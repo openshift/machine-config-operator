@@ -403,7 +403,7 @@ var map_MachineConfigNodeSpec = map[string]string{
 	"node":          "node contains a reference to the node for this machine config node.",
 	"pool":          "pool contains a reference to the machine config pool that this machine config node's referenced node belongs to.",
 	"configVersion": "configVersion holds the desired config version for the node targeted by this machine config node resource. The desired version represents the machine config the node will attempt to update to and gets set before the machine config operator validates the new machine config against the current machine config.",
-	"configImage":   "configImage holds the desired image for the node targeted by this machine config node resource. The desired image represents the image the node will attempt to update to and gets set before the machine config operator validates the new image against the current image.",
+	"configImage":   "configImage holds the desired image for the node targeted by this machine config node resource. The desired image represents the image the node will attempt to update to and gets set before the machine config operator validates the new image against the current image. This field will be used only when OCL is enabled. This will be empty/omitted otherwise.",
 }
 
 func (MachineConfigNodeSpec) SwaggerDoc() map[string]string {
@@ -412,7 +412,7 @@ func (MachineConfigNodeSpec) SwaggerDoc() map[string]string {
 
 var map_MachineConfigNodeSpecConfigImage = map[string]string{
 	"":             "MachineConfigNodeSpecConfigImage holds the desired image for the node. This structure is populated from the `machineconfiguration.openshift.io/desiredImage` annotation on the target node, which is set by the Machine Config Pool controller to signal the desired image pullspec for the node to update to.",
-	"desiredImage": "desiredImage is the  fully qualified image pull spec of the image that the Machine Config Operator (MCO) intends to apply to the node. This field is optional. The length of the field must be between 1 to 447 characters.",
+	"desiredImage": "desiredImage is the  fully qualified image pull spec of the image that the Machine Config Operator (MCO) intends to apply to the node. This field is optional. When OCL is not enabled, this field will be omitted/empty. The format of the push spec is: host[:port][/namespace]/name@sha256:<digest>, where the digest must be 64 characters long, and consist only of lowercase hexadecimal characters, a-f and 0-9. The length of the whole spec must be between 1 to 447 characters.",
 }
 
 func (MachineConfigNodeSpecConfigImage) SwaggerDoc() map[string]string {
@@ -433,7 +433,7 @@ var map_MachineConfigNodeStatus = map[string]string{
 	"conditions":         "conditions represent the observations of a machine config node's current state. Valid types are: UpdatePrepared, UpdateExecuted, UpdatePostActionComplete, UpdateComplete, Updated, Resumed, Drained, AppliedFilesAndOS, Cordoned, Uncordoned, RebootedNode, NodeDegraded, PinnedImageSetsProgressing, and PinnedImageSetsDegraded. The following types are only available when the ImageModeStatusReporting feature gate is enabled: ImagePulledFromRegistry, AppliedOSImage, AppliedFiles",
 	"observedGeneration": "observedGeneration represents the generation of the MachineConfigNode object observed by the Machine Config Operator's controller. This field is updated when the controller observes a change to the desiredConfig in the configVersion of the machine config node spec.",
 	"configVersion":      "configVersion describes the current and desired machine config version for this node.",
-	"configImage":        "configImage describes the current and desired image for this node.",
+	"configImage":        "configImage describes the current and desired image for this node. OCL must be enabled for this to be populated. It will be omitted/empty otherwise.",
 	"pinnedImageSets":    "pinnedImageSets describes the current and desired pinned image sets for this node.",
 }
 
@@ -442,9 +442,9 @@ func (MachineConfigNodeStatus) SwaggerDoc() map[string]string {
 }
 
 var map_MachineConfigNodeStatusConfigImage = map[string]string{
-	"":             "MachineConfigNodeStatusConfigImage holds the observed state of the image on the node, including both the image targeted for an update and the image currently applied. This allows for monitoring the progress of the layering rollout.",
-	"currentImage": "currentImage is the  fully qualified image pull spec of the image that is currently applied to the node. This field is optional because when image-mode is first enabled on a node, there is no currentImage because the node has not yet applied the updated image. Only after the updated image is applied will the currentImage be populated. The length of the field must be between 1 to 447 characters.",
-	"desiredImage": "desiredImage is a mirror of the desired image from the Spec. When the current and desired image are not equal, the node is in an updating phase. This field is optional. The length of the field must be between 1 to 447 characters.",
+	"":             "MachineConfigNodeStatusConfigImage holds the observed state of the image on the node, including both the image targeted for an update and the image currently applied. This allows for monitoring the progress of the layering rollout. If OCL is enabled, desiredImage must be defined.",
+	"currentImage": "currentImage is the  fully qualified image pull spec of the image that is currently applied to the node. This field is optional because when image-mode is first enabled on a node, there is no currentImage because the node has not yet applied the updated image. Only after the updated image is applied will the currentImage be populated. The format of the push spec is: host[:port][/namespace]/name@sha256:<digest>, where the digest must be 64 characters long, and consist only of lowercase hexadecimal characters, a-f and 0-9. The length of the whole spec must be between 1 to 447 characters.",
+	"desiredImage": "desiredImage is a mirror of the desired image from the Spec. When the current and desired image are not equal, the node is in an updating phase. This field is required. The format of the push spec is: host[:port][/namespace]/name@sha256:<digest>, where the digest must be 64 characters long, and consist only of lowercase hexadecimal characters, a-f and 0-9. The length of the whole spec must be between 1 to 447 characters.",
 }
 
 func (MachineConfigNodeStatusConfigImage) SwaggerDoc() map[string]string {

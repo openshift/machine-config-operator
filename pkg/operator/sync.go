@@ -811,7 +811,7 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.Cluste
 		//Add: check if image mode status reporting fg is enables and if yes, use 821-826 as a guideline for configImage initialization
 		if fg.Enabled(features.FeatureGateImageModeStatusReporting) {
 			newMCS.Spec.ConfigImage = mcfgv1.MachineConfigNodeSpecConfigImage{
-				DesiredImage: node.Annotations[daemonconsts.DesiredImageAnnotationKey],
+				DesiredImage: mcfgv1.ImageDigestFormat(node.Annotations[daemonconsts.DesiredImageAnnotationKey]),
 			}
 		}
 

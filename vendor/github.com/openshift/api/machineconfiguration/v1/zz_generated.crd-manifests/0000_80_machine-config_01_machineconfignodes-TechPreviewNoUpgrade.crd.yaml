@@ -103,22 +103,26 @@ spec:
                 description: |-
                   configImage holds the desired image for the node targeted by this machine config node resource.
                   The desired image represents the image the node will attempt to update to and gets set before the machine config operator validates
-                  the new image against the current image.
+                  the new image against the current image. This field will be used only when OCL is enabled. This will be empty/omitted otherwise.
                 properties:
                   desiredImage:
                     description: |-
                       desiredImage is the  fully qualified image pull spec of the image that the Machine
-                      Config Operator (MCO) intends to apply to the node. This field is optional.
-                      The length of the field must be between 1 to 447 characters.
+                      Config Operator (MCO) intends to apply to the node. This field is optional. When
+                      OCL is not enabled, this field will be omitted/empty.
+                      The format of the push spec is: host[:port][/namespace]/name@sha256:<digest>,
+                      where the digest must be 64 characters long, and consist only of lowercase hexadecimal characters, a-f and 0-9.
+                      The length of the whole spec must be between 1 to 447 characters.
                     maxLength: 447
+                    minLength: 1
                     type: string
                     x-kubernetes-validations:
+                    - message: the OCI Image reference must end with a valid '@sha256:<digest>'
+                        suffix, where '<digest>' is 64 characters long
+                      rule: (self.split('@').size() == 2 && self.split('@')[1].matches('^sha256:[a-f0-9]{64}$'))
                     - message: the OCI Image name should follow the host[:port][/namespace]/name
-                        format, resembling a valid URL without the scheme. Or it must
-                        be a valid .svc followed by a port, repository, image name,
-                        and tag.
-                      rule: self.matches('^([a-zA-Z0-9-]+\\.)+[a-zA-Z0-9-]+(:[0-9]{2,5})?(/[a-zA-Z0-9-_]{1,61})*/[a-zA-Z0-9-_.]+:[a-zA-Z0-9._-]+$')
-                        || self.matches('^[^.]+\\.[^.]+\\.svc:\\d+\\/[^\\/]+\\/[^\\/]+:[^\\/]+$')
+                        format, resembling a valid URL without the scheme
+                      rule: (self.split('@')[0].matches('^([a-zA-Z0-9-]+\\.)+[a-zA-Z0-9-]+(:[0-9]{2,5})?/([a-zA-Z0-9-_]{0,61}/)?[a-zA-Z0-9-_.]*?$'))
                 type: object
               configVersion:
                 description: |-
@@ -266,7 +270,9 @@ spec:
                 x-kubernetes-list-type: map
               configImage:
                 description: configImage describes the current and desired image for
-                  this node.
+                  this node. OCL must be enabled for this to be populated. It will
+                  be omitted/empty otherwise.
+                minProperties: 1
                 properties:
                   currentImage:
                     description: |-
@@ -276,30 +282,36 @@ spec:
                       node, there is no currentImage because the node has not yet applied
                       the updated image. Only after the updated image is applied will the
                       currentImage be populated.
-                      The length of the field must be between 1 to 447 characters.
+                      The format of the push spec is: host[:port][/namespace]/name@sha256:<digest>,
+                      where the digest must be 64 characters long, and consist only of lowercase hexadecimal characters, a-f and 0-9.
+                      The length of the whole spec must be between 1 to 447 characters.
                     maxLength: 447
+                    minLength: 1
                     type: string
                     x-kubernetes-validations:
+                    - message: the OCI Image reference must end with a valid '@sha256:<digest>'
+                        suffix, where '<digest>' is 64 characters long
+                      rule: (self.split('@').size() == 2 && self.split('@')[1].matches('^sha256:[a-f0-9]{64}$'))
                     - message: the OCI Image name should follow the host[:port][/namespace]/name
-                        format, resembling a valid URL without the scheme. Or it must
-                        be a valid .svc followed by a port, repository, image name,
-                        and tag.
-                      rule: self.matches('^([a-zA-Z0-9-]+\\.)+[a-zA-Z0-9-]+(:[0-9]{2,5})?(/[a-zA-Z0-9-_]{1,61})*/[a-zA-Z0-9-_.]+:[a-zA-Z0-9._-]+$')
-                        || self.matches('^[^.]+\\.[^.]+\\.svc:\\d+\\/[^\\/]+\\/[^\\/]+:[^\\/]+$')
+                        format, resembling a valid URL without the scheme
+                      rule: (self.split('@')[0].matches('^([a-zA-Z0-9-]+\\.)+[a-zA-Z0-9-]+(:[0-9]{2,5})?/([a-zA-Z0-9-_]{0,61}/)?[a-zA-Z0-9-_.]*?$'))
                   desiredImage:
                     description: |-
                       desiredImage is a mirror of the desired image from the Spec. When the
-                      current and desired image are not equal, the node is in an updating phase. This field is optional.
-                      The length of the field must be between 1 to 447 characters.
+                      current and desired image are not equal, the node is in an updating phase. This field is required.
+                      The format of the push spec is: host[:port][/namespace]/name@sha256:<digest>,
+                      where the digest must be 64 characters long, and consist only of lowercase hexadecimal characters, a-f and 0-9.
+                      The length of the whole spec must be between 1 to 447 characters.
                     maxLength: 447
+                    minLength: 1
                     type: string
                     x-kubernetes-validations:
+                    - message: the OCI Image reference must end with a valid '@sha256:<digest>'
+                        suffix, where '<digest>' is 64 characters long
+                      rule: (self.split('@').size() == 2 && self.split('@')[1].matches('^sha256:[a-f0-9]{64}$'))
                     - message: the OCI Image name should follow the host[:port][/namespace]/name
-                        format, resembling a valid URL without the scheme. Or it must
-                        be a valid .svc followed by a port, repository, image name,
-                        and tag.
-                      rule: self.matches('^([a-zA-Z0-9-]+\\.)+[a-zA-Z0-9-]+(:[0-9]{2,5})?(/[a-zA-Z0-9-_]{1,61})*/[a-zA-Z0-9-_.]+:[a-zA-Z0-9._-]+$')
-                        || self.matches('^[^.]+\\.[^.]+\\.svc:\\d+\\/[^\\/]+\\/[^\\/]+:[^\\/]+$')
+                        format, resembling a valid URL without the scheme
+                      rule: (self.split('@')[0].matches('^([a-zA-Z0-9-]+\\.)+[a-zA-Z0-9-]+(:[0-9]{2,5})?/([a-zA-Z0-9-_]{0,61}/)?[a-zA-Z0-9-_.]*?$'))
                 type: object
               configVersion:
                 description: configVersion describes the current and desired machine

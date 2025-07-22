@@ -981,7 +981,7 @@ github.com/opencontainers/image-spec/specs-go/v1
 # github.com/opencontainers/runtime-spec v1.2.0
 ## explicit
 github.com/opencontainers/runtime-spec/specs-go
-# github.com/openshift/api v0.0.0-20250620092249-a8cbc218cd2c => github.com/naseerahkani/api v0.0.0-20250709200454-c82e51f90bb8
+# github.com/openshift/api v0.0.0-20250620092249-a8cbc218cd2c => github.com/naseerahkani/api v0.0.0-20250715184238-584477d3b226
 ## explicit; go 1.23.0
 github.com/openshift/api
 github.com/openshift/api/annotations
@@ -1064,7 +1064,7 @@ github.com/openshift/api/template
 github.com/openshift/api/template/v1
 github.com/openshift/api/user
 github.com/openshift/api/user/v1
-# github.com/openshift/client-go v0.0.0-20250425165505-5f55ff6979a1 => github.com/naseerahkani/client-go v0.0.0-20250710210823-95c2813c5f23
+# github.com/openshift/client-go v0.0.0-20250425165505-5f55ff6979a1 => github.com/naseerahkani/client-go v0.0.0-20250722005126-8e9e555e298c
 ## explicit; go 1.23.0
 github.com/openshift/client-go/build/applyconfigurations/build/v1
 github.com/openshift/client-go/build/applyconfigurations/internal
@@ -2771,5 +2771,5 @@ sigs.k8s.io/yaml
 sigs.k8s.io/yaml/goyaml.v2
 sigs.k8s.io/yaml/goyaml.v3
 # k8s.io/kube-openapi => github.com/openshift/kube-openapi v0.0.0-20230816122517-ffc8f001abb0
-# github.com/openshift/client-go => github.com/naseerahkani/client-go v0.0.0-20250710210823-95c2813c5f23
-# github.com/openshift/api => github.com/naseerahkani/api v0.0.0-20250709200454-c82e51f90bb8
+# github.com/openshift/client-go => github.com/naseerahkani/client-go v0.0.0-20250722005126-8e9e555e298c
+# github.com/openshift/api => github.com/naseerahkani/api v0.0.0-20250715184238-584477d3b226

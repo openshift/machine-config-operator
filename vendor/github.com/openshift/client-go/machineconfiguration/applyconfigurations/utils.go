@@ -58,10 +58,14 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &machineconfigurationv1.MachineConfigNodeApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("MachineConfigNodeSpec"):
 		return &machineconfigurationv1.MachineConfigNodeSpecApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("MachineConfigNodeSpecConfigImage"):
+		return &machineconfigurationv1.MachineConfigNodeSpecConfigImageApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("MachineConfigNodeSpecMachineConfigVersion"):
 		return &machineconfigurationv1.MachineConfigNodeSpecMachineConfigVersionApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("MachineConfigNodeStatus"):
 		return &machineconfigurationv1.MachineConfigNodeStatusApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("MachineConfigNodeStatusConfigImage"):
+		return &machineconfigurationv1.MachineConfigNodeStatusConfigImageApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("MachineConfigNodeStatusMachineConfigVersion"):
 		return &machineconfigurationv1.MachineConfigNodeStatusMachineConfigVersionApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("MachineConfigNodeStatusPinnedImageSet"):

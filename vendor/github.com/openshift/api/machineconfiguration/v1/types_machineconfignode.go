@@ -101,7 +101,7 @@ type MachineConfigNodeSpec struct {
 
 	// configImage holds the desired image for the node targeted by this machine config node resource.
 	// The desired image represents the image the node will attempt to update to and gets set before the machine config operator validates
-	// the new image against the current image.
+	// the new image against the current image. This field will be used only when OCL is enabled. This will be empty/omitted otherwise.
 	// +openshift:enable:FeatureGate=ImageModeStatusReporting
 	// +optional
 	ConfigImage MachineConfigNodeSpecConfigImage `json:"configImage"`
@@ -129,10 +129,10 @@ type MachineConfigNodeStatus struct {
 	// configVersion describes the current and desired machine config version for this node.
 	// +optional
 	ConfigVersion *MachineConfigNodeStatusMachineConfigVersion `json:"configVersion,omitempty"`
-	// configImage describes the current and desired image for this node.
+	// configImage describes the current and desired image for this node. OCL must be enabled for this to be populated. It will be omitted/empty otherwise.
 	// +openshift:enable:FeatureGate=ImageModeStatusReporting
 	// +optional
-	ConfigImage MachineConfigNodeStatusConfigImage `json:"configImage"`
+	ConfigImage *MachineConfigNodeStatusConfigImage `json:"configImage,omitempty"`
 	// pinnedImageSets describes the current and desired pinned image sets for this node.
 	// +listType=map
 	// +listMapKey=name
@@ -228,18 +228,20 @@ type MachineConfigNodeSpecMachineConfigVersion struct {
 // to signal the desired image pullspec for the node to update to.
 type MachineConfigNodeSpecConfigImage struct {
 	// desiredImage is the  fully qualified image pull spec of the image that the Machine
-	// Config Operator (MCO) intends to apply to the node. This field is optional.
-	// The length of the field must be between 1 to 447 characters.
-	// +kubebuilder:validation:MaxLength=447
-	// +kubebuilder:validation:XValidation:rule="self.matches('^([a-zA-Z0-9-]+\\\\.)+[a-zA-Z0-9-]+(:[0-9]{2,5})?(/[a-zA-Z0-9-_]{1,61})*/[a-zA-Z0-9-_.]+:[a-zA-Z0-9._-]+$') || self.matches('^[^.]+\\\\.[^.]+\\\\.svc:\\\\d+\\\\/[^\\\\/]+\\\\/[^\\\\/]+:[^\\\\/]+$')",message="the OCI Image name should follow the host[:port][/namespace]/name format, resembling a valid URL without the scheme. Or it must be a valid .svc followed by a port, repository, image name, and tag."
+	// Config Operator (MCO) intends to apply to the node. This field is optional. When
+	// OCL is not enabled, this field will be omitted/empty.
+	// The format of the push spec is: host[:port][/namespace]/name@sha256:<digest>,
+	// where the digest must be 64 characters long, and consist only of lowercase hexadecimal characters, a-f and 0-9.
+	// The length of the whole spec must be between 1 to 447 characters.
 	// +optional
-	DesiredImage string `json:"desiredImage"`
+	DesiredImage ImageDigestFormat `json:"desiredImage"`
 }
 
 // MachineConfigNodeStatusConfigImage holds the observed state of the image
 // on the node, including both the image targeted for an update and the image
 // currently applied. This allows for monitoring the progress of the layering
-// rollout.
+// rollout. If OCL is enabled, desiredImage must be defined.
+// +kubebuilder:validation:MinProperties:=1
 type MachineConfigNodeStatusConfigImage struct {
 	// currentImage is the  fully qualified image pull spec of the image that is
 	// currently applied to the node.
@@ -247,18 +249,18 @@ type MachineConfigNodeStatusConfigImage struct {
 	// node, there is no currentImage because the node has not yet applied
 	// the updated image. Only after the updated image is applied will the
 	// currentImage be populated.
-	// The length of the field must be between 1 to 447 characters.
-	// +kubebuilder:validation:MaxLength=447
-	// +kubebuilder:validation:XValidation:rule="self.matches('^([a-zA-Z0-9-]+\\\\.)+[a-zA-Z0-9-]+(:[0-9]{2,5})?(/[a-zA-Z0-9-_]{1,61})*/[a-zA-Z0-9-_.]+:[a-zA-Z0-9._-]+$') || self.matches('^[^.]+\\\\.[^.]+\\\\.svc:\\\\d+\\\\/[^\\\\/]+\\\\/[^\\\\/]+:[^\\\\/]+$')",message="the OCI Image name should follow the host[:port][/namespace]/name format, resembling a valid URL without the scheme. Or it must be a valid .svc followed by a port, repository, image name, and tag."
+	// The format of the push spec is: host[:port][/namespace]/name@sha256:<digest>,
+	// where the digest must be 64 characters long, and consist only of lowercase hexadecimal characters, a-f and 0-9.
+	// The length of the whole spec must be between 1 to 447 characters.
 	// +optional
-	CurrentImage string `json:"currentImage"`
+	CurrentImage ImageDigestFormat `json:"currentImage"`
 	// desiredImage is a mirror of the desired image from the Spec. When the
-	// current and desired image are not equal, the node is in an updating phase. This field is optional.
-	// The length of the field must be between 1 to 447 characters.
-	// +kubebuilder:validation:MaxLength=447
-	// +kubebuilder:validation:XValidation:rule="self.matches('^([a-zA-Z0-9-]+\\\\.)+[a-zA-Z0-9-]+(:[0-9]{2,5})?(/[a-zA-Z0-9-_]{1,61})*/[a-zA-Z0-9-_.]+:[a-zA-Z0-9._-]+$') || self.matches('^[^.]+\\\\.[^.]+\\\\.svc:\\\\d+\\\\/[^\\\\/]+\\\\/[^\\\\/]+:[^\\\\/]+$')",message="the OCI Image name should follow the host[:port][/namespace]/name format, resembling a valid URL without the scheme. Or it must be a valid .svc followed by a port, repository, image name, and tag."
+	// current and desired image are not equal, the node is in an updating phase. This field is required.
+	// The format of the push spec is: host[:port][/namespace]/name@sha256:<digest>,
+	// where the digest must be 64 characters long, and consist only of lowercase hexadecimal characters, a-f and 0-9.
+	// The length of the whole spec must be between 1 to 447 characters.
 	// +optional
-	DesiredImage string `json:"desiredImage"`
+	DesiredImage ImageDigestFormat `json:"desiredImage"`
 }
 
 // StateProgress is each possible state for each possible MachineConfigNodeType
