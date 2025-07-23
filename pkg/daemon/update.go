@@ -2580,8 +2580,25 @@ func (dn *Daemon) updateLayeredOSToPullspec(newURL string) error {
 		if err := dn.InplaceUpdateViaNewContainer(newURL); err != nil {
 			return err
 		}
-	} else if err := dn.NodeUpdaterClient.RebaseLayered(newURL); err != nil {
-		return fmt.Errorf("failed to update OS to %s : %w", newURL, err)
+	} else {
+		// Workaround for OCPBUGS-43406, retry the remote rebase with backoff,
+		// such that if we happen to update while the CoreDNS pod is being restarted,
+		// the next retry should succeed if no other issues are present.
+		backoff := wait.Backoff{
+			Duration: 5 * time.Second,
+			Factor:   2,
+			Steps:    5,
+		}
+
+		if err := wait.ExponentialBackoff(backoff, func() (bool, error) {
+			if err := dn.NodeUpdaterClient.RebaseLayered(newURL); err != nil {
+				klog.Warningf("Failed to update OS to %s (will retry): %v", newURL, err)
+				return false, nil
+			}
+			return true, nil
+		}); err != nil {
+			return fmt.Errorf("Failed to update OS to %s after retries: %w", newURL, err)
+		}
 	}
 
 	return nil
