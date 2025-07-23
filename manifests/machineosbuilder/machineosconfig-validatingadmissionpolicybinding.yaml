@@ -1,0 +1,7 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: "machineosconfig-name-check-binding"
+spec:
+  policyName: "machineosconfig-name-check"
+  validationActions: [Deny]
