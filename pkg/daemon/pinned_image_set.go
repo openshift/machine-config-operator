@@ -546,7 +546,7 @@ func (p *PinnedImageSetManager) updateStatusProgressing(pools []*mcfgv1.MachineC
 	}
 
 	// Get MCP associated with node
-	pool, err := helpers.GetPrimaryPoolNameForMCN(p.mcpLister, node)
+	mcpName, desiredConfigVersion, err := helpers.GetPrimaryPoolDetailsForMCN(p.mcpLister, node)
 	if err != nil {
 		return err
 	}
@@ -564,7 +564,8 @@ func (p *PinnedImageSetManager) updateStatusProgressing(pools []*mcfgv1.MachineC
 		p.mcfgClient,
 		applyCfg,
 		p.fgHandler,
-		pool,
+		mcpName,
+		desiredConfigVersion,
 	)
 }
 
@@ -581,7 +582,7 @@ func (p *PinnedImageSetManager) updateStatusProgressingComplete(pools []*mcfgv1.
 	}
 
 	// Get MCP associated with node
-	pool, err := helpers.GetPrimaryPoolNameForMCN(p.mcpLister, node)
+	mcpName, desiredConfigVersion, err := helpers.GetPrimaryPoolDetailsForMCN(p.mcpLister, node)
 	if err != nil {
 		return err
 	}
@@ -599,7 +600,8 @@ func (p *PinnedImageSetManager) updateStatusProgressingComplete(pools []*mcfgv1.
 		p.mcfgClient,
 		applyCfg,
 		p.fgHandler,
-		pool,
+		mcpName,
+		desiredConfigVersion,
 	)
 	if err != nil {
 		klog.Errorf("Failed to update machine config node: %v", err)
@@ -619,7 +621,8 @@ func (p *PinnedImageSetManager) updateStatusProgressingComplete(pools []*mcfgv1.
 		p.mcfgClient,
 		nil,
 		p.fgHandler,
-		pool,
+		mcpName,
+		desiredConfigVersion,
 	)
 }
 
@@ -636,7 +639,7 @@ func (p *PinnedImageSetManager) updateStatusError(pools []*mcfgv1.MachineConfigP
 	}
 
 	// Get MCP associated with node
-	pool, err := helpers.GetPrimaryPoolNameForMCN(p.mcpLister, node)
+	mcpName, desiredConfigVersion, err := helpers.GetPrimaryPoolDetailsForMCN(p.mcpLister, node)
 	if err != nil {
 		return err
 	}
@@ -654,7 +657,8 @@ func (p *PinnedImageSetManager) updateStatusError(pools []*mcfgv1.MachineConfigP
 		p.mcfgClient,
 		applyCfg,
 		p.fgHandler,
-		pool,
+		mcpName,
+		desiredConfigVersion,
 	)
 }
 
