@@ -623,7 +623,6 @@ func getIgnitionHost(infraStatus *configv1.InfrastructureStatus) (string, error)
 func (optr *Operator) syncCustomResourceDefinitions() error {
 	crds := []string{
 		"manifests/controllerconfig.crd.yaml",
-		"manifests/0000_80_machine-config-operator_01_machineconfignode-TechPreviewNoUpgrade.crd.yaml",
 	}
 
 	for _, crd := range crds {
