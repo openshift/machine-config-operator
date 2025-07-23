@@ -43,7 +43,7 @@ func (dn *Daemon) performDrain() error {
 		logSystem("Drain not required, skipping")
 
 		// Get MCP associated with node
-		pool, err := helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
+		mcpName, desiredConfigVersion, err := helpers.GetPrimaryPoolDetailsForMCN(dn.mcpLister, dn.node)
 		if err != nil {
 			return err
 		}
@@ -56,7 +56,8 @@ func (dn *Daemon) performDrain() error {
 			dn.node,
 			dn.mcfgClient,
 			dn.fgHandler,
-			pool,
+			mcpName,
+			desiredConfigVersion,
 		)
 		if err != nil {
 			klog.Errorf("Error making MCN for Drain not required: %v", err)
