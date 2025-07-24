@@ -316,7 +316,7 @@ func (ctrl *Controller) syncNode(key string) error {
 	}
 
 	// Get MCP associated with node
-	pool, err := helpers.GetPrimaryPoolNameForMCN(ctrl.mcpLister, node)
+	mcpName, desiredConfigVersion, err := helpers.GetPrimaryPoolDetailsForMCN(ctrl.mcpLister, node)
 	if err != nil {
 		return err
 	}
@@ -334,7 +334,8 @@ func (ctrl *Controller) syncNode(key string) error {
 				node,
 				ctrl.client,
 				ctrl.featureGatesAccessor,
-				pool,
+				mcpName,
+				desiredConfigVersion,
 			)
 			if nErr != nil {
 				klog.Errorf("Error making MCN for Uncordon failure: %v", err)
@@ -350,7 +351,8 @@ func (ctrl *Controller) syncNode(key string) error {
 			node,
 			ctrl.client,
 			ctrl.featureGatesAccessor,
-			pool,
+			mcpName,
+			desiredConfigVersion,
 		)
 		if err != nil {
 			klog.Errorf("Error making MCN for UnCordon success: %v", err)
@@ -406,7 +408,7 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 	}
 
 	// Get MCP associated with node
-	pool, err := helpers.GetPrimaryPoolNameForMCN(ctrl.mcpLister, node)
+	mcpName, desiredConfigVersion, err := helpers.GetPrimaryPoolDetailsForMCN(ctrl.mcpLister, node)
 	if err != nil {
 		return err
 	}
@@ -422,7 +424,8 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 				node,
 				ctrl.client,
 				ctrl.featureGatesAccessor,
-				pool,
+				mcpName,
+				desiredConfigVersion,
 			)
 			if Nerr != nil {
 				klog.Errorf("Error making MCN for Cordon Failure: %v", Nerr)
@@ -437,7 +440,8 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 			node,
 			ctrl.client,
 			ctrl.featureGatesAccessor,
-			pool,
+			mcpName,
+			desiredConfigVersion,
 		)
 		if err != nil {
 			klog.Errorf("Error making MCN for Cordon Success: %v", err)
@@ -454,7 +458,8 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 		node,
 		ctrl.client,
 		ctrl.featureGatesAccessor,
-		pool,
+		mcpName,
+		desiredConfigVersion,
 	)
 	if err != nil {
 		klog.Errorf("Error making MCN for Drain beginning: %v", err)
@@ -484,7 +489,8 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 			node,
 			ctrl.client,
 			ctrl.featureGatesAccessor,
-			pool,
+			mcpName,
+			desiredConfigVersion,
 		)
 		if nErr != nil {
 			klog.Errorf("Error making MCN for Drain failure: %v", nErr)
@@ -501,7 +507,8 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 		node,
 		ctrl.client,
 		ctrl.featureGatesAccessor,
-		pool,
+		mcpName,
+		desiredConfigVersion,
 	)
 	if err != nil {
 		klog.Errorf("Error making MCN for Drain success: %v", err)

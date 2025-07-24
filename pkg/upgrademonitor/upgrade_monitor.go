@@ -41,9 +41,10 @@ func GenerateAndApplyMachineConfigNodes(
 	node *corev1.Node,
 	mcfgClient mcfgclientset.Interface,
 	fgAccessor featuregates.FeatureGateAccess,
-	pool string,
+	mcpName string,
+	desiredConfigVersion string,
 ) error {
-	return generateAndApplyMachineConfigNodes(parentCondition, childCondition, parentStatus, childStatus, node, mcfgClient, nil, fgAccessor, pool)
+	return generateAndApplyMachineConfigNodes(parentCondition, childCondition, parentStatus, childStatus, node, mcfgClient, nil, fgAccessor, mcpName, desiredConfigVersion)
 }
 
 func UpdateMachineConfigNodeStatus(
@@ -55,9 +56,10 @@ func UpdateMachineConfigNodeStatus(
 	mcfgClient mcfgclientset.Interface,
 	imageSetApplyConfig []*machineconfigurationv1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration,
 	fgAccessor featuregates.FeatureGateAccess,
-	pool string,
+	mcpName string,
+	desiredConfigVersion string,
 ) error {
-	return generateAndApplyMachineConfigNodes(parentCondition, childCondition, parentStatus, childStatus, node, mcfgClient, imageSetApplyConfig, fgAccessor, pool)
+	return generateAndApplyMachineConfigNodes(parentCondition, childCondition, parentStatus, childStatus, node, mcfgClient, imageSetApplyConfig, fgAccessor, mcpName, desiredConfigVersion)
 }
 
 // Helper function to convert metav1.Condition to ConditionApplyConfiguration
@@ -90,7 +92,8 @@ func generateAndApplyMachineConfigNodes(
 	mcfgClient mcfgclientset.Interface,
 	imageSetApplyConfig []*machineconfigurationv1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration,
 	fgAccessor featuregates.FeatureGateAccess,
-	pool string,
+	mcpName string,
+	desiredConfigVersion string,
 ) error {
 	if fgAccessor == nil || node == nil || parentCondition == nil || mcfgClient == nil {
 		return nil
@@ -305,7 +308,7 @@ func generateAndApplyMachineConfigNodes(
 			newMCNode.Spec.ConfigVersion.Desired = NotYetSet
 		}
 		newMCNode.Name = node.Name
-		newMCNode.Spec.Pool = mcfgv1.MCOObjectReference{Name: pool}
+		newMCNode.Spec.Pool = mcfgv1.MCOObjectReference{Name: mcpName}
 		newMCNode.Spec.Node = mcfgv1.MCOObjectReference{Name: node.Name}
 
 		_, err := mcfgClient.MachineconfigurationV1().MachineConfigNodes().Create(context.TODO(), newMCNode, metav1.CreateOptions{})
@@ -316,7 +319,7 @@ func generateAndApplyMachineConfigNodes(
 	}
 	// if this is the first time we are applying the MCN and the node is ready, set the config version probably
 	if node.Status.Phase != corev1.NodePending && node.Status.Phase != corev1.NodePhase("Provisioning") && newMCNode.Spec.ConfigVersion.Desired == "NotYetSet" {
-		err = GenerateAndApplyMachineConfigNodeSpec(fgAccessor, pool, node, mcfgClient)
+		err = GenerateAndApplyMachineConfigNodeSpec(fgAccessor, mcpName, desiredConfigVersion, node, mcfgClient)
 		if err != nil {
 			klog.Errorf("Error making MCN spec for Update Compatible: %v", err)
 		}
@@ -338,8 +341,8 @@ func isSingletonCondition(singletonConditionTypes []mcfgv1.StateProgress, condit
 	return false
 }
 
-// GenerateAndApplyMachineConfigNodeSpec generates and applies a new MCN spec based off the node state
-func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAccess, pool string, node *corev1.Node, mcfgClient mcfgclientset.Interface) error {
+// GenerateAndApplyMachineConfigNodeSpec generates and applies a new MCN spec based off node and MCP properties
+func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAccess, mcpName, desiredConfigVersion string, node *corev1.Node, mcfgClient mcfgclientset.Interface) error {
 	if fgAccessor == nil || node == nil {
 		return nil
 	}
@@ -349,14 +352,16 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 		return err
 	}
 	if fg == nil || !fg.Enabled(features.FeatureGateMachineConfigNodes) {
-		klog.Infof("MCN Featuregate is not enabled. Please enable the TechPreviewNoUpgrade featureset to use MachineConfigNodes")
+		klog.V(4).Infof("MachineConfigNode feature gate is not enabled. Please enable the featureset to use the MCN resource.")
 		return nil
 	}
-	// get the existing MCN, or if it DNE create one below
-	mcNode, needNewMCNode := createOrGetMachineConfigNode(mcfgClient, node)
-	newMCNode := mcNode.DeepCopy()
-	// set the spec config version
-	newMCNode.ObjectMeta.OwnerReferences = []metav1.OwnerReference{
+
+	// Get the existing MCN for the node or, if one does not exist, create one later in the flow
+	mcn, needNewMCN := createOrGetMachineConfigNode(mcfgClient, node)
+	newMCN := mcn.DeepCopy()
+
+	// Set the MCN metadata
+	newMCN.ObjectMeta.OwnerReferences = []metav1.OwnerReference{
 		{
 			APIVersion: "v1",
 			Name:       node.ObjectMeta.Name,
@@ -365,38 +370,37 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 		},
 	}
 
-	newMCNode.Spec.ConfigVersion = mcfgv1.MachineConfigNodeSpecMachineConfigVersion{
-		Desired: node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey],
+	// Set MCN.Spec values
+	newMCN.Spec.ConfigVersion = mcfgv1.MachineConfigNodeSpecMachineConfigVersion{
+		Desired: desiredConfigVersion,
 	}
-	// Set desired config to NotYetSet if the annotation is empty to satisfy API validation
-	if newMCNode.Spec.ConfigVersion.Desired == "" {
-		newMCNode.Spec.ConfigVersion.Desired = NotYetSet
+	newMCN.Spec.Pool = mcfgv1.MCOObjectReference{
+		Name: mcpName,
 	}
-
-	newMCNode.Spec.Pool = mcfgv1.MCOObjectReference{
-		Name: pool,
-	}
-	newMCNode.Spec.Node = mcfgv1.MCOObjectReference{
+	newMCN.Spec.Node = mcfgv1.MCOObjectReference{
 		Name: node.Name,
 	}
-	if !needNewMCNode {
-		nodeRefApplyConfig := machineconfigurationv1.MCOObjectReference().WithName(newMCNode.Spec.Node.Name)
-		poolRefApplyConfig := machineconfigurationv1.MCOObjectReference().WithName(newMCNode.Spec.Pool.Name)
-		specconfigVersionApplyConfig := machineconfigurationv1.MachineConfigNodeSpecMachineConfigVersion().WithDesired(newMCNode.Spec.ConfigVersion.Desired)
-		specApplyConfig := machineconfigurationv1.MachineConfigNodeSpec().WithNode(nodeRefApplyConfig).WithPool(poolRefApplyConfig).WithConfigVersion(specconfigVersionApplyConfig)
-		mcnodeApplyConfig := machineconfigurationv1.MachineConfigNode(newMCNode.Name).WithSpec(specApplyConfig)
-		_, err := mcfgClient.MachineconfigurationV1().MachineConfigNodes().Apply(context.TODO(), mcnodeApplyConfig, metav1.ApplyOptions{FieldManager: "machine-config-operator", Force: true})
+
+	// Update the existing MCN if one exists
+	if !needNewMCN {
+		nodeRefApplyConfig := machineconfigurationv1.MCOObjectReference().WithName(newMCN.Spec.Node.Name)
+		poolRefApplyConfig := machineconfigurationv1.MCOObjectReference().WithName(newMCN.Spec.Pool.Name)
+		specConfigVersionApplyConfig := machineconfigurationv1.MachineConfigNodeSpecMachineConfigVersion().WithDesired(newMCN.Spec.ConfigVersion.Desired)
+		specApplyConfig := machineconfigurationv1.MachineConfigNodeSpec().WithNode(nodeRefApplyConfig).WithPool(poolRefApplyConfig).WithConfigVersion(specConfigVersionApplyConfig)
+		mcnApplyConfig := machineconfigurationv1.MachineConfigNode(newMCN.Name).WithSpec(specApplyConfig)
+		_, err := mcfgClient.MachineconfigurationV1().MachineConfigNodes().Apply(context.TODO(), mcnApplyConfig, metav1.ApplyOptions{FieldManager: "machine-config-operator", Force: true})
 		if err != nil {
 			klog.Errorf("Error applying MCN Spec: %v", err)
 			return err
 		}
-	} else {
-		_, err := mcfgClient.MachineconfigurationV1().MachineConfigNodes().Create(context.TODO(), newMCNode, metav1.CreateOptions{})
+	} else { // Create a new MCN if one does not yet exist
+		_, err := mcfgClient.MachineconfigurationV1().MachineConfigNodes().Create(context.TODO(), newMCN, metav1.CreateOptions{})
 		if err != nil {
 			klog.Errorf("Error creating MCN: %v", err)
 			return err
 		}
 	}
+
 	return nil
 }
 
