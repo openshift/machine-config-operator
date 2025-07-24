@@ -2,9 +2,8 @@ package daemon
 
 import (
 	"context"
-	"testing"
-
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"testing"
 
 	apicfgv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
@@ -155,12 +154,12 @@ func (tc upgradeMonitorTestCase) run(t *testing.T) {
 
 	for _, n := range f.nodeLister {
 		// Get MCP associated with node
-		mcpName, desiredConfigVersion, err := helpers.GetPrimaryPoolDetailsForMCN(d.mcpLister, n)
+		pool, err := helpers.GetPrimaryPoolNameForMCN(d.mcpLister, n)
 		if err != nil {
 			f.t.Fatalf("Error getting primary pool for node: %v", n.Name)
 		}
 
-		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(tc.parentCondition, tc.childCondition, tc.parentStatus, tc.childStatus, n, d.mcfgClient, d.fgHandler, mcpName, desiredConfigVersion)
+		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(tc.parentCondition, tc.childCondition, tc.parentStatus, tc.childStatus, n, d.mcfgClient, d.fgHandler, pool)
 		if err != nil {
 			f.t.Fatalf("Could not generate and apply MCN %v", err)
 		}
