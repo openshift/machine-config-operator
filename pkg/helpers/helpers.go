@@ -51,32 +51,30 @@ func GetNodesForPool(mcpLister v1.MachineConfigPoolLister, nodeLister corev1list
 	return nodes, nil
 }
 
-// GetPrimaryPoolDetailsForMCN gets the MCP details needed to populate a node's MachineConfigNode object,
-// which are the MCP name and desired config version.
-//   - When the node does not yet exist (is nil) or the node does not yet have annotations, the MCP name
-//     and desried config version will temporarily be set to `not-yet-set` (the default not yet set
-//     placeholder value for upgrade monitor functions).
-//   - Once the node exists (is not nil) and the node annotations are properly set, the node will update
-//     again and the MCP name and desired config version will be updated accordingly.
-func GetPrimaryPoolDetailsForMCN(mcpLister v1.MachineConfigPoolLister, node *corev1.Node) (mcpName, desiredConfig string, err error) {
+// GetPrimaryPoolNameForMCN gets the MCP pool name value that is used in a node's MachineConfigNode object.
+// When the node does not yet exist (is nil) or the node does not yet have annotations, the pool name will
+// temporarily be set to `not-yet-set` (the default not yet set placeholder value for upgrade monitor
+// functions). Once the node exists (is not nil) and the annotations are properly set, the node will update
+// again and the pool name will be updated.
+func GetPrimaryPoolNameForMCN(mcpLister v1.MachineConfigPoolLister, node *corev1.Node) (string, error) {
 	// Handle case of nil node
 	if node == nil {
-		klog.Error("node object is nil, setting associated MCP values to 'not-yet-set'")
-		return upgrademonitor.NotYetSet, upgrademonitor.NotYetSet, nil
+		klog.Error("node object is nil, setting associated MCP to unknown")
+		return upgrademonitor.NotYetSet, nil
 	}
 
 	// Use `GetPrimaryPoolForNode` to get primary MCP associated with node
 	primaryPool, err := GetPrimaryPoolForNode(mcpLister, node)
 	if err != nil {
-		klog.Errorf("error getting primary MCP for node: %v", node.Name)
-		return "", "", err
+		klog.Errorf("error getting primary pool for node: %v", node.Name)
+		return "", err
 	} else if primaryPool == nil {
 		// On first provisioning, the node may not have annoatations and, thus, will not be associated with a pool.
 		// In this case, the pool value will be set to a temporary dummy value.
-		klog.Infof("No primary MCP is associated with node: %v", node.Name)
-		return upgrademonitor.NotYetSet, upgrademonitor.NotYetSet, nil
+		klog.Infof("No primary pool is associated with node: %v", node.Name)
+		return upgrademonitor.NotYetSet, nil
 	}
-	return primaryPool.Name, primaryPool.Spec.Configuration.Name, nil
+	return primaryPool.Name, nil
 }
 
 func GetPrimaryPoolForNode(mcpLister v1.MachineConfigPoolLister, node *corev1.Node) (*mcfgv1.MachineConfigPool, error) {
