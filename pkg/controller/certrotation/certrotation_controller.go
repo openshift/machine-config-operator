@@ -30,6 +30,8 @@ import (
 	"github.com/openshift/library-go/pkg/operator/certrotation"
 	"github.com/openshift/library-go/pkg/operator/events"
 
+	aroclientset "github.com/Azure/ARO-RP/pkg/operator/clientset/versioned"
+
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
 
@@ -45,6 +47,7 @@ const (
 type CertRotationController struct {
 	kubeClient   kubernetes.Interface
 	configClient configclientset.Interface
+	aroClient    aroclientset.Interface
 
 	mcoConfigMapInfomer coreinformersv1.ConfigMapInformer
 	maoSecretInformer   coreinformersv1.SecretInformer
@@ -64,6 +67,7 @@ func New(
 	kubeClient kubernetes.Interface,
 	configClient configclientset.Interface,
 	machineClient machineclientset.Interface,
+	aroClient aroclientset.Interface,
 	maoSecretInformer coreinformersv1.SecretInformer,
 	mcoSecretInformer coreinformersv1.SecretInformer,
 	mcoConfigMapInfomer coreinformersv1.ConfigMapInformer,
@@ -74,6 +78,7 @@ func New(
 	c := &CertRotationController{
 		kubeClient:          kubeClient,
 		configClient:        configClient,
+		aroClient:           aroClient,
 		recorder:            recorder,
 		maoSecretInformer:   maoSecretInformer,
 		mcoConfigMapInfomer: mcoConfigMapInfomer,
@@ -155,8 +160,16 @@ func New(
 		recorder,
 		NewCertRotationStatusReporter(),
 	)
-	// Skip rotating this cert if the cluster does not use MachineSets
-	if hasFunctionalMachineAPI(machineClient) || hasFunctionalClusterAPI() {
+
+	aroCluster, err := c.aroClient.AroV1alpha1().Clusters().Get(context.Background(), "cluster", metav1.GetOptions{})
+	if err != nil {
+		klog.V(4).Infof("ARO cluster resource not found or not accessible: %v", err)
+	} else {
+		klog.Infof("ARO cluster resource found w/ IPs: %s", aroCluster.Spec.APIIntIP)
+	}
+
+	// Skip rotating this cert if the cluster does not use MachineSets or ARO
+	if (hasFunctionalMachineAPI(machineClient) || hasFunctionalClusterAPI()) && aroCluster == nil {
 		klog.Infof("Adding MCS CA/TLS cert rotator")
 		c.certRotators = append(c.certRotators, machineConfigServerCertRotator)
 	} else {
