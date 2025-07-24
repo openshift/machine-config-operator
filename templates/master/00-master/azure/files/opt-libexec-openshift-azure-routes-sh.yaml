@@ -87,6 +87,13 @@ contents:
     }
 
     sync_rules() {
+        # Define a conntrack mark bit to identify connections that should be redirected.
+        # This allows us to stop redirecting *new* connections when a VIP is removed,
+        # while allowing *existing* connections to remain redirected until they close.
+        # Using a bitwise OR to set the mark and a bitwise AND to check it ensures
+        # that this script can coexist with other processes that also use conntrack marks.
+        local CT_MARK_BIT="0x4"
+
         # Construct the VIP lists. (The nftables syntax allows a trailing comma.)
         v4vipset=""
         v6vipset=""
@@ -104,12 +111,21 @@ contents:
         echo "synchronizing IPv4 VIPs to (${v4vipset}), IPv6 VIPS to (${v6vipset})"
         {
             echo "flush chain inet ${TABLE_NAME} ${VIPS_CHAIN}"
+
+            # For new connections to an active VIP, set our bit in the conntrack mark.
+            # This action is non-terminating, so the packet will be processed
+            # by the next rule as well.
             if [[ -n "${v4vipset}" ]]; then
-                echo "add rule inet ${TABLE_NAME} ${VIPS_CHAIN} ip daddr { ${v4vipset} } redirect"
+                echo "add rule inet ${TABLE_NAME} ${VIPS_CHAIN} ip daddr { ${v4vipset} } ct state new ct mark set ct mark or ${CT_MARK_BIT}"
             fi
             if [[ -n "${v6vipset}" ]]; then
-                echo "add rule inet ${TABLE_NAME} ${VIPS_CHAIN} ip6 daddr { ${v6vipset} } redirect"
+                echo "add rule inet ${TABLE_NAME} ${VIPS_CHAIN} ip6 daddr { ${v6vipset} } ct state new ct mark set ct mark or ${CT_MARK_BIT}"
             fi
+
+            # For any packet belonging to a connection that has our mark bit set, redirect it.
+            # This covers both the initial packet (which just got marked) and all
+            # subsequent packets in the connection (which inherit the mark).
+            echo "add rule inet ${TABLE_NAME} ${VIPS_CHAIN} ct mark and ${CT_MARK_BIT} == ${CT_MARK_BIT} redirect"
         } | nft -f -
     }
 
