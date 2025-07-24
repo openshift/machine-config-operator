@@ -18,6 +18,4 @@ done
 
 #this one goes in manifests rather than install, but should it? 
 cp "vendor/github.com/openshift/api/machineconfiguration/v1/0000_80_controllerconfig.crd.yaml" "manifests/controllerconfig.crd.yaml"
-cp "vendor/github.com/openshift/api/machineconfiguration/v1alpha1/0000_80_machineconfignode-TechPreviewNoUpgrade.crd.yaml" "manifests/0000_80_machine-config-operator_01_machineconfignode-TechPreviewNoUpgrade.crd.yaml" 
 cp "vendor/github.com/openshift/api/operator/v1/0000_80_machine-config-operator_01_config.crd.yaml" "install/0000_80_machine-config-operator_01_config.crd.yaml"
-
