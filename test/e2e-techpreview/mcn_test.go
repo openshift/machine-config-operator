@@ -83,7 +83,7 @@ func TestMCNPoolNameCustom(t *testing.T) {
 	// Create a custom MCP and assign a worker node to it
 	customMCPName := "infra"
 	customNode := helpers.GetRandomNode(t, cs, "worker")
-	helpers.CreatePoolWithNode(t, cs, customMCPName, customNode)
+	t.Cleanup(helpers.CreatePoolWithNode(t, cs, customMCPName, customNode))
 
 	// Test that MCN pool name value matches MCP association
 	customNodeMCN, customErr := cs.MachineconfigurationV1Interface.MachineConfigNodes().Get(context.TODO(), customNode.Name, metav1.GetOptions{})
