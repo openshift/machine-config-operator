@@ -124,7 +124,7 @@ func (dn *Daemon) executeReloadServiceNodeDisruptionAction(serviceName string, r
 	}
 
 	// Get MCP associated with node
-	pool, err := helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
+	mcpName, desiredConfigVersion, err := helpers.GetPrimaryPoolDetailsForMCN(dn.mcpLister, dn.node)
 	if err != nil {
 		return err
 	}
@@ -137,7 +137,8 @@ func (dn *Daemon) executeReloadServiceNodeDisruptionAction(serviceName string, r
 		dn.node,
 		dn.mcfgClient,
 		dn.featureGatesAccessor,
-		pool,
+		mcpName,
+		desiredConfigVersion,
 	)
 	if err != nil {
 		klog.Errorf("Error making MCN for Reloading success: %v", err)
@@ -165,7 +166,7 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 		logSystem("Performing post config change action: %v for config %s", action.Type, configName)
 
 		// Get MCP associated with node
-		pool, err := helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
+		mcpName, desiredConfigVersion, err := helpers.GetPrimaryPoolDetailsForMCN(dn.mcpLister, dn.node)
 		if err != nil {
 			return err
 		}
@@ -180,7 +181,8 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 				dn.node,
 				dn.mcfgClient,
 				dn.featureGatesAccessor,
-				pool,
+				mcpName,
+				desiredConfigVersion,
 			)
 			if err != nil {
 				klog.Errorf("Error making MCN for rebooting: %v", err)
@@ -200,7 +202,8 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 				dn.node,
 				dn.mcfgClient,
 				dn.featureGatesAccessor,
-				pool,
+				mcpName,
+				desiredConfigVersion,
 			)
 			if err != nil {
 				klog.Errorf("Error making MCN for no post config change action: %v", err)
@@ -269,7 +272,7 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 // If at any point an error occurs, we reboot the node so that node has correct configuration.
 func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string, configName string) error {
 	// Get MCP associated with node
-	pool, err := helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
+	mcpName, desiredConfigVersion, err := helpers.GetPrimaryPoolDetailsForMCN(dn.mcpLister, dn.node)
 	if err != nil {
 		return err
 	}
@@ -283,7 +286,8 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 			dn.node,
 			dn.mcfgClient,
 			dn.featureGatesAccessor,
-			pool,
+			mcpName,
+			desiredConfigVersion,
 		)
 		if err != nil {
 			klog.Errorf("Error making MCN for rebooting: %v", err)
@@ -304,7 +308,8 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 			dn.node,
 			dn.mcfgClient,
 			dn.featureGatesAccessor,
-			pool,
+			mcpName,
+			desiredConfigVersion,
 		)
 		if err != nil {
 			klog.Errorf("Error making MCN for no post config change action: %v", err)
@@ -330,7 +335,8 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 			dn.node,
 			dn.mcfgClient,
 			dn.featureGatesAccessor,
-			pool,
+			mcpName,
+			desiredConfigVersion,
 		)
 		if err != nil {
 			klog.Errorf("Error making MCN for Reloading success: %v", err)
@@ -869,21 +875,15 @@ func (dn *Daemon) updateOnClusterLayering(oldConfig, newConfig *mcfgv1.MachineCo
 
 	// Add the desired config version to the MCN
 	// 	get MCP associated with node
-	pool, err := helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
+	mcpName, desiredConfigVersion, err := helpers.GetPrimaryPoolDetailsForMCN(dn.mcpLister, dn.node)
 	if err != nil {
 		return err
 	}
 
 	// Update the MCN's NodeNodeDegraded condition with the update result
 	defer func() {
-		dn.reportMachineNodeDegradeStatus(retErr, pool)
+		dn.reportMachineNodeDegradeStatus(retErr, mcpName, desiredConfigVersion)
 	}()
-
-	//  update the MCN spec
-	err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(dn.featureGatesAccessor, pool, dn.node, dn.mcfgClient)
-	if err != nil {
-		return fmt.Errorf("error updating MCN spec for node %s: %w", dn.node.Name, err)
-	}
 
 	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
 	if err != nil {
@@ -1110,14 +1110,14 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	}()
 
 	// Get MCP associated with node
-	pool, err := helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
+	mcpName, desiredConfigVersion, err := helpers.GetPrimaryPoolDetailsForMCN(dn.mcpLister, dn.node)
 	if err != nil {
 		return err
 	}
 
 	// Update the MCN's NodeNodeDegraded condition with the update result
 	defer func() {
-		dn.reportMachineNodeDegradeStatus(retErr, pool)
+		dn.reportMachineNodeDegradeStatus(retErr, mcpName, desiredConfigVersion)
 	}()
 
 	oldConfigName := oldConfig.GetName()
@@ -1146,7 +1146,8 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 			dn.node,
 			dn.mcfgClient,
 			dn.featureGatesAccessor,
-			pool,
+			mcpName,
+			desiredConfigVersion,
 		)
 		if Nerr != nil {
 			klog.Errorf("Error making MCN for Preparing update failed: %v", err)
@@ -1193,7 +1194,8 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 			dn.node,
 			dn.mcfgClient,
 			dn.featureGatesAccessor,
-			pool,
+			mcpName,
+			desiredConfigVersion,
 		)
 		if Nerr != nil {
 			klog.Errorf("Error making MCN for Preparing update failed: %v", err)
@@ -1228,16 +1230,13 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		dn.node,
 		dn.mcfgClient,
 		dn.featureGatesAccessor,
-		pool,
+		mcpName,
+		desiredConfigVersion,
 	)
 	if err != nil {
 		klog.Errorf("Error making MCN for Update Compatible: %v", err)
 	}
 
-	err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(dn.featureGatesAccessor, pool, dn.node, dn.mcfgClient)
-	if err != nil {
-		klog.Errorf("Error making MCN spec for Update Compatible: %v", err)
-	}
 	if drain {
 		if err := dn.performDrain(); err != nil {
 			return err
@@ -1252,7 +1251,8 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 			dn.node,
 			dn.mcfgClient,
 			dn.featureGatesAccessor,
-			pool,
+			mcpName,
+			desiredConfigVersion,
 		)
 		if err != nil {
 			klog.Errorf("Error making MCN for Drain not required: %v", err)
@@ -1280,7 +1280,8 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		dn.node,
 		dn.mcfgClient,
 		dn.featureGatesAccessor,
-		pool,
+		mcpName,
+		desiredConfigVersion,
 	)
 	if err != nil {
 		klog.Errorf("Error making MCN for Updating Files and OS: %v", err)
@@ -1393,7 +1394,8 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		dn.node,
 		dn.mcfgClient,
 		dn.featureGatesAccessor,
-		pool,
+		mcpName,
+		desiredConfigVersion,
 	)
 	if err != nil {
 		klog.Errorf("Error making MCN for Updated Files and OS: %v", err)
@@ -3083,7 +3085,7 @@ func canonicalizeMachineConfigImage(img string, mc *mcfgv1.MachineConfig) *mcfgv
 // If the error is not nil the condition status is set to [metav1.ConditionTrue] and the condition
 // message is formatted accordingly to include the error message. The condition is otherwise set to
 // [metav1.ConditionFalse].
-func (dn *Daemon) reportMachineNodeDegradeStatus(err error, pool string) {
+func (dn *Daemon) reportMachineNodeDegradeStatus(err error, mcpName, desiredConfigVersion string) {
 	if dn.node == nil {
 		return
 	}
@@ -3107,7 +3109,8 @@ func (dn *Daemon) reportMachineNodeDegradeStatus(err error, pool string) {
 		dn.node,
 		dn.mcfgClient,
 		dn.featureGatesAccessor,
-		pool,
+		mcpName,
+		desiredConfigVersion,
 	); applyErr != nil {
 		klog.Errorf("Error updating MCN degraded status condition %v", applyErr)
 	}

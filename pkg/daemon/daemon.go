@@ -713,7 +713,7 @@ func (dn *Daemon) syncNode(key string) error {
 	}
 
 	// Get MCP associated with node
-	pool, err := helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, node)
+	mcpName, desiredConfigVersion, err := helpers.GetPrimaryPoolDetailsForMCN(dn.mcpLister, node)
 	if err != nil {
 		return err
 	}
@@ -728,7 +728,8 @@ func (dn *Daemon) syncNode(key string) error {
 			node,
 			dn.mcfgClient,
 			dn.featureGatesAccessor,
-			pool,
+			mcpName,
+			desiredConfigVersion,
 		)
 		if err != nil {
 			klog.Errorf("Error making MCN for Rebooted: %v", err)
@@ -804,7 +805,8 @@ func (dn *Daemon) syncNode(key string) error {
 			node,
 			dn.mcfgClient,
 			dn.featureGatesAccessor,
-			pool,
+			mcpName,
+			desiredConfigVersion,
 		)
 		if err != nil {
 			klog.Errorf("Error making MCN for Resumed true: %v", err)
@@ -843,7 +845,8 @@ func (dn *Daemon) syncNode(key string) error {
 			dn.node,
 			dn.mcfgClient,
 			dn.featureGatesAccessor,
-			pool,
+			mcpName,
+			desiredConfigVersion,
 		)
 		if err != nil {
 			klog.Errorf("Error making MCN for Updated false: %v", err)
@@ -868,7 +871,8 @@ func (dn *Daemon) syncNode(key string) error {
 			dn.node,
 			dn.mcfgClient,
 			dn.featureGatesAccessor,
-			pool,
+			mcpName,
+			desiredConfigVersion,
 		)
 		if err != nil {
 			klog.Errorf("Error making MCN for Updated: %v", err)
@@ -2319,7 +2323,7 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, bool, erro
 		// let's mark it done!
 
 		// Get MCP associated with node
-		pool, err := helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
+		mcpName, desiredConfigVersion, err := helpers.GetPrimaryPoolDetailsForMCN(dn.mcpLister, dn.node)
 		if err != nil {
 			return missingODC, inDesiredConfig, err
 		}
@@ -2332,7 +2336,8 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, bool, erro
 			dn.node,
 			dn.mcfgClient,
 			dn.featureGatesAccessor,
-			pool,
+			mcpName,
+			desiredConfigVersion,
 		)
 		if err != nil {
 			klog.Errorf("Error making MCN for Resumed true: %v", err)
