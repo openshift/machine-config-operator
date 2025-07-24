@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -1192,7 +1193,16 @@ func updateNamespacedPolicyJSONs(clusterOverridePolicyJSON []byte, internalBlock
 
 func imagePolicyConfigFileList(namespaceJSONs map[string][]byte) []generatedConfigFile {
 	var namespacedPolicyConfigFileList []generatedConfigFile
-	for namespace, data := range namespaceJSONs {
+
+	// Sort namespaces to ensure deterministic output
+	namespaces := make([]string, 0, len(namespaceJSONs))
+	for namespace := range namespaceJSONs {
+		namespaces = append(namespaces, namespace)
+	}
+	sort.Strings(namespaces)
+
+	for _, namespace := range namespaces {
+		data := namespaceJSONs[namespace]
 		namespacedPolicyFilePath := fmt.Sprintf(namespacedPolicyFilePathFormat, namespace)
 		namespacedPolicyConfigFileList = append(namespacedPolicyConfigFileList, generatedConfigFile{
 			filePath: namespacedPolicyFilePath,
