@@ -1,11 +1,12 @@
-//+build !windows
+//go:build !windows
+// +build !windows
 
 package dbus
 
 import (
 	"errors"
-	"io/ioutil"
 	"net"
+	"os"
 )
 
 func init() {
@@ -27,7 +28,7 @@ func newNonceTcpTransport(keys string) (transport, error) {
 	if err != nil {
 		return nil, err
 	}
-	b, err := ioutil.ReadFile(noncefile)
+	b, err := os.ReadFile(noncefile)
 	if err != nil {
 		return nil, err
 	}

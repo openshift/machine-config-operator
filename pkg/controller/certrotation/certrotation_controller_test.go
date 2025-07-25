@@ -18,6 +18,7 @@ import (
 
 	kubeinformers "k8s.io/client-go/informers"
 
+	fakearoclientset "github.com/Azure/ARO-RP/pkg/operator/clientset/versioned/fake"
 	fakeconfigv1client "github.com/openshift/client-go/config/clientset/versioned/fake"
 	fakemachineclientset "github.com/openshift/client-go/machine/clientset/versioned/fake"
 
@@ -34,6 +35,7 @@ type fixture struct {
 	kubeClient    *fake.Clientset
 	configClient  *fakeconfigv1client.Clientset
 	machineClient *fakemachineclientset.Clientset
+	aroClient     *fakearoclientset.Clientset
 
 	maoSecretLister    []*corev1.Secret
 	mcoSecretLister    []*corev1.Secret
@@ -71,6 +73,7 @@ func (f *fixture) newController() *CertRotationController {
 	f.kubeClient = fake.NewSimpleClientset(f.objects...)
 	f.configClient = fakeconfigv1client.NewSimpleClientset(f.configObjects...)
 	f.machineClient = fakemachineclientset.NewSimpleClientset(f.machineObjects...)
+	f.aroClient = fakearoclientset.NewSimpleClientset()
 	f.k8sI = kubeinformers.NewSharedInformerFactory(f.kubeClient, noResyncPeriodFunc())
 
 	for _, secret := range f.maoSecretLister {
@@ -85,7 +88,7 @@ func (f *fixture) newController() *CertRotationController {
 		f.k8sI.Core().V1().ConfigMaps().Informer().GetIndexer().Add(configMap)
 	}
 
-	c, err := New(f.kubeClient, f.configClient, f.machineClient, f.k8sI.Core().V1().Secrets(), f.k8sI.Core().V1().Secrets(), f.k8sI.Core().V1().ConfigMaps())
+	c, err := New(f.kubeClient, f.configClient, f.machineClient, f.aroClient, f.k8sI.Core().V1().Secrets(), f.k8sI.Core().V1().Secrets(), f.k8sI.Core().V1().ConfigMaps())
 	require.NoError(f.t, err)
 
 	c.StartInformers()
