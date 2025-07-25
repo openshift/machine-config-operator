@@ -45,13 +45,25 @@ func NewFilteredMachineConfigNodeInformer(client versioned.Interface, resyncPeri
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.MachineconfigurationV1().MachineConfigNodes().List(context.TODO(), options)
+				return client.MachineconfigurationV1().MachineConfigNodes().List(context.Background(), options)
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.MachineconfigurationV1().MachineConfigNodes().Watch(context.TODO(), options)
+				return client.MachineconfigurationV1().MachineConfigNodes().Watch(context.Background(), options)
+			},
+			ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.MachineconfigurationV1().MachineConfigNodes().List(ctx, options)
+			},
+			WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.MachineconfigurationV1().MachineConfigNodes().Watch(ctx, options)
 			},
 		},
 		&apimachineconfigurationv1.MachineConfigNode{},
