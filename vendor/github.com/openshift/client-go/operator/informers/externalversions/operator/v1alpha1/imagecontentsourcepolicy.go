@@ -45,13 +45,25 @@ func NewFilteredImageContentSourcePolicyInformer(client versioned.Interface, res
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.OperatorV1alpha1().ImageContentSourcePolicies().List(context.TODO(), options)
+				return client.OperatorV1alpha1().ImageContentSourcePolicies().List(context.Background(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.OperatorV1alpha1().ImageContentSourcePolicies().Watch(context.TODO(), options)
+				return client.OperatorV1alpha1().ImageContentSourcePolicies().Watch(context.Background(), options)
+			},
+			ListWithContextFunc: func(ctx context.Context, options v1.ListOptions) (runtime.Object, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.OperatorV1alpha1().ImageContentSourcePolicies().List(ctx, options)
+			},
+			WatchFuncWithContext: func(ctx context.Context, options v1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.OperatorV1alpha1().ImageContentSourcePolicies().Watch(ctx, options)
 			},
 		},
 		&apioperatorv1alpha1.ImageContentSourcePolicy{},
