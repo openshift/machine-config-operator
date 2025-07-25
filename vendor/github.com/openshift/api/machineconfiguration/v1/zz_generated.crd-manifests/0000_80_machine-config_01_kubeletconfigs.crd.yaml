@@ -44,7 +44,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: spec contains the desired kubelet configuration.
+            description: KubeletConfigSpec defines the desired state of KubeletConfig
             properties:
               autoSizingReserved:
                 type: boolean
@@ -61,7 +61,7 @@ spec:
                 type: integer
               machineConfigPoolSelector:
                 description: |-
-                  machineConfigPoolSelector selects which pools the KubeletConfig shoud apply to.
+                  MachineConfigPoolSelector selects which pools the KubeletConfig shoud apply to.
                   A nil selector will result in no pools being selected.
                 properties:
                   matchExpressions:
@@ -308,7 +308,7 @@ spec:
                 type: object
             type: object
           status:
-            description: status contains observed information about the kubelet configuration.
+            description: KubeletConfigStatus defines the observed state of a KubeletConfig
             properties:
               conditions:
                 description: conditions represents the latest available observations

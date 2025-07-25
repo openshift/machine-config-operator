@@ -63,11 +63,11 @@ spec:
             properties:
               baseOSExtensionsContainerImage:
                 description: |-
-                  baseOSExtensionsContainerImage specifies the remote location that will be used
+                  BaseOSExtensionsContainerImage specifies the remote location that will be used
                   to fetch the extensions container matching a new-format OS image
                 type: string
               config:
-                description: config is a Ignition Config object.
+                description: Config is a Ignition Config object.
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
               extensions:
@@ -95,7 +95,7 @@ spec:
                 type: string
               osImageURL:
                 description: |-
-                  osImageURL specifies the remote location that will be used to
+                  OSImageURL specifies the remote location that will be used to
                   fetch the OS.
                 type: string
             type: object

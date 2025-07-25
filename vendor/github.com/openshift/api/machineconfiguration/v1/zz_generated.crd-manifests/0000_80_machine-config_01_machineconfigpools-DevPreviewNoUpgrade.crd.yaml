@@ -86,7 +86,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: spec contains the desired machine config pool configuration.
+            description: MachineConfigPoolSpec is the spec for MachineConfigPool resource.
             properties:
               configuration:
                 description: The targeted MachineConfig object for the machine config
@@ -341,8 +341,8 @@ spec:
                 x-kubernetes-list-type: map
             type: object
           status:
-            description: status contains observed information about the machine config
-              pool.
+            description: MachineConfigPoolStatus is the status for MachineConfigPool
+              resource.
             properties:
               certExpirys:
                 description: certExpirys keeps track of important certificate expiration
