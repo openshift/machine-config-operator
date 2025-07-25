@@ -1604,8 +1604,6 @@ func TestGeneratePolicyJSON(t *testing.T) {
                         "pki": {
 						  "caRootsData": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJBVEE9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0=",
 						  "caIntermediatesData": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJBVEE9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0=",
-						  "caIntermediatesPath": "",
-					      "caRootsPath": "", 
 						  "subjectEmail": "test-user@example.com",
 						  "subjectHostname": "my-host.example.com"
 						},
@@ -1638,8 +1636,6 @@ func TestGeneratePolicyJSON(t *testing.T) {
 					"pki": {
 					  "caRootsData": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJBVEE9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0=",
 					  "caIntermediatesData": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJBVEE9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0=",
-					  "caIntermediatesPath": "",
-					  "caRootsPath": "", 
 					  "subjectEmail": "test-user@example.com",
 					  "subjectHostname": "my-host.example.com"
 					},
@@ -1678,6 +1674,9 @@ func TestGeneratePolicyJSON(t *testing.T) {
 
 	baseData, err := updatePolicyJSON(templateBytes, []string{}, []string{}, "release-reg.io/image/release", clusterScopePolicies)
 	require.NoError(t, err)
+
+	require.NoError(t, os.WriteFile("expected.json", expectClusterPolicy, 0o755))
+	require.NoError(t, os.WriteFile("actual.json", baseData, 0o755))
 	require.JSONEq(t, string(expectClusterPolicy), string(baseData))
 
 }
@@ -1984,8 +1983,6 @@ func TestUpdateNamespacedPolicyJSONs(t *testing.T) {
 					"pki": {
 					  "caRootsData": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJBVEE9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0=",
 					  "caIntermediatesData": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJBVEE9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0=",
-					  "caIntermediatesPath": "",
-					  "caRootsPath": "", 
 					  "subjectEmail": "test-user@example.com",
 					  "subjectHostname": "my-host.example.com"
 					},
@@ -2049,8 +2046,6 @@ func TestUpdateNamespacedPolicyJSONs(t *testing.T) {
 					"pki": {
 					  "caRootsData": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJBVEE9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0=",
 					  "caIntermediatesData": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJBVEE9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0=",
-					  "caIntermediatesPath": "",
-					  "caRootsPath": "", 
 					  "subjectEmail": "test-user@example.com",
 					  "subjectHostname": "my-host.example.com"
 					},

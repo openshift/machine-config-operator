@@ -15,6 +15,7 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	routeclientset "github.com/openshift/client-go/route/clientset/versioned"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/imagepruner"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -91,6 +92,7 @@ func NewOSBuildControllerFromControllerContextWithConfig(ctrlCtx *ctrlcommon.Con
 		ctrlCtx.ClientBuilder.KubeClientOrDie("machine-os-builder"),
 		ctrlCtx.ClientBuilder.ImageClientOrDie("machine-os-builder"),
 		ctrlCtx.ClientBuilder.RouteClientOrDie("machine-os-builder"),
+		imagepruner.NewImagePruner(),
 	)
 }
 
@@ -100,6 +102,7 @@ func newOSBuildController(
 	kubeclient clientset.Interface,
 	imageclient imagev1clientset.Interface,
 	routeclient routeclientset.Interface,
+	imagepruner imagepruner.ImagePruner,
 ) *OSBuildController {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -146,7 +149,7 @@ func newOSBuildController(
 		UpdateFunc: ctrl.updateMachineConfigPool,
 	})
 
-	ctrl.buildReconciler = newBuildReconciler(mcfgclient, kubeclient, imageclient, routeclient, ctrl.listers)
+	ctrl.buildReconciler = newBuildReconciler(mcfgclient, kubeclient, imageclient, routeclient, ctrl.listers, imagepruner)
 	ctrl.shutdownDelayHandler = newShutdownDelayHandler(ctrl.listers)
 	ctrl.shutdownChan = make(chan struct{})
 

@@ -51,6 +51,7 @@ import (
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/helpers"
+	"github.com/openshift/machine-config-operator/pkg/secrets"
 	"github.com/openshift/machine-config-operator/pkg/server"
 	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -2121,8 +2122,8 @@ func (optr *Operator) getImageRegistryPullSecrets() ([]byte, error) {
 	}
 
 	// Create the JSON map
-	dockerConfigJSON := ctrlcommon.DockerConfigJSON{
-		Auths: map[string]ctrlcommon.DockerConfigEntry{},
+	dockerConfigJSON := secrets.DockerConfigJSON{
+		Auths: map[string]secrets.DockerConfigEntry{},
 	}
 
 	// Get the list of image pull secrets from the designated service account

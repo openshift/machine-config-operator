@@ -3,14 +3,15 @@ package common
 import (
 	"testing"
 
+	"github.com/openshift/machine-config-operator/pkg/secrets"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestConvertSecretTodockercfg(t *testing.T) {
 	t.Parallel()
 
-	dockerconfigjson := []byte(`{"auths":{"registry.hostname.com":{"password":"p455w0rd","username":"user"}}}`)
-	dockercfg := []byte(`{"registry.hostname.com":{"password":"p455w0rd","username":"user"}}`)
+	dockerconfigjson := []byte(`{"auths":{"registry.hostname.com":{"username":"user","password":"p455w0rd"}}}`)
+	dockercfg := []byte(`{"registry.hostname.com":{"username":"user","password":"p455w0rd"}}`)
 
 	testCases := []struct {
 		name          string
@@ -39,8 +40,8 @@ func TestConvertSecretTodockercfg(t *testing.T) {
 func TestConvertSecretToDockerconfigJSON(t *testing.T) {
 	t.Parallel()
 
-	dockerconfigjson := []byte(`{"auths":{"registry.hostname.com":{"password":"p455w0rd","username":"user"}}}`)
-	dockercfg := []byte(`{"registry.hostname.com":{"password":"p455w0rd","username":"user"}}`)
+	dockerconfigjson := []byte(`{"auths":{"registry.hostname.com":{"username":"user","password":"p455w0rd"}}}`)
+	dockercfg := []byte(`{"registry.hostname.com":{"username":"user","password":"p455w0rd"}}`)
 
 	testCases := []struct {
 		name              string
@@ -96,8 +97,8 @@ func TestToDockerConfigJSON(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			expected := &DockerConfigJSON{
-				Auths: DockerConfig{
+			expected := &secrets.DockerConfigJSON{
+				Auths: secrets.DockerConfig{
 					"registry.hostname.com": {
 						Username: "user",
 						Password: "p455w0rd",
@@ -118,19 +119,19 @@ func TestMergeDockerConfigstoJSONMap(t *testing.T) {
 	testCases := []struct {
 		name            string
 		inputBytes      []byte
-		inputEntries    map[string]DockerConfigEntry
-		expectedEntries map[string]DockerConfigEntry
+		inputEntries    map[string]secrets.DockerConfigEntry
+		expectedEntries map[string]secrets.DockerConfigEntry
 	}{
 		{
 			name:       "simple concatenation",
 			inputBytes: []byte(`{"registry.hostname.com":{"password":"p455w0rd","username":"user"}}`),
-			inputEntries: map[string]DockerConfigEntry{
+			inputEntries: map[string]secrets.DockerConfigEntry{
 				"second-registry.hostname.com": {
 					Username: "user",
 					Password: "p455w0rd",
 				},
 			},
-			expectedEntries: map[string]DockerConfigEntry{
+			expectedEntries: map[string]secrets.DockerConfigEntry{
 				"registry.hostname.com": {
 					Username: "user",
 					Password: "p455w0rd",
@@ -144,13 +145,13 @@ func TestMergeDockerConfigstoJSONMap(t *testing.T) {
 		{
 			name:       "JSON overrides entry",
 			inputBytes: []byte(`{"registry.hostname.com":{"password":"p455w0rd","username":"other-user"}}`),
-			inputEntries: map[string]DockerConfigEntry{
+			inputEntries: map[string]secrets.DockerConfigEntry{
 				"registry.hostname.com": {
 					Username: "user",
 					Password: "p455w0rd",
 				},
 			},
-			expectedEntries: map[string]DockerConfigEntry{
+			expectedEntries: map[string]secrets.DockerConfigEntry{
 				"registry.hostname.com": {
 					Username: "other-user",
 					Password: "p455w0rd",
