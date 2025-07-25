@@ -107,6 +107,14 @@ func New(
 		return nil, fmt.Errorf("failed to parse %s: %w", apiserverIntURL, err)
 	}
 
+	aroCluster, err := c.aroClient.AroV1alpha1().Clusters().Get(context.Background(), "cluster", metav1.GetOptions{})
+	if err != nil {
+		klog.Infof("ARO cluster resource not found or not accessible: %v", err)
+	} else {
+		klog.Infof("ARO cluster resource found w/ IPs: %s", aroCluster.Spec.APIIntIP)
+		serverIPs = append(serverIPs, aroCluster.Spec.APIIntIP)
+	}
+
 	// The cert controller will begin creating "machine-config-server-ca" configmap & secret in the MCO namespace.
 	// The *-user-data secrets will be updated based on these configmap/secrets.
 	// For the *-user-data-managed secrets, the operator will begin to use "machine-config-server-ca" configmap
@@ -161,15 +169,8 @@ func New(
 		NewCertRotationStatusReporter(),
 	)
 
-	aroCluster, err := c.aroClient.AroV1alpha1().Clusters().Get(context.Background(), "cluster", metav1.GetOptions{})
-	if err != nil {
-		klog.V(4).Infof("ARO cluster resource not found or not accessible: %v", err)
-	} else {
-		klog.Infof("ARO cluster resource found w/ IPs: %s", aroCluster.Spec.APIIntIP)
-	}
-
-	// Skip rotating this cert if the cluster does not use MachineSets or ARO
-	if (hasFunctionalMachineAPI(machineClient) || hasFunctionalClusterAPI()) && aroCluster == nil {
+	// Skip rotating this cert if the cluster does not use MachineSets
+	if hasFunctionalMachineAPI(machineClient) || hasFunctionalClusterAPI() {
 		klog.Infof("Adding MCS CA/TLS cert rotator")
 		c.certRotators = append(c.certRotators, machineConfigServerCertRotator)
 	} else {
