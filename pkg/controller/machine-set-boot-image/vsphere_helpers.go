@@ -471,7 +471,9 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 			}
 			finder = finder.SetDatacenter(datacenter)
 
-			existingTemplateVM, err := finder.VirtualMachine(ctx, providerSpec.Template)
+			name = fmt.Sprintf("%s-rhcos-%s", infraID, failureDomain.Name)
+
+			existingTemplateVM, err := finder.VirtualMachine(ctx, name)
 			if err != nil {
 				return "", false, fmt.Errorf("finder had error: %w", err)
 			}
@@ -502,7 +504,6 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 						return "", false, fmt.Errorf("Failed to download %s: %w", ova.Location, err)
 					}
 
-					name = fmt.Sprintf("%s-rhcos-%s", infraID, failureDomain.Name)
 					if len(name) > 80 {
 						return "", false, fmt.Errorf("Length of VM template name `%s` exceeds the permitted limit of 80 characters", name)
 					}
@@ -516,7 +517,11 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 					return name, true, nil
 				}
 
-				klog.Infof("Existing RHCOS v%s does match current RHCOS v%s. Skipping reconciliation process.", templateProductVersion, release)
+				klog.Infof("Existing RHCOS v%s does match current RHCOS v%s. Skipping reconciliation process using govmomi.", templateProductVersion, release)
+				if providerSpec.Template != name {
+					klog.Infof("ProviderSpec template name: %s has diverged from the VM Template of name: %s that exists in VSphere. Reconciling the name change.", providerSpec.Template, name)
+					return name, true, nil
+				}
 
 			} else {
 				return "", false, fmt.Errorf("unable to determine RHCOS version of virtual machine: %s", providerSpec.Template)
