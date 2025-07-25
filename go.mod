@@ -1,8 +1,6 @@
 module github.com/openshift/machine-config-operator
 
-go 1.23.3
-
-toolchain go1.24.4
+go 1.24.0
 
 require (
 	github.com/Azure/ARO-RP v0.0.0-20250602035759-0693f32d5ccc
