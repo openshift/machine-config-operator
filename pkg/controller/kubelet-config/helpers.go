@@ -3,7 +3,9 @@ package kubeletconfig
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -20,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/klog/v2"
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
+	yamlv2 "sigs.k8s.io/yaml"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
@@ -75,6 +78,12 @@ func createNewKubeletDynamicSystemReservedIgnition(autoSystemReserved *bool, use
 func createNewKubeletLogLevelIgnition(level int32) *ign3types.File {
 	config := fmt.Sprintf("[Service]\nEnvironment=\"KUBELET_LOG_LEVEL=%d\"\n", level)
 	r := ctrlcommon.NewIgnFileBytesOverwriting("/etc/systemd/system/kubelet.service.d/20-logging.conf", []byte(config))
+	return &r
+}
+
+func createNewKubeletDropInDirConfigIgnition(dir string) *ign3types.File {
+	config := fmt.Sprintf("[Service]\nEnvironment=\"KUBELET_CONFIG_DROPIN_DIR=%s\"\n", dir)
+	r := ctrlcommon.NewIgnFileBytesOverwriting("/etc/systemd/system/kubelet.service.d/30-dropin-dir.conf", []byte(config))
 	return &r
 }
 
@@ -352,19 +361,37 @@ func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 	if cfg.Spec.LogLevel != nil && (*cfg.Spec.LogLevel < 1 || *cfg.Spec.LogLevel > 10) {
 		return fmt.Errorf("KubeletConfig's LogLevel is not valid [1,10]: %v", cfg.Spec.LogLevel)
 	}
-	if cfg.Spec.KubeletConfig == nil || cfg.Spec.KubeletConfig.Raw == nil {
+
+	if (cfg.Spec.KubeletConfig == nil || cfg.Spec.KubeletConfig.Raw == nil) && cfg.Spec.DropInConfig == nil {
 		return nil
 	}
-	kcDecoded, err := DecodeKubeletConfig(cfg.Spec.KubeletConfig.Raw)
+
+	// If KubeletConfig is set, ensure DropInConfig is not set
+	if cfg.Spec.KubeletConfig != nil && cfg.Spec.KubeletConfig.Raw != nil {
+		// Validate the main KubeletConfig
+		if err := validateKubeletConfig(cfg, cfg.Spec.KubeletConfig); err != nil {
+			return err
+		}
+	}
+
+	// If DropInConfig is set, validate the KubeletConfig inside it
+	if cfg.Spec.DropInConfig != nil {
+		// Ensure KubeletConfig is set in DropInConfig
+		if err := validateKubeletConfig(cfg, &cfg.Spec.DropInConfig.KubeletConfig); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func validateKubeletConfig(cfg *mcfgv1.KubeletConfig, kubeletConfig *runtime.RawExtension) error {
+	kcDecoded, err := DecodeKubeletConfig(kubeletConfig.Raw)
 	if err != nil {
 		return fmt.Errorf("KubeletConfig could not be unmarshalled, err: %w", err)
 	}
 
 	// Check all the fields a user cannot set within the KubeletConfig CR.
-	// If a user were to set these values, the system may become unrecoverable
-	// (ie: not recover after a reboot).
-	// Therefore, if the KubeletConfig CR instance contains a non-zero or non-empty value
-	// for one of the following fields, the MCC will not apply the CR and error out instead.
 	if kcDecoded.CgroupDriver != "" {
 		return fmt.Errorf("KubeletConfiguration: cgroupDriver is not allowed to be set, but contains: %s", kcDecoded.CgroupDriver)
 	}
@@ -384,6 +411,7 @@ func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 		cfg.Spec.AutoSizingReserved != nil && *cfg.Spec.AutoSizingReserved {
 		return fmt.Errorf("KubeletConfiguration: autoSizingReserved and systemdReserved cannot be set together")
 	}
+
 	return nil
 }
 
@@ -454,58 +482,59 @@ func kubeletConfigToIgnFile(cfg *kubeletconfigv1beta1.KubeletConfiguration) (*ig
 }
 
 // generateKubeletIgnFiles generates the Ignition files from the kubelet config
-func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeConfig *kubeletconfigv1beta1.KubeletConfiguration) (*ign3types.File, *ign3types.File, *ign3types.File, error) {
+func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeConfig *kubeletconfigv1beta1.KubeletConfiguration) (*ign3types.File, *ign3types.File, *ign3types.File, *ign3types.File, error) {
 	var (
 		kubeletIgnition            *ign3types.File
 		logLevelIgnition           *ign3types.File
 		autoSizingReservedIgnition *ign3types.File
+		dropInDirConfigIgnition    *ign3types.File
 	)
 	userDefinedSystemReserved := make(map[string]string)
 
 	if kubeletConfig.Spec.KubeletConfig != nil && kubeletConfig.Spec.KubeletConfig.Raw != nil {
-		specKubeletConfig, err := DecodeKubeletConfig(kubeletConfig.Spec.KubeletConfig.Raw)
+		specKubeletConfig, err := processDropInConfig(kubeletConfig, originalKubeConfig, userDefinedSystemReserved)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("could not deserialize the new Kubelet config: %w", err)
-		}
-
-		if val, ok := specKubeletConfig.SystemReserved["memory"]; ok {
-			userDefinedSystemReserved["memory"] = val
-			delete(specKubeletConfig.SystemReserved, "memory")
-		}
-
-		if val, ok := specKubeletConfig.SystemReserved["cpu"]; ok {
-			userDefinedSystemReserved["cpu"] = val
-			delete(specKubeletConfig.SystemReserved, "cpu")
-		}
-
-		if val, ok := specKubeletConfig.SystemReserved["ephemeral-storage"]; ok {
-			userDefinedSystemReserved["ephemeral-storage"] = val
-			delete(specKubeletConfig.SystemReserved, "ephemeral-storage")
-		}
-
-		// FeatureGates must be set from the FeatureGate.
-		// Remove them here to prevent the specKubeletConfig merge overwriting them.
-		specKubeletConfig.FeatureGates = nil
-
-		// "protectKernelDefaults" is a boolean, optional field with `omitempty` json tag in the upstream kubelet configuration
-		// This field has been set to `true` by default in OCP recently
-		// As this field is an optional one with the above tag, it gets omitted when a user inputs it to `false`
-		// Reference: https://github.com/golang/go/issues/13284
-		// Adding a workaround to decide if the user has actually set the field to `false`
-		if strings.Contains(string(kubeletConfig.Spec.KubeletConfig.Raw), protectKernelDefaultsStr) {
-			originalKubeConfig.ProtectKernelDefaults = false
+			return nil, nil, nil, nil, fmt.Errorf("could not process drop-in config: %w", err)
 		}
 		// Merge the Old and New
 		err = mergo.Merge(originalKubeConfig, specKubeletConfig, mergo.WithOverride)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("could not merge original config and new config: %w", err)
+			return nil, nil, nil, nil, fmt.Errorf("could not merge original config and new config: %w", err)
+		}
+	}
+
+	if kubeletConfig.Spec.DropInConfig != nil {
+		dropInDir := kubeletConfig.Spec.DropInConfig.ConfigDirectory
+		dropInConfig := kubeletConfig.Spec.DropInConfig.KubeletConfig
+		cfg, err := processDropInConfig(kubeletConfig, originalKubeConfig, userDefinedSystemReserved)
+		if err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("could not process drop-in config: %w", err)
+		}
+		// Decode JSON Raw into KubeletConfiguration
+		var kubeletConfigObj kubeletconfigv1beta1.KubeletConfiguration
+		err = json.Unmarshal(dropInConfig.Raw, &cfg)
+		if err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("could not decode drop-in config JSON: %w", err)
+		}
+
+		// Convert the KubeletConfiguration into YAML
+		kubeletConfigYaml, err := yamlv2.Marshal(kubeletConfigObj)
+		if err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("could not marshal KubeletConfiguration to YAML: %w", err)
+		}
+		// Write the specKubeletConfig to a file in the drop-in directory
+		dropInFilePath := fmt.Sprintf("%s/%s", dropInDir, kubeletConfig.Spec.DropInConfig.ConfigFile)
+
+		// Write the YAML data to the specified file
+		if err := os.WriteFile(dropInFilePath, kubeletConfigYaml, 0644); err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("could not write drop-in config to file: %w", err)
 		}
 	}
 
 	// Encode the new config into an Ignition File
 	kubeletIgnition, err := kubeletConfigToIgnFile(originalKubeConfig)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("could not encode JSON: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("could not encode JSON: %w", err)
 	}
 
 	if kubeletConfig.Spec.LogLevel != nil {
@@ -517,6 +546,42 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 	if len(userDefinedSystemReserved) > 0 {
 		autoSizingReservedIgnition = createNewKubeletDynamicSystemReservedIgnition(nil, userDefinedSystemReserved)
 	}
+	if kubeletConfig.Spec.DropInConfig != nil {
+		dropInDirConfigIgnition = createNewKubeletDropInDirConfigIgnition(kubeletConfig.Spec.DropInConfig.ConfigDirectory)
+	}
 
-	return kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, nil
+	return kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, dropInDirConfigIgnition, nil
+}
+
+func processDropInConfig(
+	dropIn *mcfgv1.KubeletConfig,
+	originalKubeConfig *kubeletconfigv1beta1.KubeletConfiguration,
+	userDefinedSystemReserved map[string]string,
+) (cfg *kubeletconfigv1beta1.KubeletConfiguration, err error) {
+	specKubeletConfig, err := DecodeKubeletConfig(dropIn.Spec.KubeletConfig.Raw)
+	if err != nil {
+		return nil, fmt.Errorf("could not deserialize the new Kubelet config: %w", err)
+	}
+
+	for _, resource := range []string{"memory", "cpu", "ephemeral-storage"} {
+		if val, ok := specKubeletConfig.SystemReserved[resource]; ok {
+			userDefinedSystemReserved[resource] = val
+			delete(specKubeletConfig.SystemReserved, resource)
+		}
+	}
+
+	// FeatureGates must be set from the FeatureGate.
+	// Remove them here to prevent the specKubeletConfig merge overwriting them.
+	specKubeletConfig.FeatureGates = nil
+
+	// "protectKernelDefaults" is a boolean, optional field with `omitempty` json tag in the upstream kubelet configuration
+	// This field has been set to `true` by default in OCP recently
+	// As this field is an optional one with the above tag, it gets omitted when a user inputs it to `false`
+	// Reference: https://github.com/golang/go/issues/13284
+	// Adding a workaround to decide if the user has actually set the field to `false`
+	if strings.Contains(string(dropIn.Spec.KubeletConfig.Raw), protectKernelDefaultsStr) {
+		originalKubeConfig.ProtectKernelDefaults = false
+	}
+
+	return specKubeletConfig, nil
 }

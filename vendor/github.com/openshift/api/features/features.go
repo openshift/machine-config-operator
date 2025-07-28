@@ -701,6 +701,14 @@ var (
 						enhancementPR("https://github.com/openshift/enhancements/pull/1697").
 						mustRegister()
 
+	FeatureGateKubeletConfigDropInDir = newFeatureGate("KubeletConfigDropInDir").
+						reportProblemsToJiraComponent("Node").
+						contactPerson("sohankunkerkar").
+						productScope(ocpSpecific).
+						enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
+						enhancementPR("https://github.com/kubernetes/enhancements/issues/3983").
+						mustRegister()
+
 	FeatureGateNutanixMultiSubnets = newFeatureGate("NutanixMultiSubnets").
 					reportProblemsToJiraComponent("Cloud Compute / Nutanix Provider").
 					contactPerson("yanhli").
@@ -806,6 +814,14 @@ var (
 					enhancementPR("https://github.com/openshift/enhancements/pull/1779").
 					enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
 					mustRegister()
+
+	FeatureGateStoragePerformantSecurityPolicy = newFeatureGate("StoragePerformantSecurityPolicy").
+							reportProblemsToJiraComponent("Storage / Kubernetes External Components").
+							contactPerson("hekumar").
+							productScope(ocpSpecific).
+							enhancementPR("https://github.com/openshift/enhancements/pull/1804").
+							enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
+							mustRegister()
 
 	FeatureGateAWSDedicatedHosts = newFeatureGate("AWSDedicatedHosts").
 					reportProblemsToJiraComponent("Installer").
