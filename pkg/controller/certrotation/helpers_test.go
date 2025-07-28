@@ -5,6 +5,8 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	arov1alpha1 "github.com/Azure/ARO-RP/pkg/operator/apis/aro.openshift.io/v1alpha1"
 )
 
 func getGoodMAOSecret(name string) *corev1.Secret {
@@ -32,6 +34,17 @@ func getMachineSet(name string) *machinev1beta1.MachineSet {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: ctrlcommon.MachineAPINamespace,
+		},
+	}
+}
+
+func getAROCluster(apiIntIP string) *arov1alpha1.Cluster {
+	return &arov1alpha1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+		Spec: arov1alpha1.ClusterSpec{
+			APIIntIP: apiIntIP,
 		},
 	}
 }
