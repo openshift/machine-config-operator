@@ -23,10 +23,7 @@ roleRef:
 apiVersion: machineconfiguration.openshift.io/v1alpha1
 kind: MachineConfigNode
 metadata:
-  name: machine-config-node-openshift-machine-config-operator
+  name: machineconfignodes.machineconfiguration.openshift.io
   namespace: openshift-machine-config-operator
   annotations:
-    include.release.openshift.io/ibm-cloud-managed: "true"
-    include.release.openshift.io/self-managed-high-availability: "true"
-    include.release.openshift.io/single-node-developer: "true"
     release.openshift.io/delete: "true"
