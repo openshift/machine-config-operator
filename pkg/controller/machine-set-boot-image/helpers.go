@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	archtranslater "github.com/coreos/stream-metadata-go/arch"
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 	opv1 "github.com/openshift/api/operator/v1"
 
@@ -16,21 +15,12 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	kruntime "k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/sets"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/yaml"
 
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
-
-// TODO - unmarshal the providerspec into each ProviderSpec type until it succeeds,
-// and then call the appropriate reconcile function. This is needed for multi platform
-// support
-func unmarshalToFindPlatform(machineSet *machinev1beta1.MachineSet, _ *corev1.ConfigMap, arch string) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
-	klog.Infof("Skipping machineset %s, unknown platform type with %s arch", machineSet.Name, arch)
-	return false, nil, nil
-}
 
 // This function unmarshals the machineset's provider spec into
 // a ProviderSpec object. Returns an error if providerSpec field is nil,
@@ -79,7 +69,7 @@ func unmarshalStreamDataConfigMap(cm *corev1.ConfigMap, st interface{}) error {
 func getMachineResourceSelectorFromMachineManagers(machineManagers []opv1.MachineManager, apiGroup opv1.MachineManagerMachineSetsAPIGroupType, resource opv1.MachineManagerMachineSetsResourceType) (bool, labels.Selector, error) {
 	// If no machine managers exist; exit the enqueue process without errors.
 	if len(machineManagers) == 0 {
-		klog.Infof("No machine manager were found, so no MAPI machinesets will be enqueued.")
+		klog.Infof("No machine managers were found, so no machine resources will be enqueued.")
 		return false, labels.Nothing(), nil
 	}
 	for _, machineManager := range machineManagers {
@@ -96,27 +86,6 @@ func getMachineResourceSelectorFromMachineManagers(machineManagers []opv1.Machin
 		}
 	}
 	return false, labels.Nothing(), nil
-}
-
-// Returns architecture type for a given machineset
-func getArchFromMachineSet(machineset *machinev1beta1.MachineSet) (arch string, err error) {
-
-	// Valid set of machineset/node architectures
-	validArchSet := sets.New[string]("arm64", "s390x", "amd64", "ppc64le")
-	// Check if the annotation enclosing arch label is present on this machineset
-	archLabel, archLabelMatch := machineset.Annotations[MachineSetArchAnnotationKey]
-	if archLabelMatch {
-		// Grab arch value from the annotation and check if it is valid
-		_, archLabelValue, archLabelValueFound := strings.Cut(archLabel, ArchLabelKey)
-		if archLabelValueFound && validArchSet.Has(archLabelValue) {
-			return archtranslater.RpmArch(archLabelValue), nil
-		}
-		return "", fmt.Errorf("invalid architecture value found in annotation: %s ", archLabel)
-	}
-	// If no arch annotation was found on the machineset, default to the control plane arch.
-	// return the architecture of the node running this pod, which will always be a control plane node.
-	klog.Infof("Defaulting to control plane architecture")
-	return archtranslater.CurrentRpmArch(), nil
 }
 
 // Upgrades the Ignition stub enclosed in referenced secret if required
