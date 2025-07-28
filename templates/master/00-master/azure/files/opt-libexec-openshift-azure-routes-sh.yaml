@@ -18,7 +18,7 @@ contents:
     # The solution is to redirect traffic destined to the lb vip back to ourselves.
     #
     # We check /run/cloud-routes/ for files $VIP.up and $VIP.down. If the .up file
-    # exists, then we redirect traffic destined for that vip to ourselves via nftables.
+    # exists, then we redirect traffic destined for that vip to ourselves via iptables.
     # A systemd unit watches the directory for changes.
     #
     # TODO: Address the potential issue where apiserver-watcher could create multiple files
@@ -32,29 +32,107 @@ contents:
     declare -A v4vips
     declare -A v6vips
 
-    TABLE_NAME="azure-vips"
-    VIPS_CHAIN="redirect-vips"
+    CHAIN_NAME="azure-vips"
     RUN_DIR="/run/cloud-routes"
 
+    # Create a chan if it doesn't exist
+    ensure_chain4() {
+        local table="${1}"
+        local chain="${2}"
+
+        if ! iptables -w -t "${table}" -S "${chain}" &> /dev/null ; then
+            echo "creating ${chain} chain in ${table} table"
+            iptables -w -t "${table}" -N "${chain}";
+        fi;
+    }
+
+    # Create a chain if it doesn't exist
+    ensure_chain6() {
+        if [ ! -f /proc/net/if_inet6 ]; then
+            return
+        fi
+        local table="${1}"
+        local chain="${2}"
+
+        if ! ip6tables -w -t "${table}" -S "${chain}" &> /dev/null ; then
+            echo "creating ${chain} chain in ${table} table"
+            ip6tables -w -t "${table}" -N "${chain}";
+        fi;
+    }
+
+
+    ensure_rule4() {
+        local table="${1}"
+        local chain="${2}"
+        shift 2
+
+        if ! iptables -w -t "${table}" -C "${chain}" "$@" &> /dev/null; then
+            echo "adding \"$@\" to ${chain} chain in ${table} table"
+            iptables -w -t "${table}" -A "${chain}" "$@"
+        fi
+    }
+
+    ensure_rule6() {
+        if [ ! -f /proc/net/if_inet6 ]; then
+            return
+        fi
+
+        local table="${1}"
+        local chain="${2}"
+        shift 2
+
+        if ! ip6tables -w -t "${table}" -C "${chain}" "$@" &> /dev/null; then
+            echo "adding \"$@\" to ${chain} chain in ${table} table"
+            ip6tables -w -t "${table}" -A "${chain}" "$@"
+        fi
+    }
+
+    # set the chain, ensure entry rules, ensure ESTABLISHED rule
     initialize() {
-        nft -f - <<EOF
-            add table inet ${TABLE_NAME} { comment "azure LB vip overriding"; }
-            add chain inet ${TABLE_NAME} ${VIPS_CHAIN}
+        ensure_chain4 nat "${CHAIN_NAME}"
+        ensure_chain6 nat "${CHAIN_NAME}"
 
-            add chain inet ${TABLE_NAME} prerouting { type nat hook prerouting priority dstnat; }
-            flush chain inet ${TABLE_NAME} prerouting
-            add rule inet ${TABLE_NAME} prerouting goto ${VIPS_CHAIN}
+        ensure_rule4 nat PREROUTING -m comment --comment 'azure LB vip overriding for pods' -j ${CHAIN_NAME}
+        ensure_rule6 nat PREROUTING -m comment --comment 'azure LB vip overriding for pods' -j ${CHAIN_NAME}
 
-            add chain inet ${TABLE_NAME} output { type nat hook output priority dstnat; }
-            flush chain inet ${TABLE_NAME} output
-            add rule inet ${TABLE_NAME} output goto ${VIPS_CHAIN}
-    EOF
+        ensure_rule4 nat OUTPUT -m comment --comment 'azure LB vip overriding for local clients' -j ${CHAIN_NAME}
+        ensure_rule6 nat OUTPUT -m comment --comment 'azure LB vip overriding for local clients' -j ${CHAIN_NAME}
+
+        # Need this so that existing flows (with an entry in conntrack) continue,
+        # even if the iptables rule is removed
+        ensure_rule4 filter FORWARD -m comment --comment 'azure LB vip existing' -m addrtype ! --dst-type LOCAL -m state --state ESTABLISHED,RELATED -j ACCEPT
+        ensure_rule6 filter FORWARD -m comment --comment 'azure LB vip existing' -m addrtype ! --dst-type LOCAL -m state --state ESTABLISHED,RELATED -j ACCEPT
+        ensure_rule4 filter OUTPUT -m comment --comment 'azure LB vip existing' -m addrtype ! --dst-type LOCAL -m state --state ESTABLISHED,RELATED -j ACCEPT
+        ensure_rule6 filter OUTPUT -m comment --comment 'azure LB vip existing' -m addrtype ! --dst-type LOCAL -m state --state ESTABLISHED,RELATED -j ACCEPT
+    }
+
+    remove_stale() {
+        ## find extra iptables rules
+        for ipt_vip in $(iptables -w -t nat -S "${CHAIN_NAME}" | awk '$4{print $4}' | awk -F/ '{print $1}'); do
+            if [[ ! -v v4vips[${ipt_vip}] ]] || [[ "${v4vips[${ipt_vip}]}" = down ]]; then
+                echo removing stale vip "${ipt_vip}" for local clients
+                iptables -w -t nat -D "${CHAIN_NAME}" --dst "${ipt_vip}" -j REDIRECT
+            fi
+        done
+
+        if [ ! -f /proc/net/if_inet6 ]; then
+            return
+        fi
+
+        for ipt_vip in $(ip6tables -w -t nat -S "${CHAIN_NAME}" | awk '$4{print $4}' | awk -F/ '{print $1}'); do
+            if [[ ! -v v6vips[${ipt_vip}] ]] || [[ "${v6vips[${ipt_vip}]}" = down ]]; then
+                echo removing stale vip "${ipt_vip}" for local clients
+                ip6tables -w -t nat -D "${CHAIN_NAME}" --dst "${ipt_vip}" -j REDIRECT
+            fi
+        done
+
     }
 
     remove_stale_routes() {
         ## find extra ovn routes
         local ovnkContainerID=$(crictl ps --name ovnkube-controller | awk '{ print $1 }' | tail -n+2)
         if [ -z "${ovnkContainerID}" ]; then
+            echo "Plugin is SDN, nothing to do.. exiting"
             return
         fi
         echo "Found ovnkube-controller pod... ${ovnkContainerID}"
@@ -86,37 +164,26 @@ contents:
 
     }
 
-    sync_rules() {
-        # Construct the VIP lists. (The nftables syntax allows a trailing comma.)
-        v4vipset=""
-        v6vipset=""
+    add_rules() {
         for vip in "${!v4vips[@]}"; do
             if [[ "${v4vips[${vip}]}" != down ]]; then
-                v4vipset="${vip}, ${v4vipset}"
-            fi
-        done
-        for vip in "${!v6vips[@]}"; do
-            if [[ "${v6vips[${vip}]}" != down ]]; then
-                v6vipset="${vip}, ${v6vipset}"
+                echo "ensuring rule for ${vip} for internal clients"
+                ensure_rule4 nat "${CHAIN_NAME}" --dst "${vip}" -j REDIRECT
             fi
         done
 
-        echo "synchronizing IPv4 VIPs to (${v4vipset}), IPv6 VIPS to (${v6vipset})"
-        {
-            echo "flush chain inet ${TABLE_NAME} ${VIPS_CHAIN}"
-            if [[ -n "${v4vipset}" ]]; then
-                echo "add rule inet ${TABLE_NAME} ${VIPS_CHAIN} ip daddr { ${v4vipset} } redirect"
+        for vip in "${!v6vips[@]}"; do
+            if [[ "${v6vips[${vip}]}" != down ]]; then
+                echo "ensuring rule for ${vip} for internal clients"
+                ensure_rule6 nat "${CHAIN_NAME}" --dst "${vip}" -j REDIRECT
             fi
-            if [[ -n "${v6vipset}" ]]; then
-                echo "add rule inet ${TABLE_NAME} ${VIPS_CHAIN} ip6 daddr { ${v6vipset} } redirect"
-            fi
-        } | nft -f -
+        done
     }
 
     add_routes() {
         local ovnkContainerID=$(crictl ps --name ovnkube-controller | awk '{ print $1 }' | tail -n+2)
         if [ -z "${ovnkContainerID}" ]; then
-            echo "OVN-Kubernetes is not running; no routes to add."
+            echo "Plugin is SDN, nothing to do.. exiting"
             return
         fi
         echo "Found ovnkube-controller pod... ${ovnkContainerID}"
@@ -163,14 +230,14 @@ contents:
     }
 
     clear_rules() {
-        echo "clearing rules from ${TABLE_NAME}"
-        nft delete table inet "${TABLE_NAME}" || true
+        echo "clearing rules from ${CHAIN_NAME} chain in nat table"
+        iptables -t nat -F "${CHAIN_NAME}" || true
     }
 
     clear_routes() {
         local ovnkContainerID=$(crictl ps --name ovnkube-controller | awk '{ print $1 }' | tail -n+2)
         if [ -z "${ovnkContainerID}" ]; then
-            echo "OVN-Kubernetes is not running; no routes to remove."
+            echo "Plugin is SDN, nothing to do.. exiting"
             return
         fi
         echo "Found ovnkube-controller pod... ${ovnkContainerID}"
@@ -178,7 +245,7 @@ contents:
         crictl exec -i ${ovnkContainerID} ovn-nbctl lr-policy-del ovn_cluster_router 1010
     }
 
-    # out parameters: v4vips v6vips
+    # out paramaters: v4vips v6vips
     list_lb_ips() {
         for k in "${!v4vips[@]}"; do
             unset v4vips["${k}"]
@@ -210,8 +277,9 @@ contents:
         start)
             initialize
             list_lb_ips
-            sync_rules
+            remove_stale
             remove_stale_routes # needed for OVN-Kubernetes plugin's routingViaHost=false mode
+            add_rules
             add_routes # needed for OVN-Kubernetes plugin's routingViaHost=false mode
             echo "done applying vip rules"
             ;;
