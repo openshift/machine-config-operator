@@ -13,6 +13,8 @@ import (
 	apiext "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+
+	aroclientset "github.com/Azure/ARO-RP/pkg/operator/clientset/versioned"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
 )
@@ -75,6 +77,11 @@ func (cb *Builder) RouteClientOrDie(name string) routeclientset.Interface {
 // MachineClientOrDie returns the machine api client interface for machine api objects.
 func (cb *Builder) MachineClientOrDie(name string) mapiclientset.Interface {
 	return mapiclientset.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
+}
+
+// AROClientOrDie returns the ARO client interface for ARO-specific objects.
+func (cb *Builder) AROClientOrDie(name string) aroclientset.Interface {
+	return aroclientset.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
 }
 
 // GetBuilderConfig returns a copy of the builders *rest.Config
