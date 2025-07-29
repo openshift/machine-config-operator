@@ -1409,17 +1409,18 @@ func (b *buildReconciler) reconcilePoolChange(ctx context.Context, mcp *mcfgv1.M
 // but populates its status from oldMosb so that no build actually runs.
 func (b *buildReconciler) reuseImageForNewMOSB(ctx context.Context, mosc *mcfgv1.MachineOSConfig, oldMosb *mcfgv1.MachineOSBuild,
 ) error {
-	// Look up the MCP
+	// Look up the MCP associated with the MOSC
 	mcp, err := b.machineConfigPoolLister.Get(mosc.Spec.MachineConfigPool.Name)
 	if err != nil {
 		return err
 	}
 
-	// Build the new MOSB object
+	// Get the osimageurl for our new MOSB object
 	osImageURLs, err := ctrlcommon.GetOSImageURLConfig(ctx, b.kubeclient)
 	if err != nil {
 		return err
 	}
+	// Build the new MOSB object. this is our "promise", we will eventually check if we will proceed with this
 	newMosb, err := buildrequest.NewMachineOSBuild(
 		buildrequest.MachineOSBuildOpts{
 			MachineOSConfig:   mosc,
@@ -1431,13 +1432,16 @@ func (b *buildReconciler) reuseImageForNewMOSB(ctx context.Context, mosc *mcfgv1
 	}
 	// todo (dkhater): push the SetOwnerReferences() part into the NewMachineOSBuild() constructor
 	// since we already have the MOSC there and it feels like something the MOSB constructor should be setting.
+
+	// set the ownder of the new MOSB to be the MOSC so we can garbage collect this later
 	newMosb.SetOwnerReferences([]metav1.OwnerReference{
 		*metav1.NewControllerRef(mosc, mcfgv1.SchemeGroupVersion.WithKind("MachineOSConfig")),
 	})
 
-	// Create it if not already there
+	// check if a MOSB with the newly generated name already exists in the cluster
 	_, err = b.machineOSBuildLister.Get(newMosb.Name)
 	if k8serrors.IsNotFound(err) {
+		// create the new MOSB object
 		if newMosb, err = b.mcfgclient.
 			MachineconfigurationV1().
 			MachineOSBuilds().
@@ -1455,33 +1459,47 @@ func (b *buildReconciler) reuseImageForNewMOSB(ctx context.Context, mosc *mcfgv1
 		return err
 	}
 
-	if inspect != nil && err == nil {
-		klog.V(4).Infof("Existing MachineOSBuild %q found, reusing image %q by assigning to MachineOSConfig %q", newMosb.Name, image, mosc.Name)
-	} else {
-		klog.V(4).Infof("Deleting MachineOSBuild %q so we can rebuild it to create a new image", newMosb.Name)
-		err := b.mcfgclient.MachineconfigurationV1().MachineOSBuilds().Delete(ctx, newMosb.Name, metav1.DeleteOptions{})
-		if err != nil && !k8serrors.IsNotFound(err) {
-			return fmt.Errorf("could not delete MachineOSBuild %q: %w", newMosb.Name, err)
+	// this is our "reality check": try to inspect the image in the registry to see if it still exists
+	switch {
+	// image is found, we will reuse this image
+	case inspect != nil && err == nil:
+		klog.Infof("Existing MachineOSBuild %q found, reusing image %q by assigning to MachineOSConfig %q", newMosb.Name, image, mosc.Name)
+		// we are unauthorized and need to report this
+	case k8serrors.IsUnauthorized(err):
+		return fmt.Errorf("authentication failed while inspecting image %q for MachineOSBuild %q: %w", image, newMosb.Name, err)
+		// image does not exist, so we delete MOSB and rebuild
+	case k8serrors.IsNotFound(err):
+		klog.Infof("Deleting MachineOSBuild %q and rebuilding", newMosb.Name)
+		if deleteErr := b.mcfgclient.MachineconfigurationV1().MachineOSBuilds().Delete(ctx, newMosb.Name, metav1.DeleteOptions{}); deleteErr != nil && !k8serrors.IsNotFound(deleteErr) {
+			return fmt.Errorf("could not delete MachineOSBuild %q: %w", newMosb.Name, deleteErr)
 		}
 		return nil
+	default:
+		return fmt.Errorf("unexpected error inspecting image %q for MachineOSBuild %q: %w", image, newMosb.Name, err)
 	}
 
+	// get the latest version of the new MOSB object to ensure we update it correctly
 	toUpdate, err := b.getMachineOSBuildForUpdate(newMosb)
 	if err != nil {
 		return err
 	}
+	// store the current status
 	oldStatus := toUpdate.Status
 
+	// copy image url
 	toUpdate.Status.DigestedImagePushSpec = oldMosb.Status.DigestedImagePushSpec
 
+	// set conditions on new MOSB status to succeeded
 	for _, c := range apihelpers.MachineOSBuildSucceededConditions() {
 		apihelpers.SetMachineOSBuildCondition(&toUpdate.Status, c)
 	}
 
+	// update MOSB object with the status
 	if err := b.setStatusOnMachineOSBuildIfNeeded(ctx, toUpdate, oldStatus, toUpdate.Status); err != nil {
 		return err
 	}
 
+	// update parent MOSC status to point to newly built (aka the reused) MOSB
 	return b.updateMachineOSConfigStatus(ctx, mosc, toUpdate)
 }
 
