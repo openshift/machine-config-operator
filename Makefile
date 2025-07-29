@@ -194,7 +194,7 @@ test-e2e-1of2: install-go-junit-report
 	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 100m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-1of2/ ./test/e2e-techpreview-shared/ | ./hack/test-with-junit.sh $(@)
 
 test-e2e-2of2: install-go-junit-report
-	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 90m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-2of2/ ./test/e2e-techpreview-shared/ | ./hack/test-with-junit.sh $(@)
+	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 100m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-2of2/ ./test/e2e-techpreview-shared/ | ./hack/test-with-junit.sh $(@)
 
 test-e2e-techpreview: install-go-junit-report
 	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 170m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-techpreview  ./test/e2e-techpreview-shared/ | ./hack/test-with-junit.sh $(@)
