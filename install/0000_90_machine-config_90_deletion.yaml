@@ -1,5 +1,6 @@
 # keep default for upgrading purposes, need to delete the existing role:
 # https://github.com/openshift/enhancements/blob/master/dev-guide/cluster-version-operator/dev/object-deletion.md
+# Remove default service account
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
@@ -17,3 +18,12 @@ roleRef:
   kind: ClusterRole
   name: cluster-admin
   apiGroup: rbac.authorization.k8s.io
+---
+# Remove unneeded v1alpha1 MCN CRD if it exists
+apiVersion: machineconfiguration.openshift.io/v1alpha1
+kind: MachineConfigNode
+metadata:
+  name: machineconfignodes.machineconfiguration.openshift.io
+  namespace: openshift-machine-config-operator
+  annotations:
+    release.openshift.io/delete: "true"
