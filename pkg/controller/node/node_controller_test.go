@@ -107,7 +107,7 @@ func (f *fixture) newControllerWithStopChan(stopCh <-chan struct{}) *Controller 
 	k8sI := kubeinformers.NewSharedInformerFactory(f.kubeclient, noResyncPeriodFunc())
 	ci := configv1informer.NewSharedInformerFactory(f.schedulerClient, noResyncPeriodFunc())
 	c := NewWithCustomUpdateDelay(i.Machineconfiguration().V1().ControllerConfigs(), i.Machineconfiguration().V1().MachineConfigs(), i.Machineconfiguration().V1().MachineConfigPools(), k8sI.Core().V1().Nodes(),
-		k8sI.Core().V1().Pods(), i.Machineconfiguration().V1().MachineOSConfigs(), ci.Config().V1().Schedulers(), f.kubeclient, f.client, time.Millisecond, f.fgHandler)
+		k8sI.Core().V1().Pods(), i.Machineconfiguration().V1().MachineOSConfigs(), i.Machineconfiguration().V1().MachineOSBuilds(), ci.Config().V1().Schedulers(), f.kubeclient, f.client, time.Millisecond, f.fgHandler)
 
 	c.ccListerSynced = alwaysReady
 	c.mcpListerSynced = alwaysReady
