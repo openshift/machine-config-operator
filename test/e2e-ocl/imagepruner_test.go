@@ -57,7 +57,7 @@ func TestImagePruner(t *testing.T) {
 
 	t.Logf("Copying %s to %s using skopeo", srcImage, realImagePullspec)
 	cmd := exec.Command("skopeo", "copy", "--dest-authfile", realImageRegistrySecretPath, "tarball://"+srcImage, "docker://"+realImagePullspec)
-	t.Logf(cmd.String())
+	t.Logf("%v", cmd.String())
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	require.NoError(t, cmd.Run())
