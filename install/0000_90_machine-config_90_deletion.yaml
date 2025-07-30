@@ -20,10 +20,13 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
 ---
 # Remove unneeded v1alpha1 MCN CRD if it exists
-apiVersion: machineconfiguration.openshift.io/v1alpha1
-kind: MachineConfigNode
+kind: CustomResourceDefinition
+apiVersion: apiextensions.k8s.io/v1
 metadata:
   name: machineconfignodes.machineconfiguration.openshift.io
-  namespace: openshift-machine-config-operator
   annotations:
     release.openshift.io/delete: "true"
+spec:
+  group: machineconfiguration.openshift.io
+  versions:
+    - name: v1alpha1
