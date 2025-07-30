@@ -666,7 +666,7 @@ func copyDir(src string, dest string) error {
 		return err
 	}
 	if !file.IsDir() {
-		return fmt.Errorf("Source " + file.Name() + " is not a directory!")
+		return fmt.Errorf("Source %v is not a directory!", file.Name())
 	}
 
 	files, err := ctrlcommon.ReadDir(src)
