@@ -289,3 +289,15 @@ func extractNSAndNameWithTag(imageRef string) (string, string, error) {
 
 	return parts[1], parts[2], nil
 }
+
+var errUnknownBuildFailure = fmt.Errorf("build failed for unknown reason")
+
+// Extracts meaningful error from MachineOSBuild
+func getBuildErrorFromMOSB(mosb *mcfgv1.MachineOSBuild) error {
+	for _, condition := range mosb.Status.Conditions {
+		if condition.Type == "Failed" && condition.Status == metav1.ConditionTrue {
+			return fmt.Errorf("%s: %s", condition.Reason, condition.Message)
+		}
+	}
+	return errUnknownBuildFailure
+}
