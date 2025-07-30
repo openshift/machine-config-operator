@@ -45,13 +45,25 @@ func NewFilteredKubeStorageVersionMigratorInformer(client versioned.Interface, r
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.OperatorV1().KubeStorageVersionMigrators().List(context.TODO(), options)
+				return client.OperatorV1().KubeStorageVersionMigrators().List(context.Background(), options)
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.OperatorV1().KubeStorageVersionMigrators().Watch(context.TODO(), options)
+				return client.OperatorV1().KubeStorageVersionMigrators().Watch(context.Background(), options)
+			},
+			ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.OperatorV1().KubeStorageVersionMigrators().List(ctx, options)
+			},
+			WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.OperatorV1().KubeStorageVersionMigrators().Watch(ctx, options)
 			},
 		},
 		&apioperatorv1.KubeStorageVersionMigrator{},
