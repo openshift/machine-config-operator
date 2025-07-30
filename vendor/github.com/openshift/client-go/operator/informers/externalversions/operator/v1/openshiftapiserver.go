@@ -45,13 +45,25 @@ func NewFilteredOpenShiftAPIServerInformer(client versioned.Interface, resyncPer
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.OperatorV1().OpenShiftAPIServers().List(context.TODO(), options)
+				return client.OperatorV1().OpenShiftAPIServers().List(context.Background(), options)
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.OperatorV1().OpenShiftAPIServers().Watch(context.TODO(), options)
+				return client.OperatorV1().OpenShiftAPIServers().Watch(context.Background(), options)
+			},
+			ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.OperatorV1().OpenShiftAPIServers().List(ctx, options)
+			},
+			WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.OperatorV1().OpenShiftAPIServers().Watch(ctx, options)
 			},
 		},
 		&apioperatorv1.OpenShiftAPIServer{},

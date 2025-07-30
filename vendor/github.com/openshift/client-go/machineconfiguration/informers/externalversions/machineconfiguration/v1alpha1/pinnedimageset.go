@@ -45,13 +45,25 @@ func NewFilteredPinnedImageSetInformer(client versioned.Interface, resyncPeriod 
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.MachineconfigurationV1alpha1().PinnedImageSets().List(context.TODO(), options)
+				return client.MachineconfigurationV1alpha1().PinnedImageSets().List(context.Background(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.MachineconfigurationV1alpha1().PinnedImageSets().Watch(context.TODO(), options)
+				return client.MachineconfigurationV1alpha1().PinnedImageSets().Watch(context.Background(), options)
+			},
+			ListWithContextFunc: func(ctx context.Context, options v1.ListOptions) (runtime.Object, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.MachineconfigurationV1alpha1().PinnedImageSets().List(ctx, options)
+			},
+			WatchFuncWithContext: func(ctx context.Context, options v1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.MachineconfigurationV1alpha1().PinnedImageSets().Watch(ctx, options)
 			},
 		},
 		&apimachineconfigurationv1alpha1.PinnedImageSet{},
