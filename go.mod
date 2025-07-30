@@ -454,3 +454,5 @@ replace (
 // The cadvisor version used in k8s v1.32.1 (v0.51.0) relies on code present on this version
 // This can be removed once it's no longer used in o/k
 replace github.com/containerd/errdefs => github.com/containerd/errdefs v0.1.0
+
+replace github.com/coreos/stream-metadata-go => github.com/patrickdillon/stream-metadata-go v0.0.0-20250728201143-3e4910735fa7
