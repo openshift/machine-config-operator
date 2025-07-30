@@ -2,7 +2,10 @@ package certrotationcontroller
 
 import (
 	"context"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
+	"net"
 	"testing"
 	"time"
 
@@ -18,6 +21,7 @@ import (
 
 	kubeinformers "k8s.io/client-go/informers"
 
+	fakearoclientset "github.com/Azure/ARO-RP/pkg/operator/clientset/versioned/fake"
 	fakeconfigv1client "github.com/openshift/client-go/config/clientset/versioned/fake"
 	fakemachineclientset "github.com/openshift/client-go/machine/clientset/versioned/fake"
 
@@ -34,6 +38,7 @@ type fixture struct {
 	kubeClient    *fake.Clientset
 	configClient  *fakeconfigv1client.Clientset
 	machineClient *fakemachineclientset.Clientset
+	aroClient     *fakearoclientset.Clientset
 
 	maoSecretLister    []*corev1.Secret
 	mcoSecretLister    []*corev1.Secret
@@ -42,6 +47,7 @@ type fixture struct {
 	objects        []runtime.Object
 	configObjects  []runtime.Object
 	machineObjects []runtime.Object
+	aroObjects     []runtime.Object
 	k8sI           kubeinformers.SharedInformerFactory
 
 	controller *CertRotationController
@@ -53,10 +59,19 @@ func newFixture(t *testing.T) *fixture {
 	f.objects = []runtime.Object{}
 	f.configObjects = []runtime.Object{}
 	f.machineObjects = []runtime.Object{}
+	f.aroObjects = []runtime.Object{}
 	return f
 }
 
 func (f *fixture) newController() *CertRotationController {
+
+	// Only set platform to Azure for the ARO test case
+	var platformStatus *configv1.PlatformStatus
+	if len(f.aroObjects) > 0 {
+		platformStatus = &configv1.PlatformStatus{
+			Type: configv1.AzurePlatformType,
+		}
+	}
 
 	f.configObjects = append(f.configObjects, &configv1.Infrastructure{
 		ObjectMeta: metav1.ObjectMeta{
@@ -64,13 +79,14 @@ func (f *fixture) newController() *CertRotationController {
 		},
 		Status: configv1.InfrastructureStatus{
 			ControlPlaneTopology: configv1.HighlyAvailableTopologyMode,
-			PlatformStatus:       nil,
+			PlatformStatus:       platformStatus,
 			APIServerInternalURL: "test-url"},
 	})
 
 	f.kubeClient = fake.NewSimpleClientset(f.objects...)
 	f.configClient = fakeconfigv1client.NewSimpleClientset(f.configObjects...)
 	f.machineClient = fakemachineclientset.NewSimpleClientset(f.machineObjects...)
+	f.aroClient = fakearoclientset.NewSimpleClientset(f.aroObjects...)
 	f.k8sI = kubeinformers.NewSharedInformerFactory(f.kubeClient, noResyncPeriodFunc())
 
 	for _, secret := range f.maoSecretLister {
@@ -85,7 +101,7 @@ func (f *fixture) newController() *CertRotationController {
 		f.k8sI.Core().V1().ConfigMaps().Informer().GetIndexer().Add(configMap)
 	}
 
-	c, err := New(f.kubeClient, f.configClient, f.machineClient, f.k8sI.Core().V1().Secrets(), f.k8sI.Core().V1().Secrets(), f.k8sI.Core().V1().ConfigMaps())
+	c, err := New(f.kubeClient, f.configClient, f.machineClient, f.aroClient, f.k8sI.Core().V1().Secrets(), f.k8sI.Core().V1().Secrets(), f.k8sI.Core().V1().ConfigMaps())
 	require.NoError(f.t, err)
 
 	c.StartInformers()
@@ -113,13 +129,50 @@ func (f *fixture) verifyUserDataSecretUpdateCount(expectedCount int) {
 	require.Equal(f.t, expectedCount, count)
 }
 
+func (f *fixture) verifyAROIPInTLSCertificate(t *testing.T, expectedIP string) {
+	// Get the TLS secret that should contain the certificate with ARO IP
+	tlsSecret, err := f.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), ctrlcommon.MachineConfigServerTLSSecretName, metav1.GetOptions{})
+	require.NoError(t, err)
+	require.NotNil(t, tlsSecret)
+
+	// Get the certificate data from the secret
+	certData, exists := tlsSecret.Data["tls.crt"]
+	require.True(t, exists, "TLS certificate should exist in secret")
+	require.NotEmpty(t, certData, "TLS certificate data should not be empty")
+
+	// Decode PEM block to get the certificate
+	block, _ := pem.Decode(certData)
+	require.NotNil(t, block, "Should be able to decode PEM certificate")
+	require.Equal(t, "CERTIFICATE", block.Type, "PEM block should be a certificate")
+
+	// Parse the certificate
+	cert, err := x509.ParseCertificate(block.Bytes)
+	require.NoError(t, err, "Should be able to parse TLS certificate")
+
+	// Verify the ARO IP is present in the certificate's Subject Alternative Names
+	expectedIPAddr := net.ParseIP(expectedIP)
+	require.NotNil(t, expectedIPAddr, "Expected ARO IP should be valid")
+
+	found := false
+	for _, ip := range cert.IPAddresses {
+		if ip.Equal(expectedIPAddr) {
+			found = true
+			break
+		}
+	}
+	require.True(t, found, "ARO IP %s should be present in certificate SAN IP addresses", expectedIP)
+	t.Logf("Successfully verified ARO IP %s is present in TLS certificate", expectedIP)
+}
+
 func TestMCSCARotation(t *testing.T) {
 	tests := []struct {
 		name                      string
 		forceRotation             bool
 		machineObjects            []runtime.Object
 		maoSecrets                []runtime.Object
+		aroObjects                []runtime.Object
 		expectedSecretUpdateCount int
+		expectedAROIP             string
 	}{
 		{
 			name:                      "Creation and no rotation expected",
@@ -149,6 +202,15 @@ func TestMCSCARotation(t *testing.T) {
 			forceRotation:             false,
 			expectedSecretUpdateCount: 0,
 		},
+		{
+			name:                      "ARO cluster with APIIntIP, creation and no rotation expected",
+			maoSecrets:                []runtime.Object{getGoodMAOSecret("test-user-data")},
+			machineObjects:            []runtime.Object{getMachineSet("test-machine")},
+			aroObjects:                []runtime.Object{getAROCluster("10.0.0.4")},
+			forceRotation:             false,
+			expectedSecretUpdateCount: 1,
+			expectedAROIP:             "10.0.0.4",
+		},
 	}
 
 	for _, test := range tests {
@@ -157,11 +219,13 @@ func TestMCSCARotation(t *testing.T) {
 			t.Parallel()
 			f := newFixture(t)
 			f.machineObjects = append(f.machineObjects, test.machineObjects...)
+			f.aroObjects = append(f.aroObjects, test.aroObjects...)
 			f.objects = append(f.objects, test.maoSecrets...)
 			for _, obj := range test.maoSecrets {
 				f.maoSecretLister = append(f.maoSecretLister, obj.(*corev1.Secret))
 			}
 			f.controller = f.newController()
+
 			f.runController()
 
 			if test.forceRotation {
@@ -182,6 +246,12 @@ func TestMCSCARotation(t *testing.T) {
 			f.runController()
 
 			f.verifyUserDataSecretUpdateCount(test.expectedSecretUpdateCount)
+
+			// Special verification for ARO IP inclusion in TLS certificate
+			// TODO: add an e2e for this when ARO prow jobs are implemented
+			if test.expectedAROIP != "" {
+				f.verifyAROIPInTLSCertificate(t, test.expectedAROIP)
+			}
 
 		})
 	}
