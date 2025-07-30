@@ -46,13 +46,25 @@ func NewFilteredMachineInformer(client versioned.Interface, namespace string, re
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.MachineV1beta1().Machines(namespace).List(context.TODO(), options)
+				return client.MachineV1beta1().Machines(namespace).List(context.Background(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.MachineV1beta1().Machines(namespace).Watch(context.TODO(), options)
+				return client.MachineV1beta1().Machines(namespace).Watch(context.Background(), options)
+			},
+			ListWithContextFunc: func(ctx context.Context, options v1.ListOptions) (runtime.Object, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.MachineV1beta1().Machines(namespace).List(ctx, options)
+			},
+			WatchFuncWithContext: func(ctx context.Context, options v1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.MachineV1beta1().Machines(namespace).Watch(ctx, options)
 			},
 		},
 		&apimachinev1beta1.Machine{},

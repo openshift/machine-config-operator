@@ -45,13 +45,25 @@ func NewFilteredKubeControllerManagerInformer(client versioned.Interface, resync
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.OperatorV1().KubeControllerManagers().List(context.TODO(), options)
+				return client.OperatorV1().KubeControllerManagers().List(context.Background(), options)
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.OperatorV1().KubeControllerManagers().Watch(context.TODO(), options)
+				return client.OperatorV1().KubeControllerManagers().Watch(context.Background(), options)
+			},
+			ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.OperatorV1().KubeControllerManagers().List(ctx, options)
+			},
+			WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.OperatorV1().KubeControllerManagers().Watch(ctx, options)
 			},
 		},
 		&apioperatorv1.KubeControllerManager{},

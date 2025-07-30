@@ -45,13 +45,25 @@ func NewFilteredMachineOSBuildInformer(client versioned.Interface, resyncPeriod 
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.MachineconfigurationV1alpha1().MachineOSBuilds().List(context.TODO(), options)
+				return client.MachineconfigurationV1alpha1().MachineOSBuilds().List(context.Background(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.MachineconfigurationV1alpha1().MachineOSBuilds().Watch(context.TODO(), options)
+				return client.MachineconfigurationV1alpha1().MachineOSBuilds().Watch(context.Background(), options)
+			},
+			ListWithContextFunc: func(ctx context.Context, options v1.ListOptions) (runtime.Object, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.MachineconfigurationV1alpha1().MachineOSBuilds().List(ctx, options)
+			},
+			WatchFuncWithContext: func(ctx context.Context, options v1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.MachineconfigurationV1alpha1().MachineOSBuilds().Watch(ctx, options)
 			},
 		},
 		&apimachineconfigurationv1alpha1.MachineOSBuild{},
