@@ -54,11 +54,11 @@ require (
 	k8s.io/client-go v0.33.2
 	k8s.io/code-generator v0.33.2
 	k8s.io/component-base v0.33.2
-	k8s.io/cri-api v0.32.1
-	k8s.io/kubectl v0.32.1
-	k8s.io/kubelet v0.32.1
-	k8s.io/kubernetes v1.28.4
-	k8s.io/utils v0.0.0-20241210054802-24370beab758
+	k8s.io/cri-api v0.33.2
+	k8s.io/kubectl v0.33.2
+	k8s.io/kubelet v0.33.2
+	k8s.io/kubernetes v1.33.2
+	k8s.io/utils v0.0.0-20250604170112-4c0f3b243397
 	sigs.k8s.io/controller-runtime v0.20.1
 	sigs.k8s.io/controller-runtime/tools/setup-envtest v0.0.0-20240522175850-2e9781e9fc60
 )
