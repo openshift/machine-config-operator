@@ -51,7 +51,7 @@ func (ctrl *Controller) processNextFeatureWorkItem() bool {
 
 func (ctrl *Controller) syncFeatureHandler(key string) error {
 	startTime := time.Now()
-	klog.V(4).Infof("Started syncing feature handler %q (%v)", key, startTime)
+	klog.Infof("Started syncing feature handler %q (%v)", key, startTime)
 	defer func() {
 		klog.V(4).Infof("Finished syncing feature handler %q (%v)", key, time.Since(startTime))
 	}()
@@ -201,6 +201,7 @@ func generateFeatureMap(featuregateAccess featuregates.FeatureGateAccess, exclus
 }
 
 func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir, role string, featureGateAccess featuregates.FeatureGateAccess, nodeConfig *osev1.Node, apiServer *osev1.APIServer) ([]byte, error) {
+	klog.Infof("feature: generateKubeConfigIgnFromFeatures")
 	originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, templatesDir, role, featureGateAccess, apiServer)
 	if err != nil {
 		return nil, err

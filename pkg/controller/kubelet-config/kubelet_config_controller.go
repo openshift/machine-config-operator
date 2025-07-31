@@ -444,9 +444,12 @@ func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, 
 
 	// Merge in Feature Gates.
 	// If they are the same, this will be a no-op
+	klog.Infof("feature: original %v", &originalKubeConfig.FeatureGates)
+	klog.Infof("feature: generateFeatureMap %v", featureGates)
 	if err := mergo.Merge(&originalKubeConfig.FeatureGates, featureGates, mergo.WithOverride); err != nil {
 		return nil, fmt.Errorf("could not merge feature gates: %w", err)
 	}
+	klog.Infof("feature: original after merge %v", &originalKubeConfig.FeatureGates)
 
 	return originalKubeConfig, nil
 }
@@ -535,7 +538,7 @@ func (ctrl *Controller) addAnnotation(cfg *mcfgv1.KubeletConfig, annotationKey, 
 //nolint:gocyclo
 func (ctrl *Controller) syncKubeletConfig(key string) error {
 	startTime := time.Now()
-	klog.V(4).Infof("Started syncing kubeletconfig %q (%v)", key, startTime)
+	klog.Infof("Started syncing kubeletconfig %q (%v)", key, startTime)
 	defer func() {
 		klog.V(4).Infof("Finished syncing kubeletconfig %q (%v)", key, time.Since(startTime))
 	}()
