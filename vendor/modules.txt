@@ -27,6 +27,17 @@ github.com/Antonboom/testifylint/internal/checkers
 github.com/Antonboom/testifylint/internal/checkers/printf
 github.com/Antonboom/testifylint/internal/config
 github.com/Antonboom/testifylint/internal/testify
+# github.com/Azure/ARO-RP v0.0.0-20250602035759-0693f32d5ccc
+## explicit; go 1.22.9
+github.com/Azure/ARO-RP/pkg/operator/apis/aro.openshift.io/v1alpha1
+github.com/Azure/ARO-RP/pkg/operator/apis/preview.aro.openshift.io/v1alpha1
+github.com/Azure/ARO-RP/pkg/operator/clientset/versioned
+github.com/Azure/ARO-RP/pkg/operator/clientset/versioned/fake
+github.com/Azure/ARO-RP/pkg/operator/clientset/versioned/scheme
+github.com/Azure/ARO-RP/pkg/operator/clientset/versioned/typed/aro.openshift.io/v1alpha1
+github.com/Azure/ARO-RP/pkg/operator/clientset/versioned/typed/aro.openshift.io/v1alpha1/fake
+github.com/Azure/ARO-RP/pkg/operator/clientset/versioned/typed/preview.aro.openshift.io/v1alpha1
+github.com/Azure/ARO-RP/pkg/operator/clientset/versioned/typed/preview.aro.openshift.io/v1alpha1/fake
 # github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161
 ## explicit; go 1.16
 github.com/Azure/go-ansiterm
@@ -97,10 +108,10 @@ github.com/alexkohler/prealloc/pkg
 # github.com/alingse/asasalint v0.0.11
 ## explicit; go 1.18
 github.com/alingse/asasalint
-# github.com/antlr4-go/antlr/v4 v4.13.0
-## explicit; go 1.20
+# github.com/antlr4-go/antlr/v4 v4.13.1
+## explicit; go 1.22
 github.com/antlr4-go/antlr/v4
-# github.com/apparentlymart/go-cidr v1.0.0
+# github.com/apparentlymart/go-cidr v1.1.0
 ## explicit
 github.com/apparentlymart/go-cidr/cidr
 # github.com/armon/circbuf v0.0.0-20190214190532-5111143e8da2
@@ -287,7 +298,7 @@ github.com/coreos/go-semver/semver
 # github.com/coreos/go-systemd v0.0.0-20190719114852-fd7a80b32e1f
 ## explicit
 github.com/coreos/go-systemd/unit
-# github.com/coreos/go-systemd/v22 v22.5.0
+# github.com/coreos/go-systemd/v22 v22.5.1-0.20231103132048-7d375ecc2b09
 ## explicit; go 1.12
 github.com/coreos/go-systemd/v22/daemon
 github.com/coreos/go-systemd/v22/dbus
@@ -357,7 +368,7 @@ github.com/coreos/rpmostree-client-go/pkg/imgref
 github.com/coreos/stream-metadata-go/arch
 github.com/coreos/stream-metadata-go/stream
 github.com/coreos/stream-metadata-go/stream/rhcos
-# github.com/coreos/vcontext v0.0.0-20230201181013-d72178a18687
+# github.com/coreos/vcontext v0.0.0-20231102161604-685dc7299dc5
 ## explicit; go 1.18
 github.com/coreos/vcontext/json
 github.com/coreos/vcontext/path
@@ -469,7 +480,7 @@ github.com/go-critic/go-critic/linter
 # github.com/go-errors/errors v1.4.2
 ## explicit; go 1.14
 github.com/go-errors/errors
-# github.com/go-jose/go-jose/v4 v4.0.4
+# github.com/go-jose/go-jose/v4 v4.0.5
 ## explicit; go 1.21
 github.com/go-jose/go-jose/v4
 github.com/go-jose/go-jose/v4/cipher
@@ -563,8 +574,8 @@ github.com/gobwas/glob/syntax/ast
 github.com/gobwas/glob/syntax/lexer
 github.com/gobwas/glob/util/runes
 github.com/gobwas/glob/util/strings
-# github.com/godbus/dbus/v5 v5.1.0
-## explicit; go 1.12
+# github.com/godbus/dbus/v5 v5.1.1-0.20240921181615-a817f3cc4a9e
+## explicit; go 1.20
 github.com/godbus/dbus/v5
 # github.com/gofrs/flock v0.12.1
 ## explicit; go 1.21.0
@@ -898,18 +909,6 @@ github.com/hashicorp/go-multierror
 # github.com/hashicorp/go-version v1.7.0
 ## explicit
 github.com/hashicorp/go-version
-# github.com/hashicorp/hcl v1.0.0
-## explicit
-github.com/hashicorp/hcl
-github.com/hashicorp/hcl/hcl/ast
-github.com/hashicorp/hcl/hcl/parser
-github.com/hashicorp/hcl/hcl/printer
-github.com/hashicorp/hcl/hcl/scanner
-github.com/hashicorp/hcl/hcl/strconv
-github.com/hashicorp/hcl/hcl/token
-github.com/hashicorp/hcl/json/parser
-github.com/hashicorp/hcl/json/scanner
-github.com/hashicorp/hcl/json/token
 # github.com/hexops/gotextdiff v1.0.3
 ## explicit; go 1.16
 github.com/hexops/gotextdiff
@@ -1015,9 +1014,6 @@ github.com/liggitt/tabwriter
 # github.com/macabu/inamedparam v0.1.3
 ## explicit; go 1.20
 github.com/macabu/inamedparam
-# github.com/magiconair/properties v1.8.7
-## explicit; go 1.19
-github.com/magiconair/properties
 # github.com/mailru/easyjson v0.9.0
 ## explicit; go 1.20
 github.com/mailru/easyjson/buffer
@@ -1579,12 +1575,9 @@ github.com/ryancurrah/gomodguard
 # github.com/ryanrolds/sqlclosecheck v0.5.1
 ## explicit; go 1.20
 github.com/ryanrolds/sqlclosecheck/pkg/analyzer
-# github.com/sagikazarmark/locafero v0.4.0
+# github.com/sagikazarmark/locafero v0.6.0
 ## explicit; go 1.20
 github.com/sagikazarmark/locafero
-# github.com/sagikazarmark/slog-shim v0.1.0
-## explicit; go 1.20
-github.com/sagikazarmark/slog-shim
 # github.com/sanposhiho/wastedassign/v2 v2.1.0
 ## explicit; go 1.18
 github.com/sanposhiho/wastedassign/v2
@@ -1663,14 +1656,10 @@ github.com/spf13/cobra
 # github.com/spf13/pflag v1.0.6
 ## explicit; go 1.12
 github.com/spf13/pflag
-# github.com/spf13/viper v1.19.0
-## explicit; go 1.20
+# github.com/spf13/viper v1.20.0-alpha.6
+## explicit; go 1.21
 github.com/spf13/viper
-github.com/spf13/viper/internal/encoding
 github.com/spf13/viper/internal/encoding/dotenv
-github.com/spf13/viper/internal/encoding/hcl
-github.com/spf13/viper/internal/encoding/ini
-github.com/spf13/viper/internal/encoding/javaproperties
 github.com/spf13/viper/internal/encoding/json
 github.com/spf13/viper/internal/encoding/toml
 github.com/spf13/viper/internal/encoding/yaml
@@ -1937,9 +1926,6 @@ golang.org/x/crypto/ssh/internal/bcrypt_pbkdf
 golang.org/x/exp/constraints
 golang.org/x/exp/maps
 golang.org/x/exp/slices
-golang.org/x/exp/slog
-golang.org/x/exp/slog/internal
-golang.org/x/exp/slog/internal/buffer
 # golang.org/x/exp/typeparams v0.0.0-20241108190413-2d47ceb2692f
 ## explicit; go 1.18
 golang.org/x/exp/typeparams
@@ -2226,9 +2212,6 @@ gopkg.in/evanphx/json-patch.v4
 # gopkg.in/inf.v0 v0.9.1
 ## explicit
 gopkg.in/inf.v0
-# gopkg.in/ini.v1 v1.67.0
-## explicit
-gopkg.in/ini.v1
 # gopkg.in/natefinch/lumberjack.v2 v2.2.1
 ## explicit; go 1.13
 gopkg.in/natefinch/lumberjack.v2
@@ -3321,7 +3304,7 @@ k8s.io/kubelet/pkg/cri/streaming
 k8s.io/kubelet/pkg/cri/streaming/portforward
 k8s.io/kubelet/pkg/cri/streaming/remotecommand
 k8s.io/kubelet/pkg/types
-# k8s.io/kubernetes v0.0.0-00010101000000-000000000000 => github.com/openshift/kubernetes v1.30.1-0.20250131233843-55625722a4b8
+# k8s.io/kubernetes v1.30.1 => github.com/openshift/kubernetes v1.30.1-0.20250131233843-55625722a4b8
 ## explicit; go 1.23.0
 k8s.io/kubernetes/cmd/kubelet/app
 k8s.io/kubernetes/cmd/kubelet/app/options
@@ -3680,6 +3663,7 @@ sigs.k8s.io/controller-runtime/pkg/internal/testing/controlplane
 sigs.k8s.io/controller-runtime/pkg/internal/testing/process
 sigs.k8s.io/controller-runtime/pkg/log
 sigs.k8s.io/controller-runtime/pkg/metrics
+sigs.k8s.io/controller-runtime/pkg/scheme
 sigs.k8s.io/controller-runtime/pkg/webhook/conversion
 # sigs.k8s.io/controller-runtime/tools/setup-envtest v0.0.0-20240522175850-2e9781e9fc60
 ## explicit; go 1.22.0
