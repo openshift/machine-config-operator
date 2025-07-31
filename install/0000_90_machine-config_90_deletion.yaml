@@ -26,6 +26,7 @@ metadata:
   name: machineconfignodes.machineconfiguration.openshift.io
   annotations:
     release.openshift.io/delete: "true"
+    release.openshift.io/feature-set: TechPreviewNoUpgrade
 spec:
   group: machineconfiguration.openshift.io
   versions:
