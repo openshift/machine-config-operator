@@ -46,9 +46,9 @@ type BuildRequestOpts struct { //nolint:revive // This name is fine.
 }
 
 // Gets the packages for the kernel from the MachineConfig, if available.
-func (b BuildRequestOpts) getKernelPackages() ([]string, []string, error) {
-	if b.MachineConfig.Spec.KernelType == ctrlcommon.KernelTypeDefault || b.MachineConfig.Spec.KernelType == "" {
-		return nil, nil, nil
+func (b BuildRequestOpts) getKernelPackages() (string, map[string][]string, error) {
+	if b.MachineConfig.Spec.KernelType == "" {
+		return "", nil, nil
 	}
 
 	return ctrlcommon.GetPackagesForSupportedKernelType(b.MachineConfig.Spec.KernelType)

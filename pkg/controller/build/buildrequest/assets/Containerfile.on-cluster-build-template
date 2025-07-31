@@ -45,11 +45,27 @@ echo "Installing extension packages: \$extensions"
 rpm-ostree install \$extensions
 {{end}}
 
-{{if and .KernelDefaultPackages .KernelPackages}}
-# Override default kernel packages
-kernelDefaultPkgs="{{- range $index, $item := .KernelDefaultPackages }}{{- if $index }} {{ end }}{{$item}}{{- end }}"
-installKernelPkgs="{{- range $index, $item := .KernelPackages }}{{- if $index }} {{ end }}{{$item}}{{- end }}"
-(echo "remove $kernelDefaultPkgs"; echo "install $installKernelPkgs"; echo run) | dnf -y shell
+{{if and .KernelType .KernelPackages}}
+
+if rpm -q kernel-rt-core > /dev/null 2>&1 && [[ "{{ .KernelType }}" != "realtime" ]]; then
+	echo "Base Image has RT kernel, new KernelType is '{{ .KernelType }}'";
+	kernelOldPkgs="{{- range $index, $item := index .KernelPackages "realtime" -}}{{- if $index }} {{ end }}{{$item}}{{- end }}"
+elif rpm -q kernel-64k-core > /dev/null 2>&1 && [[ "{{ .KernelType }}" != "64k-pages" ]]; then
+	echo "Base Image has 64k-pages kernel, new KernelType is '{{ .KernelType }}'";
+	kernelOldPkgs="{{- range $index, $item := index .KernelPackages "64k-pages" -}}{{- if $index }} {{ end }}{{$item}}{{- end }}"
+elif rpm -q kernel > /dev/null 2>&1 && [[ "{{ .KernelType }}" != "default" ]]; then
+	echo "Base Image has Default kernel, new KernelType is '{{ .KernelType }}'";
+	kernelOldPkgs="{{- range $index, $item := index .KernelPackages "default" -}}{{- if $index }} {{ end }}{{$item}}{{- end }}"
+else
+	echo "Unknown kernel type '{{ .KernelType }}'";
+	exit 1;
+fi
+
+# Override existing kernel packages if it differs from the requested kernel type
+if [ -n "$kernelOldPkgs" ]; then
+	installKernelPkgs="{{- range $index, $item := index .KernelPackages .KernelType -}}{{- if $index }} {{ end }}{{$item}}{{- end }}"
+	(echo "remove $kernelOldPkgs"; echo "install $installKernelPkgs"; echo run) | dnf -y shell
+fi
 {{end}}
 
 rm /etc/yum.repos.d/coreos-extensions.repo
