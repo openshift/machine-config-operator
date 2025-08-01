@@ -2200,3 +2200,38 @@ func TestUpdateNamespacedPolicyJSONs(t *testing.T) {
 		require.JSONEq(t, string(expectRet[namespace]), string(v))
 	}
 }
+
+func TestImagePolicyConfigFileListDeterministicOrder(t *testing.T) {
+	// Create test data with multiple namespaces in non-alphabetical order
+	namespaceJSONs := map[string][]byte{
+		"zebra-namespace": []byte(`{"test": "zebra"}`),
+		"alpha-namespace": []byte(`{"test": "alpha"}`),
+		"delta-namespace": []byte(`{"test": "delta"}`),
+		"beta-namespace":  []byte(`{"test": "beta"}`),
+		"gamma-namespace": []byte(`{"test": "gamma"}`),
+	}
+
+	// Call the function multiple times
+	result1 := imagePolicyConfigFileList(namespaceJSONs)
+	result2 := imagePolicyConfigFileList(namespaceJSONs)
+	result3 := imagePolicyConfigFileList(namespaceJSONs)
+
+	require.Equal(t, result1, result2, "Results should be identical between calls")
+	require.Equal(t, result2, result3, "Results should be identical between calls")
+
+	expectedOrder := []string{
+		"alpha-namespace",
+		"beta-namespace",
+		"delta-namespace",
+		"gamma-namespace",
+		"zebra-namespace",
+	}
+
+	require.Len(t, result1, len(expectedOrder), "Should have same number of entries")
+
+	for i, namespace := range expectedOrder {
+		expectedPath := "/etc/crio/policies/" + namespace + ".json"
+		require.Equal(t, expectedPath, result1[i].filePath, "File path should match expected order")
+		require.Equal(t, namespaceJSONs[namespace], result1[i].data, "Data should match expected data of namespace")
+	}
+}
