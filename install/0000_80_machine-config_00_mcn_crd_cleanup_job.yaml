@@ -1,0 +1,98 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: machine-config-nodes-crd-cleanup
+  namespace: openshift-machine-config-operator
+  annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+    include.release.openshift.io/ibm-cloud-managed: "true"
+    release.openshift.io/feature-set: Default
+  labels:
+    openshift.io/run-level: "0000_80_machine-config_00"
+spec:
+  completions: 1
+  parallelism: 1
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: machine-config-nodes-crd-cleanup
+      annotations:
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+    spec:
+      serviceAccountName: machine-config-operator
+      restartPolicy: OnFailure
+      containers:
+      - name: crd-cleanup
+        image: registry.redhat.io/openshift4/ose-cli:latest
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -euo pipefail
+          
+          CRD_NAME="machineconfignodes.machineconfiguration.openshift.io"
+          
+          echo "Checking for MachineConfigNodes CRD with v1alpha1 version..."
+          
+          # Check if CRD exists
+          if ! oc get crd "$CRD_NAME" >/dev/null 2>&1; then
+            echo "CRD $CRD_NAME does not exist, nothing to clean up"
+            exit 0
+          fi
+          
+          # Check if CRD has v1alpha1 version
+          HAS_V1ALPHA1=$(oc get crd "$CRD_NAME" -o jsonpath='{.spec.versions[?(@.name=="v1alpha1")].name}' 2>/dev/null || echo "")
+          
+          if [ -z "$HAS_V1ALPHA1" ]; then
+            echo "CRD $CRD_NAME does not have v1alpha1 version, nothing to clean up"
+            exit 0
+          fi
+          
+          echo "Found CRD $CRD_NAME with v1alpha1 version, deleting it..."
+          
+          # Delete the CRD
+          if oc delete crd "$CRD_NAME"; then
+            echo "Successfully deleted CRD $CRD_NAME"
+          else
+            echo "Failed to delete CRD $CRD_NAME"
+            exit 1
+          fi
+          
+          echo "CRD cleanup completed successfully"
+        resources:
+          requests:
+            cpu: 10m
+            memory: 50Mi
+          limits:
+            cpu: 100m
+            memory: 100Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
+          runAsUser: 65534
+          seccompProfile:
+            type: RuntimeDefault
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+      tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/master
+        operator: Exists
+      - effect: NoExecute
+        key: node.kubernetes.io/unreachable
+        operator: Exists
+        tolerationSeconds: 120
+      - effect: NoExecute
+        key: node.kubernetes.io/not-ready
+        operator: Exists
+        tolerationSeconds: 120
