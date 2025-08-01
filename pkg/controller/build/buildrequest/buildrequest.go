@@ -311,6 +311,11 @@ func (br buildRequestImpl) renderContainerfile() (string, error) {
 		return "", err
 	}
 
+	kernelType, kernelPackages, err := br.opts.getKernelPackages()
+	if err != nil {
+		return "", err
+	}
+
 	out := &strings.Builder{}
 
 	// This anonymous struct is necessary because templates cannot access
@@ -324,6 +329,8 @@ func (br buildRequestImpl) renderContainerfile() (string, error) {
 		BaseOSImage        string
 		ExtensionsImage    string
 		ExtensionsPackages []string
+		KernelType         string
+		KernelPackages     map[string][]string
 	}{
 		MachineOSBuild:     br.opts.MachineOSBuild,
 		MachineOSConfig:    br.opts.MachineOSConfig,
@@ -331,6 +338,8 @@ func (br buildRequestImpl) renderContainerfile() (string, error) {
 		BaseOSImage:        br.opts.OSImageURLConfig.BaseOSContainerImage,
 		ExtensionsImage:    br.opts.OSImageURLConfig.BaseOSExtensionsContainerImage,
 		ExtensionsPackages: extPkgs,
+		KernelType:         kernelType,
+		KernelPackages:     kernelPackages,
 	}
 
 	if err := tmpl.Execute(out, items); err != nil {
