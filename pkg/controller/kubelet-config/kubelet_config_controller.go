@@ -444,9 +444,12 @@ func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, 
 
 	// Merge in Feature Gates.
 	// If they are the same, this will be a no-op
+	klog.Infof("feature: original %v", &originalKubeConfig.FeatureGates)
+	klog.Infof("feature: generateFeatureMap %v", featureGates)
 	if err := mergo.Merge(&originalKubeConfig.FeatureGates, featureGates, mergo.WithOverride); err != nil {
 		return nil, fmt.Errorf("could not merge feature gates: %w", err)
 	}
+	klog.Infof("feature: original after merge %v", &originalKubeConfig.FeatureGates)
 
 	return originalKubeConfig, nil
 }
@@ -535,7 +538,7 @@ func (ctrl *Controller) addAnnotation(cfg *mcfgv1.KubeletConfig, annotationKey, 
 //nolint:gocyclo
 func (ctrl *Controller) syncKubeletConfig(key string) error {
 	startTime := time.Now()
-	klog.V(4).Infof("Started syncing kubeletconfig %q (%v)", key, startTime)
+	klog.Infof("Started syncing kubeletconfig %q (%v)", key, startTime)
 	defer func() {
 		klog.V(4).Infof("Finished syncing kubeletconfig %q (%v)", key, time.Since(startTime))
 	}()
@@ -711,8 +714,10 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
 			var err error
 			if isNotFound {
+				klog.Infof("Created MachineConfig %v ", mc.Name)
 				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
 			} else {
+				klog.Infof("Updated MachineConfig %v ", mc.Name)
 				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Update(context.TODO(), mc, metav1.UpdateOptions{})
 			}
 			return err
@@ -723,6 +728,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		if err := ctrl.addFinalizerToKubeletConfig(cfg, mc); err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not add finalizers to KubeletConfig: %v", err)
 		}
+		klog.Infof("MachineConfig %v ", mc.Name)
 		klog.Infof("Applied KubeletConfig %v on MachineConfigPool %v", key, pool.Name)
 		ctrlcommon.UpdateStateMetric(ctrlcommon.MCCSubControllerState, "machine-config-controller-kubelet-config", "Sync Kubelet Config", pool.Name)
 	}
