@@ -130,30 +130,30 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.Contro
 
 	for idx := 1; idx < len(configs); idx++ {
 		if configs[idx].Spec.Config.Raw != nil {
-			klog.Info("Merging config %v into first", configs[idx].Name)
+			klog.Infof("Merging %v", configs[idx].Name)
 			mergedIgn, err := ParseAndConvertConfig(configs[idx].Spec.Config.Raw)
 			if err != nil {
 				return nil, err
 			}
-			if idx == len(configs)-1 {
+			if configs[idx].Name == "98-worker-generated-kubelet" || configs[idx].Name == "99-worker-generated-kubelet" {
 				for _, file := range mergedIgn.Storage.Files {
 					if file.Path == "/etc/kubernetes/kubelet.conf" {
-						klog.Info("Merging config %v", &file.Contents.Source)
+						klog.Infof("TO BE MERGED %v", *file.Contents.Source)
 					}
 				}
 				for _, file := range outIgn.Storage.Files {
 					if file.Path == "/etc/kubernetes/kubelet.conf" {
-						klog.Info("outIgn before merge %v", &file.Contents.Source)
+						klog.Infof("outIgn BEFORE merge %v", *file.Contents.Source)
 					}
 				}
 			}
 
 			outIgn = ign3.Merge(outIgn, mergedIgn)
 
-			if idx == len(configs)-1 {
+			if configs[idx].Name == "98-worker-generated-kubelet" || configs[idx].Name == "99-worker-generated-kubelet" || idx == len(configs)-1 {
 				for _, file := range outIgn.Storage.Files {
 					if file.Path == "/etc/kubernetes/kubelet.conf" {
-						klog.Info("outIgn after merge %v", &file.Contents.Source)
+						klog.Infof("outIgn AFTER merge %v", *file.Contents.Source)
 					}
 				}
 			}
