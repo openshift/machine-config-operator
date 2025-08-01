@@ -114,12 +114,14 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.Contro
 	var err error
 
 	if configs[0].Spec.Config.Raw == nil {
+		klog.Info("configs[0].Spec.Config.Raw == nil")
 		outIgn = ign3types.Config{
 			Ignition: ign3types.Ignition{
 				Version: ign3types.MaxVersion.String(),
 			},
 		}
 	} else {
+		klog.Info("First config %v", configs[0].Name)
 		outIgn, err = ParseAndConvertConfig(configs[0].Spec.Config.Raw)
 		if err != nil {
 			return nil, err
@@ -128,11 +130,33 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.Contro
 
 	for idx := 1; idx < len(configs); idx++ {
 		if configs[idx].Spec.Config.Raw != nil {
+			klog.Info("Merging config %v into first", configs[idx].Name)
 			mergedIgn, err := ParseAndConvertConfig(configs[idx].Spec.Config.Raw)
 			if err != nil {
 				return nil, err
 			}
+			if idx == len(configs)-1 {
+				for _, file := range mergedIgn.Storage.Files {
+					if file.Path == "/etc/kubernetes/kubelet.conf" {
+						klog.Info("Merging config %v", &file.Contents.Source)
+					}
+				}
+				for _, file := range outIgn.Storage.Files {
+					if file.Path == "/etc/kubernetes/kubelet.conf" {
+						klog.Info("outIgn before merge %v", &file.Contents.Source)
+					}
+				}
+			}
+
 			outIgn = ign3.Merge(outIgn, mergedIgn)
+
+			if idx == len(configs)-1 {
+				for _, file := range outIgn.Storage.Files {
+					if file.Path == "/etc/kubernetes/kubelet.conf" {
+						klog.Info("outIgn after merge %v", &file.Contents.Source)
+					}
+				}
+			}
 		}
 	}
 

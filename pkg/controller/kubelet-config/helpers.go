@@ -497,7 +497,7 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 			originalKubeConfig.ProtectKernelDefaults = false
 		}
 		// Merge the Old and New
-		klog.Info("feature: generateKubeletIgnFiles  originalKubeConfig %v", originalKubeConfig)
+		klog.Info("feature: generateKubeletIgnFiles  originalKubeConfig %v", originalKubeConfig.FeatureGates)
 		err = mergo.Merge(originalKubeConfig, specKubeletConfig, mergo.WithOverride)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("could not merge original config and new config: %w", err)
