@@ -714,8 +714,10 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
 			var err error
 			if isNotFound {
+				klog.Infof("Created MachineConfig %v ", mc.Name)
 				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
 			} else {
+				klog.Infof("Updated MachineConfig %v ", mc.Name)
 				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Update(context.TODO(), mc, metav1.UpdateOptions{})
 			}
 			return err
@@ -726,6 +728,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		if err := ctrl.addFinalizerToKubeletConfig(cfg, mc); err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not add finalizers to KubeletConfig: %v", err)
 		}
+		klog.Infof("MachineConfig %v ", mc.Name)
 		klog.Infof("Applied KubeletConfig %v on MachineConfigPool %v", key, pool.Name)
 		ctrlcommon.UpdateStateMetric(ctrlcommon.MCCSubControllerState, "machine-config-controller-kubelet-config", "Sync Kubelet Config", pool.Name)
 	}

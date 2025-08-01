@@ -485,6 +485,7 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 
 		// FeatureGates must be set from the FeatureGate.
 		// Remove them here to prevent the specKubeletConfig merge overwriting them.
+		klog.Info("feature: generateKubeletIgnFiles featuregates before setting nil %v", specKubeletConfig.FeatureGates)
 		specKubeletConfig.FeatureGates = nil
 
 		// "protectKernelDefaults" is a boolean, optional field with `omitempty` json tag in the upstream kubelet configuration
@@ -496,6 +497,7 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 			originalKubeConfig.ProtectKernelDefaults = false
 		}
 		// Merge the Old and New
+		klog.Info("feature: generateKubeletIgnFiles  originalKubeConfig %v", originalKubeConfig)
 		err = mergo.Merge(originalKubeConfig, specKubeletConfig, mergo.WithOverride)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("could not merge original config and new config: %w", err)
