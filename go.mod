@@ -353,4 +353,4 @@ replace k8s.io/kube-openapi => github.com/openshift/kube-openapi v0.0.0-20230816
 
 replace github.com/openshift/client-go => github.com/naseerahkani/client-go v0.0.0-20250722005126-8e9e555e298c
 
-replace github.com/openshift/api => github.com/naseerahkani/api v0.0.0-20250715184238-584477d3b226
+replace github.com/openshift/api => github.com/naseerahkani/api v0.0.0-20250724174438-d1048fccac8c

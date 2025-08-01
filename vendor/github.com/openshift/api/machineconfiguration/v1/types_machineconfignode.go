@@ -104,7 +104,7 @@ type MachineConfigNodeSpec struct {
 	// the new image against the current image. This field will be used only when OCL is enabled. This will be empty/omitted otherwise.
 	// +openshift:enable:FeatureGate=ImageModeStatusReporting
 	// +optional
-	ConfigImage MachineConfigNodeSpecConfigImage `json:"configImage"`
+	ConfigImage *MachineConfigNodeSpecConfigImage `json:"configImage,omitempty"`
 }
 
 // MachineConfigNodeStatus holds the reported information on a particular machine config node.

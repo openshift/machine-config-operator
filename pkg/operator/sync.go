@@ -808,9 +808,8 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.Cluste
 			},
 		}
 
-		//Add: check if image mode status reporting fg is enables and if yes, use 821-826 as a guideline for configImage initialization
-		if fg.Enabled(features.FeatureGateImageModeStatusReporting) {
-			newMCS.Spec.ConfigImage = mcfgv1.MachineConfigNodeSpecConfigImage{
+		if fg.Enabled(features.FeatureGateImageModeStatusReporting) && node.Annotations[daemonconsts.DesiredImageAnnotationKey] != "" {
+			newMCS.Spec.ConfigImage = &mcfgv1.MachineConfigNodeSpecConfigImage{
 				DesiredImage: mcfgv1.ImageDigestFormat(node.Annotations[daemonconsts.DesiredImageAnnotationKey]),
 			}
 		}
@@ -827,19 +826,11 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.Cluste
 		}
 
 		// if this is the first time we are applying the MCN and the node is ready, set the config version probably
+		// this should also catch the configImage requirements from the GenerateAndApplyMachineConfigNodeSpec function in upgrademonitor (lines 398-400)
 		if mcn.Spec.ConfigVersion.Desired == upgrademonitor.NotYetSet {
 			err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(optr.fgAccessor, pool, node, optr.client)
 			if err != nil {
-				klog.Errorf("Error making MCN spec for Update Compatible: %v", err)
-			}
-		}
-
-		if fg.Enabled(features.FeatureGateImageModeStatusReporting) {
-			if mcn.Spec.ConfigImage.DesiredImage == upgrademonitor.NotYetSet {
-				err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(optr.fgAccessor, pool, node, optr.client)
-				if err != nil {
-					klog.Errorf("Error making MCN spec for Update Compatible: %v", err)
-				}
+				klog.Errorf("Error making MCN Spec: %v", err)
 			}
 		}
 

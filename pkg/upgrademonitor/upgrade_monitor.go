@@ -258,6 +258,32 @@ func generateAndApplyMachineConfigNodes(
 		newMCNode.Status.ConfigVersion.Current = node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey]
 	}
 
+	// Set desired version in MCN.Status.ConfigImage
+	desiredImageAnnotation := node.Annotations[daemonconsts.DesiredImageAnnotationKey]
+	currentImageAnnotation := node.Annotations[daemonconsts.CurrentImageAnnotationKey]
+	// 	if the update is compatible, we can set the desired to the one being used in the update,
+	// 	otherwise continue using the placeholder value
+	if desiredImageAnnotation != "" || currentImageAnnotation != "" {
+		// desiredImageAnnotation := node.Annotations[daemonconsts.DesiredImageAnnotationKey]
+		if newMCNode.Status.ConfigImage == nil {
+			newMCNode.Status.ConfigImage = &mcfgv1.MachineConfigNodeStatusConfigImage{
+				// DesiredImage: mcfgv1.ImageDigestFormat(desiredImageAnnotation),
+			}
+			// } else {
+			// 	newMCNode.Status.ConfigImage.DesiredImage = mcfgv1.ImageDigestFormat(desiredImageAnnotation)
+		}
+		if desiredImageAnnotation != "" {
+			newMCNode.Status.ConfigImage.DesiredImage = mcfgv1.ImageDigestFormat(desiredImageAnnotation)
+		}
+		if currentImageAnnotation != "" {
+			newMCNode.Status.ConfigImage.CurrentImage = mcfgv1.ImageDigestFormat(currentImageAnnotation)
+		}
+	}
+	// // Set current version in MCN.Status.ConfigImage if node annotation exists
+	// if node.Annotations[daemonconsts.CurrentImageAnnotationKey] != "" {
+	// 	newMCNode.Status.ConfigImage.CurrentImage = mcfgv1.ImageDigestFormat(node.Annotations[daemonconsts.CurrentImageAnnotationKey])
+	// }
+
 	// if we do not need a new MCN, generate the apply configurations for this object
 	if !needNewMCNode {
 		statusconfigVersionApplyConfig := machineconfigurationv1.MachineConfigNodeStatusMachineConfigVersion().WithDesired(newMCNode.Status.ConfigVersion.Desired)
@@ -318,13 +344,9 @@ func generateAndApplyMachineConfigNodes(
 			newMCNode.Spec.ConfigVersion.Desired = NotYetSet
 		}
 
-		if fg.Enabled(features.FeatureGateImageModeStatusReporting) {
-			newMCNode.Spec.ConfigImage = mcfgv1.MachineConfigNodeSpecConfigImage{
+		if fg.Enabled(features.FeatureGateImageModeStatusReporting) && node.Annotations[daemonconsts.DesiredImageAnnotationKey] != "" {
+			newMCNode.Spec.ConfigImage = &mcfgv1.MachineConfigNodeSpecConfigImage{
 				DesiredImage: mcfgv1.ImageDigestFormat(node.Annotations[daemonconsts.DesiredImageAnnotationKey]),
-			}
-
-			if newMCNode.Spec.ConfigImage.DesiredImage == "" {
-				newMCNode.Spec.ConfigImage.DesiredImage = ""
 			}
 
 		}
@@ -392,10 +414,6 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 	newMCNode.Spec.ConfigVersion = mcfgv1.MachineConfigNodeSpecMachineConfigVersion{
 		Desired: node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey],
 	}
-	// Set desired config to NotYetSet if the annotation is empty to satisfy API validation
-	if newMCNode.Spec.ConfigVersion.Desired == "" {
-		newMCNode.Spec.ConfigVersion.Desired = NotYetSet
-	}
 
 	newMCNode.Spec.Pool = mcfgv1.MCOObjectReference{
 		Name: pool,
@@ -403,14 +421,9 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 	newMCNode.Spec.Node = mcfgv1.MCOObjectReference{
 		Name: node.Name,
 	}
-
-	if fg.Enabled(features.FeatureGateImageModeStatusReporting) {
-		newMCNode.Spec.ConfigImage = mcfgv1.MachineConfigNodeSpecConfigImage{
-			DesiredImage: mcfgv1.ImageDigestFormat(node.Annotations[daemonconsts.DesiredImageAnnotationKey]),
-		}
-		// check if it should be empty
-		if newMCNode.Spec.ConfigImage.DesiredImage == "" {
-			newMCNode.Spec.ConfigVersion.Desired = NotYetSet
+	if daemonconsts.DesiredImageAnnotationKey != "" && fg.Enabled(features.FeatureGateImageModeStatusReporting) {
+		newMCNode.Spec.ConfigImage = &mcfgv1.MachineConfigNodeSpecConfigImage{
+			DesiredImage: daemonconsts.DesiredImageAnnotationKey,
 		}
 	}
 

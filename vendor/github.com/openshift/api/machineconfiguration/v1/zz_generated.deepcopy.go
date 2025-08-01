@@ -670,7 +670,7 @@ func (in *MachineConfigNode) DeepCopyInto(out *MachineConfigNode) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
 	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
-	out.Spec = in.Spec
+	in.Spec.DeepCopyInto(&out.Spec)
 	in.Status.DeepCopyInto(&out.Status)
 	return
 }
@@ -732,7 +732,11 @@ func (in *MachineConfigNodeSpec) DeepCopyInto(out *MachineConfigNodeSpec) {
 	out.Node = in.Node
 	out.Pool = in.Pool
 	out.ConfigVersion = in.ConfigVersion
-	out.ConfigImage = in.ConfigImage
+	if in.ConfigImage != nil {
+		in, out := &in.ConfigImage, &out.ConfigImage
+		*out = new(MachineConfigNodeSpecConfigImage)
+		**out = **in
+	}
 	return
 }
 
