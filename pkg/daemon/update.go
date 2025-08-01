@@ -1005,7 +1005,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	logSystem("Starting update from %s to %s: %+v", oldConfigName, newConfigName, diff)
 
 	diffFileSet := ctrlcommon.CalculateConfigFileDiffs(&oldIgnConfig, &newIgnConfig)
-	diffUnitSet, addedOrChangedUnits := ctrlcommon.CalculateConfigUnitDiffs(&oldIgnConfig, &newIgnConfig)
+	diffUnitSet := ctrlcommon.CalculateConfigUnitDiffs(&oldIgnConfig, &newIgnConfig)
 
 	var nodeDisruptionActions []opv1.NodeDisruptionPolicyStatusAction
 	var actions []string
@@ -1117,13 +1117,13 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	}
 
 	// update files on disk that need updating
-	if err := dn.updateFiles(oldIgnConfig, newIgnConfig, addedOrChangedUnits, skipCertificateWrite); err != nil {
+	if err := dn.updateFiles(oldIgnConfig, newIgnConfig, skipCertificateWrite); err != nil {
 		return err
 	}
 
 	defer func() {
 		if retErr != nil {
-			if err := dn.updateFiles(newIgnConfig, oldIgnConfig, addedOrChangedUnits, skipCertificateWrite); err != nil {
+			if err := dn.updateFiles(newIgnConfig, oldIgnConfig, skipCertificateWrite); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
 				retErr = fmt.Errorf("error rolling back files writes: %w", errs)
 				return
@@ -1258,17 +1258,15 @@ func (dn *Daemon) updateHypershift(oldConfig, newConfig *mcfgv1.MachineConfig, d
 		return fmt.Errorf("parsing new Ignition config failed: %w", err)
 	}
 
-	_, addedOrChangedUnits := ctrlcommon.CalculateConfigUnitDiffs(&oldIgnConfig, &newIgnConfig)
-
 	// update files on disk that need updating
 	// We should't skip the certificate write in HyperShift since it does not run the extra daemon process
-	if err := dn.updateFiles(oldIgnConfig, newIgnConfig, addedOrChangedUnits, false); err != nil {
+	if err := dn.updateFiles(oldIgnConfig, newIgnConfig, false); err != nil {
 		return err
 	}
 
 	defer func() {
 		if retErr != nil {
-			if err := dn.updateFiles(newIgnConfig, oldIgnConfig, addedOrChangedUnits, false); err != nil {
+			if err := dn.updateFiles(newIgnConfig, oldIgnConfig, false); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
 				retErr = fmt.Errorf("error rolling back files writes: %w", errs)
 				return
@@ -1773,12 +1771,12 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 // whatever has been written is picked up by the appropriate daemons, if
 // required. in particular, a daemon-reload and restart for any unit files
 // touched.
-func (dn *Daemon) updateFiles(oldIgnConfig, newIgnConfig ign3types.Config, addedOrChangedUnits []ign3types.Unit, skipCertificateWrite bool) error {
+func (dn *Daemon) updateFiles(oldIgnConfig, newIgnConfig ign3types.Config, skipCertificateWrite bool) error {
 	klog.Info("Updating files")
 	if err := dn.writeFiles(newIgnConfig.Storage.Files, skipCertificateWrite); err != nil {
 		return err
 	}
-	if err := dn.writeUnits(addedOrChangedUnits); err != nil {
+	if err := dn.writeUnits(newIgnConfig.Systemd.Units); err != nil {
 		return err
 	}
 	return dn.deleteStaleData(oldIgnConfig, newIgnConfig)
