@@ -738,6 +738,15 @@ func cloudPlatformAPIIntLoadBalancerIPs(cfg RenderConfig) (interface{}, error) {
 			default:
 				return nil, fmt.Errorf("")
 			}
+		case configv1.AzurePlatformType:
+			switch cloudPlatformLoadBalancerIPState(cfg) {
+			case availableLBIPState:
+				return cfg.Infra.Status.PlatformStatus.Azure.CloudLoadBalancerConfig.ClusterHosted.APIIntLoadBalancerIPs, nil
+			case absentLBIPState:
+				return nil, fmt.Errorf("Azure API Server IPs unavailable when the DNSType is ClusterHosted")
+			default:
+				return nil, fmt.Errorf("")
+			}
 		default:
 			return nil, fmt.Errorf("invalid cloud platform for API Server Internal IPs")
 		}
@@ -766,6 +775,15 @@ func cloudPlatformAPILoadBalancerIPs(cfg RenderConfig) (interface{}, error) {
 				return cfg.Infra.Status.PlatformStatus.AWS.CloudLoadBalancerConfig.ClusterHosted.APILoadBalancerIPs, nil
 			case absentLBIPState:
 				return nil, fmt.Errorf("AWS API Server IPs unavailable when the DNSType is ClusterHosted")
+			default:
+				return nil, fmt.Errorf("")
+			}
+		case configv1.AzurePlatformType:
+			switch cloudPlatformLoadBalancerIPState(cfg) {
+			case availableLBIPState:
+				return cfg.Infra.Status.PlatformStatus.Azure.CloudLoadBalancerConfig.ClusterHosted.APILoadBalancerIPs, nil
+			case absentLBIPState:
+				return nil, fmt.Errorf("Azure API Server IPs unavailable when the DNSType is ClusterHosted")
 			default:
 				return nil, fmt.Errorf("")
 			}
@@ -800,6 +818,15 @@ func cloudPlatformIngressLoadBalancerIPs(cfg RenderConfig) (interface{}, error) 
 			default:
 				return nil, fmt.Errorf("")
 			}
+		case configv1.AzurePlatformType:
+			switch cloudPlatformLoadBalancerIPState(cfg) {
+			case availableLBIPState:
+				return cfg.Infra.Status.PlatformStatus.Azure.CloudLoadBalancerConfig.ClusterHosted.IngressLoadBalancerIPs, nil
+			case absentLBIPState:
+				return nil, fmt.Errorf("Azure Ingress IPs unavailable when the DNSType is ClusterHosted")
+			default:
+				return nil, fmt.Errorf("")
+			}
 		default:
 			return nil, fmt.Errorf("invalid cloud platform for Ingress LoadBalancer IPs")
 		}
@@ -829,6 +856,16 @@ func cloudPlatformLoadBalancerIPState(cfg RenderConfig) LoadBalancerIPState {
 			// If absent, that is exoected to be temporary.
 			if cfg.Infra.Status.PlatformStatus.AWS != nil && cfg.Infra.Status.PlatformStatus.AWS.CloudLoadBalancerConfig != nil && cfg.Infra.Status.PlatformStatus.AWS.CloudLoadBalancerConfig.DNSType == configv1.ClusterHostedDNSType {
 				if cfg.Infra.Status.PlatformStatus.AWS.CloudLoadBalancerConfig.ClusterHosted != nil {
+					lbIPState = availableLBIPState
+				} else {
+					lbIPState = absentLBIPState
+				}
+			}
+		case configv1.AzurePlatformType:
+			// If DNSType is set to `ClusterHosted`, we expect the Load Balancer IP addresses to be set.
+			// If absent, that is exoected to be temporary.
+			if cfg.Infra.Status.PlatformStatus.Azure != nil && cfg.Infra.Status.PlatformStatus.Azure.CloudLoadBalancerConfig != nil && cfg.Infra.Status.PlatformStatus.Azure.CloudLoadBalancerConfig.DNSType == configv1.ClusterHostedDNSType {
+				if cfg.Infra.Status.PlatformStatus.Azure.CloudLoadBalancerConfig.ClusterHosted != nil {
 					lbIPState = availableLBIPState
 				} else {
 					lbIPState = absentLBIPState
