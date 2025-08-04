@@ -1187,21 +1187,6 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 			return err
 		}
 
-		_, newOCLImage := extractOCLImageFromMachineConfig(newConfig)
-		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
-			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgv1.MachineConfigNodeImagePulledFromRegistry), Message: fmt.Sprintf("Image %s pulled from registry.", newOCLImage)},
-			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeImagePulledFromRegistry, Reason: fmt.Sprintf("%s%s", string(mcfgv1.MachineConfigNodeUpdateExecuted), string(mcfgv1.MachineConfigNodeImagePulledFromRegistry)), Message: fmt.Sprintf("Image %s pulled from registry.", newOCLImage)},
-			metav1.ConditionUnknown,
-			metav1.ConditionTrue,
-			dn.node,
-			dn.mcfgClient,
-			dn.featureGatesAccessor,
-			pool,
-		)
-		if err != nil {
-			klog.Errorf("Error making MCN for Pulling Image from Registry: %v", err)
-		}
-
 		defer func() {
 			if retErr != nil {
 				if err := coreOSDaemon.applyOSChanges(*diff, newConfig, oldConfig); err != nil {
@@ -2801,9 +2786,30 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 		}
 	}
 
+	// Get MCP associated with node
+	pool, err := helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
+	if err != nil {
+		return err
+	}
+
 	// Update OS
 	if mcDiff.osUpdate {
 		if err := dn.updateLayeredOS(newConfig); err != nil {
+			_, newOCLImage := extractOCLImageFromMachineConfig(newConfig)
+			err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
+				&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgv1.MachineConfigNodeImagePulledFromRegistry), Message: fmt.Sprintf("Image %s pulled from registry.", newOCLImage)},
+				&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeImagePulledFromRegistry, Reason: fmt.Sprintf("%s%s", string(mcfgv1.MachineConfigNodeUpdateExecuted), string(mcfgv1.MachineConfigNodeImagePulledFromRegistry)), Message: fmt.Sprintf("Image %s pulled from registry.", newOCLImage)},
+				metav1.ConditionUnknown,
+				metav1.ConditionTrue,
+				dn.node,
+				dn.mcfgClient,
+				dn.featureGatesAccessor,
+				pool,
+			)
+			if err != nil {
+				klog.Errorf("Error making MCN for Pulling Image from Registry: %v", err)
+			}
+
 			mcdPivotErr.Inc()
 			return err
 		}
