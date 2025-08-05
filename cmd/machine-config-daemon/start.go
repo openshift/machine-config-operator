@@ -193,6 +193,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		nodeScopedInformer,
 		ctrlctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 		ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
+		ctrlctx.OperatorInformerFactory.Operator().V1().MachineConfigurations(),
 		ctrlctx.ClientBuilder.OperatorClientOrDie(componentName),
 		startOpts.kubeletHealthzEnabled,
 		startOpts.kubeletHealthzEndpoint,
