@@ -24,6 +24,7 @@ import (
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 
 	mcopfake "github.com/openshift/client-go/operator/clientset/versioned/fake"
+	operatorinformer "github.com/openshift/client-go/operator/informers/externalversions"
 	core "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
 
@@ -150,7 +151,7 @@ func (f *fixture) newController() *Daemon {
 
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
 	k8sI := kubeinformers.NewSharedInformerFactory(f.kubeclient, noResyncPeriodFunc())
-
+	oi := operatorinformer.NewSharedInformerFactory(f.oclient, noResyncPeriodFunc())
 	d, err := New(nil)
 	if err != nil {
 		f.t.Fatalf("can't bring up daemon: %v", err)
@@ -162,6 +163,7 @@ func (f *fixture) newController() *Daemon {
 		k8sI.Core().V1().Nodes(),
 		i.Machineconfiguration().V1().ControllerConfigs(),
 		i.Machineconfiguration().V1().MachineConfigPools(),
+		oi.Operator().V1().MachineConfigurations(),
 		f.oclient,
 		false,
 		"",

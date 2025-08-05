@@ -262,7 +262,7 @@ func TestReconcilableDiff(t *testing.T) {
 	oldConfig := newMachineConfigFromFiles(oldFiles)
 	newConfig := newMachineConfigFromFiles(append(oldFiles, newTestIgnitionFile(nOldFiles+1)))
 
-	diff, err := reconcilable(oldConfig, newConfig)
+	diff, err := reconcilable(oldConfig, newConfig, nil)
 	checkReconcilableResults(t, "add file", err)
 	assert.Equal(t, diff.osUpdate, false)
 	assert.Equal(t, diff.passwd, false)
@@ -270,7 +270,7 @@ func TestReconcilableDiff(t *testing.T) {
 	assert.Equal(t, diff.files, true)
 
 	newConfig = newMachineConfigFromFiles(nil)
-	diff, err = reconcilable(oldConfig, newConfig)
+	diff, err = reconcilable(oldConfig, newConfig, nil)
 	checkReconcilableResults(t, "remove all files", err)
 	assert.Equal(t, diff.osUpdate, false)
 	assert.Equal(t, diff.passwd, false)
@@ -279,7 +279,7 @@ func TestReconcilableDiff(t *testing.T) {
 
 	newConfig = newMachineConfigFromFiles(oldFiles)
 	newConfig.Spec.OSImageURL = "example.com/rhel-coreos:new"
-	diff, err = reconcilable(oldConfig, newConfig)
+	diff, err = reconcilable(oldConfig, newConfig, nil)
 	checkReconcilableResults(t, "os update", err)
 	assert.Equal(t, diff.osUpdate, true)
 	assert.Equal(t, diff.passwd, false)
@@ -463,12 +463,12 @@ func TestInvalidIgnConfig(t *testing.T) {
 	}
 	newIgnConfig.Storage.Files = append(newIgnConfig.Storage.Files, newIgnFile)
 	newMcfg := helpers.CreateMachineConfigFromIgnition(newIgnConfig)
-	_, err := reconcilable(oldMcfg, newMcfg)
+	_, err := reconcilable(oldMcfg, newMcfg, nil)
 	assert.NotNil(t, err, "Expected error. Relative Paths should fail general ignition validation")
 
 	newIgnConfig.Storage.Files[0].Node.Path = "/home/core/test"
 	newMcfg = helpers.CreateMachineConfigFromIgnition(newIgnConfig)
-	diff, err := reconcilable(oldMcfg, newMcfg)
+	diff, err := reconcilable(oldMcfg, newMcfg, nil)
 	assert.Nil(t, err, "Expected no error. Absolute paths should not fail general ignition validation")
 	assert.Equal(t, diff.files, true)
 }

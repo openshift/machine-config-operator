@@ -9,6 +9,8 @@ import (
 	"github.com/clarketm/json"
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	configv1 "github.com/openshift/api/config/v1"
+	mcopfake "github.com/openshift/client-go/operator/clientset/versioned/fake"
+	operatorinformer "github.com/openshift/client-go/operator/informers/externalversions"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -41,7 +43,8 @@ var (
 type fixture struct {
 	t *testing.T
 
-	client *fake.Clientset
+	client  *fake.Clientset
+	oclient *mcopfake.Clientset
 
 	mcpLister []*mcfgv1.MachineConfigPool
 	mcLister  []*mcfgv1.MachineConfig
@@ -51,23 +54,29 @@ type fixture struct {
 
 	actions []core.Action
 
-	objects []runtime.Object
+	objects   []runtime.Object
+	oObjects  []runtime.Object
+	fgHandler ctrlcommon.FeatureGatesHandler
 }
 
 func newFixture(t *testing.T) *fixture {
 	f := &fixture{}
 	f.t = t
 	f.objects = []runtime.Object{}
+	f.oObjects = []runtime.Object{}
 	return f
 }
 
 func (f *fixture) newController() *Controller {
 	f.client = fake.NewSimpleClientset(f.objects...)
-
+	f.oclient = mcopfake.NewSimpleClientset(f.oObjects...)
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
+	oi := operatorinformer.NewSharedInformerFactory(f.oclient, noResyncPeriodFunc())
 
 	c := New(i.Machineconfiguration().V1().MachineConfigPools(), i.Machineconfiguration().V1().MachineConfigs(),
-		i.Machineconfiguration().V1().ControllerConfigs(), i.Machineconfiguration().V1().ContainerRuntimeConfigs(), i.Machineconfiguration().V1().KubeletConfigs(), k8sfake.NewSimpleClientset(), f.client)
+		i.Machineconfiguration().V1().ControllerConfigs(), i.Machineconfiguration().V1().ContainerRuntimeConfigs(),
+		i.Machineconfiguration().V1().KubeletConfigs(), oi.Operator().V1().MachineConfigurations(),
+		k8sfake.NewSimpleClientset(), f.client, f.fgHandler)
 
 	c.mcpListerSynced = alwaysReady
 	c.mcListerSynced = alwaysReady
@@ -423,7 +432,7 @@ func TestGenerateMachineConfigOverrideOSImageURL(t *testing.T) {
 
 	mcs = append(mcs, helpers.NewMachineConfig("00-test-cluster-master-1", map[string]string{"node-role/master": ""}, "dummy-change-2", []ign3types.File{}))
 
-	gmc, err = generateAndValidateRenderedMachineConfig(gmc, mcp, mcs, cc)
+	gmc, err = generateAndValidateRenderedMachineConfig(gmc, mcp, mcs, cc, nil)
 	assert.NoError(t, err)
 	assert.Equal(t, "dummy-change-2", gmc.Spec.OSImageURL)
 }
@@ -595,7 +604,7 @@ func TestGenerateMachineConfigValidation(t *testing.T) {
 
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
 
-	gmc, err := generateAndValidateRenderedMachineConfig(currentMC, mcp, mcs, cc)
+	gmc, err := generateAndValidateRenderedMachineConfig(currentMC, mcp, mcs, cc, nil)
 	assert.Error(t, err)
 	assert.Nil(t, gmc)
 }

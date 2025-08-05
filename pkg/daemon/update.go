@@ -979,7 +979,17 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	klog.Infof("Checking Reconcilable for config %v to %v", oldConfigName, newConfigName)
 	// checking for reconcilability
 	// make sure we can actually reconcile this state
-	diff, reconcilableError := reconcilable(oldConfig, newConfig)
+
+	var mcop opv1.MachineConfiguration
+	if !firstBoot && dn.fgHandler != nil && dn.fgHandler.Enabled(features.FeatureGateIrreconcilableMachineConfig) {
+		mcopPtr, err := ctrlcommon.GetIrreconcilableOverrides(dn.mcopLister)
+		if err != nil {
+			return err
+		}
+		mcop = *mcopPtr
+	}
+
+	diff, reconcilableError := reconcilable(oldConfig, newConfig, &mcop.Spec.IrreconcilableValidationOverrides)
 
 	if reconcilableError != nil {
 		Nerr := upgrademonitor.GenerateAndApplyMachineConfigNodes(
@@ -1434,8 +1444,8 @@ func newMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineC
 // underlying node filesystem and can inspect the FIPS file
 // (/proc/sys/crypto/fips_enabled) and can determine if there is a mismatch
 // between the MachineConfig and the actual on-disk state.
-func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDiff, error) {
-	if err := ctrlcommon.IsRenderedConfigReconcilable(oldConfig, newConfig); err != nil {
+func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig, overrides *opv1.IrreconcilableValidationOverrides) (*machineConfigDiff, error) {
+	if err := ctrlcommon.IsRenderedConfigReconcilable(oldConfig, newConfig, overrides); err != nil {
 		return nil, fmt.Errorf("configs %s, %s are not reconcilable: %w", oldConfig.Name, newConfig.Name, err)
 	}
 

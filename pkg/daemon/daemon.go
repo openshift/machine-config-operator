@@ -20,12 +20,14 @@ import (
 	"syscall"
 	"time"
 
-	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
-	mcopclientset "github.com/openshift/client-go/operator/clientset/versioned"
-
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/renameio"
+	opv1 "github.com/openshift/api/operator/v1"
+	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
+	mcopclientset "github.com/openshift/client-go/operator/clientset/versioned"
+	mcopinformersv1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
+	mcoplistersv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -100,6 +102,9 @@ type Daemon struct {
 
 	ccLister       mcfglistersv1.ControllerConfigLister
 	ccListerSynced cache.InformerSynced
+
+	mcopLister       mcoplistersv1.MachineConfigurationLister
+	mcopListerSynced cache.InformerSynced
 
 	// skipReboot skips the reboot after a sync, only valid with onceFrom != ""
 	skipReboot bool
@@ -366,6 +371,7 @@ func (dn *Daemon) ClusterConnect(
 	nodeInformer coreinformersv1.NodeInformer,
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
+	mcopInformer mcopinformersv1.MachineConfigurationInformer,
 	mcopClient mcopclientset.Interface,
 	kubeletHealthzEnabled bool,
 	kubeletHealthzEndpoint string,
@@ -402,6 +408,8 @@ func (dn *Daemon) ClusterConnect(
 	dn.ccListerSynced = ccInformer.Informer().HasSynced
 	dn.mcpLister = mcpInformer.Lister()
 	dn.mcpListerSynced = mcpInformer.Informer().HasSynced
+	dn.mcopLister = mcopInformer.Lister()
+	dn.mcopListerSynced = mcopInformer.Informer().HasSynced
 
 	nw, err := newNodeWriter(dn.name, dn.stopCh)
 	if err != nil {
@@ -1086,7 +1094,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 	klog.Infof("Successfully read current/desired Config")
 
 	// check update reconcilability
-	mcDiff, err := reconcilable(&currentConfig, &desiredConfig)
+	mcDiff, err := reconcilable(&currentConfig, &desiredConfig, &opv1.IrreconcilableValidationOverrides{})
 	if err != nil {
 		return fmt.Errorf("the update is not reconcilable: %w", err)
 	}
