@@ -93,16 +93,23 @@ func getMachineResourceSelectorFromMachineManagers(machineManagers []opv1.Machin
 func getArchFromMachineSet(machineset *machinev1beta1.MachineSet) (arch string, err error) {
 
 	// Valid set of machineset/node architectures
-	validArchSet := sets.New[string]("arm64", "s390x", "amd64", "ppc64le")
+	validArchSet := sets.New("arm64", "s390x", "amd64", "ppc64le")
 	// Check if the annotation enclosing arch label is present on this machineset
 	archLabel, archLabelMatch := machineset.Annotations[MachineSetArchAnnotationKey]
 	if archLabelMatch {
-		// Grab arch value from the annotation and check if it is valid
-		_, archLabelValue, archLabelValueFound := strings.Cut(archLabel, ArchLabelKey)
-		if archLabelValueFound && validArchSet.Has(archLabelValue) {
-			return archtranslater.RpmArch(archLabelValue), nil
+		// Parse the annotation value which may contain multiple comma-separated labels
+		// Example: kubernetes.io/arch=amd64,topology.ebs.csi.aws.com/zone=eu-central-1a
+		for _, label := range strings.Split(archLabel, ",") {
+			label = strings.TrimSpace(label)
+			if archLabelValue, found := strings.CutPrefix(label, ArchLabelKey); found {
+				// Extract just the architecture value after "kubernetes.io/arch="
+				if validArchSet.Has(archLabelValue) {
+					return archtranslater.RpmArch(archLabelValue), nil
+				}
+				return "", fmt.Errorf("invalid architecture value found in annotation: %s", archLabelValue)
+			}
 		}
-		return "", fmt.Errorf("invalid architecture value found in annotation: %s ", archLabel)
+		return "", fmt.Errorf("kubernetes.io/arch label not found in annotation: %s", archLabel)
 	}
 	// If no arch annotation was found on the machineset, default to the control plane arch.
 	// return the architecture of the node running this pod, which will always be a control plane node.
