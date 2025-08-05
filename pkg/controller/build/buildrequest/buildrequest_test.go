@@ -232,13 +232,13 @@ func assertBuildJobIsCorrect(t *testing.T, buildJob *batchv1.Job, opts BuildRequ
 		etcPkiEntitlementKeysOpts.volumeMount(),
 	)
 
-	assert.Equal(t, buildJob.Spec.Template.Spec.Containers[0].Image, mcoImagePullspec)
+	assert.Equal(t, buildJob.Spec.Template.Spec.InitContainers[0].Image, mcoImagePullspec)
 	expectedPullspecs := []string{
 		"base-os-image-from-machineosconfig",
 		fixtures.OSImageURLConfig().BaseOSContainerImage,
 	}
 
-	assert.Contains(t, expectedPullspecs, buildJob.Spec.Template.Spec.Containers[1].Image)
+	assert.Contains(t, expectedPullspecs, buildJob.Spec.Template.Spec.Containers[0].Image)
 
 	assertPodHasVolume(t, buildJob.Spec.Template.Spec, corev1.Volume{
 		Name: "final-image-push-creds",
