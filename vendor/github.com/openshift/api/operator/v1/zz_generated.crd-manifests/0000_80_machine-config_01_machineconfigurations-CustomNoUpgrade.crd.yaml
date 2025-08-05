@@ -6,6 +6,7 @@ metadata:
     api.openshift.io/merged-by-featuregates: "true"
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
+    release.openshift.io/feature-set: CustomNoUpgrade
   name: machineconfigurations.operator.openshift.io
 spec:
   group: operator.openshift.io
@@ -57,6 +58,37 @@ spec:
                   This provides a mechanism to kick a previously failed deployment and provide a reason why you think it will work
                   this time instead of failing again on the same config.
                 type: string
+              irreconcilableMCValidationOverrides:
+                description: |-
+                  irreconcilableMCValidationOverrides allows administrators to apply MachineConfig changes
+                  that would normally be rejected as irreconcilable by disabling specific MCO validations.
+                  When overrides are enabled, the MCO will accept MachineConfigs containing changes to the
+                  specified sections and include them in the rendered configuration. However, only newly
+                  provisioned nodes will apply these changes - existing nodes will report irreconcilable
+                  differences in their MachineConfigNode status.
+                properties:
+                  storage:
+                    description: |-
+                      storage can be used to allow making irreconcilable changes to the selected sections under the
+                      `spec.config.storage` field of MachineConfig CRs
+                      It may not exceed 3 items and must not contain duplicates.
+                      Allowed element values are "Disks", "FileSystems", "Raid" and omitted.
+                      When contains "Disks" changes to the `spec.config.storage.disks` section of MachineConfig CRs are allowed.
+                      When contains "FileSystems" changes to the `spec.config.storage.filesystems` section of MachineConfig CRs are allowed.
+                      When contains "Raid" changes to the `spec.config.storage.raid` section of MachineConfig CRs are allowed.
+                      When omitted changes to the `spec.config.storage` section are forbidden.
+                    items:
+                      description: IrreconcilableMachineConfigValidationOverridesStorage
+                        defines available storage irreconcilable overrides.
+                      enum:
+                      - Disks
+                      - FileSystems
+                      - Raid
+                      type: string
+                    maxItems: 3
+                    type: array
+                    x-kubernetes-list-type: set
+                type: object
               logLevel:
                 default: Normal
                 description: |-

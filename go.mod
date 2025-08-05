@@ -413,6 +413,8 @@ require (
 	sigs.k8s.io/yaml v1.6.0
 )
 
+replace github.com/openshift/api v0.0.0-20250729005210-6d3c4e25a8d3 => github.com/pablintino/api v0.0.0-20250805074550-e7f5138f34fb
+
 replace (
 	github.com/onsi/ginkgo/v2 => github.com/openshift/onsi-ginkgo/v2 v2.6.1-0.20241205171354-8006f302fd12
 

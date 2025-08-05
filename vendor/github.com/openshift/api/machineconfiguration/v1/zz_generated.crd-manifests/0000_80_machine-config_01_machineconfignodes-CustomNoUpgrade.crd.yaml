@@ -6,6 +6,7 @@ metadata:
     api.openshift.io/merged-by-featuregates: "true"
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
+    release.openshift.io/feature-set: CustomNoUpgrade
   labels:
     openshift.io/operator-managed: ""
   name: machineconfignodes.machineconfiguration.openshift.io
@@ -277,6 +278,47 @@ spec:
                 required:
                 - desired
                 type: object
+              irreconcilableChanges:
+                description: |-
+                  irreconcilableChanges described the current differences between the target rendered
+                  MachineConfig and the configuration the Machine Config Daemon has applied to the
+                  associated node. This field is only populated when irreconcilable changes are permitted
+                  and applied to a pool of nodes. Already existing nodes will start reporting this field
+                  while new joining nodes will pick the irreconcilable changes at the first Ignition run
+                  and won't report differences.
+                items:
+                  description: |-
+                    IrreconcilableChangeDiff holds an individual diff between the initial install-time MachineConfig
+                    and the latest applied one caused by the presence of irreconcilable changes.
+                  properties:
+                    diff:
+                      description: |-
+                        diff contains a human-readable representation of the difference between the original
+                        install-time content of the field and the current applied MachineConfig content for
+                        that field.
+                        The fieldPath must be at least 1 character in length and  must not exceed 1024 characters in length.
+                      maxLength: 1024
+                      minLength: 1
+                      type: string
+                    fieldPath:
+                      description: |-
+                        fieldPath points to the path in the latest rendered MachineConfig this diff element refers to.
+                        The fieldPath must be at least 1 character in length, must not exceed 70 characters in length,
+                        must start with the spec. prefix and should only contain alphanumeric characters, brackets
+                        (for lists indexing) or dots (to designate keys inside objects).
+                      maxLength: 70
+                      minLength: 1
+                      pattern: ^spec\.[\da-zA-Z\.\[\]]+$
+                      type: string
+                  required:
+                  - diff
+                  - fieldPath
+                  type: object
+                maxItems: 32
+                type: array
+                x-kubernetes-list-map-keys:
+                - fieldPath
+                x-kubernetes-list-type: map
               observedGeneration:
                 description: |-
                   observedGeneration represents the generation of the MachineConfigNode object observed by the Machine Config Operator's controller.

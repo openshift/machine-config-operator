@@ -3,9 +3,11 @@ package common
 import (
 	"fmt"
 	"reflect"
+	"slices"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	opv1 "github.com/openshift/api/operator/v1"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"k8s.io/klog/v2"
 )
@@ -19,8 +21,9 @@ import (
 // We can only update machine configs that have changes to the files,
 // directories, links, and systemd units sections of the included ignition
 // config currently.
-func IsRenderedConfigReconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) error {
-	return IsComponentConfigsReconcilable(oldConfig, []*mcfgv1.MachineConfig{newConfig})
+func IsRenderedConfigReconcilable(oldConfig, newConfig *mcfgv1.MachineConfig,
+	overrides *opv1.IrreconcilableMachineConfigValidationOverrides) error {
+	return IsComponentConfigsReconcilable(oldConfig, []*mcfgv1.MachineConfig{newConfig}, overrides)
 }
 
 // IsComponentConfigsReconcilable checks each individual component
@@ -28,7 +31,10 @@ func IsRenderedConfigReconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) er
 // efficient because we only have to process the old config once. If an error
 // occurs, the name of the component config will be included in the error
 // message.
-func IsComponentConfigsReconcilable(oldConfig *mcfgv1.MachineConfig, newConfigs []*mcfgv1.MachineConfig) error {
+func IsComponentConfigsReconcilable(oldConfig *mcfgv1.MachineConfig,
+	newConfigs []*mcfgv1.MachineConfig,
+	overrides *opv1.IrreconcilableMachineConfigValidationOverrides,
+) error {
 	// The parser will try to translate versions less than maxVersion to maxVersion, or output an err.
 	// The ignition output in case of success will always have maxVersion
 	oldIgn, err := ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
@@ -38,7 +44,7 @@ func IsComponentConfigsReconcilable(oldConfig *mcfgv1.MachineConfig, newConfigs 
 
 	// Go through each component config and determine if it is reconcilable.
 	for _, newConfig := range newConfigs {
-		if err := isReconcilable(oldIgn, oldConfig, newConfig); err != nil {
+		if err := isReconcilable(oldIgn, oldConfig, newConfig, overrides); err != nil {
 			return err
 		}
 	}
@@ -47,7 +53,7 @@ func IsComponentConfigsReconcilable(oldConfig *mcfgv1.MachineConfig, newConfigs 
 }
 
 // Parses a new config and determines if it is reconcilable.
-func isReconcilable(oldIgn ign3types.Config, oldConfig, newConfig *mcfgv1.MachineConfig) error {
+func isReconcilable(oldIgn ign3types.Config, oldConfig, newConfig *mcfgv1.MachineConfig, overrides *opv1.IrreconcilableMachineConfigValidationOverrides) error {
 	newIgn, err := ParseAndConvertConfig(newConfig.Spec.Config.Raw)
 	if err != nil {
 		return fmt.Errorf("parsing new Ignition config from machineconfig %q failed: %w", newConfig.Name, err)
@@ -58,7 +64,7 @@ func isReconcilable(oldIgn ign3types.Config, oldConfig, newConfig *mcfgv1.Machin
 		return fmt.Errorf("validating new Ignition config from machineconfig %q failed: %w", newConfig.Name, err)
 	}
 
-	if err := isConfigReconcilable(oldIgn, newIgn, oldConfig, newConfig); err != nil {
+	if err := isConfigReconcilable(oldIgn, newIgn, oldConfig, newConfig, overrides); err != nil {
 		return fmt.Errorf("new machineconfig %q is not reconcilable against %q: %s", oldConfig.Name, newConfig.Name, err)
 	}
 
@@ -66,7 +72,7 @@ func isReconcilable(oldIgn ign3types.Config, oldConfig, newConfig *mcfgv1.Machin
 }
 
 // Determines if a given config is reconcilable.
-func isConfigReconcilable(oldIgn, newIgn ign3types.Config, oldConfig, newConfig *mcfgv1.MachineConfig) error {
+func isConfigReconcilable(oldIgn, newIgn ign3types.Config, oldConfig, newConfig *mcfgv1.MachineConfig, overrides *opv1.IrreconcilableMachineConfigValidationOverrides) error {
 	// Passwd section
 
 	// we don't currently configure Groups in place. we don't configure Users except
@@ -86,16 +92,21 @@ func isConfigReconcilable(oldIgn, newIgn ign3types.Config, oldConfig, newConfig 
 	}
 
 	// Storage section
+	var storageOverrides []opv1.IrreconcilableMachineConfigValidationOverridesStorage
+	if overrides != nil {
+		storageOverrides = overrides.Storage
+	}
 
-	// we can only reconcile files right now. make sure the sections we can't
-	// fix aren't changed.
-	if !reflect.DeepEqual(oldIgn.Storage.Disks, newIgn.Storage.Disks) {
+	if !slices.Contains(storageOverrides, opv1.IrreconcilableMachineConfigValidationOverridesStorageDisks) &&
+		!reflect.DeepEqual(oldIgn.Storage.Disks, newIgn.Storage.Disks) {
 		return fmt.Errorf("ignition disks section contains changes")
 	}
-	if !reflect.DeepEqual(oldIgn.Storage.Filesystems, newIgn.Storage.Filesystems) {
+	if !slices.Contains(storageOverrides, opv1.IrreconcilableMachineConfigValidationOverridesStorageFileSystems) &&
+		!reflect.DeepEqual(oldIgn.Storage.Filesystems, newIgn.Storage.Filesystems) {
 		return fmt.Errorf("ignition filesystems section contains changes")
 	}
-	if !reflect.DeepEqual(oldIgn.Storage.Raid, newIgn.Storage.Raid) {
+	if !slices.Contains(storageOverrides, opv1.IrreconcilableMachineConfigValidationOverridesStorageRaid) &&
+		!reflect.DeepEqual(oldIgn.Storage.Raid, newIgn.Storage.Raid) {
 		return fmt.Errorf("ignition raid section contains changes")
 	}
 	if !reflect.DeepEqual(oldIgn.Storage.Directories, newIgn.Storage.Directories) {

@@ -55,6 +55,16 @@ type MachineConfigurationSpec struct {
 	// has no effect on cluster upgrades which will still incur node disruption where required.
 	// +optional
 	NodeDisruptionPolicy NodeDisruptionPolicyConfig `json:"nodeDisruptionPolicy"`
+
+	// irreconcilableMCValidationOverrides allows administrators to apply MachineConfig changes
+	// that would normally be rejected as irreconcilable by disabling specific MCO validations.
+	// When overrides are enabled, the MCO will accept MachineConfigs containing changes to the
+	// specified sections and include them in the rendered configuration. However, only newly
+	// provisioned nodes will apply these changes - existing nodes will report irreconcilable
+	// differences in their MachineConfigNode status.
+	// +openshift:enable:FeatureGate=IrreconcilableMachineConfig
+	// +optional
+	IrreconcilableMachineConfigValidationOverrides IrreconcilableMachineConfigValidationOverrides `json:"irreconcilableMCValidationOverrides"`
 }
 
 type MachineConfigurationStatus struct {
@@ -118,6 +128,38 @@ type MachineConfigurationList struct {
 
 	// items contains the items
 	Items []MachineConfiguration `json:"items"`
+}
+
+// IrreconcilableMachineConfigValidationOverridesStorage defines available storage irreconcilable overrides.
+// +kubebuilder:validation:Enum=Disks;FileSystems;Raid
+type IrreconcilableMachineConfigValidationOverridesStorage string
+
+const (
+	// Disks enables changes to the `spec.config.storage.disks` section of MachineConfig CRs.
+	IrreconcilableMachineConfigValidationOverridesStorageDisks IrreconcilableMachineConfigValidationOverridesStorage = "Disks"
+
+	// FileSystems enables changes to the `spec.config.storage.filesystems` section of MachineConfig CRs.
+	IrreconcilableMachineConfigValidationOverridesStorageFileSystems IrreconcilableMachineConfigValidationOverridesStorage = "FileSystems"
+
+	// Raid enables changes to the `spec.config.storage.raid` section of MachineConfig CRs.
+	IrreconcilableMachineConfigValidationOverridesStorageRaid IrreconcilableMachineConfigValidationOverridesStorage = "Raid"
+)
+
+// IrreconcilableMachineConfigValidationOverrides holds the irreconcilable validations overrides to be applied on
+// each rendered MachineConfig generation.
+type IrreconcilableMachineConfigValidationOverrides struct {
+	// storage can be used to allow making irreconcilable changes to the selected sections under the
+	// `spec.config.storage` field of MachineConfig CRs
+	// It may not exceed 3 items and must not contain duplicates.
+	// Allowed element values are "Disks", "FileSystems", "Raid" and omitted.
+	// When contains "Disks" changes to the `spec.config.storage.disks` section of MachineConfig CRs are allowed.
+	// When contains "FileSystems" changes to the `spec.config.storage.filesystems` section of MachineConfig CRs are allowed.
+	// When contains "Raid" changes to the `spec.config.storage.raid` section of MachineConfig CRs are allowed.
+	// When omitted changes to the `spec.config.storage` section are forbidden.
+	// +optional
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=3
+	Storage []IrreconcilableMachineConfigValidationOverridesStorage `json:"storage,omitempty"`
 }
 
 type ManagedBootImages struct {

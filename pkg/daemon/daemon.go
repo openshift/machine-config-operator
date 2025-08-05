@@ -20,6 +20,7 @@ import (
 	"syscall"
 	"time"
 
+	opv1 "github.com/openshift/api/operator/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	mcopclientset "github.com/openshift/client-go/operator/clientset/versioned"
 
@@ -1086,7 +1087,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 	klog.Infof("Successfully read current/desired Config")
 
 	// check update reconcilability
-	mcDiff, err := reconcilable(&currentConfig, &desiredConfig)
+	mcDiff, err := reconcilable(&currentConfig, &desiredConfig, &opv1.IrreconcilableMachineConfigValidationOverrides{})
 	if err != nil {
 		return fmt.Errorf("the update is not reconcilable: %w", err)
 	}

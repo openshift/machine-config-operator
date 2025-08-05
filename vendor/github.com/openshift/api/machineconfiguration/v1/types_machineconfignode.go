@@ -126,6 +126,40 @@ type MachineConfigNodeStatus struct {
 	// +kubebuilder:validation:MaxItems=100
 	// +optional
 	PinnedImageSets []MachineConfigNodeStatusPinnedImageSet `json:"pinnedImageSets,omitempty"`
+	// irreconcilableChanges described the current differences between the target rendered
+	// MachineConfig and the configuration the Machine Config Daemon has applied to the
+	// associated node. This field is only populated when irreconcilable changes are permitted
+	// and applied to a pool of nodes. Already existing nodes will start reporting this field
+	// while new joining nodes will pick the irreconcilable changes at the first Ignition run
+	// and won't report differences.
+	// +listType=map
+	// +listMapKey=fieldPath
+	// +openshift:enable:FeatureGate=IrreconcilableMachineConfig
+	// +kubebuilder:validation:MaxItems=32
+	// +optional
+	IrreconcilableChanges []IrreconcilableChangeDiff `json:"irreconcilableChanges,omitempty"`
+}
+
+// IrreconcilableChangeDiff holds an individual diff between the initial install-time MachineConfig
+// and the latest applied one caused by the presence of irreconcilable changes.
+type IrreconcilableChangeDiff struct {
+	// fieldPath points to the path in the latest rendered MachineConfig this diff element refers to.
+	// The fieldPath must be at least 1 character in length, must not exceed 70 characters in length,
+	// must start with the spec. prefix and should only contain alphanumeric characters, brackets
+	// (for lists indexing) or dots (to designate keys inside objects).
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=70
+	// +kubebuilder:validation:Pattern=`^spec\.[\da-zA-Z\.\[\]]+$`
+	FieldPath string `json:"fieldPath,omitempty"`
+	// diff contains a human-readable representation of the difference between the original
+	// install-time content of the field and the current applied MachineConfig content for
+	// that field.
+	// The fieldPath must be at least 1 character in length and  must not exceed 1024 characters in length.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=1024
+	Diff string `json:"diff,omitempty"`
 }
 
 // MachineConfigNodeStatusPinnedImageSet holds information about the current, desired, and failed pinned image sets for the observed machine config node.
