@@ -134,7 +134,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 				ctrlctx.KubeNamespacedInformerFactory.Core().V1().ConfigMaps(),
 				ctrlctx.MachineInformerFactory.Machine().V1beta1().MachineSets(),
 				ctrlctx.ConfigInformerFactory.Config().V1().Infrastructures(),
-				ctrlctx.ClientBuilder.OperatorClientOrDie(componentName),
+				ctrlctx.ClientBuilder.OperatorClientOrDie("machine-set-boot-image-controller"),
 				ctrlctx.OperatorInformerFactory.Operator().V1().MachineConfigurations(),
 				ctrlctx.FeatureGatesHandler,
 			)
@@ -230,6 +230,8 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.InformerFactory.Machineconfiguration().V1().KubeletConfigs(),
 			ctx.ClientBuilder.KubeClientOrDie("render-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("render-controller"),
+			ctx.ClientBuilder.OperatorClientOrDie("render-controller"),
+			ctx.FeatureGatesHandler,
 		),
 		// The node controller consumes data written by the above
 		node.New(

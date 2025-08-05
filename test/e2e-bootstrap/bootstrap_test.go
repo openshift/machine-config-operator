@@ -513,6 +513,8 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.InformerFactory.Machineconfiguration().V1().KubeletConfigs(),
 			ctx.ClientBuilder.KubeClientOrDie("render-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("render-controller"),
+			ctx.ClientBuilder.OperatorClientOrDie("render-controller"),
+			ctx.FeatureGatesHandler,
 		),
 		// The node controller consumes data written by the above
 		node.New(
