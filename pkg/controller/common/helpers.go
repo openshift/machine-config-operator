@@ -121,7 +121,6 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.Contro
 			},
 		}
 	} else {
-		klog.Info("First config %v", configs[0].Name)
 		outIgn, err = ParseAndConvertConfig(configs[0].Spec.Config.Raw)
 		if err != nil {
 			return nil, err
