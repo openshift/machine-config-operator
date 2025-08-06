@@ -1238,6 +1238,12 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig(machineConfigFile string) er
 	if err != nil {
 		return fmt.Errorf("failed to parse MachineConfig: %w", err)
 	}
+	// Write the first MC used by the MCD as the install-time MC. This configuration may be used
+	// later to check irreconcilable differences between the node's state and the target MC.
+	if err := dn.writeInstallConfigFile(&mc); err != nil {
+		return err
+	}
+
 	newEnough, err := dn.NodeUpdaterClient.IsNewEnoughForLayering()
 	if err != nil {
 		return err
@@ -2566,6 +2572,16 @@ func (dn *Daemon) completeUpdate(desiredConfigName string) error {
 }
 
 func (dn *Daemon) triggerUpdate(currentConfig, desiredConfig *mcfgv1.MachineConfig, currentImage, desiredImage string) error {
+	// Write, if it doesn't exist, the installtime config file.
+	// Ideally, in new clusters, the file already exists as it's created by the first boot run of the MCD, but,
+	// in already existing clusters that updates to the latest configuration the MCD needs to create it assuming
+	// that the current configuration matches the one used at installation time, at least, from an Ignition perspective
+	// Differences in the MCD managed fields of the Ignition configuration or the MCO's specific fields in the MC
+	// are acceptable from the irreconcilable fields usage point of view.
+	if err := dn.writeInstallConfigFile(currentConfig); err != nil {
+		return err
+	}
+
 	// Before we do any updates, ensure that the image pull secrets that rpm-ostree uses are up-to-date.
 	if err := dn.syncInternalRegistryPullSecrets(nil); err != nil {
 		return err

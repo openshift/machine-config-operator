@@ -366,6 +366,24 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 	return dn.finishRebootlessUpdate()
 }
 
+func (dn *Daemon) writeInstallConfigFile(config *mcfgv1.MachineConfig) error {
+
+	configPath := filepath.Join(filepath.Dir(dn.currentConfigPath), "installconfig")
+	if _, err := os.Stat(configPath); err == nil || !os.IsNotExist(err) {
+		return err
+	}
+	// If the logic reached this far it means the installconfig file does not exist
+	jsonConfig, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("error creating the installtime config json content. %w", err)
+	}
+	if err := writeFileAtomicallyWithDefaults(configPath, jsonConfig); err != nil {
+		return fmt.Errorf("error writting the installtime config json file. %w", err)
+	}
+
+	return nil
+}
+
 func setRunningKargsWithCmdline(config *mcfgv1.MachineConfig, requestedKargs []string, cmdline []byte) error {
 	splits := splitKernelArguments(strings.TrimSpace(string(cmdline)))
 	config.Spec.KernelArguments = nil
