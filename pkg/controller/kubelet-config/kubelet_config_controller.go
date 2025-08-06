@@ -728,7 +728,6 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		if err := ctrl.addFinalizerToKubeletConfig(cfg, mc); err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not add finalizers to KubeletConfig: %v", err)
 		}
-		klog.Infof("MachineConfig %v ", mc.Name)
 		klog.Infof("Applied KubeletConfig %v on MachineConfigPool %v", key, pool.Name)
 		ctrlcommon.UpdateStateMetric(ctrlcommon.MCCSubControllerState, "machine-config-controller-kubelet-config", "Sync Kubelet Config", pool.Name)
 	}
