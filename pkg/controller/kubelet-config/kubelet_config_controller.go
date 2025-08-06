@@ -540,7 +540,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 	startTime := time.Now()
 	klog.Infof("Started syncing kubeletconfig %q (%v)", key, startTime)
 	defer func() {
-		klog.V(4).Infof("Finished syncing kubeletconfig %q (%v)", key, time.Since(startTime))
+		klog.Infof("Finished syncing kubeletconfig %q (%v)", key, time.Since(startTime))
 	}()
 
 	// Wait to apply a kubelet config if the controller config is not completed
@@ -556,7 +556,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 	// Fetch the KubeletConfig
 	cfg, err := ctrl.mckLister.Get(name)
 	if macherrors.IsNotFound(err) {
-		klog.V(2).Infof("KubeletConfig %v has been deleted", key)
+		klog.Infof("KubeletConfig %v has been deleted", key)
 		return nil
 	}
 	if err != nil {
@@ -587,7 +587,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 
 	if len(mcpPools) == 0 {
 		err := fmt.Errorf("KubeletConfig %v does not match any MachineConfigPools", key)
-		klog.V(2).Infof("%v", err)
+		klog.Infof("%v", err)
 		return ctrl.syncStatusOnly(cfg, err)
 	}
 
@@ -603,6 +603,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		return ctrl.syncStatusOnly(cfg, err, "could not get the TLSSecurityProfile from %v: %v", ctrlcommon.APIServerInstanceName, err)
 	}
 
+	klog.Info("Reached Pools")
 	for _, pool := range mcpPools {
 		if pool.Spec.Configuration.Name == "" {
 			updateDelay := 5 * time.Second
@@ -618,12 +619,14 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not get kubelet config key: %v", err)
 		}
+		klog.Infof("ManagedKey %s", managedKey)
 		mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), managedKey, metav1.GetOptions{})
 		if err != nil && !macherrors.IsNotFound(err) {
 			return ctrl.syncStatusOnly(cfg, err, "could not find MachineConfig: %v", managedKey)
 		}
 		isNotFound := macherrors.IsNotFound(err)
 		// If we have seen this generation and the sync didn't fail, then skip
+		klog.Info("Before skip")
 		if !isNotFound && cfg.Status.ObservedGeneration >= cfg.Generation && cfg.Status.Conditions[len(cfg.Status.Conditions)-1].Type == mcfgv1.KubeletConfigSuccess {
 			// But we still need to compare the generated controller version because during an upgrade we need a new one
 			mcCtrlVersion := mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey]
@@ -631,6 +634,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 				return nil
 			}
 		}
+		klog.Info("After skip")
 		// Generate the original KubeletConfig
 		cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 		if err != nil {
