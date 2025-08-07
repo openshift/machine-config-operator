@@ -632,6 +632,21 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			updateOriginalKubeConfigwithNodeConfig(nodeConfig, originalKubeConfig)
 		}
 
+		if !isNotFound {
+			// When a Machine Config already exists, let's check if it needs an update on the feature Gates
+			match, err := machineConfigFeatureGatesMatchesOriginalFeatureGates(mc, originalKubeConfig)
+			if err != nil {
+				return ctrl.syncStatusOnly(cfg, err, "could not check if original and machine config feature gates match: %v", err)
+			}
+			if match && cfg.Status.ObservedGeneration >= cfg.Generation && cfg.Status.Conditions[len(cfg.Status.Conditions)-1].Type == mcfgv1.KubeletConfigSuccess {
+				// But we still need to compare the generated controller version because during an upgrade we need a new one
+				mcCtrlVersion := mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey]
+				if mcCtrlVersion == version.Hash {
+					return nil
+				}
+			}
+		}
+
 		// If the provided kubeletconfig has a TLS profile, override the one generated from templates.
 		if cfg.Spec.TLSSecurityProfile != nil {
 			klog.Infof("Using tlsSecurityProfile provided by KubeletConfig %s", cfg.Name)
@@ -747,6 +762,33 @@ func (ctrl *Controller) cleanUpDuplicatedMC(prefix string) error {
 		}
 	}
 	return nil
+}
+
+// machineConfigFeatureGatesMatchesOriginalFeatureGates checks if the Kubelet Config defined at the Machine Config matches the latest
+// feature gate defined.
+func machineConfigFeatureGatesMatchesOriginalFeatureGates(mc *mcfgv1.MachineConfig, originalKubeConfig *kubeletconfigv1beta1.KubeletConfiguration) (bool, error) {
+	filePath := "/etc/kubernetes/kubelet.conf"
+	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+	if err != nil {
+		return false, fmt.Errorf("parsing rendered MC Ignition config failed with error: %w", err)
+	}
+
+	for _, file := range ignCfg.Storage.Files {
+		if file.Path != filePath {
+			continue
+		}
+		// Extract and decode the encoded data
+		decodedData, err := ctrlcommon.DecodeIgnitionFileContents(file.Contents.Source, file.Contents.Compression)
+		if err != nil {
+			return false, fmt.Errorf("error decoding %s: %v", file.Path, err)
+		}
+		mckubeConfig, err := DecodeKubeletConfig(decodedData)
+		if err != nil {
+			return false, fmt.Errorf("could not deserialize the Kubelet source: %w", err)
+		}
+		return reflect.DeepEqual(mckubeConfig.FeatureGates, originalKubeConfig.FeatureGates), nil
+	}
+	return false, nil
 }
 
 func (ctrl *Controller) popFinalizerFromKubeletConfig(kc *mcfgv1.KubeletConfig) error {
