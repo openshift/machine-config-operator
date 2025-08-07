@@ -89,3 +89,95 @@ func setMachineSetBootImage(machineset *machinev1beta1.MachineSet, generateBootI
 	currentBootImage := string(machineset.Spec.Template.Spec.ProviderSpec.Value.Raw)
 	machineset.Spec.Template.Spec.ProviderSpec.Value.Raw = []byte(generateBootImageFunc(currentBootImage))
 }
+
+func TestGetArchFromMachineSet(t *testing.T) {
+	cases := []struct {
+		name        string
+		annotations map[string]string
+		expectedArch string
+		expectError  bool
+	}{
+		{
+			name: "Single architecture label",
+			annotations: map[string]string{
+				MachineSetArchAnnotationKey: "kubernetes.io/arch=amd64",
+			},
+			expectedArch: "x86_64",
+			expectError:  false,
+		},
+		{
+			name: "Multiple labels with architecture first",
+			annotations: map[string]string{
+				MachineSetArchAnnotationKey: "kubernetes.io/arch=amd64,topology.ebs.csi.aws.com/zone=eu-central-1a",
+			},
+			expectedArch: "x86_64",
+			expectError:  false,
+		},
+		{
+			name: "Multiple labels with architecture last",
+			annotations: map[string]string{
+				MachineSetArchAnnotationKey: "topology.ebs.csi.aws.com/zone=eu-central-1a,kubernetes.io/arch=arm64",
+			},
+			expectedArch: "aarch64",
+			expectError:  false,
+		},
+		{
+			name: "Multiple labels with architecture in middle",
+			annotations: map[string]string{
+				MachineSetArchAnnotationKey: "topology.ebs.csi.aws.com/zone=eu-central-1a,kubernetes.io/arch=s390x,node.kubernetes.io/instance-type=m5.large",
+			},
+			expectedArch: "s390x",
+			expectError:  false,
+		},
+		{
+			name: "Multiple labels with spaces",
+			annotations: map[string]string{
+				MachineSetArchAnnotationKey: " topology.ebs.csi.aws.com/zone=eu-central-1a , kubernetes.io/arch=ppc64le , node.kubernetes.io/instance-type=m5.large ",
+			},
+			expectedArch: "ppc64le",
+			expectError:  false,
+		},
+		{
+			name: "Invalid architecture",
+			annotations: map[string]string{
+				MachineSetArchAnnotationKey: "kubernetes.io/arch=invalid-arch",
+			},
+			expectError: true,
+		},
+		{
+			name: "No architecture label",
+			annotations: map[string]string{
+				MachineSetArchAnnotationKey: "topology.ebs.csi.aws.com/zone=eu-central-1a,node.kubernetes.io/instance-type=m5.large",
+			},
+			expectError: true,
+		},
+		{
+			name:         "No annotation",
+			annotations:  map[string]string{},
+			expectedArch: "", // Will default to control plane arch, but we can't test that easily
+			expectError:  false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			machineSet := &machinev1beta1.MachineSet{
+				ObjectMeta: v1.ObjectMeta{
+					Name:        "test-machineset",
+					Annotations: tc.annotations,
+				},
+			}
+
+			arch, err := getArchFromMachineSet(machineSet)
+
+			if tc.expectError {
+				assert.Error(t, err, "Expected error for test case: %s", tc.name)
+			} else {
+				assert.NoError(t, err, "Unexpected error for test case: %s", tc.name)
+				if tc.expectedArch != "" {
+					assert.Equal(t, tc.expectedArch, arch, "Architecture mismatch for test case: %s", tc.name)
+				}
+			}
+		})
+	}
+}
