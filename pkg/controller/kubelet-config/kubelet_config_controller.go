@@ -444,12 +444,9 @@ func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, 
 
 	// Merge in Feature Gates.
 	// If they are the same, this will be a no-op
-	klog.Infof("feature: original %v", &originalKubeConfig.FeatureGates)
-	klog.Infof("feature: generateFeatureMap %v", featureGates)
 	if err := mergo.Merge(&originalKubeConfig.FeatureGates, featureGates, mergo.WithOverride); err != nil {
 		return nil, fmt.Errorf("could not merge feature gates: %w", err)
 	}
-	klog.Infof("feature: original after merge %v", &originalKubeConfig.FeatureGates)
 
 	return originalKubeConfig, nil
 }
@@ -627,13 +624,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		isNotFound := macherrors.IsNotFound(err)
 		// If we have seen this generation and the sync didn't fail, then skip
 		klog.Info("Before skip")
-		if !isNotFound && cfg.Status.ObservedGeneration >= cfg.Generation && cfg.Status.Conditions[len(cfg.Status.Conditions)-1].Type == mcfgv1.KubeletConfigSuccess {
-			// But we still need to compare the generated controller version because during an upgrade we need a new one
-			mcCtrlVersion := mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey]
-			if mcCtrlVersion == version.Hash {
-				return nil
-			}
-		}
+
 		klog.Info("After skip")
 		// Generate the original KubeletConfig
 		cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
@@ -648,6 +639,21 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		// updating the originalKubeConfig based on the nodeConfig on a worker node
 		if role == ctrlcommon.MachineConfigPoolWorker {
 			updateOriginalKubeConfigwithNodeConfig(nodeConfig, originalKubeConfig)
+		}
+
+		// UPDATING
+		if !isNotFound {
+			match, err := machineConfigFeatureGatesMatchesOriginalFeatureGates(mc, originalKubeConfig)
+			if err != nil {
+				return ctrl.syncStatusOnly(cfg, err, "could not check if original and machine config feature gates match: %v", err)
+			}
+			if match && cfg.Status.ObservedGeneration >= cfg.Generation && cfg.Status.Conditions[len(cfg.Status.Conditions)-1].Type == mcfgv1.KubeletConfigSuccess {
+				// But we still need to compare the generated controller version because during an upgrade we need a new one
+				mcCtrlVersion := mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey]
+				if mcCtrlVersion == version.Hash {
+					return nil
+				}
+			}
 		}
 
 		// If the provided kubeletconfig has a TLS profile, override the one generated from templates.
@@ -739,6 +745,33 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		return err
 	}
 	return ctrl.syncStatusOnly(cfg, nil)
+}
+
+func machineConfigFeatureGatesMatchesOriginalFeatureGates(mc *mcfgv1.MachineConfig, originalKubeConfig *kubeletconfigv1beta1.KubeletConfiguration) (bool, error) {
+	filePath := "/etc/kubernetes/kubelet.conf"
+	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+	if err != nil {
+		return false, fmt.Errorf("parsing rendered MC Ignition config failed with error: %w", err)
+	}
+
+	for _, file := range ignCfg.Storage.Files {
+		if file.Path != filePath {
+			continue
+		}
+		// Extract and decode the encoded data
+		decodedData, err := ctrlcommon.DecodeIgnitionFileContents(file.Contents.Source, file.Contents.Compression)
+		if err != nil {
+			return false, fmt.Errorf("error decoding %s: %v", file.Path, err)
+		}
+		mckubeConfig, err := DecodeKubeletConfig(decodedData)
+		if err != nil {
+			return false, fmt.Errorf("could not deserialize the Kubelet source: %w", err)
+		}
+		klog.Infof("mckubeConfig: %v", mckubeConfig.FeatureGates)
+		klog.Infof("originalKubeConfig: %v", originalKubeConfig.FeatureGates)
+		return reflect.DeepEqual(mckubeConfig.FeatureGates, originalKubeConfig.FeatureGates), nil
+	}
+	return false, nil
 }
 
 // cleanUpDuplicatedMC removes the MC of non-updated GeneratedByControllerVersionKey if its name contains 'generated-kubelet'.

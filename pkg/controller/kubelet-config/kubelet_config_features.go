@@ -47,17 +47,6 @@ func (ctrl *Controller) processNextFeatureWorkItem() bool {
 	err := ctrl.syncFeatureHandler(key)
 	ctrl.handleFeatureErr(err, key)
 
-	// fetch the kubeletconfigs
-	// kcs, err := ctrl.mckLister.List(labels.Everything())
-	// ctrl.handleFeatureErr(err, key)
-
-	// for _, kc := range kcs {
-	// 	// updating the existing kubeletconfigs with the updated featuregates
-	// 	klog.Info("updating the existing kubeletconfigs with the updated featuregates ###############")
-	// 	err := ctrl.syncKubeletConfig(kc.Name)
-	// 	ctrl.handleFeatureErr(err, key)
-	// }
-
 	return true
 }
 
