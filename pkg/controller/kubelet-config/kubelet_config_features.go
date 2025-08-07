@@ -46,12 +46,13 @@ func (ctrl *Controller) processNextFeatureWorkItem() bool {
 
 	err := ctrl.syncFeatureHandler(key)
 	ctrl.handleFeatureErr(err, key)
+
 	return true
 }
 
 func (ctrl *Controller) syncFeatureHandler(key string) error {
 	startTime := time.Now()
-	klog.V(4).Infof("Started syncing feature handler %q (%v)", key, startTime)
+	klog.Infof("Started syncing feature handler %q (%v)", key, startTime)
 	defer func() {
 		klog.V(4).Infof("Finished syncing feature handler %q (%v)", key, time.Since(startTime))
 	}()
@@ -115,8 +116,10 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
 			var err error
 			if isNotFound {
+				klog.Infof("Created MachineConfig %v ", mc.Name)
 				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
 			} else {
+				klog.Infof("Updated MachineConfig %v ", mc.Name)
 				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Update(context.TODO(), mc, metav1.UpdateOptions{})
 			}
 			return err
@@ -201,6 +204,7 @@ func generateFeatureMap(featuregateAccess featuregates.FeatureGateAccess, exclus
 }
 
 func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir, role string, featureGateAccess featuregates.FeatureGateAccess, nodeConfig *osev1.Node, apiServer *osev1.APIServer) ([]byte, error) {
+	klog.Infof("feature: generateKubeConfigIgnFromFeatures")
 	originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, templatesDir, role, featureGateAccess, apiServer)
 	if err != nil {
 		return nil, err
@@ -217,6 +221,12 @@ func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir
 
 	tempIgnConfig := ctrlcommon.NewIgnConfig()
 	tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *cfgIgn)
+	for _, file := range tempIgnConfig.Storage.Files {
+		if file.Path == "/etc/kubernetes/kubelet.conf" {
+			klog.Info(file.Contents.Source)
+		}
+	}
+	klog.Info("tempIgnConfig %v", tempIgnConfig.Storage.Files)
 	rawCfgIgn, err := json.Marshal(tempIgnConfig)
 	if err != nil {
 		return nil, err

@@ -97,7 +97,7 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 	for _, pool := range mcpPools {
 		role := pool.Name
 		// Get MachineConfig
-		key, err := getManagedNodeConfigKey(pool, ctrl.client)
+		key, err := getManagedNodeConfigKey(pool, ctrl.client) // 97
 		if err != nil {
 			return err
 		}
@@ -152,8 +152,10 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
 			var err error
 			if isNotFound {
+				klog.Infof("Created MachineConfig %v ", mc.Name)
 				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
 			} else {
+				klog.Infof("Updated MachineConfig %v ", mc.Name)
 				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Update(context.TODO(), mc, metav1.UpdateOptions{})
 			}
 			return err
@@ -169,8 +171,9 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 		return fmt.Errorf("could not get KubeletConfigs, err: %w", err)
 	}
 	for _, kc := range kcs {
+		klog.Info("Updating syncKubeletConfig(99) from syncNodeConfigHandler(97)")
 		// updating the existing kubeletconfigs with the updated nodeconfig
-		err := ctrl.syncKubeletConfig(kc.Name)
+		err := ctrl.syncKubeletConfig(kc.Name) // 99
 		if err != nil {
 			return fmt.Errorf("could not update KubeletConfig %v, err: %w", kc, err)
 		}

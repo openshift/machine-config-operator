@@ -114,6 +114,7 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.Contro
 	var err error
 
 	if configs[0].Spec.Config.Raw == nil {
+		klog.Info("configs[0].Spec.Config.Raw == nil")
 		outIgn = ign3types.Config{
 			Ignition: ign3types.Ignition{
 				Version: ign3types.MaxVersion.String(),
@@ -128,11 +129,33 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.Contro
 
 	for idx := 1; idx < len(configs); idx++ {
 		if configs[idx].Spec.Config.Raw != nil {
+			//klog.Infof("Merging %v", configs[idx].Name)
 			mergedIgn, err := ParseAndConvertConfig(configs[idx].Spec.Config.Raw)
 			if err != nil {
 				return nil, err
 			}
+			// if configs[idx].Name == "98-worker-generated-kubelet" || configs[idx].Name == "99-worker-generated-kubelet" {
+			// 	for _, file := range mergedIgn.Storage.Files {
+			// 		if file.Path == "/etc/kubernetes/kubelet.conf" {
+			// 			klog.Infof("TO BE MERGED %v", *file.Contents.Source)
+			// 		}
+			// 	}
+			// 	for _, file := range outIgn.Storage.Files {
+			// 		if file.Path == "/etc/kubernetes/kubelet.conf" {
+			// 			klog.Infof("outIgn BEFORE merge %v", *file.Contents.Source)
+			// 		}
+			// 	}
+			// }
+
 			outIgn = ign3.Merge(outIgn, mergedIgn)
+
+			// if configs[idx].Name == "98-worker-generated-kubelet" || configs[idx].Name == "99-worker-generated-kubelet" {
+			// 	for _, file := range outIgn.Storage.Files {
+			// 		if file.Path == "/etc/kubernetes/kubelet.conf" {
+			// 			klog.Infof("outIgn AFTER merge %v", *file.Contents.Source)
+			// 		}
+			// 	}
+			// }
 		}
 	}
 
