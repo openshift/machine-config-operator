@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
 	"time"
@@ -663,6 +664,49 @@ func TestRebuildAnnotationRestartsBuild(t *testing.T) {
 	t.Logf("Annotation is updated, waiting for new build %s to start", mosb.Name)
 	// Wait for the build to start.
 	waitForBuildToStart(t, cs, mosb)
+}
+
+func TestKernelType(t *testing.T) {
+	cs := framework.NewClientSet("")
+
+	// Create layered MCP and assign a node
+	helpers.CreateMCP(t, cs, layeredMCPName)
+
+	requiredKernelType := ctrlcommon.KernelTypeRealtime
+	if goruntime.GOARCH == "arm64" {
+		requiredKernelType = ctrlcommon.KernelType64kPages
+	}
+
+	// Apply Kernel Type
+	mcName := fmt.Sprintf("%s-kernel-machineconfig", requiredKernelType)
+	mc := newMachineConfigWithKernelType(mcName, layeredMCPName, requiredKernelType)
+	deleteMCFunc := makeIdempotentAndRegister(t, applyMC(t, cs, mc))
+	_, err := helpers.WaitForRenderedConfig(t, cs, layeredMCPName, mcName)
+	require.NoError(t, err)
+
+	// Create an image
+	imagePullspec, _ := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
+		poolName: layeredMCPName,
+		customDockerfiles: map[string]string{
+			layeredMCPName: cowsayDockerfile,
+		},
+	})
+
+	// Roll out image to node
+	node := helpers.GetRandomNode(t, cs, "worker")
+	unlabelFunc := makeIdempotentAndRegisterAlwaysRun(t, helpers.LabelNode(t, cs, node, helpers.MCPNameToRole(layeredMCPName)))
+	helpers.WaitForNodeImageChange(t, cs, node, imagePullspec)
+	helpers.AssertNodeBootedIntoImage(t, cs, node, imagePullspec)
+	t.Logf("Node %s is booted into image %q", node.Name, imagePullspec)
+
+	// Check if the booted image has the appropriate kernel
+	foundKernel := helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "uname", "-r")
+	if !compareKernelType(t, foundKernel, requiredKernelType) {
+		t.Fatalf("Kernel type requested %s, got %s", requiredKernelType, foundKernel)
+	}
+	unlabelFunc()
+	deleteMCFunc()
+	assertNodeRevertsToNonLayered(t, cs, node)
 }
 
 func assertBuildObjectsAreCreated(t *testing.T, kubeassert *helpers.Assertions, mosb *mcfgv1.MachineOSBuild) {

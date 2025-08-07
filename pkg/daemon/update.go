@@ -552,8 +552,8 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 	// if they were in use, so we also need to preserve that behavior.
 	// https://issues.redhat.com/browse/OCPBUGS-4049
 	if mcDiff.osUpdate || mcDiff.extensions || mcDiff.kernelType || mcDiff.kargs || mcDiff.oclEnabled ||
-		canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime ||
-		canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelType64kPages {
+		helpers.CanonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime ||
+		helpers.CanonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelType64kPages {
 
 		// Throw started/staged events only if there is any update required for the OS
 		if dn.nodeWriter != nil {
@@ -562,7 +562,7 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 				// osChangesString() can return empty in cases where the above diffs are false,
 				// but the node uses a non standard kernel, so let's make it a bit more
 				// informative in such cases
-				reason = fmt.Sprintf("Updating to a target config with %s kernel", canonicalizeKernelType(newConfig.Spec.KernelType))
+				reason = fmt.Sprintf("Updating to a target config with %s kernel", helpers.CanonicalizeKernelType(newConfig.Spec.KernelType))
 			}
 			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "OSUpdateStarted", reason)
 		}
@@ -1375,16 +1375,6 @@ func (mcDiff *machineConfigDiff) osChangesString() string {
 	return strings.Join(changes, "; ")
 }
 
-// canonicalizeKernelType returns a valid kernelType. We consider empty("") and default kernelType as same
-func canonicalizeKernelType(kernelType string) string {
-	if kernelType == ctrlcommon.KernelTypeRealtime {
-		return ctrlcommon.KernelTypeRealtime
-	} else if kernelType == ctrlcommon.KernelType64kPages {
-		return ctrlcommon.KernelType64kPages
-	}
-	return ctrlcommon.KernelTypeDefault
-}
-
 // newMachineConfigDiff compares two MachineConfig objects.
 func newMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDiff, error) {
 	oldIgn, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
@@ -1413,7 +1403,7 @@ func newMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineC
 		passwd:     !reflect.DeepEqual(oldIgn.Passwd, newIgn.Passwd),
 		files:      !reflect.DeepEqual(oldIgn.Storage.Files, newIgn.Storage.Files),
 		units:      !reflect.DeepEqual(oldIgn.Systemd.Units, newIgn.Systemd.Units),
-		kernelType: canonicalizeKernelType(oldConfig.Spec.KernelType) != canonicalizeKernelType(newConfig.Spec.KernelType),
+		kernelType: helpers.CanonicalizeKernelType(oldConfig.Spec.KernelType) != helpers.CanonicalizeKernelType(newConfig.Spec.KernelType),
 		extensions: !(extensionsEmpty || reflect.DeepEqual(oldConfig.Spec.Extensions, newConfig.Spec.Extensions)),
 		oclEnabled: (oldOCLImage != "" || newOCLImage != "") || (oldOCLImage != "" && newOCLImage != ""),
 	}
@@ -1705,8 +1695,8 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 		return nil
 	}
 
-	oldKtype := canonicalizeKernelType(oldConfig.Spec.KernelType)
-	newKtype := canonicalizeKernelType(newConfig.Spec.KernelType)
+	oldKtype := helpers.CanonicalizeKernelType(oldConfig.Spec.KernelType)
+	newKtype := helpers.CanonicalizeKernelType(newConfig.Spec.KernelType)
 
 	// In the OS update path, we removed overrides for kernel-rt.  So if the target (new) config
 	// is also default (i.e. throughput) then we have nothing to do.
