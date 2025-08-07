@@ -219,3 +219,13 @@ func IsCoreOSNode(node *corev1.Node) bool {
 	}
 	return false
 }
+
+// CanonicalizeKernelType returns a valid kernelType. We consider empty("") and default kernelType as same
+func CanonicalizeKernelType(kernelType string) string {
+	if kernelType == ctrlcommon.KernelTypeRealtime {
+		return ctrlcommon.KernelTypeRealtime
+	} else if kernelType == ctrlcommon.KernelType64kPages {
+		return ctrlcommon.KernelType64kPages
+	}
+	return ctrlcommon.KernelTypeDefault
+}

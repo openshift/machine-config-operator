@@ -3,6 +3,7 @@ package buildrequest
 import (
 	"context"
 	"fmt"
+	goruntime "runtime"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -12,6 +13,7 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/helpers"
 	"github.com/openshift/machine-config-operator/pkg/secrets"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -43,6 +45,22 @@ type BuildRequestOpts struct { //nolint:revive // This name is fine.
 	Proxy *configv1.ProxyStatus
 	// Additional trust bundles for proxy (user defined)
 	AdditionalTrustBundle []byte
+}
+
+// Gets the packages for the kernel from the MachineConfig, if available.
+func (b BuildRequestOpts) getKernelPackages() (string, map[string][]string, error) {
+
+	newKtype := helpers.CanonicalizeKernelType(b.MachineConfig.Spec.KernelType)
+	if newKtype == ctrlcommon.KernelTypeDefault {
+		return "", nil, nil
+	}
+
+	// 64K memory pages kernel is only supported for aarch64
+	if newKtype == ctrlcommon.KernelType64kPages && goruntime.GOARCH != "arm64" {
+		return "", nil, fmt.Errorf("64k-pages is only supported for aarch64 architecture")
+	}
+
+	return ctrlcommon.GetPackagesForSupportedKernelType(newKtype)
 }
 
 // Gets the packages for the extensions from the MachineConfig, if available.
