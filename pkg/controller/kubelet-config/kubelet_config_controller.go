@@ -609,14 +609,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			return ctrl.syncStatusOnly(cfg, err, "could not find MachineConfig: %v", managedKey)
 		}
 		isNotFound := macherrors.IsNotFound(err)
-		// If we have seen this generation and the sync didn't fail, then skip
-		if !isNotFound && cfg.Status.ObservedGeneration >= cfg.Generation && cfg.Status.Conditions[len(cfg.Status.Conditions)-1].Type == mcfgv1.KubeletConfigSuccess {
-			// But we still need to compare the generated controller version because during an upgrade we need a new one
-			mcCtrlVersion := mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey]
-			if mcCtrlVersion == version.Hash {
-				return nil
-			}
-		}
+
 		// Generate the original KubeletConfig
 		cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 		if err != nil {
@@ -638,7 +631,11 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			if err != nil {
 				return ctrl.syncStatusOnly(cfg, err, "could not check if original and machine config feature gates match: %v", err)
 			}
-			if match && cfg.Status.ObservedGeneration >= cfg.Generation && cfg.Status.Conditions[len(cfg.Status.Conditions)-1].Type == mcfgv1.KubeletConfigSuccess {
+			configSuccess := false
+			if len(cfg.Status.Conditions) > 0 {
+				configSuccess = cfg.Status.Conditions[len(cfg.Status.Conditions)-1].Type == mcfgv1.KubeletConfigSuccess
+			}
+			if match && cfg.Status.ObservedGeneration >= cfg.Generation && configSuccess {
 				// But we still need to compare the generated controller version because during an upgrade we need a new one
 				mcCtrlVersion := mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey]
 				if mcCtrlVersion == version.Hash {
@@ -767,28 +764,27 @@ func (ctrl *Controller) cleanUpDuplicatedMC(prefix string) error {
 // machineConfigFeatureGatesMatchesOriginalFeatureGates checks if the Kubelet Config defined at the Machine Config matches the latest
 // feature gate defined.
 func machineConfigFeatureGatesMatchesOriginalFeatureGates(mc *mcfgv1.MachineConfig, originalKubeConfig *kubeletconfigv1beta1.KubeletConfiguration) (bool, error) {
-	filePath := "/etc/kubernetes/kubelet.conf"
-	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+	if len(mc.Spec.Config.Raw) == 0 {
+		if len(originalKubeConfig.FeatureGates) > 0 {
+			return false, nil
+		} else {
+			return true, nil
+		}
+	}
+	file, err := findKubeletConfig(mc)
 	if err != nil {
-		return false, fmt.Errorf("parsing rendered MC Ignition config failed with error: %w", err)
+		return false, nil
 	}
-
-	for _, file := range ignCfg.Storage.Files {
-		if file.Path != filePath {
-			continue
-		}
-		// Extract and decode the encoded data
-		decodedData, err := ctrlcommon.DecodeIgnitionFileContents(file.Contents.Source, file.Contents.Compression)
-		if err != nil {
-			return false, fmt.Errorf("error decoding %s: %v", file.Path, err)
-		}
-		mckubeConfig, err := DecodeKubeletConfig(decodedData)
-		if err != nil {
-			return false, fmt.Errorf("could not deserialize the Kubelet source: %w", err)
-		}
-		return reflect.DeepEqual(mckubeConfig.FeatureGates, originalKubeConfig.FeatureGates), nil
+	// Extract and decode the encoded data
+	decodedData, err := ctrlcommon.DecodeIgnitionFileContents(file.Contents.Source, file.Contents.Compression)
+	if err != nil {
+		return false, fmt.Errorf("error decoding %s: %v", file.Path, err)
 	}
-	return false, nil
+	mckubeConfig, err := DecodeKubeletConfig(decodedData)
+	if err != nil {
+		return false, fmt.Errorf("could not deserialize the Kubelet source: %w", err)
+	}
+	return reflect.DeepEqual(mckubeConfig.FeatureGates, originalKubeConfig.FeatureGates), nil
 }
 
 func (ctrl *Controller) popFinalizerFromKubeletConfig(kc *mcfgv1.KubeletConfig) error {
