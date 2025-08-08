@@ -298,28 +298,38 @@ func TestOSBuildController(t *testing.T) {
 			mosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, kubeclient, apiMosc, apiMCP)
 			buildJobName := utils.GetBuildJobName(mosb)
 			// After creating the new MachineOSConfig, a MachineOSBuild should be created.
+			t.Logf("Debug: Checking MachineOSBuildExists for iteration %d, mosb name: %s", i, mosb.Name)
 			kubeassert.MachineOSBuildExists(mosb, "MachineOSBuild not created for MachineOSConfig %s change, iteration %d", mosc.Name, i)
 
+			t.Logf("Debug: Checking assertBuildObjectsAreCreated for iteration %d", i)
 			assertBuildObjectsAreCreated(ctx, t, kubeassert, mosb)
 			// After a new MachineOSBuild is created, a job should be created.
+			t.Logf("Debug: Checking JobExists for iteration %d, job name: %s", i, buildJobName)
 			kubeassert.JobExists(buildJobName, "Build job did not get created for MachineOSConfig %s change", mosc.Name)
 			// Set the successful status on the job.
+			t.Logf("Debug: Setting job status to succeeded for iteration %d", i)
 			fixtures.SetJobStatus(ctx, t, kubeclient, mosb, fixtures.JobStatus{Succeeded: 1})
 			// The MachineOSBuild should be successful.
+			t.Logf("Debug: Checking MachineOSBuildIsSuccessful for iteration %d", i)
 			kubeassert.MachineOSBuildIsSuccessful(mosb, "Expected the MachineOSBuild %s status to be successful", mosb.Name)
 			// And the build job should be deleted.
+			t.Logf("Debug: Checking assertBuildObjectsAreDeleted for iteration %d", i)
 			assertBuildObjectsAreDeleted(ctx, t, kubeassert, mosb)
+			t.Logf("Debug: Checking JobDoesNotExist for iteration %d, job name: %s", i, buildJobName)
 			kubeassert.JobDoesNotExist(buildJobName, "Expected the build job %s to be deleted", buildJobName)
 
 			// Ensure that the MachineOSBuild count increases with each successful build.
+			t.Logf("Debug: Before isMachineOSBuildReachedExpectedCount for iteration %d, expected count: %d", i, i+2)
 			isMachineOSBuildReachedExpectedCount(ctx, t, mcfgclient, apiMosc, i+2)
 		}
 
 		// Now, we delete the MachineOSConfig and we expect that all
 		// MachineOSBuilds that were created from it are also deleted.
+		t.Logf("Debug: Deleting MachineOSConfig %s", mosc.Name)
 		err := mcfgclient.MachineconfigurationV1().MachineOSConfigs().Delete(ctx, mosc.Name, metav1.DeleteOptions{})
 		require.NoError(t, err)
 
+		t.Logf("Debug: Before final isMachineOSBuildReachedExpectedCount, expected count: 0")
 		isMachineOSBuildReachedExpectedCount(ctx, t, mcfgclient, mosc, 0)
 	})
 
@@ -337,25 +347,33 @@ func TestOSBuildController(t *testing.T) {
 			mosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, kubeclient, apiMosc, apiMCP)
 			buildJobName := utils.GetBuildJobName(mosb)
 			// After updating the MachineConfigPool, a new MachineOSBuild should get created.
+			t.Logf("Debug: Checking MachineOSBuildExists for iteration %d, mosb name: %s", i, mosb.Name)
 			kubeassert.MachineOSBuildExists(mosb, "New MachineOSBuild for MachineConfigPool %q update for MachineOSConfig %q never gets created", mcp.Name, mosc.Name)
 			// After a new MachineOSBuild is created, a job should be created.
+			t.Logf("Debug: Checking JobExists for iteration %d, job name: %s", i, buildJobName)
 			kubeassert.JobExists(buildJobName, "Build job did not get created for MachineConfigPool %q change", mcp.Name)
 			// Set the successful status on the job.
+			t.Logf("Debug: Setting job status to succeeded for iteration %d", i)
 			fixtures.SetJobStatus(ctx, t, kubeclient, mosb, fixtures.JobStatus{Succeeded: 1})
 			// The MachineOSBuild should be successful.
+			t.Logf("Debug: Checking MachineOSBuildIsSuccessful for iteration %d", i)
 			kubeassert.MachineOSBuildIsSuccessful(mosb, "Expected the MachineOSBuild %s status to be successful", mosb.Name)
 			// And the build job should be deleted.
+			t.Logf("Debug: Checking JobDoesNotExist for iteration %d, job name: %s", i, buildJobName)
 			kubeassert.JobDoesNotExist(buildJobName, "Expected the build job %s to be deleted", buildJobName)
 
 			// Ensure that the MachineOSBuild count increases with each successful build.
+			t.Logf("Debug: Before isMachineOSBuildReachedExpectedCount for iteration %d, expected count: %d", i, i+2)
 			isMachineOSBuildReachedExpectedCount(ctx, t, mcfgclient, apiMosc, i+2)
 		}
 
 		// Now, we delete the MachineOSConfig and we expect that all
 		// MachineOSBuilds that were created from it are also deleted.
+		t.Logf("Debug: Deleting MachineOSConfig %s", mosc.Name)
 		err := mcfgclient.MachineconfigurationV1().MachineOSConfigs().Delete(ctx, mosc.Name, metav1.DeleteOptions{})
 		require.NoError(t, err)
 
+		t.Logf("Debug: Before final isMachineOSBuildReachedExpectedCount, expected count: 0")
 		isMachineOSBuildReachedExpectedCount(ctx, t, mcfgclient, mosc, 0)
 	})
 }
@@ -774,7 +792,7 @@ func insertNewRenderedMachineConfigWithoutImageChange(ctx context.Context, t *te
 func isMachineOSBuildReachedExpectedCount(ctx context.Context, t *testing.T, mcfgclient mcfgclientset.Interface, mosc *mcfgv1.MachineOSConfig, expected int) {
 	t.Helper()
 
-	err := wait.PollImmediateInfiniteWithContext(ctx, time.Millisecond, func(ctx context.Context) (bool, error) {
+	err := wait.PollUntilContextCancel(ctx, time.Millisecond, true, func(ctx context.Context) (bool, error) {
 		mosbList, err := mcfgclient.MachineconfigurationV1().MachineOSBuilds().List(ctx, metav1.ListOptions{
 			LabelSelector: utils.MachineOSBuildForPoolSelector(mosc).String(),
 		})
@@ -793,7 +811,7 @@ func assertMachineOSConfigGetsBuiltImagePushspec(ctx context.Context, t *testing
 
 	var foundMosc *mcfgv1.MachineOSConfig
 
-	err := wait.PollImmediateInfiniteWithContext(ctx, time.Millisecond, func(ctx context.Context) (bool, error) {
+	err := wait.PollUntilContextCancel(ctx, time.Millisecond, true, func(ctx context.Context) (bool, error) {
 		apiMosc, err := mcfgclient.MachineconfigurationV1().MachineOSConfigs().Get(ctx, mosc.Name, metav1.GetOptions{})
 		if err != nil {
 			return false, err
@@ -811,7 +829,7 @@ func assertMachineOSConfigGetsBuiltImagePushspec(ctx context.Context, t *testing
 func assertMachineOSConfigGetsCurrentBuildAnnotation(ctx context.Context, t *testing.T, mcfgclient mcfgclientset.Interface, mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) {
 	t.Helper()
 
-	err := wait.PollImmediateInfiniteWithContext(ctx, time.Millisecond, func(ctx context.Context) (bool, error) {
+	err := wait.PollUntilContextCancel(ctx, time.Millisecond, true, func(ctx context.Context) (bool, error) {
 		apiMosc, err := mcfgclient.MachineconfigurationV1().MachineOSConfigs().Get(ctx, mosc.Name, metav1.GetOptions{})
 		if err != nil {
 			return false, err
