@@ -979,7 +979,19 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	klog.Infof("Checking Reconcilable for config %v to %v", oldConfigName, newConfigName)
 	// checking for reconcilability
 	// make sure we can actually reconcile this state
-	diff, reconcilableError := reconcilable(oldConfig, newConfig)
+
+	var mcop opv1.MachineConfiguration
+	if dn.fgHandler.Enabled(features.FeatureGateIrreconcilableMachineConfig) {
+		mcopPtr, err := dn.mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, metav1.GetOptions{})
+		if err == nil {
+			mcop = *mcopPtr
+		} else {
+			// Soft fail. In case there's an error do not fail the render and just pass irreconcilable field overrides
+			klog.Warningf("unable to fetch the MachineConfigurations object for MC validation. %v", err)
+		}
+	}
+
+	diff, reconcilableError := reconcilable(oldConfig, newConfig, &mcop.Spec.IrreconcilableMachineConfigValidationOverrides)
 
 	if reconcilableError != nil {
 		Nerr := upgrademonitor.GenerateAndApplyMachineConfigNodes(
@@ -1434,8 +1446,8 @@ func newMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineC
 // underlying node filesystem and can inspect the FIPS file
 // (/proc/sys/crypto/fips_enabled) and can determine if there is a mismatch
 // between the MachineConfig and the actual on-disk state.
-func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDiff, error) {
-	if err := ctrlcommon.IsRenderedConfigReconcilable(oldConfig, newConfig); err != nil {
+func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig, overrides *opv1.IrreconcilableMachineConfigValidationOverrides) (*machineConfigDiff, error) {
+	if err := ctrlcommon.IsRenderedConfigReconcilable(oldConfig, newConfig, overrides); err != nil {
 		return nil, fmt.Errorf("configs %s, %s are not reconcilable: %w", oldConfig.Name, newConfig.Name, err)
 	}
 

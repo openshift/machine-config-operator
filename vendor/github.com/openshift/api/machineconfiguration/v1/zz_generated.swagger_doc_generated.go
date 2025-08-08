@@ -79,7 +79,7 @@ var map_ContainerRuntimeConfiguration = map[string]string{
 	"logLevel":       "logLevel specifies the verbosity of the logs based on the level it is set to. Options are fatal, panic, error, warn, info, and debug.",
 	"logSizeMax":     "logSizeMax specifies the Maximum size allowed for the container log file. Negative numbers indicate that no size limit is imposed. If it is positive, it must be >= 8192 to match/exceed conmon's read buffer.",
 	"overlaySize":    "overlaySize specifies the maximum size of a container image. This flag can be used to set quota on the size of container images. (default: 10GB)",
-	"defaultRuntime": "defaultRuntime is the name of the OCI runtime to be used as the default.",
+	"defaultRuntime": "defaultRuntime is the name of the OCI runtime to be used as the default for containers. Allowed values are `runc` and `crun`. When set to `runc`, OpenShift will use runc to execute the container When set to `crun`, OpenShift will use crun to execute the container When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time. Currently, the default is `crun`.",
 }
 
 func (ContainerRuntimeConfiguration) SwaggerDoc() map[string]string {
@@ -368,6 +368,16 @@ func (PoolSynchronizerStatus) SwaggerDoc() map[string]string {
 	return map_PoolSynchronizerStatus
 }
 
+var map_IrreconcilableChangeDiff = map[string]string{
+	"":          "IrreconcilableChangeDiff holds an individual diff between the initial install-time MachineConfig and the latest applied one caused by the presence of irreconcilable changes.",
+	"fieldPath": "fieldPath points to the path in the latest rendered MachineConfig this diff element refers to. The fieldPath must be at least 1 character in length, must not exceed 70 characters in length, must start with the spec. prefix and should only contain alphanumeric characters, brackets (for lists indexing) or dots (to designate keys inside objects).",
+	"diff":      "diff contains a human-readable representation of the difference between the original install-time content of the field and the current applied MachineConfig content for that field. The fieldPath must be at least 1 character in length and  must not exceed 1024 characters in length.",
+}
+
+func (IrreconcilableChangeDiff) SwaggerDoc() map[string]string {
+	return map_IrreconcilableChangeDiff
+}
+
 var map_MCOObjectReference = map[string]string{
 	"":     "MCOObjectReference holds information about an object the MCO either owns or modifies in some way",
 	"name": "name is the name of the object being referenced. For example, this can represent a machine config pool or node name. Must be a lowercase RFC-1123 subdomain name (https://tools.ietf.org/html/rfc1123) consisting of only lowercase alphanumeric characters, hyphens (-), and periods (.), and must start and end with an alphanumeric character, and be at most 253 characters in length.",
@@ -419,11 +429,12 @@ func (MachineConfigNodeSpecMachineConfigVersion) SwaggerDoc() map[string]string 
 }
 
 var map_MachineConfigNodeStatus = map[string]string{
-	"":                   "MachineConfigNodeStatus holds the reported information on a particular machine config node.",
-	"conditions":         "conditions represent the observations of a machine config node's current state. Valid types are: UpdatePrepared, UpdateExecuted, UpdatePostActionComplete, UpdateComplete, Updated, Resumed, Drained, AppliedFilesAndOS, Cordoned, Uncordoned, RebootedNode, NodeDegraded, PinnedImageSetsProgressing, and PinnedImageSetsDegraded.",
-	"observedGeneration": "observedGeneration represents the generation of the MachineConfigNode object observed by the Machine Config Operator's controller. This field is updated when the controller observes a change to the desiredConfig in the configVersion of the machine config node spec.",
-	"configVersion":      "configVersion describes the current and desired machine config version for this node.",
-	"pinnedImageSets":    "pinnedImageSets describes the current and desired pinned image sets for this node.",
+	"":                      "MachineConfigNodeStatus holds the reported information on a particular machine config node.",
+	"conditions":            "conditions represent the observations of a machine config node's current state. Valid types are: UpdatePrepared, UpdateExecuted, UpdatePostActionComplete, UpdateComplete, Updated, Resumed, Drained, AppliedFilesAndOS, Cordoned, Uncordoned, RebootedNode, NodeDegraded, PinnedImageSetsProgressing, and PinnedImageSetsDegraded.",
+	"observedGeneration":    "observedGeneration represents the generation of the MachineConfigNode object observed by the Machine Config Operator's controller. This field is updated when the controller observes a change to the desiredConfig in the configVersion of the machine config node spec.",
+	"configVersion":         "configVersion describes the current and desired machine config version for this node.",
+	"pinnedImageSets":       "pinnedImageSets describes the current and desired pinned image sets for this node.",
+	"irreconcilableChanges": "irreconcilableChanges described the current differences between the target rendered MachineConfig and the configuration the Machine Config Daemon has applied to the associated node. This field is only populated when irreconcilable changes are permitted and applied to a pool of nodes. Already existing nodes will start reporting this field while new joining nodes will pick the irreconcilable changes at the first Ignition run and won't report differences.",
 }
 
 func (MachineConfigNodeStatus) SwaggerDoc() map[string]string {
