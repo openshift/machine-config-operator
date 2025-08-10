@@ -767,9 +767,8 @@ func machineConfigFeatureGatesMatchesOriginalFeatureGates(mc *mcfgv1.MachineConf
 	if len(mc.Spec.Config.Raw) == 0 {
 		if len(originalKubeConfig.FeatureGates) > 0 {
 			return false, nil
-		} else {
-			return true, nil
 		}
+		return true, nil
 	}
 	file, err := findKubeletConfig(mc)
 	if err != nil {
