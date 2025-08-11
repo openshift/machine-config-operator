@@ -16,14 +16,6 @@ func (c *FakeMachineconfigurationV1alpha1) MachineConfigNodes() v1alpha1.Machine
 	return newFakeMachineConfigNodes(c)
 }
 
-func (c *FakeMachineconfigurationV1alpha1) MachineOSBuilds() v1alpha1.MachineOSBuildInterface {
-	return newFakeMachineOSBuilds(c)
-}
-
-func (c *FakeMachineconfigurationV1alpha1) MachineOSConfigs() v1alpha1.MachineOSConfigInterface {
-	return newFakeMachineOSConfigs(c)
-}
-
 func (c *FakeMachineconfigurationV1alpha1) PinnedImageSets() v1alpha1.PinnedImageSetInterface {
 	return newFakePinnedImageSets(c)
 }

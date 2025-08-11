@@ -95,8 +95,6 @@ var legacyFeatureGates = sets.New(
 	// never add to this list, if you think you have an exception ask @deads2k
 	"OVNObservability",
 	// never add to this list, if you think you have an exception ask @deads2k
-	"OnClusterBuild",
-	// never add to this list, if you think you have an exception ask @deads2k
 	"PersistentIPsForVirtualization",
 	// never add to this list, if you think you have an exception ask @deads2k
 	"PinnedImages",
