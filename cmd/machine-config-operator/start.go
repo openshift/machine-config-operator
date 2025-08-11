@@ -105,6 +105,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			ctrlctx.InformerFactory.Machineconfiguration().V1().ContainerRuntimeConfigs(),
 			ctrlctx.ConfigInformerFactory.Config().V1().Nodes(),
 			ctrlctx.ConfigInformerFactory.Config().V1().APIServers(),
+			ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1().MachineOSConfigs(),
 			ctrlctx,
 		)
 

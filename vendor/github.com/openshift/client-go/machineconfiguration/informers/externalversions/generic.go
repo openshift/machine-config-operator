@@ -60,10 +60,6 @@ func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource
 		// Group=machineconfiguration.openshift.io, Version=v1alpha1
 	case v1alpha1.SchemeGroupVersion.WithResource("machineconfignodes"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Machineconfiguration().V1alpha1().MachineConfigNodes().Informer()}, nil
-	case v1alpha1.SchemeGroupVersion.WithResource("machineosbuilds"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Machineconfiguration().V1alpha1().MachineOSBuilds().Informer()}, nil
-	case v1alpha1.SchemeGroupVersion.WithResource("machineosconfigs"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Machineconfiguration().V1alpha1().MachineOSConfigs().Informer()}, nil
 	case v1alpha1.SchemeGroupVersion.WithResource("pinnedimagesets"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Machineconfiguration().V1alpha1().PinnedImageSets().Informer()}, nil
 
