@@ -95,7 +95,7 @@ func newFixtureWithFeatureGates(t *testing.T, enabled, disabled []configv1.Featu
 }
 
 func newFixture(t *testing.T) *fixture {
-	return newFixtureWithFeatureGates(t, []configv1.FeatureGateName{features.FeatureGatePinnedImages, features.FeatureGateOnClusterBuild}, []configv1.FeatureGateName{})
+	return newFixtureWithFeatureGates(t, []configv1.FeatureGateName{features.FeatureGatePinnedImages}, []configv1.FeatureGateName{})
 }
 
 func (f *fixture) newControllerWithStopChan(stopCh <-chan struct{}) *Controller {

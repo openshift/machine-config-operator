@@ -9,7 +9,7 @@ import (
 	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
 )
 
-var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][OCPFeatureGate:OnClusterBuild][Serial][Disruptive] MCO ocb", func() {
+var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Serial][Disruptive] MCO ocb", func() {
 	defer g.GinkgoRecover()
 
 	var (
