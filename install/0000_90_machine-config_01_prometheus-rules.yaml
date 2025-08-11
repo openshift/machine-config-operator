@@ -180,3 +180,7 @@ spec:
             description: >-
               Could not find config {{ $labels.mc }} in-cluster, this likely indicates the MachineConfigs in-cluster has changed during the install process. 
               If you are seeing this when installing the cluster, please compare the in-cluster rendered machineconfigs to /etc/mcs-machine-config-content.json
+    - name: telemetry.rules
+      rules:
+      - expr: sum by (node) (mcd_local_unsupported_packages)
+        record: node:mcd_local_unsupported_packages:count
