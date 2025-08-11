@@ -532,9 +532,9 @@ func (ctrl *Controller) addAnnotation(cfg *mcfgv1.KubeletConfig, annotationKey, 
 //nolint:gocyclo
 func (ctrl *Controller) syncKubeletConfig(key string) error {
 	startTime := time.Now()
-	klog.V(4).Infof("Started syncing kubeletconfig %q (%v)", key, startTime)
+	klog.Infof("Started syncing kubeletconfig %q (%v)", key, startTime)
 	defer func() {
-		klog.V(4).Infof("Finished syncing kubeletconfig %q (%v)", key, time.Since(startTime))
+		klog.Infof("Finished syncing kubeletconfig %q (%v)", key, time.Since(startTime))
 	}()
 
 	// Wait to apply a kubelet config if the controller config is not completed
@@ -639,6 +639,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 				// But we still need to compare the generated controller version because during an upgrade we need a new one
 				mcCtrlVersion := mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey]
 				if mcCtrlVersion == version.Hash {
+					klog.Infof("Skipping update")
 					return nil
 				}
 			}
@@ -712,8 +713,10 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
 			var err error
 			if isNotFound {
+				klog.Infof("Creating Machine Config %s", mc.Name)
 				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
 			} else {
+				klog.Infof("Updating Machine Config %s", mc.Name)
 				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Update(context.TODO(), mc, metav1.UpdateOptions{})
 			}
 			return err
