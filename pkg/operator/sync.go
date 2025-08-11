@@ -1206,11 +1206,6 @@ func (optr *Operator) syncMachineOSBuilder(config *renderConfig, _ *configv1.Clu
 // Determines if the Machine OS Builder deployment is in the correct state
 // based upon whether we have opted-in pools or not.
 func (optr *Operator) reconcileMachineOSBuilder(mob *appsv1.Deployment) error {
-	// Check if OnClusterBuild feature gate is enabled
-	if !optr.fgHandler.Enabled(features.FeatureGateOnClusterBuild) {
-		return nil
-	}
-
 	// First, check if we have any MachineConfigPools opted in.
 	layeredMCPs, err := optr.getLayeredMachineConfigPools()
 	if err != nil {
@@ -2301,11 +2296,6 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 	}
 
 	return nil
-}
-
-// Determines if the OnclusterBuild FeatureGate is enabled.
-func (optr *Operator) isOnClusterBuildFeatureGateEnabled() bool {
-	return optr.fgHandler.Enabled(features.FeatureGateOnClusterBuild)
 }
 
 // Determines if this cluster is on a platform that opts in for boot images by default

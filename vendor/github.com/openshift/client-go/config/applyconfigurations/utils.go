@@ -456,6 +456,10 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &configv1.WebhookTokenAuthenticatorApplyConfiguration{}
 
 		// Group=config.openshift.io, Version=v1alpha1
+	case v1alpha1.SchemeGroupVersion.WithKind("AlertmanagerConfig"):
+		return &configv1alpha1.AlertmanagerConfigApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("AlertmanagerCustomConfig"):
+		return &configv1alpha1.AlertmanagerCustomConfigApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("Backup"):
 		return &configv1alpha1.BackupApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("BackupSpec"):
@@ -470,6 +474,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &configv1alpha1.ClusterMonitoringApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("ClusterMonitoringSpec"):
 		return &configv1alpha1.ClusterMonitoringSpecApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("ContainerResource"):
+		return &configv1alpha1.ContainerResourceApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("EtcdBackupSpec"):
 		return &configv1alpha1.EtcdBackupSpecApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("FulcioCAWithRekor"):

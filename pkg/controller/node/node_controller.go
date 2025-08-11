@@ -1509,7 +1509,7 @@ func getErrorString(err error) string {
 }
 
 func (ctrl *Controller) isLayeredPool(mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) bool {
-	return ctrl.isConfigOrBuildPresent(mosc, mosb) && ctrl.fgHandler.Enabled(features.FeatureGateOnClusterBuild)
+	return ctrl.isConfigOrBuildPresent(mosc, mosb)
 }
 
 func (ctrl *Controller) isConfigOrBuildPresent(mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) bool {
