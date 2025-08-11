@@ -180,3 +180,10 @@ spec:
             description: >-
               Could not find config {{ $labels.mc }} in-cluster, this likely indicates the MachineConfigs in-cluster has changed during the install process. 
               If you are seeing this when installing the cluster, please compare the in-cluster rendered machineconfigs to /etc/mcs-machine-config-content.json
+    - name: mcd-unsupported-packages.rules
+      rules:
+      - expr: sum(mcd_local_unsupported_packages)
+        record: cluster:mcd_total_unsupported_packages:sum
+      - expr: count(mcd_local_unsupported_packages > 0)
+        record: cluster:mcd_nodes_with_unsupported_packages:count
+
