@@ -105,6 +105,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.KubeNamespacedInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.KubeMAOSharedInformer.Start(ctrlctx.Stop)
+		ctrlctx.OCLInformerFactory.Start(ctrlctx.Stop)
 
 		close(ctrlctx.InformersStarted)
 
@@ -144,10 +145,6 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			ctrlctx.MachineInformerFactory.Start(ctrlctx.Stop)
 			ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
 			ctrlctx.OperatorInformerFactory.Start(ctrlctx.Stop)
-		}
-
-		if ctrlctx.FeatureGatesHandler.Enabled(features.FeatureGateOnClusterBuild) {
-			ctrlctx.OCLInformerFactory.Start(ctrlctx.Stop)
 		}
 
 		for _, c := range controllers {

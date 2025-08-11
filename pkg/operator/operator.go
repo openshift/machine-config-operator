@@ -188,6 +188,7 @@ func New(
 	crcInformer mcfginformersv1.ContainerRuntimeConfigInformer,
 	nodeClusterInformer configinformersv1.NodeInformer,
 	apiserverInformer configinformersv1.APIServerInformer,
+	moscInformer mcfginformersv1.MachineOSConfigInformer,
 	ctrlctx *ctrlcommon.ControllerContext,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()
@@ -256,6 +257,7 @@ func New(
 		nodeClusterInformer.Informer(),
 		clusterOperatorInformer.Informer(),
 		apiserverInformer.Informer(),
+		moscInformer.Informer(),
 	}
 	for _, i := range informers {
 		i.AddEventHandler(optr.eventHandler())
@@ -318,6 +320,8 @@ func New(
 	optr.crcListerSynced = crcInformer.Informer().HasSynced
 	optr.apiserverLister = apiserverInformer.Lister()
 	optr.apiserverListerSynced = apiserverInformer.Informer().HasSynced
+	optr.moscLister = moscInformer.Lister()
+	optr.moscListerSynced = moscInformer.Informer().HasSynced
 
 	optr.vStore.Set("operator", version.ReleaseVersion)
 	optr.vStore.Set("operator-image", version.OperatorImage)
@@ -369,18 +373,7 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.mckListerSynced,
 		optr.crcListerSynced,
 		optr.nodeClusterListerSynced,
-	}
-
-	if optr.isOnClusterBuildFeatureGateEnabled() {
-		klog.Infof("On-cluster layering featuregate enabled, starting MachineOSConfig informer")
-		moscInformer := optr.ctrlctx.InformerFactory.Machineconfiguration().V1().MachineOSConfigs()
-		optr.moscLister = moscInformer.Lister()
-		optr.moscListerSynced = moscInformer.Informer().HasSynced
-		cacheSynced = append(cacheSynced, optr.moscListerSynced)
-		moscInformer.Informer().AddEventHandler(optr.eventHandler())
-		// We have to start this inofrmer ourselves because the caller has started
-		// all of the other informers before calling Run().
-		go moscInformer.Informer().Run(optr.ctrlctx.Stop)
+		optr.moscListerSynced,
 	}
 
 	if !cache.WaitForCacheSync(stopCh,
