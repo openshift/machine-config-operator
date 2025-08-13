@@ -220,23 +220,6 @@ func (c *CertRotationController) Run(ctx context.Context, workers int) {
 	<-ctx.Done()
 }
 
-// This should not be directly called; it is only to be used for unit tests.
-func (c *CertRotationController) Sync() error {
-	syncCtx := factory.NewSyncContext("mco-cert-rotation-sync", c.recorder)
-
-	if err := c.syncHostnames(); err != nil {
-		return err
-	}
-
-	for _, certRotator := range c.certRotators {
-		if err := certRotator.Sync(context.TODO(), syncCtx); err != nil {
-			return err
-		}
-	}
-	return nil
-
-}
-
 func getServerIPsFromInfra(cfg *configv1.Infrastructure) []string {
 	if cfg.Status.PlatformStatus == nil {
 		return []string{}
