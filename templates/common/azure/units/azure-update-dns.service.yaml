@@ -1,0 +1,19 @@
+name: azure-update-dns.service
+enabled: {{if and (eq .Infra.Status.PlatformStatus.Type "Azure") (.Infra.Status.PlatformStatus.Azure) (.Infra.Status.PlatformStatus.Azure.CloudLoadBalancerConfig) (eq .Infra.Status.PlatformStatus.Azure.CloudLoadBalancerConfig.DNSType "ClusterHosted") }}true{{else}}false{{end}}
+contents: |
+  [Unit]
+  Description=Update Default Azure Resolver
+  # We don't need to do this on the firstboot
+  After=firstboot-osupdate.target
+  # Wait for NetworkManager to report it's online
+  After=NetworkManager-wait-online.service
+  # Run before kubelet
+  Before=kubelet-dependencies.target
+
+  [Service]
+  Type=oneshot
+  RemainAfterExit=yes
+  ExecStart=/usr/local/bin/update-dns-server 169.254.169.254
+
+  [Install]
+  RequiredBy=kubelet-dependencies.target
