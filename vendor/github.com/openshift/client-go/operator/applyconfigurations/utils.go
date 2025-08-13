@@ -224,6 +224,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &operatorv1.IPv6GatewayConfigApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("IPv6OVNKubernetesConfig"):
 		return &operatorv1.IPv6OVNKubernetesConfigApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("IrreconcilableValidationOverrides"):
+		return &operatorv1.IrreconcilableValidationOverridesApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("KubeAPIServer"):
 		return &operatorv1.KubeAPIServerApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("KubeAPIServerSpec"):
