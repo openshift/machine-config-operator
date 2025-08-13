@@ -6,6 +6,7 @@ metadata:
     api.openshift.io/merged-by-featuregates: "true"
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
+    release.openshift.io/feature-set: TechPreviewNoUpgrade
   labels:
     openshift.io/operator-managed: ""
   name: machineconfignodes.machineconfiguration.openshift.io
@@ -277,6 +278,52 @@ spec:
                 required:
                 - desired
                 type: object
+              irreconcilableChanges:
+                description: |-
+                  irreconcilableChanges is an optional field that contains the observed differences between this nodes
+                  configuration and the target rendered MachineConfig.
+                  This field will be set when there are changes to the target rendered MachineConfig that can only be applied to
+                  new nodes joining the cluster.
+                  Entries must be unique, keyed on the fieldPath field.
+                  Must not exceed 32 entries.
+                items:
+                  description: |-
+                    IrreconcilableChangeDiff holds an individual diff between the initial install-time MachineConfig
+                    and the latest applied one caused by the presence of irreconcilable changes.
+                  properties:
+                    diff:
+                      description: |-
+                        diff is a required field containing the difference between the nodes current configuration and the latest
+                        rendered MachineConfig for the field specified in fieldPath.
+                        Must not be an empty string and must not exceed 4096 characters in length.
+                      maxLength: 4096
+                      minLength: 1
+                      type: string
+                    fieldPath:
+                      description: |-
+                        fieldPath is a required reference to the path in the latest rendered MachineConfig that differs from this nodes
+                        configuration.
+                        Must not be empty and must not exceed 70 characters in length.
+                        Must begin with the prefix 'spec.' and only contain alphanumeric characters, square brackets ('[]'), or dots ('.').
+                      maxLength: 70
+                      minLength: 1
+                      type: string
+                      x-kubernetes-validations:
+                      - message: The fieldPath must start with `spec.`
+                        rule: self.startsWith('spec.')
+                      - message: The fieldPath must consist only of alphanumeric characters,
+                          brackets [] and dots ('.').
+                        rule: self.matches('^[\\da-zA-Z\\.\\[\\]]+$')
+                  required:
+                  - diff
+                  - fieldPath
+                  type: object
+                maxItems: 32
+                minItems: 1
+                type: array
+                x-kubernetes-list-map-keys:
+                - fieldPath
+                x-kubernetes-list-type: map
               observedGeneration:
                 description: |-
                   observedGeneration represents the generation of the MachineConfigNode object observed by the Machine Config Operator's controller.
