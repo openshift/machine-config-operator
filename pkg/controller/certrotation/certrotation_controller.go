@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"time"
 
 	"github.com/vincent-petithory/dataurl"
@@ -15,10 +14,12 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
 
@@ -32,6 +33,9 @@ import (
 
 	aroclientset "github.com/Azure/ARO-RP/pkg/operator/clientset/versioned"
 
+	configinformers "github.com/openshift/client-go/config/informers/externalversions/config/v1"
+	configlisterv1 "github.com/openshift/client-go/config/listers/config/v1"
+
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
 
@@ -42,6 +46,7 @@ const (
 	mcsCARefresh     = 8 * oneYear
 	mcsTLSKeyExpiry  = mcsCAExpiry
 	mcsTLSKeyRefresh = mcsCARefresh
+	workQueueKey     = "key"
 )
 
 type CertRotationController struct {
@@ -51,9 +56,14 @@ type CertRotationController struct {
 
 	mcoConfigMapInfomer coreinformersv1.ConfigMapInformer
 	maoSecretInformer   coreinformersv1.SecretInformer
+	infraInformer       configinformers.InfrastructureInformer
 
 	mcoSecretLister corelisterv1.SecretLister
 	maoSecretLister corelisterv1.SecretLister
+	infraLister     configlisterv1.InfrastructureLister
+
+	hostnamesRotation *DynamicServingRotation
+	hostnamesQueue    workqueue.TypedRateLimitingInterface[string]
 
 	certRotators []factory.Controller
 
@@ -71,6 +81,7 @@ func New(
 	maoSecretInformer coreinformersv1.SecretInformer,
 	mcoSecretInformer coreinformersv1.SecretInformer,
 	mcoConfigMapInfomer coreinformersv1.ConfigMapInformer,
+	infraInformer configinformers.InfrastructureInformer,
 ) (*CertRotationController, error) {
 
 	recorder := events.NewLoggingEventRecorder(componentName, clock.RealClock{})
@@ -88,34 +99,15 @@ func New(
 			maoSecretInformer.Informer().HasSynced,
 			mcoSecretInformer.Informer().HasSynced,
 			mcoConfigMapInfomer.Informer().HasSynced,
+			infraInformer.Informer().HasSynced,
 		},
-	}
 
-	// This is required for the machine-config-server-tls secret rotation
-	cfg, err := configClient.ConfigV1().Infrastructures().Get(context.Background(), "cluster", metav1.GetOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("unable to get cluster infrastructure resource: %w", err)
-	}
-
-	serverIPs := getServerIPsFromInfra(cfg)
-
-	if cfg.Status.APIServerInternalURL == "" {
-		return nil, fmt.Errorf("no APIServerInternalURL found in cluster infrastructure resource")
-	}
-	apiserverIntURL, err := url.Parse(cfg.Status.APIServerInternalURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse %s: %w", apiserverIntURL, err)
-	}
-
-	// Only attempt to get ARO cluster resource on Azure platform
-	if cfg.Status.PlatformStatus != nil && cfg.Status.PlatformStatus.Type == configv1.AzurePlatformType {
-		aroCluster, err := c.aroClient.AroV1alpha1().Clusters().Get(context.Background(), "cluster", metav1.GetOptions{})
-		if err != nil {
-			klog.Infof("ARO cluster resource not found or not accessible: %v", err)
-		} else {
-			klog.Infof("ARO cluster resource found w/ IPs: %s", aroCluster.Spec.APIIntIP)
-			serverIPs = append(serverIPs, aroCluster.Spec.APIIntIP)
-		}
+		hostnamesRotation: &DynamicServingRotation{hostnamesChanged: make(chan struct{}, 10)},
+		hostnamesQueue: workqueue.NewTypedRateLimitingQueueWithConfig(
+			workqueue.DefaultTypedControllerRateLimiter[string](),
+			workqueue.TypedRateLimitingQueueConfig[string]{Name: "Hostnames"}),
+		infraInformer: infraInformer,
+		infraLister:   infraInformer.Lister(),
 	}
 
 	// The cert controller will begin creating "machine-config-server-ca" configmap & secret in the MCO namespace.
@@ -161,7 +153,8 @@ func New(
 			Validity: mcsTLSKeyExpiry,
 			Refresh:  mcsTLSKeyRefresh,
 			CertCreator: &certrotation.ServingRotation{
-				Hostnames: func() []string { return append([]string{apiserverIntURL.Hostname()}, serverIPs...) },
+				Hostnames:        c.hostnamesRotation.GetHostnames,
+				HostnamesChanged: c.hostnamesRotation.hostnamesChanged,
 			},
 			Informer:      mcoSecretInformer,
 			Lister:        c.mcoSecretLister,
@@ -214,6 +207,12 @@ func (c *CertRotationController) Run(ctx context.Context, workers int) {
 		utilruntime.HandleError(err)
 	}
 
+	if err := c.syncHostnames(); err != nil {
+		utilruntime.HandleError(err)
+	}
+
+	go wait.Until(c.runHostnames, time.Second, ctx.Done())
+
 	for _, certRotator := range c.certRotators {
 		go certRotator.Run(ctx, workers)
 	}
@@ -224,6 +223,11 @@ func (c *CertRotationController) Run(ctx context.Context, workers int) {
 // This should not be directly called; it is only to be used for unit tests.
 func (c *CertRotationController) Sync() error {
 	syncCtx := factory.NewSyncContext("mco-cert-rotation-sync", c.recorder)
+
+	if err := c.syncHostnames(); err != nil {
+		return err
+	}
+
 	for _, certRotator := range c.certRotators {
 		if err := certRotator.Sync(context.TODO(), syncCtx); err != nil {
 			return err
@@ -285,6 +289,13 @@ func (c *CertRotationController) StartInformers() error {
 		UpdateFunc: c.updateSecret,
 	}); err != nil {
 		return fmt.Errorf("unable to attach secret handler: %w", err)
+	}
+	if _, err := c.infraInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    func(_ any) { c.hostnamesQueue.Add(workQueueKey) },
+		UpdateFunc: func(_, _ any) { c.hostnamesQueue.Add(workQueueKey) },
+		DeleteFunc: func(_ any) { c.hostnamesQueue.Add(workQueueKey) },
+	}); err != nil {
+		return fmt.Errorf("unable to attach infra handler: %w", err)
 	}
 	return nil
 }
