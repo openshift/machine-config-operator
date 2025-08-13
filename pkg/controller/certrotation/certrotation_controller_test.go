@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	configv1 "github.com/openshift/api/config/v1"
+	configinformers "github.com/openshift/client-go/config/informers/externalversions"
+	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/openshift/library-go/pkg/operator/certrotation"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -43,12 +45,14 @@ type fixture struct {
 	maoSecretLister    []*corev1.Secret
 	mcoSecretLister    []*corev1.Secret
 	mcoConfigMapLister []*corev1.ConfigMap
+	infraLister        []*configv1.Infrastructure
 
 	objects        []runtime.Object
 	configObjects  []runtime.Object
 	machineObjects []runtime.Object
 	aroObjects     []runtime.Object
 	k8sI           kubeinformers.SharedInformerFactory
+	infraInformer  configinformers.SharedInformerFactory
 
 	controller *CertRotationController
 }
@@ -80,7 +84,7 @@ func (f *fixture) newController() *CertRotationController {
 		Status: configv1.InfrastructureStatus{
 			ControlPlaneTopology: configv1.HighlyAvailableTopologyMode,
 			PlatformStatus:       platformStatus,
-			APIServerInternalURL: "test-url"},
+			APIServerInternalURL: "https://10.0.0.1:6443"},
 	})
 
 	f.kubeClient = fake.NewSimpleClientset(f.objects...)
@@ -88,6 +92,7 @@ func (f *fixture) newController() *CertRotationController {
 	f.machineClient = fakemachineclientset.NewSimpleClientset(f.machineObjects...)
 	f.aroClient = fakearoclientset.NewSimpleClientset(f.aroObjects...)
 	f.k8sI = kubeinformers.NewSharedInformerFactory(f.kubeClient, noResyncPeriodFunc())
+	f.infraInformer = configinformers.NewSharedInformerFactory(f.configClient, noResyncPeriodFunc())
 
 	for _, secret := range f.maoSecretLister {
 		f.k8sI.Core().V1().Secrets().Informer().GetIndexer().Add(secret)
@@ -101,7 +106,12 @@ func (f *fixture) newController() *CertRotationController {
 		f.k8sI.Core().V1().ConfigMaps().Informer().GetIndexer().Add(configMap)
 	}
 
-	c, err := New(f.kubeClient, f.configClient, f.machineClient, f.aroClient, f.k8sI.Core().V1().Secrets(), f.k8sI.Core().V1().Secrets(), f.k8sI.Core().V1().ConfigMaps())
+	for _, infra := range f.configObjects {
+		f.infraInformer.Config().V1().Infrastructures().Informer().GetIndexer().Add(infra)
+		f.infraLister = append(f.infraLister, infra.(*configv1.Infrastructure))
+	}
+
+	c, err := New(f.kubeClient, f.configClient, f.machineClient, f.aroClient, f.k8sI.Core().V1().Secrets(), f.k8sI.Core().V1().Secrets(), f.k8sI.Core().V1().ConfigMaps(), f.infraInformer.Config().V1().Infrastructures())
 	require.NoError(f.t, err)
 
 	c.StartInformers()
@@ -110,9 +120,25 @@ func (f *fixture) newController() *CertRotationController {
 	return c
 }
 
+func (f *fixture) sync() error {
+	syncCtx := factory.NewSyncContext("mco-cert-rotation-sync", f.controller.recorder)
+
+	if err := f.controller.syncHostnames(); err != nil {
+		return err
+	}
+
+	for _, certRotator := range f.controller.certRotators {
+		if err := certRotator.Sync(context.TODO(), syncCtx); err != nil {
+			return err
+		}
+	}
+	return nil
+
+}
+
 func (f *fixture) runController() {
 
-	err := f.controller.Sync()
+	err := f.sync()
 	require.NoError(f.t, err)
 
 	f.controller.reconcileUserDataSecrets()
@@ -162,6 +188,72 @@ func (f *fixture) verifyAROIPInTLSCertificate(t *testing.T, expectedIP string) {
 	}
 	require.True(t, found, "ARO IP %s should be present in certificate SAN IP addresses", expectedIP)
 	t.Logf("Successfully verified ARO IP %s is present in TLS certificate", expectedIP)
+}
+
+func TestInfraUpdateTriggersCertResync(t *testing.T) {
+	f := newFixture(t)
+	f.objects = append(f.objects, getGoodMAOSecret("test-user-data"))
+	f.maoSecretLister = append(f.maoSecretLister, getGoodMAOSecret("test-user-data"))
+	f.machineObjects = append(f.machineObjects, getMachineSet("test-machine"))
+
+	f.controller = f.newController()
+
+	// Perform initial sync to create initial certificates
+	f.runController()
+
+	// Update the Infrastructure object with a new APIServerInternalURL
+	infraObj := &configv1.Infrastructure{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+		Status: configv1.InfrastructureStatus{
+			ControlPlaneTopology: configv1.HighlyAvailableTopologyMode,
+			APIServerInternalURL: "https://10.0.0.2:6443", // Changed from 10.0.0.1 to 10.0.0.2
+		},
+	}
+
+	// Update the Infrastructure object
+	_, err := f.configClient.ConfigV1().Infrastructures().Update(context.TODO(), infraObj, metav1.UpdateOptions{})
+	require.NoError(t, err)
+
+	// Update the informer with the new Infrastructure object
+	f.infraInformer.Config().V1().Infrastructures().Informer().GetIndexer().Update(infraObj)
+
+	// Trigger the sync after Infrastructure update
+	f.syncListers(t)
+	f.runController()
+
+	// Verify that the TLS certificate was regenerated with the new hostname
+	tlsSecret, err := f.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), ctrlcommon.MachineConfigServerTLSSecretName, metav1.GetOptions{})
+	require.NoError(t, err)
+	require.NotNil(t, tlsSecret)
+
+	// Verify certificate contains new hostname
+	certData, exists := tlsSecret.Data["tls.crt"]
+	require.True(t, exists, "TLS certificate should exist in secret")
+	require.NotEmpty(t, certData, "TLS certificate data should not be empty")
+
+	// Decode and parse certificate
+	block, _ := pem.Decode(certData)
+	require.NotNil(t, block, "Should be able to decode PEM certificate")
+
+	cert, err := x509.ParseCertificate(block.Bytes)
+	require.NoError(t, err, "Should be able to parse TLS certificate")
+
+	// Verify the new hostname is in the certificate's DNS names
+	expectedHostname := "10.0.0.2"
+	found := false
+	for _, dnsName := range cert.DNSNames {
+		if dnsName == expectedHostname {
+			found = true
+			break
+		}
+	}
+	require.True(t, found, "New hostname %s should be present in certificate DNS names", expectedHostname)
+	t.Logf("Successfully verified hostname %s is present in TLS certificate after Infrastructure update", expectedHostname)
+
+	// Verify that user data secrets were updated (should be 1 total update)
+	f.verifyUserDataSecretUpdateCount(1)
 }
 
 func TestMCSCARotation(t *testing.T) {
