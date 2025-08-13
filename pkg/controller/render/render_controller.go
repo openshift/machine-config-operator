@@ -96,7 +96,7 @@ func New(
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 	mcopClient mcopclientset.Interface,
-	FeatureGatesHandler ctrlcommon.FeatureGatesHandler,
+	featureGatesHandler ctrlcommon.FeatureGatesHandler,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -109,7 +109,7 @@ func New(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
 			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigcontroller-rendercontroller"}),
 		mcopClient: mcopClient,
-		fgHandler:  FeatureGatesHandler,
+		fgHandler:  featureGatesHandler,
 	}
 
 	mcpInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
