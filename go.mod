@@ -29,6 +29,7 @@ require (
 	github.com/google/renameio v0.1.0
 	github.com/google/uuid v1.6.0
 	github.com/imdario/mergo v0.3.16
+	github.com/josephburnett/jd/v2 v2.3.0
 	github.com/onsi/ginkgo/v2 v2.22.2
 	github.com/onsi/gomega v1.36.2
 	github.com/opencontainers/go-digest v1.0.0
@@ -164,7 +165,7 @@ require (
 	github.com/quasilyte/go-ruleguard/dsl v0.3.22 // indirect
 	github.com/raeperd/recvcheck v0.1.2 // indirect
 	github.com/robfig/cron v1.2.0 // indirect
-	github.com/rogpeppe/go-internal v1.13.1 // indirect
+	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/sagikazarmark/locafero v0.6.0 // indirect
 	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1 // indirect
@@ -175,9 +176,9 @@ require (
 	github.com/sigstore/rekor v1.3.10 // indirect
 	github.com/sourcegraph/conc v0.3.0 // indirect
 	github.com/stoewer/go-strcase v1.3.0 // indirect
-	github.com/tidwall/gjson v1.14.2 // indirect
+	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
-	github.com/tidwall/pretty v1.2.0 // indirect
+	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/timonwong/loggercheck v0.10.1 // indirect
 	github.com/uudashr/iface v1.2.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
@@ -387,7 +388,7 @@ require (
 	go.uber.org/zap v1.27.0 // indirect
 	go4.org v0.0.0-20200104003542-c7e774b10ea0 // indirect
 	golang.org/x/crypto v0.40.0 // indirect
-	golang.org/x/exp v0.0.0-20250103183323-7d7fa50e5329
+	golang.org/x/exp v0.0.0-20250305212735-054e65f0b394
 	golang.org/x/exp/typeparams v0.0.0-20241108190413-2d47ceb2692f // indirect
 	golang.org/x/mod v0.25.0 // indirect
 	golang.org/x/oauth2 v0.29.0 // indirect

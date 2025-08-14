@@ -23,6 +23,7 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/renameio"
+	"github.com/openshift/api/features"
 	opv1 "github.com/openshift/api/operator/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	mcopclientset "github.com/openshift/client-go/operator/clientset/versioned"
@@ -160,6 +161,8 @@ type Daemon struct {
 
 	deferKubeletRestart bool
 
+	irreconcilableReporter IrreconcilableReporter
+
 	// Ensures that only a single syncOSImagePullSecrets call can run at a time.
 	osImageMux *sync.Mutex
 }
@@ -173,6 +176,10 @@ type Daemon struct {
 // cast Daemon to CoreOSDaemon manually in update()
 type CoreOSDaemon struct {
 	*Daemon
+}
+
+type IrreconcilableReporter interface {
+	CheckReportIrreconcilableDifferences(targetMachineConfig *mcfgv1.MachineConfig, nodeName string) error
 }
 
 var ErrAuxiliary = errors.New("Error from auxiliary packages")
@@ -358,6 +365,7 @@ func New(
 		currentImagePath:       currentImagePath,
 		configDriftMonitor:     NewConfigDriftMonitor(),
 		osImageMux:             &sync.Mutex{},
+		irreconcilableReporter: NewNoOpIrreconcilableReporterImpl(),
 	}, nil
 }
 
@@ -425,6 +433,11 @@ func (dn *Daemon) ClusterConnect(
 	dn.kubeletHealthzEndpoint = kubeletHealthzEndpoint
 
 	dn.fgHandler = fgHandler
+
+	if dn.fgHandler.Enabled(features.FeatureGateIrreconcilableMachineConfig) {
+		klog.Errorf("@@@@ NewIrreconcilableReporter enabled")
+		dn.irreconcilableReporter = NewIrreconcilableReporter(dn.mcfgClient)
+	}
 
 	return nil
 }

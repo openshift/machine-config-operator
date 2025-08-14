@@ -963,6 +963,13 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	defer func() {
 		dn.reportMachineNodeDegradeStatus(retErr, pool)
 	}()
+	defer func() {
+		if dn.node != nil && retErr == nil {
+			if err := dn.irreconcilableReporter.CheckReportIrreconcilableDifferences(newConfig, dn.node.Name); retErr != nil {
+				klog.Errorf("Error updating MCN with the irreconcilable report %v", err)
+			}
+		}
+	}()
 
 	oldConfigName := oldConfig.GetName()
 	newConfigName := newConfig.GetName()

@@ -4,11 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-
 	features "github.com/openshift/api/features"
 	machineconfigurationv1 "github.com/openshift/client-go/machineconfiguration/applyconfigurations/machineconfiguration/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/utils/ptr"
@@ -102,7 +101,7 @@ func generateAndApplyMachineConfigNodes(
 	}
 
 	// get the existing MCN, or if it DNE create one below
-	mcNode, needNewMCNode := createOrGetMachineConfigNode(mcfgClient, node)
+	mcNode, needNewMCNode := createOrGetMachineConfigNode(mcfgClient, node.Name)
 	newMCNode := mcNode.DeepCopy()
 	newParentCondition := metav1.Condition{
 		Type:               string(parentCondition.State),
@@ -346,7 +345,7 @@ func GenerateAndApplyMachineConfigNodeSpec(fgHandler ctrlcommon.FeatureGatesHand
 		return nil
 	}
 	// get the existing MCN, or if it DNE create one below
-	mcNode, needNewMCNode := createOrGetMachineConfigNode(mcfgClient, node)
+	mcNode, needNewMCNode := createOrGetMachineConfigNode(mcfgClient, node.Name)
 	newMCNode := mcNode.DeepCopy()
 	// set the spec config version
 	newMCNode.ObjectMeta.OwnerReferences = []metav1.OwnerReference{
@@ -394,12 +393,12 @@ func GenerateAndApplyMachineConfigNodeSpec(fgHandler ctrlcommon.FeatureGatesHand
 }
 
 // createOrGetMachineConfigNode gets the named MCN or returns a boolean indicating we need to create one
-func createOrGetMachineConfigNode(mcfgClient mcfgclientset.Interface, node *corev1.Node) (*mcfgv1.MachineConfigNode, bool) {
-	mcNode, err := mcfgClient.MachineconfigurationV1().MachineConfigNodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
+func createOrGetMachineConfigNode(mcfgClient mcfgclientset.Interface, nodeName string) (*mcfgv1.MachineConfigNode, bool) {
+	mcNode, err := mcfgClient.MachineconfigurationV1().MachineConfigNodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
 	if err != nil {
 		// no existing MCN found since no resource found, no error yet just create a new one
 		if apierrors.IsNotFound((err)) {
-			klog.V(4).Infof("MachineConfigNode for node %q not found, will create a new one", node.Name)
+			klog.V(4).Infof("MachineConfigNode for node %q not found, will create a new one", nodeName)
 			return mcNode, true
 		}
 		// true error getting existing MCN
