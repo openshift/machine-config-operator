@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
+	opv1 "github.com/openshift/api/operator/v1"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/test/helpers"
 )
@@ -40,6 +41,18 @@ func TestIsRenderedConfigReconcilable(t *testing.T) {
 	isReconcilable = IsRenderedConfigReconcilable(oldConfig, newConfig, nil)
 	checkIrreconcilableResults(t, "Disk", isReconcilable)
 
+	// Verify Disk changes are allowed if an override is given
+	isReconcilable = IsRenderedConfigReconcilable(
+		oldConfig,
+		newConfig,
+		&opv1.IrreconcilableValidationOverrides{
+			Storage: []opv1.IrreconcilableValidationOverridesStorage{
+				opv1.IrreconcilableValidationOverridesStorageDisks,
+			},
+		},
+	)
+	checkReconcilableResults(t, "Disk", isReconcilable)
+
 	// Match storage disks
 	newIgnCfg.Storage.Disks = oldIgnCfg.Storage.Disks
 	newConfig = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
@@ -57,6 +70,18 @@ func TestIsRenderedConfigReconcilable(t *testing.T) {
 	oldConfig = helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
 	isReconcilable = IsRenderedConfigReconcilable(oldConfig, newConfig, nil)
 	checkIrreconcilableResults(t, "Filesystem", isReconcilable)
+
+	// Verify Filesystems changes are allowed if an override is given
+	isReconcilable = IsRenderedConfigReconcilable(
+		oldConfig,
+		newConfig,
+		&opv1.IrreconcilableValidationOverrides{
+			Storage: []opv1.IrreconcilableValidationOverridesStorage{
+				opv1.IrreconcilableValidationOverridesStorageFileSystems,
+			},
+		},
+	)
+	checkReconcilableResults(t, "Filesystem", isReconcilable)
 
 	// Match Storage filesystems
 	newIgnCfg.Storage.Filesystems = oldIgnCfg.Storage.Filesystems
@@ -76,6 +101,18 @@ func TestIsRenderedConfigReconcilable(t *testing.T) {
 	oldConfig = helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
 	isReconcilable = IsRenderedConfigReconcilable(oldConfig, newConfig, nil)
 	checkIrreconcilableResults(t, "Raid", isReconcilable)
+
+	// Verify Raid changes are allowed if an override is given
+	isReconcilable = IsRenderedConfigReconcilable(
+		oldConfig,
+		newConfig,
+		&opv1.IrreconcilableValidationOverrides{
+			Storage: []opv1.IrreconcilableValidationOverridesStorage{
+				opv1.IrreconcilableValidationOverridesStorageRaid,
+			},
+		},
+	)
+	checkReconcilableResults(t, "Raid", isReconcilable)
 
 	// Match storage raid
 	newIgnCfg.Storage.Raid = oldIgnCfg.Storage.Raid
