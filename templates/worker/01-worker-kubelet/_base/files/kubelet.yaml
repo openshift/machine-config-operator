@@ -10,7 +10,7 @@ contents:
       anonymous:
         enabled: false
     cgroupDriver: systemd
-    cgroupRoot: /
+    cgroupRoot: /kubepods
     clusterDNS:
       - {{.ClusterDNSIP}}
     clusterDomain: cluster.local
