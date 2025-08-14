@@ -41,8 +41,8 @@ chmod 644 /etc/yum.repos.d/coreos-extensions.repo
 {{if .ExtensionsPackages}}
 # Install extension packages
 extensions="{{- range $index, $item := .ExtensionsPackages }}{{- if $index }} {{ end }}{{$item}}{{- end }}"
-echo "Installing extension packages: \$extensions"
-rpm-ostree install \$extensions
+echo "Installing extension packages: $extensions"
+rpm-ostree install $extensions
 {{end}}
 
 {{if and .KernelType .KernelPackages}}
