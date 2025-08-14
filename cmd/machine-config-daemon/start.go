@@ -181,6 +181,12 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 
 	ctrlctx := ctrlcommon.CreateControllerContext(ctx, cb)
 
+	// Early start the config informer because feature gate depends on it
+	ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
+	if fgErr := ctrlctx.FeatureGatesHandler.Connect(ctx); fgErr != nil {
+		klog.Fatal(fmt.Errorf("failed to connect to feature gates %w", fgErr))
+	}
+
 	nodeScopedInformer, nodeScopedInformerStartFunc := ctrlcommon.NewScopedNodeInformerFromClientBuilder(cb, startOpts.nodeName)
 
 	// create the daemon instance. this also initializes kube client items
@@ -203,18 +209,12 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		klog.Fatalf("Failed to initialize: %v", err)
 	}
 
-	// start config informer early because feature gate depends on it
-	ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
 	ctrlctx.KubeInformerFactory.Start(stopCh)
 	ctrlctx.KubeNamespacedInformerFactory.Start(stopCh)
 	ctrlctx.InformerFactory.Start(stopCh)
 	ctrlctx.OperatorInformerFactory.Start(stopCh)
 	nodeScopedInformerStartFunc(ctrlctx.Stop)
 	close(ctrlctx.InformersStarted)
-
-	if fgErr := ctrlctx.FeatureGatesHandler.Connect(ctx); fgErr != nil {
-		klog.Fatal(fmt.Errorf("failed to connect to feature gates %w", fgErr))
-	}
 
 	// ok to start the rest of the informers now that we have observed the initial feature gates
 	if ctrlctx.FeatureGatesHandler.Enabled(features.FeatureGatePinnedImages) && ctrlctx.FeatureGatesHandler.Enabled(features.FeatureGateMachineConfigNodes) {
