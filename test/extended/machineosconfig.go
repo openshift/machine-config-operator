@@ -39,31 +39,31 @@ func NewMachineOSConfigList(oc *exutil.CLI) *MachineOSConfigList {
 }
 
 // CreateMachineOSConfig creates a MOSC resource using the information provided in the arguments
-func CreateMachineOSConfig(oc *exutil.CLI, name, pool, baseImagePullSecret, renderedImagePushSecret, pushSpec string, containerFile []ContainerFile) (*MachineOSConfig, error) {
-	return createMachineOSConfig(oc, name, pool, &baseImagePullSecret, renderedImagePushSecret, pushSpec, containerFile)
+func CreateMachineOSConfig(oc *exutil.CLI, moscAndMcpName, baseImagePullSecret, renderedImagePushSecret, pushSpec string, containerFile []ContainerFile) (*MachineOSConfig, error) {
+	return createMachineOSConfig(oc, moscAndMcpName, &baseImagePullSecret, renderedImagePushSecret, pushSpec, containerFile)
 }
 
 // CreateMachineOSConfigWithDefaultBasImagePullSecret creates a MOSC resource using the information provided in the arguments, it does not define the image pull secret
-func CreateMachineOSConfigWithDefaultBasImagePullSecret(oc *exutil.CLI, name, pool, renderedImagePushSecret, pushSpec string, containerFile []ContainerFile) (*MachineOSConfig, error) {
-	return createMachineOSConfig(oc, name, pool, nil, renderedImagePushSecret, pushSpec, containerFile)
+func CreateMachineOSConfigWithDefaultBasImagePullSecret(oc *exutil.CLI, moscAndMcpName, renderedImagePushSecret, pushSpec string, containerFile []ContainerFile) (*MachineOSConfig, error) {
+	return createMachineOSConfig(oc, moscAndMcpName, nil, renderedImagePushSecret, pushSpec, containerFile)
 }
 
 // createMachineOSConfig creates a MOSC resource using the information provided in the arguments
-func createMachineOSConfig(oc *exutil.CLI, name, pool string, baseImagePullSecret *string, renderedImagePushSecret, pushSpec string, containerFile []ContainerFile) (*MachineOSConfig, error) {
+func createMachineOSConfig(oc *exutil.CLI, moscAndMcpName string, baseImagePullSecret *string, renderedImagePushSecret, pushSpec string, containerFile []ContainerFile) (*MachineOSConfig, error) {
 	var (
 		containerFilesString = "[]"
 		moscTemplateFile     = "generic-machine-os-config-nobaseimagepull.yaml"
-		parameters           = []string{"-p", "NAME=" + name, "POOL=" + pool,
+		parameters           = []string{"-p", "NAME=" + moscAndMcpName, "POOL=" + moscAndMcpName,
 			"RENDEREDIMAGEPUSHSECRET=" + renderedImagePushSecret, "PUSHSPEC=" + pushSpec}
 	)
 	if baseImagePullSecret != nil {
 		moscTemplateFile = "generic-machine-os-config.yaml"
 		parameters = append(parameters, "BASEIMAGEPULLSECRET="+*baseImagePullSecret)
-		logger.Infof("Creating MachineOSConfig %s in pool %s with pullSecret %s pushSecret %s and pushSpec %s", name, pool, *baseImagePullSecret, renderedImagePushSecret, pushSpec)
+		logger.Infof("Creating MachineOSConfig %s in pool %s with pullSecret %s pushSecret %s and pushSpec %s", moscAndMcpName, moscAndMcpName, *baseImagePullSecret, renderedImagePushSecret, pushSpec)
 	} else {
-		logger.Infof("Creating MachineOSConfig %s in pool %s with default pullSecret pushSecret %s and pushSpec %s", name, pool, renderedImagePushSecret, pushSpec)
+		logger.Infof("Creating MachineOSConfig %s in pool %s with default pullSecret pushSecret %s and pushSpec %s", moscAndMcpName, moscAndMcpName, renderedImagePushSecret, pushSpec)
 	}
-	newMOSC := NewMachineOSConfig(oc, name)
+	newMOSC := NewMachineOSConfig(oc, moscAndMcpName)
 
 	if len(containerFile) > 0 {
 		containerFilesBytes, err := json.Marshal(containerFile)
@@ -103,15 +103,15 @@ func CopySecretToMCONamespace(secret *Secret, newName string) (*Secret, error) {
 	return &Secret{Resource: *mcoResource}, nil
 }
 
-func CreateMachineOSConfigUsingInternalRegistry(oc *exutil.CLI, namespace, name, pool string, containerFile []ContainerFile, defaultPullSecret bool) (*MachineOSConfig, error) {
+func CreateMachineOSConfigUsingInternalRegistry(oc *exutil.CLI, namespace, moscAndMcpName string, containerFile []ContainerFile, defaultPullSecret bool) (*MachineOSConfig, error) {
 
 	// We use the builder SA secret in the namespace to push the images to the internal registry
 	renderedImagePushSecret, err := CreateInternalRegistrySecretFromSA(oc, "builder", namespace, "cloned-push-secret"+exutil.GetRandomString(), MachineConfigNamespace)
 	if err != nil {
-		return NewMachineOSConfig(oc, name), err
+		return NewMachineOSConfig(oc, moscAndMcpName), err
 	}
 	if !renderedImagePushSecret.Exists() {
-		return NewMachineOSConfig(oc, name), fmt.Errorf("Rendered image push secret does not exist: %s", renderedImagePushSecret)
+		return NewMachineOSConfig(oc, moscAndMcpName), fmt.Errorf("Rendered image push secret does not exist: %s", renderedImagePushSecret)
 	}
 
 	if namespace != MachineConfigNamespace { // If the secret is not in MCO, we copy it there
@@ -120,31 +120,31 @@ func CreateMachineOSConfigUsingInternalRegistry(oc *exutil.CLI, namespace, name,
 		// We use the default SA secret in MCO to pull the current image from the internal registry
 		namespacedPullSecret, err := CreateInternalRegistrySecretFromSA(oc, "default", namespace, "cloned-currentpull-secret"+exutil.GetRandomString(), namespace)
 		if err != nil {
-			return NewMachineOSConfig(oc, name), err
+			return NewMachineOSConfig(oc, moscAndMcpName), err
 		}
 		if !namespacedPullSecret.Exists() {
-			return NewMachineOSConfig(oc, name), fmt.Errorf("Current image pull secret does not exist: %s", namespacedPullSecret)
+			return NewMachineOSConfig(oc, moscAndMcpName), fmt.Errorf("Current image pull secret does not exist: %s", namespacedPullSecret)
 		}
 
 		namespacedDockerConfig, err := namespacedPullSecret.GetDataValue(".dockerconfigjson")
 		if err != nil {
-			return NewMachineOSConfig(oc, name), fmt.Errorf("Could not extract dockerConfig from the namespaced pull secret")
+			return NewMachineOSConfig(oc, moscAndMcpName), fmt.Errorf("Could not extract dockerConfig from the namespaced pull secret")
 		}
 
 		pullSecret := GetPullSecret(oc.AsAdmin())
 		pullSecretDockerConfig, err := pullSecret.GetDataValue(".dockerconfigjson")
 		if err != nil {
-			return NewMachineOSConfig(oc, name), fmt.Errorf("Could not extract dockerConfig from the cluster's pull secret")
+			return NewMachineOSConfig(oc, moscAndMcpName), fmt.Errorf("Could not extract dockerConfig from the cluster's pull secret")
 		}
 
 		mergedDockerConfig, err := MergeDockerConfigs(pullSecretDockerConfig, namespacedDockerConfig)
 		if err != nil {
-			return NewMachineOSConfig(oc, name), fmt.Errorf("Could not merge the namespaced pull-secret dockerconfig and the cluster's pull-secret docker config")
+			return NewMachineOSConfig(oc, moscAndMcpName), fmt.Errorf("Could not merge the namespaced pull-secret dockerconfig and the cluster's pull-secret docker config")
 		}
 
 		err = pullSecret.SetDataValue(".dockerconfigjson", mergedDockerConfig)
 		if err != nil {
-			return NewMachineOSConfig(oc, name), fmt.Errorf("Could not configure the cluster's pull-secret with the merged dockerconfig")
+			return NewMachineOSConfig(oc, moscAndMcpName), fmt.Errorf("Could not configure the cluster's pull-secret with the merged dockerconfig")
 		}
 
 		logger.Infof("Waiting for the secret to be updated in all pools")
@@ -152,39 +152,39 @@ func CreateMachineOSConfigUsingInternalRegistry(oc *exutil.CLI, namespace, name,
 	}
 
 	// We use a push spec stored in the internal registry in the MCO namespace. We use a different image for every pool
-	pushSpec := fmt.Sprintf("%s/%s/ocb-%s-image:latest", InternalRegistrySvcURL, namespace, pool)
+	pushSpec := fmt.Sprintf("%s/%s/ocb-%s-image:latest", InternalRegistrySvcURL, namespace, moscAndMcpName)
 
 	if !defaultPullSecret {
 		// We use a copy of the cluster's pull secret to pull the images
 		pullSecret := NewSecret(oc.AsAdmin(), "openshift-config", "pull-secret")
 		baseImagePullSecret, err := CopySecretToMCONamespace(pullSecret, "cloned-basepull-secret-"+exutil.GetRandomString())
 		if err != nil {
-			return NewMachineOSConfig(oc, name), err
+			return NewMachineOSConfig(oc, moscAndMcpName), err
 		}
-		return CreateMachineOSConfig(oc, name, pool, baseImagePullSecret.GetName(), renderedImagePushSecret.GetName(), pushSpec, containerFile)
+		return CreateMachineOSConfig(oc, moscAndMcpName, baseImagePullSecret.GetName(), renderedImagePushSecret.GetName(), pushSpec, containerFile)
 	}
 
-	return CreateMachineOSConfigWithDefaultBasImagePullSecret(oc, name, pool, renderedImagePushSecret.GetName(), pushSpec, containerFile)
+	return CreateMachineOSConfigWithDefaultBasImagePullSecret(oc, moscAndMcpName, renderedImagePushSecret.GetName(), pushSpec, containerFile)
 }
 
 // CreateMachineOSConfigUsingExternalRegistry creates a new MOSC resource using the mcoqe external registry. The credentials to pull and push images in the mcoqe repo should be previously added to the cluster's pull secret
-func CreateMachineOSConfigUsingExternalRegistry(oc *exutil.CLI, name, pool string, containerFile []ContainerFile, defaultPullSecret bool) (*MachineOSConfig, error) {
+func CreateMachineOSConfigUsingExternalRegistry(oc *exutil.CLI, moscAndMcpName string, containerFile []ContainerFile, defaultPullSecret bool) (*MachineOSConfig, error) {
 	var (
 		// We use a copy of the cluster's pull secret to pull the images
 		pullSecret = NewSecret(oc.AsAdmin(), "openshift-config", "pull-secret")
 	)
 	copyPullSecret, err := CopySecretToMCONamespace(pullSecret, "cloned-pull-secret-"+exutil.GetRandomString())
 	if err != nil {
-		return NewMachineOSConfig(oc, name), err
+		return NewMachineOSConfig(oc, moscAndMcpName), err
 	}
 
 	clusterName, err := exutil.GetInfraID(oc)
 	if err != nil {
-		return NewMachineOSConfig(oc, name), err
+		return NewMachineOSConfig(oc, moscAndMcpName), err
 	}
 
 	// We use a push spec stored in the internal registry in the MCO namespace. We use a different image for every pool
-	pushSpec := fmt.Sprintf("%s:ocb-%s-%s", DefaultLayeringQuayRepository, pool, clusterName)
+	pushSpec := fmt.Sprintf("%s:ocb-%s-%s", DefaultLayeringQuayRepository, moscAndMcpName, clusterName)
 
 	// If we use the external registry we need to add an expiration date label so that the images are automatically cleaned
 	configuredContainerFile := []ContainerFile{}
@@ -197,25 +197,25 @@ func CreateMachineOSConfigUsingExternalRegistry(oc *exutil.CLI, name, pool strin
 	}
 
 	if defaultPullSecret {
-		return CreateMachineOSConfigWithDefaultBasImagePullSecret(oc, name, pool, copyPullSecret.GetName(), pushSpec, configuredContainerFile)
+		return CreateMachineOSConfigWithDefaultBasImagePullSecret(oc, moscAndMcpName, copyPullSecret.GetName(), pushSpec, configuredContainerFile)
 	}
 
-	return CreateMachineOSConfig(oc, name, pool, copyPullSecret.GetName(), copyPullSecret.GetName(), pushSpec, configuredContainerFile)
+	return CreateMachineOSConfig(oc, moscAndMcpName, copyPullSecret.GetName(), copyPullSecret.GetName(), pushSpec, configuredContainerFile)
 
 }
 
 // CreateMachineOSConfigUsingExternalOrInternalRegistry creates a MOSC using internal registry if possible, if not possible it will use external registry. It will define the BaseImagePullSecret too
-func CreateMachineOSConfigUsingExternalOrInternalRegistry(oc *exutil.CLI, namespace, name, pool string, containerFile []ContainerFile) (*MachineOSConfig, error) {
-	return createMachineOSConfigUsingExternalOrInternalRegistry(oc, namespace, name, pool, containerFile, false)
+func CreateMachineOSConfigUsingExternalOrInternalRegistry(oc *exutil.CLI, namespace, moscAndMcpName string, containerFile []ContainerFile) (*MachineOSConfig, error) {
+	return createMachineOSConfigUsingExternalOrInternalRegistry(oc, namespace, moscAndMcpName, containerFile, false)
 }
 
 // createMachineOSConfigUsingExternalOrInternalRegistry creates a MOSC using internal registry if possible, if not possible it will use external registry
-func createMachineOSConfigUsingExternalOrInternalRegistry(oc *exutil.CLI, namespace, name, pool string, containerFile []ContainerFile, defaultPullSecret bool) (*MachineOSConfig, error) {
+func createMachineOSConfigUsingExternalOrInternalRegistry(oc *exutil.CLI, namespace, moscAndMcpName string, containerFile []ContainerFile, defaultPullSecret bool) (*MachineOSConfig, error) {
 	if CanUseInternalRegistryToStoreOSImage(oc) {
-		return CreateMachineOSConfigUsingInternalRegistry(oc, namespace, name, pool, containerFile, defaultPullSecret)
+		return CreateMachineOSConfigUsingInternalRegistry(oc, namespace, moscAndMcpName, containerFile, defaultPullSecret)
 	}
 
-	return CreateMachineOSConfigUsingExternalRegistry(oc, name, pool, containerFile, defaultPullSecret)
+	return CreateMachineOSConfigUsingExternalRegistry(oc, moscAndMcpName, containerFile, defaultPullSecret)
 
 }
 
