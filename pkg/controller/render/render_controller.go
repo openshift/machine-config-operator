@@ -8,11 +8,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	opv1 "github.com/openshift/api/operator/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
+	mcopclientset "github.com/openshift/client-go/operator/clientset/versioned"
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -76,6 +79,10 @@ type Controller struct {
 	mckLister       mcfglistersv1.KubeletConfigLister
 	mckListerSynced cache.InformerSynced
 
+	mcopClient mcopclientset.Interface
+
+	fgHandler ctrlcommon.FeatureGatesHandler
+
 	queue workqueue.TypedRateLimitingInterface[string]
 }
 
@@ -88,6 +95,8 @@ func New(
 	mckInformer mcfginformersv1.KubeletConfigInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
+	mcopClient mcopclientset.Interface,
+	featureGatesHandler ctrlcommon.FeatureGatesHandler,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -99,6 +108,8 @@ func New(
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
 			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigcontroller-rendercontroller"}),
+		mcopClient: mcopClient,
+		fgHandler:  featureGatesHandler,
 	}
 
 	mcpInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -519,7 +530,18 @@ func (ctrl *Controller) getRenderedMachineConfig(pool *mcfgv1.MachineConfigPool,
 		return nil, fmt.Errorf("could not get current MachineConfig %s for MachineConfigPool %s: %w", pool.Spec.Configuration.Name, pool.Name, err)
 	}
 
-	return generateAndValidateRenderedMachineConfig(currentMC, pool, configs, cc)
+	var mcop opv1.MachineConfiguration
+	if ctrl.fgHandler != nil && ctrl.fgHandler.Enabled(features.FeatureGateIrreconcilableMachineConfig) {
+		mcopPtr, err := ctrl.mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, metav1.GetOptions{})
+		if err == nil {
+			mcop = *mcopPtr
+		} else {
+			// Soft fail. In case there's an error do not fail the render and just pass irreconcilable field overrides
+			klog.Warningf("unable to fetch the MachineConfigurations object for MC rendering. %v", err)
+		}
+	}
+
+	return generateAndValidateRenderedMachineConfig(currentMC, pool, configs, cc, &mcop.Spec.IrreconcilableValidationOverrides)
 }
 
 func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig) error {
@@ -657,7 +679,12 @@ func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mc
 // were used to generate the rendered MachineConfig will be evaluated
 // one-by-one to identify which MachineConfig is not reconcilable. The name of
 // the unreconcilable MachineConfig is included in the returned error.
-func generateAndValidateRenderedMachineConfig(currentMC *mcfgv1.MachineConfig, pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig) (*mcfgv1.MachineConfig, error) {
+func generateAndValidateRenderedMachineConfig(
+	currentMC *mcfgv1.MachineConfig,
+	pool *mcfgv1.MachineConfigPool,
+	configs []*mcfgv1.MachineConfig,
+	cconfig *mcfgv1.ControllerConfig,
+	validationOverrides *opv1.IrreconcilableValidationOverrides) (*mcfgv1.MachineConfig, error) {
 	source := getMachineConfigRefs(configs)
 	klog.V(4).Infof("Considering %d configs %s for MachineConfig generation", len(source), source)
 
@@ -668,13 +695,14 @@ func generateAndValidateRenderedMachineConfig(currentMC *mcfgv1.MachineConfig, p
 
 	klog.V(4).Infof("Considering generated MachineConfig %q", generated.Name)
 
-	if fullErr := ctrlcommon.IsRenderedConfigReconcilable(currentMC, generated); fullErr != nil {
+	if fullErr := ctrlcommon.IsRenderedConfigReconcilable(currentMC, generated, validationOverrides); fullErr != nil {
 		fullMsg := fullErr.Error()
 
 		// trying to match error reason suffix
 		for _, cfg := range configs {
 			singleErr := ctrlcommon.IsComponentConfigsReconcilable(
 				currentMC, []*mcfgv1.MachineConfig{cfg},
+				validationOverrides,
 			)
 			if singleErr == nil {
 				continue
@@ -693,7 +721,7 @@ func generateAndValidateRenderedMachineConfig(currentMC *mcfgv1.MachineConfig, p
 		}
 
 		// fallback
-		compErr := ctrlcommon.IsComponentConfigsReconcilable(currentMC, configs)
+		compErr := ctrlcommon.IsComponentConfigsReconcilable(currentMC, configs, validationOverrides)
 		return nil, fmt.Errorf("render reconciliation error: %v; component errors: %v", fullErr, compErr)
 	}
 
