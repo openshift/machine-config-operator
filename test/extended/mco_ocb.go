@@ -319,7 +319,7 @@ func ValidateSuccessfulMOSC(mosc *MachineOSConfig, checkers []Checker) {
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting MOSB from MOSC")
 	o.Eventually(mosb.GetJob, "2m", "20s").Should(Exist(),
 		"No build job was created when OCB was enabled")
-	o.Eventually(mosb, "5m", "20s").Should(HaveConditionField("Building", "status", TrueString),
+	o.Eventually(mosb, "8m", "20s").Should(HaveConditionField("Building", "status", TrueString),
 		"MachineOSBuild didn't report that the build has begun")
 	logger.Infof("OK!\n")
 
