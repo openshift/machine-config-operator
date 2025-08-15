@@ -25,7 +25,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	g.It("PolarionID:83141-A valid MachineOSConfig leads to a successful MachineOSBuild and cleanup of its associated resources", func() {
 		var (
 			infraMcpName = "infra"
-			moscName     = fmt.Sprintf("tc-%s-infra", GetCurrentTestPolarionIDNumber())
+			moscName     = infraMcpName
 		)
 
 		exutil.By("Create custom infra MCP")
@@ -57,7 +57,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	g.It("PolarionID:83138-A MachineOSConfig fails to apply or degrades if invalid inputs are given", func() {
 		var (
 			infraMcpName = "infra"
-			moscName     = fmt.Sprintf("tc-%s-infra", GetCurrentTestPolarionIDNumber())
+			moscName     = infraMcpName
 			pushSpec     = fmt.Sprintf("%s/openshift-machine-config-operator/ocb-%s-image:latest", InternalRegistrySvcURL, infraMcpName)
 			pullSecret   = NewSecret(oc.AsAdmin(), "openshift-config", "pull-secret")
 
@@ -151,7 +151,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		var (
 			mcp      = GetCompactCompatiblePool(oc.AsAdmin())
-			moscName = "test-" + mcp.GetName() + "-" + GetCurrentTestPolarionIDNumber()
+			moscName = mcp.GetName()
 		)
 
 		exutil.By("Configure OCB functionality for the new worker MCP")
@@ -174,7 +174,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		var (
 			mcp      = GetCompactCompatiblePool(oc.AsAdmin())
-			moscName = "test-" + mcp.GetName() + "-" + GetCurrentTestPolarionIDNumber()
+			moscName = mcp.GetName()
 		)
 
 		exutil.By("Configure OCB functionality for the new worker MCP")
@@ -225,7 +225,7 @@ func testContainerFile(containerFiles []ContainerFile, imageNamespace string, mc
 	var (
 		oc       = mcp.GetOC().AsAdmin()
 		mcpList  = NewMachineConfigPoolList(oc.AsAdmin())
-		moscName = "test-" + GetCurrentTestPolarionIDNumber()
+		moscName = mcp.GetName()
 		mosc     *MachineOSConfig
 		err      error
 	)
