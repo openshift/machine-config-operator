@@ -597,7 +597,7 @@ func TestKubeletConfigUpdates(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
 			kubeletConfigKey, _ := getManagedKubeletConfigKey(mcp, f.client, kc1)
-			mcs := helpers.NewMachineConfig(kubeletConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
+			mcs := helpers.NewMachineConfig(kubeletConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{})
 			mcsDeprecated := mcs.DeepCopy()
 			mcsDeprecated.Name = getManagedKubeletConfigKeyDeprecated(mcp)
 
@@ -668,6 +668,171 @@ func TestKubeletConfigUpdates(t *testing.T) {
 			f.validateActions()
 
 			close(stopCh)
+		})
+	}
+}
+
+func TestMachineConfigUpdateUponFeatureGateUpdate(t *testing.T) {
+	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
+		t.Run(string(platform), func(t *testing.T) {
+			f := newFixture(t)
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
+			f.newController(fgHandler)
+
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
+			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
+			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+			kubeletConfigKey, _ := getManagedKubeletConfigKey(mcp, f.client, kc1)
+			originalKubeletConfiguration := kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100, FeatureGates: map[string]bool{"Example": true}}
+			cfgIgn, err := kubeletConfigToIgnFile(&originalKubeletConfiguration)
+			if err != nil {
+				t.Errorf("kubeletConfigToIgnFile returned: %v", err)
+			}
+			mcs := helpers.NewMachineConfig(kubeletConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{*cfgIgn})
+			mcs.SetAnnotations(map[string]string{
+				ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
+			})
+			mcsDeprecated := mcs.DeepCopy()
+			mcsDeprecated.Name = getManagedKubeletConfigKeyDeprecated(mcp)
+
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mcpLister = append(f.mcpLister, mcp2)
+			f.mckLister = append(f.mckLister, kc1)
+			f.objects = append(f.objects, kc1)
+
+			f.expectGetMachineConfigAction(mcs)
+			f.expectGetMachineConfigAction(mcsDeprecated)
+			f.expectGetMachineConfigAction(mcs)
+			f.expectUpdateKubeletConfigRoot(kc1)
+			f.expectCreateMachineConfigAction(mcs)
+			f.expectPatchKubeletConfig(kc1, kcfgPatchBytes)
+			f.expectUpdateKubeletConfig(kc1)
+
+			c := f.newController(fgHandler)
+			stopCh := make(chan struct{})
+
+			err = c.syncHandler(getKey(kc1, t))
+			if err != nil {
+				t.Errorf("syncHandler returned: %v", err)
+			}
+
+			f.validateActions()
+			close(stopCh)
+
+			// Perform Update
+			f = newFixture(t)
+
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mcpLister = append(f.mcpLister, mcp2)
+			f.mckLister = append(f.mckLister, kc1)
+			f.objects = append(f.objects, mcs, kc1) // MachineConfig exists
+
+			// no feature gates update
+			fgHandler = ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example", "Example2"}, nil)
+			c = f.newController(fgHandler)
+			stopCh = make(chan struct{})
+
+			// Apply update
+			err = c.syncHandler(getKey(kc1, t))
+			if err != nil {
+				t.Errorf("syncHandler returned: %v", err)
+			}
+
+			f.expectGetMachineConfigAction(mcs)
+			f.expectGetMachineConfigAction(mcs)
+			f.expectUpdateMachineConfigAction(mcs)
+			f.expectPatchKubeletConfig(kc1, kcfgPatchBytes)
+			f.expectUpdateKubeletConfig(kc1)
+
+			f.validateActions()
+
+			close(stopCh)
+
+		})
+	}
+}
+
+func TestMachineConfigSkipUpdate(t *testing.T) {
+	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
+		t.Run(string(platform), func(t *testing.T) {
+			f := newFixture(t)
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
+			f.newController(fgHandler)
+
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
+			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
+			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+			kubeletConfigKey, _ := getManagedKubeletConfigKey(mcp, f.client, kc1)
+			originalKubeletConfiguration := kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100, FeatureGates: map[string]bool{"Example": true}}
+			cfgIgn, err := kubeletConfigToIgnFile(&originalKubeletConfiguration)
+			if err != nil {
+				t.Errorf("kubeletConfigToIgnFile returned: %v", err)
+			}
+			mcs := helpers.NewMachineConfig(kubeletConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{*cfgIgn})
+			mcs.SetAnnotations(map[string]string{
+				ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
+			})
+			mcsDeprecated := mcs.DeepCopy()
+			mcsDeprecated.Name = getManagedKubeletConfigKeyDeprecated(mcp)
+
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mcpLister = append(f.mcpLister, mcp2)
+			f.mckLister = append(f.mckLister, kc1)
+			f.objects = append(f.objects, kc1)
+
+			f.expectGetMachineConfigAction(mcs)
+			f.expectGetMachineConfigAction(mcsDeprecated)
+			f.expectGetMachineConfigAction(mcs)
+			f.expectUpdateKubeletConfigRoot(kc1)
+			f.expectCreateMachineConfigAction(mcs)
+			f.expectPatchKubeletConfig(kc1, kcfgPatchBytes)
+			f.expectUpdateKubeletConfig(kc1)
+
+			c := f.newController(fgHandler)
+			stopCh := make(chan struct{})
+
+			err = c.syncHandler(getKey(kc1, t))
+			if err != nil {
+				t.Errorf("syncHandler returned: %v", err)
+			}
+
+			f.validateActions()
+			close(stopCh)
+
+			// Perform Update
+			f = newFixture(t)
+
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mcpLister = append(f.mcpLister, mcp2)
+			f.mckLister = append(f.mckLister, kc1)
+			f.objects = append(f.objects, mcs, kc1) // MachineConfig exists
+
+			// no feature gates update
+			fgHandler = ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
+			c = f.newController(fgHandler)
+			stopCh = make(chan struct{})
+
+			klog.Info("Applying no update")
+
+			// Apply update
+			err = c.syncHandler(getKey(kc1, t))
+			if err != nil {
+				t.Errorf("syncHandler returned: %v", err)
+			}
+
+			f.expectGetMachineConfigAction(mcs)
+			f.expectGetMachineConfigAction(mcs)
+
+			f.validateActions()
+
+			close(stopCh)
+
 		})
 	}
 }
@@ -969,7 +1134,7 @@ func TestAddAnnotationExistingKubeletConfig(t *testing.T) {
 			kc1 := newKubeletConfig("smaller-max-pods-1", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 200}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
 			kc1.SetAnnotations(map[string]string{ctrlcommon.MCNameSuffixAnnotationKey: "1"})
 			kc1.Finalizers = []string{kc1MCKey}
-			kcMC := helpers.NewMachineConfig(kcMCKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
+			kcMC := helpers.NewMachineConfig(kcMCKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{})
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
