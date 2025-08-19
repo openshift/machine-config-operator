@@ -9,13 +9,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/containers/image/v5/types"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	imagev1clientset "github.com/openshift/client-go/image/clientset/versioned"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	routeclientset "github.com/openshift/client-go/route/clientset/versioned"
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/imagebuilder"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/imagepruner"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/controller/template"
@@ -28,6 +31,7 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	clientset "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -66,21 +70,23 @@ type buildReconciler struct {
 	kubeclient  clientset.Interface
 	imageclient imagev1clientset.Interface
 	routeclient routeclientset.Interface
+	imagepruner imagepruner.ImagePruner
 	*listers
 }
 
 // Instantiates a new reconciler instance. This returns an interface to
 // disallow access to its private methods.
-func newBuildReconciler(mcfgclient mcfgclientset.Interface, kubeclient clientset.Interface, imageclient imagev1clientset.Interface, routeclient routeclientset.Interface, l *listers) reconciler {
-	return newBuildReconcilerAsStruct(mcfgclient, kubeclient, imageclient, routeclient, l)
+func newBuildReconciler(mcfgclient mcfgclientset.Interface, kubeclient clientset.Interface, imageclient imagev1clientset.Interface, routeclient routeclientset.Interface, l *listers, imagepruner imagepruner.ImagePruner) reconciler {
+	return newBuildReconcilerAsStruct(mcfgclient, kubeclient, imageclient, routeclient, l, imagepruner)
 }
 
-func newBuildReconcilerAsStruct(mcfgclient mcfgclientset.Interface, kubeclient clientset.Interface, imageclient imagev1clientset.Interface, routeclient routeclientset.Interface, l *listers) *buildReconciler {
+func newBuildReconcilerAsStruct(mcfgclient mcfgclientset.Interface, kubeclient clientset.Interface, imageclient imagev1clientset.Interface, routeclient routeclientset.Interface, l *listers, imagepruner imagepruner.ImagePruner) *buildReconciler {
 	return &buildReconciler{
 		mcfgclient:  mcfgclient,
 		kubeclient:  kubeclient,
 		imageclient: imageclient,
 		routeclient: routeclient,
+		imagepruner: imagepruner,
 		listers:     l,
 	}
 }
@@ -968,40 +974,19 @@ func (b *buildReconciler) deleteMOSBImage(mosb *mcfgv1.MachineOSBuild, moscName 
 	}
 
 	image := string(mosb.Spec.RenderedImagePushSpec)
-	isOpenShiftRegistry, err := b.isOpenShiftRegistry(image)
-	if err != nil {
-		return err
-	}
-	if isOpenShiftRegistry {
-		klog.Infof("Deleting image %s from internal registry for MachineOSBuild %s", image, mosb.Name)
-		// Use the openshift API to delete the image
-		ns, img, err := extractNSAndNameWithTag(image)
-		if err != nil {
-			return err
+	if err := b.deleteImage(ctx, image, mosb); err != nil {
+		wrappedErr := fmt.Errorf("could not delete image for MachineOSBuild %s for MachineOSConfig %s: %w", mosb.Name, moscName, err)
+		// If the image cannot be deleted because it either does not exist or one's
+		// creds do not have the necessary permissions, then we should ignore the
+		// error and continue.
+		if imagepruner.IsTolerableDeleteErr(err) || k8serrors.IsNotFound(err) {
+			klog.Warning(wrappedErr.Error())
+		} else {
+			return wrappedErr
 		}
-		if err := b.imageclient.ImageV1().ImageStreamTags(ns).Delete(context.TODO(), img, metav1.DeleteOptions{}); err != nil {
-			return fmt.Errorf("could not delete image %s from internal registry for MachineOSBuild %s: %w", image, mosb.Name, err)
-		}
-		return nil
+	} else {
+		klog.Infof("Deleted image %s from registry for MachineOSBuild %s", image, mosb.Name)
 	}
-
-	klog.Infof("Deleting image %s from external registry using skopeo for MachineOSBuild %s", image, mosb.Name)
-	// Create the authfile for the rendered push secret
-	authFile, err := b.getAuthFilePath(mosb, moscName)
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(authFile)
-	// Create the certs directory to be used by skopeo
-	if err := b.getCerts(); err != nil {
-		return err
-	}
-	defer os.RemoveAll(certsDir)
-
-	if err := daemon.DeleteImage(image, authFile); err != nil {
-		return fmt.Errorf("could not delete image %s from registry for MachineOSBuild %s: %w", image, mosb.Name, err)
-	}
-	klog.Infof("Deleted image %s from registry for MachineOSBuild %s", image, mosb.Name)
 	return nil
 }
 
@@ -1330,4 +1315,348 @@ func (b *buildReconciler) syncMachineConfigPool(ctx context.Context, mcp *mcfgv1
 	return b.timeObjectOperation(mcp, syncingVerb, func() error {
 		return b.createNewMachineOSBuildOrReuseExistingForPoolChange(ctx, mcp)
 	})
+}
+
+func (b *buildReconciler) reconcilePoolChange(ctx context.Context, mcp *mcfgv1.MachineConfigPool) error {
+
+	mosc, err := utils.GetMachineOSConfigForMachineConfigPool(mcp, b.utilListers())
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			klog.Infof("No MachineOSConfig for pool %q, skipping", mcp.Name)
+			return nil
+		}
+		return fmt.Errorf("failed to get MachineOSConfig for pool %q: %w", mcp.Name, err)
+	}
+
+	oldRendered := mcp.Status.Configuration.Name
+	newRendered := mcp.Spec.Configuration.Name
+
+	// old pool
+	old := mcp.DeepCopy()
+	old.Spec.Configuration.Name = mcp.Status.Configuration.Name
+	firstOptIn := mosc.Annotations[constants.CurrentMachineOSBuildAnnotationKey]
+	if firstOptIn == "" {
+		return fmt.Errorf("no current build annotation on MachineOSConfig %q", mosc.Name)
+	}
+
+	needsImageRebuild, err := b.reconcileImageRebuild(old, mcp)
+	if err != nil {
+		return err
+	}
+
+	// This is our trigger point
+	if (oldRendered != newRendered && needsImageRebuild) || firstOptIn == "" {
+		klog.Infof("pool %q: rendered config changed and requires an image rebuild. Verifying if a valid build already exists...", mcp.Name)
+
+		osImageURLs, _ := ctrlcommon.GetOSImageURLConfig(ctx, b.kubeclient)
+		targetMosb, err := buildrequest.NewMachineOSBuild(buildrequest.MachineOSBuildOpts{
+			MachineOSConfig:   mosc,
+			MachineConfigPool: mcp,
+			OSImageURLConfig:  osImageURLs,
+		})
+		if err != nil {
+			return fmt.Errorf("could not generate name for target MOSB: %w", err)
+		}
+
+		// Now, check if a MOSB with that name already exists.
+		existingMosb, err := b.machineOSBuildLister.Get(targetMosb.Name)
+		if err == nil {
+			// A MOSB for our target config was found. Check its status
+			mosbState := ctrlcommon.NewMachineOSBuildState(existingMosb)
+
+			if mosbState.IsInTransientState() {
+				klog.Infof("pool %q: MOSB (%s) is in a transient state. Please allow time for MOSB to finish updating.", mcp.Name, existingMosb.Name)
+				return nil
+			}
+
+			// if MOSB state is successful, this can mean one of two things:
+			// 1. Applied MC triggered a MOSB build through `needsImageRebuild`, and it completed, but we are waiting for spec == status in the node update
+			// 2. Current MOSB state is successful, and a deleted MC triggered a MOSB build through `needsImageRebuild`.
+			if mosbState.IsBuildSuccess() {
+				klog.Infof("pool %q: Found successful build for target. Reusing image.", mcp.Name)
+				return b.reuseImageForNewMOSB(ctx, mosc, existingMosb)
+			}
+
+		} else if !k8serrors.IsNotFound(err) {
+			// An actual error occurred (not just "not found"). Return the error.
+			return fmt.Errorf("could not get target MOSB %s: %w", targetMosb.Name, err)
+		}
+
+	} else if oldRendered != newRendered && !needsImageRebuild {
+		klog.Infof("pool %q: No new image needs to be created, reusing last MOSB", mcp.Name)
+		prevPullSpec := mosc.Status.CurrentImagePullSpec
+		oldMOSB, err := utils.GetMachineOSBuildForImagePullspec(string(prevPullSpec), b.utilListers())
+		if err != nil {
+			return fmt.Errorf("failed to look up MachineOSBuild for pull-spec %q: %w", prevPullSpec, err)
+		}
+		return b.reuseImageForNewMOSB(ctx, mosc, oldMOSB)
+	}
+
+	klog.Infof("pool %q: detected extension/kernel/kargs/OSImageURL change → will rebuild image", mcp.Name)
+	return b.createNewMachineOSBuildOrReuseExisting(ctx, mosc, needsImageRebuild)
+
+}
+
+// reuseImageForNewMOSB creates a new MOSB (for the new rendered-MC name)
+// but populates its status from oldMosb so that no build actually runs.
+func (b *buildReconciler) reuseImageForNewMOSB(ctx context.Context, mosc *mcfgv1.MachineOSConfig, oldMosb *mcfgv1.MachineOSBuild,
+) error {
+	// Look up the MCP associated with the MOSC
+	mcp, err := b.machineConfigPoolLister.Get(mosc.Spec.MachineConfigPool.Name)
+	if err != nil {
+		return err
+	}
+
+	// Get the osimageurl for our new MOSB object
+	osImageURLs, err := ctrlcommon.GetOSImageURLConfig(ctx, b.kubeclient)
+	if err != nil {
+		return err
+	}
+	// Build the new MOSB object. this is our "promise", we will eventually check if we will proceed with this
+	newMosb, err := buildrequest.NewMachineOSBuild(
+		buildrequest.MachineOSBuildOpts{
+			MachineOSConfig:   mosc,
+			MachineConfigPool: mcp,
+			OSImageURLConfig:  osImageURLs,
+		})
+	if err != nil {
+		return err
+	}
+	// todo (dkhater): push the SetOwnerReferences() part into the NewMachineOSBuild() constructor
+	// since we already have the MOSC there and it feels like something the MOSB constructor should be setting.
+
+	// set the ownder of the new MOSB to be the MOSC so we can garbage collect this later
+	newMosb.SetOwnerReferences([]metav1.OwnerReference{
+		*metav1.NewControllerRef(mosc, mcfgv1.SchemeGroupVersion.WithKind("MachineOSConfig")),
+	})
+
+	// check if a MOSB with the newly generated name already exists in the cluster
+	_, err = b.machineOSBuildLister.Get(newMosb.Name)
+	if k8serrors.IsNotFound(err) {
+		// create the new MOSB object
+		if newMosb, err = b.mcfgclient.
+			MachineconfigurationV1().
+			MachineOSBuilds().
+			Create(ctx, newMosb, metav1.CreateOptions{}); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
+
+	image := string(oldMosb.Status.DigestedImagePushSpec)
+
+	inspect, err := b.inspectImage(ctx, image, newMosb)
+	if err != nil {
+		return err
+	}
+
+	// this is our "reality check": try to inspect the image in the registry to see if it still exists
+	switch {
+	// image is found, we will reuse this image
+	case inspect != nil && err == nil:
+		klog.Infof("Existing MachineOSBuild %q found, reusing image %q by assigning to MachineOSConfig %q", newMosb.Name, image, mosc.Name)
+	// we are unauthorized and need to report this
+	case k8serrors.IsUnauthorized(err) || imagepruner.IsAccessDeniedErr(err):
+		return fmt.Errorf("authentication failed while inspecting image %q for MachineOSBuild %q: %w", image, newMosb.Name, err)
+	// image does not exist, so we delete MOSB and rebuild
+	case k8serrors.IsNotFound(err) || imagepruner.IsImageNotFoundErr(err):
+		klog.Infof("Deleting MachineOSBuild %q and rebuilding", newMosb.Name)
+		if deleteErr := b.mcfgclient.MachineconfigurationV1().MachineOSBuilds().Delete(ctx, newMosb.Name, metav1.DeleteOptions{}); deleteErr != nil && !k8serrors.IsNotFound(deleteErr) {
+			return fmt.Errorf("could not delete MachineOSBuild %q: %w", newMosb.Name, deleteErr)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unexpected error inspecting image %q for MachineOSBuild %q: %w", image, newMosb.Name, err)
+	}
+
+	// get the latest version of the new MOSB object to ensure we update it correctly
+	toUpdate, err := b.getMachineOSBuildForUpdate(newMosb)
+	if err != nil {
+		return err
+	}
+	// store the current status
+	oldStatus := toUpdate.Status
+
+	// copy image url
+	toUpdate.Status.DigestedImagePushSpec = oldMosb.Status.DigestedImagePushSpec
+
+	// set conditions on new MOSB status to succeeded
+	for _, c := range apihelpers.MachineOSBuildSucceededConditions() {
+		apihelpers.SetMachineOSBuildCondition(&toUpdate.Status, c)
+	}
+
+	// update MOSB object with the status
+	if err := b.setStatusOnMachineOSBuildIfNeeded(ctx, toUpdate, oldStatus, toUpdate.Status); err != nil {
+		return err
+	}
+
+	// update parent MOSC status to point to newly built (aka the reused) MOSB
+	return b.updateMachineOSConfigStatus(ctx, mosc, toUpdate)
+}
+
+// getObjectsForImagePruner retrieves the secret for the MachineOSBuild and the ControllerConfig for use by the imagepruner.
+func (b *buildReconciler) getObjectsForImagePruner(mosb *mcfgv1.MachineOSBuild) (*corev1.Secret, *mcfgv1.ControllerConfig, error) {
+	secretName := mosb.Annotations[constants.RenderedImagePushSecretAnnotationKey]
+
+	if secretName == "" {
+		return nil, nil, fmt.Errorf("MachineOSBuild %s missing annotation %s", mosb.Name, constants.RenderedImagePushSecretAnnotationKey)
+	}
+
+	secret, err := b.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), secretName, metav1.GetOptions{})
+	if err != nil {
+		return nil, nil, fmt.Errorf("could not get rendered push secret %s: %w", secretName, err)
+	}
+
+	controllerConfigs, err := b.listers.controllerConfigLister.List(labels.Everything())
+	if err != nil {
+		return nil, nil, fmt.Errorf("could not list ControllerConfigs: %w", err)
+	}
+
+	if len(controllerConfigs) == 0 {
+		return nil, nil, fmt.Errorf("no ControllerConfigs found")
+	}
+
+	return secret.DeepCopy(), controllerConfigs[0].DeepCopy(), nil
+}
+
+// inspectImage retrieves the necessary objects and calls InspectImage on the imagepruner.
+func (b *buildReconciler) inspectImage(ctx context.Context, pullspec string, mosb *mcfgv1.MachineOSBuild) (*types.ImageInspectInfo, error) {
+	secret, cc, err := b.getObjectsForImagePruner(mosb)
+	if err != nil {
+		return nil, err
+	}
+
+	info, _, err := b.imagepruner.InspectImage(ctx, pullspec, secret, cc)
+	return info, err
+}
+
+// deleteImage retrieves the necessary objects and calls DeleteImage on the imagepruner.
+func (b *buildReconciler) deleteImage(ctx context.Context, pullspec string, mosb *mcfgv1.MachineOSBuild) error {
+	isOpenShiftRegistry, err := b.isOpenShiftRegistry(pullspec)
+	if err != nil {
+		return err
+	}
+
+	if isOpenShiftRegistry {
+		klog.Infof("Deleting image %s from internal registry for MachineOSBuild %s", pullspec, mosb.Name)
+		// Use the openshift API to delete the image
+		ns, img, err := extractNSAndNameWithTag(pullspec)
+		if err != nil {
+			return err
+		}
+		if err := b.imageclient.ImageV1().ImageStreamTags(ns).Delete(context.TODO(), img, metav1.DeleteOptions{}); err != nil {
+			return fmt.Errorf("could not delete image %s from internal registry for MachineOSBuild %s: %w", pullspec, mosb.Name, err)
+		}
+		return nil
+	}
+
+	klog.Infof("Deleting image %s from external registry using skopeo for MachineOSBuild %s", pullspec, mosb.Name)
+	secret, cc, err := b.getObjectsForImagePruner(mosb)
+	if err != nil {
+		return err
+	}
+
+	return b.imagepruner.DeleteImage(ctx, pullspec, secret, cc)
+}
+
+// Determines if builds should be prevented due to pool degradation.
+// Returns true if pool has ANY degraded condition other than BuildDegraded,
+// but false if degraded ONLY due to BuildDegraded (to allow retry attempts).
+func (b *buildReconciler) shouldPreventBuildDueToDegradation(mcp *mcfgv1.MachineConfigPool) bool {
+	// Check for ALL degradation conditions except BuildDegraded that should prevent new builds
+	// We intentionally exclude BuildDegraded to allow retries
+	// We check specific conditions rather than overall Degraded since Degraded=True could be due to BuildDegraded alone
+	nonBuildDegradedTypes := []mcfgv1.MachineConfigPoolConditionType{
+		mcfgv1.MachineConfigPoolNodeDegraded,
+		mcfgv1.MachineConfigPoolRenderDegraded,
+		mcfgv1.MachineConfigPoolPinnedImageSetsDegraded,
+		mcfgv1.MachineConfigPoolSynchronizerDegraded,
+	}
+
+	for _, condType := range nonBuildDegradedTypes {
+		if apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, condType) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// reconcileImageRebuild calls RequiresRebuild to see if an MC changes the kernel args, ext, or osimageurl.
+// if it does, we build a new image in our new MOSB
+func (b *buildReconciler) reconcileImageRebuild(oldMCP, curMCP *mcfgv1.MachineConfigPool) (bool, error) {
+
+	curr, err := b.machineConfigLister.Get(oldMCP.Spec.Configuration.Name)
+	if err != nil {
+		return false, err
+	}
+	des, err := b.machineConfigLister.Get(curMCP.Spec.Configuration.Name)
+	if err != nil {
+		return false, err
+	}
+
+	return ctrlcommon.RequiresRebuild(curr, des), nil
+}
+
+// Clears BuildDegraded condition when a new build starts (allowing retry after failure)
+func (b *buildReconciler) initializeBuildDegradedCondition(ctx context.Context, pool *mcfgv1.MachineConfigPool) error {
+	// Check if BuildDegraded condition is already False - if so, no update needed
+	if apihelpers.IsMachineConfigPoolConditionFalse(pool.Status.Conditions, mcfgv1.MachineConfigPoolImageBuildDegraded) {
+		return nil
+	}
+
+	// Clear BuildDegraded condition (even if it was True from previous failure) when new build starts
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		// Get fresh copy for update to avoid conflicts
+		currentPool, err := b.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(ctx, pool.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+
+		buildDegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolImageBuildDegraded, corev1.ConditionFalse, "BuildStarted", "Build started for pool "+currentPool.Name)
+		apihelpers.SetMachineConfigPoolCondition(&currentPool.Status, *buildDegraded)
+
+		_, err = b.mcfgclient.MachineconfigurationV1().MachineConfigPools().UpdateStatus(ctx, currentPool, metav1.UpdateOptions{})
+		return err
+	})
+}
+
+// Clears BuildDegraded condition when build succeeds
+func (b *buildReconciler) syncBuildSuccessStatus(ctx context.Context, pool *mcfgv1.MachineConfigPool) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		// Get fresh copy for update to avoid conflicts
+		currentPool, err := b.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(ctx, pool.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+
+		buildDegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolImageBuildDegraded, corev1.ConditionFalse, "BuildSucceeded", "Build succeeded for pool "+currentPool.Name)
+		apihelpers.SetMachineConfigPoolCondition(&currentPool.Status, *buildDegraded)
+
+		_, err = b.mcfgclient.MachineconfigurationV1().MachineConfigPools().UpdateStatus(ctx, currentPool, metav1.UpdateOptions{})
+		return err
+	})
+}
+
+// Sets BuildDegraded condition when build fails
+func (b *buildReconciler) syncBuildFailureStatus(ctx context.Context, pool *mcfgv1.MachineConfigPool, buildErr error, mosbName string) error {
+	updateErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		// Get fresh copy for update to avoid conflicts
+		currentPool, err := b.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(ctx, pool.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+
+		// The message content may be truncated https://github.com/kubernetes/apimachinery/blob/f5dd29d6ada12819a4a6ddc97d5bdf812f8a1cad/pkg/apis/meta/v1/types.go#L1619-L1635
+		buildDegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolImageBuildDegraded, corev1.ConditionTrue, "BuildFailed", fmt.Sprintf("Failed to build OS image for pool %s (MachineOSBuild: %s): %v", currentPool.Name, mosbName, buildErr))
+		apihelpers.SetMachineConfigPoolCondition(&currentPool.Status, *buildDegraded)
+
+		_, updateErr := b.mcfgclient.MachineconfigurationV1().MachineConfigPools().UpdateStatus(ctx, currentPool, metav1.UpdateOptions{})
+		return updateErr
+	})
+	if updateErr != nil {
+		klog.Errorf("Error updating MachineConfigPool %s BuildDegraded status: %v", pool.Name, updateErr)
+	}
+	return buildErr
 }
