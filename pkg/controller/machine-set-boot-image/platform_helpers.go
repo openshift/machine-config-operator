@@ -256,20 +256,33 @@ func reconcileAzureProviderSpec(streamData *stream.Stream, arch string, _ *oscon
 		usesHyperVGen2 = strings.Contains(currentImage.SKU, "v2")
 	}
 
-	var targetImage machinev1beta1.Image
-
-	streamArch, err := streamData.GetArchitecture(arch)
-	if err != nil {
-		return false, nil, err
-	}
-	streamAzureImages := streamArch.RHELCoreOSExtensions.Marketplace.Azure.NoPurchasePlan
-	// arm64 only uses hyperGenV2
-	if usesHyperVGen2 || arch == "aarch64" {
-		targetImage = getAzureImageFromStreamImage(*streamAzureImages.Gen2, false)
-	} else {
-		targetImage = getAzureImageFromStreamImage(*streamAzureImages.Gen1, false)
+	// Temporary hack for testing
+	targetImage := machinev1beta1.Image{
+		Offer:      "aro4",
+		Publisher:  "azureopenshift",
+		ResourceID: "",
+		SKU:        "419-v2",
+		Version:    "419.6.20250523",
+		Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
 	}
 
+	if !usesHyperVGen2 {
+		targetImage.SKU = "aro_419"
+	}
+	/*
+		var targetImage machinev1beta1.Image
+		streamArch, err := streamData.GetArchitecture(arch)
+			if err != nil {
+				return false, nil, err
+			}
+				streamAzureImages := streamArch.RHELCoreOSExtensions.Marketplace.Azure.NoPurchasePlan
+				// arm64 only uses hyperGenV2
+				if usesHyperVGen2 || arch == "aarch64" {
+					targetImage = getAzureImageFromStreamImage(*streamAzureImages.Gen2, false)
+				} else {
+					targetImage = getAzureImageFromStreamImage(*streamAzureImages.Gen1, false)
+				}
+	*/
 	// If the current image matches, nothing to do here
 	if reflect.DeepEqual(currentImage, targetImage) {
 		return false, nil, nil
