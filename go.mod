@@ -29,6 +29,7 @@ require (
 	github.com/google/renameio v0.1.0
 	github.com/google/uuid v1.6.0
 	github.com/imdario/mergo v0.3.16
+	github.com/josephburnett/jd v1.9.2
 	github.com/onsi/ginkgo/v2 v2.22.2
 	github.com/onsi/gomega v1.36.2
 	github.com/opencontainers/go-digest v1.0.0
@@ -184,6 +185,7 @@ require (
 	github.com/xen0n/gosmopolitan v1.2.2 // indirect
 	github.com/xlab/treeprint v1.2.0 // indirect
 	github.com/ykadowak/zerologlint v0.1.5 // indirect
+	github.com/yudai/golcs v0.0.0-20170316035057-ecda9a501e82 // indirect
 	go-simpler.org/musttag v0.13.0 // indirect
 	go-simpler.org/sloglint v0.7.2 // indirect
 	go.etcd.io/etcd/api/v3 v3.5.21 // indirect
