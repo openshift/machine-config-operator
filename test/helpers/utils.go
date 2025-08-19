@@ -946,6 +946,26 @@ func ExecCmdOnNodeWithError(cs *framework.ClientSet, node corev1.Node, subArgs .
 // ExecCmdOnNode finds a node's mcd, and oc rsh's into it to execute a command on the node
 // all commands should use /rootfs as root
 func execCmdOnNode(cs *framework.ClientSet, node corev1.Node, subArgs ...string) (*exec.Cmd, error) {
+	mcd, err := mcdForNode(cs, &node)
+	if err != nil {
+		return nil, fmt.Errorf("could not get MCD for node %s: %w", node.Name, err)
+	}
+
+	mcdName := mcd.ObjectMeta.Name
+
+	args := []string{"rsh",
+		"-n", "openshift-machine-config-operator",
+		"-c", "machine-config-daemon",
+		mcdName}
+	args = append(args, subArgs...)
+
+	return NewOcCommand(cs, args...)
+}
+
+// NewOcCommand() configures an exec.Cmd instance to pass the provided
+// arguments into the oc command. Returns an error if the oc command is missing
+// or the KUBECONFIG is also missing.
+func NewOcCommand(cs *framework.ClientSet, args ...string) (*exec.Cmd, error) {
 	// Check for an oc binary in $PATH.
 	path, err := exec.LookPath("oc")
 	if err != nil {
@@ -958,25 +978,26 @@ func execCmdOnNode(cs *framework.ClientSet, node corev1.Node, subArgs ...string)
 		return nil, fmt.Errorf("could not get kubeconfig: %w", err)
 	}
 
-	mcd, err := mcdForNode(cs, &node)
-	if err != nil {
-		return nil, fmt.Errorf("could not get MCD for node %s: %w", node.Name, err)
-	}
-
-	mcdName := mcd.ObjectMeta.Name
-
-	entryPoint := path
-	args := []string{"rsh",
-		"-n", "openshift-machine-config-operator",
-		"-c", "machine-config-daemon",
-		mcdName}
-	args = append(args, subArgs...)
-
-	cmd := exec.Command(entryPoint, args...)
+	cmd := exec.Command(path, args...)
 	// If one passes a path to a kubeconfig via NewClientSet instead of setting
 	// $KUBECONFIG, oc will be unaware of it. To remedy, we explicitly set
 	// KUBECONFIG to the value held by the clientset.
 	cmd.Env = append(cmd.Env, "KUBECONFIG="+kubeconfig)
+
+	return cmd, nil
+}
+
+// NewOcCommandWithOutput() performs the same as above while also wiring
+// cmd.Stdout to os.Stdout and cmd.Stderr to os.Stderr.
+func NewOcCommandWithOutput(cs *framework.ClientSet, args ...string) (*exec.Cmd, error) {
+	cmd, err := NewOcCommand(cs, args...)
+	if err != nil {
+		return nil, err
+	}
+
+	cmd.Stdout = os.Stdout
+	cmd.Stdout = os.Stderr
+
 	return cmd, nil
 }
 
