@@ -999,35 +999,12 @@ func (b *buildReconciler) deleteMOSBImage(ctx context.Context, mosb *mcfgv1.Mach
 	}
 
 	image := string(mosb.Spec.RenderedImagePushSpec)
-	isOpenShiftRegistry, err := ctrlcommon.IsOpenShiftRegistry(ctx, image, b.kubeclient, b.routeclient)
-	if err != nil {
-		return err
-	}
-	if isOpenShiftRegistry {
-		klog.Infof("Deleting image %s from internal registry for MachineOSBuild %s", image, mosb.Name)
-		// Use the openshift API to delete the image
-		ns, img, err := extractNSAndNameWithTag(image)
-		if err != nil {
-			return err
-		}
-		if err := b.imageclient.ImageV1().ImageStreamTags(ns).Delete(context.TODO(), img, metav1.DeleteOptions{}); err != nil {
-			// If the ImageStreamTag doesn't exist (e.g., build failed before pushing), ignore the error
-			if k8serrors.IsNotFound(err) {
-				klog.Infof("ImageStreamTag %s not found for MachineOSBuild %s, skipping deletion (likely failed build)", img, mosb.Name)
-				return nil
-			}
-			return fmt.Errorf("could not delete image %s from internal registry for MachineOSBuild %s: %w", image, mosb.Name, err)
-		}
-		return nil
-	}
-
-	klog.Infof("Deleting image %s from external registry using skopeo for MachineOSBuild %s", image, mosb.Name)
 	if err := b.deleteImage(ctx, image, mosb); err != nil {
 		wrappedErr := fmt.Errorf("could not delete image for MachineOSBuild %s for MachineOSConfig %s: %w", mosb.Name, moscName, err)
 		// If the image cannot be deleted because it either does not exist or one's
 		// creds do not have the necessary permissions, then we should ignore the
 		// error and continue.
-		if imagepruner.IsTolerableDeleteErr(err) {
+		if imagepruner.IsTolerableDeleteErr(err) || k8serrors.IsNotFound(err) {
 			klog.Warning(wrappedErr.Error())
 		} else {
 			return wrappedErr
@@ -1481,11 +1458,11 @@ func (b *buildReconciler) reuseImageForNewMOSB(ctx context.Context, mosc *mcfgv1
 	// image is found, we will reuse this image
 	case inspect != nil && err == nil:
 		klog.Infof("Existing MachineOSBuild %q found, reusing image %q by assigning to MachineOSConfig %q", newMosb.Name, image, mosc.Name)
-		// we are unauthorized and need to report this
-	case k8serrors.IsUnauthorized(err):
+	// we are unauthorized and need to report this
+	case k8serrors.IsUnauthorized(err) || imagepruner.IsAccessDeniedErr(err):
 		return fmt.Errorf("authentication failed while inspecting image %q for MachineOSBuild %q: %w", image, newMosb.Name, err)
-		// image does not exist, so we delete MOSB and rebuild
-	case k8serrors.IsNotFound(err):
+	// image does not exist, so we delete MOSB and rebuild
+	case k8serrors.IsNotFound(err) || imagepruner.IsImageNotFoundErr(err):
 		klog.Infof("Deleting MachineOSBuild %q and rebuilding", newMosb.Name)
 		if deleteErr := b.mcfgclient.MachineconfigurationV1().MachineOSBuilds().Delete(ctx, newMosb.Name, metav1.DeleteOptions{}); deleteErr != nil && !k8serrors.IsNotFound(deleteErr) {
 			return fmt.Errorf("could not delete MachineOSBuild %q: %w", newMosb.Name, deleteErr)
@@ -1558,6 +1535,25 @@ func (b *buildReconciler) inspectImage(ctx context.Context, pullspec string, mos
 
 // deleteImage retrieves the necessary objects and calls DeleteImage on the imagepruner.
 func (b *buildReconciler) deleteImage(ctx context.Context, pullspec string, mosb *mcfgv1.MachineOSBuild) error {
+	isOpenShiftRegistry, err := ctrlcommon.IsOpenShiftRegistry(ctx, pullspec, b.kubeclient, b.routeclient)
+	if err != nil {
+		return err
+	}
+
+	if isOpenShiftRegistry {
+		klog.Infof("Deleting image %s from internal registry for MachineOSBuild %s", pullspec, mosb.Name)
+		// Use the openshift API to delete the image
+		ns, img, err := extractNSAndNameWithTag(pullspec)
+		if err != nil {
+			return err
+		}
+		if err := b.imageclient.ImageV1().ImageStreamTags(ns).Delete(context.TODO(), img, metav1.DeleteOptions{}); err != nil {
+			return fmt.Errorf("could not delete image %s from internal registry for MachineOSBuild %s: %w", pullspec, mosb.Name, err)
+		}
+		return nil
+	}
+
+	klog.Infof("Deleting image %s from external registry using skopeo for MachineOSBuild %s", pullspec, mosb.Name)
 	secret, cc, err := b.getObjectsForImagePruner(mosb)
 	if err != nil {
 		return err
