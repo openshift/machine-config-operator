@@ -19,6 +19,7 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	"github.com/openshift/machine-config-operator/pkg/daemon/runtimeassets"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
@@ -1329,4 +1330,99 @@ func waitForJobToReachMOSBCondition(ctx context.Context, t *testing.T, cs *frame
 
 		return expectedCondition == buildprogress, nil
 	})
+}
+
+// waitForImageBuildDegradedCondition waits for the ImageBuildDegraded condition to reach the expected state
+func waitForImageBuildDegradedCondition(ctx context.Context, t *testing.T, cs *framework.ClientSet, poolName string, expectedStatus corev1.ConditionStatus) *mcfgv1.MachineConfigPoolCondition {
+	t.Helper()
+
+	var condition *mcfgv1.MachineConfigPoolCondition
+	require.NoError(t, wait.PollImmediate(1*time.Second, 2*time.Minute, func() (bool, error) {
+		mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(ctx, poolName, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+
+		condition = apihelpers.GetMachineConfigPoolCondition(mcp.Status, mcfgv1.MachineConfigPoolImageBuildDegraded)
+		if condition == nil {
+			return false, nil
+		}
+
+		return condition.Status == expectedStatus, nil
+	}))
+
+	return condition
+}
+
+// TestImageBuildDegradedOnFailureAndClearedOnBuildSuccess tests that the ImageBuildDegraded condition is set to
+// True when a MachineOSBuild fails, and is set to False when a MachineOSBuild succeeds after a previous failure.
+func TestImageBuildDegradedOnFailureAndClearedOnBuildSuccess(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	cs := framework.NewClientSet("")
+
+	mosc := prepareForOnClusterLayeringTest(t, cs, onClusterLayeringTestOpts{
+		poolName: layeredMCPName,
+		customDockerfiles: map[string]string{
+			layeredMCPName: cowsayDockerfile,
+		},
+	})
+
+	// First, add a bad containerfile to cause a build failure
+	t.Logf("Adding a bad containerfile for MachineOSConfig %s to cause a build failure", mosc.Name)
+	mosc.Spec.Containerfile = getBadContainerFileForFailureTest()
+
+	createMachineOSConfig(t, cs, mosc)
+
+	// Wait for the build to start and fail
+	firstMosb := waitForBuildToStartForPoolAndConfig(t, cs, layeredMCPName, mosc.Name)
+	t.Logf("Waiting for MachineOSBuild %s to fail", firstMosb.Name)
+
+	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
+	kubeassert.Eventually().MachineOSBuildIsFailure(firstMosb)
+
+	// Wait for and verify ImageBuildDegraded condition is set to True
+	degradedCondition := waitForImageBuildDegradedCondition(ctx, t, cs, layeredMCPName, corev1.ConditionTrue)
+	require.NotNil(t, degradedCondition, "ImageBuildDegraded condition should be present")
+	assert.Equal(t, "BuildFailed", degradedCondition.Reason, "ImageBuildDegraded reason should be BuildFailed")
+	assert.Contains(t, degradedCondition.Message, fmt.Sprintf("Failed to build OS image for pool %s", layeredMCPName), "ImageBuildDegraded message should contain pool name")
+	assert.Contains(t, degradedCondition.Message, firstMosb.Name, "ImageBuildDegraded message should contain MachineOSBuild name")
+
+	t.Logf("ImageBuildDegraded condition correctly set to True with message: %s", degradedCondition.Message)
+
+	// Now fix the MachineOSConfig with a good containerfile
+	apiMosc, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().Get(ctx, mosc.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	apiMosc.Spec.Containerfile = []mcfgv1.MachineOSContainerfile{
+		{
+			ContainerfileArch: mcfgv1.NoArch,
+			Content:           cowsayDockerfile,
+		},
+	}
+
+	updated, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().Update(ctx, apiMosc, metav1.UpdateOptions{})
+	require.NoError(t, err)
+
+	t.Logf("Fixed containerfile, waiting for new build to start")
+
+	mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(ctx, layeredMCPName, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	// Compute the new MachineOSBuild name
+	moscChangeMosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, cs.GetKubeclient(), updated, mcp)
+
+	// Wait for the second build to start and complete successfully
+	secondMosb := waitForBuildToStart(t, cs, moscChangeMosb)
+	finishedBuild := waitForBuildToComplete(t, cs, secondMosb)
+
+	t.Logf("Second build completed successfully: %s", finishedBuild.Name)
+
+	// Wait for and verify ImageBuildDegraded condition is now False
+	degradedCondition = waitForImageBuildDegradedCondition(ctx, t, cs, layeredMCPName, corev1.ConditionFalse)
+	require.NotNil(t, degradedCondition, "ImageBuildDegraded condition should still be present")
+	assert.Equal(t, "BuildSucceeded", degradedCondition.Reason, "ImageBuildDegraded reason should be BuildSucceeded")
+
+	t.Logf("ImageBuildDegraded condition correctly cleared to False with message: %s", degradedCondition.Message)
 }

@@ -29,6 +29,7 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	clientset "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -265,23 +266,70 @@ func (b *buildReconciler) updateMachineOSBuild(ctx context.Context, old, current
 	}
 
 	if !oldState.IsBuildFailure() && curState.IsBuildFailure() {
-		klog.Infof("MachineOSBuild %s failed, leaving ephemeral objects in place for inspection", current.Name)
+		klog.Infof("MachineOSBuild %s failed, leaving ephemeral objects in place for inspection and setting BuildDegraded condition", current.Name)
+
+		// Before setting BuildDegraded, check if another MachineOSBuild is active or if this one has been superseded
+		mosbList, err := b.getMachineOSBuildsForMachineOSConfig(mosc)
+		if err != nil {
+			return fmt.Errorf("could not get MachineOSBuilds for MachineOSConfig %q: %w", mosc.Name, err)
+		}
+
+		// Check if there are any newer or active builds that would supersede this failure
+		hasActiveBuild := false
+		isCurrentBuildStale := false
+		for _, mosb := range mosbList {
+			// Skip the current failed build
+			if mosb.Name == current.Name {
+				continue
+			}
+			mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
+			// Check if there's an active build (building, prepared, or succeeded)
+			if mosbState.IsBuilding() || mosbState.IsBuildPrepared() || mosbState.IsBuildSuccess() {
+				hasActiveBuild = true
+				klog.Infof("Found active MachineOSBuild %s, skipping BuildDegraded condition for failed build %s", mosb.Name, current.Name)
+				break
+			}
+		}
+
+		// Also check if the failed MachineOSBuild is no longer referenced by the MachineOSConfig
+		if mosc.Status.CurrentImagePullSpec != "" && !isMachineOSBuildCurrentForMachineOSConfigWithPullspec(mosc, current) {
+			isCurrentBuildStale = true
+			klog.Infof("Failed MachineOSBuild %s is no longer current for MachineOSConfig %s, skipping BuildDegraded condition", current.Name, mosc.Name)
+		}
+
+		// Only set BuildDegraded if there are no active builds and this build is still current
+		if hasActiveBuild || isCurrentBuildStale {
+			klog.Infof("Skipping BuildDegraded condition for failed MachineOSBuild %s (hasActiveBuild=%v, isStale=%v)", current.Name, hasActiveBuild, isCurrentBuildStale)
+			return nil
+		}
+
 		mcp, err := b.machineConfigPoolLister.Get(mosc.Spec.MachineConfigPool.Name)
 		if err != nil {
 			return fmt.Errorf("could not get MachineConfigPool from MachineOSConfig %q: %w", mosc.Name, err)
 		}
 
-		// Just so I don't have to remove the mcp right now :P
-		klog.Infof("Target MachineConfigPool %q", mcp.Name)
-
-		// Implement code to degrade MCP
-		return nil
+		// Set BuildDegraded condition
+		buildError := getBuildErrorFromMOSB(current)
+		return b.syncBuildFailureStatus(ctx, mcp, buildError, current.Name)
 	}
 
 	// If the build was successful, clean up the build objects and propagate the
 	// final image pushspec onto the MachineOSConfig object.
+	// Also clear BuildDegraded condition if it was set due to a previously failed build
 	if !oldState.IsBuildSuccess() && curState.IsBuildSuccess() {
 		klog.Infof("MachineOSBuild %s succeeded, cleaning up all ephemeral objects used for the build", current.Name)
+
+		mcp, err := b.machineConfigPoolLister.Get(mosc.Spec.MachineConfigPool.Name)
+		if err != nil {
+			return fmt.Errorf("could not get MachineConfigPool from MachineOSConfig %q: %w", mosc.Name, err)
+		}
+
+		// Clear BuildDegraded condition if set
+		if err := b.syncBuildSuccessStatus(ctx, mcp); err != nil {
+			klog.Errorf("Failed to clear BuildDegraded condition for pool %s: %v", mcp.Name, err)
+		}
+
+		// Clean up ephemeral objects
 		if err := imagebuilder.NewJobImageBuilder(b.kubeclient, b.mcfgclient, current, mosc).Clean(ctx); err != nil {
 			return err
 		}
@@ -412,6 +460,16 @@ func (b *buildReconciler) startBuild(ctx context.Context, mosb *mcfgv1.MachineOS
 		return fmt.Errorf("could not update MachineOSConfig %q status for MachineOSBuild %q: %w", mosc.Name, mosb.Name, err)
 	}
 
+	// Initialize BuildDegraded condition to False when build starts
+	mcp, err := b.machineConfigPoolLister.Get(mosc.Spec.MachineConfigPool.Name)
+	if err != nil {
+		return fmt.Errorf("could not get MachineConfigPool from MachineOSConfig %q: %w", mosc.Name, err)
+	}
+
+	if err := b.initializeBuildDegradedCondition(ctx, mcp); err != nil {
+		klog.Errorf("Failed to initialize BuildDegraded condition for pool %s: %v", mcp.Name, err)
+	}
+
 	return nil
 }
 
@@ -506,9 +564,10 @@ func (b *buildReconciler) createNewMachineOSBuildOrReuseExisting(ctx context.Con
 		return fmt.Errorf("could not get MachineConfigPool %s for MachineOSConfig %s: %w", mosc.Spec.MachineConfigPool.Name, mosc.Name, err)
 	}
 
-	// TODO: Consider what we should do in the event of a degraded MachineConfigPool.
-	if ctrlcommon.IsPoolAnyDegraded(mcp) {
-		return fmt.Errorf("MachineConfigPool %s is degraded", mcp.Name)
+	// Allow builds to retry when pool is degraded only due to BuildDegraded,
+	// but prevent builds for other types of degradation (NodeDegraded, RenderDegraded)
+	if b.shouldPreventBuildDueToDegradation(mcp) {
+		return fmt.Errorf("MachineConfigPool %s is degraded due to non-build issues", mcp.Name)
 	}
 
 	// TODO: Consider using a ConfigMap lister to get this value instead of the API server.
@@ -952,6 +1011,11 @@ func (b *buildReconciler) deleteMOSBImage(ctx context.Context, mosb *mcfgv1.Mach
 			return err
 		}
 		if err := b.imageclient.ImageV1().ImageStreamTags(ns).Delete(context.TODO(), img, metav1.DeleteOptions{}); err != nil {
+			// If the ImageStreamTag doesn't exist (e.g., build failed before pushing), ignore the error
+			if k8serrors.IsNotFound(err) {
+				klog.Infof("ImageStreamTag %s not found for MachineOSBuild %s, skipping deletion (likely failed build)", img, mosb.Name)
+				return nil
+			}
 			return fmt.Errorf("could not delete image %s from internal registry for MachineOSBuild %s: %w", image, mosb.Name, err)
 		}
 		return nil
@@ -1549,6 +1613,29 @@ func (b *buildReconciler) deleteImage(ctx context.Context, pullspec string, mosb
 	return b.imagepruner.DeleteImage(ctx, pullspec, secret, cc)
 }
 
+// Determines if builds should be prevented due to pool degradation.
+// Returns true if pool has ANY degraded condition other than BuildDegraded,
+// but false if degraded ONLY due to BuildDegraded (to allow retry attempts).
+func (b *buildReconciler) shouldPreventBuildDueToDegradation(mcp *mcfgv1.MachineConfigPool) bool {
+	// Check for ALL degradation conditions except BuildDegraded that should prevent new builds
+	// We intentionally exclude BuildDegraded to allow retries
+	// We check specific conditions rather than overall Degraded since Degraded=True could be due to BuildDegraded alone
+	nonBuildDegradedTypes := []mcfgv1.MachineConfigPoolConditionType{
+		mcfgv1.MachineConfigPoolNodeDegraded,
+		mcfgv1.MachineConfigPoolRenderDegraded,
+		mcfgv1.MachineConfigPoolPinnedImageSetsDegraded,
+		mcfgv1.MachineConfigPoolSynchronizerDegraded,
+	}
+
+	for _, condType := range nonBuildDegradedTypes {
+		if apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, condType) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // reconcileImageRebuild calls RequiresRebuild to see if an MC changes the kernel args, ext, or osimageurl.
 // if it does, we build a new image in our new MOSB
 func (b *buildReconciler) reconcileImageRebuild(oldMCP, curMCP *mcfgv1.MachineConfigPool) (bool, error) {
@@ -1563,4 +1650,66 @@ func (b *buildReconciler) reconcileImageRebuild(oldMCP, curMCP *mcfgv1.MachineCo
 	}
 
 	return ctrlcommon.RequiresRebuild(curr, des), nil
+}
+
+// Clears BuildDegraded condition when a new build starts (allowing retry after failure)
+func (b *buildReconciler) initializeBuildDegradedCondition(ctx context.Context, pool *mcfgv1.MachineConfigPool) error {
+	// Check if BuildDegraded condition is already False - if so, no update needed
+	if apihelpers.IsMachineConfigPoolConditionFalse(pool.Status.Conditions, mcfgv1.MachineConfigPoolImageBuildDegraded) {
+		return nil
+	}
+
+	// Clear BuildDegraded condition (even if it was True from previous failure) when new build starts
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		// Get fresh copy for update to avoid conflicts
+		currentPool, err := b.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(ctx, pool.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+
+		buildDegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolImageBuildDegraded, corev1.ConditionFalse, "BuildStarted", "Build started for pool "+currentPool.Name)
+		apihelpers.SetMachineConfigPoolCondition(&currentPool.Status, *buildDegraded)
+
+		_, err = b.mcfgclient.MachineconfigurationV1().MachineConfigPools().UpdateStatus(ctx, currentPool, metav1.UpdateOptions{})
+		return err
+	})
+}
+
+// Clears BuildDegraded condition when build succeeds
+func (b *buildReconciler) syncBuildSuccessStatus(ctx context.Context, pool *mcfgv1.MachineConfigPool) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		// Get fresh copy for update to avoid conflicts
+		currentPool, err := b.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(ctx, pool.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+
+		buildDegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolImageBuildDegraded, corev1.ConditionFalse, "BuildSucceeded", "Build succeeded for pool "+currentPool.Name)
+		apihelpers.SetMachineConfigPoolCondition(&currentPool.Status, *buildDegraded)
+
+		_, err = b.mcfgclient.MachineconfigurationV1().MachineConfigPools().UpdateStatus(ctx, currentPool, metav1.UpdateOptions{})
+		return err
+	})
+}
+
+// Sets BuildDegraded condition when build fails
+func (b *buildReconciler) syncBuildFailureStatus(ctx context.Context, pool *mcfgv1.MachineConfigPool, buildErr error, mosbName string) error {
+	updateErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		// Get fresh copy for update to avoid conflicts
+		currentPool, err := b.mcfgclient.MachineconfigurationV1().MachineConfigPools().Get(ctx, pool.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+
+		// The message content may be truncated https://github.com/kubernetes/apimachinery/blob/f5dd29d6ada12819a4a6ddc97d5bdf812f8a1cad/pkg/apis/meta/v1/types.go#L1619-L1635
+		buildDegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolImageBuildDegraded, corev1.ConditionTrue, "BuildFailed", fmt.Sprintf("Failed to build OS image for pool %s (MachineOSBuild: %s): %v", currentPool.Name, mosbName, buildErr))
+		apihelpers.SetMachineConfigPoolCondition(&currentPool.Status, *buildDegraded)
+
+		_, updateErr := b.mcfgclient.MachineconfigurationV1().MachineConfigPools().UpdateStatus(ctx, currentPool, metav1.UpdateOptions{})
+		return updateErr
+	})
+	if updateErr != nil {
+		klog.Errorf("Error updating MachineConfigPool %s BuildDegraded status: %v", pool.Name, updateErr)
+	}
+	return buildErr
 }
