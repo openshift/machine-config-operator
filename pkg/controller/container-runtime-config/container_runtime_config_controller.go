@@ -787,8 +787,13 @@ func (ctrl *Controller) cleanUpDuplicatedMC() error {
 		if !strings.Contains(mc.Name, generatedCtrCfg) {
 			continue
 		}
+		// Recheck to ensure nothing changed in between
+		mcToBeDeleted, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), mc.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
 		// delete the containerruntime mc if its degraded
-		if mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] != version.Hash {
+		if mcToBeDeleted.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] != version.Hash {
 			if err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), mc.Name, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
 				return fmt.Errorf("error deleting degraded containerruntime machine config %s: %w", mc.Name, err)
 			}
