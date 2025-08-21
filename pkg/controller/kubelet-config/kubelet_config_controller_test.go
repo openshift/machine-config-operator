@@ -112,6 +112,29 @@ func (f *fixture) validateActions() {
 	}
 }
 
+func (f *fixture) validateMachineConfig() {
+	actions := filterInformerActions(f.client.Actions())
+	for i, actual := range actions {
+		expected := f.actions[i]
+		if actual.GetVerb() == "update" && actual.GetResource().Resource == "machineconfigs" {
+			actualmc := actual.(core.UpdateAction).GetObject().(*mcfgv1.MachineConfig)
+			expectedmc := expected.(core.UpdateAction).GetObject().(*mcfgv1.MachineConfig)
+			actualKubeletConfig, err := findMachineConfigKubeletConfig(actualmc)
+			require.NoError(f.t, err)
+			expectedKubeletConfig, err := findMachineConfigKubeletConfig(expectedmc)
+			require.NoError(f.t, err)
+			if !equality.Semantic.DeepEqual(actualKubeletConfig.FeatureGates, expectedKubeletConfig.FeatureGates) {
+				f.t.Errorf("Action %s %s has wrong object\nDiff:\n %s",
+					actual.GetVerb(), actual.GetResource().Resource, diff.ObjectGoPrintDiff(actualKubeletConfig.FeatureGates, expectedKubeletConfig.FeatureGates))
+			}
+			if !equality.Semantic.DeepEqual(actualKubeletConfig.MaxPods, expectedKubeletConfig.MaxPods) {
+				f.t.Errorf("Action %s %s has wrong object\nDiff:\n %s",
+					actual.GetVerb(), actual.GetResource().Resource, diff.ObjectGoPrintDiff(actualKubeletConfig.MaxPods, expectedKubeletConfig.MaxPods))
+			}
+		}
+	}
+}
+
 func newFeatures(name string, enabled, disabled []string, labels map[string]string) *osev1.FeatureGate {
 	if labels == nil {
 		labels = map[string]string{}
@@ -597,7 +620,9 @@ func TestKubeletConfigUpdates(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
 			kubeletConfigKey, _ := getManagedKubeletConfigKey(mcp, f.client, kc1)
-			mcs := helpers.NewMachineConfig(kubeletConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
+			cfgIgn, err := kubeletConfigToIgnFile(&kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100, FeatureGates: map[string]bool{"Example": true}})
+			require.NoError(t, err)
+			mcs := helpers.NewMachineConfig(kubeletConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{*cfgIgn})
 			mcsDeprecated := mcs.DeepCopy()
 			mcsDeprecated.Name = getManagedKubeletConfigKeyDeprecated(mcp)
 
@@ -618,7 +643,7 @@ func TestKubeletConfigUpdates(t *testing.T) {
 			c := f.newController(fgHandler)
 			stopCh := make(chan struct{})
 
-			err := c.syncHandler(getKey(kc1, t))
+			err = c.syncHandler(getKey(kc1, t))
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
 			}
@@ -628,6 +653,14 @@ func TestKubeletConfigUpdates(t *testing.T) {
 
 			// Perform Update
 			f = newFixture(t)
+
+			cfgIgn, err = kubeletConfigToIgnFile(&kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 101, FeatureGates: map[string]bool{"Example": true}})
+			require.NoError(t, err)
+			mcUpdate := mcs.DeepCopy()
+			ignConf, err := ctrlcommon.ParseAndConvertConfig(mcUpdate.Spec.Config.Raw)
+			require.NoError(t, err)
+			ignConf.Storage.Files = []ign3types.File{*cfgIgn}
+			mcUpdate.Spec.Config.Raw = helpers.MarshalOrDie(ignConf)
 
 			// Modify config
 			kcUpdate := kc1.DeepCopy()
@@ -645,7 +678,7 @@ func TestKubeletConfigUpdates(t *testing.T) {
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
 			f.mcpLister = append(f.mcpLister, mcp2)
-			f.mckLister = append(f.mckLister, kc1)
+			f.mckLister = append(f.mckLister, kcUpdate)
 			f.objects = append(f.objects, mcs, kcUpdate) // MachineConfig exists
 
 			c = f.newController(fgHandler)
@@ -661,13 +694,188 @@ func TestKubeletConfigUpdates(t *testing.T) {
 
 			f.expectGetMachineConfigAction(mcs)
 			f.expectGetMachineConfigAction(mcs)
-			f.expectUpdateMachineConfigAction(mcs)
+			f.expectUpdateMachineConfigAction(mcUpdate)
 			f.expectPatchKubeletConfig(kcUpdate, kcfgPatchBytes)
 			f.expectUpdateKubeletConfig(kcUpdate)
 
 			f.validateActions()
+			f.validateMachineConfig()
 
 			close(stopCh)
+		})
+	}
+}
+
+func TestMachineConfigUpdateUponFeatureGateUpdate(t *testing.T) {
+	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
+		t.Run(string(platform), func(t *testing.T) {
+			f := newFixture(t)
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
+			f.newController(fgHandler)
+
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
+			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
+			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+			kubeletConfigKey, _ := getManagedKubeletConfigKey(mcp, f.client, kc1)
+			originalKubeletConfiguration := kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100, FeatureGates: map[string]bool{"Example": true}}
+			cfgIgn, err := kubeletConfigToIgnFile(&originalKubeletConfiguration)
+			if err != nil {
+				t.Errorf("kubeletConfigToIgnFile returned: %v", err)
+			}
+			mcs := helpers.NewMachineConfig(kubeletConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{*cfgIgn})
+			mcs.SetAnnotations(map[string]string{
+				ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
+			})
+			mcsDeprecated := mcs.DeepCopy()
+			mcsDeprecated.Name = getManagedKubeletConfigKeyDeprecated(mcp)
+
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mcpLister = append(f.mcpLister, mcp2)
+			f.mckLister = append(f.mckLister, kc1)
+			f.objects = append(f.objects, kc1)
+
+			f.expectGetMachineConfigAction(mcs)
+			f.expectGetMachineConfigAction(mcsDeprecated)
+			f.expectGetMachineConfigAction(mcs)
+			f.expectUpdateKubeletConfigRoot(kc1)
+			f.expectCreateMachineConfigAction(mcs)
+			f.expectPatchKubeletConfig(kc1, kcfgPatchBytes)
+			f.expectUpdateKubeletConfig(kc1)
+
+			c := f.newController(fgHandler)
+			stopCh := make(chan struct{})
+
+			err = c.syncHandler(getKey(kc1, t))
+			if err != nil {
+				t.Errorf("syncHandler returned: %v", err)
+			}
+
+			f.validateActions()
+			close(stopCh)
+
+			// Perform Update
+			f = newFixture(t)
+			originalKubeletConfiguration.FeatureGates = map[string]bool{"Example": true, "Example2": true}
+			cfgIgn, err = kubeletConfigToIgnFile(&originalKubeletConfiguration)
+			require.NoError(t, err)
+			mcUpdate := mcs.DeepCopy()
+			ignConf, err := ctrlcommon.ParseAndConvertConfig(mcUpdate.Spec.Config.Raw)
+			require.NoError(t, err)
+			ignConf.Storage.Files = []ign3types.File{*cfgIgn}
+			mcUpdate.Spec.Config.Raw = helpers.MarshalOrDie(ignConf)
+
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mcpLister = append(f.mcpLister, mcp2)
+			f.mckLister = append(f.mckLister, kc1)
+			f.objects = append(f.objects, mcs, kc1) // MachineConfig exists
+
+			// feature gates update
+			fgHandler = ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example", "Example2"}, nil)
+			c = f.newController(fgHandler)
+			stopCh = make(chan struct{})
+
+			// Apply update
+			err = c.syncHandler(getKey(kc1, t))
+			if err != nil {
+				t.Errorf("syncHandler returned: %v", err)
+			}
+
+			f.expectGetMachineConfigAction(mcs)
+			f.expectGetMachineConfigAction(mcs)
+			f.expectUpdateMachineConfigAction(mcUpdate)
+			f.expectPatchKubeletConfig(kc1, kcfgPatchBytes)
+			f.expectUpdateKubeletConfig(kc1)
+
+			f.validateActions()
+			f.validateMachineConfig()
+
+			close(stopCh)
+
+		})
+	}
+}
+
+func TestMachineConfigSkipUpdate(t *testing.T) {
+	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
+		t.Run(string(platform), func(t *testing.T) {
+			f := newFixture(t)
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
+			f.newController(fgHandler)
+
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
+			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
+			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+			kubeletConfigKey, _ := getManagedKubeletConfigKey(mcp, f.client, kc1)
+			originalKubeletConfiguration := kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100, FeatureGates: map[string]bool{"Example": true}}
+			cfgIgn, err := kubeletConfigToIgnFile(&originalKubeletConfiguration)
+			if err != nil {
+				t.Errorf("kubeletConfigToIgnFile returned: %v", err)
+			}
+			mcs := helpers.NewMachineConfig(kubeletConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{*cfgIgn})
+			mcs.SetAnnotations(map[string]string{
+				ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
+			})
+			mcsDeprecated := mcs.DeepCopy()
+			mcsDeprecated.Name = getManagedKubeletConfigKeyDeprecated(mcp)
+
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mcpLister = append(f.mcpLister, mcp2)
+			f.mckLister = append(f.mckLister, kc1)
+			f.objects = append(f.objects, kc1)
+
+			f.expectGetMachineConfigAction(mcs)
+			f.expectGetMachineConfigAction(mcsDeprecated)
+			f.expectGetMachineConfigAction(mcs)
+			f.expectUpdateKubeletConfigRoot(kc1)
+			f.expectCreateMachineConfigAction(mcs)
+			f.expectPatchKubeletConfig(kc1, kcfgPatchBytes)
+			f.expectUpdateKubeletConfig(kc1)
+
+			c := f.newController(fgHandler)
+			stopCh := make(chan struct{})
+
+			err = c.syncHandler(getKey(kc1, t))
+			if err != nil {
+				t.Errorf("syncHandler returned: %v", err)
+			}
+
+			f.validateActions()
+			close(stopCh)
+
+			f = newFixture(t)
+
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mcpLister = append(f.mcpLister, mcp2)
+			f.mckLister = append(f.mckLister, kc1)
+			f.objects = append(f.objects, mcs, kc1) // MachineConfig exists
+
+			// no feature gates update
+			fgHandler = ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
+			c = f.newController(fgHandler)
+			stopCh = make(chan struct{})
+
+			klog.Info("Applying no update")
+
+			// Apply update
+			err = c.syncHandler(getKey(kc1, t))
+			if err != nil {
+				t.Errorf("syncHandler returned: %v", err)
+			}
+
+			f.expectGetMachineConfigAction(mcs)
+			f.expectGetMachineConfigAction(mcs)
+
+			f.validateActions()
+			f.validateMachineConfig()
+
+			close(stopCh)
+
 		})
 	}
 }
@@ -969,7 +1177,9 @@ func TestAddAnnotationExistingKubeletConfig(t *testing.T) {
 			kc1 := newKubeletConfig("smaller-max-pods-1", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 200}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
 			kc1.SetAnnotations(map[string]string{ctrlcommon.MCNameSuffixAnnotationKey: "1"})
 			kc1.Finalizers = []string{kc1MCKey}
-			kcMC := helpers.NewMachineConfig(kcMCKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
+			cfgIgn, err := kubeletConfigToIgnFile(&kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100, FeatureGates: map[string]bool{"Example": true}})
+			require.NoError(t, err)
+			kcMC := helpers.NewMachineConfig(kcMCKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{*cfgIgn})
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
@@ -993,7 +1203,7 @@ func TestAddAnnotationExistingKubeletConfig(t *testing.T) {
 			f.expectUpdateKubeletConfig(kc)
 
 			c := f.newController(fgHandler)
-			err := c.syncHandler(getKey(kc, t))
+			err = c.syncHandler(getKey(kc, t))
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
 			}
@@ -1167,7 +1377,6 @@ func TestKubeletConfigTLSRender(t *testing.T) {
 			require.NoError(t, err)
 			originalKubeConfig, err := DecodeKubeletConfig(contents)
 			require.NoError(t, err)
-
 			// Generate expected profiles from helper function
 			var expectedTLSCipherSuites []string
 			var expectedTLSMinVersion string
