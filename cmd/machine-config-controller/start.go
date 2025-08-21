@@ -239,6 +239,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.KubeInformerFactory.Core().V1().Nodes(),
 			ctx.KubeInformerFactory.Core().V1().Pods(),
 			ctx.OCLInformerFactory.Machineconfiguration().V1().MachineOSConfigs(),
+			ctx.OCLInformerFactory.Machineconfiguration().V1().MachineOSBuilds(),
 			ctx.ConfigInformerFactory.Config().V1().Schedulers(),
 			ctx.ClientBuilder.KubeClientOrDie("node-update-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("node-update-controller"),

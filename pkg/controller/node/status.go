@@ -41,17 +41,24 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 		}
 	}
 
-	mosc, mosb, l, err := ctrl.getConfigAndBuildAndLayeredStatus(pool)
+	// Get fresh copy of MCP from lister to ensure we have the latest status
+	// in case other controllers like build controller updated it recently
+	freshPool, err := ctrl.mcpLister.Get(pool.Name)
+	if err != nil {
+		return fmt.Errorf("could not get fresh MachineConfigPool %q: %w", pool.Name, err)
+	}
+
+	mosc, mosb, l, err := ctrl.getConfigAndBuildAndLayeredStatus(freshPool)
 	if err != nil {
 		return fmt.Errorf("could get MachineOSConfig or MachineOSBuild: %w", err)
 	}
 
-	newStatus := ctrl.calculateStatus(machineConfigStates, cc, pool, nodes, mosc, mosb)
-	if equality.Semantic.DeepEqual(pool.Status, newStatus) {
+	newStatus := ctrl.calculateStatus(machineConfigStates, cc, freshPool, nodes, mosc, mosb)
+	if equality.Semantic.DeepEqual(freshPool.Status, newStatus) {
 		return nil
 	}
 
-	newPool := pool
+	newPool := freshPool.DeepCopy()
 	newPool.Status = newStatus
 	_, err = ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(context.TODO(), newPool, metav1.UpdateOptions{})
 	if err != nil {
@@ -279,17 +286,36 @@ func (ctrl *Controller) calculateStatus(mcs []*mcfgv1.MachineConfigNode, cconfig
 	}
 
 	if mosc != nil && !pool.Spec.Paused {
-		// MOSC exists but MOSB doesn't exist yet -> change MCP to update
-		if mosb == nil {
-			updating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", fmt.Sprintf("Pool is waiting for a new OS image build to start (mosc: %s)", mosc.Name))
-			apihelpers.SetMachineConfigPoolCondition(&status, *updating)
-		} else {
-			// Some cases we have an old MOSB object that still exists, we still update MCP
-			mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
-			if mosbState.IsBuilding() || mosbState.IsBuildPrepared() {
-				updating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", fmt.Sprintf("Pool is waiting for OS image build to complete (mosb: %s)", mosb.Name))
+		// Check for non-build degradation before setting Updating status
+		// Don't set Updating=True if pool is degraded due to render/node/other issues
+		isNonBuildDegraded := apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolRenderDegraded) ||
+			apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolNodeDegraded) ||
+			apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolPinnedImageSetsDegraded)
+
+		switch {
+		case !isNonBuildDegraded:
+			switch {
+			case mosb == nil:
+				// MOSC exists but MOSB doesn't exist yet -> change MCP to update
+				updating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", fmt.Sprintf("Pool is waiting for a new OS image build to start (mosc: %s)", mosc.Name))
 				apihelpers.SetMachineConfigPoolCondition(&status, *updating)
+			default:
+				// Some cases we have an old MOSB object that still exists, we still update MCP
+				mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
+				switch {
+				case mosbState.IsBuilding() || mosbState.IsBuildPrepared():
+					updating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", fmt.Sprintf("Pool is waiting for OS image build to complete (mosb: %s)", mosb.Name))
+					apihelpers.SetMachineConfigPoolCondition(&status, *updating)
+				case mosbState.IsBuildFailure():
+					// Clear updating status when build fails
+					updating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionFalse, "", fmt.Sprintf("Pool update stopped due to OS image build failure (mosb: %s)", mosb.Name))
+					apihelpers.SetMachineConfigPoolCondition(&status, *updating)
+				}
 			}
+		default:
+			// Pool is degraded due to non-build issues, clear updating status
+			updating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionFalse, "", "Pool update paused due to degraded condition")
+			apihelpers.SetMachineConfigPoolCondition(&status, *updating)
 		}
 	}
 
@@ -314,15 +340,57 @@ func (ctrl *Controller) calculateStatus(mcs []*mcfgv1.MachineConfigNode, cconfig
 
 	// here we now set the MCP Degraded field, the node_controller is the one making the call right now
 	// but we might have a dedicated controller or control loop somewhere else that understands how to
-	// set Degraded. For now, the node_controller understand NodeDegraded & RenderDegraded = Degraded.
+	// set Degraded. For now, the node_controller understand NodeDegraded & RenderDegraded & BuildDegraded = Degraded.
 	renderDegraded := apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolRenderDegraded)
-	if nodeDegraded || renderDegraded || pinnedImageSetsDegraded {
+	buildDegraded := apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolImageBuildDegraded)
+
+	// Clear BuildDegraded condition in several scenarios to prevent stale degraded state:
+	// 1. Active build (building or prepared) - new build started
+	// 2. Successful build - build completed successfully
+	// 3. MachineOSConfig exists but no MachineOSBuild - new or retry attempt pending
+	// 4. No layered pool objects (cleanup scenario) - clear stale BuildDegraded
+	switch {
+	case mosb != nil:
+		mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
+		switch {
+		case mosbState.IsBuilding() || mosbState.IsBuildPrepared():
+			// Active build detected - clear any previous BuildDegraded condition
+			buildDegradedClear := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolImageBuildDegraded, corev1.ConditionFalse, "BuildStarted", "New build started")
+			apihelpers.SetMachineConfigPoolCondition(&status, *buildDegradedClear)
+			// Update local variable for degraded calculation
+			buildDegraded = false
+		case mosbState.IsBuildSuccess():
+			// Successful build detected - clear any previous BuildDegraded condition
+			buildDegradedClear := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolImageBuildDegraded, corev1.ConditionFalse, "BuildSucceeded", "Build completed successfully")
+			apihelpers.SetMachineConfigPoolCondition(&status, *buildDegradedClear)
+			buildDegraded = false
+		}
+	case mosc != nil:
+		// MachineOSConfig exists but no MachineOSBuild - this indicates a retry attempt
+		// Clear any previous BuildDegraded condition to allow the retry
+		if apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolImageBuildDegraded) {
+			buildDegradedClear := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolImageBuildDegraded, corev1.ConditionFalse, "BuildPending", "MachineOSConfig updated/created, waiting for MachineOSBuild")
+			apihelpers.SetMachineConfigPoolCondition(&status, *buildDegradedClear)
+			buildDegraded = false
+		}
+	default:
+		// No layered pool objects exist (both mosb and mosc are nil)
+		// This means builds have been cleaned up - clear any stale BuildDegraded condition
+		if apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolImageBuildDegraded) {
+			buildDegradedClear := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolImageBuildDegraded, corev1.ConditionFalse, "NoLayeredObjects", "No layered pool objects found, clearing stale build degraded condition")
+			apihelpers.SetMachineConfigPoolCondition(&status, *buildDegradedClear)
+			buildDegraded = false
+		}
+	}
+
+	if nodeDegraded || renderDegraded || buildDegraded || pinnedImageSetsDegraded {
 		sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolDegraded, corev1.ConditionTrue, "", "")
 		if nodeDegraded {
 			sdegraded.Message = nodeDegradedMessage
+		} else if buildDegraded {
+			sdegraded.Message = "Custom OS image build failed"
 		}
 		apihelpers.SetMachineConfigPoolCondition(&status, *sdegraded)
-
 	} else {
 		sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolDegraded, corev1.ConditionFalse, "", "")
 		apihelpers.SetMachineConfigPoolCondition(&status, *sdegraded)

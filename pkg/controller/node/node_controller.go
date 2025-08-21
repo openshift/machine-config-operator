@@ -90,15 +90,18 @@ type Controller struct {
 	ccLister   mcfglistersv1.ControllerConfigLister
 	mcLister   mcfglistersv1.MachineConfigLister
 	mcpLister  mcfglistersv1.MachineConfigPoolLister
+	moscLister mcfglistersv1.MachineOSConfigLister
+	mosbLister mcfglistersv1.MachineOSBuildLister
 	nodeLister corelisterv1.NodeLister
 	podLister  corelisterv1.PodLister
 
 	ccListerSynced   cache.InformerSynced
 	mcListerSynced   cache.InformerSynced
 	mcpListerSynced  cache.InformerSynced
+	moscListerSynced cache.InformerSynced
+	mosbListerSynced cache.InformerSynced
 	nodeListerSynced cache.InformerSynced
 	mcnListerSynced  cache.InformerSynced
-	moscListerSynced cache.InformerSynced
 
 	schedulerList         cligolistersv1.SchedulerLister
 	schedulerListerSynced cache.InformerSynced
@@ -119,6 +122,7 @@ func New(
 	nodeInformer coreinformersv1.NodeInformer,
 	podInformer coreinformersv1.PodInformer,
 	moscInformer mcfginformersv1.MachineOSConfigInformer,
+	mosbInformer mcfginformersv1.MachineOSBuildInformer,
 	schedulerInformer cligoinformersv1.SchedulerInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
@@ -129,6 +133,7 @@ func New(
 		mcInformer,
 		mcpInformer,
 		moscInformer,
+		mosbInformer,
 		nodeInformer,
 		podInformer,
 		schedulerInformer,
@@ -146,6 +151,7 @@ func NewWithCustomUpdateDelay(
 	nodeInformer coreinformersv1.NodeInformer,
 	podInformer coreinformersv1.PodInformer,
 	moscInformer mcfginformersv1.MachineOSConfigInformer,
+	mosbInformer mcfginformersv1.MachineOSBuildInformer,
 	schedulerInformer cligoinformersv1.SchedulerInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
@@ -157,6 +163,7 @@ func NewWithCustomUpdateDelay(
 		mcInformer,
 		mcpInformer,
 		moscInformer,
+		mosbInformer,
 		nodeInformer,
 		podInformer,
 		schedulerInformer,
@@ -173,6 +180,7 @@ func newController(
 	mcInformer mcfginformersv1.MachineConfigInformer,
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
 	moscInformer mcfginformersv1.MachineOSConfigInformer,
+	mosbInformer mcfginformersv1.MachineOSBuildInformer,
 	nodeInformer coreinformersv1.NodeInformer,
 	podInformer coreinformersv1.PodInformer,
 	schedulerInformer cligoinformersv1.SchedulerInformer,
@@ -200,6 +208,11 @@ func newController(
 		UpdateFunc: ctrl.updateMachineOSConfig,
 		DeleteFunc: ctrl.deleteMachineOSConfig,
 	})
+	mosbInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addMachineOSBuild,
+		UpdateFunc: ctrl.updateMachineOSBuild,
+		DeleteFunc: ctrl.deleteMachineOSBuild,
+	})
 	mcpInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addMachineConfigPool,
 		UpdateFunc: ctrl.updateMachineConfigPool,
@@ -222,13 +235,16 @@ func newController(
 	ctrl.ccLister = ccInformer.Lister()
 	ctrl.mcLister = mcInformer.Lister()
 	ctrl.mcpLister = mcpInformer.Lister()
+	ctrl.moscLister = moscInformer.Lister()
+	ctrl.mosbLister = mosbInformer.Lister()
 	ctrl.nodeLister = nodeInformer.Lister()
 	ctrl.podLister = podInformer.Lister()
 	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
 	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
 	ctrl.mcpListerSynced = mcpInformer.Informer().HasSynced
-	ctrl.nodeListerSynced = nodeInformer.Informer().HasSynced
 	ctrl.moscListerSynced = moscInformer.Informer().HasSynced
+	ctrl.mosbListerSynced = mosbInformer.Informer().HasSynced
+	ctrl.nodeListerSynced = nodeInformer.Informer().HasSynced
 
 	ctrl.schedulerList = schedulerInformer.Lister()
 	ctrl.schedulerListerSynced = schedulerInformer.Informer().HasSynced
@@ -241,7 +257,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.mcpListerSynced, ctrl.nodeListerSynced, ctrl.schedulerListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.mcpListerSynced, ctrl.moscListerSynced, ctrl.mosbListerSynced, ctrl.nodeListerSynced, ctrl.schedulerListerSynced) {
 		return
 	}
 
@@ -463,6 +479,61 @@ func (ctrl *Controller) deleteMachineOSBuild(obj interface{}) {
 		}
 	}
 	klog.V(4).Infof("Deleting MachineOSBuild %s", curMOSB.Name)
+}
+
+func (ctrl *Controller) addMachineOSBuild(obj interface{}) {
+	curMOSB := obj.(*mcfgv1.MachineOSBuild)
+	klog.V(4).Infof("Adding MachineOSBuild %s", curMOSB.Name)
+
+	// Find the associated MachineConfigPool from the MachineOSBuild
+	if curMOSB.Labels == nil {
+		return
+	}
+
+	poolName, ok := curMOSB.Labels[buildconstants.TargetMachineConfigPoolLabelKey]
+	if !ok {
+		return
+	}
+
+	mcp, err := ctrl.mcpLister.Get(poolName)
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("Couldn't get MachineConfigPool from MachineOSBuild %#v: %v", curMOSB, err))
+		return
+	}
+	klog.V(4).Infof("MachineOSBuild %s affects MachineConfigPool %s", curMOSB.Name, mcp.Name)
+	ctrl.enqueueMachineConfigPool(mcp)
+}
+
+func (ctrl *Controller) updateMachineOSBuild(old, cur interface{}) {
+	oldMOSB := old.(*mcfgv1.MachineOSBuild)
+	curMOSB := cur.(*mcfgv1.MachineOSBuild)
+
+	// Only process if the build status or phase has changed
+	if oldMOSB.Status.BuildStart == curMOSB.Status.BuildStart &&
+		oldMOSB.Status.BuildEnd == curMOSB.Status.BuildEnd &&
+		equality.Semantic.DeepEqual(oldMOSB.Status.Conditions, curMOSB.Status.Conditions) {
+		return
+	}
+
+	klog.V(4).Infof("Updating MachineOSBuild %s", curMOSB.Name)
+
+	// Find the associated MachineConfigPool from the MachineOSBuild
+	if curMOSB.Labels == nil {
+		return
+	}
+
+	poolName, ok := curMOSB.Labels[buildconstants.TargetMachineConfigPoolLabelKey]
+	if !ok {
+		return
+	}
+
+	mcp, err := ctrl.mcpLister.Get(poolName)
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("Couldn't get MachineConfigPool from MachineOSBuild %#v: %v", curMOSB, err))
+		return
+	}
+	klog.V(4).Infof("MachineOSBuild %s status changed for MachineConfigPool %s", curMOSB.Name, mcp.Name)
+	ctrl.enqueueMachineConfigPool(mcp)
 }
 
 func (ctrl *Controller) addMachineConfigPool(obj interface{}) {
@@ -922,21 +993,18 @@ func (ctrl *Controller) getConfigAndBuildAndLayeredStatus(pool *mcfgv1.MachineCo
 }
 
 func (ctrl *Controller) getConfigAndBuild(pool *mcfgv1.MachineConfigPool) (*mcfgv1.MachineOSConfig, *mcfgv1.MachineOSBuild, error) {
-	// TODO: We should use the selectors from the build controller since they are
-	// well-tested and makes querying for this information significantly easier.
-	// Additionally, this should use listers instead of API clients in order to
-	// reduce the impact on the API server.
 	var ourConfig *mcfgv1.MachineOSConfig
 	var ourBuild *mcfgv1.MachineOSBuild
-	configList, err := ctrl.client.MachineconfigurationV1().MachineOSConfigs().List(context.TODO(), metav1.ListOptions{})
+
+	// Use listers instead of API calls for better performance and immediate cache updates
+	configList, err := ctrl.moscLister.List(labels.Everything())
 	if err != nil {
 		return nil, nil, err
 	}
 
-	for _, config := range configList.Items {
-		config := config
+	for _, config := range configList {
 		if config.Spec.MachineConfigPool.Name == pool.Name {
-			ourConfig = &config
+			ourConfig = config
 			break
 		}
 	}
@@ -945,15 +1013,14 @@ func (ctrl *Controller) getConfigAndBuild(pool *mcfgv1.MachineConfigPool) (*mcfg
 		return nil, nil, nil
 	}
 
-	buildList, err := ctrl.client.MachineconfigurationV1().MachineOSBuilds().List(context.TODO(), metav1.ListOptions{})
+	buildList, err := ctrl.mosbLister.List(labels.Everything())
 	if err != nil {
 		return nil, nil, err
 	}
 
-	for _, build := range buildList.Items {
-		build := build
+	for _, build := range buildList {
 		if build.Spec.MachineOSConfig.Name == ourConfig.Name && build.Spec.MachineConfig.Name == pool.Spec.Configuration.Name {
-			ourBuild = &build
+			ourBuild = build
 			break
 		}
 	}
