@@ -589,6 +589,7 @@ func TestContainerRuntimeConfigCreate(t *testing.T) {
 			f.expectUpdateContainerRuntimeConfigRoot(ctrcfg1)
 			f.expectCreateMachineConfigAction(mcs1)
 			f.expectPatchContainerRuntimeConfig(ctrcfg1, ctrcfgPatchBytes)
+			f.expectGetMachineConfigAction(mcs2)
 			f.expectUpdateContainerRuntimeConfig(ctrcfg1)
 
 			f.run(getKey(ctrcfg1, t))
@@ -629,6 +630,7 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			f.expectUpdateContainerRuntimeConfigRoot(ctrcfg1)
 			f.expectCreateMachineConfigAction(mcs)
 			f.expectPatchContainerRuntimeConfig(ctrcfg1, ctrcfgPatchBytes)
+			f.expectGetMachineConfigAction(mcs)
 			f.expectUpdateContainerRuntimeConfig(ctrcfg1)
 
 			c := f.newController()
@@ -671,6 +673,7 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			f.expectUpdateContainerRuntimeConfig(ctrcfgUpdate)
 			f.expectUpdateMachineConfigAction(mcsUpdate)
 			f.expectPatchContainerRuntimeConfig(ctrcfgUpdate, ctrcfgPatchBytes)
+			f.expectGetMachineConfigAction(mcsUpdate)
 			f.expectUpdateContainerRuntimeConfig(ctrcfgUpdate)
 
 			f.validateActions()
@@ -1541,6 +1544,7 @@ func TestCtrruntimeConfigMultiCreate(t *testing.T) {
 				f.expectUpdateContainerRuntimeConfigRoot(ccr)
 				f.expectCreateMachineConfigAction(mcs)
 				f.expectPatchContainerRuntimeConfig(ccr, []byte(expectedPatch))
+				f.expectGetMachineConfigAction(mcs)
 				f.expectUpdateContainerRuntimeConfig(ccr)
 				f.run(poolName)
 			}
@@ -1650,6 +1654,7 @@ func TestAddAnnotationExistingContainerRuntimeConfig(t *testing.T) {
 			f.expectUpdateContainerRuntimeConfigRoot(ctrc)
 			f.expectUpdateMachineConfigAction(ctrcfgMC)
 			f.expectPatchContainerRuntimeConfig(ctrc, []byte("{}"))
+			f.expectGetMachineConfigAction(ctrcfgMC)
 			f.expectUpdateContainerRuntimeConfig(ctrc)
 
 			c := f.newController()
