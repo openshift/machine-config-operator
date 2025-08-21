@@ -168,22 +168,4 @@ spec:
               If this happens on container level, the descheduler will not be able to detect it, as it works on the pod level.
               To fix this, increase memory of the affected node of control plane nodes.
             runbook_url: https://github.com/openshift/runbooks/blob/master/alerts/machine-config-operator/ExtremelyHighIndividualControlPlaneMemory.md
-    - name: mcd-missing-mc
-      rules:
-        - alert: MissingMachineConfig
-          expr: |
-            mcd_missing_mc > 0
-          labels:
-            namespace: openshift-machine-config-operator
-            severity: warning
-          annotations:
-            summary: "This keeps track of Machine Config failures. Specifically a common failure on install when a rendered Machine Config is missing. Triggered when this error happens once."
-            description: >-
-              Could not find config {{ $labels.mc }} in-cluster, this likely indicates the MachineConfigs in-cluster has changed during the install process. 
-              If you are seeing this when installing the cluster, please compare the in-cluster rendered machineconfigs to /etc/mcs-machine-config-content.json
-    - name: telemetry.rules
-      rules:
-      - expr: count(mcd_local_unsupported_packages > 0)
-        record: cluster:mcd_nodes_with_unsupported_packages:count
-      - expr: sum(mcd_local_unsupported_packages)
-        record: cluster:mcd_total_unsupported_packages:sum
+
