@@ -305,6 +305,7 @@ machineconfigurations.operator.openshift.io:
   Capability: ""
   Category: ""
   FeatureGates:
+  - IrreconcilableMachineConfig
   - ManagedBootImages
   FilenameOperatorName: machine-config
   FilenameOperatorOrdering: "01"

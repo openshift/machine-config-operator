@@ -44,6 +44,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &machineconfigurationv1.ImageRegistryBundleApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("ImageSecretObjectReference"):
 		return &machineconfigurationv1.ImageSecretObjectReferenceApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("IrreconcilableChangeDiff"):
+		return &machineconfigurationv1.IrreconcilableChangeDiffApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("KubeletConfig"):
 		return &machineconfigurationv1.KubeletConfigApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("KubeletConfigCondition"):
