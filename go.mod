@@ -29,12 +29,13 @@ require (
 	github.com/google/renameio v0.1.0
 	github.com/google/uuid v1.6.0
 	github.com/imdario/mergo v0.3.16
+	github.com/josephburnett/jd v1.9.2
 	github.com/onsi/ginkgo/v2 v2.22.2
 	github.com/onsi/gomega v1.36.2
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/openshift-eng/openshift-tests-extension v0.0.0-20250722101414-8083129ab8f9
-	github.com/openshift/api v0.0.0-20250808142411-c974eeafe3f1
-	github.com/openshift/client-go v0.0.0-20250811113315-c2dfb51e2d06
+	github.com/openshift/api v0.0.0-20250811150514-cc869c87a7f0
+	github.com/openshift/client-go v0.0.0-20250811163556-6193816ae379
 	github.com/openshift/library-go v0.0.0-20250729191057-91376e1b394e
 	github.com/openshift/runtime-utils v0.0.0-20230921210328-7bdb5b9c177b
 	github.com/prometheus/client_golang v1.22.0
@@ -184,6 +185,7 @@ require (
 	github.com/xen0n/gosmopolitan v1.2.2 // indirect
 	github.com/xlab/treeprint v1.2.0 // indirect
 	github.com/ykadowak/zerologlint v0.1.5 // indirect
+	github.com/yudai/golcs v0.0.0-20170316035057-ecda9a501e82 // indirect
 	go-simpler.org/musttag v0.13.0 // indirect
 	go-simpler.org/sloglint v0.7.2 // indirect
 	go.etcd.io/etcd/api/v3 v3.5.21 // indirect

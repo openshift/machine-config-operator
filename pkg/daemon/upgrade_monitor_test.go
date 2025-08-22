@@ -2,8 +2,10 @@ package daemon
 
 import (
 	"context"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"testing"
+
+	operatorinformer "github.com/openshift/client-go/operator/informers/externalversions"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 
 	apicfgv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
@@ -117,6 +119,7 @@ func (tc upgradeMonitorTestCase) run(t *testing.T) {
 
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
 	k8sI := kubeinformers.NewSharedInformerFactory(f.kubeclient, noResyncPeriodFunc())
+	oi := operatorinformer.NewSharedInformerFactory(f.oclient, noResyncPeriodFunc())
 
 	d, err := New(nil)
 	if err != nil {
@@ -129,6 +132,7 @@ func (tc upgradeMonitorTestCase) run(t *testing.T) {
 		k8sI.Core().V1().Nodes(),
 		i.Machineconfiguration().V1().ControllerConfigs(),
 		i.Machineconfiguration().V1().MachineConfigPools(),
+		oi.Operator().V1().MachineConfigurations(),
 		f.oclient,
 		false,
 		"",

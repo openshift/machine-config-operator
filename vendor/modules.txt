@@ -930,6 +930,9 @@ github.com/jingyugao/rowserrcheck/passes/rowserr
 # github.com/jjti/go-spancheck v0.6.4
 ## explicit; go 1.22.1
 github.com/jjti/go-spancheck
+# github.com/josephburnett/jd v1.9.2
+## explicit; go 1.18
+github.com/josephburnett/jd/v2
 # github.com/josharian/intern v1.0.0
 ## explicit; go 1.5
 github.com/josharian/intern
@@ -1211,7 +1214,7 @@ github.com/openshift-eng/openshift-tests-extension/pkg/ginkgo
 github.com/openshift-eng/openshift-tests-extension/pkg/junit
 github.com/openshift-eng/openshift-tests-extension/pkg/util/sets
 github.com/openshift-eng/openshift-tests-extension/pkg/version
-# github.com/openshift/api v0.0.0-20250808142411-c974eeafe3f1
+# github.com/openshift/api v0.0.0-20250811150514-cc869c87a7f0
 ## explicit; go 1.24.0
 github.com/openshift/api
 github.com/openshift/api/annotations
@@ -1294,7 +1297,7 @@ github.com/openshift/api/template
 github.com/openshift/api/template/v1
 github.com/openshift/api/user
 github.com/openshift/api/user/v1
-# github.com/openshift/client-go v0.0.0-20250811113315-c2dfb51e2d06
+# github.com/openshift/client-go v0.0.0-20250811163556-6193816ae379
 ## explicit; go 1.24.0
 github.com/openshift/client-go/apps/applyconfigurations/apps/v1
 github.com/openshift/client-go/apps/applyconfigurations/internal
@@ -1800,6 +1803,9 @@ github.com/yeya24/promlinter
 # github.com/ykadowak/zerologlint v0.1.5
 ## explicit; go 1.19
 github.com/ykadowak/zerologlint
+# github.com/yudai/golcs v0.0.0-20170316035057-ecda9a501e82
+## explicit
+github.com/yudai/golcs
 # gitlab.com/bosi/decorder v0.4.2
 ## explicit; go 1.20
 gitlab.com/bosi/decorder

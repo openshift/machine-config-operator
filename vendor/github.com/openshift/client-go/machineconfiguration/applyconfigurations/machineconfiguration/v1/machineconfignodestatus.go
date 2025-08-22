@@ -9,10 +9,11 @@ import (
 // MachineConfigNodeStatusApplyConfiguration represents a declarative configuration of the MachineConfigNodeStatus type for use
 // with apply.
 type MachineConfigNodeStatusApplyConfiguration struct {
-	Conditions         []metav1.ConditionApplyConfiguration                           `json:"conditions,omitempty"`
-	ObservedGeneration *int64                                                         `json:"observedGeneration,omitempty"`
-	ConfigVersion      *MachineConfigNodeStatusMachineConfigVersionApplyConfiguration `json:"configVersion,omitempty"`
-	PinnedImageSets    []MachineConfigNodeStatusPinnedImageSetApplyConfiguration      `json:"pinnedImageSets,omitempty"`
+	Conditions            []metav1.ConditionApplyConfiguration                           `json:"conditions,omitempty"`
+	ObservedGeneration    *int64                                                         `json:"observedGeneration,omitempty"`
+	ConfigVersion         *MachineConfigNodeStatusMachineConfigVersionApplyConfiguration `json:"configVersion,omitempty"`
+	PinnedImageSets       []MachineConfigNodeStatusPinnedImageSetApplyConfiguration      `json:"pinnedImageSets,omitempty"`
+	IrreconcilableChanges []IrreconcilableChangeDiffApplyConfiguration                   `json:"irreconcilableChanges,omitempty"`
 }
 
 // MachineConfigNodeStatusApplyConfiguration constructs a declarative configuration of the MachineConfigNodeStatus type for use with
@@ -59,6 +60,19 @@ func (b *MachineConfigNodeStatusApplyConfiguration) WithPinnedImageSets(values .
 			panic("nil value passed to WithPinnedImageSets")
 		}
 		b.PinnedImageSets = append(b.PinnedImageSets, *values[i])
+	}
+	return b
+}
+
+// WithIrreconcilableChanges adds the given value to the IrreconcilableChanges field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the IrreconcilableChanges field.
+func (b *MachineConfigNodeStatusApplyConfiguration) WithIrreconcilableChanges(values ...*IrreconcilableChangeDiffApplyConfiguration) *MachineConfigNodeStatusApplyConfiguration {
+	for i := range values {
+		if values[i] == nil {
+			panic("nil value passed to WithIrreconcilableChanges")
+		}
+		b.IrreconcilableChanges = append(b.IrreconcilableChanges, *values[i])
 	}
 	return b
 }

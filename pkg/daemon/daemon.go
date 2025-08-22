@@ -20,12 +20,15 @@ import (
 	"syscall"
 	"time"
 
-	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
-	mcopclientset "github.com/openshift/client-go/operator/clientset/versioned"
-
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/renameio"
+	"github.com/openshift/api/features"
+	opv1 "github.com/openshift/api/operator/v1"
+	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
+	mcopclientset "github.com/openshift/client-go/operator/clientset/versioned"
+	mcopinformersv1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
+	mcoplistersv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -101,6 +104,9 @@ type Daemon struct {
 	ccLister       mcfglistersv1.ControllerConfigLister
 	ccListerSynced cache.InformerSynced
 
+	mcopLister       mcoplistersv1.MachineConfigurationLister
+	mcopListerSynced cache.InformerSynced
+
 	// skipReboot skips the reboot after a sync, only valid with onceFrom != ""
 	skipReboot bool
 
@@ -155,6 +161,8 @@ type Daemon struct {
 
 	deferKubeletRestart bool
 
+	irreconcilableReporter IrreconcilableReporter
+
 	// Ensures that only a single syncOSImagePullSecrets call can run at a time.
 	osImageMux *sync.Mutex
 }
@@ -168,6 +176,14 @@ type Daemon struct {
 // cast Daemon to CoreOSDaemon manually in update()
 type CoreOSDaemon struct {
 	*Daemon
+}
+
+// IrreconcilableReporter exposes the logic to analyze the irreconcilable differences between a given node rendered
+// MachineConfig and the install-time MachineConfig and report them to the MCN status.
+type IrreconcilableReporter interface {
+	// CheckReportIrreconcilableDifferences generates and pushes the irreconcilable differences to the MCN CR
+	// of the given node.
+	CheckReportIrreconcilableDifferences(targetMachineConfig *mcfgv1.MachineConfig, nodeName string) error
 }
 
 var ErrAuxiliary = errors.New("Error from auxiliary packages")
@@ -353,6 +369,7 @@ func New(
 		currentImagePath:       currentImagePath,
 		configDriftMonitor:     NewConfigDriftMonitor(),
 		osImageMux:             &sync.Mutex{},
+		irreconcilableReporter: NewNoOpIrreconcilableReporterImpl(),
 	}, nil
 }
 
@@ -366,6 +383,7 @@ func (dn *Daemon) ClusterConnect(
 	nodeInformer coreinformersv1.NodeInformer,
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
+	mcopInformer mcopinformersv1.MachineConfigurationInformer,
 	mcopClient mcopclientset.Interface,
 	kubeletHealthzEnabled bool,
 	kubeletHealthzEndpoint string,
@@ -402,6 +420,8 @@ func (dn *Daemon) ClusterConnect(
 	dn.ccListerSynced = ccInformer.Informer().HasSynced
 	dn.mcpLister = mcpInformer.Lister()
 	dn.mcpListerSynced = mcpInformer.Informer().HasSynced
+	dn.mcopLister = mcopInformer.Lister()
+	dn.mcopListerSynced = mcopInformer.Informer().HasSynced
 
 	nw, err := newNodeWriter(dn.name, dn.stopCh)
 	if err != nil {
@@ -417,6 +437,12 @@ func (dn *Daemon) ClusterConnect(
 	dn.kubeletHealthzEndpoint = kubeletHealthzEndpoint
 
 	dn.fgHandler = fgHandler
+
+	// If the IrreconcilableMachineConfig FG is enabled turn on the reporting of irreconcilable differences
+	// MCN is required too, as the irreconcilable diffs report is stored as part of the MCN status
+	if dn.fgHandler.Enabled(features.FeatureGateIrreconcilableMachineConfig) && dn.fgHandler.Enabled(features.FeatureGateMachineConfigNodes) {
+		dn.irreconcilableReporter = NewIrreconcilableReporter(dn.mcfgClient)
+	}
 
 	return nil
 }
@@ -1086,7 +1112,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 	klog.Infof("Successfully read current/desired Config")
 
 	// check update reconcilability
-	mcDiff, err := reconcilable(&currentConfig, &desiredConfig)
+	mcDiff, err := reconcilable(&currentConfig, &desiredConfig, &opv1.IrreconcilableValidationOverrides{})
 	if err != nil {
 		return fmt.Errorf("the update is not reconcilable: %w", err)
 	}
@@ -2362,6 +2388,13 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, bool, erro
 				errLabelStr := fmt.Sprintf("error setting node's state to Done: %v", err)
 				UpdateStateMetric(mcdUpdateState, "", errLabelStr)
 				return missingODC, inDesiredConfig, fmt.Errorf("error setting node's state to Done: %w", err)
+			}
+		}
+
+		// Report irreconcilable differences, if any
+		if dn.node != nil {
+			if err := dn.irreconcilableReporter.CheckReportIrreconcilableDifferences(state.desiredConfig, dn.node.Name); err != nil {
+				klog.Errorf("Error updating MCN with the irreconcilable report %v", err)
 			}
 		}
 
