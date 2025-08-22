@@ -574,6 +574,9 @@ contents:
       for conn in "${connections[@]}"; do
         local slave_type=$($NMCLI_GET_VALUE connection.slave-type connection show "$conn")
         if [ "$slave_type" = "team" ] || [ "$slave_type" = "bond" ]; then
+          # Some Cisco switches mishandle LACP with agg=0; set slave down to
+          # avoid sending such packets during reactivation.
+          ip link set $(nmcli -g connection.interface-name connection show "$conn") down
           mod_nm_conn "$conn" connection.autoconnect yes
         fi
       done
