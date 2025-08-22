@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"time"
@@ -25,6 +26,7 @@ import (
 	o "github.com/onsi/gomega"
 	crdv1 "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/typed/apiextensions/v1"
 
+	"k8s.io/kubernetes/test/e2e/framework"
 	e2edebug "k8s.io/kubernetes/test/e2e/framework/debug"
 
 	kubeauthorizationv1 "k8s.io/api/authorization/v1"
@@ -1020,4 +1022,11 @@ func (c *CLI) SilentOutput() (string, error) {
 		e2e.Failf("unable to execute %q: %v", c.execPath, err)
 		return "", nil
 	}
+}
+
+// FatalErr exits the test in case a fatal error has occurred.
+func FatalErr(msg interface{}) {
+	// the path that leads to this being called isn't always clear...
+	fmt.Fprintln(g.GinkgoWriter, string(debug.Stack()))
+	framework.Failf("%v", msg)
 }
