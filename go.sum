@@ -168,8 +168,8 @@ github.com/coreos/ignition/v2 v2.20.0 h1:xQjrxhCbcSKpqrN2hOQavAc1rx0GOf6qh2QCauS
 github.com/coreos/ignition/v2 v2.20.0/go.mod h1:l7EpXNWA7jBXmjUMvnVBlrrj+LX2wA/PAyD9kstwFDQ=
 github.com/coreos/rpmostree-client-go v0.0.0-20230914135003-fae0786302f7 h1:gpIn0B0F00GJPlI1iPjJbHMS01QoxDs7Bf8UgH9D3wg=
 github.com/coreos/rpmostree-client-go v0.0.0-20230914135003-fae0786302f7/go.mod h1:WiAXRoGnl4Lwr7OM5izCLWMLH6Y43sYWJREoeeHEg4E=
-github.com/coreos/stream-metadata-go v0.4.3 h1:5GykJ8dtZSx1rdlzEAiDVzA73cwmUF3ceTuIP293L6E=
-github.com/coreos/stream-metadata-go v0.4.3/go.mod h1:fMObQqQm8Ku91G04btKzEH3AsdP1mrAb986z9aaK0tE=
+github.com/coreos/stream-metadata-go v0.4.10-0.20250806142651-4a7d280a6c7b h1:CT6nMx5Ap/K6MT8zMqByrWz+RZV7O6pBGW5LhB/pwvY=
+github.com/coreos/stream-metadata-go v0.4.10-0.20250806142651-4a7d280a6c7b/go.mod h1:dTE8UEFgyUcrbdUg7vGT3uIP7S8a1IwUlmWLKlOp8G8=
 github.com/coreos/vcontext v0.0.0-20190529201340-22b159166068/go.mod h1:E+6hug9bFSe0KZ2ZAzr8M9F5JlArJjv5D1JS7KSkPKE=
 github.com/coreos/vcontext v0.0.0-20191017033345-260217907eb5/go.mod h1:E+6hug9bFSe0KZ2ZAzr8M9F5JlArJjv5D1JS7KSkPKE=
 github.com/coreos/vcontext v0.0.0-20231102161604-685dc7299dc5 h1:sMZSC2BW5LKCdvNbfN12SbKrNvtLBUNjfHZmMvI2ItY=
