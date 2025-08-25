@@ -1139,6 +1139,9 @@ func (p *PinnedImageSetManager) getImageSize(ctx context.Context, imageName, aut
 		imageName,
 	}
 
+	klog.Errorf("args: %v", args)
+	klog.Errorf("authFilePath: %v", authFilePath)
+
 	output, err := exec.CommandContext(ctx, "podman", args...).CombinedOutput()
 	if err != nil && strings.Contains(err.Error(), "manifest unknown") {
 		return 0, errNotFound
