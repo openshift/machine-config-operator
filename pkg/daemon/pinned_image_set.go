@@ -763,6 +763,7 @@ func (p *PinnedImageSetManager) prefetchWorker(ctx context.Context) {
 			task.monitor.Done()
 			continue
 		}
+		klog.Errorf("in prefetchWorker with image: %v and auth: %v", task.image, task.auth)
 		if err := ensurePullImage(ctx, p.criClient, p.backoff, task.image, task.auth); err != nil {
 			task.monitor.Error(err)
 			klog.Warningf("failed to prefetch image %q: %v", task.image, err)
