@@ -3,8 +3,6 @@ package build
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -20,7 +18,6 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/build/imagepruner"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	"github.com/openshift/machine-config-operator/pkg/controller/template"
 	daemonconstants "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/helpers"
 	batchv1 "k8s.io/api/batch/v1"
@@ -632,46 +629,6 @@ func (b *buildReconciler) createNewMachineOSBuildOrReuseExisting(ctx context.Con
 			return fmt.Errorf("could not create new MachineOSBuild %q: %w", mosb.Name, err)
 		}
 		klog.Infof("New MachineOSBuild created: %s", mosb.Name)
-	}
-
-	return nil
-}
-
-// getCerts created the certs directory and returns the path to the certs directory
-func (b *buildReconciler) getCerts() error {
-	err := os.MkdirAll(certsDir, 0o755)
-	if err != nil {
-		return fmt.Errorf("could not create certs dir: %w", err)
-	}
-	controllerConfigs, err := b.listers.controllerConfigLister.List(labels.Everything())
-	if err != nil {
-		return fmt.Errorf("could not list ControllerConfigs: %w", err)
-	}
-	if len(controllerConfigs) == 0 {
-		return fmt.Errorf("no ControllerConfigs found")
-	}
-	cc := controllerConfigs[0]
-	template.UpdateControllerConfigCerts(cc)
-
-	// Copy the certs to /etc/docker/certs.d directory
-	for _, CA := range cc.Spec.ImageRegistryBundleData {
-		caFile := strings.ReplaceAll(CA.File, "..", ":")
-		if err := os.MkdirAll(filepath.Join(certsDir, caFile), 0o755); err != nil {
-			return err
-		}
-		if err := os.WriteFile(filepath.Join(certsDir, caFile, "ca.crt"), CA.Data, 0o644); err != nil {
-			return err
-		}
-	}
-
-	for _, CA := range cc.Spec.ImageRegistryBundleUserData {
-		caFile := strings.ReplaceAll(CA.File, "..", ":")
-		if err := os.MkdirAll(filepath.Join(certsDir, caFile), 0o755); err != nil {
-			return err
-		}
-		if err := os.WriteFile(filepath.Join(certsDir, caFile, "ca.crt"), CA.Data, 0o644); err != nil {
-			return err
-		}
 	}
 
 	return nil
@@ -1367,7 +1324,6 @@ func (b *buildReconciler) syncMachineConfigPool(ctx context.Context, mcp *mcfgv1
 }
 
 func (b *buildReconciler) reconcilePoolChange(ctx context.Context, mcp *mcfgv1.MachineConfigPool) error {
-
 	mosc, err := utils.GetMachineOSConfigForMachineConfigPool(mcp, b.utilListers())
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
@@ -1422,10 +1378,25 @@ func (b *buildReconciler) reconcilePoolChange(ctx context.Context, mcp *mcfgv1.M
 			// 1. Applied MC triggered a MOSB build through `needsImageRebuild`, and it completed, but we are waiting for spec == status in the node update
 			// 2. Current MOSB state is successful, and a deleted MC triggered a MOSB build through `needsImageRebuild`.
 			if mosbState.IsBuildSuccess() {
-				klog.Infof("pool %q: Found successful build for target. Reusing image.", mcp.Name)
-				return b.reuseImageForNewMOSB(ctx, mosc, existingMosb)
-			}
+				// Next, we should check if the image associated with the MachineOSBuild still exists.
+				info, err := b.inspectImage(ctx, string(existingMosb.Status.DigestedImagePushSpec), existingMosb)
+				// If the image exists, reuse it.
+				if info != nil && err == nil {
+					klog.Infof("pool %q: Found successful build for target whose image exists. Reusing image.", mcp.Name)
+					return b.reuseImageForNewMOSB(ctx, mosc, existingMosb)
+				}
 
+				// If the image does not exist, rebuild it.
+				if imagepruner.IsImageNotFoundErr(err) {
+					klog.Infof("pool %q: Found successful build for target whose image no longer exists. Will rebuild.", mcp.Name)
+					return b.createNewMachineOSBuildOrReuseExisting(ctx, mosc, true)
+				}
+
+				// If we could not inspect the image, we might not have permissions to
+				// do so, or it could be another issue. Either way, we should return an
+				// error here.
+				return fmt.Errorf("could not inspect image %s for MachineOSBuild %s for MachineConfigPool %s: %w", string(existingMosb.Status.DigestedImagePushSpec), existingMosb.Name, mcp.Name, err)
+			}
 		} else if !k8serrors.IsNotFound(err) {
 			// An actual error occurred (not just "not found"). Return the error.
 			return fmt.Errorf("could not get target MOSB %s: %w", targetMosb.Name, err)
@@ -1496,20 +1467,16 @@ func (b *buildReconciler) reuseImageForNewMOSB(ctx context.Context, mosc *mcfgv1
 	image := string(oldMosb.Status.DigestedImagePushSpec)
 
 	inspect, err := b.inspectImage(ctx, image, newMosb)
-	if err != nil {
-		return err
-	}
-
 	// this is our "reality check": try to inspect the image in the registry to see if it still exists
 	switch {
 	// image is found, we will reuse this image
 	case inspect != nil && err == nil:
 		klog.Infof("Existing MachineOSBuild %q found, reusing image %q by assigning to MachineOSConfig %q", newMosb.Name, image, mosc.Name)
 	// we are unauthorized and need to report this
-	case k8serrors.IsUnauthorized(err) || imagepruner.IsAccessDeniedErr(err):
+	case err != nil && (k8serrors.IsUnauthorized(err) || imagepruner.IsAccessDeniedErr(err)):
 		return fmt.Errorf("authentication failed while inspecting image %q for MachineOSBuild %q: %w", image, newMosb.Name, err)
 	// image does not exist, so we delete MOSB and rebuild
-	case k8serrors.IsNotFound(err) || imagepruner.IsImageNotFoundErr(err):
+	case err != nil && (k8serrors.IsNotFound(err) || imagepruner.IsImageNotFoundErr(err)):
 		klog.Infof("Deleting MachineOSBuild %q and rebuilding", newMosb.Name)
 		if deleteErr := b.mcfgclient.MachineconfigurationV1().MachineOSBuilds().Delete(ctx, newMosb.Name, metav1.DeleteOptions{}); deleteErr != nil && !k8serrors.IsNotFound(deleteErr) {
 			return fmt.Errorf("could not delete MachineOSBuild %q: %w", newMosb.Name, deleteErr)
@@ -1595,6 +1562,10 @@ func (b *buildReconciler) deleteImage(ctx context.Context, pullspec string, mosb
 			return err
 		}
 		if err := b.imageclient.ImageV1().ImageStreamTags(ns).Delete(context.TODO(), img, metav1.DeleteOptions{}); err != nil {
+			if k8serrors.IsNotFound(err) {
+				klog.Infof("image %s for MachineOSBuild %s not found", pullspec, mosb.Name)
+				return nil
+			}
 			return fmt.Errorf("could not delete image %s from internal registry for MachineOSBuild %s: %w", pullspec, mosb.Name, err)
 		}
 		return nil
