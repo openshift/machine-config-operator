@@ -11,7 +11,6 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/operator"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
-	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/klog/v2"
 )
 
@@ -132,19 +131,10 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		<-ctx.Done()
 	}
 
-	leaderElectionCfg := common.GetLeaderElectionConfig(cb.GetBuilderConfig())
-
-	leaderelection.RunOrDie(runContext, leaderelection.LeaderElectionConfig{
-		Lock:            common.CreateResourceLock(cb, ctrlcommon.MCONamespace, componentName),
-		ReleaseOnCancel: true,
-		LeaseDuration:   leaderElectionCfg.LeaseDuration.Duration,
-		RenewDeadline:   leaderElectionCfg.RenewDeadline.Duration,
-		RetryPeriod:     leaderElectionCfg.RetryPeriod.Duration,
-		Callbacks: leaderelection.LeaderCallbacks{
-			OnStartedLeading: run,
-			OnStoppedLeading: func() {
-				klog.Info("Stopped leading. Terminating.")
-			},
-		},
+	common.DoLeaderElectionAndRunOrDie(runContext, &common.RunOpts{
+		Namespace:     ctrlcommon.MCONamespace,
+		ComponentName: componentName,
+		Builder:       cb,
+		OnStart:       run,
 	})
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/openshift/library-go/pkg/config/clusterstatus"
 	"github.com/openshift/library-go/pkg/config/leaderelection"
 	"k8s.io/client-go/rest"
+	k8sleaderelection "k8s.io/client-go/tools/leaderelection"
 )
 
 // CreateResourceLock returns an interface for the resource lock.
@@ -56,6 +57,38 @@ func CreateResourceLock(cb *clients.Builder, componentNamespace, componentName s
 	}
 
 	return lock
+}
+
+type RunOpts struct {
+	Namespace     string
+	ComponentName string
+	Builder       *clients.Builder
+	OnStart       func(context.Context)
+	OnStop        func()
+}
+
+func DoLeaderElectionAndRunOrDie(ctx context.Context, o *RunOpts) {
+	onStop := func() {
+		if o.OnStop != nil {
+			o.OnStop()
+		}
+
+		klog.Infof("Stopped leading, terminating %s", o.ComponentName)
+	}
+
+	cfg := GetLeaderElectionConfig(o.Builder.GetBuilderConfig())
+
+	k8sleaderelection.RunOrDie(ctx, k8sleaderelection.LeaderElectionConfig{
+		Lock:            CreateResourceLock(o.Builder, o.Namespace, o.ComponentName),
+		ReleaseOnCancel: true,
+		LeaseDuration:   cfg.LeaseDuration.Duration,
+		RenewDeadline:   cfg.RenewDeadline.Duration,
+		RetryPeriod:     cfg.RetryPeriod.Duration,
+		Callbacks: k8sleaderelection.LeaderCallbacks{
+			OnStartedLeading: o.OnStart,
+			OnStoppedLeading: onStop,
+		},
+	})
 }
 
 // GetLeaderElectionConfig returns leader election configs defaults based on the cluster topology
