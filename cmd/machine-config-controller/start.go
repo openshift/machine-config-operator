@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"os"
 
 	features "github.com/openshift/api/features"
 	"github.com/openshift/machine-config-operator/cmd/common"
@@ -169,11 +168,9 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			OnStartedLeading: run,
 			OnStoppedLeading: func() {
 				klog.Infof("Stopped leading. Terminating.")
-				os.Exit(0)
 			},
 		},
 	})
-	panic("unreachable")
 }
 
 func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controller {

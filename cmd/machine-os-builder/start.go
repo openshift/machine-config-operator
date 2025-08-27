@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"os"
 
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/internal/clients"
@@ -88,9 +87,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 				// cleanup as well as to terminate its lease.
 				<-shutdownChan
 				klog.Infof("Stopped leading; machine-os-builder terminating.")
-				os.Exit(0)
 			},
 		},
 	})
-
 }

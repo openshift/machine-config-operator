@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"os"
 
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/internal/clients"
@@ -145,9 +144,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			OnStartedLeading: run,
 			OnStoppedLeading: func() {
 				klog.Info("Stopped leading. Terminating.")
-				os.Exit(0)
 			},
 		},
 	})
-	panic("unreachable")
 }
