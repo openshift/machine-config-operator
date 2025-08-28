@@ -403,11 +403,16 @@ func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAc
 // createOrGetMachineConfigNode gets the named MCN or returns a boolean indicating we need to create one
 func createOrGetMachineConfigNode(mcfgClient mcfgclientset.Interface, node *corev1.Node) (*mcfgv1.MachineConfigNode, bool) {
 	mcNode, err := mcfgClient.MachineconfigurationV1().MachineConfigNodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
-	if mcNode.Name == "" || (err != nil && apierrors.IsNotFound(err)) {
+	if err != nil {
+		// no existing MCN found since no resource found, no error yet just create a new one
+		if apierrors.IsNotFound((err)) {
+			klog.V(4).Infof("MachineConfigNode for node %q not found, will create a new one", node.Name)
+			return mcNode, true
+		}
+		// true error getting existing MCN
 		klog.Errorf("error getting existing MCN: %v", err)
 		return mcNode, true
 	}
-
 	return mcNode, false
 }
 
