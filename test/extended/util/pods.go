@@ -96,14 +96,18 @@ func GetPodName(oc *CLI, namespace, podLabel, node string) (string, error) {
 
 // AssertAllPodsToBeReadyWithPollerParams assert all pods in NS are in ready state until timeout in a given namespace
 // Pros: allow user to customize poller parameters
-func AssertAllPodsToBeReadyWithPollerParams(oc *CLI, namespace string, interval, timeout time.Duration) {
+func AssertAllPodsToBeReadyWithPollerParams(oc *CLI, namespace string, interval, timeout time.Duration, selector string) {
 	err := wait.PollUntilContextTimeout(context.Background(), interval, timeout, false, func(_ context.Context) (bool, error) {
 
 		// get the status flag for all pods
 		// except the ones which are in Complete Status.
 		// it use 'ne' operator which is only compatible with 4.10+ oc versions
 		template := "'{{- range .items -}}{{- range .status.conditions -}}{{- if ne .reason \"PodCompleted\" -}}{{- if eq .type \"Ready\" -}}{{- .status}} {{\" \"}}{{- end -}}{{- end -}}{{- end -}}{{- end -}}'"
-		stdout, err := oc.AsAdmin().Run("get").Args("pods", "-n", namespace).Template(template).Output()
+		baseArgs := []string{"pods", "-n", namespace}
+		if selector != "" {
+			baseArgs = append(baseArgs, "-l", selector)
+		}
+		stdout, err := oc.AsAdmin().Run("get").Args(baseArgs...).Template(template).Output()
 		if err != nil {
 			e2e.Logf("the err:%v, and try next round", err)
 			return false, nil
@@ -118,5 +122,11 @@ func AssertAllPodsToBeReadyWithPollerParams(oc *CLI, namespace string, interval,
 
 // AssertAllPodsToBeReady assert all pods in NS are in ready state until timeout in a given namespace
 func AssertAllPodsToBeReady(oc *CLI, namespace string) {
-	AssertAllPodsToBeReadyWithPollerParams(oc, namespace, 10*time.Second, 4*time.Minute)
+	AssertAllPodsToBeReadyWithPollerParams(oc, namespace, 10*time.Second, 4*time.Minute, "")
+}
+
+// AssertAllPodsToBeReadyWithSelector assert all pods in NS are in ready state until timeout in a given namespace
+// The selector parameter follows the regular oc/kubectl format for the --selector option.
+func AssertAllPodsToBeReadyWithSelector(oc *CLI, namespace, selector string) {
+	AssertAllPodsToBeReadyWithPollerParams(oc, namespace, 10*time.Second, 4*time.Minute, selector)
 }
