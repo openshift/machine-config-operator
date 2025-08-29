@@ -302,7 +302,10 @@ func ValidateSuccessfulMOSC(mosc *MachineOSConfig, checkers []Checker) {
 	o.Eventually(mOSBuilder.Get, "2m", "30s").WithArguments(`{.status.availableReplicas}`).Should(o.Equal("1"),
 		"The machine-os-builder deployment was created but the available number of replicas is not the expected one")
 
-	exutil.AssertAllPodsToBeReady(mosc.GetOC(), MachineConfigNamespace)
+	// Ensure all pods are running
+	// Do not consider pods created by jobs, as the build pod uses an init container
+	// to build that takes time to be ready and its configuration will be asserted later
+	exutil.AssertAllPodsToBeReadyWithSelector(mosc.GetOC(), MachineConfigNamespace, "!batch.kubernetes.io/job-name")
 	logger.Infof("OK!\n")
 
 	exutil.By("Check that the  machine-os-builder is using leader election without failing")
