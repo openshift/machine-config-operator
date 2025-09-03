@@ -1207,6 +1207,11 @@ func (in *MachineOSBuilderReference) DeepCopyInto(out *MachineOSBuilderReference
 		*out = new(ObjectReference)
 		**out = **in
 	}
+	if in.Pipeline != nil {
+		in, out := &in.Pipeline, &out.Pipeline
+		*out = new(ObjectReference)
+		**out = **in
+	}
 	return
 }
 
@@ -1311,6 +1316,11 @@ func (in *MachineOSConfigSpec) DeepCopyInto(out *MachineOSConfigSpec) {
 	if in.Containerfile != nil {
 		in, out := &in.Containerfile, &out.Containerfile
 		*out = make([]MachineOSContainerfile, len(*in))
+		copy(*out, *in)
+	}
+	if in.PostBuildTasks != nil {
+		in, out := &in.PostBuildTasks, &out.PostBuildTasks
+		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
 	return

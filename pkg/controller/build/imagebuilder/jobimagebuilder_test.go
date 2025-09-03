@@ -40,7 +40,7 @@ func TestJobImageBuilder(t *testing.T) {
 
 	assert.NoError(t, jim.Start(ctx))
 
-	buildJobName := utils.GetBuildJobName(lobj.MachineOSBuild)
+	buildJobName := utils.GetBuildName(lobj.MachineOSBuild)
 
 	kubeassert.Now().JobExists(buildJobName)
 	assertObjectsAreCreatedByPreparer(ctx, t, kubeassert, jim.(*jobImageBuilder).buildrequest)
@@ -234,7 +234,7 @@ func TestJobImageBuilderCanCleanWithOnlyMachineOSBuild(t *testing.T) {
 
 	assert.NoError(t, jim.Start(ctx))
 
-	buildJobName := utils.GetBuildJobName(lobj.MachineOSBuild)
+	buildJobName := utils.GetBuildName(lobj.MachineOSBuild)
 
 	kubeassert.JobExists(buildJobName)
 	buildReq := jim.(*jobImageBuilder).buildrequest
@@ -266,7 +266,7 @@ func TestJobImageBuilderSetsBuildStartAndEndTimestamp(t *testing.T) {
 
 	assert.NoError(t, jim.Start(ctx))
 
-	job, err := kubeclient.BatchV1().Jobs(ctrlcommon.MCONamespace).Get(ctx, utils.GetBuildJobName(lobj.MachineOSBuild), metav1.GetOptions{})
+	job, err := kubeclient.BatchV1().Jobs(ctrlcommon.MCONamespace).Get(ctx, utils.GetBuildName(lobj.MachineOSBuild), metav1.GetOptions{})
 	require.NoError(t, err)
 
 	// Set -60 seconds so that we can get a time that is one minute before the current time.

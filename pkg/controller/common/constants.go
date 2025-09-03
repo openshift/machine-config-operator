@@ -7,6 +7,9 @@ const (
 	// OpenshiftConfigManagedNamespace is the namespace that has the etc-pki-entitlement/Simple Content Access Cert
 	OpenshiftConfigManagedNamespace = "openshift-config-managed"
 
+	// OpenshiftPipelinesNamespace contains resources for openshift pipelines (tekton)
+	OpenshiftPipelinesNamespace = "openshift-pipelines"
+
 	// SimpleContentAccessSecret is the secret that holds the SimpleContentAccess cert which provides RHEL entitlements
 	SimpleContentAccessSecretName = "etc-pki-entitlement"
 	// MachineAPINamespace is the namespace that should be used for all API objects owned by the machine api operator

@@ -571,14 +571,6 @@ var (
 						enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
 						mustRegister()
 
-	FeatureGateChunkSizeMiB = newFeatureGate("ChunkSizeMiB").
-				reportProblemsToJiraComponent("Image Registry").
-				contactPerson("flavianmissi").
-				productScope(ocpSpecific).
-				enhancementPR(legacyFeatureGateWithoutEnhancement).
-				enableIn(configv1.Default, configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
-				mustRegister()
-
 	FeatureGateMachineAPIMigration = newFeatureGate("MachineAPIMigration").
 					reportProblemsToJiraComponent("OCPCLOUD").
 					contactPerson("jspeed").

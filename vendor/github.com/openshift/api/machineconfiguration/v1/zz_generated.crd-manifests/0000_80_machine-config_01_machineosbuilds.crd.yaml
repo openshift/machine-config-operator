@@ -221,14 +221,76 @@ spec:
                     - name
                     - resource
                     type: object
+                  pipeline:
+                    description: |-
+                      pipeline is a reference to the pipeline object that is managing the image build.
+                      This is required if the imageBuilderType is Pipeline, and forbidden otherwise.
+                    properties:
+                      group:
+                        description: |-
+                          group of the referent.
+                          The name must contain only lowercase alphanumeric characters, '-' or '.' and start/end with an alphanumeric character.
+                          Example: "", "apps", "build.openshift.io", etc.
+                        maxLength: 253
+                        type: string
+                        x-kubernetes-validations:
+                        - message: a lowercase RFC 1123 subdomain must consist of
+                            lower case alphanumeric characters, '-' or '.', and must
+                            start and end with an alphanumeric character.
+                          rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                      name:
+                        description: |-
+                          name of the referent.
+                          The name must contain only lowercase alphanumeric characters, '-' or '.' and start/end with an alphanumeric character.
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                        x-kubernetes-validations:
+                        - message: a lowercase RFC 1123 subdomain must consist of
+                            lower case alphanumeric characters, '-' or '.', and must
+                            start and end with an alphanumeric character.
+                          rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                      namespace:
+                        description: |-
+                          namespace of the referent.
+                          This value should consist of at most 63 characters, and of only lowercase alphanumeric characters and hyphens,
+                          and should start and end with an alphanumeric character.
+                        maxLength: 63
+                        minLength: 1
+                        type: string
+                        x-kubernetes-validations:
+                        - message: the value must consist of only lowercase alphanumeric
+                            characters and hyphens
+                          rule: '!format.dns1123Label().validate(self).hasValue()'
+                      resource:
+                        description: |-
+                          resource of the referent.
+                          This value should consist of at most 63 characters, and of only lowercase alphanumeric characters and hyphens,
+                          and should start with an alphabetic character and end with an alphanumeric character.
+                          Example: "deployments", "deploymentconfigs", "pods", etc.
+                        maxLength: 63
+                        minLength: 1
+                        type: string
+                        x-kubernetes-validations:
+                        - message: a DNS-1035 label must consist of lower case alphanumeric
+                            characters or '-', start with an alphabetic character,
+                            and end with an alphanumeric character
+                          rule: '!format.dns1035Label().validate(self).hasValue()'
+                    required:
+                    - group
+                    - name
+                    - resource
+                    type: object
                 required:
                 - imageBuilderType
                 type: object
                 x-kubernetes-validations:
-                - message: job is required when imageBuilderType is Job, and forbidden
-                    otherwise
-                  rule: 'has(self.imageBuilderType) && self.imageBuilderType == ''Job''
-                    ?  has(self.job) : !has(self.job)'
+                - message: Either 'job' or 'pipeline' must be set depending on imageBuilderType
+                    ('Job' or 'Pipeline'), and the other must be unset
+                  rule: 'has(self.imageBuilderType) && (self.imageBuilderType == ''Job''
+                    || self.imageBuilderType == ''Pipeline'') ? (self.imageBuilderType
+                    == ''Job'' ? has(self.job) && !has(self.pipeline) : has(self.pipeline)
+                    && !has(self.job)) : !has(self.job) && !has(self.pipeline)'
               conditions:
                 description: |-
                   conditions are state related conditions for the build. Valid types are:
