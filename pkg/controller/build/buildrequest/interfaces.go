@@ -3,11 +3,12 @@ package buildrequest
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	clientset "k8s.io/client-go/kubernetes"
 )
 
 type BuildRequest interface {
 	Opts() BuildRequestOpts
-	Builder() Builder
+	Builder(kubeclient clientset.Interface) (Builder, error)
 	Secrets() ([]*corev1.Secret, error)
 	ConfigMaps() ([]*corev1.ConfigMap, error)
 }

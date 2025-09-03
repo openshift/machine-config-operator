@@ -103,7 +103,7 @@ func NewObjectBuildersForTest(poolName string) ObjectBuildersForTest {
 			constants.MachineOSConfigNameLabelKey:     moscName,
 		}).
 		WithAnnotations(map[string]string{
-			constants.JobUIDAnnotationKey: JobUID,
+			constants.BuildTypeUIDAnnotationKey: JobUID,
 		})
 
 	return ObjectBuildersForTest{

@@ -17,6 +17,10 @@ import (
 	routeclientset "github.com/openshift/client-go/route/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/imagepruner"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
+	olmclientset "github.com/operator-framework/operator-lifecycle-manager/pkg/api/client/clientset/versioned"
+	pipelineoperatorclientset "github.com/tektoncd/operator/pkg/client/clientset/versioned"
+	tektonv1beta1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	tektonclientset "github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
@@ -37,6 +41,9 @@ type OSBuildController struct {
 	kubeclient    clientset.Interface
 	imageclient   imagev1clientset.Interface
 	routeclient   routeclientset.Interface
+	pipelineoperatorclient pipelineoperatorclientset.Interface
+	olmclient              olmclientset.Interface
+	tektonclient           tektonclientset.Interface
 
 	config    Config
 	execQueue *ctrlcommon.WrappedQueue
@@ -92,6 +99,9 @@ func NewOSBuildControllerFromControllerContextWithConfig(ctrlCtx *ctrlcommon.Con
 		ctrlCtx.ClientBuilder.KubeClientOrDie("machine-os-builder"),
 		ctrlCtx.ClientBuilder.ImageClientOrDie("machine-os-builder"),
 		ctrlCtx.ClientBuilder.RouteClientOrDie("machine-os-builder"),
+		ctrlCtx.ClientBuilder.PipelineOperatorClientOrDie("machine-os-builder"),
+		ctrlCtx.ClientBuilder.OLMClientOrDie("machine-os-builder"),
+		ctrlCtx.ClientBuilder.TektonClientOrDie("machine-os-builder"),
 		imagepruner.NewImagePruner(),
 	)
 }
@@ -102,19 +112,25 @@ func newOSBuildController(
 	kubeclient clientset.Interface,
 	imageclient imagev1clientset.Interface,
 	routeclient routeclientset.Interface,
+	pipelineoperatorclient pipelineoperatorclientset.Interface,
+	olmclient olmclientset.Interface,
+	tektonclient tektonclientset.Interface,
 	imagepruner imagepruner.ImagePruner,
 ) *OSBuildController {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
 	eventBroadcaster.StartRecordingToSink(&coreclientsetv1.EventSinkImpl{Interface: kubeclient.CoreV1().Events("")})
 
-	informers := newInformers(mcfgclient, kubeclient)
+	informers := newInformers(mcfgclient, kubeclient, tektonclient)
 
 	ctrl := &OSBuildController{
 		kubeclient:    kubeclient,
 		mcfgclient:    mcfgclient,
 		imageclient:   imageclient,
 		routeclient:   routeclient,
+		pipelineoperatorclient: pipelineoperatorclient,
+		olmclient:              olmclient,
+		tektonclient:           tektonclient,
 		informers:     informers,
 		listers:       informers.listers(),
 		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineosbuilder"}),
@@ -144,12 +160,18 @@ func newOSBuildController(
 		DeleteFunc: ctrl.deleteJob,
 	})
 
+	ctrl.pipelineRunInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addPipelineRun,
+		UpdateFunc: ctrl.updatePipelineRun,
+		DeleteFunc: ctrl.deletePipelineRun,
+	})
+
 	ctrl.machineConfigPoolInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addMachineConfigPool,
 		UpdateFunc: ctrl.updateMachineConfigPool,
 	})
 
-	ctrl.buildReconciler = newBuildReconciler(mcfgclient, kubeclient, imageclient, routeclient, ctrl.listers, imagepruner)
+	ctrl.buildReconciler = newBuildReconciler(mcfgclient, kubeclient, imageclient, routeclient, pipelineoperatorclient, olmclient, tektonclient, ctrl.listers, imagepruner)
 	ctrl.shutdownDelayHandler = newShutdownDelayHandler(ctrl.listers)
 	ctrl.shutdownChan = make(chan struct{})
 
@@ -317,6 +339,29 @@ func (ctrl *OSBuildController) deleteJob(cur interface{}) {
 	job := cur.(*batchv1.Job)
 	ctrl.enqueueFuncForObject(job, func(ctx context.Context) error {
 		return ctrl.buildReconciler.DeleteJob(ctx, job)
+	})
+}
+
+func (ctrl *OSBuildController) addPipelineRun(cur interface{}) {
+	pipelineRun := cur.(*tektonv1beta1.PipelineRun)
+	ctrl.enqueueFuncForObject(pipelineRun, func(ctx context.Context) error {
+		return ctrl.buildReconciler.AddPipelineRun(ctx, pipelineRun)
+	})
+}
+
+func (ctrl *OSBuildController) updatePipelineRun(old, cur interface{}) {
+	oldPipelineRun := old.(*tektonv1beta1.PipelineRun)
+	curPipelineRun := cur.(*tektonv1beta1.PipelineRun)
+
+	ctrl.enqueueFuncForObject(curPipelineRun, func(ctx context.Context) error {
+		return ctrl.buildReconciler.UpdatePipelineRun(ctx, oldPipelineRun, curPipelineRun)
+	})
+}
+
+func (ctrl *OSBuildController) deletePipelineRun(cur interface{}) {
+	pipelineRun := cur.(*tektonv1beta1.PipelineRun)
+	ctrl.enqueueFuncForObject(pipelineRun, func(ctx context.Context) error {
+		return ctrl.buildReconciler.DeletePipelineRun(ctx, pipelineRun)
 	})
 }
 

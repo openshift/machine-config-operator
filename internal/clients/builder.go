@@ -9,6 +9,9 @@ import (
 	mapiclientset "github.com/openshift/client-go/machine/clientset/versioned"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	operatorclientset "github.com/openshift/client-go/operator/clientset/versioned"
+	olmclientset "github.com/operator-framework/operator-lifecycle-manager/pkg/api/client/clientset/versioned"
+	pipelineoperatorclientset "github.com/tektoncd/operator/pkg/client/clientset/versioned"
+	tektonclientset "github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
 	routeclientset "github.com/openshift/client-go/route/clientset/versioned"
 	apiext "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/client-go/kubernetes"
@@ -82,6 +85,18 @@ func (cb *Builder) MachineClientOrDie(name string) mapiclientset.Interface {
 // AROClientOrDie returns the ARO client interface for ARO-specific objects.
 func (cb *Builder) AROClientOrDie(name string) aroclientset.Interface {
 	return aroclientset.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
+}
+
+func (cb *Builder) TektonClientOrDie(name string) tektonclientset.Interface {
+	return tektonclientset.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
+}
+
+func (cb *Builder) OLMClientOrDie(name string) olmclientset.Interface {
+	return olmclientset.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
+}
+
+func (cb *Builder) PipelineOperatorClientOrDie(name string) pipelineoperatorclientset.Interface {
+	return pipelineoperatorclientset.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
 }
 
 // GetBuilderConfig returns a copy of the builders *rest.Config
