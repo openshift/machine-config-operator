@@ -31,6 +31,8 @@ func NewLayeredNodeState(n *corev1.Node) *LayeredNodeState {
 // checked against the OCL objects.
 func (l *LayeredNodeState) IsDone(mcp *mcfgv1.MachineConfigPool, layered bool, mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) bool {
 	if layered {
+		klog.Errorf("In layered mode conditional, mosc: %v, mosb: %v", mosc.Name, mosb.Name)
+		klog.Errorf("In layered mode conditional, l.IsNodeDone(): %v, l.IsDesiredMachineConfigEqualToPool(mcp): %v, l.IsDesiredEqualToBuild(mosc, mosb): %v", l.IsNodeDone(), l.IsDesiredMachineConfigEqualToPool(mcp), l.IsDesiredEqualToBuild(mosc, mosb))
 		return l.IsNodeDone() && l.IsDesiredMachineConfigEqualToPool(mcp) && l.IsDesiredEqualToBuild(mosc, mosb)
 	}
 	return l.IsNodeDone() && l.IsDesiredMachineConfigEqualToPool(mcp)

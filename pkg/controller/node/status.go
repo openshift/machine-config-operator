@@ -435,8 +435,10 @@ func isNodeManaged(node *corev1.Node) bool {
 // current config matches the desired config, which also matches the target config,
 // and the "done" flag is set.
 func getUpdatedMachines(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node, mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild, layered bool) []*corev1.Node {
+	klog.Errorf("In getUpdatedMachines for pool %s with %v nodes, and layered %v", pool.Name, len(nodes), layered)
 	var updated []*corev1.Node
 	for _, node := range nodes {
+		klog.Errorf("node: %s", node)
 		lns := ctrlcommon.NewLayeredNodeState(node)
 		if lns.IsDone(pool, layered, mosc, mosb) {
 			updated = append(updated, node)
