@@ -523,6 +523,7 @@ var map_MachineOSBuilderReference = map[string]string{
 	"":                 "MachineOSBuilderReference describes which ImageBuilder backend to use for this build",
 	"imageBuilderType": "imageBuilderType describes the type of image builder used to build this image. Valid values are Job only. When set to Job, a pod based builder, using buildah, is launched to build the specified image.",
 	"job":              "job is a reference to the job object that is managing the image build. This is required if the imageBuilderType is Job, and forbidden otherwise.",
+	"pipeline":         "pipeline is a reference to the pipeline object that is managing the image build. This is required if the imageBuilderType is Pipeline, and forbidden otherwise.",
 }
 
 func (MachineOSBuilderReference) SwaggerDoc() map[string]string {
@@ -592,11 +593,12 @@ func (MachineOSConfigList) SwaggerDoc() map[string]string {
 var map_MachineOSConfigSpec = map[string]string{
 	"":                        "MachineOSConfigSpec describes user-configurable options as well as information about a build process.",
 	"machineConfigPool":       "machineConfigPool is the pool which the build is for. The Machine Config Operator will perform the build and roll out the built image to the specified pool.",
-	"imageBuilder":            "imageBuilder describes which image builder will be used in each build triggered by this MachineOSConfig. Currently supported type(s): Job",
+	"imageBuilder":            "imageBuilder describes which image builder will be used in each build triggered by this MachineOSConfig. Currently supported type(s): Job, Pipeline",
 	"baseImagePullSecret":     "baseImagePullSecret is the secret used to pull the base image. Must live in the openshift-machine-config-operator namespace if provided. Defaults to using the cluster-wide pull secret if not specified. This is provided during install time of the cluster, and lives in the openshift-config namespace as a secret.",
 	"renderedImagePushSecret": "renderedImagePushSecret is the secret used to connect to a user registry. The final image push and pull secrets should be separate and assume the principal of least privilege. The push secret with write privilege is only required to be present on the node hosting the MachineConfigController pod. The pull secret with read only privileges is required on all nodes. By separating the two secrets, the risk of write credentials becoming compromised is reduced.",
 	"renderedImagePushSpec":   "renderedImagePushSpec describes the location of the final image. The MachineOSConfig object will use the in cluster image registry configuration. If you wish to use a mirror or any other settings specific to registries.conf, please specify those in the cluster wide registries.conf via the cluster image.config, ImageContentSourcePolicies, ImageDigestMirrorSet, or ImageTagMirrorSet objects. The format of the image push spec is: host[:port][/namespace]/name:<tag> or svc_name.namespace.svc[:port]/repository/name:<tag>. The length of the push spec must be between 1 to 447 characters.",
 	"containerFile":           "containerFile describes the custom data the user has specified to build into the image. This is also commonly called a Dockerfile and you can treat it as such. The content is the content of your Dockerfile. See https://github.com/containers/common/blob/main/docs/Containerfile.5.md for the spec reference. This is a list indexed by architecture name (e.g. AMD64), and allows specifying one containerFile per arch, up to 4.",
+	"postBuildTasks":          "postBuildTasks references tekton tasks to run post os image build",
 }
 
 func (MachineOSConfigSpec) SwaggerDoc() map[string]string {
@@ -626,7 +628,7 @@ func (MachineOSContainerfile) SwaggerDoc() map[string]string {
 }
 
 var map_MachineOSImageBuilder = map[string]string{
-	"imageBuilderType": "imageBuilderType specifies the backend to be used to build the image. Valid options are: Job",
+	"imageBuilderType": "imageBuilderType specifies the backend to be used to build the image. Valid options are: Job, Pipeline",
 }
 
 func (MachineOSImageBuilder) SwaggerDoc() map[string]string {
