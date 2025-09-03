@@ -464,6 +464,7 @@ func TestKubeletConfigCreate(t *testing.T) {
 			f.expectUpdateKubeletConfigRoot(kc1)
 			f.expectCreateMachineConfigAction(mcs)
 			f.expectPatchKubeletConfig(kc1, kcfgPatchBytes)
+			f.expectGetMachineConfigAction(mcs)
 			f.expectUpdateKubeletConfig(kc1)
 
 			f.run(getKey(kc1, t))
@@ -510,6 +511,7 @@ func TestKubeletConfigMultiCreate(t *testing.T) {
 				f.expectUpdateKubeletConfigRoot(kc)
 				f.expectCreateMachineConfigAction(mcs)
 				f.expectPatchKubeletConfig(kc, []byte(expectedPatch))
+				f.expectGetMachineConfigAction(mcs)
 				f.expectUpdateKubeletConfig(kc)
 				f.run(poolName)
 			}
@@ -558,6 +560,7 @@ func TestKubeletConfigAutoSizingReserved(t *testing.T) {
 			f.expectUpdateKubeletConfigRoot(kc1)
 			f.expectCreateMachineConfigAction(mcs)
 			f.expectPatchKubeletConfig(kc1, kcfgPatchBytes)
+			f.expectGetMachineConfigAction(mcs)
 			f.expectUpdateKubeletConfig(kc1)
 
 			f.run(getKey(kc1, t))
@@ -601,6 +604,7 @@ func TestKubeletConfiglogFile(t *testing.T) {
 			f.expectUpdateKubeletConfigRoot(kc1)
 			f.expectCreateMachineConfigAction(mcs)
 			f.expectPatchKubeletConfig(kc1, kcfgPatchBytes)
+			f.expectGetMachineConfigAction(mcs)
 			f.expectUpdateKubeletConfig(kc1)
 
 			f.run(getKey(kc1, t))
@@ -638,6 +642,7 @@ func TestKubeletConfigUpdates(t *testing.T) {
 			f.expectUpdateKubeletConfigRoot(kc1)
 			f.expectCreateMachineConfigAction(mcs)
 			f.expectPatchKubeletConfig(kc1, kcfgPatchBytes)
+			f.expectGetMachineConfigAction(mcs)
 			f.expectUpdateKubeletConfig(kc1)
 
 			c := f.newController(fgHandler)
@@ -696,6 +701,7 @@ func TestKubeletConfigUpdates(t *testing.T) {
 			f.expectGetMachineConfigAction(mcs)
 			f.expectUpdateMachineConfigAction(mcUpdate)
 			f.expectPatchKubeletConfig(kcUpdate, kcfgPatchBytes)
+			f.expectGetMachineConfigAction(mcs)
 			f.expectUpdateKubeletConfig(kcUpdate)
 
 			f.validateActions()
@@ -742,6 +748,7 @@ func TestMachineConfigUpdateUponFeatureGateUpdate(t *testing.T) {
 			f.expectUpdateKubeletConfigRoot(kc1)
 			f.expectCreateMachineConfigAction(mcs)
 			f.expectPatchKubeletConfig(kc1, kcfgPatchBytes)
+			f.expectGetMachineConfigAction(mcs)
 			f.expectUpdateKubeletConfig(kc1)
 
 			c := f.newController(fgHandler)
@@ -787,6 +794,7 @@ func TestMachineConfigUpdateUponFeatureGateUpdate(t *testing.T) {
 			f.expectGetMachineConfigAction(mcs)
 			f.expectUpdateMachineConfigAction(mcUpdate)
 			f.expectPatchKubeletConfig(kc1, kcfgPatchBytes)
+			f.expectGetMachineConfigAction(mcs)
 			f.expectUpdateKubeletConfig(kc1)
 
 			f.validateActions()
@@ -834,6 +842,7 @@ func TestMachineConfigSkipUpdate(t *testing.T) {
 			f.expectUpdateKubeletConfigRoot(kc1)
 			f.expectCreateMachineConfigAction(mcs)
 			f.expectPatchKubeletConfig(kc1, kcfgPatchBytes)
+			f.expectGetMachineConfigAction(mcs)
 			f.expectUpdateKubeletConfig(kc1)
 
 			c := f.newController(fgHandler)
@@ -981,6 +990,7 @@ func TestKubeletFeatureExists(t *testing.T) {
 			f.expectUpdateKubeletConfigRoot(kc1)
 			f.expectCreateMachineConfigAction(mcs)
 			f.expectPatchKubeletConfig(kc1, kcfgPatchBytes)
+			f.expectGetMachineConfigAction(mcs)
 			f.expectUpdateKubeletConfig(kc1)
 
 			f.run(getKey(kc1, t))
@@ -1200,6 +1210,7 @@ func TestAddAnnotationExistingKubeletConfig(t *testing.T) {
 			f.expectUpdateKubeletConfigRoot(kc)
 			f.expectUpdateMachineConfigAction(kcMC)
 			f.expectPatchKubeletConfig(kc, []byte("{}"))
+			f.expectGetMachineConfigAction(kcMC)
 			f.expectUpdateKubeletConfig(kc)
 
 			c := f.newController(fgHandler)
