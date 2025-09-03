@@ -26,14 +26,16 @@ func NewLayeredNodeState(n *corev1.Node) *LayeredNodeState {
 	return &LayeredNodeState{node: n}
 }
 
-// Checks if the node is done "working" and that the node is targeting is MachineConfig
-// determined by the pool. If in layered mode, the image annotations are also checked
-// checked against the OCL objects.
+// Checks if the node is done "working." For a node in both layered and non-layered MCPs, the
+// node's state annotation must be "Done" and it must be targeting the correct MachineConfig. For
+// `layered` MCPs, the node's desired image annotation must match the image defined in the
+// MachineOsConfig and the desired MachineConfig must match the config version defined in the
+// MachineOSBuild. For non-layered MCPs, the node must not have a desired image annotation value.
 func (l *LayeredNodeState) IsDone(mcp *mcfgv1.MachineConfigPool, layered bool, mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) bool {
 	if layered {
 		return l.IsNodeDone() && l.IsDesiredMachineConfigEqualToPool(mcp) && l.IsDesiredEqualToBuild(mosc, mosb)
 	}
-	return l.IsNodeDone() && l.IsDesiredMachineConfigEqualToPool(mcp)
+	return l.IsNodeDone() && l.IsDesiredMachineConfigEqualToPool(mcp) && !l.IsDesiredImageAnnotationPresentOnNode()
 }
 
 // The original behavior of getUnavailableMachines is: getUnavailableMachines
