@@ -69,6 +69,10 @@ func (l *LayeredNodeState) IsUnavailableForUpdate() bool {
 // node's desired image annotation and compares the MachineConfig specified by the
 // MachineOSBuild to the one specified by the node's desired MachineConfig annotation.
 func (l *LayeredNodeState) IsDesiredEqualToBuild(mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) bool {
+	klog.Errorf("mosc != nil: %v", mosc != nil) //false
+	klog.Errorf("l.isDesiredImageEqualToMachineOSConfig(mosc): %v", l.isDesiredImageEqualToMachineOSConfig(mosc)) //false
+	klog.Errorf("mosb != nil: %v", mosb != nil) //false
+	klog.Errorf("l.isDesiredMachineConfigEqualToBuild(mosb): %v", l.isDesiredMachineConfigEqualToBuild(mosb)) //false
 	return (mosc != nil && l.isDesiredImageEqualToMachineOSConfig(mosc)) && (mosb != nil && l.isDesiredMachineConfigEqualToBuild(mosb))
 }
 
