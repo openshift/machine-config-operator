@@ -3,10 +3,16 @@ package machineset
 import (
 	"testing"
 
+	"github.com/coreos/stream-metadata-go/stream"
+	"github.com/coreos/stream-metadata-go/stream/rhcos"
+	osconfigv1 "github.com/openshift/api/config/v1"
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 func TestHotLoop(t *testing.T) {
@@ -92,8 +98,8 @@ func setMachineSetBootImage(machineset *machinev1beta1.MachineSet, generateBootI
 
 func TestGetArchFromMachineSet(t *testing.T) {
 	cases := []struct {
-		name        string
-		annotations map[string]string
+		name         string
+		annotations  map[string]string
 		expectedArch string
 		expectError  bool
 	}{
@@ -177,6 +183,498 @@ func TestGetArchFromMachineSet(t *testing.T) {
 				if tc.expectedArch != "" {
 					assert.Equal(t, tc.expectedArch, arch, "Architecture mismatch for test case: %s", tc.name)
 				}
+			}
+		})
+	}
+}
+
+// This tests reconcileAzureProviderSpec against the various stream variants.
+// See comments in reconcileAzureProviderSpec() for additional context.
+func TestReconcileAzureProviderSpec(t *testing.T) {
+	streamData := &stream.Stream{
+		Architectures: map[string]stream.Arch{
+			"x86_64": {
+				RHELCoreOSExtensions: &rhcos.Extensions{
+					Marketplace: &rhcos.Marketplace{
+						Azure: &rhcos.AzureMarketplace{
+							NoPurchasePlan: &rhcos.AzureMarketplaceImages{
+								Gen1: &rhcos.AzureMarketplaceImage{
+									Offer:     "aro4",
+									Publisher: "azureopenshift",
+									SKU:       "aro_419",
+									Version:   "419.94.20250101",
+								},
+								Gen2: &rhcos.AzureMarketplaceImage{
+									Offer:     "aro4",
+									Publisher: "azureopenshift",
+									SKU:       "419-v2",
+									Version:   "419.94.20250101",
+								},
+							},
+							OCP: &rhcos.AzureMarketplaceImages{
+								Gen1: &rhcos.AzureMarketplaceImage{
+									Publisher: "redhat",
+									Offer:     "rh-ocp-worker",
+									SKU:       "rh-ocp-worker-gen1",
+									Version:   "4.18.2025031114",
+								},
+								Gen2: &rhcos.AzureMarketplaceImage{
+									Publisher: "redhat",
+									Offer:     "rh-ocp-worker",
+									SKU:       "rh-ocp-worker",
+									Version:   "4.18.2025031114",
+								},
+							},
+							OPP: &rhcos.AzureMarketplaceImages{
+								Gen1: &rhcos.AzureMarketplaceImage{
+									Publisher: "redhat",
+									Offer:     "rh-opp-worker",
+									SKU:       "rh-opp-worker-gen1",
+									Version:   "4.18.2025031114",
+								},
+								Gen2: &rhcos.AzureMarketplaceImage{
+									Publisher: "redhat",
+									Offer:     "rh-opp-worker",
+									SKU:       "rh-opp-worker",
+									Version:   "4.18.2025031114",
+								},
+							},
+							OKE: &rhcos.AzureMarketplaceImages{
+								Gen1: &rhcos.AzureMarketplaceImage{
+									Publisher: "redhat",
+									Offer:     "rh-oke-worker",
+									SKU:       "rh-oke-worker-gen1",
+									Version:   "4.18.2025031114",
+								},
+								Gen2: &rhcos.AzureMarketplaceImage{
+									Publisher: "redhat",
+									Offer:     "rh-oke-worker",
+									SKU:       "rh-oke-worker",
+									Version:   "4.18.2025031114",
+								},
+							},
+							OCPEMEA: &rhcos.AzureMarketplaceImages{
+								Gen1: &rhcos.AzureMarketplaceImage{
+									Publisher: "redhat-limited",
+									Offer:     "rh-ocp-worker",
+									SKU:       "rh-ocp-worker-gen1",
+									Version:   "4.18.2025031114",
+								},
+								Gen2: &rhcos.AzureMarketplaceImage{
+									Publisher: "redhat-limited",
+									Offer:     "rh-ocp-worker",
+									SKU:       "rh-ocp-worker",
+									Version:   "4.18.2025031114",
+								},
+							},
+							OPPEMEA: &rhcos.AzureMarketplaceImages{
+								Gen1: &rhcos.AzureMarketplaceImage{
+									Publisher: "redhat-limited",
+									Offer:     "rh-opp-worker",
+									SKU:       "rh-opp-worker-gen1",
+									Version:   "4.18.2025031114",
+								},
+								Gen2: &rhcos.AzureMarketplaceImage{
+									Publisher: "redhat-limited",
+									Offer:     "rh-opp-worker",
+									SKU:       "rh-opp-worker",
+									Version:   "4.18.2025031114",
+								},
+							},
+							OKEEMEA: &rhcos.AzureMarketplaceImages{
+								Gen1: &rhcos.AzureMarketplaceImage{
+									Publisher: "redhat-limited",
+									Offer:     "rh-oke-worker",
+									SKU:       "rh-oke-worker-gen1",
+									Version:   "4.18.2025031114",
+								},
+								Gen2: &rhcos.AzureMarketplaceImage{
+									Publisher: "redhat-limited",
+									Offer:     "rh-oke-worker",
+									SKU:       "rh-oke-worker",
+									Version:   "4.18.2025031114",
+								},
+							},
+						},
+					},
+				},
+			},
+			"aarch64": {
+				RHELCoreOSExtensions: &rhcos.Extensions{
+					Marketplace: &rhcos.Marketplace{
+						Azure: &rhcos.AzureMarketplace{
+							NoPurchasePlan: &rhcos.AzureMarketplaceImages{
+								Gen2: &rhcos.AzureMarketplaceImage{
+									Offer:     "aro4",
+									Publisher: "azureopenshift",
+									SKU:       "419-arm",
+									Version:   "419.94.20250101",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// Create a fake secret with ignition data
+	testSecret := &corev1.Secret{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      "test-secret",
+			Namespace: "openshift-machine-api",
+		},
+		Data: map[string][]byte{
+			"userData": []byte(`{"ignition":{"version":"3.4.0"},"storage":{"files":[]},"systemd":{},"passwd":{}}`),
+		},
+	}
+
+	fakeClient := fake.NewSimpleClientset(testSecret)
+
+	tests := []struct {
+		name          string
+		arch          string
+		currentImage  machinev1beta1.Image
+		expectedImage machinev1beta1.Image
+		expectPatch   bool
+		expectSkip    bool
+		streamData    *stream.Stream // Custom stream data for specific tests
+	}{
+		{
+			name: "Legacy Gen1 upload image transitions to marketplace Gen1",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				ResourceID: "test-gen1-image",
+			},
+			expectedImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "aro_419",
+				Version:    "419.94.20250101",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectPatch: true,
+		},
+		{
+			name: "Legacy Gen2 upload image transitions to marketplace Gen2",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				ResourceID: "test-gen2-image",
+			},
+			expectedImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "419-v2",
+				Version:    "419.94.20250101",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectPatch: true,
+		},
+		{
+			name: "Marketplace Gen1 image updates to newer version",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "aro_418",
+				Version:    "418.94.20241201",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectedImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "aro_419",
+				Version:    "419.94.20250101",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectPatch: true,
+		},
+		{
+			name: "Marketplace Gen2 image updates to newer version",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "418-v2",
+				Version:    "418.94.20241201",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectedImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "419-v2",
+				Version:    "419.94.20250101",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectPatch: true,
+		},
+		{
+			name: "ARM64 always uses Gen2",
+			arch: "aarch64",
+			currentImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "aro_418", // this can't realistically happen, but a Gen1 SKU but should be forced to arm SKU
+				Version:    "418.94.20241201",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectedImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "419-arm", // Should be Gen2 SKU
+				Version:    "419.94.20250101",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectPatch: true,
+		},
+		{
+			name: "No update needed - image already current",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "419-v2",
+				Version:    "419.94.20250101",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectedImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "419-v2",
+				Version:    "419.94.20250101",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectPatch: false,
+		},
+		{
+			name: "Skip unsupported architecture ppc64le",
+			arch: "ppc64le",
+			currentImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "419-v2",
+				Version:    "419.94.20250101",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectSkip: true,
+		},
+		{
+			name: "Skip unsupported architecture s390x",
+			arch: "s390x",
+			currentImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "419-v2",
+				Version:    "419.94.20250101",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectSkip: true,
+		},
+		{
+			name: "Paid OCP Gen1 image updates to newer version",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				Publisher:  "redhat",
+				Offer:      "rh-ocp-worker",
+				ResourceID: "",
+				SKU:        "rh-ocp-worker-gen1",
+				Version:    "4.17.2024121214",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceWithPlan,
+			},
+			expectedImage: machinev1beta1.Image{
+				Publisher:  "redhat",
+				Offer:      "rh-ocp-worker",
+				ResourceID: "",
+				SKU:        "rh-ocp-worker-gen1",
+				Version:    "4.18.2025031114",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceWithPlan,
+			},
+			expectPatch: true,
+		},
+		{
+			name: "Paid OCP Gen2 image updates to newer version",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				Publisher:  "redhat",
+				Offer:      "rh-ocp-worker",
+				ResourceID: "",
+				SKU:        "rh-ocp-worker",
+				Version:    "4.17.2024121214",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceWithPlan,
+			},
+			expectedImage: machinev1beta1.Image{
+				Publisher:  "redhat",
+				Offer:      "rh-ocp-worker",
+				ResourceID: "",
+				SKU:        "rh-ocp-worker",
+				Version:    "4.18.2025031114",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceWithPlan,
+			},
+			expectPatch: true,
+		},
+		{
+			name: "Paid OPP EMEA Gen1 image updates to newer version",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				Publisher:  "redhat-limited",
+				Offer:      "rh-opp-worker",
+				ResourceID: "",
+				SKU:        "rh-opp-worker-gen1",
+				Version:    "4.17.2024121214",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceWithPlan,
+			},
+			expectedImage: machinev1beta1.Image{
+				Publisher:  "redhat-limited",
+				Offer:      "rh-opp-worker",
+				ResourceID: "",
+				SKU:        "rh-opp-worker-gen1",
+				Version:    "4.18.2025031114",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceWithPlan,
+			},
+			expectPatch: true,
+		},
+		{
+			name: "Paid OKE EMEA Gen2 image updates to newer version",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				Publisher:  "redhat-limited",
+				Offer:      "rh-oke-worker",
+				ResourceID: "",
+				SKU:        "rh-oke-worker",
+				Version:    "4.17.2024121214",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceWithPlan,
+			},
+			expectedImage: machinev1beta1.Image{
+				Publisher:  "redhat-limited",
+				Offer:      "rh-oke-worker",
+				ResourceID: "",
+				SKU:        "rh-oke-worker",
+				Version:    "4.18.2025031114",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceWithPlan,
+			},
+			expectPatch: true,
+		},
+		{
+			name: "Paid OCP image already current - no update needed",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				Publisher:  "redhat",
+				Offer:      "rh-ocp-worker",
+				ResourceID: "",
+				SKU:        "rh-ocp-worker",
+				Version:    "4.18.2025031114",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceWithPlan,
+			},
+			expectedImage: machinev1beta1.Image{
+				Publisher:  "redhat",
+				Offer:      "rh-ocp-worker",
+				ResourceID: "",
+				SKU:        "rh-ocp-worker",
+				Version:    "4.18.2025031114",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceWithPlan,
+			},
+			expectPatch: false,
+		},
+		{
+			name: "Error when marketplace extensions are nil",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				Publisher:  "azureopenshift",
+				Offer:      "aro4",
+				ResourceID: "",
+				SKU:        "419-v2",
+				Version:    "419.94.20250101",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectSkip: true,
+			streamData: &stream.Stream{
+				Architectures: map[string]stream.Arch{
+					"x86_64": {
+						RHELCoreOSExtensions: &rhcos.Extensions{
+							Marketplace: nil, // Marketplace is nil
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "Error when Azure marketplace is nil",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				Publisher:  "azureopenshift",
+				Offer:      "aro4",
+				ResourceID: "",
+				SKU:        "419-v2",
+				Version:    "419.94.20250101",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectSkip: true,
+			streamData: &stream.Stream{
+				Architectures: map[string]stream.Arch{
+					"x86_64": {
+						RHELCoreOSExtensions: &rhcos.Extensions{
+							Marketplace: &rhcos.Marketplace{
+								Azure: nil, // Azure marketplace is nil
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create provider spec with current image
+			providerSpec := &machinev1beta1.AzureMachineProviderSpec{
+				Image: tt.currentImage,
+				UserDataSecret: &corev1.SecretReference{
+					Name: "test-secret",
+				},
+			}
+
+			// Create a mock infrastructure object
+			infra := &osconfigv1.Infrastructure{}
+
+			// Use custom stream data if provided, otherwise use default
+			testStreamData := streamData
+			if tt.streamData != nil {
+				testStreamData = tt.streamData
+			}
+
+			patchRequired, updatedProviderSpec, err := reconcileAzureProviderSpec(
+				testStreamData,
+				tt.arch,
+				infra,
+				providerSpec,
+				"test-machineset",
+				fakeClient,
+			)
+
+			require.NoError(t, err)
+
+			if tt.expectSkip {
+				assert.False(t, patchRequired, "Expected no patch for skipped case")
+				return
+			}
+
+			assert.Equal(t, tt.expectPatch, patchRequired, "Patch required mismatch")
+
+			if tt.expectPatch {
+				require.NotNil(t, updatedProviderSpec, "Updated provider spec should not be nil when patch is required")
+				assert.Equal(t, tt.expectedImage, updatedProviderSpec.Image, "Updated image mismatch")
 			}
 		})
 	}
