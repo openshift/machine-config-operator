@@ -206,6 +206,7 @@ func (ctrl *Controller) calculateStatus(mcs []*mcfgv1.MachineConfigNode, cconfig
 
 	// this is # 1 priority, get the upgrade states actually reporting
 	if degradedMachineCount+readyMachineCount+unavailableMachineCount+updatingMachineCount != int32(len(nodes)) {
+		klog.Errorf("In degraded + ready + unavailable + updating != nodes...")
 
 		updatedMachines = getUpdatedMachines(pool, nodes, mosc, mosb, isLayeredPool)
 		updatedMachineCount = int32(len(updatedMachines))
@@ -218,6 +219,8 @@ func (ctrl *Controller) calculateStatus(mcs []*mcfgv1.MachineConfigNode, cconfig
 
 		degradedMachines = getDegradedMachines(nodes)
 		degradedMachineCount = int32(len(degradedMachines))
+	} else {
+		klog.Errorf("In degraded + ready + unavailable + updating == nodes... Not where we want to be.")
 	}
 
 	for _, n := range degradedMachines {
