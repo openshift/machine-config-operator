@@ -126,7 +126,7 @@ func (l *LayeredNodeState) isImageAnnotationEqualToMachineOSConfig(anno string, 
 	// Handle case when MOSC is nil (image mode is being disabled)
 	if mosc == nil {
 		// TOOD: check if this comes back as nil or empty string
-		return val == nil || val == ""
+		return val == ""
 	}
 
 	// If a layered node does not have an image annotation and has a valid MOSC, then the image is being built
