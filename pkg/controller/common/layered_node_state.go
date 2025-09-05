@@ -31,8 +31,10 @@ func NewLayeredNodeState(n *corev1.Node) *LayeredNodeState {
 // checked against the OCL objects.
 func (l *LayeredNodeState) IsDone(mcp *mcfgv1.MachineConfigPool, layered bool, mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) bool {
 	if layered {
+		klog.Errorf("in IsDone and layered")
 		return l.IsNodeDone() && l.IsDesiredMachineConfigEqualToPool(mcp) && l.IsDesiredEqualToBuild(mosc, mosb)
 	}
+	klog.Errorf("in IsDone and NOT layered")
 	return l.IsNodeDone() && l.IsDesiredMachineConfigEqualToPool(mcp)
 }
 
@@ -67,12 +69,14 @@ func (l *LayeredNodeState) IsUnavailableForUpdate() bool {
 // node's desired image annotation and compares the MachineConfig specified by the
 // MachineOSBuild to the one specified by the node's desired MachineConfig annotation.
 func (l *LayeredNodeState) IsDesiredEqualToBuild(mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) bool {
+	klog.Errorf("in IsDesiredEqualToBuild")
 	return l.isDesiredImageEqualToMachineOSConfig(mosc) && l.isDesiredMachineConfigEqualToBuild(mosb)
 }
 
 // Compares the desired image annotation on the node against the CurrentImagePullSpec
 // specified by the MachineOSConfig object.
 func (l *LayeredNodeState) isDesiredImageEqualToMachineOSConfig(mosc *mcfgv1.MachineOSConfig) bool {
+	klog.Errorf("in isDesiredImageEqualToMachineOSConfig")
 	return l.isImageAnnotationEqualToMachineOSConfig(daemonconsts.DesiredImageAnnotationKey, mosc)
 }
 
@@ -98,7 +102,9 @@ func (l *LayeredNodeState) IsCurrentMachineConfigEqualToPool(mcp *mcfgv1.Machine
 // Compares the MachineConfig specified by the MachineConfigPool to the one
 // specified by the node's desired MachineConfig annotation.
 func (l *LayeredNodeState) IsDesiredMachineConfigEqualToPool(mcp *mcfgv1.MachineConfigPool) bool {
-	return l.node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] == mcp.Spec.Configuration.Name
+	ret := l.node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] == mcp.Spec.Configuration.Name
+	klog.Errorf("in IsDesiredMachineConfigEqualToPool, returning %v", ret)
+	return ret
 }
 
 // Checks if both the current and desired image annotation are present on the node.
@@ -131,11 +137,13 @@ func (l *LayeredNodeState) isImageAnnotationEqualToMachineOSConfig(anno string, 
 
 	// If a layered node does not have an image annotation and has a valid MOSC, then the image is being built
 	if val == "" || !ok {
+		klog.Errorf("in isImageAnnotationEqualToMachineOSConfig returning false cause val == '' or !ok")
 		return false
 	}
 
 	// Get the MachineOSConfigState
 	moscs := NewMachineOSConfigState(mosc)
+	klog.Errorf("in isImageAnnotationEqualToMachineOSConfig with moscs")
 
 	if moscs.HasOSImage() {
 		// If the MOSC image has an image, the image annotation on the node can be directly compared.
@@ -190,21 +198,26 @@ func (l *LayeredNodeState) Node() *corev1.Node {
 // isNodeDone returns true if the current == desired and the MCD has marked done.
 func (l *LayeredNodeState) IsNodeDone() bool {
 	if l.node.Annotations == nil {
+		klog.Error("in IsNodeDone, returning false, 1")
 		return false
 	}
 
 	if !l.isNodeConfigDone() {
+		klog.Error("in IsNodeDone, returning false, 2")
 		return false
 	}
 
 	if !l.isNodeImageDone() {
+		klog.Error("in IsNodeDone, returning false, 3")
 		return false
 	}
 
 	if !l.isNodeMCDState(daemonconsts.MachineConfigDaemonStateDone) {
+		klog.Error("in IsNodeDone, returning false, 4")
 		return false
 	}
 
+	klog.Error("in IsNodeDone, returning true")
 	return true
 }
 
