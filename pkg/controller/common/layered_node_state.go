@@ -67,15 +67,12 @@ func (l *LayeredNodeState) IsUnavailableForUpdate() bool {
 // node's desired image annotation and compares the MachineConfig specified by the
 // MachineOSBuild to the one specified by the node's desired MachineConfig annotation.
 func (l *LayeredNodeState) IsDesiredEqualToBuild(mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) bool {
-	klog.Errorf("mosc != nil: %v", mosc != nil)
-	klog.Errorf("mosb != nil: %v", mosb != nil)
 	return l.isDesiredImageEqualToMachineOSConfig(mosc) && l.isDesiredMachineConfigEqualToBuild(mosb)
 }
 
 // Compares the desired image annotation on the node against the CurrentImagePullSpec
 // specified by the MachineOSConfig object.
 func (l *LayeredNodeState) isDesiredImageEqualToMachineOSConfig(mosc *mcfgv1.MachineOSConfig) bool {
-	klog.Errorf("in isDesiredImageEqualToMachineOSConfig, returning: %v", l.isImageAnnotationEqualToMachineOSConfig(daemonconsts.DesiredImageAnnotationKey, mosc))
 	return l.isImageAnnotationEqualToMachineOSConfig(daemonconsts.DesiredImageAnnotationKey, mosc)
 }
 
@@ -88,7 +85,6 @@ func (l *LayeredNodeState) isDesiredMachineConfigEqualToBuild(mosb *mcfgv1.Machi
 		return l.node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] == ""
 	}
 
-	klog.Errorf("in isDesiredMachineConfigEqualToBuild, returning: %v", l.node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] == mosb.Spec.MachineConfig.Name)
 	return l.node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] == mosb.Spec.MachineConfig.Name
 
 }
