@@ -69,7 +69,7 @@ func (l *LayeredNodeState) IsUnavailableForUpdate() bool {
 func (l *LayeredNodeState) IsDesiredEqualToBuild(mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) bool {
 	klog.Errorf("mosc != nil: %v", mosc != nil)
 	klog.Errorf("mosb != nil: %v", mosb != nil)
-	return (mosc != nil && l.isDesiredImageEqualToMachineOSConfig(mosc)) && (mosb != nil && l.isDesiredMachineConfigEqualToBuild(mosb))
+	return l.isDesiredImageEqualToMachineOSConfig(mosc) && l.isDesiredMachineConfigEqualToBuild(mosb)
 }
 
 // Compares the desired image annotation on the node against the CurrentImagePullSpec
@@ -82,6 +82,12 @@ func (l *LayeredNodeState) isDesiredImageEqualToMachineOSConfig(mosc *mcfgv1.Mac
 // Compares the MachineConfig specified by the MachineConfigPool to the MachineConfig
 // specified by the node's desired MachineConfig annotation.
 func (l *LayeredNodeState) isDesiredMachineConfigEqualToBuild(mosb *mcfgv1.MachineOSBuild) bool {
+	// Handle case when MOSB is nil (image mode is being disabled)
+	if mosb == nil {
+		// TODO: check if this comes back as nil or empty string
+		return l.node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] == ""
+	}
+
 	klog.Errorf("in isDesiredMachineConfigEqualToBuild, returning: %v", l.node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] == mosb.Spec.MachineConfig.Name)
 	return l.node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] == mosb.Spec.MachineConfig.Name
 
@@ -117,14 +123,23 @@ func (l *LayeredNodeState) IsCurrentImageAnnotationPresentOnNode() bool {
 // Compares the CurrentImagePullSpec specified by the MachineOSConfig object against the
 // image specified by the annotation passed in.
 func (l *LayeredNodeState) isImageAnnotationEqualToMachineOSConfig(anno string, mosc *mcfgv1.MachineOSConfig) bool {
-	moscs := NewMachineOSConfigState(mosc)
-
+	// Get the image annotation from the node
 	val, ok := l.node.Annotations[anno]
+	klog.Errorf("in isImageAnnotationEqualToMachineOSConfig, val: %v, ok: %v", val, ok)
+
+	// Handle case when MOSC is nil (image mode is being disabled)
+	if mosc == nil {
+		// TOOD: check if this comes back as nil or empty string
+		return val == nil || val == ""
+	}
 
 	// If a layered node does not have an image annotation and has a valid MOSC, then the image is being built
 	if val == "" || !ok {
 		return false
 	}
+
+	// Get the MachineOSConfigState
+	moscs := NewMachineOSConfigState(mosc)
 
 	if moscs.HasOSImage() {
 		// If the MOSC image has an image, the image annotation on the node can be directly compared.
