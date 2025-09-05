@@ -30,12 +30,13 @@ func NewLayeredNodeState(n *corev1.Node) *LayeredNodeState {
 // determined by the pool. If in layered mode, the image annotations are also checked
 // checked against the OCL objects.
 func (l *LayeredNodeState) IsDone(mcp *mcfgv1.MachineConfigPool, layered bool, mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) bool {
-	if layered {
-		klog.Errorf("in IsDone and layered")
-		return l.IsNodeDone() && l.IsDesiredMachineConfigEqualToPool(mcp) && l.IsDesiredEqualToBuild(mosc, mosb)
-	}
-	klog.Errorf("in IsDone and NOT layered")
-	return l.IsNodeDone() && l.IsDesiredMachineConfigEqualToPool(mcp)
+	// if layered {
+	// 	klog.Errorf("in IsDone and layered")
+	// 	return l.IsNodeDone() && l.IsDesiredMachineConfigEqualToPool(mcp) && l.IsDesiredEqualToBuild(mosc, mosb)
+	// }
+	// klog.Errorf("in IsDone and NOT layered")
+	// return l.IsNodeDone() && l.IsDesiredMachineConfigEqualToPool(mcp)
+	return l.IsNodeDone() && l.IsDesiredMachineConfigEqualToPool(mcp) && l.IsDesiredEqualToBuild(mosc, mosb)
 }
 
 // The original behavior of getUnavailableMachines is: getUnavailableMachines
