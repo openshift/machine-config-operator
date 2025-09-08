@@ -611,8 +611,10 @@ func getPodFromJob(ctx context.Context, cs *framework.ClientSet, jobName string)
 		// this is needed when we test the case for a new pod being created after deleting the existing one
 		// as sometimes it takes time for the old pod to be completely deleted
 		for _, pod := range podList.Items {
-			if pod.Status.Phase == corev1.PodRunning {
-				return &pod, nil
+			for _, status := range pod.Status.InitContainerStatuses {
+				if status.State.Running != nil {
+					return &pod, nil
+				}
 			}
 		}
 	}
