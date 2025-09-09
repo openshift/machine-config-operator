@@ -93,6 +93,9 @@ type onClusterLayeringTestOpts struct {
 
 	// Inject YUM repo information from a Centos 9 stream container
 	useYumRepos bool
+
+	// Apply the following MachineConfigs before beginning the build.
+	machineConfigs []*mcfgv1.MachineConfig
 }
 
 func TestOnClusterLayeringOnOKD(t *testing.T) {
@@ -108,7 +111,6 @@ func TestOnClusterLayeringOnOKD(t *testing.T) {
 
 // Tests that an on-cluster build can be performed with the Custom Pod Builder.
 func TestOnClusterLayering(t *testing.T) {
-
 	_, mosb := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
@@ -141,10 +143,18 @@ func TestOnClusterLayering(t *testing.T) {
 // Tests that an on-cluster build can be performed and that the resulting image
 // is rolled out to an opted-in node.
 func TestOnClusterBuildRollsOutImage(t *testing.T) {
+	requiredKernelType := ctrlcommon.KernelTypeRealtime
+	if goruntime.GOARCH == "arm64" {
+		requiredKernelType = ctrlcommon.KernelType64kPages
+	}
+
 	imagePullspec, _ := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
 			layeredMCPName: cowsayDockerfile,
+		},
+		machineConfigs: []*mcfgv1.MachineConfig{
+			newMachineConfigWithKernelType(fmt.Sprintf("%s-kernel-machineconfig", requiredKernelType), layeredMCPName, requiredKernelType),
 		},
 	})
 
@@ -156,12 +166,26 @@ func TestOnClusterBuildRollsOutImage(t *testing.T) {
 
 	helpers.AssertNodeBootedIntoImage(t, cs, node, imagePullspec)
 	t.Logf("Node %s is booted into image %q", node.Name, imagePullspec)
-
 	t.Log(helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "cowsay", "Moo!"))
+
+	// Check that the booted image has the requested kernel
+	foundKernel := helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "uname", "-r")
+	t.Logf("Node %s running kernel: %s", node.Name, foundKernel)
+	if !compareKernelType(t, foundKernel, requiredKernelType) {
+		t.Fatalf("Kernel type requested %s, got %s", requiredKernelType, foundKernel)
+	}
 
 	unlabelFunc()
 
 	assertNodeRevertsToNonLayered(t, cs, node)
+
+	// Check that the reverted image has the default kernel.
+	requiredKernelType = ctrlcommon.KernelTypeDefault
+	foundKernel = helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "uname", "-r")
+	t.Logf("Node %s running kernel: %s", node.Name, foundKernel)
+	if !compareKernelType(t, foundKernel, requiredKernelType) {
+		t.Fatalf("Kernel type requested %s, got %s", requiredKernelType, foundKernel)
+	}
 }
 
 func TestMissingImageIsRebuilt(t *testing.T) {
@@ -1029,7 +1053,15 @@ func prepareForOnClusterLayeringTest(t *testing.T, cs *framework.ClientSet, test
 		makeIdempotentAndRegister(t, helpers.CreateMCP(t, cs, testOpts.poolName))
 	}
 
-	_, err := helpers.WaitForRenderedConfig(t, cs, testOpts.poolName, "00-worker")
+	mcNames := []string{"00-worker"}
+	if len(testOpts.machineConfigs) > 0 {
+		for _, mc := range testOpts.machineConfigs {
+			makeIdempotentAndRegister(t, helpers.ApplyMC(t, cs, mc))
+			mcNames = append(mcNames, mc.Name)
+		}
+	}
+
+	_, err := helpers.WaitForRenderedConfigs(t, cs, testOpts.poolName, mcNames...)
 	require.NoError(t, err)
 
 	mosc := &mcfgv1.MachineOSConfig{
