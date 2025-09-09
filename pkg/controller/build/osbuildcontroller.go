@@ -17,7 +17,6 @@ import (
 	routeclientset "github.com/openshift/client-go/route/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/imagepruner"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
-	olmclientset "github.com/operator-framework/operator-lifecycle-manager/pkg/api/client/clientset/versioned"
 	pipelineoperatorclientset "github.com/tektoncd/operator/pkg/client/clientset/versioned"
 	tektonv1beta1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	tektonclientset "github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
@@ -42,7 +41,6 @@ type OSBuildController struct {
 	imageclient            imagev1clientset.Interface
 	routeclient            routeclientset.Interface
 	pipelineoperatorclient pipelineoperatorclientset.Interface
-	olmclient              olmclientset.Interface
 	tektonclient           tektonclientset.Interface
 
 	config    Config
@@ -100,7 +98,6 @@ func NewOSBuildControllerFromControllerContextWithConfig(ctrlCtx *ctrlcommon.Con
 		ctrlCtx.ClientBuilder.ImageClientOrDie("machine-os-builder"),
 		ctrlCtx.ClientBuilder.RouteClientOrDie("machine-os-builder"),
 		ctrlCtx.ClientBuilder.PipelineOperatorClientOrDie("machine-os-builder"),
-		ctrlCtx.ClientBuilder.OLMClientOrDie("machine-os-builder"),
 		ctrlCtx.ClientBuilder.TektonClientOrDie("machine-os-builder"),
 		imagepruner.NewImagePruner(),
 	)
@@ -113,7 +110,6 @@ func newOSBuildController(
 	imageclient imagev1clientset.Interface,
 	routeclient routeclientset.Interface,
 	pipelineoperatorclient pipelineoperatorclientset.Interface,
-	olmclient olmclientset.Interface,
 	tektonclient tektonclientset.Interface,
 	imagepruner imagepruner.ImagePruner,
 ) *OSBuildController {
@@ -129,7 +125,6 @@ func newOSBuildController(
 		imageclient:            imageclient,
 		routeclient:            routeclient,
 		pipelineoperatorclient: pipelineoperatorclient,
-		olmclient:              olmclient,
 		tektonclient:           tektonclient,
 		informers:              informers,
 		listers:                informers.listers(),
@@ -171,7 +166,7 @@ func newOSBuildController(
 		UpdateFunc: ctrl.updateMachineConfigPool,
 	})
 
-	ctrl.buildReconciler = newBuildReconciler(mcfgclient, kubeclient, imageclient, routeclient, pipelineoperatorclient, olmclient, tektonclient, ctrl.listers, imagepruner)
+	ctrl.buildReconciler = newBuildReconciler(mcfgclient, kubeclient, imageclient, routeclient, pipelineoperatorclient, tektonclient, ctrl.listers, imagepruner)
 	ctrl.shutdownDelayHandler = newShutdownDelayHandler(ctrl.listers)
 	ctrl.shutdownChan = make(chan struct{})
 

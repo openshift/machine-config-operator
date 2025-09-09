@@ -24,7 +24,6 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/template"
 	daemonconstants "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/helpers"
-	olmclientset "github.com/operator-framework/operator-lifecycle-manager/pkg/api/client/clientset/versioned"
 	pipelineoperatorclientset "github.com/tektoncd/operator/pkg/client/clientset/versioned"
 	tektonv1beta1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	tektonclientset "github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
@@ -84,18 +83,17 @@ type buildReconciler struct {
 	routeclient            routeclientset.Interface
 	imagepruner            imagepruner.ImagePruner
 	pipelineoperatorclient pipelineoperatorclientset.Interface
-	olmclient              olmclientset.Interface
 	tektonclient           tektonclientset.Interface
 	*listers
 }
 
 // Instantiates a new reconciler instance. This returns an interface to
 // disallow access to its private methods.
-func newBuildReconciler(mcfgclient mcfgclientset.Interface, kubeclient clientset.Interface, imageclient imagev1clientset.Interface, routeclient routeclientset.Interface, pipelineoperatorclient pipelineoperatorclientset.Interface, olmclient olmclientset.Interface, tektonclient tektonclientset.Interface, l *listers, imagepruner imagepruner.ImagePruner) reconciler {
-	return newBuildReconcilerAsStruct(mcfgclient, kubeclient, imageclient, routeclient, pipelineoperatorclient, olmclient, tektonclient, l, imagepruner)
+func newBuildReconciler(mcfgclient mcfgclientset.Interface, kubeclient clientset.Interface, imageclient imagev1clientset.Interface, routeclient routeclientset.Interface, pipelineoperatorclient pipelineoperatorclientset.Interface, tektonclient tektonclientset.Interface, l *listers, imagepruner imagepruner.ImagePruner) reconciler {
+	return newBuildReconcilerAsStruct(mcfgclient, kubeclient, imageclient, routeclient, pipelineoperatorclient, tektonclient, l, imagepruner)
 }
 
-func newBuildReconcilerAsStruct(mcfgclient mcfgclientset.Interface, kubeclient clientset.Interface, imageclient imagev1clientset.Interface, routeclient routeclientset.Interface, pipelineoperatorclient pipelineoperatorclientset.Interface, olmclient olmclientset.Interface, tektonclient tektonclientset.Interface, l *listers, imagepruner imagepruner.ImagePruner) *buildReconciler {
+func newBuildReconcilerAsStruct(mcfgclient mcfgclientset.Interface, kubeclient clientset.Interface, imageclient imagev1clientset.Interface, routeclient routeclientset.Interface, pipelineoperatorclient pipelineoperatorclientset.Interface, tektonclient tektonclientset.Interface, l *listers, imagepruner imagepruner.ImagePruner) *buildReconciler {
 	return &buildReconciler{
 		mcfgclient:             mcfgclient,
 		kubeclient:             kubeclient,
@@ -103,7 +101,6 @@ func newBuildReconcilerAsStruct(mcfgclient mcfgclientset.Interface, kubeclient c
 		routeclient:            routeclient,
 		imagepruner:            imagepruner,
 		pipelineoperatorclient: pipelineoperatorclient,
-		olmclient:              olmclient,
 		tektonclient:           tektonclient,
 		listers:                l,
 	}
@@ -145,7 +142,7 @@ func (b *buildReconciler) updateMachineOSConfig(ctx context.Context, old, cur *m
 
 		if cur.Spec.ImageBuilder.ImageBuilderType == mcfgv1.PipelineBuilder {
 			// Check and install pipeline
-			err := checkAndInstallPipeline(ctx, b.kubeclient, b.pipelineoperatorclient, b.olmclient, b.tektonclient, cur.Spec.PostBuildTasks)
+			err := checkAndInstallPipeline(ctx, b.kubeclient, b.pipelineoperatorclient, b.tektonclient, cur.Spec.PostBuildTasks)
 			if err != nil {
 				return fmt.Errorf("error checking pipeline exists and installing: %v", err)
 			}
@@ -193,7 +190,7 @@ func (b *buildReconciler) rebuildMachineOSConfig(ctx context.Context, mosc *mcfg
 func (b *buildReconciler) addMachineOSConfig(ctx context.Context, mosc *mcfgv1.MachineOSConfig) error {
 	if mosc.Spec.ImageBuilder.ImageBuilderType == mcfgv1.PipelineBuilder {
 		// Check and install pipeline
-		err := checkAndInstallPipeline(ctx, b.kubeclient, b.pipelineoperatorclient, b.olmclient, b.tektonclient, mosc.Spec.PostBuildTasks)
+		err := checkAndInstallPipeline(ctx, b.kubeclient, b.pipelineoperatorclient, b.tektonclient, mosc.Spec.PostBuildTasks)
 		if err != nil {
 			return fmt.Errorf("error checking pipeline exists and installing: %v", err)
 		}
@@ -227,7 +224,7 @@ func (b *buildReconciler) deleteMachineOSConfig(ctx context.Context, mosc *mcfgv
 	return nil
 }
 
-func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface, pipelineoperatorclient pipelineoperatorclientset.Interface, olmclient olmclientset.Interface, tektonclient tektonclientset.Interface, postBuildTasks []string) error {
+func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface, pipelineoperatorclient pipelineoperatorclientset.Interface, tektonclient tektonclientset.Interface, postBuildTasks []string) error {
 	tektonNamespace := "openshift-pipelines"
 	tektonConfigName := "config"
 	tektonPipelineName := "build-and-push-pipeline"
@@ -1678,7 +1675,7 @@ func (b *buildReconciler) syncMachineOSBuild(ctx context.Context, mosb *mcfgv1.M
 
 			if mosc.Spec.ImageBuilder.ImageBuilderType == mcfgv1.PipelineBuilder {
 				// Check and install pipeline
-				err := checkAndInstallPipeline(ctx, b.kubeclient, b.pipelineoperatorclient, b.olmclient, b.tektonclient, mosc.Spec.PostBuildTasks)
+				err := checkAndInstallPipeline(ctx, b.kubeclient, b.pipelineoperatorclient, b.tektonclient, mosc.Spec.PostBuildTasks)
 				if err != nil {
 					return fmt.Errorf("error checking pipeline exists and installing: %v", err)
 				}
@@ -1751,7 +1748,7 @@ func (b *buildReconciler) syncMachineOSConfig(ctx context.Context, mosc *mcfgv1.
 
 		if mosc.Spec.ImageBuilder.ImageBuilderType == mcfgv1.PipelineBuilder {
 			// Check and install pipeline
-			err := checkAndInstallPipeline(ctx, b.kubeclient, b.pipelineoperatorclient, b.olmclient, b.tektonclient, mosc.Spec.PostBuildTasks)
+			err := checkAndInstallPipeline(ctx, b.kubeclient, b.pipelineoperatorclient, b.tektonclient, mosc.Spec.PostBuildTasks)
 			if err != nil {
 				return fmt.Errorf("error checking pipeline exists and installing: %v", err)
 			}
