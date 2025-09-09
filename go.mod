@@ -40,7 +40,6 @@ require (
 	github.com/openshift/client-go v0.0.0-20250811163556-6193816ae379
 	github.com/openshift/library-go v0.0.0-20250729191057-91376e1b394e
 	github.com/openshift/runtime-utils v0.0.0-20230921210328-7bdb5b9c177b
-	github.com/operator-framework/api v0.33.0
 	github.com/operator-framework/operator-lifecycle-manager v0.33.0
 	github.com/prometheus/client_golang v1.23.0
 	github.com/rs/zerolog v1.34.0
@@ -168,6 +167,7 @@ require (
 	github.com/opencontainers/selinux v1.12.0 // indirect
 	github.com/openshift-pipelines/pipelines-as-code v0.35.0 // indirect
 	github.com/openshift/apiserver-library-go v0.0.0-20250710132015-f0d44ef6e53b // indirect
+	github.com/operator-framework/api v0.33.0 // indirect
 	github.com/peterbourgon/diskv v2.0.1+incompatible // indirect
 	github.com/prometheus/statsd_exporter v0.28.0 // indirect
 	github.com/quasilyte/go-ruleguard/dsl v0.3.22 // indirect
