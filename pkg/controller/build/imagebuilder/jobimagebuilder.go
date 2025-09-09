@@ -10,8 +10,8 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	tektonclientset "github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -26,8 +26,27 @@ type jobImageBuilder struct {
 	cleaner Cleaner
 }
 
-func newJobImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, tektonclient tektonclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig, builder buildrequest.Builder) *jobImageBuilder {
-	b, c := newBaseImageBuilderWithCleaner(kubeclient, mcfgclient, tektonclient, mosb, mosc, builder)
+// Gets the final image pullspec.
+func (j *jobImageBuilder) getFinalImagePullspec(ctx context.Context) (string, error) {
+	name, err := j.getDigestConfigMapName()
+	if err != nil {
+		return "", fmt.Errorf("could not get digest configmap name: %w", err)
+	}
+
+	digestConfigMap, err := j.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("could not get final image digest configmap %q: %w", name, err)
+	}
+
+	sha, err := utils.ParseImagePullspec(string(j.mosc.Spec.RenderedImagePushSpec), digestConfigMap.Data["digest"])
+	if err != nil {
+		return "", fmt.Errorf("could not create digested image pullspec from the pullspec %q and the digest %q: %w", j.mosc.Status.CurrentImagePullSpec, digestConfigMap.Data["digest"], err)
+	}
+	return sha, nil
+}
+
+func newJobImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig, builder buildrequest.Builder) *jobImageBuilder {
+	b, c := newBaseImageBuilderWithCleaner(kubeclient, mcfgclient, mosb, mosc, builder)
 	return &jobImageBuilder{
 		baseImageBuilder: b,
 		cleaner:          c,
@@ -35,29 +54,29 @@ func newJobImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset
 }
 
 // Instantiates a ImageBuildObserver using the MachineOSBuild and MachineOSConfig objects.
-func NewJobImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, tektonclient tektonclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig) ImageBuilder {
-	return newJobImageBuilder(kubeclient, mcfgclient, tektonclient, mosb, mosc, nil)
+func NewJobImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig) ImageBuilder {
+	return newJobImageBuilder(kubeclient, mcfgclient, mosb, mosc, nil)
 }
 
 // Instantiates an ImageBuildObserver using the MachineOSBuild and MachineOSConfig objects.
-func NewJobImageBuildObserver(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, tektonclient tektonclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig) ImageBuildObserver {
-	return newJobImageBuilder(kubeclient, mcfgclient, tektonclient, mosb, mosc, nil)
+func NewJobImageBuildObserver(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig) ImageBuildObserver {
+	return newJobImageBuilder(kubeclient, mcfgclient, mosb, mosc, nil)
 }
 
 // Instantiates an ImageBuildObserver which infers the MachineOSBuild state
 // from the provided builder object
-func NewJobImageBuildObserverFromBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, tektonclient tektonclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig, builder buildrequest.Builder) ImageBuildObserver {
-	return newJobImageBuilder(kubeclient, mcfgclient, tektonclient, mosb, mosc, builder)
+func NewJobImageBuildObserverFromBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig, builder buildrequest.Builder) ImageBuildObserver {
+	return newJobImageBuilder(kubeclient, mcfgclient, mosb, mosc, builder)
 }
 
 // Instantiates a Cleaner using only the MachineOSBuild object.
-func NewJobImageBuildCleaner(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, tektonclient tektonclientset.Interface, mosb *mcfgv1.MachineOSBuild) Cleaner {
-	return newJobImageBuilder(kubeclient, mcfgclient, tektonclient, mosb, nil, nil)
+func NewJobImageBuildCleaner(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, mosb *mcfgv1.MachineOSBuild) Cleaner {
+	return newJobImageBuilder(kubeclient, mcfgclient, mosb, nil, nil)
 }
 
 // Instantiates a Cleaner using only the Builder object.
-func NewJobImageBuildCleanerFromBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, tektonclient tektonclientset.Interface, builder buildrequest.Builder) Cleaner {
-	return newJobImageBuilder(kubeclient, mcfgclient, tektonclient, nil, nil, builder)
+func NewJobImageBuildCleanerFromBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, builder buildrequest.Builder) Cleaner {
+	return newJobImageBuilder(kubeclient, mcfgclient, nil, nil, builder)
 }
 
 // Gets the build job from the API server and wraps it in the Builder interface
@@ -238,6 +257,53 @@ func (j *jobImageBuilder) getStatus(ctx context.Context) (*batchv1.Job, mcfgv1.B
 	klog.Infof("Build job %q status %+v mapped to MachineOSBuild progress %q", job.Name, job.Status, status)
 
 	return job, status, conditions, nil
+}
+
+// Computes the MachineOSBuild status given the build status as well as the
+// conditions. Also fetches the final image pullspec from the digestfile
+// ConfigMap.
+func (j *jobImageBuilder) getMachineOSBuildStatus(ctx context.Context, obj kubeObject, buildStatus mcfgv1.BuildProgress, conditions []metav1.Condition) (mcfgv1.MachineOSBuildStatus, error) {
+	now := metav1.Now()
+
+	out := mcfgv1.MachineOSBuildStatus{}
+
+	out.BuildStart = &now
+
+	if buildStatus == mcfgv1.MachineOSBuildSucceeded || buildStatus == mcfgv1.MachineOSBuildFailed || buildStatus == mcfgv1.MachineOSBuildInterrupted {
+		out.BuildEnd = &now
+	}
+
+	// In this scenario, the build is in a terminal state, but we don't know
+	// when it started since the machine-os-builder pod may have been offline.
+	// In this case, we should get the creation timestamp from the builder
+	// object and use that as the start time instead of now since the buildEnd
+	// must be after the buildStart time.
+	if out.BuildStart == &now && out.BuildEnd == &now {
+		jobCreationTimestamp := obj.GetCreationTimestamp()
+		out.BuildStart = &jobCreationTimestamp
+	}
+
+	if buildStatus == mcfgv1.MachineOSBuildSucceeded {
+		pullspec, err := j.getFinalImagePullspec(ctx)
+		if err != nil {
+			return out, err
+		}
+
+		out.DigestedImagePushSpec = mcfgv1.ImageDigestFormat(pullspec)
+	}
+
+	out.Conditions = conditions
+	out.Builder = &mcfgv1.MachineOSBuilderReference{
+		ImageBuilderType: mcfgv1.JobBuilder,
+		// TODO: Should we clear this whenever the build is complete?
+		Job: &mcfgv1.ObjectReference{
+			Name:      obj.GetName(),
+			Group:     batchv1.SchemeGroupVersion.Group,
+			Namespace: obj.GetNamespace(),
+			Resource:  "jobs",
+		},
+	}
+	return out, nil
 }
 
 func (j *jobImageBuilder) machineOSBuildStatus(ctx context.Context) (mcfgv1.MachineOSBuildStatus, error) {
