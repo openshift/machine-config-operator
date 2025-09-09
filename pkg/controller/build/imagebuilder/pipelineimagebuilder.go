@@ -119,56 +119,55 @@ func (p *pipelineImageBuilder) start(ctx context.Context) (*tektonv1beta1.Pipeli
 	buildPipelineRun := builder.GetObject().(*tektonv1beta1.PipelineRun)
 
 	bp, err := p.tektonclient.TektonV1beta1().PipelineRuns(ctrlcommon.MCONamespace).Create(ctx, buildPipelineRun, metav1.CreateOptions{})
-	if err == nil {
-		klog.Infof("Build PipelineRun %q created for MachineOSBuild %q", bp.Name, mosbName)
-
-		// Set the job UID as an annotation in the MOSB
-		if p.mosb != nil {
-			metav1.SetMetaDataAnnotation(&p.mosb.ObjectMeta, constants.BuildTypeUIDAnnotationKey, string(bp.UID))
-			// Update the MOSB with the new annotations
-			_, err := p.mcfgclient.MachineconfigurationV1().MachineOSBuilds().Update(ctx, p.mosb, metav1.UpdateOptions{})
-			if err != nil && !k8serrors.IsNotFound(err) {
-				return nil, fmt.Errorf("could not update MachineOSBuild %s with pipelineRun UID annotation: %w", mosbName, err)
-			}
+	if err != nil {
+		if k8serrors.IsAlreadyExists(err) {
+			return p.getBuildPipelineStrict(ctx)
 		}
 
-		// Set the owner reference of the configmaps and secrets created to be the Job
-		// Set blockOwnerDeletion and Controller to false as Job ownership doesn't work when set to true
-		oref := metav1.NewControllerRef(bp, tektonv1beta1.SchemeGroupVersion.WithKind("PipelineRun"))
-		falseBool := false
-		oref.BlockOwnerDeletion = &falseBool
-		oref.Controller = &falseBool
-
-		cms, err := p.buildrequest.ConfigMaps()
-		if err != nil {
-			return nil, err
-		}
-		for _, cm := range cms {
-			cm.SetOwnerReferences([]metav1.OwnerReference{*oref})
-			if _, err := p.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Update(ctx, cm, metav1.UpdateOptions{}); err != nil {
-				return nil, err
-			}
-		}
-
-		secrets, err := p.buildrequest.Secrets()
-		if err != nil {
-			return nil, err
-		}
-		for _, secret := range secrets {
-			secret.SetOwnerReferences([]metav1.OwnerReference{*oref})
-			if _, err := p.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Update(ctx, secret, metav1.UpdateOptions{}); err != nil {
-				return nil, err
-			}
-		}
-
-		return bp, nil
+		return nil, fmt.Errorf("could not create build pipeline: %w", err)
 	}
 
-	if k8serrors.IsAlreadyExists(err) {
-		return p.getBuildPipelineStrict(ctx)
+	klog.Infof("Build PipelineRun %q created for MachineOSBuild %q", bp.Name, mosbName)
+
+	// Set the job UID as an annotation in the MOSB
+	if p.mosb != nil {
+		metav1.SetMetaDataAnnotation(&p.mosb.ObjectMeta, constants.BuildTypeUIDAnnotationKey, string(bp.UID))
+		// Update the MOSB with the new annotations
+		_, err := p.mcfgclient.MachineconfigurationV1().MachineOSBuilds().Update(ctx, p.mosb, metav1.UpdateOptions{})
+		if err != nil && !k8serrors.IsNotFound(err) {
+			return nil, fmt.Errorf("could not update MachineOSBuild %s with pipelineRun UID annotation: %w", mosbName, err)
+		}
 	}
 
-	return nil, fmt.Errorf("could not create build pipeline: %w", err)
+	// Set the owner reference of the configmaps and secrets created to be the Job
+	// Set blockOwnerDeletion and Controller to false as Job ownership doesn't work when set to true
+	oref := metav1.NewControllerRef(bp, tektonv1beta1.SchemeGroupVersion.WithKind("PipelineRun"))
+	falseBool := false
+	oref.BlockOwnerDeletion = &falseBool
+	oref.Controller = &falseBool
+
+	cms, err := p.buildrequest.ConfigMaps()
+	if err != nil {
+		return nil, err
+	}
+	for _, cm := range cms {
+		cm.SetOwnerReferences([]metav1.OwnerReference{*oref})
+		if _, err := p.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Update(ctx, cm, metav1.UpdateOptions{}); err != nil {
+			return nil, err
+		}
+	}
+
+	secrets, err := p.buildrequest.Secrets()
+	if err != nil {
+		return nil, err
+	}
+	for _, secret := range secrets {
+		secret.SetOwnerReferences([]metav1.OwnerReference{*oref})
+		if _, err := p.kubeclient.CoreV1().Secrets(ctrlcommon.MCONamespace).Update(ctx, secret, metav1.UpdateOptions{}); err != nil {
+			return nil, err
+		}
+	}
+	return bp, nil
 }
 
 // Gets the build Pipeline, returning any errors in the process.
