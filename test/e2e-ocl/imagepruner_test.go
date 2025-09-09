@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,7 +16,9 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 
+	"github.com/containers/image/v5/docker"
 	"github.com/containers/image/v5/types"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/distribution/reference"
@@ -141,16 +144,44 @@ func TestImagePrunerOnCluster(t *testing.T) {
 	certsDir := filepath.Join(t.TempDir())
 	require.NoError(t, os.WriteFile(filepath.Join(certsDir, externalRegistryHostname+".crt"), ingressCert.Data["tls.crt"], 0o644))
 
-	// Wait for the route to finish setting up. Not sure if there is an object we can poll for this instead.
-	time.Sleep(time.Second * 5)
+	// Wait for the route to finish setting up. We can determine that the route
+	// setup is complete when we get an image not found error when inspecting a
+	// nonexistent image.
+	err = wait.PollImmediate(time.Second, time.Minute, func() (bool, error) {
+		imgPruner := imagepruner.NewImageInspectorDeleter()
+		sysCtx := &types.SystemContext{DockerCertPath: certsDir, AuthFilePath: secretPath}
+
+		_, _, err = imgPruner.ImageInspect(ctx, sysCtx, pullspec)
+
+		// If we get an image not found error, that means the route is set up
+		// because we were able to authenticate to the image registry and make a
+		// query for a nonexistent image.
+		if imagepruner.IsImageNotFoundErr(err) {
+			return true, nil
+		}
+
+		// If this is an HTTP 503 error, that means the route has not finished
+		// being set up, so we need to try again.
+		var unexpectedHTTPError docker.UnexpectedHTTPStatusError
+		if errors.As(err, &unexpectedHTTPError) && unexpectedHTTPError.StatusCode == http.StatusServiceUnavailable {
+			return false, nil
+		}
+
+		// We were unable to identify this error, so return it.
+		return false, fmt.Errorf("unknown registry error when polling: %w", err)
+	})
+
+	require.NoError(t, err, unwrapAll(err))
 
 	// Now we can run our test cases. All test cases use the
 	// ImageInspectorDeleter directly since we need to have a bit more control
 	// over the SystemContext given that we're running out-of-cluster.
 	t.Run("Inspect without creds", func(t *testing.T) {
 		t.Parallel()
+
 		imgPruner := imagepruner.NewImageInspectorDeleter()
 		sysCtx := &types.SystemContext{DockerCertPath: certsDir}
+
 		_, _, err = imgPruner.ImageInspect(ctx, sysCtx, pullspec)
 		assert.Error(t, err)
 		assert.True(t, imagepruner.IsAccessDeniedErr(err), "expected access denied err: %s", unwrapAll(err))
@@ -158,6 +189,7 @@ func TestImagePrunerOnCluster(t *testing.T) {
 
 	t.Run("Inspect nonexistent image digest with creds", func(t *testing.T) {
 		t.Parallel()
+
 		imgPruner := imagepruner.NewImageInspectorDeleter()
 		sysCtx := &types.SystemContext{DockerCertPath: certsDir, AuthFilePath: secretPath}
 
@@ -172,6 +204,7 @@ func TestImagePrunerOnCluster(t *testing.T) {
 
 	t.Run("Inspect nonexistent image tag with creds", func(t *testing.T) {
 		t.Parallel()
+
 		imgPruner := imagepruner.NewImageInspectorDeleter()
 		sysCtx := &types.SystemContext{DockerCertPath: certsDir, AuthFilePath: secretPath}
 
@@ -185,6 +218,7 @@ func TestImagePrunerOnCluster(t *testing.T) {
 
 	t.Run("Inspect nonexistent image repo with creds", func(t *testing.T) {
 		t.Parallel()
+
 		imgPruner := imagepruner.NewImageInspectorDeleter()
 		sysCtx := &types.SystemContext{DockerCertPath: certsDir, AuthFilePath: secretPath}
 
@@ -198,9 +232,12 @@ func TestImagePrunerOnCluster(t *testing.T) {
 
 	t.Run("Push image and inspect", func(t *testing.T) {
 		t.Parallel()
+
 		require.NoError(t, createAndPushScratchImage(ctx, t, pullspec, secretPath, certsDir))
+
 		imgPruner := imagepruner.NewImageInspectorDeleter()
 		sysCtx := &types.SystemContext{DockerCertPath: certsDir, AuthFilePath: secretPath}
+
 		_, _, err := imgPruner.ImageInspect(ctx, sysCtx, pullspec)
 		assert.NoError(t, err)
 
@@ -779,6 +816,21 @@ func canTestOnInClusterRegistry(ctx context.Context, kubeconfig string) (bool, e
 	return false, nil
 }
 
+// Skopeo requires that a policy.json file be present. Usually, this file is
+// placed in /etc/containers/policy.json when Skopeo is installed. Because we
+// must install skopeo from source in CI, this file is missing. So what we do
+// in this scenario is write our own policy.json file to a temp directory
+// instead. The temp directory is managed by the Go test suite and will be
+// removed after the test is finished.
+func writePolicyFile(t *testing.T) (string, error) {
+	policyPath := filepath.Join(t.TempDir(), "policy.json")
+
+	// Compacted contents of https://github.com/containers/skopeo/blob/main/default-policy.json
+	policyJSONBytes := []byte(`{"default":[{"type":"insecureAcceptAnything"}],"transports":{"docker-daemon":{"":[{"type":"insecureAcceptAnything"}]}}}`)
+
+	return policyPath, os.WriteFile(policyPath, policyJSONBytes, 0o755)
+}
+
 // Creates an empty scratch image and pushes it to the given pullspec using the
 // provided secret path. Accepts an optional certsDir parameter which is
 // particularly useful for pushing internal image registries which have
@@ -792,9 +844,14 @@ func createAndPushScratchImage(ctx context.Context, t *testing.T, pullspec, secr
 		return err
 	}
 
-	cmd := exec.Command("skopeo", "copy", "--dest-authfile", secretPath, "tarball://"+srcImage, "docker://"+pullspec)
+	policyPath, err := writePolicyFile(t)
+	if err != nil {
+		return fmt.Errorf("could not write policy.json file: %w", err)
+	}
+
+	cmd := exec.Command("skopeo", "--policy", policyPath, "copy", "--dest-authfile", secretPath, "tarball://"+srcImage, "docker://"+pullspec)
 	if certsDir != "" {
-		cmd = exec.Command("skopeo", "copy", "--dest-cert-dir", certsDir, "--dest-authfile", secretPath, "tarball://"+srcImage, "docker://"+pullspec)
+		cmd = exec.Command("skopeo", "--policy", policyPath, "copy", "--dest-cert-dir", certsDir, "--dest-authfile", secretPath, "tarball://"+srcImage, "docker://"+pullspec)
 	}
 
 	t.Logf("Copying %s to %s using skopeo", srcImage, pullspec)

@@ -109,6 +109,18 @@ else
 	GO111MODULE=on go build -o $(GOPATH)/bin/golangci-lint ./vendor/github.com/golangci/golangci-lint/cmd/golangci-lint
 endif
 
+SKOPEO := $(shell command -v skopeo 2> /dev/null)
+install-skopeo:
+ifdef SKOPEO
+	@echo "Found skopeo"
+	skopeo --version
+else
+	@echo "Installing skopeo"
+	./hack/install-skopeo.sh
+endif
+
+# install-skopeo is purposely omitted from this target because it is only
+# needed for a single test target (test-e2e-ocl).
 install-tools: install-golangci-lint install-go-junit-report install-setup-envtest
 
 # Runs golangci-lint
@@ -196,8 +208,9 @@ test-e2e-techpreview: install-go-junit-report
 test-e2e-single-node: install-go-junit-report
 	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 120m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-single-node/ | ./hack/test-with-junit.sh $(@)
 
-test-e2e-ocl: install-go-junit-report
-	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 190m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-ocl/ | ./hack/test-with-junit.sh $(@)
+test-e2e-ocl: install-go-junit-report install-skopeo
+	# Temporarily include /tmp/skopeo/bin in our PATH variable so that the test suite can find skopeo.
+	set -o pipefail; PATH="$(PATH):/tmp/skopeo/bin" go test -tags=$(GOTAGS) -failfast -timeout 190m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-ocl/ | ./hack/test-with-junit.sh $(@)
 
 bootstrap-e2e: install-go-junit-report install-setup-envtest
 	@echo "Setting up KUBEBUILDER_ASSETS"
