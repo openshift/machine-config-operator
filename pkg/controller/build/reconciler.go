@@ -24,7 +24,6 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/template"
 	daemonconstants "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/helpers"
-	olmv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	olmclientset "github.com/operator-framework/operator-lifecycle-manager/pkg/api/client/clientset/versioned"
 	pipelineoperatorclientset "github.com/tektoncd/operator/pkg/client/clientset/versioned"
 	tektonv1beta1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
@@ -230,9 +229,7 @@ func (b *buildReconciler) deleteMachineOSConfig(ctx context.Context, mosc *mcfgv
 
 func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface, pipelineoperatorclient pipelineoperatorclientset.Interface, olmclient olmclientset.Interface, tektonclient tektonclientset.Interface, postBuildTasks []string) error {
 	tektonNamespace := "openshift-pipelines"
-	operatorsNamespace := "openshift-operators"
 	tektonConfigName := "config"
-	subscriptionName := "openshift-pipelines-operator"
 	tektonPipelineName := "build-and-push-pipeline"
 	tektonClusterTaskName := "buildah"
 	var namespaceDNE, tektonconfigDNE, tektonPipelineDNE, buildahTaskDNE bool = false, false, false, false
@@ -257,32 +254,9 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 		}
 	}
 	if namespaceDNE || tektonconfigDNE {
-		// Define the Subscription resource
-		subscription := &olmv1alpha1.Subscription{
-			TypeMeta: metav1.TypeMeta{
-				APIVersion: "operators.coreos.com/v1alpha1",
-				Kind:       "Subscription",
-			},
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      subscriptionName,
-				Namespace: "openshift-operators",
-			},
-			Spec: &olmv1alpha1.SubscriptionSpec{
-				Channel:                "latest",
-				Package:                "openshift-pipelines-operator-rh",
-				CatalogSource:          "redhat-operators",
-				CatalogSourceNamespace: "openshift-marketplace",
-			},
-		}
-		_, err = olmclient.OperatorsV1alpha1().Subscriptions(operatorsNamespace).Create(ctx, subscription, metav1.CreateOptions{})
-		if err != nil {
-			if k8serrors.IsAlreadyExists(err) {
-				klog.V(2).Infof("%v already exists", subscriptionName)
-			} else {
-				return fmt.Errorf("subscription resource create error %v", err)
-			}
-		}
+		return fmt.Errorf("openshift-pipeline namespace or tektonConfig operator does not exist. Kindly first get the openshift-pipelines subscription: %v", err)
 	}
+
 	interval := 1 * time.Minute
 	timeout := 20 * time.Minute
 	err = waitForTektonConfigReady(ctx, pipelineoperatorclient, tektonNamespace, tektonConfigName, interval, timeout)
