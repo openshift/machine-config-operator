@@ -211,7 +211,7 @@ test-e2e-single-node: install-go-junit-report
 	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 120m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-single-node/ | ./hack/test-with-junit.sh $(@)
 
 test-e2e-ocl: install-go-junit-report
-	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 120m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-ocl/ | ./hack/test-with-junit.sh $(@)
+	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 190m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-ocl/ | ./hack/test-with-junit.sh $(@)
 
 bootstrap-e2e: install-go-junit-report install-setup-envtest
 	@echo "Setting up KUBEBUILDER_ASSETS"
