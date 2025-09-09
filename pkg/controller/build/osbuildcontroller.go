@@ -36,11 +36,11 @@ type OSBuildController struct {
 	*listers
 	*informers
 
-	eventRecorder record.EventRecorder
-	mcfgclient    mcfgclientset.Interface
-	kubeclient    clientset.Interface
-	imageclient   imagev1clientset.Interface
-	routeclient   routeclientset.Interface
+	eventRecorder          record.EventRecorder
+	mcfgclient             mcfgclientset.Interface
+	kubeclient             clientset.Interface
+	imageclient            imagev1clientset.Interface
+	routeclient            routeclientset.Interface
 	pipelineoperatorclient pipelineoperatorclientset.Interface
 	olmclient              olmclientset.Interface
 	tektonclient           tektonclientset.Interface
@@ -124,16 +124,16 @@ func newOSBuildController(
 	informers := newInformers(mcfgclient, kubeclient, tektonclient)
 
 	ctrl := &OSBuildController{
-		kubeclient:    kubeclient,
-		mcfgclient:    mcfgclient,
-		imageclient:   imageclient,
-		routeclient:   routeclient,
+		kubeclient:             kubeclient,
+		mcfgclient:             mcfgclient,
+		imageclient:            imageclient,
+		routeclient:            routeclient,
 		pipelineoperatorclient: pipelineoperatorclient,
 		olmclient:              olmclient,
 		tektonclient:           tektonclient,
-		informers:     informers,
-		listers:       informers.listers(),
-		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineosbuilder"}),
+		informers:              informers,
+		listers:                informers.listers(),
+		eventRecorder:          eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineosbuilder"}),
 		execQueue: ctrlcommon.NewWrappedQueueWithOpts(ctrlcommon.WrappedQueueOpts{
 			Name:       "machineosbuilder",
 			MaxRetries: ctrlConfig.MaxRetries,

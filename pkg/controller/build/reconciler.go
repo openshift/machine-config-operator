@@ -21,14 +21,14 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/build/imagepruner"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/controller/template"
+	daemonconstants "github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	"github.com/openshift/machine-config-operator/pkg/helpers"
 	olmv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	olmclientset "github.com/operator-framework/operator-lifecycle-manager/pkg/api/client/clientset/versioned"
 	pipelineoperatorclientset "github.com/tektoncd/operator/pkg/client/clientset/versioned"
 	tektonv1beta1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	tektonclientset "github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
-	"github.com/openshift/machine-config-operator/pkg/controller/template"
-	daemonconstants "github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	"github.com/openshift/machine-config-operator/pkg/helpers"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -79,11 +79,11 @@ type reconciler interface {
 // is to respond to incoming events in a specific way. By doing this, the
 // reconciliation process has a clear entrypoint for each incoming event.
 type buildReconciler struct {
-	mcfgclient  mcfgclientset.Interface
-	kubeclient  clientset.Interface
-	imageclient imagev1clientset.Interface
-	routeclient routeclientset.Interface
-	imagepruner imagepruner.ImagePruner
+	mcfgclient             mcfgclientset.Interface
+	kubeclient             clientset.Interface
+	imageclient            imagev1clientset.Interface
+	routeclient            routeclientset.Interface
+	imagepruner            imagepruner.ImagePruner
 	pipelineoperatorclient pipelineoperatorclientset.Interface
 	olmclient              olmclientset.Interface
 	tektonclient           tektonclientset.Interface
@@ -98,15 +98,15 @@ func newBuildReconciler(mcfgclient mcfgclientset.Interface, kubeclient clientset
 
 func newBuildReconcilerAsStruct(mcfgclient mcfgclientset.Interface, kubeclient clientset.Interface, imageclient imagev1clientset.Interface, routeclient routeclientset.Interface, pipelineoperatorclient pipelineoperatorclientset.Interface, olmclient olmclientset.Interface, tektonclient tektonclientset.Interface, l *listers, imagepruner imagepruner.ImagePruner) *buildReconciler {
 	return &buildReconciler{
-		mcfgclient:  mcfgclient,
-		kubeclient:  kubeclient,
-		imageclient: imageclient,
-		routeclient: routeclient,
-		imagepruner: imagepruner,
+		mcfgclient:             mcfgclient,
+		kubeclient:             kubeclient,
+		imageclient:            imageclient,
+		routeclient:            routeclient,
+		imagepruner:            imagepruner,
 		pipelineoperatorclient: pipelineoperatorclient,
 		olmclient:              olmclient,
 		tektonclient:           tektonclient,
-		listers:     l,
+		listers:                l,
 	}
 }
 
@@ -311,7 +311,7 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 		task := existingBuildah.DeepCopy()
 		task.Name = "buildah-custom"
 		task.Namespace = ctrlcommon.MCONamespace
-		volumeMounts := []corev1.VolumeMount{
+		volumeMountsForBuildah := []corev1.VolumeMount{
 			{
 				Name:      "base-image-pull-creds",
 				MountPath: "/tmp/base-image-pull-creds",
@@ -321,32 +321,78 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 				MountPath: "/tmp/final-image-push-creds",
 			},
 		}
-		task.Spec.Steps[0].VolumeMounts = append(task.Spec.Steps[0].VolumeMounts, volumeMounts...)
+		task.Spec.Steps[0].VolumeMounts = append(task.Spec.Steps[0].VolumeMounts, volumeMountsForBuildah...)
 		step := tektonv1beta1.Step{
 			Name:   "setup-environment",
 			Image:  "$(params.podimage)",
 			Script: buildahBuildPipelineScript,
+			VolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      "machineconfig",
+					MountPath: "/tmp/machineconfig",
+				},
+				{
+					Name:      "containerfile",
+					MountPath: "/tmp/containerfile",
+				},
+				{
+					Name:      "additional-trust-bundle",
+					MountPath: "/etc/pki/ca-trust/source/anchors",
+				},
+			},
 		}
 		task.Spec.Steps = append([]tektonv1beta1.Step{step}, task.Spec.Steps...)
 		params := []tektonv1beta1.ParamSpec{
-			{Name: "containerFileName", Type: tektonv1beta1.ParamTypeString, Description: "container file name"},
-			{Name: "containerFileData", Type: tektonv1beta1.ParamTypeString, Description: "container file data"},
+			{Name: "containerFileConfigMapName", Type: tektonv1beta1.ParamTypeString, Description: "container file config map name"},
 			{Name: "buildContextName", Type: tektonv1beta1.ParamTypeString, Description: "context"},
 			{Name: "podimage", Type: tektonv1beta1.ParamTypeString, Description: "image"},
-			{Name: "machineConfig", Type: tektonv1beta1.ParamTypeString, Description: "machine config"},
-			{Name: "additionalTrustBundle", Type: tektonv1beta1.ParamTypeString, Description: "trust bundle"},
+			{Name: "machineConfigConfigMapName", Type: tektonv1beta1.ParamTypeString, Description: "machine config config map name"},
+			{Name: "additionalTrustBundleConfigMapName", Type: tektonv1beta1.ParamTypeString, Description: "trust bundle config map name"},
 			{Name: "authfilePush", Type: tektonv1beta1.ParamTypeString, Description: "authfilePush"},
 			{Name: "authfileBuild", Type: tektonv1beta1.ParamTypeString, Description: "authfileBuild"},
 		}
 		task.Spec.Params = append(task.Spec.Params, params...)
 		volumes := []corev1.Volume{
 			{
+				// Provides the rendered Containerfile.
+				Name: "containerfile",
+				VolumeSource: corev1.VolumeSource{
+					ConfigMap: &corev1.ConfigMapVolumeSource{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: "$(params.containerFileConfigMapName)",
+						},
+					},
+				},
+			},
+			{
+				// Provides the rendered MachineConfig in a gzipped / base64-encoded
+				// format.
+				Name: "machineconfig",
+				VolumeSource: corev1.VolumeSource{
+					ConfigMap: &corev1.ConfigMapVolumeSource{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: "$(params.machineConfigConfigMapName)",
+						},
+					},
+				},
+			},
+			{
+				// Provides the user defined Additional Trust Bundle
+				Name: "additional-trust-bundle",
+				VolumeSource: corev1.VolumeSource{
+					ConfigMap: &corev1.ConfigMapVolumeSource{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: "$(params.additionalTrustBundleConfigMapName)",
+						},
+					},
+				},
+			},
+			{
 				// Provides the credentials needed to pull the base OS image.
 				Name: "base-image-pull-creds",
 				VolumeSource: corev1.VolumeSource{
 					Secret: &corev1.SecretVolumeSource{
 						SecretName: "$(params.authfileBuild)",
-						// SecretName: br.opts.MachineOSConfig.Spec.BaseImagePullSecret.Name,
 						Items: []corev1.KeyToPath{
 							{
 								Key:  corev1.DockerConfigJsonKey,
@@ -410,15 +456,14 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 					{Name: "authfileBuild", Type: tektonv1beta1.ParamTypeString, Description: "authfileBuild"},
 					{Name: "authfilePush", Type: tektonv1beta1.ParamTypeString, Description: "authfilePush"},
 					{Name: "tag", Type: tektonv1beta1.ParamTypeString, Description: "Image URL"},
-					{Name: "containerFileName", Type: tektonv1beta1.ParamTypeString, Description: "container file name"},
-					{Name: "containerFileData", Type: tektonv1beta1.ParamTypeString, Description: "container file data"},
+					{Name: "containerFileConfigMapName", Type: tektonv1beta1.ParamTypeString, Description: "container file config map name"},
 					{Name: "httpProxy", Type: tektonv1beta1.ParamTypeString, Description: "httpproxy", Default: &tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: ""}},
 					{Name: "httpsProxy", Type: tektonv1beta1.ParamTypeString, Description: "httpsproxy", Default: &tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: ""}},
 					{Name: "noProxy", Type: tektonv1beta1.ParamTypeString, Description: "noproxy", Default: &tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: ""}},
 					{Name: "buildContextName", Type: tektonv1beta1.ParamTypeString, Description: "context"},
 					{Name: "podimage", Type: tektonv1beta1.ParamTypeString, Description: "image"},
-					{Name: "machineConfig", Type: tektonv1beta1.ParamTypeString, Description: "machine config"},
-					{Name: "additionalTrustBundle", Type: tektonv1beta1.ParamTypeString, Description: "additional trust bundle"},
+					{Name: "machineConfigConfigMapName", Type: tektonv1beta1.ParamTypeString, Description: "machine config config map name"},
+					{Name: "additionalTrustBundleConfigMapName", Type: tektonv1beta1.ParamTypeString, Description: "additional trust bundle config map name"},
 				},
 				Results: []tektonv1beta1.PipelineResult{
 					{Name: "IMAGE_DIGEST", Type: tektonv1beta1.ResultsTypeString, Description: "Digest of the image just built", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(tasks.buildah-build.results.IMAGE_DIGEST)"}},
@@ -437,17 +482,16 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 						Params: []tektonv1beta1.Param{
 							{Name: "IMAGE", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.tag)"}},
 							{Name: "STORAGE_DRIVER", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.storageDriver)"}},
-							{Name: "DOCKERFILE", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.buildContextName)/$(params.containerFileName)"}},
+							{Name: "DOCKERFILE", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.buildContextName)/Containerfile"}},
 							{Name: "CONTEXT", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(workspaces.source.path)/$(params.buildContextName)"}},
 							{Name: "BUILD_EXTRA_ARGS", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "--authfile=/tmp/base-image-pull-creds/config.json --log-level=$(params.logLevel)"}},
 							{Name: "BUILD_ARGS", Value: tektonv1beta1.ParamValue{Type: tektonv1beta1.ParamTypeArray, ArrayVal: []string{"HTTP_PROXY=$(params.httpProxy)", "HTTPS_PROXY=$(params.httpsProxy)", "NO_PROXY=$(params.noProxy)"}}},
 							{Name: "PUSH_EXTRA_ARGS", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "--authfile=/tmp/final-image-push-creds/config.json --cert-dir /var/run/secrets/kubernetes.io/serviceaccount"}},
-							{Name: "containerFileName", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.containerFileName)"}},
-							{Name: "containerFileData", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.containerFileData)"}},
+							{Name: "containerFileConfigMapName", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.containerFileConfigMapName)"}},
 							{Name: "buildContextName", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.buildContextName)"}},
 							{Name: "podimage", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.podimage)"}},
-							{Name: "machineConfig", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.machineConfig)"}},
-							{Name: "additionalTrustBundle", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.additionalTrustBundle)"}},
+							{Name: "machineConfigConfigMapName", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.machineConfigConfigMapName)"}},
+							{Name: "additionalTrustBundleConfigMapName", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.additionalTrustBundleConfigMapName)"}},
 							{Name: "authfileBuild", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.authfileBuild)"}},
 							{Name: "authfilePush", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(params.authfilePush)"}},
 						},
@@ -460,20 +504,20 @@ func checkAndInstallPipeline(ctx context.Context, kubeclient clientset.Interface
 		}
 
 		for _, taskName := range postBuildTasks {
-		    newTask := tektonv1beta1.PipelineTask{
-			Name:    taskName,
-			TaskRef: &tektonv1beta1.TaskRef{
+			newTask := tektonv1beta1.PipelineTask{
 				Name: taskName,
-				Kind: tektonv1beta1.NamespacedTaskKind,
-			},
+				TaskRef: &tektonv1beta1.TaskRef{
+					Name: taskName,
+					Kind: tektonv1beta1.NamespacedTaskKind,
+				},
 
-			RunAfter: []string{"buildah-build"},
+				RunAfter: []string{"buildah-build"},
 
-			Params: []tektonv1beta1.Param{
-				{Name: "podimage", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(tasks.buildah-build.results.IMAGE_URL)"}},
-			},
-		    }
-		    pipeline.Spec.Tasks = append(pipeline.Spec.Tasks, newTask)
+				Params: []tektonv1beta1.Param{
+					{Name: "podimage", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "$(tasks.buildah-build.results.IMAGE_URL)"}},
+				},
+			}
+			pipeline.Spec.Tasks = append(pipeline.Spec.Tasks, newTask)
 		}
 
 		_, err = tektonclient.TektonV1beta1().Pipelines(ctrlcommon.MCONamespace).Create(context.Background(), pipeline, metav1.CreateOptions{})
@@ -1286,7 +1330,7 @@ func (b *buildReconciler) getMachineOSConfigForBuilder(builder buildrequest.Buil
 
 // Deletes the underlying build objects for a given MachineOSBuild.
 func (b *buildReconciler) deleteBuilderForMachineOSBuild(ctx context.Context, mosb *mcfgv1.MachineOSBuild) error {
-	
+
 	mosc, err := utils.GetMachineOSConfigForMachineOSBuild(mosb, b.utilListers())
 	if err != nil {
 		return err

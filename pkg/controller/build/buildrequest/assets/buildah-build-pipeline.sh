@@ -3,8 +3,6 @@ set -xeuo
 
 DEST=/etc/pki/ca-trust/extracted
 
-echo $(params.additionalTrustBundle) > /etc/pki/ca-trust/source/anchors/openshift-config-user-ca-bundle.crt
-
 # Prevent p11-kit from reading user configuration files.
 export P11_KIT_NO_USER_CONFIG=1
 
@@ -18,7 +16,6 @@ build_context="$(workspaces.source.path)/$(params.buildContextName)"
 mkdir -p "$build_context/machineconfig"
 
 # Copy the Containerfile, Machineconfigs and Additional Trust Bundle from configmaps into our build context.
-echo "$(params.containerFileData)" > "$build_context/$(params.containerFileName)"
-echo "$(params.machineConfig)" > "$build_context/machineconfig/machineconfig.json.gz"
-
+cp /tmp/containerfile/Containerfile "$build_context"
+cp /tmp/machineconfig/machineconfig.json.gz "$build_context/machineconfig/"
 cp /etc/pki/ca-trust/source/anchors/openshift-config-user-ca-bundle.crt "$build_context"

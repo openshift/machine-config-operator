@@ -208,9 +208,9 @@ func (p *pipelineImageBuilder) getBuildPipelineFromBuilderOrAPI(ctx context.Cont
 		if err := p.validateBuilderType(p.builder); err != nil {
 			return nil, fmt.Errorf("could not get build pipeline run from builder: %w", err)
 		}
-		
+
 		pipelineRun := p.builder.GetObject().(*tektonv1beta1.PipelineRun)
-		
+
 		// Ensure that the pipelineRun UID matches the pipelineRunUID annotation in the MOSB so that
 		// we know that we are using the correct pipelineRun to set the status of the MOSB
 		if pipelineRunIsForMOSB(pipelineRun, p.mosb) {
@@ -223,7 +223,7 @@ func (p *pipelineImageBuilder) getBuildPipelineFromBuilderOrAPI(ctx context.Cont
 	if err != nil {
 		return nil, fmt.Errorf("could not get build pipelineRun from API: %w", err)
 	}
-	
+
 	klog.V(4).Infof("Using build pipelineRun from API %s", string(pipelineRun.UID))
 	return pipelineRun, nil
 }
@@ -287,7 +287,7 @@ func (p *pipelineImageBuilder) stop(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("could not get PipelineRun to stop build pipelineRun: %w", err)
 	}
-	
+
 	// Ensure that the pipelineRun being deleted is for the MOSB we are currently reconciling
 	if !pipelineRunIsForMOSB(buildPipelineRun, p.mosb) {
 		klog.Infof("Build pipelineRun %q with UID %s is not owned by MachineOSBuild %q, will not delete", buildPipelineRun.Name, buildPipelineRun.UID, mosbName)

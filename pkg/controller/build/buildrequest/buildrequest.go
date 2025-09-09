@@ -690,23 +690,6 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 }
 
 func (br buildRequestImpl) createPipelineRun(kubeclient clientset.Interface) (*tektonv1beta1.PipelineRun, error) {
-	// TODO(rsaini) create pipeline run object and return
-
-	containerfile, err := kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), br.getContainerfileConfigMapName(), metav1.GetOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("could not get rendered containerfile: %w", err)
-	}
-
-	machineconfig, err := kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), br.getMCConfigMapName(), metav1.GetOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("could not get rendered machineconfig: %w", err)
-	}
-
-	additionalTrustBundle, err := kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), br.getAdditionalTrustBundleConfigMapName(), metav1.GetOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("could not get rendered containerfile: %w", err)
-	}
-
 	pipelineRun := &tektonv1beta1.PipelineRun{
 		ObjectMeta: br.getObjectMeta(br.getBuildName()),
 		Spec: tektonv1beta1.PipelineRunSpec{
@@ -718,10 +701,9 @@ func (br buildRequestImpl) createPipelineRun(kubeclient clientset.Interface) (*t
 				{Name: "authfileBuild", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: br.getBasePullSecretName()}},
 				{Name: "authfilePush", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: br.getFinalPushSecretName()}},
 				{Name: "tag", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: string(br.opts.MachineOSBuild.Spec.RenderedImagePushSpec)}},
-				{Name: "containerFileName", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "ContainerFile"}},
-				{Name: "containerFileData", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: containerfile.Data["Containerfile"]}},
-				{Name: "machineConfig", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: machineconfig.Data[machineConfigJSONFilename]}},
-				{Name: "additionalTrustBundle", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: string(additionalTrustBundle.BinaryData["openshift-config-user-ca-bundle.crt"])}},
+				{Name: "containerFileConfigMapName", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: br.getContainerfileConfigMapName()}},
+				{Name: "machineConfigConfigMapName", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: br.getMCConfigMapName()}},
+				{Name: "additionalTrustBundleConfigMapName", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: br.getAdditionalTrustBundleConfigMapName()}},
 				{Name: "buildContextName", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "context"}},
 				{Name: "podimage", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: br.opts.OSImageURLConfig.BaseOSContainerImage}},
 			},

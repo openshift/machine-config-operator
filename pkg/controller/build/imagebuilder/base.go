@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	tektonv1beta1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	tektonclientset "github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
 	batchv1 "k8s.io/api/batch/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -32,10 +33,10 @@ type baseImageBuilder struct {
 // Constructs a baseImageBuilder, deep-copying objects as needed.
 func newBaseImageBuilder(kubeclient clientset.Interface, mcfgclient mcfgclientset.Interface, tektonclient tektonclientset.Interface, mosb *mcfgv1.MachineOSBuild, mosc *mcfgv1.MachineOSConfig, builder buildrequest.Builder) *baseImageBuilder {
 	b := &baseImageBuilder{
-		kubeclient: kubeclient,
-		mcfgclient: mcfgclient,
+		kubeclient:   kubeclient,
+		mcfgclient:   mcfgclient,
 		tektonclient: tektonclient,
-		builder:    builder,
+		builder:      builder,
 	}
 
 	if mosb != nil {
@@ -98,7 +99,7 @@ func (b *baseImageBuilder) getMachineOSBuildStatus(ctx context.Context, obj kube
 	}
 
 	out.Conditions = conditions
-	
+
 	switch b.mosc.Spec.ImageBuilder.ImageBuilderType {
 	case mcfgv1.JobBuilder:
 		out.Builder = &mcfgv1.MachineOSBuilderReference{
@@ -117,14 +118,14 @@ func (b *baseImageBuilder) getMachineOSBuildStatus(ctx context.Context, obj kube
 			// TODO: Should we clear this whenever the build is complete?
 			Pipeline: &mcfgv1.ObjectReference{
 				Name:      obj.GetName(),
-				Group:     batchv1.SchemeGroupVersion.Group,
+				Group:     tektonv1beta1.SchemeGroupVersion.Group,
 				Namespace: obj.GetNamespace(),
 				Resource:  "pipelines",
 			},
 		}
 	default:
 		return out, fmt.Errorf("ImageBuilderType: %s is not supported", b.mosc.Spec.ImageBuilder.ImageBuilderType)
-	}	
+	}
 
 	return out, nil
 }
@@ -185,7 +186,7 @@ func (b *baseImageBuilder) getFinalImagePullspec(ctx context.Context) (string, e
 		}
 	default:
 		return "", fmt.Errorf("ImageBuilderType: %s is not supported", b.mosc.Spec.ImageBuilder.ImageBuilderType)
-	}	
+	}
 
 	return sha, nil
 }
