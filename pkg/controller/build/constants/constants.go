@@ -19,7 +19,7 @@ const (
 	MachineOSConfigNameAnnotationKey     = "machineconfiguration.openshift.io/machine-os-config"
 	MachineOSConfigNameLabelKey          = MachineOSConfigNameAnnotationKey
 	MachineOSBuildNameLabelKey           = MachineOSBuildNameAnnotationKey
-	JobUIDAnnotationKey                  = "machineconfiguration.openshift.io/job-uid"
+	BuildTypeUIDAnnotationKey            = "machineconfiguration.openshift.io/buildtype-uid"
 	RenderedImagePushSecretAnnotationKey = "machineconfiguration.openshift.io/rendered-image-push-secret"
 )
 

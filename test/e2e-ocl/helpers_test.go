@@ -630,8 +630,8 @@ func getJobForMOSB(ctx context.Context, cs *framework.ClientSet, build *mcfgv1.M
 		if err != nil {
 			return jobName, fmt.Errorf("could not get MachineOSBuild %s: %w", build.Name, err)
 		}
-		if mosb.GetAnnotations()[constants.JobUIDAnnotationKey] != "" {
-			mosbJobUID = mosb.GetAnnotations()[constants.JobUIDAnnotationKey]
+		if mosb.GetAnnotations()[constants.BuildTypeUIDAnnotationKey] != "" {
+			mosbJobUID = mosb.GetAnnotations()[constants.BuildTypeUIDAnnotationKey]
 			break
 		}
 		time.Sleep(1 * time.Second)

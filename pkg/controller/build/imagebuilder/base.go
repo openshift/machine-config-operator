@@ -10,8 +10,6 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/build/buildrequest"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	batchv1 "k8s.io/api/batch/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientset "k8s.io/client-go/kubernetes"
@@ -61,54 +59,6 @@ type kubeObject interface {
 	GroupVersionKind() schema.GroupVersionKind
 }
 
-// Computes the MachineOSBuild status given the build status as well as the
-// conditions. Also fetches the final image pullspec from the digestfile
-// ConfigMap.
-func (b *baseImageBuilder) getMachineOSBuildStatus(ctx context.Context, obj kubeObject, buildStatus mcfgv1.BuildProgress, conditions []metav1.Condition) (mcfgv1.MachineOSBuildStatus, error) {
-	now := metav1.Now()
-
-	out := mcfgv1.MachineOSBuildStatus{}
-
-	out.BuildStart = &now
-
-	if buildStatus == mcfgv1.MachineOSBuildSucceeded || buildStatus == mcfgv1.MachineOSBuildFailed || buildStatus == mcfgv1.MachineOSBuildInterrupted {
-		out.BuildEnd = &now
-	}
-
-	// In this scenario, the build is in a terminal state, but we don't know
-	// when it started since the machine-os-builder pod may have been offline.
-	// In this case, we should get the creation timestamp from the builder
-	// object and use that as the start time instead of now since the buildEnd
-	// must be after the buildStart time.
-	if out.BuildStart == &now && out.BuildEnd == &now {
-		jobCreationTimestamp := obj.GetCreationTimestamp()
-		out.BuildStart = &jobCreationTimestamp
-	}
-
-	if buildStatus == mcfgv1.MachineOSBuildSucceeded {
-		pullspec, err := b.getFinalImagePullspec(ctx)
-		if err != nil {
-			return out, err
-		}
-
-		out.DigestedImagePushSpec = mcfgv1.ImageDigestFormat(pullspec)
-	}
-
-	out.Conditions = conditions
-	out.Builder = &mcfgv1.MachineOSBuilderReference{
-		ImageBuilderType: mcfgv1.JobBuilder,
-		// TODO: Should we clear this whenever the build is complete?
-		Job: &mcfgv1.ObjectReference{
-			Name:      obj.GetName(),
-			Group:     batchv1.SchemeGroupVersion.Group,
-			Namespace: obj.GetNamespace(),
-			Resource:  "jobs",
-		},
-	}
-
-	return out, nil
-}
-
 // Attaches the MachineOSBuild name onto an error, if possible.
 func (b *baseImageBuilder) addMachineOSBuildNameToError(err error) error {
 	buildName, buildNameErr := b.getMachineOSBuildName()
@@ -135,26 +85,6 @@ func (b *baseImageBuilder) getDigestConfigMapName() (string, error) {
 	return fmt.Sprintf("digest-%s", mosbName), nil
 }
 
-// Gets the final image pullspec from the digestfile ConfigMap.
-func (b *baseImageBuilder) getFinalImagePullspec(ctx context.Context) (string, error) {
-	name, err := b.getDigestConfigMapName()
-	if err != nil {
-		return "", fmt.Errorf("could not get digest configmap name: %w", err)
-	}
-
-	digestConfigMap, err := b.kubeclient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
-		return "", fmt.Errorf("could not get final image digest configmap %q: %w", name, err)
-	}
-
-	sha, err := utils.ParseImagePullspec(string(b.mosc.Spec.RenderedImagePushSpec), digestConfigMap.Data["digest"])
-	if err != nil {
-		return "", fmt.Errorf("could not create digested image pullspec from the pullspec %q and the digest %q: %w", b.mosc.Status.CurrentImagePullSpec, digestConfigMap.Data["digest"], err)
-	}
-
-	return sha, nil
-}
-
 // Gets the name of the MachineOSBuild name either directly from the
 // MachineOSBuild or from the Builder object.
 func (b *baseImageBuilder) getMachineOSBuildName() (string, error) {
@@ -179,7 +109,7 @@ func (b *baseImageBuilder) getMachineOSConfigName() (string, error) {
 // getting it directly from the Builder object.
 func (b *baseImageBuilder) getBuilderUID() (string, error) {
 	if b.mosb != nil {
-		return b.mosb.GetAnnotations()[constants.JobUIDAnnotationKey], nil
+		return b.mosb.GetAnnotations()[constants.BuildTypeUIDAnnotationKey], nil
 	}
 
 	return b.builder.BuilderUID()
@@ -190,7 +120,7 @@ func (b *baseImageBuilder) getBuilderUID() (string, error) {
 // directly from the Builder object.
 func (b *baseImageBuilder) getBuilderName() string {
 	if b.mosb != nil {
-		return utils.GetBuildJobName(b.mosb)
+		return utils.GetBuildName(b.mosb)
 	}
 
 	return b.builder.GetObject().GetName()
@@ -208,5 +138,5 @@ func (b *baseImageBuilder) prepareForBuild(ctx context.Context) (buildrequest.Bu
 
 	b.buildrequest = br
 
-	return br.Builder(), nil
+	return br.Builder(b.kubeclient)
 }

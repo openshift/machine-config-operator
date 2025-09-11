@@ -498,19 +498,19 @@ func TestDeletedBuilderInterruptsMachineOSBuild(t *testing.T) {
 	startedBuild := waitForBuildToStartForPoolAndConfig(t, cs, poolName, mosc.Name)
 	t.Logf("MachineOSBuild %q has started", startedBuild.Name)
 
-	pod, err := getPodFromJob(ctx, cs, utils.GetBuildJobName(startedBuild))
+	pod, err := getPodFromJob(ctx, cs, utils.GetBuildName(startedBuild))
 	require.NoError(t, err)
 
 	// Delete the builder
 	bgDeletion := metav1.DeletePropagationBackground
-	err = cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).Delete(ctx, utils.GetBuildJobName(startedBuild), metav1.DeleteOptions{PropagationPolicy: &bgDeletion})
+	err = cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).Delete(ctx, utils.GetBuildName(startedBuild), metav1.DeleteOptions{PropagationPolicy: &bgDeletion})
 	require.NoError(t, err)
 
 	// Wait for the build to be interrupted.
 	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx).Eventually()
 	waitForBuildToBeInterrupted(t, cs, startedBuild)
 	// Ensure that the pod and job are deleted
-	kubeassert.Eventually().JobDoesNotExist(utils.GetBuildJobName(startedBuild))
+	kubeassert.Eventually().JobDoesNotExist(utils.GetBuildName(startedBuild))
 	kubeassert.Eventually().PodDoesNotExist(pod.Name)
 }
 
@@ -541,7 +541,7 @@ func TestDeletedPodDoesNotInterruptMachineOSBuild(t *testing.T) {
 	t.Logf("MachineOSBuild %q has started", startedBuild.Name)
 
 	// Get the pod created by the build Job
-	pod, err := getPodFromJob(ctx, cs, utils.GetBuildJobName(startedBuild))
+	pod, err := getPodFromJob(ctx, cs, utils.GetBuildName(startedBuild))
 	require.NoError(t, err)
 
 	// Delete the pod
@@ -556,7 +556,7 @@ func TestDeletedPodDoesNotInterruptMachineOSBuild(t *testing.T) {
 	kubeassert.MachineOSBuildIsRunning(startedBuild)
 
 	// Check that a new pod was created
-	podNew, err := getPodFromJob(ctx, cs, utils.GetBuildJobName(startedBuild))
+	podNew, err := getPodFromJob(ctx, cs, utils.GetBuildName(startedBuild))
 	require.NoError(t, err)
 	assert.NotEqual(t, podNew, pod)
 }
@@ -584,7 +584,7 @@ func TestDeletedTransientMachineOSBuildIsRecreated(t *testing.T) {
 	// Wait for the build to start
 	firstMosb := waitForBuildToStartForPoolAndConfig(t, cs, poolName, mosc.Name)
 
-	firstJob, err := cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).Get(ctx, utils.GetBuildJobName(firstMosb), metav1.GetOptions{})
+	firstJob, err := cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).Get(ctx, utils.GetBuildName(firstMosb), metav1.GetOptions{})
 	require.NoError(t, err)
 
 	// Delete the MachineOSBuild.
@@ -602,7 +602,7 @@ func TestDeletedTransientMachineOSBuildIsRecreated(t *testing.T) {
 	// Wait for a new MachineOSBuild to start in its place.
 	secondMosb := waitForBuildToStartForPoolAndConfig(t, cs, poolName, mosc.Name)
 
-	secondJob, err := cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).Get(ctx, utils.GetBuildJobName(secondMosb), metav1.GetOptions{})
+	secondJob, err := cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).Get(ctx, utils.GetBuildName(secondMosb), metav1.GetOptions{})
 	require.NoError(t, err)
 
 	assert.Equal(t, firstMosb.Name, secondMosb.Name)
@@ -640,19 +640,19 @@ func TestRebuildAnnotationRestartsBuild(t *testing.T) {
 	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
 	assertBuildObjectsAreCreated(t, kubeassert, mosb)
 
-	pod, err := getPodFromJob(ctx, cs, utils.GetBuildJobName(mosb))
+	pod, err := getPodFromJob(ctx, cs, utils.GetBuildName(mosb))
 	require.NoError(t, err)
 	t.Logf("Initial build has started, delete the job to interrupt the build...")
 	// Delete the builder
 	bgDeletion := metav1.DeletePropagationBackground
-	err = cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).Delete(ctx, utils.GetBuildJobName(mosb), metav1.DeleteOptions{PropagationPolicy: &bgDeletion})
+	err = cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).Delete(ctx, utils.GetBuildName(mosb), metav1.DeleteOptions{PropagationPolicy: &bgDeletion})
 	require.NoError(t, err)
 
 	// Wait for the build to be interrupted.
 	waitForBuildToBeInterrupted(t, cs, mosb)
 
 	// Wait for the job and pod to be deleted.
-	kubeassert.Eventually().JobDoesNotExist(utils.GetBuildJobName(mosb))
+	kubeassert.Eventually().JobDoesNotExist(utils.GetBuildName(mosb))
 	kubeassert.Eventually().PodDoesNotExist(pod.Name)
 
 	t.Logf("Add rebuild annotation to the MOSC...")
@@ -713,7 +713,7 @@ func TestKernelType(t *testing.T) {
 func assertBuildObjectsAreCreated(t *testing.T, kubeassert *helpers.Assertions, mosb *mcfgv1.MachineOSBuild) {
 	t.Helper()
 
-	kubeassert.JobExists(utils.GetBuildJobName(mosb))
+	kubeassert.JobExists(utils.GetBuildName(mosb))
 	kubeassert.ConfigMapExists(utils.GetContainerfileConfigMapName(mosb))
 	kubeassert.ConfigMapExists(utils.GetMCConfigMapName(mosb))
 	kubeassert.ConfigMapExists(utils.GetEtcPolicyConfigMapName(mosb))
@@ -733,7 +733,7 @@ func assertBuildObjectsAreCreated(t *testing.T, kubeassert *helpers.Assertions, 
 func assertBuildObjectsAreDeleted(t *testing.T, kubeassert *helpers.Assertions, mosb *mcfgv1.MachineOSBuild) {
 	t.Helper()
 
-	kubeassert.JobDoesNotExist(utils.GetBuildJobName(mosb))
+	kubeassert.JobDoesNotExist(utils.GetBuildName(mosb))
 	kubeassert.ConfigMapDoesNotExist(utils.GetContainerfileConfigMapName(mosb))
 	kubeassert.ConfigMapDoesNotExist(utils.GetMCConfigMapName(mosb))
 	kubeassert.ConfigMapDoesNotExist(utils.GetEtcPolicyConfigMapName(mosb))

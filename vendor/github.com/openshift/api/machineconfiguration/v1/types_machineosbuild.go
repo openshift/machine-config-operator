@@ -121,7 +121,7 @@ type MachineOSBuildStatus struct {
 
 // MachineOSBuilderReference describes which ImageBuilder backend to use for this build
 // +union
-// +kubebuilder:validation:XValidation:rule="has(self.imageBuilderType) && self.imageBuilderType == 'Job' ?  has(self.job) : !has(self.job)",message="job is required when imageBuilderType is Job, and forbidden otherwise"
+// +kubebuilder:validation:XValidation:rule="has(self.imageBuilderType) && (self.imageBuilderType == 'Job' || self.imageBuilderType == 'Pipeline') ? (self.imageBuilderType == 'Job' ? has(self.job) && !has(self.pipeline) : has(self.pipeline) && !has(self.job)) : !has(self.job) && !has(self.pipeline)",message="Either 'job' or 'pipeline' must be set depending on imageBuilderType ('Job' or 'Pipeline'), and the other must be unset"
 type MachineOSBuilderReference struct {
 	// imageBuilderType describes the type of image builder used to build this image.
 	// Valid values are Job only.
@@ -135,6 +135,12 @@ type MachineOSBuilderReference struct {
 	// +unionMember
 	// +optional
 	Job *ObjectReference `json:"job,omitempty"`
+
+	// pipeline is a reference to the pipeline object that is managing the image build.
+	// This is required if the imageBuilderType is Pipeline, and forbidden otherwise.
+	// +unionMember
+	// +optional
+	Pipeline *ObjectReference `json:"pipeline,omitempty"`
 }
 
 // BuildProgess highlights some of the key phases of a build to be tracked in Conditions.

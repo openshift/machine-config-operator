@@ -14,6 +14,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	chelpers "github.com/openshift/machine-config-operator/pkg/controller/common"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	tektonv1beta1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -77,9 +78,12 @@ func (br buildRequestImpl) Opts() BuildRequestOpts {
 	return br.opts
 }
 
-// Creates the Build Job object.
-func (br buildRequestImpl) Builder() Builder {
-	return newBuilder(br.podToJob(br.toBuildahPod()))
+// Creates the Build object.
+func (br buildRequestImpl) Builder(kubeclient clientset.Interface) (Builder, error) {
+	if br.opts.MachineOSConfig.Spec.ImageBuilder.ImageBuilderType == mcfgv1.PipelineBuilder {
+		return newBuilder(br.createPipelineRun(kubeclient))
+	}
+	return newBuilder(br.podToJob(br.toBuildahPod()), nil)
 }
 
 // Takes the configured secrets and creates an ephemeral clone of them, canonicalizing them, if needed.
@@ -685,6 +689,45 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 	}
 }
 
+func (br buildRequestImpl) createPipelineRun(kubeclient clientset.Interface) (*tektonv1beta1.PipelineRun, error) {
+	pipelineRun := &tektonv1beta1.PipelineRun{
+		ObjectMeta: br.getObjectMeta(br.getBuildName()),
+		Spec: tektonv1beta1.PipelineRunSpec{
+			PipelineRef:        &tektonv1beta1.PipelineRef{Name: "build-and-push-pipeline"},
+			ServiceAccountName: "machine-os-builder",
+			Params: []tektonv1beta1.Param{
+				{Name: "logLevel", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "DEBUG"}},
+				{Name: "storageDriver", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "vfs"}},
+				{Name: "authfileBuild", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: br.getBasePullSecretName()}},
+				{Name: "authfilePush", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: br.getFinalPushSecretName()}},
+				{Name: "tag", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: string(br.opts.MachineOSBuild.Spec.RenderedImagePushSpec)}},
+				{Name: "containerFileConfigMapName", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: br.getContainerfileConfigMapName()}},
+				{Name: "machineConfigConfigMapName", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: br.getMCConfigMapName()}},
+				{Name: "additionalTrustBundleConfigMapName", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: br.getAdditionalTrustBundleConfigMapName()}},
+				{Name: "buildContextName", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: "context"}},
+				{Name: "podimage", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: br.opts.OSImageURLConfig.BaseOSContainerImage}},
+			},
+			Workspaces: []tektonv1beta1.WorkspaceBinding{
+				{
+					Name:     "source",
+					EmptyDir: &corev1.EmptyDirVolumeSource{},
+				},
+			},
+		},
+	}
+
+	if br.opts.Proxy != nil {
+		proxyParams := []tektonv1beta1.Param{
+			{Name: "httpProxy", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: br.opts.Proxy.HTTPProxy}},
+			{Name: "httpsProxy", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: br.opts.Proxy.HTTPSProxy}},
+			{Name: "noProxy", Value: tektonv1beta1.ArrayOrString{Type: tektonv1beta1.ParamTypeString, StringVal: br.opts.Proxy.NoProxy}},
+		}
+		pipelineRun.Spec.Params = append(pipelineRun.Spec.Params, proxyParams...)
+	}
+
+	return pipelineRun, nil
+}
+
 // Populates the labels map for all objects created by imageBuildRequest
 func (br buildRequestImpl) getLabelsForObjectMeta() map[string]string {
 	return map[string]string{
@@ -756,7 +799,7 @@ func (br buildRequestImpl) getEtcRegistriesConfigMapName() string {
 
 // Computes the build name based upon the MachineConfigPool name.
 func (br buildRequestImpl) getBuildName() string {
-	return utils.GetBuildJobName(br.opts.MachineOSBuild)
+	return utils.GetBuildName(br.opts.MachineOSBuild)
 }
 
 func (br buildRequestImpl) getDigestConfigMapName() string {
