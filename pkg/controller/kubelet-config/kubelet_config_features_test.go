@@ -97,6 +97,8 @@ func TestFeaturesDefault(t *testing.T) {
 			f.expectGetMachineConfigAction(mcs2Deprecated)
 			f.expectGetMachineConfigAction(mcs2)
 			f.expectCreateMachineConfigAction(mcs2)
+			f.expectGetMachineConfigAction(mcs2Deprecated)
+			f.expectGetMachineConfigAction(mcs2)
 
 			f.runFeature(getKeyFromFeatureGate(features, t), fgHandler)
 		})
@@ -153,6 +155,8 @@ func TestFeaturesCustomNoUpgrade(t *testing.T) {
 			f.expectGetMachineConfigAction(mcs2Deprecated)
 			f.expectGetMachineConfigAction(mcs2)
 			f.expectCreateMachineConfigAction(mcs2)
+			f.expectGetMachineConfigAction(mcs2Deprecated)
+			f.expectGetMachineConfigAction(mcs2)
 			f.runFeature(getKeyFromFeatureGate(features, t), fgHandler)
 		})
 	}
