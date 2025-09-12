@@ -320,7 +320,7 @@ func TestGetUpdatedMachines(t *testing.T) {
 
 			pool := helpers.NewMachineConfigPoolBuilder("pool-1").WithMachineConfig(test.currentConfig).MachineConfigPool()
 
-			updated := getUpdatedMachines(pool, test.nodes, test.mosc, test.mosb, test.layered)
+			updated := ctrlcommon.GetUpdatedMachines(pool, test.nodes, test.mosc, test.mosb, test.layered)
 			assertExpectedNodes(t, getNamesFromNodes(test.updated), updated)
 
 			// This is a much tighter assertion than the one I added. Not sure if

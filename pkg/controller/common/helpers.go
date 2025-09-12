@@ -49,6 +49,7 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	"github.com/openshift/library-go/pkg/crypto"
+	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 )
 
 // strToPtr converts the input string to a pointer to itself
@@ -1262,4 +1263,65 @@ func RequiresRebuild(oldMC, newMC *mcfgv1.MachineConfig) bool {
 		oldMC.Spec.KernelType != newMC.Spec.KernelType ||
 		!reflect.DeepEqual(oldMC.Spec.Extensions, newMC.Spec.Extensions) ||
 		!reflect.DeepEqual(oldMC.Spec.KernelArguments, newMC.Spec.KernelArguments)
+}
+
+// GetUpdatedMachines filters the provided nodes to return the nodes whose
+// current config matches its desired config and target config in the
+// associated MCP and has the "done" flag set.
+func GetUpdatedMachines(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node, mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild, layered bool) []*corev1.Node {
+	var updated []*corev1.Node
+	for _, node := range nodes {
+		lns := NewLayeredNodeState(node)
+		if lns.IsDone(pool, layered, mosc, mosb) {
+			updated = append(updated, node)
+		}
+	}
+	return updated
+}
+
+// GetDegradedMachines filters the provided nodes to return the nodes that
+// are considered in a degraded state.
+func GetDegradedMachines(nodes []*corev1.Node) []*corev1.Node {
+	var degraded []*corev1.Node
+	for _, node := range nodes {
+		if node.Annotations == nil {
+			continue
+		}
+		dconfig, ok := node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey]
+		if !ok || dconfig == "" {
+			continue
+		}
+		dstate, ok := node.Annotations[daemonconsts.MachineConfigDaemonStateAnnotationKey]
+		if !ok || dstate == "" {
+			continue
+		}
+
+		if dstate == daemonconsts.MachineConfigDaemonStateDegraded || dstate == daemonconsts.MachineConfigDaemonStateUnreconcilable {
+			degraded = append(degraded, node)
+		}
+	}
+	return degraded
+}
+
+// `IsMachineUpdatedMCN` checks if a machine (node) is "updated" by checking the associated MCN's
+// properties. For a node in both layered and non-layered MCPs, the desired config version in the
+// MCN's status must equal the desired config in the MCP's spec. For layered MCPs, the desired
+// config version in the MCN's status must also equal the config version in the MOSB's spec and the
+// desired config image in the MCN's status must equal the image in the MOSC. For non-layered MCPs,
+// the desired image in the MCN's status should not be set.
+func IsMachineUpdatedMCN(mcn *mcfgv1.MachineConfigNode, mcp *mcfgv1.MachineConfigPool, mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild, layered bool) bool {
+	if mcn == nil || mcp == nil {
+		return false
+	}
+	if layered {
+		if mosc == nil || mosb == nil {
+			return false
+		}
+		moscs := NewMachineOSConfigState(mosc)
+		//nolint:gocritic // (ijanssen) - the linter thinks the MCN config version and MOSB spec check is suspicious check, but it's needed :)
+		return mcn.Status.ConfigVersion.Desired == mcp.Spec.Configuration.Name &&
+			mcn.Status.ConfigVersion.Desired == mosb.Spec.MachineConfig.Name &&
+			moscs.HasOSImage() && string(mcn.Status.ConfigImage.DesiredImage) == moscs.GetOSImage()
+	}
+	return mcn.Status.ConfigVersion.Desired == mcp.Spec.Configuration.Name && mcn.Status.ConfigImage.DesiredImage == ""
 }
