@@ -12,6 +12,7 @@ type MachineConfigNodeStatusApplyConfiguration struct {
 	Conditions            []metav1.ConditionApplyConfiguration                           `json:"conditions,omitempty"`
 	ObservedGeneration    *int64                                                         `json:"observedGeneration,omitempty"`
 	ConfigVersion         *MachineConfigNodeStatusMachineConfigVersionApplyConfiguration `json:"configVersion,omitempty"`
+	ConfigImage           *MachineConfigNodeStatusConfigImageApplyConfiguration          `json:"configImage,omitempty"`
 	PinnedImageSets       []MachineConfigNodeStatusPinnedImageSetApplyConfiguration      `json:"pinnedImageSets,omitempty"`
 	IrreconcilableChanges []IrreconcilableChangeDiffApplyConfiguration                   `json:"irreconcilableChanges,omitempty"`
 }
@@ -48,6 +49,14 @@ func (b *MachineConfigNodeStatusApplyConfiguration) WithObservedGeneration(value
 // If called multiple times, the ConfigVersion field is set to the value of the last call.
 func (b *MachineConfigNodeStatusApplyConfiguration) WithConfigVersion(value *MachineConfigNodeStatusMachineConfigVersionApplyConfiguration) *MachineConfigNodeStatusApplyConfiguration {
 	b.ConfigVersion = value
+	return b
+}
+
+// WithConfigImage sets the ConfigImage field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ConfigImage field is set to the value of the last call.
+func (b *MachineConfigNodeStatusApplyConfiguration) WithConfigImage(value *MachineConfigNodeStatusConfigImageApplyConfiguration) *MachineConfigNodeStatusApplyConfiguration {
+	b.ConfigImage = value
 	return b
 }
 
