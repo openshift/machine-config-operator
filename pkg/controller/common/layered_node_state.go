@@ -321,3 +321,19 @@ func (l *LayeredNodeState) CheckNodeCandidacyForUpdate(layered bool, pool *mcfgv
 
 	return true
 }
+
+// GetDesiredAnnotationsFromMachineOSConfig gets the desired config version and desired image values from the associated MOSC and MOSB
+func (l *LayeredNodeState) GetDesiredAnnotationsFromMachineConfigPool(mcp *mcfgv1.MachineConfigPool) (desriedConfig string) {
+	return mcp.Spec.Configuration.Name
+}
+
+// GetDesiredAnnotationsFromMachineOSConfig gets the desired config version and desired image values from the associated MOSC and MOSB
+func (l *LayeredNodeState) GetDesiredAnnotationsFromMachineOSConfig(mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) (desriedConfig, desiredImage string) {
+	desiredImage = ""
+	moscs := NewMachineOSConfigState(mosc)
+	if moscs.HasOSImage() {
+		desiredImage = moscs.GetOSImage()
+	}
+
+	return mosb.Spec.MachineConfig.Name, desiredImage
+}
