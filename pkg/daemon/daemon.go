@@ -254,28 +254,6 @@ var (
 	defaultRebootTimeout = 24 * time.Hour
 )
 
-// Create a custom error type to hold the missing MachineConfig name.
-type ErrMissingMachineConfig struct {
-	missingMC string
-}
-
-// Optional constructor for the error type.
-func newErrMissingMachineConfig(missingMC string) error {
-	return &ErrMissingMachineConfig{
-		missingMC: missingMC,
-	}
-}
-
-// This implements the error interface within Go.
-func (e *ErrMissingMachineConfig) Error() string {
-	return fmt.Sprintf("missing MachineConfig %s", e.missingMC)
-}
-
-// This is an optional accessor to get the missing MachineConfig. useful when trying to increment the metric in one line.
-func (e *ErrMissingMachineConfig) MissingMachineConfig() string {
-	return e.missingMC
-}
-
 // rebootCommand creates a new transient systemd unit to reboot the system.
 // With the upstream implementation of kubelet graceful shutdown feature,
 // we don't explicitly stop the kubelet so that kubelet can gracefully shutdown
@@ -855,7 +833,6 @@ func (dn *Daemon) syncNode(key string) error {
 	// Pass to the shared update prep method
 	ufc, err := dn.prepUpdateFromCluster()
 	if err != nil {
-		maybeReportOnMissingMC(err)
 		return err
 	}
 
@@ -881,7 +858,6 @@ func (dn *Daemon) syncNode(key string) error {
 
 		if err := dn.triggerUpdate(ufc.currentConfig, ufc.desiredConfig, ufc.currentImage, ufc.desiredImage); err != nil {
 			// if MC was not found, let user know where they can find more info on this.
-			maybeReportOnMissingMC(err)
 			return err
 		}
 	} else {
@@ -2190,7 +2166,6 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 
 	state, err := dn.getStateAndConfigs()
 	if err != nil {
-		maybeReportOnMissingMC(err)
 		return err
 	}
 
@@ -2291,7 +2266,6 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 	// Kick off an update.
 	err = dn.triggerUpdate(state.currentConfig, state.desiredConfig, state.currentImage, state.desiredImage)
 	if err != nil {
-		maybeReportOnMissingMC(err)
 	}
 	return err
 }
@@ -2420,7 +2394,6 @@ func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, c
 			if err := dn.nodeWriter.SetDegraded(err); err != nil {
 				return err
 			}
-			maybeReportOnMissingMC(err)
 			return err
 		}
 		if ufc.currentConfig == nil || ufc.desiredConfig == nil {
@@ -2899,18 +2872,11 @@ func forceFileExists() bool {
 func maybeAddMachineConfigInfo(configName string, err error) error {
 	if apierrors.IsNotFound(err) {
 		// We actually know the MC is missing, so lets add the additional context.
-		return errors.Join(newErrMissingMachineConfig(configName), err)
+		return err
 	}
 
 	// We couldn't get the MC for any other reason.
 	return err
-}
-
-func maybeReportOnMissingMC(err error) {
-	var missingMCErr *ErrMissingMachineConfig
-	if errors.As(err, &missingMCErr) {
-		mcdMissingMC.WithLabelValues(missingMCErr.MissingMachineConfig()).Inc()
-	}
 }
 
 type healthHandler struct{}
