@@ -154,7 +154,7 @@ func RenderBootstrap(
 		templatectrl.KubeRbacProxyKey:       imgs.KubeRbacProxy,
 	}
 
-	config := getRenderConfig("", string(filesData[kubeAPIServerServingCA]), spec, &imgs.RenderConfigImages, infra, nil, nil)
+	config := getRenderConfig("", string(filesData[kubeAPIServerServingCA]), spec, &imgs.RenderConfigImages, infra, nil, nil, "2")
 
 	manifests := []manifest{
 		{

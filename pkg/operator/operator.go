@@ -220,6 +220,7 @@ func New(
 			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigoperator"}),
 		fgHandler: fgHandler,
 		ctrlctx:   ctrlctx,
+		logLevel:  2,
 	}
 
 	err := corev1.AddToScheme(scheme.Scheme)

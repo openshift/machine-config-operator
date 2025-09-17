@@ -21,8 +21,8 @@ spec:
         image: "{{.Images.MachineConfigOperator}}"
         command: ["/usr/bin/machine-os-builder"]
         args:
-        - start
-        - -v4
+        - "start"
+        - "--v={{.LogLevel}}"
         resources:
           requests:
             cpu: 20m
