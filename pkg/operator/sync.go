@@ -640,7 +640,23 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		return err
 	}
 
-	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra, pointerConfigData, apiServer)
+	// Set operator log level from MachineConfiguration CR, defaulting to Normal if not found
+	// This is only in place in case the CR has been defined at install-time; typically this
+	// will result in a Not Found error on first sync, so default to Normal log level to handle
+	// that case.
+	mcop, err := optr.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
+	//nolint:gocritic // I disagree that this would be more readable with a switch case :)  - djoshy
+	if apierrors.IsNotFound(err) {
+		// MachineConfiguration CR not found, use default log level
+		optr.setOperatorLogLevel(opv1.Normal)
+	} else if err != nil {
+		return err
+	} else {
+		// MachineConfiguration CR exists, use its configured log level
+		optr.setOperatorLogLevel(mcop.Spec.OperatorLogLevel)
+	}
+
+	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra, pointerConfigData, apiServer, fmt.Sprintf("%d", optr.logLevel))
 
 	return nil
 }
@@ -2031,7 +2047,7 @@ func setGVK(obj runtime.Object, scheme *runtime.Scheme) error {
 	return nil
 }
 
-func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *ctrlcommon.RenderConfigImages, infra *configv1.Infrastructure, pointerConfigData []byte, apiServer *configv1.APIServer) *renderConfig {
+func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *ctrlcommon.RenderConfigImages, infra *configv1.Infrastructure, pointerConfigData []byte, apiServer *configv1.APIServer, logLevel string) *renderConfig {
 	tlsMinVersion, tlsCipherSuites := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
 	return &renderConfig{
 		TargetNamespace:        tnamespace,
@@ -2045,6 +2061,7 @@ func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.C
 		Infra:                  *infra,
 		TLSMinVersion:          tlsMinVersion,
 		TLSCipherSuites:        tlsCipherSuites,
+		LogLevel:               logLevel,
 	}
 }
 
