@@ -2226,6 +2226,11 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 		return fmt.Errorf("grabbing MachineConfiguration/%s CR failed: %v", ctrlcommon.MCOOperatorKnobsObjectName, err)
 	}
 
+	// Set the log level to the value defined in the MachineConfiguration object
+	// Note that this value defaults to "Normal" per API validation rules:
+	// https://github.com/openshift/api/blob/83b017b06367bf8564bf94f5c6c1ad8aed5d3ab9/operator/v1/types.go#L61
+	optr.setOperatorLogLevel(mcop.Spec.OperatorLogLevel)
+
 	// Ensure boot images configmap is stamped
 	if err := optr.stampBootImagesConfigMap(); err != nil {
 		klog.Errorf("Failed to stamp bootimages configmap: %v", err)
