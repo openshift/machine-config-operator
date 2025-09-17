@@ -371,7 +371,7 @@ github.com/coreos/ignition/v2/config/validate
 ## explicit; go 1.17
 github.com/coreos/rpmostree-client-go/pkg/client
 github.com/coreos/rpmostree-client-go/pkg/imgref
-# github.com/coreos/stream-metadata-go v0.4.3
+# github.com/coreos/stream-metadata-go v0.4.10-0.20250806142651-4a7d280a6c7b
 ## explicit; go 1.18
 github.com/coreos/stream-metadata-go/arch
 github.com/coreos/stream-metadata-go/stream
