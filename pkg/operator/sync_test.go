@@ -354,7 +354,7 @@ func TestSyncMachineConfiguration(t *testing.T) {
 			infra:                           buildInfra(withPlatformType(configv1.AzurePlatformType)),
 			mcop:                            buildMachineConfigurationWithNoBootImageConfiguration(),
 			annotationExpected:              false,
-			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithNoConfiguration(),
+			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithUpdateDisabled(),
 		},
 		{
 			name:                            "vsphere platform, no existing config, no opt-in expected",
@@ -374,7 +374,7 @@ func TestSyncMachineConfiguration(t *testing.T) {
 			optr := &Operator{
 				eventRecorder: &record.FakeRecorder{},
 				fgHandler: ctrlcommon.NewFeatureGatesHardcodedHandler(
-					[]configv1.FeatureGateName{features.FeatureGateManagedBootImages, features.FeatureGateManagedBootImagesAWS, features.FeatureGateManagedBootImagesvSphere}, []configv1.FeatureGateName{},
+					[]configv1.FeatureGateName{features.FeatureGateManagedBootImages, features.FeatureGateManagedBootImagesAWS, features.FeatureGateManagedBootImagesvSphere, features.FeatureGateManagedBootImagesAzure}, []configv1.FeatureGateName{},
 				),
 				infraLister: configlistersv1.NewInfrastructureLister(infraIndexer),
 				mcopLister:  mcoplistersv1.NewMachineConfigurationLister(mcopIndexer),

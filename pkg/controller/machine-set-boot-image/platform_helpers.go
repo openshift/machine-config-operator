@@ -3,9 +3,11 @@ package machineset
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/coreos/stream-metadata-go/stream"
+	"github.com/coreos/stream-metadata-go/stream/rhcos"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
@@ -15,6 +17,31 @@ import (
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 )
 
+// AzureVariant represents the different Azure marketplace image variants
+type AzureVariant string
+
+const (
+	// Standard OCP variant used by openshift-installer and ARO. Clusters on legacy images will
+	// also fall into this category as they are transitioned to the unpaid marketplace images.
+	AzureVariantMarketplaceNoPlan AzureVariant = "MarketplaceNoPlan"
+
+	// Paid variants of the OCP product line that are available in the marketplace.
+	// These clusters use an image defined in the InstallConfig at install time.
+	AzureVariantOCP AzureVariant = "MarketplaceWithPlan-OCP"
+	AzureVariantOPP AzureVariant = "MarketplaceWithPlan-OPP"
+	AzureVariantOKE AzureVariant = "MarketplaceWithPlan-OKE"
+
+	// EMEA flavor of the 3 paid variants listed above.
+	AzureVariantOCPEMEA AzureVariant = "MarketplaceWithPlan-OCPEMEA"
+	AzureVariantOPPEMEA AzureVariant = "MarketplaceWithPlan-OPPEMEA"
+	AzureVariantOKEEMEA AzureVariant = "MarketplaceWithPlan-OKEEMEA"
+)
+
+// publisherOffer represents a publisher-offer combination for Azure marketplace images
+type publisherOffer struct {
+	publisher, offer string
+}
+
 // This function calls the appropriate reconcile function based on the infra type
 // On success, it will return a bool indicating if a patch is required, and an updated
 // machineset object if any. It will return an error if any of the above steps fail.
@@ -22,6 +49,8 @@ func checkMachineSet(infra *osconfigv1.Infrastructure, machineSet *machinev1beta
 	switch infra.Status.PlatformStatus.Type {
 	case osconfigv1.AWSPlatformType:
 		return reconcilePlatform(machineSet, infra, configMap, arch, secretClient, reconcileAWSProviderSpec)
+	case osconfigv1.AzurePlatformType:
+		return reconcilePlatform(machineSet, infra, configMap, arch, secretClient, reconcileAzureProviderSpec)
 	case osconfigv1.GCPPlatformType:
 		return reconcilePlatform(machineSet, infra, configMap, arch, secretClient, reconcileGCPProviderSpec)
 	case osconfigv1.VSpherePlatformType:
@@ -215,4 +244,191 @@ func reconcileVSphereProviderSpec(streamData *stream.Stream, arch string, infra 
 	}
 
 	return patchRequired, newProviderSpec, nil
+}
+
+// reconcileAzureProviderSpec reconciles the Azure provider spec by updating AMIs
+// Returns whether a patch is required, the updated provider spec, and any error
+func reconcileAzureProviderSpec(streamData *stream.Stream, arch string, _ *osconfigv1.Infrastructure, providerSpec *machinev1beta1.AzureMachineProviderSpec, machineSetName string, secretClient clientset.Interface) (bool, *machinev1beta1.AzureMachineProviderSpec, error) {
+
+	if arch == "ppc64le" || arch == "s390x" {
+		klog.Infof("Skipping machineset %s, machinesets with arch %s are not supported for Azure", machineSetName, arch)
+		return false, nil, nil
+	}
+
+	currentImage := providerSpec.Image
+
+	// Machinesets that have a non empty resourceID are provisioned via an image that was
+	// uploaded at install-time. For these cases, the MCO will transition them to unpaid
+	// marketplace images. As part of https://issues.redhat.com//browse/CORS-3652, standard installs
+	// will also begin to use the unpaid marketplace images(aka ARO images)
+	usesLegacyImageUpload := (currentImage.ResourceID != "")
+
+	// Determine the target image stream variant
+	azureVariant, err := determineAzureVariant(usesLegacyImageUpload, currentImage)
+	if err != nil {
+		return false, nil, err
+	}
+
+	// Extract RHCOS stream for the architecture of this machineSet
+	streamArch, err := streamData.GetArchitecture(arch)
+	if err != nil {
+		return false, nil, err
+	}
+
+	// Sanity check: On OKD clusters marketplace streams are not available, so they should be skipped for updates.
+	// TODO: Determine if OKD azure clusters are even in use/tested
+	if streamArch.RHELCoreOSExtensions.Marketplace == nil {
+		klog.Infof("Skipping machineset %s, marketplace streams are not available", machineSetName)
+		return false, nil, nil
+	}
+	if streamArch.RHELCoreOSExtensions.Marketplace.Azure == nil {
+		klog.Infof("Skipping machineset %s, Azure marketplace streams are not available", machineSetName)
+		return false, nil, nil
+	}
+
+	// There are two types to consider: hyperGenV1 & hyperGenV2. This determination
+	// can be done from the existing image information, and then used to pick from the stream data.
+	//
+	// Uploaded images(legacy) have a "gen2" in the resourceID field to indicate hyperGenV2
+	//
+	// Unpaid marketplace images:
+	// - have a "v2" in the SKU field to indicate hyperGenV2
+	// - aarch64 machinesets can only use hyperGenV2 images
+	//
+	// Paid marketplace images(MCO-1790):
+	// - have a "-gen1" in the SKU field to indicate hyperGenV1
+	// - we do not support paid marketplace images for aarch64
+	var usesHyperVGen2 bool
+	switch {
+	case usesLegacyImageUpload:
+		usesHyperVGen2 = strings.Contains(currentImage.ResourceID, "gen2")
+	case providerSpec.Image.Type == machinev1beta1.AzureImageTypeMarketplaceNoPlan:
+		usesHyperVGen2 = strings.Contains(currentImage.SKU, "v2") || arch == "aarch64"
+	default:
+		usesHyperVGen2 = !strings.Contains(currentImage.SKU, "gen1")
+	}
+
+	// Determine target image from RHCOS stream
+	targetImage, err := getTargetImageFromStream(streamArch, azureVariant, usesHyperVGen2, arch)
+	if err != nil {
+		return false, nil, err
+	}
+
+	// If the current image matches, nothing to do here
+	// Q: Should we enhance this to do version comparisons?
+	if reflect.DeepEqual(currentImage, targetImage) {
+		return false, nil, nil
+	}
+
+	klog.Infof("Current boot image version: %s", currentImage.Version)
+	klog.Infof("New target boot image version: %s", targetImage.Version)
+
+	// Update the machine set with the new image
+	newProviderSpec := providerSpec.DeepCopy()
+	newProviderSpec.Image = targetImage
+
+	// Ensure the ignition stub is the minimum acceptable spec required for boot image updates
+	if err := upgradeStubIgnitionIfRequired(providerSpec.UserDataSecret.Name, secretClient); err != nil {
+		return false, nil, err
+	}
+
+	return true, newProviderSpec, nil
+}
+
+// getAzureImageFromStreamImage converts a stream marketplace image to an Azure machine image
+// Sets the image type based on whether it's a paid marketplace image(unused at the time) or not
+func getAzureImageFromStreamImage(streamImage rhcos.AzureMarketplaceImage, isPaidImage bool) machinev1beta1.Image {
+	azureImage := machinev1beta1.Image{
+		Offer:      streamImage.Offer,
+		Publisher:  streamImage.Publisher,
+		ResourceID: "",
+		SKU:        streamImage.SKU,
+		Version:    streamImage.Version,
+		Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+	}
+	if isPaidImage {
+		azureImage.Type = machinev1beta1.AzureImageTypeMarketplaceWithPlan
+	}
+	return azureImage
+}
+
+// determineAzureVariant determines which Azure marketplace variant to use based on the current image configuration
+func determineAzureVariant(usesLegacyImageUpload bool, currentImage machinev1beta1.Image) (AzureVariant, error) {
+	// Unpaid images(ARO) are publised under the "azureopenshift" published
+	if usesLegacyImageUpload || currentImage.Publisher == "azureopenshift" {
+		return AzureVariantMarketplaceNoPlan, nil
+	}
+
+	// For paid images:
+	// - Three product lines are published in the marketplace: OCP, OPP, OKE.
+	// - EMEA regions have a slightly different publisher, "redhat-limited", but all other
+	// fields are the same.
+
+	variants := map[publisherOffer]AzureVariant{
+		{"redhat", "rh-ocp-worker"}:         AzureVariantOCP,
+		{"redhat", "rh-opp-worker"}:         AzureVariantOPP,
+		{"redhat", "rh-oke-worker"}:         AzureVariantOKE,
+		{"redhat-limited", "rh-ocp-worker"}: AzureVariantOCPEMEA,
+		{"redhat-limited", "rh-opp-worker"}: AzureVariantOPPEMEA,
+		{"redhat-limited", "rh-oke-worker"}: AzureVariantOKEEMEA,
+	}
+
+	key := publisherOffer{currentImage.Publisher, currentImage.Offer}
+	if variant, exists := variants[key]; exists {
+		return variant, nil
+	}
+
+	return "", fmt.Errorf("could not determine azure marketplace variant, cannot update boot images")
+}
+
+// getTargetImageFromStream determines the correct Azure marketplace image based on architecture and variant
+func getTargetImageFromStream(streamArch *stream.Arch, variant AzureVariant, usesHyperVGen2 bool, arch string) (machinev1beta1.Image, error) {
+	marketplace := streamArch.RHELCoreOSExtensions.Marketplace.Azure
+
+	var imageSet *rhcos.AzureMarketplaceImages
+
+	// Select the appropriate image set based on variant
+	switch variant {
+	case AzureVariantMarketplaceNoPlan:
+		imageSet = marketplace.NoPurchasePlan
+	case AzureVariantOCP:
+		imageSet = marketplace.OCP
+	case AzureVariantOPP:
+		imageSet = marketplace.OPP
+	case AzureVariantOKE:
+		imageSet = marketplace.OKE
+	case AzureVariantOCPEMEA:
+		imageSet = marketplace.OCPEMEA
+	case AzureVariantOPPEMEA:
+		imageSet = marketplace.OPPEMEA
+	case AzureVariantOKEEMEA:
+		imageSet = marketplace.OKEEMEA
+	default:
+		return machinev1beta1.Image{}, fmt.Errorf("unsupported Azure variant")
+	}
+
+	if imageSet == nil {
+		return machinev1beta1.Image{}, fmt.Errorf("no Azure marketplace images available for variant %s", variant)
+	}
+
+	var streamImage *rhcos.AzureMarketplaceImage
+
+	// arm64 only uses hyperGenV2
+	if usesHyperVGen2 {
+		if imageSet.Gen2 == nil {
+			return machinev1beta1.Image{}, fmt.Errorf("no Gen2 Azure marketplace image available for architecture %s", arch)
+		}
+		streamImage = imageSet.Gen2
+	} else {
+		if imageSet.Gen1 == nil {
+			return machinev1beta1.Image{}, fmt.Errorf("no Gen1 Azure marketplace image available for architecture %s", arch)
+		}
+		streamImage = imageSet.Gen1
+	}
+
+	isPaidImage := (variant != AzureVariantMarketplaceNoPlan)
+	// Convert stream image to Azure machine image
+	targetImage := getAzureImageFromStreamImage(*streamImage, isPaidImage)
+
+	return targetImage, nil
 }
