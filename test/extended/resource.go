@@ -409,6 +409,21 @@ func (t *Template) Create(parameters ...string) error {
 	return exutil.CreateClusterResourceFromTemplateWithError(t.oc, allParams...)
 }
 
+// Apply the resources defined in the template file
+// The template will be created using oc with no namespace (-n NAMESPACE) argument. So if we want to
+// create a namespaced resource we need to add the NAMESPACE parameter to the template and
+// provide the "-p NAMESPACE" argument to this function.
+func (t *Template) Apply(parameters ...string) error {
+	if t.templateFile == "" {
+		return fmt.Errorf("There is no template configured")
+	}
+
+	allParams := []string{"--ignore-unknown-parameters=true", "-f", t.templateFile}
+	allParams = append(allParams, parameters...)
+
+	return exutil.ApplyClusterResourceFromTemplateWithError(t.oc, allParams...)
+}
+
 // ResourceList provides the functionality to handle lists of openshift resources
 type ResourceList struct {
 	ocGetter
