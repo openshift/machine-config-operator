@@ -10,6 +10,8 @@ import (
 	exutil "github.com/openshift/machine-config-operator/test/extended/util"
 	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
 
+	"k8s.io/apimachinery/pkg/util/sets"
+
 	o "github.com/onsi/gomega"
 )
 
@@ -424,4 +426,24 @@ func GetOperatorNode(oc *exutil.CLI) (*Node, error) {
 	}
 
 	return NewNode(oc, nodeName), nil
+}
+
+// Returns the set of ready nodes in the cluster
+func getReadyNodes(oc *exutil.CLI) (sets.Set[string], error) {
+	nodeList := NewResourceList(oc.AsAdmin(), "nodes")
+	nodes, err := nodeList.GetAll()
+	if err != nil {
+		return nil, err
+	}
+
+	nodeSet := sets.New[string]()
+	for _, node := range nodes {
+		node.oc.NotShowInfo()
+		isReady, err := node.Get(`{.status.conditions[?(@.type=="Ready")].status}`)
+		if err == nil && isReady == TrueString {
+			nodeSet.Insert(node.name)
+		}
+		node.oc.SetShowInfo()
+	}
+	return nodeSet, nil
 }
