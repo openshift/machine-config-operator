@@ -32,7 +32,7 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-// skipUnlessTargetPSkipUnlessTargetPlatformlatform skips the test if it is running on the target platform
+// SkipUnlessTargetPlatform skips the test if it is not running on the target platform
 func skipUnlessTargetPlatform(oc *exutil.CLI, platformType osconfigv1.PlatformType) {
 	infra, err := oc.AdminConfigClient().ConfigV1().Infrastructures().Get(context.Background(), "cluster", metav1.GetOptions{})
 	o.Expect(err).NotTo(o.HaveOccurred())
@@ -40,7 +40,7 @@ func skipUnlessTargetPlatform(oc *exutil.CLI, platformType osconfigv1.PlatformTy
 		e2eskipper.Skipf("This test only applies to %s platform", platformType)
 	}
 	// If not Azure, we can return immediately
-	if infra.Status.PlatformStatus.Type == osconfigv1.AzurePlatformType {
+	if infra.Status.PlatformStatus.Type != osconfigv1.AzurePlatformType {
 		return
 	}
 	// Special consideration for Azure: we should skip for AzureStack variant
@@ -49,7 +49,7 @@ func skipUnlessTargetPlatform(oc *exutil.CLI, platformType osconfigv1.PlatformTy
 	}
 }
 
-// skipUnlessFunctionalMachineAPI skips the test if the cluster is using Machine API
+// skipUnlessFunctionalMachineAPI skips the test if the cluster is not using Machine API
 func skipUnlessFunctionalMachineAPI(oc *exutil.CLI) {
 	machineClient, err := machineclient.NewForConfig(oc.KubeFramework().ClientConfig())
 	o.Expect(err).ToNot(o.HaveOccurred())

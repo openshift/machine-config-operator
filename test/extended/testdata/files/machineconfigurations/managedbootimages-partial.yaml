@@ -1,0 +1,23 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: managedbootimages-none
+objects:
+- apiVersion: operator.openshift.io/v1
+  kind: MachineConfiguration
+  metadata:
+    name: cluster
+    namespace: openshift-machine-config-operator
+  spec:
+    logLevel: Normal
+    operatorLogLevel: Normal
+    managedBootImages:
+      machineManagers:
+      - resource: machinesets
+        apiGroup: machine.openshift.io
+        selection:
+          mode: Partial
+          partial:
+            machineResourceSelector:
+              matchLabels:
+                test: boot
