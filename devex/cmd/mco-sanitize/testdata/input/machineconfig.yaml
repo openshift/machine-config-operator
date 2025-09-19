@@ -1,0 +1,19 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  name: test-machine-config
+spec:
+  config:
+    storage:
+      files:
+      - path: /etc/secret.conf
+        contents: "secret-password-123"
+      - path: /etc/public.conf
+        contents: "public-config-data"
+    systemd:
+      units:
+      - name: test.service
+        contents: |
+          [Service]
+          ExecStart=/bin/echo "secret-token-456"
+          User=root
