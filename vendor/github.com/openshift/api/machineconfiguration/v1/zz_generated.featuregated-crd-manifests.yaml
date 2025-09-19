@@ -117,6 +117,7 @@ machineconfignodes.machineconfiguration.openshift.io:
   Capability: ""
   Category: ""
   FeatureGates:
+  - ImageModeStatusReporting
   - IrreconcilableMachineConfig
   - MachineConfigNodes
   FilenameOperatorName: machine-config
