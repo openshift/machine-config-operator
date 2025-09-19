@@ -25,6 +25,18 @@ func CreateClusterResourceFromTemplate(oc *CLI, parameters ...string) {
 	resourceFromTemplate(oc, true, false, "", parameters...)
 }
 
+// ApplyClusterResourceFromTemplateWithError apply resource from the template and return error if happened.
+// For ex: ApplyClusterResourceFromTemplateWithError(oc, "--ignore-unknown-parameters=true", "-f", "TEMPLATE LOCATION")
+func ApplyClusterResourceFromTemplateWithError(oc *CLI, parameters ...string) error {
+	return resourceFromTemplate(oc, false, true, "", parameters...)
+}
+
+// ApplyClusterResourceFromTemplate apply resource from the template.
+// For ex: ApplyClusterResourceFromTemplate(oc, "--ignore-unknown-parameters=true", "-f", "TEMPLATE LOCATION")
+func ApplyClusterResourceFromTemplate(oc *CLI, parameters ...string) {
+	resourceFromTemplate(oc, false, false, "", parameters...)
+}
+
 // CreateNsResourceFromTemplate create ns resource from the template.
 // No need to add a namespace parameter in the template file as it can be provided as a function argument.
 // For ex: CreateNsResourceFromTemplate(oc, "NAMESPACE", "--ignore-unknown-parameters=true", "-f", "TEMPLATE LOCATION")
