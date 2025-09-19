@@ -1256,7 +1256,7 @@ spec:
                     type: object
                 type: object
               idleConnectionTerminationPolicy:
-                default: Immediate
+                default: Deferred
                 description: |-
                   idleConnectionTerminationPolicy maps directly to HAProxy's
                   idle-close-on-response option and controls whether HAProxy
@@ -1264,7 +1264,7 @@ spec:
                   (router reload).
 
                   Allowed values for this field are "Immediate" and
-                  "Deferred". The default value is "Immediate".
+                  "Deferred". The default value is "Deferred".
 
                   When set to "Immediate", idle connections are closed
                   immediately during router reloads. This ensures immediate
@@ -2159,7 +2159,7 @@ spec:
                     type: string
                   connectTimeout:
                     description: |-
-                      connectTimeout defines the maximum time to wait for
+                      ConnectTimeout defines the maximum time to wait for
                       a connection attempt to a server/backend to succeed.
 
                       This field expects an unsigned duration string of decimal numbers, each with optional

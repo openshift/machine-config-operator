@@ -27,6 +27,7 @@ type APIServer struct {
 	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 	// spec holds user settable values for configuration
+	// +kubebuilder:validation:Required
 	// +required
 	Spec APIServerSpec `json:"spec"`
 	// status holds observed values from the cluster. They may not be overridden.
@@ -128,6 +129,7 @@ type Audit struct {
 type AuditCustomRule struct {
 	// group is a name of group a request user must be member of in order to this profile to apply.
 	//
+	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	// +required
 	Group string `json:"group"`
@@ -144,6 +146,7 @@ type AuditCustomRule struct {
 	//
 	// If unset, the 'Default' profile is used as the default.
 	//
+	// +kubebuilder:validation:Required
 	// +required
 	Profile AuditProfileType `json:"profile,omitempty"`
 }
