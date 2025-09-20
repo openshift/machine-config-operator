@@ -186,10 +186,18 @@ func newImageRegistrySecretFromDockerConfigBytes(in []byte) (ImageRegistrySecret
 		return nil, fmt.Errorf("empty dockerconfig bytes")
 	}
 
+	// Check if the input is just the JSON null literal
+	if bytes.TrimSpace(in) != nil && string(bytes.TrimSpace(in)) == "null" {
+		return nil, fmt.Errorf("dockerconfig bytes contain JSON null")
+	}
+
 	errs := []error{}
 
 	cfg, err := decodeDockerConfigJSONBytes(in)
 	if err == nil {
+		if cfg == nil {
+			return nil, fmt.Errorf("decoded DockerConfigJSONBytes is nil")
+		}
 		return &imageRegistrySecretImpl{cfg: *cfg, isLegacyStyle: false}, nil
 	}
 
@@ -197,6 +205,9 @@ func newImageRegistrySecretFromDockerConfigBytes(in []byte) (ImageRegistrySecret
 
 	auths, err := decodeDockercfgBytes(in)
 	if err == nil {
+		if auths == nil {
+			return nil, fmt.Errorf("decoded DockercfgBytes is nil")
+		}
 		return &imageRegistrySecretImpl{cfg: DockerConfigJSON{Auths: *auths}, isLegacyStyle: true}, nil
 	}
 
