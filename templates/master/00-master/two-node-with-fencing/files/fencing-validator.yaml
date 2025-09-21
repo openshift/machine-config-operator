@@ -7,7 +7,7 @@ contents:
     export LANG=C
     
     # ================================
-    # {{ default vars }}
+    #  default vars
     # ================================
     SSH_USER="${SSH_USER:-core}"
     SSH_KEY="${SSH_KEY:-}"
@@ -23,7 +23,7 @@ contents:
     CMD_EXEC_TIMEOUT_SECS="${CMD_EXEC_TIMEOUT_SECS:-60s}"
     
     # ================================
-    # {{ exit codes }}
+    #  exit codes
     # ================================
     EXIT_OK=0
     EXIT_GENERIC=1
@@ -35,7 +35,7 @@ contents:
     EXIT_ETCD_FATAL=24
     
     # ================================
-    # {{ main functions }}
+    # main functions
     # ================================
     main() {
       # -------- Discover nodes --------
@@ -125,7 +125,7 @@ contents:
     }
     
     # ================================
-    # {{ helper functions }}
+    # helper functions
     # ================================
     
     log() {
@@ -442,7 +442,7 @@ contents:
     }
     
     # ================================
-    # {{ usage and options parser }}
+    #  usage and options parser
     # ================================
     usage() {
       cat <<'EOF'
@@ -517,3 +517,4 @@ contents:
     if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
       main "$@"
     fi
+    
