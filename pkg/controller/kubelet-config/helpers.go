@@ -380,6 +380,12 @@ func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 	if kcDecoded.StaticPodPath != "" {
 		return fmt.Errorf("KubeletConfiguration: staticPodPath is not allowed to be set, but contains: %s", kcDecoded.StaticPodPath)
 	}
+	if kcDecoded.FailSwapOn != nil {
+		return fmt.Errorf("KubeletConfiguration: failSwapOn is not allowed to be set, but contains: %v", *kcDecoded.FailSwapOn)
+	}
+	if kcDecoded.MemorySwap.SwapBehavior != "" {
+		return fmt.Errorf("KubeletConfiguration: swapBehavior is not allowed to be set, but contains: %s", kcDecoded.MemorySwap.SwapBehavior)
+	}
 	if kcDecoded.SystemReserved != nil && len(kcDecoded.SystemReserved) > 0 &&
 		cfg.Spec.AutoSizingReserved != nil && *cfg.Spec.AutoSizingReserved {
 		return fmt.Errorf("KubeletConfiguration: autoSizingReserved and systemdReserved cannot be set together")
