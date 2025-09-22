@@ -926,6 +926,20 @@ func TestKubeletConfigDenylistedOptions(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "test banned failSwapOn",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				FailSwapOn: pointer.BoolPtr(true),
+			},
+		},
+		{
+			name: "test banned swapBehavior",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				MemorySwap: kubeletconfigv1beta1.MemorySwapConfiguration{
+					SwapBehavior: "NoSwap",
+				},
+			},
+		},
 	}
 
 	successTests := []struct {
