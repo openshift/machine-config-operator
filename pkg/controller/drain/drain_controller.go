@@ -385,7 +385,13 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 		break
 	}
 
-	if !isOngoingDrain {
+	// isOngoingDrain will only inform us of MCO managed cordons/drains. We should also check
+	// if an external actor has uncordoned this node, and force it back into a cordoned state if so.
+	if isOngoingDrain && !node.Spec.Unschedulable {
+		klog.Infof("External actor has unexpectedly uncordoned node %s, cordoning again...", node.Name)
+	}
+
+	if !isOngoingDrain || !node.Spec.Unschedulable {
 		ctrl.logNode(node, "cordoning")
 		// perform cordon
 		if err := ctrl.cordonOrUncordonNode(true, node, drainer); err != nil {
