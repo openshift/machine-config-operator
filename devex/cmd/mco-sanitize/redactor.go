@@ -8,6 +8,18 @@ import (
 	"strings"
 )
 
+// Redactor defines the interface for sanitizing sensitive data in Kubernetes resources.
+// Implementations should redact specified fields while preserving the structure and
+// metadata necessary for analysis and debugging purposes.
+type Redactor interface {
+	// Redact sanitizes the given inputData based on the provided Kubernetes resource metadata.
+	// The inputData should be the unmarshalled representation of the k8sResources.
+	// A content marshaler is required to calculate the length of redacted content.
+	// Returns true if any redaction was performed, false otherwise.
+	// Returns an error if the redaction process encounters any issues.
+	Redact(inputData interface{}, k8sResources []KubernetesMetaResource, marshaler contentMarshaler) (bool, error)
+}
+
 // redactTargetConfig holds redaction configuration for a specific Kubernetes resource type
 type redactTargetConfig struct {
 	namespaces []string
