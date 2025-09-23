@@ -4,6 +4,16 @@ package main
 // Abstraction of JSON/YAML marshaller/unmarshaller.
 type contentMarshaler func(interface{}) ([]byte, error)
 
+// contentUnmarshaller is a function type that a byte representation to an interface{}.
+// Abstraction of JSON/YAML unmarshaller.
+type contentUnmarshaller func([]byte, interface{}) error
+
+// KubernetesMetaListInterface represents a generic Kubernetes List resource structure.
+// It contains a collection of items that can be any type of Kubernetes resource.
+type KubernetesMetaListInterface struct {
+	Items []map[string]interface{} `yaml:"items,omitempty" json:"items,omitempty"`
+}
+
 // KubernetesMetadata represents the metadata section of a Kubernetes resource.
 // It contains essential identification information for the resource.
 type KubernetesMetadata struct {
