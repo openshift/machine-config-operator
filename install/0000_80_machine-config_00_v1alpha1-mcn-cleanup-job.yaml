@@ -49,13 +49,18 @@ spec:
               echo "Checking for MachineConfigNodes CRD with v1alpha1 version..."
               
               # Check if CRD exists
-              if ! oc get crd "$CRD_NAME" >/dev/null 2>&1; then
-                echo "CRD $CRD_NAME does not exist, nothing to clean up"
+              if ! CRD_CHECK_OUTPUT=$(oc get crd "$CRD_NAME" 2>&1); then
+                echo "Error checking for CRD $CRD_NAME: $CRD_CHECK_OUTPUT"
+                echo "Assuming CRD does not exist, nothing to clean up"
                 exit 0
               fi
-              
+
               # Check if CRD has v1alpha1 version
-              HAS_V1ALPHA1=$(oc get crd "$CRD_NAME" -o jsonpath='{.spec.versions[?(@.name=="v1alpha1")].name}' 2>/dev/null || echo "")
+              if ! HAS_V1ALPHA1=$(oc get crd "$CRD_NAME" -o jsonpath='{.spec.versions[?(@.name=="v1alpha1")].name}' 2>&1); then
+                echo "Error checking CRD versions for $CRD_NAME: $HAS_V1ALPHA1"
+                echo "v1 version likely exists, skipping cleanup"
+                exit 0
+              fi
               
               if [ -z "$HAS_V1ALPHA1" ]; then
                 echo "CRD $CRD_NAME does not have v1alpha1 version, nothing to clean up"
@@ -65,10 +70,11 @@ spec:
               echo "Found CRD $CRD_NAME with v1alpha1 version, deleting it..."
               
               # Delete the CRD
-              if oc delete crd "$CRD_NAME"; then
+              if DELETE_OUTPUT=$(oc delete crd "$CRD_NAME" 2>&1); then
                 echo "Successfully deleted CRD $CRD_NAME"
               else
                 echo "Failed to delete CRD $CRD_NAME"
+                echo "Delete error output: $DELETE_OUTPUT"
                 exit 1
               fi
               
@@ -88,7 +94,7 @@ spec:
             seccompProfile:
               type: RuntimeDefault
           nodeSelector:
-            node-role.kubernetes.io/control-plane: ""
+            node-role.kubernetes.io/master: ""
           priorityClassName: "system-cluster-critical"
           tolerations:
           - effect: NoSchedule
