@@ -25,7 +25,8 @@ contents:
     rotateCertificates: true
     serializeImagePulls: false
     staticPodPath: /etc/kubernetes/manifests
-    swapBehavior: NoSwap
+    memorySwap:
+      swapBehavior: NoSwap
     systemCgroups: /system.slice
     nodeStatusUpdateFrequency: 10s
     nodeStatusReportFrequency: 5m
