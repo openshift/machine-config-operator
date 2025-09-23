@@ -255,23 +255,22 @@ func generateAndApplyMachineConfigNodes(
 	if fgHandler.Enabled(features.FeatureGateImageModeStatusReporting) {
 		currentImageAnnotation := node.Annotations[daemonconsts.CurrentImageAnnotationKey]
 		desiredImageAnnotation := node.Annotations[daemonconsts.DesiredImageAnnotationKey]
-		
+
 		// Only set ConfigImage if at least one image annotation exists
 		if currentImageAnnotation != "" || desiredImageAnnotation != "" {
-			// Initialize ConfigImage if it doesn't exist
-			if newMCNode.Status.ConfigImage == nil {
-				newMCNode.Status.ConfigImage = &mcfgv1.MachineConfigNodeStatusConfigImage{}
-			}
-			
+			newMCNStatusConfigImage := mcfgv1.MachineConfigNodeStatusConfigImage{}
+
 			// Set current image if annotation exists
 			if currentImageAnnotation != "" {
-				newMCNode.Status.ConfigImage.CurrentImage = mcfgv1.ImageDigestFormat(currentImageAnnotation)
+				newMCNStatusConfigImage.CurrentImage = mcfgv1.ImageDigestFormat(currentImageAnnotation)
 			}
-			
+
 			// Set desired image if annotation exists
 			if desiredImageAnnotation != "" {
-				newMCNode.Status.ConfigImage.DesiredImage = mcfgv1.ImageDigestFormat(desiredImageAnnotation)
+				newMCNStatusConfigImage.DesiredImage = mcfgv1.ImageDigestFormat(desiredImageAnnotation)
 			}
+
+			newMCNode.Status.ConfigImage = newMCNStatusConfigImage
 		}
 	}
 
@@ -288,19 +287,19 @@ func generateAndApplyMachineConfigNodes(
 			WithConfigVersion(statusconfigVersionApplyConfig)
 
 		// Add ConfigImage to apply configuration if feature gate is enabled and image annotations exist
-		if fgHandler.Enabled(features.FeatureGateImageModeStatusReporting) && newMCNode.Status.ConfigImage != nil {
+		if fgHandler.Enabled(features.FeatureGateImageModeStatusReporting) && (newMCNode.Status.ConfigImage.CurrentImage != "" || newMCNode.Status.ConfigImage.DesiredImage != "") {
 			configImageApplyConfig := machineconfigurationv1.MachineConfigNodeStatusConfigImage()
-			
+
 			// Set current image if it exists
 			if newMCNode.Status.ConfigImage.CurrentImage != "" {
 				configImageApplyConfig = configImageApplyConfig.WithCurrentImage(newMCNode.Status.ConfigImage.CurrentImage)
 			}
-			
+
 			// Set desired image if it exists
 			if newMCNode.Status.ConfigImage.DesiredImage != "" {
 				configImageApplyConfig = configImageApplyConfig.WithDesiredImage(newMCNode.Status.ConfigImage.DesiredImage)
 			}
-			
+
 			statusApplyConfig = statusApplyConfig.WithConfigImage(configImageApplyConfig)
 		}
 
