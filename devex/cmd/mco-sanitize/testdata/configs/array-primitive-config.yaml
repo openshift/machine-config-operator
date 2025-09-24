@@ -1,0 +1,8 @@
+redact:
+  - apiVersion: v1
+    kind: ConfigMap
+    paths:
+      - data.apiKeys
+      - data.passwords
+      - data.databases.1
+      - data.servers.1
