@@ -35,10 +35,13 @@ type ConfigRedact struct {
 	Paths []string `yaml:"paths"`
 }
 
+// Config represents the complete sanitizer configuration containing redaction rules.
 type Config struct {
 	Redact []ConfigRedact `yaml:"redact,omitempty"`
 }
 
+// NewConfigFromEnv creates a Config from the MCO_MUST_GATHER_SANITIZER_CFG environment variable.
+// The variable can contain either a file path or base64-encoded configuration data.
 func NewConfigFromEnv() (*Config, error) {
 	content := os.Getenv(McoMustGatherSanitizerConfigEncodedEnvVar)
 	if content == "" {
@@ -64,6 +67,7 @@ func NewConfigFromEnv() (*Config, error) {
 	return &config, nil
 }
 
+// BuildDefaultConfig creates a Config using the embedded default configuration.
 func BuildDefaultConfig() (*Config, error) {
 
 	var config Config
@@ -73,6 +77,8 @@ func BuildDefaultConfig() (*Config, error) {
 	return &config, nil
 }
 
+// GetConfig returns a sanitizer configuration, first trying environment variable,
+// then falling back to the default embedded configuration.
 func GetConfig() (*Config, error) {
 	config, err := NewConfigFromEnv()
 	if err != nil {
