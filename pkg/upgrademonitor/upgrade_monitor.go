@@ -376,8 +376,64 @@ func isSingletonCondition(singletonConditionTypes []mcfgv1.StateProgress, condit
 	return false
 }
 
+// func UpdateMachineConfigNodeSpecDesiredImage(fgHandler ctrlcommon.FeatureGatesHandler, node *corev1.Node, mcfgClient mcfgclientset.Interface) error {
+func UpdateMachineConfigNodeSpecDesiredAnnotations(fgHandler ctrlcommon.FeatureGatesHandler, mcfgClient mcfgclientset.Interface, nodeName string, desiredConfig string, desiredImage string) error {
+	if fgHandler == nil {
+		return nil
+	}
+
+	// Check that the MachineConfigNode and ImageModeStatusReporting feature gates are enabled
+	if !fgHandler.Enabled(features.FeatureGateMachineConfigNodes) || !fgHandler.Enabled(features.FeatureGateImageModeStatusReporting) {
+		klog.Infof("MachineConfigNode FeatureGate is not enabled.")
+		return nil
+	}
+
+	if !fgHandler.Enabled(features.FeatureGateImageModeStatusReporting) {
+		klog.Infof("ImageModeStatusReporting FeatureGate is not enabled. Please enable the TechPreviewNoUpgrade FeatureSet to use ImageModeStatusReporting.")
+		return nil
+	}
+
+	// get the existing MCN
+	mcn, mcnErr := mcfgClient.MachineconfigurationV1().
+		MachineConfigNodes().
+		Get(context.TODO(), nodeName, metav1.GetOptions{})
+	// // TODO: figure out the need of this check
+	// if needNewMCNode {
+	// 	return fmt.Errorf("No MachineConfigNode exists yet for node %v. Use `GenerateAndApplyMachineConfigNodeSpec` instead.", node)
+	// }
+	if mcnErr != nil {
+		// no existing MCN found since no resource found
+		if apierrors.IsNotFound(mcnErr) {
+			return fmt.Errorf("MCN for %s node does not exits. Skipping MCN spec update.", nodeName)
+		}
+		return mcnErr
+	}
+
+	// Set the desired config annotation
+	mcn.Spec.ConfigVersion.Desired = NotYetSet
+	if desiredConfig != "" {
+		mcn.Spec.ConfigVersion.Desired = desiredConfig
+	}
+
+	// Set the desired image annotation
+	// TODO: figure out if this actually handles the removal of the field
+	mcn.Spec.ConfigImage = mcfgv1.MachineConfigNodeSpecConfigImage{}
+	if desiredImage != "" {
+		mcn.Spec.ConfigImage = mcfgv1.MachineConfigNodeSpecConfigImage{
+			DesiredImage: mcfgv1.ImageDigestFormat(desiredImage),
+		}
+	}
+
+	if _, err := mcfgClient.MachineconfigurationV1().MachineConfigNodes().Update(context.TODO(), mcn, metav1.UpdateOptions{FieldManager: "machine-config-operator"}); err != nil {
+		return fmt.Errorf("failed to update the %s mcn spec with the new desired config and image value: %w",
+			nodeName, err)
+	}
+	return nil
+}
+
 // GenerateAndApplyMachineConfigNodeSpec generates and applies a new MCN spec based off the node state
 func GenerateAndApplyMachineConfigNodeSpec(fgHandler ctrlcommon.FeatureGatesHandler, pool string, node *corev1.Node, mcfgClient mcfgclientset.Interface) error {
+	// TODO: add in this function something to handle addig the desired image annotation if it exists
 	if fgHandler == nil || node == nil {
 		return nil
 	}
@@ -389,7 +445,7 @@ func GenerateAndApplyMachineConfigNodeSpec(fgHandler ctrlcommon.FeatureGatesHand
 	// get the existing MCN, or if it DNE create one below
 	mcNode, needNewMCNode := createOrGetMachineConfigNode(mcfgClient, node)
 	newMCNode := mcNode.DeepCopy()
-	// set the spec config version
+	// Set the MCN owner references
 	newMCNode.ObjectMeta.OwnerReferences = []metav1.OwnerReference{
 		{
 			APIVersion: "v1",
@@ -399,14 +455,22 @@ func GenerateAndApplyMachineConfigNodeSpec(fgHandler ctrlcommon.FeatureGatesHand
 		},
 	}
 
+	// Set the desired config version in the MCN
 	newMCNode.Spec.ConfigVersion = mcfgv1.MachineConfigNodeSpecMachineConfigVersion{
 		Desired: node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey],
 	}
-	// Set desired config to NotYetSet if the annotation is empty to satisfy API validation
+	// If the desired config does not yet exist for the node, the desired config should be set to NotYetSet
 	if newMCNode.Spec.ConfigVersion.Desired == "" {
 		newMCNode.Spec.ConfigVersion.Desired = NotYetSet
 	}
 
+	// Set the desired image in the MCN if it exists
+	newMCNode.Spec.ConfigImage = mcfgv1.MachineConfigNodeSpecConfigImage{}
+	if node.Annotations[daemonconsts.DesiredImageAnnotationKey] != "" {
+		newMCNode.Spec.ConfigImage.DesiredImage = mcfgv1.ImageDigestFormat(node.Annotations[daemonconsts.DesiredImageAnnotationKey])
+	}
+
+	// Set the MCN pool and node names
 	newMCNode.Spec.Pool = mcfgv1.MCOObjectReference{
 		Name: pool,
 	}
