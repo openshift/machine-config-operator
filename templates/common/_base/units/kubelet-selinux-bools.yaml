@@ -1,0 +1,14 @@
+name: kubelet-selinux-bools.service
+enabled: true
+contents: |
+  [Unit]
+  Description=Adjust selinux bools for kubelet.
+  Before=kubelet-dependencies.target
+  [Service]
+  Type=oneshot
+  RemainAfterExit=yes
+  User=root
+  ExecStart=-/usr/sbin/setsebool selinuxuser_execstack off
+  TimeoutSec=20
+  [Install]
+  RequiredBy=kubelet-dependencies.target
