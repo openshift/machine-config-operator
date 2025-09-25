@@ -33,6 +33,9 @@ contents:
         "/etc/hostname",
     ]
     drop_infra_ctr = true
+    default_ulimits = [
+      "nofile=1048576",
+    ]
 
     [crio.runtime.runtimes.runc]
     runtime_root = "/run/runc"
