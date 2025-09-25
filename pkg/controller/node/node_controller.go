@@ -9,6 +9,7 @@ import (
 	"time"
 
 	helpers "github.com/openshift/machine-config-operator/pkg/helpers"
+	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
 
 	configv1 "github.com/openshift/api/config/v1"
 	features "github.com/openshift/api/features"
@@ -1288,11 +1289,21 @@ func (ctrl *Controller) updateCandidateNode(mosc *mcfgv1.MachineOSConfig, mosb *
 		}
 
 		lns := ctrlcommon.NewLayeredNodeState(oldNode)
+		desiredConfig := lns.GetDesiredConfigAnnotation()
+		desiredImage := lns.GetDesiredImageAnnotation()
 		if !layered {
+			// TODO: see if this can be consolidated
 			lns.SetDesiredStateFromPool(pool)
+			// TODO: see what's up with the desired image annotation in this case...
+			desiredConfig = lns.GetDesiredAnnotationsFromMachineConfigPool(pool)
 		} else {
+			// TODO: see if this can be consolidated
 			lns.SetDesiredStateFromMachineOSConfig(mosc, mosb)
+			// TODO: test this
+			desiredConfig, desiredImage = lns.GetDesiredAnnotationsFromMachineOSConfig(mosc, mosb)
 		}
+		// TODO: maybe add a try/catch for the error handling if the MCN does not yest exist
+		upgrademonitor.UpdateMachineConfigNodeSpecDesiredAnnotations(ctrl.fgHandler, ctrl.client, nodeName, desiredConfig, desiredImage)
 
 		// Set the desired state to match the pool.
 

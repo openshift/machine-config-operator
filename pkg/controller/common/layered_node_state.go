@@ -143,6 +143,7 @@ func (l *LayeredNodeState) SetDesiredStateFromPool(mcp *mcfgv1.MachineConfigPool
 	node := l.Node()
 
 	metav1.SetMetaDataAnnotation(&node.ObjectMeta, daemonconsts.DesiredMachineConfigAnnotationKey, mcp.Spec.Configuration.Name)
+	// todo: check if a new desired config actually deletes an image anno
 	delete(node.Annotations, daemonconsts.DesiredImageAnnotationKey)
 
 	l.node = node
@@ -320,4 +321,30 @@ func (l *LayeredNodeState) CheckNodeCandidacyForUpdate(layered bool, pool *mcfgv
 	}
 
 	return true
+}
+
+// Returns the desired config version annotation present on the node.
+func (l *LayeredNodeState) GetDesiredConfigAnnotation() string {
+	return l.node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey]
+}
+
+// Returns the desired image annotation present on the node.
+func (l *LayeredNodeState) GetDesiredImageAnnotation() string {
+	return l.node.Annotations[daemonconsts.DesiredImageAnnotationKey]
+}
+
+// GetDesiredAnnotationsFromMachineOSConfig gets the desired config version and desired image values from the associated MOSC and MOSB
+func (l *LayeredNodeState) GetDesiredAnnotationsFromMachineConfigPool(mcp *mcfgv1.MachineConfigPool) (desriedConfig string) {
+	return mcp.Spec.Configuration.Name
+}
+
+// GetDesiredAnnotationsFromMachineOSConfig gets the desired config version and desired image values from the associated MOSC and MOSB
+func (l *LayeredNodeState) GetDesiredAnnotationsFromMachineOSConfig(mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) (desriedConfig, desiredImage string) {
+	desiredImage = ""
+	moscs := NewMachineOSConfigState(mosc)
+	if moscs.HasOSImage() {
+		desiredImage = moscs.GetOSImage()
+	}
+
+	return mosb.Spec.MachineConfig.Name, desiredImage
 }
