@@ -6,6 +6,7 @@ import (
 	"time"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/openshift/library-go/pkg/controller/factory"
@@ -82,7 +83,22 @@ func NewCertRotationController(
 	return factory.New().
 		ResyncEvery(time.Minute).
 		WithSync(c.Sync).
-		WithInformers(
+		WithFilteredEventsInformers(
+			func(obj interface{}) bool {
+				if cm, ok := obj.(*corev1.ConfigMap); ok {
+					return cm.Namespace == caBundleConfigMap.Namespace && cm.Name == caBundleConfigMap.Name
+				}
+				if secret, ok := obj.(*corev1.Secret); ok {
+					if secret.Namespace == rotatedSigningCASecret.Namespace && secret.Name == rotatedSigningCASecret.Name {
+						return true
+					}
+					if secret.Namespace == rotatedSelfSignedCertKeySecret.Namespace && secret.Name == rotatedSelfSignedCertKeySecret.Name {
+						return true
+					}
+					return false
+				}
+				return true
+			},
 			rotatedSigningCASecret.Informer.Informer(),
 			caBundleConfigMap.Informer.Informer(),
 			rotatedSelfSignedCertKeySecret.Informer.Informer(),
