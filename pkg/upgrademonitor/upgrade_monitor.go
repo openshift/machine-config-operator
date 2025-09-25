@@ -135,6 +135,7 @@ func generateAndApplyMachineConfigNodes(
 
 	// we use this array to see if the MCN has all of its conditions set
 	// if not we set a sane default
+	// TODO: decide if the image reg stuff should be added here too
 	allConditionTypes := []mcfgv1.StateProgress{
 		mcfgv1.MachineConfigNodeUpdatePrepared,
 		mcfgv1.MachineConfigNodeUpdateExecuted,
@@ -250,28 +251,25 @@ func generateAndApplyMachineConfigNodes(
 		newMCNode.Status.ConfigVersion.Current = node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey]
 	}
 
-	// Set current and desired images in MCN.Status.ConfigImage if node annotations exist
+	// Set current and desired image values in MCN.Status.ConfigImage
 	// This is only done when the ImageModeStatusReporting feature gate is enabled
 	if fgHandler.Enabled(features.FeatureGateImageModeStatusReporting) {
+		// TODO: test if this flow accurately updates the current image annotaiton on OCL disable
+		newMCNStatusConfigImage := mcfgv1.MachineConfigNodeStatusConfigImage{}
 		currentImageAnnotation := node.Annotations[daemonconsts.CurrentImageAnnotationKey]
 		desiredImageAnnotation := node.Annotations[daemonconsts.DesiredImageAnnotationKey]
 
-		// Only set ConfigImage if at least one image annotation exists
-		if currentImageAnnotation != "" || desiredImageAnnotation != "" {
-			newMCNStatusConfigImage := mcfgv1.MachineConfigNodeStatusConfigImage{}
-
-			// Set current image if annotation exists
-			if currentImageAnnotation != "" {
-				newMCNStatusConfigImage.CurrentImage = mcfgv1.ImageDigestFormat(currentImageAnnotation)
-			}
-
-			// Set desired image if annotation exists
-			if desiredImageAnnotation != "" {
-				newMCNStatusConfigImage.DesiredImage = mcfgv1.ImageDigestFormat(desiredImageAnnotation)
-			}
-
-			newMCNode.Status.ConfigImage = newMCNStatusConfigImage
+		// Set current image if annotation exists
+		if currentImageAnnotation != "" {
+			newMCNStatusConfigImage.CurrentImage = mcfgv1.ImageDigestFormat(currentImageAnnotation)
 		}
+
+		// Set desired image if annotation exists
+		if desiredImageAnnotation != "" {
+			newMCNStatusConfigImage.DesiredImage = mcfgv1.ImageDigestFormat(desiredImageAnnotation)
+		}
+
+		newMCNode.Status.ConfigImage = newMCNStatusConfigImage
 	}
 
 	// if we do not need a new MCN, generate the apply configurations for this object
