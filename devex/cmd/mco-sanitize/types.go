@@ -1,7 +1,7 @@
 package main
 
 // contentMarshaler is a function type that converts an interface{} value to its byte representation.
-// Abstraction of JSON/YAML marshaller/unmarshaller.
+// Abstraction of JSON/YAML marshaller.
 type contentMarshaler func(interface{}) ([]byte, error)
 
 // contentUnmarshaller is a function type that a byte representation to an interface{}.

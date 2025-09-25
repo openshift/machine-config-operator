@@ -1,4 +1,3 @@
-// Assisted-by: Claude
 package main
 
 import (
