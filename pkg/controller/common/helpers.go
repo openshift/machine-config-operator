@@ -49,6 +49,7 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	"github.com/openshift/library-go/pkg/crypto"
+	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 )
 
 // strToPtr converts the input string to a pointer to itself
@@ -1262,4 +1263,42 @@ func RequiresRebuild(oldMC, newMC *mcfgv1.MachineConfig) bool {
 		oldMC.Spec.KernelType != newMC.Spec.KernelType ||
 		!reflect.DeepEqual(oldMC.Spec.Extensions, newMC.Spec.Extensions) ||
 		!reflect.DeepEqual(oldMC.Spec.KernelArguments, newMC.Spec.KernelArguments)
+}
+
+// GetUpdatedMachines filters the provided nodes to return the nodes whose
+// current config matches its desired config and target config in the
+// associated MCP and has the "done" flag set.
+func GetUpdatedMachines(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node, mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild, layered bool) []*corev1.Node {
+	var updated []*corev1.Node
+	for _, node := range nodes {
+		lns := NewLayeredNodeState(node)
+		if lns.IsDone(pool, layered, mosc, mosb) {
+			updated = append(updated, node)
+		}
+	}
+	return updated
+}
+
+// GetDegradedMachines filters the provided nodes to return the nodes that
+// are considered in a degraded state.
+func GetDegradedMachines(nodes []*corev1.Node) []*corev1.Node {
+	var degraded []*corev1.Node
+	for _, node := range nodes {
+		if node.Annotations == nil {
+			continue
+		}
+		dconfig, ok := node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey]
+		if !ok || dconfig == "" {
+			continue
+		}
+		dstate, ok := node.Annotations[daemonconsts.MachineConfigDaemonStateAnnotationKey]
+		if !ok || dstate == "" {
+			continue
+		}
+
+		if dstate == daemonconsts.MachineConfigDaemonStateDegraded || dstate == daemonconsts.MachineConfigDaemonStateUnreconcilable {
+			degraded = append(degraded, node)
+		}
+	}
+	return degraded
 }
