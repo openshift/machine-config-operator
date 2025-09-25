@@ -1288,15 +1288,19 @@ func (ctrl *Controller) updateCandidateNode(mosc *mcfgv1.MachineOSConfig, mosb *
 			return err
 		}
 
-		desiredConfig := ""
-		desiredImage := ""
 		lns := ctrlcommon.NewLayeredNodeState(oldNode)
+		desiredConfig := lns.GetDesiredConfigAnnotation()
+		desiredImage := lns.GetDesiredImageAnnotation()
 		if !layered {
+			// TODO: see if this can be consolidated
 			lns.SetDesiredStateFromPool(pool)
-			desiredConfig = lns.GetDesiredConfigAnnotation()
+			// TODO: see what's up with the desired image annotation in this case...
+			desiredConfig = lns.GetDesiredAnnotationsFromMachineConfigPool(pool)
 		} else {
+			// TODO: see if this can be consolidated
 			lns.SetDesiredStateFromMachineOSConfig(mosc, mosb)
-			desiredImage = lns.GetDesiredImageAnnotation()
+			// TODO: test this
+			desiredConfig, desiredImage = lns.GetDesiredAnnotationsFromMachineOSConfig(mosc, mosb)
 		}
 		// TODO: maybe add a try/catch for the error handling if the MCN does not yest exist
 		upgrademonitor.UpdateMachineConfigNodeSpecDesiredAnnotations(ctrl.fgHandler, ctrl.client, nodeName, desiredConfig, desiredImage)
