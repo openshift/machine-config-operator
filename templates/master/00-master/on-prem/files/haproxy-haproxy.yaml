@@ -14,9 +14,9 @@ contents:
       timeout http-request 30s
       timeout queue        1m
       timeout connect      10s
-      timeout client       86400s
-      timeout server       86400s
-      timeout tunnel       86400s
+      timeout client       1m
+      timeout server       1m
+      timeout tunnel       5m
       timeout client-fin   1s
       timeout server-fin   1s
     {{`{{- if gt (len .LBConfig.Backends) 0 }}`}}
