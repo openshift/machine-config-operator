@@ -321,15 +321,15 @@ func (l *LayeredNodeState) CheckNodeCandidacyForUpdate(layered bool, pool *mcfgv
 	return true
 }
 
-// // Returns the desired config version annotation present on the node.
-// func (l *LayeredNodeState) GetDesiredConfigAnnotation() string {
-// 	return l.node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey]
-// }
+// Returns the desired config version annotation present on the node.
+func (l *LayeredNodeState) GetDesiredConfigAnnotation() string {
+	return l.node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey]
+}
 
-// // Returns the desired image annotation present on the node.
-// func (l *LayeredNodeState) GetDesiredImageAnnotation() string {
-// 	return l.node.Annotations[daemonconsts.DesiredImageAnnotationKey]
-// }
+// Returns the desired image annotation present on the node.
+func (l *LayeredNodeState) GetDesiredImageAnnotation() string {
+	return l.node.Annotations[daemonconsts.DesiredImageAnnotationKey]
+}
 
 // GetDesiredAnnotationsFromMachineOSConfig gets the desired config version and desired image values from the associated MOSC and MOSB
 func (l *LayeredNodeState) GetDesiredAnnotationsFromMachineConfigPool(mcp *mcfgv1.MachineConfigPool) (desriedConfig string) {
