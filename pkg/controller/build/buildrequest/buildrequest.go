@@ -451,6 +451,10 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 			Name:  "NO_PROXY",
 			Value: noProxy,
 		},
+		{
+			Name:  "BASE_OS_IMAGE_PULLSPEC",
+			Value: br.opts.OSImageURLConfig.BaseOSContainerImage,
+		},
 	}
 
 	securityContext := &corev1.SecurityContext{}
@@ -560,7 +564,6 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					SecretName: br.getBasePullSecretName(),
-					// SecretName: br.opts.MachineOSConfig.Spec.BuildInputs.BaseImagePullSecret.Name,
 					Items: []corev1.KeyToPath{
 						{
 							Key:  corev1.DockerConfigJsonKey,
@@ -575,7 +578,6 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 			Name: "final-image-push-creds",
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					// SecretName: br.opts.MachineOSConfig.Spec.BuildInputs.RenderedImagePushSecret.Name,
 					SecretName: br.getFinalPushSecretName(),
 					Items: []corev1.KeyToPath{
 						{
@@ -587,14 +589,11 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 			},
 		},
 		{
-			// Provides a way for the "image-build" container to signal that it
-			// finished so that the "wait-for-done" container can retrieve the
-			// iamge SHA.
+			// Provides a way for the "image-build" container to pass the digested
+			// pullspec and oc binary to the "create-digest-configmap" container.
 			Name: "done",
 			VolumeSource: corev1.VolumeSource{
-				EmptyDir: &corev1.EmptyDirVolumeSource{
-					Medium: corev1.StorageMediumMemory,
-				},
+				EmptyDir: &corev1.EmptyDirVolumeSource{},
 			},
 		},
 		{
@@ -671,7 +670,7 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 					// us to avoid parsing log files.
 					Name:            "create-digest-configmap",
 					Command:         append(command, digestCMScript),
-					Image:           br.opts.OSImageURLConfig.BaseOSContainerImage,
+					Image:           br.opts.Images.MachineConfigOperator,
 					Env:             env,
 					ImagePullPolicy: corev1.PullAlways,
 					SecurityContext: securityContext,

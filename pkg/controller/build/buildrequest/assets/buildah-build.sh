@@ -98,4 +98,16 @@ buildah push \
 	--authfile="$FINAL_IMAGE_PUSH_CREDS" \
 	--digestfile="/tmp/done/digestfile" \
 	--cert-dir /var/run/secrets/kubernetes.io/serviceaccount "$TAG"
+
+# If the oc command is not present, then we must extract it from the base OS
+# image which we've already pulled to do the build.
+if ! command -v "oc" &> /dev/null; then
+    # Extract the oc binary from the base OS image and place it into the
+    # /tmp/done path.
+    container="$(buildah from --authfile="$BASE_IMAGE_PULL_CREDS" "$BASE_OS_IMAGE_PULLSPEC")"
+    buildah unshare /bin/bash -c 'cp "$(buildah mount "$container")/usr/bin/oc" "/tmp/done/oc"; buildah umount "$container"'
+    buildah rm "$container"
+    echo "Extracted oc command from $BASE_OS_IMAGE_PULLSPEC"
+fi
+
 EOF
