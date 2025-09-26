@@ -1,0 +1,8 @@
+2024-09-19 10:30:45 INFO  [main] Application starting up
+2024-09-19 10:30:46 DEBUG [config] Loading configuration from /etc/app/config.yaml
+2024-09-19 10:30:47 INFO  [auth] User admin logged in with token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+2024-09-19 10:30:48 ERROR [db] Connection failed: password=secret123, retrying...
+2024-09-19 10:30:49 WARN  [cache] Cache miss for key: user-session-abc123
+2024-09-19 10:30:50 INFO  [api] Handling request GET /api/v1/users
+2024-09-19 10:30:51 DEBUG [sql] Executing query: SELECT * FROM users WHERE api_key = 'sk-1234567890abcdef'
+2024-09-19 10:30:52 INFO  [metrics] CPU usage: 45%, Memory: 2.1GB, Disk: 78%

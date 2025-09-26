@@ -1,0 +1,5 @@
+redact:
+  - apiVersion: v1
+    kind: Secret
+    paths:
+      - data

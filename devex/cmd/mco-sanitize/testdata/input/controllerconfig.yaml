@@ -1,0 +1,9 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: ControllerConfig
+metadata:
+  name: test-controller-config
+spec:
+  internalRegistryPullSecret: "registry-secret-data"
+  kubeAPIServerServingCAData: "ca-cert-data"
+  rootCAData: "root-ca-certificate-data"
+  additionalTrustBundle: "additional-trust-bundle-data"
