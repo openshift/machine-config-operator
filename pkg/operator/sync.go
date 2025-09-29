@@ -24,6 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
 	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
@@ -47,6 +48,7 @@ import (
 	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	"github.com/openshift/machine-config-operator/pkg/controller/build"
+	buildconstants "github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -709,6 +711,14 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig, _ *configv1.C
 		if err != nil {
 			return err
 		}
+	}
+
+	// Annotate pools with pre-built images from MachineOSConfigs
+	klog.V(2).Info("Attempting to annotate pools with pre-built images from MachineOSConfigs")
+	if err := optr.annotatePoolsWithPreBuiltImages(); err != nil {
+		klog.Warningf("Failed to annotate pools with pre-built images: %v", err)
+	} else {
+		klog.V(2).Info("Successfully completed pool annotation check")
 	}
 
 	userDataTemplatePath := "manifests/userdata_secret.yaml"
@@ -2329,4 +2339,148 @@ func (optr *Operator) isDefaultOnBootImageUpdatePlatform() (bool, error) {
 	}
 	defaultOnPlatforms := sets.New(configv1.GCPPlatformType, configv1.AWSPlatformType)
 	return defaultOnPlatforms.Has(infra.Status.PlatformStatus.Type), nil
+}
+
+// syncMachineOSConfigs reads bootstrap MachineOSConfig manifests and creates them in the cluster
+func (optr *Operator) syncMachineOSConfigs(config *renderConfig, _ *configv1.ClusterOperator) error {
+	klog.V(4).Info("MachineOSConfig sync started")
+	defer func() {
+		klog.V(4).Info("MachineOSConfig sync complete")
+	}()
+
+	// Check if bootstrap is complete
+	bootstrapComplete := false
+	_, err := optr.clusterCmLister.ConfigMaps("kube-system").Get("bootstrap")
+	if err != nil {
+		bootstrapComplete = true
+	} else {
+		bootstrapComplete = false
+	}
+
+	// Only process bootstrap MachineOSConfigs after bootstrap is complete
+	if !bootstrapComplete {
+		klog.V(4).Info("Bootstrap not complete, skipping MachineOSConfig bootstrap processing")
+		return nil
+	}
+
+	// Path to bootstrap MachineOSConfigs directory
+	bootstrapMOSCDir := "/etc/mcs/bootstrap/machine-os-configs"
+	
+	// Check if the directory exists
+	if _, err := os.Stat(bootstrapMOSCDir); os.IsNotExist(err) {
+		klog.V(4).Info("Bootstrap MachineOSConfig directory does not exist, skipping")
+		return nil
+	}
+
+	// Read all files in the directory
+	files, err := os.ReadDir(bootstrapMOSCDir)
+	if err != nil {
+		return fmt.Errorf("failed to read bootstrap MachineOSConfig directory: %w", err)
+	}
+
+	for _, file := range files {
+		if file.IsDir() || !strings.HasSuffix(file.Name(), ".yaml") {
+			continue
+		}
+
+		filePath := fmt.Sprintf("%s/%s", bootstrapMOSCDir, file.Name())
+		manifestData, err := os.ReadFile(filePath)
+		if err != nil {
+			klog.Errorf("Failed to read bootstrap MachineOSConfig manifest %s: %v", filePath, err)
+			continue
+		}
+
+		// Parse the manifest to extract the MachineOSConfig
+		scheme := runtime.NewScheme()
+		mcfgv1.Install(scheme)
+		codecFactory := serializer.NewCodecFactory(scheme)
+		decoder := codecFactory.UniversalDecoder(mcfgv1.GroupVersion)
+		
+		obj, err := runtime.Decode(decoder, manifestData)
+		if err != nil {
+			klog.Errorf("Failed to decode bootstrap MachineOSConfig manifest %s: %v", filePath, err)
+			continue
+		}
+
+		mosc, ok := obj.(*mcfgv1.MachineOSConfig)
+		if !ok {
+			klog.Errorf("Unexpected object type in bootstrap MachineOSConfig manifest %s: %T", filePath, obj)
+			continue
+		}
+
+		// Check if the MachineOSConfig already exists
+		existingMOSC, err := optr.moscLister.Get(mosc.Name)
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				// Create the MachineOSConfig
+				klog.Infof("Creating MachineOSConfig %s from bootstrap manifest", mosc.Name)
+				_, err = optr.client.MachineconfigurationV1().MachineOSConfigs().Create(context.TODO(), mosc, metav1.CreateOptions{})
+				if err != nil {
+					klog.Errorf("Failed to create MachineOSConfig %s: %v", mosc.Name, err)
+					continue
+				}
+				klog.Infof("Successfully created MachineOSConfig %s from bootstrap", mosc.Name)
+			} else {
+				klog.Errorf("Failed to get existing MachineOSConfig %s: %v", mosc.Name, err)
+				continue
+			}
+		} else {
+			klog.V(4).Infof("MachineOSConfig %s already exists, skipping bootstrap creation", existingMOSC.Name)
+		}
+	}
+
+	return nil
+}
+
+
+// annotatePoolsWithPreBuiltImages checks for MachineOSConfigs with pre-built images
+// and annotates the corresponding MachineConfigPools so the render controller can inject the osImageURL
+func (optr *Operator) annotatePoolsWithPreBuiltImages() error {
+	// Get all MachineOSConfigs
+	moscs, err := optr.moscLister.List(labels.Everything())
+	if err != nil {
+		return fmt.Errorf("failed to list MachineOSConfigs: %w", err)
+	}
+
+	for _, mosc := range moscs {
+		// Check if this MachineOSConfig has a pre-built image annotation
+		preBuiltImage, hasPreBuiltImage := mosc.Annotations[buildconstants.PreBuiltImageAnnotationKey]
+		if !hasPreBuiltImage || preBuiltImage == "" {
+			continue
+		}
+
+		poolName := mosc.Spec.MachineConfigPool.Name
+		klog.Infof("Found MachineOSConfig %s with pre-built image %s for pool %s", mosc.Name, preBuiltImage, poolName)
+
+		// Get the pool
+		pool, err := optr.mcpLister.Get(poolName)
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				klog.Warningf("Pool %s not found for MachineOSConfig %s, skipping annotation", poolName, mosc.Name)
+				continue
+			}
+			return fmt.Errorf("failed to get pool %s: %w", poolName, err)
+		}
+
+		// Check if pool already has the annotation
+		if existingImage, exists := pool.Annotations[buildconstants.PreBuiltImageAnnotationKey]; exists && existingImage == preBuiltImage {
+			klog.V(4).Infof("Pool %s already has pre-built image annotation %s, skipping", poolName, preBuiltImage)
+			continue
+		}
+
+		// Update the pool with the annotation
+		poolCopy := pool.DeepCopy()
+		if poolCopy.Annotations == nil {
+			poolCopy.Annotations = make(map[string]string)
+		}
+		poolCopy.Annotations[buildconstants.PreBuiltImageAnnotationKey] = preBuiltImage
+
+		klog.Infof("Annotating pool %s with pre-built image %s", poolName, preBuiltImage)
+		_, err = optr.client.MachineconfigurationV1().MachineConfigPools().Update(context.TODO(), poolCopy, metav1.UpdateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to annotate pool %s: %w", poolName, err)
+		}
+	}
+
+	return nil
 }
