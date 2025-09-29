@@ -13,6 +13,12 @@ const (
 	TargetMachineConfigPoolLabelKey = "machineconfiguration.openshift.io/target-machine-config-pool"
 )
 
+// New labels for pre-built image tracking
+const (
+	// PreBuiltImageLabelKey marks MachineOSBuild objects created from pre-built images
+	PreBuiltImageLabelKey = "machineconfiguration.openshift.io/pre-built-image"
+)
+
 // Annotations added to all ephemeral build objects BuildController creates.
 const (
 	MachineOSBuildNameAnnotationKey      = "machineconfiguration.openshift.io/machine-os-build"
@@ -34,6 +40,20 @@ const (
 // MachineOSBuild will be deleted, which will cause a rebuild to occur.
 const (
 	RebuildMachineOSConfigAnnotationKey string = "machineconfiguration.openshift.io/rebuild"
+)
+
+// New annotations for pre-built image support
+const (
+	// PreBuiltImageAnnotationKey indicates a MachineOSConfig should be seeded with a pre-built image
+	PreBuiltImageAnnotationKey = "machineconfiguration.openshift.io/pre-built-image"
+	// PreBuiltImageSeededAnnotationKey indicates that the initial synthetic MOSB has been created for this MOSC
+	PreBuiltImageSeededAnnotationKey = "machineconfiguration.openshift.io/pre-built-image-seeded"
+)
+
+// Component MachineConfig naming for pre-built images
+const (
+	// PreBuiltImageMachineConfigPrefix is the prefix for component MCs that set osImageURL from pre-built images
+	PreBuiltImageMachineConfigPrefix = "10-prebuiltimage-osimageurl-"
 )
 
 // Entitled build secret names
