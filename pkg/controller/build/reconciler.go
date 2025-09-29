@@ -159,6 +159,17 @@ func (b *buildReconciler) rebuildMachineOSConfig(ctx context.Context, mosc *mcfg
 // Runs whenever a new MachineOSConfig is added. Determines if a new
 // MachineOSBuild should be created and then creates it, if needed.
 func (b *buildReconciler) addMachineOSConfig(ctx context.Context, mosc *mcfgv1.MachineOSConfig) error {
+	// Check for pre-built image seeding annotation - only seed if not already seeded
+	if preBuiltImage, hasImage := getPreBuiltImage(mosc); hasImage {
+		if shouldSeedWithPreBuiltImage(mosc) {
+			klog.Infof("MachineOSConfig %q has pre-built image annotation, attempting to seed with image %q", mosc.Name, preBuiltImage)
+			return b.seedMachineOSConfigWithExistingImage(ctx, mosc, preBuiltImage)
+		}
+		// If we get here, either already seeded or has current build - proceed normally
+		klog.V(4).Infof("MachineOSConfig %q has pre-built image annotation but seeding already complete, proceeding with normal processing", mosc.Name)
+	}
+
+	// Existing logic for normal MachineOSConfig processing
 	return b.syncMachineOSConfig(ctx, mosc)
 }
 
@@ -1115,30 +1126,48 @@ func (b *buildReconciler) syncMachineOSBuild(ctx context.Context, mosb *mcfgv1.M
 			return nil
 		}
 
-		oldRendered, err := b.machineConfigLister.Get(mcp.Status.Configuration.Name)
-		if err != nil {
-			return err
-		}
-		newRendered, err := b.machineConfigLister.Get(mcp.Spec.Configuration.Name)
-		if err != nil {
-			return err
-		}
+		// At install time, the pool's status.configuration.name may be empty until the pool converges.
+		// Skip the rendered config comparison in this case and proceed with the build.
+		if mcp.Status.Configuration.Name == "" {
+			klog.V(4).Infof("MachineConfigPool %q status.configuration.name is empty (likely at install time), skipping rendered config comparison", mcp.Name)
+		} else {
+			oldRendered, err := b.machineConfigLister.Get(mcp.Status.Configuration.Name)
+			if err != nil {
+				return err
+			}
+			newRendered, err := b.machineConfigLister.Get(mcp.Spec.Configuration.Name)
+			if err != nil {
+				return err
+			}
 
-		old := mcp.DeepCopy()
-		old.Spec.Configuration.Name = mcp.Status.Configuration.Name
+			old := mcp.DeepCopy()
+			old.Spec.Configuration.Name = mcp.Status.Configuration.Name
 
-		// reconcileImageRebuild checks to see if we require a new build job (an MC consists of a osimage url,
-		// kernel args, or ext change)
-		needsImageRebuild, err := b.reconcileImageRebuild(old, mcp)
-		if err != nil {
-			return err
-		}
-		if oldRendered != newRendered && !needsImageRebuild {
-			klog.Infof("MachineOSBuild %q: No new image needs to be created, reusing last MOSB", mosb.Name)
-			return nil
+			// reconcileImageRebuild checks to see if we require a new build job (an MC consists of a osimage url,
+			// kernel args, or ext change)
+			needsImageRebuild, err := b.reconcileImageRebuild(old, mcp)
+			if err != nil {
+				return err
+			}
+			if oldRendered != newRendered && !needsImageRebuild {
+				klog.Infof("MachineOSBuild %q: No new image needs to be created, reusing last MOSB", mosb.Name)
+				return nil
+			}
 		}
 
 		mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
+
+		// CRITICAL CHECK: If this MOSB has the pre-built-image label, it's a synthetic build
+		// and we should NEVER create a real build job for it. This check must come FIRST
+		// before any state checks, because during synthetic MOSB creation there's a timing
+		// window where the MOSB exists but status hasn't been updated yet, so state checks
+		// might incorrectly think it needs a build.
+		if mosb.Labels != nil {
+			if preBuiltLabel, hasLabel := mosb.Labels[constants.PreBuiltImageLabelKey]; hasLabel && preBuiltLabel == "true" {
+				klog.V(4).Infof("MachineOSBuild %q has pre-built-image label, this is a synthetic build - skipping real build start", mosb.Name)
+				return nil
+			}
+		}
 
 		if mosbState.IsInTerminalState() {
 			return nil
@@ -1155,6 +1184,13 @@ func (b *buildReconciler) syncMachineOSBuild(ctx context.Context, mosb *mcfgv1.M
 				// we get here. If that is the case, we should ignore any not found
 				// errors here.
 				return ignoreErrIsNotFound(fmt.Errorf("could not sync MachineOSBuild %q: %w", mosb.Name, err))
+			}
+
+			// If this MOSC has a pre-built image annotation and hasn't been seeded yet,
+			// don't start a real build - the seeding workflow should handle creating a synthetic build
+			if isPreBuiltImageAwaitingSeeding(mosc) {
+				klog.Infof("MachineOSBuild %q associated with MachineOSConfig %q has pre-built image annotation but hasn't been seeded yet, skipping real build start (seeding workflow should handle this)", mosb.Name, mosc.Name)
+				return nil
 			}
 
 			observer := imagebuilder.NewJobImageBuildObserver(b.kubeclient, b.mcfgclient, mosb, mosc)
@@ -1234,6 +1270,13 @@ func (b *buildReconciler) syncMachineOSConfig(ctx context.Context, mosc *mcfgv1.
 			}
 		}
 
+		// If the MachineOSConfig has a pre-built image annotation AND hasn't been seeded yet,
+		// the seeding workflow should handle creating the synthetic build. Don't create a normal build here.
+		if shouldSeedWithPreBuiltImage(mosc) {
+			klog.Infof("MachineOSConfig %q has pre-built image annotation but hasn't been seeded yet, skipping normal build creation (seeding workflow should handle this)", mosc.Name)
+			return nil
+		}
+
 		klog.Infof("No matching MachineOSBuild found for MachineOSConfig %q, will create one", mosc.Name)
 		if err := b.createNewMachineOSBuildOrReuseExisting(ctx, mosc, false); err != nil {
 			return fmt.Errorf("could not create new or reuse existing MachineOSBuild for MachineOSConfig %q: %w", mosc.Name, err)
@@ -1286,13 +1329,27 @@ func (b *buildReconciler) reconcilePoolChange(ctx context.Context, mcp *mcfgv1.M
 		return fmt.Errorf("failed to get MachineOSConfig for pool %q: %w", mcp.Name, err)
 	}
 
+	// If the MachineOSConfig has a pre-built image annotation AND hasn't been seeded yet,
+	// the seeding workflow should handle creating the synthetic build. Don't proceed with normal build workflow.
+	firstOptIn := mosc.Annotations[constants.CurrentMachineOSBuildAnnotationKey]
+	if hasPreBuiltImageAnnotation(mosc) && !hasPreBuiltImageSeededAnnotation(mosc) && firstOptIn == "" {
+		klog.Infof("MachineOSConfig %q has pre-built image annotation but hasn't been seeded yet, skipping pool change reconciliation (seeding workflow should handle this)", mosc.Name)
+		return nil
+	}
+
 	oldRendered := mcp.Status.Configuration.Name
 	newRendered := mcp.Spec.Configuration.Name
+
+	// At install time, the pool's status.configuration.name or spec.configuration.name may be empty
+	// until the pool converges. Skip the image rebuild check in this case.
+	if oldRendered == "" || newRendered == "" {
+		klog.V(4).Infof("MachineConfigPool %q has empty configuration name (status: %q, spec: %q), likely at install time, skipping pool change reconciliation", mcp.Name, oldRendered, newRendered)
+		return nil
+	}
 
 	// old pool
 	old := mcp.DeepCopy()
 	old.Spec.Configuration.Name = mcp.Status.Configuration.Name
-	firstOptIn := mosc.Annotations[constants.CurrentMachineOSBuildAnnotationKey]
 	if firstOptIn == "" {
 		return fmt.Errorf("no current build annotation on MachineOSConfig %q", mosc.Name)
 	}
@@ -1632,4 +1689,233 @@ func (b *buildReconciler) syncBuildFailureStatus(ctx context.Context, pool *mcfg
 		klog.Errorf("Error updating MachineConfigPool %s BuildDegraded status: %v", pool.Name, updateErr)
 	}
 	return buildErr
+}
+
+// seedMachineOSConfigWithExistingImage handles the seeding of a MachineOSConfig with a pre-built image
+func (b *buildReconciler) seedMachineOSConfigWithExistingImage(ctx context.Context, mosc *mcfgv1.MachineOSConfig, imageSpec string) error {
+	// Step 1: Ensure required push secret exists from bootstrap
+	if err := b.ensureBootstrapSecretExists(ctx, mosc.Spec.RenderedImagePushSecret.Name); err != nil {
+		return fmt.Errorf("could not ensure push secret %s exists: %w", mosc.Spec.RenderedImagePushSecret.Name, err)
+	}
+
+	// Step 2: Generate expected MachineOSBuild using existing MCO logic
+	mcp, err := b.machineConfigPoolLister.Get(mosc.Spec.MachineConfigPool.Name)
+	if err != nil {
+		return fmt.Errorf("could not get MachineConfigPool %q: %w", mosc.Spec.MachineConfigPool.Name, err)
+	}
+
+	templateMOSB, err := buildrequest.NewMachineOSBuildFromAPI(ctx, b.kubeclient, mosc, mcp)
+	if err != nil {
+		return fmt.Errorf("could not generate MachineOSBuild template for MachineOSConfig %q: %w", mosc.Name, err)
+	}
+
+	// Step 2: Create synthetic MachineOSBuild with success status
+	syntheticMOSB, err := b.createSyntheticMachineOSBuild(ctx, mosc, templateMOSB.Name, imageSpec)
+	if err != nil {
+		return fmt.Errorf("could not create synthetic MachineOSBuild for MachineOSConfig %q: %w", mosc.Name, err)
+	}
+
+	// Step 3: Update MachineOSConfig with build annotation and status
+	if err := b.updateMachineOSConfigForSeeding(ctx, mosc, syntheticMOSB, imageSpec); err != nil {
+		return fmt.Errorf("could not update MachineOSConfig %q for seeding: %w", mosc.Name, err)
+	}
+
+	klog.Infof("Successfully seeded MachineOSConfig %q with pre-built image %q", mosc.Name, imageSpec)
+	return nil
+}
+
+// createSyntheticMachineOSBuild creates a MachineOSBuild object for pre-built images
+func (b *buildReconciler) createSyntheticMachineOSBuild(ctx context.Context, mosc *mcfgv1.MachineOSConfig, buildName, imageSpec string) (*mcfgv1.MachineOSBuild, error) {
+	// Get current rendered MachineConfig for the pool
+	mcp, err := b.machineConfigPoolLister.Get(mosc.Spec.MachineConfigPool.Name)
+	if err != nil {
+		return nil, fmt.Errorf("could not get MachineConfigPool %q: %w", mosc.Spec.MachineConfigPool.Name, err)
+	}
+
+	// Generate build metadata using the same utility as normal OCL workflow
+	buildLabels := utils.GetMachineOSBuildLabels(mosc, mcp)
+	// Add pre-built image marker
+	buildLabels[constants.PreBuiltImageLabelKey] = "true"
+
+	buildAnnotations := map[string]string{
+		constants.RenderedImagePushSecretAnnotationKey: mosc.Spec.RenderedImagePushSecret.Name,
+	}
+
+	now := metav1.Now()
+	// buildEnd must be after buildStart for API validation
+	buildEnd := metav1.NewTime(now.Add(1 * time.Second))
+
+	// Set owner reference to the MachineOSConfig (matching normal OCL workflow)
+	oref := metav1.NewControllerRef(mosc, mcfgv1.SchemeGroupVersion.WithKind("MachineOSConfig"))
+
+	// Create MachineOSBuild object matching the normal OCL workflow template
+	mosb := &mcfgv1.MachineOSBuild{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "MachineOSBuild",
+			APIVersion: "machineconfiguration.openshift.io/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   buildName,
+			Labels: buildLabels,
+			Finalizers: []string{
+				metav1.FinalizerDeleteDependents,
+			},
+			Annotations:     buildAnnotations,
+			OwnerReferences: []metav1.OwnerReference{*oref},
+		},
+		Spec: mcfgv1.MachineOSBuildSpec{
+			RenderedImagePushSpec: mosc.Spec.RenderedImagePushSpec,
+			MachineConfig: mcfgv1.MachineConfigReference{
+				Name: mcp.Spec.Configuration.Name,
+			},
+			MachineOSConfig: mcfgv1.MachineOSConfigReference{
+				Name: mosc.Name,
+			},
+		},
+		Status: mcfgv1.MachineOSBuildStatus{
+			BuildStart:            &now,
+			BuildEnd:              &buildEnd,
+			DigestedImagePushSpec: mcfgv1.ImageDigestFormat(imageSpec),
+			Conditions: []metav1.Condition{
+				{
+					Type:               string(mcfgv1.MachineOSBuildSucceeded),
+					Status:             metav1.ConditionTrue,
+					LastTransitionTime: now,
+					Reason:             "PreBuiltImageSeeded",
+					Message:            fmt.Sprintf("Pre-built image %q successfully seeded", imageSpec),
+				},
+				{
+					Type:               string(mcfgv1.MachineOSBuildPrepared),
+					Status:             metav1.ConditionFalse,
+					LastTransitionTime: now,
+					Reason:             "PreBuiltImageSeeded",
+					Message:            "Skipped: using pre-built image",
+				},
+				{
+					Type:               string(mcfgv1.MachineOSBuilding),
+					Status:             metav1.ConditionFalse,
+					LastTransitionTime: now,
+					Reason:             "PreBuiltImageSeeded",
+					Message:            "Skipped: using pre-built image",
+				},
+				{
+					Type:               string(mcfgv1.MachineOSBuildFailed),
+					Status:             metav1.ConditionFalse,
+					LastTransitionTime: now,
+					Reason:             "PreBuiltImageSeeded",
+					Message:            "Skipped: using pre-built image",
+				},
+				{
+					Type:               string(mcfgv1.MachineOSBuildInterrupted),
+					Status:             metav1.ConditionFalse,
+					LastTransitionTime: now,
+					Reason:             "PreBuiltImageSeeded",
+					Message:            "Skipped: using pre-built image",
+				},
+			},
+		},
+	}
+
+	// Check if the MachineOSBuild already exists (may have been created by normal workflow due to timing)
+	existingMOSB, err := b.mcfgclient.MachineconfigurationV1().MachineOSBuilds().Get(ctx, buildName, metav1.GetOptions{})
+	if err != nil && !k8serrors.IsNotFound(err) {
+		return nil, fmt.Errorf("could not check if MachineOSBuild %q exists: %w", buildName, err)
+	}
+
+	var createdMOSB *mcfgv1.MachineOSBuild
+	if k8serrors.IsNotFound(err) {
+		// Create the MachineOSBuild object (status will be ignored on creation)
+		createdMOSB, err = b.mcfgclient.MachineconfigurationV1().MachineOSBuilds().Create(ctx, mosb, metav1.CreateOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("could not create synthetic MachineOSBuild %q: %w", buildName, err)
+		}
+		klog.Infof("Created synthetic MachineOSBuild %q for pre-built image %q", buildName, imageSpec)
+	} else {
+		// MachineOSBuild already exists - this can happen due to race between seeding and normal workflow
+		klog.Infof("MachineOSBuild %q already exists, converting to synthetic build with success status", buildName)
+
+		// Update the existing MOSB to have the pre-built-image label if it doesn't already
+		if existingMOSB.Labels == nil {
+			existingMOSB.Labels = make(map[string]string)
+		}
+		if existingMOSB.Labels[constants.PreBuiltImageLabelKey] != "true" {
+			existingMOSB.Labels[constants.PreBuiltImageLabelKey] = "true"
+			existingMOSB, err = b.mcfgclient.MachineconfigurationV1().MachineOSBuilds().Update(ctx, existingMOSB, metav1.UpdateOptions{})
+			if err != nil {
+				return nil, fmt.Errorf("could not update labels on existing MachineOSBuild %q: %w", buildName, err)
+			}
+		}
+		createdMOSB = existingMOSB
+	}
+
+	// Update the status separately (status is ignored on Create and must always be set for synthetic builds)
+	createdMOSB.Status = mosb.Status
+	updatedMOSB, err := b.mcfgclient.MachineconfigurationV1().MachineOSBuilds().UpdateStatus(ctx, createdMOSB, metav1.UpdateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("could not update status on synthetic MachineOSBuild %q: %w", buildName, err)
+	}
+
+	klog.Infof("Updated status on synthetic MachineOSBuild %q with success condition", buildName)
+	return updatedMOSB, nil
+}
+
+// updateMachineOSConfigForSeeding updates MachineOSConfig for seeded state
+func (b *buildReconciler) updateMachineOSConfigForSeeding(ctx context.Context, mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild, imageSpec string) error {
+	// Update annotations - add both current build and seeded marker
+	metav1.SetMetaDataAnnotation(&mosc.ObjectMeta, constants.CurrentMachineOSBuildAnnotationKey, mosb.Name)
+	metav1.SetMetaDataAnnotation(&mosc.ObjectMeta, constants.PreBuiltImageSeededAnnotationKey, "true")
+
+	// Update the MachineOSConfig object
+	updatedMOSC, err := b.mcfgclient.MachineconfigurationV1().MachineOSConfigs().Update(ctx, mosc, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("could not update MachineOSConfig %q annotations: %w", mosc.Name, err)
+	}
+
+	// Update status with current image
+	updatedMOSC.Status.CurrentImagePullSpec = mcfgv1.ImageDigestFormat(imageSpec)
+	updatedMOSC.Status.ObservedGeneration = updatedMOSC.GetGeneration()
+	updatedMOSC.Status.MachineOSBuild = &mcfgv1.ObjectReference{
+		Name:     mosb.Name,
+		Group:    mcfgv1.SchemeGroupVersion.Group,
+		Resource: "machineosbuilds",
+	}
+
+	// Add conditions indicating seeded state
+	// Note: Using generic condition types since specific MachineOSConfig condition types may not be defined yet
+	seededCondition := metav1.Condition{
+		Type:               "Seeded",
+		Status:             metav1.ConditionTrue,
+		LastTransitionTime: metav1.NewTime(time.Now()),
+		Reason:             "PreBuiltImageSeeded",
+		Message:            fmt.Sprintf("MachineOSConfig seeded with pre-built image %q", imageSpec),
+	}
+
+	// Add the condition to the status
+	updatedMOSC.Status.Conditions = append(updatedMOSC.Status.Conditions, seededCondition)
+
+	_, err = b.mcfgclient.MachineconfigurationV1().MachineOSConfigs().UpdateStatus(ctx, updatedMOSC, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("could not update MachineOSConfig %q status: %w", mosc.Name, err)
+	}
+
+	klog.Infof("Updated MachineOSConfig %q status with pre-built image %q", mosc.Name, imageSpec)
+	return nil
+}
+
+// ensureBootstrapSecretExists verifies that the required secret exists in the MCO namespace.
+// Secrets are expected to be created from bootstrap manifests when the cluster starts up.
+func (b *buildReconciler) ensureBootstrapSecretExists(ctx context.Context, secretName string) error {
+	// Check if the secret exists in the MCO namespace
+	_, err := b.kubeclient.CoreV1().Secrets("openshift-machine-config-operator").Get(ctx, secretName, metav1.GetOptions{})
+	if err == nil {
+		// Secret exists
+		klog.V(4).Infof("Secret %s exists in MCO namespace", secretName)
+		return nil
+	}
+
+	if k8serrors.IsNotFound(err) {
+		return fmt.Errorf("required secret %s not found in openshift-machine-config-operator namespace. Ensure the secret was created from bootstrap manifests or exists in the cluster", secretName)
+	}
+
+	return fmt.Errorf("failed to check if secret %s exists: %w", secretName, err)
 }

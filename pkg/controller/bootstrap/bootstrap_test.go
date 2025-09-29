@@ -200,3 +200,72 @@ func TestBootstrapRun(t *testing.T) {
 		})
 	}
 }
+
+func TestValidatePreBuiltImage(t *testing.T) {
+	tests := []struct {
+		name          string
+		imageSpec     string
+		expectedError bool
+		errorContains string
+	}{
+		{
+			name:          "Valid image with proper digest format",
+			imageSpec:     "registry.example.com/test@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+			expectedError: false,
+		},
+		{
+			name:          "Empty image spec should fail",
+			imageSpec:     "",
+			expectedError: true,
+			errorContains: "cannot be empty",
+		},
+		{
+			name:          "Image without digest should fail",
+			imageSpec:     "registry.example.com/test:latest",
+			expectedError: true,
+			errorContains: "must use digested format",
+		},
+		{
+			name:          "Image with invalid digest length should fail",
+			imageSpec:     "registry.example.com/test@sha256:12345",
+			expectedError: true,
+			errorContains: "invalid reference format",
+		},
+		{
+			name:          "Image with invalid digest characters should fail",
+			imageSpec:     "registry.example.com/test@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdez",
+			expectedError: true,
+			errorContains: "invalid reference format",
+		},
+		{
+			name:          "Image with uppercase digest should fail",
+			imageSpec:     "registry.example.com/test@sha256:1234567890ABCDEF1234567890abcdef1234567890abcdef1234567890abcdef",
+			expectedError: true,
+			errorContains: "invalid checksum digest format",
+		},
+		{
+			name:          "Image with MD5 digest should fail",
+			imageSpec:     "registry.example.com/test@md5:1234567890abcdef1234567890abcdef",
+			expectedError: true,
+			errorContains: "unsupported digest algorithm",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validatePreBuiltImage(tt.imageSpec)
+
+			if tt.expectedError && err == nil {
+				t.Errorf("Expected error but got none")
+			}
+			if !tt.expectedError && err != nil {
+				t.Errorf("Unexpected error: %v", err)
+			}
+			if tt.expectedError && err != nil && tt.errorContains != "" {
+				if !strings.Contains(err.Error(), tt.errorContains) {
+					t.Errorf("Expected error to contain %q, but got: %v", tt.errorContains, err)
+				}
+			}
+		})
+	}
+}
