@@ -22,6 +22,9 @@ import (
 	apicfgv1alpha1 "github.com/openshift/api/config/v1alpha1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
+	buildconstants "github.com/openshift/machine-config-operator/pkg/controller/build/constants"
+	"github.com/containers/image/v5/docker/reference"
+	"github.com/opencontainers/go-digest"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	containerruntimeconfig "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
 	kubeletconfig "github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
@@ -73,8 +76,9 @@ func (b *Bootstrap) Run(destDir string) error {
 	apioperatorsv1alpha1.Install(scheme)
 	apicfgv1.Install(scheme)
 	apicfgv1alpha1.Install(scheme)
+	corev1.AddToScheme(scheme)
 	codecFactory := serializer.NewCodecFactory(scheme)
-	decoder := codecFactory.UniversalDecoder(mcfgv1.GroupVersion, apioperatorsv1alpha1.GroupVersion, apicfgv1.GroupVersion, apicfgv1alpha1.GroupVersion)
+	decoder := codecFactory.UniversalDecoder(mcfgv1.GroupVersion, apioperatorsv1alpha1.GroupVersion, apicfgv1.GroupVersion, apicfgv1alpha1.GroupVersion, corev1.SchemeGroupVersion)
 
 	var (
 		cconfig              *mcfgv1.ControllerConfig
@@ -83,6 +87,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		kconfigs             []*mcfgv1.KubeletConfig
 		pools                []*mcfgv1.MachineConfigPool
 		configs              []*mcfgv1.MachineConfig
+		machineOSConfigs     []*mcfgv1.MachineOSConfig
 		crconfigs            []*mcfgv1.ContainerRuntimeConfig
 		icspRules            []*apioperatorsv1alpha1.ImageContentSourcePolicy
 		idmsRules            []*apicfgv1.ImageDigestMirrorSet
@@ -91,6 +96,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		imagePolicies        []*apicfgv1.ImagePolicy
 		imgCfg               *apicfgv1.Image
 		apiServer            *apicfgv1.APIServer
+		secrets              []*corev1.Secret
 	)
 	for _, info := range infos {
 		if info.IsDir() {
@@ -124,6 +130,8 @@ func (b *Bootstrap) Run(destDir string) error {
 				pools = append(pools, obj)
 			case *mcfgv1.MachineConfig:
 				configs = append(configs, obj)
+			case *mcfgv1.MachineOSConfig:
+				machineOSConfigs = append(machineOSConfigs, obj)
 			case *mcfgv1.ControllerConfig:
 				cconfig = obj
 			case *mcfgv1.ContainerRuntimeConfig:
@@ -154,6 +162,8 @@ func (b *Bootstrap) Run(destDir string) error {
 				if obj.GetName() == ctrlcommon.APIServerInstanceName {
 					apiServer = obj
 				}
+			case *corev1.Secret:
+				secrets = append(secrets, obj)
 			default:
 				klog.Infof("skipping %q [%d] manifest because of unhandled %T", file.Name(), idx+1, obji)
 			}
@@ -239,6 +249,14 @@ func (b *Bootstrap) Run(destDir string) error {
 		return err
 	}
 
+	// Apply pre-built images to rendered MachineConfigs for hybrid OCL
+	if len(machineOSConfigs) > 0 {
+		if err := applyPreBuiltImagesToRenderedConfigs(gconfigs, machineOSConfigs, fpools); err != nil {
+			return err
+		}
+		klog.Infof("Successfully applied pre-built images to rendered MachineConfigs for hybrid OCL.")
+	}
+
 	serializer := json.NewYAMLSerializer(json.DefaultMetaFactory, scheme, scheme)
 	encoder := codecFactory.EncoderForVersion(serializer, mcfgv1.GroupVersion)
 
@@ -278,6 +296,55 @@ func (b *Bootstrap) Run(destDir string) error {
 		if err := os.WriteFile(path, buf.Bytes(), 0o664); err != nil {
 			return err
 		}
+	}
+
+	// Write MachineOSConfigs to machine-os-configs directory
+	// These will be created by the MCO controller after cluster startup
+	if len(machineOSConfigs) > 0 {
+		mosconfigdir := filepath.Join(destDir, "machine-os-configs")
+		if err := os.MkdirAll(mosconfigdir, 0o764); err != nil {
+			return err
+		}
+		for _, mosc := range machineOSConfigs {
+			buf := bytes.Buffer{}
+			err := encoder.Encode(mosc, &buf)
+			if err != nil {
+				return err
+			}
+			path := filepath.Join(mosconfigdir, fmt.Sprintf("%s.yaml", mosc.Name))
+			// Disable gosec here to avoid throwing
+			// G306: Expect WriteFile permissions to be 0600 or less
+			// #nosec
+			if err := os.WriteFile(path, buf.Bytes(), 0o664); err != nil {
+				return err
+			}
+		}
+		klog.Infof("Successfully wrote %d MachineOSConfig manifests for post-bootstrap creation", len(machineOSConfigs))
+	}
+
+	// Write Secrets to secrets directory
+	// These will be created by the MCO controller after cluster startup
+	if len(secrets) > 0 {
+		secretsdir := filepath.Join(destDir, "secrets")
+		if err := os.MkdirAll(secretsdir, 0o764); err != nil {
+			return err
+		}
+		secretEncoder := codecFactory.EncoderForVersion(serializer, corev1.SchemeGroupVersion)
+		for _, secret := range secrets {
+			buf := bytes.Buffer{}
+			err := secretEncoder.Encode(secret, &buf)
+			if err != nil {
+				return err
+			}
+			path := filepath.Join(secretsdir, fmt.Sprintf("%s.yaml", secret.Name))
+			// Disable gosec here to avoid throwing
+			// G306: Expect WriteFile permissions to be 0600 or less
+			// #nosec
+			if err := os.WriteFile(path, buf.Bytes(), 0o664); err != nil {
+				return err
+			}
+		}
+		klog.Infof("Successfully wrote %d Secret manifests for post-bootstrap creation", len(secrets))
 	}
 
 	// If an apiServer object exists, write it to /etc/mcs/bootstrap/api-server/api-server.yaml
@@ -376,3 +443,100 @@ func parseManifests(filename string, r io.Reader) ([]manifest, error) {
 		manifests = append(manifests, m)
 	}
 }
+
+// applyPreBuiltImagesToRenderedConfigs applies pre-built images to rendered MachineConfigs
+// and annotates MachineConfigPools for pools that have associated MachineOSConfigs with pre-built image annotations
+func applyPreBuiltImagesToRenderedConfigs(renderedConfigs []*mcfgv1.MachineConfig, machineOSConfigs []*mcfgv1.MachineOSConfig, pools []*mcfgv1.MachineConfigPool) error {
+	// Create a map of pool names to pre-built images
+	poolToPreBuiltImage := make(map[string]string)
+
+	for _, mosc := range machineOSConfigs {
+		// Check if this MachineOSConfig has a pre-built image annotation
+		preBuiltImage, hasPreBuiltImage := mosc.Annotations[buildconstants.PreBuiltImageAnnotationKey]
+		if !hasPreBuiltImage || preBuiltImage == "" {
+			continue
+		}
+
+		// Validate the pre-built image before proceeding
+		if err := validatePreBuiltImage(preBuiltImage); err != nil {
+			return fmt.Errorf("invalid pre-built image %q for MachineOSConfig %s: %w", preBuiltImage, mosc.Name, err)
+		}
+
+		klog.Infof("Found MachineOSConfig %s with pre-built image: %s for pool %s", mosc.Name, preBuiltImage, mosc.Spec.MachineConfigPool.Name)
+		poolToPreBuiltImage[mosc.Spec.MachineConfigPool.Name] = preBuiltImage
+	}
+
+	// Annotate MachineConfigPools with pre-built images
+	for _, pool := range pools {
+		if preBuiltImage, exists := poolToPreBuiltImage[pool.Name]; exists {
+			klog.Infof("Annotating MachineConfigPool %s with pre-built image: %s", pool.Name, preBuiltImage)
+			if pool.Annotations == nil {
+				pool.Annotations = make(map[string]string)
+			}
+			pool.Annotations[buildconstants.PreBuiltImageAnnotationKey] = preBuiltImage
+		}
+	}
+
+	// Apply pre-built images to rendered MachineConfigs
+	for _, mc := range renderedConfigs {
+		// Get the pool name from the MachineConfig's owner references
+		var poolName string
+		for _, ownerRef := range mc.GetOwnerReferences() {
+			if ownerRef.Kind == "MachineConfigPool" {
+				poolName = ownerRef.Name
+				break
+			}
+		}
+
+		if poolName == "" {
+			// Skip if we can't determine the pool name
+			continue
+		}
+
+		// Check if this pool has a pre-built image
+		if preBuiltImage, exists := poolToPreBuiltImage[poolName]; exists {
+			klog.Infof("Setting OSImageURL to %s for rendered MachineConfig %s (pool: %s)", preBuiltImage, mc.Name, poolName)
+			mc.Spec.OSImageURL = preBuiltImage
+
+			// Add annotation to track that this MC uses a pre-built image
+			if mc.Annotations == nil {
+				mc.Annotations = make(map[string]string)
+			}
+			mc.Annotations[buildconstants.PreBuiltImageAnnotationKey] = preBuiltImage
+		}
+	}
+
+	return nil
+}
+
+// validatePreBuiltImage validates the pre-built image format using containers/image library
+func validatePreBuiltImage(imageSpec string) error {
+	if imageSpec == "" {
+		return fmt.Errorf("pre-built image spec cannot be empty")
+	}
+
+	// Use the containers/image library to parse and validate the image reference
+	ref, err := reference.ParseNamed(imageSpec)
+	if err != nil {
+		return fmt.Errorf("pre-built image has invalid format: %w", err)
+	}
+
+	// Ensure the reference has a digest (is canonical)
+	canonical, ok := ref.(reference.Canonical)
+	if !ok {
+		return fmt.Errorf("pre-built image must use digested format (image@sha256:digest), got: %q", imageSpec)
+	}
+
+	// Validate the digest using the go-digest library
+	if err := canonical.Digest().Validate(); err != nil {
+		return fmt.Errorf("pre-built image has invalid digest: %w", err)
+	}
+
+	// Ensure it's specifically a SHA256 digest (which is what we expect for container images)
+	if canonical.Digest().Algorithm() != digest.SHA256 {
+		return fmt.Errorf("pre-built image must use SHA256 digest, got %s: %q", canonical.Digest().Algorithm(), imageSpec)
+	}
+
+	return nil
+}
+
