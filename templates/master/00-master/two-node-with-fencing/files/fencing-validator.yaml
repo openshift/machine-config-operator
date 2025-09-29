@@ -63,8 +63,8 @@ contents:
       case "$TRANSPORT" in
         auto)
           if ssh_ok "$IP_A" && ssh_ok "$IP_B"; then
-            TRANSPORT=ssh; CONDUCTOR="$IP_B"; _sudo_check; log "Using SSH; conductor=$CONDUCTOR"
-          elif ocdebug_ok "$NODE_A" && ocdebug_ok "$NODE_B"; then
+            TRANSPORT=ssh; CONDUCTOR="$IP_B"; sudo_check; log "Using SSH; conductor=$CONDUCTOR"
+          elif oc_debug_ok "$NODE_A" && oc_debug_ok "$NODE_B"; then
             TRANSPORT=ocdebug; CONDUCTOR="$NODE_B"; log "Using oc debug; conductor=$CONDUCTOR"
           else
             log_err "Auto mode: neither SSH nor oc debug reachable on both nodes."; exit $EXIT_GENERIC
@@ -72,10 +72,10 @@ contents:
           ;;
         ssh)
           (ssh_ok "$IP_A" && ssh_ok "$IP_B") || { log_err "SSH not available to both nodes"; exit $EXIT_GENERIC; }
-          CONDUCTOR="$IP_B"; _sudo_check; log "Using SSH; conductor=$CONDUCTOR"
+          CONDUCTOR="$IP_B"; sudo_check; log "Using SSH; conductor=$CONDUCTOR"
           ;;
         ocdebug)
-          (ocdebug_ok "$NODE_A" && ocdebug_ok "$NODE_B") || { log_err "oc debug not available on both nodes"; exit $EXIT_GENERIC; }
+          (oc_debug_ok "$NODE_A" && oc_debug_ok "$NODE_B") || { log_err "oc debug not available on both nodes"; exit $EXIT_GENERIC; }
           CONDUCTOR="$NODE_B"; log "Using oc debug; conductor=$CONDUCTOR"
           ;;
       esac
@@ -89,7 +89,7 @@ contents:
       log "Mode: transport=$TRANSPORT disruptive=$DISRUPTIVE dry-run=$DRY_RUN"
       log "=== Non-disruptive validation ==="
       check_stonith || exit $EXIT_STONITH_MISSING
-      if ! ( pcmkonline "$PCMK_A" && pcmkonline "$PCMK_B" ); then
+      if ! ( pcmk_online "$PCMK_A" && pcmk_online "$PCMK_B" ); then
         log_err "Both nodes must be ONLINE (Pacemaker)"
         exit $EXIT_PACEMAKER_OFFLINE
       fi
@@ -141,21 +141,21 @@ contents:
       printf '\033[32m[OK]\033[0m %s\n' "$*"
     }
     
-    _is_ipv6() {
+    is_ipv6() {
       [[ "$1" == *:* ]]
     }
-    _fmt_host(){
+    fmt_host(){
       local h="$1"
       h="${h#[[]}"
       h="${h%[]]}"
-      _is_ipv6 "$h" && echo "[$h]" || echo "$h"
+      is_ipv6 "$h" && echo "[$h]" || echo "$h"
     }
     short_hostname() {
       echo "${1%%.*}"
     }
     ssh_cmd() {
       local host
-      host="$(_fmt_host "$1")"
+      host="$(fmt_host "$1")"
       shift
       local keyopt=(); [[ -n "$SSH_KEY" ]] && keyopt=(-i "$SSH_KEY")
       timeout "$CMD_EXEC_TIMEOUT_SECS" ssh \
@@ -180,7 +180,7 @@ contents:
       fi
     }
     
-    ocdebug_ok() {
+    oc_debug_ok() {
       oc_run debug -q node/"$1" -- chroot /host true >/dev/null 2>&1
     }
     
@@ -188,7 +188,7 @@ contents:
       ssh_cmd "$1" true >/dev/null 2>&1
     }
     
-    _sudo_check() {
+    sudo_check() {
       for h in "$IP_A" "$IP_B"; do
         ssh_cmd "$h" "sudo -n true" >/dev/null 2>&1 || {
           log_err "Passwordless sudo required on $h for SSH mode."; exit $EXIT_GENERIC; }
@@ -218,7 +218,7 @@ contents:
       } END{ print "" }' <<<"$out"
     }
     
-    pcmkonline() {
+    pcmk_online() {
       local want="$1" s="${1%%.*}" names
       names="$(pcs_nodes_names)"
       [[ -n "$names" ]] || return 1
@@ -251,7 +251,7 @@ contents:
       deadline=$((SECONDS+TIMEOUT))
       log "Waiting for '$n' ONLINE (Pacemaker)…"
       while (( SECONDS < deadline )); do
-        pcmkonline "$n" && { log_ok "$n ONLINE (Pacemaker)"; return $EXIT_OK; }
+        pcmk_online "$n" && { log_ok "$n ONLINE (Pacemaker)"; return $EXIT_OK; }
         sleep 5
       done
       log_err "Timeout waiting Pacemaker ONLINE for $n"; return 1
