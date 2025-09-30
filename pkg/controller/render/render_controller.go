@@ -560,10 +560,11 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		return fmt.Errorf("could not generate rendered MachineConfig: %w", err)
 	}
 
-	// Emit event and collect metric when OSImageURL was overridden.
+	// Collect metric when OSImageURL was overridden
+	var isOSImageURLOverridden bool
 	if generated.Spec.OSImageURL != ctrlcommon.GetDefaultBaseImageContainer(&cc.Spec) {
 		ctrlcommon.OSImageURLOverride.WithLabelValues(pool.Name).Set(1)
-		ctrl.eventRecorder.Eventf(generated, corev1.EventTypeNormal, "OSImageURLOverridden", "OSImageURL was overridden via machineconfig in %s (was: %s is: %s)", generated.Name, cc.Spec.OSImageURL, generated.Spec.OSImageURL)
+		isOSImageURLOverridden = true
 	} else {
 		// Reset metric when OSImageURL has not been overridden
 		ctrlcommon.OSImageURLOverride.WithLabelValues(pool.Name).Set(0)
@@ -576,6 +577,9 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), generated, metav1.CreateOptions{})
 		if err != nil {
 			return err
+		}
+		if isOSImageURLOverridden {
+			ctrl.eventRecorder.Eventf(generated, corev1.EventTypeNormal, "OSImageURLOverridden", "OSImageURL was overridden via machineconfig in %s (was: %s is: %s)", generated.Name, cc.Spec.OSImageURL, generated.Spec.OSImageURL)
 		}
 		klog.V(2).Infof("Generated machineconfig %s from %d configs: %s", generated.Name, len(source), source)
 		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "RenderedConfigGenerated", "%s successfully generated (release version: %s, controller version: %s)",
