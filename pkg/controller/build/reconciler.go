@@ -1587,7 +1587,7 @@ func (b *buildReconciler) initializeBuildDegradedCondition(ctx context.Context, 
 			return err
 		}
 
-		buildDegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolImageBuildDegraded, corev1.ConditionFalse, "BuildStarted", "Build started for pool "+currentPool.Name)
+		buildDegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolImageBuildDegraded, corev1.ConditionFalse, string(mcfgv1.MachineConfigPoolBuilding), "Build started for pool "+currentPool.Name)
 		apihelpers.SetMachineConfigPoolCondition(&currentPool.Status, *buildDegraded)
 
 		_, err = b.mcfgclient.MachineconfigurationV1().MachineConfigPools().UpdateStatus(ctx, currentPool, metav1.UpdateOptions{})
@@ -1604,7 +1604,7 @@ func (b *buildReconciler) syncBuildSuccessStatus(ctx context.Context, pool *mcfg
 			return err
 		}
 
-		buildDegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolImageBuildDegraded, corev1.ConditionFalse, "BuildSucceeded", "Build succeeded for pool "+currentPool.Name)
+		buildDegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolImageBuildDegraded, corev1.ConditionFalse, string(mcfgv1.MachineConfigPoolBuildSuccess), "Build succeeded for pool "+currentPool.Name)
 		apihelpers.SetMachineConfigPoolCondition(&currentPool.Status, *buildDegraded)
 
 		_, err = b.mcfgclient.MachineconfigurationV1().MachineConfigPools().UpdateStatus(ctx, currentPool, metav1.UpdateOptions{})
@@ -1622,7 +1622,7 @@ func (b *buildReconciler) syncBuildFailureStatus(ctx context.Context, pool *mcfg
 		}
 
 		// The message content may be truncated https://github.com/kubernetes/apimachinery/blob/f5dd29d6ada12819a4a6ddc97d5bdf812f8a1cad/pkg/apis/meta/v1/types.go#L1619-L1635
-		buildDegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolImageBuildDegraded, corev1.ConditionTrue, "BuildFailed", fmt.Sprintf("Failed to build OS image for pool %s (MachineOSBuild: %s): %v", currentPool.Name, mosbName, buildErr))
+		buildDegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolImageBuildDegraded, corev1.ConditionTrue, string(mcfgv1.MachineConfigPoolBuildFailed), fmt.Sprintf("Failed to build OS image for pool %s (MachineOSBuild: %s): %v", currentPool.Name, mosbName, buildErr))
 		apihelpers.SetMachineConfigPoolCondition(&currentPool.Status, *buildDegraded)
 
 		_, updateErr := b.mcfgclient.MachineconfigurationV1().MachineConfigPools().UpdateStatus(ctx, currentPool, metav1.UpdateOptions{})
