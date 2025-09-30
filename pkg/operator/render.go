@@ -51,6 +51,7 @@ type renderConfig struct {
 	PointerConfig          string
 	TLSMinVersion          string
 	TLSCipherSuites        []string
+	LogLevel               string
 }
 
 type assetRenderer struct {
