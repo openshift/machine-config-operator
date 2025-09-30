@@ -26,6 +26,7 @@ spec:
           - "--payload-version={{.ReleaseVersion}}"
           - "--tls-cipher-suites={{join .TLSCipherSuites ","}}"
           - "--tls-min-version={{.TLSMinVersion}}"
+          - "--v={{.LogLevel}}"
         resources:
           requests:
             cpu: 20m

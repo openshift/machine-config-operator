@@ -46,6 +46,8 @@ import (
 	mcopclientset "github.com/openshift/client-go/operator/clientset/versioned"
 	mcopinformersv1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
 	mcoplistersv1 "github.com/openshift/client-go/operator/listers/operator/v1"
+
+	loglevelhelpers "github.com/openshift/library-go/pkg/operator/loglevel"
 )
 
 const (
@@ -64,6 +66,7 @@ type Operator struct {
 	inClusterBringup bool
 
 	imagesFile string
+	logLevel   int
 
 	vStore *versionStore
 
@@ -217,6 +220,7 @@ func New(
 			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigoperator"}),
 		fgHandler: fgHandler,
 		ctrlctx:   ctrlctx,
+		logLevel:  2,
 	}
 
 	err := corev1.AddToScheme(scheme.Scheme)
@@ -468,6 +472,25 @@ func (optr *Operator) handleErr(err error, key string) {
 	klog.V(2).Infof("Dropping operator %q out of the queue: %v", key, err)
 	optr.queue.Forget(key)
 	optr.queue.AddAfter(key, 1*time.Minute)
+}
+
+// Sets the operator log level value to the one described in the value passed in
+// Levels are set according to the standard described in the API repo:
+// https://github.com/openshift/api/blob/83b017b06367bf8564bf94f5c6c1ad8aed5d3ab9/operator/v1/types.go#L96-L109
+// This function does not return an error from dynamically seting the loglevel, it
+// just logs it for the moment.
+func (optr *Operator) setOperatorLogLevel(logLevelFromMachineConfiguration opv1.LogLevel) {
+	newLogLevel := loglevelhelpers.LogLevelToVerbosity(logLevelFromMachineConfiguration)
+
+	if newLogLevel != optr.logLevel {
+		if err := loglevelhelpers.SetLogLevel(logLevelFromMachineConfiguration); err != nil {
+			klog.Errorf("Failed to set log level to %d: %v", optr.logLevel, err)
+		} else {
+			klog.Infof("Log level changed from %d to %d", optr.logLevel, newLogLevel)
+			// Update the operator's global flag for log level, this updates the MCO operand manifests
+			optr.logLevel = newLogLevel
+		}
+	}
 }
 
 func (optr *Operator) sync(key string) error {
