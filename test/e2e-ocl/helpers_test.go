@@ -28,6 +28,7 @@ import (
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -592,7 +593,8 @@ func streamBuildPodLogsToFile(ctx context.Context, t *testing.T, cs *framework.C
 	return streamPodContainerLogsToFile(ctx, t, cs, pod, dirPath)
 }
 
-func getPodFromJob(ctx context.Context, cs *framework.ClientSet, jobName string) (*corev1.Pod, error) {
+// Returns a list of pods that match a given job name.
+func listPodsForJob(ctx context.Context, cs *framework.ClientSet, jobName string) (*corev1.PodList, error) {
 	job, err := cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).Get(ctx, jobName, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("could not get job %s: %w", job, err)
@@ -603,6 +605,16 @@ func getPodFromJob(ctx context.Context, cs *framework.ClientSet, jobName string)
 		return nil, fmt.Errorf("could not get pods with job label %s: %w", jobName, err)
 	}
 
+	return podList, nil
+}
+
+// Retrieves the currently running build pod for a given job name.
+func getPodFromJob(ctx context.Context, cs *framework.ClientSet, jobName string) (*corev1.Pod, error) {
+	podList, err := listPodsForJob(ctx, cs, jobName)
+	if err != nil {
+		return nil, fmt.Errorf("could not list pods for job %s: %w", jobName, err)
+	}
+
 	if podList != nil {
 		if len(podList.Items) == 1 {
 			return &podList.Items[0], nil
@@ -611,14 +623,31 @@ func getPodFromJob(ctx context.Context, cs *framework.ClientSet, jobName string)
 		// this is needed when we test the case for a new pod being created after deleting the existing one
 		// as sometimes it takes time for the old pod to be completely deleted
 		for _, pod := range podList.Items {
-			for _, status := range pod.Status.InitContainerStatuses {
-				if status.State.Running != nil {
-					return &pod, nil
-				}
+			if isBuildPodRunning(&pod) {
+				return &pod, nil
 			}
 		}
 	}
+
 	return nil, fmt.Errorf("no pod found for job %s", jobName)
+}
+
+// Determines if a build pod is running by first examining the init container
+// statuses and then the main container statuses.
+func isBuildPodRunning(pod *corev1.Pod) bool {
+	for _, status := range pod.Status.InitContainerStatuses {
+		if status.State.Running != nil {
+			return true
+		}
+	}
+
+	for _, status := range pod.Status.ContainerStatuses {
+		if status.State.Running != nil {
+			return true
+		}
+	}
+
+	return false
 }
 
 // getJobForMOSB returns the name of the job that was created for the given MOSB by comparing the job UID
@@ -1004,5 +1033,48 @@ func scaleDownDeployment(t *testing.T, cs *framework.ClientSet, deployment metav
 
 	return helpers.MakeIdempotentAndRegister(t, func() {
 		require.NoError(t, setDeploymentReplicas(t, cs, deployment, originalReplicas))
+	})
+}
+
+// forceMachineOSBuildToFail() repeatedly deletes the build pod associated
+// with the given MachineOSBuild so that the job will fail.
+func forceMachineOSBuildToFail(ctx context.Context, t *testing.T, cs *framework.ClientSet, mosb *mcfgv1.MachineOSBuild) error {
+	start := time.Now()
+
+	jobName, err := getJobForMOSB(ctx, cs, mosb)
+	if err != nil {
+		return fmt.Errorf("could not identify job for MachineOSBuild %s: %w", mosb.Name, err)
+	}
+
+	t.Logf("Found job %s for MachineOSBuild %s, will delete pods belonging to this job to cause build failure", jobName, mosb.Name)
+
+	return wait.PollImmediate(1*time.Second, 5*time.Minute, func() (bool, error) {
+		job, err := cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).Get(ctx, jobName, metav1.GetOptions{})
+		if err != nil {
+			return false, fmt.Errorf("could not get job %s for MachineOSBuild %s: %w", jobName, mosb.Name, err)
+		}
+
+		for _, condition := range job.Status.Conditions {
+			if condition.Reason == batchv1.JobReasonBackoffLimitExceeded && condition.Status == corev1.ConditionTrue {
+				t.Logf("Job %s has indicated failure after %s", jobName, time.Since(start))
+				return true, nil
+			}
+		}
+
+		podList, err := listPodsForJob(ctx, cs, jobName)
+		if err != nil {
+			return false, fmt.Errorf("could not list pods for job %s: %w", jobName, err)
+		}
+
+		for _, pod := range podList.Items {
+			if pod.DeletionTimestamp == nil {
+				t.Logf("Deleting pod %s belonging to job %s", pod.Name, jobName)
+				if err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).Delete(ctx, pod.Name, metav1.DeleteOptions{}); err != nil {
+					return false, fmt.Errorf("could not delete pod %s: %w", pod.Name, err)
+				}
+			}
+		}
+
+		return false, nil
 	})
 }
