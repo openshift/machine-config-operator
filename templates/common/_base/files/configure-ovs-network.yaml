@@ -5,6 +5,13 @@ contents:
     #!/bin/bash
     set -x
 
+    # Clear ovn-remote config to connect to OVN DBs.
+    # ovnkube controller will set it on startup.
+    # May remove when https://issues.redhat.com/browse/FDP-1537 is availabe
+    # However it may also be a good idea to leave this because we don't want
+    # ovn-controller syncing to a stale OVN southbound database.
+    ovs-vsctl set Open_vSwitch . external_ids:ovn-remote=" "
+
     if [ -e /etc/nmstate/openshift/applied ]; then
       echo "Skipping configure-ovs due to manual network configuration"
       exit 0
