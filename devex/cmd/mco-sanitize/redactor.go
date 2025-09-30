@@ -264,17 +264,17 @@ func (n *visitorNode) redact() error {
 	}
 
 	var redactSource string
-	switch val := n.value.(type) {
+	switch value := n.value.(type) {
 	case []interface{}, map[string]interface{}:
-		rawBytes, err := n.marshaler(val)
+		rawBytes, err := n.marshaler(value)
 		if err != nil {
 			return err
 		}
 		redactSource = string(rawBytes)
 	case string:
-		redactSource = val
+		redactSource = value
 	default:
-		redactSource = fmt.Sprintf("%v", val)
+		redactSource = fmt.Sprintf("%v", value)
 	}
 	redactInfo := map[string]interface{}{
 		"_REDACTED": "This field has been redacted",
