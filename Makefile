@@ -217,7 +217,7 @@ test-e2e-single-node: install-go-junit-report
 
 test-e2e-ocl: install-go-junit-report install-skopeo
 	# Temporarily include /tmp/skopeo/bin in our PATH variable so that the test suite can find skopeo.
-	set -o pipefail; PATH="$(PATH):/tmp/skopeo/bin" go test -tags=$(GOTAGS) -failfast -timeout 190m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-ocl/ | ./hack/test-with-junit.sh $(@)
+	set -o pipefail; PATH="$(PATH):/tmp/skopeo/bin" go test -tags=$(GOTAGS) -timeout 190m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-ocl/ | ./hack/test-with-junit.sh $(@)
 
 bootstrap-e2e: install-go-junit-report install-setup-envtest
 	@echo "Setting up KUBEBUILDER_ASSETS"
