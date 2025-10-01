@@ -116,12 +116,14 @@ func TestOnClusterLayeringOnOKD(t *testing.T) {
 
 // Tests that an on-cluster build can be performed with the Custom Pod Builder.
 func TestOnClusterLayering(t *testing.T) {
-	_, mosb := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
+	_, firstMosb := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
 			layeredMCPName: cowsayDockerfile,
 		},
 	})
+
+	assert.NotEqual(t, string(firstMosb.UID), "")
 
 	// Test rebuild annotation works
 	ctx, cancel := context.WithCancel(context.Background())
@@ -137,12 +139,12 @@ func TestOnClusterLayering(t *testing.T) {
 	helpers.SetRebuildAnnotationOnMachineOSConfig(ctx, t, cs.GetMcfgclient(), mosc)
 
 	// Use the UID of the previous MOSB to ensure it is deleted as the rebuild will trigger a MOSB with the same name
-	t.Logf("Waiting for the previous MachineOSBuild with UID %q to be deleted", mosb.UID)
-	waitForMOSBToBeDeleted(t, cs, mosb)
+	t.Logf("Waiting for the previous MachineOSBuild with UID %q to be deleted", firstMosb.UID)
+	waitForMOSBToBeDeleted(t, cs, firstMosb)
 
 	// Wait for the build to start
-	waitForBuildToStartForPoolAndConfig(t, cs, layeredMCPName, mosc.Name)
-
+	secondMosb := waitForBuildToStartForPoolAndConfig(t, cs, layeredMCPName, mosc.Name)
+	assert.NotEqual(t, firstMosb.UID, secondMosb.UID)
 }
 
 // Tests that an on-cluster build can be performed and that the resulting image
@@ -648,42 +650,54 @@ func TestRebuildAnnotationRestartsBuild(t *testing.T) {
 
 	createMachineOSConfig(t, cs, mosc)
 
-	mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(ctx, layeredMCPName, metav1.GetOptions{})
-	require.NoError(t, err)
-
-	mosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, cs.GetKubeclient(), mosc, mcp)
-
 	// First, we get a MachineOSBuild started as usual.
-	waitForBuildToStart(t, cs, mosb)
+	firstMosb := waitForBuildToStartForPoolAndConfig(t, cs, layeredMCPName, mosc.Name)
+
+	assert.NotEqual(t, string(firstMosb.UID), "")
 
 	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
-	assertBuildObjectsAreCreated(t, kubeassert, mosb)
+	assertBuildObjectsAreCreated(t, kubeassert, firstMosb)
 
-	pod, err := getPodFromJob(ctx, cs, utils.GetBuildJobName(mosb))
+	firstJob, err := cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).Get(ctx, utils.GetBuildJobName(firstMosb), metav1.GetOptions{})
+	require.NoError(t, err)
+
+	pod, err := getPodFromJob(ctx, cs, utils.GetBuildJobName(firstMosb))
 	require.NoError(t, err)
 	t.Logf("Initial build has started, delete the job to interrupt the build...")
 	// Delete the builder
 	bgDeletion := metav1.DeletePropagationBackground
-	err = cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).Delete(ctx, utils.GetBuildJobName(mosb), metav1.DeleteOptions{PropagationPolicy: &bgDeletion})
+	err = cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).Delete(ctx, utils.GetBuildJobName(firstMosb), metav1.DeleteOptions{PropagationPolicy: &bgDeletion})
 	require.NoError(t, err)
 
 	// Wait for the build to be interrupted.
-	waitForBuildToBeInterrupted(t, cs, mosb)
+	waitForBuildToBeInterrupted(t, cs, firstMosb)
 
 	// Wait for the job and pod to be deleted.
-	kubeassert.Eventually().JobDoesNotExist(utils.GetBuildJobName(mosb))
+	kubeassert.Eventually().JobDoesNotExist(utils.GetBuildJobName(firstMosb))
 	kubeassert.Eventually().PodDoesNotExist(pod.Name)
 
 	t.Logf("Add rebuild annotation to the MOSC...")
 	helpers.SetRebuildAnnotationOnMachineOSConfig(ctx, t, cs.GetMcfgclient(), mosc)
 
 	// Wait for the MOSB to be deleted
-	t.Logf("Waiting for MachineOSBuild with UID %s to be deleted", mosb.UID)
-	waitForMOSBToBeDeleted(t, cs, mosb)
+	t.Logf("Waiting for MachineOSBuild with UID %s to be deleted", firstMosb.UID)
+	waitForMOSBToBeDeleted(t, cs, firstMosb)
 
-	t.Logf("Annotation is updated, waiting for new build %s to start", mosb.Name)
+	t.Logf("Annotation is updated, waiting for new build %s to start", firstMosb.Name)
 	// Wait for the build to start.
-	waitForBuildToStart(t, cs, mosb)
+	secondMosb := waitForBuildToStart(t, cs, firstMosb)
+
+	secondJob, err := cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).Get(ctx, utils.GetBuildJobName(secondMosb), metav1.GetOptions{})
+	require.NoError(t, err)
+
+	// Ensure that the names are the same, but that the first and second
+	// MachineOSBuilds have different UIDs.
+	assert.Equal(t, firstMosb.Name, secondMosb.Name)
+	assert.NotEqual(t, firstMosb.UID, secondMosb.UID)
+
+	// Ensure that the build jobs have also changed.
+	assert.Equal(t, firstJob.Name, secondJob.Name)
+	assert.NotEqual(t, firstJob.UID, secondJob.UID)
 }
 
 func assertBuildObjectsAreCreated(t *testing.T, kubeassert *helpers.Assertions, mosb *mcfgv1.MachineOSBuild) {
