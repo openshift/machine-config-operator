@@ -697,12 +697,12 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig, _ *configv1.C
 		}
 	}
 
-	// Annotate pools with pre-built images from MachineOSConfigs
-	klog.V(2).Info("Attempting to annotate pools with pre-built images from MachineOSConfigs")
-	if err := optr.annotatePoolsWithPreBuiltImages(); err != nil {
-		klog.Warningf("Failed to annotate pools with pre-built images: %v", err)
+	// Sync component MachineConfigs for pre-built images from MachineOSConfigs
+	klog.V(2).Info("Syncing component MachineConfigs for pre-built images from MachineOSConfigs")
+	if err := optr.syncPreBuiltImageMachineConfigs(); err != nil {
+		klog.Warningf("Failed to sync pre-built image MachineConfigs: %v", err)
 	} else {
-		klog.V(2).Info("Successfully completed pool annotation check")
+		klog.V(2).Info("Successfully synced pre-built image MachineConfigs")
 	}
 
 	userDataTemplatePath := "manifests/userdata_secret.yaml"
@@ -2411,52 +2411,82 @@ func (optr *Operator) syncMachineOSConfigs(config *renderConfig, _ *configv1.Clu
 }
 
 
-// annotatePoolsWithPreBuiltImages checks for MachineOSConfigs with pre-built images
-// and annotates the corresponding MachineConfigPools so the render controller can inject the osImageURL
-func (optr *Operator) annotatePoolsWithPreBuiltImages() error {
+// syncPreBuiltImageMachineConfigs creates/updates/deletes component MachineConfigs for pools with pre-built images.
+// These component MCs set the osImageURL which gets merged into rendered MCs by the render controller.
+func (optr *Operator) syncPreBuiltImageMachineConfigs() error {
 	// Get all MachineOSConfigs
 	moscs, err := optr.moscLister.List(labels.Everything())
 	if err != nil {
 		return fmt.Errorf("failed to list MachineOSConfigs: %w", err)
 	}
 
+	// Build map of pools that should have pre-built image component MCs
+	poolsWithPreBuiltImages := make(map[string]string) // poolName -> preBuiltImage
 	for _, mosc := range moscs {
-		// Check if this MachineOSConfig has a pre-built image annotation
 		preBuiltImage, hasPreBuiltImage := mosc.Annotations[buildconstants.PreBuiltImageAnnotationKey]
 		if !hasPreBuiltImage || preBuiltImage == "" {
 			continue
 		}
-
 		poolName := mosc.Spec.MachineConfigPool.Name
-		klog.Infof("Found MachineOSConfig %s with pre-built image %s for pool %s", mosc.Name, preBuiltImage, poolName)
+		poolsWithPreBuiltImages[poolName] = preBuiltImage
+		klog.V(4).Infof("MachineOSConfig %s has pre-built image %s for pool %s", mosc.Name, preBuiltImage, poolName)
+	}
 
-		// Get the pool
-		pool, err := optr.mcpLister.Get(poolName)
+	// Get all existing pre-built image component MCs
+	allMCs, err := optr.mcLister.List(labels.Everything())
+	if err != nil {
+		return fmt.Errorf("failed to list MachineConfigs: %w", err)
+	}
+
+	existingPreBuiltMCs := make(map[string]*mcfgv1.MachineConfig) // poolName -> MC
+	for _, mc := range allMCs {
+		// Check if this is a pre-built image component MC by name pattern
+		if strings.HasPrefix(mc.Name, "10-prebuiltimage-osimageurl-") {
+			poolName := strings.TrimPrefix(mc.Name, "10-prebuiltimage-osimageurl-")
+			existingPreBuiltMCs[poolName] = mc
+		}
+	}
+
+	// Create or update component MCs for pools that should have them
+	for poolName, preBuiltImage := range poolsWithPreBuiltImages {
+		mcName := fmt.Sprintf("10-prebuiltimage-osimageurl-%s", poolName)
+
+		required := &mcfgv1.MachineConfig{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: mcfgv1.SchemeGroupVersion.String(),
+				Kind:       "MachineConfig",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name: mcName,
+				Labels: map[string]string{
+					mcfgv1.MachineConfigRoleLabelKey: poolName,
+				},
+				Annotations: map[string]string{
+					buildconstants.PreBuiltImageAnnotationKey: preBuiltImage,
+				},
+			},
+			Spec: mcfgv1.MachineConfigSpec{
+				OSImageURL: preBuiltImage,
+			},
+		}
+
+		_, updated, err := mcoResourceApply.ApplyMachineConfig(optr.client.MachineconfigurationV1(), required)
 		if err != nil {
-			if apierrors.IsNotFound(err) {
-				klog.Warningf("Pool %s not found for MachineOSConfig %s, skipping annotation", poolName, mosc.Name)
-				continue
+			return fmt.Errorf("failed to apply pre-built image MachineConfig %s: %w", mcName, err)
+		}
+		if updated {
+			klog.Infof("Created/updated pre-built image MachineConfig %s with OSImageURL %s for pool %s", mcName, preBuiltImage, poolName)
+		}
+	}
+
+	// Delete component MCs for pools that no longer have pre-built images
+	for poolName, existingMC := range existingPreBuiltMCs {
+		if _, shouldExist := poolsWithPreBuiltImages[poolName]; !shouldExist {
+			klog.Infof("Deleting pre-built image MachineConfig %s as pool %s no longer has a pre-built image", existingMC.Name, poolName)
+			err := optr.client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), existingMC.Name, metav1.DeleteOptions{})
+			if err != nil && !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to delete pre-built image MachineConfig %s: %w", existingMC.Name, err)
 			}
-			return fmt.Errorf("failed to get pool %s: %w", poolName, err)
-		}
-
-		// Check if pool already has the annotation
-		if existingImage, exists := pool.Annotations[buildconstants.PreBuiltImageAnnotationKey]; exists && existingImage == preBuiltImage {
-			klog.V(4).Infof("Pool %s already has pre-built image annotation %s, skipping", poolName, preBuiltImage)
-			continue
-		}
-
-		// Update the pool with the annotation
-		poolCopy := pool.DeepCopy()
-		if poolCopy.Annotations == nil {
-			poolCopy.Annotations = make(map[string]string)
-		}
-		poolCopy.Annotations[buildconstants.PreBuiltImageAnnotationKey] = preBuiltImage
-
-		klog.Infof("Annotating pool %s with pre-built image %s", poolName, preBuiltImage)
-		_, err = optr.client.MachineconfigurationV1().MachineConfigPools().Update(context.TODO(), poolCopy, metav1.UpdateOptions{})
-		if err != nil {
-			return fmt.Errorf("failed to annotate pool %s: %w", poolName, err)
 		}
 	}
 

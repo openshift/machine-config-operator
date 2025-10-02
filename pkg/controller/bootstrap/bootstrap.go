@@ -244,17 +244,22 @@ func (b *Bootstrap) Run(destDir string) error {
 	}
 	klog.Infof("Successfully generated MachineConfigs from kubelet configs.")
 
+	// Create component MachineConfigs for pre-built images for hybrid OCL
+	// This must happen BEFORE render.RunBootstrap() so they can be merged into rendered MCs
+	if len(machineOSConfigs) > 0 {
+		preBuiltImageMCs, err := createPreBuiltImageMachineConfigs(machineOSConfigs, pools)
+		if err != nil {
+			return fmt.Errorf("failed to create pre-built image MachineConfigs: %w", err)
+		}
+		if len(preBuiltImageMCs) > 0 {
+			configs = append(configs, preBuiltImageMCs...)
+			klog.Infof("Successfully created %d pre-built image component MachineConfigs for hybrid OCL.", len(preBuiltImageMCs))
+		}
+	}
+
 	fpools, gconfigs, err := render.RunBootstrap(pools, configs, cconfig)
 	if err != nil {
 		return err
-	}
-
-	// Apply pre-built images to rendered MachineConfigs for hybrid OCL
-	if len(machineOSConfigs) > 0 {
-		if err := applyPreBuiltImagesToRenderedConfigs(gconfigs, machineOSConfigs, fpools); err != nil {
-			return err
-		}
-		klog.Infof("Successfully applied pre-built images to rendered MachineConfigs for hybrid OCL.")
 	}
 
 	serializer := json.NewYAMLSerializer(json.DefaultMetaFactory, scheme, scheme)
@@ -444,9 +449,12 @@ func parseManifests(filename string, r io.Reader) ([]manifest, error) {
 	}
 }
 
-// applyPreBuiltImagesToRenderedConfigs applies pre-built images to rendered MachineConfigs
-// and annotates MachineConfigPools for pools that have associated MachineOSConfigs with pre-built image annotations
-func applyPreBuiltImagesToRenderedConfigs(renderedConfigs []*mcfgv1.MachineConfig, machineOSConfigs []*mcfgv1.MachineOSConfig, pools []*mcfgv1.MachineConfigPool) error {
+// createPreBuiltImageMachineConfigs creates component MachineConfigs that set osImageURL for pools
+// that have associated MachineOSConfigs with pre-built image annotations.
+// These component MCs will be automatically merged into rendered MCs by the render controller.
+func createPreBuiltImageMachineConfigs(machineOSConfigs []*mcfgv1.MachineOSConfig, pools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
+	var preBuiltImageMCs []*mcfgv1.MachineConfig
+
 	// Create a map of pool names to pre-built images
 	poolToPreBuiltImage := make(map[string]string)
 
@@ -459,54 +467,42 @@ func applyPreBuiltImagesToRenderedConfigs(renderedConfigs []*mcfgv1.MachineConfi
 
 		// Validate the pre-built image before proceeding
 		if err := validatePreBuiltImage(preBuiltImage); err != nil {
-			return fmt.Errorf("invalid pre-built image %q for MachineOSConfig %s: %w", preBuiltImage, mosc.Name, err)
+			return nil, fmt.Errorf("invalid pre-built image %q for MachineOSConfig %s: %w", preBuiltImage, mosc.Name, err)
 		}
 
 		klog.Infof("Found MachineOSConfig %s with pre-built image: %s for pool %s", mosc.Name, preBuiltImage, mosc.Spec.MachineConfigPool.Name)
 		poolToPreBuiltImage[mosc.Spec.MachineConfigPool.Name] = preBuiltImage
 	}
 
-	// Annotate MachineConfigPools with pre-built images
-	for _, pool := range pools {
-		if preBuiltImage, exists := poolToPreBuiltImage[pool.Name]; exists {
-			klog.Infof("Annotating MachineConfigPool %s with pre-built image: %s", pool.Name, preBuiltImage)
-			if pool.Annotations == nil {
-				pool.Annotations = make(map[string]string)
-			}
-			pool.Annotations[buildconstants.PreBuiltImageAnnotationKey] = preBuiltImage
+	// Create component MachineConfigs for each pool with a pre-built image
+	// The render controller will automatically merge these into the rendered MC based on the role label
+	for poolName, preBuiltImage := range poolToPreBuiltImage {
+		mcName := fmt.Sprintf("10-prebuiltimage-osimageurl-%s", poolName)
+
+		mc := &mcfgv1.MachineConfig{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: mcfgv1.SchemeGroupVersion.String(),
+				Kind:       "MachineConfig",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name: mcName,
+				Labels: map[string]string{
+					mcfgv1.MachineConfigRoleLabelKey: poolName,
+				},
+				Annotations: map[string]string{
+					buildconstants.PreBuiltImageAnnotationKey: preBuiltImage,
+				},
+			},
+			Spec: mcfgv1.MachineConfigSpec{
+				OSImageURL: preBuiltImage,
+			},
 		}
+
+		preBuiltImageMCs = append(preBuiltImageMCs, mc)
+		klog.Infof("Created component MachineConfig %s with OSImageURL: %s for pool %s", mcName, preBuiltImage, poolName)
 	}
 
-	// Apply pre-built images to rendered MachineConfigs
-	for _, mc := range renderedConfigs {
-		// Get the pool name from the MachineConfig's owner references
-		var poolName string
-		for _, ownerRef := range mc.GetOwnerReferences() {
-			if ownerRef.Kind == "MachineConfigPool" {
-				poolName = ownerRef.Name
-				break
-			}
-		}
-
-		if poolName == "" {
-			// Skip if we can't determine the pool name
-			continue
-		}
-
-		// Check if this pool has a pre-built image
-		if preBuiltImage, exists := poolToPreBuiltImage[poolName]; exists {
-			klog.Infof("Setting OSImageURL to %s for rendered MachineConfig %s (pool: %s)", preBuiltImage, mc.Name, poolName)
-			mc.Spec.OSImageURL = preBuiltImage
-
-			// Add annotation to track that this MC uses a pre-built image
-			if mc.Annotations == nil {
-				mc.Annotations = make(map[string]string)
-			}
-			mc.Annotations[buildconstants.PreBuiltImageAnnotationKey] = preBuiltImage
-		}
-	}
-
-	return nil
+	return preBuiltImageMCs, nil
 }
 
 // validatePreBuiltImage validates the pre-built image format using containers/image library
