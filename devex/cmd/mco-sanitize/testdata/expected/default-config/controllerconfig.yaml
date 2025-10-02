@@ -1,0 +1,17 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: ControllerConfig
+metadata:
+    name: test-controller-config
+spec:
+    additionalTrustBundle:
+        _REDACTED: This field has been redacted
+        length: 28
+    internalRegistryPullSecret:
+        _REDACTED: This field has been redacted
+        length: 20
+    kubeAPIServerServingCAData:
+        _REDACTED: This field has been redacted
+        length: 12
+    rootCAData:
+        _REDACTED: This field has been redacted
+        length: 24

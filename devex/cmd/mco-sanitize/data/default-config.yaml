@@ -1,0 +1,14 @@
+redact:
+  - kind: MachineConfig
+    apiVersion: machineconfiguration.openshift.io/v1
+    paths:
+      - spec.config.storage.files.*.contents
+      - spec.config.systemd.units.*.contents
+      - spec.config.systemd.units.*.dropins.*.contents
+  - kind: ControllerConfig
+    apiVersion: machineconfiguration.openshift.io/v1
+    paths:
+      - spec.internalRegistryPullSecret
+      - spec.kubeAPIServerServingCAData
+      - spec.rootCAData
+      - spec.additionalTrustBundle
