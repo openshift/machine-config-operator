@@ -6,6 +6,7 @@ require (
 	github.com/Azure/ARO-RP v0.0.0-20250602035759-0693f32d5ccc
 	github.com/BurntSushi/toml v1.5.0
 	github.com/InVisionApp/go-health v2.1.0+incompatible
+	github.com/ProtonMail/go-crypto v1.3.0
 	github.com/apparentlymart/go-cidr v1.1.0
 	github.com/ashcrow/osrelease v0.0.0-20180626175927-9b292693c55c
 	github.com/clarketm/json v1.17.1
@@ -93,6 +94,7 @@ require (
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/chai2010/gettext-go v1.0.2 // indirect
 	github.com/ckaznocha/intrange v0.3.0 // indirect
+	github.com/cloudflare/circl v1.6.0 // indirect
 	github.com/container-storage-interface/spec v1.9.0 // indirect
 	github.com/containerd/containerd/api v1.8.0 // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect

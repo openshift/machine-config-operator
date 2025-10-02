@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-configmap-primitives
+data:
+  # Array of primitive strings (some sensitive, some not)
+  apiKeys:
+  - "public-key-1"
+  - "secret-api-key-abc123"
+  - "another-public-key"
+  - "sensitive-token-xyz789"
+
+  # Array of database connection strings
+  databases:
+  - "postgresql://user:password@db1:5432/app"
+  - "redis://user:secret@redis1:6379"
+  - "mongodb://admin:pass123@mongo:27017/data"
+
+  # Mixed array with some public values
+  servers:
+  - "https://api.example.com"
+  - "postgres://admin:secret@internal-db:5432/prod"
+  - "https://public.service.com"
+
+  # Single level primitive arrays
+  passwords:
+  - "admin-password-123"
+  - "user-secret-456"
+  - "service-token-789"
+
+  # Public config that should NOT be redacted
+  endpoints:
+  - "https://api.public.com"
+  - "https://service.public.org"
+
+  publicSetting: "this should remain visible"
