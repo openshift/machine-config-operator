@@ -19,7 +19,6 @@ import (
 	mcoplistersv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
-	build "github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -663,15 +662,6 @@ func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mc
 	}
 	merged.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] = version.Hash
 	merged.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey] = cconfig.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey]
-
-	// Check if the pool has a pre-built image annotation for install-time hybrid OCL
-	// This allows us to inject a custom OS image for layered pools at install time
-	if preBuiltImage, hasPreBuiltImage := pool.Annotations[build.PreBuiltImageAnnotationKey]; hasPreBuiltImage && preBuiltImage != "" {
-		klog.Infof("Injecting pre-built image %q into rendered MachineConfig %s for pool %s", preBuiltImage, merged.Name, pool.Name)
-		merged.Spec.OSImageURL = preBuiltImage
-		// Add annotation to track that this MC uses a pre-built image
-		merged.Annotations[build.PreBuiltImageAnnotationKey] = preBuiltImage
-	}
 
 	// The operator needs to know the user overrode this, so it knows if it needs to skip the
 	// OSImageURL check during upgrade -- if the user took over managing OS upgrades this way,
