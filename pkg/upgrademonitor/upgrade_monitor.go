@@ -335,6 +335,45 @@ func isSingletonCondition(singletonConditionTypes []mcfgv1.StateProgress, condit
 	return false
 }
 
+// UpdateMachineConfigNodeSpecDesiredVersion sets the desired config version value in the `Spec` of
+// an existing MachineConfigNode resource
+func UpdateMachineConfigNodeSpecDesiredVersion(fgHandler ctrlcommon.FeatureGatesHandler, mcfgClient mcfgclientset.Interface, nodeName string, desiredConfig string) error {
+	if fgHandler == nil {
+		return nil
+	}
+
+	// Check that the MachineConfigNode feature gate is enabled
+	if !fgHandler.Enabled(features.FeatureGateMachineConfigNodes) {
+		klog.Infof("MachineConfigNode FeatureGate is not enabled.")
+		return nil
+	}
+
+	// Get the existing MCN
+	mcn, mcnErr := mcfgClient.MachineconfigurationV1().MachineConfigNodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
+	// Note that this function is only intended to update the Spec of an existing MCN. We should
+	// not reach this point if there is not an existing MCN for a node, but we need to handle the
+	// DNE error situation just in case.
+	if mcnErr != nil {
+		// no existing MCN found since no resource found
+		if apierrors.IsNotFound(mcnErr) {
+			return fmt.Errorf("MCN for %s node does not exits. Skipping MCN desired annotations spec update.", nodeName)
+		}
+		return mcnErr
+	}
+
+	// Set the desired config annotation
+	mcn.Spec.ConfigVersion.Desired = NotYetSet
+	if desiredConfig != "" {
+		mcn.Spec.ConfigVersion.Desired = desiredConfig
+	}
+
+	// Update the MCN resource
+	if _, err := mcfgClient.MachineconfigurationV1().MachineConfigNodes().Update(context.TODO(), mcn, metav1.UpdateOptions{FieldManager: "machine-config-operator"}); err != nil {
+		return fmt.Errorf("failed to update the %s mcn spec with the new desired config and image value: %w", nodeName, err)
+	}
+	return nil
+}
+
 // GenerateAndApplyMachineConfigNodeSpec generates and applies a new MCN spec based off the node state
 func GenerateAndApplyMachineConfigNodeSpec(fgHandler ctrlcommon.FeatureGatesHandler, pool string, node *corev1.Node, mcfgClient mcfgclientset.Interface) error {
 	if fgHandler == nil || node == nil {
