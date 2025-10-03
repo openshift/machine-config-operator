@@ -176,7 +176,7 @@ type MachineConfigPoolReference struct {
 	// This value should be at most 253 characters, and must contain only lowercase
 	// alphanumeric characters, hyphens and periods, and should start and end with an alphanumeric character.
 	// +kubebuilder:validation:MaxLength:=253
-	// +kubebuilder:validation:XValidation:rule="!format.dns1123Subdomain().validate(self).hasValue()",message="a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character."
+	// +kubebuilder:validation:XValidation:rule=`self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$')`,message="a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character."
 	// +required
 	Name string `json:"name"`
 }
@@ -187,7 +187,7 @@ type ImageSecretObjectReference struct {
 	// Must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character.
 	// This secret must be in the openshift-machine-config-operator namespace.
 	// +kubebuilder:validation:MaxLength:=253
-	// +kubebuilder:validation:XValidation:rule="!format.dns1123Subdomain().validate(self).hasValue()",message="a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character."
+	// +kubebuilder:validation:XValidation:rule=`self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$')`,message="a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character."
 	// +required
 	Name string `json:"name"`
 }
