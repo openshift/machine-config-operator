@@ -32,7 +32,9 @@ contents:
     EXIT_FENCING_SECRETS_MISMATCH=26
     EXIT_DAEMONS_BAD=22
     EXIT_ETCD_NOT_READY=23
-    EXIT_ETCD_FATAL=24
+    
+    READY_TIMEOUT="${READY_TIMEOUT:-$((TIMEOUT / 2))}"
+    PCMK_TIMEOUT="${PCMK_TIMEOUT:-$((TIMEOUT / 2))}"
     
     # ================================
     # main functions
@@ -167,12 +169,15 @@ contents:
     log() {
     	printf '\033[36m[INFO]\033[0m %s\n' "$*"
     }
+    
     log_warn() {
     	printf '\033[33m[WARN]\033[0m %s\n' "$*"
     }
+    
     log_err() {
     	printf '\033[31m[ERROR]\033[0m %s\n' "$*" >&2
     }
+    
     log_ok() {
     	printf '\033[32m[OK]\033[0m %s\n' "$*"
     }
@@ -180,18 +185,26 @@ contents:
     is_ipv6() {
     	[[ "$1" == *:* ]]
     }
-    fmt_host() {
+    
+    ip_for_url() {
     	local h="$1"
-    	h="${h#[[]}"
-    	h="${h%[]]}"
-    	is_ipv6 "$h" && echo "[$h]" || echo "$h"
+    	is_ipv6 "$h" && printf '[%s]\n' "$h" || printf '%s\n' "$h"
     }
+    
+    format_host_ip() {
+    	local raw_host="$1"
+    	raw_host="${raw_host#[[]}"
+    	raw_host="${raw_host%[]]}"
+    	is_ipv6 "$raw_host" && echo "[$raw_host]" || echo "$raw_host"
+    }
+    
     short_hostname() {
     	echo "${1%%.*}"
     }
+    
     ssh_cmd() {
     	local host
-    	host="$(fmt_host "$1")"
+    	host="$(format_host_ip "$1")"
     	shift
     	local keyopt=()
     	[[ -n "$SSH_KEY" ]] && keyopt=(-i "$SSH_KEY")
@@ -238,14 +251,7 @@ contents:
     get_internal_ip() {
     	local node="$1"
     	oc_run get node "$node" -o json |
-    		jq -r '
-          [ .status.addresses[] | select(.type=="InternalIP") | .address ] as $a
-          | ( ($a | map(select(test("\\."))))                           # v4
-              + ( ($a | map(select(test(":"))))                          # or v6
-                  | map(select(startswith("fe80:")|not))
-                )
-            )[0] // empty
-        '
+    		jq -r '[.status.addresses[]? | select(.type=="InternalIP")][0].address // empty'
     }
     
     node_ready() {
@@ -262,52 +268,62 @@ contents:
     }
     
     pcmk_online() {
-    	local want="$1" s="${1%%.*}" names
-    	names="$(pcs_nodes_names)"
-    	[[ -n "$names" ]] || return 1
-    	names=" $names "
-    	[[ "$names" == *" $want "* || "$names" == *" $s "* ]]
+    	local target_node="$1"
+    	local short_node_name="${target_node%%.*}"
+    	local pcmk_online_nodes
+    	pcmk_online_nodes="$(pcs_nodes_names)"
+    	[[ -n "$pcmk_online_nodes" ]] || return 1
+    	pcmk_online_nodes=" $pcmk_online_nodes "
+    	[[ "$pcmk_online_nodes" == *" $target_node "* || "$pcmk_online_nodes" == *" $short_node_name "* ]]
     }
     
     wait_not_ready() {
-    	local n="$1" deadline=$((SECONDS + TIMEOUT))
-    	log "Waiting for '$n' to become NotReady (API)"
+    	local target_node="$1"
+    	local deadline=$((SECONDS + TIMEOUT))
+    
+    	log "Waiting for '$target_node' to become NotReady (API)"
     	while ((SECONDS < deadline)); do
-    		if ! node_ready "$n"; then
-    			log_ok "$n NotReady (API)"
+    		if ! node_ready "$target_node"; then
+    			log_ok "$target_node NotReady (API)"
     			return $EXIT_OK
     		fi
     		sleep 5
     	done
-    	log_err "Timeout waiting for $n NotReady"
+    
+    	log_err "Timeout waiting for $target_node NotReady"
     	return $EXIT_GENERIC
     }
     
     wait_ready() {
-    	local n="$1" deadline=$((SECONDS + TIMEOUT))
-    	log "Waiting for '$n' Ready (API)…"
-    	while ((SECONDS < deadline)); do
-    		node_ready "$n" && {
-    			log_ok "$n Ready (API)"
+    	local target_node="$1"
+    	local api_deadline=$((SECONDS + READY_TIMEOUT))
+    
+    	log "Waiting for '$target_node' Ready (API)…"
+    	while ((SECONDS < api_deadline)); do
+    		if node_ready "$target_node"; then
+    			log_ok "$target_node Ready (API)"
     			break
-    		}
+    		fi
     		sleep 5
     	done
-    	((SECONDS < deadline)) || {
-    		log_err "Timeout waiting Ready for $n"
+    
+    	if ((SECONDS >= api_deadline)); then
+    		log_err "Timeout waiting Ready for $target_node"
     		return $EXIT_GENERIC
-    	}
-    	deadline=$((SECONDS + TIMEOUT))
-    	log "Waiting for '$n' ONLINE (Pacemaker)…"
-    	while ((SECONDS < deadline)); do
-    		pcmk_online "$n" && {
-    			log_ok "$n ONLINE (Pacemaker)"
+    	fi
+    
+    	local pcmk_deadline=$((SECONDS + PCMK_TIMEOUT))
+    	log "Waiting for '$target_node' ONLINE (Pacemaker)…"
+    	while ((SECONDS < pcmk_deadline)); do
+    		if pcmk_online "$target_node"; then
+    			log_ok "$target_node ONLINE (Pacemaker)"
     			return $EXIT_OK
-    		}
+    		fi
     		sleep 5
     	done
-    	log_err "Timeout waiting Pacemaker ONLINE for $n"
-    	return 1
+    
+    	log_err "Timeout waiting Pacemaker ONLINE for $target_node"
+    	return $EXIT_GENERIC
     }
     
     stonith_show() {
@@ -369,21 +385,19 @@ contents:
     
     etcd_both_voters_healthy() {
     	local tgt="$1" out
-    
+    	local A_URL B_URL
+    	A_URL="$(ip_for_url "$IP_A")"
+    	B_URL="$(ip_for_url "$IP_B")"
     	out="$(host_run "$tgt" \
-    		"podman exec etcd sh -lc 'ETCDCTL_API=3 etcdctl -w json endpoint health --endpoints=https://$IP_A:2379,https://$IP_B:2379'")" &&
+    		"podman exec etcd sh -lc 'ETCDCTL_API=3 etcdctl -w json endpoint health --endpoints=https://$A_URL:2379,https://$B_URL:2379'")" &&
     		jq -e 'type=="array" and all(.[]; .health==true)' >/dev/null <<<"$out" ||
     		return $EXIT_GENERIC
     
     	out="$(host_run "$tgt" \
     		"podman exec etcd sh -lc 'ETCDCTL_API=3 etcdctl -w json member list'")" &&
-    		jq -e --arg ipa "$IP_A" --arg ipb "$IP_B" '
-          .members as $m
-          | [ $m[] | select((.isLearner // .learner // false)==false) ] as $v
-          | ( any($v[]?; (.clientURLs[]? | contains($ipa))) and
-              any($v[]?; (.clientURLs[]? | contains($ipb))) )
-        ' >/dev/null <<<"$out" ||
-    		return $EXIT_GENERIC
+    		jq -e --arg ipa "https://$A_URL:" --arg ipb "https://$B_URL:" \
+    			'(.members//[])|map(select(.isLearner|not)) as $v|(any($v[]?; .clientURLs[]? | contains($ipa)) and any($v[]?; .clientURLs[]? | contains($ipb)))' \
+    			>/dev/null <<<"$out" || return $EXIT_GENERIC
     
     	return $EXIT_OK
     }
@@ -418,17 +432,9 @@ contents:
     	local node="$1" ns="openshift-etcd" short_node
     	short_node="$(short_hostname "$node")"
     	oc_run -n "$ns" get secret -o json 2>/dev/null |
-    		jq -e --arg node "$node" --arg short "$short_node" '
-            any(.items[]?;
-              (.metadata.name | startswith("fencing-credentials-"))
-              and
-              (
-                .metadata.name == ("fencing-credentials-" + $node)
-                or .metadata.name == ("fencing-credentials-" + $short)
-                or (.metadata.name | contains($node) or contains($short))
-              )
-            )
-          '
+    		jq -e --arg short "$short_node" '
+          any(.items[]?; (.metadata.name // "") | startswith("fencing-credentials-" + $short))
+        ' >/dev/null
     }
     
     check_fencing_secret_bindings() {
