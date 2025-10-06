@@ -57,12 +57,6 @@ var (
 			Name: "mcd_config_drift",
 			Help: "timestamp for config drift",
 		})
-	// mcdMissingMC tracks the missing machine config error
-	mcdMissingMC = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "mcd_missing_mc",
-			Help: "total number of times a MC was reported missing",
-		}, []string{"mc"})
 
 	// unsupportedPackages counts the number of unsupported packages installed on the node, categorized by vendor
 	unsupportedPackages = prometheus.NewGaugeVec(
