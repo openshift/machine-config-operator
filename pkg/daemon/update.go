@@ -2704,20 +2704,18 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 		return dn.InplaceUpdateViaNewContainer(newURL)
 	}
 
+	isPisConfigured, err := dn.isPinnedImageSetConfigured()
+	if err != nil {
+		// Ignore the error and default to remote pull
+		klog.Errorf("Failed to determine if pinned image set is configured: %v", err)
+	}
+
+	// If PIS is configured check if the image is locally present. If so, rebase using
+	// the local image
 	isOsImagePresent := false
-
-	// not set during firstboot
-	if dn.featureGatesAccessor != nil {
-		fg, err := dn.featureGatesAccessor.CurrentFeatureGates()
-		if err != nil {
+	if isPisConfigured {
+		if isOsImagePresent, err = isImagePresent(newURL); err != nil {
 			return err
-		}
-
-		if fg.Enabled(features.FeatureGatePinnedImages) {
-			isOsImagePresent, err = isImagePresent(newURL)
-			if err != nil {
-				return err
-			}
 		}
 	}
 
@@ -2747,6 +2745,32 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	}
 
 	return nil
+}
+
+func (dn *Daemon) isPinnedImageSetConfigured() (bool, error) {
+	if dn.featureGatesAccessor == nil || dn.node == nil || dn.mcpLister == nil {
+		// MCD first boot run: No connection to the cluster and node not populated -> Cannot check PIS config
+		return false, nil
+	}
+
+	if fg, err := dn.featureGatesAccessor.CurrentFeatureGates(); err != nil || !fg.Enabled(features.FeatureGatePinnedImages) {
+		// Failure fetching the FeatureGates (should never happen) or PIS not enabled
+		return false, err
+	}
+
+	// PIS is enabled. Check if it's configured in any of its pools
+	pools, _, err := helpers.GetPoolsForNode(dn.mcpLister, dn.node)
+	if err != nil {
+		return false, fmt.Errorf("failed to get pools for node %q: %w", dn.node.Name, err)
+	}
+
+	for _, pool := range pools {
+		if pool.Spec.PinnedImageSets != nil && len(pool.Spec.PinnedImageSets) > 0 {
+			return true, nil
+		}
+	}
+	// No pools with PIS configured
+	return false, nil
 }
 
 // Synchronously invoke a command, writing its stdout to our stdout,
