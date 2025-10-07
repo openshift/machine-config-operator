@@ -18,13 +18,13 @@ import (
 	kscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog/v2"
 
+	"github.com/containers/image/v5/docker/reference"
+	"github.com/opencontainers/go-digest"
 	apicfgv1 "github.com/openshift/api/config/v1"
 	apicfgv1alpha1 "github.com/openshift/api/config/v1alpha1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	buildconstants "github.com/openshift/machine-config-operator/pkg/controller/build/constants"
-	"github.com/containers/image/v5/docker/reference"
-	"github.com/opencontainers/go-digest"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	containerruntimeconfig "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
 	kubeletconfig "github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
@@ -96,7 +96,6 @@ func (b *Bootstrap) Run(destDir string) error {
 		imagePolicies        []*apicfgv1.ImagePolicy
 		imgCfg               *apicfgv1.Image
 		apiServer            *apicfgv1.APIServer
-		secrets              []*corev1.Secret
 	)
 	for _, info := range infos {
 		if info.IsDir() {
@@ -162,8 +161,6 @@ func (b *Bootstrap) Run(destDir string) error {
 				if obj.GetName() == ctrlcommon.APIServerInstanceName {
 					apiServer = obj
 				}
-			case *corev1.Secret:
-				secrets = append(secrets, obj)
 			default:
 				klog.Infof("skipping %q [%d] manifest because of unhandled %T", file.Name(), idx+1, obji)
 			}
@@ -251,10 +248,8 @@ func (b *Bootstrap) Run(destDir string) error {
 		if err != nil {
 			return fmt.Errorf("failed to create pre-built image MachineConfigs: %w", err)
 		}
-		if len(preBuiltImageMCs) > 0 {
-			configs = append(configs, preBuiltImageMCs...)
-			klog.Infof("Successfully created %d pre-built image component MachineConfigs for hybrid OCL.", len(preBuiltImageMCs))
-		}
+		configs = append(configs, preBuiltImageMCs...)
+		klog.Infof("Successfully created %d pre-built image component MachineConfigs for hybrid OCL.", len(preBuiltImageMCs))
 	}
 
 	fpools, gconfigs, err := render.RunBootstrap(pools, configs, cconfig)
@@ -303,54 +298,6 @@ func (b *Bootstrap) Run(destDir string) error {
 		}
 	}
 
-	// Write MachineOSConfigs to machine-os-configs directory
-	// These will be created by the MCO controller after cluster startup
-	if len(machineOSConfigs) > 0 {
-		mosconfigdir := filepath.Join(destDir, "machine-os-configs")
-		if err := os.MkdirAll(mosconfigdir, 0o764); err != nil {
-			return err
-		}
-		for _, mosc := range machineOSConfigs {
-			buf := bytes.Buffer{}
-			err := encoder.Encode(mosc, &buf)
-			if err != nil {
-				return err
-			}
-			path := filepath.Join(mosconfigdir, fmt.Sprintf("%s.yaml", mosc.Name))
-			// Disable gosec here to avoid throwing
-			// G306: Expect WriteFile permissions to be 0600 or less
-			// #nosec
-			if err := os.WriteFile(path, buf.Bytes(), 0o664); err != nil {
-				return err
-			}
-		}
-		klog.Infof("Successfully wrote %d MachineOSConfig manifests for post-bootstrap creation", len(machineOSConfigs))
-	}
-
-	// Write Secrets to secrets directory
-	// These will be created by the MCO controller after cluster startup
-	if len(secrets) > 0 {
-		secretsdir := filepath.Join(destDir, "secrets")
-		if err := os.MkdirAll(secretsdir, 0o764); err != nil {
-			return err
-		}
-		secretEncoder := codecFactory.EncoderForVersion(serializer, corev1.SchemeGroupVersion)
-		for _, secret := range secrets {
-			buf := bytes.Buffer{}
-			err := secretEncoder.Encode(secret, &buf)
-			if err != nil {
-				return err
-			}
-			path := filepath.Join(secretsdir, fmt.Sprintf("%s.yaml", secret.Name))
-			// Disable gosec here to avoid throwing
-			// G306: Expect WriteFile permissions to be 0600 or less
-			// #nosec
-			if err := os.WriteFile(path, buf.Bytes(), 0o664); err != nil {
-				return err
-			}
-		}
-		klog.Infof("Successfully wrote %d Secret manifests for post-bootstrap creation", len(secrets))
-	}
 
 	// If an apiServer object exists, write it to /etc/mcs/bootstrap/api-server/api-server.yaml
 	// so that bootstrap MCS can consume it
@@ -452,54 +399,33 @@ func parseManifests(filename string, r io.Reader) ([]manifest, error) {
 // createPreBuiltImageMachineConfigs creates component MachineConfigs that set osImageURL for pools
 // that have associated MachineOSConfigs with pre-built image annotations.
 // These component MCs will be automatically merged into rendered MCs by the render controller.
+// This function performs strict validation at bootstrap time and will fail if:
+// - A MachineOSConfig is missing the pre-built image annotation
+// - The pre-built image format or digest is invalid
 func createPreBuiltImageMachineConfigs(machineOSConfigs []*mcfgv1.MachineOSConfig, pools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
 	var preBuiltImageMCs []*mcfgv1.MachineConfig
 
-	// Create a map of pool names to pre-built images
-	poolToPreBuiltImage := make(map[string]string)
-
+	// At bootstrap time, we require ALL MachineOSConfigs to have pre-built images
+	// This is a strict requirement for day-0 hybrid OCL support
 	for _, mosc := range machineOSConfigs {
-		// Check if this MachineOSConfig has a pre-built image annotation
 		preBuiltImage, hasPreBuiltImage := mosc.Annotations[buildconstants.PreBuiltImageAnnotationKey]
 		if !hasPreBuiltImage || preBuiltImage == "" {
-			continue
+			return nil, fmt.Errorf("MachineOSConfig %s is missing required annotation %s for bootstrap pre-built image support",
+				mosc.Name, buildconstants.PreBuiltImageAnnotationKey)
 		}
 
-		// Validate the pre-built image before proceeding
+		poolName := mosc.Spec.MachineConfigPool.Name
+
+		// Validate the pre-built image format and digest
 		if err := validatePreBuiltImage(preBuiltImage); err != nil {
-			return nil, fmt.Errorf("invalid pre-built image %q for MachineOSConfig %s: %w", preBuiltImage, mosc.Name, err)
+			return nil, fmt.Errorf("invalid pre-built image %q for MachineOSConfig %s (pool %s): %w",
+				preBuiltImage, mosc.Name, poolName, err)
 		}
 
-		klog.Infof("Found MachineOSConfig %s with pre-built image: %s for pool %s", mosc.Name, preBuiltImage, mosc.Spec.MachineConfigPool.Name)
-		poolToPreBuiltImage[mosc.Spec.MachineConfigPool.Name] = preBuiltImage
-	}
-
-	// Create component MachineConfigs for each pool with a pre-built image
-	// The render controller will automatically merge these into the rendered MC based on the role label
-	for poolName, preBuiltImage := range poolToPreBuiltImage {
-		mcName := fmt.Sprintf("10-prebuiltimage-osimageurl-%s", poolName)
-
-		mc := &mcfgv1.MachineConfig{
-			TypeMeta: metav1.TypeMeta{
-				APIVersion: mcfgv1.SchemeGroupVersion.String(),
-				Kind:       "MachineConfig",
-			},
-			ObjectMeta: metav1.ObjectMeta{
-				Name: mcName,
-				Labels: map[string]string{
-					mcfgv1.MachineConfigRoleLabelKey: poolName,
-				},
-				Annotations: map[string]string{
-					buildconstants.PreBuiltImageAnnotationKey: preBuiltImage,
-				},
-			},
-			Spec: mcfgv1.MachineConfigSpec{
-				OSImageURL: preBuiltImage,
-			},
-		}
-
+		// Create the component MachineConfig
+		mc := ctrlcommon.CreatePreBuiltImageMachineConfig(poolName, preBuiltImage, buildconstants.PreBuiltImageAnnotationKey)
 		preBuiltImageMCs = append(preBuiltImageMCs, mc)
-		klog.Infof("Created component MachineConfig %s with OSImageURL: %s for pool %s", mcName, preBuiltImage, poolName)
+		klog.Infof("✓ Validated and created component MachineConfig %s with OSImageURL: %s for pool %s", mc.Name, preBuiltImage, poolName)
 	}
 
 	return preBuiltImageMCs, nil
@@ -535,4 +461,3 @@ func validatePreBuiltImage(imageSpec string) error {
 
 	return nil
 }
-
