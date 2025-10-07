@@ -28,8 +28,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/serializer"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
@@ -165,13 +163,13 @@ func (b *buildReconciler) rebuildMachineOSConfig(ctx context.Context, mosc *mcfg
 // MachineOSBuild should be created and then creates it, if needed.
 func (b *buildReconciler) addMachineOSConfig(ctx context.Context, mosc *mcfgv1.MachineOSConfig) error {
 	// Check for pre-built image seeding annotation - only seed if not already seeded
-	if preBuiltImage, exists := mosc.Annotations[constants.PreBuiltImageAnnotationKey]; exists {
+	if preBuiltImage, hasImage := getPreBuiltImage(mosc); hasImage {
 		// Only attempt seeding if this MachineOSConfig hasn't been seeded yet
 		// The seeded annotation prevents re-running the seeding workflow on every sync
-		if _, alreadySeeded := mosc.Annotations[constants.PreBuiltImageSeededAnnotationKey]; !alreadySeeded && !hasCurrentBuildAnnotation(mosc) {
+		if shouldSeedWithPreBuiltImage(mosc) {
 			klog.Infof("MachineOSConfig %q has pre-built image annotation and hasn't been seeded yet, attempting to seed with image %q", mosc.Name, preBuiltImage)
 			return b.seedMachineOSConfigWithExistingImage(ctx, mosc, preBuiltImage)
-		} else if alreadySeeded {
+		} else if hasPreBuiltImageSeededAnnotation(mosc) {
 			klog.V(4).Infof("MachineOSConfig %q has already been seeded with pre-built image, proceeding with normal processing", mosc.Name)
 		} else {
 			klog.Infof("MachineOSConfig %q has pre-built image annotation but already has current build %q, proceeding with normal processing",
@@ -1302,11 +1300,9 @@ func (b *buildReconciler) syncMachineOSBuild(ctx context.Context, mosb *mcfgv1.M
 
 			// If this MOSC has a pre-built image annotation and hasn't been seeded yet,
 			// don't start a real build - the seeding workflow should handle creating a synthetic build
-			if _, hasPreBuiltImage := mosc.Annotations[constants.PreBuiltImageAnnotationKey]; hasPreBuiltImage {
-				if _, alreadySeeded := mosc.Annotations[constants.PreBuiltImageSeededAnnotationKey]; !alreadySeeded {
-					klog.Infof("MachineOSBuild %q associated with MachineOSConfig %q has pre-built image annotation but hasn't been seeded yet, skipping real build start (seeding workflow should handle this)", mosb.Name, mosc.Name)
-					return nil
-				}
+			if isPreBuiltImageAwaitingSeeding(mosc) {
+				klog.Infof("MachineOSBuild %q associated with MachineOSConfig %q has pre-built image annotation but hasn't been seeded yet, skipping real build start (seeding workflow should handle this)", mosb.Name, mosc.Name)
+				return nil
 			}
 
 			observer := imagebuilder.NewJobImageBuildObserver(b.kubeclient, b.mcfgclient, mosb, mosc)
@@ -1388,11 +1384,9 @@ func (b *buildReconciler) syncMachineOSConfig(ctx context.Context, mosc *mcfgv1.
 
 		// If the MachineOSConfig has a pre-built image annotation AND hasn't been seeded yet,
 		// the seeding workflow should handle creating the synthetic build. Don't create a normal build here.
-		if _, hasPreBuiltImage := mosc.Annotations[constants.PreBuiltImageAnnotationKey]; hasPreBuiltImage {
-			if _, alreadySeeded := mosc.Annotations[constants.PreBuiltImageSeededAnnotationKey]; !alreadySeeded && !hasCurrentBuildAnnotation(mosc) {
-				klog.Infof("MachineOSConfig %q has pre-built image annotation but hasn't been seeded yet, skipping normal build creation (seeding workflow should handle this)", mosc.Name)
-				return nil
-			}
+		if shouldSeedWithPreBuiltImage(mosc) {
+			klog.Infof("MachineOSConfig %q has pre-built image annotation but hasn't been seeded yet, skipping normal build creation (seeding workflow should handle this)", mosc.Name)
+			return nil
 		}
 
 		klog.Infof("No matching MachineOSBuild found for MachineOSConfig %q, will create one", mosc.Name)
@@ -1451,11 +1445,9 @@ func (b *buildReconciler) reconcilePoolChange(ctx context.Context, mcp *mcfgv1.M
 	// If the MachineOSConfig has a pre-built image annotation AND hasn't been seeded yet,
 	// the seeding workflow should handle creating the synthetic build. Don't proceed with normal build workflow.
 	firstOptIn := mosc.Annotations[constants.CurrentMachineOSBuildAnnotationKey]
-	if _, hasPreBuiltImage := mosc.Annotations[constants.PreBuiltImageAnnotationKey]; hasPreBuiltImage {
-		if _, alreadySeeded := mosc.Annotations[constants.PreBuiltImageSeededAnnotationKey]; !alreadySeeded && firstOptIn == "" {
-			klog.Infof("MachineOSConfig %q has pre-built image annotation but hasn't been seeded yet, skipping pool change reconciliation (seeding workflow should handle this)", mosc.Name)
-			return nil
-		}
+	if hasPreBuiltImageAnnotation(mosc) && !hasPreBuiltImageSeededAnnotation(mosc) && firstOptIn == "" {
+		klog.Infof("MachineOSConfig %q has pre-built image annotation but hasn't been seeded yet, skipping pool change reconciliation (seeding workflow should handle this)", mosc.Name)
+		return nil
 	}
 
 	oldRendered := mcp.Status.Configuration.Name
@@ -1864,6 +1856,34 @@ func (b *buildReconciler) createSyntheticMachineOSBuild(ctx context.Context, mos
 					Reason:             "PreBuiltImageSeeded",
 					Message:            fmt.Sprintf("Pre-built image %q successfully seeded", imageSpec),
 				},
+				{
+					Type:               string(mcfgv1.MachineOSBuildPrepared),
+					Status:             metav1.ConditionFalse,
+					LastTransitionTime: now,
+					Reason:             "PreBuiltImageSeeded",
+					Message:            "Skipped: using pre-built image",
+				},
+				{
+					Type:               string(mcfgv1.MachineOSBuilding),
+					Status:             metav1.ConditionFalse,
+					LastTransitionTime: now,
+					Reason:             "PreBuiltImageSeeded",
+					Message:            "Skipped: using pre-built image",
+				},
+				{
+					Type:               string(mcfgv1.MachineOSBuildFailed),
+					Status:             metav1.ConditionFalse,
+					LastTransitionTime: now,
+					Reason:             "PreBuiltImageSeeded",
+					Message:            "Skipped: using pre-built image",
+				},
+				{
+					Type:               string(mcfgv1.MachineOSBuildInterrupted),
+					Status:             metav1.ConditionFalse,
+					LastTransitionTime: now,
+					Reason:             "PreBuiltImageSeeded",
+					Message:            "Skipped: using pre-built image",
+				},
 			},
 		},
 	}
@@ -1954,72 +1974,20 @@ func (b *buildReconciler) updateMachineOSConfigForSeeding(ctx context.Context, m
 	return nil
 }
 
-// ensureBootstrapSecretExists ensures that a secret from the bootstrap manifests exists in the MCO namespace
+// ensureBootstrapSecretExists verifies that the required secret exists in the MCO namespace.
+// Secrets are expected to be created from bootstrap manifests when the cluster starts up.
 func (b *buildReconciler) ensureBootstrapSecretExists(ctx context.Context, secretName string) error {
-	// First check if the secret already exists
+	// Check if the secret exists in the MCO namespace
 	_, err := b.kubeclient.CoreV1().Secrets("openshift-machine-config-operator").Get(ctx, secretName, metav1.GetOptions{})
 	if err == nil {
-		// Secret already exists
+		// Secret exists
+		klog.V(4).Infof("Secret %s exists in MCO namespace", secretName)
 		return nil
 	}
-	if !k8serrors.IsNotFound(err) {
-		return fmt.Errorf("failed to check if secret %s exists: %w", secretName, err)
+
+	if k8serrors.IsNotFound(err) {
+		return fmt.Errorf("required secret %s not found in openshift-machine-config-operator namespace. Ensure the secret was created from bootstrap manifests or exists in the cluster", secretName)
 	}
 
-	// Secret doesn't exist, try to create it from bootstrap manifests
-	klog.Infof("Secret %s not found, attempting to create from bootstrap manifests", secretName)
-
-	// Path to bootstrap secrets directory
-	bootstrapSecretsDir := "/etc/mcs/bootstrap/secrets"
-
-	// Check if the directory exists
-	if _, err := os.Stat(bootstrapSecretsDir); os.IsNotExist(err) {
-		return fmt.Errorf("bootstrap secrets directory %s does not exist", bootstrapSecretsDir)
-	}
-
-	// Look for the specific secret file
-	secretFilePath := filepath.Join(bootstrapSecretsDir, secretName+".yaml")
-	if _, err := os.Stat(secretFilePath); os.IsNotExist(err) {
-		return fmt.Errorf("bootstrap secret manifest %s not found", secretFilePath)
-	}
-
-	// Read and decode the secret manifest
-	data, err := os.ReadFile(secretFilePath)
-	if err != nil {
-		return fmt.Errorf("failed to read bootstrap secret manifest %s: %w", secretFilePath, err)
-	}
-
-	// Set up decoder for Secret objects
-	scheme := runtime.NewScheme()
-	corev1.AddToScheme(scheme)
-	codecFactory := serializer.NewCodecFactory(scheme)
-	decoder := codecFactory.UniversalDecoder(corev1.SchemeGroupVersion)
-
-	obj, err := runtime.Decode(decoder, data)
-	if err != nil {
-		return fmt.Errorf("failed to decode bootstrap secret manifest %s: %w", secretFilePath, err)
-	}
-
-	secret, ok := obj.(*corev1.Secret)
-	if !ok {
-		return fmt.Errorf("unexpected object type in bootstrap secret manifest %s: %T", secretFilePath, obj)
-	}
-
-	// Ensure the secret is created in the MCO namespace
-	secret.Namespace = "openshift-machine-config-operator"
-
-	// Create the secret
-	klog.Infof("Creating secret %s in MCO namespace from bootstrap manifest", secret.Name)
-	_, err = b.kubeclient.CoreV1().Secrets("openshift-machine-config-operator").Create(ctx, secret, metav1.CreateOptions{})
-	if err != nil {
-		if k8serrors.IsAlreadyExists(err) {
-			// Someone else created it between our check and creation attempt
-			klog.Infof("Secret %s was created by another process", secretName)
-			return nil
-		}
-		return fmt.Errorf("failed to create secret %s: %w", secret.Name, err)
-	}
-
-	klog.Infof("Successfully created secret %s from bootstrap manifest", secret.Name)
-	return nil
+	return fmt.Errorf("failed to check if secret %s exists: %w", secretName, err)
 }

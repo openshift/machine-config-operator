@@ -24,7 +24,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
 	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
@@ -2341,97 +2340,6 @@ func (optr *Operator) isDefaultOnBootImageUpdatePlatform() (bool, error) {
 	return defaultOnPlatforms.Has(infra.Status.PlatformStatus.Type), nil
 }
 
-// syncMachineOSConfigs reads bootstrap MachineOSConfig manifests and creates them in the cluster
-func (optr *Operator) syncMachineOSConfigs(config *renderConfig, _ *configv1.ClusterOperator) error {
-	klog.V(4).Info("MachineOSConfig sync started")
-	defer func() {
-		klog.V(4).Info("MachineOSConfig sync complete")
-	}()
-
-	// Check if bootstrap is complete
-	bootstrapComplete := false
-	_, err := optr.clusterCmLister.ConfigMaps("kube-system").Get("bootstrap")
-	if err != nil {
-		bootstrapComplete = true
-	} else {
-		bootstrapComplete = false
-	}
-
-	// Only process bootstrap MachineOSConfigs after bootstrap is complete
-	if !bootstrapComplete {
-		klog.V(4).Info("Bootstrap not complete, skipping MachineOSConfig bootstrap processing")
-		return nil
-	}
-
-	// Path to bootstrap MachineOSConfigs directory
-	bootstrapMOSCDir := "/etc/mcs/bootstrap/machine-os-configs"
-	
-	// Check if the directory exists
-	if _, err := os.Stat(bootstrapMOSCDir); os.IsNotExist(err) {
-		klog.V(4).Info("Bootstrap MachineOSConfig directory does not exist, skipping")
-		return nil
-	}
-
-	// Read all files in the directory
-	files, err := os.ReadDir(bootstrapMOSCDir)
-	if err != nil {
-		return fmt.Errorf("failed to read bootstrap MachineOSConfig directory: %w", err)
-	}
-
-	for _, file := range files {
-		if file.IsDir() || !strings.HasSuffix(file.Name(), ".yaml") {
-			continue
-		}
-
-		filePath := fmt.Sprintf("%s/%s", bootstrapMOSCDir, file.Name())
-		manifestData, err := os.ReadFile(filePath)
-		if err != nil {
-			klog.Errorf("Failed to read bootstrap MachineOSConfig manifest %s: %v", filePath, err)
-			continue
-		}
-
-		// Parse the manifest to extract the MachineOSConfig
-		scheme := runtime.NewScheme()
-		mcfgv1.Install(scheme)
-		codecFactory := serializer.NewCodecFactory(scheme)
-		decoder := codecFactory.UniversalDecoder(mcfgv1.GroupVersion)
-		
-		obj, err := runtime.Decode(decoder, manifestData)
-		if err != nil {
-			klog.Errorf("Failed to decode bootstrap MachineOSConfig manifest %s: %v", filePath, err)
-			continue
-		}
-
-		mosc, ok := obj.(*mcfgv1.MachineOSConfig)
-		if !ok {
-			klog.Errorf("Unexpected object type in bootstrap MachineOSConfig manifest %s: %T", filePath, obj)
-			continue
-		}
-
-		// Check if the MachineOSConfig already exists
-		existingMOSC, err := optr.moscLister.Get(mosc.Name)
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				// Create the MachineOSConfig
-				klog.Infof("Creating MachineOSConfig %s from bootstrap manifest", mosc.Name)
-				_, err = optr.client.MachineconfigurationV1().MachineOSConfigs().Create(context.TODO(), mosc, metav1.CreateOptions{})
-				if err != nil {
-					klog.Errorf("Failed to create MachineOSConfig %s: %v", mosc.Name, err)
-					continue
-				}
-				klog.Infof("Successfully created MachineOSConfig %s from bootstrap", mosc.Name)
-			} else {
-				klog.Errorf("Failed to get existing MachineOSConfig %s: %v", mosc.Name, err)
-				continue
-			}
-		} else {
-			klog.V(4).Infof("MachineOSConfig %s already exists, skipping bootstrap creation", existingMOSC.Name)
-		}
-	}
-
-	return nil
-}
-
 
 // syncPreBuiltImageMachineConfigs creates/updates/deletes component MachineConfigs for pools with pre-built images.
 // These component MCs set the osImageURL which gets merged into rendered MCs by the render controller.
@@ -2442,17 +2350,8 @@ func (optr *Operator) syncPreBuiltImageMachineConfigs() error {
 		return fmt.Errorf("failed to list MachineOSConfigs: %w", err)
 	}
 
-	// Build map of pools that should have pre-built image component MCs
-	poolsWithPreBuiltImages := make(map[string]string) // poolName -> preBuiltImage
-	for _, mosc := range moscs {
-		preBuiltImage, hasPreBuiltImage := mosc.Annotations[buildconstants.PreBuiltImageAnnotationKey]
-		if !hasPreBuiltImage || preBuiltImage == "" {
-			continue
-		}
-		poolName := mosc.Spec.MachineConfigPool.Name
-		poolsWithPreBuiltImages[poolName] = preBuiltImage
-		klog.V(4).Infof("MachineOSConfig %s has pre-built image %s for pool %s", mosc.Name, preBuiltImage, poolName)
-	}
+	// Build map of pools that should have pre-built image component MCs using common helper
+	poolsWithPreBuiltImages := ctrlcommon.BuildPoolToPreBuiltImageMap(moscs, buildconstants.PreBuiltImageAnnotationKey)
 
 	// Get all existing pre-built image component MCs
 	allMCs, err := optr.mcLister.List(labels.Everything())
@@ -2460,44 +2359,18 @@ func (optr *Operator) syncPreBuiltImageMachineConfigs() error {
 		return fmt.Errorf("failed to list MachineConfigs: %w", err)
 	}
 
-	existingPreBuiltMCs := make(map[string]*mcfgv1.MachineConfig) // poolName -> MC
-	for _, mc := range allMCs {
-		// Check if this is a pre-built image component MC by name pattern
-		if strings.HasPrefix(mc.Name, "10-prebuiltimage-osimageurl-") {
-			poolName := strings.TrimPrefix(mc.Name, "10-prebuiltimage-osimageurl-")
-			existingPreBuiltMCs[poolName] = mc
-		}
-	}
+	existingPreBuiltMCs := ctrlcommon.GetPreBuiltImageMachineConfigsFromList(allMCs)
 
 	// Create or update component MCs for pools that should have them
 	for poolName, preBuiltImage := range poolsWithPreBuiltImages {
-		mcName := fmt.Sprintf("10-prebuiltimage-osimageurl-%s", poolName)
-
-		required := &mcfgv1.MachineConfig{
-			TypeMeta: metav1.TypeMeta{
-				APIVersion: mcfgv1.SchemeGroupVersion.String(),
-				Kind:       "MachineConfig",
-			},
-			ObjectMeta: metav1.ObjectMeta{
-				Name: mcName,
-				Labels: map[string]string{
-					mcfgv1.MachineConfigRoleLabelKey: poolName,
-				},
-				Annotations: map[string]string{
-					buildconstants.PreBuiltImageAnnotationKey: preBuiltImage,
-				},
-			},
-			Spec: mcfgv1.MachineConfigSpec{
-				OSImageURL: preBuiltImage,
-			},
-		}
+		required := ctrlcommon.CreatePreBuiltImageMachineConfig(poolName, preBuiltImage, buildconstants.PreBuiltImageAnnotationKey)
 
 		_, updated, err := mcoResourceApply.ApplyMachineConfig(optr.client.MachineconfigurationV1(), required)
 		if err != nil {
-			return fmt.Errorf("failed to apply pre-built image MachineConfig %s: %w", mcName, err)
+			return fmt.Errorf("failed to apply pre-built image MachineConfig %s: %w", required.Name, err)
 		}
 		if updated {
-			klog.Infof("Created/updated pre-built image MachineConfig %s with OSImageURL %s for pool %s", mcName, preBuiltImage, poolName)
+			klog.Infof("Created/updated pre-built image MachineConfig %s with OSImageURL %s for pool %s", required.Name, preBuiltImage, poolName)
 		}
 	}
 

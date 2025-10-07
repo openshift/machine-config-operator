@@ -508,9 +508,6 @@ func (optr *Operator) sync(key string) error {
 		{"RenderConfig", optr.syncRenderConfig},
 		{"MachineConfiguration", optr.syncMachineConfiguration},
 		{"MachineConfigNode", optr.syncMachineConfigNodes},
-		// MachineOSConfigs must be synced before MachineConfigPools so that
-		// pools can be annotated with pre-built images before rendered MCs are created
-		{"MachineOSConfigs", optr.syncMachineOSConfigs},
 		{"MachineConfigPools", optr.syncMachineConfigPools},
 		{"MachineConfigDaemon", optr.syncMachineConfigDaemon},
 		{"MachineConfigController", optr.syncMachineConfigController},

@@ -50,6 +50,12 @@ const (
 	PreBuiltImageSeededAnnotationKey = "machineconfiguration.openshift.io/pre-built-image-seeded"
 )
 
+// Component MachineConfig naming for pre-built images
+const (
+	// PreBuiltImageMachineConfigPrefix is the prefix for component MCs that set osImageURL from pre-built images
+	PreBuiltImageMachineConfigPrefix = "10-prebuiltimage-osimageurl-"
+)
+
 // Entitled build secret names
 const (
 	// Name of the etc-pki-entitlement secret from the openshift-config-managed namespace.
