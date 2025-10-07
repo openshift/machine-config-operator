@@ -2557,12 +2557,17 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 		return dn.InplaceUpdateViaNewContainer(newURL)
 	}
 
-	isOsImagePresent := false
+	isPisConfigured, err := dn.isPinnedImageSetConfigured()
+	if err != nil {
+		// Ignore the error and default to remote pull
+		klog.Errorf("Failed to determine if pinned image set is configured: %v", err)
+	}
 
-	// not set during firstboot
-	if dn.fgHandler != nil && dn.fgHandler.Enabled(features.FeatureGatePinnedImages) {
-		isOsImagePresent, err = isImagePresent(newURL)
-		if err != nil {
+	// If PIS is configured check if the image is locally present. If so, rebase using
+	// the local image
+	isOsImagePresent := false
+	if isPisConfigured {
+		if isOsImagePresent, err = isImagePresent(newURL); err != nil {
 			return err
 		}
 	}
@@ -2593,6 +2598,29 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	}
 
 	return nil
+}
+
+func (dn *Daemon) isPinnedImageSetConfigured() (bool, error) {
+	if dn.fgHandler == nil || !dn.fgHandler.Enabled(features.FeatureGatePinnedImages) || dn.node == nil || dn.mcpLister == nil {
+		// Two options:
+		// - PIS is not enabled
+		// - MCD first boot run: No connection to the cluster and node not populated -> Cannot check PIS config
+		return false, nil
+	}
+
+	// PIS is enabled. Check if it's configured in any of its pools
+	pools, _, err := helpers.GetPoolsForNode(dn.mcpLister, dn.node)
+	if err != nil {
+		return false, fmt.Errorf("failed to get pools for node %q: %w", dn.node.Name, err)
+	}
+
+	for _, pool := range pools {
+		if pool.Spec.PinnedImageSets != nil && len(pool.Spec.PinnedImageSets) > 0 {
+			return true, nil
+		}
+	}
+	// No pools with PIS configured
+	return false, nil
 }
 
 // Synchronously invoke a command, writing its stdout to our stdout,
