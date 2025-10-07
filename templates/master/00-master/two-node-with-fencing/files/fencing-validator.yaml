@@ -1,0 +1,652 @@
+mode: 0755
+path: "/usr/local/bin/fencing_validator"
+contents:
+  inline: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export LANG=C
+    
+    # ================================
+    #  default vars
+    # ================================
+    SSH_USER="${SSH_USER:-core}"
+    SSH_KEY="${SSH_KEY:-}"
+    KUBECONFIG_PATH="${KUBECONFIG:-}"
+    TRANSPORT="${TRANSPORT:-auto}"
+    DISRUPTIVE="${DISRUPTIVE:-false}"
+    DRY_RUN="${DRY_RUN:-false}"
+    TIMEOUT="${TIMEOUT:-1200}"
+    IP_A="${IP_A:-}"
+    IP_B="${IP_B:-}"
+    OC_BIN="${OC_BIN:-oc}"
+    OC_REQ_TIMEOUT="${OC_REQ_TIMEOUT:-10s}"
+    CMD_EXEC_TIMEOUT_SECS="${CMD_EXEC_TIMEOUT_SECS:-60s}"
+    
+    # ================================
+    #  exit codes
+    # ================================
+    EXIT_OK=0
+    EXIT_GENERIC=1
+    EXIT_STONITH_MISSING=20
+    EXIT_PACEMAKER_OFFLINE=21
+    EXIT_FENCING_SECRETS_MISMATCH=26
+    EXIT_DAEMONS_BAD=22
+    EXIT_ETCD_NOT_READY=23
+    
+    READY_TIMEOUT="${READY_TIMEOUT:-$((TIMEOUT / 2))}"
+    PCMK_TIMEOUT="${PCMK_TIMEOUT:-$((TIMEOUT / 2))}"
+    
+    # ================================
+    # main functions
+    # ================================
+    main() {
+    	command -v jq >/dev/null 2>&1 || {
+    		log_err "jq not found in PATH"
+    		exit $EXIT_GENERIC
+    	}
+    
+    	# -------- Discover nodes --------
+    	log "Detecting control-plane nodes…"
+    	MIN_OCP="4.20.0"
+    	OCP_VER="$(oc_run get clusterversion version -o json 2>/dev/null | jq -r '.status.desired.version // empty' || true)"
+    	if [[ -n "$OCP_VER" ]]; then
+    		base_ver="${OCP_VER%%[-+]*}"
+    		if [[ "$(printf '%s\n%s\n' "$base_ver" "$MIN_OCP" | sort -V | head -n1)" != "$MIN_OCP" ]]; then
+    			log_err "OpenShift $OCP_VER detected; this validator requires >= $MIN_OCP"
+    			exit $EXIT_GENERIC
+    		fi
+    	fi
+    
+    	log "Detecting control-plane nodes (label: node-role.kubernetes.io/control-plane)…"
+    	mapfile -t CP_NODES < <(
+    		oc_run get nodes -l node-role.kubernetes.io/control-plane= -o json 2>/dev/null |
+    			jq -r '.items[].metadata.name'
+    	)
+    	[[ ${#CP_NODES[@]} -eq 2 ]] || {
+    		log_err "Expected exactly 2 control-plane nodes, got ${#CP_NODES[@]}: ${CP_NODES[*]-}"
+    		exit $EXIT_GENERIC
+    	}
+    	NODE_A="${CP_NODES[0]}"
+    	NODE_B="${CP_NODES[1]}"
+    
+    	[[ -z "$IP_A" ]] && IP_A="$(get_internal_ip "$NODE_A" || true)"
+    	[[ -z "$IP_A" ]] && IP_A="$NODE_A"
+    	[[ -z "$IP_B" ]] && IP_B="$(get_internal_ip "$NODE_B" || true)"
+    	[[ -z "$IP_B" ]] && IP_B="$NODE_B"
+    	CONDUCTOR=""
+    	case "$TRANSPORT" in
+    	auto)
+    		if ssh_ok "$IP_A" && ssh_ok "$IP_B"; then
+    			TRANSPORT=ssh
+    			CONDUCTOR="$IP_B"
+    			sudo_check
+    			log "Using SSH; conductor=$CONDUCTOR"
+    		elif oc_debug_ok "$NODE_A" && oc_debug_ok "$NODE_B"; then
+    			TRANSPORT=ocdebug
+    			CONDUCTOR="$NODE_B"
+    			log "Using oc debug; conductor=$CONDUCTOR"
+    		else
+    			log_err "Auto mode: neither SSH nor oc debug reachable on both nodes."
+    			exit $EXIT_GENERIC
+    		fi
+    		;;
+    	ssh)
+    		(ssh_ok "$IP_A" && ssh_ok "$IP_B") || {
+    			log_err "SSH not available to both nodes"
+    			exit $EXIT_GENERIC
+    		}
+    		CONDUCTOR="$IP_B"
+    		sudo_check
+    		log "Using SSH; conductor=$CONDUCTOR"
+    		;;
+    	ocdebug)
+    		(oc_debug_ok "$NODE_A" && oc_debug_ok "$NODE_B") || {
+    			log_err "oc debug not available on both nodes"
+    			exit $EXIT_GENERIC
+    		}
+    		CONDUCTOR="$NODE_B"
+    		log "Using oc debug; conductor=$CONDUCTOR"
+    		;;
+    	esac
+    
+    	# -------- Pacemaker names --------
+    	PCMK_A="$NODE_A"
+    	PCMK_B="$NODE_B"
+    	log "Mapping: $NODE_A -> $(short_hostname "$PCMK_A") ; $NODE_B -> $(short_hostname "$PCMK_B")"
+    
+    	# -------- Run --------
+    	log "Mode: transport=$TRANSPORT disruptive=$DISRUPTIVE dry-run=$DRY_RUN"
+    	log "=== Non-disruptive validation ==="
+    	check_stonith || exit $EXIT_STONITH_MISSING
+    	if ! (pcmk_online "$PCMK_A" && pcmk_online "$PCMK_B"); then
+    		log_err "Both nodes must be ONLINE (Pacemaker)"
+    		exit $EXIT_PACEMAKER_OFFLINE
+    	fi
+    	log_ok "Both nodes ONLINE"
+    	check_daemon_status || exit $EXIT_DAEMONS_BAD
+    	etcd_wait
+    	check_fencing_secret_bindings || exit $EXIT_FENCING_SECRETS_MISMATCH
+    	log_ok "[PASS] Non-disruptive checks complete"
+    
+    	if ! $DISRUPTIVE; then
+    		$DRY_RUN && dry_run_plan
+    		echo "Done (non-disruptive)."
+    		exit $EXIT_OK
+    	fi
+    
+    	$DRY_RUN && {
+    		dry_run_plan
+    		exit $EXIT_OK
+    	}
+    
+    	log "=== Disruptive validation ==="
+    	# Fence A
+    	switch_conductor_for "$NODE_A"
+    	log "Fencing $NODE_A (PCMK: $PCMK_A)"
+    	fence "$PCMK_A" || exit $EXIT_GENERIC
+    	wait_not_ready "$NODE_A"
+    	wait_ready "$NODE_A"
+    	etcd_wait
+    	check_daemon_status || exit $EXIT_DAEMONS_BAD
+    
+    	# Fence B
+    	switch_conductor_for "$NODE_B"
+    	log "Fencing $NODE_B (PCMK: $PCMK_B)"
+    	etcd_wait
+    	fence "$PCMK_B" || exit $EXIT_GENERIC
+    	wait_not_ready "$NODE_B"
+    	wait_ready "$NODE_B"
+    	etcd_wait
+    	check_daemon_status || exit $EXIT_DAEMONS_BAD
+    
+    	log_ok "Disruptive validation PASSED"
+    }
+    
+    # ================================
+    # helper functions
+    # ================================
+    
+    log() {
+    	printf '\033[36m[INFO]\033[0m %s\n' "$*"
+    }
+    
+    log_warn() {
+    	printf '\033[33m[WARN]\033[0m %s\n' "$*"
+    }
+    
+    log_err() {
+    	printf '\033[31m[ERROR]\033[0m %s\n' "$*" >&2
+    }
+    
+    log_ok() {
+    	printf '\033[32m[OK]\033[0m %s\n' "$*"
+    }
+    
+    is_ipv6() {
+    	[[ "$1" == *:* ]]
+    }
+    
+    ip_for_url() {
+    	local h="$1"
+    	is_ipv6 "$h" && printf '[%s]\n' "$h" || printf '%s\n' "$h"
+    }
+    
+    format_host_ip() {
+    	local raw_host="$1"
+    	raw_host="${raw_host#[[]}"
+    	raw_host="${raw_host%[]]}"
+    	is_ipv6 "$raw_host" && echo "[$raw_host]" || echo "$raw_host"
+    }
+    
+    short_hostname() {
+    	echo "${1%%.*}"
+    }
+    
+    ssh_cmd() {
+    	local host
+    	host="$(format_host_ip "$1")"
+    	shift
+    	local keyopt=()
+    	[[ -n "$SSH_KEY" ]] && keyopt=(-i "$SSH_KEY")
+    	timeout "$CMD_EXEC_TIMEOUT_SECS" ssh \
+    		-o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    		-o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 \
+    		"${keyopt[@]}" "${SSH_USER}@${host}" "$@"
+    }
+    
+    oc_run() {
+    	timeout "$CMD_EXEC_TIMEOUT_SECS" "$OC_BIN" --request-timeout="$OC_REQ_TIMEOUT" "$@"
+    }
+    
+    host_run() {
+    	local target="$1"
+    	shift
+    	local raw="$*"
+    	local cmd="$raw"
+    	cmd=${cmd//\'/\'"\'"\'}
+    	if [[ "$TRANSPORT" == ssh ]]; then
+    		ssh_cmd "$target" "sudo -n bash -lc '$cmd'"
+    	else
+    		oc_run debug -q node/"$target" -- chroot /host bash -lc "$raw"
+    	fi
+    }
+    
+    oc_debug_ok() {
+    	oc_run debug -q node/"$1" -- chroot /host true >/dev/null 2>&1
+    }
+    
+    ssh_ok() {
+    	ssh_cmd "$1" true >/dev/null 2>&1
+    }
+    
+    sudo_check() {
+    	for h in "$IP_A" "$IP_B"; do
+    		ssh_cmd "$h" "sudo -n true" >/dev/null 2>&1 || {
+    			log_err "Passwordless sudo required on $h for SSH mode."
+    			exit $EXIT_GENERIC
+    		}
+    	done
+    }
+    
+    get_internal_ip() {
+    	local node="$1"
+    	oc_run get node "$node" -o json |
+    		jq -r '[.status.addresses[]? | select(.type=="InternalIP")][0].address // empty'
+    }
+    
+    node_ready() {
+    	oc_run get node "$1" -o json |
+    		jq -e '.status.conditions[] | select(.type=="Ready") | select(.status=="True")' >/dev/null
+    }
+    
+    pcs_nodes_names() {
+    	local out
+    	out="$(host_run "$CONDUCTOR" "pcs status nodes 2>/dev/null || crm_mon -1 2>/dev/null" 2>/dev/null || true)"
+    	awk '/^[[:space:]]*Online:/{ 
+        for (i=2;i<=NF;i++) { gsub(/[][]/,"",$i); printf "%s ", $i } 
+      } END{ print "" }' <<<"$out"
+    }
+    
+    pcmk_online() {
+    	local target_node="$1"
+    	local short_node_name="${target_node%%.*}"
+    	local pcmk_online_nodes
+    	pcmk_online_nodes="$(pcs_nodes_names)"
+    	[[ -n "$pcmk_online_nodes" ]] || return 1
+    	pcmk_online_nodes=" $pcmk_online_nodes "
+    	[[ "$pcmk_online_nodes" == *" $target_node "* || "$pcmk_online_nodes" == *" $short_node_name "* ]]
+    }
+    
+    wait_not_ready() {
+    	local target_node="$1"
+    	local deadline=$((SECONDS + TIMEOUT))
+    
+    	log "Waiting for '$target_node' to become NotReady (API)"
+    	while ((SECONDS < deadline)); do
+    		if ! node_ready "$target_node"; then
+    			log_ok "$target_node NotReady (API)"
+    			return $EXIT_OK
+    		fi
+    		sleep 5
+    	done
+    
+    	log_err "Timeout waiting for $target_node NotReady"
+    	return $EXIT_GENERIC
+    }
+    
+    wait_ready() {
+    	local target_node="$1"
+    	local api_deadline=$((SECONDS + READY_TIMEOUT))
+    
+    	log "Waiting for '$target_node' Ready (API)…"
+    	while ((SECONDS < api_deadline)); do
+    		if node_ready "$target_node"; then
+    			log_ok "$target_node Ready (API)"
+    			break
+    		fi
+    		sleep 5
+    	done
+    
+    	if ((SECONDS >= api_deadline)); then
+    		log_err "Timeout waiting Ready for $target_node"
+    		return $EXIT_GENERIC
+    	fi
+    
+    	local pcmk_deadline=$((SECONDS + PCMK_TIMEOUT))
+    	log "Waiting for '$target_node' ONLINE (Pacemaker)…"
+    	while ((SECONDS < pcmk_deadline)); do
+    		if pcmk_online "$target_node"; then
+    			log_ok "$target_node ONLINE (Pacemaker)"
+    			return $EXIT_OK
+    		fi
+    		sleep 5
+    	done
+    
+    	log_err "Timeout waiting Pacemaker ONLINE for $target_node"
+    	return $EXIT_GENERIC
+    }
+    
+    stonith_show() {
+    	host_run "$CONDUCTOR" \
+    		"(pcs stonith config || pcs stonith status || pcs stonith show) 2>&1" ||
+    		true
+    }
+    
+    check_stonith() {
+    	log "Checking STONITH…"
+    	local out
+    	out="$(stonith_show)"
+    	[[ -n "$out" ]] || {
+    		log_err "No STONITH devices detected (pcs returned empty output)"
+    		return $EXIT_GENERIC
+    	}
+    	host_run "$CONDUCTOR" \
+    		'pcs property config stonith-enabled 2>&1 || pcs property list stonith-enabled 2>&1 || pcs property show --all stonith-enabled 2>&1' |
+    		grep -Eqi 'stonith-enabled[^[:alnum:]]*true' ||
+    		{
+    			log_err "stonith-enabled=false (or not reported)"
+    			return $EXIT_GENERIC
+    		}
+    
+    	log_ok "STONITH present and enabled"
+    }
+    
+    check_daemon_status() {
+    	log "Checking Pacemaker daemon status…"
+    	local out ds ok_all=1
+    	out="$(host_run "$CONDUCTOR" "pcs status --full 2>/dev/null || pcs status 2>/dev/null" 2>/dev/null || true)"
+    	ds="$(awk '/^Daemon Status:/,0{print}' <<<"$out")"
+    	[[ -n "$ds" ]] || {
+    		log_err "Daemon Status section not found in 'pcs status' output"
+    		return $EXIT_GENERIC
+    	}
+    
+    	for svc in corosync pacemaker pcsd; do
+    		if ! grep -qiE "^[[:space:]]*$svc:[[:space:]]*(active|running)" <<<"$ds"; then
+    			log_err "Daemon '$svc' not active/enabled"
+    			ok_all=0
+    		fi
+    	done
+    
+    	if ((ok_all == 1)); then
+    		log_ok "Daemon Status: corosync, pacemaker, pcsd active/enabled"
+    	else
+    		return $EXIT_GENERIC
+    	fi
+    }
+    
+    node_exec_target() {
+    	if [[ "$TRANSPORT" == "ssh" ]]; then
+    		[[ "$1" == "$NODE_A" ]] && echo "$IP_A" || echo "$IP_B"
+    	else
+    		echo "$1"
+    	fi
+    }
+    
+    etcd_both_voters_healthy() {
+    	local tgt="$1" out
+    	local A_URL B_URL
+    	A_URL="$(ip_for_url "$IP_A")"
+    	B_URL="$(ip_for_url "$IP_B")"
+    	out="$(host_run "$tgt" \
+    		"podman exec etcd sh -lc 'ETCDCTL_API=3 etcdctl -w json endpoint health --endpoints=https://$A_URL:2379,https://$B_URL:2379'")" &&
+    		jq -e 'type=="array" and all(.[]; .health==true)' >/dev/null <<<"$out" ||
+    		return $EXIT_GENERIC
+    
+    	out="$(host_run "$tgt" \
+    		"podman exec etcd sh -lc 'ETCDCTL_API=3 etcdctl -w json member list'")" &&
+    		jq -e --arg ipa "https://$A_URL:" --arg ipb "https://$B_URL:" \
+    			'(.members//[])|map(select(.isLearner|not)) as $v|(any($v[]?; .clientURLs[]? | contains($ipa)) and any($v[]?; .clientURLs[]? | contains($ipb)))' \
+    			>/dev/null <<<"$out" || return $EXIT_GENERIC
+    
+    	return $EXIT_OK
+    }
+    
+    etcd_ready() {
+    	local ra rb
+    	etcd_both_voters_healthy "$(node_exec_target "$NODE_A")"
+    	ra=$?
+    	((ra == 0)) && return $EXIT_OK
+    
+    	etcd_both_voters_healthy "$(node_exec_target "$NODE_B")"
+    	rb=$?
+    	((rb == 0)) && return $EXIT_OK
+    	return $EXIT_GENERIC
+    }
+    
+    etcd_wait() {
+    	local deadline=$((SECONDS + TIMEOUT / 2)) start=$SECONDS
+    	log "Waiting for etcd to report 2 healthy non-learner (voter) members (max wait: $((TIMEOUT / 2))s)…"
+    	while ((SECONDS < deadline)); do
+    		if etcd_ready; then
+    			log_ok "etcd has 2 healthy voters (waited $((SECONDS - start))s)"
+    			return $EXIT_OK
+    		fi
+    		sleep 5
+    	done
+    	log_err "Timeout waiting for etcd quorum (two healthy non-learner CP voters)"
+    	exit $EXIT_ETCD_NOT_READY
+    }
+    
+    find_fencing_secret_for_node() {
+    	local node="$1" ns="openshift-etcd" short_node
+    	short_node="$(short_hostname "$node")"
+    	oc_run -n "$ns" get secret -o json 2>/dev/null |
+    		jq -e --arg short "$short_node" '
+          any(.items[]?; (.metadata.name // "") | startswith("fencing-credentials-" + $short))
+        ' >/dev/null
+    }
+    
+    check_fencing_secret_bindings() {
+    	local missing=0 n
+    	for n in "$NODE_A" "$NODE_B"; do
+    		if ! find_fencing_secret_for_node "$n" >/dev/null; then
+    			log_err "No fencing credential secret found that matches node hostname '$n'.
+                If you installed with FQDNs, ensure the secret(s)
+                use the same hostname form used by the cluster (short vs FQDN)."
+    			missing=1
+    		fi
+    	done
+    	if ((missing == 1)); then
+    		log_err "Fencing credentials mismatch may prevent STONITH from targeting nodes correctly."
+    		return 1
+    	fi
+    	return $EXIT_OK
+    }
+    
+    switch_conductor_for() {
+    	local target="$1"
+    	if [[ "$TRANSPORT" == "ssh" ]]; then
+    		CONDUCTOR=$([[ "$target" == "$NODE_A" ]] && echo "$IP_B" || echo "$IP_A")
+    	else
+    		CONDUCTOR=$([[ "$target" == "$NODE_A" ]] && echo "$NODE_B" || echo "$NODE_A")
+    	fi
+    	return $EXIT_OK
+    }
+    
+    fence() {
+    	local t="$1"
+    	log "[ACTION] Fencing (reboot) '$t' from '$CONDUCTOR'..."
+    	local to=$((TIMEOUT / 2))
+    	((to < 1)) && to=1
+    
+    	if [[ "$TRANSPORT" == "ocdebug" ]]; then
+    		if ! host_run "$CONDUCTOR" "command -v systemd-run >/dev/null 2>&1 && \
+            systemd-run --unit fence-$t --collect bash -lc 'pcs stonith fence $t' \
+            || nohup bash -lc 'pcs stonith fence $t' >/var/tmp/fence-$t.log 2>&1 & disown"; then
+    			log_err "Dispatching fence for '$t' via ocdebug failed to start"
+    			return 1
+    		fi
+    		sleep 5
+    		return $EXIT_OK
+    	fi
+    
+    	if ! host_run "$CONDUCTOR" "timeout $to pcs stonith fence $t"; then
+    		log_err "Fencing '$t' failed or timed out (${to}s)"
+    		return 1
+    	fi
+    }
+    
+    dry_run_plan() {
+    	local c1="$CONDUCTOR" c2
+    	if [[ "$TRANSPORT" == "ssh" ]]; then
+    		c2=$([[ "$c1" == "$IP_B" ]] && echo "$IP_A" || echo "$IP_B")
+    	else
+    		c2=$([[ "$c1" == "$NODE_B" ]] && echo "$NODE_A" || echo "$NODE_B")
+    	fi
+    	log "[DRY-RUN] Would fence $PCMK_A from $c1, then $PCMK_B from $c2"
+    }
+    
+    # ================================
+    #  usage and options parser
+    # ================================
+    usage() {
+    	cat <<'EOF'
+    Usage:
+      fencing_validator [--user <ssh-user>] [--ssh-key <path>]
+                           [--kubeconfig <path>]
+                           [--transport auto|ssh|ocdebug]
+                           [--hosts "<hostA,hostB>"] [--host-a <host>] [--host-b <host>]
+                           [--disruptive] [--dry-run] [--timeout <sec>]
+    
+    Examples (hosts):
+      --hosts "10.0.0.10,10.0.0.11"
+      --hosts "2001:db8::a,2001:db8::b"
+    
+    Note: For IPv6, pass the raw address (no brackets). The script adds [ ] where needed.
+    
+    Timeouts:
+      --timeout <sec> / TIMEOUT
+          Maximum time (in seconds) to wait for a condition to succeed.
+          This is the overall loop timeout (e.g., waiting for a node or etcd to recover).
+          Default: 1200 seconds (20 min).
+    
+      CMD_EXEC_TIMEOUT_SECS
+          Maximum time (in seconds) allowed for a single remote command to run
+          (e.g., one `podman exec`, one `pcs status` call).
+          This is enforced in `host_run` for both SSH and oc debug transports.
+          Default: 60 seconds.
+    
+      OC_REQ_TIMEOUT
+          Per-request API timeout for the `oc` client when contacting the API server.
+          Applies to each HTTP request inside `oc` commands, not the overall command runtime.
+          Default: 10s.
+    
+    Env (optional): SSH_USER, SSH_KEY, KUBECONFIG, TRANSPORT, DISRUPTIVE, DRY_RUN, TIMEOUT, IP_A, IP_B, OC_BIN, OC_REQ_TIMEOUT, CMD_EXEC_TIMEOUT_SECS
+    EOF
+    }
+    
+    # valreq <flag> <value>
+    # Returns success (0) if <value> exists and is not another option (i.e., doesn't start with '-').
+    # Used in argument parsing to validate that an option expecting a value actually has one.
+    valreq() {
+    	[[ -n "${2-}" && "$2" != -* ]]
+    }
+    
+    while [[ $# -gt 0 ]]; do
+    	case "$1" in
+    	--user)
+    		valreq "$1" "${2-}" || {
+    			log_err "--user requires a value"
+    			exit $EXIT_GENERIC
+    		}
+    		SSH_USER="$2"
+    		shift 2
+    		;;
+    	--ssh-key)
+    		valreq "$1" "${2-}" || {
+    			log_err "--ssh-key requires a value"
+    			exit $EXIT_GENERIC
+    		}
+    		SSH_KEY="$2"
+    		shift 2
+    		;;
+    	--kubeconfig)
+    		valreq "$1" "${2-}" || {
+    			log_err "--kubeconfig requires a value"
+    			exit $EXIT_GENERIC
+    		}
+    		KUBECONFIG_PATH="$2"
+    		shift 2
+    		;;
+    	--transport)
+    		valreq "$1" "${2-}" || {
+    			log_err "--transport requires a value"
+    			exit $EXIT_GENERIC
+    		}
+    		TRANSPORT="$2"
+    		shift 2
+    		;;
+    	--timeout)
+    		valreq "$1" "${2-}" || {
+    			log_err "--timeout requires a value"
+    			exit $EXIT_GENERIC
+    		}
+    		TIMEOUT="$2"
+    		shift 2
+    		;;
+    	--hosts)
+    		valreq "$1" "${2-}" || {
+    			log_err "--hosts requires a value like 'A,B'"
+    			exit $EXIT_GENERIC
+    		}
+    		IFS=',' read -r IP_A IP_B <<<"$2"
+    		shift 2
+    		;;
+    	--host-a)
+    		valreq "$1" "${2-}" || {
+    			log_err "--host-a requires a value"
+    			exit $EXIT_GENERIC
+    		}
+    		IP_A="$2"
+    		shift 2
+    		;;
+    	--host-b)
+    		valreq "$1" "${2-}" || {
+    			log_err "--host-b requires a value"
+    			exit $EXIT_GENERIC
+    		}
+    		IP_B="$2"
+    		shift 2
+    		;;
+    	--disruptive)
+    		DISRUPTIVE=true
+    		shift
+    		;;
+    	--dry-run)
+    		DRY_RUN=true
+    		shift
+    		;;
+    	-h | --help)
+    		usage
+    		exit 0
+    		;;
+    	*)
+    		log_err "Unknown arg: $1"
+    		usage
+    		exit $EXIT_GENERIC
+    		;;
+    	esac
+    done
+    
+    IP_A="${IP_A//[[:space:]]/}"
+    IP_B="${IP_B//[[:space:]]/}"
+    
+    [[ "$TRANSPORT" =~ ^(auto|ssh|ocdebug)$ ]] || {
+    	log_err "--transport must be auto|ssh|ocdebug"
+    	exit $EXIT_GENERIC
+    }
+    [[ "$TIMEOUT" =~ ^[0-9]+$ ]] || {
+    	log_err "Invalid --timeout '$TIMEOUT'"
+    	exit $EXIT_GENERIC
+    }
+    
+    [[ -n "$KUBECONFIG_PATH" ]] && export KUBECONFIG="$KUBECONFIG_PATH"
+    log "Checking cluster access with '$OC_BIN'..."
+    oc_run whoami >/dev/null
+    
+    # Start the program
+    if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    	main "$@"
+    fi
+    
