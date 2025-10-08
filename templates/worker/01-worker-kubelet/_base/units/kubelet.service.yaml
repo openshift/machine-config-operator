@@ -10,6 +10,7 @@ contents: |
   [Service]
   Type=notify
   ExecStartPre=/bin/mkdir --parents /etc/kubernetes/manifests
+  ExecStartPre=/bin/mkdir --parents /etc/openshift/kubelet.conf.d
   ExecStartPre=-/usr/sbin/restorecon -ri /var/lib/kubelet/pod-resources /usr/local/bin/kubenswrapper /usr/bin/kubensenter
 {{- if eq .IPFamilies "IPv6"}}
   Environment="KUBELET_NODE_IP=::"
@@ -24,6 +25,7 @@ contents: |
   ExecStart=/usr/local/bin/kubenswrapper \
       /usr/bin/kubelet \
         --config=/etc/kubernetes/kubelet.conf \
+        --config-dir=/etc/openshift/kubelet.conf.d \
         --bootstrap-kubeconfig=/etc/kubernetes/kubeconfig \
         --kubeconfig=/var/lib/kubelet/kubeconfig \
         --container-runtime-endpoint=/var/run/crio/crio.sock \
