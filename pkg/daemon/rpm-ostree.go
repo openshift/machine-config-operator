@@ -1,15 +1,23 @@
 package daemon
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 
+	"github.com/containers/image/v5/signature"
 	rpmostreeclient "github.com/coreos/rpmostree-client-go/pkg/client"
 	"gopkg.in/yaml.v2"
 	"k8s.io/klog/v2"
 )
+
+const imagePolicyTransportContainerStorage = "containers-storage"
+const imagePolicyFilePath = "/etc/containers/policy.json"
+const rpmOstreeTemporalDropinFile = "/run/systemd/system/rpm-ostreed.service.d/temporal-policy-binding.conf"
+const rpmOstreeTemporalPolicyFile = "/run/tmp-rpm-ostree-policy.json"
 
 // RpmOstreeClient provides all RpmOstree related methods in one structure.
 // This structure implements DeploymentClient
@@ -185,11 +193,176 @@ func (r *RpmOstreeClient) RebaseLayered(imgURL string) error {
 }
 
 // RebaseLayeredFromContainerStorage rebases the system from an existing local container storage image.
-func (r *RpmOstreeClient) RebaseLayeredFromContainerStorage(imgURL string) error {
+func (r *RpmOstreeClient) RebaseLayeredFromContainerStorage(podmanImageInfo *PodmanImageInfo) error {
 	// Try to re-link the merged pull secrets if they exist, since it could have been populated without a daemon reboot
 	if err := useMergedPullSecrets(rpmOstreeSystem); err != nil {
 		return fmt.Errorf("Error while ensuring access to pull secrets: %w", err)
 	}
-	klog.Infof("Executing local container storage rebase to %s", imgURL)
-	return runRpmOstree("rebase", "--experimental", "ostree-unverified-image:containers-storage:"+imgURL)
+
+	defer func() {
+		// Call the cleanup always, just in case there are left-overs of
+		// a previous killed MCD (unlikely, but possible)
+		if err := cleanupTemporalOstreePolicyFileDropin(); err != nil {
+			klog.Errorf("Error deleting temporary MCD temporal policy %v", err)
+		}
+	}()
+	// Temporary patch the containers policies to allow rpm-ostree to pull
+	// an image from local storage. Only required if the policies are
+	// restrictive and won't allow containers-storage transport pulls.
+	if err := patchPoliciesForContainerStorage(podmanImageInfo); err != nil {
+		// Swallow the error and let it fail in case the user/default defined policies
+		// avoids pulling the image
+		klog.Errorf("Error writing temporal policy files %v", err)
+	}
+
+	klog.Infof("Executing local container storage rebase to %s", podmanImageInfo.RepoDigest)
+	return runRpmOstree("rebase", "--experimental", "ostree-unverified-image:containers-storage:"+podmanImageInfo.RepoDigest)
+}
+
+func restoreTemporalPolicyFile() error {
+	err := os.Rename(imagePolicyFilePath+".mcd.bak", imagePolicyFilePath)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+// patchPoliciesForContainerStorage temporarily overrides the container image policy visible
+// to rpm-ostreed to ensure pulls from the "containers-storage" transport are allowed for the
+// given image.
+//
+// This is necessary for tools like rpm-ostree to function correctly with locally
+// stored images, especially in environments with restrictive security policies. A common
+// scenario is a user removing the default "insecureAcceptAnything" policy without
+// adding an explicit rule for local storage, which is an easily missed implementation detail.
+//
+// The function is idempotent and will not modify the policy if it's already permissive
+// enough for local storage pulls.
+//
+// To avoid modifying the system's policy file, this function creates a temporary policy file
+// at rpmOstreeTemporalPolicyFile and uses a systemd drop-in to bind-mount it over the actual
+// policy file for the rpm-ostreed service. The drop-in and temporary policy file are cleaned
+// up after the rpm-ostree operation completes.
+func patchPoliciesForContainerStorage(podmanImageInfo *PodmanImageInfo) error {
+	url, err := generateTransportPolicyKeyForReference(podmanImageInfo)
+	if err != nil {
+		return err
+	}
+	_, err = os.Stat(imagePolicyFilePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			klog.Warningf("No policy file found at %s. Skipping temporal policy generation.", imagePolicyFilePath)
+			return nil
+		}
+		return err
+	}
+
+	policyOriginalContent, err := os.ReadFile(imagePolicyFilePath)
+	if err != nil {
+		return err
+	}
+
+	policy, err := signature.NewPolicyFromBytes(policyOriginalContent)
+	if err != nil {
+		return err
+	}
+
+	_, containerStoragePoliciesPresent := policy.Transports[imagePolicyTransportContainerStorage]
+	if (reflect.DeepEqual(policy.Default[0], signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()}) && !containerStoragePoliciesPresent) {
+		// Temporary patching the policies.json file can be skipped, with warranties, and without re-implementing the
+		// logic that evaluates the policies or importing it under the following circumstances (must match all):
+		//  1. The default policy should be "insecureAcceptAnything"
+		//  2. Transport-specific policies for containers-storage shouldn't be in place.
+		return err
+	}
+
+	// At this point there's no warranty the policy will allow rpm-ostree to fetch the image
+	// from local storage -> Add a specific rule to allow the image
+	if !containerStoragePoliciesPresent {
+		policy.Transports[imagePolicyTransportContainerStorage] = make(map[string]signature.PolicyRequirements)
+	}
+	policy.Transports[imagePolicyTransportContainerStorage][url] = signature.PolicyRequirements{
+		signature.NewPRInsecureAcceptAnything(),
+	}
+
+	// Prepare the json patched content
+	policyJSON, err := json.MarshalIndent(policy, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	// The temporal policy is written atomically
+	if err = writeFileAtomicallyWithDefaults(rpmOstreeTemporalPolicyFile, policyJSON); err != nil {
+		return err
+	}
+
+	if err = writeTemporalOstreePolicyFileDropin(); err != nil {
+		return err
+	}
+
+	klog.Infof("Temporal allow policy added for URL %s", url)
+	return nil
+}
+
+// generateTransportPolicyKeyForReference creates the reference string used as a key in the
+// image policy file for the "containers-storage" transport.
+//
+// The format of this string is not officially documented and was determined by reverse-engineering
+// the policy evaluation logic. It is structured as follows:
+// "[<storage-driver>@<graph-root>]<repo-digest>@<image-id>"
+//
+// The storage driver and graph root details are retrieved from the running Podman
+// instance at runtime.
+func generateTransportPolicyKeyForReference(podmanImageInfo *PodmanImageInfo) (string, error) {
+	podmanInfo, err := GetPodmanInfo()
+	if err != nil {
+		return "", fmt.Errorf("failed to get podman info for storage configuration gathering: %w", err)
+	}
+	return fmt.Sprintf("[%s@%s]%s@%s", podmanInfo.Store.GraphDriverName, podmanInfo.Store.GraphRoot, podmanImageInfo.RepoDigest, podmanImageInfo.Id), nil
+}
+
+// writeTemporalOstreePolicyFileDropin creates a systemd drop-in configuration that
+// bind-mounts the temporary policy file over the actual policy file for rpm-ostreed.
+// This allows rpm-ostree to use the patched policy without modifying the system's
+// policy file directly. After writing the drop-in, the function reloads systemd and
+// restarts rpm-ostreed to apply the changes.
+func writeTemporalOstreePolicyFileDropin() error {
+	// Create a temporal dropin to mount the temporal policy into rpm-ostreed process
+	if err := writeFileAtomicallyWithDefaults(
+		rpmOstreeTemporalDropinFile,
+		[]byte(
+			fmt.Sprintf(
+				"[Service]\nBindReadOnlyPaths=%s:%s", rpmOstreeTemporalPolicyFile, imagePolicyFilePath),
+		),
+	); err != nil {
+		return err
+	}
+	return systemdRpmOstreeReload()
+}
+
+// cleanupTemporalOstreePolicyFileDropin removes the systemd drop-in configuration
+// created by writeTemporalOstreePolicyFileDropin, restoring rpm-ostreed to use the
+// original system policy file. After removing the drop-in, the function reloads
+// systemd and restarts rpm-ostreed to apply the changes.
+func cleanupTemporalOstreePolicyFileDropin() error {
+	if err := os.Remove(rpmOstreeTemporalDropinFile); err != nil {
+		if os.IsNotExist(err) {
+			// Nothing to do
+			return nil
+		}
+		return err
+	}
+	return systemdRpmOstreeReload()
+}
+
+// systemdRpmOstreeReload notifies systemd of unit configuration changes and restarts
+// the rpm-ostreed service if it's currently running.
+func systemdRpmOstreeReload() error {
+	// Tell systemd that there are changes in the units
+	if err := runCmdSync("systemctl", "daemon-reload"); err != nil {
+		return err
+	}
+
+	// In case rpm-ostreed is running restart it to take the latest config
+	return runCmdSync("systemctl", "try-restart", "rpm-ostreed")
 }
