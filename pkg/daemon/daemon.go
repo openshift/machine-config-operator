@@ -165,6 +165,12 @@ type Daemon struct {
 
 	// Ensures that only a single syncOSImagePullSecrets call can run at a time.
 	osImageMux *sync.Mutex
+
+	// Abstraction for running commands against the OS
+	cmdRunner CommandRunner
+
+	// Bare minimal podman client
+	podmanInterface PodmanInterface
 }
 
 // CoreOSDaemon protects the methods that should only be called on CoreOS variants
@@ -329,10 +335,11 @@ func New(
 	}
 
 	var nodeUpdaterClient *RpmOstreeClient
-
+	cmdRunner := &CommandRunnerOS{}
+	podmanInterface := NewPodmanExec(cmdRunner)
 	// Only pull the osImageURL from OSTree when we are on RHCOS or FCOS
 	if hostos.IsCoreOSVariant() {
-		nodeUpdaterClientVal := NewNodeUpdaterClient()
+		nodeUpdaterClientVal := NewNodeUpdaterClient(cmdRunner, podmanInterface)
 		nodeUpdaterClient = &nodeUpdaterClientVal
 		err := nodeUpdaterClient.Initialize()
 		if err != nil {
@@ -370,6 +377,8 @@ func New(
 		configDriftMonitor:     NewConfigDriftMonitor(),
 		osImageMux:             &sync.Mutex{},
 		irreconcilableReporter: NewNoOpIrreconcilableReporterImpl(),
+		cmdRunner:              cmdRunner,
+		podmanInterface:        podmanInterface,
 	}, nil
 }
 
