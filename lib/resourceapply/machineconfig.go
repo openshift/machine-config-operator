@@ -2,6 +2,7 @@ package resourceapply
 
 import (
 	"context"
+	"fmt"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgclientv1 "github.com/openshift/client-go/machineconfiguration/clientset/versioned/typed/machineconfiguration/v1"
@@ -26,6 +27,9 @@ func ApplyMachineConfig(client mcfgclientv1.MachineConfigsGetter, required *mcfg
 
 	modified := ptr.To(false)
 	mcoResourceMerge.EnsureMachineConfig(modified, existing, *required)
+	fmt.Println("----existing-------", existing)
+	fmt.Println("-----------------------------------------------------------")
+	fmt.Println("----required-------", required)
 	if !*modified {
 		return existing, false, nil
 	}
