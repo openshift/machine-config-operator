@@ -737,45 +737,6 @@ func TestOriginalFileBackupRestore(t *testing.T) {
 	assert.True(t, os.IsNotExist(err))
 }
 
-func TestIsImagePresent(t *testing.T) {
-	// Create a temporary directory for the mock "podman" command.
-	tmpDir, err := os.MkdirTemp("", "*.test")
-	require.Nil(t, err)
-	defer os.RemoveAll(tmpDir)
-
-	// Create the script that mocks the "podman" command:
-	podmanScript := filepath.Join(tmpDir, "podman")
-	err = os.WriteFile(
-		podmanScript,
-		[]byte(
-			"#!/bin/bash\n"+
-				"if [[ \"$4\" =~ test-true ]]; then\n"+
-				"  echo '1b57f04f6da8'\n"+
-				"else\n"+
-				"  echo ''\n"+
-				"fi\n"+
-				"exit 0\n",
-		),
-		0700,
-	)
-	require.Nil(t, err)
-
-	// Change the "PATH" environment variable for the execution of the rest of the test:
-	oldPath := os.Getenv("PATH")
-	defer os.Setenv("PATH", oldPath)
-	newPath := fmt.Sprintf("%s%c%s", tmpDir, os.PathListSeparator, oldPath)
-	os.Setenv("PATH", newPath)
-
-	// Test the function:
-	imagePresent, err := isImagePresent("quay.io/openshift-release-dev/test-true")
-	assert.Nil(t, err)
-	assert.True(t, imagePresent)
-
-	imagePresent, err = isImagePresent("quay.io/openshift-release-dev/test-false")
-	assert.Nil(t, err)
-	assert.False(t, imagePresent)
-}
-
 func TestFindClosestFilePolicyPathMatch(t *testing.T) {
 
 	policyActions := map[string][]opv1.NodeDisruptionPolicyStatusAction{
