@@ -441,47 +441,29 @@ func podmanRemove(cid string) {
 	exec.Command("podman", "rm", "-f", cid).Run()
 }
 
-// return true if the image is present
-func isImagePresent(imgURL string) (bool, error) {
-	// search the image
-	var imageSearch []byte
-	imageSearch, err := runGetOut("podman", "images", "-q", "--filter", fmt.Sprintf("reference=%s", imgURL))
-	if err != nil {
-		return false, fmt.Errorf("error searching the image: %w", err)
+func pullExtensionsImage(podmanInterface PodmanInterface, imgURL string) error {
+	// Check if the image is present
+	podmanImageInfo, err := podmanInterface.GetPodmanImageInfoByReference(imgURL)
+	if err != nil || podmanImageInfo != nil {
+		// The image exists (ok) or an error happened
+		return err
 	}
-	if strings.TrimSpace(string(imageSearch)) == "" {
-		return false, nil
+
+	// The image is not present, pull it
+	var authArgs []string
+	if _, err := os.Stat(kubeletAuthFile); err == nil {
+		authArgs = append(authArgs, "--authfile", kubeletAuthFile)
 	}
-	return true, nil
+	args := []string{"pull", "-q"}
+	args = append(args, authArgs...)
+	args = append(args, imgURL)
+	_, err = pivotutils.RunExtBackground(numRetriesNetCommands, "podman", args...)
+	return err
 }
 
 func podmanCopy(imgURL, osImageContentDir string) (err error) {
-	// arguments used in external commands
-	var args []string
-
 	// make sure that osImageContentDir doesn't exist
 	os.RemoveAll(osImageContentDir)
-
-	// Check if the image is present
-	imagePresent, err := isImagePresent(imgURL)
-	if err != nil {
-		return
-	}
-
-	// Pull the container image
-	if !imagePresent {
-		var authArgs []string
-		if _, err := os.Stat(kubeletAuthFile); err == nil {
-			authArgs = append(authArgs, "--authfile", kubeletAuthFile)
-		}
-		args = []string{"pull", "-q"}
-		args = append(args, authArgs...)
-		args = append(args, imgURL)
-		_, err = pivotutils.RunExtBackground(numRetriesNetCommands, "podman", args...)
-		if err != nil {
-			return
-		}
-	}
 
 	// create a container
 	var cidBuf []byte
@@ -496,7 +478,7 @@ func podmanCopy(imgURL, osImageContentDir string) (err error) {
 
 	// copy the content from create container locally into a temp directory under /run/
 	cid := strings.TrimSpace(string(cidBuf))
-	args = []string{"cp", fmt.Sprintf("%s:/", cid), osImageContentDir}
+	args := []string{"cp", fmt.Sprintf("%s:/", cid), osImageContentDir}
 	_, err = pivotutils.RunExtBackground(numRetriesNetCommands, "podman", args...)
 	if err != nil {
 		return
@@ -514,7 +496,7 @@ func podmanCopy(imgURL, osImageContentDir string) (err error) {
 
 // ExtractExtensionsImage extracts the OS extensions content in a temporary directory under /run/machine-os-extensions
 // and returns the path on successful extraction
-func ExtractExtensionsImage(imgURL string) (osExtensionsImageContentDir string, err error) {
+func (dn *CoreOSDaemon) ExtractExtensionsImage(imgURL string) (osExtensionsImageContentDir string, err error) {
 	if err = os.MkdirAll(osExtensionsContentBaseDir, 0o755); err != nil {
 		err = fmt.Errorf("error creating directory %s: %w", osExtensionsContentBaseDir, err)
 		return
@@ -523,7 +505,9 @@ func ExtractExtensionsImage(imgURL string) (osExtensionsImageContentDir string, 
 	if osExtensionsImageContentDir, err = os.MkdirTemp(osExtensionsContentBaseDir, "os-extensions-content-"); err != nil {
 		return
 	}
-
+	if err := pullExtensionsImage(dn.podmanInterface, imgURL); err != nil {
+		return osExtensionsImageContentDir, fmt.Errorf("error pulling extensions image %s: %w", imgURL, err)
+	}
 	// Extract the image using `podman cp`
 	return osExtensionsImageContentDir, podmanCopy(imgURL, osExtensionsImageContentDir)
 }
@@ -2712,15 +2696,15 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 
 	// If PIS is configured check if the image is locally present. If so, rebase using
 	// the local image
-	isOsImagePresent := false
+	var podmanImageInfo *PodmanImageInfo
 	if isPisConfigured {
-		if isOsImagePresent, err = isImagePresent(newURL); err != nil {
+		if podmanImageInfo, err = dn.podmanInterface.GetPodmanImageInfoByReference(newURL); err != nil {
 			return err
 		}
 	}
 
-	if isOsImagePresent {
-		if err := dn.NodeUpdaterClient.RebaseLayeredFromContainerStorage(newURL); err != nil {
+	if podmanImageInfo != nil {
+		if err := dn.NodeUpdaterClient.RebaseLayeredFromContainerStorage(podmanImageInfo); err != nil {
 			return fmt.Errorf("failed to update OS from local storage: %s: %w", newURL, err)
 		}
 	} else {
@@ -2773,6 +2757,11 @@ func (dn *Daemon) isPinnedImageSetConfigured() (bool, error) {
 	return false, nil
 }
 
+// TODO: Delete this function to always consume the CommandRunner interface instance
+// Tracking story: https://issues.redhat.com/browse/MCO-1925
+//
+//	Conserved the old signature to avoid a big footprint bugfix with this change
+//
 // Synchronously invoke a command, writing its stdout to our stdout,
 // and gathering stderr into a buffer which will be returned in err
 // in case of error.
@@ -2920,7 +2909,7 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 		// TODO(jkyros): the original intent was that we use the extensions container as a service, but that currently results
 		// in a lot of complexity due to boostrap and firstboot where the service isn't easily available, so for now we are going
 		// to extract them to disk like we did previously.
-		if osExtensionsContentDir, err = ExtractExtensionsImage(newConfig.Spec.BaseOSExtensionsContainerImage); err != nil {
+		if osExtensionsContentDir, err = dn.ExtractExtensionsImage(newConfig.Spec.BaseOSExtensionsContainerImage); err != nil {
 			return err
 		}
 		// Delete extracted OS image once we are done.
