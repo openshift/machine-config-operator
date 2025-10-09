@@ -8,7 +8,7 @@ import (
 
 	"github.com/containers/image/v5/docker"
 	"github.com/docker/distribution/registry/api/errcode"
-	errcodev2 "github.com/docker/distribution/registry/api/v2"
+	v2 "github.com/docker/distribution/registry/api/v2"
 )
 
 // IsTolerableDeleteErr determines if the returned error message during image deletion can be
@@ -24,23 +24,59 @@ func IsTolerableDeleteErr(err error) bool {
 		return false
 	}
 
-	// Any errors related to the actual image registry query are wrapped in an
-	// ErrImage instance. This allows us to easily identify intolerable errors
-	// such as not being able to write the authfile or certs, etc.
-	var errImage *ErrImage
-	if !errors.As(err, &errImage) {
+	if IsImageNotFoundErr(err) {
+		return true
+	}
+
+	if IsAccessDeniedErr(err) {
+		return true
+	}
+
+	return false
+}
+
+// IsImageNotFoundErr determines if the returned error message indicates that
+// the image is not found. This assumes that the image registry returns such an
+// error code, which is not always the case. Some image registries return an
+// unauthorized or forbidden error which this function does not take into
+// account. For that, use IsAccessDeniedErr below as an additional check.
+func IsImageNotFoundErr(err error) bool {
+	if err == nil {
 		return false
 	}
 
-	if isTolerableErrorCode(err) {
+	if !isErrImage(err) {
+		return false
+	}
+
+	if isMaskedHTTP404(err) {
+		return true
+	}
+
+	if isImageNotFoundErrorCode(err) {
+		return true
+	}
+
+	return false
+}
+
+// IsAccessDeniedErr determines if the returned error indicates that the image
+// cannot be accessed or the operation cannot be performed due to permissions
+// issue. Some image registries use this as a proxy for the image not existing.
+func IsAccessDeniedErr(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	if !isErrImage(err) {
+		return false
+	}
+
+	if isAccessDeniedErrorCode(err) {
 		return true
 	}
 
 	if isTolerableUnexpectedHTTPStatusError(err) {
-		return true
-	}
-
-	if isMaskedHTTP404(err) {
 		return true
 	}
 
@@ -59,37 +95,80 @@ func isMaskedHTTP404(err error) bool {
 	return strings.Contains(err.Error(), "Image may not exist or is not stored with a v2 Schema in a v2 registry")
 }
 
-// isTolerableErrorCode checks if the error code from the registry is tolerable for deletion.
-// This includes cases where the manifest is unknown, or authorization is denied.
-func isTolerableErrorCode(err error) bool {
+// isImageNotFoundErrorCode checks if the error is an ErrorCode instance
+// indicating that a given manifest is not found or the repo name is unknown.
+// This also handles the Quay.io edgecase of an image being deleted and Quay
+// returning an HTTP 500 indicating that.
+func isImageNotFoundErrorCode(err error) bool {
 	if err == nil {
 		return false
 	}
 
-	var errCode errcode.Error
-	if !errors.As(err, &errCode) {
-		return false
-	}
-
-	code := errCode.ErrorCode()
-
-	if code == errcodev2.ErrorCodeManifestUnknown {
+	if isManifestUnknownError(err) {
 		return true
 	}
 
+	if isNameUnknownError(err) {
+		return true
+	}
+
+	var errCode errcode.Error
+	if errors.As(err, &errCode) {
+		return isQuayErrorCode(errCode)
+	}
+
+	return false
+}
+
+// Determines if the error is due to the repo name being unknown.
+func isNameUnknownError(err error) bool {
+	var ec errcode.ErrorCoder
+	if errors.As(err, &ec) && ec.ErrorCode() == v2.ErrorCodeNameUnknown {
+		return true
+	}
+
+	return false
+}
+
+// Adapted from: https://github.com/containers/image/blob/52ee4dff559a09ffa45783c50bcb7b3f7faebb04/docker/docker_client.go#L1109-L1133
+func isManifestUnknownError(err error) bool {
+	// docker/distribution, and as defined in the spec
+	var ec errcode.ErrorCoder
+	if errors.As(err, &ec) && ec.ErrorCode() == v2.ErrorCodeManifestUnknown {
+		return true
+	}
+	// registry.redhat.io as of October 2022
+	var e errcode.Error
+	if errors.As(err, &e) && e.ErrorCode() == errcode.ErrorCodeUnknown && e.Message == "Not Found" {
+		return true
+	}
+	// Harbor v2.10.2
+	if errors.As(err, &e) && e.ErrorCode() == errcode.ErrorCodeUnknown && strings.Contains(strings.ToLower(e.Message), "not found") {
+		return true
+	}
+	// registry.access.redhat.com as of August 2025
+	if errors.As(err, &e) && e.ErrorCode() == v2.ErrorCodeNameUnknown {
+		return true
+	}
+
+	return false
+}
+
+// isAccessDeniedErrorCode checks if the error is an ErrorCode instance and
+// then checks the known status codes.
+func isAccessDeniedErrorCode(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var ec errcode.ErrorCoder
 	// Quay.io returns this code whenever one is not authorized to delete an image.
-	if code == errcode.ErrorCodeUnauthorized {
+	if errors.As(err, &ec) && ec.ErrorCode() == errcode.ErrorCodeUnauthorized {
 		return true
 	}
 
 	// Docker.io returns this code whenever one is not authorized to delete an image.
-	if code == errcode.ErrorCodeDenied {
-		return true
-	}
-
-	// Quay.io returns an HTTP 500 if an image was recently deleted and the
-	// garbage collection has not run yet.
-	if isQuayErrorCode(errCode) {
+	if errors.As(err, &ec) && ec.ErrorCode() == errcode.ErrorCodeDenied {
 		return true
 	}
 
@@ -128,15 +207,16 @@ func isTolerableUnexpectedHTTPStatusError(err error) bool {
 	}
 
 	var unexpectedHTTPErr docker.UnexpectedHTTPStatusError
-	if !errors.As(err, &unexpectedHTTPErr) {
-		return false
-	}
-
-	if unexpectedHTTPErr.StatusCode == http.StatusUnauthorized {
+	if errors.As(err, &unexpectedHTTPErr) && unexpectedHTTPErr.StatusCode == http.StatusUnauthorized {
 		return true
 	}
 
-	if unexpectedHTTPErr.StatusCode == http.StatusForbidden {
+	if errors.As(err, &unexpectedHTTPErr) && unexpectedHTTPErr.StatusCode == http.StatusForbidden {
+		return true
+	}
+
+	var unauthedForCreds docker.ErrUnauthorizedForCredentials
+	if errors.As(err, &unauthedForCreds) {
 		return true
 	}
 
@@ -188,4 +268,18 @@ func (e *ErrImage) Error() string {
 // Unwrap implements the Unwrap interface, allowing the nested error to be surfaced.
 func (e *ErrImage) Unwrap() error {
 	return e.err
+}
+
+// isErrImage determines whether the given error is an instance of the ErrImage
+// type defined above.
+func isErrImage(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Any errors related to the actual image registry query are wrapped in an
+	// ErrImage instance. This allows us to easily identify intolerable errors
+	// such as not being able to write the authfile or certs, etc.
+	var errImage *ErrImage
+	return errors.As(err, &errImage)
 }
