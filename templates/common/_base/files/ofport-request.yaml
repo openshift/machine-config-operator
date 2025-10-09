@@ -59,13 +59,7 @@ contents:
     fi
 
     # Get the bridge name
-    BRIDGE_NAME=$(nmcli -t -f connection.interface-name conn show "${BRIDGE_ID}" | awk -F ':' '{print $NF}') || true
-    if [ "${BRIDGE_NAME}" == "" ]; then
-        #Check if br-ex is managed by nmstate (br-ex-br)
-        PORT_CONNECTION_UUID=$(nmcli -t -f device,type,uuid conn | awk -F ':' '{if( $1=="br-ex" && $2~/^ovs-bridge/) print $NF}')
-        BRIDGE_ID=$(nmcli -t -f connection.id conn show "${PORT_CONNECTION_UUID}" | awk -F ':' '{print $NF}')
-        BRIDGE_NAME=$(nmcli -t -f connection.interface-name conn show "${BRIDGE_ID}" | awk -F ':' '{print $NF}')
-    fi
+    BRIDGE_NAME=$(nmcli -t -f connection.interface-name conn show "${BRIDGE_ID}" | awk -F ':' '{print $NF}')
     # Limit this to br-ex and br-ex1 only. If one wanted to enable this for all OVS bridges,
     # the condition would be: if [ "$BRIDGE_NAME" == "" ]; then
     if [ "${BRIDGE_NAME}" != "br-ex" ] && [ "${BRIDGE_NAME}" != "br-ex1" ]; then
