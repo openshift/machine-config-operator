@@ -480,7 +480,7 @@ func validateExtensions(exts []string) error {
 func GetPackagesForSupportedKernelType(kernelType string) (string, map[string][]string, error) {
 	kernelPackages := map[string][]string{
 		KernelTypeDefault:  {"kernel", "kernel-core", "kernel-modules", "kernel-modules-core", "kernel-modules-extra"},
-		KernelTypeRealtime: {"kernel-rt-core", "kernel-rt-modules", "kernel-rt-modules-extra", "kernel-rt-kvm"},
+		KernelTypeRealtime: {"kernel-rt-core", "kernel-rt-modules", "kernel-rt-modules-extra" },
 		KernelType64kPages: {"kernel-64k-core", "kernel-64k-modules", "kernel-64k-modules-core", "kernel-64k-modules-extra"},
 	}
 	if _, ok := kernelPackages[kernelType]; ok {

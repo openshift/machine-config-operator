@@ -1723,7 +1723,7 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 	defaultKernel := []string{"kernel", "kernel-core", "kernel-modules", "kernel-modules-core", "kernel-modules-extra"}
 	// Note this list explicitly does *not* include kernel-rt as that is a meta-package that tries to pull in a lot
 	// of other dependencies we don't want for historical reasons.
-	realtimeKernel := []string{"kernel-rt-core", "kernel-rt-modules", "kernel-rt-modules-extra", "kernel-rt-kvm"}
+	realtimeKernel := []string{"kernel-rt-core", "kernel-rt-modules", "kernel-rt-modules-extra"}
 	hugePagesKernel := []string{"kernel-64k-core", "kernel-64k-modules", "kernel-64k-modules-core", "kernel-64k-modules-extra"}
 
 	if oldKtype != newKtype {
