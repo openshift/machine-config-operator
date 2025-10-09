@@ -288,6 +288,28 @@ func TestGetUpdatedMachines(t *testing.T) {
 			newNode("node-1", machineConfigV1, machineConfigV1),
 			newNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
 		},
+	}, {
+		name: "Pool with image mode disabling, one node updating, 2 nodes not not acted upon",
+		nodes: []*corev1.Node{
+			newLayeredNode("node-0", machineConfigV0, machineConfigV0, imageV1, ""),
+			newLayeredNode("node-1", machineConfigV0, machineConfigV0, imageV1, imageV1),
+			newLayeredNode("node-2", machineConfigV0, machineConfigV0, imageV1, imageV1),
+		},
+		currentConfig: machineConfigV0,
+		updated:       nil,
+		layered:       false,
+	}, {
+		name: "Pool with image mode disabling, one node updated, 1 node updating, 1 node not acted upon",
+		nodes: []*corev1.Node{
+			newNode("node-0", machineConfigV0, machineConfigV0),
+			newLayeredNode("node-1", machineConfigV0, machineConfigV0, imageV1, ""),
+			newLayeredNode("node-2", machineConfigV0, machineConfigV0, imageV1, imageV1),
+		},
+		currentConfig: machineConfigV0,
+		updated: []*corev1.Node{
+			newNode("node-0", machineConfigV0, machineConfigV0),
+		},
+		layered: false,
 	},
 	}
 
