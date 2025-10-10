@@ -83,7 +83,7 @@ type BootImageState struct {
 	hotLoopCount int
 }
 
-// Helper function that checks if all resources have been evaluated
+// isFinished checks if all resources have been evaluated
 func (mrs MachineResourceStats) isFinished() bool {
 	return mrs.totalCount == (mrs.inProgress + mrs.erroredCount)
 }
@@ -189,6 +189,8 @@ func (ctrl *Controller) Run(stopCh <-chan struct{}) {
 	<-stopCh
 }
 
+// addMAPIMachineSet handles the addition of a MAPI MachineSet by triggering
+// a reconciliation of all enrolled MAPI MachineSets.
 func (ctrl *Controller) addMAPIMachineSet(obj interface{}) {
 
 	machineSet := obj.(*machinev1beta1.MachineSet)
@@ -201,6 +203,8 @@ func (ctrl *Controller) addMAPIMachineSet(obj interface{}) {
 	go func() { ctrl.syncMAPIMachineSets("MAPIMachinesetAdded") }()
 }
 
+// updateMAPIMachineSet handles updates to a MAPI MachineSet by triggering
+// a reconciliation if the ProviderSpec, labels, annotations, or owner references changed.
 func (ctrl *Controller) updateMAPIMachineSet(oldMS, newMS interface{}) {
 
 	oldMachineSet := oldMS.(*machinev1beta1.MachineSet)
@@ -222,6 +226,8 @@ func (ctrl *Controller) updateMAPIMachineSet(oldMS, newMS interface{}) {
 	go func() { ctrl.syncMAPIMachineSets("MAPIMachinesetUpdated") }()
 }
 
+// deleteMAPIMachineSet handles the deletion of a MAPI MachineSet by triggering
+// a reconciliation of all enrolled MAPI MachineSets.
 func (ctrl *Controller) deleteMAPIMachineSet(deletedMS interface{}) {
 
 	deletedMachineSet := deletedMS.(*machinev1beta1.MachineSet)
@@ -234,6 +240,8 @@ func (ctrl *Controller) deleteMAPIMachineSet(deletedMS interface{}) {
 	go func() { ctrl.syncMAPIMachineSets("MAPIMachinesetDeleted") }()
 }
 
+// addControlPlaneMachineSet handles the addition of a ControlPlaneMachineSet by triggering
+// a reconciliation of all enrolled ControlPlaneMachineSets.
 func (ctrl *Controller) addControlPlaneMachineSet(obj interface{}) {
 
 	machineSet := obj.(*machinev1.ControlPlaneMachineSet)
@@ -246,6 +254,8 @@ func (ctrl *Controller) addControlPlaneMachineSet(obj interface{}) {
 	go func() { ctrl.syncControlPlaneMachineSets("ControlPlaneMachineSetAdded") }()
 }
 
+// updateControlPlaneMachineSet handles updates to a ControlPlaneMachineSet by triggering
+// a reconciliation if the ProviderSpec, labels, annotations, or owner references changed.
 func (ctrl *Controller) updateControlPlaneMachineSet(oldCPMS, newCPMS interface{}) {
 
 	oldMS := oldCPMS.(*machinev1.ControlPlaneMachineSet)
@@ -267,6 +277,8 @@ func (ctrl *Controller) updateControlPlaneMachineSet(oldCPMS, newCPMS interface{
 	go func() { ctrl.syncControlPlaneMachineSets("ControlPlaneMachineSetUpdated") }()
 }
 
+// deleteControlPlaneMachineSet handles the deletion of a ControlPlaneMachineSet by triggering
+// a reconciliation of all enrolled ControlPlaneMachineSets.
 func (ctrl *Controller) deleteControlPlaneMachineSet(deletedCPMS interface{}) {
 
 	deletedMachineSet := deletedCPMS.(*machinev1beta1.MachineSet)
@@ -279,6 +291,8 @@ func (ctrl *Controller) deleteControlPlaneMachineSet(deletedCPMS interface{}) {
 	go func() { ctrl.syncControlPlaneMachineSets("ControlPlaneMachineSetDeleted") }()
 }
 
+// addConfigMap handles the addition of the boot images ConfigMap by triggering
+// a reconciliation of all enrolled machine resources.
 func (ctrl *Controller) addConfigMap(obj interface{}) {
 
 	configMap := obj.(*corev1.ConfigMap)
@@ -294,6 +308,8 @@ func (ctrl *Controller) addConfigMap(obj interface{}) {
 	go func() { ctrl.syncAll("BootImageConfigMapAdded") }()
 }
 
+// updateConfigMap handles updates to the boot images ConfigMap by triggering
+// a reconciliation of all enrolled machine resources if the resource version changed.
 func (ctrl *Controller) updateConfigMap(oldCM, newCM interface{}) {
 
 	oldConfigMap := oldCM.(*corev1.ConfigMap)
@@ -315,6 +331,8 @@ func (ctrl *Controller) updateConfigMap(oldCM, newCM interface{}) {
 	go func() { ctrl.syncAll("BootImageConfigMapUpdated") }()
 }
 
+// deleteConfigMap handles the deletion of the boot images ConfigMap by triggering
+// a reconciliation of all enrolled machine resources.
 func (ctrl *Controller) deleteConfigMap(obj interface{}) {
 
 	configMap := obj.(*corev1.ConfigMap)
@@ -330,6 +348,8 @@ func (ctrl *Controller) deleteConfigMap(obj interface{}) {
 	go func() { ctrl.syncAll("BootImageConfigMapDeleted") }()
 }
 
+// addMachineConfiguration handles the addition of the cluster-level MachineConfiguration
+// by triggering a reconciliation of all enrolled machine resources.
 func (ctrl *Controller) addMachineConfiguration(obj interface{}) {
 
 	machineConfiguration := obj.(*opv1.MachineConfiguration)
@@ -346,6 +366,8 @@ func (ctrl *Controller) addMachineConfiguration(obj interface{}) {
 	go func() { ctrl.syncAll("BootImageUpdateConfigurationAdded") }()
 }
 
+// updateMachineConfiguration handles updates to the cluster-level MachineConfiguration
+// by triggering a reconciliation if the ManagedBootImagesStatus changed.
 func (ctrl *Controller) updateMachineConfiguration(oldMC, newMC interface{}) {
 
 	oldMachineConfiguration := oldMC.(*opv1.MachineConfiguration)
@@ -368,6 +390,8 @@ func (ctrl *Controller) updateMachineConfiguration(oldMC, newMC interface{}) {
 	go func() { ctrl.syncAll("BootImageUpdateConfigurationUpdated") }()
 }
 
+// deleteMachineConfiguration handles the deletion of the cluster-level MachineConfiguration
+// by triggering a reconciliation of all enrolled machine resources.
 func (ctrl *Controller) deleteMachineConfiguration(obj interface{}) {
 
 	machineConfiguration := obj.(*opv1.MachineConfiguration)
@@ -384,6 +408,8 @@ func (ctrl *Controller) deleteMachineConfiguration(obj interface{}) {
 	go func() { ctrl.syncAll("BootImageUpdateConfigurationDeleted") }()
 }
 
+// updateConditions updates the boot image update conditions on the MachineConfiguration status
+// based on the current state of machine resource reconciliation.
 func (ctrl *Controller) updateConditions(newReason string, syncError error, targetConditionType string) {
 	ctrl.conditionMutex.Lock()
 	defer ctrl.conditionMutex.Unlock()
@@ -435,6 +461,8 @@ func (ctrl *Controller) updateConditions(newReason string, syncError error, targ
 	}
 }
 
+// updateMachineConfigurationStatus updates the MachineConfiguration status with new conditions
+// using retry logic to handle concurrent updates.
 func (ctrl *Controller) updateMachineConfigurationStatus(mcop *opv1.MachineConfiguration, newConditions []metav1.Condition) {
 
 	// Using a retry here as there may be concurrent reconiliation loops updating conditions for multiple
@@ -458,6 +486,8 @@ func (ctrl *Controller) updateMachineConfigurationStatus(mcop *opv1.MachineConfi
 	}
 }
 
+// getDefaultConditions returns the default boot image update conditions when no
+// machine resources are enrolled.
 func getDefaultConditions() []metav1.Condition {
 	// These are boilerplate conditions, with no machine resources enrolled.
 	return []metav1.Condition{

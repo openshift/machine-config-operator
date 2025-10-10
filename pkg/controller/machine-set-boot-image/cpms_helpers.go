@@ -90,7 +90,7 @@ func (ctrl *Controller) syncControlPlaneMachineSets(reason string) {
 
 	// If no machine resources were enrolled; exit the enqueue process without errors.
 	if len(controlPlaneMachineSets) == 0 {
-		klog.Infof("No ControlPlaneMachineSet were enrolled, so no MAPI machinesets will be enqueued.")
+		klog.Infof("No ControlPlaneMachineSet was enrolled, so no ControlPlaneMachineSet will be enqueued.")
 		// clear out ControlPlaneMachineSet boot image history
 		for k := range ctrl.cpmsBootImageState {
 			delete(ctrl.cpmsBootImageState, k)
