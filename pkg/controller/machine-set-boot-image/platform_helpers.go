@@ -62,6 +62,7 @@ func checkMachineSet(infra *osconfigv1.Infrastructure, machineSet *machinev1beta
 }
 
 // Generic reconcile function that handles the common pattern across all platforms
+// nolint:dupl // I separated this from reconcilePlatformCPMS for readability
 func reconcilePlatform[T any](
 	machineSet *machinev1beta1.MachineSet,
 	infra *osconfigv1.Infrastructure,

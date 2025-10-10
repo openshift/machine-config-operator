@@ -37,7 +37,7 @@ rules:
   resources: ["daemonsets"]
   verbs: ["get"]
 - apiGroups: ["machine.openshift.io"]
-  resources: ["machinesets","machines"]
+  resources: ["machinesets","machines","controlplanemachinesets"]
   verbs: ["get", "list", "watch", "patch"]
 - apiGroups: ["operator.openshift.io"]
   resources: ["machineconfigurations/status"]
