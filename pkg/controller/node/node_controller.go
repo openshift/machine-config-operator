@@ -8,11 +8,11 @@ import (
 	"sort"
 	"time"
 
-	helpers "github.com/openshift/machine-config-operator/pkg/helpers"
-
 	configv1 "github.com/openshift/api/config/v1"
 	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	helpers "github.com/openshift/machine-config-operator/pkg/helpers"
+	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
 
 	cligoinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	cligolistersv1 "github.com/openshift/client-go/config/listers/config/v1"
@@ -1288,14 +1288,22 @@ func (ctrl *Controller) updateCandidateNode(mosc *mcfgv1.MachineOSConfig, mosb *
 		}
 
 		lns := ctrlcommon.NewLayeredNodeState(oldNode)
+		desiredConfig := ""
 		if !layered {
 			lns.SetDesiredStateFromPool(pool)
+			desiredConfig = pool.Spec.Configuration.Name
 		} else {
 			lns.SetDesiredStateFromMachineOSConfig(mosc, mosb)
+			desiredConfig = mosb.Spec.MachineConfig.Name
+		}
+
+		// Populate the desired config version and image annotations in the node's MCN
+		err = upgrademonitor.UpdateMachineConfigNodeSpecDesiredVersion(ctrl.fgHandler, ctrl.client, nodeName, desiredConfig)
+		if err != nil {
+			klog.Errorf("error populating MCN for desired config version: %v", err)
 		}
 
 		// Set the desired state to match the pool.
-
 		newData, err := json.Marshal(lns.Node())
 		if err != nil {
 			return err
