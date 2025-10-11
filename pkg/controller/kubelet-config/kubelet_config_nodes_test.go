@@ -90,13 +90,13 @@ func TestBootstrapNodeConfigDefault(t *testing.T) {
 	}{
 		configNodeCgroupDefault: {
 			Name:             "Default",
-			MasterKernelArgs: []string{"systemd.unified_cgroup_hierarchy=1", "cgroup_no_v1=\"all\"", "psi=0"},
-			WorkerKernelArgs: []string{"systemd.unified_cgroup_hierarchy=1", "cgroup_no_v1=\"all\"", "psi=0"},
+			MasterKernelArgs: []string{"systemd.unified_cgroup_hierarchy=1", "cgroup_no_v1=\"all\"", "psi=1"},
+			WorkerKernelArgs: []string{"systemd.unified_cgroup_hierarchy=1", "cgroup_no_v1=\"all\"", "psi=1"},
 		},
 		configNodeCgroupV2: {
 			Name:             "Cgroupv2",
-			MasterKernelArgs: []string{"systemd.unified_cgroup_hierarchy=1", "cgroup_no_v1=\"all\"", "psi=0"},
-			WorkerKernelArgs: []string{"systemd.unified_cgroup_hierarchy=1", "cgroup_no_v1=\"all\"", "psi=0"},
+			MasterKernelArgs: []string{"systemd.unified_cgroup_hierarchy=1", "cgroup_no_v1=\"all\"", "psi=1"},
+			WorkerKernelArgs: []string{"systemd.unified_cgroup_hierarchy=1", "cgroup_no_v1=\"all\"", "psi=1"},
 		},
 	}
 
@@ -220,6 +220,63 @@ func TestNodeConfigCustom(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, mcList.Items, 1)
 			require.NotEqual(t, nodeKeyCustom, mcList.Items[0].Name)
+		})
+	}
+}
+
+func TestUpdateMachineConfigWithRealtimeKernel(t *testing.T) {
+	// Test that realtime kernels get psi=0 while regular kernels get psi=1
+	tests := []struct {
+		name            string
+		kernelType      string
+		expectedPSI     string
+	}{
+		{
+			name:        "Regular kernel",
+			kernelType:  "",
+			expectedPSI: "psi=1",
+		},
+		{
+			name:        "Default kernel",
+			kernelType:  "default",
+			expectedPSI: "psi=1",
+		},
+		{
+			name:        "Realtime kernel",
+			kernelType:  "realtime",
+			expectedPSI: "psi=0",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodeConfig := createNewDefaultNodeconfigWithCgroup(osev1.CgroupModeV2)
+			mc := helpers.NewMachineConfigExtended(
+				"test-mc",
+				map[string]string{"node-role/worker": ""},
+				nil,
+				[]ign3types.File{},
+				[]ign3types.Unit{},
+				[]ign3types.SSHAuthorizedKey{},
+				[]string{},
+				false,
+				[]string{},
+				tt.kernelType,
+				"dummy://",
+			)
+
+			err := updateMachineConfigwithCgroup(nodeConfig, mc)
+			require.NoError(t, err)
+
+			// Check that the expected PSI setting is in the kernel arguments
+			found := false
+			for _, arg := range mc.Spec.KernelArguments {
+				if arg == tt.expectedPSI {
+					found = true
+					break
+				}
+			}
+			require.True(t, found, "Expected kernel argument %s not found in %v", tt.expectedPSI, mc.Spec.KernelArguments)
 		})
 	}
 }

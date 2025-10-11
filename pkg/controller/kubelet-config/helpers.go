@@ -152,9 +152,17 @@ func updateMachineConfigwithCgroup(node *osev1.Node, mc *mcfgv1.MachineConfig) e
 	// updating the Machine Config resource with the relevant cgroup config
 	var (
 		kernelArgsv1                                            = []string{"systemd.unified_cgroup_hierarchy=0", "systemd.legacy_systemd_cgroup_controller=1"}
-		kernelArgsv2                                            = []string{"systemd.unified_cgroup_hierarchy=1", "cgroup_no_v1=\"all\"", "psi=0"}
+		kernelArgsv2                                            []string
 		kernelArgsToAdd, kernelArgsToRemove, adjustedKernelArgs []string
 	)
+
+	// Check if this is a realtime kernel - only disable PSI for realtime kernels
+	if mc.Spec.KernelType == "realtime" {
+		kernelArgsv2 = []string{"systemd.unified_cgroup_hierarchy=1", "cgroup_no_v1=\"all\"", "psi=0"}
+	} else {
+		// For non-RT kernels, explicitly enable PSI
+		kernelArgsv2 = []string{"systemd.unified_cgroup_hierarchy=1", "cgroup_no_v1=\"all\"", "psi=1"}
+	}
 	switch node.Spec.CgroupMode {
 	case osev1.CgroupModeV2, osev1.CgroupModeEmpty:
 		kernelArgsToAdd = append(kernelArgsToAdd, kernelArgsv2...)
