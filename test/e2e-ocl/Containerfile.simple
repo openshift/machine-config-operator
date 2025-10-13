@@ -1,0 +1,3 @@
+FROM configs AS final
+RUN touch /etc/simple-test-file.txt && \
+    ostree container commit
