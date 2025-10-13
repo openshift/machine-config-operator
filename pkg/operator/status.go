@@ -316,13 +316,6 @@ func (optr *Operator) syncUpgradeableStatus() error {
 			break
 		}
 	}
-	// this should no longer trigger when adding a node to a pool. It should only trigger if the node actually has to go through an upgrade
-	// updating and degraded can occur together, in that case defer to the degraded Reason that is already set above
-	if updating && !degraded && !interrupted {
-		coStatus.Status = configv1.ConditionFalse
-		coStatus.Reason = "PoolUpdating"
-		coStatus.Message = "One or more machine config pools are updating, please see `oc get mcp` for further details"
-	}
 
 	// don't overwrite status if updating or degraded
 	if !updating && !degraded && !interrupted {
