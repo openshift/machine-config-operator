@@ -13,10 +13,14 @@ import (
 	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// TODO:
+//   - See if image mode is supported in master MCP --> probably just add a skip if no worker MCP
+//   - Update tests to be more functioned out --> this will probably be the same for all MCN stuff, just with different MCs passed in
+//   - Update test to use allowed MCPs; sort of same as #1
+//   - Move some funcs to a helper file
 var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Disruptive][OCPFeatureGate:ImageModeStatusReporting]", func() {
 	defer g.GinkgoRecover()
 
@@ -33,6 +37,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	})
 
 	g.It("MachineConfigNode properties should match the associated node properties when OCB is enabled in the default MachineConfigPool", func() {
+		// TODO: check on the MCP cleanup defer func
 		var (
 			mcp            = GetCompactCompatiblePool(oc.AsAdmin())
 			mcpAndMoscName = mcp.GetName()
@@ -50,7 +55,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		exutil.By("Validate nodes' starting MCN properties")
 		for _, node := range nodesToTest {
-			err = ValidateMCNForNode(oc, clientSet, node, mcpAndMoscName)
+			err = ValidateMCNForNode(oc, clientSet, node.Name, mcpAndMoscName)
 			o.Expect(err).NotTo(o.HaveOccurred(), "Error validating MCN for node `%s`: %s", node.Name, err)
 		}
 		logger.Infof("OK!\n")
@@ -67,7 +72,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		exutil.By("Validate nodes' MCN properties")
 		for _, node := range nodesToTest {
-			err = ValidateMCNForNode(oc, clientSet, node, mcpAndMoscName)
+			err = ValidateMCNForNode(oc, clientSet, node.Name, mcpAndMoscName)
 			o.Expect(err).NotTo(o.HaveOccurred(), "Error validating MCN for node `%s`: %s", node.Name, err)
 		}
 		logger.Infof("OK!\n")
@@ -82,7 +87,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		exutil.By("Validate nodes' MCN properties")
 		for _, node := range nodesToTest {
-			err = ValidateMCNForNode(oc, clientSet, node, mcpAndMoscName)
+			err = ValidateMCNForNode(oc, clientSet, node.Name, mcpAndMoscName)
 			o.Expect(err).NotTo(o.HaveOccurred(), "Error validating MCN for node `%s`: %s", node.Name, err)
 		}
 		logger.Infof("OK!\n")
@@ -114,6 +119,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	g.It("MachineConfigNode properties should match the associated node properties when OCB is enabled in a custom MachineConfigPool", func() {
 		// TODO: test this with extension update
 		// TODO: add skip for non-custom allowed env
+		// TODO: check on the MCP cleanup defer func
 		var (
 			mcpAndMoscName = "infra"
 			clientSet      = framework.NewClientSet("")
@@ -123,13 +129,13 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		workerNodes, err := helpers.GetNodesByRole(clientSet, "worker")
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting worker nodes: %s", err)
 		o.Expect(len(workerNodes)).To(o.BeNumerically(">=", 1), "Less than one worker node in pool")
-		nodeToTest := workerNodes[0]
-		logger.Infof("Using `%s` as node for test")
+		nodeToTestName := workerNodes[0].Name
+		logger.Infof("Using `%s` as node for test", nodeToTestName)
 		logger.Infof("OK!\n")
 
 		exutil.By("Validate node's starting MCN properties")
-		err = ValidateMCNForNode(oc, clientSet, nodeToTest, "worker")
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error validating MCN for node `%s`: %s", nodeToTest.Name, err)
+		err = ValidateMCNForNode(oc, clientSet, nodeToTestName, "worker")
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error validating MCN for node `%s`: %s", nodeToTestName, err)
 		logger.Infof("OK!\n")
 
 		exutil.By("Create custom `infra` MCP and add the test node to it")
@@ -137,20 +143,22 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		infraMcp, err := CreateCustomMCP(oc.AsAdmin(), mcpAndMoscName, 0)
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating a new custom pool `%s`: %s", mcpAndMoscName, err)
 		// TODO: add MCP cleanup
+		// defer CleanupCustomMCP(oc, clientSet, mcpAndMoscName, nodeToTestName)
 		// Label node
-		err = oc.Run("label").Args(fmt.Sprintf("node/%s", nodeToTest.Name), fmt.Sprintf("node-role.kubernetes.io/%s=", mcpAndMoscName)).Execute()
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error labeing node `%s` for MCP `%s`: %s", nodeToTest.Name, mcpAndMoscName, err)
+		err = oc.AsAdmin().Run("label").Args(fmt.Sprintf("node/%s", nodeToTestName), fmt.Sprintf("node-role.kubernetes.io/%s=", mcpAndMoscName)).Execute()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error labeing node `%s` for MCP `%s`: %s", nodeToTestName, mcpAndMoscName, err)
 		// Wait for the new `infra` MCP to be ready
 		WaitForMCPToBeReady(oc, clientSet, mcpAndMoscName, 1)
 		logger.Infof("OK!\n")
 
 		exutil.By("Validate node's custom MCP MCN properties")
-		err = ValidateMCNForNode(oc, clientSet, nodeToTest, mcpAndMoscName)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error validating MCN for node `%s`: %s", nodeToTest.Name, err)
+		err = ValidateMCNForNode(oc, clientSet, nodeToTestName, mcpAndMoscName)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error validating MCN for node `%s`: %s", nodeToTestName, err)
 		logger.Infof("OK!\n")
 
 		exutil.By("Configure OCB functionality for the new `infra` MCP")
 		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, mcpAndMoscName, nil)
+		// update to wait for MCP to be updated again
 		defer mosc.CleanupAndDelete()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource: %s", err)
 		logger.Infof("OK!\n")
@@ -160,8 +168,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("OK!\n")
 
 		exutil.By("Validate the node in `infra` MCP has correct MCN properties")
-		err = ValidateMCNForNode(oc, clientSet, nodeToTest, mcpAndMoscName)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error validating MCN for node `%s`: %s", nodeToTest.Name, err)
+		err = ValidateMCNForNode(oc, clientSet, nodeToTestName, mcpAndMoscName)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error validating MCN for node `%s`: %s", nodeToTestName, err)
 		logger.Infof("OK!\n")
 
 		exutil.By("Remove the MachineOSConfig resource")
@@ -173,18 +181,18 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("OK!\n")
 
 		exutil.By("Validate the node in `infra` MCP has correct MCN properties")
-		err = ValidateMCNForNode(oc, clientSet, nodeToTest, mcpAndMoscName)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error validating MCN for node `%s`: %s", nodeToTest.Name, err)
+		err = ValidateMCNForNode(oc, clientSet, nodeToTestName, mcpAndMoscName)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error validating MCN for node `%s`: %s", nodeToTestName, err)
 		logger.Infof("OK!\n")
 
 		exutil.By("Delete the `infra` MCP")
-		err = CleanupCustomMCP(oc, clientSet, mcpAndMoscName, nodeToTest.Name)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error validating MCN for node `%s`: %s", nodeToTest.Name, err)
+		err = CleanupCustomMCP(oc, clientSet, mcpAndMoscName, nodeToTestName)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error deleting `%s` MCP: %s", mcpAndMoscName, err)
 		logger.Infof("OK!\n")
 
 		exutil.By("Validate the test node has correct MCN properties")
-		err = ValidateMCNForNode(oc, clientSet, nodeToTest, "worker")
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error validating MCN for node `%s`: %s", nodeToTest.Name, err)
+		err = ValidateMCNForNode(oc, clientSet, nodeToTestName, "worker")
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error validating MCN for node `%s`: %s", nodeToTestName, err)
 		logger.Infof("OK!\n")
 
 		// Add a node to the custom MCP
@@ -404,7 +412,14 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 //   - Check that `mcn.Spec.ConfigImage.DesiredImage` matches the node desired image
 //   - Check that `nmcn.Status.ConfigImage.CurrentImage` matches the node current image
 //   - Check that `mcn.Status.ConfigImage.DesiredImage` matches the node desired image
-func ValidateMCNForNode(oc *exutil.CLI, clientSet *framework.ClientSet, node corev1.Node, poolName string) error {
+func ValidateMCNForNode(oc *exutil.CLI, clientSet *framework.ClientSet, nodeName, poolName string) error {
+	// Get updated node
+	node, nodeErr := oc.AsAdmin().KubeClient().CoreV1().Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
+	if nodeErr != nil {
+		logger.Errorf("Could not get node `%v`", nodeName)
+		return nodeErr
+	}
+
 	// Get node's desired and current config versions and images
 	nodeCurrentConfig := node.Annotations[constants.CurrentMachineConfigAnnotationKey]
 	nodeDesiredConfig := node.Annotations[constants.DesiredMachineConfigAnnotationKey]
@@ -486,7 +501,7 @@ func ValidateMCNForNode(oc *exutil.CLI, clientSet *framework.ClientSet, node cor
 func CleanupCustomMCP(oc *exutil.CLI, clientSet *framework.ClientSet, customMCPName string, nodeName string) error {
 	// Unlabel node
 	logger.Infof("Removing label node-role.kubernetes.io/%v from node %v", customMCPName, nodeName)
-	unlabelErr := oc.Run("label").Args(fmt.Sprintf("node/%s", nodeName), fmt.Sprintf("node-role.kubernetes.io/%s-", customMCPName)).Execute()
+	unlabelErr := oc.AsAdmin().Run("label").Args(fmt.Sprintf("node/%s", nodeName), fmt.Sprintf("node-role.kubernetes.io/%s-", customMCPName)).Execute()
 	if unlabelErr != nil {
 		return fmt.Errorf("could not remove label 'node-role.kubernetes.io/%v' from node '%v'; err: %v", customMCPName, nodeName, unlabelErr)
 	}
@@ -506,7 +521,7 @@ func CleanupCustomMCP(oc *exutil.CLI, clientSet *framework.ClientSet, customMCPN
 
 	// Delete custom MCP
 	logger.Infof("Deleting MCP %v", customMCPName)
-	deleteMCPErr := oc.Run("delete").Args("mcp", customMCPName).Execute()
+	deleteMCPErr := oc.AsAdmin().Run("delete").Args("mcp", customMCPName).Execute()
 	if deleteMCPErr != nil {
 		return fmt.Errorf("error deleting MCP '%v': %v", customMCPName, deleteMCPErr)
 	}
