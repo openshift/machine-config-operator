@@ -1019,6 +1019,21 @@ func (ctrl *Controller) getConfigAndBuild(pool *mcfgv1.MachineConfigPool) (*mcfg
 		return nil, nil, err
 	}
 
+	// First, try to get the MOSB from the current-machine-os-build annotation on the MOSC
+	// This ensures we get the correct build when multiple MOSBs exist for the same rendered MC
+	if currentBuildName, hasAnnotation := ourConfig.Annotations[buildconstants.CurrentMachineOSBuildAnnotationKey]; hasAnnotation {
+		for _, build := range buildList {
+			if build.Name == currentBuildName {
+				ourBuild = build
+				klog.V(4).Infof("Found current MachineOSBuild %q from annotation for MachineOSConfig %q", currentBuildName, ourConfig.Name)
+				return ourConfig, ourBuild, nil
+			}
+		}
+		klog.Warningf("MachineOSConfig %q has current-machine-os-build annotation pointing to %q, but that build was not found", ourConfig.Name, currentBuildName)
+	}
+
+	// Fallback: if annotation is not present or build not found, use the old logic
+	// This handles backwards compatibility and edge cases
 	for _, build := range buildList {
 		if build.Spec.MachineOSConfig.Name == ourConfig.Name && build.Spec.MachineConfig.Name == pool.Spec.Configuration.Name {
 			ourBuild = build
