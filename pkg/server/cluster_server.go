@@ -9,12 +9,15 @@ import (
 	"path/filepath"
 	"time"
 
+	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	yaml "github.com/ghodss/yaml"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfginformers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 
 	"github.com/openshift/machine-config-operator/internal/clients"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
@@ -42,6 +45,8 @@ type clusterServer struct {
 	machineConfigLister     v1.MachineConfigLister
 	controllerConfigLister  v1.ControllerConfigLister
 	configMapLister         corelisterv1.ConfigMapLister
+	machineOSConfigLister   v1.MachineOSConfigLister
+	machineOSBuildLister    v1.MachineOSBuildLister
 
 	kubeconfigFunc kubeconfigFunc
 	apiserverURL   string
@@ -76,23 +81,27 @@ func NewClusterServer(kubeConfig, apiserverURL string) (Server, error) {
 	sharedInformerFactory := mcfginformers.NewSharedInformerFactory(machineConfigClient, resyncPeriod()())
 	kubeNamespacedSharedInformer := informers.NewFilteredSharedInformerFactory(kubeClient, resyncPeriod()(), "openshift-machine-config-operator", nil)
 
-	mcpInformer, mcInformer, ccInformer, cmInformer :=
+	mcpInformer, mcInformer, ccInformer, cmInformer, moscInformer, mosbInformer :=
 		sharedInformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 		sharedInformerFactory.Machineconfiguration().V1().MachineConfigs(),
 		sharedInformerFactory.Machineconfiguration().V1().ControllerConfigs(),
-		kubeNamespacedSharedInformer.Core().V1().ConfigMaps()
-	mcpLister, mcLister, ccLister, cmLister := mcpInformer.Lister(), mcInformer.Lister(), ccInformer.Lister(), cmInformer.Lister()
-	mcpListerHasSynced, mcListerHasSynced, ccListerHasSynced, cmListerHasSynced :=
+		kubeNamespacedSharedInformer.Core().V1().ConfigMaps(),
+		sharedInformerFactory.Machineconfiguration().V1().MachineOSConfigs(),
+		sharedInformerFactory.Machineconfiguration().V1().MachineOSBuilds()
+	mcpLister, mcLister, ccLister, cmLister, moscLister, mosbLister := mcpInformer.Lister(), mcInformer.Lister(), ccInformer.Lister(), cmInformer.Lister(), moscInformer.Lister(), mosbInformer.Lister()
+	mcpListerHasSynced, mcListerHasSynced, ccListerHasSynced, cmListerHasSynced, moscListerHasSynced, mosbListerHasSynced :=
 		mcpInformer.Informer().HasSynced,
 		mcInformer.Informer().HasSynced,
 		ccInformer.Informer().HasSynced,
-		cmInformer.Informer().HasSynced
+		cmInformer.Informer().HasSynced,
+		moscInformer.Informer().HasSynced,
+		mosbInformer.Informer().HasSynced
 
 	var informerStopCh chan struct{}
 	go sharedInformerFactory.Start(informerStopCh)
 	go kubeNamespacedSharedInformer.Start(informerStopCh)
 
-	if !cache.WaitForCacheSync(informerStopCh, mcpListerHasSynced, mcListerHasSynced, ccListerHasSynced, cmListerHasSynced) {
+	if !cache.WaitForCacheSync(informerStopCh, mcpListerHasSynced, mcListerHasSynced, ccListerHasSynced, cmListerHasSynced, moscListerHasSynced, mosbListerHasSynced) {
 		return nil, errors.New("failed to wait for cache sync")
 	}
 
@@ -101,6 +110,8 @@ func NewClusterServer(kubeConfig, apiserverURL string) (Server, error) {
 		machineConfigLister:     mcLister,
 		controllerConfigLister:  ccLister,
 		configMapLister:         cmLister,
+		machineOSConfigLister:   moscLister,
+		machineOSBuildLister:    mosbLister,
 		kubeconfigFunc:          func() ([]byte, []byte, error) { return kubeconfigFromSecret(bootstrapTokenDir, apiserverURL, nil) },
 		apiserverURL:            apiserverURL,
 	}, nil
@@ -163,7 +174,27 @@ func (cs *clusterServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error
 
 	addDataAndMaybeAppendToIgnition(caBundleFilePath, cc.Spec.KubeAPIServerServingCAData, &ignConf)
 	addDataAndMaybeAppendToIgnition(cloudProviderCAPath, cc.Spec.CloudProviderCAData, &ignConf)
-	appenders := getAppenders(currConf, cr.version, cs.kubeconfigFunc, []string{}, "")
+
+	desiredImage := cs.resolveDesiredImageForPool(mp)
+	klog.Infof("desiredImage is found to be %s", desiredImage)
+
+	appenders := []appenderFunc{
+		func(cfg *ign3types.Config, _ *mcfgv1.MachineConfig) error {
+			return appendNodeAnnotations(cfg, currConf, desiredImage)
+		},
+		func(cfg *ign3types.Config, _ *mcfgv1.MachineConfig) error {
+			return appendKubeConfig(cfg, cs.kubeconfigFunc)
+		},
+		appendInitialMachineConfig,
+		func(cfg *ign3types.Config, _ *mcfgv1.MachineConfig) error { return appendCerts(cfg, []string{}, "") },
+		// Inject desired image into the MC
+		appendDesiredOSImage(desiredImage),
+		// Must be last
+		func(cfg *ign3types.Config, mc *mcfgv1.MachineConfig) error {
+			return appendEncapsulated(cfg, mc, cr.version)
+		},
+	}
+
 	for _, a := range appenders {
 		if err := a(&ignConf, mc); err != nil {
 			return nil, err
@@ -223,4 +254,96 @@ func kubeconfigFromSecret(secretDir, apiserverURL string, caData []byte) ([]byte
 		return nil, nil, err
 	}
 	return kcData, caData, nil
+}
+
+// Finds the MOSC that targets this MCO and verfies that the MOSC has an image in status
+// locates the matching MOSB for the MCP's current or next rendered MC and confirms build succeeded
+// and returns the image pullspec when its ready
+func (cs *clusterServer) resolveDesiredImageForPool(pool *mcfgv1.MachineConfigPool) string {
+	// If listers are not initialized (e.g., in tests or clusters without layering), return empty
+	if cs.machineOSConfigLister == nil || cs.machineOSBuildLister == nil {
+		return ""
+	}
+
+	// Find MachineOSConfig for this pool
+	moscList, err := cs.machineOSConfigLister.List(labels.Everything())
+	if err != nil {
+		// MOSC resources not available
+		klog.Infof("Could not list MachineOSConfigs for pool %s: %v", pool.Name, err)
+		return ""
+	}
+
+	var mosc *mcfgv1.MachineOSConfig
+	for _, config := range moscList {
+		if config.Spec.MachineConfigPool.Name == pool.Name {
+			mosc = config
+			break
+		}
+	}
+
+	// No MOSC for this pool - not layered
+	if mosc == nil {
+		return ""
+	}
+
+	// Check if image is ready in MOSC status
+	moscState := ctrlcommon.NewMachineOSConfigState(mosc)
+	if !moscState.HasOSImage() {
+		klog.Infof("Pool %s has MachineOSConfig but image not ready yet", pool.Name)
+		return ""
+	}
+
+	// Also verify the corresponding MOSB is successful to ensure we don't serve an image that hasn't been built yet
+	mosbList, err := cs.machineOSBuildLister.List(labels.Everything())
+	if err != nil {
+		klog.Infof("Could not list MachineOSBuilds for pool %s: %v", pool.Name, err)
+		return ""
+	}
+
+	var currentConf string
+	if pool.Status.UpdatedMachineCount > 0 {
+		currentConf = pool.Spec.Configuration.Name
+	} else {
+		currentConf = pool.Status.Configuration.Name
+	}
+
+	var mosb *mcfgv1.MachineOSBuild
+	for _, build := range mosbList {
+		if build.Spec.MachineOSConfig.Name == mosc.Name &&
+			build.Spec.MachineConfig.Name == currentConf {
+			mosb = build
+			break
+		}
+	}
+
+	if mosb == nil {
+		klog.Infof("Pool %s has MachineOSConfig but no matching MachineOSBuild for MC %s", pool.Name, currentConf)
+		return ""
+	}
+
+	// Check build is successful
+	mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
+	if !mosbState.IsBuildSuccess() {
+		klog.Infof("Pool %s has MachineOSBuild but build not successful yet", pool.Name)
+		return ""
+	}
+
+	imageSpec := moscState.GetOSImage()
+	klog.Infof("Resolved layered image for pool %s: %s", pool.Name, imageSpec)
+	return imageSpec
+}
+
+// appendDesiredOSImage mutates the MC to include the desired OS image.
+// This runs appendEncapsulated so mcd-firstboot sees the image on first boot.
+func appendDesiredOSImage(desired string) appenderFunc {
+	return func(_ *ign3types.Config, mc *mcfgv1.MachineConfig) error {
+		if desired == "" {
+			return nil
+		}
+		if mc.Spec.OSImageURL != desired {
+			klog.Infof("overriding MC OSImageURL: %q -> %q", mc.Spec.OSImageURL, desired)
+			mc.Spec.OSImageURL = desired
+		}
+		return nil
+	}
 }
