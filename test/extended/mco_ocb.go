@@ -5,15 +5,16 @@ import (
 
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
-	exutil "github.com/openshift/machine-config-operator/test/extended/util"
-	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
+	exutil "github.com/openshift/origin/test/extended/util"
+	compat_otp "github.com/openshift/origin/test/extended/util/compat_otp"
+	logger "github.com/openshift/origin/test/extended/util/compat_otp/logext"
 )
 
 var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Serial][Disruptive] MCO ocb", func() {
 	defer g.GinkgoRecover()
 
 	var (
-		oc = exutil.NewCLI("mco-ocb", exutil.KubeConfigPath())
+		oc = compat_otp.NewCLI("mco-ocb", compat_otp.KubeConfigPath())
 	)
 
 	g.JustBeforeEach(func() {
@@ -27,14 +28,14 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			mcpAndMoscName = "infra"
 		)
 
-		exutil.By("Create custom infra MCP")
+		compat_otp.By("Create custom infra MCP")
 		// We add no workers to the infra pool, it is not necessary
 		infraMcp, err := CreateCustomMCP(oc.AsAdmin(), mcpAndMoscName, 0)
 		defer infraMcp.delete()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating a new custom pool: %s", mcpAndMoscName)
 		logger.Infof("OK!\n")
 
-		exutil.By("Configure OCB functionality for the new infra MCP")
+		compat_otp.By("Configure OCB functionality for the new infra MCP")
 		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, mcpAndMoscName, nil)
 		defer mosc.CleanupAndDelete()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
@@ -42,13 +43,13 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		ValidateSuccessfulMOSC(mosc, nil)
 
-		exutil.By("Remove the MachineOSConfig resource")
+		compat_otp.By("Remove the MachineOSConfig resource")
 		o.Expect(mosc.CleanupAndDelete()).To(o.Succeed(), "Error cleaning up %s", mosc)
 		logger.Infof("OK!\n")
 
 		ValidateMOSCIsGarbageCollected(mosc, infraMcp)
 
-		exutil.AssertAllPodsToBeReady(oc.AsAdmin(), MachineConfigNamespace)
+		compat_otp.AssertAllPodsToBeReady(oc.AsAdmin(), MachineConfigNamespace)
 		logger.Infof("OK!\n")
 
 	})
@@ -70,15 +71,15 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			expectedWrongBuilderTypeMsg = fmt.Sprintf(`Unsupported value: "%s": supported values: "Job"`, fakeBuilderType)
 		)
 
-		exutil.By("Create custom infra MCP")
+		compat_otp.By("Create custom infra MCP")
 		// We add no workers to the infra pool, it is not necessary
 		infraMcp, err := CreateCustomMCP(oc.AsAdmin(), mcpAndMoscName, 0)
 		defer infraMcp.delete()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating a new custom pool: %s", mcpAndMoscName)
 		logger.Infof("OK!\n")
 
-		exutil.By("Clone the pull-secret in MCO namespace")
-		clonedSecret, err := CloneResource(pullSecret, "cloned-pull-secret-"+exutil.GetRandomString(), MachineConfigNamespace, nil)
+		compat_otp.By("Clone the pull-secret in MCO namespace")
+		clonedSecret, err := CloneResource(pullSecret, "cloned-pull-secret-"+compat_otp.GetRandomString(), MachineConfigNamespace, nil)
 		defer clonedSecret.Delete()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating the cluster's pull-secret in MCO namespace")
 		logger.Infof("OK!\n")
@@ -99,8 +100,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		err = NewMCOTemplate(oc, "generic-machine-os-config.yaml").Create("-p", "NAME="+mcpAndMoscName, "POOL="+mcpAndMoscName, "PULLSECRET="+clonedSecret.GetName(),
 			"PUSHSECRET="+clonedSecret.GetName(), "PUSHSPEC="+pushSpec, "IMAGEBUILDERTYPE="+fakeBuilderType)
 		o.Expect(err).To(o.HaveOccurred(), "Expected oc command to fail, but it didn't")
-		o.Expect(err).To(o.BeAssignableToTypeOf(&exutil.ExitError{}), "Unexpected error while creating the new MOSC")
-		o.Expect(err.(*exutil.ExitError).StdErr).To(o.ContainSubstring(expectedWrongBuilderTypeMsg),
+		o.Expect(IsExecShellError(err)).To(o.BeTrue(), "Unexpected error while creating the new MOSC. %s", err)
+		o.Expect(err.Error()).To(o.ContainSubstring(expectedWrongBuilderTypeMsg),
 			"MSOC creation using wrong image type builder should be forbidden")
 
 		logger.Infof("OK!")
@@ -151,7 +152,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			mcp = GetCompactCompatiblePool(oc.AsAdmin())
 		)
 
-		exutil.By("Configure OCB functionality for the new worker MCP")
+		compat_otp.By("Configure OCB functionality for the new worker MCP")
 		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, mcp.GetName(), nil)
 		defer DisableOCL(mosc)
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
@@ -162,7 +163,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		// rebuild the image and check that the image is properly applied in the nodes
 		RebuildImageAndCheck(mosc)
 
-		exutil.By("Remove the MachineOSConfig resource")
+		compat_otp.By("Remove the MachineOSConfig resource")
 		o.Expect(DisableOCL(mosc)).To(o.Succeed(), "Error cleaning up %s", mosc)
 		logger.Infof("OK!\n")
 	})
@@ -173,13 +174,13 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			mcp = GetCompactCompatiblePool(oc.AsAdmin())
 		)
 
-		exutil.By("Configure OCB functionality for the new worker MCP")
+		compat_otp.By("Configure OCB functionality for the new worker MCP")
 		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, mcp.GetName(), nil)
 		defer DisableOCL(mosc)
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
 		logger.Infof("OK!\n")
 
-		exutil.By("Wait until MOSB starts building")
+		compat_otp.By("Wait until MOSB starts building")
 		var mosb *MachineOSBuild
 		var job *Job
 		o.Eventually(func() (*MachineOSBuild, error) {
@@ -198,7 +199,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			"MachineOSBuild didn't report that the build has begun")
 		logger.Infof("OK!\n")
 
-		exutil.By("Interrupt the build")
+		compat_otp.By("Interrupt the build")
 		o.Expect(job.Delete()).To(o.Succeed(),
 			"Error deleting %s", job)
 		o.Eventually(mosb, "5m", "20s").Should(HaveConditionField("Interrupted", "status", TrueString),
@@ -210,7 +211,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		// rebuild the image and check that the image is properly applied in the nodes
 		RebuildImageAndCheck(mosc)
 
-		exutil.By("Remove the MachineOSConfig resource")
+		compat_otp.By("Remove the MachineOSConfig resource")
 		o.Expect(DisableOCL(mosc)).To(o.Succeed(), "Error cleaning up %s", mosc)
 		logger.Infof("OK!\n")
 	})
@@ -226,12 +227,12 @@ func testContainerFile(containerFiles []ContainerFile, imageNamespace string, mc
 	)
 	switch imageNamespace {
 	case MachineConfigNamespace:
-		exutil.By("Configure OCB functionality for the new infra MCP. Create MOSC")
+		compat_otp.By("Configure OCB functionality for the new infra MCP. Create MOSC")
 		mosc, err = createMachineOSConfigUsingExternalOrInternalRegistry(oc, MachineConfigNamespace, mcp.GetName(), containerFiles, defaultPullSecret)
 	default:
 		SkipTestIfCannotUseInternalRegistry(mcp.GetOC())
 
-		exutil.By("Capture the current pull-secret value")
+		compat_otp.By("Capture the current pull-secret value")
 		// We don't use the pullSecret resource directly, instead we use auxiliary functions that will
 		// extract and restore the secret's values using a file. Like that we can recover the value of the pull-secret
 		// if our execution goes wrong, without printing it in the logs (for security reasons).
@@ -248,7 +249,7 @@ func testContainerFile(containerFiles []ContainerFile, imageNamespace string, mc
 		}()
 		logger.Infof("OK!\n")
 
-		exutil.By("Create namespace to store the osImage")
+		compat_otp.By("Create namespace to store the osImage")
 		tmpNamespace := NewResource(oc.AsAdmin(), "ns", imageNamespace)
 		if !tmpNamespace.Exists() {
 			defer tmpNamespace.Delete()
@@ -256,7 +257,7 @@ func testContainerFile(containerFiles []ContainerFile, imageNamespace string, mc
 		}
 		logger.Infof("OK!\n")
 
-		exutil.By("Configure OCB functionality for the new infra MCP. Create MOSC")
+		compat_otp.By("Configure OCB functionality for the new infra MCP. Create MOSC")
 		mosc, err = CreateMachineOSConfigUsingInternalRegistry(oc, tmpNamespace.GetName(), mcp.GetName(), containerFiles, defaultPullSecret)
 	}
 	defer DisableOCL(mosc)
@@ -267,7 +268,7 @@ func testContainerFile(containerFiles []ContainerFile, imageNamespace string, mc
 
 	ValidateSuccessfulMOSC(mosc, checkers)
 
-	exutil.By("Remove the MachineOSConfig resource")
+	compat_otp.By("Remove the MachineOSConfig resource")
 	o.Expect(DisableOCL(mosc)).To(o.Succeed(), "Error cleaning up %s", mosc)
 	logger.Infof("OK!\n")
 
@@ -288,7 +289,7 @@ func ValidateSuccessfulMOSC(mosc *MachineOSConfig, checkers []Checker) {
 	mcp, err := mosc.GetMachineConfigPool()
 	o.Expect(err).NotTo(o.HaveOccurred(), "Cannot get the MCP for %s", mosc)
 
-	exutil.By("Check that the deployment machine-os-builder is created")
+	compat_otp.By("Check that the deployment machine-os-builder is created")
 	mOSBuilder := NewNamespacedResource(mosc.GetOC(), "deployment", MachineConfigNamespace, "machine-os-builder")
 
 	o.Eventually(mOSBuilder, "5m", "30s").Should(Exist(),
@@ -305,17 +306,17 @@ func ValidateSuccessfulMOSC(mosc *MachineOSConfig, checkers []Checker) {
 	// Ensure all pods are running
 	// Do not consider pods created by jobs, as the build pod uses an init container
 	// to build that takes time to be ready and its configuration will be asserted later
-	exutil.AssertAllPodsToBeReadyWithSelector(mosc.GetOC(), MachineConfigNamespace, "!batch.kubernetes.io/job-name")
+	AssertAllPodsToBeReadyWithSelector(mosc.GetOC(), MachineConfigNamespace, "!batch.kubernetes.io/job-name")
 	logger.Infof("OK!\n")
 
-	exutil.By("Check that the  machine-os-builder is using leader election without failing")
+	compat_otp.By("Check that the  machine-os-builder is using leader election without failing")
 	o.Expect(mOSBuilder.Logs()).To(o.And(
 		o.ContainSubstring("attempting to acquire leader lease openshift-machine-config-operator/machine-os-builder"),
 		o.ContainSubstring("successfully acquired lease openshift-machine-config-operator/machine-os-builder")),
 		"The machine os builder pod is not using the leader election without failures")
 	logger.Infof("OK!\n")
 
-	exutil.By("Check that a new build has been triggered")
+	compat_otp.By("Check that a new build has been triggered")
 	o.Eventually(mosc.GetCurrentMachineOSBuild, "5m", "20s").Should(Exist(),
 		"No build was created when OCB was enabled")
 	mosb, err := mosc.GetCurrentMachineOSBuild()
@@ -326,7 +327,7 @@ func ValidateSuccessfulMOSC(mosc *MachineOSConfig, checkers []Checker) {
 		"MachineOSBuild didn't report that the build has begun")
 	logger.Infof("OK!\n")
 
-	exutil.By("Check that a new build is successfully executed")
+	compat_otp.By("Check that a new build is successfully executed")
 	o.Eventually(mosb, "20m", "20s").Should(HaveConditionField("Building", "status", FalseString), "Build was not finished")
 	o.Eventually(mosb, "10m", "20s").Should(HaveConditionField("Succeeded", "status", TrueString), "Build didn't succeed")
 	o.Eventually(mosb, "2m", "20s").Should(HaveConditionField("Interrupted", "status", FalseString), "Build was interrupted")
@@ -335,7 +336,7 @@ func ValidateSuccessfulMOSC(mosc *MachineOSConfig, checkers []Checker) {
 	o.Eventually(mosb.GetJob, "2m", "20s").ShouldNot(Exist(), "Build job was not cleaned")
 	logger.Infof("OK!\n")
 
-	exutil.By("Check that the digested image value was properly updated in MOSB and MOSC resources")
+	compat_otp.By("Check that the digested image value was properly updated in MOSB and MOSC resources")
 	mosbStatusDigestedImagePullSpec := ""
 	o.Eventually(func() (string, error) {
 		var err error
@@ -351,12 +352,12 @@ func ValidateSuccessfulMOSC(mosc *MachineOSConfig, checkers []Checker) {
 	numNodes, err := mcp.getMachineCount()
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting MachineCount from %s", mcp)
 	if numNodes > 0 {
-		exutil.By("Wait for the new image to be applied")
+		compat_otp.By("Wait for the new image to be applied")
 		mcp.waitForComplete()
 		logger.Infof("OK!\n")
 
 		node := mcp.GetSortedNodesOrFail()[0]
-		exutil.By("Check that the right image is deployed in the nodes")
+		compat_otp.By("Check that the right image is deployed in the nodes")
 		currentImagePullSpec, err := mosc.GetStatusCurrentImagePullSpec()
 		o.Expect(err).NotTo(o.HaveOccurred(),
 			"Error getting the current image pull spec in %s", mosc)
@@ -377,9 +378,9 @@ func verifyEntitlementSecretIsPresent(oc *exutil.CLI, mcp *MachineConfigPool) {
 	secretName := fmt.Sprintf("etc-pki-entitlement-%s", mcp.GetName())
 	entitlementSecretInMco := NewSecret(oc.AsAdmin(), "openshift-machine-config-operator", secretName)
 
-	exutil.By("Verify the etc-pki-entitlement secret is present in openshift-config-managed namespace ")
+	compat_otp.By("Verify the etc-pki-entitlement secret is present in openshift-config-managed namespace ")
 	if entitlementSecret.Exists() {
-		exutil.By("Verify the etc-pki-entitlement secret is present")
+		compat_otp.By("Verify the etc-pki-entitlement secret is present")
 		logger.Infof("%s\n", entitlementSecretInMco)
 		o.Eventually(entitlementSecretInMco.Exists, "5m", "30s").Should(o.BeTrue(), "Error etc-pki-entitlement should exist")
 		logger.Infof("OK!\n")
@@ -431,7 +432,7 @@ func DisableOCL(mosc *MachineOSConfig) error {
 
 // ValidateMOSCIsGarbageCollected makes sure that all resources related to the provided MOSC have been removed
 func ValidateMOSCIsGarbageCollected(mosc *MachineOSConfig, mcp *MachineConfigPool) {
-	exutil.By("Check that the OCB resources are cleaned up")
+	compat_otp.By("Check that the OCB resources are cleaned up")
 
 	logger.Infof("Validating that MOSB resources were garbage collected")
 	NewMachineOSBuildList(mosc.GetOC()).PrintDebugCommand() // for debugging purposes
@@ -450,7 +451,7 @@ func ValidateMOSCIsGarbageCollected(mosc *MachineOSConfig, mcp *MachineConfigPoo
 	}
 	logger.Infof("OK!")
 
-	exutil.By("Verify the etc-pki-entitlement secret is removed")
+	compat_otp.By("Verify the etc-pki-entitlement secret is removed")
 	oc := mosc.GetOC()
 	secretName := fmt.Sprintf("etc-pki-entitlement-%s", mcp.GetName())
 	entitlementSecretInMco := NewSecret(oc.AsAdmin(), "openshift-machine-config-operator", secretName)
@@ -465,7 +466,7 @@ func checkMisconfiguredMOSC(oc *exutil.CLI, moscAndMcpName, baseImagePullSecret,
 		machineConfigCO = NewResource(oc.AsAdmin(), "co", "machine-config")
 	)
 
-	exutil.By(stepMgs)
+	compat_otp.By(stepMgs)
 	defer logger.Infof("OK!\n")
 
 	logger.Infof("Create a misconfiugred MOSC")
@@ -493,19 +494,19 @@ func checkMisconfiguredMOSC(oc *exutil.CLI, moscAndMcpName, baseImagePullSecret,
 
 // RebuildImageAndCheck rebuild the latest image of the MachineOSConfig resource and checks that it is properly built and applied
 func RebuildImageAndCheck(mosc *MachineOSConfig) {
-	exutil.By("Rebuild the current image")
+	compat_otp.By("Rebuild the current image")
 
 	var (
-		mcp                  = exutil.OrFail[*MachineConfigPool](mosc.GetMachineConfigPool())
-		mosb                 = exutil.OrFail[*MachineOSBuild](mosc.GetCurrentMachineOSBuild())
-		currentImagePullSpec = exutil.OrFail[string](mosc.GetStatusCurrentImagePullSpec())
+		mcp                  = compat_otp.OrFail[*MachineConfigPool](mosc.GetMachineConfigPool())
+		mosb                 = compat_otp.OrFail[*MachineOSBuild](mosc.GetCurrentMachineOSBuild())
+		currentImagePullSpec = compat_otp.OrFail[string](mosc.GetStatusCurrentImagePullSpec())
 	)
 
 	o.Expect(mosc.Rebuild()).To(o.Succeed(),
 		"Error patching %s to rebuild the current image", mosc)
 	logger.Infof("OK!\n")
 
-	exutil.By("Check that the existing MOSB is reused and it builds a new image")
+	compat_otp.By("Check that the existing MOSB is reused and it builds a new image")
 	o.Eventually(mosb.GetJob, "2m", "20s").Should(Exist(), "Rebuild job was not created")
 	o.Eventually(mosb, "20m", "20s").Should(HaveConditionField("Building", "status", FalseString), "Rebuild was not finished")
 	o.Eventually(mosb, "10m", "20s").Should(HaveConditionField("Succeeded", "status", TrueString), "Rebuild didn't succeed")
@@ -515,7 +516,7 @@ func RebuildImageAndCheck(mosc *MachineOSConfig) {
 	o.Eventually(mosb.GetJob, "2m", "20s").ShouldNot(Exist(), "Build job was not cleaned")
 	logger.Infof("OK!\n")
 
-	exutil.By("Wait for the new image to be applied")
+	compat_otp.By("Wait for the new image to be applied")
 	nodes, err := mcp.GetCoreOsNodes()
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting coreos nodes from %s", mcp)
 	if len(nodes) > 0 {
@@ -524,8 +525,8 @@ func RebuildImageAndCheck(mosc *MachineOSConfig) {
 		mcp.waitForComplete()
 		logger.Infof("OK!\n")
 
-		exutil.By("Check that the new image is the one used in the nodes")
-		newImagePullSpec := exutil.OrFail[string](mosc.GetStatusCurrentImagePullSpec())
+		compat_otp.By("Check that the new image is the one used in the nodes")
+		newImagePullSpec := compat_otp.OrFail[string](mosc.GetStatusCurrentImagePullSpec())
 		o.Expect(newImagePullSpec).NotTo(o.Equal(currentImagePullSpec),
 			"The new image after the rebuild operation should be different fron the initial image")
 		o.Expect(node.GetCurrentBootOSImage()).To(o.Equal(newImagePullSpec),

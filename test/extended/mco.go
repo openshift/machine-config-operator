@@ -2,8 +2,8 @@ package extended
 
 import (
 	o "github.com/onsi/gomega"
-	exutil "github.com/openshift/machine-config-operator/test/extended/util"
-	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
+	compat_otp "github.com/openshift/origin/test/extended/util/compat_otp"
+	logger "github.com/openshift/origin/test/extended/util/compat_otp/logext"
 )
 
 func checkDegraded(mcp *MachineConfigPool, expectedMessage, expectedReason, degradedConditionType string, checkCODegraded bool, offset int) {
@@ -13,7 +13,7 @@ func checkDegraded(mcp *MachineConfigPool, expectedMessage, expectedReason, degr
 		expectedNumDegradedMachines = 1
 	}
 
-	exutil.By("Wait until MCP becomes degraded")
+	compat_otp.By("Wait until MCP becomes degraded")
 	o.EventuallyWithOffset(offset, mcp, mcp.estimateWaitDuration().String(), "30s").Should(BeDegraded(),
 		"The '%s' MCP should become degraded when we try to create an invalid MC, but it didn't.", mcp.GetName())
 	o.EventuallyWithOffset(offset, mcp.getDegradedMachineCount, "5m", "30s").Should(o.Equal(expectedNumDegradedMachines),
@@ -21,7 +21,7 @@ func checkDegraded(mcp *MachineConfigPool, expectedMessage, expectedReason, degr
 
 	logger.Infof("OK!\n")
 
-	exutil.By("Validate the reported error")
+	compat_otp.By("Validate the reported error")
 	degradedCondition := mcp.GetConditionByType(degradedConditionType)
 
 	o.ExpectWithOffset(offset, mcp).Should(HaveConditionField(degradedConditionType, "status", o.Equal("True")),
@@ -34,7 +34,7 @@ func checkDegraded(mcp *MachineConfigPool, expectedMessage, expectedReason, degr
 		"'worker' MCP is not reporting the expected reason in the NodeDegraded condition: %s", degradedConditionType, degradedCondition)
 	logger.Infof("OK!\n")
 
-	exutil.By("Get co machine config to verify status and reason for Upgradeable type")
+	compat_otp.By("Get co machine config to verify status and reason for Upgradeable type")
 
 	// If the pool is degraded, then co/machine-config should not be upgradeable
 	// It's unlikely, but it can happen that the MCP is degraded, but the CO has not been already updated with the right error message.

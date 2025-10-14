@@ -7,8 +7,9 @@ import (
 	"strings"
 	"time"
 
-	exutil "github.com/openshift/machine-config-operator/test/extended/util"
-	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
+	exutil "github.com/openshift/origin/test/extended/util"
+	compat_otp "github.com/openshift/origin/test/extended/util/compat_otp"
+	logger "github.com/openshift/origin/test/extended/util/compat_otp/logext"
 
 	"k8s.io/apimachinery/pkg/util/sets"
 
@@ -61,7 +62,7 @@ func (n *Node) DebugNodeWithChroot(cmd ...string) (string, error) {
 		if i > 0 {
 			logger.Infof("Error happened: %s.\nRetrying command. Num retries: %d", err, i)
 		}
-		out, err = exutil.DebugNodeWithChroot(n.oc, n.name, cmd...)
+		out, err = compat_otp.DebugNodeWithChroot(n.oc, n.name, cmd...)
 		if err == nil {
 			return out, nil
 		}
@@ -107,7 +108,7 @@ func (n *Node) DebugNodeWithChrootStd(cmd ...string) (string, string, error) {
 
 // GetMachineConfigDaemon returns the name of the ConfigDaemon pod for this node
 func (n *Node) GetMachineConfigDaemon() string {
-	machineConfigDaemon, err := exutil.GetPodName(n.oc, "openshift-machine-config-operator", "k8s-app=machine-config-daemon", n.name)
+	machineConfigDaemon, err := compat_otp.GetPodName(n.oc, "openshift-machine-config-operator", "k8s-app=machine-config-daemon", n.name)
 	o.Expect(err).NotTo(o.HaveOccurred())
 	return machineConfigDaemon
 }
@@ -314,7 +315,7 @@ func (n Node) GetMCDaemonLogs(filter string) (string, error) {
 		err     error
 	)
 	err = Retry(5, 5*time.Second, func() error {
-		mcdLogs, err = exutil.GetSpecificPodLogs(n.oc, MachineConfigNamespace, "machine-config-daemon", n.GetMachineConfigDaemon(), filter)
+		mcdLogs, err = compat_otp.GetSpecificPodLogs(n.oc, MachineConfigNamespace, "machine-config-daemon", n.GetMachineConfigDaemon(), filter)
 		return err
 	})
 
@@ -394,7 +395,7 @@ func quietSetNamespacePrivileged(oc *exutil.CLI, namespace string) error {
 	defer oc.SetShowInfo()
 
 	logger.Debugf("Setting namespace %s as privileged", namespace)
-	return exutil.SetNamespacePrivileged(oc, namespace)
+	return compat_otp.SetNamespacePrivileged(oc, namespace)
 }
 
 // quietRecoverNamespaceRestricted invokes exutil.RecoverNamespaceRestricted but disable the logs output to avoid noise in the logs
@@ -403,7 +404,7 @@ func quietRecoverNamespaceRestricted(oc *exutil.CLI, namespace string) error {
 	defer oc.SetShowInfo()
 
 	logger.Debugf("Recovering namespace %s from privileged", namespace)
-	return exutil.RecoverNamespaceRestricted(oc, namespace)
+	return compat_otp.RecoverNamespaceRestricted(oc, namespace)
 }
 
 // GetOperatorNode returns the node running the MCO operator pod

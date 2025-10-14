@@ -2,8 +2,10 @@ package extended
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -12,8 +14,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	exutil "github.com/openshift/machine-config-operator/test/extended/util"
-	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
+	util "github.com/openshift/machine-config-operator/test/extended/util"
+	exutil "github.com/openshift/origin/test/extended/util"
+	compat_otp "github.com/openshift/origin/test/extended/util/compat_otp"
+	logger "github.com/openshift/origin/test/extended/util/compat_otp/logext"
 	"github.com/tidwall/sjson"
 
 	g "github.com/onsi/ginkgo/v2"
@@ -62,7 +66,7 @@ type TextToVerify struct {
 
 func (pdb *PodDisruptionBudget) create(oc *exutil.CLI) {
 	logger.Infof("Creating pod disruption budget: %s", pdb.name)
-	exutil.CreateNsResourceFromTemplate(oc, pdb.namespace, "--ignore-unknown-parameters=true", "-f", pdb.template, "-p", "NAME="+pdb.name)
+	compat_otp.CreateNsResourceFromTemplate(oc, pdb.namespace, "--ignore-unknown-parameters=true", "-f", pdb.template, "-p", "NAME="+pdb.name)
 }
 
 func (pdb *PodDisruptionBudget) delete(oc *exutil.CLI) {
@@ -72,7 +76,7 @@ func (pdb *PodDisruptionBudget) delete(oc *exutil.CLI) {
 }
 
 func (icsp *ImageContentSourcePolicy) create(oc *exutil.CLI) {
-	exutil.CreateClusterResourceFromTemplate(oc, "--ignore-unknown-parameters=true", "-f", icsp.template, "-p", "NAME="+icsp.name)
+	compat_otp.CreateClusterResourceFromTemplate(oc, "--ignore-unknown-parameters=true", "-f", icsp.template, "-p", "NAME="+icsp.name)
 	mcp := NewMachineConfigPool(oc.AsAdmin(), "worker")
 	mcp.waitForComplete()
 	mcp.name = "master"
@@ -99,12 +103,12 @@ func setDataForPullSecret(oc *exutil.CLI, configFile string) (string, error) {
 
 // generateTemplateAbsolutePath manipulates absolute path of test file by
 // cached fixture test data dir and file name
-// because exutil.FixturePath will copy all test files to fixture path (tmp dir with prefix fixture-testdata-dir)
+// because compat_otp.FixturePath will copy all test files to fixture path (tmp dir with prefix fixture-testdata-dir)
 // this operation is very expensive, we don't want to call it for every case
 func generateTemplateAbsolutePath(fileName string) string {
 	fixtureInitLock.Do(func() {
 		logger.Infof("mco fixture dir is not initialized, start to create")
-		fixturesPath = exutil.FixturePath(".")
+		fixturesPath = util.FixturePath(".")
 		logger.Infof("mco fixture dir is initialized: %s", fixturesPath)
 	})
 	return filepath.Join(fixturesPath, fileName)
@@ -186,7 +190,7 @@ func sortMasterNodeList(oc *exutil.CLI, nodes []Node) ([]Node, error) {
 
 // preChecks executes some basic checks to make sure the the cluster is healthy enough to run MCO test cases
 func preChecks(oc *exutil.CLI) {
-	exutil.By("MCO Preconditions Checks")
+	compat_otp.By("MCO Preconditions Checks")
 
 	allMCPs, err := NewMachineConfigPoolList(oc.AsAdmin()).GetAll()
 	o.Expect(err).NotTo(o.HaveOccurred(), "Cannot get the list of MachineConfigPools")
@@ -212,7 +216,7 @@ func preChecks(oc *exutil.CLI) {
 func createTmpDir() string {
 	// according to review comment, dir name should not depend on temp ns
 	// it is empty when initialized by `NewCLIWithoutNamespace`
-	tmpdir := filepath.Join(e2e.TestContext.OutputDir, fmt.Sprintf("mco-test-%s", exutil.GetRandomString()))
+	tmpdir := filepath.Join(e2e.TestContext.OutputDir, fmt.Sprintf("mco-test-%s", compat_otp.GetRandomString()))
 	err := os.MkdirAll(tmpdir, 0o755)
 	o.Expect(err).NotTo(o.HaveOccurred())
 	logger.Infof("create test dir %s", tmpdir)
@@ -438,4 +442,25 @@ func IsCompactOrSNOCluster(oc *exutil.CLI) bool {
 	)
 
 	return wMcp.IsEmpty() && len(mcpList.GetAllOrFail()) == 2
+}
+
+// IsExecShellError returns true if the error is due to a failure in the command execution, and not a failue elsewhere (for exmaple, a system failure previous to the shell command execution)
+func IsExecShellError(err error) bool {
+	if unwrapped := errors.Unwrap(err); unwrapped != nil {
+		_, ok := unwrapped.(*exec.ExitError)
+		return ok
+	}
+	_, ok := err.(*exec.ExitError)
+	return ok
+}
+
+// UnwrapExecCode unwraps the error and extracts the stderr string if possible
+func UnwrapExecCode(err error) (int, error) {
+	if unwrapped := errors.Unwrap(err); unwrapped != nil {
+		exitError, ok := unwrapped.(*exec.ExitError)
+		if ok {
+			return exitError.ExitCode(), nil
+		}
+	}
+	return -1, fmt.Errorf("No exit code available in the provided error %s", err)
 }

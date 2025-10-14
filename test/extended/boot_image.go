@@ -17,7 +17,7 @@ import (
 	machineclient "github.com/openshift/client-go/machine/clientset/versioned"
 	machineconfigclient "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	mcopclient "github.com/openshift/client-go/operator/clientset/versioned"
-	exutil "github.com/openshift/machine-config-operator/test/extended/util"
+	exutil "github.com/openshift/origin/test/extended/util"
 
 	o "github.com/onsi/gomega"
 

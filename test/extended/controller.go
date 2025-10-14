@@ -5,8 +5,9 @@ import (
 	"strings"
 	"time"
 
-	exutil "github.com/openshift/machine-config-operator/test/extended/util"
-	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
+	exutil "github.com/openshift/origin/test/extended/util"
+	compat_otp "github.com/openshift/origin/test/extended/util/compat_otp"
+	logger "github.com/openshift/origin/test/extended/util/compat_otp/logext"
 )
 
 // Controller handles the functinalities related to the MCO controller pod
@@ -81,7 +82,7 @@ func (mcc Controller) GetRawLogs() (string, error) {
 		logger.Errorf("Error getting controller pod name. Error: %s", err)
 		return "", err
 	}
-	podAllLogs, err := exutil.GetSpecificPodLogs(mcc.oc, MachineConfigNamespace, ControllerContainer, cachedPodName, "")
+	podAllLogs, err := compat_otp.GetSpecificPodLogs(mcc.oc, MachineConfigNamespace, ControllerContainer, cachedPodName, "")
 	if err != nil {
 		logger.Errorf("Error getting log lines. Error: %s", err)
 		return "", err

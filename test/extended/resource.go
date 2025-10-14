@@ -11,8 +11,9 @@ import (
 	"github.com/onsi/gomega/types"
 
 	o "github.com/onsi/gomega"
-	exutil "github.com/openshift/machine-config-operator/test/extended/util"
-	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
+	exutil "github.com/openshift/origin/test/extended/util"
+	compat_otp "github.com/openshift/origin/test/extended/util/compat_otp"
+	logger "github.com/openshift/origin/test/extended/util/compat_otp/logext"
 	e2e "k8s.io/kubernetes/test/e2e/framework"
 )
 
@@ -406,7 +407,7 @@ func (t *Template) Create(parameters ...string) error {
 	allParams := []string{"--ignore-unknown-parameters=true", "-f", t.templateFile}
 	allParams = append(allParams, parameters...)
 
-	return exutil.CreateClusterResourceFromTemplateWithError(t.oc, allParams...)
+	return compat_otp.CreateClusterResourceFromTemplateWithError(t.oc, allParams...)
 }
 
 // Apply the resources defined in the template file
@@ -421,7 +422,7 @@ func (t *Template) Apply(parameters ...string) error {
 	allParams := []string{"--ignore-unknown-parameters=true", "-f", t.templateFile}
 	allParams = append(allParams, parameters...)
 
-	return exutil.ApplyClusterResourceFromTemplateWithError(t.oc, allParams...)
+	return compat_otp.ApplyClusterResourceFromTemplateWithError(t.oc, allParams...)
 }
 
 // ResourceList provides the functionality to handle lists of openshift resources

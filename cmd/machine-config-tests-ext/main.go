@@ -9,7 +9,8 @@ import (
 	"github.com/openshift-eng/openshift-tests-extension/pkg/cmd"
 	v "github.com/openshift-eng/openshift-tests-extension/pkg/version"
 	"github.com/openshift/machine-config-operator/pkg/version"
-	exutil "github.com/openshift/machine-config-operator/test/extended/util"
+	exutil "github.com/openshift/origin/test/extended/util"
+	compat_otp "github.com/openshift/origin/test/extended/util/compat_otp"
 	e2e "k8s.io/kubernetes/test/e2e/framework"
 
 	"github.com/spf13/cobra"
@@ -54,14 +55,15 @@ func main() {
 		Long: "MCO Extended Test Suite (OTE Based)",
 	}
 
-	exutil.InitStandardFlags()
+	exutil.WithCleanup(func() {})
+	compat_otp.InitStandardFlags()
 	specs.AddBeforeAll(func() {
 		if err := exutil.InitTest(false); err != nil {
 			panic(err)
 		}
-		e2e.AfterReadingAllFlags(exutil.TestContext)
+		e2e.AfterReadingAllFlags(compat_otp.TestContext)
 		e2e.TestContext.DumpLogsOnFailure = true
-		exutil.TestContext.DumpLogsOnFailure = true
+		compat_otp.TestContext.DumpLogsOnFailure = true
 	})
 
 	root.AddCommand(

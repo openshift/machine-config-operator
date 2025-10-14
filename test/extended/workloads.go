@@ -1,6 +1,6 @@
 package extended
 
-import exutil "github.com/openshift/machine-config-operator/test/extended/util"
+import exutil "github.com/openshift/origin/test/extended/util"
 
 // Job struct to handle Job resources
 type Job struct {

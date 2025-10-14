@@ -6,8 +6,9 @@ import (
 	"strings"
 	"time"
 
-	exutil "github.com/openshift/machine-config-operator/test/extended/util"
-	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
+	exutil "github.com/openshift/origin/test/extended/util"
+	compat_otp "github.com/openshift/origin/test/extended/util/compat_otp"
+	logger "github.com/openshift/origin/test/extended/util/compat_otp/logext"
 
 	"k8s.io/apimachinery/pkg/util/wait"
 )
@@ -39,7 +40,7 @@ func (mc *MachineConfig) SetTemplate(template Template) *MachineConfig {
 }
 
 func (mc *MachineConfig) create() {
-	mc.name = mc.name + "-" + exutil.GetRandomString()
+	mc.name = mc.name + "-" + compat_otp.GetRandomString()
 	params := []string{"-p", "NAME=" + mc.name, "POOL=" + mc.pool}
 	params = append(params, mc.parameters...)
 	mc.Create(params...)
@@ -56,7 +57,7 @@ func (mc *MachineConfig) create() {
 		}
 		return false, nil
 	})
-	exutil.AssertWaitPollNoErr(pollerr, fmt.Sprintf("create machine config %v failed", mc.name))
+	compat_otp.AssertWaitPollNoErr(pollerr, fmt.Sprintf("create machine config %v failed", mc.name))
 
 	if !mc.skipWaitForMcp {
 		mcp := NewMachineConfigPool(mc.oc, mc.pool)

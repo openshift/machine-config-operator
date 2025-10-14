@@ -11,7 +11,8 @@ import (
 
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
-	exutil "github.com/openshift/machine-config-operator/test/extended/util"
+	exutil "github.com/openshift/origin/test/extended/util"
+	compat_otp "github.com/openshift/origin/test/extended/util/compat_otp"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/kubernetes/test/e2e/framework"
@@ -26,7 +27,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		PartialMachineSetFixture = filepath.Join("machineconfigurations", "managedbootimages-partial.yaml")
 		EmptyMachineSetFixture   = filepath.Join("machineconfigurations", "managedbootimages-empty.yaml")
 
-		oc = exutil.NewCLI("mco-bootimage", exutil.KubeConfigPath()).AsAdmin()
+		oc = compat_otp.NewCLI("mco-bootimage", compat_otp.KubeConfigPath()).AsAdmin()
 	)
 
 	g.BeforeEach(func() {

@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"time"
 
-	exutil "github.com/openshift/machine-config-operator/test/extended/util"
-	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
+	exutil "github.com/openshift/origin/test/extended/util"
+	logger "github.com/openshift/origin/test/extended/util/compat_otp/logext"
 	e2e "k8s.io/kubernetes/test/e2e/framework"
 )
 

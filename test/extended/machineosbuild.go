@@ -3,7 +3,7 @@ package extended
 import (
 	"fmt"
 
-	exutil "github.com/openshift/machine-config-operator/test/extended/util"
+	exutil "github.com/openshift/origin/test/extended/util"
 )
 
 // MachineOSBuild resource type declaration
