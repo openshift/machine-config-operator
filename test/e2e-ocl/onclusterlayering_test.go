@@ -31,6 +31,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/build/imagebuilder"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -904,6 +905,7 @@ func waitForBuildToStart(t *testing.T, cs *framework.ClientSet, build *mcfgv1.Ma
 	return mosb
 }
 
+// Waits for a MachineOSBuild with a specific UID to be deleted.
 func waitForMOSBToBeDeleted(t *testing.T, cs *framework.ClientSet, mosb *mcfgv1.MachineOSBuild) {
 	t.Helper()
 
@@ -911,45 +913,71 @@ func waitForMOSBToBeDeleted(t *testing.T, cs *framework.ClientSet, mosb *mcfgv1.
 	defer cancel()
 
 	start := time.Now()
-	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
 
-	// Get the MOSB from the API to get the UID
-	mosb, err := cs.MachineconfigurationV1Interface.MachineOSBuilds().Get(context.Background(), mosb.Name, metav1.GetOptions{})
-	require.NoError(t, err)
-	mosbUID := mosb.UID
-	t.Logf("Waiting for MachineOSBuild with UID %s to be deleted", mosbUID)
+	// If the given MachineOSBuild does not have a UID, e.g., from the
+	// NewMachineOSBuildFromAPIOrDie() helper, then we query the API server to
+	// find it.
+	if mosb.UID == "" {
+		t.Logf("No UID provided for MachineOSBuild %s, querying API for UID", mosb.Name)
+		// Get the MOSB from the API to get the UID
+		apiMosb, err := cs.MachineconfigurationV1Interface.MachineOSBuilds().Get(context.Background(), mosb.Name, metav1.GetOptions{})
+		require.NoError(t, err)
 
-	mosbs, err := cs.MachineconfigurationV1Interface.MachineOSBuilds().List(ctx, metav1.ListOptions{})
-	require.NoError(t, err)
-
-	mosbWithUIDFound := false
-	for _, mosb := range mosbs.Items {
-		if mosb.UID == mosbUID {
-			kubeassert.Eventually().MachineOSBuildDoesNotExist(&mosb)
-			t.Logf("MachineOSBuild with UID %s deleted after %s", mosbUID, time.Since(start))
-			mosbWithUIDFound = true
+		if k8serrors.IsNotFound(err) {
+			t.Logf("MachineOSBuild %s is not found, must have already been deleted", mosb.Name)
 			return
 		}
+
+		require.NoError(t, err)
+
+		mosb = apiMosb
 	}
 
-	if !mosbWithUIDFound {
-		t.Logf("MachineOSBuild with UID %s not found, must have already been deleted", mosbUID)
-	}
+	mosbName := mosb.Name
+	mosbUID := mosb.UID
+
+	t.Logf("Waiting for MachineOSBuild %s with UID %s to be deleted", mosbName, mosbUID)
+
+	// Assert does not adequately handle the case where the object is deleted.
+	// See https://issues.redhat.com/browse/OCPBUGS-63048 for details.
+	err := wait.PollImmediate(time.Second, time.Minute*5, func() (bool, error) {
+		mosbs, err := cs.MachineconfigurationV1Interface.MachineOSBuilds().List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return false, err
+		}
+
+		for _, mosb := range mosbs.Items {
+			// If we find a MachineOSBuild with the same name and UID, then we know
+			// it has not been deleted yet.
+			if mosb.Name == mosbName && mosb.UID == mosbUID {
+				return false, nil
+			}
+		}
+
+		return true, nil
+	})
+
+	t.Logf("MachineOSBuild %s with UID %s deleted after %s", mosb.Name, mosb.UID, time.Since(start))
+
+	require.NoError(t, err, "MachineOSBuild %s with UID %s not deleted after %s", mosb.Name, mosb.UID, time.Since(start))
 }
 
-// Waits for a MachineOSBuild to be deleted.
+// Waits for a MachineOSBuild to be deleted. This is different than
+// waitForMOSBToBeDeleted since it then asserts that all of the objects
+// associated with the MOSB are deleted.
 func waitForBuildToBeDeleted(t *testing.T, cs *framework.ClientSet, build *mcfgv1.MachineOSBuild) {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*5)
 	defer cancel()
 
+	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
+
 	t.Logf("Waiting for MachineOSBuild %s to be deleted", build.Name)
 
 	start := time.Now()
-	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
-	kubeassert.Eventually().MachineOSBuildDoesNotExist(build)
-	t.Logf("MachineOSBuild %s deleted after %s", build.Name, time.Since(start))
+
+	waitForMOSBToBeDeleted(t, cs, build)
 
 	assertBuildObjectsAreDeleted(t, kubeassert.Eventually(), build)
 	t.Logf("Build objects deleted after %s", time.Since(start))
