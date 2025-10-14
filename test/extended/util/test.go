@@ -35,7 +35,23 @@ var (
 )
 
 func InitStandardFlags() {
+	// Register common flags first
 	e2e.RegisterCommonFlags(flag.CommandLine)
+	
+	// Try to register cluster flags, but handle the case where flags might already be defined
+	defer func() {
+		if r := recover(); r != nil {
+			// If there's a panic due to flag redefinition, log it but continue
+			// This can happen if flags are already registered elsewhere (e.g., in imports)
+			if strings.Contains(fmt.Sprint(r), "flag redefined") {
+				e2e.Logf("Warning: Some flags were already defined, skipping redefinition: %v", r)
+			} else {
+				// Re-panic if it's not a flag redefinition issue
+				panic(r)
+			}
+		}
+	}()
+	
 	e2e.RegisterClusterFlags(flag.CommandLine)
 }
 
