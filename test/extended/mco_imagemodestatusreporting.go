@@ -3,6 +3,7 @@ package extended
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	g "github.com/onsi/ginkgo/v2"
@@ -120,80 +121,18 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		// TODO: test this with extension update
 		// TODO: add skip for non-custom allowed env
 		// TODO: check on the MCP cleanup defer func
-		var (
-			mcpAndMoscName = "infra"
-			clientSet      = framework.NewClientSet("")
-		)
 
-		exutil.By("Select a node to follow in this test")
-		workerNodes, err := helpers.GetNodesByRole(clientSet, "worker")
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting worker nodes: %s", err)
-		o.Expect(len(workerNodes)).To(o.BeNumerically(">=", 1), "Less than one worker node in pool")
-		nodeToTestName := workerNodes[0].Name
-		logger.Infof("Using `%s` as node for test", nodeToTestName)
-		logger.Infof("OK!\n")
+		// Create client set for the test
+		clientSet := framework.NewClientSet("")
 
-		exutil.By("Validate node's starting MCN properties")
-		err = ValidateMCNForNode(oc, clientSet, nodeToTestName, "worker")
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error validating MCN for node `%s`: %s", nodeToTestName, err)
-		logger.Infof("OK!\n")
+		// Skip this test for clusters that do not have nodes in the worker MCP, since that is
+		// required to create the custom MCP used throughout this test.
+		if !ClusterHasNodesInDesiredMCP(oc, clientSet, "worker") {
+			g.Skip(fmt.Sprintf("Skipping this test since the cluster does not have nodes in the worker MCP, which is required to create a custom MCP."))
+		}
 
-		exutil.By("Create custom `infra` MCP and add the test node to it")
-		// Create MCP
-		infraMcp, err := CreateCustomMCP(oc.AsAdmin(), mcpAndMoscName, 0)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating a new custom pool `%s`: %s", mcpAndMoscName, err)
-		// TODO: add MCP cleanup
-		// defer CleanupCustomMCP(oc, clientSet, mcpAndMoscName, nodeToTestName)
-		// Label node
-		err = oc.AsAdmin().Run("label").Args(fmt.Sprintf("node/%s", nodeToTestName), fmt.Sprintf("node-role.kubernetes.io/%s=", mcpAndMoscName)).Execute()
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error labeing node `%s` for MCP `%s`: %s", nodeToTestName, mcpAndMoscName, err)
-		// Wait for the new `infra` MCP to be ready
-		WaitForMCPToBeReady(oc, clientSet, mcpAndMoscName, 1)
-		logger.Infof("OK!\n")
-
-		exutil.By("Validate node's custom MCP MCN properties")
-		err = ValidateMCNForNode(oc, clientSet, nodeToTestName, mcpAndMoscName)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error validating MCN for node `%s`: %s", nodeToTestName, err)
-		logger.Infof("OK!\n")
-
-		exutil.By("Configure OCB functionality for the new `infra` MCP")
-		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, mcpAndMoscName, nil)
-		// update to wait for MCP to be updated again
-		defer mosc.CleanupAndDelete()
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource: %s", err)
-		logger.Infof("OK!\n")
-
-		exutil.By("Validating the `infra` MOSC applied successfully")
-		ValidateSuccessfulMOSC(mosc, nil)
-		logger.Infof("OK!\n")
-
-		exutil.By("Validate the node in `infra` MCP has correct MCN properties")
-		err = ValidateMCNForNode(oc, clientSet, nodeToTestName, mcpAndMoscName)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error validating MCN for node `%s`: %s", nodeToTestName, err)
-		logger.Infof("OK!\n")
-
-		exutil.By("Remove the MachineOSConfig resource")
-		o.Expect(DisableOCL(mosc)).To(o.Succeed(), "Error cleaning up MOSC `%s`: %s", mosc, err)
-		logger.Infof("OK!\n")
-
-		exutil.By("Validating the `infra` MOSC was removed successfully")
-		ValidateMOSCIsGarbageCollected(mosc, infraMcp)
-		logger.Infof("OK!\n")
-
-		exutil.By("Validate the node in `infra` MCP has correct MCN properties")
-		err = ValidateMCNForNode(oc, clientSet, nodeToTestName, mcpAndMoscName)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error validating MCN for node `%s`: %s", nodeToTestName, err)
-		logger.Infof("OK!\n")
-
-		exutil.By("Delete the `infra` MCP")
-		err = CleanupCustomMCP(oc, clientSet, mcpAndMoscName, nodeToTestName)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error deleting `%s` MCP: %s", mcpAndMoscName, err)
-		logger.Infof("OK!\n")
-
-		exutil.By("Validate the test node has correct MCN properties")
-		err = ValidateMCNForNode(oc, clientSet, nodeToTestName, "worker")
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error validating MCN for node `%s`: %s", nodeToTestName, err)
-		logger.Infof("OK!\n")
+		// Run the standardized image mode MCN test for a custom MCP named `infra` with no MC to apply
+		runImageModeMCNTest(oc, clientSet, "infra")
 
 		// Add a node to the custom MCP
 		// Enable OCB in the custom MCP
@@ -403,6 +342,90 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	})
 })
 
+// `runImageModeMCNTest` runs through the general flow of validating the MCN of a node for image
+// mode enabled workflows. The steps for the test are as follows:
+//  1. Select a worker node to use throughout the test
+//  2. Validate the starting properties of te MCN associated with the test node
+//  3. Create a custom MCP named the value of `mcpAndMoscName` and add the test node to it
+//  4. Validate the properties of the MCN associated with the test node
+//  5. Configure on cluster image mode in the custom MCP & validate the MOSC applied successfully
+//  6. Validate the properties of the MCN associated with the test node
+//  7. Disable on cluster image mode in the custom MCP & validate the MOSC removal was successful
+//  8. Validate the properties of the MCN associated with the test node
+//  9. Remove the custom MCP
+//  10. Validate the properties of the MCN associated with the test node
+func runImageModeMCNTest(oc *exutil.CLI, clientSet *framework.ClientSet, mcpAndMoscName string) {
+	exutil.By("Select a node to follow in this test")
+	workerNodes, err := helpers.GetNodesByRole(clientSet, "worker")
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting worker nodes: %s", err)
+	o.Expect(len(workerNodes)).To(o.BeNumerically(">=", 1), "Less than one worker node in pool")
+	nodeToTestName := workerNodes[0].Name
+	logger.Infof("Using `%s` as node for test", nodeToTestName)
+	logger.Infof("OK!\n")
+
+	exutil.By("Validate node's starting MCN properties")
+	err = ValidateMCNForNode(oc, clientSet, nodeToTestName, "worker")
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error validating MCN for node `%s`: %s", nodeToTestName, err)
+	logger.Infof("OK!\n")
+
+	exutil.By("Create custom `infra` MCP and add the test node to it")
+	// Create MCP
+	infraMcp, err := CreateCustomMCP(oc.AsAdmin(), mcpAndMoscName, 0)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error creating a new custom pool `%s`: %s", mcpAndMoscName, err)
+	// TODO: add MCP cleanup
+	// defer CleanupCustomMCP(oc, clientSet, mcpAndMoscName, nodeToTestName)
+	// Label node
+	err = oc.AsAdmin().Run("label").Args(fmt.Sprintf("node/%s", nodeToTestName), fmt.Sprintf("node-role.kubernetes.io/%s=", mcpAndMoscName)).Execute()
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error labeing node `%s` for MCP `%s`: %s", nodeToTestName, mcpAndMoscName, err)
+	// Wait for the new `infra` MCP to be ready
+	WaitForMCPToBeReady(oc, clientSet, mcpAndMoscName, 1)
+	logger.Infof("OK!\n")
+
+	exutil.By("Validate node's custom MCP MCN properties")
+	err = ValidateMCNForNode(oc, clientSet, nodeToTestName, mcpAndMoscName)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error validating MCN for node `%s`: %s", nodeToTestName, err)
+	logger.Infof("OK!\n")
+
+	exutil.By("Configure OCB functionality for the new `infra` MCP")
+	mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, mcpAndMoscName, nil)
+	// update to wait for MCP to be updated again
+	defer mosc.CleanupAndDelete()
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource: %s", err)
+	logger.Infof("OK!\n")
+
+	exutil.By("Validating the `infra` MOSC applied successfully")
+	ValidateSuccessfulMOSC(mosc, nil)
+	logger.Infof("OK!\n")
+
+	exutil.By("Validate the node in `infra` MCP has correct MCN properties")
+	err = ValidateMCNForNode(oc, clientSet, nodeToTestName, mcpAndMoscName)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error validating MCN for node `%s`: %s", nodeToTestName, err)
+	logger.Infof("OK!\n")
+
+	exutil.By("Remove the MachineOSConfig resource")
+	o.Expect(DisableOCL(mosc)).To(o.Succeed(), "Error cleaning up MOSC `%s`: %s", mosc, err)
+	logger.Infof("OK!\n")
+
+	exutil.By("Validating the `infra` MOSC was removed successfully")
+	ValidateMOSCIsGarbageCollected(mosc, infraMcp)
+	logger.Infof("OK!\n")
+
+	exutil.By("Validate the node in `infra` MCP has correct MCN properties")
+	err = ValidateMCNForNode(oc, clientSet, nodeToTestName, mcpAndMoscName)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error validating MCN for node `%s`: %s", nodeToTestName, err)
+	logger.Infof("OK!\n")
+
+	exutil.By("Delete the `infra` MCP")
+	err = CleanupCustomMCP(oc, clientSet, mcpAndMoscName, nodeToTestName)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error deleting `%s` MCP: %s", mcpAndMoscName, err)
+	logger.Infof("OK!\n")
+
+	exutil.By("Validate the test node has correct MCN properties")
+	err = ValidateMCNForNode(oc, clientSet, nodeToTestName, "worker")
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error validating MCN for node `%s`: %s", nodeToTestName, err)
+	logger.Infof("OK!\n")
+}
+
 // `ValidateMCNForNode` validates the MCN of a provided node by checking the following:
 //   - Check that `mcn.Spec.Pool.Name` matches provided `poolName`
 //   - Check that `mcn.Name` matches the node name
@@ -570,4 +593,29 @@ func WaitForNodeCurrentConfig(oc *exutil.CLI, nodeName string, config string) {
 		logger.Infof("Node '%v' has a current config version of '%v'. Waiting for the node's current config version to be '%v'.", nodeName, nodeCurrentConfig, config)
 		return false
 	}, 5*time.Minute, 10*time.Second).Should(o.BeTrue(), "Timed out waiting for node '%v' to have a current config version of '%v'.", nodeName, config)
+}
+
+// `GetRolesToTest` gets the MCPs in a cluster with nodes associated to it. This allows a more robust way to determine
+// the roles to use when selecting nodes and testing their MCP associations in an MCN.
+func GetRolesToTest(oc *exutil.CLI, clientSet *framework.ClientSet) []string {
+	// Get MCPs
+	mcps, mcpErr := clientSet.GetMcfgclient().MachineconfigurationV1().MachineConfigPools().List(context.TODO(), metav1.ListOptions{})
+	o.Expect(mcpErr).NotTo(o.HaveOccurred(), "Error getting MCPs.")
+
+	// For any MCP with machines, add the MCP name as a role to test.
+	var rolesToTest []string
+	for _, mcp := range mcps.Items {
+		if mcp.Status.MachineCount > 0 {
+			rolesToTest = append(rolesToTest, mcp.Name)
+		}
+	}
+
+	return rolesToTest
+}
+
+// `ClusterHasNodesInDesiredMCP` returns true if the test cluster has nodes in the specifed desired
+// MCP and false otherwise.
+func ClusterHasNodesInDesiredMCP(oc *exutil.CLI, clientSet *framework.ClientSet, desiredMCP string) bool {
+	rolesInCluster := GetRolesToTest(oc, clientSet)
+	return slices.Contains(rolesInCluster, desiredMCP)
 }
