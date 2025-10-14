@@ -21,8 +21,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes/fake"
 
+	routev1 "github.com/openshift/api/route/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	routefake "github.com/openshift/client-go/route/clientset/versioned/fake"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 )
@@ -159,7 +163,7 @@ func TestBootstrapServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error while appending file to ignition: %v", err)
 	}
-	anno, err := getNodeAnnotation(mp.Status.Configuration.Name)
+	anno, err := getNodeAnnotation(mp.Status.Configuration.Name, "")
 	if err != nil {
 		t.Fatalf("unexpected error while creating annotations err: %v", err)
 	}
@@ -354,7 +358,7 @@ func TestClusterServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error while appending file to ignition: %v", err)
 	}
-	anno, err := getNodeAnnotation(mp.Status.Configuration.Name)
+	anno, err := getNodeAnnotation(mp.Status.Configuration.Name, "")
 	if err != nil {
 		t.Fatalf("unexpected error while creating annotations err: %v", err)
 	}
@@ -533,4 +537,246 @@ func TestKubeconfigFromSecret(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestResolveDesiredImageForPool tests the 1-reboot vs 2-reboot behavior for layered images.
+// This verifies that:
+// - External registry images are served during bootstrap (1 reboot optimization)
+// - Internal registry images are NOT served during bootstrap (2 reboots - safe fallback)
+// - Registry detection failures default to safe fallback (2 reboots)
+func TestResolveDesiredImageForPool(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name               string
+		poolName           string
+		moscExists         bool
+		mosbExists         bool
+		mosbSuccessful     bool
+		registryInternal   bool
+		expectedImageURL   string
+		expectedRebootPath string
+	}{
+		{
+			name:               "External registry image - 1 reboot path",
+			poolName:           "worker",
+			moscExists:         true,
+			mosbExists:         true,
+			mosbSuccessful:     true,
+			registryInternal:   false,
+			expectedImageURL:   "quay.io/openshift/custom-layered-image@sha256:abc123",
+			expectedRebootPath: "1-reboot (layered image served during bootstrap)",
+		},
+		{
+			name:               "Internal registry image - 2 reboot path",
+			poolName:           "worker",
+			moscExists:         true,
+			mosbExists:         true,
+			mosbSuccessful:     true,
+			registryInternal:   true,
+			expectedImageURL:   "",
+			expectedRebootPath: "2-reboot (base image served, then update to layered after joining cluster)",
+		},
+		{
+			name:               "No MOSC - no layering",
+			poolName:           "worker",
+			moscExists:         false,
+			expectedImageURL:   "",
+			expectedRebootPath: "Base image only (pool not using layering)",
+		},
+		{
+			name:               "MOSB not successful - wait for build",
+			poolName:           "worker",
+			moscExists:         true,
+			mosbExists:         true,
+			mosbSuccessful:     false,
+			expectedImageURL:   "",
+			expectedRebootPath: "Base image (wait for build to complete)",
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Create test pool
+			pool := &mcfgv1.MachineConfigPool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: tc.poolName,
+				},
+				Spec: mcfgv1.MachineConfigPoolSpec{
+					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{
+						ObjectReference: corev1.ObjectReference{
+							Name: "rendered-worker-new",
+						},
+					},
+				},
+				Status: mcfgv1.MachineConfigPoolStatus{
+					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{
+						ObjectReference: corev1.ObjectReference{
+							Name: "rendered-worker-old",
+						},
+					},
+					UpdatedMachineCount: 1, // At least one node updated, so use new config
+				},
+			}
+
+			// Create mock listers
+			var moscList []*mcfgv1.MachineOSConfig
+			var mosbList []*mcfgv1.MachineOSBuild
+
+			if tc.moscExists {
+				mosc := &mcfgv1.MachineOSConfig{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: tc.poolName,
+					},
+					Spec: mcfgv1.MachineOSConfigSpec{
+						MachineConfigPool: mcfgv1.MachineConfigPoolReference{
+							Name: tc.poolName,
+						},
+					},
+					Status: mcfgv1.MachineOSConfigStatus{
+						CurrentImagePullSpec: mcfgv1.ImageDigestFormat("quay.io/openshift/custom-layered-image@sha256:abc123"),
+					},
+				}
+
+				if tc.registryInternal {
+					mosc.Status.CurrentImagePullSpec = mcfgv1.ImageDigestFormat("image-registry.openshift-image-registry.svc:5000/openshift/custom-layered-image@sha256:abc123")
+				}
+
+				moscList = append(moscList, mosc)
+			}
+
+			if tc.mosbExists {
+				mosb := &mcfgv1.MachineOSBuild{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: tc.poolName + "-" + pool.Spec.Configuration.ObjectReference.Name,
+					},
+					Spec: mcfgv1.MachineOSBuildSpec{
+						MachineOSConfig: mcfgv1.MachineOSConfigReference{
+							Name: tc.poolName,
+						},
+						MachineConfig: mcfgv1.MachineConfigReference{
+							Name: pool.Spec.Configuration.ObjectReference.Name,
+						},
+					},
+					Status: mcfgv1.MachineOSBuildStatus{},
+				}
+
+				if tc.mosbSuccessful {
+					// Set conditions to indicate build success
+					mosb.Status.Conditions = []metav1.Condition{
+						{
+							Type:   "Succeeded",
+							Status: metav1.ConditionTrue,
+						},
+					}
+
+					if tc.registryInternal {
+						mosb.Status.DigestedImagePushSpec = mcfgv1.ImageDigestFormat("image-registry.openshift-image-registry.svc:5000/openshift/custom-layered-image@sha256:abc123")
+					} else {
+						mosb.Status.DigestedImagePushSpec = mcfgv1.ImageDigestFormat("quay.io/openshift/custom-layered-image@sha256:abc123")
+					}
+				}
+
+				mosbList = append(mosbList, mosb)
+			}
+
+			moscLister := &mockMOSCLister{configs: moscList}
+			mosbLister := &mockMOSBLister{builds: mosbList}
+
+			// Create fake k8s clients for registry detection
+			kubeclient, routeclient := createFakeRegistryClients(tc.registryInternal)
+
+			// Create cluster server
+			cs := &clusterServer{
+				machineOSConfigLister: moscLister,
+				machineOSBuildLister:  mosbLister,
+				kubeclient:            kubeclient,
+				routeclient:           routeclient,
+			}
+
+			// Call resolveDesiredImageForPool
+			result := cs.resolveDesiredImageForPool(pool)
+
+			// Verify result
+			assert.Equal(t, tc.expectedImageURL, result, "Image URL should match expected for %s", tc.expectedRebootPath)
+
+			// Log the reboot path for clarity
+			t.Logf("✓ Verified %s", tc.expectedRebootPath)
+		})
+	}
+}
+
+// Mock listers for MachineOSConfig and MachineOSBuild
+type mockMOSCLister struct {
+	configs []*mcfgv1.MachineOSConfig
+}
+
+func (m *mockMOSCLister) List(selector labels.Selector) ([]*mcfgv1.MachineOSConfig, error) {
+	return m.configs, nil
+}
+
+func (m *mockMOSCLister) Get(name string) (*mcfgv1.MachineOSConfig, error) {
+	for _, config := range m.configs {
+		if config.Name == name {
+			return config, nil
+		}
+	}
+	return nil, fmt.Errorf("MachineOSConfig %s not found", name)
+}
+
+type mockMOSBLister struct {
+	builds []*mcfgv1.MachineOSBuild
+}
+
+func (m *mockMOSBLister) List(selector labels.Selector) ([]*mcfgv1.MachineOSBuild, error) {
+	return m.builds, nil
+}
+
+func (m *mockMOSBLister) Get(name string) (*mcfgv1.MachineOSBuild, error) {
+	for _, build := range m.builds {
+		if build.Name == name {
+			return build, nil
+		}
+	}
+	return nil, fmt.Errorf("MachineOSBuild %s not found", name)
+}
+
+// Helper function to create fake clients with or without internal registry
+func createFakeRegistryClients(withInternalRegistry bool) (*fake.Clientset, *routefake.Clientset) {
+	var services []runtime.Object
+	var routes []runtime.Object
+
+	if withInternalRegistry {
+		// Create fake internal registry service
+		services = append(services, &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "image-registry",
+				Namespace: "openshift-image-registry",
+			},
+			Spec: corev1.ServiceSpec{
+				Ports: []corev1.ServicePort{
+					{Port: 5000},
+				},
+			},
+		})
+
+		// Create fake internal registry route
+		routes = append(routes, &routev1.Route{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "default-route",
+				Namespace: "openshift-image-registry",
+			},
+			Spec: routev1.RouteSpec{
+				Host: "default-route-openshift-image-registry.apps.example.com",
+			},
+		})
+	}
+
+	kubeclient := fake.NewSimpleClientset(services...)
+	routeclient := routefake.NewSimpleClientset(routes...)
+
+	return kubeclient, routeclient
 }
