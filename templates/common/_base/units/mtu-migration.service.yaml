@@ -6,7 +6,7 @@ contents: |
   Description=Configures interfaces and routes with temporary MTUs during MTU migration
   Requires=openvswitch.service ovs-configuration.service
   Wants=NetworkManager-wait-online.service
-  After=NetworkManager-wait-online.service openvswitch.service network.service ovs-configuration.service wait-for-primary-ip.service
+  After=NetworkManager-wait-online.service openvswitch.service network.service ovs-configuration.service wait-for-node-ip.service
   Before=kubelet-dependencies.target node-valid-hostname.service
 
   [Service]
