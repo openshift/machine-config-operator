@@ -59,9 +59,13 @@ contents:
     fi
 
     # Get the bridge name
-    BRIDGE_NAME=$(nmcli -t -f connection.interface-name conn show "${BRIDGE_ID}" | awk -F ':' '{print $NF}')
+    BRIDGE_NAME=$(nmcli -t -f connection.interface-name conn show "${BRIDGE_ID}" | awk -F ':' '{print $NF}') || true
     # Limit this to br-ex and br-ex1 only. If one wanted to enable this for all OVS bridges,
     # the condition would be: if [ "$BRIDGE_NAME" == "" ]; then
+    # OCPBUGS-54682: If the condition is not met the first time it will check for br-ex-br to see if there is a K-NMS managed br-ex.
+    if [ "${BRIDGE_NAME}" != "br-ex" ] && [ "${BRIDGE_NAME}" != "br-ex1" ]; then
+        BRIDGE_NAME=$(nmcli -t -f connection.interface-name conn show "br-ex-br" | awk -F ':' '{print $NF}')
+    fi
     if [ "${BRIDGE_NAME}" != "br-ex" ] && [ "${BRIDGE_NAME}" != "br-ex1" ]; then
         exit 0
     fi
