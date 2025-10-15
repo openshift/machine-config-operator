@@ -1712,7 +1712,6 @@ func (dn *Daemon) getStateAndConfigs() (*stateAndConfigs, error) {
 		}
 		return nil, err
 	}
-	klog.Infof("[daemon.go] getStateAndConfigs: bootstrapping=%v, currentConfigName=%s, currentConfig.Spec.OSImageURL=%s (source=cluster-lister)", bootstrapping, currentConfigName, currentConfig.Spec.OSImageURL)
 	state, err := getNodeAnnotationExt(dn.node, constants.MachineConfigDaemonStateAnnotationKey, true)
 	if err != nil {
 		return nil, err
@@ -1722,13 +1721,11 @@ func (dn *Daemon) getStateAndConfigs() (*stateAndConfigs, error) {
 		klog.Infof("%s is not set. any errors? %s", constants.CurrentImageAnnotationKey, err)
 		return nil, err
 	}
-	klog.Infof("[daemon.go] getStateAndConfigs: currentImage=%s (from node annotations)", currentImage)
 	desiredImage, err := getNodeAnnotationExt(dn.node, constants.DesiredImageAnnotationKey, true)
 	if err != nil {
 		klog.Infof("%s is not set. any errors? %s", constants.DesiredImageAnnotationKey, err)
 		return nil, err
 	}
-	klog.Infof("[daemon.go] getStateAndConfigs: desiredImage=%s (from node annotations)", desiredImage)
 
 	// Temporary hack: the MCS used to not write the state=done annotation
 	// key.  If it's unset, let's write it now.
@@ -2177,19 +2174,13 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 
 	// Bootstrapping state is when we have the node annotations file
 	if state.bootstrapping {
-		// targetOSImageURL := state.currentConfig.Spec.OSImageURL
-		// klog.Infof("[daemon.go] checkStateOnFirstRun: in bootstrap mode, bootedOSImageURL=%s, targetOSImageURL=%s (from state.currentConfig.Spec.OSImageURL)", dn.bootedOSImageURL, targetOSImageURL)
-
 		// During bootstrap, prefer the image from node annotations (if set) over the MC from cluster lister
 		targetOSImageURL := state.currentImage
 		if targetOSImageURL == "" {
 			// Fall back to MC's OSImageURL if no image annotation was provided
 			targetOSImageURL = state.currentConfig.Spec.OSImageURL
 		}
-		klog.Infof("[daemon.go] checkStateOnFirstRun: in bootstrap mode, bootedOSImageURL=%s, targetOSImageURL=%s (from state.currentImage annotation or state.currentConfig.Spec.OSImageURL)", dn.bootedOSImageURL,
-			targetOSImageURL)
 		osMatch := dn.checkOS(targetOSImageURL)
-		klog.Infof("[daemon.go] checkStateOnFirstRun: osMatch=%v (bootedOSImageURL == targetOSImageURL)", osMatch)
 		if !osMatch {
 			logSystem("Bootstrap pivot required to: %s", targetOSImageURL)
 
