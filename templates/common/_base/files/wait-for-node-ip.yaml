@@ -1,0 +1,54 @@
+mode: 0755
+path: "/usr/local/bin/wait-for-node-ip.sh"
+contents:
+  inline: |
+    #!/bin/bash
+    set -eux
+
+    wait_for_ip_bind() {
+      local ip=$1
+      local end_time=$((SECONDS + 60))
+      while [[ $SECONDS -lt $end_time ]]
+      do
+        random_port=$(shuf -i 50000-60000 -n 1)
+        echo "Trying to bind ${ip} on port ${random_port}"
+        local exit_code=0
+        timeout 2s nc -l "${ip}" "${random_port}" || exit_code=$?
+        if [[ $exit_code -eq 124 ]]; then
+          echo "Address bound successfully"
+          return 0
+        fi
+        sleep 10
+      done
+      echo "Failed to bind ${ip} after 60 seconds"
+      return 123
+    }
+
+    if [ ! -e /etc/nmstate/openshift/applied ]; then
+      # No need to do this if no NMState configuration was applied
+      exit 0
+    fi
+
+    ip=$(cat /run/nodeip-configuration/primary-ip || echo "")
+    if [[ "${ip}" == "" ]]; then
+      echo "No primary ip to bind was found or running on system without nodeip-configuration"
+      exit 1
+    fi
+    wait_for_ip_bind "${ip}"
+
+    # Do not fail below because we don't know if we run on primary-v4 or primary-v6 platform.
+    # We only want to make sure that if nodeip-configuration detected an IP address, the
+    # address is usable.
+    ip=$(cat /run/nodeip-configuration/ipv4 || echo "")
+    if [[ "${ip}" == "" ]]; then
+      echo "No ipv4 to bind was found"
+    else
+      wait_for_ip_bind "${ip}"
+    fi
+
+    ip=$(cat /run/nodeip-configuration/ipv6 || echo "")
+    if [[ "${ip}" == "" ]]; then
+      echo "No ipv6 to bind was found"
+    else
+      wait_for_ip_bind "${ip}"
+    fi
