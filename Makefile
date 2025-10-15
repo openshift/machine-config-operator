@@ -30,7 +30,7 @@ GOTAGS = "containers_image_openpgp exclude_graphdriver_devicemapper exclude_grap
 
 all: binaries
 
-.PHONY: clean test test-unit test-e2e verify update install-tools
+.PHONY: clean test test-unit test-e2e verify update update-amis install-tools
 
 # Remove build artifaces
 # Example:
@@ -69,6 +69,13 @@ test-unit: install-go-junit-report
 #    make update
 update:
 	hack/update-templates.sh
+
+# Update the AMI list from the OpenShift installer repository.
+# Example:
+#    make update-amis
+update-amis:
+	python3 hack/update_amis.py
+
 go-deps:
 	go mod tidy
 	go mod vendor
