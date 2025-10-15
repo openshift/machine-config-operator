@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"os"
 
 	features "github.com/openshift/api/features"
 	"github.com/openshift/machine-config-operator/cmd/common"
@@ -22,7 +21,6 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/klog/v2"
 )
 
@@ -158,23 +156,12 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		<-ctx.Done()
 	}
 
-	leaderElectionCfg := common.GetLeaderElectionConfig(cb.GetBuilderConfig())
-
-	leaderelection.RunOrDie(runContext, leaderelection.LeaderElectionConfig{
-		Lock:            common.CreateResourceLock(cb, startOpts.resourceLockNamespace, componentName),
-		ReleaseOnCancel: true,
-		LeaseDuration:   leaderElectionCfg.LeaseDuration.Duration,
-		RenewDeadline:   leaderElectionCfg.RenewDeadline.Duration,
-		RetryPeriod:     leaderElectionCfg.RetryPeriod.Duration,
-		Callbacks: leaderelection.LeaderCallbacks{
-			OnStartedLeading: run,
-			OnStoppedLeading: func() {
-				klog.Infof("Stopped leading. Terminating.")
-				os.Exit(0)
-			},
-		},
+	common.DoLeaderElectionAndRunOrDie(runContext, &common.RunOpts{
+		Namespace:     startOpts.resourceLockNamespace,
+		ComponentName: componentName,
+		Builder:       cb,
+		OnStart:       run,
 	})
-	panic("unreachable")
 }
 
 func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controller {
