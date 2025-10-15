@@ -8,8 +8,9 @@ import (
 
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
-	exutil "github.com/openshift/machine-config-operator/test/extended/util"
-	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
+	exutil "github.com/openshift/origin/test/extended/util"
+	compat_otp "github.com/openshift/origin/test/extended/util/compat_otp"
+	logger "github.com/openshift/origin/test/extended/util/compat_otp/logext"
 	"github.com/tidwall/sjson"
 )
 
@@ -106,7 +107,7 @@ func CopySecretToMCONamespace(secret *Secret, newName string) (*Secret, error) {
 func CreateMachineOSConfigUsingInternalRegistry(oc *exutil.CLI, namespace, moscAndMcpName string, containerFile []ContainerFile, defaultPullSecret bool) (*MachineOSConfig, error) {
 
 	// We use the builder SA secret in the namespace to push the images to the internal registry
-	renderedImagePushSecret, err := CreateInternalRegistrySecretFromSA(oc, "builder", namespace, "cloned-push-secret"+exutil.GetRandomString(), MachineConfigNamespace)
+	renderedImagePushSecret, err := CreateInternalRegistrySecretFromSA(oc, "builder", namespace, "cloned-push-secret"+compat_otp.GetRandomString(), MachineConfigNamespace)
 	if err != nil {
 		return NewMachineOSConfig(oc, moscAndMcpName), err
 	}
@@ -118,7 +119,7 @@ func CreateMachineOSConfigUsingInternalRegistry(oc *exutil.CLI, namespace, moscA
 
 		// TODO: HERE WE NEED TO ADD THE NAMESPACE PULL SECRET TO THE CLUSTER'S PULL-SECRET SO THAT WE CAN PULL THE RESULTING IMAGE STORED IN A DIFFERENT NAMESPACE THAN MCO
 		// We use the default SA secret in MCO to pull the current image from the internal registry
-		namespacedPullSecret, err := CreateInternalRegistrySecretFromSA(oc, "default", namespace, "cloned-currentpull-secret"+exutil.GetRandomString(), namespace)
+		namespacedPullSecret, err := CreateInternalRegistrySecretFromSA(oc, "default", namespace, "cloned-currentpull-secret"+compat_otp.GetRandomString(), namespace)
 		if err != nil {
 			return NewMachineOSConfig(oc, moscAndMcpName), err
 		}
@@ -157,7 +158,7 @@ func CreateMachineOSConfigUsingInternalRegistry(oc *exutil.CLI, namespace, moscA
 	if !defaultPullSecret {
 		// We use a copy of the cluster's pull secret to pull the images
 		pullSecret := NewSecret(oc.AsAdmin(), "openshift-config", "pull-secret")
-		baseImagePullSecret, err := CopySecretToMCONamespace(pullSecret, "cloned-basepull-secret-"+exutil.GetRandomString())
+		baseImagePullSecret, err := CopySecretToMCONamespace(pullSecret, "cloned-basepull-secret-"+compat_otp.GetRandomString())
 		if err != nil {
 			return NewMachineOSConfig(oc, moscAndMcpName), err
 		}
@@ -173,12 +174,12 @@ func CreateMachineOSConfigUsingExternalRegistry(oc *exutil.CLI, moscAndMcpName s
 		// We use a copy of the cluster's pull secret to pull the images
 		pullSecret = NewSecret(oc.AsAdmin(), "openshift-config", "pull-secret")
 	)
-	copyPullSecret, err := CopySecretToMCONamespace(pullSecret, "cloned-pull-secret-"+exutil.GetRandomString())
+	copyPullSecret, err := CopySecretToMCONamespace(pullSecret, "cloned-pull-secret-"+compat_otp.GetRandomString())
 	if err != nil {
 		return NewMachineOSConfig(oc, moscAndMcpName), err
 	}
 
-	clusterName, err := exutil.GetInfraID(oc)
+	clusterName, err := compat_otp.GetInfraID(oc)
 	if err != nil {
 		return NewMachineOSConfig(oc, moscAndMcpName), err
 	}

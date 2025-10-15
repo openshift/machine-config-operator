@@ -5,8 +5,8 @@ import (
 
 	o "github.com/onsi/gomega"
 	"github.com/onsi/gomega/types"
-	exutil "github.com/openshift/machine-config-operator/test/extended/util"
-	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
+	compat_otp "github.com/openshift/origin/test/extended/util/compat_otp"
+	logger "github.com/openshift/origin/test/extended/util/compat_otp/logext"
 )
 
 type Checker interface {
@@ -25,7 +25,7 @@ func (cOutChecker CommandOutputChecker) Check(checkedNodes ...Node) {
 	if cOutChecker.Desc != "" {
 		msg = cOutChecker.Desc
 	}
-	exutil.By(msg)
+	compat_otp.By(msg)
 	o.Expect(checkedNodes).NotTo(o.BeEmpty(), "Refuse to check an empty list of nodes")
 
 	for _, node := range checkedNodes {
@@ -51,7 +51,7 @@ func (rfc RemoteFileChecker) Check(checkedNodes ...Node) {
 	if rfc.Desc != "" {
 		msg = rfc.Desc
 	}
-	exutil.By(msg)
+	compat_otp.By(msg)
 	o.Expect(checkedNodes).NotTo(o.BeEmpty(), "Refuse to check an empty list of nodes")
 
 	for _, node := range checkedNodes {

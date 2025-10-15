@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
-	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
+	logger "github.com/openshift/origin/test/extended/util/compat_otp/logext"
 	e2e "k8s.io/kubernetes/test/e2e/framework"
 )
 

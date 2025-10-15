@@ -1,7 +1,7 @@
 package extended
 
 import (
-	exutil "github.com/openshift/machine-config-operator/test/extended/util"
+	exutil "github.com/openshift/origin/test/extended/util"
 )
 
 // MachineConfigNode resource type declaration
