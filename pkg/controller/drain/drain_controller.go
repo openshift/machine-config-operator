@@ -569,11 +569,13 @@ func (ctrl *Controller) cordonOrUncordonNode(desired bool, node *corev1.Node, dr
 	}
 
 	var lastErr error
+
+	currentNode := node.DeepCopy()
 	if err := wait.ExponentialBackoff(ctrl.cfg.CordonOrUncordonBackoff, func() (bool, error) {
 		// Log has been added to ensure that MCO is correctly performing cordon/uncordon.
 		// This should help us with debugging bugs like https://bugzilla.redhat.com/show_bug.cgi?id=2022387
-		ctrl.logNode(node, "initiating %s (currently schedulable: %t)", verb, !node.Spec.Unschedulable)
-		err := drain.RunCordonOrUncordon(drainer, node, desired)
+		ctrl.logNode(node, "initiating %s (currently schedulable: %t)", verb, !currentNode.Spec.Unschedulable)
+		err := drain.RunCordonOrUncordon(drainer, currentNode, desired)
 		if err != nil {
 			lastErr = err
 			klog.Infof("%s failed with: %v, retrying", verb, err)
@@ -587,14 +589,14 @@ func (ctrl *Controller) cordonOrUncordonNode(desired bool, node *corev1.Node, dr
 			klog.Errorf("Failed to fetch node %v, retrying", err)
 			return false, nil
 		}
-
-		if updatedNode.Spec.Unschedulable != desired {
+		currentNode = updatedNode
+		if currentNode.Spec.Unschedulable != desired {
 			// See https://bugzilla.redhat.com/show_bug.cgi?id=2022387
 			ctrl.logNode(node, "RunCordonOrUncordon() succeeded but node is still not in %s state, retrying", verb)
 			return false, nil
 		}
 
-		ctrl.logNode(node, "%s succeeded (currently schedulable: %t)", verb, !updatedNode.Spec.Unschedulable)
+		ctrl.logNode(node, "%s succeeded (currently schedulable: %t)", verb, !currentNode.Spec.Unschedulable)
 		return true, nil
 	}); err != nil {
 		if wait.Interrupted(err) {
