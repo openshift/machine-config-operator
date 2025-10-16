@@ -90,13 +90,13 @@ func TestBootstrapNodeConfigDefault(t *testing.T) {
 	}{
 		configNodeCgroupDefault: {
 			Name:             "Default",
-			MasterKernelArgs: []string{"systemd.unified_cgroup_hierarchy=1", "cgroup_no_v1=\"all\"", "psi=0"},
-			WorkerKernelArgs: []string{"systemd.unified_cgroup_hierarchy=1", "cgroup_no_v1=\"all\"", "psi=0"},
+			MasterKernelArgs: []string{"systemd.unified_cgroup_hierarchy=1", "cgroup_no_v1=\"all\"", "psi=1"},
+			WorkerKernelArgs: []string{"systemd.unified_cgroup_hierarchy=1", "cgroup_no_v1=\"all\"", "psi=1"},
 		},
 		configNodeCgroupV2: {
 			Name:             "Cgroupv2",
-			MasterKernelArgs: []string{"systemd.unified_cgroup_hierarchy=1", "cgroup_no_v1=\"all\"", "psi=0"},
-			WorkerKernelArgs: []string{"systemd.unified_cgroup_hierarchy=1", "cgroup_no_v1=\"all\"", "psi=0"},
+			MasterKernelArgs: []string{"systemd.unified_cgroup_hierarchy=1", "cgroup_no_v1=\"all\"", "psi=1"},
+			WorkerKernelArgs: []string{"systemd.unified_cgroup_hierarchy=1", "cgroup_no_v1=\"all\"", "psi=1"},
 		},
 	}
 
