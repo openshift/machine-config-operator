@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
@@ -329,6 +330,16 @@ func (cs *clusterServer) resolveDesiredImageForPool(pool *mcfgv1.MachineConfigPo
 	}
 
 	imageSpec := moscState.GetOSImage()
+
+	// Don't serve internal registry images during bootstrap because cluster DNS is not available yet
+	// New nodes will bootstrap with base image, then update to layered image after joining cluster (2 reboots)
+	// External registries (Quay, etc.) will still get the 1-reboot optimization
+	if strings.Contains(imageSpec, ".svc:") || strings.Contains(imageSpec, ".svc.cluster.local") {
+		klog.Infof("Pool %s layered image uses internal registry (%s) - not serving for firstboot (DNS unavailable)", pool.Name, imageSpec)
+		klog.Infof("New nodes will bootstrap with base image, then update to layered image after joining cluster")
+		return ""
+	}
+
 	klog.Infof("Resolved layered image for pool %s: %s", pool.Name, imageSpec)
 	return imageSpec
 }
