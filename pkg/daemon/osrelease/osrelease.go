@@ -109,6 +109,11 @@ func (os OperatingSystem) IsEL9() bool {
 	return os.IsEL() && strings.HasPrefix(os.version, "9.") || os.version == "9"
 }
 
+// IsEL10 is true if the OS is RHCOS 10 or SCOS 10
+func (os OperatingSystem) IsEL10() bool {
+	return os.IsEL() && strings.HasPrefix(os.version, "10.") || os.version == "10"
+}
+
 // IsFCOS is true if the OS is Fedora CoreOS
 func (os OperatingSystem) IsFCOS() bool {
 	return os.id == fedora && os.variantID == coreos

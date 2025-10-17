@@ -132,11 +132,36 @@ VARIANT="CoreOS"
 VARIANT_ID=coreos
 OSTREE_VERSION='37.20230126.20.0'`
 
+	rhcos101OSReleaseContents := `NAME="Red Hat Enterprise Linux CoreOS"
+VERSION="10.1.20251005-0 (Coughlan)"
+ID="rhel"
+ID_LIKE="centos fedora"
+VERSION_ID="10.1"
+PLATFORM_ID="platform:el10"
+PRETTY_NAME="Red Hat Enterprise Linux CoreOS 10.1.20251005-0 (Coughlan)"
+ANSI_COLOR="0;31"
+LOGO="fedora-logo-icon"
+CPE_NAME="cpe:/o:redhat:enterprise_linux:10.1"
+HOME_URL="https://www.redhat.com/"
+VENDOR_NAME="Red Hat"
+VENDOR_URL="https://www.redhat.com/"
+DOCUMENTATION_URL="https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/10"
+BUG_REPORT_URL="https://issues.redhat.com/"
+REDHAT_BUGZILLA_PRODUCT="Red Hat Enterprise Linux 10"
+REDHAT_BUGZILLA_PRODUCT_VERSION=10.1
+REDHAT_SUPPORT_PRODUCT="Red Hat Enterprise Linux"
+REDHAT_SUPPORT_PRODUCT_VERSION="10.1 Beta"
+OSTREE_VERSION='10.1.20251005-0'
+VARIANT=CoreOS
+VARIANT_ID=coreos
+OPENSHIFT_VERSION="4.20"`
+
 	testCases := []struct {
 		Name                   string
 		OSReleaseContents      string
 		IsEL                   bool
 		IsEL9                  bool
+		IsEL10                 bool
 		IsFCOS                 bool
 		IsSCOS                 bool
 		IsCoreOSVariant        bool
@@ -148,6 +173,7 @@ OSTREE_VERSION='37.20230126.20.0'`
 			OSReleaseContents:      rhcos86OSReleaseContents,
 			IsEL:                   true,
 			IsEL9:                  false,
+			IsEL10:                 false,
 			IsFCOS:                 false,
 			IsSCOS:                 false,
 			IsCoreOSVariant:        true,
@@ -166,10 +192,23 @@ OSTREE_VERSION='37.20230126.20.0'`
 			ToPrometheusLabel:      "RHCOS",
 		},
 		{
+			Name:                   "RHCOS 10.1",
+			OSReleaseContents:      rhcos101OSReleaseContents,
+			IsEL:                   true,
+			IsEL9:                  false,
+			IsEL10:                 true,
+			IsFCOS:                 false,
+			IsSCOS:                 false,
+			IsCoreOSVariant:        true,
+			IsLikeTraditionalRHEL7: false,
+			ToPrometheusLabel:      "RHEL",
+		},
+		{
 			Name:                   "Fedora 37 Server",
 			OSReleaseContents:      fedora37ServerOSReleaseContents,
 			IsEL:                   false,
 			IsEL9:                  false,
+			IsEL10:                 false,
 			IsFCOS:                 false,
 			IsSCOS:                 false,
 			IsCoreOSVariant:        false,
@@ -181,6 +220,7 @@ OSTREE_VERSION='37.20230126.20.0'`
 			OSReleaseContents:      scosOSReleaseContents,
 			IsEL:                   true,
 			IsEL9:                  true,
+			IsEL10:                 false,
 			IsFCOS:                 false,
 			IsSCOS:                 true,
 			IsCoreOSVariant:        true,
@@ -192,6 +232,7 @@ OSTREE_VERSION='37.20230126.20.0'`
 			OSReleaseContents:      fcosOSReleaseContents,
 			IsEL:                   false,
 			IsEL9:                  false,
+			IsEL10:                 false,
 			IsFCOS:                 true,
 			IsSCOS:                 false,
 			IsCoreOSVariant:        true,
@@ -209,6 +250,7 @@ OSTREE_VERSION='37.20230126.20.0'`
 
 			assert.Equal(t, testCase.IsEL, os.IsEL(), "expected IsEL() to be %v", testCase.IsEL)
 			assert.Equal(t, testCase.IsEL9, os.IsEL9(), "expected IsEL9() to be %v", testCase.IsEL9)
+			assert.Equal(t, testCase.IsEL10, os.IsEL10(), "expected IsEL10() to be %v", testCase.IsEL9)
 			assert.Equal(t, testCase.IsCoreOSVariant, os.IsCoreOSVariant(), "expected IsCoreOSVariant() to be %v", testCase.IsCoreOSVariant)
 			assert.Equal(t, testCase.IsFCOS, os.IsFCOS(), "expected IsFCOS() to be %v", testCase.IsFCOS)
 			assert.Equal(t, testCase.IsSCOS, os.IsSCOS(), "expected IsSCOS() to be %v", testCase.IsSCOS)
