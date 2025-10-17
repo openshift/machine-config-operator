@@ -182,6 +182,8 @@ spec:
                   UpdatePrepared, UpdateExecuted, UpdatePostActionComplete, UpdateComplete, Updated, Resumed,
                   Drained, AppliedFilesAndOS, Cordoned, Uncordoned, RebootedNode, NodeDegraded, PinnedImageSetsProgressing,
                   and PinnedImageSetsDegraded.
+                  The following types are only available when the ImageModeStatusReporting feature gate is enabled: ImagePulledFromRegistry,
+                  AppliedOSImage, AppliedFiles
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.

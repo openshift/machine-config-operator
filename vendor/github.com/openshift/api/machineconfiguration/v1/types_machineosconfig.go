@@ -17,6 +17,7 @@ import (
 // MachineOSConfig describes the configuration for a build process managed by the MCO
 // Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 // +openshift:compatibility-gen:level=1
+// +kubebuilder:validation:XValidation:rule="self.metadata.name == self.spec.machineConfigPool.name || oldSelf.hasValue() && oldSelf.spec.machineConfigPool.name.value() == self.spec.machineConfigPool.name",optionalOldSelf=true,message="MachineOSConfig name must match the referenced MachineConfigPool name; can only have one MachineOSConfig per MachineConfigPool"
 type MachineOSConfig struct {
 	metav1.TypeMeta `json:",inline"`
 
