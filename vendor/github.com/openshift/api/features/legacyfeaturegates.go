@@ -21,8 +21,6 @@ var legacyFeatureGates = sets.New(
 	// never add to this list, if you think you have an exception ask @deads2k
 	"BuildCSIVolumes",
 	// never add to this list, if you think you have an exception ask @deads2k
-	"ChunkSizeMiB",
-	// never add to this list, if you think you have an exception ask @deads2k
 	"ClusterAPIInstall",
 	// never add to this list, if you think you have an exception ask @deads2k
 	"ClusterAPIInstallIBMCloud",

@@ -99,6 +99,30 @@ spec:
           spec:
             description: spec describes the configuration of the machine config node.
             properties:
+              configImage:
+                description: |-
+                  configImage is an optional field for configuring the OS image to be used for this node. This field will only exist if the node belongs to a pool opted into on-cluster image builds, and will override any MachineConfig referenced OSImageURL fields
+                  When omitted, Image Mode is not be enabled and the node will follow the standard update process of creating a rendered MachineConfig and updating to its specifications.
+                  When specified, Image Mode is enabled and will attempt to update the node to use the desired image. Following this, the node will follow the standard update process of creating a rendered MachineConfig and updating to its specifications.
+                properties:
+                  desiredImage:
+                    description: |-
+                      desiredImage is a required field that configures the image that the node should be updated to use.
+                      It must be a fully qualified OCI image pull spec of the format host[:port][/namespace]/name@sha256:, where the digest must be exactly 64 characters in length and consist only of lowercase hexadecimal characters, a-f and 0-9.
+                      desiredImage must not be an empty string and must not exceed 447 characters in length.
+                    maxLength: 447
+                    minLength: 1
+                    type: string
+                    x-kubernetes-validations:
+                    - message: the OCI Image reference must end with a valid '@sha256:<digest>'
+                        suffix, where '<digest>' is 64 characters long
+                      rule: (self.split('@').size() == 2 && self.split('@')[1].matches('^sha256:[a-f0-9]{64}$'))
+                    - message: the OCI Image name should follow the host[:port][/namespace]/name
+                        format, resembling a valid URL without the scheme
+                      rule: (self.split('@')[0].matches('^([a-zA-Z0-9-]+\\.)+[a-zA-Z0-9-]+(:[0-9]{2,5})?/([a-zA-Z0-9-_]{0,61}/)?[a-zA-Z0-9-_.]*?$'))
+                required:
+                - desiredImage
+                type: object
               configVersion:
                 description: |-
                   configVersion holds the desired config version for the node targeted by this machine config node resource.
@@ -182,6 +206,8 @@ spec:
                   UpdatePrepared, UpdateExecuted, UpdatePostActionComplete, UpdateComplete, Updated, Resumed,
                   Drained, AppliedFilesAndOS, Cordoned, Uncordoned, RebootedNode, NodeDegraded, PinnedImageSetsProgressing,
                   and PinnedImageSetsDegraded.
+                  The following types are only available when the ImageModeStatusReporting feature gate is enabled: ImagePulledFromRegistry,
+                  AppliedOSImage, AppliedFiles
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -241,6 +267,52 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              configImage:
+                description: |-
+                  configImage is an optional field for configuring the OS image to be used for this node. This field will only exist if the node belongs to a pool opted into on-cluster image builds, and will override any MachineConfig referenced OSImageURL fields.
+                  When omitted, this means that the Image Mode feature is not being used and the node will be up to date with the specific current rendered config version for the nodes MachinePool.
+                  When specified, the Image Mode feature is enabled and the contents of this field show the observed state of the node image.
+                  When Image Mode is enabled and a new MachineConfig is applied such that a new OS image build is not created, only the configVersion field will change.
+                  When Image Mode is enabled and a new MachineConfig is applied such that a new OS image build is created, then only the configImage field will change. It is also possible that both the configImage
+                  and configVersion change during the same update.
+                minProperties: 1
+                properties:
+                  currentImage:
+                    description: |-
+                      currentImage is an optional field that represents the current image that is applied to the node.
+                      When omitted, this means that no image updates have been applied to the node and it will be up to date with the specific current rendered config version.
+                      When specified, this means that the node is currently using this image.
+                      currentImage must be a fully qualified OCI image pull spec of the format host[:port][/namespace]/name@sha256:, where the digest must be exactly 64 characters in length and consist only of lowercase hexadecimal characters, a-f and 0-9.
+                      currentImage must not be an empty string and must not exceed 447 characters in length.
+                    maxLength: 447
+                    minLength: 1
+                    type: string
+                    x-kubernetes-validations:
+                    - message: the OCI Image reference must end with a valid '@sha256:<digest>'
+                        suffix, where '<digest>' is 64 characters long
+                      rule: (self.split('@').size() == 2 && self.split('@')[1].matches('^sha256:[a-f0-9]{64}$'))
+                    - message: the OCI Image name should follow the host[:port][/namespace]/name
+                        format, resembling a valid URL without the scheme
+                      rule: (self.split('@')[0].matches('^([a-zA-Z0-9-]+\\.)+[a-zA-Z0-9-]+(:[0-9]{2,5})?/([a-zA-Z0-9-_]{0,61}/)?[a-zA-Z0-9-_.]*?$'))
+                  desiredImage:
+                    description: |-
+                      desiredImage is an optional field that represents the currently observed state of image that the node should be updated to use.
+                      When not specified, this means that Image Mode has been disabled and the node will up to date with the specific current rendered config version.
+                      When specified, this means that Image Mode has been enabled and the node is actively progressing to update the node to this image.
+                      If currentImage and desiredImage match, the node has been successfully updated to use the desired image.
+                      desiredImage must be a fully qualified OCI image pull spec of the format host[:port][/namespace]/name@sha256:, where the digest must be exactly 64 characters in length and consist only of lowercase hexadecimal characters, a-f and 0-9.
+                      desiredImage must not be an empty string and must not exceed 447 characters in length.
+                    maxLength: 447
+                    minLength: 1
+                    type: string
+                    x-kubernetes-validations:
+                    - message: the OCI Image reference must end with a valid '@sha256:<digest>'
+                        suffix, where '<digest>' is 64 characters long
+                      rule: (self.split('@').size() == 2 && self.split('@')[1].matches('^sha256:[a-f0-9]{64}$'))
+                    - message: the OCI Image name should follow the host[:port][/namespace]/name
+                        format, resembling a valid URL without the scheme
+                      rule: (self.split('@')[0].matches('^([a-zA-Z0-9-]+\\.)+[a-zA-Z0-9-]+(:[0-9]{2,5})?/([a-zA-Z0-9-_]{0,61}/)?[a-zA-Z0-9-_.]*?$'))
+                type: object
               configVersion:
                 description: configVersion describes the current and desired machine
                   config version for this node.

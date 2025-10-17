@@ -9,6 +9,7 @@ import (
 	"time"
 
 	helpers "github.com/openshift/machine-config-operator/pkg/helpers"
+	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
 
 	configv1 "github.com/openshift/api/config/v1"
 	features "github.com/openshift/api/features"
@@ -1288,14 +1289,19 @@ func (ctrl *Controller) updateCandidateNode(mosc *mcfgv1.MachineOSConfig, mosb *
 		}
 
 		lns := ctrlcommon.NewLayeredNodeState(oldNode)
+		desiredConfig := ""
+		desiredImage := ""
 		if !layered {
 			lns.SetDesiredStateFromPool(pool)
+			// If pool is not layered, the desired image annotation is removed (see the `delete`
+			// call in `SetDesiredStateFromPool`), so only the desired config version must be set.
+			desiredConfig = lns.GetDesiredAnnotationsFromMachineConfigPool(pool)
 		} else {
 			lns.SetDesiredStateFromMachineOSConfig(mosc, mosb)
+			desiredConfig, desiredImage = lns.GetDesiredAnnotationsFromMachineOSConfig(mosc, mosb)
 		}
 
 		// Set the desired state to match the pool.
-
 		newData, err := json.Marshal(lns.Node())
 		if err != nil {
 			return err
@@ -1304,6 +1310,12 @@ func (ctrl *Controller) updateCandidateNode(mosc *mcfgv1.MachineOSConfig, mosb *
 		// Don't make a patch call if no update is needed.
 		if reflect.DeepEqual(newData, oldData) {
 			return nil
+		}
+
+		// Populate the desired config version and image annotations in the node's MCN
+		err = upgrademonitor.UpdateMachineConfigNodeSpecDesiredAnnotations(ctrl.fgHandler, ctrl.client, nodeName, desiredConfig, desiredImage)
+		if err != nil {
+			klog.Errorf("error populating MCN for desired config version and image updates: %v", err)
 		}
 
 		klog.V(4).Infof("Pool %s: layered=%v node %s update is needed", pool.Name, layered, nodeName)

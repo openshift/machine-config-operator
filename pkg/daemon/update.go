@@ -2572,11 +2572,38 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 		}
 	}
 
+	// For image mode status reporting we need the node's MCP association to populate its MCN
+	imageModeStatusReportingEnabled := dn.fgHandler != nil && dn.fgHandler.Enabled(features.FeatureGateImageModeStatusReporting)
+	pool := ""
+	if imageModeStatusReportingEnabled {
+		pool, err = helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
+		if err != nil {
+			return err
+		}
+	}
+
 	if isOsImagePresent {
 		if err := dn.NodeUpdaterClient.RebaseLayeredFromContainerStorage(newURL); err != nil {
 			return fmt.Errorf("failed to update OS from local storage: %s: %w", newURL, err)
 		}
 	} else {
+		// Report ImagePulledFromRegistry condition as unknown (pulling)
+		if imageModeStatusReportingEnabled {
+			err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+				&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeImagePulledFromRegistry, Reason: string(mcfgv1.MachineConfigNodeImagePulledFromRegistry), Message: fmt.Sprintf("Pulling OS image %s from registry", newURL)},
+				nil,
+				metav1.ConditionUnknown,
+				metav1.ConditionFalse,
+				dn.node,
+				dn.mcfgClient,
+				dn.fgHandler,
+				pool,
+			)
+			if err != nil {
+				klog.Errorf("Error setting ImagePulledFromRegistry condition to unknown: %v", err)
+			}
+		}
+
 		// Workaround for OCPBUGS-43406, retry the remote rebase with backoff,
 		// such that if we happen to update while the CoreDNS pod is being restarted,
 		// the next retry should succeed if no other issues are present.
@@ -2593,7 +2620,40 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 			}
 			return true, nil
 		}); err != nil {
+			// Report ImagePulledFromRegistry condition as false (failed)
+			if imageModeStatusReportingEnabled {
+				err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
+					&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeImagePulledFromRegistry, Reason: string(mcfgv1.MachineConfigNodeImagePulledFromRegistry), Message: fmt.Sprintf("Failed to pull OS image %s from registry: %v", newURL, err)},
+					nil,
+					metav1.ConditionFalse,
+					metav1.ConditionFalse,
+					dn.node,
+					dn.mcfgClient,
+					dn.fgHandler,
+					pool,
+				)
+				if err != nil {
+					klog.Errorf("Error setting ImagePulledFromRegistry condition to false: %v", err)
+				}
+			}
 			return fmt.Errorf("Failed to update OS to %s after retries: %w", newURL, err)
+		}
+
+		// Report ImagePulledFromRegistry condition as true (success)
+		if imageModeStatusReportingEnabled {
+			err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+				&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeImagePulledFromRegistry, Reason: string(mcfgv1.MachineConfigNodeImagePulledFromRegistry), Message: fmt.Sprintf("Successfully pulled OS image %s from registry", newURL)},
+				nil,
+				metav1.ConditionTrue,
+				metav1.ConditionFalse,
+				dn.node,
+				dn.mcfgClient,
+				dn.fgHandler,
+				pool,
+			)
+			if err != nil {
+				klog.Errorf("Error setting ImagePulledFromRegistry condition to true: %v", err)
+			}
 		}
 	}
 
@@ -2755,6 +2815,7 @@ func (dn *Daemon) reboot(rationale string) error {
 	return nil
 }
 
+//nolint:gocyclo
 func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
 	// Override the computed diff if the booted state differs from the oldConfig
 	// https://issues.redhat.com/browse/OCPBUGS-2757
@@ -2766,13 +2827,75 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 	var osExtensionsContentDir string
 	var err error
 
+	// For image mode status reporting we need the node's MCP association to populate its MCN
+	imageModeStatusReportingEnabled := dn.fgHandler != nil && dn.fgHandler.Enabled(features.FeatureGateImageModeStatusReporting)
+	pool := ""
+	if imageModeStatusReportingEnabled {
+		pool, err = helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
+		if err != nil {
+			return err
+		}
+	}
+
 	if newConfig.Spec.BaseOSExtensionsContainerImage != "" && (mcDiff.osUpdate || mcDiff.extensions || mcDiff.kernelType) && !mcDiff.oclEnabled {
 		// TODO(jkyros): the original intent was that we use the extensions container as a service, but that currently results
 		// in a lot of complexity due to boostrap and firstboot where the service isn't easily available, so for now we are going
 		// to extract them to disk like we did previously.
+
+		// Report ImagePulledFromRegistry condition as unknown (pulling)
+		if imageModeStatusReportingEnabled {
+			err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+				&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeImagePulledFromRegistry, Reason: string(mcfgv1.MachineConfigNodeImagePulledFromRegistry), Message: fmt.Sprintf("Pulling extensions image %s from registry", newConfig.Spec.BaseOSExtensionsContainerImage)},
+				nil,
+				metav1.ConditionUnknown,
+				metav1.ConditionFalse,
+				dn.node,
+				dn.mcfgClient,
+				dn.fgHandler,
+				pool,
+			)
+			if err != nil {
+				klog.Errorf("Error setting ImagePulledFromRegistry condition to unknown: %v", err)
+			}
+		}
+
 		if osExtensionsContentDir, err = ExtractExtensionsImage(newConfig.Spec.BaseOSExtensionsContainerImage); err != nil {
+			// Report ImagePulledFromRegistry condition as false (failed)
+			if imageModeStatusReportingEnabled {
+				err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+					&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeImagePulledFromRegistry, Reason: string(mcfgv1.MachineConfigNodeImagePulledFromRegistry), Message: fmt.Sprintf("Failed to pull extensions image %s from registry: %v", newConfig.Spec.BaseOSExtensionsContainerImage, err)},
+					nil,
+					metav1.ConditionFalse,
+					metav1.ConditionFalse,
+					dn.node,
+					dn.mcfgClient,
+					dn.fgHandler,
+					pool,
+				)
+				if err != nil {
+					klog.Errorf("Error setting ImagePulledFromRegistry condition to false: %v", err)
+				}
+			}
 			return err
 		}
+
+		// Report ImagePulledFromRegistry condition as true (success)
+		if imageModeStatusReportingEnabled {
+			err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+				&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeImagePulledFromRegistry, Reason: string(mcfgv1.MachineConfigNodeImagePulledFromRegistry), Message: fmt.Sprintf("Successfully pulled extensions image %s from registry", newConfig.Spec.BaseOSExtensionsContainerImage)},
+				nil,
+				metav1.ConditionTrue,
+				metav1.ConditionFalse,
+				dn.node,
+				dn.mcfgClient,
+				dn.fgHandler,
+				pool,
+			)
+			if err != nil {
+				klog.Errorf("Error setting ImagePulledFromRegistry condition to true: %v", err)
+			}
+		}
+
 		// Delete extracted OS image once we are done.
 		defer os.RemoveAll(osExtensionsContentDir)
 
