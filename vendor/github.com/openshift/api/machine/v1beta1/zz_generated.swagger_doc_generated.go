@@ -15,6 +15,7 @@ var map_AWSMachineProviderConfig = map[string]string{
 	"":                        "AWSMachineProviderConfig is the Schema for the awsmachineproviderconfigs API Compatibility level 2: Stable within a major release for a minimum of 9 months or 3 minor releases (whichever is longer).",
 	"ami":                     "ami is the reference to the AMI from which to create the machine instance.",
 	"instanceType":            "instanceType is the type of instance to create. Example: m4.xlarge",
+	"cpuOptions":              "cpuOptions defines CPU-related settings for the instance, including the confidential computing policy. When omitted, this means no opinion and the AWS platform is left to choose a reasonable default. More info: https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_CpuOptionsRequest.html, https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/cpu-options-supported-instances-values.html",
 	"tags":                    "tags is the set of tags to add to apply to an instance, in addition to the ones added by default by the actuator. These tags are additive. The actuator will ensure these tags are present, but will not remove any other tags that may exist on the instance.",
 	"iamInstanceProfile":      "iamInstanceProfile is a reference to an IAM role to assign to the instance",
 	"userDataSecret":          "userDataSecret contains a local reference to a secret that contains the UserData to apply to the instance",
@@ -80,6 +81,15 @@ var map_BlockDeviceMappingSpec = map[string]string{
 
 func (BlockDeviceMappingSpec) SwaggerDoc() map[string]string {
 	return map_BlockDeviceMappingSpec
+}
+
+var map_CPUOptions = map[string]string{
+	"":                    "CPUOptions defines CPU-related settings for the instance, including the confidential computing policy. If provided, it must not be empty — at least one field must be set.",
+	"confidentialCompute": "confidentialCompute specifies whether confidential computing should be enabled for the instance, and, if so, which confidential computing technology to use. Valid values are: Disabled, AMDEncryptedVirtualizationNestedPaging and omitted. When set to Disabled, confidential computing will be disabled for the instance. When set to AMDEncryptedVirtualizationNestedPaging, AMD SEV-SNP will be used as the confidential computing technology for the instance. In this case, ensure the following conditions are met: 1) The selected instance type supports AMD SEV-SNP. 2) The selected AWS region supports AMD SEV-SNP. 3) The selected AMI supports AMD SEV-SNP. More details can be checked at https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/sev-snp.html When omitted, this means no opinion and the AWS platform is left to choose a reasonable default, which is subject to change without notice. The current default is Disabled.",
+}
+
+func (CPUOptions) SwaggerDoc() map[string]string {
+	return map_CPUOptions
 }
 
 var map_EBSBlockDeviceSpec = map[string]string{
