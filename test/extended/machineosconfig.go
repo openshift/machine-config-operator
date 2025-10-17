@@ -403,7 +403,9 @@ func cleanupMOSCSecret(secret Secret) error {
 // CreateInternalRegistrySecretFromSA creates a secret containing the credentials to logint to the internal registry as a given service account
 func CreateInternalRegistrySecretFromSA(oc *exutil.CLI, saName, saNamespace, secretName, secretNamespace string) (*Secret, error) {
 	var (
-		tmpDockerConfigFile = generateTmpFile(oc, "tmp-config.json")
+		// Use a path that works inside the debug pod's filesystem
+		tmpDockerConfigFile = fmt.Sprintf("/tmp/.tmp-%s-tmp-config.json%d", oc.Namespace(), time.Now().UnixNano())
+		localDockerConfigFile = generateTmpFile(oc, "tmp-config.json")
 		masterNode          = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolMaster).GetNodesOrFail()[0]
 	)
 	logger.Infof("Create a new secret with the credentials to login to the internal registry using a SA")
@@ -422,7 +424,7 @@ func CreateInternalRegistrySecretFromSA(oc *exutil.CLI, saName, saNamespace, sec
 
 	logger.Infof("Copy the docker.json file to local")
 	// Because several MOSCs can be applied at the same time, MCDs can be restarted several times and it can cause a failure in the CopyToLocal method. We retry to mitigate this scenario
-	err = Retry(5, 5*time.Second, func() error { return masterNode.CopyToLocal(tmpDockerConfigFile, tmpDockerConfigFile) })
+	err = Retry(5, 5*time.Second, func() error { return masterNode.CopyToLocal(tmpDockerConfigFile, localDockerConfigFile) })
 	if err != nil {
 		return nil, fmt.Errorf("Error copying the resulting authorization file to local")
 	}
@@ -430,7 +432,7 @@ func CreateInternalRegistrySecretFromSA(oc *exutil.CLI, saName, saNamespace, sec
 	logger.Infof("OK!")
 
 	logger.Infof("Create the secret with the credentials to push images to the internal registry")
-	err = oc.Run("create").Args("secret", "-n", secretNamespace, "docker-registry", secretName, "--from-file=.dockerconfigjson="+tmpDockerConfigFile).Execute()
+	err = oc.Run("create").Args("secret", "-n", secretNamespace, "docker-registry", secretName, "--from-file=.dockerconfigjson="+localDockerConfigFile).Execute()
 	if err != nil {
 		return nil, err
 	}

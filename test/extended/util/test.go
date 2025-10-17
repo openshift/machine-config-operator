@@ -37,7 +37,7 @@ var (
 func InitStandardFlags() {
 	// Register common flags first
 	e2e.RegisterCommonFlags(flag.CommandLine)
-	
+
 	// Try to register cluster flags, but handle the case where flags might already be defined
 	defer func() {
 		if r := recover(); r != nil {
@@ -51,7 +51,7 @@ func InitStandardFlags() {
 			}
 		}
 	}()
-	
+
 	e2e.RegisterClusterFlags(flag.CommandLine)
 }
 
@@ -267,3 +267,7 @@ func addRoleToE2EServiceAccounts(rbacClient rbacv1client.RbacV1Interface, namesp
 		e2e.Failf("%v", err)
 	}
 }
+
+// func init() {
+// 	InitStandardFlags()
+// }
