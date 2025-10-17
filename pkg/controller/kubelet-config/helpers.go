@@ -152,7 +152,7 @@ func updateMachineConfigwithCgroup(node *osev1.Node, mc *mcfgv1.MachineConfig) e
 	// updating the Machine Config resource with the relevant cgroup config
 	var (
 		kernelArgsv1                                            = []string{"systemd.unified_cgroup_hierarchy=0", "systemd.legacy_systemd_cgroup_controller=1"}
-		kernelArgsv2                                            = []string{"systemd.unified_cgroup_hierarchy=1", "cgroup_no_v1=\"all\"", "psi=0"}
+		kernelArgsv2                                            = []string{"systemd.unified_cgroup_hierarchy=1", "cgroup_no_v1=\"all\""}
 		kernelArgsToAdd, kernelArgsToRemove, adjustedKernelArgs []string
 	)
 	switch node.Spec.CgroupMode {
