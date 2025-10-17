@@ -169,6 +169,7 @@ func getNodeAnnotation(conf string) (string, error) {
 	nodeAnnotations := map[string]string{
 		daemonconsts.CurrentMachineConfigAnnotationKey:     conf,
 		daemonconsts.DesiredMachineConfigAnnotationKey:     conf,
+		daemonconsts.FirstPivotMachineConfigAnnotationKey:  conf,
 		daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateDone,
 	}
 	contents, err := json.Marshal(nodeAnnotations)
