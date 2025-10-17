@@ -441,20 +441,6 @@ func podmanRemove(cid string) {
 	exec.Command("podman", "rm", "-f", cid).Run()
 }
 
-// return true if the image is present
-func isImagePresent(imgURL string) (bool, error) {
-	// search the image
-	var imageSearch []byte
-	imageSearch, err := runGetOut("podman", "images", "-q", "--filter", fmt.Sprintf("reference=%s", imgURL))
-	if err != nil {
-		return false, fmt.Errorf("error searching the image: %w", err)
-	}
-	if strings.TrimSpace(string(imageSearch)) == "" {
-		return false, nil
-	}
-	return true, nil
-}
-
 func podmanCopy(imgURL, osImageContentDir string) (err error) {
 	// arguments used in external commands
 	var args []string
@@ -463,13 +449,13 @@ func podmanCopy(imgURL, osImageContentDir string) (err error) {
 	os.RemoveAll(osImageContentDir)
 
 	// Check if the image is present
-	imagePresent, err := isImagePresent(imgURL)
+	podmanImageInfo, err := GetPodmanImageInfoByReference(imgURL)
 	if err != nil {
 		return
 	}
 
 	// Pull the container image
-	if !imagePresent {
+	if podmanImageInfo == nil {
 		var authArgs []string
 		if _, err := os.Stat(kubeletAuthFile); err == nil {
 			authArgs = append(authArgs, "--authfile", kubeletAuthFile)
@@ -2712,15 +2698,15 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 
 	// If PIS is configured check if the image is locally present. If so, rebase using
 	// the local image
-	isOsImagePresent := false
+	var podmanImageInfo *PodmanImageInfo
 	if isPisConfigured {
-		if isOsImagePresent, err = isImagePresent(newURL); err != nil {
+		if podmanImageInfo, err = GetPodmanImageInfoByReference(newURL); err != nil {
 			return err
 		}
 	}
 
-	if isOsImagePresent {
-		if err := dn.NodeUpdaterClient.RebaseLayeredFromContainerStorage(newURL); err != nil {
+	if podmanImageInfo != nil {
+		if err := dn.NodeUpdaterClient.RebaseLayeredFromContainerStorage(podmanImageInfo); err != nil {
 			return fmt.Errorf("failed to update OS from local storage: %s: %w", newURL, err)
 		}
 	} else {
