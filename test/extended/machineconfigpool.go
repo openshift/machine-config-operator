@@ -10,8 +10,12 @@ import (
 
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	machineconfigclient "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	exutil "github.com/openshift/machine-config-operator/test/extended/util"
 	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	e2e "k8s.io/kubernetes/test/e2e/framework"
 )
@@ -820,4 +824,87 @@ func DebugDegradedStatus(mcp *MachineConfigPool) {
 	}
 	logger.Infof("Last %d lines of MCC:\n%s", maxMCCLines, GetLastNLines(mccLogs, maxMCCLines))
 	logger.Infof("END DEBUG")
+}
+
+// `DoesMachineConfigPoolHaveMachines` returns true if the desired MCP, defined by the `mcpName`
+// parameter has machines and false otherwise. It also returns an error if one occurs when getting
+// the MCP.
+func DoesMachineConfigPoolHaveMachines(machineConfigClient *machineconfigclient.Clientset, mcpName string) bool {
+	// Get desired MCP
+	mcp, mcpErr := machineConfigClient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), mcpName, metav1.GetOptions{})
+	o.Expect(mcpErr).NotTo(o.HaveOccurred(), "Error checking for compatible MCPs: %s", mcpErr)
+
+	// Check if desired MCP has machines
+	return mcp.Status.MachineCount > 0
+}
+
+// `WaitForMCPToBeReady` waits up to 5 minutes for a pool to be in an updated state with a specified number of ready machines
+func WaitForMCPToBeReady(oc *exutil.CLI, machineConfigClient *machineconfigclient.Clientset, poolName string, readyMachineCount int32) {
+	o.Eventually(func() bool {
+		mcp, err := machineConfigClient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), poolName, metav1.GetOptions{})
+		if err != nil {
+			logger.Infof("Failed to grab MCP '%v', error :%v", poolName, err)
+			return false
+		}
+		// Check if the pool is in an updated state with the correct number of ready machines
+		if IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdated) && mcp.Status.UpdatedMachineCount == readyMachineCount {
+			logger.Infof("MCP '%v' has the desired %v ready machines.", poolName, mcp.Status.UpdatedMachineCount)
+			return true
+		}
+		// Log details of what is outstanding for the pool to be considered ready
+		if mcp.Status.UpdatedMachineCount == readyMachineCount {
+			logger.Infof("MCP '%v' has the desired %v ready machines, but is not in an 'Updated' state.", poolName, mcp.Status.UpdatedMachineCount)
+		} else {
+			logger.Infof("MCP '%v' has %v ready machines. Waiting for the desired ready machine count of %v.", poolName, mcp.Status.UpdatedMachineCount, readyMachineCount)
+		}
+		return false
+	}, 5*time.Minute, 10*time.Second).Should(o.BeTrue(), "Timed out waiting for MCP '%v' to be in 'Updated' state with %v ready machines.", poolName, readyMachineCount)
+}
+
+// `CleanupCustomMCP` cleans up a custom MCP if it exists through the following steps:
+//  1. Remove the custom MCP role label from the node
+//  2. Wait for the custom MCP to be updated with no ready machines
+//  3. Wait for the node to have a current config version equal to the config version of the worker MCP
+//  4. Remove the custom MCP
+func CleanupCustomMCP(oc *exutil.CLI, machineConfigClient *machineconfigclient.Clientset, customMCPName string, nodeName string) error {
+	// Skip this if the custom MCP is already deleted
+	logger.Infof("Checking if MCP `%v` still exists", customMCPName)
+	_, customMcpErr := machineConfigClient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), customMCPName, metav1.GetOptions{})
+	if customMcpErr != nil {
+		if apierrors.IsNotFound(customMcpErr) {
+			logger.Infof("Custom MCP `%v` no longer exists, no cleanup is required", customMCPName)
+			return nil
+		} else {
+			return fmt.Errorf("error checking existance of %v MCP", customMCPName)
+		}
+	}
+
+	// Unlabel node
+	logger.Infof("Removing label node-role.kubernetes.io/%v from node %v", customMCPName, nodeName)
+	unlabelErr := oc.AsAdmin().Run("label").Args(fmt.Sprintf("node/%s", nodeName), fmt.Sprintf("node-role.kubernetes.io/%s-", customMCPName)).Execute()
+	if unlabelErr != nil {
+		return fmt.Errorf("could not remove label 'node-role.kubernetes.io/%v' from node '%v'; err: %v", customMCPName, nodeName, unlabelErr)
+	}
+
+	// Wait for custom MCP to report no ready nodes
+	logger.Infof("Waiting for %v MCP to be updated with %v ready machines.", customMCPName, 0)
+	WaitForMCPToBeReady(oc, machineConfigClient, customMCPName, 0)
+
+	// Wait for node to have a current config version equal to the worker MCP's config version
+	workerMcp, workerMcpErr := machineConfigClient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
+	if workerMcpErr != nil {
+		return fmt.Errorf("could not get worker MCP; err: %v", workerMcpErr)
+	}
+	workerMcpConfig := workerMcp.Spec.Configuration.Name
+	logger.Infof("Waiting for %v node to be updated with %v config version.", nodeName, workerMcpConfig)
+	WaitForNodeCurrentConfig(oc, nodeName, workerMcpConfig)
+
+	// Delete custom MCP
+	logger.Infof("Deleting MCP %v", customMCPName)
+	deleteMCPErr := oc.AsAdmin().Run("delete").Args("mcp", customMCPName).Execute()
+	if deleteMCPErr != nil {
+		return fmt.Errorf("error deleting MCP '%v': %v", customMCPName, deleteMCPErr)
+	}
+
+	return nil
 }
