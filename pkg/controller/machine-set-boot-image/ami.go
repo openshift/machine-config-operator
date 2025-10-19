@@ -4,6 +4,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
+// source commit hash = 28ce2c4d6557b159d0253a8f32f640b50a578798
+// source URI = https://github.com/openshift/installer/blob/main/data/data/coreos/rhcos.json
+
 // AllowedAMIs contains the set of AMI IDs that are allowed to be updated from
 var AllowedAMIs = sets.New(
 	"ami-000145e5a91e9ac22", "ami-0001c9b25b9ca6731", "ami-000277c401a2db73a", "ami-0002c5529c6fff5a4", "ami-00033b241162023da",
@@ -1417,4 +1420,32 @@ var AllowedAMIs = sets.New(
 	"ami-0ff4e932cabee6256", "ami-0ff4fdc5b214f44a9", "ami-0ff530e464d386737", "ami-0ff55f3137f7b2b90", "ami-0ff5c08957821d8ee",
 	"ami-0ff5d97cd0b6cd949", "ami-0ff609cf0a5f78f63", "ami-0ff64f495c7e977cf", "ami-0ff931d09ab1cdccd", "ami-0ffb4a883a156709a",
 	"ami-0ffdaea585a65e49f", "ami-0ffdfef19643ac7f5", "ami-0ffe01a0fb1078c6f", "ami-0ffe8d7ad8405534c", "ami-0ffec236307e00b94",
+	"ami-000abd48695e852a9", "ami-000b42519a25cacc5", "ami-001d35f0b7a38999e", "ami-004899c1b1392a416", "ami-007439e088223214a",
+	"ami-00bd76511738f7c79", "ami-00c57db622051df7b", "ami-0104db843a42a4455", "ami-012a97b7293096c47", "ami-012fa36dc30f5e43c",
+	"ami-013bd53f7db86068d", "ami-0148286cf26e84d1d", "ami-019cdefdbe8ae3f45", "ami-01e129afb49fdd7ac", "ami-020178428baa4d29d",
+	"ami-020f780ada6ae8dad", "ami-0214e803d8564e890", "ami-021b5ab76f755886f", "ami-0228c2964a198026b", "ami-023b6cb1f845e69bf",
+	"ami-024f628f2bf9dadba", "ami-025c94ec9eb0e18ff", "ami-026b8f665827ffda4", "ami-029e68d76a61871b1", "ami-02d89c98e7cb51709",
+	"ami-02e1801c5d670fc58", "ami-02f64485ccc70a4b0", "ami-030445ba8507a3ec6", "ami-033695428741399bd", "ami-038f598890a52f3c9",
+	"ami-03ec26381f6a347be", "ami-03f6525889efe953b", "ami-03f93a32298fb00fb", "ami-04332931a972c8398", "ami-045044c91f08f0141",
+	"ami-045c4882302e99352", "ami-0467b2b1a131cb070", "ami-049ef84221f8c41fb", "ami-04c3ea90e1fec5a29", "ami-04ca111133e8458c6",
+	"ami-04cd61839a245df4e", "ami-04d3462fcff665a38", "ami-04db8de6d2660d477", "ami-054cb427389152da1", "ami-056269e07d092d729",
+	"ami-05834415546b16278", "ami-05a118f475704e651", "ami-05ac23294a4ae1451", "ami-05bcd8360b8e667ba", "ami-05fce4dea56fdf75f",
+	"ami-0612e7d07f913d6da", "ami-063fdc060a1235bfd", "ami-0695977d7105dd264", "ami-06a69920498a19505", "ami-06c0dd7efd3688e89",
+	"ami-06ce6706d18914e38", "ami-06e1f97c47558c2cc", "ami-06eb65026809257f2", "ami-07079826624ddc0d3", "ami-071273656bbd5ceaf",
+	"ami-0764fc8a8a3159ee8", "ami-0774d29f6ed96935b", "ami-0788e768db7ced74d", "ami-07b9d012be3de4f52", "ami-07e7ddbe74370b8d4",
+	"ami-082a55a580d5538ed", "ami-08587b3c3e9c0b132", "ami-086c5fdb20edc12c7", "ami-0871eb73b7eba6b71", "ami-087742c9801577ca8",
+	"ami-0890ea87ff5edfe5d", "ami-08956a7d43f06c11a", "ami-089d8892ef8f88156", "ami-08a972c2bc8a15c46", "ami-08cd8521bbeef13da",
+	"ami-08f4d022a29e9eca7", "ami-08ff4ee35db1e8b29", "ami-0907a17ccca484f8a", "ami-0929268b6d28ba1e9", "ami-0934f6e7344143299",
+	"ami-09469dfe86edf2a39", "ami-0961ddf05f99aa1ac", "ami-097ddc2cc5a145e29", "ami-09a4ec979ba4d8804", "ami-09b876828c9cb81f2",
+	"ami-09c2ab0e2e7411878", "ami-09d23adad19cdb25c", "ami-09e3bf4a7e74ce7db", "ami-09f65446cd0bf6996", "ami-09f756251f513af27",
+	"ami-09fe6bcfb3cab07a7", "ami-0a3254abafd41cbda", "ami-0a7e97cb28cbb8354", "ami-0a9461ac20d4691fe", "ami-0aab399b5d22e4302",
+	"ami-0ab3d3804935c276d", "ami-0ac916d2813a7b18a", "ami-0ae438f9ab8af4459", "ami-0afe0c55043adaf0a", "ami-0aff54e74e2bf4555",
+	"ami-0b31157035ce913d5", "ami-0b4093c08d6b1e916", "ami-0b745e03468dc48d2", "ami-0b83bc614ecbb4381", "ami-0b9392304b25a1be6",
+	"ami-0ba39a0e658a28b9b", "ami-0ba6941055f037421", "ami-0bbc07f8031693f95", "ami-0bc01c2ad16fef268", "ami-0c110862155a78151",
+	"ami-0c59bfd7b7a7cc3e7", "ami-0c5e7ad0cce0b5b68", "ami-0c5f9e47b5c3e9c13", "ami-0cca0b255eebfac0d", "ami-0cd7e64385588d5af",
+	"ami-0cebb38e071808759", "ami-0d05d8687e94714da", "ami-0d191a1bffd735ebe", "ami-0d2f277e312013de9", "ami-0d3c5dedab43b8daa",
+	"ami-0db4e8c33879b1a97", "ami-0dc346212bfae9a5a", "ami-0dd67b8ff235b962c", "ami-0df908df0aad1f3b2", "ami-0e024a0bbbdf621da",
+	"ami-0e0a89efe9e4aebd8", "ami-0e0eb82f12439136c", "ami-0e62ef7268af3c2ca", "ami-0e72cf40ed8ca51f3", "ami-0e76fbd6c355a48c4",
+	"ami-0e939a03652163c23", "ami-0ed302ffd26100bbb", "ami-0f22ba0e5c926e85a", "ami-0f6dbbdd757912184", "ami-0f79de75c0bb9ea50",
+	"ami-0f7e06ef6b630d78c", "ami-0f9afa7909fa8890b", "ami-0faeee552170fef71", "ami-0ff561b9a6261fac9", "ami-0ff7e5fea2302529b",
 )
