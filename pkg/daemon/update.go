@@ -67,6 +67,13 @@ const (
 	postConfigChangeActionReboot = "reboot"
 )
 
+// releaseKernelPackages contains the list of packages per kernel type a given OS release uses
+type releaseKernelPackages struct {
+	defaultKernel   []string
+	realtimeKernel  []string
+	hugePagesKernel []string
+}
+
 func getNodeRef(node *corev1.Node) *corev1.ObjectReference {
 	return &corev1.ObjectReference{
 		Kind: "Node",
@@ -1719,24 +1726,18 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 		return fmt.Errorf("64k-pages is only supported for aarch64 architecture")
 	}
 
-	// TODO: Drop this code and use https://github.com/coreos/rpm-ostree/issues/2542 instead
-	defaultKernel := []string{"kernel", "kernel-core", "kernel-modules", "kernel-modules-core", "kernel-modules-extra"}
-	// Note this list explicitly does *not* include kernel-rt as that is a meta-package that tries to pull in a lot
-	// of other dependencies we don't want for historical reasons.
-	realtimeKernel := []string{"kernel-rt-core", "kernel-rt-modules", "kernel-rt-modules-extra", "kernel-rt-kvm"}
-	hugePagesKernel := []string{"kernel-64k-core", "kernel-64k-modules", "kernel-64k-modules-core", "kernel-64k-modules-extra"}
-
 	if oldKtype != newKtype {
 		logSystem("Initiating switch to kernel %s", newKtype)
 	} else {
 		logSystem("Re-applying kernel type %s", newKtype)
 	}
 
+	kernelPackages := dn.getKernelPackagesForRelease()
 	if newKtype == ctrlcommon.KernelTypeRealtime {
 		// Switch to RT kernel
 		args := []string{"override", "remove"}
-		args = append(args, defaultKernel...)
-		for _, pkg := range realtimeKernel {
+		args = append(args, kernelPackages.defaultKernel...)
+		for _, pkg := range kernelPackages.realtimeKernel {
 			args = append(args, constants.RPMOSTreeInstallArg, pkg)
 		}
 
@@ -1744,14 +1745,34 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 	} else if newKtype == ctrlcommon.KernelType64kPages {
 		// Switch to 64k pages kernel
 		args := []string{"override", "remove"}
-		args = append(args, defaultKernel...)
-		for _, pkg := range hugePagesKernel {
+		args = append(args, kernelPackages.defaultKernel...)
+		for _, pkg := range kernelPackages.hugePagesKernel {
 			args = append(args, constants.RPMOSTreeInstallArg, pkg)
 		}
 
 		return runRpmOstree(args...)
 	}
 	return fmt.Errorf("unhandled kernel type %s", newKtype)
+}
+
+// getKernelPackagesForRelease returns the list of kernel packaged for the running OS release.
+func (dn *CoreOSDaemon) getKernelPackagesForRelease() releaseKernelPackages {
+	// TODO: Drop this code and use https://github.com/coreos/rpm-ostree/issues/2542 instead
+
+	kernelPackages := releaseKernelPackages{
+		defaultKernel:   []string{"kernel", "kernel-core", "kernel-modules", "kernel-modules-core", "kernel-modules-extra"},
+		hugePagesKernel: []string{"kernel-64k-core", "kernel-64k-modules", "kernel-64k-modules-core", "kernel-64k-modules-extra"},
+		// Note this list explicitly does *not* include kernel-rt as that is a meta-package that tries to pull in a lot
+		// of other dependencies we don't want for historical reasons.
+		realtimeKernel: []string{"kernel-rt-core", "kernel-rt-modules", "kernel-rt-modules-extra"},
+	}
+
+	// RHEL10 early bugfix of OCPBUGS-62925
+	// RHEL10 doesn't ship with kernel-rt-kvm
+	if !dn.os.IsEL10() {
+		kernelPackages.realtimeKernel = append(kernelPackages.realtimeKernel, "kernel-rt-kvm")
+	}
+	return kernelPackages
 }
 
 // updateFiles writes files specified by the nodeconfig to disk. it also writes
