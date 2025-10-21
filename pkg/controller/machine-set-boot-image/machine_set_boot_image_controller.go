@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"sync"
 
+	features "github.com/openshift/api/features"
 	opv1 "github.com/openshift/api/operator/v1"
 	configinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
@@ -23,10 +24,13 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/kubectl/pkg/scheme"
 
+	machinev1 "github.com/openshift/api/machine/v1"
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 	machineclientset "github.com/openshift/client-go/machine/clientset/versioned"
-	mapimachineinformers "github.com/openshift/client-go/machine/informers/externalversions/machine/v1beta1"
-	machinelisters "github.com/openshift/client-go/machine/listers/machine/v1beta1"
+	mapimachineinformersv1 "github.com/openshift/client-go/machine/informers/externalversions/machine/v1"
+	mapimachineinformersv1beta1 "github.com/openshift/client-go/machine/informers/externalversions/machine/v1beta1"
+	machinelistersv1 "github.com/openshift/client-go/machine/listers/machine/v1"
+	machinelistersv1beta1 "github.com/openshift/client-go/machine/listers/machine/v1beta1"
 
 	mcopinformersv1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
 	mcoplistersv1 "github.com/openshift/client-go/operator/listers/operator/v1"
@@ -41,21 +45,26 @@ type Controller struct {
 	eventRecorder record.EventRecorder
 
 	mcoCmLister          corelisterv1.ConfigMapLister
-	mapiMachineSetLister machinelisters.MachineSetLister
+	mapiMachineSetLister machinelistersv1beta1.MachineSetLister
+	cpmsLister           machinelistersv1.ControlPlaneMachineSetLister
 	infraLister          configlistersv1.InfrastructureLister
 	mcopLister           mcoplistersv1.MachineConfigurationLister
 
 	mcoCmListerSynced          cache.InformerSynced
 	mapiMachineSetListerSynced cache.InformerSynced
+	cpmsListerSynced           cache.InformerSynced
 	infraListerSynced          cache.InformerSynced
 	mcopListerSynced           cache.InformerSynced
 
 	mapiStats                  MachineResourceStats
+	cpmsStats                  MachineResourceStats
 	capiMachineSetStats        MachineResourceStats
 	capiMachineDeploymentStats MachineResourceStats
 	mapiBootImageState         map[string]BootImageState
+	cpmsBootImageState         map[string]BootImageState
 	conditionMutex             sync.Mutex
 	mapiSyncMutex              sync.Mutex
+	cpmsSyncMutex              sync.Mutex
 
 	fgHandler ctrlcommon.FeatureGatesHandler
 }
@@ -74,7 +83,7 @@ type BootImageState struct {
 	hotLoopCount int
 }
 
-// Helper function that checks if all resources have been evaluated
+// isFinished checks if all resources have been evaluated
 func (mrs MachineResourceStats) isFinished() bool {
 	return mrs.totalCount == (mrs.inProgress + mrs.erroredCount)
 }
@@ -101,7 +110,8 @@ func New(
 	kubeClient clientset.Interface,
 	machineClient machineclientset.Interface,
 	mcoCmInfomer coreinformersv1.ConfigMapInformer,
-	mapiMachineSetInformer mapimachineinformers.MachineSetInformer,
+	mapiMachineSetInformer mapimachineinformersv1beta1.MachineSetInformer,
+	cpmsInformer mapimachineinformersv1.ControlPlaneMachineSetInformer,
 	infraInformer configinformersv1.InfrastructureInformer,
 	mcopClient mcopclientset.Interface,
 	mcopInformer mcopinformersv1.MachineConfigurationInformer,
@@ -120,11 +130,13 @@ func New(
 
 	ctrl.mcoCmLister = mcoCmInfomer.Lister()
 	ctrl.mapiMachineSetLister = mapiMachineSetInformer.Lister()
+	ctrl.cpmsLister = cpmsInformer.Lister()
 	ctrl.infraLister = infraInformer.Lister()
 	ctrl.mcopLister = mcopInformer.Lister()
 
 	ctrl.mcoCmListerSynced = mcoCmInfomer.Informer().HasSynced
 	ctrl.mapiMachineSetListerSynced = mapiMachineSetInformer.Informer().HasSynced
+	ctrl.cpmsListerSynced = cpmsInformer.Informer().HasSynced
 	ctrl.infraListerSynced = infraInformer.Informer().HasSynced
 	ctrl.mcopListerSynced = mcopInformer.Informer().HasSynced
 
@@ -133,6 +145,15 @@ func New(
 		UpdateFunc: ctrl.updateMAPIMachineSet,
 		DeleteFunc: ctrl.deleteMAPIMachineSet,
 	})
+
+	if fgHandler.Enabled(features.FeatureGateManagedBootImagesCPMS) {
+		klog.V(4).Infof("ManagedBootImagesCPMS feature gate is enabled, adding CPMS event handlers")
+		cpmsInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc:    ctrl.addControlPlaneMachineSet,
+			UpdateFunc: ctrl.updateControlPlaneMachineSet,
+			DeleteFunc: ctrl.deleteControlPlaneMachineSet,
+		})
+	}
 
 	mcoCmInfomer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addConfigMap,
@@ -149,6 +170,7 @@ func New(
 	ctrl.fgHandler = fgHandler
 
 	ctrl.mapiBootImageState = map[string]BootImageState{}
+	ctrl.cpmsBootImageState = map[string]BootImageState{}
 
 	return ctrl
 }
@@ -167,6 +189,8 @@ func (ctrl *Controller) Run(stopCh <-chan struct{}) {
 	<-stopCh
 }
 
+// addMAPIMachineSet handles the addition of a MAPI MachineSet by triggering
+// a reconciliation of all enrolled MAPI MachineSets.
 func (ctrl *Controller) addMAPIMachineSet(obj interface{}) {
 
 	machineSet := obj.(*machinev1beta1.MachineSet)
@@ -179,6 +203,8 @@ func (ctrl *Controller) addMAPIMachineSet(obj interface{}) {
 	go func() { ctrl.syncMAPIMachineSets("MAPIMachinesetAdded") }()
 }
 
+// updateMAPIMachineSet handles updates to a MAPI MachineSet by triggering
+// a reconciliation if the ProviderSpec, labels, annotations, or owner references changed.
 func (ctrl *Controller) updateMAPIMachineSet(oldMS, newMS interface{}) {
 
 	oldMachineSet := oldMS.(*machinev1beta1.MachineSet)
@@ -200,6 +226,8 @@ func (ctrl *Controller) updateMAPIMachineSet(oldMS, newMS interface{}) {
 	go func() { ctrl.syncMAPIMachineSets("MAPIMachinesetUpdated") }()
 }
 
+// deleteMAPIMachineSet handles the deletion of a MAPI MachineSet by triggering
+// a reconciliation of all enrolled MAPI MachineSets.
 func (ctrl *Controller) deleteMAPIMachineSet(deletedMS interface{}) {
 
 	deletedMachineSet := deletedMS.(*machinev1beta1.MachineSet)
@@ -212,6 +240,59 @@ func (ctrl *Controller) deleteMAPIMachineSet(deletedMS interface{}) {
 	go func() { ctrl.syncMAPIMachineSets("MAPIMachinesetDeleted") }()
 }
 
+// addControlPlaneMachineSet handles the addition of a ControlPlaneMachineSet by triggering
+// a reconciliation of all enrolled ControlPlaneMachineSets.
+func (ctrl *Controller) addControlPlaneMachineSet(obj interface{}) {
+
+	machineSet := obj.(*machinev1.ControlPlaneMachineSet)
+
+	klog.Infof("ControlPlaneMachineSet %s added, reconciling enrolled machine resources", machineSet.Name)
+
+	// Update/Check all ControlPlaneMachineSets instead of just this one. This prevents needing to maintain a local
+	// store of machineset conditions. As this is using a lister, it is relatively inexpensive to do
+	// this.
+	go func() { ctrl.syncControlPlaneMachineSets("ControlPlaneMachineSetAdded") }()
+}
+
+// updateControlPlaneMachineSet handles updates to a ControlPlaneMachineSet by triggering
+// a reconciliation if the ProviderSpec, labels, annotations, or owner references changed.
+func (ctrl *Controller) updateControlPlaneMachineSet(oldCPMS, newCPMS interface{}) {
+
+	oldMS := oldCPMS.(*machinev1.ControlPlaneMachineSet)
+	newMS := newCPMS.(*machinev1.ControlPlaneMachineSet)
+
+	// Don't take action if the there is no change in the MachineSet's ProviderSpec, labels, annotations and ownerreferences
+	if reflect.DeepEqual(oldMS.Spec.Template.OpenShiftMachineV1Beta1Machine.Spec.ProviderSpec, newMS.Spec.Template.OpenShiftMachineV1Beta1Machine.Spec.ProviderSpec) &&
+		reflect.DeepEqual(oldMS.GetLabels(), newMS.GetLabels()) &&
+		reflect.DeepEqual(oldMS.GetAnnotations(), newMS.GetAnnotations()) &&
+		reflect.DeepEqual(oldMS.GetOwnerReferences(), newMS.GetOwnerReferences()) {
+		return
+	}
+
+	klog.Infof("ControlPlaneMachineSet %s updated, reconciling enrolled machineset resources", oldMS.Name)
+
+	// Update all ControlPlaneMachineSets instead of just this one. This prevents needing to maintain a local
+	// store of machineset conditions. As this is using a lister, it is relatively inexpensive to do
+	// this.
+	go func() { ctrl.syncControlPlaneMachineSets("ControlPlaneMachineSetUpdated") }()
+}
+
+// deleteControlPlaneMachineSet handles the deletion of a ControlPlaneMachineSet by triggering
+// a reconciliation of all enrolled ControlPlaneMachineSets.
+func (ctrl *Controller) deleteControlPlaneMachineSet(deletedCPMS interface{}) {
+
+	deletedMachineSet := deletedCPMS.(*machinev1beta1.MachineSet)
+
+	klog.Infof("ControlPlaneMachineSet %s deleted, reconciling enrolled machineset resources", deletedMachineSet.Name)
+
+	// Update all ControlPlaneMachineSets. This prevents needing to maintain a local
+	// store of machineset conditions. As this is using a lister, it is relatively inexpensive to do
+	// this.
+	go func() { ctrl.syncControlPlaneMachineSets("ControlPlaneMachineSetDeleted") }()
+}
+
+// addConfigMap handles the addition of the boot images ConfigMap by triggering
+// a reconciliation of all enrolled machine resources.
 func (ctrl *Controller) addConfigMap(obj interface{}) {
 
 	configMap := obj.(*corev1.ConfigMap)
@@ -224,10 +305,11 @@ func (ctrl *Controller) addConfigMap(obj interface{}) {
 	klog.Infof("configMap %s added, reconciling enrolled machine resources", configMap.Name)
 
 	// Update all machinesets since the "golden" configmap has been added
-	// TODO: Add go routines for CAPI resources here
-	go func() { ctrl.syncMAPIMachineSets("BootImageConfigMapAdded") }()
+	go func() { ctrl.syncAll("BootImageConfigMapAdded") }()
 }
 
+// updateConfigMap handles updates to the boot images ConfigMap by triggering
+// a reconciliation of all enrolled machine resources if the resource version changed.
 func (ctrl *Controller) updateConfigMap(oldCM, newCM interface{}) {
 
 	oldConfigMap := oldCM.(*corev1.ConfigMap)
@@ -246,10 +328,11 @@ func (ctrl *Controller) updateConfigMap(oldCM, newCM interface{}) {
 	klog.Infof("configMap %s updated, reconciling enrolled machine resources", oldConfigMap.Name)
 
 	// Update all machinesets since the "golden" configmap has been updated
-	// TODO: Add go routines for CAPI resources here
-	go func() { ctrl.syncMAPIMachineSets("BootImageConfigMapUpdated") }()
+	go func() { ctrl.syncAll("BootImageConfigMapUpdated") }()
 }
 
+// deleteConfigMap handles the deletion of the boot images ConfigMap by triggering
+// a reconciliation of all enrolled machine resources.
 func (ctrl *Controller) deleteConfigMap(obj interface{}) {
 
 	configMap := obj.(*corev1.ConfigMap)
@@ -262,9 +345,11 @@ func (ctrl *Controller) deleteConfigMap(obj interface{}) {
 	klog.Infof("configMap %s deleted, reconciling enrolled machine resources", configMap.Name)
 
 	// Update all machinesets since the "golden" configmap has been deleted
-	go func() { ctrl.syncMAPIMachineSets("BootImageConfigMapDeleted") }()
+	go func() { ctrl.syncAll("BootImageConfigMapDeleted") }()
 }
 
+// addMachineConfiguration handles the addition of the cluster-level MachineConfiguration
+// by triggering a reconciliation of all enrolled machine resources.
 func (ctrl *Controller) addMachineConfiguration(obj interface{}) {
 
 	machineConfiguration := obj.(*opv1.MachineConfiguration)
@@ -278,10 +363,11 @@ func (ctrl *Controller) addMachineConfiguration(obj interface{}) {
 	klog.Infof("Bootimages management configuration has been added, reconciling enrolled machine resources")
 
 	// Update/Check machinesets since the boot images configuration knob was updated
-	// TODO: Add go routines for CAPI resources here
-	go func() { ctrl.syncMAPIMachineSets("BootImageUpdateConfigurationAdded") }()
+	go func() { ctrl.syncAll("BootImageUpdateConfigurationAdded") }()
 }
 
+// updateMachineConfiguration handles updates to the cluster-level MachineConfiguration
+// by triggering a reconciliation if the ManagedBootImagesStatus changed.
 func (ctrl *Controller) updateMachineConfiguration(oldMC, newMC interface{}) {
 
 	oldMachineConfiguration := oldMC.(*opv1.MachineConfiguration)
@@ -301,10 +387,11 @@ func (ctrl *Controller) updateMachineConfiguration(oldMC, newMC interface{}) {
 	klog.Infof("Bootimages management configuration has been updated, reconciling enrolled machine resources")
 
 	// Update all machinesets since the boot images configuration knob was updated
-	// TODO: Add go routines for CAPI resources here
-	go func() { ctrl.syncMAPIMachineSets("BootImageUpdateConfigurationUpdated") }()
+	go func() { ctrl.syncAll("BootImageUpdateConfigurationUpdated") }()
 }
 
+// deleteMachineConfiguration handles the deletion of the cluster-level MachineConfiguration
+// by triggering a reconciliation of all enrolled machine resources.
 func (ctrl *Controller) deleteMachineConfiguration(obj interface{}) {
 
 	machineConfiguration := obj.(*opv1.MachineConfiguration)
@@ -318,10 +405,11 @@ func (ctrl *Controller) deleteMachineConfiguration(obj interface{}) {
 	klog.Infof("Bootimages management configuration has been deleted, reconciling enrolled machine resources")
 
 	// Update/Check machinesets since the boot images configuration knob was updated
-	// TODO: Add go routines for CAPI resources here
-	go func() { ctrl.syncMAPIMachineSets("BootImageUpdateConfigurationDeleted") }()
+	go func() { ctrl.syncAll("BootImageUpdateConfigurationDeleted") }()
 }
 
+// updateConditions updates the boot image update conditions on the MachineConfiguration status
+// based on the current state of machine resource reconciliation.
 func (ctrl *Controller) updateConditions(newReason string, syncError error, targetConditionType string) {
 	ctrl.conditionMutex.Lock()
 	defer ctrl.conditionMutex.Unlock()
@@ -339,19 +427,19 @@ func (ctrl *Controller) updateConditions(newReason string, syncError error, targ
 	for i, condition := range newConditions {
 		if condition.Type == targetConditionType {
 			if condition.Type == opv1.MachineConfigurationBootImageUpdateProgressing {
-				newConditions[i].Message = fmt.Sprintf("Reconciled %d of %d MAPI MachineSets | Reconciled %d of %d CAPI MachineSets | Reconciled %d of %d CAPI MachineDeployments", ctrl.mapiStats.inProgress, ctrl.mapiStats.totalCount, ctrl.capiMachineSetStats.inProgress, ctrl.capiMachineSetStats.totalCount, ctrl.capiMachineDeploymentStats.inProgress, ctrl.capiMachineDeploymentStats.totalCount)
+				newConditions[i].Message = fmt.Sprintf("Reconciled %d of %d MAPI MachineSets | Reconciled %d of %d ControlPlaneMachineSets | Reconciled %d of %d CAPI MachineSets | Reconciled %d of %d CAPI MachineDeployments", ctrl.mapiStats.inProgress, ctrl.mapiStats.totalCount, ctrl.cpmsStats.inProgress, ctrl.cpmsStats.totalCount, ctrl.capiMachineSetStats.inProgress, ctrl.capiMachineSetStats.totalCount, ctrl.capiMachineDeploymentStats.inProgress, ctrl.capiMachineDeploymentStats.totalCount)
 				newConditions[i].Reason = newReason
 				// If all machine resources have been processed, then the controller is no longer progressing.
-				if ctrl.mapiStats.isFinished() && ctrl.capiMachineSetStats.isFinished() && ctrl.capiMachineDeploymentStats.isFinished() {
+				if ctrl.mapiStats.isFinished() && ctrl.cpmsStats.isFinished() && ctrl.capiMachineSetStats.isFinished() && ctrl.capiMachineDeploymentStats.isFinished() {
 					newConditions[i].Status = metav1.ConditionFalse
 				} else {
 					newConditions[i].Status = metav1.ConditionTrue
 				}
 			} else if condition.Type == opv1.MachineConfigurationBootImageUpdateDegraded {
 				if syncError == nil {
-					newConditions[i].Message = fmt.Sprintf("%d Degraded MAPI MachineSets | %d Degraded CAPI MachineSets | %d CAPI MachineDeployments", ctrl.mapiStats.erroredCount, ctrl.capiMachineSetStats.erroredCount, ctrl.capiMachineDeploymentStats.erroredCount)
+					newConditions[i].Message = fmt.Sprintf("%d Degraded MAPI MachineSets | %d Degraded ControlPlaneMachineSets | %d Degraded CAPI MachineSets | %d CAPI MachineDeployments", ctrl.mapiStats.erroredCount, ctrl.cpmsStats.erroredCount, ctrl.capiMachineSetStats.erroredCount, ctrl.capiMachineDeploymentStats.erroredCount)
 				} else {
-					newConditions[i].Message = fmt.Sprintf("%d Degraded MAPI MachineSets | %d Degraded CAPI MachineSets | %d CAPI MachineDeployments | Error(s): %s", ctrl.mapiStats.erroredCount, ctrl.capiMachineSetStats.erroredCount, ctrl.capiMachineDeploymentStats.erroredCount, syncError.Error())
+					newConditions[i].Message = fmt.Sprintf("%d Degraded MAPI MachineSets | %d Degraded ControlPlaneMachineSets | %d Degraded CAPI MachineSets | %d CAPI MachineDeployments | Error(s): %s", ctrl.mapiStats.erroredCount, ctrl.cpmsStats.erroredCount, ctrl.capiMachineSetStats.erroredCount, ctrl.capiMachineDeploymentStats.erroredCount, syncError.Error())
 				}
 				newConditions[i].Reason = newReason
 				if syncError != nil {
@@ -373,6 +461,8 @@ func (ctrl *Controller) updateConditions(newReason string, syncError error, targ
 	}
 }
 
+// updateMachineConfigurationStatus updates the MachineConfiguration status with new conditions
+// using retry logic to handle concurrent updates.
 func (ctrl *Controller) updateMachineConfigurationStatus(mcop *opv1.MachineConfiguration, newConditions []metav1.Condition) {
 
 	// Using a retry here as there may be concurrent reconiliation loops updating conditions for multiple
@@ -396,22 +486,30 @@ func (ctrl *Controller) updateMachineConfigurationStatus(mcop *opv1.MachineConfi
 	}
 }
 
+// getDefaultConditions returns the default boot image update conditions when no
+// machine resources are enrolled.
 func getDefaultConditions() []metav1.Condition {
 	// These are boilerplate conditions, with no machine resources enrolled.
 	return []metav1.Condition{
 		{
 			Type:               opv1.MachineConfigurationBootImageUpdateProgressing,
-			Message:            "Reconciled 0 of 0 MAPI MachineSets | Reconciled 0 of 0 CAPI MachineSets | Reconciled 0 of 0 CAPI MachineDeployments",
+			Message:            "Reconciled 0 of 0 MAPI MachineSets | Reconciled 0 of 0 ControlPlaneMachineSets | Reconciled 0 of 0 CAPI MachineSets | Reconciled 0 of 0 CAPI MachineDeployments",
 			Reason:             "NA",
 			LastTransitionTime: metav1.Now(),
 			Status:             metav1.ConditionFalse,
 		},
 		{
 			Type:               opv1.MachineConfigurationBootImageUpdateDegraded,
-			Message:            "0 Degraded MAPI MachineSets | 0 Degraded CAPI MachineSets | 0 CAPI MachineDeployments",
+			Message:            "0 Degraded MAPI MachineSets | 0 Degraded ControlPlaneMachineSets | 0 Degraded CAPI MachineSets | 0 CAPI MachineDeployments",
 			Reason:             "NA",
 			LastTransitionTime: metav1.Now(),
 			Status:             metav1.ConditionFalse,
 		}}
 
+}
+
+// syncAll will attempt to enqueue all supported machine resources
+func (ctrl *Controller) syncAll(reason string) {
+	ctrl.syncControlPlaneMachineSets(reason)
+	ctrl.syncMAPIMachineSets(reason)
 }

@@ -142,6 +142,9 @@ machineconfignodes.machineconfiguration.openshift.io:
   - jsonPath: .status.conditions[?(@.type=="Updated")].status
     name: Updated
     type: string
+  - jsonPath: .metadata.creationTimestamp
+    name: Age
+    type: date
   - jsonPath: .status.conditions[?(@.type=="UpdatePrepared")].status
     name: UpdatePrepared
     priority: 1

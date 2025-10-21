@@ -24,6 +24,7 @@ import (
 )
 
 // syncMAPIMachineSets will attempt to enqueue every machineset
+// nolint:dupl // I separated this from syncControlPlaneMachineSets for readability
 func (ctrl *Controller) syncMAPIMachineSets(reason string) {
 
 	ctrl.mapiSyncMutex.Lock()
