@@ -104,6 +104,7 @@ func getRandomMachineSet(machineClient *machineclient.Clientset) machinev1beta1.
 }
 
 // verifyMachineSetUpdate verifies that the the boot image values of a MachineSet are reconciled correctly
+// nolint:dupl // I separated these from verifyControlPlaneMachineSetUpdate for readability
 func verifyMachineSetUpdate(oc *exutil.CLI, machineSet machinev1beta1.MachineSet, updateExpected bool) {
 
 	newProviderSpecPatch, originalProviderSpecPatch, backdatedBootImage, originalBootImage := createFakeUpdatePatch(oc, machineSet)
