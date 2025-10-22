@@ -509,7 +509,6 @@ func (optr *Operator) sync(key string) error {
 		{"MachineConfiguration", optr.syncMachineConfiguration},
 		{"MachineConfigNode", optr.syncMachineConfigNodes},
 		{"MachineConfigPools", optr.syncMachineConfigPools},
-		{"DefaultKubeletConfigs", optr.syncDefaultKubeletConfigs},
 		{"MachineConfigDaemon", optr.syncMachineConfigDaemon},
 		{"MachineConfigController", optr.syncMachineConfigController},
 		{"MachineConfigServer", optr.syncMachineConfigServer},

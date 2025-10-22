@@ -41,7 +41,6 @@ import (
 
 	features "github.com/openshift/api/features"
 	mcoac "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
-	mcfgclientscheme "github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
@@ -757,63 +756,6 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig, _ *configv1.C
 		if err != nil {
 			return err
 		}
-	}
-
-	return nil
-}
-
-// syncDefaultKubeletConfigs applies default autosizing KubeletConfigs for new cluster installations.
-// It only applies these configs during initial cluster bringup to enable AutoSizingReserved=true
-// for both master and worker pools. Upgraded clusters will not have these configs applied.
-func (optr *Operator) syncDefaultKubeletConfigs(config *renderConfig, _ *configv1.ClusterOperator) error {
-	// Only apply default configs during initial cluster bringup
-	if !optr.inClusterBringup {
-		klog.V(4).Info("Skipping default KubeletConfig sync - cluster is not in bringup mode")
-		return nil
-	}
-
-	klog.Info("Applying default autosizing KubeletConfigs for new installation")
-
-	// List of default autosizing kubeletconfig manifests
-	defaultKubeletConfigs := []string{
-		"manifests/0000_80_machine-config_07_worker-kubeletconfig-autosizing.yaml",
-		"manifests/0000_80_machine-config_07_master-kubeletconfig-autosizing.yaml",
-	}
-
-	for _, kcPath := range defaultKubeletConfigs {
-		// Render the manifest
-		kcBytes, err := renderAsset(config, kcPath)
-		if err != nil {
-			// If manifest doesn't exist in install directory, skip it
-			// This handles cases where the manifests may not be in the container yet
-			klog.Warningf("Could not render default KubeletConfig manifest %s: %v", kcPath, err)
-			continue
-		}
-
-		// Unmarshal the YAML into a KubeletConfig object
-		var kc mcfgv1.KubeletConfig
-		if err := runtime.DecodeInto(mcfgclientscheme.Codecs.UniversalDecoder(), kcBytes, &kc); err != nil {
-			return fmt.Errorf("failed to decode KubeletConfig from %s: %w", kcPath, err)
-		}
-
-		// Check if a KubeletConfig with this name already exists
-		_, err = optr.mckLister.Get(kc.Name)
-		if err == nil {
-			// Config already exists, skip creation
-			klog.V(4).Infof("Default KubeletConfig %s already exists, skipping", kc.Name)
-			continue
-		} else if !apierrors.IsNotFound(err) {
-			// Some other error occurred
-			return fmt.Errorf("error checking for existing KubeletConfig %s: %w", kc.Name, err)
-		}
-
-		// Create the KubeletConfig directly using the client
-		_, err = optr.client.MachineconfigurationV1().KubeletConfigs().Create(context.TODO(), &kc, metav1.CreateOptions{})
-		if err != nil {
-			return fmt.Errorf("failed to create default KubeletConfig %s: %w", kc.Name, err)
-		}
-
-		klog.Infof("Successfully applied default autosizing KubeletConfig: %s", kc.Name)
 	}
 
 	return nil

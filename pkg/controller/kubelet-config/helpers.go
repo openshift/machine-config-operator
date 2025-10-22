@@ -518,9 +518,11 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 		logLevelIgnition = createNewKubeletLogLevelIgnition(*kubeletConfig.Spec.LogLevel)
 	}
 	if kubeletConfig.Spec.AutoSizingReserved != nil && len(userDefinedSystemReserved) == 0 {
+		klog.Infof("KubeletConfig %s: autoSizingReserved is set to %t", kubeletConfig.Name, *kubeletConfig.Spec.AutoSizingReserved)
 		autoSizingReservedIgnition = createNewKubeletDynamicSystemReservedIgnition(kubeletConfig.Spec.AutoSizingReserved, userDefinedSystemReserved)
 	}
 	if len(userDefinedSystemReserved) > 0 {
+		klog.Infof("KubeletConfig %s: using user-defined systemReserved values: %v", kubeletConfig.Name, userDefinedSystemReserved)
 		autoSizingReservedIgnition = createNewKubeletDynamicSystemReservedIgnition(nil, userDefinedSystemReserved)
 	}
 
