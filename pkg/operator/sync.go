@@ -761,6 +761,60 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig, _ *configv1.C
 	return nil
 }
 
+// syncDefaultKubeletConfigs applies default autosizing KubeletConfigs for new cluster installations.
+// It only applies these configs during initial cluster bringup to enable AutoSizingReserved=true
+// for both master and worker pools. Upgraded clusters will not have these configs applied.
+func (optr *Operator) syncDefaultKubeletConfigs(config *renderConfig, _ *configv1.ClusterOperator) error {
+	// Only apply default configs during initial cluster bringup
+	if !optr.inClusterBringup {
+		klog.V(4).Info("Skipping default KubeletConfig sync - cluster is not in bringup mode")
+		return nil
+	}
+
+	klog.Info("Applying default autosizing KubeletConfigs for new installation")
+
+	// List of default autosizing kubeletconfig manifests
+	defaultKubeletConfigs := []string{
+		"manifests/0000_80_machine-config_07_worker-kubeletconfig-autosizing.yaml",
+		"manifests/0000_80_machine-config_07_master-kubeletconfig-autosizing.yaml",
+	}
+
+	for _, kcPath := range defaultKubeletConfigs {
+		// Render the manifest
+		kcBytes, err := renderAsset(config, kcPath)
+		if err != nil {
+			// If manifest doesn't exist in install directory, skip it
+			// This handles cases where the manifests may not be in the container yet
+			klog.Warningf("Could not render default KubeletConfig manifest %s: %v", kcPath, err)
+			continue
+		}
+
+		// Read the KubeletConfig
+		kc := mcoResourceRead.ReadKubeletConfigV1OrDie(kcBytes)
+
+		// Check if a KubeletConfig with this name already exists
+		_, err = optr.mckLister.Get(kc.Name)
+		if err == nil {
+			// Config already exists, skip creation
+			klog.V(4).Infof("Default KubeletConfig %s already exists, skipping", kc.Name)
+			continue
+		} else if !apierrors.IsNotFound(err) {
+			// Some other error occurred
+			return fmt.Errorf("error checking for existing KubeletConfig %s: %w", kc.Name, err)
+		}
+
+		// Apply the KubeletConfig
+		_, _, err = mcoResourceApply.ApplyKubeletConfig(optr.client.MachineconfigurationV1(), kc)
+		if err != nil {
+			return fmt.Errorf("failed to apply default KubeletConfig %s: %w", kc.Name, err)
+		}
+
+		klog.Infof("Successfully applied default autosizing KubeletConfig: %s", kc.Name)
+	}
+
+	return nil
+}
+
 // we need to mimic this
 func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.ClusterOperator) error {
 	if !optr.fgHandler.Enabled(features.FeatureGateMachineConfigNodes) {
