@@ -13,8 +13,10 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	"github.com/vincent-petithory/dataurl"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/klog/v2"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	build "github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 )
@@ -49,8 +51,8 @@ type Server interface {
 func getAppenders(currMachineConfig string, version *semver.Version, f kubeconfigFunc, certs []string, serverDir string) []appenderFunc {
 	appenders := []appenderFunc{
 		// append machine annotations file.
-		func(cfg *ign3types.Config, _ *mcfgv1.MachineConfig) error {
-			return appendNodeAnnotations(cfg, currMachineConfig)
+		func(cfg *ign3types.Config, mc *mcfgv1.MachineConfig) error {
+			return appendNodeAnnotations(cfg, currMachineConfig, mc)
 		},
 		// append kubeconfig.
 		func(cfg *ign3types.Config, _ *mcfgv1.MachineConfig) error { return appendKubeConfig(cfg, f) },
@@ -153,8 +155,8 @@ func appendKubeConfig(conf *ign3types.Config, f kubeconfigFunc) error {
 	return nil
 }
 
-func appendNodeAnnotations(conf *ign3types.Config, currConf string) error {
-	anno, err := getNodeAnnotation(currConf)
+func appendNodeAnnotations(conf *ign3types.Config, currConf string, mc *mcfgv1.MachineConfig) error {
+	anno, err := getNodeAnnotation(currConf, mc)
 	if err != nil {
 		return err
 	}
@@ -165,12 +167,21 @@ func appendNodeAnnotations(conf *ign3types.Config, currConf string) error {
 	return nil
 }
 
-func getNodeAnnotation(conf string) (string, error) {
+func getNodeAnnotation(conf string, mc *mcfgv1.MachineConfig) (string, error) {
 	nodeAnnotations := map[string]string{
 		daemonconsts.CurrentMachineConfigAnnotationKey:     conf,
 		daemonconsts.DesiredMachineConfigAnnotationKey:     conf,
 		daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateDone,
 	}
+
+	// Check if this MachineConfig has a pre-built image annotation (install-time hybrid OCL)
+	// If so, set the currentImage and desiredImage annotations so the node starts in layered mode
+	if preBuiltImage, hasPreBuiltImage := mc.Annotations[build.PreBuiltImageAnnotationKey]; hasPreBuiltImage && preBuiltImage != "" {
+		nodeAnnotations[daemonconsts.CurrentImageAnnotationKey] = preBuiltImage
+		nodeAnnotations[daemonconsts.DesiredImageAnnotationKey] = preBuiltImage
+		klog.Infof("Setting initial node annotations for layered mode with pre-built image: %s", preBuiltImage)
+	}
+
 	contents, err := json.Marshal(nodeAnnotations)
 	if err != nil {
 		return "", fmt.Errorf("could not marshal node annotations, err: %w", err)
