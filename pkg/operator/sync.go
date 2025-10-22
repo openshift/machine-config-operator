@@ -41,6 +41,7 @@ import (
 
 	features "github.com/openshift/api/features"
 	mcoac "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
+	mcfgclientscheme "github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
@@ -789,8 +790,11 @@ func (optr *Operator) syncDefaultKubeletConfigs(config *renderConfig, _ *configv
 			continue
 		}
 
-		// Read the KubeletConfig
-		kc := mcoResourceRead.ReadKubeletConfigV1OrDie(kcBytes)
+		// Unmarshal the YAML into a KubeletConfig object
+		var kc mcfgv1.KubeletConfig
+		if err := runtime.DecodeInto(mcfgclientscheme.Codecs.UniversalDecoder(), kcBytes, &kc); err != nil {
+			return fmt.Errorf("failed to decode KubeletConfig from %s: %w", kcPath, err)
+		}
 
 		// Check if a KubeletConfig with this name already exists
 		_, err = optr.mckLister.Get(kc.Name)
@@ -803,10 +807,10 @@ func (optr *Operator) syncDefaultKubeletConfigs(config *renderConfig, _ *configv
 			return fmt.Errorf("error checking for existing KubeletConfig %s: %w", kc.Name, err)
 		}
 
-		// Apply the KubeletConfig
-		_, _, err = mcoResourceApply.ApplyKubeletConfig(optr.client.MachineconfigurationV1(), kc)
+		// Create the KubeletConfig directly using the client
+		_, err = optr.client.MachineconfigurationV1().KubeletConfigs().Create(context.TODO(), &kc, metav1.CreateOptions{})
 		if err != nil {
-			return fmt.Errorf("failed to apply default KubeletConfig %s: %w", kc.Name, err)
+			return fmt.Errorf("failed to create default KubeletConfig %s: %w", kc.Name, err)
 		}
 
 		klog.Infof("Successfully applied default autosizing KubeletConfig: %s", kc.Name)
