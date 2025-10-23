@@ -42,7 +42,7 @@ func createNewKubeletDynamicSystemReservedIgnition(autoSystemReserved *bool, use
 	var systemReservedEphemeralStorage string
 
 	if autoSystemReserved == nil {
-		autoNodeSizing = "false"
+		autoNodeSizing = "true"
 	} else {
 		autoNodeSizing = strconv.FormatBool(*autoSystemReserved)
 	}
@@ -68,7 +68,7 @@ func createNewKubeletDynamicSystemReservedIgnition(autoSystemReserved *bool, use
 	config := fmt.Sprintf("NODE_SIZING_ENABLED=%s\nSYSTEM_RESERVED_MEMORY=%s\nSYSTEM_RESERVED_CPU=%s\nSYSTEM_RESERVED_ES=%s\n",
 		autoNodeSizing, systemReservedMemory, systemReservedCPU, systemReservedEphemeralStorage)
 
-	r := ctrlcommon.NewIgnFileBytesOverwriting("/etc/node-sizing-enabled.env", []byte(config))
+	r := ctrlcommon.NewIgnFileBytesOverwriting("/etc/auto-node-sizing-enabled.env", []byte(config))
 	return &r
 }
 
@@ -528,8 +528,7 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 	if kubeletConfig.Spec.AutoSizingReserved != nil && len(userDefinedSystemReserved) == 0 {
 		klog.Infof("KubeletConfig %s: autoSizingReserved is set to %t", kubeletConfig.Name, *kubeletConfig.Spec.AutoSizingReserved)
 		autoSizingReservedIgnition = createNewKubeletDynamicSystemReservedIgnition(kubeletConfig.Spec.AutoSizingReserved, userDefinedSystemReserved)
-	}
-	if len(userDefinedSystemReserved) > 0 {
+	} else if len(userDefinedSystemReserved) > 0 {
 		klog.Infof("KubeletConfig %s: using user-defined systemReserved values: %v", kubeletConfig.Name, userDefinedSystemReserved)
 		autoSizingReservedIgnition = createNewKubeletDynamicSystemReservedIgnition(nil, userDefinedSystemReserved)
 	}
