@@ -3,7 +3,7 @@ kind: KubeletConfig
 metadata:
   name: default-autosizing-master
 spec:
-  autoSizingReserved: false
+  autoSizingReserved: true
   machineConfigPoolSelector:
     matchLabels:
       pools.operator.machineconfiguration.openshift.io/master: ""
