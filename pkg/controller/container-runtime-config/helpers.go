@@ -49,12 +49,13 @@ const (
 	policyConfigPath                       = "/etc/containers/policy.json"
 	// CRIODropInFilePathLogLevel is the path at which changes to the crio config for log-level
 	// will be dropped in this is exported so that we can use it in the e2e-tests
-	CRIODropInFilePathLogLevel       = "/etc/crio/crio.conf.d/01-ctrcfg-logLevel"
-	crioDropInFilePathPidsLimit      = "/etc/crio/crio.conf.d/01-ctrcfg-pidsLimit"
-	crioDropInFilePathLogSizeMax     = "/etc/crio/crio.conf.d/01-ctrcfg-logSizeMax"
-	CRIODropInFilePathDefaultRuntime = "/etc/crio/crio.conf.d/01-ctrcfg-defaultRuntime"
-	imagepolicyType                  = "sigstoreSigned"
-	sigstoreRegistriesConfigFilePath = "/etc/containers/registries.d/sigstore-registries.yaml"
+	CRIODropInFilePathLogLevel                    = "/etc/crio/crio.conf.d/01-ctrcfg-logLevel"
+	crioDropInFilePathPidsLimit                   = "/etc/crio/crio.conf.d/01-ctrcfg-pidsLimit"
+	crioDropInFilePathLogSizeMax                  = "/etc/crio/crio.conf.d/01-ctrcfg-logSizeMax"
+	CRIODropInFilePathDefaultRuntime              = "/etc/crio/crio.conf.d/01-ctrcfg-defaultRuntime"
+	CRIODropInFilePathDefaultContainerRuntimeCrun = "/etc/crio/crio.conf.d/01-mc-defaultContainerRuntimeCrun"
+	imagepolicyType                               = "sigstoreSigned"
+	sigstoreRegistriesConfigFilePath              = "/etc/containers/registries.d/sigstore-registries.yaml"
 )
 
 var (
@@ -1210,4 +1211,16 @@ func imagePolicyConfigFileList(namespaceJSONs map[string][]byte) []generatedConf
 		})
 	}
 	return namespacedPolicyConfigFileList
+}
+
+// createDefaultContainerRuntimeFile creates a TOML config file for crun as the default container runtime
+func createDefaultContainerRuntimeFile() []generatedConfigFile {
+	generatedConfigFileList := make([]generatedConfigFile, 0)
+	tomlConf := tomlConfigCRIODefaultRuntime{}
+	tomlConf.Crio.Runtime.DefaultRuntime = string(mcfgv1.ContainerRuntimeDefaultRuntimeCrun)
+	generatedConfigFileList, err := addTOMLgeneratedConfigFile(generatedConfigFileList, CRIODropInFilePathDefaultContainerRuntimeCrun, tomlConf)
+	if err != nil {
+		klog.V(2).Infof("error setting default-container-runtime to crio.conf.d: %v", err)
+	}
+	return generatedConfigFileList
 }
