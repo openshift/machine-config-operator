@@ -454,19 +454,6 @@ func getUnavailableMachines(nodes []*corev1.Node, pool *mcfgv1.MachineConfigPool
 	return unavail
 }
 
-func getNamesFromNodes(nodes []*corev1.Node) []string {
-	if len(nodes) == 0 {
-		return nil
-	}
-
-	names := []string{}
-	for _, node := range nodes {
-		names = append(names, node.Name)
-	}
-
-	return names
-}
-
 // newPoolSynchronizer creates a new pool synchronizer.
 func newPoolSynchronizer(machineCount int32) *poolSynchronizer {
 	return &poolSynchronizer{

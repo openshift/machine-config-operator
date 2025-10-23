@@ -103,24 +103,6 @@ func newNodeWithLabel(name string, currentConfig, desiredConfig string, labels m
 	return nb.Node()
 }
 
-func newLayeredNodeWithReady(name string, currentConfig, desiredConfig, currentImage, desiredImage string, status corev1.ConditionStatus) *corev1.Node {
-	nb := helpers.NewNodeBuilder(name)
-	nb.WithCurrentConfig(currentConfig)
-	nb.WithDesiredConfig(desiredConfig)
-	nb.WithCurrentImage(currentImage)
-	nb.WithDesiredImage(desiredImage)
-	nb.WithStatus(corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: status}}})
-	return nb.Node()
-}
-
-func newNodeWithReady(name string, currentConfig, desiredConfig string, status corev1.ConditionStatus) *corev1.Node {
-	nb := helpers.NewNodeBuilder(name)
-	nb.WithCurrentConfig(currentConfig)
-	nb.WithDesiredConfig(desiredConfig)
-	nb.WithStatus(corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: status}}})
-	return nb.Node()
-}
-
 func newNodeWithDaemonState(name string, currentConfig, desiredConfig, dstate string) *corev1.Node {
 	nb := helpers.NewNodeBuilder(name)
 	nb.WithConfigs(currentConfig, desiredConfig)
@@ -135,206 +117,6 @@ func newNodeWithReadyAndDaemonState(name string, currentConfig, desiredConfig st
 	nb.WithStatus(corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: status}}})
 	nb.WithMCDState(dstate)
 	return nb.Node()
-}
-
-func TestGetUpdatedMachines(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name          string
-		nodes         []*corev1.Node
-		currentConfig string
-		currentImage  string
-		updated       []*corev1.Node
-		layered       bool
-		mosc          *mcfgv1.MachineOSConfig
-		mosb          *mcfgv1.MachineOSBuild
-	}{{
-		name:          "no nodes",
-		nodes:         []*corev1.Node{},
-		currentConfig: machineConfigV1,
-		updated:       nil,
-	}, {
-		name: "1 node updated, 1 updating, 1 not acted upon",
-		nodes: []*corev1.Node{
-			newNode("node-0", machineConfigV0, machineConfigV0),
-			newNode("node-1", machineConfigV1, machineConfigV1),
-			newNode("node-2", machineConfigV0, machineConfigV1),
-		},
-		currentConfig: machineConfigV1,
-		updated:       []*corev1.Node{newNode("node-1", machineConfigV1, machineConfigV1)},
-	}, {
-		name: "2 node updated, 1 updating",
-		nodes: []*corev1.Node{
-			newNode("node-0", machineConfigV0, machineConfigV1),
-			newNode("node-1", machineConfigV1, machineConfigV1),
-			newNode("node-2", machineConfigV1, machineConfigV1),
-		},
-		currentConfig: machineConfigV1,
-		updated:       []*corev1.Node{newNode("node-1", machineConfigV1, machineConfigV1), newNode("node-2", machineConfigV1, machineConfigV1)},
-	}, {
-		name: "2 node updated, 1 updating, but one updated node is NotReady",
-		nodes: []*corev1.Node{
-			newNode("node-0", machineConfigV0, machineConfigV1),
-			newNode("node-1", machineConfigV1, machineConfigV1),
-			newNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
-		},
-		currentConfig: machineConfigV1,
-		updated:       []*corev1.Node{newNode("node-1", machineConfigV1, machineConfigV1), newNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionFalse)},
-	}, {
-		name: "1 layered node updated, 1 updating, 1 not acted upon",
-		nodes: []*corev1.Node{
-			newLayeredNode("node-0", machineConfigV0, machineConfigV0, imageV0, imageV0),
-			newLayeredNode("node-1", machineConfigV1, machineConfigV1, imageV1, imageV1),
-			newLayeredNode("node-2", machineConfigV0, machineConfigV1, imageV0, imageV1),
-		},
-		currentConfig: machineConfigV1,
-		currentImage:  imageV1,
-		updated: []*corev1.Node{
-			newLayeredNode("node-1", machineConfigV1, machineConfigV1, imageV1, imageV1),
-		},
-		layered: true,
-		mosc:    helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
-		mosb:    helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
-	}, {
-		name: "2 layered nodes updated, 1 updating MachineConfig",
-		nodes: []*corev1.Node{
-			newLayeredNode("node-0", machineConfigV0, machineConfigV1, imageV1, imageV1),
-			newLayeredNode("node-1", machineConfigV1, machineConfigV1, imageV1, imageV1),
-			newLayeredNode("node-2", machineConfigV1, machineConfigV1, imageV1, imageV1),
-		},
-		currentConfig: machineConfigV1,
-		currentImage:  imageV1,
-		updated: []*corev1.Node{
-			newLayeredNode("node-1", machineConfigV1, machineConfigV1, imageV1, imageV1),
-			newLayeredNode("node-2", machineConfigV1, machineConfigV1, imageV1, imageV1),
-		},
-		layered: true,
-		mosc:    helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
-		mosb:    helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
-	}, {
-		name: "2 layered nodes updated, 1 updating image",
-		nodes: []*corev1.Node{
-			newLayeredNode("node-0", machineConfigV1, machineConfigV1, imageV0, imageV1),
-			newLayeredNode("node-1", machineConfigV1, machineConfigV1, imageV1, imageV1),
-			newLayeredNode("node-2", machineConfigV1, machineConfigV1, imageV1, imageV1),
-		},
-		currentConfig: machineConfigV1,
-		currentImage:  imageV1,
-		updated: []*corev1.Node{
-			newLayeredNode("node-1", machineConfigV1, machineConfigV1, imageV1, imageV1),
-			newLayeredNode("node-2", machineConfigV1, machineConfigV1, imageV1, imageV1),
-		},
-		layered: true,
-		mosc:    helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
-		mosb:    helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
-	}, {
-		name: "2 layered nodes updated, 1 updating, but one updated node is NotReady",
-		nodes: []*corev1.Node{
-			newLayeredNode("node-0", machineConfigV0, machineConfigV1, imageV0, imageV1),
-			newLayeredNode("node-1", machineConfigV1, machineConfigV1, imageV1, imageV1),
-			newLayeredNodeWithReady("node-2", machineConfigV1, machineConfigV1, imageV1, imageV1, corev1.ConditionFalse),
-		},
-		currentConfig: machineConfigV1,
-		currentImage:  imageV1,
-		updated: []*corev1.Node{
-			newLayeredNode("node-1", machineConfigV1, machineConfigV1, imageV1, imageV1),
-			newLayeredNodeWithReady("node-2", machineConfigV1, machineConfigV1, imageV1, imageV1, corev1.ConditionFalse),
-		},
-		layered: true,
-		mosc:    helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
-		mosb:    helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
-	}, {
-		name: "Layered pool with unlayered nodes",
-		nodes: []*corev1.Node{
-			newLayeredNode("node-0", machineConfigV1, machineConfigV1, imageV1, imageV1),
-			newLayeredNode("node-1", machineConfigV1, machineConfigV1, imageV1, imageV1),
-			newLayeredNodeWithReady("node-2", machineConfigV1, machineConfigV1, imageV1, imageV1, corev1.ConditionTrue),
-			newNode("node-3", machineConfigV0, machineConfigV0),
-		},
-		currentConfig: machineConfigV1,
-		currentImage:  imageV1,
-		updated: []*corev1.Node{
-			newLayeredNode("node-0", machineConfigV1, machineConfigV1, imageV1, imageV1),
-			newLayeredNode("node-1", machineConfigV1, machineConfigV1, imageV1, imageV1),
-			newLayeredNodeWithReady("node-2", machineConfigV1, machineConfigV1, imageV1, imageV1, corev1.ConditionTrue),
-		},
-		layered: true,
-		mosc:    helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
-		mosb:    helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
-	}, {
-		name: "Layered pool with image not built",
-		nodes: []*corev1.Node{
-			newNode("node-0", machineConfigV1, machineConfigV1),
-			newNode("node-1", machineConfigV1, machineConfigV1),
-			newNode("node-2", machineConfigV1, machineConfigV1),
-		},
-		currentConfig: machineConfigV1,
-		updated:       nil,
-		layered:       true,
-		mosc:          helpers.NewMachineOSConfigBuilder("mosc-1").WithMachineConfigPool("pool-1").MachineOSConfig(),
-		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
-	}, {
-		name: "Unlayered pool with 1 layered node",
-		nodes: []*corev1.Node{
-			newNode("node-0", machineConfigV1, machineConfigV1),
-			newNode("node-1", machineConfigV1, machineConfigV1),
-			newNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
-			newLayeredNode("node-3", machineConfigV0, machineConfigV0, imageV1, imageV1),
-		},
-		currentConfig: machineConfigV1,
-		updated: []*corev1.Node{
-			newNode("node-0", machineConfigV1, machineConfigV1),
-			newNode("node-1", machineConfigV1, machineConfigV1),
-			newNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
-		},
-	}, {
-		name: "Pool with image mode disabling, one node updating, 2 nodes not not acted upon",
-		nodes: []*corev1.Node{
-			newLayeredNode("node-0", machineConfigV0, machineConfigV0, imageV1, ""),
-			newLayeredNode("node-1", machineConfigV0, machineConfigV0, imageV1, imageV1),
-			newLayeredNode("node-2", machineConfigV0, machineConfigV0, imageV1, imageV1),
-		},
-		currentConfig: machineConfigV0,
-		updated:       nil,
-		layered:       false,
-	}, {
-		name: "Pool with image mode disabling, one node updated, 1 node updating, 1 node not acted upon",
-		nodes: []*corev1.Node{
-			newNode("node-0", machineConfigV0, machineConfigV0),
-			newLayeredNode("node-1", machineConfigV0, machineConfigV0, imageV1, ""),
-			newLayeredNode("node-2", machineConfigV0, machineConfigV0, imageV1, imageV1),
-		},
-		currentConfig: machineConfigV0,
-		updated: []*corev1.Node{
-			newNode("node-0", machineConfigV0, machineConfigV0),
-		},
-		layered: false,
-	},
-	}
-
-	for _, test := range tests {
-		test := test
-
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-
-			pool := helpers.NewMachineConfigPoolBuilder("pool-1").WithMachineConfig(test.currentConfig).MachineConfigPool()
-
-			updated := ctrlcommon.GetUpdatedMachines(pool, test.nodes, test.mosc, test.mosb, test.layered)
-			assertExpectedNodes(t, getNamesFromNodes(test.updated), updated)
-
-			// This is a much tighter assertion than the one I added. Not sure if
-			// it's strictly required or not, so I'll leave it for now.
-
-			if !reflect.DeepEqual(updated, test.updated) {
-				t.Fatalf("mismatch expected: %v got %v", test.updated, updated)
-			}
-
-			if t.Failed() {
-				helpers.DumpNodesAndPools(t, test.nodes, []*mcfgv1.MachineConfigPool{pool})
-			}
-		})
-	}
 }
 
 func TestGetReadyMachines(t *testing.T) {
@@ -356,36 +138,36 @@ func TestGetReadyMachines(t *testing.T) {
 	}, {
 		name: "1 node updated, 1 updating, 1 not acted upon",
 		nodes: []*corev1.Node{
-			newNodeWithReady("node-0", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
-			newNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
-			newNodeWithReady("node-2", machineConfigV0, machineConfigV1, corev1.ConditionFalse),
+			helpers.NewNodeWithReady("node-0", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV1, corev1.ConditionFalse),
 		},
 		currentConfig: machineConfigV1,
-		ready:         []*corev1.Node{newNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue)},
+		ready:         []*corev1.Node{helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue)},
 	}, {
 		name: "2 node updated, 1 updating",
 		nodes: []*corev1.Node{
-			newNodeWithReady("node-0", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
-			newNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
-			newNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
+			helpers.NewNodeWithReady("node-0", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
 		},
 		currentConfig: machineConfigV1,
-		ready:         []*corev1.Node{newNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue)},
+		ready:         []*corev1.Node{helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue)},
 	}, {
 		name: "2 node updated, 1 updating",
 		nodes: []*corev1.Node{
-			newNodeWithReady("node-0", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
-			newNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
-			newNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-0", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
 		},
 		currentConfig: machineConfigV1,
-		ready:         []*corev1.Node{newNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue), newNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionTrue)},
+		ready:         []*corev1.Node{helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue), helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionTrue)},
 	}, {
 		name: "2 node updated, 1 updating, but one updated node is NotReady",
 		nodes: []*corev1.Node{
 			newNode("node-0", machineConfigV0, machineConfigV1),
 			newNode("node-1", machineConfigV1, machineConfigV1),
-			newNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
+			helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
 		},
 		currentConfig: machineConfigV1,
 		ready:         []*corev1.Node{newNode("node-1", machineConfigV1, machineConfigV1)},
@@ -394,7 +176,7 @@ func TestGetReadyMachines(t *testing.T) {
 		nodes: []*corev1.Node{
 			newLayeredNode("node-0", machineConfigV0, machineConfigV1, imageV0, imageV1),
 			newLayeredNode("node-1", machineConfigV1, machineConfigV1, imageV1, imageV1),
-			newLayeredNodeWithReady("node-2", machineConfigV1, machineConfigV1, imageV1, imageV1, corev1.ConditionFalse),
+			helpers.NewLayeredNodeWithReady("node-2", machineConfigV1, machineConfigV1, imageV1, imageV1, corev1.ConditionFalse),
 		},
 		currentConfig: machineConfigV1,
 		currentImage:  imageV1,
@@ -472,45 +254,45 @@ func TestGetUnavailableMachines(t *testing.T) {
 	}{{
 		name:    "no nodes",
 		nodes:   []*corev1.Node{},
-		unavail: nil,
+		unavail: []string{},
 	}, {
 		name: "1 in progress",
 		nodes: []*corev1.Node{
-			newNodeWithReady("node-0", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
-			newNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
-			newNodeWithReady("node-2", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-0", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
 		},
 		unavail: []string{"node-2"},
 	}, {
 		name: "1 unavail, 1 in progress",
 		nodes: []*corev1.Node{
-			newNodeWithReady("node-0", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
-			newNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
-			newNodeWithReady("node-2", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-0", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
+			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
 		},
 		unavail: []string{"node-1", "node-2"},
 	}, {
 		name: "1 node updated, 1 updating, 1 updating but not v2 and is ready",
 		nodes: []*corev1.Node{
-			newNodeWithReady("node-0", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
-			newNodeWithReady("node-1", machineConfigV2, machineConfigV2, corev1.ConditionTrue),
-			newNodeWithReady("node-2", machineConfigV0, machineConfigV2, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-0", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-1", machineConfigV2, machineConfigV2, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV2, corev1.ConditionTrue),
 		},
 		unavail: []string{"node-0", "node-2"},
 	}, {
 		name: "1 node updated, 1 updating, 1 updating but not v2 and is not ready",
 		nodes: []*corev1.Node{
-			newNodeWithReady("node-0", machineConfigV0, machineConfigV1, corev1.ConditionFalse),
-			newNodeWithReady("node-1", machineConfigV2, machineConfigV2, corev1.ConditionTrue),
-			newNodeWithReady("node-2", machineConfigV0, machineConfigV2, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-0", machineConfigV0, machineConfigV1, corev1.ConditionFalse),
+			helpers.NewNodeWithReady("node-1", machineConfigV2, machineConfigV2, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV2, corev1.ConditionTrue),
 		},
 		unavail: []string{"node-0", "node-2"},
 	}, {
 		name: "2 node updated, 1 updating",
 		nodes: []*corev1.Node{
-			newNodeWithReady("node-0", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
-			newNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
-			newNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
+			helpers.NewNodeWithReady("node-0", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
 		},
 		unavail: []string{"node-0", "node-2"},
 	}, {
@@ -518,7 +300,7 @@ func TestGetUnavailableMachines(t *testing.T) {
 		nodes: []*corev1.Node{
 			newNode("node-0", machineConfigV0, machineConfigV1),
 			newNode("node-1", machineConfigV1, machineConfigV1),
-			newNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
+			helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
 		},
 		unavail: []string{"node-0", "node-2"},
 	}, {
@@ -526,7 +308,7 @@ func TestGetUnavailableMachines(t *testing.T) {
 		nodes: []*corev1.Node{
 			newNode("node-0", machineConfigV0, machineConfigV1),
 			newNode("node-1", machineConfigV1, machineConfigV1),
-			newNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
+			helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
 		},
 		unavail: []string{"node-0", "node-2"},
 	}, {
@@ -645,7 +427,7 @@ func TestGetUnavailableMachines(t *testing.T) {
 
 func assertExpectedNodes(t *testing.T, expected []string, actual []*corev1.Node) {
 	t.Helper()
-	assert.Equal(t, expected, getNamesFromNodes(actual))
+	assert.Equal(t, expected, helpers.GetNamesFromNodes(actual))
 }
 
 func TestCalculateStatus(t *testing.T) {
@@ -658,9 +440,9 @@ func TestCalculateStatus(t *testing.T) {
 		verify func(mcfgv1.MachineConfigPoolStatus, *testing.T)
 	}{{
 		nodes: []*corev1.Node{
-			newNodeWithReady("node-0", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
-			newNodeWithReady("node-1", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
-			newNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-0", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-1", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
 		},
 		currentConfig: machineConfigV1,
 		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
@@ -700,9 +482,9 @@ func TestCalculateStatus(t *testing.T) {
 		},
 	}, {
 		nodes: []*corev1.Node{
-			newNodeWithReady("node-0", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
-			newNodeWithReady("node-1", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
-			newNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-0", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-1", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
 		},
 		currentConfig: machineConfigV1,
 		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
@@ -742,9 +524,9 @@ func TestCalculateStatus(t *testing.T) {
 		},
 	}, {
 		nodes: []*corev1.Node{
-			newNodeWithReady("node-0", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
-			newNodeWithReady("node-1", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
-			newNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-0", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-1", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
 		},
 		currentConfig: machineConfigV1,
 		paused:        true,
@@ -767,9 +549,9 @@ func TestCalculateStatus(t *testing.T) {
 		},
 	}, {
 		nodes: []*corev1.Node{
-			newNodeWithReady("node-0", machineConfigV0, machineConfigV1, corev1.ConditionFalse),
-			newNodeWithReady("node-1", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
-			newNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-0", machineConfigV0, machineConfigV1, corev1.ConditionFalse),
+			helpers.NewNodeWithReady("node-1", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
 		},
 		currentConfig: machineConfigV1,
 		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
@@ -810,8 +592,8 @@ func TestCalculateStatus(t *testing.T) {
 	}, {
 		nodes: []*corev1.Node{
 			newNodeWithReadyAndDaemonState("node-0", machineConfigV0, machineConfigV1, corev1.ConditionFalse, daemonconsts.MachineConfigDaemonStateDegraded),
-			newNodeWithReady("node-1", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
-			newNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-1", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
 		},
 		currentConfig: machineConfigV1,
 		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
@@ -851,9 +633,9 @@ func TestCalculateStatus(t *testing.T) {
 		},
 	}, {
 		nodes: []*corev1.Node{
-			newNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
-			newNodeWithReady("node-1", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
-			newNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
+			helpers.NewNodeWithReady("node-1", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
 		},
 		currentConfig: machineConfigV1,
 		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
@@ -893,9 +675,9 @@ func TestCalculateStatus(t *testing.T) {
 		},
 	}, {
 		nodes: []*corev1.Node{
-			newNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
-			newNodeWithReady("node-1", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
-			newNodeWithReady("node-2", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-1", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
 		},
 		currentConfig: machineConfigV1,
 		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
@@ -935,9 +717,9 @@ func TestCalculateStatus(t *testing.T) {
 		},
 	}, {
 		nodes: []*corev1.Node{
-			newNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
-			newNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
-			newNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
 		},
 		currentConfig: machineConfigV1,
 		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
