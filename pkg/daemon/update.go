@@ -1863,27 +1863,30 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) e
 		newFileSet[f.Path] = struct{}{}
 	}
 
-	// need to skip these on upgrade if they are in a MC, or else we will remove all certs!
-	certsToSkip := []string{
+	// need to skip these on upgrade if they are in a MC,
+	// or else we will remove all certs!
+	// also required to ensure that clusters with node sizing disabled are not affected
+	filesToSkip := []string{
 		userCABundleFilePath,
 		caBundleFilePath,
 		cloudCABundleFilePath,
+		"/etc/node-sizing-enabled.env",
 	}
 	for _, f := range oldIgnConfig.Storage.Files {
 		if _, ok := newFileSet[f.Path]; ok {
 			continue
 		}
-		skipBecauseCert := false
-		for _, cert := range certsToSkip {
-			if cert == f.Path {
-				skipBecauseCert = true
+		mustSkip := false
+		for _, fileToSkip := range filesToSkip {
+			if fileToSkip == f.Path {
+				mustSkip = true
 				break
 			}
 		}
 		if strings.Contains(filepath.Dir(f.Path), imageCAFilePath) {
-			skipBecauseCert = true
+			mustSkip = true
 		}
-		if skipBecauseCert {
+		if mustSkip {
 			continue
 		}
 		if _, err := os.Stat(noOrigFileStampName(f.Path)); err == nil {
