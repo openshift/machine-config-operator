@@ -226,18 +226,11 @@ func (b *Bootstrap) Run(destDir string) error {
 	klog.Infof("Successfully generated MachineConfigs from node.Configs.")
 
 	if len(kconfigs) > 0 {
-		klog.Infof("Bootstrap: found %d KubeletConfig(s) in manifests, processing...", len(kconfigs))
-		for i, kc := range kconfigs {
-			klog.Infof("Bootstrap: KubeletConfig[%d]: name=%s, autoSizingReserved=%v", i, kc.Name, kc.Spec.AutoSizingReserved)
-		}
 		kconfigs, err := kubeletconfig.RunKubeletBootstrap(b.templatesDir, kconfigs, cconfig, fgHandler, nodeConfig, pools, apiServer)
 		if err != nil {
 			return err
 		}
 		configs = append(configs, kconfigs...)
-		klog.Infof("Bootstrap: successfully generated %d MachineConfig(s) from KubeletConfigs", len(kconfigs))
-	} else {
-		klog.Infof("Bootstrap: no KubeletConfigs found in manifests, skipping kubelet config bootstrap")
 	}
 	klog.Infof("Successfully generated MachineConfigs from kubelet configs.")
 
