@@ -1313,15 +1313,19 @@ func IsMachineUpdatedMCN(mcn *mcfgv1.MachineConfigNode, mcp *mcfgv1.MachineConfi
 	if mcn == nil || mcp == nil {
 		return false
 	}
-	if layered {
-		if mosc == nil || mosb == nil {
-			return false
-		}
-		moscs := NewMachineOSConfigState(mosc)
-		//nolint:gocritic // (ijanssen) - the linter thinks the MCN config version and MOSB spec check is suspicious check, but it's needed :)
-		return mcn.Status.ConfigVersion.Desired == mcp.Spec.Configuration.Name &&
-			mcn.Status.ConfigVersion.Desired == mosb.Spec.MachineConfig.Name &&
-			moscs.HasOSImage() && string(mcn.Status.ConfigImage.DesiredImage) == moscs.GetOSImage()
+
+	// Handle the non-layered pool case.
+	if !layered {
+		return mcn.Status.ConfigVersion.Desired == mcp.Spec.Configuration.Name && mcn.Status.ConfigImage.DesiredImage == ""
 	}
-	return mcn.Status.ConfigVersion.Desired == mcp.Spec.Configuration.Name && mcn.Status.ConfigImage.DesiredImage == ""
+
+	// Handle the layered pool case.
+	if mosc == nil || mosb == nil {
+		return false
+	}
+	moscs := NewMachineOSConfigState(mosc)
+	//nolint:gocritic // (ijanssen) - the linter thinks the MCN config version and MOSB spec check is suspicious check, but it's needed :)
+	return mcn.Status.ConfigVersion.Desired == mcp.Spec.Configuration.Name &&
+		mcn.Status.ConfigVersion.Desired == mosb.Spec.MachineConfig.Name &&
+		moscs.HasOSImage() && string(mcn.Status.ConfigImage.DesiredImage) == moscs.GetOSImage()
 }
