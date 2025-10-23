@@ -63,4 +63,29 @@ spec:
   - name: health
     port: 8798
     protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: machine-config-server
+  namespace: openshift-machine-config-operator
+  labels:
+    k8s-app: machine-config-server
+  annotations:
+    include.release.openshift.io/ibm-cloud-managed: "true"
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+spec:
+  type: ClusterIP
+  selector:
+    k8s-app: machine-config-server
+  ports:
+  - name: https
+    port: 22623
+    targetPort: 22623
+    protocol: TCP
+  - name: http
+    port: 22624
+    targetPort: 22624
+    protocol: TCP
 
