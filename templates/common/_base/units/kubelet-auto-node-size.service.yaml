@@ -11,8 +11,7 @@ contents: |
   # Need oneshot to delay kubelet
   Type=oneshot
   RemainAfterExit=yes
-  EnvironmentFile=/etc/auto-node-sizing-enabled.env
-  EnvironmentFile=-/etc/node-sizing-enabled.env
-  ExecStart=/bin/bash /usr/local/sbin/dynamic-system-reserved-calc.sh ${NODE_SIZING_ENABLED} ${SYSTEM_RESERVED_MEMORY} ${SYSTEM_RESERVED_CPU} ${SYSTEM_RESERVED_ES}
+  EnvironmentFile=/etc/node-sizing-enabled.env
+  ExecStart=/bin/bash /usr/local/sbin/dynamic-system-reserved-calc.sh ${NODE_SIZING_ENABLED} ${SYSTEM_RESERVED_MEMORY} ${SYSTEM_RESERVED_CPU} ${SYSTEM_RESERVED_ES} ${NODE_SIZING_USER_VAL}
   [Install]
   RequiredBy=kubelet-dependencies.target
