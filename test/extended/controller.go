@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended/util"
 	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
 )
@@ -45,6 +46,36 @@ func (mcc *Controller) GetPodName() (string, error) {
 	}
 	mcc.podName = podName
 	return podName, nil
+}
+
+// IgnoreLogsBeforeNow when it is called all logs generated before calling it will be ignored by "GetLogs"
+func (mcc *Controller) IgnoreLogsBeforeNow() error {
+	mcc.logsCheckPoint = ""
+	logsUptoNow, err := mcc.GetLogs()
+	if err != nil {
+		return err
+	}
+	mcc.logsCheckPoint = logsUptoNow
+
+	return nil
+}
+
+// IgnoreLogsBeforeNowOrFail  when it is called all logs generated before calling it will be ignored by "GetLogs", if this method fails, the test is failed
+func (mcc *Controller) IgnoreLogsBeforeNowOrFail() *Controller {
+	err := mcc.IgnoreLogsBeforeNow()
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error trying to ignore old logs in the MachineConfigController pod")
+
+	return mcc
+}
+
+// StopIgnoringLogs when it is called "IgnoreLogsBeforeNow" effect will not be taken into account anymore, and "GetLogs" will return full logs in MCO controller
+func (mcc *Controller) StopIgnoringLogs() {
+	mcc.logsCheckPoint = ""
+}
+
+// GetIgnoredLogs returns the logs that will be ignored after calling "IgnoreLogsBeforeNow"
+func (mcc Controller) GetIgnoredLogs() string {
+	return mcc.logsCheckPoint
 }
 
 // GetLogs returns the MCO controller logs. Logs generated before calling the function "IgnoreLogsBeforeNow" will not be returned
