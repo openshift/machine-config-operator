@@ -4,8 +4,6 @@ enabled: false
 contents: |
   [Unit]
   Description=Populates resolv.conf according to on-prem IPI needs
-  # Per https://issues.redhat.com/browse/OCPBUGS-27162 there is a problem if this is started before crio-wipe
-  After=crio-wipe.service
   StartLimitIntervalSec=0
   [Service]
   Type=oneshot
