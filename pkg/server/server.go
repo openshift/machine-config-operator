@@ -50,7 +50,7 @@ func getAppenders(currMachineConfig string, version *semver.Version, f kubeconfi
 	appenders := []appenderFunc{
 		// append machine annotations file.
 		func(cfg *ign3types.Config, _ *mcfgv1.MachineConfig) error {
-			return appendNodeAnnotations(cfg, currMachineConfig)
+			return appendNodeAnnotations(cfg, currMachineConfig, "")
 		},
 		// append kubeconfig.
 		func(cfg *ign3types.Config, _ *mcfgv1.MachineConfig) error { return appendKubeConfig(cfg, f) },
@@ -153,8 +153,8 @@ func appendKubeConfig(conf *ign3types.Config, f kubeconfigFunc) error {
 	return nil
 }
 
-func appendNodeAnnotations(conf *ign3types.Config, currConf string) error {
-	anno, err := getNodeAnnotation(currConf)
+func appendNodeAnnotations(conf *ign3types.Config, currConf, image string) error {
+	anno, err := getNodeAnnotation(currConf, image)
 	if err != nil {
 		return err
 	}
@@ -165,11 +165,16 @@ func appendNodeAnnotations(conf *ign3types.Config, currConf string) error {
 	return nil
 }
 
-func getNodeAnnotation(conf string) (string, error) {
+func getNodeAnnotation(conf, image string) (string, error) {
 	nodeAnnotations := map[string]string{
 		daemonconsts.CurrentMachineConfigAnnotationKey:     conf,
 		daemonconsts.DesiredMachineConfigAnnotationKey:     conf,
 		daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateDone,
+	}
+	// If image is provided, include image annotations
+	if image != "" {
+		nodeAnnotations[daemonconsts.CurrentImageAnnotationKey] = image
+		nodeAnnotations[daemonconsts.DesiredImageAnnotationKey] = image
 	}
 	contents, err := json.Marshal(nodeAnnotations)
 	if err != nil {

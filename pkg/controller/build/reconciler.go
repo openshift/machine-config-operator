@@ -999,7 +999,7 @@ func (b *buildReconciler) deleteMOSBImage(ctx context.Context, mosb *mcfgv1.Mach
 	}
 
 	image := string(mosb.Spec.RenderedImagePushSpec)
-	isOpenShiftRegistry, err := b.isOpenShiftRegistry(image)
+	isOpenShiftRegistry, err := ctrlcommon.IsOpenShiftRegistry(ctx, image, b.kubeclient, b.routeclient)
 	if err != nil {
 		return err
 	}
@@ -1037,53 +1037,6 @@ func (b *buildReconciler) deleteMOSBImage(ctx context.Context, mosb *mcfgv1.Mach
 	}
 
 	return nil
-}
-
-// getInternalRegistryHostnames discovers OpenShift internal registry hostnames
-func (b *buildReconciler) getInternalRegistryHostnames(ctx context.Context) ([]string, error) {
-	var hostnames []string
-
-	// Get the list of services in the openshift-image-registry namespace (cluster-local)
-	services, err := b.kubeclient.CoreV1().Services("openshift-image-registry").List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-	for _, svc := range services.Items {
-		clusterHostname := fmt.Sprintf("%s.%s.svc", svc.Name, svc.Namespace)
-		if len(svc.Spec.Ports) > 0 {
-			port := svc.Spec.Ports[0].Port
-			hostnames = append(hostnames, fmt.Sprintf("%s:%d", clusterHostname, port))
-		} else {
-			hostnames = append(hostnames, clusterHostname)
-		}
-	}
-
-	// Get the list of routes in the openshift-image-registry namespace (external access)
-	routes, err := b.routeclient.RouteV1().Routes("openshift-image-registry").List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-	for _, route := range routes.Items {
-		if route.Spec.Host != "" {
-			hostnames = append(hostnames, route.Spec.Host)
-		}
-	}
-
-	return hostnames, nil
-}
-
-// isOpenShiftRegistry checks if the imageRef points to one of the known internal hostnames
-func (b *buildReconciler) isOpenShiftRegistry(imageRef string) (bool, error) {
-	registryHosts, err := b.getInternalRegistryHostnames(context.TODO())
-	if err != nil {
-		return false, err
-	}
-	for _, host := range registryHosts {
-		if strings.HasPrefix(imageRef, host) {
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 // Finds and deletes any other running builds for a given MachineOSConfig.
