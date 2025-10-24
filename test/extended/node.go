@@ -1,16 +1,21 @@
 package extended
 
 import (
+	"context"
 	"fmt"
+	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
+	expect "github.com/google/goexpect"
 	exutil "github.com/openshift/machine-config-operator/test/extended/util"
 	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
 
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	o "github.com/onsi/gomega"
 )
@@ -120,7 +125,7 @@ func (n *Node) GetUnitProperties(unitName string, args ...string) (string, error
 }
 
 // GetRpmOstreeStatus returns the rpm-ostree status in json format
-func (n Node) GetRpmOstreeStatus(asJSON bool) (string, error) {
+func (n *Node) GetRpmOstreeStatus(asJSON bool) (string, error) {
 	args := []string{"rpm-ostree", "status"}
 	if asJSON {
 		args = append(args, "--json")
@@ -131,7 +136,7 @@ func (n Node) GetRpmOstreeStatus(asJSON bool) (string, error) {
 }
 
 // GetBootedOsTreeDeployment returns the ostree deployment currently booted. In json format
-func (n Node) GetBootedOsTreeDeployment(asJSON bool) (string, error) {
+func (n *Node) GetBootedOsTreeDeployment(asJSON bool) (string, error) {
 	if asJSON {
 		stringStatus, err := n.GetRpmOstreeStatus(true)
 		if err != nil {
@@ -165,7 +170,7 @@ func (n Node) GetBootedOsTreeDeployment(asJSON bool) (string, error) {
 }
 
 // GetCurrentBootOSImage returns the osImage currently used to boot the node
-func (n Node) GetCurrentBootOSImage() (string, error) {
+func (n *Node) GetCurrentBootOSImage() (string, error) {
 	deployment, err := n.GetBootedOsTreeDeployment(true)
 	if err != nil {
 		return "", fmt.Errorf("Error getting the rpm-ostree status value.\n%s", err)
@@ -221,22 +226,22 @@ func (n *Node) RestoreDesiredConfig() error {
 }
 
 // GetCurrentMachineConfig returns the ID of the current machine config used in the node
-func (n Node) GetCurrentMachineConfig() string {
+func (n *Node) GetCurrentMachineConfig() string {
 	return n.GetOrFail(`{.metadata.annotations.machineconfiguration\.openshift\.io/currentConfig}`)
 }
 
 // GetCurrentImage returns the current image used in this node
-func (n Node) GetCurrentImage() string {
+func (n *Node) GetCurrentImage() string {
 	return n.GetOrFail(`{.metadata.annotations.machineconfiguration\.openshift\.io/currentImage}`)
 }
 
 // GetDesiredMachineConfig returns the ID of the machine config that we want the node to use
-func (n Node) GetDesiredMachineConfig() string {
+func (n *Node) GetDesiredMachineConfig() string {
 	return n.GetOrFail(`{.metadata.annotations.machineconfiguration\.openshift\.io/desiredConfig}`)
 }
 
 // GetMachineConfigState returns the State of machineconfiguration process
-func (n Node) GetMachineConfigState() string {
+func (n *Node) GetMachineConfigState() string {
 	return n.GetOrFail(`{.metadata.annotations.machineconfiguration\.openshift\.io/state}`)
 }
 
@@ -251,23 +256,28 @@ func (n *Node) PatchDesiredConfigAndDesiredImage(desiredConfig, desiredImage str
 }
 
 // GetDesiredDrain returns the last desired machine config that needed a drain operation in this node
-func (n Node) GetDesiredDrain() string {
+func (n *Node) GetDesiredDrain() string {
 	return n.GetOrFail(`{.metadata.annotations.machineconfiguration\.openshift\.io/desiredDrain}`)
 }
 
 // GetLastAppliedDrain returns the last applied drain in this node
-func (n Node) GetLastAppliedDrain() string {
+func (n *Node) GetLastAppliedDrain() string {
 	return n.GetOrFail(`{.metadata.annotations.machineconfiguration\.openshift\.io/lastAppliedDrain}`)
 }
 
 // HasBeenDrained returns a true if the desired and the last applied drain annotations have the same value
-func (n Node) HasBeenDrained() bool {
+func (n *Node) HasBeenDrained() bool {
 	return n.GetLastAppliedDrain() == n.GetDesiredDrain()
 }
 
 // IsUpdated returns if the node is pending for machineconfig configuration or it is up to date
 func (n *Node) IsUpdated() bool {
 	return (n.GetCurrentMachineConfig() == n.GetDesiredMachineConfig()) && (n.GetMachineConfigState() == "Done")
+}
+
+// IsReady returns if the node is in Ready condition
+func (n *Node) IsReady() bool {
+	return n.IsConditionStatusTrue("Ready")
 }
 
 // IsTainted returns if the node hast taints or not
@@ -308,7 +318,7 @@ func (n *Node) IsEdge() (bool, error) {
 }
 
 // GetMCDaemonLogs returns the logs of the MachineConfig daemonset pod for this node. The logs will be grepped using the 'filter' parameter
-func (n Node) GetMCDaemonLogs(filter string) (string, error) {
+func (n *Node) GetMCDaemonLogs(filter string) (string, error) {
 	var (
 		mcdLogs = ""
 		err     error
@@ -319,6 +329,26 @@ func (n Node) GetMCDaemonLogs(filter string) (string, error) {
 	})
 
 	return mcdLogs, err
+}
+
+// CopyFromLocal copies a local file to the node
+func (n *Node) CopyFromLocal(from, to string) error {
+	immediate := true
+	waitErr := wait.PollUntilContextTimeout(context.TODO(), 1*time.Minute, 5*time.Minute, immediate, func(_ context.Context) (bool, error) {
+		kubeletReady := n.IsReady()
+		if kubeletReady {
+			return true, nil
+		}
+		logger.Warnf("Kubelet is not ready in %s. To copy the file to the node we need to wait for kubelet to be ready. Waiting...", n)
+		return false, nil
+	})
+
+	if waitErr != nil {
+		logger.Errorf("Cannot copy file %s to %s in node %s because Kubelet is not ready in this node", from, to, n)
+		return waitErr
+	}
+
+	return n.oc.Run("adm").Args("copy-to-node", "node/"+n.GetName(), fmt.Sprintf("--copy=%s=%s", from, to)).Execute()
 }
 
 // CopyToLocal Copy a file or directory in the node to a local path
@@ -446,4 +476,170 @@ func getReadyNodes(oc *exutil.CLI) (sets.Set[string], error) {
 		node.oc.SetShowInfo()
 	}
 	return nodeSet, nil
+}
+
+// GetDateOrFail executes GetDate and fails the test if there is an error
+func (n *Node) GetDateOrFail() time.Time {
+	date, err := n.GetDate()
+	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Could not get the current date in %s", n)
+
+	return date
+}
+
+// GetDate executes `date`command and returns the current time in the node
+func (n *Node) GetDate() (time.Time, error) {
+
+	date, _, err := n.DebugNodeWithChrootStd(`date`, `+%Y-%m-%dT%H:%M:%SZ`)
+
+	logger.Infof("node %s. DATE: %s", n.GetName(), date)
+	if err != nil {
+		logger.Errorf("Error trying to get date in node %s: %s", n.GetName(), err)
+		return time.Time{}, err
+	}
+	layout := "2006-01-02T15:04:05Z"
+	returnTime, perr := time.Parse(layout, date)
+	if perr != nil {
+		logger.Errorf("Error trying to parsing date %s in node %s: %s", date, n.GetName(), perr)
+		return time.Time{}, perr
+	}
+
+	return returnTime, nil
+}
+
+// GetUptime executes `uptime -s` command and returns the time when the node was booted
+func (n *Node) GetUptime() (time.Time, error) {
+
+	uptime, _, err := n.DebugNodeWithChrootStd(`uptime`, `-s`)
+
+	logger.Infof("node %s. UPTIME: %s", n.GetName(), uptime)
+	if err != nil {
+		logger.Errorf("Error trying to get uptime in node %s: %s", n.GetName(), err)
+		return time.Time{}, err
+	}
+	layout := "2006-01-02 15:04:05"
+	returnTime, perr := time.Parse(layout, uptime)
+	if perr != nil {
+		logger.Errorf("Error trying to parsing uptime %s in node %s: %s", uptime, n.GetName(), perr)
+		return time.Time{}, perr
+	}
+
+	return returnTime, nil
+}
+
+// GetEventsByReasonSince returns a list of all the events with the given reason that are related to this node since the provided date
+func (n *Node) GetEventsByReasonSince(since time.Time, reason string) ([]Event, error) {
+	eventList := NewEventList(n.oc, MachineConfigNamespace)
+	eventList.ByFieldSelector(`reason=` + reason + `,involvedObject.name=` + n.GetName())
+
+	return eventList.GetAllSince(since)
+}
+
+// GetAllEventsSince returns a list of all the events related to this node since the provided date
+func (n *Node) GetAllEventsSince(since time.Time) ([]Event, error) {
+	eventList := NewEventList(n.oc, MachineConfigNamespace)
+	eventList.ByFieldSelector(`involvedObject.name=` + n.GetName())
+
+	return eventList.GetAllSince(since)
+}
+
+// GetAllEventsSinceEvent returns a list of all the events related to this node that occurred after the provided event
+func (n *Node) GetAllEventsSinceEvent(since *Event) ([]Event, error) {
+	eventList := NewEventList(n.oc, MachineConfigNamespace)
+	eventList.ByFieldSelector(`involvedObject.name=` + n.GetName())
+
+	return eventList.GetAllEventsSinceEvent(since)
+}
+
+// GetLatestEvent returns the latest event occurred in the node
+func (n *Node) GetLatestEvent() (*Event, error) {
+	eventList := NewEventList(n.oc, MachineConfigNamespace)
+	eventList.ByFieldSelector(`involvedObject.name=` + n.GetName())
+
+	return eventList.GetLatest()
+}
+
+// GetEvents retunrs all the events that happened in this node since IgnoreEventsBeforeNow() method was called.
+//
+//	If IgnoreEventsBeforeNow() is not called, it returns all existing events for this node.
+func (n *Node) GetEvents() ([]Event, error) {
+	return n.GetAllEventsSince(n.eventCheckpoint)
+}
+
+// IgnoreEventsBeforeNow sets the event checkpoint to the latest event, so GetEvents will only return events after this point
+func (n *Node) IgnoreEventsBeforeNow() error {
+	var err error
+	latestEvent, lerr := n.GetLatestEvent()
+	if lerr != nil {
+		return lerr
+	}
+
+	logger.Infof("Latest event in node %s was: %s", n.GetName(), latestEvent)
+
+	if latestEvent == nil {
+		logger.Infof("Since no event was found for node %s, we will not ignore any event", n.GetName())
+		n.eventCheckpoint = time.Time{}
+		return nil
+	}
+
+	logger.Infof("Ignoring all previous events!")
+	n.eventCheckpoint, err = latestEvent.GetLastTimestamp()
+	return err
+}
+
+// ExecuteDebugExpectBatch executes an interactive expect session in a debug pod for this node
+func (n *Node) ExecuteDebugExpectBatch(timeout time.Duration, batch []expect.Batcher) ([]expect.BatchRes, error) {
+	debug := false
+	if _, enabled := os.LookupEnv(logger.EnableDebugLog); enabled {
+		debug = true
+	}
+
+	setErr := quietSetNamespacePrivileged(n.oc, n.oc.Namespace())
+	if setErr != nil {
+		return nil, setErr
+	}
+
+	debugCommand := fmt.Sprintf("oc --kubeconfig=%s -n %s debug node/%s",
+		exutil.KubeConfigPath(), n.oc.Namespace(), n.GetName())
+
+	logger.Infof("Expect spawning command: %s", debugCommand)
+	e, _, err := expect.Spawn(debugCommand, -1, expect.Verbose(debug))
+	defer func() { _ = e.Close() }()
+	if err != nil {
+		logger.Errorf("Error spawning process %s. Error: %s", debugCommand, err)
+		return nil, err
+	}
+
+	br, err := e.ExpectBatch(batch, timeout)
+	if err != nil {
+		logger.Errorf("Error running expect batch process for node %s: %s. Batch result: %v", n.GetName(), err, br)
+	}
+
+	recErr := quietRecoverNamespaceRestricted(n.oc, n.oc.Namespace())
+	if recErr != nil {
+		return br, recErr
+	}
+
+	return br, err
+}
+
+// GetRHELVersion returns the RHEL version string from the node's /etc/os-release file
+func (n *Node) GetRHELVersion() (string, error) {
+	vContent, err := n.DebugNodeWithChroot("cat", "/etc/os-release")
+	if err != nil {
+		return "", err
+	}
+
+	r := regexp.MustCompile(`VERSION_ID="?(?P<rhel_version>[^"]+)"?`)
+	match := r.FindStringSubmatch(vContent)
+	if len(match) == 0 {
+		msg := fmt.Sprintf("No RHEL_VERSION available in /etc/os-release file: %s", vContent)
+		logger.Errorf(msg)
+		return "", fmt.Errorf("Error: %s", msg)
+	}
+
+	rhelvIndex := r.SubexpIndex("rhel_version")
+	rhelVersion := match[rhelvIndex]
+
+	logger.Infof("Node %s RHEL_VERSION %s", n.GetName(), rhelVersion)
+	return rhelVersion, nil
 }
