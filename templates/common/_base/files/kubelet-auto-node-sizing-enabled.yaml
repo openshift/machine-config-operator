@@ -1,5 +1,5 @@
 mode: 0644
-path: "/etc/auto-node-sizing-enabled.env"
+path: "/etc/node-sizing-enabled.env"
 contents:
   inline: |
     NODE_SIZING_ENABLED=true

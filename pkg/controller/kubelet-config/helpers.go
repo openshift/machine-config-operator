@@ -36,16 +36,9 @@ const (
 )
 
 func createNewKubeletDynamicSystemReservedIgnition(autoSystemReserved *bool, userDefinedSystemReserved map[string]string) *ign3types.File {
-	var autoNodeSizing string
 	var systemReservedMemory string
 	var systemReservedCPU string
 	var systemReservedEphemeralStorage string
-
-	if autoSystemReserved == nil {
-		autoNodeSizing = "true"
-	} else {
-		autoNodeSizing = strconv.FormatBool(*autoSystemReserved)
-	}
 
 	if val, ok := userDefinedSystemReserved["memory"]; ok && val != "" {
 		systemReservedMemory = val
@@ -64,11 +57,16 @@ func createNewKubeletDynamicSystemReservedIgnition(autoSystemReserved *bool, use
 	} else {
 		systemReservedEphemeralStorage = "1Gi"
 	}
+	var config string
+	if autoSystemReserved == nil {
+		config = fmt.Sprintf("NODE_SIZING_ENABLED=%s\nSYSTEM_RESERVED_MEMORY=%s\nSYSTEM_RESERVED_CPU=%s\nSYSTEM_RESERVED_ES=%s\n",
+			"true", systemReservedMemory, systemReservedCPU, systemReservedEphemeralStorage)
+	} else {
+		config = fmt.Sprintf("NODE_SIZING_ENABLED=%s\nSYSTEM_RESERVED_MEMORY=%s\nSYSTEM_RESERVED_CPU=%s\nSYSTEM_RESERVED_ES=%s\nNODE_SIZING_USER_VAL=%s\n",
+			"true", systemReservedMemory, systemReservedCPU, systemReservedEphemeralStorage, strconv.FormatBool(*autoSystemReserved))
+	}
 
-	config := fmt.Sprintf("NODE_SIZING_ENABLED=%s\nSYSTEM_RESERVED_MEMORY=%s\nSYSTEM_RESERVED_CPU=%s\nSYSTEM_RESERVED_ES=%s\n",
-		autoNodeSizing, systemReservedMemory, systemReservedCPU, systemReservedEphemeralStorage)
-
-	r := ctrlcommon.NewIgnFileBytesOverwriting("/etc/auto-node-sizing-enabled.env", []byte(config))
+	r := ctrlcommon.NewIgnFileBytesOverwriting("/etc/node-sizing-enabled.env", []byte(config))
 	return &r
 }
 
@@ -461,7 +459,6 @@ func kubeletConfigToIgnFile(cfg *kubeletconfigv1beta1.KubeletConfiguration) (*ig
 
 // generateKubeletIgnFiles generates the Ignition files from the kubelet config
 func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeConfig *kubeletconfigv1beta1.KubeletConfiguration) (*ign3types.File, *ign3types.File, *ign3types.File, error) {
-	klog.Infof("generateKubeletIgnFiles: starting for KubeletConfig %s", kubeletConfig.Name)
 	var (
 		kubeletIgnition            *ign3types.File
 		logLevelIgnition           *ign3types.File
@@ -470,7 +467,6 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 	userDefinedSystemReserved := make(map[string]string)
 
 	if kubeletConfig.Spec.KubeletConfig != nil && kubeletConfig.Spec.KubeletConfig.Raw != nil {
-		klog.Infof("generateKubeletIgnFiles: KubeletConfig %s has custom kubelet config, decoding", kubeletConfig.Name)
 		specKubeletConfig, err := DecodeKubeletConfig(kubeletConfig.Spec.KubeletConfig.Raw)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("could not deserialize the new Kubelet config: %w", err)
@@ -479,19 +475,16 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 		if val, ok := specKubeletConfig.SystemReserved["memory"]; ok {
 			userDefinedSystemReserved["memory"] = val
 			delete(specKubeletConfig.SystemReserved, "memory")
-			klog.Infof("generateKubeletIgnFiles: KubeletConfig %s has user-defined systemReserved memory: %s", kubeletConfig.Name, val)
 		}
 
 		if val, ok := specKubeletConfig.SystemReserved["cpu"]; ok {
 			userDefinedSystemReserved["cpu"] = val
 			delete(specKubeletConfig.SystemReserved, "cpu")
-			klog.Infof("generateKubeletIgnFiles: KubeletConfig %s has user-defined systemReserved cpu: %s", kubeletConfig.Name, val)
 		}
 
 		if val, ok := specKubeletConfig.SystemReserved["ephemeral-storage"]; ok {
 			userDefinedSystemReserved["ephemeral-storage"] = val
 			delete(specKubeletConfig.SystemReserved, "ephemeral-storage")
-			klog.Infof("generateKubeletIgnFiles: KubeletConfig %s has user-defined systemReserved ephemeral-storage: %s", kubeletConfig.Name, val)
 		}
 
 		// FeatureGates must be set from the FeatureGate.
@@ -507,7 +500,6 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 			originalKubeConfig.ProtectKernelDefaults = false
 		}
 		// Merge the Old and New
-		klog.Infof("generateKubeletIgnFiles: merging custom kubelet config for KubeletConfig %s", kubeletConfig.Name)
 		err = mergo.Merge(originalKubeConfig, specKubeletConfig, mergo.WithOverride)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("could not merge original config and new config: %w", err)
@@ -515,25 +507,19 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 	}
 
 	// Encode the new config into an Ignition File
-	klog.Infof("generateKubeletIgnFiles: encoding kubelet config to ignition file for KubeletConfig %s", kubeletConfig.Name)
 	kubeletIgnition, err := kubeletConfigToIgnFile(originalKubeConfig)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("could not encode JSON: %w", err)
 	}
 
 	if kubeletConfig.Spec.LogLevel != nil {
-		klog.Infof("generateKubeletIgnFiles: creating log level ignition for KubeletConfig %s with level %d", kubeletConfig.Name, *kubeletConfig.Spec.LogLevel)
 		logLevelIgnition = createNewKubeletLogLevelIgnition(*kubeletConfig.Spec.LogLevel)
 	}
 	if kubeletConfig.Spec.AutoSizingReserved != nil && len(userDefinedSystemReserved) == 0 {
-		klog.Infof("KubeletConfig %s: autoSizingReserved is set to %t", kubeletConfig.Name, *kubeletConfig.Spec.AutoSizingReserved)
 		autoSizingReservedIgnition = createNewKubeletDynamicSystemReservedIgnition(kubeletConfig.Spec.AutoSizingReserved, userDefinedSystemReserved)
 	} else if len(userDefinedSystemReserved) > 0 {
-		klog.Infof("KubeletConfig %s: using user-defined systemReserved values: %v", kubeletConfig.Name, userDefinedSystemReserved)
 		autoSizingReservedIgnition = createNewKubeletDynamicSystemReservedIgnition(nil, userDefinedSystemReserved)
 	}
 
-	klog.Infof("generateKubeletIgnFiles: completed for KubeletConfig %s (kubeletIgnition=%v, logLevelIgnition=%v, autoSizingReservedIgnition=%v)",
-		kubeletConfig.Name, kubeletIgnition != nil, logLevelIgnition != nil, autoSizingReservedIgnition != nil)
 	return kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, nil
 }

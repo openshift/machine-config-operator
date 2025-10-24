@@ -222,6 +222,10 @@ func writeDropins(u ign3types.Unit, systemdRoot string, isCoreOSVariant bool) er
 	return nil
 }
 
+const (
+	nodeSizingEnabledFilePath = "/etc/node-sizing-enabled.env"
+)
+
 // writeFiles writes the given files to disk.
 // it doesn't fetch remote files and expects a flattened config file.
 func writeFiles(files []ign3types.File, skipCertificateWrite bool) error {
@@ -231,6 +235,18 @@ func writeFiles(files []ign3types.File, skipCertificateWrite bool) error {
 			klog.V(4).Infof("Skipping file %s during writeFiles", caBundleFilePath)
 			continue
 		}
+
+		// Skip writing node-sizing-enabled.env to preserve node-local auto-sizing state
+		// This file is written once during first boot and should not be overwritten by template updates
+		if file.Path == nodeSizingEnabledFilePath {
+			if _, err := os.Stat(nodeSizingEnabledFilePath); err == nil {
+				klog.Infof("Skipping overwrite of existing file %s to preserve auto-sizing configuration", nodeSizingEnabledFilePath)
+				continue
+			}
+			// File doesn't exist, allow first-time write
+			klog.Infof("Writing node-sizing-enabled.env for the first time")
+		}
+
 		klog.Infof("Writing file %q", file.Path)
 
 		// We don't support appends in the file section, so instead of waiting to fail validation,
