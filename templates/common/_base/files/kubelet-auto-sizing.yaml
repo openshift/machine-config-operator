@@ -142,11 +142,12 @@ contents:
     if ! [ -f $NODE_AUTO_SIZING_VERSION_FILE ]; then
         create_version_file $NODE_AUTO_SIZING_VERSION $NODE_AUTO_SIZING_VERSION_FILE
     fi
-    new_version=$(jq .version $NODE_AUTO_SIZING_VERSION_FILE)
-    if [ $1 == "true" ]; then
-        dynamic_node_sizing $new_version $4
-    elif [ $1 == "false" ]; then
-        static_node_sizing $2 $3 $4
+    autoSizingEnabled=${5:-$1}
+    new_version="$(jq .version "$NODE_AUTO_SIZING_VERSION_FILE")"
+    if [ "$autoSizingEnabled" == "true" ]; then
+        dynamic_node_sizing "$new_version" "$4"
+    elif [ "$autoSizingEnabled" == "false" ]; then
+        static_node_sizing "$2" "$3" "$4"
     else
         echo "Unrecognized command line option. Valid options are \"true\" or \"false\""
     fi
