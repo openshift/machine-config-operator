@@ -130,6 +130,8 @@ require (
 	github.com/google/cadvisor v0.52.1 // indirect
 	github.com/google/cel-go v0.23.2 // indirect
 	github.com/google/gnostic-models v0.6.9 // indirect
+	github.com/google/goexpect v0.0.0-20210430020637-ab937bf7fd6f // indirect
+	github.com/google/goterm v0.0.0-20190703233501-fc88cf888a3f // indirect
 	github.com/google/pprof v0.0.0-20241210010833-40e02aabc2ad // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 // indirect
