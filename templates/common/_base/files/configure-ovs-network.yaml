@@ -21,6 +21,8 @@ contents:
     # the ovs pod needs it to know ovs is running on the host.
     touch /var/run/ovs-config-executed
 
+    # always use --escape no to prevent ':' mangling.  nmcli will escape all colons as \:, this breaks input
+    NMCLI_GET_VALUE="nmcli --escape no --get-values"
     # These are well knwon NM default paths
     NM_CONN_ETC_PATH="/etc/NetworkManager/system-connections"
     NM_CONN_RUN_PATH="/run/NetworkManager/system-connections"
@@ -124,7 +126,7 @@ contents:
     clone_slave_connection() {
       local uuid="$1"
       local old_name
-      old_name="$(nmcli -g connection.id connection show uuid "$uuid")"
+      old_name="$($NMCLI_GET_VALUE connection.id connection show uuid "$uuid")"
       local new_name="${old_name}${MANAGED_NM_CONN_SUFFIX}"
       if nmcli connection show id "${new_name}" &> /dev/null; then
         echo "WARNING: existing ovs slave ${new_name} connection profile file found, overwriting..." >&2
@@ -138,13 +140,13 @@ contents:
     replace_connection_master() {
       local old="$1"
       local new="$2"
-      for conn_uuid in $(nmcli -g UUID connection show) ; do
-        if [ "$(nmcli -g connection.master connection show uuid "$conn_uuid")" != "$old" ]; then
+      for conn_uuid in $($NMCLI_GET_VALUE UUID connection show) ; do
+        if [ "$($NMCLI_GET_VALUE connection.master connection show uuid "$conn_uuid")" != "$old" ]; then
           continue
         fi
 
-        local active_state=$(nmcli -g GENERAL.STATE connection show "$conn_uuid")
-        local autoconnect=$(nmcli -g connection.autoconnect connection show "$conn_uuid")
+        local active_state=$($NMCLI_GET_VALUE GENERAL.STATE connection show "$conn_uuid")
+        local autoconnect=$($NMCLI_GET_VALUE connection.autoconnect connection show "$conn_uuid")
         if [ "$active_state" != "activated" ] && [ "$autoconnect" != "yes" ]; then
           # Assume that slave profiles intended to be used are those that are:
           # - active
@@ -241,14 +243,14 @@ contents:
 
       extra_phys_args=()
       # check if this interface is a vlan, bond, team, or ethernet type
-      if [ "$(nmcli --get-values connection.type conn show ${old_conn})" == "vlan" ]; then
+      if [ "$($NMCLI_GET_VALUE connection.type conn show ${old_conn})" == "vlan" ]; then
         iface_type=vlan
-        vlan_id=$(nmcli --get-values vlan.id conn show ${old_conn})
+        vlan_id=$($NMCLI_GET_VALUE vlan.id conn show ${old_conn})
         if [ -z "$vlan_id" ]; then
           echo "ERROR: unable to determine vlan_id for vlan connection: ${old_conn}"
           exit 1
         fi
-        vlan_parent=$(nmcli --get-values vlan.parent conn show ${old_conn})
+        vlan_parent=$($NMCLI_GET_VALUE vlan.parent conn show ${old_conn})
         if [ -z "$vlan_parent" ]; then
           echo "ERROR: unable to determine vlan_parent for vlan connection: ${old_conn}"
           exit 1
@@ -257,14 +259,14 @@ contents:
         if nmcli connection show uuid "$vlan_parent" &> /dev/null; then
           # if the VLAN connection is configured with a connection UUID as parent, we need to find the underlying device
           # and create the bridge against it, as the parent connection can be replaced by another bridge.
-          vlan_parent=$(nmcli --get-values GENERAL.DEVICES conn show uuid ${vlan_parent})
+          vlan_parent=$($NMCLI_GET_VALUE GENERAL.DEVICES conn show uuid ${vlan_parent})
         fi
 
         extra_phys_args=( dev "${vlan_parent}" id "${vlan_id}" )
-      elif [ "$(nmcli --get-values connection.type conn show ${old_conn})" == "bond" ]; then
+      elif [ "$($NMCLI_GET_VALUE connection.type conn show ${old_conn})" == "bond" ]; then
         iface_type=bond
         # check bond options
-        bond_opts=$(nmcli --get-values bond.options conn show ${old_conn})
+        bond_opts=$($NMCLI_GET_VALUE bond.options conn show ${old_conn})
         if [ -n "$bond_opts" ]; then
           extra_phys_args+=( bond.options "${bond_opts}" )
           MODE_REGEX="(^|,)mode=active-backup(,|$)"
@@ -273,10 +275,10 @@ contents:
             clone_mac=0
           fi
         fi
-      elif [ "$(nmcli --get-values connection.type conn show ${old_conn})" == "team" ]; then
+      elif [ "$($NMCLI_GET_VALUE connection.type conn show ${old_conn})" == "team" ]; then
         iface_type=team
         # check team config options
-        team_config_opts=$(nmcli --get-values team.config -e no conn show ${old_conn})
+        team_config_opts=$($NMCLI_GET_VALUE team.config -e no conn show ${old_conn})
         if [ -n "$team_config_opts" ]; then
           # team.config is json, remove spaces to avoid problems later on
           extra_phys_args+=( team.config "${team_config_opts//[[:space:]]/}" )
@@ -287,11 +289,11 @@ contents:
             clone_mac=0
           fi
         fi
-      elif [ "$(nmcli --get-values connection.type conn show ${old_conn})" == "tun" ]; then
+      elif [ "$($NMCLI_GET_VALUE connection.type conn show ${old_conn})" == "tun" ]; then
         iface_type=tun
-        tun_mode=$(nmcli --get-values tun.mode -e no connection show ${old_conn})
+        tun_mode=$($NMCLI_GET_VALUE tun.mode -e no connection show ${old_conn})
         extra_phys_args+=( tun.mode "${tun_mode}" )
-      elif [ "$(nmcli --get-values connection.type conn show ${old_conn})" == "bridge" ]; then
+      elif [ "$($NMCLI_GET_VALUE connection.type conn show ${old_conn})" == "bridge" ]; then
         iface_type=bridge
       else
         iface_type=802-3-ethernet
@@ -314,25 +316,25 @@ contents:
       # use ${extra_phys_args[@]+"${extra_phys_args[@]}"} instead of ${extra_phys_args[@]} to be compatible with bash 4.2 in RHEL7.9
       if ! nmcli connection show "$bridge_interface_name" &> /dev/null; then
         ovs-vsctl --timeout=30 --if-exists destroy interface ${iface}
-        ovs_default_port_conn=$(nmcli -g connection.uuid conn show "$default_port_name")
+        ovs_default_port_conn=$($NMCLI_GET_VALUE connection.uuid conn show "$default_port_name")
         add_nm_conn "$bridge_interface_name" type ${iface_type} conn.interface ${iface} master "$ovs_default_port_conn" \
           slave-type ovs-port connection.autoconnect-priority 100 connection.autoconnect-slaves 1 802-3-ethernet.mtu ${iface_mtu} \
           ${extra_phys_args[@]+"${extra_phys_args[@]}"}
       fi
 
       # Get the new connection uuids
-      new_conn=$(nmcli -g connection.uuid conn show "$bridge_interface_name")
-      ovs_port_conn=$(nmcli -g connection.uuid conn show "$ovs_port")
+      new_conn=$($NMCLI_GET_VALUE connection.uuid conn show "$bridge_interface_name")
+      ovs_port_conn=$($NMCLI_GET_VALUE connection.uuid conn show "$ovs_port")
 
       # Update connections with master property set to use the new connection
       replace_connection_master $old_conn $new_conn
       replace_connection_master $iface $new_conn
 
-      ipv4_method=$(nmcli -g ipv4.method conn show "$old_conn")
-      ipv6_method=$(nmcli -g ipv6.method conn show "$old_conn")
+      ipv4_method=$($NMCLI_GET_VALUE ipv4.method conn show "$old_conn")
+      ipv6_method=$($NMCLI_GET_VALUE ipv6.method conn show "$old_conn")
 
-      ipv4_addresses=$(nmcli -g ipv4.addresses conn show "$old_conn")
-      ipv6_addresses=$(nmcli -g ipv6.addresses conn show "$old_conn")
+      ipv4_addresses=$($NMCLI_GET_VALUE ipv4.addresses conn show "$old_conn")
+      ipv6_addresses=$($NMCLI_GET_VALUE ipv6.addresses conn show "$old_conn")
 
       # Warn about an invalid MTU that will most likely fail in one way or
       # another
@@ -386,19 +388,39 @@ contents:
           fi
 
           # check for dhcp client ids
-          dhcp_client_id=$(nmcli --get-values ipv4.dhcp-client-id conn show ${old_conn})
+          dhcp_client_id=$($NMCLI_GET_VALUE ipv4.dhcp-client-id conn show ${old_conn})
           if [ -n "$dhcp_client_id" ]; then
             extra_if_brex_args+="ipv4.dhcp-client-id ${dhcp_client_id} "
           fi
 
-          dhcp6_client_id=$(nmcli --get-values ipv6.dhcp-duid conn show ${old_conn})
+          dhcp6_client_id=$($NMCLI_GET_VALUE ipv6.dhcp-duid conn show ${old_conn})
           if [ -n "$dhcp6_client_id" ]; then
             extra_if_brex_args+="ipv6.dhcp-duid ${dhcp6_client_id} "
           fi
 
-          ipv6_addr_gen_mode=$(nmcli --get-values ipv6.addr-gen-mode conn show ${old_conn})
+          ipv6_addr_gen_mode=$($NMCLI_GET_VALUE ipv6.addr-gen-mode conn show ${old_conn})
           if [ -n "$ipv6_addr_gen_mode" ]; then
             extra_if_brex_args+="ipv6.addr-gen-mode ${ipv6_addr_gen_mode} "
+          fi
+
+          # check for static DNS address
+          ipv4_dns=$($NMCLI_GET_VALUE ipv4.dns conn show ${old_conn})
+          if [ -n "$ipv4_dns" ]; then
+            extra_if_brex_args+="ipv4.dns ${ipv4_dns} "
+          fi
+          ipv6_dns=$($NMCLI_GET_VALUE ipv6.dns conn show ${old_conn})
+          if [ -n "$ipv6_dns" ]; then
+            extra_if_brex_args+="ipv6.dns ${ipv6_dns} "
+          fi
+    
+          # check for auto-dns
+          ipv4_auto_dns=$($NMCLI_GET_VALUE ipv4.ignore-auto-dns conn show ${old_conn})
+          if [ -n "$ipv4_auto_dns" ]; then
+            extra_if_brex_args+="ipv4.ignore-auto-dns ${ipv4_auto_dns} "
+          fi
+          ipv6_auto_dns=$($NMCLI_GET_VALUE ipv6.ignore-auto-dns conn show ${old_conn})
+          if [ -n "$ipv6_auto_dns" ]; then
+            extra_if_brex_args+="ipv6.ignore-auto-dns ${ipv6_auto_dns} "
           fi
 
           add_nm_conn "$ovs_interface" type ovs-interface slave-type ovs-port conn.interface "$bridge_name" master "$ovs_port_conn" \
@@ -462,7 +484,7 @@ contents:
       # not happen for software devices as those always require a profile.
       for dev in $@; do
         # Only attempt to connect a disconnected device
-        local connected_state=$(nmcli -g GENERAL.STATE device show "$dev" || echo "")
+        local connected_state=$($NMCLI_GET_VALUE GENERAL.STATE device show "$dev" || echo "")
         if [[ "$connected_state" =~ "disconnected" ]]; then
           # keep track if a profile by the same name as the device existed 
           # before we attempt activation
@@ -486,6 +508,7 @@ contents:
         fi
 
         echo "Waiting for interface $dev to activate..."
+        # don't use --escape no, we use : delimiter here
         if ! timeout 60 bash -c "while ! nmcli -g DEVICE,STATE c | grep "'"'"$dev":activated'"'"; do sleep 5; done"; then
           echo "WARNING: $dev did not activate"
         fi
@@ -556,7 +579,7 @@ contents:
       # problem and hopefully we can make sure everything is activated as we
       # want next.
       for conn in "${connections[@]}"; do
-        local slave_type=$(nmcli -g connection.slave-type connection show "$conn")
+        local slave_type=$($NMCLI_GET_VALUE connection.slave-type connection show "$conn")
         if [ "$slave_type" = "team" ] || [ "$slave_type" = "bond" ]; then
           mod_nm_conn "$conn" connection.autoconnect yes
         fi
@@ -568,7 +591,7 @@ contents:
       declare -A master_interfaces
       for conn in "${connections[@]}"; do
         # Get the slave type
-        local slave_type=$(nmcli -g connection.slave-type connection show "$conn")
+        local slave_type=$($NMCLI_GET_VALUE connection.slave-type connection show "$conn")
         local is_slave=false
         if [ "$slave_type" = "team" ] || [ "$slave_type" = "bond" ]; then
           is_slave=true
@@ -577,7 +600,7 @@ contents:
         # For slave interfaces, initialize the master interface to false if the key is not yet in the array
         local master_interface
         if $is_slave; then
-          master_interface=$(nmcli -g connection.master connection show "$conn")
+          master_interface=$($NMCLI_GET_VALUE connection.master connection show "$conn")
           if ! [[ -v "master_interfaces[$master_interface]" ]]; then
             master_interfaces["$master_interface"]=false
           fi
@@ -585,7 +608,7 @@ contents:
 
         # slaves should implicitly activate, give them a chance to do so
         if $is_slave; then
-          if ! timeout 5 bash -c "while ! nmcli -g GENERAL.STATE conn show "$conn" | grep activated; do sleep 1; done"; then
+          if ! timeout 5 bash -c "while ! $NMCLI_GET_VALUE GENERAL.STATE conn show "$conn" | grep activated; do sleep 1; done"; then
             echo "WARNING: slave $conn did not implicitly activate in 5s, activating explicitly."
           fi
         fi
@@ -593,7 +616,7 @@ contents:
         # Do not activate interfaces that are already active
         # But set the entry in master_interfaces to true if this is a slave
         # Also set autoconnect to yes
-        local active_state=$(nmcli -g GENERAL.STATE conn show "$conn")
+        local active_state=$($NMCLI_GET_VALUE GENERAL.STATE conn show "$conn")
         if [ "$active_state" == "activated" ]; then
           echo "Connection $conn already activated"
           if $is_slave; then
@@ -719,7 +742,7 @@ contents:
     get_bridge_physical_interface() {
       local bridge_interface="$1"
       local physical_interface=""
-      physical_interface=$(nmcli -g connection.interface-name conn show "${bridge_interface}" 2>/dev/null || echo "")
+      physical_interface=$($NMCLI_GET_VALUE connection.interface-name conn show "${bridge_interface}" 2>/dev/null || echo "")
       echo "${physical_interface}"
     }
 
