@@ -2183,7 +2183,12 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 
 	// Bootstrapping state is when we have the node annotations file
 	if state.bootstrapping {
-		targetOSImageURL := state.currentConfig.Spec.OSImageURL
+		// During bootstrap, prefer the image from node annotations (if set) over the MC from cluster lister
+		targetOSImageURL := state.currentImage
+		if targetOSImageURL == "" {
+			// Fall back to MC's OSImageURL if no image annotation was provided
+			targetOSImageURL = state.currentConfig.Spec.OSImageURL
+		}
 		osMatch := dn.checkOS(targetOSImageURL)
 		if !osMatch {
 			logSystem("Bootstrap pivot required to: %s", targetOSImageURL)
