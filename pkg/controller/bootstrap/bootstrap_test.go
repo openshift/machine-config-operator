@@ -151,7 +151,7 @@ spec:
 				t.Fatalf("failed to parse manifest: %v", err)
 			}
 			if !reflect.DeepEqual(got, test.want) {
-				t.Fatalf("mismatch found %s", diff.ObjectDiff(got, test.want))
+				t.Fatalf("mismatch found %s", diff.Diff(got, test.want))
 			}
 		})
 	}
