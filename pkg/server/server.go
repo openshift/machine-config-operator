@@ -46,22 +46,23 @@ type Server interface {
 	GetConfig(poolRequest) (*runtime.RawExtension, error)
 }
 
-func getAppenders(currMachineConfig string, version *semver.Version, f kubeconfigFunc, certs []string, serverDir string) []appenderFunc {
+func getAppenders(_ string, version *semver.Version, f kubeconfigFunc, certs []string, serverDir string, extra ...appenderFunc) []appenderFunc {
 	appenders := []appenderFunc{
-		// append machine annotations file.
-		func(cfg *ign3types.Config, _ *mcfgv1.MachineConfig) error {
-			return appendNodeAnnotations(cfg, currMachineConfig, "")
-		},
 		// append kubeconfig.
 		func(cfg *ign3types.Config, _ *mcfgv1.MachineConfig) error { return appendKubeConfig(cfg, f) },
 		// append the machineconfig content
 		appendInitialMachineConfig,
 		func(cfg *ign3types.Config, _ *mcfgv1.MachineConfig) error { return appendCerts(cfg, certs, serverDir) },
-		// This has to come last!!!
-		func(cfg *ign3types.Config, mc *mcfgv1.MachineConfig) error {
-			return appendEncapsulated(cfg, mc, version)
-		},
 	}
+
+	// Insert extra appenders in the middle
+	appenders = append(appenders, extra...)
+
+	// This has to come last!!!
+	appenders = append(appenders, func(cfg *ign3types.Config, mc *mcfgv1.MachineConfig) error {
+		return appendEncapsulated(cfg, mc, version)
+	})
+
 	return appenders
 }
 
