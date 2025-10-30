@@ -1,11 +1,16 @@
 package operator
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	imagev1 "github.com/openshift/api/image/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
+	"github.com/openshift/machine-config-operator/pkg/controller/osimagestream"
 	"k8s.io/klog/v2"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -34,6 +39,8 @@ func RenderBootstrap(
 	mcsCAFile, kubeAPIServerServingCA, pullSecretFile string,
 	imgs *ctrlcommon.Images,
 	destinationDir, releaseImage string,
+	imageStream *imagev1.ImageStream,
+	cliOSImageStream *osimagestream.CliOSImageStreamParser,
 ) error {
 	filesData := map[string][]byte{}
 	files := []string{
@@ -137,10 +144,22 @@ func RenderBootstrap(
 		spec.CloudProviderCAData = data
 	}
 
+	// TODO @pablintino Example of how Streams are integrated
+	// at bootstrap time
+	pullSecretSecret := resourceread.ReadSecretV1OrDie(filesData[pullSecretFile])
+	osimageStream, err := osimagestream.BuildOsImageStreamBootstrap(
+		context.Background(),
+		pullSecretSecret,
+		&mcfgv1.ControllerConfig{Spec: *spec}, imageStream, cliOSImageStream)
+	if err != nil {
+		return err
+	}
+
 	spec.RootCAData = bundle
 	spec.PullSecret = nil
-	spec.BaseOSContainerImage = imgs.BaseOSContainerImage
-	spec.BaseOSExtensionsContainerImage = imgs.BaseOSExtensionsContainerImage
+	defaultStream := osimagestream.GetDefaultOSImageStream(osimageStream)
+	spec.BaseOSContainerImage = defaultStream.OSImageUrl
+	spec.BaseOSExtensionsContainerImage = defaultStream.OSExtensionsImageUrl
 	spec.ReleaseImage = releaseImage
 	spec.Images = map[string]string{
 		templatectrl.MachineConfigOperatorKey: imgs.MachineConfigOperator,

@@ -28,10 +28,6 @@ type Images struct {
 // RenderConfigImages are image names used to render templates under ./manifests/
 type RenderConfigImages struct {
 	MachineConfigOperator string `json:"machineConfigOperator"`
-	// The new format image
-	BaseOSContainerImage string `json:"baseOSContainerImage"`
-	// The matching extensions container for the new format image
-	BaseOSExtensionsContainerImage string `json:"baseOSExtensionsContainerImage"`
 	// These have to be named differently from the ones in ControllerConfigImages
 	// or we get errors about ambiguous selectors because both structs are
 	// combined in the Images struct.
