@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/google/uuid"
 	exutil "github.com/openshift/machine-config-operator/test/extended/util"
 	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
@@ -438,4 +439,62 @@ func IsCompactOrSNOCluster(oc *exutil.CLI) bool {
 	)
 
 	return wMcp.IsEmpty() && len(mcpList.GetAllOrFail()) == 2
+}
+
+// MarshalOrFail marshals the input to JSON and fails the test if there is an error
+func MarshalOrFail(input interface{}) []byte {
+	inputJSON, err := json.Marshal(input)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error marshaling input to JSON")
+	return inputJSON
+}
+
+// OCCreate creates a resource from a file using oc create -f
+func OCCreate(oc *exutil.CLI, fileName string) error {
+	return oc.Run("create").Args("-f", fileName).Execute()
+}
+
+// OrFail function will process another function's return values and fail if any of those returned values is an error != nil and returns the first value
+// example: if we have: func getValue() (string, error)
+//
+//	we can do:  value := OrFail[string](getValue())
+func OrFail[T any](vals ...any) T {
+	for _, val := range vals {
+		err, ok := val.(error)
+		if ok {
+			o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred())
+		}
+	}
+
+	return vals[0].(T)
+}
+
+// skipTestIfRHELVersion skips the test if the RHEL version matches the constraint
+func skipTestIfRHELVersion(node Node, operator, constraintVersion string) {
+	actualVersion, err := node.GetRHELVersion()
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting RHEL version from node %s", node.GetName())
+
+	// Pad version to semantic version format if needed (e.g., "9.6" -> "9.6.0")
+	parts := strings.Split(actualVersion, ".")
+	for len(parts) < 3 {
+		parts = append(parts, "0")
+	}
+	paddedVersion := strings.Join(parts, ".")
+
+	// Pad constraint version as well
+	constraintParts := strings.Split(constraintVersion, ".")
+	for len(constraintParts) < 3 {
+		constraintParts = append(constraintParts, "0")
+	}
+	paddedConstraintVersion := strings.Join(constraintParts, ".")
+
+	// Parse versions for comparison
+	constraint, err := semver.NewConstraint(operator + paddedConstraintVersion)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error parsing version constraint")
+
+	actual, err := semver.NewVersion(paddedVersion)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error parsing actual version %s (padded from %s)", paddedVersion, actualVersion)
+
+	if constraint.Check(actual) {
+		g.Skip(fmt.Sprintf("Test requires RHEL version NOT %s %s, but node has %s", operator, constraintVersion, actualVersion))
+	}
 }

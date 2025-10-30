@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended/util"
 	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
 )
@@ -47,6 +48,36 @@ func (mcc *Controller) GetPodName() (string, error) {
 	return podName, nil
 }
 
+// IgnoreLogsBeforeNow when it is called all logs generated before calling it will be ignored by "GetLogs"
+func (mcc *Controller) IgnoreLogsBeforeNow() error {
+	mcc.logsCheckPoint = ""
+	logsUptoNow, err := mcc.GetLogs()
+	if err != nil {
+		return err
+	}
+	mcc.logsCheckPoint = logsUptoNow
+
+	return nil
+}
+
+// IgnoreLogsBeforeNowOrFail  when it is called all logs generated before calling it will be ignored by "GetLogs", if this method fails, the test is failed
+func (mcc *Controller) IgnoreLogsBeforeNowOrFail() *Controller {
+	err := mcc.IgnoreLogsBeforeNow()
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error trying to ignore old logs in the MachineConfigController pod")
+
+	return mcc
+}
+
+// StopIgnoringLogs when it is called "IgnoreLogsBeforeNow" effect will not be taken into account anymore, and "GetLogs" will return full logs in MCO controller
+func (mcc *Controller) StopIgnoringLogs() {
+	mcc.logsCheckPoint = ""
+}
+
+// GetIgnoredLogs returns the logs that will be ignored after calling "IgnoreLogsBeforeNow"
+func (mcc *Controller) GetIgnoredLogs() string {
+	return mcc.logsCheckPoint
+}
+
 // GetLogs returns the MCO controller logs. Logs generated before calling the function "IgnoreLogsBeforeNow" will not be returned
 // This function can return big log so, please, try not to print the returned value in your tests
 func (mcc *Controller) GetLogs() (string, error) {
@@ -71,7 +102,7 @@ func (mcc *Controller) GetLogs() (string, error) {
 }
 
 // GetRawLogs return the controller pod's logs without removing the ignored logs part
-func (mcc Controller) GetRawLogs() (string, error) {
+func (mcc *Controller) GetRawLogs() (string, error) {
 	cachedPodName, err := mcc.GetCachedPodName()
 	if err != nil {
 		return "", err
@@ -91,7 +122,7 @@ func (mcc Controller) GetRawLogs() (string, error) {
 }
 
 // HasAcquiredLease returns true if the controller acquired the lease properly
-func (mcc Controller) HasAcquiredLease() (bool, error) {
+func (mcc *Controller) HasAcquiredLease() (bool, error) {
 	podAllLogs, err := mcc.GetRawLogs()
 	if err != nil {
 		return false, err

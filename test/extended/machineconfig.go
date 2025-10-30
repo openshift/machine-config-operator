@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended/util"
 	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
 
@@ -71,10 +72,25 @@ func (mc *MachineConfig) create() {
 	}
 }
 
-// we need this method to be able to delete the MC without waiting for success.
-// TODO: This method should be deleted when we refactor the MC struct to embed the Resource struct. But right now we have no other choice.
-func (mc *MachineConfig) deleteNoWait() error {
-	return mc.Delete()
+// DeleteWithWait deletes the MachineConfig and waits for the MCP to be updated
+func (mc *MachineConfig) DeleteWithWait() {
+	// This method waits a minimum of 1 minute for the MCP to be updated after the MC has been deleted.
+	// It is very expensive, since this method is deferred very often and in those cases the MC has been already deleted.
+	// In order to improve the performance we do nothing if the MC does not exist.
+	if !mc.Exists() {
+		logger.Infof("MachineConfig %s does not exist. We will not try to delete it.", mc.GetName())
+		return
+	}
+
+	mcp := NewMachineConfigPool(mc.oc, mc.pool)
+	if mc.GetKernelTypeSafe() != "" {
+		mcp.SetWaitingTimeForKernelChange() // If the MC is configuring a different kernel, we increase the waiting period
+	}
+
+	err := mc.oc.AsAdmin().WithoutNamespace().Run("delete").Args("mc", mc.name, "--ignore-not-found=true").Execute()
+	o.Expect(err).NotTo(o.HaveOccurred())
+
+	mcp.waitForComplete()
 }
 
 // GetKernelTypeSafe Get the kernelType configured in this MC. If any arror happens it returns an empty string
@@ -86,4 +102,25 @@ func (mc *MachineConfig) GetKernelTypeSafe() string {
 func (mc *MachineConfig) HasExtensionsSafe() bool {
 	ext := mc.GetSafe(`{.spec.extensions}`, "[]")
 	return ext != "[]" && ext != ""
+}
+
+// GetAuthorizedKeysByUserAsList returns a list of all authorized keys for the given user
+func (mc *MachineConfig) GetAuthorizedKeysByUserAsList(user string) ([]string, error) {
+	listKeys := []string{}
+
+	keys, err := mc.Get(fmt.Sprintf(`{.spec.config.passwd.users[?(@.name=="%s")].sshAuthorizedKeys}`, user))
+	if err != nil {
+		return nil, err
+	}
+
+	if keys == "" {
+		return listKeys, nil
+	}
+
+	jKeys := JSON(keys)
+	for _, key := range jKeys.Items() {
+		listKeys = append(listKeys, key.ToString())
+	}
+
+	return listKeys, err
 }

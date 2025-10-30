@@ -1,5 +1,7 @@
 package extended
 
+import "time"
+
 const (
 	// MachineConfigNamespace mco namespace
 	MachineConfigNamespace = "openshift-machine-config-operator"
@@ -59,4 +61,7 @@ const (
 	// Labels and Annotations required for determining architecture of a machineset
 	MachineSetArchAnnotationKey = "capacity.cluster-autoscaler.kubernetes.io/labels"
 	ArchLabelKey                = "kubernetes.io/arch="
+
+	// DefaultExpectTimeout is the default timeout for expect operations
+	DefaultExpectTimeout = 10 * time.Second
 )
