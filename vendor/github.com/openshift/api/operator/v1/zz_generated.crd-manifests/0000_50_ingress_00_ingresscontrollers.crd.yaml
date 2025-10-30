@@ -164,7 +164,27 @@ spec:
                   updated.
 
                   If empty, defaults to ingress.config.openshift.io/cluster .spec.domain.
+
+                  The domain value must be a valid DNS name. It must consist of lowercase
+                  alphanumeric characters, '-' or '.', and each label must start and end
+                  with an alphanumeric character and not exceed 63 characters. Maximum
+                  length of a valid DNS domain is 253 characters.
+
+                  The implementation may add a prefix such as "router-default." to the domain
+                  when constructing the router canonical hostname. To ensure the resulting
+                  hostname does not exceed the DNS maximum length of 253 characters,
+                  the domain length is additionally validated at the IngressController object
+                  level. For the maximum length of the domain value itself, the shortest
+                  possible variant of the prefix and the ingress controller name was considered
+                  for example "router-a."
+                maxLength: 244
                 type: string
+                x-kubernetes-validations:
+                - message: domain must consist of lower case alphanumeric characters,
+                    '-' or '.', and must start and end with an alphanumeric character
+                  rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                - message: each DNS label must not exceed 63 characters
+                  rule: self.split('.').all(label, size(label) <= 63)
               endpointPublishingStrategy:
                 description: |-
                   endpointPublishingStrategy is used to publish the ingress controller
@@ -3234,6 +3254,11 @@ spec:
                 type: object
             type: object
         type: object
+        x-kubernetes-validations:
+        - message: The combined 'router-' + metadata.name + '.' + .spec.domain cannot
+            exceed 253 characters
+          rule: '!has(self.spec.domain) || size(''router-'' + self.metadata.name +
+            ''.'' + self.spec.domain) <= 253'
     served: true
     storage: true
     subresources:
