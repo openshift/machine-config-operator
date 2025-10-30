@@ -46,23 +46,72 @@ type Server interface {
 	GetConfig(poolRequest) (*runtime.RawExtension, error)
 }
 
-func getAppenders(currMachineConfig string, version *semver.Version, f kubeconfigFunc, certs []string, serverDir string) []appenderFunc {
-	appenders := []appenderFunc{
-		// append machine annotations file.
+// appendersBuilder builds a slice of appenderFunc with guaranteed ordering.
+// The builder ensures that appendEncapsulated is always added last.
+type appendersBuilder struct {
+	version         *semver.Version
+	kubeconfigFn    kubeconfigFunc
+	certs           []string
+	serverDir       string
+	customAppenders []appenderFunc
+}
+
+// newAppendersBuilder creates a new appendersBuilder.
+// Common appenders (kubeconfig, initial machine config, certs) are added automatically in build().
+func newAppendersBuilder(version *semver.Version, kubeconfigFn kubeconfigFunc, certs []string, serverDir string) *appendersBuilder {
+	return &appendersBuilder{
+		version:         version,
+		kubeconfigFn:    kubeconfigFn,
+		certs:           certs,
+		serverDir:       serverDir,
+		customAppenders: make([]appenderFunc, 0),
+	}
+}
+
+// WithNodeAnnotations adds the node annotations appender with the specified config and image.
+func (ab *appendersBuilder) WithNodeAnnotations(currMachineConfig, image string) *appendersBuilder {
+	ab.customAppenders = append(ab.customAppenders, func(cfg *ign3types.Config, _ *mcfgv1.MachineConfig) error {
+		return appendNodeAnnotations(cfg, currMachineConfig, image)
+	})
+	return ab
+}
+
+// WithCustomAppender adds a custom appender function.
+// Custom appenders are inserted before the common appenders and appendEncapsulated.
+func (ab *appendersBuilder) WithCustomAppender(appender appenderFunc) *appendersBuilder {
+	ab.customAppenders = append(ab.customAppenders, appender)
+	return ab
+}
+
+// build creates the final slice of appenderFunc with the correct ordering:
+// 1. Custom appenders (node annotations, desired image, etc.)
+// 2. Common appenders (kubeconfig, initial machine config, certs)
+// 3. appendEncapsulated (always last)
+func (ab *appendersBuilder) build() []appenderFunc {
+	result := make([]appenderFunc, 0, len(ab.customAppenders)+4)
+
+	// Add custom appenders first
+	result = append(result, ab.customAppenders...)
+
+	// Add common appenders and appendEncapsulated
+	result = append(result,
+		// append kubeconfig
 		func(cfg *ign3types.Config, _ *mcfgv1.MachineConfig) error {
-			return appendNodeAnnotations(cfg, currMachineConfig, "")
+			return appendKubeConfig(cfg, ab.kubeconfigFn)
 		},
-		// append kubeconfig.
-		func(cfg *ign3types.Config, _ *mcfgv1.MachineConfig) error { return appendKubeConfig(cfg, f) },
 		// append the machineconfig content
 		appendInitialMachineConfig,
-		func(cfg *ign3types.Config, _ *mcfgv1.MachineConfig) error { return appendCerts(cfg, certs, serverDir) },
-		// This has to come last!!!
-		func(cfg *ign3types.Config, mc *mcfgv1.MachineConfig) error {
-			return appendEncapsulated(cfg, mc, version)
+		// append certs
+		func(cfg *ign3types.Config, _ *mcfgv1.MachineConfig) error {
+			return appendCerts(cfg, ab.certs, ab.serverDir)
 		},
-	}
-	return appenders
+		// appendEncapsulated must always be last
+		func(cfg *ign3types.Config, mc *mcfgv1.MachineConfig) error {
+			return appendEncapsulated(cfg, mc, ab.version)
+		},
+	)
+
+	return result
 }
 
 func appendCerts(cfg *ign3types.Config, certs []string, serverDir string) error {
