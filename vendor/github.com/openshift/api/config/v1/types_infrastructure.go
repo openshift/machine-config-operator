@@ -491,6 +491,21 @@ type AWSServiceEndpoint struct {
 	URL string `json:"url"`
 }
 
+// IPFamilyType represents the IP protocol family that cloud platform resources should use.
+// +kubebuilder:validation:Enum=IPv4;DualStackIPv6Primary;DualStackIPv4Primary
+type IPFamilyType string
+
+const (
+	// IPv4 indicates that cloud platform resources should use IPv4 addressing only.
+	IPv4 IPFamilyType = "IPv4"
+
+	// DualStackIPv6Primary indicates that cloud platform resources should use dual-stack networking with IPv6 as primary.
+	DualStackIPv6Primary IPFamilyType = "DualStackIPv6Primary"
+
+	// DualStackIPv4Primary indicates that cloud platform resources should use dual-stack networking with IPv4 as primary.
+	DualStackIPv4Primary IPFamilyType = "DualStackIPv4Primary"
+)
+
 // AWSPlatformSpec holds the desired state of the Amazon Web Services infrastructure provider.
 // This only includes fields that can be modified in the cluster.
 type AWSPlatformSpec struct {
@@ -536,6 +551,18 @@ type AWSPlatformStatus struct {
 	// +optional
 	// +nullable
 	CloudLoadBalancerConfig *CloudLoadBalancerConfig `json:"cloudLoadBalancerConfig,omitempty"`
+
+	// ipFamily specifies the IP protocol family that should be used for AWS
+	// network resources. This controls whether AWS resources are created with
+	// IPv4-only, or dual-stack networking with IPv4 or IPv6 as the primary
+	// protocol family.
+	//
+	// +default="IPv4"
+	// +kubebuilder:default="IPv4"
+	// +kubebuilder:validation:XValidation:rule="oldSelf == '' || self == oldSelf",message="ipFamily is immutable once set"
+	// +openshift:enable:FeatureGate=AWSDualStackInstall
+	// +optional
+	IPFamily IPFamilyType `json:"ipFamily,omitempty"`
 }
 
 // AWSResourceTag is a tag to apply to AWS resources created for the cluster.
@@ -607,6 +634,18 @@ type AzurePlatformStatus struct {
 	// +openshift:enable:FeatureGate=AzureClusterHostedDNSInstall
 	// +optional
 	CloudLoadBalancerConfig *CloudLoadBalancerConfig `json:"cloudLoadBalancerConfig,omitempty"`
+
+	// ipFamily specifies the IP protocol family that should be used for Azure
+	// network resources. This controls whether Azure resources are created with
+	// IPv4-only, or dual-stack networking with IPv4 or IPv6 as the primary
+	// protocol family.
+	//
+	// +default="IPv4"
+	// +kubebuilder:default="IPv4"
+	// +kubebuilder:validation:XValidation:rule="oldSelf == '' || self == oldSelf",message="ipFamily is immutable once set"
+	// +openshift:enable:FeatureGate=AzureDualStackInstall
+	// +optional
+	IPFamily IPFamilyType `json:"ipFamily,omitempty"`
 }
 
 // AzureResourceTag is a tag to apply to Azure resources created for the cluster.

@@ -452,6 +452,22 @@ type MachineConfigPoolSpec struct {
 	// +listMapKey=name
 	// +kubebuilder:validation:MaxItems=100
 	PinnedImageSets []PinnedImageSetRef `json:"pinnedImageSets,omitempty"`
+
+	// osImageStream specifies an OS stream to be used for the pool.
+	//
+	// When set, this value overrides the cluster-wide OS images for the pool with
+	// the OS and Extensions associated to the specified stream.
+	// When omitted or empty, the pool uses the cluster-wide default OS images.
+	//
+	// The stream name must start with a letter and contain only alphanumeric
+	// characters, hyphens ('-'), and dots ('.'), with a maximum length of 70 characters.
+	//
+	// +optional
+	// +openshift:enable:FeatureGate=OSStreams
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=70
+	// +kubebuilder:validation:XValidation:rule=`self.matches('^[a-zA-Z][a-zA-Z0-9.-]*$')`,message="The osImageStream must start with a letter and contain only alphanumeric characters, hyphens ('-'), and dots ('.')."
+	OSImageStream string `json:"osImageStream,omitempty"`
 }
 
 type PinnedImageSetRef struct {

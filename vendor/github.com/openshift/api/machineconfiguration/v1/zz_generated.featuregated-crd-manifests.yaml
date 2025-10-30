@@ -29,7 +29,9 @@ controllerconfigs.machineconfiguration.openshift.io:
   Category: ""
   FeatureGates:
   - AWSClusterHostedDNSInstall
+  - AWSDualStackInstall
   - AzureClusterHostedDNSInstall
+  - AzureDualStackInstall
   - DualReplica
   - DyanmicServiceEndpointIBMCloud
   - GCPClusterHostedDNSInstall
@@ -198,6 +200,7 @@ machineconfigpools.machineconfiguration.openshift.io:
   Capability: ""
   Category: ""
   FeatureGates:
+  - OSStreams
   - PinnedImages
   FilenameOperatorName: machine-config
   FilenameOperatorOrdering: "01"

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/openshift/machine-config-operator/pkg/controller/osimagestream"
 	"github.com/spf13/cobra"
 	"k8s.io/klog/v2"
 
@@ -82,6 +83,7 @@ func init() {
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.haproxyImage, "haproxy-image", "", "Image for haproxy.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.baremetalRuntimeCfgImage, "baremetal-runtimecfg-image", "", "Image for baremetal-runtimecfg.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.oauthProxyImage, "oauth-proxy-image", "", "Image for origin oauth proxy.")
+	// TODO: @pablintino I'm not sure who's passing the baseos options
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.baseOSContainerImage, "baseos-image", "", "ostree-bootable container image reference")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.baseOSExtensionsContainerImage, "baseos-extensions-image", "", "Image with extensions")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.kubeRbacProxyImage, "kube-rbac-proxy-image", "", "Image for origin kube-rbac proxy.")
@@ -118,20 +120,14 @@ func runBootstrapCmd(_ *cobra.Command, _ []string) {
 	// To help debugging, immediately log version
 	klog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
 
-	baseOSContainerImageTag := "rhel-coreos"
-	if version.IsFCOS() {
-		baseOSContainerImageTag = "fedora-coreos"
-	} else if version.IsSCOS() {
-		baseOSContainerImageTag = "stream-coreos"
-	}
-
+	var imgstream *imagev1.ImageStream
 	if bootstrapOpts.imageReferences != "" {
 		imageRefData, err := os.ReadFile(bootstrapOpts.imageReferences)
 		if err != nil {
 			klog.Fatalf("failed to read %s: %v", bootstrapOpts.imageReferences, err)
 		}
 
-		imgstream := resourceread.ReadImageStreamV1OrDie(imageRefData)
+		imgstream = resourceread.ReadImageStreamV1OrDie(imageRefData)
 
 		bootstrapOpts.mcoImage = findImageOrDie(imgstream, "machine-config-operator")
 		bootstrapOpts.keepalivedImage = findImageOrDie(imgstream, "keepalived-ipfailover")
@@ -142,26 +138,25 @@ func runBootstrapCmd(_ *cobra.Command, _ []string) {
 		bootstrapOpts.kubeRbacProxyImage = findImageOrDie(imgstream, "kube-rbac-proxy")
 		bootstrapOpts.infraImage = findImageOrDie(imgstream, "pod")
 		bootstrapOpts.haproxyImage = findImageOrDie(imgstream, "haproxy-router")
-		bootstrapOpts.baseOSContainerImage, err = findImage(imgstream, baseOSContainerImageTag)
-		if err != nil {
+
+		// TODO: @pablintino. I've not identified a usage of the bootstrap that doesn't pass the image-references option
+		streamName := osimagestream.GetDefaultStreamName()
+		if _, err = findImage(imgstream, streamName); err != nil {
 			klog.Warningf("Base OS container not found: %s", err)
 		}
-		bootstrapOpts.baseOSExtensionsContainerImage, err = findImage(imgstream, fmt.Sprintf("%s-extensions", baseOSContainerImageTag))
-		if err != nil {
+		if _, err = findImage(imgstream, fmt.Sprintf("%s-extensions", streamName)); err != nil {
 			klog.Warningf("Base OS extensions container not found: %s", err)
 		}
 	}
 
 	imgs := ctrlcommon.Images{
 		RenderConfigImages: ctrlcommon.RenderConfigImages{
-			MachineConfigOperator:          bootstrapOpts.mcoImage,
-			KeepalivedBootstrap:            bootstrapOpts.keepalivedImage,
-			CorednsBootstrap:               bootstrapOpts.corednsImage,
-			BaremetalRuntimeCfgBootstrap:   bootstrapOpts.baremetalRuntimeCfgImage,
-			OauthProxy:                     bootstrapOpts.oauthProxyImage,
-			KubeRbacProxy:                  bootstrapOpts.kubeRbacProxyImage,
-			BaseOSContainerImage:           bootstrapOpts.baseOSContainerImage,
-			BaseOSExtensionsContainerImage: bootstrapOpts.baseOSExtensionsContainerImage,
+			MachineConfigOperator:        bootstrapOpts.mcoImage,
+			KeepalivedBootstrap:          bootstrapOpts.keepalivedImage,
+			CorednsBootstrap:             bootstrapOpts.corednsImage,
+			BaremetalRuntimeCfgBootstrap: bootstrapOpts.baremetalRuntimeCfgImage,
+			OauthProxy:                   bootstrapOpts.oauthProxyImage,
+			KubeRbacProxy:                bootstrapOpts.kubeRbacProxyImage,
 		},
 		ControllerConfigImages: ctrlcommon.ControllerConfigImages{
 			InfraImage:          bootstrapOpts.infraImage,
@@ -172,6 +167,11 @@ func runBootstrapCmd(_ *cobra.Command, _ []string) {
 		},
 	}
 
+	// todo: @pablintino Add the CLI image URLs as another source fot the OS Stream parser
+	var cliOSImageStreamParser *osimagestream.CliOSImageStreamParser
+	if bootstrapOpts.baseOSContainerImage != "" && bootstrapOpts.baseOSExtensionsContainerImage != "" {
+		cliOSImageStreamParser = osimagestream.NewCliOSImageStreamParser(bootstrapOpts.baseOSContainerImage, bootstrapOpts.baseOSExtensionsContainerImage)
+	}
 	if err := operator.RenderBootstrap(
 		bootstrapOpts.additionalTrustBundleFile,
 		bootstrapOpts.proxyConfigFile,
@@ -185,6 +185,8 @@ func runBootstrapCmd(_ *cobra.Command, _ []string) {
 		&imgs,
 		bootstrapOpts.destinationDir,
 		bootstrapOpts.releaseImage,
+		imgstream,
+		cliOSImageStreamParser,
 	); err != nil {
 		klog.Fatalf("error rendering bootstrap manifests: %v", err)
 	}

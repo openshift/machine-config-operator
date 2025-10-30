@@ -505,6 +505,7 @@ func (optr *Operator) sync(key string) error {
 	syncFuncs := []syncFunc{
 		// "RenderConfig" must always run first as it sets the renderConfig in the operator
 		// for the sync funcs below
+		{"OSImageStream", optr.syncOSImageStreams},
 		{"RenderConfig", optr.syncRenderConfig},
 		{"MachineConfiguration", optr.syncMachineConfiguration},
 		{"MachineConfigNode", optr.syncMachineConfigNodes},
