@@ -374,6 +374,13 @@ func (mcp *MachineConfigPool) GetCoreOsNodes() ([]Node, error) {
 	return mcp.GetNodesByLabel("node.openshift.io/os_id=rhel")
 }
 
+// GetCoreOsNodesOrFail returns a list with the CoreOs nodes that belong to the machine config pool. If any error happens it fails the test.
+func (mcp *MachineConfigPool) GetCoreOsNodesOrFail() []Node {
+	ns, err := mcp.GetCoreOsNodes()
+	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Cannot get the coreOS nodes in %s MCP", mcp.GetName())
+	return ns
+}
+
 // GetSortedNodes returns a list with the nodes that belong to the machine config pool in the same order used to update them
 // when a configuration is applied
 func (mcp *MachineConfigPool) GetSortedNodes() ([]Node, error) {
@@ -617,6 +624,18 @@ func (mcp *MachineConfigPool) RecoverFromDegraded() error {
 	}
 
 	return nil
+}
+
+// GetConfiguredMachineConfig returns the MachineConfig that is currently configured in this pool
+func (mcp *MachineConfigPool) GetConfiguredMachineConfig() (*MachineConfig, error) {
+	currentMcName, err := mcp.Get("{.status.configuration.name}")
+	if err != nil {
+		logger.Errorf("Error getting the currently configured MC in pool %s: %s", mcp.GetName(), err)
+		return nil, err
+	}
+
+	logger.Debugf("The currently configured MC in pool %s is: %s", mcp.GetName(), currentMcName)
+	return NewMachineConfig(mcp.oc, currentMcName, mcp.GetName()), nil
 }
 
 // SanityCheck returns an error if the MCP is Degraded or Updating.
