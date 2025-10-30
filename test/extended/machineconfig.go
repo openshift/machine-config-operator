@@ -6,9 +6,12 @@ import (
 	"strings"
 	"time"
 
+	machineconfigclient "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	exutil "github.com/openshift/machine-config-operator/test/extended/util"
 	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
 
+	apierrs "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -86,4 +89,30 @@ func (mc *MachineConfig) GetKernelTypeSafe() string {
 func (mc *MachineConfig) HasExtensionsSafe() bool {
 	ext := mc.GetSafe(`{.spec.extensions}`, "[]")
 	return ext != "[]" && ext != ""
+}
+
+// `ApplyMachineConfigFixtureOriginPort` applies a MachineConfig fixture
+// TODO (MCO-1960): Replace this function ported from o/origin with a standardized helper.
+func ApplyMachineConfigFixtureOriginPort(oc *exutil.CLI, fixture string) error {
+	err := NewMCOTemplate(oc, fixture).Apply()
+	return err
+}
+
+// `DeleteMCByNameOriginPort` deletes the MC with the provided name if it exists in the cluster
+// TODO (MCO-1960): Replace this function ported from o/origin with a standardized helper.
+func DeleteMCByNameOriginPort(oc *exutil.CLI, machineConfigClient *machineconfigclient.Clientset, mcName string) (mcDeleted bool, err error) {
+	// Check if the MC still exists
+	_, getMCErr := machineConfigClient.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), mcName, metav1.GetOptions{})
+	if getMCErr != nil {
+		// If the MC does not exist in the cluster, we have nothing to delete
+		if apierrs.IsNotFound(getMCErr) {
+			logger.Infof("MC `%s` does not exist so no deletion is necessary.", mcName)
+			return false, nil
+		}
+		return false, getMCErr
+	}
+
+	// Delete the desired MC
+	deleteMCErr := oc.Run("delete").Args("machineconfig", mcName).Execute()
+	return true, deleteMCErr
 }
