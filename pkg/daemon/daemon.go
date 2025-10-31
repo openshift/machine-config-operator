@@ -884,7 +884,7 @@ func (dn *Daemon) syncNode(key string) error {
 			klog.Errorf("Error making MCN for Updated: %v", err)
 		}
 	}
-	klog.V(2).Infof("Node %s is already synced", node.Name)
+	klog.V(4).Infof("Node %s is already synced", node.Name)
 	if !dn.booting && dn.initializeHealthServer {
 		// we want to wait until we are done booting AND we only want to do this once
 		// we also want to give ourselves a little extra buffer. The corner case here is sometimes we get thru the first sync, and then the errors
@@ -1586,7 +1586,7 @@ func (dn *Daemon) runKubeletHealthzMonitor(stopCh <-chan struct{}, exitCh chan<-
 }
 
 func (dn *Daemon) getHealth() error {
-	klog.V(2).Info("Kubelet health running")
+	klog.V(4).Info("Kubelet health running")
 	ctx, cancel := context.WithTimeout(context.Background(), kubeletHealthzTimeout)
 	defer cancel()
 
@@ -1613,7 +1613,7 @@ func (dn *Daemon) getHealth() error {
 		return nil
 	}
 
-	klog.V(2).Info("Kubelet health ok")
+	klog.V(4).Info("Kubelet health ok")
 
 	return nil
 }
@@ -2522,7 +2522,7 @@ func (dn *Daemon) prepUpdateFromCluster() (*updateFromCluster, error) {
 		if desiredConfigName == currentConfigName {
 			if state == constants.MachineConfigDaemonStateDone {
 				// No actual update to the config
-				klog.V(2).Info("No updating is required")
+				klog.V(4).Info("No updating is required")
 				return nil, nil
 			}
 			// This seems like it shouldn't happen...let's just warn for now.
@@ -2532,7 +2532,7 @@ func (dn *Daemon) prepUpdateFromCluster() (*updateFromCluster, error) {
 		if desiredImage == odc.currentImage && desiredConfigName == currentConfigName {
 			if state == constants.MachineConfigDaemonStateDone {
 				// No actual update to the config
-				klog.V(2).Info("No updating is required")
+				klog.V(4).Info("No updating is required")
 				return nil, nil
 			}
 			// This seems like it shouldn't happen...let's just warn for now.
