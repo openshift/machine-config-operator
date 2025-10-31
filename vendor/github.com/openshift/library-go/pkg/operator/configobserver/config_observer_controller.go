@@ -202,7 +202,7 @@ func (c ConfigObserver) sync(ctx context.Context, syncCtx factory.SyncContext) e
 func (c ConfigObserver) updateObservedConfig(ctx context.Context, syncCtx factory.SyncContext, existingConfig map[string]interface{}, mergedObservedConfig map[string]interface{}) error {
 	if len(c.nestedConfigPath) == 0 {
 		if !equality.Semantic.DeepEqual(existingConfig, mergedObservedConfig) {
-			syncCtx.Recorder().Eventf("ObservedConfigChanged", "Writing updated observed config: %v", diff.ObjectDiff(existingConfig, mergedObservedConfig))
+			syncCtx.Recorder().Eventf("ObservedConfigChanged", "Writing updated observed config: %v", diff.Diff(existingConfig, mergedObservedConfig))
 			return c.updateConfig(ctx, syncCtx, mergedObservedConfig, v1helpers.UpdateObservedConfigFn)
 		}
 		return nil
@@ -217,7 +217,7 @@ func (c ConfigObserver) updateObservedConfig(ctx context.Context, syncCtx factor
 		return fmt.Errorf("unable to extract the merged config under %v, err %v", c.nestedConfigPath, err)
 	}
 	if !equality.Semantic.DeepEqual(existingConfigNested, mergedObservedConfigNested) {
-		syncCtx.Recorder().Eventf("ObservedConfigChanged", "Writing updated section (%q) of observed config: %q", strings.Join(c.nestedConfigPath, "/"), diff.ObjectDiff(existingConfigNested, mergedObservedConfigNested))
+		syncCtx.Recorder().Eventf("ObservedConfigChanged", "Writing updated section (%q) of observed config: %q", strings.Join(c.nestedConfigPath, "/"), diff.Diff(existingConfigNested, mergedObservedConfigNested))
 		return c.updateConfig(ctx, syncCtx, mergedObservedConfigNested, c.updateNestedConfigHelper)
 	}
 	return nil

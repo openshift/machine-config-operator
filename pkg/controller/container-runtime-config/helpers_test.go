@@ -887,7 +887,7 @@ func TestUpdatePolicyJSON(t *testing.T) {
 				return
 			}
 			if !reflect.DeepEqual(gotConf, tt.want) {
-				t.Errorf("updatePolicyJSON() Diff:\n %s", diff.ObjectGoPrintDiff(tt.want, gotConf))
+				t.Errorf("updatePolicyJSON() Diff:\n %s", diff.Diff(tt.want, gotConf))
 			}
 			// Ensure that the generated configuration is actually valid.
 			_, err = signature.NewPolicyFromBytes(got)
