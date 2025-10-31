@@ -7,6 +7,7 @@ import (
 	"github.com/openshift/machine-config-operator/devex/internal/pkg/rollout"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/framework"
+	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/spf13/cobra"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -34,7 +35,7 @@ func doRevert(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("could not revert to original MCO image: %w", err)
 	}
 
-	if err := rollout.UnexposeClusterImageRegistry(cs); err != nil {
+	if err := helpers.UnexposeClusterImageRegistry(context.TODO(), cs); err != nil {
 		return fmt.Errorf("could not unexpose cluster image registry: %w", err)
 	}
 

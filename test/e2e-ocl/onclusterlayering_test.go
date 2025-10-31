@@ -31,6 +31,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/build/imagebuilder"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -98,6 +99,9 @@ type onClusterLayeringTestOpts struct {
 
 	// Inject YUM repo information from a Centos 9 stream container
 	useYumRepos bool
+
+	// Apply the following MachineConfigs before beginning the build.
+	machineConfigs []*mcfgv1.MachineConfig
 }
 
 func TestOnClusterLayeringOnOKD(t *testing.T) {
@@ -113,13 +117,14 @@ func TestOnClusterLayeringOnOKD(t *testing.T) {
 
 // Tests that an on-cluster build can be performed with the Custom Pod Builder.
 func TestOnClusterLayering(t *testing.T) {
-
-	_, mosb := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
+	_, firstMosb := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
 			layeredMCPName: cowsayDockerfile,
 		},
 	})
+
+	assert.NotEqual(t, string(firstMosb.UID), "")
 
 	// Test rebuild annotation works
 	ctx, cancel := context.WithCancel(context.Background())
@@ -135,21 +140,29 @@ func TestOnClusterLayering(t *testing.T) {
 	helpers.SetRebuildAnnotationOnMachineOSConfig(ctx, t, cs.GetMcfgclient(), mosc)
 
 	// Use the UID of the previous MOSB to ensure it is deleted as the rebuild will trigger a MOSB with the same name
-	t.Logf("Waiting for the previous MachineOSBuild with UID %q to be deleted", mosb.UID)
-	waitForMOSBToBeDeleted(t, cs, mosb)
+	t.Logf("Waiting for the previous MachineOSBuild with UID %q to be deleted", firstMosb.UID)
+	waitForMOSBToBeDeleted(t, cs, firstMosb)
 
 	// Wait for the build to start
-	waitForBuildToStartForPoolAndConfig(t, cs, layeredMCPName, mosc.Name)
-
+	secondMosb := waitForBuildToStartForPoolAndConfig(t, cs, layeredMCPName, mosc.Name)
+	assert.NotEqual(t, firstMosb.UID, secondMosb.UID)
 }
 
 // Tests that an on-cluster build can be performed and that the resulting image
 // is rolled out to an opted-in node.
 func TestOnClusterBuildRollsOutImage(t *testing.T) {
+	requiredKernelType := ctrlcommon.KernelTypeRealtime
+	if goruntime.GOARCH == "arm64" {
+		requiredKernelType = ctrlcommon.KernelType64kPages
+	}
+
 	imagePullspec, _ := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
 			layeredMCPName: cowsayDockerfile,
+		},
+		machineConfigs: []*mcfgv1.MachineConfig{
+			newMachineConfigWithKernelType(fmt.Sprintf("%s-kernel-machineconfig", requiredKernelType), layeredMCPName, requiredKernelType),
 		},
 	})
 
@@ -161,12 +174,26 @@ func TestOnClusterBuildRollsOutImage(t *testing.T) {
 
 	helpers.AssertNodeBootedIntoImage(t, cs, node, imagePullspec)
 	t.Logf("Node %s is booted into image %q", node.Name, imagePullspec)
-
 	t.Log(helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "cowsay", "Moo!"))
+
+	// Check that the booted image has the requested kernel
+	foundKernel := helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "uname", "-r")
+	t.Logf("Node %s running kernel: %s", node.Name, foundKernel)
+	if !compareKernelType(t, foundKernel, requiredKernelType) {
+		t.Fatalf("Kernel type requested %s, got %s", requiredKernelType, foundKernel)
+	}
 
 	unlabelFunc()
 
 	assertNodeRevertsToNonLayered(t, cs, node)
+
+	// Check that the reverted image has the default kernel.
+	requiredKernelType = ctrlcommon.KernelTypeDefault
+	foundKernel = helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "uname", "-r")
+	t.Logf("Node %s running kernel: %s", node.Name, foundKernel)
+	if !compareKernelType(t, foundKernel, requiredKernelType) {
+		t.Fatalf("Kernel type requested %s, got %s", requiredKernelType, foundKernel)
+	}
 }
 
 func TestMissingImageIsRebuilt(t *testing.T) {
@@ -409,12 +436,11 @@ func TestMachineConfigPoolChangeRestartsBuild(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// This test starts a build with an image that is known to fail because it uses
-// an invalid containerfile. After failure, it edits the  MachineOSConfig
-// with the expectation that the failed build and its  will be deleted and a new
-// build will start in its place.
+// This test starts a build that it then forces to fail by deleting the build
+// pods until the job itself fails. After failure, it edits the
+// MachineOSConfig with the expectation that the failed build and its  will be
+// deleted and a new build will start in its place.
 func TestGracefulBuildFailureRecovery(t *testing.T) {
-
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
@@ -427,17 +453,16 @@ func TestGracefulBuildFailureRecovery(t *testing.T) {
 		},
 	})
 
-	// Add a bad containerfile so that we can cause a build failure
-	t.Logf("Adding a bad containerfile for MachineOSConfig %s to cause a build failure", mosc.Name)
-
-	mosc.Spec.Containerfile = getBadContainerFileForFailureTest()
-
 	createMachineOSConfig(t, cs, mosc)
 
 	// Wait for the build to start.
 	firstMosb := waitForBuildToStartForPoolAndConfig(t, cs, layeredMCPName, mosc.Name)
 
 	t.Logf("Waiting for MachineOSBuild %s to fail", firstMosb.Name)
+
+	// Repeatedly delete the build pod until the job fails to cause a failure.
+	// Otherwise, it takes a very long time for the job to actually fail.
+	require.NoError(t, forceMachineOSBuildToFail(ctx, t, cs, firstMosb))
 
 	// Wait for the build to fail.
 	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
@@ -451,8 +476,6 @@ func TestGracefulBuildFailureRecovery(t *testing.T) {
 
 	updated, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().Update(ctx, apiMosc, metav1.UpdateOptions{})
 	require.NoError(t, err)
-
-	t.Logf("Cleared out bad containerfile")
 
 	mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(ctx, layeredMCPName, metav1.GetOptions{})
 	require.NoError(t, err)
@@ -470,7 +493,6 @@ func TestGracefulBuildFailureRecovery(t *testing.T) {
 	// Ensure that the second build is still running.
 	kubeassert.MachineOSBuildExists(secondMosb)
 	assertBuildObjectsAreCreated(t, kubeassert, secondMosb)
-
 }
 
 // This test validates that when a running builder is deleted, the
@@ -629,85 +651,54 @@ func TestRebuildAnnotationRestartsBuild(t *testing.T) {
 
 	createMachineOSConfig(t, cs, mosc)
 
-	mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(ctx, layeredMCPName, metav1.GetOptions{})
-	require.NoError(t, err)
-
-	mosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, cs.GetKubeclient(), mosc, mcp)
-
 	// First, we get a MachineOSBuild started as usual.
-	waitForBuildToStart(t, cs, mosb)
+	firstMosb := waitForBuildToStartForPoolAndConfig(t, cs, layeredMCPName, mosc.Name)
+
+	assert.NotEqual(t, string(firstMosb.UID), "")
 
 	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
-	assertBuildObjectsAreCreated(t, kubeassert, mosb)
+	assertBuildObjectsAreCreated(t, kubeassert, firstMosb)
 
-	pod, err := getPodFromJob(ctx, cs, utils.GetBuildJobName(mosb))
+	firstJob, err := cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).Get(ctx, utils.GetBuildJobName(firstMosb), metav1.GetOptions{})
+	require.NoError(t, err)
+
+	pod, err := getPodFromJob(ctx, cs, utils.GetBuildJobName(firstMosb))
 	require.NoError(t, err)
 	t.Logf("Initial build has started, delete the job to interrupt the build...")
 	// Delete the builder
 	bgDeletion := metav1.DeletePropagationBackground
-	err = cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).Delete(ctx, utils.GetBuildJobName(mosb), metav1.DeleteOptions{PropagationPolicy: &bgDeletion})
+	err = cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).Delete(ctx, utils.GetBuildJobName(firstMosb), metav1.DeleteOptions{PropagationPolicy: &bgDeletion})
 	require.NoError(t, err)
 
 	// Wait for the build to be interrupted.
-	waitForBuildToBeInterrupted(t, cs, mosb)
+	waitForBuildToBeInterrupted(t, cs, firstMosb)
 
 	// Wait for the job and pod to be deleted.
-	kubeassert.Eventually().JobDoesNotExist(utils.GetBuildJobName(mosb))
+	kubeassert.Eventually().JobDoesNotExist(utils.GetBuildJobName(firstMosb))
 	kubeassert.Eventually().PodDoesNotExist(pod.Name)
 
 	t.Logf("Add rebuild annotation to the MOSC...")
 	helpers.SetRebuildAnnotationOnMachineOSConfig(ctx, t, cs.GetMcfgclient(), mosc)
 
 	// Wait for the MOSB to be deleted
-	t.Logf("Waiting for MachineOSBuild with UID %s to be deleted", mosb.UID)
-	waitForMOSBToBeDeleted(t, cs, mosb)
+	t.Logf("Waiting for MachineOSBuild with UID %s to be deleted", firstMosb.UID)
+	waitForMOSBToBeDeleted(t, cs, firstMosb)
 
-	t.Logf("Annotation is updated, waiting for new build %s to start", mosb.Name)
+	t.Logf("Annotation is updated, waiting for new build %s to start", firstMosb.Name)
 	// Wait for the build to start.
-	waitForBuildToStart(t, cs, mosb)
-}
+	secondMosb := waitForBuildToStart(t, cs, firstMosb)
 
-func TestKernelType(t *testing.T) {
-	cs := framework.NewClientSet("")
-
-	// Create layered MCP and assign a node
-	helpers.CreateMCP(t, cs, layeredMCPName)
-
-	requiredKernelType := ctrlcommon.KernelTypeRealtime
-	if goruntime.GOARCH == "arm64" {
-		requiredKernelType = ctrlcommon.KernelType64kPages
-	}
-
-	// Apply Kernel Type
-	mcName := fmt.Sprintf("%s-kernel-machineconfig", requiredKernelType)
-	mc := newMachineConfigWithKernelType(mcName, layeredMCPName, requiredKernelType)
-	deleteMCFunc := makeIdempotentAndRegister(t, applyMC(t, cs, mc))
-	_, err := helpers.WaitForRenderedConfig(t, cs, layeredMCPName, mcName)
+	secondJob, err := cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).Get(ctx, utils.GetBuildJobName(secondMosb), metav1.GetOptions{})
 	require.NoError(t, err)
 
-	// Create an image
-	imagePullspec, _ := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
-		poolName: layeredMCPName,
-		customDockerfiles: map[string]string{
-			layeredMCPName: cowsayDockerfile,
-		},
-	})
+	// Ensure that the names are the same, but that the first and second
+	// MachineOSBuilds have different UIDs.
+	assert.Equal(t, firstMosb.Name, secondMosb.Name)
+	assert.NotEqual(t, firstMosb.UID, secondMosb.UID)
 
-	// Roll out image to node
-	node := helpers.GetRandomNode(t, cs, "worker")
-	unlabelFunc := makeIdempotentAndRegisterAlwaysRun(t, helpers.LabelNode(t, cs, node, helpers.MCPNameToRole(layeredMCPName)))
-	helpers.WaitForNodeImageChange(t, cs, node, imagePullspec)
-	helpers.AssertNodeBootedIntoImage(t, cs, node, imagePullspec)
-	t.Logf("Node %s is booted into image %q", node.Name, imagePullspec)
-
-	// Check if the booted image has the appropriate kernel
-	foundKernel := helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "uname", "-r")
-	if !compareKernelType(t, foundKernel, requiredKernelType) {
-		t.Fatalf("Kernel type requested %s, got %s", requiredKernelType, foundKernel)
-	}
-	unlabelFunc()
-	deleteMCFunc()
-	assertNodeRevertsToNonLayered(t, cs, node)
+	// Ensure that the build jobs have also changed.
+	assert.Equal(t, firstJob.Name, secondJob.Name)
+	assert.NotEqual(t, firstJob.UID, secondJob.UID)
 }
 
 func assertBuildObjectsAreCreated(t *testing.T, kubeassert *helpers.Assertions, mosb *mcfgv1.MachineOSBuild) {
@@ -914,6 +905,7 @@ func waitForBuildToStart(t *testing.T, cs *framework.ClientSet, build *mcfgv1.Ma
 	return mosb
 }
 
+// Waits for a MachineOSBuild with a specific UID to be deleted.
 func waitForMOSBToBeDeleted(t *testing.T, cs *framework.ClientSet, mosb *mcfgv1.MachineOSBuild) {
 	t.Helper()
 
@@ -921,45 +913,71 @@ func waitForMOSBToBeDeleted(t *testing.T, cs *framework.ClientSet, mosb *mcfgv1.
 	defer cancel()
 
 	start := time.Now()
-	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
 
-	// Get the MOSB from the API to get the UID
-	mosb, err := cs.MachineconfigurationV1Interface.MachineOSBuilds().Get(context.Background(), mosb.Name, metav1.GetOptions{})
-	require.NoError(t, err)
-	mosbUID := mosb.UID
-	t.Logf("Waiting for MachineOSBuild with UID %s to be deleted", mosbUID)
+	// If the given MachineOSBuild does not have a UID, e.g., from the
+	// NewMachineOSBuildFromAPIOrDie() helper, then we query the API server to
+	// find it.
+	if mosb.UID == "" {
+		t.Logf("No UID provided for MachineOSBuild %s, querying API for UID", mosb.Name)
+		// Get the MOSB from the API to get the UID
+		apiMosb, err := cs.MachineconfigurationV1Interface.MachineOSBuilds().Get(context.Background(), mosb.Name, metav1.GetOptions{})
+		require.NoError(t, err)
 
-	mosbs, err := cs.MachineconfigurationV1Interface.MachineOSBuilds().List(ctx, metav1.ListOptions{})
-	require.NoError(t, err)
-
-	mosbWithUIDFound := false
-	for _, mosb := range mosbs.Items {
-		if mosb.UID == mosbUID {
-			kubeassert.Eventually().MachineOSBuildDoesNotExist(&mosb)
-			t.Logf("MachineOSBuild with UID %s deleted after %s", mosbUID, time.Since(start))
-			mosbWithUIDFound = true
+		if k8serrors.IsNotFound(err) {
+			t.Logf("MachineOSBuild %s is not found, must have already been deleted", mosb.Name)
 			return
 		}
+
+		require.NoError(t, err)
+
+		mosb = apiMosb
 	}
 
-	if !mosbWithUIDFound {
-		t.Logf("MachineOSBuild with UID %s not found, must have already been deleted", mosbUID)
-	}
+	mosbName := mosb.Name
+	mosbUID := mosb.UID
+
+	t.Logf("Waiting for MachineOSBuild %s with UID %s to be deleted", mosbName, mosbUID)
+
+	// Assert does not adequately handle the case where the object is deleted.
+	// See https://issues.redhat.com/browse/OCPBUGS-63048 for details.
+	err := wait.PollImmediate(time.Second, time.Minute*5, func() (bool, error) {
+		mosbs, err := cs.MachineconfigurationV1Interface.MachineOSBuilds().List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return false, err
+		}
+
+		for _, mosb := range mosbs.Items {
+			// If we find a MachineOSBuild with the same name and UID, then we know
+			// it has not been deleted yet.
+			if mosb.Name == mosbName && mosb.UID == mosbUID {
+				return false, nil
+			}
+		}
+
+		return true, nil
+	})
+
+	t.Logf("MachineOSBuild %s with UID %s deleted after %s", mosb.Name, mosb.UID, time.Since(start))
+
+	require.NoError(t, err, "MachineOSBuild %s with UID %s not deleted after %s", mosb.Name, mosb.UID, time.Since(start))
 }
 
-// Waits for a MachineOSBuild to be deleted.
+// Waits for a MachineOSBuild to be deleted. This is different than
+// waitForMOSBToBeDeleted since it then asserts that all of the objects
+// associated with the MOSB are deleted.
 func waitForBuildToBeDeleted(t *testing.T, cs *framework.ClientSet, build *mcfgv1.MachineOSBuild) {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*5)
 	defer cancel()
 
+	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
+
 	t.Logf("Waiting for MachineOSBuild %s to be deleted", build.Name)
 
 	start := time.Now()
-	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
-	kubeassert.Eventually().MachineOSBuildDoesNotExist(build)
-	t.Logf("MachineOSBuild %s deleted after %s", build.Name, time.Since(start))
+
+	waitForMOSBToBeDeleted(t, cs, build)
 
 	assertBuildObjectsAreDeleted(t, kubeassert.Eventually(), build)
 	t.Logf("Build objects deleted after %s", time.Since(start))
@@ -1083,7 +1101,15 @@ func prepareForOnClusterLayeringTest(t *testing.T, cs *framework.ClientSet, test
 		makeIdempotentAndRegister(t, helpers.CreateMCP(t, cs, testOpts.poolName))
 	}
 
-	_, err := helpers.WaitForRenderedConfig(t, cs, testOpts.poolName, "00-worker")
+	mcNames := []string{"00-worker"}
+	if len(testOpts.machineConfigs) > 0 {
+		for _, mc := range testOpts.machineConfigs {
+			makeIdempotentAndRegister(t, helpers.ApplyMC(t, cs, mc))
+			mcNames = append(mcNames, mc.Name)
+		}
+	}
+
+	_, err := helpers.WaitForRenderedConfigs(t, cs, testOpts.poolName, mcNames...)
 	require.NoError(t, err)
 
 	mosc := &mcfgv1.MachineOSConfig{
@@ -1354,9 +1380,12 @@ func waitForImageBuildDegradedCondition(ctx context.Context, t *testing.T, cs *f
 	return condition
 }
 
-// TestImageBuildDegradedOnFailureAndClearedOnBuildSuccess tests that the ImageBuildDegraded condition is set to
-// True when a MachineOSBuild fails, and is set to False when a MachineOSBuild succeeds after a previous failure.
-func TestImageBuildDegradedOnFailureAndClearedOnBuildSuccess(t *testing.T) {
+// TestImageBuildDegradedOnFailureAndClearedOnBuildStart tests that the
+// ImageBuildDegraded condition is set to True when a MachineOSBuild fails, and
+// is set to False when a MachineOSBuild is started after a previous failure.
+// Previously, this test waited until the build was completed before verifying
+// that the state was no longer degraded.
+func TestImageBuildDegradedOnFailureAndClearedOnBuildStart(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
@@ -1369,7 +1398,8 @@ func TestImageBuildDegradedOnFailureAndClearedOnBuildSuccess(t *testing.T) {
 		},
 	})
 
-	// First, add a bad containerfile to cause a build failure
+	// First, add a bad containerfile to cause a build failure. However, we will
+	// actually delete the build pod to force the failure to happen faster.
 	t.Logf("Adding a bad containerfile for MachineOSConfig %s to cause a build failure", mosc.Name)
 	mosc.Spec.Containerfile = getBadContainerFileForFailureTest()
 
@@ -1379,13 +1409,17 @@ func TestImageBuildDegradedOnFailureAndClearedOnBuildSuccess(t *testing.T) {
 	firstMosb := waitForBuildToStartForPoolAndConfig(t, cs, layeredMCPName, mosc.Name)
 	t.Logf("Waiting for MachineOSBuild %s to fail", firstMosb.Name)
 
+	// Force the build to fail faster by repeatedly deleting the build pods until
+	// the job reflects a failure status.
+	require.NoError(t, forceMachineOSBuildToFail(ctx, t, cs, firstMosb))
+
 	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
 	kubeassert.Eventually().MachineOSBuildIsFailure(firstMosb)
 
 	// Wait for and verify ImageBuildDegraded condition is set to True
 	degradedCondition := waitForImageBuildDegradedCondition(ctx, t, cs, layeredMCPName, corev1.ConditionTrue)
 	require.NotNil(t, degradedCondition, "ImageBuildDegraded condition should be present")
-	assert.Equal(t, "BuildFailed", degradedCondition.Reason, "ImageBuildDegraded reason should be BuildFailed")
+	assert.Equal(t, string(mcfgv1.MachineConfigPoolBuildFailed), degradedCondition.Reason, "ImageBuildDegraded reason should be BuildFailed")
 	assert.Contains(t, degradedCondition.Message, fmt.Sprintf("Failed to build OS image for pool %s", layeredMCPName), "ImageBuildDegraded message should contain pool name")
 	assert.Contains(t, degradedCondition.Message, firstMosb.Name, "ImageBuildDegraded message should contain MachineOSBuild name")
 
@@ -1413,16 +1447,12 @@ func TestImageBuildDegradedOnFailureAndClearedOnBuildSuccess(t *testing.T) {
 	// Compute the new MachineOSBuild name
 	moscChangeMosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, cs.GetKubeclient(), updated, mcp)
 
-	// Wait for the second build to start and complete successfully
-	secondMosb := waitForBuildToStart(t, cs, moscChangeMosb)
-	finishedBuild := waitForBuildToComplete(t, cs, secondMosb)
+	// Wait for the second build to start
+	waitForBuildToStart(t, cs, moscChangeMosb)
 
-	t.Logf("Second build completed successfully: %s", finishedBuild.Name)
-
-	// Wait for and verify ImageBuildDegraded condition is now False
+	// Wait for and verify ImageBuildDegraded condition is False after the new build starts.
 	degradedCondition = waitForImageBuildDegradedCondition(ctx, t, cs, layeredMCPName, corev1.ConditionFalse)
 	require.NotNil(t, degradedCondition, "ImageBuildDegraded condition should still be present")
-	assert.Equal(t, "BuildSucceeded", degradedCondition.Reason, "ImageBuildDegraded reason should be BuildSucceeded")
-
+	assert.Equal(t, string(mcfgv1.MachineConfigPoolBuilding), degradedCondition.Reason, "ImageBuildDegraded reason should be Building")
 	t.Logf("ImageBuildDegraded condition correctly cleared to False with message: %s", degradedCondition.Message)
 }
