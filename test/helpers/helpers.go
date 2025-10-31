@@ -273,3 +273,38 @@ func MarshalOrDie(input interface{}) []byte {
 	}
 	return bytes
 }
+
+// NewNodeWithReady creates a new node with the specified configuration and ready status
+func NewNodeWithReady(name, currentConfig, desiredConfig string, status corev1.ConditionStatus) *corev1.Node {
+	nb := NewNodeBuilder(name)
+	nb.WithCurrentConfig(currentConfig)
+	nb.WithDesiredConfig(desiredConfig)
+	nb.WithStatus(corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: status}}})
+	return nb.Node()
+}
+
+// NewLayeredNodeWithReady creates a new layered node with the specified configuration, images, and ready status
+func NewLayeredNodeWithReady(name, currentConfig, desiredConfig, currentImage, desiredImage string, status corev1.ConditionStatus) *corev1.Node {
+	nb := NewNodeBuilder(name)
+	nb.WithCurrentConfig(currentConfig)
+	nb.WithDesiredConfig(desiredConfig)
+	nb.WithCurrentImage(currentImage)
+	nb.WithDesiredImage(desiredImage)
+	nb.WithStatus(corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: status}}})
+	return nb.Node()
+}
+
+// GetNamesFromNodes extracts node names from a slice of nodes
+func GetNamesFromNodes(nodes []*corev1.Node) []string {
+	// When there are no nodes, return an empty
+	if len(nodes) == 0 {
+		return []string{}
+	}
+
+	// Loop through the nodes to return a list of their names.
+	names := make([]string, len(nodes))
+	for i, node := range nodes {
+		names[i] = node.Name
+	}
+	return names
+}
