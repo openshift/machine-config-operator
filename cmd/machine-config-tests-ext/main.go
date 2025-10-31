@@ -6,11 +6,12 @@ import (
 	"strings"
 	"time"
 
+	e2e "k8s.io/kubernetes/test/e2e/framework"
+
 	"github.com/openshift-eng/openshift-tests-extension/pkg/cmd"
 	v "github.com/openshift-eng/openshift-tests-extension/pkg/version"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	exutil "github.com/openshift/machine-config-operator/test/extended/util"
-	e2e "k8s.io/kubernetes/test/e2e/framework"
 
 	"github.com/spf13/cobra"
 
