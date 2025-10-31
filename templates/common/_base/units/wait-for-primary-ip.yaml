@@ -1,8 +1,8 @@
-name: wait-for-primary-ip.service
+name: wait-for-node-ip.service
 enabled: true
 contents: |
   [Unit]
-  Description=Ensure primary IP is assigned and usable
+  Description=Ensure node IP(s) are assigned and usable
   Requires=nmstate.service
   After=nmstate.service
   Before=kubelet-dependencies.target
@@ -14,7 +14,7 @@ contents: |
   # available in systemd v244 and higher.
   ExecStart=/bin/bash -c " \
     until \
-    /usr/local/bin/wait-for-primary-ip.sh; \
+    /usr/local/bin/wait-for-node-ip.sh; \
     do \
     sleep 10; \
     done"
