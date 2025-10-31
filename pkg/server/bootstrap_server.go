@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 
+	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	yaml "github.com/ghodss/yaml"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientcmd "k8s.io/client-go/tools/clientcmd/api/v1"
@@ -134,7 +135,12 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*runtime.RawExtension, er
 
 	addDataAndMaybeAppendToIgnition(caBundleFilePath, cc.Spec.KubeAPIServerServingCAData, &ignConf)
 	addDataAndMaybeAppendToIgnition(cloudProviderCAPath, cc.Spec.CloudProviderCAData, &ignConf)
-	appenders := getAppenders(currConf, nil, bsc.kubeconfigFunc, bsc.certs, bsc.serverBaseDir)
+	appenders := getAppenders(currConf, nil, bsc.kubeconfigFunc, bsc.certs, bsc.serverBaseDir,
+		// append machine annotations file.
+		func(cfg *ign3types.Config, _ *mcfgv1.MachineConfig) error {
+			return appendNodeAnnotations(cfg, currConf, "")
+		},
+	)
 	for _, a := range appenders {
 		if err := a(&ignConf, mc); err != nil {
 			return nil, err
