@@ -36,16 +36,9 @@ const (
 )
 
 func createNewKubeletDynamicSystemReservedIgnition(autoSystemReserved *bool, userDefinedSystemReserved map[string]string) *ign3types.File {
-	var autoNodeSizing string
 	var systemReservedMemory string
 	var systemReservedCPU string
 	var systemReservedEphemeralStorage string
-
-	if autoSystemReserved == nil {
-		autoNodeSizing = "false"
-	} else {
-		autoNodeSizing = strconv.FormatBool(*autoSystemReserved)
-	}
 
 	if val, ok := userDefinedSystemReserved["memory"]; ok && val != "" {
 		systemReservedMemory = val
@@ -64,9 +57,14 @@ func createNewKubeletDynamicSystemReservedIgnition(autoSystemReserved *bool, use
 	} else {
 		systemReservedEphemeralStorage = "1Gi"
 	}
-
-	config := fmt.Sprintf("NODE_SIZING_ENABLED=%s\nSYSTEM_RESERVED_MEMORY=%s\nSYSTEM_RESERVED_CPU=%s\nSYSTEM_RESERVED_ES=%s\n",
-		autoNodeSizing, systemReservedMemory, systemReservedCPU, systemReservedEphemeralStorage)
+	var config string
+	if autoSystemReserved == nil {
+		config = fmt.Sprintf("NODE_SIZING_ENABLED=%s\nSYSTEM_RESERVED_MEMORY=%s\nSYSTEM_RESERVED_CPU=%s\nSYSTEM_RESERVED_ES=%s\n",
+			"true", systemReservedMemory, systemReservedCPU, systemReservedEphemeralStorage)
+	} else {
+		config = fmt.Sprintf("NODE_SIZING_ENABLED=%s\nSYSTEM_RESERVED_MEMORY=%s\nSYSTEM_RESERVED_CPU=%s\nSYSTEM_RESERVED_ES=%s\nNODE_SIZING_USER_VAL=%s\n",
+			"true", systemReservedMemory, systemReservedCPU, systemReservedEphemeralStorage, strconv.FormatBool(*autoSystemReserved))
+	}
 
 	r := ctrlcommon.NewIgnFileBytesOverwriting("/etc/node-sizing-enabled.env", []byte(config))
 	return &r
@@ -519,8 +517,7 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 	}
 	if kubeletConfig.Spec.AutoSizingReserved != nil && len(userDefinedSystemReserved) == 0 {
 		autoSizingReservedIgnition = createNewKubeletDynamicSystemReservedIgnition(kubeletConfig.Spec.AutoSizingReserved, userDefinedSystemReserved)
-	}
-	if len(userDefinedSystemReserved) > 0 {
+	} else if len(userDefinedSystemReserved) > 0 {
 		autoSizingReservedIgnition = createNewKubeletDynamicSystemReservedIgnition(nil, userDefinedSystemReserved)
 	}
 
