@@ -26,6 +26,9 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		PartialMachineSetFixture = filepath.Join("machineconfigurations", "managedbootimages-partial.yaml")
 		EmptyMachineSetFixture   = filepath.Join("machineconfigurations", "managedbootimages-empty.yaml")
 
+		AllControlPlaneMachineSetFixture  = filepath.Join("machineconfigurations", "managedbootimages-cpms-all.yaml")
+		NoneControlPlaneMachineSetFixture = filepath.Join("machineconfigurations", "managedbootimages-cpms-none.yaml")
+
 		oc = exutil.NewCLI("mco-bootimage", exutil.KubeConfigPath()).AsAdmin()
 	)
 
@@ -62,6 +65,15 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	// This test is [Disruptive] because it scales up a new worker node after performing a boot image update, and the scales it down.
 	g.It("[Disruptive] Should update boot images on an Azure MachineSets with a legacy boot image and scale successfully [apigroup:machineconfiguration.openshift.io]", func() {
 		AzureLegacyBootImageTest(oc, PartialMachineSetFixture)
+	})
+
+	// This test is [Disruptive] because it scales up a new control plane node after performing a boot image update, and the scales it down.
+	g.It("[OCPFeatureGate:ManagedBootImagesCPMS][Disruptive] Should update boot images on ControlPlaneMachineSets and resize properly [apigroup:machineconfiguration.openshift.io]", func() {
+		AllControlPlaneMachineSetTest(oc, AllControlPlaneMachineSetFixture)
+	})
+
+	g.It("[OCPFeatureGate:ManagedBootImagesCPMS] Should not update boot images on ControlPlaneMachineSets when not configured [apigroup:machineconfiguration.openshift.io]", func() {
+		NoneControlPlaneMachineSetTest(oc, NoneControlPlaneMachineSetFixture)
 	})
 })
 

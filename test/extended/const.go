@@ -52,6 +52,9 @@ const (
 	// MAPIMachinesetQualifiedName is the fully qualified name of the MAPI MachineSet Resource
 	MAPIMachinesetQualifiedName = "machinesets.machine.openshift.io"
 
+	// ControlPlaneMachinesetQualifiedName is the fully qualified name of the MAPI MachineSet Resource
+	ControlPlaneMachinesetQualifiedName = "controlplanemachinesets.machine.openshift.io"
+
 	// GoldenBootImagesConfigMap is the configmap that stores the bootimages refs of the current OCP release
 	GoldenBootImagesConfigMap = "coreos-bootimages"
 
