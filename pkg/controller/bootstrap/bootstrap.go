@@ -18,10 +18,13 @@ import (
 	kscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog/v2"
 
+	"github.com/containers/image/v5/docker/reference"
+	"github.com/opencontainers/go-digest"
 	apicfgv1 "github.com/openshift/api/config/v1"
 	apicfgv1alpha1 "github.com/openshift/api/config/v1alpha1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
+	buildconstants "github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	containerruntimeconfig "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
 	kubeletconfig "github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
@@ -73,8 +76,9 @@ func (b *Bootstrap) Run(destDir string) error {
 	apioperatorsv1alpha1.Install(scheme)
 	apicfgv1.Install(scheme)
 	apicfgv1alpha1.Install(scheme)
+	corev1.AddToScheme(scheme)
 	codecFactory := serializer.NewCodecFactory(scheme)
-	decoder := codecFactory.UniversalDecoder(mcfgv1.GroupVersion, apioperatorsv1alpha1.GroupVersion, apicfgv1.GroupVersion, apicfgv1alpha1.GroupVersion)
+	decoder := codecFactory.UniversalDecoder(mcfgv1.GroupVersion, apioperatorsv1alpha1.GroupVersion, apicfgv1.GroupVersion, apicfgv1alpha1.GroupVersion, corev1.SchemeGroupVersion)
 
 	var (
 		cconfig              *mcfgv1.ControllerConfig
@@ -83,6 +87,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		kconfigs             []*mcfgv1.KubeletConfig
 		pools                []*mcfgv1.MachineConfigPool
 		configs              []*mcfgv1.MachineConfig
+		machineOSConfigs     []*mcfgv1.MachineOSConfig
 		crconfigs            []*mcfgv1.ContainerRuntimeConfig
 		icspRules            []*apioperatorsv1alpha1.ImageContentSourcePolicy
 		idmsRules            []*apicfgv1.ImageDigestMirrorSet
@@ -124,6 +129,8 @@ func (b *Bootstrap) Run(destDir string) error {
 				pools = append(pools, obj)
 			case *mcfgv1.MachineConfig:
 				configs = append(configs, obj)
+			case *mcfgv1.MachineOSConfig:
+				machineOSConfigs = append(machineOSConfigs, obj)
 			case *mcfgv1.ControllerConfig:
 				cconfig = obj
 			case *mcfgv1.ContainerRuntimeConfig:
@@ -233,6 +240,17 @@ func (b *Bootstrap) Run(destDir string) error {
 		configs = append(configs, kconfigs...)
 	}
 	klog.Infof("Successfully generated MachineConfigs from kubelet configs.")
+
+	// Create component MachineConfigs for pre-built images for hybrid OCL
+	// This must happen BEFORE render.RunBootstrap() so they can be merged into rendered MCs
+	if len(machineOSConfigs) > 0 {
+		preBuiltImageMCs, err := createPreBuiltImageMachineConfigs(machineOSConfigs, pools)
+		if err != nil {
+			return fmt.Errorf("failed to create pre-built image MachineConfigs: %w", err)
+		}
+		configs = append(configs, preBuiltImageMCs...)
+		klog.Infof("Successfully created %d pre-built image component MachineConfigs for hybrid OCL.", len(preBuiltImageMCs))
+	}
 
 	fpools, gconfigs, err := render.RunBootstrap(pools, configs, cconfig)
 	if err != nil {
@@ -375,4 +393,70 @@ func parseManifests(filename string, r io.Reader) ([]manifest, error) {
 		}
 		manifests = append(manifests, m)
 	}
+}
+
+// createPreBuiltImageMachineConfigs creates component MachineConfigs that set osImageURL for pools
+// that have associated MachineOSConfigs with pre-built image annotations.
+// These component MCs will be automatically merged into rendered MCs by the render controller.
+// This function performs strict validation at bootstrap time and will fail if:
+// - A MachineOSConfig is missing the pre-built image annotation
+// - The pre-built image format or digest is invalid
+func createPreBuiltImageMachineConfigs(machineOSConfigs []*mcfgv1.MachineOSConfig, pools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
+	var preBuiltImageMCs []*mcfgv1.MachineConfig
+
+	// At bootstrap time, we require ALL MachineOSConfigs to have pre-built images
+	// This is a strict requirement for day-0 hybrid OCL support
+	for _, mosc := range machineOSConfigs {
+		preBuiltImage, hasPreBuiltImage := mosc.Annotations[buildconstants.PreBuiltImageAnnotationKey]
+		if !hasPreBuiltImage || preBuiltImage == "" {
+			return nil, fmt.Errorf("MachineOSConfig %s is missing required annotation %s for bootstrap pre-built image support",
+				mosc.Name, buildconstants.PreBuiltImageAnnotationKey)
+		}
+
+		poolName := mosc.Spec.MachineConfigPool.Name
+
+		// Validate the pre-built image format and digest
+		if err := validatePreBuiltImage(preBuiltImage); err != nil {
+			return nil, fmt.Errorf("invalid pre-built image %q for MachineOSConfig %s (pool %s): %w",
+				preBuiltImage, mosc.Name, poolName, err)
+		}
+
+		// Create the component MachineConfig
+		mc := ctrlcommon.CreatePreBuiltImageMachineConfig(poolName, preBuiltImage, buildconstants.PreBuiltImageAnnotationKey)
+		preBuiltImageMCs = append(preBuiltImageMCs, mc)
+		klog.Infof("✓ Validated and created component MachineConfig %s with OSImageURL: %s for pool %s", mc.Name, preBuiltImage, poolName)
+	}
+
+	return preBuiltImageMCs, nil
+}
+
+// validatePreBuiltImage validates the pre-built image format using containers/image library
+func validatePreBuiltImage(imageSpec string) error {
+	if imageSpec == "" {
+		return fmt.Errorf("pre-built image spec cannot be empty")
+	}
+
+	// Use the containers/image library to parse and validate the image reference
+	ref, err := reference.ParseNamed(imageSpec)
+	if err != nil {
+		return fmt.Errorf("pre-built image has invalid format: %w", err)
+	}
+
+	// Ensure the reference has a digest (is canonical)
+	canonical, ok := ref.(reference.Canonical)
+	if !ok {
+		return fmt.Errorf("pre-built image must use digested format (image@sha256:digest), got: %q", imageSpec)
+	}
+
+	// Validate the digest using the go-digest library
+	if err := canonical.Digest().Validate(); err != nil {
+		return fmt.Errorf("pre-built image has invalid digest: %w", err)
+	}
+
+	// Ensure it's specifically a SHA256 digest (which is what we expect for container images)
+	if canonical.Digest().Algorithm() != digest.SHA256 {
+		return fmt.Errorf("pre-built image must use SHA256 digest, got %s: %q", canonical.Digest().Algorithm(), imageSpec)
+	}
+
+	return nil
 }
