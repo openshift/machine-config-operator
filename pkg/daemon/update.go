@@ -2627,7 +2627,7 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 		}); err != nil {
 			// Report ImagePulledFromRegistry condition as false (failed)
 			if imageModeStatusReportingEnabled {
-				err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
+				mcnErr := upgrademonitor.GenerateAndApplyMachineConfigNodes(
 					&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeImagePulledFromRegistry, Reason: string(mcfgv1.MachineConfigNodeImagePulledFromRegistry), Message: fmt.Sprintf("Failed to pull OS image %s from registry: %v", newURL, err)},
 					nil,
 					metav1.ConditionFalse,
@@ -2637,8 +2637,8 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 					dn.fgHandler,
 					pool,
 				)
-				if err != nil {
-					klog.Errorf("Error setting ImagePulledFromRegistry condition to false: %v", err)
+				if mcnErr != nil {
+					klog.Errorf("Error setting ImagePulledFromRegistry condition to false: %v", mcnErr)
 				}
 			}
 			return fmt.Errorf("Failed to update OS to %s after retries: %w", newURL, err)
