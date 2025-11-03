@@ -419,7 +419,7 @@ func IsCapabilityEnabled(oc *exutil.CLI, capability string) bool {
 func GetCurrentTestPolarionIDNumber() string {
 	name := g.CurrentSpecReport().FullText()
 
-	r := regexp.MustCompile(`PolarionID:(?P<id>\d+)`)
+	r := regexp.MustCompile(`\[PolarionID:(?P<id>\d+)\]`)
 
 	matches := r.FindStringSubmatch(name)
 	number := r.SubexpIndex("id")
