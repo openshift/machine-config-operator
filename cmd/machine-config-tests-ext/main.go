@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/openshift-eng/openshift-tests-extension/pkg/cmd"
+	et "github.com/openshift-eng/openshift-tests-extension/pkg/extension/extensiontests"
 	v "github.com/openshift-eng/openshift-tests-extension/pkg/version"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
@@ -19,6 +20,37 @@ import (
 	_ "github.com/openshift/machine-config-operator/test/extended"
 	_ "github.com/openshift/machine-config-operator/test/extended-priv"
 )
+
+func applyLabelFilters(specs et.ExtensionTestSpecs) {
+	// Apply Platform label filters: tests with Platform:platformname only run on that platform
+	specs.Walk(func(spec *et.ExtensionTestSpec) {
+		for label := range spec.Labels {
+			if strings.HasPrefix(label, "Platform:") {
+				platformName := strings.TrimPrefix(label, "Platform:")
+				spec.Include(et.PlatformEquals(platformName))
+			}
+		}
+	})
+
+	// Apply NoPlatform label filters: tests with NoPlatform:platformname excluded from that platform
+	specs.Walk(func(spec *et.ExtensionTestSpec) {
+		for label := range spec.Labels {
+			if strings.HasPrefix(label, "NoPlatform:") {
+				platformName := strings.TrimPrefix(label, "NoPlatform:")
+				spec.Exclude(et.PlatformEquals(platformName))
+			}
+		}
+	})
+
+	// Exclude tests with "Exclude:REASON" labels
+	specs.Walk(func(spec *et.ExtensionTestSpec) {
+		for label := range spec.Labels {
+			if strings.HasPrefix(label, "Exclude:") {
+				spec.Exclude("true")
+			}
+		}
+	})
+}
 
 func main() {
 	// Extension registry
@@ -47,6 +79,8 @@ func main() {
 	if err != nil {
 		panic(fmt.Sprintf("couldn't build extension test specs from ginkgo: %+v", err.Error()))
 	}
+
+	applyLabelFilters(specs)
 
 	ext.AddSpecs(specs)
 	registry.Register(ext)
