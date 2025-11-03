@@ -69,6 +69,12 @@ func TestNodeConfigDefault(t *testing.T) {
 			f.nodeLister = append(f.nodeLister, nodeConfig)
 			f.oseobjects = append(f.oseobjects, nodeConfig)
 
+			// Auto-sizing MC
+			autoSizingKey := fmt.Sprintf("01-%s-auto-sizing", mcp.Name)
+			autoSizingMC := helpers.NewMachineConfig(autoSizingKey, map[string]string{"node-role/worker": ""}, "dummy://", []ign3types.File{{}})
+
+			f.expectGetMachineConfigAction(autoSizingMC)
+			f.expectCreateMachineConfigAction(autoSizingMC)
 			f.expectGetMachineConfigAction(mcs)
 			f.expectGetMachineConfigAction(mcsDeprecated)
 			f.expectGetMachineConfigAction(mcs)
@@ -119,11 +125,18 @@ func TestBootstrapNodeConfigDefault(t *testing.T) {
 						if err != nil {
 							t.Errorf("could not run node config bootstrap: %v", err)
 						}
-						expectedCount := 2
+						// Bootstrap now creates 4 MachineConfigs:
+						// 1. master auto-sizing (01-master-auto-sizing-disabled)
+						// 2. master node config (97-master-generated-kubelet)
+						// 3. worker auto-sizing (01-worker-auto-sizing-disabled)
+						// 4. worker node config (97-worker-generated-kubelet)
+						expectedCount := 4
 						if len(mcs) != expectedCount {
 							t.Errorf("expected %v machine configs generated with the default node config, got %d machine configs", expectedCount, len(mcs))
 						}
-						require.Equal(t, mcs[0].Spec.KernelArguments, expect.MasterKernelArgs)
+						// The kernel args are on the node config MCs (indices 2 and 3)
+						// Order: 0=master auto-sizing, 1=worker auto-sizing, 2=master node config, 3=worker node config
+						require.Equal(t, expect.MasterKernelArgs, mcs[2].Spec.KernelArguments)
 					}
 				})
 			}
@@ -218,8 +231,19 @@ func TestNodeConfigCustom(t *testing.T) {
 
 			mcList, err = c.client.MachineconfigurationV1().MachineConfigs().List(context.TODO(), metav1.ListOptions{})
 			require.NoError(t, err)
-			require.Len(t, mcList.Items, 1)
-			require.NotEqual(t, nodeKeyCustom, mcList.Items[0].Name)
+			// Now expecting 2 MachineConfigs:
+			// 1. Auto-sizing MC for worker (01-worker-auto-sizing-disabled)
+			// 2. Node config MC for worker (97-worker-generated-kubelet)
+			// Note: The pre-existing nodeKeyCustom (97-custom-generated-kubelet) is cleaned up by
+			// cleanUpDuplicatedMC because it was created without the proper annotation
+			require.Len(t, mcList.Items, 2)
+			// Verify both MachineConfigs are present
+			mcNames := make(map[string]bool)
+			for _, mc := range mcList.Items {
+				mcNames[mc.Name] = true
+			}
+			require.True(t, mcNames["01-worker-auto-sizing-disabled"], "Expected 01-worker-auto-sizing-disabled to be created")
+			require.True(t, mcNames["97-worker-generated-kubelet"], "Expected 97-worker-generated-kubelet to be created")
 		})
 	}
 }
