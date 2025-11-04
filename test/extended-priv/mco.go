@@ -1,6 +1,11 @@
 package extended
 
 import (
+	"fmt"
+	"strings"
+
+	"github.com/Masterminds/semver/v3"
+	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
@@ -65,4 +70,34 @@ func checkDegraded(mcp *MachineConfigPool, expectedMessage, expectedReason, degr
 			"co/machine-config should never have condition Available=false")
 	}
 	logger.Infof("OK!\n")
+}
+
+func skipTestIfRHELVersion(node Node, operator, constraintVersion string) {
+	actualVersion, err := node.GetRHELVersion()
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting RHEL version from node %s", node.GetName())
+
+	// Pad version to semantic version format if needed (e.g., "9.6" -> "9.6.0")
+	parts := strings.Split(actualVersion, ".")
+	for len(parts) < 3 {
+		parts = append(parts, "0")
+	}
+	paddedVersion := strings.Join(parts, ".")
+
+	// Pad constraint version as well
+	constraintParts := strings.Split(constraintVersion, ".")
+	for len(constraintParts) < 3 {
+		constraintParts = append(constraintParts, "0")
+	}
+	paddedConstraintVersion := strings.Join(constraintParts, ".")
+
+	// Parse versions for comparison
+	constraint, err := semver.NewConstraint(operator + paddedConstraintVersion)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error parsing version constraint")
+
+	actual, err := semver.NewVersion(paddedVersion)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error parsing actual version %s (padded from %s)", paddedVersion, actualVersion)
+
+	if constraint.Check(actual) {
+		g.Skip(fmt.Sprintf("Test requires RHEL version NOT %s %s, but node has %s", operator, constraintVersion, actualVersion))
+	}
 }

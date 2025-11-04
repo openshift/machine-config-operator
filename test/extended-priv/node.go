@@ -12,8 +12,10 @@ import (
 
 	expect "github.com/google/goexpect"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
+	"github.com/openshift/machine-config-operator/test/extended-priv/util/architecture"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	o "github.com/onsi/gomega"
@@ -274,11 +276,6 @@ func (n *Node) IsUpdated() bool {
 	return (n.GetCurrentMachineConfig() == n.GetDesiredMachineConfig()) && (n.GetMachineConfigState() == "Done")
 }
 
-// IsReady returns if the node is in Ready condition
-func (n *Node) IsReady() bool {
-	return n.IsConditionStatusTrue("Ready")
-}
-
 // IsTainted returns if the node hast taints or not
 func (n *Node) IsTainted() bool {
 	taint, err := n.Get("{.spec.taints}")
@@ -316,6 +313,11 @@ func (n *Node) IsEdge() (bool, error) {
 	return true, nil
 }
 
+// IsReady returns if the node is in Ready condition
+func (n *Node) IsReady() bool {
+	return n.IsConditionStatusTrue("Ready")
+}
+
 // GetMCDaemonLogs returns the logs of the MachineConfig daemonset pod for this node. The logs will be grepped using the 'filter' parameter
 func (n *Node) GetMCDaemonLogs(filter string) (string, error) {
 	var (
@@ -328,150 +330,6 @@ func (n *Node) GetMCDaemonLogs(filter string) (string, error) {
 	})
 
 	return mcdLogs, err
-}
-
-// CopyFromLocal copies a local file to the node
-func (n *Node) CopyFromLocal(from, to string) error {
-	immediate := true
-	waitErr := wait.PollUntilContextTimeout(context.TODO(), 1*time.Minute, 5*time.Minute, immediate, func(_ context.Context) (bool, error) {
-		kubeletReady := n.IsReady()
-		if kubeletReady {
-			return true, nil
-		}
-		logger.Warnf("Kubelet is not ready in %s. To copy the file to the node we need to wait for kubelet to be ready. Waiting...", n)
-		return false, nil
-	})
-
-	if waitErr != nil {
-		logger.Errorf("Cannot copy file %s to %s in node %s because Kubelet is not ready in this node", from, to, n)
-		return waitErr
-	}
-
-	return n.oc.Run("adm").Args("copy-to-node", "node/"+n.GetName(), fmt.Sprintf("--copy=%s=%s", from, to)).Execute()
-}
-
-// CopyToLocal Copy a file or directory in the node to a local path
-func (n *Node) CopyToLocal(from, to string) error {
-	logger.Infof("Node: %s. Copying file %s to local path %s",
-		n.GetName(), from, to)
-	mcDaemonName := n.GetMachineConfigDaemon()
-	fromDaemon := filepath.Join("/rootfs", from)
-
-	return n.oc.Run("cp").Args("-n", MachineConfigNamespace, mcDaemonName+":"+fromDaemon, to, "-c", MachineConfigDaemon).Execute()
-}
-
-// GetPool returns the only pool owning this node
-func (n *Node) GetPrimaryPool() (*MachineConfigPool, error) {
-	allMCPs, err := NewMachineConfigPoolList(n.oc).GetAll()
-	if err != nil {
-		return nil, err
-	}
-
-	var primaryPool *MachineConfigPool
-	for _, item := range allMCPs {
-		pool := item
-		allNodes, err := pool.getSelectedNodes("")
-		if err != nil {
-			return nil, err
-		}
-
-		for _, node := range allNodes {
-			if node.GetName() != n.GetName() {
-				continue
-			}
-
-			// We use short circuit evaluation to set the primary pool:
-			// - If the pool is master, it will be the primary pool;
-			// - If the primary pool is nil (not set yet), we set the primary pool (either worker or custom);
-			// - If the primary pool is not nil, we overwrite it only if the primary pool is a worker.
-			if pool.IsMaster() || primaryPool == nil || primaryPool.IsWorker() {
-				primaryPool = &pool
-			} else if pool.IsCustom() && primaryPool != nil && primaryPool.IsCustom() {
-				// Error condition: the node belongs to 2 custom pools
-				return nil, fmt.Errorf("Forbidden configuration. The node %s belongs to 2 custom pools: %s and %s",
-					node.GetName(), primaryPool.GetName(), pool.GetName())
-			}
-		}
-	}
-
-	return primaryPool, nil
-}
-
-// GetMachineConfigNode returns the MachineConfigNode resource linked to this node
-func (n *Node) GetMachineConfigNode() *MachineConfigNode {
-	return NewMachineConfigNode(n.oc.AsAdmin(), n.GetName())
-}
-
-// GetAll returns a []Node list with all existing nodes
-func (nl *NodeList) GetAll() ([]Node, error) {
-	allNodeResources, err := nl.ResourceList.GetAll()
-	if err != nil {
-		return nil, err
-	}
-	allNodes := make([]Node, 0, len(allNodeResources))
-
-	for _, nodeRes := range allNodeResources {
-		allNodes = append(allNodes, *NewNode(nl.oc, nodeRes.name))
-	}
-
-	return allNodes, nil
-}
-
-// GetAllReady returns a []Node list with all ready nodes
-func (nl *NodeList) GetAllReady() ([]Node, error) {
-	allNodes, err := nl.GetAll()
-	if err != nil {
-		return nil, err
-	}
-
-	readyNodes := make([]Node, 0)
-	for _, node := range allNodes {
-		if node.IsReady() {
-			readyNodes = append(readyNodes, node)
-		}
-	}
-
-	return readyNodes, nil
-}
-
-// quietSetNamespacePrivileged invokes exutil.SetNamespacePrivileged but disable the logs output to avoid noise in the logs
-func quietSetNamespacePrivileged(oc *exutil.CLI, namespace string) error {
-	oc.NotShowInfo()
-	defer oc.SetShowInfo()
-
-	logger.Debugf("Setting namespace %s as privileged", namespace)
-	return exutil.SetNamespacePrivileged(oc, namespace)
-}
-
-// quietRecoverNamespaceRestricted invokes exutil.RecoverNamespaceRestricted but disable the logs output to avoid noise in the logs
-func quietRecoverNamespaceRestricted(oc *exutil.CLI, namespace string) error {
-	oc.NotShowInfo()
-	defer oc.SetShowInfo()
-
-	logger.Debugf("Recovering namespace %s from privileged", namespace)
-	return exutil.RecoverNamespaceRestricted(oc, namespace)
-}
-
-// GetOperatorNode returns the node running the MCO operator pod
-func GetOperatorNode(oc *exutil.CLI) (*Node, error) {
-	podsList := NewNamespacedResourceList(oc.AsAdmin(), "pods", MachineConfigNamespace)
-	podsList.ByLabel("k8s-app=machine-config-operator")
-
-	mcoPods, err := podsList.GetAll()
-	if err != nil {
-		return nil, err
-	}
-
-	if len(mcoPods) != 1 {
-		return nil, fmt.Errorf("There should be 1 and only 1 MCO operator pod. Found operator pods: %s", mcoPods)
-	}
-
-	nodeName, err := mcoPods[0].Get(`{.spec.nodeName}`)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewNode(oc, nodeName), nil
 }
 
 // GetDateOrFail executes GetDate and fails the test if there is an error
@@ -638,4 +496,189 @@ func (n *Node) GetRHELVersion() (string, error) {
 
 	logger.Infof("Node %s RHEL_VERSION %s", n.GetName(), rhelVersion)
 	return rhelVersion, nil
+}
+
+// GetPool returns the only pool owning this node
+func (n *Node) GetPrimaryPool() (*MachineConfigPool, error) {
+	allMCPs, err := NewMachineConfigPoolList(n.oc).GetAll()
+	if err != nil {
+		return nil, err
+	}
+
+	var primaryPool *MachineConfigPool
+	for _, item := range allMCPs {
+		pool := item
+		allNodes, err := pool.getSelectedNodes("")
+		if err != nil {
+			return nil, err
+		}
+
+		for _, node := range allNodes {
+			if node.GetName() != n.GetName() {
+				continue
+			}
+
+			// We use short circuit evaluation to set the primary pool:
+			// - If the pool is master, it will be the primary pool;
+			// - If the primary pool is nil (not set yet), we set the primary pool (either worker or custom);
+			// - If the primary pool is not nil, we overwrite it only if the primary pool is a worker.
+			if pool.IsMaster() || primaryPool == nil || primaryPool.IsWorker() {
+				primaryPool = &pool
+			} else if pool.IsCustom() && primaryPool != nil && primaryPool.IsCustom() {
+				// Error condition: the node belongs to 2 custom pools
+				return nil, fmt.Errorf("Forbidden configuration. The node %s belongs to 2 custom pools: %s and %s",
+					node.GetName(), primaryPool.GetName(), pool.GetName())
+			}
+		}
+	}
+
+	if primaryPool == nil {
+		return nil, fmt.Errorf("Could not find the primary pool for %s", n)
+	}
+
+	return primaryPool, nil
+}
+
+// GetArchitecture returns the architecture of the node
+func (n *Node) GetArchitecture() (architecture.Architecture, error) {
+	arch, err := n.Get(`{.status.nodeInfo.architecture}`)
+	if err != nil {
+		return architecture.UNKNOWN, err
+	}
+	return architecture.FromString(arch), nil
+}
+
+// GetArchitectureOrFail get the architecture used in the node and fail the test if any error happens while doing it
+func (n *Node) GetArchitectureOrFail() architecture.Architecture {
+	arch, err := n.GetArchitecture()
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the architecture of node %s", n.GetName())
+
+	return arch
+}
+
+// GetMachineConfigNode returns the MachineConfigNode resource linked to this node
+func (n *Node) GetMachineConfigNode() *MachineConfigNode {
+	return NewMachineConfigNode(n.oc.AsAdmin(), n.GetName())
+}
+
+// GetAll returns a []Node list with all existing nodes
+func (nl *NodeList) GetAll() ([]Node, error) {
+	allNodeResources, err := nl.ResourceList.GetAll()
+	if err != nil {
+		return nil, err
+	}
+	allNodes := make([]Node, 0, len(allNodeResources))
+
+	for _, nodeRes := range allNodeResources {
+		allNodes = append(allNodes, *NewNode(nl.oc, nodeRes.name))
+	}
+
+	return allNodes, nil
+}
+
+// GetAllReady returns a []Node list with all ready nodes
+func (nl *NodeList) GetAllReady() ([]Node, error) {
+	allNodes, err := nl.GetAll()
+	if err != nil {
+		return nil, err
+	}
+
+	readyNodes := make([]Node, 0)
+	for _, node := range allNodes {
+		if node.IsReady() {
+			readyNodes = append(readyNodes, node)
+		}
+	}
+
+	return readyNodes, nil
+}
+
+// quietSetNamespacePrivileged invokes exutil.SetNamespacePrivileged but disable the logs output to avoid noise in the logs
+func quietSetNamespacePrivileged(oc *exutil.CLI, namespace string) error {
+	oc.NotShowInfo()
+	defer oc.SetShowInfo()
+
+	logger.Debugf("Setting namespace %s as privileged", namespace)
+	return exutil.SetNamespacePrivileged(oc, namespace)
+}
+
+// quietRecoverNamespaceRestricted invokes exutil.RecoverNamespaceRestricted but disable the logs output to avoid noise in the logs
+func quietRecoverNamespaceRestricted(oc *exutil.CLI, namespace string) error {
+	oc.NotShowInfo()
+	defer oc.SetShowInfo()
+
+	logger.Debugf("Recovering namespace %s from privileged", namespace)
+	return exutil.RecoverNamespaceRestricted(oc, namespace)
+}
+
+// GetOperatorNode returns the node running the MCO operator pod
+func GetOperatorNode(oc *exutil.CLI) (*Node, error) {
+	podsList := NewNamespacedResourceList(oc.AsAdmin(), "pods", MachineConfigNamespace)
+	podsList.ByLabel("k8s-app=machine-config-operator")
+
+	mcoPods, err := podsList.GetAll()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(mcoPods) != 1 {
+		return nil, fmt.Errorf("There should be 1 and only 1 MCO operator pod. Found operator pods: %s", mcoPods)
+	}
+
+	nodeName, err := mcoPods[0].Get(`{.spec.nodeName}`)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewNode(oc, nodeName), nil
+}
+
+// CopyFromLocal copies a local file to the node
+func (n *Node) CopyFromLocal(from, to string) error {
+	immediate := true
+	waitErr := wait.PollUntilContextTimeout(context.TODO(), 1*time.Minute, 5*time.Minute, immediate, func(_ context.Context) (bool, error) {
+		kubeletReady := n.IsReady()
+		if kubeletReady {
+			return true, nil
+		}
+		logger.Warnf("Kubelet is not ready in %s. To copy the file to the node we need to wait for kubelet to be ready. Waiting...", n)
+		return false, nil
+	})
+
+	if waitErr != nil {
+		logger.Errorf("Cannot copy file %s to %s in node %s because Kubelet is not ready in this node", from, to, n)
+		return waitErr
+	}
+
+	return n.oc.Run("adm").Args("copy-to-node", "node/"+n.GetName(), fmt.Sprintf("--copy=%s=%s", from, to)).Execute()
+}
+
+// CopyToLocal Copy a file or directory in the node to a local path
+func (n *Node) CopyToLocal(from, to string) error {
+	logger.Infof("Node: %s. Copying file %s to local path %s",
+		n.GetName(), from, to)
+	mcDaemonName := n.GetMachineConfigDaemon()
+	fromDaemon := filepath.Join("/rootfs", from)
+
+	return n.oc.Run("cp").Args("-n", MachineConfigNamespace, mcDaemonName+":"+fromDaemon, to, "-c", MachineConfigDaemon).Execute()
+}
+
+// Returns the set of ready nodes in the cluster
+func getReadyNodes(oc *exutil.CLI) (sets.Set[string], error) {
+	nodeList := NewResourceList(oc.AsAdmin(), "nodes")
+	nodes, err := nodeList.GetAll()
+	if err != nil {
+		return nil, err
+	}
+
+	nodeSet := sets.New[string]()
+	for _, node := range nodes {
+		node.oc.NotShowInfo()
+		isReady, err := node.Get(`{.status.conditions[?(@.type=="Ready")].status}`)
+		if err == nil && isReady == TrueString {
+			nodeSet.Insert(node.name)
+		}
+		node.oc.SetShowInfo()
+	}
+	return nodeSet, nil
 }

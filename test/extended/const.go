@@ -19,9 +19,4 @@ const (
 
 	// MachineConfigNamespace mco namespace
 	MachineConfigNamespace = "openshift-machine-config-operator"
-
-	// TrueString string for true value
-	TrueString = "True"
-	// FalseString string for false value
-	FalseString = "False"
 )
