@@ -211,6 +211,8 @@ func assertSecretInCorrectFormat(t *testing.T, secret *corev1.Secret) {
 }
 
 func assertBuildJobIsCorrect(t *testing.T, buildJob *batchv1.Job, opts BuildRequestOpts) {
+	t.Helper()
+
 	etcRpmGpgKeysOpts := optsForEtcRpmGpgKeys()
 	assertBuildJobMatchesExpectations(t, opts.HasEtcPkiRpmGpgKeys, buildJob,
 		etcRpmGpgKeysOpts.envVar(),
@@ -233,12 +235,7 @@ func assertBuildJobIsCorrect(t *testing.T, buildJob *batchv1.Job, opts BuildRequ
 	)
 
 	assert.Equal(t, buildJob.Spec.Template.Spec.InitContainers[0].Image, mcoImagePullspec)
-	expectedPullspecs := []string{
-		"base-os-image-from-machineosconfig",
-		fixtures.OSImageURLConfig().BaseOSContainerImage,
-	}
-
-	assert.Contains(t, expectedPullspecs, buildJob.Spec.Template.Spec.Containers[0].Image)
+	assert.Equal(t, buildJob.Spec.Template.Spec.Containers[0].Image, mcoImagePullspec)
 
 	assertPodHasVolume(t, buildJob.Spec.Template.Spec, corev1.Volume{
 		Name: "final-image-push-creds",
