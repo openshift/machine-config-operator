@@ -42,7 +42,7 @@ func createNewKubeletDynamicSystemReservedIgnition(autoSystemReserved *bool, use
 	var systemReservedEphemeralStorage string
 
 	if autoSystemReserved == nil {
-		autoNodeSizing = "false"
+		autoNodeSizing = "true"
 	} else {
 		autoNodeSizing = strconv.FormatBool(*autoSystemReserved)
 	}
