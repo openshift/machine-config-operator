@@ -1,10 +1,11 @@
 package common
 
 import (
-	"github.com/coreos/go-semver/semver"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/coreos/go-semver/semver"
 
 	"github.com/clarketm/json"
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
@@ -14,11 +15,13 @@ import (
 	validate3 "github.com/coreos/ignition/v2/config/validate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/pkg/controller/common/fixtures"
+	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/test/helpers"
 )
 
@@ -994,4 +997,1032 @@ func TestGetPackagesForSupportedExtensions(t *testing.T) {
 			assert.Equal(t, testCase.expectedPackages, pkgs)
 		})
 	}
+}
+
+// `TestGetUpdatedMachines` tests the GetUpdatedMachines helper function for nodes in both layered
+// and non-layered MCPs.
+func TestGetUpdatedMachines(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name          string
+		nodes         []*corev1.Node
+		currentConfig string
+		currentImage  string
+		updated       []*corev1.Node
+		layered       bool
+		mosc          *mcfgv1.MachineOSConfig
+		mosb          *mcfgv1.MachineOSBuild
+	}{{
+		name:          "no nodes",
+		nodes:         []*corev1.Node{},
+		currentConfig: machineConfigV1,
+		updated:       nil,
+	}, {
+		name: "1 node updated, 1 updating, 1 not acted upon",
+		nodes: []*corev1.Node{
+			newNode(machineConfigV0, machineConfigV0),
+			newNode(machineConfigV1, machineConfigV1),
+			newNode(machineConfigV0, machineConfigV1),
+		},
+		currentConfig: machineConfigV1,
+		updated:       []*corev1.Node{newNode(machineConfigV1, machineConfigV1)},
+	}, {
+		name: "2 node updated, 1 updating",
+		nodes: []*corev1.Node{
+			newNode(machineConfigV0, machineConfigV1),
+			newNode(machineConfigV1, machineConfigV1),
+			newNode(machineConfigV1, machineConfigV1),
+		},
+		currentConfig: machineConfigV1,
+		updated:       []*corev1.Node{newNode(machineConfigV1, machineConfigV1), newNode(machineConfigV1, machineConfigV1)},
+	}, {
+		name: "2 node updated, 1 updating, but one updated node is NotReady",
+		nodes: []*corev1.Node{
+			newNode(machineConfigV0, machineConfigV1),
+			newNode(machineConfigV1, machineConfigV1),
+			helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
+		},
+		currentConfig: machineConfigV1,
+		updated:       []*corev1.Node{newNode(machineConfigV1, machineConfigV1), helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionFalse)},
+	}, {
+		name: "1 layered node updated, 1 updating, 1 not acted upon",
+		nodes: []*corev1.Node{
+			newLayeredNode(machineConfigV0, machineConfigV0, imageV0, imageV0),
+			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+			newLayeredNode(machineConfigV0, machineConfigV1, imageV0, imageV1),
+		},
+		currentConfig: machineConfigV1,
+		currentImage:  imageV1,
+		updated: []*corev1.Node{
+			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+		},
+		layered: true,
+		mosc:    helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
+		mosb:    helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
+	}, {
+		name: "2 layered nodes updated, 1 updating MachineConfig",
+		nodes: []*corev1.Node{
+			newLayeredNode(machineConfigV0, machineConfigV1, imageV1, imageV1),
+			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+		},
+		currentConfig: machineConfigV1,
+		currentImage:  imageV1,
+		updated: []*corev1.Node{
+			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+		},
+		layered: true,
+		mosc:    helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
+		mosb:    helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
+	}, {
+		name: "2 layered nodes updated, 1 updating image",
+		nodes: []*corev1.Node{
+			newLayeredNode(machineConfigV1, machineConfigV1, imageV0, imageV1),
+			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+		},
+		currentConfig: machineConfigV1,
+		currentImage:  imageV1,
+		updated: []*corev1.Node{
+			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+		},
+		layered: true,
+		mosc:    helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
+		mosb:    helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
+	}, {
+		name: "2 layered nodes updated, 1 updating, but one updated node is NotReady",
+		nodes: []*corev1.Node{
+			newLayeredNode(machineConfigV0, machineConfigV1, imageV0, imageV1),
+			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+			helpers.NewLayeredNodeWithReady("node-2", machineConfigV1, machineConfigV1, imageV1, imageV1, corev1.ConditionFalse),
+		},
+		currentConfig: machineConfigV1,
+		currentImage:  imageV1,
+		updated: []*corev1.Node{
+			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+			helpers.NewLayeredNodeWithReady("node-2", machineConfigV1, machineConfigV1, imageV1, imageV1, corev1.ConditionFalse),
+		},
+		layered: true,
+		mosc:    helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
+		mosb:    helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
+	}, {
+		name: "Layered pool with unlayered nodes",
+		nodes: []*corev1.Node{
+			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+			helpers.NewLayeredNodeWithReady("node-2", machineConfigV1, machineConfigV1, imageV1, imageV1, corev1.ConditionTrue),
+			newNode(machineConfigV0, machineConfigV0),
+		},
+		currentConfig: machineConfigV1,
+		currentImage:  imageV1,
+		updated: []*corev1.Node{
+			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+			helpers.NewLayeredNodeWithReady("node-2", machineConfigV1, machineConfigV1, imageV1, imageV1, corev1.ConditionTrue),
+		},
+		layered: true,
+		mosc:    helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
+		mosb:    helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
+	}, {
+		name: "Layered pool with image not built",
+		nodes: []*corev1.Node{
+			newNode(machineConfigV1, machineConfigV1),
+			newNode(machineConfigV1, machineConfigV1),
+			newNode(machineConfigV1, machineConfigV1),
+		},
+		currentConfig: machineConfigV1,
+		updated:       nil,
+		layered:       true,
+		mosc:          helpers.NewMachineOSConfigBuilder("mosc-1").WithMachineConfigPool("pool-1").MachineOSConfig(),
+		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
+	}, {
+		name: "Unlayered pool with 1 layered node",
+		nodes: []*corev1.Node{
+			newNode(machineConfigV1, machineConfigV1),
+			newNode(machineConfigV1, machineConfigV1),
+			helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			newLayeredNode(machineConfigV0, machineConfigV0, imageV1, imageV1),
+		},
+		currentConfig: machineConfigV1,
+		updated: []*corev1.Node{
+			newNode(machineConfigV1, machineConfigV1),
+			newNode(machineConfigV1, machineConfigV1),
+			helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+		},
+	}, {
+		name: "Pool with image mode disabling, one node updating, 2 nodes not not acted upon",
+		nodes: []*corev1.Node{
+			newLayeredNode(machineConfigV0, machineConfigV0, imageV1, ""),
+			newLayeredNode(machineConfigV0, machineConfigV0, imageV1, imageV1),
+			newLayeredNode(machineConfigV0, machineConfigV0, imageV1, imageV1),
+		},
+		currentConfig: machineConfigV0,
+		updated:       nil,
+		layered:       false,
+	}, {
+		name: "Pool with image mode disabling, one node updated, 1 node updating, 1 node not acted upon",
+		nodes: []*corev1.Node{
+			newNode(machineConfigV0, machineConfigV0),
+			newLayeredNode(machineConfigV0, machineConfigV0, imageV1, ""),
+			newLayeredNode(machineConfigV0, machineConfigV0, imageV1, imageV1),
+		},
+		currentConfig: machineConfigV0,
+		updated: []*corev1.Node{
+			newNode(machineConfigV0, machineConfigV0),
+		},
+		layered: false,
+	},
+	}
+
+	for _, test := range tests {
+		test := test
+
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			pool := helpers.NewMachineConfigPoolBuilder("pool-1").WithMachineConfig(test.currentConfig).MachineConfigPool()
+
+			updated := GetUpdatedMachines(pool, test.nodes, test.mosc, test.mosb, test.layered)
+			assertExpectedNodes(t, helpers.GetNamesFromNodes(test.updated), updated)
+
+			// This is a much tighter assertion than the one I added. Not sure if
+			// it's strictly required or not, so I'll leave it for now.
+
+			if !reflect.DeepEqual(updated, test.updated) {
+				t.Fatalf("mismatch expected: %v got %v", test.updated, updated)
+			}
+
+			if t.Failed() {
+				helpers.DumpNodesAndPools(t, test.nodes, []*mcfgv1.MachineConfigPool{pool})
+			}
+		})
+	}
+}
+
+// `TestGetDegradedMachines` tests the GetDegradedMachines helper function for nodes in both
+// layered and non-layered MCPs.
+// Assisted-by: Cursor.
+func TestGetDegradedMachines(t *testing.T) {
+	tests := []struct {
+		name     string
+		nodes    []*corev1.Node
+		expected []string
+	}{
+		{
+			name:     "empty nodes list",
+			nodes:    []*corev1.Node{},
+			expected: []string{},
+		},
+		{
+			name:     "nil nodes list",
+			nodes:    nil,
+			expected: []string{},
+		},
+		{
+			name: "node with nil annotations",
+			nodes: []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "node1",
+						Annotations: nil,
+					},
+				},
+			},
+			expected: []string{},
+		},
+		{
+			name: "node with empty annotations",
+			nodes: []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "node1",
+						Annotations: map[string]string{},
+					},
+				},
+			},
+			expected: []string{},
+		},
+		{
+			name: "node missing desired config annotation",
+			nodes: []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node1",
+						Annotations: map[string]string{
+							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateDegraded,
+						},
+					},
+				},
+			},
+			expected: []string{},
+		},
+		{
+			name: "node with empty desired config annotation",
+			nodes: []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node1",
+						Annotations: map[string]string{
+							daemonconsts.DesiredMachineConfigAnnotationKey:     "",
+							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateDegraded,
+						},
+					},
+				},
+			},
+			expected: []string{},
+		},
+		{
+			name: "node missing state annotation",
+			nodes: []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node1",
+						Annotations: map[string]string{
+							daemonconsts.DesiredMachineConfigAnnotationKey: "rendered-worker-abc123",
+						},
+					},
+				},
+			},
+			expected: []string{},
+		},
+		{
+			name: "node with empty state annotation",
+			nodes: []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node1",
+						Annotations: map[string]string{
+							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
+							daemonconsts.MachineConfigDaemonStateAnnotationKey: "",
+						},
+					},
+				},
+			},
+			expected: []string{},
+		},
+		{
+			name: "node with degraded state",
+			nodes: []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node1",
+						Annotations: map[string]string{
+							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
+							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateDegraded,
+						},
+					},
+				},
+			},
+			expected: []string{"node1"},
+		},
+		{
+			name: "node with unreconcilable state",
+			nodes: []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node1",
+						Annotations: map[string]string{
+							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
+							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateUnreconcilable,
+						},
+					},
+				},
+			},
+			expected: []string{"node1"},
+		},
+		{
+			name: "node with working state (not degraded)",
+			nodes: []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node1",
+						Annotations: map[string]string{
+							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
+							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateWorking,
+						},
+					},
+				},
+			},
+			expected: []string{},
+		},
+		{
+			name: "node with done state (not degraded)",
+			nodes: []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node1",
+						Annotations: map[string]string{
+							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
+							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateDone,
+						},
+					},
+				},
+			},
+			expected: []string{},
+		},
+		{
+			name: "node with rebooting state (not degraded)",
+			nodes: []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node1",
+						Annotations: map[string]string{
+							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
+							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateRebooting,
+						},
+					},
+				},
+			},
+			expected: []string{},
+		},
+		{
+			name: "multiple nodes with mixed states",
+			nodes: []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node1",
+						Annotations: map[string]string{
+							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
+							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateDegraded,
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node2",
+						Annotations: map[string]string{
+							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
+							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateDone,
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node3",
+						Annotations: map[string]string{
+							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
+							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateUnreconcilable,
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node4",
+						Annotations: map[string]string{
+							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
+							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateWorking,
+						},
+					},
+				},
+			},
+			expected: []string{"node1", "node3"},
+		},
+		{
+			name: "layered node with degraded state",
+			nodes: []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "layered-node1",
+						Annotations: map[string]string{
+							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
+							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateDegraded,
+							daemonconsts.DesiredImageAnnotationKey:             "quay.io/openshift/okd-content@sha256:abc123",
+							daemonconsts.CurrentImageAnnotationKey:             "quay.io/openshift/okd-content@sha256:def456",
+						},
+					},
+				},
+			},
+			expected: []string{"layered-node1"},
+		},
+		{
+			name: "layered node with unreconcilable state",
+			nodes: []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "layered-node2",
+						Annotations: map[string]string{
+							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
+							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateUnreconcilable,
+							daemonconsts.DesiredImageAnnotationKey:             "quay.io/openshift/okd-content@sha256:abc123",
+							daemonconsts.CurrentImageAnnotationKey:             "quay.io/openshift/okd-content@sha256:def456",
+						},
+					},
+				},
+			},
+			expected: []string{"layered-node2"},
+		},
+		{
+			name: "layered node with done state (not degraded)",
+			nodes: []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "layered-node3",
+						Annotations: map[string]string{
+							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
+							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateDone,
+							daemonconsts.DesiredImageAnnotationKey:             "quay.io/openshift/okd-content@sha256:abc123",
+							daemonconsts.CurrentImageAnnotationKey:             "quay.io/openshift/okd-content@sha256:abc123",
+						},
+					},
+				},
+			},
+			expected: []string{},
+		},
+		{
+			name: "mixed layered and non-layered nodes",
+			nodes: []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "non-layered-degraded",
+						Annotations: map[string]string{
+							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
+							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateDegraded,
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "layered-degraded",
+						Annotations: map[string]string{
+							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
+							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateDegraded,
+							daemonconsts.DesiredImageAnnotationKey:             "quay.io/openshift/okd-content@sha256:abc123",
+							daemonconsts.CurrentImageAnnotationKey:             "quay.io/openshift/okd-content@sha256:def456",
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "non-layered-done",
+						Annotations: map[string]string{
+							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
+							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateDone,
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "layered-done",
+						Annotations: map[string]string{
+							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
+							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateDone,
+							daemonconsts.DesiredImageAnnotationKey:             "quay.io/openshift/okd-content@sha256:abc123",
+							daemonconsts.CurrentImageAnnotationKey:             "quay.io/openshift/okd-content@sha256:abc123",
+						},
+					},
+				},
+			},
+			expected: []string{"non-layered-degraded", "layered-degraded"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := GetDegradedMachines(tt.nodes)
+			actualNames := helpers.GetNamesFromNodes(result)
+			assert.Equal(t, tt.expected, actualNames, "GetDegradedMachines returned unexpected results")
+		})
+	}
+}
+
+// `TestIsMachineUpdatedMCN` tests the IsMachineUpdatedMCN helper function for nodes in both
+// layered and non-layered MCPs.
+// Assisted-by: Cursor.
+func TestIsMachineUpdatedMCN(t *testing.T) {
+	tests := []struct {
+		name     string
+		mcn      *mcfgv1.MachineConfigNode
+		mcp      *mcfgv1.MachineConfigPool
+		mosc     *mcfgv1.MachineOSConfig
+		mosb     *mcfgv1.MachineOSBuild
+		layered  bool
+		expected bool
+	}{
+		{
+			name: "nil mcn should return false",
+			mcn:  nil,
+			mcp: &mcfgv1.MachineConfigPool{
+				Spec: mcfgv1.MachineConfigPoolSpec{
+					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{
+						ObjectReference: corev1.ObjectReference{
+							Name: "rendered-worker-abc123",
+						},
+					},
+				},
+			},
+			layered:  false,
+			expected: false,
+		},
+		{
+			name: "nil mcp should return false",
+			mcn: &mcfgv1.MachineConfigNode{
+				Status: mcfgv1.MachineConfigNodeStatus{
+					ConfigVersion: &mcfgv1.MachineConfigNodeStatusMachineConfigVersion{
+						Desired: "rendered-worker-abc123",
+					},
+					ConfigImage: mcfgv1.MachineConfigNodeStatusConfigImage{
+						DesiredImage: "",
+					},
+				},
+			},
+			mcp:      nil,
+			layered:  false,
+			expected: false,
+		},
+		{
+			name: "non-layered: updated machine (config matches, no image)",
+			mcn: &mcfgv1.MachineConfigNode{
+				Status: mcfgv1.MachineConfigNodeStatus{
+					ConfigVersion: &mcfgv1.MachineConfigNodeStatusMachineConfigVersion{
+						Desired: "rendered-worker-abc123",
+					},
+					ConfigImage: mcfgv1.MachineConfigNodeStatusConfigImage{
+						DesiredImage: "",
+					},
+				},
+			},
+			mcp: &mcfgv1.MachineConfigPool{
+				Spec: mcfgv1.MachineConfigPoolSpec{
+					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{
+						ObjectReference: corev1.ObjectReference{
+							Name: "rendered-worker-abc123",
+						},
+					},
+				},
+			},
+			layered:  false,
+			expected: true,
+		},
+		{
+			name: "non-layered: not updated machine (config doesn't match)",
+			mcn: &mcfgv1.MachineConfigNode{
+				Status: mcfgv1.MachineConfigNodeStatus{
+					ConfigVersion: &mcfgv1.MachineConfigNodeStatusMachineConfigVersion{
+						Desired: "rendered-worker-abc123",
+					},
+					ConfigImage: mcfgv1.MachineConfigNodeStatusConfigImage{
+						DesiredImage: "",
+					},
+				},
+			},
+			mcp: &mcfgv1.MachineConfigPool{
+				Spec: mcfgv1.MachineConfigPoolSpec{
+					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{
+						ObjectReference: corev1.ObjectReference{
+							Name: "rendered-worker-def456",
+						},
+					},
+				},
+			},
+			layered:  false,
+			expected: false,
+		},
+		{
+			name: "non-layered: not updated machine (has image when shouldn't)",
+			mcn: &mcfgv1.MachineConfigNode{
+				Status: mcfgv1.MachineConfigNodeStatus{
+					ConfigVersion: &mcfgv1.MachineConfigNodeStatusMachineConfigVersion{
+						Desired: "rendered-worker-abc123",
+					},
+					ConfigImage: mcfgv1.MachineConfigNodeStatusConfigImage{
+						DesiredImage: "quay.io/openshift/okd-content@sha256:abc123",
+					},
+				},
+			},
+			mcp: &mcfgv1.MachineConfigPool{
+				Spec: mcfgv1.MachineConfigPoolSpec{
+					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{
+						ObjectReference: corev1.ObjectReference{
+							Name: "rendered-worker-abc123",
+						},
+					},
+				},
+			},
+			layered:  false,
+			expected: false,
+		},
+		{
+			name: "layered: nil mosc should return false",
+			mcn: &mcfgv1.MachineConfigNode{
+				Status: mcfgv1.MachineConfigNodeStatus{
+					ConfigVersion: &mcfgv1.MachineConfigNodeStatusMachineConfigVersion{
+						Desired: "rendered-worker-abc123",
+					},
+					ConfigImage: mcfgv1.MachineConfigNodeStatusConfigImage{
+						DesiredImage: "quay.io/openshift/okd-content@sha256:abc123",
+					},
+				},
+			},
+			mcp: &mcfgv1.MachineConfigPool{
+				Spec: mcfgv1.MachineConfigPoolSpec{
+					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{
+						ObjectReference: corev1.ObjectReference{
+							Name: "rendered-worker-abc123",
+						},
+					},
+				},
+			},
+			mosc:     nil,
+			mosb:     &mcfgv1.MachineOSBuild{},
+			layered:  true,
+			expected: false,
+		},
+		{
+			name: "layered: nil mosb should return false",
+			mcn: &mcfgv1.MachineConfigNode{
+				Status: mcfgv1.MachineConfigNodeStatus{
+					ConfigVersion: &mcfgv1.MachineConfigNodeStatusMachineConfigVersion{
+						Desired: "rendered-worker-abc123",
+					},
+					ConfigImage: mcfgv1.MachineConfigNodeStatusConfigImage{
+						DesiredImage: "quay.io/openshift/okd-content@sha256:abc123",
+					},
+				},
+			},
+			mcp: &mcfgv1.MachineConfigPool{
+				Spec: mcfgv1.MachineConfigPoolSpec{
+					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{
+						ObjectReference: corev1.ObjectReference{
+							Name: "rendered-worker-abc123",
+						},
+					},
+				},
+			},
+			mosc: &mcfgv1.MachineOSConfig{
+				Status: mcfgv1.MachineOSConfigStatus{
+					CurrentImagePullSpec: "quay.io/openshift/okd-content@sha256:abc123",
+				},
+			},
+			mosb:     nil,
+			layered:  true,
+			expected: false,
+		},
+		{
+			name: "layered: updated machine (all conditions match)",
+			mcn: &mcfgv1.MachineConfigNode{
+				Status: mcfgv1.MachineConfigNodeStatus{
+					ConfigVersion: &mcfgv1.MachineConfigNodeStatusMachineConfigVersion{
+						Desired: "rendered-worker-abc123",
+					},
+					ConfigImage: mcfgv1.MachineConfigNodeStatusConfigImage{
+						DesiredImage: "quay.io/openshift/okd-content@sha256:abc123",
+					},
+				},
+			},
+			mcp: &mcfgv1.MachineConfigPool{
+				Spec: mcfgv1.MachineConfigPoolSpec{
+					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{
+						ObjectReference: corev1.ObjectReference{
+							Name: "rendered-worker-abc123",
+						},
+					},
+				},
+			},
+			mosc: &mcfgv1.MachineOSConfig{
+				Status: mcfgv1.MachineOSConfigStatus{
+					CurrentImagePullSpec: "quay.io/openshift/okd-content@sha256:abc123",
+				},
+			},
+			mosb: &mcfgv1.MachineOSBuild{
+				Spec: mcfgv1.MachineOSBuildSpec{
+					MachineConfig: mcfgv1.MachineConfigReference{
+						Name: "rendered-worker-abc123",
+					},
+				},
+			},
+			layered:  true,
+			expected: true,
+		},
+		{
+			name: "layered: not updated machine (config version doesn't match)",
+			mcn: &mcfgv1.MachineConfigNode{
+				Status: mcfgv1.MachineConfigNodeStatus{
+					ConfigVersion: &mcfgv1.MachineConfigNodeStatusMachineConfigVersion{
+						Desired: "rendered-worker-abc123",
+					},
+					ConfigImage: mcfgv1.MachineConfigNodeStatusConfigImage{
+						DesiredImage: "quay.io/openshift/okd-content@sha256:abc123",
+					},
+				},
+			},
+			mcp: &mcfgv1.MachineConfigPool{
+				Spec: mcfgv1.MachineConfigPoolSpec{
+					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{
+						ObjectReference: corev1.ObjectReference{
+							Name: "rendered-worker-def456",
+						},
+					},
+				},
+			},
+			mosc: &mcfgv1.MachineOSConfig{
+				Status: mcfgv1.MachineOSConfigStatus{
+					CurrentImagePullSpec: "quay.io/openshift/okd-content@sha256:abc123",
+				},
+			},
+			mosb: &mcfgv1.MachineOSBuild{
+				Spec: mcfgv1.MachineOSBuildSpec{
+					MachineConfig: mcfgv1.MachineConfigReference{
+						Name: "rendered-worker-abc123",
+					},
+				},
+			},
+			layered:  true,
+			expected: false,
+		},
+		{
+			name: "layered: not updated machine (image doesn't match)",
+			mcn: &mcfgv1.MachineConfigNode{
+				Status: mcfgv1.MachineConfigNodeStatus{
+					ConfigVersion: &mcfgv1.MachineConfigNodeStatusMachineConfigVersion{
+						Desired: "rendered-worker-abc123",
+					},
+					ConfigImage: mcfgv1.MachineConfigNodeStatusConfigImage{
+						DesiredImage: "quay.io/openshift/okd-content@sha256:def456",
+					},
+				},
+			},
+			mcp: &mcfgv1.MachineConfigPool{
+				Spec: mcfgv1.MachineConfigPoolSpec{
+					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{
+						ObjectReference: corev1.ObjectReference{
+							Name: "rendered-worker-abc123",
+						},
+					},
+				},
+			},
+			mosc: &mcfgv1.MachineOSConfig{
+				Status: mcfgv1.MachineOSConfigStatus{
+					CurrentImagePullSpec: "quay.io/openshift/okd-content@sha256:abc123",
+				},
+			},
+			mosb: &mcfgv1.MachineOSBuild{
+				Spec: mcfgv1.MachineOSBuildSpec{
+					MachineConfig: mcfgv1.MachineConfigReference{
+						Name: "rendered-worker-abc123",
+					},
+				},
+			},
+			layered:  true,
+			expected: false,
+		},
+		{
+			name: "layered: not updated machine (mosc has no image)",
+			mcn: &mcfgv1.MachineConfigNode{
+				Status: mcfgv1.MachineConfigNodeStatus{
+					ConfigVersion: &mcfgv1.MachineConfigNodeStatusMachineConfigVersion{
+						Desired: "rendered-worker-abc123",
+					},
+					ConfigImage: mcfgv1.MachineConfigNodeStatusConfigImage{
+						DesiredImage: "quay.io/openshift/okd-content@sha256:abc123",
+					},
+				},
+			},
+			mcp: &mcfgv1.MachineConfigPool{
+				Spec: mcfgv1.MachineConfigPoolSpec{
+					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{
+						ObjectReference: corev1.ObjectReference{
+							Name: "rendered-worker-abc123",
+						},
+					},
+				},
+			},
+			mosc: &mcfgv1.MachineOSConfig{
+				Status: mcfgv1.MachineOSConfigStatus{
+					CurrentImagePullSpec: "",
+				},
+			},
+			mosb: &mcfgv1.MachineOSBuild{
+				Spec: mcfgv1.MachineOSBuildSpec{
+					MachineConfig: mcfgv1.MachineConfigReference{
+						Name: "rendered-worker-abc123",
+					},
+				},
+			},
+			layered:  true,
+			expected: false,
+		},
+		{
+			name: "layered: not updated machine (mosb machine config name doesn't match)",
+			mcn: &mcfgv1.MachineConfigNode{
+				Status: mcfgv1.MachineConfigNodeStatus{
+					ConfigVersion: &mcfgv1.MachineConfigNodeStatusMachineConfigVersion{
+						Desired: "rendered-worker-abc123",
+					},
+					ConfigImage: mcfgv1.MachineConfigNodeStatusConfigImage{
+						DesiredImage: "quay.io/openshift/okd-content@sha256:abc123",
+					},
+				},
+			},
+			mcp: &mcfgv1.MachineConfigPool{
+				Spec: mcfgv1.MachineConfigPoolSpec{
+					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{
+						ObjectReference: corev1.ObjectReference{
+							Name: "rendered-worker-abc123",
+						},
+					},
+				},
+			},
+			mosc: &mcfgv1.MachineOSConfig{
+				Status: mcfgv1.MachineOSConfigStatus{
+					CurrentImagePullSpec: "quay.io/openshift/okd-content@sha256:abc123",
+				},
+			},
+			mosb: &mcfgv1.MachineOSBuild{
+				Spec: mcfgv1.MachineOSBuildSpec{
+					MachineConfig: mcfgv1.MachineConfigReference{
+						Name: "rendered-worker-def456",
+					},
+				},
+			},
+			layered:  true,
+			expected: false,
+		},
+		{
+			name: "layered: not updated machine (mosb machine config is nil)",
+			mcn: &mcfgv1.MachineConfigNode{
+				Status: mcfgv1.MachineConfigNodeStatus{
+					ConfigVersion: &mcfgv1.MachineConfigNodeStatusMachineConfigVersion{
+						Desired: "rendered-worker-abc123",
+					},
+					ConfigImage: mcfgv1.MachineConfigNodeStatusConfigImage{
+						DesiredImage: "quay.io/openshift/okd-content@sha256:abc123",
+					},
+				},
+			},
+			mcp: &mcfgv1.MachineConfigPool{
+				Spec: mcfgv1.MachineConfigPoolSpec{
+					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{
+						ObjectReference: corev1.ObjectReference{
+							Name: "rendered-worker-abc123",
+						},
+					},
+				},
+			},
+			mosc: &mcfgv1.MachineOSConfig{
+				Status: mcfgv1.MachineOSConfigStatus{
+					CurrentImagePullSpec: "quay.io/openshift/okd-content@sha256:abc123",
+				},
+			},
+			mosb: &mcfgv1.MachineOSBuild{
+				Spec: mcfgv1.MachineOSBuildSpec{
+					MachineConfig: mcfgv1.MachineConfigReference{
+						Name: "",
+					},
+				},
+			},
+			layered:  true,
+			expected: false,
+		},
+		{
+			name: "layered: updated machine with different image versions",
+			mcn: &mcfgv1.MachineConfigNode{
+				Status: mcfgv1.MachineConfigNodeStatus{
+					ConfigVersion: &mcfgv1.MachineConfigNodeStatusMachineConfigVersion{
+						Desired: "rendered-worker-abc123",
+					},
+					ConfigImage: mcfgv1.MachineConfigNodeStatusConfigImage{
+						DesiredImage: "quay.io/openshift/okd-content@sha256:xyz789",
+					},
+				},
+			},
+			mcp: &mcfgv1.MachineConfigPool{
+				Spec: mcfgv1.MachineConfigPoolSpec{
+					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{
+						ObjectReference: corev1.ObjectReference{
+							Name: "rendered-worker-abc123",
+						},
+					},
+				},
+			},
+			mosc: &mcfgv1.MachineOSConfig{
+				Status: mcfgv1.MachineOSConfigStatus{
+					CurrentImagePullSpec: "quay.io/openshift/okd-content@sha256:xyz789",
+				},
+			},
+			mosb: &mcfgv1.MachineOSBuild{
+				Spec: mcfgv1.MachineOSBuildSpec{
+					MachineConfig: mcfgv1.MachineConfigReference{
+						Name: "rendered-worker-abc123",
+					},
+				},
+			},
+			layered:  true,
+			expected: true,
+		},
+		{
+			name: "non-layered: machine with empty desired config",
+			mcn: &mcfgv1.MachineConfigNode{
+				Status: mcfgv1.MachineConfigNodeStatus{
+					ConfigVersion: &mcfgv1.MachineConfigNodeStatusMachineConfigVersion{
+						Desired: "",
+					},
+					ConfigImage: mcfgv1.MachineConfigNodeStatusConfigImage{
+						DesiredImage: "",
+					},
+				},
+			},
+			mcp: &mcfgv1.MachineConfigPool{
+				Spec: mcfgv1.MachineConfigPoolSpec{
+					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{
+						ObjectReference: corev1.ObjectReference{
+							Name: "rendered-worker-abc123",
+						},
+					},
+				},
+			},
+			layered:  false,
+			expected: false,
+		},
+		{
+			name: "layered: machine with empty desired config",
+			mcn: &mcfgv1.MachineConfigNode{
+				Status: mcfgv1.MachineConfigNodeStatus{
+					ConfigVersion: &mcfgv1.MachineConfigNodeStatusMachineConfigVersion{
+						Desired: "",
+					},
+					ConfigImage: mcfgv1.MachineConfigNodeStatusConfigImage{
+						DesiredImage: "quay.io/openshift/okd-content@sha256:abc123",
+					},
+				},
+			},
+			mcp: &mcfgv1.MachineConfigPool{
+				Spec: mcfgv1.MachineConfigPoolSpec{
+					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{
+						ObjectReference: corev1.ObjectReference{
+							Name: "rendered-worker-abc123",
+						},
+					},
+				},
+			},
+			mosc: &mcfgv1.MachineOSConfig{
+				Status: mcfgv1.MachineOSConfigStatus{
+					CurrentImagePullSpec: "quay.io/openshift/okd-content@sha256:abc123",
+				},
+			},
+			mosb: &mcfgv1.MachineOSBuild{
+				Spec: mcfgv1.MachineOSBuildSpec{
+					MachineConfig: mcfgv1.MachineConfigReference{
+						Name: "rendered-worker-abc123",
+					},
+				},
+			},
+			layered:  true,
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := IsMachineUpdatedMCN(tt.mcn, tt.mcp, tt.mosc, tt.mosb, tt.layered)
+			assert.Equal(t, tt.expected, result, "IsMachineUpdatedMCN returned unexpected result")
+		})
+	}
+}
+
+// assertExpectedNodes asserts that the actual nodes match the expected node names
+func assertExpectedNodes(t *testing.T, expected []string, actual []*corev1.Node) {
+	t.Helper()
+	assert.Equal(t, expected, helpers.GetNamesFromNodes(actual))
 }
