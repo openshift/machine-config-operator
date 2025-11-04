@@ -68,7 +68,7 @@ func createNewKubeletDynamicSystemReservedIgnition(autoSystemReserved *bool, use
 	config := fmt.Sprintf("NODE_SIZING_ENABLED=%s\nSYSTEM_RESERVED_MEMORY=%s\nSYSTEM_RESERVED_CPU=%s\nSYSTEM_RESERVED_ES=%s\n",
 		autoNodeSizing, systemReservedMemory, systemReservedCPU, systemReservedEphemeralStorage)
 
-	r := ctrlcommon.NewIgnFileBytesOverwriting("/etc/node-sizing-enabled.env", []byte(config))
+	r := ctrlcommon.NewIgnFileBytesOverwriting(ctrlcommon.NodeSizingEnabledEnvPath, []byte(config))
 	return &r
 }
 
