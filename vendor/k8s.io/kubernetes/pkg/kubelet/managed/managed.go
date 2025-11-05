@@ -17,6 +17,7 @@ limitations under the License.
 package managed
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -24,6 +25,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
 var (
@@ -88,6 +90,40 @@ func IsPodManaged(pod *v1.Pod) (bool, string, string) {
 	return false, "", ""
 }
 
+// podSandboxStatusGetter is an interface for getting pod sandbox status
+type podSandboxStatusGetter interface {
+	PodSandboxStatus(ctx context.Context, podSandboxID string, verbose bool) (*runtimeapi.PodSandboxStatusResponse, error)
+}
+
+// IsPodSandboxManagedPod checks if a pod sandbox belongs to a managed pod
+// by looking for workload pinning annotations.
+func IsPodSandboxManagedPod(sandboxAnnotations map[string]string) bool {
+	if sandboxAnnotations == nil {
+		return false
+	}
+	for annotation := range sandboxAnnotations {
+		if strings.HasPrefix(annotation, WorkloadsAnnotationPrefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsManagedPodFromRuntimeService checks if a pod is managed by fetching the pod sandbox
+// status and checking for workload pinning annotations.
+func IsManagedPodFromRuntimeService(ctx context.Context, runtimeService podSandboxStatusGetter, podSandboxID string) bool {
+	if podSandboxID == "" {
+		return false
+	}
+
+	sandboxResp, err := runtimeService.PodSandboxStatus(ctx, podSandboxID, false)
+	if err != nil || sandboxResp == nil || sandboxResp.GetStatus() == nil {
+		return false
+	}
+
+	return IsPodSandboxManagedPod(sandboxResp.GetStatus().Annotations)
+}
+
 // ModifyStaticPodForPinnedManagement will modify a pod for pod management
 func ModifyStaticPodForPinnedManagement(pod *v1.Pod) (*v1.Pod, string, error) {
 	pod = pod.DeepCopy()
@@ -117,14 +153,36 @@ func GenerateResourceName(workloadName string) v1.ResourceName {
 func updateContainers(workloadName string, pod *v1.Pod) error {
 	updateContainer := func(container *v1.Container) error {
 		if container.Resources.Requests == nil {
-			return fmt.Errorf("managed container %v does not have Resource.Requests", container.Name)
+			// Nothing to modify, but that is OK, it will not
+			// change the QoS class of the modified Pod
+			return nil
 		}
-		if _, ok := container.Resources.Requests[v1.ResourceCPU]; !ok {
+
+		_, cpuOk := container.Resources.Requests[v1.ResourceCPU]
+		_, memoryOk := container.Resources.Requests[v1.ResourceMemory]
+
+		// It is possible memory is configured using limits only and that implies
+		// requests with the same value, check for that in case memory requests
+		// are not present by themselves.
+		if !memoryOk && container.Resources.Limits != nil {
+			_, memoryOk = container.Resources.Limits[v1.ResourceMemory]
+		}
+
+		// When both cpu and memory requests are missing, there is nothing
+		// to do
+		if !cpuOk && !memoryOk {
+			return nil
+		}
+
+		// Both memory and cpu have to be set to make sure stripping them
+		// will not change the QoS class of the Pod
+		if !cpuOk {
 			return fmt.Errorf("managed container %v does not have cpu requests", container.Name)
 		}
-		if _, ok := container.Resources.Requests[v1.ResourceMemory]; !ok {
+		if !memoryOk {
 			return fmt.Errorf("managed container %v does not have memory requests", container.Name)
 		}
+
 		if container.Resources.Limits == nil {
 			container.Resources.Limits = v1.ResourceList{}
 		}

@@ -43,7 +43,7 @@ func TestApplyMachineConfig(t *testing.T) {
 			}
 			actual := actions[1].(clienttesting.CreateAction).GetObject().(*mcfgv1.MachineConfig)
 			if !equality.Semantic.DeepEqual(expected, actual) {
-				t.Error(diff.ObjectDiff(expected, actual))
+				t.Error(diff.Diff(expected, actual))
 			}
 		},
 	}, {
@@ -91,7 +91,7 @@ func TestApplyMachineConfig(t *testing.T) {
 			}
 			actual := actions[1].(clienttesting.UpdateAction).GetObject().(*mcfgv1.MachineConfig)
 			if !equality.Semantic.DeepEqual(expected, actual) {
-				t.Error(diff.ObjectDiff(expected, actual))
+				t.Error(diff.Diff(expected, actual))
 			}
 		},
 	}, {
@@ -126,7 +126,7 @@ func TestApplyMachineConfig(t *testing.T) {
 			}
 			actual := actions[1].(clienttesting.UpdateAction).GetObject().(*mcfgv1.MachineConfig)
 			if !equality.Semantic.DeepEqual(expected, actual) {
-				t.Error(diff.ObjectDiff(expected, actual))
+				t.Error(diff.Diff(expected, actual))
 			}
 		},
 	}, {
@@ -164,7 +164,7 @@ func TestApplyMachineConfig(t *testing.T) {
 			}
 			actual := actions[1].(clienttesting.UpdateAction).GetObject().(*mcfgv1.MachineConfig)
 			if !equality.Semantic.DeepEqual(expected, actual) {
-				t.Error(diff.ObjectDiff(expected, actual))
+				t.Error(diff.Diff(expected, actual))
 			}
 		},
 	}, {
@@ -215,7 +215,7 @@ func TestApplyMachineConfig(t *testing.T) {
 			}
 			actual := actions[1].(clienttesting.UpdateAction).GetObject().(*mcfgv1.MachineConfig)
 			if !equality.Semantic.DeepEqual(expected, actual) {
-				t.Error(diff.ObjectDiff(expected, actual))
+				t.Error(diff.Diff(expected, actual))
 			}
 		},
 	}, {
@@ -277,7 +277,7 @@ func TestApplyMachineConfig(t *testing.T) {
 			}
 			actual := actions[1].(clienttesting.UpdateAction).GetObject().(*mcfgv1.MachineConfig)
 			if !equality.Semantic.DeepEqual(expected, actual) {
-				t.Error(diff.ObjectDiff(expected, actual))
+				t.Error(diff.Diff(expected, actual))
 			}
 		},
 	}}

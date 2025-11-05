@@ -669,6 +669,7 @@ var _ runtimeapi.ImageServiceServer = (*FakeRuntime)(nil)
 
 // FakeRuntime represents a fake remote container runtime.
 type FakeRuntime struct {
+	runtimeapi.UnimplementedImageServiceServer
 	server *grpc.Server
 	// Fake runtime service.
 	ImageService *apitest.FakeImageService
