@@ -17,7 +17,8 @@ import (
 	machineclient "github.com/openshift/client-go/machine/clientset/versioned"
 	machineconfigclient "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	mcopclient "github.com/openshift/client-go/operator/clientset/versioned"
-	exutil "github.com/openshift/machine-config-operator/test/extended/util"
+	extpriv "github.com/openshift/machine-config-operator/test/extended-priv"
+	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 
 	o "github.com/onsi/gomega"
 
@@ -440,7 +441,7 @@ func getReleaseBootImageVersion(oc *exutil.CLI, arch string) (string, error) {
 
 // getAlephVersionFromNode retrieves the aleph version of a node
 func getAlephVersionFromNode(oc *exutil.CLI, nodeName string) (string, error) {
-	node := NewNode(oc, nodeName)
+	node := extpriv.NewNode(oc, nodeName)
 	alephPath := "/sysroot/.coreos-aleph-version.json"
 
 	out, err := node.DebugNodeWithChroot("cat", alephPath)
@@ -478,7 +479,7 @@ func getAlephVersionFromNode(oc *exutil.CLI, nodeName string) (string, error) {
 
 // Applies a boot image fixture and waits for the MCO to reconcile the status
 func applyMachineConfigurationFixture(oc *exutil.CLI, fixture string) {
-	err := NewMCOTemplate(oc, fixture).Apply()
+	err := extpriv.NewMCOTemplate(oc, fixture).Apply()
 	o.Expect(err).NotTo(o.HaveOccurred())
 
 	// Ensure status accounts for the fixture that was applied

@@ -8,8 +8,8 @@ import (
 
 	g "github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega/types"
-	exutil "github.com/openshift/machine-config-operator/test/extended/util"
-	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
+	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
+	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 )
 
 // Event struct is used to handle Event resources in OCP
