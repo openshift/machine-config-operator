@@ -23,7 +23,7 @@ RUN --mount=type=cache,target=/go/rhel8/.cache,z \
     --mount=type=cache,target=/go/rhel8/pkg/mod,z \
     make install DESTDIR=./instroot-rhel8 && tar -C instroot-rhel8 -cf instroot-rhel8.tar .
 
-FROM registry.ci.openshift.org/ocp/builder:rhel-9-enterprise-base-multi-openshift-4.19
+FROM registry.ci.openshift.org/ocp/4.20:base-rhel9
 ARG TAGS=""
 COPY install /manifests
 RUN --mount=type=cache,target=/var/cache/dnf,z \
