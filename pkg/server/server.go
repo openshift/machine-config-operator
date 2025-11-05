@@ -169,6 +169,7 @@ func getNodeAnnotation(conf, image string) (string, error) {
 	nodeAnnotations := map[string]string{
 		daemonconsts.CurrentMachineConfigAnnotationKey:     conf,
 		daemonconsts.DesiredMachineConfigAnnotationKey:     conf,
+		daemonconsts.FirstPivotMachineConfigAnnotationKey:  conf,
 		daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateDone,
 	}
 	// If image is provided, include image annotations
