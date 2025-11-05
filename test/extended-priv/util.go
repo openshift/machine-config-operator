@@ -13,8 +13,8 @@ import (
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/google/uuid"
-	exutil "github.com/openshift/machine-config-operator/test/extended/util"
-	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
+	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
+	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 	"github.com/tidwall/sjson"
 
 	g "github.com/onsi/ginkgo/v2"

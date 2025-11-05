@@ -9,7 +9,7 @@ import (
 	"github.com/openshift-eng/openshift-tests-extension/pkg/cmd"
 	v "github.com/openshift-eng/openshift-tests-extension/pkg/version"
 	"github.com/openshift/machine-config-operator/pkg/version"
-	exutil "github.com/openshift/machine-config-operator/test/extended/util"
+	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 	e2e "k8s.io/kubernetes/test/e2e/framework"
 
 	"github.com/spf13/cobra"
@@ -17,6 +17,7 @@ import (
 	e "github.com/openshift-eng/openshift-tests-extension/pkg/extension"
 	g "github.com/openshift-eng/openshift-tests-extension/pkg/ginkgo"
 	_ "github.com/openshift/machine-config-operator/test/extended"
+	_ "github.com/openshift/machine-config-operator/test/extended-priv"
 )
 
 func main() {

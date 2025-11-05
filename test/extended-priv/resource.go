@@ -11,8 +11,9 @@ import (
 	"github.com/onsi/gomega/types"
 
 	o "github.com/onsi/gomega"
-	exutil "github.com/openshift/machine-config-operator/test/extended/util"
-	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
+	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
+	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
+	"k8s.io/apimachinery/pkg/util/sets"
 	e2e "k8s.io/kubernetes/test/e2e/framework"
 )
 
@@ -534,4 +535,22 @@ func (matcher *existMatcher) FailureMessage(actual interface{}) (message string)
 
 func (matcher *existMatcher) NegatedFailureMessage(actual interface{}) (message string) {
 	return fmt.Sprintf("Expected %s \n\t%s\nnot to exist", reflect.TypeOf(actual), actual)
+}
+
+// ToResourceInterfaces converts a slice of any type T that implements ResourceInterface to []ResourceInterface
+func ToResourceInterfaces[T ResourceInterface](resources []T) []ResourceInterface {
+	result := make([]ResourceInterface, len(resources))
+	for i, res := range resources {
+		result[i] = res
+	}
+	return result
+}
+
+// GetResourcesNamesSet returns a set containing the names of the provided resources
+func GetResourcesNamesSet(resources []ResourceInterface) sets.Set[string] {
+	namesSet := sets.New[string]()
+	for _, resource := range resources {
+		namesSet.Insert(resource.GetName())
+	}
+	return namesSet
 }
