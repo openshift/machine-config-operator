@@ -125,11 +125,11 @@ func (f *fixture) validateMachineConfig() {
 			require.NoError(f.t, err)
 			if !equality.Semantic.DeepEqual(actualKubeletConfig.FeatureGates, expectedKubeletConfig.FeatureGates) {
 				f.t.Errorf("Action %s %s has wrong object\nDiff:\n %s",
-					actual.GetVerb(), actual.GetResource().Resource, diff.ObjectGoPrintDiff(actualKubeletConfig.FeatureGates, expectedKubeletConfig.FeatureGates))
+					actual.GetVerb(), actual.GetResource().Resource, diff.Diff(actualKubeletConfig.FeatureGates, expectedKubeletConfig.FeatureGates))
 			}
 			if !equality.Semantic.DeepEqual(actualKubeletConfig.MaxPods, expectedKubeletConfig.MaxPods) {
 				f.t.Errorf("Action %s %s has wrong object\nDiff:\n %s",
-					actual.GetVerb(), actual.GetResource().Resource, diff.ObjectGoPrintDiff(actualKubeletConfig.MaxPods, expectedKubeletConfig.MaxPods))
+					actual.GetVerb(), actual.GetResource().Resource, diff.Diff(actualKubeletConfig.MaxPods, expectedKubeletConfig.MaxPods))
 			}
 		}
 	}
@@ -383,7 +383,7 @@ func checkAction(expected, actual core.Action, t *testing.T, index int) {
 
 		if !equality.Semantic.DeepEqual(expObject, object) {
 			t.Errorf("Action %s %s has wrong object\nDiff:\n %s",
-				a.GetVerb(), a.GetResource().Resource, diff.ObjectGoPrintDiff(expObject, object))
+				a.GetVerb(), a.GetResource().Resource, diff.Diff(expObject, object))
 		}
 	case core.PatchAction:
 		e, _ := expected.(core.PatchAction)
@@ -392,7 +392,7 @@ func checkAction(expected, actual core.Action, t *testing.T, index int) {
 
 		if !equality.Semantic.DeepEqual(expPatch, patch) {
 			t.Errorf("Action %s %s has wrong patch\nDiff:\n %s",
-				a.GetVerb(), a.GetResource().Resource, diff.ObjectGoPrintDiff(expPatch, patch))
+				a.GetVerb(), a.GetResource().Resource, diff.Diff(expPatch, patch))
 		}
 	}
 }

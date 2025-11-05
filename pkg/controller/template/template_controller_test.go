@@ -205,7 +205,7 @@ func checkAction(expected, actual core.Action, t *testing.T) {
 		filterTimeFromControllerStatus(object, expObject)
 		if !equality.Semantic.DeepEqual(expObject, object) {
 			t.Errorf("Action %s %s has wrong object\nDiff:\n %s",
-				a.GetVerb(), a.GetResource().Resource, diff.ObjectGoPrintDiff(expObject, object))
+				a.GetVerb(), a.GetResource().Resource, diff.Diff(expObject, object))
 		}
 	case core.UpdateAction:
 		e, _ := expected.(core.UpdateAction)
@@ -215,7 +215,7 @@ func checkAction(expected, actual core.Action, t *testing.T) {
 		filterTimeFromControllerStatus(object, expObject)
 		if !equality.Semantic.DeepEqual(expObject, object) {
 			t.Errorf("Action %s %s has wrong object\nDiff:\n %s",
-				a.GetVerb(), a.GetResource().Resource, diff.ObjectGoPrintDiff(expObject, object))
+				a.GetVerb(), a.GetResource().Resource, diff.Diff(expObject, object))
 		}
 	case core.PatchAction:
 		e, _ := expected.(core.PatchAction)
@@ -224,7 +224,7 @@ func checkAction(expected, actual core.Action, t *testing.T) {
 
 		if !equality.Semantic.DeepEqual(expPatch, expPatch) {
 			t.Errorf("Action %s %s has wrong patch\nDiff:\n %s",
-				a.GetVerb(), a.GetResource().Resource, diff.ObjectGoPrintDiff(expPatch, patch))
+				a.GetVerb(), a.GetResource().Resource, diff.Diff(expPatch, patch))
 		}
 	}
 }
