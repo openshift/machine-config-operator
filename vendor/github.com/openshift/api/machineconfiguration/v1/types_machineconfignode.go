@@ -158,7 +158,78 @@ type MachineConfigNodeStatus struct {
 	// +kubebuilder:validation:MaxItems=32
 	// +optional
 	IrreconcilableChanges []IrreconcilableChangeDiff `json:"irreconcilableChanges,omitempty"`
+	// internalReleaseImage describes the status of the release payloads stored in the node.
+	// When specified, an internalReleaseImage custom resource exists on the cluster, and the specified images will be made available on the control plane nodes.
+	// This field will reflect the actual on-disk state of those release images.
+	// +openshift:enable:FeatureGate=NoRegistryClusterOperations
+	// +optional
+	InternalReleaseImage MachineConfigNodeStatusInternalReleaseImage `json:"internalReleaseImage,omitzero,omitempty"`
 }
+
+// MachineConfigNodeStatusInternalReleaseImage holds information about the current and discovered release bundles for the observed machine
+// config node.
+type MachineConfigNodeStatusInternalReleaseImage struct {
+	// releases is a list of the release bundles currently owned and managed by the
+	// cluster, indicating that their images can be safely pulled by any cluster entity
+	// requiring them.
+	// Entries must be unique, keyed on the name field.
+	// This field can contain between 1 and 5 entries.
+	// +listType=map
+	// +listMapKey=name
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=5
+	// +required
+	Releases []MachineConfigNodeStatusInternalReleaseImageRef `json:"releases,omitempty"`
+}
+
+// MachineConfigNodeStatusInternalReleaseImageRef is used to provide a more detailed reference for
+// a release bundle.
+type MachineConfigNodeStatusInternalReleaseImageRef struct {
+	// conditions represent the observations of an internal release image current state. Valid types are:
+	// Mounted, Installing, Available, Removing and Degraded.
+	// +listType=map
+	// +listMapKey=type
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=5
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	// name indicates the desired release bundle identifier. This field is required and must be between 1 and 64 characters long.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=64
+	// +required
+	Name string `json:"name,omitempty"`
+	// image is an OCP release image referenced by digest.
+	// The format of the image pull spec is: host[:port][/namespace]/name@sha256:<digest>,
+	// where the digest must be 64 characters long, and consist only of lowercase hexadecimal characters, a-f and 0-9.
+	// The length of the whole spec must be between 0 to 447 characters.
+	// The field is optional, and it will be provided after a release will be successfully installed.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=447
+	// +kubebuilder:validation:XValidation:rule=`self == '' || (self.split('@').size() == 2 && self.split('@')[1].matches('^sha256:[a-f0-9]{64}$'))`,message="the OCI Image reference must end with a valid '@sha256:<digest>' suffix, where '<digest>' is 64 characters long"
+	// +kubebuilder:validation:XValidation:rule=`self == '' || (self.split('@')[0].matches('^([a-zA-Z0-9-]+\\.)+[a-zA-Z0-9-]+(:[0-9]{2,5})?/([a-zA-Z0-9-_]{0,61}/)?[a-zA-Z0-9-_.]*?$'))`,message="the OCI Image name should follow the host[:port][/namespace]/name format, resembling a valid URL without the scheme"
+	// +optional
+	Image string `json:"image,omitempty"`
+}
+
+// InternalReleaseImageConditionType is each possible state for each possible MachineConfigNodeStatusInternalReleaseImageRef
+// conditions type.
+// +enum
+type InternalReleaseImageConditionType string
+
+const (
+	// InternalReleaseImageConditionTypeMounted describes a new release, not yet installed, that has been discovered when an ISO has been attached to
+	// the current node
+	InternalReleaseImageConditionTypeMounted InternalReleaseImageConditionType = "Mounted"
+	// InternalReleaseImageConditionTypeInstalling describes a new release that is getting installed on the current node. Due the size of the data
+	// transfered, the operation could take several minutes
+	InternalReleaseImageConditionTypeInstalling InternalReleaseImageConditionType = "Installing"
+	// InternalReleaseImageConditionTypeAvailable describes a release that has been successfully installed on the current node, ready to be consumed
+	InternalReleaseImageConditionTypeAvailable InternalReleaseImageConditionType = "Available"
+	// InternalReleaseImageConditionTypeRemoving describes an existing release that is getting removed from the current node
+	InternalReleaseImageConditionTypeRemoving InternalReleaseImageConditionType = "Removing"
+	// InternalReleaseImageConditionTypeDegraded describes a failure for the current release
+	InternalReleaseImageConditionTypeDegraded InternalReleaseImageConditionType = "Degraded"
+)
 
 // IrreconcilableChangeDiff holds an individual diff between the initial install-time MachineConfig
 // and the latest applied one caused by the presence of irreconcilable changes.

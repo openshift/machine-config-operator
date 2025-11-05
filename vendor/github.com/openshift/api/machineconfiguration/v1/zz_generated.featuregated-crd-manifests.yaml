@@ -29,7 +29,9 @@ controllerconfigs.machineconfiguration.openshift.io:
   Category: ""
   FeatureGates:
   - AWSClusterHostedDNSInstall
+  - AWSDualStackInstall
   - AzureClusterHostedDNSInstall
+  - AzureDualStackInstall
   - DualReplica
   - DyanmicServiceEndpointIBMCloud
   - GCPClusterHostedDNSInstall
@@ -120,6 +122,7 @@ machineconfignodes.machineconfiguration.openshift.io:
   - ImageModeStatusReporting
   - IrreconcilableMachineConfig
   - MachineConfigNodes
+  - NoRegistryClusterOperations
   FilenameOperatorName: machine-config
   FilenameOperatorOrdering: "01"
   FilenameRunLevel: "0000_80"
