@@ -280,6 +280,22 @@ func (optr *Operator) syncUpgradeableStatus(co *configv1.ClusterOperator) error 
 		coStatusCondition.Reason = "ClusterOnCgroupV1"
 		coStatusCondition.Message = "Cluster is using deprecated cgroup v1 and is not upgradable. Please update the `CgroupMode` in the `nodes.config.openshift.io` object to 'v2'. Once upgraded, the cluster cannot be changed back to cgroup v1"
 	}
+
+	// Check for ClusterImagePolicy named "openshift" which conflicts with the cluster default ClusterImagePolicy object
+	// Only block upgrades if it's a customer-created resource (not the internal-openshift-hosted default)
+	cip, err := optr.configClient.ConfigV1().ClusterImagePolicies().Get(context.TODO(), "openshift", metav1.GetOptions{})
+	if err == nil {
+		annotations := cip.GetAnnotations()
+		isClusterDefault := annotations != nil && annotations["exclude.release.openshift.io/internal-openshift-hosted"] == "true"
+		if !isClusterDefault {
+			coStatusCondition.Status = configv1.ConditionFalse
+			coStatusCondition.Reason = "ConflictingClusterImagePolicy"
+			coStatusCondition.Message = "ClusterImagePolicy resource named 'openshift' conflicts with the cluster default ClusterImagePolicy object and blocks upgrades. Please delete the 'openshift' ClusterImagePolicy resource and reapply it with a different name if needed"
+		}
+	} else if !apierrors.IsNotFound(err) {
+		return err
+	}
+
 	var degraded, interrupted bool
 	for _, pool := range pools {
 		interrupted = isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolBuildInterrupted)
