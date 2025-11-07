@@ -10,32 +10,24 @@ import (
 func TestCreateNewKubeletDynamicSystemReservedIgnition(t *testing.T) {
 	tests := []struct {
 		name                string
-		autoSystemReserved  *bool
+		autoSystemReserved  bool
 		expectedAutoSizing  string
 		expectedMemory      string
 		expectedCPU         string
 		expectedEphemeral   string
 	}{
 		{
-			name:                "Auto sizing should be true if autoSystemReserved is passed as nil",
-			autoSystemReserved:  nil,
+			name:                "Auto sizing should be true if autoSystemReserved is true",
+			autoSystemReserved:  true,
 			expectedAutoSizing:  "NODE_SIZING_ENABLED=true",
 			expectedMemory:      "SYSTEM_RESERVED_MEMORY=1Gi",
 			expectedCPU:         "SYSTEM_RESERVED_CPU=500m",
 			expectedEphemeral:   "SYSTEM_RESERVED_ES=1Gi",
 		},
 		{
-			name:                "Auto sizing should be false if autoSystemReserved is passed as false",
-			autoSystemReserved:  boolPtr(false),
+			name:                "Auto sizing should be false if autoSystemReserved is false",
+			autoSystemReserved:  false,
 			expectedAutoSizing:  "NODE_SIZING_ENABLED=false",
-			expectedMemory:      "SYSTEM_RESERVED_MEMORY=1Gi",
-			expectedCPU:         "SYSTEM_RESERVED_CPU=500m",
-			expectedEphemeral:   "SYSTEM_RESERVED_ES=1Gi",
-		},
-		{
-			name:                "Auto sizing should be true if autoSystemReserved is passed as true",
-			autoSystemReserved:  boolPtr(true),
-			expectedAutoSizing:  "NODE_SIZING_ENABLED=true",
 			expectedMemory:      "SYSTEM_RESERVED_MEMORY=1Gi",
 			expectedCPU:         "SYSTEM_RESERVED_CPU=500m",
 			expectedEphemeral:   "SYSTEM_RESERVED_ES=1Gi",
@@ -79,9 +71,4 @@ func TestCreateNewKubeletDynamicSystemReservedIgnition(t *testing.T) {
 			}
 		})
 	}
-}
-
-// boolPtr is a helper function to get a pointer to a bool value
-func boolPtr(b bool) *bool {
-	return &b
 }
