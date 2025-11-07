@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openshift/machine-config-operator/test/extended/testdata"
+	"github.com/openshift/machine-config-operator/test/extended-priv/testdata"
 	kapierrs "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"

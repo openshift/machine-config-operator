@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/onsi/ginkgo/v2"
-	"github.com/openshift/machine-config-operator/test/extended/util/provider"
+	"github.com/openshift/machine-config-operator/test/extended-priv/util/provider"
 	kapiv1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"

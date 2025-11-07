@@ -6,8 +6,8 @@ import (
 
 	o "github.com/onsi/gomega"
 	"github.com/onsi/gomega/types"
-	exutil "github.com/openshift/machine-config-operator/test/extended/util"
-	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
+	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
+	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 )
 
 type Checker interface {

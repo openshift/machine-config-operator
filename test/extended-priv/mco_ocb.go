@@ -5,8 +5,8 @@ import (
 
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
-	exutil "github.com/openshift/machine-config-operator/test/extended/util"
-	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
+	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
+	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 )
 
 var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Serial][Disruptive] MCO ocb", func() {
