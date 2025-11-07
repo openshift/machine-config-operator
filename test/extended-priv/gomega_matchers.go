@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
+	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 
 	g "github.com/onsi/ginkgo/v2"
 	gomegamatchers "github.com/onsi/gomega/matchers"

@@ -7,8 +7,8 @@ import (
 	"regexp"
 	"strings"
 
-	exutil "github.com/openshift/machine-config-operator/test/extended/util"
-	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
+	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
+	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 	e2e "k8s.io/kubernetes/test/e2e/framework"
 )
 

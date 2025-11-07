@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 
 	o "github.com/onsi/gomega"
-	exutil "github.com/openshift/machine-config-operator/test/extended/util"
+	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 )
 
 // ConfigMap struct encapsulates the functionalities regarding ocp configmaps

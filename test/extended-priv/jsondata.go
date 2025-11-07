@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	logger "github.com/openshift/machine-config-operator/test/extended/util/logext"
+	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 
 	e2e "k8s.io/kubernetes/test/e2e/framework"
 )
