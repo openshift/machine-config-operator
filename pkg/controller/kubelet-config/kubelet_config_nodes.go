@@ -64,6 +64,18 @@ func (ctrl *Controller) handleNodeConfigErr(err error, key string) {
 	ctrl.nodeConfigQueue.AddAfter(key, 1*time.Minute)
 }
 
+// createAutoSizingIgnConfig creates the Ignition config for auto-sizing disabled
+func createAutoSizingIgnConfig() ([]byte, error) {
+	autoSizingFile := ctrlcommon.NewIgnFileBytes("/etc/node-sizing-enabled.env", []byte(DefaultAutoSizingEnvContent))
+	autoSizingIgnConfig := ctrlcommon.NewIgnConfig()
+	autoSizingIgnConfig.Storage.Files = append(autoSizingIgnConfig.Storage.Files, autoSizingFile)
+	rawAutoSizingIgn, err := json.Marshal(autoSizingIgnConfig)
+	if err != nil {
+		return nil, err
+	}
+	return rawAutoSizingIgn, nil
+}
+
 // newAutoSizingMachineConfig creates an empty auto-sizing MachineConfig for a given pool
 func newAutoSizingMachineConfig(pool *mcfgv1.MachineConfigPool) (*mcfgv1.MachineConfig, error) {
 	autoSizingDisabledName := fmt.Sprintf("01-%s-auto-sizing-disabled", pool.Name)
@@ -73,11 +85,8 @@ func newAutoSizingMachineConfig(pool *mcfgv1.MachineConfigPool) (*mcfgv1.Machine
 		return nil, err
 	}
 
-	// Create the auto-sizing disabled file
-	autoSizingFile := ctrlcommon.NewIgnFileBytes("/etc/node-sizing-enabled.env", []byte(DefaultAutoSizingEnvContent))
-	autoSizingIgnConfig := ctrlcommon.NewIgnConfig()
-	autoSizingIgnConfig.Storage.Files = append(autoSizingIgnConfig.Storage.Files, autoSizingFile)
-	rawAutoSizingIgn, err := json.Marshal(autoSizingIgnConfig)
+	// Create the auto-sizing disabled file using the helper function
+	rawAutoSizingIgn, err := createAutoSizingIgnConfig()
 	if err != nil {
 		return nil, err
 	}
