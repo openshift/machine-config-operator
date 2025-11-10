@@ -3,14 +3,13 @@ package imagepruner
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/containers/common/pkg/retry"
-	"github.com/containers/image/v5/docker"
 	"github.com/containers/image/v5/image"
 	"github.com/containers/image/v5/manifest"
 	"github.com/containers/image/v5/types"
 	digest "github.com/opencontainers/go-digest"
+	"github.com/openshift/machine-config-operator/pkg/imageutils"
 )
 
 const (
@@ -58,24 +57,6 @@ func (i *imageInspectorImpl) DeleteImage(ctx context.Context, sysCtx *types.Syst
 	return deleteImage(ctx, sysCtx, image)
 }
 
-// parseImageName parses the image name string into an ImageReference,
-// handling various prefix formats like "docker://" and ensuring a standard format.
-func parseImageName(imgName string) (types.ImageReference, error) {
-	if strings.Contains(imgName, "//") && !strings.HasPrefix(imgName, "docker://") {
-		return nil, fmt.Errorf("unknown transport for pullspec %s", imgName)
-	}
-
-	if strings.HasPrefix(imgName, "docker://") {
-		imgName = strings.ReplaceAll(imgName, "docker://", "//")
-	}
-
-	if !strings.HasPrefix(imgName, "//") {
-		imgName = "//" + imgName
-	}
-
-	return docker.Transport.ParseReference(imgName)
-}
-
 // deleteImage attempts to delete the specified image with retries,
 // using the provided context and system context.
 //
@@ -85,7 +66,7 @@ func deleteImage(ctx context.Context, sysCtx *types.SystemContext, imageName str
 		MaxRetry: cmdRetriesCount,
 	}
 
-	ref, err := parseImageName(imageName)
+	ref, err := imageutils.ParseImageName(imageName)
 	if err != nil {
 		return err
 	}
@@ -105,29 +86,19 @@ func deleteImage(ctx context.Context, sysCtx *types.SystemContext, imageName str
 //
 //nolint:unparam
 func imageInspect(ctx context.Context, sysCtx *types.SystemContext, imageName string) (*types.ImageInspectInfo, *digest.Digest, error) {
-	var (
-		src        types.ImageSource
-		imgInspect *types.ImageInspectInfo
-		err        error
-	)
-
-	retryOpts := retry.RetryOptions{
-		MaxRetry: cmdRetriesCount,
-	}
-
-	ref, err := parseImageName(imageName)
+	ref, err := imageutils.ParseImageName(imageName)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error parsing image name %q: %w", imageName, err)
 	}
 
-	// retry.IfNecessary takes into account whether the error is "retryable"
-	// so we don't keep looping on errors that will never resolve
-	if err := retry.RetryIfNecessary(ctx, func() error {
-		src, err = ref.NewImageSource(ctx, sysCtx)
-		return err
-	}, &retryOpts); err != nil {
-		return nil, nil, newErrImage(imageName, fmt.Errorf("error getting image source: %w", err))
+	retryOpts := retry.RetryOptions{
+		MaxRetry: cmdRetriesCount,
 	}
+	src, err := imageutils.GetImageSourceFromReference(ctx, sysCtx, ref, &retryOpts)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error getting image source for %s: %w", imageName, err)
+	}
+	defer src.Close()
 
 	var rawManifest []byte
 	unparsedInstance := image.UnparsedInstance(src, nil)
@@ -144,14 +115,13 @@ func imageInspect(ctx context.Context, sysCtx *types.SystemContext, imageName st
 		return nil, nil, fmt.Errorf("error retrieving image digest: %q: %w", imageName, err)
 	}
 
-	defer src.Close()
-
 	img, err := image.FromUnparsedImage(ctx, sysCtx, unparsedInstance)
 	if err != nil {
 		return nil, nil, newErrImage(imageName, fmt.Errorf("error parsing manifest for image: %w", err))
 	}
 
-	if err := retry.RetryIfNecessary(ctx, func() error {
+	var imgInspect *types.ImageInspectInfo
+	if err := retry.IfNecessary(ctx, func() error {
 		imgInspect, err = img.Inspect(ctx)
 		return err
 	}, &retryOpts); err != nil {
