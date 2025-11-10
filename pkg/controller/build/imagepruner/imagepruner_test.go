@@ -2,6 +2,7 @@ package imagepruner
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -23,12 +24,16 @@ type fakeImageInspector struct {
 	deleteImageCalled    bool
 	deleteImagePullspec  string
 	deleteImageSysCtx    *types.SystemContext
+	imageApiError        bool
 }
 
 // ImageInspect is a mock implementation for testing, setting flags to indicate it was called.
 func (f *fakeImageInspector) ImageInspect(_ context.Context, sysCtx *types.SystemContext, pullspec string) (*types.ImageInspectInfo, *digest.Digest, error) {
 	f.imageInspectCalled = true
 	f.imageInspectPullspec = pullspec
+	if f.imageApiError {
+		return nil, nil, fmt.Errorf("fake inspect error")
+	}
 	return nil, nil, nil
 }
 
@@ -36,6 +41,9 @@ func (f *fakeImageInspector) ImageInspect(_ context.Context, sysCtx *types.Syste
 func (f *fakeImageInspector) DeleteImage(_ context.Context, sysCtx *types.SystemContext, pullspec string) error {
 	f.deleteImageCalled = true
 	f.deleteImagePullspec = pullspec
+	if f.imageApiError {
+		return fmt.Errorf("fake delete error")
+	}
 	return nil
 }
 
@@ -50,7 +58,8 @@ func TestImagePruner(t *testing.T) {
 	testCases := []struct {
 		name        string
 		inputSecret *corev1.Secret
-		expectError bool
+		authError   bool
+		imageError  bool
 	}{
 		{
 			name: "DockerConfigJSON",
@@ -76,6 +85,32 @@ func TestImagePruner(t *testing.T) {
 				Type: corev1.SecretTypeDockercfg,
 			},
 		},
+		{
+			name: "ImageErrorHandling",
+			inputSecret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "pull-secret",
+				},
+				Data: map[string][]byte{
+					corev1.DockerConfigJsonKey: []byte(newSecret),
+				},
+				Type: corev1.SecretTypeDockerConfigJson,
+			},
+			imageError: true,
+		},
+		{
+			name: "AuthErrorHandling",
+			inputSecret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "pull-secret",
+				},
+				Data: map[string][]byte{
+					corev1.DockerConfigJsonKey: []byte(newSecret),
+				},
+				Type: corev1.SecretTypeOpaque,
+			},
+			authError: true,
+		},
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -86,7 +121,9 @@ func TestImagePruner(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			fii := &fakeImageInspector{}
+			fii := &fakeImageInspector{
+				imageApiError: testCase.imageError,
+			}
 			ip := &imagePrunerImpl{
 				images: fii,
 			}
@@ -94,36 +131,34 @@ func TestImagePruner(t *testing.T) {
 			pullspec := "registry.hostname.com/org/repo:latest"
 
 			cc := &mcfgv1.ControllerConfig{}
-
-			sysCtx, err := ip.prepareSystemContext(testCase.inputSecret, cc)
-			if testCase.expectError {
+			_, _, err := ip.InspectImage(ctx, pullspec, testCase.inputSecret, cc)
+			if testCase.imageError {
 				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-				assert.Contains(t, sysCtx.AuthFilePath, "authfile.json")
-				assert.FileExists(t, sysCtx.AuthFilePath)
-				assert.DirExists(t, sysCtx.DockerPerHostCertDirPath)
-				assert.NoError(t, ip.cleanup(sysCtx))
-				assert.NoFileExists(t, sysCtx.AuthFilePath)
-				assert.NoDirExists(t, sysCtx.DockerPerHostCertDirPath)
-			}
-
-			_, _, err = ip.InspectImage(ctx, pullspec, testCase.inputSecret, cc)
-			if testCase.expectError {
+				// SysContext context created but the API call failed
+				assert.True(t, fii.imageInspectCalled)
+			} else if testCase.authError {
 				assert.Error(t, err)
-				assert.False(t, fii.imageInspectCalled)
+				// The API called wasn't performed cause the logic couldn't reach that point
+				assert.False(t, fii.deleteImageCalled)
 			} else {
 				assert.NoError(t, err)
 				assert.True(t, fii.imageInspectCalled)
+				assert.Equal(t, fii.imageInspectPullspec, pullspec)
 			}
 
 			err = ip.DeleteImage(ctx, pullspec, testCase.inputSecret, cc)
-			if testCase.expectError {
+			if testCase.imageError {
 				assert.Error(t, err)
+				// SysContext context created but the API call failed
+				assert.True(t, fii.deleteImageCalled)
+			} else if testCase.authError {
+				assert.Error(t, err)
+				// The API called wasn't performed cause the logic couldn't reach that point
 				assert.False(t, fii.deleteImageCalled)
 			} else {
 				assert.NoError(t, err)
 				assert.True(t, fii.deleteImageCalled)
+				assert.Equal(t, fii.deleteImagePullspec, pullspec)
 			}
 		})
 	}
