@@ -345,13 +345,13 @@ func (ctrl *Controller) calculateStatus(mcns []*mcfgv1.MachineConfigNode, cconfi
 		switch {
 		case mosbState.IsBuilding() || mosbState.IsBuildPrepared():
 			// Active build detected - clear any previous BuildDegraded condition
-			buildDegradedClear := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolImageBuildDegraded, corev1.ConditionFalse, "BuildStarted", "New build started")
+			buildDegradedClear := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolImageBuildDegraded, corev1.ConditionFalse, string(mcfgv1.MachineConfigPoolBuilding), "New build started")
 			apihelpers.SetMachineConfigPoolCondition(&status, *buildDegradedClear)
 			// Update local variable for degraded calculation
 			buildDegraded = false
 		case mosbState.IsBuildSuccess():
 			// Successful build detected - clear any previous BuildDegraded condition
-			buildDegradedClear := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolImageBuildDegraded, corev1.ConditionFalse, "BuildSucceeded", "Build completed successfully")
+			buildDegradedClear := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolImageBuildDegraded, corev1.ConditionFalse, string(mcfgv1.MachineConfigPoolBuildSuccess), "Build completed successfully")
 			apihelpers.SetMachineConfigPoolCondition(&status, *buildDegradedClear)
 			buildDegraded = false
 		}
@@ -359,7 +359,7 @@ func (ctrl *Controller) calculateStatus(mcns []*mcfgv1.MachineConfigNode, cconfi
 		// MachineOSConfig exists but no MachineOSBuild - this indicates a retry attempt
 		// Clear any previous BuildDegraded condition to allow the retry
 		if apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolImageBuildDegraded) {
-			buildDegradedClear := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolImageBuildDegraded, corev1.ConditionFalse, "BuildPending", "MachineOSConfig updated/created, waiting for MachineOSBuild")
+			buildDegradedClear := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolImageBuildDegraded, corev1.ConditionFalse, string(mcfgv1.MachineConfigPoolBuildPending), "MachineOSConfig updated/created, waiting for MachineOSBuild")
 			apihelpers.SetMachineConfigPoolCondition(&status, *buildDegradedClear)
 			buildDegraded = false
 		}
