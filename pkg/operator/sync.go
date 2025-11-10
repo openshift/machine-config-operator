@@ -555,15 +555,6 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		internalRegistryPullSecret = nil
 	}
 
-	// sync up os image url
-	// TODO: this should probably be part of the imgs
-	oscontainer, osextensionscontainer, err := optr.getOsImageURLs(optr.namespace)
-	if err != nil {
-		return err
-	}
-	imgs.BaseOSContainerImage = oscontainer
-	imgs.BaseOSExtensionsContainerImage = osextensionscontainer
-
 	// sync up the ControllerConfigSpec
 	infra, network, proxy, dns, apiServer, err := optr.getGlobalConfig()
 	if err != nil {
@@ -613,8 +604,17 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 	spec.ImageRegistryBundleUserData = imgRegistryUsrData
 	spec.PullSecret = &corev1.ObjectReference{Namespace: "openshift-config", Name: "pull-secret"}
 	spec.InternalRegistryPullSecret = internalRegistryPullSecret
-	spec.BaseOSContainerImage = imgs.BaseOSContainerImage
-	spec.BaseOSExtensionsContainerImage = imgs.BaseOSExtensionsContainerImage
+
+	// sync up os image url
+	// TODO: this should probably be part of the imgs
+	osImageUrlCfg, err := optr.getOsImageURLs(optr.namespace)
+	if err != nil {
+		return err
+	}
+	// Fill the ControllerConfig fields (not used, but preserved) with sane defaults
+	osImageStreamsDefaultCfg := osImageUrlCfg.StreamsConfig.GetOSImageURLsForDefaultStream()
+	spec.BaseOSContainerImage = osImageStreamsDefaultCfg.BaseOSContainerImage
+	spec.BaseOSExtensionsContainerImage = osImageStreamsDefaultCfg.BaseOSExtensionsContainerImage
 	spec.Images = map[string]string{
 		templatectrl.MachineConfigOperatorKey: imgs.MachineConfigOperator,
 		templatectrl.APIServerWatcherKey:      imgs.MachineConfigOperator,
@@ -1718,14 +1718,14 @@ func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig, co *c
 			_, hasRequiredPoolLabel := pool.Labels[requiredForUpgradeMachineConfigPoolLabelKey]
 
 			if hasRequiredPoolLabel {
-				opURL, _, err := optr.getOsImageURLs(optr.namespace)
+				osImageUrlCfg, err := optr.getOsImageURLs(optr.namespace)
 				if err != nil {
 					klog.Errorf("Error getting configmap osImageURL: %q", err)
 					return false, nil
 				}
 				releaseVersion, _ := optr.vStore.Get("operator")
-
-				if err := isMachineConfigPoolConfigurationValid(optr.fgHandler, pool, version.Hash, releaseVersion, opURL, optr.mcLister.Get); err != nil {
+				osStreaDefaultConfig := osImageUrlCfg.StreamsConfig.GetOSImageURLsForDefaultStream()
+				if err := isMachineConfigPoolConfigurationValid(optr.fgHandler, pool, version.Hash, releaseVersion, osStreaDefaultConfig.BaseOSContainerImage, optr.mcLister.Get); err != nil {
 					lastErr = fmt.Errorf("MachineConfigPool %s has not progressed to latest configuration: %w, retrying", pool.Name, err)
 					newCO := co.DeepCopy()
 					syncerr := optr.syncUpgradeableStatus(newCO)
@@ -1884,23 +1884,23 @@ func (optr *Operator) waitForControllerConfigToBeCompleted(resource *mcfgv1.Cont
 }
 
 // getOsImageURLs returns (new type, new extensions, old type) for operating system update images.
-func (optr *Operator) getOsImageURLs(namespace string) (string, string, error) {
+func (optr *Operator) getOsImageURLs(namespace string) (*ctrlcommon.OSImageURLConfig, error) {
 	cm, err := optr.mcoCmLister.ConfigMaps(namespace).Get(ctrlcommon.MachineConfigOSImageURLConfigMapName)
 	if err != nil {
-		return "", "", err
+		return nil, err
 	}
 
 	cfg, err := ctrlcommon.ParseOSImageURLConfigMap(cm)
 	if err != nil {
-		return "", "", err
+		return nil, err
 	}
 
 	optrVersion, _ := optr.vStore.Get("operator")
 	if cfg.ReleaseVersion != optrVersion {
-		return "", "", fmt.Errorf("refusing to read osImageURL version %q, operator version %q", cfg.ReleaseVersion, optrVersion)
+		return nil, fmt.Errorf("refusing to read osImageURL version %q, operator version %q", cfg.ReleaseVersion, optrVersion)
 	}
 
-	return cfg.BaseOSContainerImage, cfg.BaseOSExtensionsContainerImage, nil
+	return cfg, nil
 }
 
 func (optr *Operator) getCAsFromConfigMap(namespace, name, key string) ([]byte, error) {
