@@ -22,7 +22,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		skipTestIfOCBIsEnabled(oc)
 	})
 
-	g.It("PolarionID:83141-A valid MachineOSConfig leads to a successful MachineOSBuild and cleanup of its associated resources", func() {
+	g.It("[PolarionID:83141][OTP] A valid MachineOSConfig leads to a successful MachineOSBuild and cleanup of its associated resources", func() {
 		var (
 			mcpAndMoscName = "infra"
 		)
@@ -53,7 +53,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 	})
 
-	g.It("PolarionID:83138-A MachineOSConfig fails to apply or degrades if invalid inputs are given", func() {
+	g.It("[PolarionID:83138][OTP] A MachineOSConfig fails to apply or degrades if invalid inputs are given", func() {
 		var (
 			mcpAndMoscName = "infra"
 			pushSpec       = fmt.Sprintf("%s/openshift-machine-config-operator/ocb-%s-image:latest", InternalRegistrySvcURL, mcpAndMoscName)
@@ -106,7 +106,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("OK!")
 	})
 
-	g.It("PolarionID:83140-A MachineOSConfig with custom containerfile definition can be successfully applied", func() {
+	g.It("[PolarionID:83140][OTP] A MachineOSConfig with custom containerfile definition can be successfully applied", func() {
 		var (
 			mcp = GetCompactCompatiblePool(oc.AsAdmin())
 
@@ -145,7 +145,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		testContainerFile([]ContainerFile{{Content: containerFileContent}}, MachineConfigNamespace, mcp, checkers, false)
 	})
 
-	g.It("PolarionID:77781-A successfully built MachineOSConfig can be re-build", func() {
+	g.It("[PolarionID:77781][OTP] A successfully built MachineOSConfig can be re-build", func() {
 
 		var (
 			mcp = GetCompactCompatiblePool(oc.AsAdmin())
@@ -167,7 +167,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("OK!\n")
 	})
 
-	g.It("PolarionID:77782-A MachineOSConfig with an unfinished build can be re-build", func() {
+	g.It("[PolarionID:77782][OTP] A MachineOSConfig with an unfinished build can be re-build", func() {
 
 		var (
 			mcp = GetCompactCompatiblePool(oc.AsAdmin())

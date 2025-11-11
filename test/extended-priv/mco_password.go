@@ -41,7 +41,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		preChecks(oc)
 	})
 
-	g.It("PolarionID:59417-MCD create/update password with MachineConfig in CoreOS nodes", func() {
+	g.It("[PolarionID:59417][OTP] MCD create/update password with MachineConfig in CoreOS nodes", func() {
 		var (
 			mcName   = "tc-59417-test-core-passwd"
 			mcc      = NewController(oc.AsAdmin()).IgnoreLogsBeforeNowOrFail()
@@ -129,7 +129,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 	})
 
-	g.It("PolarionID:72137-Create a password for a user different from 'core' user", func() {
+	g.It("[PolarionID:72137][OTP] Create a password for a user different from 'core' user", func() {
 		var (
 			mcName       = "mco-tc-59900-wrong-user-password"
 			wrongUser    = "root"
@@ -149,7 +149,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	})
 
 	// https://issues.redhat.com/browse/MCO-1696
-	g.It("PolarionID:59424-ssh keys can be found in new dir on RHCOS9 node", func() {
+	g.It("[PolarionID:59424][OTP] ssh keys can be found in new dir on RHCOS9 node", func() {
 		var (
 			allCoreOsNodes = wMcp.GetCoreOsNodesOrFail()
 			allMasters     = mMcp.GetNodesOrFail()
@@ -191,7 +191,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		}
 	})
 
-	g.It("PolarionID:59426-ssh keys can be updated in new dir on RHCOS9 node", func() {
+	g.It("[PolarionID:59426][LEVEL0][OTP] ssh keys can be updated in new dir on RHCOS9 node", func() {
 
 		var (
 			mcName            = "tc-59426-add-ssh-key"
@@ -276,7 +276,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 	})
 
-	g.It("PolarionID:62533-Passwd login must not work with ssh", func() {
+	g.It("[PolarionID:62533][OTP] Passwd login must not work with ssh", func() {
 		var (
 			mcName       = "tc-62533-test-passwd-ssh-login"
 			password     = exutil.GetRandomString()
@@ -312,7 +312,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("OK!\n")
 	})
 
-	g.It("PolarionID:64986-Remove all ssh keys", func() {
+	g.It("[PolarionID:64986][OTP] Remove all ssh keys", func() {
 		var (
 			sshMCName    = "99-" + mcp.GetName() + "-ssh"
 			backupMCFile = filepath.Join(e2e.TestContext.OutputDir, "tc-64986-"+sshMCName+".backup.json")
@@ -373,7 +373,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("OK!\n")
 	})
 
-	g.It("PolarionID:75552-apply ssh keys when root owns .ssh", func() {
+	g.It("[PolarionID:75552][OTP] apply ssh keys when root owns .ssh", func() {
 		var (
 			node         = mcp.GetSortedNodesOrFail()[0]
 			authKeysdDir = NewRemoteFile(node, "/home/core/.ssh/authorized_keys.d")
