@@ -46,8 +46,6 @@ const (
 const (
 	// PreBuiltImageAnnotationKey indicates a MachineOSConfig should be seeded with a pre-built image
 	PreBuiltImageAnnotationKey = "machineconfiguration.openshift.io/pre-built-image"
-	// PreBuiltImageSeededAnnotationKey indicates that the initial synthetic MOSB has been created for this MOSC
-	PreBuiltImageSeededAnnotationKey = "machineconfiguration.openshift.io/pre-built-image-seeded"
 )
 
 // Component MachineConfig naming for pre-built images

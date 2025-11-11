@@ -324,11 +324,13 @@ func TestUpdateMachineOSConfigForSeeding(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create test objects
+			// Create test objects with pre-built image annotation
 			mosc := &mcfgv1.MachineOSConfig{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:        "layered",
-					Annotations: make(map[string]string),
+					Name: "layered",
+					Annotations: map[string]string{
+						constants.PreBuiltImageAnnotationKey: tt.imageSpec,
+					},
 				},
 				Spec: mcfgv1.MachineOSConfigSpec{
 					MachineConfigPool: mcfgv1.MachineConfigPoolReference{Name: "layered"},
@@ -353,20 +355,34 @@ func TestUpdateMachineOSConfigForSeeding(t *testing.T) {
 				t.Errorf("Unexpected error: %v", err)
 			}
 
-			// Verify annotations were set
-			if mosc.Annotations[constants.CurrentMachineOSBuildAnnotationKey] != mosb.Name {
+			// Fetch the updated MOSC from the fake client
+			updatedMOSC, err := mcfgClient.MachineconfigurationV1().MachineOSConfigs().Get(ctx, mosc.Name, metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("Failed to get updated MachineOSConfig: %v", err)
+			}
+
+			// Verify current build annotation was set (this marks seeding as complete)
+			if updatedMOSC.Annotations[constants.CurrentMachineOSBuildAnnotationKey] != mosb.Name {
 				t.Errorf("Expected current build annotation to be %q, got %q",
-					mosb.Name, mosc.Annotations[constants.CurrentMachineOSBuildAnnotationKey])
+					mosb.Name, updatedMOSC.Annotations[constants.CurrentMachineOSBuildAnnotationKey])
 			}
 
-			// Verify build annotation was set
-			if mosc.Annotations[constants.CurrentMachineOSBuildAnnotationKey] == "" {
-				t.Error("Expected current MachineOSBuild annotation to be set")
+			// IMPORTANT: Verify pre-built image annotation is NOT removed during seeding
+			// It will be removed in a separate reconciliation after status is confirmed persisted
+			if _, hasAnnotation := updatedMOSC.Annotations[constants.PreBuiltImageAnnotationKey]; !hasAnnotation {
+				t.Error("Pre-built image annotation should NOT be removed during seeding (removed in separate cleanup step)")
 			}
 
-			// Verify status was updated - Note: This would require the update to succeed
-			// In a real test with proper setup, we'd verify the status was updated
-			// For now, we just verify the function doesn't error
+			// Verify status has the image pullspec
+			if updatedMOSC.Status.CurrentImagePullSpec != mcfgv1.ImageDigestFormat(tt.imageSpec) {
+				t.Errorf("Expected Status.CurrentImagePullSpec to be %q, got %q",
+					tt.imageSpec, updatedMOSC.Status.CurrentImagePullSpec)
+			}
+
+			// Verify status has the MachineOSBuild reference
+			if updatedMOSC.Status.MachineOSBuild == nil || updatedMOSC.Status.MachineOSBuild.Name != mosb.Name {
+				t.Errorf("Expected Status.MachineOSBuild.Name to be %q", mosb.Name)
+			}
 		})
 	}
 }

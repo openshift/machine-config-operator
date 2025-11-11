@@ -398,19 +398,18 @@ func parseManifests(filename string, r io.Reader) ([]manifest, error) {
 // createPreBuiltImageMachineConfigs creates component MachineConfigs that set osImageURL for pools
 // that have associated MachineOSConfigs with pre-built image annotations.
 // These component MCs will be automatically merged into rendered MCs by the render controller.
-// This function performs strict validation at bootstrap time and will fail if:
-// - A MachineOSConfig is missing the pre-built image annotation
-// - The pre-built image format or digest is invalid
+// This function validates pre-built images at bootstrap time and will fail if the image format is invalid.
+// MOSCs without the annotation are skipped (this can happen if bootstrap runs again after seeding).
 func createPreBuiltImageMachineConfigs(machineOSConfigs []*mcfgv1.MachineOSConfig, pools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
 	var preBuiltImageMCs []*mcfgv1.MachineConfig
 
-	// At bootstrap time, we require ALL MachineOSConfigs to have pre-built images
-	// This is a strict requirement for day-0 hybrid OCL support
 	for _, mosc := range machineOSConfigs {
 		preBuiltImage, hasPreBuiltImage := mosc.Annotations[buildconstants.PreBuiltImageAnnotationKey]
+
+		// Skip if annotation is not present (could be a re-run after seeding completed)
 		if !hasPreBuiltImage || preBuiltImage == "" {
-			return nil, fmt.Errorf("MachineOSConfig %s is missing required annotation %s for bootstrap pre-built image support",
-				mosc.Name, buildconstants.PreBuiltImageAnnotationKey)
+			klog.V(4).Infof("Skipping MachineOSConfig %s - no pre-built image annotation (may have already been seeded)", mosc.Name)
+			continue
 		}
 
 		poolName := mosc.Spec.MachineConfigPool.Name

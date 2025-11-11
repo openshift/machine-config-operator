@@ -2350,16 +2350,39 @@ func (optr *Operator) syncPreBuiltImageMachineConfigs() error {
 		return fmt.Errorf("failed to list MachineOSConfigs: %w", err)
 	}
 
-	// Build map of pools that should have pre-built image component MCs using common helper
-	poolsWithPreBuiltImages := ctrlcommon.BuildPoolToPreBuiltImageMap(moscs, buildconstants.PreBuiltImageAnnotationKey)
-
-	// Get all existing pre-built image component MCs
+	// Get all existing pre-built image component MCs first
+	// We need this early to check if they exist before using annotations
 	allMCs, err := optr.mcLister.List(labels.Everything())
 	if err != nil {
 		return fmt.Errorf("failed to list MachineConfigs: %w", err)
 	}
 
 	existingPreBuiltMCs := ctrlcommon.GetPreBuiltImageMachineConfigsFromList(allMCs)
+
+	// Build map of pools that should have pre-built image component MCs
+	// Strategy: If component MC exists, use its osImageURL to preserve it (frozen, never changes)
+	// Otherwise, use annotation to create it if present
+	poolsWithPreBuiltImages := make(map[string]string)
+	for _, mosc := range moscs {
+		poolName := mosc.Spec.MachineConfigPool.Name
+
+		var preBuiltImage string
+
+		// First check if component MC already exists - if so, preserve it using its current osImageURL
+		// This ensures the MC never changes and is never deleted once created
+		if existingMC, exists := existingPreBuiltMCs[poolName]; exists {
+			preBuiltImage = existingMC.Spec.OSImageURL
+			klog.V(4).Infof("Found existing pre-built image component MC %s for pool %s, preserving with osImageURL %s", existingMC.Name, poolName, preBuiltImage)
+		} else if annotationImage, hasAnnotation := mosc.Annotations[buildconstants.PreBuiltImageAnnotationKey]; hasAnnotation && annotationImage != "" {
+			// Component MC doesn't exist yet, use annotation to create it
+			preBuiltImage = annotationImage
+			klog.V(4).Infof("MachineOSConfig %s has pre-built image annotation %s for pool %s, will create component MC", mosc.Name, preBuiltImage, poolName)
+		}
+
+		if preBuiltImage != "" {
+			poolsWithPreBuiltImages[poolName] = preBuiltImage
+		}
+	}
 
 	// Create or update component MCs for pools that should have them
 	for poolName, preBuiltImage := range poolsWithPreBuiltImages {

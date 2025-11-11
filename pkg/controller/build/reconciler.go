@@ -388,14 +388,22 @@ func (b *buildReconciler) updateMachineOSConfigStatus(ctx context.Context, mosc 
 		return nil
 	}
 
-	// skip the status update if the current image pullspec equals the digest image pushspec.
-	if mosc.Status.CurrentImagePullSpec == mosb.Status.DigestedImagePushSpec {
-		klog.Infof("MachineOSConfig %q already has final image pushspec for MachineOSBuild %q", mosc.Name, mosb.Name)
+	// Check if the machineOSBuild reference matches
+	machineOSBuildRefMatches := mosc.Status.MachineOSBuild != nil && mosc.Status.MachineOSBuild.Name == mosb.Name
+
+	// skip the status update if both the current image pullspec and machineOSBuild reference are already correct.
+	if mosc.Status.CurrentImagePullSpec == mosb.Status.DigestedImagePushSpec && machineOSBuildRefMatches {
+		klog.Infof("MachineOSConfig %q already has final image pushspec and machineOSBuild reference for MachineOSBuild %q", mosc.Name, mosb.Name)
 		return nil
 	}
 
 	mosc.Status.CurrentImagePullSpec = mosb.Status.DigestedImagePushSpec
 	mosc.Status.ObservedGeneration = mosc.GetGeneration()
+	mosc.Status.MachineOSBuild = &mcfgv1.ObjectReference{
+		Name:     mosb.Name,
+		Group:    mcfgv1.SchemeGroupVersion.Group,
+		Resource: "machineosbuilds",
+	}
 
 	_, err = b.mcfgclient.MachineconfigurationV1().MachineOSConfigs().UpdateStatus(ctx, mosc, metav1.UpdateOptions{})
 	if err == nil {
@@ -1245,6 +1253,19 @@ func (b *buildReconciler) syncMachineOSConfigs(ctx context.Context) error {
 // should be created.
 func (b *buildReconciler) syncMachineOSConfig(ctx context.Context, mosc *mcfgv1.MachineOSConfig) error {
 	return b.timeObjectOperation(mosc, syncingVerb, func() error {
+		// Check if we need to clean up the pre-built image annotation after successful seeding
+		// This happens in a separate reconciliation to ensure status is persisted before removing annotation
+		if needsPreBuiltImageAnnotationCleanup(mosc) {
+			klog.Infof("MachineOSConfig %q seeding complete and status populated, removing pre-built image annotation", mosc.Name)
+			delete(mosc.Annotations, constants.PreBuiltImageAnnotationKey)
+			if _, err := b.mcfgclient.MachineconfigurationV1().MachineOSConfigs().Update(ctx, mosc, metav1.UpdateOptions{}); err != nil {
+				return fmt.Errorf("could not remove pre-built image annotation from MachineOSConfig %q: %w", mosc.Name, err)
+			}
+			klog.Infof("Successfully removed pre-built image annotation from MachineOSConfig %q", mosc.Name)
+			// Trigger another sync to handle any pending work now that annotation is removed
+			return nil
+		}
+
 		mosbs, err := b.getMachineOSBuildsForMachineOSConfig(mosc)
 		if err != nil {
 			return fmt.Errorf("could not list MachineOSBuilds for MachineOSConfig %q: %w", mosc.Name, err)
@@ -1331,8 +1352,9 @@ func (b *buildReconciler) reconcilePoolChange(ctx context.Context, mcp *mcfgv1.M
 
 	// If the MachineOSConfig has a pre-built image annotation AND hasn't been seeded yet,
 	// the seeding workflow should handle creating the synthetic build. Don't proceed with normal build workflow.
+	// Seeding is considered complete once the currentBuild annotation is set.
 	firstOptIn := mosc.Annotations[constants.CurrentMachineOSBuildAnnotationKey]
-	if hasPreBuiltImageAnnotation(mosc) && !hasPreBuiltImageSeededAnnotation(mosc) && firstOptIn == "" {
+	if hasPreBuiltImageAnnotation(mosc) && firstOptIn == "" {
 		klog.Infof("MachineOSConfig %q has pre-built image annotation but hasn't been seeded yet, skipping pool change reconciliation (seeding workflow should handle this)", mosc.Name)
 		return nil
 	}
@@ -1861,9 +1883,9 @@ func (b *buildReconciler) createSyntheticMachineOSBuild(ctx context.Context, mos
 
 // updateMachineOSConfigForSeeding updates MachineOSConfig for seeded state
 func (b *buildReconciler) updateMachineOSConfigForSeeding(ctx context.Context, mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild, imageSpec string) error {
-	// Update annotations - add both current build and seeded marker
+	// Update annotations - set current build annotation to mark seeding as complete
+	// The currentBuild annotation serves as the marker that seeding has occurred
 	metav1.SetMetaDataAnnotation(&mosc.ObjectMeta, constants.CurrentMachineOSBuildAnnotationKey, mosb.Name)
-	metav1.SetMetaDataAnnotation(&mosc.ObjectMeta, constants.PreBuiltImageSeededAnnotationKey, "true")
 
 	// Update the MachineOSConfig object
 	updatedMOSC, err := b.mcfgclient.MachineconfigurationV1().MachineOSConfigs().Update(ctx, mosc, metav1.UpdateOptions{})

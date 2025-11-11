@@ -262,12 +262,6 @@ func hasPreBuiltImageAnnotation(mosc *mcfgv1.MachineOSConfig) bool {
 	return exists
 }
 
-// hasPreBuiltImageSeededAnnotation checks if a MachineOSConfig has been seeded with a pre-built image.
-func hasPreBuiltImageSeededAnnotation(mosc *mcfgv1.MachineOSConfig) bool {
-	_, exists := mosc.Annotations[constants.PreBuiltImageSeededAnnotationKey]
-	return exists
-}
-
 // getPreBuiltImage returns the pre-built image from a MachineOSConfig's annotations.
 // Returns the image string and a boolean indicating if it exists and is non-empty.
 func getPreBuiltImage(mosc *mcfgv1.MachineOSConfig) (string, bool) {
@@ -278,18 +272,29 @@ func getPreBuiltImage(mosc *mcfgv1.MachineOSConfig) (string, bool) {
 // shouldSeedWithPreBuiltImage determines if a MachineOSConfig should be seeded with a pre-built image.
 // Returns true if:
 // - The MOSC has a pre-built image annotation
-// - The MOSC has NOT been seeded yet
-// - The MOSC does NOT have a current build annotation
+// - The MOSC does NOT have a current build annotation (meaning seeding hasn't happened yet)
 func shouldSeedWithPreBuiltImage(mosc *mcfgv1.MachineOSConfig) bool {
 	return hasPreBuiltImageAnnotation(mosc) &&
-		!hasPreBuiltImageSeededAnnotation(mosc) &&
 		!hasCurrentBuildAnnotation(mosc)
 }
 
 // isPreBuiltImageAwaitingSeeding checks if a MOSC has pre-built image annotation but hasn't been seeded.
 // This is useful for skipping normal build workflows when the seeding workflow should handle it.
+// Seeding is considered complete once the currentBuild annotation is set.
 func isPreBuiltImageAwaitingSeeding(mosc *mcfgv1.MachineOSConfig) bool {
-	return hasPreBuiltImageAnnotation(mosc) && !hasPreBuiltImageSeededAnnotation(mosc)
+	return hasPreBuiltImageAnnotation(mosc) && !hasCurrentBuildAnnotation(mosc)
+}
+
+// needsPreBuiltImageAnnotationCleanup determines if a MOSC has completed seeding and
+// the pre-built image annotation can be safely removed.
+// Returns true if:
+// - The MOSC has a current build annotation (seeding is complete)
+// - The MOSC status has been populated with CurrentImagePullSpec
+// - The MOSC still has the PreBuiltImageAnnotationKey (needs cleanup)
+func needsPreBuiltImageAnnotationCleanup(mosc *mcfgv1.MachineOSConfig) bool {
+	return hasCurrentBuildAnnotation(mosc) &&
+		mosc.Status.CurrentImagePullSpec != "" &&
+		hasPreBuiltImageAnnotation(mosc)
 }
 
 // Looks at the error chain for the given error and determines if the error
