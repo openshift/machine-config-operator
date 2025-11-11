@@ -17,9 +17,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	)
 
 	g.JustBeforeEach(func() {
-		preChecks(oc)
-
-		skipTestIfOCBIsEnabled(oc)
+		PreChecks(oc)
+		SkipTestIfOCBIsEnabled(oc)
 	})
 
 	g.It("PolarionID:83141-A valid MachineOSConfig leads to a successful MachineOSBuild and cleanup of its associated resources", func() {
@@ -274,7 +273,7 @@ func testContainerFile(containerFiles []ContainerFile, imageNamespace string, mc
 	ValidateMOSCIsGarbageCollected(mosc, mcp)
 }
 
-func skipTestIfOCBIsEnabled(oc *exutil.CLI) {
+func SkipTestIfOCBIsEnabled(oc *exutil.CLI) {
 	moscl := NewMachineOSConfigList(oc)
 	allMosc := moscl.GetAllOrFail()
 	if len(allMosc) != 0 {

@@ -185,8 +185,8 @@ func sortMasterNodeList(oc *exutil.CLI, nodes []Node) ([]Node, error) {
 	return masterSortedNodes, nil
 }
 
-// preChecks executes some basic checks to make sure the the cluster is healthy enough to run MCO test cases
-func preChecks(oc *exutil.CLI) {
+// PreChecks executes some basic checks to make sure the the cluster is healthy enough to run MCO test cases
+func PreChecks(oc *exutil.CLI) {
 	exutil.By("MCO Preconditions Checks")
 
 	allMCPs, err := NewMachineConfigPoolList(oc.AsAdmin()).GetAll()
