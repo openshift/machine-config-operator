@@ -1990,10 +1990,12 @@ func removeIgnitionArtifacts() error {
 	return nil
 }
 
-// PersistNetworkInterfaces runs if the host is RHEL8, which can happen
-// when scaling up older bootimages and targeting 4.13+ (rhel9).  In this case,
+// PersistNetworkInterfaces runs if the host is RHEL8 or RHEL9, which can happen
+// when scaling up older bootimages and targeting newer RHEL versions.  In this case,
 // we may want to pin NIC interface names that reference static IP addresses.
-// More information in https://issues.redhat.com/browse/OCPBUGS-10787
+// More information:
+//   - RHEL 8→9 transition: https://issues.redhat.com/browse/OCPBUGS-10787
+//   - RHEL 9→10 transition: https://issues.redhat.com/browse/OCPBUGS-63593
 func PersistNetworkInterfaces(osRoot string) error {
 	hostos, err := osrelease.GetHostRunningOSFromRoot(osRoot)
 	if err != nil {
@@ -2012,8 +2014,8 @@ func PersistNetworkInterfaces(osRoot string) error {
 	// likely this NIC pinning should actually be driven automatically by
 	// host updates.  If you change this, you'll need to change the conditions
 	// below too.
-	persisting := hostos.IsEL8()
-	cleanup := hostos.IsEL9()
+	persisting := hostos.IsEL8() || hostos.IsEL9()
+	cleanup := hostos.IsEL10()
 	if !(persisting || cleanup) {
 		return nil
 	}
@@ -2028,11 +2030,16 @@ func PersistNetworkInterfaces(osRoot string) error {
 
 	switch {
 	case persisting:
-		klog.Info("Persisting NIC names for RHEL8 host system")
+		if hostos.IsEL8() {
+			klog.Info("Persisting NIC names for RHEL8 host system (RHEL8→9 transition)")
+		} else if hostos.IsEL9() {
+			klog.Info("Persisting NIC names for RHEL9 host system (RHEL9→10 transition)")
+		}
 	case cleanup:
+		klog.Info("Cleaning up NIC name persistence for RHEL10 host system")
 		cmd.Args = append(cmd.Args, "--cleanup")
 	default:
-		return fmt.Errorf("Unexpected host OS %s", hostos.ToPrometheusLabel())
+		return fmt.Errorf("unexpected host OS %s", hostos.ToPrometheusLabel())
 	}
 
 	// nmstate always logs to stderr, so we need to capture/forward that too
