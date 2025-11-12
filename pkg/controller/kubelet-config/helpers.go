@@ -20,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/klog/v2"
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
+	kubeletypes "k8s.io/kubernetes/pkg/kubelet/types"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
@@ -390,6 +391,12 @@ func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 		cfg.Spec.AutoSizingReserved != nil && *cfg.Spec.AutoSizingReserved {
 		return fmt.Errorf("KubeletConfiguration: autoSizingReserved and systemdReserved cannot be set together")
 	}
+	// Validate that systemReservedCgroup matches systemCgroups if both are set
+	if kcDecoded.SystemReservedCgroup != "" && kcDecoded.SystemCgroups != "" {
+		if kcDecoded.SystemReservedCgroup != kcDecoded.SystemCgroups {
+			return fmt.Errorf("KubeletConfiguration: systemReservedCgroup (%s) must match systemCgroups (%s)", kcDecoded.SystemReservedCgroup, kcDecoded.SystemCgroups)
+		}
+	}
 	return nil
 }
 
@@ -505,6 +512,56 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 		err = mergo.Merge(originalKubeConfig, specKubeletConfig, mergo.WithOverride)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("could not merge original config and new config: %w", err)
+		}
+
+		// Empty strings are ignored by mergo, so we need to set them to empty string for SystemReservedCgroup explicitly
+		// Else the old value is retained. Tested by test/e2e-2of2/kubeletcfg_test.go
+		// However, only clear it if the user explicitly sets enforceNodeAllocatable without system-reserved enforcement
+		if specKubeletConfig.SystemReservedCgroup == "" && len(specKubeletConfig.EnforceNodeAllocatable) > 0 {
+			// User explicitly set enforceNodeAllocatable - check if it contains system-reserved enforcement
+			hasSystemReservedEnforcement := false
+			for _, val := range specKubeletConfig.EnforceNodeAllocatable {
+				if val == kubeletypes.SystemReservedEnforcementKey || val == kubeletypes.SystemReservedCompressibleEnforcementKey {
+					hasSystemReservedEnforcement = true
+					break
+				}
+			}
+
+			// Only clear systemReservedCgroup if user explicitly set enforceNodeAllocatable without system-reserved enforcement
+			// This prevents validation error: "systemReservedCgroup must be specified when system-reserved is in enforceNodeAllocatable"
+			if !hasSystemReservedEnforcement {
+				originalKubeConfig.SystemReservedCgroup = ""
+			}
+		}
+	}
+
+	if originalKubeConfig.ReservedSystemCPUs != "" {
+		klog.Infof("reservedSystemCPUs is set to %s, disabling systemReservedCgroup enforcement", originalKubeConfig.ReservedSystemCPUs)
+		originalKubeConfig.SystemReservedCgroup = ""
+		// Filter out system-reserved enforcement keys and ensure pods is present
+		filtered := []string{}
+		hasPods := false
+		for _, val := range originalKubeConfig.EnforceNodeAllocatable {
+			// Skip system-reserved enforcement keys
+			if val == kubeletypes.SystemReservedEnforcementKey ||
+				val == kubeletypes.SystemReservedCompressibleEnforcementKey {
+				continue
+			}
+			if val == kubeletypes.NodeAllocatableEnforcementKey {
+				hasPods = true
+			}
+			filtered = append(filtered, val)
+		}
+		// Ensure pods enforcement is always present
+		if !hasPods {
+			filtered = append([]string{kubeletypes.NodeAllocatableEnforcementKey}, filtered...)
+		}
+		originalKubeConfig.EnforceNodeAllocatable = filtered
+	}
+
+	if originalKubeConfig.SystemReservedCgroup != "" && originalKubeConfig.SystemCgroups != "" {
+		if originalKubeConfig.SystemReservedCgroup != originalKubeConfig.SystemCgroups {
+			return nil, nil, nil, fmt.Errorf("invalid merged configuration: systemReservedCgroup (%s) must match systemCgroups (%s)", originalKubeConfig.SystemReservedCgroup, originalKubeConfig.SystemCgroups)
 		}
 	}
 
