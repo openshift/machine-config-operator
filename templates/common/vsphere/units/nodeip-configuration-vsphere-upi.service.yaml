@@ -23,6 +23,7 @@ contents: |
   [Service]
   # Need oneshot to delay kubelet
   Type=oneshot
+  SyslogIdentifier=nodeip-configuration
   # Would prefer to do Restart=on-failure instead of this bash retry loop, but
   # the version of systemd we have right now doesn't support it. It should be
   # available in systemd v244 and higher.
