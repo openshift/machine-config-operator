@@ -20,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/klog/v2"
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
+	kubeletypes "k8s.io/kubernetes/pkg/kubelet/types"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
@@ -390,6 +391,12 @@ func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 		cfg.Spec.AutoSizingReserved != nil && *cfg.Spec.AutoSizingReserved {
 		return fmt.Errorf("KubeletConfiguration: autoSizingReserved and systemdReserved cannot be set together")
 	}
+	// Validate that systemReservedCgroup matches systemCgroups if both are set
+	if kcDecoded.SystemReservedCgroup != "" && kcDecoded.SystemCgroups != "" {
+		if kcDecoded.SystemReservedCgroup != kcDecoded.SystemCgroups {
+			return fmt.Errorf("KubeletConfiguration: systemReservedCgroup (%s) must match systemCgroups (%s)", kcDecoded.SystemReservedCgroup, kcDecoded.SystemCgroups)
+		}
+	}
 	return nil
 }
 
@@ -506,6 +513,22 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("could not merge original config and new config: %w", err)
 		}
+
+		// Empty strings are ignored by mergo, so we need to set them to empty string for SystemReservedCgroup explicitly
+		// Else the old value is retained. Tested by test/e2e-2of2/kubeletcfg_test.go
+		if specKubeletConfig.SystemReservedCgroup == "" {
+			originalKubeConfig.SystemReservedCgroup = ""
+		}
+	}
+
+	// Handle systemReservedCgroup and enforceNodeAllocatable based on:
+	// Check if reservedSystemCPUs is set (incompatible with systemReservedCgroup)
+	if originalKubeConfig.ReservedSystemCPUs != "" {
+		klog.Infof("reservedSystemCPUs is set to %s, disabling systemReservedCgroup enforcement", originalKubeConfig.ReservedSystemCPUs)
+		// Clear systemReservedCgroup
+		originalKubeConfig.SystemReservedCgroup = ""
+		// Set enforceNodeAllocatable to only pods (the default)
+		originalKubeConfig.EnforceNodeAllocatable = []string{kubeletypes.NodeAllocatableEnforcementKey}
 	}
 
 	// Encode the new config into an Ignition File
