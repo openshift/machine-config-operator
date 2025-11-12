@@ -95,6 +95,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			ctrlctx.ConfigInformerFactory.Config().V1().Images(),
 			ctrlctx.KubeNamespacedInformerFactory.Core().V1().ServiceAccounts(),
 			ctrlctx.KubeNamespacedInformerFactory.Core().V1().Secrets(),
+			ctrlctx.OpenShiftConfigKubeNamespacedInformerFactory.Core().V1().ConfigMaps(),
 			ctrlctx.OpenShiftConfigKubeNamespacedInformerFactory.Core().V1().Secrets(),
 			ctrlctx.OpenShiftConfigManagedKubeNamespacedInformerFactory.Core().V1().Secrets(),
 			ctrlctx.ConfigInformerFactory.Config().V1().ClusterOperators(),
