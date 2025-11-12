@@ -20,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
+	kubeletypes "k8s.io/kubernetes/pkg/kubelet/types"
 )
 
 const (
@@ -48,9 +49,16 @@ func TestKubeletConfigDefaultUpdateFreq(t *testing.T) {
 	runTestWithKubeletCfg(t, "resources", []string{`"?nodeStatusUpdateFrequency"?: (\S+)`}, []string{"nodeStatusUpdateFrequency"}, [][]string{{"10s"}}, kc1, nil)
 }
 func TestKubeletConfigMaxPods(t *testing.T) {
-	kcRaw1, err := kcfg.EncodeKubeletConfig(&kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, kubeletconfigv1beta1.SchemeGroupVersion, runtime.ContentTypeJSON)
-	require.Nil(t, err, "failed to encode kubelet config")
 	autoNodeSizing := true
+
+	// kc1: systemReservedCgroup: "", enforceNodeAllocatable: [pods]
+	kcRaw1, err := kcfg.EncodeKubeletConfig(&kubeletconfigv1beta1.KubeletConfiguration{
+		MaxPods:                100,
+		SystemReservedCgroup:   "",
+		EnforceNodeAllocatable: []string{kubeletypes.NodeAllocatableEnforcementKey},
+	}, kubeletconfigv1beta1.SchemeGroupVersion, runtime.ContentTypeJSON)
+	require.Nil(t, err, "failed to encode kubelet config")
+
 	kc1 := &mcfgv1.KubeletConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-101"},
 		Spec: mcfgv1.KubeletConfigSpec{
@@ -60,8 +68,15 @@ func TestKubeletConfigMaxPods(t *testing.T) {
 			},
 		},
 	}
-	kcRaw2, err := kcfg.EncodeKubeletConfig(&kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 200}, kubeletconfigv1beta1.SchemeGroupVersion, runtime.ContentTypeJSON)
+
+	// kc2: systemReservedCgroup: /system.slice, enforceNodeAllocatable: [pods, system-reserved-compressible]
+	kcRaw2, err := kcfg.EncodeKubeletConfig(&kubeletconfigv1beta1.KubeletConfiguration{
+		MaxPods:                200,
+		SystemReservedCgroup:   "/system.slice",
+		EnforceNodeAllocatable: []string{kubeletypes.NodeAllocatableEnforcementKey, kubeletypes.SystemReservedCompressibleEnforcementKey},
+	}, kubeletconfigv1beta1.SchemeGroupVersion, runtime.ContentTypeJSON)
 	require.Nil(t, err, "failed to encode kubelet config")
+
 	kc2 := &mcfgv1.KubeletConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-200"},
 		Spec: mcfgv1.KubeletConfigSpec{
@@ -72,7 +87,11 @@ func TestKubeletConfigMaxPods(t *testing.T) {
 		},
 	}
 
-	runTestWithKubeletCfg(t, "max-pods", []string{`"?maxPods"?: (\S+)`}, []string{"maxPods"}, [][]string{{"100", "200"}}, kc1, kc2)
+	runTestWithKubeletCfg(t, "max-pods",
+		[]string{`"?maxPods"?: (\S+)`, `"?systemReservedCgroup"?: "?([^",\n]*)"?`, `"?enforceNodeAllocatable"?:`},
+		[]string{"maxPods", "systemReservedCgroup", "enforceNodeAllocatable"},
+		[][]string{{"100", "200"}, {"", "/system.slice"}, {"pods", "system-reserved-compressible"}},
+		kc1, kc2)
 }
 
 // runTestWithKubeletCfg creates a kubelet config and checks whether the expected updates were applied, then deletes the kubelet config and makes
@@ -118,12 +137,26 @@ func runTestWithKubeletCfg(t *testing.T, testName string, regexKey []string, str
 	// the kubelet.conf format is yaml when in the default state and becomes a json when we apply a kubelet config CR
 	defaultConfVals := []string{}
 	for i, val := range regexKey {
-		if strings.Contains(val, "systemReserved") {
+		if strings.Contains(val, "systemReserved") && stringKey[i] != "systemReservedCgroup" && stringKey[i] != "enforceNodeAllocatable" {
 			defaultConfVals = append(defaultConfVals, "")
 			continue
 		}
 		out, _ := getValueFromKubeletConfig(t, cs, node, val, stringKey[i], kubeletPath)
 		defaultConfVals = append(defaultConfVals, out)
+
+		// Verify default state for systemReservedCgroup and enforceNodeAllocatable before applying kc1
+		if stringKey[i] == "systemReservedCgroup" {
+			require.True(t, strings.Contains(out, "/system.slice"), "default systemReservedCgroup should be '/system.slice'")
+			t.Logf("Verified default systemReservedCgroup: /system.slice")
+			continue // Skip early exit check for this field since we're testing disable/re-enable
+		}
+		if stringKey[i] == "enforceNodeAllocatable" {
+			require.True(t, strings.Contains(out, "pods"), "default enforceNodeAllocatable should contain 'pods'")
+			require.True(t, strings.Contains(out, "system-reserved-compressible"), "default enforceNodeAllocatable should contain 'system-reserved-compressible'")
+			t.Logf("Verified default enforceNodeAllocatable contains: pods, system-reserved-compressible")
+			continue // Skip early exit check for this field since we're testing disable/re-enable
+		}
+
 		for _, expect := range expectedConfVals[i] {
 			if defaultConfVals[i] == expect {
 				t.Logf("default configuration value %s same as values being tested against. Consider updating the test", defaultConfVals[i])
@@ -160,6 +193,10 @@ func runTestWithKubeletCfg(t *testing.T, testName string, regexKey []string, str
 		} else { // sometimes it seems regexp does not work here
 			require.True(t, strings.Contains(out, expectedConfVals[i][0]))
 		}
+		// Additional validation for enforceNodeAllocatable to ensure "pods" is present
+		if stringKey[i] == "enforceNodeAllocatable" {
+			require.True(t, strings.Contains(out, "pods"), "enforceNodeAllocatable should contain 'pods'")
+		}
 	}
 
 	if kc2 != nil {
@@ -170,13 +207,18 @@ func runTestWithKubeletCfg(t *testing.T, testName string, regexKey []string, str
 		require.Nil(t, err, "failed to render machine config from second container runtime config")
 		// ensure the second kubelet config update rolls out to the pool
 		helpers.WaitForConfigAndPoolComplete(t, cs, poolName, kcMCName2)
-		// verify value was changed to match that of the first kubelet config
+		// verify value was changed to match that of the second kubelet config
 		for i, val := range regexKey {
 			out, found := getValueFromKubeletConfig(t, cs, node, val, stringKey[i], kubeletPath)
 			if found {
 				require.Equal(t, out, expectedConfVals[i][1], "value in kubelet config not updated as expected")
 			} else { // sometimes it seems regexp does not work here
 				require.True(t, strings.Contains(out, expectedConfVals[i][1]))
+			}
+			// Additional validation for enforceNodeAllocatable to ensure both "pods" and "system-reserved-compressible" are present
+			if stringKey[i] == "enforceNodeAllocatable" && kc2.Spec.AutoSizingReserved != nil && *kc2.Spec.AutoSizingReserved {
+				require.True(t, strings.Contains(out, "pods"), "enforceNodeAllocatable should contain 'pods'")
+				require.True(t, strings.Contains(out, "system-reserved-compressible"), "enforceNodeAllocatable should contain 'system-reserved-compressible'")
 			}
 		}
 
@@ -195,6 +237,10 @@ func runTestWithKubeletCfg(t *testing.T, testName string, regexKey []string, str
 			} else { // sometimes it seems regexp does not work here
 				require.True(t, strings.Contains(out, expectedConfVals[i][0]))
 			}
+			// Additional validation for enforceNodeAllocatable to ensure "pods" is present
+			if stringKey[i] == "enforceNodeAllocatable" {
+				require.True(t, strings.Contains(out, "pods"), "enforceNodeAllocatable should contain 'pods'")
+			}
 		}
 
 		// cleanup the first kubelet config and make sure it doesn't error
@@ -206,6 +252,16 @@ func runTestWithKubeletCfg(t *testing.T, testName string, regexKey []string, str
 		// verify that the config value rolled back to the default value
 		for i, val := range regexKey {
 			out, found := getValueFromKubeletConfig(t, cs, node, val, stringKey[i], kubeletPath)
+			// Verify default state has system-reserved-compressible enabled
+			if stringKey[i] == "enforceNodeAllocatable" {
+				require.True(t, strings.Contains(out, "pods"), "enforceNodeAllocatable should contain 'pods' in default state")
+				require.True(t, strings.Contains(out, "system-reserved-compressible"), "enforceNodeAllocatable should contain 'system-reserved-compressible' in default state")
+				continue
+			}
+			if stringKey[i] == "systemReservedCgroup" {
+				require.True(t, strings.Contains(out, "/system.slice"), "systemReservedCgroup should be '/system.slice' in default state")
+				continue
+			}
 			if found {
 				require.Equal(t, out, defaultConfVals[i], "value in kubelet config not updated as expected")
 			} else { // sometimes it seems regexp does not work here
@@ -289,6 +345,13 @@ func getValueFromKubeletConfig(t *testing.T, cs *framework.ClientSet, node corev
 	if len(matches) != 2 && strings.Contains(string(out), stringKey) {
 		return string(out), false
 	}
+
+	// If the field is not found in the YAML, it means it's empty/omitted (due to omitempty tags)
+	// This is expected for fields like systemReservedCgroup when set to empty string
+	if len(matches) == 0 {
+		return "", true
+	}
+
 	require.Len(t, matches, 2, fmt.Sprintf("failed to get %s", regexKey))
 
 	require.NotEmpty(t, matches[1], "regex %s attempted on kubelet config of node %s came back empty", node.Name, regexKey)
