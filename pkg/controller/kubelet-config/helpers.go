@@ -390,6 +390,12 @@ func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 		cfg.Spec.AutoSizingReserved != nil && *cfg.Spec.AutoSizingReserved {
 		return fmt.Errorf("KubeletConfiguration: autoSizingReserved and systemdReserved cannot be set together")
 	}
+	// Validate that systemReservedCgroup matches systemCgroups if both are set
+	if kcDecoded.SystemReservedCgroup != "" && kcDecoded.SystemCgroups != "" {
+		if kcDecoded.SystemReservedCgroup != kcDecoded.SystemCgroups {
+			return fmt.Errorf("KubeletConfiguration: systemReservedCgroup (%s) must match systemCgroups (%s)", kcDecoded.SystemReservedCgroup, kcDecoded.SystemCgroups)
+		}
+	}
 	return nil
 }
 
@@ -460,7 +466,7 @@ func kubeletConfigToIgnFile(cfg *kubeletconfigv1beta1.KubeletConfiguration) (*ig
 }
 
 // generateKubeletIgnFiles generates the Ignition files from the kubelet config
-func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeConfig *kubeletconfigv1beta1.KubeletConfiguration) (*ign3types.File, *ign3types.File, *ign3types.File, error) {
+func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeConfig *kubeletconfigv1beta1.KubeletConfiguration, role string, mcClient mcfgclientset.Interface) (*ign3types.File, *ign3types.File, *ign3types.File, error) {
 	var (
 		kubeletIgnition            *ign3types.File
 		logLevelIgnition           *ign3types.File
@@ -506,6 +512,35 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("could not merge original config and new config: %w", err)
 		}
+	}
+
+	// Handle systemReservedCgroup and enforceNodeAllocatable based on:
+	// 1. Presence of "50-{role}-system-compressible-disabled" MachineConfig (upgrade from 4.20)
+	// 2. OR reservedSystemCPUs being set (incompatible with systemReservedCgroup)
+	shouldDisableSystemReservedCgroup := false
+
+	// Check if the upgrade marker MachineConfig exists (only when mcClient is available, not during bootstrap)
+	if mcClient != nil {
+		compressibleDisabledMCName := fmt.Sprintf("50-%s-system-compressible-disabled", role)
+		_, mcErr := mcClient.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), compressibleDisabledMCName, metav1.GetOptions{})
+		if mcErr == nil {
+			// MachineConfig exists, this is an upgrade from 4.20
+			shouldDisableSystemReservedCgroup = true
+			klog.Infof("Found MachineConfig %s, disabling systemReservedCgroup enforcement", compressibleDisabledMCName)
+		}
+	}
+
+	// Check if reservedSystemCPUs is set (incompatible with systemReservedCgroup)
+	if originalKubeConfig.ReservedSystemCPUs != "" {
+		shouldDisableSystemReservedCgroup = true
+		klog.Infof("reservedSystemCPUs is set to %s, disabling systemReservedCgroup enforcement", originalKubeConfig.ReservedSystemCPUs)
+	}
+
+	if shouldDisableSystemReservedCgroup {
+		// Clear systemReservedCgroup
+		originalKubeConfig.SystemReservedCgroup = ""
+		// Set enforceNodeAllocatable to only pods
+		originalKubeConfig.EnforceNodeAllocatable = []string{"pods"}
 	}
 
 	// Encode the new config into an Ignition File

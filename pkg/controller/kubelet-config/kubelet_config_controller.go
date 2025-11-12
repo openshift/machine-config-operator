@@ -652,7 +652,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			originalKubeConfig.TLSCipherSuites = observedCipherSuites
 		}
 
-		kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, err := generateKubeletIgnFiles(cfg, originalKubeConfig)
+		kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, err := generateKubeletIgnFiles(cfg, originalKubeConfig, role, ctrl.client)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err)
 		}
