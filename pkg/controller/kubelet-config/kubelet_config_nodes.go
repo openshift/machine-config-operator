@@ -21,14 +21,6 @@ import (
 	"k8s.io/klog/v2"
 )
 
-const (
-	DefaultAutoSizingEnvContent = `NODE_SIZING_ENABLED=false
-SYSTEM_RESERVED_MEMORY=1Gi
-SYSTEM_RESERVED_CPU=500m
-SYSTEM_RESERVED_ES=1Gi
-`
-)
-
 func (ctrl *Controller) nodeConfigWorker() {
 	for ctrl.processNextNodeConfigWorkItem() {
 	}
@@ -62,71 +54,6 @@ func (ctrl *Controller) handleNodeConfigErr(err error, key string) {
 	klog.V(2).Infof("Dropping node config %q out of the queue: %v", key, err)
 	ctrl.nodeConfigQueue.Forget(key)
 	ctrl.nodeConfigQueue.AddAfter(key, 1*time.Minute)
-}
-
-// createAutoSizingIgnConfig creates the Ignition config for auto-sizing disabled
-func createAutoSizingIgnConfig() ([]byte, error) {
-	autoSizingFile := ctrlcommon.NewIgnFileBytes("/etc/node-sizing-enabled.env", []byte(DefaultAutoSizingEnvContent))
-	autoSizingIgnConfig := ctrlcommon.NewIgnConfig()
-	autoSizingIgnConfig.Storage.Files = append(autoSizingIgnConfig.Storage.Files, autoSizingFile)
-	rawAutoSizingIgn, err := json.Marshal(autoSizingIgnConfig)
-	if err != nil {
-		return nil, err
-	}
-	return rawAutoSizingIgn, nil
-}
-
-// newAutoSizingMachineConfig creates an empty auto-sizing MachineConfig for a given pool
-func newAutoSizingMachineConfig(pool *mcfgv1.MachineConfigPool) (*mcfgv1.MachineConfig, error) {
-	autoSizingDisabledName := fmt.Sprintf("01-%s-auto-sizing-disabled", pool.Name)
-	ignConfig := ctrlcommon.NewIgnConfig()
-	autoSizingMC, err := ctrlcommon.MachineConfigFromIgnConfig(pool.Name, autoSizingDisabledName, ignConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	// Create the auto-sizing disabled file using the helper function
-	rawAutoSizingIgn, err := createAutoSizingIgnConfig()
-	if err != nil {
-		return nil, err
-	}
-	autoSizingMC.Spec.Config.Raw = rawAutoSizingIgn
-	// Do not add GeneratedByControllerVersionAnnotationKey annotation to auto-sizing MachineConfig. It will fail upgrade.
-	// This annotation is added for informing the user that the auto-sizing MachineConfig was added in a patch release
-	// to identify clusters created before 4.21 release.
-	autoSizingMC.ObjectMeta.Annotations = map[string]string{
-		"openshift-patch-reference": "added auto-sizing MachineConfig to disable node sizing",
-	}
-
-	return autoSizingMC, nil
-}
-
-// configureAutoSizingMachineConfig creates an auto-sizing MachineConfig for a given pool if it doesn't exist
-func (ctrl *Controller) configureAutoSizingMachineConfig(pool *mcfgv1.MachineConfigPool) error {
-	autoSizingKey := fmt.Sprintf("01-%s-auto-sizing-disabled", pool.Name)
-	_, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), autoSizingKey, metav1.GetOptions{})
-	autoSizingIsNotFound := errors.IsNotFound(err)
-	if err != nil && !autoSizingIsNotFound {
-		return err
-	}
-	// Only create the auto-sizing MachineConfig if it doesn't exist
-	if autoSizingIsNotFound {
-		autoSizingMC, err := newAutoSizingMachineConfig(pool)
-		if err != nil {
-			return err
-		}
-		// Create the auto-sizing MachineConfig
-		if err := retry.RetryOnConflict(updateBackoff, func() error {
-			_, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), autoSizingMC, metav1.CreateOptions{})
-			return err
-		}); err != nil {
-			return fmt.Errorf("Could not Create auto-sizing MachineConfig, error: %w", err)
-		}
-		klog.Infof("Created auto-sizing configuration %v on MachineConfigPool %v", autoSizingKey, pool.Name)
-	} else {
-		klog.V(4).Infof("Auto-sizing MachineConfig %v already exists for pool %v, skipping creation", autoSizingKey, pool.Name)
-	}
-	return nil
 }
 
 // syncNodeConfigHandler syncs whenever there is a change on the nodes.config.openshift.io resource
@@ -164,13 +91,6 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 	apiServer, err := ctrl.apiserverLister.Get(ctrlcommon.APIServerInstanceName)
 	if err != nil && !errors.IsNotFound(err) {
 		return fmt.Errorf("could not get the TLSSecurityProfile from %v: %v", ctrlcommon.APIServerInstanceName, err)
-	}
-
-	for _, pool := range mcpPools {
-		// First, create the auto-sizing MachineConfig for this pool if it doesn't exist
-		if err := ctrl.configureAutoSizingMachineConfig(pool); err != nil {
-			return err
-		}
 	}
 
 	for _, pool := range mcpPools {
@@ -357,15 +277,6 @@ func RunNodeConfigBootstrap(templateDir string, fgHandler ctrlcommon.FeatureGate
 	}
 
 	configs := []*mcfgv1.MachineConfig{}
-
-	// Create auto-sizing MachineConfigs for each pool
-	for _, pool := range mcpPools {
-		autoSizingMC, err := newAutoSizingMachineConfig(pool)
-		if err != nil {
-			return nil, err
-		}
-		configs = append(configs, autoSizingMC)
-	}
 
 	for _, pool := range mcpPools {
 		role := pool.Name
