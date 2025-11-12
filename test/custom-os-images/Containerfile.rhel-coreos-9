@@ -1,0 +1,13 @@
+FROM registry.ci.openshift.org/ocp/4.21:rhel-coreos AS base
+
+FROM quay.io/centos/centos:stream9 AS epel
+WORKDIR /etc/yum.repos.d
+RUN dnf install -y epel-release && \
+    curl -LO https://pkgs.tailscale.com/stable/rhel/9/tailscale.repo && \
+    sed -i 's/\$stream/9-stream/g' /etc/yum.repos.d/centos*.repo
+
+FROM base AS final
+COPY --from=epel /etc/yum.repos.d /etc/yum.repos.d
+COPY --from=epel /etc/pki/rpm-gpg/RPM-GPG-KEY-* /etc/pki/rpm-gpg/
+RUN rpm-ostree install ripgrep yq tailscale && \
+    ostree container commit
