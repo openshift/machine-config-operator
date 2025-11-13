@@ -10,6 +10,8 @@ import (
 type Interface interface {
 	// MachineConfigNodes returns a MachineConfigNodeInformer.
 	MachineConfigNodes() MachineConfigNodeInformer
+	// OSImageStreams returns a OSImageStreamInformer.
+	OSImageStreams() OSImageStreamInformer
 	// PinnedImageSets returns a PinnedImageSetInformer.
 	PinnedImageSets() PinnedImageSetInformer
 }
@@ -28,6 +30,11 @@ func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakList
 // MachineConfigNodes returns a MachineConfigNodeInformer.
 func (v *version) MachineConfigNodes() MachineConfigNodeInformer {
 	return &machineConfigNodeInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
+// OSImageStreams returns a OSImageStreamInformer.
+func (v *version) OSImageStreams() OSImageStreamInformer {
+	return &oSImageStreamInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
 // PinnedImageSets returns a PinnedImageSetInformer.

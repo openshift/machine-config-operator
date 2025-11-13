@@ -13,6 +13,7 @@ import (
 type MachineconfigurationV1alpha1Interface interface {
 	RESTClient() rest.Interface
 	MachineConfigNodesGetter
+	OSImageStreamsGetter
 	PinnedImageSetsGetter
 }
 
@@ -23,6 +24,10 @@ type MachineconfigurationV1alpha1Client struct {
 
 func (c *MachineconfigurationV1alpha1Client) MachineConfigNodes() MachineConfigNodeInterface {
 	return newMachineConfigNodes(c)
+}
+
+func (c *MachineconfigurationV1alpha1Client) OSImageStreams() OSImageStreamInterface {
+	return newOSImageStreams(c)
 }
 
 func (c *MachineconfigurationV1alpha1Client) PinnedImageSets() PinnedImageSetInterface {

@@ -289,6 +289,7 @@ var map_MachineConfigPoolSpec = map[string]string{
 	"maxUnavailable":        "maxUnavailable defines either an integer number or percentage of nodes in the pool that can go Unavailable during an update. This includes nodes Unavailable for any reason, including user initiated cordons, failing nodes, etc. The default value is 1.\n\nA value larger than 1 will mean multiple nodes going unavailable during the update, which may affect your workload stress on the remaining nodes. You cannot set this value to 0 to stop updates (it will default back to 1); to stop updates, use the 'paused' property instead. Drain will respect Pod Disruption Budgets (PDBs) such as etcd quorum guards, even if maxUnavailable is greater than one.",
 	"configuration":         "The targeted MachineConfig object for the machine config pool.",
 	"pinnedImageSets":       "pinnedImageSets specifies a sequence of PinnedImageSetRef objects for the pool. Nodes within this pool will preload and pin images defined in the PinnedImageSet. Before pulling images the MachineConfigDaemon will ensure the total uncompressed size of all the images does not exceed available resources. If the total size of the images exceeds the available resources the controller will report a Degraded status to the MachineConfigPool and not attempt to pull any images. Also to help ensure the kubelet can mitigate storage risk, the pinned_image configuration and subsequent service reload will happen only after all of the images have been pulled for each set. Images from multiple PinnedImageSets are loaded and pinned sequentially as listed. Duplicate and existing images will be skipped.\n\nAny failure to prefetch or pin images will result in a Degraded pool. Resolving these failures is the responsibility of the user. The admin should be proactive in ensuring adequate storage and proper image authentication exists in advance.",
+	"osImageStream":         "osImageStream specifies an OS stream to be used for the pool.\n\nThis field can be optionally set to a known OSImageStream name to change the OS and Extension images with a well-known, tested, release-provided set of images. This enables a streamlined way of switching the pool's node OS to a different version than the cluster default, such as transitioning to a major RHEL version.\n\nWhen set, the referenced stream overrides the cluster-wide OS images for the pool with the OS and Extensions associated to stream. When omitted, the pool uses the cluster-wide default OS images.",
 }
 
 func (MachineConfigPoolSpec) SwaggerDoc() map[string]string {
@@ -307,6 +308,7 @@ var map_MachineConfigPoolStatus = map[string]string{
 	"conditions":              "conditions represents the latest available observations of current state.",
 	"certExpirys":             "certExpirys keeps track of important certificate expiration data",
 	"poolSynchronizersStatus": "poolSynchronizersStatus is the status of the machines managed by the pool synchronizers.",
+	"osImageStream":           "osImageStream specifies the last updated OSImageStream for the pool.\n\nWhen omitted, the pool is using the cluster-wide default OS images.",
 }
 
 func (MachineConfigPoolStatus) SwaggerDoc() map[string]string {
@@ -344,6 +346,14 @@ var map_NetworkInfo = map[string]string{
 
 func (NetworkInfo) SwaggerDoc() map[string]string {
 	return map_NetworkInfo
+}
+
+var map_OSImageStreamReference = map[string]string{
+	"name": "name is a required reference to an OSImageStream to be used for the pool.\n\nIt must be a valid RFC 1123 subdomain between 1 and 253 characters in length, consisting of lowercase alphanumeric characters, hyphens ('-'), and periods ('.').",
+}
+
+func (OSImageStreamReference) SwaggerDoc() map[string]string {
+	return map_OSImageStreamReference
 }
 
 var map_PinnedImageSetRef = map[string]string{
