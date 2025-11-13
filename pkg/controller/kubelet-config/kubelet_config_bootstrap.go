@@ -55,7 +55,7 @@ func RunKubeletBootstrap(templateDir string, kubeletConfigs []*mcfgv1.KubeletCon
 				originalKubeConfig.TLSCipherSuites = observedCipherSuites
 			}
 
-			kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, err := generateKubeletIgnFiles(kubeletConfig, originalKubeConfig)
+			kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, err := generateKubeletIgnFiles(kubeletConfig, originalKubeConfig, role, nil)
 			if err != nil {
 				return nil, err
 			}
