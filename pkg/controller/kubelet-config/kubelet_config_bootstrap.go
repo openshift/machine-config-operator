@@ -40,7 +40,7 @@ func RunKubeletBootstrap(templateDir string, kubeletConfigs []*mcfgv1.KubeletCon
 			}
 			role := pool.Name
 
-			originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(controllerConfig, templateDir, role, fgHandler, apiServer)
+			originalKubeConfig, _, err := generateOriginalKubeletConfigWithFeatureGates(controllerConfig, templateDir, role, fgHandler, apiServer)
 			if err != nil {
 				return nil, err
 			}

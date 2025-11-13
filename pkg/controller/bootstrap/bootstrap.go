@@ -234,12 +234,14 @@ func (b *Bootstrap) Run(destDir string) error {
 	}
 	klog.Infof("Successfully generated MachineConfigs from kubelet configs.")
 
-	compressibleConfigs, err := kubeletconfig.RunCompressibleBootstrap(pools, cconfig, b.templatesDir, apiServer)
-	if err != nil {
-		return err
-	}
-	configs = append(configs, compressibleConfigs...)
-	klog.Infof("Successfully generated MachineConfigs for compressible kubelet configs.")
+	// Note: Compressible machine configs are now created by the kubelet-config controller
+	// at runtime when kubelet configs are synced, not during bootstrap
+	// compressibleConfigs, err := kubeletconfig.RunCompressibleBootstrap(pools, cconfig, b.templatesDir, apiServer)
+	// if err != nil {
+	// 	return err
+	// }
+	// configs = append(configs, compressibleConfigs...)
+	// klog.Infof("Successfully generated MachineConfigs for compressible kubelet configs.")
 
 	fpools, gconfigs, err := render.RunBootstrap(pools, configs, cconfig)
 	if err != nil {
