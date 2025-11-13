@@ -2,15 +2,13 @@ package imagepruner
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/containers/common/pkg/retry"
-	"github.com/containers/image/v5/docker"
-	"github.com/containers/image/v5/image"
-	"github.com/containers/image/v5/manifest"
 	"github.com/containers/image/v5/types"
 	digest "github.com/opencontainers/go-digest"
+	"github.com/openshift/machine-config-operator/pkg/imageutils"
 )
 
 const (
@@ -58,24 +56,6 @@ func (i *imageInspectorImpl) DeleteImage(ctx context.Context, sysCtx *types.Syst
 	return deleteImage(ctx, sysCtx, image)
 }
 
-// parseImageName parses the image name string into an ImageReference,
-// handling various prefix formats like "docker://" and ensuring a standard format.
-func parseImageName(imgName string) (types.ImageReference, error) {
-	if strings.Contains(imgName, "//") && !strings.HasPrefix(imgName, "docker://") {
-		return nil, fmt.Errorf("unknown transport for pullspec %s", imgName)
-	}
-
-	if strings.HasPrefix(imgName, "docker://") {
-		imgName = strings.ReplaceAll(imgName, "docker://", "//")
-	}
-
-	if !strings.HasPrefix(imgName, "//") {
-		imgName = "//" + imgName
-	}
-
-	return docker.Transport.ParseReference(imgName)
-}
-
 // deleteImage attempts to delete the specified image with retries,
 // using the provided context and system context.
 //
@@ -85,7 +65,7 @@ func deleteImage(ctx context.Context, sysCtx *types.SystemContext, imageName str
 		MaxRetry: cmdRetriesCount,
 	}
 
-	ref, err := parseImageName(imageName)
+	ref, err := imageutils.ParseImageName(imageName)
 	if err != nil {
 		return err
 	}
@@ -104,59 +84,28 @@ func deleteImage(ctx context.Context, sysCtx *types.SystemContext, imageName str
 // TODO(jkyros): Revisit direct skopeo inspect usage, but direct library calls are beneficial for error context.
 //
 //nolint:unparam
-func imageInspect(ctx context.Context, sysCtx *types.SystemContext, imageName string) (*types.ImageInspectInfo, *digest.Digest, error) {
-	var (
-		src        types.ImageSource
-		imgInspect *types.ImageInspectInfo
-		err        error
-	)
-
+func imageInspect(ctx context.Context, sysCtx *types.SystemContext, imageName string) (inspectInfo *types.ImageInspectInfo, digest *digest.Digest, err error) {
 	retryOpts := retry.RetryOptions{
 		MaxRetry: cmdRetriesCount,
 	}
-
-	ref, err := parseImageName(imageName)
+	image, imgSource, err := imageutils.GetImage(ctx, sysCtx, imageName, &retryOpts)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error parsing image name %q: %w", imageName, err)
+		return nil, nil, newErrImage(imageName, fmt.Errorf("error fetching underlying image: %w", err))
 	}
+	defer func() {
+		if imgSourceErr := imgSource.Close(); imgSourceErr != nil {
+			err = errors.Join(err, imgSourceErr)
+		}
+	}()
 
-	// retry.IfNecessary takes into account whether the error is "retryable"
-	// so we don't keep looping on errors that will never resolve
-	if err := retry.RetryIfNecessary(ctx, func() error {
-		src, err = ref.NewImageSource(ctx, sysCtx)
-		return err
-	}, &retryOpts); err != nil {
-		return nil, nil, newErrImage(imageName, fmt.Errorf("error getting image source: %w", err))
-	}
-
-	var rawManifest []byte
-	unparsedInstance := image.UnparsedInstance(src, nil)
-	if err := retry.IfNecessary(ctx, func() error {
-		rawManifest, _, err = unparsedInstance.Manifest(ctx)
-		return err
-	}, &retryOpts); err != nil {
-		return nil, nil, fmt.Errorf("error retrieving manifest for image: %w", err)
-	}
-
-	// get the digest here because it's not part of the image inspection
-	digest, err := manifest.Digest(rawManifest)
+	inspectInfo, err = imageutils.GetInspectInfoFromImage(ctx, image, &retryOpts)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error retrieving image digest: %q: %w", imageName, err)
+		return nil, nil, newErrImage(imageName, fmt.Errorf("error inspecting image: %w", err))
 	}
 
-	defer src.Close()
-
-	img, err := image.FromUnparsedImage(ctx, sysCtx, unparsedInstance)
+	imageDigest, err := imageutils.GetDigestFromImage(ctx, image, &retryOpts)
 	if err != nil {
-		return nil, nil, newErrImage(imageName, fmt.Errorf("error parsing manifest for image: %w", err))
+		return nil, nil, newErrImage(imageName, fmt.Errorf("error fetching image digest: %w", err))
 	}
-
-	if err := retry.RetryIfNecessary(ctx, func() error {
-		imgInspect, err = img.Inspect(ctx)
-		return err
-	}, &retryOpts); err != nil {
-		return nil, nil, newErrImage(imageName, err)
-	}
-
-	return imgInspect, &digest, nil
+	return inspectInfo, &imageDigest, nil
 }
