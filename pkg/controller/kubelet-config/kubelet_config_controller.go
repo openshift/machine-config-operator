@@ -200,8 +200,10 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	klog.Info("Starting MachineConfigController-KubeletConfigController")
 	defer klog.Info("Shutting down MachineConfigController-KubeletConfigController")
 
-	// Note: Compressible machine configs are created during kubelet config sync
-	// in generateOriginalKubeletConfigWithFeatureGates() when kubelet config is generated
+	// Ensure compressible machine configs are created for all pools at startup
+	if err := ctrl.ensureCompressibleMachineConfigs(); err != nil {
+		klog.Warningf("Error ensuring compressible MachineConfigs: %v", err)
+	}
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(ctrl.worker, time.Second, stopCh)
@@ -620,15 +622,9 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			return fmt.Errorf("could not get ControllerConfig %w", err)
 		}
 
-		originalKubeConfig, kubeletContents, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, ctrl.fgHandler, apiServer)
+		originalKubeConfig, _, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, ctrl.fgHandler, apiServer)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not get original kubelet config: %v", err)
-		}
-
-		// Create compressible machine config with the generated kubelet config
-		if err := ctrl.createCompressibleMachineConfigIfNeeded(pool.Name, kubeletContents); err != nil {
-			klog.Warningf("Failed to create compressible machine config for pool %v: %v", pool.Name, err)
-			// Don't fail the sync if compressible MC creation fails, just log it
 		}
 
 		// updating the originalKubeConfig based on the nodeConfig on a worker node

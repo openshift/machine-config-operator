@@ -5,9 +5,11 @@ import (
 	"fmt"
 
 	"github.com/clarketm/json"
+	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/labels"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
@@ -88,4 +90,70 @@ func (ctrl *Controller) createCompressibleMachineConfigIfNeeded(poolName string,
 	}
 
 	return nil
+}
+
+// ensureCompressibleMachineConfigs ensures compressible machine configs exist for all pools
+// This is called at controller startup to create compressible MCs for all pools
+func (ctrl *Controller) ensureCompressibleMachineConfigs() error {
+	// Get all pools
+	pools, err := ctrl.mcpLister.List(labels.Everything())
+	if err != nil {
+		return fmt.Errorf("could not list machine config pools: %w", err)
+	}
+
+	// Get ControllerConfig
+	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
+	if err != nil {
+		return fmt.Errorf("could not get ControllerConfig: %w", err)
+	}
+
+	// Get APIServer
+	apiServer, err := ctrl.apiserverLister.Get(ctrlcommon.APIServerInstanceName)
+	if err != nil && !errors.IsNotFound(err) {
+		return fmt.Errorf("could not get APIServer: %w", err)
+	}
+
+	// Create compressible MC for each pool
+	for _, pool := range pools {
+		// Generate the original kubelet config for this pool
+		_, kubeletContents, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, pool.Name, ctrl.fgHandler, apiServer)
+		if err != nil {
+			klog.Warningf("Failed to generate kubelet config for pool %v: %v", pool.Name, err)
+			continue
+		}
+
+		// Create compressible MC
+		if err := ctrl.createCompressibleMachineConfigIfNeeded(pool.Name, kubeletContents); err != nil {
+			klog.Warningf("Failed to create compressible machine config for pool %v: %v", pool.Name, err)
+			// Don't fail startup if compressible MC creation fails for a pool
+			continue
+		}
+	}
+
+	return nil
+}
+
+// RunCompressibleBootstrap generates compressible machine configs for all pools during bootstrap
+func RunCompressibleBootstrap(pools []*mcfgv1.MachineConfigPool, cconfig *mcfgv1.ControllerConfig, templatesDir string, apiServer *configv1.APIServer, fgHandler ctrlcommon.FeatureGatesHandler) ([]*mcfgv1.MachineConfig, error) {
+	configs := []*mcfgv1.MachineConfig{}
+
+	for _, pool := range pools {
+		// Generate the original kubelet config for this pool
+		_, kubeletContents, err := generateOriginalKubeletConfigWithFeatureGates(cconfig, templatesDir, pool.Name, fgHandler, apiServer)
+		if err != nil {
+			klog.Warningf("Failed to generate kubelet config for pool %v: %v", pool.Name, err)
+			continue
+		}
+
+		// Create compressible MC
+		compressibleMC, err := newCompressibleMachineConfig(pool.Name, kubeletContents)
+		if err != nil {
+			klog.Warningf("Failed to create compressible machine config for pool %v: %v", pool.Name, err)
+			continue
+		}
+
+		configs = append(configs, compressibleMC)
+	}
+
+	return configs, nil
 }
