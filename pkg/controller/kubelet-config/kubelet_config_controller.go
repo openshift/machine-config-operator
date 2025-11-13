@@ -200,6 +200,11 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	klog.Info("Starting MachineConfigController-KubeletConfigController")
 	defer klog.Info("Shutting down MachineConfigController-KubeletConfigController")
 
+	// Ensure compressible machine configs are created for all pools
+	if err := ctrl.ensureCompressibleMachineConfigs(); err != nil {
+		klog.Errorf("Error ensuring compressible MachineConfigs: %v", err)
+	}
+
 	for i := 0; i < workers; i++ {
 		go wait.Until(ctrl.worker, time.Second, stopCh)
 	}
