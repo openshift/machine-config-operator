@@ -20,6 +20,7 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
+	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/daemon/runtimeassets"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
@@ -68,6 +69,9 @@ var (
 
 	//go:embed Containerfile.okd-fcos
 	okdFcosDockerfile string
+
+	//go:embed Containerfile.simple
+	simpleDockerfile string
 )
 
 var skipCleanupAlways bool
@@ -1455,4 +1459,146 @@ func TestImageBuildDegradedOnFailureAndClearedOnBuildStart(t *testing.T) {
 	require.NotNil(t, degradedCondition, "ImageBuildDegraded condition should still be present")
 	assert.Equal(t, string(mcfgv1.MachineConfigPoolBuilding), degradedCondition.Reason, "ImageBuildDegraded reason should be Building")
 	t.Logf("ImageBuildDegraded condition correctly cleared to False with message: %s", degradedCondition.Message)
+}
+
+// TestCurrentMachineOSBuildAnnotationHandling tests that the node controller correctly uses the
+// current-machine-os-build annotation on the MachineOSConfig to select the correct MOSB when
+// multiple MOSBs exist for the same rendered MachineConfig. This can happen during rapid updates
+// or when a rebuild annotation is applied.
+func TestCurrentMachineOSBuildAnnotationHandling(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	cs := framework.NewClientSet("")
+
+	// Setup: Create initial layered pool and build
+	mosc := prepareForOnClusterLayeringTest(t, cs, onClusterLayeringTestOpts{
+		poolName: layeredMCPName,
+		customDockerfiles: map[string]string{
+			layeredMCPName: simpleDockerfile,
+		},
+	})
+
+	createMachineOSConfig(t, cs, mosc)
+
+	// Wait for the first build to complete
+	firstMosb := waitForBuildToStartForPoolAndConfig(t, cs, layeredMCPName, mosc.Name)
+	t.Logf("First MachineOSBuild %q has started", firstMosb.Name)
+
+	firstFinishedBuild := waitForBuildToComplete(t, cs, firstMosb)
+	firstImagePullspec := string(firstFinishedBuild.Status.DigestedImagePushSpec)
+	t.Logf("First MachineOSBuild %q completed with image: %s", firstFinishedBuild.Name, firstImagePullspec)
+
+	// Verify the MOSC has the current-machine-os-build annotation set to the first build
+	apiMosc, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().Get(ctx, mosc.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+	currentBuildAnnotation := apiMosc.GetAnnotations()[constants.CurrentMachineOSBuildAnnotationKey]
+	assert.Equal(t, firstFinishedBuild.Name, currentBuildAnnotation,
+		"MOSC should have current-machine-os-build annotation pointing to first build")
+	t.Logf("Verified MOSC has current-machine-os-build annotation: %s", currentBuildAnnotation)
+
+	// Trigger a second build by editing the MOSC (e.g., updating the containerfile)
+	// This does NOT create a new rendered MC, which is the scenario we're testing
+	t.Logf("Updating MachineOSConfig containerfile to trigger second build without new rendered MC")
+	apiMosc, err = cs.MachineconfigurationV1Interface.MachineOSConfigs().Get(ctx, mosc.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	// Update the containerfile to trigger a rebuild
+	apiMosc.Spec.Containerfile = []mcfgv1.MachineOSContainerfile{
+		{
+			ContainerfileArch: mcfgv1.NoArch,
+			Content:           simpleDockerfile + "\nRUN echo 'test annotation handling' > /etc/test-annotation",
+		},
+	}
+	apiMosc, err = cs.MachineconfigurationV1Interface.MachineOSConfigs().Update(ctx, apiMosc, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	t.Logf("Updated MachineOSConfig %q containerfile", apiMosc.Name)
+
+	// Wait for the second build to start
+	t.Logf("Waiting for second build to start...")
+	secondMosbName := waitForMOSCToUpdateCurrentMOSB(ctx, t, cs, mosc.Name, firstMosb.Name)
+	secondMosb, err := cs.GetMcfgclient().MachineconfigurationV1().MachineOSBuilds().Get(ctx, secondMosbName, metav1.GetOptions{})
+	require.NoError(t, err)
+	secondMosb = waitForBuildToStart(t, cs, secondMosb)
+	t.Logf("Second MachineOSBuild %q has started", secondMosb.Name)
+
+	// At this point, both MOSBs exist:
+	// - firstMosb is completed (with original containerfile)
+	// - secondMosb is building (with updated containerfile, but SAME rendered MC)
+	// This is the critical scenario: multiple MOSBs for the same rendered MachineConfig
+
+	// Verify that the MOSC annotation now points to the second build
+	apiMosc, err = cs.MachineconfigurationV1Interface.MachineOSConfigs().Get(ctx, mosc.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+	currentBuildAnnotation = apiMosc.GetAnnotations()[constants.CurrentMachineOSBuildAnnotationKey]
+	assert.Equal(t, secondMosb.Name, currentBuildAnnotation,
+		"MOSC should have current-machine-os-build annotation pointing to second build")
+	t.Logf("Verified MOSC annotation updated to second build: %s", currentBuildAnnotation)
+
+	// List all MOSBs to confirm both exist
+	allMosbs, err := cs.MachineconfigurationV1Interface.MachineOSBuilds().List(ctx, metav1.ListOptions{})
+	require.NoError(t, err)
+
+	mosbNames := []string{}
+	for _, mosb := range allMosbs.Items {
+		if mosb.Spec.MachineOSConfig.Name == mosc.Name {
+			mosbNames = append(mosbNames, mosb.Name)
+		}
+	}
+	t.Logf("Found %d MOSBs for MachineOSConfig %q: %v", len(mosbNames), mosc.Name, mosbNames)
+	assert.GreaterOrEqual(t, len(mosbNames), 2, "Should have at least 2 MOSBs at this point")
+
+	// The critical test: The node controller should use the MOSB specified by the annotation
+	// (secondMosb) even though firstMosb also exists and matches the MOSC name.
+	// This is implicitly tested by the fact that the pool status should reflect the second build.
+	// We verify this by checking the pool is waiting for the second build, not using the first.
+
+	t.Logf("Verifying that pool targets the correct (second) build based on annotation")
+	// The pool should be waiting for the second build to complete, not using the first completed build
+	// We can verify this by checking that the pool doesn't have the first image in its status
+
+	// Wait for the second build to complete
+	t.Logf("Waiting for second build to complete...")
+	secondFinishedBuild := waitForBuildToComplete(t, cs, secondMosb)
+	secondImagePullspec := string(secondFinishedBuild.Status.DigestedImagePushSpec)
+	t.Logf("Second MachineOSBuild %q completed with image: %s", secondFinishedBuild.Name, secondImagePullspec)
+
+	// Verify the images are different (proving we built a new image, not reusing the old one)
+	assert.NotEqual(t, firstImagePullspec, secondImagePullspec,
+		"First and second builds should produce different images")
+
+	// Verify that the MOSC status reflects the second build's image
+	waitForMOSCToGetNewPullspec(ctx, t, cs, mosc.Name, secondImagePullspec)
+	apiMosc, err = cs.MachineconfigurationV1Interface.MachineOSConfigs().Get(ctx, mosc.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, mcfgv1.ImageDigestFormat(secondImagePullspec), apiMosc.Status.CurrentImagePullSpec,
+		"MOSC status should have the second build's image pullspec")
+
+	// The critical test: Verify the node controller uses the annotation to select the correct MOSB
+	// Add a node to the pool and verify it gets the SECOND build's image, not the first
+	t.Logf("Adding node to pool to verify node controller uses annotation-based MOSB selection")
+	node := helpers.GetRandomNode(t, cs, "worker")
+
+	unlabelFunc := makeIdempotentAndRegisterAlwaysRun(t, helpers.LabelNode(t, cs, node, helpers.MCPNameToRole(layeredMCPName)))
+	defer unlabelFunc()
+
+	// Wait for the node controller to update the node's desiredImage annotation
+	// The node controller should use the annotation on the MOSC to select the second MOSB
+	// and therefore set the desiredImage to the second build's image, NOT the first
+	t.Logf("Waiting for node %s to have desiredImage set to second build's image", node.Name)
+	helpers.WaitForNodeImageChange(t, cs, node, secondImagePullspec)
+
+	// Verify the node's desiredImage annotation matches the second build
+	updatedNode, err := cs.CoreV1Interface.Nodes().Get(ctx, node.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+	desiredImage := updatedNode.Annotations[daemonconsts.DesiredImageAnnotationKey]
+	assert.Equal(t, secondImagePullspec, desiredImage,
+		"Node controller should use annotation to select second build, not first build")
+	t.Logf("Node controller correctly selected second build based on annotation")
+
+	// Also verify it's NOT the first build's image
+	assert.NotEqual(t, firstImagePullspec, desiredImage,
+		"Node should NOT have first build's image (would indicate annotation was ignored)")
+
+	t.Logf("Successfully verified that node controller uses annotation-based build selection")
 }
