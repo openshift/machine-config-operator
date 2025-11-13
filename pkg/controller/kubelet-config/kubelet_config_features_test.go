@@ -43,7 +43,7 @@ func TestFeatureGateDrift(t *testing.T) {
 			ctrl := f.newController(fgHandler)
 
 			// Generate kubelet config with feature gates applied
-			kubeletConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, "master", fgHandler, nil)
+			kubeletConfig, _, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, "master", fgHandler, nil)
 			require.NoError(t, err)
 
 			t.Logf("Generated Kubelet Config Feature Gates: %v", kubeletConfig.FeatureGates)
