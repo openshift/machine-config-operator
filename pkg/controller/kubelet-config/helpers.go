@@ -35,17 +35,13 @@ const (
 	protectKernelDefaultsStr      = "\"protectKernelDefaults\":false"
 )
 
-func createNewKubeletDynamicSystemReservedIgnition(autoSystemReserved *bool, userDefinedSystemReserved map[string]string) *ign3types.File {
+func createNewKubeletDynamicSystemReservedIgnition(autoSystemReserved bool, userDefinedSystemReserved map[string]string) *ign3types.File {
 	var autoNodeSizing string
 	var systemReservedMemory string
 	var systemReservedCPU string
 	var systemReservedEphemeralStorage string
 
-	if autoSystemReserved == nil {
-		autoNodeSizing = "false"
-	} else {
-		autoNodeSizing = strconv.FormatBool(*autoSystemReserved)
-	}
+	autoNodeSizing = strconv.FormatBool(autoSystemReserved)
 
 	if val, ok := userDefinedSystemReserved["memory"]; ok && val != "" {
 		systemReservedMemory = val
@@ -518,10 +514,10 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 		logLevelIgnition = createNewKubeletLogLevelIgnition(*kubeletConfig.Spec.LogLevel)
 	}
 	if kubeletConfig.Spec.AutoSizingReserved != nil && len(userDefinedSystemReserved) == 0 {
-		autoSizingReservedIgnition = createNewKubeletDynamicSystemReservedIgnition(kubeletConfig.Spec.AutoSizingReserved, userDefinedSystemReserved)
-	}
-	if len(userDefinedSystemReserved) > 0 {
-		autoSizingReservedIgnition = createNewKubeletDynamicSystemReservedIgnition(nil, userDefinedSystemReserved)
+		autoSizingReservedIgnition = createNewKubeletDynamicSystemReservedIgnition(*kubeletConfig.Spec.AutoSizingReserved, userDefinedSystemReserved)
+	} else if len(userDefinedSystemReserved) > 0 {
+		// The user has chosen to provide a map of memory, cpu and io system reserved values. Hence disable AutoSizingReserved
+		autoSizingReservedIgnition = createNewKubeletDynamicSystemReservedIgnition(false, userDefinedSystemReserved)
 	}
 
 	return kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, nil

@@ -389,6 +389,97 @@ metadata:
 	}
 }
 
+func TestNodeSizingEnabled(t *testing.T) {
+	ctx := context.Background()
+
+	testEnv := framework.NewTestEnv(t)
+
+	configv1.Install(scheme.Scheme)
+	configv1alpha1.Install(scheme.Scheme)
+	mcfgv1.Install(scheme.Scheme)
+	apioperatorsv1alpha1.Install(scheme.Scheme)
+
+	baseTestManifests := loadBaseTestManifests(t)
+
+	cfg, err := testEnv.Start()
+	require.NoError(t, err)
+	defer func() {
+		assert.NoError(t, testEnv.Stop())
+	}()
+
+	clientSet := framework.NewClientSetFromConfig(cfg)
+
+	_, err = clientSet.Namespaces().Create(ctx, &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: framework.OpenshiftConfigNamespace,
+		},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	_, err = clientSet.Namespaces().Create(ctx, &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: bootstrapTestName,
+		},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	objs := append([]runtime.Object{}, baseTestManifests...)
+
+	// Add node config
+	nodeConfigManifest := [][]byte{
+		[]byte(`apiVersion: config.openshift.io/v1
+kind: Node
+metadata:
+  name: cluster`),
+	}
+	objs = append(objs, loadRawManifests(t, nodeConfigManifest)...)
+
+	fixture := newTestFixture(t, cfg, objs)
+	defer framework.CleanEnvironment(t, clientSet)
+	defer fixture.stop()
+
+	// Fetch the controller rendered configurations
+	controllerRenderedMasterConfigName, err := helpers.WaitForRenderedConfigs(t, clientSet, "master", []string{"99-master-ssh", "99-master-generated-registries"}...)
+	require.NoError(t, err)
+	t.Logf("Controller rendered master config as %q", controllerRenderedMasterConfigName)
+
+	controllerRenderedWorkerConfigName, err := helpers.WaitForRenderedConfigs(t, clientSet, "worker", []string{"99-worker-ssh", "99-worker-generated-registries"}...)
+	require.NoError(t, err)
+	t.Logf("Controller rendered worker config as %q", controllerRenderedWorkerConfigName)
+
+	// Verify node sizing enabled file for master
+	verifyNodeSizingEnabled(t, clientSet, controllerRenderedMasterConfigName)
+
+	// Verify node sizing enabled file for worker
+	verifyNodeSizingEnabled(t, clientSet, controllerRenderedWorkerConfigName)
+}
+
+func verifyNodeSizingEnabled(t *testing.T, clientSet *framework.ClientSet, renderedConfigName string) {
+	controllerMC, err := clientSet.MachineConfigs().Get(context.Background(), renderedConfigName, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	ignCfg, err := ctrlcommon.ParseAndConvertConfig(controllerMC.Spec.Config.Raw)
+	require.NoError(t, err)
+
+	// Find the node sizing enabled file
+	var foundFile bool
+	for _, file := range ignCfg.Storage.Files {
+		if file.Path == "/etc/node-sizing-enabled.env" {
+			foundFile = true
+
+			// Decode the file contents
+			contents, err := ctrlcommon.DecodeIgnitionFileContents(file.Contents.Source, file.Contents.Compression)
+			require.NoError(t, err, "Failed to decode node-sizing-enabled.env file contents")
+
+			contentsStr := string(contents)
+			require.Contains(t, contentsStr, "NODE_SIZING_ENABLED=true", "Expected /etc/node-sizing-enabled.env to contain NODE_SIZING_ENABLED=true in machine config %s", renderedConfigName)
+			break
+		}
+	}
+
+	require.True(t, foundFile, "Expected to find /etc/node-sizing-enabled.env in machine config %s", renderedConfigName)
+}
+
 func compareRenderedConfigPool(t *testing.T, clientSet *framework.ClientSet, destDir, poolName, controllerRenderedConfigName string) {
 	paths, err := filepath.Glob(filepath.Join(destDir, "machine-configs", fmt.Sprintf("rendered-%s-*.yaml", poolName)))
 	require.NoError(t, err)
