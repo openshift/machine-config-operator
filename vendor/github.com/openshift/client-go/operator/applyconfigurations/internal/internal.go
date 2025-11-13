@@ -1974,6 +1974,9 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: healthCheckInterval
       type:
         namedType: io.k8s.apimachinery.pkg.apis.meta.v1.Duration
+    - name: httpKeepAliveTimeout
+      type:
+        namedType: io.k8s.apimachinery.pkg.apis.meta.v1.Duration
     - name: maxConnections
       type:
         scalar: numeric

@@ -114,6 +114,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &machineconfigurationv1.NetworkInfoApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("ObjectReference"):
 		return &machineconfigurationv1.ObjectReferenceApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("OSImageStreamReference"):
+		return &machineconfigurationv1.OSImageStreamReferenceApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("PinnedImageRef"):
 		return &machineconfigurationv1.PinnedImageRefApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("PinnedImageSet"):
@@ -140,6 +142,12 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &machineconfigurationv1alpha1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("MCOObjectReference"):
 		return &machineconfigurationv1alpha1.MCOObjectReferenceApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("OSImageStream"):
+		return &machineconfigurationv1alpha1.OSImageStreamApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("OSImageStreamSet"):
+		return &machineconfigurationv1alpha1.OSImageStreamSetApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("OSImageStreamStatus"):
+		return &machineconfigurationv1alpha1.OSImageStreamStatusApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("PinnedImageRef"):
 		return &machineconfigurationv1alpha1.PinnedImageRefApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("PinnedImageSet"):

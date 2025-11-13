@@ -1,5 +1,6 @@
 | FeatureGate | Default on Hypershift | Default on SelfManagedHA | DevPreviewNoUpgrade on Hypershift | DevPreviewNoUpgrade on SelfManagedHA | TechPreviewNoUpgrade on Hypershift | TechPreviewNoUpgrade on SelfManagedHA  |
 | ------ | --- | --- | --- | --- | --- | ---  |
+| ClientsAllowCBOR| | | | | |  |
 | ClusterAPIInstall| | | | | |  |
 | EventedPLEG| | | | | |  |
 | MachineAPIOperatorDisableMachineHealthCheckController| | | | | |  |
@@ -14,6 +15,8 @@
 | NewOLMOwnSingleNamespace| | | | <span style="background-color: #519450">Enabled</span> | | <span style="background-color: #519450">Enabled</span>  |
 | NewOLMPreflightPermissionChecks| | | | <span style="background-color: #519450">Enabled</span> | | <span style="background-color: #519450">Enabled</span>  |
 | NoRegistryClusterInstall| | | | <span style="background-color: #519450">Enabled</span> | | <span style="background-color: #519450">Enabled</span>  |
+| ProvisioningRequestAvailable| | | <span style="background-color: #519450">Enabled</span> | <span style="background-color: #519450">Enabled</span> | |  |
+| HyperShiftOnlyDynamicResourceAllocation| <span style="background-color: #519450">Enabled</span> | | <span style="background-color: #519450">Enabled</span> | | <span style="background-color: #519450">Enabled</span> |  |
 | NewOLM| | <span style="background-color: #519450">Enabled</span> | | <span style="background-color: #519450">Enabled</span> | | <span style="background-color: #519450">Enabled</span>  |
 | NewOLMWebhookProviderOpenshiftServiceCA| | <span style="background-color: #519450">Enabled</span> | | <span style="background-color: #519450">Enabled</span> | | <span style="background-color: #519450">Enabled</span>  |
 | AWSClusterHostedDNS| | | <span style="background-color: #519450">Enabled</span> | <span style="background-color: #519450">Enabled</span> | <span style="background-color: #519450">Enabled</span> | <span style="background-color: #519450">Enabled</span>  |
@@ -30,7 +33,6 @@
 | BootcNodeManagement| | | <span style="background-color: #519450">Enabled</span> | <span style="background-color: #519450">Enabled</span> | <span style="background-color: #519450">Enabled</span> | <span style="background-color: #519450">Enabled</span>  |
 | CBORServingAndStorage| | | <span style="background-color: #519450">Enabled</span> | <span style="background-color: #519450">Enabled</span> | <span style="background-color: #519450">Enabled</span> | <span style="background-color: #519450">Enabled</span>  |
 | CRDCompatibilityRequirementOperator| | | <span style="background-color: #519450">Enabled</span> | <span style="background-color: #519450">Enabled</span> | <span style="background-color: #519450">Enabled</span> | <span style="background-color: #519450">Enabled</span>  |
-| ClientsAllowCBOR| | | <span style="background-color: #519450">Enabled</span> | <span style="background-color: #519450">Enabled</span> | <span style="background-color: #519450">Enabled</span> | <span style="background-color: #519450">Enabled</span>  |
 | ClientsPreferCBOR| | | <span style="background-color: #519450">Enabled</span> | <span style="background-color: #519450">Enabled</span> | <span style="background-color: #519450">Enabled</span> | <span style="background-color: #519450">Enabled</span>  |
 | ClusterAPIInstallIBMCloud| | | <span style="background-color: #519450">Enabled</span> | <span style="background-color: #519450">Enabled</span> | <span style="background-color: #519450">Enabled</span> | <span style="background-color: #519450">Enabled</span>  |
 | ClusterAPIMachineManagement| | | <span style="background-color: #519450">Enabled</span> | <span style="background-color: #519450">Enabled</span> | <span style="background-color: #519450">Enabled</span> | <span style="background-color: #519450">Enabled</span>  |
