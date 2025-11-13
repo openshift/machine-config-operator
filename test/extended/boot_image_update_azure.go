@@ -18,7 +18,7 @@ import (
 )
 
 // These tests are [Serial] because it modifies the cluster/machineconfigurations.operator.openshift.io object in each test.
-var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Serial][OCPFeatureGate:ManagedBootImagesAzure]", g.Ordered, func() {
+var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Serial][OCPFeatureGate:ManagedBootImagesAzure]", g.Label("Platform:azure"), g.Ordered, func() {
 	defer g.GinkgoRecover()
 	var (
 		AllMachineSetFixture     = filepath.Join("machineconfigurations", "managedbootimages-all.yaml")
