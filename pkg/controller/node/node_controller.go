@@ -26,6 +26,7 @@ import (
 	"github.com/openshift/machine-config-operator/internal"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	"github.com/openshift/machine-config-operator/pkg/constants"
+	buildconstants "github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	corev1 "k8s.io/api/core/v1"
@@ -48,8 +49,6 @@ import (
 	clientretry "k8s.io/client-go/util/retry"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
-
-	buildconstants "github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 )
 
 const (
@@ -1019,6 +1018,21 @@ func (ctrl *Controller) getConfigAndBuild(pool *mcfgv1.MachineConfigPool) (*mcfg
 		return nil, nil, err
 	}
 
+	// First, try to get the MOSB from the current-machine-os-build annotation on the MOSC
+	// This ensures we get the correct build when multiple MOSBs exist for the same rendered MC
+	if currentBuildName, hasAnnotation := ourConfig.Annotations[buildconstants.CurrentMachineOSBuildAnnotationKey]; hasAnnotation {
+		for _, build := range buildList {
+			if build.Name == currentBuildName {
+				ourBuild = build
+				klog.V(4).Infof("Found current MachineOSBuild %q from annotation for MachineOSConfig %q", currentBuildName, ourConfig.Name)
+				return ourConfig, ourBuild, nil
+			}
+		}
+		klog.Warningf("MachineOSConfig %q has current-machine-os-build annotation pointing to %q, but that build was not found", ourConfig.Name, currentBuildName)
+	}
+
+	// Fallback: if annotation is not present or build not found, use the old logic
+	// This handles backwards compatibility and edge cases
 	for _, build := range buildList {
 		if build.Spec.MachineOSConfig.Name == ourConfig.Name && build.Spec.MachineConfig.Name == pool.Spec.Configuration.Name {
 			ourBuild = build

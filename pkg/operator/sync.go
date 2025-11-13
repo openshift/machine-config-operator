@@ -47,6 +47,7 @@ import (
 	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	"github.com/openshift/machine-config-operator/pkg/controller/build"
+	buildconstants "github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -709,6 +710,14 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig, _ *configv1.C
 		if err != nil {
 			return err
 		}
+	}
+
+	// Sync component MachineConfigs for pre-built images from MachineOSConfigs
+	klog.V(2).Info("Syncing component MachineConfigs for pre-built images from MachineOSConfigs")
+	if err := optr.syncPreBuiltImageMachineConfigs(); err != nil {
+		klog.Warningf("Failed to sync pre-built image MachineConfigs: %v", err)
+	} else {
+		klog.V(2).Info("Successfully synced pre-built image MachineConfigs")
 	}
 
 	userDataTemplatePath := "manifests/userdata_secret.yaml"
@@ -2329,4 +2338,75 @@ func (optr *Operator) isDefaultOnBootImageUpdatePlatform() (bool, error) {
 	}
 	defaultOnPlatforms := sets.New(configv1.GCPPlatformType, configv1.AWSPlatformType)
 	return defaultOnPlatforms.Has(infra.Status.PlatformStatus.Type), nil
+}
+
+
+// syncPreBuiltImageMachineConfigs creates/updates/deletes component MachineConfigs for pools with pre-built images.
+// These component MCs set the osImageURL which gets merged into rendered MCs by the render controller.
+func (optr *Operator) syncPreBuiltImageMachineConfigs() error {
+	// Get all MachineOSConfigs
+	moscs, err := optr.moscLister.List(labels.Everything())
+	if err != nil {
+		return fmt.Errorf("failed to list MachineOSConfigs: %w", err)
+	}
+
+	// Get all existing pre-built image component MCs first
+	// We need this early to check if they exist before using annotations
+	allMCs, err := optr.mcLister.List(labels.Everything())
+	if err != nil {
+		return fmt.Errorf("failed to list MachineConfigs: %w", err)
+	}
+
+	existingPreBuiltMCs := ctrlcommon.GetPreBuiltImageMachineConfigsFromList(allMCs)
+
+	// Build map of pools that should have pre-built image component MCs
+	// Strategy: If component MC exists, use its osImageURL to preserve it (frozen, never changes)
+	// Otherwise, use annotation to create it if present
+	poolsWithPreBuiltImages := make(map[string]string)
+	for _, mosc := range moscs {
+		poolName := mosc.Spec.MachineConfigPool.Name
+
+		var preBuiltImage string
+
+		// First check if component MC already exists - if so, preserve it using its current osImageURL
+		// This ensures the MC never changes and is never deleted once created
+		if existingMC, exists := existingPreBuiltMCs[poolName]; exists {
+			preBuiltImage = existingMC.Spec.OSImageURL
+			klog.V(4).Infof("Found existing pre-built image component MC %s for pool %s, preserving with osImageURL %s", existingMC.Name, poolName, preBuiltImage)
+		} else if annotationImage, hasAnnotation := mosc.Annotations[buildconstants.PreBuiltImageAnnotationKey]; hasAnnotation && annotationImage != "" {
+			// Component MC doesn't exist yet, use annotation to create it
+			preBuiltImage = annotationImage
+			klog.V(4).Infof("MachineOSConfig %s has pre-built image annotation %s for pool %s, will create component MC", mosc.Name, preBuiltImage, poolName)
+		}
+
+		if preBuiltImage != "" {
+			poolsWithPreBuiltImages[poolName] = preBuiltImage
+		}
+	}
+
+	// Create or update component MCs for pools that should have them
+	for poolName, preBuiltImage := range poolsWithPreBuiltImages {
+		required := ctrlcommon.CreatePreBuiltImageMachineConfig(poolName, preBuiltImage, buildconstants.PreBuiltImageAnnotationKey)
+
+		_, updated, err := mcoResourceApply.ApplyMachineConfig(optr.client.MachineconfigurationV1(), required)
+		if err != nil {
+			return fmt.Errorf("failed to apply pre-built image MachineConfig %s: %w", required.Name, err)
+		}
+		if updated {
+			klog.Infof("Created/updated pre-built image MachineConfig %s with OSImageURL %s for pool %s", required.Name, preBuiltImage, poolName)
+		}
+	}
+
+	// Delete component MCs for pools that no longer have pre-built images
+	for poolName, existingMC := range existingPreBuiltMCs {
+		if _, shouldExist := poolsWithPreBuiltImages[poolName]; !shouldExist {
+			klog.Infof("Deleting pre-built image MachineConfig %s as pool %s no longer has a pre-built image", existingMC.Name, poolName)
+			err := optr.client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), existingMC.Name, metav1.DeleteOptions{})
+			if err != nil && !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to delete pre-built image MachineConfig %s: %w", existingMC.Name, err)
+			}
+		}
+	}
+
+	return nil
 }

@@ -188,8 +188,8 @@ func (cs *clusterServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error
 	klog.Infof("desiredImage is found to be %s", desiredImage)
 
 	appenders := []appenderFunc{
-		func(cfg *ign3types.Config, _ *mcfgv1.MachineConfig) error {
-			return appendNodeAnnotations(cfg, currConf, desiredImage)
+		func(cfg *ign3types.Config, mc *mcfgv1.MachineConfig) error {
+			return appendNodeAnnotations(cfg, currConf, desiredImage, mc)
 		},
 		func(cfg *ign3types.Config, _ *mcfgv1.MachineConfig) error {
 			return appendKubeConfig(cfg, cs.kubeconfigFunc)
