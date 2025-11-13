@@ -263,56 +263,20 @@ func (b *buildReconciler) updateMachineOSBuild(ctx context.Context, old, current
 	}
 
 	if !oldState.IsBuildFailure() && curState.IsBuildFailure() {
-		klog.Infof("MachineOSBuild %s failed, leaving ephemeral objects in place for inspection and setting BuildDegraded condition", current.Name)
-
-		// Before setting BuildDegraded, check if another MachineOSBuild is active or if this one has been superseded
-		mosbList, err := b.getMachineOSBuildsForMachineOSConfig(mosc)
-		if err != nil {
-			return fmt.Errorf("could not get MachineOSBuilds for MachineOSConfig %q: %w", mosc.Name, err)
-		}
-
-		// Check if there are any newer or active builds that would supersede this failure
-		hasActiveBuild := false
-		isCurrentBuildStale := false
-		for _, mosb := range mosbList {
-			// Skip the current failed build
-			if mosb.Name == current.Name {
-				continue
-			}
-			mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
-			// Check if there's an active build (building, prepared, or succeeded)
-			if mosbState.IsBuilding() || mosbState.IsBuildPrepared() || mosbState.IsBuildSuccess() {
-				hasActiveBuild = true
-				klog.Infof("Found active MachineOSBuild %s, skipping BuildDegraded condition for failed build %s", mosb.Name, current.Name)
-				break
-			}
-		}
-
-		// Also check if the failed MachineOSBuild is no longer referenced by the MachineOSConfig
-		if mosc.Status.CurrentImagePullSpec != "" && !isMachineOSBuildCurrentForMachineOSConfigWithPullspec(mosc, current) {
-			isCurrentBuildStale = true
-			klog.Infof("Failed MachineOSBuild %s is no longer current for MachineOSConfig %s, skipping BuildDegraded condition", current.Name, mosc.Name)
-		}
-
-		// Only set BuildDegraded if there are no active builds and this build is still current
-		if hasActiveBuild || isCurrentBuildStale {
-			klog.Infof("Skipping BuildDegraded condition for failed MachineOSBuild %s (hasActiveBuild=%v, isStale=%v)", current.Name, hasActiveBuild, isCurrentBuildStale)
-			return nil
-		}
+		klog.Infof("MachineOSBuild %s failed, leaving ephemeral objects in place for inspection", current.Name)
 
 		mcp, err := b.machineConfigPoolLister.Get(mosc.Spec.MachineConfigPool.Name)
 		if err != nil {
 			return fmt.Errorf("could not get MachineConfigPool from MachineOSConfig %q: %w", mosc.Name, err)
 		}
 
-		// Set BuildDegraded condition
-		buildError := getBuildErrorFromMOSB(current)
-		return b.syncBuildFailureStatus(ctx, mcp, buildError, current.Name)
+		// Always update ImageBuildDegraded condition based on current active build status
+		return b.updateImageBuildDegradedCondition(ctx, mcp, mosc)
 	}
 
 	// If the build was successful, clean up the build objects and propagate the
 	// final image pushspec onto the MachineOSConfig object.
-	// Also clear BuildDegraded condition if it was set due to a previously failed build
+	// Also update BuildDegraded condition based on current active build status
 	if !oldState.IsBuildSuccess() && curState.IsBuildSuccess() {
 		klog.Infof("MachineOSBuild %s succeeded, cleaning up all ephemeral objects used for the build", current.Name)
 
@@ -321,9 +285,9 @@ func (b *buildReconciler) updateMachineOSBuild(ctx context.Context, old, current
 			return fmt.Errorf("could not get MachineConfigPool from MachineOSConfig %q: %w", mosc.Name, err)
 		}
 
-		// Clear BuildDegraded condition if set
-		if err := b.syncBuildSuccessStatus(ctx, mcp); err != nil {
-			klog.Errorf("Failed to clear BuildDegraded condition for pool %s: %v", mcp.Name, err)
+		// Update BuildDegraded condition based on current active build status
+		if err := b.updateImageBuildDegradedCondition(ctx, mcp, mosc); err != nil {
+			klog.Errorf("Failed to update ImageBuildDegraded condition for pool %s: %v", mcp.Name, err)
 		}
 
 		// Clean up ephemeral objects
@@ -369,6 +333,18 @@ func (b *buildReconciler) updateMachineOSConfigStatus(ctx context.Context, mosc 
 		klog.Infof("Updated annotations on MachineOSConfig %q", mosc.Name)
 
 		mosc = updatedMosc
+
+		// When annotations are updated (new build starts), also update observedGeneration
+		// to signal that the controller is processing the current generation
+		if mosc.Status.ObservedGeneration != mosc.GetGeneration() {
+			mosc.Status.ObservedGeneration = mosc.GetGeneration()
+			_, err = b.mcfgclient.MachineconfigurationV1().MachineOSConfigs().UpdateStatus(ctx, mosc, metav1.UpdateOptions{})
+			if err != nil {
+				klog.Errorf("Failed to update observedGeneration on MachineOSConfig %q: %v", mosc.Name, err)
+			} else {
+				klog.Infof("Updated observedGeneration on MachineOSConfig %q to %d", mosc.Name, mosc.GetGeneration())
+			}
+		}
 	}
 
 	// Skip the status update if digest image pushspec hasn't been set yet.
@@ -457,14 +433,14 @@ func (b *buildReconciler) startBuild(ctx context.Context, mosb *mcfgv1.MachineOS
 		return fmt.Errorf("could not update MachineOSConfig %q status for MachineOSBuild %q: %w", mosc.Name, mosb.Name, err)
 	}
 
-	// Initialize BuildDegraded condition to False when build starts
+	// Update BuildDegraded condition based on current active build status when build starts
 	mcp, err := b.machineConfigPoolLister.Get(mosc.Spec.MachineConfigPool.Name)
 	if err != nil {
 		return fmt.Errorf("could not get MachineConfigPool from MachineOSConfig %q: %w", mosc.Name, err)
 	}
 
-	if err := b.initializeBuildDegradedCondition(ctx, mcp); err != nil {
-		klog.Errorf("Failed to initialize BuildDegraded condition for pool %s: %v", mcp.Name, err)
+	if err := b.updateImageBuildDegradedCondition(ctx, mcp, mosc); err != nil {
+		klog.Errorf("Failed to update ImageBuildDegraded condition for pool %s: %v", mcp.Name, err)
 	}
 
 	return nil
@@ -1632,4 +1608,80 @@ func (b *buildReconciler) syncBuildFailureStatus(ctx context.Context, pool *mcfg
 		klog.Errorf("Error updating MachineConfigPool %s BuildDegraded status: %v", pool.Name, updateErr)
 	}
 	return buildErr
+}
+
+// getCurrentBuild finds the currently active (most relevant) build from a list of MachineOSBuilds
+// Priority: 1) Currently referenced by MOSC, 2) Building/Prepared, 3) Most recent
+func (b *buildReconciler) getCurrentBuild(mosc *mcfgv1.MachineOSConfig, mosbList []*mcfgv1.MachineOSBuild) *mcfgv1.MachineOSBuild {
+	var activeBuild *mcfgv1.MachineOSBuild
+	var mostRecentBuild *mcfgv1.MachineOSBuild
+
+	// First, look for the build currently referenced by the MachineOSConfig
+	for _, mosb := range mosbList {
+		if isMachineOSBuildCurrentForMachineOSConfig(mosc, mosb) {
+			activeBuild = mosb
+			break
+		}
+	}
+
+	// If no current build found, look for active builds (building/prepared)
+	if activeBuild == nil {
+		for _, mosb := range mosbList {
+			mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
+			if mosbState.IsBuilding() || mosbState.IsBuildPrepared() {
+				activeBuild = mosb
+				break
+			}
+		}
+	}
+
+	// Keep track of the most recent build regardless
+	for _, mosb := range mosbList {
+		if mostRecentBuild == nil || mosb.CreationTimestamp.After(mostRecentBuild.CreationTimestamp.Time) {
+			mostRecentBuild = mosb
+		}
+	}
+
+	// If still no active build, use the most recent one
+	if activeBuild == nil {
+		activeBuild = mostRecentBuild
+	}
+
+	return activeBuild
+}
+
+// updateImageBuildDegradedCondition examines all MachineOSBuilds for the MachineOSConfig
+// and sets the ImageBuildDegraded condition based on the status of the currently active build
+func (b *buildReconciler) updateImageBuildDegradedCondition(ctx context.Context, pool *mcfgv1.MachineConfigPool, mosc *mcfgv1.MachineOSConfig) error {
+	mosbList, err := b.getMachineOSBuildsForMachineOSConfig(mosc)
+	if err != nil {
+		return fmt.Errorf("could not get MachineOSBuilds for MachineOSConfig %q: %w", mosc.Name, err)
+	}
+
+	// Find the currently active build
+	activeBuild := b.getCurrentBuild(mosc, mosbList)
+
+	// If no builds exist at all, clear any existing BuildDegraded condition
+	if activeBuild == nil {
+		return b.syncBuildSuccessStatus(ctx, pool)
+	}
+
+	// Update condition based on the active build's status
+	activeState := ctrlcommon.NewMachineOSBuildState(activeBuild)
+
+	switch {
+	case activeState.IsBuildFailure():
+		// Set BuildDegraded=True for failed builds
+		buildError := getBuildErrorFromMOSB(activeBuild)
+		return b.syncBuildFailureStatus(ctx, pool, buildError, activeBuild.Name)
+	case activeState.IsBuildSuccess():
+		// Clear BuildDegraded=False for successful builds
+		return b.syncBuildSuccessStatus(ctx, pool)
+	case activeState.IsBuilding(), activeState.IsBuildPrepared():
+		// Clear BuildDegraded=False for builds in progress (allow retry after previous failure)
+		return b.initializeBuildDegradedCondition(ctx, pool)
+	}
+
+	// For any other states, don't change the condition
+	return nil
 }

@@ -1452,13 +1452,150 @@ func TestImageBuildDegradedOnFailureAndClearedOnBuildStart(t *testing.T) {
 	moscChangeMosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, cs.GetKubeclient(), updated, mcp)
 
 	// Wait for the second build to start
-	waitForBuildToStart(t, cs, moscChangeMosb)
+	secondMosb := waitForBuildToStart(t, cs, moscChangeMosb)
+	t.Logf("Second build started successfully: %s", secondMosb.Name)
 
 	// Wait for and verify ImageBuildDegraded condition is False after the new build starts.
+	// The condition should be cleared when the build starts.
 	degradedCondition = waitForImageBuildDegradedCondition(ctx, t, cs, layeredMCPName, corev1.ConditionFalse)
 	require.NotNil(t, degradedCondition, "ImageBuildDegraded condition should still be present")
 	assert.Equal(t, string(mcfgv1.MachineConfigPoolBuilding), degradedCondition.Reason, "ImageBuildDegraded reason should be Building")
-	t.Logf("ImageBuildDegraded condition correctly cleared to False with message: %s", degradedCondition.Message)
+	t.Logf("ImageBuildDegraded condition correctly cleared to False when build started with message: %s", degradedCondition.Message)
+
+	// Wait for the second build to complete successfully
+	finishedBuild := waitForBuildToComplete(t, cs, secondMosb)
+	t.Logf("Second build completed successfully: %s", finishedBuild.Name)
+
+	// Wait for the MachineOSConfig to get the new pullspec, which indicates full reconciliation
+	waitForMOSCToGetNewPullspec(ctx, t, cs, mosc.Name, string(finishedBuild.Status.DigestedImagePushSpec))
+
+	// Wait for and verify ImageBuildDegraded condition is False with reason BuildSucceeded
+	degradedCondition = waitForImageBuildDegradedCondition(ctx, t, cs, layeredMCPName, corev1.ConditionFalse)
+	require.NotNil(t, degradedCondition, "ImageBuildDegraded condition should still be present")
+	assert.Equal(t, string(mcfgv1.MachineConfigPoolBuildSuccess), degradedCondition.Reason, "ImageBuildDegraded reason should be BuildSuccess")
+	t.Logf("ImageBuildDegraded condition correctly set to False when build succeeded with message: %s", degradedCondition.Message)
+
+	// Verify MCP status is correct after successful build and full reconciliation
+	successMcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(ctx, layeredMCPName, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	// After successful build completion and full reconciliation, MCP should show:
+	// Updated=True, Updating=False, Degraded=False, ImageBuildDegraded=False
+	kubeassert.Eventually().MachineConfigPoolReachesState(successMcp, func(mcp *mcfgv1.MachineConfigPool, err error) (bool, error) {
+		if err != nil {
+			return false, err
+		}
+		// Return false (keep polling) if conditions don't match expected state
+		if !apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdated) ||
+			apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdating) ||
+			apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolDegraded) ||
+			apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolImageBuildDegraded) {
+			return false, nil
+		}
+
+		// Return true when expected state is reached
+		t.Logf("MCP status after successful build - Updated: %v, Updating: %v, Degraded: %v, ImageBuildDegraded: %v",
+			apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdated),
+			apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdating),
+			apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolDegraded),
+			apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolImageBuildDegraded))
+
+		return true, nil
+	}, "MCP should reach correct state after successful build (Updated=True, Updating=False, Degraded=False, ImageBuildDegraded=False)")
+
+	// Now trigger another build to test MCP status transitions when a new build starts
+	t.Logf("Triggering a third build to test MCP status transitions")
+
+	// Modify the containerfile slightly to trigger a new build
+	apiMosc, err = cs.MachineconfigurationV1Interface.MachineOSConfigs().Get(ctx, mosc.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	// Add a comment to the containerfile to change it and trigger a new build
+	modifiedDockerfile := cowsayDockerfile + "\n# Comment to trigger new build"
+	apiMosc.Spec.Containerfile = []mcfgv1.MachineOSContainerfile{
+		{
+			ContainerfileArch: mcfgv1.NoArch,
+			Content:           modifiedDockerfile,
+		},
+	}
+
+	updated, err = cs.MachineconfigurationV1Interface.MachineOSConfigs().Update(ctx, apiMosc, metav1.UpdateOptions{})
+	require.NoError(t, err)
+
+	t.Logf("Modified containerfile, waiting for third build to start")
+
+	// Get the updated MCP to compute the new build
+	mcp, err = cs.MachineconfigurationV1Interface.MachineConfigPools().Get(ctx, layeredMCPName, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	// Compute the new MachineOSBuild name for the third build
+	thirdMoscMosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, cs.GetKubeclient(), updated, mcp)
+
+	// Wait for the third build to start
+	thirdMosb := waitForBuildToStart(t, cs, thirdMoscMosb)
+	t.Logf("Third build started: %s", thirdMosb.Name)
+
+	// Verify MCP status during active build:
+	// Updated=False, Updating=True, Degraded=False, ImageBuildDegraded=False
+	buildingMcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(ctx, layeredMCPName, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	kubeassert.Eventually().MachineConfigPoolReachesState(buildingMcp, func(mcp *mcfgv1.MachineConfigPool, err error) (bool, error) {
+		if err != nil {
+			return false, err
+		}
+		// During build, MCP should show: Updated=False, Updating=True
+		if apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdated) ||
+			!apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdating) ||
+			apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolDegraded) ||
+			apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolImageBuildDegraded) {
+			return false, nil
+		}
+
+		t.Logf("MCP status during active build - Updated: %v, Updating: %v, Degraded: %v, ImageBuildDegraded: %v",
+			apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdated),
+			apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdating),
+			apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolDegraded),
+			apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolImageBuildDegraded))
+
+		return true, nil
+	}, "MCP should reach correct state during active build (Updated=False, Updating=True, Degraded=False, ImageBuildDegraded=False)")
+
+	// Wait for the third build to complete successfully
+	finalBuild := waitForBuildToComplete(t, cs, thirdMosb)
+	t.Logf("Third build completed successfully: %s", finalBuild.Name)
+
+	// Wait for the MachineOSConfig to get the new pullspec, which indicates full reconciliation
+	waitForMOSCToGetNewPullspec(ctx, t, cs, mosc.Name, string(finalBuild.Status.DigestedImagePushSpec))
+
+	// Final verification: MCP status should return to:
+	// Updated=True, Updating=False, Degraded=False, ImageBuildDegraded=False
+	finalMcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(ctx, layeredMCPName, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	kubeassert.Eventually().MachineConfigPoolReachesState(finalMcp, func(mcp *mcfgv1.MachineConfigPool, err error) (bool, error) {
+		if err != nil {
+			return false, err
+		}
+		// Return false (keep polling) if conditions don't match expected state
+		if !apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdated) ||
+			apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdating) ||
+			apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolDegraded) ||
+			apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolImageBuildDegraded) {
+			return false, nil
+		}
+
+		// Return true when expected state is reached
+		t.Logf("Final MCP status after third build completion - Updated: %v, Updating: %v, Degraded: %v, ImageBuildDegraded: %v",
+			apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdated),
+			apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdating),
+			apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolDegraded),
+			apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolImageBuildDegraded))
+
+		return true, nil
+	}, "MCP should return to correct state after final build completion (Updated=True, Updating=False, Degraded=False, ImageBuildDegraded=False)")
+
+	t.Logf("All MCP status transitions verified successfully across build failure, success, and subsequent new build")
 }
 
 // TestCurrentMachineOSBuildAnnotationHandling tests that the node controller correctly uses the
