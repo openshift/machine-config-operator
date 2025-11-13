@@ -185,24 +185,11 @@ func (cs *clusterServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error
 	addDataAndMaybeAppendToIgnition(cloudProviderCAPath, cc.Spec.CloudProviderCAData, &ignConf)
 
 	desiredImage := cs.resolveDesiredImageForPool(mp)
-	klog.Infof("desiredImage is found to be %s", desiredImage)
 
-	appenders := []appenderFunc{
-		func(cfg *ign3types.Config, _ *mcfgv1.MachineConfig) error {
-			return appendNodeAnnotations(cfg, currConf, desiredImage)
-		},
-		func(cfg *ign3types.Config, _ *mcfgv1.MachineConfig) error {
-			return appendKubeConfig(cfg, cs.kubeconfigFunc)
-		},
-		appendInitialMachineConfig,
-		func(cfg *ign3types.Config, _ *mcfgv1.MachineConfig) error { return appendCerts(cfg, []string{}, "") },
-		// Inject desired image into the MC
-		appendDesiredOSImage(desiredImage),
-		// Must be last
-		func(cfg *ign3types.Config, mc *mcfgv1.MachineConfig) error {
-			return appendEncapsulated(cfg, mc, cr.version)
-		},
-	}
+	appenders := newAppendersBuilder(cr.version, cs.kubeconfigFunc, []string{}, "").
+		WithNodeAnnotations(currConf, desiredImage).
+		WithCustomAppender(appendDesiredOSImage(desiredImage)).
+		build()
 
 	for _, a := range appenders {
 		if err := a(&ignConf, mc); err != nil {
@@ -308,20 +295,6 @@ func (cs *clusterServer) resolveDesiredImageForPool(pool *mcfgv1.MachineConfigPo
 		return ""
 	}
 
-	// Also verify the corresponding MOSB is successful to ensure we don't serve an image that hasn't been built yet
-	//
-	// Note: We cannot directly use the MOSB reference from mosc.Status.MachineOSBuild here because
-	// there can be multiple MOSBs for a single MOSC (one per rendered MachineConfig). The MOSC status
-	// points to the latest successful build, but we need the MOSB matching the pool's rollout state.
-	// We use pool.Status.Configuration.Name (old config) when UpdatedMachineCount == 0, and
-	// pool.Spec.Configuration.Name (new config) when UpdatedMachineCount > 0. This matches the existing
-	// MCS behavior for non-layered nodes and ensures we serve the correct image during rollouts.
-	//
-	// TODO(dkhater): For added safety during node scale-up, we should only serve the new build if it's
-	// both successful AND at least one node has already updated to it. This would more closely match
-	// the existing MCS rollout behavior and provide better safety, though it would result in additional
-	// reboots when scaling nodes during an update.
-	// See https://issues.redhat.com/browse/MCO-1940 for tracking this improvement.
 	mosbList, err := cs.machineOSBuildLister.List(labels.Everything())
 	if err != nil {
 		klog.Infof("Could not list MachineOSBuilds for pool %s: %v", pool.Name, err)
@@ -353,6 +326,12 @@ func (cs *clusterServer) resolveDesiredImageForPool(pool *mcfgv1.MachineConfigPo
 	mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
 	if !mosbState.IsBuildSuccess() {
 		klog.Infof("Pool %s has MachineOSBuild but build not successful yet", pool.Name)
+		return ""
+	}
+
+	// Only serve layered images if at least one node has completed the update.
+	if pool.Status.UpdatedMachineCount == 0 {
+		klog.Infof("Pool %s has successful MOSB %s but no nodes have completed update yet (UpdatedMachineCount=0), will not serve layered image during bootstrap", pool.Name, mosb.Name)
 		return ""
 	}
 
