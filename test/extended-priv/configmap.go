@@ -2,6 +2,7 @@ package extended
 
 import (
 	"encoding/json"
+	"fmt"
 
 	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
@@ -27,6 +28,24 @@ func NewConfigMapList(oc *exutil.CLI, namespace string) *ConfigMapList {
 	return &ConfigMapList{ResourceList: *NewNamespacedResourceList(oc, "ConfigMap", namespace)}
 }
 
+// GetDataValue returns the value of a specific key in the .data field
+func (cm *ConfigMap) GetDataValue(key string) (string, error) {
+	// We cant use the "resource.Get" method, because exutil.client will trim the output, removing spaces and newlines that could be important in a configuration.
+	dataMap, err := cm.GetDataMap()
+
+	if err != nil {
+		return "", err
+	}
+
+	data, ok := dataMap[key]
+	if !ok {
+		return "", fmt.Errorf("Key %s does not exist in the .data in Configmap -n %s %s",
+			key, cm.GetNamespace(), cm.GetName())
+	}
+
+	return data, nil
+}
+
 // GetDataMap returns the valus in the .data field as a map[string][string]
 func (cm *ConfigMap) GetDataMap() (map[string]string, error) {
 	data := map[string]string{}
@@ -40,6 +59,16 @@ func (cm *ConfigMap) GetDataMap() (map[string]string, error) {
 	}
 
 	return data, nil
+}
+
+// GetDataValueOrFail returns the value of a specific key in the .data field and fails the test if any error happens
+func (cm *ConfigMap) GetDataValueOrFail(key string) string {
+	value, err := cm.GetDataValue(key)
+	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(),
+		"Could get the value for key %s in configmap -n %s %s",
+		key, cm.GetNamespace(), cm.GetName())
+
+	return value
 }
 
 // GetAll returns a []ConfigMap list with all existing pinnedimageset sorted by creation timestamp
