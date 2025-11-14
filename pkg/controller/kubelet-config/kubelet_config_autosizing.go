@@ -28,41 +28,20 @@ SYSTEM_RESERVED_ES=1Gi
 `
 )
 
-// createAutoSizingIgnConfig creates the Ignition config with environment variables
-// to disable auto-sizing of system reserved resources
-func createAutoSizingIgnConfig() ([]byte, error) {
-	autoSizingFile := ctrlcommon.NewIgnFileBytes(AutoSizingEnvFilePath, []byte(DefaultAutoSizingEnvContent))
-	autoSizingIgnConfig := ctrlcommon.NewIgnConfig()
-	autoSizingIgnConfig.Storage.Files = append(autoSizingIgnConfig.Storage.Files, autoSizingFile)
-	rawAutoSizingIgn, err := json.Marshal(autoSizingIgnConfig)
+// ensureAutoSizingMachineConfigs ensures auto-sizing MachineConfigs exist for all MachineConfigPools
+func (ctrl *Controller) ensureAutoSizingMachineConfigs() error {
+	mcpPools, err := ctrl.mcpLister.List(labels.Everything())
 	if err != nil {
-		return nil, err
-	}
-	return rawAutoSizingIgn, nil
-}
-
-// newAutoSizingMachineConfig creates an auto-sizing MachineConfig for a given pool
-func newAutoSizingMachineConfig(pool *mcfgv1.MachineConfigPool) (*mcfgv1.MachineConfig, error) {
-	autoSizingDisabledMCName := fmt.Sprintf(AutoSizingMachineConfigNamePrefix, pool.Name)
-	ignConfig := ctrlcommon.NewIgnConfig()
-	autoSizingMC, err := ctrlcommon.MachineConfigFromIgnConfig(pool.Name, autoSizingDisabledMCName, ignConfig)
-	if err != nil {
-		return nil, err
+		return fmt.Errorf("could not list MachineConfigPools: %w", err)
 	}
 
-	rawAutoSizingIgn, err := createAutoSizingIgnConfig()
-	if err != nil {
-		return nil, err
-	}
-	autoSizingMC.Spec.Config.Raw = rawAutoSizingIgn
-	// Do not add GeneratedByControllerVersionAnnotationKey annotation to auto-sizing MachineConfig. It will fail upgrade.
-	// This annotation is added for informing the user that the auto-sizing MachineConfig was added in a patch release
-	// to identify clusters created before 4.21 release.
-	autoSizingMC.ObjectMeta.Annotations = map[string]string{
-		"openshift-patch-reference": "machineConfig-to-set-the-default-behavior-of-NODE_SIZING_ENABLED",
+	for _, pool := range mcpPools {
+		if err := ctrl.createAutoSizingMachineConfigIfNeeded(pool); err != nil {
+			return fmt.Errorf("could not ensure auto-sizing MachineConfig for pool %v: %w", pool.Name, err)
+		}
 	}
 
-	return autoSizingMC, nil
+	return nil
 }
 
 // createAutoSizingMachineConfigIfNeeded creates an auto-sizing MachineConfig for a given pool if it doesn't exist
@@ -93,22 +72,6 @@ func (ctrl *Controller) createAutoSizingMachineConfigIfNeeded(pool *mcfgv1.Machi
 	return nil
 }
 
-// ensureAutoSizingMachineConfigs ensures auto-sizing MachineConfigs exist for all MachineConfigPools
-func (ctrl *Controller) ensureAutoSizingMachineConfigs() error {
-	mcpPools, err := ctrl.mcpLister.List(labels.Everything())
-	if err != nil {
-		return fmt.Errorf("could not list MachineConfigPools: %w", err)
-	}
-
-	for _, pool := range mcpPools {
-		if err := ctrl.createAutoSizingMachineConfigIfNeeded(pool); err != nil {
-			return fmt.Errorf("could not ensure auto-sizing MachineConfig for pool %v: %w", pool.Name, err)
-		}
-	}
-
-	return nil
-}
-
 // RunAutoSizingBootstrap generates auto-sizing MachineConfig objects for all mcpPools
 func RunAutoSizingBootstrap(mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
 	configs := []*mcfgv1.MachineConfig{}
@@ -123,4 +86,41 @@ func RunAutoSizingBootstrap(mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.Mac
 	}
 
 	return configs, nil
+}
+
+// newAutoSizingMachineConfig creates an auto-sizing MachineConfig for a given pool
+func newAutoSizingMachineConfig(pool *mcfgv1.MachineConfigPool) (*mcfgv1.MachineConfig, error) {
+	autoSizingDisabledMCName := fmt.Sprintf(AutoSizingMachineConfigNamePrefix, pool.Name)
+	ignConfig := ctrlcommon.NewIgnConfig()
+	autoSizingMC, err := ctrlcommon.MachineConfigFromIgnConfig(pool.Name, autoSizingDisabledMCName, ignConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	rawAutoSizingIgn, err := createAutoSizingIgnConfig()
+	if err != nil {
+		return nil, err
+	}
+	autoSizingMC.Spec.Config.Raw = rawAutoSizingIgn
+	// Do not add GeneratedByControllerVersionAnnotationKey annotation to auto-sizing MachineConfig. It will fail upgrade.
+	// This annotation is added for informing the user that the auto-sizing MachineConfig was added in a patch release
+	// to identify clusters created before 4.21 release.
+	autoSizingMC.ObjectMeta.Annotations = map[string]string{
+		"openshift-patch-reference": "machineConfig-to-set-the-default-behavior-of-NODE_SIZING_ENABLED",
+	}
+
+	return autoSizingMC, nil
+}
+
+// createAutoSizingIgnConfig creates the Ignition config with environment variables
+// to disable auto-sizing of system reserved resources
+func createAutoSizingIgnConfig() ([]byte, error) {
+	autoSizingFile := ctrlcommon.NewIgnFileBytes(AutoSizingEnvFilePath, []byte(DefaultAutoSizingEnvContent))
+	autoSizingIgnConfig := ctrlcommon.NewIgnConfig()
+	autoSizingIgnConfig.Storage.Files = append(autoSizingIgnConfig.Storage.Files, autoSizingFile)
+	rawAutoSizingIgn, err := json.Marshal(autoSizingIgnConfig)
+	if err != nil {
+		return nil, err
+	}
+	return rawAutoSizingIgn, nil
 }
