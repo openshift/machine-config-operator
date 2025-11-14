@@ -119,11 +119,15 @@ func TestBootstrapNodeConfigDefault(t *testing.T) {
 						if err != nil {
 							t.Errorf("could not run node config bootstrap: %v", err)
 						}
+						// Bootstrap now creates 2 MachineConfigs (auto-sizing MCs are created separately):
+						// 1. master node config (97-master-generated-kubelet)
+						// 2. worker node config (97-worker-generated-kubelet)
 						expectedCount := 2
 						if len(mcs) != expectedCount {
 							t.Errorf("expected %v machine configs generated with the default node config, got %d machine configs", expectedCount, len(mcs))
 						}
-						require.Equal(t, mcs[0].Spec.KernelArguments, expect.MasterKernelArgs)
+						// The kernel args are on the node config MCs (indices 0 and 1)
+						require.Equal(t, expect.MasterKernelArgs, mcs[0].Spec.KernelArguments)
 					}
 				})
 			}
@@ -218,8 +222,13 @@ func TestNodeConfigCustom(t *testing.T) {
 
 			mcList, err = c.client.MachineconfigurationV1().MachineConfigs().List(context.TODO(), metav1.ListOptions{})
 			require.NoError(t, err)
+			// Now expecting 1 MachineConfig:
+			// 1. Node config MC for worker (97-worker-generated-kubelet)
+			// Note: The pre-existing nodeKeyCustom (97-custom-generated-kubelet) is cleaned up by
+			// cleanUpDuplicatedMC because it was created without the proper annotation
 			require.Len(t, mcList.Items, 1)
-			require.NotEqual(t, nodeKeyCustom, mcList.Items[0].Name)
+			// Verify MachineConfig is present
+			require.Equal(t, "97-worker-generated-kubelet", mcList.Items[0].Name)
 		})
 	}
 }
