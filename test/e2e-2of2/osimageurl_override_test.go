@@ -22,7 +22,7 @@ import (
 // 6. Wait for the node to roll back.
 // 7. Assert that the binaries are no longer present.
 func TestOSImageURLOverride(t *testing.T) {
-	envVarName := "MCO_OS_IMAGE_URL"
+	envVarName := "MCO_OS_IMAGE_URL_RHEL_9"
 
 	osImageURL, ok := os.LookupEnv(envVarName)
 	if ok && osImageURL != "" {
