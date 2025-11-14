@@ -112,7 +112,7 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 				return err
 			}
 		}
-		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, ctrl.fgHandler, apiServer)
+		originalKubeConfig, _, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, ctrl.fgHandler, apiServer)
 		if err != nil {
 			return err
 		}
@@ -290,7 +290,7 @@ func RunNodeConfigBootstrap(templateDir string, fgHandler ctrlcommon.FeatureGate
 		if err != nil {
 			return nil, err
 		}
-		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cconfig, templateDir, role, fgHandler, apiServer)
+		originalKubeConfig, _, err := generateOriginalKubeletConfigWithFeatureGates(cconfig, templateDir, role, fgHandler, apiServer)
 		if err != nil {
 			return nil, err
 		}
