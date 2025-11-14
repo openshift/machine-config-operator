@@ -535,10 +535,19 @@ func ReexecuteForTargetRoot(target string) error {
 	if sourceOsVersion.IsLikeRHEL() && targetOsVersion.IsLikeRHEL() {
 		sourceMajor := sourceOsVersion.BaseVersionMajor()
 		targetMajor := targetOsVersion.BaseVersionMajor()
-		if sourceMajor == "9" && targetMajor == "8" {
+
+		// When container is newer than target, use target-compatible binary
+		switch {
+		case sourceMajor == "10" && targetMajor == "9":
+			sourceBinarySuffix = ".rhel9"
+			klog.Info("container is rhel10, target is rhel9")
+		case sourceMajor == "10" && targetMajor == "8":
+			sourceBinarySuffix = ".rhel8"
+			klog.Info("container is rhel10, target is rhel8")
+		case sourceMajor == "9" && targetMajor == "8":
 			sourceBinarySuffix = ".rhel8"
 			klog.Info("container is rhel9, target is rhel8")
-		} else {
+		default:
 			klog.Infof("using appropriate binary for source=rhel-%s target=rhel-%s", sourceMajor, targetMajor)
 		}
 	} else {
