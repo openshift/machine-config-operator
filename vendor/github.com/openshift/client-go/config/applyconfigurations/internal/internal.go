@@ -164,6 +164,10 @@ var schemaYAML = typed.YAMLObject(`types:
         namedType: com.github.openshift.api.config.v1.CloudLoadBalancerConfig
       default:
         dnsType: PlatformDefault
+    - name: ipFamily
+      type:
+        scalar: string
+      default: IPv4
     - name: region
       type:
         scalar: string
@@ -363,6 +367,10 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: cloudName
       type:
         scalar: string
+    - name: ipFamily
+      type:
+        scalar: string
+      default: IPv4
     - name: networkResourceGroupName
       type:
         scalar: string
@@ -4145,6 +4153,46 @@ var schemaYAML = typed.YAMLObject(`types:
         elementType:
           namedType: __untyped_deduced_
         elementRelationship: separable
+- name: com.github.openshift.api.config.v1alpha1.CRIOCredentialProviderConfig
+  map:
+    fields:
+    - name: apiVersion
+      type:
+        scalar: string
+    - name: kind
+      type:
+        scalar: string
+    - name: metadata
+      type:
+        namedType: io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta
+      default: {}
+    - name: spec
+      type:
+        namedType: com.github.openshift.api.config.v1alpha1.CRIOCredentialProviderConfigSpec
+      default: {}
+    - name: status
+      type:
+        namedType: com.github.openshift.api.config.v1alpha1.CRIOCredentialProviderConfigStatus
+- name: com.github.openshift.api.config.v1alpha1.CRIOCredentialProviderConfigSpec
+  map:
+    fields:
+    - name: matchImages
+      type:
+        list:
+          elementType:
+            scalar: string
+          elementRelationship: associative
+- name: com.github.openshift.api.config.v1alpha1.CRIOCredentialProviderConfigStatus
+  map:
+    fields:
+    - name: conditions
+      type:
+        list:
+          elementType:
+            namedType: io.k8s.apimachinery.pkg.apis.meta.v1.Condition
+          elementRelationship: associative
+          keys:
+          - type
 - name: com.github.openshift.api.config.v1alpha1.ClusterImagePolicy
   map:
     fields:

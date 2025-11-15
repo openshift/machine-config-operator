@@ -200,6 +200,21 @@ func findPolicyJSON(mc *mcfgv1.MachineConfig) (*ign3types.File, error) {
 	return nil, fmt.Errorf("could not find Policy JSON")
 }
 
+func findCredProviderConfig(mc *mcfgv1.MachineConfig, credProviderConfigPath string) (*ign3types.File, error) {
+	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+	if err != nil {
+		return nil, fmt.Errorf("parsing Credential Provider Ignition config failed with error: %w", err)
+	}
+	for _, c := range ignCfg.Storage.Files {
+		klog.Infof("Checking file path : %s", c.Path)
+		if c.Path == credProviderConfigPath {
+			c := c
+			return &c, nil
+		}
+	}
+	return nil, fmt.Errorf("could not find Credential Provider Config")
+}
+
 // Deprecated: use getManagedKeyCtrCfg
 func getManagedKeyCtrCfgDeprecated(pool *mcfgv1.MachineConfigPool) string {
 	return fmt.Sprintf("99-%s-%s-containerruntime", pool.Name, pool.ObjectMeta.UID)
