@@ -600,7 +600,11 @@ func (mcp *MachineConfigPool) RecoverFromDegraded() error {
 	mcpNodes, _ := mcp.GetNodes()
 	for _, node := range mcpNodes {
 		logger.Infof("Restoring desired config in node: %s", node)
-		if node.IsUpdated() {
+		isUpdated, err := node.IsUpdated()
+		if err != nil {
+			return fmt.Errorf("Error checking if node %s is updated: %s", node.GetName(), err)
+		}
+		if isUpdated {
 			logger.Infof("node is updated, don't need to recover")
 		} else {
 			err := node.RestoreDesiredConfig()
@@ -814,9 +818,13 @@ func DebugDegradedStatus(mcp *MachineConfigPool) {
 	allNodes, err := nodeList.GetAll()
 	if err == nil {
 		for _, node := range allNodes {
-			state := node.GetMachineConfigState()
-			if state != "Done" {
-				logger.Infof("NODE %s IS %s", node.GetName(), state)
+			state, err := node.GetMachineConfigState()
+			if state != "Done" || err != nil {
+				if err != nil {
+					logger.Infof("Error getting machine config state for node %s: %v", node.GetName(), err)
+				} else {
+					logger.Infof("NODE %s IS %s", node.GetName(), state)
+				}
 				logger.Infof("%s", node.PrettyString())
 				logger.Infof("#######################\n\n")
 				mcdLogs, err := node.GetMCDaemonLogs("")
