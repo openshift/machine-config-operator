@@ -1,0 +1,18 @@
+mode: 0755
+path: "/usr/local/bin/iri-setup-registry.sh"
+contents:
+  inline: |
+    #!/bin/bash
+
+    # Create certificate for the local registry
+    mkdir -p /tmp/certs
+    openssl req -newkey rsa:4096 -nodes -sha256 \
+      -keyout /tmp/certs/iri-registry-tls.key \
+      -subj "/C=US/ST=Denial/L=Springfield/O=Dis/CN=api-int.{{.DNS.Spec.BaseDomain}}" \
+      -addext "subjectAltName=DNS:api-int.{{.DNS.Spec.BaseDomain}}" \
+      -x509 -days 36500 \
+      -out /tmp/certs/iri-registry-tls.crt
+
+    # Apply certificates
+    mv /tmp/certs/iri-registry-tls.crt /etc/pki/ca-trust/source/anchors/
+    update-ca-trust extract

@@ -451,8 +451,13 @@ func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, 
 func generateOriginalKubeletConfigIgn(cc *mcfgv1.ControllerConfig, templatesDir, role string, apiServer *osev1.APIServer) (*ign3types.File, error) {
 	// Render the default templates
 	tlsMinVersion, tlsCipherSuites := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
-	rc := &mtmpl.RenderConfig{ControllerConfigSpec: &cc.Spec, TLSMinVersion: tlsMinVersion, TLSCipherSuites: tlsCipherSuites}
-	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templatesDir)
+	rc := &mtmpl.RenderContext{
+		Config:       &mtmpl.RenderConfig{ControllerConfigSpec: &cc.Spec, TLSMinVersion: tlsMinVersion, TLSCipherSuites: tlsCipherSuites},
+		TemplatesDir: templatesDir,
+		Role:         role,
+	}
+
+	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc)
 	if err != nil {
 		return nil, fmt.Errorf("GenerateMachineConfigsforRole failed with error: %w", err)
 	}

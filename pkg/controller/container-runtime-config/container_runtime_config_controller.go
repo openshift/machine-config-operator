@@ -501,11 +501,15 @@ func (ctrl *Controller) handleImgErr(err error, key string) {
 
 // generateOriginalContainerRuntimeConfigs returns rendered default storage, registries and policy config files
 func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.ControllerConfig, role string) (*ign3types.File, *ign3types.File, *ign3types.File, error) {
-	// Render the default templates
-	rc := &mtmpl.RenderConfig{
-		ControllerConfigSpec: &cc.Spec,
+	rc := &mtmpl.RenderContext{
+		Config: &mtmpl.RenderConfig{
+			ControllerConfigSpec: &cc.Spec,
+		},
+		TemplatesDir: templateDir,
+		Role:         role,
 	}
-	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templateDir)
+
+	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("generateMachineConfigsforRole failed with error %w", err)
 	}

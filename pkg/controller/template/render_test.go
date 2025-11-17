@@ -199,6 +199,13 @@ func TestSkipMissing(t *testing.T) {
 
 const templateDir = "../../../templates"
 
+func dummyRenderContext(cconfig *mcfgv1.ControllerConfig) *RenderContext {
+	return &RenderContext{
+		TemplatesDir: templateDir,
+		Config:       &RenderConfig{&cconfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil},
+	}
+}
+
 var (
 	configs = map[string]string{
 		"aws":                    "./test_data/controller_config_aws.yaml",
@@ -239,14 +246,14 @@ func TestInvalidPlatform(t *testing.T) {
 
 	// we must treat unrecognized constants as "none"
 	controllerConfig.Spec.Infra.Status.PlatformStatus.Type = "_bad_"
-	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil}, templateDir)
+	_, err = generateTemplateMachineConfigs(dummyRenderContext(controllerConfig))
 	if err != nil {
 		t.Errorf("expect nil error, got: %v", err)
 	}
 
 	// explicitly blocked
 	controllerConfig.Spec.Infra.Status.PlatformStatus.Type = "_base"
-	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil}, templateDir)
+	_, err = generateTemplateMachineConfigs(dummyRenderContext(controllerConfig))
 	expectErr(err, "failed to create MachineConfig for role master: platform _base unsupported")
 }
 
@@ -257,7 +264,7 @@ func TestGenerateMachineConfigs(t *testing.T) {
 			t.Fatalf("failed to get controllerconfig config: %v", err)
 		}
 
-		cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil}, templateDir)
+		cfgs, err := generateTemplateMachineConfigs(dummyRenderContext(controllerConfig))
 		if err != nil {
 			t.Fatalf("failed to generate machine configs: %v", err)
 		}
@@ -438,7 +445,7 @@ func TestGetPaths(t *testing.T) {
 			}
 			c.res = append(c.res, platformBase)
 
-			got := getPaths(&RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil}, config.Spec.Platform)
+			got := getPaths(dummyRenderContext(config), config.Spec.Platform)
 			if reflect.DeepEqual(got, c.res) {
 				t.Fatalf("mismatch got: %s want: %s", got, c.res)
 			}

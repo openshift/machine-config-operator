@@ -60,6 +60,9 @@ const (
 	// APIServerInstanceName is a singleton name for APIServer configuration
 	APIServerInstanceName = "cluster"
 
+	// InternalReleaseImageInstanceName is a singleton name for InternalReleaseImage configuration
+	InternalReleaseImageInstanceName = "cluster"
+
 	// APIServerInstanceName is a singleton name for APIServer configuration
 	APIServerBootstrapFileLocation = "/etc/mcs/bootstrap/api-server/api-server.yaml"
 
