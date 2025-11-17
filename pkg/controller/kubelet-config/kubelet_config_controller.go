@@ -144,6 +144,15 @@ func New(
 		DeleteFunc: ctrl.deleteKubeletConfig,
 	})
 
+	ccInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addControllerConfig,
+		UpdateFunc: ctrl.updateControllerConfig,
+	})
+
+	mcpInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: ctrl.addMachineConfigPool,
+	})
+
 	featInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addFeature,
 		UpdateFunc: ctrl.updateFeature,
@@ -273,6 +282,67 @@ func (ctrl *Controller) deleteAPIServer(obj interface{}) {
 		}
 	}
 	ctrl.filterAPIServer(apiServer)
+}
+
+func (ctrl *Controller) addControllerConfig(obj interface{}) {
+	cc := obj.(*mcfgv1.ControllerConfig)
+	klog.V(4).Infof("ControllerConfig %s added", cc.Name)
+	// Try to ensure compressible MCs are created when ControllerConfig becomes available
+	if err := ctrl.ensureCompressibleMachineConfigs(); err != nil {
+		klog.Warningf("Error ensuring compressible MachineConfigs after ControllerConfig add: %v", err)
+	}
+}
+
+func (ctrl *Controller) updateControllerConfig(old, cur interface{}) {
+	oldCC := old.(*mcfgv1.ControllerConfig)
+	newCC := cur.(*mcfgv1.ControllerConfig)
+
+	// Check if ControllerConfig just became completed
+	if oldCC.Status.ObservedGeneration != oldCC.Generation &&
+		newCC.Status.ObservedGeneration == newCC.Generation {
+		klog.V(4).Infof("ControllerConfig %s became ready", newCC.Name)
+		// Try to ensure compressible MCs are created when ControllerConfig becomes ready
+		if err := ctrl.ensureCompressibleMachineConfigs(); err != nil {
+			klog.Warningf("Error ensuring compressible MachineConfigs after ControllerConfig update: %v", err)
+		}
+	}
+}
+
+func (ctrl *Controller) addMachineConfigPool(obj interface{}) {
+	pool := obj.(*mcfgv1.MachineConfigPool)
+	klog.V(4).Infof("MachineConfigPool %s added, ensuring compressible MachineConfig exists", pool.Name)
+
+	// Check if ControllerConfig is ready
+	if err := apihelpers.IsControllerConfigCompleted(ctrlcommon.ControllerConfigName, ctrl.ccLister.Get); err != nil {
+		klog.V(4).Infof("ControllerConfig not ready, will create compressible MC for pool %s later", pool.Name)
+		return
+	}
+
+	// Get ControllerConfig
+	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
+	if err != nil {
+		klog.Warningf("Could not get ControllerConfig for new pool %s: %v", pool.Name, err)
+		return
+	}
+
+	// Get APIServer
+	apiServer, err := ctrl.apiserverLister.Get(ctrlcommon.APIServerInstanceName)
+	if err != nil && !macherrors.IsNotFound(err) {
+		klog.Warningf("Could not get APIServer for new pool %s: %v", pool.Name, err)
+		return
+	}
+
+	// Generate kubelet config for this pool
+	_, kubeletContents, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, pool.Name, ctrl.fgHandler, apiServer)
+	if err != nil {
+		klog.Warningf("Failed to generate kubelet config for new pool %s: %v", pool.Name, err)
+		return
+	}
+
+	// Create compressible MC for this pool
+	if err := ctrl.createCompressibleMachineConfigIfNeeded(pool.Name, kubeletContents); err != nil {
+		klog.Warningf("Failed to create compressible machine config for new pool %s: %v", pool.Name, err)
+	}
 }
 
 func kubeletConfigTriggerObjectChange(old, newKubeletConfig *mcfgv1.KubeletConfig) bool {
