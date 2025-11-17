@@ -1178,6 +1178,19 @@ spec:
                                   - topology
                                   - zone
                                   type: object
+                                  x-kubernetes-validations:
+                                  - message: when zoneAffinity type is HostGroup,
+                                      regionAffinity type must be ComputeCluster
+                                    rule: 'has(self.zoneAffinity) && self.zoneAffinity.type
+                                      == ''HostGroup'' ?  has(self.regionAffinity)
+                                      && self.regionAffinity.type == ''ComputeCluster''
+                                      : true'
+                                  - message: when zoneAffinity type is ComputeCluster,
+                                      regionAffinity type must be Datacenter
+                                    rule: 'has(self.zoneAffinity) && self.zoneAffinity.type
+                                      == ''ComputeCluster'' ?  has(self.regionAffinity)
+                                      && self.regionAffinity.type == ''Datacenter''
+                                      : true'
                                 type: array
                                 x-kubernetes-list-map-keys:
                                 - name

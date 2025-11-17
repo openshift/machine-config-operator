@@ -762,6 +762,11 @@ func (in *GCPMachineProviderSpec) DeepCopyInto(out *GCPMachineProviderSpec) {
 		*out = make([]GCPGPUConfig, len(*in))
 		copy(*out, *in)
 	}
+	if in.ProvisioningModel != nil {
+		in, out := &in.ProvisioningModel, &out.ProvisioningModel
+		*out = new(GCPProvisioningModelType)
+		**out = **in
+	}
 	out.ShieldedInstanceConfig = in.ShieldedInstanceConfig
 	if in.ResourceManagerTags != nil {
 		in, out := &in.ResourceManagerTags, &out.ResourceManagerTags
