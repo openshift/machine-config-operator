@@ -3,6 +3,7 @@ package containerruntimeconfig
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -546,6 +547,53 @@ func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.Cont
 	return gmcStorageConfig, gmcRegistriesConfig, gmcPolicyJSON, nil
 }
 
+func generateOriginalCredentialProviderConfig(templateDir string, cc *mcfgv1.ControllerConfig, role string) (*ign3types.File, error) {
+
+	// Render the default templates
+	rc := &mtmpl.RenderConfig{
+		ControllerConfigSpec: &cc.Spec,
+	}
+	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templateDir)
+	if err != nil {
+		return nil, fmt.Errorf("generateMachineConfigsforRole failed with error %w", err)
+	}
+	// Find generated provider.yaml
+	var (
+		config, gmcCredProviderConfig *ign3types.File
+		errCredProvider               error
+		credProviderConfigPath        string
+	)
+
+	// Determine credential provider config path based on platform
+	// staying consistent with path used in pkg/controller/template/render.go
+	credProviderConfigPathFormat := filepath.FromSlash("/etc/kubernetes/credential-providers/%s-credential-provider.yaml")
+	switch cc.Spec.Infra.Status.PlatformStatus.Type {
+	case apicfgv1.AWSPlatformType:
+		credProviderConfigPath = fmt.Sprintf(credProviderConfigPathFormat, "ecr")
+	case apicfgv1.GCPPlatformType:
+		credProviderConfigPath = fmt.Sprintf(credProviderConfigPathFormat, "gcr")
+	case apicfgv1.AzurePlatformType:
+		credProviderConfigPath = fmt.Sprintf(credProviderConfigPathFormat, "acr")
+	default:
+		return nil, fmt.Errorf("unsupported platform type: %s", cc.Spec.Infra.Status.PlatformStatus.Type)
+	}
+	klog.Infof("credential provider config path set to: %s", credProviderConfigPath)
+
+	// Find credential provider config
+	for _, gmc := range generatedConfigs {
+		config, errCredProvider = findCredProviderConfig(gmc, credProviderConfigPath)
+		if errCredProvider != nil {
+			klog.V(4).Infof("could not find credential provider config in generated config %s: %v", gmc.Name, errCredProvider)
+			return nil, fmt.Errorf("could not generate original credential provider configs: %w", errCredProvider)
+		}
+
+		gmcCredProviderConfig = config
+
+	}
+
+	return gmcCredProviderConfig, nil
+}
+
 func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.ContainerRuntimeConfig, err error, args ...interface{}) error {
 	statusUpdateErr := retry.RetryOnConflict(updateBackoff, func() error {
 		newcfg, getErr := ctrl.mccrLister.Get(cfg.Name)
@@ -934,6 +982,18 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		if err != nil {
 			return err
 		}
+
+		credProviderConfigIgn, err := generateOriginalCredentialProviderConfig(ctrl.templatesDir, controllerConfig, role)
+		if err != nil {
+			klog.Infof("could not generate original CRIO credential provider config for role %s: %v", role, err)
+		}
+		contents, err := ctrlcommon.DecodeIgnitionFileContents(credProviderConfigIgn.Contents.Source, credProviderConfigIgn.Contents.Compression)
+		if err != nil {
+			klog.Infof("could not decode CRIO credential provider config for role %s: %v", role, err)
+		}
+
+		klog.Infof("Decoded CRIO credential provider config contents successfully for role %s: %s", role, string(contents))
+
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
 			registriesIgn, err := registriesConfigIgnition(ctrl.templatesDir, controllerConfig, role, releaseImage,
 				imgcfg.Spec.RegistrySources.InsecureRegistries, registriesBlocked, policyBlocked, allowedRegs,
