@@ -19,6 +19,7 @@ import (
 	"github.com/openshift/library-go/pkg/cloudprovider"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/machine-config-operator/pkg/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -43,9 +44,10 @@ const (
 // RenderConfig is wrapper around ControllerConfigSpec.
 type RenderConfig struct {
 	*mcfgv1.ControllerConfigSpec
-	PullSecret      string
-	TLSMinVersion   string
-	TLSCipherSuites []string
+	PullSecret           string
+	TLSMinVersion        string
+	TLSCipherSuites      []string
+	InternalReleaseImage *mcfgv1alpha1.InternalReleaseImage
 
 	// no need to set this, will be automatically configured
 	Constants map[string]string
@@ -63,6 +65,7 @@ const (
 	workerRole          = "worker"
 	arbiterRole         = "arbiter"
 	cloudPlatformAltDNS = "cloud-platform-alt-dns"
+	iri                 = "internalreleaseimage"
 )
 
 // generateTemplateMachineConfigs returns MachineConfig objects from the templateDir and a config object
@@ -252,6 +255,10 @@ func getPaths(config *RenderConfig, platformString string) []string {
 
 	if hasControlPlaneTopology(config, configv1.DualReplicaTopologyMode) {
 		platformBasedPaths = append(platformBasedPaths, tnf)
+	}
+
+	if config.InternalReleaseImage != nil {
+		platformBasedPaths = append(platformBasedPaths, iri)
 	}
 
 	return platformBasedPaths
