@@ -247,7 +247,8 @@ func (ctrl *Controller) calculateStatus(mcns []*mcfgv1.MachineConfigNode, cconfi
 	// 	  if the pool is paused or true if the pool is not paused and the PIS is not degraded
 	allUpdated := updatedMachineCount == totalMachineCount &&
 		readyMachineCount == totalMachineCount &&
-		unavailableMachineCount == 0
+		unavailableMachineCount == 0 &&
+		!isLayeredPoolBuilding(isLayeredPool, mosc, mosb)
 	if allUpdated {
 		//TODO: update api to only have one condition regarding status of update.
 		updatedMsg := fmt.Sprintf("All nodes are updated with %s", getPoolUpdateLine(pool, mosc, isLayeredPool))
@@ -502,5 +503,37 @@ func isPinnedImageSetsInProgressForPool(pool *mcfgv1.MachineConfigPool) bool {
 			return true
 		}
 	}
+	return false
+}
+
+// isLayeredPoolBuilding checks if a layered pool has an active build or failed build that would
+// make nodes not truly "updated" even if they have the current machine config
+func isLayeredPoolBuilding(isLayeredPool bool, mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) bool {
+	if !isLayeredPool || mosc == nil || mosb == nil {
+		return false
+	}
+
+	mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
+
+	// Check if there's an active build (building or prepared)
+	if mosbState.IsBuilding() || mosbState.IsBuildPrepared() {
+		return true
+	}
+
+	// Check if there's a failed build - this means the update attempt failed
+	// so nodes should not be considered "updated"
+	if mosbState.IsBuildFailure() {
+		return true
+	}
+
+	// Check if there's a successful build that nodes haven't applied yet
+	// This happens when a build completes but the MOSC status hasn't been updated
+	// or nodes haven't picked up the new image yet
+	if mosbState.IsBuildSuccess() && mosb.Status.DigestedImagePushSpec != "" {
+		// If the successful build's image differs from what MOSC thinks is current,
+		// then nodes are not truly updated to the latest successful build
+		return string(mosb.Status.DigestedImagePushSpec) != string(mosc.Status.CurrentImagePullSpec)
+	}
+
 	return false
 }
