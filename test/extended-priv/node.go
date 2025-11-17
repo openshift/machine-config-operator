@@ -212,7 +212,10 @@ func (n *Node) GetCurrentBootOSImage() (string, error) {
 
 // RestoreDesiredConfig changes the value of the desiredConfig annotation to equal the value of currentConfig. desiredConfig=currentConfig.
 func (n *Node) RestoreDesiredConfig() error {
-	currentConfig := n.GetCurrentMachineConfig()
+	currentConfig, err := n.GetCurrentMachineConfig()
+	if err != nil {
+		return err
+	}
 	if currentConfig == "" {
 		return fmt.Errorf("currentConfig annotation has an empty value in node %s", n.GetName())
 	}
@@ -227,8 +230,8 @@ func (n *Node) RestoreDesiredConfig() error {
 }
 
 // GetCurrentMachineConfig returns the ID of the current machine config used in the node
-func (n *Node) GetCurrentMachineConfig() string {
-	return n.GetOrFail(`{.metadata.annotations.machineconfiguration\.openshift\.io/currentConfig}`)
+func (n *Node) GetCurrentMachineConfig() (string, error) {
+	return n.Get(`{.metadata.annotations.machineconfiguration\.openshift\.io/currentConfig}`)
 }
 
 // GetCurrentImage returns the current image used in this node
@@ -237,13 +240,13 @@ func (n *Node) GetCurrentImage() string {
 }
 
 // GetDesiredMachineConfig returns the ID of the machine config that we want the node to use
-func (n *Node) GetDesiredMachineConfig() string {
-	return n.GetOrFail(`{.metadata.annotations.machineconfiguration\.openshift\.io/desiredConfig}`)
+func (n *Node) GetDesiredMachineConfig() (string, error) {
+	return n.Get(`{.metadata.annotations.machineconfiguration\.openshift\.io/desiredConfig}`)
 }
 
 // GetMachineConfigState returns the State of machineconfiguration process
-func (n *Node) GetMachineConfigState() string {
-	return n.GetOrFail(`{.metadata.annotations.machineconfiguration\.openshift\.io/state}`)
+func (n *Node) GetMachineConfigState() (string, error) {
+	return n.Get(`{.metadata.annotations.machineconfiguration\.openshift\.io/state}`)
 }
 
 // PatchDesiredConfig patches the desiredConfig annotation with the provided value
@@ -272,8 +275,23 @@ func (n *Node) HasBeenDrained() bool {
 }
 
 // IsUpdated returns if the node is pending for machineconfig configuration or it is up to date
-func (n *Node) IsUpdated() bool {
-	return (n.GetCurrentMachineConfig() == n.GetDesiredMachineConfig()) && (n.GetMachineConfigState() == "Done")
+func (n *Node) IsUpdated() (bool, error) {
+	currentConfig, err := n.GetCurrentMachineConfig()
+	if err != nil {
+		return false, err
+	}
+
+	desiredConfig, err := n.GetDesiredMachineConfig()
+	if err != nil {
+		return false, err
+	}
+
+	state, err := n.GetMachineConfigState()
+	if err != nil {
+		return false, err
+	}
+
+	return (currentConfig == desiredConfig) && (state == "Done"), nil
 }
 
 // IsTainted returns if the node hast taints or not
