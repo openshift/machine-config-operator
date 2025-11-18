@@ -42,13 +42,11 @@ func TestBuildRequestInvalidExtensions(t *testing.T) {
 func TestBuildRequest(t *testing.T) {
 	t.Parallel()
 
-	osImageURLConfig := fixtures.OSImageURLConfig()
-
 	expectedContents := func() []string {
 		return []string{
-			fmt.Sprintf("FROM %s AS extract", osImageURLConfig.BaseOSContainerImage),
-			fmt.Sprintf("FROM %s AS configs", osImageURLConfig.BaseOSContainerImage),
-			fmt.Sprintf("LABEL baseOSContainerImage=%s", osImageURLConfig.BaseOSContainerImage),
+			fmt.Sprintf("FROM %s AS extract", fixtures.BaseOSContainerImage),
+			fmt.Sprintf("FROM %s AS configs", fixtures.BaseOSContainerImage),
+			fmt.Sprintf("LABEL baseOSContainerImage=%s", fixtures.BaseOSContainerImage),
 		}
 	}
 
@@ -66,7 +64,7 @@ func TestBuildRequest(t *testing.T) {
 				return opts
 			},
 			expectedContainerfileContents: append(expectedContents(), []string{
-				fmt.Sprintf("RUN --mount=type=bind,from=%s", osImageURLConfig.BaseOSExtensionsContainerImage),
+				fmt.Sprintf("RUN --mount=type=bind,from=%s", fixtures.BaseOSExtensionsContainerImage),
 				`extensions="usbguard"`,
 			}...),
 		},
@@ -78,7 +76,7 @@ func TestBuildRequest(t *testing.T) {
 				return opts
 			},
 			expectedContainerfileContents: append(expectedContents(), []string{
-				fmt.Sprintf("RUN --mount=type=bind,from=%s", osImageURLConfig.BaseOSExtensionsContainerImage),
+				fmt.Sprintf("RUN --mount=type=bind,from=%s", fixtures.BaseOSExtensionsContainerImage),
 				`extensions="krb5-workstation libkadm5 usbguard"`,
 			}...),
 		},
@@ -86,12 +84,12 @@ func TestBuildRequest(t *testing.T) {
 			name: "Missing extensions image and extensions",
 			optsFunc: func() BuildRequestOpts {
 				opts := getBuildRequestOpts()
-				opts.OSImageURLConfig.BaseOSExtensionsContainerImage = ""
+				opts.MachineConfig.Spec.BaseOSExtensionsContainerImage = ""
 				opts.MachineConfig.Spec.Extensions = []string{"usbguard"}
 				return opts
 			},
 			unexpectedContainerfileContents: []string{
-				fmt.Sprintf("RUN --mount=type=bind,from=%s", osImageURLConfig.BaseOSContainerImage),
+				fmt.Sprintf("RUN --mount=type=bind,from=%s", fixtures.BaseOSContainerImage),
 				"extensions=\"usbguard\"",
 			},
 		},
@@ -235,7 +233,7 @@ func assertBuildJobIsCorrect(t *testing.T, buildJob *batchv1.Job, opts BuildRequ
 	assert.Equal(t, buildJob.Spec.Template.Spec.InitContainers[0].Image, mcoImagePullspec)
 	expectedPullspecs := []string{
 		"base-os-image-from-machineosconfig",
-		fixtures.OSImageURLConfig().BaseOSContainerImage,
+		fixtures.BaseOSContainerImage,
 	}
 
 	assert.Contains(t, expectedPullspecs, buildJob.Spec.Template.Spec.Containers[0].Image)
@@ -312,7 +310,7 @@ RUN rpm-ostree install && \
 	newSecret := `{"auths":` + legacySecret + `}`
 
 	return BuildRequestOpts{
-		MachineConfig:   &mcfgv1.MachineConfig{},
+		MachineConfig:   fixtures.NewObjectsForTest("worker").RenderedMachineConfig,
 		MachineOSConfig: layeredObjects.MachineOSConfigBuilder.MachineOSConfig(),
 		MachineOSBuild:  layeredObjects.MachineOSBuildBuilder.MachineOSBuild(),
 		Images: &ctrlcommon.Images{
@@ -320,7 +318,6 @@ RUN rpm-ostree install && \
 				MachineConfigOperator: mcoImagePullspec,
 			},
 		},
-		OSImageURLConfig: fixtures.OSImageURLConfig(),
 		BaseImagePullSecret: &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "base-image-pull-secret",
