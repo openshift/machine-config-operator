@@ -130,16 +130,6 @@ func validateMCOConfigMap(cm *corev1.ConfigMap, name string, reqDataKeys, reqBin
 	return nil
 }
 
-// Gets and parses the OSImageURL data from the machine-config-osimageurl ConfigMap.
-func GetOSImageURLConfig(ctx context.Context, kubeclient clientset.Interface) (*OSImageURLConfig, error) {
-	cm, err := kubeclient.CoreV1().ConfigMaps(MCONamespace).Get(ctx, MachineConfigOSImageURLConfigMapName, metav1.GetOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("could not get ConfigMap %s: %w", MachineConfigOSImageURLConfigMapName, err)
-	}
-
-	return ParseOSImageURLConfigMap(cm)
-}
-
 // Gets and parse the Images data from the machine-config-operator-images ConfigMap.
 func GetImagesConfig(ctx context.Context, kubeclient clientset.Interface) (*Images, error) {
 	cm, err := kubeclient.CoreV1().ConfigMaps(MCONamespace).Get(ctx, MachineConfigOperatorImagesConfigMapName, metav1.GetOptions{})
