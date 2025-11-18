@@ -335,8 +335,8 @@ func (br buildRequestImpl) renderContainerfile() (string, error) {
 		MachineOSBuild:     br.opts.MachineOSBuild,
 		MachineOSConfig:    br.opts.MachineOSConfig,
 		UserContainerfile:  br.userContainerfile,
-		BaseOSImage:        br.opts.OSImageURLConfig.BaseOSContainerImage,
-		ExtensionsImage:    br.opts.OSImageURLConfig.BaseOSExtensionsContainerImage,
+		BaseOSImage:        br.opts.MachineConfig.Spec.OSImageURL,
+		ExtensionsImage:    br.opts.MachineConfig.Spec.BaseOSExtensionsContainerImage,
 		ExtensionsPackages: extPkgs,
 		KernelType:         kernelType,
 		KernelPackages:     kernelPackages,
@@ -453,7 +453,7 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 		},
 		{
 			Name:  "BASE_OS_IMAGE_PULLSPEC",
-			Value: br.opts.OSImageURLConfig.BaseOSContainerImage,
+			Value: br.opts.MachineConfig.Spec.OSImageURL,
 		},
 	}
 
