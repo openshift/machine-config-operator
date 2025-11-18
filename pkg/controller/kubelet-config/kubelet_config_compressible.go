@@ -29,10 +29,11 @@ const (
 func (ctrl *Controller) ensureCompressibleMachineConfigs() error {
 	// Wait to create compressible configs if the controller config is not completed
 	if err := apihelpers.IsControllerConfigCompleted(ctrlcommon.ControllerConfigName, ctrl.ccLister.Get); err != nil {
-		klog.V(4).Infof("ControllerConfig not ready, skipping compressible machine config creation: %v", err)
-		return nil
+		klog.V(1).Infof("ControllerConfig not ready, skipping compressible machine config creation: %v", err)
+		return err
 	}
 
+	klog.V(1).Infof("ensureCompressibleMachineConfigs - ngopalak - 1")
 	// Get all pools
 	pools, err := ctrl.mcpLister.List(labels.Everything())
 	if err != nil {
@@ -59,7 +60,7 @@ func (ctrl *Controller) ensureCompressibleMachineConfigs() error {
 			klog.Warningf("Failed to generate kubelet config for pool %v: %v", pool.Name, err)
 			continue
 		}
-
+		klog.V(1).Infof("ensureCompressibleMachineConfigs - ngopalak - 2")
 		// Create compressible MC
 		if err := ctrl.createCompressibleMachineConfigIfNeeded(pool.Name, kubeletContents); err != nil {
 			klog.Warningf("Failed to create compressible machine config for pool %v: %v", pool.Name, err)
@@ -68,6 +69,7 @@ func (ctrl *Controller) ensureCompressibleMachineConfigs() error {
 		}
 	}
 
+	klog.V(1).Infof("ensureCompressibleMachineConfigs - ngopalak - 3")
 	return nil
 }
 
