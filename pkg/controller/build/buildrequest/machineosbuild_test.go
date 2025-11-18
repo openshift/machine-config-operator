@@ -5,13 +5,11 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/fixtures"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	testhelpers "github.com/openshift/machine-config-operator/test/helpers"
 )
 
@@ -22,18 +20,7 @@ func TestMachineOSBuild(t *testing.T) {
 	poolName := "worker"
 
 	getMachineConfig := func() *mcfgv1.MachineConfig {
-		return &mcfgv1.MachineConfig{
-			ObjectMeta: metav1.ObjectMeta{
-				Annotations: map[string]string{
-					ctrlcommon.ReleaseImageVersionAnnotationKey: "release-version",
-				},
-				Name: "rendered-worker-1",
-			},
-			Spec: mcfgv1.MachineConfigSpec{
-				OSImageURL:                     fixtures.BaseOSContainerImage,
-				BaseOSExtensionsContainerImage: fixtures.BaseOSExtensionsContainerImage,
-			},
-		}
+		return fixtures.NewObjectsForTest(poolName).RenderedMachineConfig
 	}
 
 	getMachineOSConfig := func() *mcfgv1.MachineOSConfig {
@@ -57,6 +44,7 @@ func TestMachineOSBuild(t *testing.T) {
 			name:        "Missing MachineConfigPool",
 			errExpected: true,
 			opts: MachineOSBuildOpts{
+				MachineConfig:   getMachineConfig(),
 				MachineOSConfig: getMachineOSConfig(),
 			},
 		},
@@ -64,6 +52,7 @@ func TestMachineOSBuild(t *testing.T) {
 			name:        "Missing MachineOSConfig",
 			errExpected: true,
 			opts: MachineOSBuildOpts{
+				MachineConfig:     getMachineConfig(),
 				MachineConfigPool: getMachineConfigPool(),
 			},
 		},
@@ -71,14 +60,14 @@ func TestMachineOSBuild(t *testing.T) {
 			name:        "Mismatched MachineConfigPool name and MachineOSConfig",
 			errExpected: true,
 			opts: MachineOSBuildOpts{
+				MachineConfig:     getMachineConfig(),
 				MachineOSConfig:   testhelpers.NewMachineOSConfigBuilder("worker").WithMachineConfigPool("other-pool").MachineOSConfig(),
 				MachineConfigPool: getMachineConfigPool(),
 			},
 		},
 		{
-			name:         "Only MachineOSConfig and MachineConfigPool",
-			expectedName: "worker-6782c5fc52947bc8fa6d105c9fe62b7d",
-			errExpected:  true,
+			name:        "Missing MachineConfig",
+			errExpected: true,
 			opts: MachineOSBuildOpts{
 				MachineOSConfig:   getMachineOSConfig(),
 				MachineConfigPool: getMachineConfigPool(),
@@ -86,7 +75,7 @@ func TestMachineOSBuild(t *testing.T) {
 		},
 		// These cases ensure that the hashed name remains stable.
 		{
-			name:         "All values from OSImageURLConfig",
+			name:         "All values present",
 			expectedName: expectedCommonHashName,
 			opts: MachineOSBuildOpts{
 				MachineConfig:     getMachineConfig(),
@@ -153,21 +142,12 @@ func TestMachineOSBuild(t *testing.T) {
 func TestMachineOSBuildLabelConsistency(t *testing.T) {
 	t.Parallel()
 
-	obj := fixtures.NewObjectsForTest("worker")
+	poolName := "worker"
+
+	obj := fixtures.NewObjectsForTest(poolName)
 
 	mosb, err := NewMachineOSBuild(MachineOSBuildOpts{
-		MachineConfig: &mcfgv1.MachineConfig{
-			ObjectMeta: metav1.ObjectMeta{
-				Annotations: map[string]string{
-					ctrlcommon.ReleaseImageVersionAnnotationKey: "release-version",
-				},
-				Name: "rendered-worker-1",
-			},
-			Spec: mcfgv1.MachineConfigSpec{
-				OSImageURL:                     fixtures.BaseOSContainerImage,
-				BaseOSExtensionsContainerImage: fixtures.BaseOSExtensionsContainerImage,
-			},
-		},
+		MachineConfig:     fixtures.NewObjectsForTest(poolName).RenderedMachineConfig,
 		MachineConfigPool: obj.MachineConfigPool,
 		MachineOSConfig:   obj.MachineOSConfig,
 	})

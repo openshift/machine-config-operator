@@ -69,13 +69,16 @@ func (m *MachineOSBuildOpts) validateMachineConfig() error {
 		return fmt.Errorf("machineconfig %q is not a rendered MachineConfig", m.MachineConfig.Name)
 	}
 
-	val, ok := m.MachineConfig.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey]
-	if !ok {
-		return fmt.Errorf("missing annotation %q on MachineConfig %q", ctrlcommon.ReleaseImageVersionAnnotationKey, m.MachineConfig.Name)
-	}
+	requiredAnnos := []string{ctrlcommon.ReleaseImageVersionAnnotationKey, ctrlcommon.GeneratedByControllerVersionAnnotationKey}
+	for _, anno := range requiredAnnos {
+		val, ok := m.MachineConfig.Annotations[anno]
+		if !ok {
+			return fmt.Errorf("missing annotation %q on MachineConfig %q", anno, m.MachineConfig.Name)
+		}
 
-	if val == "" {
-		return fmt.Errorf("empty annotation %q value on MachineConfig %q", ctrlcommon.ReleaseImageVersionAnnotationKey, m.MachineConfig.Name)
+		if val == "" {
+			return fmt.Errorf("empty annotation %q value on MachineConfig %q", anno, m.MachineConfig.Name)
+		}
 	}
 
 	return nil
@@ -84,7 +87,8 @@ func (m *MachineOSBuildOpts) validateMachineConfig() error {
 // Creates a list of objects that are consumed by the SHA256 hash.
 func (m *MachineOSBuildOpts) objectsForHash() []interface{} {
 	// Represents a private version of the OSImageURLConfig struct to keep the
-	// hashed name generation stable regardless of the input source.
+	// hashed name generation stable regardless of the input source. This means
+	// that we can eventually remove the OSImageURLConfig struct.
 	type osImageURLConfig struct {
 		BaseOSContainerImage           string
 		BaseOSExtensionsContainerImage string
@@ -95,8 +99,10 @@ func (m *MachineOSBuildOpts) objectsForHash() []interface{} {
 	cfg := osImageURLConfig{
 		BaseOSContainerImage:           m.MachineConfig.Spec.OSImageURL,
 		BaseOSExtensionsContainerImage: m.MachineConfig.Spec.BaseOSExtensionsContainerImage,
-		OSImageURL:                     "", // This value is purposely left empty because the ConfigMap does not actually populate this value.
-		ReleaseVersion:                 m.MachineConfig.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey],
+		// This value is purposely left empty because the ConfigMap does not actually
+		// populate this value. However, we want the hashing to be stable.
+		OSImageURL:     "",
+		ReleaseVersion: m.MachineConfig.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey],
 	}
 
 	// The objects considered for hashing described inline:
@@ -108,7 +114,7 @@ func (m *MachineOSBuildOpts) objectsForHash() []interface{} {
 		m.MachineConfigPool.Spec.Configuration,
 		// The MachineOSConfig Spec field.
 		m.MachineOSConfig.Spec,
-		// The complete OSImageURLConfig object.
+		// The complete osImageURLConfig object.
 		cfg,
 	}
 
