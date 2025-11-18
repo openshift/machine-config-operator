@@ -24,8 +24,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
 
-	routev1 "github.com/openshift/api/route/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	routev1 "github.com/openshift/api/route/v1"
 	routefake "github.com/openshift/client-go/route/clientset/versioned/fake"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -541,41 +541,45 @@ func TestKubeconfigFromSecret(t *testing.T) {
 
 // TestResolveDesiredImageForPool tests the 1-reboot vs 2-reboot behavior for layered images.
 // This verifies that:
-// - External registry images are served during bootstrap (1 reboot optimization)
+// - External registry images are served during bootstrap only if UpdatedMachineCount > 0 (1 reboot optimization)
 // - Internal registry images are NOT served during bootstrap (2 reboots - safe fallback)
+// - Images are NOT served if no nodes have completed the update yet (UpdatedMachineCount == 0) for safety
 // - Registry detection failures default to safe fallback (2 reboots)
 func TestResolveDesiredImageForPool(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
-		name               string
-		poolName           string
-		moscExists         bool
-		mosbExists         bool
-		mosbSuccessful     bool
-		registryInternal   bool
-		expectedImageURL   string
-		expectedRebootPath string
+		name                string
+		poolName            string
+		moscExists          bool
+		mosbExists          bool
+		mosbSuccessful      bool
+		registryInternal    bool
+		updatedMachineCount int32
+		expectedImageURL    string
+		expectedRebootPath  string
 	}{
 		{
-			name:               "External registry image - 1 reboot path",
-			poolName:           "worker",
-			moscExists:         true,
-			mosbExists:         true,
-			mosbSuccessful:     true,
-			registryInternal:   false,
-			expectedImageURL:   "quay.io/openshift/custom-layered-image@sha256:abc123",
-			expectedRebootPath: "1-reboot (layered image served during bootstrap)",
+			name:                "External registry image - 1 reboot path",
+			poolName:            "worker",
+			moscExists:          true,
+			mosbExists:          true,
+			mosbSuccessful:      true,
+			registryInternal:    false,
+			updatedMachineCount: 1,
+			expectedImageURL:    "quay.io/openshift/custom-layered-image@sha256:abc123",
+			expectedRebootPath:  "1-reboot (layered image served during bootstrap)",
 		},
 		{
-			name:               "Internal registry image - 2 reboot path",
-			poolName:           "worker",
-			moscExists:         true,
-			mosbExists:         true,
-			mosbSuccessful:     true,
-			registryInternal:   true,
-			expectedImageURL:   "",
-			expectedRebootPath: "2-reboot (base image served, then update to layered after joining cluster)",
+			name:                "Internal registry image - 2 reboot path",
+			poolName:            "worker",
+			moscExists:          true,
+			mosbExists:          true,
+			mosbSuccessful:      true,
+			registryInternal:    true,
+			updatedMachineCount: 1,
+			expectedImageURL:    "",
+			expectedRebootPath:  "2-reboot (base image served, then update to layered after joining cluster)",
 		},
 		{
 			name:               "No MOSC - no layering",
@@ -585,13 +589,25 @@ func TestResolveDesiredImageForPool(t *testing.T) {
 			expectedRebootPath: "Base image only (pool not using layering)",
 		},
 		{
-			name:               "MOSB not successful - wait for build",
-			poolName:           "worker",
-			moscExists:         true,
-			mosbExists:         true,
-			mosbSuccessful:     false,
-			expectedImageURL:   "",
-			expectedRebootPath: "Base image (wait for build to complete)",
+			name:                "MOSB not successful - wait for build",
+			poolName:            "worker",
+			moscExists:          true,
+			mosbExists:          true,
+			mosbSuccessful:      false,
+			updatedMachineCount: 1,
+			expectedImageURL:    "",
+			expectedRebootPath:  "Base image (wait for build to complete)",
+		},
+		{
+			name:                "External registry image but no nodes updated yet - 2 reboot path",
+			poolName:            "worker",
+			moscExists:          true,
+			mosbExists:          true,
+			mosbSuccessful:      true,
+			registryInternal:    false,
+			updatedMachineCount: 0,
+			expectedImageURL:    "",
+			expectedRebootPath:  "2-reboot (no nodes have validated the new build yet)",
 		},
 	}
 
@@ -618,7 +634,7 @@ func TestResolveDesiredImageForPool(t *testing.T) {
 							Name: "rendered-worker-old",
 						},
 					},
-					UpdatedMachineCount: 1, // At least one node updated, so use new config
+					UpdatedMachineCount: tc.updatedMachineCount,
 				},
 			}
 
@@ -649,16 +665,24 @@ func TestResolveDesiredImageForPool(t *testing.T) {
 			}
 
 			if tc.mosbExists {
+				// Determine which config the MOSB should be for based on UpdatedMachineCount
+				var configName string
+				if tc.updatedMachineCount > 0 {
+					configName = pool.Spec.Configuration.ObjectReference.Name
+				} else {
+					configName = pool.Status.Configuration.ObjectReference.Name
+				}
+
 				mosb := &mcfgv1.MachineOSBuild{
 					ObjectMeta: metav1.ObjectMeta{
-						Name: tc.poolName + "-" + pool.Spec.Configuration.ObjectReference.Name,
+						Name: tc.poolName + "-" + configName,
 					},
 					Spec: mcfgv1.MachineOSBuildSpec{
 						MachineOSConfig: mcfgv1.MachineOSConfigReference{
 							Name: tc.poolName,
 						},
 						MachineConfig: mcfgv1.MachineConfigReference{
-							Name: pool.Spec.Configuration.ObjectReference.Name,
+							Name: configName,
 						},
 					},
 					Status: mcfgv1.MachineOSBuildStatus{},
@@ -779,4 +803,428 @@ func createFakeRegistryClients(withInternalRegistry bool) (*fake.Clientset, *rou
 	routeclient := routefake.NewSimpleClientset(routes...)
 
 	return kubeclient, routeclient
+}
+
+// TestLayeredImageServingDuringScaleUp tests the scenario where a MOSC is applied
+// and a new node scales up simultaneously. This verifies the safety behavior:
+// - New nodes get base image during bootstrap if UpdatedMachineCount == 0 (2 reboots)
+// - New nodes get layered image during bootstrap if UpdatedMachineCount > 0 (1 reboot)
+// - Internal registry images are NOT served during bootstrap (2 reboots)
+func TestLayeredImageServingDuringScaleUp(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name                string
+		poolName            string
+		moscExists          bool
+		mosbExists          bool
+		mosbSuccessful      bool
+		registryInternal    bool
+		updatedMachineCount int32
+		expectedImageURL    string
+		expectedRebootPath  string
+	}{
+		{
+			name:                "Scale up with no nodes updated yet - 2 reboot path (safety)",
+			poolName:            "worker",
+			moscExists:          true,
+			mosbExists:          true,
+			mosbSuccessful:      true,
+			registryInternal:    false,
+			updatedMachineCount: 0,
+			expectedImageURL:    "",
+			expectedRebootPath:  "2-reboot (no nodes have validated the new build yet)",
+		},
+		{
+			name:                "Scale up after first node updated - 1 reboot path (external registry)",
+			poolName:            "worker",
+			moscExists:          true,
+			mosbExists:          true,
+			mosbSuccessful:      true,
+			registryInternal:    false,
+			updatedMachineCount: 1,
+			expectedImageURL:    "quay.io/openshift/custom-layered-image@sha256:abc123",
+			expectedRebootPath:  "1-reboot (layered image served during bootstrap)",
+		},
+		{
+			name:                "Scale up with internal registry - 2 reboot path (DNS not available)",
+			poolName:            "worker",
+			moscExists:          true,
+			mosbExists:          true,
+			mosbSuccessful:      true,
+			registryInternal:    true,
+			updatedMachineCount: 1,
+			expectedImageURL:    "",
+			expectedRebootPath:  "2-reboot (base image served, then update to layered after joining cluster)",
+		},
+		{
+			name:                "Scale up while build in progress - 2 reboot path (wait for build)",
+			poolName:            "worker",
+			moscExists:          true,
+			mosbExists:          true,
+			mosbSuccessful:      false,
+			registryInternal:    false,
+			updatedMachineCount: 0,
+			expectedImageURL:    "",
+			expectedRebootPath:  "Base image (wait for build to complete)",
+		},
+		{
+			name:                "Scale up without MOSC - base image only",
+			poolName:            "worker",
+			moscExists:          false,
+			mosbExists:          false,
+			mosbSuccessful:      false,
+			registryInternal:    false,
+			updatedMachineCount: 0,
+			expectedImageURL:    "",
+			expectedRebootPath:  "Base image only (pool not using layering)",
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Create test pool
+			pool := &mcfgv1.MachineConfigPool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: tc.poolName,
+				},
+				Spec: mcfgv1.MachineConfigPoolSpec{
+					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{
+						ObjectReference: corev1.ObjectReference{
+							Name: "rendered-worker-new",
+						},
+					},
+				},
+				Status: mcfgv1.MachineConfigPoolStatus{
+					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{
+						ObjectReference: corev1.ObjectReference{
+							Name: "rendered-worker-old",
+						},
+					},
+					UpdatedMachineCount: tc.updatedMachineCount,
+				},
+			}
+
+			// Create mock listers
+			var moscList []*mcfgv1.MachineOSConfig
+			var mosbList []*mcfgv1.MachineOSBuild
+
+			if tc.moscExists {
+				mosc := &mcfgv1.MachineOSConfig{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: tc.poolName,
+					},
+					Spec: mcfgv1.MachineOSConfigSpec{
+						MachineConfigPool: mcfgv1.MachineConfigPoolReference{
+							Name: tc.poolName,
+						},
+					},
+					Status: mcfgv1.MachineOSConfigStatus{
+						CurrentImagePullSpec: mcfgv1.ImageDigestFormat("quay.io/openshift/custom-layered-image@sha256:abc123"),
+					},
+				}
+
+				if tc.registryInternal {
+					mosc.Status.CurrentImagePullSpec = mcfgv1.ImageDigestFormat("image-registry.openshift-image-registry.svc:5000/openshift/custom-layered-image@sha256:abc123")
+				}
+
+				moscList = append(moscList, mosc)
+			}
+
+			if tc.mosbExists {
+				// Determine which config the MOSB should be for based on UpdatedMachineCount
+				var configName string
+				if tc.updatedMachineCount > 0 {
+					configName = pool.Spec.Configuration.ObjectReference.Name
+				} else {
+					configName = pool.Status.Configuration.ObjectReference.Name
+				}
+
+				mosb := &mcfgv1.MachineOSBuild{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: tc.poolName + "-" + configName,
+					},
+					Spec: mcfgv1.MachineOSBuildSpec{
+						MachineOSConfig: mcfgv1.MachineOSConfigReference{
+							Name: tc.poolName,
+						},
+						MachineConfig: mcfgv1.MachineConfigReference{
+							Name: configName,
+						},
+					},
+					Status: mcfgv1.MachineOSBuildStatus{},
+				}
+
+				if tc.mosbSuccessful {
+					// Set conditions to indicate build success
+					mosb.Status.Conditions = []metav1.Condition{
+						{
+							Type:   "Succeeded",
+							Status: metav1.ConditionTrue,
+						},
+					}
+
+					if tc.registryInternal {
+						mosb.Status.DigestedImagePushSpec = mcfgv1.ImageDigestFormat("image-registry.openshift-image-registry.svc:5000/openshift/custom-layered-image@sha256:abc123")
+					} else {
+						mosb.Status.DigestedImagePushSpec = mcfgv1.ImageDigestFormat("quay.io/openshift/custom-layered-image@sha256:abc123")
+					}
+				}
+
+				mosbList = append(mosbList, mosb)
+			}
+
+			moscLister := &mockMOSCLister{configs: moscList}
+			mosbLister := &mockMOSBLister{builds: mosbList}
+
+			// Create fake k8s clients for registry detection
+			kubeclient, routeclient := createFakeRegistryClients(tc.registryInternal)
+
+			// Create cluster server
+			cs := &clusterServer{
+				machineOSConfigLister: moscLister,
+				machineOSBuildLister:  mosbLister,
+				kubeclient:            kubeclient,
+				routeclient:           routeclient,
+			}
+
+			// Call resolveDesiredImageForPool
+			result := cs.resolveDesiredImageForPool(pool)
+
+			// Verify result
+			assert.Equal(t, tc.expectedImageURL, result, "Image URL should match expected for %s", tc.expectedRebootPath)
+
+			// Log the reboot path for clarity
+			t.Logf("✓ Verified %s", tc.expectedRebootPath)
+		})
+	}
+}
+
+// TestGetConfigWithLayeredImage tests the complete flow of GetConfig with layered images
+// This ensures that the node annotations include the correct image URL
+func TestGetConfigWithLayeredImage(t *testing.T) {
+	t.Parallel()
+
+	const renderedConfigNew = "rendered-worker-new"
+
+	testCases := []struct {
+		name                string
+		moscExists          bool
+		mosbSuccessful      bool
+		registryInternal    bool
+		updatedMachineCount int32
+		expectedImageInAnno string
+	}{
+		{
+			name:                "External registry with nodes updated - image in annotations",
+			moscExists:          true,
+			mosbSuccessful:      true,
+			registryInternal:    false,
+			updatedMachineCount: 1,
+			expectedImageInAnno: "quay.io/openshift/custom-layered-image@sha256:abc123",
+		},
+		{
+			name:                "Internal registry - no image in annotations",
+			moscExists:          true,
+			mosbSuccessful:      true,
+			registryInternal:    true,
+			updatedMachineCount: 1,
+			expectedImageInAnno: "",
+		},
+		{
+			name:                "No nodes updated yet - no image in annotations",
+			moscExists:          true,
+			mosbSuccessful:      true,
+			registryInternal:    false,
+			updatedMachineCount: 0,
+			expectedImageInAnno: "",
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Load test MachineConfig
+			mcPath := filepath.Join(testDir, "machine-configs", testConfig+".yaml")
+			mcData, err := os.ReadFile(mcPath)
+			require.NoError(t, err)
+
+			mc := new(mcfgv1.MachineConfig)
+			err = yaml.Unmarshal(mcData, mc)
+			require.NoError(t, err)
+			mc.Name = renderedConfigNew
+
+			// Also need to create the old config for the lister
+			oldMC := new(mcfgv1.MachineConfig)
+			err = yaml.Unmarshal(mcData, oldMC)
+			require.NoError(t, err)
+			oldMC.Name = "rendered-worker-old"
+
+			pool := &mcfgv1.MachineConfigPool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "worker",
+				},
+				Spec: mcfgv1.MachineConfigPoolSpec{
+					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{
+						ObjectReference: corev1.ObjectReference{
+							Name: renderedConfigNew,
+						},
+					},
+				},
+				Status: mcfgv1.MachineConfigPoolStatus{
+					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{
+						ObjectReference: corev1.ObjectReference{
+							Name: "rendered-worker-old",
+						},
+					},
+					UpdatedMachineCount: tc.updatedMachineCount,
+				},
+			}
+
+			var moscList []*mcfgv1.MachineOSConfig
+			var mosbList []*mcfgv1.MachineOSBuild
+
+			if tc.moscExists {
+				mosc := &mcfgv1.MachineOSConfig{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "worker",
+					},
+					Spec: mcfgv1.MachineOSConfigSpec{
+						MachineConfigPool: mcfgv1.MachineConfigPoolReference{
+							Name: "worker",
+						},
+					},
+					Status: mcfgv1.MachineOSConfigStatus{
+						CurrentImagePullSpec: mcfgv1.ImageDigestFormat("quay.io/openshift/custom-layered-image@sha256:abc123"),
+					},
+				}
+
+				if tc.registryInternal {
+					mosc.Status.CurrentImagePullSpec = mcfgv1.ImageDigestFormat("image-registry.openshift-image-registry.svc:5000/openshift/custom-layered-image@sha256:abc123")
+				}
+
+				moscList = append(moscList, mosc)
+
+				// Determine which config the MOSB should be for based on UpdatedMachineCount
+				var configName string
+				if tc.updatedMachineCount > 0 {
+					configName = pool.Spec.Configuration.ObjectReference.Name
+				} else {
+					configName = pool.Status.Configuration.ObjectReference.Name
+				}
+
+				if tc.mosbSuccessful {
+					mosb := &mcfgv1.MachineOSBuild{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "worker-" + configName,
+						},
+						Spec: mcfgv1.MachineOSBuildSpec{
+							MachineOSConfig: mcfgv1.MachineOSConfigReference{
+								Name: "worker",
+							},
+							MachineConfig: mcfgv1.MachineConfigReference{
+								Name: configName,
+							},
+						},
+						Status: mcfgv1.MachineOSBuildStatus{
+							Conditions: []metav1.Condition{
+								{
+									Type:   "Succeeded",
+									Status: metav1.ConditionTrue,
+								},
+							},
+						},
+					}
+
+					if tc.registryInternal {
+						mosb.Status.DigestedImagePushSpec = mcfgv1.ImageDigestFormat("image-registry.openshift-image-registry.svc:5000/openshift/custom-layered-image@sha256:abc123")
+					} else {
+						mosb.Status.DigestedImagePushSpec = mcfgv1.ImageDigestFormat("quay.io/openshift/custom-layered-image@sha256:abc123")
+					}
+
+					mosbList = append(mosbList, mosb)
+				}
+			}
+
+			controllerConfig := getTestControllerConfig()
+
+			mcpLister := &mockMCPLister{pools: []*mcfgv1.MachineConfigPool{pool}}
+			mcLister := &mockMCLister{configs: []*mcfgv1.MachineConfig{mc, oldMC}}
+			ccLister := &mockCCLister{configs: []*mcfgv1.ControllerConfig{controllerConfig}}
+			moscLister := &mockMOSCLister{configs: moscList}
+			mosbLister := &mockMOSBLister{builds: mosbList}
+
+			kubeclient, routeclient := createFakeRegistryClients(tc.registryInternal)
+
+			csc := &clusterServer{
+				machineConfigPoolLister: mcpLister,
+				machineConfigLister:     mcLister,
+				controllerConfigLister:  ccLister,
+				machineOSConfigLister:   moscLister,
+				machineOSBuildLister:    mosbLister,
+				kubeclient:              kubeclient,
+				routeclient:             routeclient,
+				kubeconfigFunc: func() ([]byte, []byte, error) {
+					return getKubeConfigContent(t)
+				},
+			}
+
+			res, err := csc.GetConfig(poolRequest{
+				machineConfigPool: "worker",
+			})
+			require.NoError(t, err)
+
+			resCfg, err := ctrlcommon.ParseAndConvertConfig(res.Raw)
+			require.NoError(t, err)
+
+			// Find the node annotations file
+			var annoFile *ign3types.File
+			for i := range resCfg.Storage.Files {
+				if resCfg.Storage.Files[i].Path == daemonconsts.InitialNodeAnnotationsFilePath {
+					annoFile = &resCfg.Storage.Files[i]
+					break
+				}
+			}
+
+			require.NotNil(t, annoFile, "Node annotations file should be present")
+
+			// Decode the annotations
+			contents, err := ctrlcommon.DecodeIgnitionFileContents(annoFile.Contents.Source, annoFile.Contents.Compression)
+			require.NoError(t, err)
+
+			var annotations map[string]string
+			err = json.Unmarshal([]byte(contents), &annotations)
+			require.NoError(t, err)
+
+			// Verify the image annotations
+			if tc.expectedImageInAnno != "" {
+				assert.Equal(t, tc.expectedImageInAnno, annotations[daemonconsts.CurrentImageAnnotationKey],
+					"Current image annotation should match expected")
+				assert.Equal(t, tc.expectedImageInAnno, annotations[daemonconsts.DesiredImageAnnotationKey],
+					"Desired image annotation should match expected")
+			} else {
+				// When no image is expected, the annotations should either be empty or not present
+				currentImage := annotations[daemonconsts.CurrentImageAnnotationKey]
+				desiredImage := annotations[daemonconsts.DesiredImageAnnotationKey]
+				assert.Empty(t, currentImage, "Current image annotation should be empty")
+				assert.Empty(t, desiredImage, "Desired image annotation should be empty")
+			}
+
+			// Verify the config name annotation
+			// When UpdatedMachineCount == 0, MCS serves the old config to avoid deadlocks
+			expectedConfig := renderedConfigNew
+			if tc.updatedMachineCount == 0 {
+				expectedConfig = "rendered-worker-old"
+			}
+			assert.Equal(t, expectedConfig, annotations[daemonconsts.CurrentMachineConfigAnnotationKey],
+				"Current config annotation should match expected")
+			assert.Equal(t, expectedConfig, annotations[daemonconsts.DesiredMachineConfigAnnotationKey],
+				"Desired config annotation should match expected")
+		})
+	}
 }
