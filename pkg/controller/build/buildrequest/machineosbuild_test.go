@@ -19,6 +19,10 @@ func TestMachineOSBuild(t *testing.T) {
 
 	poolName := "worker"
 
+	getMachineConfig := func() *mcfgv1.MachineConfig {
+		return fixtures.NewObjectsForTest(poolName).RenderedMachineConfig
+	}
+
 	getMachineOSConfig := func() *mcfgv1.MachineOSConfig {
 		return testhelpers.NewMachineOSConfigBuilder(poolName).WithMachineConfigPool(poolName).MachineOSConfig()
 	}
@@ -28,7 +32,7 @@ func TestMachineOSBuild(t *testing.T) {
 	}
 
 	// Some of the test cases expect the hash name to be the same. This is that hash value.
-	expectedCommonHashName := "worker-55592464e51104dcc274a300565fec9e"
+	expectedCommonHashName := "worker-699e6be74658adcb3ff2b48f32cd1584"
 
 	testCases := []struct {
 		name         string
@@ -40,6 +44,7 @@ func TestMachineOSBuild(t *testing.T) {
 			name:        "Missing MachineConfigPool",
 			errExpected: true,
 			opts: MachineOSBuildOpts{
+				MachineConfig:   getMachineConfig(),
 				MachineOSConfig: getMachineOSConfig(),
 			},
 		},
@@ -47,6 +52,7 @@ func TestMachineOSBuild(t *testing.T) {
 			name:        "Missing MachineOSConfig",
 			errExpected: true,
 			opts: MachineOSBuildOpts{
+				MachineConfig:     getMachineConfig(),
 				MachineConfigPool: getMachineConfigPool(),
 			},
 		},
@@ -54,30 +60,27 @@ func TestMachineOSBuild(t *testing.T) {
 			name:        "Mismatched MachineConfigPool name and MachineOSConfig",
 			errExpected: true,
 			opts: MachineOSBuildOpts{
+				MachineConfig:     getMachineConfig(),
 				MachineOSConfig:   testhelpers.NewMachineOSConfigBuilder("worker").WithMachineConfigPool("other-pool").MachineOSConfig(),
 				MachineConfigPool: getMachineConfigPool(),
 			},
 		},
 		{
-			name:         "Only MachineOSConfig and MachineConfigPool",
-			expectedName: "worker-6782c5fc52947bc8fa6d105c9fe62b7d",
-			errExpected:  true,
+			name:        "Missing MachineConfig",
+			errExpected: true,
 			opts: MachineOSBuildOpts{
 				MachineOSConfig:   getMachineOSConfig(),
 				MachineConfigPool: getMachineConfigPool(),
 			},
 		},
-		// These cases ensure that the hashed name remains stable regardless of
-		// which source of truth is used for the base OS image, extensions image,
-		// and / or release version. In these cases, the source of truth can either
-		// be the value from the MachineOSConfig or the OSImageURLConfig struct.
+		// These cases ensure that the hashed name remains stable.
 		{
-			name:         "All values from OSImageURLConfig",
+			name:         "All values present",
 			expectedName: expectedCommonHashName,
 			opts: MachineOSBuildOpts{
+				MachineConfig:     getMachineConfig(),
 				MachineOSConfig:   getMachineOSConfig(),
 				MachineConfigPool: getMachineConfigPool(),
-				OSImageURLConfig:  fixtures.OSImageURLConfig(),
 			},
 		},
 		// These cases ensure that pausing the MachineConfigPool does not affect the hash.
@@ -85,18 +88,18 @@ func TestMachineOSBuild(t *testing.T) {
 			name:         "Unpaused MachineConfigPool",
 			expectedName: expectedCommonHashName,
 			opts: MachineOSBuildOpts{
+				MachineConfig:     getMachineConfig(),
 				MachineOSConfig:   getMachineOSConfig(),
 				MachineConfigPool: getMachineConfigPool(),
-				OSImageURLConfig:  fixtures.OSImageURLConfig(),
 			},
 		},
 		{
 			name:         "Paused MachineConfigPool",
 			expectedName: expectedCommonHashName,
 			opts: MachineOSBuildOpts{
+				MachineConfig:     getMachineConfig(),
 				MachineOSConfig:   getMachineOSConfig(),
 				MachineConfigPool: testhelpers.NewMachineConfigPoolBuilder(poolName).WithPaused().MachineConfigPool(),
-				OSImageURLConfig:  fixtures.OSImageURLConfig(),
 			},
 		},
 	}
@@ -139,12 +142,14 @@ func TestMachineOSBuild(t *testing.T) {
 func TestMachineOSBuildLabelConsistency(t *testing.T) {
 	t.Parallel()
 
-	obj := fixtures.NewObjectsForTest("worker")
+	poolName := "worker"
+
+	obj := fixtures.NewObjectsForTest(poolName)
 
 	mosb, err := NewMachineOSBuild(MachineOSBuildOpts{
+		MachineConfig:     fixtures.NewObjectsForTest(poolName).RenderedMachineConfig,
 		MachineConfigPool: obj.MachineConfigPool,
 		MachineOSConfig:   obj.MachineOSConfig,
-		OSImageURLConfig:  fixtures.OSImageURLConfig(),
 	})
 
 	assert.NoError(t, err)

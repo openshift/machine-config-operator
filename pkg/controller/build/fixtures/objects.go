@@ -21,10 +21,11 @@ const (
 
 // Provides consistently instantiated objects for use in a given test.
 type ObjectsForTest struct {
-	MachineConfigPool *mcfgv1.MachineConfigPool
-	MachineConfigs    []*mcfgv1.MachineConfig
-	MachineOSConfig   *mcfgv1.MachineOSConfig
-	MachineOSBuild    *mcfgv1.MachineOSBuild
+	MachineConfigPool     *mcfgv1.MachineConfigPool
+	MachineConfigs        []*mcfgv1.MachineConfig
+	MachineOSConfig       *mcfgv1.MachineOSConfig
+	MachineOSBuild        *mcfgv1.MachineOSBuild
+	RenderedMachineConfig *mcfgv1.MachineConfig
 }
 
 // Provides the builders to create consistently instantiated objects for use in
@@ -38,11 +39,14 @@ type ObjectBuildersForTest struct {
 func (o *ObjectBuildersForTest) ToObjectsForTest() ObjectsForTest {
 	mcp := o.MachineConfigPoolBuilder.MachineConfigPool()
 
+	mcs, renderedMC := newMachineConfigsFromPool(mcp)
+
 	return ObjectsForTest{
-		MachineConfigPool: mcp,
-		MachineConfigs:    newMachineConfigsFromPool(mcp),
-		MachineOSConfig:   o.MachineOSConfigBuilder.MachineOSConfig(),
-		MachineOSBuild:    o.MachineOSBuildBuilder.MachineOSBuild(),
+		MachineConfigPool:     mcp,
+		MachineConfigs:        mcs,
+		MachineOSConfig:       o.MachineOSConfigBuilder.MachineOSConfig(),
+		MachineOSBuild:        o.MachineOSBuildBuilder.MachineOSBuild(),
+		RenderedMachineConfig: renderedMC,
 	}
 }
 
@@ -51,7 +55,7 @@ func (o *ObjectBuildersForTest) ToObjectsForTest() ObjectsForTest {
 func (o *ObjectsForTest) ToRuntimeObjects() []runtime.Object {
 	out := []runtime.Object{o.MachineConfigPool}
 
-	for _, item := range o.MachineConfigs {
+	for _, item := range append(o.MachineConfigs, o.RenderedMachineConfig) {
 		out = append(out, item)
 	}
 
@@ -162,7 +166,7 @@ func defaultKubeObjects() []runtime.Object {
 }
 
 // Generates MachineConfigs from the given MachineConfigPool for insertion.
-func newMachineConfigsFromPool(mcp *mcfgv1.MachineConfigPool) []*mcfgv1.MachineConfig {
+func newMachineConfigsFromPool(mcp *mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, *mcfgv1.MachineConfig) {
 	files := []ign3types.File{}
 
 	out := []*mcfgv1.MachineConfig{}
@@ -186,17 +190,21 @@ func newMachineConfigsFromPool(mcp *mcfgv1.MachineConfigPool) []*mcfgv1.MachineC
 			[]ign3types.File{file}))
 	}
 
-	// Create a rendered MachineConfig to accompany our MachineConfigPool.
-	out = append(out, testhelpers.NewMachineConfig(
+	renderedMC := testhelpers.NewMachineConfig(
 		mcp.Spec.Configuration.Name,
-		map[string]string{
-			ctrlcommon.GeneratedByControllerVersionAnnotationKey: "version-number",
-			"machineconfiguration.openshift.io/role":             mcp.Name,
-		},
+		map[string]string{},
 		"",
-		files))
+		files)
 
-	return out
+	renderedMC.Annotations = map[string]string{
+		ctrlcommon.ReleaseImageVersionAnnotationKey:          ReleaseVersion,
+		ctrlcommon.GeneratedByControllerVersionAnnotationKey: "controller-version",
+	}
+
+	renderedMC.Spec.OSImageURL = BaseOSContainerImage
+	renderedMC.Spec.BaseOSExtensionsContainerImage = BaseOSExtensionsContainerImage
+
+	return out, renderedMC
 }
 
 // Gets an example machine-config-operator-images ConfigMap.
