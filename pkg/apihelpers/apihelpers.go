@@ -325,6 +325,24 @@ func IsControllerConfigCompleted(ccName string, ccGetter func(string) (*mcfgv1.C
 	return fmt.Errorf("ControllerConfig has not completed: completed(%v) running(%v) failing(%v)", completed, running, failing)
 }
 
+func IsControllerConfigRunning(ccName string, ccGetter func(string) (*mcfgv1.ControllerConfig, error)) error {
+	cur, err := ccGetter(ccName)
+	if err != nil {
+		return err
+	}
+
+	if cur.Generation != cur.Status.ObservedGeneration {
+		return fmt.Errorf("status for ControllerConfig %s is being reported for %d, expecting it for %d", ccName, cur.Status.ObservedGeneration, cur.Generation)
+	}
+
+	running := IsControllerConfigStatusConditionTrue(cur.Status.Conditions, mcfgv1.TemplateControllerRunning)
+	failing := IsControllerConfigStatusConditionTrue(cur.Status.Conditions, mcfgv1.TemplateControllerFailing)
+	if !running {
+		return fmt.Errorf("ControllerConfig has not running: running(%v) failing(%v)", running, failing)
+	}
+	return nil
+}
+
 // AreMCGeneratingSubControllersCompleted checks whether all MC producing sub-controllers are completed
 func AreMCGeneratingSubControllersCompletedForPool(crcLister func(labels.Selector) ([]*mcfgv1.ContainerRuntimeConfig, error), mckLister func(labels.Selector) ([]*mcfgv1.KubeletConfig, error), poolLabels map[string]string) error {
 

@@ -28,8 +28,8 @@ const (
 // This is called at controller startup to create compressible MCs for all pools
 func (ctrl *Controller) ensureCompressibleMachineConfigs() error {
 	// Wait to create compressible configs if the controller config is not completed
-	if err := apihelpers.IsControllerConfigCompleted(ctrlcommon.ControllerConfigName, ctrl.ccLister.Get); err != nil {
-		klog.V(1).Infof("ControllerConfig not ready, skipping compressible machine config creation: %v", err)
+	if err := apihelpers.IsControllerConfigRunning(ctrlcommon.ControllerConfigName, ctrl.ccLister.Get); err != nil {
+		klog.V(1).Infof("ControllerConfig not running, skipping compressible machine config creation: %v", err)
 		return err
 	}
 
