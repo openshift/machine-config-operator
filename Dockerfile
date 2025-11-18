@@ -7,9 +7,7 @@ COPY . .
 # just use that.  For now we work around this by copying a tarball.
 ENV GOCACHE="/go/rhel9/.cache"
 ENV GOMODCACHE="/go/rhel9/pkg/mod"
-RUN --mount=type=cache,target=/go/rhel9/.cache,z \
-    --mount=type=cache,target=/go/rhel9/pkg/mod,z \
-    make install DESTDIR=./instroot-rhel9 && tar -C instroot-rhel9 -cf instroot-rhel9.tar .
+RUN make install DESTDIR=./instroot-rhel9 && tar -C instroot-rhel9 -cf instroot-rhel9.tar .
 
 # Add a RHEL 8 builder to compile the RHEL 8 compatible binaries
 FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.23-openshift-4.19 AS rhel8-builder
@@ -19,15 +17,12 @@ WORKDIR /go/src/github.com/openshift/machine-config-operator
 COPY . .
 ENV GOCACHE="/go/rhel8/.cache"
 ENV GOMODCACHE="/go/rhel8/pkg/mod"
-RUN --mount=type=cache,target=/go/rhel8/.cache,z \
-    --mount=type=cache,target=/go/rhel8/pkg/mod,z \
-    make install DESTDIR=./instroot-rhel8 && tar -C instroot-rhel8 -cf instroot-rhel8.tar .
+RUN make install DESTDIR=./instroot-rhel8 && tar -C instroot-rhel8 -cf instroot-rhel8.tar .
 
 FROM registry.ci.openshift.org/ocp/builder:rhel-9-enterprise-base-multi-openshift-4.18
 ARG TAGS=""
 COPY install /manifests
-RUN --mount=type=cache,target=/var/cache/dnf,z \
-    if [ "${TAGS}" = "fcos" ]; then \
+RUN if [ "${TAGS}" = "fcos" ]; then \
     # comment out non-base/extensions image-references entirely for fcos
     sed -i '/- name: rhel-coreos-/,+3 s/^/#/' /manifests/image-references && \
     # also remove extensions from the osimageurl configmap (if we don't, oc won't rewrite it, and the placeholder value will survive and get used)
