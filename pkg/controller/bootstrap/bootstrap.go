@@ -208,13 +208,6 @@ func (b *Bootstrap) Run(destDir string) error {
 	}
 	klog.Infof("Successfully generated MachineConfigs from feature gates.")
 
-	compressibleConfigs, err := kubeletconfig.RunCompressibleBootstrap(pools, cconfig, b.templatesDir, apiServer, fgHandler)
-	if err != nil {
-		return err
-	}
-	configs = append(configs, compressibleConfigs...)
-	klog.Infof("Successfully generated MachineConfigs for compressible kubelet configs.")
-
 	if nodeConfig == nil {
 		nodeConfig = &apicfgv1.Node{
 			ObjectMeta: metav1.ObjectMeta{
@@ -240,6 +233,13 @@ func (b *Bootstrap) Run(destDir string) error {
 		configs = append(configs, kconfigs...)
 	}
 	klog.Infof("Successfully generated MachineConfigs from kubelet configs.")
+
+	compressibleConfigs, err := kubeletconfig.RunCompressibleBootstrap(pools, cconfig, b.templatesDir, apiServer, fgHandler)
+	if err != nil {
+		return err
+	}
+	configs = append(configs, compressibleConfigs...)
+	klog.Infof("Successfully generated MachineConfigs for compressible kubelet configs.")
 
 	fpools, gconfigs, err := render.RunBootstrap(pools, configs, cconfig)
 	if err != nil {
