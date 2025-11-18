@@ -3,6 +3,7 @@ package buildrequest
 import (
 
 	//nolint:gosec
+
 	"crypto/md5"
 	"fmt"
 	"strings"
@@ -65,7 +66,7 @@ func (m *MachineOSBuildOpts) validateMachineConfig() error {
 		return fmt.Errorf("missing required MachineConfig")
 	}
 
-	if !strings.HasPrefix(m.MachineConfig.Name, "rendered-") {
+	if !strings.HasPrefix(m.MachineConfig.Name, ctrlcommon.RenderedMachineConfigPrefix) {
 		return fmt.Errorf("machineconfig %q is not a rendered MachineConfig", m.MachineConfig.Name)
 	}
 
@@ -99,8 +100,10 @@ func (m *MachineOSBuildOpts) objectsForHash() []interface{} {
 	cfg := osImageURLConfig{
 		BaseOSContainerImage:           m.MachineConfig.Spec.OSImageURL,
 		BaseOSExtensionsContainerImage: m.MachineConfig.Spec.BaseOSExtensionsContainerImage,
-		// This value is purposely left empty because the ConfigMap does not actually
-		// populate this value. However, we want the hashing to be stable.
+		// To maintain stable hashing, this field is purposely left empty because
+		// these values were originally populated from the
+		// "machine-config-osimageurl" ConfigMap. The ConfigMap field which
+		// populates this struct field is blank.
 		OSImageURL:     "",
 		ReleaseVersion: m.MachineConfig.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey],
 	}
