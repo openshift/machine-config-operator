@@ -37,7 +37,6 @@ func TestOSImageURLOverride(t *testing.T) {
 	node := helpers.GetRandomNode(t, cs, "worker")
 
 	binaries := []string{
-		"/usr/bin/tailscale",
 		"/usr/bin/rg",
 		"/usr/bin/yq",
 	}

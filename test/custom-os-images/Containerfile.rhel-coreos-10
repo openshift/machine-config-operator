@@ -3,7 +3,6 @@ FROM registry.ci.openshift.org/ocp/4.21:rhel-coreos-10 AS base
 FROM quay.io/centos/centos:stream10 AS epel
 WORKDIR /etc/yum.repos.d
 RUN dnf install -y --setopt=keepcache=True epel-release && \
-    curl -LO https://pkgs.tailscale.com/stable/rhel/10/tailscale.repo && \
     sed -i 's/\$stream/10-stream/g' /etc/yum.repos.d/centos*.repo && \
     sed -i 's/EPEL\-\$releasever_major/EPEL-10/g' /etc/yum.repos.d/epel*.repo && \
     sed -i -E 's/\$\{releasever_minor\:\+\-z\}//g' /etc/yum.repos.d/epel*.repo
@@ -11,5 +10,5 @@ RUN dnf install -y --setopt=keepcache=True epel-release && \
 FROM base AS final
 COPY --from=epel /etc/yum.repos.d /etc/yum.repos.d
 COPY --from=epel /etc/pki/rpm-gpg/RPM-GPG-KEY-* /etc/pki/rpm-gpg/
-RUN rpm-ostree install ripgrep yq tailscale && \
+RUN rpm-ostree install ripgrep yq && \
     ostree container commit
