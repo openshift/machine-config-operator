@@ -45,7 +45,7 @@ type publisherOffer struct {
 // This function calls the appropriate reconcile function based on the infra type
 // On success, it will return a bool indicating if a patch is required, and an updated
 // machineset object if any. It will return an error if any of the above steps fail.
-func checkMachineSet(infra *osconfigv1.Infrastructure, machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap, arch string, secretClient clientset.Interface) (bool, *machinev1beta1.MachineSet, error) {
+func checkMachineSet(infra *osconfigv1.Infrastructure, machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap, arch string, secretClient clientset.Interface) (bool, bool, *machinev1beta1.MachineSet, error) {
 	switch infra.Status.PlatformStatus.Type {
 	case osconfigv1.AWSPlatformType:
 		return reconcilePlatform(machineSet, infra, configMap, arch, secretClient, reconcileAWSProviderSpec)
@@ -57,7 +57,7 @@ func checkMachineSet(infra *osconfigv1.Infrastructure, machineSet *machinev1beta
 		return reconcilePlatform(machineSet, infra, configMap, arch, secretClient, reconcileVSphereProviderSpec)
 	default:
 		klog.Infof("Skipping machineset %s, unsupported platform %s", machineSet.Name, infra.Status.PlatformStatus.Type)
-		return false, nil, nil
+		return false, false, nil, nil
 	}
 }
 
@@ -69,44 +69,44 @@ func reconcilePlatform[T any](
 	configMap *corev1.ConfigMap,
 	arch string,
 	secretClient clientset.Interface,
-	reconcileProviderSpec func(*stream.Stream, string, *osconfigv1.Infrastructure, *T, string, clientset.Interface) (bool, *T, error),
-) (patchRequired bool, newMachineSet *machinev1beta1.MachineSet, err error) {
+	reconcileProviderSpec func(*stream.Stream, string, *osconfigv1.Infrastructure, *T, string, clientset.Interface) (bool, bool, *T, error),
+) (patchRequired, patchSkipped bool, newMachineSet *machinev1beta1.MachineSet, err error) {
 	klog.Infof("Reconciling MAPI machineset %s on %s, with arch %s", machineSet.Name, string(infra.Status.PlatformStatus.Type), arch)
 
 	// Unmarshal the provider spec
 	providerSpec := new(T)
 	if err := unmarshalProviderSpec(machineSet, providerSpec); err != nil {
-		return false, nil, err
+		return false, false, nil, err
 	}
 
 	// Unmarshal the configmap into a stream object
 	streamData := new(stream.Stream)
 	if err := unmarshalStreamDataConfigMap(configMap, streamData); err != nil {
-		return false, nil, err
+		return false, false, nil, err
 	}
 
 	// Reconcile the provider spec
-	patchRequired, newProviderSpec, err := reconcileProviderSpec(streamData, arch, infra, providerSpec, machineSet.Name, secretClient)
+	patchRequired, patchSkipped, newProviderSpec, err := reconcileProviderSpec(streamData, arch, infra, providerSpec, machineSet.Name, secretClient)
 	if err != nil {
-		return false, nil, err
+		return false, false, nil, err
 	}
 
 	// If no patch is required, exit early
 	if !patchRequired {
-		return false, nil, nil
+		return false, patchSkipped, nil, nil
 	}
 
 	// If patch is required, marshal the new providerspec into the machineset
 	newMachineSet = machineSet.DeepCopy()
 	if err := marshalProviderSpec(newMachineSet, newProviderSpec); err != nil {
-		return false, nil, err
+		return false, false, nil, err
 	}
-	return patchRequired, newMachineSet, nil
+	return patchRequired, false, newMachineSet, nil
 }
 
 // reconcileGCPProviderSpec reconciles the GCP provider spec by updating boot images
 // Returns whether a patch is required, the updated provider spec, and any error
-func reconcileGCPProviderSpec(streamData *stream.Stream, arch string, _ *osconfigv1.Infrastructure, providerSpec *machinev1beta1.GCPMachineProviderSpec, machineSetName string, secretClient clientset.Interface) (bool, *machinev1beta1.GCPMachineProviderSpec, error) {
+func reconcileGCPProviderSpec(streamData *stream.Stream, arch string, _ *osconfigv1.Infrastructure, providerSpec *machinev1beta1.GCPMachineProviderSpec, machineSetName string, secretClient clientset.Interface) (bool, bool, *machinev1beta1.GCPMachineProviderSpec, error) {
 
 	// Construct the new target bootimage from the configmap
 	// This formatting is based on how the installer constructs
@@ -131,7 +131,7 @@ func reconcileGCPProviderSpec(streamData *stream.Stream, arch string, _ *osconfi
 		// If image does not start with "projects/rhcos-cloud/global/images", this is a custom boot image.
 		if !strings.HasPrefix(disk.Image, "projects/rhcos-cloud/global/images") {
 			klog.Infof("current boot image %s is unknown, skipping update of MachineSet %s", disk.Image, machineSetName)
-			return false, nil, nil
+			return false, true, nil, nil
 		}
 		patchRequired = true
 		newProviderSpec.Disks[idx].Image = newBootImage
@@ -140,16 +140,16 @@ func reconcileGCPProviderSpec(streamData *stream.Stream, arch string, _ *osconfi
 	if patchRequired {
 		// Ensure the ignition stub is the minimum acceptable spec required for boot image updates
 		if err := upgradeStubIgnitionIfRequired(providerSpec.UserDataSecret.Name, secretClient); err != nil {
-			return false, nil, err
+			return false, false, nil, err
 		}
 	}
 
-	return patchRequired, newProviderSpec, nil
+	return patchRequired, false, newProviderSpec, nil
 }
 
 // reconcileAWSProviderSpec reconciles the AWS provider spec by updating AMIs
 // Returns whether a patch is required, the updated provider spec, and any error
-func reconcileAWSProviderSpec(streamData *stream.Stream, arch string, _ *osconfigv1.Infrastructure, providerSpec *machinev1beta1.AWSMachineProviderConfig, machineSetName string, secretClient clientset.Interface) (bool, *machinev1beta1.AWSMachineProviderConfig, error) {
+func reconcileAWSProviderSpec(streamData *stream.Stream, arch string, _ *osconfigv1.Infrastructure, providerSpec *machinev1beta1.AWSMachineProviderConfig, machineSetName string, secretClient clientset.Interface) (bool, bool, *machinev1beta1.AWSMachineProviderConfig, error) {
 
 	// Extract the region from the Placement field
 	region := providerSpec.Placement.Region
@@ -159,7 +159,7 @@ func reconcileAWSProviderSpec(streamData *stream.Stream, arch string, _ *osconfi
 	if err != nil {
 		// On a region not found error, log and skip this MachineSet
 		klog.Infof("failed to get AMI for region %s: %v, skipping update of MachineSet %s", region, err, machineSetName)
-		return false, nil, nil
+		return false, true, nil, nil
 	}
 
 	newAMI := awsRegionImage.Image
@@ -172,20 +172,20 @@ func reconcileAWSProviderSpec(streamData *stream.Stream, arch string, _ *osconfi
 	// Related bug: https://issues.redhat.com/browse/OCPBUGS-57506
 	if newProviderSpec.AMI.ID == nil {
 		klog.Infof("current AMI.ID is undefined, skipping update of MachineSet %s", machineSetName)
-		return false, nil, nil
+		return false, true, nil, nil
 	}
 
 	currentAMI := *newProviderSpec.AMI.ID
 
 	// If the current AMI matches target AMI, nothing to do here
 	if newAMI == currentAMI {
-		return false, nil, nil
+		return false, false, nil, nil
 	}
 
 	// Validate that we're allowed to update from the current AMI
 	if !AllowedAMIs.Has(currentAMI) {
 		klog.Infof("current AMI %s is unknown, skipping update of MachineSet %s", currentAMI, machineSetName)
-		return false, nil, nil
+		return false, true, nil, nil
 	}
 
 	klog.Infof("Current image: %s: %s", region, currentAMI)
@@ -199,27 +199,27 @@ func reconcileAWSProviderSpec(streamData *stream.Stream, arch string, _ *osconfi
 
 	// Ensure the ignition stub is the minimum acceptable spec required for boot image updates
 	if err := upgradeStubIgnitionIfRequired(providerSpec.UserDataSecret.Name, secretClient); err != nil {
-		return false, nil, err
+		return false, false, nil, err
 	}
 
-	return true, newProviderSpec, nil
+	return true, false, newProviderSpec, nil
 }
 
-func reconcileVSphereProviderSpec(streamData *stream.Stream, arch string, infra *osconfigv1.Infrastructure, providerSpec *machinev1beta1.VSphereMachineProviderSpec, _ string, secretClient clientset.Interface) (bool, *machinev1beta1.VSphereMachineProviderSpec, error) {
+func reconcileVSphereProviderSpec(streamData *stream.Stream, arch string, infra *osconfigv1.Infrastructure, providerSpec *machinev1beta1.VSphereMachineProviderSpec, _ string, secretClient clientset.Interface) (bool, bool, *machinev1beta1.VSphereMachineProviderSpec, error) {
 
 	if infra.Spec.PlatformSpec.VSphere == nil {
 		klog.Warningf("Reconcile skipped: VSphere field is nil in PlatformSpec %v", infra.Spec.PlatformSpec)
-		return false, nil, nil
+		return false, false, nil, nil
 	}
 
 	streamArch, err := streamData.GetArchitecture(arch)
 	if err != nil {
-		return false, nil, err
+		return false, false, nil, err
 	}
 
 	artifacts := streamArch.Artifacts["vmware"]
 	if artifacts.Release == "" {
-		return false, nil, fmt.Errorf("%s: artifact '%s' not found", streamData.FormatPrefix(arch), "vmware")
+		return false, false, nil, fmt.Errorf("%s: artifact '%s' not found", streamData.FormatPrefix(arch), "vmware")
 	}
 
 	newProviderSpec := providerSpec.DeepCopy()
@@ -227,38 +227,38 @@ func reconcileVSphereProviderSpec(streamData *stream.Stream, arch string, infra 
 	// Fetch the creds configmap
 	credsSc, err := secretClient.CoreV1().Secrets("kube-system").Get(context.TODO(), "vsphere-creds", metav1.GetOptions{})
 	if err != nil {
-		return false, nil, fmt.Errorf("failed to fetch vsphere-creds Secret during machineset sync: %w", err)
+		return false, false, nil, fmt.Errorf("failed to fetch vsphere-creds Secret during machineset sync: %w", err)
 	}
 
 	newBootImg, patchRequired, err := createNewVMTemplate(streamData, providerSpec, infra, credsSc, arch, artifacts.Release)
 	if err != nil {
-		return false, nil, err
+		return false, false, nil, err
 	}
 
 	// If patch is required, marshal the new providerspec into the machineset
 	if patchRequired {
 		// Ensure the ignition stub is the minimum acceptable spec required for boot image updates
 		if err := upgradeStubIgnitionIfRequired(providerSpec.UserDataSecret.Name, secretClient); err != nil {
-			return false, nil, err
+			return false, false, nil, err
 		}
 		newProviderSpec.Template = newBootImg
 	}
 
-	return patchRequired, newProviderSpec, nil
+	return patchRequired, false, newProviderSpec, nil
 }
 
 // reconcileAzureProviderSpec reconciles the Azure provider spec by updating AMIs
 // Returns whether a patch is required, the updated provider spec, and any error
-func reconcileAzureProviderSpec(streamData *stream.Stream, arch string, _ *osconfigv1.Infrastructure, providerSpec *machinev1beta1.AzureMachineProviderSpec, machineSetName string, secretClient clientset.Interface) (bool, *machinev1beta1.AzureMachineProviderSpec, error) {
+func reconcileAzureProviderSpec(streamData *stream.Stream, arch string, _ *osconfigv1.Infrastructure, providerSpec *machinev1beta1.AzureMachineProviderSpec, machineSetName string, secretClient clientset.Interface) (bool, bool, *machinev1beta1.AzureMachineProviderSpec, error) {
 
 	if arch == "ppc64le" || arch == "s390x" {
 		klog.Infof("Skipping update for %s, machinesets/controlplanemachinesets with arch %s are not supported for Azure", machineSetName, arch)
-		return false, nil, nil
+		return false, false, nil, nil
 	}
 
 	if providerSpec.SecurityProfile != nil && providerSpec.SecurityProfile.Settings.SecurityType != "" {
 		klog.Infof("Skipping update for %s, machinesets/controlplanemachinesets with a SecurityType defined(%s in this case) is not currently supported for Azure", machineSetName, providerSpec.SecurityProfile.Settings.SecurityType)
-		return false, nil, nil
+		return false, false, nil, nil
 	}
 
 	currentImage := providerSpec.Image
@@ -272,24 +272,24 @@ func reconcileAzureProviderSpec(streamData *stream.Stream, arch string, _ *oscon
 	// Determine the target image stream variant
 	azureVariant, err := determineAzureVariant(usesLegacyImageUpload, currentImage)
 	if err != nil {
-		return false, nil, err
+		return false, false, nil, err
 	}
 
 	// Extract RHCOS stream for the architecture of this machineSet
 	streamArch, err := streamData.GetArchitecture(arch)
 	if err != nil {
-		return false, nil, err
+		return false, false, nil, err
 	}
 
 	// Sanity check: On OKD clusters marketplace streams are not available, so they should be skipped for updates.
 	// TODO: Determine if OKD azure clusters are even in use/tested
 	if streamArch.RHELCoreOSExtensions.Marketplace == nil {
 		klog.Infof("Skipping machineset %s, marketplace streams are not available", machineSetName)
-		return false, nil, nil
+		return false, true, nil, nil
 	}
 	if streamArch.RHELCoreOSExtensions.Marketplace.Azure == nil {
 		klog.Infof("Skipping machineset %s, Azure marketplace streams are not available", machineSetName)
-		return false, nil, nil
+		return false, true, nil, nil
 	}
 
 	// There are two types to consider: hyperGenV1 & hyperGenV2. This determination
@@ -317,13 +317,13 @@ func reconcileAzureProviderSpec(streamData *stream.Stream, arch string, _ *oscon
 	// Determine target image from RHCOS stream
 	targetImage, err := getTargetImageFromStream(streamArch, azureVariant, usesHyperVGen2, arch)
 	if err != nil {
-		return false, nil, err
+		return false, false, nil, err
 	}
 
 	// If the current image matches, nothing to do here
 	// Q: Should we enhance this to do version comparisons?
 	if reflect.DeepEqual(currentImage, targetImage) {
-		return false, nil, nil
+		return false, false, nil, nil
 	}
 
 	klog.Infof("Current boot image version: %s", currentImage.Version)
@@ -335,10 +335,10 @@ func reconcileAzureProviderSpec(streamData *stream.Stream, arch string, _ *oscon
 
 	// Ensure the ignition stub is the minimum acceptable spec required for boot image updates
 	if err := upgradeStubIgnitionIfRequired(providerSpec.UserDataSecret.Name, secretClient); err != nil {
-		return false, nil, err
+		return false, false, nil, err
 	}
 
-	return true, newProviderSpec, nil
+	return true, false, newProviderSpec, nil
 }
 
 // getAzureImageFromStreamImage converts a stream marketplace image to an Azure machine image

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	features "github.com/openshift/api/features"
@@ -14,6 +15,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	k8sversion "k8s.io/apimachinery/pkg/util/version"
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	clientset "k8s.io/client-go/kubernetes"
@@ -77,6 +79,7 @@ type Controller struct {
 // Stats structure for local bookkeeping of machine resources
 type MachineResourceStats struct {
 	inProgress   int
+	skippedCount int
 	erroredCount int
 	totalCount   int
 }
@@ -92,6 +95,17 @@ type BootImageState struct {
 // isFinished checks if all resources have been evaluated
 func (mrs MachineResourceStats) isFinished() bool {
 	return mrs.totalCount == (mrs.inProgress + mrs.erroredCount)
+}
+
+func (mrs MachineResourceStats) getProgressingStatusMessage(name string) string {
+	if mrs.skippedCount > 0 {
+		return fmt.Sprintf("Reconciled %d of %d %s (%d skipped)", mrs.inProgress-mrs.skippedCount, mrs.totalCount, name, mrs.skippedCount)
+	}
+	return fmt.Sprintf("Reconciled %d of %d %s", mrs.inProgress, mrs.totalCount, name)
+}
+
+func (mrs MachineResourceStats) getDegradedStatusMessage(name string) string {
+	return fmt.Sprintf("%d Degraded %s", mrs.erroredCount, name)
 }
 
 const (
@@ -446,8 +460,11 @@ func (ctrl *Controller) updateMachineConfiguration(oldMC, newMC interface{}) {
 		return
 	}
 
-	// Only take action if the there is an actual change in the MachineConfiguration's ManagedBootImagesStatus
-	if reflect.DeepEqual(oldMachineConfiguration.Status.ManagedBootImagesStatus, newMachineConfiguration.Status.ManagedBootImagesStatus) {
+	// Skip reconciliation if neither ManagedBootImagesStatus nor BootImageSkewEnforcementStatus has changed.
+	// BootImageSkewEnforcementStatus is only checked when the BootImageSkewEnforcement feature gate is enabled.
+	if reflect.DeepEqual(oldMachineConfiguration.Status.ManagedBootImagesStatus, newMachineConfiguration.Status.ManagedBootImagesStatus) &&
+		(!ctrl.fgHandler.Enabled(features.FeatureGateBootImageSkewEnforcement) ||
+			reflect.DeepEqual(oldMachineConfiguration.Status.BootImageSkewEnforcementStatus, newMachineConfiguration.Status.BootImageSkewEnforcementStatus)) {
 		return
 	}
 
@@ -493,7 +510,13 @@ func (ctrl *Controller) updateConditions(newReason string, syncError error, targ
 	for i, condition := range newConditions {
 		if condition.Type == targetConditionType {
 			if condition.Type == opv1.MachineConfigurationBootImageUpdateProgressing {
-				newConditions[i].Message = fmt.Sprintf("Reconciled %d of %d MAPI MachineSets | Reconciled %d of %d ControlPlaneMachineSets | Reconciled %d of %d CAPI MachineSets | Reconciled %d of %d CAPI MachineDeployments", ctrl.mapiStats.inProgress, ctrl.mapiStats.totalCount, ctrl.cpmsStats.inProgress, ctrl.cpmsStats.totalCount, ctrl.capiMachineSetStats.inProgress, ctrl.capiMachineSetStats.totalCount, ctrl.capiMachineDeploymentStats.inProgress, ctrl.capiMachineDeploymentStats.totalCount)
+				messages := []string{
+					ctrl.mapiStats.getProgressingStatusMessage("MAPI MachineSets"),
+					ctrl.cpmsStats.getProgressingStatusMessage("ControlPlaneMachineSets"),
+					ctrl.capiMachineSetStats.getProgressingStatusMessage("CAPI MachineSets"),
+					ctrl.capiMachineDeploymentStats.getProgressingStatusMessage("CAPI MachineDeployments"),
+				}
+				newConditions[i].Message = strings.Join(messages, " | ")
 				newConditions[i].Reason = newReason
 				// If all machine resources have been processed, then the controller is no longer progressing.
 				if ctrl.mapiStats.isFinished() && ctrl.cpmsStats.isFinished() && ctrl.capiMachineSetStats.isFinished() && ctrl.capiMachineDeploymentStats.isFinished() {
@@ -502,10 +525,16 @@ func (ctrl *Controller) updateConditions(newReason string, syncError error, targ
 					newConditions[i].Status = metav1.ConditionTrue
 				}
 			} else if condition.Type == opv1.MachineConfigurationBootImageUpdateDegraded {
+				messages := []string{
+					ctrl.mapiStats.getDegradedStatusMessage("MAPI MachineSets"),
+					ctrl.cpmsStats.getDegradedStatusMessage("ControlPlaneMachineSets"),
+					ctrl.capiMachineSetStats.getDegradedStatusMessage("CAPI MachineSets"),
+					ctrl.capiMachineDeploymentStats.getDegradedStatusMessage("CAPI MachineDeployments"),
+				}
 				if syncError == nil {
-					newConditions[i].Message = fmt.Sprintf("%d Degraded MAPI MachineSets | %d Degraded ControlPlaneMachineSets | %d Degraded CAPI MachineSets | %d CAPI MachineDeployments", ctrl.mapiStats.erroredCount, ctrl.cpmsStats.erroredCount, ctrl.capiMachineSetStats.erroredCount, ctrl.capiMachineDeploymentStats.erroredCount)
+					newConditions[i].Message = strings.Join(messages, " | ")
 				} else {
-					newConditions[i].Message = fmt.Sprintf("%d Degraded MAPI MachineSets | %d Degraded ControlPlaneMachineSets | %d Degraded CAPI MachineSets | %d CAPI MachineDeployments | Error(s): %s", ctrl.mapiStats.erroredCount, ctrl.cpmsStats.erroredCount, ctrl.capiMachineSetStats.erroredCount, ctrl.capiMachineDeploymentStats.erroredCount, syncError.Error())
+					newConditions[i].Message = fmt.Sprintf("%s | Error(s): %s", strings.Join(messages, " | "), syncError.Error())
 				}
 				newConditions[i].Reason = newReason
 				if syncError != nil {
@@ -523,33 +552,77 @@ func (ctrl *Controller) updateConditions(newReason string, syncError error, targ
 	}
 	// Only make an API call if there is an update to the Conditions field
 	if !reflect.DeepEqual(newConditions, mcop.Status.Conditions) {
-		ctrl.updateMachineConfigurationStatus(mcop, newConditions)
+		mcop.Status.Conditions = newConditions
+		ctrl.updateMachineConfigurationStatus(mcop.Status)
 	}
 }
 
-// updateMachineConfigurationStatus updates the MachineConfiguration status with new conditions
-// using retry logic to handle concurrent updates.
-func (ctrl *Controller) updateMachineConfigurationStatus(mcop *opv1.MachineConfiguration, newConditions []metav1.Condition) {
+// updateClusterBootImage updates the cluster boot image record if the skew enforcement is set to Automatic mode.
+func (ctrl *Controller) updateClusterBootImage() {
 
+	mcop, err := ctrl.mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, metav1.GetOptions{})
+	if err != nil {
+		klog.Errorf("error updating cluster boot image record: %s", err)
+		return
+	}
+	// No action to take if not in automatic mode
+	if mcop.Status.BootImageSkewEnforcementStatus.Mode != opv1.BootImageSkewEnforcementModeStatusAutomatic {
+		return
+	}
+
+	// Get OCP version of last boot image update from configmap
+	configMap, err := ctrl.mcoCmLister.ConfigMaps(ctrlcommon.MCONamespace).Get(ctrlcommon.BootImagesConfigMapName)
+	if err != nil {
+		klog.Warningf("Failed to get boot images configmap: %v, skipping cluster boot image record update", err)
+		return
+	}
+
+	releaseVersion, found := configMap.Data[ctrlcommon.OCPReleaseVersionKey]
+	if !found {
+		klog.Warningf("OCP release version not found in boot images configmap, skipping cluster boot image record update")
+		return
+	}
+
+	// Parse and extract semantic version (major.minor.patch) for API validation
+	parsedVersion, err := k8sversion.ParseGeneric(releaseVersion)
+	if err != nil {
+		klog.Warningf("Failed to parse release version %q from configmap: %v, skipping cluster boot image record update", releaseVersion, err)
+		return
+	}
+	ocpVersion := fmt.Sprintf("%d.%d.%d", parsedVersion.Major(), parsedVersion.Minor(), parsedVersion.Patch())
+
+	newBootImageSkewEnforcementStatus := mcop.Status.BootImageSkewEnforcementStatus.DeepCopy()
+	newBootImageSkewEnforcementStatus.Automatic = opv1.ClusterBootImageAutomatic{
+		OCPVersion: ocpVersion,
+	}
+
+	// Only make an API call if there is an update to the skew enforcement status
+	if !reflect.DeepEqual(mcop.Status.BootImageSkewEnforcementStatus, newBootImageSkewEnforcementStatus) {
+		mcop.Status.BootImageSkewEnforcementStatus = *newBootImageSkewEnforcementStatus
+		ctrl.updateMachineConfigurationStatus(mcop.Status)
+	}
+}
+
+// updateMachineConfigurationStatus updates the MachineConfiguration status using retry logic to handle concurrent updates.
+func (ctrl *Controller) updateMachineConfigurationStatus(mcopStatus opv1.MachineConfigurationStatus) {
 	// Using a retry here as there may be concurrent reconiliation loops updating conditions for multiple
 	// resources at the same time and their local stores may be out of date
-	if !reflect.DeepEqual(mcop.Status.Conditions, newConditions) {
-		klog.V(4).Infof("%v", newConditions)
-		if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-			mcop, err := ctrl.mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, metav1.GetOptions{})
-			if err != nil {
-				return err
-			}
-			mcop.Status.Conditions = newConditions
-			_, err = ctrl.mcopClient.OperatorV1().MachineConfigurations().UpdateStatus(context.TODO(), mcop, metav1.UpdateOptions{})
-			if err != nil {
-				return err
-			}
-			return nil
-		}); err != nil {
-			klog.Errorf("error updating MachineConfiguration status: %v", err)
+	klog.V(4).Infof("MachineConfiguration status update: %v", mcopStatus)
+	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		mcop, err := ctrl.mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, metav1.GetOptions{})
+		if err != nil {
+			return err
 		}
+		mcop.Status = mcopStatus
+		_, err = ctrl.mcopClient.OperatorV1().MachineConfigurations().UpdateStatus(context.TODO(), mcop, metav1.UpdateOptions{})
+		if err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		klog.Errorf("error updating MachineConfiguration status: %v", err)
 	}
+
 }
 
 // getDefaultConditions returns the default boot image update conditions when no
