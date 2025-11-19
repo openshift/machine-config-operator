@@ -620,7 +620,7 @@ func TestDontDeleteRPMFiles(t *testing.T) {
 func TestIgn3Cfg(t *testing.T) {
 	cs := framework.NewClientSet("")
 
-	delete := helpers.CreateMCP(t, cs, "infra")
+	deleteFunc := helpers.CreateMCP(t, cs, "infra")
 	workerOldMc := helpers.GetMcName(t, cs, "worker")
 
 	unlabelFunc := helpers.LabelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
@@ -631,7 +631,7 @@ func TestIgn3Cfg(t *testing.T) {
 		if err := helpers.WaitForPoolComplete(t, cs, "worker", workerOldMc); err != nil {
 			t.Fatal(err)
 		}
-		delete()
+		deleteFunc()
 	})
 	// create a dummy MC with an sshKey for user Core
 	mcName := fmt.Sprintf("99-ign3cfg-infra-%s", uuid.NewUUID())
@@ -650,6 +650,59 @@ func TestIgn3Cfg(t *testing.T) {
 	tempFile := ign3types.File{Node: ign3types.Node{Path: "/etc/testfileconfig"},
 		FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.Resource{Source: &testfiledata}, Mode: &mode}}
 	testIgn3Config.Storage.Files = append(testIgn3Config.Storage.Files, tempFile)
+
+	overrideName := "override.conf"
+	testIgn3Config.Systemd.Units = []ign3types.Unit{
+		{
+			Name:     "new-svc.service",
+			Enabled:  helpers.BoolToPtr(true),
+			Contents: getSystemdUnitContents("New Service"),
+		},
+		{
+			Name:     "new-svc-with-dropin.service",
+			Enabled:  helpers.BoolToPtr(true),
+			Contents: getSystemdUnitContents("New Service With Dropin"),
+			Dropins: []ign3types.Dropin{
+				{
+					Name:     overrideName,
+					Contents: helpers.StrToPtr("[Unit]\nDescription=Dropin Override"),
+				},
+			},
+		},
+		{
+			Name:    "new-empty-svc.service",
+			Enabled: helpers.BoolToPtr(true),
+		},
+		{
+			Name:    "new-empty-svc-with-empty-dropin.service",
+			Enabled: helpers.BoolToPtr(true),
+			Dropins: []ign3types.Dropin{
+				{
+					Name: overrideName,
+				},
+			},
+		},
+		{
+			Name:    "new-empty-svc-with-dropin.service",
+			Enabled: helpers.BoolToPtr(true),
+			Dropins: []ign3types.Dropin{
+				{
+					Name:     overrideName,
+					Contents: getSystemdUnitContents("Empty Service With Dropin Override"),
+				},
+			},
+		},
+		{
+			Name:    "new-empty-disabled-svc.service",
+			Enabled: helpers.BoolToPtr(false),
+		},
+		{
+			Name:     "new-disabled-svc.service",
+			Enabled:  helpers.BoolToPtr(false),
+			Contents: getSystemdUnitContents("New Disabled Service"),
+		},
+	}
+
 	rawIgnConfig := helpers.MarshalOrDie(testIgn3Config)
 	mcadd.Spec.Config.Raw = rawIgnConfig
 
@@ -681,6 +734,46 @@ func TestIgn3Cfg(t *testing.T) {
 		t.Fatalf("updated file doesn't contain expected data, got %s", foundFile)
 	}
 	t.Logf("Node %s has file", infraNode.Name)
+
+	systemdUnitAssertions := map[string]func(*testing.T, string){
+		"new-svc.service": func(t *testing.T, name string) {
+			assertSystemdUnitFileExists(t, cs, infraNode, name)
+			assertSystemdUnitIsEnabled(t, cs, infraNode, name)
+		},
+		"new-svc-with-dropin.service": func(t *testing.T, name string) {
+			assertSystemdUnitFileExists(t, cs, infraNode, name)
+			assertSystemdUnitIsEnabled(t, cs, infraNode, name)
+			assertSystemdUnitDropinFileExists(t, cs, infraNode, name, overrideName)
+			assertSystemdUnitHasDropins(t, cs, infraNode, name, []string{overrideName})
+		},
+		"new-empty-svc.service": func(t *testing.T, name string) {
+			assertSystemdUnitFileDoesNotExist(t, cs, infraNode, name)
+			assertSystemdUnitDoesNotExist(t, cs, infraNode, name)
+		},
+		"new-empty-svc-with-empty-dropin.service": func(t *testing.T, name string) {
+			assertSystemdUnitDoesNotExist(t, cs, infraNode, name)
+			assertSystemdUnitFileDoesNotExist(t, cs, infraNode, name)
+			assertSystemdUnitDropinFileDoesNotExist(t, cs, infraNode, name, overrideName)
+		},
+		"new-empty-svc-with-dropin.service": func(t *testing.T, name string) {
+			assertSystemdUnitFileDoesNotExist(t, cs, infraNode, name)
+			assertSystemdUnitDropinFileExists(t, cs, infraNode, name, overrideName)
+		},
+		"new-empty-disabled-svc.service": func(t *testing.T, name string) {
+			assertSystemdUnitDoesNotExist(t, cs, infraNode, name)
+			assertSystemdUnitFileDoesNotExist(t, cs, infraNode, name)
+		},
+		"new-disabled-svc.service": func(t *testing.T, name string) {
+			assertSystemdUnitFileExists(t, cs, infraNode, name)
+			assertSystemdUnitExists(t, cs, infraNode, name)
+			assertSystemdUnitIsDisabled(t, cs, infraNode, name)
+		},
+	}
+
+	for name, assertionFunc := range systemdUnitAssertions {
+		t.Logf("Running assertion(s) for %s", name)
+		assertionFunc(t, name)
+	}
 
 	unlabelFunc()
 
