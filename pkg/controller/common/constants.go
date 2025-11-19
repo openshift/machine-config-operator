@@ -150,6 +150,7 @@ const (
 	// NodeSizingEnabledEnvPath is the file path for the node sizing enabled environment file
 	NodeSizingEnabledEnvPath = "/etc/node-sizing-enabled.env"
 	// Current Boot Image Skew Limits
+	// Note: Update units in status_test.go when the following are bumped
 	RHCOSVersionBootImageSkewLimit = "9.2"
 	OCPVersionBootImageSkewLimit   = "4.13.0"
 )
