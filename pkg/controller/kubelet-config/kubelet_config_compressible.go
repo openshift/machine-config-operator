@@ -7,7 +7,6 @@ import (
 	"github.com/clarketm/json"
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -27,13 +26,6 @@ const (
 // ensureCompressibleMachineConfigs ensures compressible machine configs exist for all pools
 // This is called at controller startup to create compressible MCs for all pools
 func (ctrl *Controller) ensureCompressibleMachineConfigs() error {
-	if err := apihelpers.IsControllerConfigRunningOrCompleted(ctrlcommon.ControllerConfigName, ctrl.ccLister.Get); err != nil {
-		// If the ControllerConfig is not running, we will encounter an error when generating the
-		// kubeletconfig object.
-		klog.V(1).Infof("ControllerConfig not running or completed: %v", err)
-		return err
-	}
-
 	pools, err := ctrl.mcpLister.List(labels.Everything())
 	if err != nil {
 		return fmt.Errorf("could not list machine config pools: %w", err)

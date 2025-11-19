@@ -201,14 +201,16 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer klog.Info("Shutting down MachineConfigController-KubeletConfigController")
 
 	// Wait for ControllerConfig generation to be reconciled before creating compressible machine configs
-	if err := ctrl.waitForControllerConfig(stopCh); err != nil {
-		klog.Warningf("Failed to wait for ControllerConfig generation reconciliation: %v", err)
-	} else {
-		// Ensure compressible machine configs are created for all pools at startup
-		if err := ctrl.ensureCompressibleMachineConfigs(); err != nil {
-			klog.Warningf("Error ensuring compressible MachineConfigs: %v", err)
+	go func() {
+		if err := ctrl.waitForControllerConfig(stopCh); err != nil {
+			klog.Warningf("Failed to wait for ControllerConfig generation reconciliation: %v", err)
+		} else {
+			// Ensure compressible machine configs are created for all pools at startup
+			if err := ctrl.ensureCompressibleMachineConfigs(); err != nil {
+				klog.Warningf("Error ensuring compressible MachineConfigs: %v", err)
+			}
 		}
-	}
+	}()
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(ctrl.worker, time.Second, stopCh)
@@ -232,14 +234,14 @@ func (ctrl *Controller) waitForControllerConfig(stopCh <-chan struct{}) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	return wait.PollUntilContextTimeout(ctx, 5*time.Second, 5*time.Minute, true, func(_ context.Context) (bool, error) {
+	return wait.PollUntilContextTimeout(ctx, 1*time.Second, 2*time.Minute, true, func(_ context.Context) (bool, error) {
 		select {
 		case <-stopCh:
 			return false, fmt.Errorf("controller stopped while waiting for ControllerConfig reconciliation")
 		default:
 		}
 
-		if err := apihelpers.IsControllerConfigRunningOrCompleted(ctrlcommon.ControllerConfigName, ctrl.ccLister.Get); err != nil {
+		if err := apihelpers.IsControllerConfigCompleted(ctrlcommon.ControllerConfigName, ctrl.ccLister.Get); err != nil {
 			// If the ControllerConfig is not running, we will encounter an error when generating the
 			// kubeletconfig object.
 			klog.V(1).Infof("ControllerConfig not running: %v", err)
