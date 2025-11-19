@@ -155,6 +155,10 @@ const (
 
 	// NodeSizingEnabledEnvPath is the file path for the node sizing enabled environment file
 	NodeSizingEnabledEnvPath = "/etc/node-sizing-enabled.env"
+
+	// Current Boot Image Skew Limits
+	RHCOSVersionBootImageSkewLimit = "9.2"
+	OCPVersionBootImageSkewLimit   = "4.13.0"
 )
 
 // Commonly-used MCO ConfigMap names
