@@ -2,7 +2,7 @@
 
 ## Prerequisites
 This quick-start guide assumes you have the following:
-- Access to an OpenShift 4.16+ cluster with TechPreview mode enabled.
+- Access to an OpenShift 4.19+ cluster.
 - We will use an ImageStream for final image storage and retrieval. You can use an external image registry such as Quay.io, if desired.
 - The OpenShift CLI tool (`oc`)
 - [`yq`](https://github.com/mikefarah/yq)
@@ -15,7 +15,7 @@ The MachineOSConfig is the entrypoint into On-Cluster Layering (OCL). This is wh
 
 ```yaml
 ---
-apiVersion: machineconfiguration.openshift.io/v1alpha1
+apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineOSConfig
 metadata:
   name: layered
@@ -24,39 +24,29 @@ spec:
   # image to be deployed to.
   machineConfigPool:
     name: layered
-  buildInputs:
-    containerFile:
-    # Here is where you can set the Containerfile for your MachineConfigPool.
-    # You'll note that you need to provide an architecture. This is because this
-    # will eventually support multiarch clusters. For now, only noArch is
-    # supported.
-    - containerfileArch: noarch
-      content: |-
-        <containerfile contents>
-    # Here is where you can select an image builder type. For now, we only
-    # support the "PodImageBuilder" type that we maintain ourselves. Future
-    # integrations can / will include other build system integrations.
-    imageBuilder:
-      imageBuilderType: PodImageBuilder
-    # The Machine OS Builder needs to know what pull secret it can use to pull
-    # the base OS image.
-    baseImagePullSecret:
-      name: <secret-name>
-    # Here is where you specify the name of the push secret you use to push
-    # your newly-built image to.
-    renderedImagePushSecret:
-      name: <secret-name>
-    # Here is where you specify the image registry to push your newly-built
-    # images to.
-    renderedImagePushspec: <final image pullspec>
-  buildOutputs:
-    # Here is where you specify what image will be used on all of your nodes to
-    # pull the newly-built image.
-    currentImagePullSecret:
-      name: <secret-name>
+  containerFile:
+  # Here is where you can set the Containerfile for your MachineConfigPool.
+  - content: |-
+      <containerfile contents>
+  # Here is where you can select an image builder type. For now, we only
+  # support the "Job" type that we maintain ourselves. Future integrations
+  # can / will include other build system integrations.
+  imageBuilder:
+    imageBuilderType: Job
+  # The Machine OS Builder needs to know what pull secret it can use to pull
+  # the base OS image.
+  baseImagePullSecret:
+    name: <secret-name>
+  # Here is where you specify the name of the push secret you use to push
+  # your newly-built image to.
+  renderedImagePushSecret:
+    name: <secret-name>
+  # Here is where you specify the image registry to push your newly-built
+  # images to.
+  renderedImagePushSpec: <final image pullspec>
 ```
 
-There is a 1:1 relationship between a MachineOSConfig and a MachineConfigPool. It is possible to opt-in only a single MachineConfigPool.
+There is a 1:1 relationship between a MachineOSConfig and a MachineConfigPool. It is possible to opt-in to only a single MachineConfigPool.
 
 ### MachineOSBuild
 
@@ -101,7 +91,7 @@ oc get imagestream/os-images  -n openshift-machine-config-operator -o=jsonpath='
 # (optional): Since this walk-through will use an ImageStream, we need to get the push and
 # pull secret associated with the builder service account. For the sake of this
 # demonstration, lets assume that this command returns the name
-# "builder-dockercfg-123".
+# "builder-dockercfg-".
 #
 # If using an external image registry, this step can be omitted, although you
 # will still need to create the push and pull secrets in the MCO namespace.
@@ -162,7 +152,7 @@ Finally, we create the MachineOSConfig object. For the sake of this walk-through
 # Write the sample MachineOSConfig to a YAML file:
 cat << EOF > layered-machineosconfig.yaml
 ---
-apiVersion: machineconfiguration.openshift.io/v1alpha1
+apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineOSConfig
 metadata:
   name: layered
@@ -171,36 +161,29 @@ spec:
   # image to be deployed to.
   machineConfigPool:
     name: layered
-  buildInputs:
-    containerFile:
-    # Here is where you can set the Containerfile for your MachineConfigPool.
-    # You'll note that you need to provide an architecture. This is because this
-    # will eventually support multiarch clusters. For now, only noArch is
-    # supported.
-    - containerfileArch: noarch
-      content: |-
-        <containerfile contents>
-    # Here is where you can select an image builder type. For now, we only
-    # support the "PodImageBuilder" type that we maintain ourselves. Future
-    # integrations can / will include other build system integrations.
-    imageBuilder:
-      imageBuilderType: PodImageBuilder
-    # The Machine OS Builder needs to know what pull secret it can use to pull
-    # the base OS image.
-    baseImagePullSecret:
-      name: <secret-name>
-    # Here is where you specify the name of the push secret you use to push
-    # your newly-built image to.
-    renderedImagePushSecret:
-      name: <secret-name>
-    # Here is where you specify the image registry to push your newly-built
-    # images to.
-    renderedImagePushspec: <final image pullspec>
-  buildOutputs:
-    # Here is where you specify what image will be used on all of your nodes to
-    # pull the newly-built image.
-    currentImagePullSecret:
-      name: <secret-name>
+  containerFile:
+  # Here is where you can set the Containerfile for your MachineConfigPool.
+  # You'll note that you need to provide an architecture. This is because this
+  # will eventually support multiarch clusters. For now, only noArch is
+  # supported.
+  - content: |-
+      <containerfile contents>
+  # Here is where you can select an image builder type. For now, we only
+  # support the "Job" type that we maintain ourselves. Future integrations
+  # can / will include other build system integrations.
+  imageBuilder:
+    imageBuilderType: Job
+  # The Machine OS Builder needs to know what pull secret it can use to pull
+  # the base OS image.
+  baseImagePullSecret:
+    name: <secret-name>
+  # Here is where you specify the name of the push secret you use to push
+  # your newly-built image to.
+  renderedImagePushSecret:
+    name: <secret-name>
+  # Here is where you specify the image registry to push your newly-built
+  # images to.
+  renderedImagePushSpec: <final image pullspec>
 EOF
 
 # Write the Containerfile to a file:
@@ -232,18 +215,17 @@ export containerfileContents="$(cat Containerfile)"
 export imageRegistryPullspec="image-registry.openshift-image-registry.svc:5000/openshift-machine-config-operator/os-images:latest"
 
 
-yq -i e '.spec.buildInputs.baseImagePullSecret.name = strenv(baseImagePullSecretName)' ./layered-machineosconfig.yaml
-yq -i e '.spec.buildInputs.renderedImagePushSecret.name = strenv(pushSecretName)' ./layered-machineosconfig.yaml
-yq -i e '.spec.buildOutputs.currentImagePullSecret.name = strenv(pullSecretName)' ./layered-machineosconfig.yaml
-yq -i e '.spec.buildInputs.containerFile[0].content = strenv(containerfileContents)' ./layered-machineosconfig.yaml
-yq -i e '.spec.buildInputs.renderedImagePushspec = strenv(imageRegistryPullspec)' ./layered-machineosconfig.yaml
+yq -i e '.spec.baseImagePullSecret.name = strenv(baseImagePullSecretName)' ./layered-machineosconfig.yaml
+yq -i e '.spec.renderedImagePushSecret.name = strenv(pushSecretName)' ./layered-machineosconfig.yaml
+yq -i e '.spec.containerFile[0].content = strenv(containerfileContents)' ./layered-machineosconfig.yaml
+yq -i e '.spec.renderedImagePushSpec = strenv(imageRegistryPullspec)' ./layered-machineosconfig.yaml
 ```
 
 This yields the following YAML:
 
 ```yaml
 ---
-apiVersion: machineconfiguration.openshift.io/v1alpha1
+apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineOSConfig
 metadata:
   name: layered
@@ -252,38 +234,31 @@ spec:
   # image to be deployed to.
   machineConfigPool:
     name: layered
-  buildInputs:
-    containerFile:
-      # Here is where you can set the Containerfile for your MachineConfigPool.
-      # You'll note that you need to provide an architecture. This is because
-      # this will eventually support multiarch clusters.
-      - containerfileArch: noarch
-        content: |-
-          FROM configs AS final
-          RUN rpm-ostree install tree && \
-            ostree container commit
-    # Here is where you can select an image builder type. For now, we only
-    # support a pod image builder that we maintain ourselves. Future
-    # integrations can / will include other build system integrations.
-    imageBuilder:
-      imageBuilderType: PodImageBuilder
-    # The Machine OS Builder needs to know what pull secret it can use to pull
-    # the base OS image.
-    baseImagePullSecret:
-      name: global-pull-secret-copy
-    # Here is where you specify the name of the push secret you use to push
-    # your newly-built image to.
-    renderedImagePushSecret:
-      name: builder-dockercfg-123
-    # Here is where you specify the image registry to push your newly-built
-    # images to. In this example, we're using an ImageStream, but one can
-    # easily use an image registry such as Quay.io.
-    renderedImagePushspec: image-registry.openshift-image-registry.svc:5000/openshift-machine-config-operator/os-image:latest
-  buildOutputs:
-    # Here is where you specify what image will be used on all of your nodes to
-    # pull the newly-built image.
-    currentImagePullSecret:
-      name: builder-dockercfg-123
+  containerFile:
+    # Here is where you can set the Containerfile for your MachineConfigPool.
+    # You'll note that you need to provide an architecture. This is because
+    # this will eventually support multiarch clusters.
+    - content: |-
+        FROM configs AS final
+        RUN rpm-ostree install tree && \
+          ostree container commit
+  # Here is where you can select an image builder type. For now, we only
+  # support a job image builder that we maintain ourselves. Future
+  # integrations can / will include other build system integrations.
+  imageBuilder:
+    imageBuilderType: Job
+  # The Machine OS Builder needs to know what pull secret it can use to pull
+  # the base OS image.
+  baseImagePullSecret:
+    name: global-pull-secret-copy
+  # Here is where you specify the name of the push secret you use to push
+  # your newly-built image to.
+  renderedImagePushSecret:
+    name: builder-dockercfg-123
+  # Here is where you specify the image registry to push your newly-built
+  # images to. In this example, we're using an ImageStream, but one can
+  # easily use an image registry such as Quay.io.
+  renderedImagePushSpec: image-registry.openshift-image-registry.svc:5000/openshift-machine-config-operator/os-image:latest
 ```
 
 Now that we've done this, we can apply the layered MachineOSConfig to our cluster:
@@ -315,8 +290,8 @@ We can also look at the MachineOSBuilds:
 ```console
 $ oc get machineosbuilds
 
-NAME                                                                PREPARED   BUILDING   SUCCEEDED   INTERRUPTED   FAILED
-layered-rendered-layered-de9c5e764b623c4065a1645261e9d553-builder   False      True       False       False         False
+NAME                                       PREPARED   BUILDING   SUCCEEDED   INTERRUPTED   FAILED   AGE
+layered-917498322fd0fa5e58671398b8cf7780   False      False      True        False         False    48m
 ```
 
 ### The build is complete
@@ -326,58 +301,74 @@ Now that the build has succeeded, we can take a closer look at the `MachineOSBui
 ```console
 $ oc get machineosbuild/layered-rendered-layered-de9c5e764b623c4065a1645261e9d553-builder -o yaml
 
-apiVersion: machineconfiguration.openshift.io/v1alpha1
+apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineOSBuild
 metadata:
-  creationTimestamp: "2024-08-20T14:35:46Z"
+  annotations:
+    machineconfiguration.openshift.io/job-uid: 6f0589cf-a34a-4880-ae7b-68fce1030e44
+    machineconfiguration.openshift.io/rendered-image-push-secret: builder-dockercfg-123
+  creationTimestamp: "2025-05-30T14:29:31Z"
+  finalizers:
+  - foregroundDeletion
   generation: 1
-  name: layered-rendered-layered-de9c5e764b623c4065a1645261e9d553-builder
-  resourceVersion: "93149"
-  uid: 9893db2e-106e-4c9a-9525-a96443e28fb8
+  labels:
+    machineconfiguration.openshift.io/machine-os-config: layered
+    machineconfiguration.openshift.io/rendered-machine-config: rendered-layered-6cd3c9b9ecb3b32dd93c403735fd9ad3
+    machineconfiguration.openshift.io/target-machine-config-pool: layered
+  name: layered-917498322fd0fa5e58671398b8cf7780
+  ownerReferences:
+  - apiVersion: machineconfiguration.openshift.io/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: MachineOSConfig
+    name: layered
+    uid: 491ad6c9-e73c-4016-98b8-3da8ec1ce586
+  resourceVersion: "109232"
+  uid: 34ab137d-87d9-4a06-a493-c09cf117c100
 spec:
-  configGeneration: 1
-  desiredConfig:
-    name: rendered-layered-de9c5e764b623c4065a1645261e9d553
+  machineConfig:
+    name: rendered-layered-6cd3c9b9ecb3b32dd93c403735fd9ad3
   machineOSConfig:
     name: layered
-  renderedImagePushspec: image-registry.openshift-image-registry.svc:5000/openshift-machine-config-operator/os-images:latest
-  version: 1
+  renderedImagePushSpec: image-registry.openshift-image-registry.svc:5000/openshift-machine-config-operator/os-image:layered-917498322fd0fa5e58671398b8cf7780
 status:
-  buildStart: "2024-08-20T14:35:46Z"
-  builderReference:
-    buildPod:
-      group: ""
-      name: build-rendered-layered-de9c5e764b623c4065a1645261e9d553
+  buildEnd: "2025-05-30T14:34:51Z"
+  buildStart: "2025-05-30T14:29:41Z"
+  builder:
+    imageBuilderType: Job
+    job:
+      group: batch
+      name: build-layered-917498322fd0fa5e58671398b8cf7780
       namespace: openshift-machine-config-operator
-      resource: ""
-    imageBuilderType: PodImageBuilder
+      resource: jobs
   conditions:
-  - lastTransitionTime: "2024-08-20T14:35:47Z"
+  - lastTransitionTime: "2025-05-30T14:29:41Z"
+    message: Build Failed
+    reason: Failed
+    status: "False"
+    type: Failed
+  - lastTransitionTime: "2025-05-30T14:29:41Z"
     message: Build Interrupted
     reason: Interrupted
     status: "False"
     type: Interrupted
-  - lastTransitionTime: "2024-08-20T14:35:52Z"
+  - lastTransitionTime: "2025-05-30T14:29:41Z"
     message: Build Prepared and Pending
     reason: Prepared
     status: "False"
     type: Prepared
-  - lastTransitionTime: "2024-08-20T14:41:41Z"
+  - lastTransitionTime: "2025-05-30T14:34:51Z"
     message: Image Build In Progress
     reason: Building
     status: "False"
     type: Building
-  - lastTransitionTime: "2024-08-20T14:41:41Z"
+  - lastTransitionTime: "2025-05-30T14:34:51Z"
     message: Build Ready
     reason: Ready
     status: "True"
     type: Succeeded
-  - lastTransitionTime: "2024-08-20T14:35:47Z"
-    message: MOSC
-    reason: MOSCAvailable
-    status: "False"
-    type: Failed
-  finalImagePullspec: image-registry.openshift-image-registry.svc:5000/openshift-machine-config-operator/os-images@sha256:c47856f56e1fdb7c9d10a1658e4ea85fbea44d71fb0e82898d152b47e0f894c6
+  digestedImagePushSpec: image-registry.openshift-image-registry.svc:5000/openshift-machine-config-operator/os-image@sha256:adf199658b8535c179fdb6e8ad40889b1b37d882a1bdb930d190d95b44bae548
+
 ```
 
 We can see what MachineConfig the image was built with, the digested image pullspec, and its overall status. It is worth noting that although the `:latest` tag is shown above, all images will be tagged with the name of the MachineConfig they were built with (this is subject to change). Additionally, when they are pulled to each node, they are only pulled using a digested image pullspec.
@@ -386,19 +377,20 @@ We can see what MachineConfig the image was built with, the digested image pulls
 
 At this point, we now have a fully-built image, but we have not yet applied it
 to any of our nodes. For the sake of this walk-through, we'll use the node named
-`ip-10-0-18-226.ec2.internal`:
+`pabrodri-test-tr2jp-worker-a-4kn5h`:
 
 ```console
 # First, lets look at what OS image our node is currently booted into:
-$ oc debug node/ip-10-0-18-226.ec2.internal -- chroot /host rpm-ostree status
+$ oc debug node/pabrodri-test-tr2jp-worker-a-4kn5h-debug-wdsz7 -- chroot /host rpm-ostree status
 
-Starting pod/ip-10-0-18-226ec2internal-debug-rtfr8 ...
+Starting pod/pabrodri-test-tr2jp-worker-a-4kn5h-debug-wdsz7 ...
 To use host binaries, run `chroot /host`
 State: idle
 Deployments:
-* ostree-unverified-registry:registry.ci.openshift.org/ocp/4.17-2024-08-19-220527@sha256:f686a353e75b2cf0981d69ee07233e71874ae0a1f37c10d883be070e63e5b60f
-                    Digest: sha256:f686a353e75b2cf0981d69ee07233e71874ae0a1f37c10d883be070e63e5b60f
-                  Version: 417.94.202408190141-0 (2024-08-19T01:45:32Z)
+* ostree-unverified-registry:registry.ci.openshift.org/ocp/4.19-2025-05-28-210643@sha256:69af94fba046002fd10732d33ce2a7517779ef7d50b692a6cdeb7e779da112e7
+                   Digest: sha256:69af94fba046002fd10732d33ce2a7517779ef7d50b692a6cdeb7e779da112e7
+                  Version: 9.6.20250527-0 (2025-05-28T18:52:59Z)
+
 
 Removing debug pod ...
 ```
@@ -408,8 +400,8 @@ We can see that we have the "factory" OS image that was provided by the current 
 Next, we can ensure that the desired package is not installed on our node by doing something like this:
 
 ```console
-$ oc debug node/ip-10-0-18-226.ec2.internal -- chroot /host tree -a /var/home/core
-Starting pod/ip-10-0-18-226ec2internal-debug-mkkjs ...
+$ oc debug node/pabrodri-test-tr2jp-worker-a-4kn5h -- chroot /host tree -a /var/home/core
+Starting pod/pabrodri-test-tr2jp-worker-a-4kn5h-debug-s6hrp ...
 To use host binaries, run `chroot /host`
 chroot: failed to run command 'tree': No such file or directory
 
@@ -420,7 +412,7 @@ error: non-zero exit code from debug container
 This confirms that we do not have the `tree` package on our node. Now, lets add the worker node to our `layered` MachineConfigPool by adding the `node-role.kubernetes.io/layered=` label to it so that it can use our newly-built OS image.
 
 ```console
-$ oc label node/ip-10-0-18-226.ec2.internal 'node-role.kubernetes.io/layered='
+$ oc label node/pabrodri-test-tr2jp-worker-a-4kn5h 'node-role.kubernetes.io/layered='
 ```
 
 Now, we'll see the node drain and begin to rebase into the newly-built OS image. This will take a few minutes, but you can use this script that will wait for it to complete:
@@ -428,7 +420,7 @@ Now, we'll see the node drain and begin to rebase into the newly-built OS image.
 ```bash
 #!/usr/bin/env bash
 
-nodeName="ip-10-0-18-226.ec2.internal"
+nodeName="pabrodri-test-tr2jp-worker-a-4kn5h"
 
 oc wait \
     --timeout=10m \
@@ -440,30 +432,25 @@ oc wait \
 Once the node has finished the update, we can interrogate the node state like we did before:
 
 ```console
-$ oc debug node/ip-10-0-18-226.ec2.internal -- chroot /host rpm-ostree status
+$ oc debug node/pabrodri-test-tr2jp-worker-a-4kn5h -- chroot /host rpm-ostree status
 
-Starting pod/ip-10-0-18-226ec2internal-debug-xvbx4 ...
+Starting pod/pabrodri-test-tr2jp-worker-a-4kn5h-debug-fvb22 ...
 To use host binaries, run `chroot /host`
-
-
 State: idle
 Deployments:
-* ostree-unverified-registry:image-registry.openshift-image-registry.svc:5000/openshift-machine-config-operator/os-images@sha256:c47856f56e1fdb7c9d10a1658e4ea85fbea44d71fb0e82898d152b47e0f894c6
-                    Digest: sha256:c47856f56e1fdb7c9d10a1658e4ea85fbea44d71fb0e82898d152b47e0f894c6
-                  Version: 417.94.202408190141-0 (2024-08-20T14:40:42Z)
-
+* ostree-unverified-registry:image-registry.openshift-image-registry.svc:5000/openshift-machine-config-operator/os-image@sha256:adf199658b8535c179fdb6e8ad40889b1b37d882a1bdb930d190d95b44bae548
+                   Digest: sha256:adf199658b8535c179fdb6e8ad40889b1b37d882a1bdb930d190d95b44bae548
+                  Version: 9.6.20250527-0 (2025-05-30T14:33:49Z)
 
 
 Removing debug pod ...
-
-
 ```
 
 We can see now that our node has booted into our new OS image. But does it have `tree` installed?
 
 ```console
-$  oc debug node/ip-10-0-18-226.ec2.internal -- chroot /host tree -a /var/home/core
-Starting pod/ip-10-0-18-226ec2internal-debug-nvld2 ...
+$  oc debug node/pabrodri-test-tr2jp-worker-a-4kn5h -- chroot /host tree -a /var/home/core
+Starting pod/pabrodri-test-tr2jp-worker-a-4kn5h-debug-hltxn ...
 To use host binaries, run `chroot /host`
 /var/home/core
 |-- .bash_logout
