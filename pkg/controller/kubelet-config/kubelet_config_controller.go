@@ -186,14 +186,14 @@ func New(
 	return ctrl
 }
 
-// waitForTemplateGeneration waits for the ControllerConfig to be reconciled by the template controller
-func (ctrl *Controller) waitForTemplateGeneration(stopCh <-chan struct{}) error {
+// waitForControllerConfig waits for the ControllerConfig to be reconciled by the template controller
+func (ctrl *Controller) waitForControllerConfig(stopCh <-chan struct{}) error {
 	klog.Info("Waiting for ControllerConfig generation to be reconciled...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	return wait.PollUntilContextTimeout(ctx, 5*time.Second, 2*time.Minute, true, func(_ context.Context) (bool, error) {
+	return wait.PollUntilContextTimeout(ctx, 5*time.Second, 5*time.Minute, true, func(_ context.Context) (bool, error) {
 		select {
 		case <-stopCh:
 			return false, fmt.Errorf("controller stopped while waiting for ControllerConfig reconciliation")
@@ -225,7 +225,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer klog.Info("Shutting down MachineConfigController-KubeletConfigController")
 
 	// Wait for ControllerConfig generation to be reconciled before creating compressible machine configs
-	if err := ctrl.waitForTemplateGeneration(stopCh); err != nil {
+	if err := ctrl.waitForControllerConfig(stopCh); err != nil {
 		klog.Warningf("Failed to wait for ControllerConfig generation reconciliation: %v", err)
 	} else {
 		// Ensure compressible machine configs are created for all pools at startup

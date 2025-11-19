@@ -30,7 +30,7 @@ func (ctrl *Controller) ensureCompressibleMachineConfigs() error {
 	if err := apihelpers.IsControllerConfigRunningOrCompleted(ctrlcommon.ControllerConfigName, ctrl.ccLister.Get); err != nil {
 		// If the ControllerConfig is not running, we will encounter an error when generating the
 		// kubeletconfig object.
-		klog.V(1).Infof("ControllerConfig not running, skipping compressible machine config creation: %v", err)
+		klog.V(1).Infof("ControllerConfig not running or completed: %v", err)
 		return err
 	}
 
