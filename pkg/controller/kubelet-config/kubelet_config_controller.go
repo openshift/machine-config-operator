@@ -186,30 +186,6 @@ func New(
 	return ctrl
 }
 
-// waitForControllerConfig waits for the ControllerConfig to be reconciled by the template controller
-func (ctrl *Controller) waitForControllerConfig(stopCh <-chan struct{}) error {
-	klog.Info("Waiting for ControllerConfig generation to be reconciled...")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
-
-	return wait.PollUntilContextTimeout(ctx, 5*time.Second, 5*time.Minute, true, func(_ context.Context) (bool, error) {
-		select {
-		case <-stopCh:
-			return false, fmt.Errorf("controller stopped while waiting for ControllerConfig reconciliation")
-		default:
-		}
-
-		if err := apihelpers.IsControllerConfigRunningOrCompleted(ctrlcommon.ControllerConfigName, ctrl.ccLister.Get); err != nil {
-			// If the ControllerConfig is not running, we will encounter an error when generating the
-			// kubeletconfig object.
-			klog.V(1).Infof("ControllerConfig not running: %v", err)
-			return false, nil
-		}
-		return true, nil
-	})
-}
-
 // Run executes the kubelet config controller.
 func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
@@ -248,6 +224,31 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 
 	<-stopCh
 }
+
+// waitForControllerConfig waits for the ControllerConfig to be reconciled by the template controller
+func (ctrl *Controller) waitForControllerConfig(stopCh <-chan struct{}) error {
+	klog.Info("Waiting for ControllerConfig generation to be reconciled...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	return wait.PollUntilContextTimeout(ctx, 5*time.Second, 5*time.Minute, true, func(_ context.Context) (bool, error) {
+		select {
+		case <-stopCh:
+			return false, fmt.Errorf("controller stopped while waiting for ControllerConfig reconciliation")
+		default:
+		}
+
+		if err := apihelpers.IsControllerConfigRunningOrCompleted(ctrlcommon.ControllerConfigName, ctrl.ccLister.Get); err != nil {
+			// If the ControllerConfig is not running, we will encounter an error when generating the
+			// kubeletconfig object.
+			klog.V(1).Infof("ControllerConfig not running: %v", err)
+			return false, nil
+		}
+		return true, nil
+	})
+}
+
 func (ctrl *Controller) filterAPIServer(apiServer *configv1.APIServer) {
 	if apiServer.Name != "cluster" {
 		return
