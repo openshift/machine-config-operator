@@ -304,66 +304,158 @@ func TestSyncMachineConfiguration(t *testing.T) {
 		name                            string
 		mcop                            *opv1.MachineConfiguration
 		infra                           *configv1.Infrastructure
+		clusterVersion                  *configv1.ClusterVersion
 		expectedManagedBootImagesStatus opv1.ManagedBootImages
+		expectedSkewEnforcementStatus   opv1.BootImageSkewEnforcementStatus
 		annotationExpected              bool
 	}{
 		{
 			name:                            "AWS platform, no existing config, opt-in expected",
 			infra:                           buildInfra(withPlatformType(configv1.AWSPlatformType)),
 			mcop:                            buildMachineConfigurationWithNoBootImageConfiguration(),
+			clusterVersion:                  buildClusterVersion("4.18.0"),
 			annotationExpected:              true,
 			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithUpdateEnabled(),
+			expectedSkewEnforcementStatus:   apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.18.0"),
 		},
 		{
 			name:                            "AWS platform, existing enabled config, no opt-in expected",
 			infra:                           buildInfra(withPlatformType(configv1.AWSPlatformType)),
 			mcop:                            buildMachineConfigurationWithBootImageUpdateEnabled(),
+			clusterVersion:                  buildClusterVersion("4.18.0"),
 			annotationExpected:              false,
 			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithUpdateEnabled(),
+			expectedSkewEnforcementStatus:   apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.18.0"),
 		},
 		{
 			name:                            "AWS platform, existing disabled config, no opt-in expected",
 			infra:                           buildInfra(withPlatformType(configv1.AWSPlatformType)),
 			mcop:                            buildMachineConfigurationWithBootImageUpdateDisabled(),
+			clusterVersion:                  buildClusterVersion("4.18.0"),
 			annotationExpected:              false,
 			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithUpdateDisabled(),
+			expectedSkewEnforcementStatus:   apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.18.0"),
 		},
 		{
 			name:                            "GCP platform, no existing config, opt-in expected",
 			infra:                           buildInfra(withPlatformType(configv1.GCPPlatformType)),
 			mcop:                            buildMachineConfigurationWithNoBootImageConfiguration(),
+			clusterVersion:                  buildClusterVersion("4.18.0"),
 			annotationExpected:              true,
 			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithUpdateEnabled(),
+			expectedSkewEnforcementStatus:   apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.18.0"),
 		},
 		{
 			name:                            "GCP platform, existing enabled config, no opt-in expected",
 			infra:                           buildInfra(withPlatformType(configv1.GCPPlatformType)),
 			mcop:                            buildMachineConfigurationWithBootImageUpdateEnabled(),
+			clusterVersion:                  buildClusterVersion("4.18.0"),
 			annotationExpected:              false,
 			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithUpdateEnabled(),
+			expectedSkewEnforcementStatus:   apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.18.0"),
 		},
 		{
 			name:                            "GCP platform, existing disabled config, no opt-in expected",
 			infra:                           buildInfra(withPlatformType(configv1.GCPPlatformType)),
 			mcop:                            buildMachineConfigurationWithBootImageUpdateDisabled(),
+			clusterVersion:                  buildClusterVersion("4.18.0"),
 			annotationExpected:              false,
 			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithUpdateDisabled(),
+			expectedSkewEnforcementStatus:   apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.18.0"),
 		},
 		{
 			name:                            "Azure platform, no existing config, no opt-in expected",
 			infra:                           buildInfra(withPlatformType(configv1.AzurePlatformType)),
 			mcop:                            buildMachineConfigurationWithNoBootImageConfiguration(),
+			clusterVersion:                  buildClusterVersion("4.18.0"),
 			annotationExpected:              false,
 			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithUpdateDisabled(),
+			expectedSkewEnforcementStatus:   apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.18.0"),
 		},
 		{
 			name:                            "vsphere platform, no existing config, no opt-in expected",
 			infra:                           buildInfra(withPlatformType(configv1.VSpherePlatformType)),
 			mcop:                            buildMachineConfigurationWithNoBootImageConfiguration(),
+			clusterVersion:                  buildClusterVersion("4.18.0"),
 			annotationExpected:              false,
 			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithUpdateDisabled(),
+			expectedSkewEnforcementStatus:   apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.18.0"),
+		},
+		// Skew enforcement test cases
+		{
+			name:                            "AWS platform, boot images enabled, skew enforcement automatic mode expected",
+			infra:                           buildInfra(withPlatformType(configv1.AWSPlatformType)),
+			mcop:                            buildMachineConfigurationWithBootImageEnabledAndNoSkewEnforcement(),
+			clusterVersion:                  buildClusterVersion("4.18.0"),
+			annotationExpected:              false,
+			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithUpdateEnabled(),
+			expectedSkewEnforcementStatus:   apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.18.0"),
+		},
+		{
+			name:                            "AWS platform, boot images disabled, skew enforcement manual mode expected",
+			infra:                           buildInfra(withPlatformType(configv1.AWSPlatformType)),
+			mcop:                            buildMachineConfigurationWithBootImageDisabledAndNoSkewEnforcement(),
+			clusterVersion:                  buildClusterVersion("4.17.0"),
+			annotationExpected:              false,
+			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithUpdateDisabled(),
+			expectedSkewEnforcementStatus:   apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.17.0"),
+		},
+		{
+			name:                            "AWS platform, spec defines manual mode, status should reflect spec",
+			infra:                           buildInfra(withPlatformType(configv1.AWSPlatformType)),
+			mcop:                            buildMachineConfigurationWithSkewEnforcementManual("4.16.0"),
+			clusterVersion:                  buildClusterVersion("4.18.0"),
+			annotationExpected:              true,
+			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithUpdateEnabled(),
+			expectedSkewEnforcementStatus:   apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.16.0"),
+		},
+		{
+			name:                            "AWS platform, spec defines none mode, status should reflect none",
+			infra:                           buildInfra(withPlatformType(configv1.AWSPlatformType)),
+			mcop:                            buildMachineConfigurationWithSkewEnforcementNone(),
+			clusterVersion:                  buildClusterVersion("4.18.0"),
+			annotationExpected:              true,
+			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithUpdateEnabled(),
+			expectedSkewEnforcementStatus:   apihelpers.GetSkewEnforcementStatusNone(),
+		},
+		{
+			name:                            "GCP platform, boot images enabled, skew enforcement automatic mode expected",
+			infra:                           buildInfra(withPlatformType(configv1.GCPPlatformType)),
+			mcop:                            buildMachineConfigurationWithBootImageEnabledAndNoSkewEnforcement(),
+			clusterVersion:                  buildClusterVersion("4.19.1"),
+			annotationExpected:              false,
+			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithUpdateEnabled(),
+			expectedSkewEnforcementStatus:   apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.19.1"),
+		},
+		{
+			name:                            "BareMetal platform (unsupported), skew enforcement manual mode expected",
+			infra:                           buildInfra(withPlatformType(configv1.BareMetalPlatformType)),
+			mcop:                            buildMachineConfigurationWithNoBootImageConfiguration(),
+			clusterVersion:                  buildClusterVersion("4.18.0"),
+			annotationExpected:              false,
+			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithNoConfiguration(),
+			expectedSkewEnforcementStatus:   apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.18.0"),
+		},
+		{
+			name:                            "AWS platform, cluster version with multiple history entries",
+			infra:                           buildInfra(withPlatformType(configv1.AWSPlatformType)),
+			mcop:                            buildMachineConfigurationWithBootImageEnabledAndNoSkewEnforcement(),
+			clusterVersion:                  buildClusterVersionWithMultipleHistory("4.19.0", "4.18.0", "4.17.0"),
+			annotationExpected:              false,
+			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithUpdateEnabled(),
+			expectedSkewEnforcementStatus:   apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.17.0"),
+		},
+		{
+			name:                            "AWS platform, CI version format should be parsed correctly",
+			infra:                           buildInfra(withPlatformType(configv1.AWSPlatformType)),
+			mcop:                            buildMachineConfigurationWithBootImageEnabledAndNoSkewEnforcement(),
+			clusterVersion:                  buildClusterVersion("4.18.0-0.ci-2024-01-01-000000"),
+			annotationExpected:              false,
+			expectedManagedBootImagesStatus: apihelpers.GetManagedBootImagesWithUpdateEnabled(),
+			expectedSkewEnforcementStatus:   apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.18.0"),
 		},
 	}
+
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			infraIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
@@ -371,15 +463,21 @@ func TestSyncMachineConfiguration(t *testing.T) {
 			mcopIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
 			mcopIndexer.Add(tc.mcop)
 			mcpIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+			clusterVersionIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+			if tc.clusterVersion != nil {
+				clusterVersionIndexer.Add(tc.clusterVersion)
+			}
+
 			optr := &Operator{
 				eventRecorder: &record.FakeRecorder{},
 				fgHandler: ctrlcommon.NewFeatureGatesHardcodedHandler(
-					[]configv1.FeatureGateName{features.FeatureGateManagedBootImages, features.FeatureGateManagedBootImagesAWS, features.FeatureGateManagedBootImagesvSphere, features.FeatureGateManagedBootImagesAzure}, []configv1.FeatureGateName{},
+					[]configv1.FeatureGateName{features.FeatureGateManagedBootImages, features.FeatureGateManagedBootImagesAWS, features.FeatureGateManagedBootImagesvSphere, features.FeatureGateManagedBootImagesAzure, features.FeatureGateBootImageSkewEnforcement}, []configv1.FeatureGateName{},
 				),
-				infraLister: configlistersv1.NewInfrastructureLister(infraIndexer),
-				mcopLister:  mcoplistersv1.NewMachineConfigurationLister(mcopIndexer),
-				mcopClient:  fakemcopclientset.NewSimpleClientset(tc.mcop),
-				mcpLister:   mcplister.NewMachineConfigPoolLister(mcpIndexer),
+				infraLister:          configlistersv1.NewInfrastructureLister(infraIndexer),
+				mcopLister:           mcoplistersv1.NewMachineConfigurationLister(mcopIndexer),
+				mcopClient:           fakemcopclientset.NewSimpleClientset(tc.mcop),
+				mcpLister:            mcplister.NewMachineConfigPoolLister(mcpIndexer),
+				clusterVersionLister: configlistersv1.NewClusterVersionLister(clusterVersionIndexer),
 			}
 			err := optr.syncMachineConfiguration(nil, nil)
 			assert.NoError(t, err)
@@ -388,6 +486,8 @@ func TestSyncMachineConfiguration(t *testing.T) {
 			// Ensure ManagedBootImagesStatus and annotations are as expected
 			assert.Equal(t, tc.expectedManagedBootImagesStatus, mcop.Status.ManagedBootImagesStatus)
 			assert.Equal(t, tc.annotationExpected, metav1.HasAnnotation(mcop.ObjectMeta, ctrlcommon.BootImageOptedInAnnotation))
+			// Ensure BootImageSkewEnforcementStatus is as expected
+			assert.Equal(t, tc.expectedSkewEnforcementStatus, mcop.Status.BootImageSkewEnforcementStatus)
 		})
 	}
 }
@@ -402,4 +502,90 @@ func buildMachineConfigurationWithBootImageUpdateEnabled() *opv1.MachineConfigur
 
 func buildMachineConfigurationWithNoBootImageConfiguration() *opv1.MachineConfiguration {
 	return &opv1.MachineConfiguration{Spec: opv1.MachineConfigurationSpec{ManagedBootImages: apihelpers.GetManagedBootImagesWithNoConfiguration()}, ObjectMeta: metav1.ObjectMeta{Name: "cluster"}}
+}
+
+// Helper functions for building ClusterVersion objects
+func buildClusterVersion(version string) *configv1.ClusterVersion {
+	return &configv1.ClusterVersion{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "version",
+		},
+		Status: configv1.ClusterVersionStatus{
+			History: []configv1.UpdateHistory{
+				{
+					State:   configv1.CompletedUpdate,
+					Version: version,
+				},
+			},
+		},
+	}
+}
+
+func buildClusterVersionWithMultipleHistory(versions ...string) *configv1.ClusterVersion {
+	history := make([]configv1.UpdateHistory, len(versions))
+	for i, v := range versions {
+		state := configv1.CompletedUpdate
+		if i == 0 {
+			state = configv1.PartialUpdate // Most recent is partial (in progress)
+		}
+		history[i] = configv1.UpdateHistory{
+			State:   state,
+			Version: v,
+		}
+	}
+	return &configv1.ClusterVersion{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "version",
+		},
+		Status: configv1.ClusterVersionStatus{
+			History: history,
+		},
+	}
+}
+
+// Helper functions for building MachineConfiguration with skew enforcement
+func buildMachineConfigurationWithSkewEnforcementManual(ocpVersion string) *opv1.MachineConfiguration {
+	return &opv1.MachineConfiguration{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+		Spec: opv1.MachineConfigurationSpec{
+			ManagedBootImages: apihelpers.GetManagedBootImagesWithNoConfiguration(),
+			BootImageSkewEnforcement: opv1.BootImageSkewEnforcementConfig{
+				Mode: opv1.BootImageSkewEnforcementConfigModeManual,
+				Manual: opv1.ClusterBootImageManual{
+					Mode:       opv1.ClusterBootImageSpecModeOCPVersion,
+					OCPVersion: ocpVersion,
+				},
+			},
+		},
+	}
+}
+
+func buildMachineConfigurationWithSkewEnforcementNone() *opv1.MachineConfiguration {
+	return &opv1.MachineConfiguration{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+		Spec: opv1.MachineConfigurationSpec{
+			ManagedBootImages: apihelpers.GetManagedBootImagesWithNoConfiguration(),
+			BootImageSkewEnforcement: opv1.BootImageSkewEnforcementConfig{
+				Mode: opv1.BootImageSkewEnforcementConfigModeNone,
+			},
+		},
+	}
+}
+
+func buildMachineConfigurationWithBootImageEnabledAndNoSkewEnforcement() *opv1.MachineConfiguration {
+	return &opv1.MachineConfiguration{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+		Spec: opv1.MachineConfigurationSpec{
+			ManagedBootImages: apihelpers.GetManagedBootImagesWithUpdateEnabled(),
+		},
+	}
+}
+
+func buildMachineConfigurationWithBootImageDisabledAndNoSkewEnforcement() *opv1.MachineConfiguration {
+	return &opv1.MachineConfiguration{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+		Spec: opv1.MachineConfigurationSpec{
+			ManagedBootImages: apihelpers.GetManagedBootImagesWithUpdateDisabled(),
+		},
+	}
 }
