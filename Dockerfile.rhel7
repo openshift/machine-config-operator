@@ -8,9 +8,7 @@ COPY . .
 # just use that.  For now we work around this by copying a tarball.
 ENV GOCACHE="/go/rhel9/.cache"
 ENV GOMODCACHE="/go/rhel9/pkg/mod"
-RUN --mount=type=cache,target=/go/rhel9/.cache,z \
-    --mount=type=cache,target=/go/rhel9/pkg/mod,z \
-    make install DESTDIR=./instroot-rhel9 && tar -C instroot-rhel9 -cf instroot-rhel9.tar .
+RUN make install DESTDIR=./instroot-rhel9 && tar -C instroot-rhel9 -cf instroot-rhel9.tar .
 
 # Add a RHEL 8 builder to compile the RHEL 8 compatible binaries
 FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.24-openshift-4.20 AS rhel8-builder
@@ -20,15 +18,12 @@ WORKDIR /go/src/github.com/openshift/machine-config-operator
 COPY . .
 ENV GOCACHE="/go/rhel8/.cache"
 ENV GOMODCACHE="/go/rhel8/pkg/mod"
-RUN --mount=type=cache,target=/go/rhel8/.cache,z \
-    --mount=type=cache,target=/go/rhel8/pkg/mod,z \
-    make install DESTDIR=./instroot-rhel8 && tar -C instroot-rhel8 -cf instroot-rhel8.tar .
+RUN make install DESTDIR=./instroot-rhel8 && tar -C instroot-rhel8 -cf instroot-rhel8.tar .
 
 FROM registry.ci.openshift.org/ocp/4.20:base-rhel9
 ARG TAGS=""
 COPY install /manifests
-RUN --mount=type=cache,target=/var/cache/dnf,z \
-    if [ "${TAGS}" = "fcos" ]; then \
+RUN if [ "${TAGS}" = "fcos" ]; then \
     # comment out non-base/extensions image-references entirely for fcos
     sed -i '/- name: rhel-coreos-/,+3 s/^/#/' /manifests/image-references && \
     # also remove extensions from the osimageurl configmap (if we don't, oc won't rewrite it, and the placeholder value will survive and get used)
@@ -45,7 +40,8 @@ RUN --mount=type=cache,target=/var/cache/dnf,z \
     # Create the build user which will be used for doing OS image builds. We
     # use the username "build" and the uid 1000 since this matches what is in
     # the official Buildah image.
-    useradd --uid 1000 build
+    # Conditional checks if "build" user does not exist before adding user.
+    if ! id -u "build" >/dev/null 2>&1; then useradd --uid 1000 build; fi
 # Copy the binaries *after* we install nmstate so we don't invalidate our cache for local builds.
 COPY --from=rhel9-builder /go/src/github.com/openshift/machine-config-operator/instroot-rhel9.tar /tmp/instroot-rhel9.tar
 RUN cd / && tar xf /tmp/instroot-rhel9.tar && rm -f /tmp/instroot-rhel9.tar
