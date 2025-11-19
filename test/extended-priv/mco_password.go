@@ -38,7 +38,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		mMcp = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolMaster)
 		mcp = GetCompactCompatiblePool(oc.AsAdmin())
 
-		preChecks(oc)
+		PreChecks(oc)
 	})
 
 	g.It("[PolarionID:59417][OTP] MCD create/update password with MachineConfig in CoreOS nodes", func() {
