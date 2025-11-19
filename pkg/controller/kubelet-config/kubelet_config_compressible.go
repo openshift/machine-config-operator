@@ -27,7 +27,7 @@ const (
 // ensureCompressibleMachineConfigs ensures compressible machine configs exist for all pools
 // This is called at controller startup to create compressible MCs for all pools
 func (ctrl *Controller) ensureCompressibleMachineConfigs() error {
-	if err := apihelpers.IsControllerConfigRunning(ctrlcommon.ControllerConfigName, ctrl.ccLister.Get); err != nil {
+	if err := apihelpers.IsControllerConfigRunningOrCompleted(ctrlcommon.ControllerConfigName, ctrl.ccLister.Get); err != nil {
 		// If the ControllerConfig is not running, we will encounter an error when generating the
 		// kubeletconfig object.
 		klog.V(1).Infof("ControllerConfig not running, skipping compressible machine config creation: %v", err)

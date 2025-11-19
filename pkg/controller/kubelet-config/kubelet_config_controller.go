@@ -200,7 +200,7 @@ func (ctrl *Controller) waitForTemplateGeneration(stopCh <-chan struct{}) error 
 		default:
 		}
 
-		if err := apihelpers.IsControllerConfigRunning(ctrlcommon.ControllerConfigName, ctrl.ccLister.Get); err != nil {
+		if err := apihelpers.IsControllerConfigRunningOrCompleted(ctrlcommon.ControllerConfigName, ctrl.ccLister.Get); err != nil {
 			// If the ControllerConfig is not running, we will encounter an error when generating the
 			// kubeletconfig object.
 			klog.V(1).Infof("ControllerConfig not running: %v", err)
