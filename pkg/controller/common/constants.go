@@ -140,6 +140,10 @@ const (
 	// Stub Ignition upgrade related annotation keys
 	StubIgnitionVersionAnnotation   = "machineconfiguration.openshift.io/stub-ignition-upgraded-to"
 	StubIgnitionTimestampAnnotation = "machineconfiguration.openshift.io/stub-ignition-upgraded-at"
+
+	// Current Boot Image Skew Limits
+	RHCOSVersionBootImageSkewLimit = "9.2"
+	OCPVersionBootImageSkewLimit   = "4.13.0"
 )
 
 // Commonly-used MCO ConfigMap names
