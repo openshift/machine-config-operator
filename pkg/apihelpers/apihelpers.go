@@ -325,6 +325,8 @@ func IsControllerConfigCompleted(ccName string, ccGetter func(string) (*mcfgv1.C
 	return fmt.Errorf("ControllerConfig has not completed: completed(%v) running(%v) failing(%v)", completed, running, failing)
 }
 
+// IsControllerConfigRunning checks whether a ControllerConfig is running. While the bootstrap is not
+// finished, the ControllerConfig is considered running
 func IsControllerConfigRunning(ccName string, ccGetter func(string) (*mcfgv1.ControllerConfig, error)) error {
 	cur, err := ccGetter(ccName)
 	if err != nil {
@@ -337,9 +339,15 @@ func IsControllerConfigRunning(ccName string, ccGetter func(string) (*mcfgv1.Con
 
 	running := IsControllerConfigStatusConditionTrue(cur.Status.Conditions, mcfgv1.TemplateControllerRunning)
 	failing := IsControllerConfigStatusConditionTrue(cur.Status.Conditions, mcfgv1.TemplateControllerFailing)
-	if !running {
-		return fmt.Errorf("ControllerConfig has not running: running(%v) failing(%v)", running, failing)
+
+	if failing {
+		return fmt.Errorf("ControllerConfig %s is failing: running(%v) failing(%v)", ccName, running, failing)
 	}
+
+	if !running {
+		return fmt.Errorf("ControllerConfig %s not running: running(%v) failing(%v)", ccName, running, failing)
+	}
+
 	return nil
 }
 
