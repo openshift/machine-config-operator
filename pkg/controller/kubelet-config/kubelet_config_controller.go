@@ -200,6 +200,18 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	klog.Info("Starting MachineConfigController-KubeletConfigController")
 	defer klog.Info("Shutting down MachineConfigController-KubeletConfigController")
 
+	// Wait for ControllerConfig generation to be reconciled before creating compressible machine configs
+	go func() {
+		if err := ctrl.waitForControllerConfig(stopCh); err != nil {
+			klog.Warningf("Failed to wait for ControllerConfig generation reconciliation: %v", err)
+		} else {
+			// Ensure compressible machine configs are created for all pools at startup
+			if err := ctrl.ensureCompressibleMachineConfigs(); err != nil {
+				klog.Warningf("Error ensuring compressible MachineConfigs: %v", err)
+			}
+		}
+	}()
+
 	for i := 0; i < workers; i++ {
 		go wait.Until(ctrl.worker, time.Second, stopCh)
 	}
@@ -214,6 +226,31 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 
 	<-stopCh
 }
+
+// waitForControllerConfig waits for the ControllerConfig to be reconciled by the template controller
+func (ctrl *Controller) waitForControllerConfig(stopCh <-chan struct{}) error {
+	klog.Info("Waiting for ControllerConfig generation to be reconciled...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	return wait.PollUntilContextTimeout(ctx, 1*time.Second, 2*time.Minute, true, func(_ context.Context) (bool, error) {
+		select {
+		case <-stopCh:
+			return false, fmt.Errorf("controller stopped while waiting for ControllerConfig reconciliation")
+		default:
+		}
+
+		if err := apihelpers.IsControllerConfigCompleted(ctrlcommon.ControllerConfigName, ctrl.ccLister.Get); err != nil {
+			// If the ControllerConfig is not running, we will encounter an error when generating the
+			// kubeletconfig object.
+			klog.V(1).Infof("ControllerConfig not running: %v", err)
+			return false, nil
+		}
+		return true, nil
+	})
+}
+
 func (ctrl *Controller) filterAPIServer(apiServer *configv1.APIServer) {
 	if apiServer.Name != "cluster" {
 		return
@@ -419,21 +456,22 @@ func (ctrl *Controller) handleFeatureErr(err error, key string) {
 
 // generateOriginalKubeletConfigWithFeatureGates generates a KubeletConfig and ensure the correct feature gates are set
 // based on the given FeatureGate.
-func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, templatesDir, role string, fgHandler ctrlcommon.FeatureGatesHandler, apiServer *configv1.APIServer) (*kubeletconfigv1beta1.KubeletConfiguration, error) {
+// It also returns the decoded kubelet config contents for use in creating compressible machine configs.
+func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, templatesDir, role string, fgHandler ctrlcommon.FeatureGatesHandler, apiServer *configv1.APIServer) (*kubeletconfigv1beta1.KubeletConfiguration, []byte, error) {
 	originalKubeletIgn, err := generateOriginalKubeletConfigIgn(cc, templatesDir, role, apiServer)
 	if err != nil {
-		return nil, fmt.Errorf("could not generate the original Kubelet config ignition: %w", err)
+		return nil, nil, fmt.Errorf("could not generate the original Kubelet config ignition: %w", err)
 	}
 	if originalKubeletIgn.Contents.Source == nil {
-		return nil, fmt.Errorf("the original Kubelet source string is empty: %w", err)
+		return nil, nil, fmt.Errorf("the original Kubelet source string is empty: %w", err)
 	}
 	contents, err := ctrlcommon.DecodeIgnitionFileContents(originalKubeletIgn.Contents.Source, originalKubeletIgn.Contents.Compression)
 	if err != nil {
-		return nil, fmt.Errorf("could not decode the original Kubelet source string: %w", err)
+		return nil, nil, fmt.Errorf("could not decode the original Kubelet source string: %w", err)
 	}
 	originalKubeConfig, err := DecodeKubeletConfig(contents)
 	if err != nil {
-		return nil, fmt.Errorf("could not deserialize the Kubelet source: %w", err)
+		return nil, nil, fmt.Errorf("could not deserialize the Kubelet source: %w", err)
 	}
 
 	// todo map pointer
@@ -442,10 +480,10 @@ func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, 
 	// Merge in Feature Gates.
 	// If they are the same, this will be a no-op
 	if err := mergo.Merge(&originalKubeConfig.FeatureGates, featureGates, mergo.WithOverride); err != nil {
-		return nil, fmt.Errorf("could not merge feature gates: %w", err)
+		return nil, nil, fmt.Errorf("could not merge feature gates: %w", err)
 	}
 
-	return originalKubeConfig, nil
+	return originalKubeConfig, contents, nil
 }
 
 func generateOriginalKubeletConfigIgn(cc *mcfgv1.ControllerConfig, templatesDir, role string, apiServer *osev1.APIServer) (*ign3types.File, error) {
@@ -616,7 +654,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			return fmt.Errorf("could not get ControllerConfig %w", err)
 		}
 
-		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, ctrl.fgHandler, apiServer)
+		originalKubeConfig, _, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, ctrl.fgHandler, apiServer)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not get original kubelet config: %v", err)
 		}

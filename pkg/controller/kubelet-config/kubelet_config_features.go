@@ -191,7 +191,7 @@ func generateFeatureMap(fgHandler ctrlcommon.FeatureGatesHandler, exclusions ...
 }
 
 func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir, role string, fgHandler ctrlcommon.FeatureGatesHandler, nodeConfig *osev1.Node, apiServer *osev1.APIServer) ([]byte, error) {
-	originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, templatesDir, role, fgHandler, apiServer)
+	originalKubeConfig, _, err := generateOriginalKubeletConfigWithFeatureGates(cc, templatesDir, role, fgHandler, apiServer)
 	if err != nil {
 		return nil, err
 	}

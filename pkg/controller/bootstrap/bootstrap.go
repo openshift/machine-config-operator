@@ -234,6 +234,13 @@ func (b *Bootstrap) Run(destDir string) error {
 	}
 	klog.Infof("Successfully generated MachineConfigs from kubelet configs.")
 
+	compressibleConfigs, err := kubeletconfig.RunCompressibleBootstrap(pools, cconfig, b.templatesDir, apiServer, fgHandler)
+	if err != nil {
+		return err
+	}
+	configs = append(configs, compressibleConfigs...)
+	klog.Infof("Successfully generated MachineConfigs for compressible kubelet configs.")
+
 	fpools, gconfigs, err := render.RunBootstrap(pools, configs, cconfig)
 	if err != nil {
 		return err
