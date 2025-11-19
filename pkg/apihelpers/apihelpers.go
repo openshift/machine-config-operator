@@ -501,3 +501,31 @@ func GetManagedBootImagesWithUpdateDisabled() opv1.ManagedBootImages {
 func GetManagedBootImagesWithNoConfiguration() opv1.ManagedBootImages {
 	return opv1.ManagedBootImages{}
 }
+
+// GetSkewEnforcementStatusAutomaticWithOCPVersion returns a BootImageSkewEnforcementStatus with Automatic mode and the given OCP version.
+func GetSkewEnforcementStatusAutomaticWithOCPVersion(ocpVersion string) opv1.BootImageSkewEnforcementStatus {
+	return opv1.BootImageSkewEnforcementStatus{
+		Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
+		Automatic: opv1.ClusterBootImageAutomatic{
+			OCPVersion: ocpVersion,
+		},
+	}
+}
+
+// GetSkewEnforcementStatusManualWithOCPVersion returns a BootImageSkewEnforcementStatus with Manual mode and the given OCP version.
+func GetSkewEnforcementStatusManualWithOCPVersion(ocpVersion string) opv1.BootImageSkewEnforcementStatus {
+	return opv1.BootImageSkewEnforcementStatus{
+		Mode: opv1.BootImageSkewEnforcementModeStatusManual,
+		Manual: opv1.ClusterBootImageManual{
+			Mode:       opv1.ClusterBootImageSpecModeOCPVersion,
+			OCPVersion: ocpVersion,
+		},
+	}
+}
+
+// GetSkewEnforcementStatusNone returns a BootImageSkewEnforcementStatus with None mode.
+func GetSkewEnforcementStatusNone() opv1.BootImageSkewEnforcementStatus {
+	return opv1.BootImageSkewEnforcementStatus{
+		Mode: opv1.BootImageSkewEnforcementModeStatusNone,
+	}
+}

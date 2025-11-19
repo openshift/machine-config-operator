@@ -83,6 +83,7 @@ type Operator struct {
 	syncHandler func(ic string) error
 
 	imgLister             configlistersv1.ImageLister
+	clusterVersionLister  configlistersv1.ClusterVersionLister
 	crdLister             apiextlistersv1.CustomResourceDefinitionLister
 	mcpLister             mcfglistersv1.MachineConfigPoolLister
 	msLister              mcfglistersv1.MachineConfigNodeLister
@@ -130,6 +131,7 @@ type Operator struct {
 	dnsListerSynced                  cache.InformerSynced
 	maoSecretInformerSynced          cache.InformerSynced
 	imgListerSynced                  cache.InformerSynced
+	clusterVersionListerSynced       cache.InformerSynced
 	mcoSAListerSynced                cache.InformerSynced
 	mcoSecretListerSynced            cache.InformerSynced
 	ocCmListerSynced                 cache.InformerSynced
@@ -181,6 +183,7 @@ func New(
 	nodeInformer coreinformersv1.NodeInformer,
 	maoSecretInformer coreinformersv1.SecretInformer,
 	imgInformer configinformersv1.ImageInformer,
+	clusterVersionInformer configinformersv1.ClusterVersionInformer,
 	mcoSAInformer coreinformersv1.ServiceAccountInformer,
 	mcoSecretInformer coreinformersv1.SecretInformer,
 	ocCmInformer coreinformersv1.ConfigMapInformer,
@@ -254,6 +257,7 @@ func New(
 		dnsInformer.Informer(),
 		maoSecretInformer.Informer(),
 		imgInformer.Informer(),
+		clusterVersionInformer.Informer(),
 		mcoSAInformer.Informer(),
 		mcoSecretInformer.Informer(),
 		ocSecretInformer.Informer(),
@@ -274,6 +278,7 @@ func New(
 	optr.syncHandler = optr.sync
 
 	optr.imgLister = imgInformer.Lister()
+	optr.clusterVersionLister = clusterVersionInformer.Lister()
 	optr.clusterCmLister = clusterCmInfomer.Lister()
 	optr.clusterCmListerSynced = clusterCmInfomer.Informer().HasSynced
 	optr.mcpLister = mcpInformer.Lister()
@@ -292,6 +297,7 @@ func New(
 	optr.nodeClusterListerSynced = nodeClusterInformer.Informer().HasSynced
 
 	optr.imgListerSynced = imgInformer.Informer().HasSynced
+	optr.clusterVersionListerSynced = clusterVersionInformer.Informer().HasSynced
 	optr.maoSecretInformerSynced = maoSecretInformer.Informer().HasSynced
 	optr.serviceAccountInformerSynced = serviceAccountInfomer.Informer().HasSynced
 	optr.clusterRoleInformerSynced = clusterRoleInformer.Informer().HasSynced
@@ -374,6 +380,7 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.mcListerSynced,
 		optr.dnsListerSynced,
 		optr.imgListerSynced,
+		optr.clusterVersionListerSynced,
 		optr.mcoSAListerSynced,
 		optr.mcoSecretListerSynced,
 		optr.ocCmListerSynced,
