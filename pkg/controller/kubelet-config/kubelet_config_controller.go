@@ -186,6 +186,45 @@ func New(
 	return ctrl
 }
 
+// waitForTemplateGeneration waits for the ControllerConfig to be reconciled by the template controller
+func (ctrl *Controller) waitForTemplateGeneration(stopCh <-chan struct{}) error {
+	klog.Info("Waiting for ControllerConfig generation to be reconciled...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	return wait.PollUntilContextTimeout(ctx, 5*time.Second, 2*time.Minute, true, func(_ context.Context) (bool, error) {
+		select {
+		case <-stopCh:
+			return false, fmt.Errorf("controller stopped while waiting for ControllerConfig reconciliation")
+		default:
+		}
+
+		cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
+		if err != nil {
+			klog.V(4).Infof("Error getting ControllerConfig: %v", err)
+			return false, nil
+		}
+
+		if cc.Generation != cc.Status.ObservedGeneration {
+			klog.V(4).Infof("Waiting for ControllerConfig reconciliation: Generation=%d, ObservedGeneration=%d",
+				cc.Generation, cc.Status.ObservedGeneration)
+			return false, nil
+		}
+
+		running := apihelpers.IsControllerConfigStatusConditionTrue(cc.Status.Conditions, mcfgv1.TemplateControllerRunning)
+		completed := apihelpers.IsControllerConfigStatusConditionTrue(cc.Status.Conditions, mcfgv1.TemplateControllerCompleted)
+
+		if running || completed {
+			klog.Info("ControllerConfig generation reconciled")
+			return true, nil
+		}
+
+		klog.V(4).Infof("Waiting for ControllerConfig reconciliation: running=%v, completed=%v", running, completed)
+		return false, nil
+	})
+}
+
 // Run executes the kubelet config controller.
 func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
@@ -200,9 +239,14 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	klog.Info("Starting MachineConfigController-KubeletConfigController")
 	defer klog.Info("Shutting down MachineConfigController-KubeletConfigController")
 
-	// Ensure compressible machine configs are created for all pools at startup
-	if err := ctrl.ensureCompressibleMachineConfigs(); err != nil {
-		klog.Warningf("Error ensuring compressible MachineConfigs: %v", err)
+	// Wait for ControllerConfig generation to be reconciled before creating compressible machine configs
+	if err := ctrl.waitForTemplateGeneration(stopCh); err != nil {
+		klog.Warningf("Failed to wait for ControllerConfig generation reconciliation: %v", err)
+	} else {
+		// Ensure compressible machine configs are created for all pools at startup
+		if err := ctrl.ensureCompressibleMachineConfigs(); err != nil {
+			klog.Warningf("Error ensuring compressible MachineConfigs: %v", err)
+		}
 	}
 
 	for i := 0; i < workers; i++ {
