@@ -200,28 +200,13 @@ func (ctrl *Controller) waitForTemplateGeneration(stopCh <-chan struct{}) error 
 		default:
 		}
 
-		cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
-		if err != nil {
-			klog.V(4).Infof("Error getting ControllerConfig: %v", err)
+		if err := apihelpers.IsControllerConfigRunning(ctrlcommon.ControllerConfigName, ctrl.ccLister.Get); err != nil {
+			// If the ControllerConfig is not running, we will encounter an error when generating the
+			// kubeletconfig object.
+			klog.V(1).Infof("ControllerConfig not running: %v", err)
 			return false, nil
 		}
-
-		if cc.Generation != cc.Status.ObservedGeneration {
-			klog.V(4).Infof("Waiting for ControllerConfig reconciliation: Generation=%d, ObservedGeneration=%d",
-				cc.Generation, cc.Status.ObservedGeneration)
-			return false, nil
-		}
-
-		running := apihelpers.IsControllerConfigStatusConditionTrue(cc.Status.Conditions, mcfgv1.TemplateControllerRunning)
-		completed := apihelpers.IsControllerConfigStatusConditionTrue(cc.Status.Conditions, mcfgv1.TemplateControllerCompleted)
-
-		if running || completed {
-			klog.Info("ControllerConfig generation reconciled")
-			return true, nil
-		}
-
-		klog.V(4).Infof("Waiting for ControllerConfig reconciliation: running=%v, completed=%v", running, completed)
-		return false, nil
+		return true, nil
 	})
 }
 
