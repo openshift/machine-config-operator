@@ -142,6 +142,7 @@ const (
 	StubIgnitionTimestampAnnotation = "machineconfiguration.openshift.io/stub-ignition-upgraded-at"
 
 	// Current Boot Image Skew Limits
+	// Note: Update units in status_test.go when the following are bumped
 	RHCOSVersionBootImageSkewLimit = "9.2"
 	OCPVersionBootImageSkewLimit   = "4.13.0"
 )
