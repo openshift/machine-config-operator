@@ -63,6 +63,7 @@ const (
 	workerRole          = "worker"
 	arbiterRole         = "arbiter"
 	cloudPlatformAltDNS = "cloud-platform-alt-dns"
+	iri                 = "internalreleaseimage"
 )
 
 // generateTemplateMachineConfigs returns MachineConfig objects from the templateDir and a config object
@@ -78,8 +79,8 @@ const (
 //	                     /01-worker-kubelet/_base/files/random.conf.tmpl
 //	              /master/00-master/_base/units/kubelet.tmpl
 //	                                  /files/hostname.tmpl
-func generateTemplateMachineConfigs(config *RenderConfig, templateDir string) ([]*mcfgv1.MachineConfig, error) {
-	infos, err := ctrlcommon.ReadDir(templateDir)
+func generateTemplateMachineConfigs(rc *RenderContext) ([]*mcfgv1.MachineConfig, error) {
+	infos, err := ctrlcommon.ReadDir(rc.TemplatesDir)
 	if err != nil {
 		return nil, err
 	}
@@ -97,11 +98,12 @@ func generateTemplateMachineConfigs(config *RenderConfig, templateDir string) ([
 		}
 
 		// Avoid creating resources for non arbiter deployments
-		if role == arbiterRole && !hasControlPlaneTopology(config, configv1.HighlyAvailableArbiterMode) {
+		if role == arbiterRole && !hasControlPlaneTopology(rc.Config, configv1.HighlyAvailableArbiterMode) {
 			continue
 		}
 
-		roleConfigs, err := GenerateMachineConfigsForRole(config, role, templateDir)
+		rc.Role = role
+		roleConfigs, err := GenerateMachineConfigsForRole(rc)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create MachineConfig for role %s: %w", role, err)
 		}
@@ -120,16 +122,16 @@ func generateTemplateMachineConfigs(config *RenderConfig, templateDir string) ([
 }
 
 // GenerateMachineConfigsForRole creates MachineConfigs for the role provided
-func GenerateMachineConfigsForRole(config *RenderConfig, role, templateDir string) ([]*mcfgv1.MachineConfig, error) {
-	rolePath := role
+func GenerateMachineConfigsForRole(rc *RenderContext) ([]*mcfgv1.MachineConfig, error) {
+	rolePath := rc.Role
 	//nolint:goconst
-	if role != workerRole && role != masterRole && role != arbiterRole {
+	if rc.Role != workerRole && rc.Role != masterRole && rc.Role != arbiterRole {
 		// custom pools are only allowed to be worker's children
 		// and can reuse the worker templates
 		rolePath = workerRole
 	}
 
-	path := filepath.Join(templateDir, rolePath)
+	path := filepath.Join(rc.TemplatesDir, rolePath)
 	infos, err := ctrlcommon.ReadDir(path)
 	if err != nil {
 		return nil, err
@@ -147,7 +149,7 @@ func GenerateMachineConfigsForRole(config *RenderConfig, role, templateDir strin
 		}
 		name := info.Name()
 		namePath := filepath.Join(path, name)
-		nameConfig, err := generateMachineConfigForName(config, role, name, templateDir, namePath, &commonAdded)
+		nameConfig, err := generateMachineConfigForName(rc, name, namePath, &commonAdded)
 		if err != nil {
 			return nil, err
 		}
@@ -229,15 +231,15 @@ func filterTemplates(toFilter map[string]string, path string, config *RenderConf
 	return filepath.Walk(path, walkFn)
 }
 
-func getPaths(config *RenderConfig, platformString string) []string {
+func getPaths(rc *RenderContext, platformString string) []string {
 	platformBasedPaths := []string{platformBase}
-	if onPremPlatform(config.Infra.Status.PlatformStatus.Type) {
+	if onPremPlatform(rc.Config.Infra.Status.PlatformStatus.Type) {
 		platformBasedPaths = append(platformBasedPaths, platformOnPrem)
 	}
 
 	// If this is a cloud platform with DNSType set to `ClusterHosted` with
 	// LB IPs provided, include path for their CoreDNS files
-	if cloudPlatformLoadBalancerIPState(*config) == availableLBIPState {
+	if cloudPlatformLoadBalancerIPState(*rc.Config) == availableLBIPState {
 		platformBasedPaths = append(platformBasedPaths, cloudPlatformAltDNS)
 	}
 
@@ -246,29 +248,33 @@ func getPaths(config *RenderConfig, platformString string) []string {
 	platformBasedPaths = append(platformBasedPaths, platformString)
 
 	// sno is specific case and it should override even specific platform files
-	if hasControlPlaneTopology(config, configv1.SingleReplicaTopologyMode) {
+	if hasControlPlaneTopology(rc.Config, configv1.SingleReplicaTopologyMode) {
 		platformBasedPaths = append(platformBasedPaths, sno)
 	}
 
-	if hasControlPlaneTopology(config, configv1.DualReplicaTopologyMode) {
+	if hasControlPlaneTopology(rc.Config, configv1.DualReplicaTopologyMode) {
 		platformBasedPaths = append(platformBasedPaths, tnf)
+	}
+
+	if rc.InternalReleaseImage != nil {
+		platformBasedPaths = append(platformBasedPaths, iri)
 	}
 
 	return platformBasedPaths
 }
 
-func generateMachineConfigForName(config *RenderConfig, role, name, templateDir, path string, commonAdded *bool) (*mcfgv1.MachineConfig, error) {
-	platformString, err := platformStringFromControllerConfigSpec(config.ControllerConfigSpec)
+func generateMachineConfigForName(rc *RenderContext, name, path string, commonAdded *bool) (*mcfgv1.MachineConfig, error) {
+	platformString, err := platformStringFromControllerConfigSpec(rc.Config.ControllerConfigSpec)
 	if err != nil {
 		return nil, err
 	}
 
 	platformDirs := []string{}
-	platformBasedPaths := getPaths(config, platformString)
+	platformBasedPaths := getPaths(rc, platformString)
 	if !*commonAdded {
 		// Loop over templates/common which applies everywhere
 		for _, dir := range platformBasedPaths {
-			basePath := filepath.Join(templateDir, "common", dir)
+			basePath := filepath.Join(rc.TemplatesDir, "common", dir)
 			exists, err := existsDir(basePath)
 			if err != nil {
 				return nil, err
@@ -305,7 +311,7 @@ func generateMachineConfigForName(config *RenderConfig, role, name, templateDir,
 			return nil, err
 		}
 		if exists {
-			if err := filterTemplates(files, p, config); err != nil {
+			if err := filterTemplates(files, p, rc.Config); err != nil {
 				return nil, err
 			}
 		}
@@ -316,7 +322,7 @@ func generateMachineConfigForName(config *RenderConfig, role, name, templateDir,
 			return nil, err
 		}
 		if exists {
-			if err := filterTemplates(units, p, config); err != nil {
+			if err := filterTemplates(units, p, rc.Config); err != nil {
 				return nil, err
 			}
 		}
@@ -327,7 +333,7 @@ func generateMachineConfigForName(config *RenderConfig, role, name, templateDir,
 			return nil, err
 		}
 		if exists {
-			if err := filterTemplates(extensions, p, config); err != nil {
+			if err := filterTemplates(extensions, p, rc.Config); err != nil {
 				return nil, err
 			}
 		}
@@ -354,7 +360,7 @@ func generateMachineConfigForName(config *RenderConfig, role, name, templateDir,
 	if err != nil {
 		return nil, fmt.Errorf("error transpiling CoreOS config to Ignition config: %w", err)
 	}
-	mcfg, err := ctrlcommon.MachineConfigFromIgnConfig(role, name, ignCfg)
+	mcfg, err := ctrlcommon.MachineConfigFromIgnConfig(rc.Role, name, ignCfg)
 	if err != nil {
 		return nil, fmt.Errorf("error creating MachineConfig from Ignition config: %w", err)
 	}
@@ -367,7 +373,7 @@ func generateMachineConfigForName(config *RenderConfig, role, name, templateDir,
 	// will keep that last value forever once you upgrade...which is a problen now that we allow OSImageURL overrides
 	// because it will look like an override when it shouldn't be. So don't take this out until you've solved that.
 	// And inject the osimageurl here
-	mcfg.Spec.OSImageURL = ctrlcommon.GetDefaultBaseImageContainer(config.ControllerConfigSpec)
+	mcfg.Spec.OSImageURL = ctrlcommon.GetDefaultBaseImageContainer(rc.Config.ControllerConfigSpec)
 
 	return mcfg, nil
 }

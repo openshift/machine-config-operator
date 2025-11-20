@@ -39,6 +39,7 @@ controllerconfigs.machineconfiguration.openshift.io:
   - HighlyAvailableArbiter
   - HighlyAvailableArbiter+DualReplica
   - NutanixMultiSubnets
+  - VSphereHostVMGroupZonal
   - VSphereMultiNetworks
   FilenameOperatorName: machine-config
   FilenameOperatorOrdering: "01"
@@ -122,6 +123,7 @@ machineconfignodes.machineconfiguration.openshift.io:
   - ImageModeStatusReporting
   - IrreconcilableMachineConfig
   - MachineConfigNodes
+  - NoRegistryClusterOperations
   FilenameOperatorName: machine-config
   FilenameOperatorOrdering: "01"
   FilenameRunLevel: "0000_80"

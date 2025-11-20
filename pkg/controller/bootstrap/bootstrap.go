@@ -20,7 +20,9 @@ import (
 
 	apicfgv1 "github.com/openshift/api/config/v1"
 	apicfgv1alpha1 "github.com/openshift/api/config/v1alpha1"
+	"github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	containerruntimeconfig "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
@@ -70,11 +72,12 @@ func (b *Bootstrap) Run(destDir string) error {
 
 	scheme := runtime.NewScheme()
 	mcfgv1.Install(scheme)
+	mcfgv1alpha1.Install(scheme)
 	apioperatorsv1alpha1.Install(scheme)
 	apicfgv1.Install(scheme)
 	apicfgv1alpha1.Install(scheme)
 	codecFactory := serializer.NewCodecFactory(scheme)
-	decoder := codecFactory.UniversalDecoder(mcfgv1.GroupVersion, apioperatorsv1alpha1.GroupVersion, apicfgv1.GroupVersion, apicfgv1alpha1.GroupVersion)
+	decoder := codecFactory.UniversalDecoder(mcfgv1.GroupVersion, mcfgv1alpha1.GroupVersion, apioperatorsv1alpha1.GroupVersion, apicfgv1.GroupVersion, apicfgv1alpha1.GroupVersion)
 
 	var (
 		cconfig              *mcfgv1.ControllerConfig
@@ -91,6 +94,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		imagePolicies        []*apicfgv1.ImagePolicy
 		imgCfg               *apicfgv1.Image
 		apiServer            *apicfgv1.APIServer
+		iri                  *mcfgv1alpha1.InternalReleaseImage
 	)
 	for _, info := range infos {
 		if info.IsDir() {
@@ -154,6 +158,10 @@ func (b *Bootstrap) Run(destDir string) error {
 				if obj.GetName() == ctrlcommon.APIServerInstanceName {
 					apiServer = obj
 				}
+			case *mcfgv1alpha1.InternalReleaseImage:
+				if obj.GetName() == ctrlcommon.InternalReleaseImageInstanceName {
+					iri = obj
+				}
 			default:
 				klog.Infof("skipping %q [%d] manifest because of unhandled %T", file.Name(), idx+1, obji)
 			}
@@ -174,7 +182,12 @@ func (b *Bootstrap) Run(destDir string) error {
 		return fmt.Errorf("error creating feature gates handler: %w", err)
 	}
 
-	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, psraw, apiServer)
+	var internalReleaseImage *mcfgv1alpha1.InternalReleaseImage
+	if fgHandler != nil && fgHandler.Enabled(features.FeatureGateNoRegistryClusterOperations) {
+		internalReleaseImage = iri
+	}
+
+	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, psraw, apiServer, internalReleaseImage)
 	if err != nil {
 		return err
 	}

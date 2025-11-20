@@ -1,0 +1,31 @@
+name: iri-registry.service
+enabled: true
+contents: |
+  [Unit]
+  Description=InternalReleaseImage Registry
+  Wants=network.target
+
+  [Service]
+  Environment=PODMAN_SYSTEMD_UNIT=%n
+  ExecStartPre=/bin/rm -f %t/%n.ctr-id
+  ExecStartPre=/usr/local/bin/iri-setup-registry.sh
+  ExecStart=podman run \
+    --net host \
+    --cidfile=%t/%n.ctr-id --log-driver=journald --replace \  
+    --name=iri-registry \
+    -v /etc/iri-registry/certs:/certs:ro,Z \
+    -v /var/lib/iri-registry:/var/lib/registry:ro \
+    -e REGISTRY_HTTP_ADDR=0.0.0.0:22625 \
+    -e REGISTRY_HTTP_TLS_CERTIFICATE=/certs/iri-registry-tls.crt \
+    -e REGISTRY_HTTP_TLS_KEY=/certs/iri-registry-tls.key \
+    localhost/registry:latest
+  ExecStop=/usr/bin/podman stop --ignore --cidfile=%t/%n.ctr-id
+  ExecStopPost=/usr/bin/podman rm -f --ignore --cidfile=%t/%n.ctr-id
+
+  Restart=on-failure
+  RestartSec=10
+  TimeoutStartSec=9000
+  TimeoutStopSec=300
+  
+  [Install]
+  WantedBy=multi-user.target

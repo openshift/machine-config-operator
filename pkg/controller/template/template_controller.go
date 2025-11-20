@@ -14,6 +14,8 @@ import (
 	"time"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	"github.com/openshift/api/machineconfiguration/v1alpha1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
@@ -74,6 +76,14 @@ type Controller struct {
 	secretsInformerSynced cache.InformerSynced
 
 	queue workqueue.TypedRateLimitingInterface[string]
+}
+
+// RenderContext contains the complete context required for rendering the templates.
+type RenderContext struct {
+	Config               *RenderConfig
+	TemplatesDir         string
+	Role                 string
+	InternalReleaseImage *v1alpha1.InternalReleaseImage
 }
 
 // New returns a new template controller.
@@ -633,7 +643,7 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 		return ctrl.syncFailingStatus(cfg, err)
 	}
 
-	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, clusterPullSecretRaw, apiServer)
+	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, clusterPullSecretRaw, apiServer, nil)
 	if err != nil {
 		return ctrl.syncFailingStatus(cfg, err)
 	}
@@ -652,19 +662,24 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 	return ctrl.syncCompletedStatus(cfg)
 }
 
-func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, clusterPullSecretRaw []byte, apiServer *configv1.APIServer) ([]*mcfgv1.MachineConfig, error) {
+func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, clusterPullSecretRaw []byte, apiServer *configv1.APIServer, iri *mcfgv1alpha1.InternalReleaseImage) ([]*mcfgv1.MachineConfig, error) {
 	buf := &bytes.Buffer{}
 	if err := json.Compact(buf, clusterPullSecretRaw); err != nil {
 		return nil, fmt.Errorf("couldn't compact pullsecret %q: %w", string(clusterPullSecretRaw), err)
 	}
 	tlsMinVersion, tlsCipherSuites := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
-	rc := &RenderConfig{
-		ControllerConfigSpec: &config.Spec,
-		PullSecret:           string(buf.Bytes()),
-		TLSMinVersion:        tlsMinVersion,
-		TLSCipherSuites:      tlsCipherSuites,
+	renderContext := &RenderContext{
+		Config: &RenderConfig{
+			ControllerConfigSpec: &config.Spec,
+			PullSecret:           string(buf.Bytes()),
+			TLSMinVersion:        tlsMinVersion,
+			TLSCipherSuites:      tlsCipherSuites,
+		},
+		TemplatesDir:         templatesDir,
+		InternalReleaseImage: iri,
 	}
-	mcs, err := generateTemplateMachineConfigs(rc, templatesDir)
+
+	mcs, err := generateTemplateMachineConfigs(renderContext)
 	if err != nil {
 		return nil, err
 	}
@@ -679,6 +694,6 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 }
 
 // RunBootstrap runs the tempate controller in boostrap mode.
-func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, apiServer *configv1.APIServer) ([]*mcfgv1.MachineConfig, error) {
-	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, apiServer)
+func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, apiServer *configv1.APIServer, iri *mcfgv1alpha1.InternalReleaseImage) ([]*mcfgv1.MachineConfig, error) {
+	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, apiServer, iri)
 }
