@@ -2298,7 +2298,7 @@ func (dn *Daemon) updateKubeConfigPermission() error {
 // (/home/core/.ssh/authorized_keys.d/ignition) or the old SSH key path
 // (/home/core/.ssh/authorized_keys)
 func (dn *Daemon) useNewSSHKeyPath() bool {
-	return dn.os.IsEL9() || dn.os.IsFCOS() || dn.os.IsSCOS()
+	return dn.os.IsEL9() || dn.os.IsEL10() || dn.os.IsFCOS() || dn.os.IsSCOS()
 }
 
 // Update a given PasswdUser's SSHKey
