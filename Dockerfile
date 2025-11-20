@@ -25,6 +25,8 @@ COPY install /manifests
 RUN if [ "${TAGS}" = "fcos" ]; then \
     # comment out non-base/extensions image-references entirely for fcos
     sed -i '/- name: rhel-coreos-/,+3 s/^/#/' /manifests/image-references && \
+    # comment out rhel10 entirely for fcos
+    sed -i '/- name: rhel-10-coreos/,+3 s/^/#/' /manifests/image-references && \
     # also remove extensions from the osimageurl configmap (if we don't, oc won't rewrite it, and the placeholder value will survive and get used)
     sed -i '/baseOSExtensionsContainerImage:/ s/^/#/' /manifests/0000_80_machine-config_05_osimageurl.yaml && \
     # rewrite image names for fcos
@@ -32,6 +34,8 @@ RUN if [ "${TAGS}" = "fcos" ]; then \
     elif [ "${TAGS}" = "scos" ]; then \
     # rewrite image names for scos
     sed -i 's/rhel-coreos/stream-coreos/g' /manifests/*; fi && \
+    # comment out rhel10 entirely for scos
+    sed -i '/- name: rhel-10-coreos/,+3 s/^/#/' /manifests/image-references; fi && \
     dnf --setopt=keepcache=true -y install 'nmstate >= 2.2.10' && \
     if ! rpm -q util-linux; then dnf install --setopt=keepcache=true -y util-linux; fi && \
     # We also need to install fuse-overlayfs and cpp for Buildah to work correctly.
