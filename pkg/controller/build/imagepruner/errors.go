@@ -45,10 +45,6 @@ func IsImageNotFoundErr(err error) bool {
 		return false
 	}
 
-	if !isErrImage(err) {
-		return false
-	}
-
 	if isMaskedHTTP404(err) {
 		return true
 	}
@@ -65,10 +61,6 @@ func IsImageNotFoundErr(err error) bool {
 // issue. Some image registries use this as a proxy for the image not existing.
 func IsAccessDeniedErr(err error) bool {
 	if err == nil {
-		return false
-	}
-
-	if !isErrImage(err) {
 		return false
 	}
 
@@ -225,61 +217,35 @@ func isTolerableUnexpectedHTTPStatusError(err error) bool {
 
 // ErrImage holds and wraps an error related to a specific image.
 type ErrImage struct {
-	msg string
-	img string
-	err error
-}
-
-// newErrImageWithMessage constructs a new ErrImage instance with a custom message,
-// image pullspec, and wrapped error.
-func newErrImageWithMessage(msg, img string, err error) error {
-	return &ErrImage{msg: msg, img: img, err: err}
+	image string
+	err   error
 }
 
 // newErrImage constructs a new ErrImage instance with an image pullspec and
-// wrapped error, without a custom message.
+// wrapped error.
 func newErrImage(img string, err error) error {
-	return &ErrImage{img: img, err: err}
+	return &ErrImage{image: img, err: err}
 }
 
-// Image returns the image pullspec that caused the error.
+// Returns the image embedded within the ErrImage struct.
 func (e *ErrImage) Image() string {
-	return e.img
+	return e.image
 }
 
 // Error implements the error interface, providing a formatted error string
-// including the message (if present), image (if present), and the wrapped error's string.
+// including the image (if present), and the wrapped error's string.
 func (e *ErrImage) Error() string {
-	if e.msg != "" && e.img != "" {
-		// If both the message and image are not empty, include both.
-		return fmt.Sprintf("%s: image %q: %s", e.msg, e.img, e.err.Error())
+	// If the image is defined and not contained within the underlying error, inject it here.
+	if e.image != "" && !strings.Contains(e.err.Error(), e.image) {
+		return fmt.Sprintf("error occurred with image %q: %s", e.image, e.err.Error())
 	}
 
-	if e.msg == "" && e.img != "" {
-		// If the message is empty and the image is not, only include the image.
-		return fmt.Sprintf("image %q: %s", e.img, e.err.Error())
-	}
-
-	// If neither the message nor the image is populated, just return the error
-	// string as-is.
+	// If the image is undefined or is already present in the error, return the
+	// error as-is.
 	return e.err.Error()
 }
 
 // Unwrap implements the Unwrap interface, allowing the nested error to be surfaced.
 func (e *ErrImage) Unwrap() error {
 	return e.err
-}
-
-// isErrImage determines whether the given error is an instance of the ErrImage
-// type defined above.
-func isErrImage(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	// Any errors related to the actual image registry query are wrapped in an
-	// ErrImage instance. This allows us to easily identify intolerable errors
-	// such as not being able to write the authfile or certs, etc.
-	var errImage *ErrImage
-	return errors.As(err, &errImage)
 }
