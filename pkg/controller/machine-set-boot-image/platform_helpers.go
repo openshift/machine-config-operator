@@ -252,7 +252,12 @@ func reconcileVSphereProviderSpec(streamData *stream.Stream, arch string, infra 
 func reconcileAzureProviderSpec(streamData *stream.Stream, arch string, _ *osconfigv1.Infrastructure, providerSpec *machinev1beta1.AzureMachineProviderSpec, machineSetName string, secretClient clientset.Interface) (bool, *machinev1beta1.AzureMachineProviderSpec, error) {
 
 	if arch == "ppc64le" || arch == "s390x" {
-		klog.Infof("Skipping machineset %s, machinesets with arch %s are not supported for Azure", machineSetName, arch)
+		klog.Infof("Skipping update for %s, machinesets/controlplanemachinesets with arch %s are not supported for Azure", machineSetName, arch)
+		return false, nil, nil
+	}
+
+	if providerSpec.SecurityProfile != nil && providerSpec.SecurityProfile.Settings.SecurityType != "" {
+		klog.Infof("Skipping update for %s, machinesets/controlplanemachinesets with a SecurityType defined(%s in this case) is not currently supported for Azure", machineSetName, providerSpec.SecurityProfile.Settings.SecurityType)
 		return false, nil, nil
 	}
 
