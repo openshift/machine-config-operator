@@ -539,9 +539,9 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 	}
 
 	// Create system reserved compressible ignition based on SystemReservedCgroup
-	// If SystemReservedCgroup is set (not empty), disable compressible (set to false)
-	// Otherwise, enable compressible (set to true)
-	systemReservedCompressibleEnabled := originalKubeConfig.SystemReservedCgroup == ""
+	// If SystemReservedCgroup is set (not empty), enable compressible (set to true) to set CPUShares=100
+	// Otherwise, disable compressible (set to false) to not set CPUShares
+	systemReservedCompressibleEnabled := originalKubeConfig.SystemReservedCgroup != ""
 	systemReservedCompressibleIgnition = createSystemReservedCompressibleIgnition(systemReservedCompressibleEnabled)
 
 	// Encode the new config into an Ignition File
