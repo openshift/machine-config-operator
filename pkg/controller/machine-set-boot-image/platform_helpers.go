@@ -256,6 +256,11 @@ func reconcileAzureProviderSpec(streamData *stream.Stream, arch string, _ *oscon
 		return false, nil, nil
 	}
 
+	if providerSpec.SecurityProfile != nil && providerSpec.SecurityProfile.Settings.SecurityType != "" {
+		klog.Infof("Skipping machineset %s, machinesets with a SecurityType %s is not currently supported for Azure", machineSetName, providerSpec.SecurityProfile.Settings.SecurityType)
+		return false, nil, nil
+	}
+
 	currentImage := providerSpec.Image
 
 	// Machinesets that have a non empty resourceID are provisioned via an image that was
