@@ -208,6 +208,14 @@ func (b *Bootstrap) Run(destDir string) error {
 	}
 	klog.Infof("Successfully generated MachineConfigs from feature gates.")
 
+	// Generate auto-sizing MachineConfigs for all pools
+	autoSizingConfigs, err := kubeletconfig.RunAutoSizingBootstrap(pools)
+	if err != nil {
+		return err
+	}
+	configs = append(configs, autoSizingConfigs...)
+	klog.Infof("Successfully generated auto-sizing MachineConfigs.")
+
 	if nodeConfig == nil {
 		nodeConfig = &apicfgv1.Node{
 			ObjectMeta: metav1.ObjectMeta{
