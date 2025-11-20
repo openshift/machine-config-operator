@@ -49,12 +49,21 @@ func NewImageInspectorDeleter() ImageInspectorDeleter {
 
 // ImageInspect uses the provided system context to inspect the provided image pullspec.
 func (i *imageInspectorImpl) ImageInspect(ctx context.Context, sysCtx *types.SystemContext, image string) (*types.ImageInspectInfo, *digest.Digest, error) {
-	return imageInspect(ctx, sysCtx, image)
+	info, digest, err := imageInspect(ctx, sysCtx, image)
+	if err == nil {
+		return info, digest, nil
+	}
+
+	return nil, nil, newErrImage(image, err)
 }
 
 // DeleteImage uses the provided system context to delete the provided image pullspec.
 func (i *imageInspectorImpl) DeleteImage(ctx context.Context, sysCtx *types.SystemContext, image string) error {
-	return deleteImage(ctx, sysCtx, image)
+	if err := deleteImage(ctx, sysCtx, image); err != nil {
+		return newErrImage(image, err)
+	}
+
+	return nil
 }
 
 // deleteImage attempts to delete the specified image with retries,
@@ -74,8 +83,9 @@ func deleteImage(ctx context.Context, sysCtx *types.SystemContext, imageName str
 	if err := retry.IfNecessary(ctx, func() error {
 		return ref.DeleteImage(ctx, sysCtx)
 	}, &retryOpts); err != nil {
-		return newErrImage(imageName, err)
+		return err
 	}
+
 	return nil
 }
 
@@ -88,7 +98,7 @@ func deleteImage(ctx context.Context, sysCtx *types.SystemContext, imageName str
 func imageInspect(ctx context.Context, sysCtx *types.SystemContext, imageName string) (*types.ImageInspectInfo, *digest.Digest, error) {
 	ref, err := imageutils.ParseImageName(imageName)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error parsing image name %q: %w", imageName, err)
+		return nil, nil, fmt.Errorf("error parsing image name: %w", err)
 	}
 
 	retryOpts := retry.RetryOptions{
@@ -96,7 +106,7 @@ func imageInspect(ctx context.Context, sysCtx *types.SystemContext, imageName st
 	}
 	src, err := imageutils.GetImageSourceFromReference(ctx, sysCtx, ref, &retryOpts)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error getting image source for %s: %w", imageName, err)
+		return nil, nil, fmt.Errorf("error getting image source: %w", err)
 	}
 	defer src.Close()
 
@@ -112,12 +122,12 @@ func imageInspect(ctx context.Context, sysCtx *types.SystemContext, imageName st
 	// get the digest here because it's not part of the image inspection
 	digest, err := manifest.Digest(rawManifest)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error retrieving image digest: %q: %w", imageName, err)
+		return nil, nil, fmt.Errorf("error retrieving image digest: %w", err)
 	}
 
 	img, err := image.FromUnparsedImage(ctx, sysCtx, unparsedInstance)
 	if err != nil {
-		return nil, nil, newErrImage(imageName, fmt.Errorf("error parsing manifest for image: %w", err))
+		return nil, nil, fmt.Errorf("error parsing manifest for image: %w", err)
 	}
 
 	var imgInspect *types.ImageInspectInfo
@@ -125,7 +135,7 @@ func imageInspect(ctx context.Context, sysCtx *types.SystemContext, imageName st
 		imgInspect, err = img.Inspect(ctx)
 		return err
 	}, &retryOpts); err != nil {
-		return nil, nil, newErrImage(imageName, err)
+		return nil, nil, err
 	}
 
 	return imgInspect, &digest, nil
