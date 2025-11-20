@@ -71,7 +71,7 @@ func TestGenerateKubeletIgnFilesWithReservedSystemCPUs(t *testing.T) {
 			}
 
 			// Execute: Generate the kubelet ignition files
-			kubeletIgnition, _, _, err := generateKubeletIgnFiles(kubeletConfig, originalKubeConfig)
+			kubeletIgnition, _, _, _, err := generateKubeletIgnFiles(kubeletConfig, originalKubeConfig)
 			require.NoError(t, err, "generateKubeletIgnFiles should not return an error")
 			require.NotNil(t, kubeletIgnition, "kubelet ignition file should not be nil")
 
@@ -132,7 +132,7 @@ func TestGenerateKubeletIgnFilesWithKubeletConfigSpec(t *testing.T) {
 	}
 
 	// Execute: Generate the kubelet ignition files
-	kubeletIgnition, _, _, err := generateKubeletIgnFiles(kubeletConfig, originalKubeConfig)
+	kubeletIgnition, _, _, _, err := generateKubeletIgnFiles(kubeletConfig, originalKubeConfig)
 	require.NoError(t, err, "generateKubeletIgnFiles should not return an error")
 	require.NotNil(t, kubeletIgnition, "kubelet ignition file should not be nil")
 
