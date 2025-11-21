@@ -7,6 +7,7 @@ import (
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
+	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/fixtures"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/stretchr/testify/assert"
@@ -196,5 +197,85 @@ func TestIsMachineOSBuildStatusUpdateNeeded(t *testing.T) {
 				})
 			}
 		}
+	}
+}
+
+func TestNeedsPreBuiltImageAnnotationCleanup(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		mosc            *mcfgv1.MachineOSConfig
+		expectedCleanup bool
+	}{
+		{
+			name: "needs cleanup - all conditions met",
+			mosc: &mcfgv1.MachineOSConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test",
+					Annotations: map[string]string{
+						constants.PreBuiltImageAnnotationKey:         "registry.example.com/image@sha256:abc123",
+						constants.CurrentMachineOSBuildAnnotationKey: "test-build-1",
+					},
+				},
+				Status: mcfgv1.MachineOSConfigStatus{
+					CurrentImagePullSpec: "registry.example.com/image@sha256:abc123",
+				},
+			},
+			expectedCleanup: true,
+		},
+		{
+			name: "no cleanup - missing current build annotation",
+			mosc: &mcfgv1.MachineOSConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test",
+					Annotations: map[string]string{
+						constants.PreBuiltImageAnnotationKey: "registry.example.com/image@sha256:abc123",
+					},
+				},
+				Status: mcfgv1.MachineOSConfigStatus{
+					CurrentImagePullSpec: "registry.example.com/image@sha256:abc123",
+				},
+			},
+			expectedCleanup: false,
+		},
+		{
+			name: "no cleanup - status not populated",
+			mosc: &mcfgv1.MachineOSConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test",
+					Annotations: map[string]string{
+						constants.PreBuiltImageAnnotationKey:         "registry.example.com/image@sha256:abc123",
+						constants.CurrentMachineOSBuildAnnotationKey: "test-build-1",
+					},
+				},
+				Status: mcfgv1.MachineOSConfigStatus{
+					CurrentImagePullSpec: "",
+				},
+			},
+			expectedCleanup: false,
+		},
+		{
+			name: "no cleanup - prebuilt image annotation already removed",
+			mosc: &mcfgv1.MachineOSConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test",
+					Annotations: map[string]string{
+						constants.CurrentMachineOSBuildAnnotationKey: "test-build-1",
+					},
+				},
+				Status: mcfgv1.MachineOSConfigStatus{
+					CurrentImagePullSpec: "registry.example.com/image@sha256:abc123",
+				},
+			},
+			expectedCleanup: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := needsPreBuiltImageAnnotationCleanup(tt.mosc)
+			assert.Equal(t, tt.expectedCleanup, result, "needsPreBuiltImageAnnotationCleanup() result mismatch")
+		})
 	}
 }
