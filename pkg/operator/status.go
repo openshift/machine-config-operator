@@ -280,6 +280,22 @@ func (optr *Operator) syncUpgradeableStatus(co *configv1.ClusterOperator) error 
 		coStatusCondition.Reason = "ClusterOnCgroupV1"
 		coStatusCondition.Message = "Cluster is using deprecated cgroup v1 and is not upgradable. Please update the `CgroupMode` in the `nodes.config.openshift.io` object to 'v2'. Once upgraded, the cluster cannot be changed back to cgroup v1"
 	}
+
+	// Check for ClusterImagePolicy named "openshift" which conflicts with the cluster default ClusterImagePolicy object
+	// Only check for Default featureSet clusters allowing 4.20 ci techpreview builds upgrades
+	// Use SigstoreImageVerificationPKI as an featureset indicator: if it's disabled, the cluster is on Default feature set
+	// (SigstoreImageVerificationPKI is only enabled in TechPreview/DevPreview in 4.20, not in Default, and thefeature set changes won’t be backported, making this method stable for 4.20.).
+	// This avoids the API call to get the FeatureGate resource
+	if optr.fgHandler != nil && !optr.fgHandler.Enabled(features.FeatureGateSigstoreImageVerificationPKI) {
+		if _, err := optr.configClient.ConfigV1().ClusterImagePolicies().Get(context.TODO(), "openshift", metav1.GetOptions{}); err == nil {
+			coStatusCondition.Status = configv1.ConditionFalse
+			coStatusCondition.Reason = "ConflictingClusterImagePolicy"
+			coStatusCondition.Message = "ClusterImagePolicy resource named 'openshift' conflicts with the cluster default ClusterImagePolicy object and blocks upgrades. Please delete the 'openshift' ClusterImagePolicy resource and reapply it with a different name if needed"
+		} else if !apierrors.IsNotFound(err) {
+			return err
+		}
+	}
+
 	var degraded, interrupted bool
 	for _, pool := range pools {
 		interrupted = isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolBuildInterrupted)
