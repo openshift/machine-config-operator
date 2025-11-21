@@ -49,6 +49,7 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	"github.com/openshift/library-go/pkg/crypto"
+	buildconstants "github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 )
 
@@ -1328,4 +1329,65 @@ func IsMachineUpdatedMCN(mcn *mcfgv1.MachineConfigNode, mcp *mcfgv1.MachineConfi
 	return mcn.Status.ConfigVersion.Desired == mcp.Spec.Configuration.Name &&
 		mcn.Status.ConfigVersion.Desired == mosb.Spec.MachineConfig.Name &&
 		moscs.HasOSImage() && string(mcn.Status.ConfigImage.DesiredImage) == moscs.GetOSImage()
+}
+
+// BuildPoolToPreBuiltImageMap creates a map of pool names to pre-built images from MachineOSConfigs.
+// It extracts the pre-built image annotation from each MachineOSConfig and maps it to the target pool.
+// This is a helper function used by both bootstrap and runtime pre-built image MachineConfig creation.
+func BuildPoolToPreBuiltImageMap(machineOSConfigs []*mcfgv1.MachineOSConfig, preBuiltImageAnnotationKey string) map[string]string {
+	poolToPreBuiltImage := make(map[string]string)
+
+	for _, mosc := range machineOSConfigs {
+		// Check if this MachineOSConfig has a pre-built image annotation
+		preBuiltImage, hasPreBuiltImage := mosc.Annotations[preBuiltImageAnnotationKey]
+		if !hasPreBuiltImage || preBuiltImage == "" {
+			continue
+		}
+
+		poolName := mosc.Spec.MachineConfigPool.Name
+		poolToPreBuiltImage[poolName] = preBuiltImage
+		klog.V(4).Infof("MachineOSConfig %s has pre-built image %s for pool %s", mosc.Name, preBuiltImage, poolName)
+	}
+
+	return poolToPreBuiltImage
+}
+
+// CreatePreBuiltImageMachineConfig creates a component MachineConfig that sets osImageURL for a pool.
+// This MachineConfig will be merged into the rendered MC by the render controller.
+func CreatePreBuiltImageMachineConfig(poolName, preBuiltImage, preBuiltImageAnnotationKey string) *mcfgv1.MachineConfig {
+	mcName := buildconstants.PreBuiltImageMachineConfigPrefix + poolName
+
+	return &mcfgv1.MachineConfig{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: mcfgv1.SchemeGroupVersion.String(),
+			Kind:       "MachineConfig",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: mcName,
+			Labels: map[string]string{
+				mcfgv1.MachineConfigRoleLabelKey: poolName,
+			},
+			Annotations: map[string]string{
+				preBuiltImageAnnotationKey: preBuiltImage,
+			},
+		},
+		Spec: mcfgv1.MachineConfigSpec{
+			OSImageURL: preBuiltImage,
+		},
+	}
+}
+
+// GetPreBuiltImageMachineConfigsFromList extracts pre-built image component MachineConfigs from a list.
+// Returns a map of poolName -> MachineConfig for all pre-built image component MCs found.
+func GetPreBuiltImageMachineConfigsFromList(mcs []*mcfgv1.MachineConfig) map[string]*mcfgv1.MachineConfig {
+	preBuiltMCs := make(map[string]*mcfgv1.MachineConfig)
+
+	for _, mc := range mcs {
+		if strings.HasPrefix(mc.Name, buildconstants.PreBuiltImageMachineConfigPrefix) {
+			poolName := strings.TrimPrefix(mc.Name, buildconstants.PreBuiltImageMachineConfigPrefix)
+			preBuiltMCs[poolName] = mc
+		}
+	}
+
+	return preBuiltMCs
 }
