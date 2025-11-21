@@ -1857,6 +1857,8 @@ func (ctrl *Controller) syncMetrics() error {
 		ctrlcommon.MCCUnavailableMachineCount.WithLabelValues(pool.Name).Set(float64(pool.Status.UnavailableMachineCount))
 	}
 	return nil
+}
+
 // migrateMCNConditionsToImageModeStatusReporting migrates MCN condition formats from the legacy
 // MachineConfigNodeUpdateFilesAndOS condition to the new ImageModeStatusReporting conditions
 // (MachineConfigNodeUpdateFiles, MachineConfigNodeUpdateOS, and MachineConfigNodeImagePulledFromRegistry).
