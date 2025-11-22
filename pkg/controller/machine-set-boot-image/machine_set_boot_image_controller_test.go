@@ -332,13 +332,14 @@ func TestReconcileAzureProviderSpec(t *testing.T) {
 	fakeClient := fake.NewSimpleClientset(testSecret)
 
 	tests := []struct {
-		name          string
-		arch          string
-		currentImage  machinev1beta1.Image
-		expectedImage machinev1beta1.Image
-		expectPatch   bool
-		expectSkip    bool
-		streamData    *stream.Stream // Custom stream data for specific tests
+		name            string
+		arch            string
+		currentImage    machinev1beta1.Image
+		expectedImage   machinev1beta1.Image
+		expectPatch     bool
+		expectSkip      bool
+		streamData      *stream.Stream                         // Custom stream data for specific tests
+		securityProfile *machinev1beta1.SecurityProfile // Custom security profile for specific tests
 	}{
 		{
 			name: "Legacy Gen1 upload image transitions to marketplace Gen1",
@@ -633,6 +634,90 @@ func TestReconcileAzureProviderSpec(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "Skip machineset with ConfidentialVM SecurityType",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "419-v2",
+				Version:    "419.94.20250101",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectSkip: true,
+			securityProfile: &machinev1beta1.SecurityProfile{
+				Settings: machinev1beta1.SecuritySettings{
+					SecurityType: "ConfidentialVM",
+				},
+			},
+		},
+		{
+			name: "Skip machineset with TrustedLaunch SecurityType",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "419-v2",
+				Version:    "419.94.20250101",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectSkip: true,
+			securityProfile: &machinev1beta1.SecurityProfile{
+				Settings: machinev1beta1.SecuritySettings{
+					SecurityType: "TrustedLaunch",
+				},
+			},
+		},
+		{
+			name: "Process machineset with SecurityProfile but empty SecurityType",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "418-v2",
+				Version:    "418.94.20241201",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectedImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "419-v2",
+				Version:    "419.94.20250101",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectPatch: true,
+			securityProfile: &machinev1beta1.SecurityProfile{
+				Settings: machinev1beta1.SecuritySettings{
+					SecurityType: "", // Empty SecurityType should not be skipped
+				},
+			},
+		},
+		{
+			name: "Process machineset with nil SecurityProfile",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "418-v2",
+				Version:    "418.94.20241201",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectedImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "419-v2",
+				Version:    "419.94.20250101",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectPatch:     true,
+			securityProfile: nil, // Nil SecurityProfile should not be skipped
+		},
 	}
 
 	for _, tt := range tests {
@@ -643,6 +728,7 @@ func TestReconcileAzureProviderSpec(t *testing.T) {
 				UserDataSecret: &corev1.SecretReference{
 					Name: "test-secret",
 				},
+				SecurityProfile: tt.securityProfile,
 			}
 
 			// Create a mock infrastructure object
