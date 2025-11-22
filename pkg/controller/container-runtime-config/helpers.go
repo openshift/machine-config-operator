@@ -165,6 +165,11 @@ func findStorageConfig(mc *mcfgv1.MachineConfig) (*ign3types.File, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing Storage Ignition config failed with error: %w", err)
 	}
+
+	for _, c := range ignCfg.Storage.Files {
+		klog.Infof("storage-----Checking file path : %s", c.Path)
+	}
+
 	for _, c := range ignCfg.Storage.Files {
 		if c.Path == storageConfigPath {
 			c := c
@@ -179,6 +184,11 @@ func findRegistriesConfig(mc *mcfgv1.MachineConfig) (*ign3types.File, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing Registries Ignition config failed with error: %w", err)
 	}
+
+	for _, c := range ignCfg.Storage.Files {
+		klog.Infof("registries-----Checking file path : %s", c.Path)
+	}
+
 	for _, c := range ignCfg.Storage.Files {
 		if c.Path == registriesConfigPath {
 			return &c, nil
@@ -1210,4 +1220,19 @@ func imagePolicyConfigFileList(namespaceJSONs map[string][]byte) []generatedConf
 		})
 	}
 	return namespacedPolicyConfigFileList
+}
+
+func findCredProviderConfig(mc *mcfgv1.MachineConfig, credProviderConfigPath string) (*ign3types.File, error) {
+	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+	if err != nil {
+		return nil, fmt.Errorf("parsing Credential Provider Ignition config failed with error: %w", err)
+	}
+	for _, c := range ignCfg.Storage.Files {
+		klog.Infof("Checking file path : %s", c.Path)
+		if c.Path == credProviderConfigPath {
+			c := c
+			return &c, nil
+		}
+	}
+	return nil, fmt.Errorf("could not find Credential Provider Config")
 }
