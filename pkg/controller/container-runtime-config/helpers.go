@@ -165,6 +165,11 @@ func findStorageConfig(mc *mcfgv1.MachineConfig) (*ign3types.File, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing Storage Ignition config failed with error: %w", err)
 	}
+
+	for _, c := range ignCfg.Storage.Files {
+		klog.Infof("storage-----Checking file path : %s", c.Path)
+	}
+
 	for _, c := range ignCfg.Storage.Files {
 		if c.Path == storageConfigPath {
 			c := c
@@ -179,6 +184,11 @@ func findRegistriesConfig(mc *mcfgv1.MachineConfig) (*ign3types.File, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing Registries Ignition config failed with error: %w", err)
 	}
+
+	for _, c := range ignCfg.Storage.Files {
+		klog.Infof("registries-----Checking file path : %s", c.Path)
+	}
+
 	for _, c := range ignCfg.Storage.Files {
 		if c.Path == registriesConfigPath {
 			return &c, nil

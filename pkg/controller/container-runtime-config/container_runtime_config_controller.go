@@ -983,19 +983,6 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		if err != nil {
 			return err
 		}
-
-		credProviderConfigIgn, err := generateOriginalCredentialProviderConfig(ctrl.templatesDir, controllerConfig, role)
-		if err != nil {
-			klog.Infof("could not generate original CRIO credential provider config for role %s: %v", role, err)
-		}
-		if err == nil && credProviderConfigIgn != nil && credProviderConfigIgn.Contents.Source != nil {
-			contents, err := ctrlcommon.DecodeIgnitionFileContents(credProviderConfigIgn.Contents.Source, credProviderConfigIgn.Contents.Compression)
-			if err != nil {
-				klog.Infof("could not decode CRIO credential provider config for role %s: %v", role, err)
-			}
-			klog.Infof("Decoded CRIO credential provider config contents successfully for role %s: %s", role, string(contents))
-		}
-
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
 			registriesIgn, err := registriesConfigIgnition(ctrl.templatesDir, controllerConfig, role, releaseImage,
 				imgcfg.Spec.RegistrySources.InsecureRegistries, registriesBlocked, policyBlocked, allowedRegs,
