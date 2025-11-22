@@ -387,6 +387,7 @@ func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) 
 	funcs["urlHost"] = urlHost
 	funcs["urlPort"] = urlPort
 	funcs["isOpenShiftManagedDefaultLB"] = isOpenShiftManagedDefaultLB
+	funcs["dnsRecordsType"] = dnsRecordsType
 	funcs["cloudPlatformAPIIntLoadBalancerIPs"] = cloudPlatformAPIIntLoadBalancerIPs
 	funcs["cloudPlatformAPILoadBalancerIPs"] = cloudPlatformAPILoadBalancerIPs
 	funcs["cloudPlatformIngressLoadBalancerIPs"] = cloudPlatformIngressLoadBalancerIPs
@@ -721,6 +722,33 @@ func isOpenShiftManagedDefaultLB(cfg RenderConfig) bool {
 		}
 	}
 	return false
+}
+
+func dnsRecordsType(cfg RenderConfig) configv1.DNSRecordsType {
+	if cfg.Infra.Status.PlatformStatus != nil {
+		switch cfg.Infra.Status.PlatformStatus.Type {
+		case configv1.BareMetalPlatformType:
+			if cfg.Infra.Status.PlatformStatus.BareMetal != nil {
+				return cfg.Infra.Status.PlatformStatus.BareMetal.DNSRecordsType
+			}
+		case configv1.NutanixPlatformType:
+			if cfg.Infra.Status.PlatformStatus.Nutanix != nil {
+				return cfg.Infra.Status.PlatformStatus.Nutanix.DNSRecordsType
+			}
+		case configv1.OpenStackPlatformType:
+			if cfg.Infra.Status.PlatformStatus.OpenStack != nil {
+				return cfg.Infra.Status.PlatformStatus.OpenStack.DNSRecordsType
+			}
+		case configv1.VSpherePlatformType:
+			// I'm intentionally not handling VSphere UPI because this should never
+			// be called on UPI, and even if it is the field is meaningless in that
+			// context and falling through to the default is fine.
+			if cfg.Infra.Status.PlatformStatus.VSphere != nil {
+				return cfg.Infra.Status.PlatformStatus.VSphere.DNSRecordsType
+			}
+		}
+	}
+	return "Internal"
 }
 
 // cloudPlatformLoadBalancerIPs provides a generic method to obtain API, API-Int and Ingrerss Load Balancer IPs

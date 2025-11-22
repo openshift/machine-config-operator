@@ -11,6 +11,7 @@ contents:
         }
         cache 30
         reload
+        {{ if ne (dnsRecordsType .) "External" }}
         template IN {{`{{ .Cluster.IngressVIPRecordType }}`}} {{ .DNS.Spec.BaseDomain }} {
             match .*[.]apps.{{ .DNS.Spec.BaseDomain }}
             answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ if gt (len (onPremPlatformIngressIPs .)) 0 }}{{ index (onPremPlatformIngressIPs .) 0 }}{{ end }}"
@@ -41,6 +42,7 @@ contents:
             {{ if gt (len (onPremPlatformAPIServerInternalIPs .)) 1 }}answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ index (onPremPlatformAPIServerInternalIPs .) 1 }}"{{ end }}
             fallthrough
         }
+        {{ end }}
         hosts {
             {{`{{- range .Cluster.NodeAddresses }}
             {{ .Address }} {{ .Name }} {{ .Name }}.{{ $.Cluster.Name }}.{{ $.Cluster.Domain }}
