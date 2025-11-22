@@ -133,6 +133,11 @@ contents:
           capabilities:
             add: ["NET_ADMIN", "SYS_CHROOT"]
         image: {{ .Images.baremetalRuntimeCfgImage }}
+        env:
+          - name: POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
         command:
         - monitor
         - "/var/lib/kubelet/kubeconfig"
