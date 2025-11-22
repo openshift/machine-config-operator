@@ -652,7 +652,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			originalKubeConfig.TLSCipherSuites = observedCipherSuites
 		}
 
-		kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, err := generateKubeletIgnFiles(cfg, originalKubeConfig)
+		kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, systemReservedCompressibleIgnition, err := generateKubeletIgnFiles(cfg, originalKubeConfig)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err)
 		}
@@ -686,14 +686,17 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		}
 
 		tempIgnConfig := ctrlcommon.NewIgnConfig()
+		if kubeletIgnition != nil {
+			tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *kubeletIgnition)
+		}
 		if autoSizingReservedIgnition != nil {
 			tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *autoSizingReservedIgnition)
 		}
 		if logLevelIgnition != nil {
 			tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *logLevelIgnition)
 		}
-		if kubeletIgnition != nil {
-			tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *kubeletIgnition)
+		if systemReservedCompressibleIgnition != nil {
+			tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *systemReservedCompressibleIgnition)
 		}
 
 		rawIgn, err := json.Marshal(tempIgnConfig)
