@@ -94,6 +94,7 @@ type Controller struct {
 	mosbLister mcfglistersv1.MachineOSBuildLister
 	nodeLister corelisterv1.NodeLister
 	podLister  corelisterv1.PodLister
+	mcnLister  mcfglistersv1.MachineConfigNodeLister
 
 	ccListerSynced   cache.InformerSynced
 	mcListerSynced   cache.InformerSynced
@@ -123,6 +124,7 @@ func New(
 	podInformer coreinformersv1.PodInformer,
 	moscInformer mcfginformersv1.MachineOSConfigInformer,
 	mosbInformer mcfginformersv1.MachineOSBuildInformer,
+	mcnInformer mcfginformersv1.MachineConfigNodeInformer,
 	schedulerInformer cligoinformersv1.SchedulerInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
@@ -136,6 +138,7 @@ func New(
 		mosbInformer,
 		nodeInformer,
 		podInformer,
+		mcnInformer,
 		schedulerInformer,
 		kubeClient,
 		mcfgClient,
@@ -152,6 +155,7 @@ func NewWithCustomUpdateDelay(
 	podInformer coreinformersv1.PodInformer,
 	moscInformer mcfginformersv1.MachineOSConfigInformer,
 	mosbInformer mcfginformersv1.MachineOSBuildInformer,
+	mcnInformer mcfginformersv1.MachineConfigNodeInformer,
 	schedulerInformer cligoinformersv1.SchedulerInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
@@ -166,6 +170,7 @@ func NewWithCustomUpdateDelay(
 		mosbInformer,
 		nodeInformer,
 		podInformer,
+		mcnInformer,
 		schedulerInformer,
 		kubeClient,
 		mcfgClient,
@@ -183,6 +188,7 @@ func newController(
 	mosbInformer mcfginformersv1.MachineOSBuildInformer,
 	nodeInformer coreinformersv1.NodeInformer,
 	podInformer coreinformersv1.PodInformer,
+	mcnInformer mcfginformersv1.MachineConfigNodeInformer,
 	schedulerInformer cligoinformersv1.SchedulerInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
@@ -228,6 +234,11 @@ func newController(
 		UpdateFunc: ctrl.checkMasterNodesOnUpdate,
 		DeleteFunc: ctrl.checkMasterNodesOnDelete,
 	})
+	mcnInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addMachineConfigNode,
+		UpdateFunc: ctrl.updateMachineConfigNode,
+		DeleteFunc: ctrl.deleteMachineConfigNode,
+	})
 
 	ctrl.syncHandler = ctrl.syncMachineConfigPool
 	ctrl.enqueueMachineConfigPool = ctrl.enqueueDefault
@@ -239,12 +250,14 @@ func newController(
 	ctrl.mosbLister = mosbInformer.Lister()
 	ctrl.nodeLister = nodeInformer.Lister()
 	ctrl.podLister = podInformer.Lister()
+	ctrl.mcnLister = mcnInformer.Lister()
 	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
 	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
 	ctrl.mcpListerSynced = mcpInformer.Informer().HasSynced
 	ctrl.moscListerSynced = moscInformer.Informer().HasSynced
 	ctrl.mosbListerSynced = mosbInformer.Informer().HasSynced
 	ctrl.nodeListerSynced = nodeInformer.Informer().HasSynced
+	ctrl.mcnListerSynced = mcnInformer.Informer().HasSynced
 
 	ctrl.schedulerList = schedulerInformer.Lister()
 	ctrl.schedulerListerSynced = schedulerInformer.Informer().HasSynced
@@ -533,6 +546,81 @@ func (ctrl *Controller) updateMachineOSBuild(old, cur interface{}) {
 		return
 	}
 	klog.V(4).Infof("MachineOSBuild %s status changed for MachineConfigPool %s", curMOSB.Name, mcp.Name)
+	ctrl.enqueueMachineConfigPool(mcp)
+}
+
+func (ctrl *Controller) addMachineConfigNode(obj interface{}) {
+	curMCN := obj.(*mcfgv1.MachineConfigNode)
+	klog.V(4).Infof("Adding MachineConfigNode %s", curMCN.Name)
+
+	// Find the associated MachineConfigPool from the MachineConfigNode. If the pool value is
+	// "not-yet-set" it means that the MCN does not have an associated MCP yet.
+	poolName := curMCN.Spec.Pool.Name
+	if poolName == upgrademonitor.NotYetSet {
+		return
+	}
+
+	mcp, err := ctrl.mcpLister.Get(poolName)
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("Couldn't get MachineConfigPool from MachineConfigNode %v: %v", curMCN, err))
+		return
+	}
+	klog.V(4).Infof("MachineConfigNode %s affects MachineConfigPool %s", curMCN.Name, mcp.Name)
+	ctrl.enqueueMachineConfigPool(mcp)
+}
+
+func (ctrl *Controller) updateMachineConfigNode(old, cur interface{}) {
+	oldMCN := old.(*mcfgv1.MachineConfigNode)
+	curMCN := cur.(*mcfgv1.MachineConfigNode)
+
+	// Only process if the MCN conditions, desired config, or pool association has changed. If the
+	// pool name value is "not-yet-set" it means that the MCN does not have an associated MCP yet,
+	// which is also a condition we should skip on.
+	curPoolName := curMCN.Spec.Pool.Name
+	if curPoolName == upgrademonitor.NotYetSet || (oldMCN.Spec.Pool.Name == curPoolName &&
+		oldMCN.Spec.ConfigVersion.Desired == curMCN.Spec.ConfigVersion.Desired &&
+		equality.Semantic.DeepEqual(oldMCN.Status.Conditions, curMCN.Status.Conditions)) {
+		return
+	}
+
+	klog.V(4).Infof("Updating MachineConfigNode %s", curMCN.Name)
+
+	mcp, err := ctrl.mcpLister.Get(curPoolName)
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("Couldn't get MachineConfigPool from MachineConfigNode %v: %v", curMCN.Name, err))
+		return
+	}
+	klog.V(4).Infof("MachineConfigNode %s status changed for MachineConfigPool %s", curMCN.Name, mcp.Name)
+	ctrl.enqueueMachineConfigPool(mcp)
+}
+
+func (ctrl *Controller) deleteMachineConfigNode(obj interface{}) {
+	curMCN, ok := obj.(*mcfgv1.MachineConfigNode)
+	if !ok {
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
+			return
+		}
+		curMCN, ok = tombstone.Obj.(*mcfgv1.MachineConfigNode)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a MCN %#v", obj))
+			return
+		}
+	}
+	klog.V(4).Infof("Deleting MachineConfigNode %s", curMCN.Name)
+
+	// Find the associated MachineConfigPool from the MachineConfigNode. If the pool value is
+	// "not-yet-set" it means that the MCN does not have an associated MCP yet.
+	mcpName := curMCN.Spec.Pool.Name
+	if mcpName == upgrademonitor.NotYetSet {
+		return
+	}
+	mcp, err := ctrl.mcpLister.Get(mcpName)
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("Couldn't get MachineConfigPool from MachineConfigNode %v", curMCN.Name))
+		return
+	}
 	ctrl.enqueueMachineConfigPool(mcp)
 }
 
