@@ -1743,6 +1743,491 @@ func TestIsConfigAndOrBuildPresent(t *testing.T) {
 	}
 }
 
+func TestIsCustomPoolBootedNode(t *testing.T) {
+	t.Parallel()
+
+	// Create test MachineConfigs with different owner references
+	infraMC := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "rendered-infra-pool-abc123",
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: mcfgv1.SchemeGroupVersion.String(),
+					Kind:       "MachineConfigPool",
+					Name:       "infra",
+				},
+			},
+		},
+	}
+
+	masterMC := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "rendered-master-abc123",
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: mcfgv1.SchemeGroupVersion.String(),
+					Kind:       "MachineConfigPool",
+					Name:       "master",
+				},
+			},
+		},
+	}
+
+	workerMC := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "rendered-worker-abc123",
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: mcfgv1.SchemeGroupVersion.String(),
+					Kind:       "MachineConfigPool",
+					Name:       "worker",
+				},
+			},
+		},
+	}
+
+	tests := []struct {
+		name               string
+		node               *corev1.Node
+		machineConfig      *mcfgv1.MachineConfig
+		expectIsCustomPool bool
+		expectedPoolName   string
+	}{
+		{
+			name: "Node with custom pool boot annotation",
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+					Annotations: map[string]string{
+						daemonconsts.FirstPivotMachineConfigAnnotationKey: infraMC.Name,
+						daemonconsts.CurrentMachineConfigAnnotationKey:    infraMC.Name,
+						daemonconsts.DesiredMachineConfigAnnotationKey:    infraMC.Name,
+					},
+				},
+			},
+			machineConfig:      infraMC,
+			expectIsCustomPool: true,
+			expectedPoolName:   "infra",
+		},
+		{
+			name: "Node already has custom pool labels applied",
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+					Annotations: map[string]string{
+						daemonconsts.FirstPivotMachineConfigAnnotationKey: infraMC.Name,
+						daemonconsts.CustomPoolLabelsAppliedAnnotationKey: "",
+						daemonconsts.CurrentMachineConfigAnnotationKey:    infraMC.Name,
+						daemonconsts.DesiredMachineConfigAnnotationKey:    infraMC.Name,
+					},
+				},
+			},
+			machineConfig:      infraMC,
+			expectIsCustomPool: false,
+			expectedPoolName:   "",
+		},
+		{
+			name: "Node without FirstPivotMachineConfig annotation",
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+					Annotations: map[string]string{
+						daemonconsts.CurrentMachineConfigAnnotationKey: infraMC.Name,
+						daemonconsts.DesiredMachineConfigAnnotationKey: infraMC.Name,
+					},
+				},
+			},
+			expectIsCustomPool: false,
+			expectedPoolName:   "",
+		},
+		{
+			name: "Node booted into master pool",
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+					Annotations: map[string]string{
+						daemonconsts.FirstPivotMachineConfigAnnotationKey: masterMC.Name,
+						daemonconsts.CurrentMachineConfigAnnotationKey:    masterMC.Name,
+						daemonconsts.DesiredMachineConfigAnnotationKey:    masterMC.Name,
+					},
+				},
+			},
+			machineConfig:      masterMC,
+			expectIsCustomPool: false,
+			expectedPoolName:   "master",
+		},
+		{
+			name: "Node booted into worker pool",
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+					Annotations: map[string]string{
+						daemonconsts.FirstPivotMachineConfigAnnotationKey: workerMC.Name,
+						daemonconsts.CurrentMachineConfigAnnotationKey:    workerMC.Name,
+						daemonconsts.DesiredMachineConfigAnnotationKey:    workerMC.Name,
+					},
+				},
+			},
+			machineConfig:      workerMC,
+			expectIsCustomPool: false,
+			expectedPoolName:   "worker",
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFixture(t)
+			if test.machineConfig != nil {
+				f.objects = append(f.objects, test.machineConfig)
+			}
+
+			c := f.newController()
+
+			isCustomPool, poolName := c.isCustomPoolBootedNode(test.node)
+
+			assert.Equal(t, test.expectIsCustomPool, isCustomPool, "isCustomPool mismatch")
+			assert.Equal(t, test.expectedPoolName, poolName, "poolName mismatch")
+		})
+	}
+}
+
+func TestFilterCustomPoolBootedNodes(t *testing.T) {
+	t.Parallel()
+
+	// Create test MachineConfigs
+	infraMC := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "rendered-infra-abc123",
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: mcfgv1.SchemeGroupVersion.String(),
+					Kind:       "MachineConfigPool",
+					Name:       "infra",
+				},
+			},
+		},
+	}
+
+	workerMC := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "rendered-worker-abc123",
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: mcfgv1.SchemeGroupVersion.String(),
+					Kind:       "MachineConfigPool",
+					Name:       "worker",
+				},
+			},
+		},
+	}
+
+	tests := []struct {
+		name               string
+		candidates         []*corev1.Node
+		machineConfigs     []*mcfgv1.MachineConfig
+		pools              []*mcfgv1.MachineConfigPool
+		expectedCandidates []string
+		expectedNodeLabels map[string]map[string]string // nodeName -> labels
+	}{
+		{
+			name: "Node booted into custom pool should be filtered out from candidates and labeled",
+			candidates: []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "infra-node",
+						Annotations: map[string]string{
+							daemonconsts.FirstPivotMachineConfigAnnotationKey: infraMC.Name,
+							daemonconsts.CurrentMachineConfigAnnotationKey:    infraMC.Name,
+							daemonconsts.DesiredMachineConfigAnnotationKey:    infraMC.Name,
+						},
+						Labels: map[string]string{
+							"node-role.kubernetes.io/worker": "",
+						},
+					},
+				},
+			},
+			machineConfigs: []*mcfgv1.MachineConfig{infraMC},
+			pools: []*mcfgv1.MachineConfigPool{
+				helpers.NewMachineConfigPoolBuilder("infra").
+					WithNodeSelector(&metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"node-role.kubernetes.io/infra": "",
+						},
+					}).
+					MachineConfigPool(),
+			},
+			expectedCandidates: []string{}, // Node should be filtered out
+			expectedNodeLabels: map[string]map[string]string{
+				"infra-node": {
+					"node-role.kubernetes.io/worker": "",
+					"node-role.kubernetes.io/infra":  "",
+				},
+			},
+		},
+		{
+			name: "Node booted into worker pool stays in candidates",
+			candidates: []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "worker-node",
+						Annotations: map[string]string{
+							daemonconsts.FirstPivotMachineConfigAnnotationKey: workerMC.Name,
+							daemonconsts.CurrentMachineConfigAnnotationKey:    workerMC.Name,
+							daemonconsts.DesiredMachineConfigAnnotationKey:    workerMC.Name,
+						},
+						Labels: map[string]string{
+							"node-role.kubernetes.io/worker": "",
+						},
+					},
+				},
+			},
+			machineConfigs: []*mcfgv1.MachineConfig{workerMC},
+			pools: []*mcfgv1.MachineConfigPool{
+				helpers.NewMachineConfigPoolBuilder("worker").
+					WithNodeSelector(&metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"node-role.kubernetes.io/worker": "",
+						},
+					}).
+					MachineConfigPool(),
+			},
+			expectedCandidates: []string{"worker-node"}, // Node should remain
+			expectedNodeLabels: map[string]map[string]string{
+				"worker-node": {
+					"node-role.kubernetes.io/worker": "",
+				},
+			},
+		},
+		{
+			name: "Node with custom pool labels already applied stays in candidates",
+			candidates: []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "already-labeled-infra-node",
+						Annotations: map[string]string{
+							daemonconsts.FirstPivotMachineConfigAnnotationKey: infraMC.Name,
+							daemonconsts.CustomPoolLabelsAppliedAnnotationKey: "",
+							daemonconsts.CurrentMachineConfigAnnotationKey:    infraMC.Name,
+							daemonconsts.DesiredMachineConfigAnnotationKey:    infraMC.Name,
+						},
+						Labels: map[string]string{
+							"node-role.kubernetes.io/worker": "",
+							"node-role.kubernetes.io/infra":  "",
+						},
+					},
+				},
+			},
+			machineConfigs: []*mcfgv1.MachineConfig{infraMC},
+			pools: []*mcfgv1.MachineConfigPool{
+				helpers.NewMachineConfigPoolBuilder("custom").
+					WithNodeSelector(&metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"node-role.kubernetes.io/infra": "",
+						},
+					}).
+					MachineConfigPool(),
+			},
+			expectedCandidates: []string{"already-labeled-infra-node"}, // Node should remain
+			expectedNodeLabels: map[string]map[string]string{
+				"already-labeled-infra-node": {
+					"node-role.kubernetes.io/worker": "",
+					"node-role.kubernetes.io/infra":  "",
+				},
+			},
+		},
+		{
+			name: "Node that booted into a custom pool should stay in candidate list if custom label was removed",
+			candidates: []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "removed-labeled-infra-node",
+						Annotations: map[string]string{
+							daemonconsts.FirstPivotMachineConfigAnnotationKey: infraMC.Name,
+							daemonconsts.CustomPoolLabelsAppliedAnnotationKey: "",
+							daemonconsts.CurrentMachineConfigAnnotationKey:    infraMC.Name,
+							daemonconsts.DesiredMachineConfigAnnotationKey:    infraMC.Name,
+						},
+						Labels: map[string]string{
+							"node-role.kubernetes.io/worker": "",
+						},
+					},
+				},
+			},
+			machineConfigs: []*mcfgv1.MachineConfig{infraMC},
+			pools: []*mcfgv1.MachineConfigPool{
+				helpers.NewMachineConfigPoolBuilder("custom").
+					WithNodeSelector(&metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"node-role.kubernetes.io/infra": "",
+						},
+					}).
+					MachineConfigPool(),
+			},
+			expectedCandidates: []string{"removed-labeled-infra-node"}, // Node should remain
+			expectedNodeLabels: map[string]map[string]string{
+				"removed-labeled-infra-node": {
+					"node-role.kubernetes.io/worker": "",
+				},
+			},
+		},
+		{
+			name: "Mix of infra and worker pool nodes",
+			candidates: []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "infra-node-1",
+						Annotations: map[string]string{
+							daemonconsts.FirstPivotMachineConfigAnnotationKey: infraMC.Name,
+							daemonconsts.CurrentMachineConfigAnnotationKey:    infraMC.Name,
+							daemonconsts.DesiredMachineConfigAnnotationKey:    infraMC.Name,
+						},
+						Labels: map[string]string{
+							"node-role.kubernetes.io/worker": "",
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "worker-node-1",
+						Annotations: map[string]string{
+							daemonconsts.FirstPivotMachineConfigAnnotationKey: workerMC.Name,
+							daemonconsts.CurrentMachineConfigAnnotationKey:    workerMC.Name,
+							daemonconsts.DesiredMachineConfigAnnotationKey:    workerMC.Name,
+						},
+						Labels: map[string]string{
+							"node-role.kubernetes.io/worker": "",
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "infra-node-2",
+						Annotations: map[string]string{
+							daemonconsts.FirstPivotMachineConfigAnnotationKey: infraMC.Name,
+							daemonconsts.CurrentMachineConfigAnnotationKey:    infraMC.Name,
+							daemonconsts.DesiredMachineConfigAnnotationKey:    infraMC.Name,
+						},
+						Labels: map[string]string{
+							"node-role.kubernetes.io/worker": "",
+						},
+					},
+				},
+			},
+			machineConfigs: []*mcfgv1.MachineConfig{infraMC, workerMC},
+			pools: []*mcfgv1.MachineConfigPool{
+				helpers.NewMachineConfigPoolBuilder("infra").
+					WithNodeSelector(&metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"node-role.kubernetes.io/infra": "",
+						},
+					}).
+					MachineConfigPool(),
+				helpers.NewMachineConfigPoolBuilder("worker").
+					WithNodeSelector(helpers.WorkerSelector).
+					MachineConfigPool(),
+			},
+			expectedCandidates: []string{"worker-node-1"}, // Only worker node remains
+			expectedNodeLabels: map[string]map[string]string{
+				"infra-node-1": {
+					"node-role.kubernetes.io/worker": "",
+					"node-role.kubernetes.io/infra":  "",
+				},
+				"worker-node-1": {
+					"node-role.kubernetes.io/worker": "",
+				},
+				"infra-node-2": {
+					"node-role.kubernetes.io/worker": "",
+					"node-role.kubernetes.io/infra":  "",
+				},
+			},
+		},
+		{
+			name: "Node without FirstPivot annotation stays in candidates(legacy scenario)",
+			candidates: []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "normal-node",
+						Annotations: map[string]string{
+							daemonconsts.CurrentMachineConfigAnnotationKey: workerMC.Name,
+							daemonconsts.DesiredMachineConfigAnnotationKey: workerMC.Name,
+						},
+						Labels: map[string]string{
+							"node-role.kubernetes.io/worker": "",
+						},
+					},
+				},
+			},
+			machineConfigs: []*mcfgv1.MachineConfig{workerMC},
+			pools: []*mcfgv1.MachineConfigPool{helpers.NewMachineConfigPoolBuilder("worker").
+				WithNodeSelector(helpers.WorkerSelector).
+				MachineConfigPool()},
+			expectedCandidates: []string{"normal-node"},
+			expectedNodeLabels: map[string]map[string]string{
+				"normal-node": {
+					"node-role.kubernetes.io/worker": "",
+				},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFixture(t)
+
+			for _, mc := range test.machineConfigs {
+				f.objects = append(f.objects, mc)
+			}
+
+			for _, pool := range test.pools {
+				f.mcpLister = append(f.mcpLister, pool)
+				f.objects = append(f.objects, pool)
+			}
+
+			for _, node := range test.candidates {
+				f.nodeLister = append(f.nodeLister, node)
+				f.kubeobjects = append(f.kubeobjects, node)
+			}
+
+			c := f.newController()
+
+			remainingCandidates := c.filterCustomPoolBootedNodes(test.candidates)
+
+			var remainingNames []string
+			for _, node := range remainingCandidates {
+				remainingNames = append(remainingNames, node.Name)
+			}
+
+			// Compare lengths and contents instead of exact slice equality
+			// to handle nil slice vs empty slice differences
+			if len(test.expectedCandidates) == 0 {
+				assert.Empty(t, remainingNames, "Expected no remaining candidates")
+			} else {
+				assert.Equal(t, test.expectedCandidates, remainingNames,
+					"Remaining candidate nodes mismatch")
+			}
+
+			// Verify node labels after the filter function
+			if test.expectedNodeLabels != nil {
+				for nodeName, expectedLabels := range test.expectedNodeLabels {
+					node, err := f.kubeclient.CoreV1().Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
+					require.NoError(t, err, "Failed to get node %s", nodeName)
+
+					for labelKey, labelValue := range expectedLabels {
+						assert.Contains(t, node.Labels, labelKey, "Node %s should have label %s", nodeName, labelKey)
+						assert.Equal(t, labelValue, node.Labels[labelKey], "Node %s label %s has wrong value", nodeName, labelKey)
+					}
+				}
+			}
+		})
+	}
+}
+
 // adds annotation to the node
 func addNodeAnnotations(node *corev1.Node, annotations map[string]string) {
 	if node.Annotations == nil {
