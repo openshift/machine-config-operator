@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"reflect"
 	"sort"
 	"time"
@@ -1529,6 +1530,105 @@ func (ctrl *Controller) filterControlPlaneCandidateNodes(pool *mcfgv1.MachineCon
 	return newCandidates, capacity, nil
 }
 
+// filterCustomPoolBootedNodes adjusts the candidate list if a node that directly booted
+// into a custom pool is found and updates the node with the appropriate label.
+func (ctrl *Controller) filterCustomPoolBootedNodes(candidates []*corev1.Node) []*corev1.Node {
+	var newCandidates []*corev1.Node
+	for _, node := range candidates {
+		isCustomBootNode, poolName := ctrl.isCustomPoolBootedNode(node)
+		if isCustomBootNode {
+			if err := ctrl.applyCustomPoolLabels(node, poolName); err != nil {
+				// best effort, log on failure, keep in candidate list
+				klog.Errorf("Failed to apply custom pool labels to node %s: %v", node.Name, err)
+			} else {
+				// On a successful update of the custom pool label, remove it from the candidate list
+				klog.Infof("Node %s was booted on custom pool %s; dropping from candidate list", node.Name, poolName)
+				continue
+			}
+		}
+		newCandidates = append(newCandidates, node)
+	}
+	return newCandidates
+}
+
+// isCustomPoolBootedNode checks if a node directly booted into a custom pool
+// by checking if it has the FirstPivotMachineConfigAnnotation and if that
+// MachineConfig belongs to a custom pool (not master/worker).
+// Returns a boolean and associated custom pool name.
+func (ctrl *Controller) isCustomPoolBootedNode(node *corev1.Node) (bool, string) {
+
+	// Check if custom label has already been automatically applied, nothing to do in that case
+	_, customPoolApplied := node.Annotations[daemonconsts.CustomPoolLabelsAppliedAnnotationKey]
+	if customPoolApplied {
+		return false, ""
+	}
+
+	// Get first pivot machineConfig, nothing to do if it doesn't exist
+	mcName, isFirstBoot := node.Annotations[daemonconsts.FirstPivotMachineConfigAnnotationKey]
+	if !isFirstBoot {
+		return false, ""
+	}
+
+	// Get the MachineConfig to check its owner references
+	mc, err := ctrl.mcLister.Get(mcName)
+	if err != nil {
+		klog.V(4).Infof("Failed to get MachineConfig %s: %v", mcName, err)
+		return false, ""
+	}
+
+	// Check if the MachineConfig has an owner reference to a MachineConfigPool
+	ownerRefs := mc.GetOwnerReferences()
+	if len(ownerRefs) == 0 {
+		klog.V(4).Infof("MachineConfig %s has no owner references", mcName)
+		return false, ""
+	}
+
+	// Get the pool name from the first owner reference
+	poolName := ownerRefs[0].Name
+
+	// Return true only if this is NOT a standard master or worker pool, along with poolName
+	return poolName != ctrlcommon.MachineConfigPoolMaster && poolName != ctrlcommon.MachineConfigPoolWorker, poolName
+}
+
+// applyCustomPoolLabels applies the node selector labels from a custom MachineConfigPool
+// to the node if the rendered MachineConfig belongs to a pool other than master/worker.
+func (ctrl *Controller) applyCustomPoolLabels(node *corev1.Node, poolName string) error {
+
+	// Get the MachineConfigPool
+	pool, err := ctrl.mcpLister.Get(poolName)
+	if err != nil {
+		return fmt.Errorf("failed to get MachineConfigPool %s: %w", poolName, err)
+	}
+
+	// Extract labels from the pool's node selector
+	if pool.Spec.NodeSelector == nil || pool.Spec.NodeSelector.MatchLabels == nil {
+		klog.V(4).Infof("MachineConfigPool %s has no node selector labels", poolName)
+		return nil
+	}
+
+	labelsToApply := pool.Spec.NodeSelector.MatchLabels
+	if len(labelsToApply) == 0 {
+		return nil
+	}
+
+	klog.Infof("Node %s was booted into custom pool %s; applying node selector labels: %v", poolName, node.Name, labelsToApply)
+
+	// Apply the labels to the node and add annotation indicating custom pool labels were applied
+	_, err = internal.UpdateNodeRetry(ctrl.kubeClient.CoreV1().Nodes(), ctrl.nodeLister, node.Name, func(node *corev1.Node) {
+		// Apply the custom pool labels
+		maps.Copy(node.Labels, labelsToApply)
+
+		// Add annotation to signal that custom pool labels were automatically applied
+		node.Annotations[daemonconsts.CustomPoolLabelsAppliedAnnotationKey] = ""
+	})
+	if err != nil {
+		return fmt.Errorf("failed to apply custom pool labels to node %s: %w", node.Name, err)
+	}
+
+	klog.Infof("Successfully applied custom pool labels to node %s", node.Name)
+	return nil
+}
+
 // SetDesiredStateFromPool in old mco explains how this works. Somehow you need to NOT FAIL if the mosb doesn't exist. So
 // we still need to base this whole things on pools but isLayeredPool == does mosb exist
 // updateCandidateMachines sets the desiredConfig annotation the candidate machines
@@ -1541,6 +1641,11 @@ func (ctrl *Controller) updateCandidateMachines(layered bool, mosc *mcfgv1.Machi
 		}
 		// In practice right now these counts will be 1 but let's stay general to support 5 etcd nodes in the future
 		ctrl.logPool(pool, "filtered to %d candidate nodes for update, capacity: %d", len(candidates), capacity)
+	}
+	// Filter out any nodes that have booted into a custom pool from candidate list
+	candidates = ctrl.filterCustomPoolBootedNodes(candidates)
+	if len(candidates) == 0 {
+		return nil
 	}
 	if capacity < uint(len(candidates)) {
 		// when list is longer than maxUnavailable, rollout nodes in zone order, zones without zone label

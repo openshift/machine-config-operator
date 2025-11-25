@@ -17,6 +17,10 @@ const (
 	CurrentMachineConfigAnnotationKey = "machineconfiguration.openshift.io/currentConfig"
 	// DesiredMachineConfigAnnotationKey is used to specify the desired MachineConfig for a machine
 	DesiredMachineConfigAnnotationKey = "machineconfiguration.openshift.io/desiredConfig"
+	// FirstPivotMachineConfigAnnotationKey is used to specify the MachineConfig the node pivoted to after firstboot.
+	FirstPivotMachineConfigAnnotationKey = "machineconfiguration.openshift.io/firstPivotConfig"
+	// CustomPoolLabelsAppliedAnnotationKey is set by the node controller to indicate custom pool labels were automatically applied
+	CustomPoolLabelsAppliedAnnotationKey = "machineconfiguration.openshift.io/customPoolLabelsApplied"
 	// MachineConfigDaemonStateAnnotationKey is used to fetch the state of the daemon on the machine.
 	MachineConfigDaemonStateAnnotationKey = "machineconfiguration.openshift.io/state"
 	// DesiredDrainerAnnotationKey is set by the MCD to indicate drain/uncordon requests
