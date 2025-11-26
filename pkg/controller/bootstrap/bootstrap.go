@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	imagev1 "github.com/openshift/api/image/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	corev1 "k8s.io/api/core/v1"
@@ -97,6 +98,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		imagePolicies        []*apicfgv1.ImagePolicy
 		imgCfg               *apicfgv1.Image
 		apiServer            *apicfgv1.APIServer
+		imageStream          *imagev1.ImageStream
 	)
 	for _, info := range infos {
 		if info.IsDir() {
@@ -162,6 +164,17 @@ func (b *Bootstrap) Run(destDir string) error {
 				if obj.GetName() == ctrlcommon.APIServerInstanceName {
 					apiServer = obj
 				}
+			case *imagev1.ImageStream:
+				for _, tag := range obj.Spec.Tags {
+					if tag.Name == "machine-config-operator" {
+						if imageStream != nil {
+							klog.Infof("multiple ImageStream found. Previous ImageStream %s replaced by %s", imageStream.Name, obj.Name)
+						}
+						imageStream = obj
+
+					}
+				}
+				// It's an ImageStream that doesn't look like the Release one (doesn't have our tag)
 			default:
 				klog.Infof("skipping %q [%d] manifest because of unhandled %T", file.Name(), idx+1, obji)
 			}
@@ -330,6 +343,10 @@ func (b *Bootstrap) Run(destDir string) error {
 	cconfigDir := filepath.Join(destDir, "controller-config")
 	if err := os.MkdirAll(cconfigDir, 0o764); err != nil {
 		return err
+	}
+
+	if imageStream != nil {
+		klog.Infof("ImageStream found!")
 	}
 
 	klog.Infof("writing the following controllerConfig to disk: %s", string(buf.Bytes()))
