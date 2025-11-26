@@ -20,24 +20,18 @@ ENV GOCACHE="/go/rhel8/.cache"
 ENV GOMODCACHE="/go/rhel8/pkg/mod"
 RUN make install DESTDIR=./instroot-rhel8 && tar -C instroot-rhel8 -cf instroot-rhel8.tar .
 
-FROM registry.ci.openshift.org/ocp/4.21:base-rhel9
+# This performs the OS image rename process for OKD.
+FROM registry.ci.openshift.org/ocp/4.21:base-rhel9 AS manifests
 ARG TAGS=""
 COPY install /manifests
-RUN if [ "${TAGS}" = "fcos" ]; then \
-    # comment out non-base/extensions image-references entirely for fcos
-    sed -i '/- name: rhel-coreos-/,+3 s/^/#/' /manifests/image-references && \
-    # comment out rhel10 entirely for fcos
-    sed -i '/- name: rhel-10-coreos/,+3 s/^/#/' /manifests/image-references && \
-    # also remove extensions from the osimageurl configmap (if we don't, oc won't rewrite it, and the placeholder value will survive and get used)
-    sed -i '/baseOSExtensionsContainerImage:/ s/^/#/' /manifests/0000_80_machine-config_05_osimageurl.yaml && \
-    # rewrite image names for fcos
-    sed -i 's/rhel-coreos/fedora-coreos/g' /manifests/*; \
-    elif [ "${TAGS}" = "scos" ]; then \
-    # rewrite image names for scos
-    sed -i 's/rhel-coreos/stream-coreos/g' /manifests/*; fi && \
-    # comment out rhel10 entirely for scos
-    sed -i '/- name: rhel-10-coreos/,+3 s/^/#/' /manifests/image-references; fi && \
-    dnf --setopt=keepcache=true -y install 'nmstate >= 2.2.10' && \
+COPY hack/rename-os-images.sh /tmp/rename-os-images.sh
+COPY hack/confirm-os-image-rename.sh /tmp/confirm-os-image-rename.sh
+RUN /tmp/rename-os-images.sh /manifests && /tmp/confirm-os-image-rename.sh /manifests
+
+FROM registry.ci.openshift.org/ocp/4.21:base-rhel9
+ARG TAGS=""
+COPY --from=manifests /manifests /manifests
+RUN dnf --setopt=keepcache=true -y install 'nmstate >= 2.2.10' && \
     if ! rpm -q util-linux; then dnf install --setopt=keepcache=true -y util-linux; fi && \
     # We also need to install fuse-overlayfs and cpp for Buildah to work correctly.
     if ! rpm -q buildah; then dnf install --setopt=keepcache=true -y buildah fuse-overlayfs cpp --exclude container-selinux; fi && \
