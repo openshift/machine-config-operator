@@ -4,4 +4,6 @@ package v1alpha1
 
 type MachineConfigNodeExpansion interface{}
 
+type OSImageStreamExpansion interface{}
+
 type PinnedImageSetExpansion interface{}
