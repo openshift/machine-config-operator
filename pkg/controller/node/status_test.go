@@ -7,7 +7,7 @@ import (
 
 	features "github.com/openshift/api/features"
 
-	apicfgv1 "github.com/openshift/api/config/v1"
+	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -431,11 +431,18 @@ func assertExpectedNodes(t *testing.T, expected []string, actual []*corev1.Node)
 }
 
 func TestCalculateStatus(t *testing.T) {
+	defaultFGs := []configv1.FeatureGateName{
+		features.FeatureGateMachineConfigNodes,
+		features.FeatureGatePinnedImages,
+	}
+
 	t.Parallel()
 	tests := []struct {
 		nodes         []*corev1.Node
+		mcns          []*mcfgv1.MachineConfigNode
 		currentConfig string
 		paused        bool
+		featureGates  []configv1.FeatureGateName
 
 		verify func(mcfgv1.MachineConfigPoolStatus, *testing.T)
 	}{{
@@ -445,6 +452,7 @@ func TestCalculateStatus(t *testing.T) {
 			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
 		},
 		currentConfig: machineConfigV1,
+		featureGates:  defaultFGs,
 		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
 			if got, want := status.MachineCount, int32(3); got != want {
 				t.Fatalf("mismatch MachineCount: got %d want: %d", got, want)
@@ -487,6 +495,7 @@ func TestCalculateStatus(t *testing.T) {
 			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
 		},
 		currentConfig: machineConfigV1,
+		featureGates:  defaultFGs,
 		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
 			if got, want := status.MachineCount, int32(3); got != want {
 				t.Fatalf("mismatch MachineCount: got %d want: %d", got, want)
@@ -530,6 +539,7 @@ func TestCalculateStatus(t *testing.T) {
 		},
 		currentConfig: machineConfigV1,
 		paused:        true,
+		featureGates:  defaultFGs,
 		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
 			condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
 			if condupdated == nil {
@@ -554,6 +564,7 @@ func TestCalculateStatus(t *testing.T) {
 			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
 		},
 		currentConfig: machineConfigV1,
+		featureGates:  defaultFGs,
 		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
 			if got, want := status.MachineCount, int32(3); got != want {
 				t.Fatalf("mismatch MachineCount: got %d want: %d", got, want)
@@ -596,6 +607,7 @@ func TestCalculateStatus(t *testing.T) {
 			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
 		},
 		currentConfig: machineConfigV1,
+		featureGates:  defaultFGs,
 		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
 			if got, want := status.MachineCount, int32(3); got != want {
 				t.Fatalf("mismatch MachineCount: got %d want: %d", got, want)
@@ -638,6 +650,7 @@ func TestCalculateStatus(t *testing.T) {
 			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
 		},
 		currentConfig: machineConfigV1,
+		featureGates:  defaultFGs,
 		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
 			if got, want := status.MachineCount, int32(3); got != want {
 				t.Fatalf("mismatch MachineCount: got %d want: %d", got, want)
@@ -680,6 +693,7 @@ func TestCalculateStatus(t *testing.T) {
 			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
 		},
 		currentConfig: machineConfigV1,
+		featureGates:  defaultFGs,
 		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
 			if got, want := status.MachineCount, int32(3); got != want {
 				t.Fatalf("mismatch MachineCount: got %d want: %d", got, want)
@@ -722,6 +736,55 @@ func TestCalculateStatus(t *testing.T) {
 			helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
 		},
 		currentConfig: machineConfigV1,
+		featureGates:  defaultFGs,
+		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+			if got, want := status.MachineCount, int32(3); got != want {
+				t.Fatalf("mismatch MachineCount: got %d want: %d", got, want)
+			}
+
+			if got, want := status.UpdatedMachineCount, int32(3); got != want {
+				t.Fatalf("mismatch UpdatedMachineCount: got %d want: %d", got, want)
+			}
+
+			if got, want := status.ReadyMachineCount, int32(3); got != want {
+				t.Fatalf("mismatch ReadyMachineCount: got %d want: %d", got, want)
+			}
+
+			if got, want := status.UnavailableMachineCount, int32(0); got != want {
+				t.Fatalf("mismatch UnavailableMachineCount: got %d want: %d", got, want)
+			}
+
+			condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
+			if condupdated == nil {
+				t.Fatal("updated condition not found")
+			}
+
+			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
+			if condupdating == nil {
+				t.Fatal("updated condition not found")
+			}
+
+			if got, want := condupdated.Status, corev1.ConditionTrue; got != want {
+				t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
+			}
+
+			if got, want := condupdating.Status, corev1.ConditionFalse; got != want {
+				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
+			}
+		},
+	}, { // For the `ImageModeStatusReporting` feature gate, MCP machine counts are populated from MCN conditions, so test those cases
+		nodes: []*corev1.Node{
+			helpers.NewNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+		},
+		mcns: []*mcfgv1.MachineConfigNode{
+			helpers.NewMachineConfigNode("node-0", "worker", machineConfigV1, true, false),
+			helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, true, false),
+			helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, true, false),
+		},
+		currentConfig: machineConfigV1,
+		featureGates:  append(defaultFGs, features.FeatureGateImageModeStatusReporting),
 		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
 			if got, want := status.MachineCount, int32(3); got != want {
 				t.Fatalf("mismatch MachineCount: got %d want: %d", got, want)
@@ -770,14 +833,14 @@ func TestCalculateStatus(t *testing.T) {
 				},
 			}
 			f := newFixtureWithFeatureGates(t,
-				[]apicfgv1.FeatureGateName{
+				[]configv1.FeatureGateName{
 					features.FeatureGateMachineConfigNodes,
 					features.FeatureGatePinnedImages,
 				},
-				[]apicfgv1.FeatureGateName{},
+				[]configv1.FeatureGateName{},
 			)
 			c := f.newController()
-			status := c.calculateStatus([]*mcfgv1.MachineConfigNode{}, nil, pool, test.nodes, nil, nil)
+			status := c.calculateStatus(test.mcns, nil, pool, test.nodes, nil, nil)
 			test.verify(status, t)
 		})
 	}
