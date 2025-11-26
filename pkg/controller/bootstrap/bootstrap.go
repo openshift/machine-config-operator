@@ -253,13 +253,13 @@ func (b *Bootstrap) Run(destDir string) error {
 
 	if fgHandler != nil && fgHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
 		if iri != nil {
-			iriConfigs, err := internalreleaseimage.RunInternalReleaseImageBootstrap(cconfig)
+			iriConfig, err := internalreleaseimage.RunInternalReleaseImageBootstrap(iri)
 			if err != nil {
 				return err
 			}
-			configs = append(configs, iriConfigs...)
+			configs = append(configs, iriConfig)
 		}
-		klog.Infof("Successfully generated MachineConfigs from InternalReleaseImage.")
+		klog.Infof("Successfully generated MachineConfig from InternalReleaseImage.")
 	}
 
 	// Create component MachineConfigs for pre-built images for hybrid OCL
