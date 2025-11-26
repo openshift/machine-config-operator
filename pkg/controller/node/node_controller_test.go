@@ -91,7 +91,7 @@ func newFixtureWithFeatureGates(t *testing.T, enabled, disabled []configv1.Featu
 }
 
 func newFixture(t *testing.T) *fixture {
-	return newFixtureWithFeatureGates(t, []configv1.FeatureGateName{features.FeatureGatePinnedImages, features.FeatureGateOnClusterBuild}, []configv1.FeatureGateName{})
+	return newFixtureWithFeatureGates(t, []configv1.FeatureGateName{features.FeatureGatePinnedImages, features.FeatureGateOnClusterBuild, features.FeatureGateMachineConfigNodes}, []configv1.FeatureGateName{})
 }
 
 func (f *fixture) newControllerWithStopChan(stopCh <-chan struct{}) *Controller {
@@ -260,7 +260,10 @@ func filterInformerActions(actions []core.Action) []core.Action {
 				action.Matches("list", "machineosbuilds") ||
 				action.Matches("watch", "machineosbuilds") ||
 				action.Matches("list", "machineosconfigs") ||
-				action.Matches("watch", "machineosconfigs")) {
+				action.Matches("watch", "machineosconfigs") ||
+				action.Matches("list", "machineconfignodes") ||
+				action.Matches("watch", "machineconfignodes") ||
+				action.Matches("get", "machineconfignodes")) {
 			continue
 		}
 		ret = append(ret, action)
