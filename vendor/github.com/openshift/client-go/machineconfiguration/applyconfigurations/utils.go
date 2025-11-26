@@ -68,6 +68,10 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &machineconfigurationv1.MachineConfigNodeStatusApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("MachineConfigNodeStatusConfigImage"):
 		return &machineconfigurationv1.MachineConfigNodeStatusConfigImageApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("MachineConfigNodeStatusInternalReleaseImage"):
+		return &machineconfigurationv1.MachineConfigNodeStatusInternalReleaseImageApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("MachineConfigNodeStatusInternalReleaseImageRef"):
+		return &machineconfigurationv1.MachineConfigNodeStatusInternalReleaseImageRefApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("MachineConfigNodeStatusMachineConfigVersion"):
 		return &machineconfigurationv1.MachineConfigNodeStatusMachineConfigVersionApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("MachineConfigNodeStatusPinnedImageSet"):
@@ -128,6 +132,16 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &machineconfigurationv1.PoolSynchronizerStatusApplyConfiguration{}
 
 		// Group=machineconfiguration.openshift.io, Version=v1alpha1
+	case v1alpha1.SchemeGroupVersion.WithKind("InternalReleaseImage"):
+		return &machineconfigurationv1alpha1.InternalReleaseImageApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("InternalReleaseImageBundleStatus"):
+		return &machineconfigurationv1alpha1.InternalReleaseImageBundleStatusApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("InternalReleaseImageRef"):
+		return &machineconfigurationv1alpha1.InternalReleaseImageRefApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("InternalReleaseImageSpec"):
+		return &machineconfigurationv1alpha1.InternalReleaseImageSpecApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("InternalReleaseImageStatus"):
+		return &machineconfigurationv1alpha1.InternalReleaseImageStatusApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("MachineConfigNode"):
 		return &machineconfigurationv1alpha1.MachineConfigNodeApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("MachineConfigNodeSpec"):
