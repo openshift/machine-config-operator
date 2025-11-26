@@ -2,7 +2,7 @@ mode: 0644
 path: "/etc/node-sizing-enabled.env"
 contents:
   inline: |
-    NODE_SIZING_ENABLED=true
+    NODE_SIZING_ENABLED={{if eq .Infra.Status.ControlPlaneTopology "External"}}false{{else}}true{{end}}
     SYSTEM_RESERVED_MEMORY=1Gi
     SYSTEM_RESERVED_CPU=500m
     SYSTEM_RESERVED_ES=1Gi
