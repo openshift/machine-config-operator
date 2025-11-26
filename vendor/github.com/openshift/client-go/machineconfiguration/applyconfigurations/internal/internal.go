@@ -219,6 +219,63 @@ var schemaYAML = typed.YAMLObject(`types:
       type:
         scalar: string
       default: ""
+- name: com.github.openshift.api.machineconfiguration.v1alpha1.OSImageStream
+  map:
+    fields:
+    - name: apiVersion
+      type:
+        scalar: string
+    - name: kind
+      type:
+        scalar: string
+    - name: metadata
+      type:
+        namedType: io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta
+      default: {}
+    - name: spec
+      type:
+        namedType: com.github.openshift.api.machineconfiguration.v1alpha1.OSImageStreamSpec
+    - name: status
+      type:
+        namedType: com.github.openshift.api.machineconfiguration.v1alpha1.OSImageStreamStatus
+- name: com.github.openshift.api.machineconfiguration.v1alpha1.OSImageStreamSpec
+  map:
+    elementType:
+      scalar: untyped
+      list:
+        elementType:
+          namedType: __untyped_atomic_
+        elementRelationship: atomic
+      map:
+        elementType:
+          namedType: __untyped_deduced_
+        elementRelationship: separable
+- name: com.github.openshift.api.machineconfiguration.v1alpha1.OSImageStreamStatus
+  map:
+    fields:
+    - name: availableStreams
+      type:
+        list:
+          elementType:
+            namedType: com.github.openshift.api.machineconfiguration.v1alpha1.OSImageStreamURLSet
+          elementRelationship: associative
+          keys:
+          - name
+    - name: defaultStream
+      type:
+        scalar: string
+- name: com.github.openshift.api.machineconfiguration.v1alpha1.OSImageStreamURLSet
+  map:
+    fields:
+    - name: name
+      type:
+        scalar: string
+    - name: osExtensionsImageURL
+      type:
+        scalar: string
+    - name: osImageURL
+      type:
+        scalar: string
 - name: com.github.openshift.api.machineconfiguration.v1alpha1.PinnedImageRef
   map:
     fields:
