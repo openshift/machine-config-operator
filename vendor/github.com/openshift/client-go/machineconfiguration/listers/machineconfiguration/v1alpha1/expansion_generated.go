@@ -2,6 +2,10 @@
 
 package v1alpha1
 
+// InternalReleaseImageListerExpansion allows custom methods to be added to
+// InternalReleaseImageLister.
+type InternalReleaseImageListerExpansion interface{}
+
 // MachineConfigNodeListerExpansion allows custom methods to be added to
 // MachineConfigNodeLister.
 type MachineConfigNodeListerExpansion interface{}

@@ -12,6 +12,10 @@ type FakeMachineconfigurationV1alpha1 struct {
 	*testing.Fake
 }
 
+func (c *FakeMachineconfigurationV1alpha1) InternalReleaseImages() v1alpha1.InternalReleaseImageInterface {
+	return newFakeInternalReleaseImages(c)
+}
+
 func (c *FakeMachineconfigurationV1alpha1) MachineConfigNodes() v1alpha1.MachineConfigNodeInterface {
 	return newFakeMachineConfigNodes(c)
 }
