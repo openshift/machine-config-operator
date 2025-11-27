@@ -50,11 +50,13 @@ func TestKubeletConfigDefaultUpdateFreq(t *testing.T) {
 func TestKubeletConfigMaxPods(t *testing.T) {
 	kcRaw1, err := kcfg.EncodeKubeletConfig(&kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, kubeletconfigv1beta1.SchemeGroupVersion, runtime.ContentTypeJSON)
 	require.Nil(t, err, "failed to encode kubelet config")
-	autoNodeSizing := true
+	autoNodeSizingEnabled := true
+	autoNodeSizingDisabled := false
+	// Initial default is enabled
 	kc1 := &mcfgv1.KubeletConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-101"},
 		Spec: mcfgv1.KubeletConfigSpec{
-			AutoSizingReserved: &autoNodeSizing,
+			AutoSizingReserved: &autoNodeSizingDisabled,
 			KubeletConfig: &runtime.RawExtension{
 				Raw: kcRaw1,
 			},
@@ -65,6 +67,7 @@ func TestKubeletConfigMaxPods(t *testing.T) {
 	kc2 := &mcfgv1.KubeletConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-200"},
 		Spec: mcfgv1.KubeletConfigSpec{
+			AutoSizingReserved: &autoNodeSizingEnabled,
 			KubeletConfig: &runtime.RawExtension{
 				Raw: kcRaw2,
 			},
