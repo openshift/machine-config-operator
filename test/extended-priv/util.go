@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/Masterminds/semver/v3"
 	"github.com/google/uuid"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
@@ -468,33 +468,152 @@ func OrFail[T any](vals ...any) T {
 	return vals[0].(T)
 }
 
-// skipTestIfRHELVersion skips the test if the RHEL version matches the constraint
-func skipTestIfRHELVersion(node Node, operator, constraintVersion string) {
-	actualVersion, err := node.GetRHELVersion()
-	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting RHEL version from node %s", node.GetName())
-
-	// Pad version to semantic version format if needed (e.g., "9.6" -> "9.6.0")
-	parts := strings.Split(actualVersion, ".")
-	for len(parts) < 3 {
-		parts = append(parts, "0")
+// QuoteIfNotJSON quotes a string if it's not valid JSON
+func QuoteIfNotJSON(s string) string {
+	var js interface{}
+	if json.Unmarshal([]byte(s), &js) == nil {
+		// It's valid JSON → return as is
+		return s
 	}
-	paddedVersion := strings.Join(parts, ".")
-
-	// Pad constraint version as well
-	constraintParts := strings.Split(constraintVersion, ".")
-	for len(constraintParts) < 3 {
-		constraintParts = append(constraintParts, "0")
+	// Not valid JSON → return quoted JSON string
+	b, err := json.Marshal(s)
+	if err != nil {
+		e2e.Failf("The provided string cannot be JSON encoded: %s", s)
 	}
-	paddedConstraintVersion := strings.Join(constraintParts, ".")
+	return string(b)
+}
 
-	// Parse versions for comparison
-	constraint, err := semver.NewConstraint(operator + paddedConstraintVersion)
-	o.Expect(err).NotTo(o.HaveOccurred(), "Error parsing version constraint")
+// IsSNO returns true if the cluster is a SNO cluster
+func IsSNO(oc *exutil.CLI) bool {
+	allNodes, err := NewNodeList(oc.AsAdmin()).GetAll()
+	if err != nil {
+		return false
+	}
+	return len(allNodes) == 1
+}
 
-	actual, err := semver.NewVersion(paddedVersion)
-	o.Expect(err).NotTo(o.HaveOccurred(), "Error parsing actual version %s (padded from %s)", paddedVersion, actualVersion)
+// SkipIfSNO skips the test case if the cluster is a SNO cluster
+func SkipIfSNO(oc *exutil.CLI) {
+	if IsSNO(oc) {
+		g.Skip("There is only 1 node in the cluster. This test is not supported in SNO clusters")
+	}
+}
 
-	if constraint.Check(actual) {
-		g.Skip(fmt.Sprintf("Test requires RHEL version NOT %s %s, but node has %s", operator, constraintVersion, actualVersion))
+// WorkersCanBeScaled returns true if worker nodes can be scaled using machinesets
+func WorkersCanBeScaled(oc *exutil.CLI) (bool, error) {
+	platform := exutil.CheckPlatform(oc)
+	logger.Infof("Checking if in this cluster workers can be scaled using machinesets")
+
+	// Baremetal and None platforms cannot scale workers
+	if platform == "baremetal" || platform == "none" || platform == "" {
+		logger.Infof("Baremetal/None platform. Can't scale up nodes in Baremetal test environments. Nodes cannot be scaled")
+		return false, nil
+	}
+
+	// Check if MachineAPI capability is enabled
+	if !IsCapabilityEnabled(oc.AsAdmin(), "MachineAPI") {
+		logger.Infof("MachineAPI capability is disabled. Nodes cannot be scaled")
+		return false, nil
+	}
+
+	// Get all machinesets
+	msl, err := NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAll()
+	if err != nil {
+		logger.Errorf("Error getting a list of MachineSet resources")
+		return false, err
+	}
+
+	// If there is no machineset then clearly we can't use them to scale the workers
+	if len(msl) == 0 {
+		logger.Infof("No machineset configured. Nodes cannot be scaled")
+		return false, nil
+	}
+
+	totalworkers := 0
+	for _, ms := range msl {
+		replicas, err := ms.Get(`{.spec.replicas}`)
+		if err != nil {
+			logger.Errorf("Error getting the number of replicas in %s", ms)
+			return false, err
+		}
+		if replicas != "" {
+			intReplicas, err := strconv.Atoi(replicas)
+			if err == nil {
+				totalworkers += intReplicas
+			}
+		}
+	}
+
+	// In some UPI/SNO/Compact clusters machineset resources exist, but they are all configured with 0 replicas
+	// If all machinesets have 0 replicas, then it means that we need to skip the test case
+	if totalworkers == 0 {
+		logger.Infof("All machinesets have 0 worker nodes. Nodes cannot be scaled")
+		return false, nil
+	}
+
+	return true, nil
+}
+
+// skipTestIfWorkersCannotBeScaled skips the current test if the worker pool cannot be scaled via machineset
+func skipTestIfWorkersCannotBeScaled(oc *exutil.CLI) {
+	canBeScaled, err := WorkersCanBeScaled(oc)
+	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error deciding if worker nodes can be scaled using machinesets")
+
+	if !canBeScaled {
+		g.Skip("Worker nodes cannot be scaled using machinesets. This test cannot be execute if workers cannot be scaled via machineset, IPI clusters.")
+	}
+}
+
+// getEnabledFeatureGates returns the list of enabled feature gates
+func getEnabledFeatureGates(oc *exutil.CLI) ([]string, error) {
+	enabledFeatureGates, err := NewResource(oc.AsAdmin(), "featuregate", "cluster").Get(`{.status.featureGates[0].enabled[*].name}`)
+	if err != nil {
+		return nil, err
+	}
+
+	if strings.TrimSpace(enabledFeatureGates) == "" {
+		return []string{}, nil
+	}
+
+	return strings.Split(enabledFeatureGates, " "), nil
+}
+
+// IsFeaturegateEnabled checks whether a featuregate is enabled or not
+func IsFeaturegateEnabled(oc *exutil.CLI, featuregate string) (bool, error) {
+	enabledFeatureGates, err := getEnabledFeatureGates(oc)
+	if err != nil {
+		return false, err
+	}
+	for _, f := range enabledFeatureGates {
+		if f == featuregate {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// SkipIfNoFeatureGate skips the test if the specified feature gate is not enabled
+func SkipIfNoFeatureGate(oc *exutil.CLI, featuregate string) {
+	enabled, err := IsFeaturegateEnabled(oc, featuregate)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting enabled featuregates")
+
+	if !enabled {
+		g.Skip(fmt.Sprintf("Featuregate %s is not enabled in this cluster", featuregate))
+	}
+}
+
+// skipTestIfSupportedPlatformNotMatched skips the test if the current platform is not in the supported list
+func skipTestIfSupportedPlatformNotMatched(oc *exutil.CLI, supported ...string) {
+	var match bool
+	p := exutil.CheckPlatform(oc)
+	for _, sp := range supported {
+		if strings.EqualFold(sp, p) {
+			match = true
+			break
+		}
+	}
+
+	if !match {
+		g.Skip(fmt.Sprintf("skip test because current platform %s is not in supported list %v", p, supported))
 	}
 }
