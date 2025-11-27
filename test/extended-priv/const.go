@@ -3,6 +3,9 @@ package extended
 import "time"
 
 const (
+	// Ignition default version
+	IgnitionDefaultVersion = "3.5.0"
+
 	// MachineConfigNamespace mco namespace
 	MachineConfigNamespace = "openshift-machine-config-operator"
 	// MachineConfigDaemon mcd container name
@@ -27,7 +30,17 @@ const (
 
 	// LayeringBaseImageReleaseInfo is the name of the layering base image in release info
 	LayeringBaseImageReleaseInfo = "rhel-coreos"
-	GenericMCTemplate            = "generic-machine-config-template.yml"
+	// GenericMCTemplate is the name of a MachineConfig template that can be fully configured by parameters
+	GenericMCTemplate = "generic-machine-config-template.yml"
+
+	// AWSPlatform value used to identify aws infrastructure
+	AWSPlatform = "aws"
+	// GCPPlatform value used to identify gcp infrastructure
+	GCPPlatform = "gcp"
+	// AzurePlatform value used to identify azure infrastructure
+	AzurePlatform = "azure"
+	// VspherePlatform value used to identify Vsphere infrastructure
+	VspherePlatform = "vsphere"
 
 	// ExpirationDockerfileLabel Expiration label in Dockerfile
 	ExpirationDockerfileLabel = `LABEL maintainer="mco-qe-team" quay.expires-after=24h`
@@ -48,4 +61,18 @@ const (
 
 	// DefaultExpectTimeout is the default timeout for expect operations
 	DefaultExpectTimeout = 10 * time.Second
+
+	// MachineAPINamespace is the MachineAPI namespace
+	MachineAPINamespace = "openshift-machine-api"
+
+	// We use full name to get machineset/machine xref: https://access.redhat.com/solutions/7040368
+	// MachineSetFullName is the machineset fully qualified name
+	MachineSetFullName = "machineset.machine.openshift.io"
+	// MachineFullName is the machine fully qualified name
+	MachineFullName = "machine.machine.openshift.io"
+
+	// MachineSetResource is the resource name for machinesets
+	MachineSetResource = "machinesets"
+	// ControlPlaneMachineSetResource is the resource name for controlplanemachinesets
+	ControlPlaneMachineSetResource = "controlplanemachinesets"
 )
