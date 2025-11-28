@@ -495,7 +495,7 @@ func GenerateSSHKeyPairOrFail() (privateKey, publicKey string) {
 	return privKey, pubKey
 }
 
-func checkSSHAccessInNode(node Node, user, privKey string) {
+func checkSSHAccessInNode(node *Node, user, privKey string) {
 	tmpPrivKeyPath := "/tmp/tmp-" + exutil.GetRandomString()
 	remotePrivSSH := NewRemoteFile(node, tmpPrivKeyPath)
 	defer func() {
@@ -510,7 +510,7 @@ func checkSSHAccessInNode(node Node, user, privKey string) {
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error in the login process using ssh key in node %s:\n %s", node.GetName(), bresp)
 }
 
-func checkAuthorizedKeyInNode(node Node, keys []string) {
+func checkAuthorizedKeyInNode(node *Node, keys []string) {
 	logger.Infof("Checking old file /home/core/.ssh/authorized_keys")
 	rOldAuthorizedFile := NewRemoteFile(node, "/home/core/.ssh/authorized_keys")
 	o.Expect(rOldAuthorizedFile.Fetch()).ShouldNot(o.Succeed(),

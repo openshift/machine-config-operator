@@ -434,12 +434,12 @@ type ResourceList struct {
 
 // NewResourceList constructs a ResourceList struct for not-namespaced resources
 func NewResourceList(oc *exutil.CLI, kind string) *ResourceList {
-	return &ResourceList{ocGetter{oc.AsAdmin(), kind, "", ""}, []string{}, ""}
+	return &ResourceList{ocGetter{oc, kind, "", ""}, []string{}, ""}
 }
 
 // NewNamespacedResourceList constructs a ResourceList struct for namespaced resources
 func NewNamespacedResourceList(oc *exutil.CLI, kind, namespace string) *ResourceList {
-	return &ResourceList{ocGetter{oc.AsAdmin(), kind, namespace, ""}, []string{}, ""}
+	return &ResourceList{ocGetter{oc, kind, namespace, ""}, []string{}, ""}
 }
 
 // CleanParams removes the extraparams added by methods like "ByLabel" or "SorBy..."
