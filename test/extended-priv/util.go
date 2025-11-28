@@ -111,7 +111,7 @@ func generateTemplateAbsolutePath(fileName string) string {
 	return filepath.Join(fixturesPath, fileName)
 }
 
-func sortNodeList(nodes []Node) []Node {
+func sortNodeList(nodes []*Node) []*Node {
 	sort.Slice(nodes, func(l, r int) bool {
 		lMetadata := JSON(nodes[l].GetOrFail("{.metadata}"))
 		rMetadata := JSON(nodes[r].GetOrFail("{.metadata}"))
@@ -159,8 +159,8 @@ func sortNodeList(nodes []Node) []Node {
 // sortMasterNodeList returns the list of nodes sorted by the order used to updated them in MCO master pool.
 //
 //	Master pool will use the same order as the rest of the pools, but the node running the operator pod will be the last one to be updated.
-func sortMasterNodeList(oc *exutil.CLI, nodes []Node) ([]Node, error) {
-	masterSortedNodes := []Node{}
+func sortMasterNodeList(oc *exutil.CLI, nodes []*Node) ([]*Node, error) {
+	masterSortedNodes := []*Node{}
 	operatorNode, err := GetOperatorNode(oc)
 	if err != nil {
 		return nil, err
@@ -168,7 +168,7 @@ func sortMasterNodeList(oc *exutil.CLI, nodes []Node) ([]Node, error) {
 
 	logger.Infof("MCO operator pod running in node: %s", operatorNode)
 
-	var latestNode Node
+	var latestNode *Node
 	for _, item := range sortNodeList(nodes) {
 		node := item
 		if node.GetName() == operatorNode.GetName() {
