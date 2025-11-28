@@ -77,7 +77,7 @@ func TestRunKubeletBootstrap(t *testing.T) {
 			}
 
 			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
-			mcs, err := RunKubeletBootstrap("../../../templates", cfgs, cc, fgHandler, nil, pools, nil)
+			mcs, err := RunKubeletBootstrap("../../../templates", cfgs, cc, fgHandler, nil, pools, nil, nil)
 			require.NoError(t, err)
 			require.Len(t, mcs, len(cfgs))
 
@@ -216,7 +216,7 @@ func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
 			f.mckLister = append(f.mckLister, kc)
 			f.objects = append(f.objects, kc)
 
-			mcs, err := RunKubeletBootstrap("../../../templates", []*mcfgv1.KubeletConfig{kc}, cc, fgHandler, nil, pools, nil)
+			mcs, err := RunKubeletBootstrap("../../../templates", []*mcfgv1.KubeletConfig{kc}, cc, fgHandler, nil, pools, nil, nil)
 			require.NoError(t, err)
 			require.Len(t, mcs, 1)
 

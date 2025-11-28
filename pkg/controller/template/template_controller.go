@@ -14,12 +14,17 @@ import (
 	"time"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	"github.com/openshift/api/machineconfiguration/v1alpha1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
+	mcfginformersv1alpha1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
+	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/controller/osimagestream"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/klog/v2"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -63,15 +68,21 @@ type Controller struct {
 	syncHandler             func(ccKey string) error
 	enqueueControllerConfig func(*mcfgv1.ControllerConfig)
 
-	ccLister mcfglistersv1.ControllerConfigLister
-	mcLister mcfglistersv1.MachineConfigLister
+	ccLister            mcfglistersv1.ControllerConfigLister
+	mcLister            mcfglistersv1.MachineConfigLister
+	mcpLister           mcfglistersv1.MachineConfigPoolLister
+	osImageStreamLister mcfglistersv1alpha1.OSImageStreamLister
 
 	apiserverLister       configlistersv1.APIServerLister
 	apiserverListerSynced cache.InformerSynced
 
-	ccListerSynced        cache.InformerSynced
-	mcListerSynced        cache.InformerSynced
-	secretsInformerSynced cache.InformerSynced
+	ccListerSynced            cache.InformerSynced
+	mcListerSynced            cache.InformerSynced
+	mcpListerSynced           cache.InformerSynced
+	secretsInformerSynced     cache.InformerSynced
+	osImageStreamListerSynced cache.InformerSynced
+
+	fgHandler ctrlcommon.FeatureGatesHandler
 
 	queue workqueue.TypedRateLimitingInterface[string]
 }
@@ -81,10 +92,13 @@ func New(
 	templatesDir string,
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mcInformer mcfginformersv1.MachineConfigInformer,
+	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
+	osImageStreamInformer mcfginformersv1alpha1.OSImageStreamInformer,
 	secretsInformer coreinformersv1.SecretInformer,
 	apiserverInformer configinformersv1.APIServerInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
+	fgHandler ctrlcommon.FeatureGatesHandler,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -98,6 +112,7 @@ func New(
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig[string](
 			workqueue.DefaultTypedControllerRateLimiter[string](),
 			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigcontroller-templatecontroller"}),
+		fgHandler: fgHandler,
 	}
 
 	ccInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -130,12 +145,24 @@ func New(
 
 	ctrl.ccLister = ccInformer.Lister()
 	ctrl.mcLister = mcInformer.Lister()
+
 	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
 	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
 	ctrl.secretsInformerSynced = secretsInformer.Informer().HasSynced
 
 	ctrl.apiserverLister = apiserverInformer.Lister()
 	ctrl.apiserverListerSynced = apiserverInformer.Informer().HasSynced
+
+	if osimagestream.IsFeatureEnabled(ctrl.fgHandler) {
+		if osImageStreamInformer != nil {
+			ctrl.osImageStreamLister = osImageStreamInformer.Lister()
+			ctrl.osImageStreamListerSynced = osImageStreamInformer.Informer().HasSynced
+		}
+		if mcpInformer != nil {
+			ctrl.mcpLister = mcpInformer.Lister()
+			ctrl.mcpListerSynced = mcpInformer.Informer().HasSynced
+		}
+	}
 
 	return ctrl
 }
@@ -287,7 +314,16 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.secretsInformerSynced) {
+	listerCaches := []cache.InformerSynced{ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.secretsInformerSynced}
+
+	// OSImageStreams and MCPs fetched only if FeatureGateOSStreams active
+	if ctrl.osImageStreamListerSynced != nil {
+		listerCaches = append(listerCaches, ctrl.osImageStreamListerSynced)
+	}
+	if ctrl.mcpListerSynced != nil {
+		listerCaches = append(listerCaches, ctrl.mcpListerSynced)
+	}
+	if !cache.WaitForCacheSync(stopCh, listerCaches...) {
 		return
 	}
 
@@ -633,7 +669,23 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 		return ctrl.syncFailingStatus(cfg, err)
 	}
 
-	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, clusterPullSecretRaw, apiServer)
+	var osImageStream *v1alpha1.OSImageStream
+	var mcps []*mcfgv1.MachineConfigPool
+	if ctrl.osImageStreamLister != nil {
+		// Get all MachineConfigPools
+		mcps, err = ctrl.mcpLister.List(labels.Everything())
+		if err != nil {
+			return fmt.Errorf("error listing MachineConfigPools: %w", err)
+		}
+
+		osImageStream, err = ctrl.osImageStreamLister.Get(ctrlcommon.ClusterInstanceNameOSImageStream)
+		// TODO @pablintino For now consider the situation where no OSImageStreams are available
+		if err != nil && !errors.IsNotFound(err) {
+			return fmt.Errorf("could not get OSImageStream, err: %w", err)
+		}
+	}
+
+	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, mcps, clusterPullSecretRaw, apiServer, osImageStream)
 	if err != nil {
 		return ctrl.syncFailingStatus(cfg, err)
 	}
@@ -652,7 +704,7 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 	return ctrl.syncCompletedStatus(cfg)
 }
 
-func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, clusterPullSecretRaw []byte, apiServer *configv1.APIServer) ([]*mcfgv1.MachineConfig, error) {
+func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, pools []*mcfgv1.MachineConfigPool, clusterPullSecretRaw []byte, apiServer *configv1.APIServer, osImageStream *v1alpha1.OSImageStream) ([]*mcfgv1.MachineConfig, error) {
 	buf := &bytes.Buffer{}
 	if err := json.Compact(buf, clusterPullSecretRaw); err != nil {
 		return nil, fmt.Errorf("couldn't compact pullsecret %q: %w", string(clusterPullSecretRaw), err)
@@ -664,7 +716,7 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 		TLSMinVersion:        tlsMinVersion,
 		TLSCipherSuites:      tlsCipherSuites,
 	}
-	mcs, err := generateTemplateMachineConfigs(rc, templatesDir)
+	mcs, err := generateTemplateMachineConfigs(rc, templatesDir, pools, osImageStream)
 	if err != nil {
 		return nil, err
 	}
@@ -678,7 +730,7 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 	return mcs, nil
 }
 
-// RunBootstrap runs the tempate controller in boostrap mode.
-func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, apiServer *configv1.APIServer) ([]*mcfgv1.MachineConfig, error) {
-	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, apiServer)
+// RunBootstrap runs the template controller in boostrap mode.
+func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pools []*mcfgv1.MachineConfigPool, pullSecretRaw []byte, apiServer *configv1.APIServer, osImageStream *v1alpha1.OSImageStream) ([]*mcfgv1.MachineConfig, error) {
+	return getMachineConfigsForControllerConfig(templatesDir, config, pools, pullSecretRaw, apiServer, osImageStream)
 }

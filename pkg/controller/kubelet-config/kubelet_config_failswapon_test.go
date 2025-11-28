@@ -35,7 +35,7 @@ func TestFailSwapOnConfiguration(t *testing.T) {
 
 			for _, tc := range testCases {
 				t.Run(tc.nodeRole, func(t *testing.T) {
-					kubeletConfig, err := generateOriginalKubeletConfigIgn(cc, ctrl.templatesDir, tc.nodeRole, &osev1.APIServer{})
+					kubeletConfig, err := generateOriginalKubeletConfigIgn(cc, ctrl.templatesDir, tc.nodeRole, &osev1.APIServer{}, nil)
 					require.NoError(t, err, "Failed to generate kubelet config for %s", tc.nodeRole)
 
 					contents, err := ctrlcommon.DecodeIgnitionFileContents(kubeletConfig.Contents.Source, kubeletConfig.Contents.Compression)

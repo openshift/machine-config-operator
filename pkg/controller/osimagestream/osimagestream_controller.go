@@ -8,7 +8,6 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/machine-config-operator/pkg/version"
-	"k8s.io/apimachinery/pkg/api/errors"
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
 
 	configinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
@@ -24,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
@@ -150,22 +150,33 @@ func (ctrl *Controller) boot() error {
 		return fmt.Errorf("error building the OSImageStream at runtime: %w", err)
 	}
 
+	var updateOSImageStream *v1alpha1.OSImageStream
 	if existingOSImageStream == nil {
 		klog.V(4).Infof("Creating OSImageStream singleton instance as it doesn't exist")
-		if _, err = ctrl.client.MachineconfigurationV1alpha1().OSImageStreams().Create(context.TODO(), osImageStream, metav1.CreateOptions{}); err != nil {
+		updateOSImageStream, err = ctrl.client.MachineconfigurationV1alpha1().OSImageStreams().Create(context.TODO(), osImageStream, metav1.CreateOptions{})
+		if err != nil {
 			return fmt.Errorf("error creating the OSImageStream at runtime: %w", err)
 		}
 	} else {
 		oldVersion := existingOSImageStream.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey]
 		klog.V(4).Infof("Updating the OSImageStream singleton as it was created by a previous version (%s). New version: %s", oldVersion, version.Hash)
-		if _, err = ctrl.client.
-			MachineconfigurationV1alpha1().
-			OSImageStreams().
-			UpdateStatus(context.TODO(), osImageStream, metav1.UpdateOptions{}); err != nil {
+		// Update metadata/spec first (mainly for annotations)
+		existingOSImageStream.ObjectMeta.Annotations = osImageStream.ObjectMeta.Annotations
+		updateOSImageStream, err = ctrl.client.MachineconfigurationV1alpha1().OSImageStreams().Update(context.TODO(), existingOSImageStream, metav1.UpdateOptions{})
+		if err != nil {
 			return fmt.Errorf("error updating the OSImageStream at runtime: %w", err)
 		}
 	}
-	ctrl.osImageStream = osImageStream
+
+	// Update the status subresource (both for newly created and updated resources)
+	updateOSImageStream.Status = osImageStream.Status
+	if _, err = ctrl.client.
+		MachineconfigurationV1alpha1().
+		OSImageStreams().
+		UpdateStatus(context.TODO(), updateOSImageStream, metav1.UpdateOptions{}); err != nil {
+		return fmt.Errorf("error updating the OSImageStream status at runtime: %w", err)
+	}
+	ctrl.osImageStream = updateOSImageStream
 	return nil
 }
 
@@ -174,7 +185,7 @@ func (ctrl *Controller) boot() error {
 func (ctrl *Controller) getExistingOSImageStream() (*v1alpha1.OSImageStream, error) {
 	osImageStream, err := ctrl.osImageStreamLister.Get(ctrlcommon.ClusterInstanceNameOSImageStream)
 	if err != nil {
-		if !errors.IsNotFound(err) {
+		if !apierrors.IsNotFound(err) {
 			return nil, fmt.Errorf("failed to retrieve existing OSImageStream: %v", err)
 		}
 		return nil, nil

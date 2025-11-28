@@ -28,7 +28,7 @@ func TestOriginalKubeletConfigDefaultNodeConfig(t *testing.T) {
 			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
 			ctrl := f.newController(fgHandler)
 
-			kubeletConfig, err := generateOriginalKubeletConfigIgn(cc, ctrl.templatesDir, "master", nil)
+			kubeletConfig, err := generateOriginalKubeletConfigIgn(cc, ctrl.templatesDir, "master", nil, nil)
 			if err != nil {
 				t.Errorf("could not generate kubelet config from templates %v", err)
 			}
@@ -112,7 +112,7 @@ func TestBootstrapNodeConfigDefault(t *testing.T) {
 			for _, configNode := range []*osev1.Node{configNodeCgroupDefault, configNodeCgroupV2, configNodeCgroupV1} {
 				expect := expected[configNode]
 				t.Run(fmt.Sprintf("Testing %v", expect.Name), func(t *testing.T) {
-					mcs, err := RunNodeConfigBootstrap("../../../templates", fgHandler, cc, configNode, mcps, nil)
+					mcs, err := RunNodeConfigBootstrap("../../../templates", fgHandler, cc, configNode, mcps, nil, nil)
 					if configNode == configNodeCgroupV1 {
 						require.Error(t, err)
 					} else {
@@ -138,7 +138,7 @@ func TestBootstrapNoNodeConfig(t *testing.T) {
 			mcp := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			mcps := []*mcfgv1.MachineConfigPool{mcp}
 
-			mcs, err := RunNodeConfigBootstrap("../../../templates", nil, cc, nil, mcps, nil)
+			mcs, err := RunNodeConfigBootstrap("../../../templates", nil, cc, nil, mcps, nil, nil)
 			if err == nil {
 				t.Errorf("expected an error while generating the kubelet config with no node config")
 			}

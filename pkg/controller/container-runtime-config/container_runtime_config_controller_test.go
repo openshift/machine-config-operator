@@ -266,6 +266,7 @@ func (f *fixture) newController() *Controller {
 		i.Machineconfiguration().V1().MachineConfigPools(),
 		i.Machineconfiguration().V1().ControllerConfigs(),
 		i.Machineconfiguration().V1().ContainerRuntimeConfigs(),
+		i.Machineconfiguration().V1alpha1().OSImageStreams(),
 		ci.Config().V1().Images(),
 		ci.Config().V1().ImageDigestMirrorSets(),
 		ci.Config().V1().ImageTagMirrorSets(),
@@ -1291,7 +1292,7 @@ func TestRunImageBootstrap(t *testing.T) {
 				// set FeatureGateSigstoreImageVerification enabled for testing
 				fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]apicfgv1.FeatureGateName{features.FeatureGateSigstoreImageVerification}, []apicfgv1.FeatureGateName{})
 
-				mcs, err := RunImageBootstrap("../../../templates", cc, pools, tc.icspRules, tc.idmsRules, tc.itmsRules, imgCfg, tc.clusterImagePolicies, tc.imagePolicies, fgHandler)
+				mcs, err := RunImageBootstrap("../../../templates", cc, pools, tc.icspRules, tc.idmsRules, tc.itmsRules, imgCfg, tc.clusterImagePolicies, tc.imagePolicies, fgHandler, nil)
 				require.NoError(t, err)
 
 				require.Len(t, mcs, len(pools))

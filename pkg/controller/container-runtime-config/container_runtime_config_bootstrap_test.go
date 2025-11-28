@@ -29,7 +29,7 @@ func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
 			f.mccrLister = append(f.mccrLister, ctrcfg)
 			f.objects = append(f.objects, ctrcfg)
 
-			mcs, err := RunContainerRuntimeBootstrap("../../../templates", []*mcfgv1.ContainerRuntimeConfig{ctrcfg}, cc, pools)
+			mcs, err := RunContainerRuntimeBootstrap("../../../templates", []*mcfgv1.ContainerRuntimeConfig{ctrcfg}, cc, pools, nil)
 			require.NoError(t, err)
 			require.Len(t, mcs, 1)
 

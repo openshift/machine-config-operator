@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/clarketm/json"
+	apicfgv1 "github.com/openshift/api/config/v1"
 	configv1 "github.com/openshift/api/config/v1"
 	fakeconfigv1client "github.com/openshift/client-go/config/clientset/versioned/fake"
 	oseconfigfake "github.com/openshift/client-go/config/clientset/versioned/fake"
@@ -56,6 +57,8 @@ type fixture struct {
 	objects     []runtime.Object
 	oseobjects  []runtime.Object
 	apiservers  []runtime.Object
+
+	fgHandler ctrlcommon.FeatureGatesHandler
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -64,6 +67,10 @@ func newFixture(t *testing.T) *fixture {
 	f.objects = []runtime.Object{}
 	f.kubeobjects = []runtime.Object{}
 	f.oseobjects = []runtime.Object{}
+	f.fgHandler = ctrlcommon.NewFeatureGatesHardcodedHandler(
+		[]apicfgv1.FeatureGateName{},
+		[]apicfgv1.FeatureGateName{},
+	)
 	return f
 }
 
@@ -112,8 +119,10 @@ func (f *fixture) newController() *Controller {
 
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
 	c := New(templateDir,
-		i.Machineconfiguration().V1().ControllerConfigs(), i.Machineconfiguration().V1().MachineConfigs(), cinformer.Core().V1().Secrets(),
-		apiserverinformer.Config().V1().APIServers(), f.kubeclient, f.client)
+		i.Machineconfiguration().V1().ControllerConfigs(), i.Machineconfiguration().V1().MachineConfigs(),
+		i.Machineconfiguration().V1().MachineConfigPools(), i.Machineconfiguration().V1alpha1().OSImageStreams(),
+		cinformer.Core().V1().Secrets(), apiserverinformer.Config().V1().APIServers(), f.kubeclient,
+		f.client, f.fgHandler)
 
 	c.ccListerSynced = alwaysReady
 	c.mcListerSynced = alwaysReady
@@ -289,7 +298,7 @@ func TestCreatesMachineConfigs(t *testing.T) {
 	f.objects = append(f.objects, cc)
 	f.kubeobjects = append(f.kubeobjects, ps)
 
-	expMCs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil)
+	expMCs, err := getMachineConfigsForControllerConfig(templateDir, cc, nil, []byte(`{"dummy": "dummy"}`), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -320,7 +329,7 @@ func TestDoNothing(t *testing.T) {
 	cc := newControllerConfig("test-cluster")
 	ps := newPullSecret("coreos-pull-secret", []byte(`{"dummy": "dummy"}`))
 
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil)
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, nil, []byte(`{"dummy": "dummy"}`), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -358,7 +367,7 @@ func TestRecreateMachineConfig(t *testing.T) {
 	cc := newControllerConfig("test-cluster")
 	ps := newPullSecret("coreos-pull-secret", []byte(`{"dummy": "dummy"}`))
 
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil)
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, nil, []byte(`{"dummy": "dummy"}`), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -397,7 +406,7 @@ func TestUpdateMachineConfig(t *testing.T) {
 	cc := newControllerConfig("test-cluster")
 	ps := newPullSecret("coreos-pull-secret", []byte(`{"dummy": "dummy"}`))
 
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil)
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, nil, []byte(`{"dummy": "dummy"}`), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -417,7 +426,7 @@ func TestUpdateMachineConfig(t *testing.T) {
 		f.objects = append(f.objects, mcs[idx])
 	}
 
-	expmcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil)
+	expmcs, err := getMachineConfigsForControllerConfig(templateDir, cc, nil, []byte(`{"dummy": "dummy"}`), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -454,7 +463,7 @@ func TestKubeletAutoNodeSizingEnabled(t *testing.T) {
 	cc := newControllerConfig("test-cluster")
 	ps := []byte(`{"dummy": "dummy"}`)
 
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, ps, nil)
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, nil, ps, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -513,7 +522,7 @@ func TestKubeletAutoNodeSizingDisabledForHypershift(t *testing.T) {
 	cc.Spec.Infra.Status.ControlPlaneTopology = configv1.ExternalTopologyMode
 	ps := []byte(`{"dummy": "dummy"}`)
 
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, ps, nil)
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, nil, ps, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

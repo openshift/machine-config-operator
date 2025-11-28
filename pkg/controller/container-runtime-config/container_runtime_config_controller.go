@@ -13,11 +13,15 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	apicfgv1 "github.com/openshift/api/config/v1"
 	features "github.com/openshift/api/features"
+	"github.com/openshift/api/machineconfiguration/v1alpha1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
 	cligoinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	cligolistersv1 "github.com/openshift/client-go/config/listers/config/v1"
+	mcfginformersv1alpha1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
+	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
+	"github.com/openshift/machine-config-operator/pkg/controller/osimagestream"
 	runtimeutils "github.com/openshift/runtime-utils/pkg/registries"
 
 	operatorinformersv1alpha1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1alpha1"
@@ -95,6 +99,9 @@ type Controller struct {
 	mccrLister       mcfglistersv1.ContainerRuntimeConfigLister
 	mccrListerSynced cache.InformerSynced
 
+	osImageStreamLister       mcfglistersv1alpha1.OSImageStreamLister
+	osImageStreamListerSynced cache.InformerSynced
+
 	imgLister       cligolistersv1.ImageLister
 	imgListerSynced cache.InformerSynced
 
@@ -133,6 +140,7 @@ func New(
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mcrInformer mcfginformersv1.ContainerRuntimeConfigInformer,
+	osImageStreamInformer mcfginformersv1alpha1.OSImageStreamInformer,
 	imgInformer cligoinformersv1.ImageInformer,
 	idmsInformer cligoinformersv1.ImageDigestMirrorSetInformer,
 	itmsInformer cligoinformersv1.ImageTagMirrorSetInformer,
@@ -223,6 +231,11 @@ func New(
 
 	ctrl.configInformerFactory = configInformerFactory
 
+	if osImageStreamInformer != nil && osimagestream.IsFeatureEnabled(ctrl.fgHandler) {
+		ctrl.osImageStreamLister = osImageStreamInformer.Lister()
+		ctrl.osImageStreamListerSynced = osImageStreamInformer.Informer().HasSynced
+	}
+
 	return ctrl
 }
 
@@ -231,8 +244,11 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 	defer ctrl.imgQueue.ShutDown()
-	listerCaches := []cache.InformerSynced{ctrl.mcpListerSynced, ctrl.mccrListerSynced, ctrl.ccListerSynced,
-		ctrl.imgListerSynced, ctrl.icspListerSynced, ctrl.idmsListerSynced, ctrl.itmsListerSynced, ctrl.clusterVersionListerSynced}
+	listerCaches := []cache.InformerSynced{
+		ctrl.mcpListerSynced, ctrl.mccrListerSynced, ctrl.ccListerSynced,
+		ctrl.imgListerSynced, ctrl.icspListerSynced, ctrl.idmsListerSynced,
+		ctrl.itmsListerSynced, ctrl.clusterVersionListerSynced,
+	}
 
 	if ctrl.sigstoreAPIEnabled() {
 		ctrl.addImagePolicyObservers()
@@ -240,6 +256,9 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 		ctrl.configInformerFactory.Start(stopCh)
 		listerCaches = append(listerCaches, ctrl.clusterImagePolicyListerSynced, ctrl.imagePolicyListerSynced)
 		ctrl.addedPolicyObservers = true
+	}
+	if ctrl.osImageStreamListerSynced != nil {
+		listerCaches = append(listerCaches, ctrl.osImageStreamListerSynced)
 	}
 
 	if !cache.WaitForCacheSync(stopCh, listerCaches...) {
@@ -505,12 +524,12 @@ func (ctrl *Controller) handleImgErr(err error, key string) {
 }
 
 // generateOriginalContainerRuntimeConfigs returns rendered default storage, registries and policy config files
-func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.ControllerConfig, role string) (*ign3types.File, *ign3types.File, *ign3types.File, error) {
+func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.ControllerConfig, role string, imageStream *v1alpha1.OSImageStreamSet) (*ign3types.File, *ign3types.File, *ign3types.File, error) {
 	// Render the default templates
 	rc := &mtmpl.RenderConfig{
 		ControllerConfigSpec: &cc.Spec,
 	}
-	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templateDir)
+	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templateDir, imageStream)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("generateMachineConfigsforRole failed with error %w", err)
 	}
@@ -713,6 +732,15 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		return fmt.Errorf("could not get ControllerConfig %w", err)
 	}
 
+	var osImageStream *v1alpha1.OSImageStream
+	if ctrl.osImageStreamLister != nil {
+		osImageStream, err = ctrl.osImageStreamLister.Get(ctrlcommon.ClusterInstanceNameOSImageStream)
+		// TODO @pablintino For now consider the situation where no OSImageStreams are available
+		if err != nil && !errors.IsNotFound(err) {
+			return fmt.Errorf("could not get OSImageStream, err: %w", err)
+		}
+	}
+
 	// Find all MachineConfigPools
 	mcpPools, err := ctrl.getPoolsForContainerRuntimeConfig(cfg)
 	if err != nil {
@@ -746,7 +774,12 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 			}
 		}
 		// Generate the original ContainerRuntimeConfig
-		originalStorageIgn, _, _, err := generateOriginalContainerRuntimeConfigs(ctrl.templatesDir, controllerConfig, role)
+		originalStorageIgn, _, _, err := generateOriginalContainerRuntimeConfigs(
+			ctrl.templatesDir,
+			controllerConfig,
+			role,
+			osimagestream.TryGetOSImageStreamFromPoolListByPoolName(osImageStream, mcpPools, pool.Name),
+		)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not generate origin ContainerRuntime Configs: %v", err)
 		}
@@ -986,6 +1019,15 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		return fmt.Errorf("could not get ControllerConfig %w", err)
 	}
 
+	var osImageStream *v1alpha1.OSImageStream
+	if ctrl.osImageStreamLister != nil {
+		osImageStream, err = ctrl.osImageStreamLister.Get(ctrlcommon.ClusterInstanceNameOSImageStream)
+		// TODO @pablintino For now consider the situation where no OSImageStreams are available
+		if err != nil && !errors.IsNotFound(err) {
+			return fmt.Errorf("could not get OSImageStream, err: %w", err)
+		}
+	}
+
 	sel, err := metav1.LabelSelectorAsSelector(metav1.AddLabelToSelector(&metav1.LabelSelector{}, builtInLabelKey, ""))
 	if err != nil {
 		return err
@@ -998,16 +1040,15 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 	for _, pool := range mcpPools {
 		// To keep track of whether we "actually" got an updated image config
 		applied := true
-		role := pool.Name
 		// Get MachineConfig
 		managedKey, err := getManagedKeyReg(pool, ctrl.client)
 		if err != nil {
 			return err
 		}
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
-			registriesIgn, err := registriesConfigIgnition(ctrl.templatesDir, controllerConfig, role, releaseImage,
+			registriesIgn, err := registriesConfigIgnition(ctrl.templatesDir, controllerConfig, mcpPools, pool, releaseImage,
 				imgcfg.Spec.RegistrySources.InsecureRegistries, registriesBlocked, policyBlocked, allowedRegs,
-				imgcfg.Spec.RegistrySources.ContainerRuntimeSearchRegistries, icspRules, idmsRules, itmsRules, clusterScopePolicies, scopeNamespacePolicies)
+				imgcfg.Spec.RegistrySources.ContainerRuntimeSearchRegistries, icspRules, idmsRules, itmsRules, clusterScopePolicies, scopeNamespacePolicies, osImageStream)
 			if err != nil {
 				return err
 			}
@@ -1068,10 +1109,10 @@ func (ctrl *Controller) syncIgnitionConfig(managedKey string, ignFile *ign3types
 	return true, err
 }
 
-func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.ControllerConfig, role, releaseImage string,
+func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.ControllerConfig, pools []*mcfgv1.MachineConfigPool, pool *mcfgv1.MachineConfigPool, releaseImage string,
 	insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs []string,
 	icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy, idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet,
-	clusterScopePolicies map[string]signature.PolicyRequirements, scopeNamespacePolicies map[string]map[string]signature.PolicyRequirements) (*ign3types.Config, error) {
+	clusterScopePolicies map[string]signature.PolicyRequirements, scopeNamespacePolicies map[string]map[string]signature.PolicyRequirements, osImageStream *v1alpha1.OSImageStream) (*ign3types.Config, error) {
 
 	var (
 		registriesTOML               []byte
@@ -1082,7 +1123,12 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 	)
 
 	// Generate the original registries config
-	_, originalRegistriesIgn, originalPolicyIgn, err := generateOriginalContainerRuntimeConfigs(templateDir, controllerConfig, role)
+	_, originalRegistriesIgn, originalPolicyIgn, err := generateOriginalContainerRuntimeConfigs(
+		templateDir,
+		controllerConfig,
+		pool.Name,
+		osimagestream.TryGetOSImageStreamFromPoolListByPoolName(osImageStream, pools, pool.Name),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("could not generate original ContainerRuntime Configs: %w", err)
 	}
@@ -1215,7 +1261,7 @@ func (ctrl *Controller) syncImagePolicyStatusOnly(namespace, imagepolicy, condit
 // except that mcfgv1.Image is not available.
 func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy,
 	idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet, imgCfg *apicfgv1.Image, clusterImagePolicies []*apicfgv1.ClusterImagePolicy, imagePolicies []*apicfgv1.ImagePolicy,
-	fgHandler ctrlcommon.FeatureGatesHandler) ([]*mcfgv1.MachineConfig, error) {
+	fgHandler ctrlcommon.FeatureGatesHandler, osImageStream *v1alpha1.OSImageStream) ([]*mcfgv1.MachineConfig, error) {
 
 	var (
 		insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs []string
@@ -1245,17 +1291,16 @@ func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerCo
 
 	var res []*mcfgv1.MachineConfig
 	for _, pool := range mcpPools {
-		role := pool.Name
 		managedKey, err := getManagedKeyReg(pool, nil)
 		if err != nil {
 			return nil, err
 		}
-		registriesIgn, err := registriesConfigIgnition(templateDir, controllerConfig, role, controllerConfig.Spec.ReleaseImage,
-			insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs, icspRules, idmsRules, itmsRules, clusterScopePolicies, scopeNamespacePolicies)
+		registriesIgn, err := registriesConfigIgnition(templateDir, controllerConfig, mcpPools, pool, controllerConfig.Spec.ReleaseImage,
+			insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs, icspRules, idmsRules, itmsRules, clusterScopePolicies, scopeNamespacePolicies, osImageStream)
 		if err != nil {
 			return nil, err
 		}
-		mc, err := ctrlcommon.MachineConfigFromIgnConfig(role, managedKey, registriesIgn)
+		mc, err := ctrlcommon.MachineConfigFromIgnConfig(pool.Name, managedKey, registriesIgn)
 		if err != nil {
 			return nil, err
 		}
