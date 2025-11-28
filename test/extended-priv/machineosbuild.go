@@ -68,17 +68,17 @@ func (mosb MachineOSBuild) GetJob() (*Job, error) {
 	return NewJob(mosb.GetOC(), jobNamespace, jobName), nil
 }
 
-// GetAll returns a []MachineOSBuild list with all existing pinnedimageset sorted by creation timestamp
-func (mosbl *MachineOSBuildList) GetAll() ([]MachineOSBuild, error) {
+// GetAll returns a []*MachineOSBuild list with all existing pinnedimageset sorted by creation timestamp
+func (mosbl *MachineOSBuildList) GetAll() ([]*MachineOSBuild, error) {
 	mosbl.ResourceList.SortByTimestamp()
 	allResources, err := mosbl.ResourceList.GetAll()
 	if err != nil {
 		return nil, err
 	}
-	all := make([]MachineOSBuild, 0, len(allResources))
+	all := make([]*MachineOSBuild, 0, len(allResources))
 
 	for _, res := range allResources {
-		all = append(all, *NewMachineOSBuild(mosbl.oc, res.name))
+		all = append(all, NewMachineOSBuild(mosbl.oc, res.name))
 	}
 
 	return all, nil

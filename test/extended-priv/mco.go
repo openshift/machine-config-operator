@@ -72,7 +72,7 @@ func checkDegraded(mcp *MachineConfigPool, expectedMessage, expectedReason, degr
 	logger.Infof("OK!\n")
 }
 
-func skipTestIfRHELVersion(node Node, operator, constraintVersion string) {
+func skipTestIfRHELVersion(node *Node, operator, constraintVersion string) {
 	actualVersion, err := node.GetRHELVersion()
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting RHEL version from node %s", node.GetName())
 

@@ -11,7 +11,7 @@ import (
 )
 
 type Checker interface {
-	Check(checkedNodes ...Node)
+	Check(checkedNodes ...*Node)
 }
 
 type CommandOutputChecker struct {
@@ -21,7 +21,7 @@ type CommandOutputChecker struct {
 	Desc     string
 }
 
-func (cOutChecker CommandOutputChecker) Check(checkedNodes ...Node) {
+func (cOutChecker CommandOutputChecker) Check(checkedNodes ...*Node) {
 	msg := "Executing verification commands"
 	if cOutChecker.Desc != "" {
 		msg = cOutChecker.Desc
@@ -47,7 +47,7 @@ type RemoteFileChecker struct {
 	Desc         string
 }
 
-func (rfc RemoteFileChecker) Check(checkedNodes ...Node) {
+func (rfc RemoteFileChecker) Check(checkedNodes ...*Node) {
 	msg := fmt.Sprintf("Checking file: %s", rfc.FileFullPath)
 	if rfc.Desc != "" {
 		msg = rfc.Desc
@@ -65,12 +65,12 @@ func (rfc RemoteFileChecker) Check(checkedNodes ...Node) {
 }
 
 // checkDrainAction checks that the drain action in the node is the expected one (drainSkipped)
-func checkDrainAction(drainSkipped bool, node Node, controller *Controller) {
+func checkDrainAction(drainSkipped bool, node *Node, controller *Controller) {
 	checkDrainActionWithGomega(drainSkipped, node, controller, o.Default)
 }
 
 // checkDrainActionWithGomega checks that the drain action in the node is the expected one (drainSkipped). It accepts an extra Gomega parameter that allows the function to be used in the Eventually gomega matchers
-func checkDrainActionWithGomega(drainExecuted bool, node Node, controller *Controller, gm o.Gomega) {
+func checkDrainActionWithGomega(drainExecuted bool, node *Node, controller *Controller, gm o.Gomega) {
 	var (
 		execDrainLogMsg = "initiating drain"
 	)
@@ -97,12 +97,12 @@ func checkDrainActionWithGomega(drainExecuted bool, node Node, controller *Contr
 }
 
 // checkRebootAction checks that the reboot action in the node is the expected one (rebootSkipped)
-func checkRebootAction(rebootExecuted bool, node Node, startTime time.Time) {
+func checkRebootAction(rebootExecuted bool, node *Node, startTime time.Time) {
 	checkRebootActionWithGomega(rebootExecuted, node, startTime, o.Default)
 }
 
 // checkRebootActionWithGomega checks that the reboot action in the node is the expected one (rebootSkipped). It accepts an extra Gomega parameter that allows the function to be used in the Eventually gomega matchers
-func checkRebootActionWithGomega(rebootExecuted bool, node Node, startTime time.Time, gm o.Gomega) {
+func checkRebootActionWithGomega(rebootExecuted bool, node *Node, startTime time.Time, gm o.Gomega) {
 	if rebootExecuted {
 		logger.Infof("Checking that node %s was rebooted", node.GetName())
 		gm.Expect(node.GetUptime()).Should(o.BeTemporally(">", startTime),
