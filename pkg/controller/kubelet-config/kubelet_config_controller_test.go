@@ -220,6 +220,7 @@ func (f *fixture) newController(fgHandler ctrlcommon.FeatureGatesHandler) *Contr
 		i.Machineconfiguration().V1().MachineConfigPools(),
 		i.Machineconfiguration().V1().ControllerConfigs(),
 		i.Machineconfiguration().V1().KubeletConfigs(),
+		i.Machineconfiguration().V1alpha1().OSImageStreams(),
 		featinformer.Config().V1().FeatureGates(),
 		featinformer.Config().V1().Nodes(),
 		featinformer.Config().V1().APIServers(),
@@ -1394,7 +1395,7 @@ func TestKubeletConfigTLSRender(t *testing.T) {
 			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
 			ctrl := f.newController(fgHandler)
 
-			kubeletConfig, err := generateOriginalKubeletConfigIgn(cc, ctrl.templatesDir, "master", testCase.apiserver)
+			kubeletConfig, err := generateOriginalKubeletConfigIgn(cc, ctrl.templatesDir, "master", testCase.apiserver, nil)
 			if err != nil {
 				t.Errorf("could not generate kubelet config from templates %v", err)
 			}

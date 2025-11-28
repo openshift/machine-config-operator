@@ -73,6 +73,15 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 
 		ctrlctx := ctrlcommon.CreateControllerContext(ctx, cb)
 
+		// Early start the config informer because feature gate depends on it
+		ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
+		if fgErr := ctrlctx.FeatureGatesHandler.Connect(ctx); fgErr != nil {
+			klog.Error(fmt.Errorf("failed to connect to feature gates %w", fgErr))
+			runCancel()
+			<-ctx.Done()
+			return
+		}
+
 		go ctrlcommon.StartMetricsListener(startOpts.promMetricsListenAddress, ctrlctx.Stop, ctrlcommon.RegisterMCCMetrics)
 
 		controllers := createControllers(ctrlctx)
@@ -110,10 +119,6 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		ctrlctx.OCLInformerFactory.Start(ctrlctx.Stop)
 
 		close(ctrlctx.InformersStarted)
-
-		if fgErr := ctrlctx.FeatureGatesHandler.Connect(ctx); fgErr != nil {
-			klog.Fatal(fmt.Errorf("failed to connect to feature gates %w", fgErr))
-		}
 
 		if ctrlctx.FeatureGatesHandler.Enabled(features.FeatureGatePinnedImages) && ctrlctx.FeatureGatesHandler.Enabled(features.FeatureGateMachineConfigNodes) {
 			pinnedImageSet := pinnedimageset.New(
@@ -202,10 +207,13 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			rootOpts.templates,
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
+			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
+			ctx.InformerFactory.Machineconfiguration().V1alpha1().OSImageStreams(),
 			ctx.OpenShiftConfigKubeNamespacedInformerFactory.Core().V1().Secrets(),
 			ctx.ConfigInformerFactory.Config().V1().APIServers(),
 			ctx.ClientBuilder.KubeClientOrDie("template-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("template-controller"),
+			ctx.FeatureGatesHandler,
 		),
 		// Add all "sub-renderers here"
 		kubeletconfig.New(
@@ -213,6 +221,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().KubeletConfigs(),
+			ctx.InformerFactory.Machineconfiguration().V1alpha1().OSImageStreams(),
 			ctx.ConfigInformerFactory.Config().V1().FeatureGates(),
 			ctx.ConfigInformerFactory.Config().V1().Nodes(),
 			ctx.ConfigInformerFactory.Config().V1().APIServers(),
@@ -226,6 +235,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().ContainerRuntimeConfigs(),
+			ctx.InformerFactory.Machineconfiguration().V1alpha1().OSImageStreams(),
 			ctx.ConfigInformerFactory.Config().V1().Images(),
 			ctx.ConfigInformerFactory.Config().V1().ImageDigestMirrorSets(),
 			ctx.ConfigInformerFactory.Config().V1().ImageTagMirrorSets(),
@@ -246,6 +256,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.InformerFactory.Machineconfiguration().V1().ContainerRuntimeConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().KubeletConfigs(),
 			ctx.OperatorInformerFactory.Operator().V1().MachineConfigurations(),
+			ctx.InformerFactory.Machineconfiguration().V1alpha1().OSImageStreams(),
 			ctx.ClientBuilder.KubeClientOrDie("render-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("render-controller"),
 			ctx.FeatureGatesHandler,

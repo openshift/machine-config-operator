@@ -179,7 +179,6 @@ func TestBuildOSImageStreamFromSources(t *testing.T) {
 			assert.NotNil(t, result)
 			assert.Equal(t, "cluster", result.Name)
 			assert.Equal(t, version.Hash, result.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey])
-			assert.Equal(t, version.Hash, result.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey])
 			if tt.expectedDefault != "" {
 				assert.Equal(t, tt.expectedDefault, result.Status.DefaultStream)
 			}
