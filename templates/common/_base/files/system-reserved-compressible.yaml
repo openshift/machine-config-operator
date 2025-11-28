@@ -1,0 +1,5 @@
+mode: 0644
+path: "/etc/system-reserved-compressible.env"
+contents:
+  inline: |
+    SYSTEM_RESERVED_COMPRESSIBLE_ENABLED=false

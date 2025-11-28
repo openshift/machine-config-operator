@@ -1,0 +1,40 @@
+mode: 0755
+path: "/usr/local/sbin/configure-user-slice.sh"
+contents:
+  inline: |
+    #!/bin/bash
+    set -e
+
+    SYSTEM_RESERVED_COMPRESSIBLE_ENABLED=$1
+    CPU_WEIGHT_CONF_DIR="/etc/systemd/system/user.slice.d"
+    CPU_WEIGHT_CONF_FILE="${CPU_WEIGHT_CONF_DIR}/99-cpu-weight.conf"
+
+    if [ "$SYSTEM_RESERVED_COMPRESSIBLE_ENABLED" == "true" ]; then
+        # Create directory if it doesn't exist
+        mkdir -p "$CPU_WEIGHT_CONF_DIR"
+
+        # Create the CPU weight configuration file
+        cat > "$CPU_WEIGHT_CONF_FILE" <<EOF
+    [Slice]
+    CPUShares=100
+    EOF
+
+        echo "Created $CPU_WEIGHT_CONF_FILE with CPUShares=100"
+
+        # Reload systemd to pick up the changes
+        systemctl daemon-reload
+    elif [ "$SYSTEM_RESERVED_COMPRESSIBLE_ENABLED" == "false" ]; then
+        # Remove the CPU weight configuration file if it exists
+        if [ -f "$CPU_WEIGHT_CONF_FILE" ]; then
+            rm -f "$CPU_WEIGHT_CONF_FILE"
+            echo "Deleted $CPU_WEIGHT_CONF_FILE"
+
+            # Reload systemd to pick up the changes
+            systemctl daemon-reload
+        else
+            echo "$CPU_WEIGHT_CONF_FILE does not exist, nothing to delete"
+        fi
+    else
+        echo "Unrecognized command line option. Valid options are \"true\" or \"false\""
+        exit 1
+    fi
