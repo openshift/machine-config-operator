@@ -181,7 +181,7 @@ func runBootstrapCmd(_ *cobra.Command, _ []string) {
 		bootstrapOpts.dnsConfigFile,
 		bootstrapOpts.cloudConfigFile,
 		bootstrapOpts.cloudProviderCAFile,
-		bootstrapOpts.mcsCAFile, bootstrapOpts.kubeCAFile, bootstrapOpts.pullSecretFile,
+		bootstrapOpts.mcsCAFile, bootstrapOpts.kubeCAFile, bootstrapOpts.pullSecretFile, bootstrapOpts.imageReferences,
 		&imgs,
 		bootstrapOpts.destinationDir,
 		bootstrapOpts.releaseImage,

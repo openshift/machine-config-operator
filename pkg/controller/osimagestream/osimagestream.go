@@ -12,7 +12,11 @@ import (
 	imagev1 "github.com/openshift/api/image/v1"
 	v1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/api/machineconfiguration/v1alpha1"
+	"github.com/openshift/machine-config-operator/pkg/controller/common"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/helpers"
 	"github.com/openshift/machine-config-operator/pkg/imageutils"
+	"github.com/openshift/machine-config-operator/pkg/version"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
@@ -123,7 +127,11 @@ func BuildOSImageStreamFromSources(ctx context.Context, sources []StreamSource) 
 	}
 	return &v1alpha1.OSImageStream{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "cluster",
+			Name: ClusterInstanceNameOSImageStream,
+			Annotations: map[string]string{
+				ctrlcommon.ReleaseImageVersionAnnotationKey:          version.Hash,
+				ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
+			},
 		},
 		Spec: &v1alpha1.OSImageStreamSpec{},
 		Status: v1alpha1.OSImageStreamStatus{
@@ -136,10 +144,7 @@ func BuildOSImageStreamFromSources(ctx context.Context, sources []StreamSource) 
 func getDefaultStreamSet(streams []v1alpha1.OSImageStreamSet) (string, error) {
 	// TODO This logic is temporal. For now, try to locate the RHEL 9 one in best effort
 	// Make a copy to avoid modifying the input slice
-	streamNames := make([]string, 0, len(streams))
-	for _, stream := range streams {
-		streamNames = append(streamNames, stream.Name)
-	}
+	streamNames := GetStreamSetsNames(streams)
 
 	// Sort by name length (shortest first) to prefer simpler names
 	slices.SortFunc(streamNames, func(a, b string) int {
@@ -173,4 +178,41 @@ func collect(ctx context.Context, sources []StreamSource) []v1alpha1.OSImageStre
 		}
 	}
 	return slices.Collect(maps.Values(result))
+}
+
+func GetOSImageStreamSetByName(osImageStream *v1alpha1.OSImageStream, name string) (*v1alpha1.OSImageStreamSet, error) {
+	if osImageStream == nil {
+		return nil, fmt.Errorf("requested OSImageStreamSet %s does not exist. OSImageStream cannot be nil", name)
+	}
+	if name == "" {
+		name = osImageStream.Status.DefaultStream
+	}
+
+	for _, stream := range osImageStream.Status.AvailableStreams {
+		if stream.Name == name {
+			return &stream, nil
+		}
+	}
+
+	return nil, fmt.Errorf("requested OSImageStream %s does not exist. Existing: %s", name, strings.Join(GetStreamSetsNames(osImageStream.Status.AvailableStreams), ","))
+}
+
+func GetOSImageStreamSetByNameDefault(osImageStream *v1alpha1.OSImageStream, name string, defaultValue *v1alpha1.OSImageStreamSet) *v1alpha1.OSImageStreamSet {
+	stream, _ := GetOSImageStreamSetByName(osImageStream, name)
+	if stream == nil {
+		return defaultValue
+	}
+	return stream
+}
+
+func GetOSImageStreamFromPoolListByPoolNameDefault(osImageStream *v1alpha1.OSImageStream, pools []*v1.MachineConfigPool, poolName string, defaultValue *v1alpha1.OSImageStreamSet) *v1alpha1.OSImageStreamSet {
+	targetPool := helpers.GetPoolByName(pools, poolName)
+	if targetPool == nil && poolName == common.MachineConfigPoolWorker {
+		targetPool = helpers.GetPoolByName(pools, common.MachineConfigPoolWorker)
+	}
+	if targetPool == nil {
+		return defaultValue
+	}
+
+	return GetOSImageStreamSetByNameDefault(osImageStream, targetPool.Spec.OSImageStream.Name, defaultValue)
 }
