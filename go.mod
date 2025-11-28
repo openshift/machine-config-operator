@@ -37,7 +37,7 @@ require (
 	github.com/onsi/gomega v1.36.2
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/openshift-eng/openshift-tests-extension v0.0.0-20250916161632-d81c09058835
-	github.com/openshift/api v0.0.0-20251124235416-c11dd82e305c
+	github.com/openshift/api v0.0.0-20251204164930-cd2e40c5883a
 	github.com/openshift/client-go v0.0.0-20251125141819-b6281947c285
 	github.com/openshift/library-go v0.0.0-20251015151611-6fc7a74b67c5
 	github.com/openshift/runtime-utils v0.0.0-20230921210328-7bdb5b9c177b
@@ -454,3 +454,7 @@ replace (
 	k8s.io/sample-cli-plugin => github.com/openshift/kubernetes/staging/src/k8s.io/sample-cli-plugin v0.0.0-20251028145634-9e794b89909a
 	k8s.io/sample-controller => github.com/openshift/kubernetes/staging/src/k8s.io/sample-controller v0.0.0-20251028145634-9e794b89909a
 )
+
+replace github.com/openshift/api => github.com/QiWang19/api v0.0.0-20251204232509-5086a5249b02
+
+replace github.com/openshift/client-go => github.com/QiWang19/client-go v0.0.0-20251206033140-b1d9ec91d591

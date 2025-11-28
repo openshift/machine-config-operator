@@ -84,14 +84,6 @@ var (
 					enableIn(configv1.Default, configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
 					mustRegister()
 
-	FeatureGateDynamicResourceAllocation = newFeatureGate("DynamicResourceAllocation").
-						reportProblemsToJiraComponent("scheduling").
-						contactPerson("jchaloup").
-						productScope(kubernetes).
-						enhancementPR("https://github.com/kubernetes/enhancements/issues/4381").
-						enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
-						mustRegister()
-
 	FeatureGateAzureWorkloadIdentity = newFeatureGate("AzureWorkloadIdentity").
 						reportProblemsToJiraComponent("cloud-credential-operator").
 						contactPerson("abutcher").
@@ -136,6 +128,14 @@ var (
 						contactPerson("QiWang").
 						productScope(ocpSpecific).
 						enhancementPR("https://github.com/openshift/enhancements/pull/1658").
+						enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
+						mustRegister()
+
+	FeatureGateCRIOCredentialProviderConfig = newFeatureGate("CRIOCredentialProviderConfig").
+						reportProblemsToJiraComponent("node").
+						contactPerson("QiWang").
+						productScope(ocpSpecific).
+						enhancementPR("https://github.com/openshift/enhancements/pull/1861").
 						enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
 						mustRegister()
 
@@ -501,7 +501,7 @@ var (
 						reportProblemsToJiraComponent("olm").
 						contactPerson("nschieder").
 						productScope(ocpSpecific).
-						enhancementPR("https://github.com/openshift/enhancements/pull/1774").
+						enhancementPR("https://github.com/openshift/enhancements/pull/1849").
 						enableForClusterProfile(SelfManaged, configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
 						mustRegister()
 
@@ -596,7 +596,7 @@ var (
 						contactPerson("psundara").
 						productScope(ocpSpecific).
 						enhancementPR(legacyFeatureGateWithoutEnhancement).
-						enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
+						enableIn(configv1.Default, configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
 						mustRegister()
 
 	FeatureGateUserNamespacesSupport = newFeatureGate("UserNamespacesSupport").
