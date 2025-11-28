@@ -1,0 +1,12 @@
+name: openshift-azure-routes.timer
+enabled: true
+contents: |
+  [Unit]
+  Description=Periodic reconciliation of Azure VIP routes
+
+  [Timer]
+  OnBootSec=30
+  OnUnitActiveSec=30
+
+  [Install]
+  WantedBy=timers.target
