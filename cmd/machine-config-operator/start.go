@@ -67,6 +67,12 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		go common.SignalHandler(runCancel)
 		ctrlctx := ctrlcommon.CreateControllerContext(ctx, cb)
 
+		// Early start the config informer because feature gate depends on it
+		ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
+		if fgErr := ctrlctx.FeatureGatesHandler.Connect(ctx); fgErr != nil {
+			klog.Fatal(fmt.Errorf("failed to connect to feature gates %w", fgErr))
+		}
+
 		controller := operator.New(
 			ctrlcommon.MCONamespace, componentName,
 			startOpts.imagesFile,
@@ -107,6 +113,8 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			ctrlctx.ConfigInformerFactory.Config().V1().Nodes(),
 			ctrlctx.ConfigInformerFactory.Config().V1().APIServers(),
 			ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1().MachineOSConfigs(),
+			ctrlctx.ConfigInformerFactory.Config().V1().ClusterVersions(),
+			ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().OSImageStreams(),
 			ctrlctx,
 		)
 
@@ -123,10 +131,6 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		ctrlctx.KubeMAOSharedInformer.Start(ctrlctx.Stop)
 
 		close(ctrlctx.InformersStarted)
-
-		if fgErr := ctrlctx.FeatureGatesHandler.Connect(ctx); fgErr != nil {
-			klog.Fatal(fmt.Errorf("failed to connect to feature gates %w", fgErr))
-		}
 
 		go controller.Run(2, ctrlctx.Stop)
 

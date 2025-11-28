@@ -101,7 +101,11 @@ func generateTemplateMachineConfigs(config *RenderConfig, templateDir string) ([
 			continue
 		}
 
-		roleConfigs, err := GenerateMachineConfigsForRole(config, role, templateDir)
+		roleConfigs, err := GenerateMachineConfigsForRole(
+			config,
+			role,
+			templateDir,
+		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create MachineConfig for role %s: %w", role, err)
 		}

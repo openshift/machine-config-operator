@@ -3,10 +3,12 @@ package osimagestream
 import (
 	"fmt"
 
+	"github.com/openshift/api/features"
 	v1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/helpers"
+	"github.com/openshift/machine-config-operator/pkg/version"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
@@ -57,4 +59,10 @@ func TryGetOSImageStreamFromPoolListByPoolName(osImageStream *v1alpha1.OSImageSt
 	}
 
 	return TryGetOSImageStreamSetByName(osImageStream, targetPool.Spec.OSImageStream.Name)
+}
+
+// IsFeatureEnabled checks if the OSImageStream feature is enabled.
+// Returns true only if the FeatureGateOSStreams is enabled and the cluster is not running SCOS or FCOS.
+func IsFeatureEnabled(fgHandler common.FeatureGatesHandler) bool {
+	return fgHandler.Enabled(features.FeatureGateOSStreams) && !version.IsSCOS() && !version.IsFCOS()
 }

@@ -2,12 +2,15 @@ package bootstrap
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
+	"github.com/openshift/machine-config-operator/pkg/osimagestream"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	corev1 "k8s.io/api/core/v1"
@@ -23,6 +26,7 @@ import (
 	apicfgv1 "github.com/openshift/api/config/v1"
 	apicfgv1alpha1 "github.com/openshift/api/config/v1alpha1"
 	"github.com/openshift/api/features"
+	imagev1 "github.com/openshift/api/image/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
@@ -70,7 +74,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		return err
 	}
 
-	psraw, err := getPullSecretFromSecret(psfraw)
+	pullSecret, err := getValidatePullSecretFromBytes(psfraw)
 	if err != nil {
 		return err
 	}
@@ -82,8 +86,13 @@ func (b *Bootstrap) Run(destDir string) error {
 	apicfgv1.Install(scheme)
 	apicfgv1alpha1.Install(scheme)
 	corev1.AddToScheme(scheme)
+	imagev1.AddToScheme(scheme)
 	codecFactory := serializer.NewCodecFactory(scheme)
-	decoder := codecFactory.UniversalDecoder(mcfgv1.GroupVersion, apioperatorsv1alpha1.GroupVersion, apicfgv1.GroupVersion, apicfgv1alpha1.GroupVersion, corev1.SchemeGroupVersion, mcfgv1alpha1.GroupVersion)
+	decoder := codecFactory.UniversalDecoder(
+		mcfgv1.GroupVersion, apioperatorsv1alpha1.GroupVersion,
+		apicfgv1.GroupVersion, apicfgv1alpha1.GroupVersion,
+		corev1.SchemeGroupVersion, mcfgv1alpha1.GroupVersion,
+		imagev1.SchemeGroupVersion)
 
 	var (
 		cconfig              *mcfgv1.ControllerConfig
@@ -101,6 +110,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		imagePolicies        []*apicfgv1.ImagePolicy
 		imgCfg               *apicfgv1.Image
 		apiServer            *apicfgv1.APIServer
+		imageStream          *imagev1.ImageStream
 		iri                  *mcfgv1alpha1.InternalReleaseImage
 	)
 	for _, info := range infos {
@@ -171,6 +181,17 @@ func (b *Bootstrap) Run(destDir string) error {
 				if obj.GetName() == ctrlcommon.InternalReleaseImageInstanceName {
 					iri = obj
 				}
+			case *imagev1.ImageStream:
+				for _, tag := range obj.Spec.Tags {
+					if tag.Name == "machine-config-operator" {
+						if imageStream != nil {
+							klog.Infof("multiple ImageStream found. Previous ImageStream %s replaced by %s", imageStream.Name, obj.Name)
+						}
+						imageStream = obj
+
+					}
+				}
+				// It's an ImageStream that doesn't look like the Release one (doesn't have our tag)
 			default:
 				klog.Infof("skipping %q [%d] manifest because of unhandled %T", file.Name(), idx+1, obji)
 			}
@@ -191,7 +212,40 @@ func (b *Bootstrap) Run(destDir string) error {
 		return fmt.Errorf("error creating feature gates handler: %w", err)
 	}
 
-	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, psraw, apiServer)
+	var osImageStream *mcfgv1alpha1.OSImageStream
+	// Enable OSImageStreams if the FeatureGate is active and the deployment is not OKD
+	if osimagestream.IsFeatureEnabled(fgHandler) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+
+		osImageStream, err = osimagestream.BuildOsImageStreamBootstrap(ctx,
+			pullSecret,
+			cconfig,
+			imageStream,
+			&osimagestream.OSImageTuple{
+				OSImage:           cconfig.Spec.BaseOSContainerImage,
+				OSExtensionsImage: cconfig.Spec.BaseOSExtensionsContainerImage,
+			},
+			osimagestream.NewDefaultStreamSourceFactory(nil, &osimagestream.DefaultImagesInspectorFactory{}),
+		)
+		if err != nil {
+			return fmt.Errorf("error inspecting available OSImageStreams: %w", err)
+		}
+
+		// If no error happened override the ControllerConfig URLs with the default stream ones
+		if err == nil {
+			defaultStreamSet, err := osimagestream.GetOSImageStreamSetByName(osImageStream, "")
+			if err != nil {
+				// Should never happen
+				return fmt.Errorf("error getting default OSImageStreamSet: %w", err)
+			}
+			cconfig.Spec.BaseOSContainerImage = string(defaultStreamSet.OSImage)
+			cconfig.Spec.BaseOSExtensionsContainerImage = string(defaultStreamSet.OSExtensionsImage)
+		}
+	}
+
+	pullSecretBytes := pullSecret.Data[corev1.DockerConfigJsonKey]
+	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, pullSecretBytes, apiServer)
 	if err != nil {
 		return err
 	}
@@ -274,7 +328,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		klog.Infof("Successfully created %d pre-built image component MachineConfigs for hybrid OCL.", len(preBuiltImageMCs))
 	}
 
-	fpools, gconfigs, err := render.RunBootstrap(pools, configs, cconfig)
+	fpools, gconfigs, err := render.RunBootstrap(pools, configs, cconfig, osImageStream)
 	if err != nil {
 		return err
 	}
@@ -357,7 +411,7 @@ func (b *Bootstrap) Run(destDir string) error {
 
 }
 
-func getPullSecretFromSecret(sData []byte) ([]byte, error) {
+func getValidatePullSecretFromBytes(sData []byte) (*corev1.Secret, error) {
 	obji, err := runtime.Decode(kscheme.Codecs.UniversalDecoder(corev1.SchemeGroupVersion), sData)
 	if err != nil {
 		return nil, err
@@ -369,7 +423,7 @@ func getPullSecretFromSecret(sData []byte) ([]byte, error) {
 	if s.Type != corev1.SecretTypeDockerConfigJson {
 		return nil, fmt.Errorf("expected secret type %s found %s", corev1.SecretTypeDockerConfigJson, s.Type)
 	}
-	return s.Data[corev1.DockerConfigJsonKey], nil
+	return s, nil
 }
 
 type manifest struct {
