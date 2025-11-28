@@ -299,7 +299,7 @@ func (mosc MachineOSConfig) GetMachineConfigPool() (*MachineConfigPool, error) {
 }
 
 // GetMachineOSBuildList returns a list of all MOSB linked to this MOSC
-func (mosc MachineOSConfig) GetMachineOSBuildList() ([]MachineOSBuild, error) {
+func (mosc MachineOSConfig) GetMachineOSBuildList() ([]*MachineOSBuild, error) {
 	mosbList := NewMachineOSBuildList(mosc.GetOC())
 	mosbList.SetItemsFilter(fmt.Sprintf(`?(@.spec.machineOSConfig.name=="%s")`, mosc.GetName()))
 	return mosbList.GetAll()
@@ -345,24 +345,24 @@ func (mosc MachineOSConfig) Rebuild() error {
 	return mosc.Patch("json", `[{"op": "add", "path": "/metadata/annotations/machineconfiguration.openshift.io~1rebuild", "value":""}]`)
 }
 
-// GetAll returns a []MachineOSConfig list with all existing pinnedimageset sorted by creation timestamp
-func (moscl *MachineOSConfigList) GetAll() ([]MachineOSConfig, error) {
+// GetAll returns a []*MachineOSConfig list with all existing pinnedimageset sorted by creation timestamp
+func (moscl *MachineOSConfigList) GetAll() ([]*MachineOSConfig, error) {
 	moscl.ResourceList.SortByTimestamp()
 	allMOSCResources, err := moscl.ResourceList.GetAll()
 	if err != nil {
 		return nil, err
 	}
-	allMOSCs := make([]MachineOSConfig, 0, len(allMOSCResources))
+	allMOSCs := make([]*MachineOSConfig, 0, len(allMOSCResources))
 
 	for _, moscRes := range allMOSCResources {
-		allMOSCs = append(allMOSCs, *NewMachineOSConfig(moscl.oc, moscRes.name))
+		allMOSCs = append(allMOSCs, NewMachineOSConfig(moscl.oc, moscRes.name))
 	}
 
 	return allMOSCs, nil
 }
 
-// GetAllOrFail returns a []MachineOSConfig list with all existing pinnedimageset sorted by creation time, if any error happens it fails the test
-func (moscl *MachineOSConfigList) GetAllOrFail() []MachineOSConfig {
+// GetAllOrFail returns a []*MachineOSConfig list with all existing pinnedimageset sorted by creation time, if any error happens it fails the test
+func (moscl *MachineOSConfigList) GetAllOrFail() []*MachineOSConfig {
 	moscs, err := moscl.GetAll()
 	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error getting the list of existing MachineOSConfig in the cluster")
 	return moscs
