@@ -13,6 +13,8 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/openshift/api/machineconfiguration/v1alpha1"
+	"github.com/openshift/machine-config-operator/pkg/controller/osimagestream"
 	"k8s.io/klog/v2"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -46,6 +48,7 @@ type RenderConfig struct {
 	PullSecret      string
 	TLSMinVersion   string
 	TLSCipherSuites []string
+	OSImageStream   *v1alpha1.OSImageStreamSet
 
 	// no need to set this, will be automatically configured
 	Constants map[string]string
@@ -78,7 +81,7 @@ const (
 //	                     /01-worker-kubelet/_base/files/random.conf.tmpl
 //	              /master/00-master/_base/units/kubelet.tmpl
 //	                                  /files/hostname.tmpl
-func generateTemplateMachineConfigs(config *RenderConfig, templateDir string) ([]*mcfgv1.MachineConfig, error) {
+func generateTemplateMachineConfigs(config *RenderConfig, templateDir string, pools []*mcfgv1.MachineConfigPool, osImageStream *v1alpha1.OSImageStream) ([]*mcfgv1.MachineConfig, error) {
 	infos, err := ctrlcommon.ReadDir(templateDir)
 	if err != nil {
 		return nil, err
@@ -101,7 +104,12 @@ func generateTemplateMachineConfigs(config *RenderConfig, templateDir string) ([
 			continue
 		}
 
-		roleConfigs, err := GenerateMachineConfigsForRole(config, role, templateDir)
+		roleConfigs, err := GenerateMachineConfigsForRole(
+			config,
+			role,
+			templateDir,
+			osimagestream.GetOSImageStreamFromPoolListByPoolNameDefault(osImageStream, pools, role, nil),
+		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create MachineConfig for role %s: %w", role, err)
 		}
@@ -120,9 +128,13 @@ func generateTemplateMachineConfigs(config *RenderConfig, templateDir string) ([
 }
 
 // GenerateMachineConfigsForRole creates MachineConfigs for the role provided
-func GenerateMachineConfigsForRole(config *RenderConfig, role, templateDir string) ([]*mcfgv1.MachineConfig, error) {
+func GenerateMachineConfigsForRole(config *RenderConfig, role, templateDir string, imageStream *v1alpha1.OSImageStreamSet) ([]*mcfgv1.MachineConfig, error) {
 	rolePath := role
 	//nolint:goconst
+	// TODO @pablintino. USE THIS SAME LOGIC EACH TIME YOU TRY TO
+	// GET THE imageStream GIVEN THE ROLE NAME AND THE POOL LIST.
+	// In case the pool is not one of this three, first try with the
+	// the pool named like the role, and if it has no stream, default to the worker one
 	if role != workerRole && role != masterRole && role != arbiterRole {
 		// custom pools are only allowed to be worker's children
 		// and can reuse the worker templates
@@ -147,7 +159,7 @@ func GenerateMachineConfigsForRole(config *RenderConfig, role, templateDir strin
 		}
 		name := info.Name()
 		namePath := filepath.Join(path, name)
-		nameConfig, err := generateMachineConfigForName(config, role, name, templateDir, namePath, &commonAdded)
+		nameConfig, err := generateMachineConfigForName(config, role, name, templateDir, namePath, imageStream, &commonAdded)
 		if err != nil {
 			return nil, err
 		}
@@ -257,7 +269,7 @@ func getPaths(config *RenderConfig, platformString string) []string {
 	return platformBasedPaths
 }
 
-func generateMachineConfigForName(config *RenderConfig, role, name, templateDir, path string, commonAdded *bool) (*mcfgv1.MachineConfig, error) {
+func generateMachineConfigForName(config *RenderConfig, role, name, templateDir, path string, imageStream *v1alpha1.OSImageStreamSet, commonAdded *bool) (*mcfgv1.MachineConfig, error) {
 	platformString, err := platformStringFromControllerConfigSpec(config.ControllerConfigSpec)
 	if err != nil {
 		return nil, err
@@ -364,10 +376,11 @@ func generateMachineConfigForName(config *RenderConfig, role, name, templateDir,
 	// TODO(jkyros): you might think you can remove this since we override later when we merge
 	// config, but resourcemerge doesn't blank this field out once it's populated
 	// so if you end up on a cluster where it was ever populated in this machineconfig, it
-	// will keep that last value forever once you upgrade...which is a problen now that we allow OSImageURL overrides
+	// will keep that last value forever once you upgrade...which is a problem now that we allow OSImageURL overrides
 	// because it will look like an override when it shouldn't be. So don't take this out until you've solved that.
 	// And inject the osimageurl here
-	mcfg.Spec.OSImageURL = ctrlcommon.GetDefaultBaseImageContainer(config.ControllerConfigSpec)
+	// TODO: @pablintino do we need to do the same with the extensions?
+	mcfg.Spec.OSImageURL = ctrlcommon.GetBaseImageContainer(config.ControllerConfigSpec, imageStream)
 
 	return mcfg, nil
 }

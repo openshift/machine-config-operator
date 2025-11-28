@@ -16,6 +16,7 @@ import (
 	kubeletconfig "github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
 	machinesetbootimage "github.com/openshift/machine-config-operator/pkg/controller/machine-set-boot-image"
 	"github.com/openshift/machine-config-operator/pkg/controller/node"
+	"github.com/openshift/machine-config-operator/pkg/controller/osimagestream"
 	"github.com/openshift/machine-config-operator/pkg/controller/pinnedimageset"
 	"github.com/openshift/machine-config-operator/pkg/controller/render"
 	"github.com/openshift/machine-config-operator/pkg/controller/template"
@@ -149,6 +150,28 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			ctrlctx.OperatorInformerFactory.Start(ctrlctx.Stop)
 		}
 
+		if ctrlctx.FeatureGatesHandler.Enabled(features.FeatureGateOSStreams) {
+			osImageStreamController := osimagestream.NewController(
+				ctrlctx.ClientBuilder.KubeClientOrDie("osimagestream-controller"),
+				ctrlctx.ClientBuilder.MachineConfigClientOrDie("osimagestream-controller"),
+				ctrlctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
+				ctrlctx.KubeNamespacedInformerFactory.Core().V1().ConfigMaps(),
+				ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().OSImageStreams(),
+				ctrlctx.ConfigInformerFactory.Config().V1().ClusterVersions(),
+			)
+
+			go osImageStreamController.Run(ctrlctx.Stop)
+			// start the informers again to enable feature gated types.
+			// see comments in SharedInformerFactory interface.
+			ctrlctx.KubeNamespacedInformerFactory.Start(ctrlctx.Stop)
+			ctrlctx.InformerFactory.Start(ctrlctx.Stop)
+			ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
+
+			if err = osImageStreamController.WaitBoot(); err != nil {
+				klog.Fatal(fmt.Errorf("failed to initialize the OSImageStream controller %w", err))
+			}
+		}
+
 		for _, c := range controllers {
 			go c.Run(2, ctrlctx.Stop)
 		}
@@ -187,10 +210,13 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			rootOpts.templates,
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
+			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
+			ctx.InformerFactory.Machineconfiguration().V1alpha1().OSImageStreams(),
 			ctx.OpenShiftConfigKubeNamespacedInformerFactory.Core().V1().Secrets(),
 			ctx.ConfigInformerFactory.Config().V1().APIServers(),
 			ctx.ClientBuilder.KubeClientOrDie("template-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("template-controller"),
+			ctx.FeatureGatesHandler,
 		),
 		// Add all "sub-renderers here"
 		kubeletconfig.New(
@@ -198,6 +224,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().KubeletConfigs(),
+			ctx.InformerFactory.Machineconfiguration().V1alpha1().OSImageStreams(),
 			ctx.ConfigInformerFactory.Config().V1().FeatureGates(),
 			ctx.ConfigInformerFactory.Config().V1().Nodes(),
 			ctx.ConfigInformerFactory.Config().V1().APIServers(),
@@ -211,6 +238,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().ContainerRuntimeConfigs(),
+			ctx.InformerFactory.Machineconfiguration().V1alpha1().OSImageStreams(),
 			ctx.ConfigInformerFactory.Config().V1().Images(),
 			ctx.ConfigInformerFactory.Config().V1().ImageDigestMirrorSets(),
 			ctx.ConfigInformerFactory.Config().V1().ImageTagMirrorSets(),
@@ -231,6 +259,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.InformerFactory.Machineconfiguration().V1().ContainerRuntimeConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().KubeletConfigs(),
 			ctx.OperatorInformerFactory.Operator().V1().MachineConfigurations(),
+			ctx.InformerFactory.Machineconfiguration().V1alpha1().OSImageStreams(),
 			ctx.ClientBuilder.KubeClientOrDie("render-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("render-controller"),
 			ctx.FeatureGatesHandler,

@@ -2,13 +2,18 @@ package bootstrap
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
+	"github.com/openshift/api/features"
 	imagev1 "github.com/openshift/api/image/v1"
+	"github.com/openshift/api/machineconfiguration/v1alpha1"
+	"github.com/openshift/machine-config-operator/pkg/controller/osimagestream"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	corev1 "k8s.io/api/core/v1"
@@ -68,7 +73,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		return err
 	}
 
-	psraw, err := getPullSecretFromSecret(psfraw)
+	pullSecret, err := getValidatePullSecretFromBytes(psfraw)
 	if err != nil {
 		return err
 	}
@@ -195,7 +200,38 @@ func (b *Bootstrap) Run(destDir string) error {
 		return fmt.Errorf("error creating feature gates handler: %w", err)
 	}
 
-	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, psraw, apiServer)
+	var osImageStream *v1alpha1.OSImageStream
+	if fgHandler.Enabled(features.FeatureGateOSStreams) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+
+		// TODO @pablintino we need to change the factory API to avoid passing that cmLister at bootstrap
+		osImageStream, err = osimagestream.BuildOsImageStreamBootstrap(ctx,
+			pullSecret,
+			cconfig,
+			imageStream,
+			&osimagestream.OSImageTuple{
+				OSImage:           cconfig.Spec.BaseOSContainerImage,
+				OSExtensionsImage: cconfig.Spec.BaseOSExtensionsContainerImage,
+			},
+			osimagestream.NewDefaultStreamSourceFactory(nil, &osimagestream.DefaultImagesInspectorFactory{}),
+		)
+		if err != nil {
+			return fmt.Errorf("error inspecting available OSImageStreams: %w", err)
+		}
+
+		// For sanity reasons we override the ControllerConfig URLs with the default stream ones
+		defaultStreamSet, err := osimagestream.GetOSImageStreamSetByName(osImageStream, "")
+		if err != nil {
+			// Should never happen
+			return fmt.Errorf("error getting default OSImageStreamSet: %w", err)
+		}
+		cconfig.Spec.BaseOSContainerImage = string(defaultStreamSet.OSImage)
+		cconfig.Spec.BaseOSExtensionsContainerImage = string(defaultStreamSet.OSExtensionsImage)
+	}
+
+	pullSecretBytes := pullSecret.Data[corev1.DockerConfigJsonKey]
+	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, pools, pullSecretBytes, apiServer, osImageStream)
 	if err != nil {
 		return err
 	}
@@ -203,7 +239,7 @@ func (b *Bootstrap) Run(destDir string) error {
 
 	configs = append(configs, iconfigs...)
 
-	rconfigs, err := containerruntimeconfig.RunImageBootstrap(b.templatesDir, cconfig, pools, icspRules, idmsRules, itmsRules, imgCfg, clusterImagePolicies, imagePolicies, fgHandler)
+	rconfigs, err := containerruntimeconfig.RunImageBootstrap(b.templatesDir, cconfig, pools, icspRules, idmsRules, itmsRules, imgCfg, clusterImagePolicies, imagePolicies, fgHandler, osImageStream)
 	if err != nil {
 		return err
 	}
@@ -212,7 +248,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	configs = append(configs, rconfigs...)
 
 	if len(crconfigs) > 0 {
-		containerRuntimeConfigs, err := containerruntimeconfig.RunContainerRuntimeBootstrap(b.templatesDir, crconfigs, cconfig, pools)
+		containerRuntimeConfigs, err := containerruntimeconfig.RunContainerRuntimeBootstrap(b.templatesDir, crconfigs, cconfig, pools, osImageStream)
 		if err != nil {
 			return err
 		}
@@ -221,7 +257,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	klog.Infof("Successfully generated MachineConfigs from containerruntime.")
 
 	if featureGate != nil {
-		featureConfigs, err := kubeletconfig.RunFeatureGateBootstrap(b.templatesDir, fgHandler, nodeConfig, cconfig, pools, apiServer)
+		featureConfigs, err := kubeletconfig.RunFeatureGateBootstrap(b.templatesDir, fgHandler, nodeConfig, cconfig, pools, apiServer, osImageStream)
 		if err != nil {
 			return err
 		}
@@ -238,7 +274,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		}
 	}
 	if nodeConfig != nil {
-		nodeConfigs, err := kubeletconfig.RunNodeConfigBootstrap(b.templatesDir, fgHandler, cconfig, nodeConfig, pools, apiServer)
+		nodeConfigs, err := kubeletconfig.RunNodeConfigBootstrap(b.templatesDir, fgHandler, cconfig, nodeConfig, pools, apiServer, osImageStream)
 		if err != nil {
 			return err
 		}
@@ -247,7 +283,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	klog.Infof("Successfully generated MachineConfigs from node.Configs.")
 
 	if len(kconfigs) > 0 {
-		kconfigs, err := kubeletconfig.RunKubeletBootstrap(b.templatesDir, kconfigs, cconfig, fgHandler, nodeConfig, pools, apiServer)
+		kconfigs, err := kubeletconfig.RunKubeletBootstrap(b.templatesDir, kconfigs, cconfig, fgHandler, nodeConfig, pools, apiServer, osImageStream)
 		if err != nil {
 			return err
 		}
@@ -267,7 +303,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		klog.Infof("Successfully created %d pre-built image component MachineConfigs for hybrid OCL.", len(preBuiltImageMCs))
 	}
 
-	fpools, gconfigs, err := render.RunBootstrap(pools, configs, cconfig)
+	fpools, gconfigs, err := render.RunBootstrap(pools, configs, cconfig, osImageStream)
 	if err != nil {
 		return err
 	}
@@ -354,7 +390,7 @@ func (b *Bootstrap) Run(destDir string) error {
 
 }
 
-func getPullSecretFromSecret(sData []byte) ([]byte, error) {
+func getValidatePullSecretFromBytes(sData []byte) (*corev1.Secret, error) {
 	obji, err := runtime.Decode(kscheme.Codecs.UniversalDecoder(corev1.SchemeGroupVersion), sData)
 	if err != nil {
 		return nil, err
@@ -366,7 +402,7 @@ func getPullSecretFromSecret(sData []byte) ([]byte, error) {
 	if s.Type != corev1.SecretTypeDockerConfigJson {
 		return nil, fmt.Errorf("expected secret type %s found %s", corev1.SecretTypeDockerConfigJson, s.Type)
 	}
-	return s.Data[corev1.DockerConfigJsonKey], nil
+	return s, nil
 }
 
 type manifest struct {

@@ -31,7 +31,7 @@ func RenderBootstrap(
 	clusterConfigConfigMapFile,
 	infraFile, networkFile, dnsFile,
 	cloudConfigFile, cloudProviderCAFile,
-	mcsCAFile, kubeAPIServerServingCA, pullSecretFile string,
+	mcsCAFile, kubeAPIServerServingCA, pullSecretFile, imageStreamFile string,
 	imgs *ctrlcommon.Images,
 	destinationDir, releaseImage string,
 ) error {
@@ -50,6 +50,9 @@ func RenderBootstrap(
 	}
 	if cloudProviderCAFile != "" {
 		files = append(files, cloudProviderCAFile)
+	}
+	if imageStreamFile != "" {
+		files = append(files, imageStreamFile)
 	}
 	for _, file := range files {
 		data, err := os.ReadFile(file)
@@ -179,6 +182,14 @@ func RenderBootstrap(
 			name:     "manifests/machineconfigserver/kube-apiserver-serving-ca-configmap.yaml",
 			filename: "manifests/kube-apiserver-serving-ca-configmap.yaml",
 		},
+	}
+
+	if imageStreamFile != "" {
+		manifests = append(manifests,
+			manifest{
+				data:     filesData[imageStreamFile],
+				filename: "bootstrap/manifests/release-image-stream.yaml",
+			})
 	}
 
 	if infra.Status.ControlPlaneTopology == configv1.HighlyAvailableArbiterMode {
