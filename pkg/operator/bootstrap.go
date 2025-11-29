@@ -152,6 +152,7 @@ func RenderBootstrap(
 		templatectrl.HaproxyKey:             imgs.Haproxy,
 		templatectrl.BaremetalRuntimeCfgKey: imgs.BaremetalRuntimeCfg,
 		templatectrl.KubeRbacProxyKey:       imgs.KubeRbacProxy,
+		templatectrl.DockerRegistryKey:      imgs.DockerRegistry,
 	}
 
 	config := getRenderConfig("", string(filesData[kubeAPIServerServingCA]), spec, &imgs.RenderConfigImages, infra, nil, nil, "2")
