@@ -13,7 +13,7 @@ func TestRunInternalReleaseImageBootstrap(t *testing.T) {
 	cc := &mcfgv1.ControllerConfig{
 		Spec: mcfgv1.ControllerConfigSpec{
 			Images: map[string]string{
-				templatectrl.DockerRegistryKey: "docker-image-pullspec",
+				templatectrl.DockerRegistryKey: "docker-registry-image-pullspec",
 			},
 		},
 	}
@@ -23,5 +23,5 @@ func TestRunInternalReleaseImageBootstrap(t *testing.T) {
 	assert.Equal(t, mc.Name, iriMachineConfigName)
 	assert.Equal(t, mc.Labels[mcfgv1.MachineConfigRoleLabelKey], "master")
 	assert.Equal(t, mc.OwnerReferences[0].Kind, "InternalReleaseImage")
-	assert.Contains(t, string(mc.Spec.Config.Raw), "docker-image-pullspec")
+	assert.Contains(t, string(mc.Spec.Config.Raw), "docker-registry-image-pullspec")
 }

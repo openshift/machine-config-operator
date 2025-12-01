@@ -1,6 +1,4 @@
-package internalreleaseimage
-
-var iriRegistryServiceTemplate = `name: iri-registry.service
+name: iri-registry.service
 enabled: true
 contents: |
   [Unit]
@@ -21,4 +19,4 @@ contents: |
   TimeoutStopSec=300
   
   [Install]
-  WantedBy=multi-user.target`
+  WantedBy=multi-user.target
