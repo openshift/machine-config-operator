@@ -13,6 +13,7 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	containerruntimeconfig "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
 	"github.com/openshift/machine-config-operator/pkg/controller/drain"
+	"github.com/openshift/machine-config-operator/pkg/controller/internalreleaseimage"
 	kubeletconfig "github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
 	machinesetbootimage "github.com/openshift/machine-config-operator/pkg/controller/machine-set-boot-image"
 	"github.com/openshift/machine-config-operator/pkg/controller/node"
@@ -123,6 +124,20 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			)
 
 			go pinnedImageSet.Run(2, ctrlctx.Stop)
+			// start the informers again to enable feature gated types.
+			// see comments in SharedInformerFactory interface.
+			ctrlctx.InformerFactory.Start(ctrlctx.Stop)
+		}
+
+		if ctrlctx.FeatureGatesHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
+			iriController := internalreleaseimage.New(
+				ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().InternalReleaseImages(),
+				ctrlctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
+				ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
+				ctrlctx.ClientBuilder.KubeClientOrDie("internalreleaseimage-controller"),
+				ctrlctx.ClientBuilder.MachineConfigClientOrDie("internalreleaseimage-controller"))
+
+			go iriController.Run(2, ctrlctx.Stop)
 			// start the informers again to enable feature gated types.
 			// see comments in SharedInformerFactory interface.
 			ctrlctx.InformerFactory.Start(ctrlctx.Stop)

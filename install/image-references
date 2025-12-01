@@ -44,3 +44,7 @@ spec:
     from:
       kind: DockerImage
       name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:baremetal-runtimecfg
+  - name: docker-registry
+    from:
+      kind: DockerImage
+      name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:docker-registry

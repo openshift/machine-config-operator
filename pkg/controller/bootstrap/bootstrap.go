@@ -258,8 +258,8 @@ func (b *Bootstrap) Run(destDir string) error {
 				return err
 			}
 			configs = append(configs, iriConfig)
+			klog.Infof("Successfully generated MachineConfig from InternalReleaseImage.")
 		}
-		klog.Infof("Successfully generated MachineConfig from InternalReleaseImage.")
 	}
 
 	// Create component MachineConfigs for pre-built images for hybrid OCL
