@@ -229,3 +229,13 @@ func CanonicalizeKernelType(kernelType string) string {
 	}
 	return ctrlcommon.KernelTypeDefault
 }
+
+// GetPoolByName finds a MachineConfigPool by name from a list of pools.
+func GetPoolByName(pools []*mcfgv1.MachineConfigPool, name string) *mcfgv1.MachineConfigPool {
+	for _, pool := range pools {
+		if pool.Name == name {
+			return pool
+		}
+	}
+	return nil
+}
