@@ -9,6 +9,8 @@ import (
 	"github.com/containers/image/v5/types"
 	imagev1 "github.com/openshift/api/image/v1"
 	"github.com/openshift/api/machineconfiguration/v1alpha1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -171,6 +173,8 @@ func TestBuildOSImageStreamFromSources(t *testing.T) {
 			require.NoError(t, err)
 			assert.NotNil(t, result)
 			assert.Equal(t, "cluster", result.Name)
+			assert.Equal(t, version.Hash, result.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey])
+			assert.Equal(t, version.Hash, result.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey])
 			if tt.expectedDefault != "" {
 				assert.Equal(t, tt.expectedDefault, result.Status.DefaultStream)
 			}
