@@ -8,6 +8,7 @@ import (
 	"os"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	"github.com/containers/image/v5/pkg/sysregistriesv2"
@@ -24,6 +25,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/diff"
 	"k8s.io/apimachinery/pkg/util/yaml"
+	kubeletapiconfig "k8s.io/kubernetes/pkg/kubelet/apis/config"
+	"k8s.io/utils/ptr"
 )
 
 func TestUpdateRegistriesConfig(t *testing.T) {
@@ -2234,4 +2237,141 @@ func TestImagePolicyConfigFileListDeterministicOrder(t *testing.T) {
 		require.Equal(t, expectedPath, result1[i].filePath, "File path should match expected order")
 		require.Equal(t, namespaceJSONs[namespace], result1[i].data, "Data should match expected data of namespace")
 	}
+}
+
+func TestUpdateCredentialProviderConfig(t *testing.T) {
+	templateCredProviderConfig := []byte(`apiVersion: kubelet.config.k8s.io/v1
+kind: CredentialProviderConfig
+providers:
+  - name: gcr-credential-provider
+    apiVersion: credentialprovider.kubelet.k8s.io/v1
+    matchImages:
+      - "gcr.io"
+      - "*.gcr.io"
+      - "*.pkg.dev"
+      - "container.cloud.google.com"
+    defaultCacheDuration: "1m"
+    args:
+      - get-credentials
+      - --v=3
+`)
+
+	templateCredProviderConfigWithCRIOProvider := []byte(`apiVersion: kubelet.config.k8s.io/v1
+kind: CredentialProviderConfig
+providers:
+  - name: gcr-credential-provider
+    apiVersion: credentialprovider.kubelet.k8s.io/v1
+    matchImages:
+      - "gcr.io"
+      - "*.gcr.io"
+      - "*.pkg.dev"
+      - "container.cloud.google.com"
+    defaultCacheDuration: "1m"
+    args:
+      - get-credentials
+      - --v=3
+  - name: crio-credential-provider
+    matchImages:
+      - "docker.io"
+      - "*.example.io"
+      - "quay.io"
+      - "registry.example.com:5000"
+    defaultCacheDuration: "1s"
+    apiVersion: credentialprovider.kubelet.k8s.io/v1
+    tokenAttributes:
+      serviceAccountTokenAudience: https://kubernetes.default.svc
+      cacheType: "Token" 
+      requireServiceAccount: false
+`)
+
+	tests := []struct {
+		name           string
+		matchImages    []string
+		templateConfig []byte
+		expectError    bool
+		expectedConfig *credentialProviderConfigVersioned
+	}{
+		{
+			name:           "add crio-credential-provider when not present",
+			matchImages:    []string{"myhost.com", "quay.io"},
+			templateConfig: templateCredProviderConfig,
+			expectedConfig: &credentialProviderConfigVersioned{
+				APIVersion: "kubelet.config.k8s.io/v1",
+				Kind:       "CredentialProviderConfig",
+				Providers: []kubeletapiconfig.CredentialProvider{
+					{
+						Name:                 "gcr-credential-provider",
+						APIVersion:           "credentialprovider.kubelet.k8s.io/v1",
+						MatchImages:          []string{"gcr.io", "*.gcr.io", "*.pkg.dev", "container.cloud.google.com"},
+						DefaultCacheDuration: &metav1.Duration{Duration: time.Minute},
+						Args:                 []string{"get-credentials", "--v=3"},
+					},
+					{
+						Name:                 "crio-credential-provider",
+						MatchImages:          []string{"myhost.com", "quay.io"},
+						APIVersion:           "credentialprovider.kubelet.k8s.io/v1",
+						DefaultCacheDuration: &metav1.Duration{Duration: time.Second},
+						TokenAttributes: &kubeletapiconfig.ServiceAccountTokenAttributes{
+							ServiceAccountTokenAudience: "https://kubernetes.default.svc",
+							CacheType:                   "Token",
+							RequireServiceAccount:       ptr.To(false),
+						},
+					},
+				},
+			},
+		},
+		{
+			name:           "crio-credential-provider already present",
+			matchImages:    []string{"myhost.com"},
+			templateConfig: templateCredProviderConfigWithCRIOProvider,
+			expectedConfig: &credentialProviderConfigVersioned{
+				APIVersion: "kubelet.config.k8s.io/v1",
+				Kind:       "CredentialProviderConfig",
+				Providers: []kubeletapiconfig.CredentialProvider{
+					{
+						Name:                 "gcr-credential-provider",
+						APIVersion:           "credentialprovider.kubelet.k8s.io/v1",
+						MatchImages:          []string{"gcr.io", "*.gcr.io", "*.pkg.dev", "container.cloud.google.com"},
+						DefaultCacheDuration: &metav1.Duration{Duration: time.Minute},
+						Args:                 []string{"get-credentials", "--v=3"},
+					},
+					{
+						Name:                 "crio-credential-provider",
+						MatchImages:          []string{"myhost.com"},
+						APIVersion:           "credentialprovider.kubelet.k8s.io/v1",
+						DefaultCacheDuration: &metav1.Duration{Duration: time.Second},
+						TokenAttributes: &kubeletapiconfig.ServiceAccountTokenAttributes{
+							ServiceAccountTokenAudience: "https://kubernetes.default.svc",
+							CacheType:                   "Token",
+							RequireServiceAccount:       ptr.To(false),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			imageSet := make(map[string]bool)
+			for _, img := range tt.matchImages {
+				imageSet[img] = true
+			}
+			credProviderConfigObject, err := credProviderConfigObject(tt.templateConfig)
+			require.NoError(t, err)
+			require.NotNil(t, credProviderConfigObject)
+			updatedConfigBytes, err := updateCredentialProviderConfig(credProviderConfigObject, imageSet)
+			if tt.expectError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+
+			var gotConfig credentialProviderConfigVersioned
+			err = yaml.Unmarshal(updatedConfigBytes, &gotConfig)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedConfig, &gotConfig)
+		})
+	}
+
 }

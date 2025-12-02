@@ -457,4 +457,4 @@ replace (
 
 replace github.com/openshift/api => github.com/QiWang19/api v0.0.0-20251204232509-5086a5249b02
 
-replace github.com/openshift/client-go => github.com/QiWang19/client-go v0.0.0-20251206033140-b1d9ec91d591
+replace github.com/openshift/client-go => github.com/QiWang19/client-go v0.0.0-20251206041215-b807c9cdcceb
