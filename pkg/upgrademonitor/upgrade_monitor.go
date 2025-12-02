@@ -338,6 +338,46 @@ func isSingletonCondition(singletonConditionTypes []mcfgv1.StateProgress, condit
 	return false
 }
 
+// UpdateMachineConfigNodeSpecDesiredAnnotation sets the desired config version in the `Spec` of an
+// existing MachineConfigNode resource
+func UpdateMachineConfigNodeSpecDesiredAnnotation(fgAccessor featuregates.FeatureGateAccess, mcfgClient mcfgclientset.Interface, nodeName, desiredConfig string) error {
+	// Check that the MachineConfigNode feature gate is enabled
+	if fgAccessor == nil {
+		return nil
+	}
+	fg, err := fgAccessor.CurrentFeatureGates()
+	if err != nil {
+		klog.Errorf("Could not get FeatureGates: %v", err)
+		return err
+	}
+	if fg == nil || !fg.Enabled(features.FeatureGateMachineConfigNodes) {
+		klog.Infof("MachineConfigNode FeatureGate is not enabled.")
+		return nil
+	}
+
+	// Get the existing MCN
+	mcn, mcnErr := mcfgClient.MachineconfigurationV1().MachineConfigNodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
+	// Note that this function is only intended to update the Spec of an existing MCN. We should
+	// not reach this point if there is not an existing MCN for a node, but we need to handle the
+	// DNE and other potential error situations just in case.
+	if mcnErr != nil {
+		return mcnErr
+	}
+
+	// Set the desired config annotation
+	mcn.Spec.ConfigVersion.Desired = NotYetSet
+	if desiredConfig != "" {
+		mcn.Spec.ConfigVersion.Desired = desiredConfig
+	}
+
+	// Update the MCN resource
+	if _, err := mcfgClient.MachineconfigurationV1().MachineConfigNodes().Update(context.TODO(), mcn, metav1.UpdateOptions{FieldManager: "machine-config-operator"}); err != nil {
+		return fmt.Errorf("failed to update the %s mcn spec with the new desired config value: %w", nodeName, err)
+	}
+
+	return nil
+}
+
 // GenerateAndApplyMachineConfigNodeSpec generates and applies a new MCN spec based off the node state
 func GenerateAndApplyMachineConfigNodeSpec(fgAccessor featuregates.FeatureGateAccess, pool string, node *corev1.Node, mcfgClient mcfgclientset.Interface) error {
 	if fgAccessor == nil || node == nil {
