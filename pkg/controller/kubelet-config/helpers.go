@@ -390,6 +390,12 @@ func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 		cfg.Spec.AutoSizingReserved != nil && *cfg.Spec.AutoSizingReserved {
 		return fmt.Errorf("KubeletConfiguration: autoSizingReserved and systemdReserved cannot be set together")
 	}
+	// Validate that systemReservedCgroup matches systemCgroups if both are set
+	if kcDecoded.SystemReservedCgroup != "" && kcDecoded.SystemCgroups != "" {
+		if kcDecoded.SystemReservedCgroup != kcDecoded.SystemCgroups {
+			return fmt.Errorf("KubeletConfiguration: systemReservedCgroup (%s) must match systemCgroups (%s)", kcDecoded.SystemReservedCgroup, kcDecoded.SystemCgroups)
+		}
+	}
 	return nil
 }
 
@@ -506,6 +512,23 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("could not merge original config and new config: %w", err)
 		}
+	}
+
+	// Handle systemReservedCgroup and enforceNodeAllocatable based on:
+	// reservedSystemCPUs being set (incompatible with systemReservedCgroup)
+	shouldDisableSystemReservedCgroup := false
+
+	// Check if reservedSystemCPUs is set (incompatible with systemReservedCgroup)
+	if originalKubeConfig.ReservedSystemCPUs != "" {
+		shouldDisableSystemReservedCgroup = true
+		klog.Infof("reservedSystemCPUs is set to %s, disabling systemReservedCgroup enforcement", originalKubeConfig.ReservedSystemCPUs)
+	}
+
+	if shouldDisableSystemReservedCgroup {
+		// Clear systemReservedCgroup
+		originalKubeConfig.SystemReservedCgroup = ""
+		// Set enforceNodeAllocatable to only pods
+		originalKubeConfig.EnforceNodeAllocatable = []string{"pods"}
 	}
 
 	// Encode the new config into an Ignition File
