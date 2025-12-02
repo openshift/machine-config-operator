@@ -40,7 +40,6 @@ contents: |
         --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
         --hostname-override=${KUBELET_NODE_NAME} \
         --register-with-taints=node-role.kubernetes.io/master=:NoSchedule \
-        --pod-infra-container-image={{.Images.infraImageKey}} \
         --system-reserved=cpu=${SYSTEM_RESERVED_CPU},memory=${SYSTEM_RESERVED_MEMORY},ephemeral-storage=${SYSTEM_RESERVED_ES} \
         --v=${KUBELET_LOG_LEVEL}
 
