@@ -52,8 +52,8 @@ github.com/ProtonMail/go-crypto v1.3.0 h1:ILq8+Sf5If5DCpHQp4PbZdS1J7HDFRXz/+xKBi
 github.com/ProtonMail/go-crypto v1.3.0/go.mod h1:9whxjD8Rbs29b4XWbB8irEcE8KHMqaR2e7GWU1R+/PE=
 github.com/QiWang19/api v0.0.0-20251204232509-5086a5249b02 h1:AatkJOk7B+A66PUpR02ZvtEafkaL8Mzn9vC6wqJrOgo=
 github.com/QiWang19/api v0.0.0-20251204232509-5086a5249b02/go.mod h1:d5uzF0YN2nQQFA0jIEWzzOZ+edmo6wzlGLvx5Fhz4uY=
-github.com/QiWang19/client-go v0.0.0-20251206033140-b1d9ec91d591 h1:nq5D1MflQVwqNcDNW3Z+3bo1mDdQLfABzBoYAbSX+X0=
-github.com/QiWang19/client-go v0.0.0-20251206033140-b1d9ec91d591/go.mod h1:iylwyks15hQrMFoa76LqqB5O53iIECos27GarEef8n8=
+github.com/QiWang19/client-go v0.0.0-20251206041215-b807c9cdcceb h1:Wjt5SbxzEsHN1KSmE4kmBZjqoOQnSM+7JyhSXBH89jc=
+github.com/QiWang19/client-go v0.0.0-20251206041215-b807c9cdcceb/go.mod h1:iylwyks15hQrMFoa76LqqB5O53iIECos27GarEef8n8=
 github.com/ajeddeloh/go-json v0.0.0-20170920214419-6a2fe990e083/go.mod h1:otnto4/Icqn88WCcM4bhIJNSgsh9VLBuspyyCfvof9c=
 github.com/ajeddeloh/go-json v0.0.0-20200220154158-5ae607161559 h1:4SPQljF/GJ8Q+QlCWMWxRBepub4DresnOm4eI2ebFGc=
 github.com/ajeddeloh/go-json v0.0.0-20200220154158-5ae607161559/go.mod h1:otnto4/Icqn88WCcM4bhIJNSgsh9VLBuspyyCfvof9c=

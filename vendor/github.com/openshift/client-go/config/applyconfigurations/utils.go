@@ -476,6 +476,12 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &configv1alpha1.ClusterMonitoringSpecApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("ContainerResource"):
 		return &configv1alpha1.ContainerResourceApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("CRIOCredentialProviderConfig"):
+		return &configv1alpha1.CRIOCredentialProviderConfigApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("CRIOCredentialProviderConfigSpec"):
+		return &configv1alpha1.CRIOCredentialProviderConfigSpecApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("CRIOCredentialProviderConfigStatus"):
+		return &configv1alpha1.CRIOCredentialProviderConfigStatusApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("EtcdBackupSpec"):
 		return &configv1alpha1.EtcdBackupSpecApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("FulcioCAWithRekor"):
