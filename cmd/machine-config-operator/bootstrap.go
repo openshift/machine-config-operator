@@ -154,14 +154,12 @@ func runBootstrapCmd(_ *cobra.Command, _ []string) {
 
 	imgs := ctrlcommon.Images{
 		RenderConfigImages: ctrlcommon.RenderConfigImages{
-			MachineConfigOperator:          bootstrapOpts.mcoImage,
-			KeepalivedBootstrap:            bootstrapOpts.keepalivedImage,
-			CorednsBootstrap:               bootstrapOpts.corednsImage,
-			BaremetalRuntimeCfgBootstrap:   bootstrapOpts.baremetalRuntimeCfgImage,
-			OauthProxy:                     bootstrapOpts.oauthProxyImage,
-			KubeRbacProxy:                  bootstrapOpts.kubeRbacProxyImage,
-			BaseOSContainerImage:           bootstrapOpts.baseOSContainerImage,
-			BaseOSExtensionsContainerImage: bootstrapOpts.baseOSExtensionsContainerImage,
+			MachineConfigOperator:        bootstrapOpts.mcoImage,
+			KeepalivedBootstrap:          bootstrapOpts.keepalivedImage,
+			CorednsBootstrap:             bootstrapOpts.corednsImage,
+			BaremetalRuntimeCfgBootstrap: bootstrapOpts.baremetalRuntimeCfgImage,
+			OauthProxy:                   bootstrapOpts.oauthProxyImage,
+			KubeRbacProxy:                bootstrapOpts.kubeRbacProxyImage,
 		},
 		ControllerConfigImages: ctrlcommon.ControllerConfigImages{
 			InfraImage:          bootstrapOpts.infraImage,

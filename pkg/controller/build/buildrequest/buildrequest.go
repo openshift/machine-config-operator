@@ -322,6 +322,7 @@ func (br buildRequestImpl) renderContainerfile() (string, error) {
 	// lowercase fields. Additionally, since there are a few fields where we
 	// default to a value from a different location, it makes more sense for us
 	// to implement that logic in Go as opposed to the Go template language.
+	osImageStreamImages := br.opts.OSImageURLConfig.StreamsConfig.GetOSImageURLsForDefaultStream()
 	items := struct {
 		MachineOSBuild     *mcfgv1.MachineOSBuild
 		MachineOSConfig    *mcfgv1.MachineOSConfig
@@ -335,8 +336,8 @@ func (br buildRequestImpl) renderContainerfile() (string, error) {
 		MachineOSBuild:     br.opts.MachineOSBuild,
 		MachineOSConfig:    br.opts.MachineOSConfig,
 		UserContainerfile:  br.userContainerfile,
-		BaseOSImage:        br.opts.OSImageURLConfig.BaseOSContainerImage,
-		ExtensionsImage:    br.opts.OSImageURLConfig.BaseOSExtensionsContainerImage,
+		BaseOSImage:        osImageStreamImages.BaseOSContainerImage,
+		ExtensionsImage:    osImageStreamImages.BaseOSExtensionsContainerImage,
 		ExtensionsPackages: extPkgs,
 		KernelType:         kernelType,
 		KernelPackages:     kernelPackages,
@@ -671,7 +672,7 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 					// us to avoid parsing log files.
 					Name:            "create-digest-configmap",
 					Command:         append(command, digestCMScript),
-					Image:           br.opts.OSImageURLConfig.BaseOSContainerImage,
+					Image:           br.opts.OSImageURLConfig.StreamsConfig.GetOSImageURLsForDefaultStream().BaseOSContainerImage,
 					Env:             env,
 					ImagePullPolicy: corev1.PullAlways,
 					SecurityContext: securityContext,

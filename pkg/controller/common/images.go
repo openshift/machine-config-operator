@@ -2,14 +2,22 @@ package common
 
 import (
 	"context"
-	"fmt"
-
 	"encoding/json"
+	"fmt"
+	"maps"
+	"slices"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	clientset "k8s.io/client-go/kubernetes"
+)
+
+const (
+	imagesConfigMapImagesField                 = "images.json"
+	osImageUrlConfigMapStreamsField            = "streams.json"
+	osImageUrlConfigMapStreamsDefaultImagesTag = "rhel-coreos"
 )
 
 // Images contain data derived from what github.com/openshift/installer's
@@ -28,10 +36,6 @@ type Images struct {
 // RenderConfigImages are image names used to render templates under ./manifests/
 type RenderConfigImages struct {
 	MachineConfigOperator string `json:"machineConfigOperator"`
-	// The new format image
-	BaseOSContainerImage string `json:"baseOSContainerImage"`
-	// The matching extensions container for the new format image
-	BaseOSExtensionsContainerImage string `json:"baseOSExtensionsContainerImage"`
 	// These have to be named differently from the ones in ControllerConfigImages
 	// or we get errors about ambiguous selectors because both structs are
 	// combined in the Images struct.
@@ -51,47 +55,107 @@ type ControllerConfigImages struct {
 	BaremetalRuntimeCfg string `json:"baremetalRuntimeCfgImage"`
 }
 
-// Parses the JSON blob containing the images information into an Images struct.
+type OSImageURLStreamConfig struct {
+	BaseOSContainerImage           string `json:"baseOSContainerImage"`
+	BaseOSExtensionsContainerImage string `json:"baseOSExtensionsContainerImage"`
+}
+type OSImageURLStreamsConfig struct {
+	Default string                            `json:"default"`
+	Streams map[string]OSImageURLStreamConfig `json:"streams"`
+}
+
+func (o *OSImageURLStreamsConfig) GetOSImageURLsForStream(stream string) OSImageURLStreamConfig {
+	tagetStream, exists := o.Streams[stream]
+	if !exists {
+		return o.GetOSImageURLsForDefaultStream()
+	}
+	return tagetStream
+}
+
+func (o *OSImageURLStreamsConfig) GetOSImageURLsForDefaultStream() OSImageURLStreamConfig {
+	return o.Streams[o.Default]
+}
+
+func (o *OSImageURLStreamsConfig) OSImageURLStreamExists(stream string) bool {
+	_, exists := o.Streams[stream]
+	return exists
+}
+
+func NewOSImageURLStreamsConfigFromBytes(buf []byte) (*OSImageURLStreamsConfig, error) {
+	streamsConfig := &OSImageURLStreamsConfig{}
+	if err := json.Unmarshal(buf, &streamsConfig); err != nil {
+		return nil, fmt.Errorf("could not parse streams config bytes: %w", err)
+	}
+	if streamsConfig.Default == "" {
+		return nil, fmt.Errorf("invalid osimagerul ConfigMap. The default stream cannot be empty")
+	}
+
+	if _, ok := streamsConfig.Streams[streamsConfig.Default]; !ok {
+		return nil, fmt.Errorf(
+			"invalid osimagerul ConfigMap. The default stream %s is not part of the declared streams %s",
+			streamsConfig.Default,
+			strings.Join(slices.Collect(maps.Keys(streamsConfig.Streams)), ", "),
+		)
+	}
+	return streamsConfig, nil
+}
+
+func NewOSImageURLStreamsConfigDefault(osContainerImage, osContainerExtensionImage string) *OSImageURLStreamsConfig {
+	return &OSImageURLStreamsConfig{
+		Default: osImageUrlConfigMapStreamsDefaultImagesTag,
+		Streams: map[string]OSImageURLStreamConfig{
+			osImageUrlConfigMapStreamsDefaultImagesTag: {
+				BaseOSContainerImage:           osContainerImage,
+				BaseOSExtensionsContainerImage: osContainerExtensionImage,
+			},
+		},
+	}
+}
+
+type OSImageURLConfig struct {
+	ReleaseVersion string
+	StreamsConfig  OSImageURLStreamsConfig
+}
+
 func ParseImagesFromBytes(in []byte) (*Images, error) {
 	img := &Images{}
-
 	if err := json.Unmarshal(in, img); err != nil {
 		return nil, fmt.Errorf("could not parse images.json bytes: %w", err)
 	}
-
 	return img, nil
-}
-
-// Reads the contents of the provided ConfigMap into an Images struct.
-func ParseImagesFromConfigMap(cm *corev1.ConfigMap) (*Images, error) {
-	if err := validateMCOConfigMap(cm, MachineConfigOperatorImagesConfigMapName, []string{"images.json"}, nil); err != nil {
-		return nil, err
-	}
-
-	return ParseImagesFromBytes([]byte(cm.Data["images.json"]))
-}
-
-// Holds the contents of the machine-config-osimageurl ConfigMap.
-type OSImageURLConfig struct {
-	BaseOSContainerImage           string
-	BaseOSExtensionsContainerImage string
-	OSImageURL                     string
-	ReleaseVersion                 string
 }
 
 // Reads the contents of the provided ConfigMap into an OSImageURLConfig struct.
 func ParseOSImageURLConfigMap(cm *corev1.ConfigMap) (*OSImageURLConfig, error) {
-	reqKeys := []string{"baseOSContainerImage", "baseOSExtensionsContainerImage", "osImageURL", "releaseVersion"}
-
-	if err := validateMCOConfigMap(cm, MachineConfigOSImageURLConfigMapName, reqKeys, nil); err != nil {
+	if err := validateMCOConfigMap(
+		cm,
+		MachineConfigOSImageURLConfigMapName,
+		[]string{"baseOSContainerImage", "baseOSExtensionsContainerImage", "releaseVersion"},
+	); err != nil {
 		return nil, err
 	}
 
+	// For now handle the streams like they are optional and populate them with a sane default
+	// in case they are not present
+	streamsData, ok := cm.Data[osImageUrlConfigMapStreamsField]
+	var streamsConfig *OSImageURLStreamsConfig
+	if ok {
+		var err error
+		streamsConfig, err = NewOSImageURLStreamsConfigFromBytes([]byte(streamsData))
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// The pre-streams fields that holds the cluster-wide OS images
+		// Always pointing to the rhel-coreos (osImageUrlConfigMapStreamsDefaultImagesTag) tag
+		legacyBaseOSContainerImage := cm.Data["baseOSContainerImage"]
+		legacyBaseOSExtensionsContainerImage := cm.Data["baseOSExtensionsContainerImage"]
+		streamsConfig = NewOSImageURLStreamsConfigDefault(legacyBaseOSContainerImage, legacyBaseOSExtensionsContainerImage)
+	}
+
 	return &OSImageURLConfig{
-		BaseOSContainerImage:           cm.Data["baseOSContainerImage"],
-		BaseOSExtensionsContainerImage: cm.Data["baseOSExtensionsContainerImage"],
-		OSImageURL:                     cm.Data["osImageURL"],
-		ReleaseVersion:                 cm.Data["releaseVersion"],
+		ReleaseVersion: cm.Data["releaseVersion"],
+		StreamsConfig:  *streamsConfig,
 	}, nil
 }
 
@@ -99,8 +163,7 @@ func ParseOSImageURLConfigMap(cm *corev1.ConfigMap) (*OSImageURLConfig, error) {
 // 1. The name matches what was provided.
 // 2. The namespace is set to the MCO's namespace.
 // 3. The data field has all of the expected keys.
-// 4. The BinarayData field has all of the expected keys.
-func validateMCOConfigMap(cm *corev1.ConfigMap, name string, reqDataKeys, reqBinaryKeys []string) error {
+func validateMCOConfigMap(cm *corev1.ConfigMap, name string, reqDataKeys []string) error {
 	if cm.Name != name {
 		return fmt.Errorf("invalid ConfigMap, expected %s", name)
 	}
@@ -116,15 +179,17 @@ func validateMCOConfigMap(cm *corev1.ConfigMap, name string, reqDataKeys, reqBin
 			}
 		}
 	}
+	return nil
+}
 
-	if reqBinaryKeys != nil {
-		for _, reqKey := range reqBinaryKeys {
-			if _, ok := cm.BinaryData[reqKey]; !ok {
-				return fmt.Errorf("expecting missing binary data key %s to be present in ConfigMap %s", reqKey, cm.Name)
-			}
-		}
+func parseJsonFromConfigMap[T any](cm *corev1.ConfigMap, name string, value *T) error {
+	if err := validateMCOConfigMap(cm, MachineConfigOperatorImagesConfigMapName, []string{name}); err != nil {
+		return err
 	}
 
+	if err := json.Unmarshal([]byte(cm.Data[name]), value); err != nil {
+		return fmt.Errorf("could not parse %s bytes: %w", name, err)
+	}
 	return nil
 }
 
@@ -145,5 +210,9 @@ func GetImagesConfig(ctx context.Context, kubeclient clientset.Interface) (*Imag
 		return nil, fmt.Errorf("could not get configmap %s: %w", MachineConfigOperatorImagesConfigMapName, err)
 	}
 
-	return ParseImagesFromConfigMap(cm)
+	images := &Images{}
+	if err := parseJsonFromConfigMap(cm, imagesConfigMapImagesField, images); err != nil {
+		return nil, fmt.Errorf("could not parse configmap %s: %w", cm.Name, err)
+	}
+	return images, nil
 }

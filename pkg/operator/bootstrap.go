@@ -144,14 +144,13 @@ func RenderBootstrap(
 	spec.ReleaseImage = releaseImage
 	spec.Images = map[string]string{
 		templatectrl.MachineConfigOperatorKey: imgs.MachineConfigOperator,
-
-		templatectrl.APIServerWatcherKey:    imgs.MachineConfigOperator,
-		templatectrl.InfraImageKey:          imgs.InfraImage,
-		templatectrl.KeepalivedKey:          imgs.Keepalived,
-		templatectrl.CorednsKey:             imgs.Coredns,
-		templatectrl.HaproxyKey:             imgs.Haproxy,
-		templatectrl.BaremetalRuntimeCfgKey: imgs.BaremetalRuntimeCfg,
-		templatectrl.KubeRbacProxyKey:       imgs.KubeRbacProxy,
+		templatectrl.APIServerWatcherKey:      imgs.MachineConfigOperator,
+		templatectrl.InfraImageKey:            imgs.InfraImage,
+		templatectrl.KeepalivedKey:            imgs.Keepalived,
+		templatectrl.CorednsKey:               imgs.Coredns,
+		templatectrl.HaproxyKey:               imgs.Haproxy,
+		templatectrl.BaremetalRuntimeCfgKey:   imgs.BaremetalRuntimeCfg,
+		templatectrl.KubeRbacProxyKey:         imgs.KubeRbacProxy,
 	}
 
 	config := getRenderConfig("", string(filesData[kubeAPIServerServingCA]), spec, &imgs.RenderConfigImages, infra, nil, nil, "2")
