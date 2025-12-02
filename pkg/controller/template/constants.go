@@ -24,4 +24,7 @@ const (
 
 	// KubeRbacProxyKey the key that references the kubeRbacProxy image
 	KubeRbacProxyKey string = "kubeRbacProxyImage"
+
+	// DockerRegistryKey is the key that references the docker-registry image in the controller
+	DockerRegistryKey string = "dockerRegistryImage"
 )

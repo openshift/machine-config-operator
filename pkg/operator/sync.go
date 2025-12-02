@@ -625,6 +625,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		templatectrl.HaproxyKey:               imgs.Haproxy,
 		templatectrl.BaremetalRuntimeCfgKey:   imgs.BaremetalRuntimeCfg,
 		templatectrl.KubeRbacProxyKey:         imgs.KubeRbacProxy,
+		templatectrl.DockerRegistryKey:        imgs.DockerRegistry,
 	}
 
 	ignitionHost, err := getIgnitionHost(&infra.Status)

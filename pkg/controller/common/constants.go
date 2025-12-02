@@ -63,6 +63,9 @@ const (
 	// ClusterInstanceNameOSImageStream is the name of the singleton cluster-scoped OSImageStream instance.
 	ClusterInstanceNameOSImageStream = "cluster"
 
+	// InternalReleaseImageInstanceName is a singleton name for InternalReleaseImage
+	InternalReleaseImageInstanceName = "cluster"
+
 	// APIServerInstanceName is a singleton name for APIServer configuration
 	APIServerBootstrapFileLocation = "/etc/mcs/bootstrap/api-server/api-server.yaml"
 
