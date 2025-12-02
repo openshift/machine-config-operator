@@ -52,7 +52,6 @@ func (r *ImageStreamStreamSource) FetchStreams(ctx context.Context) ([]*v1alpha1
 // fetchImagesData inspects the provided container images and extracts their metadata.
 // Images that fail inspection are logged and skipped rather than causing the entire operation to fail.
 func (r *ImageStreamStreamSource) fetchImagesData(ctx context.Context, images []string) ([]*ImageData, error) {
-
 	inspectionResults, err := r.imageInspector.Inspect(ctx, images...)
 	if err != nil {
 		return nil, err
@@ -67,7 +66,13 @@ func (r *ImageStreamStreamSource) fetchImagesData(ctx context.Context, images []
 			)
 			continue
 		}
-		results = append(results, r.imageStreamExtractor.GetImageData(inspectionResult.Image, inspectionResult.InspectInfo.Labels))
+		imageData := r.imageStreamExtractor.GetImageData(inspectionResult.Image, inspectionResult.InspectInfo.Labels)
+		// If imageData is nil: Not a CoreOS versions with the streams labels in place
+		if imageData == nil {
+			klog.V(4).Infof("image %s does not contain stream labels. Image discarded.", inspectionResult.Image)
+			continue
+		}
+		results = append(results, imageData)
 	}
 	return results, nil
 }

@@ -133,6 +133,16 @@ func TestImageStreamStreamSource_FetchStreams(t *testing.T) {
 								"io.openshift.build.source-location": "https://github.com/openshift/os",
 							},
 						},
+						{
+							Name: "custom-os-extensions",
+							From: &corev1.ObjectReference{
+								Kind: "DockerImage",
+								Name: "quay.io/openshift/custom-os-extensions:latest",
+							},
+							Annotations: map[string]string{
+								"io.openshift.build.source-location": "https://github.com/openshift/os",
+							},
+						},
 					},
 				},
 			},
@@ -142,6 +152,15 @@ func TestImageStreamStreamSource_FetchStreams(t *testing.T) {
 					InspectInfo: &types.ImageInspectInfo{
 						Labels: map[string]string{
 							labelStreamClass: "custom-stream",
+						},
+					},
+				},
+				{
+					Image: "quay.io/openshift/custom-os-extensions:latest",
+					InspectInfo: &types.ImageInspectInfo{
+						Labels: map[string]string{
+							labelStreamClass: "custom-stream",
+							labelOSTreeLinux: labelValuePresent,
 						},
 					},
 				},
@@ -179,14 +198,23 @@ func TestImageStreamStreamSource_FetchStreams(t *testing.T) {
 			providerImageStream: createTestImageStream(),
 			inspectorResults: []imageutils.BulkInspectResult{
 				{
-					Image: testRHELCoreosImage,
+					Image: "invalid-image",
 					Error: errors.New("failed to inspect"),
+				},
+				{
+					Image: testRHELCoreosImage,
+					InspectInfo: &types.ImageInspectInfo{
+						Labels: map[string]string{
+							labelStreamClass: streamNameRHELCoreos,
+						},
+					},
 				},
 				{
 					Image: testRHELCoreosExtensionsImage,
 					InspectInfo: &types.ImageInspectInfo{
 						Labels: map[string]string{
 							labelStreamClass: streamNameRHELCoreos,
+							labelOSTreeLinux: labelValuePresent,
 						},
 					},
 				},
@@ -224,10 +252,10 @@ func TestImageStreamStreamSource_FetchStreams(t *testing.T) {
 							},
 						},
 						{
-							Name: "stream-coreos-10.0",
+							Name: "stream-coreos-10-extensions",
 							From: &corev1.ObjectReference{
 								Kind: "DockerImage",
-								Name: "quay.io/openshift/stream-coreos:10.0",
+								Name: "quay.io/openshift/stream-coreos-extensions:10.0",
 							},
 						},
 					},
@@ -239,12 +267,28 @@ func TestImageStreamStreamSource_FetchStreams(t *testing.T) {
 					InspectInfo: &types.ImageInspectInfo{
 						Labels: map[string]string{
 							labelStreamClass: streamNameRHELCoreos,
+						},
+					},
+				},
+				{
+					Image: testRHELCoreosExtensionsImage,
+					InspectInfo: &types.ImageInspectInfo{
+						Labels: map[string]string{
+							labelStreamClass: streamNameRHELCoreos,
 							labelOSTreeLinux: labelValuePresent,
 						},
 					},
 				},
 				{
 					Image: "quay.io/openshift/stream-coreos:10.0",
+					InspectInfo: &types.ImageInspectInfo{
+						Labels: map[string]string{
+							labelStreamClass: "stream-coreos",
+						},
+					},
+				},
+				{
+					Image: "quay.io/openshift/stream-coreos-extensions:10.0",
 					InspectInfo: &types.ImageInspectInfo{
 						Labels: map[string]string{
 							labelStreamClass: "stream-coreos",
