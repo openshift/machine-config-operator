@@ -18,5 +18,6 @@ data:
       "haproxyImage": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:haproxy-router",
       "baremetalRuntimeCfgImage": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:baremetal-runtimecfg",
       "oauthProxy": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:oauth-proxy",
-      "kubeRbacProxy": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:kube-rbac-proxy"
+      "kubeRbacProxy": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:kube-rbac-proxy",
+      "dockerRegistryImage": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:docker-registry"
     }

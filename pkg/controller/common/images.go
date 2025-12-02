@@ -40,6 +40,7 @@ type RenderConfigImages struct {
 	BaremetalRuntimeCfgBootstrap string `json:"baremetalRuntimeCfg"`
 	OauthProxy                   string `json:"oauthProxy"`
 	KubeRbacProxy                string `json:"kubeRbacProxy"`
+	DockerRegistryBootstrap      string `json:"dockerRegistry"`
 }
 
 // ControllerConfigImages are image names used to render templates under ./templates/
@@ -49,6 +50,7 @@ type ControllerConfigImages struct {
 	Coredns             string `json:"corednsImage"`
 	Haproxy             string `json:"haproxyImage"`
 	BaremetalRuntimeCfg string `json:"baremetalRuntimeCfgImage"`
+	DockerRegistry      string `json:"dockerRegistryImage"`
 }
 
 // Parses the JSON blob containing the images information into an Images struct.

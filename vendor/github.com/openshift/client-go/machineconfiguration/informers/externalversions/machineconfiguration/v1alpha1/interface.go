@@ -8,6 +8,8 @@ import (
 
 // Interface provides access to all the informers in this group version.
 type Interface interface {
+	// InternalReleaseImages returns a InternalReleaseImageInformer.
+	InternalReleaseImages() InternalReleaseImageInformer
 	// MachineConfigNodes returns a MachineConfigNodeInformer.
 	MachineConfigNodes() MachineConfigNodeInformer
 	// OSImageStreams returns a OSImageStreamInformer.
@@ -25,6 +27,11 @@ type version struct {
 // New returns a new Interface.
 func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakListOptions internalinterfaces.TweakListOptionsFunc) Interface {
 	return &version{factory: f, namespace: namespace, tweakListOptions: tweakListOptions}
+}
+
+// InternalReleaseImages returns a InternalReleaseImageInformer.
+func (v *version) InternalReleaseImages() InternalReleaseImageInformer {
+	return &internalReleaseImageInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
 // MachineConfigNodes returns a MachineConfigNodeInformer.
