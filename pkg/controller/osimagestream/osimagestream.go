@@ -12,7 +12,9 @@ import (
 	imagev1 "github.com/openshift/api/image/v1"
 	v1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/api/machineconfiguration/v1alpha1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/imageutils"
+	"github.com/openshift/machine-config-operator/pkg/version"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
@@ -108,6 +110,7 @@ func BuildOsImageStreamRuntime(
 	return factory.CreateRuntimeSources(ctx, releaseImage, sysCtx.SysContext)
 }
 
+// BuildOSImageStreamFromSources aggregates streams from multiple sources into a single OSImageStream.
 func BuildOSImageStreamFromSources(ctx context.Context, sources []StreamSource) (*v1alpha1.OSImageStream, error) {
 	streams := collect(ctx, sources)
 	if len(streams) == 0 {
@@ -123,7 +126,11 @@ func BuildOSImageStreamFromSources(ctx context.Context, sources []StreamSource) 
 	}
 	return &v1alpha1.OSImageStream{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "cluster",
+			Name: ctrlcommon.ClusterInstanceNameOSImageStream,
+			Annotations: map[string]string{
+				ctrlcommon.ReleaseImageVersionAnnotationKey:          version.Hash,
+				ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
+			},
 		},
 		Spec: &v1alpha1.OSImageStreamSpec{},
 		Status: v1alpha1.OSImageStreamStatus{
@@ -136,10 +143,7 @@ func BuildOSImageStreamFromSources(ctx context.Context, sources []StreamSource) 
 func getDefaultStreamSet(streams []v1alpha1.OSImageStreamSet) (string, error) {
 	// TODO This logic is temporal. For now, try to locate the RHEL 9 one in best effort
 	// Make a copy to avoid modifying the input slice
-	streamNames := make([]string, 0, len(streams))
-	for _, stream := range streams {
-		streamNames = append(streamNames, stream.Name)
-	}
+	streamNames := GetStreamSetsNames(streams)
 
 	// Sort by name length (shortest first) to prefer simpler names
 	slices.SortFunc(streamNames, func(a, b string) int {
