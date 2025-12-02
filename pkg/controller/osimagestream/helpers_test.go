@@ -9,6 +9,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -49,8 +50,8 @@ func TestGetStreamSetsNames(t *testing.T) {
 	}
 }
 
-func TestGetOSImageStreamSetByName(t *testing.T) {
-	osImageStream := &v1alpha1.OSImageStream{
+func getStubOSImageStream() *v1alpha1.OSImageStream {
+	return &v1alpha1.OSImageStream{
 		Status: v1alpha1.OSImageStreamStatus{
 			DefaultStream: "rhel-9",
 			AvailableStreams: []v1alpha1.OSImageStreamSet{
@@ -59,53 +60,67 @@ func TestGetOSImageStreamSetByName(t *testing.T) {
 			},
 		},
 	}
+}
 
+func TestGetOSImageStreamSetByName(t *testing.T) {
 	tests := []struct {
-		name          string
-		osImageStream *v1alpha1.OSImageStream
-		streamName    string
-		expected      *v1alpha1.OSImageStreamSet
-		errorContains string
+		name                 string
+		osImageStreamFactory func() *v1alpha1.OSImageStream
+		streamName           string
+		expected             *v1alpha1.OSImageStreamSet
+		errorContains        string
+		errorCheckFn         func(*testing.T, error)
 	}{
 		{
-			name:          "find existing stream",
-			osImageStream: osImageStream,
-			streamName:    "rhel-9",
-			expected:      &v1alpha1.OSImageStreamSet{Name: "rhel-9", OSImage: "image1", OSExtensionsImage: "ext1"},
+			name:                 "find existing stream",
+			osImageStreamFactory: getStubOSImageStream,
+			streamName:           "rhel-9",
+			expected:             &v1alpha1.OSImageStreamSet{Name: "rhel-9", OSImage: "image1", OSExtensionsImage: "ext1"},
 		},
 		{
-			name:          "find another existing stream",
-			osImageStream: osImageStream,
-			streamName:    "rhel-10",
-			expected:      &v1alpha1.OSImageStreamSet{Name: "rhel-10", OSImage: "image2", OSExtensionsImage: "ext2"},
+			name:                 "find another existing stream",
+			osImageStreamFactory: getStubOSImageStream,
+			streamName:           "rhel-10",
+			expected:             &v1alpha1.OSImageStreamSet{Name: "rhel-10", OSImage: "image2", OSExtensionsImage: "ext2"},
 		},
 		{
-			name:          "empty name returns default stream",
-			osImageStream: osImageStream,
-			streamName:    "",
-			expected:      &v1alpha1.OSImageStreamSet{Name: "rhel-9", OSImage: "image1", OSExtensionsImage: "ext1"},
+			name:                 "empty name returns default stream",
+			osImageStreamFactory: getStubOSImageStream,
+			streamName:           "",
+			expected:             &v1alpha1.OSImageStreamSet{Name: "rhel-9", OSImage: "image1", OSExtensionsImage: "ext1"},
 		},
 		{
-			name:          "non-existent stream",
-			osImageStream: osImageStream,
-			streamName:    "non-existent",
-			errorContains: "does not exist",
+			name:                 "non-existent stream",
+			osImageStreamFactory: getStubOSImageStream,
+			streamName:           "non-existent",
+			errorContains:        "not found",
+			errorCheckFn: func(t *testing.T, err error) {
+				assert.True(t, apierrors.IsNotFound(err))
+			},
 		},
 		{
-			name:          "nil osImageStream",
-			osImageStream: nil,
-			streamName:    "rhel-9",
-			errorContains: "cannot be nil",
+			name:                 "nil osImageStream",
+			osImageStreamFactory: nil,
+			streamName:           "rhel-9",
+			errorContains:        "cannot be nil",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := GetOSImageStreamSetByName(tt.osImageStream, tt.streamName)
+			var osImageStream *v1alpha1.OSImageStream
+			if tt.osImageStreamFactory != nil {
+				osImageStream = tt.osImageStreamFactory()
+			}
+
+			result, err := GetOSImageStreamSetByName(osImageStream, tt.streamName)
 			if tt.errorContains != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.errorContains)
 				assert.Nil(t, result)
+				if tt.errorCheckFn != nil {
+					tt.errorCheckFn(t, err)
+				}
 			} else {
 				require.NoError(t, err)
 				assert.Equal(t, tt.expected, result)
@@ -115,45 +130,40 @@ func TestGetOSImageStreamSetByName(t *testing.T) {
 }
 
 func TestTryGetOSImageStreamSetByName(t *testing.T) {
-	osImageStream := &v1alpha1.OSImageStream{
-		Status: v1alpha1.OSImageStreamStatus{
-			DefaultStream: "rhel-9",
-			AvailableStreams: []v1alpha1.OSImageStreamSet{
-				{Name: "rhel-9", OSImage: "image1", OSExtensionsImage: "ext1"},
-				{Name: "rhel-10", OSImage: "image2", OSExtensionsImage: "ext2"},
-			},
-		},
-	}
 
 	tests := []struct {
-		name          string
-		osImageStream *v1alpha1.OSImageStream
-		streamName    string
-		expected      *v1alpha1.OSImageStreamSet
+		name                 string
+		osImageStreamFactory func() *v1alpha1.OSImageStream
+		streamName           string
+		expected             *v1alpha1.OSImageStreamSet
 	}{
 		{
-			name:          "find existing stream",
-			osImageStream: osImageStream,
-			streamName:    "rhel-9",
-			expected:      &v1alpha1.OSImageStreamSet{Name: "rhel-9", OSImage: "image1", OSExtensionsImage: "ext1"},
+			name:                 "find existing stream",
+			osImageStreamFactory: getStubOSImageStream,
+			streamName:           "rhel-9",
+			expected:             &v1alpha1.OSImageStreamSet{Name: "rhel-9", OSImage: "image1", OSExtensionsImage: "ext1"},
 		},
 		{
-			name:          "non-existent stream returns nil",
-			osImageStream: osImageStream,
-			streamName:    "non-existent",
-			expected:      nil,
+			name:                 "non-existent stream returns nil",
+			osImageStreamFactory: getStubOSImageStream,
+			streamName:           "non-existent",
+			expected:             nil,
 		},
 		{
-			name:          "nil osImageStream returns nil",
-			osImageStream: nil,
-			streamName:    "rhel-9",
-			expected:      nil,
+			name:                 "nil osImageStream returns nil",
+			osImageStreamFactory: nil,
+			streamName:           "rhel-9",
+			expected:             nil,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := TryGetOSImageStreamSetByName(tt.osImageStream, tt.streamName)
+			var osImageStream *v1alpha1.OSImageStream
+			if tt.osImageStreamFactory != nil {
+				osImageStream = tt.osImageStreamFactory()
+			}
+			result := TryGetOSImageStreamSetByName(osImageStream, tt.streamName)
 			assert.Equal(t, tt.expected, result)
 		})
 	}

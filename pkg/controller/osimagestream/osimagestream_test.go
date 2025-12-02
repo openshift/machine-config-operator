@@ -34,6 +34,7 @@ func TestBuildOSImageStreamFromSources(t *testing.T) {
 		name            string
 		sources         []StreamSource
 		expectedDefault string
+		error           error
 		errorContains   string
 		validateStreams func(t *testing.T, streams []v1alpha1.OSImageStreamSet)
 	}{
@@ -59,7 +60,7 @@ func TestBuildOSImageStreamFromSources(t *testing.T) {
 					streams: []*v1alpha1.OSImageStreamSet{},
 				},
 			},
-			errorContains: "could not find any OS stream",
+			error: ErrorNoOSImageStreamAvailable,
 		},
 		{
 			name: "error - all sources fail",
@@ -68,7 +69,7 @@ func TestBuildOSImageStreamFromSources(t *testing.T) {
 					err: errors.New("fetch failed"),
 				},
 			},
-			errorContains: "could not find any OS stream",
+			error: ErrorNoOSImageStreamAvailable,
 		},
 		{
 			name: "error - no default stream available",
@@ -167,6 +168,10 @@ func TestBuildOSImageStreamFromSources(t *testing.T) {
 			if tt.errorContains != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.errorContains)
+				return
+			} else if tt.error != nil {
+				require.Error(t, err)
+				require.ErrorIs(t, err, tt.error)
 				return
 			}
 
@@ -345,7 +350,7 @@ func TestDefaultStreamSourceFactory_CreateRuntimeSources_BothSourcesFail(t *test
 
 	require.Error(t, err)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "could not find any OS stream")
+	assert.ErrorIs(t, err, ErrorNoOSImageStreamAvailable)
 }
 
 func TestDefaultStreamSourceFactory_CreateRuntimeSources_MultipleStreams(t *testing.T) {
@@ -727,5 +732,5 @@ func TestDefaultStreamSourceFactory_CreateBootstrapSources_NoSources(t *testing.
 
 	require.Error(t, err)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "could not find any OS stream")
+	assert.ErrorIs(t, err, ErrorNoOSImageStreamAvailable)
 }

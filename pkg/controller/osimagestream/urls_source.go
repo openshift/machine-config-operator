@@ -8,6 +8,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/imageutils"
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
+	"k8s.io/klog/v2"
 )
 
 // OSImageTuple represents a pair of container images for OS and extensions.
@@ -54,10 +55,18 @@ func (s *OSImagesURLStreamSource) FetchStreams(ctx context.Context) ([]*v1alpha1
 		return nil, fmt.Errorf("error inspecting OS extensions image %w", err)
 	}
 
-	return GroupOSContainerImageMetadataToStream([]*ImageData{
-		s.imageStreamExtractor.GetImageData(osInspectResult.Image, osInspectResult.InspectInfo.Labels),
-		s.imageStreamExtractor.GetImageData(osExtensionsInspectResult.Image, osExtensionsInspectResult.InspectInfo.Labels),
-	}), nil
+	var imagesData []*ImageData
+	for _, inspectionResult := range []*imageutils.BulkInspectResult{osInspectResult, osExtensionsInspectResult} {
+		imageData := s.imageStreamExtractor.GetImageData(inspectionResult.Image, inspectionResult.InspectInfo.Labels)
+		if imageData == nil {
+			klog.V(4).Infof("image %s does not contain stream labels. Image discarded.", inspectionResult.Image)
+
+			// Both imageData should be fine to consider the source URLs valid
+			return []*v1alpha1.OSImageStreamSet{}, nil
+		}
+		imagesData = append(imagesData, imageData)
+	}
+	return GroupOSContainerImageMetadataToStream(imagesData), nil
 }
 
 // getInspectResultByImageName finds the inspection result for a specific image name
