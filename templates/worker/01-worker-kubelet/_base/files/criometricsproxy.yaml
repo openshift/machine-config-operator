@@ -7,6 +7,8 @@ contents:
     metadata:
       name: kube-rbac-proxy-crio
       namespace: openshift-machine-config-operator
+      labels:
+        k8s-app: kube-rbac-proxy-crio
       annotations:
         target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
         openshift.io/required-scc: privileged
