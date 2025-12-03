@@ -83,7 +83,7 @@ func (p *AllowMutationsPlugin) Stop() {
 }
 
 // Configure is called when the plugin is configured by the runtime
-func (p *AllowMutationsPlugin) Configure(_ context.Context, config, runtime, version string) (stub.EventMask, error) {
+func (p *AllowMutationsPlugin) Configure(_ context.Context, _ /* config */, runtime, version string) (stub.EventMask, error) {
 	p.log.Infof("Connected to %s/%s", runtime, version)
 
 	// We want to intercept container creation to enforce mutation policy
