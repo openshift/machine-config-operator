@@ -1604,6 +1604,8 @@ func TestGeneratePolicyJSON(t *testing.T) {
                         "pki": {
 						  "caRootsData": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJBVEE9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0=",
 						  "caIntermediatesData": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJBVEE9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0=",
+						  "caIntermediatesPath": "",
+					      "caRootsPath": "", 
 						  "subjectEmail": "test-user@example.com",
 						  "subjectHostname": "my-host.example.com"
 						},
@@ -1636,6 +1638,8 @@ func TestGeneratePolicyJSON(t *testing.T) {
 					"pki": {
 					  "caRootsData": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJBVEE9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0=",
 					  "caIntermediatesData": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJBVEE9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0=",
+					  "caIntermediatesPath": "",
+					  "caRootsPath": "", 
 					  "subjectEmail": "test-user@example.com",
 					  "subjectHostname": "my-host.example.com"
 					},
@@ -1983,6 +1987,8 @@ func TestUpdateNamespacedPolicyJSONs(t *testing.T) {
 					"pki": {
 					  "caRootsData": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJBVEE9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0=",
 					  "caIntermediatesData": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJBVEE9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0=",
+					  "caIntermediatesPath": "",
+					  "caRootsPath": "", 
 					  "subjectEmail": "test-user@example.com",
 					  "subjectHostname": "my-host.example.com"
 					},
@@ -2046,6 +2052,8 @@ func TestUpdateNamespacedPolicyJSONs(t *testing.T) {
 					"pki": {
 					  "caRootsData": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJBVEE9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0=",
 					  "caIntermediatesData": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJBVEE9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0=",
+					  "caIntermediatesPath": "",
+					  "caRootsPath": "", 
 					  "subjectEmail": "test-user@example.com",
 					  "subjectHostname": "my-host.example.com"
 					},

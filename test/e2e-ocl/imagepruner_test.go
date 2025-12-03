@@ -6,7 +6,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,7 +17,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 
-	"github.com/containers/image/v5/docker"
 	"github.com/containers/image/v5/types"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/distribution/reference"
@@ -162,8 +160,7 @@ func TestImagePrunerOnCluster(t *testing.T) {
 
 		// If this is an HTTP 503 error, that means the route has not finished
 		// being set up, so we need to try again.
-		var unexpectedHTTPError docker.UnexpectedHTTPStatusError
-		if errors.As(err, &unexpectedHTTPError) && unexpectedHTTPError.StatusCode == http.StatusServiceUnavailable {
+		if err != nil && (strings.Contains(err.Error(), "503") || strings.Contains(err.Error(), "Service Unavailable")) {
 			return false, nil
 		}
 

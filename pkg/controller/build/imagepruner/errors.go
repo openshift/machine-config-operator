@@ -76,7 +76,9 @@ func IsAccessDeniedErr(err error) bool {
 		return true
 	}
 
-	if isTolerableUnexpectedHTTPStatusError(err) {
+	// Check for ErrUnauthorizedForCredentials directly
+	var unauthedForCreds docker.ErrUnauthorizedForCredentials
+	if errors.As(err, &unauthedForCreds) {
 		return true
 	}
 
@@ -193,30 +195,6 @@ func isQuayErrorCode(errCode errcode.Error) bool {
 	}
 
 	if strings.Contains(errCode.Message, "expired") {
-		return true
-	}
-
-	return false
-}
-
-// isTolerableUnexpectedHTTPStatusError checks if an unexpected HTTP status error
-// is tolerable, specifically if it's an Unauthorized (401) or Forbidden (403) status.
-func isTolerableUnexpectedHTTPStatusError(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	var unexpectedHTTPErr docker.UnexpectedHTTPStatusError
-	if errors.As(err, &unexpectedHTTPErr) && unexpectedHTTPErr.StatusCode == http.StatusUnauthorized {
-		return true
-	}
-
-	if errors.As(err, &unexpectedHTTPErr) && unexpectedHTTPErr.StatusCode == http.StatusForbidden {
-		return true
-	}
-
-	var unauthedForCreds docker.ErrUnauthorizedForCredentials
-	if errors.As(err, &unauthedForCreds) {
 		return true
 	}
 
