@@ -57,6 +57,8 @@ const (
 	WorkerLabel = "node-role.kubernetes.io/worker"
 	// ControlPlaneLabel defines the label associated with master/control-plane node.
 	ControlPlaneLabel = "node-role.kubernetes.io/control-plane"
+	// ArbiterLabel defines the label associated with arbiter node.
+	ArbiterLabel = "node-role.kubernetes.io/arbiter"
 
 	// maxRetries is the number of times a machineconfig pool will be retried before it is dropped out of the queue.
 	// With the current rate-limiter in use (5ms*2^(maxRetries-1)) the following numbers represent the times
@@ -1288,6 +1290,8 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	var arbiterMosc *mcfgv1.MachineOSConfig
 	var arbiterMosb *mcfgv1.MachineOSBuild
 	var arbiterLayered bool
+	// If we are in HighlyAvailableArbiterMode, combine the arbiter nodes to use where we can avoid duplication.
+	var combinedNodes = append([]*corev1.Node{}, nodes...)
 	if pool.Name == ctrlcommon.MachineConfigPoolMaster && controlPlaneTopology == configv1.HighlyAvailableArbiterMode {
 		arbiterObj, err := ctrl.mcpLister.Get(ctrlcommon.MachineConfigPoolArbiter)
 		if err != nil {
@@ -1303,28 +1307,21 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 			if err != nil {
 				return fmt.Errorf("error getting config and build for arbiter pool %q, error: %w", ctrlcommon.MachineConfigPoolArbiter, err)
 			}
-			combinedNodes := append([]*corev1.Node{}, nodes...)
 			combinedNodes = append(combinedNodes, arbiterNodes...)
 			combinedMax, err := maxUnavailable(pool, combinedNodes)
 			if err != nil {
 				return fmt.Errorf("error getting max unavailable count for pool %q, error: %w", pool.Name, err)
 			}
-			arbiterUnavailable := len(getUnavailableMachines(arbiterNodes, arbiterPool))
-			// Adjust maxunavail to account for arbiter unavailable nodes
-			// This ensures we don't exceed the combined maxUnavailable across both pools
-			maxunavail = combinedMax - arbiterUnavailable
-			if maxunavail < 0 {
-				maxunavail = 0
-			}
+			maxunavail = combinedMax
 		}
 	}
 
-	if err := ctrl.setClusterConfigAnnotation(nodes, controlPlaneTopology); err != nil {
+	if err := ctrl.setClusterConfigAnnotation(combinedNodes, controlPlaneTopology); err != nil {
 		return fmt.Errorf("error setting clusterConfig Annotation for node in pool %q, error: %w", pool.Name, err)
 	}
 	// Taint all the nodes in the node pool, irrespective of their upgrade status.
 	ctx := context.TODO()
-	for _, node := range nodes {
+	for _, node := range combinedNodes {
 		// All the nodes that need to be upgraded should have `NodeUpdateInProgressTaint` so that they're less likely
 		// to be chosen during the scheduling cycle. This includes nodes which are:
 		// (i) In a Pool being updated to a new MC or image
@@ -1333,7 +1330,18 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 
 		lns := ctrlcommon.NewLayeredNodeState(node)
 
-		if (!layered && lns.IsDesiredMachineConfigEqualToPool(pool) && !lns.AreImageAnnotationsPresentOnNode()) || (layered && lns.IsDesiredEqualToBuild(mosc, mosb)) {
+		desiredPool := pool
+		desiredMosc := mosc
+		desiredMosb := mosb
+		desiredLayered := layered
+		if _, ok := node.GetLabels()[ArbiterLabel]; ok && controlPlaneTopology == configv1.HighlyAvailableArbiterMode {
+			desiredPool = arbiterPool
+			desiredMosc = arbiterMosc
+			desiredMosb = arbiterMosb
+			desiredLayered = arbiterLayered
+		}
+
+		if (!desiredLayered && lns.IsDesiredMachineConfigEqualToPool(desiredPool) && !lns.AreImageAnnotationsPresentOnNode()) || (layered && lns.IsDesiredEqualToBuild(desiredMosc, desiredMosb)) {
 			if hasInProgressTaint {
 				if err := ctrl.removeUpdateInProgressTaint(ctx, node.Name); err != nil {
 					err = fmt.Errorf("failed removing %s taint for node %s: %w", constants.NodeUpdateInProgressTaint.Key, node.Name, err)
@@ -1349,26 +1357,25 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 			}
 		}
 	}
+
 	candidates, capacity := getAllCandidateMachines(layered, mosc, mosb, pool, nodes, maxunavail)
-	masterTargeted := 0
-	if len(candidates) > 0 {
-		zones := make(map[string]bool)
-		for _, candidate := range candidates {
-			zone, ok := candidate.Labels[zoneLabel]
-			if ok {
-				zones[zone] = true
-			}
-		}
-		ctrl.logPool(pool, "%d candidate nodes in %d zones for update, capacity: %d", len(candidates), len(zones), capacity)
-		if err := ctrl.updateCandidateMachines(layered, mosc, mosb, pool, candidates, capacity); err != nil {
-			if syncErr := ctrl.syncStatusOnly(pool); syncErr != nil {
-				errs := kubeErrs.NewAggregate([]error{syncErr, err})
-				return fmt.Errorf("error setting annotations for pool %q, sync error: %w", pool.Name, errs)
-			}
+	if err := ctrl.updateCandidates(layered, mosc, mosb, pool, candidates, capacity); err != nil {
+		return err
+	}
+
+	// If coordinating with arbiter pool, also handle arbiter node updates
+	if arbiterPool != nil && len(arbiterNodes) > 0 && pool.Name == ctrlcommon.MachineConfigPoolMaster && controlPlaneTopology == configv1.HighlyAvailableArbiterMode {
+		arbiterUnavailable := len(getUnavailableMachines(arbiterNodes, arbiterPool))
+		//#nosec G115 -- there is no overflow, it's an int converted to uint and then added to another int
+		arbiterMaxUnavail := int(capacity) - len(candidates) + arbiterUnavailable
+		arbiterCandidates, arbiterCapacity := getAllCandidateMachines(arbiterLayered, arbiterMosc, arbiterMosb, arbiterPool, arbiterNodes, arbiterMaxUnavail)
+		if err := ctrl.updateCandidates(arbiterLayered, arbiterMosc, arbiterMosb, arbiterPool, arbiterCandidates, arbiterCapacity); err != nil {
 			return err
 		}
-		masterTargeted = len(candidates)
-		ctrlcommon.UpdateStateMetric(ctrlcommon.MCCSubControllerState, "machine-config-controller-node", "Sync Machine Config Pool", pool.Name)
+		// Sync status for arbiter pool
+		if err := ctrl.syncStatusOnly(arbiterPool); err != nil {
+			return err
+		}
 	}
 
 	// If coordinating with arbiter pool, also handle arbiter node updates
@@ -1406,7 +1413,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		combinedNodes = append(combinedNodes, arbiterNodes...)
 		combinedMax, err := maxUnavailable(pool, combinedNodes)
 		if err == nil {
-			remainingCapacity := combinedMax - masterUnavailable - masterTargeted - arbiterUnavailable
+			remainingCapacity := combinedMax - masterUnavailable - arbiterUnavailable
 			if remainingCapacity < 0 {
 				remainingCapacity = 0
 			}
@@ -1447,6 +1454,28 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 
 	// Update metrics after syncing the pool status
 	return ctrl.syncMetrics()
+}
+
+func (ctrl *Controller) updateCandidates(layered bool, mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild, pool *mcfgv1.MachineConfigPool, candidates []*corev1.Node, capacity uint) error {
+	if len(candidates) > 0 {
+		zones := make(map[string]bool)
+		for _, candidate := range candidates {
+			zone, ok := candidate.Labels[zoneLabel]
+			if ok {
+				zones[zone] = true
+			}
+		}
+		ctrl.logPool(pool, "%d candidate nodes in %d zones for update, capacity: %d", len(candidates), len(zones), capacity)
+		if err := ctrl.updateCandidateMachines(layered, mosc, mosb, pool, candidates, capacity); err != nil {
+			if syncErr := ctrl.syncStatusOnly(pool); syncErr != nil {
+				errs := kubeErrs.NewAggregate([]error{syncErr, err})
+				return fmt.Errorf("error setting annotations for pool %q, sync error: %w", pool.Name, errs)
+			}
+			return err
+		}
+		ctrlcommon.UpdateStateMetric(ctrlcommon.MCCSubControllerState, "machine-config-controller-node", "Sync Machine Config Pool", pool.Name)
+	}
+	return nil
 }
 
 func (ctrl *Controller) handleArbiterPoolEvent(pool *mcfgv1.MachineConfigPool) error {
