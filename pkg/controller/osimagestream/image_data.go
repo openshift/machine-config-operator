@@ -96,11 +96,11 @@ func findLabelValue(m map[string]string, keys ...string) string {
 // Combines pairs of OS and extensions images that share the same stream name into OSImageStreamSet objects.
 // If multiple images are found for the same stream and type, the last one wins.
 func GroupOSContainerImageMetadataToStream(imagesMetadata []*ImageData) []*v1alpha1.OSImageStreamSet {
-	streamMaps := make(map[string]*v1alpha1.OSImageStreamSet)
+	streamMap := make(map[string]*v1alpha1.OSImageStreamSet)
 	for _, imageMetadata := range imagesMetadata {
-		streamURLSet, exists := streamMaps[imageMetadata.Stream]
+		streamURLSet, exists := streamMap[imageMetadata.Stream]
 		if !exists {
-			streamMaps[imageMetadata.Stream] = NewOSImageStreamURLSetFromImageMetadata(imageMetadata)
+			streamMap[imageMetadata.Stream] = NewOSImageStreamURLSetFromImageMetadata(imageMetadata)
 			continue
 		}
 
@@ -120,7 +120,20 @@ func GroupOSContainerImageMetadataToStream(imagesMetadata []*ImageData) []*v1alp
 			streamURLSet.OSExtensionsImage = imageName
 		}
 	}
-	return slices.Collect(maps.Values(streamMaps))
+
+	// Remove mapped OSImageStreamSet with only one URL. A valid OSImageStreamSet must
+	// point to both images.
+	// How can a stream end here?
+	//  - An ImageStream with only one of the images tagged
+	//  - A proper built ImageStream but one of the images is lacking the stream labels
+	//  - A URL set with only one image having the labels
+	for _, stream := range streamMap {
+		if stream.OSExtensionsImage == "" || stream.OSImage == "" {
+			delete(streamMap, stream.Name)
+		}
+	}
+
+	return slices.Collect(maps.Values(streamMap))
 }
 
 // NewOSImageStreamURLSetFromImageMetadata creates an OSImageStreamSet from image metadata.

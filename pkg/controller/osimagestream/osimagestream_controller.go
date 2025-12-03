@@ -101,12 +101,8 @@ func (ctrl *Controller) Run(stopCh <-chan struct{}) {
 		err := ctrl.boot()
 		if err != nil {
 			klog.Errorf("Error booting OSImageStreamController: %v", err)
-		}
-
-		if err != nil {
-			defer klog.Errorf("OSImageStreamController failed to boot: %v", err)
 		} else {
-			defer klog.Infof(
+			klog.Infof(
 				"OSImageStreamController booted successfully. Available streams: %s. Default stream: %s",
 				GetStreamSetsNames(ctrl.osImageStream.Status.AvailableStreams),
 				ctrl.osImageStream.Status.DefaultStream,

@@ -2,12 +2,12 @@ package osimagestream
 
 import (
 	"fmt"
-	"strings"
 
 	v1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/helpers"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 // GetStreamSetsNames extracts the names from a slice of OSImageStreamSets.
@@ -35,7 +35,7 @@ func GetOSImageStreamSetByName(osImageStream *v1alpha1.OSImageStream, name strin
 		}
 	}
 
-	return nil, fmt.Errorf("requested OSImageStream %s does not exist. Existing: %s", name, strings.Join(GetStreamSetsNames(osImageStream.Status.AvailableStreams), ","))
+	return nil, k8serrors.NewNotFound(v1alpha1.GroupVersion.WithResource("osimagestreams").GroupResource(), name)
 }
 
 // TryGetOSImageStreamSetByName retrieves an OSImageStreamSet by name, returning nil if not found.
