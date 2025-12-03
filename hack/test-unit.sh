@@ -17,7 +17,13 @@ COVERAGE_REPORT="mco-unit-test-coverage.out"
 
 function run_tests() {
   test_opts=("$@")
-  CGO_ENABLED=0 go test "${test_opts[@]}" -tags="$GOTAGS" './devex/...' './cmd/...' './pkg/...' './lib/...' './test/helpers/...' | ./hack/test-with-junit.sh "$MAKEFILE_TARGET"
+  # Add containers_image_openpgp to avoid CGO dependency
+  if [ -n "$GOTAGS" ]; then
+    COMBINED_TAGS="$GOTAGS,containers_image_openpgp"
+  else
+    COMBINED_TAGS="containers_image_openpgp"
+  fi
+  CGO_ENABLED=0 go test "${test_opts[@]}" -tags="$COMBINED_TAGS" './devex/...' './cmd/...' './pkg/...' './lib/...' './test/helpers/...' | ./hack/test-with-junit.sh "$MAKEFILE_TARGET"
 }
 
 function run_tests_with_coverage() {
