@@ -19,7 +19,7 @@ function run_tests() {
   test_opts=("$@")
   # Add containers_image_openpgp to avoid CGO dependency
   if [ -n "$GOTAGS" ]; then
-    COMBINED_TAGS="$GOTAGS,containers_image_openpgp"
+    COMBINED_TAGS="$GOTAGS containers_image_openpgp"
   else
     COMBINED_TAGS="containers_image_openpgp"
   fi
