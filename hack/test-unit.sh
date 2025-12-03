@@ -17,13 +17,7 @@ COVERAGE_REPORT="mco-unit-test-coverage.out"
 
 function run_tests() {
   test_opts=("$@")
-  # Add containers_image_openpgp to avoid CGO dependency
-  if [ -n "$GOTAGS" ]; then
-    COMBINED_TAGS="$GOTAGS,containers_image_openpgp"
-  else
-    COMBINED_TAGS="containers_image_openpgp"
-  fi
-  CGO_ENABLED=0 go test "${test_opts[@]}" -tags="$COMBINED_TAGS" './devex/...' './cmd/...' './pkg/...' './lib/...' './test/helpers/...' | ./hack/test-with-junit.sh "$MAKEFILE_TARGET"
+  CGO_ENABLED=0 go test "${test_opts[@]}" -tags="$GOTAGS" './devex/...' './cmd/...' './pkg/...' './lib/...' './test/helpers/...' | ./hack/test-with-junit.sh "$MAKEFILE_TARGET"
 }
 
 function run_tests_with_coverage() {
@@ -53,7 +47,8 @@ if [ ! -n "$GOTAGS" ]; then
 fi
 
 # Common options to pass to go test
-test_opts=( "-v" "-count=1" )
+# -p=1 ensures tests run sequentially to avoid timing issues in controller tests
+test_opts=( "-v" "-count=1" "-p=1" )
 
 cd "$REPO_ROOT"
 

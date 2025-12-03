@@ -1078,3 +1078,24 @@ func forceMachineOSBuildToFail(ctx context.Context, t *testing.T, cs *framework.
 		return false, nil
 	})
 }
+
+// newMachineConfigWithKernelType returns the same base MC, but adds the given kernel
+func newMachineConfigWithKernelType(name, pool, kernelType string) *mcfgv1.MachineConfig {
+	mc := newMachineConfig(name, pool)
+	mc.Spec.KernelType = kernelType
+	return mc
+}
+
+func compareKernelType(t *testing.T, foundKernel, requiredKernelType string) bool {
+	switch requiredKernelType {
+	case ctrlcommon.KernelTypeDefault:
+		return !strings.Contains(foundKernel, "rt") && !strings.Contains(foundKernel, "64k")
+	case ctrlcommon.KernelTypeRealtime:
+		return strings.Contains(foundKernel, "rt")
+	case ctrlcommon.KernelType64kPages:
+		return strings.Contains(foundKernel, "64k")
+	default:
+		t.Logf("Unsupported kernel type requested in MC %s", requiredKernelType)
+		return false
+	}
+}
