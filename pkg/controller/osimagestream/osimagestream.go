@@ -21,6 +21,10 @@ import (
 	"k8s.io/klog/v2"
 )
 
+var (
+	ErrorNoOSImageStreamAvailable = errors.New("unable to retrieve any OSImageStream from the configured sources")
+)
+
 // StreamSource represents a source that can provide OS image stream sets.
 type StreamSource interface {
 	FetchStreams(ctx context.Context) ([]*v1alpha1.OSImageStreamSet, error)
@@ -114,7 +118,7 @@ func BuildOsImageStreamRuntime(
 func BuildOSImageStreamFromSources(ctx context.Context, sources []StreamSource) (*v1alpha1.OSImageStream, error) {
 	streams := collect(ctx, sources)
 	if len(streams) == 0 {
-		return nil, fmt.Errorf("could not find any OS stream")
+		return nil, ErrorNoOSImageStreamAvailable
 	}
 
 	// TODO: This logic is temporal till we make an agreement on
