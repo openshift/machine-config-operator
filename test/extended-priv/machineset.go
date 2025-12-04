@@ -29,16 +29,16 @@ func NewMachineSetList(oc *exutil.CLI, namespace string) *MachineSetList {
 	return &MachineSetList{*NewNamespacedResourceList(oc, MachineSetFullName, namespace)}
 }
 
-// GetAll returns a []MachineSet list with all existing MachineSets
-func (msl *MachineSetList) GetAll() ([]MachineSet, error) {
+// GetAll returns a []*MachineSet list with all existing MachineSets
+func (msl *MachineSetList) GetAll() ([]*MachineSet, error) {
 	allMachineSetResources, err := msl.ResourceList.GetAll()
 	if err != nil {
 		return nil, err
 	}
-	allMachineSets := make([]MachineSet, 0, len(allMachineSetResources))
+	allMachineSets := make([]*MachineSet, 0, len(allMachineSetResources))
 
 	for _, msRes := range allMachineSetResources {
-		allMachineSets = append(allMachineSets, *NewMachineSet(msl.oc, msRes.GetNamespace(), msRes.GetName()))
+		allMachineSets = append(allMachineSets, NewMachineSet(msl.oc, msRes.GetNamespace(), msRes.GetName()))
 	}
 
 	return allMachineSets, nil

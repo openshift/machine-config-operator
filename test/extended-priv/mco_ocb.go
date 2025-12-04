@@ -274,7 +274,7 @@ func testContainerFile(containerFiles []ContainerFile, imageNamespace string, mc
 }
 
 func SkipTestIfOCBIsEnabled(oc *exutil.CLI) {
-	moscl := NewMachineOSConfigList(oc)
+	moscl := NewMachineOSConfigList(oc.AsAdmin())
 	allMosc := moscl.GetAllOrFail()
 	if len(allMosc) != 0 {
 		moscl.PrintDebugCommand()
