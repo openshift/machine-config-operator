@@ -681,6 +681,15 @@ func (n *Node) CopyToLocal(from, to string) error {
 	return n.oc.Run("cp").Args("-n", MachineConfigNamespace, mcDaemonName+":"+fromDaemon, to, "-c", MachineConfigDaemon).Execute()
 }
 
+// RemoveFile removes a file from the node
+func (n *Node) RemoveFile(filePathToRemove string) error {
+	logger.Infof("Removing file %s from node %s", filePathToRemove, n.GetName())
+	output, err := n.DebugNodeWithChroot("rm", "-f", filePathToRemove)
+	logger.Infof(output)
+
+	return err
+}
+
 // Returns the set of ready nodes in the cluster
 func getReadyNodes(oc *exutil.CLI) (sets.Set[string], error) {
 	nodeList := NewResourceList(oc.AsAdmin(), "nodes")
@@ -699,4 +708,99 @@ func getReadyNodes(oc *exutil.CLI) (sets.Set[string], error) {
 		node.oc.SetShowInfo()
 	}
 	return nodeSet, nil
+}
+
+// WaitForLabelRemoved waits until the given label is not present in the node.
+func (n *Node) WaitForLabelRemoved(label string) error {
+	logger.Infof("Waiting for label %s to be removed from node %s", label, n.GetName())
+
+	immediate := true
+	waitErr := wait.PollUntilContextTimeout(context.TODO(), 1*time.Minute, 10*time.Minute, immediate, func(_ context.Context) (bool, error) {
+		labels, err := n.Get(`{.metadata.labels}`)
+		if err != nil {
+			logger.Infof("Error waiting for labels to be removed:%v, and try next round", err)
+			return false, nil
+		}
+		labelsMap := JSON(labels)
+		label, err := labelsMap.GetSafe(label)
+		if err == nil && !label.Exists() {
+			logger.Infof("Label %s has been removed from node %s", label, n.GetName())
+			return true, nil
+		}
+		return false, nil
+	})
+
+	if waitErr != nil {
+		logger.Errorf("Timeout while waiting for label %s to be delete from node %s. Error: %s",
+			label,
+			n.GetName(),
+			waitErr)
+	}
+
+	return waitErr
+}
+
+// Reboot schedules a reboot of the node
+func (n *Node) Reboot() error {
+	afterSeconds := 1
+	logger.Infof("REBOOTING NODE %s  after %d seconds!!", n.GetName(), afterSeconds)
+
+	// In SNO we cannot trigger the reboot directly using a debug command (like: "sleep 10 && reboot"), because the debug pod will return a failure
+	// because we lose connectivity with the cluster when we reboot the only node in the cluster
+	// The solution is to schedule a reboot 1 second after the Reboot method is called, and wait 5 seconds to make sure that the reboot happened
+	out, err := n.DebugNodeWithChroot("sh", "-c", fmt.Sprintf("systemd-run --on-active=%d --timer-property=AccuracySec=10ms reboot", afterSeconds))
+	if err != nil {
+		logger.Errorf("Error rebooting node %s:\n%s", n, out)
+	}
+
+	time.Sleep(time.Duration(afterSeconds) * time.Second) // we don't return the control of the program until we make sure that the timer for the reboot has expired
+	return err
+}
+
+// GetFileSystemSpaceUsage returns the filesystem space usage for a given path in the node
+func (n *Node) GetFileSystemSpaceUsage(path string) (*SpaceUsage, error) {
+	var (
+		parserRegex = `(?P<Used>\d+)\D+(?P<Avail>\d+)`
+	)
+	stdout, stderr, err := n.DebugNodeWithChrootStd("df", "-B1", "--output=used,avail", path)
+	if err != nil {
+		logger.Errorf("Error getting the disk usage in node %s:\nstdout:%s\nstderr:%s",
+			n.GetName(), stdout, stderr)
+		return nil, err
+	}
+
+	lines := strings.Split(stdout, "\n")
+	if len(lines) != 2 {
+		return nil, fmt.Errorf("Expected 2 lines, and got:\n%s", stdout)
+	}
+
+	logger.Debugf("parsing: %s", lines[1])
+	re := regexp.MustCompile(parserRegex)
+	match := re.FindStringSubmatch(strings.TrimSpace(lines[1]))
+	logger.Infof("matched disk space stat info: %v", match)
+	// check whether matched string found
+	if len(match) == 0 {
+		return nil, fmt.Errorf("no disk space info matched")
+	}
+
+	usedIndex := re.SubexpIndex("Used")
+	if usedIndex < 0 {
+		return nil, fmt.Errorf("Could not parse Used bytes from\n%s", stdout)
+	}
+	used, err := strconv.ParseInt(match[usedIndex], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("Could convert parsed Used data [%s] into float64 from\n%s", match[usedIndex], stdout)
+
+	}
+
+	availIndex := re.SubexpIndex("Avail")
+	if usedIndex < 0 {
+		return nil, fmt.Errorf("Could not parse Avail bytes from\n%s", stdout)
+	}
+	avail, err := strconv.ParseInt(match[availIndex], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("Could convert parsed Avail data [%s] into float64 from\n%s", match[availIndex], stdout)
+	}
+
+	return &SpaceUsage{Used: used, Avail: avail}, nil
 }

@@ -53,6 +53,11 @@ type ImageTagMirrorSet struct {
 	Template
 }
 
+// NewImageDigestMirrorSet create a new ImageDigestMirrorSet struct
+func NewImageDigestMirrorSet(oc *exutil.CLI, name string, t Template) *ImageDigestMirrorSet {
+	return &ImageDigestMirrorSet{Resource: *NewResource(oc, "ImageDigestMirrorSet", name), Template: t}
+}
+
 // TextToVerify is a helper struct to verify configurations using the `createMcAndVerifyMCValue` function
 type TextToVerify struct {
 	textToVerifyForMC   string
@@ -616,4 +621,17 @@ func skipTestIfSupportedPlatformNotMatched(oc *exutil.CLI, supported ...string) 
 	if !match {
 		g.Skip(fmt.Sprintf("skip test because current platform %s is not in supported list %v", p, supported))
 	}
+}
+
+// RemoveDuplicates removes duplicate items from a list
+func RemoveDuplicates[T comparable](list []T) []T {
+	allKeys := make(map[T]bool)
+	fileterdList := []T{}
+	for _, item := range list {
+		if !allKeys[item] {
+			allKeys[item] = true
+			fileterdList = append(fileterdList, item)
+		}
+	}
+	return fileterdList
 }
