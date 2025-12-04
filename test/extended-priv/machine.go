@@ -41,7 +41,7 @@ func (m Machine) GetNode() (*Node, error) {
 		return nil, fmt.Errorf("No node linked to this Machine. Machine: %s", m.GetName())
 	}
 
-	return &(nodes[0]), nil
+	return nodes[0], nil
 }
 
 // GetNodeOrFail, call GetNode, fail the test if any error occurred
@@ -75,16 +75,16 @@ func NewMachineList(oc *exutil.CLI, namespace string) *MachineList {
 	return &MachineList{*NewNamespacedResourceList(oc, MachineFullName, namespace)}
 }
 
-// GetAll returns a []Machine slice with all existing nodes
-func (ml MachineList) GetAll() ([]Machine, error) {
+// GetAll returns a []*Machine slice with all existing nodes
+func (ml MachineList) GetAll() ([]*Machine, error) {
 	allMResources, err := ml.ResourceList.GetAll()
 	if err != nil {
 		return nil, err
 	}
-	allMs := make([]Machine, 0, len(allMResources))
+	allMs := make([]*Machine, 0, len(allMResources))
 
 	for _, mRes := range allMResources {
-		allMs = append(allMs, *NewMachine(ml.oc, mRes.GetNamespace(), mRes.GetName()))
+		allMs = append(allMs, NewMachine(ml.oc, mRes.GetNamespace(), mRes.GetName()))
 	}
 
 	return allMs, nil

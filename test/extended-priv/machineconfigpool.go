@@ -304,7 +304,7 @@ func (mcp *MachineConfigPool) SetWaitingTimeForExtensionsChange() {
 }
 
 // getSelectedNodes returns a list with the nodes that match the .spec.nodeSelector.matchLabels criteria plus the provided extraLabels
-func (mcp *MachineConfigPool) getSelectedNodes(extraLabels string) ([]Node, error) {
+func (mcp *MachineConfigPool) getSelectedNodes(extraLabels string) ([]*Node, error) {
 	mcp.oc.NotShowInfo()
 	defer mcp.oc.SetShowInfo()
 
@@ -331,7 +331,7 @@ func (mcp *MachineConfigPool) getSelectedNodes(extraLabels string) ([]Node, erro
 }
 
 // GetNodesByLabel returns a list with the nodes that belong to the machine config pool and contain the given labels
-func (mcp *MachineConfigPool) GetNodesByLabel(labels string) ([]Node, error) {
+func (mcp *MachineConfigPool) GetNodesByLabel(labels string) ([]*Node, error) {
 	mcp.oc.NotShowInfo()
 	defer mcp.oc.SetShowInfo()
 
@@ -340,7 +340,7 @@ func (mcp *MachineConfigPool) GetNodesByLabel(labels string) ([]Node, error) {
 		return nil, err
 	}
 
-	returnNodes := []Node{}
+	returnNodes := []*Node{}
 
 	for _, item := range nodes {
 		node := item
@@ -358,24 +358,24 @@ func (mcp *MachineConfigPool) GetNodesByLabel(labels string) ([]Node, error) {
 }
 
 // GetNodes returns a list with the nodes that belong to the machine config pool, by default, windows nodes will be excluded
-func (mcp *MachineConfigPool) GetNodes() ([]Node, error) {
+func (mcp *MachineConfigPool) GetNodes() ([]*Node, error) {
 	return mcp.GetNodesByLabel("")
 }
 
 // GetNodesOrFail returns a list with the nodes that belong to the machine config pool and fail the test if any error happened
-func (mcp *MachineConfigPool) GetNodesOrFail() []Node {
+func (mcp *MachineConfigPool) GetNodesOrFail() []*Node {
 	ns, err := mcp.GetNodes()
 	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Cannot get the nodes in %s MCP", mcp.GetName())
 	return ns
 }
 
 // GetCoreOsNodes returns a list with the CoreOs nodes that belong to the machine config pool
-func (mcp *MachineConfigPool) GetCoreOsNodes() ([]Node, error) {
+func (mcp *MachineConfigPool) GetCoreOsNodes() ([]*Node, error) {
 	return mcp.GetNodesByLabel("node.openshift.io/os_id=rhel")
 }
 
 // GetCoreOsNodesOrFail returns a list with the CoreOs nodes that belong to the machine config pool. If any error happens it fails the test.
-func (mcp *MachineConfigPool) GetCoreOsNodesOrFail() []Node {
+func (mcp *MachineConfigPool) GetCoreOsNodesOrFail() []*Node {
 	ns, err := mcp.GetCoreOsNodes()
 	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Cannot get the coreOS nodes in %s MCP", mcp.GetName())
 	return ns
@@ -383,7 +383,7 @@ func (mcp *MachineConfigPool) GetCoreOsNodesOrFail() []Node {
 
 // GetSortedNodes returns a list with the nodes that belong to the machine config pool in the same order used to update them
 // when a configuration is applied
-func (mcp *MachineConfigPool) GetSortedNodes() ([]Node, error) {
+func (mcp *MachineConfigPool) GetSortedNodes() ([]*Node, error) {
 
 	poolNodes, err := mcp.GetNodes()
 	if err != nil {
@@ -400,7 +400,7 @@ func (mcp *MachineConfigPool) GetSortedNodes() ([]Node, error) {
 
 // GetSortedNodesOrFail returns a list with the nodes that belong to the machine config pool in the same order used to update them
 // when a configuration is applied. If any error happens while getting the list, then the test is failed.
-func (mcp *MachineConfigPool) GetSortedNodesOrFail() []Node {
+func (mcp *MachineConfigPool) GetSortedNodesOrFail() []*Node {
 	nodes, err := mcp.GetSortedNodes()
 	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(),
 		"Cannot get the list of nodes that belong to '%s' MCP", mcp.GetName())
@@ -569,7 +569,7 @@ func GetCompactCompatiblePool(oc *exutil.CLI) *MachineConfigPool {
 	var (
 		wMcp    = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
 		mMcp    = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolMaster)
-		mcpList = NewMachineConfigPoolList(oc)
+		mcpList = NewMachineConfigPoolList(oc.AsAdmin())
 	)
 
 	mcpList.PrintDebugCommand()
@@ -586,7 +586,7 @@ func GetCompactCompatiblePool(oc *exutil.CLI) *MachineConfigPool {
 	for _, mcp := range mcpList.GetAllOrFail() {
 		if mcp.IsCustom() && !mcp.IsEmpty() { // All worker pools were moved to cutom pools
 			logger.Infof("Worker pool is empty, but there is a custom pool with nodes. Proposing %s MCP for testing", mcp.GetName())
-			return &mcp
+			return mcp
 		}
 	}
 
@@ -700,27 +700,27 @@ func (mcp MachineConfigPool) GetMOSC() (*MachineOSConfig, error) {
 	if len(moscs) == 0 {
 		return nil, nil
 	}
-	return &(moscs[0]), nil
+	return moscs[0], nil
 }
 
-// GetAll returns a []MachineConfigPool list with all existing machine config pools sorted by creation time
-func (mcpl *MachineConfigPoolList) GetAll() ([]MachineConfigPool, error) {
+// GetAll returns a []*MachineConfigPool list with all existing machine config pools sorted by creation time
+func (mcpl *MachineConfigPoolList) GetAll() ([]*MachineConfigPool, error) {
 	mcpl.ResourceList.SortByTimestamp()
 	allMCPResources, err := mcpl.ResourceList.GetAll()
 	if err != nil {
 		return nil, err
 	}
-	allMCPs := make([]MachineConfigPool, 0, len(allMCPResources))
+	allMCPs := make([]*MachineConfigPool, 0, len(allMCPResources))
 
 	for _, mcpRes := range allMCPResources {
-		allMCPs = append(allMCPs, *NewMachineConfigPool(mcpl.oc, mcpRes.name))
+		allMCPs = append(allMCPs, NewMachineConfigPool(mcpl.oc, mcpRes.name))
 	}
 
 	return allMCPs, nil
 }
 
-// GetAllOrFail returns a []MachineConfigPool list with all existing machine config pools sorted by creation time, if any error happens it fails the test
-func (mcpl *MachineConfigPoolList) GetAllOrFail() []MachineConfigPool {
+// GetAllOrFail returns a []*MachineConfigPool list with all existing machine config pools sorted by creation time, if any error happens it fails the test
+func (mcpl *MachineConfigPoolList) GetAllOrFail() []*MachineConfigPool {
 	mcps, err := mcpl.GetAll()
 	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error getting the list of existing MCP in the cluster")
 	return mcps
@@ -766,7 +766,7 @@ func CreateCustomMCP(oc *exutil.CLI, name string, numNodes int) (*MachineConfigP
 }
 
 // CreateCustomMCPByNodes creates a new MCP containing the nodes provided in the "nodes" parameter
-func CreateCustomMCPByNodes(oc *exutil.CLI, name string, nodes []Node) (*MachineConfigPool, error) {
+func CreateCustomMCPByNodes(oc *exutil.CLI, name string, nodes []*Node) (*MachineConfigPool, error) {
 	customMcp := NewMachineConfigPool(oc, name)
 
 	err := NewMCOTemplate(oc, "custom-machine-config-pool.yaml").Create("-p", fmt.Sprintf("NAME=%s", name))

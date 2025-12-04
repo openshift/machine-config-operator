@@ -16,7 +16,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		oc = exutil.NewCLI("mco-controlplanemachineset", exutil.KubeConfigPath())
 		// Common variables
 		cpms                 *ControlPlaneMachineSet
-		machines             []Machine
+		machines             []*Machine
 		machineConfiguration *MachineConfiguration
 	)
 

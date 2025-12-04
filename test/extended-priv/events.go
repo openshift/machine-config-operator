@@ -64,18 +64,18 @@ func NewEventList(oc *exutil.CLI, namespace string) *EventList {
 	return &EventList{*NewNamespacedResourceList(oc, "Event", namespace)}
 }
 
-// GetAll returns a []Event list with all existing events sorted by last occurrence
+// GetAll returns a []*Event list with all existing events sorted by last occurrence
 // the first element will be the most recent one
-func (el *EventList) GetAll() ([]Event, error) {
+func (el *EventList) GetAll() ([]*Event, error) {
 	el.SortByLastTimestamp()
 	allEventResources, err := el.ResourceList.GetAll()
 	if err != nil {
 		return nil, err
 	}
-	allEvents := make([]Event, 0, len(allEventResources))
+	allEvents := make([]*Event, 0, len(allEventResources))
 
 	for _, eventRes := range allEventResources {
-		allEvents = append(allEvents, *NewEvent(el.oc, eventRes.namespace, eventRes.name))
+		allEvents = append(allEvents, NewEvent(el.oc, eventRes.namespace, eventRes.name))
 	}
 	// We want the first element to be the more recent
 	allEvents = reverseEventsList(allEvents)
@@ -100,11 +100,11 @@ func (el *EventList) GetLatest() (*Event, error) {
 		return nil, nil
 	}
 
-	return &(allEvents[0]), nil
+	return allEvents[0], nil
 }
 
 // GetAllEventsSinceEvent returns all events that occurred since a given event (not included)
-func (el *EventList) GetAllEventsSinceEvent(sinceEvent *Event) ([]Event, error) {
+func (el *EventList) GetAllEventsSinceEvent(sinceEvent *Event) ([]*Event, error) {
 	allEvents, lerr := el.GetAll()
 	if lerr != nil {
 		logger.Errorf("Error getting events %s", lerr)
@@ -115,7 +115,7 @@ func (el *EventList) GetAllEventsSinceEvent(sinceEvent *Event) ([]Event, error) 
 		return allEvents, nil
 	}
 
-	returnEvents := []Event{}
+	returnEvents := []*Event{}
 	for _, event := range allEvents {
 		if event.name == sinceEvent.name {
 			break
@@ -127,7 +127,7 @@ func (el *EventList) GetAllEventsSinceEvent(sinceEvent *Event) ([]Event, error) 
 }
 
 // GetAllSince return a list of the events that happened since the provided duration
-func (el *EventList) GetAllSince(since time.Time) ([]Event, error) {
+func (el *EventList) GetAllSince(since time.Time) ([]*Event, error) {
 	// Remove log noise
 	el.oc.NotShowInfo()
 	defer el.oc.SetShowInfo()
@@ -138,7 +138,7 @@ func (el *EventList) GetAllSince(since time.Time) ([]Event, error) {
 		return nil, lerr
 	}
 
-	returnEvents := []Event{}
+	returnEvents := []*Event{}
 	for _, loopEvent := range allEvents {
 		event := loopEvent // this is to make sure that we execute defer in all events, and not only in the last one
 		// Remove log noise
@@ -162,7 +162,7 @@ func (el *EventList) GetAllSince(since time.Time) ([]Event, error) {
 }
 
 // from https://github.com/golang/go/wiki/SliceTricks#reversing
-func reverseEventsList(a []Event) []Event {
+func reverseEventsList(a []*Event) []*Event {
 
 	for i := len(a)/2 - 1; i >= 0; i-- {
 		opp := len(a) - 1 - i
@@ -202,14 +202,15 @@ type haveEventsSequenceMatcher struct {
 func (matcher *haveEventsSequenceMatcher) Match(actual interface{}) (success bool, err error) {
 
 	logger.Infof("Start verifying events sequence: %s", matcher.sequence)
-	events, ok := actual.([]Event)
+	events, ok := actual.([]*Event)
 	if !ok {
-		return false, fmt.Errorf("HaveSequence matcher expects a slice of Events in test case %v", g.CurrentSpecReport().FullText())
+		return false, fmt.Errorf("HaveSequence matcher expects a slice of *Event in test case %v", g.CurrentSpecReport().FullText())
 	}
 
 	// To avoid too many "oc" executions we store the events information in a cached struct list with "lastTimestamp" and "reason" fields.
 	tmpEvents := make([]tmpEvent, len(events))
-	for index, event := range events {
+	for index, loopEvent := range events {
+		event := loopEvent // this is to make sure that we execute defer in all events, and not only in the last one
 		event.oc.NotShowInfo()
 		defer event.oc.SetShowInfo()
 
@@ -258,14 +259,14 @@ func (matcher *haveEventsSequenceMatcher) Match(actual interface{}) (success boo
 
 func (matcher *haveEventsSequenceMatcher) FailureMessage(actual interface{}) (message string) {
 	// The type was already validated in Match, we can safely ignore the error
-	events, _ := actual.([]Event)
+	events, _ := actual.([]*Event)
 
 	var output strings.Builder
 
 	if len(events) == 0 {
 		output.WriteString("No events in the list\n")
 	} else {
-		output.WriteString("Expecte events\n")
+		output.WriteString("Expect events\n")
 		for _, event := range events {
 			output.WriteString(fmt.Sprintf("-  %s\n", event))
 		}
@@ -277,10 +278,10 @@ func (matcher *haveEventsSequenceMatcher) FailureMessage(actual interface{}) (me
 
 func (matcher *haveEventsSequenceMatcher) NegatedFailureMessage(actual interface{}) (message string) {
 	// The type was already validated in Match, we can safely ignore the error
-	events, _ := actual.([]Event)
+	events, _ := actual.([]*Event)
 
 	var output strings.Builder
-	output.WriteString("Expecte events\n")
+	output.WriteString("Expect events\n")
 	for _, event := range events {
 		output.WriteString(fmt.Sprintf("-  %s\n", event))
 	}

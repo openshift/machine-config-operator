@@ -263,7 +263,7 @@ func (cpms ControlPlaneMachineSet) SetUserDataSecret(userDataSecretName string) 
 }
 
 // GetMachines returns a slice with the machines created for this ControlPlaneMachineSet
-func (cpms ControlPlaneMachineSet) GetMachines() ([]Machine, error) {
+func (cpms ControlPlaneMachineSet) GetMachines() ([]*Machine, error) {
 	ml := NewMachineList(cpms.oc, cpms.GetNamespace())
 	ml.ByLabel("machine.openshift.io/cluster-api-machine-role=master")
 	ml.ByLabel("machine.openshift.io/cluster-api-machine-type=master")
@@ -272,7 +272,7 @@ func (cpms ControlPlaneMachineSet) GetMachines() ([]Machine, error) {
 }
 
 // GetMachinesOrFail get machines from ControlPlaneMachineSet or fail the test if any error occurred
-func (cpms ControlPlaneMachineSet) GetMachinesOrFail() []Machine {
+func (cpms ControlPlaneMachineSet) GetMachinesOrFail() []*Machine {
 	ml, err := cpms.GetMachines()
 	o.Expect(err).NotTo(o.HaveOccurred(), "Get machines of ControlPlaneMachineSet %s failed", cpms.GetName())
 	return ml
@@ -304,23 +304,23 @@ func (cpms ControlPlaneMachineSet) GetNodesOrFail() []*Node {
 	return nodes
 }
 
-// GetAll returns a []ControlPlaneMachineSet list with all existing ControlPlaneMachineSets
-func (cpmsl *ControlPlaneMachineSetList) GetAll() ([]ControlPlaneMachineSet, error) {
+// GetAll returns a []*ControlPlaneMachineSet list with all existing ControlPlaneMachineSets
+func (cpmsl *ControlPlaneMachineSetList) GetAll() ([]*ControlPlaneMachineSet, error) {
 	allCPMSResources, err := cpmsl.ResourceList.GetAll()
 	if err != nil {
 		return nil, err
 	}
-	allCPMS := make([]ControlPlaneMachineSet, 0, len(allCPMSResources))
+	allCPMS := make([]*ControlPlaneMachineSet, 0, len(allCPMSResources))
 
 	for _, cpmsRes := range allCPMSResources {
-		allCPMS = append(allCPMS, *NewControlPlaneMachineSet(cpmsl.oc, cpmsRes.GetNamespace(), cpmsRes.GetName()))
+		allCPMS = append(allCPMS, NewControlPlaneMachineSet(cpmsl.oc, cpmsRes.GetNamespace(), cpmsRes.GetName()))
 	}
 
 	return allCPMS, nil
 }
 
-// GetAllOrFail returns a []ControlPlaneMachineSet list with all existing ControlPlaneMachineSets and fail the test if it is not possible
-func (cpmsl *ControlPlaneMachineSetList) GetAllOrFail() []ControlPlaneMachineSet {
+// GetAllOrFail returns a []*ControlPlaneMachineSet list with all existing ControlPlaneMachineSets and fail the test if it is not possible
+func (cpmsl *ControlPlaneMachineSetList) GetAllOrFail() []*ControlPlaneMachineSet {
 	allCpms, err := cpmsl.GetAll()
 	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error getting the list of existing ControlPlaneMachineSets")
 

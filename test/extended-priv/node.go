@@ -399,7 +399,7 @@ func (n *Node) GetUptime() (time.Time, error) {
 }
 
 // GetEventsByReasonSince returns a list of all the events with the given reason that are related to this node since the provided date
-func (n *Node) GetEventsByReasonSince(since time.Time, reason string) ([]Event, error) {
+func (n *Node) GetEventsByReasonSince(since time.Time, reason string) ([]*Event, error) {
 	eventList := NewEventList(n.oc, MachineConfigNamespace)
 	eventList.ByFieldSelector(`reason=` + reason + `,involvedObject.name=` + n.GetName())
 
@@ -407,7 +407,7 @@ func (n *Node) GetEventsByReasonSince(since time.Time, reason string) ([]Event, 
 }
 
 // GetAllEventsSince returns a list of all the events related to this node since the provided date
-func (n *Node) GetAllEventsSince(since time.Time) ([]Event, error) {
+func (n *Node) GetAllEventsSince(since time.Time) ([]*Event, error) {
 	eventList := NewEventList(n.oc, MachineConfigNamespace)
 	eventList.ByFieldSelector(`involvedObject.name=` + n.GetName())
 
@@ -415,7 +415,7 @@ func (n *Node) GetAllEventsSince(since time.Time) ([]Event, error) {
 }
 
 // GetAllEventsSinceEvent returns a list of all the events related to this node that occurred after the provided event
-func (n *Node) GetAllEventsSinceEvent(since *Event) ([]Event, error) {
+func (n *Node) GetAllEventsSinceEvent(since *Event) ([]*Event, error) {
 	eventList := NewEventList(n.oc, MachineConfigNamespace)
 	eventList.ByFieldSelector(`involvedObject.name=` + n.GetName())
 
@@ -433,7 +433,7 @@ func (n *Node) GetLatestEvent() (*Event, error) {
 // GetEvents retunrs all the events that happened in this node since IgnoreEventsBeforeNow() method was called.
 //
 //	If IgnoreEventsBeforeNow() is not called, it returns all existing events for this node.
-func (n *Node) GetEvents() ([]Event, error) {
+func (n *Node) GetEvents() ([]*Event, error) {
 	return n.GetAllEventsSince(n.eventCheckpoint)
 }
 
@@ -518,7 +518,7 @@ func (n *Node) GetRHELVersion() (string, error) {
 
 // GetPool returns the only pool owning this node
 func (n *Node) GetPrimaryPool() (*MachineConfigPool, error) {
-	allMCPs, err := NewMachineConfigPoolList(n.oc).GetAll()
+	allMCPs, err := NewMachineConfigPoolList(n.oc.AsAdmin()).GetAll()
 	if err != nil {
 		return nil, err
 	}
@@ -541,7 +541,7 @@ func (n *Node) GetPrimaryPool() (*MachineConfigPool, error) {
 			// - If the primary pool is nil (not set yet), we set the primary pool (either worker or custom);
 			// - If the primary pool is not nil, we overwrite it only if the primary pool is a worker.
 			if pool.IsMaster() || primaryPool == nil || primaryPool.IsWorker() {
-				primaryPool = &pool
+				primaryPool = pool
 			} else if pool.IsCustom() && primaryPool != nil && primaryPool.IsCustom() {
 				// Error condition: the node belongs to 2 custom pools
 				return nil, fmt.Errorf("Forbidden configuration. The node %s belongs to 2 custom pools: %s and %s",
@@ -579,29 +579,29 @@ func (n *Node) GetMachineConfigNode() *MachineConfigNode {
 	return NewMachineConfigNode(n.oc.AsAdmin(), n.GetName())
 }
 
-// GetAll returns a []Node list with all existing nodes
-func (nl *NodeList) GetAll() ([]Node, error) {
+// GetAll returns a []*Node list with all existing nodes
+func (nl *NodeList) GetAll() ([]*Node, error) {
 	allNodeResources, err := nl.ResourceList.GetAll()
 	if err != nil {
 		return nil, err
 	}
-	allNodes := make([]Node, 0, len(allNodeResources))
+	allNodes := make([]*Node, 0, len(allNodeResources))
 
 	for _, nodeRes := range allNodeResources {
-		allNodes = append(allNodes, *NewNode(nl.oc, nodeRes.name))
+		allNodes = append(allNodes, NewNode(nl.oc, nodeRes.name))
 	}
 
 	return allNodes, nil
 }
 
-// GetAllReady returns a []Node list with all ready nodes
-func (nl *NodeList) GetAllReady() ([]Node, error) {
+// GetAllReady returns a []*Node list with all ready nodes
+func (nl *NodeList) GetAllReady() ([]*Node, error) {
 	allNodes, err := nl.GetAll()
 	if err != nil {
 		return nil, err
 	}
 
-	readyNodes := make([]Node, 0)
+	readyNodes := make([]*Node, 0)
 	for _, node := range allNodes {
 		if node.IsReady() {
 			readyNodes = append(readyNodes, node)
