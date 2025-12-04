@@ -20,7 +20,7 @@ ENV GOCACHE="/go/rhel8/.cache"
 ENV GOMODCACHE="/go/rhel8/pkg/mod"
 RUN make install DESTDIR=./instroot-rhel8 && tar -C instroot-rhel8 -cf instroot-rhel8.tar .
 
-FROM registry.ci.openshift.org/ocp/4.21:base-rhel9
+FROM registry.ci.openshift.org/ocp/4.21:base-rhel9-minimal-test
 ARG TAGS=""
 COPY install /manifests
 RUN if [ "${TAGS}" = "fcos" ]; then \
