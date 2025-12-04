@@ -370,6 +370,8 @@ func generateMachineConfigForName(config *RenderConfig, role, name, templateDir,
 	// MCs with the OSImageURL set are considered during the merge process.
 	// Now the image URL is explicitly cleared to avoid confusion. Its content is never consumed.
 	mcfg.Spec.OSImageURL = ""
+	// The same applies to the extensions image
+	mcfg.Spec.BaseOSExtensionsContainerImage = ""
 
 	return mcfg, nil
 }

@@ -250,6 +250,13 @@ func (ctrl *Controller) calculateStatus(mcns []*mcfgv1.MachineConfigNode, cconfi
 		unavailableMachineCount == 0 &&
 		!isLayeredPoolBuilding(isLayeredPool, mosc, mosb)
 	if allUpdated {
+		// When the pool is fully updated & the `OSStreams` FeatureGate is enabled, set the
+		// `OSImageStream` reference in the MCP status to be consistent to what is defined in the
+		// MCP spec
+		if ctrl.fgHandler.Enabled(features.FeatureGateOSStreams) {
+			status.OSImageStream = pool.Spec.OSImageStream
+		}
+
 		//TODO: update api to only have one condition regarding status of update.
 		updatedMsg := fmt.Sprintf("All nodes are updated with %s", getPoolUpdateLine(pool, mosc, isLayeredPool))
 		supdated := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdated, corev1.ConditionTrue, "", updatedMsg)

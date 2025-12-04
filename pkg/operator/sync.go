@@ -1299,24 +1299,22 @@ func (optr *Operator) syncOSImageStream(_ *renderConfig, _ *configv1.ClusterOper
 		klog.V(4).Info("OSImageStream sync complete")
 	}()
 
-	// Check if the feature is enabled
-	if !osimagestream.IsFeatureEnabled(optr.fgHandler) {
-		klog.V(4).Info("OSImageStream feature is not enabled, skipping sync")
-		return nil
-	}
-
-	// Get the existing OSImageStream if it exists
-	existingOSImageStream, err := optr.getExistingOSImageStream()
-	if err != nil {
+	// This sync runs once per version. Before performing the streams fetching
+	// process, that takes time as it requires inspecting images, ensure this function
+	// needs to build the stream.
+	existingOSImageStream, updateRequired, err := optr.isOSImageStreamBuildRequired()
+	if !updateRequired || err != nil {
 		return err
 	}
 
-	// Check if an update is needed
-	if !osImageStreamRequiresUpdate(existingOSImageStream) {
-		klog.V(4).Info("OSImageStream is already up-to-date, skipping sync")
-		return nil
-	}
+	// If the code reaches this point the OSImageStream CR is not
+	// present (new cluster) or it's out-dated (cluster update).
+	// Build the new OSImageStream and push it.
+	return optr.buildOSImageStream(existingOSImageStream)
 
+}
+
+func (optr *Operator) buildOSImageStream(existingOSImageStream *v1alpha1.OSImageStream) error {
 	klog.Info("Starting building of the OSImageStream instance")
 
 	// Get the release payload image from ClusterVersion
@@ -1382,8 +1380,28 @@ func (optr *Operator) syncOSImageStream(_ *renderConfig, _ *configv1.ClusterOper
 	klog.Infof("OSImageStream synced successfully. Available streams: %s. Default stream: %s",
 		osimagestream.GetStreamSetsNames(updateOSImageStream.Status.AvailableStreams),
 		updateOSImageStream.Status.DefaultStream)
-
 	return nil
+}
+
+func (optr *Operator) isOSImageStreamBuildRequired() (*v1alpha1.OSImageStream, bool, error) {
+	// Check if the feature is enabled
+	if !osimagestream.IsFeatureEnabled(optr.fgHandler) {
+		klog.V(4).Info("OSImageStream feature is not enabled, skipping sync")
+		return nil, false, nil
+	}
+
+	// Get the existing OSImageStream if it exists
+	existingOSImageStream, err := optr.getExistingOSImageStream()
+	if err != nil {
+		return nil, true, err
+	}
+
+	// Check if an update is needed
+	if !osImageStreamRequiresUpdate(existingOSImageStream) {
+		klog.V(4).Info("OSImageStream is already up-to-date, skipping sync")
+		return nil, false, nil
+	}
+	return existingOSImageStream, true, nil
 }
 
 // buildMinimalControllerConfigForOSImageStream builds a minimal ControllerConfig with just the image registry certs
