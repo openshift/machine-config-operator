@@ -74,6 +74,16 @@ func main() {
 		TestTimeout:      &defaultTimeout,
 	})
 
+	// This suite will include all tests not included in the previous suite inheriting from openshift/disruptive
+	ext.AddGlobalSuite(e.Suite{
+		Name: "openshift/machine-config-operator/qe",
+		Qualifiers: []string{
+			`!name.contains("[Suite:openshift/machine-config-operator/disruptive")`,
+		},
+		ClusterStability: e.ClusterStabilityDisruptive,
+		TestTimeout:      &defaultTimeout,
+	})
+
 	// If using Ginkgo, build test specs automatically
 	specs, err := g.BuildExtensionTestSpecsFromOpenShiftGinkgoSuite()
 	if err != nil {

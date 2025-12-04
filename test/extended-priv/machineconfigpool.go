@@ -12,6 +12,7 @@ import (
 	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
+	"github.com/tidwall/gjson"
 	"k8s.io/apimachinery/pkg/util/wait"
 	e2e "k8s.io/kubernetes/test/e2e/framework"
 )
@@ -847,4 +848,198 @@ func DebugDegradedStatus(mcp *MachineConfigPool) {
 	}
 	logger.Infof("Last %d lines of MCC:\n%s", maxMCCLines, GetLastNLines(mccLogs, maxMCCLines))
 	logger.Infof("END DEBUG")
+}
+
+// DeleteCustomMCP deletes a custom MCP and removes its labels from all nodes
+func DeleteCustomMCP(oc *exutil.CLI, name string) error {
+	mcp := NewMachineConfigPool(oc, name)
+	if !mcp.Exists() {
+		logger.Infof("MCP %s does not exist. No need to remove it", mcp.GetName())
+		return nil
+	}
+
+	exutil.By(fmt.Sprintf("Removing custom MCP %s", name))
+
+	nodes, err := mcp.GetNodes()
+	if err != nil {
+		logger.Errorf("Could not get the nodes that belong to MCP %s: %s", mcp.GetName(), err)
+		return err
+	}
+
+	label := fmt.Sprintf("node-role.kubernetes.io/%s", mcp.GetName())
+	for _, node := range nodes {
+		logger.Infof("Removing pool label from node %s", node.GetName())
+		err := node.RemoveLabel(label)
+		if err != nil {
+			logger.Errorf("Could not remove the role label from node %s: %s", node.GetName(), err)
+			return err
+		}
+	}
+
+	for _, node := range nodes {
+		err := node.WaitForLabelRemoved(label)
+		if err != nil {
+			logger.Errorf("The label %s was not removed from node %s", label, node.GetName())
+		}
+	}
+
+	err = mcp.WaitForMachineCount(0, 5*time.Minute)
+	if err != nil {
+		logger.Errorf("The %s MCP already contains nodes, it cannot be deleted: %s", mcp.GetName(), err)
+		return err
+	}
+
+	// Wait for worker MCP to be updated before removing the custom pool
+	// in order to make sure that no node has any annotation pointing to resources that depend on the custom pool that we want to delete
+	wMcp := NewMachineConfigPool(oc, MachineConfigPoolWorker)
+	wMcp.waitForComplete()
+
+	err = mcp.Delete()
+	if err != nil {
+		logger.Errorf("Could not delete %s MCP", mcp.GetName())
+		return err
+	}
+
+	return nil
+}
+
+// GetPoolSynchronizersStatusByType returns the pool synchronizer status for a given type
+func (mcp *MachineConfigPool) GetPoolSynchronizersStatusByType(pType string) (string, error) {
+	return mcp.Get(`{.status.poolSynchronizersStatus[?(@.poolSynchronizerType=="` + pType + `")]}`)
+}
+
+// IsPinnedImagesComplete returns if the MCP is reporting that there is no pinnedimages operation in progress
+func (mcp *MachineConfigPool) IsPinnedImagesComplete() (bool, error) {
+
+	pinnedStatus, err := mcp.GetPoolSynchronizersStatusByType("PinnedImageSets")
+	if err != nil {
+		return false, err
+	}
+
+	logger.Infof("Pinned status: %s", pinnedStatus)
+
+	mcpMachineCount, err := mcp.Get(`{.status.machineCount}`)
+	if err != nil {
+		return false, err
+	}
+
+	if mcpMachineCount == "" {
+		return false, fmt.Errorf("status.machineCount is empty in mcp %s", mcp.GetName())
+	}
+
+	pinnedMachineCount := gjson.Get(pinnedStatus, "machineCount").String()
+	if pinnedMachineCount == "" {
+		return false, fmt.Errorf("pinned status machineCount is empty in mcp %s", mcp.GetName())
+	}
+
+	pinnedUnavailableMachineCount := gjson.Get(pinnedStatus, "unavailableMachineCount").String()
+	if pinnedUnavailableMachineCount == "" {
+		return false, fmt.Errorf("pinned status unavailableMachineCount is empty in mcp %s", mcp.GetName())
+	}
+
+	updatedMachineCount := gjson.Get(pinnedStatus, "updatedMachineCount").String()
+	if updatedMachineCount == "" {
+		return false, fmt.Errorf("pinned status updatedMachineCount is empty in mcp %s", mcp.GetName())
+	}
+
+	return mcpMachineCount == pinnedMachineCount && updatedMachineCount == pinnedMachineCount && pinnedUnavailableMachineCount == "0", nil
+}
+
+// allNodesReportingPinnedSuccess returns true if all nodes in the pool are reporting pinned images success
+func (mcp *MachineConfigPool) allNodesReportingPinnedSuccess() (bool, error) {
+	allNodes, err := mcp.GetNodes()
+	if err != nil {
+		return false, err
+	}
+
+	if len(allNodes) == 0 {
+		logger.Infof("Warning, pool %s has no nodes!! We consider all nodes as correctly pinned", mcp.GetName())
+	}
+
+	for _, node := range allNodes {
+		nodeMCN := node.GetMachineConfigNode()
+		if nodeMCN.IsPinnedImageSetsDegraded() {
+			logger.Infof("Node %s is pinned degraded. Condition:\n%s", node.GetName(), nodeMCN.GetConditionByType("PinnedImageSetsDegraded"))
+			return false, nil
+		}
+
+		if nodeMCN.IsPinnedImageSetsProgressing() {
+			return false, nil
+		}
+	}
+
+	return true, nil
+}
+
+// waitForPinComplete waits for the MCP to complete pinning images
+func (mcp *MachineConfigPool) waitForPinComplete(timeToWait time.Duration) error {
+	logger.Infof("Waiting %s for MCP %s to complete pinned images.", timeToWait, mcp.name)
+
+	immediate := false
+	err := wait.PollUntilContextTimeout(context.TODO(), 1*time.Minute, timeToWait, immediate, func(_ context.Context) (bool, error) {
+		pinnedComplete, err := mcp.IsPinnedImagesComplete()
+		if err != nil {
+
+			logger.Infof("Error getting pinned complete: %s", err)
+			return false, err
+		}
+
+		if !pinnedComplete {
+			logger.Infof("Waiting for PinnedImageSets poolSynchronizersStatus status to repot success")
+			return false, nil
+		}
+
+		allNodesComplete, err := mcp.allNodesReportingPinnedSuccess()
+		if err != nil {
+			logger.Infof("Error getting if all nodes finished")
+			return false, err
+		}
+
+		if !allNodesComplete {
+			logger.Infof("Waiting for all nodes to report pinned images success")
+			return false, nil
+		}
+
+		logger.Infof("Pool %s successfully pinned the images! Complete!", mcp.GetName())
+		return true, nil
+	})
+
+	if err != nil {
+		logger.Infof("Pinned images operation is not completed on mcp %s", mcp.name)
+	}
+	return err
+}
+
+// GetPinnedImageSets returns a list with the nodes that match the .spec.nodeSelector.matchLabels criteria plus the provided extraLabels
+func (mcp *MachineConfigPool) GetPinnedImageSets() ([]*PinnedImageSet, error) {
+	mcp.oc.NotShowInfo()
+	defer mcp.oc.SetShowInfo()
+
+	labelsString, err := mcp.Get(`{.spec.machineConfigSelector.matchLabels}`)
+	if err != nil {
+		return nil, err
+	}
+
+	if labelsString == "" {
+		return nil, fmt.Errorf("No machineConfigSelector found in %s", mcp)
+	}
+
+	labels := gjson.Parse(labelsString)
+
+	requiredLabel := ""
+	labels.ForEach(func(key, value gjson.Result) bool {
+		requiredLabel += fmt.Sprintf("%s=%s,", key.String(), value.String())
+		return true // keep iterating
+	})
+
+	if requiredLabel == "" {
+		return nil, fmt.Errorf("No labels matcher could be built for %s", mcp)
+	}
+	// remove the last comma
+	requiredLabel = strings.TrimSuffix(requiredLabel, ",")
+
+	pisList := NewPinnedImageSetList(mcp.oc)
+	pisList.ByLabel(requiredLabel)
+
+	return pisList.GetAll()
 }
