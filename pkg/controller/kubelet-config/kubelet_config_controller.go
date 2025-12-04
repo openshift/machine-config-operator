@@ -12,10 +12,6 @@ import (
 	"github.com/clarketm/json"
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	"github.com/imdario/mergo"
-	"github.com/openshift/api/machineconfiguration/v1alpha1"
-	mcfginformersv1alpha1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
-	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
-	"github.com/openshift/machine-config-operator/pkg/osimagestream"
 	corev1 "k8s.io/api/core/v1"
 	macherrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -97,9 +93,6 @@ type Controller struct {
 	nodeConfigLister       oselistersv1.NodeLister
 	nodeConfigListerSynced cache.InformerSynced
 
-	osImageStreamLister       mcfglistersv1alpha1.OSImageStreamLister
-	osImageStreamListerSynced cache.InformerSynced
-
 	apiserverLister       oselistersv1.APIServerLister
 	apiserverListerSynced cache.InformerSynced
 
@@ -116,7 +109,6 @@ func New(
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mkuInformer mcfginformersv1.KubeletConfigInformer,
-	osImageStreamInformer mcfginformersv1alpha1.OSImageStreamInformer,
 	featInformer oseinformersv1.FeatureGateInformer,
 	nodeConfigInformer oseinformersv1.NodeInformer,
 	apiserverInformer oseinformersv1.APIServerInformer,
@@ -191,10 +183,6 @@ func New(
 	ctrl.apiserverLister = apiserverInformer.Lister()
 	ctrl.apiserverListerSynced = apiserverInformer.Informer().HasSynced
 
-	if osImageStreamInformer != nil && osimagestream.IsFeatureEnabled(ctrl.fgHandler) {
-		ctrl.osImageStreamLister = osImageStreamInformer.Lister()
-		ctrl.osImageStreamListerSynced = osImageStreamInformer.Informer().HasSynced
-	}
 	return ctrl
 }
 
@@ -205,18 +193,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer ctrl.featureQueue.ShutDown()
 	defer ctrl.nodeConfigQueue.ShutDown()
 
-	listerCaches := []cache.InformerSynced{
-		ctrl.mcpListerSynced,
-		ctrl.mckListerSynced,
-		ctrl.ccListerSynced,
-		ctrl.featListerSynced,
-		ctrl.apiserverListerSynced,
-	}
-	if ctrl.osImageStreamListerSynced != nil {
-		listerCaches = append(listerCaches, ctrl.osImageStreamListerSynced)
-	}
-
-	if !cache.WaitForCacheSync(stopCh, listerCaches...) {
+	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.mckListerSynced, ctrl.ccListerSynced, ctrl.featListerSynced, ctrl.apiserverListerSynced) {
 		return
 	}
 
@@ -442,8 +419,8 @@ func (ctrl *Controller) handleFeatureErr(err error, key string) {
 
 // generateOriginalKubeletConfigWithFeatureGates generates a KubeletConfig and ensure the correct feature gates are set
 // based on the given FeatureGate.
-func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, templatesDir, role string, fgHandler ctrlcommon.FeatureGatesHandler, apiServer *configv1.APIServer, imageStream *v1alpha1.OSImageStreamSet) (*kubeletconfigv1beta1.KubeletConfiguration, error) {
-	originalKubeletIgn, err := generateOriginalKubeletConfigIgn(cc, templatesDir, role, apiServer, imageStream)
+func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, templatesDir, role string, fgHandler ctrlcommon.FeatureGatesHandler, apiServer *configv1.APIServer) (*kubeletconfigv1beta1.KubeletConfiguration, error) {
+	originalKubeletIgn, err := generateOriginalKubeletConfigIgn(cc, templatesDir, role, apiServer)
 	if err != nil {
 		return nil, fmt.Errorf("could not generate the original Kubelet config ignition: %w", err)
 	}
@@ -471,11 +448,11 @@ func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, 
 	return originalKubeConfig, nil
 }
 
-func generateOriginalKubeletConfigIgn(cc *mcfgv1.ControllerConfig, templatesDir, role string, apiServer *osev1.APIServer, imageStream *v1alpha1.OSImageStreamSet) (*ign3types.File, error) {
+func generateOriginalKubeletConfigIgn(cc *mcfgv1.ControllerConfig, templatesDir, role string, apiServer *osev1.APIServer) (*ign3types.File, error) {
 	// Render the default templates
 	tlsMinVersion, tlsCipherSuites := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
 	rc := &mtmpl.RenderConfig{ControllerConfigSpec: &cc.Spec, TLSMinVersion: tlsMinVersion, TLSCipherSuites: tlsCipherSuites}
-	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templatesDir, imageStream)
+	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templatesDir, nil)
 	if err != nil {
 		return nil, fmt.Errorf("GenerateMachineConfigsforRole failed with error: %w", err)
 	}
@@ -620,13 +597,6 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		return ctrl.syncStatusOnly(cfg, err, "could not get the TLSSecurityProfile from %v: %v", ctrlcommon.APIServerInstanceName, err)
 	}
 
-	var osImageStream *v1alpha1.OSImageStream
-	if ctrl.osImageStreamLister != nil {
-		if osImageStream, err = ctrl.osImageStreamLister.Get(ctrlcommon.ClusterInstanceNameOSImageStream); err != nil {
-			return fmt.Errorf("could not get OSImageStream, err: %w", err)
-		}
-	}
-
 	for _, pool := range mcpPools {
 		role := pool.Name
 		// Get MachineConfig
@@ -646,14 +616,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			return fmt.Errorf("could not get ControllerConfig %w", err)
 		}
 
-		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(
-			cc,
-			ctrl.templatesDir,
-			role,
-			ctrl.fgHandler,
-			apiServer,
-			osimagestream.TryGetOSImageStreamFromPoolListByPoolName(osImageStream, mcpPools, pool.Name),
-		)
+		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, ctrl.fgHandler, apiServer)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not get original kubelet config: %v", err)
 		}

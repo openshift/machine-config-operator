@@ -4,9 +4,7 @@ import (
 	"fmt"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	"github.com/openshift/api/machineconfiguration/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	"github.com/openshift/machine-config-operator/pkg/osimagestream"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -14,7 +12,7 @@ import (
 )
 
 // RunContainerRuntimeBootstrap generates ignition configs at bootstrap
-func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.ContainerRuntimeConfig, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool, osImageStream *v1alpha1.OSImageStream) ([]*mcfgv1.MachineConfig, error) {
+func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.ContainerRuntimeConfig, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
 	var res []*mcfgv1.MachineConfig
 	managedKeyExist := make(map[string]bool)
 	for _, cfg := range crconfigs {
@@ -34,12 +32,7 @@ func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.Contai
 			}
 			role := pool.Name
 			// Generate the original ContainerRuntimeConfig
-			originalStorageIgn, _, _, err := generateOriginalContainerRuntimeConfigs(
-				templateDir,
-				controllerConfig,
-				role,
-				osimagestream.TryGetOSImageStreamFromPoolListByPoolName(osImageStream, mcpPools, pool.Name),
-			)
+			originalStorageIgn, _, _, err := generateOriginalContainerRuntimeConfigs(templateDir, controllerConfig, role)
 			if err != nil {
 				return nil, fmt.Errorf("could not generate origin ContainerRuntime Configs: %w", err)
 			}
