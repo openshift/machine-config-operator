@@ -9,11 +9,7 @@ contents:
         forward . {{`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`}} {
             policy sequential
         }
-        cache 900 {
-            success 10000 900
-            denial 5000 30
-            prefetch 1 10m
-        }
+        cache 30
         reload
         template IN {{`{{ .Cluster.CloudLBRecordType }}`}} {{ .DNS.Spec.BaseDomain }} {
             match .*[.]apps.{{ .DNS.Spec.BaseDomain }}
