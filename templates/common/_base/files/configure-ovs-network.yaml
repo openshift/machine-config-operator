@@ -581,6 +581,16 @@ contents:
       for conn in "${connections[@]}"; do
         local slave_type=$($NMCLI_GET_VALUE connection.slave-type connection show "$conn")
         if [ "$slave_type" = "team" ] || [ "$slave_type" = "bond" ]; then
+          # Work around a Cisco switch issue: if a slave is detached from a bond
+          # (e.g. during NM reactivation) before LACP negotiation completes, the
+          # switch may mishandle LACP packets with agg=0. To avoid this, wait for
+          # LACP to finish (only applies to LACP bonds in state UP).
+          slave=$(nmcli -g connection.interface-name connection show "$conn")
+          if ip -d link show "$slave" | tr '\n' ' ' | grep -q 'state UP.*ad_aggregator_id'; then
+            if ! timeout 5 bash -c "while [ \$(ip -d link show \"$slave\" | grep -o \"collecting,distributing\" | wc -l) -lt 2 ]; do sleep 1; done"; then
+              echo "WARNING: LACP negotiation is not yet done on slave $conn."
+            fi
+          fi
           mod_nm_conn "$conn" connection.autoconnect yes
         fi
       done
