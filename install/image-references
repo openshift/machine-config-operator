@@ -28,6 +28,14 @@ spec:
     from:
       kind: DockerImage
       name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:rhel-coreos-extensions
+  - name: rhel-coreos-10
+    from:
+      kind: DockerImage
+      name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:rhel10-coreos
+  - name: rhel-coreos-10-extensions
+    from:
+      kind: DockerImage
+      name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:rhel10-coreos-extensions
   - name: keepalived-ipfailover
     from:
       kind: DockerImage
