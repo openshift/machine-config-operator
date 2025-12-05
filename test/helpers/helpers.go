@@ -12,6 +12,7 @@ import (
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 )
 
 var (
@@ -307,4 +308,72 @@ func GetNamesFromNodes(nodes []*corev1.Node) []string {
 		names[i] = node.Name
 	}
 	return names
+}
+
+// NewMachineConfigNode creates a new MachineConfigNode with the desired name, pool association,
+// and desired config and image values. It also populates the conditions with the "Updated" and
+// "NodeDegraded" conditions set to "True" if the `isUpdated` and `isDegraded` values are true,
+// respectively, and "False" if the respective booleans are false.
+func NewMachineConfigNode(name, pool, desiredConfig, desiredImage string, isUpdated, isDegraded bool) *mcfgv1.MachineConfigNode {
+	updatedStatus := metav1.ConditionFalse
+	if isUpdated {
+		updatedStatus = metav1.ConditionTrue
+	}
+	degradedStatus := metav1.ConditionFalse
+	if isDegraded {
+		degradedStatus = metav1.ConditionTrue
+	}
+	return &mcfgv1.MachineConfigNode{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+		Spec: mcfgv1.MachineConfigNodeSpec{
+			Node: mcfgv1.MCOObjectReference{
+				Name: name,
+			},
+			Pool: mcfgv1.MCOObjectReference{
+				Name: pool,
+			},
+			ConfigVersion: mcfgv1.MachineConfigNodeSpecMachineConfigVersion{
+				Desired: desiredConfig,
+			},
+		},
+		Status: mcfgv1.MachineConfigNodeStatus{
+			ConfigVersion: &mcfgv1.MachineConfigNodeStatusMachineConfigVersion{
+				Desired: desiredConfig,
+			},
+			ConfigImage: mcfgv1.MachineConfigNodeStatusConfigImage{
+				DesiredImage: mcfgv1.ImageDigestFormat(desiredImage),
+			},
+			Conditions: []metav1.Condition{
+				{
+					Type:               string(mcfgv1.MachineConfigNodeUpdated),
+					Message:            "test",
+					Reason:             "test",
+					LastTransitionTime: metav1.Now(),
+					Status:             updatedStatus,
+				},
+				{
+					Type:               string(mcfgv1.MachineConfigNodeNodeDegraded),
+					Message:            "test",
+					Reason:             "test",
+					LastTransitionTime: metav1.Now(),
+					Status:             degradedStatus,
+				},
+			},
+		},
+	}
+}
+
+// NewNodeWithReadyAndDaemonStateAndImageAnnos creates a node with a "ready" status and the desired
+// daemon state, current image, and and desired image annotations
+func NewNodeWithReadyAndDaemonStateAndImageAnnos(name, currentConfig, desiredConfig, currentImage, desiredImage, daemonState string, ready corev1.ConditionStatus) *corev1.Node {
+	node := NewNodeWithReady(name, currentConfig, desiredConfig, ready)
+	if node.Annotations == nil {
+		node.Annotations = make(map[string]string)
+	}
+	node.Annotations[daemonconsts.MachineConfigDaemonStateAnnotationKey] = daemonState
+	node.Annotations[daemonconsts.DesiredImageAnnotationKey] = desiredImage
+	node.Annotations[daemonconsts.CurrentImageAnnotationKey] = currentImage
+	return node
 }
