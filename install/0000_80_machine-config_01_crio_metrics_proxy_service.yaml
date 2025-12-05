@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: kube-rbac-proxy-crio
+  namespace: openshift-machine-config-operator
+  labels:
+    k8s-app: kube-rbac-proxy-crio
+spec:
+  type: ClusterIP
+  selector:
+    k8s-app: kube-rbac-proxy-crio
+  ports:
+  - name: metrics
+    port: 9637
+    targetPort: 9637
+    protocol: TCP
+
