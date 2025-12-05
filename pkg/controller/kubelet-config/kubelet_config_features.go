@@ -8,6 +8,8 @@ import (
 
 	"github.com/clarketm/json"
 	osev1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/api/machineconfiguration/v1alpha1"
+	"github.com/openshift/machine-config-operator/pkg/controller/osimagestream"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -60,6 +62,15 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 		return fmt.Errorf("could not get ControllerConfig: %w", err)
 	}
 
+	var osImageStream *v1alpha1.OSImageStream
+	if ctrl.osImageStreamLister != nil {
+		osImageStream, err = ctrl.osImageStreamLister.Get(ctrlcommon.ClusterInstanceNameOSImageStream)
+		// TODO @pablintino For now consider the situation where no OSImageStreams are available
+		if err != nil && !errors.IsNotFound(err) {
+			return fmt.Errorf("could not get OSImageStream, err: %w", err)
+		}
+	}
+
 	// Find all MachineConfigPools
 	mcpPools, err := ctrl.mcpLister.List(labels.Everything())
 	if err != nil {
@@ -98,7 +109,14 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 			}
 		}
 
-		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(cc, ctrl.templatesDir, role, ctrl.fgHandler, nodeConfig, apiServer)
+		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(
+			cc,
+			ctrl.templatesDir,
+			role,
+			ctrl.fgHandler,
+			nodeConfig,
+			apiServer, osimagestream.TryGetOSImageStreamFromPoolListByPoolName(osImageStream, mcpPools, role),
+		)
 		if err != nil {
 			return err
 		}
@@ -190,8 +208,8 @@ func generateFeatureMap(fgHandler ctrlcommon.FeatureGatesHandler, exclusions ...
 	return &rv
 }
 
-func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir, role string, fgHandler ctrlcommon.FeatureGatesHandler, nodeConfig *osev1.Node, apiServer *osev1.APIServer) ([]byte, error) {
-	originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, templatesDir, role, fgHandler, apiServer)
+func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir, role string, fgHandler ctrlcommon.FeatureGatesHandler, nodeConfig *osev1.Node, apiServer *osev1.APIServer, imageStream *v1alpha1.OSImageStreamSet) ([]byte, error) {
+	originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, templatesDir, role, fgHandler, apiServer, imageStream)
 	if err != nil {
 		return nil, err
 	}
@@ -214,7 +232,7 @@ func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir
 	return rawCfgIgn, nil
 }
 
-func RunFeatureGateBootstrap(templateDir string, fgHandler ctrlcommon.FeatureGatesHandler, nodeConfig *osev1.Node, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool, apiServer *osev1.APIServer) ([]*mcfgv1.MachineConfig, error) {
+func RunFeatureGateBootstrap(templateDir string, fgHandler ctrlcommon.FeatureGatesHandler, nodeConfig *osev1.Node, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool, apiServer *osev1.APIServer, osImageStream *v1alpha1.OSImageStream) ([]*mcfgv1.MachineConfig, error) {
 	machineConfigs := []*mcfgv1.MachineConfig{}
 
 	for _, pool := range mcpPools {
@@ -222,7 +240,15 @@ func RunFeatureGateBootstrap(templateDir string, fgHandler ctrlcommon.FeatureGat
 		if nodeConfig == nil {
 			nodeConfig = createNewDefaultNodeconfig()
 		}
-		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(controllerConfig, templateDir, role, fgHandler, nodeConfig, apiServer)
+		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(
+			controllerConfig,
+			templateDir,
+			role,
+			fgHandler,
+			nodeConfig,
+			apiServer,
+			osimagestream.TryGetOSImageStreamFromPoolListByPoolName(osImageStream, mcpPools, role),
+		)
 		if err != nil {
 			return nil, err
 		}
