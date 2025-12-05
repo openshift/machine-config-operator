@@ -48,12 +48,21 @@ func NewImageInspectorDeleter() ImageInspectorDeleter {
 
 // ImageInspect uses the provided system context to inspect the provided image pullspec.
 func (i *imageInspectorImpl) ImageInspect(ctx context.Context, sysCtx *types.SystemContext, image string) (*types.ImageInspectInfo, *digest.Digest, error) {
-	return imageInspect(ctx, sysCtx, image)
+	info, digest, err := imageInspect(ctx, sysCtx, image)
+	if err == nil {
+		return info, digest, nil
+	}
+
+	return nil, nil, newErrImage(image, err)
 }
 
 // DeleteImage uses the provided system context to delete the provided image pullspec.
 func (i *imageInspectorImpl) DeleteImage(ctx context.Context, sysCtx *types.SystemContext, image string) error {
-	return deleteImage(ctx, sysCtx, image)
+	if err := deleteImage(ctx, sysCtx, image); err != nil {
+		return newErrImage(image, err)
+	}
+
+	return nil
 }
 
 // deleteImage attempts to delete the specified image with retries,
@@ -73,8 +82,9 @@ func deleteImage(ctx context.Context, sysCtx *types.SystemContext, imageName str
 	if err := retry.IfNecessary(ctx, func() error {
 		return ref.DeleteImage(ctx, sysCtx)
 	}, &retryOpts); err != nil {
-		return newErrImage(imageName, err)
+		return err
 	}
+
 	return nil
 }
 
