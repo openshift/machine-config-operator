@@ -1161,10 +1161,10 @@ func TestInstallRPMAndCheckMCDMetrics(t *testing.T) {
 			return
 		}
 
+		t.Logf("Executing rpm-ostree uninstall command on node %s", node.Name)
 		uninstallCmd := []string{
 			"chroot", "/rootfs", "rpm-ostree", "uninstall", "epel-release",
 		}
-
 		_, err = helpers.ExecCmdOnNodeWithError(cs, node, uninstallCmd...)
 		if err != nil {
 			t.Logf("Failed to uninstall RPM package on node %s: %v", node.Name, err)
@@ -1173,22 +1173,40 @@ func TestInstallRPMAndCheckMCDMetrics(t *testing.T) {
 		t.Log("RPM package uninstalled successfully")
 
 		t.Logf("Rebooting node %s to apply the changes", node.Name)
-
 		rebootCmd := []string{
 			"chroot", "/rootfs", "sudo", "systemctl", "reboot",
 		}
-
 		_, err = helpers.ExecCmdOnNodeWithError(cs, node, rebootCmd...)
 		if err != nil {
 			t.Logf("Failed to reboot node %s: %v", node.Name, err)
 			return
 		}
+		t.Logf("Reboot command issued successfully")
 
+		t.Logf("Waiting for node %s to be ready after reboot", node.Name)
 		err = helpers.WaitForNodeReady(t, cs, node)
 		if err != nil {
 			t.Logf("Node %s is not ready after reboot: %v.", node.Name, err)
 			return
 		}
+
+		// Wait for the MCD daemon to be reachable on the rebooted node
+		t.Logf("Waiting for MCD daemon to be reachable on node %s", node.Name)
+		err = wait.PollUntilContextTimeout(context.Background(), 5*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+			// Try to execute a simple command on the node to verify the daemon is reachable
+			_, err := helpers.ExecCmdOnNodeWithError(cs, node, "echo", "daemon-reachable")
+			if err != nil {
+				t.Logf("MCD daemon on node %s is not reachable yet: %v, retrying...", node.Name, err)
+				return false, nil
+			}
+			return true, nil
+		})
+		if err != nil {
+			t.Logf("MCD daemon on node %s did not become reachable in time: %v", node.Name, err)
+			return
+		}
+		t.Logf("MCD daemon on node %s is reachable", node.Name)
+
 		t.Logf("Node %s rebooted successfully and RPM package is removed", node.Name)
 	})
 
@@ -1244,6 +1262,13 @@ func TestInstallRPMAndCheckMCDMetrics(t *testing.T) {
 		out, err := helpers.ExecCmdOnNodeWithError(cs, node, cmd...)
 		if err != nil {
 			t.Logf("Error executing curl on node %s: %v", node.Name, err)
+			return false, nil
+		}
+
+		// Wait for the node to return to a ready state
+		lns := ctrlcommon.NewLayeredNodeState(&node)
+		if !lns.IsNodeReady() {
+			t.Logf("Node %s is not ready yet.", node.Name)
 			return false, nil
 		}
 
