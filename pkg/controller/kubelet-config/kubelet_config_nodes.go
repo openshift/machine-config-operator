@@ -61,9 +61,9 @@ func (ctrl *Controller) handleNodeConfigErr(err error, key string) {
 // node specific features such as cgroup modes, workerlatencyprofiles, etc.
 func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 	startTime := time.Now()
-	klog.V(4).Infof("Started syncing nodeConfig handler %q (%v)", key, startTime)
+	klog.Infof("Started syncing nodeConfig handler %q (%v)", key, startTime)
 	defer func() {
-		klog.V(4).Infof("Finished syncing nodeConfig handler %q (%v)", key, time.Since(startTime))
+		klog.Infof("Finished syncing nodeConfig handler %q (%v)", key, time.Since(startTime))
 	}()
 
 	// Fetch the Node
@@ -168,6 +168,7 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 		return fmt.Errorf("could not get KubeletConfigs, err: %w", err)
 	}
 	for _, kc := range kcs {
+		klog.Infof("Syncing kubeletconfig %v", kc.Name)
 		// updating the existing kubeletconfigs with the updated nodeconfig
 		err := ctrl.syncKubeletConfig(kc.Name)
 		if err != nil {

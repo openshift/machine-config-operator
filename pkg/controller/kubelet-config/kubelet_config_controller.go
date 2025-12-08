@@ -538,9 +538,9 @@ func (ctrl *Controller) addAnnotation(cfg *mcfgv1.KubeletConfig, annotationKey, 
 //nolint:gocyclo
 func (ctrl *Controller) syncKubeletConfig(key string) error {
 	startTime := time.Now()
-	klog.V(4).Infof("Started syncing kubeletconfig %q (%v)", key, startTime)
+	klog.Infof("Started syncing kubeletconfig %q (%v)", key, startTime)
 	defer func() {
-		klog.V(4).Infof("Finished syncing kubeletconfig %q (%v)", key, time.Since(startTime))
+		klog.Infof("Finished syncing kubeletconfig %q (%v)", key, time.Since(startTime))
 	}()
 
 	// Wait to apply a kubelet config if the controller config is not completed
@@ -556,7 +556,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 	// Fetch the KubeletConfig
 	cfg, err := ctrl.mckLister.Get(name)
 	if macherrors.IsNotFound(err) {
-		klog.V(2).Infof("KubeletConfig %v has been deleted", key)
+		klog.Infof("KubeletConfig %v has been deleted", key)
 		return nil
 	}
 	if err != nil {
@@ -587,7 +587,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 
 	if len(mcpPools) == 0 {
 		err := fmt.Errorf("KubeletConfig %v does not match any MachineConfigPools", key)
-		klog.V(2).Infof("%v", err)
+		klog.Infof("%v", err)
 		return ctrl.syncStatusOnly(cfg, err)
 	}
 
@@ -606,6 +606,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 	for _, pool := range mcpPools {
 		role := pool.Name
 		// Get MachineConfig
+		klog.Infof("Getting kubelet config key for pool %v and kubelet config %v", pool.Name, cfg.Name)
 		managedKey, err := getManagedKubeletConfigKey(pool, ctrl.client, cfg)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not get kubelet config key: %v", err)
@@ -632,6 +633,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		}
 
 		if !isNotFound {
+			klog.Info("managedKey machine config Is not not found %v", managedKey)
 			// When a Machine Config already exists, let's check if it needs an update on the feature Gates
 			match, err := machineConfigFeatureGatesMatchesOriginalFeatureGates(mc, originalKubeConfig)
 			if err != nil {
@@ -664,6 +666,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		}
 
 		if isNotFound {
+			klog.Info("managedKey machine config Is NOT found %v", managedKey)
 			ignConfig := ctrlcommon.NewIgnConfig()
 			mc, err = ctrlcommon.MachineConfigFromIgnConfig(role, managedKey, ignConfig)
 			if err != nil {

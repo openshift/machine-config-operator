@@ -420,9 +420,9 @@ func (ctrl *Controller) handleErr(err error, key string) {
 // This function is not meant to be invoked concurrently with the same key.
 func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	startTime := time.Now()
-	klog.V(4).Infof("Started syncing machineconfigpool %q (%v)", key, startTime)
+	klog.Infof("Started syncing machineconfigpool %q (%v)", key, startTime)
 	defer func() {
-		klog.V(4).Infof("Finished syncing machineconfigpool %q (%v)", key, time.Since(startTime))
+		klog.Infof("Finished syncing machineconfigpool %q (%v)", key, time.Since(startTime))
 	}()
 
 	_, name, err := cache.SplitMetaNamespaceKey(key)
@@ -514,6 +514,7 @@ func (ctrl *Controller) getRenderedMachineConfig(pool *mcfgv1.MachineConfigPool,
 	// perform reconciliation. So we must solely generate the rendered
 	// MachineConfig.
 	if pool.Spec.Configuration.Name == "" {
+		klog.Infof("Pool %v has no rendered MachineConfig", pool.Name)
 		return generateRenderedMachineConfig(pool, configs, cc)
 	}
 
