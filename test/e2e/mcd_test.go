@@ -1247,6 +1247,13 @@ func TestInstallRPMAndCheckMCDMetrics(t *testing.T) {
 			return false, nil
 		}
 
+		// Wait for the node to return to a ready state
+		lns := ctrlcommon.NewLayeredNodeState(&node)
+		if !lns.IsNodeReady() {
+			t.Logf("Node %s is not ready yet.", node.Name)
+			return false, nil
+		}
+
 		// Check for the metric
 		metricName := "mcd_local_unsupported_packages"
 		if !strings.Contains(out, metricName) {
