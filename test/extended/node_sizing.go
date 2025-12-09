@@ -28,7 +28,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 	oc := exutil.NewCLI("mco-node-sizing", exutil.KubeConfigPath()).AsAdmin()
 
-	g.It("should have NODE_SIZING_ENABLED=true by default and NODE_SIZING_ENABLED=false when KubeletConfig with autoSizingReserved=false is applied [apigroup:machineconfiguration.openshift.io]", func(ctx context.Context) {
+	g.It("should have NODE_SIZING_ENABLED=true by default and NODE_SIZING_ENABLED=false when KubeletConfig with autoSizingReserved=false is applied [Slow][Disruptive][apigroup:machineconfiguration.openshift.io]", func(ctx context.Context) {
 		mcClient, err := machineconfigclient.NewForConfig(oc.KubeFramework().ClientConfig())
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating machine config client")
 
@@ -157,16 +157,29 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 				}
 				currentConfig := currentNode.Annotations["machineconfiguration.openshift.io/currentConfig"]
 				desiredConfig := currentNode.Annotations["machineconfiguration.openshift.io/desiredConfig"]
+				state := currentNode.Annotations["machineconfiguration.openshift.io/state"]
 
 				// Check if the node is using a worker config (not node-sizing-test config)
-				isWorkerConfig := currentConfig != "" && !strings.Contains(currentConfig, testMCPName) && currentConfig == desiredConfig
+				// and is in Done state (not Updating, Degraded, etc.)
+				isWorkerConfig := currentConfig != "" &&
+					!strings.Contains(currentConfig, testMCPName) &&
+					currentConfig == desiredConfig &&
+					state == "Done"
+
 				if isWorkerConfig {
-					framework.Logf("Node %s successfully transitioned to worker config: %s", nodeName, currentConfig)
+					framework.Logf("Node %s successfully transitioned to worker config: %s (state: %s)", nodeName, currentConfig, state)
 				} else {
-					framework.Logf("Node %s still transitioning: current=%s, desired=%s", nodeName, currentConfig, desiredConfig)
+					framework.Logf("Node %s still transitioning: current=%s, desired=%s, state=%s", nodeName, currentConfig, desiredConfig, state)
 				}
 				return isWorkerConfig
 			}, 10*time.Minute, 10*time.Second).Should(o.BeTrue(), fmt.Sprintf("Node %s should transition back to worker pool", nodeName))
+
+			// Additionally wait for the worker MCP to be ready and updated
+			g.By("Waiting for worker MachineConfigPool to be ready after node transition")
+			waitErr := waitForMCPToBeReadyNodeSizing(ctx, mcClient, "worker", 5*time.Minute)
+			if waitErr != nil {
+				framework.Logf("Warning: worker MCP may not be fully ready after node transition: %v", waitErr)
+			}
 		})
 
 		g.By("Waiting for custom MachineConfigPool to be ready")
@@ -312,7 +325,7 @@ func createPrivilegedPodWithHostEtcNodeSizing(podName, namespace, nodeName strin
 			Containers: []corev1.Container{
 				{
 					Name:    "test-container",
-					Image:   "registry.k8s.io/e2e-test-images/agnhost:2.56",
+					Image:   "image-registry.openshift-image-registry.svc:5000/openshift/tools:latest",
 					Command: []string{"/bin/sh", "-c", "sleep 300"},
 					SecurityContext: &corev1.SecurityContext{
 						Privileged: ptr.To(true),
