@@ -1,4 +1,4 @@
-package machineset
+package bootimage
 
 import (
 	"context"
