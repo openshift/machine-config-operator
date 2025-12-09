@@ -3,8 +3,9 @@ package internalreleaseimage
 import (
 	"bytes"
 	"context"
-	_ "embed"
+	"embed"
 	"fmt"
+	"path/filepath"
 	"reflect"
 	"text/template"
 	"time"
@@ -41,7 +42,8 @@ import (
 const (
 	maxRetries = 15
 
-	iriMachineConfigName = "02-master-internalreleaseimage"
+	iriMachineConfigName    = "02-master-internalreleaseimage"
+	iriMachineConfigNameFmt = "02-%s-internalreleaseimage"
 )
 
 var (
@@ -54,13 +56,14 @@ var (
 		Jitter:   1.0,
 	}
 
-	//go:embed templates/iri-registry.service.yaml
-	iriRegistryServiceTemplate string
+	//go:embed templates/*
+	templatesFS embed.FS
 )
 
 // Controller defines the InternalReleaseImage controller.
 type Controller struct {
 	client        mcfgclientset.Interface
+	kubeClient    clientset.Interface
 	eventRecorder record.EventRecorder
 
 	syncHandler                 func(mcp string) error
@@ -91,8 +94,8 @@ func New(
 	eventBroadcaster.StartRecordingToSink(&corev1client.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	ctrl := &Controller{
-		client: mcfgClient,
-
+		client:        mcfgClient,
+		kubeClient:    kubeClient,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-internalreleaseimagecontroller"})),
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
@@ -320,10 +323,16 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) error {
 		return fmt.Errorf("could not get ControllerConfig %w", err)
 	}
 
+	iriSecret, err := ctrl.kubeClient.CoreV1().Secrets(common.MCONamespace).Get(context.TODO(), ctrlcommon.InternalReleaseImageTLSSecretName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("could not get Secret %s: %w", ctrlcommon.InternalReleaseImageTLSSecretName, err)
+	}
+
 	if isNotFound {
-		mc, err = generateInternalReleaseImageMachineConfig(iri, cconfig)
+		configs, _ := generateInternalReleaseImageMachineConfigs(iri, iriSecret, cconfig) //!!!
+		mc = configs[0]
 	} else {
-		err = updateInternalReleaseImageMachineConfig(mc, cconfig)
+		err = updateInternalReleaseImageMachineConfig(mc, iriSecret, cconfig)
 	}
 	if err != nil {
 		return err // syncStatus, could not create/update MachineConfig
@@ -346,21 +355,6 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) error {
 		return err // syncStatus , could not add finalizers
 	}
 
-	return nil
-}
-
-func updateInternalReleaseImageMachineConfig(mc *mcfgv1.MachineConfig, controllerConfig *mcfgv1.ControllerConfig) error {
-	ignCfg, err := generateIgnitionFromTemplate(controllerConfig)
-	if err != nil {
-		return err
-	}
-
-	rawIgn, err := json.Marshal(ignCfg)
-	if err != nil {
-		return err
-	}
-
-	mc.Spec.Config.Raw = rawIgn
 	return nil
 }
 
@@ -389,15 +383,66 @@ func (ctrl *Controller) updateInternalReleaseImageFinalizers(iri *mcfgv1alpha1.I
 	return err
 }
 
-func generateInternalReleaseImageMachineConfig(iri *mcfgv1alpha1.InternalReleaseImage, controllerConfig *mcfgv1.ControllerConfig) (*mcfgv1.MachineConfig, error) {
-	ignCfg, err := generateIgnitionFromTemplate(controllerConfig)
+func updateInternalReleaseImageMachineConfig(mc *mcfgv1.MachineConfig, iriTLSCert *corev1.Secret, controllerConfig *mcfgv1.ControllerConfig) error {
+	rc, err := newRenderConfig(iriTLSCert, controllerConfig)
+	if err != nil {
+		return err
+	}
+
+	ignCfg, err := generateIgnitionFromTemplates("master", rc)
+	if err != nil {
+		return err
+	}
+
+	// update existing machine config
+	rawIgn, err := json.Marshal(ignCfg)
+	if err != nil {
+		return err
+	}
+
+	mc.Spec.Config.Raw = rawIgn
+	return nil
+}
+
+func generateInternalReleaseImageMachineConfigs(iri *mcfgv1alpha1.InternalReleaseImage, iriTLSCert *corev1.Secret, controllerConfig *mcfgv1.ControllerConfig) ([]*mcfgv1.MachineConfig, error) {
+	rc, err := newRenderConfig(iriTLSCert, controllerConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	mcfg, err := ctrlcommon.MachineConfigFromIgnConfig(common.MachineConfigPoolMaster, iriMachineConfigName, ignCfg)
+	entries, err := templatesFS.ReadDir("templates")
 	if err != nil {
-		return nil, fmt.Errorf("error creating MachineConfig from Ignition config: %w", err)
+		return nil, err
+	}
+
+	configs := []*mcfgv1.MachineConfig{}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		role := e.Name()
+
+		ignCfg, err := generateIgnitionFromTemplates(role, rc)
+		if err != nil {
+			return nil, err
+		}
+
+		name := fmt.Sprintf("02-%s-internalreleaseimage", role)
+		mc, err := createMachineConfigWithIgnition(name, role, ignCfg, iri)
+		if err != nil {
+			return nil, err
+		}
+
+		configs = append(configs, mc)
+	}
+
+	return configs, nil
+}
+
+func createMachineConfigWithIgnition(name string, role string, ignCfg *ign3types.Config, iri *mcfgv1alpha1.InternalReleaseImage) (*mcfgv1.MachineConfig, error) {
+	mcfg, err := ctrlcommon.MachineConfigFromIgnConfig(role, name, ignCfg)
+	if err != nil {
+		return nil, fmt.Errorf("error creating MachineConfig '%s' from Ignition config: %w", name, err)
 	}
 
 	cref := metav1.NewControllerRef(iri, controllerKind)
@@ -409,28 +454,113 @@ func generateInternalReleaseImageMachineConfig(iri *mcfgv1alpha1.InternalRelease
 	return mcfg, nil
 }
 
-func generateIgnitionFromTemplate(controllerConfig *mcfgv1.ControllerConfig) (*ign3types.Config, error) {
-	// Parse the iri template
-	tmpl, err := template.New("iri-template").Parse(iriRegistryServiceTemplate)
+type renderConfig struct {
+	DockerRegistryImage string
+	IriTLSKey           string
+	IriTLSCert          string
+	RootCA              string
+}
+
+func newRenderConfig(iriSecret *corev1.Secret, controllerConfig *mcfgv1.ControllerConfig) (*renderConfig, error) {
+	iriTLSKey, err := extractTLSCertFieldFromSecret(iriSecret, "tls.key")
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse iri-template : %w", err)
+		return nil, err
 	}
-
-	type iriRenderConfig struct {
-		DockerRegistryImage string
+	iriTLSCert, err := extractTLSCertFieldFromSecret(iriSecret, "tls.crt")
+	if err != nil {
+		return nil, err
 	}
-
-	buf := new(bytes.Buffer)
-	if err := tmpl.Execute(buf, iriRenderConfig{
+	return &renderConfig{
 		DockerRegistryImage: controllerConfig.Spec.Images[templatectrl.DockerRegistryKey],
-	}); err != nil {
-		return nil, fmt.Errorf("failed to execute template: %w", err)
+		IriTLSKey:           iriTLSKey,
+		IriTLSCert:          iriTLSCert,
+		RootCA:              string(controllerConfig.Spec.RootCAData),
+	}, nil
+}
+
+func generateIgnitionFromTemplates(role string, rc *renderConfig) (*ign3types.Config, error) {
+	// Render templates
+	units, err := renderTemplateFolder(rc, filepath.Join(role, "units"))
+	if err != nil {
+		return nil, err
+	}
+	files, err := renderTemplateFolder(rc, filepath.Join(role, "files"))
+	if err != nil {
+		return nil, err
+	}
+	dirs := []string{
+		"/etc/iri-registry",
+		"/etc/iri-registry/certs",
+		"/var/lib/iri-registry",
 	}
 
 	// Generate the iri ignition
-	ignCfg, err := ctrlcommon.TranspileCoreOSConfigToIgn(nil, []string{buf.String()})
+	ignCfg, err := ctrlcommon.TranspileCoreOSConfigToIgn(files, units)
 	if err != nil {
 		return nil, fmt.Errorf("error transpiling CoreOS config to Ignition config: %w", err)
 	}
+	transpileIgitionDirs(ignCfg, dirs)
+
 	return ignCfg, nil
+}
+
+func extractTLSCertFieldFromSecret(secret *corev1.Secret, fieldName string) (string, error) {
+	raw, found := secret.Data[fieldName]
+	if !found {
+		return "", fmt.Errorf("cannot find %s in secret %s", fieldName, secret.Name)
+	}
+	return string(raw), nil
+}
+
+func transpileIgitionDirs(ignCfg *ign3types.Config, directories []string) {
+	for _, d := range directories {
+		mode := 0644
+		ignCfg.Storage.Directories = append(ignCfg.Storage.Directories, ign3types.Directory{
+			Node: ign3types.Node{
+				Path: d,
+			},
+			DirectoryEmbedded1: ign3types.DirectoryEmbedded1{
+				Mode: &mode,
+			},
+		})
+	}
+}
+
+func renderTemplateFolder(rc any, folder string) ([]string, error) {
+	tmplFolder := filepath.Join("templates", folder)
+
+	files := []string{}
+	entries, err := templatesFS.ReadDir(tmplFolder)
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range entries {
+		data, err := templatesFS.ReadFile(filepath.Join(tmplFolder, e.Name()))
+		if err != nil {
+			return nil, err
+		}
+
+		rendered, err := applyTemplate(rc, data)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, rendered)
+	}
+
+	return files, nil
+}
+
+func applyTemplate(rc any, iriTemplate []byte) (string, error) {
+	funcs := ctrlcommon.GetTemplateFuncMap()
+	tmpl, err := template.New("internalreleaseimage").Funcs(funcs).Parse(string(iriTemplate))
+	if err != nil {
+		return "", fmt.Errorf("failed to parse iri-template : %w", err)
+	}
+
+	buf := new(bytes.Buffer)
+	if err := tmpl.Execute(buf, rc); err != nil {
+		return "", fmt.Errorf("failed to execute template: %w", err)
+	}
+
+	return buf.String(), nil
 }
