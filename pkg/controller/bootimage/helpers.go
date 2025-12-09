@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	kruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/yaml"
@@ -126,6 +127,32 @@ func upgradeStubIgnitionIfRequired(secretName string, secretClient clientset.Int
 			return fmt.Errorf("could not update secret %s: %w", secret.Name, err)
 		}
 
+	}
+	return nil
+}
+
+// waitForMachineConfigurationReady waits for the MachineConfiguration to be ready
+// by polling until the status is populated and the ObservedGeneration matches Generation.
+func (ctrl *Controller) waitForMachineConfigurationReady() error {
+	var mcop *opv1.MachineConfiguration
+	var pollError error
+	if err := wait.PollUntilContextTimeout(context.TODO(), 5*time.Second, 2*time.Minute, true, func(_ context.Context) (bool, error) {
+		mcop, pollError = ctrl.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
+		if pollError != nil {
+			klog.Errorf("MachineConfiguration/cluster has not been created yet")
+			return false, nil
+		}
+
+		// Ensure status.ObservedGeneration matches the last generation of MachineConfiguration
+		if mcop.Generation != mcop.Status.ObservedGeneration {
+			klog.Errorf("MachineConfiguration.Status is not up to date.")
+			pollError = fmt.Errorf("MachineConfiguration.Status is not up to date")
+			return false, nil
+		}
+		return true, nil
+	}); err != nil {
+		klog.Errorf("MachineConfiguration was not ready: %v", pollError)
+		return pollError
 	}
 	return nil
 }
