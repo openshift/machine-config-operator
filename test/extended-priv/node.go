@@ -505,7 +505,7 @@ func (n *Node) GetRHELVersion() (string, error) {
 	match := r.FindStringSubmatch(vContent)
 	if len(match) == 0 {
 		msg := fmt.Sprintf("No RHEL_VERSION available in /etc/os-release file: %s", vContent)
-		logger.Errorf(msg)
+		logger.Errorf("%s", msg)
 		return "", fmt.Errorf("Error: %s", msg)
 	}
 
