@@ -11,8 +11,9 @@ import (
 	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 	"github.com/openshift/machine-config-operator/pkg/controller/common"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	"github.com/stretchr/testify/assert"
+
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -36,41 +37,40 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 		},
 		{
 			name:           "add finalizer if not present",
-			initialObjects: objs(iri(), cconfig()),
+			initialObjects: objs(iri(), cconfig(), iriCertSecret()),
 			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMC *mcfgv1.MachineConfig) {
 				assert.Equal(t, iri().finalizer(iriMachineConfigName).build(), actualIRI)
 			},
 		},
 		{
 			name:           "generate iri machine-config if not present",
-			initialObjects: objs(iri(), cconfig()),
+			initialObjects: objs(iri(), cconfig(), iriCertSecret()),
 			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMC *mcfgv1.MachineConfig) {
 				assert.Equal(t, iriMachineConfigName, actualMC.Name)
 				assert.Equal(t, actualMC.Labels[mcfgv1.MachineConfigRoleLabelKey], common.MachineConfigPoolMaster)
 				assert.Equal(t, actualMC.OwnerReferences[0].Kind, "InternalReleaseImage")
-				// Check that the templating code replaced the docker-registry image
-				assert.Contains(t, string(actualMC.Spec.Config.Raw), "docker-registry-image-pullspec")
+				verifyInternalReleaseMasterMachineConfig(t, actualMC)
 			},
 		},
 		{
 			name:           "avoid machine-config drifting",
-			initialObjects: objs(iri().finalizer(iriMachineConfigName), cconfig(), machineconfig().ignition("some garbage")),
+			initialObjects: objs(iri().finalizer(iriMachineConfigName), cconfig(), iriCertSecret(), mastermachineconfig().ignition("some garbage")),
 			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMC *mcfgv1.MachineConfig) {
-				assert.Contains(t, string(actualMC.Spec.Config.Raw), "docker-registry-image-pullspec")
+				verifyInternalReleaseMasterMachineConfig(t, actualMC)
 			},
 		},
 		{
 			name:           "refresh machine-config on controllerConfig update",
-			initialObjects: objs(iri().finalizer(iriMachineConfigName), cconfig().dockerRegistryImage("a-new-docker-registry-image-pullspec"), machineconfig()),
+			initialObjects: objs(iri().finalizer(iriMachineConfigName), cconfig().dockerRegistryImage("a-new-docker-registry-image-pullspec"), iriCertSecret(), mastermachineconfig()),
 			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMC *mcfgv1.MachineConfig) {
-				assert.Contains(t, string(actualMC.Spec.Config.Raw), "a-new-docker-registry-image-pullspec")
+				verifyInternalReleaseMasterMachineConfig(t, actualMC)
 			},
 		},
 		{
 			name: "machine-config cascade delete on iri removal",
 			initialObjects: objs(
 				iri().finalizer(iriMachineConfigName).setDeletionTimestamp(),
-				cconfig(), machineconfig()),
+				cconfig(), iriCertSecret(), mastermachineconfig()),
 			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMC *mcfgv1.MachineConfig) {
 				assert.Empty(t, actualIRI.Finalizers)
 				assert.Nil(t, actualMC)
@@ -118,138 +118,49 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 	}
 }
 
-// objs is an helper func to improve the test readability.
-func objs(builders ...objBuilder) func() []runtime.Object {
-	return func() []runtime.Object {
-		objects := []runtime.Object{}
-		for _, b := range builders {
-			objects = append(objects, b.build())
-		}
-		return objects
-	}
-}
-
-type objBuilder interface {
-	build() runtime.Object
-}
-
-// iriBuilder simplifies the creation of an InternalReleaseImage resource in the test.
-type iriBuilder struct {
-	obj *mcfgv1alpha1.InternalReleaseImage
-}
-
-func iri() *iriBuilder {
-	return &iriBuilder{
-		obj: &mcfgv1alpha1.InternalReleaseImage{
-			ObjectMeta: v1.ObjectMeta{
-				Name: ctrlcommon.InternalReleaseImageInstanceName,
-			},
-		},
-	}
-}
-
-func (ib *iriBuilder) finalizer(f ...string) *iriBuilder {
-	ib.obj.SetFinalizers(f)
-	return ib
-}
-
-func (ib *iriBuilder) setDeletionTimestamp() *iriBuilder {
-	now := v1.Now()
-	ib.obj.SetDeletionTimestamp(&now)
-	return ib
-}
-
-func (ib *iriBuilder) build() runtime.Object {
-	return ib.obj
-}
-
-// controllerConfigBuilder simplifies the creation of a ControllerConfig resource in the test.
-type controllerConfigBuilder struct {
-	obj *mcfgv1.ControllerConfig
-}
-
-func cconfig() *controllerConfigBuilder {
-	return &controllerConfigBuilder{
-		obj: &mcfgv1.ControllerConfig{
-			ObjectMeta: v1.ObjectMeta{
-				Name: ctrlcommon.ControllerConfigName,
-			},
-			Spec: mcfgv1.ControllerConfigSpec{
-				Images: map[string]string{
-					templatectrl.DockerRegistryKey: "docker-registry-image-pullspec",
-				},
-			},
-		},
-	}
-}
-
-func (ccb *controllerConfigBuilder) dockerRegistryImage(image string) *controllerConfigBuilder {
-	ccb.obj.Spec.Images[templatectrl.DockerRegistryKey] = image
-	return ccb
-}
-
-func (ccb *controllerConfigBuilder) build() runtime.Object {
-	return ccb.obj
-}
-
-// machineConfigBuilder simplifies the creation of a MachineConfig resource in the test.
-type machineConfigBuilder struct {
-	obj *mcfgv1.MachineConfig
-}
-
-func machineconfig() *machineConfigBuilder {
-	return &machineConfigBuilder{
-		obj: &mcfgv1.MachineConfig{
-			ObjectMeta: v1.ObjectMeta{
-				Name: iriMachineConfigName,
-			},
-			Spec: mcfgv1.MachineConfigSpec{
-				Config: runtime.RawExtension{},
-			},
-		},
-	}
-}
-
-func (mcb *machineConfigBuilder) ignition(ign string) *machineConfigBuilder {
-	mcb.obj.Spec.Config.Raw = []byte(ign)
-	return mcb
-}
-
-func (mcb *machineConfigBuilder) build() runtime.Object {
-	return mcb.obj
-}
-
 // The fixture used to setup and run the controller.
 type fixture struct {
 	t *testing.T
 
 	client    *fake.Clientset
+	k8sClient *k8sfake.Clientset
 	iriLister []*mcfgv1alpha1.InternalReleaseImage
 	ccLister  []*mcfgv1.ControllerConfig
 	mcLister  []*mcfgv1.MachineConfig
 
 	controller *Controller
 	objects    []runtime.Object
+	k8sObjects []runtime.Object
 }
 
 func newFixture(t *testing.T, objects []runtime.Object) *fixture {
-	f := &fixture{
-		t:       t,
-		objects: objects,
-	}
+	f := &fixture{t: t}
+	f.setupObjects(objects)
 	f.controller = f.newController()
 	return f
 }
 
+func (f *fixture) setupObjects(objs []runtime.Object) {
+	for _, o := range objs {
+		switch o.(type) {
+		case *corev1.Secret, *corev1.ConfigMap, *corev1.Pod:
+			f.k8sObjects = append(f.k8sObjects, o)
+		default:
+			f.objects = append(f.objects, o)
+		}
+	}
+}
+
 func (f *fixture) newController() *Controller {
 	f.client = fake.NewSimpleClientset(f.objects...)
+	f.k8sClient = k8sfake.NewSimpleClientset(f.k8sObjects...)
 	i := informers.NewSharedInformerFactory(f.client, func() time.Duration { return 0 }())
 
 	c := New(
 		i.Machineconfiguration().V1alpha1().InternalReleaseImages(),
 		i.Machineconfiguration().V1().ControllerConfigs(),
 		i.Machineconfiguration().V1().MachineConfigs(),
-		k8sfake.NewSimpleClientset(),
+		f.k8sClient,
 		f.client,
 	)
 
@@ -282,7 +193,6 @@ func (f *fixture) run(key string) {
 }
 
 func (f *fixture) runController(key string, expectError bool) {
-
 	err := f.controller.syncHandler(key)
 	if !expectError && err != nil {
 		f.t.Errorf("error syncing internalreleaseimage: %v", err)
