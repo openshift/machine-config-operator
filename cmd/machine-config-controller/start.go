@@ -9,12 +9,12 @@ import (
 	features "github.com/openshift/api/features"
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/internal/clients"
+	bootimagecontroller "github.com/openshift/machine-config-operator/pkg/controller/bootimage"
 	certrotationcontroller "github.com/openshift/machine-config-operator/pkg/controller/certrotation"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	containerruntimeconfig "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
 	"github.com/openshift/machine-config-operator/pkg/controller/drain"
 	kubeletconfig "github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
-	machinesetbootimage "github.com/openshift/machine-config-operator/pkg/controller/machine-set-boot-image"
 	"github.com/openshift/machine-config-operator/pkg/controller/node"
 	"github.com/openshift/machine-config-operator/pkg/controller/pinnedimageset"
 	"github.com/openshift/machine-config-operator/pkg/controller/render"
@@ -129,7 +129,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		}
 
 		if ctrlcommon.IsBootImageControllerRequired(ctrlctx) {
-			machineSetBootImage := machinesetbootimage.New(
+			bootImageController := bootimagecontroller.New(
 				ctrlctx.ClientBuilder.KubeClientOrDie("machine-set-boot-image-controller"),
 				ctrlctx.ClientBuilder.MachineClientOrDie("machine-set-boot-image-controller"),
 				ctrlctx.KubeNamespacedInformerFactory.Core().V1().ConfigMaps(),
@@ -139,7 +139,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 				ctrlctx.OperatorInformerFactory.Operator().V1().MachineConfigurations(),
 				ctrlctx.FeatureGatesHandler,
 			)
-			go machineSetBootImage.Run(ctrlctx.Stop)
+			go bootImageController.Run(ctrlctx.Stop)
 			// start the informers again to enable feature gated types.
 			// see comments in SharedInformerFactory interface.
 			ctrlctx.KubeNamespacedInformerFactory.Start(ctrlctx.Stop)

@@ -1,4 +1,4 @@
-package machineset
+package bootimage
 
 import (
 	"context"
@@ -212,6 +212,8 @@ func (ctrl *Controller) deleteMAPIMachineSet(deletedMS interface{}) {
 	go func() { ctrl.syncMAPIMachineSets("MAPIMachinesetDeleted") }()
 }
 
+// addConfigMap handles the addition of the boot images ConfigMap by triggering
+// a reconciliation of all enrolled machine resources.
 func (ctrl *Controller) addConfigMap(obj interface{}) {
 
 	configMap := obj.(*corev1.ConfigMap)
