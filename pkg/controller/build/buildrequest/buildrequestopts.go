@@ -11,8 +11,8 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
-	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/secrets"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	clientset "k8s.io/client-go/kubernetes"
@@ -214,7 +214,7 @@ func (o *optsGetter) getValidatedSecret(ctx context.Context, name string) (*core
 		return nil, fmt.Errorf("could not fetch secret %s: %w", name, err)
 	}
 
-	if err := utils.ValidatePullSecret(secret); err != nil {
+	if err := secrets.ValidateKubernetesImageRegistrySecret(secret); err != nil {
 		return nil, fmt.Errorf("could not validate secret %s: %w", name, err)
 	}
 
