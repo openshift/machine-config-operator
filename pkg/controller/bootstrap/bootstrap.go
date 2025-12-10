@@ -115,10 +115,6 @@ func (b *Bootstrap) Run(destDir string) error {
 		}
 		defer file.Close()
 
-		if info.Name() == "internal-release-image-tls-secret.yaml" {
-			_ = ""
-		}
-
 		manifests, err := parseManifests(file.Name(), file)
 		if err != nil {
 			return fmt.Errorf("error parsing manifests from %s: %w", file.Name(), err)
@@ -262,11 +258,11 @@ func (b *Bootstrap) Run(destDir string) error {
 
 	if fgHandler != nil && fgHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
 		if iri != nil {
-			configs, err := internalreleaseimage.RunInternalReleaseImageBootstrap(iri, iriTLSCert, cconfig)
+			iriConfigs, err := internalreleaseimage.RunInternalReleaseImageBootstrap(iri, iriTLSCert, cconfig)
 			if err != nil {
 				return err
 			}
-			configs = append(configs, configs...)
+			configs = append(configs, iriConfigs...)
 			klog.Infof("Successfully generated MachineConfig from InternalReleaseImage.")
 		}
 	}
