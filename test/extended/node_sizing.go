@@ -17,6 +17,7 @@ import (
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	machineconfigclient "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
+	"github.com/openshift/machine-config-operator/pkg/controller/common"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 )
 
@@ -28,7 +29,6 @@ const (
 	nodeSizingEnvFile           = "/etc/node-sizing-enabled.env"
 	nodeSizingEnvHostFile       = "/host/etc/node-sizing-enabled.env"
 	nodeSizingEnvKey            = "NODE_SIZING_ENABLED"
-	mcpRoleLabel                = "machineconfiguration.openshift.io/role"
 	mcpPoolLabel                = "machineconfiguration.openshift.io/pool"
 )
 
@@ -132,7 +132,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 // selectWorkerNodeWithoutCustomRoles selects a worker node that doesn't have custom role labels
 func selectWorkerNodeWithoutCustomRoles(ctx context.Context, oc *exutil.CLI) *corev1.Node {
-	workerLabelSelector := fmt.Sprintf("%s%s", NodeRoleLabelPrefix, WorkerNodeRole)
+	workerLabelSelector := fmt.Sprintf("%s%s", NodeRoleLabelPrefix, common.MachineConfigPoolWorker)
 	nodes, err := oc.KubeClient().CoreV1().Nodes().List(ctx, metav1.ListOptions{
 		LabelSelector: workerLabelSelector,
 	})
@@ -151,22 +151,14 @@ func selectWorkerNodeWithoutCustomRoles(ctx context.Context, oc *exutil.CLI) *co
 	return nil // This line will never be reached due to the Expect above
 }
 
-// hasCustomRoleLabels checks if a node has custom role labels (excluding standard roles: worker, master, control-plane)
+// hasCustomRoleLabels checks if a node has multiple role labels, which indicates custom roles
 func hasCustomRoleLabels(node *corev1.Node) bool {
-	standardRoles := []string{WorkerNodeRole, MasterNodeRole, ControlPlaneNodeRole}
-
+	roleCount := 0
 	for labelKey := range node.Labels {
 		if strings.HasPrefix(labelKey, NodeRoleLabelPrefix) {
-			role := strings.TrimPrefix(labelKey, NodeRoleLabelPrefix)
-			isStandardRole := false
-			for _, standardRole := range standardRoles {
-				if role == standardRole {
-					isStandardRole = true
-					break
-				}
-			}
-			if !isStandardRole {
-				framework.Logf("Skipping node %s: has custom role %s", node.Name, role)
+			roleCount++
+			if roleCount > 1 {
+				framework.Logf("Skipping node %s: has multiple role labels", node.Name)
 				return true
 			}
 		}
@@ -204,9 +196,9 @@ func createCustomMachineConfigPool(ctx context.Context, mcClient *machineconfigc
 			MachineConfigSelector: &metav1.LabelSelector{
 				MatchExpressions: []metav1.LabelSelectorRequirement{
 					{
-						Key:      mcpRoleLabel,
+						Key:      mcfgv1.MachineConfigRoleLabelKey,
 						Operator: metav1.LabelSelectorOpIn,
-						Values:   []string{WorkerNodeRole, mcpName},
+						Values:   []string{common.MachineConfigPoolWorker, mcpName},
 					},
 				},
 			},
@@ -270,7 +262,7 @@ func waitForMCPToStartUpdating(ctx context.Context, mcClient *machineconfigclien
 		}
 		// Check if MCP is updating (has conditions indicating update in progress)
 		for _, condition := range mcp.Status.Conditions {
-			if condition.Type == mcfgv1.MachineConfigPoolConditionType(MachineConfigPoolConditionUpdating) && condition.Status == corev1.ConditionTrue {
+			if condition.Type == mcfgv1.MachineConfigPoolUpdating && condition.Status == corev1.ConditionTrue {
 				return true
 			}
 		}
@@ -312,7 +304,7 @@ func registerNodeLabelCleanup(ctx context.Context, oc *exutil.CLI, mcClient *mac
 
 		// Additionally wait for the worker MCP to be ready and updated
 		g.By("Waiting for worker MachineConfigPool to be ready after node transition")
-		waitErr := waitForMCPToBeReadyNodeSizing(ctx, mcClient, WorkerNodeRole, 5*time.Minute)
+		waitErr := waitForMCPToBeReadyNodeSizing(ctx, mcClient, common.MachineConfigPoolWorker, 5*time.Minute)
 		if waitErr != nil {
 			framework.Logf("Warning: worker MCP may not be fully ready after node transition: %v", waitErr)
 		}
@@ -402,7 +394,7 @@ func cleanupSynchronously(ctx context.Context, oc *exutil.CLI, mcClient *machine
 	waitForNodeToTransitionToWorkerPool(ctx, oc, nodeName, mcpName)
 
 	g.By("Waiting for worker MachineConfigPool to be ready after node transition")
-	err = waitForMCPToBeReadyNodeSizing(ctx, mcClient, WorkerNodeRole, 5*time.Minute)
+	err = waitForMCPToBeReadyNodeSizing(ctx, mcClient, common.MachineConfigPoolWorker, 5*time.Minute)
 	o.Expect(err).NotTo(o.HaveOccurred(), "Worker MCP should be ready after node transition")
 
 	g.By("Cleaning up custom MachineConfigPool")
@@ -502,15 +494,15 @@ func waitForMCPToBeReadyNodeSizing(ctx context.Context, mcClient *machineconfigc
 
 		for _, condition := range mcp.Status.Conditions {
 			switch condition.Type {
-			case mcfgv1.MachineConfigPoolConditionType(MachineConfigPoolConditionUpdating):
+			case mcfgv1.MachineConfigPoolUpdating:
 				if condition.Status == corev1.ConditionTrue {
 					updating = true
 				}
-			case mcfgv1.MachineConfigPoolConditionType(MachineConfigPoolConditionDegraded):
+			case mcfgv1.MachineConfigPoolDegraded:
 				if condition.Status == corev1.ConditionTrue {
 					degraded = true
 				}
-			case mcfgv1.MachineConfigPoolConditionType(MachineConfigPoolConditionUpdated):
+			case mcfgv1.MachineConfigPoolUpdated:
 				if condition.Status == corev1.ConditionTrue {
 					ready = true
 				}
