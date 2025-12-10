@@ -43,4 +43,20 @@ const (
 	MachineConfigDaemonStateDegraded = "Degraded"
 	// MachineConfigDaemonStateUnreconcilable is set by the daemon when a MachineConfig cannot be applied.
 	MachineConfigDaemonStateUnreconcilable = "Unreconcilable"
+
+	// MachineConfigPoolConditionUpdating indicates the pool is updating
+	MachineConfigPoolConditionUpdating = "Updating"
+	// MachineConfigPoolConditionUpdated indicates the pool has been updated
+	MachineConfigPoolConditionUpdated = "Updated"
+	// MachineConfigPoolConditionDegraded indicates the pool is degraded
+	MachineConfigPoolConditionDegraded = "Degraded"
+
+	// NodeRoleLabelPrefix is the prefix for node role labels
+	NodeRoleLabelPrefix = "node-role.kubernetes.io/"
+	// WorkerNodeRole is the worker role label
+	WorkerNodeRole = "worker"
+	// MasterNodeRole is the master role label
+	MasterNodeRole = "master"
+	// ControlPlaneNodeRole is the control-plane role label
+	ControlPlaneNodeRole = "control-plane"
 )
