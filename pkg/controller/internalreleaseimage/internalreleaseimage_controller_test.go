@@ -9,7 +9,6 @@ import (
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
-	"github.com/openshift/machine-config-operator/pkg/controller/common"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/stretchr/testify/assert"
 
@@ -25,55 +24,79 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 	cases := []struct {
 		name           string
 		initialObjects func() []runtime.Object
-		verify         func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMC *mcfgv1.MachineConfig)
+		verify         func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig)
 	}{
 		{
 			name:           "feature inactive",
 			initialObjects: objs(),
-			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMC *mcfgv1.MachineConfig) {
+			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
 				assert.Nil(t, actualIRI)
-				assert.Nil(t, actualMC)
+				assert.Nil(t, actualMasterMC)
+				assert.Nil(t, actualWorkerMC)
 			},
 		},
 		{
 			name:           "add finalizer if not present",
 			initialObjects: objs(iri(), cconfig(), iriCertSecret()),
-			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMC *mcfgv1.MachineConfig) {
-				assert.Equal(t, iri().finalizer(iriMachineConfigName).build(), actualIRI)
+			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
+				assert.Equal(t, iri().finalizer(masterName(), workerName()).build(), actualIRI)
 			},
 		},
 		{
 			name:           "generate iri machine-config if not present",
 			initialObjects: objs(iri(), cconfig(), iriCertSecret()),
-			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMC *mcfgv1.MachineConfig) {
-				assert.Equal(t, iriMachineConfigName, actualMC.Name)
-				assert.Equal(t, actualMC.Labels[mcfgv1.MachineConfigRoleLabelKey], common.MachineConfigPoolMaster)
-				assert.Equal(t, actualMC.OwnerReferences[0].Kind, "InternalReleaseImage")
-				verifyInternalReleaseMasterMachineConfig(t, actualMC)
+			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
+				verifyInternalReleaseMasterMachineConfig(t, actualMasterMC)
+				verifyInternalReleaseWorkerMachineConfig(t, actualWorkerMC)
 			},
 		},
 		{
-			name:           "avoid machine-config drifting",
-			initialObjects: objs(iri().finalizer(iriMachineConfigName), cconfig(), iriCertSecret(), mastermachineconfig().ignition("some garbage")),
-			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMC *mcfgv1.MachineConfig) {
-				verifyInternalReleaseMasterMachineConfig(t, actualMC)
-			},
-		},
-		{
-			name:           "refresh machine-config on controllerConfig update",
-			initialObjects: objs(iri().finalizer(iriMachineConfigName), cconfig().dockerRegistryImage("a-new-docker-registry-image-pullspec"), iriCertSecret(), mastermachineconfig()),
-			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMC *mcfgv1.MachineConfig) {
-				verifyInternalReleaseMasterMachineConfig(t, actualMC)
-			},
-		},
-		{
-			name: "machine-config cascade delete on iri removal",
+			name: "avoid machine-config drifting",
 			initialObjects: objs(
-				iri().finalizer(iriMachineConfigName).setDeletionTimestamp(),
-				cconfig(), iriCertSecret(), mastermachineconfig()),
-			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMC *mcfgv1.MachineConfig) {
+				iri().finalizer(masterName(), workerName()),
+				cconfig(), iriCertSecret(),
+				machineconfigmaster().ignition("some garbage"),
+				machineconfigworker().ignition("other garbage")),
+			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
+				verifyInternalReleaseMasterMachineConfig(t, actualMasterMC)
+				verifyInternalReleaseWorkerMachineConfig(t, actualWorkerMC)
+			},
+		},
+		{
+			name: "refresh machine-config on controllerConfig update",
+			initialObjects: objs(
+				iri().finalizer(masterName(), workerName()),
+				cconfig().dockerRegistryImage("a-new-docker-registry-image-pullspec"), iriCertSecret(),
+				machineconfigmaster(), machineconfigworker()),
+			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
+				verifyInternalReleaseMasterMachineConfig(t, actualMasterMC)
+				verifyInternalReleaseWorkerMachineConfig(t, actualWorkerMC)
+			},
+		},
+		{
+			name: "machine-config cascade delete on iri removal - removes the first machineconfig",
+			initialObjects: objs(
+				iri().finalizer(masterName(), workerName()).setDeletionTimestamp(),
+				cconfig(), iriCertSecret(),
+				machineconfigmaster(), machineconfigworker()),
+			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
+				assert.NotNil(t, iri)
+				assert.Equal(t, []string{workerName()}, actualIRI.Finalizers)
+				assert.Nil(t, actualMasterMC)
+				assert.NotNil(t, actualWorkerMC)
+			},
+		},
+		{
+			name: "machine-config cascade delete on iri removal - then removes the remaining machineconfig",
+			initialObjects: objs(
+				iri().finalizer(workerName()).setDeletionTimestamp(),
+				cconfig(), iriCertSecret(),
+				machineconfigworker()),
+			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
+				assert.NotNil(t, iri)
 				assert.Empty(t, actualIRI.Finalizers)
-				assert.Nil(t, actualMC)
+				assert.Nil(t, actualMasterMC)
+				assert.Nil(t, actualWorkerMC)
 			},
 		},
 	}
@@ -103,15 +126,23 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 						actualIRI = nil
 					}
 				}
-				actualMC, err := f.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), iriMachineConfigName, v1.GetOptions{})
+				actualMasterMC, err := f.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), masterName(), v1.GetOptions{})
 				if err != nil {
 					if !errors.IsNotFound(err) {
 						t.Errorf("Error while running sync step: %v", err)
 					} else {
-						actualMC = nil
+						actualMasterMC = nil
 					}
 				}
-				tc.verify(t, actualIRI, actualMC)
+				actualWorkerMC, err := f.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), workerName(), v1.GetOptions{})
+				if err != nil {
+					if !errors.IsNotFound(err) {
+						t.Errorf("Error while running sync step: %v", err)
+					} else {
+						actualWorkerMC = nil
+					}
+				}
+				tc.verify(t, actualIRI, actualMasterMC, actualWorkerMC)
 			}
 
 		})

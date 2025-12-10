@@ -10,5 +10,5 @@ import (
 func TestRunInternalReleaseImageBootstrap(t *testing.T) {
 	configs, err := RunInternalReleaseImageBootstrap(&mcfgv1alpha1.InternalReleaseImage{}, iriCertSecret().obj, cconfig().obj)
 	assert.NoError(t, err)
-	verifyInternalReleaseMasterMachineConfig(t, configs[0])
+	verifyAllInternalReleaseImageMachineConfigs(t, configs)
 }

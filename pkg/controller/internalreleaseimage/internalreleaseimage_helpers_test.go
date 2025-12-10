@@ -3,12 +3,12 @@ package internalreleaseimage
 // Test builders and helper methods.
 
 import (
+	"fmt"
 	"testing"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
-	"github.com/openshift/machine-config-operator/pkg/controller/common"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	"github.com/stretchr/testify/assert"
@@ -17,13 +17,19 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
+func verifyAllInternalReleaseImageMachineConfigs(t *testing.T, configs []*mcfgv1.MachineConfig) {
+	assert.Len(t, configs, 2)
+	verifyInternalReleaseMasterMachineConfig(t, configs[0])
+	verifyInternalReleaseWorkerMachineConfig(t, configs[1])
+}
+
 func verifyInternalReleaseMasterMachineConfig(t *testing.T, mc *mcfgv1.MachineConfig) {
-	assert.Equal(t, iriMachineConfigName, mc.Name)
-	assert.Equal(t, common.MachineConfigPoolMaster, mc.Labels[mcfgv1.MachineConfigRoleLabelKey])
-	assert.Equal(t, "InternalReleaseImage", mc.OwnerReferences[0].Kind)
+	assert.Equal(t, masterName(), mc.Name)
+	assert.Equal(t, ctrlcommon.MachineConfigPoolMaster, mc.Labels[mcfgv1.MachineConfigRoleLabelKey])
+	assert.Equal(t, controllerKind.Kind, mc.OwnerReferences[0].Kind)
 
 	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
-	assert.NoError(t, err)
+	assert.NoError(t, err, mc.Name)
 
 	assert.Len(t, ignCfg.Systemd.Units, 1)
 	assert.Contains(t, *ignCfg.Systemd.Units[0].Contents, "docker-registry-image-pullspec")
@@ -32,6 +38,19 @@ func verifyInternalReleaseMasterMachineConfig(t *testing.T, mc *mcfgv1.MachineCo
 	verifyIgnitionFile(t, &ignCfg, "/etc/pki/ca-trust/source/anchors/root-ca.crt", "root-ca-data")
 	verifyIgnitionFile(t, &ignCfg, "/etc/iri-registry/certs/tls.key", "iri-tls-key")
 	verifyIgnitionFile(t, &ignCfg, "/etc/iri-registry/certs/tls.crt", "iri-tls-crt")
+}
+
+func verifyInternalReleaseWorkerMachineConfig(t *testing.T, mc *mcfgv1.MachineConfig) {
+	assert.Equal(t, workerName(), mc.Name)
+	assert.Equal(t, ctrlcommon.MachineConfigPoolWorker, mc.Labels[mcfgv1.MachineConfigRoleLabelKey])
+	assert.Equal(t, controllerKind.Kind, mc.OwnerReferences[0].Kind)
+
+	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+	assert.NoError(t, err)
+
+	assert.Len(t, ignCfg.Systemd.Units, 0)
+	assert.Len(t, ignCfg.Storage.Files, 1)
+	verifyIgnitionFile(t, &ignCfg, "/etc/pki/ca-trust/source/anchors/root-ca.crt", "root-ca-data")
 }
 
 func verifyIgnitionFile(t *testing.T, ignCfg *ign3types.Config, path string, expectedContent string) {
@@ -120,13 +139,29 @@ type machineConfigBuilder struct {
 	obj *mcfgv1.MachineConfig
 }
 
-func mastermachineconfig() *machineConfigBuilder {
+func machineconfigmaster() *machineConfigBuilder {
+	return machineconfig("master")
+}
+
+func machineconfigworker() *machineConfigBuilder {
+	return machineconfig("worker")
+}
+
+func masterName() string {
+	return fmt.Sprintf(machineConfigNameFmt, "master")
+}
+
+func workerName() string {
+	return fmt.Sprintf(machineConfigNameFmt, "worker")
+}
+
+func machineconfig(role string) *machineConfigBuilder {
 	return &machineConfigBuilder{
 		obj: &mcfgv1.MachineConfig{
 			ObjectMeta: v1.ObjectMeta{
-				Name: iriMachineConfigName,
+				Name: fmt.Sprintf(machineConfigNameFmt, role),
 				Labels: map[string]string{
-					mcfgv1.MachineConfigRoleLabelKey: common.MachineConfigPoolMaster,
+					mcfgv1.MachineConfigRoleLabelKey: role,
 				},
 				OwnerReferences: []v1.OwnerReference{
 					{
@@ -159,7 +194,7 @@ func iriCertSecret() *secretBuilder {
 	return &secretBuilder{
 		obj: &corev1.Secret{
 			ObjectMeta: v1.ObjectMeta{
-				Namespace: common.MCONamespace,
+				Namespace: ctrlcommon.MCONamespace,
 				Name:      ctrlcommon.InternalReleaseImageTLSSecretName,
 			},
 			Data: map[string][]byte{
