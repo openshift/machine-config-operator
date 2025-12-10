@@ -1714,6 +1714,9 @@ func (dn *Daemon) verifyExtensionsInStagedDeployment(newConfig *mcfgv1.MachineCo
 		return fmt.Errorf("failed to get required packages for extensions: %w", err)
 	}
 
+	// This is just a dummy addition to the expected package list to simulate a seemingly
+	// successful extension install that is actually missing a package to test the degrade.
+	requiredPackages = append(requiredPackages, "dummy-rpm")
 	// Verify the extension packages have installed
 	if err := verifyExtensionPackagesInDeployment(requiredPackages, staged.RequestedPackages); err != nil {
 		return err
