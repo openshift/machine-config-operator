@@ -180,6 +180,16 @@ type: kubernetes.io/dockercfg`
 			expected: &DockerConfigJSON{Auths: DockerConfig{}},
 		},
 		{
+			name:     "Empty JSON object without auths key",
+			bytes:    []byte(`{}`),
+			expected: &DockerConfigJSON{Auths: nil},
+		},
+		{
+			name:        "JSON null literal",
+			bytes:       []byte(`null`),
+			errExpected: true,
+		},
+		{
 			name:        "Invalid K8s object bytes",
 			bytes:       []byte(`{"kind":"ConfigMap","apiVersion":"v1","metadata":{"name":"configmap"},"data":{"key":"value"}}`),
 			errExpected: true,
