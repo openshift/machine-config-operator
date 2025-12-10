@@ -857,6 +857,97 @@ func TestFindClosestFilePolicyPathMatch(t *testing.T) {
 	}
 }
 
+// Assisted by: Cursor
+func TestVerifyExtensionPackagesInDeployment(t *testing.T) {
+	tests := []struct {
+		name               string
+		requiredPackages   []string
+		deploymentPackages []string
+		expectError        bool
+		errorContains      string
+	}{
+		{
+			name:               "no required packages, no deployment packages",
+			requiredPackages:   []string{},
+			deploymentPackages: []string{},
+			expectError:        false,
+		},
+		{
+			name:               "no required packages, some deployment packages",
+			requiredPackages:   []string{},
+			deploymentPackages: []string{"some-package", "another-package"},
+			expectError:        false,
+		},
+		{
+			name:               "all required packages present",
+			requiredPackages:   []string{"crun-wasm"},
+			deploymentPackages: []string{"crun-wasm", "other-package"},
+			expectError:        false,
+		},
+		{
+			name:               "multiple required packages all present",
+			requiredPackages:   []string{"NetworkManager-libreswan", "libreswan"},
+			deploymentPackages: []string{"NetworkManager-libreswan", "libreswan", "other-package"},
+			expectError:        false,
+		},
+		{
+			name:               "missing single required package",
+			requiredPackages:   []string{"crun-wasm"},
+			deploymentPackages: []string{"other-package"},
+			expectError:        true,
+			errorContains:      "crun-wasm",
+		},
+		{
+			name:               "missing multiple required packages",
+			requiredPackages:   []string{"NetworkManager-libreswan", "libreswan"},
+			deploymentPackages: []string{"other-package"},
+			expectError:        true,
+			errorContains:      "NetworkManager-libreswan",
+		},
+		{
+			name:               "partial packages present - missing one",
+			requiredPackages:   []string{"NetworkManager-libreswan", "libreswan"},
+			deploymentPackages: []string{"NetworkManager-libreswan", "other-package"},
+			expectError:        true,
+			errorContains:      "libreswan",
+		},
+		{
+			name:               "two-node-ha extension packages all present",
+			requiredPackages:   []string{"pacemaker", "pcs", "fence-agents-all"},
+			deploymentPackages: []string{"pacemaker", "pcs", "fence-agents-all"},
+			expectError:        false,
+		},
+		{
+			name:               "two-node-ha extension packages partially present",
+			requiredPackages:   []string{"pacemaker", "pcs", "fence-agents-all"},
+			deploymentPackages: []string{"pacemaker", "pcs"},
+			expectError:        true,
+			errorContains:      "fence-agents-all",
+		},
+		{
+			name:               "required packages present with extra packages in deployment",
+			requiredPackages:   []string{"usbguard"},
+			deploymentPackages: []string{"usbguard", "random-package-1", "random-package-2"},
+			expectError:        false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := verifyExtensionPackagesInDeployment(tt.requiredPackages, tt.deploymentPackages)
+
+			if tt.expectError {
+				assert.Error(t, err, "expected error but got none")
+				if tt.errorContains != "" {
+					assert.Contains(t, err.Error(), tt.errorContains, "error message should contain expected text")
+				}
+			} else {
+				assert.NoError(t, err, "unexpected error")
+			}
+		})
+	}
+}
+
 func TestGenerateExtensionsArgs(t *testing.T) {
 	tests := []struct {
 		name         string
