@@ -21,15 +21,15 @@ import (
 )
 
 const (
-	nodeSizingTestMCPName      = "node-sizing-test"
-	nodeSizingTestKubeletName  = "auto-sizing-enabled"
-	nodeSizingTestPodName      = "node-sizing-test"
+	nodeSizingTestMCPName       = "node-sizing-test"
+	nodeSizingTestKubeletName   = "auto-sizing-enabled"
+	nodeSizingTestPodName       = "node-sizing-test"
 	nodeSizingAutoSizingPodName = "node-sizing-autosizing-test"
-	nodeSizingEnvFile          = "/etc/node-sizing-enabled.env"
-	nodeSizingEnvHostFile      = "/host/etc/node-sizing-enabled.env"
-	nodeSizingEnvKey           = "NODE_SIZING_ENABLED"
-	mcpRoleLabel               = "machineconfiguration.openshift.io/role"
-	mcpPoolLabel               = "machineconfiguration.openshift.io/pool"
+	nodeSizingEnvFile           = "/etc/node-sizing-enabled.env"
+	nodeSizingEnvHostFile       = "/host/etc/node-sizing-enabled.env"
+	nodeSizingEnvKey            = "NODE_SIZING_ENABLED"
+	mcpRoleLabel                = "machineconfiguration.openshift.io/role"
+	mcpPoolLabel                = "machineconfiguration.openshift.io/pool"
 )
 
 var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Serial] Node sizing", func() {
@@ -84,7 +84,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		g.By("Waiting for pod to be running")
 		waitForPodRunningNodeSizing(ctx, oc, nodeSizingTestPodName, namespace)
 
-		verifyNodeSizingEnabledFileContent(ctx, oc, nodeSizingTestPodName, namespace, nodeName, TrueString)
+		verifyNodeSizingEnabledFileContent(oc, nodeSizingTestPodName, namespace, nodeName, TrueString)
 
 		g.By("Deleting the test pod before applying KubeletConfig")
 		err = oc.KubeClient().CoreV1().Pods(namespace).Delete(ctx, nodeSizingTestPodName, metav1.DeleteOptions{})
@@ -122,7 +122,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		g.By("Waiting for pod to be running")
 		waitForPodRunningNodeSizing(ctx, oc, nodeSizingAutoSizingPodName, namespace)
 
-		verifyNodeSizingEnabledFileContent(ctx, oc, nodeSizingAutoSizingPodName, namespace, nodeName, FalseString)
+		verifyNodeSizingEnabledFileContent(oc, nodeSizingAutoSizingPodName, namespace, nodeName, FalseString)
 
 		// Execute cleanup synchronously before test completes to ensure cluster is in clean state
 		// DeferCleanup will still run as a safety net in case this cleanup fails
@@ -469,7 +469,7 @@ func waitForPodRunningNodeSizing(ctx context.Context, oc *exutil.CLI, podName, n
 }
 
 // verifyNodeSizingEnabledFileContent verifies the NODE_SIZING_ENABLED value in the env file
-func verifyNodeSizingEnabledFileContent(ctx context.Context, oc *exutil.CLI, podName, namespace, nodeName, expectedValue string) {
+func verifyNodeSizingEnabledFileContent(oc *exutil.CLI, podName, namespace, nodeName, expectedValue string) {
 	g.By("Verifying /etc/node-sizing-enabled.env file exists")
 	output, err := oc.Run("exec").Args(podName, "-n", namespace, "--", "test", "-f", nodeSizingEnvHostFile).Output()
 	o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("File %s should exist on node %s. Output: %s", nodeSizingEnvFile, nodeName, output))
@@ -489,7 +489,7 @@ func verifyNodeSizingEnabledFileContent(ctx context.Context, oc *exutil.CLI, pod
 
 // waitForMCPToBeReadyNodeSizing waits for a MachineConfigPool to be ready
 func waitForMCPToBeReadyNodeSizing(ctx context.Context, mcClient *machineconfigclient.Clientset, poolName string, timeout time.Duration) error {
-	return wait.PollImmediate(10*time.Second, timeout, func() (bool, error) {
+	return wait.PollUntilContextTimeout(ctx, 10*time.Second, timeout, true, func(ctx context.Context) (bool, error) {
 		mcp, err := mcClient.MachineconfigurationV1().MachineConfigPools().Get(ctx, poolName, metav1.GetOptions{})
 		if err != nil {
 			return false, err

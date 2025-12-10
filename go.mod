@@ -63,6 +63,7 @@ require (
 	k8s.io/kubectl v0.34.1
 	k8s.io/kubelet v0.34.1
 	k8s.io/kubernetes v1.34.1
+	k8s.io/pod-security-admission v0.0.0
 	k8s.io/utils v0.0.0-20251002143259-bc988d571ff4
 	sigs.k8s.io/controller-runtime v0.20.1
 	sigs.k8s.io/controller-runtime/tools/setup-envtest v0.0.0-20240522175850-2e9781e9fc60
@@ -227,7 +228,6 @@ require (
 	k8s.io/kms v0.34.1 // indirect
 	k8s.io/kube-scheduler v0.0.0 // indirect
 	k8s.io/mount-utils v0.0.0 // indirect
-	k8s.io/pod-security-admission v0.0.0 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.31.2 // indirect
 	sigs.k8s.io/kustomize/api v0.20.1 // indirect
 	sigs.k8s.io/kustomize/kyaml v0.20.1 // indirect
