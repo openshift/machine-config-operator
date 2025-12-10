@@ -31,8 +31,9 @@ install_skopeo() {
     return 0
   fi
 
-  # Get the most recent tagged version of skopeo.
-  skopeo_version="$(curl -s https://api.github.com/repos/containers/skopeo/releases/latest | python3 -c 'import sys, json; print(json.load(sys.stdin)["tag_name"])')"
+  # Pin to a specific version compatible with Go 1.23.x
+  # v1.20.0 is the last release before Go 1.24 requirement
+  skopeo_version="v1.20.0"
 
   echo "Installing skopeo $skopeo_version from source"
 
