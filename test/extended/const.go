@@ -21,9 +21,9 @@ const (
 	MachineConfigNamespace = "openshift-machine-config-operator"
 
 	// TrueString string for true value
-	TrueString = "true"
+	TrueString = "True"
 	// FalseString string for false value
-	FalseString = "false"
+	FalseString = "False"
 
 	// CurrentMachineConfigAnnotationKey is used to fetch current MachineConfig for a machine
 	CurrentMachineConfigAnnotationKey = "machineconfiguration.openshift.io/currentConfig"
