@@ -7,6 +7,7 @@ import (
 
 	"github.com/ghodss/yaml"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
 
 var (
@@ -37,7 +38,7 @@ func getMachineConfigHashedName(pool *mcfgv1.MachineConfigPool, config *mcfgv1.M
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("rendered-%s-%x", pool.GetName(), h), nil
+	return fmt.Sprintf("%s%s-%x", ctrlcommon.RenderedMachineConfigPrefix, pool.GetName(), h), nil
 }
 
 func hashData(data []byte) ([]byte, error) {
