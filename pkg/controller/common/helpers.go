@@ -28,6 +28,7 @@ import (
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
 	validate2 "github.com/coreos/ignition/config/validate"
 	ign3error "github.com/coreos/ignition/v2/config/shared/errors"
+	"github.com/openshift/api/machineconfiguration/v1alpha1"
 
 	ign3 "github.com/coreos/ignition/v2/config/v3_5"
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
@@ -68,7 +69,7 @@ func boolToPtr(b bool) *bool {
 // It uses the Ignition config from first object as base and appends all the rest.
 // Kernel arguments are concatenated.
 // It defaults to the OSImageURL provided by the CVO but allows a MC provided OSImageURL to take precedence.
-func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig) (*mcfgv1.MachineConfig, error) {
+func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig, imageStream *v1alpha1.OSImageStreamSet) (*mcfgv1.MachineConfig, error) {
 	if len(configs) == 0 {
 		return nil, nil
 	}
@@ -187,7 +188,7 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.Contro
 	// For layering, we want to let the user override OSImageURL again
 	// The template configs always match what's in controllerconfig because they get rendered from there,
 	// so the only way we get an override here is if the user adds something different
-	osImageURL := GetDefaultBaseImageContainer(&cconfig.Spec)
+	osImageURL := GetBaseImageContainer(&cconfig.Spec, imageStream)
 	for _, cfg := range configs {
 		if cfg.Spec.OSImageURL != "" {
 			osImageURL = cfg.Spec.OSImageURL
@@ -195,7 +196,7 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.Contro
 	}
 
 	// Allow overriding the extensions container
-	baseOSExtensionsContainerImage := cconfig.Spec.BaseOSExtensionsContainerImage
+	baseOSExtensionsContainerImage := GetBaseExtensionsImageContainer(&cconfig.Spec, imageStream)
 	for _, cfg := range configs {
 		if cfg.Spec.BaseOSExtensionsContainerImage != "" {
 			baseOSExtensionsContainerImage = cfg.Spec.BaseOSExtensionsContainerImage
@@ -1035,9 +1036,20 @@ func GetIgnitionFileDataByPath(config *ign3types.Config, path string) ([]byte, e
 	return nil, nil
 }
 
-// GetDefaultBaseImageContainer returns the default bootable host base image.
-func GetDefaultBaseImageContainer(cconfigspec *mcfgv1.ControllerConfigSpec) string {
-	return cconfigspec.BaseOSContainerImage
+// GetBaseImageContainer returns the default bootable host base image.
+func GetBaseImageContainer(cconfigspec *mcfgv1.ControllerConfigSpec, imageStream *v1alpha1.OSImageStreamSet) string {
+	if imageStream == nil {
+		return cconfigspec.BaseOSContainerImage
+	}
+	return string(imageStream.OSImage)
+}
+
+// GetBaseExtensionsImageContainer returns the default bootable host base image.
+func GetBaseExtensionsImageContainer(cconfigspec *mcfgv1.ControllerConfigSpec, imageStream *v1alpha1.OSImageStreamSet) string {
+	if imageStream == nil {
+		return cconfigspec.BaseOSExtensionsContainerImage
+	}
+	return string(imageStream.OSExtensionsImage)
 }
 
 // Configures common template FuncMaps used across all renderers.

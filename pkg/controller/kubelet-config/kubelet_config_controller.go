@@ -452,7 +452,7 @@ func generateOriginalKubeletConfigIgn(cc *mcfgv1.ControllerConfig, templatesDir,
 	// Render the default templates
 	tlsMinVersion, tlsCipherSuites := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
 	rc := &mtmpl.RenderConfig{ControllerConfigSpec: &cc.Spec, TLSMinVersion: tlsMinVersion, TLSCipherSuites: tlsCipherSuites}
-	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templatesDir)
+	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templatesDir, nil)
 	if err != nil {
 		return nil, fmt.Errorf("GenerateMachineConfigsforRole failed with error: %w", err)
 	}

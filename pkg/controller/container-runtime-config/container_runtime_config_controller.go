@@ -510,7 +510,7 @@ func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.Cont
 	rc := &mtmpl.RenderConfig{
 		ControllerConfigSpec: &cc.Spec,
 	}
-	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templateDir)
+	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templateDir, nil)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("generateMachineConfigsforRole failed with error %w", err)
 	}
