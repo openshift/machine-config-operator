@@ -18,6 +18,7 @@ import (
 	"time"
 
 	configclientscheme "github.com/openshift/client-go/config/clientset/versioned/scheme"
+	"github.com/openshift/machine-config-operator/pkg/osimagestream"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -256,6 +257,75 @@ func isCloudConfRequired(infra *configv1.Infrastructure) bool {
 	return platformsRequiringCloudConf.Has(string(infra.Status.PlatformStatus.Type))
 }
 
+// getImageRegistryBundles retrieves and returns image registry certificate bundles.
+// It fetches both user-provided additional trusted CAs and managed registry CAs.
+func (optr *Operator) getImageRegistryBundles() ([]mcfgv1.ImageRegistryBundle, []mcfgv1.ImageRegistryBundle, error) {
+	cfg, err := optr.imgLister.Get("cluster")
+	if err != nil {
+		return nil, nil, err
+	}
+
+	imgRegistryUsrData := []mcfgv1.ImageRegistryBundle{}
+	if cfg.Spec.AdditionalTrustedCA.Name != "" {
+		cm, err := optr.ocCmLister.ConfigMaps(ctrlcommon.OpenshiftConfigNamespace).Get(cfg.Spec.AdditionalTrustedCA.Name)
+		if err != nil {
+			klog.Warningf("could not find configmap specified in image.config.openshift.io/cluster with the name %s", cfg.Spec.AdditionalTrustedCA.Name)
+		} else {
+			newKeys := sets.StringKeySet(cm.Data).List()
+			newBinaryKeys := sets.StringKeySet(cm.BinaryData).List()
+			for _, key := range newKeys {
+				raw, err := base64.StdEncoding.DecodeString(cm.Data[key])
+				if err != nil {
+					imgRegistryUsrData = append(imgRegistryUsrData, mcfgv1.ImageRegistryBundle{
+						File: key,
+						Data: []byte(cm.Data[key]),
+					})
+				} else {
+					imgRegistryUsrData = append(imgRegistryUsrData, mcfgv1.ImageRegistryBundle{
+						File: key,
+						Data: raw,
+					})
+				}
+			}
+			for _, key := range newBinaryKeys {
+				imgRegistryUsrData = append(imgRegistryUsrData, mcfgv1.ImageRegistryBundle{
+					File: key,
+					Data: cm.BinaryData[key],
+				})
+			}
+		}
+	}
+
+	imgRegistryData := []mcfgv1.ImageRegistryBundle{}
+	cm, err := optr.clusterCmLister.ConfigMaps("openshift-config-managed").Get("image-registry-ca")
+	if err == nil {
+		newKeys := sets.StringKeySet(cm.Data).List()
+		newBinaryKeys := sets.StringKeySet(cm.BinaryData).List()
+		for _, key := range newKeys {
+			raw, err := base64.StdEncoding.DecodeString(cm.Data[key])
+			if err != nil {
+				imgRegistryData = append(imgRegistryData, mcfgv1.ImageRegistryBundle{
+					File: key,
+					Data: []byte(cm.Data[key]),
+				})
+			} else {
+				imgRegistryData = append(imgRegistryData, mcfgv1.ImageRegistryBundle{
+					File: key,
+					Data: raw,
+				})
+			}
+		}
+		for _, key := range newBinaryKeys {
+			imgRegistryData = append(imgRegistryData, mcfgv1.ImageRegistryBundle{
+				File: key,
+				Data: cm.BinaryData[key],
+			})
+		}
+	}
+
+	return imgRegistryData, imgRegistryUsrData, nil
+}
+
 // Sync cloud config on supported platform from cloud.conf available in openshift-config-managed/kube-cloud-config ConfigMap.
 func (optr *Operator) syncCloudConfig(spec *mcfgv1.ControllerConfigSpec, infra *configv1.Infrastructure) error {
 	cm, err := optr.clusterCmLister.ConfigMaps("openshift-config-managed").Get("kube-cloud-config")
@@ -332,66 +402,9 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 
 	// handle image registry certificates.
 	// parse these, add them to ctrlcfgspec and then handle these in the daemon write to disk function
-	cfg, err := optr.imgLister.Get("cluster")
+	imgRegistryData, imgRegistryUsrData, err := optr.getImageRegistryBundles()
 	if err != nil {
 		return err
-	}
-	imgRegistryUsrData := []mcfgv1.ImageRegistryBundle{}
-	if cfg.Spec.AdditionalTrustedCA.Name != "" {
-		cm, err := optr.ocCmLister.ConfigMaps(ctrlcommon.OpenshiftConfigNamespace).Get(cfg.Spec.AdditionalTrustedCA.Name)
-		if err != nil {
-			klog.Warningf("could not find configmap specified in image.config.openshift.io/cluster with the name %s", cfg.Spec.AdditionalTrustedCA.Name)
-		} else {
-			newKeys := sets.StringKeySet(cm.Data).List()
-			newBinaryKeys := sets.StringKeySet(cm.BinaryData).List()
-			for _, key := range newKeys {
-				raw, err := base64.StdEncoding.DecodeString(cm.Data[key])
-				if err != nil {
-					imgRegistryUsrData = append(imgRegistryUsrData, mcfgv1.ImageRegistryBundle{
-						File: key,
-						Data: []byte(cm.Data[key]),
-					})
-				} else {
-					imgRegistryUsrData = append(imgRegistryUsrData, mcfgv1.ImageRegistryBundle{
-						File: key,
-						Data: raw,
-					})
-				}
-			}
-			for _, key := range newBinaryKeys {
-				imgRegistryUsrData = append(imgRegistryUsrData, mcfgv1.ImageRegistryBundle{
-					File: key,
-					Data: cm.BinaryData[key],
-				})
-			}
-		}
-	}
-
-	imgRegistryData := []mcfgv1.ImageRegistryBundle{}
-	cm, err := optr.clusterCmLister.ConfigMaps("openshift-config-managed").Get("image-registry-ca")
-	if err == nil {
-		newKeys := sets.StringKeySet(cm.Data).List()
-		newBinaryKeys := sets.StringKeySet(cm.BinaryData).List()
-		for _, key := range newKeys {
-			raw, err := base64.StdEncoding.DecodeString(cm.Data[key])
-			if err != nil {
-				imgRegistryData = append(imgRegistryData, mcfgv1.ImageRegistryBundle{
-					File: key,
-					Data: []byte(cm.Data[key]),
-				})
-			} else {
-				imgRegistryData = append(imgRegistryData, mcfgv1.ImageRegistryBundle{
-					File: key,
-					Data: raw,
-				})
-			}
-		}
-		for _, key := range newBinaryKeys {
-			imgRegistryData = append(imgRegistryData, mcfgv1.ImageRegistryBundle{
-				File: key,
-				Data: cm.BinaryData[key],
-			})
-		}
 	}
 
 	mergedData := append([]mcfgv1.ImageRegistryBundle{}, append(imgRegistryData, imgRegistryUsrData...)...)
@@ -400,7 +413,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		caData[CA.File] = string(CA.Data)
 	}
 
-	cm, err = optr.clusterCmLister.ConfigMaps("openshift-config-managed").Get("merged-trusted-image-registry-ca")
+	cm, err := optr.clusterCmLister.ConfigMaps("openshift-config-managed").Get("merged-trusted-image-registry-ca")
 	if err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
@@ -556,15 +569,6 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		internalRegistryPullSecret = nil
 	}
 
-	// sync up os image url
-	// TODO: this should probably be part of the imgs
-	oscontainer, osextensionscontainer, err := optr.getOsImageURLs(optr.namespace)
-	if err != nil {
-		return err
-	}
-	imgs.BaseOSContainerImage = oscontainer
-	imgs.BaseOSExtensionsContainerImage = osextensionscontainer
-
 	// sync up the ControllerConfigSpec
 	infra, network, proxy, dns, apiServer, err := optr.getGlobalConfig()
 	if err != nil {
@@ -607,6 +611,14 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 	if err := optr.syncCloudConfig(spec, infra); err != nil {
 		return err
 	}
+
+	oscontainer, osextensionscontainer, err := optr.getOsImageURLs(optr.namespace, "")
+	if err != nil {
+		return fmt.Errorf("could not get OS images: %w", err)
+
+	}
+	imgs.BaseOSContainerImage = oscontainer
+	imgs.BaseOSExtensionsContainerImage = osextensionscontainer
 
 	spec.KubeAPIServerServingCAData = kubeAPIServerServingCABytes
 	spec.RootCAData = machineConfigServerCABundle
@@ -1728,9 +1740,9 @@ func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig, co *c
 			_, hasRequiredPoolLabel := pool.Labels[requiredForUpgradeMachineConfigPoolLabelKey]
 
 			if hasRequiredPoolLabel {
-				opURL, _, err := optr.getOsImageURLs(optr.namespace)
+				opURL, _, err := optr.getOsImageURLs(optr.namespace, pool.Spec.OSImageStream.Name)
 				if err != nil {
-					klog.Errorf("Error getting configmap osImageURL: %q", err)
+					klog.Errorf("Error getting OS images: %q", err)
 					return false, nil
 				}
 				releaseVersion, _ := optr.vStore.Get("operator")
@@ -1893,8 +1905,23 @@ func (optr *Operator) waitForControllerConfigToBeCompleted(resource *mcfgv1.Cont
 	return nil
 }
 
-// getOsImageURLs returns (new type, new extensions, old type) for operating system update images.
-func (optr *Operator) getOsImageURLs(namespace string) (string, string, error) {
+// getOsImageURLs retrieves the base OS and OS extensions container image URLs.
+// It first checks OSImageStream (if enabled), then falls back to the ConfigMap.
+func (optr *Operator) getOsImageURLs(namespace, osImageStreamName string) (string, string, error) {
+	// If OSImageStream is enabled fetch the URLs from there
+	if optr.osImageStreamLister != nil && osimagestream.IsFeatureEnabled(optr.fgHandler) {
+		osImageStream, err := optr.osImageStreamLister.Get(ctrlcommon.ClusterInstanceNameOSImageStream)
+		if err != nil {
+			return "", "", fmt.Errorf("could not get OSImageStream: %w", err)
+		}
+
+		stream, err := osimagestream.GetOSImageStreamSetByName(osImageStream, osImageStreamName)
+		if err != nil {
+			return "", "", fmt.Errorf("could not get OSImageStream: %w", err)
+		}
+		return string(stream.OSImage), string(stream.OSExtensionsImage), nil
+	}
+
 	cm, err := optr.mcoCmLister.ConfigMaps(namespace).Get(ctrlcommon.MachineConfigOSImageURLConfigMapName)
 	if err != nil {
 		return "", "", err

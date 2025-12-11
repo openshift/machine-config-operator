@@ -106,7 +106,7 @@ func TestReadImageFileContent(t *testing.T) {
 
 	timedCtx, timedCtxCancelFn := context.WithTimeout(context.Background(), time.Minute)
 	defer timedCtxCancelFn()
-	content, err := imageutils.ReadImageFileContent(timedCtx, sysContext.SysContext, clusterVersion.Status.Desired.Image, releaseManifestsMatcher)
+	content, err := imageutils.ReadImageFileContent(timedCtx, sysContext.SysContext, clusterVersion.Status.Desired.Image, releaseManifestsMatcher, nil)
 	require.NoError(t, err)
 
 	// Note: The test file is a file used in the MCO to fetch OSImageStreams, and it's

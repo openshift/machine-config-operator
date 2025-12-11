@@ -6,7 +6,7 @@ import (
 
 	"github.com/openshift/machine-config-operator/internal/clients"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	"github.com/openshift/machine-config-operator/pkg/controller/osimagestream"
+	"github.com/openshift/machine-config-operator/pkg/osimagestream"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
