@@ -189,6 +189,10 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.Contro
 	// so the only way we get an override here is if the user adds something different
 	osImageURL := GetDefaultBaseImageContainer(&cconfig.Spec)
 	for _, cfg := range configs {
+		// Ignore generated MCs, only the rendered MC or a user provided MC can set this field
+		if cfg.Annotations[GeneratedByControllerVersionAnnotationKey] != "" {
+			continue
+		}
 		if cfg.Spec.OSImageURL != "" {
 			osImageURL = cfg.Spec.OSImageURL
 		}
@@ -197,6 +201,10 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.Contro
 	// Allow overriding the extensions container
 	baseOSExtensionsContainerImage := cconfig.Spec.BaseOSExtensionsContainerImage
 	for _, cfg := range configs {
+		// Ignore generated MCs, only the rendered MC or a user provided MC can set this field
+		if cfg.Annotations[GeneratedByControllerVersionAnnotationKey] != "" {
+			continue
+		}
 		if cfg.Spec.BaseOSExtensionsContainerImage != "" {
 			baseOSExtensionsContainerImage = cfg.Spec.BaseOSExtensionsContainerImage
 		}
