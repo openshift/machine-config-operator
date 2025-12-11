@@ -24,6 +24,7 @@ spec:
         image: {{.Images.MachineConfigOperator}}
         ports:
         - containerPort: 8798
+          hostIP: 127.0.0.1
           name: health
           protocol: TCP
         command: ["/usr/bin/machine-config-daemon"]
