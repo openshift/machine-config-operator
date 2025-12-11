@@ -181,7 +181,7 @@ func deleteAllMachineConfigsForPool(cs *framework.ClientSet, mcp *mcfgv1.Machine
 	for _, mc := range machineConfigs.Items {
 		mc := mc
 		eg.Go(func() error {
-			if _, ok := mc.Annotations[helpers.MCPNameToRole(mcp.Name)]; ok && !strings.HasPrefix(mc.Name, "rendered-") {
+			if _, ok := mc.Annotations[helpers.MCPNameToRole(mcp.Name)]; ok && !strings.HasPrefix(mc.Name, ctrlcommon.RenderedMachineConfigPrefix) {
 				if err := cs.MachineConfigs().Delete(context.TODO(), mc.Name, metav1.DeleteOptions{}); err != nil {
 					return err
 				}
