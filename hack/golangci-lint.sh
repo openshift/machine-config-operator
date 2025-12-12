@@ -13,11 +13,6 @@ GOTAGS="${1:-""}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-""}"
 TIMEOUT="${2:-"10m"}" # Default timeout to 10 minutes if not provided
 
-if [ ! -n "$GOTAGS" ]; then
-  echo "No Go tags provided"
-  exit 1
-fi
-
 cd "$REPO_ROOT"
 
 retval=0
