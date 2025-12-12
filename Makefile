@@ -26,7 +26,7 @@ export GOPROXY=https://proxy.golang.org
 # this is necessary for running golangci-lint in a container
 export GOLANGCI_LINT_CACHE=$(shell echo $${GOLANGCI_LINT_CACHE:-$$GOPATH/cache})
 
-GOTAGS = "containers_image_openpgp exclude_graphdriver_devicemapper exclude_graphdriver_btrfs containers_image_ostree_stub"
+GOTAGS = "$(TAGS)"
 
 all: binaries
 
@@ -43,11 +43,11 @@ clean:
 # Example:
 #    make _build-component-machine-config-operator
 _build-component-%:
-	WHAT_PATH=cmd/$* WHAT=$(basename $*) hack/build-go.sh
+	WHAT_PATH=cmd/$* WHAT=$(basename $*) GOTAGS=$(GOTAGS) hack/build-go.sh
 
 # Build the helpers under devex/cmd.
 _build-helper-%:
-	WHAT_PATH=devex/cmd/$* WHAT=$(basename $*) hack/build-go.sh
+	WHAT_PATH=devex/cmd/$* WHAT=$(basename $*) GOTAGS=$(GOTAGS) hack/build-go.sh
 
 # Verify that an e2e test is valid Golang by doing a trial compilation.
 _verify-e2e-%:
