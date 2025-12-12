@@ -481,9 +481,18 @@ func TestKubeletAutoNodeSizingEnabled(t *testing.T) {
 
 				contentsStr := string(contents)
 
-				// Verify NODE_SIZING_ENABLED=true is present
-				if !strings.Contains(contentsStr, "NODE_SIZING_ENABLED=true") {
-					t.Errorf("Expected NODE_SIZING_ENABLED=true in %s, got: %s", mc.Name, contentsStr)
+				// Verify NODE_SIZING_ENABLED based on node role
+				// Master nodes should have NODE_SIZING_ENABLED=false
+				// Other nodes (worker, etc.) should have NODE_SIZING_ENABLED=true
+				isMasterNode := strings.Contains(mc.Name, "master")
+				if isMasterNode {
+					if !strings.Contains(contentsStr, "NODE_SIZING_ENABLED=false") {
+						t.Errorf("Expected NODE_SIZING_ENABLED=false in %s, got: %s", mc.Name, contentsStr)
+					}
+				} else {
+					if !strings.Contains(contentsStr, "NODE_SIZING_ENABLED=true") {
+						t.Errorf("Expected NODE_SIZING_ENABLED=true in %s, got: %s", mc.Name, contentsStr)
+					}
 				}
 
 				// Verify other expected values
