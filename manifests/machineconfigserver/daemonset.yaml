@@ -26,6 +26,13 @@ spec:
           - "--payload-version={{.ReleaseVersion}}"
           - "--tls-cipher-suites={{join .TLSCipherSuites ","}}"
           - "--tls-min-version={{.TLSMinVersion}}"
+        ports:
+        - containerPort: 22623
+          name: https
+          protocol: TCP
+        - containerPort: 22624
+          name: http
+          protocol: TCP
         resources:
           requests:
             cpu: 20m
