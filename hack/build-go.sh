@@ -5,7 +5,7 @@ set -eu
 REPO=github.com/openshift/machine-config-operator
 WHAT=${WHAT:-machine-config-operator}
 WHAT_PATH="${WHAT_PATH:-cmd/${WHAT}}"
-GOTAGS="${GOTAGS:-} ${TAGS:-}"
+GOTAGS="${GOTAGS:-}"
 GLDFLAGS=${GLDFLAGS:-}
 
 eval $(go env | grep -e "GOHOSTOS" -e "GOHOSTARCH")
@@ -36,10 +36,6 @@ if [ -z ${BIN_PATH+a} ]; then
 fi
 
 mkdir -p ${BIN_PATH}
-
-if [[ $WHAT == "machine-config-controller" ]]; then
-    GOTAGS="containers_image_openpgp exclude_graphdriver_devicemapper exclude_graphdriver_btrfs containers_image_ostree_stub"
-fi
 
 echo "Building ${REPO}/${WHAT_PATH} (${VERSION_OVERRIDE}, ${HASH}) for $GOOS/$GOARCH"
 GOOS=${GOOS} GOARCH=${GOARCH} go build -mod=vendor -tags="${GOTAGS}" -ldflags "${GLDFLAGS} -s -w" -o ${BIN_PATH}/${WHAT} ${REPO}/${WHAT_PATH}

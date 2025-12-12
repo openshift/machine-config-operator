@@ -47,7 +47,13 @@ authfile = os.environ.get('AUTHFILE')
 if authfile:
     args.extend(['--authfile', authfile])
 for k in openshift_keys:
-    args.append(f'--label={k}=')
-args.extend([f'--label=vcs-ref={gitrev}', '--label=vcs-type=git', '--label=vcs-url='])
+    args.append(f"--label={k}=")
+args.extend([f"--label=vcs-ref={gitrev}", "--label=vcs-type=git", "--label=vcs-url="])
+
+# Check if TAGS env var is set. Setting this allows Go build tags to be passed
+# into the image build process as a build argument.
+tags = os.environ.get("TAGS")
+if tags:
+    args.extend(["--build-arg", f"TAGS={tags}"])
 print(subprocess.list2cmdline(args))
 os.execlp(podman, *args)
