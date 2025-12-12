@@ -3,6 +3,7 @@ package template
 import (
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -447,4 +448,128 @@ func getKey(config *mcfgv1.ControllerConfig, t *testing.T) string {
 		return ""
 	}
 	return key
+}
+
+func TestKubeletAutoNodeSizingEnabled(t *testing.T) {
+	cc := newControllerConfig("test-cluster")
+	ps := []byte(`{"dummy": "dummy"}`)
+
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, ps, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Find machine configs that should contain the auto-node-sizing file
+	// The file should be in all role-based machine configs (master, worker)
+	autoSizingFileFound := false
+	for _, mc := range mcs {
+		ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+		if err != nil {
+			t.Fatalf("Failed to parse ignition config for %s: %v", mc.Name, err)
+		}
+
+		// Look for the auto-node-sizing file
+		for _, file := range ignCfg.Storage.Files {
+			if file.Path == ctrlcommon.NodeSizingEnabledEnvPath {
+				autoSizingFileFound = true
+
+				// Decode the file contents
+				contents, err := ctrlcommon.DecodeIgnitionFileContents(file.Contents.Source, file.Contents.Compression)
+				if err != nil {
+					t.Fatalf("Failed to decode auto-node-sizing file contents: %v", err)
+				}
+
+				contentsStr := string(contents)
+
+				// Verify NODE_SIZING_ENABLED based on node role
+				// Master nodes should have NODE_SIZING_ENABLED=false
+				// Other nodes (worker, etc.) should have NODE_SIZING_ENABLED=true
+				isMasterNode := strings.Contains(mc.Name, "master")
+				if isMasterNode {
+					if !strings.Contains(contentsStr, "NODE_SIZING_ENABLED=false") {
+						t.Errorf("Expected NODE_SIZING_ENABLED=false in %s, got: %s", mc.Name, contentsStr)
+					}
+				} else {
+					if !strings.Contains(contentsStr, "NODE_SIZING_ENABLED=true") {
+						t.Errorf("Expected NODE_SIZING_ENABLED=true in %s, got: %s", mc.Name, contentsStr)
+					}
+				}
+
+				// Verify other expected values
+				if !strings.Contains(contentsStr, "SYSTEM_RESERVED_MEMORY=1Gi") {
+					t.Errorf("Expected SYSTEM_RESERVED_MEMORY=1Gi in %s, got: %s", mc.Name, contentsStr)
+				}
+
+				if !strings.Contains(contentsStr, "SYSTEM_RESERVED_CPU=500m") {
+					t.Errorf("Expected SYSTEM_RESERVED_CPU=500m in %s, got: %s", mc.Name, contentsStr)
+				}
+
+				if !strings.Contains(contentsStr, "SYSTEM_RESERVED_ES=1Gi") {
+					t.Errorf("Expected SYSTEM_RESERVED_ES=1Gi in %s, got: %s", mc.Name, contentsStr)
+				}
+			}
+		}
+	}
+
+	if !autoSizingFileFound {
+		t.Errorf("Expected to find %s file in at least one machine config", ctrlcommon.NodeSizingEnabledEnvPath)
+	}
+}
+
+func TestKubeletAutoNodeSizingDisabledForHypershift(t *testing.T) {
+	cc := newControllerConfig("test-cluster")
+	// Set ControlPlaneTopology to External to simulate Hypershift
+	cc.Spec.Infra.Status.ControlPlaneTopology = configv1.ExternalTopologyMode
+	ps := []byte(`{"dummy": "dummy"}`)
+
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, ps, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Find machine configs that should contain the auto-node-sizing file
+	autoSizingFileFound := false
+	for _, mc := range mcs {
+		ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+		if err != nil {
+			t.Fatalf("Failed to parse ignition config for %s: %v", mc.Name, err)
+		}
+
+		// Look for the auto-node-sizing file
+		for _, file := range ignCfg.Storage.Files {
+			if file.Path == ctrlcommon.NodeSizingEnabledEnvPath {
+				autoSizingFileFound = true
+
+				// Decode the file contents
+				contents, err := ctrlcommon.DecodeIgnitionFileContents(file.Contents.Source, file.Contents.Compression)
+				if err != nil {
+					t.Fatalf("Failed to decode auto-node-sizing file contents: %v", err)
+				}
+
+				contentsStr := string(contents)
+
+				// Verify NODE_SIZING_ENABLED=false is present for Hypershift
+				if !strings.Contains(contentsStr, "NODE_SIZING_ENABLED=false") {
+					t.Errorf("Expected NODE_SIZING_ENABLED=false for Hypershift in %s, got: %s", mc.Name, contentsStr)
+				}
+
+				// Verify other expected values are still present
+				if !strings.Contains(contentsStr, "SYSTEM_RESERVED_MEMORY=1Gi") {
+					t.Errorf("Expected SYSTEM_RESERVED_MEMORY=1Gi in %s, got: %s", mc.Name, contentsStr)
+				}
+
+				if !strings.Contains(contentsStr, "SYSTEM_RESERVED_CPU=500m") {
+					t.Errorf("Expected SYSTEM_RESERVED_CPU=500m in %s, got: %s", mc.Name, contentsStr)
+				}
+
+				if !strings.Contains(contentsStr, "SYSTEM_RESERVED_ES=1Gi") {
+					t.Errorf("Expected SYSTEM_RESERVED_ES=1Gi in %s, got: %s", mc.Name, contentsStr)
+				}
+			}
+		}
+	}
+
+	if !autoSizingFileFound {
+		t.Errorf("Expected to find %s file in at least one machine config", ctrlcommon.NodeSizingEnabledEnvPath)
+	}
 }
