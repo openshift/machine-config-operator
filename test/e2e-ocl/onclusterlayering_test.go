@@ -802,7 +802,7 @@ func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) 
 	// Goroutine so that the rest of the test can continue.
 	go func() {
 		err := streamBuildPodLogsToFile(buildPodStreamerCtx, t, cs, startedBuild, podLogsDirPath)
-		require.NoError(t, err, "expected no error, got %s", err)
+		assert.NoError(t, err, "expected no error, got %s", err)
 	}()
 
 	// We also want to collect logs from the machine-os-builder pod since they
@@ -811,7 +811,7 @@ func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) 
 	// blocked.
 	go func() {
 		err := streamMachineOSBuilderPodLogsToFile(mobPodStreamerCtx, t, cs, podLogsDirPath)
-		require.NoError(t, err, "expected no error, got: %s", err)
+		assert.NoError(t, err, "expected no error, got: %s", err)
 	}()
 
 	// Wait for the build to complete.
