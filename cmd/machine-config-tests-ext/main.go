@@ -72,6 +72,18 @@ func main() {
 		},
 		ClusterStability: e.ClusterStabilityDisruptive,
 		TestTimeout:      &defaultTimeout,
+		Description:      "Suite that daily sends signals to component readiness",
+	})
+
+	// This suite will include all tests not included in the previous suite inheriting from openshift/disruptive
+	ext.AddGlobalSuite(e.Suite{
+		Name: "openshift/machine-config-operator/longduration",
+		Qualifiers: []string{
+			`name.contains("[Suite:openshift/machine-config-operator/longduration]")`,
+		},
+		ClusterStability: e.ClusterStabilityDisruptive,
+		TestTimeout:      &defaultTimeout,
+		Description:      "A long-running, resource-intensive test suite executed on a scheduled basis to provide deep validation beyond the standard executions",
 	})
 
 	// If using Ginkgo, build test specs automatically
