@@ -1,0 +1,5 @@
+mode: 0644
+path: "/etc/pki/ca-trust/source/anchors/root-ca.crt"
+contents:
+  inline: |-
+{{indent 4 .RootCA}}
