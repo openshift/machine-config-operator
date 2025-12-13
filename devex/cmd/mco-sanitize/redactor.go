@@ -155,18 +155,17 @@ func recursiveWalk(node *visitorNode, path []string) (bool, error) {
 				}
 			}
 			return changed, nil
-		} else {
-			// The path provides the index to pick. Transverse only that index
-			pathIndex, err := strconv.Atoi(key)
-			if err != nil {
-				return false, errors.New("redact path uses array indexing at a path level that is not an array")
-			}
-			newNode := node.newArrayChild(pathIndex)
-			if newNode == nil {
-				return false, nil
-			}
-			return recursiveWalk(newNode, path[1:])
 		}
+		// The path provides the index to pick. Transverse only that index
+		pathIndex, err := strconv.Atoi(key)
+		if err != nil {
+			return false, errors.New("redact path uses array indexing at a path level that is not an array")
+		}
+		newNode := node.newArrayChild(pathIndex)
+		if newNode == nil {
+			return false, nil
+		}
+		return recursiveWalk(newNode, path[1:])
 	case map[string]interface{}:
 		// Map case. newObjectChild returns nil if the key doesn't exist which should make us
 		// break the transversing path
