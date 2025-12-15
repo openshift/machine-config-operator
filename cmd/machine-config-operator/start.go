@@ -25,9 +25,8 @@ var (
 	}
 
 	startOpts struct {
-		kubeconfig     string
-		imagesFile     string
-		promMetricsURL string
+		kubeconfig string
+		imagesFile string
 	}
 )
 
@@ -35,7 +34,6 @@ func init() {
 	rootCmd.AddCommand(startCmd)
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeconfig, "kubeconfig", "", "Kubeconfig file to access a remote cluster (testing only)")
 	startCmd.PersistentFlags().StringVar(&startOpts.imagesFile, "images-json", "", "images.json file for MCO.")
-	startCmd.PersistentFlags().StringVar(&startOpts.promMetricsURL, "metrics-listen-address", "127.0.0.1:8797", "Listen address for prometheus metrics listener")
 }
 
 func runStartCmd(_ *cobra.Command, _ []string) {
@@ -45,8 +43,6 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	// This is 'main' context that we thread through the controller context and
 	// the leader elections. Cancelling this is "stop everything, we are shutting down".
 	runContext, runCancel := context.WithCancel(context.Background())
-	stopCh := make(chan struct{})
-	defer close(stopCh)
 
 	// To help debugging, immediately log version
 	klog.Infof("Version: %s (Raw: %s, Hash: %s)", version.ReleaseVersion, version.Raw, version.Hash)
@@ -59,9 +55,6 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	if err != nil {
 		klog.Fatalf("error creating clients: %v", err)
 	}
-
-	// start metrics listener
-	go ctrlcommon.StartMetricsListener(startOpts.promMetricsURL, stopCh, operator.RegisterMCOMetrics)
 
 	run := func(ctx context.Context) {
 		go common.SignalHandler(runCancel)
