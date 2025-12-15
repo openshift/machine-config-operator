@@ -160,7 +160,7 @@ func TestMetrics(t *testing.T) {
 	t.Cleanup(e2e_shared_test.MutateNodeAndWait(t, cs, &node, mcp))
 
 	if err := wait.Poll(5*time.Second, 5*time.Minute, func() (bool, error) {
-		svc, err := cs.Services("openshift-machine-config-operator").Get(context.TODO(), "machine-config-operator", metav1.GetOptions{})
+		svc, err := cs.Services("openshift-machine-config-operator").Get(context.TODO(), "machine-config-controller", metav1.GetOptions{})
 		require.Nil(t, err)
 
 		// Extract the IP and port and build the URL
