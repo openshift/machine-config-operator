@@ -852,7 +852,7 @@ func ownerReferenceImageConfig(imageConfig *apicfgv1.Image) metav1.OwnerReferenc
 	}
 }
 
-func policyItemFromSpec(policy apicfgv1.Policy) (signature.PolicyRequirement, error) {
+func policyItemFromSpec(policy apicfgv1.ImageSigstoreVerificationPolicy) (signature.PolicyRequirement, error) {
 	var (
 		sigstorePolicyRequirement signature.PolicyRequirement
 		signedIdentity            signature.PolicyReferenceMatch
