@@ -1,27 +1,6 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: machine-config-operator
-  namespace: openshift-machine-config-operator
-  labels:
-    k8s-app: machine-config-operator
-  annotations:
-    include.release.openshift.io/ibm-cloud-managed: "true"
-    include.release.openshift.io/self-managed-high-availability: "true"
-    include.release.openshift.io/single-node-developer: "true"
-    service.beta.openshift.io/serving-cert-secret-name: mco-proxy-tls
-spec:
-  type: ClusterIP
-  selector:
-    k8s-app: machine-config-operator
-  ports:
-  - name: metrics
-    port: 9001
-    protocol: TCP
----
-apiVersion: v1
-kind: Service
-metadata:
   name: machine-config-controller
   namespace: openshift-machine-config-operator
   labels:

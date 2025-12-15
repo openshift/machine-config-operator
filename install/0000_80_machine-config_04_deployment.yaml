@@ -43,30 +43,6 @@ spec:
         volumeMounts:
         - name: images
           mountPath: /etc/mco/images
-      - name: kube-rbac-proxy
-        image: placeholder.url.oc.will.replace.this.org/placeholdernamespace:kube-rbac-proxy
-        ports:
-        - containerPort: 9001
-          name: metrics
-          protocol: TCP
-        args:
-        - --secure-listen-address=0.0.0.0:9001
-        - --config-file=/etc/kube-rbac-proxy/config-file.yaml
-        - --tls-cipher-suites=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305
-        - --upstream=http://127.0.0.1:8797
-        - --logtostderr=true
-        - --tls-cert-file=/etc/tls/private/tls.crt
-        - --tls-private-key-file=/etc/tls/private/tls.key
-        resources:
-          requests:
-            cpu: 20m
-            memory: 50Mi
-        terminationMessagePolicy: FallbackToLogsOnError
-        volumeMounts:
-        - mountPath: /etc/tls/private
-          name: proxy-tls
-        - mountPath: /etc/kube-rbac-proxy
-          name: auth-proxy-config
       serviceAccountName: machine-config-operator
       nodeSelector:
         node-role.kubernetes.io/master: ""
@@ -91,10 +67,4 @@ spec:
       - name: images
         configMap:
           name: machine-config-operator-images
-      - name: proxy-tls
-        secret:
-          secretName: mco-proxy-tls
-      - configMap:
-          name: kube-rbac-proxy
-        name: auth-proxy-config
 
