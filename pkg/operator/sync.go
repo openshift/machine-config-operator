@@ -2179,16 +2179,23 @@ func (optr *Operator) getImageRegistryPullSecrets() ([]byte, error) {
 
 	clusterPullSecretRaw := clusterPullSecret.Data[corev1.DockerConfigJsonKey]
 
-	// Add in the cluster pull secret to the JSON map, but convert it to kubernetes.io/dockercfg first
-	// as the global pull secret is of type kubernetes.io/dockerconfigjson
-	clusterPullSecretRawOld, err := ctrlcommon.ConvertSecretTodockercfg(clusterPullSecretRaw)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert global pull secret to old format: %w", err)
-	}
+	// Handle empty pull-secret gracefully
+	// Check if the pull-secret is empty or just contains "{}"
+	// This can happen when users set an empty pull-secret: `oc set data secret/pull-secret '.dockerconfigjson={}'`
+	if len(clusterPullSecretRaw) > 0 && string(bytes.TrimSpace(clusterPullSecretRaw)) != "{}" {
+		// Add in the cluster pull secret to the JSON map, but convert it to kubernetes.io/dockercfg first
+		// as the global pull secret is of type kubernetes.io/dockerconfigjson
+		clusterPullSecretRawOld, err := ctrlcommon.ConvertSecretTodockercfg(clusterPullSecretRaw)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert global pull secret to old format: %w", err)
+		}
 
-	err = ctrlcommon.MergeDockerConfigstoJSONMap(clusterPullSecretRawOld, dockerConfigJSON.Auths)
-	if err != nil {
-		return nil, fmt.Errorf("failed to merge global pull secret:  %w", err)
+		err = ctrlcommon.MergeDockerConfigstoJSONMap(clusterPullSecretRawOld, dockerConfigJSON.Auths)
+		if err != nil {
+			return nil, fmt.Errorf("failed to merge global pull secret:  %w", err)
+		}
+	} else {
+		klog.V(4).Infof("Skipping merge of empty global pull secret")
 	}
 
 	// Add in a default image registry route for first boot cases; this route won't be provided during a pull
