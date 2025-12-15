@@ -273,6 +273,17 @@ spec:
                   description: Release represents an OpenShift release image and associated
                     metadata.
                   properties:
+                    architecture:
+                      description: |-
+                        architecture is an optional field that indicates the
+                        value of the cluster architecture. In this context cluster
+                        architecture means either a single architecture or a multi
+                        architecture.
+                        Valid values are 'Multi' and empty.
+                      enum:
+                      - Multi
+                      - ""
+                      type: string
                     channels:
                       description: |-
                         channels is the set of Cincinnati channels to which the release
@@ -448,6 +459,17 @@ spec:
                     release:
                       description: release is the target of the update.
                       properties:
+                        architecture:
+                          description: |-
+                            architecture is an optional field that indicates the
+                            value of the cluster architecture. In this context cluster
+                            architecture means either a single architecture or a multi
+                            architecture.
+                            Valid values are 'Multi' and empty.
+                          enum:
+                          - Multi
+                          - ""
+                          type: string
                         channels:
                           description: |-
                             channels is the set of Cincinnati channels to which the release
@@ -623,6 +645,17 @@ spec:
                   If the cluster is not yet fully initialized desired will be set
                   with the information available, which may be an image or a tag.
                 properties:
+                  architecture:
+                    description: |-
+                      architecture is an optional field that indicates the
+                      value of the cluster architecture. In this context cluster
+                      architecture means either a single architecture or a multi
+                      architecture.
+                      Valid values are 'Multi' and empty.
+                    enum:
+                    - Multi
+                    - ""
+                    type: string
                   channels:
                     description: |-
                       channels is the set of Cincinnati channels to which the release
