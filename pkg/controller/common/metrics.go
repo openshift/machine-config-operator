@@ -32,18 +32,56 @@ var (
 			Name: "mcc_drain_err",
 			Help: "logs failed drain",
 		}, []string{"node"})
-	// MCCPoolAlert logs when the pool configuration changes in a way the user should know.
+
+	// MCCPoolAlert logs when the pool configuration changes in a way the user should know
 	MCCPoolAlert = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "mcc_pool_alert",
 			Help: "pool status alert",
 		}, []string{"node"})
+
 	// MCCSubControllerState logs the state of the subcontrollers of the MCC
 	MCCSubControllerState = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "mcc_sub_controller_state",
 			Help: "state of sub-controllers in the MCC",
 		}, []string{"subcontroller", "state", "object"})
+
+	// MCCState is the state of the machine config controller
+	// pause, updated, updating, degraded
+	MCCState = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "mco_state",
+			Help: "state of a specified pool",
+		}, []string{"node", "pool", "state", "reason"})
+
+	// MCCMachineCount is the total number of nodes in the pool
+	MCCMachineCount = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "mco_machine_count",
+			Help: "total number of machines in a specified pool",
+		}, []string{"pool"})
+
+	// MCCUpdatedMachineCount is the updated machines in the pool
+	MCCUpdatedMachineCount = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "mco_updated_machine_count",
+			Help: "total number of updated machines in specified pool",
+		}, []string{"pool"})
+
+	// MCCDegradedMachineCount is the degraded machines in the pool
+	MCCDegradedMachineCount = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "mco_degraded_machine_count",
+			Help: "total number of degraded machines in specified pool",
+		}, []string{"pool"})
+
+	// MCCUnavailableMachineCount is the unavailable machines in the pool
+	MCCUnavailableMachineCount = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "mco_unavailable_machine_count",
+			Help: "total number of unavailable machines in specified pool",
+		}, []string{"pool"})
 )
 
 func RegisterMCCMetrics() error {
@@ -52,13 +90,18 @@ func RegisterMCCMetrics() error {
 		MCCDrainErr,
 		MCCPoolAlert,
 		MCCSubControllerState,
+		MCCState,
+		MCCMachineCount,
+		MCCUpdatedMachineCount,
+		MCCDegradedMachineCount,
+		MCCUnavailableMachineCount,
 	})
 
 	if err != nil {
 		return fmt.Errorf("could not register machine-config-controller metrics: %w", err)
 	}
 
-	// Initilize GuageVecs to ensure that metrics of type GuageVec are accessible from the dashboard even if without a logged value
+	// Initialize GaugeVecs to ensure that metrics of type GaugeVec are accessible from the dashboard even if without a logged value
 	// Solution to OCPBUGS-20427: https://issues.redhat.com/browse/OCPBUGS-20427
 	OSImageURLOverride.WithLabelValues("initialize").Set(0)
 	MCCDrainErr.WithLabelValues("initialize").Set(0)

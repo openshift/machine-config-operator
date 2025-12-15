@@ -1319,7 +1319,13 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		}
 		ctrlcommon.UpdateStateMetric(ctrlcommon.MCCSubControllerState, "machine-config-controller-node", "Sync Machine Config Pool", pool.Name)
 	}
-	return ctrl.syncStatusOnly(pool)
+
+	if err := ctrl.syncStatusOnly(pool); err != nil {
+		return err
+	}
+
+	// Update metrics after syncing the pool status
+	return ctrl.syncMetrics()
 }
 
 // checkIfNodeHasInProgressTaint checks if the given node has in progress taint
@@ -1707,4 +1713,34 @@ func (ctrl *Controller) isConfigOrBuildPresent(mosc *mcfgv1.MachineOSConfig, mos
 
 func (ctrl *Controller) isConfigAndBuildPresent(mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) bool {
 	return (mosc != nil && mosb != nil)
+}
+
+// syncMetrics updates the metrics for all pools
+func (ctrl *Controller) syncMetrics() error {
+	pools, err := ctrl.mcpLister.List(labels.Everything())
+	if err != nil {
+		return err
+	}
+	// set metrics per pool, we need to get the latest condition to log for the state
+	var latestTime metav1.Time
+	latestTime.Time = time.Time{}
+	var cond mcfgv1.MachineConfigPoolCondition
+	for _, pool := range pools {
+		for _, condition := range pool.Status.Conditions {
+			if condition.Status == corev1.ConditionTrue && condition.LastTransitionTime.After(latestTime.Time) {
+				cond = condition
+				latestTime = cond.LastTransitionTime
+			}
+		}
+
+		nodes, _ := helpers.GetNodesForPool(ctrl.mcpLister, ctrl.nodeLister, pool)
+		for _, node := range nodes {
+			ctrlcommon.MCCState.WithLabelValues(node.Name, pool.Name, string(cond.Type), cond.Reason).SetToCurrentTime()
+		}
+		ctrlcommon.MCCMachineCount.WithLabelValues(pool.Name).Set(float64(pool.Status.MachineCount))
+		ctrlcommon.MCCUpdatedMachineCount.WithLabelValues(pool.Name).Set(float64(pool.Status.UpdatedMachineCount))
+		ctrlcommon.MCCDegradedMachineCount.WithLabelValues(pool.Name).Set(float64(pool.Status.DegradedMachineCount))
+		ctrlcommon.MCCUnavailableMachineCount.WithLabelValues(pool.Name).Set(float64(pool.Status.UnavailableMachineCount))
+	}
+	return nil
 }
