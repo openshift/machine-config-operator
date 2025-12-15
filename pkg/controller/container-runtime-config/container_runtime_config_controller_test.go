@@ -220,10 +220,10 @@ func newClusterImagePolicyWithPublicKey(name string, scopes []string, keyData []
 		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5)), Generation: 1},
 		Spec: apicfgv1.ClusterImagePolicySpec{
 			Scopes: imgScopes,
-			Policy: apicfgv1.Policy{
+			Policy: apicfgv1.ImageSigstoreVerificationPolicy{
 				RootOfTrust: apicfgv1.PolicyRootOfTrust{
 					PolicyType: apicfgv1.PublicKeyRootOfTrust,
-					PublicKey: &apicfgv1.PublicKey{
+					PublicKey: &apicfgv1.ImagePolicyPublicKeyRootOfTrust{
 						KeyData: keyData,
 					},
 				},
@@ -242,10 +242,10 @@ func newImagePolicyWithPublicKey(name, namespace string, scopes []string, keyDat
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, UID: types.UID(utilrand.String(5)), Generation: 1},
 		Spec: apicfgv1.ImagePolicySpec{
 			Scopes: imgScopes,
-			Policy: apicfgv1.Policy{
+			Policy: apicfgv1.ImageSigstoreVerificationPolicy{
 				RootOfTrust: apicfgv1.PolicyRootOfTrust{
 					PolicyType: apicfgv1.PublicKeyRootOfTrust,
-					PublicKey: &apicfgv1.PublicKey{
+					PublicKey: &apicfgv1.ImagePolicyPublicKeyRootOfTrust{
 						KeyData: keyData,
 					},
 				},
