@@ -46,7 +46,6 @@ type fixture struct {
 	apiserverclient *oseconfigfake.Clientset
 
 	ccLister []*mcfgv1.ControllerConfig
-	mcLister []*mcfgv1.MachineConfig
 
 	kubeactions []core.Action
 	actions     []core.Action
@@ -111,11 +110,10 @@ func (f *fixture) newController() *Controller {
 
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
 	c := New(templateDir,
-		i.Machineconfiguration().V1().ControllerConfigs(), i.Machineconfiguration().V1().MachineConfigs(), cinformer.Core().V1().Secrets(),
+		i.Machineconfiguration().V1().ControllerConfigs(), cinformer.Core().V1().Secrets(),
 		apiserverinformer.Config().V1().APIServers(), f.kubeclient, f.client)
 
 	c.ccListerSynced = alwaysReady
-	c.mcListerSynced = alwaysReady
 	c.apiserverListerSynced = alwaysReady
 	c.eventRecorder = &record.FakeRecorder{}
 
@@ -126,10 +124,6 @@ func (f *fixture) newController() *Controller {
 
 	for _, c := range f.ccLister {
 		i.Machineconfiguration().V1().ControllerConfigs().Informer().GetIndexer().Add(c)
-	}
-
-	for _, m := range f.mcLister {
-		i.Machineconfiguration().V1().MachineConfigs().Informer().GetIndexer().Add(m)
 	}
 
 	return c
@@ -327,7 +321,6 @@ func TestDoNothing(t *testing.T) {
 	f.ccLister = append(f.ccLister, cc)
 	f.objects = append(f.objects, cc)
 	f.kubeobjects = append(f.kubeobjects, ps)
-	f.mcLister = append(f.mcLister, mcs...)
 	for idx := range mcs {
 		f.objects = append(f.objects, mcs[idx])
 	}
@@ -366,7 +359,6 @@ func TestRecreateMachineConfig(t *testing.T) {
 	f.objects = append(f.objects, cc)
 	f.kubeobjects = append(f.kubeobjects, ps)
 	for idx := 0; idx < len(mcs)-1; idx++ {
-		f.mcLister = append(f.mcLister, mcs[idx])
 		f.objects = append(f.objects, mcs[idx])
 	}
 
@@ -412,7 +404,6 @@ func TestUpdateMachineConfig(t *testing.T) {
 	f.kubeobjects = append(f.kubeobjects, ps)
 	f.objects = append(f.objects, cc)
 	for idx := range mcs {
-		f.mcLister = append(f.mcLister, mcs[idx])
 		f.objects = append(f.objects, mcs[idx])
 	}
 
