@@ -1,5 +1,0 @@
-mode: 0644
-path: "/etc/iri-registry/certs/tls.crt"
-contents:
-  inline: |-
-{{indent 4 .IriTLSCert}}

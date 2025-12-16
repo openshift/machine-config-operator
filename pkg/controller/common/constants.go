@@ -69,9 +69,6 @@ const (
 	// InternalReleaseImageInstanceName is a singleton name for InternalReleaseImage
 	InternalReleaseImageInstanceName = "cluster"
 
-	// InternalReleaseImageTLSSecretName is the name of the secret manifest containing the InternalReleaseImage TLS certificate.
-	InternalReleaseImageTLSSecretName = "internal-release-image-tls"
-
 	// APIServerInstanceName is a singleton name for APIServer configuration
 	APIServerBootstrapFileLocation = "/etc/mcs/bootstrap/api-server/api-server.yaml"
 

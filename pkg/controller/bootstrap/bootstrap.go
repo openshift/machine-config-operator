@@ -102,7 +102,6 @@ func (b *Bootstrap) Run(destDir string) error {
 		imgCfg               *apicfgv1.Image
 		apiServer            *apicfgv1.APIServer
 		iri                  *mcfgv1alpha1.InternalReleaseImage
-		iriTLSCert           *corev1.Secret
 	)
 	for _, info := range infos {
 		if info.IsDir() {
@@ -171,10 +170,6 @@ func (b *Bootstrap) Run(destDir string) error {
 			case *mcfgv1alpha1.InternalReleaseImage:
 				if obj.GetName() == ctrlcommon.InternalReleaseImageInstanceName {
 					iri = obj
-				}
-			case *corev1.Secret:
-				if obj.GetName() == ctrlcommon.InternalReleaseImageTLSSecretName {
-					iriTLSCert = obj
 				}
 			default:
 				klog.Infof("skipping %q [%d] manifest because of unhandled %T", file.Name(), idx+1, obji)
@@ -258,11 +253,11 @@ func (b *Bootstrap) Run(destDir string) error {
 
 	if fgHandler != nil && fgHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
 		if iri != nil {
-			iriConfigs, err := internalreleaseimage.RunInternalReleaseImageBootstrap(iri, iriTLSCert, cconfig)
+			iriConfig, err := internalreleaseimage.RunInternalReleaseImageBootstrap(iri, cconfig)
 			if err != nil {
 				return err
 			}
-			configs = append(configs, iriConfigs...)
+			configs = append(configs, iriConfig)
 			klog.Infof("Successfully generated MachineConfig from InternalReleaseImage.")
 		}
 	}
