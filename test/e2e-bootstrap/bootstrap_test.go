@@ -467,7 +467,6 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 		template.New(
 			templatesDir,
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
-			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 			ctx.OpenShiftConfigKubeNamespacedInformerFactory.Core().V1().Secrets(),
 			ctx.ConfigInformerFactory.Config().V1().APIServers(),
 			ctx.ClientBuilder.KubeClientOrDie("template-controller"),
