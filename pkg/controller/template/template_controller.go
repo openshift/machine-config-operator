@@ -6,11 +6,14 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
+	"sync"
 	"time"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -26,7 +29,6 @@ import (
 	configinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -74,6 +76,8 @@ type Controller struct {
 	secretsInformerSynced cache.InformerSynced
 
 	queue workqueue.TypedRateLimitingInterface[string]
+
+	urlClearOnce sync.Once
 }
 
 // New returns a new template controller.
@@ -588,7 +592,7 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 		return err
 	}
 	controllerconfig, err := ctrl.ccLister.Get(name)
-	if errors.IsNotFound(err) {
+	if apierrors.IsNotFound(err) {
 		klog.V(2).Infof("ControllerConfig %v has been deleted", key)
 		return nil
 	}
@@ -633,6 +637,15 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 		return ctrl.syncFailingStatus(cfg, err)
 	}
 
+	// TODO: To be removed when 4.22 is EOL
+	// Since 4.22 templated/generated (non-rendered) MCs no longer set the
+	// OS and Extensions URLs and if given, the render controller ignores their
+	// values. To improve UX we remove the URLs from existing MCs once.
+	if clearErr := ctrl.clearImageURLs(); err == nil && apiServer != nil {
+		// Best effort, do not fail
+		klog.Warningf("Clearing MCs URLs has failed: %v", clearErr)
+	}
+
 	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, clusterPullSecretRaw, apiServer)
 	if err != nil {
 		return ctrl.syncFailingStatus(cfg, err)
@@ -650,6 +663,39 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 	}
 
 	return ctrl.syncCompletedStatus(cfg)
+}
+
+// clearImageURLs clears OSImageURL and BaseOSExtensionsContainerImage from template-generated
+// MachineConfigs. This is a one-time migration operation to remove these fields from generated
+// MachineConfigs, as they should only be set on rendered or user-provided MachineConfigs.
+// The function uses sync.Once to ensure it runs only once per controller lifecycle.
+func (ctrl *Controller) clearImageURLs() error {
+	var err error
+	ctrl.urlClearOnce.Do(func() {
+		var mcList *mcfgv1.MachineConfigList
+		mcList, err = ctrl.client.MachineconfigurationV1().MachineConfigs().List(context.TODO(), metav1.ListOptions{})
+		if err != nil {
+			return
+		}
+		for _, mc := range mcList.Items {
+			if mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] == "" || strings.HasPrefix(mc.Name, ctrlcommon.RenderedMachineConfigPrefix) {
+				// It's a rendered MC or a user provided one.
+				// This update code only works with templated/generated MCs
+				continue
+			}
+
+			if mc.Spec.OSImageURL != "" || mc.Spec.BaseOSExtensionsContainerImage != "" {
+				mc.Spec.OSImageURL = ""
+				mc.Spec.BaseOSExtensionsContainerImage = ""
+
+				if _, updateErr := ctrl.client.MachineconfigurationV1().MachineConfigs().Update(context.TODO(), &mc, metav1.UpdateOptions{}); updateErr != nil {
+					err = errors.Join(err, updateErr)
+				}
+				klog.Infof("Removed old imageURLs from MachineConfig %s", mc.Name)
+			}
+		}
+	})
+	return err
 }
 
 func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, clusterPullSecretRaw []byte, apiServer *configv1.APIServer) ([]*mcfgv1.MachineConfig, error) {
