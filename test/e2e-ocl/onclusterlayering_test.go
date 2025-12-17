@@ -999,8 +999,31 @@ func waitForBuildToComplete(t *testing.T, cs *framework.ClientSet, startedBuild 
 
 	start := time.Now()
 
-	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
-	kubeassert.Eventually().MachineOSBuildIsSuccessful(startedBuild)
+	// Use WithTimeout to explicitly set the timeout on the assertion,
+	// ensuring the timeout is properly enforced
+	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx).Eventually().WithTimeout(time.Minute * 20)
+
+	// Check the build status periodically and log it for debugging
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				t.Logf("Context cancelled/timed out while waiting for build %s after %s", startedBuild.Name, time.Since(start))
+				return
+			case <-ticker.C:
+				mosb, err := cs.MachineconfigurationV1Interface.MachineOSBuilds().Get(context.Background(), startedBuild.Name, metav1.GetOptions{})
+				if err != nil {
+					t.Logf("Error fetching build status for %s: %v", startedBuild.Name, err)
+				} else {
+					t.Logf("Build %s status after %s: %+v", startedBuild.Name, time.Since(start), mosb.Status.Conditions)
+				}
+			}
+		}
+	}()
+
+	kubeassert.MachineOSBuildIsSuccessful(startedBuild)
 	t.Logf("MachineOSBuild %s successful after %s", startedBuild.Name, time.Since(start))
 	assertBuildObjectsAreDeleted(t, kubeassert.Eventually(), startedBuild)
 	t.Logf("Build objects deleted after %s", time.Since(start))
