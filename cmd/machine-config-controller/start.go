@@ -73,6 +73,15 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 
 		ctrlctx := ctrlcommon.CreateControllerContext(ctx, cb)
 
+		// Early start the config informer because feature gate depends on it
+		ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
+		if fgErr := ctrlctx.FeatureGatesHandler.Connect(ctx); fgErr != nil {
+			klog.Error(fmt.Errorf("failed to connect to feature gates %w", fgErr))
+			runCancel()
+			<-ctx.Done()
+			return
+		}
+
 		go ctrlcommon.StartMetricsListener(startOpts.promMetricsListenAddress, ctrlctx.Stop, ctrlcommon.RegisterMCCMetrics)
 
 		controllers := createControllers(ctrlctx)
@@ -110,10 +119,6 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		ctrlctx.OCLInformerFactory.Start(ctrlctx.Stop)
 
 		close(ctrlctx.InformersStarted)
-
-		if fgErr := ctrlctx.FeatureGatesHandler.Connect(ctx); fgErr != nil {
-			klog.Fatal(fmt.Errorf("failed to connect to feature gates %w", fgErr))
-		}
 
 		if ctrlctx.FeatureGatesHandler.Enabled(features.FeatureGatePinnedImages) && ctrlctx.FeatureGatesHandler.Enabled(features.FeatureGateMachineConfigNodes) {
 			pinnedImageSet := pinnedimageset.New(
@@ -245,6 +250,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.InformerFactory.Machineconfiguration().V1().ContainerRuntimeConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().KubeletConfigs(),
 			ctx.OperatorInformerFactory.Operator().V1().MachineConfigurations(),
+			ctx.InformerFactory.Machineconfiguration().V1alpha1().OSImageStreams(),
 			ctx.ClientBuilder.KubeClientOrDie("render-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("render-controller"),
 			ctx.FeatureGatesHandler,
