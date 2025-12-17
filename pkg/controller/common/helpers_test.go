@@ -383,7 +383,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 		},
 	}
 	inMachineConfigs := []*mcfgv1.MachineConfig{machineConfigFIPS}
-	mergedMachineConfig, err := MergeMachineConfigs(inMachineConfigs, cconfig)
+	mergedMachineConfig, err := MergeMachineConfigs(inMachineConfigs, cconfig, nil)
 	require.Nil(t, err)
 
 	// check that the outgoing config does have the version string set,
@@ -397,7 +397,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 	require.Nil(t, err)
 	expectedMachineConfig := &mcfgv1.MachineConfig{
 		Spec: mcfgv1.MachineConfigSpec{
-			OSImageURL:      GetDefaultBaseImageContainer(&cconfig.Spec),
+			OSImageURL:      GetBaseImageContainer(&cconfig.Spec, nil),
 			KernelArguments: []string{},
 			Config: runtime.RawExtension{
 				Raw: rawOutIgn,
@@ -504,7 +504,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 		machineConfigIgnV2Merge,
 	}
 
-	mergedMachineConfig, err = MergeMachineConfigs(inMachineConfigs, cconfig)
+	mergedMachineConfig, err = MergeMachineConfigs(inMachineConfigs, cconfig, nil)
 	require.Nil(t, err)
 
 	expectedMachineConfig = &mcfgv1.MachineConfig{
@@ -588,7 +588,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 	}
 
 	cconfig = &mcfgv1.ControllerConfig{}
-	mergedMachineConfig, err = MergeMachineConfigs(inMachineConfigs, cconfig)
+	mergedMachineConfig, err = MergeMachineConfigs(inMachineConfigs, cconfig, nil)
 	require.Nil(t, err)
 
 	// The expectation here is that the merged config contains the MCs with name bbb (overrides aaa due to name) and ccc (overrides ddd due to pool)
@@ -795,7 +795,7 @@ func TestSetDefaultFileOverwrite(t *testing.T) {
 	require.Nil(t, err)
 
 	cconfig := &mcfgv1.ControllerConfig{}
-	mergedMachineConfig, err := MergeMachineConfigs([]*mcfgv1.MachineConfig{machineConfigPreMerge}, cconfig)
+	mergedMachineConfig, err := MergeMachineConfigs([]*mcfgv1.MachineConfig{machineConfigPreMerge}, cconfig, nil)
 	require.Nil(t, err)
 
 	// Convert and create the expected post-merge config

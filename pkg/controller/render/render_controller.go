@@ -10,17 +10,21 @@ import (
 
 	"github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	"github.com/openshift/api/machineconfiguration/v1alpha1"
 	opv1 "github.com/openshift/api/operator/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
+	mcfginformersv1alpha1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
+	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 	mcopinformersv1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
 	mcoplistersv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	"github.com/openshift/machine-config-operator/pkg/osimagestream"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -65,11 +69,13 @@ type Controller struct {
 	syncHandler              func(mcp string) error
 	enqueueMachineConfigPool func(*mcfgv1.MachineConfigPool)
 
-	mcpLister mcfglistersv1.MachineConfigPoolLister
-	mcLister  mcfglistersv1.MachineConfigLister
+	mcpLister           mcfglistersv1.MachineConfigPoolLister
+	mcLister            mcfglistersv1.MachineConfigLister
+	osImageStreamLister mcfglistersv1alpha1.OSImageStreamLister
 
-	mcpListerSynced cache.InformerSynced
-	mcListerSynced  cache.InformerSynced
+	mcpListerSynced           cache.InformerSynced
+	mcListerSynced            cache.InformerSynced
+	osImageStreamListerSynced cache.InformerSynced
 
 	ccLister       mcfglistersv1.ControllerConfigLister
 	ccListerSynced cache.InformerSynced
@@ -96,6 +102,7 @@ func New(
 	crcInformer mcfginformersv1.ContainerRuntimeConfigInformer,
 	mckInformer mcfginformersv1.KubeletConfigInformer,
 	mcopInformer mcopinformersv1.MachineConfigurationInformer,
+	osImageStreamInformer mcfginformersv1alpha1.OSImageStreamInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 	featureGatesHandler ctrlcommon.FeatureGatesHandler,
@@ -140,6 +147,10 @@ func New(
 	ctrl.mcopLister = mcopInformer.Lister()
 	ctrl.mcopListerSynced = mcopInformer.Informer().HasSynced
 
+	if osImageStreamInformer != nil && osimagestream.IsFeatureEnabled(ctrl.fgHandler) {
+		ctrl.osImageStreamLister = osImageStreamInformer.Lister()
+		ctrl.osImageStreamListerSynced = osImageStreamInformer.Informer().HasSynced
+	}
 	return ctrl
 }
 
@@ -148,7 +159,13 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.mcListerSynced, ctrl.ccListerSynced) {
+	listerCaches := []cache.InformerSynced{ctrl.mcpListerSynced, ctrl.mcListerSynced, ctrl.ccListerSynced}
+
+	// OSImageStreams and MCPs fetched only if FeatureGateOSStreams active
+	if ctrl.osImageStreamListerSynced != nil {
+		listerCaches = append(listerCaches, ctrl.osImageStreamListerSynced)
+	}
+	if !cache.WaitForCacheSync(stopCh, listerCaches...) {
 		return
 	}
 
@@ -512,12 +529,12 @@ func (ctrl *Controller) garbageCollectRenderedConfigs(_ *mcfgv1.MachineConfigPoo
 	return nil
 }
 
-func (ctrl *Controller) getRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cc *mcfgv1.ControllerConfig) (*mcfgv1.MachineConfig, error) {
+func (ctrl *Controller) getRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cc *mcfgv1.ControllerConfig, osImageStreamSet *v1alpha1.OSImageStreamSet) (*mcfgv1.MachineConfig, error) {
 	// If we don't yet have a rendered MachineConfig on the pool, we cannot
 	// perform reconciliation. So we must solely generate the rendered
 	// MachineConfig.
 	if pool.Spec.Configuration.Name == "" {
-		return generateRenderedMachineConfig(pool, configs, cc)
+		return generateRenderedMachineConfig(pool, configs, cc, osImageStreamSet)
 	}
 
 	// The pool has a rendered MachineConfig, so we can do more advanced
@@ -526,7 +543,7 @@ func (ctrl *Controller) getRenderedMachineConfig(pool *mcfgv1.MachineConfigPool,
 
 	// Degenerate case: When the renderedMC that the MCP is currently pointing to is deleted
 	if apierrors.IsNotFound(err) {
-		generated, err := generateRenderedMachineConfig(pool, configs, cc)
+		generated, err := generateRenderedMachineConfig(pool, configs, cc, osImageStreamSet)
 		if err != nil {
 			return nil, err
 		}
@@ -545,7 +562,24 @@ func (ctrl *Controller) getRenderedMachineConfig(pool *mcfgv1.MachineConfigPool,
 		mcop = *mcopPtr
 	}
 
-	return generateAndValidateRenderedMachineConfig(currentMC, pool, configs, cc, &mcop.Spec.IrreconcilableValidationOverrides)
+	return generateAndValidateRenderedMachineConfig(currentMC, pool, configs, cc, &mcop.Spec.IrreconcilableValidationOverrides, osImageStreamSet)
+}
+
+func (ctrl *Controller) getOSImageStreamForPool(pool *mcfgv1.MachineConfigPool) (*v1alpha1.OSImageStreamSet, error) {
+	if !osimagestream.IsFeatureEnabled(ctrl.fgHandler) || ctrl.osImageStreamLister == nil {
+		return nil, nil
+	}
+
+	imageStream, err := ctrl.osImageStreamLister.Get(ctrlcommon.ClusterInstanceNameOSImageStream)
+	if err != nil {
+		return nil, fmt.Errorf("could not get OSImageStream for pool %s: %w", pool.Name, err)
+	}
+
+	imageStreamSet, err := osimagestream.GetOSImageStreamSetByName(imageStream, pool.Spec.OSImageStream.Name)
+	if err != nil {
+		return nil, fmt.Errorf("could not get OSImageStreamSet for pool %s: %w", pool.Name, err)
+	}
+	return imageStreamSet, nil
 }
 
 func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig) error {
@@ -558,14 +592,19 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		return err
 	}
 
-	generated, err := ctrl.getRenderedMachineConfig(pool, configs, cc)
+	osImageStreamSet, err := ctrl.getOSImageStreamForPool(pool)
+	if err != nil {
+		return err
+	}
+
+	generated, err := ctrl.getRenderedMachineConfig(pool, configs, cc, osImageStreamSet)
 	if err != nil {
 		return fmt.Errorf("could not generate rendered MachineConfig: %w", err)
 	}
 
 	// Collect metric when OSImageURL was overridden
 	var isOSImageURLOverridden bool
-	if generated.Spec.OSImageURL != ctrlcommon.GetDefaultBaseImageContainer(&cc.Spec) {
+	if generated.Spec.OSImageURL != ctrlcommon.GetBaseImageContainer(&cc.Spec, osImageStreamSet) {
 		ctrlcommon.OSImageURLOverride.WithLabelValues(pool.Name).Set(1)
 		isOSImageURLOverridden = true
 	} else {
@@ -616,7 +655,7 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 }
 
 // generateRenderedMachineConfig takes all MCs for a given pool and returns a single rendered MC. For ex master-XXXX or worker-XXXX
-func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig) (*mcfgv1.MachineConfig, error) {
+func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig, osImageStreamSet *v1alpha1.OSImageStreamSet) (*mcfgv1.MachineConfig, error) {
 	// Suppress rendered config generation until a corresponding new controller can roll out too.
 	// https://bugzilla.redhat.com/show_bug.cgi?id=1879099
 	if genver, ok := cconfig.Annotations[daemonconsts.GeneratedByVersionAnnotationKey]; ok {
@@ -647,7 +686,7 @@ func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mc
 		}
 	}
 
-	merged, err := ctrlcommon.MergeMachineConfigs(configs, cconfig)
+	merged, err := ctrlcommon.MergeMachineConfigs(configs, cconfig, osImageStreamSet)
 
 	if err != nil {
 		return nil, err
@@ -669,7 +708,7 @@ func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mc
 	// The operator needs to know the user overrode this, so it knows if it needs to skip the
 	// OSImageURL check during upgrade -- if the user took over managing OS upgrades this way,
 	// the operator shouldn't stop the rest of the upgrade from progressing/completing.
-	if merged.Spec.OSImageURL != ctrlcommon.GetDefaultBaseImageContainer(&cconfig.Spec) {
+	if merged.Spec.OSImageURL != ctrlcommon.GetBaseImageContainer(&cconfig.Spec, osImageStreamSet) {
 		merged.Annotations[ctrlcommon.OSImageURLOverriddenKey] = "true"
 		// Log a warning if the osImageURL is set using a tag instead of a digest
 		if !strings.Contains(merged.Spec.OSImageURL, "sha256:") {
@@ -692,11 +731,12 @@ func generateAndValidateRenderedMachineConfig(
 	pool *mcfgv1.MachineConfigPool,
 	configs []*mcfgv1.MachineConfig,
 	cconfig *mcfgv1.ControllerConfig,
-	validationOverrides *opv1.IrreconcilableValidationOverrides) (*mcfgv1.MachineConfig, error) {
+	validationOverrides *opv1.IrreconcilableValidationOverrides,
+	osImageStreamSet *v1alpha1.OSImageStreamSet) (*mcfgv1.MachineConfig, error) {
 	source := getMachineConfigRefs(configs)
 	klog.V(4).Infof("Considering %d configs %s for MachineConfig generation", len(source), source)
 
-	generated, err := generateRenderedMachineConfig(pool, configs, cconfig)
+	generated, err := generateRenderedMachineConfig(pool, configs, cconfig, osImageStreamSet)
 	if err != nil {
 		return nil, err
 	}
@@ -741,7 +781,7 @@ func generateAndValidateRenderedMachineConfig(
 // RunBootstrap runs the render controller in bootstrap mode.
 // For each pool, it matches the machineconfigs based on label selector and
 // returns the generated machineconfigs and pool with CurrentMachineConfig status field set.
-func RunBootstrap(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig) ([]*mcfgv1.MachineConfigPool, []*mcfgv1.MachineConfig, error) {
+func RunBootstrap(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig, osImageStream *v1alpha1.OSImageStream) ([]*mcfgv1.MachineConfigPool, []*mcfgv1.MachineConfig, error) {
 	var (
 		opools   []*mcfgv1.MachineConfigPool
 		oconfigs []*mcfgv1.MachineConfig
@@ -751,8 +791,15 @@ func RunBootstrap(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineCo
 		if err != nil {
 			return nil, nil, err
 		}
+		var osImageStreamSet *v1alpha1.OSImageStreamSet
+		if osImageStream != nil {
+			osImageStreamSet, err = osimagestream.GetOSImageStreamSetByName(osImageStream, pool.Spec.OSImageStream.Name)
+			if err != nil {
+				return nil, nil, fmt.Errorf("couldn't get the OSImageStream for pool %s %w", pool.Name, err)
+			}
+		}
 
-		generated, err := generateRenderedMachineConfig(pool, pcs, cconfig)
+		generated, err := generateRenderedMachineConfig(pool, pcs, cconfig, osImageStreamSet)
 		if err != nil {
 			return nil, nil, err
 		}

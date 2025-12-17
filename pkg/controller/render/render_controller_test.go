@@ -8,6 +8,7 @@ import (
 
 	"github.com/clarketm/json"
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
+	apicfgv1 "github.com/openshift/api/config/v1"
 	configv1 "github.com/openshift/api/config/v1"
 	mcopfake "github.com/openshift/client-go/operator/clientset/versioned/fake"
 	operatorinformer "github.com/openshift/client-go/operator/informers/externalversions"
@@ -64,6 +65,10 @@ func newFixture(t *testing.T) *fixture {
 	f.t = t
 	f.objects = []runtime.Object{}
 	f.oObjects = []runtime.Object{}
+	f.fgHandler = ctrlcommon.NewFeatureGatesHardcodedHandler(
+		[]apicfgv1.FeatureGateName{},
+		[]apicfgv1.FeatureGateName{},
+	)
 	return f
 }
 
@@ -76,7 +81,7 @@ func (f *fixture) newController() *Controller {
 	c := New(i.Machineconfiguration().V1().MachineConfigPools(), i.Machineconfiguration().V1().MachineConfigs(),
 		i.Machineconfiguration().V1().ControllerConfigs(), i.Machineconfiguration().V1().ContainerRuntimeConfigs(),
 		i.Machineconfiguration().V1().KubeletConfigs(), oi.Operator().V1().MachineConfigurations(),
-		k8sfake.NewSimpleClientset(), f.client, f.fgHandler)
+		i.Machineconfiguration().V1alpha1().OSImageStreams(), k8sfake.NewSimpleClientset(), f.client, f.fgHandler)
 
 	c.mcpListerSynced = alwaysReady
 	c.mcListerSynced = alwaysReady
@@ -299,7 +304,7 @@ func TestCreatesGeneratedMachineConfig(t *testing.T) {
 		f.objects = append(f.objects, mcs[idx])
 	}
 
-	gmc, err := generateRenderedMachineConfig(mcp, mcs, cc)
+	gmc, err := generateRenderedMachineConfig(mcp, mcs, cc, nil)
 	assert.NoError(t, err)
 
 	mcpNew := mcp.DeepCopy()
@@ -331,7 +336,7 @@ func TestIgnValidationGenerateRenderedMachineConfig(t *testing.T) {
 	}
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
 
-	_, err := generateRenderedMachineConfig(mcp, mcs, cc)
+	_, err := generateRenderedMachineConfig(mcp, mcs, cc, nil)
 	require.Nil(t, err)
 
 	// verify that an invalid ignition config (here a config with content and an empty version,
@@ -343,7 +348,7 @@ func TestIgnValidationGenerateRenderedMachineConfig(t *testing.T) {
 	require.Nil(t, err)
 	mcs[1].Spec.Config.Raw = rawIgnCfg
 
-	_, err = generateRenderedMachineConfig(mcp, mcs, cc)
+	_, err = generateRenderedMachineConfig(mcp, mcs, cc, nil)
 	require.NotNil(t, err)
 
 	// verify that a machine config with no ignition content will not fail validation
@@ -352,7 +357,7 @@ func TestIgnValidationGenerateRenderedMachineConfig(t *testing.T) {
 	require.Nil(t, err)
 	mcs[1].Spec.Config.Raw = rawEmptyIgnCfg
 	mcs[1].Spec.KernelArguments = append(mcs[1].Spec.KernelArguments, "test1")
-	_, err = generateRenderedMachineConfig(mcp, mcs, cc)
+	_, err = generateRenderedMachineConfig(mcp, mcs, cc, nil)
 	require.Nil(t, err)
 
 }
@@ -377,7 +382,7 @@ func TestUpdatesGeneratedMachineConfig(t *testing.T) {
 	}
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
 
-	gmc, err := generateRenderedMachineConfig(mcp, mcs, cc)
+	gmc, err := generateRenderedMachineConfig(mcp, mcs, cc, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -400,7 +405,7 @@ func TestUpdatesGeneratedMachineConfig(t *testing.T) {
 	f.mcLister = append(f.mcLister, gmc)
 	f.objects = append(f.objects, gmc)
 
-	expmc, err := generateRenderedMachineConfig(mcp, mcs, cc)
+	expmc, err := generateRenderedMachineConfig(mcp, mcs, cc, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -424,7 +429,7 @@ func TestGenerateMachineConfigOverrideOSImageURL(t *testing.T) {
 
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
 
-	gmc, err := generateRenderedMachineConfig(mcp, mcs, cc)
+	gmc, err := generateRenderedMachineConfig(mcp, mcs, cc, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -432,7 +437,7 @@ func TestGenerateMachineConfigOverrideOSImageURL(t *testing.T) {
 
 	mcs = append(mcs, helpers.NewMachineConfig("00-test-cluster-master-1", map[string]string{"node-role/master": ""}, "dummy-change-2", []ign3types.File{}))
 
-	gmc, err = generateAndValidateRenderedMachineConfig(gmc, mcp, mcs, cc, nil)
+	gmc, err = generateAndValidateRenderedMachineConfig(gmc, mcp, mcs, cc, nil, nil)
 	assert.NoError(t, err)
 	assert.Equal(t, "dummy-change-2", gmc.Spec.OSImageURL)
 }
@@ -446,12 +451,12 @@ func TestVersionSkew(t *testing.T) {
 
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
 	cc.Annotations[daemonconsts.GeneratedByVersionAnnotationKey] = "different-version"
-	_, err := generateRenderedMachineConfig(mcp, mcs, cc)
+	_, err := generateRenderedMachineConfig(mcp, mcs, cc, nil)
 	require.NotNil(t, err)
 
 	// Now the same thing without overriding the version
 	cc = newControllerConfig(ctrlcommon.ControllerConfigName)
-	gmc, err := generateRenderedMachineConfig(mcp, mcs, cc)
+	gmc, err := generateRenderedMachineConfig(mcp, mcs, cc, nil)
 	require.Nil(t, err)
 	require.NotNil(t, gmc)
 }
@@ -464,14 +469,14 @@ func TestGenerateRenderedConfigOnLatestControllerVersionOnly(t *testing.T) {
 	}
 	version.Hash = "2"
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
-	_, err := generateRenderedMachineConfig(mcp, mcs, cc)
+	_, err := generateRenderedMachineConfig(mcp, mcs, cc, nil)
 	require.NotNil(t, err)
 
 	mcs = []*mcfgv1.MachineConfig{
 		helpers.NewMachineConfigWithAnnotation("00-updated-conf", map[string]string{"node-role/master": ""}, map[string]string{ctrlcommon.GeneratedByControllerVersionAnnotationKey: "2"}, "dummy-test-1", []ign3types.File{}),
 		helpers.NewMachineConfigWithAnnotation("99-user-conf", map[string]string{"node-role/master": ""}, map[string]string{ctrlcommon.GeneratedByControllerVersionAnnotationKey: ""}, "user-data", []ign3types.File{}),
 	}
-	_, err = generateRenderedMachineConfig(mcp, mcs, cc)
+	_, err = generateRenderedMachineConfig(mcp, mcs, cc, nil)
 	require.Nil(t, err)
 }
 
@@ -495,7 +500,7 @@ func TestDoNothing(t *testing.T) {
 	}
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
 
-	gmc, err := generateRenderedMachineConfig(mcp, mcs, cc)
+	gmc, err := generateRenderedMachineConfig(mcp, mcs, cc, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -604,7 +609,7 @@ func TestGenerateMachineConfigValidation(t *testing.T) {
 
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
 
-	gmc, err := generateAndValidateRenderedMachineConfig(currentMC, mcp, mcs, cc, nil)
+	gmc, err := generateAndValidateRenderedMachineConfig(currentMC, mcp, mcs, cc, nil, nil)
 	assert.Error(t, err)
 	assert.Nil(t, gmc)
 }
