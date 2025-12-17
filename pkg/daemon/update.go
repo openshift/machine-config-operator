@@ -608,6 +608,8 @@ func calculatePostConfigChangeActionFromMCDiffs(diffFileSet []string) (actions [
 	}
 	directoriesPostConfigChangeActionNone := []string{
 		constants.OpenShiftNMStateConfigDir,
+		// TODO:should be kubelet restart, but keeping none for testing
+		constants.KubernetesCredentialProvidersDir,
 	}
 	filesPostConfigChangeActionReloadCrio := []string{
 		constants.ContainerRegistryConfPath,
