@@ -87,6 +87,8 @@ contents:
           {
             if pid=$(pgrep -o keepalived); then
               kill -s SIGTERM "$pid"
+              # Give keepalived time to shut down
+              while pgrep -o keepalived; do sleep 1; done
             fi
           }
 
@@ -146,7 +148,8 @@ contents:
           fi
 
           rm -f "$keepalived_sock"
-          socat UNIX-LISTEN:${keepalived_sock},fork system:'bash -c msg_handler'
+          socat UNIX-LISTEN:${keepalived_sock},fork system:'bash -c msg_handler' &
+          wait
         resources:
           requests:
             cpu: 100m
