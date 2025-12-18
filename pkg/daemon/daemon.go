@@ -662,15 +662,32 @@ type unreconcilableErr struct {
 	error
 }
 
+// updateErrorState calls `SetUnreconcilable` to set the node's state annotation value to
+// "Unreconcilable" and the associated reason annotation if the provided error is an unreconcilable
+// error. Otherwise it calls `updateDegradedState` to set the node's state annotation value to
+// "Degraded," populate the associated reason annotation, and set the degrade condition in the MCN.
 func (dn *Daemon) updateErrorState(err error) error {
 	var uErr *unreconcilableErr
 	if errors.As(err, &uErr) {
-		dn.nodeWriter.SetUnreconcilable(err)
-	} else {
-		if err := dn.nodeWriter.SetDegraded(err); err != nil {
-			return err
-		}
+		return dn.nodeWriter.SetUnreconcilable(err)
 	}
+	return dn.updateDegradedState(err)
+}
+
+// `updateDegradedState` calls `SetDegraded` to set the node's state annotation value to "Degraded"
+// and populate the associated reason annotation. It then sets the degrade condition in the MCN.
+func (dn *Daemon) updateDegradedState(err error) error {
+	// Set node state annotation to "Degraded"
+	if setErr := dn.nodeWriter.SetDegraded(err); setErr != nil {
+		return setErr
+	}
+	// Get MCP associated with node
+	pool, poolErr := helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
+	if poolErr != nil {
+		return poolErr
+	}
+	// Set the node's MCN condition to "Degraded"
+	dn.reportMachineNodeDegradeStatus(err, pool)
 	return nil
 }
 
@@ -2426,7 +2443,7 @@ func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, c
 		// NOTE: This case expects a cluster to exists already.
 		ufc, err := dn.prepUpdateFromCluster()
 		if err != nil {
-			if err := dn.nodeWriter.SetDegraded(err); err != nil {
+			if err := dn.updateDegradedState(err); err != nil {
 				return err
 			}
 			maybeReportOnMissingMC(err)
@@ -2437,7 +2454,7 @@ func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, c
 		}
 		// At this point we have verified we need to update
 		if err = dn.triggerUpdateWithMachineConfig(ufc.currentConfig, &machineConfig, false); err != nil {
-			dn.nodeWriter.SetDegraded(err)
+			dn.updateDegradedState(err)
 			return err
 		}
 		return nil
