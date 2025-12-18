@@ -1,4 +1,4 @@
-package machineset
+package bootimage
 
 import (
 	"context"
@@ -29,7 +29,7 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
 
-	"github.com/openshift/machine-config-operator/pkg/controller/machine-set-boot-image/cache"
+	"github.com/openshift/machine-config-operator/pkg/controller/bootimage/cache"
 )
 
 type VsphereResources struct {

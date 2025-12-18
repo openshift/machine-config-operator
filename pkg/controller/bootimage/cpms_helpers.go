@@ -1,4 +1,4 @@
-package machineset
+package bootimage
 
 import (
 	"bytes"
@@ -23,7 +23,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/jsonmergepatch"
-	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 )
@@ -40,30 +39,11 @@ func (ctrl *Controller) syncControlPlaneMachineSets(reason string) {
 		return
 	}
 
-	ctrl.cpmsSyncMutex.Lock()
-	defer ctrl.cpmsSyncMutex.Unlock()
-
-	var mcop *opv1.MachineConfiguration
-	var pollError error
-	// Wait for mcop.Status to populate, otherwise error out. This shouldn't take very long
-	// as this is done by the operator sync loop.
-	if err := wait.PollUntilContextTimeout(context.TODO(), 5*time.Second, 2*time.Minute, true, func(_ context.Context) (bool, error) {
-		mcop, pollError = ctrl.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
-		if pollError != nil {
-			klog.Errorf("MachineConfiguration/cluster has not been created yet")
-			return false, nil
-		}
-
-		// Ensure status.ObservedGeneration matches the last generation of MachineConfiguration
-		if mcop.Generation != mcop.Status.ObservedGeneration {
-			klog.Errorf("MachineConfiguration.Status is not up to date.")
-			pollError = fmt.Errorf("MachineConfiguration.Status is not up to date")
-			return false, nil
-		}
-		return true, nil
-	}); err != nil {
-		klog.Errorf("MachineConfiguration was not ready: %v", pollError)
-		ctrl.updateConditions(reason, fmt.Errorf("MachineConfiguration was not ready:  while enqueueing ControlPlaneMachineSet %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+	// Get MachineConfiguration to determine which resources are enrolled
+	mcop, err := ctrl.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
+	if err != nil {
+		klog.Errorf("Failed to get MachineConfiguration: %v", err)
+		ctrl.updateConditions(reason, fmt.Errorf("failed to get MachineConfiguration while enqueueing ControlPlaneMachineSet: %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
 		return
 	}
 
