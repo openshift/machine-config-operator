@@ -78,7 +78,7 @@ func (rf *RemoteFile) fetchTextContent() error {
 	tmpcontent := strings.SplitN(output, startCat, 2)[1]
 	// take into account that "cat" introduces a newline at the end
 	lastIndex := strings.LastIndex(tmpcontent, endCat)
-	rf.content = fmt.Sprintf(tmpcontent[:lastIndex])
+	rf.content = tmpcontent[:lastIndex]
 
 	logger.Debugf("remote file %s content is:\n%s", rf.fullPath, rf.content)
 
@@ -299,7 +299,7 @@ func (rf *RemoteFile) Rm(args ...string) error {
 
 	cmd = append(cmd, rf.fullPath)
 	output, err := rf.node.DebugNodeWithChroot(cmd...)
-	logger.Infof(output)
+	logger.Infof("%s", output)
 
 	return err
 }

@@ -428,7 +428,7 @@ func uploadBaseImageToVsphere(baseImageSrc, baseImageDest, server, dataCenter, d
 	uploadCmd.Env = govcExecEnv
 
 	out, err := uploadCmd.CombinedOutput()
-	logger.Infof(string(out))
+	logger.Infof("%s", string(out))
 	if err != nil {
 		if strings.Contains(string(out), "already exists") {
 			logger.Infof("Image %s already exists in the cloud, we don't upload it again", baseImageDest)
@@ -444,7 +444,7 @@ func uploadBaseImageToVsphere(baseImageSrc, baseImageDest, server, dataCenter, d
 	upgradeCmd.Env = govcExecEnv
 
 	out, err = upgradeCmd.CombinedOutput()
-	logger.Infof(string(out))
+	logger.Infof("%s", string(out))
 	if err != nil {
 		// We don't fail. We log a warning and continue.
 		logger.Warnf("ERROR UPGRADING HARDWARE: %s", err)
@@ -457,7 +457,7 @@ func uploadBaseImageToVsphere(baseImageSrc, baseImageDest, server, dataCenter, d
 	templateCmd.Env = govcExecEnv
 
 	out, err = templateCmd.CombinedOutput()
-	logger.Infof(string(out))
+	logger.Infof("%s", string(out))
 	if err != nil {
 		// We don't fail. We log a warning and continue.
 		logger.Warnf("ERROR CONVERTING INTO TEMPLATE: %s", err)
