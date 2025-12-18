@@ -999,16 +999,18 @@ func waitForBuildToComplete(t *testing.T, cs *framework.ClientSet, startedBuild 
 
 	start := time.Now()
 
-	// Use WithTimeout to explicitly set the timeout on the assertion,
-	// ensuring the timeout is properly enforced
-	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx).Eventually().WithTimeout(time.Minute * 20)
+	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
 
 	// Check the build status periodically and log it for debugging
+	debugCancel := make(chan struct{})
+	defer close(debugCancel)
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
+			case <-debugCancel:
+				return
 			case <-ctx.Done():
 				t.Logf("Context cancelled/timed out while waiting for build %s after %s", startedBuild.Name, time.Since(start))
 				return
@@ -1023,7 +1025,7 @@ func waitForBuildToComplete(t *testing.T, cs *framework.ClientSet, startedBuild 
 		}
 	}()
 
-	kubeassert.MachineOSBuildIsSuccessful(startedBuild)
+	kubeassert.Eventually().MachineOSBuildIsSuccessful(startedBuild)
 	t.Logf("MachineOSBuild %s successful after %s", startedBuild.Name, time.Since(start))
 	assertBuildObjectsAreDeleted(t, kubeassert.Eventually(), startedBuild)
 	t.Logf("Build objects deleted after %s", time.Since(start))
