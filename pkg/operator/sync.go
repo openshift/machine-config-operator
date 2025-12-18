@@ -2321,9 +2321,19 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 			}
 		}
 		mcop.Status = *newMachineConfigurationStatus
-		_, err = optr.mcopClient.OperatorV1().MachineConfigurations().UpdateStatus(context.TODO(), mcop, metav1.UpdateOptions{})
-		if err != nil {
+
+		// Handle resoucce conflicts since the boot image controller may update conditions at startup
+		if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+			// Refetch via direct API call
+			mcop, err = optr.mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, metav1.GetOptions{})
+			if err != nil {
+				return err
+			}
+			mcop.Status = *newMachineConfigurationStatus
+			_, err = optr.mcopClient.OperatorV1().MachineConfigurations().UpdateStatus(context.TODO(), mcop, metav1.UpdateOptions{})
 			return err
+		}); err != nil {
+			return fmt.Errorf("error updating MachineConfiguration status: %v", err)
 		}
 	}
 
