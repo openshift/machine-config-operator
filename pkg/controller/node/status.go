@@ -139,6 +139,9 @@ func (ctrl *Controller) calculateStatus(fg featuregates.FeatureGate, mcs []*mcfg
 			// populate the degradedReasons from the MachineConfigNodeNodeDegraded condition
 			if mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodeNodeDegraded && cond.Status == metav1.ConditionTrue {
 				degradedMachines = append(degradedMachines, ourNode)
+				// Degraded nodes are also unavailable since they are not in a "Done" state
+				// and cannot be used for further updates (see IsUnavailableForUpdate)
+				unavailableMachines = append(unavailableMachines, ourNode)
 				degradedReasons = append(degradedReasons, fmt.Sprintf("Node %s is reporting: %q", ourNode.Name, cond.Message))
 				break
 			}
