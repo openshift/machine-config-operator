@@ -153,6 +153,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 				ctrlctx.ConfigInformerFactory.Config().V1().Infrastructures(),
 				ctrlctx.ClientBuilder.OperatorClientOrDie(componentName),
 				ctrlctx.OperatorInformerFactory.Operator().V1().MachineConfigurations(),
+				ctrlctx.ConfigInformerFactory.Config().V1().ClusterVersions(),
 				ctrlctx.FeatureGatesHandler,
 			)
 			go bootImageController.Run(ctrlctx.Stop)
