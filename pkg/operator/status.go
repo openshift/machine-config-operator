@@ -7,7 +7,6 @@ import (
 	"reflect"
 	"sort"
 	"strings"
-	"time"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 
@@ -26,7 +25,6 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	kcc "github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
-	"github.com/openshift/machine-config-operator/pkg/helpers"
 )
 
 // syncVersion handles reporting the version to the clusteroperator
@@ -293,35 +291,6 @@ func (optr *Operator) syncUpgradeableStatus(co *configv1.ClusterOperator) error 
 	}
 
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, coStatusCondition, clock.RealClock{})
-	return nil
-}
-
-func (optr *Operator) syncMetrics() error {
-	pools, err := optr.mcpLister.List(labels.Everything())
-	if err != nil {
-		return err
-	}
-	// set metrics per pool, we need to get the latest condition to log for the state
-	var latestTime metav1.Time
-	latestTime.Time = time.Time{}
-	var cond mcfgv1.MachineConfigPoolCondition
-	for _, pool := range pools {
-		for _, condition := range pool.Status.Conditions {
-			if condition.Status == corev1.ConditionTrue && condition.LastTransitionTime.After(latestTime.Time) {
-				cond = condition
-				latestTime = cond.LastTransitionTime
-			}
-		}
-
-		nodes, _ := helpers.GetNodesForPool(optr.mcpLister, optr.nodeLister, pool)
-		for _, node := range nodes {
-			mcoState.WithLabelValues(node.Name, pool.Name, string(cond.Type), cond.Reason).SetToCurrentTime()
-		}
-		mcoMachineCount.WithLabelValues(pool.Name).Set(float64(pool.Status.MachineCount))
-		mcoUpdatedMachineCount.WithLabelValues(pool.Name).Set(float64(pool.Status.UpdatedMachineCount))
-		mcoDegradedMachineCount.WithLabelValues(pool.Name).Set(float64(pool.Status.DegradedMachineCount))
-		mcoUnavailableMachineCount.WithLabelValues(pool.Name).Set(float64(pool.Status.UnavailableMachineCount))
-	}
 	return nil
 }
 
