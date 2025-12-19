@@ -6,6 +6,7 @@ import (
 	"time"
 
 	opv1 "github.com/openshift/api/operator/v1"
+	"github.com/openshift/machine-config-operator/pkg/osimagestream"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
 
@@ -40,8 +41,10 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
+	mcfginformersv1alpha1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
 
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
+	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 
 	mcopclientset "github.com/openshift/client-go/operator/clientset/versioned"
 	mcopinformersv1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
@@ -110,6 +113,8 @@ type Operator struct {
 	nodeClusterLister     configlistersv1.NodeLister
 	moscLister            mcfglistersv1.MachineOSConfigLister
 	apiserverLister       configlistersv1.APIServerLister
+	clusterVersionLister  configlistersv1.ClusterVersionLister
+	osImageStreamLister   mcfglistersv1alpha1.OSImageStreamLister
 
 	crdListerSynced                  cache.InformerSynced
 	deployListerSynced               cache.InformerSynced
@@ -142,6 +147,7 @@ type Operator struct {
 	nodeClusterListerSynced          cache.InformerSynced
 	moscListerSynced                 cache.InformerSynced
 	apiserverListerSynced            cache.InformerSynced
+	osImageStreamListerSynced        cache.InformerSynced
 
 	// queue only ever has one item, but it has nice error handling backoff/retry semantics
 	queue workqueue.TypedRateLimitingInterface[string]
@@ -195,6 +201,8 @@ func New(
 	nodeClusterInformer configinformersv1.NodeInformer,
 	apiserverInformer configinformersv1.APIServerInformer,
 	moscInformer mcfginformersv1.MachineOSConfigInformer,
+	clusterVersionInformer configinformersv1.ClusterVersionInformer,
+	osImageStreamInformer mcfginformersv1alpha1.OSImageStreamInformer,
 	ctrlctx *ctrlcommon.ControllerContext,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()
@@ -332,6 +340,11 @@ func New(
 	optr.apiserverListerSynced = apiserverInformer.Informer().HasSynced
 	optr.moscLister = moscInformer.Lister()
 	optr.moscListerSynced = moscInformer.Informer().HasSynced
+	optr.clusterVersionLister = clusterVersionInformer.Lister()
+	if osImageStreamInformer != nil && osimagestream.IsFeatureEnabled(optr.fgHandler) {
+		optr.osImageStreamLister = osImageStreamInformer.Lister()
+		optr.osImageStreamListerSynced = osImageStreamInformer.Informer().HasSynced
+	}
 
 	optr.vStore.Set("operator", version.ReleaseVersion)
 	optr.vStore.Set("operator-image", version.OperatorImage)
@@ -386,7 +399,9 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.nodeClusterListerSynced,
 		optr.moscListerSynced,
 	}
-
+	if optr.osImageStreamListerSynced != nil && osimagestream.IsFeatureEnabled(optr.fgHandler) {
+		cacheSynced = append(cacheSynced, optr.osImageStreamListerSynced)
+	}
 	if !cache.WaitForCacheSync(stopCh,
 		cacheSynced...) {
 		klog.Error("failed to sync caches")
@@ -510,8 +525,11 @@ func (optr *Operator) sync(key string) error {
 	// syncFuncs is the list of sync functions that are executed in order.
 	// any error marks sync as failure.
 	syncFuncs := []syncFunc{
-		// "RenderConfig" must always run first as it sets the renderConfig in the operator
-		// for the sync funcs below
+		// OSImageStream must run FIRST to provide OS image information as RenderConfig will read
+		// images references from OSImageStream
+		{"OSImageStream", optr.syncOSImageStream},
+		// "RenderConfig" should be the first one to run (except OSImageStream) as it sets the renderConfig in
+		// the operator for the sync funcs below
 		{"RenderConfig", optr.syncRenderConfig},
 		{"MachineConfiguration", optr.syncMachineConfiguration},
 		{"MachineConfigNode", optr.syncMachineConfigNodes},
