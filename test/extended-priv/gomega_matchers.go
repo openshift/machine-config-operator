@@ -152,3 +152,8 @@ func (matcher *AvailableMatcher) NegatedFailureMessage(actual interface{}) (mess
 
 	return message
 }
+
+// BeAvailable returns the gomega matcher to check if a resource is available or not.
+func BeAvailable() types.GomegaMatcher {
+	return &DegradedMatcher{&conditionMatcher{conditionType: "Available", field: "status", expected: "True"}}
+}
