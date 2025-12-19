@@ -132,8 +132,7 @@ func BuildOSImageStreamFromSources(ctx context.Context, sources []StreamSource) 
 		ObjectMeta: metav1.ObjectMeta{
 			Name: ctrlcommon.ClusterInstanceNameOSImageStream,
 			Annotations: map[string]string{
-				ctrlcommon.ReleaseImageVersionAnnotationKey:          version.Hash,
-				ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
+				ctrlcommon.ReleaseImageVersionAnnotationKey: version.Hash,
 			},
 		},
 		Spec: &v1alpha1.OSImageStreamSpec{},
