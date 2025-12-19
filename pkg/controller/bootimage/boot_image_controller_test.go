@@ -1,4 +1,4 @@
-package machineset
+package bootimage
 
 import (
 	"testing"
@@ -97,71 +97,144 @@ func setMachineSetBootImage(machineset *machinev1beta1.MachineSet, generateBootI
 }
 
 func TestGetArchFromMachineSet(t *testing.T) {
+	// Helper to create a single-arch cluster version
+	singleArchCV := &osconfigv1.ClusterVersion{
+		Status: osconfigv1.ClusterVersionStatus{
+			Desired: osconfigv1.Release{
+				Architecture: "", // Empty means single-arch
+			},
+		},
+	}
+	// Helper to create a multi-arch cluster version
+	multiArchCV := &osconfigv1.ClusterVersion{
+		Status: osconfigv1.ClusterVersionStatus{
+			Desired: osconfigv1.Release{
+				Architecture: osconfigv1.ClusterVersionArchitectureMulti,
+			},
+		},
+	}
+
 	cases := []struct {
-		name         string
-		annotations  map[string]string
-		expectedArch string
-		expectError  bool
+		name           string
+		annotations    map[string]string
+		clusterVersion *osconfigv1.ClusterVersion
+		expectedArch   string
+		expectError    bool
 	}{
 		{
-			name: "Single architecture label",
+			name: "Single architecture label in single-arch cluster",
 			annotations: map[string]string{
 				MachineSetArchAnnotationKey: "kubernetes.io/arch=amd64",
 			},
-			expectedArch: "x86_64",
-			expectError:  false,
+			clusterVersion: singleArchCV,
+			expectedArch:   "x86_64",
+			expectError:    false,
+		},
+		{
+			name: "Single architecture label in multi-arch cluster",
+			annotations: map[string]string{
+				MachineSetArchAnnotationKey: "kubernetes.io/arch=amd64",
+			},
+			clusterVersion: multiArchCV,
+			expectedArch:   "x86_64",
+			expectError:    false,
 		},
 		{
 			name: "Multiple labels with architecture first",
 			annotations: map[string]string{
 				MachineSetArchAnnotationKey: "kubernetes.io/arch=amd64,topology.ebs.csi.aws.com/zone=eu-central-1a",
 			},
-			expectedArch: "x86_64",
-			expectError:  false,
+			clusterVersion: singleArchCV,
+			expectedArch:   "x86_64",
+			expectError:    false,
 		},
 		{
 			name: "Multiple labels with architecture last",
 			annotations: map[string]string{
 				MachineSetArchAnnotationKey: "topology.ebs.csi.aws.com/zone=eu-central-1a,kubernetes.io/arch=arm64",
 			},
-			expectedArch: "aarch64",
-			expectError:  false,
+			clusterVersion: singleArchCV,
+			expectedArch:   "aarch64",
+			expectError:    false,
 		},
 		{
 			name: "Multiple labels with architecture in middle",
 			annotations: map[string]string{
 				MachineSetArchAnnotationKey: "topology.ebs.csi.aws.com/zone=eu-central-1a,kubernetes.io/arch=s390x,node.kubernetes.io/instance-type=m5.large",
 			},
-			expectedArch: "s390x",
-			expectError:  false,
+			clusterVersion: singleArchCV,
+			expectedArch:   "s390x",
+			expectError:    false,
 		},
 		{
 			name: "Multiple labels with spaces",
 			annotations: map[string]string{
 				MachineSetArchAnnotationKey: " topology.ebs.csi.aws.com/zone=eu-central-1a , kubernetes.io/arch=ppc64le , node.kubernetes.io/instance-type=m5.large ",
 			},
-			expectedArch: "ppc64le",
-			expectError:  false,
+			clusterVersion: singleArchCV,
+			expectedArch:   "ppc64le",
+			expectError:    false,
 		},
 		{
 			name: "Invalid architecture",
 			annotations: map[string]string{
 				MachineSetArchAnnotationKey: "kubernetes.io/arch=invalid-arch",
 			},
-			expectError: true,
+			clusterVersion: singleArchCV,
+			expectError:    true,
 		},
 		{
-			name: "No architecture label",
+			name: "No architecture label in annotation",
 			annotations: map[string]string{
 				MachineSetArchAnnotationKey: "topology.ebs.csi.aws.com/zone=eu-central-1a,node.kubernetes.io/instance-type=m5.large",
+			},
+			clusterVersion: singleArchCV,
+			expectError:    true,
+		},
+		{
+			name:           "No annotation in single-arch cluster defaults to control plane arch",
+			annotations:    map[string]string{},
+			clusterVersion: singleArchCV,
+			expectError:    false, // Should default to control plane arch
+		},
+		{
+			name:        "No annotation in multi-arch cluster returns error",
+			annotations: map[string]string{},
+			clusterVersion: &osconfigv1.ClusterVersion{
+				Status: osconfigv1.ClusterVersionStatus{
+					Desired: osconfigv1.Release{
+						Architecture: osconfigv1.ClusterVersionArchitectureMulti,
+					},
+				},
 			},
 			expectError: true,
 		},
 		{
-			name:         "No annotation",
-			annotations:  map[string]string{},
-			expectedArch: "", // Will default to control plane arch, but we can't test that easily
-			expectError:  false,
+			name: "ARM64 architecture in multi-arch cluster",
+			annotations: map[string]string{
+				MachineSetArchAnnotationKey: "kubernetes.io/arch=arm64",
+			},
+			clusterVersion: multiArchCV,
+			expectedArch:   "aarch64",
+			expectError:    false,
+		},
+		{
+			name: "PPC64LE architecture in single-arch cluster",
+			annotations: map[string]string{
+				MachineSetArchAnnotationKey: "kubernetes.io/arch=ppc64le",
+			},
+			clusterVersion: singleArchCV,
+			expectedArch:   "ppc64le",
+			expectError:    false,
+		},
+		{
+			name: "S390X architecture in multi-arch cluster",
+			annotations: map[string]string{
+				MachineSetArchAnnotationKey: "kubernetes.io/arch=s390x",
+			},
+			clusterVersion: multiArchCV,
+			expectedArch:   "s390x",
+			expectError:    false,
 		},
 	}
 
@@ -174,7 +247,7 @@ func TestGetArchFromMachineSet(t *testing.T) {
 				},
 			}
 
-			arch, err := getArchFromMachineSet(machineSet)
+			arch, err := getArchFromMachineSet(machineSet, tc.clusterVersion)
 
 			if tc.expectError {
 				assert.Error(t, err, "Expected error for test case: %s", tc.name)
