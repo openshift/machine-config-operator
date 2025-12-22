@@ -1,6 +1,8 @@
 module github.com/openshift/machine-config-operator
 
-go 1.24.0
+go 1.24.3
+
+toolchain go1.24.5
 
 require (
 	github.com/Azure/ARO-RP v0.0.0-20250602035759-0693f32d5ccc
@@ -11,6 +13,7 @@ require (
 	github.com/apparentlymart/go-cidr v1.1.0
 	github.com/ashcrow/osrelease v0.0.0-20180626175927-9b292693c55c
 	github.com/clarketm/json v1.17.1
+	github.com/containerd/nri v0.10.0
 	github.com/containers/common v0.62.1
 	github.com/containers/image/v5 v5.35.0
 	github.com/containers/kubensmnt v1.2.0
@@ -102,7 +105,7 @@ require (
 	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
-	github.com/containerd/ttrpc v1.2.6 // indirect
+	github.com/containerd/ttrpc v1.2.7 // indirect
 	github.com/containerd/typeurl/v2 v2.2.3 // indirect
 	github.com/cyberphone/json-canonicalization v0.0.0-20241213102144-19d51d7fe467 // indirect
 	github.com/cyphar/filepath-securejoin v0.4.1 // indirect
@@ -142,6 +145,7 @@ require (
 	github.com/karamaru-alpha/copyloopvar v1.1.0 // indirect
 	github.com/karrick/godirwalk v1.17.0 // indirect
 	github.com/kkHAIKE/contextcheck v1.1.5 // indirect
+	github.com/knqyf263/go-plugin v0.9.0 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/lasiar/canonicalheader v1.1.2 // indirect
 	github.com/ldez/grignotin v0.7.0 // indirect
@@ -180,6 +184,7 @@ require (
 	github.com/sigstore/rekor v1.3.10 // indirect
 	github.com/sourcegraph/conc v0.3.0 // indirect
 	github.com/stoewer/go-strcase v1.3.0 // indirect
+	github.com/tetratelabs/wazero v1.9.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.0 // indirect
 	github.com/timonwong/loggercheck v0.10.1 // indirect
@@ -366,7 +371,7 @@ require (
 	github.com/securego/gosec/v2 v2.21.4 // indirect
 	github.com/shazow/go-diff v0.0.0-20160112020656-b6b7b6733b8c // indirect
 	github.com/sigstore/sigstore v1.9.3 // indirect
-	github.com/sirupsen/logrus v1.9.3 // indirect
+	github.com/sirupsen/logrus v1.9.3
 	github.com/sivchari/containedctx v1.0.3 // indirect
 	github.com/sivchari/tenv v1.12.1 // indirect
 	github.com/sonatard/noctx v0.1.0 // indirect
