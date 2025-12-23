@@ -24,6 +24,7 @@ import (
 
 	operatorlistersv1alpha1 "github.com/openshift/client-go/operator/listers/operator/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -60,9 +61,10 @@ const (
 	// 5ms, 10ms, 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s, 20.4s, 41s, 82s
 	maxRetries = 15
 
-	builtInLabelKey    = "machineconfiguration.openshift.io/mco-built-in"
-	configMapName      = "crio-default-container-runtime"
-	forceSyncOnUpgrade = "force-sync-on-upgrade"
+	builtInLabelKey               = "machineconfiguration.openshift.io/mco-built-in"
+	defaultContainerRuntimeCMName = "crio-default-container-runtime"
+	forceSyncOnUpgrade            = "force-sync-on-upgrade"
+	defaultUlimitsCMName          = "crio-default-ulimits"
 )
 
 var (
@@ -217,6 +219,8 @@ func New(
 
 	ctrl.clusterVersionLister = clusterVersionInformer.Lister()
 	ctrl.clusterVersionListerSynced = clusterVersionInformer.Informer().HasSynced
+	ctrl.queue.Add(forceSyncOnUpgrade)
+
 	ctrl.queue.Add(forceSyncOnUpgrade)
 
 	ctrl.fgHandler = fgHandler
@@ -607,7 +611,7 @@ func (ctrl *Controller) addAnnotation(cfg *mcfgv1.ContainerRuntimeConfig, annota
 // re-running the migration.
 func (ctrl *Controller) migrateRuncToCrun() error {
 	// Check if the migration ConfigMap exists
-	_, err := ctrl.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), configMapName, metav1.GetOptions{})
+	_, err := ctrl.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), defaultContainerRuntimeCMName, metav1.GetOptions{})
 	if errors.IsNotFound(err) {
 		// ConfigMap doesn't exist, no migration needed
 		return nil
@@ -647,7 +651,7 @@ func (ctrl *Controller) migrateRuncToCrun() error {
 	}
 
 	// Delete the ConfigMap after successful migration
-	if err := ctrl.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Delete(context.TODO(), configMapName, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
+	if err := ctrl.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Delete(context.TODO(), defaultContainerRuntimeCMName, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
 		return fmt.Errorf("error deleting crio-default-container-runtime configmap: %w", err)
 	}
 
@@ -670,6 +674,11 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		if err := ctrl.migrateRuncToCrun(); err != nil {
 			return fmt.Errorf("Error during runc to crun migration: %w", err)
 		}
+	}
+
+	// create the MC for the drop in default-ulimits crio.conf file
+	if err := ctrl.createDefaultUlimitsMC(); err != nil {
+		return fmt.Errorf("failed to create the crio-default-ulimits MC: %w", err)
 	}
 
 	if key == forceSyncOnUpgrade {
@@ -740,9 +749,8 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		// If we have seen this generation and the sync didn't fail, then skip
 		if !isNotFound && cfg.Status.ObservedGeneration >= cfg.Generation && cfg.Status.Conditions[len(cfg.Status.Conditions)-1].Type == mcfgv1.ContainerRuntimeConfigSuccess {
 			// But we still need to compare the generated controller version because during an upgrade we need a new one
-			mcCtrlVersion := mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey]
-			if mcCtrlVersion == version.Hash {
-				return nil
+			if mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] == version.Hash {
+				continue
 			}
 		}
 		// Generate the original ContainerRuntimeConfig
@@ -1137,6 +1145,90 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 
 	registriesIgn := createNewIgnition(generatedConfigFileList)
 	return &registriesIgn, nil
+}
+
+func (ctrl *Controller) createDefaultUlimitsMC() error {
+	// Check if the crio-default-ulimits config map exists in the openshift-machine-config-operator namespace
+	defaultUlimitsCM, err := ctrl.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), defaultUlimitsCMName, metav1.GetOptions{})
+	if err != nil && !errors.IsNotFound(err) {
+		return fmt.Errorf("error checking for %s config map: %w", defaultUlimitsCMName, err)
+	}
+	// If the crio-default-ulimits config map exists, the MC was already created, so skip creating it again.
+	if defaultUlimitsCM != nil && !errors.IsNotFound(err) {
+		return nil
+	}
+
+	// Find all the MachineConfigPools
+	mcpPoolsAll, err := ctrl.mcpLister.List(labels.Everything())
+	if err != nil {
+		return err
+	}
+
+	// Create the crio-default-ulimits MC for all the available pools
+	for _, pool := range mcpPoolsAll {
+		if pool.Name != ctrlcommon.MachineConfigPoolMaster && pool.Name != ctrlcommon.MachineConfigPoolWorker {
+			continue
+		}
+		managedKey := getManagedKeyDefaultUlimits(pool)
+		mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), managedKey, metav1.GetOptions{})
+		if err != nil && !errors.IsNotFound(err) {
+			return fmt.Errorf("error checking for %s machine config: %w", managedKey, err)
+		}
+		// continue to the next MC if this already exists
+		if mc != nil && !errors.IsNotFound(err) {
+			continue
+		}
+
+		klog.Infof("updating default_ulimits for pool %s", pool.Name)
+		// Update the default_ulimits setting
+		tempIgnCfg := ctrlcommon.NewIgnConfig()
+		mc, err = ctrlcommon.MachineConfigFromIgnConfig(pool.Name, managedKey, tempIgnCfg)
+		if err != nil {
+			return fmt.Errorf("could not create crio-default-ulimits MachineConfig from new Ignition config: %w", err)
+		}
+		rawRuntimeIgnition, err := json.Marshal(createNewIgnition(createDefaultUlimitsFile()))
+		if err != nil {
+			return fmt.Errorf("error marshalling crio-default-ulimits config ignition: %w", err)
+		}
+		mc.Spec.Config.Raw = rawRuntimeIgnition
+		// Create the crio-default-ulimits MC
+		if err := retry.RetryOnConflict(updateBackoff, func() error {
+			_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
+			return err
+		}); err != nil {
+			return fmt.Errorf("could not create MachineConfig for crio-default-ulimits: %w", err)
+		}
+		klog.Infof("Applied default runtime MC %v on MachineConfigPool %v", managedKey, pool.Name)
+	}
+
+	// Create the config map for crio-default-ulimits so we know that the crio-default-ulimits MC has been created
+	if defaultUlimitsCM == nil {
+		defaultUlimitsCM = &v1.ConfigMap{}
+	}
+
+	defaultUlimitsCM.Name = defaultUlimitsCMName
+	defaultUlimitsCM.Namespace = ctrlcommon.MCONamespace
+	if _, err := ctrl.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Create(context.TODO(), defaultUlimitsCM, metav1.CreateOptions{}); err != nil {
+		return fmt.Errorf("error creating %s config map: %w", defaultUlimitsCMName, err)
+	}
+	return nil
+}
+
+// RunDefaultUlimitsBootstrap creates the crio-default-ulimits mc on bootstrap
+func RunDefaultUlimitsBootstrap(mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
+	var res []*mcfgv1.MachineConfig
+	for _, pool := range mcpPools {
+		if pool.Name != ctrlcommon.MachineConfigPoolMaster && pool.Name != ctrlcommon.MachineConfigPoolWorker {
+			continue
+		}
+		defaultUlimitsIgn := createNewIgnition(createDefaultUlimitsFile())
+		mc, err := ctrlcommon.MachineConfigFromIgnConfig(pool.Name, getManagedKeyDefaultUlimits(pool), defaultUlimitsIgn)
+		if err != nil {
+			return nil, fmt.Errorf("could not create MachineConfig from new Ignition config: %w", err)
+		}
+		res = append(res, mc)
+	}
+	return res, nil
 }
 
 // getValidScopePolicies returns a map[scope]policyRequirement from ClusterImagePolicy, a map[scope][namespace]policyRequirement from ImagePolicy CRs.

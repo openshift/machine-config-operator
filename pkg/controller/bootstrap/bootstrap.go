@@ -190,6 +190,12 @@ func (b *Bootstrap) Run(destDir string) error {
 
 	configs = append(configs, rconfigs...)
 
+	defaultUlimitsConfigs, err := containerruntimeconfig.RunDefaultUlimitsBootstrap(pools)
+	if err != nil {
+		return err
+	}
+	configs = append(configs, defaultUlimitsConfigs...)
+
 	if len(crconfigs) > 0 {
 		containerRuntimeConfigs, err := containerruntimeconfig.RunContainerRuntimeBootstrap(b.templatesDir, crconfigs, cconfig, pools)
 		if err != nil {

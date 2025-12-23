@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 
@@ -49,6 +50,12 @@ const (
 	bootstrapTestName    = "bootstrap-test"
 	templatesDir         = "../../templates"
 	bootstrapTestDataDir = "../../pkg/controller/bootstrap/testdata/bootstrap"
+	imagesFile           = "../../install/image-references"
+	componentNamespace   = "openshift-machine-config-operator"
+	pollInterval         = 200 * time.Millisecond
+	pollTimeout          = 30 * time.Second
+	ulimitsMCMaster      = "00-override-master-generated-crio-default-ulimits"
+	ulimitsMCWorker      = "00-override-worker-generated-crio-default-ulimits"
 )
 
 var (
@@ -86,6 +93,13 @@ func TestE2EBootstrap(t *testing.T) {
 
 	_, err = clientSet.Namespaces().Create(ctx, &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
+			Name: componentNamespace,
+		},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	_, err = clientSet.Namespaces().Create(ctx, &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
 			Name: framework.OpenshiftConfigNamespace,
 		},
 	}, metav1.CreateOptions{})
@@ -106,8 +120,8 @@ func TestE2EBootstrap(t *testing.T) {
 	}{
 		{
 			name:             "With no additional manifests",
-			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries"},
-			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries"},
+			waitForMasterMCs: []string{"99-master-ssh", ulimitsMCMaster, "99-master-generated-registries"},
+			waitForWorkerMCs: []string{"99-worker-ssh", ulimitsMCWorker, "99-worker-generated-registries"},
 		},
 		{
 			name: "With a featuregate manifest",
@@ -119,8 +133,8 @@ metadata:
 spec:
   featureSet: TechPreviewNoUpgrade`),
 			},
-			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries", "98-master-generated-kubelet"},
-			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "98-worker-generated-kubelet"},
+			waitForMasterMCs: []string{"99-master-ssh", ulimitsMCMaster, "99-master-generated-registries", "98-master-generated-kubelet"},
+			waitForWorkerMCs: []string{"99-worker-ssh", ulimitsMCWorker, "99-worker-generated-registries", "98-worker-generated-kubelet"},
 		},
 		{
 			name: "With a node config manifest empty spec",
@@ -133,8 +147,8 @@ metadata:
 			// "CgroupMode" field in the nodes.config resource is empty
 			// Internally it gets updated to "v2" explicitly
 			// Hence, 97-{master/worker}-generated-kubelet are expected
-			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries", "97-master-generated-kubelet"},
-			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "97-worker-generated-kubelet"},
+			waitForMasterMCs: []string{"99-master-ssh", ulimitsMCMaster, "99-master-generated-registries", "97-master-generated-kubelet"},
+			waitForWorkerMCs: []string{"99-worker-ssh", ulimitsMCWorker, "99-worker-generated-registries", "97-worker-generated-kubelet"},
 		},
 		{
 			name: "With a node config manifest empty \"cgroupMode\"",
@@ -149,8 +163,8 @@ spec:
 			// "CgroupMode" field in the nodes.config resource is empty
 			// Internally it gets updated to "v2" explicitly
 			// Hence, 97-{master/worker}-generated-kubelet are expected
-			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries", "97-master-generated-kubelet"},
-			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "97-worker-generated-kubelet"},
+			waitForMasterMCs: []string{"99-master-ssh", ulimitsMCMaster, "99-master-generated-registries", "97-master-generated-kubelet"},
+			waitForWorkerMCs: []string{"99-worker-ssh", ulimitsMCWorker, "99-worker-generated-registries", "97-worker-generated-kubelet"},
 		},
 		{
 			name: "With a featuregate manifest and master kubelet config manifest",
@@ -180,8 +194,8 @@ spec:
       memory: 500Mi
 `),
 			},
-			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries", "99-master-generated-kubelet"},
-			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries"},
+			waitForMasterMCs: []string{"99-master-ssh", ulimitsMCMaster, "99-master-generated-registries", "99-master-generated-kubelet"},
+			waitForWorkerMCs: []string{"99-worker-ssh", ulimitsMCWorker, "99-worker-generated-registries"},
 		},
 		{
 			name: "With a featuregate manifest and a config node manifest",
@@ -199,8 +213,8 @@ metadata:
 spec:
   cgroupMode: "v2"`),
 			},
-			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries", "98-master-generated-kubelet", "97-master-generated-kubelet"},
-			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "98-worker-generated-kubelet", "97-worker-generated-kubelet"},
+			waitForMasterMCs: []string{"99-master-ssh", ulimitsMCMaster, "99-master-generated-registries", "98-master-generated-kubelet", "97-master-generated-kubelet"},
+			waitForWorkerMCs: []string{"99-worker-ssh", ulimitsMCWorker, "99-worker-generated-registries", "98-worker-generated-kubelet", "97-worker-generated-kubelet"},
 		},
 		{
 			name: "With a config node manifest and without a featuregate manifest",
@@ -213,8 +227,8 @@ spec:
   cgroupMode: "v2"`),
 			},
 			// As the CGroupsV2 feature is GA, 97-{master/worker}-generated-kubelet mcs are expected even without a Techpreview featuregate
-			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries", "97-master-generated-kubelet"},
-			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "97-worker-generated-kubelet"},
+			waitForMasterMCs: []string{"99-master-ssh", ulimitsMCMaster, "99-master-generated-registries", "97-master-generated-kubelet"},
+			waitForWorkerMCs: []string{"99-worker-ssh", ulimitsMCWorker, "99-worker-generated-registries", "97-worker-generated-kubelet"},
 		},
 		{
 			name: "With a node config manifest and a master kubelet config manifest",
@@ -245,8 +259,8 @@ spec:
       memory: 500Mi
 `),
 			},
-			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries", "99-master-generated-kubelet", "97-master-generated-kubelet"},
-			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "97-worker-generated-kubelet"},
+			waitForMasterMCs: []string{"99-master-ssh", ulimitsMCMaster, "99-master-generated-registries", "99-master-generated-kubelet", "97-master-generated-kubelet"},
+			waitForWorkerMCs: []string{"99-worker-ssh", ulimitsMCWorker, "99-worker-generated-registries", "97-worker-generated-kubelet"},
 		},
 		{
 			name: "With a node config manifest and a worker kubelet config manifest",
@@ -278,8 +292,8 @@ spec:
 			},
 			// 97-{master/worker}-generated-kubelet are expected to be created as the empty "cgroupMode"
 			// internally translates to "v2"
-			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries", "97-master-generated-kubelet"},
-			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "99-worker-generated-kubelet", "97-worker-generated-kubelet"},
+			waitForMasterMCs: []string{"99-master-ssh", ulimitsMCMaster, "99-master-generated-registries", "97-master-generated-kubelet"},
+			waitForWorkerMCs: []string{"99-worker-ssh", ulimitsMCWorker, "99-worker-generated-registries", "99-worker-generated-kubelet", "97-worker-generated-kubelet"},
 		},
 		{
 			name: "With a worker kubelet config manifest",
@@ -303,8 +317,8 @@ spec:
       memory: 500Mi
 `),
 			},
-			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries"},
-			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "99-worker-generated-kubelet"},
+			waitForMasterMCs: []string{"99-master-ssh", ulimitsMCMaster, "99-master-generated-registries"},
+			waitForWorkerMCs: []string{"99-worker-ssh", ulimitsMCWorker, "99-worker-generated-registries", "99-worker-generated-kubelet"},
 		},
 		{
 			name: "With a container runtime config",
@@ -321,8 +335,8 @@ spec:
     pidsLimit: 100000
 `),
 			},
-			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries", "99-master-generated-containerruntime"},
-			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries"},
+			waitForMasterMCs: []string{"99-master-ssh", ulimitsMCMaster, "99-master-generated-registries", "99-master-generated-containerruntime"},
+			waitForWorkerMCs: []string{"99-worker-ssh", ulimitsMCWorker, "99-worker-generated-registries"},
 		},
 	}
 
@@ -330,6 +344,19 @@ spec:
 		t.Run(tc.name, func(t *testing.T) {
 			objs := append([]runtime.Object{}, baseTestManifests...)
 			objs = append(objs, loadRawManifests(t, tc.manifests)...)
+
+			ulimitsRawIgnition := []byte(`{"ignition":{"version":"3.2.0"},"storage":{"files":[{"overwrite":true,"path":"/etc/crio/crio.conf.d/01-ctrcfg-defaultUlimits","contents":{"compression":"","source":"data:text/plain;charset=utf-8;base64,W2NyaW9dCiAgW2NyaW8ucnVudGltZV0KICAgIGRlZmF1bHRfcnVudGltZSA9ICJydW5jIgo="},"mode":420}]}}`)
+			masterInheritableMC, err := ctrlcommon.MachineConfigFromRawIgnConfig("master", ulimitsMCMaster, ulimitsRawIgnition)
+			require.NoError(t, err)
+
+			workerInheritableMC, err := ctrlcommon.MachineConfigFromRawIgnConfig("worker", ulimitsMCWorker, ulimitsRawIgnition)
+			require.NoError(t, err)
+
+			_, err = clientSet.MachineConfigs().Create(ctx, masterInheritableMC, metav1.CreateOptions{})
+			require.NoError(t, err)
+
+			_, err = clientSet.MachineConfigs().Create(ctx, workerInheritableMC, metav1.CreateOptions{})
+			require.NoError(t, err)
 
 			// Only add this node config if one doesn't already exist.
 			// If two are present, the latter one will overwrite the former one.
