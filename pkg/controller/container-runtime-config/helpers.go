@@ -53,6 +53,7 @@ const (
 	crioDropInFilePathPidsLimit      = "/etc/crio/crio.conf.d/01-ctrcfg-pidsLimit"
 	crioDropInFilePathLogSizeMax     = "/etc/crio/crio.conf.d/01-ctrcfg-logSizeMax"
 	CRIODropInFilePathDefaultRuntime = "/etc/crio/crio.conf.d/01-ctrcfg-defaultRuntime"
+	CRIODropInFilePathDefaultUlimits = "/etc/crio/crio.conf.d/01-ctrcfg-defaultUlimits"
 	imagepolicyType                  = "sigstoreSigned"
 	sigstoreRegistriesConfigFilePath = "/etc/containers/registries.d/sigstore-registries.yaml"
 )
@@ -121,6 +122,17 @@ type tomlConfigCRIODefaultRuntime struct {
 	Crio struct {
 		Runtime struct {
 			DefaultRuntime string `toml:"default_runtime,omitempty"`
+		} `toml:"runtime"`
+	} `toml:"crio"`
+}
+
+// tomlConfigCRIODefaultUlimits is used for conversions when default-ulimits is changed
+// TOML-friendly (it has all of the explicit tables). It's just used for
+// conversions.
+type tomlConfigCRIODefaultUlimits struct {
+	Crio struct {
+		Runtime struct {
+			DefaultUlimits []string `toml:"default_ulimits,omitempty"`
 		} `toml:"runtime"`
 	} `toml:"crio"`
 }
@@ -336,6 +348,10 @@ func notLatestContainerRuntimeConfigInPool(ctrcfgList []mcfgv1.ContainerRuntimeC
 	return false
 }
 
+func getManagedKeyDefaultUlimits(pool *mcfgv1.MachineConfigPool) string {
+	return fmt.Sprintf("00-override-%s-generated-crio-default-ulimits", pool.Name)
+}
+
 // Deprecated: use getManagedKeyReg
 func getManagedKeyRegDeprecated(pool *mcfgv1.MachineConfigPool) string {
 	return fmt.Sprintf("99-%s-%s-registries", pool.Name, pool.ObjectMeta.UID)
@@ -367,6 +383,17 @@ func wrapErrorWithCondition(err error, args ...interface{}) mcfgv1.ContainerRunt
 		}
 	}
 	return *condition
+}
+
+func createDefaultUlimitsFile() []generatedConfigFile {
+	generatedConfigFileList := make([]generatedConfigFile, 0)
+	tomlConf := tomlConfigCRIODefaultUlimits{}
+	tomlConf.Crio.Runtime.DefaultUlimits = []string{"nofile=1048576"}
+	generatedConfigFileList, err := addTOMLgeneratedConfigFile(generatedConfigFileList, CRIODropInFilePathDefaultUlimits, tomlConf)
+	if err != nil {
+		klog.V(2).Infoln(err, "error setting default-container-runtime to crio.conf.d: %v", err)
+	}
+	return generatedConfigFileList
 }
 
 // updateStorageConfig decodes the data rendered from the template, merges the changes in and encodes it
