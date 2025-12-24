@@ -53,12 +53,14 @@ type Controller struct {
 	cpmsLister           machinelistersv1.ControlPlaneMachineSetLister
 	infraLister          configlistersv1.InfrastructureLister
 	mcopLister           mcoplistersv1.MachineConfigurationLister
+	clusterVersionLister configlistersv1.ClusterVersionLister
 
 	mcoCmListerSynced          cache.InformerSynced
 	mapiMachineSetListerSynced cache.InformerSynced
 	cpmsListerSynced           cache.InformerSynced
 	infraListerSynced          cache.InformerSynced
 	mcopListerSynced           cache.InformerSynced
+	clusterVersionListerSynced cache.InformerSynced
 
 	queue workqueue.TypedRateLimitingInterface[string]
 
@@ -122,6 +124,7 @@ func New(
 	infraInformer configinformersv1.InfrastructureInformer,
 	mcopClient mcopclientset.Interface,
 	mcopInformer mcopinformersv1.MachineConfigurationInformer,
+	clusterVersionInformer configinformersv1.ClusterVersionInformer,
 	fgHandler ctrlcommon.FeatureGatesHandler,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
@@ -145,12 +148,14 @@ func New(
 	ctrl.cpmsLister = cpmsInformer.Lister()
 	ctrl.infraLister = infraInformer.Lister()
 	ctrl.mcopLister = mcopInformer.Lister()
+	ctrl.clusterVersionLister = clusterVersionInformer.Lister()
 
 	ctrl.mcoCmListerSynced = mcoCmInfomer.Informer().HasSynced
 	ctrl.mapiMachineSetListerSynced = mapiMachineSetInformer.Informer().HasSynced
 	ctrl.cpmsListerSynced = cpmsInformer.Informer().HasSynced
 	ctrl.infraListerSynced = infraInformer.Informer().HasSynced
 	ctrl.mcopListerSynced = mcopInformer.Informer().HasSynced
+	ctrl.clusterVersionListerSynced = clusterVersionInformer.Informer().HasSynced
 
 	mapiMachineSetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addMAPIMachineSet,
@@ -192,7 +197,7 @@ func (ctrl *Controller) Run(stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.mcoCmListerSynced, ctrl.mapiMachineSetListerSynced, ctrl.infraListerSynced, ctrl.mcopListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, ctrl.mcoCmListerSynced, ctrl.mapiMachineSetListerSynced, ctrl.infraListerSynced, ctrl.mcopListerSynced, ctrl.clusterVersionListerSynced) {
 		return
 	}
 
