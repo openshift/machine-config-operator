@@ -235,27 +235,40 @@ func ValidateTransitionThroughConditions(machineConfigClient *machineconfigclien
 		o.Expect(conditionMet).To(o.BeTrue(), "Error, could not detect Drained=True.")
 	}
 
-	logger.Infof("Waiting for AppliedFilesAndOS=Unknown")
-	conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateFilesAndOS, metav1.ConditionUnknown, 30*time.Second, 1*time.Second)
-	o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for AppliedFilesAndOS=Unknown: %v", err))
-	if !conditionMet {
-		logger.Infof("Warning, could not detect AppliedFilesAndOS=Unknown.")
-	}
-
-	// On image mode update, check that node transitions through the "ImagePulledFromRegistry" phase
+	// On image mode update, check that node transitions through the "AppliedOSImage" and
+	// "ImagePulledFromRegistry" phases
 	if isImageMode {
+		logger.Infof("Waiting for AppliedOSImage=Unknown")
+		conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateOS, metav1.ConditionUnknown, 30*time.Second, 1*time.Second)
+		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for AppliedOSImage=Unknown: %v", err))
+		if !conditionMet {
+			logger.Infof("Warning, could not detect AppliedOSImage=Unknown.")
+		}
+
 		logger.Infof("Waiting for ImagePulledFromRegistry=Unknown")
 		conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeImagePulledFromRegistry, metav1.ConditionUnknown, 30*time.Second, 1*time.Second)
 		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for ImagePulledFromRegistry=Unknown: %v", err))
 		if !conditionMet {
 			logger.Infof("Warning, could not detect ImagePulledFromRegistry=Unknown.")
 		}
-	}
 
-	logger.Infof("Waiting for AppliedFilesAndOS=True")
-	conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateFilesAndOS, metav1.ConditionTrue, 3*time.Minute, 1*time.Second)
-	o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for AppliedFilesAndOS=True: %v", err))
-	o.Expect(conditionMet).To(o.BeTrue(), "Error, could not detect AppliedFilesAndOS=True.")
+		logger.Infof("Waiting for AppliedOSImage=True")
+		conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateOS, metav1.ConditionTrue, 3*time.Minute, 1*time.Second)
+		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for AppliedOSImage=True: %v", err))
+		o.Expect(conditionMet).To(o.BeTrue(), "Error, could not detect AppliedOSImage=True.")
+	} else { // On a non-image mode update, check that node transitions through the "AppliedFiles" phase
+		logger.Infof("Waiting for AppliedFiles=Unknown")
+		conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateFiles, metav1.ConditionUnknown, 30*time.Second, 1*time.Second)
+		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for AppliedFiles=Unknown: %v", err))
+		if !conditionMet {
+			logger.Infof("Warning, could not detect AppliedFiles=Unknown.")
+		}
+
+		logger.Infof("Waiting for AppliedFiles=True")
+		conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateFiles, metav1.ConditionTrue, 3*time.Minute, 1*time.Second)
+		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for AppliedFiles=True: %v", err))
+		o.Expect(conditionMet).To(o.BeTrue(), "Error, could not detect AppliedFiles=True.")
+	}
 
 	logger.Infof("Waiting for UpdateExecuted=True")
 	conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateExecuted, metav1.ConditionTrue, 20*time.Second, 1*time.Second)
