@@ -479,10 +479,10 @@ func clusterImagePolicyTestCRs() map[string]apicfgv1.ClusterImagePolicy {
 			},
 			Spec: apicfgv1.ClusterImagePolicySpec{
 				Scopes: []apicfgv1.ImageScope{"test0.com"},
-				Policy: apicfgv1.Policy{
+				Policy: apicfgv1.ImageSigstoreVerificationPolicy{
 					RootOfTrust: apicfgv1.PolicyRootOfTrust{
 						PolicyType: apicfgv1.FulcioCAWithRekorRootOfTrust,
-						FulcioCAWithRekor: &apicfgv1.FulcioCAWithRekor{
+						FulcioCAWithRekor: &apicfgv1.ImagePolicyFulcioCAWithRekorRootOfTrust{
 							FulcioCAData: testFulcioData,
 							RekorKeyData: testRekorKeyData,
 							FulcioSubject: apicfgv1.PolicyFulcioSubject{
@@ -507,10 +507,10 @@ func clusterImagePolicyTestCRs() map[string]apicfgv1.ClusterImagePolicy {
 			},
 			Spec: apicfgv1.ClusterImagePolicySpec{
 				Scopes: []apicfgv1.ImageScope{"test0.com", "test1.com"},
-				Policy: apicfgv1.Policy{
+				Policy: apicfgv1.ImageSigstoreVerificationPolicy{
 					RootOfTrust: apicfgv1.PolicyRootOfTrust{
 						PolicyType: apicfgv1.PublicKeyRootOfTrust,
-						PublicKey: &apicfgv1.PublicKey{
+						PublicKey: &apicfgv1.ImagePolicyPublicKeyRootOfTrust{
 							KeyData:      testKeyData,
 							RekorKeyData: testRekorKeyData,
 						},
@@ -531,10 +531,10 @@ func clusterImagePolicyTestCRs() map[string]apicfgv1.ClusterImagePolicy {
 			},
 			Spec: apicfgv1.ClusterImagePolicySpec{
 				Scopes: []apicfgv1.ImageScope{"a.com/a1/a2", "a.com/a1/a2@sha256:0000000000000000000000000000000000000000000000000000000000000000", "*.example.com", "policy.scope", "foo.example.com/ns/repo"},
-				Policy: apicfgv1.Policy{
+				Policy: apicfgv1.ImageSigstoreVerificationPolicy{
 					RootOfTrust: apicfgv1.PolicyRootOfTrust{
 						PolicyType: apicfgv1.PublicKeyRootOfTrust,
-						PublicKey: &apicfgv1.PublicKey{
+						PublicKey: &apicfgv1.ImagePolicyPublicKeyRootOfTrust{
 							KeyData:      testKeyData,
 							RekorKeyData: testRekorKeyData,
 						},
@@ -548,10 +548,10 @@ func clusterImagePolicyTestCRs() map[string]apicfgv1.ClusterImagePolicy {
 			},
 			Spec: apicfgv1.ClusterImagePolicySpec{
 				Scopes: []apicfgv1.ImageScope{"test3.com/ns/repo"},
-				Policy: apicfgv1.Policy{
+				Policy: apicfgv1.ImageSigstoreVerificationPolicy{
 					RootOfTrust: apicfgv1.PolicyRootOfTrust{
 						PolicyType: apicfgv1.PKIRootOfTrust,
-						PKI: &apicfgv1.PKI{
+						PKI: &apicfgv1.ImagePolicyPKIRootOfTrust{
 							CertificateAuthorityRootsData:         testCertsData,
 							CertificateAuthorityIntermediatesData: testCertsData,
 							PKICertificateSubject: apicfgv1.PKICertificateSubject{
@@ -579,10 +579,10 @@ func imagePolicyTestCRs() map[string]apicfgv1.ImagePolicy {
 			},
 			Spec: apicfgv1.ImagePolicySpec{
 				Scopes: []apicfgv1.ImageScope{"test0.com", "test2.com"},
-				Policy: apicfgv1.Policy{
+				Policy: apicfgv1.ImageSigstoreVerificationPolicy{
 					RootOfTrust: apicfgv1.PolicyRootOfTrust{
 						PolicyType: apicfgv1.PublicKeyRootOfTrust,
-						PublicKey: &apicfgv1.PublicKey{
+						PublicKey: &apicfgv1.ImagePolicyPublicKeyRootOfTrust{
 							KeyData: testKeyData,
 						},
 					},
@@ -596,10 +596,10 @@ func imagePolicyTestCRs() map[string]apicfgv1.ImagePolicy {
 			},
 			Spec: apicfgv1.ImagePolicySpec{
 				Scopes: []apicfgv1.ImageScope{"a.com/a1/a2", "a.com/a1/a2@sha256:0000000000000000000000000000000000000000000000000000000000000000", "*.example.com", "policy.scope", "foo.example.com/ns/repo"},
-				Policy: apicfgv1.Policy{
+				Policy: apicfgv1.ImageSigstoreVerificationPolicy{
 					RootOfTrust: apicfgv1.PolicyRootOfTrust{
 						PolicyType: apicfgv1.PublicKeyRootOfTrust,
-						PublicKey: &apicfgv1.PublicKey{
+						PublicKey: &apicfgv1.ImagePolicyPublicKeyRootOfTrust{
 							KeyData: testKeyData,
 						},
 					},
@@ -613,10 +613,10 @@ func imagePolicyTestCRs() map[string]apicfgv1.ImagePolicy {
 			},
 			Spec: apicfgv1.ImagePolicySpec{
 				Scopes: []apicfgv1.ImageScope{"test2.com"},
-				Policy: apicfgv1.Policy{
+				Policy: apicfgv1.ImageSigstoreVerificationPolicy{
 					RootOfTrust: apicfgv1.PolicyRootOfTrust{
 						PolicyType: apicfgv1.PublicKeyRootOfTrust,
-						PublicKey: &apicfgv1.PublicKey{
+						PublicKey: &apicfgv1.ImagePolicyPublicKeyRootOfTrust{
 							KeyData: testKeyData,
 						},
 					},
@@ -630,10 +630,10 @@ func imagePolicyTestCRs() map[string]apicfgv1.ImagePolicy {
 			},
 			Spec: apicfgv1.ImagePolicySpec{
 				Scopes: []apicfgv1.ImageScope{"test3.com"},
-				Policy: apicfgv1.Policy{
+				Policy: apicfgv1.ImageSigstoreVerificationPolicy{
 					RootOfTrust: apicfgv1.PolicyRootOfTrust{
 						PolicyType: apicfgv1.PublicKeyRootOfTrust,
-						PublicKey: &apicfgv1.PublicKey{
+						PublicKey: &apicfgv1.ImagePolicyPublicKeyRootOfTrust{
 							KeyData: testKeyData,
 						},
 					},
@@ -647,10 +647,10 @@ func imagePolicyTestCRs() map[string]apicfgv1.ImagePolicy {
 			},
 			Spec: apicfgv1.ImagePolicySpec{
 				Scopes: []apicfgv1.ImageScope{"test4.com/ns-policy/repo"},
-				Policy: apicfgv1.Policy{
+				Policy: apicfgv1.ImageSigstoreVerificationPolicy{
 					RootOfTrust: apicfgv1.PolicyRootOfTrust{
 						PolicyType: apicfgv1.PKIRootOfTrust,
-						PKI: &apicfgv1.PKI{
+						PKI: &apicfgv1.ImagePolicyPKIRootOfTrust{
 							CertificateAuthorityRootsData:         testCertsData,
 							CertificateAuthorityIntermediatesData: testCertsData,
 							PKICertificateSubject: apicfgv1.PKICertificateSubject{
