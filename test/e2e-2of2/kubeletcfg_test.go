@@ -65,6 +65,7 @@ func TestKubeletConfigMaxPods(t *testing.T) {
 	kc2 := &mcfgv1.KubeletConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-200"},
 		Spec: mcfgv1.KubeletConfigSpec{
+			AutoSizingReserved: &autoNodeSizing,
 			KubeletConfig: &runtime.RawExtension{
 				Raw: kcRaw2,
 			},
