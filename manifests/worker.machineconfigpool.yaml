@@ -12,3 +12,7 @@ spec:
   nodeSelector:
     matchLabels:
       node-role.kubernetes.io/worker: ""
+{{- with installConfigOSImageStream .InstallConfig "compute" }}
+  osImageStream:
+    name: {{ . }}
+{{- end }}
