@@ -670,7 +670,15 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		optr.setOperatorLogLevel(mcop.Spec.OperatorLogLevel)
 	}
 
-	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra, pointerConfigData, apiServer, fmt.Sprintf("%d", optr.logLevel))
+	installConfig, err := optr.getInstallConfig()
+	if err != nil {
+		return err
+	}
+
+	optr.renderConfig = getRenderConfig(
+		optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages,
+		infra, pointerConfigData, apiServer, installConfig, fmt.Sprintf("%d", optr.logLevel),
+	)
 
 	return nil
 }
@@ -2007,12 +2015,16 @@ func (optr *Operator) stampBootImagesConfigMap() error {
 	return nil
 }
 
-func (optr *Operator) getCloudConfigFromConfigMap(namespace, name, key string) (string, error) {
-	cm, err := optr.clusterCmLister.ConfigMaps(namespace).Get(name)
+func (optr *Operator) getInstallConfig() (*InstallConfig, error) {
+	cm, err := optr.clusterCmLister.ConfigMaps("kube-system").Get("cluster-config-v1")
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return getCloudConfigFromConfigMap(cm, key)
+	installConfig, err := NewInstallConfigFromConfigMap(cm)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve install-config from ConfigMap: %w", err)
+	}
+	return installConfig, nil
 }
 
 func getCloudConfigFromConfigMap(cm *corev1.ConfigMap, key string) (string, error) {
@@ -2084,7 +2096,7 @@ func setGVK(obj runtime.Object, scheme *runtime.Scheme) error {
 	return nil
 }
 
-func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *ctrlcommon.RenderConfigImages, infra *configv1.Infrastructure, pointerConfigData []byte, apiServer *configv1.APIServer, logLevel string) *renderConfig {
+func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *ctrlcommon.RenderConfigImages, infra *configv1.Infrastructure, pointerConfigData []byte, apiServer *configv1.APIServer, installConfig *InstallConfig, logLevel string) *renderConfig {
 	tlsMinVersion, tlsCipherSuites := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
 	return &renderConfig{
 		TargetNamespace:        tnamespace,
@@ -2098,6 +2110,7 @@ func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.C
 		Infra:                  *infra,
 		TLSMinVersion:          tlsMinVersion,
 		TLSCipherSuites:        tlsCipherSuites,
+		InstallConfig:          installConfig,
 		LogLevel:               logLevel,
 	}
 }
