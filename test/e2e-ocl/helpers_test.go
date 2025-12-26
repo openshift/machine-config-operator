@@ -574,7 +574,13 @@ func streamMachineOSBuilderPodLogsToFile(ctx context.Context, t *testing.T, cs *
 		LabelSelector: "k8s-app=machine-os-builder",
 	})
 
-	require.NoError(t, err)
+	if err != nil {
+		return fmt.Errorf("could not list machine-os-builder pods: %w", err)
+	}
+
+	if len(pods.Items) == 0 {
+		return fmt.Errorf("no machine-os-builder pods found")
+	}
 
 	mobPod := &pods.Items[0]
 	return streamPodContainerLogsToFile(ctx, t, cs, mobPod, dirPath)
