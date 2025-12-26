@@ -1462,3 +1462,11 @@ func GetCAsFromConfigMap(cm *corev1.ConfigMap, key string) ([]byte, error) {
 	}
 	return nil, fmt.Errorf("%s not found in %s/%s", key, cm.Namespace, cm.Name)
 }
+
+// RequiresRebuild determines if a MachineConfig change requires rebuilding the OS image
+func RequiresRebuild(oldMC, newMC *mcfgv1.MachineConfig) bool {
+	return oldMC.Spec.OSImageURL != newMC.Spec.OSImageURL ||
+		oldMC.Spec.KernelType != newMC.Spec.KernelType ||
+		!reflect.DeepEqual(oldMC.Spec.Extensions, newMC.Spec.Extensions) ||
+		!reflect.DeepEqual(oldMC.Spec.KernelArguments, newMC.Spec.KernelArguments)
+}
