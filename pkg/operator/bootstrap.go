@@ -1,11 +1,17 @@
 package operator
 
 import (
+	"bytes"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/klog/v2"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -39,13 +45,8 @@ func RenderBootstrap(
 		{
 			name:     "manifests/machineconfigcontroller/controllerconfig.yaml",
 			filename: "bootstrap/manifests/machineconfigcontroller-controllerconfig.yaml",
-		}, {
-			name:     "manifests/master.machineconfigpool.yaml",
-			filename: "bootstrap/manifests/master.machineconfigpool.yaml",
-		}, {
-			name:     "manifests/worker.machineconfigpool.yaml",
-			filename: "bootstrap/manifests/worker.machineconfigpool.yaml",
-		}, {
+		},
+		{
 			name:     "manifests/bootstrap-pod-v2.yaml",
 			filename: "bootstrap/machineconfigoperator-bootstrap-pod.yaml",
 		}, {
@@ -60,12 +61,11 @@ func RenderBootstrap(
 		},
 	}
 
-	if dependencies.Infrastructure.Status.ControlPlaneTopology == configv1.HighlyAvailableArbiterMode {
-		manifests = append(manifests, manifest{
-			name:     "manifests/arbiter.machineconfigpool.yaml",
-			filename: "bootstrap/manifests/arbiter.machineconfigpool.yaml",
-		})
+	mcpManifests, err := fetchPoolManifests("manifests", dependencies.Infrastructure, dependencies.ClusterConfig)
+	if err != nil {
+		return fmt.Errorf("error fetching pool manifests: %w", err)
 	}
+	manifests = append(manifests, mcpManifests...)
 
 	manifests = appendManifestsByPlatform(manifests, dependencies.Infrastructure)
 
@@ -147,9 +147,15 @@ func buildSpec(dependencies *BootstrapDependencies, imgs *ctrlcommon.Images, rel
 		templatectrl.DockerRegistryKey:      imgs.DockerRegistry,
 	}
 
-	config := getRenderConfig("", dependencies.KubeAPIServerServingCA, spec,
-		&imgs.RenderConfigImages, dependencies.Infrastructure, nil, nil, "2")
-	return config, nil
+	return getRenderConfig(
+		"",
+		dependencies.KubeAPIServerServingCA,
+		spec,
+		&imgs.RenderConfigImages,
+		dependencies.Infrastructure,
+		nil, nil,
+		dependencies.ClusterConfig,
+		"2"), nil
 }
 
 func appendManifestsByPlatform(manifests []manifest, infra *configv1.Infrastructure) []manifest {
@@ -267,4 +273,74 @@ func getPlatformManifests(manifests []manifest, platformName string, lbType conf
 	}
 
 	return append(manifests, platformManifests...)
+}
+
+// fetchPoolManifest reads all the files in the given basePath and
+// collects all the files, in the form of manifest that contains a
+// MachineConfigPool.
+func fetchPoolManifests(basePath string, infra *configv1.Infrastructure, installConfig *InstallConfig) ([]manifest, error) {
+	entries, err := os.ReadDir(basePath)
+	if err != nil {
+		return nil, err
+	}
+
+	scheme := runtime.NewScheme()
+	if err := mcfgv1.Install(scheme); err != nil {
+		return nil, fmt.Errorf("failed to install scheme for MCP manifests discovery: %v", err)
+	}
+
+	codecFactory := serializer.NewCodecFactory(scheme)
+	decoder := codecFactory.UniversalDecoder(mcfgv1.GroupVersion)
+	mcpPaths := make(map[string]manifest)
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		path := filepath.Join(basePath, entry.Name())
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue // Skip files we can't read
+		}
+		object, err := runtime.Decode(decoder, data)
+		if err != nil {
+			if runtime.IsNotRegisteredError(err) {
+				// Not out CR, not our problem
+				continue
+			}
+			return nil, fmt.Errorf("error parsing %q manifest: %w", path, err)
+		}
+
+		switch obj := object.(type) {
+		case *mcfgv1.MachineConfigPool:
+			mcpPaths[obj.Name] = manifest{
+				name:     path,
+				filename: filepath.Join("bootstrap", "manifests", obj.Name),
+			}
+		}
+	}
+
+	// Prepare the encoder
+	info, _ := runtime.SerializerInfoForMediaType(codecFactory.SupportedMediaTypes(), runtime.ContentTypeYAML)
+	encoder := codecFactory.EncoderForVersion(info.Serializer, mcfgv1.GroupVersion)
+
+	// Append the generated MCPs if not present
+	generatedPools := ctrlcommon.GenerateManagedPools(infra, installConfig.OSImageStream)
+	for _, pool := range generatedPools {
+		if _, ok := mcpPaths[pool.Name]; ok {
+			// A manifest already exist, ignore
+			continue
+		}
+
+		buf := bytes.Buffer{}
+		if err := encoder.Encode(&pool, &buf); err != nil {
+			return nil, err
+		}
+
+		mcpPaths[pool.Name] = manifest{
+			data:     buf.Bytes(),
+			filename: filepath.Join("bootstrap", "manifests", fmt.Sprintf("%s.machineconfigpool.yaml", pool.Name)),
+		}
+	}
+	return slices.Collect(maps.Values(mcpPaths)), nil
 }

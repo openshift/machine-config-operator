@@ -13,13 +13,38 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/openshift/api/annotations"
+	configv1 "github.com/openshift/api/config/v1"
+	features "github.com/openshift/api/features"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	"github.com/openshift/api/machineconfiguration/v1alpha1"
+	opv1 "github.com/openshift/api/operator/v1"
 	configclientscheme "github.com/openshift/client-go/config/clientset/versioned/scheme"
+	mcoac "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
+	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
+	"github.com/openshift/library-go/pkg/operator/resource/resourcemerge"
+	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
+	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
+	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
+	"github.com/openshift/machine-config-operator/pkg/controller/build"
+	buildconstants "github.com/openshift/machine-config-operator/pkg/controller/build/constants"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
+	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	"github.com/openshift/machine-config-operator/pkg/helpers"
 	"github.com/openshift/machine-config-operator/pkg/osimagestream"
+	"github.com/openshift/machine-config-operator/pkg/secrets"
+	"github.com/openshift/machine-config-operator/pkg/server"
+	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
+	"github.com/openshift/machine-config-operator/pkg/version"
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv1 "k8s.io/api/autoscaling/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -35,34 +60,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
-
-	"github.com/openshift/api/annotations"
-	configv1 "github.com/openshift/api/config/v1"
-	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	opv1 "github.com/openshift/api/operator/v1"
-
-	features "github.com/openshift/api/features"
-	mcoac "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
-	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
-	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
-	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
-	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
-	"github.com/openshift/machine-config-operator/pkg/apihelpers"
-	"github.com/openshift/machine-config-operator/pkg/controller/build"
-	buildconstants "github.com/openshift/machine-config-operator/pkg/controller/build/constants"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
-	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	"github.com/openshift/machine-config-operator/pkg/helpers"
-	"github.com/openshift/machine-config-operator/pkg/secrets"
-	"github.com/openshift/machine-config-operator/pkg/server"
-	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
-	"github.com/openshift/machine-config-operator/pkg/version"
-	autoscalingv1 "k8s.io/api/autoscaling/v1"
-)
-
-const (
-	requiredForUpgradeMachineConfigPoolLabelKey = "operator.machineconfiguration.openshift.io/required-for-upgrade"
+	"k8s.io/utils/ptr"
 )
 
 var platformsRequiringCloudConf = sets.NewString(
@@ -650,7 +648,15 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		optr.setOperatorLogLevel(mcop.Spec.OperatorLogLevel)
 	}
 
-	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra, pointerConfigData, apiServer, fmt.Sprintf("%d", optr.logLevel))
+	installConfig, err := optr.getInstallConfig()
+	if err != nil {
+		return err
+	}
+
+	optr.renderConfig = getRenderConfig(
+		optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages,
+		infra, pointerConfigData, apiServer, installConfig, fmt.Sprintf("%d", optr.logLevel),
+	)
 
 	return nil
 }
@@ -709,31 +715,15 @@ func getIgnitionHost(infraStatus *configv1.InfrastructureStatus) (string, error)
 				}
 			}
 		}
+
 	}
 
 	return ignitionHost, nil
 }
 
 func (optr *Operator) syncMachineConfigPools(config *renderConfig, _ *configv1.ClusterOperator) error {
-	mcps := []string{
-		"manifests/master.machineconfigpool.yaml",
-		"manifests/worker.machineconfigpool.yaml",
-	}
-
-	if config.Infra.Status.ControlPlaneTopology == configv1.HighlyAvailableArbiterMode {
-		mcps = append(mcps, "manifests/arbiter.machineconfigpool.yaml")
-	}
-
-	for _, mcp := range mcps {
-		mcpBytes, err := renderAsset(config, mcp)
-		if err != nil {
-			return err
-		}
-		p := mcoResourceRead.ReadMachineConfigPoolV1OrDie(mcpBytes)
-		_, _, err = mcoResourceApply.ApplyMachineConfigPool(optr.client.MachineconfigurationV1(), p)
-		if err != nil {
-			return err
-		}
+	if err := optr.syncManagedMachineConfigPools(config); err != nil {
+		return fmt.Errorf("error syncing managed machine config pools: %w", err)
 	}
 
 	// Sync component MachineConfigs for pre-built images from MachineOSConfigs
@@ -792,6 +782,92 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig, _ *configv1.C
 	}
 
 	return nil
+}
+
+func (optr *Operator) syncManagedMachineConfigPools(config *renderConfig) error {
+	var err error
+	var osImageStream *v1alpha1.OSImageStream
+	if !osimagestream.IsFeatureEnabled(optr.fgHandler) {
+		if osImageStream, err = optr.getExistingOSImageStream(); err != nil {
+			return err
+		}
+	}
+
+	for _, mcp := range ctrlcommon.GenerateManagedPools(&config.Infra, "") {
+		existing, err := optr.client.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), mcp.GetName(), metav1.GetOptions{})
+		if err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get MachineConfigPool %s: %w", mcp.GetName(), err)
+		}
+
+		// If the MCP doesn't exist, create it
+		if apierrors.IsNotFound(err) {
+			klog.Infof("Creating managed MachineConfigPool %s as it does not exist", mcp.GetName())
+
+			// This piece of code tries (best effort) to guess the previous OSImageStream used by
+			// the pool (maybe the pool was deleted, and we are creating it again).
+			// The main idea is to avoid undesired changes of the target node's OSes
+			if osImageStream != nil {
+				previousOSImageStream, err := optr.getPreviousOSImageStream(osImageStream, mcp.GetName())
+				if err != nil {
+					return err
+				}
+				mcp.Spec.OSImageStream.Name = previousOSImageStream
+			}
+
+			if _, err := optr.client.MachineconfigurationV1().MachineConfigPools().Create(context.TODO(), &mcp, metav1.CreateOptions{}); err != nil {
+				return fmt.Errorf("failed to create MachineConfigPool %s: %w", mcp.GetName(), err)
+			}
+			continue
+		}
+
+		// Update the existing MCP
+		modified := ptr.To(false)
+		resourcemerge.EnsureObjectMeta(modified, &existing.ObjectMeta, mcp.ObjectMeta)
+
+		// Always preserve the existing OSImageStream - cluster state takes precedence over rendered manifests for
+		// the OS Image Stream field
+		mcp.Spec.OSImageStream.Name = existing.Spec.OSImageStream.Name
+		existing.Spec = mcp.Spec
+		if _, err := optr.client.MachineconfigurationV1().MachineConfigPools().Update(context.TODO(), existing, metav1.UpdateOptions{}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// getPreviousOSImageStream determines the OS image stream name that was previously used for a given pool.
+// It examines the most recent rendered MachineConfig for the specified pool to identify which OSImageStream
+// was in use.
+// Returns the name of the previous OS image stream, or an empty string if it cannot be determined.
+func (optr *Operator) getPreviousOSImageStream(osImageStream *v1alpha1.OSImageStream, pool string) (string, error) {
+	mcs, err := optr.mcLister.List(labels.Everything())
+	if err != nil {
+		return "", err
+	}
+	var renderedMCs []*mcfgv1.MachineConfig
+	for _, mc := range mcs {
+		if !strings.HasPrefix(mc.Name, fmt.Sprintf("%s-%s-", ctrlcommon.RenderedMachineConfigPrefix, pool)) || mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] != version.Hash {
+			// Not a rendered MC of our target pool or not generated by this version, ignore
+			continue
+		}
+		renderedMCs = append(renderedMCs, mc)
+	}
+	sort.Slice(renderedMCs, func(i, j int) bool {
+		// Sort: newest render goes first
+		return renderedMCs[j].CreationTimestamp.Before(&renderedMCs[i].CreationTimestamp)
+	})
+
+	if len(renderedMCs) != 0 {
+		// Pick the newest one
+		previousStreamSet := osimagestream.GetOSImageStreamSetByURL(osImageStream, renderedMCs[0].Spec.OSImageURL)
+		if previousStreamSet != nil && previousStreamSet.Name != osImageStream.Status.DefaultStream {
+			klog.Infof("Successfully recovered OSImageStream name %s for %s MachineConfigPool", previousStreamSet.Name, pool)
+			return previousStreamSet.Name, nil
+		}
+	}
+
+	// Weren't able to guess the previous OSImageStream from the last rendered MC
+	return "", nil
 }
 
 // we need to mimic this
@@ -1709,7 +1785,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig, co *c
 
 	requiredMachineCount := 0
 	for _, pool := range pools {
-		_, hasRequiredPoolLabel := pool.Labels[requiredForUpgradeMachineConfigPoolLabelKey]
+		_, hasRequiredPoolLabel := pool.Labels[ctrlcommon.MachineConfigPoolRequiredForUpgradeLabel]
 		if hasRequiredPoolLabel {
 			requiredMachineCount += int(pool.Status.MachineCount)
 		}
@@ -1765,7 +1841,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig, co *c
 				return false, nil
 			}
 
-			_, hasRequiredPoolLabel := pool.Labels[requiredForUpgradeMachineConfigPoolLabelKey]
+			_, hasRequiredPoolLabel := pool.Labels[ctrlcommon.MachineConfigPoolRequiredForUpgradeLabel]
 
 			if hasRequiredPoolLabel {
 				opURL, _, err := optr.getOsImageURLs(optr.namespace, pool.Spec.OSImageStream.Name)
@@ -2035,12 +2111,16 @@ func (optr *Operator) stampBootImagesConfigMap() error {
 	return nil
 }
 
-func (optr *Operator) getCloudConfigFromConfigMap(namespace, name, key string) (string, error) {
-	cm, err := optr.clusterCmLister.ConfigMaps(namespace).Get(name)
+func (optr *Operator) getInstallConfig() (*InstallConfig, error) {
+	cm, err := optr.clusterCmLister.ConfigMaps("kube-system").Get("cluster-config-v1")
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return getCloudConfigFromConfigMap(cm, key)
+	installConfig, err := NewInstallConfigFromConfigMap(cm)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve install-config from ConfigMap: %w", err)
+	}
+	return installConfig, nil
 }
 
 func getCloudConfigFromConfigMap(cm *corev1.ConfigMap, key string) (string, error) {
@@ -2112,7 +2192,7 @@ func setGVK(obj runtime.Object, scheme *runtime.Scheme) error {
 	return nil
 }
 
-func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *ctrlcommon.RenderConfigImages, infra *configv1.Infrastructure, pointerConfigData []byte, apiServer *configv1.APIServer, logLevel string) *renderConfig {
+func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *ctrlcommon.RenderConfigImages, infra *configv1.Infrastructure, pointerConfigData []byte, apiServer *configv1.APIServer, installConfig *InstallConfig, logLevel string) *renderConfig {
 	tlsMinVersion, tlsCipherSuites := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
 	return &renderConfig{
 		TargetNamespace:        tnamespace,
@@ -2126,6 +2206,7 @@ func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.C
 		Infra:                  *infra,
 		TLSMinVersion:          tlsMinVersion,
 		TLSCipherSuites:        tlsCipherSuites,
+		InstallConfig:          installConfig,
 		LogLevel:               logLevel,
 	}
 }

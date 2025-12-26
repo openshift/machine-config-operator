@@ -38,6 +38,22 @@ func GetOSImageStreamSetByName(osImageStream *v1alpha1.OSImageStream, name strin
 	return nil, k8serrors.NewNotFound(v1alpha1.GroupVersion.WithResource("osimagestreams").GroupResource(), name)
 }
 
+// GetOSImageStreamSetByURL retrieves an OSImageStreamSet by container OS URL from an OSImageStream.
+// Returns nil if a stream matching the URL was not found.
+func GetOSImageStreamSetByURL(osImageStream *v1alpha1.OSImageStream, url string) *v1alpha1.OSImageStreamSet {
+	if osImageStream == nil {
+		return nil
+	}
+
+	for _, stream := range osImageStream.Status.AvailableStreams {
+		if string(stream.OSImage) == url {
+			return &stream
+		}
+	}
+
+	return nil
+}
+
 // IsFeatureEnabled checks if the OSImageStream feature is enabled.
 // Returns true only if the FeatureGateOSStreams is enabled and the cluster is not running SCOS or FCOS.
 func IsFeatureEnabled(fgHandler common.FeatureGatesHandler) bool {

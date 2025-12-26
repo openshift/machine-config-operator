@@ -52,6 +52,7 @@ type renderConfig struct {
 	TLSMinVersion          string
 	TLSCipherSuites        []string
 	LogLevel               string
+	InstallConfig          *InstallConfig
 }
 
 type assetRenderer struct {
