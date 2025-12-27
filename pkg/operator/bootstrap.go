@@ -96,6 +96,15 @@ func RenderBootstrap(
 		return fmt.Errorf("expected *configv1.DNS found %T", obji)
 	}
 
+	obji, err = runtime.Decode(scheme.Codecs.UniversalDecoder(corev1.SchemeGroupVersion), filesData[clusterConfigConfigMapFile])
+	if err != nil {
+		return err
+	}
+	installConfigCM, ok := obji.(*corev1.ConfigMap)
+	if !ok {
+		return fmt.Errorf("expected *corev1.ConfigMap found %T", obji)
+	}
+
 	spec, err := createDiscoveredControllerConfigSpec(infra, network, proxy, dns)
 	if err != nil {
 		return err
@@ -124,6 +133,11 @@ func RenderBootstrap(
 			return fmt.Errorf("failed to load the cloud provider config: %w", err)
 		}
 		spec.CloudProviderConfig = cloudConf
+	}
+
+	installConfig, err := NewInstallConfigFromConfigMap(installConfigCM)
+	if err != nil {
+		return fmt.Errorf("failed to load install-config: %w", err)
 	}
 
 	bundle := make([]byte, 0)
@@ -155,7 +169,7 @@ func RenderBootstrap(
 		templatectrl.DockerRegistryKey:      imgs.DockerRegistry,
 	}
 
-	config := getRenderConfig("", string(filesData[kubeAPIServerServingCA]), spec, &imgs.RenderConfigImages, infra, nil, nil, "2")
+	config := getRenderConfig("", string(filesData[kubeAPIServerServingCA]), spec, &imgs.RenderConfigImages, infra, nil, nil, installConfig, "2")
 
 	manifests := []manifest{
 		{
@@ -189,7 +203,7 @@ func RenderBootstrap(
 		})
 	}
 
-	manifests = appendManifestsByPlatform(manifests, *infra)
+	manifests = appendManifestsByPlatform(manifests, infra)
 
 	for _, m := range manifests {
 		var b []byte
@@ -222,81 +236,123 @@ func RenderBootstrap(
 	return nil
 }
 
-func appendManifestsByPlatform(manifests []manifest, infra configv1.Infrastructure) []manifest {
+func appendBaremetalManifests(manifests []manifest, platformStatus *configv1.PlatformStatus) []manifest {
+	if platformStatus.BareMetal == nil {
+		return manifests
+	}
 	lbType := configv1.LoadBalancerTypeOpenShiftManagedDefault
-	if infra.Status.PlatformStatus.BareMetal != nil {
-		if infra.Status.PlatformStatus.BareMetal.LoadBalancer != nil {
-			lbType = infra.Status.PlatformStatus.BareMetal.LoadBalancer.Type
-		}
-		manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.BareMetalPlatformType)), lbType)
+	if platformStatus.BareMetal.LoadBalancer != nil {
+		lbType = platformStatus.BareMetal.LoadBalancer.Type
 	}
+	return getPlatformManifests(manifests, strings.ToLower(string(configv1.BareMetalPlatformType)), lbType)
+}
 
-	if infra.Status.PlatformStatus.OpenStack != nil {
-		if infra.Status.PlatformStatus.OpenStack.LoadBalancer != nil {
-			lbType = infra.Status.PlatformStatus.OpenStack.LoadBalancer.Type
-		}
-		manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.OpenStackPlatformType)), lbType)
+func appendOpenStackManifests(manifests []manifest, platformStatus *configv1.PlatformStatus) []manifest {
+	if platformStatus.OpenStack == nil {
+		return manifests
 	}
-
-	if infra.Status.PlatformStatus.Ovirt != nil {
-		if infra.Status.PlatformStatus.Ovirt.LoadBalancer != nil {
-			lbType = infra.Status.PlatformStatus.Ovirt.LoadBalancer.Type
-		}
-		manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.OvirtPlatformType)), lbType)
+	lbType := configv1.LoadBalancerTypeOpenShiftManagedDefault
+	if platformStatus.OpenStack.LoadBalancer != nil {
+		lbType = platformStatus.OpenStack.LoadBalancer.Type
 	}
+	return getPlatformManifests(manifests, strings.ToLower(string(configv1.OpenStackPlatformType)), lbType)
+}
 
-	if infra.Status.PlatformStatus.VSphere != nil {
-		// TODO(mko) It is not clear why for user-managed LB and for ELB we want to skip CoreDNS as every
-		// other platform deploys CoreDNS without keepalived, and only vSphere skips both.
-		// As this only refactors the existing code, I do not want to change this behaviour.
+func appendOvirtManifests(manifests []manifest, platformStatus *configv1.PlatformStatus) []manifest {
+	if platformStatus.Ovirt == nil {
+		return manifests
+	}
+	lbType := configv1.LoadBalancerTypeOpenShiftManagedDefault
+	if platformStatus.Ovirt.LoadBalancer != nil {
+		lbType = platformStatus.Ovirt.LoadBalancer.Type
+	}
+	return getPlatformManifests(manifests, strings.ToLower(string(configv1.OvirtPlatformType)), lbType)
+}
 
-		// vSphere allows setting user-managed LB by simply leaving the VIPs in PlatformStatus empty.
-		if len(infra.Status.PlatformStatus.VSphere.APIServerInternalIPs) == 0 {
+func appendVSphereManifests(manifests []manifest, platformStatus *configv1.PlatformStatus) []manifest {
+	if platformStatus.VSphere == nil {
+		return manifests
+	}
+	// TODO(mko) It is not clear why for user-managed LB and for ELB we want to skip CoreDNS as every
+	// other platform deploys CoreDNS without keepalived, and only vSphere skips both.
+	// As this only refactors the existing code, I do not want to change this behaviour.
+
+	// vSphere allows setting user-managed LB by simply leaving the VIPs in PlatformStatus empty.
+	if len(platformStatus.VSphere.APIServerInternalIPs) == 0 {
+		return manifests
+	}
+	if platformStatus.VSphere.LoadBalancer != nil {
+		if platformStatus.VSphere.LoadBalancer.Type != configv1.LoadBalancerTypeOpenShiftManagedDefault {
 			return manifests
 		}
-		if infra.Status.PlatformStatus.VSphere.LoadBalancer != nil {
-			if infra.Status.PlatformStatus.VSphere.LoadBalancer.Type != configv1.LoadBalancerTypeOpenShiftManagedDefault {
-				return manifests
-			}
-		}
-		manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.VSpherePlatformType)), lbType)
 	}
+	lbType := configv1.LoadBalancerTypeOpenShiftManagedDefault
+	return getPlatformManifests(manifests, strings.ToLower(string(configv1.VSpherePlatformType)), lbType)
+}
 
-	if infra.Status.PlatformStatus.Nutanix != nil {
-		if infra.Status.PlatformStatus.Nutanix.LoadBalancer != nil {
-			lbType = infra.Status.PlatformStatus.Nutanix.LoadBalancer.Type
-		}
-		manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.NutanixPlatformType)), lbType)
+func appendNutanixManifests(manifests []manifest, platformStatus *configv1.PlatformStatus) []manifest {
+	if platformStatus.Nutanix == nil {
+		return manifests
 	}
+	lbType := configv1.LoadBalancerTypeOpenShiftManagedDefault
+	if platformStatus.Nutanix.LoadBalancer != nil {
+		lbType = platformStatus.Nutanix.LoadBalancer.Type
+	}
+	return getPlatformManifests(manifests, strings.ToLower(string(configv1.NutanixPlatformType)), lbType)
+}
 
-	if infra.Status.PlatformStatus.GCP != nil {
-		// Generate just the CoreDNS manifests for the GCP platform only when the DNSType is `ClusterHosted`.
-		if infra.Status.PlatformStatus.GCP.CloudLoadBalancerConfig != nil && infra.Status.PlatformStatus.GCP.CloudLoadBalancerConfig.DNSType == configv1.ClusterHostedDNSType {
-			// We do not need the keepalived manifests to be generated because the cloud default Load Balancers are in use.
-			// So, setting the lbType to `UserManaged` although the default cloud LBs are not user managed.
-			lbType = configv1.LoadBalancerTypeUserManaged
-			manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.GCPPlatformType)), lbType)
-		}
+func appendGCPManifests(manifests []manifest, platformStatus *configv1.PlatformStatus) []manifest {
+	if platformStatus.GCP == nil {
+		return manifests
 	}
-	if infra.Status.PlatformStatus.AWS != nil {
-		// Generate just the CoreDNS manifests for the AWS platform only when the DNSType is `ClusterHosted`.
-		if infra.Status.PlatformStatus.AWS.CloudLoadBalancerConfig != nil && infra.Status.PlatformStatus.AWS.CloudLoadBalancerConfig.DNSType == configv1.ClusterHostedDNSType {
-			// We do not need the keepalived manifests to be generated because the cloud default Load Balancers are in use.
-			// So, setting the lbType to `UserManaged` although the default cloud LBs are not user managed.
-			lbType = configv1.LoadBalancerTypeUserManaged
-			manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.AWSPlatformType)), lbType)
-		}
+	// Generate just the CoreDNS manifests for the GCP platform only when the DNSType is `ClusterHosted`.
+	if platformStatus.GCP.CloudLoadBalancerConfig != nil && platformStatus.GCP.CloudLoadBalancerConfig.DNSType == configv1.ClusterHostedDNSType {
+		// We do not need the keepalived manifests to be generated because the cloud default Load Balancers are in use.
+		// So, setting the lbType to `UserManaged` although the default cloud LBs are not user managed.
+		lbType := configv1.LoadBalancerTypeUserManaged
+		return getPlatformManifests(manifests, strings.ToLower(string(configv1.GCPPlatformType)), lbType)
 	}
-	if infra.Status.PlatformStatus.Azure != nil {
-		// Generate just the CoreDNS manifests for the Azure platform only when the DNSType is `ClusterHosted`.
-		if infra.Status.PlatformStatus.Azure.CloudLoadBalancerConfig != nil && infra.Status.PlatformStatus.Azure.CloudLoadBalancerConfig.DNSType == configv1.ClusterHostedDNSType {
-			// We do not need the keepalived manifests to be generated because the cloud default Load Balancers are in use.
-			// So, setting the lbType to `UserManaged` although the default cloud LBs are not user managed.
-			lbType = configv1.LoadBalancerTypeUserManaged
-			manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.AzurePlatformType)), lbType)
-		}
-	}
+	return manifests
+}
 
+func appendAWSManifests(manifests []manifest, platformStatus *configv1.PlatformStatus) []manifest {
+	if platformStatus.AWS == nil {
+		return manifests
+	}
+	// Generate just the CoreDNS manifests for the AWS platform only when the DNSType is `ClusterHosted`.
+	if platformStatus.AWS.CloudLoadBalancerConfig != nil && platformStatus.AWS.CloudLoadBalancerConfig.DNSType == configv1.ClusterHostedDNSType {
+		// We do not need the keepalived manifests to be generated because the cloud default Load Balancers are in use.
+		// So, setting the lbType to `UserManaged` although the default cloud LBs are not user managed.
+		lbType := configv1.LoadBalancerTypeUserManaged
+		return getPlatformManifests(manifests, strings.ToLower(string(configv1.AWSPlatformType)), lbType)
+	}
+	return manifests
+}
+
+func appendAzureManifests(manifests []manifest, platformStatus *configv1.PlatformStatus) []manifest {
+	if platformStatus.Azure == nil {
+		return manifests
+	}
+	// Generate just the CoreDNS manifests for the Azure platform only when the DNSType is `ClusterHosted`.
+	if platformStatus.Azure.CloudLoadBalancerConfig != nil && platformStatus.Azure.CloudLoadBalancerConfig.DNSType == configv1.ClusterHostedDNSType {
+		// We do not need the keepalived manifests to be generated because the cloud default Load Balancers are in use.
+		// So, setting the lbType to `UserManaged` although the default cloud LBs are not user managed.
+		lbType := configv1.LoadBalancerTypeUserManaged
+		return getPlatformManifests(manifests, strings.ToLower(string(configv1.AzurePlatformType)), lbType)
+	}
+	return manifests
+}
+
+func appendManifestsByPlatform(manifests []manifest, infra *configv1.Infrastructure) []manifest {
+	platformStatus := infra.Status.PlatformStatus
+	manifests = appendBaremetalManifests(manifests, platformStatus)
+	manifests = appendOpenStackManifests(manifests, platformStatus)
+	manifests = appendOvirtManifests(manifests, platformStatus)
+	manifests = appendVSphereManifests(manifests, platformStatus)
+	manifests = appendNutanixManifests(manifests, platformStatus)
+	manifests = appendGCPManifests(manifests, platformStatus)
+	manifests = appendAWSManifests(manifests, platformStatus)
+	manifests = appendAzureManifests(manifests, platformStatus)
 	return manifests
 }
 
