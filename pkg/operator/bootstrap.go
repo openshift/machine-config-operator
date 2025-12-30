@@ -9,11 +9,6 @@ import (
 	"k8s.io/klog/v2"
 
 	configv1 "github.com/openshift/api/config/v1"
-	configscheme "github.com/openshift/client-go/config/clientset/versioned/scheme"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/kubernetes/scheme"
-
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 )
@@ -26,136 +21,19 @@ type manifest struct {
 
 // RenderBootstrap writes to destinationDir static Pods.
 func RenderBootstrap(
-	additionalTrustBundleFile,
-	proxyFile,
-	clusterConfigConfigMapFile,
-	infraFile, networkFile, dnsFile,
-	cloudConfigFile, cloudProviderCAFile,
-	mcsCAFile, kubeAPIServerServingCA, pullSecretFile string,
+	dependenciesFiles BootstrapDependenciesFiles,
 	imgs *ctrlcommon.Images,
 	destinationDir, releaseImage string,
 ) error {
-	filesData := map[string][]byte{}
-	files := []string{
-		proxyFile,
-		clusterConfigConfigMapFile,
-		infraFile,
-		networkFile,
-		mcsCAFile,
-		pullSecretFile,
-		dnsFile,
-	}
-	if kubeAPIServerServingCA != "" {
-		files = append(files, kubeAPIServerServingCA)
-	}
-	if cloudProviderCAFile != "" {
-		files = append(files, cloudProviderCAFile)
-	}
-	for _, file := range files {
-		data, err := os.ReadFile(file)
-		if err != nil {
-			return err
-		}
-		filesData[file] = data
-	}
-
-	// create ControllerConfigSpec
-	obji, err := runtime.Decode(configscheme.Codecs.UniversalDecoder(configv1.SchemeGroupVersion), filesData[infraFile])
+	dependencies, err := NewBootstrapDependencies(dependenciesFiles)
 	if err != nil {
-		return err
-	}
-	infra, ok := obji.(*configv1.Infrastructure)
-	if !ok {
-		return fmt.Errorf("expected *configv1.Infrastructure found %T", obji)
+		return fmt.Errorf("error parsing dependencies for MCO bootstrap: %w", err)
 	}
 
-	obji, err = runtime.Decode(configscheme.Codecs.UniversalDecoder(configv1.SchemeGroupVersion), filesData[proxyFile])
+	config, err := buildSpec(dependencies, imgs, releaseImage)
 	if err != nil {
-		return err
+		return fmt.Errorf("error building spec for MCO bootstrap: %w", err)
 	}
-	proxy, ok := obji.(*configv1.Proxy)
-	if !ok {
-		return fmt.Errorf("expected *configv1.Proxy found %T", obji)
-	}
-
-	obji, err = runtime.Decode(configscheme.Codecs.UniversalDecoder(configv1.SchemeGroupVersion), filesData[networkFile])
-	if err != nil {
-		return err
-	}
-	network, ok := obji.(*configv1.Network)
-	if !ok {
-		return fmt.Errorf("expected *configv1.Network found %T", obji)
-	}
-
-	obji, err = runtime.Decode(configscheme.Codecs.UniversalDecoder(configv1.SchemeGroupVersion), filesData[dnsFile])
-	if err != nil {
-		return err
-	}
-	dns, ok := obji.(*configv1.DNS)
-	if !ok {
-		return fmt.Errorf("expected *configv1.DNS found %T", obji)
-	}
-
-	spec, err := createDiscoveredControllerConfigSpec(infra, network, proxy, dns)
-	if err != nil {
-		return err
-	}
-
-	additionalTrustBundleData, err := os.ReadFile(additionalTrustBundleFile)
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	if additionalTrustBundleData != nil {
-		obji, err := runtime.Decode(scheme.Codecs.UniversalDecoder(corev1.SchemeGroupVersion), additionalTrustBundleData)
-		if err != nil {
-			return err
-		}
-		additionalTrustBundle, ok := obji.(*corev1.ConfigMap)
-		if !ok {
-			return fmt.Errorf("expected *corev1.ConfigMap found %T", obji)
-		}
-		spec.AdditionalTrustBundle = []byte(additionalTrustBundle.Data["ca-bundle.crt"])
-	}
-
-	// if the cloudConfig is set in infra read the cloudConfigFile
-	if infra.Spec.CloudConfig.Name != "" {
-		cloudConf, err := loadBootstrapCloudProviderConfig(infra, cloudConfigFile)
-		if err != nil {
-			return fmt.Errorf("failed to load the cloud provider config: %w", err)
-		}
-		spec.CloudProviderConfig = cloudConf
-	}
-
-	bundle := make([]byte, 0)
-	bundle = append(bundle, filesData[mcsCAFile]...)
-	// Append the kube-ca if given.
-	if _, ok := filesData[kubeAPIServerServingCA]; ok {
-		spec.KubeAPIServerServingCAData = filesData[kubeAPIServerServingCA]
-	}
-	// Set the cloud-provider CA if given.
-	if data, ok := filesData[cloudProviderCAFile]; ok {
-		spec.CloudProviderCAData = data
-	}
-
-	spec.RootCAData = bundle
-	spec.PullSecret = nil
-	spec.BaseOSContainerImage = imgs.BaseOSContainerImage
-	spec.BaseOSExtensionsContainerImage = imgs.BaseOSExtensionsContainerImage
-	spec.ReleaseImage = releaseImage
-	spec.Images = map[string]string{
-		templatectrl.MachineConfigOperatorKey: imgs.MachineConfigOperator,
-
-		templatectrl.APIServerWatcherKey:    imgs.MachineConfigOperator,
-		templatectrl.InfraImageKey:          imgs.InfraImage,
-		templatectrl.KeepalivedKey:          imgs.Keepalived,
-		templatectrl.CorednsKey:             imgs.Coredns,
-		templatectrl.HaproxyKey:             imgs.Haproxy,
-		templatectrl.BaremetalRuntimeCfgKey: imgs.BaremetalRuntimeCfg,
-		templatectrl.KubeRbacProxyKey:       imgs.KubeRbacProxy,
-		templatectrl.DockerRegistryKey:      imgs.DockerRegistry,
-	}
-
-	config := getRenderConfig("", string(filesData[kubeAPIServerServingCA]), spec, &imgs.RenderConfigImages, infra, nil, nil, "2")
 
 	manifests := []manifest{
 		{
@@ -171,7 +49,7 @@ func RenderBootstrap(
 			name:     "manifests/bootstrap-pod-v2.yaml",
 			filename: "bootstrap/machineconfigoperator-bootstrap-pod.yaml",
 		}, {
-			data:     filesData[pullSecretFile],
+			data:     []byte(dependencies.PullSecret),
 			filename: "bootstrap/manifests/machineconfigcontroller-pull-secret",
 		}, {
 			name:     "manifests/machineconfigserver/csr-bootstrap-role-binding.yaml",
@@ -182,14 +60,14 @@ func RenderBootstrap(
 		},
 	}
 
-	if infra.Status.ControlPlaneTopology == configv1.HighlyAvailableArbiterMode {
+	if dependencies.Infrastructure.Status.ControlPlaneTopology == configv1.HighlyAvailableArbiterMode {
 		manifests = append(manifests, manifest{
 			name:     "manifests/arbiter.machineconfigpool.yaml",
 			filename: "bootstrap/manifests/arbiter.machineconfigpool.yaml",
 		})
 	}
 
-	manifests = appendManifestsByPlatform(manifests, *infra)
+	manifests = appendManifestsByPlatform(manifests, dependencies.Infrastructure)
 
 	for _, m := range manifests {
 		var b []byte
@@ -222,7 +100,59 @@ func RenderBootstrap(
 	return nil
 }
 
-func appendManifestsByPlatform(manifests []manifest, infra configv1.Infrastructure) []manifest {
+func buildSpec(dependencies *BootstrapDependencies, imgs *ctrlcommon.Images, releaseImage string) (*renderConfig, error) {
+
+	// create ControllerConfigSpec
+	spec, err := createDiscoveredControllerConfigSpec(
+		dependencies.Infrastructure,
+		dependencies.Network,
+		dependencies.Proxy,
+		dependencies.DNS)
+	if err != nil {
+		return nil, err
+	}
+
+	if dependencies.AdditionalTrustBundle != "" {
+		spec.AdditionalTrustBundle = []byte(dependencies.AdditionalTrustBundle)
+	}
+
+	if dependencies.CloudConfig != "" {
+		spec.CloudProviderConfig = dependencies.CloudConfig
+	}
+
+	// Append the kube-ca if given.
+	if dependencies.KubeAPIServerServingCA != "" {
+		spec.KubeAPIServerServingCAData = []byte(dependencies.KubeAPIServerServingCA)
+	}
+	// Set the cloud-provider CA if given.
+	if dependencies.CloudProviderCA != "" {
+		spec.CloudProviderCAData = []byte(dependencies.CloudProviderCA)
+	}
+
+	spec.RootCAData = []byte(dependencies.MCSCA)
+	spec.PullSecret = nil
+	spec.BaseOSContainerImage = imgs.BaseOSContainerImage
+	spec.BaseOSExtensionsContainerImage = imgs.BaseOSExtensionsContainerImage
+	spec.ReleaseImage = releaseImage
+	spec.Images = map[string]string{
+		templatectrl.MachineConfigOperatorKey: imgs.MachineConfigOperator,
+
+		templatectrl.APIServerWatcherKey:    imgs.MachineConfigOperator,
+		templatectrl.InfraImageKey:          imgs.InfraImage,
+		templatectrl.KeepalivedKey:          imgs.Keepalived,
+		templatectrl.CorednsKey:             imgs.Coredns,
+		templatectrl.HaproxyKey:             imgs.Haproxy,
+		templatectrl.BaremetalRuntimeCfgKey: imgs.BaremetalRuntimeCfg,
+		templatectrl.KubeRbacProxyKey:       imgs.KubeRbacProxy,
+		templatectrl.DockerRegistryKey:      imgs.DockerRegistry,
+	}
+
+	config := getRenderConfig("", dependencies.KubeAPIServerServingCA, spec,
+		&imgs.RenderConfigImages, dependencies.Infrastructure, nil, nil, "2")
+	return config, nil
+}
+
+func appendManifestsByPlatform(manifests []manifest, infra *configv1.Infrastructure) []manifest {
 	lbType := configv1.LoadBalancerTypeOpenShiftManagedDefault
 	if infra.Status.PlatformStatus.BareMetal != nil {
 		if infra.Status.PlatformStatus.BareMetal.LoadBalancer != nil {
@@ -298,28 +228,6 @@ func appendManifestsByPlatform(manifests []manifest, infra configv1.Infrastructu
 	}
 
 	return manifests
-}
-
-// loadBootstrapCloudProviderConfig reads the cloud provider config from cloudConfigFile based on infra object.
-func loadBootstrapCloudProviderConfig(infra *configv1.Infrastructure, cloudConfigFile string) (string, error) {
-	data, err := os.ReadFile(cloudConfigFile)
-	if err != nil {
-		return "", err
-	}
-	obji, err := runtime.Decode(scheme.Codecs.UniversalDecoder(corev1.SchemeGroupVersion), data)
-	if err != nil {
-		return "", err
-	}
-	cm, ok := obji.(*corev1.ConfigMap)
-	if !ok {
-		return "", fmt.Errorf("expected *corev1.ConfigMap found %T", obji)
-	}
-	cloudConf, ok := cm.Data["cloud.conf"]
-	if !ok {
-		klog.Infof("falling back to reading cloud provider config from user specified key %s", infra.Spec.CloudConfig.Key)
-		cloudConf = cm.Data[infra.Spec.CloudConfig.Key]
-	}
-	return cloudConf, nil
 }
 
 func getPlatformManifests(manifests []manifest, platformName string, lbType configv1.PlatformLoadBalancerType) []manifest {
