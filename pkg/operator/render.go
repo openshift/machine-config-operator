@@ -52,6 +52,7 @@ type renderConfig struct {
 	TLSMinVersion          string
 	TLSCipherSuites        []string
 	LogLevel               string
+	InstallConfig          *InstallConfig
 }
 
 type assetRenderer struct {
@@ -87,6 +88,7 @@ func (a *assetRenderer) addTemplateFuncs() {
 	funcs["cloudPlatformAPIIntLoadBalancerIPs"] = cloudPlatformAPIIntLoadBalancerIPs
 	funcs["cloudPlatformAPILoadBalancerIPs"] = cloudPlatformAPILoadBalancerIPs
 	funcs["cloudPlatformIngressLoadBalancerIPs"] = cloudPlatformIngressLoadBalancerIPs
+	funcs["installConfigOSImageStream"] = installConfigOSImageStream
 	funcs["join"] = strings.Join
 
 	a.tmpl = a.tmpl.Funcs(funcs)
@@ -127,6 +129,26 @@ func toYAML(i interface{}) []byte {
 		panic(err)
 	}
 	return out
+}
+
+// installConfigOSImageStream returns the OS image stream for the specified pool type.
+// poolType can be "controlPlane", "compute", or "arbiter".
+// If poolType is empty or unrecognized, returns the global OSImageStream.
+func installConfigOSImageStream(cfg *InstallConfig, poolType string) string {
+	if cfg == nil {
+		return ""
+	}
+	streams := cfg.GetInstallOSImageStreams()
+	switch poolType {
+	case "controlPlane":
+		return streams.ControlPlane
+	case "compute":
+		return streams.Compute
+	case "arbiter":
+		return streams.Arbiter
+	default:
+		return cfg.OSImageStream
+	}
 }
 
 // createDiscoveredControllerConfigSpec uses the Infrastructure and Network global configuration to discover various
