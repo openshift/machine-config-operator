@@ -14,6 +14,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	k8sversion "k8s.io/apimachinery/pkg/util/version"
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	clientset "k8s.io/client-go/kubernetes"
@@ -77,6 +78,7 @@ type Controller struct {
 // Stats structure for local bookkeeping of machine resources
 type MachineResourceStats struct {
 	inProgress   int
+	skippedCount int
 	erroredCount int
 	totalCount   int
 }
@@ -446,8 +448,10 @@ func (ctrl *Controller) updateMachineConfiguration(oldMC, newMC interface{}) {
 		return
 	}
 
-	// Only take action if the there is an actual change in the MachineConfiguration's ManagedBootImagesStatus
-	if reflect.DeepEqual(oldMachineConfiguration.Status.ManagedBootImagesStatus, newMachineConfiguration.Status.ManagedBootImagesStatus) {
+	// Only take action if the there is an actual change in the MachineConfiguration's ManagedBootImagesStatus or BootImageSkewEnforcementStatus(when bootimageskewenforcement feature gate is enabled)
+	if reflect.DeepEqual(oldMachineConfiguration.Status.ManagedBootImagesStatus, newMachineConfiguration.Status.ManagedBootImagesStatus) &&
+		(!ctrl.fgHandler.Enabled(features.FeatureGateBootImageSkewEnforcement) ||
+			reflect.DeepEqual(oldMachineConfiguration.Status.BootImageSkewEnforcementStatus, newMachineConfiguration.Status.BootImageSkewEnforcementStatus)) {
 		return
 	}
 
@@ -523,33 +527,77 @@ func (ctrl *Controller) updateConditions(newReason string, syncError error, targ
 	}
 	// Only make an API call if there is an update to the Conditions field
 	if !reflect.DeepEqual(newConditions, mcop.Status.Conditions) {
-		ctrl.updateMachineConfigurationStatus(mcop, newConditions)
+		mcop.Status.Conditions = newConditions
+		ctrl.updateMachineConfigurationStatus(mcop.Status)
 	}
 }
 
-// updateMachineConfigurationStatus updates the MachineConfiguration status with new conditions
-// using retry logic to handle concurrent updates.
-func (ctrl *Controller) updateMachineConfigurationStatus(mcop *opv1.MachineConfiguration, newConditions []metav1.Condition) {
+// updateClusterBootImage updates the cluster boot image record if the skew enforcement is set to Automatic mode.
+func (ctrl *Controller) updateClusterBootImage() {
 
+	mcop, err := ctrl.mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, metav1.GetOptions{})
+	if err != nil {
+		klog.Errorf("error updating cluster boot image record: %s", err)
+		return
+	}
+	// No action to take if not in automatic mode
+	if mcop.Status.BootImageSkewEnforcementStatus.Mode != opv1.BootImageSkewEnforcementModeStatusAutomatic {
+		return
+	}
+
+	// Get OCP version of last boot image update from configmap
+	configMap, err := ctrl.mcoCmLister.ConfigMaps(ctrlcommon.MCONamespace).Get(ctrlcommon.BootImagesConfigMapName)
+	if err != nil {
+		klog.Warningf("Failed to get boot images configmap: %v, skipping cluster boot image record update", err)
+		return
+	}
+
+	releaseVersion, found := configMap.Data[ctrlcommon.OCPReleaseVersionKey]
+	if !found {
+		klog.Warningf("OCP release version not found in boot images configmap, skipping cluster boot image record update")
+		return
+	}
+
+	// Parse and extract semantic version (major.minor.patch) for API validation
+	parsedVersion, err := k8sversion.ParseGeneric(releaseVersion)
+	if err != nil {
+		klog.Warningf("Failed to parse release version %q from configmap: %v, skipping cluster boot image record update", releaseVersion, err)
+		return
+	}
+	ocpVersion := fmt.Sprintf("%d.%d.%d", parsedVersion.Major(), parsedVersion.Minor(), parsedVersion.Patch())
+
+	newBootImageSkewEnforcementStatus := mcop.Status.BootImageSkewEnforcementStatus.DeepCopy()
+	newBootImageSkewEnforcementStatus.Automatic = opv1.ClusterBootImageAutomatic{
+		OCPVersion: ocpVersion,
+	}
+
+	// Only make an API call if there is an update to the skew enforcement status
+	if !reflect.DeepEqual(mcop.Status.BootImageSkewEnforcementStatus, newBootImageSkewEnforcementStatus) {
+		mcop.Status.BootImageSkewEnforcementStatus = *newBootImageSkewEnforcementStatus
+		ctrl.updateMachineConfigurationStatus(mcop.Status)
+	}
+}
+
+// updateMachineConfigurationStatus updates the MachineConfiguration status using retry logic to handle concurrent updates.
+func (ctrl *Controller) updateMachineConfigurationStatus(mcopStatus opv1.MachineConfigurationStatus) {
 	// Using a retry here as there may be concurrent reconiliation loops updating conditions for multiple
 	// resources at the same time and their local stores may be out of date
-	if !reflect.DeepEqual(mcop.Status.Conditions, newConditions) {
-		klog.V(4).Infof("%v", newConditions)
-		if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-			mcop, err := ctrl.mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, metav1.GetOptions{})
-			if err != nil {
-				return err
-			}
-			mcop.Status.Conditions = newConditions
-			_, err = ctrl.mcopClient.OperatorV1().MachineConfigurations().UpdateStatus(context.TODO(), mcop, metav1.UpdateOptions{})
-			if err != nil {
-				return err
-			}
-			return nil
-		}); err != nil {
-			klog.Errorf("error updating MachineConfiguration status: %v", err)
+	klog.V(2).Infof("MachineConfiguration status update: %v", mcopStatus)
+	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		mcop, err := ctrl.mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, metav1.GetOptions{})
+		if err != nil {
+			return err
 		}
+		mcop.Status = mcopStatus
+		_, err = ctrl.mcopClient.OperatorV1().MachineConfigurations().UpdateStatus(context.TODO(), mcop, metav1.UpdateOptions{})
+		if err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		klog.Errorf("error updating MachineConfiguration status: %v", err)
 	}
+
 }
 
 // getDefaultConditions returns the default boot image update conditions when no
