@@ -516,8 +516,22 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 
 		// Empty strings are ignored by mergo, so we need to set them to empty string for SystemReservedCgroup explicitly
 		// Else the old value is retained. Tested by test/e2e-2of2/kubeletcfg_test.go
-		if specKubeletConfig.SystemReservedCgroup == "" {
-			originalKubeConfig.SystemReservedCgroup = ""
+		// However, only clear it if the user explicitly sets enforceNodeAllocatable without system-reserved enforcement
+		if specKubeletConfig.SystemReservedCgroup == "" && len(specKubeletConfig.EnforceNodeAllocatable) > 0 {
+			// User explicitly set enforceNodeAllocatable - check if it contains system-reserved enforcement
+			hasSystemReservedEnforcement := false
+			for _, val := range specKubeletConfig.EnforceNodeAllocatable {
+				if val == kubeletypes.SystemReservedEnforcementKey || val == kubeletypes.SystemReservedCompressibleEnforcementKey {
+					hasSystemReservedEnforcement = true
+					break
+				}
+			}
+
+			// Only clear systemReservedCgroup if user explicitly set enforceNodeAllocatable without system-reserved enforcement
+			// This prevents validation error: "systemReservedCgroup must be specified when system-reserved is in enforceNodeAllocatable"
+			if !hasSystemReservedEnforcement {
+				originalKubeConfig.SystemReservedCgroup = ""
+			}
 		}
 	}
 
