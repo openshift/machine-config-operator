@@ -559,8 +559,8 @@ func WorkersCanBeScaled(oc *exutil.CLI) (bool, error) {
 	return true, nil
 }
 
-// skipTestIfWorkersCannotBeScaled skips the current test if the worker pool cannot be scaled via machineset
-func skipTestIfWorkersCannotBeScaled(oc *exutil.CLI) {
+// SkipTestIfWorkersCannotBeScaled skips the current test if the worker pool cannot be scaled via machineset
+func SkipTestIfWorkersCannotBeScaled(oc *exutil.CLI) {
 	canBeScaled, err := WorkersCanBeScaled(oc)
 	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error deciding if worker nodes can be scaled using machinesets")
 
