@@ -212,3 +212,57 @@ func TestGenerateKubeletIgnFilesWithEmptyStringOverride(t *testing.T) {
 	require.Equal(t, []string{kubeletypes.NodeAllocatableEnforcementKey}, decodedConfig.EnforceNodeAllocatable,
 		"enforceNodeAllocatable should be [pods] from user config but got %v", decodedConfig.EnforceNodeAllocatable)
 }
+
+// TestGenerateKubeletIgnFilesWithPartialUserConfig tests the bug scenario where:
+// - Base config has systemReservedCgroup="/system.slice" and enforceNodeAllocatable with system-reserved-compressible
+// - User provides custom config that doesn't mention systemReservedCgroup at all (e.g., only sets maxPods)
+// - Expected: systemReservedCgroup should be preserved from base config (not cleared)
+// This prevents validation error: "systemReservedCgroup must be specified when system-reserved is in enforceNodeAllocatable"
+func TestGenerateKubeletIgnFilesWithPartialUserConfig(t *testing.T) {
+	originalKubeConfig := &kubeletconfigv1beta1.KubeletConfiguration{
+		MaxPods:                110,
+		SystemReservedCgroup:   "/system.slice",
+		EnforceNodeAllocatable: []string{kubeletypes.NodeAllocatableEnforcementKey, kubeletypes.SystemReservedCompressibleEnforcementKey},
+	}
+
+	// User only sets maxPods, doesn't mention systemReservedCgroup or enforceNodeAllocatable
+	userKubeletConfig := &kubeletconfigv1beta1.KubeletConfiguration{
+		MaxPods: 200,
+	}
+
+	userKubeletConfigRaw, err := EncodeKubeletConfig(userKubeletConfig, kubeletconfigv1beta1.SchemeGroupVersion, runtime.ContentTypeYAML)
+	require.NoError(t, err)
+
+	kubeletConfig := &mcfgv1.KubeletConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-partial-config",
+		},
+		Spec: mcfgv1.KubeletConfigSpec{
+			KubeletConfig: &runtime.RawExtension{
+				Raw: userKubeletConfigRaw,
+			},
+		},
+	}
+
+	kubeletIgnition, _, _, err := generateKubeletIgnFiles(kubeletConfig, originalKubeConfig)
+	require.NoError(t, err, "generateKubeletIgnFiles should not return an error")
+	require.NotNil(t, kubeletIgnition, "kubelet ignition file should not be nil")
+
+	contents, err := ctrlcommon.DecodeIgnitionFileContents(kubeletIgnition.Contents.Source, kubeletIgnition.Contents.Compression)
+	require.NoError(t, err, "decoding ignition file contents should succeed")
+
+	decodedConfig, err := DecodeKubeletConfig(contents)
+	require.NoError(t, err, "decoding kubelet config should succeed")
+
+	// Verify: maxPods was updated
+	require.Equal(t, int32(200), decodedConfig.MaxPods,
+		"MaxPods should be 200 from user config but got %d", decodedConfig.MaxPods)
+
+	// Verify: systemReservedCgroup was preserved from base config (not cleared)
+	require.Equal(t, "/system.slice", decodedConfig.SystemReservedCgroup,
+		"systemReservedCgroup should be preserved as /system.slice from base config but got %q", decodedConfig.SystemReservedCgroup)
+
+	// Verify: enforceNodeAllocatable was preserved from base config
+	require.Equal(t, []string{kubeletypes.NodeAllocatableEnforcementKey, kubeletypes.SystemReservedCompressibleEnforcementKey}, decodedConfig.EnforceNodeAllocatable,
+		"enforceNodeAllocatable should be preserved from base config but got %v", decodedConfig.EnforceNodeAllocatable)
+}

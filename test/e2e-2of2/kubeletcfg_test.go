@@ -225,7 +225,7 @@ func runTestWithKubeletCfg(t *testing.T, testName string, regexKey []string, str
 				require.True(t, strings.Contains(out, expectedConfVals[i][1]))
 			}
 			// Additional validation for enforceNodeAllocatable to ensure both "pods" and "system-reserved-compressible" are present
-			if stringKey[i] == "enforceNodeAllocatable" && *kc2.Spec.AutoSizingReserved {
+			if stringKey[i] == "enforceNodeAllocatable" && kc2.Spec.AutoSizingReserved != nil && *kc2.Spec.AutoSizingReserved {
 				require.True(t, strings.Contains(out, "pods"), "enforceNodeAllocatable should contain 'pods'")
 				require.True(t, strings.Contains(out, "system-reserved-compressible"), "enforceNodeAllocatable should contain 'system-reserved-compressible'")
 			}
