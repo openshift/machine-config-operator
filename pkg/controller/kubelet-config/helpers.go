@@ -78,6 +78,12 @@ func createNewKubeletLogLevelIgnition(level int32) *ign3types.File {
 	return &r
 }
 
+func createSystemReservedCompressibleIgnition(enabled bool) *ign3types.File {
+	config := fmt.Sprintf("SYSTEM_RESERVED_COMPRESSIBLE_ENABLED=%t\n", enabled)
+	r := ctrlcommon.NewIgnFileBytesOverwriting("/etc/system-reserved-compressible.env", []byte(config))
+	return &r
+}
+
 func createNewKubeletIgnition(yamlConfig []byte) *ign3types.File {
 
 	r := ctrlcommon.NewIgnFileBytesOverwriting("/etc/kubernetes/kubelet.conf", yamlConfig)
@@ -390,6 +396,12 @@ func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 		cfg.Spec.AutoSizingReserved != nil && *cfg.Spec.AutoSizingReserved {
 		return fmt.Errorf("KubeletConfiguration: autoSizingReserved and systemdReserved cannot be set together")
 	}
+	// Validate that systemReservedCgroup matches systemCgroups if both are set
+	if kcDecoded.SystemReservedCgroup != "" && kcDecoded.SystemCgroups != "" {
+		if kcDecoded.SystemReservedCgroup != kcDecoded.SystemCgroups {
+			return fmt.Errorf("KubeletConfiguration: systemReservedCgroup (%s) must match systemCgroups (%s)", kcDecoded.SystemReservedCgroup, kcDecoded.SystemCgroups)
+		}
+	}
 	return nil
 }
 
@@ -460,18 +472,19 @@ func kubeletConfigToIgnFile(cfg *kubeletconfigv1beta1.KubeletConfiguration) (*ig
 }
 
 // generateKubeletIgnFiles generates the Ignition files from the kubelet config
-func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeConfig *kubeletconfigv1beta1.KubeletConfiguration) (*ign3types.File, *ign3types.File, *ign3types.File, error) {
+func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeConfig *kubeletconfigv1beta1.KubeletConfiguration) (*ign3types.File, *ign3types.File, *ign3types.File, *ign3types.File, error) {
 	var (
-		kubeletIgnition            *ign3types.File
-		logLevelIgnition           *ign3types.File
-		autoSizingReservedIgnition *ign3types.File
+		kubeletIgnition                    *ign3types.File
+		logLevelIgnition                   *ign3types.File
+		autoSizingReservedIgnition         *ign3types.File
+		systemReservedCompressibleIgnition *ign3types.File
 	)
 	userDefinedSystemReserved := make(map[string]string)
 
 	if kubeletConfig.Spec.KubeletConfig != nil && kubeletConfig.Spec.KubeletConfig.Raw != nil {
 		specKubeletConfig, err := DecodeKubeletConfig(kubeletConfig.Spec.KubeletConfig.Raw)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("could not deserialize the new Kubelet config: %w", err)
+			return nil, nil, nil, nil, fmt.Errorf("could not deserialize the new Kubelet config: %w", err)
 		}
 
 		if val, ok := specKubeletConfig.SystemReserved["memory"]; ok {
@@ -504,14 +517,37 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 		// Merge the Old and New
 		err = mergo.Merge(originalKubeConfig, specKubeletConfig, mergo.WithOverride)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("could not merge original config and new config: %w", err)
+			return nil, nil, nil, nil, fmt.Errorf("could not merge original config and new config: %w", err)
 		}
 	}
+
+	// Handle systemReservedCgroup and enforceNodeAllocatable based on:
+	// reservedSystemCPUs being set (incompatible with systemReservedCgroup)
+	shouldDisableSystemReservedCgroup := false
+
+	// Check if reservedSystemCPUs is set (incompatible with systemReservedCgroup)
+	if originalKubeConfig.ReservedSystemCPUs != "" {
+		shouldDisableSystemReservedCgroup = true
+		klog.Infof("reservedSystemCPUs is set to %s, disabling systemReservedCgroup enforcement", originalKubeConfig.ReservedSystemCPUs)
+	}
+
+	if shouldDisableSystemReservedCgroup {
+		// Clear systemReservedCgroup
+		originalKubeConfig.SystemReservedCgroup = ""
+		// Set enforceNodeAllocatable to only pods
+		originalKubeConfig.EnforceNodeAllocatable = []string{"pods"}
+	}
+
+	// Create system reserved compressible ignition based on SystemReservedCgroup
+	// If SystemReservedCgroup is set (not empty), enable compressible (set to true) to set CPUShares=100
+	// Otherwise, disable compressible (set to false) to not set CPUShares
+	systemReservedCompressibleEnabled := originalKubeConfig.SystemReservedCgroup != ""
+	systemReservedCompressibleIgnition = createSystemReservedCompressibleIgnition(systemReservedCompressibleEnabled)
 
 	// Encode the new config into an Ignition File
 	kubeletIgnition, err := kubeletConfigToIgnFile(originalKubeConfig)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("could not encode JSON: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("could not encode JSON: %w", err)
 	}
 
 	if kubeletConfig.Spec.LogLevel != nil {
@@ -524,5 +560,5 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 		autoSizingReservedIgnition = createNewKubeletDynamicSystemReservedIgnition(nil, userDefinedSystemReserved)
 	}
 
-	return kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, nil
+	return kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, systemReservedCompressibleIgnition, nil
 }
