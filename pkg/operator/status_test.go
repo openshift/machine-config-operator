@@ -855,6 +855,75 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 			expectMessage:      "",
 			expectError:        false,
 		},
+		// Boot image controller readiness tests
+		{
+			name:               "boot image controller is degraded in Automatic mode",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:    opv1.MachineConfigurationBootImageUpdateDegraded,
+							Status:  metav1.ConditionTrue,
+							Message: "failed to update boot images",
+						},
+					},
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
+						Automatic: opv1.ClusterBootImageAutomatic{
+							OCPVersion: "4.12.0", // Out of skew, but degraded check should happen first
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: true,
+			expectMessage:      "Upgrades have been disabled due to boot image update failures: Boot image controller is degraded: failed to update boot images",
+			expectError:        false,
+		},
+		{
+			name:               "boot image controller is progressing in Automatic mode",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   opv1.MachineConfigurationBootImageUpdateProgressing,
+							Status: metav1.ConditionTrue,
+						},
+					},
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
+						Automatic: opv1.ClusterBootImageAutomatic{
+							OCPVersion: "4.12.0", // Out of skew, but progressing check should skip skew evaluation
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: false,
+			expectMessage:      "",
+			expectError:        false,
+		},
+		{
+			name:               "boot image controller hasn't completed first pass in Automatic mode",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{},
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
+						Automatic: opv1.ClusterBootImageAutomatic{
+							OCPVersion: "4.12.0", // Out of skew, but readiness check should skip skew evaluation
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: false,
+			expectMessage:      "",
+			expectError:        false,
+		},
 		// OCP version tests in automatic mode
 		{
 			name:               "mode is Automatic with OCP version within limit",
@@ -862,6 +931,12 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 			mcop: &opv1.MachineConfiguration{
 				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
 				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   opv1.MachineConfigurationBootImageUpdateProgressing,
+							Status: metav1.ConditionFalse,
+						},
+					},
 					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
 						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
 						Automatic: opv1.ClusterBootImageAutomatic{
@@ -880,6 +955,12 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 			mcop: &opv1.MachineConfiguration{
 				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
 				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   opv1.MachineConfigurationBootImageUpdateProgressing,
+							Status: metav1.ConditionFalse,
+						},
+					},
 					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
 						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
 						Automatic: opv1.ClusterBootImageAutomatic{
@@ -937,6 +1018,12 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 			mcop: &opv1.MachineConfiguration{
 				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
 				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   opv1.MachineConfigurationBootImageUpdateProgressing,
+							Status: metav1.ConditionFalse,
+						},
+					},
 					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
 						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
 						Automatic: opv1.ClusterBootImageAutomatic{
@@ -956,6 +1043,12 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 			mcop: &opv1.MachineConfiguration{
 				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
 				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   opv1.MachineConfigurationBootImageUpdateProgressing,
+							Status: metav1.ConditionFalse,
+						},
+					},
 					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
 						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
 						Automatic: opv1.ClusterBootImageAutomatic{
@@ -974,6 +1067,12 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 			mcop: &opv1.MachineConfiguration{
 				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
 				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   opv1.MachineConfigurationBootImageUpdateProgressing,
+							Status: metav1.ConditionFalse,
+						},
+					},
 					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
 						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
 						Automatic: opv1.ClusterBootImageAutomatic{
@@ -992,6 +1091,12 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 			mcop: &opv1.MachineConfiguration{
 				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
 				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   opv1.MachineConfigurationBootImageUpdateProgressing,
+							Status: metav1.ConditionFalse,
+						},
+					},
 					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
 						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
 						Automatic: opv1.ClusterBootImageAutomatic{
@@ -1010,6 +1115,12 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 			mcop: &opv1.MachineConfiguration{
 				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
 				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   opv1.MachineConfigurationBootImageUpdateProgressing,
+							Status: metav1.ConditionFalse,
+						},
+					},
 					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
 						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
 						Automatic: opv1.ClusterBootImageAutomatic{
@@ -1029,6 +1140,12 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 			mcop: &opv1.MachineConfiguration{
 				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
 				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   opv1.MachineConfigurationBootImageUpdateProgressing,
+							Status: metav1.ConditionFalse,
+						},
+					},
 					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
 						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
 						Automatic: opv1.ClusterBootImageAutomatic{
