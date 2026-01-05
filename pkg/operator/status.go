@@ -615,6 +615,31 @@ func taskFailed(task string) string {
 	return task + "Failed"
 }
 
+// checkBootImageControllerReady checks if the boot image controller is ready to have its status used for skew enforcement.
+// Returns (statusReady, controllerError).
+// If statusReady is false and controllerError is not nil, the controller is degraded and upgrades should be blocked.
+// If statusReady is false and controllerError is nil, the controller is still initializing/progressing.
+func checkBootImageControllerReady(mcop *opv1.MachineConfiguration) (bool, error) {
+	// If boot image controller is degraded, return Upgradable=false and an error
+	if meta.IsStatusConditionTrue(mcop.Status.Conditions, opv1.MachineConfigurationBootImageUpdateDegraded) {
+		degradedCondition := meta.FindStatusCondition(mcop.Status.Conditions, opv1.MachineConfigurationBootImageUpdateDegraded)
+		return false, fmt.Errorf("Boot image controller is degraded: %s", degradedCondition.Message)
+	}
+
+	// If boot image controller is still progressing or hasn't completed its first pass, return true for statusReady
+	progressingCondition := meta.FindStatusCondition(mcop.Status.Conditions, opv1.MachineConfigurationBootImageUpdateProgressing)
+	if progressingCondition == nil {
+		klog.V(4).Infof("Boot image controller hasn't completed its first pass, skipping boot image skew enforcement check")
+		return false, nil
+	}
+	if progressingCondition.Status == metav1.ConditionTrue {
+		klog.V(4).Infof("Boot image controller is still progressing, skipping boot image skew enforcement check")
+		return false, nil
+	}
+
+	return true, nil
+}
+
 // checkBootImageSkewUpgradeableGuard checks if the boot image version is within acceptable limits.
 // It returns an error if there is no skew enforcement opinion specified. If one is specified,
 // it checks if boot image skew is within the expected limit.
@@ -640,6 +665,15 @@ func (optr *Operator) checkBootImageSkewUpgradeableGuard() (bool, string, error)
 
 	switch mcop.Status.BootImageSkewEnforcementStatus.Mode {
 	case opv1.BootImageSkewEnforcementModeStatusAutomatic:
+		// Check if boot image controller is ready before using its status
+		statusReady, controllerError := checkBootImageControllerReady(mcop)
+		if !statusReady {
+			if controllerError != nil {
+				return true, fmt.Sprintf("Upgrades have been disabled due to boot image update failures: %s", controllerError.Error()), nil
+			}
+			return false, "", nil
+		}
+
 		skewLimitExceeded, skewLimitExceededMessage = checkBootImageSkew(
 			mcop.Status.BootImageSkewEnforcementStatus.Automatic.OCPVersion,
 			mcop.Status.BootImageSkewEnforcementStatus.Automatic.RHCOSVersion,
