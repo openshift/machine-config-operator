@@ -20,8 +20,10 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
+	mcfginformersv1alpha1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
 
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
+	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 	"github.com/openshift/machine-config-operator/internal"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
@@ -29,6 +31,7 @@ import (
 	buildconstants "github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	"github.com/openshift/machine-config-operator/pkg/osimagestream"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -87,22 +90,24 @@ type Controller struct {
 	syncHandler              func(mcp string) error
 	enqueueMachineConfigPool func(*mcfgv1.MachineConfigPool)
 
-	ccLister   mcfglistersv1.ControllerConfigLister
-	mcLister   mcfglistersv1.MachineConfigLister
-	mcpLister  mcfglistersv1.MachineConfigPoolLister
-	moscLister mcfglistersv1.MachineOSConfigLister
-	mosbLister mcfglistersv1.MachineOSBuildLister
-	nodeLister corelisterv1.NodeLister
-	podLister  corelisterv1.PodLister
-	mcnLister  mcfglistersv1.MachineConfigNodeLister
+	ccLister            mcfglistersv1.ControllerConfigLister
+	mcLister            mcfglistersv1.MachineConfigLister
+	mcpLister           mcfglistersv1.MachineConfigPoolLister
+	moscLister          mcfglistersv1.MachineOSConfigLister
+	mosbLister          mcfglistersv1.MachineOSBuildLister
+	nodeLister          corelisterv1.NodeLister
+	podLister           corelisterv1.PodLister
+	mcnLister           mcfglistersv1.MachineConfigNodeLister
+	osImageStreamLister mcfglistersv1alpha1.OSImageStreamLister
 
-	ccListerSynced   cache.InformerSynced
-	mcListerSynced   cache.InformerSynced
-	mcpListerSynced  cache.InformerSynced
-	moscListerSynced cache.InformerSynced
-	mosbListerSynced cache.InformerSynced
-	nodeListerSynced cache.InformerSynced
-	mcnListerSynced  cache.InformerSynced
+	ccListerSynced            cache.InformerSynced
+	mcListerSynced            cache.InformerSynced
+	mcpListerSynced           cache.InformerSynced
+	moscListerSynced          cache.InformerSynced
+	mosbListerSynced          cache.InformerSynced
+	nodeListerSynced          cache.InformerSynced
+	mcnListerSynced           cache.InformerSynced
+	osImageStreamListerSynced cache.InformerSynced
 
 	schedulerList         cligolistersv1.SchedulerLister
 	schedulerListerSynced cache.InformerSynced
@@ -126,6 +131,7 @@ func New(
 	mosbInformer mcfginformersv1.MachineOSBuildInformer,
 	mcnInformer mcfginformersv1.MachineConfigNodeInformer,
 	schedulerInformer cligoinformersv1.SchedulerInformer,
+	osImageStreamInformer mcfginformersv1alpha1.OSImageStreamInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 	fgHandler ctrlcommon.FeatureGatesHandler,
@@ -140,6 +146,7 @@ func New(
 		podInformer,
 		mcnInformer,
 		schedulerInformer,
+		osImageStreamInformer,
 		kubeClient,
 		mcfgClient,
 		defaultUpdateDelay,
@@ -157,6 +164,7 @@ func NewWithCustomUpdateDelay(
 	mosbInformer mcfginformersv1.MachineOSBuildInformer,
 	mcnInformer mcfginformersv1.MachineConfigNodeInformer,
 	schedulerInformer cligoinformersv1.SchedulerInformer,
+	osImageStreamInformer mcfginformersv1alpha1.OSImageStreamInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 	updateDelay time.Duration,
@@ -172,6 +180,7 @@ func NewWithCustomUpdateDelay(
 		podInformer,
 		mcnInformer,
 		schedulerInformer,
+		osImageStreamInformer,
 		kubeClient,
 		mcfgClient,
 		updateDelay,
@@ -190,6 +199,7 @@ func newController(
 	podInformer coreinformersv1.PodInformer,
 	mcnInformer mcfginformersv1.MachineConfigNodeInformer,
 	schedulerInformer cligoinformersv1.SchedulerInformer,
+	osImageStreamInformer mcfginformersv1alpha1.OSImageStreamInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 	updateDelay time.Duration,
@@ -251,6 +261,7 @@ func newController(
 	ctrl.nodeLister = nodeInformer.Lister()
 	ctrl.podLister = podInformer.Lister()
 	ctrl.mcnLister = mcnInformer.Lister()
+	ctrl.osImageStreamLister = osImageStreamInformer.Lister()
 	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
 	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
 	ctrl.mcpListerSynced = mcpInformer.Informer().HasSynced
@@ -258,6 +269,7 @@ func newController(
 	ctrl.mosbListerSynced = mosbInformer.Informer().HasSynced
 	ctrl.nodeListerSynced = nodeInformer.Informer().HasSynced
 	ctrl.mcnListerSynced = mcnInformer.Informer().HasSynced
+	ctrl.osImageStreamListerSynced = osImageStreamInformer.Informer().HasSynced
 
 	ctrl.schedulerList = schedulerInformer.Lister()
 	ctrl.schedulerListerSynced = schedulerInformer.Informer().HasSynced
@@ -270,7 +282,15 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.mcpListerSynced, ctrl.moscListerSynced, ctrl.mosbListerSynced, ctrl.nodeListerSynced, ctrl.schedulerListerSynced) {
+	syncers := []cache.InformerSynced{
+		ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.mcpListerSynced, ctrl.moscListerSynced,
+		ctrl.mosbListerSynced, ctrl.nodeListerSynced, ctrl.schedulerListerSynced,
+	}
+	// Only wait for the OSImageStream informer to sync if the feature is enabled
+	if osimagestream.IsFeatureEnabled(ctrl.fgHandler) {
+		syncers = append(syncers, ctrl.osImageStreamListerSynced)
+	}
+	if !cache.WaitForCacheSync(stopCh, syncers...) {
 		return
 	}
 

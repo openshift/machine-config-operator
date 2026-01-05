@@ -3,6 +3,7 @@ package node
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/openshift/machine-config-operator/pkg/osimagestream"
@@ -250,14 +251,11 @@ func (ctrl *Controller) calculateStatus(mcns []*mcfgv1.MachineConfigNode, cconfi
 		readyMachineCount == totalMachineCount &&
 		unavailableMachineCount == 0 &&
 		!isLayeredPoolBuilding(isLayeredPool, mosc, mosb)
+	// Get the OSImageStream the pool is targeting & set it in the pool's status
+	if osimagestream.IsFeatureEnabled(ctrl.fgHandler) {
+		status.OSImageStream = ctrl.getOSImageStream(allUpdated, pool, updatedMachines, nodes)
+	}
 	if allUpdated {
-		// When the pool is fully updated & the `OSStreams` FeatureGate is enabled, set the
-		// `OSImageStream` reference in the MCP status to be consistent to what is defined in the
-		// MCP spec
-		if osimagestream.IsFeatureEnabled(ctrl.fgHandler) {
-			status.OSImageStream = pool.Spec.OSImageStream
-		}
-
 		//TODO: update api to only have one condition regarding status of update.
 		updatedMsg := fmt.Sprintf("All nodes are updated with %s", getPoolUpdateLine(pool, mosc, isLayeredPool))
 		supdated := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdated, corev1.ConditionTrue, "", updatedMsg)
@@ -544,4 +542,94 @@ func isLayeredPoolBuilding(isLayeredPool bool, mosc *mcfgv1.MachineOSConfig, mos
 	}
 
 	return false
+}
+
+// getOSImageStream gets the OSImageStream for a pool
+func (ctrl *Controller) getOSImageStream(allUpdated bool, pool *mcfgv1.MachineConfigPool, updatedMachines, nodes []*corev1.Node) mcfgv1.OSImageStreamReference {
+	// If we are in the process of updating and the OSImageStream has previously been set,
+	// continue using that value. Otherwise, we need to determine it based on the nodes.
+	if !allUpdated && pool.Status.OSImageStream.Name != "" {
+		return pool.Status.OSImageStream
+	}
+
+	// Get the default stream from the OSImageStream CR
+	defaultStreamName, availableStreamNames, err := osimagestream.GetDefaultAndAvailableStreamNames(ctrl.osImageStreamLister)
+	// If we can't get the OSImageStream CR (e.g., during initial cluster setup or if the CR
+	// hasn't been created yet), use the fallback default and allow all rhel-9 and rhel-10 streams.
+	if err != nil {
+		klog.V(4).Infof("Could not retrieve OSImageStream CR: %v. Setting the OS stream to empty.", err)
+		return mcfgv1.OSImageStreamReference{}
+	}
+
+	// If a pool has no nodes, nodes added to the pool will either point to the OSImageStream
+	// specified in the MCP's spec or the default stream if none is specified.
+	if len(nodes) == 0 {
+		if pool.Spec.OSImageStream.Name != "" {
+			return pool.Spec.OSImageStream
+		}
+		return mcfgv1.OSImageStreamReference{
+			Name: defaultStreamName,
+		}
+	}
+
+	// In all other situations, we need to grab the OSImageStream from the nodes in the pool.
+	return getOSImageStreamFromNode(updatedMachines, nodes, defaultStreamName, availableStreamNames)
+}
+
+// getOSImageStreamFromNode gets the RHEL version a node is running and returns the corresponding
+// OSImageStreamReference
+// Assisted by: Cursor
+func getOSImageStreamFromNode(updatedMachines, nodes []*corev1.Node, defaultStreamName string, availableStreamNames []string) mcfgv1.OSImageStreamReference {
+	// Select a node to check the RHEl version of. Ideally we want to grab an updated node if one
+	// exists, but if not we will check an updating node to ensure the MCP's image steam value is
+	// always populated.
+	var nodeToCheck *corev1.Node
+	if len(updatedMachines) > 0 {
+		nodeToCheck = updatedMachines[0]
+	} else {
+		nodeToCheck = nodes[0]
+	}
+
+	// Get RHEL version of node from Status.NodeInfo.OSImage
+	osImage := nodeToCheck.Status.NodeInfo.OSImage
+	// If the osImage in the node is empty, which should rarely happen during times like a node is
+	// being provisioned, then return the default OSImageStream version
+	if osImage == "" {
+		return mcfgv1.OSImageStreamReference{
+			Name: defaultStreamName,
+		}
+	}
+
+	// Pattern to match the major RHEL/RHCOS version after "CoreOS " or "Linux "
+	// Examples:
+	//   "Red Hat Enterprise Linux CoreOS 9.4 (Plow)" → captures "9"
+	//   "Red Hat Enterprise Linux CoreOS 9.6.20251219-0 (Plow)" → captures "9"
+	//   "Red Hat Enterprise Linux 10 (Orca)" → captures "10"
+	versionPattern := regexp.MustCompile(`(?:CoreOS|Linux)\s+(\d+)`)
+	matches := versionPattern.FindStringSubmatch(osImage)
+	// matches[0] is the full match, matches[1] is the captured group (major version).
+	// We need >= 2 to safely access matches[1].
+	if len(matches) >= 2 {
+		majorVersion := matches[1]
+		imageStreamName := fmt.Sprintf("rhel-%s", majorVersion)
+
+		// Validate that the image stream is in the list of available streams
+		for _, name := range availableStreamNames {
+			if name == imageStreamName {
+				return mcfgv1.OSImageStreamReference{
+					Name: imageStreamName,
+				}
+			}
+		}
+
+		// If we make it through the loop without a match, that means the node is on an unsupported
+		// RHEL version. We should not make it here, but we should handle the error situation in case.
+		klog.Warningf("Node %v has OS image '%v' (RHEL %s), which is not in the available streams %v. Setting the OS stream to empty.", nodeToCheck.Name, osImage, majorVersion, availableStreamNames)
+		return mcfgv1.OSImageStreamReference{}
+	}
+
+	// If we make it to here it means that a valid major version could not be found by parsing the
+	// node's OSImage, which should not occur but we should account for.
+	klog.Infof("Node %v is reporting OSImage of %v, an no valid RHEL major version could be determined. Setting the OS stream to empty.", nodeToCheck.Name, osImage)
+	return mcfgv1.OSImageStreamReference{}
 }

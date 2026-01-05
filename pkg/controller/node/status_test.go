@@ -886,16 +886,13 @@ func TestCalculateStatus(t *testing.T) {
 			}
 		},
 	}, {
-		name: "all nodes updated, OSStream defined in MCP Spec",
+		name: "OSImageStream is empty when OSImageStream CR does not exist",
 		nodes: []*corev1.Node{
 			helpers.NewNodeWithReady("node-0", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
 			helpers.NewNodeWithReady("node-1", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
 			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
 		},
 		currentConfig: machineConfigV0,
-		osStream: mcfgv1.OSImageStreamReference{
-			Name: "rhel-10",
-		},
 		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
 			if got, want := status.MachineCount, int32(3); got != want {
 				t.Fatalf("mismatch MachineCount: got %d want: %d", got, want)
@@ -931,109 +928,9 @@ func TestCalculateStatus(t *testing.T) {
 				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
 			}
 
-			statusOSStreamName := status.OSImageStream.Name
-			if statusOSStreamName != "rhel-10" {
-				t.Fatal("OSImageStreamReference in MCP status not updated correctly")
-			}
-		},
-	}, {
-		name: "some nodes still updating, OSStream defined in MCP Spec",
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReady("node-0", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
-			helpers.NewNodeWithReady("node-1", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
-			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
-		},
-		currentConfig: machineConfigV1,
-		osStream: mcfgv1.OSImageStreamReference{
-			Name: "rhel-10",
-		},
-		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-			if got, want := status.MachineCount, int32(3); got != want {
-				t.Fatalf("mismatch MachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.UpdatedMachineCount, int32(0); got != want {
-				t.Fatalf("mismatch UpdatedMachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.ReadyMachineCount, int32(0); got != want {
-				t.Fatalf("mismatch ReadyMachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.UnavailableMachineCount, int32(1); got != want {
-				t.Fatalf("mismatch UnavailableMachineCount: got %d want: %d", got, want)
-			}
-
-			condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
-			if condupdated == nil {
-				t.Fatal("updated condition not found")
-			}
-
-			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-			if condupdating == nil {
-				t.Fatal("updating condition not found")
-			}
-
-			if got, want := condupdated.Status, corev1.ConditionFalse; got != want {
-				t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
-			}
-
-			if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
-				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-			}
-
-			statusOSStreamName := status.OSImageStream.Name
-			if statusOSStreamName == "rhel-10" {
-				t.Fatal("OSImageStreamReference updated in MCP status, but should not be")
-			}
-		},
-	}, {
-		name: "all nodes updated, OSStream removed from MCP Spec",
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReady("node-0", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
-			helpers.NewNodeWithReady("node-1", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
-			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
-		},
-		currentConfig: machineConfigV0,
-		osStream:      mcfgv1.OSImageStreamReference{},
-		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-			if got, want := status.MachineCount, int32(3); got != want {
-				t.Fatalf("mismatch MachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.UpdatedMachineCount, int32(3); got != want {
-				t.Fatalf("mismatch UpdatedMachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.ReadyMachineCount, int32(3); got != want {
-				t.Fatalf("mismatch ReadyMachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.UnavailableMachineCount, int32(0); got != want {
-				t.Fatalf("mismatch UnavailableMachineCount: got %d want: %d", got, want)
-			}
-
-			condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
-			if condupdated == nil {
-				t.Fatal("updated condition not found")
-			}
-
-			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-			if condupdating == nil {
-				t.Fatal("updating condition not found")
-			}
-
-			if got, want := condupdated.Status, corev1.ConditionTrue; got != want {
-				t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
-			}
-
-			if got, want := condupdating.Status, corev1.ConditionFalse; got != want {
-				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-			}
-
-			statusOSStream := status.OSImageStream
-			if statusOSStream.Name != "" {
-				t.Fatal("OSImageStreamReference in MCP status not cleared correctly")
+			// When OSImageStream CR does not exist, status.OSImageStream should be empty
+			if got, want := status.OSImageStream.Name, ""; got != want {
+				t.Fatalf("mismatch OSImageStream.Name: got %q want: %q - OSImageStream should be empty when CR does not exist", got, want)
 			}
 		},
 	}}
@@ -1494,6 +1391,80 @@ func TestCalculateStatusWithImageModeReporting(t *testing.T) {
 			c := f.newController()
 			status := c.calculateStatus(test.mcns, nil, pool, test.nodes, mosc, mosb)
 			test.verify(status, t)
+		})
+	}
+}
+
+// Assisted by: Cursor
+func TestGetOSImageStreamFromNode(t *testing.T) {
+	t.Parallel()
+
+	defaultStreamName := "rhel-9"
+	availableStreamNames := []string{"rhel-9", "rhel-10"}
+
+	tests := []struct {
+		name     string
+		osImage  string
+		expected string
+	}{
+		{
+			name:     "RHCOS 9.4 format returns rhel-9",
+			osImage:  "Red Hat Enterprise Linux CoreOS 9.4 (Plow)",
+			expected: "rhel-9",
+		},
+		{
+			name:     "RHCOS 9.6 with build number returns rhel-9",
+			osImage:  "Red Hat Enterprise Linux CoreOS 9.6.20251219-0 (Plow)",
+			expected: "rhel-9",
+		},
+		{
+			name:     "RHEL 9.2 format returns rhel-9",
+			osImage:  "Red Hat Enterprise Linux 9.2 (Orca)",
+			expected: "rhel-9",
+		},
+		{
+			name:     "RHCOS 10.0 format returns rhel-10",
+			osImage:  "Red Hat Enterprise Linux CoreOS 10.0 (Plow)",
+			expected: "rhel-10",
+		},
+		{
+			name:     "RHEL 10 format returns rhel-10",
+			osImage:  "Red Hat Enterprise Linux 10 (Orca)",
+			expected: "rhel-10",
+		},
+		{
+			name:     "older RHCOS format with build number returns empty (unsupported version 419)",
+			osImage:  "Red Hat Enterprise Linux CoreOS 419.94.202411191647-0 (Plow)",
+			expected: "",
+		},
+		{
+			name:     "empty OSImage defaults to rhel-9",
+			osImage:  "",
+			expected: "rhel-9",
+		},
+		{
+			name:     "no version number returns empty",
+			osImage:  "Unknown OS",
+			expected: "",
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			// Create a node with the specified OSImage
+			node := &corev1.Node{
+				Status: corev1.NodeStatus{
+					NodeInfo: corev1.NodeSystemInfo{
+						OSImage: test.osImage,
+					},
+				},
+			}
+			result := getOSImageStreamFromNode(nil, []*corev1.Node{node}, defaultStreamName, availableStreamNames)
+			if result.Name != test.expected {
+				t.Errorf("getOSImageStreamFromNode with OSImage=%q returned %q, expected %q", test.osImage, result.Name, test.expected)
+			}
 		})
 	}
 }
