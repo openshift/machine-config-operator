@@ -24,42 +24,31 @@ var (
 	}
 
 	bootstrapOpts struct {
-		baremetalRuntimeCfgImage       string
-		cloudConfigFile                string
-		configFile                     string
-		cloudProviderCAFile            string
-		corednsImage                   string
 		destinationDir                 string
+		baremetalRuntimeCfgImage       string
+		corednsImage                   string
 		haproxyImage                   string
-		imagesConfigMapFile            string
-		infraConfigFile                string
 		infraImage                     string
 		releaseImage                   string
 		keepalivedImage                string
-		kubeCAFile                     string
 		mcoImage                       string
 		oauthProxyImage                string
 		kubeRbacProxyImage             string
 		dockerRegistryImage            string
-		networkConfigFile              string
 		oscontentImage                 string
-		pullSecretFile                 string
-		mcsCAFile                      string
-		proxyConfigFile                string
-		additionalTrustBundleFile      string
-		dnsConfigFile                  string
 		imageReferences                string
 		baseOSContainerImage           string
 		baseOSExtensionsContainerImage string
+		dependencyFiles                operator.BootstrapDependenciesFiles
 	}
 )
 
 func init() {
 	rootCmd.AddCommand(bootstrapCmd)
 	// See https://docs.openshift.com/container-platform/4.13/security/certificate_types_descriptions/machine-config-operator-certificates.html
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mcsCAFile, "root-ca", "/etc/ssl/kubernetes/ca.crt", "Path to installer-generated root MCS CA")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.kubeCAFile, "kube-ca", "", "path to kube-apiserver serving-ca bundle")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.pullSecretFile, "pull-secret", "/assets/manifests/pull.json", "path to secret manifest that contains pull secret.")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.dependencyFiles.MCSCAFile, "root-ca", "/etc/ssl/kubernetes/ca.crt", "Path to installer-generated root MCS CA")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.dependencyFiles.KubeAPIServerServingCA, "kube-ca", "", "path to kube-apiserver serving-ca bundle")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.dependencyFiles.PullSecret, "pull-secret", "/assets/manifests/pull.json", "path to secret manifest that contains pull secret.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.destinationDir, "dest-dir", "", "The destination directory where MCO writes the manifests.")
 	bootstrapCmd.MarkFlagRequired("dest-dir")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mcoImage, "machine-config-operator-image", "", "Image for Machine Config Operator.")
@@ -70,14 +59,14 @@ func init() {
 	bootstrapCmd.MarkFlagRequired("infra-image")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.releaseImage, "release-image", "", "Release image used for cluster installation.")
 	bootstrapCmd.MarkFlagRequired("release-image")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.configFile, "config-file", "", "ClusterConfig ConfigMap file.")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.dependencyFiles.ClusterConfig, "config-file", "", "ClusterConfig ConfigMap file.")
 	bootstrapCmd.MarkFlagRequired("config-file")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.infraConfigFile, "infra-config-file", "/assets/manifests/cluster-infrastructure-02-config.yml", "File containing infrastructure.config.openshift.io manifest.")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.networkConfigFile, "network-config-file", "/assets/manifests/cluster-network-02-config.yml", "File containing network.config.openshift.io manifest.")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.cloudConfigFile, "cloud-config-file", "", "File containing the config map that contains the cloud config for cloudprovider.")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.proxyConfigFile, "proxy-config-file", "/assets/manifests/cluster-proxy-01-config.yaml", "File containing proxy.config.openshift.io manifest.")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.dnsConfigFile, "dns-config-file", "/assets/manifests/cluster-dns-02-config.yml", "File containing dns.config.openshift.io manifest.")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.additionalTrustBundleFile, "additional-trust-bundle-config-file", "/assets/manifests/user-ca-bundle-config.yaml", "File containing the additional user provided CA bundle manifest.")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.dependencyFiles.Infrastructure, "infra-config-file", "/assets/manifests/cluster-infrastructure-02-config.yml", "File containing infrastructure.config.openshift.io manifest.")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.dependencyFiles.Network, "network-config-file", "/assets/manifests/cluster-network-02-config.yml", "File containing network.config.openshift.io manifest.")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.dependencyFiles.CloudConfig, "cloud-config-file", "", "File containing the config map that contains the cloud config for cloudprovider.")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.dependencyFiles.Proxy, "proxy-config-file", "/assets/manifests/cluster-proxy-01-config.yaml", "File containing proxy.config.openshift.io manifest.")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.dependencyFiles.DNS, "dns-config-file", "/assets/manifests/cluster-dns-02-config.yml", "File containing dns.config.openshift.io manifest.")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.dependencyFiles.AdditionalTrustBundle, "additional-trust-bundle-config-file", "/assets/manifests/user-ca-bundle-config.yaml", "File containing the additional user provided CA bundle manifest.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.keepalivedImage, "keepalived-image", "", "Image for Keepalived.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.corednsImage, "coredns-image", "", "Image for CoreDNS.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.haproxyImage, "haproxy-image", "", "Image for haproxy.")
@@ -88,7 +77,7 @@ func init() {
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.kubeRbacProxyImage, "kube-rbac-proxy-image", "", "Image for origin kube-rbac proxy.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.dockerRegistryImage, "docker-registry-image", "", "Image for docker-registry.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.imageReferences, "image-references", "", "File containing imagestreams (from cluster-version-operator)")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.cloudProviderCAFile, "cloud-provider-ca-file", "", "path to cloud provider CA certificate")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.dependencyFiles.CloudProviderCA, "cloud-provider-ca-file", "", "path to cloud provider CA certificate")
 
 }
 
@@ -178,15 +167,7 @@ func runBootstrapCmd(_ *cobra.Command, _ []string) {
 	}
 
 	if err := operator.RenderBootstrap(
-		bootstrapOpts.additionalTrustBundleFile,
-		bootstrapOpts.proxyConfigFile,
-		bootstrapOpts.configFile,
-		bootstrapOpts.infraConfigFile,
-		bootstrapOpts.networkConfigFile,
-		bootstrapOpts.dnsConfigFile,
-		bootstrapOpts.cloudConfigFile,
-		bootstrapOpts.cloudProviderCAFile,
-		bootstrapOpts.mcsCAFile, bootstrapOpts.kubeCAFile, bootstrapOpts.pullSecretFile,
+		bootstrapOpts.dependencyFiles,
 		&imgs,
 		bootstrapOpts.destinationDir,
 		bootstrapOpts.releaseImage,
