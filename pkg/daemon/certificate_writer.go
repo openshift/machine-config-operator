@@ -221,7 +221,7 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 							}
 
 							pathToData[kubeConfigPath] = newData
-							klog.Infof("Writing new Data to /etc/kubernetes/kubeconfig: %s", string(newData))
+							klog.Infof("Writing new Data to /etc/kubernetes/kubeconfig")
 						}
 					} else {
 						klog.Info("Could not read kubeconfig file, or data does not need to be changed")
