@@ -313,7 +313,7 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 	moscList, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().List(context.TODO(), metav1.ListOptions{})
 	require.NoError(t, err)
 
-	kubeassert := helpers.AssertClientSet(t, cs).WithContext(context.TODO())
+	kubeassert := helpers.AssertClientSet(t, cs)
 
 	if len(secretList.Items) == 0 {
 		t.Logf("No build-time secrets to clean up")
