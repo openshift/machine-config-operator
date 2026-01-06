@@ -21,11 +21,24 @@ func newNode(current, desired string) *corev1.Node {
 	return helpers.NewNodeBuilder("").WithCurrentConfig(current).WithDesiredConfig(desired).Node()
 }
 
+func newNodeWithState(current, desired, state string) *corev1.Node {
+	return helpers.NewNodeBuilder("").WithCurrentConfig(current).WithDesiredConfig(desired).WithMCDState(state).Node()
+}
+
 func newLayeredNode(currentConfig, desiredConfig, currentImage, desiredImage string) *corev1.Node {
 	nb := helpers.NewNodeBuilder("")
 	nb.WithCurrentConfig(currentConfig).WithDesiredConfig(desiredConfig)
 	nb.WithCurrentImage(currentImage).WithDesiredImage(desiredImage)
 	nb.WithNodeReady()
+	return nb.Node()
+}
+
+func newLayeredNodeWithState(currentConfig, desiredConfig, currentImage, desiredImage, state string) *corev1.Node {
+	nb := helpers.NewNodeBuilder("")
+	nb.WithCurrentConfig(currentConfig).WithDesiredConfig(desiredConfig)
+	nb.WithCurrentImage(currentImage).WithDesiredImage(desiredImage)
+	nb.WithNodeReady()
+	nb.WithMCDState(state)
 	return nb.Node()
 }
 

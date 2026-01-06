@@ -105,7 +105,7 @@ func (ctrl *Controller) calculateStatus(mcns []*mcfgv1.MachineConfigNode, cconfi
 
 	// Update the number of degraded and updated machines from conditions in the MCNs for the nodes
 	// in the associated MCP.
-	var degradedMachines, readyMachines, updatedMachines, unavailableMachines []*corev1.Node
+	var degradedMachines, updatedMachines []*corev1.Node
 	degradedReasons := []string{}
 	pinnedImageSetsDegraded := false
 	for _, mcn := range mcns {
@@ -188,20 +188,17 @@ func (ctrl *Controller) calculateStatus(mcns []*mcfgv1.MachineConfigNode, cconfi
 	degradedMachineCount := int32(len(degradedMachines))
 	updatedMachineCount := int32(len(updatedMachines))
 
-	// When the ImageModeStatusReporting feature gate is not enabled, default to getting the number
-	// of degraded and updated machines from the node and MCP properties.
-	if !imageModeReportingIsEnabled {
-		updatedMachines = ctrlcommon.GetUpdatedMachines(pool, nodes, mosc, mosb, isLayeredPool)
-		updatedMachineCount = int32(len(updatedMachines))
-		degradedMachines = ctrlcommon.GetDegradedMachines(nodes)
-		degradedMachineCount = int32(len(degradedMachines))
-	}
+	// Get the number of ready and unavailable machines from the node and MCP properties.
+	machinesByState := ctrlcommon.GetMachinesByState(pool, nodes, mosc, mosb, isLayeredPool)
+	readyMachineCount := int32(len(machinesByState.Ready))
+	unavailableMachineCount := int32(len(machinesByState.Unavailable))
 
-	// Always get the number of ready and unavailable machines from the node and MCP properties
-	readyMachines = getReadyMachines(pool, nodes, mosc, mosb, isLayeredPool)
-	readyMachineCount := int32(len(readyMachines))
-	unavailableMachines = getUnavailableMachines(nodes, pool)
-	unavailableMachineCount := int32(len(unavailableMachines))
+	// When the ImageModeStatusReporting feature gate is not enabled, get the number of updated and
+	// degraded machines from the node and MCP properties.
+	if !imageModeReportingIsEnabled {
+		updatedMachineCount = int32(len(machinesByState.Updated))
+		degradedMachineCount = int32(len(machinesByState.Degraded))
+	}
 
 	// Create degrade message by aggregating degraded reasons from all degraded machines
 	for _, n := range degradedMachines {
@@ -430,36 +427,20 @@ func isNodeManaged(node *corev1.Node) bool {
 	return true
 }
 
-// getReadyMachines filters the provided nodes to return the nodes
-// that are updated and marked ready
-func getReadyMachines(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node, mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild, layered bool) []*corev1.Node {
-	updated := ctrlcommon.GetUpdatedMachines(pool, nodes, mosc, mosb, layered)
-	var ready []*corev1.Node
-	for _, node := range updated {
-		lns := ctrlcommon.NewLayeredNodeState(node)
-		if lns.IsNodeReady() {
-			ready = append(ready, node)
-		}
-	}
-	return ready
-}
-
 // getUnavailableMachines returns the set of nodes which are
 // either marked unscheduleable, or have a MCD actively working.
 // If the MCD is actively working (or hasn't started) then the
 // node *may* go unschedulable in the future, so we don't want to
 // potentially start another node update exceeding our maxUnavailable.
 // Somewhat the opposite of getReadyNodes().
-func getUnavailableMachines(nodes []*corev1.Node, pool *mcfgv1.MachineConfigPool) []*corev1.Node {
+func getUnavailableMachines(nodes []*corev1.Node) []*corev1.Node {
 	var unavail []*corev1.Node
 	for _, node := range nodes {
 		lns := ctrlcommon.NewLayeredNodeState(node)
 		if lns.IsUnavailableForUpdate() {
 			unavail = append(unavail, node)
-			klog.V(4).Infof("getUnavailableMachines: Found unavailable node %s in pool %s", node.Name, pool.Name)
 		}
 	}
-	klog.V(4).Infof("getUnavailableMachines: Found %d unavailable in pool %s", len(unavail), pool.Name)
 	return unavail
 }
 
