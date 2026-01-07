@@ -146,6 +146,9 @@ const (
 	// Stub Ignition upgrade related annotation keys
 	StubIgnitionVersionAnnotation   = "machineconfiguration.openshift.io/stub-ignition-upgraded-to"
 	StubIgnitionTimestampAnnotation = "machineconfiguration.openshift.io/stub-ignition-upgraded-at"
+
+	// NodeSizingEnabledEnvPath is the file path for the node sizing enabled environment file
+	NodeSizingEnabledEnvPath = "/etc/node-sizing-enabled.env"
 )
 
 // Commonly-used MCO ConfigMap names
