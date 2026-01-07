@@ -3,13 +3,11 @@ package main
 import (
 	"context"
 	"flag"
-	"os"
 
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	"github.com/openshift/machine-config-operator/pkg/controller/build"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	"k8s.io/client-go/tools/leaderelection"
 
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
@@ -72,25 +70,16 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		ctrl.Run(ctx, 3)
 	}
 
-	leaderElectionCfg := common.GetLeaderElectionConfig(cb.GetBuilderConfig())
-
-	leaderelection.RunOrDie(ctx, leaderelection.LeaderElectionConfig{
-		Lock:            common.CreateResourceLock(cb, ctrlcommon.MCONamespace, componentName),
-		ReleaseOnCancel: true,
-		LeaseDuration:   leaderElectionCfg.LeaseDuration.Duration,
-		RenewDeadline:   leaderElectionCfg.RenewDeadline.Duration,
-		RetryPeriod:     leaderElectionCfg.RetryPeriod.Duration,
-		Callbacks: leaderelection.LeaderCallbacks{
-			OnStartedLeading: run,
-			OnStoppedLeading: func() {
-				// Block this function until the controller shutdown is complete to
-				// ensure that the controller both has enough time to finish its
-				// cleanup as well as to terminate its lease.
-				<-shutdownChan
-				klog.Infof("Stopped leading; machine-os-builder terminating.")
-				os.Exit(0)
-			},
+	common.DoLeaderElectionAndRunOrDie(ctx, &common.RunOpts{
+		Namespace:     ctrlcommon.MCONamespace,
+		ComponentName: componentName,
+		Builder:       cb,
+		OnStart:       run,
+		OnStop: func() {
+			// Block this function until the controller shutdown is complete to
+			// ensure that the controller both has enough time to finish its
+			// cleanup as well as to terminate its lease.
+			<-shutdownChan
 		},
 	})
-
 }
