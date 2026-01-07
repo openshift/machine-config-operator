@@ -2111,6 +2111,10 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 	var disabledUnits []string
 
 	isCoreOSVariant := dn.os.IsCoreOSVariant()
+	systemdUnits, err := dn.listSystemdUnits()
+	if err != nil {
+		return err
+	}
 
 	for _, u := range units {
 		if err := writeUnit(u, pathSystemd, isCoreOSVariant); err != nil {
@@ -2132,7 +2136,7 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 		if u.Enabled != nil {
 			// Only when a unit has contents should we attempt to enable or disable it.
 			// See: https://issues.redhat.com/browse/OCPBUGS-56648
-			if unitHasContent(u) {
+			if unitHasContent(u) || systemdUnits.Has(u.Name) {
 				if *u.Enabled {
 					enabledUnits = append(enabledUnits, u.Name)
 				} else {
@@ -2164,6 +2168,29 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 		}
 	}
 	return nil
+}
+
+func (dn *Daemon) listSystemdUnits() (sets.Set[string], error) {
+	rawJSON, err := dn.cmdRunner.RunGetOut("systemctl", "list-units", "--all", "--no-pager", "--output=json")
+	if err != nil {
+		return nil, fmt.Errorf("error listing systemd units: %w", err)
+	}
+
+	type Unit struct {
+		Unit string `json:"unit,omitempty"`
+	}
+	var units []Unit
+	if err := json.Unmarshal(rawJSON, &units); err != nil {
+		return nil, fmt.Errorf("error parsing systemd units: %w", err)
+	}
+
+	names := sets.New[string]()
+	for _, u := range units {
+		if u.Unit != "" {
+			names.Insert(u.Unit)
+		}
+	}
+	return names, nil
 }
 
 // writeFiles writes the given files to disk.
