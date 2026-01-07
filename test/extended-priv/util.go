@@ -3,6 +3,7 @@ package extended
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -634,4 +635,107 @@ func RemoveDuplicates[T comparable](list []T) []T {
 		}
 	}
 	return fileterdList
+}
+
+// isFIPSEnabledInClusterConfig checks if FIPS is enabled in the cluster configuration
+func isFIPSEnabledInClusterConfig(oc *exutil.CLI) bool {
+	cc := NewNamespacedResource(oc.AsAdmin(), "cm", "kube-system", "cluster-config-v1")
+	ic := cc.GetOrFail("{.data.install-config}")
+	return strings.Contains(ic, "fips: true")
+}
+
+// skipTestIfFIPSIsNotEnabled skip the test if fips is not enabled
+func skipTestIfFIPSIsNotEnabled(oc *exutil.CLI) {
+	if !isFIPSEnabledInClusterConfig(oc) {
+		g.Skip("fips is not enabled, skip this test")
+	}
+}
+
+// skipTestIfFIPSIstEnabled skip the test if fips is not enabled
+func skipTestIfFIPSIsEnabled(oc *exutil.CLI) {
+	if isFIPSEnabledInClusterConfig(oc) {
+		g.Skip("fips is enabled, skip this test")
+	}
+}
+
+// getURLEncodedFileConfig returns a file configuration with URL-encoded content
+func getURLEncodedFileConfig(destinationPath, content, mode string) string {
+	encodedContent := url.PathEscape(content)
+
+	return getFileConfig(destinationPath, "data:,"+encodedContent, mode)
+}
+
+// getFileConfig returns a file configuration JSON string
+func getFileConfig(destinationPath, source, mode string) string {
+	decimalMode := mode
+	// if octal number we convert it to decimal. Json templates do not accept numbers with a leading zero (octal).
+	// if we don't do this conversion the 'oc process' command will not be able to render the template because {"mode": 0666}
+	//   is not a valid json. Numbers in json cannot start with a leading 0
+	if mode != "" && mode[0] == '0' {
+		// parse the octal string and conver to unsigned integer(file modes are always positive)
+		iMode, err := strconv.ParseUint(mode, 8, 64)
+		// get a string with the decimal numeric representation of the mode
+		decimalMode = fmt.Sprintf("%d", iMode)
+		if err != nil {
+			e2e.Failf("Filer permissions %s cannot be converted to integer", mode)
+		}
+	}
+
+	var fileConfig string
+	if mode == "" {
+		fileConfig = fmt.Sprintf(`{"contents": {"source": "%s"}, "path": "%s"}`, source, destinationPath)
+	} else {
+		fileConfig = fmt.Sprintf(`{"contents": {"source": "%s"}, "path": "%s", "mode": %s}`, source, destinationPath, decimalMode)
+	}
+
+	return fileConfig
+}
+
+// GetMCSPodNames returns the names of machine-config-server pods
+func GetMCSPodNames(oc *exutil.CLI) ([]string, error) {
+	output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("pods", "-n", MachineConfigNamespace,
+		"-l", "k8s-app=machine-config-server", "-o", "jsonpath={.items[*].metadata.name }").Output()
+	if err != nil {
+		return nil, err
+	}
+
+	if strings.Trim(output, " \n") == "" {
+		return []string{}, nil
+	}
+
+	return strings.Split(output, " "), nil
+}
+
+// RotateMCSCertificates it executes the "oc adm ocp-certificates regenerate-machine-config-server-serving-cert" command in a master node
+// When we execute the command in the master node we make sure that in FIPS clusters we are running the command from a FIPS enabled machine.
+func RotateMCSCertificates(oc *exutil.CLI) error {
+	wMcp := NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
+	master := wMcp.GetNodesOrFail()[0]
+
+	remoteAdminKubeConfig := fmt.Sprintf("/root/remoteKubeConfig-%s", uuid.New().String())
+	adminKubeConfig := exutil.KubeConfigPath()
+
+	defer master.RemoveFile(remoteAdminKubeConfig)
+	err := master.CopyFromLocal(adminKubeConfig, remoteAdminKubeConfig)
+
+	if err != nil {
+		return err
+	}
+
+	command := fmt.Sprintf("oc --kubeconfig=%s --insecure-skip-tls-verify adm ocp-certificates regenerate-machine-config-server-serving-cert",
+		remoteAdminKubeConfig)
+
+	logger.Infof("RUN: %s", command)
+	stdout, err := master.DebugNodeWithChroot(strings.Split(command, " ")...)
+
+	logger.Infof(stdout)
+
+	return err
+}
+
+// skipIfNoTechPreview skips the test if TechPreviewNoUpgrade is not enabled
+func skipIfNoTechPreview(oc *exutil.CLI) {
+	if !exutil.IsTechPreviewNoUpgrade(oc) {
+		g.Skip("featureSet: TechPreviewNoUpgrade is required for this test")
+	}
 }
