@@ -1,6 +1,11 @@
 package architecture
 
 import (
+	"fmt"
+	"strings"
+
+	g "github.com/onsi/ginkgo/v2"
+	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 	e2e "k8s.io/kubernetes/test/e2e/framework"
 )
 
@@ -81,4 +86,33 @@ func (a Architecture) GNUString() string {
 		e2e.Failf("Unknown architecture %d", a)
 	}
 	return ""
+}
+
+// ClusterArchitecture determines the architecture of the cluster
+func ClusterArchitecture(oc *exutil.CLI) (architecture Architecture) {
+	output, err := oc.WithoutNamespace().AsAdmin().Run("get").Args("nodes", "-o=jsonpath={.items[*].status.nodeInfo.architecture}").Output()
+	if err != nil {
+		e2e.Failf("unable to get the cluster architecture: %v", err)
+	}
+	if output == "" {
+		e2e.Failf("the retrieved architecture is empty")
+	}
+	architectureList := strings.Split(output, " ")
+	architecture = FromString(architectureList[0])
+	for _, nodeArchitecture := range architectureList[1:] {
+		if FromString(nodeArchitecture) != architecture {
+			e2e.Logf("Found multi-arch node cluster")
+			return MULTI
+		}
+	}
+	return
+}
+
+// SkipNonAmd64SingleArch skips the test if the cluster architecture is not AMD64
+func SkipNonAmd64SingleArch(oc *exutil.CLI) (architecture Architecture) {
+	architecture = ClusterArchitecture(oc)
+	if architecture != AMD64 {
+		g.Skip(fmt.Sprintf("Skip for cluster architecture: %s", architecture.String()))
+	}
+	return
 }
