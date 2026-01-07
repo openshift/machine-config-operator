@@ -21,7 +21,7 @@ type ReadImageFileContentFn func(*tar.Header) bool
 // It iterates through the image layers (starting from the last) and uses matcherFn
 // to identify the target file. When found, the file content is returned as a byte slice.
 // If no matching file is found, (nil, nil) is returned.
-func ReadImageFileContent(ctx context.Context, sysCtx *types.SystemContext, imageName string, matcherFn ReadImageFileContentFn) (content []byte, err error) {
+func ReadImageFileContent(ctx context.Context, sysCtx *types.SystemContext, imageName string, matcherFn ReadImageFileContentFn, retryOpts *retry.Options) (content []byte, err error) {
 	ref, err := ParseImageName(imageName)
 	if err != nil {
 		return nil, err
@@ -36,7 +36,11 @@ func ReadImageFileContent(ctx context.Context, sysCtx *types.SystemContext, imag
 		}
 	}()
 
-	src, err := GetImageSourceFromReference(ctx, sysCtx, ref, &retry.Options{MaxRetry: 2})
+	retries := retryOpts
+	if retries == nil {
+		retries = &retry.Options{MaxRetry: 2}
+	}
+	src, err := GetImageSourceFromReference(ctx, sysCtx, ref, retries)
 	if err != nil {
 		return nil, err
 	}
