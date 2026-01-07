@@ -1,10 +1,10 @@
-package machineset
+package bootimage
 
 import (
 	"context"
 	"fmt"
 	"reflect"
-	"sync"
+	"time"
 
 	opv1 "github.com/openshift/api/operator/v1"
 	configinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
@@ -13,6 +13,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -20,6 +21,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
+	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 	"k8s.io/kubectl/pkg/scheme"
 
@@ -40,22 +42,27 @@ type Controller struct {
 	mcopClient    mcopclientset.Interface
 	eventRecorder record.EventRecorder
 
+	syncHandler func(event string) error
+
 	mcoCmLister          corelisterv1.ConfigMapLister
 	mapiMachineSetLister machinelisters.MachineSetLister
 	infraLister          configlistersv1.InfrastructureLister
 	mcopLister           mcoplistersv1.MachineConfigurationLister
+	clusterVersionLister configlistersv1.ClusterVersionLister
 
 	mcoCmListerSynced          cache.InformerSynced
 	mapiMachineSetListerSynced cache.InformerSynced
 	infraListerSynced          cache.InformerSynced
 	mcopListerSynced           cache.InformerSynced
+	clusterVersionListerSynced cache.InformerSynced
+
+	queue workqueue.TypedRateLimitingInterface[string]
 
 	mapiStats                  MachineResourceStats
 	capiMachineSetStats        MachineResourceStats
 	capiMachineDeploymentStats MachineResourceStats
 	mapiBootImageState         map[string]BootImageState
-	conditionMutex             sync.Mutex
-	mapiSyncMutex              sync.Mutex
+	cpmsBootImageState         map[string]BootImageState
 
 	fgHandler ctrlcommon.FeatureGatesHandler
 }
@@ -69,6 +76,7 @@ type MachineResourceStats struct {
 
 // State structure uses for detecting hot loops. Reset when cluster is opted
 // out of boot image updates.
+// nolint: revive
 type BootImageState struct {
 	value        []byte
 	hotLoopCount int
@@ -94,6 +102,9 @@ const (
 
 	// Threshold for hot loop detection
 	HotLoopLimit = 3
+
+	// maxRetries is the number of times a sync will be retried before it is dropped out of the queue.
+	maxRetries = 15
 )
 
 // New returns a new machine-set-boot-image controller.
@@ -105,6 +116,7 @@ func New(
 	infraInformer configinformersv1.InfrastructureInformer,
 	mcopClient mcopclientset.Interface,
 	mcopInformer mcopinformersv1.MachineConfigurationInformer,
+	clusterVersionInformer configinformersv1.ClusterVersionInformer,
 	fgHandler ctrlcommon.FeatureGatesHandler,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
@@ -116,17 +128,24 @@ func New(
 		machineClient: machineClient,
 		mcopClient:    mcopClient,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-machinesetbootimagecontroller"})),
+		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
+			workqueue.DefaultTypedControllerRateLimiter[string](),
+			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigcontroller-machinesetbootimagecontroller"}),
 	}
+
+	ctrl.syncHandler = ctrl.syncAll
 
 	ctrl.mcoCmLister = mcoCmInfomer.Lister()
 	ctrl.mapiMachineSetLister = mapiMachineSetInformer.Lister()
 	ctrl.infraLister = infraInformer.Lister()
 	ctrl.mcopLister = mcopInformer.Lister()
+	ctrl.clusterVersionLister = clusterVersionInformer.Lister()
 
 	ctrl.mcoCmListerSynced = mcoCmInfomer.Informer().HasSynced
 	ctrl.mapiMachineSetListerSynced = mapiMachineSetInformer.Informer().HasSynced
 	ctrl.infraListerSynced = infraInformer.Informer().HasSynced
 	ctrl.mcopListerSynced = mcopInformer.Informer().HasSynced
+	ctrl.clusterVersionListerSynced = clusterVersionInformer.Informer().HasSynced
 
 	mapiMachineSetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addMAPIMachineSet,
@@ -156,17 +175,69 @@ func New(
 // Run executes the machine-set-boot-image controller.
 func (ctrl *Controller) Run(stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
+	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.mcoCmListerSynced, ctrl.mapiMachineSetListerSynced, ctrl.infraListerSynced, ctrl.mcopListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, ctrl.mcoCmListerSynced, ctrl.mapiMachineSetListerSynced, ctrl.infraListerSynced, ctrl.mcopListerSynced, ctrl.clusterVersionListerSynced) {
 		return
 	}
 
 	klog.Info("Starting MachineConfigController-MachineSetBootImageController")
 	defer klog.Info("Shutting down MachineConfigController-MachineSetBootImageController")
 
+	// This controller needs to run in single thread mode, as the work unit per sync are
+	// the same and shouldn't overlap each other.
+	go wait.Until(ctrl.worker, time.Second, stopCh)
+
 	<-stopCh
 }
 
+// enqueueEvent adds a event to the work queue.
+func (ctrl *Controller) enqueueEvent(event string) {
+	ctrl.queue.Add(event)
+}
+
+// worker runs a worker thread that just dequeues items, processes them, and marks them done.
+// It enforces that the syncHandler is never invoked concurrently with the same key.
+func (ctrl *Controller) worker() {
+	for ctrl.processNextWorkItem() {
+	}
+}
+
+// processNextWorkItem processes the next work item from the queue.
+func (ctrl *Controller) processNextWorkItem() bool {
+	event, quit := ctrl.queue.Get()
+	if quit {
+		return false
+	}
+	defer ctrl.queue.Done(event)
+
+	err := ctrl.syncHandler(event)
+	ctrl.handleErr(err, event)
+
+	return true
+}
+
+// handleErr checks if an error happened and makes sure we will retry later.
+func (ctrl *Controller) handleErr(err error, event string) {
+	if err == nil {
+		ctrl.queue.Forget(event)
+		return
+	}
+
+	if ctrl.queue.NumRequeues(event) < maxRetries {
+		klog.V(2).Infof("Error syncing boot image controller for event %v: %v", event, err)
+		ctrl.queue.AddRateLimited(event)
+		return
+	}
+
+	utilruntime.HandleError(err)
+	klog.V(2).Infof("Dropping event %q out of the queue: %v", event, err)
+	ctrl.queue.Forget(event)
+	ctrl.queue.AddAfter(event, 1*time.Minute)
+}
+
+// addMAPIMachineSet handles the addition of a MAPI MachineSet by triggering
+// a reconciliation of all enrolled MAPI MachineSets.
 func (ctrl *Controller) addMAPIMachineSet(obj interface{}) {
 
 	machineSet := obj.(*machinev1beta1.MachineSet)
@@ -176,7 +247,7 @@ func (ctrl *Controller) addMAPIMachineSet(obj interface{}) {
 	// Update/Check all machinesets instead of just this one. This prevents needing to maintain a local
 	// store of machineset conditions. As this is using a lister, it is relatively inexpensive to do
 	// this.
-	go func() { ctrl.syncMAPIMachineSets("MAPIMachinesetAdded") }()
+	ctrl.enqueueEvent("MAPIMachineSetAdded")
 }
 
 func (ctrl *Controller) updateMAPIMachineSet(oldMS, newMS interface{}) {
@@ -197,7 +268,7 @@ func (ctrl *Controller) updateMAPIMachineSet(oldMS, newMS interface{}) {
 	// Update all machinesets instead of just this one. This prevents needing to maintain a local
 	// store of machineset conditions. As this is using a lister, it is relatively inexpensive to do
 	// this.
-	go func() { ctrl.syncMAPIMachineSets("MAPIMachinesetUpdated") }()
+	ctrl.enqueueEvent("MAPIMachineSetUpdated")
 }
 
 func (ctrl *Controller) deleteMAPIMachineSet(deletedMS interface{}) {
@@ -209,9 +280,11 @@ func (ctrl *Controller) deleteMAPIMachineSet(deletedMS interface{}) {
 	// Update all machinesets. This prevents needing to maintain a local
 	// store of machineset conditions. As this is using a lister, it is relatively inexpensive to do
 	// this.
-	go func() { ctrl.syncMAPIMachineSets("MAPIMachinesetDeleted") }()
+	ctrl.enqueueEvent("MAPIMachineSetDeleted")
 }
 
+// addConfigMap handles the addition of the boot images ConfigMap by triggering
+// a reconciliation of all enrolled machine resources.
 func (ctrl *Controller) addConfigMap(obj interface{}) {
 
 	configMap := obj.(*corev1.ConfigMap)
@@ -224,8 +297,7 @@ func (ctrl *Controller) addConfigMap(obj interface{}) {
 	klog.Infof("configMap %s added, reconciling enrolled machine resources", configMap.Name)
 
 	// Update all machinesets since the "golden" configmap has been added
-	// TODO: Add go routines for CAPI resources here
-	go func() { ctrl.syncMAPIMachineSets("BootImageConfigMapAdded") }()
+	ctrl.enqueueEvent("BootImageConfigMapAdded")
 }
 
 func (ctrl *Controller) updateConfigMap(oldCM, newCM interface{}) {
@@ -246,8 +318,7 @@ func (ctrl *Controller) updateConfigMap(oldCM, newCM interface{}) {
 	klog.Infof("configMap %s updated, reconciling enrolled machine resources", oldConfigMap.Name)
 
 	// Update all machinesets since the "golden" configmap has been updated
-	// TODO: Add go routines for CAPI resources here
-	go func() { ctrl.syncMAPIMachineSets("BootImageConfigMapUpdated") }()
+	ctrl.enqueueEvent("BootImageConfigMapUpdated")
 }
 
 func (ctrl *Controller) deleteConfigMap(obj interface{}) {
@@ -262,7 +333,7 @@ func (ctrl *Controller) deleteConfigMap(obj interface{}) {
 	klog.Infof("configMap %s deleted, reconciling enrolled machine resources", configMap.Name)
 
 	// Update all machinesets since the "golden" configmap has been deleted
-	go func() { ctrl.syncMAPIMachineSets("BootImageConfigMapDeleted") }()
+	ctrl.enqueueEvent("BootImageConfigMapDeleted")
 }
 
 func (ctrl *Controller) addMachineConfiguration(obj interface{}) {
@@ -278,8 +349,7 @@ func (ctrl *Controller) addMachineConfiguration(obj interface{}) {
 	klog.Infof("Bootimages management configuration has been added, reconciling enrolled machine resources")
 
 	// Update/Check machinesets since the boot images configuration knob was updated
-	// TODO: Add go routines for CAPI resources here
-	go func() { ctrl.syncMAPIMachineSets("BootImageUpdateConfigurationAdded") }()
+	ctrl.enqueueEvent("BootImageUpdateConfigurationAdded")
 }
 
 func (ctrl *Controller) updateMachineConfiguration(oldMC, newMC interface{}) {
@@ -301,8 +371,7 @@ func (ctrl *Controller) updateMachineConfiguration(oldMC, newMC interface{}) {
 	klog.Infof("Bootimages management configuration has been updated, reconciling enrolled machine resources")
 
 	// Update all machinesets since the boot images configuration knob was updated
-	// TODO: Add go routines for CAPI resources here
-	go func() { ctrl.syncMAPIMachineSets("BootImageUpdateConfigurationUpdated") }()
+	ctrl.enqueueEvent("BootImageUpdateConfigurationUpdated")
 }
 
 func (ctrl *Controller) deleteMachineConfiguration(obj interface{}) {
@@ -318,13 +387,11 @@ func (ctrl *Controller) deleteMachineConfiguration(obj interface{}) {
 	klog.Infof("Bootimages management configuration has been deleted, reconciling enrolled machine resources")
 
 	// Update/Check machinesets since the boot images configuration knob was updated
-	// TODO: Add go routines for CAPI resources here
-	go func() { ctrl.syncMAPIMachineSets("BootImageUpdateConfigurationDeleted") }()
+	ctrl.enqueueEvent("BootImageUpdateConfigurationDeleted")
 }
 
 func (ctrl *Controller) updateConditions(newReason string, syncError error, targetConditionType string) {
-	ctrl.conditionMutex.Lock()
-	defer ctrl.conditionMutex.Unlock()
+
 	mcop, err := ctrl.mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, metav1.GetOptions{})
 	if err != nil {
 		klog.Errorf("error updating progressing condition: %s", err)
@@ -414,4 +481,18 @@ func getDefaultConditions() []metav1.Condition {
 			Status:             metav1.ConditionFalse,
 		}}
 
+}
+
+// syncAll will attempt to sync all supported machine resources
+func (ctrl *Controller) syncAll(event string) error {
+	klog.V(4).Infof("Syncing boot image controller for event: %s", event)
+
+	// Wait for MachineConfiguration/cluster to be ready before syncing any machine resources
+	if err := ctrl.waitForMachineConfigurationReady(); err != nil {
+		ctrl.updateConditions(event, fmt.Errorf("MachineConfiguration was not ready: %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+		return err
+	}
+
+	ctrl.syncMAPIMachineSets(event)
+	return nil
 }

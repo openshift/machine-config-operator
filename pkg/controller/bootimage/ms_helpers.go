@@ -1,4 +1,4 @@
-package machineset
+package bootimage
 
 import (
 	"bytes"
@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	osconfigv1 "github.com/openshift/api/config/v1"
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 	opv1 "github.com/openshift/api/operator/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -17,7 +18,6 @@ import (
 	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/jsonmergepatch"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 
 	archtranslater "github.com/coreos/stream-metadata-go/arch"
@@ -26,30 +26,11 @@ import (
 // syncMAPIMachineSets will attempt to enqueue every machineset
 func (ctrl *Controller) syncMAPIMachineSets(reason string) {
 
-	ctrl.mapiSyncMutex.Lock()
-	defer ctrl.mapiSyncMutex.Unlock()
-
-	var mcop *opv1.MachineConfiguration
-	var pollError error
-	// Wait for mcop.Status to populate, otherwise error out. This shouldn't take very long
-	// as this is done by the operator sync loop.
-	if err := wait.PollUntilContextTimeout(context.TODO(), 5*time.Second, 2*time.Minute, true, func(_ context.Context) (bool, error) {
-		mcop, pollError = ctrl.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
-		if pollError != nil {
-			klog.Errorf("MachineConfiguration/cluster has not been created yet")
-			return false, nil
-		}
-
-		// Ensure status.ObservedGeneration matches the last generation of MachineConfiguration
-		if mcop.Generation != mcop.Status.ObservedGeneration {
-			klog.Errorf("MachineConfiguration.Status is not up to date.")
-			pollError = fmt.Errorf("MachineConfiguration.Status is not up to date")
-			return false, nil
-		}
-		return true, nil
-	}); err != nil {
-		klog.Errorf("MachineConfiguration was not ready: %v", pollError)
-		ctrl.updateConditions(reason, fmt.Errorf("MachineConfiguration was not ready:  while enqueueing MAPI MachineSets %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+	// Get MachineConfiguration to determine which resources are enrolled
+	mcop, err := ctrl.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
+	if err != nil {
+		klog.Errorf("Failed to get MachineConfiguration: %v", err)
+		ctrl.updateConditions(reason, fmt.Errorf("failed to get MachineConfiguration while enqueueing MAPI MachineSets: %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
 		return
 	}
 
@@ -132,9 +113,20 @@ func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet
 		}
 	}
 
-	// Fetch the architecture type of this machineset
-	arch, err := getArchFromMachineSet(machineSet)
+	// Fetch the ClusterVersion to determine if this is a multi-arch cluster
+	clusterVersion, err := ctrl.clusterVersionLister.Get("version")
 	if err != nil {
+		return fmt.Errorf("failed to fetch clusterversion during machineset sync: %v, defaulting to single-arch behavior", err)
+	}
+
+	// Fetch the architecture type of this machineset
+	arch, err := getArchFromMachineSet(machineSet, clusterVersion)
+	if err != nil {
+		// If no architecture annotation was found, skip this machineset without erroring
+		// A later sync loop will pick it up once the annotation is added
+		if strings.Contains(err.Error(), "no architecture annotation found") {
+			return nil
+		}
 		return fmt.Errorf("failed to fetch arch during machineset sync: %w", err)
 	}
 
@@ -241,29 +233,37 @@ func (ctrl *Controller) patchMachineSet(oldMachineSet, newMachineSet *machinev1b
 }
 
 // Returns architecture type for a given machineset
-func getArchFromMachineSet(machineset *machinev1beta1.MachineSet) (arch string, err error) {
+func getArchFromMachineSet(machineset *machinev1beta1.MachineSet, clusterVersion *osconfigv1.ClusterVersion) (arch string, err error) {
 
 	// Valid set of machineset/node architectures
 	validArchSet := sets.New("arm64", "s390x", "amd64", "ppc64le")
 	// Check if the annotation enclosing arch label is present on this machineset
 	archLabel, archLabelMatch := machineset.Annotations[MachineSetArchAnnotationKey]
-	if archLabelMatch {
-		// Parse the annotation value which may contain multiple comma-separated labels
-		// Example: kubernetes.io/arch=amd64,topology.ebs.csi.aws.com/zone=eu-central-1a
-		for label := range strings.SplitSeq(archLabel, ",") {
-			label = strings.TrimSpace(label)
-			if archLabelValue, found := strings.CutPrefix(label, ArchLabelKey); found {
-				// Extract just the architecture value after "kubernetes.io/arch="
-				if validArchSet.Has(archLabelValue) {
-					return archtranslater.RpmArch(archLabelValue), nil
-				}
-				return "", fmt.Errorf("invalid architecture value found in annotation: %s", archLabelValue)
-			}
+
+	if !archLabelMatch {
+		// Check if this is a multi-arch cluster
+		// clusterVersion should never be nil as it's validated by the caller
+		if clusterVersion.Status.Desired.Architecture == osconfigv1.ClusterVersionArchitectureMulti {
+			// For multi-arch clusters, we require the architecture annotation
+			klog.Errorf("No architecture annotation found on machineset %s in multi-arch cluster, skipping boot image update", machineset.Name)
+			return "", fmt.Errorf("no architecture annotation found on machineset %s", machineset.Name)
 		}
-		return "", fmt.Errorf("kubernetes.io/arch label not found in annotation: %s", archLabel)
+		// For single-arch clusters, default to control plane architecture
+		klog.Infof("No architecture annotation found on machineset %s, defaulting to control plane architecture", machineset.Name)
+		return archtranslater.CurrentRpmArch(), nil
 	}
-	// If no arch annotation was found on the machineset, default to the control plane arch.
-	// return the architecture of the node running this pod, which will always be a control plane node.
-	klog.Infof("Defaulting to control plane architecture")
-	return archtranslater.CurrentRpmArch(), nil
+
+	// Parse the annotation value which may contain multiple comma-separated labels
+	// Example: kubernetes.io/arch=amd64,topology.ebs.csi.aws.com/zone=eu-central-1a
+	for label := range strings.SplitSeq(archLabel, ",") {
+		label = strings.TrimSpace(label)
+		if archLabelValue, found := strings.CutPrefix(label, ArchLabelKey); found {
+			// Extract just the architecture value after "kubernetes.io/arch="
+			if validArchSet.Has(archLabelValue) {
+				return archtranslater.RpmArch(archLabelValue), nil
+			}
+			return "", fmt.Errorf("invalid architecture value found in annotation: %s", archLabelValue)
+		}
+	}
+	return "", fmt.Errorf("kubernetes.io/arch label not found in annotation: %s", archLabel)
 }
