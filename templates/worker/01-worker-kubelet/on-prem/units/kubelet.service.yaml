@@ -41,7 +41,6 @@ contents: |
         --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
         --cloud-provider={{cloudProvider .}} \
         --hostname-override=${KUBELET_NODE_NAME} \
-        --pod-infra-container-image={{.Images.infraImageKey}} \
         --system-reserved=cpu=${SYSTEM_RESERVED_CPU},memory=${SYSTEM_RESERVED_MEMORY},ephemeral-storage=${SYSTEM_RESERVED_ES} \
         --v=${KUBELET_LOG_LEVEL}
 
