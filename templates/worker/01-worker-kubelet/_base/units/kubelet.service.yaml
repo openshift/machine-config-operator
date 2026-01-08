@@ -42,7 +42,6 @@ contents: |
         {{credentialProviderConfigFlag . }} \
         --hostname-override=${KUBELET_NODE_NAME} \
         --provider-id=${KUBELET_PROVIDERID} \
-        --pod-infra-container-image={{.Images.infraImageKey}} \
         --system-reserved=cpu=${SYSTEM_RESERVED_CPU},memory=${SYSTEM_RESERVED_MEMORY},ephemeral-storage=${SYSTEM_RESERVED_ES} \
         --v=${KUBELET_LOG_LEVEL}
 
