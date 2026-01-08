@@ -40,6 +40,8 @@ var (
 		templates                string
 		promMetricsListenAddress string
 		resourceLockNamespace    string
+		tlsCipherSuites          []string
+		tlsMinVersion            string
 	}
 )
 
@@ -48,6 +50,8 @@ func init() {
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeconfig, "kubeconfig", "", "Kubeconfig file to access a remote cluster (testing only)")
 	startCmd.PersistentFlags().StringVar(&startOpts.resourceLockNamespace, "resourcelock-namespace", metav1.NamespaceSystem, "Path to the template files used for creating MachineConfig objects")
 	startCmd.PersistentFlags().StringVar(&startOpts.promMetricsListenAddress, "metrics-listen-address", "127.0.0.1:8797", "Listen address for prometheus metrics listener")
+	startCmd.PersistentFlags().StringSliceVar(&startOpts.tlsCipherSuites, "tls-cipher-suites", nil, "Comma-separated list of cipher suites for the metrics server")
+	startCmd.PersistentFlags().StringVar(&startOpts.tlsMinVersion, "tls-min-version", "VersionTLS12", "Minimum TLS version supported for the metrics server")
 }
 
 func runStartCmd(_ *cobra.Command, _ []string) {
@@ -73,7 +77,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 
 		ctrlctx := ctrlcommon.CreateControllerContext(ctx, cb)
 
-		go ctrlcommon.StartMetricsListener(startOpts.promMetricsListenAddress, ctrlctx.Stop, ctrlcommon.RegisterMCCMetrics)
+		go ctrlcommon.StartMetricsListener(startOpts.promMetricsListenAddress, ctrlctx.Stop, ctrlcommon.RegisterMCCMetrics, startOpts.tlsMinVersion, startOpts.tlsCipherSuites)
 
 		controllers := createControllers(ctrlctx)
 		draincontroller := drain.New(
