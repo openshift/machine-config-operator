@@ -1,0 +1,46 @@
+mode: 0644
+path: "/usr/local/bin/load-registry-image.sh"
+contents:
+  inline: |-
+    #!/bin/bash
+    set -euo pipefail
+
+    # The image used for the InternalReleaseImage registry, specified by digest.
+    registryImage="{{ .DockerRegistryImage }}"
+
+    imageBase="${registryImage%@*}"   
+    imageDigest="${registryImage#*@}"
+
+    # If the registry is already available in the local container storage then
+    # there's no need to preload it.
+    echo "Checking if ${registryImage} is locally available..."
+    imageId=$(podman images --digests --filter "digest=${imageDigest}" --format '{{"{{"}}.ID{{"}}"}}')
+
+    if [[ -n "$imageId" ]]; then
+        echo "Registry image ${registryImage} found"
+        exit 0
+    fi
+
+    localRegistryImageDir="${REGISTRY_DIR}/images/registry"
+    
+    if [[ -d "${localRegistryImageDir}" ]]; then
+        # Load registry image into the local container storage
+        echo "Loading registry image from local cache (digest: ${imageDigest})"
+        imageId=$(podman pull -q "dir:${localRegistryImageDir}")
+        
+        # Tag the pulled image with :latest using the image ID. Even though not directly used, the tag is
+        # required to allow podman running the container by using the image digest.
+        echo "Tagging registry image $imageId as ${imageBase}:latest"
+        podman tag "$imageId" "${imageBase}:latest"
+        exit 0
+    fi
+        
+    # As a fallback, let's try to fetch the registry image remotely
+    echo "Trying to pull ${registryImage} from remote registry..."
+    if podman pull '${registryImage}'; then
+        echo "Successfully pulled ${registryImage} from remote registry"
+        exit 0
+    fi
+
+    echo "Unable to retrieve ${registryImage}, cannot start the InternalReleaseImage registry"
+    exit 1
