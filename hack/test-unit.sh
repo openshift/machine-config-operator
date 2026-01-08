@@ -47,7 +47,8 @@ if [ ! -n "$GOTAGS" ]; then
 fi
 
 # Common options to pass to go test
-test_opts=( "-v" "-count=1" )
+# -p=1 ensures tests run sequentially to avoid timing issues in controller tests
+test_opts=( "-v" "-count=1" "-p=1" )
 
 cd "$REPO_ROOT"
 
