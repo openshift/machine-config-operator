@@ -34,10 +34,11 @@ func verifyInternalReleaseMasterMachineConfig(t *testing.T, mc *mcfgv1.MachineCo
 	assert.Len(t, ignCfg.Systemd.Units, 1)
 	assert.Contains(t, *ignCfg.Systemd.Units[0].Contents, "docker-registry-image-pullspec")
 
-	assert.Len(t, ignCfg.Storage.Files, 3)
+	assert.Len(t, ignCfg.Storage.Files, 4, "Found an unexpected file")
 	verifyIgnitionFile(t, &ignCfg, "/etc/pki/ca-trust/source/anchors/root-ca.crt", "root-ca-data")
 	verifyIgnitionFile(t, &ignCfg, "/etc/iri-registry/certs/tls.key", "iri-tls-key")
 	verifyIgnitionFile(t, &ignCfg, "/etc/iri-registry/certs/tls.crt", "iri-tls-crt")
+	verifyIgnitionFileContains(t, &ignCfg, "/usr/local/bin/load-registry-image.sh", "docker-registry-image-pullspec")
 }
 
 func verifyInternalReleaseWorkerMachineConfig(t *testing.T, mc *mcfgv1.MachineConfig) {
@@ -57,6 +58,12 @@ func verifyIgnitionFile(t *testing.T, ignCfg *ign3types.Config, path string, exp
 	data, err := ctrlcommon.GetIgnitionFileDataByPath(ignCfg, path)
 	assert.NoError(t, err)
 	assert.Equal(t, expectedContent, string(data), path)
+}
+
+func verifyIgnitionFileContains(t *testing.T, ignCfg *ign3types.Config, path string, expectedContent string) {
+	data, err := ctrlcommon.GetIgnitionFileDataByPath(ignCfg, path)
+	assert.NoError(t, err)
+	assert.Contains(t, string(data), expectedContent, path)
 }
 
 // objs is an helper func to improve the test readability.
