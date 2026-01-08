@@ -21,6 +21,7 @@ import (
 	"github.com/clarketm/json"
 	"github.com/coreos/go-semver/semver"
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
+	"github.com/godbus/dbus/v5"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -2136,7 +2137,8 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 		if u.Enabled != nil {
 			// Only when a unit has contents should we attempt to enable or disable it.
 			// See: https://issues.redhat.com/browse/OCPBUGS-56648
-			if unitHasContent(u) || systemdUnits.Has(u.Name) {
+			_, unitExists := systemdUnits[u.Name]
+			if unitHasContent(u) || unitExists {
 				if *u.Enabled {
 					enabledUnits = append(enabledUnits, u.Name)
 				} else {
@@ -2170,27 +2172,44 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 	return nil
 }
 
-func (dn *Daemon) listSystemdUnits() (sets.Set[string], error) {
-	rawJSON, err := dn.cmdRunner.RunGetOut("systemctl", "list-units", "--all", "--no-pager", "--output=json")
+type systemdDBusListUnit struct {
+	Name        string
+	Description string
+	LoadState   string
+	ActiveState string
+	SubState    string
+	Followed    string
+	Path        dbus.ObjectPath
+	JobID       uint32
+	JobType     string
+	JobPath     dbus.ObjectPath
+}
+
+func (dn *Daemon) listSystemdUnits() (result map[string]systemdDBusListUnit, err error) {
+	conn, err := dbus.SystemBus()
 	if err != nil {
-		return nil, fmt.Errorf("error listing systemd units: %w", err)
+		return nil, fmt.Errorf("failed to connect to system bus to list units: %w", err)
 	}
-
-	type Unit struct {
-		Unit string `json:"unit,omitempty"`
-	}
-	var units []Unit
-	if err := json.Unmarshal(rawJSON, &units); err != nil {
-		return nil, fmt.Errorf("error parsing systemd units: %w", err)
-	}
-
-	names := sets.New[string]()
-	for _, u := range units {
-		if u.Unit != "" {
-			names.Insert(u.Unit)
+	defer func() {
+		if closeErr := conn.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("failed to close connection to system bus to list units: %w", closeErr))
 		}
+	}()
+
+	// https://www.freedesktop.org/software/systemd/man/latest/org.freedesktop.systemd1.html
+	// Create the DBUS API object (org.freedesktop.systemd1) and call the ListUnits
+	// method available at the Manager object at /org/freedesktop/systemd1
+	var units []systemdDBusListUnit
+	if err = conn.Object("org.freedesktop.systemd1", "/org/freedesktop/systemd1").
+		Call("org.freedesktop.systemd1.Manager.ListUnits", 0).Store(&units); err != nil {
+		return nil, fmt.Errorf("failed to list systemd units: %w", err)
 	}
-	return names, nil
+
+	result = make(map[string]systemdDBusListUnit)
+	for _, unit := range units {
+		result[unit.Name] = unit
+	}
+	return result, err
 }
 
 // writeFiles writes the given files to disk.
