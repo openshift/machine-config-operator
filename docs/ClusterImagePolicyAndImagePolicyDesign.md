@@ -5,9 +5,9 @@ ClusterImagePolicy and ImagePolicy CRD are managed by ContainerRuntimeConfig con
 Generating corresponding CRI-O configuration files for image signature verification. Rollout ClusterImagePolicy to `/etc/containers/policy.json` for cluster wide configuration. Rollout ImagePolicy to `/etc/crio/policies/<NAMESPACE>.json`. Roll out the registries configuration to `/etc/containers/registries.d/sigstore-registries.yaml`.
 
 ## CRD
-[ClusterImagePolicy CRD](https://github.com/openshift/api/blob/master/config/v1alpha1/zz_generated.crd-manifests/0000_10_config-operator_01_clusterimagepolicies-TechPreviewNoUpgrade.crd.yaml)
+[ClusterImagePolicy CRD](https://github.com/openshift/api/blob/master/config/v1alpha1/zz_generated.crd-manifests/0000_10_config-operator_01_clusterimagepolicies.crd.yaml)
 
-[ImagePolicy CRD](https://github.com/openshift/api/blob/master/config/v1alpha1/zz_generated.crd-manifests/0000_10_config-operator_01_imagepolicies-TechPreviewNoUpgrade.crd.yaml)
+[ImagePolicy CRD](https://github.com/openshift/api/blob/master/config/v1alpha1/zz_generated.crd-manifests/0000_10_config-operator_01_imagepolicies.crd.yaml)
 
 ## Example
 
