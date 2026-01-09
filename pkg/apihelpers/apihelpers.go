@@ -487,17 +487,71 @@ func CheckNodeDisruptionActionsForTargetActions(actions []opv1.NodeDisruptionPol
 	return currentActions.HasAny(targetActions...)
 }
 
-// Returns a MachineConfiguration object with the cluster opted into boot image updates.
-func GetManagedBootImagesWithUpdateEnabled() opv1.ManagedBootImages {
-	return opv1.ManagedBootImages{MachineManagers: []opv1.MachineManager{{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}}}}
+// HasMAPIMachineSetManager checks if a MachineManager entry for a target resource exists.
+func HasMAPIMachineSetManager(machineManagers []opv1.MachineManager, resource opv1.MachineManagerMachineSetsResourceType) bool {
+	for _, manager := range machineManagers {
+		if manager.Resource == resource {
+			return true
+		}
+	}
+	return false
 }
 
-// Returns a MachineConfiguration object with the cluster opted out of boot image updates.
-func GetManagedBootImagesWithUpdateDisabled() opv1.ManagedBootImages {
-	return opv1.ManagedBootImages{MachineManagers: []opv1.MachineManager{{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.None}}}}
+// GetMAPIMachineSetManagerMode returns a target MachineManager entry's mode. This should ideally
+// only be called if the machine manager exists in the list, returns None if not found.
+func GetMAPIMachineSetManagerMode(machineManagers []opv1.MachineManager, resource opv1.MachineManagerMachineSetsResourceType) opv1.MachineManagerSelectorMode {
+	for _, manager := range machineManagers {
+		if manager.Resource == resource {
+			return manager.Selection.Mode
+		}
+	}
+	// Return None if no match is found
+	return opv1.None
 }
 
-// Returns a MachineConfiguration object with an empty configuration; to be used in testing a situation where admin has no opinion.
-func GetManagedBootImagesWithNoConfiguration() opv1.ManagedBootImages {
-	return opv1.ManagedBootImages{}
+// HasMAPIMachineSetManagerWithMode checks if a MachineManager entry for a target resource exists with the specified mode.
+func HasMAPIMachineSetManagerWithMode(machineManagers []opv1.MachineManager, resource opv1.MachineManagerMachineSetsResourceType, mode opv1.MachineManagerSelectorMode) bool {
+	for _, manager := range machineManagers {
+		if manager.Resource == resource {
+			return manager.Selection.Mode == mode
+		}
+	}
+	return false
+}
+
+// MergeMAPIManagerMode updates or adds a MachineManager entry for the target MachineSets resource
+// with the specified mode, preserving other MachineManager entries. The resource type could be a standard
+// MAPI MachineSet, or a MAPI ControlPlaneMachineSet
+func MergeMAPIManagerMode(status *opv1.MachineConfigurationStatus, resource opv1.MachineManagerMachineSetsResourceType, mode opv1.MachineManagerSelectorMode) {
+	var result opv1.ManagedBootImages
+	// Grab existing machine managers from status
+	existing := status.ManagedBootImagesStatus
+	// Handle nil case by initializing
+	if existing.MachineManagers != nil {
+		result = *existing.DeepCopy()
+	} else {
+		result = opv1.ManagedBootImages{MachineManagers: []opv1.MachineManager{}}
+	}
+
+	// Look for existing MachineSet MachineManager
+	found := false
+	for i := range result.MachineManagers {
+		if result.MachineManagers[i].Resource == resource &&
+			result.MachineManagers[i].APIGroup == opv1.MachineAPI {
+			result.MachineManagers[i].Selection.Mode = mode
+			found = true
+			break
+		}
+	}
+
+	// If not found, append a new MachineManager for regular MachineSets
+	if !found {
+		result.MachineManagers = append(result.MachineManagers, opv1.MachineManager{
+			Resource:  resource,
+			APIGroup:  opv1.MachineAPI,
+			Selection: opv1.MachineManagerSelector{Mode: mode},
+		})
+	}
+
+	status.ManagedBootImagesStatus = result
 }
