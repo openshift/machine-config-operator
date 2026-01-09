@@ -1,0 +1,10 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: "managed-bootimages-cpms-platform-check-binding"
+spec:
+  policyName: "managed-bootimages-cpms-platform-check"
+  validationActions: [Deny]
+  paramRef:
+    name: "cluster"
+    parameterNotFoundAction: "Deny"
