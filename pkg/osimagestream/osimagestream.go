@@ -12,6 +12,7 @@ import (
 	imagev1 "github.com/openshift/api/image/v1"
 	v1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/api/machineconfiguration/v1alpha1"
+	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/imageutils"
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -180,4 +181,32 @@ func collect(ctx context.Context, sources []StreamSource) []v1alpha1.OSImageStre
 		}
 	}
 	return slices.Collect(maps.Values(result))
+}
+
+// GetDefaultAndAvailableStreamNames retrieves the default and available stream names from the
+// OSImageStream CR. It returns an error if the CR doesn't exist or has no default or available set.
+// Assisted by: Cursor
+func GetDefaultAndAvailableStreamNames(lister mcfglistersv1alpha1.OSImageStreamLister) (defaultStreamName string, availableStreamNames []string, err error) {
+	// Grab the cluster's OSImageStream
+	osImageStream, err := lister.Get(ctrlcommon.ClusterInstanceNameOSImageStream)
+	if err != nil {
+		klog.Warningf("Failed to retrieve OSImageStream CR: %v.", err)
+		return defaultStreamName, availableStreamNames, err
+	}
+
+	// Grab the name of the default OSImageStream
+	if osImageStream.Status.DefaultStream == "" {
+		klog.V(4).Infof("OSImageStream CR has no default stream set.")
+		return defaultStreamName, availableStreamNames, err
+	}
+	defaultStreamName = osImageStream.Status.DefaultStream
+
+	// Grab the names of the available OSImageStreams
+	if len(osImageStream.Status.AvailableStreams) == 0 {
+		klog.V(4).Infof("OSImageStream CR has no available streams set.")
+		return defaultStreamName, availableStreamNames, err
+	}
+	availableStreamNames = GetStreamSetsNames(osImageStream.Status.AvailableStreams)
+
+	return defaultStreamName, availableStreamNames, nil
 }
