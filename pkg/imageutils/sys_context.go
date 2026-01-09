@@ -2,6 +2,7 @@ package imageutils
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,11 +39,33 @@ func NewSysContextFromControllerConfig(secret *corev1.Secret, cc *mcfgv1.Control
 	if err != nil {
 		return nil, fmt.Errorf("could not get authfile path for secret %s: %w", secret.Name, err)
 	}
+
 	sysContext.SysContext = &types.SystemContext{
 		AuthFilePath:             authfilePath,
 		DockerPerHostCertDirPath: certsDir,
+		DockerProxyURL:           getProxy(cc),
 	}
 	return sysContext, nil
+}
+
+// getProxy returns the proxy URL to use. The value, extracted
+// from mcfgv1.ControllerConfig.Spec.Proxy, prioritizes HTTPS proxy over
+// regular HTTP. Returns nil if no proxy is configured.
+func getProxy(cc *mcfgv1.ControllerConfig) *url.URL {
+	// TODO: Introduce a change in the containers repo to allow per schema (http/https)
+	// proxy settings
+	if cc.Spec.Proxy != nil && cc.Spec.Proxy.HTTPSProxy != "" {
+		return &url.URL{
+			Scheme: "https",
+			Host:   cc.Spec.Proxy.HTTPSProxy,
+		}
+	} else if cc.Spec.Proxy != nil && cc.Spec.Proxy.HTTPProxy != "" {
+		return &url.URL{
+			Scheme: "http",
+			Host:   cc.Spec.Proxy.HTTPProxy,
+		}
+	}
+	return nil
 }
 
 // Cleanup removes all temporary files and directories created by NewSysContextFromControllerConfig.
