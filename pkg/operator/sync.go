@@ -100,6 +100,8 @@ const (
 	mccMachineConfigPoolSelectorValidatingAdmissionPolicyBindingPath  = "manifests/machineconfigcontroller/custom-machine-config-pool-selector-validatingadmissionpolicybinding.yaml"
 	mccUpdateBootImagesValidatingAdmissionPolicyPath                  = "manifests/machineconfigcontroller/update-bootimages-validatingadmissionpolicy.yaml"
 	mccUpdateBootImagesValidatingAdmissionPolicyBindingPath           = "manifests/machineconfigcontroller/update-bootimages-validatingadmissionpolicybinding.yaml"
+	mccUpdateBootImagesCPMSValidatingAdmissionPolicyPath              = "manifests/machineconfigcontroller/update-bootimages-cpms-validatingadmissionpolicy.yaml"
+	mccUpdateBootImagesCPMSValidatingAdmissionPolicyBindingPath       = "manifests/machineconfigcontroller/update-bootimages-cpms-validatingadmissionpolicybinding.yaml"
 
 	// Machine OS Builder manifest paths
 	mobClusterRoleManifestPath                      = "manifests/machineosbuilder/clusterrole.yaml"
@@ -1171,6 +1173,12 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig, _ *confi
 			mccMachineConfigPoolSelectorValidatingAdmissionPolicyBindingPath,
 		},
 	}
+
+	if optr.fgHandler.Enabled(features.FeatureGateManagedBootImagesCPMS) {
+		paths.validatingAdmissionPolicies = append(paths.validatingAdmissionPolicies, mccUpdateBootImagesCPMSValidatingAdmissionPolicyPath)
+		paths.validatingAdmissionPolicyBindings = append(paths.validatingAdmissionPolicyBindings, mccUpdateBootImagesCPMSValidatingAdmissionPolicyBindingPath)
+	}
+
 	if err := optr.applyManifests(config, paths); err != nil {
 		return fmt.Errorf("failed to apply machine config controller manifests: %w", err)
 	}
