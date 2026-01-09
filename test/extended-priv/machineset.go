@@ -2,7 +2,9 @@ package extended
 
 import (
 	"fmt"
+	"time"
 
+	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 	"github.com/tidwall/gjson"
@@ -42,6 +44,57 @@ func (msl *MachineSetList) GetAll() ([]*MachineSet, error) {
 	}
 
 	return allMachineSets, nil
+}
+
+// GetMachines returns a slice with the machines created for this MachineSet
+func (ms MachineSet) GetMachines() ([]*Machine, error) {
+	ml := NewMachineList(ms.oc, ms.GetNamespace())
+	ml.ByLabel("machine.openshift.io/cluster-api-machineset=" + ms.GetName())
+	ml.SortByTimestamp()
+	return ml.GetAll()
+}
+
+// WaitForRunningMachines waits for the specified number of running machines to be created from this MachineSet
+// Returns the running machines on success
+func (ms MachineSet) WaitForRunningMachines(expectedReplicas int, timeout, pollInterval time.Duration) []Machine {
+	var runningMachines []Machine
+
+	o.Eventually(func() bool {
+		// Get all machines from the machineset
+		machines, err := ms.GetMachines()
+		if err != nil {
+			logger.Infof("Failed to get machines for machineset %s: %v", ms.GetName(), err)
+			return false
+		}
+
+		if len(machines) == 0 {
+			logger.Infof("No machines found yet for machineset %s", ms.GetName())
+			return false
+		}
+
+		// Check how many machines are running
+		runningMachines = []Machine{}
+		for _, machine := range machines {
+			isRunning, err := machine.IsRunning()
+			if err != nil {
+				logger.Infof("Failed to get phase for machine %s: %v", machine.GetName(), err)
+				continue
+			}
+			if isRunning {
+				runningMachines = append(runningMachines, *machine)
+			}
+		}
+
+		if len(runningMachines) >= expectedReplicas {
+			logger.Infof("MachineSet %s has %d/%d running machines", ms.GetName(), len(runningMachines), expectedReplicas)
+			return true
+		}
+
+		logger.Infof("MachineSet %s has %d/%d running machines, waiting...", ms.GetName(), len(runningMachines), expectedReplicas)
+		return false
+	}, timeout, pollInterval).Should(o.BeTrue(), "Timed out waiting for %d running machines from MachineSet %s", expectedReplicas, ms.GetName())
+
+	return runningMachines
 }
 
 // convertUserDataToNewVersion converts the provided userData ignition config into the provided version format
