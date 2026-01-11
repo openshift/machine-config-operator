@@ -13,3 +13,7 @@ spec:
   nodeSelector:
     matchLabels:
       node-role.kubernetes.io/arbiter: ""
+{{- with installConfigOSImageStream .InstallConfig "arbiter" }}
+  osImageStream:
+    name: {{ . }}
+{{- end }}
