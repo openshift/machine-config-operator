@@ -181,17 +181,6 @@ func (b *BootcClient) GetBootedAndStagedImage() (*BootEntry, *BootEntry, error) 
 	return status.Status.GetBootedImage(), status.Status.GetStagedImage(), nil
 }
 
-// // GetStatus returns multi-line human-readable text describing system status
-// // Bootc is working on status update: https://github.com/containers/bootc/issues/408
-// func (r *BootcClient) GetStatus() (string, error) {
-// 	output, err := runGetOut("bootc", "status")
-// 	if err != nil {
-// 		return "", err
-// 	}
-
-// 	return string(output), nil
-// }
-
 // GetBootedImageInfo() returns the image URL as well as the image version(for logging) and the ostree commit (for comparisons)
 func (b *BootcClient) GetBootedImageInfo() (*BootedImageInfo, error) {
 	bootedImage, _, err := b.GetBootedAndStagedImage()
