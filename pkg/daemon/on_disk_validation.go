@@ -242,7 +242,8 @@ func checkUnitEnabled(name string, expectedEnabled *bool) error {
 	if expectedEnabled == nil {
 		return nil
 	}
-	outBytes, _ := runGetOut("systemctl", "is-enabled", name)
+	cmdRunner := &CommandRunnerOS{}
+	outBytes, _ := cmdRunner.RunGetOut("systemctl", "is-enabled", name)
 	out := strings.TrimSpace(string(outBytes))
 
 	switch {

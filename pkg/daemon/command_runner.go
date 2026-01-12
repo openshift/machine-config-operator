@@ -35,14 +35,6 @@ func (r *CommandRunnerOS) RunGetOut(command string, args ...string) ([]byte, err
 	return rawOut, nil
 }
 
-// TODO: Delete this function to always consume the interface instance
-// Tracking story: https://issues.redhat.com/browse/MCO-1924
-//
-//	Conserved the old signature to avoid a big footprint bugfix with this change
-func runGetOut(command string, args ...string) ([]byte, error) {
-	return (&CommandRunnerOS{}).RunGetOut(command, args...)
-}
-
 // MockCommandRunner is a test implementation that returns pre-configured outputs.
 type MockCommandRunner struct {
 	outputs map[string][]byte
