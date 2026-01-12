@@ -350,7 +350,7 @@ func wrapErrorWithCondition(err error, args ...interface{}) mcfgv1.ContainerRunt
 	if err != nil {
 		condition = apihelpers.NewContainerRuntimeConfigCondition(
 			mcfgv1.ContainerRuntimeConfigFailure,
-			corev1.ConditionFalse,
+			corev1.ConditionTrue,
 			fmt.Sprintf("Error: %v", err),
 		)
 	} else {
