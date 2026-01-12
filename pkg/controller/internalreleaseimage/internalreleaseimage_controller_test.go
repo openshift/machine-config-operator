@@ -7,6 +7,7 @@ import (
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	configinformers "github.com/openshift/client-go/config/informers/externalversions"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -18,6 +19,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/record"
+
+	fakeconfigv1client "github.com/openshift/client-go/config/clientset/versioned/fake"
 )
 
 func TestInternalReleaseImageCreate(t *testing.T) {
@@ -153,15 +156,18 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 type fixture struct {
 	t *testing.T
 
-	client    *fake.Clientset
-	k8sClient *k8sfake.Clientset
-	iriLister []*mcfgv1alpha1.InternalReleaseImage
-	ccLister  []*mcfgv1.ControllerConfig
-	mcLister  []*mcfgv1.MachineConfig
+	client       *fake.Clientset
+	k8sClient    *k8sfake.Clientset
+	configClient *fakeconfigv1client.Clientset
+	iriLister    []*mcfgv1alpha1.InternalReleaseImage
+	ccLister     []*mcfgv1.ControllerConfig
+	mcLister     []*mcfgv1.MachineConfig
 
-	controller *Controller
-	objects    []runtime.Object
-	k8sObjects []runtime.Object
+	controller      *Controller
+	objects         []runtime.Object
+	k8sObjects      []runtime.Object
+	configObjects   []runtime.Object
+	configInformer  configinformers.SharedInformerFactory
 }
 
 func newFixture(t *testing.T, objects []runtime.Object) *fixture {
@@ -185,12 +191,15 @@ func (f *fixture) setupObjects(objs []runtime.Object) {
 func (f *fixture) newController() *Controller {
 	f.client = fake.NewSimpleClientset(f.objects...)
 	f.k8sClient = k8sfake.NewSimpleClientset(f.k8sObjects...)
+	f.configClient = fakeconfigv1client.NewSimpleClientset(f.configObjects...)
 	i := informers.NewSharedInformerFactory(f.client, func() time.Duration { return 0 }())
+	f.configInformer = configinformers.NewSharedInformerFactory(f.configClient, func() time.Duration { return 0 }())
 
 	c := New(
 		i.Machineconfiguration().V1alpha1().InternalReleaseImages(),
 		i.Machineconfiguration().V1().ControllerConfigs(),
 		i.Machineconfiguration().V1().MachineConfigs(),
+		f.configInformer.Config().V1().ClusterVersions(),
 		f.k8sClient,
 		f.client,
 	)
@@ -199,12 +208,15 @@ func (f *fixture) newController() *Controller {
 	c.iriListerSynced = alwaysReady
 	c.ccListerSynced = alwaysReady
 	c.mcListerSynced = alwaysReady
+	c.clusterVersionListerSynced = alwaysReady
 	c.eventRecorder = &record.FakeRecorder{}
 
 	stopCh := make(chan struct{})
 	defer close(stopCh)
 	i.Start(stopCh)
 	i.WaitForCacheSync(stopCh)
+	f.configInformer.Start(stopCh)
+	f.configInformer.WaitForCacheSync(stopCh)
 
 	for _, c := range f.iriLister {
 		i.Machineconfiguration().V1alpha1().InternalReleaseImages().Informer().GetIndexer().Add(c)

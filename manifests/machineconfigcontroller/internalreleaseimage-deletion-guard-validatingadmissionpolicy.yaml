@@ -1,0 +1,22 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: "internalreleaseimage-deletion-guard"
+spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: config.openshift.io/v1
+    kind: ClusterVersion
+  matchConstraints:
+    matchPolicy: Equivalent
+    namespaceSelector: {}
+    objectSelector: {}
+    resourceRules:
+    - apiGroups:   ["machineconfiguration.openshift.io"]
+      apiVersions: ["v1alpha1"]
+      operations:  ["DELETE"]
+      resources:   ["internalreleaseimages"]
+      scope: "*"
+  validations:
+    - expression: "!oldObject.status.releases.exists(r, has(r.image) && r.image == params.status.desired.image)"
+      message: "Cannot delete InternalReleaseImage while the cluster is using a release bundle from this resource. The current cluster release image matches a release stored in this InternalReleaseImage. Please upgrade or downgrade to a different release before deletion."

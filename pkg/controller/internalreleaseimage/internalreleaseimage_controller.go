@@ -20,6 +20,8 @@ import (
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	configinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
+	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
@@ -28,6 +30,7 @@ import (
 	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
+	"github.com/openshift/machine-config-operator/pkg/osimagestream"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -64,6 +67,9 @@ type Controller struct {
 	mcLister       mcfglistersv1.MachineConfigLister
 	mcListerSynced cache.InformerSynced
 
+	clusterVersionLister       configlistersv1.ClusterVersionLister
+	clusterVersionListerSynced cache.InformerSynced
+
 	queue workqueue.TypedRateLimitingInterface[string]
 }
 
@@ -72,6 +78,7 @@ func New(
 	iriInformer mcfginformersv1alpha1.InternalReleaseImageInformer,
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mcInformer mcfginformersv1.MachineConfigInformer,
+	clusterVersionInformer configinformersv1.ClusterVersionInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 ) *Controller {
@@ -115,6 +122,9 @@ func New(
 	ctrl.mcLister = mcInformer.Lister()
 	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
 
+	ctrl.clusterVersionLister = clusterVersionInformer.Lister()
+	ctrl.clusterVersionListerSynced = clusterVersionInformer.Informer().HasSynced
+
 	return ctrl
 }
 
@@ -123,7 +133,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.iriListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, ctrl.iriListerSynced, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.clusterVersionListerSynced) {
 		return
 	}
 
@@ -336,6 +346,61 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) error {
 		}
 	}
 
+	// Initialize status if empty
+	if err := ctrl.initializeInternalReleaseImageStatus(iri); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// initializeInternalReleaseImageStatus initializes the status of an InternalReleaseImage
+// if it is empty. It populates the status with release bundle entries from the spec,
+// setting the Image field from the current ClusterVersion and adding initial conditions.
+func (ctrl *Controller) initializeInternalReleaseImageStatus(iri *mcfgv1alpha1.InternalReleaseImage) error {
+	// Only initialize if status is empty and spec has releases
+	if len(iri.Status.Releases) != 0 || len(iri.Spec.Releases) == 0 {
+		return nil
+	}
+
+	klog.V(4).Infof("Initializing status for InternalReleaseImage %s", iri.Name)
+
+	// Get the release payload image from ClusterVersion
+	releaseImage, err := osimagestream.GetReleasePayloadImage(ctrl.clusterVersionLister)
+	if err != nil {
+		return fmt.Errorf("error getting Release Image from ClusterVersion for InternalReleaseImage status initialization: %w", err)
+	}
+
+	// Build status releases from spec releases
+	statusReleases := make([]mcfgv1alpha1.InternalReleaseImageBundleStatus, 0, len(iri.Spec.Releases))
+	for _, specRelease := range iri.Spec.Releases {
+		statusRelease := mcfgv1alpha1.InternalReleaseImageBundleStatus{
+			Name:  specRelease.Name,
+			Image: releaseImage,
+			Conditions: []metav1.Condition{
+				{
+					Type:               string(mcfgv1alpha1.InternalReleaseImageConditionTypeAvailable),
+					Status:             metav1.ConditionTrue,
+					LastTransitionTime: metav1.Now(),
+					Reason:             "Installed",
+					Message:            "Release bundle is available",
+				},
+			},
+		}
+		statusReleases = append(statusReleases, statusRelease)
+	}
+
+	iri.Status.Releases = statusReleases
+
+	// Update the status subresource
+	if err := retry.RetryOnConflict(updateBackoff, func() error {
+		_, err := ctrl.client.MachineconfigurationV1alpha1().InternalReleaseImages().UpdateStatus(context.TODO(), iri, metav1.UpdateOptions{})
+		return err
+	}); err != nil {
+		return fmt.Errorf("failed to update InternalReleaseImage status: %w", err)
+	}
+
+	klog.V(2).Infof("Initialized status for InternalReleaseImage %s with %d releases", iri.Name, len(statusReleases))
 	return nil
 }
 
