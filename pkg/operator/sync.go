@@ -85,21 +85,23 @@ type manifestPaths struct {
 
 const (
 	// Machine Config Controller manifest paths
-	mccClusterRoleManifestPath                                        = "manifests/machineconfigcontroller/clusterrole.yaml"
-	mccEventsClusterRoleManifestPath                                  = "manifests/machineconfigcontroller/events-clusterrole.yaml"
-	mccEventsRoleBindingDefaultManifestPath                           = "manifests/machineconfigcontroller/events-rolebinding-default.yaml"
-	mccEventsRoleBindingTargetManifestPath                            = "manifests/machineconfigcontroller/events-rolebinding-target.yaml"
-	mccClusterRoleBindingManifestPath                                 = "manifests/machineconfigcontroller/clusterrolebinding.yaml"
-	mccServiceAccountManifestPath                                     = "manifests/machineconfigcontroller/sa.yaml"
-	mccKubeRbacProxyConfigMapPath                                     = "manifests/machineconfigcontroller/kube-rbac-proxy-config.yaml"
-	mccKubeRbacProxyPrometheusRolePath                                = "manifests/machineconfigcontroller/prometheus-rbac.yaml"
-	mccKubeRbacProxyPrometheusRoleBindingPath                         = "manifests/machineconfigcontroller/prometheus-rolebinding-target.yaml"
-	mccMachineConfigurationGuardsValidatingAdmissionPolicyPath        = "manifests/machineconfigcontroller/machineconfiguration-guards-validatingadmissionpolicy.yaml"
-	mccMachineConfigurationGuardsValidatingAdmissionPolicyBindingPath = "manifests/machineconfigcontroller/machineconfiguration-guards-validatingadmissionpolicybinding.yaml"
-	mccMachineConfigPoolSelectorValidatingAdmissionPolicyPath         = "manifests/machineconfigcontroller/custom-machine-config-pool-selector-validatingadmissionpolicy.yaml"
-	mccMachineConfigPoolSelectorValidatingAdmissionPolicyBindingPath  = "manifests/machineconfigcontroller/custom-machine-config-pool-selector-validatingadmissionpolicybinding.yaml"
-	mccUpdateBootImagesValidatingAdmissionPolicyPath                  = "manifests/machineconfigcontroller/update-bootimages-validatingadmissionpolicy.yaml"
-	mccUpdateBootImagesValidatingAdmissionPolicyBindingPath           = "manifests/machineconfigcontroller/update-bootimages-validatingadmissionpolicybinding.yaml"
+	mccClusterRoleManifestPath                                            = "manifests/machineconfigcontroller/clusterrole.yaml"
+	mccEventsClusterRoleManifestPath                                      = "manifests/machineconfigcontroller/events-clusterrole.yaml"
+	mccEventsRoleBindingDefaultManifestPath                               = "manifests/machineconfigcontroller/events-rolebinding-default.yaml"
+	mccEventsRoleBindingTargetManifestPath                                = "manifests/machineconfigcontroller/events-rolebinding-target.yaml"
+	mccClusterRoleBindingManifestPath                                     = "manifests/machineconfigcontroller/clusterrolebinding.yaml"
+	mccServiceAccountManifestPath                                         = "manifests/machineconfigcontroller/sa.yaml"
+	mccKubeRbacProxyConfigMapPath                                         = "manifests/machineconfigcontroller/kube-rbac-proxy-config.yaml"
+	mccKubeRbacProxyPrometheusRolePath                                    = "manifests/machineconfigcontroller/prometheus-rbac.yaml"
+	mccKubeRbacProxyPrometheusRoleBindingPath                             = "manifests/machineconfigcontroller/prometheus-rolebinding-target.yaml"
+	mccMachineConfigurationGuardsValidatingAdmissionPolicyPath            = "manifests/machineconfigcontroller/machineconfiguration-guards-validatingadmissionpolicy.yaml"
+	mccMachineConfigurationGuardsValidatingAdmissionPolicyBindingPath     = "manifests/machineconfigcontroller/machineconfiguration-guards-validatingadmissionpolicybinding.yaml"
+	mccMachineConfigPoolSelectorValidatingAdmissionPolicyPath             = "manifests/machineconfigcontroller/custom-machine-config-pool-selector-validatingadmissionpolicy.yaml"
+	mccMachineConfigPoolSelectorValidatingAdmissionPolicyBindingPath      = "manifests/machineconfigcontroller/custom-machine-config-pool-selector-validatingadmissionpolicybinding.yaml"
+	mccUpdateBootImagesValidatingAdmissionPolicyPath                      = "manifests/machineconfigcontroller/update-bootimages-validatingadmissionpolicy.yaml"
+	mccUpdateBootImagesValidatingAdmissionPolicyBindingPath               = "manifests/machineconfigcontroller/update-bootimages-validatingadmissionpolicybinding.yaml"
+	mccMachineConfigPoolOSImageStreamValidatingAdmissionPolicyPath        = "manifests/machineconfigcontroller/machineconfigpool-osimagestream-reference-validatingadmissionpolicy.yaml"
+	mccMachineConfigPoolOSImageStreamValidatingAdmissionPolicyBindingPath = "manifests/machineconfigcontroller/machineconfigpool-osimagestream-reference-validatingadmissionpolicybinding.yaml"
 
 	// Machine OS Builder manifest paths
 	mobClusterRoleManifestPath                      = "manifests/machineosbuilder/clusterrole.yaml"
@@ -1171,6 +1173,12 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig, _ *confi
 			mccMachineConfigPoolSelectorValidatingAdmissionPolicyBindingPath,
 		},
 	}
+
+	if optr.fgHandler.Enabled(features.FeatureGateOSStreams) {
+		paths.validatingAdmissionPolicies = append(paths.validatingAdmissionPolicies, mccMachineConfigPoolOSImageStreamValidatingAdmissionPolicyPath)
+		paths.validatingAdmissionPolicyBindings = append(paths.validatingAdmissionPolicyBindings, mccMachineConfigPoolOSImageStreamValidatingAdmissionPolicyBindingPath)
+	}
+
 	if err := optr.applyManifests(config, paths); err != nil {
 		return fmt.Errorf("failed to apply machine config controller manifests: %w", err)
 	}
