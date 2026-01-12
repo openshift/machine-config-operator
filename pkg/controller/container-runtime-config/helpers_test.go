@@ -5,6 +5,7 @@ import (
 	b64 "encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"reflect"
 	"testing"
@@ -20,6 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/maps"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/diff"
@@ -2233,5 +2235,67 @@ func TestImagePolicyConfigFileListDeterministicOrder(t *testing.T) {
 		expectedPath := "/etc/crio/policies/" + namespace + ".json"
 		require.Equal(t, expectedPath, result1[i].filePath, "File path should match expected order")
 		require.Equal(t, namespaceJSONs[namespace], result1[i].data, "Data should match expected data of namespace")
+	}
+}
+
+func TestWrapErrorWithCondition(t *testing.T) {
+	tests := []struct {
+		name            string
+		err             error
+		args            []interface{}
+		expectedType    mcfgv1.ContainerRuntimeConfigStatusConditionType
+		expectedStatus  corev1.ConditionStatus
+		expectedMessage string
+	}{
+		{
+			name:            "error without args produces Failure condition with status True",
+			err:             fmt.Errorf("invalid container runtime configuration"),
+			args:            nil,
+			expectedType:    mcfgv1.ContainerRuntimeConfigFailure,
+			expectedStatus:  corev1.ConditionTrue,
+			expectedMessage: "Error: invalid container runtime configuration",
+		},
+		{
+			name:            "error with formatted args produces Failure condition with status True",
+			err:             fmt.Errorf("validation failed"),
+			args:            []interface{}{"Failed to validate %s: %v", "runtime config", "invalid field"},
+			expectedType:    mcfgv1.ContainerRuntimeConfigFailure,
+			expectedStatus:  corev1.ConditionTrue,
+			expectedMessage: "Failed to validate runtime config: invalid field",
+		},
+		{
+			name:            "nil error produces Success condition with status True",
+			err:             nil,
+			args:            nil,
+			expectedType:    mcfgv1.ContainerRuntimeConfigSuccess,
+			expectedStatus:  corev1.ConditionTrue,
+			expectedMessage: "Success",
+		},
+		{
+			name:            "nil error with args still produces Success condition",
+			err:             nil,
+			args:            []interface{}{"Custom success message"},
+			expectedType:    mcfgv1.ContainerRuntimeConfigSuccess,
+			expectedStatus:  corev1.ConditionTrue,
+			expectedMessage: "Custom success message",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			condition := wrapErrorWithCondition(tt.err, tt.args...)
+
+			if condition.Type != tt.expectedType {
+				t.Errorf("expected condition type %v, got %v", tt.expectedType, condition.Type)
+			}
+
+			if condition.Status != tt.expectedStatus {
+				t.Errorf("expected condition status %v, got %v", tt.expectedStatus, condition.Status)
+			}
+
+			if condition.Message != tt.expectedMessage {
+				t.Errorf("expected message %q, got %q", tt.expectedMessage, condition.Message)
+			}
+		})
 	}
 }
