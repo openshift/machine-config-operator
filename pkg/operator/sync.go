@@ -231,10 +231,6 @@ func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
 		return fmt.Errorf("error updating cluster operator status: %w", syncClusterFleetEvaluationErr)
 	}
 
-	if err := optr.syncMetrics(); err != nil {
-		return fmt.Errorf("error syncing metrics: %w", err)
-	}
-
 	if optr.inClusterBringup && syncErr.err == nil {
 		klog.Infof("Initialization complete")
 		optr.inClusterBringup = false
@@ -1673,10 +1669,6 @@ func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig, co *c
 
 	// Let's start with a 10 minute timeout per "required" node.
 	if err := wait.PollUntilContextTimeout(ctx, time.Second, time.Duration(requiredMachineCount*10)*time.Minute, false, func(_ context.Context) (bool, error) {
-		if err := optr.syncMetrics(); err != nil {
-			return false, err
-		}
-
 		if lastErr != nil {
 			// In this case, only the status extension field is updated.
 			newCOStatus := co.Status.DeepCopy()
