@@ -2,6 +2,7 @@ package imageutils
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,11 +39,32 @@ func NewSysContextFromControllerConfig(secret *corev1.Secret, cc *mcfgv1.Control
 	if err != nil {
 		return nil, fmt.Errorf("could not get authfile path for secret %s: %w", secret.Name, err)
 	}
+
+	proxyURL, err := getProxy(cc)
+	if err != nil {
+		return nil, fmt.Errorf("could not get proxy URL: %w", err)
+	}
+
 	sysContext.SysContext = &types.SystemContext{
 		AuthFilePath:             authfilePath,
 		DockerPerHostCertDirPath: certsDir,
+		DockerProxyURL:           proxyURL,
 	}
 	return sysContext, nil
+}
+
+// getProxy returns the proxy URL to use. The value, extracted
+// from mcfgv1.ControllerConfig.Spec.Proxy, prioritizes HTTPS proxy over
+// regular HTTP. Returns nil if no proxy is configured.
+func getProxy(cc *mcfgv1.ControllerConfig) (*url.URL, error) {
+	// TODO: Improve when containers-libs is used with https://github.com/containers/container-libs/pull/583
+	// proxy settings
+	if cc.Spec.Proxy != nil && cc.Spec.Proxy.HTTPSProxy != "" {
+		return url.Parse(cc.Spec.Proxy.HTTPSProxy)
+	} else if cc.Spec.Proxy != nil && cc.Spec.Proxy.HTTPProxy != "" {
+		return url.Parse(cc.Spec.Proxy.HTTPProxy)
+	}
+	return nil, nil
 }
 
 // Cleanup removes all temporary files and directories created by NewSysContextFromControllerConfig.

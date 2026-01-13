@@ -54,8 +54,8 @@ func (optr *Operator) buildOSImageStream(existingOSImageStream *v1alpha1.OSImage
 		return fmt.Errorf("could not get the cluster PullSecret for OSImageStream sync: %w", err)
 	}
 
-	// Build a minimal ControllerConfig with image registry certs
-	// We can't use renderConfig (it runs after us) so we build the cert data directly
+	// Build a minimal ControllerConfig with image registry certs and proxy settings
+	// We can't use renderConfig (it runs after us) so we build it here directly
 	minimalCC, err := optr.buildMinimalControllerConfigForOSImageStream()
 	if err != nil {
 		return fmt.Errorf("could not build minimal ControllerConfig for OSImageStream: %w", err)
@@ -129,20 +129,34 @@ func (optr *Operator) isOSImageStreamBuildRequired() (*v1alpha1.OSImageStream, b
 	return existingOSImageStream, true, nil
 }
 
-// buildMinimalControllerConfigForOSImageStream builds a minimal ControllerConfig with just the image registry certs
-// needed for OSImageStream to inspect images. This is necessary because OSImageStream must run before RenderConfig.
+// buildMinimalControllerConfigForOSImageStream builds a minimal ControllerConfig with the bare minimum for the
+// osimagestream package to build an image inspection environment. The bare minimum consists of the image registry certs
+// and the proxy configuration, if present.
+// This is necessary because OSImageStream must run before RenderConfig.
 func (optr *Operator) buildMinimalControllerConfigForOSImageStream() (*mcfgv1.ControllerConfig, error) {
 	imgRegistryData, imgRegistryUsrData, err := optr.getImageRegistryBundles()
 	if err != nil {
 		return nil, fmt.Errorf("could not get image registry bundles: %w", err)
 	}
 
-	return &mcfgv1.ControllerConfig{
+	cc := &mcfgv1.ControllerConfig{
 		Spec: mcfgv1.ControllerConfigSpec{
 			ImageRegistryBundleData:     imgRegistryData,
 			ImageRegistryBundleUserData: imgRegistryUsrData,
 		},
-	}, nil
+	}
+
+	// Optional: If the cluster has a proxy configured consume it, as image inspection
+	// may need to go through the proxy too.
+	proxy, err := optr.proxyLister.Get("cluster")
+	if err != nil && !apierrors.IsNotFound(err) {
+		return nil, fmt.Errorf("could not get proxy configuration: %w", err)
+	}
+	if proxy != nil {
+		cc.Spec.Proxy = &proxy.Status
+	}
+
+	return cc, nil
 }
 
 // getExistingOSImageStream retrieves the existing OSImageStream from the lister.
