@@ -822,19 +822,27 @@ func (dn *Daemon) updateOnClusterLayering(oldConfig, newConfig *mcfgv1.MachineCo
 	}
 
 	if dn.nodeWriter != nil {
-		// Refetch node from lister to get fresh state before checking guard.
-		// This prevents overwriting Degraded/Unreconcilable states that were just set.
-		freshNode, err := dn.nodeLister.Get(dn.name)
-		if err != nil {
-			return fmt.Errorf("error fetching fresh node state: %w", err)
-		}
-		state, err := getNodeAnnotationExt(freshNode, constants.MachineConfigDaemonStateAnnotationKey, true)
+		// First check dn.node (from informer cache)
+		state, err := getNodeAnnotationExt(dn.node, constants.MachineConfigDaemonStateAnnotationKey, true)
 		if err != nil {
 			return err
 		}
+
 		if state != constants.MachineConfigDaemonStateDegraded && state != constants.MachineConfigDaemonStateUnreconcilable {
-			if err := dn.nodeWriter.SetWorking(); err != nil {
-				return fmt.Errorf("error setting node's state to Working: %w", err)
+			freshNode, err := dn.kubeClient.CoreV1().Nodes().Get(context.TODO(), dn.name, metav1.GetOptions{})
+			if err != nil {
+				return fmt.Errorf("error fetching fresh node state from API: %w", err)
+			}
+
+			state, err = getNodeAnnotationExt(freshNode, constants.MachineConfigDaemonStateAnnotationKey, true)
+			if err != nil {
+				return err
+			}
+
+			if state != constants.MachineConfigDaemonStateDegraded && state != constants.MachineConfigDaemonStateUnreconcilable {
+				if err := dn.nodeWriter.SetWorking(); err != nil {
+					return fmt.Errorf("error setting node's state to Working: %w", err)
+				}
 			}
 		}
 	}
@@ -1074,13 +1082,27 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	oldConfig = canonicalizeEmptyMC(oldConfig)
 
 	if dn.nodeWriter != nil {
+		// First check dn.node (from informer cache)
 		state, err := getNodeAnnotationExt(dn.node, constants.MachineConfigDaemonStateAnnotationKey, true)
 		if err != nil {
 			return err
 		}
+
 		if state != constants.MachineConfigDaemonStateDegraded && state != constants.MachineConfigDaemonStateUnreconcilable {
-			if err := dn.nodeWriter.SetWorking(); err != nil {
-				return fmt.Errorf("error setting node's state to Working: %w", err)
+			freshNode, err := dn.kubeClient.CoreV1().Nodes().Get(context.TODO(), dn.name, metav1.GetOptions{})
+			if err != nil {
+				return fmt.Errorf("error fetching fresh node state from API: %w", err)
+			}
+
+			state, err = getNodeAnnotationExt(freshNode, constants.MachineConfigDaemonStateAnnotationKey, true)
+			if err != nil {
+				return err
+			}
+
+			if state != constants.MachineConfigDaemonStateDegraded && state != constants.MachineConfigDaemonStateUnreconcilable {
+				if err := dn.nodeWriter.SetWorking(); err != nil {
+					return fmt.Errorf("error setting node's state to Working: %w", err)
+				}
 			}
 		}
 	}
