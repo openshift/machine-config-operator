@@ -24,7 +24,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		// Skip if single node
 		SkipIfSNO(oc.AsAdmin())
 		// Skip if no machineset
-		skipTestIfWorkersCannotBeScaled(oc.AsAdmin())
+		SkipTestIfWorkersCannotBeScaled(oc.AsAdmin())
 		// ControlPlaneMachineSet Bootimages Update functionality is only available in GCP, AWS, and Azure (Tech Preview)
 		skipTestIfSupportedPlatformNotMatched(oc, GCPPlatform, AWSPlatform, AzurePlatform)
 		// Skip if ManagedBootImagesCPMS feature gate is not enabled
