@@ -1,4 +1,4 @@
-mode: 0644
+mode: 0755
 path: "/usr/local/bin/load-registry-image.sh"
 contents:
   inline: |-
