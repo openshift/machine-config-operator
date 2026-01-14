@@ -1257,7 +1257,7 @@ github.com/openshift-eng/openshift-tests-extension/pkg/ginkgo
 github.com/openshift-eng/openshift-tests-extension/pkg/junit
 github.com/openshift-eng/openshift-tests-extension/pkg/util/sets
 github.com/openshift-eng/openshift-tests-extension/pkg/version
-# github.com/openshift/api v0.0.0-20251124235416-c11dd82e305c
+# github.com/openshift/api v0.0.0-20251204164930-cd2e40c5883a => github.com/QiWang19/api v0.0.0-20251204232509-5086a5249b02
 ## explicit; go 1.24.0
 github.com/openshift/api
 github.com/openshift/api/annotations
@@ -1340,7 +1340,7 @@ github.com/openshift/api/template
 github.com/openshift/api/template/v1
 github.com/openshift/api/user
 github.com/openshift/api/user/v1
-# github.com/openshift/client-go v0.0.0-20251125141819-b6281947c285
+# github.com/openshift/client-go v0.0.0-20251125141819-b6281947c285 => github.com/QiWang19/client-go v0.0.0-20251206041215-b807c9cdcceb
 ## explicit; go 1.24.0
 github.com/openshift/client-go/apps/applyconfigurations/apps/v1
 github.com/openshift/client-go/apps/applyconfigurations/internal
@@ -3963,3 +3963,5 @@ sigs.k8s.io/yaml/kyaml
 # k8s.io/sample-apiserver => github.com/openshift/kubernetes/staging/src/k8s.io/sample-apiserver v0.0.0-20251028145634-9e794b89909a
 # k8s.io/sample-cli-plugin => github.com/openshift/kubernetes/staging/src/k8s.io/sample-cli-plugin v0.0.0-20251028145634-9e794b89909a
 # k8s.io/sample-controller => github.com/openshift/kubernetes/staging/src/k8s.io/sample-controller v0.0.0-20251028145634-9e794b89909a
+# github.com/openshift/api => github.com/QiWang19/api v0.0.0-20251204232509-5086a5249b02
+# github.com/openshift/client-go => github.com/QiWang19/client-go v0.0.0-20251206041215-b807c9cdcceb

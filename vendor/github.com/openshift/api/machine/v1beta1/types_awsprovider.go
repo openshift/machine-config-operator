@@ -425,7 +425,7 @@ type HostPlacement struct {
 	// When Affinity is set to AnyAvailable, and you stop and restart the instance, it can be restarted on any available host.
 	// +required
 	// +unionDiscriminator
-	Affinity *HostAffinity `json:"affinity,omitempty"`
+	Affinity HostAffinity `json:"affinity,omitempty"`
 
 	// dedicatedHost specifies the exact host that an instance should be restarted on if stopped.
 	// dedicatedHost is required when 'affinity' is set to DedicatedHost, and forbidden otherwise.

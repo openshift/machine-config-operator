@@ -148,9 +148,6 @@ spec:
                     characters, '-' or '.', and must start and end with an alphanumeric
                     character.
                   rule: '!format.dns1123Subdomain().validate(self).hasValue()'
-            required:
-            - availableStreams
-            - defaultStream
             type: object
             x-kubernetes-validations:
             - message: defaultStream must reference a stream name from availableStreams

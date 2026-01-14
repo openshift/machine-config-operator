@@ -51,11 +51,11 @@ type OSImageStreamStatus struct {
 	// availableStreams is required, must have at least one item, must not exceed
 	// 100 items, and must have unique entries keyed on the name field.
 	//
-	// +required
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=100
 	// +listType=map
 	// +listMapKey=name
+	// +optional
 	AvailableStreams []OSImageStreamSet `json:"availableStreams,omitempty"`
 
 	// defaultStream is the name of the stream that should be used as the default
@@ -65,10 +65,10 @@ type OSImageStreamStatus struct {
 	// consisting of lowercase alphanumeric characters, hyphens ('-'), and periods ('.'),
 	// and must reference the name of one of the streams in availableStreams.
 	//
-	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=253
 	// +kubebuilder:validation:XValidation:rule="!format.dns1123Subdomain().validate(self).hasValue()",message="a RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character."
+	// +optional
 	DefaultStream string `json:"defaultStream,omitempty"`
 }
 
