@@ -14,6 +14,7 @@ import (
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 	"k8s.io/apimachinery/pkg/util/wait"
+	e2e "k8s.io/kubernetes/test/e2e/framework"
 )
 
 // MachineSet struct to handle MachineSet resources
@@ -34,6 +35,10 @@ func NewMachineSet(oc *exutil.CLI, namespace, name string) *MachineSet {
 // NewMachineSetList constructs a new MachineSetList struct
 func NewMachineSetList(oc *exutil.CLI, namespace string) *MachineSetList {
 	return &MachineSetList{*NewNamespacedResourceList(oc, MachineSetFullName, namespace)}
+}
+
+func (ms MachineSet) String() string {
+	return ms.GetName()
 }
 
 // ScaleTo scales the MachineSet to the exact given value
@@ -250,24 +255,86 @@ func (ms MachineSet) GetArchitectureOrFail() architecture.Architecture {
 	return arch
 }
 
+// SetArchitecture sets the architecture annotation for this MachineSet
+func (ms MachineSet) SetArchitecture(arch string) error {
+	return ms.Patch("json",
+		fmt.Sprintf(`[{"op": "add", "path": "/metadata/annotations/capacity.cluster-autoscaler.kubernetes.io~1labels", "value": "kubernetes.io/arch=%s"}]`,
+			arch))
+}
+
+// GetUserDataSecretName returns the name of the user-data secret
+func (ms MachineSet) GetUserDataSecretName() (string, error) {
+	return ms.Get(`{.spec.template.spec.providerSpec.value.userDataSecret.name}`)
+}
+
+// GetUserDataSecret returns the secret used for user-data
+func (ms MachineSet) GetUserDataSecret() (*Secret, error) {
+	secretName, err := ms.GetUserDataSecretName()
+	if err != nil {
+		return nil, err
+	}
+	return NewSecret(ms.GetOC(), MachineAPINamespace, secretName), nil
+}
+
 // SetUserDataSecret configures the machineset to use the provided user-data secret in the machine-config-api namespace
 func (ms MachineSet) SetUserDataSecret(userDataSecretName string) error {
 	return ms.Patch("json", `[{ "op": "replace", "path": "/spec/template/spec/providerSpec/value/userDataSecret/name", "value": "`+userDataSecretName+`" }]`)
 }
 
-// GetAll returns a []*MachineSet list with all existing MachineSets
+// GetCoreOsBootImage returns the configured coreOsBootImage in this machineset
+func (ms MachineSet) GetCoreOsBootImage() (string, error) {
+	// the coreOs boot image is stored differently in the machineset spec depending on the platform
+	// currently we only support testing the coresOs boot image in GCP platform.
+	coreOsBootImagePath := ""
+	switch p := exutil.CheckPlatform(ms.oc); p {
+	case AWSPlatform:
+		coreOsBootImagePath = `{.spec.template.spec.providerSpec.value.ami.id}`
+	case GCPPlatform:
+		// For GCP, dynamically find the boot disk index
+		bootDiskIndex, err := GCPGetMachineSetBootDiskIndex(ms)
+		if err != nil {
+			return "", err
+		}
+		coreOsBootImagePath = fmt.Sprintf(`{.spec.template.spec.providerSpec.value.disks[%d].image}`, bootDiskIndex)
+	case VspherePlatform:
+		coreOsBootImagePath = `{.spec.template.spec.providerSpec.value.template}`
+	case AzurePlatform:
+		coreOsBootImagePath = `{.spec.template.spec.providerSpec.value.image}`
+	default:
+		e2e.Failf("Machineset.GetCoreOsBootImage method is only supported for GCP and AWS infrastructure")
+	}
+
+	return ms.Get(coreOsBootImagePath)
+}
+
+// GetCoreOsBootImageOrFail returns the configured coreOsBootImage in this machineset and fails the test case if any error happened
+func (ms MachineSet) GetCoreOsBootImageOrFail() string {
+	img, err := ms.GetCoreOsBootImage()
+	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error getting the coreos boot image value in %s", ms)
+	return img
+}
+
+// GetAll returns a []*MachineSet list with all existing machinesets
 func (msl *MachineSetList) GetAll() ([]*MachineSet, error) {
-	allMachineSetResources, err := msl.ResourceList.GetAll()
+	allMSResources, err := msl.ResourceList.GetAll()
 	if err != nil {
 		return nil, err
 	}
-	allMachineSets := make([]*MachineSet, 0, len(allMachineSetResources))
+	allMS := make([]*MachineSet, 0, len(allMSResources))
 
-	for _, msRes := range allMachineSetResources {
-		allMachineSets = append(allMachineSets, NewMachineSet(msl.oc, msRes.GetNamespace(), msRes.GetName()))
+	for _, msRes := range allMSResources {
+		allMS = append(allMS, NewMachineSet(msl.oc, msRes.GetNamespace(), msRes.GetName()))
 	}
 
-	return allMachineSets, nil
+	return allMS, nil
+}
+
+// GetAllOrFail returns a []*Machineset list with all existing machinesets and fail the test if it is not possible
+func (msl *MachineSetList) GetAllOrFail() []*MachineSet {
+	allMs, err := msl.GetAll()
+	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error getting the list of existing MachineSets")
+
+	return allMs
 }
 
 // WaitForRunningMachines waits for the specified number of running machines to be created from this MachineSet
@@ -510,4 +577,24 @@ func GCPGetMachineSetBootDiskIndex(ms MachineSet) (int, error) {
 	}
 
 	return -1, fmt.Errorf("No boot disk found in disks array (no disk with boot: true)")
+}
+
+// AllNodesUpdated returns true if all nodes in this machineset are updated
+func (ms MachineSet) AllNodesUpdated() (bool, error) {
+	nodes, err := ms.GetNodes()
+	if err != nil {
+		return false, err
+	}
+
+	for _, node := range nodes {
+		updated, err := node.IsUpdated()
+		if err != nil {
+			return false, err
+		}
+		if !updated {
+			return false, nil
+		}
+	}
+
+	return true, nil
 }
