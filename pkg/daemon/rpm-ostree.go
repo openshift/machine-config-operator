@@ -229,6 +229,38 @@ func (r *RpmOstreeClient) RebaseLayeredFromContainerStorage(podmanImageInfo *Pod
 	return runRpmOstree("rebase", "--experimental", "ostree-unverified-image:containers-storage:"+podmanImageInfo.RepoDigest)
 }
 
+// DeploymentVersion wraps rpm-ostree deployment information to provide
+// version checking methods similar to the osrelease package.
+type DeploymentVersion struct {
+	// osName is the osname field from the deployment
+	osName string
+	// version is the version field from the deployment
+	version string
+}
+
+// NewTargetOSVersionFromDeployment creates a DeploymentVersion from the given deployment
+func NewTargetOSVersionFromDeployment(deployment *rpmostreeclient.Deployment) *DeploymentVersion {
+	return &DeploymentVersion{
+		osName:  deployment.OSName,
+		version: deployment.Version,
+	}
+}
+
+// BaseVersionMajor returns the first number in a `.` separated version.
+func (t *DeploymentVersion) BaseVersionMajor() string {
+	return strings.Split(t.version, ".")[0]
+}
+
+// IsEL is true if the OS is an Enterprise Linux variant of CoreOS
+func (t *DeploymentVersion) IsEL() bool {
+	return t.osName == "rhcos" || t.osName == "scos"
+}
+
+// IsEL10 is true if the target OS is RHCOS 10 or SCOS 10
+func (t *DeploymentVersion) IsEL10() bool {
+	return t.IsEL() && (strings.HasPrefix(t.version, "10.") || t.version == "10")
+}
+
 // patchPoliciesForContainerStorage temporarily overrides the container image policy visible
 // to rpm-ostreed to ensure pulls from the "containers-storage" transport are allowed for the
 // given image.
