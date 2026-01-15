@@ -468,6 +468,7 @@ func newTestFixture(t *testing.T, cfg *rest.Config, objs []runtime.Object) *fixt
 	ctrlctx.InformerFactory.Start(ctrlctx.Stop)
 	ctrlctx.KubeInformerFactory.Start(ctrlctx.Stop)
 	ctrlctx.OpenShiftConfigKubeNamespacedInformerFactory.Start(ctrlctx.Stop)
+	ctrlctx.OpenShiftConfigManagedKubeNamespacedInformerFactory.Start(ctrlctx.Stop)
 	ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
 	ctrlctx.OperatorInformerFactory.Start(ctrlctx.Stop)
 
@@ -522,6 +523,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.ConfigInformerFactory.Config().V1().Images(),
 			ctx.ConfigInformerFactory.Config().V1().ImageDigestMirrorSets(),
 			ctx.ConfigInformerFactory.Config().V1().ImageTagMirrorSets(),
+			ctx.OpenShiftConfigManagedKubeNamespacedInformerFactory.Core().V1().ConfigMaps(),
 			ctx.ConfigInformerFactory,
 			ctx.OperatorInformerFactory.Operator().V1alpha1().ImageContentSourcePolicies(),
 			ctx.ConfigInformerFactory.Config().V1().ClusterVersions(),

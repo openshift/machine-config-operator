@@ -34,8 +34,11 @@ import (
 	"k8s.io/apimachinery/pkg/util/jsonmergepatch"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	coreclientsetv1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	corelistersv1 "k8s.io/client-go/listers/core/v1"
+
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
@@ -109,6 +112,9 @@ type Controller struct {
 	itmsLister       cligolistersv1.ImageTagMirrorSetLister
 	itmsListerSynced cache.InformerSynced
 
+	ocManagedConfigMapLister       corelistersv1.ConfigMapLister
+	ocManagedConfigMapListerSynced cache.InformerSynced
+
 	configInformerFactory          configinformers.SharedInformerFactory
 	clusterImagePolicyLister       cligolistersv1.ClusterImagePolicyLister
 	clusterImagePolicyListerSynced cache.InformerSynced
@@ -138,6 +144,7 @@ func New(
 	imgInformer cligoinformersv1.ImageInformer,
 	idmsInformer cligoinformersv1.ImageDigestMirrorSetInformer,
 	itmsInformer cligoinformersv1.ImageTagMirrorSetInformer,
+	ocManagedConfigMapInformer coreinformersv1.ConfigMapInformer,
 	configInformerFactory configinformers.SharedInformerFactory,
 	icspInformer operatorinformersv1alpha1.ImageContentSourcePolicyInformer,
 	clusterVersionInformer cligoinformersv1.ClusterVersionInformer,
@@ -217,6 +224,9 @@ func New(
 	ctrl.itmsLister = itmsInformer.Lister()
 	ctrl.itmsListerSynced = itmsInformer.Informer().HasSynced
 
+	ctrl.ocManagedConfigMapLister = ocManagedConfigMapInformer.Lister()
+	ctrl.ocManagedConfigMapListerSynced = ocManagedConfigMapInformer.Informer().HasSynced
+
 	ctrl.clusterVersionLister = clusterVersionInformer.Lister()
 	ctrl.clusterVersionListerSynced = clusterVersionInformer.Informer().HasSynced
 	ctrl.queue.Add(forceSyncOnUpgrade)
@@ -236,7 +246,8 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer ctrl.queue.ShutDown()
 	defer ctrl.imgQueue.ShutDown()
 	listerCaches := []cache.InformerSynced{ctrl.mcpListerSynced, ctrl.mccrListerSynced, ctrl.ccListerSynced,
-		ctrl.imgListerSynced, ctrl.icspListerSynced, ctrl.idmsListerSynced, ctrl.itmsListerSynced, ctrl.clusterVersionListerSynced}
+		ctrl.imgListerSynced, ctrl.icspListerSynced, ctrl.idmsListerSynced, ctrl.itmsListerSynced,
+		ctrl.ocManagedConfigMapListerSynced, ctrl.clusterVersionListerSynced}
 
 	if ctrl.sigstoreAPIEnabled() {
 		ctrl.addImagePolicyObservers()
@@ -840,6 +851,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 	if err := ctrl.cleanUpDuplicatedMC(); err != nil {
 		return err
 	}
+
 	return ctrl.syncStatusOnly(cfg, nil)
 }
 
@@ -897,6 +909,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 	defer func() {
 		klog.V(4).Infof("Finished syncing ImageConfig %q (%v)", key, time.Since(startTime))
 	}()
+	ctx := context.TODO()
 
 	// Fetch the ImageConfig
 	imgcfg, err := ctrl.imgLister.Get("cluster")
@@ -1033,6 +1046,12 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 			ctrlcommon.UpdateStateMetric(ctrlcommon.MCCSubControllerState, "machine-config-controller-container-runtime-config", "Sync Image Config", pool.Name)
 		}
 	}
+
+	hasReleaseMirrorConfig := len(icspRules)+len(idmsRules) > 0 // not specifically about quay.io/openshift-release-dev/ocp-release , but should get us started
+	if err := ctrl.syncAdminAckConfigMap(ctx, hasReleaseMirrorConfig); err != nil {
+		return fmt.Errorf("error syncing admin ack configmap: %w", err)
+	}
+
 	return nil
 }
 
