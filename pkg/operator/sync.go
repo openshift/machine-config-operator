@@ -2310,29 +2310,11 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 	}
 
 	defaultOptInEvent := false
+	supportsBootImageUpdates, supportCPMSBootImageUpdates, isDefaultOnPlatform := ctrlcommon.CheckBootImagePlatform(infra, optr.fgHandler)
 	// Populate the default boot images configuration in the status, if the cluster is on a
 	// boot image updates supported platform
-	if ctrlcommon.CheckBootImagePlatform(infra, optr.fgHandler) {
-		// Mirror the spec if it is defined, i.e. admin has an opinion
-		if mcop.Spec.ManagedBootImages.MachineManagers != nil {
-			newMachineConfigurationStatus.ManagedBootImagesStatus = *mcop.Spec.ManagedBootImages.DeepCopy()
-		} else {
-			// Admin has no opinion, so use the MCO defined default, which is platform dependant
-			isDefaultOnPlatform, err := optr.isDefaultOnBootImageUpdatePlatform()
-			if err != nil {
-				klog.Errorf("failed to determine platform type, cluster will not be opted in for boot image updates by default")
-			}
-			if isDefaultOnPlatform {
-				// A default opt-in can happen in two ways:
-				// - Cluster is being installed on a release that opts the cluster in (ManagedBootImagesStatus is not defined)
-				// - Cluster is opted out and is being upgraded to a release that opts the cluster in (ManagedBootImagesStatus is currently disabled)
-				defaultOptInEvent = (mcop.Status.ManagedBootImagesStatus.MachineManagers == nil) ||
-					reflect.DeepEqual(mcop.Status.ManagedBootImagesStatus, apihelpers.GetManagedBootImagesWithUpdateDisabled())
-				newMachineConfigurationStatus.ManagedBootImagesStatus = apihelpers.GetManagedBootImagesWithUpdateEnabled()
-			} else {
-				newMachineConfigurationStatus.ManagedBootImagesStatus = apihelpers.GetManagedBootImagesWithUpdateDisabled()
-			}
-		}
+	if supportsBootImageUpdates {
+		defaultOptInEvent = optr.syncManagedBootImagesStatus(mcop, newMachineConfigurationStatus, isDefaultOnPlatform, supportCPMSBootImageUpdates)
 	}
 
 	newMachineConfigurationStatus.ObservedGeneration = mcop.GetGeneration()
@@ -2374,15 +2356,50 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 	return nil
 }
 
-// Determines if this cluster is on a platform that opts in for boot images by default
-func (optr *Operator) isDefaultOnBootImageUpdatePlatform() (bool, error) {
-	infra, err := optr.infraLister.Get("cluster")
-	if err != nil {
-		klog.Errorf("Could not get infra: %v", err)
-		return false, err
+// syncManagedBootImagesStatus populates the ManagedBootImagesStatus in the MachineConfiguration status
+// based on admin spec, platform defaults, and existing status. Returns true if a default opt-in event occurred.
+func (optr *Operator) syncManagedBootImagesStatus(mcop *opv1.MachineConfiguration, status *opv1.MachineConfigurationStatus, isDefaultOnPlatform, supportCPMSBootImageUpdates bool) bool {
+	defaultOptInEvent := false
+
+	// An empty list is a legacy method of opting out of boot image updates completely
+	if mcop.Spec.ManagedBootImages.MachineManagers != nil && len(mcop.Spec.ManagedBootImages.MachineManagers) == 0 {
+		status.ManagedBootImagesStatus = *mcop.Spec.ManagedBootImages.DeepCopy()
+		return false
 	}
-	defaultOnPlatforms := sets.New(configv1.GCPPlatformType, configv1.AWSPlatformType)
-	return defaultOnPlatforms.Has(infra.Status.PlatformStatus.Type), nil
+
+	// Populate/Reflect opinion for MAPI MachineSets
+	//
+	// Default to None unless overridden via admin opinion or opt-in mechanism
+	mapiMachineSetManager := opv1.MachineManager{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.None}}
+	if mcop.Spec.ManagedBootImages.MachineManagers != nil && apihelpers.HasMAPIMachineSetManager(mcop.Spec.ManagedBootImages.MachineManagers, opv1.MachineSets) {
+		// An admin-defined opinion for MAPI MachineSets exist, so reflect that to the status
+		mapiMachineSetManager = apihelpers.GetMAPIMachineSetManager(mcop.Spec.ManagedBootImages.MachineManagers, opv1.MachineSets)
+	} else if isDefaultOnPlatform {
+		// This implies that the MachineManagers list is nil or it does and no opinion for MAPI MachineSet exists
+		// A default opt-in can happen in two ways:
+		// - Cluster is being installed on a release that opts the cluster in (ManagedBootImagesStatus is not defined)
+		// - Cluster is opted out and is being upgraded to a release that opts the cluster in (MachineSet manager has mode=None)
+		defaultOptInEvent = (mcop.Status.ManagedBootImagesStatus.MachineManagers == nil) ||
+			apihelpers.HasMAPIMachineSetManagerWithMode(mcop.Status.ManagedBootImagesStatus.MachineManagers, opv1.MachineSets, opv1.None)
+		// Merge the MachineSet manager with mode=All, preserving other MachineManagers
+		mapiMachineSetManager.Selection.Mode = opv1.All
+	}
+	// Merge the determined MAPI MachineSet Manager mode to status
+	apihelpers.MergeMachineManager(status, mapiMachineSetManager)
+
+	// Populate/Reflect opinion for ControlPlaneMachineSets, if CPMS feature gate is enabled
+	if optr.fgHandler.Enabled(features.FeatureGateManagedBootImagesCPMS) && supportCPMSBootImageUpdates {
+		// Default to None unless overridden via admin opinion.
+		cpmsManager := opv1.MachineManager{Resource: opv1.ControlPlaneMachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.None}}
+		if mcop.Spec.ManagedBootImages.MachineManagers != nil && apihelpers.HasMAPIMachineSetManager(mcop.Spec.ManagedBootImages.MachineManagers, opv1.ControlPlaneMachineSets) {
+			// An admin-defined opinion for ControlMachineSets exist, so reflect that to the status
+			cpmsManager = apihelpers.GetMAPIMachineSetManager(mcop.Spec.ManagedBootImages.MachineManagers, opv1.ControlPlaneMachineSets)
+		}
+		// Merge the determined ControlPlaneMachineSet Manager
+		apihelpers.MergeMachineManager(status, cpmsManager)
+	}
+
+	return defaultOptInEvent
 }
 
 // syncPreBuiltImageMachineConfigs creates/updates/deletes component MachineConfigs for pools with pre-built images.
