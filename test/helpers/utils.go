@@ -903,7 +903,7 @@ func getRPMOStreeStatusForNode(cs *framework.ClientSet, node corev1.Node) (*rpmo
 func getBootedRPMOstreeDeployment(cs *framework.ClientSet, node corev1.Node) (*rpmostreeclient.Deployment, error) {
 	var status *rpmostreeclient.Status
 
-	backoff := wait.Backoff{Duration: 10 * time.Second, Steps: 36} // ~6 min
+	backoff := wait.Backoff{Duration: 10 * time.Second, Steps: 60} // ~10 min
 	// retry until rpm-ostree status succeeds
 	if err := wait.ExponentialBackoff(backoff, func() (bool, error) {
 		var err error
