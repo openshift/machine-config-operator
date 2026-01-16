@@ -1,7 +1,7 @@
 # NOTE: When making changes to this service, be sure they are replicated in the
 # VSphere-specific service in templates/common/[vsphere|kubevirt]/units
 name: nodeip-configuration.service
-enabled: {{if or (eq .Infra.Status.PlatformStatus.Type "None") (and (eq .Infra.Status.ControlPlaneTopology "SingleReplica") (eq (cloudProvider .) "external")) }}true{{else}}false{{end}}
+enabled: {{if or (eq .Infra.Status.PlatformStatus.Type "None") (eq .Infra.Status.PlatformStatus.Type "External") (and (eq .Infra.Status.ControlPlaneTopology "SingleReplica") (eq (cloudProvider .) "external")) }}true{{else}}false{{end}}
 contents: |
   [Unit]
   Description=Writes IP address configuration so that kubelet and crio services select a valid node IP
