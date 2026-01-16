@@ -21,6 +21,7 @@ import (
 
 	"github.com/clarketm/json"
 	"github.com/coreos/go-semver/semver"
+	systemddbus "github.com/coreos/go-systemd/v22/dbus"
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -2147,7 +2148,8 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 		if u.Enabled != nil {
 			// Only when a unit has contents should we attempt to enable or disable it.
 			// See: https://issues.redhat.com/browse/OCPBUGS-56648
-			if unitHasContent(u) || systemdUnits.Has(u.Name) {
+			_, unitExists := systemdUnits[u.Name]
+			if unitHasContent(u) || unitExists {
 				if *u.Enabled {
 					enabledUnits = append(enabledUnits, u.Name)
 				} else {
@@ -2181,27 +2183,26 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 	return nil
 }
 
-func (dn *Daemon) listSystemdUnits() (sets.Set[string], error) {
-	rawJSON, err := dn.cmdRunner.RunGetOut("systemctl", "list-units", "--all", "--no-pager", "--output=json")
+func (dn *Daemon) listSystemdUnits() (result map[string]systemddbus.UnitStatus, err error) {
+	conn, err := systemddbus.NewSystemdConnectionContext(context.Background())
 	if err != nil {
-		return nil, fmt.Errorf("error listing systemd units: %w", err)
+		return nil, fmt.Errorf("failed to connect to system bus to list units: %w", err)
+	}
+	defer func() {
+		conn.Close()
+	}()
+
+	units, err := conn.ListUnitsContext(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to list systemd units: %w", err)
 	}
 
-	type Unit struct {
-		Unit string `json:"unit,omitempty"`
+	result = make(map[string]systemddbus.UnitStatus)
+	for _, unit := range units {
+		result[unit.Name] = unit
 	}
-	var units []Unit
-	if err := json.Unmarshal(rawJSON, &units); err != nil {
-		return nil, fmt.Errorf("error parsing systemd units: %w", err)
-	}
+	return result, nil
 
-	names := sets.New[string]()
-	for _, u := range units {
-		if u.Unit != "" {
-			names.Insert(u.Unit)
-		}
-	}
-	return names, nil
 }
 
 // writeFiles writes the given files to disk.
