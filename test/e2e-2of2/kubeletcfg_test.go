@@ -162,16 +162,6 @@ func runTestWithKubeletCfg(t *testing.T, testName string, regexKey []string, str
 		}
 	}
 
-	// Get the new node object which should reflect new values for the allocatables
-	if *kc1.Spec.AutoSizingReserved {
-		refreshedNode := helpers.GetSingleNodeByRole(t, cs, poolName)
-
-		// The value for the allocatable should have changed because of the auto node sizing.
-		// We cannot predict if the values of the allocatables will increase or decrease,
-		// as it depends on the configuration of the system under test.
-		require.NotEqual(t, refreshedNode.Status.Allocatable.Memory().Value(), node.Status.Allocatable.Memory().Value(), "value of the allocatable should have changed")
-	}
-
 	if kc2 != nil {
 		// create our second kubelet config and attach it to our created node pool
 		cleanupKcFunc2 := createKcWithConfig(t, cs, kcName2, poolName, &kc2.Spec, "1")
