@@ -10,11 +10,16 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/api/machineconfiguration/v1alpha1"
+	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/imageutils"
 	"github.com/openshift/machine-config-operator/pkg/osimagestream"
 	"github.com/openshift/machine-config-operator/pkg/version"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/cri-api/pkg/errors"
 	"k8s.io/klog/v2"
 )
 
@@ -66,8 +71,13 @@ func (optr *Operator) buildOSImageStream(existingOSImageStream *v1alpha1.OSImage
 	buildCtx, buildCancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer buildCancel()
 
+	sysCtxBuilder, err := optr.getSysContextBuilder(clusterPullSecret, minimalCC)
+	if err != nil {
+		return fmt.Errorf("could not build SysContext for OSImageStream build: %w", err)
+	}
+
 	imageStreamFactory := osimagestream.NewDefaultStreamSourceFactory(optr.mcoCmLister, &osimagestream.DefaultImagesInspectorFactory{})
-	osImageStream, err := osimagestream.BuildOsImageStreamRuntime(buildCtx, clusterPullSecret, minimalCC, image, imageStreamFactory)
+	osImageStream, err := osimagestream.BuildOsImageStreamRuntime(buildCtx, sysCtxBuilder, image, imageStreamFactory)
 	if err != nil {
 		return fmt.Errorf("error building the OSImageStream: %w", err)
 	}
@@ -106,6 +116,53 @@ func (optr *Operator) buildOSImageStream(existingOSImageStream *v1alpha1.OSImage
 		osimagestream.GetStreamSetsNames(updateOSImageStream.Status.AvailableStreams),
 		updateOSImageStream.Status.DefaultStream)
 	return nil
+}
+
+// getSysContextBuilder creates a configured SysContextBuilder for container image operations
+// by combining cluster credentials, registry configuration, and mirror policies.
+func (optr *Operator) getSysContextBuilder(clusterPullSecret *corev1.Secret, minimalCC *mcfgv1.ControllerConfig) (*imageutils.SysContextBuilder, error) {
+	sysCtxBuilder := imageutils.NewSysContextBuilder().
+		WithSecret(clusterPullSecret).
+		WithControllerConfig(minimalCC)
+
+	imageConfig, err := optr.imgLister.Get("cluster")
+	if err != nil && !apierrors.IsNotFound(err) {
+		return nil, fmt.Errorf("could not get image configuration: %w", err)
+	}
+
+	icspRules, err := optr.icspLister.List(labels.Everything())
+	if err != nil && errors.IsNotFound(err) {
+		icspRules = []*apioperatorsv1alpha1.ImageContentSourcePolicy{}
+	} else if err != nil {
+		return nil, fmt.Errorf("could not get ICSP rules: %w", err)
+	}
+
+	// Find all ImageDigestMirrorSet objects
+	idmsRules, err := optr.idmsLister.List(labels.Everything())
+	if err != nil && errors.IsNotFound(err) {
+		idmsRules = []*configv1.ImageDigestMirrorSet{}
+	} else if err != nil {
+		return nil, fmt.Errorf("could not get IDMS rules: %w", err)
+	}
+
+	// Find all ImageTagMirrorSet objects
+	itmsRules, err := optr.itmsLister.List(labels.Everything())
+	if err != nil && errors.IsNotFound(err) {
+		itmsRules = []*configv1.ImageTagMirrorSet{}
+	} else if err != nil {
+		return nil, fmt.Errorf("could not get ITMS rules: %w", err)
+	}
+
+	// Add the registries config to the builder only if there are rules applied
+	if imageConfig != nil || len(icspRules) != 0 || len(idmsRules) != 0 || len(itmsRules) != 0 {
+		registriesConf, err := imageutils.GenerateRegistriesConfig(imageConfig, icspRules, idmsRules, itmsRules)
+		if err != nil {
+			return nil, fmt.Errorf("could not build registries configuration: %w", err)
+		}
+		sysCtxBuilder.WithRegistriesConfig(registriesConf)
+	}
+
+	return sysCtxBuilder, nil
 }
 
 func (optr *Operator) isOSImageStreamBuildRequired() (*v1alpha1.OSImageStream, bool, error) {
@@ -155,6 +212,12 @@ func (optr *Operator) buildMinimalControllerConfigForOSImageStream() (*mcfgv1.Co
 	if proxy != nil {
 		cc.Spec.Proxy = &proxy.Status
 	}
+
+	trustBundle, err := optr.getTrustedBundle(proxy)
+	if err != nil {
+		return nil, fmt.Errorf("could not get trusted CA bundle: %w", err)
+	}
+	cc.Spec.AdditionalTrustBundle = trustBundle
 
 	return cc, nil
 }
