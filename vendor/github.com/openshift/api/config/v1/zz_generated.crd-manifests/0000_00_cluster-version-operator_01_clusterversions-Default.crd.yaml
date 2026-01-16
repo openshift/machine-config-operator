@@ -273,6 +273,17 @@ spec:
                   description: Release represents an OpenShift release image and associated
                     metadata.
                   properties:
+                    architecture:
+                      description: |-
+                        architecture is an optional field that indicates the
+                        value of the cluster architecture. In this context cluster
+                        architecture means either a single architecture or a multi
+                        architecture.
+                        Valid values are 'Multi' and empty.
+                      enum:
+                      - Multi
+                      - ""
+                      type: string
                     channels:
                       description: |-
                         channels is the set of Cincinnati channels to which the release
@@ -448,6 +459,17 @@ spec:
                     release:
                       description: release is the target of the update.
                       properties:
+                        architecture:
+                          description: |-
+                            architecture is an optional field that indicates the
+                            value of the cluster architecture. In this context cluster
+                            architecture means either a single architecture or a multi
+                            architecture.
+                            Valid values are 'Multi' and empty.
+                          enum:
+                          - Multi
+                          - ""
+                          type: string
                         channels:
                           description: |-
                             channels is the set of Cincinnati channels to which the release
@@ -562,6 +584,7 @@ spec:
                         - name
                         - url
                         type: object
+                      maxItems: 200
                       minItems: 1
                       type: array
                       x-kubernetes-list-map-keys:
@@ -571,6 +594,7 @@ spec:
                   - release
                   - risks
                   type: object
+                maxItems: 500
                 type: array
                 x-kubernetes-list-type: atomic
               conditions:
@@ -623,6 +647,17 @@ spec:
                   If the cluster is not yet fully initialized desired will be set
                   with the information available, which may be an image or a tag.
                 properties:
+                  architecture:
+                    description: |-
+                      architecture is an optional field that indicates the
+                      value of the cluster architecture. In this context cluster
+                      architecture means either a single architecture or a multi
+                      architecture.
+                      Valid values are 'Multi' and empty.
+                    enum:
+                    - Multi
+                    - ""
+                    type: string
                   channels:
                     description: |-
                       channels is the set of Cincinnati channels to which the release
@@ -669,7 +704,7 @@ spec:
                     acceptedRisks:
                       description: |-
                         acceptedRisks records risks which were accepted to initiate the update.
-                        For example, it may menition an Upgradeable=False or missing signature
+                        For example, it may mention an Upgradeable=False or missing signature
                         that was overridden via desiredUpdate.force, or an update that was
                         initiated despite not being in the availableUpdates set of recommended
                         update targets.

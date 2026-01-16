@@ -422,7 +422,11 @@ type MachineConfigPoolSpec struct {
 	// to stop updates, use the 'paused' property instead. Drain will respect
 	// Pod Disruption Budgets (PDBs) such as etcd quorum guards, even if
 	// maxUnavailable is greater than one.
+	// When specified as an integer, the value must be greater than 0.
+	// When specified as a string, it must be a percentage (e.g., "50%").
 	// +optional
+	// +kubebuilder:validation:XIntOrString
+	// +kubebuilder:validation:XValidation:rule="type(self) == int ? self > 0 : type(self) == string && self.matches('^[0-9]+%$')",message="must be a positive integer greater than 0, or a percentage string (e.g., '50%')"
 	MaxUnavailable *intstr.IntOrString `json:"maxUnavailable,omitempty"`
 
 	// The targeted MachineConfig object for the machine config pool.
