@@ -577,32 +577,9 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		return err
 	}
 
-	var trustBundle []byte
-	certPool := x509.NewCertPool()
-	// this is the generic trusted bundle for things like self-signed registries.
-	additionalTrustBundle, err := optr.getCAsFromConfigMap(ctrlcommon.OpenshiftConfigNamespace, "user-ca-bundle", "ca-bundle.crt")
-	if err != nil && !apierrors.IsNotFound(err) {
+	trustBundle, err := optr.getTrustedBundle(proxy)
+	if err != nil {
 		return err
-	}
-	if len(additionalTrustBundle) > 0 {
-		if !certPool.AppendCertsFromPEM(additionalTrustBundle) {
-			return fmt.Errorf("configmap %s/%s doesn't have a valid PEM bundle", ctrlcommon.OpenshiftConfigNamespace, "user-ca-bundle")
-		}
-		trustBundle = append(trustBundle, additionalTrustBundle...)
-	}
-
-	// this is the trusted bundle specific for proxy things and can differ from the generic one above.
-	if proxy != nil && proxy.Spec.TrustedCA.Name != "" && proxy.Spec.TrustedCA.Name != "user-ca-bundle" {
-		proxyTrustBundle, err := optr.getCAsFromConfigMap(ctrlcommon.OpenshiftConfigNamespace, proxy.Spec.TrustedCA.Name, "ca-bundle.crt")
-		if err != nil {
-			return err
-		}
-		if len(proxyTrustBundle) > 0 {
-			if !certPool.AppendCertsFromPEM(proxyTrustBundle) {
-				return fmt.Errorf("configmap %s/%s doesn't have a valid PEM bundle", ctrlcommon.OpenshiftConfigNamespace, proxy.Spec.TrustedCA.Name)
-			}
-			trustBundle = append(trustBundle, proxyTrustBundle...)
-		}
 	}
 	spec.AdditionalTrustBundle = trustBundle
 
@@ -671,6 +648,37 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra, pointerConfigData, apiServer, fmt.Sprintf("%d", optr.logLevel))
 
 	return nil
+}
+
+func (optr *Operator) getTrustedBundle(proxy *configv1.Proxy) ([]byte, error) {
+	var trustBundle []byte
+	certPool := x509.NewCertPool()
+	// this is the generic trusted bundle for things like self-signed registries.
+	additionalTrustBundle, err := optr.getCAsFromConfigMap(ctrlcommon.OpenshiftConfigNamespace, "user-ca-bundle", "ca-bundle.crt")
+	if err != nil && !apierrors.IsNotFound(err) {
+		return nil, err
+	}
+	if len(additionalTrustBundle) > 0 {
+		if !certPool.AppendCertsFromPEM(additionalTrustBundle) {
+			return nil, fmt.Errorf("configmap %s/%s doesn't have a valid PEM bundle", ctrlcommon.OpenshiftConfigNamespace, "user-ca-bundle")
+		}
+		trustBundle = append(trustBundle, additionalTrustBundle...)
+	}
+
+	// this is the trusted bundle specific for proxy things and can differ from the generic one above.
+	if proxy != nil && proxy.Spec.TrustedCA.Name != "" && proxy.Spec.TrustedCA.Name != "user-ca-bundle" {
+		proxyTrustBundle, err := optr.getCAsFromConfigMap(ctrlcommon.OpenshiftConfigNamespace, proxy.Spec.TrustedCA.Name, "ca-bundle.crt")
+		if err != nil {
+			return nil, err
+		}
+		if len(proxyTrustBundle) > 0 {
+			if !certPool.AppendCertsFromPEM(proxyTrustBundle) {
+				return nil, fmt.Errorf("configmap %s/%s doesn't have a valid PEM bundle", ctrlcommon.OpenshiftConfigNamespace, proxy.Spec.TrustedCA.Name)
+			}
+			trustBundle = append(trustBundle, proxyTrustBundle...)
+		}
+	}
+	return trustBundle, nil
 }
 
 func getIgnitionHost(infraStatus *configv1.InfrastructureStatus) (string, error) {

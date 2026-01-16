@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/openshift/machine-config-operator/pkg/imageutils"
 	"github.com/openshift/machine-config-operator/pkg/osimagestream"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -220,33 +221,19 @@ func (b *Bootstrap) Run(destDir string) error {
 	var osImageStream *mcfgv1alpha1.OSImageStream
 	// Enable OSImageStreams if the FeatureGate is active and the deployment is not OKD
 	if osimagestream.IsFeatureEnabled(fgHandler) {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-		defer cancel()
-
-		osImageStream, err = osimagestream.BuildOsImageStreamBootstrap(ctx,
-			pullSecret,
-			cconfig,
-			imageStream,
-			&osimagestream.OSImageTuple{
-				OSImage:           cconfig.Spec.BaseOSContainerImage,
-				OSExtensionsImage: cconfig.Spec.BaseOSExtensionsContainerImage,
-			},
-			osimagestream.NewDefaultStreamSourceFactory(nil, &osimagestream.DefaultImagesInspectorFactory{}),
-		)
+		osImageStream, err = b.fetchOSImageStream(imageStream, cconfig, icspRules, idmsRules, itmsRules, imgCfg, pullSecret)
 		if err != nil {
-			return fmt.Errorf("error inspecting available OSImageStreams: %w", err)
+			return err
 		}
 
-		// If no error happened override the ControllerConfig URLs with the default stream ones
-		if err == nil {
-			defaultStreamSet, err := osimagestream.GetOSImageStreamSetByName(osImageStream, "")
-			if err != nil {
-				// Should never happen
-				return fmt.Errorf("error getting default OSImageStreamSet: %w", err)
-			}
-			cconfig.Spec.BaseOSContainerImage = string(defaultStreamSet.OSImage)
-			cconfig.Spec.BaseOSExtensionsContainerImage = string(defaultStreamSet.OSExtensionsImage)
+		// Override the ControllerConfig URLs with the default stream ones
+		defaultStreamSet, err := osimagestream.GetOSImageStreamSetByName(osImageStream, "")
+		if err != nil {
+			// Should never happen
+			return fmt.Errorf("error getting default OSImageStreamSet: %w", err)
 		}
+		cconfig.Spec.BaseOSContainerImage = string(defaultStreamSet.OSImage)
+		cconfig.Spec.BaseOSExtensionsContainerImage = string(defaultStreamSet.OSExtensionsImage)
 	}
 
 	pullSecretBytes := pullSecret.Data[corev1.DockerConfigJsonKey]
@@ -414,6 +401,46 @@ func (b *Bootstrap) Run(destDir string) error {
 	klog.Infof("writing the following controllerConfig to disk: %s", string(buf.Bytes()))
 	return os.WriteFile(filepath.Join(cconfigDir, "machine-config-controller.yaml"), buf.Bytes(), 0o664)
 
+}
+
+func (b *Bootstrap) fetchOSImageStream(
+	imageStream *imagev1.ImageStream,
+	cconfig *mcfgv1.ControllerConfig,
+	icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy,
+	idmsRules []*apicfgv1.ImageDigestMirrorSet,
+	itmsRules []*apicfgv1.ImageTagMirrorSet,
+	imgCfg *apicfgv1.Image,
+	pullSecret *corev1.Secret,
+) (*mcfgv1alpha1.OSImageStream, error) {
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	sysCtxBuilder := imageutils.NewSysContextBuilder().
+		WithControllerConfig(cconfig).
+		WithSecret(pullSecret)
+
+	registriesConfig, err := imageutils.GenerateRegistriesConfig(imgCfg, icspRules, idmsRules, itmsRules)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate registries config for OSImageStreams fetching: %w", err)
+	}
+	if registriesConfig != nil {
+		sysCtxBuilder.WithRegistriesConfig(registriesConfig)
+	}
+
+	osImageStream, err := osimagestream.BuildOsImageStreamBootstrap(ctx,
+		sysCtxBuilder,
+		imageStream,
+		&osimagestream.OSImageTuple{
+			OSImage:           cconfig.Spec.BaseOSContainerImage,
+			OSExtensionsImage: cconfig.Spec.BaseOSExtensionsContainerImage,
+		},
+		osimagestream.NewDefaultStreamSourceFactory(nil, &osimagestream.DefaultImagesInspectorFactory{}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error inspecting available OSImageStreams: %w", err)
+	}
+	return osImageStream, nil
 }
 
 func getValidPullSecretFromBytes(sData []byte) (*corev1.Secret, error) {

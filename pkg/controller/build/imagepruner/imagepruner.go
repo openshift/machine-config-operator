@@ -38,7 +38,7 @@ func NewImagePruner() ImagePruner {
 // InspectImage inspects the given image using the provided secret. It also accepts a
 // ControllerConfig so that certificates may be placed on the filesystem for authentication.
 func (i *imagePrunerImpl) InspectImage(ctx context.Context, pullspec string, secret *corev1.Secret, cc *mcfgv1.ControllerConfig) (*types.ImageInspectInfo, *digest.Digest, error) {
-	sysCtx, err := imageutils.NewSysContextFromControllerConfig(secret, cc)
+	sysCtx, err := imageutils.NewSysContextBuilder().WithSecret(secret).WithControllerConfig(cc).Build()
 	if err != nil {
 		return nil, nil, fmt.Errorf("could not prepare for image inspection: %w", err)
 	}
@@ -60,7 +60,7 @@ func (i *imagePrunerImpl) InspectImage(ctx context.Context, pullspec string, sec
 // DeleteImage deletes the given image using the provided secret. It also accepts a
 // ControllerConfig so that certificates may be placed on the filesystem for authentication.
 func (i *imagePrunerImpl) DeleteImage(ctx context.Context, pullspec string, secret *corev1.Secret, cc *mcfgv1.ControllerConfig) error {
-	sysCtx, err := imageutils.NewSysContextFromControllerConfig(secret, cc)
+	sysCtx, err := imageutils.NewSysContextBuilder().WithSecret(secret).WithControllerConfig(cc).Build()
 	if err != nil {
 		return fmt.Errorf("could not prepare for image deletion: %w", err)
 	}
