@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
+	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -91,6 +92,13 @@ func iri() *iriBuilder {
 		obj: &mcfgv1alpha1.InternalReleaseImage{
 			ObjectMeta: v1.ObjectMeta{
 				Name: ctrlcommon.InternalReleaseImageInstanceName,
+			},
+			Spec: mcfgv1alpha1.InternalReleaseImageSpec{
+				Releases: []mcfgv1alpha1.InternalReleaseImageRef{
+					{
+						Name: "ocp-release-bundle-4.21.5-x86_64",
+					},
+				},
 			},
 		},
 	}
@@ -214,4 +222,28 @@ func iriCertSecret() *secretBuilder {
 
 func (sb *secretBuilder) build() runtime.Object {
 	return sb.obj
+}
+
+// clusterVersionBuilder simplifies the creation of a Secret resource in the test.
+type clusterVersionBuilder struct {
+	obj *configv1.ClusterVersion
+}
+
+func clusterVersion() *clusterVersionBuilder {
+	return &clusterVersionBuilder{
+		obj: &configv1.ClusterVersion{
+			ObjectMeta: v1.ObjectMeta{
+				Name: "version",
+			},
+			Status: configv1.ClusterVersionStatus{
+				Desired: configv1.Release{
+					Image: "ocp-4.21-release-pullspec",
+				},
+			},
+		},
+	}
+}
+
+func (cvb *clusterVersionBuilder) build() runtime.Object {
+	return cvb.obj
 }
