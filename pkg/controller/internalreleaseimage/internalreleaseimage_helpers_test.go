@@ -36,7 +36,7 @@ func verifyInternalReleaseMasterMachineConfig(t *testing.T, mc *mcfgv1.MachineCo
 	assert.Contains(t, *ignCfg.Systemd.Units[0].Contents, "docker-registry-image-pullspec")
 
 	assert.Len(t, ignCfg.Storage.Files, 4, "Found an unexpected file")
-	verifyIgnitionFile(t, &ignCfg, "/etc/pki/ca-trust/source/anchors/root-ca.crt", "root-ca-data")
+	verifyIgnitionFile(t, &ignCfg, "/etc/pki/ca-trust/source/anchors/iri-root-ca.crt", "iri-root-ca-data")
 	verifyIgnitionFile(t, &ignCfg, "/etc/iri-registry/certs/tls.key", "iri-tls-key")
 	verifyIgnitionFile(t, &ignCfg, "/etc/iri-registry/certs/tls.crt", "iri-tls-crt")
 	verifyIgnitionFileContains(t, &ignCfg, "/usr/local/bin/load-registry-image.sh", "docker-registry-image-pullspec")
@@ -52,7 +52,7 @@ func verifyInternalReleaseWorkerMachineConfig(t *testing.T, mc *mcfgv1.MachineCo
 
 	assert.Len(t, ignCfg.Systemd.Units, 0)
 	assert.Len(t, ignCfg.Storage.Files, 1)
-	verifyIgnitionFile(t, &ignCfg, "/etc/pki/ca-trust/source/anchors/root-ca.crt", "root-ca-data")
+	verifyIgnitionFile(t, &ignCfg, "/etc/pki/ca-trust/source/anchors/iri-root-ca.crt", "iri-root-ca-data")
 }
 
 func verifyIgnitionFile(t *testing.T, ignCfg *ign3types.Config, path string, expectedContent string) {
@@ -134,7 +134,7 @@ func cconfig() *controllerConfigBuilder {
 				Images: map[string]string{
 					templatectrl.DockerRegistryKey: "docker-registry-image-pullspec",
 				},
-				RootCAData: []byte("root-ca-data"),
+				RootCAData: []byte("iri-root-ca-data"),
 			},
 		},
 	}
