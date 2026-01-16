@@ -32,6 +32,8 @@ import (
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	"github.com/openshift/machine-config-operator/pkg/osimagestream"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	coreinformersv1 "k8s.io/client-go/informers/core/v1"
+	corelistersv1 "k8s.io/client-go/listers/core/v1"
 )
 
 const (
@@ -52,7 +54,6 @@ var (
 // Controller defines the InternalReleaseImage controller.
 type Controller struct {
 	client        mcfgclientset.Interface
-	kubeClient    clientset.Interface
 	eventRecorder record.EventRecorder
 
 	syncHandler                 func(mcp string) error
@@ -70,6 +71,9 @@ type Controller struct {
 	clusterVersionLister       configlistersv1.ClusterVersionLister
 	clusterVersionListerSynced cache.InformerSynced
 
+	secretLister       corelistersv1.SecretLister
+	secretListerSynced cache.InformerSynced
+
 	queue workqueue.TypedRateLimitingInterface[string]
 }
 
@@ -79,6 +83,7 @@ func New(
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mcInformer mcfginformersv1.MachineConfigInformer,
 	clusterVersionInformer configinformersv1.ClusterVersionInformer,
+	secretInformer coreinformersv1.SecretInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 ) *Controller {
@@ -88,7 +93,6 @@ func New(
 
 	ctrl := &Controller{
 		client:        mcfgClient,
-		kubeClient:    kubeClient,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-internalreleaseimagecontroller"})),
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
@@ -113,6 +117,10 @@ func New(
 		DeleteFunc: ctrl.deleteMachineConfig,
 	})
 
+	secretInformer.Informer().AddEventHandler(cache.ResourceEventHandlerDetailedFuncs{
+		UpdateFunc: ctrl.updateSecret,
+	})
+
 	ctrl.iriLister = iriInformer.Lister()
 	ctrl.iriListerSynced = iriInformer.Informer().HasSynced
 
@@ -125,6 +133,9 @@ func New(
 	ctrl.clusterVersionLister = clusterVersionInformer.Lister()
 	ctrl.clusterVersionListerSynced = clusterVersionInformer.Informer().HasSynced
 
+	ctrl.secretLister = secretInformer.Lister()
+	ctrl.secretListerSynced = secretInformer.Informer().HasSynced
+
 	return ctrl
 }
 
@@ -133,7 +144,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.iriListerSynced, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.clusterVersionListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, ctrl.iriListerSynced, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.clusterVersionListerSynced, ctrl.secretListerSynced) {
 		return
 	}
 
@@ -263,6 +274,18 @@ func (ctrl *Controller) processMachineConfigEvent(obj interface{}, logMsg string
 	ctrl.queue.Add(ctrlcommon.InternalReleaseImageInstanceName)
 }
 
+func (ctrl *Controller) updateSecret(obj, _ interface{}) {
+	secret := obj.(*corev1.Secret)
+
+	// Skip any event not related to the InternalReleaseImage secrets
+	if secret.Name != ctrlcommon.InternalReleaseImageTLSSecretName {
+		return
+	}
+
+	klog.V(4).Infof("Secret %s update", secret.Name)
+	ctrl.queue.Add(ctrlcommon.InternalReleaseImageInstanceName)
+}
+
 func (ctrl *Controller) enqueue(iri *mcfgv1alpha1.InternalReleaseImage) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(iri)
 	if err != nil {
@@ -288,7 +311,7 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) error {
 	}
 
 	// Fetch the InternalReleaseImage
-	iri, err := ctrl.client.MachineconfigurationV1alpha1().InternalReleaseImages().Get(context.TODO(), name, metav1.GetOptions{})
+	iri, err := ctrl.iriLister.Get(name)
 	if errors.IsNotFound(err) {
 		klog.V(2).Infof("InternalReleaseImage %v has been deleted", key)
 		return nil
@@ -308,12 +331,12 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) error {
 		return nil
 	}
 
-	cconfig, err := ctrl.client.MachineconfigurationV1().ControllerConfigs().Get(context.TODO(), ctrlcommon.ControllerConfigName, metav1.GetOptions{})
+	cconfig, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
 		return fmt.Errorf("could not get ControllerConfig %w", err)
 	}
 
-	iriSecret, err := ctrl.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), ctrlcommon.InternalReleaseImageTLSSecretName, metav1.GetOptions{})
+	iriSecret, err := ctrl.secretLister.Secrets(ctrlcommon.MCONamespace).Get(ctrlcommon.InternalReleaseImageTLSSecretName)
 	if err != nil {
 		return fmt.Errorf("could not get Secret %s: %w", ctrlcommon.InternalReleaseImageTLSSecretName, err)
 	}
@@ -321,7 +344,7 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) error {
 	for _, role := range SupportedRoles {
 		r := NewRendererByRole(role, iri, iriSecret, cconfig)
 
-		mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), r.GetMachineConfigName(), metav1.GetOptions{})
+		mc, err := ctrl.mcLister.Get(r.GetMachineConfigName())
 		isNotFound := errors.IsNotFound(err)
 		if err != nil && !isNotFound {
 			return err // syncStatus, could not find MachineConfig
