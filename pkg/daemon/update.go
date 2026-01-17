@@ -1734,7 +1734,10 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 		logSystem("Re-applying kernel type %s", newKtype)
 	}
 
-	kernelPackages := dn.getKernelPackagesForRelease()
+	kernelPackages, err := dn.getKernelPackagesForTargetRelease()
+	if err != nil {
+		return fmt.Errorf("failed to get kernel packages for target release: %w", err)
+	}
 	if newKtype == ctrlcommon.KernelTypeRealtime {
 		// Switch to RT kernel
 		args := []string{"override", "remove"}
@@ -1757,9 +1760,21 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 	return fmt.Errorf("unhandled kernel type %s", newKtype)
 }
 
-// getKernelPackagesForRelease returns the list of kernel packaged for the running OS release.
-func (dn *CoreOSDaemon) getKernelPackagesForRelease() releaseKernelPackages {
+// getKernelPackagesForTargetRelease returns the list of kernel packaged for the running OS release.
+func (dn *CoreOSDaemon) getKernelPackagesForTargetRelease() (releaseKernelPackages, error) {
 	// TODO: Drop this code and use https://github.com/coreos/rpm-ostree/issues/2542 instead
+
+	// Fetch the OS deployments to infer the target OS version from them
+	booted, staged, err := dn.NodeUpdaterClient.GetBootedAndStagedDeployment()
+	if err != nil {
+		return releaseKernelPackages{}, fmt.Errorf("error fetching OS deployments : %v", err)
+	}
+
+	// If there's a staged deployment the packages will be installed in it instead of in the current booted deployment
+	targetDeployment := booted
+	if staged != nil {
+		targetDeployment = staged
+	}
 
 	kernelPackages := releaseKernelPackages{
 		defaultKernel:   []string{"kernel", "kernel-core", "kernel-modules", "kernel-modules-core", "kernel-modules-extra"},
@@ -1771,10 +1786,11 @@ func (dn *CoreOSDaemon) getKernelPackagesForRelease() releaseKernelPackages {
 
 	// RHEL10 early bugfix of OCPBUGS-62925
 	// RHEL10 doesn't ship with kernel-rt-kvm
-	if !dn.os.IsEL10() {
+	targetVersion := NewTargetOSVersionFromDeployment(targetDeployment)
+	if !targetVersion.IsEL10() {
 		kernelPackages.realtimeKernel = append(kernelPackages.realtimeKernel, "kernel-rt-kvm")
 	}
-	return kernelPackages
+	return kernelPackages, nil
 }
 
 // updateFiles writes files specified by the nodeconfig to disk. it also writes
