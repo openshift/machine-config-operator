@@ -2,7 +2,6 @@ package assets
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -97,7 +96,7 @@ func (a Asset) WriteFile(path string) error {
 		perms = a.FilePermission
 	}
 	fmt.Printf("Writing asset: %s\n", f)
-	return ioutil.WriteFile(f, a.Data, os.FileMode(perms))
+	return os.WriteFile(f, a.Data, os.FileMode(perms))
 }
 
 // MustCreateAssetFromTemplate process the given template using and return an asset.
@@ -224,7 +223,7 @@ func LoadFilesRecursively(dir string, predicates ...FileInfoPredicate) (map[stri
 				}
 			}
 
-			bs, err := ioutil.ReadFile(path)
+			bs, err := os.ReadFile(path)
 			if err != nil {
 				return err
 			}
