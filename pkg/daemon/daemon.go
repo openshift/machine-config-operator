@@ -912,7 +912,7 @@ func (dn *Daemon) syncNode(key string) error {
 		go func() {
 			klog.Infof("Starting health listener on 127.0.0.1:8798")
 			mux := http.NewServeMux()
-			mux.Handle("/health", &healthHandler{})
+			mux.Handle("/health", &healthHandler{daemon: dn})
 			s := http.Server{
 				TLSConfig: &tls.Config{
 					MinVersion:   tls.VersionTLS12,
@@ -943,6 +943,25 @@ func (dn *Daemon) syncNode(key string) error {
 	return nil
 }
 
+// getDesiredConfigAndImage returns the desired MachineConfig and OS image from node annotations
+func (dn *Daemon) getDesiredConfigAndImage() (*mcfgv1.MachineConfig, string, error) {
+	if dn.node == nil {
+		return nil, "", fmt.Errorf("node is nil")
+	}
+
+	desiredConfigName := dn.node.Annotations[constants.DesiredMachineConfigAnnotationKey]
+	if desiredConfigName == "" {
+		return nil, "", fmt.Errorf("no desired config annotation on node")
+	}
+
+	desiredConfig, err := dn.mcLister.Get(desiredConfigName)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get desired config %s: %w", desiredConfigName, err)
+	}
+
+	return desiredConfig, desiredConfig.Spec.OSImageURL, nil
+}
+
 // Validates that the on-disk state matches the currently applied machineconfig
 // before an update occurs.
 func (dn *Daemon) runPreflightConfigDriftCheck() error {
@@ -967,8 +986,52 @@ func (dn *Daemon) runPreflightConfigDriftCheck() error {
 
 	start := time.Now()
 
+	// Validate against CURRENT config
 	if err := dn.validateOnDiskStateOrImage(currentOnDisk.currentConfig, currentOnDisk.currentImage); err != nil {
-		dn.nodeWriter.Eventf(corev1.EventTypeWarning, "PreflightConfigDriftCheckFailed", err.Error())
+		klog.Warningf("Preflight validation failed against current config: %v", err)
+
+		// NEW: Check if files match DESIRED config
+		// This handles recovery from liveness probe kills during updates
+		desiredConfig, desiredImage, desErr := dn.getDesiredConfigAndImage()
+		if desErr == nil && desiredConfig != nil {
+			klog.Infof("Checking if files match desired config %s (interrupted update recovery)",
+				desiredConfig.GetName())
+
+			desiredErr := dn.validateOnDiskStateOrImage(desiredConfig, desiredImage)
+			if desiredErr == nil {
+				// Files match DESIRED config - we were interrupted mid-update!
+				klog.Infof("SUCCESS: Files match desired config - recovering from interrupted update")
+
+				// Update node annotation to reflect completed state
+				state := &stateAndConfigs{
+					currentConfig: desiredConfig,
+					desiredConfig: desiredConfig,
+					currentImage:  desiredImage,
+					desiredImage:  desiredImage,
+				}
+				if updateErr := dn.nodeWriter.SetDone(state); updateErr != nil {
+					return fmt.Errorf("failed to update node annotations for recovery: %w", updateErr)
+				}
+
+				// Emit recovery event
+				dn.nodeWriter.Eventf(corev1.EventTypeWarning, "RecoveredFromInterruptedUpdate",
+					"Recovered from interrupted update to %s. Files were already written before MCD was killed.",
+					desiredConfig.GetName())
+
+				klog.Infof("Preflight check recovered from interrupted update (took %s)", time.Since(start))
+				return nil
+			}
+			klog.Warningf("Files don't match desired config either: %v", desiredErr)
+		}
+
+		// Files match neither current nor desired - real drift!
+		errMsg := fmt.Sprintf("unexpected on-disk state: %v\n\n"+
+			"Recovery options:\n"+
+			"1. Force recovery: touch %s && oc delete pod -n openshift-machine-config-operator <mcd-pod>\n"+
+			"2. Check if update was interrupted by liveness probe timeout",
+			err, constants.MachineConfigDaemonForceFile)
+
+		dn.nodeWriter.Eventf(corev1.EventTypeWarning, "PreflightConfigDriftCheckFailed", errMsg)
 		klog.Errorf("Preflight config drift check failed: %v", err)
 		return &configDriftErr{err}
 	}
@@ -2897,16 +2960,31 @@ func forceFileExists() bool {
 	return err == nil
 }
 
-type healthHandler struct{}
+type healthHandler struct {
+	daemon *Daemon
+}
 
 func (h *healthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Length", "0")
-	if r.Method == http.MethodGet || r.Method == http.MethodHead {
-		w.WriteHeader(http.StatusOK)
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
 
-	w.WriteHeader(http.StatusMethodNotAllowed)
+	// ALWAYS return 200 OK to prevent liveness probe kills during legitimate operations
+	// Check if actively updating to provide observability
+	h.daemon.updateActiveLock.Lock()
+	updateActive := h.daemon.updateActive
+	h.daemon.updateActiveLock.Unlock()
+
+	if updateActive {
+		w.Header().Set("X-MCD-Status", "updating")
+		w.Header().Set("X-MCD-Message", "MCD is performing update operation")
+	} else {
+		w.Header().Set("X-MCD-Status", "ready")
+	}
+
+	w.Header().Set("Content-Length", "0")
+	w.WriteHeader(http.StatusOK)
 }
 
 // Disable insecure cipher suites for CVE-2016-2183
