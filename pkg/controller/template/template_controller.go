@@ -144,10 +144,17 @@ func (ctrl *Controller) addSecret(obj interface{}) {
 	ctrl.filterSecret(secret)
 }
 
-func (ctrl *Controller) updateSecret(_, new interface{}) {
-	secret := new.(*corev1.Secret)
-	klog.V(4).Infof("Update Secret %v", secret)
-	ctrl.filterSecret(secret)
+func (ctrl *Controller) updateSecret(old, new interface{}) {
+	oldSecret := old.(*corev1.Secret)
+	newSecret := new.(*corev1.Secret)
+
+	klog.V(4).Infof("Update Secret %v", newSecret)
+
+	// Only trigger resync if the secret data actually changed
+	// This prevents log spam from informer resyncs and watch reconnections
+	if !reflect.DeepEqual(oldSecret.Data, newSecret.Data) {
+		ctrl.filterSecret(newSecret)
+	}
 }
 
 func (ctrl *Controller) deleteSecret(obj interface{}) {
