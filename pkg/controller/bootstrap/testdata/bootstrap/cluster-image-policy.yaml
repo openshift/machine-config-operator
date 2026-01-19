@@ -1,0 +1,13 @@
+apiVersion: config.openshift.io/v1
+kind: ClusterImagePolicy
+metadata:
+  creationTimestamp: null
+  name: openshift
+spec:
+  policy:
+    rootOfTrust:
+      policyType: PublicKey
+      publicKey: #using public key from https://docs.sigstore.dev/cosign/verifying/verify
+        keyData: LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUZrd0V3WUhLb1pJemowQ0FRWUlLb1pJemowREFRY0RRZ0FFTGlnQ25sTE5LZ09nbFJUeDFEN0poSTdlUnc5OQpRb2xFOUpvNFFVeG5iTXk1blV1QkwrVVpGOXFxZm0vRGcxQk5lSFJUaEh6V2gya2k5dkFFZ1dFRE93PT0KLS0tLS1FTkQgUFVCTElDIEtFWS0tLS0tCg==
+  scopes:
+  - quay.io/openshift-release-dev/ocp-release
