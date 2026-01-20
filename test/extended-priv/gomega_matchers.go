@@ -94,6 +94,11 @@ func HaveConditionField(conditionType, conditionField string, expected interface
 	return &conditionMatcher{conditionType: conditionType, field: conditionField, expected: expected}
 }
 
+// HaveDegradedMessage returns the gomega matcher to check if a resource is reporting the given degraded message
+func HaveDegradedMessage(expected interface{}) types.GomegaMatcher {
+	return &conditionMatcher{conditionType: "Degraded", field: "message", expected: expected}
+}
+
 // DegradedMatcher struct implementing gomaega matcher interface to check Degraded condition
 type DegradedMatcher struct {
 	*conditionMatcher

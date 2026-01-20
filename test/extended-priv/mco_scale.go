@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"path"
 	"strings"
 	"time"
@@ -41,6 +40,45 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		mMcp = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolMaster)
 		machineConfiguration = GetMachineConfiguration(oc.AsAdmin())
 		PreChecks(oc)
+
+		failureHandler := func(message string, callerSkip ...int) {
+			logger.Errorf("Gomega assertion failed!")
+			logger.Errorf("Failure message: %s", message)
+
+			msList := NewMachineSetList(oc.AsAdmin(), MachineAPINamespace)
+			mList := NewMachineList(oc.AsAdmin(), MachineAPINamespace)
+			nodeList := NewNodeList(oc.AsAdmin())
+
+			logger.Infof("DEBUGGING NODES")
+			nodeList.PrintDebugCommand()
+			logger.Infof("\n\n")
+
+			logger.Infof("DEBUGGING MACHINESETS")
+			msList.PrintDebugCommand()
+			logger.Infof("%s", msList.PrettyString())
+			logger.Infof("\n\n")
+
+			logger.Infof("DEBUGGING MACHINESETS")
+			mList.PrintDebugCommand()
+			logger.Infof("%s", mList.PrettyString())
+			logger.Infof("\n\n")
+
+			// We are adding an extra level to the stack here.
+			// We adjust it so that the assertions can point to the right line of code
+			// What we do with the callerSkip is similar to configuring all assertions with Offset(1) (increasing offset by one)
+			if len(callerSkip) == 0 {
+				callerSkip = []int{1} // default offset should be 1 with this failureHandler wrapper
+			}
+
+			// Increment the first value to account for this wrapper (increase the offset)
+			callerSkip[0]++
+
+			// Fail executing ginkgo failhandler
+			g.Fail(message, callerSkip...)
+		}
+
+		o.RegisterFailHandler(failureHandler)
+
 	})
 
 	g.It("[PolarionID:63894][OTP] Scaleup using 4.1 cloud image", g.Label("Platform:aws"), func() {
@@ -889,34 +927,6 @@ func uploadBaseImageToCloud(oc *exutil.CLI, platform, baseImageURL, baseImage st
 	default:
 		return fmt.Errorf("Platform %s is not supported, base image cannot be updloaded", platform)
 	}
-}
-
-func getGovcEnv(server, dataCenter, dataStore, resourcePool, user, password string) []string {
-	var (
-		govcEnv = []string{
-			"GOVC_URL=" + server,
-			"GOVC_USERNAME=" + user,
-			"GOVC_PASSWORD=" + password,
-			"GOVC_DATASTORE=" + dataStore,
-			"GOVC_RESOURCE_POOL=" + resourcePool,
-			"GOVC_DATACENTER=" + dataCenter,
-			"GOVC_INSECURE=true",
-		}
-		originalEnv = os.Environ()
-	)
-
-	// In prow the GOVC_TLS_CA_CERTS is not correctly set and it is making the govc command fail.
-	// we remove this variable from the environment
-	var execEnv []string
-	for _, envVar := range originalEnv {
-		if strings.HasPrefix(envVar, "GOVC_TLS_CA_CERTS=") {
-			continue
-		}
-		execEnv = append(execEnv, envVar)
-	}
-	execEnv = append(execEnv, govcEnv...)
-
-	return execEnv
 }
 
 func getvSphereCredentials(oc *exutil.CLI) (server, dataCenter, dataStore, resourcePool, user, password string, err error) {
