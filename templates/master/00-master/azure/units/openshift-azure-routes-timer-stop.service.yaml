@@ -1,0 +1,10 @@
+name: openshift-azure-routes-timer-stop.service
+enabled: false
+contents: |
+  [Unit]
+  Description=Stop Azure VIP routes periodic timer after boot window
+
+  [Service]
+  Type=oneshot
+  ExecStart=/bin/systemctl stop openshift-azure-routes.timer
+  SyslogIdentifier=openshift-azure-routes-timer-stop
