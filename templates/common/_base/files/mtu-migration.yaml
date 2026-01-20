@@ -12,7 +12,7 @@ contents:
 
     # mtu-migration systemd service will call this script with the following
     # environment variables set:
-    # - NETWORK_TYPE: OVNKubernetes or OpenshiftSDN
+    # - NETWORK_TYPE: OVNKubernetes
     # - TARGET_MTU: new host MTU to set
     # - CURRENT_MTU: current host MTU (optional, not currently used)
     # - CNI_TARGET_MTU: new cluster network MTU (optional, not currently used)
@@ -158,7 +158,7 @@ contents:
         exit 1
     fi
 
-    if ! [[ $NETWORK_TYPE == "OVNKubernetes" || $NETWORK_TYPE == "OpenShiftSDN" ]]; then
+    if ! [[ $NETWORK_TYPE == "OVNKubernetes" ]]; then
         echo "error: NETWORK_TYPE=$NETWORK_TYPE not supported for MTU migration"
         exit 1
     fi
@@ -168,29 +168,15 @@ contents:
         exit 0
     fi
 
+    # for ovn-k, we handle interfaces from well known NM profiles
     ifaces=()
-    if [ "$NETWORK_TYPE" == "OVNKubernetes" ]; then
-        # for ovn-k, we handle interfaces from well known NM profiles
-        ifaces+=("$(nmcli -g connection.interface-name c show ovs-if-br-ex)")
-        ifaces+=("$(nmcli -g connection.interface-name c show ovs-if-phys0)")
-        for connection in ovs-if-br-ex1 ovs-if-phys1; do
-            # nmcli exit code is 10 when not found
-            iface="$(nmcli -g connection.interface-name c show $connection || [ "$?" = "10" ])"
-            [ -n "$iface" ] && ifaces+=("$iface")
-        done
-    else
-        # for openshift-sdn, we handle the default gateway interface
-        gw_iface=$(ip route show default | awk '{ if ($4 == "dev") { print $5; exit } }')
-        if [[ -z "$gw_iface" ]]; then
-            # no IPv4 Default gateway interface found, checking IPv6
-            gw_iface=$(ip -6 route show default | awk '{ if ($4 == "dev") { print $5; exit } }')
-        fi
-        if [[ -z "$gw_iface" ]]; then
-            echo "mtu migration error: no gateway interface found, cannot continue"
-            exit 1
-        fi
-        ifaces+=("$gw_iface")
-    fi
+    ifaces+=("$(nmcli -g connection.interface-name c show ovs-if-br-ex)")
+    ifaces+=("$(nmcli -g connection.interface-name c show ovs-if-phys0)")
+    for connection in ovs-if-br-ex1 ovs-if-phys1; do
+        # nmcli exit code is 10 when not found
+        iface="$(nmcli -g connection.interface-name c show $connection || [ "$?" = "10" ])"
+        [ -n "$iface" ] && ifaces+=("$iface")
+    done
 
     # if it's a bond or team interface, MTU propagates to slaves when set on
     # master.
