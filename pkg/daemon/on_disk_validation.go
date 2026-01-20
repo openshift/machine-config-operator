@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
@@ -102,12 +101,7 @@ func checkV3Unit(unit ign3types.Unit, systemdPath string) error {
 		return nil
 	}
 
-	err := checkFileContentsAndMode(path, []byte(*unit.Contents), defaultFilePermissions)
-	if err != nil {
-		return err
-	}
-
-	return checkUnitEnabled(unit.Name, unit.Enabled)
+	return checkFileContentsAndMode(path, []byte(*unit.Contents), defaultFilePermissions)
 }
 
 // checkV3Units validates the contents of all the units in the
@@ -233,29 +227,6 @@ func checkV2Files(files []ign2types.File) error {
 			return err
 		}
 		checkedFiles[f.Path] = true
-	}
-	return nil
-}
-
-// checkUnitEnabled checks whether a systemd unit is enabled as expected.
-func checkUnitEnabled(name string, expectedEnabled *bool) error {
-	if expectedEnabled == nil {
-		return nil
-	}
-	outBytes, _ := runGetOut("systemctl", "is-enabled", name)
-	out := strings.TrimSpace(string(outBytes))
-
-	switch {
-	case *expectedEnabled:
-		// If expected to be enabled, reject known "not enabled" states
-		if out == "disabled" || out == "masked" || out == "masked-runtime" || out == "not-found" {
-			return fmt.Errorf("unit %q expected enabled=true, but systemd reports %q", name, out)
-		}
-	case !*expectedEnabled:
-		// If expected to be disabled, reject any of the enabled-like states
-		if out == "enabled" || out == "enabled-runtime" {
-			return fmt.Errorf("unit %q expected enabled=false, but systemd reports %q", name, out)
-		}
 	}
 	return nil
 }

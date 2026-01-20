@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"reflect"
 	goruntime "runtime"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -1014,20 +1013,13 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	logSystem("Starting update from %s to %s: %+v", oldConfigName, newConfigName, diff)
 
 	diffFileSet := ctrlcommon.CalculateConfigFileDiffs(&oldIgnConfig, &newIgnConfig)
-	// Get the added and updated units
-	unitDiff := ctrlcommon.GetChangedConfigUnitsByType(&oldIgnConfig, &newIgnConfig)
-	addedOrChangedUnits := slices.Concat(unitDiff.Added, unitDiff.Updated)
-	// Get the names of all units changed in some way (added, removed, or updated)
-	var allChangedUnitNames []string
-	for _, unit := range append(addedOrChangedUnits, unitDiff.Removed...) {
-		allChangedUnitNames = append(allChangedUnitNames, unit.Name)
-	}
+	diffUnitSet := ctrlcommon.CalculateConfigUnitDiffs(&oldIgnConfig, &newIgnConfig)
 
 	var nodeDisruptionActions []opv1.NodeDisruptionPolicyStatusAction
 	var actions []string
 	// Node Disruption Policies cannot be used during firstboot as API is not accessible.
 	if !firstBoot {
-		nodeDisruptionActions, err = dn.calculatePostConfigChangeNodeDisruptionAction(diff, diffFileSet, allChangedUnitNames)
+		nodeDisruptionActions, err = dn.calculatePostConfigChangeNodeDisruptionAction(diff, diffFileSet, diffUnitSet)
 	} else {
 		actions, err = calculatePostConfigChangeAction(diff, diffFileSet)
 		klog.Infof("Skipping node disruption polciies as node is executing first boot.")
@@ -1133,13 +1125,13 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	}
 
 	// update files on disk that need updating
-	if err := dn.updateFiles(oldIgnConfig, newIgnConfig, addedOrChangedUnits, skipCertificateWrite); err != nil {
+	if err := dn.updateFiles(oldIgnConfig, newIgnConfig, skipCertificateWrite); err != nil {
 		return err
 	}
 
 	defer func() {
 		if retErr != nil {
-			if err := dn.updateFiles(newIgnConfig, oldIgnConfig, addedOrChangedUnits, skipCertificateWrite); err != nil {
+			if err := dn.updateFiles(newIgnConfig, oldIgnConfig, skipCertificateWrite); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
 				retErr = fmt.Errorf("error rolling back files writes: %w", errs)
 				return
@@ -1274,18 +1266,15 @@ func (dn *Daemon) updateHypershift(oldConfig, newConfig *mcfgv1.MachineConfig, d
 		return fmt.Errorf("parsing new Ignition config failed: %w", err)
 	}
 
-	unitDiff := ctrlcommon.GetChangedConfigUnitsByType(&oldIgnConfig, &newIgnConfig)
-	addedOrChangedUnits := slices.Concat(unitDiff.Added, unitDiff.Updated)
-
 	// update files on disk that need updating
 	// We should't skip the certificate write in HyperShift since it does not run the extra daemon process
-	if err := dn.updateFiles(oldIgnConfig, newIgnConfig, addedOrChangedUnits, false); err != nil {
+	if err := dn.updateFiles(oldIgnConfig, newIgnConfig, false); err != nil {
 		return err
 	}
 
 	defer func() {
 		if retErr != nil {
-			if err := dn.updateFiles(newIgnConfig, oldIgnConfig, addedOrChangedUnits, false); err != nil {
+			if err := dn.updateFiles(newIgnConfig, oldIgnConfig, false); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
 				retErr = fmt.Errorf("error rolling back files writes: %w", errs)
 				return
@@ -1810,12 +1799,12 @@ func (dn *CoreOSDaemon) getKernelPackagesForTargetRelease() (releaseKernelPackag
 // whatever has been written is picked up by the appropriate daemons, if
 // required. in particular, a daemon-reload and restart for any unit files
 // touched.
-func (dn *Daemon) updateFiles(oldIgnConfig, newIgnConfig ign3types.Config, addedOrChangedUnits []ign3types.Unit, skipCertificateWrite bool) error {
+func (dn *Daemon) updateFiles(oldIgnConfig, newIgnConfig ign3types.Config, skipCertificateWrite bool) error {
 	klog.Info("Updating files")
 	if err := dn.writeFiles(newIgnConfig.Storage.Files, skipCertificateWrite); err != nil {
 		return err
 	}
-	if err := dn.writeUnits(addedOrChangedUnits); err != nil {
+	if err := dn.writeUnits(newIgnConfig.Systemd.Units); err != nil {
 		return err
 	}
 	return dn.deleteStaleData(oldIgnConfig, newIgnConfig)
