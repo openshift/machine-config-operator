@@ -1303,7 +1303,31 @@ func (dn *Daemon) getCurrentConfigFromNode() (*onDiskConfig, error) {
 }
 
 func (dn *Daemon) startConfigDriftMonitor() {
-	mcdConfigDrift.Set(0)
+	// Initialize the config drift metric based on the node's current state.
+	// If the node is Degraded due to config drift, set the metric to current time to indicate ongoing drift. Otherwise, clear the metric.
+	state, err := getNodeAnnotationExt(dn.node, constants.MachineConfigDaemonStateAnnotationKey, true)
+	if err != nil {
+		klog.Warningf("Could not get node state when initializing config drift metric: %v", err)
+		mcdConfigDrift.Set(0)
+	} else if state == constants.MachineConfigDaemonStateDegraded {
+		// Check if degraded due to config drift by examining the reason annotation
+		reason, err := getNodeAnnotationExt(dn.node, constants.MachineConfigDaemonReasonAnnotationKey, true)
+		if err != nil {
+			klog.Warningf("Could not get node reason when initializing config drift metric: %v", err)
+			mcdConfigDrift.Set(0)
+		} else if strings.Contains(reason, "content mismatch") || strings.Contains(reason, "mode mismatch") {
+			// Node is degraded due to config drift - set metric to indicate ongoing drift
+			mcdConfigDrift.SetToCurrentTime()
+			klog.Infof("Config drift metric initialized: node is degraded due to config drift")
+		} else {
+			// Node is degraded but not due to config drift
+			mcdConfigDrift.Set(0)
+		}
+	} else {
+		// Node is not degraded - clear the metric
+		mcdConfigDrift.Set(0)
+	}
+
 	// Even though the Config Drift Monitor object ensures that only a single
 	// Config Drift Watcher is running at any given time, other things, such as
 	// emitting Kube events on startup, should only occur if we weren't
