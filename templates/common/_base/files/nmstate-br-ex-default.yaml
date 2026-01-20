@@ -1,0 +1,38 @@
+mode: 0644
+path: "/etc/nmstate/openshift/default.yml"
+contents:
+  inline: |
+    capture:
+      default-gw: routes.running.destination=="0.0.0.0/0"
+      # TODO: Select based on description, as set by nodeip-configuration?
+      base-iface: interfaces.name==capture.default-gw.routes.running.0.next-hop-interface
+    desiredState:
+      interfaces:
+      - name: {{`"{{ capture.base-iface.interfaces.0.name }}"`}}
+        type: ethernet
+        state: up
+        ipv4:
+          enabled: false
+        ipv6:
+          enabled: false
+      - name: br-ex
+        type: ovs-bridge
+        state: up
+        ipv4:
+          enabled: false
+        ipv6:
+          enabled: false
+        bridge:
+          port:
+          - name: {{`"{{ capture.base-iface.interfaces.0.name }}"`}}
+          - name: br-ex
+      - name: br-ex
+        type: ovs-interface
+        state: up
+        copy-mac-from: {{`"{{ capture.base-iface.interfaces.0.name }}"`}}
+        ipv4:
+          enabled: {{`"{{ capture.base-iface.interfaces.0.ipv4.enabled }}"`}}
+          dhcp: {{`"{{ capture.base-iface.interfaces.0.ipv4.dhcp }}"`}}
+        ipv6:
+          enabled: {{`"{{ capture.base-iface.interfaces.0.ipv6.enabled }}"`}}
+          dhcp: {{`"{{ capture.base-iface.interfaces.0.ipv6.dhcp }}"`}}

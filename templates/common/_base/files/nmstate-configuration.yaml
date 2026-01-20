@@ -16,14 +16,17 @@ contents:
     hostname=$(hostname -s)
     host_file="${hostname}.yml"
     cluster_file="cluster.yml"
+    default_file="default.yml"
     config_file=""
     if [ -s "$src_path/$host_file" ]; then
       config_file=$host_file
     elif [ -s "$src_path/$cluster_file" ]; then
       config_file=$cluster_file
+    elif [ -s "$src_path/$default_file" ]; then
+      config_file=$default_file
     else
       echo "No configuration found at $src_path/$host_file or $src_path/$cluster_file"
-      exit 0
+      exit 1
     fi
     
     if [ -e "$src_path/applied" ]; then
