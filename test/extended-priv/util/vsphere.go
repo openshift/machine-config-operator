@@ -14,6 +14,7 @@ import (
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/ovf/importer"
+	"github.com/vmware/govmomi/vim25/mo"
 )
 
 // DownloadOVAIfURL downloads an OVA file from a URL if the path is a URL,
@@ -78,11 +79,14 @@ func DownloadOVAIfURL(ovaPath string) (string, error) {
 func UploadBaseImageToVsphere(baseImageSrc, baseImageDest, server, dataCenter, dataStore, resourcePool, user, password string) error {
 	ctx := context.Background()
 
-	// Build vSphere URL
-	u, err := url.Parse(fmt.Sprintf("https://%s:%s@%s/sdk", user, password, server))
+	// Build vSphere URL without credentials
+	u, err := url.Parse(fmt.Sprintf("https://%s/sdk", server))
 	if err != nil {
-		return fmt.Errorf("failed to parse vSphere URL: %w", err)
+		return fmt.Errorf("failed to parse vSphere URL for server %s", server)
 	}
+
+	// Set credentials separately
+	u.User = url.UserPassword(user, password)
 
 	logger.Infof("Uploading base image %s to vsphere with name %s", baseImageSrc, baseImageDest)
 
@@ -199,4 +203,58 @@ func UploadBaseImageToVsphere(baseImageSrc, baseImageDest, server, dataCenter, d
 	}
 
 	return nil
+}
+
+// GetReleaseFromVsphereTemplate gets the release version from a vSphere template
+func GetReleaseFromVsphereTemplate(vsphereTemplate, server, dataCenter, user, password string) (string, error) {
+	ctx := context.Background()
+
+	// Build vSphere URL without credentials
+	u, err := url.Parse(fmt.Sprintf("https://%s/sdk", server))
+	if err != nil {
+		return "", fmt.Errorf("failed to parse vSphere URL for server %s", server)
+	}
+
+	// Set credentials separately
+	u.User = url.UserPassword(user, password)
+
+	logger.Infof("Getting information about vsphere template %s", vsphereTemplate)
+
+	// Connect to vSphere
+	c, err := govmomi.NewClient(ctx, u, true)
+	if err != nil {
+		return "", fmt.Errorf("failed to connect to vSphere: %w", err)
+	}
+	defer c.Logout(ctx)
+
+	// Create finder
+	finder := find.NewFinder(c.Client, true)
+
+	// Find datacenter
+	dc, err := finder.Datacenter(ctx, dataCenter)
+	if err != nil {
+		return "", fmt.Errorf("failed to find datacenter %s: %w", dataCenter, err)
+	}
+	finder.SetDatacenter(dc)
+
+	// Find the VM/template
+	vm, err := finder.VirtualMachine(ctx, vsphereTemplate)
+	if err != nil {
+		return "", fmt.Errorf("failed to find VM/template %s: %w", vsphereTemplate, err)
+	}
+
+	// Get VM properties
+	var moVM mo.VirtualMachine
+	err = vm.Properties(ctx, vm.Reference(), []string{"summary.config.product"}, &moVM)
+	if err != nil {
+		return "", fmt.Errorf("failed to get VM properties: %w", err)
+	}
+
+	if moVM.Summary.Config.Product == nil || moVM.Summary.Config.Product.Version == "" {
+		return "", fmt.Errorf("cannot get version from VM %s", vsphereTemplate)
+	}
+
+	version := moVM.Summary.Config.Product.Version
+	logger.Infof("Version for vm %s: %s", vsphereTemplate, version)
+	return version, nil
 }

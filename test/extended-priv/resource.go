@@ -162,6 +162,61 @@ func (r ocGetter) String() string {
 	return fmt.Sprintf("<Kind: %s, Name: %s, Namespace: %s>", r.kind, r.name, r.namespace)
 }
 
+// PrettyString returns an indented json string with the definition of the resource
+func (r ocGetter) PrettyString() string {
+	// Check if this is a sensitive resource that should not print full JSON
+	if r.isSensitiveResource() {
+		return fmt.Sprintf("<%s: %s, Name: %s, Namespace: %s> (content redacted for security)", r.kind, r.kind, r.name, r.namespace)
+	}
+
+	definition, dErr := r.Get(`{}`)
+	if dErr != nil {
+		return dErr.Error()
+	}
+
+	var data interface{}
+	if err := json.Unmarshal([]byte(definition), &data); err != nil {
+		return err.Error()
+	}
+
+	formattedDefinition, err := json.MarshalIndent(data, "", "    ")
+	if err != nil {
+		return err.Error()
+	}
+	return string(formattedDefinition)
+
+}
+
+// isSensitiveResource checks if the resource contains sensitive data that should not be printed
+func (r ocGetter) isSensitiveResource() bool {
+	kind := strings.ToLower(r.kind)
+
+	// Check if it's a Secret (secret, secrets)
+	if kind == "secret" || kind == "secrets" {
+		return true
+	}
+
+	// Check if it's a ControllerConfig (controllerconfig, controllerconfigs, with or without API group)
+	if kind == "controllerconfig" || kind == "controllerconfigs" ||
+		strings.HasPrefix(kind, "controllerconfig.") ||
+		strings.HasPrefix(kind, "controllerconfigs.") {
+		return true
+	}
+
+	// Check if it's a MachineConfig containing kubelet config.json
+	if kind == "machineconfig" || kind == "mc" || kind == "machineconfigs" ||
+		strings.HasPrefix(kind, "machineconfig.") ||
+		strings.HasPrefix(kind, "machineconfigs.") {
+		// Try to get the files from the MachineConfig
+		files, err := r.Get(`{.spec.config.storage.files[*].path}`)
+		if err == nil && strings.Contains(files, "/var/lib/kubelet/config.json") {
+			return true
+		}
+	}
+
+	return false
+}
+
 // NewResource constructs a Resource struct for a not-namespaced resource
 func NewResource(oc *exutil.CLI, kind, name string) *Resource {
 	return &Resource{ocGetter: ocGetter{oc, kind, "", name}}
@@ -363,26 +418,6 @@ func (r *Resource) ExportToFile(fileName string) error {
 	}
 
 	return err
-}
-
-// PrettyString returns an indented json string with the definition of the resource
-func (r *Resource) PrettyString() string {
-	definition, dErr := r.Get(`{}`)
-	if dErr != nil {
-		return dErr.Error()
-	}
-
-	var data interface{}
-	if err := json.Unmarshal([]byte(definition), &data); err != nil {
-		return err.Error()
-	}
-
-	formattedDefinition, err := json.MarshalIndent(data, "", "    ")
-	if err != nil {
-		return err.Error()
-	}
-	return string(formattedDefinition)
-
 }
 
 // NewMCOTemplate creates a new template using the MCO fixture directory as the base path of the template file

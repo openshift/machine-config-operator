@@ -146,3 +146,46 @@ func (mcc *Controller) GetNode() (*Node, error) {
 
 	return NewNode(mcc.oc, nodeName), nil
 }
+
+// GetPreviousLogs returns the previous logs of the machine-config-controller pod
+func (mcc *Controller) GetPreviousLogs() (string, error) {
+	cachedPodName, err := mcc.GetCachedPodName()
+	if err != nil {
+		return "", err
+	}
+	if cachedPodName == "" {
+		err := fmt.Errorf("Cannot get controller pod name. Failed getting MCO controller logs")
+		logger.Errorf("Error getting controller pod name. Error: %s", err)
+		return "", err
+	}
+
+	prevLogs, err := NewNamespacedResource(mcc.oc, "pod", MachineConfigNamespace, cachedPodName).Logs("-p")
+	if err != nil {
+		if strings.Contains(prevLogs, "previous terminated container") && strings.Contains(prevLogs, "not found") {
+			logger.Infof("There was no previous pod for %s", cachedPodName)
+			return "", nil
+		}
+		logger.Infof("Unexpected error while getting MCC previous logs: %s", err)
+		return prevLogs, err
+	}
+	return prevLogs, nil
+}
+
+// checkMCCPanic checks the machine-config-controller logs for panics
+func checkMCCPanic(oc *exutil.CLI) {
+	var (
+		mcc = NewController(oc.AsAdmin())
+	)
+
+	exutil.By("Check MCC Logs for Panic is not produced")
+	mccPrevLogs, err := mcc.GetPreviousLogs()
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting previous MCC logs")
+
+	o.Expect(mccPrevLogs).NotTo(o.Or(o.ContainSubstring("panic"), o.ContainSubstring("Panic")), "Panic is seen in MCC previous logs after deleting OCB resources:\n%s", mccPrevLogs)
+	mccLogs, err := mcc.GetLogs()
+
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting MCC logs")
+	o.Expect(mccLogs).NotTo(o.Or(o.ContainSubstring("panic"), o.ContainSubstring("Panic")), "Panic is seen in MCC logs after deleting OCB resources:\n%s", mccLogs)
+
+	logger.Infof("OK!\n")
+}
