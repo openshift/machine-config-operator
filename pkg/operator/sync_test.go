@@ -407,30 +407,30 @@ func TestSyncMachineConfiguration(t *testing.T) {
 			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.18.0"),
 		},
 		{
-			name:               "Azure platform, no existing config, no opt-in expected",
+			name:               "Azure platform, no existing config, opt-in expected",
 			infra:              buildInfra(withPlatformType(configv1.AzurePlatformType)),
 			mcop:               buildMachineConfigurationWithNoBootImageConfiguration(),
 			clusterVersion:     buildClusterVersion("4.18.0"),
-			annotationExpected: false,
+			annotationExpected: true,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
 				MachineManagers: []opv1.MachineManager{
-					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.None}},
+					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
 				},
 			},
-			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.18.0"),
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.18.0"),
 		},
 		{
-			name:               "vsphere platform, no existing config, no opt-in expected",
+			name:               "vsphere platform, no existing config, opt-in expected",
 			infra:              buildInfra(withPlatformType(configv1.VSpherePlatformType)),
 			mcop:               buildMachineConfigurationWithNoBootImageConfiguration(),
 			clusterVersion:     buildClusterVersion("4.18.0"),
-			annotationExpected: false,
+			annotationExpected: true,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
 				MachineManagers: []opv1.MachineManager{
-					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.None}},
+					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
 				},
 			},
-			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.18.0"),
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.18.0"),
 		},
 		{
 			name:                            "bare metal platform, unsupported platform, no configuration expected",
@@ -488,15 +488,15 @@ func TestSyncMachineConfiguration(t *testing.T) {
 			infra:                 buildInfra(withPlatformType(configv1.AzurePlatformType)),
 			mcop:                  buildMachineConfigurationWithNoBootImageConfiguration(),
 			clusterVersion:        buildClusterVersion("4.18.0"),
-			annotationExpected:    false,
+			annotationExpected:    true,
 			enableCPMSFeatureGate: true,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
 				MachineManagers: []opv1.MachineManager{
-					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.None}},
+					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
 					{Resource: opv1.ControlPlaneMachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.None}},
 				},
 			},
-			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.18.0"),
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.18.0"),
 		},
 		{
 			name:                  "AWS platform, CPMS enabled in spec, MachineSets should still follow platform default (All)",
@@ -514,19 +514,19 @@ func TestSyncMachineConfiguration(t *testing.T) {
 			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.18.0"),
 		},
 		{
-			name:                  "Azure platform, CPMS enabled in spec, MachineSets should still follow platform default (None)",
+			name:                  "Azure platform, CPMS enabled in spec, MachineSets should still follow platform default (All)",
 			infra:                 buildInfra(withPlatformType(configv1.AzurePlatformType)),
 			mcop:                  buildMachineConfigurationWithCPMSEnabled(),
 			clusterVersion:        buildClusterVersion("4.18.0"),
-			annotationExpected:    false,
+			annotationExpected:    true,
 			enableCPMSFeatureGate: true,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
 				MachineManagers: []opv1.MachineManager{
-					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.None}},
+					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
 					{Resource: opv1.ControlPlaneMachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
 				},
 			},
-			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.18.0"),
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.18.0"),
 		},
 		{
 			name:                  "AWS platform, MachineSets enabled in spec, CPMS should remain disabled (no opinion)",
@@ -618,14 +618,14 @@ func TestSyncMachineConfiguration(t *testing.T) {
 			infra:                 buildInfra(withPlatformType(configv1.VSpherePlatformType)),
 			mcop:                  buildMachineConfigurationWithNoBootImageConfiguration(),
 			clusterVersion:        buildClusterVersion("4.19.0"),
-			annotationExpected:    false,
+			annotationExpected:    true,
 			enableCPMSFeatureGate: true,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
 				MachineManagers: []opv1.MachineManager{
-					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.None}},
+					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
 				},
 			},
-			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.19.0"),
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.19.0"),
 		},
 		// Skew enforcement test cases
 		{
