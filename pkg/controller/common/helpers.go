@@ -945,25 +945,12 @@ func CalculateConfigFileDiffs(oldIgnConfig, newIgnConfig *ign3types.Config) []st
 	return diffFileSet
 }
 
-type UnitDiff struct {
-	Added   []ign3types.Unit
-	Removed []ign3types.Unit
-	Updated []ign3types.Unit
-}
-
-// GetChangedConfigUnitsByType compares the units present in two ignition configurations, one
-// old config and the other new, a struct with units mapped to the type of change:
-//   - New unit added: "Added"
-//   - Unit previously existing removed: "Removed"
-//   - Existing unit changed in some way: "Updated"
-func GetChangedConfigUnitsByType(oldIgnConfig, newIgnConfig *ign3types.Config) (unitDiffs UnitDiff) {
-	diffUnit := UnitDiff{
-		Added:   []ign3types.Unit{},
-		Removed: []ign3types.Unit{},
-		Updated: []ign3types.Unit{},
-	}
-
-	// Get the sets of the old and new units from the ignition configurations
+// CalculateConfigUnitDiffs compares the units present in two ignition configurations and returns the list of units
+// that are different between them
+//
+//nolint:dupl
+func CalculateConfigUnitDiffs(oldIgnConfig, newIgnConfig *ign3types.Config) []string {
+	// Go through the units and see what is new or different
 	oldUnitSet := make(map[string]ign3types.Unit)
 	for _, u := range oldIgnConfig.Systemd.Units {
 		oldUnitSet[u.Name] = u
@@ -972,25 +959,26 @@ func GetChangedConfigUnitsByType(oldIgnConfig, newIgnConfig *ign3types.Config) (
 	for _, u := range newIgnConfig.Systemd.Units {
 		newUnitSet[u.Name] = u
 	}
+	diffUnitSet := []string{}
 
 	// First check if any units were removed
 	for unit := range oldUnitSet {
 		_, ok := newUnitSet[unit]
 		if !ok {
-			diffUnit.Removed = append(diffUnit.Removed, oldUnitSet[unit])
+			diffUnitSet = append(diffUnitSet, unit)
 		}
 	}
 
-	// Now check if any units were added or updated
+	// Now check if any units were added/changed
 	for name, newUnit := range newUnitSet {
 		oldUnit, ok := oldUnitSet[name]
 		if !ok {
-			diffUnit.Added = append(diffUnit.Added, newUnitSet[name])
+			diffUnitSet = append(diffUnitSet, name)
 		} else if !reflect.DeepEqual(oldUnit, newUnit) {
-			diffUnit.Updated = append(diffUnit.Updated, newUnitSet[name])
+			diffUnitSet = append(diffUnitSet, name)
 		}
 	}
-	return diffUnit
+	return diffUnitSet
 }
 
 // NewIgnFile returns a simple ignition3 file from just path and file contents.
