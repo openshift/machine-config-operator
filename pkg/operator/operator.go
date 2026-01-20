@@ -373,7 +373,6 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		moscInformer := optr.ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().MachineOSConfigs()
 		optr.moscLister = moscInformer.Lister()
 		optr.moscListerSynced = moscInformer.Informer().HasSynced
-		cacheSynced = append(cacheSynced, optr.moscListerSynced)
 		moscInformer.Informer().AddEventHandler(optr.eventHandler())
 		// We have to start this inofrmer ourselves because the caller has started
 		// all of the other informers before calling Run().
