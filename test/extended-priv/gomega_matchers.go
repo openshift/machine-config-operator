@@ -4,11 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 
-	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
-
 	g "github.com/onsi/ginkgo/v2"
 	gomegamatchers "github.com/onsi/gomega/matchers"
 	"github.com/onsi/gomega/types"
+	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 )
 
 // struct implementing gomaega matcher interface
@@ -94,9 +93,19 @@ func HaveConditionField(conditionType, conditionField string, expected interface
 	return &conditionMatcher{conditionType: conditionType, field: conditionField, expected: expected}
 }
 
-// HaveDegradedMessage returns the gomega matcher to check if a resource is reporting the given degraded message
+// HaveNodeDegradedMessage returns the gomega matcher to check if a resource is reporting the given degraded message
+func HaveNodeDegradedMessage(expected interface{}) types.GomegaMatcher {
+	return &conditionMatcher{conditionType: "NodeDegraded", field: "message", expected: expected}
+}
+
+// HaveDegradedMessage returns the gomega matcher to check if a resource is reporting the given node degraded message
 func HaveDegradedMessage(expected interface{}) types.GomegaMatcher {
 	return &conditionMatcher{conditionType: "Degraded", field: "message", expected: expected}
+}
+
+// HaveAvailableMessage returns the gomega matcher to check if a resource is reporting the given node available message
+func HaveAvailableMessage(expected interface{}) types.GomegaMatcher {
+	return &conditionMatcher{conditionType: "Available", field: "message", expected: expected}
 }
 
 // DegradedMatcher struct implementing gomaega matcher interface to check Degraded condition

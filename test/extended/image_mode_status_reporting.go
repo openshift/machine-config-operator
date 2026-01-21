@@ -156,7 +156,7 @@ func runImageModeMCNTest(oc *exutil.CLI, machineConfigClient *machineconfigclien
 	logger.Infof("OK!\n")
 
 	exutil.By("Configure OCB functionality for the new `infra` MCP")
-	mosc, err := extpriv.CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, mcpAndMoscName, nil)
+	mosc, err := extpriv.CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, mcpAndMoscName, mcpAndMoscName, nil)
 	defer extpriv.DisableOCL(mosc)
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource: %s", err)
 	logger.Infof("OK!\n")
@@ -266,7 +266,7 @@ func runMachineCountTest(machineConfigClient *machineconfigclient.Clientset, oc 
 		layered = true
 		// Enable image mode in the desired pool
 		exutil.By("Configure OCB functionality in the `master` MCP")
-		mosc, err = extpriv.CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, mcpName, nil)
+		mosc, err = extpriv.CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, mcpName, mcpName, nil)
 		defer extpriv.DisableOCL(mosc)
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource: %s", err)
 		logger.Infof("OK!\n")
