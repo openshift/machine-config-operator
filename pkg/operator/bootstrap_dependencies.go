@@ -80,7 +80,7 @@ type BootstrapDependencies struct {
 	Network        *configv1.Network
 	DNS            *configv1.DNS
 	PullSecret     string
-	ClusterConfig  string
+	ClusterConfig  *InstallConfig
 	CloudConfig    string
 
 	CloudProviderCA        string
@@ -271,8 +271,14 @@ func (b *BootstrapDependencies) fillCloudConfigData() error {
 // fillClusterConfig loads the cluster configuration data.
 func (b *BootstrapDependencies) fillClusterConfig() error {
 	var err error
-	if b.ClusterConfig, err = readString(b.Files.ClusterConfig); err != nil {
-		return fmt.Errorf("failed to read ClusterConfig file %s: %w", b.Files.ClusterConfig, err)
+	cm, err := readCoreCR[*corev1.ConfigMap](b.Files.ClusterConfig)
+	if err != nil {
+		return fmt.Errorf("failed to read Cluster Config file %s: %w", b.Files.ClusterConfig, err)
 	}
+	b.ClusterConfig, err = NewInstallConfigFromConfigMap(cm)
+	if err != nil {
+		return fmt.Errorf("failed to read Cluster Config from ConfigMap file %s: %w", b.Files.ClusterConfig, err)
+	}
+
 	return nil
 }

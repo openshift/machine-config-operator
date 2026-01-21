@@ -147,9 +147,15 @@ func buildSpec(dependencies *BootstrapDependencies, imgs *ctrlcommon.Images, rel
 		templatectrl.DockerRegistryKey:      imgs.DockerRegistry,
 	}
 
-	config := getRenderConfig("", dependencies.KubeAPIServerServingCA, spec,
-		&imgs.RenderConfigImages, dependencies.Infrastructure, nil, nil, "2")
-	return config, nil
+	return getRenderConfig(
+		"",
+		dependencies.KubeAPIServerServingCA,
+		spec,
+		&imgs.RenderConfigImages,
+		dependencies.Infrastructure,
+		nil, nil,
+		dependencies.ClusterConfig,
+		"2"), nil
 }
 
 func appendManifestsByPlatform(manifests []manifest, infra *configv1.Infrastructure) []manifest {

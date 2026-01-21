@@ -13,3 +13,7 @@ spec:
   nodeSelector:
     matchLabels:
       node-role.kubernetes.io/master: ""
+{{- with installConfigOSImageStream .InstallConfig "controlPlane" }}
+  osImageStream:
+    name: {{ . }}
+{{- end }}

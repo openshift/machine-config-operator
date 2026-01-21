@@ -17,9 +17,32 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openshift/api/annotations"
+	configv1 "github.com/openshift/api/config/v1"
+	features "github.com/openshift/api/features"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	opv1 "github.com/openshift/api/operator/v1"
 	configclientscheme "github.com/openshift/client-go/config/clientset/versioned/scheme"
+	mcoac "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
+	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
+	"github.com/openshift/library-go/pkg/operator/resource/resourcemerge"
+	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
+	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
+	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
+	"github.com/openshift/machine-config-operator/pkg/controller/build"
+	buildconstants "github.com/openshift/machine-config-operator/pkg/controller/build/constants"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
+	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	"github.com/openshift/machine-config-operator/pkg/helpers"
 	"github.com/openshift/machine-config-operator/pkg/osimagestream"
+	"github.com/openshift/machine-config-operator/pkg/secrets"
+	"github.com/openshift/machine-config-operator/pkg/server"
+	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
+	"github.com/openshift/machine-config-operator/pkg/version"
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv1 "k8s.io/api/autoscaling/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -34,30 +57,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
-
-	"github.com/openshift/api/annotations"
-	configv1 "github.com/openshift/api/config/v1"
-	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	opv1 "github.com/openshift/api/operator/v1"
-
-	features "github.com/openshift/api/features"
-	mcoac "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
-	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
-	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
-	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
-	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
-	"github.com/openshift/machine-config-operator/pkg/apihelpers"
-	"github.com/openshift/machine-config-operator/pkg/controller/build"
-	buildconstants "github.com/openshift/machine-config-operator/pkg/controller/build/constants"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
-	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	"github.com/openshift/machine-config-operator/pkg/helpers"
-	"github.com/openshift/machine-config-operator/pkg/secrets"
-	"github.com/openshift/machine-config-operator/pkg/server"
-	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
-	"github.com/openshift/machine-config-operator/pkg/version"
-	autoscalingv1 "k8s.io/api/autoscaling/v1"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -668,7 +668,15 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		optr.setOperatorLogLevel(mcop.Spec.OperatorLogLevel)
 	}
 
-	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra, pointerConfigData, apiServer, fmt.Sprintf("%d", optr.logLevel))
+	installConfig, err := optr.getInstallConfig()
+	if err != nil {
+		return err
+	}
+
+	optr.renderConfig = getRenderConfig(
+		optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages,
+		infra, pointerConfigData, apiServer, installConfig, fmt.Sprintf("%d", optr.logLevel),
+	)
 
 	return nil
 }
@@ -702,23 +710,50 @@ func getIgnitionHost(infraStatus *configv1.InfrastructureStatus) (string, error)
 }
 
 func (optr *Operator) syncMachineConfigPools(config *renderConfig, _ *configv1.ClusterOperator) error {
-	mcps := []string{
+	mcpManifests := []string{
 		"manifests/master.machineconfigpool.yaml",
 		"manifests/worker.machineconfigpool.yaml",
 	}
 
 	if config.Infra.Status.ControlPlaneTopology == configv1.HighlyAvailableArbiterMode {
-		mcps = append(mcps, "manifests/arbiter.machineconfigpool.yaml")
+		mcpManifests = append(mcpManifests, "manifests/arbiter.machineconfigpool.yaml")
 	}
 
-	for _, mcp := range mcps {
-		mcpBytes, err := renderAsset(config, mcp)
+	for _, mcpManifest := range mcpManifests {
+		mcpBytes, err := renderAsset(config, mcpManifest)
 		if err != nil {
 			return err
 		}
-		p := mcoResourceRead.ReadMachineConfigPoolV1OrDie(mcpBytes)
-		_, _, err = mcoResourceApply.ApplyMachineConfigPool(optr.client.MachineconfigurationV1(), p)
-		if err != nil {
+
+		mcp := mcoResourceRead.ReadMachineConfigPoolV1OrDie(mcpBytes)
+		existing, err := optr.client.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), mcp.GetName(), metav1.GetOptions{})
+		if err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get MachineConfigPool %s: %w", mcp.GetName(), err)
+		}
+
+		// If the MCP doesn't exist, create it
+		if apierrors.IsNotFound(err) {
+			// install-time OS Image Streams should only be taken into consideration at cluster bootstrapping
+			if !optr.inClusterBringup {
+				mcp.Spec.OSImageStream.Name = ""
+			}
+
+			if _, err := optr.client.MachineconfigurationV1().MachineConfigPools().Create(context.TODO(), mcp, metav1.CreateOptions{}); err != nil {
+				return fmt.Errorf("failed to create MachineConfigPool %s: %w", mcp.GetName(), err)
+			}
+
+			continue
+		}
+
+		// Update the existing MCP
+		modified := ptr.To(false)
+		resourcemerge.EnsureObjectMeta(modified, &existing.ObjectMeta, mcp.ObjectMeta)
+
+		// Always preserve the existing OSImageStream - cluster state takes precedence over rendered manifests for
+		// the OS Image Stream field
+		mcp.Spec.OSImageStream.Name = existing.Spec.OSImageStream.Name
+		existing.Spec = mcp.Spec
+		if _, err := optr.client.MachineconfigurationV1().MachineConfigPools().Update(context.TODO(), existing, metav1.UpdateOptions{}); err != nil {
 			return err
 		}
 	}
@@ -2007,12 +2042,16 @@ func (optr *Operator) stampBootImagesConfigMap() error {
 	return nil
 }
 
-func (optr *Operator) getCloudConfigFromConfigMap(namespace, name, key string) (string, error) {
-	cm, err := optr.clusterCmLister.ConfigMaps(namespace).Get(name)
+func (optr *Operator) getInstallConfig() (*InstallConfig, error) {
+	cm, err := optr.clusterCmLister.ConfigMaps("kube-system").Get("cluster-config-v1")
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return getCloudConfigFromConfigMap(cm, key)
+	installConfig, err := NewInstallConfigFromConfigMap(cm)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve install-config from ConfigMap: %w", err)
+	}
+	return installConfig, nil
 }
 
 func getCloudConfigFromConfigMap(cm *corev1.ConfigMap, key string) (string, error) {
@@ -2084,7 +2123,7 @@ func setGVK(obj runtime.Object, scheme *runtime.Scheme) error {
 	return nil
 }
 
-func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *ctrlcommon.RenderConfigImages, infra *configv1.Infrastructure, pointerConfigData []byte, apiServer *configv1.APIServer, logLevel string) *renderConfig {
+func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *ctrlcommon.RenderConfigImages, infra *configv1.Infrastructure, pointerConfigData []byte, apiServer *configv1.APIServer, installConfig *InstallConfig, logLevel string) *renderConfig {
 	tlsMinVersion, tlsCipherSuites := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
 	return &renderConfig{
 		TargetNamespace:        tnamespace,
@@ -2098,6 +2137,7 @@ func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.C
 		Infra:                  *infra,
 		TLSMinVersion:          tlsMinVersion,
 		TLSCipherSuites:        tlsCipherSuites,
+		InstallConfig:          installConfig,
 		LogLevel:               logLevel,
 	}
 }
