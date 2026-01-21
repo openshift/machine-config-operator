@@ -19,7 +19,9 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/daemon"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/daemon/cri"
+	"github.com/openshift/machine-config-operator/pkg/daemon/nri"
 	"github.com/openshift/machine-config-operator/pkg/version"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"k8s.io/klog/v2"
 )
@@ -248,6 +250,24 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		// start the informers for the pinned image set again after the feature gate is enabled this is allowed.
 		// see comments in SharedInformerFactory interface.
 		ctrlctx.InformerFactory.Start(stopCh)
+	}
+
+	// Initialize and start NRI plugin for mutation control
+	nriLogger := logrus.New()
+	nriLogger.SetFormatter(&logrus.TextFormatter{
+		FullTimestamp: true,
+	})
+
+	nriPlugin, err := nri.NewAllowMutationsPlugin(nriLogger, nri.DefaultConfigPath)
+	if err != nil {
+		klog.Warningf("Failed to initialize NRI plugin: %v. NRI mutation control will not be available.", err)
+	} else {
+		klog.Infof("Starting NRI AllowMutations plugin")
+		go func() {
+			if err := nriPlugin.Start(ctx); err != nil {
+				klog.Errorf("NRI plugin exited with error: %v", err)
+			}
+		}()
 	}
 
 	if err := dn.Run(stopCh, exitCh, errCh); err != nil {

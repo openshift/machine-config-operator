@@ -1,0 +1,6 @@
+mode: 0644
+path: "/etc/crio/crio.conf.d/01-ctrcfg-nriPlugin"
+contents:
+  inline: |
+    [crio.nri]
+    enable_nri = true
