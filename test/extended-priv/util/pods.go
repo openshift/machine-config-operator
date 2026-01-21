@@ -130,3 +130,32 @@ func AssertAllPodsToBeReady(oc *CLI, namespace string) {
 func AssertAllPodsToBeReadyWithSelector(oc *CLI, namespace, selector string) {
 	AssertAllPodsToBeReadyWithPollerParams(oc, namespace, 10*time.Second, 4*time.Minute, selector)
 }
+
+// If no container is provided (empty string "") it will default to the first container
+func remoteShPod(oc *CLI, namespace, podName string, needBash, needChroot bool, container string, cmd ...string) (string, error) {
+	var cargs []string
+	var containerArgs []string
+	switch {
+	case needBash:
+		cargs = []string{"-n", namespace, podName, "bash", "-c"}
+	case needChroot:
+		cargs = []string{"-n", namespace, podName, "chroot", "/rootfs"}
+	default:
+		cargs = []string{"-n", namespace, podName}
+	}
+
+	if container != "" {
+		containerArgs = []string{"-c", container}
+	} else {
+		containerArgs = []string{}
+	}
+
+	containerArgs = append(containerArgs, cargs...)
+	containerArgs = append(containerArgs, cmd...)
+	return oc.AsAdmin().WithoutNamespace().Run("rsh").Args(containerArgs...).Output()
+}
+
+// RemoteShContainer creates a remote shell of the given container inside the pod
+func RemoteShContainer(oc *CLI, namespace, podName, container string, cmd ...string) (string, error) {
+	return remoteShPod(oc, namespace, podName, false, false, container, cmd...)
+}
