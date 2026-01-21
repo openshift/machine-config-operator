@@ -28,6 +28,10 @@ contents:
     memorySwap:
       swapBehavior: NoSwap
     systemCgroups: /system.slice
+    systemReservedCgroup: /system.slice
+    enforceNodeAllocatable:
+      - pods
+      - system-reserved-compressible
     nodeStatusUpdateFrequency: 10s
     nodeStatusReportFrequency: 5m
     serverTLSBootstrap: true
