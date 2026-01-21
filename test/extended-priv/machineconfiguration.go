@@ -1,6 +1,8 @@
 package extended
 
 import (
+	"strings"
+
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 )
@@ -47,4 +49,36 @@ func (mc MachineConfiguration) SetPartialManagedBootImagesConfig(resource, label
 // SetNoneManagedBootImagesConfig configures MachineConfiguration so that no machinesets are updated
 func (mc MachineConfiguration) SetNoneManagedBootImagesConfig(resource string) error {
 	return mc.Patch("merge", `{"spec":{"managedBootImages":{"machineManagers":[{"resource": "`+resource+`","apiGroup": "machine.openshift.io","selection": {"mode": "None"}}]}}}`)
+}
+
+// EnableIrreconcilableValidationOverrides enables irreconcilableValidationOverrides for storage
+func (mc MachineConfiguration) EnableIrreconcilableValidationOverrides() error {
+	return mc.Patch("merge", `{"spec":{"irreconcilableValidationOverrides":{"storage":["Disks","Raid","FileSystems"]}}}`)
+}
+
+// GetManagedBootImagesStatus returns the entire .status.managedBootImagesStatus field
+func (mc MachineConfiguration) GetManagedBootImagesStatus() (string, error) {
+	return mc.Get(`{.status.managedBootImagesStatus}`)
+}
+
+// GetManagedBootImagesStatusForResource returns the status for a specific resource type
+func (mc MachineConfiguration) GetManagedBootImagesStatusForResource(resource string) (string, error) {
+	return mc.Get(`{.status.managedBootImagesStatus.machineManagers[?(@.resource=="` + resource + `")]}`)
+}
+
+// GetManagedBootImagesModeForResource returns the selection mode for a specific resource type
+func (mc MachineConfiguration) GetManagedBootImagesModeForResource(resource string) (string, error) {
+	return mc.Get(`{.status.managedBootImagesStatus.machineManagers[?(@.resource=="` + resource + `")].selection.mode}`)
+}
+
+// GetAllManagedBootImagesResources returns all resource types configured in the status as a slice
+func (mc MachineConfiguration) GetAllManagedBootImagesResources() ([]string, error) {
+	result, err := mc.Get(`{.status.managedBootImagesStatus.machineManagers[*].resource}`)
+	if err != nil {
+		return nil, err
+	}
+	if result == "" {
+		return []string{}, nil
+	}
+	return strings.Fields(result), nil
 }

@@ -7,9 +7,10 @@ import (
 	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
+	"github.com/tidwall/gjson"
 )
 
-var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Serial][Disruptive][OCPFeatureGate:ManagedBootImagesCPMS] MCO ControlPlaneMachineSet", func() {
+var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Serial][Disruptive][OCPFeatureGate:ManagedBootImagesCPMS] MCO ControlPlaneMachineSet", g.Label("Platform:gce", "Platform:aws", "Platform:azure"), func() {
 	defer g.GinkgoRecover()
 
 	var (
@@ -364,4 +365,106 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			"The user-data secret was unexpectedly updated when owner reference was present")
 		logger.Infof("OK!\n")
 	})
+
+	// AI-assisted: This test case validates that MachineConfiguration status correctly reflects spec changes
+	g.It("[PolarionID:87023][OTP] MachineConfiguration status correctly reflects spec changes [apigroup:machineconfiguration.openshift.io]", func() {
+
+		var (
+			testConfigs = []struct {
+				description string
+				patchConfig string
+			}{
+				{
+					description: "Test Partial mode for MachineSet resource",
+					patchConfig: `{"spec":{"managedBootImages":{"machineManagers":[{"resource":"machinesets","apiGroup":"machine.openshift.io","selection":{"mode":"Partial","partial":{"machineResourceSelector":{"matchLabels":{"test-label":"test-value"}}}}}]}}}`,
+				},
+				{
+					description: "Test None mode for MachineSet resource",
+					patchConfig: `{"spec":{"managedBootImages":{"machineManagers":[{"resource":"machinesets","apiGroup":"machine.openshift.io","selection":{"mode":"None"}}]}}}`,
+				},
+				{
+					description: "Test All mode for MachineSet resource",
+					patchConfig: `{"spec":{"managedBootImages":{"machineManagers":[{"resource":"machinesets","apiGroup":"machine.openshift.io","selection":{"mode":"All"}}]}}}`,
+				},
+				{
+					description: "Test None mode for ControlPlaneMachineSet resource",
+					patchConfig: `{"spec":{"managedBootImages":{"machineManagers":[{"resource":"controlplanemachinesets","apiGroup":"machine.openshift.io","selection":{"mode":"None"}}]}}}`,
+				},
+				{
+					description: "Test All mode for ControlPlaneMachineSet resource",
+					patchConfig: `{"spec":{"managedBootImages":{"machineManagers":[{"resource":"controlplanemachinesets","apiGroup":"machine.openshift.io","selection":{"mode":"All"}}]}}}`,
+				},
+			}
+		)
+
+		for _, tc := range testConfigs {
+			logger.Infof(tc.description)
+			testMachineConfigurationStatusUpdate(machineConfiguration, tc.patchConfig)
+		}
+	})
 })
+
+// testMachineConfigurationStatusUpdate validates that MachineConfiguration status updates correctly
+func testMachineConfigurationStatusUpdate(mc *MachineConfiguration, patchConfig string) {
+	exutil.By("Capture original MachineConfiguration status")
+
+	originalSpec := mc.GetSpecOrFail()
+	defer mc.SetSpec(originalSpec)
+	originalStatus, err := mc.GetManagedBootImagesStatus()
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting original status from %s", mc)
+	logger.Infof("Original status: %s", originalStatus)
+
+	// Capture the status for each resource before applying the config
+	resourcesBefore, err := mc.GetAllManagedBootImagesResources()
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting all resources from status")
+
+	originalResourceStatus := make(map[string]string)
+	for _, res := range resourcesBefore {
+		if res != "" {
+			status, err := mc.GetManagedBootImagesStatusForResource(res)
+			o.Expect(err).NotTo(o.HaveOccurred(), "Error getting status for resource %s", res)
+			originalResourceStatus[res] = status
+			logger.Infof("Captured original status for resource %s", res)
+		}
+	}
+	logger.Infof("OK!\n")
+
+	exutil.By("Extract resource and expected status config from the patch config")
+	expectedStatusConfig := gjson.Get(patchConfig, "spec.managedBootImages.machineManagers.0").String()
+	o.Expect(expectedStatusConfig).NotTo(o.BeEmpty(), "Failed to extract expected status config from patchConfig")
+
+	resource := gjson.Get(patchConfig, "spec.managedBootImages.machineManagers.0.resource").String()
+	o.Expect(resource).NotTo(o.BeEmpty(), "Failed to extract resource from patchConfig")
+
+	logger.Infof("Resource: %s", resource)
+	logger.Infof("Expected status config: %s", expectedStatusConfig)
+	logger.Infof("OK!\n")
+
+	exutil.By("Apply the new configuration")
+	o.Expect(mc.Patch("merge", patchConfig)).To(o.Succeed(), "Error applying configuration to %s", mc)
+	logger.Infof("OK!\n")
+
+	exutil.By("Check that the configured resource is correctly reported in the status")
+	o.Eventually(mc.GetManagedBootImagesStatusForResource, "5m", "10s").WithArguments(resource).Should(o.MatchJSON(expectedStatusConfig),
+		"Resource %s status does not match the expected configuration. Expected: %s", resource, expectedStatusConfig)
+	logger.Infof("OK!\n")
+
+	exutil.By("Check that other managedBootImagesStatus configurations remain the same as before")
+	for res, originalStatusValue := range originalResourceStatus {
+		if res != resource {
+			o.Eventually(mc.GetManagedBootImagesStatusForResource, "5m", "10s").WithArguments(res).Should(o.MatchJSON(originalStatusValue),
+				"Resource %s status changed unexpectedly. Expected: %s", res, originalStatusValue)
+			logger.Infof("Resource %s status unchanged", res)
+		}
+	}
+	logger.Infof("OK!\n")
+
+	exutil.By("Remove the applied configuration and restore original spec")
+	o.Expect(mc.SetSpec(originalSpec)).To(o.Succeed(), "Error restoring original spec in %s", mc)
+	logger.Infof("OK!\n")
+
+	exutil.By("Check that the original status values were restored")
+	o.Eventually(mc.GetManagedBootImagesStatus, "5m", "10s").Should(o.MatchJSON(originalStatus),
+		"Status was not restored to original value")
+	logger.Infof("OK!\n")
+}
