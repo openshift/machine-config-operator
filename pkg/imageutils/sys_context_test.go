@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/containers/image/v5/pkg/sysregistriesv2"
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/stretchr/testify/assert"
@@ -12,7 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func TestNewSysContextFromControllerConfig(t *testing.T) {
+func TestSysContextBuilderWithSecretAndCerts(t *testing.T) {
 	legacySecret := `{"registry.hostname.com": {"username": "user", "password": "s3kr1t", "auth": "s00pers3kr1t", "email": "user@hostname.com"}}`
 	newSecret := `{"auths":` + legacySecret + `}`
 
@@ -67,8 +68,11 @@ MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuOSW8w==
 				},
 			}
 
-			sysCtx, err := NewSysContextFromControllerConfig(tc.secret, cc)
-			require.NoError(t, err, "NewSysContextFromControllerConfig should not fail")
+			sysCtx, err := NewSysContextBuilder().
+				WithSecret(tc.secret).
+				WithControllerConfig(cc).
+				Build()
+			require.NoError(t, err, "SysContextBuilder.Build should not fail")
 			require.NotNil(t, sysCtx, "SysContext wrapper should not be nil")
 			require.NotNil(t, sysCtx.SysContext, "Underlying SystemContext should not be nil")
 
@@ -102,7 +106,191 @@ MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuOSW8w==
 	}
 }
 
-func TestNewSysContextFromControllerConfigWithProxy(t *testing.T) {
+func TestSysContextBuilder(t *testing.T) {
+	testCases := []struct {
+		name              string
+		secret            *corev1.Secret
+		controllerConfig  *mcfgv1.ControllerConfig
+		registriesConfig  *sysregistriesv2.V2RegistriesConf
+		expectTempDir     bool
+		expectAuthFile    bool
+		expectCerts       bool
+		expectProxy       bool
+		expectRegistries  bool
+	}{
+		{
+			name:          "Empty context - no options",
+			expectTempDir: false,
+		},
+		{
+			name: "WithRegistriesConfig only",
+			registriesConfig: &sysregistriesv2.V2RegistriesConf{
+				Registries: []sysregistriesv2.Registry{
+					{
+						Endpoint: sysregistriesv2.Endpoint{
+							Location: "registry.example.com",
+						},
+					},
+				},
+			},
+			expectTempDir:    true,
+			expectRegistries: true,
+		},
+		{
+			name: "WithSecret only",
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pull-secret",
+					Namespace: "test-namespace",
+				},
+				Type: corev1.SecretTypeDockerConfigJson,
+				Data: map[string][]byte{
+					corev1.DockerConfigJsonKey: []byte(`{"auths":{"registry.hostname.com": {"username": "user", "password": "s3kr1t"}}}`),
+				},
+			},
+			expectTempDir:  true,
+			expectAuthFile: true,
+		},
+		{
+			name: "WithControllerConfig only - certs",
+			controllerConfig: &mcfgv1.ControllerConfig{
+				Spec: mcfgv1.ControllerConfigSpec{
+					ImageRegistryBundleData: []mcfgv1.ImageRegistryBundle{
+						{
+							File: "registry.hostname.com",
+							Data: []byte(`-----BEGIN CERTIFICATE-----
+MIICljCCAX4CCQCKz8Vz4VR5+jANBgkqhkiG9w0BAQsFADANMQswCQYDVQQGEwJV
+UzAeFw0yMDAxMDEwMDAwMDBaFw0zMDAxMDEwMDAwMDBaMA0xCzAJBgNVBAYTAlVT
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuOSW8w==
+-----END CERTIFICATE-----`),
+						},
+					},
+				},
+			},
+			expectTempDir: true,
+			expectCerts:   true,
+		},
+		{
+			name: "WithControllerConfig only - proxy",
+			controllerConfig: &mcfgv1.ControllerConfig{
+				Spec: mcfgv1.ControllerConfigSpec{
+					Proxy: &configv1.ProxyStatus{
+						HTTPSProxy: "https://proxy.example.com:3128",
+					},
+				},
+			},
+			expectTempDir: false, // Proxy doesn't need temp dir
+			expectProxy:   true,
+		},
+		{
+			name: "Both WithSecret and WithControllerConfig",
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pull-secret",
+					Namespace: "test-namespace",
+				},
+				Type: corev1.SecretTypeDockerConfigJson,
+				Data: map[string][]byte{
+					corev1.DockerConfigJsonKey: []byte(`{"auths":{"registry.hostname.com": {"username": "user", "password": "s3kr1t"}}}`),
+				},
+			},
+			controllerConfig: &mcfgv1.ControllerConfig{
+				Spec: mcfgv1.ControllerConfigSpec{
+					ImageRegistryBundleData: []mcfgv1.ImageRegistryBundle{
+						{
+							File: "registry.hostname.com",
+							Data: []byte(`-----BEGIN CERTIFICATE-----
+MIICljCCAX4CCQCKz8Vz4VR5+jANBgkqhkiG9w0BAQsFADANMQswCQYDVQQGEwJV
+UzAeFw0yMDAxMDEwMDAwMDBaFw0zMDAxMDEwMDAwMDBaMA0xCzAJBgNVBAYTAlVT
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuOSW8w==
+-----END CERTIFICATE-----`),
+						},
+					},
+					Proxy: &configv1.ProxyStatus{
+						HTTPSProxy: "https://proxy.example.com:3128",
+					},
+				},
+			},
+			expectTempDir:  true,
+			expectAuthFile: true,
+			expectCerts:    true,
+			expectProxy:    true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			builder := NewSysContextBuilder()
+
+			if tc.secret != nil {
+				builder.WithSecret(tc.secret)
+			}
+
+			if tc.controllerConfig != nil {
+				builder.WithControllerConfig(tc.controllerConfig)
+			}
+
+			if tc.registriesConfig != nil {
+				builder.WithRegistriesConfig(tc.registriesConfig)
+			}
+
+			sysCtx, err := builder.Build()
+			require.NoError(t, err, "Build should not fail")
+			require.NotNil(t, sysCtx, "SysContext wrapper should not be nil")
+			require.NotNil(t, sysCtx.SysContext, "Underlying SystemContext should not be nil")
+
+			// Check temp dir expectations
+			if tc.expectTempDir {
+				assert.NotEmpty(t, sysCtx.temporalDir, "Temporal directory should not be empty")
+				assert.DirExists(t, sysCtx.temporalDir, "Temporal directory should exist")
+			} else {
+				assert.Empty(t, sysCtx.temporalDir, "Temporal directory should be empty")
+			}
+
+			// Check auth file expectations
+			if tc.expectAuthFile {
+				assert.NotEmpty(t, sysCtx.SysContext.AuthFilePath, "AuthFilePath should not be empty")
+				assert.FileExists(t, sysCtx.SysContext.AuthFilePath, "AuthFile should exist")
+			} else {
+				assert.Empty(t, sysCtx.SysContext.AuthFilePath, "AuthFilePath should be empty")
+			}
+
+			// Check certs expectations
+			if tc.expectCerts {
+				assert.NotEmpty(t, sysCtx.SysContext.DockerPerHostCertDirPath, "DockerPerHostCertDirPath should not be empty")
+				assert.DirExists(t, sysCtx.SysContext.DockerPerHostCertDirPath, "Certs directory should exist")
+			} else {
+				assert.Empty(t, sysCtx.SysContext.DockerPerHostCertDirPath, "DockerPerHostCertDirPath should be empty")
+			}
+
+			// Check proxy expectations
+			if tc.expectProxy {
+				assert.NotNil(t, sysCtx.SysContext.DockerProxyURL, "DockerProxyURL should not be nil")
+			} else {
+				assert.Nil(t, sysCtx.SysContext.DockerProxyURL, "DockerProxyURL should be nil")
+			}
+
+			// Check registries expectations
+			if tc.expectRegistries {
+				assert.NotEmpty(t, sysCtx.SysContext.SystemRegistriesConfPath, "SystemRegistriesConfPath should not be empty")
+				assert.FileExists(t, sysCtx.SysContext.SystemRegistriesConfPath, "Registries config file should exist")
+			} else {
+				assert.Empty(t, sysCtx.SysContext.SystemRegistriesConfPath, "SystemRegistriesConfPath should be empty")
+			}
+
+			// Cleanup
+			err = sysCtx.Cleanup()
+			require.NoError(t, err, "Cleanup should not fail")
+
+			// Verify cleanup removed the temporal directory if it existed
+			if tc.expectTempDir {
+				assert.NoDirExists(t, sysCtx.temporalDir, "Temporal directory should be removed after cleanup")
+			}
+		})
+	}
+}
+
+func TestSysContextBuilderWithProxy(t *testing.T) {
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "pull-secret",
@@ -187,8 +375,11 @@ func TestNewSysContextFromControllerConfigWithProxy(t *testing.T) {
 				},
 			}
 
-			sysCtx, err := NewSysContextFromControllerConfig(secret, cc)
-			require.NoError(t, err, "NewSysContextFromControllerConfig should not fail")
+			sysCtx, err := NewSysContextBuilder().
+				WithSecret(secret).
+				WithControllerConfig(cc).
+				Build()
+			require.NoError(t, err, "SysContextBuilder.Build should not fail")
 			require.NotNil(t, sysCtx, "SysContext wrapper should not be nil")
 			require.NotNil(t, sysCtx.SysContext, "Underlying SystemContext should not be nil")
 

@@ -37,7 +37,7 @@ func setupSysContext(t *testing.T, cs *framework.ClientSet) *imageutils.SysConte
 	require.NoError(t, err)
 	require.NotNil(t, secret)
 
-	sysContext, err := imageutils.NewSysContextFromControllerConfig(secret, controllerConfig)
+	sysContext, err := imageutils.NewSysContextBuilder().WithSecret(secret).WithControllerConfig(controllerConfig).Build()
 	require.NoError(t, err)
 	require.NotNil(t, sysContext)
 
