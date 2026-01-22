@@ -10,12 +10,10 @@ import (
 
 	"github.com/containers/image/v5/types"
 	imagev1 "github.com/openshift/api/image/v1"
-	v1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/api/machineconfiguration/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/imageutils"
 	"github.com/openshift/machine-config-operator/pkg/version"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
@@ -76,13 +74,12 @@ func (f *DefaultStreamSourceFactory) CreateBootstrapSources(ctx context.Context,
 // BuildOsImageStreamBootstrap builds an OSImageStream for bootstrap using the provided factory.
 func BuildOsImageStreamBootstrap(
 	ctx context.Context,
-	secret *corev1.Secret,
-	controllerConfig *v1.ControllerConfig,
+	sysCtxBuilder *imageutils.SysContextBuilder,
 	imageStream *imagev1.ImageStream,
 	cliImages *OSImageTuple,
 	factory ImageStreamFactory,
 ) (*v1alpha1.OSImageStream, error) {
-	sysCtx, err := imageutils.NewSysContextFromControllerConfig(secret, controllerConfig)
+	sysCtx, err := sysCtxBuilder.Build()
 	if err != nil {
 		return nil, fmt.Errorf("could not prepare for image inspection: %w", err)
 	}
@@ -97,12 +94,11 @@ func BuildOsImageStreamBootstrap(
 // BuildOsImageStreamRuntime builds an OSImageStream for runtime using the provided factory.
 func BuildOsImageStreamRuntime(
 	ctx context.Context,
-	secret *corev1.Secret,
-	controllerConfig *v1.ControllerConfig,
+	sysCtxBuilder *imageutils.SysContextBuilder,
 	releaseImage string,
 	factory ImageStreamFactory,
 ) (*v1alpha1.OSImageStream, error) {
-	sysCtx, err := imageutils.NewSysContextFromControllerConfig(secret, controllerConfig)
+	sysCtx, err := sysCtxBuilder.Build()
 	if err != nil {
 		return nil, fmt.Errorf("could not prepare for image inspection: %w", err)
 	}
