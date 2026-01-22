@@ -48,7 +48,7 @@ func (kc KubeletConfig) waitUntilSuccess(timeout string) {
 func (kc KubeletConfig) waitUntilFailure(expectedMsg, timeout string) {
 	logger.Infof("wait for %s to report failure", kc.name)
 	o.EventuallyWithOffset(1, &kc, timeout, "2s").Should(o.SatisfyAll(
-		HaveConditionField("Failure", "status", "False"),
+		HaveConditionField("Failure", "status", "True"),
 		HaveConditionField("Failure", "message", o.ContainSubstring(expectedMsg)),
 	), "KubeletConfig '%s' should report Failure in status.conditions and report failure message %s. But it doesn't.", kc.GetName(), expectedMsg)
 }
