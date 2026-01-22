@@ -17,6 +17,7 @@ import (
 	configv1alpha1 "github.com/openshift/api/config/v1alpha1"
 	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	_ "github.com/openshift/api/operator/v1alpha1/zz_generated.crd-manifests"
 	featuregatescontroller "github.com/openshift/api/payload-command/render"
@@ -72,6 +73,7 @@ func TestE2EBootstrap(t *testing.T) {
 	configv1.Install(scheme.Scheme)
 	configv1alpha1.Install(scheme.Scheme)
 	mcfgv1.Install(scheme.Scheme)
+	mcfgv1alpha1.Install(scheme.Scheme)
 	apioperatorsv1alpha1.Install(scheme.Scheme)
 
 	baseTestManifests := loadBaseTestManifests(t)
@@ -384,7 +386,6 @@ metadata:
 			// Compare the rendered configs
 			compareRenderedConfigPool(t, clientSet, destDir, "master", controllerRenderedMasterConfigName)
 			compareRenderedConfigPool(t, clientSet, destDir, "worker", controllerRenderedWorkerConfigName)
-
 		})
 	}
 }
@@ -447,14 +448,14 @@ metadata:
 	require.NoError(t, err)
 	t.Logf("Controller rendered worker config as %q", controllerRenderedWorkerConfigName)
 
-	// Verify node sizing enabled file for master
-	verifyNodeSizingEnabled(t, clientSet, controllerRenderedMasterConfigName)
+	// Verify node sizing disabled file for master
+	verifyNodeSizing(t, clientSet, controllerRenderedMasterConfigName, false)
 
 	// Verify node sizing enabled file for worker
-	verifyNodeSizingEnabled(t, clientSet, controllerRenderedWorkerConfigName)
+	verifyNodeSizing(t, clientSet, controllerRenderedWorkerConfigName, true)
 }
 
-func verifyNodeSizingEnabled(t *testing.T, clientSet *framework.ClientSet, renderedConfigName string) {
+func verifyNodeSizing(t *testing.T, clientSet *framework.ClientSet, renderedConfigName string, enabled bool) {
 	controllerMC, err := clientSet.MachineConfigs().Get(context.Background(), renderedConfigName, metav1.GetOptions{})
 	require.NoError(t, err)
 
@@ -472,7 +473,11 @@ func verifyNodeSizingEnabled(t *testing.T, clientSet *framework.ClientSet, rende
 			require.NoError(t, err, "Failed to decode node-sizing-enabled.env file contents")
 
 			contentsStr := string(contents)
-			require.Contains(t, contentsStr, "NODE_SIZING_ENABLED=true", "Expected /etc/node-sizing-enabled.env to contain NODE_SIZING_ENABLED=true in machine config %s", renderedConfigName)
+			if enabled {
+				require.Contains(t, contentsStr, "NODE_SIZING_ENABLED=true", "Expected /etc/node-sizing-enabled.env to contain NODE_SIZING_ENABLED=true in machine config %s", renderedConfigName)
+			} else {
+				require.Contains(t, contentsStr, "NODE_SIZING_ENABLED=false", "Expected /etc/node-sizing-enabled.env to contain NODE_SIZING_ENABLED=false in machine config %s", renderedConfigName)
+			}
 			break
 		}
 	}
@@ -493,6 +498,7 @@ func compareRenderedConfigPool(t *testing.T, clientSet *framework.ClientSet, des
 	require.Nil(t, err)
 	outIgn := ign3types.Config{}
 	err = json.Unmarshal(controllerMC.Spec.Config.Raw, &outIgn)
+	require.NoError(t, err, "failed to unmarshal controller MC ignition config")
 
 	for _, file := range outIgn.Storage.Files {
 		require.False(t, file.Path == "/etc/kubernetes/kubelet-ca.crt")
@@ -687,6 +693,30 @@ func ensureFeatureGate(t *testing.T, clientSet *framework.ClientSet, objs ...run
 	require.NoError(t, err)
 	currentDetails := featuregatescontroller.FeaturesGateDetailsFromFeatureSets(featureGateStatus, controllerConfig.Spec.ReleaseImage)
 
+	// Explicitly disable OSStreams feature. This is because this feature requires a controllerconfig object
+	// with valid RHEL image metadata that is capable of being inspected without needing credentials. Potential possibilites are:
+	// 1. Setup a test image w/ appropriate metadata on a public registry
+	// 2. Mock the image inspector
+	osstreamsfg := configv1.FeatureGateName("OSStreams")
+	newEnabled := []configv1.FeatureGateAttributes{}
+	for _, fg := range currentDetails.Enabled {
+		if fg.Name != osstreamsfg {
+			newEnabled = append(newEnabled, fg)
+		}
+	}
+	currentDetails.Enabled = newEnabled
+	// Add to disabled if not already there
+	found := false
+	for _, fg := range currentDetails.Disabled {
+		if fg.Name == osstreamsfg {
+			found = true
+			break
+		}
+	}
+	if !found {
+		currentDetails.Disabled = append(currentDetails.Disabled, configv1.FeatureGateAttributes{Name: osstreamsfg})
+	}
+
 	rawDetails := *currentDetails
 	rawDetails.Version = version.ReleaseVersion
 
@@ -731,7 +761,7 @@ func loadBaseTestManifests(t *testing.T) []runtime.Object {
 
 func loadRawManifests(t *testing.T, rawObjs [][]byte) []runtime.Object {
 	codecFactory := serializer.NewCodecFactory(scheme.Scheme)
-	decoder := codecFactory.UniversalDecoder(corev1GroupVersion, mcfgv1.GroupVersion, apioperatorsv1alpha1.GroupVersion, configv1alpha1.GroupVersion, configv1.GroupVersion)
+	decoder := codecFactory.UniversalDecoder(corev1GroupVersion, mcfgv1.GroupVersion, mcfgv1alpha1.GroupVersion, apioperatorsv1alpha1.GroupVersion, configv1alpha1.GroupVersion, configv1.GroupVersion)
 
 	objs := []runtime.Object{}
 	for _, raw := range rawObjs {
