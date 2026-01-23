@@ -3,9 +3,8 @@ path: "/etc/nmstate/openshift/default.yml"
 contents:
   inline: |
     capture:
-      default-gw: routes.running.destination=="0.0.0.0/0"
-      # TODO: Select based on description, as set by nodeip-configuration?
-      base-iface: interfaces.name==capture.default-gw.routes.running.0.next-hop-interface
+      # FIXME: This requires primary to be the first altname. Need NMState support to fix.
+      base-iface: interfaces.alt-names.0.name == "primary"
     desiredState:
       interfaces:
       - name: {{`"{{ capture.base-iface.interfaces.0.name }}"`}}

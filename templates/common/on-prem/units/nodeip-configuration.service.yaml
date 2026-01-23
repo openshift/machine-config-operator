@@ -23,6 +23,7 @@ contents: |
     --authfile /var/lib/kubelet/config.json \
     --env 'ENABLE_NODEIP_DEBUG=true' \
     --net=host \
+    --privileged \
     --security-opt label=disable \
     --volume /etc/systemd/system:/etc/systemd/system \
     --volume /run/nodeip-configuration:/run/nodeip-configuration \
