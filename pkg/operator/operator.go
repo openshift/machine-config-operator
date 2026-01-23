@@ -122,6 +122,7 @@ type Operator struct {
 	apiserverLister       configlistersv1.APIServerLister
 	clusterVersionLister  configlistersv1.ClusterVersionLister
 	osImageStreamLister   mcfglistersv1alpha1.OSImageStreamLister
+	iriLister             mcfglistersv1alpha1.InternalReleaseImageLister
 
 	crdListerSynced                  cache.InformerSynced
 	deployListerSynced               cache.InformerSynced
@@ -158,6 +159,7 @@ type Operator struct {
 	moscListerSynced                 cache.InformerSynced
 	apiserverListerSynced            cache.InformerSynced
 	osImageStreamListerSynced        cache.InformerSynced
+	iriListerSynced                  cache.InformerSynced
 
 	// queue only ever has one item, but it has nice error handling backoff/retry semantics
 	queue workqueue.TypedRateLimitingInterface[string]
@@ -216,6 +218,7 @@ func New(
 	moscInformer mcfginformersv1.MachineOSConfigInformer,
 	clusterVersionInformer configinformersv1.ClusterVersionInformer,
 	osImageStreamInformer mcfginformersv1alpha1.OSImageStreamInformer,
+	iriInformer mcfginformersv1alpha1.InternalReleaseImageInformer,
 	ctrlctx *ctrlcommon.ControllerContext,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()
@@ -365,6 +368,10 @@ func New(
 		optr.osImageStreamLister = osImageStreamInformer.Lister()
 		optr.osImageStreamListerSynced = osImageStreamInformer.Informer().HasSynced
 	}
+	if iriInformer != nil {
+		optr.iriLister = iriInformer.Lister()
+		optr.iriListerSynced = iriInformer.Informer().HasSynced
+	}
 
 	optr.vStore.Set("operator", version.ReleaseVersion)
 	optr.vStore.Set("operator-image", version.OperatorImage)
@@ -424,6 +431,9 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 	}
 	if optr.osImageStreamListerSynced != nil && osimagestream.IsFeatureEnabled(optr.fgHandler) {
 		cacheSynced = append(cacheSynced, optr.osImageStreamListerSynced)
+	}
+	if optr.iriListerSynced != nil {
+		cacheSynced = append(cacheSynced, optr.iriListerSynced)
 	}
 	if !cache.WaitForCacheSync(stopCh,
 		cacheSynced...) {
