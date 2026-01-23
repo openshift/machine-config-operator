@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 
+	features "github.com/openshift/api/features"
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -66,6 +67,13 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			klog.Fatal(fmt.Errorf("failed to connect to feature gates %w", fgErr))
 		}
 
+		// Only pass IRI informer when the feature gate is enabled to avoid
+		// watching for a CRD that may not exist
+		var iriInformer = ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().InternalReleaseImages()
+		if !ctrlctx.FeatureGatesHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
+			iriInformer = nil
+		}
+
 		controller := operator.New(
 			ctrlcommon.MCONamespace, componentName,
 			startOpts.imagesFile,
@@ -111,6 +119,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1().MachineOSConfigs(),
 			ctrlctx.ConfigInformerFactory.Config().V1().ClusterVersions(),
 			ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().OSImageStreams(),
+			iriInformer,
 			ctrlctx,
 		)
 
