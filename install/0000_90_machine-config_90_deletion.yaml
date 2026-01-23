@@ -28,3 +28,28 @@ metadata:
     include.release.openshift.io/single-node-developer: "true"
     release.openshift.io/feature-set: Default
     release.openshift.io/delete: "true"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: machine-config-operator
+  namespace: openshift-machine-config-operator
+  annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+    include.release.openshift.io/ibm-cloud-managed: "true"
+    release.openshift.io/feature-set: Default
+    release.openshift.io/delete: "true"
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: machine-config-operator
+  namespace: openshift-machine-config-operator
+  labels:
+    k8s-app: machine-config-operator
+  annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+    release.openshift.io/feature-set: Default
+    release.openshift.io/delete: "true"
