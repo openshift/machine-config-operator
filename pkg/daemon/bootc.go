@@ -150,7 +150,15 @@ type ImageSignature struct {
 
 // bootc.go
 
+// NodeUpdaterInterface provides a common interface for OS update operations
+type NodeUpdaterInterface interface {
+	Initialize() error
+	UpdateOS(imageURL string) error
+	GetBootedImageInfo() (*BootedImageInfo, error)
+}
+
 // BootcClient provides all Bootc related methods in one structure.
+// This structure implements NodeUpdaterInterface
 type BootcClient struct {
 	client Client
 }
@@ -225,4 +233,16 @@ func (b *BootcClient) Switch(imgURL string) error {
 	}
 	klog.Infof("Executing switch to %s", imgURL)
 	return runBootc("switch", imgURL)
+}
+
+// UpdateOS implements NodeUpdaterInterface for bootc-based OS updates
+func (b *BootcClient) UpdateOS(imageURL string) error {
+	return b.Switch(imageURL)
+}
+
+// NewBootcClient creates a new BootcClient
+func NewBootcClient() *BootcClient {
+	return &BootcClient{
+		client: NewClient("machine-config-daemon"),
+	}
 }

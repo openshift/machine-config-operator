@@ -2610,6 +2610,16 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	newURL := config.Spec.OSImageURL
 	klog.Infof("Updating OS to layered image %q", newURL)
 
+	// Check if BootcNodeManagement feature gate is enabled
+	bootcEnabled := dn.fgHandler != nil && dn.fgHandler.Enabled(features.FeatureGateBootcNodeManagement)
+	
+	if bootcEnabled && dn.BootcClient != nil {
+		klog.Info("Using bootc for OS update")
+		return dn.updateLayeredOSWithBootc(config)
+	}
+
+	// Fall back to rpm-ostree path
+	klog.Info("Using rpm-ostree for OS update")
 	newEnough, err := dn.NodeUpdaterClient.IsNewEnoughForLayering()
 	if err != nil {
 		return err
@@ -3047,6 +3057,81 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 
 	// Apply extensions
 	return dn.applyExtensions(oldConfig, newConfig)
+}
+
+// updateLayeredOSWithBootc updates the system OS using bootc when BootcNodeManagement feature gate is enabled
+func (dn *Daemon) updateLayeredOSWithBootc(config *mcfgv1.MachineConfig) error {
+	newURL := config.Spec.OSImageURL
+	klog.Infof("Updating OS with bootc to image %q", newURL)
+
+	// For image mode status reporting we need the node's MCP association to populate its MCN
+	imageModeStatusReportingEnabled := dn.fgHandler != nil && dn.fgHandler.Enabled(features.FeatureGateImageModeStatusReporting)
+	pool := ""
+	var err error
+	if imageModeStatusReportingEnabled {
+		pool, err = helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Report ImagePulledFromRegistry condition as unknown (pulling)
+	if imageModeStatusReportingEnabled {
+		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeImagePulledFromRegistry, Reason: string(mcfgv1.MachineConfigNodeImagePulledFromRegistry), Message: fmt.Sprintf("Pulling OS image %s from registry using bootc", newURL)},
+			nil,
+			metav1.ConditionUnknown,
+			metav1.ConditionUnknown,
+			dn.node,
+			dn.mcfgClient,
+			dn.fgHandler,
+			pool,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to report image pull start: %w", err)
+		}
+	}
+
+	// Perform the bootc switch operation
+	if err := dn.BootcClient.UpdateOS(newURL); err != nil {
+		// Report ImagePulledFromRegistry condition as false (failed)
+		if imageModeStatusReportingEnabled {
+			reportErr := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+				&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeImagePulledFromRegistry, Reason: string(mcfgv1.MachineConfigNodeImagePulledFromRegistry), Message: fmt.Sprintf("Failed to pull OS image %s from registry using bootc: %v", newURL, err)},
+				nil,
+				metav1.ConditionFalse,
+				metav1.ConditionFalse,
+				dn.node,
+				dn.mcfgClient,
+				dn.fgHandler,
+				pool,
+			)
+			if reportErr != nil {
+				klog.Errorf("Failed to report image pull failure: %v", reportErr)
+			}
+		}
+		return fmt.Errorf("failed to update OS with bootc: %s: %w", newURL, err)
+	}
+
+	// Report ImagePulledFromRegistry condition as true (success)
+	if imageModeStatusReportingEnabled {
+		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeImagePulledFromRegistry, Reason: string(mcfgv1.MachineConfigNodeImagePulledFromRegistry), Message: fmt.Sprintf("Successfully pulled OS image %s from registry using bootc", newURL)},
+			nil,
+			metav1.ConditionTrue,
+			metav1.ConditionTrue,
+			dn.node,
+			dn.mcfgClient,
+			dn.fgHandler,
+			pool,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to report image pull success: %w", err)
+		}
+	}
+
+	klog.Infof("Successfully updated OS with bootc to %s", newURL)
+	return nil
 }
 
 // Enables the revert layering systemd unit.
