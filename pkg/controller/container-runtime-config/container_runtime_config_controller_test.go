@@ -30,6 +30,7 @@ import (
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	apicfgv1 "github.com/openshift/api/config/v1"
+	apicfgv1alpha1 "github.com/openshift/api/config/v1alpha1"
 	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
@@ -75,6 +76,7 @@ type fixture struct {
 	itmsLister               []*apicfgv1.ImageTagMirrorSet
 	clusterImagePolicyLister []*apicfgv1.ClusterImagePolicy
 	imagePolicyLister        []*apicfgv1.ImagePolicy
+	criocpLister             []*apicfgv1alpha1.CRIOCredentialProviderConfig
 
 	actions               []core.Action
 	skipActionsValidation bool
@@ -91,7 +93,10 @@ func newFixture(t *testing.T) *fixture {
 	f.t = t
 	f.objects = []runtime.Object{}
 	f.fgHandler = ctrlcommon.NewFeatureGatesHardcodedHandler(
-		[]apicfgv1.FeatureGateName{features.FeatureGateSigstoreImageVerification},
+		[]apicfgv1.FeatureGateName{
+			features.FeatureGateSigstoreImageVerification,
+			features.FeatureGateCRIOCredentialProviderConfig,
+		},
 		[]apicfgv1.FeatureGateName{},
 	)
 	return f
@@ -286,6 +291,7 @@ func (f *fixture) newController() *Controller {
 	c.clusterImagePolicyListerSynced = alwaysReady
 	c.imagePolicyListerSynced = alwaysReady
 	c.clusterVersionListerSynced = alwaysReady
+	c.criocpListerSynced = alwaysReady
 	c.eventRecorder = &record.FakeRecorder{}
 
 	stopCh := make(chan struct{})
@@ -327,6 +333,9 @@ func (f *fixture) newController() *Controller {
 	for _, c := range f.imagePolicyLister {
 		ci.Config().V1().ImagePolicies().Informer().GetIndexer().Add(c)
 	}
+	for _, c := range f.criocpLister {
+		ci.Config().V1alpha1().CRIOCredentialProviderConfigs().Informer().GetIndexer().Add(c)
+	}
 
 	return c
 }
@@ -345,6 +354,10 @@ func (f *fixture) runController(mcpname string, expectError bool) {
 		c.addImagePolicyObservers()
 		c.addedPolicyObservers = true
 	}
+	if !c.addedCRIOCPObservers {
+		c.addCRIOCPObservers()
+		c.addedCRIOCPObservers = true
+	}
 	err := c.syncImgHandler(mcpname)
 	if !expectError && err != nil {
 		f.t.Errorf("error syncing image config: %v", err)
@@ -357,6 +370,13 @@ func (f *fixture) runController(mcpname string, expectError bool) {
 		f.t.Errorf("error syncing containerruntimeconfigs: %v", err)
 	} else if expectError && err == nil {
 		f.t.Error("expected error syncing containerruntimeconfigs, got nil")
+	}
+
+	err = c.syncCRIOCPHandler(mcpname)
+	if !expectError && err != nil {
+		f.t.Errorf("error syncing CRIOCredentialProviderConfigs: %v", err)
+	} else if expectError && err == nil {
+		f.t.Error("expected error syncing CRIOCredentialProviderConfigs, got nil")
 	}
 
 	f.validateActions()
@@ -619,6 +639,56 @@ func verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mc *mcfgv1.Machin
 			t.Errorf("Expected to find namespaced policy JSON files under %s directory in machineconfig %s", constants.CrioPoliciesDir, mcName)
 		}
 		require.Equal(t, expectedNamedpacedPolicyJSONs, gotNamespacedPolicyJSONs)
+	}
+}
+
+func (f *fixture) verifyCRIOCredentialProviderConfigContents(t *testing.T, mcName string, criocp *apicfgv1alpha1.CRIOCredentialProviderConfig) {
+	if len(criocp.Spec.MatchImages) == 0 {
+		return
+	}
+
+	updatedMC, err := f.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), mcName, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	ignCfg, err := ctrlcommon.ParseAndConvertConfig(updatedMC.Spec.Config.Raw)
+	require.NoError(t, err)
+
+	// find any file under /etc/kubernetes/credential-providers and validate it contains the crio provider entry
+	// under the precondition that the criocp.Spec.MatchImages should have at least one entry
+	found := false
+	for _, ffile := range ignCfg.Storage.Files {
+		if !strings.HasPrefix(ffile.Path, constants.KubernetesCredentialProvidersDir) {
+			continue
+		}
+
+		contents, err := ctrlcommon.DecodeIgnitionFileContents(ffile.Contents.Source, ffile.Contents.Compression)
+		require.NoError(t, err)
+
+		credObj, err := credProviderConfigObject(contents)
+		require.NoError(t, err)
+
+		for _, provider := range credObj.Providers {
+			if provider.Name != crioCredentialProviderName {
+				continue
+			}
+
+			allMatch := false
+			for _, mi := range criocp.Spec.MatchImages {
+				if assert.Contains(t, provider.MatchImages, string(mi)) {
+					allMatch = true
+				}
+			}
+
+			found = allMatch
+			break
+		}
+
+		if found {
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("did not find %s provider with expected matchImages in MachineConfig %s", crioCredentialProviderName, mcName)
 	}
 }
 
@@ -2024,5 +2094,132 @@ func TestImagePolicyCreate(t *testing.T) {
 				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfg1, nil, nil, nil, nil, imgPolicy, cc.Spec.ReleaseImage, verifyOpts)
 			}
 		})
+	}
+}
+
+func TestCrioCredentialProviderConfigCreate(t *testing.T) {
+	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType} {
+		t.Run(string(platform), func(t *testing.T) {
+			f := newFixture(t)
+			f.newController()
+
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
+			mcp1 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
+			criocp := newCrioCredentialProviderConfig("cluster", []string{"example.com"})
+
+			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
+			keyCRIOCP, _ := getManagedKeyCRIOCredentialProvider(mcp)
+			keyCRIOCP1, _ := getManagedKeyCRIOCredentialProvider(mcp1)
+
+			mcs := helpers.NewMachineConfig(keyCRIOCP, map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
+			mcs1 := helpers.NewMachineConfig(keyCRIOCP1, map[string]string{"node-role": "worker"}, "dummy://", []ign3types.File{{}})
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mcpLister = append(f.mcpLister, mcp1)
+			f.criocpLister = append(f.criocpLister, criocp)
+			f.cvLister = append(f.cvLister, cvcfg1)
+
+			f.expectGetMachineConfigAction(mcs)
+			f.expectCreateMachineConfigAction(mcs)
+
+			f.expectGetMachineConfigAction(mcs1)
+			f.expectCreateMachineConfigAction(mcs1)
+
+			f.run("")
+
+			f.verifyCRIOCredentialProviderConfigContents(t, mcs.Name, criocp)
+		})
+	}
+}
+
+func TestCrioCredentialProviderConfigUpdate(t *testing.T) {
+	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType} {
+		t.Run(string(platform), func(t *testing.T) {
+			f := newFixture(t)
+			f.newController()
+
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
+			mcp1 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
+			criocp := newCrioCredentialProviderConfig("cluster", []string{"example.com"})
+
+			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
+			keyCRIOCP, _ := getManagedKeyCRIOCredentialProvider(mcp)
+			keyCRIOCP1, _ := getManagedKeyCRIOCredentialProvider(mcp1)
+
+			mcs := helpers.NewMachineConfig(keyCRIOCP, map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
+			mcs1 := helpers.NewMachineConfig(keyCRIOCP1, map[string]string{"node-role": "worker"}, "dummy://", []ign3types.File{{}})
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mcpLister = append(f.mcpLister, mcp1)
+			f.criocpLister = append(f.criocpLister, criocp)
+			f.cvLister = append(f.cvLister, cvcfg1)
+
+			mcsUpdate := mcs.DeepCopy()
+			mcs1Update := mcs1.DeepCopy()
+
+			f.expectGetMachineConfigAction(mcs)
+			f.expectCreateMachineConfigAction(mcs)
+
+			f.expectGetMachineConfigAction(mcs1)
+			f.expectCreateMachineConfigAction(mcs1)
+
+			stopCh := make(chan struct{})
+
+			f.run("")
+
+			f.validateActions()
+			close(stopCh)
+
+			f.verifyCRIOCredentialProviderConfigContents(t, mcs.Name, criocp)
+
+			f = newFixture(t)
+			criocpUpdate := criocp.DeepCopy()
+			criocpUpdate.Spec.MatchImages = []apicfgv1alpha1.MatchImage{"example.com", "example1.com"}
+
+			f.criocpLister = append(f.criocpLister, criocpUpdate)
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mcpLister = append(f.mcpLister, mcp1)
+			f.cvLister = append(f.cvLister, cvcfg1)
+			f.objects = append(f.objects, mcsUpdate, mcs1Update)
+
+			f.expectGetMachineConfigAction(mcsUpdate)
+			f.expectUpdateMachineConfigAction(mcsUpdate)
+
+			f.expectGetMachineConfigAction(mcs1Update)
+			f.expectUpdateMachineConfigAction(mcs1Update)
+
+			stopCh = make(chan struct{})
+
+			f.run("")
+
+			f.validateActions()
+			close(stopCh)
+
+			f.verifyCRIOCredentialProviderConfigContents(t, mcs.Name, criocpUpdate)
+
+		})
+	}
+}
+
+func newCrioCredentialProviderConfig(name string, matchImages []string) *apicfgv1alpha1.CRIOCredentialProviderConfig {
+	var images []apicfgv1alpha1.MatchImage
+	for _, img := range matchImages {
+		images = append(images, apicfgv1alpha1.MatchImage(img))
+	}
+
+	return &apicfgv1alpha1.CRIOCredentialProviderConfig{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: apicfgv1alpha1.SchemeGroupVersion.String(),
+			Kind:       "CrioCredentialProviderConfig",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+		Spec: &apicfgv1alpha1.CRIOCredentialProviderConfigSpec{
+			MatchImages: images,
+		},
 	}
 }
