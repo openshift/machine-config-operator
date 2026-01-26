@@ -18,6 +18,7 @@ import (
 	configv1alpha1 "github.com/openshift/api/config/v1alpha1"
 	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	_ "github.com/openshift/api/operator/v1alpha1/zz_generated.crd-manifests"
 	featuregatescontroller "github.com/openshift/api/payload-command/render"
@@ -79,6 +80,7 @@ func TestE2EBootstrap(t *testing.T) {
 	configv1.Install(scheme.Scheme)
 	configv1alpha1.Install(scheme.Scheme)
 	mcfgv1.Install(scheme.Scheme)
+	mcfgv1alpha1.Install(scheme.Scheme)
 	apioperatorsv1alpha1.Install(scheme.Scheme)
 
 	baseTestManifests := loadBaseTestManifests(t)
@@ -345,19 +347,6 @@ spec:
 			objs := append([]runtime.Object{}, baseTestManifests...)
 			objs = append(objs, loadRawManifests(t, tc.manifests)...)
 
-			ulimitsRawIgnition := []byte(`{"ignition":{"version":"3.2.0"},"storage":{"files":[{"overwrite":true,"path":"/etc/crio/crio.conf.d/01-ctrcfg-defaultUlimits","contents":{"compression":"","source":"data:text/plain;charset=utf-8;base64,W2NyaW9dCiAgW2NyaW8ucnVudGltZV0KICAgIGRlZmF1bHRfcnVudGltZSA9ICJydW5jIgo="},"mode":420}]}}`)
-			masterInheritableMC, err := ctrlcommon.MachineConfigFromRawIgnConfig("master", ulimitsMCMaster, ulimitsRawIgnition)
-			require.NoError(t, err)
-
-			workerInheritableMC, err := ctrlcommon.MachineConfigFromRawIgnConfig("worker", ulimitsMCWorker, ulimitsRawIgnition)
-			require.NoError(t, err)
-
-			_, err = clientSet.MachineConfigs().Create(ctx, masterInheritableMC, metav1.CreateOptions{})
-			require.NoError(t, err)
-
-			_, err = clientSet.MachineConfigs().Create(ctx, workerInheritableMC, metav1.CreateOptions{})
-			require.NoError(t, err)
-
 			// Only add this node config if one doesn't already exist.
 			// If two are present, the latter one will overwrite the former one.
 			if !containsGVK(objs, configv1.SchemeGroupVersion.WithKind("Node")) {
@@ -411,7 +400,6 @@ metadata:
 			// Compare the rendered configs
 			compareRenderedConfigPool(t, clientSet, destDir, "master", controllerRenderedMasterConfigName)
 			compareRenderedConfigPool(t, clientSet, destDir, "worker", controllerRenderedWorkerConfigName)
-
 		})
 	}
 }
@@ -429,6 +417,7 @@ func compareRenderedConfigPool(t *testing.T, clientSet *framework.ClientSet, des
 	require.Nil(t, err)
 	outIgn := ign3types.Config{}
 	err = json.Unmarshal(controllerMC.Spec.Config.Raw, &outIgn)
+	require.NoError(t, err, "failed to unmarshal controller MC ignition config")
 
 	for _, file := range outIgn.Storage.Files {
 		require.False(t, file.Path == "/etc/kubernetes/kubelet-ca.crt")
@@ -666,7 +655,7 @@ func loadBaseTestManifests(t *testing.T) []runtime.Object {
 
 func loadRawManifests(t *testing.T, rawObjs [][]byte) []runtime.Object {
 	codecFactory := serializer.NewCodecFactory(scheme.Scheme)
-	decoder := codecFactory.UniversalDecoder(corev1GroupVersion, mcfgv1.GroupVersion, apioperatorsv1alpha1.GroupVersion, configv1alpha1.GroupVersion, configv1.GroupVersion)
+	decoder := codecFactory.UniversalDecoder(corev1GroupVersion, mcfgv1.GroupVersion, mcfgv1alpha1.GroupVersion, apioperatorsv1alpha1.GroupVersion, configv1alpha1.GroupVersion, configv1.GroupVersion)
 
 	objs := []runtime.Object{}
 	for _, raw := range rawObjs {

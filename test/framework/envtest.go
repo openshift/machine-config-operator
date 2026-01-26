@@ -27,6 +27,7 @@ import (
 
 const (
 	OpenshiftConfigNamespace string = "openshift-config"
+	MCONamespace             string = "openshift-machine-config-operator"
 	//
 	// Although the MCO has been bumped to 1.29.2, openshift-kubebuilder-tools
 	// does not have an archive for that kube version yet. For now, hardcode to match it.
@@ -86,12 +87,8 @@ func setupEnvTest(t *testing.T) (string, error) {
 		os.Setenv("HOME", homeDir)
 	}
 
-	// Use the remote-bucket flag to keep up with openshift/api's divergence
-	// More info:
-	// https://github.com/openshift/api/pull/1774,
-	// https://github.com/openshift/api/blob/master/tools/publish-kubebuilder-tools/README.md#using-the-archives
-	// https://groups.google.com/a/redhat.com/g/aos-devel/c/JXtIlYlFbDA
-	cmd := exec.Command(setupEnvTestBinPath, "use", k8sVersion, "--index", "https://raw.githubusercontent.com/openshift/api/master/envtest-releases.yaml")
+	// Explanation for flags: https://groups.google.com/a/redhat.com/g/aos-devel/c/JXtIlYlFbDA
+	cmd := exec.Command(setupEnvTestBinPath, "use", k8sVersion, "-p", "path", "--index", "https://raw.githubusercontent.com/openshift/api/master/envtest-releases.yaml")
 	t.Log("Setting up EnvTest: $", cmd)
 
 	// We want to consume the path of where setup-envtest installed the
@@ -117,11 +114,9 @@ func NewTestEnv(t *testing.T) *envtest.Environment {
 	return &envtest.Environment{
 		CRDInstallOptions: envtest.CRDInstallOptions{
 			Paths: []string{
-				filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "config", "v1"),
-				filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "operator", "v1alpha1"),
+				filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "operator", "v1", "zz_generated.crd-manifests"),
 				filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "operator", "v1alpha1", "zz_generated.crd-manifests"),
 				filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "config", "v1", "zz_generated.crd-manifests"),
-				filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "config", "v1alpha1", "zz_generated.crd-manifests"),
 				filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "machineconfiguration", "v1", "zz_generated.crd-manifests"),
 				filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "machineconfiguration", "v1alpha1", "zz_generated.crd-manifests"),
 			},
@@ -159,8 +154,7 @@ func CheckCleanEnvironment(t *testing.T, clientSet *ClientSet) {
 
 	mcList, err := clientSet.MachineConfigs().List(ctx, metav1.ListOptions{})
 	require.NoError(t, err)
-	// 2 99-poolname-generated-crio-default-ulimits mc should exist
-	require.Len(t, mcList.Items, 2)
+	require.Len(t, mcList.Items, 0)
 	// ######################################
 	// END: machineconfiguration.openshift.io
 	// ######################################
@@ -183,7 +177,14 @@ func CheckCleanEnvironment(t *testing.T, clientSet *ClientSet) {
 		podList, err := clientSet.Pods(namespaceName).List(ctx, metav1.ListOptions{})
 		require.NoError(t, err)
 		require.Len(t, podList.Items, 0)
+
 	}
+
+	// Check MCO namespace ConfigMaps separately (e.g., crio-default-ulimits marker)
+	// We don't check all namespaces because system ConfigMaps exist in kube-system
+	mcoConfigMapList, err := clientSet.ConfigMaps(MCONamespace).List(ctx, metav1.ListOptions{})
+	require.NoError(t, err)
+	require.Len(t, mcoConfigMapList.Items, 0)
 
 	nodeList, err := clientSet.ConfigV1Interface.Nodes().List(ctx, metav1.ListOptions{})
 	require.NoError(t, err)
@@ -262,6 +263,9 @@ func CleanEnvironment(t *testing.T, clientSet *ClientSet) {
 
 	err = clientSet.MachineConfigs().DeleteCollection(ctx, metav1.DeleteOptions{}, metav1.ListOptions{})
 	require.NoError(t, err)
+
+	err = clientSet.MachineOSConfigs().DeleteCollection(ctx, metav1.DeleteOptions{}, metav1.ListOptions{})
+	require.NoError(t, err)
 	// ######################################
 	// END: machineconfiguration.openshift.io
 	// ######################################
@@ -282,7 +286,13 @@ func CleanEnvironment(t *testing.T, clientSet *ClientSet) {
 
 		err = clientSet.Pods(namespaceName).DeleteCollection(ctx, metav1.DeleteOptions{}, metav1.ListOptions{})
 		require.NoError(t, err)
+
 	}
+
+	// Delete MCO namespace ConfigMaps separately (e.g., crio-default-ulimits marker)
+	// We don't delete from all namespaces because system ConfigMaps exist in kube-system
+	err = clientSet.ConfigMaps(MCONamespace).DeleteCollection(ctx, metav1.DeleteOptions{}, metav1.ListOptions{})
+	require.NoError(t, err)
 
 	err = clientSet.ConfigV1Interface.Nodes().DeleteCollection(ctx, metav1.DeleteOptions{}, metav1.ListOptions{})
 	require.NoError(t, err)
@@ -346,6 +356,9 @@ func CreateObjects(t *testing.T, clientSet *ClientSet, objs ...runtime.Object) {
 			require.NoError(t, err)
 		case *mcfgv1.KubeletConfig:
 			_, err := clientSet.KubeletConfigs().Create(ctx, tObj, metav1.CreateOptions{})
+			require.NoError(t, err)
+		case *mcfgv1.MachineOSConfig:
+			_, err := clientSet.MachineOSConfigs().Create(ctx, tObj, metav1.CreateOptions{})
 			require.NoError(t, err)
 		case *corev1.Secret:
 			_, err := clientSet.Secrets(tObj.GetNamespace()).Create(ctx, tObj, metav1.CreateOptions{})
