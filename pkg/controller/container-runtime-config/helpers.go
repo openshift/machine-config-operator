@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	"github.com/containers/image/v5/docker/reference"
@@ -24,6 +25,7 @@ import (
 	"github.com/ghodss/yaml"
 	"github.com/opencontainers/go-digest"
 	apicfgv1 "github.com/openshift/api/config/v1"
+	apicfgv1alpha1 "github.com/openshift/api/config/v1alpha1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	"github.com/openshift/runtime-utils/pkg/registries"
 	runtimeutils "github.com/openshift/runtime-utils/pkg/registries"
@@ -37,6 +39,8 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	kubeletconfig "k8s.io/kubernetes/pkg/kubelet/apis/config"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -58,6 +62,8 @@ const (
 	crioDropInFilePathAdditionalArtifactStores = "/etc/crio/crio.conf.d/01-ctrcfg-additionalArtifactStores"
 	imagepolicyType                            = "sigstoreSigned"
 	sigstoreRegistriesConfigFilePath           = "/etc/containers/registries.d/sigstore-registries.yaml"
+	crioCredentialProviderName                 = "crio-credential-provider"
+	credentialProviderAPIVersion               = "credentialprovider.kubelet.k8s.io/v1"
 )
 
 var (
@@ -228,6 +234,19 @@ func findPolicyJSON(mc *mcfgv1.MachineConfig) (*ign3types.File, error) {
 	return nil, fmt.Errorf("could not find Policy JSON")
 }
 
+func findCredProviderConfig(mc *mcfgv1.MachineConfig, credProviderConfigPath string) (*ign3types.File, error) {
+	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+	if err != nil {
+		return nil, fmt.Errorf("parsing CRIOCredentialProvider Ignition config failed with error: %w", err)
+	}
+	for _, c := range ignCfg.Storage.Files {
+		if c.Path == credProviderConfigPath {
+			return &c, nil
+		}
+	}
+	return nil, fmt.Errorf("could not find CRIOCredentialProvider Config")
+}
+
 // Deprecated: use getManagedKeyCtrCfg
 func getManagedKeyCtrCfgDeprecated(pool *mcfgv1.MachineConfigPool) string {
 	return fmt.Sprintf("99-%s-%s-containerruntime", pool.Name, pool.ObjectMeta.UID)
@@ -362,6 +381,10 @@ func notLatestContainerRuntimeConfigInPool(ctrcfgList []mcfgv1.ContainerRuntimeC
 		}
 	}
 	return false
+}
+
+func getManagedKeyCRIOCredentialProvider(pool *mcfgv1.MachineConfigPool) (string, error) {
+	return ctrlcommon.GetManagedKey(pool, nil, "97", "credentialproviderconfig", "")
 }
 
 // Deprecated: use getManagedKeyReg
@@ -955,6 +978,15 @@ func ownerReferenceImageConfig(imageConfig *apicfgv1.Image) metav1.OwnerReferenc
 	}
 }
 
+func ownerReferenceCredentialProviderConfig(credentialProviderConfig *apicfgv1alpha1.CRIOCredentialProviderConfig) metav1.OwnerReference {
+	return metav1.OwnerReference{
+		APIVersion: apicfgv1alpha1.SchemeGroupVersion.String(),
+		Kind:       "CRIOCredentialProviderConfig",
+		Name:       credentialProviderConfig.Name,
+		UID:        credentialProviderConfig.UID,
+	}
+}
+
 func policyItemFromSpec(policy apicfgv1.ImageSigstoreVerificationPolicy) (signature.PolicyRequirement, error) {
 	var (
 		sigstorePolicyRequirement signature.PolicyRequirement
@@ -1313,4 +1345,206 @@ func imagePolicyConfigFileList(namespaceJSONs map[string][]byte) []generatedConf
 		})
 	}
 	return namespacedPolicyConfigFileList
+}
+
+func credProviderConfigObject(contents []byte) (*credentialProviderConfigWithVersion, error) {
+	// Unmarshal into custom struct first to handle YAML with omitempty fields
+	credProviderConfigObject := &credentialProviderConfigWithVersion{
+		APIVersion: "kubelet.config.k8s.io/v1",
+		Kind:       "CredentialProviderConfig",
+	}
+	err := yaml.Unmarshal(contents, credProviderConfigObject)
+	if err != nil {
+		return nil, fmt.Errorf("error unmarshalling credential provider config: %w", err)
+	}
+
+	return credProviderConfigObject, nil
+}
+
+// credentialProviderWithTag is a custom struct with omitempty tags to avoid null values in YAML
+type credentialProviderWithTag struct {
+	Name                 string                                  `json:"name"`
+	MatchImages          []string                                `json:"matchImages"`
+	DefaultCacheDuration *metav1.Duration                        `json:"defaultCacheDuration,omitempty"`
+	APIVersion           string                                  `json:"apiVersion"`
+	Args                 []string                                `json:"args,omitempty"`
+	Env                  []kubeletconfig.ExecEnvVar              `json:"env,omitempty"`
+	TokenAttributes      *serviceAccountTokenAttributesVersioned `json:"tokenAttributes,omitempty"`
+}
+
+// serviceAccountTokenAttributesVersioned is a custom struct with omitempty tags to avoid null values in YAML
+type serviceAccountTokenAttributesVersioned struct {
+	ServiceAccountTokenAudience          string                                     `json:"serviceAccountTokenAudience"`
+	CacheType                            kubeletconfig.ServiceAccountTokenCacheType `json:"cacheType"`
+	RequireServiceAccount                *bool                                      `json:"requireServiceAccount"`
+	RequiredServiceAccountAnnotationKeys []string                                   `json:"requiredServiceAccountAnnotationKeys,omitempty"`
+	OptionalServiceAccountAnnotationKeys []string                                   `json:"optionalServiceAccountAnnotationKeys,omitempty"`
+}
+
+type credentialProviderConfigWithVersion struct {
+	APIVersion string                       `json:"apiVersion"`
+	Kind       string                       `json:"kind"`
+	Providers  []*credentialProviderWithTag `json:"providers"`
+}
+
+func updateCredentialProviderConfig(credProviderConfigObject *credentialProviderConfigWithVersion, newImages []apicfgv1alpha1.MatchImage) ([]byte, []string, error) {
+
+	// newImages is not expected to be empty here as the caller should skip calling this function if there are no images
+	var (
+		overlappedEntries = make(map[string]bool)
+		conflictList      []string
+		images            []string
+		matchImages       = make(map[string]bool)
+	)
+
+	crioCredProviderExist := false
+	crioCredProviderIdx := -1
+
+	for i, provider := range credProviderConfigObject.Providers {
+
+		if provider.Name != crioCredentialProviderName {
+			continue
+		}
+
+		crioCredProviderExist = true
+		crioCredProviderIdx = i
+		break
+	}
+
+	for _, newImg := range newImages {
+		img := string(newImg)
+		conflicted := false
+
+		for _, provider := range credProviderConfigObject.Providers {
+			if provider.Name == crioCredentialProviderName {
+				continue
+			}
+			for _, existingImg := range provider.MatchImages {
+				if runtimeutils.ScopeIsNestedInsideScope(img, existingImg) || runtimeutils.ScopeIsNestedInsideScope(existingImg, img) {
+					overlappedEntries[img] = true
+					conflicted = true
+					break
+				}
+			}
+			if conflicted {
+				break
+			}
+		}
+
+		if !conflicted {
+			matchImages[img] = true
+		}
+	}
+
+	for img := range overlappedEntries {
+		conflictList = append(conflictList, img)
+	}
+	sort.Strings(conflictList)
+
+	if len(matchImages) == 0 && len(overlappedEntries) > 0 {
+		return nil, conflictList, nil
+	}
+
+	if len(matchImages) > 0 {
+		for img := range matchImages {
+			images = append(images, img)
+		}
+	} else if len(overlappedEntries) == 0 {
+		// No existing providers to conflict with (e.g. non-cloud platform)
+		for _, img := range newImages {
+			images = append(images, string(img))
+		}
+	}
+	sort.Strings(images)
+
+	if crioCredProviderExist && crioCredProviderIdx != -1 {
+		credProviderConfigObject.Providers[crioCredProviderIdx].MatchImages = images
+	} else {
+		newProvider := &credentialProviderWithTag{
+			Name:                 crioCredentialProviderName,
+			MatchImages:          images,
+			DefaultCacheDuration: &metav1.Duration{Duration: time.Second},
+			APIVersion:           credentialProviderAPIVersion,
+			TokenAttributes: &serviceAccountTokenAttributesVersioned{
+				ServiceAccountTokenAudience: "https://kubernetes.default.svc",
+				RequireServiceAccount:       ptr.To(false),
+				CacheType:                   kubeletconfig.TokenServiceAccountTokenCacheType,
+			},
+		}
+		credProviderConfigObject.Providers = append(credProviderConfigObject.Providers, newProvider)
+	}
+
+	credProviderConfigsYaml, err := yaml.Marshal(credProviderConfigObject)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error marshalling credential provider config: %v", err)
+	}
+
+	return credProviderConfigsYaml, conflictList, nil
+}
+
+// generateDropinUnitCredProviderConfig generates the systemd drop-in unit file content
+// for kubelet credential provider configuration. This configures the kubelet with the
+// image credential provider config path via environment variables.
+func generateDropinUnitCredProviderConfig(genericCredProviderConfigPath string) []byte {
+	credentialProviderBinDirFlag := "--image-credential-provider-bin-dir=/usr/libexec/kubelet-image-credential-provider-plugins"
+	dropInContent := fmt.Sprintf(`[Service]
+# Prepends the credential provider flags to the existing Kubelet arguments
+Environment="KUBELET_CRIO_IMAGE_CREDENTIAL_PROVIDER_FLAGS=%s --image-credential-provider-config=%s"
+`, credentialProviderBinDirFlag, genericCredProviderConfigPath)
+	return []byte(dropInContent)
+}
+
+func wrapErrorWithCRIOCredentialProviderConfigCondition(err error, conditionType, reason string, args ...interface{}) metav1.Condition {
+	message := ""
+	if len(args) >= 1 {
+		if format, ok := args[0].(string); ok {
+			message = format
+			if len(args) > 1 {
+				message = fmt.Sprintf(format, args[1:]...)
+			}
+		}
+	}
+
+	if conditionType == "" {
+		conditionType = apicfgv1alpha1.ConditionTypeMachineConfigRendered
+	}
+
+	if err == nil {
+		if reason == "" {
+			if conditionType == apicfgv1alpha1.ConditionTypeMachineConfigRendered {
+				reason = apicfgv1alpha1.ReasonMachineConfigRenderingSucceeded
+			} else {
+				reason = "Succeeded"
+			}
+		}
+		if message == "" {
+			message = "Success"
+		}
+
+		status := metav1.ConditionTrue
+		if conditionType == apicfgv1alpha1.ConditionTypeValidated && reason == apicfgv1alpha1.ReasonConfigurationPartiallyApplied {
+			status = metav1.ConditionFalse
+		}
+
+		return *apihelpers.NewCondition(
+			conditionType,
+			status,
+			reason,
+			message,
+		)
+	}
+
+	if reason == "" {
+		reason = apicfgv1alpha1.ReasonMachineConfigRenderingFailed
+	}
+	if message == "" {
+		message = fmt.Sprintf("Error: %v", err)
+	}
+
+	return *apihelpers.NewCondition(
+		conditionType,
+		metav1.ConditionFalse,
+		reason,
+		message,
+	)
 }
