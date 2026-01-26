@@ -9,6 +9,7 @@ import (
 	"os"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	"github.com/containers/image/v5/pkg/sysregistriesv2"
@@ -16,6 +17,7 @@ import (
 	"github.com/containers/image/v5/types"
 	storageconfig "github.com/containers/storage/pkg/config"
 	apicfgv1 "github.com/openshift/api/config/v1"
+	apicfgv1alpha1 "github.com/openshift/api/config/v1alpha1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	"github.com/stretchr/testify/assert"
@@ -26,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/diff"
 	"k8s.io/apimachinery/pkg/util/yaml"
+	"k8s.io/utils/ptr"
 )
 
 func TestUpdateRegistriesConfig(t *testing.T) {
@@ -2642,4 +2645,304 @@ func TestWrapErrorWithCondition(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWrapErrorWithCRIOCredentialProviderConfigCondition(t *testing.T) {
+	tests := []struct {
+		name           string
+		err            error
+		conditionType  string
+		reason         string
+		args           []interface{}
+		expectedType   string
+		expectedStatus metav1.ConditionStatus
+		expectedReason string
+		expectedMsg    string
+	}{
+		{
+			name:           "nil error defaults to rendered success",
+			err:            nil,
+			conditionType:  "",
+			reason:         "",
+			args:           nil,
+			expectedType:   apicfgv1alpha1.ConditionTypeMachineConfigRendered,
+			expectedStatus: metav1.ConditionTrue,
+			expectedReason: apicfgv1alpha1.ReasonMachineConfigRenderingSucceeded,
+			expectedMsg:    "Success",
+		},
+		{
+			name:           "validated partial applied returns false status",
+			err:            nil,
+			conditionType:  apicfgv1alpha1.ConditionTypeValidated,
+			reason:         apicfgv1alpha1.ReasonConfigurationPartiallyApplied,
+			args:           []interface{}{"partially applied"},
+			expectedType:   apicfgv1alpha1.ConditionTypeValidated,
+			expectedStatus: metav1.ConditionFalse,
+			expectedReason: apicfgv1alpha1.ReasonConfigurationPartiallyApplied,
+			expectedMsg:    "partially applied",
+		},
+		{
+			name:           "validated success returns true status",
+			err:            nil,
+			conditionType:  apicfgv1alpha1.ConditionTypeValidated,
+			reason:         "",
+			expectedType:   apicfgv1alpha1.ConditionTypeValidated,
+			expectedStatus: metav1.ConditionTrue,
+			expectedReason: "Succeeded",
+			expectedMsg:    "Success",
+		},
+		{
+			name:           "error defaults reason to machine config rendering failed",
+			err:            errors.New("boom"),
+			conditionType:  apicfgv1alpha1.ConditionTypeValidated,
+			reason:         "",
+			args:           nil,
+			expectedType:   apicfgv1alpha1.ConditionTypeValidated,
+			expectedStatus: metav1.ConditionFalse,
+			expectedReason: apicfgv1alpha1.ReasonMachineConfigRenderingFailed,
+			expectedMsg:    "Error: boom",
+		},
+		{
+			name:           "error with explicit reason and message format",
+			err:            errors.New("bad input"),
+			conditionType:  apicfgv1alpha1.ConditionTypeMachineConfigRendered,
+			reason:         apicfgv1alpha1.ReasonValidationFailed,
+			args:           []interface{}{"custom %s", "message"},
+			expectedType:   apicfgv1alpha1.ConditionTypeMachineConfigRendered,
+			expectedStatus: metav1.ConditionFalse,
+			expectedReason: apicfgv1alpha1.ReasonValidationFailed,
+			expectedMsg:    "custom message",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			condition := wrapErrorWithCRIOCredentialProviderConfigCondition(tt.err, tt.conditionType, tt.reason, tt.args...)
+
+			assert.Equal(t, tt.expectedType, condition.Type)
+			assert.Equal(t, tt.expectedStatus, condition.Status)
+			assert.Equal(t, tt.expectedReason, condition.Reason)
+			assert.Equal(t, tt.expectedMsg, condition.Message)
+		})
+	}
+}
+
+func TestUpdateCredentialProviderConfig(t *testing.T) {
+	templateCredProviderConfig := []byte(`apiVersion: kubelet.config.k8s.io/v1
+kind: CredentialProviderConfig
+providers:
+  - name: gcr-credential-provider
+    apiVersion: credentialprovider.kubelet.k8s.io/v1
+    matchImages:
+      - "gcr.io"
+      - "*.gcr.io"
+      - "*.pkg.dev"
+      - "container.cloud.google.com"
+    defaultCacheDuration: "1m"
+    args:
+      - get-credentials
+      - --v=3
+`)
+
+	templateCredProviderConfigWithCRIOProvider := []byte(`apiVersion: kubelet.config.k8s.io/v1
+kind: CredentialProviderConfig
+providers:
+  - name: gcr-credential-provider
+    apiVersion: credentialprovider.kubelet.k8s.io/v1
+    matchImages:
+      - "gcr.io"
+      - "*.gcr.io"
+      - "*.pkg.dev"
+      - "container.cloud.google.com"
+    defaultCacheDuration: "1m"
+    args:
+      - get-credentials
+      - --v=3
+  - name: crio-credential-provider
+    matchImages:
+      - "docker.io"
+      - "*.example.io"
+      - "quay.io"
+      - "registry.example.com:5000"
+    defaultCacheDuration: "1s"
+    apiVersion: credentialprovider.kubelet.k8s.io/v1
+    tokenAttributes:
+      serviceAccountTokenAudience: https://kubernetes.default.svc
+      cacheType: "Token" 
+      requireServiceAccount: false  
+`)
+
+	tests := []struct {
+		name                    string
+		matchImages             []string
+		templateConfig          []byte
+		expectError             bool
+		expectOverlappedEntries []string
+		expectedConfig          *credentialProviderConfigWithVersion
+	}{
+		{
+			name:           "add crio-credential-provider when template config is nil",
+			matchImages:    []string{"myhost.com", "quay.io"},
+			templateConfig: nil,
+			expectedConfig: &credentialProviderConfigWithVersion{
+				APIVersion: "kubelet.config.k8s.io/v1",
+				Kind:       "CredentialProviderConfig",
+				Providers: []*credentialProviderWithTag{
+					{
+						Name:                 "crio-credential-provider",
+						MatchImages:          []string{"myhost.com", "quay.io"},
+						APIVersion:           "credentialprovider.kubelet.k8s.io/v1",
+						DefaultCacheDuration: &metav1.Duration{Duration: time.Second},
+						TokenAttributes: &serviceAccountTokenAttributesVersioned{
+							ServiceAccountTokenAudience: "https://kubernetes.default.svc",
+							CacheType:                   "Token",
+							RequireServiceAccount:       ptr.To(false),
+						},
+					},
+				},
+			},
+		},
+		{
+			name:           "add crio-credential-provider when not present",
+			matchImages:    []string{"myhost.com", "quay.io"},
+			templateConfig: templateCredProviderConfig,
+			expectedConfig: &credentialProviderConfigWithVersion{
+				APIVersion: "kubelet.config.k8s.io/v1",
+				Kind:       "CredentialProviderConfig",
+				Providers: []*credentialProviderWithTag{
+					{
+						Name:                 "gcr-credential-provider",
+						APIVersion:           "credentialprovider.kubelet.k8s.io/v1",
+						MatchImages:          []string{"gcr.io", "*.gcr.io", "*.pkg.dev", "container.cloud.google.com"},
+						DefaultCacheDuration: &metav1.Duration{Duration: time.Minute},
+						Args:                 []string{"get-credentials", "--v=3"},
+					},
+					{
+						Name:                 "crio-credential-provider",
+						MatchImages:          []string{"myhost.com", "quay.io"},
+						APIVersion:           "credentialprovider.kubelet.k8s.io/v1",
+						DefaultCacheDuration: &metav1.Duration{Duration: time.Second},
+						TokenAttributes: &serviceAccountTokenAttributesVersioned{
+							ServiceAccountTokenAudience: "https://kubernetes.default.svc",
+							CacheType:                   "Token",
+							RequireServiceAccount:       ptr.To(false),
+						},
+					},
+				},
+			},
+		},
+		{
+			name:           "crio-credential-provider already present",
+			matchImages:    []string{"myhost.com"},
+			templateConfig: templateCredProviderConfigWithCRIOProvider,
+			expectedConfig: &credentialProviderConfigWithVersion{
+				APIVersion: "kubelet.config.k8s.io/v1",
+				Kind:       "CredentialProviderConfig",
+				Providers: []*credentialProviderWithTag{
+					{
+						Name:                 "gcr-credential-provider",
+						APIVersion:           "credentialprovider.kubelet.k8s.io/v1",
+						MatchImages:          []string{"gcr.io", "*.gcr.io", "*.pkg.dev", "container.cloud.google.com"},
+						DefaultCacheDuration: &metav1.Duration{Duration: time.Minute},
+						Args:                 []string{"get-credentials", "--v=3"},
+					},
+					{
+						Name:                 "crio-credential-provider",
+						MatchImages:          []string{"myhost.com"},
+						APIVersion:           "credentialprovider.kubelet.k8s.io/v1",
+						DefaultCacheDuration: &metav1.Duration{Duration: time.Second},
+						TokenAttributes: &serviceAccountTokenAttributesVersioned{
+							ServiceAccountTokenAudience: "https://kubernetes.default.svc",
+							CacheType:                   "Token",
+							RequireServiceAccount:       ptr.To(false),
+						},
+					},
+				},
+			},
+		},
+
+		{
+			name:           "all matchImages overlap with existing provider - returns nil",
+			matchImages:    []string{"gcr.io", "*.cloud.google.com", "*.gcr.io", "*.pkg.dev"},
+			templateConfig: templateCredProviderConfig,
+			expectOverlappedEntries: []string{
+				"*.cloud.google.com",
+				"*.gcr.io",
+				"*.pkg.dev",
+				"gcr.io",
+			},
+			// When all matchImages overlap, updatedConfigBytes is nil
+			// This is equivalent to not calling updateCredentialProviderConfig at all
+			expectedConfig: nil,
+		},
+		{
+			name:           "overlapping matchImages with existing provider",
+			matchImages:    []string{"gcr.io", "myhost.com", "*.cloud.google.com", "quay.io"},
+			templateConfig: templateCredProviderConfig,
+			expectOverlappedEntries: []string{
+				"*.cloud.google.com",
+				"gcr.io",
+			},
+			expectedConfig: &credentialProviderConfigWithVersion{
+				APIVersion: "kubelet.config.k8s.io/v1",
+				Kind:       "CredentialProviderConfig",
+				Providers: []*credentialProviderWithTag{
+					{
+						Name:                 "gcr-credential-provider",
+						APIVersion:           "credentialprovider.kubelet.k8s.io/v1",
+						MatchImages:          []string{"gcr.io", "*.gcr.io", "*.pkg.dev", "container.cloud.google.com"},
+						DefaultCacheDuration: &metav1.Duration{Duration: time.Minute},
+						Args:                 []string{"get-credentials", "--v=3"},
+					},
+					{
+						Name:                 "crio-credential-provider",
+						MatchImages:          []string{"myhost.com", "quay.io"},
+						APIVersion:           "credentialprovider.kubelet.k8s.io/v1",
+						DefaultCacheDuration: &metav1.Duration{Duration: time.Second},
+						TokenAttributes: &serviceAccountTokenAttributesVersioned{
+							ServiceAccountTokenAudience: "https://kubernetes.default.svc",
+							CacheType:                   "Token",
+							RequireServiceAccount:       ptr.To(false),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+
+			var testImages []apicfgv1alpha1.MatchImage
+			for _, img := range tt.matchImages {
+				testImages = append(testImages, apicfgv1alpha1.MatchImage(img))
+			}
+
+			credProviderConfigObject, err := credProviderConfigObject(tt.templateConfig)
+			require.NoError(t, err)
+			require.NotNil(t, credProviderConfigObject)
+			updatedConfigBytes, overlappedEntries, err := updateCredentialProviderConfig(credProviderConfigObject, testImages)
+			if tt.expectError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			if len(tt.expectOverlappedEntries) > 0 {
+				require.Equal(t, tt.expectOverlappedEntries, overlappedEntries, "expected overlapped entries")
+			} else {
+				require.Empty(t, overlappedEntries, "expected no overlapped entries")
+			}
+
+			if tt.expectedConfig == nil {
+				// When all matchImages overlap, updatedConfigBytes should be nil
+				require.Nil(t, updatedConfigBytes, "expected nil config when all matchImages overlap")
+			} else {
+				var gotConfig credentialProviderConfigWithVersion
+				err = yaml.Unmarshal(updatedConfigBytes, &gotConfig)
+				require.NoError(t, err)
+				assert.Equal(t, tt.expectedConfig, &gotConfig)
+			}
+		})
+	}
+
 }
