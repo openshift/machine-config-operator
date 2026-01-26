@@ -398,7 +398,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		)
 
 		for _, tc := range testConfigs {
-			logger.Infof(tc.description)
+			logger.Infof("%s", tc.description)
 			testMachineConfigurationStatusUpdate(machineConfiguration, tc.patchConfig)
 		}
 	})

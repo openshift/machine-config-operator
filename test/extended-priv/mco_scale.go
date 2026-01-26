@@ -218,7 +218,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			if len(errors) != 0 {
 				logger.Infof("There were errors restoring the original MachineSet resources in the cluster")
 				for _, e := range errors {
-					logger.Errorf(e)
+					logger.Errorf("%v", e)
 				}
 			}
 
@@ -698,7 +698,7 @@ func SimpleScaleUPTest(oc *exutil.CLI, mcp *MachineConfigPool, imageVersion, ign
 		if len(errors) != 0 {
 			logger.Infof("There were errors restoring the original MachineSet resources in the cluster")
 			for _, e := range errors {
-				logger.Errorf(e)
+				logger.Errorf("%v", e)
 			}
 		}
 

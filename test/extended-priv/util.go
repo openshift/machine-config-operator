@@ -728,7 +728,7 @@ func RotateMCSCertificates(oc *exutil.CLI) error {
 	logger.Infof("RUN: %s", command)
 	stdout, err := master.DebugNodeWithChroot(strings.Split(command, " ")...)
 
-	logger.Infof(stdout)
+	logger.Infof("%v", stdout)
 
 	return err
 }
