@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"time"
 
@@ -235,9 +236,44 @@ func (b *BootcClient) Switch(imgURL string) error {
 	return runBootc("switch", imgURL)
 }
 
+// SwitchViaSystemdRun executes bootc switch using systemd-run to ensure it runs in host context
+// This is similar to InplaceUpdateViaNewContainer but for bootc operations
+func (b *BootcClient) SwitchViaSystemdRun(imgURL string) error {
+	// Try to re-link the merged pull secrets if they exist, since it could have been populated without a daemon reboot
+	if err := useMergedPullSecrets(bootcSystem); err != nil {
+		return fmt.Errorf("Error while ensuring access to pull secrets: %w", err)
+	}
+
+	klog.Infof("Executing bootc switch via systemd-run to %s", imgURL)
+	
+	// Use systemd-run to execute bootc switch in host context
+	// This mirrors the pattern used in InplaceUpdateViaNewContainer
+	systemdArgs := []string{
+		"--unit", "machine-config-daemon-bootc-switch", 
+		"-p", "EnvironmentFile=-/etc/mco/proxy.env", 
+		"--collect", "--wait", "--", 
+		"bootc", "switch", imgURL,
+	}
+	
+	return runCmdSync("systemd-run", systemdArgs...)
+}
+
 // UpdateOS implements NodeUpdaterInterface for bootc-based OS updates
+// This method handles the "Detected container; this command requires a booted host system" error
+// by detecting the execution context and using the appropriate invocation method.
 func (b *BootcClient) UpdateOS(imageURL string) error {
-	return b.Switch(imageURL)
+	// Check if MCD has re-executed itself in host context
+	// This environment variable is set by ReexecuteForTargetRoot
+	if _, inHostContext := os.LookupEnv("_MCD_DID_REEXEC"); inHostContext {
+		// We're running in host context, use direct bootc switch
+		klog.Info("Running bootc switch in host context")
+		return b.Switch(imageURL)
+	}
+	
+	// We're running in container context, use systemd-run to execute in host context
+	// This avoids the "Detected container" error by running bootc on the host via systemd-run
+	klog.Info("Running bootc switch via systemd-run from container context")
+	return b.SwitchViaSystemdRun(imageURL)
 }
 
 // NewBootcClient creates a new BootcClient

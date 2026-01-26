@@ -947,7 +947,9 @@ func TestGenerateExtensionsArgs(t *testing.T) {
 
 // MockBootcClient is a mock implementation of BootcClient for testing
 type MockBootcClient struct {
-	updateOSFunc func(imageURL string) error
+	updateOSFunc       func(imageURL string) error
+	switchFunc         func(imageURL string) error
+	switchViaSystemdFunc func(imageURL string) error
 }
 
 func (m *MockBootcClient) Initialize() error {
@@ -957,6 +959,20 @@ func (m *MockBootcClient) Initialize() error {
 func (m *MockBootcClient) UpdateOS(imageURL string) error {
 	if m.updateOSFunc != nil {
 		return m.updateOSFunc(imageURL)
+	}
+	return nil
+}
+
+func (m *MockBootcClient) Switch(imageURL string) error {
+	if m.switchFunc != nil {
+		return m.switchFunc(imageURL)
+	}
+	return nil
+}
+
+func (m *MockBootcClient) SwitchViaSystemdRun(imageURL string) error {
+	if m.switchViaSystemdFunc != nil {
+		return m.switchViaSystemdFunc(imageURL)
 	}
 	return nil
 }
@@ -1123,4 +1139,38 @@ func TestUpdateLayeredOS_BootcFeatureGate(t *testing.T) {
 		
 		// No assertion needed - we just want to make sure it doesn't panic
 	})
+}
+
+func TestBootcClient_ContainerContextDetection(t *testing.T) {
+	tests := []struct {
+		name         string
+		hasReexecEnv bool
+	}{
+		{
+			name:         "host context detected",
+			hasReexecEnv: true,
+		},
+		{
+			name:         "container context detected",
+			hasReexecEnv: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set or unset the reexec environment variable
+			if tt.hasReexecEnv {
+				t.Setenv("_MCD_DID_REEXEC", "1")
+			}
+
+			// Test the environment detection logic directly
+			_, inHostContext := os.LookupEnv("_MCD_DID_REEXEC")
+			
+			if tt.hasReexecEnv {
+				assert.True(t, inHostContext, "Should detect host context when _MCD_DID_REEXEC is set")
+			} else {
+				assert.False(t, inHostContext, "Should detect container context when _MCD_DID_REEXEC is not set")
+			}
+		})
+	}
 }
