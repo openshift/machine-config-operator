@@ -736,7 +736,7 @@ func streamContainerLogToFile(ctx context.Context, t *testing.T, cs *framework.C
 			if err != nil {
 				// If the container is waiting to start (e.g., PodInitializing), wait and retry
 				if strings.Contains(err.Error(), "waiting to start") || strings.Contains(err.Error(), "PodInitializing") {
-					time.Sleep(2 * time.Second)
+					time.Sleep(5 * time.Second)
 					continue
 				}
 				return fmt.Errorf("could not get logs for container %s in pod %s: %w", container.Name, pod.Name, err)
