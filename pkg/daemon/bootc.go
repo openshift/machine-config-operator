@@ -236,26 +236,60 @@ func (b *BootcClient) Switch(imgURL string) error {
 	return runBootc("switch", imgURL)
 }
 
-// SwitchViaSystemdRun executes bootc switch using systemd-run to ensure it runs in host context
-// This is similar to InplaceUpdateViaNewContainer but for bootc operations
-func (b *BootcClient) SwitchViaSystemdRun(imgURL string) error {
+// SwitchViaPrivilegedContainer executes bootc switch using a privileged container
+// This mirrors the InplaceUpdateViaNewContainer approach for rpm-ostree
+func (b *BootcClient) SwitchViaPrivilegedContainer(imgURL string) error {
 	// Try to re-link the merged pull secrets if they exist, since it could have been populated without a daemon reboot
 	if err := useMergedPullSecrets(bootcSystem); err != nil {
 		return fmt.Errorf("Error while ensuring access to pull secrets: %w", err)
 	}
 
-	klog.Infof("Executing bootc switch via systemd-run to %s", imgURL)
+	// Get the currently booted OS image to use as the container image for running bootc
+	// We need to run bootc from a container that has the bootc binary available
+	var bootcContainerImage string
+	bootedImageInfo, err := b.GetBootedImageInfo()
+	if err != nil {
+		klog.Warningf("Failed to get booted image info for bootc container: %v, falling back to target image", err)
+		// Fall back to using the target image if we can't get the booted image
+		bootcContainerImage = imgURL
+		klog.Infof("Using target image as bootc container: %s", bootcContainerImage)
+	} else {
+		bootcContainerImage = bootedImageInfo.OSImageURL
+		if bootcContainerImage == "" {
+			klog.Warning("No booted OS image URL available, using target image as bootc container")
+			bootcContainerImage = imgURL
+		}
+		klog.Infof("Using booted OS image as bootc container: %s", bootcContainerImage)
+	}
+
+	klog.Infof("Executing bootc switch via privileged container (using %s) to switch to %s", bootcContainerImage, imgURL)
 	
-	// Use systemd-run to execute bootc switch in host context
-	// This mirrors the pattern used in InplaceUpdateViaNewContainer
-	systemdArgs := []string{
+	// Use systemd-run to execute bootc switch in a privileged container with full host access
+	// This mirrors the pattern used in InplaceUpdateViaNewContainer for rpm-ostree
+	systemdPodmanArgs := []string{
 		"--unit", "machine-config-daemon-bootc-switch", 
 		"-p", "EnvironmentFile=-/etc/mco/proxy.env", 
 		"--collect", "--wait", "--", 
-		"bootc", "switch", imgURL,
+		"podman",
 	}
 	
-	return runCmdSync("systemd-run", systemdArgs...)
+	// Run bootc switch in a privileged container with full host access
+	// We use the currently booted OS image as the container since it should have bootc available
+	// This should avoid the "Detected container" error by giving bootc access to the host system
+	runArgs := append([]string{}, systemdPodmanArgs...)
+	runArgs = append(runArgs, "run", 
+		"--env-file", "/etc/mco/proxy.env",
+		"--privileged", 
+		"--pid=host", 
+		"--net=host", 
+		"--rm",
+		"-v", "/:/run/host",
+		"--authfile", "/var/lib/kubelet/config.json",
+		bootcContainerImage, // Use the currently booted OS image as the container to run bootc from
+		"bootc", "switch", imgURL)
+	
+	klog.Infof("Running systemd-run command: %s %v", "systemd-run", runArgs)
+	return runCmdSync("systemd-run", runArgs...)
 }
 
 // UpdateOS implements NodeUpdaterInterface for bootc-based OS updates
@@ -270,10 +304,10 @@ func (b *BootcClient) UpdateOS(imageURL string) error {
 		return b.Switch(imageURL)
 	}
 	
-	// We're running in container context, use systemd-run to execute in host context
-	// This avoids the "Detected container" error by running bootc on the host via systemd-run
-	klog.Info("Running bootc switch via systemd-run from container context")
-	return b.SwitchViaSystemdRun(imageURL)
+	// We're running in container context, use privileged container to execute with host access
+	// This avoids the "Detected container" error by running bootc in a privileged container with full host access
+	klog.Info("Running bootc switch via privileged container from container context")
+	return b.SwitchViaPrivilegedContainer(imageURL)
 }
 
 // NewBootcClient creates a new BootcClient

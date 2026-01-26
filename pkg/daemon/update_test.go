@@ -947,9 +947,9 @@ func TestGenerateExtensionsArgs(t *testing.T) {
 
 // MockBootcClient is a mock implementation of BootcClient for testing
 type MockBootcClient struct {
-	updateOSFunc       func(imageURL string) error
-	switchFunc         func(imageURL string) error
-	switchViaSystemdFunc func(imageURL string) error
+	updateOSFunc               func(imageURL string) error
+	switchFunc                 func(imageURL string) error
+	switchViaPrivilegedFunc    func(imageURL string) error
 }
 
 func (m *MockBootcClient) Initialize() error {
@@ -970,9 +970,9 @@ func (m *MockBootcClient) Switch(imageURL string) error {
 	return nil
 }
 
-func (m *MockBootcClient) SwitchViaSystemdRun(imageURL string) error {
-	if m.switchViaSystemdFunc != nil {
-		return m.switchViaSystemdFunc(imageURL)
+func (m *MockBootcClient) SwitchViaPrivilegedContainer(imageURL string) error {
+	if m.switchViaPrivilegedFunc != nil {
+		return m.switchViaPrivilegedFunc(imageURL)
 	}
 	return nil
 }
