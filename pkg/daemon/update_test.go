@@ -950,6 +950,7 @@ type MockBootcClient struct {
 	updateOSFunc               func(imageURL string) error
 	switchFunc                 func(imageURL string) error
 	switchViaPrivilegedFunc    func(imageURL string) error
+	switchViaHostNamespacesFunc func(imageURL string) error
 }
 
 func (m *MockBootcClient) Initialize() error {
@@ -973,6 +974,13 @@ func (m *MockBootcClient) Switch(imageURL string) error {
 func (m *MockBootcClient) SwitchViaPrivilegedContainer(imageURL string) error {
 	if m.switchViaPrivilegedFunc != nil {
 		return m.switchViaPrivilegedFunc(imageURL)
+	}
+	return nil
+}
+
+func (m *MockBootcClient) SwitchViaHostNamespaces(imageURL string) error {
+	if m.switchViaHostNamespacesFunc != nil {
+		return m.switchViaHostNamespacesFunc(imageURL)
 	}
 	return nil
 }
