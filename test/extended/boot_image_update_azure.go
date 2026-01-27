@@ -6,13 +6,12 @@ import (
 	"path/filepath"
 	"time"
 
-	osconfigv1 "github.com/openshift/api/config/v1"
-	machineclient "github.com/openshift/client-go/machine/clientset/versioned"
-
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
+	osconfigv1 "github.com/openshift/api/config/v1"
+	machineclient "github.com/openshift/client-go/machine/clientset/versioned"
+	extpriv "github.com/openshift/machine-config-operator/test/extended-priv"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/kubernetes/test/e2e/framework"
 )
@@ -31,11 +30,11 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 	g.BeforeEach(func() {
 		// Skip this test if not on Azure platform
-		skipUnlessTargetPlatform(oc, osconfigv1.AzurePlatformType)
+		extpriv.SkipUnlessTargetPlatform(oc, osconfigv1.AzurePlatformType)
 		// Skip this test if the cluster is not using MachineAPI
 		skipUnlessFunctionalMachineAPI(oc)
 		// Skip this test on single node platforms
-		skipOnSingleNodeTopology(oc)
+		extpriv.SkipOnSingleNodeTopology(oc)
 	})
 
 	g.AfterEach(func() {
@@ -73,7 +72,7 @@ func AzureLegacyBootImageTest(oc *exutil.CLI, fixture string) {
 	// Pick a random machineset to test
 	machineClient, err := machineclient.NewForConfig(oc.KubeFramework().ClientConfig())
 	o.Expect(err).NotTo(o.HaveOccurred())
-	machineSetUnderTest := getRandomMachineSet(machineClient)
+	machineSetUnderTest := extpriv.GetRandomMachineSet(machineClient)
 	framework.Logf("MachineSet under test: %s", machineSetUnderTest.Name)
 
 	// Label this machineset with the test=boot label

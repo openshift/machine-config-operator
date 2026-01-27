@@ -4,11 +4,10 @@ import (
 	"context"
 	"time"
 
-	machineclient "github.com/openshift/client-go/machine/clientset/versioned"
-	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
-
 	o "github.com/onsi/gomega"
-
+	machineclient "github.com/openshift/client-go/machine/clientset/versioned"
+	extpriv "github.com/openshift/machine-config-operator/test/extended-priv"
+	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/kubernetes/test/e2e/framework"
 )
@@ -36,7 +35,7 @@ func PartialMachineSetTest(oc *exutil.CLI, fixture string) {
 	// Pick a random machineset to test
 	machineClient, err := machineclient.NewForConfig(oc.KubeFramework().ClientConfig())
 	o.Expect(err).NotTo(o.HaveOccurred())
-	machineSetUnderTest := getRandomMachineSet(machineClient)
+	machineSetUnderTest := extpriv.GetRandomMachineSet(machineClient)
 	framework.Logf("MachineSet under test: %s", machineSetUnderTest.Name)
 
 	// Label this machineset with the test=boot label
