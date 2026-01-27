@@ -112,6 +112,14 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			klog.Fatalf("unable to start cert rotation controller: %v", err)
 		}
 
+		pinnedImageSet := pinnedimageset.New(
+			ctrlctx.InformerFactory.Machineconfiguration().V1().PinnedImageSets(),
+			ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
+			ctrlctx.ClientBuilder.KubeClientOrDie("pinned-image-set-controller"),
+			ctrlctx.ClientBuilder.MachineConfigClientOrDie("pinned-image-set-controller"),
+		)
+		go pinnedImageSet.Run(2, ctrlctx.Stop)
+
 		// Start the shared factory informers that you need to use in your controller
 		ctrlctx.InformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.KubeInformerFactory.Start(ctrlctx.Stop)
@@ -123,20 +131,6 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		ctrlctx.OCLInformerFactory.Start(ctrlctx.Stop)
 
 		close(ctrlctx.InformersStarted)
-
-		if ctrlctx.FeatureGatesHandler.Enabled(features.FeatureGatePinnedImages) && ctrlctx.FeatureGatesHandler.Enabled(features.FeatureGateMachineConfigNodes) {
-			pinnedImageSet := pinnedimageset.New(
-				ctrlctx.InformerFactory.Machineconfiguration().V1().PinnedImageSets(),
-				ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
-				ctrlctx.ClientBuilder.KubeClientOrDie("pinned-image-set-controller"),
-				ctrlctx.ClientBuilder.MachineConfigClientOrDie("pinned-image-set-controller"),
-			)
-
-			go pinnedImageSet.Run(2, ctrlctx.Stop)
-			// start the informers again to enable feature gated types.
-			// see comments in SharedInformerFactory interface.
-			ctrlctx.InformerFactory.Start(ctrlctx.Stop)
-		}
 
 		if ctrlctx.FeatureGatesHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
 			iriController := internalreleaseimage.New(

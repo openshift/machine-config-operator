@@ -97,10 +97,6 @@ func generateAndApplyMachineConfigNodes(
 		return nil
 	}
 
-	if !fgHandler.Enabled(features.FeatureGateMachineConfigNodes) {
-		return nil
-	}
-
 	// get the existing MCN, or if it DNE create one below
 	mcNode, needNewMCNode := createOrGetMachineConfigNode(mcfgClient, node)
 	newMCNode := mcNode.DeepCopy()
@@ -128,9 +124,9 @@ func generateAndApplyMachineConfigNodes(
 	}
 
 	// singleton conditions are conditions that should only have one instance (no children) in the MCN status.
-	var singletonConditionTypes []mcfgv1.StateProgress
-	if fgHandler.Enabled(features.FeatureGatePinnedImages) {
-		singletonConditionTypes = append(singletonConditionTypes, mcfgv1.MachineConfigNodePinnedImageSetsDegraded, mcfgv1.MachineConfigNodePinnedImageSetsProgressing)
+	singletonConditionTypes := []mcfgv1.StateProgress{
+		mcfgv1.MachineConfigNodePinnedImageSetsDegraded,
+		mcfgv1.MachineConfigNodePinnedImageSetsProgressing,
 	}
 
 	// we use this array to see if the MCN has all of its conditions set
@@ -311,29 +307,27 @@ func generateAndApplyMachineConfigNodes(
 			statusApplyConfig = statusApplyConfig.WithConfigImage(configImageApplyConfig)
 		}
 
-		if fgHandler.Enabled(features.FeatureGatePinnedImages) {
-			if imageSetApplyConfig == nil {
-				for _, imageSet := range newMCNode.Status.PinnedImageSets {
-					// By default, a PinnedImageSet reference must include the name of the PIS and the desired generation
-					pisApplyConfig := &machineconfigurationv1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration{
-						DesiredGeneration: ptr.To(imageSet.DesiredGeneration),
-						Name:              ptr.To(imageSet.Name),
-					}
-					// Only set `CurrentGeneration` value when we are currently on a valid generation (imageSet.CurrentGeneration value is non-0)
-					if imageSet.CurrentGeneration != 0 {
-						pisApplyConfig.CurrentGeneration = ptr.To(imageSet.CurrentGeneration)
-					}
-					// Only set `LastFailedGeneration` value when it is a non-default (non-0) value
-					if imageSet.LastFailedGeneration != 0 {
-						pisApplyConfig.LastFailedGeneration = ptr.To(imageSet.LastFailedGeneration)
-						pisApplyConfig.LastFailedGenerationError = ptr.To(imageSet.LastFailedGenerationError)
-					}
-
-					statusApplyConfig = statusApplyConfig.WithPinnedImageSets(pisApplyConfig)
+		if imageSetApplyConfig == nil {
+			for _, imageSet := range newMCNode.Status.PinnedImageSets {
+				// By default, a PinnedImageSet reference must include the name of the PIS and the desired generation
+				pisApplyConfig := &machineconfigurationv1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration{
+					DesiredGeneration: ptr.To(imageSet.DesiredGeneration),
+					Name:              ptr.To(imageSet.Name),
 				}
-			} else if len(imageSetApplyConfig) > 0 {
-				statusApplyConfig = statusApplyConfig.WithPinnedImageSets(imageSetApplyConfig...)
+				// Only set `CurrentGeneration` value when we are currently on a valid generation (imageSet.CurrentGeneration value is non-0)
+				if imageSet.CurrentGeneration != 0 {
+					pisApplyConfig.CurrentGeneration = ptr.To(imageSet.CurrentGeneration)
+				}
+				// Only set `LastFailedGeneration` value when it is a non-default (non-0) value
+				if imageSet.LastFailedGeneration != 0 {
+					pisApplyConfig.LastFailedGeneration = ptr.To(imageSet.LastFailedGeneration)
+					pisApplyConfig.LastFailedGenerationError = ptr.To(imageSet.LastFailedGenerationError)
+				}
+
+				statusApplyConfig = statusApplyConfig.WithPinnedImageSets(pisApplyConfig)
 			}
+		} else if len(imageSetApplyConfig) > 0 {
+			statusApplyConfig = statusApplyConfig.WithPinnedImageSets(imageSetApplyConfig...)
 		}
 
 		mcnodeApplyConfig := machineconfigurationv1.MachineConfigNode(newMCNode.Name).WithStatus(statusApplyConfig)
@@ -391,12 +385,6 @@ func UpdateMachineConfigNodeSpecDesiredAnnotations(fgHandler ctrlcommon.FeatureG
 		return nil
 	}
 
-	// Check that the MachineConfigNode feature gate is enabled
-	if !fgHandler.Enabled(features.FeatureGateMachineConfigNodes) {
-		klog.Infof("MachineConfigNode FeatureGate is not enabled.")
-		return nil
-	}
-
 	// Get the existing MCN
 	mcn, mcnErr := mcfgClient.MachineconfigurationV1().MachineConfigNodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
 	// Note that this function is only intended to update the Spec of an existing MCN. We should
@@ -434,11 +422,6 @@ func UpdateMachineConfigNodeSpecDesiredAnnotations(fgHandler ctrlcommon.FeatureG
 // GenerateAndApplyMachineConfigNodeSpec generates and applies a new MCN spec based off the node state
 func GenerateAndApplyMachineConfigNodeSpec(fgHandler ctrlcommon.FeatureGatesHandler, pool string, node *corev1.Node, mcfgClient mcfgclientset.Interface) error {
 	if fgHandler == nil || node == nil {
-		return nil
-	}
-
-	if !fgHandler.Enabled(features.FeatureGateMachineConfigNodes) {
-		klog.Infof("MachineConfigNode FeatureGate is not enabled.")
 		return nil
 	}
 
