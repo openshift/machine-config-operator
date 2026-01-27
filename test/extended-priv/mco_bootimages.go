@@ -796,6 +796,20 @@ func getCoreOsBootImageFromConfigMapOrFail(platform, region string, arch archite
 	return image
 }
 
+// GetRHCOSVersionFromConfigMap retrieves the RHCOS release version from the coreos-bootimages ConfigMap
+func GetRHCOSVersionFromConfigMap(oc *exutil.CLI) string {
+	coreosBootimagesCM := NewConfigMap(oc.AsAdmin(), MachineConfigNamespace, "coreos-bootimages")
+	streamJSON, err := coreosBootimagesCM.GetDataValue("stream")
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting stream data from coreos-bootimages configmap")
+
+	parsedStream := gjson.Parse(streamJSON)
+	// Get the release version from  aws artifacts
+	rhcosVersion := parsedStream.Get("architectures.x86_64.artifacts.aws.release").String()
+	o.Expect(rhcosVersion).NotTo(o.BeEmpty(), "RHCOS version not found in coreos-bootimages configmap")
+
+	return rhcosVersion
+}
+
 // testUserDataUpdateFailure function that executes the common parts of the update spec v3 negative test cases
 func testUserDataUpdateFailure(oc *exutil.CLI, clonedMSName, clonedSecretName, expectedFailedMessageRegexp string, userDataModifyFunc func(userData string) (string, error)) {
 
