@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"reflect"
 	"testing"
@@ -27,7 +28,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/diff"
 	"k8s.io/apimachinery/pkg/util/yaml"
-	kubeletapiconfig "k8s.io/kubernetes/pkg/kubelet/apis/config"
 	"k8s.io/utils/ptr"
 )
 
@@ -2353,16 +2353,16 @@ providers:
 		matchImages    []string
 		templateConfig []byte
 		expectError    bool
-		expectedConfig *credentialProviderConfigVersioned
+		expectedConfig *credentialProviderConfigWithVersion
 	}{
 		{
 			name:           "add crio-credential-provider when not present",
 			matchImages:    []string{"myhost.com", "quay.io"},
 			templateConfig: templateCredProviderConfig,
-			expectedConfig: &credentialProviderConfigVersioned{
+			expectedConfig: &credentialProviderConfigWithVersion{
 				APIVersion: "kubelet.config.k8s.io/v1",
 				Kind:       "CredentialProviderConfig",
-				Providers: []kubeletapiconfig.CredentialProvider{
+				Providers: []*credentialProviderWithTag{
 					{
 						Name:                 "gcr-credential-provider",
 						APIVersion:           "credentialprovider.kubelet.k8s.io/v1",
@@ -2375,7 +2375,7 @@ providers:
 						MatchImages:          []string{"myhost.com", "quay.io"},
 						APIVersion:           "credentialprovider.kubelet.k8s.io/v1",
 						DefaultCacheDuration: &metav1.Duration{Duration: time.Second},
-						TokenAttributes: &kubeletapiconfig.ServiceAccountTokenAttributes{
+						TokenAttributes: &serviceAccountTokenAttributesVersioned{
 							ServiceAccountTokenAudience: "https://kubernetes.default.svc",
 							CacheType:                   "Token",
 							RequireServiceAccount:       ptr.To(false),
@@ -2388,10 +2388,10 @@ providers:
 			name:           "crio-credential-provider already present",
 			matchImages:    []string{"myhost.com"},
 			templateConfig: templateCredProviderConfigWithCRIOProvider,
-			expectedConfig: &credentialProviderConfigVersioned{
+			expectedConfig: &credentialProviderConfigWithVersion{
 				APIVersion: "kubelet.config.k8s.io/v1",
 				Kind:       "CredentialProviderConfig",
-				Providers: []kubeletapiconfig.CredentialProvider{
+				Providers: []*credentialProviderWithTag{
 					{
 						Name:                 "gcr-credential-provider",
 						APIVersion:           "credentialprovider.kubelet.k8s.io/v1",
@@ -2404,7 +2404,7 @@ providers:
 						MatchImages:          []string{"myhost.com"},
 						APIVersion:           "credentialprovider.kubelet.k8s.io/v1",
 						DefaultCacheDuration: &metav1.Duration{Duration: time.Second},
-						TokenAttributes: &kubeletapiconfig.ServiceAccountTokenAttributes{
+						TokenAttributes: &serviceAccountTokenAttributesVersioned{
 							ServiceAccountTokenAudience: "https://kubernetes.default.svc",
 							CacheType:                   "Token",
 							RequireServiceAccount:       ptr.To(false),
@@ -2431,7 +2431,9 @@ providers:
 			}
 			require.NoError(t, err)
 
-			var gotConfig credentialProviderConfigVersioned
+			log.Println("updated bytes: ", string(updatedConfigBytes))
+
+			var gotConfig credentialProviderConfigWithVersion
 			err = yaml.Unmarshal(updatedConfigBytes, &gotConfig)
 			require.NoError(t, err)
 			assert.Equal(t, tt.expectedConfig, &gotConfig)

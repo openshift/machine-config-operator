@@ -1248,22 +1248,44 @@ func imagePolicyConfigFileList(namespaceJSONs map[string][]byte) []generatedConf
 	return namespacedPolicyConfigFileList
 }
 
-func credProviderConfigObject(contents []byte) (*kubeletconfig.CredentialProviderConfig, error) {
-	credProviderConfigObject := &kubeletconfig.CredentialProviderConfig{}
+func credProviderConfigObject(contents []byte) (*credentialProviderConfigWithVersion, error) {
+	// Unmarshal into custom struct first to handle YAML with omitempty fields
+	credProviderConfigObject := &credentialProviderConfigWithVersion{}
 	err := yaml.Unmarshal(contents, credProviderConfigObject)
 	if err != nil {
 		return nil, fmt.Errorf("error unmarshalling credential provider config: %w", err)
 	}
+
 	return credProviderConfigObject, nil
 }
 
-type credentialProviderConfigVersioned struct {
-	APIVersion string                             `yaml:"apiVersion"`
-	Kind       string                             `yaml:"kind"`
-	Providers  []kubeletconfig.CredentialProvider `yaml:"providers"`
+// credentialProviderWithTag is a custom struct with omitempty tags to avoid null values in YAML
+type credentialProviderWithTag struct {
+	Name                 string                                  `json:"name"`
+	MatchImages          []string                                `json:"matchImages"`
+	DefaultCacheDuration *metav1.Duration                        `json:"defaultCacheDuration,omitempty"`
+	APIVersion           string                                  `json:"apiVersion"`
+	Args                 []string                                `json:"args,omitempty"`
+	Env                  []kubeletconfig.ExecEnvVar              `json:"env,omitempty"`
+	TokenAttributes      *serviceAccountTokenAttributesVersioned `json:"tokenAttributes,omitempty"`
 }
 
-func updateCredentialProviderConfig(credProviderConfigObject *kubeletconfig.CredentialProviderConfig, matchImages map[string]bool) ([]byte, error) {
+// serviceAccountTokenAttributesVersioned is a custom struct with omitempty tags to avoid null values in YAML
+type serviceAccountTokenAttributesVersioned struct {
+	ServiceAccountTokenAudience          string                                     `json:"serviceAccountTokenAudience"`
+	CacheType                            kubeletconfig.ServiceAccountTokenCacheType `json:"cacheType"`
+	RequireServiceAccount                *bool                                      `json:"requireServiceAccount"`
+	RequiredServiceAccountAnnotationKeys []string                                   `json:"requiredServiceAccountAnnotationKeys,omitempty"`
+	OptionalServiceAccountAnnotationKeys []string                                   `json:"optionalServiceAccountAnnotationKeys,omitempty"`
+}
+
+type credentialProviderConfigWithVersion struct {
+	APIVersion string                       `json:"apiVersion"`
+	Kind       string                       `json:"kind"`
+	Providers  []*credentialProviderWithTag `json:"providers"`
+}
+
+func updateCredentialProviderConfig(credProviderConfigObject *credentialProviderConfigWithVersion, matchImages map[string]bool) ([]byte, error) {
 
 	// matchImages is not expected to be empty here as the caller should skip calling this function if there are no images
 	images := []string{}
@@ -1287,12 +1309,12 @@ func updateCredentialProviderConfig(credProviderConfigObject *kubeletconfig.Cred
 	if crioCredProviderExist && crioCredProviderIdx != -1 {
 		credProviderConfigObject.Providers[crioCredProviderIdx].MatchImages = images
 	} else {
-		newProvider := kubeletconfig.CredentialProvider{
+		newProvider := &credentialProviderWithTag{
 			Name:                 crioCredentialProviderName,
 			MatchImages:          images,
 			DefaultCacheDuration: &metav1.Duration{Duration: time.Second},
 			APIVersion:           credentialProviderAPIVersion,
-			TokenAttributes: &kubeletconfig.ServiceAccountTokenAttributes{
+			TokenAttributes: &serviceAccountTokenAttributesVersioned{
 				ServiceAccountTokenAudience: "https://kubernetes.default.svc",
 				RequireServiceAccount:       ptr.To(false),
 				CacheType:                   kubeletconfig.TokenServiceAccountTokenCacheType,
@@ -1301,15 +1323,10 @@ func updateCredentialProviderConfig(credProviderConfigObject *kubeletconfig.Cred
 		credProviderConfigObject.Providers = append(credProviderConfigObject.Providers, newProvider)
 	}
 
-	credProviderConfigVersionedObj := credentialProviderConfigVersioned{
-		APIVersion: "kubelet.config.k8s.io/v1",
-		Kind:       "CredentialProviderConfig",
-		Providers:  credProviderConfigObject.Providers,
-	}
-
-	credProviderConfigsYaml, err := yaml.Marshal(credProviderConfigVersionedObj)
+	credProviderConfigsYaml, err := yaml.Marshal(credProviderConfigObject)
 	if err != nil {
 		return nil, fmt.Errorf("error marshalling credential provider config: %v", err)
 	}
+
 	return credProviderConfigsYaml, nil
 }

@@ -690,6 +690,7 @@ func generateOriginalCredentialProviderConfig(templateDir string, cc *mcfgv1.Con
 	for _, gmc := range generatedConfigs {
 		config, errCredProvider = findCredProviderConfig(gmc, credProviderConfigPath)
 		if errCredProvider == nil {
+			klog.Infof("find credential provider config in generated config %s: %v", gmc.Name, errCredProvider)
 			gmcCredProviderConfig = config
 			break
 		}
@@ -1216,8 +1217,10 @@ func (ctrl *Controller) syncCRIOCredentialProviderConfig(key string) error {
 		klog.V(4).Infof("Finished syncing CRIOCredentialProvider config %q (%v)", key, time.Since(startTime))
 	}()
 
-	var crioCredentialProviderConfig *apicfgv1alpha1.CRIOCredentialProviderConfig
-	var err error
+	var (
+		crioCredentialProviderConfig *apicfgv1alpha1.CRIOCredentialProviderConfig
+		err                          error
+	)
 
 	if ctrl.crioCPObserversAdded {
 		crioCredentialProviderConfig, err = ctrl.criocpLister.Get("cluster")
@@ -1227,6 +1230,9 @@ func (ctrl *Controller) syncCRIOCredentialProviderConfig(key string) error {
 		} else if err != nil {
 			return err
 		}
+	} else {
+		klog.V(2).Infof("CRIOCredentialProviderConfig observer not added, skipping sync")
+		return nil
 	}
 
 	// Get ControllerConfig
@@ -1246,16 +1252,15 @@ func (ctrl *Controller) syncCRIOCredentialProviderConfig(key string) error {
 	}
 
 	for _, pool := range mcpPools {
-		role := pool.Name
 		applied := true
 
+		role := pool.Name
 		managedKeyCredentialProvider, err := getManagedKeyCRIOCredentialProvider(pool)
 		if err != nil {
 			return err
 		}
 
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
-
 			if crioCredentialProviderConfig != nil {
 
 				credentialProviderConfigIgn, err := crioCredentialProviderConfigIgnition(ctrl.templatesDir, controllerConfig, role, crioCredentialProviderConfig)
@@ -1263,31 +1268,24 @@ func (ctrl *Controller) syncCRIOCredentialProviderConfig(key string) error {
 					klog.Infof("could not generate CRIO Credential Provider Ignition config for role %s: %v", role, err)
 					return fmt.Errorf("could not generate CRIO Credential Provider Ignition config: %w", err)
 				}
-				applied, err = ctrl.syncIgnitionConfig(managedKeyCredentialProvider, credentialProviderConfigIgn, pool, ownerReferenceCredentialProviderConfig(crioCredentialProviderConfig))
+				ownerRef := ownerReferenceCredentialProviderConfig(crioCredentialProviderConfig)
+				klog.Infof("OwnerRef for CRIO Credential Provider Config: %v", ownerRef)
+				applied, err = ctrl.syncIgnitionConfig(managedKeyCredentialProvider, credentialProviderConfigIgn, pool, ownerRef)
 				if err != nil {
 					klog.Infof("could not sync CRIO Credential Provider Ignition config for role %s: %v", role, err)
 					return fmt.Errorf("could not sync CRIO Credential Provider Ignition config: %w", err)
 				}
 			}
+
 			return err
 		}); err != nil {
 			return fmt.Errorf("could not Create/Update MachineConfig: %w", err)
 		}
 
 		if applied {
-			klog.Infof("Applied CRIOCredentialProviderConfig on MachineConfigPool %v", pool.Name)
-			ctrlcommon.UpdateStateMetric(ctrlcommon.MCCSubControllerState, "machine-config-controller-container-runtime-config", "Sync CRIOCredentialProviderConfig", pool.Name)
+			klog.Infof("Applied CRIOCredentialProviderConfig cluster on MachineConfigPool %v", pool.Name)
+			ctrlcommon.UpdateStateMetric(ctrlcommon.MCCSubControllerState, "machine-config-controller-container-runtime-config", "Sync CRIO Credential Provider Config", pool.Name)
 		}
-
-		// credProviderConfigIgn, err := generateOriginalCredentialProviderConfig(ctrl.templatesDir, controllerConfig, role)
-		// if err != nil {
-		// 	return fmt.Errorf("could not generate original CRIO credential provider config for role %s: %w", role, err)
-		// }
-		// contents, err := ctrlcommon.DecodeIgnitionFileContents(credProviderConfigIgn.Contents.Source, credProviderConfigIgn.Contents.Compression)
-		// if err != nil {
-		// 	return fmt.Errorf("could not decode CRIO credential provider config for role %s: %w", role, err)
-		// }
-		// klog.Infof("Decoded CRIO credential provider config contents successfully for role %s: %s", role, string(contents))
 	}
 
 	return nil
