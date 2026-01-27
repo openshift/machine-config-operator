@@ -11,14 +11,12 @@ import (
 	"time"
 
 	expect "github.com/google/goexpect"
+	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 	"github.com/openshift/machine-config-operator/test/extended-priv/util/architecture"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
-
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
-
-	o "github.com/onsi/gomega"
 )
 
 // Node is used to handle node OCP resources
@@ -109,6 +107,36 @@ func (n *Node) DebugNodeWithChrootStd(cmd ...string) (string, string, error) {
 	}
 
 	return stdout, stderr, err
+}
+
+// WaitForLabelRemoved waits until the given label is not present in the node.
+func (n *Node) WaitForLabelRemoved(label string) error {
+	logger.Infof("Waiting for label %s to be removed from node %s", label, n.GetName())
+
+	immediate := true
+	waitErr := wait.PollUntilContextTimeout(context.TODO(), 1*time.Minute, 10*time.Minute, immediate, func(_ context.Context) (bool, error) {
+		labels, err := n.Get(`{.metadata.labels}`)
+		if err != nil {
+			logger.Infof("Error waiting for labels to be removed:%v, and try next round", err)
+			return false, nil
+		}
+		labelsMap := JSON(labels)
+		label, err := labelsMap.GetSafe(label)
+		if err == nil && !label.Exists() {
+			logger.Infof("Label %s has been removed from node %s", label, n.GetName())
+			return true, nil
+		}
+		return false, nil
+	})
+
+	if waitErr != nil {
+		logger.Errorf("Timeout while waiting for label %s to be delete from node %s. Error: %s",
+			label,
+			n.GetName(),
+			waitErr)
+	}
+
+	return waitErr
 }
 
 // GetMachineConfigDaemon returns the name of the ConfigDaemon pod for this node
@@ -249,6 +277,11 @@ func (n *Node) GetMachineConfigState() (string, error) {
 	return n.Get(`{.metadata.annotations.machineconfiguration\.openshift\.io/state}`)
 }
 
+// GetMachineConfigReason returns the Reason of machineconfiguration on this node
+func (n *Node) GetMachineConfigReason() string {
+	return n.GetOrFail(`{.metadata.annotations.machineconfiguration\.openshift\.io/reason}`)
+}
+
 // PatchDesiredConfig patches the desiredConfig annotation with the provided value
 func (n *Node) PatchDesiredConfig(desiredConfig string) error {
 	return n.Patch("merge", `{"metadata":{"annotations":{"machineconfiguration.openshift.io/desiredConfig":"`+desiredConfig+`"}}}`)
@@ -291,13 +324,40 @@ func (n *Node) IsUpdated() (bool, error) {
 		return false, err
 	}
 
-	return (currentConfig == desiredConfig) && (state == "Done"), nil
+	mcdLogs, err := n.GetMCDaemonLogs("")
+	if err != nil {
+		return false, err
+	}
+
+	// Workaroud. After setting the status to Done, MCO actually executes more actions.
+	// To make sure that no more actions will be executed in the node, we need to wait for this string in the logs
+	driftMonitorStarted := regexp.MustCompile(`(?i)config.*drift.*monitor.*started`).MatchString(mcdLogs)
+
+	return (currentConfig == desiredConfig) && (state == "Done") && (driftMonitorStarted), nil
 }
 
 // IsTainted returns if the node hast taints or not
 func (n *Node) IsTainted() bool {
 	taint, err := n.Get("{.spec.taints}")
 	return err == nil && taint != ""
+}
+
+// Returns true if the node is schedulable
+func (n *Node) IsSchedulable() (bool, error) {
+	unschedulable, err := n.Get(`{.spec.unschedulable}`)
+	if err != nil {
+		return false, err
+	}
+
+	return !IsTrue(unschedulable), nil
+}
+
+// Returns true if the node is schedulable and fails the test if there is an error
+func (n *Node) IsSchedulableOrFail() bool {
+	schedulable, err := n.IsSchedulable()
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error while getting the taints in node %s", n.GetName())
+
+	return schedulable
 }
 
 // HasTaintEffect Returns true if the node has any taint with the given effect
@@ -331,7 +391,7 @@ func (n *Node) IsEdge() (bool, error) {
 	return true, nil
 }
 
-// IsReady returns if the node is in Ready condition
+// IsReady returns boolean 'true' if the node is ready. Else it retruns 'false'.
 func (n *Node) IsReady() bool {
 	return n.IsConditionStatusTrue("Ready")
 }
@@ -350,7 +410,7 @@ func (n *Node) GetMCDaemonLogs(filter string) (string, error) {
 	return mcdLogs, err
 }
 
-// GetDateOrFail executes GetDate and fails the test if there is an error
+// GetDateOrFail executes `date`command and returns the current time in the node and fails the test case if there is any error
 func (n *Node) GetDateOrFail() time.Time {
 	date, err := n.GetDate()
 	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Could not get the current date in %s", n)
@@ -430,14 +490,13 @@ func (n *Node) GetLatestEvent() (*Event, error) {
 	return eventList.GetLatest()
 }
 
-// GetEvents retunrs all the events that happened in this node since IgnoreEventsBeforeNow() method was called.
+// GetEvents retunrs all the events that happened in this node since IgnoreEventsBeforeNow()() method was called.
 //
 //	If IgnoreEventsBeforeNow() is not called, it returns all existing events for this node.
 func (n *Node) GetEvents() ([]*Event, error) {
 	return n.GetAllEventsSince(n.eventCheckpoint)
 }
 
-// IgnoreEventsBeforeNow sets the event checkpoint to the latest event, so GetEvents will only return events after this point
 func (n *Node) IgnoreEventsBeforeNow() error {
 	var err error
 	latestEvent, lerr := n.GetLatestEvent()
@@ -458,7 +517,63 @@ func (n *Node) IgnoreEventsBeforeNow() error {
 	return err
 }
 
-// ExecuteDebugExpectBatch executes an interactive expect session in a debug pod for this node
+// Reboot reboots the node after waiting 10 seconds. To know why look https://issues.redhat.com/browse/OCPBUGS-1306
+func (n *Node) Reboot() error {
+	afterSeconds := 1
+	logger.Infof("REBOOTING NODE %s  after %d seconds!!", n.GetName(), afterSeconds)
+
+	// In SNO we cannot trigger the reboot directly using a debug command (like: "sleep 10 && reboot"), because the debug pod will return a failure
+	// because we lose connectivity with the cluster when we reboot the only node in the cluster
+	// The solution is to schedule a reboot 1 second after the Reboot method is called, and wait 5 seconds to make sure that the reboot happened
+	out, err := n.DebugNodeWithChroot("sh", "-c", fmt.Sprintf("systemd-run --on-active=%d --timer-property=AccuracySec=10ms reboot", afterSeconds))
+	if err != nil {
+		logger.Errorf("Error rebooting node %s:\n%s", n, out)
+	}
+
+	time.Sleep(time.Duration(afterSeconds) * time.Second) // we don't return the control of the program until we make sure that the timer for the reboot has expired
+	return err
+}
+
+// CopyFromLocal Copy a local file or directory to the node
+func (n *Node) CopyFromLocal(from, to string) error {
+	immediate := true
+	waitErr := wait.PollUntilContextTimeout(context.TODO(), 1*time.Minute, 5*time.Minute, immediate, func(_ context.Context) (bool, error) {
+		kubeletReady := n.IsReady()
+		if kubeletReady {
+			return true, nil
+		}
+		logger.Warnf("Kubelet is not ready in %s. To copy the file to the node we need to wait for kubelet to be ready. Waiting...", n)
+		return false, nil
+	})
+
+	if waitErr != nil {
+		logger.Errorf("Cannot copy file %s to %s in node %s because Kubelet is not ready in this node", from, to, n)
+		return waitErr
+	}
+
+	return n.oc.Run("adm").Args("copy-to-node", "node/"+n.GetName(), fmt.Sprintf("--copy=%s=%s", from, to)).Execute()
+}
+
+// CopyToLocal Copy a file or directory in the node to a local path
+func (n *Node) CopyToLocal(from, to string) error {
+	logger.Infof("Node: %s. Copying file %s to local path %s",
+		n.GetName(), from, to)
+	mcDaemonName := n.GetMachineConfigDaemon()
+	fromDaemon := filepath.Join("/rootfs", from)
+
+	return n.oc.Run("cp").Args("-n", MachineConfigNamespace, mcDaemonName+":"+fromDaemon, to, "-c", MachineConfigDaemon).Execute()
+}
+
+// RemoveFile removes a file from the node
+func (n *Node) RemoveFile(filePathToRemove string) error {
+	logger.Infof("Removing file %s from node %s", filePathToRemove, n.GetName())
+	output, err := n.DebugNodeWithChroot("rm", "-f", filePathToRemove)
+	logger.Infof(output)
+
+	return err
+}
+
+// ExecuteExpectBatch run a command and executes an interactive batch sequence using expect
 func (n *Node) ExecuteDebugExpectBatch(timeout time.Duration, batch []expect.Batcher) ([]expect.BatchRes, error) {
 	debug := false
 	if _, enabled := os.LookupEnv(logger.EnableDebugLog); enabled {
@@ -494,7 +609,7 @@ func (n *Node) ExecuteDebugExpectBatch(timeout time.Duration, batch []expect.Bat
 	return br, err
 }
 
-// GetRHELVersion returns the RHEL version string from the node's /etc/os-release file
+// GetRHELVersion returns the RHEL version of the  node
 func (n *Node) GetRHELVersion() (string, error) {
 	vContent, err := n.DebugNodeWithChroot("cat", "/etc/os-release")
 	if err != nil {
@@ -557,7 +672,15 @@ func (n *Node) GetPrimaryPool() (*MachineConfigPool, error) {
 	return primaryPool, nil
 }
 
-// GetArchitecture returns the architecture of the node
+// GetPool returns the only pool owning this node and fails the test if any error happened
+func (n *Node) GetPrimaryPoolOrFail() *MachineConfigPool {
+	pool, err := n.GetPrimaryPool()
+	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error getting the primary pool of node %s", n.GetName())
+
+	return pool
+}
+
+// GetArchitecture get the architecture used in the node
 func (n *Node) GetArchitecture() (architecture.Architecture, error) {
 	arch, err := n.Get(`{.status.nodeInfo.architecture}`)
 	if err != nil {
@@ -579,185 +702,13 @@ func (n *Node) GetMachineConfigNode() *MachineConfigNode {
 	return NewMachineConfigNode(n.oc.AsAdmin(), n.GetName())
 }
 
-// GetAll returns a []*Node list with all existing nodes
-func (nl *NodeList) GetAll() ([]*Node, error) {
-	allNodeResources, err := nl.ResourceList.GetAll()
-	if err != nil {
-		return nil, err
-	}
-	allNodes := make([]*Node, 0, len(allNodeResources))
-
-	for _, nodeRes := range allNodeResources {
-		allNodes = append(allNodes, NewNode(nl.oc, nodeRes.name))
-	}
-
-	return allNodes, nil
-}
-
-// GetAllReady returns a []*Node list with all ready nodes
-func (nl *NodeList) GetAllReady() ([]*Node, error) {
-	allNodes, err := nl.GetAll()
-	if err != nil {
-		return nil, err
-	}
-
-	readyNodes := make([]*Node, 0)
-	for _, node := range allNodes {
-		if node.IsReady() {
-			readyNodes = append(readyNodes, node)
-		}
-	}
-
-	return readyNodes, nil
-}
-
-// quietSetNamespacePrivileged invokes exutil.SetNamespacePrivileged but disable the logs output to avoid noise in the logs
-func quietSetNamespacePrivileged(oc *exutil.CLI, namespace string) error {
-	oc.NotShowInfo()
-	defer oc.SetShowInfo()
-
-	logger.Debugf("Setting namespace %s as privileged", namespace)
-	return exutil.SetNamespacePrivileged(oc, namespace)
-}
-
-// quietRecoverNamespaceRestricted invokes exutil.RecoverNamespaceRestricted but disable the logs output to avoid noise in the logs
-func quietRecoverNamespaceRestricted(oc *exutil.CLI, namespace string) error {
-	oc.NotShowInfo()
-	defer oc.SetShowInfo()
-
-	logger.Debugf("Recovering namespace %s from privileged", namespace)
-	return exutil.RecoverNamespaceRestricted(oc, namespace)
-}
-
-// GetOperatorNode returns the node running the MCO operator pod
-func GetOperatorNode(oc *exutil.CLI) (*Node, error) {
-	podsList := NewNamespacedResourceList(oc.AsAdmin(), "pods", MachineConfigNamespace)
-	podsList.ByLabel("k8s-app=machine-config-operator")
-
-	mcoPods, err := podsList.GetAll()
-	if err != nil {
-		return nil, err
-	}
-
-	if len(mcoPods) != 1 {
-		return nil, fmt.Errorf("There should be 1 and only 1 MCO operator pod. Found operator pods: %s", mcoPods)
-	}
-
-	nodeName, err := mcoPods[0].Get(`{.spec.nodeName}`)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewNode(oc, nodeName), nil
-}
-
-// CopyFromLocal copies a local file to the node
-func (n *Node) CopyFromLocal(from, to string) error {
-	immediate := true
-	waitErr := wait.PollUntilContextTimeout(context.TODO(), 1*time.Minute, 5*time.Minute, immediate, func(_ context.Context) (bool, error) {
-		kubeletReady := n.IsReady()
-		if kubeletReady {
-			return true, nil
-		}
-		logger.Warnf("Kubelet is not ready in %s. To copy the file to the node we need to wait for kubelet to be ready. Waiting...", n)
-		return false, nil
-	})
-
-	if waitErr != nil {
-		logger.Errorf("Cannot copy file %s to %s in node %s because Kubelet is not ready in this node", from, to, n)
-		return waitErr
-	}
-
-	return n.oc.Run("adm").Args("copy-to-node", "node/"+n.GetName(), fmt.Sprintf("--copy=%s=%s", from, to)).Execute()
-}
-
-// CopyToLocal Copy a file or directory in the node to a local path
-func (n *Node) CopyToLocal(from, to string) error {
-	logger.Infof("Node: %s. Copying file %s to local path %s",
-		n.GetName(), from, to)
-	mcDaemonName := n.GetMachineConfigDaemon()
-	fromDaemon := filepath.Join("/rootfs", from)
-
-	return n.oc.Run("cp").Args("-n", MachineConfigNamespace, mcDaemonName+":"+fromDaemon, to, "-c", MachineConfigDaemon).Execute()
-}
-
-// RemoveFile removes a file from the node
-func (n *Node) RemoveFile(filePathToRemove string) error {
-	logger.Infof("Removing file %s from node %s", filePathToRemove, n.GetName())
-	output, err := n.DebugNodeWithChroot("rm", "-f", filePathToRemove)
-	logger.Infof(output)
-
-	return err
-}
-
-// Returns the set of ready nodes in the cluster
-func getReadyNodes(oc *exutil.CLI) (sets.Set[string], error) {
-	nodeList := NewResourceList(oc.AsAdmin(), "nodes")
-	nodes, err := nodeList.GetAll()
-	if err != nil {
-		return nil, err
-	}
-
-	nodeSet := sets.New[string]()
-	for _, node := range nodes {
-		node.oc.NotShowInfo()
-		isReady, err := node.Get(`{.status.conditions[?(@.type=="Ready")].status}`)
-		if err == nil && isReady == TrueString {
-			nodeSet.Insert(node.name)
-		}
-		node.oc.SetShowInfo()
-	}
-	return nodeSet, nil
-}
-
-// WaitForLabelRemoved waits until the given label is not present in the node.
-func (n *Node) WaitForLabelRemoved(label string) error {
-	logger.Infof("Waiting for label %s to be removed from node %s", label, n.GetName())
-
-	immediate := true
-	waitErr := wait.PollUntilContextTimeout(context.TODO(), 1*time.Minute, 10*time.Minute, immediate, func(_ context.Context) (bool, error) {
-		labels, err := n.Get(`{.metadata.labels}`)
-		if err != nil {
-			logger.Infof("Error waiting for labels to be removed:%v, and try next round", err)
-			return false, nil
-		}
-		labelsMap := JSON(labels)
-		label, err := labelsMap.GetSafe(label)
-		if err == nil && !label.Exists() {
-			logger.Infof("Label %s has been removed from node %s", label, n.GetName())
-			return true, nil
-		}
-		return false, nil
-	})
-
-	if waitErr != nil {
-		logger.Errorf("Timeout while waiting for label %s to be delete from node %s. Error: %s",
-			label,
-			n.GetName(),
-			waitErr)
-	}
-
-	return waitErr
-}
-
-// Reboot schedules a reboot of the node
-func (n *Node) Reboot() error {
-	afterSeconds := 1
-	logger.Infof("REBOOTING NODE %s  after %d seconds!!", n.GetName(), afterSeconds)
-
-	// In SNO we cannot trigger the reboot directly using a debug command (like: "sleep 10 && reboot"), because the debug pod will return a failure
-	// because we lose connectivity with the cluster when we reboot the only node in the cluster
-	// The solution is to schedule a reboot 1 second after the Reboot method is called, and wait 5 seconds to make sure that the reboot happened
-	out, err := n.DebugNodeWithChroot("sh", "-c", fmt.Sprintf("systemd-run --on-active=%d --timer-property=AccuracySec=10ms reboot", afterSeconds))
-	if err != nil {
-		logger.Errorf("Error rebooting node %s:\n%s", n, out)
-	}
-
-	time.Sleep(time.Duration(afterSeconds) * time.Second) // we don't return the control of the program until we make sure that the timer for the reboot has expired
-	return err
-}
-
-// GetFileSystemSpaceUsage returns the filesystem space usage for a given path in the node
+// GetFileSystemSpaceUsage returns the space usage in the node
+// Parse command
+// $ df -B1 --output=used,avail /
+//
+//	Used      Avail
+//
+// 38409719808 7045369856
 func (n *Node) GetFileSystemSpaceUsage(path string) (*SpaceUsage, error) {
 	var (
 		parserRegex = `(?P<Used>\d+)\D+(?P<Avail>\d+)`
@@ -803,4 +754,122 @@ func (n *Node) GetFileSystemSpaceUsage(path string) (*SpaceUsage, error) {
 	}
 
 	return &SpaceUsage{Used: used, Avail: avail}, nil
+}
+
+// GetAll returns a []*Node list with all existing nodes
+func (nl *NodeList) GetAll() ([]*Node, error) {
+	allNodeResources, err := nl.ResourceList.GetAll()
+	if err != nil {
+		return nil, err
+	}
+	allNodes := make([]*Node, 0, len(allNodeResources))
+
+	for _, nodeRes := range allNodeResources {
+		allNodes = append(allNodes, NewNode(nl.oc, nodeRes.name))
+	}
+
+	return allNodes, nil
+}
+
+// GetAllLinux resturns a list with all linux nodes in the cluster
+func (nl NodeList) GetAllLinux() ([]*Node, error) {
+	nl.ByLabel("kubernetes.io/os=linux")
+
+	return nl.GetAll()
+}
+
+// GetAllWorkerNodes returns a list of worker Nodes
+func (nl NodeList) GetAllWorkerNodes() ([]*Node, error) {
+	nl.ByLabel("node-role.kubernetes.io/worker=")
+
+	return nl.GetAll()
+}
+
+// GetAllLinuxWorkerNodes returns a list of linux worker Nodes
+func (nl NodeList) GetAllLinuxWorkerNodes() ([]*Node, error) {
+	nl.ByLabel("node-role.kubernetes.io/worker=,kubernetes.io/os=linux")
+
+	return nl.GetAll()
+}
+
+// GetAllLinuxWorkerNodesOrFail returns a list of linux worker Nodes. Fail the test case if an error happens.
+func (nl NodeList) GetAllLinuxWorkerNodesOrFail() []*Node {
+	workers, err := nl.GetAllLinuxWorkerNodes()
+	o.Expect(err).NotTo(o.HaveOccurred())
+	return workers
+}
+
+// GetAllReady returns all nodes that are in Ready status
+func (nl NodeList) GetAllReady() ([]*Node, error) {
+	allNodes, err := nl.GetAll()
+	if err != nil {
+		return nil, err
+	}
+
+	readyNodes := []*Node{}
+	for _, node := range allNodes {
+		if node.IsReady() {
+			readyNodes = append(readyNodes, node)
+		}
+	}
+	return readyNodes, nil
+}
+
+// quietSetNamespacePrivileged invokes compat_otp.SetNamespacePrivileged but disable the logs output to avoid noise in the logs
+func quietSetNamespacePrivileged(oc *exutil.CLI, namespace string) error {
+	oc.NotShowInfo()
+	defer oc.SetShowInfo()
+
+	logger.Debugf("Setting namespace %s as privileged", namespace)
+	return exutil.SetNamespacePrivileged(oc, namespace)
+}
+
+// quietRecoverNamespaceRestricted invokes compat_otp.RecoverNamespaceRestricted but disable the logs output to avoid noise in the logs
+func quietRecoverNamespaceRestricted(oc *exutil.CLI, namespace string) error {
+	oc.NotShowInfo()
+	defer oc.SetShowInfo()
+
+	logger.Debugf("Recovering namespace %s from privileged", namespace)
+	return exutil.RecoverNamespaceRestricted(oc, namespace)
+}
+
+// GetOperatorNode returns the node running the MCO operator pod
+func GetOperatorNode(oc *exutil.CLI) (*Node, error) {
+	podsList := NewNamespacedResourceList(oc.AsAdmin(), "pods", MachineConfigNamespace)
+	podsList.ByLabel("k8s-app=machine-config-operator")
+
+	mcoPods, err := podsList.GetAll()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(mcoPods) != 1 {
+		return nil, fmt.Errorf("There should be 1 and only 1 MCO operator pod. Found operator pods: %s", mcoPods)
+	}
+
+	nodeName, err := mcoPods[0].Get(`{.spec.nodeName}`)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewNode(oc, nodeName), nil
+}
+
+func getReadyNodes(oc *exutil.CLI) (sets.Set[string], error) {
+	nodeList := NewResourceList(oc.AsAdmin(), "nodes")
+	nodes, err := nodeList.GetAll()
+	if err != nil {
+		return nil, err
+	}
+
+	nodeSet := sets.New[string]()
+	for _, node := range nodes {
+		node.oc.NotShowInfo()
+		isReady, err := node.Get(`{.status.conditions[?(@.type=="Ready")].status}`)
+		if err == nil && isReady == TrueString {
+			nodeSet.Insert(node.name)
+		}
+		node.oc.SetShowInfo()
+	}
+	return nodeSet, nil
 }

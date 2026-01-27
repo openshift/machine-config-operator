@@ -34,7 +34,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("OK!\n")
 
 		exutil.By("Configure OCB functionality for the new infra MCP")
-		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, mcpAndMoscName, nil)
+		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, mcpAndMoscName, mcpAndMoscName, nil)
 		defer mosc.CleanupAndDelete()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
 		logger.Infof("OK!\n")
@@ -151,7 +151,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		)
 
 		exutil.By("Configure OCB functionality for the new worker MCP")
-		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, mcp.GetName(), nil)
+		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, mcp.GetName(), mcp.GetName(), nil)
 		defer DisableOCL(mosc)
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
 		logger.Infof("OK!\n")
@@ -173,7 +173,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		)
 
 		exutil.By("Configure OCB functionality for the new worker MCP")
-		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, mcp.GetName(), nil)
+		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, mcp.GetName(), mcp.GetName(), nil)
 		defer DisableOCL(mosc)
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
 		logger.Infof("OK!\n")
@@ -226,7 +226,7 @@ func testContainerFile(containerFiles []ContainerFile, imageNamespace string, mc
 	switch imageNamespace {
 	case MachineConfigNamespace:
 		exutil.By("Configure OCB functionality for the new infra MCP. Create MOSC")
-		mosc, err = createMachineOSConfigUsingExternalOrInternalRegistry(oc, MachineConfigNamespace, mcp.GetName(), containerFiles, defaultPullSecret)
+		mosc, err = createMachineOSConfigUsingExternalOrInternalRegistry(oc, MachineConfigNamespace, mcp.GetName(), mcp.GetName(), containerFiles, defaultPullSecret, true)
 	default:
 		SkipTestIfCannotUseInternalRegistry(mcp.GetOC())
 
@@ -256,7 +256,7 @@ func testContainerFile(containerFiles []ContainerFile, imageNamespace string, mc
 		logger.Infof("OK!\n")
 
 		exutil.By("Configure OCB functionality for the new infra MCP. Create MOSC")
-		mosc, err = CreateMachineOSConfigUsingInternalRegistry(oc, tmpNamespace.GetName(), mcp.GetName(), containerFiles, defaultPullSecret)
+		mosc, err = CreateMachineOSConfigUsingInternalRegistry(oc, tmpNamespace.GetName(), mcp.GetName(), mcp.GetName(), containerFiles, defaultPullSecret)
 	}
 	defer DisableOCL(mosc)
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
