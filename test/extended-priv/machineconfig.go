@@ -9,7 +9,6 @@ import (
 	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
-
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -36,6 +35,20 @@ func NewMachineConfig(oc *exutil.CLI, name, pool string) *MachineConfig {
 // SetTemplate sets the template that will be used by the "create" method in order to create the MC
 func (mc *MachineConfig) SetTemplate(template Template) *MachineConfig {
 	mc.Template = template
+	return mc
+}
+
+// SetMCOTemplate set a template defined in the MCO testdata folder
+func (mc *MachineConfig) SetMCOTemplate(templateName string) *MachineConfig {
+	mc.Template = *NewMCOTemplate(mc.oc, templateName)
+	return mc
+}
+
+// SetParams set parameters defined in template
+func (mc *MachineConfig) SetParams(params ...string) *MachineConfig {
+	if len(params) > 0 {
+		mc.parameters = append(mc.parameters, params...)
+	}
 	return mc
 }
 

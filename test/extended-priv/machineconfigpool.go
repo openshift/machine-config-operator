@@ -409,6 +409,66 @@ func (mcp *MachineConfigPool) GetSortedNodesOrFail() []*Node {
 	return nodes
 }
 
+// GetCordonedNodes get cordoned nodes (if maxUnavailable > 1 ) otherwise return the 1st cordoned node
+func (mcp *MachineConfigPool) GetCordonedNodes() []*Node {
+
+	// requirement is: when pool is in updating state, get the updating node list
+	o.Expect(mcp.WaitForUpdatingStatus()).NotTo(o.HaveOccurred(), "Waiting for Updating status change failed")
+	// polling all nodes in this pool and check whether all cordoned nodes (SchedulingDisabled)
+	var allUpdatingNodes []*Node
+	err := wait.PollUntilContextTimeout(context.TODO(), 5*time.Second, 10*time.Minute, true, func(_ context.Context) (bool, error) {
+		nodes, nerr := mcp.GetNodes()
+		if nerr != nil {
+			return false, fmt.Errorf("Get all linux node failed, will try again in next run %v", nerr)
+		}
+		for _, node := range nodes {
+			schedulable, serr := node.IsSchedulable()
+			if serr != nil {
+				logger.Errorf("Checking node is schedulable failed %v", serr)
+				continue
+			}
+			if !schedulable {
+				allUpdatingNodes = append(allUpdatingNodes, node)
+			}
+		}
+
+		return len(allUpdatingNodes) > 0, nil
+	})
+
+	exutil.AssertWaitPollNoErr(err, fmt.Sprintf("Could not get the list of updating nodes on mcp %s", mcp.GetName()))
+
+	return allUpdatingNodes
+}
+
+// GetUnreconcilableNodes get all nodes that value of annotation machineconfiguration.openshift.io/state is Unreconcilable
+func (mcp *MachineConfigPool) GetUnreconcilableNodes() ([]*Node, error) {
+
+	allUnreconcilableNodes := []*Node{}
+	allNodes, err := mcp.GetNodes()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, n := range allNodes {
+		state := n.GetAnnotationOrFail(NodeAnnotationState)
+		if state == "Unreconcilable" {
+			allUnreconcilableNodes = append(allUnreconcilableNodes, n)
+		}
+	}
+
+	return allUnreconcilableNodes, nil
+}
+
+// GetUnreconcilableNodesOrFail get all nodes that value of annotation machineconfiguration.openshift.io/state is Unreconcilable
+// fail the test if any error occurred
+func (mcp *MachineConfigPool) GetUnreconcilableNodesOrFail() []*Node {
+
+	allUnreconcilableNodes, err := mcp.GetUnreconcilableNodes()
+	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Cannot get the unreconcilable nodes in %s MCP", mcp.GetName())
+
+	return allUnreconcilableNodes
+}
+
 // WaitForNotDegradedStatus waits until MCP is not degraded, if the condition times out the returned error is != nil
 func (mcp MachineConfigPool) WaitForNotDegradedStatus() error {
 	timeToWait := mcp.estimateWaitDuration()
@@ -557,353 +617,6 @@ func (mcp *MachineConfigPool) waitForComplete() {
 	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), fmt.Sprintf("mc operation is not completed on mcp %s: %s", mcp.name, err))
 }
 
-// GetCompactCompatiblePool returns worker pool if the cluster is not compact/SNO. Else it will return master pool or custom pool if worker pool is empty.
-// Current logic:
-// If worker pool has nodes, we return worker pool
-// Else if worker pool is empty
-//
-//		If custom pools exist
-//			If any custom pool has nodes, we return the custom pool
-//	     	Else (all custom pools are empty) we are in a Compact/SNO cluster with extra empty custom pools, we return master
-//		Else (worker pool is empty and there is no custom pool) we are in a Compact/SNO cluster, we return master
-func GetCompactCompatiblePool(oc *exutil.CLI) *MachineConfigPool {
-	var (
-		wMcp    = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
-		mMcp    = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolMaster)
-		mcpList = NewMachineConfigPoolList(oc.AsAdmin())
-	)
-
-	mcpList.PrintDebugCommand()
-
-	if IsCompactOrSNOCluster(oc) {
-		return mMcp
-	}
-
-	if !wMcp.IsEmpty() {
-		return wMcp
-	}
-
-	// The cluster is not Compact/SNO but the the worker pool is empty. All nodes have been moved to one or several custom pool
-	for _, mcp := range mcpList.GetAllOrFail() {
-		if mcp.IsCustom() && !mcp.IsEmpty() { // All worker pools were moved to cutom pools
-			logger.Infof("Worker pool is empty, but there is a custom pool with nodes. Proposing %s MCP for testing", mcp.GetName())
-			return mcp
-		}
-	}
-
-	e2e.Failf("Something went wrong. There is no suitable pool to execute the test case")
-	return nil
-}
-
-// RecoverFromDegraded updates the current and desired machine configs so that the pool can recover from degraded state once the offending MC is deleted
-func (mcp *MachineConfigPool) RecoverFromDegraded() error {
-	logger.Infof("Recovering %s pool from degraded status", mcp.GetName())
-	mcpNodes, _ := mcp.GetNodes()
-	for _, node := range mcpNodes {
-		logger.Infof("Restoring desired config in node: %s", node)
-		isUpdated, err := node.IsUpdated()
-		if err != nil {
-			return fmt.Errorf("Error checking if node %s is updated: %s", node.GetName(), err)
-		}
-		if isUpdated {
-			logger.Infof("node is updated, don't need to recover")
-		} else {
-			err := node.RestoreDesiredConfig()
-			if err != nil {
-				return fmt.Errorf("Error restoring desired config in node %s. Error: %s",
-					mcp.GetName(), err)
-			}
-		}
-	}
-
-	derr := mcp.WaitForNotDegradedStatus()
-	if derr != nil {
-		logger.Infof("Could not recover from the degraded status: %s", derr)
-		return derr
-	}
-
-	uerr := mcp.WaitForUpdatedStatus()
-	if uerr != nil {
-		logger.Infof("Could not recover from the degraded status: %s", uerr)
-		return uerr
-	}
-
-	return nil
-}
-
-// GetConfiguredMachineConfig returns the MachineConfig that is currently configured in this pool
-func (mcp *MachineConfigPool) GetConfiguredMachineConfig() (*MachineConfig, error) {
-	currentMcName, err := mcp.Get("{.status.configuration.name}")
-	if err != nil {
-		logger.Errorf("Error getting the currently configured MC in pool %s: %s", mcp.GetName(), err)
-		return nil, err
-	}
-
-	logger.Debugf("The currently configured MC in pool %s is: %s", mcp.GetName(), currentMcName)
-	return NewMachineConfig(mcp.oc, currentMcName, mcp.GetName()), nil
-}
-
-// SanityCheck returns an error if the MCP is Degraded or Updating.
-// We can't use WaitForUpdatedStatus or WaitForNotDegradedStatus because they always wait the interval. In a sanity check we want a fast response.
-func (mcp *MachineConfigPool) SanityCheck() error {
-	timeToWait := mcp.estimateWaitDuration() / 13
-	logger.Infof("Waiting %s for MCP %s to be completed.", timeToWait.Round(time.Second), mcp.name)
-
-	const trueStatus = "True"
-	var message string
-
-	err := wait.PollUntilContextTimeout(context.TODO(), 1*time.Minute, timeToWait, true, func(_ context.Context) (bool, error) {
-		// If there are degraded machines, stop polling, directly fail
-		degraded, degradederr := mcp.GetDegradedStatus()
-		if degradederr != nil {
-			message = fmt.Sprintf("Error gettting Degraded status: %s", degradederr)
-			return false, nil
-		}
-
-		if degraded == trueStatus {
-			message = fmt.Sprintf("MCP '%s' is degraded", mcp.GetName())
-			return false, nil
-		}
-
-		updated, err := mcp.GetUpdatedStatus()
-		if err != nil {
-			message = fmt.Sprintf("Error gettting Updated status: %s", err)
-			return false, nil
-		}
-		if updated == trueStatus {
-			logger.Infof("MCP '%s' is ready for testing", mcp.name)
-			return true, nil
-		}
-		message = fmt.Sprintf("MCP '%s' is not updated", mcp.GetName())
-		return false, nil
-	})
-
-	if err != nil {
-		return errors.New(message)
-	}
-
-	return nil
-}
-
-// GetMOSC returns the MachineOSConfig resource for this pool
-func (mcp MachineConfigPool) GetMOSC() (*MachineOSConfig, error) {
-	moscList := NewMachineOSConfigList(mcp.GetOC())
-	moscList.SetItemsFilter(`?(@.spec.machineConfigPool.name=="` + mcp.GetName() + `")`)
-	moscs, err := moscList.GetAll()
-	if err != nil {
-		return nil, err
-	}
-	if len(moscs) > 1 {
-		moscList.PrintDebugCommand()
-		return nil, fmt.Errorf("There are more than one MOSC for pool %s", mcp.GetName())
-	}
-
-	if len(moscs) == 0 {
-		return nil, nil
-	}
-	return moscs[0], nil
-}
-
-// GetAll returns a []*MachineConfigPool list with all existing machine config pools sorted by creation time
-func (mcpl *MachineConfigPoolList) GetAll() ([]*MachineConfigPool, error) {
-	mcpl.ResourceList.SortByTimestamp()
-	allMCPResources, err := mcpl.ResourceList.GetAll()
-	if err != nil {
-		return nil, err
-	}
-	allMCPs := make([]*MachineConfigPool, 0, len(allMCPResources))
-
-	for _, mcpRes := range allMCPResources {
-		allMCPs = append(allMCPs, NewMachineConfigPool(mcpl.oc, mcpRes.name))
-	}
-
-	return allMCPs, nil
-}
-
-// GetAllOrFail returns a []*MachineConfigPool list with all existing machine config pools sorted by creation time, if any error happens it fails the test
-func (mcpl *MachineConfigPoolList) GetAllOrFail() []*MachineConfigPool {
-	mcps, err := mcpl.GetAll()
-	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error getting the list of existing MCP in the cluster")
-	return mcps
-}
-
-// waitForComplete waits until all MCP in the list are updated
-func (mcpl *MachineConfigPoolList) waitForComplete() {
-	mcps, err := mcpl.GetAll()
-	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error getting the list of existing MCP in the cluster")
-	// We always wait for master first, to make sure that we avoid problems in SNO
-	for _, mcp := range mcps {
-		if mcp.IsMaster() {
-			mcp.waitForComplete()
-			break
-		}
-	}
-
-	for _, mcp := range mcps {
-		if !mcp.IsMaster() {
-			mcp.waitForComplete()
-		}
-	}
-}
-
-// CreateCustomMCP create a new custom MCP with the given name and the given number of nodes
-// Nodes will be taken from the worker pool
-func CreateCustomMCP(oc *exutil.CLI, name string, numNodes int) (*MachineConfigPool, error) {
-	var (
-		wMcp = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
-	)
-
-	workerNodes, err := wMcp.GetNodes()
-	if err != nil {
-		return NewMachineConfigPool(oc, name), err
-	}
-
-	if numNodes > len(workerNodes) {
-		return NewMachineConfigPool(oc, name), fmt.Errorf("A %d nodes custom pool cannot be created because there are only %d nodes in the %s pool",
-			numNodes, len(workerNodes), wMcp.GetName())
-	}
-
-	return CreateCustomMCPByNodes(oc, name, workerNodes[0:numNodes])
-}
-
-// CreateCustomMCPByNodes creates a new MCP containing the nodes provided in the "nodes" parameter
-func CreateCustomMCPByNodes(oc *exutil.CLI, name string, nodes []*Node) (*MachineConfigPool, error) {
-	customMcp := NewMachineConfigPool(oc, name)
-
-	err := NewMCOTemplate(oc, "custom-machine-config-pool.yaml").Create("-p", fmt.Sprintf("NAME=%s", name))
-	if err != nil {
-		logger.Errorf("Could not create a custom MCP for worker nodes with nodes %s", nodes)
-		return customMcp, err
-	}
-
-	for _, n := range nodes {
-		err := n.AddLabel(fmt.Sprintf("node-role.kubernetes.io/%s", name), "")
-		if err != nil {
-			logger.Infof("Error labeling node %s to add it to pool %s", n.GetName(), customMcp.GetName())
-		}
-		logger.Infof("Node %s added to custom pool %s", n.GetName(), customMcp.GetName())
-	}
-
-	expectedNodes := len(nodes)
-	err = customMcp.WaitForMachineCount(expectedNodes, 5*time.Minute)
-	if err != nil {
-		logger.Errorf("The %s MCP is not reporting the expected machine count", customMcp.GetName())
-		return customMcp, err
-	}
-
-	err = customMcp.WaitImmediateForUpdatedStatus()
-	if err != nil {
-		logger.Errorf("The %s MCP is not updated", customMcp.GetName())
-		return customMcp, err
-	}
-
-	return customMcp, nil
-}
-
-// DebugDegradedStatus prints the necessary information to debug why a MCP became degraded
-func DebugDegradedStatus(mcp *MachineConfigPool) {
-	var (
-		nodeList    = NewNodeList(mcp.GetOC())
-		mcc         = NewController(mcp.GetOC())
-		maxMCCLines = 30
-		maxMCDLines = 30
-	)
-
-	logger.Infof("START DEBUG")
-	_ = mcp.GetOC().Run("get").Args("co", "machine-config").Execute()
-	_ = mcp.GetOC().Run("get").Args("mcp").Execute()
-	_ = mcp.GetOC().Run("get").Args("nodes", "-o", "wide").Execute()
-	logger.Infof("Not updated MCP %s", mcp.GetName())
-	logger.Infof("%s", mcp.PrettyString())
-	logger.Infof("#######################\n\n")
-	allNodes, err := nodeList.GetAll()
-	if err == nil {
-		for _, node := range allNodes {
-			state, err := node.GetMachineConfigState()
-			if state != "Done" || err != nil {
-				if err != nil {
-					logger.Infof("Error getting machine config state for node %s: %v", node.GetName(), err)
-				} else {
-					logger.Infof("NODE %s IS %s", node.GetName(), state)
-				}
-				logger.Infof("%s", node.PrettyString())
-				logger.Infof("#######################\n\n")
-				mcdLogs, err := node.GetMCDaemonLogs("")
-				if err != nil {
-					logger.Infof("Error getting MCD logs for node %s", node.GetName())
-				}
-				logger.Infof("Node %s MCD logs:\n%s", node.GetName(), GetLastNLines(mcdLogs, maxMCDLines))
-				logger.Infof("#######################\n\n")
-				logger.Infof("MachineConfigNode:\n%s", node.GetMachineConfigNode().PrettyString())
-				logger.Infof("#######################\n\n")
-			}
-		}
-	} else {
-		logger.Infof("Error getting the list of degraded nodes: %s", err)
-	}
-
-	mccLogs, err := mcc.GetLogs()
-	if err != nil {
-		logger.Infof("Error getting the logs from MCC: %s", err)
-	}
-	logger.Infof("Last %d lines of MCC:\n%s", maxMCCLines, GetLastNLines(mccLogs, maxMCCLines))
-	logger.Infof("END DEBUG")
-}
-
-// DeleteCustomMCP deletes a custom MCP and removes its labels from all nodes
-func DeleteCustomMCP(oc *exutil.CLI, name string) error {
-	mcp := NewMachineConfigPool(oc, name)
-	if !mcp.Exists() {
-		logger.Infof("MCP %s does not exist. No need to remove it", mcp.GetName())
-		return nil
-	}
-
-	exutil.By(fmt.Sprintf("Removing custom MCP %s", name))
-
-	nodes, err := mcp.GetNodes()
-	if err != nil {
-		logger.Errorf("Could not get the nodes that belong to MCP %s: %s", mcp.GetName(), err)
-		return err
-	}
-
-	label := fmt.Sprintf("node-role.kubernetes.io/%s", mcp.GetName())
-	for _, node := range nodes {
-		logger.Infof("Removing pool label from node %s", node.GetName())
-		err := node.RemoveLabel(label)
-		if err != nil {
-			logger.Errorf("Could not remove the role label from node %s: %s", node.GetName(), err)
-			return err
-		}
-	}
-
-	for _, node := range nodes {
-		err := node.WaitForLabelRemoved(label)
-		if err != nil {
-			logger.Errorf("The label %s was not removed from node %s", label, node.GetName())
-		}
-	}
-
-	err = mcp.WaitForMachineCount(0, 5*time.Minute)
-	if err != nil {
-		logger.Errorf("The %s MCP already contains nodes, it cannot be deleted: %s", mcp.GetName(), err)
-		return err
-	}
-
-	// Wait for worker MCP to be updated before removing the custom pool
-	// in order to make sure that no node has any annotation pointing to resources that depend on the custom pool that we want to delete
-	wMcp := NewMachineConfigPool(oc, MachineConfigPoolWorker)
-	wMcp.waitForComplete()
-
-	err = mcp.Delete()
-	if err != nil {
-		logger.Errorf("Could not delete %s MCP", mcp.GetName())
-		return err
-	}
-
-	return nil
-}
-
-// GetPoolSynchronizersStatusByType returns the pool synchronizer status for a given type
 func (mcp *MachineConfigPool) GetPoolSynchronizersStatusByType(pType string) (string, error) {
 	return mcp.Get(`{.status.poolSynchronizersStatus[?(@.poolSynchronizerType=="` + pType + `")]}`)
 }
@@ -1010,6 +723,96 @@ func (mcp *MachineConfigPool) waitForPinComplete(timeToWait time.Duration) error
 	return err
 }
 
+// RecoverFromDegraded updates the current and desired machine configs so that the pool can recover from degraded state once the offending MC is deleted
+func (mcp *MachineConfigPool) RecoverFromDegraded() error {
+	logger.Infof("Recovering %s pool from degraded status", mcp.GetName())
+	mcpNodes, _ := mcp.GetNodes()
+	for _, node := range mcpNodes {
+		logger.Infof("Restoring desired config in node: %s", node)
+		isUpdated, err := node.IsUpdated()
+		if err != nil {
+			return fmt.Errorf("Error checking if node %s is updated: %s", node.GetName(), err)
+		}
+		if isUpdated {
+			logger.Infof("node is updated, don't need to recover")
+		} else {
+			err := node.RestoreDesiredConfig()
+			if err != nil {
+				return fmt.Errorf("Error restoring desired config in node %s. Error: %s",
+					mcp.GetName(), err)
+			}
+		}
+	}
+
+	derr := mcp.WaitForNotDegradedStatus()
+	if derr != nil {
+		logger.Infof("Could not recover from the degraded status: %s", derr)
+		return derr
+	}
+
+	uerr := mcp.WaitForUpdatedStatus()
+	if uerr != nil {
+		logger.Infof("Could not recover from the degraded status: %s", uerr)
+		return uerr
+	}
+
+	return nil
+}
+
+// GetConfiguredMachineConfig returns the MachineConfig that is currently configured in this pool
+func (mcp *MachineConfigPool) GetConfiguredMachineConfig() (*MachineConfig, error) {
+	currentMcName, err := mcp.Get("{.status.configuration.name}")
+	if err != nil {
+		logger.Errorf("Error getting the currently configured MC in pool %s: %s", mcp.GetName(), err)
+		return nil, err
+	}
+
+	logger.Debugf("The currently configured MC in pool %s is: %s", mcp.GetName(), currentMcName)
+	return NewMachineConfig(mcp.oc, currentMcName, mcp.GetName()), nil
+}
+
+// SanityCheck returns an error if the MCP is Degraded or Updating.
+// We can't use WaitForUpdatedStatus or WaitForNotDegradedStatus because they always wait the interval. In a sanity check we want a fast response.
+func (mcp *MachineConfigPool) SanityCheck() error {
+	timeToWait := mcp.estimateWaitDuration() / 13
+	logger.Infof("Waiting %s for MCP %s to be completed.", timeToWait.Round(time.Second), mcp.name)
+
+	const trueStatus = "True"
+	var message string
+
+	err := wait.PollUntilContextTimeout(context.TODO(), 1*time.Minute, timeToWait, true, func(_ context.Context) (bool, error) {
+		// If there are degraded machines, stop polling, directly fail
+		degraded, degradederr := mcp.GetDegradedStatus()
+		if degradederr != nil {
+			message = fmt.Sprintf("Error gettting Degraded status: %s", degradederr)
+			return false, nil
+		}
+
+		if degraded == trueStatus {
+			message = fmt.Sprintf("MCP '%s' is degraded", mcp.GetName())
+			return false, nil
+		}
+
+		updated, err := mcp.GetUpdatedStatus()
+		if err != nil {
+			message = fmt.Sprintf("Error gettting Updated status: %s", err)
+			return false, nil
+		}
+		if updated == trueStatus {
+			logger.Infof("MCP '%s' is ready for testing", mcp.name)
+			return true, nil
+		}
+		message = fmt.Sprintf("MCP '%s' is not updated", mcp.GetName())
+		return false, nil
+	})
+
+	if err != nil {
+		return errors.New(message)
+	}
+
+	return nil
+}
+
 // GetPinnedImageSets returns a list with the nodes that match the .spec.nodeSelector.matchLabels criteria plus the provided extraLabels
 func (mcp *MachineConfigPool) GetPinnedImageSets() ([]*PinnedImageSet, error) {
 	mcp.oc.NotShowInfo()
@@ -1042,4 +845,266 @@ func (mcp *MachineConfigPool) GetPinnedImageSets() ([]*PinnedImageSet, error) {
 	pisList.ByLabel(requiredLabel)
 
 	return pisList.GetAll()
+}
+
+// GetMOSC returns the MachineOSConfig resource for this pool
+func (mcp MachineConfigPool) GetMOSC() (*MachineOSConfig, error) {
+	moscList := NewMachineOSConfigList(mcp.GetOC())
+	moscList.SetItemsFilter(`?(@.spec.machineConfigPool.name=="` + mcp.GetName() + `")`)
+	moscs, err := moscList.GetAll()
+	if err != nil {
+		return nil, err
+	}
+	if len(moscs) > 1 {
+		moscList.PrintDebugCommand()
+		return nil, fmt.Errorf("There are more than one MOSC for pool %s", mcp.GetName())
+	}
+
+	if len(moscs) == 0 {
+		return nil, nil
+	}
+	return moscs[0], nil
+}
+
+// GetAll returns a []*MachineConfigPool list with all existing machine config pools sorted by creation time
+func (mcpl *MachineConfigPoolList) GetAll() ([]*MachineConfigPool, error) {
+	mcpl.ResourceList.SortByTimestamp()
+	allMCPResources, err := mcpl.ResourceList.GetAll()
+	if err != nil {
+		return nil, err
+	}
+	allMCPs := make([]*MachineConfigPool, 0, len(allMCPResources))
+
+	for _, mcpRes := range allMCPResources {
+		allMCPs = append(allMCPs, NewMachineConfigPool(mcpl.oc, mcpRes.name))
+	}
+
+	return allMCPs, nil
+}
+
+// GetAllOrFail returns a []*MachineConfigPool list with all existing machine config pools sorted by creation time, if any error happens it fails the test
+func (mcpl *MachineConfigPoolList) GetAllOrFail() []*MachineConfigPool {
+	mcps, err := mcpl.GetAll()
+	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error getting the list of existing MCP in the cluster")
+	return mcps
+}
+
+// waitForComplete waits until all MCP in the list are updated
+func (mcpl *MachineConfigPoolList) waitForComplete() {
+	mcps, err := mcpl.GetAll()
+	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error getting the list of existing MCP in the cluster")
+	// We always wait for master first, to make sure that we avoid problems in SNO
+	for _, mcp := range mcps {
+		if mcp.IsMaster() {
+			mcp.waitForComplete()
+			break
+		}
+	}
+
+	for _, mcp := range mcps {
+		if !mcp.IsMaster() {
+			mcp.waitForComplete()
+		}
+	}
+}
+
+// GetCompactCompatiblePool returns worker pool if the cluster is not compact/SNO. Else it will return master pool or custom pool if worker pool is empty.
+// Current logic:
+// If worker pool has nodes, we return worker pool
+// Else if worker pool is empty
+//
+//		If custom pools exist
+//			If any custom pool has nodes, we return the custom pool
+//	    	Else (all custom pools are empty) we are in a Compact/SNO cluster with extra empty custom pools, we return master
+//		Else (worker pool is empty and there is no custom pool) we are in a Compact/SNO cluster, we return master
+func GetCompactCompatiblePool(oc *exutil.CLI) *MachineConfigPool {
+	var (
+		wMcp    = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
+		mMcp    = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolMaster)
+		mcpList = NewMachineConfigPoolList(oc.AsAdmin())
+	)
+
+	mcpList.PrintDebugCommand()
+
+	if IsCompactOrSNOCluster(oc) {
+		return mMcp
+	}
+
+	if !wMcp.IsEmpty() {
+		return wMcp
+	}
+
+	// The cluster is not Compact/SNO but the the worker pool is empty. All nodes have been moved to one or several custom pool
+	for _, mcp := range mcpList.GetAllOrFail() {
+		if mcp.IsCustom() && !mcp.IsEmpty() { // All worker pools were moved to cutom pools
+			logger.Infof("Worker pool is empty, but there is a custom pool with nodes. Proposing %s MCP for testing", mcp.GetName())
+			return mcp
+		}
+	}
+
+	e2e.Failf("Something went wrong. There is no suitable pool to execute the test case")
+	return nil
+}
+
+// CreateCustomMCP create a new custom MCP with the given name and the given number of nodes
+// Nodes will be taken from the worker pool
+func CreateCustomMCP(oc *exutil.CLI, name string, numNodes int) (*MachineConfigPool, error) {
+	var (
+		wMcp = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
+	)
+
+	workerNodes, err := wMcp.GetNodes()
+	if err != nil {
+		return NewMachineConfigPool(oc, name), err
+	}
+
+	if numNodes > len(workerNodes) {
+		return NewMachineConfigPool(oc, name), fmt.Errorf("A %d nodes custom pool cannot be created because there are only %d nodes in the %s pool",
+			numNodes, len(workerNodes), wMcp.GetName())
+	}
+
+	return CreateCustomMCPByNodes(oc, name, workerNodes[0:numNodes])
+}
+
+// CreateCustomMCPByNodes creates a new MCP containing the nodes provided in the "nodes" parameter
+func CreateCustomMCPByNodes(oc *exutil.CLI, name string, nodes []*Node) (*MachineConfigPool, error) {
+	customMcp := NewMachineConfigPool(oc, name)
+
+	err := NewMCOTemplate(oc, "custom-machine-config-pool.yaml").Create("-p", fmt.Sprintf("NAME=%s", name))
+	if err != nil {
+		logger.Errorf("Could not create a custom MCP for worker nodes with nodes %s", nodes)
+		return customMcp, err
+	}
+
+	for _, n := range nodes {
+		err := n.AddLabel(fmt.Sprintf("node-role.kubernetes.io/%s", name), "")
+		if err != nil {
+			logger.Infof("Error labeling node %s to add it to pool %s", n.GetName(), customMcp.GetName())
+		}
+		logger.Infof("Node %s added to custom pool %s", n.GetName(), customMcp.GetName())
+	}
+
+	expectedNodes := len(nodes)
+	err = customMcp.WaitForMachineCount(expectedNodes, 5*time.Minute)
+	if err != nil {
+		logger.Errorf("The %s MCP is not reporting the expected machine count", customMcp.GetName())
+		return customMcp, err
+	}
+
+	err = customMcp.WaitImmediateForUpdatedStatus()
+	if err != nil {
+		logger.Errorf("The %s MCP is not updated", customMcp.GetName())
+		return customMcp, err
+	}
+
+	return customMcp, nil
+}
+
+// DeleteCustomMCP deletes a custom MCP and removes its labels from all nodes
+func DeleteCustomMCP(oc *exutil.CLI, name string) error {
+	mcp := NewMachineConfigPool(oc, name)
+	if !mcp.Exists() {
+		logger.Infof("MCP %s does not exist. No need to remove it", mcp.GetName())
+		return nil
+	}
+
+	exutil.By(fmt.Sprintf("Removing custom MCP %s", name))
+
+	nodes, err := mcp.GetNodes()
+	if err != nil {
+		logger.Errorf("Could not get the nodes that belong to MCP %s: %s", mcp.GetName(), err)
+		return err
+	}
+
+	label := fmt.Sprintf("node-role.kubernetes.io/%s", mcp.GetName())
+	for _, node := range nodes {
+		logger.Infof("Removing pool label from node %s", node.GetName())
+		err := node.RemoveLabel(label)
+		if err != nil {
+			logger.Errorf("Could not remove the role label from node %s: %s", node.GetName(), err)
+			return err
+		}
+	}
+
+	for _, node := range nodes {
+		err := node.WaitForLabelRemoved(label)
+		if err != nil {
+			logger.Errorf("The label %s was not removed from node %s", label, node.GetName())
+		}
+	}
+
+	err = mcp.WaitForMachineCount(0, 5*time.Minute)
+	if err != nil {
+		logger.Errorf("The %s MCP already contains nodes, it cannot be deleted: %s", mcp.GetName(), err)
+		return err
+	}
+
+	// Wait for worker MCP to be updated before removing the custom pool
+	// in order to make sure that no node has any annotation pointing to resources that depend on the custom pool that we want to delete
+	wMcp := NewMachineConfigPool(oc, MachineConfigPoolWorker)
+	wMcp.waitForComplete()
+
+	err = mcp.Delete()
+	if err != nil {
+		logger.Errorf("Could not delete %s MCP", mcp.GetName())
+		return err
+	}
+
+	return nil
+}
+
+// DebugDegradedStatus prints the necessary information to debug why a MCP became degraded
+func DebugDegradedStatus(mcp *MachineConfigPool) {
+	var (
+		nodeList    = NewNodeList(mcp.GetOC())
+		mcc         = NewController(mcp.GetOC())
+		maxMCCLines = 30
+		maxMCDLines = 30
+	)
+
+	logger.Infof("START DEBUG")
+	_ = mcp.GetOC().Run("get").Args("co", "machine-config").Execute()
+	_ = mcp.GetOC().Run("get").Args("mcp").Execute()
+	_ = mcp.GetOC().Run("get").Args("nodes", "-o", "wide").Execute()
+	logger.Infof("Not updated MCP %s", mcp.GetName())
+	logger.Infof("%s", mcp.PrettyString())
+	logger.Infof("#######################\n\n")
+	allNodes, err := nodeList.GetAll()
+	if err == nil {
+		for _, node := range allNodes {
+			state, err := node.GetMachineConfigState()
+			if state != "Done" || err != nil {
+				if err != nil {
+					logger.Infof("Error getting machine config state for node %s: %v", node.GetName(), err)
+				} else {
+					logger.Infof("NODE %s IS %s", node.GetName(), state)
+				}
+				logger.Infof("%s", node.PrettyString())
+				logger.Infof("#######################\n\n")
+				mcdLogs, err := node.GetMCDaemonLogs("")
+				if err != nil {
+					logger.Infof("Error getting MCD logs for node %s", node.GetName())
+				}
+				logger.Infof("Node %s MCD logs:\n%s", node.GetName(), GetLastNLines(mcdLogs, maxMCDLines))
+				logger.Infof("#######################\n\n")
+				logger.Infof("MachineConfigNode:\n%s", node.GetMachineConfigNode().PrettyString())
+				logger.Infof("#######################\n\n")
+			}
+		}
+	} else {
+		logger.Infof("Error getting the list of degraded nodes: %s", err)
+	}
+
+	mccLogs, err := mcc.GetLogs()
+	if err != nil {
+		logger.Infof("Error getting the logs from MCC: %s", err)
+	}
+	logger.Infof("Last %d lines of MCC:\n%s", maxMCCLines, GetLastNLines(mccLogs, maxMCCLines))
+	logger.Infof("END DEBUG")
+}
+
+// MoveNodeToAnotherCustomPool moves a node from one custom pool to another custom pool
+func MoveNodeToAnotherCustomPool(node *Node, origMCP, destMCP string) error {
+	return node.Patch("json",
+		fmt.Sprintf(`[{"op":"remove", "path": "/metadata/labels/node-role.kubernetes.io~1%s"},{"op": "add", "path":"/metadata/labels/node-role.kubernetes.io~1%s", "value": ""}]`, origMCP, destMCP))
 }

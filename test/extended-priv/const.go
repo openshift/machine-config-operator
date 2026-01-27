@@ -33,6 +33,9 @@ const (
 	// GenericMCTemplate is the name of a MachineConfig template that can be fully configured by parameters
 	GenericMCTemplate = "generic-machine-config-template.yml"
 
+	// NodeAnnotationState state of the mc
+	NodeAnnotationState = "machineconfiguration.openshift.io/state"
+
 	// AWSPlatform value used to identify aws infrastructure
 	AWSPlatform = "aws"
 	// GCPPlatform value used to identify gcp infrastructure
@@ -45,6 +48,9 @@ const (
 	// ExpirationDockerfileLabel Expiration label in Dockerfile
 	ExpirationDockerfileLabel = `LABEL maintainer="mco-qe-team" quay.expires-after=24h`
 
+	// DefaultExpectTimeout is the default timeout for expect operations
+	DefaultExpectTimeout = 10 * time.Second
+
 	// DefaultMinutesWaitingPerNode is the  number of minutes per node that the MCPs will wait to become updated
 	DefaultMinutesWaitingPerNode = 13
 
@@ -54,17 +60,13 @@ const (
 	// ExtensionsChangeIncWait extra minutes that MCPs will wait per node if we change the extensions in a configuration
 	ExtensionsChangeIncWait = 5
 
-	// TrueString string for true value
-	TrueString = "True"
-	// FalseString string for false value
-	FalseString = "False"
-
-	// DefaultExpectTimeout is the default timeout for expect operations
-	DefaultExpectTimeout = 10 * time.Second
-
 	// MachineAPINamespace is the MachineAPI namespace
 	MachineAPINamespace = "openshift-machine-api"
 
+	// Machine phase Provisioning
+	MachinePhaseProvisioning = "Provisioning"
+	// Machine phase Deleting
+	MachinePhaseDeleting = "Deleting"
 	// We use full name to get machineset/machine xref: https://access.redhat.com/solutions/7040368
 	// MachineSetFullName is the machineset fully qualified name
 	MachineSetFullName = "machineset.machine.openshift.io"
@@ -75,6 +77,11 @@ const (
 	MachineSetResource = "machinesets"
 	// ControlPlaneMachineSetResource is the resource name for controlplanemachinesets
 	ControlPlaneMachineSetResource = "controlplanemachinesets"
+
+	// TrueString string for true value
+	TrueString = "True"
+	// FalseString string for false value
+	FalseString = "False"
 
 	// BusyBoxImage the multiplatform busybox image stored in openshifttest
 	BusyBoxImage = "quay.io/openshifttest/busybox@sha256:c5439d7db88ab5423999530349d327b04279ad3161d7596d2126dfb5b02bfd1f"
