@@ -194,7 +194,6 @@ func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
 
 			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler(
 				[]apicfgv1.FeatureGateName{
-					features.FeatureGateMachineConfigNodes,
 					features.FeatureGatePinnedImages,
 				},
 				[]apicfgv1.FeatureGateName{},

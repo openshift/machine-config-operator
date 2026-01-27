@@ -31,15 +31,13 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 	}
 
 	machineConfigStates := []*mcfgv1.MachineConfigNode{}
-	if ctrl.fgHandler.Enabled(features.FeatureGateMachineConfigNodes) {
-		for _, node := range nodes {
-			ms, err := ctrl.client.MachineconfigurationV1().MachineConfigNodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
-			if err != nil {
-				klog.Errorf("Could not find our MachineConfigNode for node. %s: %v", node.Name, err)
-				continue
-			}
-			machineConfigStates = append(machineConfigStates, ms)
+	for _, node := range nodes {
+		ms, err := ctrl.client.MachineconfigurationV1().MachineConfigNodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
+		if err != nil {
+			klog.Errorf("Could not find our MachineConfigNode for node. %s: %v", node.Name, err)
+			continue
 		}
+		machineConfigStates = append(machineConfigStates, ms)
 	}
 
 	// Get fresh copy of MCP from lister to ensure we have the latest status

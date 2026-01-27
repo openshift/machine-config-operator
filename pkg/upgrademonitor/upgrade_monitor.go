@@ -97,10 +97,6 @@ func generateAndApplyMachineConfigNodes(
 		return nil
 	}
 
-	if !fgHandler.Enabled(features.FeatureGateMachineConfigNodes) {
-		return nil
-	}
-
 	// get the existing MCN, or if it DNE create one below
 	mcNode, needNewMCNode := createOrGetMachineConfigNode(mcfgClient, node)
 	newMCNode := mcNode.DeepCopy()
@@ -391,12 +387,6 @@ func UpdateMachineConfigNodeSpecDesiredAnnotations(fgHandler ctrlcommon.FeatureG
 		return nil
 	}
 
-	// Check that the MachineConfigNode feature gate is enabled
-	if !fgHandler.Enabled(features.FeatureGateMachineConfigNodes) {
-		klog.Infof("MachineConfigNode FeatureGate is not enabled.")
-		return nil
-	}
-
 	// Get the existing MCN
 	mcn, mcnErr := mcfgClient.MachineconfigurationV1().MachineConfigNodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
 	// Note that this function is only intended to update the Spec of an existing MCN. We should
@@ -434,11 +424,6 @@ func UpdateMachineConfigNodeSpecDesiredAnnotations(fgHandler ctrlcommon.FeatureG
 // GenerateAndApplyMachineConfigNodeSpec generates and applies a new MCN spec based off the node state
 func GenerateAndApplyMachineConfigNodeSpec(fgHandler ctrlcommon.FeatureGatesHandler, pool string, node *corev1.Node, mcfgClient mcfgclientset.Interface) error {
 	if fgHandler == nil || node == nil {
-		return nil
-	}
-
-	if !fgHandler.Enabled(features.FeatureGateMachineConfigNodes) {
-		klog.Infof("MachineConfigNode FeatureGate is not enabled.")
 		return nil
 	}
 

@@ -124,7 +124,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 
 		close(ctrlctx.InformersStarted)
 
-		if ctrlctx.FeatureGatesHandler.Enabled(features.FeatureGatePinnedImages) && ctrlctx.FeatureGatesHandler.Enabled(features.FeatureGateMachineConfigNodes) {
+		if ctrlctx.FeatureGatesHandler.Enabled(features.FeatureGatePinnedImages) {
 			pinnedImageSet := pinnedimageset.New(
 				ctrlctx.InformerFactory.Machineconfiguration().V1().PinnedImageSets(),
 				ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),

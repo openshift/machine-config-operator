@@ -221,7 +221,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	close(ctrlctx.InformersStarted)
 
 	// ok to start the rest of the informers now that we have observed the initial feature gates
-	if ctrlctx.FeatureGatesHandler.Enabled(features.FeatureGatePinnedImages) && ctrlctx.FeatureGatesHandler.Enabled(features.FeatureGateMachineConfigNodes) {
+	if ctrlctx.FeatureGatesHandler.Enabled(features.FeatureGatePinnedImages) {
 		klog.Infof("Feature enabled: %s", features.FeatureGatePinnedImages)
 		criClient, err := cri.NewClient(ctx, constants.DefaultCRIOSocketPath)
 		if err != nil {

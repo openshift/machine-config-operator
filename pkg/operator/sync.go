@@ -793,9 +793,6 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig, _ *configv1.C
 
 // we need to mimic this
 func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.ClusterOperator) error {
-	if !optr.fgHandler.Enabled(features.FeatureGateMachineConfigNodes) {
-		return nil
-	}
 	nodes, err := optr.nodeLister.List(labels.Everything())
 	if err != nil {
 		return err
