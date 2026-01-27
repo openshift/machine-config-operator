@@ -4,7 +4,7 @@ contents:
   inline: |
     capture:
       # FIXME: This requires primary to be the first altname. Need NMState support to fix.
-      base-iface: interfaces.alt-names.0.name == "primary"
+      base-iface: interfaces.primary
     desiredState:
       interfaces:
       - name: {{`"{{ capture.base-iface.interfaces.0.name }}"`}}
