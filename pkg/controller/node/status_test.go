@@ -1051,7 +1051,6 @@ func TestCalculateStatus(t *testing.T) {
 			}
 			f := newFixtureWithFeatureGates(t,
 				[]apicfgv1.FeatureGateName{
-					features.FeatureGatePinnedImages,
 					features.FeatureGateOSStreams,
 				},
 				[]apicfgv1.FeatureGateName{},
@@ -1073,7 +1072,6 @@ func TestCalculateStatusWithImageModeReporting(t *testing.T) {
 	// This simulates a DevPreview environment where this feature gate is available
 	fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler(
 		[]apicfgv1.FeatureGateName{
-			features.FeatureGatePinnedImages,
 			features.FeatureGateImageModeStatusReporting, // Enable ImageModeStatusReporting directly
 		},
 		[]apicfgv1.FeatureGateName{},
@@ -1470,7 +1468,6 @@ func TestCalculateStatusWithImageModeReporting(t *testing.T) {
 			// Create fixture with our ImageModeStatusReporting feature gate handler
 			f := newFixtureWithFeatureGates(t,
 				[]apicfgv1.FeatureGateName{
-					features.FeatureGatePinnedImages,
 					features.FeatureGateImageModeStatusReporting,
 				},
 				[]apicfgv1.FeatureGateName{},

@@ -13,7 +13,6 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
 
 	configv1 "github.com/openshift/api/config/v1"
-	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 
 	cligoinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
@@ -892,11 +891,9 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 		return
 	}
 
-	if ctrl.fgHandler.Enabled(features.FeatureGatePinnedImages) {
-		for _, pool := range pools {
-			if isPinnedImageSetsInProgressForPool(pool) {
-				changed = true
-			}
+	for _, pool := range pools {
+		if isPinnedImageSetsInProgressForPool(pool) {
+			changed = true
 		}
 	}
 

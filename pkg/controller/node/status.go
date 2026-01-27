@@ -98,7 +98,6 @@ func (ctrl *Controller) calculateStatus(mcns []*mcfgv1.MachineConfigNode, cconfi
 
 	// Determine if pool is layered and get enabled feature gates
 	isLayeredPool := ctrl.isLayeredPool(mosc, mosb)
-	pisIsEnabled := ctrl.fgHandler.Enabled(features.FeatureGatePinnedImages)
 	imageModeReportingIsEnabled := ctrl.fgHandler.Enabled(features.FeatureGateImageModeStatusReporting)
 
 	// Update the number of degraded and updated machines from conditions in the MCNs for the nodes
@@ -126,11 +125,9 @@ func (ctrl *Controller) calculateStatus(mcns []*mcfgv1.MachineConfigNode, cconfi
 			break
 		}
 
-		// If the PIS feature gate is enabled, update the PIS reference in the PoolSynchronizer object
-		if pisIsEnabled {
-			if isPinnedImageSetsUpdated(mcn) {
-				poolSynchronizer.SetUpdated(mcfgv1.PinnedImageSets)
-			}
+		// Update the PIS reference in the PoolSynchronizer object
+		if isPinnedImageSetsUpdated(mcn) {
+			poolSynchronizer.SetUpdated(mcfgv1.PinnedImageSets)
 		}
 
 		// Loop through the MCN conditions to determine if the associated node is updating, updated, or degraded
@@ -221,18 +218,16 @@ func (ctrl *Controller) calculateStatus(mcns []*mcfgv1.MachineConfigNode, cconfi
 	}
 
 	// Update synchronizer status for pinned image sets
-	if pisIsEnabled {
-		syncStatus := poolSynchronizer.GetStatus(mcfgv1.PinnedImageSets)
-		status.PoolSynchronizersStatus = []mcfgv1.PoolSynchronizerStatus{
-			{
-				PoolSynchronizerType:    mcfgv1.PinnedImageSets,
-				MachineCount:            syncStatus.MachineCount,
-				UpdatedMachineCount:     syncStatus.UpdatedMachineCount,
-				ReadyMachineCount:       int64(readyMachineCount),
-				UnavailableMachineCount: int64(unavailableMachineCount),
-				AvailableMachineCount:   int64(totalMachineCount - unavailableMachineCount),
-			},
-		}
+	syncStatus := poolSynchronizer.GetStatus(mcfgv1.PinnedImageSets)
+	status.PoolSynchronizersStatus = []mcfgv1.PoolSynchronizerStatus{
+		{
+			PoolSynchronizerType:    mcfgv1.PinnedImageSets,
+			MachineCount:            syncStatus.MachineCount,
+			UpdatedMachineCount:     syncStatus.UpdatedMachineCount,
+			ReadyMachineCount:       int64(readyMachineCount),
+			UnavailableMachineCount: int64(unavailableMachineCount),
+			AvailableMachineCount:   int64(totalMachineCount - unavailableMachineCount),
+		},
 	}
 
 	// Update MCP status configuation & conditions

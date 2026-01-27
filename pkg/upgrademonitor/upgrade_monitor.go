@@ -124,9 +124,9 @@ func generateAndApplyMachineConfigNodes(
 	}
 
 	// singleton conditions are conditions that should only have one instance (no children) in the MCN status.
-	var singletonConditionTypes []mcfgv1.StateProgress
-	if fgHandler.Enabled(features.FeatureGatePinnedImages) {
-		singletonConditionTypes = append(singletonConditionTypes, mcfgv1.MachineConfigNodePinnedImageSetsDegraded, mcfgv1.MachineConfigNodePinnedImageSetsProgressing)
+	singletonConditionTypes := []mcfgv1.StateProgress{
+		mcfgv1.MachineConfigNodePinnedImageSetsDegraded,
+		mcfgv1.MachineConfigNodePinnedImageSetsProgressing,
 	}
 
 	// we use this array to see if the MCN has all of its conditions set
@@ -307,29 +307,27 @@ func generateAndApplyMachineConfigNodes(
 			statusApplyConfig = statusApplyConfig.WithConfigImage(configImageApplyConfig)
 		}
 
-		if fgHandler.Enabled(features.FeatureGatePinnedImages) {
-			if imageSetApplyConfig == nil {
-				for _, imageSet := range newMCNode.Status.PinnedImageSets {
-					// By default, a PinnedImageSet reference must include the name of the PIS and the desired generation
-					pisApplyConfig := &machineconfigurationv1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration{
-						DesiredGeneration: ptr.To(imageSet.DesiredGeneration),
-						Name:              ptr.To(imageSet.Name),
-					}
-					// Only set `CurrentGeneration` value when we are currently on a valid generation (imageSet.CurrentGeneration value is non-0)
-					if imageSet.CurrentGeneration != 0 {
-						pisApplyConfig.CurrentGeneration = ptr.To(imageSet.CurrentGeneration)
-					}
-					// Only set `LastFailedGeneration` value when it is a non-default (non-0) value
-					if imageSet.LastFailedGeneration != 0 {
-						pisApplyConfig.LastFailedGeneration = ptr.To(imageSet.LastFailedGeneration)
-						pisApplyConfig.LastFailedGenerationError = ptr.To(imageSet.LastFailedGenerationError)
-					}
-
-					statusApplyConfig = statusApplyConfig.WithPinnedImageSets(pisApplyConfig)
+		if imageSetApplyConfig == nil {
+			for _, imageSet := range newMCNode.Status.PinnedImageSets {
+				// By default, a PinnedImageSet reference must include the name of the PIS and the desired generation
+				pisApplyConfig := &machineconfigurationv1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration{
+					DesiredGeneration: ptr.To(imageSet.DesiredGeneration),
+					Name:              ptr.To(imageSet.Name),
 				}
-			} else if len(imageSetApplyConfig) > 0 {
-				statusApplyConfig = statusApplyConfig.WithPinnedImageSets(imageSetApplyConfig...)
+				// Only set `CurrentGeneration` value when we are currently on a valid generation (imageSet.CurrentGeneration value is non-0)
+				if imageSet.CurrentGeneration != 0 {
+					pisApplyConfig.CurrentGeneration = ptr.To(imageSet.CurrentGeneration)
+				}
+				// Only set `LastFailedGeneration` value when it is a non-default (non-0) value
+				if imageSet.LastFailedGeneration != 0 {
+					pisApplyConfig.LastFailedGeneration = ptr.To(imageSet.LastFailedGeneration)
+					pisApplyConfig.LastFailedGenerationError = ptr.To(imageSet.LastFailedGenerationError)
+				}
+
+				statusApplyConfig = statusApplyConfig.WithPinnedImageSets(pisApplyConfig)
 			}
+		} else if len(imageSetApplyConfig) > 0 {
+			statusApplyConfig = statusApplyConfig.WithPinnedImageSets(imageSetApplyConfig...)
 		}
 
 		mcnodeApplyConfig := machineconfigurationv1.MachineConfigNode(newMCNode.Name).WithStatus(statusApplyConfig)
