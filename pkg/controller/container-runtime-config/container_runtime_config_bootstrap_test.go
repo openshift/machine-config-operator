@@ -22,7 +22,7 @@ func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
 				helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
 			}
 			// ctrcfg for bootstrap mode
-			cm := newConfigMap("crio-default-ulimits")
+			cm := newConfigMap(ctrlcommon.MCONamespace, "crio-default-ulimits")
 			ctrcfg := newContainerRuntimeConfig("log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
 
 			f.ccLister = append(f.ccLister, cc)

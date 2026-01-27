@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/diff"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	k8sinformers "k8s.io/client-go/informers"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 	core "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
@@ -100,11 +101,11 @@ func newFixture(t *testing.T) *fixture {
 	return f
 }
 
-func newConfigMap(name string) *k8sv1.ConfigMap {
+func newConfigMap(namespace, name string) *k8sv1.ConfigMap {
 	return &k8sv1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: "openshift-machine-config-operator",
+			Namespace: namespace,
 		},
 	}
 }
@@ -275,6 +276,8 @@ func (f *fixture) newController() *Controller {
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
 	ci := configv1informer.NewSharedInformerFactory(f.imgClient, noResyncPeriodFunc())
 	oi := operatorinformer.NewSharedInformerFactory(f.operatorClient, noResyncPeriodFunc())
+	k8sInformer := k8sinformers.NewSharedInformerFactory(f.kubeClient, noResyncPeriodFunc())
+
 	c := New(templateDir,
 		i.Machineconfiguration().V1().MachineConfigPools(),
 		i.Machineconfiguration().V1().ControllerConfigs(),
@@ -282,6 +285,7 @@ func (f *fixture) newController() *Controller {
 		ci.Config().V1().Images(),
 		ci.Config().V1().ImageDigestMirrorSets(),
 		ci.Config().V1().ImageTagMirrorSets(),
+		k8sInformer.Core().V1().ConfigMaps(),
 		ci,
 		oi.Operator().V1alpha1().ImageContentSourcePolicies(),
 		ci.Config().V1().ClusterVersions(),
@@ -298,6 +302,7 @@ func (f *fixture) newController() *Controller {
 	c.itmsListerSynced = alwaysReady
 	c.clusterImagePolicyListerSynced = alwaysReady
 	c.imagePolicyListerSynced = alwaysReady
+	c.ocManagedConfigMapListerSynced = alwaysReady
 	c.clusterVersionListerSynced = alwaysReady
 	c.eventRecorder = &record.FakeRecorder{}
 
@@ -309,6 +314,8 @@ func (f *fixture) newController() *Controller {
 	ci.WaitForCacheSync(stopCh)
 	oi.Start(stopCh)
 	oi.WaitForCacheSync(stopCh)
+	k8sInformer.Start(stopCh)
+	k8sInformer.WaitForCacheSync(stopCh)
 
 	for _, c := range f.ccLister {
 		i.Machineconfiguration().V1().ControllerConfigs().Informer().GetIndexer().Add(c)
@@ -659,14 +666,15 @@ func TestContainerRuntimeConfigCreate(t *testing.T) {
 			defaultUlimitsmcs2 := helpers.NewMachineConfig("00-override-worker-generated-crio-default-ulimits", nil, "dummy://", []ign3types.File{{}})
 			mcs2 := mcs1.DeepCopy()
 			mcs2.Name = ctrCfgKey
-			cm := newConfigMap("crio-default-container-runtime")
+			cm := newConfigMap(ctrlcommon.MCONamespace, defaultContainerRuntimeCMName)
+			adminAckGateConfigMap := newConfigMap(ctrlcommon.OpenshiftConfigManagedNamespace, AdminAckGatesConfigMapName)
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
 			f.mcpLister = append(f.mcpLister, mcp2)
 			f.mccrLister = append(f.mccrLister, ctrcfg1)
 			f.objects = append(f.objects, ctrcfg1)
-			f.k8sObjects = append(f.k8sObjects, cm)
+			f.k8sObjects = append(f.k8sObjects, cm, adminAckGateConfigMap)
 
 			f.expectGetMachineConfigAction(defaultUlimitsmcs1)
 			f.expectCreateMachineConfigAction(defaultUlimitsmcs1)
@@ -709,14 +717,15 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			defaultUlimitsmcs2 := helpers.NewMachineConfig("00-override-worker-generated-crio-default-ulimits", nil, "dummy://", []ign3types.File{{}})
 			mcsUpdate := mcs.DeepCopy()
 			mcsUpdate.Name = keyCtrCfg
-			cm := newConfigMap("crio-default-container-runtime")
+			cm := newConfigMap(ctrlcommon.MCONamespace, defaultContainerRuntimeCMName)
+			adminAckGateConfigMap := newConfigMap(ctrlcommon.OpenshiftConfigManagedNamespace, AdminAckGatesConfigMapName)
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
 			f.mcpLister = append(f.mcpLister, mcp2)
 			f.mccrLister = append(f.mccrLister, ctrcfg1)
 			f.objects = append(f.objects, ctrcfg1)
-			f.k8sObjects = append(f.k8sObjects, cm)
+			f.k8sObjects = append(f.k8sObjects, cm, adminAckGateConfigMap)
 
 			f.expectGetMachineConfigAction(defaultUlimitsmcs1)
 			f.expectCreateMachineConfigAction(defaultUlimitsmcs1)
@@ -756,7 +765,7 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			f.mcpLister = append(f.mcpLister, mcp2)
 			f.mccrLister = append(f.mccrLister, ctrcfgUpdate)
 			f.objects = append(f.objects, mcsUpdate, ctrcfgUpdate)
-			f.k8sObjects = append(f.k8sObjects, cm)
+			f.k8sObjects = append(f.k8sObjects, cm, adminAckGateConfigMap)
 
 			c = f.newController()
 			stopCh = make(chan struct{})
@@ -807,6 +816,8 @@ func TestImageConfigCreate(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}, AllowedRegistries: []string{"allow.io"}, ContainerRuntimeSearchRegistries: []string{"search-reg.io"}})
 			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
+			adminAckGateConfigMap := newConfigMap(ctrlcommon.OpenshiftConfigManagedNamespace, AdminAckGatesConfigMapName)
+
 			keyReg1, _ := getManagedKeyReg(mcp, nil)
 			keyReg2, _ := getManagedKeyReg(mcp2, nil)
 			mcs1 := helpers.NewMachineConfig(keyReg1, map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
@@ -820,6 +831,7 @@ func TestImageConfigCreate(t *testing.T) {
 			f.imgLister = append(f.imgLister, imgcfg1)
 			f.cvLister = append(f.cvLister, cvcfg1)
 			f.imgObjects = append(f.imgObjects, imgcfg1)
+			f.k8sObjects = append(f.k8sObjects, adminAckGateConfigMap)
 
 			f.expectGetMachineConfigAction(mcs1)
 			f.expectGetMachineConfigAction(mcs1)
@@ -861,6 +873,7 @@ func TestImageConfigUpdate(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}, AllowedRegistries: []string{"allow.io"}, ContainerRuntimeSearchRegistries: []string{"search-reg.io"}})
 			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
+			adminAckGateConfigMap := newConfigMap(ctrlcommon.OpenshiftConfigManagedNamespace, AdminAckGatesConfigMapName)
 			keyReg1, _ := getManagedKeyReg(mcp, nil)
 			keyReg2, _ := getManagedKeyReg(mcp2, nil)
 			mcs1 := helpers.NewMachineConfig(getManagedKeyRegDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
@@ -876,6 +889,7 @@ func TestImageConfigUpdate(t *testing.T) {
 			f.imgLister = append(f.imgLister, imgcfg1)
 			f.cvLister = append(f.cvLister, cvcfg1)
 			f.imgObjects = append(f.imgObjects, imgcfg1)
+			f.k8sObjects = append(f.k8sObjects, adminAckGateConfigMap)
 
 			f.expectGetMachineConfigAction(mcs1Update)
 			f.expectGetMachineConfigAction(mcs1)
@@ -915,6 +929,7 @@ func TestImageConfigUpdate(t *testing.T) {
 			f.cvLister = append(f.cvLister, cvcfg1)
 			f.imgObjects = append(f.imgObjects, imgcfgUpdate)
 			f.objects = append(f.objects, mcs1Update, mcs2Update)
+			f.k8sObjects = []runtime.Object{adminAckGateConfigMap}
 
 			c = f.newController()
 			stopCh = make(chan struct{})
@@ -963,6 +978,7 @@ func TestICSPUpdate(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}})
 			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
+			adminAckGateConfigMap := newConfigMap(ctrlcommon.OpenshiftConfigManagedNamespace, AdminAckGatesConfigMapName)
 			keyReg1, _ := getManagedKeyReg(mcp, nil)
 			keyReg2, _ := getManagedKeyReg(mcp2, nil)
 			mcs1 := helpers.NewMachineConfig(getManagedKeyRegDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
@@ -983,6 +999,7 @@ func TestICSPUpdate(t *testing.T) {
 			f.cvLister = append(f.cvLister, cvcfg1)
 			f.imgObjects = append(f.imgObjects, imgcfg1)
 			f.operatorObjects = append(f.operatorObjects, icsp)
+			f.k8sObjects = append(f.k8sObjects, adminAckGateConfigMap)
 
 			f.expectGetMachineConfigAction(mcs1Update)
 			f.expectGetMachineConfigAction(mcs1)
@@ -1026,6 +1043,7 @@ func TestICSPUpdate(t *testing.T) {
 			f.objects = append(f.objects, mcs1Update, mcs2Update)
 			f.imgObjects = append(f.imgObjects, imgcfg1)
 			f.operatorObjects = append(f.operatorObjects, icspUpdate)
+			f.k8sObjects = append(f.k8sObjects, adminAckGateConfigMap)
 
 			c = f.newController()
 			stopCh = make(chan struct{})
@@ -1072,6 +1090,7 @@ func TestIDMSUpdate(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}})
 			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
+			adminAckGateConfigMap := newConfigMap(ctrlcommon.OpenshiftConfigManagedNamespace, AdminAckGatesConfigMapName)
 			keyReg1, _ := getManagedKeyReg(mcp, nil)
 			keyReg2, _ := getManagedKeyReg(mcp2, nil)
 			mcs1 := helpers.NewMachineConfig(getManagedKeyRegDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
@@ -1092,6 +1111,7 @@ func TestIDMSUpdate(t *testing.T) {
 			f.cvLister = append(f.cvLister, cvcfg1)
 			f.imgObjects = append(f.imgObjects, imgcfg1)
 			f.operatorObjects = append(f.operatorObjects, idms)
+			f.k8sObjects = append(f.k8sObjects, adminAckGateConfigMap)
 
 			f.expectGetMachineConfigAction(mcs1Update)
 			f.expectGetMachineConfigAction(mcs1)
@@ -1135,6 +1155,7 @@ func TestIDMSUpdate(t *testing.T) {
 			f.objects = append(f.objects, mcs1Update, mcs2Update)
 			f.imgObjects = append(f.imgObjects, imgcfg1)
 			f.operatorObjects = append(f.operatorObjects, idmsUpdate)
+			f.k8sObjects = append(f.k8sObjects, adminAckGateConfigMap)
 
 			c = f.newController()
 			stopCh = make(chan struct{})
@@ -1181,6 +1202,7 @@ func TestITMSUpdate(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}})
 			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
+			adminAckGateConfigMap := newConfigMap(ctrlcommon.OpenshiftConfigManagedNamespace, AdminAckGatesConfigMapName)
 			keyReg1, _ := getManagedKeyReg(mcp, nil)
 			keyReg2, _ := getManagedKeyReg(mcp2, nil)
 			mcs1 := helpers.NewMachineConfig(getManagedKeyRegDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
@@ -1201,6 +1223,7 @@ func TestITMSUpdate(t *testing.T) {
 			f.cvLister = append(f.cvLister, cvcfg1)
 			f.imgObjects = append(f.imgObjects, imgcfg1)
 			f.operatorObjects = append(f.operatorObjects, itms)
+			f.k8sObjects = append(f.k8sObjects, adminAckGateConfigMap)
 
 			f.expectGetMachineConfigAction(mcs1Update)
 			f.expectGetMachineConfigAction(mcs1)
@@ -1244,6 +1267,7 @@ func TestITMSUpdate(t *testing.T) {
 			f.objects = append(f.objects, mcs1Update, mcs2Update)
 			f.imgObjects = append(f.imgObjects, imgcfg1)
 			f.operatorObjects = append(f.operatorObjects, itmsUpdate)
+			f.k8sObjects = append(f.k8sObjects, adminAckGateConfigMap)
 
 			c = f.newController()
 			stopCh = make(chan struct{})
@@ -1668,8 +1692,9 @@ func TestCtrruntimeConfigMultiCreate(t *testing.T) {
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			f.ccLister = append(f.ccLister, cc)
 
-			cm := newConfigMap("crio-default-container-runtime")
-			f.k8sObjects = []runtime.Object{cm}
+			cm := newConfigMap(ctrlcommon.MCONamespace, defaultContainerRuntimeCMName)
+			adminAckGateConfigMap := newConfigMap(ctrlcommon.OpenshiftConfigManagedNamespace, AdminAckGatesConfigMapName)
+			f.k8sObjects = []runtime.Object{cm, adminAckGateConfigMap}
 
 			ctrcfgCount := 30
 			for i := 0; i < ctrcfgCount; i++ {
@@ -1687,7 +1712,7 @@ func TestCtrruntimeConfigMultiCreate(t *testing.T) {
 				f.mcpLister = append(f.mcpLister, mcp)
 				f.mccrLister = append(f.mccrLister, ccr)
 				f.objects = append(f.objects, ccr)
-				f.k8sObjects = []runtime.Object{cm}
+				f.k8sObjects = []runtime.Object{cm, adminAckGateConfigMap}
 
 				mcs := helpers.NewMachineConfig(generateManagedKey(ccr, 1), labelSelector.MatchLabels, "dummy://", []ign3types.File{{}})
 				mcsDeprecated := mcs.DeepCopy()
@@ -1720,7 +1745,8 @@ func TestContainerruntimeConfigResync(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			ccr1 := newContainerRuntimeConfig("log-level-1", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
 			ccr2 := newContainerRuntimeConfig("log-level-2", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
-			cm := newConfigMap("crio-default-container-runtime")
+			cm := newConfigMap(ctrlcommon.MCONamespace, defaultContainerRuntimeCMName)
+			adminAckGateConfigMap := newConfigMap(ctrlcommon.OpenshiftConfigManagedNamespace, AdminAckGatesConfigMapName)
 
 			ctrConfigKey, _ := getManagedKeyCtrCfg(mcp, f.client, ccr1)
 			mcs := helpers.NewMachineConfig(ctrConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
@@ -1732,7 +1758,7 @@ func TestContainerruntimeConfigResync(t *testing.T) {
 			f.mcpLister = append(f.mcpLister, mcp2)
 			f.mccrLister = append(f.mccrLister, ccr1)
 			f.objects = append(f.objects, ccr1)
-			f.k8sObjects = []runtime.Object{cm}
+			f.k8sObjects = []runtime.Object{cm, adminAckGateConfigMap}
 
 			c := f.newController()
 			err := c.syncHandler(getKey(ccr1, t))
@@ -1795,14 +1821,15 @@ func TestAddAnnotationExistingContainerRuntimeConfig(t *testing.T) {
 			ctrcfgMC := helpers.NewMachineConfig(ctrMCKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
 			defaultUlimitsmcs1 := helpers.NewMachineConfig("00-override-master-generated-crio-default-ulimits", nil, "dummy://", []ign3types.File{{}})
 			defaultUlimitsmcs2 := helpers.NewMachineConfig("00-override-worker-generated-crio-default-ulimits", nil, "dummy://", []ign3types.File{{}})
-			cm := newConfigMap("crio-default-container-runtime")
+			cm := newConfigMap(ctrlcommon.MCONamespace, defaultContainerRuntimeCMName)
+			adminAckGateConfigMap := newConfigMap(ctrlcommon.OpenshiftConfigManagedNamespace, AdminAckGatesConfigMapName)
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
 			f.mcpLister = append(f.mcpLister, mcp2)
 			f.mccrLister = append(f.mccrLister, ctrc, ctrc1)
 			f.objects = append(f.objects, ctrc, ctrc1, ctrcfgMC)
-			f.k8sObjects = []runtime.Object{cm}
+			f.k8sObjects = []runtime.Object{cm, adminAckGateConfigMap}
 
 			// ctrc created before ctrc1,
 			// make sure ccr does not have annotation machineconfiguration.openshift.io/mc-name-suffix before sync, ccr1 has annotation machineconfiguration.openshift.io/mc-name-suffix
@@ -1940,6 +1967,7 @@ func TestClusterImagePolicyCreate(t *testing.T) {
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}, AllowedRegistries: []string{"example.com"}, ContainerRuntimeSearchRegistries: []string{"search-reg.io"}})
+			adminAckGateConfigMap := newConfigMap(ctrlcommon.OpenshiftConfigManagedNamespace, AdminAckGatesConfigMapName)
 
 			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
 			keyReg1, _ := getManagedKeyReg(mcp, nil)
@@ -1958,6 +1986,7 @@ func TestClusterImagePolicyCreate(t *testing.T) {
 			f.clusterImagePolicyLister = append(f.clusterImagePolicyLister, clusterimgPolicy)
 			f.cvLister = append(f.cvLister, cvcfg1)
 			f.imgObjects = append(f.imgObjects, imgcfg1)
+			f.k8sObjects = append(f.k8sObjects, adminAckGateConfigMap)
 
 			f.expectGetMachineConfigAction(mcs1)
 			f.expectGetMachineConfigAction(mcs1)
@@ -1998,6 +2027,7 @@ func TestSigstoreRegistriesConfigIDMSandCIPCreate(t *testing.T) {
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}, AllowedRegistries: []string{"example.com"}, ContainerRuntimeSearchRegistries: []string{"search-reg.io"}})
+			adminAckGateConfigMap := newConfigMap(ctrlcommon.OpenshiftConfigManagedNamespace, AdminAckGatesConfigMapName)
 
 			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
 			keyReg1, _ := getManagedKeyReg(mcp, nil)
@@ -2021,6 +2051,7 @@ func TestSigstoreRegistriesConfigIDMSandCIPCreate(t *testing.T) {
 			f.clusterImagePolicyLister = append(f.clusterImagePolicyLister, clusterimgPolicy)
 			f.cvLister = append(f.cvLister, cvcfg1)
 			f.imgObjects = append(f.imgObjects, imgcfg1)
+			f.k8sObjects = append(f.k8sObjects, adminAckGateConfigMap)
 
 			f.expectGetMachineConfigAction(mcs1)
 			f.expectGetMachineConfigAction(mcs1)
@@ -2063,6 +2094,7 @@ func TestImagePolicyCreate(t *testing.T) {
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}, AllowedRegistries: []string{"example.com"}, ContainerRuntimeSearchRegistries: []string{"search-reg.io"}})
+			adminAckGateConfigMap := newConfigMap(ctrlcommon.OpenshiftConfigManagedNamespace, AdminAckGatesConfigMapName)
 
 			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
 			keyReg1, _ := getManagedKeyReg(mcp, nil)
@@ -2081,6 +2113,7 @@ func TestImagePolicyCreate(t *testing.T) {
 			f.imagePolicyLister = append(f.imagePolicyLister, imgPolicy)
 			f.cvLister = append(f.cvLister, cvcfg1)
 			f.imgObjects = append(f.imgObjects, imgcfg1)
+			f.k8sObjects = append(f.k8sObjects, adminAckGateConfigMap)
 
 			f.expectGetMachineConfigAction(mcs1)
 			f.expectGetMachineConfigAction(mcs1)
