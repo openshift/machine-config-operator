@@ -6,6 +6,9 @@ import (
 	"time"
 
 	opv1 "github.com/openshift/api/operator/v1"
+	operatorinformersv1alpha1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1alpha1"
+	operatorlistersv1alpha1 "github.com/openshift/client-go/operator/listers/operator/v1alpha1"
+	"github.com/openshift/machine-config-operator/pkg/osimagestream"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
 
@@ -40,8 +43,10 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
+	mcfginformersv1alpha1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
 
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
+	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 
 	mcopclientset "github.com/openshift/client-go/operator/clientset/versioned"
 	mcopinformersv1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
@@ -65,8 +70,10 @@ type Operator struct {
 
 	inClusterBringup bool
 
-	imagesFile string
-	logLevel   int
+	imagesFile    string
+	templatesPath string
+
+	logLevel int
 
 	vStore *versionStore
 
@@ -83,6 +90,9 @@ type Operator struct {
 	syncHandler func(ic string) error
 
 	imgLister             configlistersv1.ImageLister
+	idmsLister            configlistersv1.ImageDigestMirrorSetLister
+	itmsLister            configlistersv1.ImageTagMirrorSetLister
+	icspLister            operatorlistersv1alpha1.ImageContentSourcePolicyLister
 	crdLister             apiextlistersv1.CustomResourceDefinitionLister
 	mcpLister             mcfglistersv1.MachineConfigPoolLister
 	msLister              mcfglistersv1.MachineConfigNodeLister
@@ -110,6 +120,8 @@ type Operator struct {
 	nodeClusterLister     configlistersv1.NodeLister
 	moscLister            mcfglistersv1.MachineOSConfigLister
 	apiserverLister       configlistersv1.APIServerLister
+	clusterVersionLister  configlistersv1.ClusterVersionLister
+	osImageStreamLister   mcfglistersv1alpha1.OSImageStreamLister
 
 	crdListerSynced                  cache.InformerSynced
 	deployListerSynced               cache.InformerSynced
@@ -130,6 +142,9 @@ type Operator struct {
 	dnsListerSynced                  cache.InformerSynced
 	maoSecretInformerSynced          cache.InformerSynced
 	imgListerSynced                  cache.InformerSynced
+	idmsListerSynced                 cache.InformerSynced
+	itmsListerSynced                 cache.InformerSynced
+	icspListerSynced                 cache.InformerSynced
 	mcoSAListerSynced                cache.InformerSynced
 	mcoSecretListerSynced            cache.InformerSynced
 	ocCmListerSynced                 cache.InformerSynced
@@ -142,6 +157,7 @@ type Operator struct {
 	nodeClusterListerSynced          cache.InformerSynced
 	moscListerSynced                 cache.InformerSynced
 	apiserverListerSynced            cache.InformerSynced
+	osImageStreamListerSynced        cache.InformerSynced
 
 	// queue only ever has one item, but it has nice error handling backoff/retry semantics
 	queue workqueue.TypedRateLimitingInterface[string]
@@ -181,6 +197,9 @@ func New(
 	nodeInformer coreinformersv1.NodeInformer,
 	maoSecretInformer coreinformersv1.SecretInformer,
 	imgInformer configinformersv1.ImageInformer,
+	idmsInformer configinformersv1.ImageDigestMirrorSetInformer,
+	itmsInformer configinformersv1.ImageTagMirrorSetInformer,
+	icspInformer operatorinformersv1alpha1.ImageContentSourcePolicyInformer,
 	mcoSAInformer coreinformersv1.ServiceAccountInformer,
 	mcoSecretInformer coreinformersv1.SecretInformer,
 	ocCmInformer coreinformersv1.ConfigMapInformer,
@@ -195,6 +214,8 @@ func New(
 	nodeClusterInformer configinformersv1.NodeInformer,
 	apiserverInformer configinformersv1.APIServerInformer,
 	moscInformer mcfginformersv1.MachineOSConfigInformer,
+	clusterVersionInformer configinformersv1.ClusterVersionInformer,
+	osImageStreamInformer mcfginformersv1alpha1.OSImageStreamInformer,
 	ctrlctx *ctrlcommon.ControllerContext,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()
@@ -274,6 +295,14 @@ func New(
 	optr.syncHandler = optr.sync
 
 	optr.imgLister = imgInformer.Lister()
+	optr.imgListerSynced = imgInformer.Informer().HasSynced
+	optr.idmsLister = idmsInformer.Lister()
+	optr.idmsListerSynced = idmsInformer.Informer().HasSynced
+	optr.itmsLister = itmsInformer.Lister()
+	optr.itmsListerSynced = itmsInformer.Informer().HasSynced
+	optr.icspLister = icspInformer.Lister()
+	optr.icspListerSynced = icspInformer.Informer().HasSynced
+
 	optr.clusterCmLister = clusterCmInfomer.Lister()
 	optr.clusterCmListerSynced = clusterCmInfomer.Informer().HasSynced
 	optr.mcpLister = mcpInformer.Lister()
@@ -291,7 +320,6 @@ func New(
 	optr.nodeClusterLister = nodeClusterInformer.Lister()
 	optr.nodeClusterListerSynced = nodeClusterInformer.Informer().HasSynced
 
-	optr.imgListerSynced = imgInformer.Informer().HasSynced
 	optr.maoSecretInformerSynced = maoSecretInformer.Informer().HasSynced
 	optr.serviceAccountInformerSynced = serviceAccountInfomer.Informer().HasSynced
 	optr.clusterRoleInformerSynced = clusterRoleInformer.Informer().HasSynced
@@ -332,6 +360,11 @@ func New(
 	optr.apiserverListerSynced = apiserverInformer.Informer().HasSynced
 	optr.moscLister = moscInformer.Lister()
 	optr.moscListerSynced = moscInformer.Informer().HasSynced
+	optr.clusterVersionLister = clusterVersionInformer.Lister()
+	if osImageStreamInformer != nil && osimagestream.IsFeatureEnabled(optr.fgHandler) {
+		optr.osImageStreamLister = osImageStreamInformer.Lister()
+		optr.osImageStreamListerSynced = osImageStreamInformer.Informer().HasSynced
+	}
 
 	optr.vStore.Set("operator", version.ReleaseVersion)
 	optr.vStore.Set("operator-image", version.OperatorImage)
@@ -374,6 +407,9 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.mcListerSynced,
 		optr.dnsListerSynced,
 		optr.imgListerSynced,
+		optr.idmsListerSynced,
+		optr.itmsListerSynced,
+		optr.icspListerSynced,
 		optr.mcoSAListerSynced,
 		optr.mcoSecretListerSynced,
 		optr.ocCmListerSynced,
@@ -386,7 +422,9 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.nodeClusterListerSynced,
 		optr.moscListerSynced,
 	}
-
+	if optr.osImageStreamListerSynced != nil && osimagestream.IsFeatureEnabled(optr.fgHandler) {
+		cacheSynced = append(cacheSynced, optr.osImageStreamListerSynced)
+	}
 	if !cache.WaitForCacheSync(stopCh,
 		cacheSynced...) {
 		klog.Error("failed to sync caches")
@@ -510,8 +548,11 @@ func (optr *Operator) sync(key string) error {
 	// syncFuncs is the list of sync functions that are executed in order.
 	// any error marks sync as failure.
 	syncFuncs := []syncFunc{
-		// "RenderConfig" must always run first as it sets the renderConfig in the operator
-		// for the sync funcs below
+		// OSImageStream must run FIRST to provide OS image information as RenderConfig will read
+		// images references from OSImageStream
+		{"OSImageStream", optr.syncOSImageStream},
+		// "RenderConfig" should be the first one to run (except OSImageStream) as it sets the renderConfig in
+		// the operator for the sync funcs below
 		{"RenderConfig", optr.syncRenderConfig},
 		{"MachineConfiguration", optr.syncMachineConfiguration},
 		{"MachineConfigNode", optr.syncMachineConfigNodes},
