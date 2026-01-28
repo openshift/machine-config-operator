@@ -456,4 +456,4 @@ replace (
 	k8s.io/sample-controller => github.com/openshift/kubernetes/staging/src/k8s.io/sample-controller v0.0.0-20251028145634-9e794b89909a
 )
 
-replace github.com/opencontainers/runc => github.com/opencontainers/runc v1.2.3
+replace github.com/opencontainers/runc => github.com/opencontainers/runc v1.1.14

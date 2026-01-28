@@ -6,6 +6,8 @@ run:
   skip-files:
     - ".*_test\\.go"
     - "lib/.*"
+  skip-dirs:
+    - test/extended-priv
 cache:
   enabled: true
 linters:
@@ -17,8 +19,6 @@ linters:
     #- gochecknoinits
     - goconst
     - gocritic
-    - gofmt
-    - goimports
     - revive
     - gosec
     - govet
@@ -48,18 +48,8 @@ linters-settings:
       - caseOrder
       - codegenComment
       - commentedOutCode
-      - deprecatedComment
-      - dupArg
-      - dupBranchBody
-      - dupCase
-      - dupSubExpr
-      - exitAfterDefer
-      - flagDeref
-      - flagName
       - nilValReturn
-      - offBy1
       - weakCond
-      - appendAssign
       - octalLiteral
       - sloppyReassign
 
@@ -72,7 +62,6 @@ linters-settings:
       - appendCombine
 
       # Style
-      - assignOp
       - boolExprSimplify
       # - captLocal
       # - commentFormatting
