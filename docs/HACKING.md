@@ -55,6 +55,56 @@ All tests (unit and e2e) can be executed with:
 
 `make test`
 
+## Bootstrap Unit Tests
+
+The MCO has specialized bootstrap tests that verify the bootstrap rendering process produces the same MachineConfigs as the running controllers. This ensures that the bootstrap and controller code paths remain in sync.
+
+### Why Bootstrap Tests Matter
+
+During cluster installation, the bootstrap process renders MachineConfigs offline (without a running API server). After the cluster is up, the MachineConfig Controller (MCC) takes over and renders MachineConfigs based on the same inputs. If these two processes produce different outputs, the installation would break, as the MCD will not be able to find the initial config during initialization. 
+
+The bootstrap tests catch drift between these two code paths before it causes production issues.
+
+### Types of Bootstrap Tests
+
+#### Unit Tests (`pkg/controller/bootstrap/bootstrap_test.go`)
+
+Basic unit tests that verify:
+- **`TestParseManifests`**: Correctly parses YAML manifests (including multi-document YAML with `---` separators)
+- **`TestBootstrapRun`**: Runs the bootstrap process against test data and verifies the rendered MachineConfigs contain expected content (e.g., registry configurations from ImageContentSourcePolicy)
+- **`TestValidatePreBuiltImage`**: Validates pre-built image specifications use proper digest formats
+
+#### E2E Bootstrap Tests (`test/e2e-bootstrap/bootstrap_test.go`)
+
+More comprehensive tests that use [envtest](https://pkg.go.dev/sigs.k8s.io/controller-runtime/pkg/envtest) to run actual MCC controllers against a simulated API server. These tests:
+
+1. Start an envtest environment with a real etcd and API server
+2. Create test manifests (FeatureGates, KubeletConfigs, ContainerRuntimeConfigs, etc.)
+3. Run the actual MCC controllers (template, kubelet-config, container-runtime-config, render, node)
+4. Wait for the controllers to produce rendered MachineConfigs
+5. Run the bootstrap process against the same manifests
+6. Compare the rendered MachineConfig names from both paths
+
+If the bootstrap and controller rendered configs don't match, the test fails with detailed output showing both configurations.
+
+### Test Data Location
+
+Bootstrap test data is located in `pkg/controller/bootstrap/testdata/bootstrap/` and includes:
+- ControllerConfig
+- MachineConfigPools (master, worker)
+- Base MachineConfigs
+- ImageContentSourcePolicy (for registry mirror testing)
+- Pull secret for MachineConfigController
+
+### Adding New Bootstrap Test Cases
+
+When adding new functionality that affects MachineConfig rendering:
+
+1. Add a test case to `TestE2EBootstrap` in `test/e2e-bootstrap/bootstrap_test.go`
+2. Define the manifests that exercise your new feature
+3. Specify which MachineConfigs should be generated for master/worker pools
+4. The test will automatically verify bootstrap and controller output match
+
 # Managing Go Dependencies
 
 Dependencies are managed with [go modules](https://github.com/golang/go/wiki/Modules) but committed directly to the repository.
