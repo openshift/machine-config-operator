@@ -1,8 +1,11 @@
 package extended
 
 import (
+	"fmt"
 	"strings"
 
+	o "github.com/onsi/gomega"
+	opv1 "github.com/openshift/api/operator/v1"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 )
@@ -84,19 +87,19 @@ func (mc MachineConfiguration) GetAllManagedBootImagesResources() ([]string, err
 }
 
 // SetManualSkew configures bootImageSkewEnforcement to Manual mode with the specified mode type and version.
-// mode should be "RHCOSVersion" or "OCPVersion", version is the corresponding version string.
-func (mc MachineConfiguration) SetManualSkew(mode, version string) error {
+// mode should be opv1.ClusterBootImageSpecModeRHCOSVersion or opv1.ClusterBootImageSpecModeOCPVersion.
+func (mc MachineConfiguration) SetManualSkew(mode opv1.ClusterBootImageManualMode, version string) error {
 	logger.Infof("Setting .spec.bootImageSkewEnforcement to Manual mode (%s: %s) on %s", mode, version, mc)
 	var versionField string
 	switch mode {
-	case "RHCOSVersion":
+	case opv1.ClusterBootImageSpecModeRHCOSVersion:
 		versionField = `"rhcosVersion":"` + version + `"`
-	case "OCPVersion":
+	case opv1.ClusterBootImageSpecModeOCPVersion:
 		versionField = `"ocpVersion":"` + version + `"`
 	default:
-		versionField = `"rhcosVersion":"` + version + `"`
+		return fmt.Errorf("unsupported manual skew mode: %s", mode)
 	}
-	return mc.Patch("merge", `{"spec":{"bootImageSkewEnforcement":{"mode":"Manual","manual":{"mode":"`+mode+`",`+versionField+`}}}}`)
+	return mc.Patch("merge", `{"spec":{"bootImageSkewEnforcement":{"mode":"Manual","manual":{"mode":"`+string(mode)+`",`+versionField+`}}}}`)
 }
 
 // SetNoneSkew configures bootImageSkewEnforcement to None mode, effectively disabling skew enforcement
@@ -117,4 +120,40 @@ func (mc MachineConfiguration) RemoveSkew() error {
 		return nil
 	}
 	return mc.Patch("json", `[{ "op": "remove", "path": "/spec/bootImageSkewEnforcement"}]`)
+}
+
+// GetBootImageSkewEnforcementStatusMode returns the .status.bootImageSkewEnforcementStatus.mode field
+func (mc MachineConfiguration) GetBootImageSkewEnforcementStatusMode() (string, error) {
+	return mc.Get(`{.status.bootImageSkewEnforcementStatus.mode}`)
+}
+
+// WaitForBootImageSkewEnforcementStatusMode waits for the bootImageSkewEnforcementStatus.mode to reach the expected value
+func (mc MachineConfiguration) WaitForBootImageSkewEnforcementStatusMode(expectedMode opv1.BootImageSkewEnforcementModeStatus) {
+	var mode string
+	o.Eventually(func() (bool, error) {
+		var err error
+		mode, err = mc.GetBootImageSkewEnforcementStatusMode()
+		if err != nil {
+			return false, err
+		}
+		return mode == string(expectedMode), nil
+	}, "2m", "10s").Should(o.BeTrue(), "MachineConfiguration bootImageSkewEnforcementStatus.mode is %s, did not reach expected state: %s", mode, expectedMode)
+}
+
+// WaitForBootImageControllerComplete waits for the boot image controller to finish processing
+// (BootImageUpdateProgressing=False)
+func (mc MachineConfiguration) WaitForBootImageControllerComplete() {
+	o.Eventually(mc.IsConditionStatusTrue, "2m", "2s").WithArguments("BootImageUpdateProgressing").
+		Should(o.BeFalse(), "Expected %s BootImageUpdateProgressing to be False.\n%s", mc, mc.PrettyString())
+}
+
+// WaitForBootImageControllerDegradedState waits for the boot image controller to be in the expected degraded state
+func (mc MachineConfiguration) WaitForBootImageControllerDegradedState(degraded bool) {
+	if degraded {
+		o.Eventually(mc.IsConditionStatusTrue, "2m", "2s").WithArguments("BootImageUpdateDegraded").
+			Should(o.BeTrue(), "Expected %s BootImageUpdateDegraded to be True.\n%s", mc, mc.PrettyString())
+	} else {
+		o.Eventually(mc.IsConditionStatusTrue, "2m", "2s").WithArguments("BootImageUpdateDegraded").
+			Should(o.BeFalse(), "Expected %s BootImageUpdateDegraded to be False.\n%s", mc, mc.PrettyString())
+	}
 }

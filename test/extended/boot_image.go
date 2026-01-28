@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"strings"
 	"time"
 
@@ -33,23 +32,6 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-// SkipUnlessTargetPlatform skips the test if it is not running on the target platform
-func skipUnlessTargetPlatform(oc *exutil.CLI, platformType osconfigv1.PlatformType) {
-	infra, err := oc.AdminConfigClient().ConfigV1().Infrastructures().Get(context.Background(), "cluster", metav1.GetOptions{})
-	o.Expect(err).NotTo(o.HaveOccurred())
-	if infra.Status.PlatformStatus.Type != platformType {
-		e2eskipper.Skipf("This test only applies to %s platform", platformType)
-	}
-	// If not Azure, we can return immediately
-	if infra.Status.PlatformStatus.Type != osconfigv1.AzurePlatformType {
-		return
-	}
-	// Special consideration for Azure: we should skip for AzureStack variant
-	if infra.Status.PlatformStatus.Azure != nil && infra.Status.PlatformStatus.Azure.CloudName == osconfigv1.AzureStackCloud {
-		e2eskipper.Skipf("This test does not apply to AzureStack variant within the Azure platform")
-	}
-}
-
 // skipUnlessFunctionalMachineAPI skips the test if the cluster is not using Machine API
 func skipUnlessFunctionalMachineAPI(oc *exutil.CLI) {
 	machineClient, err := machineclient.NewForConfig(oc.KubeFramework().ClientConfig())
@@ -76,32 +58,6 @@ func skipUnlessFunctionalMachineAPI(oc *exutil.CLI) {
 		}
 	}
 	e2eskipper.Skipf("haven't found a machine in running state, this test can be run on a platform that supports functional MachineAPI")
-}
-
-// skipOnSingleNodeTopology skips the test if the cluster is using single-node topology
-func skipOnSingleNodeTopology(oc *exutil.CLI) {
-	infra, err := oc.AdminConfigClient().ConfigV1().Infrastructures().Get(context.Background(), "cluster", metav1.GetOptions{})
-	o.Expect(err).NotTo(o.HaveOccurred())
-	if infra.Status.ControlPlaneTopology == osconfigv1.SingleReplicaTopologyMode {
-		e2eskipper.Skipf("This test does not apply to single-node topologies")
-	}
-}
-
-// `IsSingleNode` returns true if the cluster is using single-node topology and false otherwise
-func IsSingleNode(oc *exutil.CLI) bool {
-	infra, err := oc.AdminConfigClient().ConfigV1().Infrastructures().Get(context.Background(), "cluster", metav1.GetOptions{})
-	o.Expect(err).NotTo(o.HaveOccurred(), "Error determining cluster infrastructure.")
-	return infra.Status.ControlPlaneTopology == osconfigv1.SingleReplicaTopologyMode
-}
-
-// getRandomMachineSet picks a random machineset present on the cluster
-func getRandomMachineSet(machineClient *machineclient.Clientset) machinev1beta1.MachineSet {
-	machineSets, err := machineClient.MachineV1beta1().MachineSets("openshift-machine-api").List(context.TODO(), metav1.ListOptions{})
-	o.Expect(err).NotTo(o.HaveOccurred())
-	// #nosec Not sure why this is needed, we are using math/rand
-	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
-	machineSetUnderTest := machineSets.Items[rnd.Intn(len(machineSets.Items))]
-	return machineSetUnderTest
 }
 
 // verifyMachineSetUpdate verifies that the the boot image values of a MachineSet are reconciled correctly

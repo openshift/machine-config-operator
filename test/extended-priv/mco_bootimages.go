@@ -1,18 +1,26 @@
 package extended
 
 import (
+	"context"
 	"fmt"
+	"math/rand"
 	"regexp"
 	"strings"
+	"time"
 
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
+	osconfigv1 "github.com/openshift/api/config/v1"
+	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
+	machineclient "github.com/openshift/client-go/machine/clientset/versioned"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 	"github.com/openshift/machine-config-operator/test/extended-priv/util/architecture"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	e2e "k8s.io/kubernetes/test/e2e/framework"
+	e2eskipper "k8s.io/kubernetes/test/e2e/framework/skipper"
 )
 
 const mapiBaseErrorMessageTemplate = `1 Degraded MAPI MachineSets | 0 Degraded ControlPlaneMachineSets | 0 Degraded CAPI MachineSets | 0 CAPI MachineDeployments | Error(s):` +
@@ -788,6 +796,20 @@ func getCoreOsBootImageFromConfigMapOrFail(platform, region string, arch archite
 	return image
 }
 
+// GetRHCOSVersionFromConfigMap retrieves the RHCOS release version from the coreos-bootimages ConfigMap
+func GetRHCOSVersionFromConfigMap(oc *exutil.CLI) string {
+	coreosBootimagesCM := NewConfigMap(oc.AsAdmin(), MachineConfigNamespace, "coreos-bootimages")
+	streamJSON, err := coreosBootimagesCM.GetDataValue("stream")
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting stream data from coreos-bootimages configmap")
+
+	parsedStream := gjson.Parse(streamJSON)
+	// Get the release version from  aws artifacts
+	rhcosVersion := parsedStream.Get("architectures.x86_64.artifacts.aws.release").String()
+	o.Expect(rhcosVersion).NotTo(o.BeEmpty(), "RHCOS version not found in coreos-bootimages configmap")
+
+	return rhcosVersion
+}
+
 // testUserDataUpdateFailure function that executes the common parts of the update spec v3 negative test cases
 func testUserDataUpdateFailure(oc *exutil.CLI, clonedMSName, clonedSecretName, expectedFailedMessageRegexp string, userDataModifyFunc func(userData string) (string, error)) {
 
@@ -1011,4 +1033,51 @@ func setArchitectureAndCheckStatus(clonedMS *MachineSet, machineConfiguration *M
 	o.Eventually(machineConfiguration, "5m", "20s").Should(HaveConditionField("BootImageUpdateProgressing", "status", "False"),
 		"Expected %s not to be BootImageUpdateDegraded.\n%s", machineConfiguration.PrettyString())
 	logger.Infof("No failures are being reported\n")
+}
+
+// SkipUnlessTargetPlatform skips the test if it is not running on any of the target platforms
+func SkipUnlessTargetPlatform(oc *exutil.CLI, platformTypes ...osconfigv1.PlatformType) {
+	infra, err := oc.AdminConfigClient().ConfigV1().Infrastructures().Get(context.Background(), "cluster", metav1.GetOptions{})
+	o.Expect(err).NotTo(o.HaveOccurred())
+
+	// Check if current platform matches any of the provided platform types
+	platformMatched := false
+	for _, platformType := range platformTypes {
+		if infra.Status.PlatformStatus.Type == platformType {
+			platformMatched = true
+			break
+		}
+	}
+
+	if !platformMatched {
+		e2eskipper.Skipf("This test only applies to %v platforms", platformTypes)
+	}
+
+	// If not Azure, we can return immediately
+	if infra.Status.PlatformStatus.Type != osconfigv1.AzurePlatformType {
+		return
+	}
+	// Special consideration for Azure: we should skip for AzureStack variant
+	if infra.Status.PlatformStatus.Azure != nil && infra.Status.PlatformStatus.Azure.CloudName == osconfigv1.AzureStackCloud {
+		e2eskipper.Skipf("This test does not apply to AzureStack variant within the Azure platform")
+	}
+}
+
+// SkipOnSingleNodeTopology skips the test if the cluster is using single-node topology
+func SkipOnSingleNodeTopology(oc *exutil.CLI) {
+	infra, err := oc.AdminConfigClient().ConfigV1().Infrastructures().Get(context.Background(), "cluster", metav1.GetOptions{})
+	o.Expect(err).NotTo(o.HaveOccurred())
+	if infra.Status.ControlPlaneTopology == osconfigv1.SingleReplicaTopologyMode {
+		e2eskipper.Skipf("This test does not apply to single-node topologies")
+	}
+}
+
+// GetRandomMachineSet picks a random machineset present on the cluster
+func GetRandomMachineSet(machineClient *machineclient.Clientset) machinev1beta1.MachineSet {
+	machineSets, err := machineClient.MachineV1beta1().MachineSets("openshift-machine-api").List(context.TODO(), metav1.ListOptions{})
+	o.Expect(err).NotTo(o.HaveOccurred())
+	// #nosec Not sure why this is needed, we are using math/rand
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
+	machineSetUnderTest := machineSets.Items[rnd.Intn(len(machineSets.Items))]
+	return machineSetUnderTest
 }

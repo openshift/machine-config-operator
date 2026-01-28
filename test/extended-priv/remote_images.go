@@ -52,7 +52,7 @@ func (ri RemoteImage) Rmi(args ...string) error {
 
 	cmd = append(cmd, ri.ImageName)
 	output, err := ri.Node.DebugNodeWithChroot(cmd...)
-	logger.Infof(output)
+	logger.Infof("%v", output)
 
 	return err
 }
@@ -68,7 +68,7 @@ func (ri RemoteImage) Pull(args ...string) error {
 
 	cmd = append(cmd, ri.ImageName)
 	output, err := ri.Node.DebugNodeWithChroot(cmd...)
-	logger.Infof(output)
+	logger.Infof("%v", output)
 
 	return err
 }

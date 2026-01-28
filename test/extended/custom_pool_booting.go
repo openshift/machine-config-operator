@@ -36,7 +36,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		extpriv.SkipTestIfWorkersCannotBeScaled(oc)
 
 		// Skip on single-node topologies
-		skipOnSingleNodeTopology(oc)
+		extpriv.SkipOnSingleNodeTopology(oc)
 
 		machineClient, err = machineclient.NewForConfig(oc.KubeFramework().ClientConfig())
 		o.Expect(err).NotTo(o.HaveOccurred())
@@ -106,7 +106,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		exutil.By("Cloning an existing machineset, edit the user-data-secret field to point to infra-user-data-managed")
 
 		// Get a random machineset to clone
-		originalMachineSet := getRandomMachineSet(machineClient)
+		originalMachineSet := extpriv.GetRandomMachineSet(machineClient)
 
 		// Create a clone without modifying user-data-secret yet
 		clonedMachineSet = originalMachineSet.DeepCopy()
