@@ -86,7 +86,7 @@ func NewClusterServer(kubeConfig, apiserverURL string) (Server, error) {
 	kubeClient := clientsBuilder.KubeClientOrDie("kube-client-shared-informer")
 	routeClient := clientsBuilder.RouteClientOrDie("route-client")
 	sharedInformerFactory := mcfginformers.NewSharedInformerFactory(machineConfigClient, resyncPeriod()())
-	kubeNamespacedSharedInformer := informers.NewFilteredSharedInformerFactory(kubeClient, resyncPeriod()(), "openshift-machine-config-operator", nil)
+	kubeNamespacedSharedInformer := informers.NewSharedInformerFactoryWithOptions(kubeClient, resyncPeriod()(), informers.WithNamespace("openshift-machine-config-operator"))
 
 	mcpInformer, mcInformer, ccInformer, cmInformer, moscInformer, mosbInformer :=
 		sharedInformerFactory.Machineconfiguration().V1().MachineConfigPools(),
