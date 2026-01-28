@@ -269,7 +269,7 @@ func TestMachineOSBuilderSecretReconciliation(t *testing.T) {
 
 			// Create MCO specific clients
 			mcfgClient := fakeclientmachineconfigv1.NewSimpleClientset()
-			mcfgInformerFactory := mcfginformers.NewFilteredSharedInformerFactory(mcfgClient, 0, ctrlcommon.MCONamespace, nil)
+			mcfgInformerFactory := mcfginformers.NewSharedInformerFactoryWithOptions(mcfgClient, 0, mcfginformers.WithNamespace(ctrlcommon.MCONamespace))
 			mcpInformer := mcfgInformerFactory.Machineconfiguration().V1().MachineConfigPools()
 
 			// Add all pools to mcpInformer
