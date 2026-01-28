@@ -1,4 +1,5 @@
 ---
+version: "2"
 run:
   concurrency: 6
   deadline: 15m
@@ -7,6 +8,10 @@ run:
     - "lib/.*"
 cache:
   enabled: true
+formatters:
+  enable:
+    - gofmt
+    - goimports
 linters:
   disable-all: true
   enable:
@@ -16,8 +21,6 @@ linters:
     #- gochecknoinits
     - goconst
     - gocritic
-    - gofmt
-    - goimports
     - revive
     - gosec
     - govet
