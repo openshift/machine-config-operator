@@ -1218,178 +1218,125 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	// Deep-copy otherwise we are mutating our cache.
 	// TODO: Deep-copy only when needed.
 	pool := machineconfigpool.DeepCopy()
-	everything := metav1.LabelSelector{}
 
 	// If arbiter pool, requeue master pool update and only sync status
 	if pool.Name == ctrlcommon.MachineConfigPoolArbiter {
-		return ctrl.handleArbiterPoolEvent(pool)
-	}
-
-	if reflect.DeepEqual(pool.Spec.NodeSelector, &everything) {
-		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeWarning, "SelectingAll", "This machineconfigpool is selecting all nodes. A non-empty selector is required.")
-		return nil
-	}
-
-	if pool.DeletionTimestamp != nil {
-		return ctrl.syncStatusOnly(pool)
-	}
-
-	if pool.Spec.Paused {
-		if apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolUpdating) {
-			klog.Infof("Pool %s is paused and will not update.", pool.Name)
-		}
-		return ctrl.syncStatusOnly(pool)
-	}
-
-	mosc, mosb, layered, err := ctrl.getConfigAndBuildAndLayeredStatus(pool)
-	if err != nil {
-		return fmt.Errorf("could not get config and build: %w", err)
-	}
-
-	if layered {
-		klog.V(4).Infof("Continuing updates for layered pool %s", pool.Name)
-		reason, canApplyUpdates, err := ctrl.canLayeredContinue(mosc, mosb)
-		if err != nil {
-			klog.Infof("Layered pool %s encountered an error: %s", pool.Name, err)
+		masterPool, err := ctrl.mcpLister.Get(ctrlcommon.MachineConfigPoolMaster)
+		if err == nil {
+			ctrl.enqueue(masterPool)
+		} else if !errors.IsNotFound(err) {
 			return err
 		}
-
-		if !canApplyUpdates {
-			// The MachineConfigPool is not ready to continue, so requeue.
-			klog.Infof("Requeueing layered pool %s: %s", pool.Name, reason)
-			return ctrl.syncStatusOnly(pool)
-		}
-	}
-
-	nodes, err := ctrl.getNodesForPool(pool)
-	if err != nil {
-		if syncErr := ctrl.syncStatusOnly(pool); syncErr != nil {
-			errs := kubeErrs.NewAggregate([]error{syncErr, err})
-			return fmt.Errorf("error getting nodes for pool %q, sync error: %w", pool.Name, errs)
-		}
-		return err
-	}
-	maxunavail, err := maxUnavailable(pool, nodes)
-	if err != nil {
-		if syncErr := ctrl.syncStatusOnly(pool); syncErr != nil {
-			errs := kubeErrs.NewAggregate([]error{syncErr, err})
-			return fmt.Errorf("error getting max unavailable count for pool %q, sync error: %w", pool.Name, errs)
-		}
-		return err
+		return ctrl.syncStatusOnly(pool)
 	}
 
 	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
 		return fmt.Errorf("error getting controllerconfig %q, error: %w", ctrlcommon.ControllerConfigName, err)
 	}
-	controlPlaneTopology := cc.Spec.Infra.Status.ControlPlaneTopology
 
-	// For master pool in HighlyAvailableArbiterMode, coordinate with arbiter pool
-	var arbiterPool *mcfgv1.MachineConfigPool
-	var arbiterNodes []*corev1.Node
-	var arbiterMosc *mcfgv1.MachineOSConfig
-	var arbiterMosb *mcfgv1.MachineOSBuild
-	var arbiterLayered bool
-	// If we are in HighlyAvailableArbiterMode, combine the arbiter nodes to use where we can avoid duplication.
-	var combinedNodes = append([]*corev1.Node{}, nodes...)
+	var controlPlaneTopology configv1.TopologyMode
+	if cc.Spec.Infra != nil {
+		controlPlaneTopology = cc.Spec.Infra.Status.ControlPlaneTopology
+	} else {
+		klog.Warningf("controllerconfig %q has no infra spec, continuing with out topology information", ctrlcommon.ControllerConfigName)
+	}
+
+	// If master pool and arbiter mode, add arbiter pool as well
+	poolsToUpdate := []*mcfgv1.MachineConfigPool{pool}
 	if pool.Name == ctrlcommon.MachineConfigPoolMaster && controlPlaneTopology == configv1.HighlyAvailableArbiterMode {
 		arbiterObj, err := ctrl.mcpLister.Get(ctrlcommon.MachineConfigPoolArbiter)
 		if err != nil {
 			return fmt.Errorf("error getting arbiter pool %q, error: %w", ctrlcommon.MachineConfigPoolArbiter, err)
 		}
-		if arbiterObj.Spec.Configuration.Name != "" && arbiterObj.DeletionTimestamp == nil && !arbiterObj.Spec.Paused {
-			arbiterPool = arbiterObj.DeepCopy()
-			arbiterNodes, err = ctrl.getNodesForPool(arbiterPool)
-			if err != nil {
-				return fmt.Errorf("error getting nodes for arbiter pool %q, error: %w", ctrlcommon.MachineConfigPoolArbiter, err)
-			}
-			arbiterMosc, arbiterMosb, arbiterLayered, err = ctrl.getConfigAndBuildAndLayeredStatus(arbiterPool)
-			if err != nil {
-				return fmt.Errorf("error getting config and build for arbiter pool %q, error: %w", ctrlcommon.MachineConfigPoolArbiter, err)
-			}
-			combinedNodes = append(combinedNodes, arbiterNodes...)
-			combinedMax, err := maxUnavailable(pool, combinedNodes)
-			if err != nil {
-				return fmt.Errorf("error getting max unavailable count for pool %q, error: %w", pool.Name, err)
-			}
-			maxunavail = combinedMax
-		}
+		poolsToUpdate = append(poolsToUpdate, arbiterObj)
 	}
 
-	if err := ctrl.setClusterConfigAnnotation(combinedNodes, controlPlaneTopology); err != nil {
-		return fmt.Errorf("error setting clusterConfig Annotation for node in pool %q, error: %w", pool.Name, err)
-	}
-	// Taint all the nodes in the node pool, irrespective of their upgrade status.
-	ctx := context.TODO()
-	for _, node := range combinedNodes {
-		// All the nodes that need to be upgraded should have `NodeUpdateInProgressTaint` so that they're less likely
-		// to be chosen during the scheduling cycle. This includes nodes which are:
-		// (i) In a Pool being updated to a new MC or image
-		// (ii) In a Pool that is being opted out of layering
-		hasInProgressTaint := checkIfNodeHasInProgressTaint(node)
-
-		lns := ctrlcommon.NewLayeredNodeState(node)
-
-		desiredPool := pool
-		desiredMosc := mosc
-		desiredMosb := mosb
-		desiredLayered := layered
-		if _, ok := node.GetLabels()[ArbiterLabel]; ok && controlPlaneTopology == configv1.HighlyAvailableArbiterMode {
-			desiredPool = arbiterPool
-			desiredMosc = arbiterMosc
-			desiredMosb = arbiterMosb
-			desiredLayered = arbiterLayered
-		}
-
-		if (!desiredLayered && lns.IsDesiredMachineConfigEqualToPool(desiredPool) && !lns.AreImageAnnotationsPresentOnNode()) || (layered && lns.IsDesiredEqualToBuild(desiredMosc, desiredMosb)) {
-			if hasInProgressTaint {
-				if err := ctrl.removeUpdateInProgressTaint(ctx, node.Name); err != nil {
-					err = fmt.Errorf("failed removing %s taint for node %s: %w", constants.NodeUpdateInProgressTaint.Key, node.Name, err)
-					klog.Error(err)
-				}
-			}
-		} else {
-			if !hasInProgressTaint {
-				if err := ctrl.setUpdateInProgressTaint(ctx, node.Name); err != nil {
-					err = fmt.Errorf("failed applying %s taint for node %s: %w", constants.NodeUpdateInProgressTaint.Key, node.Name, err)
-					klog.Error(err)
-				}
-			}
-		}
-	}
-
-	candidates, capacity := getAllCandidateMachines(layered, mosc, mosb, pool, nodes, maxunavail)
-	if err := ctrl.updateCandidates(layered, mosc, mosb, pool, candidates, capacity); err != nil {
+	if err := ctrl.updatePools(poolsToUpdate, controlPlaneTopology); err != nil {
 		return err
 	}
 
-	// If coordinating with arbiter pool, also handle arbiter node updates
-	if arbiterPool != nil && len(arbiterNodes) > 0 && pool.Name == ctrlcommon.MachineConfigPoolMaster && controlPlaneTopology == configv1.HighlyAvailableArbiterMode {
-		arbiterUnavailable := len(getUnavailableMachines(arbiterNodes, arbiterPool))
-		//#nosec G115 -- there is no overflow, it's an int converted to uint and then added to another int
-		arbiterMaxUnavail := int(capacity) - len(candidates) + arbiterUnavailable
-		arbiterCandidates, arbiterCapacity := getAllCandidateMachines(arbiterLayered, arbiterMosc, arbiterMosb, arbiterPool, arbiterNodes, arbiterMaxUnavail)
-		if err := ctrl.updateCandidates(arbiterLayered, arbiterMosc, arbiterMosb, arbiterPool, arbiterCandidates, arbiterCapacity); err != nil {
-			return err
-		}
-		// Sync status for arbiter pool
-		if err := ctrl.syncStatusOnly(arbiterPool); err != nil {
-			return err
-		}
-	}
+	// Update metrics after syncing the pool status
+	return ctrl.syncMetrics()
+}
 
-	// If coordinating with arbiter pool, also handle arbiter node updates
-	if arbiterPool != nil && len(arbiterNodes) > 0 {
-		// Set cluster config annotation for arbiter nodes
-		if err := ctrl.setClusterConfigAnnotation(arbiterNodes, controlPlaneTopology); err != nil {
-			return fmt.Errorf("error setting clusterConfig Annotation for node in pool %q, error: %w", arbiterPool.Name, err)
+// updatePools processes pools sequentially, coordinating updates between master and arbiter pools
+// in HighlyAvailableArbiterMode. The arbiter pool only updates after all master nodes have completed
+// their updates to prevent concurrent master and arbiter updates which could impact cluster availability.
+func (ctrl *Controller) updatePools(pools []*mcfgv1.MachineConfigPool, controlPlaneTopology configv1.TopologyMode) error {
+	everything := metav1.LabelSelector{}
+
+	// Track master pool unavailable count to coordinate with arbiter
+	var masterUnavailableCount int
+
+	for _, pool := range pools {
+		if reflect.DeepEqual(pool.Spec.NodeSelector, &everything) {
+			ctrl.eventRecorder.Eventf(pool, corev1.EventTypeWarning, "SelectingAll", "This machineconfigpool is selecting all nodes. A non-empty selector is required.")
+			return nil
 		}
 
-		// Handle taints for arbiter nodes
-		for _, node := range arbiterNodes {
+		if pool.DeletionTimestamp != nil {
+			return ctrl.syncStatusOnly(pool)
+		}
+
+		if pool.Spec.Paused {
+			if apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolUpdating) {
+				klog.Infof("Pool %s is paused and will not update.", pool.Name)
+			}
+			return ctrl.syncStatusOnly(pool)
+		}
+
+		mosc, mosb, layered, err := ctrl.getConfigAndBuildAndLayeredStatus(pool)
+		if err != nil {
+			return fmt.Errorf("could not get config and build: %w", err)
+		}
+
+		if layered {
+			klog.V(4).Infof("Continuing updates for layered pool %s", pool.Name)
+			reason, canApplyUpdates, err := ctrl.canLayeredContinue(mosc, mosb)
+			if err != nil {
+				klog.Infof("Layered pool %s encountered an error: %s", pool.Name, err)
+				return err
+			}
+
+			if !canApplyUpdates {
+				// The MachineConfigPool is not ready to continue, so requeue.
+				klog.Infof("Requeueing layered pool %s: %s", pool.Name, reason)
+				return ctrl.syncStatusOnly(pool)
+			}
+		}
+
+		nodes, err := ctrl.getNodesForPool(pool)
+		if err != nil {
+			if syncErr := ctrl.syncStatusOnly(pool); syncErr != nil {
+				errs := kubeErrs.NewAggregate([]error{syncErr, err})
+				return fmt.Errorf("error getting nodes for pool %q, sync error: %w", pool.Name, errs)
+			}
+			return err
+		}
+		maxunavail, err := maxUnavailable(pool, nodes)
+		if err != nil {
+			if syncErr := ctrl.syncStatusOnly(pool); syncErr != nil {
+				errs := kubeErrs.NewAggregate([]error{syncErr, err})
+				return fmt.Errorf("error getting max unavailable count for pool %q, sync error: %w", pool.Name, errs)
+			}
+			return err
+		}
+		if err := ctrl.setClusterConfigAnnotation(nodes, controlPlaneTopology); err != nil {
+			return fmt.Errorf("error setting clusterConfig Annotation for node in pool %q, error: %w", pool.Name, err)
+		}
+
+		// Taint all the nodes in the node pool, irrespective of their upgrade status.
+		ctx := context.TODO()
+		for _, node := range nodes {
+			// All the nodes that need to be upgraded should have `NodeUpdateInProgressTaint` so that they're less likely
+			// to be chosen during the scheduling cycle. This includes nodes which are:
+			// (i) In a Pool being updated to a new MC or image
+			// (ii) In a Pool that is being opted out of layering
 			hasInProgressTaint := checkIfNodeHasInProgressTaint(node)
 			lns := ctrlcommon.NewLayeredNodeState(node)
-			if (!arbiterLayered && lns.IsDesiredMachineConfigEqualToPool(arbiterPool) && !lns.AreImageAnnotationsPresentOnNode()) || (arbiterLayered && lns.IsDesiredEqualToBuild(arbiterMosc, arbiterMosb)) {
+
+			if (!layered && lns.IsDesiredMachineConfigEqualToPool(pool) && !lns.AreImageAnnotationsPresentOnNode()) || (layered && lns.IsDesiredEqualToBuild(mosc, mosb)) {
 				if hasInProgressTaint {
 					if err := ctrl.removeUpdateInProgressTaint(ctx, node.Name); err != nil {
 						err = fmt.Errorf("failed removing %s taint for node %s: %w", constants.NodeUpdateInProgressTaint.Key, node.Name, err)
@@ -1406,107 +1353,49 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 			}
 		}
 
-		// Calculate remaining capacity for arbiter after master updates
-		masterUnavailable := len(getUnavailableMachines(nodes, pool))
-		arbiterUnavailable := len(getUnavailableMachines(arbiterNodes, arbiterPool))
-		combinedNodes := append([]*corev1.Node{}, nodes...)
-		combinedNodes = append(combinedNodes, arbiterNodes...)
-		combinedMax, err := maxUnavailable(pool, combinedNodes)
-		if err == nil {
-			remainingCapacity := combinedMax - masterUnavailable - arbiterUnavailable
-			if remainingCapacity < 0 {
-				remainingCapacity = 0
-			}
-			arbiterMaxUnavail := arbiterUnavailable + remainingCapacity
-			if arbiterMaxUnavail < 0 {
-				arbiterMaxUnavail = 0
-			}
-
-			arbiterCandidates, arbiterCapacity := getAllCandidateMachines(arbiterLayered, arbiterMosc, arbiterMosb, arbiterPool, arbiterNodes, arbiterMaxUnavail)
-			if len(arbiterCandidates) > 0 {
-				zones := make(map[string]bool)
-				for _, candidate := range arbiterCandidates {
-					if zone, ok := candidate.Labels[zoneLabel]; ok {
-						zones[zone] = true
-					}
-				}
-				ctrl.logPool(arbiterPool, "%d candidate nodes in %d zones for update, capacity: %d", len(arbiterCandidates), len(zones), arbiterCapacity)
-				if err := ctrl.updateCandidateMachines(arbiterLayered, arbiterMosc, arbiterMosb, arbiterPool, arbiterCandidates, arbiterCapacity); err != nil {
-					if syncErr := ctrl.syncStatusOnly(arbiterPool); syncErr != nil {
-						errs := kubeErrs.NewAggregate([]error{syncErr, err})
-						return fmt.Errorf("error setting annotations for pool %q, sync error: %w", arbiterPool.Name, errs)
-					}
-					return err
-				}
-				ctrlcommon.UpdateStateMetric(ctrlcommon.MCCSubControllerState, "machine-config-controller-node", "Sync Machine Config Pool", arbiterPool.Name)
-			}
-
-			// Sync status for arbiter pool
-			if err := ctrl.syncStatusOnly(arbiterPool); err != nil {
+		// For arbiter pool in HighlyAvailableArbiterMode, only allow updates if no master nodes are unavailable.
+		// This ensures arbiter updates happen after all masters have completed their updates.
+		isArbiterPool := pool.Name == ctrlcommon.MachineConfigPoolArbiter && controlPlaneTopology == configv1.HighlyAvailableArbiterMode
+		if isArbiterPool && masterUnavailableCount > 0 {
+			klog.Infof("Pool %s: deferring arbiter updates until %d master node(s) complete their updates", pool.Name, masterUnavailableCount)
+			if err := ctrl.syncStatusOnly(pool); err != nil {
 				return err
 			}
+			continue
 		}
-	}
 
-	if err := ctrl.syncStatusOnly(pool); err != nil {
-		return err
-	}
+		candidates, capacity := getAllCandidateMachines(layered, mosc, mosb, pool, nodes, maxunavail)
 
-	// Update metrics after syncing the pool status
-	return ctrl.syncMetrics()
-}
-
-func (ctrl *Controller) updateCandidates(layered bool, mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild, pool *mcfgv1.MachineConfigPool, candidates []*corev1.Node, capacity uint) error {
-	if len(candidates) > 0 {
-		zones := make(map[string]bool)
-		for _, candidate := range candidates {
-			zone, ok := candidate.Labels[zoneLabel]
-			if ok {
-				zones[zone] = true
-			}
+		// Track master unavailable count for arbiter coordination
+		if pool.Name == ctrlcommon.MachineConfigPoolMaster && controlPlaneTopology == configv1.HighlyAvailableArbiterMode {
+			masterUnavailableCount = len(getUnavailableMachines(nodes, pool)) + len(candidates)
 		}
-		ctrl.logPool(pool, "%d candidate nodes in %d zones for update, capacity: %d", len(candidates), len(zones), capacity)
-		if err := ctrl.updateCandidateMachines(layered, mosc, mosb, pool, candidates, capacity); err != nil {
-			if syncErr := ctrl.syncStatusOnly(pool); syncErr != nil {
-				errs := kubeErrs.NewAggregate([]error{syncErr, err})
-				return fmt.Errorf("error setting annotations for pool %q, sync error: %w", pool.Name, errs)
+
+		if len(candidates) > 0 {
+			zones := make(map[string]bool)
+			for _, candidate := range candidates {
+				zone, ok := candidate.Labels[zoneLabel]
+				if ok {
+					zones[zone] = true
+				}
 			}
+			ctrl.logPool(pool, "%d candidate nodes in %d zones for update, capacity: %d", len(candidates), len(zones), capacity)
+			if err := ctrl.updateCandidateMachines(layered, mosc, mosb, pool, candidates, capacity); err != nil {
+				if syncErr := ctrl.syncStatusOnly(pool); syncErr != nil {
+					errs := kubeErrs.NewAggregate([]error{syncErr, err})
+					return fmt.Errorf("error setting annotations for pool %q, sync error: %w", pool.Name, errs)
+				}
+				return err
+			}
+			ctrlcommon.UpdateStateMetric(ctrlcommon.MCCSubControllerState, "machine-config-controller-node", "Sync Machine Config Pool", pool.Name)
+		}
+
+		// Sync status for this pool
+		if err := ctrl.syncStatusOnly(pool); err != nil {
 			return err
 		}
-		ctrlcommon.UpdateStateMetric(ctrlcommon.MCCSubControllerState, "machine-config-controller-node", "Sync Machine Config Pool", pool.Name)
 	}
 	return nil
-}
-
-func (ctrl *Controller) handleArbiterPoolEvent(pool *mcfgv1.MachineConfigPool) error {
-	masterPool, err := ctrl.mcpLister.Get(ctrlcommon.MachineConfigPoolMaster)
-	if err == nil {
-		ctrl.enqueue(masterPool)
-	} else if !errors.IsNotFound(err) {
-		return err
-	}
-	// Still sync status for arbiter pool
-	if pool.DeletionTimestamp != nil || pool.Spec.Paused {
-		return ctrl.syncStatusOnly(pool)
-	}
-	mosc, mosb, layered, err := ctrl.getConfigAndBuildAndLayeredStatus(pool)
-	if err != nil {
-		return fmt.Errorf("could not get config and build: %w", err)
-	}
-	if layered {
-		_, canApplyUpdates, err := ctrl.canLayeredContinue(mosc, mosb)
-		if err != nil {
-			return err
-		}
-		if !canApplyUpdates {
-			return ctrl.syncStatusOnly(pool)
-		}
-	}
-
-	if err := ctrl.syncStatusOnly(pool); err != nil {
-		return err
-	}
-	return ctrl.syncMetrics()
 }
 
 // checkIfNodeHasInProgressTaint checks if the given node has in progress taint
@@ -1961,6 +1850,9 @@ func (ctrl *Controller) removeUpdateInProgressTaint(ctx context.Context, nodeNam
 }
 
 func maxUnavailable(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) (int, error) {
+	if pool.Name == ctrlcommon.MachineConfigPoolArbiter {
+		return 1, nil
+	}
 	intOrPercent := intstrutil.FromInt(1)
 	if pool.Spec.MaxUnavailable != nil {
 		intOrPercent = *pool.Spec.MaxUnavailable
