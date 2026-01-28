@@ -529,7 +529,6 @@ func SupportedExtensions() map[string][]string {
 	// Each extension keeps a list of packages required to get enabled on host.
 	return map[string][]string{
 		"two-node-ha":          {"pacemaker", "pcs", "fence-agents-all"},
-		"wasm":                 {"crun-wasm"},
 		"ipsec":                {"NetworkManager-libreswan", "libreswan"},
 		"usbguard":             {"usbguard"},
 		"kerberos":             {"krb5-workstation", "libkadm5"},

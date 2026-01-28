@@ -967,8 +967,8 @@ func TestGetPackagesForSupportedExtensions(t *testing.T) {
 		},
 		{
 			name:             "Supported single package extension",
-			extensions:       []string{"wasm"},
-			expectedPackages: []string{"crun-wasm"},
+			extensions:       []string{"sysstat"},
+			expectedPackages: []string{"sysstat"},
 		},
 		{
 			name:             "Supported single multi-package extension",
