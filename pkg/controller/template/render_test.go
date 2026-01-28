@@ -214,7 +214,6 @@ var (
 		"kubevirt":               "./test_data/controller_config_kubevirt.yaml",
 		"powervs":                "./test_data/controller_config_powervs.yaml",
 		"nutanix":                "./test_data/controller_config_nutanix.yaml",
-		"network-forwarding-sdn": "./test_data/controller_config_forwarding_sdn.yaml",
 		"network-forwarding-ovn": "./test_data/controller_config_forwarding_ovn.yaml",
 		"gcp-custom-dns":         "./test_data/controller_config_gcp_custom_dns.yaml",
 		"gcp-default-dns":        "./test_data/controller_config_gcp_default_dns.yaml",
@@ -337,7 +336,7 @@ func TestGenerateMachineConfigs(t *testing.T) {
 		if !foundKubeletUnitWorker {
 			t.Errorf("Failed to find kubelet unit for worker")
 		}
-		if foundIPForwarding && controllerConfig.Spec.NetworkType != "OpenShiftSDN" {
+		if foundIPForwarding {
 			t.Errorf("IP forwarding file mismatch. Was rendered: %t for network type: %s",
 				foundIPForwarding, controllerConfig.Spec.NetworkType)
 		}
