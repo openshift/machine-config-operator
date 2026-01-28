@@ -1,4 +1,5 @@
 ---
+version: "2"
 run:
   concurrency: 6
   deadline: 15m
