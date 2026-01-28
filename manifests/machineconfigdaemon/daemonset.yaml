@@ -46,10 +46,19 @@ spec:
           - mountPath: /rootfs
             name: rootfs
             mountPropagation: HostToContainer
+        startupProbe:
+          httpGet:
+            host: 127.0.0.1
+            scheme: HTTP
+            port: 8798
+            path: /health
+          periodSeconds: 10
+          failureThreshold: 30
         livenessProbe:
-          initialDelaySeconds: 120
+          initialDelaySeconds: 0
           periodSeconds: 30
-          failureThreshold: 3
+          failureThreshold: 10
+          timeoutSeconds: 10
           httpGet:
             host: 127.0.0.1
             scheme: HTTP
