@@ -502,7 +502,7 @@ func (optr *Operator) allMachineConfigPoolStatus() (map[string]string, error) {
 
 // isMachineConfigPoolConfigurationValid returns nil, or error when the configuration of a `pool` is created by the controller at version `version`,
 // when the osImageURL does not match what's in the configmap or when the rendered-config-xxx does not match the OCP release version.
-func isMachineConfigPoolConfigurationValid(fgHandler ctrlcommon.FeatureGatesHandler, pool *mcfgv1.MachineConfigPool, version, releaseVersion, osURL string, machineConfigGetter func(string) (*mcfgv1.MachineConfig, error)) error {
+func isMachineConfigPoolConfigurationValid(pool *mcfgv1.MachineConfigPool, version, releaseVersion, osURL string, machineConfigGetter func(string) (*mcfgv1.MachineConfig, error)) error {
 	// both .status.configuration.name and .status.configuration.source must be set.
 	if pool.Spec.Configuration.Name == "" {
 		return fmt.Errorf("configuration spec for pool %s is empty: %v", pool.GetName(), machineConfigPoolStatus(pool))

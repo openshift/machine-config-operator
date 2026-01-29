@@ -19,7 +19,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"k8s.io/apimachinery/pkg/util/uuid"
 
-	apicfgv1 "github.com/openshift/api/config/v1"
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	fakeconfigclientset "github.com/openshift/client-go/config/clientset/versioned/fake"
@@ -191,11 +190,7 @@ func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
 				source = append(source, corev1.ObjectReference{Name: s})
 			}
 
-			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler(
-				[]apicfgv1.FeatureGateName{},
-				[]apicfgv1.FeatureGateName{},
-			)
-			err := isMachineConfigPoolConfigurationValid(fgHandler, &mcfgv1.MachineConfigPool{
+			err := isMachineConfigPoolConfigurationValid(&mcfgv1.MachineConfigPool{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "dummy-pool",
 				},
