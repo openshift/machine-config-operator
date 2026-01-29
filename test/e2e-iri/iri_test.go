@@ -116,6 +116,48 @@ func pingIRIRegistry(t *testing.T, client *http.Client, ipAddr string) {
 	require.Equal(t, apiVersion, "registry/2.0")
 }
 
+func TestIRIController_ShouldPreventDeletionWhenInUse(t *testing.T) {
+	cs := framework.NewClientSet("")
+	ctx := context.Background()
+
+	// Get the InternalReleaseImage resource
+	iri, err := cs.InternalReleaseImages().Get(ctx, "cluster", v1.GetOptions{})
+	require.NoError(t, err)
+
+	// Verify the IRI has releases in its status
+	require.NotEmpty(t, iri.Status.Releases, "IRI should have releases in status")
+
+	// Get the ClusterVersion to know what release the cluster is using
+	cv, err := cs.ClusterVersions().Get(ctx, "version", v1.GetOptions{})
+	require.NoError(t, err)
+	require.NotEmpty(t, cv.Status.Desired.Image, "ClusterVersion should have a desired image")
+
+	// Verify that at least one release in IRI matches the current cluster version
+	matchFound := false
+	for _, release := range iri.Status.Releases {
+		if release.Image == cv.Status.Desired.Image {
+			matchFound = true
+			break
+		}
+	}
+	require.True(t, matchFound, "IRI should contain a release matching the current cluster version")
+
+	// Attempt to delete the InternalReleaseImage - this should fail
+	err = cs.InternalReleaseImages().Delete(ctx, "cluster", v1.DeleteOptions{})
+	require.Error(t, err, "Deleting IRI while in use should fail")
+
+	// Verify the error is an Invalid error from the ValidatingAdmissionPolicy
+	// ValidatingAdmissionPolicy returns Invalid (422) errors, not Forbidden (403)
+	require.True(t, k8serrors.IsInvalid(err), "Error should be an Invalid error from admission policy, got: %v", err)
+	require.Contains(t, err.Error(), "Cannot delete InternalReleaseImage while the cluster is using a release bundle from this resource",
+		"Error message should indicate the IRI is in use")
+
+	// Verify the IRI still exists
+	iri, err = cs.InternalReleaseImages().Get(ctx, "cluster", v1.GetOptions{})
+	require.NoError(t, err, "IRI should still exist after failed deletion attempt")
+	require.NotNil(t, iri, "IRI should not be nil")
+}
+
 func TestIRIController_ShouldRestoreMachineConfigsWhenModified(t *testing.T) {
 	cases := []struct {
 		name       string
