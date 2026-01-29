@@ -22,11 +22,6 @@ spec:
       containers:
       - name: machine-config-daemon
         image: {{.Images.MachineConfigOperator}}
-        ports:
-        - containerPort: 8798
-          hostIP: 127.0.0.1
-          name: health
-          protocol: TCP
         command: ["/usr/bin/machine-config-daemon"]
         args:
           - "start"
@@ -43,15 +38,6 @@ spec:
           - mountPath: /rootfs
             name: rootfs
             mountPropagation: HostToContainer
-        livenessProbe:
-          initialDelaySeconds: 120
-          periodSeconds: 30
-          failureThreshold: 3
-          httpGet:
-            host: 127.0.0.1
-            scheme: HTTP
-            port: 8798
-            path: /health
         env:
           - name: NODE_NAME
             valueFrom:
