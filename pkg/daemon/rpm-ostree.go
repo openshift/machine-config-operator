@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/containers/image/v5/signature"
 	rpmostreeclient "github.com/coreos/rpmostree-client-go/pkg/client"
@@ -18,6 +20,7 @@ const imagePolicyTransportContainerStorage = "containers-storage"
 const imagePolicyFilePath = "/etc/containers/policy.json"
 const rpmOstreeTemporalDropinFile = "/run/systemd/system/rpm-ostreed.service.d/temporal-policy-binding.conf"
 const rpmOstreeTemporalPolicyFile = "/run/tmp-rpm-ostree-policy.json"
+const rpmOstreeLockFile = "/run/mcd-rpm-ostree.lock"
 
 // RpmOstreeClient provides all RpmOstree related methods in one structure.
 // This structure implements DeploymentClient
@@ -38,10 +41,58 @@ func NewNodeUpdaterClient(commandRunner CommandRunner, podmanInterface PodmanInt
 	}
 }
 
+// acquireRpmOstreeLock acquires an exclusive lock before running rpm-ostree
+// This prevents multiple MCD container instances from racing
+func acquireRpmOstreeLock() (*os.File, error) {
+	lockFile, err := os.OpenFile(rpmOstreeLockFile, os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open rpm-ostree lock file: %w", err)
+	}
+
+	klog.Info("Acquiring rpm-ostree operation lock")
+
+	// Try to acquire exclusive lock with timeout and retry
+	timeout := time.After(10 * time.Minute)
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		if err == nil {
+			klog.Info("Acquired rpm-ostree operation lock")
+			return lockFile, nil
+		}
+
+		select {
+		case <-timeout:
+			lockFile.Close()
+			return nil, fmt.Errorf("timeout waiting for rpm-ostree lock (another MCD may be running)")
+		case <-ticker.C:
+			klog.Info("Waiting for previous rpm-ostree operation to complete...")
+		}
+	}
+}
+
+// releaseRpmOstreeLock releases the exclusive lock held on rpm-ostree operations
+func releaseRpmOstreeLock(lockFile *os.File) {
+	if lockFile != nil {
+		syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
+		lockFile.Close()
+		klog.Info("Released rpm-ostree operation lock")
+	}
+}
+
 // Synchronously invoke rpm-ostree, writing its stdout to our stdout,
 // and gathering stderr into a buffer which will be returned in err
 // in case of error.
 func runRpmOstree(args ...string) error {
+	// Acquire exclusive lock to prevent multiple MCD instances from racing
+	lockFile, err := acquireRpmOstreeLock()
+	if err != nil {
+		return fmt.Errorf("failed to acquire rpm-ostree lock: %w", err)
+	}
+	defer releaseRpmOstreeLock(lockFile)
+
 	return runCmdSync("rpm-ostree", args...)
 }
 
