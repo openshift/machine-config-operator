@@ -495,7 +495,7 @@ func (optr *Operator) allMachineConfigPoolStatus() (map[string]string, error) {
 
 	ret := map[string]string{}
 	for _, pool := range pools {
-		ret[pool.GetName()] = machineConfigPoolStatus(optr.fgHandler, pool)
+		ret[pool.GetName()] = machineConfigPoolStatus(pool)
 	}
 	return ret, nil
 }
