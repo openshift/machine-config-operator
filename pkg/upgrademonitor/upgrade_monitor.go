@@ -135,20 +135,48 @@ func generateAndApplyMachineConfigNodes(
 
 	// we use this array to see if the MCN has all of its conditions set
 	// if not we set a sane default
-	allConditionTypes := []mcfgv1.StateProgress{
-		mcfgv1.MachineConfigNodeUpdatePrepared,
-		mcfgv1.MachineConfigNodeUpdateExecuted,
-		mcfgv1.MachineConfigNodeUpdatePostActionComplete,
-		mcfgv1.MachineConfigNodeUpdateComplete,
-		mcfgv1.MachineConfigNodeResumed,
-		mcfgv1.MachineConfigNodeUpdateDrained,
-		mcfgv1.MachineConfigNodeUpdateFilesAndOS,
-		mcfgv1.MachineConfigNodeImagePulledFromRegistry,
-		mcfgv1.MachineConfigNodeUpdateCordoned,
-		mcfgv1.MachineConfigNodeUpdateRebooted,
-		mcfgv1.MachineConfigNodeUpdated,
-		mcfgv1.MachineConfigNodeUpdateUncordoned,
-		mcfgv1.MachineConfigNodeNodeDegraded,
+	// TODO (MCO-1775): Once ImageModeStatusReporting is GA, clean up the below logic. The `if`
+	// conditional will no longer be needed.
+	var allConditionTypes []mcfgv1.StateProgress
+	imageModeStatusReportingEnabled := fgHandler.Enabled(features.FeatureGateImageModeStatusReporting)
+	// If `ImageModeStatusReporting` is not enabled, use the default conditions
+	if !imageModeStatusReportingEnabled {
+		allConditionTypes = append(
+			allConditionTypes,
+			mcfgv1.MachineConfigNodeUpdatePrepared,
+			mcfgv1.MachineConfigNodeUpdateExecuted,
+			mcfgv1.MachineConfigNodeUpdatePostActionComplete,
+			mcfgv1.MachineConfigNodeUpdateComplete,
+			mcfgv1.MachineConfigNodeResumed,
+			mcfgv1.MachineConfigNodeUpdateDrained,
+			mcfgv1.MachineConfigNodeUpdateFilesAndOS,
+			mcfgv1.MachineConfigNodeUpdateCordoned,
+			mcfgv1.MachineConfigNodeUpdateRebooted,
+			mcfgv1.MachineConfigNodeUpdated,
+			mcfgv1.MachineConfigNodeUpdateUncordoned,
+			mcfgv1.MachineConfigNodeNodeDegraded,
+		)
+	} else { // If `ImageModeStatusReporting` is enabled, include the new condition states
+		allConditionTypes = append(
+			allConditionTypes,
+			mcfgv1.MachineConfigNodeUpdatePrepared,
+			mcfgv1.MachineConfigNodeUpdateExecuted,
+			mcfgv1.MachineConfigNodeUpdatePostActionComplete,
+			mcfgv1.MachineConfigNodeUpdateComplete,
+			mcfgv1.MachineConfigNodeResumed,
+			mcfgv1.MachineConfigNodeUpdateDrained,
+			// Note that the following two conditions replace the previous, singular
+			// `MachineConfigNodeUpdateFilesAndOS` condition
+			mcfgv1.MachineConfigNodeUpdateFiles,
+			mcfgv1.MachineConfigNodeUpdateOS,
+			mcfgv1.MachineConfigNodeUpdateCordoned,
+			mcfgv1.MachineConfigNodeUpdateRebooted,
+			mcfgv1.MachineConfigNodeUpdated,
+			mcfgv1.MachineConfigNodeUpdateUncordoned,
+			// Note that the following condition is new
+			mcfgv1.MachineConfigNodeImagePulledFromRegistry,
+			mcfgv1.MachineConfigNodeNodeDegraded,
+		)
 	}
 	allConditionTypes = append(allConditionTypes, singletonConditionTypes...)
 

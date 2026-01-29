@@ -7,6 +7,7 @@ import (
 	"maps"
 	"reflect"
 	"sort"
+	"strings"
 	"time"
 
 	helpers "github.com/openshift/machine-config-operator/pkg/helpers"
@@ -296,6 +297,14 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 
 	klog.Info("Starting MachineConfigController-NodeController")
 	defer klog.Info("Shutting down MachineConfigController-NodeController")
+
+	// TODO (MCO-1775): Once ImageModeStatusReporting has been GA for an entire release version
+	// (for example >=4.22.0), the below migration logic can be removed.
+	// Perform one-time migration from legacy MachineConfigNodeUpdateFilesAndOS condition
+	// to new ImageModeStatusReporting conditions when feature gate is enabled
+	if ctrl.fgHandler.Enabled(features.FeatureGateImageModeStatusReporting) {
+		go ctrl.performImageModeStatusReportingConditionMigration()
+	}
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(ctrl.worker, time.Second, stopCh)
@@ -1928,5 +1937,137 @@ func (ctrl *Controller) syncBootImageSkewEnforcementMetric(obj any) {
 		ctrlcommon.MCCBootImageSkewEnforcementNone.Set(1)
 	} else {
 		ctrlcommon.MCCBootImageSkewEnforcementNone.Set(0)
+	}
+}
+
+// migrateMCNConditionsToImageModeStatusReporting migrates MCN condition formats from the legacy
+// MachineConfigNodeUpdateFilesAndOS condition to the new ImageModeStatusReporting conditions
+// (MachineConfigNodeUpdateFiles, MachineConfigNodeUpdateOS, and MachineConfigNodeImagePulledFromRegistry).
+// Removes the legacy condition and adds the new conditions with appropriate default values.
+// Returns the number of MCNs that had their conditions migrated.
+func (ctrl *Controller) migrateMCNConditionsToImageModeStatusReporting() (int, error) {
+	// Get all MachineConfigNodes
+	mcns, err := ctrl.client.MachineconfigurationV1().MachineConfigNodes().List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		return 0, fmt.Errorf("failed to list MachineConfigNodes for condition migration: %w", err)
+	}
+
+	// Loop through all the cluster's MCNs and migrate them if needed
+	migratedCount := 0
+	for _, mcn := range mcns.Items {
+		// Check if the legacy condition exists and filter it out
+		hasLegacyCondition := false
+		// If we need to clean the legacy condition, the new conditions should not exist, but we
+		// will check to fully prevent condition duplication
+		needsUpdateFiles := true
+		needsUpdateOS := true
+		needsImagePulledFromRegistry := true
+		var newConditions []metav1.Condition
+		for _, condition := range mcn.Status.Conditions {
+			//nolint:gocritic // (ijanssen) the linter thinks this block would be clearer as a switch statement, but I disagree
+			if condition.Type == string(mcfgv1.MachineConfigNodeUpdateFilesAndOS) {
+				hasLegacyCondition = true
+				klog.V(4).Infof("Removing legacy MachineConfigNodeUpdateFilesAndOS condition from MCN %s", mcn.Name)
+				continue // Skip adding this condition to the new list
+			} else if condition.Type == string(mcfgv1.MachineConfigNodeUpdateFiles) {
+				needsUpdateFiles = false
+			} else if condition.Type == string(mcfgv1.MachineConfigNodeUpdateOS) {
+				needsUpdateOS = false
+			} else if condition.Type == string(mcfgv1.MachineConfigNodeImagePulledFromRegistry) {
+				needsImagePulledFromRegistry = false
+			}
+
+			newConditions = append(newConditions, condition)
+		}
+
+		// Only update the MCN if we found and removed the legacy condition or if any new
+		// conditions need to be added
+		if hasLegacyCondition || needsUpdateOS || needsUpdateFiles || needsImagePulledFromRegistry {
+			// Add the new ImageModeStatusReporting conditions with default values only if they don't exist
+			now := metav1.Now()
+
+			if needsUpdateFiles {
+				defaultCondition := metav1.Condition{
+					Type:               string(mcfgv1.MachineConfigNodeUpdateFiles),
+					Message:            fmt.Sprintf("This node has not yet entered the %s phase", string(mcfgv1.MachineConfigNodeUpdateFiles)),
+					Reason:             "NotYetOccurred",
+					LastTransitionTime: now,
+					Status:             metav1.ConditionFalse,
+				}
+				newConditions = append(newConditions, defaultCondition)
+			}
+
+			if needsUpdateOS {
+				defaultCondition := metav1.Condition{
+					Type:               string(mcfgv1.MachineConfigNodeUpdateOS),
+					Message:            fmt.Sprintf("This node has not yet entered the %s phase", string(mcfgv1.MachineConfigNodeUpdateOS)),
+					Reason:             "NotYetOccurred",
+					LastTransitionTime: now,
+					Status:             metav1.ConditionFalse,
+				}
+				newConditions = append(newConditions, defaultCondition)
+			}
+
+			if needsImagePulledFromRegistry {
+				defaultCondition := metav1.Condition{
+					Type:               string(mcfgv1.MachineConfigNodeImagePulledFromRegistry),
+					Message:            fmt.Sprintf("This node has not yet entered the %s phase", string(mcfgv1.MachineConfigNodeImagePulledFromRegistry)),
+					Reason:             "NotYetOccurred",
+					LastTransitionTime: now,
+					Status:             metav1.ConditionFalse,
+				}
+				newConditions = append(newConditions, defaultCondition)
+			}
+
+			mcnCopy := mcn.DeepCopy()
+			mcnCopy.Status.Conditions = newConditions
+			_, err = ctrl.client.MachineconfigurationV1().MachineConfigNodes().UpdateStatus(context.TODO(), mcnCopy, metav1.UpdateOptions{})
+			if err != nil {
+				return migratedCount, fmt.Errorf("failed to update MCN %s during condition migration to ImageModeStatusReporting: %w", mcn.Name, err)
+			}
+			migratedCount++
+
+			// Create descriptive log message based on what was done
+			var actions []string
+			if hasLegacyCondition {
+				actions = append(actions, "removed legacy MachineConfigNodeUpdateFilesAndOS condition")
+			}
+			if needsUpdateFiles || needsUpdateOS || needsImagePulledFromRegistry {
+				var addedConditions []string
+				if needsUpdateFiles {
+					addedConditions = append(addedConditions, "MachineConfigNodeUpdateFiles")
+				}
+				if needsUpdateOS {
+					addedConditions = append(addedConditions, "MachineConfigNodeUpdateOS")
+				}
+				if needsImagePulledFromRegistry {
+					addedConditions = append(addedConditions, "MachineConfigNodeImagePulledFromRegistry")
+				}
+				actions = append(actions, fmt.Sprintf("added %s condition(s)", strings.Join(addedConditions, ", ")))
+			}
+
+			klog.Infof("Successfully migrated conditions for MCN %s: %s", mcn.Name, strings.Join(actions, " and "))
+		}
+	}
+
+	return migratedCount, nil
+}
+
+// performImageModeStatusReportingConditionMigration runs once at controller startup to migrate MCN conditions
+// from legacy MachineConfigNodeUpdateFilesAndOS condition to new ImageModeStatusReporting condition format.
+// This runs in a goroutine to avoid blocking controller startup.
+func (ctrl *Controller) performImageModeStatusReportingConditionMigration() {
+	klog.Info("Starting one-time MCN condition migration to ImageModeStatusReporting format")
+
+	migratedCount, err := ctrl.migrateMCNConditionsToImageModeStatusReporting()
+	if err != nil {
+		klog.Errorf("Failed to migrate MCN condition formats to ImageModeStatusReporting: %v", err)
+		return
+	}
+
+	if migratedCount > 0 {
+		klog.Infof("Completed MCN condition migration to ImageModeStatusReporting format for %d total nodes", migratedCount)
+	} else {
+		klog.Info("No MCN condition migration to ImageModeStatusReporting format required")
 	}
 }
