@@ -47,4 +47,8 @@ contents:
             {{- end }}`}}
             fallthrough
         }
+        {
+          hosts
+          fallthrough
+        }
     }
