@@ -264,6 +264,7 @@ func filterInformerActions(actions []core.Action) []core.Action {
 				action.Matches("watch", "machineosbuilds") ||
 				action.Matches("list", "machineosconfigs") ||
 				action.Matches("watch", "machineosconfigs") ||
+				action.Matches("get", "machineconfignodes") ||
 				action.Matches("list", "machineconfignodes") ||
 				action.Matches("watch", "machineconfignodes")) {
 			continue
