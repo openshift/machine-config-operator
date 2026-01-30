@@ -99,6 +99,8 @@ const (
 	mccMachineConfigPoolSelectorValidatingAdmissionPolicyBindingPath  = "manifests/machineconfigcontroller/custom-machine-config-pool-selector-validatingadmissionpolicybinding.yaml"
 	mccUpdateBootImagesValidatingAdmissionPolicyPath                  = "manifests/machineconfigcontroller/update-bootimages-validatingadmissionpolicy.yaml"
 	mccUpdateBootImagesValidatingAdmissionPolicyBindingPath           = "manifests/machineconfigcontroller/update-bootimages-validatingadmissionpolicybinding.yaml"
+	mccIRIDeletionGuardValidatingAdmissionPolicyPath                  = "manifests/machineconfigcontroller/internalreleaseimage-deletion-guard-validatingadmissionpolicy.yaml"
+	mccIRIDeletionGuardValidatingAdmissionPolicyBindingPath           = "manifests/machineconfigcontroller/internalreleaseimage-deletion-guard-validatingadmissionpolicybinding.yaml"
 
 	// Machine OS Builder manifest paths
 	mobClusterRoleManifestPath                      = "manifests/machineosbuilder/clusterrole.yaml"
@@ -1158,6 +1160,16 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig, _ *confi
 			mccUpdateBootImagesValidatingAdmissionPolicyBindingPath,
 			mccMachineConfigPoolSelectorValidatingAdmissionPolicyBindingPath,
 		},
+	}
+
+	if optr.fgHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
+		// Only deploy the IRI deletion guard policy if the IRI resource actually exists
+		if optr.iriLister != nil {
+			if _, err := optr.iriLister.Get(ctrlcommon.InternalReleaseImageInstanceName); err == nil {
+				paths.validatingAdmissionPolicies = append(paths.validatingAdmissionPolicies, mccIRIDeletionGuardValidatingAdmissionPolicyPath)
+				paths.validatingAdmissionPolicyBindings = append(paths.validatingAdmissionPolicyBindings, mccIRIDeletionGuardValidatingAdmissionPolicyBindingPath)
+			}
+		}
 	}
 	if err := optr.applyManifests(config, paths); err != nil {
 		return fmt.Errorf("failed to apply machine config controller manifests: %w", err)

@@ -1,0 +1,24 @@
+name: iri-registry.service
+enabled: true
+contents: |
+  [Unit]
+  Description=InternalReleaseImage Registry
+  Wants=network.target
+  ConditionPathIsDirectory=/var/lib/iri-registry
+
+  [Service]
+  Environment=REGISTRY_DIR=/var/lib/iri-registry
+  Environment=PODMAN_SYSTEMD_UNIT=%n
+  ExecStartPre=/usr/local/bin/load-registry-image.sh
+  ExecStartPre=/bin/rm -f %t/%n.ctr-id
+  ExecStart=podman run --net host --cidfile=%t/%n.ctr-id --log-driver=journald --replace --name=iri-registry -v ${REGISTRY_DIR}:/var/lib/registry:ro,Z -v /etc/iri-registry/certs:/certs:ro -e REGISTRY_HTTP_ADDR=0.0.0.0:22625 -e REGISTRY_HTTP_TLS_CERTIFICATE=/certs/tls.crt -e REGISTRY_HTTP_TLS_KEY=/certs/tls.key -u 0 --entrypoint=/usr/bin/distribution {{ .DockerRegistryImage }} serve /etc/registry/config.yaml
+  ExecStop=/usr/bin/podman stop --ignore --cidfile=%t/%n.ctr-id
+  ExecStopPost=/usr/bin/podman rm -f --ignore --cidfile=%t/%n.ctr-id
+
+  Restart=on-failure
+  RestartSec=10
+  TimeoutStartSec=9000
+  TimeoutStopSec=300
+  
+  [Install]
+  WantedBy=multi-user.target
