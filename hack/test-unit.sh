@@ -17,7 +17,7 @@ COVERAGE_REPORT="mco-unit-test-coverage.out"
 
 function run_tests() {
   test_opts=("$@")
-  CGO_ENABLED=0 go test "${test_opts[@]}" -tags="$GOTAGS" './devex/...' './cmd/...' './pkg/...' './lib/...' './test/helpers/...' | ./hack/test-with-junit.sh "$MAKEFILE_TARGET"
+  go test "${test_opts[@]}" -tags="${GOTAGS}" './devex/...' './cmd/...' './pkg/...' './lib/...' './test/helpers/...' | ./hack/test-with-junit.sh "$MAKEFILE_TARGET"
 }
 
 function run_tests_with_coverage() {
@@ -38,11 +38,6 @@ function run_tests_with_coverage() {
 
 if [ ! -n "$MAKEFILE_TARGET" ]; then
   echo "No Makefile target provided"
-  exit 1
-fi
-
-if [ ! -n "$GOTAGS" ]; then
-  echo "No GOTAGS provided"
   exit 1
 fi
 
