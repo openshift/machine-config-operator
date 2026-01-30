@@ -26,7 +26,7 @@ export GOPROXY=https://proxy.golang.org
 # this is necessary for running golangci-lint in a container
 export GOLANGCI_LINT_CACHE=$(shell echo $${GOLANGCI_LINT_CACHE:-$$GOPATH/cache})
 
-GOTAGS = "containers_image_openpgp exclude_graphdriver_devicemapper exclude_graphdriver_btrfs containers_image_ostree_stub"
+GOTAGS = "containers_image_openpgp exclude_graphdriver_devicemapper exclude_graphdriver_btrfs containers_image_ostree_stub $(TAGS)"
 
 all: binaries
 

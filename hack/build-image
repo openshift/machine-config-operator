@@ -41,6 +41,10 @@ else:
 
 print(f"HEAD commit: {gitrev}")
 args = [podman, 'build', '-t', imgname, '--no-cache', '.']
+# Check if TAGS environment variable is set and pass it as a build argument
+tags = os.environ.get('TAGS')
+if tags:
+    args.extend(['--build-arg', f'TAGS={tags}'])
 # Check if AUTHFILE environment variable is set. Setting this allows the user to specify which file to use
 # for the authentication when building the image
 authfile = os.environ.get('AUTHFILE')

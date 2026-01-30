@@ -38,7 +38,7 @@ fi
 mkdir -p ${BIN_PATH}
 
 if [[ $WHAT == "machine-config-controller" ]]; then
-    GOTAGS="containers_image_openpgp exclude_graphdriver_devicemapper exclude_graphdriver_btrfs containers_image_ostree_stub"
+    GOTAGS="${GOTAGS} containers_image_openpgp exclude_graphdriver_devicemapper exclude_graphdriver_btrfs containers_image_ostree_stub"
 fi
 
 echo "Building ${REPO}/${WHAT_PATH} (${VERSION_OVERRIDE}, ${HASH}) for $GOOS/$GOARCH"
