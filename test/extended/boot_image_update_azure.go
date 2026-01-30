@@ -35,7 +35,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		// Skip this test if the cluster is not using MachineAPI
 		skipUnlessFunctionalMachineAPI(oc)
 		// Skip this test on single node platforms
-		skipOnSingleNodeTopology(oc)
+		exutil.SkipOnSingleNodeTopology(oc)
 	})
 
 	g.AfterEach(func() {
