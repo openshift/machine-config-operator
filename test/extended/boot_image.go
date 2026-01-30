@@ -78,22 +78,6 @@ func skipUnlessFunctionalMachineAPI(oc *exutil.CLI) {
 	e2eskipper.Skipf("haven't found a machine in running state, this test can be run on a platform that supports functional MachineAPI")
 }
 
-// skipOnSingleNodeTopology skips the test if the cluster is using single-node topology
-func skipOnSingleNodeTopology(oc *exutil.CLI) {
-	infra, err := oc.AdminConfigClient().ConfigV1().Infrastructures().Get(context.Background(), "cluster", metav1.GetOptions{})
-	o.Expect(err).NotTo(o.HaveOccurred())
-	if infra.Status.ControlPlaneTopology == osconfigv1.SingleReplicaTopologyMode {
-		e2eskipper.Skipf("This test does not apply to single-node topologies")
-	}
-}
-
-// `IsSingleNode` returns true if the cluster is using single-node topology and false otherwise
-func IsSingleNode(oc *exutil.CLI) bool {
-	infra, err := oc.AdminConfigClient().ConfigV1().Infrastructures().Get(context.Background(), "cluster", metav1.GetOptions{})
-	o.Expect(err).NotTo(o.HaveOccurred(), "Error determining cluster infrastructure.")
-	return infra.Status.ControlPlaneTopology == osconfigv1.SingleReplicaTopologyMode
-}
-
 // getRandomMachineSet picks a random machineset present on the cluster
 func getRandomMachineSet(machineClient *machineclient.Clientset) machinev1beta1.MachineSet {
 	machineSets, err := machineClient.MachineV1beta1().MachineSets("openshift-machine-api").List(context.TODO(), metav1.ListOptions{})

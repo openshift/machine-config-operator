@@ -489,22 +489,6 @@ func QuoteIfNotJSON(s string) string {
 	return string(b)
 }
 
-// IsSNO returns true if the cluster is a SNO cluster
-func IsSNO(oc *exutil.CLI) bool {
-	allNodes, err := NewNodeList(oc.AsAdmin()).GetAll()
-	if err != nil {
-		return false
-	}
-	return len(allNodes) == 1
-}
-
-// SkipIfSNO skips the test case if the cluster is a SNO cluster
-func SkipIfSNO(oc *exutil.CLI) {
-	if IsSNO(oc) {
-		g.Skip("There is only 1 node in the cluster. This test is not supported in SNO clusters")
-	}
-}
-
 // WorkersCanBeScaled returns true if worker nodes can be scaled using machinesets
 func WorkersCanBeScaled(oc *exutil.CLI) (bool, error) {
 	platform := exutil.CheckPlatform(oc)
