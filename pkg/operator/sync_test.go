@@ -6,6 +6,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	features "github.com/openshift/api/features"
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
@@ -303,7 +304,9 @@ func TestSyncMachineConfiguration(t *testing.T) {
 		name                            string
 		mcop                            *opv1.MachineConfiguration
 		infra                           *configv1.Infrastructure
+		clusterVersion                  *configv1.ClusterVersion
 		expectedManagedBootImagesStatus opv1.ManagedBootImages
+		expectedSkewEnforcementStatus   opv1.BootImageSkewEnforcementStatus
 		annotationExpected              bool
 		enableCPMSFeatureGate           bool
 	}{
@@ -311,62 +314,73 @@ func TestSyncMachineConfiguration(t *testing.T) {
 			name:               "AWS platform, no existing config, opt-in expected",
 			infra:              buildInfra(withPlatformType(configv1.AWSPlatformType)),
 			mcop:               buildMachineConfigurationWithNoBootImageConfiguration(),
+			clusterVersion:     buildClusterVersion("4.18.0"),
 			annotationExpected: true,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
 				MachineManagers: []opv1.MachineManager{
 					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
 				},
 			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.18.0"),
 		},
 		{
 			name:               "AWS platform, existing enabled config, no opt-in expected",
 			infra:              buildInfra(withPlatformType(configv1.AWSPlatformType)),
 			mcop:               buildMachineConfigurationWithMachineSetsEnabled(),
+			clusterVersion:     buildClusterVersion("4.18.0"),
 			annotationExpected: false,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
 				MachineManagers: []opv1.MachineManager{
 					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
 				},
 			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.18.0"),
 		},
 		{
 			name:               "AWS platform, existing disabled config, no opt-in expected",
 			infra:              buildInfra(withPlatformType(configv1.AWSPlatformType)),
 			mcop:               buildMachineConfigurationWithMachineSetsDisabled(),
+			clusterVersion:     buildClusterVersion("4.18.0"),
 			annotationExpected: false,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
 				MachineManagers: []opv1.MachineManager{
 					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.None}},
 				},
 			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.18.0"),
 		},
 		{
 			name:               "GCP platform, no existing config, opt-in expected",
 			infra:              buildInfra(withPlatformType(configv1.GCPPlatformType)),
 			mcop:               buildMachineConfigurationWithNoBootImageConfiguration(),
+			clusterVersion:     buildClusterVersion("4.18.0"),
 			annotationExpected: true,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
 				MachineManagers: []opv1.MachineManager{
 					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
 				},
 			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.18.0"),
 		},
 		{
 			name:               "GCP platform, existing enabled config, no opt-in expected",
 			infra:              buildInfra(withPlatformType(configv1.GCPPlatformType)),
 			mcop:               buildMachineConfigurationWithMachineSetsEnabled(),
+			clusterVersion:     buildClusterVersion("4.18.0"),
 			annotationExpected: false,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
 				MachineManagers: []opv1.MachineManager{
 					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
 				},
 			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.18.0"),
 		},
 
 		{
 			name:               "GCP platform, existing parial config, no opt-in expected",
 			infra:              buildInfra(withPlatformType(configv1.GCPPlatformType)),
 			mcop:               buildMachineConfigurationWithMachineSetsPartiallyEnabled(map[string]string{"test": "boot"}),
+			clusterVersion:     buildClusterVersion("4.18.0"),
 			annotationExpected: false,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
 				MachineManagers: []opv1.MachineManager{
@@ -377,61 +391,73 @@ func TestSyncMachineConfiguration(t *testing.T) {
 					}}},
 				},
 			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.18.0"),
 		},
 		{
 			name:               "GCP platform, existing disabled config, no opt-in expected",
 			infra:              buildInfra(withPlatformType(configv1.GCPPlatformType)),
 			mcop:               buildMachineConfigurationWithMachineSetsDisabled(),
+			clusterVersion:     buildClusterVersion("4.18.0"),
 			annotationExpected: false,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
 				MachineManagers: []opv1.MachineManager{
 					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.None}},
 				},
 			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.18.0"),
 		},
 		{
 			name:               "Azure platform, no existing config, no opt-in expected",
 			infra:              buildInfra(withPlatformType(configv1.AzurePlatformType)),
 			mcop:               buildMachineConfigurationWithNoBootImageConfiguration(),
+			clusterVersion:     buildClusterVersion("4.18.0"),
 			annotationExpected: false,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
 				MachineManagers: []opv1.MachineManager{
 					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.None}},
 				},
 			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.18.0"),
 		},
 		{
 			name:               "vsphere platform, no existing config, no opt-in expected",
 			infra:              buildInfra(withPlatformType(configv1.VSpherePlatformType)),
 			mcop:               buildMachineConfigurationWithNoBootImageConfiguration(),
+			clusterVersion:     buildClusterVersion("4.18.0"),
 			annotationExpected: false,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
 				MachineManagers: []opv1.MachineManager{
 					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.None}},
 				},
 			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.18.0"),
 		},
 		{
 			name:                            "bare metal platform, unsupported platform, no configuration expected",
 			infra:                           buildInfra(withPlatformType(configv1.BareMetalPlatformType)),
 			mcop:                            buildMachineConfigurationWithNoBootImageConfiguration(),
+			clusterVersion:                  buildClusterVersion("4.18.0"),
 			annotationExpected:              false,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{},
+			expectedSkewEnforcementStatus:   apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.18.0"),
 		},
 		{
 			name:               "vsphere platform, empty list config, no opt-in expected",
 			infra:              buildInfra(withPlatformType(configv1.VSpherePlatformType)),
 			mcop:               buildMachineConfigurationWithEmptyListBootImageConfiguration(),
+			clusterVersion:     buildClusterVersion("4.18.0"),
 			annotationExpected: false,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
 				MachineManagers: []opv1.MachineManager{},
 			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.18.0"),
 		},
 		// CPMS test cases - feature gate enabled
 		{
 			name:                  "AWS platform, no existing config, default CPMS disabled",
 			infra:                 buildInfra(withPlatformType(configv1.AWSPlatformType)),
 			mcop:                  buildMachineConfigurationWithNoBootImageConfiguration(),
+			clusterVersion:        buildClusterVersion("4.18.0"),
 			annotationExpected:    true,
 			enableCPMSFeatureGate: true,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
@@ -440,11 +466,13 @@ func TestSyncMachineConfiguration(t *testing.T) {
 					{Resource: opv1.ControlPlaneMachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.None}},
 				},
 			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.18.0"),
 		},
 		{
 			name:                  "GCP platform, no existing config, default CPMS disabled",
 			infra:                 buildInfra(withPlatformType(configv1.GCPPlatformType)),
 			mcop:                  buildMachineConfigurationWithNoBootImageConfiguration(),
+			clusterVersion:        buildClusterVersion("4.18.0"),
 			annotationExpected:    true,
 			enableCPMSFeatureGate: true,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
@@ -453,11 +481,13 @@ func TestSyncMachineConfiguration(t *testing.T) {
 					{Resource: opv1.ControlPlaneMachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.None}},
 				},
 			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.18.0"),
 		},
 		{
 			name:                  "Azure platform, no existing config, default CPMS disabled",
 			infra:                 buildInfra(withPlatformType(configv1.AzurePlatformType)),
 			mcop:                  buildMachineConfigurationWithNoBootImageConfiguration(),
+			clusterVersion:        buildClusterVersion("4.18.0"),
 			annotationExpected:    false,
 			enableCPMSFeatureGate: true,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
@@ -466,11 +496,13 @@ func TestSyncMachineConfiguration(t *testing.T) {
 					{Resource: opv1.ControlPlaneMachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.None}},
 				},
 			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.18.0"),
 		},
 		{
 			name:                  "AWS platform, CPMS enabled in spec, MachineSets should still follow platform default (All)",
 			infra:                 buildInfra(withPlatformType(configv1.AWSPlatformType)),
 			mcop:                  buildMachineConfigurationWithCPMSEnabled(),
+			clusterVersion:        buildClusterVersion("4.18.0"),
 			annotationExpected:    true, // MachineSets get auto opted-in since no opinion exists
 			enableCPMSFeatureGate: true,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
@@ -479,11 +511,13 @@ func TestSyncMachineConfiguration(t *testing.T) {
 					{Resource: opv1.ControlPlaneMachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
 				},
 			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.18.0"),
 		},
 		{
 			name:                  "Azure platform, CPMS enabled in spec, MachineSets should still follow platform default (None)",
 			infra:                 buildInfra(withPlatformType(configv1.AzurePlatformType)),
 			mcop:                  buildMachineConfigurationWithCPMSEnabled(),
+			clusterVersion:        buildClusterVersion("4.18.0"),
 			annotationExpected:    false,
 			enableCPMSFeatureGate: true,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
@@ -492,11 +526,13 @@ func TestSyncMachineConfiguration(t *testing.T) {
 					{Resource: opv1.ControlPlaneMachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
 				},
 			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.18.0"),
 		},
 		{
 			name:                  "AWS platform, MachineSets enabled in spec, CPMS should remain disabled (no opinion)",
 			infra:                 buildInfra(withPlatformType(configv1.AWSPlatformType)),
 			mcop:                  buildMachineConfigurationWithMachineSetsEnabled(),
+			clusterVersion:        buildClusterVersion("4.18.0"),
 			annotationExpected:    false,
 			enableCPMSFeatureGate: true,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
@@ -505,11 +541,13 @@ func TestSyncMachineConfiguration(t *testing.T) {
 					{Resource: opv1.ControlPlaneMachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.None}},
 				},
 			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.18.0"),
 		},
 		{
 			name:                  "AWS platform, both MachineSets and CPMS enabled in spec",
 			infra:                 buildInfra(withPlatformType(configv1.AWSPlatformType)),
 			mcop:                  buildMachineConfigurationWithMachineSetsEnabledCPMSEnabled(),
+			clusterVersion:        buildClusterVersion("4.18.0"),
 			annotationExpected:    false,
 			enableCPMSFeatureGate: true,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
@@ -518,11 +556,13 @@ func TestSyncMachineConfiguration(t *testing.T) {
 					{Resource: opv1.ControlPlaneMachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
 				},
 			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.18.0"),
 		},
 		{
 			name:                  "AWS platform, MachineSets disabled but CPMS enabled in spec, CPMS opinion reflected",
 			infra:                 buildInfra(withPlatformType(configv1.AWSPlatformType)),
 			mcop:                  buildMachineConfigurationWithMachineSetsDisabledCPMSEnabled(),
+			clusterVersion:        buildClusterVersion("4.18.0"),
 			annotationExpected:    false,
 			enableCPMSFeatureGate: true,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
@@ -531,11 +571,13 @@ func TestSyncMachineConfiguration(t *testing.T) {
 					{Resource: opv1.ControlPlaneMachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
 				},
 			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.18.0"),
 		},
 		{
 			name:                  "AWS platform, MachineSets partially enabled and CPMS enabled in spec, both opinions reflected",
 			infra:                 buildInfra(withPlatformType(configv1.AWSPlatformType)),
 			mcop:                  buildMachineConfigurationWithMachineSetsPartiallyEnabledCPMSEnabled(map[string]string{"test": "boot"}),
+			clusterVersion:        buildClusterVersion("4.18.0"),
 			annotationExpected:    false,
 			enableCPMSFeatureGate: true,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
@@ -548,28 +590,34 @@ func TestSyncMachineConfiguration(t *testing.T) {
 					{Resource: opv1.ControlPlaneMachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
 				},
 			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.18.0"),
 		},
 		{
 			name:                  "AWS platform, empty list config, no opt-in expected",
 			infra:                 buildInfra(withPlatformType(configv1.AWSPlatformType)),
 			mcop:                  buildMachineConfigurationWithEmptyListBootImageConfiguration(),
+			clusterVersion:        buildClusterVersion("4.18.0"),
 			annotationExpected:    false,
 			enableCPMSFeatureGate: true,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
 				MachineManagers: []opv1.MachineManager{},
 			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.18.0"),
 		},
 		{
 			name:                            "bare metal platform, unsupported platform, no MachineSet/CPMS configuration expected",
 			infra:                           buildInfra(withPlatformType(configv1.BareMetalPlatformType)),
 			mcop:                            buildMachineConfigurationWithNoBootImageConfiguration(),
+			clusterVersion:                  buildClusterVersion("4.19.0"),
 			annotationExpected:              false,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{},
+			expectedSkewEnforcementStatus:   apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.19.0"),
 		},
 		{
 			name:                  "vsphere platform, CPMS updates unsupported, MachineSet configuration expected, no CPMS configuration expected",
 			infra:                 buildInfra(withPlatformType(configv1.VSpherePlatformType)),
 			mcop:                  buildMachineConfigurationWithNoBootImageConfiguration(),
+			clusterVersion:        buildClusterVersion("4.19.0"),
 			annotationExpected:    false,
 			enableCPMSFeatureGate: true,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
@@ -577,8 +625,111 @@ func TestSyncMachineConfiguration(t *testing.T) {
 					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.None}},
 				},
 			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.19.0"),
+		},
+		// Skew enforcement test cases
+		{
+			name:               "AWS platform, boot images enabled, skew enforcement automatic mode expected",
+			infra:              buildInfra(withPlatformType(configv1.AWSPlatformType)),
+			mcop:               buildMachineConfigurationWithBootImageEnabledAndNoSkewEnforcement(),
+			clusterVersion:     buildClusterVersion("4.18.0"),
+			annotationExpected: false,
+			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
+				MachineManagers: []opv1.MachineManager{
+					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
+				},
+			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.18.0"),
+		},
+		{
+			name:               "AWS platform, boot images disabled, skew enforcement manual mode expected",
+			infra:              buildInfra(withPlatformType(configv1.AWSPlatformType)),
+			mcop:               buildMachineConfigurationWithBootImageDisabledAndNoSkewEnforcement(),
+			clusterVersion:     buildClusterVersion("4.17.0"),
+			annotationExpected: false,
+			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
+				MachineManagers: []opv1.MachineManager{
+					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.None}},
+				},
+			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.17.0"),
+		},
+		{
+			name:               "AWS platform, spec defines manual mode, status should reflect spec",
+			infra:              buildInfra(withPlatformType(configv1.AWSPlatformType)),
+			mcop:               buildMachineConfigurationWithSkewEnforcementManual("4.16.0"),
+			clusterVersion:     buildClusterVersion("4.18.0"),
+			annotationExpected: true,
+			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
+				MachineManagers: []opv1.MachineManager{
+					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
+				},
+			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.16.0"),
+		},
+		{
+			name:               "AWS platform, spec defines none mode, status should reflect none",
+			infra:              buildInfra(withPlatformType(configv1.AWSPlatformType)),
+			mcop:               buildMachineConfigurationWithSkewEnforcementNone(),
+			clusterVersion:     buildClusterVersion("4.18.0"),
+			annotationExpected: true,
+			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
+				MachineManagers: []opv1.MachineManager{
+					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
+				},
+			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusNone(),
+		},
+		{
+			name:               "GCP platform, boot images enabled, skew enforcement automatic mode expected",
+			infra:              buildInfra(withPlatformType(configv1.GCPPlatformType)),
+			mcop:               buildMachineConfigurationWithBootImageEnabledAndNoSkewEnforcement(),
+			clusterVersion:     buildClusterVersion("4.19.1"),
+			annotationExpected: false,
+			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
+				MachineManagers: []opv1.MachineManager{
+					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
+				},
+			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.19.1"),
+		},
+		{
+			name:                            "BareMetal platform (unsupported), skew enforcement manual mode expected",
+			infra:                           buildInfra(withPlatformType(configv1.BareMetalPlatformType)),
+			mcop:                            buildMachineConfigurationWithNoBootImageConfiguration(),
+			clusterVersion:                  buildClusterVersion("4.18.0"),
+			annotationExpected:              false,
+			expectedManagedBootImagesStatus: opv1.ManagedBootImages{},
+			expectedSkewEnforcementStatus:   apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.18.0"),
+		},
+		{
+			name:               "AWS platform, cluster version with multiple history entries",
+			infra:              buildInfra(withPlatformType(configv1.AWSPlatformType)),
+			mcop:               buildMachineConfigurationWithBootImageEnabledAndNoSkewEnforcement(),
+			clusterVersion:     buildClusterVersionWithMultipleHistory("4.19.0", "4.18.0", "4.17.0"),
+			annotationExpected: false,
+			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
+				MachineManagers: []opv1.MachineManager{
+					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
+				},
+			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.17.0"),
+		},
+		{
+			name:               "AWS platform, CI version format should be parsed correctly",
+			infra:              buildInfra(withPlatformType(configv1.AWSPlatformType)),
+			mcop:               buildMachineConfigurationWithBootImageEnabledAndNoSkewEnforcement(),
+			clusterVersion:     buildClusterVersion("4.18.0-0.ci-2024-01-01-000000"),
+			annotationExpected: false,
+			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
+				MachineManagers: []opv1.MachineManager{
+					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
+				},
+			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.18.0"),
 		},
 	}
+
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			infraIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
@@ -586,6 +737,10 @@ func TestSyncMachineConfiguration(t *testing.T) {
 			mcopIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
 			mcopIndexer.Add(tc.mcop)
 			mcpIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+			clusterVersionIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+			if tc.clusterVersion != nil {
+				clusterVersionIndexer.Add(tc.clusterVersion)
+			}
 
 			enabledFeatureGates := []configv1.FeatureGateName{features.FeatureGateManagedBootImages, features.FeatureGateManagedBootImagesAWS, features.FeatureGateManagedBootImagesvSphere, features.FeatureGateManagedBootImagesAzure, features.FeatureGateBootImageSkewEnforcement}
 			if tc.enableCPMSFeatureGate {
@@ -596,10 +751,11 @@ func TestSyncMachineConfiguration(t *testing.T) {
 				fgHandler: ctrlcommon.NewFeatureGatesHardcodedHandler(
 					enabledFeatureGates, []configv1.FeatureGateName{},
 				),
-				infraLister: configlistersv1.NewInfrastructureLister(infraIndexer),
-				mcopLister:  mcoplistersv1.NewMachineConfigurationLister(mcopIndexer),
-				mcopClient:  fakemcopclientset.NewSimpleClientset(tc.mcop),
-				mcpLister:   mcplister.NewMachineConfigPoolLister(mcpIndexer),
+				infraLister:          configlistersv1.NewInfrastructureLister(infraIndexer),
+				mcopLister:           mcoplistersv1.NewMachineConfigurationLister(mcopIndexer),
+				mcopClient:           fakemcopclientset.NewSimpleClientset(tc.mcop),
+				mcpLister:            mcplister.NewMachineConfigPoolLister(mcpIndexer),
+				clusterVersionLister: configlistersv1.NewClusterVersionLister(clusterVersionIndexer),
 			}
 			err := optr.syncMachineConfiguration(nil, nil)
 			assert.NoError(t, err)
@@ -608,6 +764,8 @@ func TestSyncMachineConfiguration(t *testing.T) {
 			// Ensure ManagedBootImagesStatus and annotations are as expected
 			assert.Equal(t, tc.expectedManagedBootImagesStatus, mcop.Status.ManagedBootImagesStatus)
 			assert.Equal(t, tc.annotationExpected, metav1.HasAnnotation(mcop.ObjectMeta, ctrlcommon.BootImageOptedInAnnotation))
+			// Ensure BootImageSkewEnforcementStatus is as expected
+			assert.Equal(t, tc.expectedSkewEnforcementStatus, mcop.Status.BootImageSkewEnforcementStatus)
 		})
 	}
 }
@@ -726,6 +884,98 @@ func buildMachineConfigurationWithMachineSetsPartiallyEnabledCPMSEnabled(matchLa
 						},
 					}}},
 					{Resource: opv1.ControlPlaneMachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
+				},
+			},
+		},
+	}
+}
+
+// Helper functions for building ClusterVersion objects
+func buildClusterVersion(version string) *configv1.ClusterVersion {
+	return &configv1.ClusterVersion{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "version",
+		},
+		Status: configv1.ClusterVersionStatus{
+			History: []configv1.UpdateHistory{
+				{
+					State:   configv1.CompletedUpdate,
+					Version: version,
+				},
+			},
+		},
+	}
+}
+
+func buildClusterVersionWithMultipleHistory(versions ...string) *configv1.ClusterVersion {
+	history := make([]configv1.UpdateHistory, len(versions))
+	for i, v := range versions {
+		state := configv1.CompletedUpdate
+		if i == 0 {
+			state = configv1.PartialUpdate // Most recent is partial (in progress)
+		}
+		history[i] = configv1.UpdateHistory{
+			State:   state,
+			Version: v,
+		}
+	}
+	return &configv1.ClusterVersion{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "version",
+		},
+		Status: configv1.ClusterVersionStatus{
+			History: history,
+		},
+	}
+}
+
+// Helper functions for building MachineConfiguration with skew enforcement
+func buildMachineConfigurationWithSkewEnforcementManual(ocpVersion string) *opv1.MachineConfiguration {
+	return &opv1.MachineConfiguration{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+		Spec: opv1.MachineConfigurationSpec{
+			BootImageSkewEnforcement: opv1.BootImageSkewEnforcementConfig{
+				Mode: opv1.BootImageSkewEnforcementConfigModeManual,
+				Manual: opv1.ClusterBootImageManual{
+					Mode:       opv1.ClusterBootImageSpecModeOCPVersion,
+					OCPVersion: ocpVersion,
+				},
+			},
+		},
+	}
+}
+
+func buildMachineConfigurationWithSkewEnforcementNone() *opv1.MachineConfiguration {
+	return &opv1.MachineConfiguration{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+		Spec: opv1.MachineConfigurationSpec{
+			BootImageSkewEnforcement: opv1.BootImageSkewEnforcementConfig{
+				Mode: opv1.BootImageSkewEnforcementConfigModeNone,
+			},
+		},
+	}
+}
+
+func buildMachineConfigurationWithBootImageEnabledAndNoSkewEnforcement() *opv1.MachineConfiguration {
+	return &opv1.MachineConfiguration{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+		Spec: opv1.MachineConfigurationSpec{
+			ManagedBootImages: opv1.ManagedBootImages{
+				MachineManagers: []opv1.MachineManager{
+					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
+				},
+			},
+		},
+	}
+}
+
+func buildMachineConfigurationWithBootImageDisabledAndNoSkewEnforcement() *opv1.MachineConfiguration {
+	return &opv1.MachineConfiguration{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+		Spec: opv1.MachineConfigurationSpec{
+			ManagedBootImages: opv1.ManagedBootImages{
+				MachineManagers: []opv1.MachineManager{
+					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.None}},
 				},
 			},
 		},
