@@ -87,4 +87,12 @@ const (
 	BusyBoxImage = "quay.io/openshifttest/busybox@sha256:c5439d7db88ab5423999530349d327b04279ad3161d7596d2126dfb5b02bfd1f"
 	// AlpineImage the multiplatform alpine image stored in openshifttest
 	AlpineImage = "quay.io/openshifttest/alpine@sha256:dc1536cbff0ba235d4219462aeccd4caceab9def96ae8064257d049166890083"
+
+	// Constants for NodeDisruptionPolicy
+	NodeDisruptionPolicyActionNone         = "None"
+	NodeDisruptionPolicyActionReboot       = "Reboot"
+	NodeDisruptionPolicyActionReload       = "Reload"
+	NodeDisruptionPolicyActionRestart      = "Restart"
+	NodeDisruptionPolicyActionDrain        = "Drain"
+	NodeDisruptionPolicyActionDaemonReload = "DaemonReload"
 )

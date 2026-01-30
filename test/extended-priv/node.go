@@ -799,6 +799,15 @@ func (nl NodeList) GetAllLinuxWorkerNodesOrFail() []*Node {
 	return workers
 }
 
+// GetAllCoreOsWokerNodesOrFail returns a list with all CoreOs nodes in the cluster. Fail the test case if an error happens.
+func (nl NodeList) GetAllCoreOsWokerNodesOrFail() []*Node {
+	nl.ByLabel("node-role.kubernetes.io/worker=,node.openshift.io/os_id=rhel")
+
+	workers, err := nl.GetAll()
+	o.Expect(err).NotTo(o.HaveOccurred())
+	return workers
+}
+
 // GetAllReady returns all nodes that are in Ready status
 func (nl NodeList) GetAllReady() ([]*Node, error) {
 	allNodes, err := nl.GetAll()
