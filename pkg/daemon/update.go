@@ -1815,7 +1815,20 @@ func (dn *Daemon) updateFiles(oldIgnConfig, newIgnConfig ign3types.Config, added
 	if err := dn.writeFiles(newIgnConfig.Storage.Files, skipCertificateWrite); err != nil {
 		return err
 	}
-	if err := dn.writeUnits(addedOrChangedUnits); err != nil {
+
+	// With OCPBUGS-58023, we updated this flow to only write units that were either added or
+	// updated. As can be seen in OCPBUGS-74692, this impacted the traditional method to recover
+	// from config drifts with systemd units. It makes the `touch /run/machine-config-daemon-force`
+	// command useless since the new flow does not rewrite all files, only the ones that have been
+	// added or changed with the latest MC. To keep the fix for OCPBUGS-58023 and allow continue
+	// supporting the traditional config drift recovery for systemd units, all units should be
+	// writen when a forcefile exists.
+	unitsToWrite := addedOrChangedUnits
+	if forceFileExists() {
+		unitsToWrite = newIgnConfig.Systemd.Units
+	}
+
+	if err := dn.writeUnits(unitsToWrite); err != nil {
 		return err
 	}
 	return dn.deleteStaleData(oldIgnConfig, newIgnConfig)
