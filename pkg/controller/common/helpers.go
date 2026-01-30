@@ -51,7 +51,6 @@ import (
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	"github.com/openshift/library-go/pkg/crypto"
 	buildconstants "github.com/openshift/machine-config-operator/pkg/controller/build/constants"
-	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 )
 
 // strToPtr converts the input string to a pointer to itself
@@ -1297,42 +1296,51 @@ func RequiresRebuild(oldMC, newMC *mcfgv1.MachineConfig) bool {
 		!reflect.DeepEqual(oldMC.Spec.KernelArguments, newMC.Spec.KernelArguments)
 }
 
-// GetUpdatedMachines filters the provided nodes to return the nodes whose
-// current config matches its desired config and target config in the
-// associated MCP and has the "done" flag set.
-func GetUpdatedMachines(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node, mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild, layered bool) []*corev1.Node {
+type MachinesByStatus struct {
+	Updated     []*corev1.Node
+	Degraded    []*corev1.Node
+	Ready       []*corev1.Node
+	Unavailable []*corev1.Node
+}
+
+// GetMachinesByState takes a list of nodes and returns lists of nodes filtered by state. The
+// states and their requirements are:
+//   - Updated: A node's current config matches its desired config and the target config in the
+//     associated MCP and the node has the "done" flag set
+//   - Degraded: The node's `machineconfiguration.openshift.io/state` annotation has a value of
+//     "Degraded" or "Unreconcilable"
+//   - Ready: The node is "Updated" and marked ready
+//   - Unavailable: The node is either marked unscheduleable or has a MCD actively working. If the
+//     MCD is actively working (or hasn't started) then the node *may* go unschedulable in the
+//     future, so the node is considered "unavailable" so another node update does not exceed
+//     the desired maxUnavailable. (Somewhat the opposite of a "Ready" node)
+func GetMachinesByState(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node, mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild, layered bool) MachinesByStatus {
 	var updated []*corev1.Node
+	var degraded []*corev1.Node
+	var ready []*corev1.Node
+	var unavail []*corev1.Node
 	for _, node := range nodes {
 		lns := NewLayeredNodeState(node)
 		if lns.IsDone(pool, layered, mosc, mosb) {
 			updated = append(updated, node)
+			// A node must be updated to be considered "Ready"
+			if lns.IsNodeReady() {
+				ready = append(ready, node)
+			}
 		}
-	}
-	return updated
-}
-
-// GetDegradedMachines filters the provided nodes to return the nodes that
-// are considered in a degraded state.
-func GetDegradedMachines(nodes []*corev1.Node) []*corev1.Node {
-	var degraded []*corev1.Node
-	for _, node := range nodes {
-		if node.Annotations == nil {
-			continue
-		}
-		dconfig, ok := node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey]
-		if !ok || dconfig == "" {
-			continue
-		}
-		dstate, ok := node.Annotations[daemonconsts.MachineConfigDaemonStateAnnotationKey]
-		if !ok || dstate == "" {
-			continue
-		}
-
-		if dstate == daemonconsts.MachineConfigDaemonStateDegraded || dstate == daemonconsts.MachineConfigDaemonStateUnreconcilable {
+		if lns.IsNodeDegraded() || lns.IsNodeUnreconcilable() {
 			degraded = append(degraded, node)
 		}
+		if lns.IsUnavailableForUpdate() {
+			unavail = append(unavail, node)
+		}
 	}
-	return degraded
+	return MachinesByStatus{
+		Updated:     updated,
+		Degraded:    degraded,
+		Ready:       ready,
+		Unavailable: unavail,
+	}
 }
 
 // `IsMachineUpdatedMCN` checks if a machine (node) is "updated" by checking the associated MCN's
