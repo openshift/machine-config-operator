@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"time"
 
@@ -150,7 +151,15 @@ type ImageSignature struct {
 
 // bootc.go
 
+// NodeUpdaterInterface provides a common interface for OS update operations
+type NodeUpdaterInterface interface {
+	Initialize() error
+	UpdateOS(imageURL string) error
+	GetBootedImageInfo() (*BootedImageInfo, error)
+}
+
 // BootcClient provides all Bootc related methods in one structure.
+// This structure implements NodeUpdaterInterface
 type BootcClient struct {
 	client Client
 }
@@ -225,4 +234,125 @@ func (b *BootcClient) Switch(imgURL string) error {
 	}
 	klog.Infof("Executing switch to %s", imgURL)
 	return runBootc("switch", imgURL)
+}
+
+// SwitchViaHostNamespaces executes bootc switch using nsenter to run in host namespaces
+// This is more aggressive than privileged container and truly escapes container detection
+func (b *BootcClient) SwitchViaHostNamespaces(imgURL string) error {
+	// Try to re-link the merged pull secrets if they exist, since it could have been populated without a daemon reboot
+	if err := useMergedPullSecrets(bootcSystem); err != nil {
+		return fmt.Errorf("Error while ensuring access to pull secrets: %w", err)
+	}
+
+	klog.Infof("Executing bootc switch via host namespaces to %s", imgURL)
+	
+	// Use systemd-run with nsenter to run bootc in the host's namespaces
+	// This combines proper service management with true host namespace access
+	systemdNsenterArgs := []string{
+		"--unit", "machine-config-daemon-bootc-nsenter",
+		"-p", "EnvironmentFile=-/etc/mco/proxy.env",
+		"--collect", "--wait", "--",
+		"nsenter", "-m", "-p", "-n", "-i", "-u", // Enter all namespaces  
+		"-t", "1", // Target PID 1 (host init process)
+		"bootc", "switch", imgURL,
+	}
+	
+	klog.Infof("Running systemd-run nsenter command: systemd-run %v", systemdNsenterArgs)
+	return runCmdSync("systemd-run", systemdNsenterArgs...)
+}
+
+// SwitchViaPrivilegedContainer executes bootc switch using a privileged container
+// This mirrors the InplaceUpdateViaNewContainer approach for rpm-ostree
+func (b *BootcClient) SwitchViaPrivilegedContainer(imgURL string) error {
+	// Try to re-link the merged pull secrets if they exist, since it could have been populated without a daemon reboot
+	if err := useMergedPullSecrets(bootcSystem); err != nil {
+		return fmt.Errorf("Error while ensuring access to pull secrets: %w", err)
+	}
+
+	// Get the currently booted OS image to use as the container image for running bootc
+	// We need to run bootc from a container that has the bootc binary available
+	var bootcContainerImage string
+	bootedImageInfo, err := b.GetBootedImageInfo()
+	if err != nil {
+		klog.Warningf("Failed to get booted image info for bootc container: %v, falling back to target image", err)
+		// Fall back to using the target image if we can't get the booted image
+		bootcContainerImage = imgURL
+		klog.Infof("Using target image as bootc container: %s", bootcContainerImage)
+	} else {
+		bootcContainerImage = bootedImageInfo.OSImageURL
+		if bootcContainerImage == "" {
+			klog.Warning("No booted OS image URL available, using target image as bootc container")
+			bootcContainerImage = imgURL
+		}
+		klog.Infof("Using booted OS image as bootc container: %s", bootcContainerImage)
+	}
+
+	klog.Infof("Executing bootc switch via privileged container (using %s) to switch to %s", bootcContainerImage, imgURL)
+	
+	// Use systemd-run to execute bootc switch in a privileged container with full host access
+	// This mirrors the pattern used in InplaceUpdateViaNewContainer for rpm-ostree
+	systemdPodmanArgs := []string{
+		"--unit", "machine-config-daemon-bootc-switch", 
+		"-p", "EnvironmentFile=-/etc/mco/proxy.env", 
+		"--collect", "--wait", "--", 
+		"podman",
+	}
+	
+	// Run bootc switch in a privileged container with full host access
+	// We use the currently booted OS image as the container since it should have bootc available
+	// This should avoid the "Detected container" error by giving bootc access to the host system
+	runArgs := append([]string{}, systemdPodmanArgs...)
+	runArgs = append(runArgs, "run", 
+		"--env-file", "/etc/mco/proxy.env",
+		"--privileged", 
+		"--pid=host", 
+		"--net=host", 
+		"--rm",
+		"-v", "/:/run/host",
+		"--authfile", "/var/lib/kubelet/config.json",
+		bootcContainerImage, // Use the currently booted OS image as the container to run bootc from
+		"bootc", "switch", imgURL)
+	
+	klog.Infof("Running systemd-run command: %s %v", "systemd-run", runArgs)
+	return runCmdSync("systemd-run", runArgs...)
+}
+
+// UpdateOS implements NodeUpdaterInterface for bootc-based OS updates
+// This method handles the "Detected container; this command requires a booted host system" error
+// by detecting the execution context and using the appropriate invocation method.
+func (b *BootcClient) UpdateOS(imageURL string) error {
+	klog.Infof("BootcClient.UpdateOS called with imageURL: %s", imageURL)
+	
+	// Debug: Print environment variables to understand the execution context
+	klog.Infof("Environment debug: PID=%d, UID=%d, GID=%d", os.Getpid(), os.Getuid(), os.Getgid())
+	if containerInfo, exists := os.LookupEnv("container"); exists {
+		klog.Infof("Environment debug: container=%s", containerInfo)
+	} else {
+		klog.Info("Environment debug: container variable not set")
+	}
+	
+	// Check if MCD has re-executed itself in host context
+	// This environment variable is set by ReexecuteForTargetRoot
+	if reexecValue, inHostContext := os.LookupEnv("_MCD_DID_REEXEC"); inHostContext {
+		// We're running in host context, use direct bootc switch
+		klog.Infof("Running bootc switch in host context (_MCD_DID_REEXEC=%s)", reexecValue)
+		return b.Switch(imageURL)
+	}
+	
+	// We're running in container context, try nsenter first for true host namespace access
+	klog.Info("Running bootc switch via host namespaces from container context (_MCD_DID_REEXEC not set)")
+	err := b.SwitchViaHostNamespaces(imageURL)
+	if err != nil {
+		klog.Warningf("nsenter approach failed: %v, falling back to privileged container", err)
+		klog.Info("Falling back to privileged container approach")
+		return b.SwitchViaPrivilegedContainer(imageURL)
+	}
+	return err
+}
+
+// NewBootcClient creates a new BootcClient
+func NewBootcClient() *BootcClient {
+	return &BootcClient{
+		client: NewClient("machine-config-daemon"),
+	}
 }
