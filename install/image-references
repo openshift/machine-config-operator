@@ -23,11 +23,11 @@ spec:
   - name: rhel-coreos
     from:
       kind: DockerImage
-      name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:rhel-coreos
+      name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:4.22-9.8-node-image
   - name: rhel-coreos-extensions
     from:
       kind: DockerImage
-      name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:rhel-coreos-extensions
+      name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:4.22-9.8-node-image-extensions
   - name: rhel-coreos-10
     from:
       kind: DockerImage
