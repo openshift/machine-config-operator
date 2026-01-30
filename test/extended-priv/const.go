@@ -45,6 +45,9 @@ const (
 	// VspherePlatform value used to identify Vsphere infrastructure
 	VspherePlatform = "vsphere"
 
+	// SingleReplicaTopology is used to identify an SNO cluster
+	SingleReplicaTopology = "SingleReplica"
+
 	// ExpirationDockerfileLabel Expiration label in Dockerfile
 	ExpirationDockerfileLabel = `LABEL maintainer="mco-qe-team" quay.expires-after=24h`
 
@@ -87,4 +90,17 @@ const (
 	BusyBoxImage = "quay.io/openshifttest/busybox@sha256:c5439d7db88ab5423999530349d327b04279ad3161d7596d2126dfb5b02bfd1f"
 	// AlpineImage the multiplatform alpine image stored in openshifttest
 	AlpineImage = "quay.io/openshifttest/alpine@sha256:dc1536cbff0ba235d4219462aeccd4caceab9def96ae8064257d049166890083"
+
+	// BootImageSkewEnforcement feature constants
+
+	// RHCOSVersionMode is used to signify that the cluster boot image is described via RHCOS version
+	RHCOSVersionMode = "RHCOSVersion"
+	// OCPVersionMode is used to signify that the cluster boot image is described via OCP version
+	OCPVersionMode = "OCPVersion"
+	// SkewEnforcementManualMode indicates boot image updates require manual intervention
+	SkewEnforcementManualMode = "Manual"
+	// SkewEnforcementAutomaticMode indicates boot image updates are applied automatically
+	SkewEnforcementAutomaticMode = "Automatic"
+	// SkewEnforcementNoneMode indicates boot image skew enforcement is disabled
+	SkewEnforcementNoneMode = "None"
 )

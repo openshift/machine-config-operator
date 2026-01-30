@@ -1032,7 +1032,7 @@ func setArchitectureAndCheckStatus(clonedMS *MachineSet, machineConfiguration *M
 func SkipOnSingleNodeTopology(oc *exutil.CLI) {
 	output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("infrastructure", "cluster", "-o=jsonpath={.status.platformStatus.controlPlaneTopology}").Output()
 	o.Expect(err).NotTo(o.HaveOccurred())
-	if output == "SingleReplica" {
+	if output == SingleReplicaTopology {
 		e2eskipper.Skipf("This test does not apply to single-node topologies")
 	}
 }
