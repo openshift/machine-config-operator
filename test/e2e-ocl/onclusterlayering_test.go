@@ -373,7 +373,14 @@ func TestMachineOSConfigChangeRestartsBuild(t *testing.T) {
 	mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(ctx, layeredMCPName, metav1.GetOptions{})
 	require.NoError(t, err)
 
-	firstMosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, cs.GetKubeclient(), mosc, mcp)
+	mc, err := cs.MachineconfigurationV1Interface.MachineConfigs().Get(ctx, mcp.Spec.Configuration.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	firstMosb := buildrequest.NewMachineOSBuildOrDie(buildrequest.MachineOSBuildOpts{
+		MachineConfig:     mc,
+		MachineOSConfig:   mosc,
+		MachineConfigPool: mcp,
+	})
 
 	// First, we get a MachineOSBuild started as usual.
 	waitForBuildToStart(t, cs, firstMosb)
@@ -383,7 +390,11 @@ func TestMachineOSConfigChangeRestartsBuild(t *testing.T) {
 
 	apiMosc := helpers.SetContainerfileContentsOnMachineOSConfig(ctx, t, cs.GetMcfgclient(), mosc, "FROM configs AS final\nRUN echo 'hello' > /etc/hello")
 
-	moscChangeMosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, cs.GetKubeclient(), apiMosc, mcp)
+	moscChangeMosb := buildrequest.NewMachineOSBuildOrDie(buildrequest.MachineOSBuildOpts{
+		MachineConfig:     mc,
+		MachineOSConfig:   apiMosc,
+		MachineConfigPool: mcp,
+	})
 
 	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
 
@@ -479,14 +490,21 @@ func TestGracefulBuildFailureRecovery(t *testing.T) {
 
 	apiMosc.Spec.Containerfile = []mcfgv1.MachineOSContainerfile{}
 
-	updated, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().Update(ctx, apiMosc, metav1.UpdateOptions{})
+	updatedMosc, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().Update(ctx, apiMosc, metav1.UpdateOptions{})
 	require.NoError(t, err)
 
 	mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(ctx, layeredMCPName, metav1.GetOptions{})
 	require.NoError(t, err)
 
+	mc, err := cs.MachineconfigurationV1Interface.MachineConfigs().Get(ctx, mcp.Spec.Configuration.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+
 	// Compute the new MachineOSBuild image name.
-	moscChangeMosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, cs.GetKubeclient(), updated, mcp)
+	moscChangeMosb := buildrequest.NewMachineOSBuildOrDie(buildrequest.MachineOSBuildOpts{
+		MachineConfig:     mc,
+		MachineOSConfig:   updatedMosc,
+		MachineConfigPool: mcp,
+	})
 
 	// Wait for the second build to start.
 	secondMosb := waitForBuildToStart(t, cs, moscChangeMosb)
@@ -1259,7 +1277,14 @@ func TestControllerEventuallyReconciles(t *testing.T) {
 
 	createMachineOSConfig(t, cs, mosc)
 
-	mosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, cs.GetKubeclient(), mosc, mcp)
+	mc, err := cs.MachineconfigurationV1Interface.MachineConfigs().Get(ctx, mcp.Spec.Configuration.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	mosb := buildrequest.NewMachineOSBuildOrDie(buildrequest.MachineOSBuildOpts{
+		MachineConfig:     mc,
+		MachineOSConfig:   mosc,
+		MachineConfigPool: mcp,
+	})
 
 	// Wait for the MachineOSBuild to exist.
 	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx).Eventually()
@@ -1445,7 +1470,7 @@ func TestImageBuildDegradedOnFailureAndClearedOnBuildStart(t *testing.T) {
 		},
 	}
 
-	updated, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().Update(ctx, apiMosc, metav1.UpdateOptions{})
+	updatedMosc, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().Update(ctx, apiMosc, metav1.UpdateOptions{})
 	require.NoError(t, err)
 
 	t.Logf("Fixed containerfile, waiting for new build to start")
@@ -1454,7 +1479,14 @@ func TestImageBuildDegradedOnFailureAndClearedOnBuildStart(t *testing.T) {
 	require.NoError(t, err)
 
 	// Compute the new MachineOSBuild name
-	moscChangeMosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, cs.GetKubeclient(), updated, mcp)
+	mc, err := cs.MachineconfigurationV1Interface.MachineConfigs().Get(ctx, mcp.Spec.Configuration.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	moscChangeMosb := buildrequest.NewMachineOSBuildOrDie(buildrequest.MachineOSBuildOpts{
+		MachineConfig:     mc,
+		MachineOSConfig:   updatedMosc,
+		MachineConfigPool: mcp,
+	})
 
 	// Wait for the second build to start
 	secondMosb := waitForBuildToStart(t, cs, moscChangeMosb)
@@ -1524,7 +1556,7 @@ func TestImageBuildDegradedOnFailureAndClearedOnBuildStart(t *testing.T) {
 		},
 	}
 
-	updated, err = cs.MachineconfigurationV1Interface.MachineOSConfigs().Update(ctx, apiMosc, metav1.UpdateOptions{})
+	updatedMosc, err = cs.MachineconfigurationV1Interface.MachineOSConfigs().Update(ctx, apiMosc, metav1.UpdateOptions{})
 	require.NoError(t, err)
 
 	t.Logf("Modified containerfile, waiting for third build to start")
@@ -1533,8 +1565,16 @@ func TestImageBuildDegradedOnFailureAndClearedOnBuildStart(t *testing.T) {
 	mcp, err = cs.MachineconfigurationV1Interface.MachineConfigPools().Get(ctx, layeredMCPName, metav1.GetOptions{})
 	require.NoError(t, err)
 
+	//Get the updated MC to compute the new build
+	mc, err = cs.MachineconfigurationV1Interface.MachineConfigs().Get(ctx, mcp.Spec.Configuration.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+
 	// Compute the new MachineOSBuild name for the third build
-	thirdMoscMosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, cs.GetKubeclient(), updated, mcp)
+	thirdMoscMosb := buildrequest.NewMachineOSBuildOrDie(buildrequest.MachineOSBuildOpts{
+		MachineConfig:     mc,
+		MachineOSConfig:   updatedMosc,
+		MachineConfigPool: mcp,
+	})
 
 	// Wait for the third build to start
 	thirdMosb := waitForBuildToStart(t, cs, thirdMoscMosb)
