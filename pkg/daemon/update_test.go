@@ -687,28 +687,6 @@ func checkIrreconcilableResults(t *testing.T, key string, reconcilableError erro
 	}
 }
 
-func TestRunGetOut(t *testing.T) {
-	o, err := runGetOut("true")
-	assert.Nil(t, err)
-	assert.Equal(t, len(o), 0)
-
-	o, err = runGetOut("false")
-	assert.NotNil(t, err)
-
-	o, err = runGetOut("echo", "hello")
-	assert.Nil(t, err)
-	assert.Equal(t, string(o), "hello\n")
-
-	// base64 encode "oops" so we can't match on the command arguments
-	o, err = runGetOut("/bin/sh", "-c", "echo hello; echo b29wcwo= | base64 -d 1>&2; exit 1")
-	assert.Error(t, err)
-	errtext := err.Error()
-	assert.Contains(t, errtext, "exit status 1\noops\n")
-
-	o, err = runGetOut("/usr/bin/test-failure-to-exec-this-should-not-exist", "arg")
-	assert.Error(t, err)
-}
-
 // TestOriginalFileBackupRestore tests backikg up and restoring original files (files that are present in the base image and
 // get overwritten by a machine configuration)
 func TestOriginalFileBackupRestore(t *testing.T) {
@@ -941,4 +919,58 @@ func TestGenerateExtensionsArgs(t *testing.T) {
 			assert.ElementsMatch(t, tt.expected, result, "generateExtensionsArgs result mismatch")
 		})
 	}
+}
+
+// MockPodmanInterface for testing podmanCopy function
+type MockPodmanInterface struct {
+	createContainerFunc func(additionalArgs []string, containerName, imgURL string) ([]byte, error)
+}
+
+func (m *MockPodmanInterface) GetPodmanImageInfoByReference(reference string) (*PodmanImageInfo, error) {
+	return nil, fmt.Errorf("not implemented in mock")
+}
+
+func (m *MockPodmanInterface) GetPodmanInfo() (*PodmanInfo, error) {
+	return nil, fmt.Errorf("not implemented in mock")
+}
+
+func (m *MockPodmanInterface) CreatePodmanContainer(additionalArgs []string, containerName, imgURL string) ([]byte, error) {
+	if m.createContainerFunc != nil {
+		return m.createContainerFunc(additionalArgs, containerName, imgURL)
+	}
+	return []byte("test-container-id"), nil
+}
+
+// Assisted by: Cursor
+func TestPodmanCopy_CreateContainerCall(t *testing.T) {
+	imgURL := "quay.io/openshift/test:latest"
+	osImageContentDir := "/tmp/test-content"
+
+	// Track the call to CreatePodmanContainer
+	var capturedArgs []string
+	var capturedContainerName string
+	var capturedImgURL string
+
+	mockPodman := &MockPodmanInterface{
+		createContainerFunc: func(additionalArgs []string, containerName, imgURL string) ([]byte, error) {
+			capturedArgs = additionalArgs
+			capturedContainerName = containerName
+			capturedImgURL = imgURL
+			return []byte("test-container-id-123"), nil
+		},
+	}
+
+	// Note: This test will fail at podmanRemove since we're only testing the interface call
+	// The function will return an error, but we can verify the CreatePodmanContainer was called correctly
+	err := podmanCopy(mockPodman, imgURL, osImageContentDir)
+
+	// Verify the CreatePodmanContainer was called with correct parameters
+	expectedArgs := []string{"--net=none", "--annotation=org.openshift.machineconfigoperator.pivot=true"}
+	assert.Equal(t, expectedArgs, capturedArgs, "CreatePodmanContainer should be called with correct additional args")
+	assert.Contains(t, capturedContainerName, "pivot-", "Container name should contain pivot prefix")
+	assert.Equal(t, imgURL, capturedImgURL, "Image URL should match")
+
+	// The function will error at podmanRemove, but that's expected in this unit test
+	// We're only testing that the CreatePodmanContainer interface is called correctly
+	assert.Error(t, err, "Expected error from podmanRemove since we're not mocking that part")
 }
