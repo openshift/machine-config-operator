@@ -5,6 +5,8 @@ contents:
     capture:
       # FIXME: This requires primary to be the first altname. Need NMState support to fix.
       base-iface: interfaces.alt-names.0.name == "primary"
+      base-iface-routes: routes.running.next-hop-interface==capture.base-iface.interfaces.0.name
+      bridge-routes: capture.base-iface-routes | routes.running.next-hop-interface:="br-ex"
     desiredState:
       interfaces:
       - name: {{`"{{ capture.base-iface.interfaces.0.name }}"`}}
@@ -36,4 +38,7 @@ contents:
         ipv6:
           enabled: {{`"{{ capture.base-iface.interfaces.0.ipv6.enabled }}"`}}
           dhcp: {{`"{{ capture.base-iface.interfaces.0.ipv6.dhcp }}"`}}
-          address: {{`"{{ capture.base-iface.interfaces.0.ipv6.address }}"`}}
+          # Doesn't work right now, can only do ipv4 static
+          #address: {{`"{{ capture.base-iface.interfaces.0.ipv6.address }}"`}}
+      routes:
+        config: {{`"{{ capture.bridge-routes.routes.running }}"`}}
