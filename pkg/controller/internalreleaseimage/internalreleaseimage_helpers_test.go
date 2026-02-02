@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
+	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -35,7 +36,7 @@ func verifyInternalReleaseMasterMachineConfig(t *testing.T, mc *mcfgv1.MachineCo
 	assert.Contains(t, *ignCfg.Systemd.Units[0].Contents, "docker-registry-image-pullspec")
 
 	assert.Len(t, ignCfg.Storage.Files, 4, "Found an unexpected file")
-	verifyIgnitionFile(t, &ignCfg, "/etc/pki/ca-trust/source/anchors/root-ca.crt", "root-ca-data")
+	verifyIgnitionFile(t, &ignCfg, "/etc/pki/ca-trust/source/anchors/iri-root-ca.crt", "iri-root-ca-data")
 	verifyIgnitionFile(t, &ignCfg, "/etc/iri-registry/certs/tls.key", "iri-tls-key")
 	verifyIgnitionFile(t, &ignCfg, "/etc/iri-registry/certs/tls.crt", "iri-tls-crt")
 	verifyIgnitionFileContains(t, &ignCfg, "/usr/local/bin/load-registry-image.sh", "docker-registry-image-pullspec")
@@ -51,7 +52,7 @@ func verifyInternalReleaseWorkerMachineConfig(t *testing.T, mc *mcfgv1.MachineCo
 
 	assert.Len(t, ignCfg.Systemd.Units, 0)
 	assert.Len(t, ignCfg.Storage.Files, 1)
-	verifyIgnitionFile(t, &ignCfg, "/etc/pki/ca-trust/source/anchors/root-ca.crt", "root-ca-data")
+	verifyIgnitionFile(t, &ignCfg, "/etc/pki/ca-trust/source/anchors/iri-root-ca.crt", "iri-root-ca-data")
 }
 
 func verifyIgnitionFile(t *testing.T, ignCfg *ign3types.Config, path string, expectedContent string) {
@@ -92,6 +93,13 @@ func iri() *iriBuilder {
 			ObjectMeta: v1.ObjectMeta{
 				Name: ctrlcommon.InternalReleaseImageInstanceName,
 			},
+			Spec: mcfgv1alpha1.InternalReleaseImageSpec{
+				Releases: []mcfgv1alpha1.InternalReleaseImageRef{
+					{
+						Name: "ocp-release-bundle-4.21.5-x86_64",
+					},
+				},
+			},
 		},
 	}
 }
@@ -126,7 +134,7 @@ func cconfig() *controllerConfigBuilder {
 				Images: map[string]string{
 					templatectrl.DockerRegistryKey: "docker-registry-image-pullspec",
 				},
-				RootCAData: []byte("root-ca-data"),
+				RootCAData: []byte("iri-root-ca-data"),
 			},
 		},
 	}
@@ -214,4 +222,28 @@ func iriCertSecret() *secretBuilder {
 
 func (sb *secretBuilder) build() runtime.Object {
 	return sb.obj
+}
+
+// clusterVersionBuilder simplifies the creation of a Secret resource in the test.
+type clusterVersionBuilder struct {
+	obj *configv1.ClusterVersion
+}
+
+func clusterVersion() *clusterVersionBuilder {
+	return &clusterVersionBuilder{
+		obj: &configv1.ClusterVersion{
+			ObjectMeta: v1.ObjectMeta{
+				Name: "version",
+			},
+			Status: configv1.ClusterVersionStatus{
+				Desired: configv1.Release{
+					Image: "ocp-4.21-release-pullspec",
+				},
+			},
+		},
+	}
+}
+
+func (cvb *clusterVersionBuilder) build() runtime.Object {
+	return cvb.obj
 }

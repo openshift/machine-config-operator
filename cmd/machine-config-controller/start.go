@@ -144,6 +144,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 				ctrlctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 				ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 				ctrlctx.ConfigInformerFactory.Config().V1().ClusterVersions(),
+				ctrlctx.KubeInformerFactory.Core().V1().Secrets(),
 				ctrlctx.ClientBuilder.KubeClientOrDie("internalreleaseimage-controller"),
 				ctrlctx.ClientBuilder.MachineConfigClientOrDie("internalreleaseimage-controller"))
 
@@ -151,6 +152,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			// start the informers again to enable feature gated types.
 			// see comments in SharedInformerFactory interface.
 			ctrlctx.InformerFactory.Start(ctrlctx.Stop)
+			ctrlctx.KubeInformerFactory.Start(ctrlctx.Stop)
 		}
 
 		if ctrlcommon.IsBootImageControllerRequired(ctrlctx) {
