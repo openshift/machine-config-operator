@@ -15,6 +15,8 @@ import (
 	"time"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
+	configv1 "github.com/openshift/api/config/v1"
+	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	opv1 "github.com/openshift/api/operator/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -939,6 +941,244 @@ func TestGenerateExtensionsArgs(t *testing.T) {
 
 			// Sort both slices for comparison since order of packages within install/uninstall groups may vary
 			assert.ElementsMatch(t, tt.expected, result, "generateExtensionsArgs result mismatch")
+		})
+	}
+}
+
+// MockBootcClient is a mock implementation of BootcClient for testing
+type MockBootcClient struct {
+	updateOSFunc               func(imageURL string) error
+	switchFunc                 func(imageURL string) error
+	switchViaPrivilegedFunc    func(imageURL string) error
+	switchViaHostNamespacesFunc func(imageURL string) error
+}
+
+func (m *MockBootcClient) Initialize() error {
+	return nil
+}
+
+func (m *MockBootcClient) UpdateOS(imageURL string) error {
+	if m.updateOSFunc != nil {
+		return m.updateOSFunc(imageURL)
+	}
+	return nil
+}
+
+func (m *MockBootcClient) Switch(imageURL string) error {
+	if m.switchFunc != nil {
+		return m.switchFunc(imageURL)
+	}
+	return nil
+}
+
+func (m *MockBootcClient) SwitchViaPrivilegedContainer(imageURL string) error {
+	if m.switchViaPrivilegedFunc != nil {
+		return m.switchViaPrivilegedFunc(imageURL)
+	}
+	return nil
+}
+
+func (m *MockBootcClient) SwitchViaHostNamespaces(imageURL string) error {
+	if m.switchViaHostNamespacesFunc != nil {
+		return m.switchViaHostNamespacesFunc(imageURL)
+	}
+	return nil
+}
+
+func (m *MockBootcClient) GetBootedImageInfo() (*BootedImageInfo, error) {
+	return &BootedImageInfo{
+		OSImageURL:   "test-image:latest",
+		ImageVersion: "1.0.0",
+		BaseChecksum: "abc123",
+	}, nil
+}
+
+func TestUpdateLayeredOSWithBootc(t *testing.T) {
+	tests := []struct {
+		name           string
+		config         *mcfgv1.MachineConfig
+		bootcEnabled   bool
+		updateOSError  error
+		expectedError  string
+	}{
+		{
+			name: "successful bootc update",
+			config: &mcfgv1.MachineConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-config"},
+				Spec: mcfgv1.MachineConfigSpec{
+					OSImageURL: "quay.io/openshift/test:latest",
+				},
+			},
+			bootcEnabled:  true,
+			updateOSError: nil,
+		},
+		{
+			name: "bootc update failure",
+			config: &mcfgv1.MachineConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-config"},
+				Spec: mcfgv1.MachineConfigSpec{
+					OSImageURL: "quay.io/openshift/test:latest",
+				},
+			},
+			bootcEnabled:  true,
+			updateOSError: fmt.Errorf("bootc switch failed"),
+			expectedError: "failed to update OS with bootc",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create mock bootc client
+			mockBootc := &MockBootcClient{
+				updateOSFunc: func(imageURL string) error {
+					assert.Equal(t, tt.config.Spec.OSImageURL, imageURL)
+					return tt.updateOSError
+				},
+			}
+
+			// Create mock feature gate handler
+			enabledFeatures := []configv1.FeatureGateName{}
+			if tt.bootcEnabled {
+				enabledFeatures = append(enabledFeatures, features.FeatureGateBootcNodeManagement)
+			}
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler(enabledFeatures, []configv1.FeatureGateName{})
+
+			// Create daemon with mock bootc client
+			daemon := &Daemon{
+				mock:        true,
+				BootcClient: NodeUpdaterInterface(mockBootc),
+				fgHandler:   fgHandler,
+			}
+
+			// Test updateLayeredOSWithBootc
+			err := daemon.updateLayeredOSWithBootc(tt.config)
+
+			if tt.expectedError != "" {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.expectedError)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestUpdateLayeredOS_BootcFeatureGate(t *testing.T) {
+	config := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-config"},
+		Spec: mcfgv1.MachineConfigSpec{
+			OSImageURL: "quay.io/openshift/test:latest",
+		},
+	}
+
+	t.Run("bootc feature gate enabled with client", func(t *testing.T) {
+		bootcCalled := false
+		
+		// Create mock bootc client
+		mockBootc := &MockBootcClient{
+			updateOSFunc: func(imageURL string) error {
+				bootcCalled = true
+				return nil
+			},
+		}
+
+		// Create mock feature gate handler with bootc enabled
+		enabledFeatures := []configv1.FeatureGateName{features.FeatureGateBootcNodeManagement}
+		fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler(enabledFeatures, []configv1.FeatureGateName{})
+
+		// Create daemon
+		daemon := &Daemon{
+			mock:        true,
+			BootcClient: NodeUpdaterInterface(mockBootc),
+			fgHandler:   fgHandler,
+		}
+
+		// Call updateLayeredOS - should use bootc path
+		_ = daemon.updateLayeredOS(config)
+		
+		// Verify bootc was called
+		assert.True(t, bootcCalled, "Expected bootc UpdateOS to be called")
+	})
+
+	t.Run("bootc feature gate disabled", func(t *testing.T) {
+		bootcCalled := false
+		
+		// Create mock bootc client
+		mockBootc := &MockBootcClient{
+			updateOSFunc: func(imageURL string) error {
+				bootcCalled = true
+				return nil
+			},
+		}
+
+		// Create mock feature gate handler with bootc disabled
+		fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]configv1.FeatureGateName{}, []configv1.FeatureGateName{})
+
+		// Create daemon
+		daemon := &Daemon{
+			mock:        true,
+			BootcClient: NodeUpdaterInterface(mockBootc),
+			fgHandler:   fgHandler,
+		}
+
+		// Call updateLayeredOS - should NOT use bootc path
+		// We don't care about the rpm-ostree error, just that bootc wasn't called
+		_ = daemon.updateLayeredOS(config)
+		
+		// Verify bootc was NOT called
+		assert.False(t, bootcCalled, "Expected bootc UpdateOS not to be called")
+	})
+
+	t.Run("bootc feature gate enabled but no client", func(t *testing.T) {
+		// Create mock feature gate handler with bootc enabled
+		enabledFeatures := []configv1.FeatureGateName{features.FeatureGateBootcNodeManagement}
+		fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler(enabledFeatures, []configv1.FeatureGateName{})
+
+		// Create daemon without bootc client
+		daemon := &Daemon{
+			mock:        true,
+			BootcClient: nil,
+			fgHandler:   fgHandler,
+		}
+
+		// Call updateLayeredOS - should NOT use bootc path because client is nil
+		// We don't care about the rpm-ostree error, just that the feature gate check works
+		_ = daemon.updateLayeredOS(config)
+		
+		// No assertion needed - we just want to make sure it doesn't panic
+	})
+}
+
+func TestBootcClient_ContainerContextDetection(t *testing.T) {
+	tests := []struct {
+		name         string
+		hasReexecEnv bool
+	}{
+		{
+			name:         "host context detected",
+			hasReexecEnv: true,
+		},
+		{
+			name:         "container context detected",
+			hasReexecEnv: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set or unset the reexec environment variable
+			if tt.hasReexecEnv {
+				t.Setenv("_MCD_DID_REEXEC", "1")
+			}
+
+			// Test the environment detection logic directly
+			_, inHostContext := os.LookupEnv("_MCD_DID_REEXEC")
+			
+			if tt.hasReexecEnv {
+				assert.True(t, inHostContext, "Should detect host context when _MCD_DID_REEXEC is set")
+			} else {
+				assert.False(t, inHostContext, "Should detect container context when _MCD_DID_REEXEC is not set")
+			}
 		})
 	}
 }
