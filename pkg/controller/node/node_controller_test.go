@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	features "github.com/openshift/api/features"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
@@ -95,7 +94,7 @@ func newFixtureWithFeatureGates(t *testing.T, enabled, disabled []configv1.Featu
 }
 
 func newFixture(t *testing.T) *fixture {
-	return newFixtureWithFeatureGates(t, []configv1.FeatureGateName{features.FeatureGatePinnedImages}, []configv1.FeatureGateName{})
+	return newFixtureWithFeatureGates(t, []configv1.FeatureGateName{}, []configv1.FeatureGateName{})
 }
 
 func (f *fixture) newControllerWithStopChan(stopCh <-chan struct{}) *Controller {
@@ -265,6 +264,7 @@ func filterInformerActions(actions []core.Action) []core.Action {
 				action.Matches("watch", "machineosbuilds") ||
 				action.Matches("list", "machineosconfigs") ||
 				action.Matches("watch", "machineosconfigs") ||
+				action.Matches("get", "machineconfignodes") ||
 				action.Matches("list", "machineconfignodes") ||
 				action.Matches("watch", "machineconfignodes")) {
 			continue
