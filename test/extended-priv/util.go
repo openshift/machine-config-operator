@@ -48,15 +48,15 @@ type ImageDigestMirrorSet struct {
 	Template
 }
 
+// NewImageDigestMirrorSet create a new ImageDigestMirrorSet struct
+func NewImageDigestMirrorSet(oc *exutil.CLI, name string, t Template) *ImageDigestMirrorSet {
+	return &ImageDigestMirrorSet{Resource: *NewResource(oc, "ImageDigestMirrorSet", name), Template: t}
+}
+
 // ImageTagMirrorSet struct is used to handle ImageTagMirrorSet resources in OCP
 type ImageTagMirrorSet struct {
 	Resource
 	Template
-}
-
-// NewImageDigestMirrorSet create a new ImageDigestMirrorSet struct
-func NewImageDigestMirrorSet(oc *exutil.CLI, name string, t Template) *ImageDigestMirrorSet {
-	return &ImageDigestMirrorSet{Resource: *NewResource(oc, "ImageDigestMirrorSet", name), Template: t}
 }
 
 // TextToVerify is a helper struct to verify configurations using the `createMcAndVerifyMCValue` function
@@ -659,6 +659,8 @@ func skipTestIfFIPSIsEnabled(oc *exutil.CLI) {
 }
 
 // getURLEncodedFileConfig returns a file configuration with URL-encoded content
+//
+//nolint:unparam
 func getURLEncodedFileConfig(destinationPath, content, mode string) string {
 	encodedContent := url.PathEscape(content)
 
@@ -738,4 +740,22 @@ func skipIfNoTechPreview(oc *exutil.CLI) {
 	if !exutil.IsTechPreviewNoUpgrade(oc) {
 		g.Skip("featureSet: TechPreviewNoUpgrade is required for this test")
 	}
+}
+
+func jsonEncode(s string) string {
+	e, err := json.Marshal(s)
+	if err != nil {
+		e2e.Failf("Error json encoding the string: %s", s)
+	}
+	return string(e)
+}
+
+func generateTempFilePath(dir, pattern string) string {
+	return filepath.Join(dir, strings.ReplaceAll(pattern, "*", exutil.GetRandomString()))
+}
+
+func getSingleUnitConfig(unitName string, unitEnabled bool, unitContents string) string {
+	// Escape not valid characters in json from the file content
+	escapedContent := jsonEncode(unitContents)
+	return fmt.Sprintf(`{"name": "%s", "enabled": %t, "contents": %s}`, unitName, unitEnabled, escapedContent)
 }
