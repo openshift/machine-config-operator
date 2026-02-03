@@ -1186,7 +1186,8 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig, _ *confi
 		},
 	}
 
-	if optr.fgHandler.Enabled(features.FeatureGateOSStreams) {
+	// Only deploy OS image stream validating admission policies when the feature is enabled and the cluster isn't OKD
+	if osimagestream.IsFeatureEnabled(optr.fgHandler) {
 		paths.validatingAdmissionPolicies = append(paths.validatingAdmissionPolicies, mccMachineConfigPoolOSImageStreamValidatingAdmissionPolicyPath)
 		paths.validatingAdmissionPolicyBindings = append(paths.validatingAdmissionPolicyBindings, mccMachineConfigPoolOSImageStreamValidatingAdmissionPolicyBindingPath)
 	}
