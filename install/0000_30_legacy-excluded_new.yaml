@@ -1,0 +1,10 @@
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: legacy-excluded
+  namespace: default
+  annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
+    release.openshift.io/feature-gate: "Example,Example2"
+data:
+  key: "new-implementation"
