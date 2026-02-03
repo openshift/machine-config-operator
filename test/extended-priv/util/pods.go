@@ -159,3 +159,18 @@ func remoteShPod(oc *CLI, namespace, podName string, needBash, needChroot bool, 
 func RemoteShContainer(oc *CLI, namespace, podName, container string, cmd ...string) (string, error) {
 	return remoteShPod(oc, namespace, podName, false, false, container, cmd...)
 }
+
+// GetAllPods returns a list of the names of all pods in the cluster in a given namespace
+func GetAllPods(oc *CLI, namespace string) ([]string, error) {
+	pods, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("pods", "-n", namespace, "-o", "jsonpath='{.items[*].metadata.name}'").Output()
+	return strings.Split(strings.Trim(pods, "'"), " "), err
+}
+
+// GetAllPodsWithLabel get array of all pods for a given namespace and label
+func GetAllPodsWithLabel(oc *CLI, namespace, label string) ([]string, error) {
+	pods, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("pods", "-n", namespace, "-l", label).Template("{{range .items}}{{.metadata.name}}{{\" \"}}{{end}}").Output()
+	if pods == "" {
+		return []string{}, err
+	}
+	return strings.Split(pods, " "), err
+}
