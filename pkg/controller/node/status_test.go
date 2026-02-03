@@ -119,132 +119,6 @@ func newNodeWithReadyAndDaemonState(name string, currentConfig, desiredConfig st
 	return nb.Node()
 }
 
-func TestGetReadyMachines(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name          string
-		nodes         []*corev1.Node
-		currentConfig string
-		currentImage  string
-		ready         []*corev1.Node
-		layered       bool
-		mosc          *mcfgv1.MachineOSConfig
-		mosb          *mcfgv1.MachineOSBuild
-	}{{
-		name:          "no nodes",
-		nodes:         []*corev1.Node{},
-		currentConfig: machineConfigV1,
-		ready:         nil,
-	}, {
-		name: "1 node updated, 1 updating, 1 not acted upon",
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReady("node-0", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
-			helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
-			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV1, corev1.ConditionFalse),
-		},
-		currentConfig: machineConfigV1,
-		ready:         []*corev1.Node{helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue)},
-	}, {
-		name: "2 node updated, 1 updating",
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReady("node-0", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
-			helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
-			helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
-		},
-		currentConfig: machineConfigV1,
-		ready:         []*corev1.Node{helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue)},
-	}, {
-		name: "2 node updated, 1 updating",
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReady("node-0", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
-			helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
-			helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
-		},
-		currentConfig: machineConfigV1,
-		ready:         []*corev1.Node{helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue), helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionTrue)},
-	}, {
-		name: "2 node updated, 1 updating, but one updated node is NotReady",
-		nodes: []*corev1.Node{
-			newNode("node-0", machineConfigV0, machineConfigV1),
-			newNode("node-1", machineConfigV1, machineConfigV1),
-			helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
-		},
-		currentConfig: machineConfigV1,
-		ready:         []*corev1.Node{newNode("node-1", machineConfigV1, machineConfigV1)},
-	}, {
-		name: "2 layered nodes updated, 1 updating, but one updated node is NotReady",
-		nodes: []*corev1.Node{
-			newLayeredNode("node-0", machineConfigV0, machineConfigV1, imageV0, imageV1),
-			newLayeredNode("node-1", machineConfigV1, machineConfigV1, imageV1, imageV1),
-			helpers.NewLayeredNodeWithReady("node-2", machineConfigV1, machineConfigV1, imageV1, imageV1, corev1.ConditionFalse),
-		},
-		currentConfig: machineConfigV1,
-		currentImage:  imageV1,
-		ready:         []*corev1.Node{newLayeredNode("node-1", machineConfigV1, machineConfigV1, imageV1, imageV1)},
-		layered:       true,
-		mosc:          helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).MachineOSConfig(),
-		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
-	}, {
-		name: "2 layered nodes updated, one node has layering mismatch",
-		nodes: []*corev1.Node{
-			newLayeredNode("node-0", machineConfigV0, machineConfigV1, imageV0, imageV1),
-			newLayeredNode("node-1", machineConfigV1, machineConfigV1, imageV1, imageV1),
-			newNode("node-2", machineConfigV0, machineConfigV0),
-		},
-		currentConfig: machineConfigV1,
-		currentImage:  imageV1,
-		ready: []*corev1.Node{
-			newLayeredNode("node-1", machineConfigV1, machineConfigV1, imageV1, imageV1),
-		},
-		layered: true,
-		mosc:    helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).MachineOSConfig(),
-		mosb:    helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
-	},
-		{
-			name: "2 nodes updated, one node has layering mismatch",
-			nodes: []*corev1.Node{
-				newLayeredNode("node-0", machineConfigV0, machineConfigV1, imageV0, imageV1),
-				newNode("node-1", machineConfigV1, machineConfigV1),
-				newNode("node-2", machineConfigV0, machineConfigV0),
-				newLayeredNode("node-3", machineConfigV1, machineConfigV1, imageV1, imageV1),
-			},
-			currentConfig: machineConfigV1,
-			ready: []*corev1.Node{
-				newLayeredNode("node-3", machineConfigV1, machineConfigV1, imageV1, imageV1),
-			},
-			layered: true,
-			mosc:    helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).MachineOSConfig(),
-			mosb:    helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
-		},
-		{
-			name: "Layered pool with image not built",
-			nodes: []*corev1.Node{
-				newNode("node-0", machineConfigV1, machineConfigV1),
-				newNode("node-1", machineConfigV1, machineConfigV1),
-				newNode("node-2", machineConfigV1, machineConfigV1),
-			},
-			currentConfig: machineConfigV1,
-			ready:         nil,
-			layered:       true,
-			mosc:          helpers.NewMachineOSConfigBuilder("mosc-1").WithMachineConfigPool("pool-1").MachineOSConfig(),
-			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
-		},
-	}
-
-	for _, test := range tests {
-		test := test
-
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			pool := helpers.NewMachineConfigPoolBuilder("").WithMachineConfig(test.currentConfig).MachineConfigPool()
-			ready := getReadyMachines(pool, test.nodes, test.mosc, test.mosb, test.layered)
-			if !reflect.DeepEqual(ready, test.ready) {
-				t.Fatalf("mismatch expected: %v got %v", test.ready, ready)
-			}
-		})
-	}
-}
-
 func TestGetUnavailableMachines(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -415,11 +289,7 @@ func TestGetUnavailableMachines(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			pb := helpers.NewMachineConfigPoolBuilder("")
-
-			pool := pb.MachineConfigPool()
-
-			unavailableNodes := getUnavailableMachines(test.nodes, pool)
+			unavailableNodes := getUnavailableMachines(test.nodes)
 			assertExpectedNodes(t, test.unavail, unavailableNodes)
 		})
 	}

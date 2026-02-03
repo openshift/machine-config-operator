@@ -21,7 +21,6 @@ import (
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/pkg/controller/common/fixtures"
-	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/test/helpers"
 )
 
@@ -999,9 +998,9 @@ func TestGetPackagesForSupportedExtensions(t *testing.T) {
 	}
 }
 
-// `TestGetUpdatedMachines` tests the GetUpdatedMachines helper function for nodes in both layered
+// `TestGetMachinesByState` tests the GetMachinesByState helper function for nodes in both layered
 // and non-layered MCPs.
-func TestGetUpdatedMachines(t *testing.T) {
+func TestGetMachinesByState(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name          string
@@ -1009,6 +1008,9 @@ func TestGetUpdatedMachines(t *testing.T) {
 		currentConfig string
 		currentImage  string
 		updated       []*corev1.Node
+		degraded      []*corev1.Node
+		ready         []*corev1.Node
+		unavailable   []*corev1.Node
 		layered       bool
 		mosc          *mcfgv1.MachineOSConfig
 		mosb          *mcfgv1.MachineOSBuild
@@ -1016,9 +1018,44 @@ func TestGetUpdatedMachines(t *testing.T) {
 		name:          "no nodes",
 		nodes:         []*corev1.Node{},
 		currentConfig: machineConfigV1,
-		updated:       nil,
 	}, {
-		name: "1 node updated, 1 updating, 1 not acted upon",
+		name: "node with nil annotations",
+		nodes: []*corev1.Node{
+			{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "node1",
+					Annotations: nil,
+				},
+			},
+		},
+		unavailable: []*corev1.Node{
+			{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "node1",
+					Annotations: nil,
+				},
+			},
+		},
+	}, {
+		name: "node with empty annotations",
+		nodes: []*corev1.Node{
+			{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "node1",
+					Annotations: map[string]string{},
+				},
+			},
+		},
+		unavailable: []*corev1.Node{
+			{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "node1",
+					Annotations: map[string]string{},
+				},
+			},
+		},
+	}, {
+		name: "1 node updated, 1 node ready, 1 updating, 1 not acted upon, 0 degraded",
 		nodes: []*corev1.Node{
 			newNode(machineConfigV0, machineConfigV0),
 			newNode(machineConfigV1, machineConfigV1),
@@ -1026,6 +1063,8 @@ func TestGetUpdatedMachines(t *testing.T) {
 		},
 		currentConfig: machineConfigV1,
 		updated:       []*corev1.Node{newNode(machineConfigV1, machineConfigV1)},
+		ready:         []*corev1.Node{newNode(machineConfigV1, machineConfigV1)},
+		unavailable:   []*corev1.Node{newNode(machineConfigV0, machineConfigV1)},
 	}, {
 		name: "2 node updated, 1 updating",
 		nodes: []*corev1.Node{
@@ -1035,8 +1074,10 @@ func TestGetUpdatedMachines(t *testing.T) {
 		},
 		currentConfig: machineConfigV1,
 		updated:       []*corev1.Node{newNode(machineConfigV1, machineConfigV1), newNode(machineConfigV1, machineConfigV1)},
+		ready:         []*corev1.Node{newNode(machineConfigV1, machineConfigV1), newNode(machineConfigV1, machineConfigV1)},
+		unavailable:   []*corev1.Node{newNode(machineConfigV0, machineConfigV1)},
 	}, {
-		name: "2 node updated, 1 updating, but one updated node is NotReady",
+		name: "2 node updated, 1 updating, but 1 updated node is NotReady",
 		nodes: []*corev1.Node{
 			newNode(machineConfigV0, machineConfigV1),
 			newNode(machineConfigV1, machineConfigV1),
@@ -1044,6 +1085,8 @@ func TestGetUpdatedMachines(t *testing.T) {
 		},
 		currentConfig: machineConfigV1,
 		updated:       []*corev1.Node{newNode(machineConfigV1, machineConfigV1), helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionFalse)},
+		ready:         []*corev1.Node{newNode(machineConfigV1, machineConfigV1)},
+		unavailable:   []*corev1.Node{newNode(machineConfigV0, machineConfigV1), helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionFalse)},
 	}, {
 		name: "1 layered node updated, 1 updating, 1 not acted upon",
 		nodes: []*corev1.Node{
@@ -1053,12 +1096,12 @@ func TestGetUpdatedMachines(t *testing.T) {
 		},
 		currentConfig: machineConfigV1,
 		currentImage:  imageV1,
-		updated: []*corev1.Node{
-			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
-		},
-		layered: true,
-		mosc:    helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
-		mosb:    helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
+		layered:       true,
+		mosc:          helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
+		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
+		updated:       []*corev1.Node{newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1)},
+		ready:         []*corev1.Node{newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1)},
+		unavailable:   []*corev1.Node{newLayeredNode(machineConfigV0, machineConfigV1, imageV0, imageV1)},
 	}, {
 		name: "2 layered nodes updated, 1 updating MachineConfig",
 		nodes: []*corev1.Node{
@@ -1068,13 +1111,18 @@ func TestGetUpdatedMachines(t *testing.T) {
 		},
 		currentConfig: machineConfigV1,
 		currentImage:  imageV1,
+		layered:       true,
+		mosc:          helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
+		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
 		updated: []*corev1.Node{
 			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
 			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
 		},
-		layered: true,
-		mosc:    helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
-		mosb:    helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
+		ready: []*corev1.Node{
+			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+		},
+		unavailable: []*corev1.Node{newLayeredNode(machineConfigV0, machineConfigV1, imageV1, imageV1)},
 	}, {
 		name: "2 layered nodes updated, 1 updating image",
 		nodes: []*corev1.Node{
@@ -1084,15 +1132,20 @@ func TestGetUpdatedMachines(t *testing.T) {
 		},
 		currentConfig: machineConfigV1,
 		currentImage:  imageV1,
+		layered:       true,
+		mosc:          helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
+		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
 		updated: []*corev1.Node{
 			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
 			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
 		},
-		layered: true,
-		mosc:    helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
-		mosb:    helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
+		ready: []*corev1.Node{
+			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+		},
+		unavailable: []*corev1.Node{newLayeredNode(machineConfigV1, machineConfigV1, imageV0, imageV1)},
 	}, {
-		name: "2 layered nodes updated, 1 updating, but one updated node is NotReady",
+		name: "2 layered nodes updated, 1 updating, but 1 updated node is NotReady",
 		nodes: []*corev1.Node{
 			newLayeredNode(machineConfigV0, machineConfigV1, imageV0, imageV1),
 			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
@@ -1100,79 +1153,152 @@ func TestGetUpdatedMachines(t *testing.T) {
 		},
 		currentConfig: machineConfigV1,
 		currentImage:  imageV1,
+		layered:       true,
+		mosc:          helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
+		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
 		updated: []*corev1.Node{
 			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
 			helpers.NewLayeredNodeWithReady("node-2", machineConfigV1, machineConfigV1, imageV1, imageV1, corev1.ConditionFalse),
 		},
-		layered: true,
-		mosc:    helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
-		mosb:    helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
+		ready: []*corev1.Node{
+			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+		},
+		unavailable: []*corev1.Node{
+			newLayeredNode(machineConfigV0, machineConfigV1, imageV0, imageV1),
+			helpers.NewLayeredNodeWithReady("node-2", machineConfigV1, machineConfigV1, imageV1, imageV1, corev1.ConditionFalse),
+		},
 	}, {
-		name: "Layered pool with unlayered nodes",
+		name: "Layered pool with unlayered nodes, 2 updated, 1 not layered and not updating",
 		nodes: []*corev1.Node{
 			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
 			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
-			helpers.NewLayeredNodeWithReady("node-2", machineConfigV1, machineConfigV1, imageV1, imageV1, corev1.ConditionTrue),
 			newNode(machineConfigV0, machineConfigV0),
 		},
 		currentConfig: machineConfigV1,
 		currentImage:  imageV1,
+		layered:       true,
+		mosc:          helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
+		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
 		updated: []*corev1.Node{
 			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
 			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
-			helpers.NewLayeredNodeWithReady("node-2", machineConfigV1, machineConfigV1, imageV1, imageV1, corev1.ConditionTrue),
 		},
-		layered: true,
-		mosc:    helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
-		mosb:    helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
+		ready: []*corev1.Node{
+			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+		},
 	}, {
-		name: "Layered pool with image not built",
+		name: "Layered pool with image not built, 3 not updated or ready, 0 updating",
 		nodes: []*corev1.Node{
 			newNode(machineConfigV1, machineConfigV1),
 			newNode(machineConfigV1, machineConfigV1),
 			newNode(machineConfigV1, machineConfigV1),
 		},
 		currentConfig: machineConfigV1,
-		updated:       nil,
 		layered:       true,
 		mosc:          helpers.NewMachineOSConfigBuilder("mosc-1").WithMachineConfigPool("pool-1").MachineOSConfig(),
 		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
 	}, {
-		name: "Unlayered pool with 1 layered node",
+		name: "Unlayered pool with 1 layered node, 2 updated, 1 not acted upon",
 		nodes: []*corev1.Node{
 			newNode(machineConfigV1, machineConfigV1),
 			newNode(machineConfigV1, machineConfigV1),
-			helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
 			newLayeredNode(machineConfigV0, machineConfigV0, imageV1, imageV1),
 		},
 		currentConfig: machineConfigV1,
 		updated: []*corev1.Node{
 			newNode(machineConfigV1, machineConfigV1),
 			newNode(machineConfigV1, machineConfigV1),
-			helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+		},
+		ready: []*corev1.Node{
+			newNode(machineConfigV1, machineConfigV1),
+			newNode(machineConfigV1, machineConfigV1),
 		},
 	}, {
-		name: "Pool with image mode disabling, one node updating, 2 nodes not not acted upon",
+		name: "Pool with image mode disabling, 1 node updating, 2 nodes not acted upon",
 		nodes: []*corev1.Node{
 			newLayeredNode(machineConfigV0, machineConfigV0, imageV1, ""),
 			newLayeredNode(machineConfigV0, machineConfigV0, imageV1, imageV1),
 			newLayeredNode(machineConfigV0, machineConfigV0, imageV1, imageV1),
 		},
 		currentConfig: machineConfigV0,
-		updated:       nil,
 		layered:       false,
-	}, {
-		name: "Pool with image mode disabling, one node updated, 1 node updating, 1 node not acted upon",
-		nodes: []*corev1.Node{
-			newNode(machineConfigV0, machineConfigV0),
+		unavailable: []*corev1.Node{
 			newLayeredNode(machineConfigV0, machineConfigV0, imageV1, ""),
-			newLayeredNode(machineConfigV0, machineConfigV0, imageV1, imageV1),
+		},
+	}, {
+		name: "Nodes with mixed states",
+		nodes: []*corev1.Node{
+			newNodeWithState(machineConfigV0, machineConfigV0, "Degraded"),
+			newNodeWithState(machineConfigV0, machineConfigV0, "Done"),
+			newNodeWithState(machineConfigV0, machineConfigV0, "Unreconcilable"),
+			newNodeWithState(machineConfigV0, machineConfigV1, "Working"),
+			newNodeWithState(machineConfigV0, machineConfigV1, "Rebooting"),
 		},
 		currentConfig: machineConfigV0,
 		updated: []*corev1.Node{
-			newNode(machineConfigV0, machineConfigV0),
+			newNodeWithState(machineConfigV0, machineConfigV0, "Done"),
 		},
-		layered: false,
+		ready: []*corev1.Node{
+			newNodeWithState(machineConfigV0, machineConfigV0, "Done"),
+		},
+		unavailable: []*corev1.Node{
+			newNodeWithState(machineConfigV0, machineConfigV0, "Degraded"),
+			newNodeWithState(machineConfigV0, machineConfigV0, "Unreconcilable"),
+			newNodeWithState(machineConfigV0, machineConfigV1, "Working"),
+			newNodeWithState(machineConfigV0, machineConfigV1, "Rebooting"),
+		},
+		degraded: []*corev1.Node{
+			newNodeWithState(machineConfigV0, machineConfigV0, "Degraded"),
+			newNodeWithState(machineConfigV0, machineConfigV0, "Unreconcilable"),
+		},
+	}, {
+		name: "Layered nodes with mixed states",
+		nodes: []*corev1.Node{
+			newLayeredNodeWithState(machineConfigV0, machineConfigV0, imageV1, imageV1, "Degraded"),
+			newLayeredNodeWithState(machineConfigV0, machineConfigV0, imageV1, imageV1, "Done"),
+			newLayeredNodeWithState(machineConfigV0, machineConfigV0, imageV1, imageV1, "Unreconcilable"),
+			newLayeredNodeWithState(machineConfigV0, machineConfigV1, imageV1, imageV1, "Working"),
+			newLayeredNodeWithState(machineConfigV0, machineConfigV1, imageV1, imageV1, "Rebooting"),
+		},
+		currentConfig: machineConfigV0,
+		currentImage:  imageV1,
+		layered:       true,
+		mosc:          helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
+		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV0).MachineOSBuild(),
+		updated: []*corev1.Node{
+			newLayeredNodeWithState(machineConfigV0, machineConfigV0, imageV1, imageV1, "Done"),
+		},
+		ready: []*corev1.Node{
+			newLayeredNodeWithState(machineConfigV0, machineConfigV0, imageV1, imageV1, "Done"),
+		},
+		unavailable: []*corev1.Node{
+			newLayeredNodeWithState(machineConfigV0, machineConfigV0, imageV1, imageV1, "Degraded"),
+			newLayeredNodeWithState(machineConfigV0, machineConfigV0, imageV1, imageV1, "Unreconcilable"),
+			newLayeredNodeWithState(machineConfigV0, machineConfigV1, imageV1, imageV1, "Working"),
+			newLayeredNodeWithState(machineConfigV0, machineConfigV1, imageV1, imageV1, "Rebooting"),
+		},
+		degraded: []*corev1.Node{
+			newLayeredNodeWithState(machineConfigV0, machineConfigV0, imageV1, imageV1, "Degraded"),
+			newLayeredNodeWithState(machineConfigV0, machineConfigV0, imageV1, imageV1, "Unreconcilable"),
+		},
+	}, {
+		name: "0 layered nodes updated, 2 degraded",
+		nodes: []*corev1.Node{
+			newLayeredNodeWithState(machineConfigV1, machineConfigV0, imageV1, imageV1, "Degraded"),
+			newLayeredNodeWithState(machineConfigV1, machineConfigV0, imageV1, imageV1, "Unreconcilable"),
+			newLayeredNode(machineConfigV0, machineConfigV0, imageV1, imageV1),
+			newLayeredNode(machineConfigV0, machineConfigV0, imageV1, imageV1),
+		},
+		currentConfig: machineConfigV1,
+		currentImage:  imageV1,
+		layered:       true,
+		mosc:          helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
+		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV0).MachineOSBuild(),
+		degraded: []*corev1.Node{
+			newLayeredNodeWithState(machineConfigV1, machineConfigV0, imageV1, imageV1, "Degraded"),
+			newLayeredNodeWithState(machineConfigV1, machineConfigV0, imageV1, imageV1, "Unreconcilable"),
+		},
 	},
 	}
 
@@ -1183,346 +1309,24 @@ func TestGetUpdatedMachines(t *testing.T) {
 			t.Parallel()
 
 			pool := helpers.NewMachineConfigPoolBuilder("pool-1").WithMachineConfig(test.currentConfig).MachineConfigPool()
+			machinesByState := GetMachinesByState(pool, test.nodes, test.mosc, test.mosb, test.layered)
 
-			updated := GetUpdatedMachines(pool, test.nodes, test.mosc, test.mosb, test.layered)
-			assertExpectedNodes(t, helpers.GetNamesFromNodes(test.updated), updated)
-
-			// This is a much tighter assertion than the one I added. Not sure if
-			// it's strictly required or not, so I'll leave it for now.
-
-			if !reflect.DeepEqual(updated, test.updated) {
-				t.Fatalf("mismatch expected: %v got %v", test.updated, updated)
+			if !reflect.DeepEqual(machinesByState.Updated, test.updated) {
+				t.Fatalf("mismatch for updated nodes. expected: %v got %v", test.updated, machinesByState.Updated)
+			}
+			if !reflect.DeepEqual(len(machinesByState.Ready), len(test.ready)) {
+				t.Fatalf("mismatch for ready nodes. expected: %v got %v", test.ready, machinesByState.Ready)
+			}
+			if !reflect.DeepEqual(machinesByState.Degraded, test.degraded) {
+				t.Fatalf("mismatch for degraded nodes. expected: %v got %v", test.degraded, machinesByState.Degraded)
+			}
+			if !reflect.DeepEqual(machinesByState.Unavailable, test.unavailable) {
+				t.Fatalf("mismatch for unavailable nodes. expected: %v got %v", test.unavailable, machinesByState.Unavailable)
 			}
 
 			if t.Failed() {
 				helpers.DumpNodesAndPools(t, test.nodes, []*mcfgv1.MachineConfigPool{pool})
 			}
-		})
-	}
-}
-
-// `TestGetDegradedMachines` tests the GetDegradedMachines helper function for nodes in both
-// layered and non-layered MCPs.
-// Assisted-by: Cursor.
-func TestGetDegradedMachines(t *testing.T) {
-	tests := []struct {
-		name     string
-		nodes    []*corev1.Node
-		expected []string
-	}{
-		{
-			name:     "empty nodes list",
-			nodes:    []*corev1.Node{},
-			expected: []string{},
-		},
-		{
-			name:     "nil nodes list",
-			nodes:    nil,
-			expected: []string{},
-		},
-		{
-			name: "node with nil annotations",
-			nodes: []*corev1.Node{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:        "node1",
-						Annotations: nil,
-					},
-				},
-			},
-			expected: []string{},
-		},
-		{
-			name: "node with empty annotations",
-			nodes: []*corev1.Node{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:        "node1",
-						Annotations: map[string]string{},
-					},
-				},
-			},
-			expected: []string{},
-		},
-		{
-			name: "node missing desired config annotation",
-			nodes: []*corev1.Node{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "node1",
-						Annotations: map[string]string{
-							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateDegraded,
-						},
-					},
-				},
-			},
-			expected: []string{},
-		},
-		{
-			name: "node with empty desired config annotation",
-			nodes: []*corev1.Node{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "node1",
-						Annotations: map[string]string{
-							daemonconsts.DesiredMachineConfigAnnotationKey:     "",
-							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateDegraded,
-						},
-					},
-				},
-			},
-			expected: []string{},
-		},
-		{
-			name: "node missing state annotation",
-			nodes: []*corev1.Node{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "node1",
-						Annotations: map[string]string{
-							daemonconsts.DesiredMachineConfigAnnotationKey: "rendered-worker-abc123",
-						},
-					},
-				},
-			},
-			expected: []string{},
-		},
-		{
-			name: "node with empty state annotation",
-			nodes: []*corev1.Node{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "node1",
-						Annotations: map[string]string{
-							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
-							daemonconsts.MachineConfigDaemonStateAnnotationKey: "",
-						},
-					},
-				},
-			},
-			expected: []string{},
-		},
-		{
-			name: "node with degraded state",
-			nodes: []*corev1.Node{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "node1",
-						Annotations: map[string]string{
-							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
-							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateDegraded,
-						},
-					},
-				},
-			},
-			expected: []string{"node1"},
-		},
-		{
-			name: "node with unreconcilable state",
-			nodes: []*corev1.Node{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "node1",
-						Annotations: map[string]string{
-							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
-							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateUnreconcilable,
-						},
-					},
-				},
-			},
-			expected: []string{"node1"},
-		},
-		{
-			name: "node with working state (not degraded)",
-			nodes: []*corev1.Node{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "node1",
-						Annotations: map[string]string{
-							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
-							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateWorking,
-						},
-					},
-				},
-			},
-			expected: []string{},
-		},
-		{
-			name: "node with done state (not degraded)",
-			nodes: []*corev1.Node{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "node1",
-						Annotations: map[string]string{
-							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
-							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateDone,
-						},
-					},
-				},
-			},
-			expected: []string{},
-		},
-		{
-			name: "node with rebooting state (not degraded)",
-			nodes: []*corev1.Node{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "node1",
-						Annotations: map[string]string{
-							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
-							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateRebooting,
-						},
-					},
-				},
-			},
-			expected: []string{},
-		},
-		{
-			name: "multiple nodes with mixed states",
-			nodes: []*corev1.Node{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "node1",
-						Annotations: map[string]string{
-							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
-							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateDegraded,
-						},
-					},
-				},
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "node2",
-						Annotations: map[string]string{
-							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
-							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateDone,
-						},
-					},
-				},
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "node3",
-						Annotations: map[string]string{
-							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
-							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateUnreconcilable,
-						},
-					},
-				},
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "node4",
-						Annotations: map[string]string{
-							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
-							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateWorking,
-						},
-					},
-				},
-			},
-			expected: []string{"node1", "node3"},
-		},
-		{
-			name: "layered node with degraded state",
-			nodes: []*corev1.Node{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "layered-node1",
-						Annotations: map[string]string{
-							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
-							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateDegraded,
-							daemonconsts.DesiredImageAnnotationKey:             "quay.io/openshift/okd-content@sha256:abc123",
-							daemonconsts.CurrentImageAnnotationKey:             "quay.io/openshift/okd-content@sha256:def456",
-						},
-					},
-				},
-			},
-			expected: []string{"layered-node1"},
-		},
-		{
-			name: "layered node with unreconcilable state",
-			nodes: []*corev1.Node{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "layered-node2",
-						Annotations: map[string]string{
-							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
-							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateUnreconcilable,
-							daemonconsts.DesiredImageAnnotationKey:             "quay.io/openshift/okd-content@sha256:abc123",
-							daemonconsts.CurrentImageAnnotationKey:             "quay.io/openshift/okd-content@sha256:def456",
-						},
-					},
-				},
-			},
-			expected: []string{"layered-node2"},
-		},
-		{
-			name: "layered node with done state (not degraded)",
-			nodes: []*corev1.Node{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "layered-node3",
-						Annotations: map[string]string{
-							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
-							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateDone,
-							daemonconsts.DesiredImageAnnotationKey:             "quay.io/openshift/okd-content@sha256:abc123",
-							daemonconsts.CurrentImageAnnotationKey:             "quay.io/openshift/okd-content@sha256:abc123",
-						},
-					},
-				},
-			},
-			expected: []string{},
-		},
-		{
-			name: "mixed layered and non-layered nodes",
-			nodes: []*corev1.Node{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "non-layered-degraded",
-						Annotations: map[string]string{
-							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
-							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateDegraded,
-						},
-					},
-				},
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "layered-degraded",
-						Annotations: map[string]string{
-							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
-							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateDegraded,
-							daemonconsts.DesiredImageAnnotationKey:             "quay.io/openshift/okd-content@sha256:abc123",
-							daemonconsts.CurrentImageAnnotationKey:             "quay.io/openshift/okd-content@sha256:def456",
-						},
-					},
-				},
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "non-layered-done",
-						Annotations: map[string]string{
-							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
-							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateDone,
-						},
-					},
-				},
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "layered-done",
-						Annotations: map[string]string{
-							daemonconsts.DesiredMachineConfigAnnotationKey:     "rendered-worker-abc123",
-							daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateDone,
-							daemonconsts.DesiredImageAnnotationKey:             "quay.io/openshift/okd-content@sha256:abc123",
-							daemonconsts.CurrentImageAnnotationKey:             "quay.io/openshift/okd-content@sha256:abc123",
-						},
-					},
-				},
-			},
-			expected: []string{"non-layered-degraded", "layered-degraded"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := GetDegradedMachines(tt.nodes)
-			actualNames := helpers.GetNamesFromNodes(result)
-			assert.Equal(t, tt.expected, actualNames, "GetDegradedMachines returned unexpected results")
 		})
 	}
 }
