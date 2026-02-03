@@ -337,3 +337,13 @@ func (l *LayeredNodeState) GetDesiredAnnotationsFromMachineOSConfig(mosc *mcfgv1
 
 	return mosb.Spec.MachineConfig.Name, desiredImage
 }
+
+// IsNodeDegraded checks if the node is reporting a MCD state of "Degraded"
+func (l *LayeredNodeState) IsNodeDegraded() bool {
+	return l.isNodeMCDState(daemonconsts.MachineConfigDaemonStateDegraded)
+}
+
+// IsNodeUnreconcilable checks if the node is reporting a MCD state of "Unreconcilable"
+func (l *LayeredNodeState) IsNodeUnreconcilable() bool {
+	return l.isNodeMCDState(daemonconsts.MachineConfigDaemonStateUnreconcilable)
+}
