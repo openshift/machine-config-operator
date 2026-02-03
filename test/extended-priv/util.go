@@ -1,10 +1,15 @@
 package extended
 
 import (
+	"context"
+	"crypto/x509"
+	b64 "encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -16,7 +21,10 @@ import (
 	"github.com/google/uuid"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
+	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"sigs.k8s.io/yaml"
 
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
@@ -742,4 +750,353 @@ func getSingleUnitConfig(unitName string, unitEnabled bool, unitContents string)
 	// Escape not valid characters in json from the file content
 	escapedContent := jsonEncode(unitContents)
 	return fmt.Sprintf(`{"name": "%s", "enabled": %t, "contents": %s}`, unitName, unitEnabled, escapedContent)
+}
+
+// GetCertificatesInfoFromPemBundle extracts certificate information from a PEM bundle
+func GetCertificatesInfoFromPemBundle(bundleName string, pemBundle []byte) ([]CertificateInfo, error) {
+	var certificatesInfo []CertificateInfo
+
+	if pemBundle == nil {
+		return nil, fmt.Errorf("Provided pem bundle is nil")
+	}
+
+	if len(pemBundle) == 0 {
+		logger.Infof("Empty pem bundle")
+		return certificatesInfo, nil
+	}
+
+	for {
+		block, rest := pem.Decode(pemBundle)
+		if block == nil {
+			return nil, fmt.Errorf("failed to parse certificate PEM:\n%s", string(pemBundle))
+		}
+
+		logger.Infof("FOUND: %s", block.Type)
+		if block.Type != "CERTIFICATE" {
+			return nil, fmt.Errorf("Only CERTIFICATES are expected in the bundle, but a type %s was found in it", block.Type)
+		}
+
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return nil, err
+		}
+
+		certificatesInfo = append(certificatesInfo,
+			CertificateInfo{
+				BundleFile: bundleName,
+				NotAfter:   cert.NotAfter.Format(time.RFC3339),
+				NotBefore:  cert.NotBefore.Format(time.RFC3339),
+				Signer:     cert.Issuer.String(),
+				Subject:    cert.Subject.String(),
+			},
+		)
+
+		pemBundle = rest
+		if len(rest) == 0 {
+			break
+		}
+
+	}
+	return certificatesInfo, nil
+}
+
+// createCA creates a new CA certificate and private key
+//
+//nolint:unparam
+func createCA(tmpDir, caFileName string) (keyPath, caPath string, err error) {
+	var (
+		keyFileName = "privateKey.pem"
+	)
+	caPath = filepath.Join(tmpDir, caFileName)
+	keyPath = filepath.Join(tmpDir, keyFileName)
+
+	logger.Infof("Creating CA in directory %s", tmpDir)
+	logger.Infof("Create key")
+	keyArgs := []string{"genrsa", "-out", keyFileName, "4096"}
+	cmd := exec.Command("openssl", keyArgs...)
+	cmd.Dir = tmpDir
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		logger.Errorf(string(output))
+		return "", "", err
+	}
+
+	logger.Infof("Create CA")
+
+	caArgs := []string{"req", "-new", "-x509", "-nodes", "-days", "3600", "-key", "privateKey.pem", "-out", caFileName, "-subj", "/OU=MCO QE/CN=example.com"}
+
+	cmd = exec.Command("openssl", caArgs...)
+	cmd.Dir = tmpDir
+
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		logger.Errorf(string(output))
+		return "", "", err
+	}
+
+	return keyPath, caPath, nil
+}
+
+// ToJSON converts the given string in to JSON format
+func ToJSON(content string) (string, error) {
+	var js json.RawMessage
+	if json.Unmarshal([]byte(content), &js) == nil {
+		// the string is already JSON, no need to manipulate it
+		return content, nil
+	}
+
+	bytes, err := yaml.YAMLToJSON([]byte(content))
+	return string(bytes), err
+}
+
+// getCertsFromKubeconfig extracts the CA certificate from a kubeconfig file
+func getCertsFromKubeconfig(kubeconfig string) (string, error) {
+	// We don't know if the kubeconfig file will be in YAML or in JSON format
+	// We will transform it into JSON
+	JSONstring, err := ToJSON(kubeconfig)
+	if err != nil {
+		return "", err
+	}
+
+	currentCtx := gjson.Get(JSONstring, "current-context")
+	logger.Debugf("Context: %s\n", currentCtx)
+	if !currentCtx.Exists() || currentCtx.String() == "" {
+		return "", fmt.Errorf("No current-contenxt in the provided kubeconfig")
+	}
+
+	logger.Debugf("Current context: %s", currentCtx.String())
+
+	cluster := gjson.Get(JSONstring, `contexts.#(name=="`+currentCtx.String()+`").context.cluster`)
+	if !cluster.Exists() || cluster.String() == "" {
+		return "", fmt.Errorf("No current cluster information for context %s in the provided kubeconfig", currentCtx.String())
+	}
+
+	logger.Debugf("Cluster: %s\n", cluster.String())
+
+	cert64 := gjson.Get(JSONstring, `clusters.#(name=="`+cluster.String()+`").cluster.certificate-authority-data`)
+	if !cert64.Exists() || cert64.String() == "" {
+		return "", fmt.Errorf("No current certificate-authority-data information for context %s and cluster %s in the provided kubeconfig", currentCtx.String(), cluster.String())
+	}
+
+	cert, err := b64.StdEncoding.DecodeString(cert64.String())
+	if err != nil {
+		logger.Errorf("The certiifcate provided in the kubeconfig is not base64 encoded")
+		return "", err
+	}
+
+	logger.Infof("Certificate successfully extracted from kubeconfig data")
+	logger.Debugf("Cert: %s\n", string(cert))
+	return string(cert), nil
+}
+
+// GetBase64EncodedFileSourceContent encodes file content as a base64 data URI
+func GetBase64EncodedFileSourceContent(fileContent string) string {
+
+	encodedContent := b64.StdEncoding.EncodeToString([]byte(fileContent))
+
+	return "data:text/plain;charset=utf-8;base64," + encodedContent
+}
+
+// PtrTo returns a pointer to the given value
+func PtrTo[T any](v T) *T {
+	return &v
+}
+
+// RemoveAllMCDPods removes all MCD pods in openshift-machine-config-operator namespace
+func RemoveAllMCDPods(oc *exutil.CLI) error {
+	return removeMCOPods(oc, "-l", "k8s-app=machine-config-daemon")
+}
+
+// removeAllMCOPods removes all MCO pods in openshift-machine-config-operator namespace matching the given selector args
+func removeMCOPods(oc *exutil.CLI, argsSelector ...string) error {
+	args := append([]string{"pods", "-n", MachineConfigNamespace}, argsSelector...)
+	err := oc.AsAdmin().WithoutNamespace().Run("delete").Args(args...).Execute()
+
+	if err != nil {
+		logger.Errorf("Cannot delete the pods in %s namespace", MachineConfigNamespace)
+		return err
+	}
+
+	return nil
+}
+
+// waitForAllMCOPodsReady waits for all MCO pods to be running and ready
+func waitForAllMCOPodsReady(oc *exutil.CLI, timeout time.Duration) error {
+	logger.Infof("Waiting for MCO pods to be runnging and ready in namespace %s", MachineConfigNamespace)
+	mcoPodsList := NewNamespacedResourceList(oc.AsAdmin(), "pod", MachineConfigNamespace)
+	mcoPodsList.PrintDebugCommand()
+	immediate := false
+	// Returns the "ready" status value unless the pod is in "Completed" status, which is ignored
+	template := `'{{- range .items -}}{{- range .status.conditions -}}{{- if ne .reason "PodCompleted" -}}{{- if eq .type "Ready" -}}{{- .status}} {{" "}}{{- end -}}{{- end -}}{{- end -}}{{- end -}}'`
+	waitErr := wait.PollUntilContextTimeout(context.TODO(), 10*time.Second, timeout, immediate,
+		func(_ context.Context) (bool, error) {
+			status, err := mcoPodsList.GetTemplate(template)
+
+			if err != nil {
+				logger.Errorf("Problems getting pods info. Trying again")
+				return false, nil
+			}
+
+			if strings.Contains(status, FalseString) {
+				return false, nil
+			}
+
+			return strings.Contains(status, TrueString), nil
+		})
+
+	if waitErr != nil {
+		_ = oc.AsAdmin().WithoutNamespace().Run("get").Args("pods", "-n", MachineConfigNamespace).Execute()
+		return fmt.Errorf("MCO pods were deleted in namespace %s, but they did not become ready", MachineConfigNamespace)
+	}
+
+	return nil
+}
+
+// checkAllOperatorsHealthy fails the test if any ClusterOperator resource is degraded
+func checkAllOperatorsHealthy(oc *exutil.CLI, timeout, poll string) {
+	o.Eventually(func(gm o.Gomega) { // Passing o.Gomega as parameter we can use assertions inside the Eventually function without breaking the retries.
+		ops, err := NewResourceList(oc.AsAdmin(), "co").GetAll()
+		gm.Expect(err).NotTo(o.HaveOccurred(), "Could not get a list with all the clusteroperator resources")
+
+		for _, op := range ops {
+			gm.Expect(&op).NotTo(BeDegraded(), "%s is Degraded!. \n%s", op.PrettyString())
+		}
+	}, timeout, poll).
+		Should(o.Succeed(),
+			"There are degraded ClusterOperators!")
+}
+
+// WaitForStableCluster waits for the cluster to be stable for a minimum period
+func WaitForStableCluster(oc *exutil.CLI, minimumStable, timeout string) error {
+	err := oc.AsAdmin().Run("adm").Args("wait-for-stable-cluster", "--minimum-stable-period", minimumStable, "--timeout", timeout).Execute()
+	if err != nil {
+		oc.Run("get").Args("co").Execute()
+	}
+	return err
+}
+
+// GetAPIServerInternalURI returns the API server internal URI
+func GetAPIServerInternalURI(oc *exutil.CLI) (string, error) {
+	infra := NewResource(oc, "infrastructure", "cluster")
+	apiServerInternalURI, err := infra.Get(`{.status.apiServerInternalURI}`)
+	if err != nil {
+		return "", err
+	}
+
+	return regexp.MustCompile(`^https*:\/\/(.*):\d+$`).ReplaceAllString(strings.TrimSpace(apiServerInternalURI), `$1`), nil
+}
+
+// splitCommandString splits a string taking into account double quotes and single quotes, unscaping the quotes if necessary
+func splitCommandString(strCommand string) []string {
+	command := []string{}
+	insideDoubleQuote := false
+	insideSingleQuote := false
+
+	isSingleQuote := func(b byte) bool {
+		return b == '\'' && !insideDoubleQuote
+	}
+
+	isDoubleQuote := func(b byte) bool {
+		return b == '"' && !insideSingleQuote
+	}
+
+	arg := []byte{}
+	for _, char := range []byte(strings.TrimSpace(strCommand)) {
+		if isDoubleQuote(char) {
+
+			// skip the first character of the quote
+			if !insideDoubleQuote {
+				insideDoubleQuote = true
+				continue
+			}
+			// we are inside a quote
+			// if the new double quote is scaped we unscape it and continue inside a quote
+			if arg[len(arg)-1] == '\\' {
+				arg[len(arg)-1] = '"'
+				continue
+			}
+
+			// If there is no scaped char the we get out of the quote state ignoring the last character of the quote
+			insideDoubleQuote = false
+			continue
+
+		}
+
+		if isSingleQuote(char) {
+			// skip the first character of the quote
+			if !insideSingleQuote {
+				insideSingleQuote = true
+				continue
+			}
+			// we are inside a quote
+			// if the new single quote is scaped we unscape it and continue inside a quote
+			if arg[len(arg)-1] == '\\' {
+				arg[len(arg)-1] = '\''
+				continue
+			}
+
+			// If there is no scaped char the we get out of the quote state ignoring the last character of the quote
+			insideSingleQuote = false
+			continue
+
+		}
+
+		if char == ' ' && !insideDoubleQuote && !insideSingleQuote {
+			command = append(command, string(arg))
+			arg = []byte{}
+			continue
+		}
+
+		arg = append(arg, char)
+	}
+	if len(arg) > 0 {
+		command = append(command, string(arg))
+	}
+
+	return command
+
+}
+
+func getMachineConfigControllerPod(oc *exutil.CLI) (string, error) {
+	pod, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("pod", "-n", MachineConfigNamespace, "-l", ControllerLabel+"="+ControllerLabelValue, "-o", `jsonpath={.items[?(@.status.phase=="Running")].metadata.name}`).Output()
+	logger.Infof("machine-config-controller pod name is %s", pod)
+	return pod, err
+}
+
+// skipTestIfWorkersCannotBeScaled skips the current test if the worker pool cannot be scaled via machineset
+func skipTestIfWorkersCannotBeScaled(oc *exutil.CLI) {
+	canBeScaled, err := WorkersCanBeScaled(oc)
+	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error decidign if worker nodes can be scaled using machinesets")
+
+	if !canBeScaled {
+		g.Skip("Worker nodes cannot be scaled using machinesets. This test cannot be execute if workers cannot be scaled via machineset, IPI clusters.")
+	}
+}
+
+// getAllKubeProxyPod returns the kube-rbac-proxy- pod for given namespace
+func getAllKubeProxyPod(oc *exutil.CLI, namespace string) ([]string, error) {
+	var kubeRabcProxyPodList []string
+	getKubeProxyPod, err := exutil.GetAllPods(oc.AsAdmin(), namespace)
+	for i := range getKubeProxyPod {
+		if strings.Contains(getKubeProxyPod[i], "kube-rbac-proxy-crio-") {
+			kubeRabcProxyPodList = append(kubeRabcProxyPodList, getKubeProxyPod[i])
+		}
+	}
+	if len(kubeRabcProxyPodList) == 0 {
+		logger.Infof("Empty kube-rbac-proxy-crio- pod list")
+		return kubeRabcProxyPodList, err
+	}
+	logger.Infof("Get all Kube proxy pod list: %s", kubeRabcProxyPodList)
+	return kubeRabcProxyPodList, err
+}
+
+// validate that the machine config 'mc' degrades machineconfigpool 'mcp', due to RenderDegraded error matching expectedNDMessage, expectedNDReason
+func validateMcpRenderDegraded(mc *MachineConfig, mcp *MachineConfigPool, expectedRDMessage, expectedRDReason string) {
+	defer o.Eventually(mcp, "5m", "20s").ShouldNot(BeDegraded(), "The MCP was not recovered from Degraded status after deleting the offending MC")
+	defer o.Eventually(mc.Delete).Should(o.Succeed(), "Could not delete the offending MC")
+	mc.create()
+	logger.Infof("OK!\n")
+
+	checkDegraded(mcp, expectedRDMessage, expectedRDReason, "RenderDegraded", false, 2)
 }

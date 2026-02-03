@@ -45,3 +45,9 @@ func (matcher *SecureMatcher) NegatedFailureMessage(actual interface{}) (message
 
 	return fmt.Sprintf("%s matched, but should NOT match!! ", matcherType) + secureMatchesMessage
 }
+
+func Secure(securedMatcher types.GomegaMatcher) types.GomegaMatcher {
+	return &SecureMatcher{
+		securedMatcher: securedMatcher,
+	}
+}

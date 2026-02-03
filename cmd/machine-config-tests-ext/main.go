@@ -41,15 +41,6 @@ func applyLabelFilters(specs et.ExtensionTestSpecs) {
 			}
 		}
 	})
-
-	// Exclude tests with "Exclude:REASON" labels
-	specs.Walk(func(spec *et.ExtensionTestSpec) {
-		for label := range spec.Labels {
-			if strings.HasPrefix(label, "Exclude:") {
-				spec.Exclude("true")
-			}
-		}
-	})
 }
 
 func main() {
@@ -92,6 +83,12 @@ func main() {
 		panic(fmt.Sprintf("couldn't build extension test specs from ginkgo: %+v", err.Error()))
 	}
 
+	// Exclude tests with "Exclude:REASON" labels
+	specs = specs.MustFilter([]string{
+		`!labels.exists(l, l.startsWith("Exclude:"))`,
+	})
+
+	// Configure environment flags filters
 	applyLabelFilters(specs)
 
 	ext.AddSpecs(specs)

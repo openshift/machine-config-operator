@@ -129,6 +129,20 @@ func (r *ocGetter) Get(jsonPath string, extraParams ...string) (string, error) {
 	return result, err
 }
 
+// GetTemplate uses the CLI to retrieve the return value for this template
+func (r *ocGetter) GetTemplate(template string, extraParams ...string) (string, error) {
+	params := r.getCommonParams()
+
+	params = append(params, extraParams...)
+
+	params = append(params, []string{"-o", "template", fmt.Sprintf("--template=%s", template)}...)
+
+	logger.Debugf("resource params %v:", params)
+	result, err := r.oc.WithoutNamespace().Run("get").Args(params...).Output()
+
+	return result, err
+}
+
 // GetSafe uses the CLI to retrieve the return value for this jsonpath, if the resource does not exist, it returns the defaut value
 func (r *ocGetter) GetSafe(jsonPath, defaultValue string, extraParams ...string) string {
 	ret, err := r.Get(jsonPath, extraParams...)

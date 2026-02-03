@@ -60,6 +60,17 @@ const (
 	// ExtensionsChangeIncWait extra minutes that MCPs will wait per node if we change the extensions in a configuration
 	ExtensionsChangeIncWait = 5
 
+	// ImageRegistryCertificatesDir is the path were the image registry certificates will be stored in a node. Example: /etc/docker/certs.d/mycertname/ca.crt
+	ImageRegistryCertificatesDir = "/etc/docker/certs.d"
+
+	// ImageRegistryCertificatesFileName is the name of the image registry certificates. Example: /etc/docker/certs.d/mycertname/ca.crt
+	ImageRegistryCertificatesFileName = "ca.crt"
+
+	// SecurePort is the tls secured port to serve ignition configs
+	IgnitionSecurePort = 22623
+	// InsecurePort is the port to serve ignition configs w/o tls
+	IgnitionInsecurePort = 22624
+
 	// MachineAPINamespace is the MachineAPI namespace
 	MachineAPINamespace = "openshift-machine-api"
 
@@ -87,6 +98,8 @@ const (
 	BusyBoxImage = "quay.io/openshifttest/busybox@sha256:c5439d7db88ab5423999530349d327b04279ad3161d7596d2126dfb5b02bfd1f"
 	// AlpineImage the multiplatform alpine image stored in openshifttest
 	AlpineImage = "quay.io/openshifttest/alpine@sha256:dc1536cbff0ba235d4219462aeccd4caceab9def96ae8064257d049166890083"
+	// TestSSLImage the testssl image stored in openshiftest
+	TestSSLImage = "quay.io/openshifttest/testssl@sha256:ad6fb8002cb9cfce3ddc8829fd6e7e0d997aeb1faf972650f3e5d7603f90c6ef"
 
 	// Constants for NodeDisruptionPolicy
 	NodeDisruptionPolicyActionNone         = "None"
@@ -107,4 +120,13 @@ const (
 	SkewEnforcementAutomaticMode = "Automatic"
 	// SkewEnforcementNoneMode indicates boot image skew enforcement is disabled
 	SkewEnforcementNoneMode = "None"
+
+	// MachineConfigServer mcs container name
+	MachineConfigServer = "machine-config-server"
+
+	// TLS Security Version
+	VersionTLS10 = 0x0301
+	VersionTLS11 = 0x0302
+	VersionTLS12 = 0x0303
+	VersionTLS13 = 0x0304
 )

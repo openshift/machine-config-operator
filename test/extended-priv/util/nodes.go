@@ -13,6 +13,25 @@ func DebugNodeWithChroot(oc *CLI, nodeName string, cmd ...string) (string, error
 	return strings.Join([]string{stdOut, stdErr}, "\n"), err
 }
 
+// DebugNodeWithOptions launches debug container with options e.g. --image
+func DebugNodeWithOptions(oc *CLI, nodeName string, options []string, cmd ...string) (string, error) {
+	stdOut, stdErr, err := debugNode(oc, nodeName, options, false, true, cmd...)
+	return strings.Join([]string{stdOut, stdErr}, "\n"), err
+}
+
+// DebugNodeWithOptionsAndChroot launches debug container using chroot and with options e.g. --image
+func DebugNodeWithOptionsAndChroot(oc *CLI, nodeName string, options []string, cmd ...string) (string, error) {
+	stdOut, stdErr, err := debugNode(oc, nodeName, options, true, true, cmd...)
+	return strings.Join([]string{stdOut, stdErr}, "\n"), err
+}
+
+// DebugNode creates a debugging session of the node
+func DebugNode(oc *CLI, nodeName string, cmd ...string) (string, error) {
+	stdOut, stdErr, err := debugNode(oc, nodeName, []string{}, false, true, cmd...)
+	return strings.Join([]string{stdOut, stdErr}, "\n"), err
+}
+
+//nolint:unparam
 func debugNode(oc *CLI, nodeName string, cmdOptions []string, needChroot, recoverNsLabels bool, cmd ...string) (stdOut, stdErr string, err error) {
 	var (
 		debugNodeNamespace string
@@ -98,4 +117,15 @@ func IsDefaultNodeSelectorEnabled(oc *CLI) bool {
 func IsWorkerNode(oc *CLI, nodeName string) bool {
 	isWorker, _ := StringsSliceContains(GetNodeListByLabel(oc, `node-role.kubernetes.io/worker`), nodeName)
 	return isWorker
+}
+
+// DeleteLabelFromNode delete the custom label from the node
+func DeleteLabelFromNode(oc *CLI, node, label string) (string, error) {
+	return oc.AsAdmin().WithoutNamespace().Run("label").Args("node", node, label+"-").Output()
+}
+
+// GetNodeHostname returns the cluster node hostname
+func GetNodeHostname(oc *CLI, node string) (string, error) {
+	hostname, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("node", node, "-o", "jsonpath='{..kubernetes\\.io/hostname}'").Output()
+	return strings.Trim(hostname, "'"), err
 }
