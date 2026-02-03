@@ -15,12 +15,15 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	opv1 "github.com/openshift/api/operator/v1"
 
 	cligoinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	cligolistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
+	mcopinformersv1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
+	mcoplistersv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
@@ -108,6 +111,9 @@ type Controller struct {
 	schedulerList         cligolistersv1.SchedulerLister
 	schedulerListerSynced cache.InformerSynced
 
+	mcopLister       mcoplistersv1.MachineConfigurationLister
+	mcopListerSynced cache.InformerSynced
+
 	queue workqueue.TypedRateLimitingInterface[string]
 
 	fgHandler ctrlcommon.FeatureGatesHandler
@@ -127,6 +133,7 @@ func New(
 	mosbInformer mcfginformersv1.MachineOSBuildInformer,
 	mcnInformer mcfginformersv1.MachineConfigNodeInformer,
 	schedulerInformer cligoinformersv1.SchedulerInformer,
+	mcopInformer mcopinformersv1.MachineConfigurationInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 	fgHandler ctrlcommon.FeatureGatesHandler,
@@ -141,6 +148,7 @@ func New(
 		podInformer,
 		mcnInformer,
 		schedulerInformer,
+		mcopInformer,
 		kubeClient,
 		mcfgClient,
 		defaultUpdateDelay,
@@ -158,6 +166,7 @@ func NewWithCustomUpdateDelay(
 	mosbInformer mcfginformersv1.MachineOSBuildInformer,
 	mcnInformer mcfginformersv1.MachineConfigNodeInformer,
 	schedulerInformer cligoinformersv1.SchedulerInformer,
+	mcopInformer mcopinformersv1.MachineConfigurationInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 	updateDelay time.Duration,
@@ -173,6 +182,7 @@ func NewWithCustomUpdateDelay(
 		podInformer,
 		mcnInformer,
 		schedulerInformer,
+		mcopInformer,
 		kubeClient,
 		mcfgClient,
 		updateDelay,
@@ -191,6 +201,7 @@ func newController(
 	podInformer coreinformersv1.PodInformer,
 	mcnInformer mcfginformersv1.MachineConfigNodeInformer,
 	schedulerInformer cligoinformersv1.SchedulerInformer,
+	mcopInformer mcopinformersv1.MachineConfigurationInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 	updateDelay time.Duration,
@@ -240,6 +251,11 @@ func newController(
 		UpdateFunc: ctrl.updateMachineConfigNode,
 		DeleteFunc: ctrl.deleteMachineConfigNode,
 	})
+	mcopInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addMachineConfiguration,
+		UpdateFunc: ctrl.updateMachineConfiguration,
+		DeleteFunc: ctrl.deleteMachineConfiguration,
+	})
 
 	ctrl.syncHandler = ctrl.syncMachineConfigPool
 	ctrl.enqueueMachineConfigPool = ctrl.enqueueDefault
@@ -263,6 +279,9 @@ func newController(
 	ctrl.schedulerList = schedulerInformer.Lister()
 	ctrl.schedulerListerSynced = schedulerInformer.Informer().HasSynced
 
+	ctrl.mcopLister = mcopInformer.Lister()
+	ctrl.mcopListerSynced = mcopInformer.Informer().HasSynced
+
 	return ctrl
 }
 
@@ -271,7 +290,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.mcpListerSynced, ctrl.moscListerSynced, ctrl.mosbListerSynced, ctrl.nodeListerSynced, ctrl.schedulerListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.mcpListerSynced, ctrl.moscListerSynced, ctrl.mosbListerSynced, ctrl.nodeListerSynced, ctrl.schedulerListerSynced, ctrl.mcopListerSynced) {
 		return
 	}
 
@@ -1848,4 +1867,66 @@ func (ctrl *Controller) syncMetrics() error {
 		ctrlcommon.MCCUnavailableMachineCount.WithLabelValues(pool.Name).Set(float64(pool.Status.UnavailableMachineCount))
 	}
 	return nil
+}
+
+// addMachineConfiguration handles MachineConfiguration add events to update the boot image skew enforcement metric.
+func (ctrl *Controller) addMachineConfiguration(obj any) {
+	if ctrl.fgHandler == nil || !ctrl.fgHandler.Enabled(features.FeatureGateBootImageSkewEnforcement) {
+		return
+	}
+
+	ctrl.syncBootImageSkewEnforcementMetric(obj)
+}
+
+// updateMachineConfiguration handles MachineConfiguration update events to update the boot image skew enforcement metric.
+// Only takes action if BootImageSkewEnforcementStatus has changed.
+func (ctrl *Controller) updateMachineConfiguration(old, cur any) {
+	if ctrl.fgHandler == nil || !ctrl.fgHandler.Enabled(features.FeatureGateBootImageSkewEnforcement) {
+		return
+	}
+
+	oldMCOP, ok := old.(*opv1.MachineConfiguration)
+	if !ok {
+		return
+	}
+	curMCOP, ok := cur.(*opv1.MachineConfiguration)
+	if !ok {
+		return
+	}
+
+	// Only update metric if BootImageSkewEnforcementStatus mode changed
+	if oldMCOP.Status.BootImageSkewEnforcementStatus.Mode == curMCOP.Status.BootImageSkewEnforcementStatus.Mode {
+		return
+	}
+
+	ctrl.syncBootImageSkewEnforcementMetric(cur)
+}
+
+// deleteMachineConfiguration handles MachineConfiguration delete events to reset the boot image skew enforcement metric.
+func (ctrl *Controller) deleteMachineConfiguration(_ any) {
+	if ctrl.fgHandler == nil || !ctrl.fgHandler.Enabled(features.FeatureGateBootImageSkewEnforcement) {
+		return
+	}
+
+	// Reset metric to 0 when MachineConfiguration is deleted
+	ctrlcommon.MCCBootImageSkewEnforcementNone.Set(0)
+}
+
+// syncBootImageSkewEnforcementMetric updates the mcc_boot_image_skew_enforcement_none metric
+// based on the current BootImageSkewEnforcementStatus mode in MachineConfiguration.
+// The metric is set to 1 when mode is "None", indicating that scaling operations may
+// not be successful.
+func (ctrl *Controller) syncBootImageSkewEnforcementMetric(obj any) {
+
+	mcop, ok := obj.(*opv1.MachineConfiguration)
+	if !ok {
+		klog.Warningf("Expected MachineConfiguration object, got %T", obj)
+		return
+	}
+
+	if mcop.Status.BootImageSkewEnforcementStatus.Mode == opv1.BootImageSkewEnforcementModeStatusNone {
+		ctrlcommon.MCCBootImageSkewEnforcementNone.Set(1)
+	} else {
+		ctrlcommon.MCCBootImageSkewEnforcementNone.Set(0)
+	}
 }
