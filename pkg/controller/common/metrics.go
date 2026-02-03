@@ -25,6 +25,15 @@ var (
 			Help: "state of OS image override",
 		}, []string{"pool"})
 
+	// MCCBootImageSkewEnforcementNone indicates when boot image skew enforcement is disabled.
+	// Set to 1 when mode is "None", 0 otherwise. A value of 1 indicates scaling operations may
+	// not be successful
+	MCCBootImageSkewEnforcementNone = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "mcc_boot_image_skew_enforcement_none",
+			Help: "Set to 1 when boot image skew enforcement mode is None, indicating scaling may not be successful as bootimages are out of date",
+		})
+
 	// MCCDrainErr logs failed drain
 	MCCDrainErr = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -94,6 +103,7 @@ func RegisterMCCMetrics() error {
 		MCCUpdatedMachineCount,
 		MCCDegradedMachineCount,
 		MCCUnavailableMachineCount,
+		MCCBootImageSkewEnforcementNone,
 	})
 
 	if err != nil {
