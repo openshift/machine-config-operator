@@ -74,6 +74,29 @@ func (n *Node) DebugNodeWithChroot(cmd ...string) (string, error) {
 	return out, err
 }
 
+// DebugNodeWithOptionsAndChroot creates a debugging session of the node with chroot
+func (n *Node) DebugNodeWithOptionsAndChroot(options []string, cmd ...string) (string, error) {
+	var (
+		out        string
+		err        error
+		numRetries = 3
+	)
+	n.oc.NotShowInfo()
+	defer n.oc.SetShowInfo()
+
+	for i := 0; i < numRetries; i++ {
+		if i > 0 {
+			logger.Infof("Error happened: %s.\nRetrying command. Num retries: %d", err, i)
+		}
+		out, err = exutil.DebugNodeWithOptionsAndChroot(n.oc, n.name, options, cmd...)
+		if err == nil {
+			return out, nil
+		}
+	}
+
+	return out, err
+}
+
 // DebugNodeWithChrootStd creates a debugging session of the node with chroot and only returns separated stdout and stderr
 func (n *Node) DebugNodeWithChrootStd(cmd ...string) (string, string, error) {
 	var (
@@ -107,6 +130,39 @@ func (n *Node) DebugNodeWithChrootStd(cmd ...string) (string, string, error) {
 	}
 
 	return stdout, stderr, err
+}
+
+// DebugNodeWithOptions launch debug container with options e.g. --image
+func (n *Node) DebugNodeWithOptions(options []string, cmd ...string) (string, error) {
+	var (
+		out        string
+		err        error
+		numRetries = 3
+	)
+
+	for i := 0; i < numRetries; i++ {
+		if i > 0 {
+			logger.Infof("Error happened: %s.\nRetrying command. Num retries: %d", err, i)
+		}
+		out, err = exutil.DebugNodeWithOptions(n.oc, n.name, options, cmd...)
+		if err == nil {
+			return out, nil
+		}
+	}
+
+	return out, err
+}
+
+// DebugNode creates a debugging session of the node
+func (n *Node) DebugNode(cmd ...string) (string, error) {
+	return exutil.DebugNode(n.oc, n.name, cmd...)
+}
+
+// DO NOT USE THIS FUNCTION. USE INSTEAD RemoveLabel from the Resource struct
+// DeleteLabel removes the given label from the node
+func (n *Node) DeleteLabel(label string) (string, error) {
+	logger.Infof("Delete label %s from node %s", label, n.GetName())
+	return exutil.DeleteLabelFromNode(n.oc, n.name, label)
 }
 
 // WaitForLabelRemoved waits until the given label is not present in the node.
@@ -146,11 +202,141 @@ func (n *Node) GetMachineConfigDaemon() string {
 	return machineConfigDaemon
 }
 
+// GetNodeHostname returns the cluster node hostname
+func (n *Node) GetNodeHostname() (string, error) {
+	return exutil.GetNodeHostname(n.oc, n.name)
+}
+
+// ForceReapplyConfiguration create the file `/run/machine-config-daemon-force` in the node
+// in order to force MCO to reapply the current configuration
+func (n *Node) ForceReapplyConfiguration() error {
+	logger.Infof("Forcing reapply configuration in node %s", n.GetName())
+	_, err := n.DebugNodeWithChroot("touch", "/run/machine-config-daemon-force")
+
+	return err
+}
+
+// GetUnitStatus executes `systemctl status` command on the node and returns the output
+func (n *Node) GetUnitStatus(unitName string) (string, error) {
+	return n.DebugNodeWithChroot("systemctl", "status", unitName)
+}
+
+// UnmaskService unmasks the given systemd service via `systemctl unmask <svcName>`
+func (n *Node) UnmaskService(svcName string) (string, error) {
+	return n.DebugNodeWithChroot("systemctl", "unmask", svcName)
+}
+
 // GetUnitProperties executes `systemctl show $unitname`, can be used to checkout service dependency
 func (n *Node) GetUnitProperties(unitName string, args ...string) (string, error) {
 	cmd := append([]string{"systemctl", "show", unitName}, args...)
 	stdout, _, err := n.DebugNodeWithChrootStd(cmd...)
 	return stdout, err
+}
+
+// GetUnitActiveEnterTime returns the ActiveEnterTimestamp of a systemd unit
+func (n *Node) GetUnitActiveEnterTime(unitName string) (time.Time, error) {
+	cmdOut, err := n.GetUnitProperties(unitName, "--timestamp=unix", "-P", "ActiveEnterTimestamp")
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	logger.Infof("Active enter time output: [%s]", cmdOut)
+
+	// The output should have this format
+	// sh-5.1# systemctl show crio.service --timestamp=unix -P ActiveEnterTimestamp
+	// @1709918801
+	r := regexp.MustCompile(`^\@(?P<unix_timestamp>[0-9]+)$`)
+	match := r.FindStringSubmatch(cmdOut)
+	if len(match) == 0 {
+		msg := fmt.Sprintf("Wrong property format. Expected a format like '@1709918801', but got '%s'", cmdOut)
+		logger.Infof(msg)
+		return time.Time{}, fmt.Errorf("%s", msg)
+	}
+	unixTimeIndex := r.SubexpIndex("unix_timestamp")
+	unixTime := match[unixTimeIndex]
+
+	iUnixTime, err := strconv.ParseInt(unixTime, 10, 64)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	activeEnterTime := time.Unix(iUnixTime, 0)
+
+	logger.Infof("Unit %s ActiveEnterTimestamp %s", unitName, activeEnterTime)
+
+	return activeEnterTime, nil
+}
+
+// GetUnitExecReloadStartTime returns the last time when the unit's ExecReload was executed
+// Parse ExecReload={ path=/bin/kill ; argv[]=/bin/kill -s HUP $MAINPID ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }
+// If the service was never reloaded, then we return an empty time.Time{} and no error.
+func (n *Node) GetUnitExecReloadStartTime(unitName string) (time.Time, error) {
+	cmdOut, err := n.GetUnitProperties(unitName, "--timestamp=unix", "-P", "ExecReload")
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	logger.Infof("Reload start time output: [%s]", cmdOut)
+
+	// The output should have this format
+	// sh-5.1# systemctl show crio.service --timestamp=unix -P ExecReload
+	// @1709918801
+	r := regexp.MustCompile(`start_time=\[(?P<unix_timestamp>@[0-9]+|n\/a)\]`)
+	match := r.FindStringSubmatch(cmdOut)
+	if len(match) == 0 {
+		msg := fmt.Sprintf("Wrong property format. Expected a format like 'start_time=[@1709918801]', but got '%s'", cmdOut)
+		logger.Infof(msg)
+		return time.Time{}, fmt.Errorf("%s", msg)
+	}
+	unixTimeIndex := r.SubexpIndex("unix_timestamp")
+	unixTime := match[unixTimeIndex]
+
+	if unixTime == "n/a" {
+		logger.Infof("Crio was never reloaded.  Reload Start Time = %s", unixTime)
+		return time.Time{}, nil
+	}
+
+	iUnixTime, err := strconv.ParseInt(strings.Replace(unixTime, "@", "", 1), 10, 64)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	activeEnterTime := time.Unix(iUnixTime, 0)
+
+	logger.Infof("Unit %s ExecReload start time %s", unitName, activeEnterTime)
+
+	return activeEnterTime, nil
+}
+
+// GetUnitDependencies executes `systemctl list-dependencies` with arguments like --before --after
+func (n *Node) GetUnitDependencies(unitName string, opts ...string) (string, error) {
+	options := []string{"systemctl", "list-dependencies", unitName}
+	if len(opts) > 0 {
+		options = append(options, opts...)
+	}
+	return n.DebugNodeWithChroot(options...)
+}
+
+// IsUnitActive check unit is active or inactive
+func (n *Node) IsUnitActive(unitName string) bool {
+	output, _, err := n.DebugNodeWithChrootStd("systemctl", "is-active", unitName)
+	if err != nil {
+		logger.Errorf("Get unit state for %s failed: %v", unitName, err)
+		return false
+	}
+	logger.Infof("Unit %s state is: %s", unitName, output)
+	return output == "active"
+}
+
+// IsUnitEnabled check unit enablement state is enabled/enabled-runtime or others e.g. disabled
+func (n *Node) IsUnitEnabled(unitName string) bool {
+	output, _, err := n.DebugNodeWithChrootStd("systemctl", "is-enabled", unitName)
+	if err != nil {
+		logger.Errorf("Get unit enablement state for %s failed: %v", unitName, err)
+		return false
+	}
+	logger.Infof("Unit %s enablement state is: %s ", unitName, output)
+	return strings.HasPrefix(output, "enabled")
 }
 
 // GetRpmOstreeStatus returns the rpm-ostree status in json format
@@ -238,6 +424,34 @@ func (n *Node) GetCurrentBootOSImage() (string, error) {
 	return image, nil
 }
 
+// Cordon cordons the node by running the "oc adm cordon" command
+func (n *Node) Cordon() error {
+	return n.oc.Run("adm").Args("cordon", n.GetName()).Execute()
+}
+
+// Uncordon uncordons the node by running the "oc adm uncordon" command
+func (n *Node) Uncordon() error {
+	return n.oc.Run("adm").Args("uncordon", n.GetName()).Execute()
+}
+
+// IsCordoned returns true if the node is cordoned
+func (n *Node) IsCordoned() (bool, error) {
+	key, err := n.Get(`{.spec.taints[?(@.key=="node.kubernetes.io/unschedulable")].key}`)
+	if err != nil {
+		return false, err
+	}
+
+	return key != "", nil
+}
+
+// IsCordonedOrFail returns true if the node is cordoned. It fails the test is there is any error
+func (n *Node) IsCordonedOrFail() bool {
+	isCordoned, err := n.IsCordoned()
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the tains in node %s", n.GetName())
+
+	return isCordoned
+}
+
 // RestoreDesiredConfig changes the value of the desiredConfig annotation to equal the value of currentConfig. desiredConfig=currentConfig.
 func (n *Node) RestoreDesiredConfig() error {
 	currentConfig, err := n.GetCurrentMachineConfig()
@@ -280,6 +494,11 @@ func (n *Node) GetMachineConfigState() (string, error) {
 // GetMachineConfigReason returns the Reason of machineconfiguration on this node
 func (n *Node) GetMachineConfigReason() string {
 	return n.GetOrFail(`{.metadata.annotations.machineconfiguration\.openshift\.io/reason}`)
+}
+
+// GetDesiredConfig returns the desired machine config for this node
+func (n *Node) GetDesiredConfig() string {
+	return n.GetOrFail(`{.metadata.annotations.machineconfiguration\.openshift\.io/desiredConfig}`)
 }
 
 // PatchDesiredConfig patches the desiredConfig annotation with the provided value
@@ -391,6 +610,22 @@ func (n *Node) IsEdge() (bool, error) {
 	return true, nil
 }
 
+// IsEdgeOrFail Returns true if th node is an edge node and fails the test if any error happens
+func (n *Node) IsEdgeOrFail() bool {
+	isEdge, err := n.IsEdge()
+	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error finding out if node %s is an edge node", n)
+	return isEdge
+}
+
+// IsUpdating returns if the node is currently updating the machine configuration
+func (n *Node) IsUpdating() (bool, error) {
+	state, err := n.GetMachineConfigState()
+	if err != nil {
+		return false, err
+	}
+	return state == "Working", nil
+}
+
 // IsReady returns boolean 'true' if the node is ready. Else it retruns 'false'.
 func (n *Node) IsReady() bool {
 	return n.IsConditionStatusTrue("Ready")
@@ -408,6 +643,61 @@ func (n *Node) GetMCDaemonLogs(filter string) (string, error) {
 	})
 
 	return mcdLogs, err
+}
+
+// PollMCDaemonLogs returns a function that can be used by gomega Eventually/Consistently functions to poll logs results
+// If there is an error, it will return empty string, new need to take that into account building our Eventually/Consistently statement
+func (n *Node) PollMCDaemonLogs(filter string) func() string {
+	return func() string {
+		logs, err := n.GetMCDaemonLogs(filter)
+		if err != nil {
+			return ""
+		}
+		return logs
+	}
+}
+
+// CaptureMCDaemonLogsUntilRestartWithTimeout captures all the logs in the MachineConfig daemon pod for this node until the daemon pod is restarted
+func (n *Node) CaptureMCDaemonLogsUntilRestartWithTimeout(timeout string) (string, error) {
+	var (
+		logs                = ""
+		err                 error
+		machineConfigDaemon = n.GetMachineConfigDaemon()
+	)
+
+	duration, err := time.ParseDuration(timeout)
+	if err != nil {
+		return "", err
+	}
+
+	c := make(chan string, 1)
+
+	go func() {
+		err = Retry(5, 5*time.Second, func() error {
+			var err error
+			logs, err = n.oc.WithoutNamespace().Run("logs").Args("-n", MachineConfigNamespace, machineConfigDaemon, "-c", "machine-config-daemon", "-f").Output()
+			if err != nil {
+				logger.Errorf("Retrying because: Error getting %s logs. Error: %s\nOutput: %s", machineConfigDaemon, err, logs)
+			}
+			return err
+		})
+
+		if err != nil {
+			logger.Errorf("Error getting %s logs. Error: %s", machineConfigDaemon, err)
+		}
+		c <- logs
+	}()
+
+	select {
+	case logs := <-c:
+		return logs, nil
+	case <-time.After(duration):
+		errMsg := fmt.Sprintf(`Node "%s". Timeout while waiting for the daemon pod "%s" -n  "%s" to be restarted`,
+			n.GetName(), machineConfigDaemon, MachineConfigNamespace)
+		logger.Infof(errMsg)
+		return "", fmt.Errorf("%s", errMsg)
+	}
+
 }
 
 // GetDateOrFail executes `date`command and returns the current time in the node and fails the test case if there is any error
@@ -517,6 +807,77 @@ func (n *Node) IgnoreEventsBeforeNow() error {
 	return err
 }
 
+// GetDateWithDelta returns the date in the node +delta
+func (n *Node) GetDateWithDelta(delta string) (time.Time, error) {
+	date, err := n.GetDate()
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	timeDuration, terr := time.ParseDuration(delta)
+	if terr != nil {
+		logger.Errorf("Error getting delta time %s", terr)
+		return time.Time{}, terr
+	}
+
+	return date.Add(timeDuration), nil
+}
+
+// IsFIPSEnabled check whether fips is enabled on node
+func (n *Node) IsFIPSEnabled() (bool, error) {
+	output, err := n.DebugNodeWithChroot("fips-mode-setup", "--check")
+	if err != nil {
+		logger.Errorf("Error checking fips mode %s", err)
+	}
+
+	return strings.Contains(output, "FIPS mode is enabled"), err
+}
+
+// IsKernelArgEnabled check whether kernel arg is enabled on node
+func (n *Node) IsKernelArgEnabled(karg string) (bool, error) {
+	unameOut, unameErr := n.DebugNodeWithChroot("bash", "-c", "uname -a")
+	if unameErr != nil {
+		logger.Errorf("Error checking kernel arg via uname -a: %v", unameErr)
+		return false, unameErr
+	}
+
+	cliOut, cliErr := n.DebugNodeWithChroot("cat", "/proc/cmdline")
+	if cliErr != nil {
+		logger.Errorf("Err checking kernel arg via /proc/cmdline: %v", cliErr)
+		return false, cliErr
+	}
+
+	return (strings.Contains(unameOut, karg) || strings.Contains(cliOut, karg)), nil
+}
+
+// IsRealTimeKernel returns true if the node is using a realtime kernel
+func (n *Node) IsRealTimeKernel() (bool, error) {
+	// we can use the IsKernelArgEnabled to check the realtime kernel
+	return n.IsKernelArgEnabled("PREEMPT_RT")
+}
+
+// Is64kPagesKernel returns true if the node is using a 64k-pages kernel
+func (n *Node) Is64kPagesKernel() (bool, error) {
+	// we can use the IsKernelArgEnabled to check the 64k-pages kernel
+	return n.IsKernelArgEnabled("+64k")
+}
+
+// InstallRpm installs the rpm in the node using rpm-ostree command
+func (n *Node) InstallRpm(rpmName string) (string, error) {
+	logger.Infof("Installing rpm '%s' in node  %s", rpmName, n.GetName())
+	out, err := n.DebugNodeWithChroot("rpm-ostree", "install", rpmName)
+
+	return out, err
+}
+
+// UninstallRpm installs the rpm in the node using rpm-ostree command
+func (n *Node) UninstallRpm(rpmName string) (string, error) {
+	logger.Infof("Uninstalling rpm '%s' in node  %s", rpmName, n.GetName())
+	out, err := n.DebugNodeWithChroot("rpm-ostree", "uninstall", rpmName)
+
+	return out, err
+}
+
 // Reboot reboots the node after waiting 10 seconds. To know why look https://issues.redhat.com/browse/OCPBUGS-1306
 func (n *Node) Reboot() error {
 	afterSeconds := 1
@@ -532,6 +893,50 @@ func (n *Node) Reboot() error {
 
 	time.Sleep(time.Duration(afterSeconds) * time.Second) // we don't return the control of the program until we make sure that the timer for the reboot has expired
 	return err
+}
+
+// IsRpmOsTreeIdle returns true if `rpm-ostree status` reports iddle state
+func (n *Node) IsRpmOsTreeIdle() (bool, error) {
+	status, err := n.GetRpmOstreeStatus(false)
+
+	if strings.Contains(status, "State: idle") {
+		return true, err
+	}
+
+	return false, err
+}
+
+// WaitUntilRpmOsTreeIsIdle waits until rpm-ostree reports an idle state. Returns an error if times out
+func (n *Node) WaitUntilRpmOsTreeIsIdle() error {
+	logger.Infof("Waiting for rpm-ostree state to be idle in node %s", n.GetName())
+
+	immediate := false
+	waitErr := wait.PollUntilContextTimeout(context.TODO(), 10*time.Second, 10*time.Minute, immediate, func(_ context.Context) (bool, error) {
+		isIddle, err := n.IsRpmOsTreeIdle()
+		if err == nil {
+			if isIddle {
+				return true, nil
+			}
+			return false, nil
+		}
+
+		logger.Infof("Error waiting for rpm-ostree status to report idle state: %s.\nTry next round", err)
+		return false, nil
+	})
+
+	if waitErr != nil {
+		logger.Errorf("Timeout while waiting for rpm-ostree status to report idle state in node %s. Error: %s",
+			n.GetName(),
+			waitErr)
+	}
+
+	return waitErr
+
+}
+
+// CancelRpmOsTreeTransactions cancels rpm-ostree transactions
+func (n *Node) CancelRpmOsTreeTransactions() (string, error) {
+	return n.DebugNodeWithChroot("rpm-ostree", "cancel")
 }
 
 // CopyFromLocal Copy a local file or directory to the node
@@ -573,6 +978,13 @@ func (n *Node) RemoveFile(filePathToRemove string) error {
 	return err
 }
 
+// RpmIsInstalled returns true if the package is installed
+func (n *Node) RpmIsInstalled(rpmNames ...string) bool {
+	rpmOutput, err := n.DebugNodeWithChroot(append([]string{"rpm", "-q"}, rpmNames...)...)
+	logger.Infof(rpmOutput)
+	return err == nil
+}
+
 // ExecuteExpectBatch run a command and executes an interactive batch sequence using expect
 func (n *Node) ExecuteDebugExpectBatch(timeout time.Duration, batch []expect.Batcher) ([]expect.BatchRes, error) {
 	debug := false
@@ -607,6 +1019,20 @@ func (n *Node) ExecuteDebugExpectBatch(timeout time.Duration, batch []expect.Bat
 	}
 
 	return br, err
+}
+
+// UserAdd creates a user in the node
+func (n *Node) UserAdd(userName string) error {
+	logger.Infof("Create user %s in node %s", userName, n.GetName())
+	_, err := n.DebugNodeWithChroot("useradd", userName)
+	return err
+}
+
+// UserDel deletes a user in the node
+func (n *Node) UserDel(userName string) error {
+	logger.Infof("Delete user %s in node %s", userName, n.GetName())
+	_, err := n.DebugNodeWithChroot("userdel", "-f", userName)
+	return err
 }
 
 // GetRHELVersion returns the RHEL version of the  node
@@ -678,6 +1104,89 @@ func (n *Node) GetPrimaryPoolOrFail() *MachineConfigPool {
 	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error getting the primary pool of node %s", n.GetName())
 
 	return pool
+}
+
+// RemoveIPTablesRulesByRegexp removes all the iptables rules printed by `iptables -S` that match the given regexp
+func (n *Node) RemoveIPTablesRulesByRegexp(regx string) ([]string, error) {
+	return n.removeIPTablesRulesByRegexp(false, regx)
+}
+
+// RemoveIP6TablesRulesByRegexp removes all the iptables rules printed by  `ip6tables -S`  that match the given regexp
+func (n *Node) RemoveIP6TablesRulesByRegexp(regx string) ([]string, error) {
+	return n.removeIPTablesRulesByRegexp(true, regx)
+}
+
+// removeIPTablesRulesByRegexp removes all the iptables rules printed by `iptables -S` or `ip6tables -S` that match the given regexp
+func (n *Node) removeIPTablesRulesByRegexp(ipv6 bool, regx string) ([]string, error) {
+	removedRules := []string{}
+	command := "iptables"
+	if ipv6 == true {
+		command = "ip6tables"
+	}
+
+	allRulesString, stderr, err := n.DebugNodeWithChrootStd(command, "-S")
+	if err != nil {
+		logger.Errorf("Error running `%s -S`. Stderr: %s", command, stderr)
+		return nil, err
+	}
+
+	allRules := strings.Split(allRulesString, "\n")
+	for _, rule := range allRules {
+		if !regexp.MustCompile(regx).MatchString(rule) {
+			continue
+		}
+		logger.Infof("%s. Removing %s rule: %s", n.GetName(), command, rule)
+		removeCommand := strings.Replace(rule, "-A", "-D", 1)
+		output, err := n.DebugNodeWithChroot(append([]string{command}, splitCommandString(removeCommand)...)...)
+		// OCPQE-20258 if the rule is removed already, retry will be failed as well. add this logic to catach this error
+		// if the error message indicates the rule does not exist, i.e. it's already removed, we consider the retry is succeed
+		alreadyRemoved := strings.Contains(output, "does a matching rule exist in that chain")
+		if alreadyRemoved {
+			logger.Warnf("iptable rule %s is already removed", rule)
+		}
+
+		if err != nil && !alreadyRemoved {
+			logger.Errorf("Output: %s", output)
+			return removedRules, err
+		}
+		removedRules = append(removedRules, rule)
+	}
+	return removedRules, err
+}
+
+// ExecIPTables executes the iptables commands in the node. The "rules" param is a list of iptables commands to be executed. Each string is a full command.
+//
+//	  for example:
+//		[ "-A OPENSHIFT-BLOCK-OUTPUT -p tcp -m tcp --dport 22623 --tcp-flags FIN,SYN,RST,ACK SYN -j REJECT --reject-with icmp-port-unreachable",
+//	       "-A OPENSHIFT-BLOCK-OUTPUT -p tcp -m tcp --dport 22624 --tcp-flags FIN,SYN,RST,ACK SYN -j REJECT --reject-with icmp-port-unreachable" ]
+//
+// This function can be used to restore the rules removed by "RemoveIPTablesRulesByRegexp"
+func (n *Node) execIPTables(ipv6 bool, rules []string) error {
+	command := "iptables"
+	if ipv6 == true {
+		command = "ip6tables"
+	}
+
+	for _, rule := range rules {
+		logger.Infof("%s. Adding %s rule: %s", n.GetName(), command, rule)
+		output, err := n.DebugNodeWithChroot(append([]string{command}, splitCommandString(rule)...)...)
+		if err != nil {
+			logger.Errorf("Output: %s", output)
+			return err
+		}
+
+	}
+	return nil
+}
+
+// ExecIPTables execute the iptables command in the node
+func (n *Node) ExecIPTables(rules []string) error {
+	return n.execIPTables(false, rules)
+}
+
+// ExecIPTables execute the ip6tables command in the node
+func (n *Node) ExecIP6Tables(rules []string) error {
+	return n.execIPTables(true, rules)
 }
 
 // GetArchitecture get the architecture used in the node

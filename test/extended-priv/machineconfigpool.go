@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	g "github.com/onsi/ginkgo/v2"
@@ -302,6 +303,85 @@ func (mcp *MachineConfigPool) SetWaitingTimeForKernelChange() {
 // SetWaitingTimeForExtensionsChange increases the time that the MCP will wait for the update to be executed
 func (mcp *MachineConfigPool) SetWaitingTimeForExtensionsChange() {
 	mcp.MinutesWaitingPerNode = DefaultMinutesWaitingPerNode + ExtensionsChangeIncWait
+}
+
+// SetDefaultWaitingTime restore the default waiting time that the MCP will wait for the update to be executed
+func (mcp *MachineConfigPool) SetDefaultWaitingTime() {
+	mcp.MinutesWaitingPerNode = DefaultMinutesWaitingPerNode
+}
+
+// GetInternalIgnitionConfigURL return the internal URL used by the nodes in this pool to get the ignition config
+func (mcp *MachineConfigPool) GetInternalIgnitionConfigURL(secure bool) (string, error) {
+	var (
+		// SecurePort is the tls secured port to serve ignition configs
+		// InsecurePort is the port to serve ignition configs w/o tls
+		port     = IgnitionSecurePort
+		protocol = "https"
+	)
+	internalAPIServerURI, err := GetAPIServerInternalURI(mcp.oc)
+	if err != nil {
+		return "", err
+	}
+	if !secure {
+		port = IgnitionInsecurePort
+		protocol = "http"
+	}
+
+	return fmt.Sprintf("%s://%s:%d/config/%s", protocol, internalAPIServerURI, port, mcp.GetName()), nil
+}
+
+// GetMCSIgnitionConfig returns the ignition config that the MCS is serving for this pool
+func (mcp *MachineConfigPool) GetMCSIgnitionConfig(secure bool, ignitionVersion string) (string, error) {
+	var (
+		// SecurePort is the tls secured port to serve ignition configs
+		// InsecurePort is the port to serve ignition configs w/o tls
+		port = IgnitionSecurePort
+	)
+	if !secure {
+		port = IgnitionInsecurePort
+	}
+
+	url, err := mcp.GetInternalIgnitionConfigURL(secure)
+	if err != nil {
+		return "", err
+	}
+
+	// We will request the config from a master node
+	mMcp := NewMachineConfigPool(mcp.oc.AsAdmin(), MachineConfigPoolMaster)
+	masters, err := mMcp.GetNodes()
+	if err != nil {
+		return "", err
+	}
+	master := masters[0]
+
+	logger.Infof("Remove the IPV4 iptables rules that block the ignition config")
+	removedRules, err := master.RemoveIPTablesRulesByRegexp(fmt.Sprintf("%d", port))
+	defer master.ExecIPTables(removedRules)
+	if err != nil {
+		return "", err
+	}
+
+	logger.Infof("Remove the IPV6 ip6tables rules that block the ignition config")
+	removed6Rules, err := master.RemoveIP6TablesRulesByRegexp(fmt.Sprintf("%d", port))
+	defer master.ExecIP6Tables(removed6Rules)
+	if err != nil {
+		return "", err
+	}
+
+	cmd := []string{"curl", "-s"}
+	if secure {
+		cmd = append(cmd, "-k")
+	}
+	if ignitionVersion != "" {
+		cmd = append(cmd, []string{"-H", fmt.Sprintf("Accept:application/vnd.coreos.ignition+json;version=%s", ignitionVersion)}...)
+	}
+	cmd = append(cmd, url)
+
+	stdout, stderr, err := master.DebugNodeWithChrootStd(cmd...)
+	if err != nil {
+		return stdout + stderr, err
+	}
+	return stdout, nil
 }
 
 // getSelectedNodes returns a list with the nodes that match the .spec.nodeSelector.matchLabels criteria plus the provided extraLabels
@@ -811,6 +891,70 @@ func (mcp *MachineConfigPool) SanityCheck() error {
 	}
 
 	return nil
+}
+
+// CaptureAllNodeLogsBeforeRestart will poll the logs of every node in the pool until thy are restarted and will return them once all nodes have been restarted
+func (mcp *MachineConfigPool) CaptureAllNodeLogsBeforeRestart() (map[string]string, error) {
+
+	type nodeLogs struct {
+		nodeName string
+		nodeLogs string
+		err      error
+	}
+
+	returnMap := map[string]string{}
+	c := make(chan nodeLogs)
+	var wg sync.WaitGroup
+
+	timeToWait := mcp.estimateWaitDuration()
+
+	logger.Infof("Waiting %s until all nodes nodes %s MCP are restarted and their logs are captured before restart", timeToWait.String(), mcp.GetName())
+
+	nodes, err := mcp.GetNodes()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, item := range nodes {
+		node := item
+		wg.Add(1)
+		go func() {
+			defer g.GinkgoRecover()
+			defer wg.Done()
+
+			logger.Infof("Capturing node %s logs until restart", node.GetName())
+			logs, err := node.CaptureMCDaemonLogsUntilRestartWithTimeout(timeToWait.String())
+			if err != nil {
+				logger.Errorf("Error while tring to capture the MCD lgos in node %s before restart", node.GetName())
+			} else {
+				logger.Infof("Captured MCD logs before node %s was rebooted", node.GetName())
+			}
+
+			c <- nodeLogs{nodeName: node.GetName(), nodeLogs: logs, err: err}
+		}()
+	}
+
+	// We are using a 0 size channel, so every previous channel call will be locked on "c <- nodeLogs" if we directly call wg.Wait because noone is already reading
+	// One solution is to wait inside a goroutine and close the channel once every node has reported his log
+	// Another solution could be to use a channel with a size = len(nodes) like `c := make(chan nodeLogs, len(nodes))` so that all tasks can write in the channel without being locked
+	go func() {
+		defer g.GinkgoRecover()
+
+		logger.Infof("Waiting for all pre-reboot logs to be collected")
+		wg.Wait()
+		logger.Infof("All logs collected. Closing the channel")
+		close(c)
+	}()
+
+	// Here we read from the channel and unlock the "c <- nodeLogs" instruction. If we call wg.Wait before this point, tasks will be locked there forever
+	for nl := range c {
+		if nl.err != nil {
+			return nil, err
+		}
+		returnMap[nl.nodeName] = nl.nodeLogs
+	}
+
+	return returnMap, nil
 }
 
 // GetPinnedImageSets returns a list with the nodes that match the .spec.nodeSelector.matchLabels criteria plus the provided extraLabels
