@@ -31,6 +31,8 @@ type PodmanInterface interface {
 	GetPodmanImageInfoByReference(reference string) (*PodmanImageInfo, error)
 	// GetPodmanInfo retrieves Podman system information.
 	GetPodmanInfo() (*PodmanInfo, error)
+	// CreatePodmanContainer creates a container from the specified image URL.
+	CreatePodmanContainer(additionalArgs []string, containerName, imgURL string) ([]byte, error)
 }
 
 // PodmanExecInterface is the production implementation that executes real podman commands.
@@ -86,4 +88,16 @@ func (p *PodmanExecInterface) GetPodmanInfo() (*PodmanInfo, error) {
 		return nil, fmt.Errorf("failed to decode podman system info output: %v", err)
 	}
 	return &podmanInfo, nil
+}
+
+// CreatePodmanContainer creates a container from the specified image URL.
+// It executes 'podman create <args> --name <containerName> <imgURL>'.
+func (p *PodmanExecInterface) CreatePodmanContainer(additionalArgs []string, containerName, imgURL string) ([]byte, error) {
+	args := []string{"create"}
+	if len(additionalArgs) > 0 {
+		args = append(args, additionalArgs...)
+	}
+	args = append(args, "--name", containerName, imgURL)
+
+	return p.cmdRunner.RunGetOut("podman", args...)
 }
