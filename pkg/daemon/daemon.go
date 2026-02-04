@@ -1310,7 +1310,7 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig(machineConfigFile string) er
 
 	// Setting the Kernel Arguments is for comparison only with the desired MachineConfig.
 	// The resulting MC should not be for updating node configuration.
-	if err = setRunningKargs(oldConfig, mc.Spec.KernelArguments); err != nil {
+	if err = dn.setRunningKargs(oldConfig, mc.Spec.KernelArguments); err != nil {
 		return fmt.Errorf("failed to set kernel arguments from /proc/cmdline: %w", err)
 	}
 
@@ -1830,7 +1830,7 @@ func (dn *Daemon) getStateAndConfigs() (*stateAndConfigs, error) {
 func (dn *Daemon) LogSystemData() {
 	// Print status if available
 	if dn.os.IsCoreOSVariant() {
-		out, err := runGetOut("rpm-ostree", "status")
+		out, err := dn.cmdRunner.RunGetOut("rpm-ostree", "status")
 		if err != nil {
 			klog.Fatalf("unable to get rpm-ostree status: %s", err)
 		}
@@ -1839,7 +1839,7 @@ func (dn *Daemon) LogSystemData() {
 		logProvisioningInformation()
 	}
 
-	boots, err := runGetOut("journalctl", "--list-boots")
+	boots, err := dn.cmdRunner.RunGetOut("journalctl", "--list-boots")
 	if err != nil {
 		klog.Errorf("Listing boots: %v", err)
 	}
@@ -1852,7 +1852,7 @@ func (dn *Daemon) LogSystemData() {
 	// to also watch dynamically of course.
 	//
 	// also xref https://github.com/coreos/console-login-helper-messages/blob/e8a849f4c23910e7c556c10719911cc59873fc23/usr/share/console-login-helper-messages/profile.sh
-	failedServices, err := runGetOut("systemctl", "list-units", "--state=failed", "--no-legend")
+	failedServices, err := dn.cmdRunner.RunGetOut("systemctl", "list-units", "--state=failed", "--no-legend")
 	switch {
 	case err != nil:
 		klog.Errorf("Listing failed systemd services: %v", err)
@@ -2690,7 +2690,7 @@ func (dn *Daemon) getMachineConfigFromClusterIfNotSet(mc *mcfgv1.MachineConfig, 
 // validateKernelArguments checks that the current boot has all arguments specified
 // in the target machineconfig.
 func (dn *CoreOSDaemon) validateKernelArguments(currentConfig *mcfgv1.MachineConfig) error {
-	rpmostreeKargsBytes, err := runGetOut("rpm-ostree", "kargs")
+	rpmostreeKargsBytes, err := dn.cmdRunner.RunGetOut("rpm-ostree", "kargs")
 	if err != nil {
 		return err
 	}

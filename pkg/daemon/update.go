@@ -389,8 +389,8 @@ func setRunningKargsWithCmdline(config *mcfgv1.MachineConfig, requestedKargs []s
 	return nil
 }
 
-func setRunningKargs(config *mcfgv1.MachineConfig, requestedKargs []string) error {
-	rpmostreeKargsBytes, err := runGetOut("rpm-ostree", "kargs")
+func (dn *Daemon) setRunningKargs(config *mcfgv1.MachineConfig, requestedKargs []string) error {
+	rpmostreeKargsBytes, err := dn.cmdRunner.RunGetOut("rpm-ostree", "kargs")
 	if err != nil {
 		return err
 	}
@@ -469,14 +469,15 @@ func pullExtensionsImage(podmanInterface PodmanInterface, imgURL string) error {
 	return err
 }
 
-func podmanCopy(imgURL, osImageContentDir string) (err error) {
+func podmanCopy(podmanInterface PodmanInterface, imgURL, osImageContentDir string) (err error) {
 	// make sure that osImageContentDir doesn't exist
 	os.RemoveAll(osImageContentDir)
 
 	// create a container
 	var cidBuf []byte
 	containerName := pivottypes.PivotNamePrefix + string(uuid.NewUUID())
-	cidBuf, err = runGetOut("podman", "create", "--net=none", "--annotation=org.openshift.machineconfigoperator.pivot=true", "--name", containerName, imgURL)
+	additionalArgs := []string{"--net=none", "--annotation=org.openshift.machineconfigoperator.pivot=true"}
+	cidBuf, err = podmanInterface.CreatePodmanContainer(additionalArgs, containerName, imgURL)
 	if err != nil {
 		return
 	}
@@ -517,7 +518,7 @@ func (dn *CoreOSDaemon) ExtractExtensionsImage(imgURL string) (osExtensionsImage
 		return osExtensionsImageContentDir, fmt.Errorf("error pulling extensions image %s: %w", imgURL, err)
 	}
 	// Extract the image using `podman cp`
-	return osExtensionsImageContentDir, podmanCopy(imgURL, osExtensionsImageContentDir)
+	return osExtensionsImageContentDir, podmanCopy(dn.podmanInterface, imgURL, osExtensionsImageContentDir)
 }
 
 // Remove pending deployment on OSTree based system

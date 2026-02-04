@@ -219,3 +219,85 @@ func TestGetPodmanInfo_InvalidJSON(t *testing.T) {
 	assert.Nil(t, info)
 	assert.Contains(t, err.Error(), "failed to decode podman system info output")
 }
+
+// Assisted by: Cursor
+func TestCreatePodmanContainer_Success(t *testing.T) {
+	containerName := "test-container"
+	imgURL := "quay.io/openshift/test:latest"
+	additionalArgs := []string{"--net=none", "--annotation=org.openshift.machineconfigoperator.pivot=true"}
+	expectedOutput := []byte("container-id-12345")
+
+	mock := &MockCommandRunner{
+		outputs: map[string][]byte{
+			"podman create --net=none --annotation=org.openshift.machineconfigoperator.pivot=true --name test-container quay.io/openshift/test:latest": expectedOutput,
+		},
+		errors: map[string]error{},
+	}
+
+	podman := NewPodmanExec(mock)
+	output, err := podman.CreatePodmanContainer(additionalArgs, containerName, imgURL)
+
+	assert.Nil(t, err)
+	assert.Equal(t, expectedOutput, output)
+}
+
+// Assisted by: Cursor
+func TestCreatePodmanContainer_NoAdditionalArgs(t *testing.T) {
+	containerName := "test-container"
+	imgURL := "quay.io/openshift/test:latest"
+	expectedOutput := []byte("container-id-67890")
+
+	mock := &MockCommandRunner{
+		outputs: map[string][]byte{
+			"podman create --name test-container quay.io/openshift/test:latest": expectedOutput,
+		},
+		errors: map[string]error{},
+	}
+
+	podman := NewPodmanExec(mock)
+	output, err := podman.CreatePodmanContainer(nil, containerName, imgURL)
+
+	assert.Nil(t, err)
+	assert.Equal(t, expectedOutput, output)
+}
+
+// Assisted by: Cursor
+func TestCreatePodmanContainer_EmptyAdditionalArgs(t *testing.T) {
+	containerName := "test-container"
+	imgURL := "quay.io/openshift/test:latest"
+	expectedOutput := []byte("container-id-empty")
+
+	mock := &MockCommandRunner{
+		outputs: map[string][]byte{
+			"podman create --name test-container quay.io/openshift/test:latest": expectedOutput,
+		},
+		errors: map[string]error{},
+	}
+
+	podman := NewPodmanExec(mock)
+	output, err := podman.CreatePodmanContainer([]string{}, containerName, imgURL)
+
+	assert.Nil(t, err)
+	assert.Equal(t, expectedOutput, output)
+}
+
+// Assisted by: Cursor
+func TestCreatePodmanContainer_CommandError(t *testing.T) {
+	containerName := "test-container"
+	imgURL := "quay.io/openshift/test:latest"
+	additionalArgs := []string{"--net=none"}
+
+	mock := &MockCommandRunner{
+		outputs: map[string][]byte{},
+		errors: map[string]error{
+			"podman create --net=none --name test-container quay.io/openshift/test:latest": fmt.Errorf("podman create failed"),
+		},
+	}
+
+	podman := NewPodmanExec(mock)
+	output, err := podman.CreatePodmanContainer(additionalArgs, containerName, imgURL)
+
+	assert.Error(t, err)
+	assert.Nil(t, output)
+	assert.Contains(t, err.Error(), "podman create failed")
+}
