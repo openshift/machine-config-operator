@@ -68,6 +68,7 @@ const (
 	defaultContainerRuntimeCMName = "crio-default-container-runtime"
 	forceSyncOnUpgrade            = "force-sync-on-upgrade"
 	defaultUlimitsCMName          = "crio-default-ulimits"
+	shortNameModeCMName           = "crio-short-name-mode"
 )
 
 var (
@@ -692,6 +693,11 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		return fmt.Errorf("failed to create the crio-default-ulimits MC: %w", err)
 	}
 
+	// create the MC for the drop in short-name-mode crio.conf file
+	if err := ctrl.createShortNameModeMC(); err != nil {
+		return fmt.Errorf("failed to create the crio-short-name-mode MC: %w", err)
+	}
+
 	if key == forceSyncOnUpgrade {
 		return nil
 	}
@@ -1167,13 +1173,21 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 }
 
 func (ctrl *Controller) createDefaultUlimitsMC() error {
-	// Check if the crio-default-ulimits config map exists in the openshift-machine-config-operator namespace
-	defaultUlimitsCM, err := ctrl.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), defaultUlimitsCMName, metav1.GetOptions{})
+	return ctrl.createMCWithContent(defaultUlimitsCMName, createDefaultUlimitsFile())
+}
+
+func (ctrl *Controller) createShortNameModeMC() error {
+	return ctrl.createMCWithContent(shortNameModeCMName, createShortNameModeFile())
+}
+
+func (ctrl *Controller) createMCWithContent(cmName string, files []generatedConfigFile) error {
+	// Check if the config map exists in the openshift-machine-config-operator namespace
+	cm, err := ctrl.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), cmName, metav1.GetOptions{})
 	if err != nil && !errors.IsNotFound(err) {
-		return fmt.Errorf("error checking for %s config map: %w", defaultUlimitsCMName, err)
+		return fmt.Errorf("error checking for %s config map: %w", cmName, err)
 	}
-	// If the crio-default-ulimits config map exists, the MC was already created, so skip creating it again.
-	if defaultUlimitsCM != nil && !errors.IsNotFound(err) {
+	// If the config map exists, the MC was already created, so skip creating it again.
+	if cm != nil && !errors.IsNotFound(err) {
 		return nil
 	}
 
@@ -1205,12 +1219,12 @@ func (ctrl *Controller) createDefaultUlimitsMC() error {
 		if err != nil {
 			return fmt.Errorf("could not create crio-default-ulimits MachineConfig from new Ignition config: %w", err)
 		}
-		rawRuntimeIgnition, err := json.Marshal(createNewIgnition(createDefaultUlimitsFile()))
+		rawRuntimeIgnition, err := json.Marshal(createNewIgnition(files))
 		if err != nil {
-			return fmt.Errorf("error marshalling crio-default-ulimits config ignition: %w", err)
+			return fmt.Errorf("error marshalling %s config ignition: %w", cmName, err)
 		}
 		mc.Spec.Config.Raw = rawRuntimeIgnition
-		// Create the crio-default-ulimits MC
+		// Create the MC
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
 			_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
 			return err
@@ -1220,28 +1234,38 @@ func (ctrl *Controller) createDefaultUlimitsMC() error {
 		klog.Infof("Applied default runtime MC %v on MachineConfigPool %v", managedKey, pool.Name)
 	}
 
-	// Create the config map for crio-default-ulimits so we know that the crio-default-ulimits MC has been created
-	if defaultUlimitsCM == nil {
-		defaultUlimitsCM = &v1.ConfigMap{}
+	// Create the config map for we know that the MC has been created
+	if cm == nil {
+		cm = &v1.ConfigMap{}
 	}
 
-	defaultUlimitsCM.Name = defaultUlimitsCMName
-	defaultUlimitsCM.Namespace = ctrlcommon.MCONamespace
-	if _, err := ctrl.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Create(context.TODO(), defaultUlimitsCM, metav1.CreateOptions{}); err != nil {
-		return fmt.Errorf("error creating %s config map: %w", defaultUlimitsCMName, err)
+	cm.Name = cmName
+	cm.Namespace = ctrlcommon.MCONamespace
+	if _, err := ctrl.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Create(context.TODO(), cm, metav1.CreateOptions{}); err != nil {
+		return fmt.Errorf("error creating %s config map: %w", cmName, err)
 	}
 	return nil
 }
 
 // RunDefaultUlimitsBootstrap creates the crio-default-ulimits mc on bootstrap
 func RunDefaultUlimitsBootstrap(mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
+	return RunCRIOMCBootstrap(mcpPools, createDefaultUlimitsFile(), getManagedKeyDefaultUlimits)
+}
+
+// RunShortNameModeBootstrap creates the crio-short-name-mode mc on bootstrap
+func RunShortNameModeBootstrap(mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
+	return RunCRIOMCBootstrap(mcpPools, createShortNameModeFile(), getManagedKeyShortNameMode)
+}
+
+// RunCRIOMCBootstrap creates the crio-default-ulimits mc on bootstrap
+func RunCRIOMCBootstrap(mcpPools []*mcfgv1.MachineConfigPool, files []generatedConfigFile, keyGenerator func(pool *mcfgv1.MachineConfigPool) string) ([]*mcfgv1.MachineConfig, error) {
 	var res []*mcfgv1.MachineConfig
 	for _, pool := range mcpPools {
 		if pool.Name != ctrlcommon.MachineConfigPoolMaster && pool.Name != ctrlcommon.MachineConfigPoolWorker {
 			continue
 		}
-		defaultUlimitsIgn := createNewIgnition(createDefaultUlimitsFile())
-		mc, err := ctrlcommon.MachineConfigFromIgnConfig(pool.Name, getManagedKeyDefaultUlimits(pool), defaultUlimitsIgn)
+		defaultUlimitsIgn := createNewIgnition(files)
+		mc, err := ctrlcommon.MachineConfigFromIgnConfig(pool.Name, keyGenerator(pool), defaultUlimitsIgn)
 		if err != nil {
 			return nil, fmt.Errorf("could not create MachineConfig from new Ignition config: %w", err)
 		}

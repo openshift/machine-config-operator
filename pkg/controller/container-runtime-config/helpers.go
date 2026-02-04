@@ -137,6 +137,17 @@ type tomlConfigCRIODefaultUlimits struct {
 	} `toml:"crio"`
 }
 
+// tomlConfigCRIOShortNameMode is used for conversions when short-name-mode is changed
+// TOML-friendly (it has all of the explicit tables). It's just used for
+// conversions.
+type tomlConfigCRIOShortNameMode struct {
+	Crio struct {
+		Image struct {
+			ShortNameMode string `toml:"short_name_mode,omitempty"`
+		} `toml:"runtime"`
+	} `toml:"crio"`
+}
+
 type dockerConfig struct {
 	UseSigstoreAttachments bool `json:"use-sigstore-attachments,omitempty"`
 }
@@ -352,6 +363,10 @@ func getManagedKeyDefaultUlimits(pool *mcfgv1.MachineConfigPool) string {
 	return fmt.Sprintf("00-override-%s-generated-crio-default-ulimits", pool.Name)
 }
 
+func getManagedKeyShortNameMode(pool *mcfgv1.MachineConfigPool) string {
+	return fmt.Sprintf("00-override-%s-generated-crio-short-name-mode", pool.Name)
+}
+
 // Deprecated: use getManagedKeyReg
 func getManagedKeyRegDeprecated(pool *mcfgv1.MachineConfigPool) string {
 	return fmt.Sprintf("99-%s-%s-registries", pool.Name, pool.ObjectMeta.UID)
@@ -389,6 +404,17 @@ func createDefaultUlimitsFile() []generatedConfigFile {
 	generatedConfigFileList := make([]generatedConfigFile, 0)
 	tomlConf := tomlConfigCRIODefaultUlimits{}
 	tomlConf.Crio.Runtime.DefaultUlimits = []string{"nofile=1048576"}
+	generatedConfigFileList, err := addTOMLgeneratedConfigFile(generatedConfigFileList, CRIODropInFilePathDefaultUlimits, tomlConf)
+	if err != nil {
+		klog.V(2).Infoln(err, "error setting default-container-runtime to crio.conf.d: %v", err)
+	}
+	return generatedConfigFileList
+}
+
+func createShortNameModeFile() []generatedConfigFile {
+	generatedConfigFileList := make([]generatedConfigFile, 0)
+	tomlConf := tomlConfigCRIOShortNameMode{}
+	tomlConf.Crio.Image.ShortNameMode = "disabled"
 	generatedConfigFileList, err := addTOMLgeneratedConfigFile(generatedConfigFileList, CRIODropInFilePathDefaultUlimits, tomlConf)
 	if err != nil {
 		klog.V(2).Infoln(err, "error setting default-container-runtime to crio.conf.d: %v", err)

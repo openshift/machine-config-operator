@@ -464,6 +464,13 @@ func (f *fixture) expectCreateMachineConfigAction(config *mcfgv1.MachineConfig) 
 	f.actions = append(f.actions, core.NewRootCreateAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config))
 }
 
+func (f *fixture) expectGetAndCreateMachineConfigAction(config *mcfgv1.MachineConfig) {
+	f.actions = append(f.actions,
+		core.NewRootGetAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config.Name),
+		core.NewRootCreateAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config),
+	)
+}
+
 func (f *fixture) expectDeleteMachineConfigAction(config *mcfgv1.MachineConfig) {
 	f.actions = append(f.actions, core.NewRootDeleteAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config.Name))
 }
@@ -664,6 +671,8 @@ func TestContainerRuntimeConfigCreate(t *testing.T) {
 			mcs1 := helpers.NewMachineConfig(getManagedKeyCtrCfgDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
 			defaultUlimitsmcs1 := helpers.NewMachineConfig("00-override-master-generated-crio-default-ulimits", nil, "dummy://", []ign3types.File{{}})
 			defaultUlimitsmcs2 := helpers.NewMachineConfig("00-override-worker-generated-crio-default-ulimits", nil, "dummy://", []ign3types.File{{}})
+			shortNameModemcs1 := helpers.NewMachineConfig("00-override-master-generated-crio-short-name-mode", nil, "dummy://", []ign3types.File{{}})
+			shortNameModemcs2 := helpers.NewMachineConfig("00-override-worker-generated-crio-short-name-mode", nil, "dummy://", []ign3types.File{{}})
 			mcs2 := mcs1.DeepCopy()
 			mcs2.Name = ctrCfgKey
 			cm := newConfigMap(ctrlcommon.MCONamespace, defaultContainerRuntimeCMName)
@@ -676,10 +685,10 @@ func TestContainerRuntimeConfigCreate(t *testing.T) {
 			f.objects = append(f.objects, ctrcfg1)
 			f.k8sObjects = append(f.k8sObjects, cm, adminAckGateConfigMap)
 
-			f.expectGetMachineConfigAction(defaultUlimitsmcs1)
-			f.expectCreateMachineConfigAction(defaultUlimitsmcs1)
-			f.expectGetMachineConfigAction(defaultUlimitsmcs2)
-			f.expectCreateMachineConfigAction(defaultUlimitsmcs2)
+			f.expectGetAndCreateMachineConfigAction(defaultUlimitsmcs1)
+			f.expectGetAndCreateMachineConfigAction(defaultUlimitsmcs2)
+			f.expectGetAndCreateMachineConfigAction(shortNameModemcs1)
+			f.expectGetAndCreateMachineConfigAction(shortNameModemcs2)
 
 			f.expectGetMachineConfigAction(mcs2)
 			f.expectGetMachineConfigAction(mcs1)
@@ -715,6 +724,8 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			mcs := helpers.NewMachineConfig(getManagedKeyCtrCfgDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
 			defaultUlimitsmcs1 := helpers.NewMachineConfig("00-override-master-generated-crio-default-ulimits", nil, "dummy://", []ign3types.File{{}})
 			defaultUlimitsmcs2 := helpers.NewMachineConfig("00-override-worker-generated-crio-default-ulimits", nil, "dummy://", []ign3types.File{{}})
+			shortNameModemcs1 := helpers.NewMachineConfig("00-override-master-generated-crio-short-name-mode", nil, "dummy://", []ign3types.File{{}})
+			shortNameModemcs2 := helpers.NewMachineConfig("00-override-worker-generated-crio-short-name-mode", nil, "dummy://", []ign3types.File{{}})
 			mcsUpdate := mcs.DeepCopy()
 			mcsUpdate.Name = keyCtrCfg
 			cm := newConfigMap(ctrlcommon.MCONamespace, defaultContainerRuntimeCMName)
@@ -727,10 +738,10 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			f.objects = append(f.objects, ctrcfg1)
 			f.k8sObjects = append(f.k8sObjects, cm, adminAckGateConfigMap)
 
-			f.expectGetMachineConfigAction(defaultUlimitsmcs1)
-			f.expectCreateMachineConfigAction(defaultUlimitsmcs1)
-			f.expectGetMachineConfigAction(defaultUlimitsmcs2)
-			f.expectCreateMachineConfigAction(defaultUlimitsmcs2)
+			f.expectGetAndCreateMachineConfigAction(defaultUlimitsmcs1)
+			f.expectGetAndCreateMachineConfigAction(defaultUlimitsmcs2)
+			f.expectGetAndCreateMachineConfigAction(shortNameModemcs1)
+			f.expectGetAndCreateMachineConfigAction(shortNameModemcs2)
 
 			f.expectGetMachineConfigAction(mcsUpdate)
 			f.expectGetMachineConfigAction(mcs)
@@ -778,10 +789,10 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 				t.Errorf("syncHandler returned: %v", err)
 			}
 
-			f.expectGetMachineConfigAction(defaultUlimitsmcs1)
-			f.expectCreateMachineConfigAction(defaultUlimitsmcs1)
-			f.expectGetMachineConfigAction(defaultUlimitsmcs2)
-			f.expectCreateMachineConfigAction(defaultUlimitsmcs2)
+			f.expectGetAndCreateMachineConfigAction(defaultUlimitsmcs1)
+			f.expectGetAndCreateMachineConfigAction(defaultUlimitsmcs2)
+			f.expectGetAndCreateMachineConfigAction(shortNameModemcs1)
+			f.expectGetAndCreateMachineConfigAction(shortNameModemcs2)
 
 			f.expectGetMachineConfigAction(mcsUpdate)
 			f.expectGetMachineConfigAction(mcsUpdate)
@@ -824,6 +835,8 @@ func TestImageConfigCreate(t *testing.T) {
 			mcs2 := helpers.NewMachineConfig(keyReg2, map[string]string{"node-role": "worker"}, "dummy://", []ign3types.File{{}})
 			defaultUlimitsmcs1 := helpers.NewMachineConfig("00-override-master-generated-crio-default-ulimits", nil, "dummy://", []ign3types.File{{}})
 			defaultUlimitsmcs2 := helpers.NewMachineConfig("00-override-worker-generated-crio-default-ulimits", nil, "dummy://", []ign3types.File{{}})
+			shortNameModemcs1 := helpers.NewMachineConfig("00-override-master-generated-crio-short-name-mode", nil, "dummy://", []ign3types.File{{}})
+			shortNameModemcs2 := helpers.NewMachineConfig("00-override-worker-generated-crio-short-name-mode", nil, "dummy://", []ign3types.File{{}})
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
@@ -841,10 +854,10 @@ func TestImageConfigCreate(t *testing.T) {
 			f.expectGetMachineConfigAction(mcs2)
 			f.expectGetMachineConfigAction(mcs2)
 			f.expectCreateMachineConfigAction(mcs2)
-			f.expectGetMachineConfigAction(defaultUlimitsmcs1)
-			f.expectCreateMachineConfigAction(defaultUlimitsmcs1)
-			f.expectGetMachineConfigAction(defaultUlimitsmcs2)
-			f.expectCreateMachineConfigAction(defaultUlimitsmcs2)
+			f.expectGetAndCreateMachineConfigAction(defaultUlimitsmcs1)
+			f.expectGetAndCreateMachineConfigAction(defaultUlimitsmcs2)
+			f.expectGetAndCreateMachineConfigAction(shortNameModemcs1)
+			f.expectGetAndCreateMachineConfigAction(shortNameModemcs2)
 
 			f.run("cluster")
 
@@ -1821,6 +1834,8 @@ func TestAddAnnotationExistingContainerRuntimeConfig(t *testing.T) {
 			ctrcfgMC := helpers.NewMachineConfig(ctrMCKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
 			defaultUlimitsmcs1 := helpers.NewMachineConfig("00-override-master-generated-crio-default-ulimits", nil, "dummy://", []ign3types.File{{}})
 			defaultUlimitsmcs2 := helpers.NewMachineConfig("00-override-worker-generated-crio-default-ulimits", nil, "dummy://", []ign3types.File{{}})
+			shortNameModemcs1 := helpers.NewMachineConfig("00-override-master-generated-crio-short-name-mode", nil, "dummy://", []ign3types.File{{}})
+			shortNameModemcs2 := helpers.NewMachineConfig("00-override-worker-generated-crio-short-name-mode", nil, "dummy://", []ign3types.File{{}})
 			cm := newConfigMap(ctrlcommon.MCONamespace, defaultContainerRuntimeCMName)
 			adminAckGateConfigMap := newConfigMap(ctrlcommon.OpenshiftConfigManagedNamespace, AdminAckGatesConfigMapName)
 
@@ -1839,10 +1854,10 @@ func TestAddAnnotationExistingContainerRuntimeConfig(t *testing.T) {
 			require.Equal(t, "1", val)
 
 			// no new machine config will be created
-			f.expectGetMachineConfigAction(defaultUlimitsmcs1)
-			f.expectCreateMachineConfigAction(defaultUlimitsmcs1)
-			f.expectGetMachineConfigAction(defaultUlimitsmcs2)
-			f.expectCreateMachineConfigAction(defaultUlimitsmcs2)
+			f.expectGetAndCreateMachineConfigAction(defaultUlimitsmcs1)
+			f.expectGetAndCreateMachineConfigAction(defaultUlimitsmcs2)
+			f.expectGetAndCreateMachineConfigAction(shortNameModemcs1)
+			f.expectGetAndCreateMachineConfigAction(shortNameModemcs2)
 
 			f.expectGetMachineConfigAction(ctrcfgMC)
 			f.expectGetMachineConfigAction(ctrcfgMC)
@@ -1977,6 +1992,8 @@ func TestClusterImagePolicyCreate(t *testing.T) {
 			mcs2 := helpers.NewMachineConfig(keyReg2, map[string]string{"node-role": "worker"}, "dummy://", []ign3types.File{{}})
 			defaultUlimitsmcs1 := helpers.NewMachineConfig("00-override-master-generated-crio-default-ulimits", nil, "dummy://", []ign3types.File{{}})
 			defaultUlimitsmcs2 := helpers.NewMachineConfig("00-override-worker-generated-crio-default-ulimits", nil, "dummy://", []ign3types.File{{}})
+			shortNameModemcs1 := helpers.NewMachineConfig("00-override-master-generated-crio-short-name-mode", nil, "dummy://", []ign3types.File{{}})
+			shortNameModemcs2 := helpers.NewMachineConfig("00-override-worker-generated-crio-short-name-mode", nil, "dummy://", []ign3types.File{{}})
 
 			clusterimgPolicy := newClusterImagePolicyWithPublicKey("image-policy", []string{"example.com"}, []byte("foo bar"))
 			f.ccLister = append(f.ccLister, cc)
@@ -1998,10 +2015,10 @@ func TestClusterImagePolicyCreate(t *testing.T) {
 			f.expectGetMachineConfigAction(mcs2)
 
 			f.expectCreateMachineConfigAction(mcs2)
-			f.expectGetMachineConfigAction(defaultUlimitsmcs1)
-			f.expectCreateMachineConfigAction(defaultUlimitsmcs1)
-			f.expectGetMachineConfigAction(defaultUlimitsmcs2)
-			f.expectCreateMachineConfigAction(defaultUlimitsmcs2)
+			f.expectGetAndCreateMachineConfigAction(defaultUlimitsmcs1)
+			f.expectGetAndCreateMachineConfigAction(defaultUlimitsmcs2)
+			f.expectGetAndCreateMachineConfigAction(shortNameModemcs1)
+			f.expectGetAndCreateMachineConfigAction(shortNameModemcs2)
 
 			f.run("")
 
@@ -2037,6 +2054,8 @@ func TestSigstoreRegistriesConfigIDMSandCIPCreate(t *testing.T) {
 			mcs2 := helpers.NewMachineConfig(keyReg2, map[string]string{"node-role": "worker"}, "dummy://", []ign3types.File{{}})
 			defaultUlimitsmcs1 := helpers.NewMachineConfig("00-override-master-generated-crio-default-ulimits", nil, "dummy://", []ign3types.File{{}})
 			defaultUlimitsmcs2 := helpers.NewMachineConfig("00-override-worker-generated-crio-default-ulimits", nil, "dummy://", []ign3types.File{{}})
+			shortNameModemcs1 := helpers.NewMachineConfig("00-override-master-generated-crio-short-name-mode", nil, "dummy://", []ign3types.File{{}})
+			shortNameModemcs2 := helpers.NewMachineConfig("00-override-worker-generated-crio-short-name-mode", nil, "dummy://", []ign3types.File{{}})
 
 			// idms source is the same as cip scope
 			idms := newIDMS("built-in", []apicfgv1.ImageDigestMirrors{
@@ -2063,10 +2082,10 @@ func TestSigstoreRegistriesConfigIDMSandCIPCreate(t *testing.T) {
 			f.expectGetMachineConfigAction(mcs2)
 
 			f.expectCreateMachineConfigAction(mcs2)
-			f.expectGetMachineConfigAction(defaultUlimitsmcs1)
-			f.expectCreateMachineConfigAction(defaultUlimitsmcs1)
-			f.expectGetMachineConfigAction(defaultUlimitsmcs2)
-			f.expectCreateMachineConfigAction(defaultUlimitsmcs2)
+			f.expectGetAndCreateMachineConfigAction(defaultUlimitsmcs1)
+			f.expectGetAndCreateMachineConfigAction(defaultUlimitsmcs2)
+			f.expectGetAndCreateMachineConfigAction(shortNameModemcs1)
+			f.expectGetAndCreateMachineConfigAction(shortNameModemcs2)
 
 			f.run("")
 
@@ -2104,6 +2123,8 @@ func TestImagePolicyCreate(t *testing.T) {
 			mcs2 := helpers.NewMachineConfig(keyReg2, map[string]string{"node-role": "worker"}, "dummy://", []ign3types.File{{}})
 			defaultUlimitsmcs1 := helpers.NewMachineConfig("00-override-master-generated-crio-default-ulimits", nil, "dummy://", []ign3types.File{{}})
 			defaultUlimitsmcs2 := helpers.NewMachineConfig("00-override-worker-generated-crio-default-ulimits", nil, "dummy://", []ign3types.File{{}})
+			shortNameModemcs1 := helpers.NewMachineConfig("00-override-master-generated-crio-short-name-mode", nil, "dummy://", []ign3types.File{{}})
+			shortNameModemcs2 := helpers.NewMachineConfig("00-override-worker-generated-crio-short-name-mode", nil, "dummy://", []ign3types.File{{}})
 
 			imgPolicy := newImagePolicyWithPublicKey("image-policy", "testnamespace", []string{"example.com"}, []byte("namespace foo bar"))
 			f.ccLister = append(f.ccLister, cc)
@@ -2125,10 +2146,10 @@ func TestImagePolicyCreate(t *testing.T) {
 			f.expectGetMachineConfigAction(mcs2)
 
 			f.expectCreateMachineConfigAction(mcs2)
-			f.expectGetMachineConfigAction(defaultUlimitsmcs1)
-			f.expectCreateMachineConfigAction(defaultUlimitsmcs1)
-			f.expectGetMachineConfigAction(defaultUlimitsmcs2)
-			f.expectCreateMachineConfigAction(defaultUlimitsmcs2)
+			f.expectGetAndCreateMachineConfigAction(defaultUlimitsmcs1)
+			f.expectGetAndCreateMachineConfigAction(defaultUlimitsmcs2)
+			f.expectGetAndCreateMachineConfigAction(shortNameModemcs1)
+			f.expectGetAndCreateMachineConfigAction(shortNameModemcs2)
 
 			f.run("")
 

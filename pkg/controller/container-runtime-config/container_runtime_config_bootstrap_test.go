@@ -9,6 +9,7 @@ import (
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
@@ -22,14 +23,14 @@ func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
 				helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
 			}
 			// ctrcfg for bootstrap mode
-			cm := newConfigMap(ctrlcommon.MCONamespace, "crio-default-ulimits")
+			cms := []runtime.Object{newConfigMap(ctrlcommon.MCONamespace, "crio-default-ulimits"), newConfigMap(ctrlcommon.MCONamespace, "crio-short-name-mode")}
 			ctrcfg := newContainerRuntimeConfig("log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, pools[0])
 			f.mccrLister = append(f.mccrLister, ctrcfg)
 			f.objects = append(f.objects, ctrcfg)
-			f.k8sObjects = append(f.k8sObjects, cm)
+			f.k8sObjects = append(f.k8sObjects, cms...)
 
 			mcs, err := RunContainerRuntimeBootstrap("../../../templates", []*mcfgv1.ContainerRuntimeConfig{ctrcfg}, cc, pools)
 			require.NoError(t, err)
