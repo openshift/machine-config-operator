@@ -35,10 +35,12 @@ contents:
           enabled: {{`"{{ capture.base-iface.interfaces.0.ipv4.enabled }}"`}}
           dhcp: {{`"{{ capture.base-iface.interfaces.0.ipv4.dhcp }}"`}}
           address: {{`"{{ capture.base-iface.interfaces.0.ipv4.address }}"`}}
+          auto-route-metric: 48
         ipv6:
           enabled: {{`"{{ capture.base-iface.interfaces.0.ipv6.enabled }}"`}}
           dhcp: {{`"{{ capture.base-iface.interfaces.0.ipv6.dhcp }}"`}}
           # Doesn't work right now, can only do ipv4 static
           #address: {{`"{{ capture.base-iface.interfaces.0.ipv6.address }}"`}}
+          auto-route-metric: 48
       routes:
         config: {{`"{{ capture.bridge-routes.routes.running }}"`}}
