@@ -86,6 +86,17 @@ func main() {
 		Description:      "A long-running, resource-intensive test suite executed on a scheduled basis to provide deep validation beyond the standard executions",
 	})
 
+	// This suite includes tests for internalreleaseimage resource for NoRegistryClusterInstall feature for agent-based installer
+	ext.AddGlobalSuite(e.Suite{
+		Name: "openshift/abi/noregistry",
+		Qualifiers: []string{
+			`name.contains("InternalReleaseImage")`,
+		},
+		ClusterStability: e.ClusterStabilityDisruptive,
+		TestTimeout:      &defaultTimeout,
+		Description:      `InternalReleaseImage tests verify NoRegistryCluster installation feature`,
+	})
+
 	// If using Ginkgo, build test specs automatically
 	specs, err := g.BuildExtensionTestSpecsFromOpenShiftGinkgoSuite()
 	if err != nil {
