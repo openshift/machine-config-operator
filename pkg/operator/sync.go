@@ -30,6 +30,7 @@ import (
 	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/jsonmergepatch"
 	"k8s.io/apimachinery/pkg/util/sets"
+	k8sversion "k8s.io/apimachinery/pkg/util/version"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/retry"
@@ -2344,6 +2345,9 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 		defaultOptInEvent = optr.syncManagedBootImagesStatus(mcop, newMachineConfigurationStatus, isDefaultOnPlatform, supportCPMSBootImageUpdates)
 	}
 
+	// Update skew enforcement status if needed
+	optr.syncBootImageSkewEnforcementStatus(mcop, newMachineConfigurationStatus, supportsBootImageUpdates)
+
 	newMachineConfigurationStatus.ObservedGeneration = mcop.GetGeneration()
 	// Check if any changes are required in the Status before making the API call.
 	if !reflect.DeepEqual(mcop.Status, *newMachineConfigurationStatus) {
@@ -2504,4 +2508,76 @@ func (optr *Operator) syncPreBuiltImageMachineConfigs() error {
 	}
 
 	return nil
+}
+
+// syncBootImageSkewEnforcementStatus determines the appropriate BootImageSkewEnforcementStatus based on
+// the MachineConfiguration spec, platform defaults, and cluster version information.
+func (optr *Operator) syncBootImageSkewEnforcementStatus(mcop *opv1.MachineConfiguration, newMachineConfigurationStatus *opv1.MachineConfigurationStatus, supportsBootImageUpdates bool) {
+	// React to any changes in boot image skew enforcement configuration
+	if !optr.fgHandler.Enabled(features.FeatureGateBootImageSkewEnforcement) {
+		return
+	}
+
+	// First, estimate an OCPVersion from ClusterVersion.
+	ocpVersionAtInstall := optr.getOCPVersionFromClusterVersion()
+	// If BootImageSkewEnforcement spec is defined, reflect that to status
+	//nolint:gocritic
+	if mcop.Spec.BootImageSkewEnforcement != (opv1.BootImageSkewEnforcementConfig{}) {
+		if mcop.Spec.BootImageSkewEnforcement.Mode == opv1.BootImageSkewEnforcementConfigModeManual {
+			newMachineConfigurationStatus.BootImageSkewEnforcementStatus = opv1.BootImageSkewEnforcementStatus{
+				Mode:   opv1.BootImageSkewEnforcementModeStatusManual,
+				Manual: mcop.Spec.BootImageSkewEnforcement.Manual,
+			}
+		} else { // only other possible opinion is "None"
+			newMachineConfigurationStatus.BootImageSkewEnforcementStatus = apihelpers.GetSkewEnforcementStatusNone()
+		}
+	} else if supportsBootImageUpdates {
+		// If an "All" option is specified and BootImageSkewEnforcementStatus is empty or not set to Automatic => set Mode to Automatic.
+		if apihelpers.HasMAPIMachineSetManagerWithMode(newMachineConfigurationStatus.ManagedBootImagesStatus.MachineManagers, opv1.MachineSets, opv1.All) {
+			if (newMachineConfigurationStatus.BootImageSkewEnforcementStatus.Mode != opv1.BootImageSkewEnforcementModeStatusAutomatic ||
+				mcop.Status.BootImageSkewEnforcementStatus == opv1.BootImageSkewEnforcementStatus{}) {
+				newMachineConfigurationStatus.BootImageSkewEnforcementStatus = apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion(ocpVersionAtInstall)
+			}
+		} else { // For any other opinion i.e. admin has overridden boot image opinion to Partial/None => set Mode to Manual.
+			newMachineConfigurationStatus.BootImageSkewEnforcementStatus = apihelpers.GetSkewEnforcementStatusManualWithOCPVersion(ocpVersionAtInstall)
+		}
+	} else { // For platforms that do not support automated boot image updates => set Mode to Manual.
+		newMachineConfigurationStatus.BootImageSkewEnforcementStatus = apihelpers.GetSkewEnforcementStatusManualWithOCPVersion(ocpVersionAtInstall)
+	}
+}
+
+// getOCPVersionFromClusterVersion extracts the OCP version from ClusterVersion history.
+// It finds the last completed update in history (install version) and parses it to a clean version string.
+// Returns an empty string if ClusterVersion cannot be retrieved or parsed.
+func (optr *Operator) getOCPVersionFromClusterVersion() string {
+	clusterVersion, err := optr.clusterVersionLister.Get("version")
+	if err != nil {
+		klog.Warningf("Failed to get ClusterVersion: %v, skipping boot image skew enforcement configuration", err)
+		return ""
+	}
+	if len(clusterVersion.Status.History) == 0 {
+		klog.Warningf("ClusterVersion has no history, skipping boot image skew enforcement configuration")
+		return ""
+	}
+
+	// History is ordered by recency (newest first), so find the last completed entry (install version)
+	var installVersion string
+	for i := len(clusterVersion.Status.History) - 1; i >= 0; i-- {
+		if clusterVersion.Status.History[i].State == configv1.CompletedUpdate {
+			installVersion = clusterVersion.Status.History[i].Version
+			break
+		}
+	}
+	// ClusterVersion has no completed updates in history(install likely on-going), default to last value
+	if installVersion == "" {
+		klog.Warningf("ClusterVersion has no completed updates in history(install likely on-going), default to last value")
+		installVersion = clusterVersion.Status.History[len(clusterVersion.Status.History)-1].Version
+	}
+	// Scrape away CI/nightly tags if needed
+	parsedVersion, err := k8sversion.ParseGeneric(installVersion)
+	if err != nil {
+		klog.Warningf("Failed to parse install version %q: %v, use a placeholder for now", installVersion, err)
+		return "0.0.0"
+	}
+	return fmt.Sprintf("%d.%d.%d", parsedVersion.Major(), parsedVersion.Minor(), parsedVersion.Patch())
 }

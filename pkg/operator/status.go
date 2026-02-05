@@ -12,6 +12,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	features "github.com/openshift/api/features"
+	opv1 "github.com/openshift/api/operator/v1"
 	cov1helpers "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -19,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	k8sversion "k8s.io/apimachinery/pkg/util/version"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
 
@@ -267,6 +269,18 @@ func (optr *Operator) syncUpgradeableStatus(co *configv1.ClusterOperator) error 
 		Type:   configv1.OperatorUpgradeable,
 		Status: configv1.ConditionTrue,
 		Reason: asExpectedReason,
+	}
+
+	// Check boot image skew upgradeable guards
+	skewErrorExists, skewErrorMessage, err := optr.checkBootImageSkewUpgradeableGuard()
+	if err != nil {
+		return err
+	}
+
+	if skewErrorExists {
+		coStatusCondition.Status = configv1.ConditionFalse
+		coStatusCondition.Reason = "ClusterBootImageSkewError"
+		coStatusCondition.Message = skewErrorMessage
 	}
 
 	var degraded, interrupted bool
@@ -599,4 +613,207 @@ func machineConfigPoolStatus(fgHandler ctrlcommon.FeatureGatesHandler, pool *mcf
 
 func taskFailed(task string) string {
 	return task + "Failed"
+}
+
+// checkBootImageControllerReady checks if the boot image controller is ready to have its status used for skew enforcement.
+// Returns (statusReady, controllerError).
+// If statusReady is false and controllerError is not nil, the controller is degraded and upgrades should be blocked.
+// If statusReady is false and controllerError is nil, the controller is still initializing/progressing.
+func checkBootImageControllerReady(mcop *opv1.MachineConfiguration) (bool, error) {
+	// If boot image controller is degraded, return Upgradable=false and an error
+	if meta.IsStatusConditionTrue(mcop.Status.Conditions, opv1.MachineConfigurationBootImageUpdateDegraded) {
+		degradedCondition := meta.FindStatusCondition(mcop.Status.Conditions, opv1.MachineConfigurationBootImageUpdateDegraded)
+		return false, fmt.Errorf("Boot image controller is degraded: %s", degradedCondition.Message)
+	}
+
+	// If boot image controller is still progressing or hasn't completed its first pass, return true for statusReady
+	progressingCondition := meta.FindStatusCondition(mcop.Status.Conditions, opv1.MachineConfigurationBootImageUpdateProgressing)
+	if progressingCondition == nil {
+		klog.V(4).Infof("Boot image controller hasn't completed its first pass, skipping boot image skew enforcement check")
+		return false, nil
+	}
+	if progressingCondition.Status == metav1.ConditionTrue {
+		klog.V(4).Infof("Boot image controller is still progressing, skipping boot image skew enforcement check")
+		return false, nil
+	}
+
+	return true, nil
+}
+
+// checkBootImageSkewUpgradeableGuard checks if the boot image version is within acceptable limits.
+// It returns an error if there is no skew enforcement opinion specified. If one is specified,
+// it checks if boot image skew is within the expected limit.
+func (optr *Operator) checkBootImageSkewUpgradeableGuard() (bool, string, error) {
+	// Check if feature gate is enabled
+	if !optr.fgHandler.Enabled(features.FeatureGateBootImageSkewEnforcement) {
+		return false, "", nil
+	}
+
+	// Fetch MachineConfiguration
+	mcop, err := optr.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			klog.V(4).Infof("MachineConfiguration not found, skipping boot image skew enforcement")
+			return false, "", nil
+		}
+		return false, "", fmt.Errorf("failed to get MachineConfiguration: %w", err)
+	}
+
+	// Perform boot image skew enforcement based on mode
+	skewLimitExceeded := false
+	skewLimitExceededMessage := ""
+
+	switch mcop.Status.BootImageSkewEnforcementStatus.Mode {
+	case opv1.BootImageSkewEnforcementModeStatusAutomatic:
+		// Check if boot image controller is ready before using its status
+		statusReady, controllerError := checkBootImageControllerReady(mcop)
+		if !statusReady {
+			if controllerError != nil {
+				return true, fmt.Sprintf("Upgrades have been disabled due to boot image update failures: %s", controllerError.Error()), nil
+			}
+			return false, "", nil
+		}
+
+		skewLimitExceeded, skewLimitExceededMessage = checkBootImageSkew(
+			mcop.Status.BootImageSkewEnforcementStatus.Automatic.OCPVersion,
+			mcop.Status.BootImageSkewEnforcementStatus.Automatic.RHCOSVersion,
+		)
+	case opv1.BootImageSkewEnforcementModeStatusManual:
+		skewLimitExceeded, skewLimitExceededMessage = checkBootImageSkew(
+			mcop.Status.BootImageSkewEnforcementStatus.Manual.OCPVersion,
+			mcop.Status.BootImageSkewEnforcementStatus.Manual.RHCOSVersion,
+		)
+	case opv1.BootImageSkewEnforcementModeStatusNone:
+		// TODO: Set a low level prom alert to set scaling risk
+		// Tracked in https://issues.redhat.com/browse/MCO-2035
+		klog.V(4).Infof("evaluating boot image skew enforcement: mode set to None")
+		return false, "", nil
+	default:
+		// Sanity check, this should only be possible if status hasn't been populated yet.
+		return false, "", nil
+	}
+
+	if skewLimitExceeded {
+		// TODO: Update error message; tracked in https://issues.redhat.com/browse/MCO-2034
+		return true, fmt.Sprintf("Upgrades have been disabled because %s. To enable upgrades, please update your boot images following the documentation at [TODO: insert link], or disable boot image skew enforcement at [TODO: insert link]", skewLimitExceededMessage), nil
+	}
+
+	return false, "", nil
+}
+
+// checkBootImageSkew determines if the cluster's boot images are within acceptable version skew.
+// It compares the oldest boot image version (currentOCPVersion, currentRHCOSVersion) against the minimum
+// supported version.
+// Returns true if the boot image version is older than the minimum, along with an error message.
+func checkBootImageSkew(currentOCPVersion, currentRHCOSVersion string) (bool, string) {
+
+	if currentOCPVersion != "" {
+		return checkOCPVersionSkew(currentOCPVersion)
+	}
+
+	if currentRHCOSVersion != "" {
+		return checkRHCOSVersionSkew(currentRHCOSVersion)
+	}
+
+	// This isn't possible due to API validations; more of a sanity check for safety
+	klog.Warningf("no boot image versions provided, skipping skew check")
+	return false, ""
+}
+
+// checkOCPVersionSkew compares a version string against the minimum supported version.
+// Returns true if the version is below the minimum, along with an error message.
+func checkOCPVersionSkew(version string) (bool, string) {
+	// Parse the boot image version
+	bootImageVersion, err := k8sversion.ParseGeneric(version)
+	if err != nil {
+		klog.Warningf("Failed to parse boot image version %q: %v", version, err)
+		return false, ""
+	}
+
+	// Parse the minimum supported version
+	minSupportedVersion, err := k8sversion.ParseGeneric(ctrlcommon.OCPVersionBootImageSkewLimit)
+	if err != nil {
+		klog.Errorf("Failed to parse OCPVersionBootImageSkewLimit constant %q: %v", ctrlcommon.OCPVersionBootImageSkewLimit, err)
+		return false, ""
+	}
+
+	// Check if boot image version is less than the minimum supported version
+	if bootImageVersion.LessThan(minSupportedVersion) {
+		return true, fmt.Sprintf("the cluster is using OCP boot image version %s, which is below the minimum required version %s",
+			version, ctrlcommon.OCPVersionBootImageSkewLimit)
+	}
+
+	klog.V(4).Infof("Boot image version %s meets minimum version requirement (>= %s)",
+		version, ctrlcommon.OCPVersionBootImageSkewLimit)
+	return false, ""
+}
+
+// checkRHCOSVersionSkew compares an RHCOS version string against the minimum supported version.
+// Returns true if the version is below the minimum, along with an error message.
+//
+// Note: RHCOS versions can either have formatting of [major].[minor].[datestamp(YYYYMMDD)]-[buildnumber] (example:9.6.20251023-0) or the legacy
+// format of [major].[minor].[timestamp(YYYYMMDDHHmm)]-[buildnumber] (example: 48.84.202208021106-0). In the modern(or RHEL) formatting, we just
+// need to compare [major.minor] against the RHCOS skew limit. In the legacy format, the minor version includes the whole RHEL major/minor
+// and only that bit should be used to compare against the RHCOS skew limit.
+func checkRHCOSVersionSkew(version string) (bool, string) {
+	// Split version to extract components
+	parts := strings.Split(version, ".")
+	if len(parts) < 3 {
+		klog.Warningf("Failed to parse RHCOS version %q: expected at least 3 parts", version)
+		return false, ""
+	}
+
+	major := parts[0]
+	minor := parts[1]
+
+	// Extract timestamp (remove build number suffix if present)
+	timestampPart := parts[2]
+	if idx := strings.Index(timestampPart, "-"); idx != -1 {
+		timestampPart = timestampPart[:idx]
+	}
+
+	var versionToCompare string
+
+	// Determine format based on timestamp length
+	switch len(timestampPart) {
+	case 8:
+		// Modern format (YYYYMMDD): compare major.minor directly
+		versionToCompare = fmt.Sprintf("%s.%s", major, minor)
+	case 12:
+		// Legacy format (YYYYMMDDHHmm): minor contains RHEL version (e.g., 84 = RHEL 8.4, 810 = RHEL 8.10)
+		// First digit is RHEL major, remaining digits are RHEL minor.
+		if len(minor) >= 2 {
+			versionToCompare = fmt.Sprintf("%s.%s", minor[:1], minor[1:])
+		} else {
+			klog.Warningf("Failed to parse RHCOS legacy version %q: minor version too short", version)
+			return false, ""
+		}
+	default:
+		klog.Warningf("Failed to parse RHCOS version %q: unexpected timestamp format (length %d)", version, len(timestampPart))
+		return false, ""
+	}
+
+	// Parse the version to compare
+	bootImageVersion, err := k8sversion.ParseGeneric(versionToCompare)
+	if err != nil {
+		klog.Warningf("Failed to parse RHCOS version %q (extracted %q): %v", version, versionToCompare, err)
+		return false, ""
+	}
+
+	// Parse the minimum supported version
+	minSupportedVersion, err := k8sversion.ParseGeneric(ctrlcommon.RHCOSVersionBootImageSkewLimit)
+	if err != nil {
+		klog.Errorf("Failed to parse RHCOSVersionBootImageSkewLimit constant %q: %v", ctrlcommon.RHCOSVersionBootImageSkewLimit, err)
+		return false, ""
+	}
+
+	// Check if boot image version is less than the minimum supported version
+	if bootImageVersion.LessThan(minSupportedVersion) {
+		return true, fmt.Sprintf("the cluster is using RHCOS boot image version %s(RHEL version: %s), which is below the minimum required RHEL version %s",
+			version, versionToCompare, ctrlcommon.RHCOSVersionBootImageSkewLimit)
+	}
+
+	klog.V(4).Infof("RHCOS boot image version %s meets minimum version requirement (>= %s)",
+		version, ctrlcommon.RHCOSVersionBootImageSkewLimit)
+	return false, ""
 }

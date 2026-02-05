@@ -146,6 +146,7 @@ type Operator struct {
 	idmsListerSynced                 cache.InformerSynced
 	itmsListerSynced                 cache.InformerSynced
 	icspListerSynced                 cache.InformerSynced
+	clusterVersionListerSynced       cache.InformerSynced
 	mcoSAListerSynced                cache.InformerSynced
 	mcoSecretListerSynced            cache.InformerSynced
 	ocCmListerSynced                 cache.InformerSynced
@@ -278,6 +279,7 @@ func New(
 		dnsInformer.Informer(),
 		maoSecretInformer.Informer(),
 		imgInformer.Informer(),
+		clusterVersionInformer.Informer(),
 		mcoSAInformer.Informer(),
 		mcoSecretInformer.Informer(),
 		ocSecretInformer.Informer(),
@@ -306,6 +308,7 @@ func New(
 	optr.icspLister = icspInformer.Lister()
 	optr.icspListerSynced = icspInformer.Informer().HasSynced
 
+	optr.clusterVersionLister = clusterVersionInformer.Lister()
 	optr.clusterCmLister = clusterCmInfomer.Lister()
 	optr.clusterCmListerSynced = clusterCmInfomer.Informer().HasSynced
 	optr.mcpLister = mcpInformer.Lister()
@@ -323,6 +326,8 @@ func New(
 	optr.nodeClusterLister = nodeClusterInformer.Lister()
 	optr.nodeClusterListerSynced = nodeClusterInformer.Informer().HasSynced
 
+	optr.imgListerSynced = imgInformer.Informer().HasSynced
+	optr.clusterVersionListerSynced = clusterVersionInformer.Informer().HasSynced
 	optr.maoSecretInformerSynced = maoSecretInformer.Informer().HasSynced
 	optr.serviceAccountInformerSynced = serviceAccountInfomer.Informer().HasSynced
 	optr.clusterRoleInformerSynced = clusterRoleInformer.Informer().HasSynced
@@ -417,6 +422,7 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.idmsListerSynced,
 		optr.itmsListerSynced,
 		optr.icspListerSynced,
+		optr.clusterVersionListerSynced,
 		optr.mcoSAListerSynced,
 		optr.mcoSecretListerSynced,
 		optr.ocCmListerSynced,
