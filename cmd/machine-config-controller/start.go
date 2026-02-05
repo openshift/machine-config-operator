@@ -21,6 +21,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/template"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/klog/v2"
@@ -104,17 +105,30 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			enabled, disabled := ctrlcommon.GetEnabledDisabledFeatures(fg)
 			klog.Infof("FeatureGates initialized: enabled=%v  disabled=%v", enabled, disabled)
 			if fg.Enabled(features.FeatureGatePinnedImages) && fg.Enabled(features.FeatureGateMachineConfigNodes) {
-				pinnedImageSet := pinnedimageset.New(
-					ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().PinnedImageSets(),
-					ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
-					ctrlctx.ClientBuilder.KubeClientOrDie("pinned-image-set-controller"),
-					ctrlctx.ClientBuilder.MachineConfigClientOrDie("pinned-image-set-controller"),
-				)
+				// Check if PinnedImageSet CRD exists before starting the informer
+				// This is necessary during upgrades where the feature gate may be enabled
+				// before the CRD is installed
+				apiExtClient := ctrlctx.ClientBuilder.APIExtClientOrDie("pinned-image-set-controller")
+				_, err := apiExtClient.ApiextensionsV1().CustomResourceDefinitions().Get(runContext, "pinnedimagesets.machineconfiguration.openshift.io", metav1.GetOptions{})
+				if err != nil {
+					if apierrors.IsNotFound(err) {
+						klog.Warningf("PinnedImages featuregate enabled, but PinnedImageSet CRD not found, skipping controller initialization")
+					} else {
+						klog.Errorf("Error checking for PinnedImageSet CRD: %v", err)
+					}
+				} else {
+					pinnedImageSet := pinnedimageset.New(
+						ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().PinnedImageSets(),
+						ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
+						ctrlctx.ClientBuilder.KubeClientOrDie("pinned-image-set-controller"),
+						ctrlctx.ClientBuilder.MachineConfigClientOrDie("pinned-image-set-controller"),
+					)
 
-				go pinnedImageSet.Run(2, ctrlctx.Stop)
-				// start the informers again to enable feature gated types.
-				// see comments in SharedInformerFactory interface.
-				ctrlctx.InformerFactory.Start(ctrlctx.Stop)
+					go pinnedImageSet.Run(2, ctrlctx.Stop)
+					// start the informers again to enable feature gated types.
+					// see comments in SharedInformerFactory interface.
+					ctrlctx.InformerFactory.Start(ctrlctx.Stop)
+				}
 			}
 
 			if ctrlcommon.IsBootImageControllerRequired(ctrlctx) {
