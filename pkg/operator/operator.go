@@ -40,8 +40,10 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
+	mcfginformersv1alpha1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
 
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
+	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 
 	mcopclientset "github.com/openshift/client-go/operator/clientset/versioned"
 	mcopinformersv1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
@@ -110,6 +112,8 @@ type Operator struct {
 	nodeClusterLister     configlistersv1.NodeLister
 	moscLister            mcfglistersv1.MachineOSConfigLister
 	apiserverLister       configlistersv1.APIServerLister
+	clusterVersionLister  configlistersv1.ClusterVersionLister
+	iriLister             mcfglistersv1alpha1.InternalReleaseImageLister
 
 	crdListerSynced                  cache.InformerSynced
 	deployListerSynced               cache.InformerSynced
@@ -142,6 +146,7 @@ type Operator struct {
 	nodeClusterListerSynced          cache.InformerSynced
 	moscListerSynced                 cache.InformerSynced
 	apiserverListerSynced            cache.InformerSynced
+	iriListerSynced                  cache.InformerSynced
 
 	// queue only ever has one item, but it has nice error handling backoff/retry semantics
 	queue workqueue.TypedRateLimitingInterface[string]
@@ -195,6 +200,8 @@ func New(
 	nodeClusterInformer configinformersv1.NodeInformer,
 	apiserverInformer configinformersv1.APIServerInformer,
 	moscInformer mcfginformersv1.MachineOSConfigInformer,
+	clusterVersionInformer configinformersv1.ClusterVersionInformer,
+	iriInformer mcfginformersv1alpha1.InternalReleaseImageInformer,
 	ctrlctx *ctrlcommon.ControllerContext,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()
@@ -332,6 +339,11 @@ func New(
 	optr.apiserverListerSynced = apiserverInformer.Informer().HasSynced
 	optr.moscLister = moscInformer.Lister()
 	optr.moscListerSynced = moscInformer.Informer().HasSynced
+	optr.clusterVersionLister = clusterVersionInformer.Lister()
+	if iriInformer != nil {
+		optr.iriLister = iriInformer.Lister()
+		optr.iriListerSynced = iriInformer.Informer().HasSynced
+	}
 
 	optr.vStore.Set("operator", version.ReleaseVersion)
 	optr.vStore.Set("operator-image", version.OperatorImage)
@@ -386,7 +398,9 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.nodeClusterListerSynced,
 		optr.moscListerSynced,
 	}
-
+	if optr.iriListerSynced != nil {
+		cacheSynced = append(cacheSynced, optr.iriListerSynced)
+	}
 	if !cache.WaitForCacheSync(stopCh,
 		cacheSynced...) {
 		klog.Error("failed to sync caches")

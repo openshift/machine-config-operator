@@ -1,16 +1,11 @@
 package internalreleaseimage
 
 import (
-	"bytes"
 	"context"
-	_ "embed"
 	"fmt"
 	"reflect"
-	"text/template"
 	"time"
 
-	"github.com/clarketm/json"
-	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -25,23 +20,24 @@ import (
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	configinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
+	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
 	mcfginformersv1alpha1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
-	"github.com/openshift/machine-config-operator/pkg/controller/common"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
-	"github.com/openshift/machine-config-operator/pkg/version"
+	"github.com/openshift/machine-config-operator/pkg/osimagestream"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	coreinformersv1 "k8s.io/client-go/informers/core/v1"
+	corelistersv1 "k8s.io/client-go/listers/core/v1"
 )
 
 const (
 	maxRetries = 15
-
-	iriMachineConfigName = "02-master-internalreleaseimage"
 )
 
 var (
@@ -53,9 +49,6 @@ var (
 		Duration: 100 * time.Millisecond,
 		Jitter:   1.0,
 	}
-
-	//go:embed templates/iri-registry.service.yaml
-	iriRegistryServiceTemplate string
 )
 
 // Controller defines the InternalReleaseImage controller.
@@ -75,6 +68,12 @@ type Controller struct {
 	mcLister       mcfglistersv1.MachineConfigLister
 	mcListerSynced cache.InformerSynced
 
+	clusterVersionLister       configlistersv1.ClusterVersionLister
+	clusterVersionListerSynced cache.InformerSynced
+
+	secretLister       corelistersv1.SecretLister
+	secretListerSynced cache.InformerSynced
+
 	queue workqueue.TypedRateLimitingInterface[string]
 }
 
@@ -83,6 +82,8 @@ func New(
 	iriInformer mcfginformersv1alpha1.InternalReleaseImageInformer,
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mcInformer mcfginformersv1.MachineConfigInformer,
+	clusterVersionInformer configinformersv1.ClusterVersionInformer,
+	secretInformer coreinformersv1.SecretInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 ) *Controller {
@@ -91,8 +92,7 @@ func New(
 	eventBroadcaster.StartRecordingToSink(&corev1client.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	ctrl := &Controller{
-		client: mcfgClient,
-
+		client:        mcfgClient,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-internalreleaseimagecontroller"})),
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
@@ -117,6 +117,10 @@ func New(
 		DeleteFunc: ctrl.deleteMachineConfig,
 	})
 
+	secretInformer.Informer().AddEventHandler(cache.ResourceEventHandlerDetailedFuncs{
+		UpdateFunc: ctrl.updateSecret,
+	})
+
 	ctrl.iriLister = iriInformer.Lister()
 	ctrl.iriListerSynced = iriInformer.Informer().HasSynced
 
@@ -126,6 +130,12 @@ func New(
 	ctrl.mcLister = mcInformer.Lister()
 	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
 
+	ctrl.clusterVersionLister = clusterVersionInformer.Lister()
+	ctrl.clusterVersionListerSynced = clusterVersionInformer.Informer().HasSynced
+
+	ctrl.secretLister = secretInformer.Lister()
+	ctrl.secretListerSynced = secretInformer.Informer().HasSynced
+
 	return ctrl
 }
 
@@ -134,7 +144,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.iriListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, ctrl.iriListerSynced, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.clusterVersionListerSynced, ctrl.secretListerSynced) {
 		return
 	}
 
@@ -255,11 +265,24 @@ func (ctrl *Controller) deleteMachineConfig(obj interface{}) {
 func (ctrl *Controller) processMachineConfigEvent(obj interface{}, logMsg string) {
 	mc := obj.(*mcfgv1.MachineConfig)
 
-	if mc.Name != iriMachineConfigName {
+	// Skip any event not related to the InternalReleaseImage machine configs
+	if len(mc.OwnerReferences) == 0 || mc.OwnerReferences[0].Kind != controllerKind.Kind {
 		return
 	}
 
 	klog.V(4).Infof(logMsg, mc.Name)
+	ctrl.queue.Add(ctrlcommon.InternalReleaseImageInstanceName)
+}
+
+func (ctrl *Controller) updateSecret(obj, _ interface{}) {
+	secret := obj.(*corev1.Secret)
+
+	// Skip any event not related to the InternalReleaseImage secrets
+	if secret.Name != ctrlcommon.InternalReleaseImageTLSSecretName {
+		return
+	}
+
+	klog.V(4).Infof("Secret %s update", secret.Name)
 	ctrl.queue.Add(ctrlcommon.InternalReleaseImageInstanceName)
 }
 
@@ -288,7 +311,7 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) error {
 	}
 
 	// Fetch the InternalReleaseImage
-	iri, err := ctrl.client.MachineconfigurationV1alpha1().InternalReleaseImages().Get(context.TODO(), name, metav1.GetOptions{})
+	iri, err := ctrl.iriLister.Get(name)
 	if errors.IsNotFound(err) {
 		klog.V(2).Infof("InternalReleaseImage %v has been deleted", key)
 		return nil
@@ -300,7 +323,7 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) error {
 	// Deep-copy otherwise we are mutating our cache.
 	iri = iri.DeepCopy()
 
-	// Check for Deleted InternalReleaseImage and optionally delete finalizers
+	// Check for Deleted InternalReleaseImage and optionally delete finalizers.
 	if !iri.DeletionTimestamp.IsZero() {
 		if len(iri.GetFinalizers()) > 0 {
 			return ctrl.cascadeDelete(iri)
@@ -308,28 +331,104 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) error {
 		return nil
 	}
 
-	// Create or update InternalReleaseImage MachineConfig
-	mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), iriMachineConfigName, metav1.GetOptions{})
-	isNotFound := errors.IsNotFound(err)
-	if err != nil && !isNotFound {
-		return err // syncStatus, could not find MachineConfig
-	}
-
-	cconfig, err := ctrl.client.MachineconfigurationV1().ControllerConfigs().Get(context.TODO(), ctrlcommon.ControllerConfigName, metav1.GetOptions{})
+	cconfig, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
 		return fmt.Errorf("could not get ControllerConfig %w", err)
 	}
 
-	if isNotFound {
-		mc, err = generateInternalReleaseImageMachineConfig(iri, cconfig)
-	} else {
-		err = updateInternalReleaseImageMachineConfig(mc, cconfig)
-	}
+	iriSecret, err := ctrl.secretLister.Secrets(ctrlcommon.MCONamespace).Get(ctrlcommon.InternalReleaseImageTLSSecretName)
 	if err != nil {
-		return err // syncStatus, could not create/update MachineConfig
+		return fmt.Errorf("could not get Secret %s: %w", ctrlcommon.InternalReleaseImageTLSSecretName, err)
 	}
 
+	for _, role := range SupportedRoles {
+		r := NewRendererByRole(role, iri, iriSecret, cconfig)
+
+		mc, err := ctrl.mcLister.Get(r.GetMachineConfigName())
+		isNotFound := errors.IsNotFound(err)
+		if err != nil && !isNotFound {
+			return err // syncStatus, could not find MachineConfig
+		}
+		if isNotFound {
+			mc, err = r.CreateEmptyMachineConfig()
+			if err != nil {
+				return err // syncStatusOnly, could not create MachineConfig
+			}
+		}
+
+		err = r.RenderAndSetIgnition(mc)
+		if err != nil {
+			return err // syncStatus, could not generate IRI configs
+		}
+		err = ctrl.createOrUpdateMachineConfig(isNotFound, mc)
+		if err != nil {
+			return err // syncStatus, could not Create/Update MachineConfig
+		}
+		if err := ctrl.addFinalizerToInternalReleaseImage(iri, mc); err != nil {
+			return err // syncStatus , could not add finalizers
+		}
+	}
+
+	// Initialize status if empty
+	if err := ctrl.initializeInternalReleaseImageStatus(iri); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// initializeInternalReleaseImageStatus initializes the status of an InternalReleaseImage
+// if it is empty. It populates the status with release bundle entries from the spec,
+// setting the Image field from the current ClusterVersion and adding initial conditions.
+func (ctrl *Controller) initializeInternalReleaseImageStatus(iri *mcfgv1alpha1.InternalReleaseImage) error {
+	// Only initialize if status is empty and spec has releases
+	if len(iri.Status.Releases) != 0 || len(iri.Spec.Releases) == 0 {
+		return nil
+	}
+
+	klog.V(4).Infof("Initializing status for InternalReleaseImage %s", iri.Name)
+
+	// Get the release payload image from ClusterVersion
+	releaseImage, err := osimagestream.GetReleasePayloadImage(ctrl.clusterVersionLister)
+	if err != nil {
+		return fmt.Errorf("error getting Release Image from ClusterVersion for InternalReleaseImage status initialization: %w", err)
+	}
+
+	// Build status releases from spec releases
+	statusReleases := make([]mcfgv1alpha1.InternalReleaseImageBundleStatus, 0, len(iri.Spec.Releases))
+	for _, specRelease := range iri.Spec.Releases {
+		statusRelease := mcfgv1alpha1.InternalReleaseImageBundleStatus{
+			Name:  specRelease.Name,
+			Image: releaseImage,
+			Conditions: []metav1.Condition{
+				{
+					Type:               string(mcfgv1alpha1.InternalReleaseImageConditionTypeAvailable),
+					Status:             metav1.ConditionTrue,
+					LastTransitionTime: metav1.Now(),
+					Reason:             "Installed",
+					Message:            "Release bundle is available",
+				},
+			},
+		}
+		statusReleases = append(statusReleases, statusRelease)
+	}
+
+	iri.Status.Releases = statusReleases
+
+	// Update the status subresource
 	if err := retry.RetryOnConflict(updateBackoff, func() error {
+		_, err := ctrl.client.MachineconfigurationV1alpha1().InternalReleaseImages().UpdateStatus(context.TODO(), iri, metav1.UpdateOptions{})
+		return err
+	}); err != nil {
+		return fmt.Errorf("failed to update InternalReleaseImage status: %w", err)
+	}
+
+	klog.V(2).Infof("Initialized status for InternalReleaseImage %s with %d releases", iri.Name, len(statusReleases))
+	return nil
+}
+
+func (ctrl *Controller) createOrUpdateMachineConfig(isNotFound bool, mc *mcfgv1.MachineConfig) error {
+	return retry.RetryOnConflict(updateBackoff, func() error {
 		var err error
 		if isNotFound {
 			_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
@@ -337,100 +436,27 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) error {
 			_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Update(context.TODO(), mc, metav1.UpdateOptions{})
 		}
 		return err
-	}); err != nil {
-		return err // syncStatus, could not Create/Update MachineConfig
-	}
-
-	// Add finalizer to the InternalReleaseImage
-	if err := ctrl.addFinalizerToInternalReleaseImage(iri, mc); err != nil {
-		return err // syncStatus , could not add finalizers
-	}
-
-	return nil
-}
-
-func updateInternalReleaseImageMachineConfig(mc *mcfgv1.MachineConfig, controllerConfig *mcfgv1.ControllerConfig) error {
-	ignCfg, err := generateIgnitionFromTemplate(controllerConfig)
-	if err != nil {
-		return err
-	}
-
-	rawIgn, err := json.Marshal(ignCfg)
-	if err != nil {
-		return err
-	}
-
-	mc.Spec.Config.Raw = rawIgn
-	return nil
+	})
 }
 
 func (ctrl *Controller) addFinalizerToInternalReleaseImage(iri *mcfgv1alpha1.InternalReleaseImage, mc *mcfgv1.MachineConfig) error {
-	if len(iri.GetFinalizers()) > 0 {
+	if ctrlcommon.InSlice(mc.Name, iri.Finalizers) {
 		return nil
 	}
 
-	return ctrl.updateInternalReleaseImageFinalizers(iri, []string{mc.Name})
-}
-
-func (ctrl *Controller) cascadeDelete(iri *mcfgv1alpha1.InternalReleaseImage) error {
-	// Delete the InternalReleaseImage machine config
-	err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), iriMachineConfigName, metav1.DeleteOptions{})
-	if err != nil && !errors.IsNotFound(err) {
-		return err
-	}
-
-	// Remove the InternalRelaseImage finalizer
-	return ctrl.updateInternalReleaseImageFinalizers(iri, []string{})
-}
-
-func (ctrl *Controller) updateInternalReleaseImageFinalizers(iri *mcfgv1alpha1.InternalReleaseImage, finalizers []string) error {
-	iri.SetFinalizers(finalizers)
+	iri.Finalizers = append(iri.Finalizers, mc.Name)
 	_, err := ctrl.client.MachineconfigurationV1alpha1().InternalReleaseImages().Update(context.TODO(), iri, metav1.UpdateOptions{})
 	return err
 }
 
-func generateInternalReleaseImageMachineConfig(iri *mcfgv1alpha1.InternalReleaseImage, controllerConfig *mcfgv1.ControllerConfig) (*mcfgv1.MachineConfig, error) {
-	ignCfg, err := generateIgnitionFromTemplate(controllerConfig)
-	if err != nil {
-		return nil, err
+func (ctrl *Controller) cascadeDelete(iri *mcfgv1alpha1.InternalReleaseImage) error {
+	mcName := iri.GetFinalizers()[0]
+	err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), mcName, metav1.DeleteOptions{})
+	if err != nil && !errors.IsNotFound(err) {
+		return err
 	}
 
-	mcfg, err := ctrlcommon.MachineConfigFromIgnConfig(common.MachineConfigPoolMaster, iriMachineConfigName, ignCfg)
-	if err != nil {
-		return nil, fmt.Errorf("error creating MachineConfig from Ignition config: %w", err)
-	}
-
-	cref := metav1.NewControllerRef(iri, controllerKind)
-	mcfg.SetOwnerReferences([]metav1.OwnerReference{*cref})
-	mcfg.SetAnnotations(map[string]string{
-		ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
-	})
-
-	return mcfg, nil
-}
-
-func generateIgnitionFromTemplate(controllerConfig *mcfgv1.ControllerConfig) (*ign3types.Config, error) {
-	// Parse the iri template
-	tmpl, err := template.New("iri-template").Parse(iriRegistryServiceTemplate)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse iri-template : %w", err)
-	}
-
-	type iriRenderConfig struct {
-		DockerRegistryImage string
-	}
-
-	buf := new(bytes.Buffer)
-	if err := tmpl.Execute(buf, iriRenderConfig{
-		DockerRegistryImage: controllerConfig.Spec.Images[templatectrl.DockerRegistryKey],
-	}); err != nil {
-		return nil, fmt.Errorf("failed to execute template: %w", err)
-	}
-
-	// Generate the iri ignition
-	ignCfg, err := ctrlcommon.TranspileCoreOSConfigToIgn(nil, []string{buf.String()})
-	if err != nil {
-		return nil, fmt.Errorf("error transpiling CoreOS config to Ignition config: %w", err)
-	}
-	return ignCfg, nil
+	iri.Finalizers = append([]string{}, iri.Finalizers[1:]...)
+	_, err = ctrl.client.MachineconfigurationV1alpha1().InternalReleaseImages().Update(context.TODO(), iri, metav1.UpdateOptions{})
+	return err
 }
