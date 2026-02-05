@@ -8,7 +8,9 @@ import (
 	"os"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/clientcmd"
 
 	features "github.com/openshift/api/features"
@@ -218,32 +220,45 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		} else {
 			klog.Infof("FeatureGates initialized: knownFeatureGates=%v", featureGates.KnownFeatures())
 			if featureGates.Enabled(features.FeatureGatePinnedImages) && featureGates.Enabled(features.FeatureGateMachineConfigNodes) {
-				klog.Infof("Feature enabled: %s", features.FeatureGatePinnedImages)
-				criClient, err := cri.NewClient(ctx, constants.DefaultCRIOSocketPath)
+				// Check if PinnedImageSet CRD exists before starting the informer
+				// This is necessary during upgrades where the feature gate may be enabled
+				// before the CRD is installed
+				apiExtClient := ctrlctx.ClientBuilder.APIExtClientOrDie(componentName)
+				_, err := apiExtClient.ApiextensionsV1().CustomResourceDefinitions().Get(ctx, "pinnedimagesets.machineconfiguration.openshift.io", metav1.GetOptions{})
 				if err != nil {
-					klog.Fatalf("Failed to initialize CRI client: %v", err)
+					if apierrors.IsNotFound(err) {
+						klog.Warningf("PinnedImages featuregate enabled, but PinnedImageSet CRD not found, skipping manager initialization")
+					} else {
+						klog.Errorf("Error checking for PinnedImageSet CRD: %v", err)
+					}
+				} else {
+					klog.Infof("Feature enabled: %s", features.FeatureGatePinnedImages)
+					criClient, err := cri.NewClient(ctx, constants.DefaultCRIOSocketPath)
+					if err != nil {
+						klog.Fatalf("Failed to initialize CRI client: %v", err)
+					}
+
+					prefetchTimeout := 2 * time.Minute
+					pinnedImageSetManager := daemon.NewPinnedImageSetManager(
+						startOpts.nodeName,
+						criClient,
+						ctrlctx.ClientBuilder.MachineConfigClientOrDie(componentName),
+						ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().PinnedImageSets(),
+						nodeScopedInformer,
+						ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
+						resource.MustParse(constants.MinFreeStorageAfterPrefetch),
+						constants.DefaultCRIOSocketPath,
+						constants.KubeletAuthFile,
+						constants.ContainerRegistryConfPath,
+						prefetchTimeout,
+						ctrlctx.FeatureGateAccess,
+					)
+
+					go pinnedImageSetManager.Run(2, stopCh)
+					// start the informers for the pinned image set again after the feature gate is enabled this is allowed.
+					// see comments in SharedInformerFactory interface.
+					ctrlctx.InformerFactory.Start(stopCh)
 				}
-
-				prefetchTimeout := 2 * time.Minute
-				pinnedImageSetManager := daemon.NewPinnedImageSetManager(
-					startOpts.nodeName,
-					criClient,
-					ctrlctx.ClientBuilder.MachineConfigClientOrDie(componentName),
-					ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().PinnedImageSets(),
-					nodeScopedInformer,
-					ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
-					resource.MustParse(constants.MinFreeStorageAfterPrefetch),
-					constants.DefaultCRIOSocketPath,
-					constants.KubeletAuthFile,
-					constants.ContainerRegistryConfPath,
-					prefetchTimeout,
-					ctrlctx.FeatureGateAccess,
-				)
-
-				go pinnedImageSetManager.Run(2, stopCh)
-				// start the informers for the pinned image set again after the feature gate is enabled this is allowed.
-				// see comments in SharedInformerFactory interface.
-				ctrlctx.InformerFactory.Start(stopCh)
 			}
 		}
 	case <-time.After(1 * time.Minute):
