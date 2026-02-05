@@ -257,7 +257,7 @@ func reconcilePlatformCPMS[T any](
 	configMap *corev1.ConfigMap,
 	arch string,
 	secretClient clientset.Interface,
-	reconcileProviderSpec func(*stream.Stream, string, *osconfigv1.Infrastructure, *T, string, clientset.Interface) (bool, *T, error),
+	reconcileProviderSpec func(*stream.Stream, string, *osconfigv1.Infrastructure, *T, string, clientset.Interface) (bool, bool, *T, error),
 ) (patchRequired bool, newCPMS *machinev1.ControlPlaneMachineSet, err error) {
 	klog.Infof("Reconciling controlplanemachineset %s on %s, with arch %s", cpms.Name, string(infra.Status.PlatformStatus.Type), arch)
 
@@ -274,7 +274,7 @@ func reconcilePlatformCPMS[T any](
 	}
 
 	// Reconcile the provider spec
-	patchRequired, newProviderSpec, err := reconcileProviderSpec(streamData, arch, infra, providerSpec, cpms.Name, secretClient)
+	patchRequired, _, newProviderSpec, err := reconcileProviderSpec(streamData, arch, infra, providerSpec, cpms.Name, secretClient)
 	if err != nil {
 		return false, nil, err
 	}

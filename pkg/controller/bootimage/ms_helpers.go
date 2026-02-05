@@ -9,6 +9,7 @@ import (
 	"time"
 
 	osconfigv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/api/features"
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 	opv1 "github.com/openshift/api/operator/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -69,6 +70,7 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) {
 	// Reset stats before initiating reconciliation loop
 	ctrl.mapiStats.inProgress = 0
 	ctrl.mapiStats.totalCount = len(mapiMachineSets)
+	ctrl.mapiStats.skippedCount = 0
 	ctrl.mapiStats.erroredCount = 0
 
 	// Signal start of reconciliation process, by setting progressing to true
@@ -76,7 +78,7 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) {
 	ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
 
 	for _, machineSet := range mapiMachineSets {
-		err := ctrl.syncMAPIMachineSet(machineSet)
+		patchSkipped, err := ctrl.syncMAPIMachineSet(machineSet)
 		if err == nil {
 			ctrl.mapiStats.inProgress++
 		} else {
@@ -84,15 +86,24 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) {
 			syncErrors = append(syncErrors, fmt.Errorf("error syncing MAPI MachineSet %s: %v", machineSet.Name, err))
 			ctrl.mapiStats.erroredCount++
 		}
+		if patchSkipped {
+			ctrl.mapiStats.skippedCount++
+		}
 		// Update progressing conditions every step of the loop
 		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
 	}
 	// Update/Clear degrade conditions based on errors from this loop
 	ctrl.updateConditions(reason, kubeErrs.NewAggregate(syncErrors), opv1.MachineConfigurationBootImageUpdateDegraded)
+	// If no machinesets were skipped, update the cluster boot image record
+	if ctrl.fgHandler.Enabled(features.FeatureGateBootImageSkewEnforcement) {
+		if ctrl.mapiStats.skippedCount == 0 {
+			ctrl.updateClusterBootImage()
+		}
+	}
 }
 
 // syncMAPIMachineSet will attempt to reconcile the provided machineset
-func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet) error {
+func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet) (bool, error) {
 
 	startTime := time.Now()
 	klog.V(4).Infof("Started syncing MAPI machineset %q (%v)", machineSet.Name, startTime)
@@ -104,20 +115,20 @@ func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet
 	// that the machineset may be managed by another workflow and should not be reconciled.
 	if len(machineSet.GetOwnerReferences()) != 0 {
 		klog.Infof("machineset %s has OwnerReference: %v, skipping boot image update", machineSet.GetOwnerReferences()[0].Kind+"/"+machineSet.GetOwnerReferences()[0].Name, machineSet.Name)
-		return nil
+		return true, nil
 	}
 
 	if os, ok := machineSet.Spec.Template.Labels[OSLabelKey]; ok {
 		if os == "Windows" {
 			klog.Infof("machineset %s has a windows os label, skipping boot image update", machineSet.Name)
-			return nil
+			return false, nil
 		}
 	}
 
 	// Fetch the ClusterVersion to determine if this is a multi-arch cluster
 	clusterVersion, err := ctrl.clusterVersionLister.Get("version")
 	if err != nil {
-		return fmt.Errorf("failed to fetch clusterversion during machineset sync: %v, defaulting to single-arch behavior", err)
+		return false, fmt.Errorf("failed to fetch clusterversion during machineset sync: %v, defaulting to single-arch behavior", err)
 	}
 
 	// Fetch the architecture type of this machineset
@@ -126,15 +137,15 @@ func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet
 		// If no architecture annotation was found, skip this machineset without erroring
 		// A later sync loop will pick it up once the annotation is added
 		if strings.Contains(err.Error(), "no architecture annotation found") {
-			return nil
+			return true, nil
 		}
-		return fmt.Errorf("failed to fetch arch during machineset sync: %w", err)
+		return false, fmt.Errorf("failed to fetch arch during machineset sync: %w", err)
 	}
 
 	// Fetch the infra object to determine the platform type
 	infra, err := ctrl.infraLister.Get("cluster")
 	if err != nil {
-		return fmt.Errorf("failed to fetch infra object during machineset sync: %w", err)
+		return false, fmt.Errorf("failed to fetch infra object during machineset sync: %w", err)
 	}
 
 	// Fetch the bootimage configmap & ensure it has been stamped by the operator. This is done by
@@ -143,44 +154,44 @@ func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet
 	// If it hasn't been updated, exit and wait for a resync.
 	configMap, err := ctrl.mcoCmLister.ConfigMaps(ctrlcommon.MCONamespace).Get(ctrlcommon.BootImagesConfigMapName)
 	if err != nil {
-		return fmt.Errorf("failed to fetch coreos-bootimages config map during machineset sync: %w", err)
+		return false, fmt.Errorf("failed to fetch coreos-bootimages config map during machineset sync: %w", err)
 	}
 	versionHashFromCM, versionHashFound := configMap.Data[ctrlcommon.MCOVersionHashKey]
 	if !versionHashFound {
 		klog.Infof("failed to find mco version hash in %s configmap, sync will exit to wait for the MCO upgrade to complete", ctrlcommon.BootImagesConfigMapName)
-		return nil
+		return true, nil
 	}
 	if versionHashFromCM != operatorversion.Hash {
 		klog.Infof("mismatch between MCO hash version stored in configmap and current MCO version; sync will exit to wait for the MCO upgrade to complete")
-		return nil
+		return true, nil
 	}
 	releaseVersionFromCM, releaseVersionFound := configMap.Data[ctrlcommon.OCPReleaseVersionKey]
 	if !releaseVersionFound {
 		klog.Infof("failed to find OCP release version in %s configmap, sync will exit to wait for the MCO upgrade to complete", ctrlcommon.BootImagesConfigMapName)
-		return nil
+		return true, nil
 	}
 	if releaseVersionFromCM != operatorversion.ReleaseVersion {
 		klog.Infof("mismatch between OCP release version stored in configmap and current MCO release version; sync will exit to wait for the MCO upgrade to complete")
-		return nil
+		return true, nil
 	}
 
 	// Check if the this MachineSet requires an update
-	patchRequired, newMachineSet, err := checkMachineSet(infra, machineSet, configMap, arch, ctrl.kubeClient)
+	patchRequired, patchSkipped, newMachineSet, err := checkMachineSet(infra, machineSet, configMap, arch, ctrl.kubeClient)
 	if err != nil {
-		return fmt.Errorf("failed to reconcile machineset %s, err: %w", machineSet.Name, err)
+		return false, fmt.Errorf("failed to reconcile machineset %s, err: %w", machineSet.Name, err)
 	}
 
 	// Patch the machineset if required
 	if patchRequired {
 		// First, check if we're hot looping
 		if ctrl.checkMAPIMachineSetHotLoop(newMachineSet) {
-			return fmt.Errorf("refusing to reconcile machineset %s, hot loop detected. Please opt-out of boot image updates, adjust your machine provisioning workflow to prevent hot loops and opt back in to resume boot image updates", machineSet.Name)
+			return false, fmt.Errorf("refusing to reconcile machineset %s, hot loop detected. Please opt-out of boot image updates, adjust your machine provisioning workflow to prevent hot loops and opt back in to resume boot image updates", machineSet.Name)
 		}
 		klog.Infof("Patching MAPI machineset %s", machineSet.Name)
-		return ctrl.patchMachineSet(machineSet, newMachineSet)
+		return false, ctrl.patchMachineSet(machineSet, newMachineSet)
 	}
 	klog.Infof("No patching required for MAPI machineset %s", machineSet.Name)
-	return nil
+	return patchSkipped, nil
 }
 
 // Checks against a local store of boot image updates to detect hot looping

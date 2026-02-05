@@ -23,8 +23,10 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	opv1 "github.com/openshift/api/operator/v1"
 	fakeconfigclientset "github.com/openshift/client-go/config/clientset/versioned/fake"
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
+	mcoplistersv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 	cov1helpers "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/helpers"
@@ -794,4 +796,496 @@ func TestInClusterBringUpStayOnErr(t *testing.T) {
 	assert.Nil(t, err, "expected syncAll to pass")
 
 	assert.False(t, optr.inClusterBringup)
+}
+
+func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
+	tests := []struct {
+		name               string
+		featureGateEnabled bool
+		mcop               *opv1.MachineConfiguration
+		mcopNotFound       bool
+		mcopGetError       error
+		expectUpgradeBlock bool
+		expectMessage      string
+		expectError        bool
+	}{
+		{
+			name:               "feature gate disabled",
+			featureGateEnabled: false,
+			mcop:               nil,
+			expectUpgradeBlock: false,
+			expectMessage:      "",
+			expectError:        false,
+		},
+		{
+			name:               "MachineConfiguration not found",
+			featureGateEnabled: true,
+			mcopNotFound:       true,
+			expectUpgradeBlock: false,
+			expectMessage:      "",
+			expectError:        false,
+		},
+		{
+			name:               "mode is None",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusNone,
+					},
+				},
+			},
+			expectUpgradeBlock: false,
+			expectMessage:      "",
+			expectError:        false,
+		},
+		{
+			name:               "mode is unset",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: "",
+					},
+				},
+			},
+			expectUpgradeBlock: false,
+			expectMessage:      "",
+			expectError:        false,
+		},
+		// Boot image controller readiness tests
+		{
+			name:               "boot image controller is degraded in Automatic mode",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:    opv1.MachineConfigurationBootImageUpdateDegraded,
+							Status:  metav1.ConditionTrue,
+							Message: "failed to update boot images",
+						},
+					},
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
+						Automatic: opv1.ClusterBootImageAutomatic{
+							OCPVersion: "4.12.0", // Out of skew, but degraded check should happen first
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: true,
+			expectMessage:      "Upgrades have been disabled due to boot image update failures: Boot image controller is degraded: failed to update boot images",
+			expectError:        false,
+		},
+		{
+			name:               "boot image controller is progressing in Automatic mode",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   opv1.MachineConfigurationBootImageUpdateProgressing,
+							Status: metav1.ConditionTrue,
+						},
+					},
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
+						Automatic: opv1.ClusterBootImageAutomatic{
+							OCPVersion: "4.12.0", // Out of skew, but progressing check should skip skew evaluation
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: false,
+			expectMessage:      "",
+			expectError:        false,
+		},
+		{
+			name:               "boot image controller hasn't completed first pass in Automatic mode",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{},
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
+						Automatic: opv1.ClusterBootImageAutomatic{
+							OCPVersion: "4.12.0", // Out of skew, but readiness check should skip skew evaluation
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: false,
+			expectMessage:      "",
+			expectError:        false,
+		},
+		// OCP version tests in automatic mode
+		{
+			name:               "mode is Automatic with OCP version within limit",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   opv1.MachineConfigurationBootImageUpdateProgressing,
+							Status: metav1.ConditionFalse,
+						},
+					},
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
+						Automatic: opv1.ClusterBootImageAutomatic{
+							OCPVersion: "4.17.0",
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: false,
+			expectMessage:      "",
+			expectError:        false,
+		},
+		{
+			name:               "mode is Automatic with OCP version below limit",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   opv1.MachineConfigurationBootImageUpdateProgressing,
+							Status: metav1.ConditionFalse,
+						},
+					},
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
+						Automatic: opv1.ClusterBootImageAutomatic{
+							OCPVersion: "4.12.0",
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: true,
+			expectMessage:      "Upgrades have been disabled because the cluster is using OCP boot image version 4.12.0, which is below the minimum required version " + ctrlcommon.OCPVersionBootImageSkewLimit + ". To enable upgrades, please update your boot images following the documentation at [TODO: insert link], or disable boot image skew enforcement at [TODO: insert link]",
+			expectError:        false,
+		},
+		// OCP version tests in manual mode
+		{
+			name:               "mode is Manual with OCP version within limit",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusManual,
+						Manual: opv1.ClusterBootImageManual{
+							Mode:       opv1.ClusterBootImageSpecModeOCPVersion,
+							OCPVersion: "4.16.0",
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: false,
+			expectMessage:      "",
+			expectError:        false,
+		},
+		{
+			name:               "mode is Manual with OCP version below limit",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusManual,
+						Manual: opv1.ClusterBootImageManual{
+							Mode:       opv1.ClusterBootImageSpecModeOCPVersion,
+							OCPVersion: "4.10.0",
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: true,
+			expectMessage:      "Upgrades have been disabled because the cluster is using OCP boot image version 4.10.0, which is below the minimum required version " + ctrlcommon.OCPVersionBootImageSkewLimit + ". To enable upgrades, please update your boot images following the documentation at [TODO: insert link], or disable boot image skew enforcement at [TODO: insert link]",
+			expectError:        false,
+		},
+		{
+			name:               "mode is Automatic with exact minimum OCP version",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   opv1.MachineConfigurationBootImageUpdateProgressing,
+							Status: metav1.ConditionFalse,
+						},
+					},
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
+						Automatic: opv1.ClusterBootImageAutomatic{
+							OCPVersion: ctrlcommon.OCPVersionBootImageSkewLimit,
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: false,
+			expectMessage:      "",
+			expectError:        false,
+		},
+		// RHCOS version tests in Automatic mode
+		{
+			name:               "mode is Automatic with modern RHCOS version within limit",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   opv1.MachineConfigurationBootImageUpdateProgressing,
+							Status: metav1.ConditionFalse,
+						},
+					},
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
+						Automatic: opv1.ClusterBootImageAutomatic{
+							RHCOSVersion: "9.4.20251023-0",
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: false,
+			expectMessage:      "",
+			expectError:        false,
+		},
+		{
+			name:               "mode is Automatic with modern RHCOS version below limit",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   opv1.MachineConfigurationBootImageUpdateProgressing,
+							Status: metav1.ConditionFalse,
+						},
+					},
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
+						Automatic: opv1.ClusterBootImageAutomatic{
+							RHCOSVersion: "9.0.20251023-0",
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: true,
+			expectMessage:      "Upgrades have been disabled because the cluster is using RHCOS boot image version 9.0.20251023-0(RHEL version: 9.0), which is below the minimum required RHEL version " + ctrlcommon.RHCOSVersionBootImageSkewLimit + ". To enable upgrades, please update your boot images following the documentation at [TODO: insert link], or disable boot image skew enforcement at [TODO: insert link]",
+			expectError:        false,
+		},
+		{
+			name:               "mode is Automatic with legacy RHCOS version within limit",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   opv1.MachineConfigurationBootImageUpdateProgressing,
+							Status: metav1.ConditionFalse,
+						},
+					},
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
+						Automatic: opv1.ClusterBootImageAutomatic{
+							RHCOSVersion: "416.94.202510081640-0",
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: false,
+			expectMessage:      "",
+			expectError:        false,
+		},
+		{
+			name:               "mode is Automatic with legacy RHCOS version below limit",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   opv1.MachineConfigurationBootImageUpdateProgressing,
+							Status: metav1.ConditionFalse,
+						},
+					},
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
+						Automatic: opv1.ClusterBootImageAutomatic{
+							RHCOSVersion: "411.86.202308081056-0",
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: true,
+			expectMessage:      "Upgrades have been disabled because the cluster is using RHCOS boot image version 411.86.202308081056-0(RHEL version: 8.6), which is below the minimum required RHEL version " + ctrlcommon.RHCOSVersionBootImageSkewLimit + ". To enable upgrades, please update your boot images following the documentation at [TODO: insert link], or disable boot image skew enforcement at [TODO: insert link]",
+			expectError:        false,
+		},
+
+		{
+			name:               "mode is Automatic with exact minimum RHCOS version",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   opv1.MachineConfigurationBootImageUpdateProgressing,
+							Status: metav1.ConditionFalse,
+						},
+					},
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
+						Automatic: opv1.ClusterBootImageAutomatic{
+							RHCOSVersion: "413.92.202402131523-0",
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: false,
+			expectMessage:      "",
+			expectError:        false,
+		},
+		// RHCOS version tests in manual mode
+		{
+			name:               "mode is Manual with modern RHCOS version within limit",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusManual,
+						Manual: opv1.ClusterBootImageManual{
+							Mode:         opv1.ClusterBootImageSpecModeRHCOSVersion,
+							RHCOSVersion: "9.6.20251023-0",
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: false,
+			expectMessage:      "",
+			expectError:        false,
+		},
+		{
+			name:               "mode is Manual with modern RHCOS version below limit",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusManual,
+						Manual: opv1.ClusterBootImageManual{
+							Mode:         opv1.ClusterBootImageSpecModeRHCOSVersion,
+							RHCOSVersion: "9.1.20251023-0",
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: true,
+			expectMessage:      "Upgrades have been disabled because the cluster is using RHCOS boot image version 9.1.20251023-0(RHEL version: 9.1), which is below the minimum required RHEL version " + ctrlcommon.RHCOSVersionBootImageSkewLimit + ". To enable upgrades, please update your boot images following the documentation at [TODO: insert link], or disable boot image skew enforcement at [TODO: insert link]",
+			expectError:        false,
+		},
+		{
+			name:               "mode is Manual with legacy RHCOS version within limit",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusManual,
+						Manual: opv1.ClusterBootImageManual{
+							Mode:         opv1.ClusterBootImageSpecModeRHCOSVersion,
+							RHCOSVersion: "416.94.202510081640-0",
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: false,
+			expectMessage:      "",
+			expectError:        false,
+		},
+		{
+			name:               "mode is Manual with legacy RHCOS version below limit",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusManual,
+						Manual: opv1.ClusterBootImageManual{
+							Mode:         opv1.ClusterBootImageSpecModeRHCOSVersion,
+							RHCOSVersion: "411.86.202308081056-0",
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: true,
+			expectMessage:      "Upgrades have been disabled because the cluster is using RHCOS boot image version 411.86.202308081056-0(RHEL version: 8.6), which is below the minimum required RHEL version " + ctrlcommon.RHCOSVersionBootImageSkewLimit + ". To enable upgrades, please update your boot images following the documentation at [TODO: insert link], or disable boot image skew enforcement at [TODO: insert link]",
+			expectError:        false,
+		},
+		{
+			name:               "mode is manual with exact minimum RHCOS version",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusManual,
+						Manual: opv1.ClusterBootImageManual{
+							Mode:         opv1.ClusterBootImageSpecModeRHCOSVersion,
+							RHCOSVersion: "413.92.202402131523-0",
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: false,
+			expectMessage:      "",
+			expectError:        false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Set up feature gate handler
+			enabledFeatures := []configv1.FeatureGateName{}
+			if tc.featureGateEnabled {
+				enabledFeatures = append(enabledFeatures, features.FeatureGateBootImageSkewEnforcement)
+			}
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler(enabledFeatures, []configv1.FeatureGateName{})
+
+			// Set up mcopLister
+			mcopIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+			if tc.mcop != nil && !tc.mcopNotFound {
+				mcopIndexer.Add(tc.mcop)
+			}
+			mcopLister := mcoplistersv1.NewMachineConfigurationLister(mcopIndexer)
+
+			optr := &Operator{
+				fgHandler:  fgHandler,
+				mcopLister: mcopLister,
+			}
+
+			upgradeBlock, message, err := optr.checkBootImageSkewUpgradeableGuard()
+
+			if tc.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+			assert.Equal(t, tc.expectUpgradeBlock, upgradeBlock, "upgrade block mismatch")
+			assert.Equal(t, tc.expectMessage, message, "message mismatch")
+		})
+	}
 }
