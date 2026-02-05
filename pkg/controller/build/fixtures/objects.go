@@ -125,7 +125,6 @@ func defaultKubeObjects() []runtime.Object {
 
 	return []runtime.Object{
 		getImagesConfigMap(),
-		getOSImageURLConfigMap(),
 		&corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      finalImagePushSecretName,
@@ -220,39 +219,12 @@ func getImagesConfigMap() *corev1.ConfigMap {
 	}
 }
 
-// Gets an example machine-config-osimageurl ConfigMap.
-func getOSImageURLConfigMap() *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      ctrlcommon.MachineConfigOSImageURLConfigMapName,
-			Namespace: ctrlcommon.MCONamespace,
-		},
-		Data: map[string]string{
-			"baseOSContainerImage":           BaseOSContainerImage,
-			"baseOSExtensionsContainerImage": BaseOSExtensionsContainerImage,
-			"osImageURL":                     OSImageURL,
-			"releaseVersion":                 ReleaseVersion,
-		},
-	}
-}
-
 const (
 	BaseOSContainerImage           string = "registry.hostname.com/org/repo@sha256 string = 220a60ecd4a3c32c282622a625a54db9ba0ff55b5ba9c29c7064a2bc358b6a3e"
 	BaseOSExtensionsContainerImage string = "registry.hostname.com/org/repo@sha256 string = 5fb4ba1a651bae8057ec6b5cdafc93fa7e0b7d944d6f02a4b751de4e15464def"
 	ReleaseVersion                 string = "release-version"
 	OSImageURL                     string = "registry.hostname.com/org/repo@sha256 string = 5be476dce1f7c1fbaf41bf9c0097e1725d7d26b74ea93543989d1a2b76fef4a5"
 )
-
-// Gets the OSImageURL struct that the machine-config-osimageurl ConfigMap
-// would be marshalled into.
-func OSImageURLConfig() *ctrlcommon.OSImageURLConfig {
-	return &ctrlcommon.OSImageURLConfig{
-		BaseOSContainerImage:           BaseOSContainerImage,
-		BaseOSExtensionsContainerImage: BaseOSExtensionsContainerImage,
-		ReleaseVersion:                 ReleaseVersion,
-		OSImageURL:                     OSImageURL,
-	}
-}
 
 func GetExpectedFinalImagePullspecForMachineOSBuild(mosb *mcfgv1.MachineOSBuild) string {
 	digest := getDigest(mosb.Name)
