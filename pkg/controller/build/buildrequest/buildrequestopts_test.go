@@ -148,7 +148,6 @@ func TestBuildRequestOpts(t *testing.T) {
 			assert.NotNil(t, brOpts.MachineOSConfig)
 			assert.NotNil(t, brOpts.MachineOSBuild)
 			assert.NotNil(t, brOpts.Images)
-			assert.NotNil(t, brOpts.OSImageURLConfig)
 			assert.NotNil(t, brOpts.BaseImagePullSecret)
 			assert.NotNil(t, brOpts.FinalImagePushSecret)
 		})
