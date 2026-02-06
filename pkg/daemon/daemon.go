@@ -246,6 +246,10 @@ const (
 	// Where nmstate writes the link files if it persisted ifnames.
 	// https://github.com/nmstate/nmstate/blob/03c7b03bd4c9b0067d3811dbbf72635201519356/rust/src/cli/persist_nic.rs#L32-L36
 	systemdNetworkDir = "etc/systemd/network"
+
+	// Config drift error message fragments used to identify drift-related degradation
+	configDriftContentMismatch = "content mismatch"
+	configDriftModeMismatch    = "mode mismatch"
 )
 
 type onceFromOrigin int
@@ -1522,8 +1526,37 @@ func (dn *Daemon) getCurrentConfigFromNode() (*onDiskConfig, error) {
 	return tempConfig, nil
 }
 
-func (dn *Daemon) startConfigDriftMonitor() {
+// initConfigDriftMetric initializes the config drift metric based on the node's current state.
+// If the node is Degraded due to config drift, set the metric to current time to indicate ongoing drift.
+// Otherwise, clear the metric.
+func (dn *Daemon) initConfigDriftMetric() {
+	var reason string
+
+	state, err := getNodeAnnotationExt(dn.node, constants.MachineConfigDaemonStateAnnotationKey, true)
+	if err != nil {
+		klog.Warningf("Could not get node state when initializing config drift metric: %v", err)
+		goto clearMetric
+	}
+	if state != constants.MachineConfigDaemonStateDegraded {
+		goto clearMetric
+	}
+
+	reason, err = getNodeAnnotationExt(dn.node, constants.MachineConfigDaemonReasonAnnotationKey, true)
+	if err != nil {
+		klog.Warningf("Could not get node reason when initializing config drift metric: %v", err)
+		goto clearMetric
+	}
+	if strings.Contains(reason, configDriftContentMismatch) || strings.Contains(reason, configDriftModeMismatch) {
+		mcdConfigDrift.SetToCurrentTime()
+		klog.Infof("Config drift metric initialized: node is degraded due to config drift")
+		return
+	}
+
+clearMetric:
 	mcdConfigDrift.Set(0)
+}
+
+func (dn *Daemon) startConfigDriftMonitor() {
 	// Even though the Config Drift Monitor object ensures that only a single
 	// Config Drift Watcher is running at any given time, other things, such as
 	// emitting Kube events on startup, should only occur if we weren't
@@ -1532,6 +1565,8 @@ func (dn *Daemon) startConfigDriftMonitor() {
 	if dn.configDriftMonitor.IsRunning() {
 		return
 	}
+
+	dn.initConfigDriftMetric()
 
 	odc, err := dn.getCurrentConfigOnDisk()
 	if err != nil && !os.IsNotExist(err) {
@@ -2291,6 +2326,9 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 
 	if err := dn.validateOnDiskStateOrImage(state.currentConfig, state.currentImage); err != nil {
 		dn.nodeWriter.Eventf(corev1.EventTypeWarning, "OnDiskStateValidationFailed", err.Error())
+		// Start the config drift monitor even when there's pre-existing drift
+		// so the metric gets initialized correctly on MCD restart
+		dn.startConfigDriftMonitor()
 		return err
 	}
 
