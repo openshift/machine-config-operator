@@ -1652,4 +1652,5 @@ var AllowedAMIs = sets.New(
 	"ami-0e6c67a8674179e1b", "ami-0e845ff8f43225df7", "ami-0e896b8e4e7de42be", "ami-0eaab2e9dd28dc852", "ami-0ed85c100ca774a06",
 	"ami-0eeea15b1c070e051", "ami-0f23efddf2ba41f5a", "ami-0f63d94711c4c3663", "ami-0f6479fb82d8108d1", "ami-0f684b45a6e89dce2",
 	"ami-0f872380c3a5cd4b2", "ami-0f99194701f0b95c9", "ami-0fa3e446c3007f39e", "ami-0fd0c820ea9c05888", "ami-0fd7c367ed8a90d52",
+	"ami-0fdb80a75b921b371", "ami-0fe02b801fea5edf6", "ami-0ff533915c03fd5c4",
 )
