@@ -21,6 +21,7 @@ import (
 
 	"github.com/clarketm/json"
 	"github.com/coreos/go-semver/semver"
+	systemddbus "github.com/coreos/go-systemd/v22/dbus"
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -81,6 +82,18 @@ func getNodeRef(node *corev1.Node) *corev1.ObjectReference {
 		Name: node.GetName(),
 		UID:  node.GetUID(),
 	}
+}
+
+func restartService(name string) error {
+	return runCmdSync("systemctl", "restart", name)
+}
+
+func reloadService(name string) error {
+	return runCmdSync("systemctl", "reload", name)
+}
+
+func reloadDaemon() error {
+	return runCmdSync("systemctl", constants.DaemonReloadCommand)
 }
 
 func (dn *Daemon) finishRebootlessUpdate() error {
@@ -150,12 +163,6 @@ func (dn *Daemon) executeReloadServiceNodeDisruptionAction(serviceName string, r
 // In the end uncordon node to schedule workload.
 // If at any point an error occurs, we reboot the node so that node has correct configuration.
 func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeActions []opv1.NodeDisruptionPolicyStatusAction, configName string) error {
-	systemdConnection, err := dn.systemdManager.NewConnection(context.Background())
-	if err != nil {
-		return fmt.Errorf("error creating connection to systemd: %w", err)
-	}
-	defer systemdConnection.Close()
-
 	for _, action := range postConfigChangeActions {
 
 		// Drain is already completed at this stage and essentially a no-op for this loop, so no need to log that.
@@ -211,7 +218,7 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 		case opv1.RestartStatusAction:
 			serviceName := string(action.Restart.ServiceName)
 
-			if err := systemdConnection.Restart(context.Background(), serviceName); err != nil {
+			if err := restartService(serviceName); err != nil {
 				// On RHEL nodes, this service is not available and will error out.
 				// In those cases, directly run the command instead of using the service
 				if serviceName == constants.UpdateCATrustServiceName {
@@ -242,19 +249,19 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 		case opv1.ReloadStatusAction:
 			// Execute a generic service reload defined by the action object
 			serviceName := string(action.Reload.ServiceName)
-			if err := dn.executeReloadServiceNodeDisruptionAction(serviceName, systemdConnection.Reload(context.Background(), serviceName)); err != nil {
+			if err := dn.executeReloadServiceNodeDisruptionAction(serviceName, reloadService(serviceName)); err != nil {
 				return err
 			}
 
 		case opv1.SpecialStatusAction:
 			// The special action type requires a CRIO reload
-			if err := dn.executeReloadServiceNodeDisruptionAction(constants.CRIOServiceName, systemdConnection.Reload(context.Background(), constants.CRIOServiceName)); err != nil {
+			if err := dn.executeReloadServiceNodeDisruptionAction(constants.CRIOServiceName, reloadService(constants.CRIOServiceName)); err != nil {
 				return err
 			}
 
 		case opv1.DaemonReloadStatusAction:
 			// Execute daemon-reload
-			if err := dn.executeReloadServiceNodeDisruptionAction(constants.DaemonReloadCommand, systemdConnection.ReloadDaemon(context.Background())); err != nil {
+			if err := dn.executeReloadServiceNodeDisruptionAction(constants.DaemonReloadCommand, reloadDaemon()); err != nil {
 				return err
 			}
 		}
@@ -274,12 +281,6 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 	if err != nil {
 		return err
 	}
-
-	systemdConnection, err := dn.systemdManager.NewConnection(context.Background())
-	if err != nil {
-		return fmt.Errorf("error creating connection to systemd: %w", err)
-	}
-	defer systemdConnection.Close()
 
 	if ctrlcommon.InSlice(postConfigChangeActionReboot, postConfigChangeActions) {
 		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
@@ -321,7 +322,8 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 
 	if ctrlcommon.InSlice(postConfigChangeActionReloadCrio, postConfigChangeActions) {
 		serviceName := constants.CRIOServiceName
-		if err := systemdConnection.Reload(context.Background(), serviceName); err != nil {
+
+		if err := reloadService(serviceName); err != nil {
 			if dn.nodeWriter != nil {
 				dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedServiceReload", fmt.Sprintf("Reloading %s service failed. Error: %v", serviceName, err))
 			}
@@ -359,7 +361,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 
 		serviceName := constants.CRIOServiceName
 
-		if err := systemdConnection.Restart(context.Background(), serviceName); err != nil {
+		if err := restartService(serviceName); err != nil {
 			if dn.nodeWriter != nil {
 				dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedServiceReload", fmt.Sprintf("Reloading %s service failed. Error: %v", serviceName, err))
 			}
@@ -1733,7 +1735,10 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 		logSystem("Re-applying kernel type %s", newKtype)
 	}
 
-	kernelPackages := dn.getKernelPackagesForRelease()
+	kernelPackages, err := dn.getKernelPackagesForTargetRelease()
+	if err != nil {
+		return fmt.Errorf("failed to get kernel packages for target release: %w", err)
+	}
 	if newKtype == ctrlcommon.KernelTypeRealtime {
 		// Switch to RT kernel
 		args := []string{"override", "remove"}
@@ -1756,9 +1761,21 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 	return fmt.Errorf("unhandled kernel type %s", newKtype)
 }
 
-// getKernelPackagesForRelease returns the list of kernel packaged for the running OS release.
-func (dn *CoreOSDaemon) getKernelPackagesForRelease() releaseKernelPackages {
+// getKernelPackagesForTargetRelease returns the list of kernel packaged for the running OS release.
+func (dn *CoreOSDaemon) getKernelPackagesForTargetRelease() (releaseKernelPackages, error) {
 	// TODO: Drop this code and use https://github.com/coreos/rpm-ostree/issues/2542 instead
+
+	// Fetch the OS deployments to infer the target OS version from them
+	booted, staged, err := dn.NodeUpdaterClient.GetBootedAndStagedDeployment()
+	if err != nil {
+		return releaseKernelPackages{}, fmt.Errorf("error fetching OS deployments : %v", err)
+	}
+
+	// If there's a staged deployment the packages will be installed in it instead of in the current booted deployment
+	targetDeployment := booted
+	if staged != nil {
+		targetDeployment = staged
+	}
 
 	kernelPackages := releaseKernelPackages{
 		defaultKernel:   []string{"kernel", "kernel-core", "kernel-modules", "kernel-modules-core", "kernel-modules-extra"},
@@ -1770,10 +1787,11 @@ func (dn *CoreOSDaemon) getKernelPackagesForRelease() releaseKernelPackages {
 
 	// RHEL10 early bugfix of OCPBUGS-62925
 	// RHEL10 doesn't ship with kernel-rt-kvm
-	if !dn.os.IsEL10() {
+	targetVersion := NewTargetOSVersionFromDeployment(targetDeployment)
+	if !targetVersion.IsEL10() {
 		kernelPackages.realtimeKernel = append(kernelPackages.realtimeKernel, "kernel-rt-kvm")
 	}
-	return kernelPackages
+	return kernelPackages, nil
 }
 
 // updateFiles writes files specified by the nodeconfig to disk. it also writes
@@ -1962,12 +1980,6 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) e
 		newUnitSet[path] = struct{}{}
 	}
 
-	systemdConnection, err := dn.systemdManager.NewConnection(context.Background())
-	if err != nil {
-		return fmt.Errorf("error creating connection to systemd: %w", err)
-	}
-	defer systemdConnection.Close()
-
 	for _, u := range oldIgnConfig.Systemd.Units {
 		for j := range u.Dropins {
 			path := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
@@ -2002,7 +2014,7 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) e
 			// look to restore defaults here, so that symlinks are removed first
 			// if the system has the service disabled
 			// writeUnits() will catch units that still have references in other MCs
-			if err := dn.presetUnit(systemdConnection, u); err != nil {
+			if err := dn.presetUnit(u); err != nil {
 				klog.Infof("Did not restore preset for %s (may not exist): %s", u.Name, err)
 			}
 			if _, err := os.Stat(noOrigFileStampName(path)); err == nil {
@@ -2057,10 +2069,12 @@ func (dn *Daemon) workaroundOcpBugs33694() error {
 }
 
 // enableUnits enables a set of systemd units via systemctl, if any fail all fails.
-func (dn *Daemon) enableUnits(systemdConnection SystemdConnection, units []string) error {
-	if err := systemdConnection.Enable(context.Background(), false, units...); err != nil {
+func (dn *Daemon) enableUnits(units []string) error {
+	args := append([]string{"enable"}, units...)
+	stdouterr, err := exec.Command("systemctl", args...).CombinedOutput()
+	if err != nil {
 		if !dn.os.IsLikeTraditionalRHEL7() {
-			return fmt.Errorf("error enabling units: %w", err)
+			return fmt.Errorf("error enabling units: %s", stdouterr)
 		}
 		// In RHEL7, the systemd version is too low, so it is unable to handle broken
 		// symlinks during enable. Do a best-effort removal of potentially broken
@@ -2072,25 +2086,26 @@ func (dn *Daemon) enableUnits(systemdConnection SystemdConnection, units []strin
 			fi, fiErr := os.Lstat(unitLinkPath)
 			if fiErr != nil {
 				if !os.IsNotExist(fiErr) {
-					return fmt.Errorf("error trying to enable unit, fallback failed with %s (original error %w)",
-						fiErr, err)
+					return fmt.Errorf("error trying to enable unit, fallback failed with %s (original error %s)",
+						fiErr, stdouterr)
 				}
 				continue
 			}
 			if fi.Mode()&os.ModeSymlink == 0 {
-				return fmt.Errorf("error trying to enable unit, a non-symlink file exists at %s (original error %w)",
-					unitLinkPath, err)
+				return fmt.Errorf("error trying to enable unit, a non-symlink file exists at %s (original error %s)",
+					unitLinkPath, stdouterr)
 			}
 			if _, evalErr := filepath.EvalSymlinks(unitLinkPath); evalErr != nil {
 				// this is a broken symlink, remove
 				if rmErr := os.Remove(unitLinkPath); rmErr != nil {
-					return fmt.Errorf("error trying to enable unit, cannot remove broken symlink: %s (original error %w)",
-						rmErr, err)
+					return fmt.Errorf("error trying to enable unit, cannot remove broken symlink: %s (original error %s)",
+						rmErr, stdouterr)
 				}
 			}
 		}
-		if err := systemdConnection.Enable(context.Background(), false, units...); err != nil {
-			return fmt.Errorf("error enabling units: %w", err)
+		stdouterr, err := exec.Command("systemctl", args...).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("error enabling units: %s", stdouterr)
 		}
 	}
 	klog.Infof("Enabled systemd units: %v", units)
@@ -2098,18 +2113,22 @@ func (dn *Daemon) enableUnits(systemdConnection SystemdConnection, units []strin
 }
 
 // disableUnits disables a set of systemd units via systemctl, if any fail all fails.
-func (dn *Daemon) disableUnits(systemdConnection SystemdConnection, units []string) error {
-	if err := systemdConnection.Disable(context.Background(), units...); err != nil {
-		return fmt.Errorf("error disabling unit: %w", err)
+func (dn *Daemon) disableUnits(units []string) error {
+	args := append([]string{"disable"}, units...)
+	stdouterr, err := exec.Command("systemctl", args...).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("error disabling unit: %s", stdouterr)
 	}
 	klog.Infof("Disabled systemd units %v", units)
 	return nil
 }
 
 // presetUnit resets a systemd unit to its preset via systemctl
-func (dn *Daemon) presetUnit(systemdConnection SystemdConnection, unit ign3types.Unit) error {
-	if err := systemdConnection.Preset(context.Background(), unit.Name); err != nil {
-		return fmt.Errorf("error running preset on unit: %w", err)
+func (dn *Daemon) presetUnit(unit ign3types.Unit) error {
+	args := []string{"preset", unit.Name}
+	stdouterr, err := exec.Command("systemctl", args...).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("error running preset on unit: %s", stdouterr)
 	}
 	klog.Infof("Preset systemd unit %q", unit.Name)
 	return nil
@@ -2121,20 +2140,13 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 	var disabledUnits []string
 
 	isCoreOSVariant := dn.os.IsCoreOSVariant()
-
-	systemdConnection, err := dn.systemdManager.NewConnection(context.Background())
-	if err != nil {
-		return fmt.Errorf("error creating connection to systemd: %w", err)
-	}
-	defer systemdConnection.Close()
-
-	systemdUnits, err := systemdConnection.ListUnits(context.Background())
+	systemdUnits, err := dn.listSystemdUnits()
 	if err != nil {
 		return err
 	}
 
 	for _, u := range units {
-		if err := writeUnit(systemdConnection, u, pathSystemd, isCoreOSVariant); err != nil {
+		if err := writeUnit(u, pathSystemd, isCoreOSVariant); err != nil {
 			return fmt.Errorf("daemon could not write systemd unit: %w", err)
 		}
 		// if the unit doesn't note if it should be enabled or disabled then
@@ -2168,7 +2180,7 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 				klog.Infof("Could not %s unit %q, because it has no contents, skipping", action, u.Name)
 			}
 		} else {
-			if err := dn.presetUnit(systemdConnection, u); err != nil {
+			if err := dn.presetUnit(u); err != nil {
 				// Don't fail here, since a unit may have a dropin referencing a nonexisting actual unit
 				klog.Infof("Could not reset unit preset for %s, skipping. (Error msg: %v)", u.Name, err)
 			}
@@ -2176,39 +2188,38 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 	}
 
 	if len(enabledUnits) > 0 {
-		if err := dn.enableUnits(systemdConnection, enabledUnits); err != nil {
+		if err := dn.enableUnits(enabledUnits); err != nil {
 			return err
 		}
 	}
 	if len(disabledUnits) > 0 {
-		if err := dn.disableUnits(systemdConnection, disabledUnits); err != nil {
+		if err := dn.disableUnits(disabledUnits); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (dn *Daemon) listSystemdUnits() (sets.Set[string], error) {
-	rawJSON, err := dn.cmdRunner.RunGetOut("systemctl", "list-units", "--all", "--no-pager", "--output=json")
+func (dn *Daemon) listSystemdUnits() (result map[string]systemddbus.UnitStatus, err error) {
+	conn, err := systemddbus.NewSystemdConnectionContext(context.Background())
 	if err != nil {
-		return nil, fmt.Errorf("error listing systemd units: %w", err)
+		return nil, fmt.Errorf("failed to connect to system bus to list units: %w", err)
+	}
+	defer func() {
+		conn.Close()
+	}()
+
+	units, err := conn.ListUnitsContext(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to list systemd units: %w", err)
 	}
 
-	type Unit struct {
-		Unit string `json:"unit,omitempty"`
+	result = make(map[string]systemddbus.UnitStatus)
+	for _, unit := range units {
+		result[unit.Name] = unit
 	}
-	var units []Unit
-	if err := json.Unmarshal(rawJSON, &units); err != nil {
-		return nil, fmt.Errorf("error parsing systemd units: %w", err)
-	}
+	return result, nil
 
-	names := sets.New[string]()
-	for _, u := range units {
-		if u.Unit != "" {
-			names.Insert(u.Unit)
-		}
-	}
-	return names, nil
 }
 
 // writeFiles writes the given files to disk.
@@ -3107,7 +3118,7 @@ func (dn *Daemon) disableRevertSystemdUnit() error {
 
 	// If we've reached this point, we know that the unit file is still present,
 	// which means that the unit may still be enabled.
-	if err := dn.systemdManager.DoConnection(context.Background(), SystemdDisable(runtimeassets.RevertServiceName)); err != nil {
+	if err := dn.disableUnits([]string{runtimeassets.RevertServiceName}); err != nil {
 		return err
 	}
 

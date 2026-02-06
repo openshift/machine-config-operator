@@ -1,14 +1,12 @@
 package daemon
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
-	"time"
 
 	"github.com/containers/image/v5/signature"
 	rpmostreeclient "github.com/coreos/rpmostree-client-go/pkg/client"
@@ -29,16 +27,14 @@ type RpmOstreeClient struct {
 	client          rpmostreeclient.Client
 	commandRunner   CommandRunner
 	podmanInterface PodmanInterface
-	systemdManager  SystemdManager
 }
 
 // NewNodeUpdaterClient is a wrapper to create an RpmOstreeClient
-func NewNodeUpdaterClient(commandRunner CommandRunner, podmanInterface PodmanInterface, systemdManager SystemdManager) RpmOstreeClient {
+func NewNodeUpdaterClient(commandRunner CommandRunner, podmanInterface PodmanInterface) RpmOstreeClient {
 	return RpmOstreeClient{
 		client:          rpmostreeclient.NewClient("machine-config-daemon"),
 		commandRunner:   commandRunner,
 		podmanInterface: podmanInterface,
-		systemdManager:  systemdManager,
 	}
 }
 
@@ -50,7 +46,7 @@ func runRpmOstree(args ...string) error {
 }
 
 // See https://bugzilla.redhat.com/show_bug.cgi?id=2111817
-func (r *RpmOstreeClient) bug2111817Workaround() error {
+func bug2111817Workaround() error {
 	targetUnit := "/run/systemd/system/rpm-ostreed.service.d/bug2111817.conf"
 	// Do nothing if the file exists
 	if _, err := os.Stat(targetUnit); err == nil {
@@ -66,24 +62,21 @@ InaccessiblePaths=
 	if err := writeFileAtomicallyWithDefaults(targetUnit, []byte(dropin)); err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
-	if err := r.systemdManager.DoConnection(ctx, SystemdReloadDaemon()); err != nil {
-		return fmt.Errorf("failed to reload daemon for rpm-ostree 2111817 bug : %w", err)
+	if err := runCmdSync("systemctl", "daemon-reload"); err != nil {
+		return err
 	}
 	klog.Infof("Enabled workaround for bug 2111817")
 	return nil
 }
 
 func (r *RpmOstreeClient) Initialize() error {
-	if err := r.bug2111817Workaround(); err != nil {
+	if err := bug2111817Workaround(); err != nil {
 		return err
 	}
 	// Ensure the temporal ostree dropin doesn't exist
 	// It shouldn't, but it's possible if the MCD container
 	// suddenly died before rpm-ostree rebase finished
-	if err := r.cleanupTemporalOstreePolicyFiles(); err != nil {
+	if err := cleanupTemporalOstreePolicyFiles(); err != nil {
 		return err
 	}
 
@@ -115,6 +108,16 @@ func (r *RpmOstreeClient) GetBootedAndStagedDeployment() (*rpmostreeclient.Deplo
 	staged := status.GetStagedDeployment()
 
 	return booted, staged, nil
+}
+
+// GetStatus returns multi-line human-readable text describing system status
+func (r *RpmOstreeClient) GetStatus() (string, error) {
+	output, err := r.commandRunner.RunGetOut("rpm-ostree", "status")
+	if err != nil {
+		return "", err
+	}
+
+	return string(output), nil
 }
 
 // GetBootedOSImageURL returns the image URL as well as the OSTree version(for logging) and the ostree commit (for comparisons)
@@ -209,7 +212,7 @@ func (r *RpmOstreeClient) RebaseLayeredFromContainerStorage(podmanImageInfo *Pod
 	defer func() {
 		// Call the cleanup always, just in case there are left-overs of
 		// a previous killed MCD (unlikely, but possible)
-		if err := r.cleanupTemporalOstreePolicyFiles(); err != nil {
+		if err := cleanupTemporalOstreePolicyFiles(); err != nil {
 			klog.Errorf("Error deleting temporary MCD temporal policy %v", err)
 		}
 	}()
@@ -327,11 +330,7 @@ func (r *RpmOstreeClient) patchPoliciesForContainerStorage(podmanImageInfo *Podm
 		return err
 	}
 
-	// Give systemd commands 60 seconds to finish
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
-	if err := r.writeTemporalOstreePolicyFileDropin(ctx); err != nil {
+	if err := writeTemporalOstreePolicyFileDropin(); err != nil {
 		return err
 	}
 
@@ -361,7 +360,7 @@ func (r *RpmOstreeClient) generateTransportPolicyKeyForReference(podmanImageInfo
 // This allows rpm-ostree to use the patched policy without modifying the system's
 // policy file directly. After writing the drop-in, the function reloads systemd and
 // restarts rpm-ostreed to apply the changes.
-func (r *RpmOstreeClient) writeTemporalOstreePolicyFileDropin(ctx context.Context) error {
+func writeTemporalOstreePolicyFileDropin() error {
 	// Create a temporal dropin to mount the temporal policy into rpm-ostreed process
 	if err := writeFileAtomicallyWithDefaults(
 		rpmOstreeTemporalDropinFile,
@@ -372,24 +371,20 @@ func (r *RpmOstreeClient) writeTemporalOstreePolicyFileDropin(ctx context.Contex
 	); err != nil {
 		return err
 	}
-	return r.systemdRpmOstreeReload(ctx)
+	return systemdRpmOstreeReload()
 }
 
 // cleanupTemporalOstreePolicyFiles removes the generated temporal files (systemd drop-in
 // and temporal policy.json) created by writeTemporalOstreePolicyFileDropin, restoring
 // rpm-ostreed to use the original system policy file. After removing the files, the
 // function reloads systemd and restarts rpm-ostreed to apply the changes.
-func (r *RpmOstreeClient) cleanupTemporalOstreePolicyFiles() error {
-	// Give systemd commands 60 seconds to finish
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
+func cleanupTemporalOstreePolicyFiles() error {
 	err := os.Remove(rpmOstreeTemporalDropinFile)
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	} else if err == nil {
 		// The file existed: Reload
-		if err := r.systemdRpmOstreeReload(ctx); err != nil {
+		if err := systemdRpmOstreeReload(); err != nil {
 			return err
 		}
 	}
@@ -403,18 +398,12 @@ func (r *RpmOstreeClient) cleanupTemporalOstreePolicyFiles() error {
 
 // systemdRpmOstreeReload notifies systemd of unit configuration changes and restarts
 // the rpm-ostreed service if it's currently running.
-func (r *RpmOstreeClient) systemdRpmOstreeReload(ctx context.Context) error {
-	conn, err := r.systemdManager.NewConnection(ctx)
-	if err != nil {
-		return fmt.Errorf("error creating connection to systemd: %w", err)
-	}
-	defer conn.Close()
-
+func systemdRpmOstreeReload() error {
 	// Tell systemd that there are changes in the units
-	if err := conn.ReloadDaemon(ctx); err != nil {
+	if err := runCmdSync("systemctl", "daemon-reload"); err != nil {
 		return err
 	}
 
 	// In case rpm-ostreed is running restart it to take the latest config
-	return conn.TryRestart(ctx, "rpm-ostreed")
+	return runCmdSync("systemctl", "try-restart", "rpm-ostreed")
 }
