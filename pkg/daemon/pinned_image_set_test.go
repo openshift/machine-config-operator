@@ -571,16 +571,11 @@ func TestEnsureCrioPinnedImagesConfigFile(t *testing.T) {
 	testCfgPath := filepath.Join(tmpDir, "50-pinned-images")
 	err = os.WriteFile(testCfgPath, newCfgBytes, 0644)
 	require.NoError(err)
-
-	pinnedImageSetManager := PinnedImageSetManager{
-		systemdManager: newMockSystemdManager(nil),
-	}
-
-	err = pinnedImageSetManager.ensureCrioPinnedImagesConfigFile(testCfgPath, imageNames)
+	err = ensureCrioPinnedImagesConfigFile(testCfgPath, imageNames)
 	require.NoError(err)
 
 	imageNames = append(imageNames, "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd")
-	err = pinnedImageSetManager.ensureCrioPinnedImagesConfigFile(testCfgPath, imageNames)
+	err = ensureCrioPinnedImagesConfigFile(testCfgPath, imageNames)
 	require.ErrorIs(err, os.ErrPermission) // this error is from atomic writer attempting to write.
 }
 
