@@ -100,6 +100,9 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			ctrlctx.KubeInformerFactory.Core().V1().Nodes(),
 			ctrlctx.KubeMAOSharedInformer.Core().V1().Secrets(),
 			ctrlctx.ConfigInformerFactory.Config().V1().Images(),
+			ctrlctx.ConfigInformerFactory.Config().V1().ImageDigestMirrorSets(),
+			ctrlctx.ConfigInformerFactory.Config().V1().ImageTagMirrorSets(),
+			ctrlctx.OperatorInformerFactory.Operator().V1alpha1().ImageContentSourcePolicies(),
 			ctrlctx.KubeNamespacedInformerFactory.Core().V1().ServiceAccounts(),
 			ctrlctx.KubeNamespacedInformerFactory.Core().V1().Secrets(),
 			ctrlctx.OpenShiftConfigKubeNamespacedInformerFactory.Core().V1().ConfigMaps(),
@@ -115,6 +118,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			ctrlctx.ConfigInformerFactory.Config().V1().APIServers(),
 			ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1().MachineOSConfigs(),
 			ctrlctx.ConfigInformerFactory.Config().V1().ClusterVersions(),
+			ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().OSImageStreams(),
 			iriInformer,
 			ctrlctx,
 		)
@@ -132,10 +136,6 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		ctrlctx.KubeMAOSharedInformer.Start(ctrlctx.Stop)
 
 		close(ctrlctx.InformersStarted)
-
-		if fgErr := ctrlctx.FeatureGatesHandler.Connect(ctx); fgErr != nil {
-			klog.Fatal(fmt.Errorf("failed to connect to feature gates %w", fgErr))
-		}
 
 		go controller.Run(2, ctrlctx.Stop)
 
