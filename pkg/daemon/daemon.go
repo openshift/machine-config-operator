@@ -169,9 +169,6 @@ type Daemon struct {
 	// Abstraction for running commands against the OS
 	cmdRunner CommandRunner
 
-	// Abstraction for interacting with systemd
-	systemdManager SystemdManager
-
 	// Bare minimal podman client
 	podmanInterface PodmanInterface
 }
@@ -318,10 +315,9 @@ func New(
 	var nodeUpdaterClient *RpmOstreeClient
 	cmdRunner := &CommandRunnerOS{}
 	podmanInterface := NewPodmanExec(cmdRunner)
-	systemdManager := NewSystemdManagerDefault()
 	// Only pull the osImageURL from OSTree when we are on RHCOS or FCOS
 	if hostos.IsCoreOSVariant() {
-		nodeUpdaterClientVal := NewNodeUpdaterClient(cmdRunner, podmanInterface, systemdManager)
+		nodeUpdaterClientVal := NewNodeUpdaterClient(cmdRunner, podmanInterface)
 		nodeUpdaterClient = &nodeUpdaterClientVal
 		err := nodeUpdaterClient.Initialize()
 		if err != nil {
@@ -361,7 +357,6 @@ func New(
 		irreconcilableReporter: NewNoOpIrreconcilableReporterImpl(),
 		cmdRunner:              cmdRunner,
 		podmanInterface:        podmanInterface,
-		systemdManager:         systemdManager,
 	}, nil
 }
 
@@ -1228,7 +1223,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 
 	if ctrlcommon.InSlice(postConfigChangeActionReloadCrio, actions) {
 		serviceName := constants.CRIOServiceName
-		if err := dn.systemdManager.DoConnection(context.Background(), SystemdReload(serviceName)); err != nil {
+		if err := reloadService(serviceName); err != nil {
 			return fmt.Errorf("could not apply update: reloading %s configuration failed. Error: %w", serviceName, err)
 		}
 		klog.Infof("%s config reloaded successfully! Desired config %s has been applied, skipping reboot", serviceName, desiredConfig.Name)

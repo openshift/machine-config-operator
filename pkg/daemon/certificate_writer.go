@@ -295,14 +295,8 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 	if controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] == ctrlcommon.ServiceCARotateTrue && oldAnno != controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] && cmErr == nil && kubeConfigDiff && !allCertsThere && !dn.deferKubeletRestart {
 		if len(onDiskKC.Clusters[0].Cluster.CertificateAuthorityData) > 0 {
 			logSystem("restarting kubelet due to server-ca rotation")
-			systemdConnection, err := dn.systemdManager.NewConnection(context.Background())
-			if err != nil {
-				return fmt.Errorf("error creating connection to systemd: %w", err)
-			}
-			defer systemdConnection.Close()
-
-			if err := systemdConnection.Stop(context.Background(), "kubelet"); err != nil {
-				return fmt.Errorf("could not stop kubelet for server-ca rotation. Error: %v", err)
+			if err := runCmdSync("systemctl", "stop", "kubelet"); err != nil {
+				return err
 			}
 			f, err := os.ReadFile("/var/lib/kubelet/kubeconfig")
 			if err != nil && os.IsNotExist(err) {
@@ -329,12 +323,12 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 				return err
 			}
 
-			if err := systemdConnection.ReloadDaemon(context.Background()); err != nil {
-				return fmt.Errorf("could not reload systemd after kubelet stop for server-ca rotation. Error: %v", err)
+			if err := runCmdSync("systemctl", "daemon-reload"); err != nil {
+				return err
 			}
 
-			if err := systemdConnection.Start(context.Background(), "kubelet"); err != nil {
-				return fmt.Errorf("could not start kubelet after stopping it for server-ca rotation. Error: %v", err)
+			if err := runCmdSync("systemctl", "start", "kubelet"); err != nil {
+				return err
 			}
 		}
 
