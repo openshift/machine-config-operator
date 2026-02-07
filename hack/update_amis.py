@@ -221,7 +221,7 @@ def main():
     # Determine the project root (parent of hack directory)
     script_dir = Path(__file__).parent.resolve()
     project_root = script_dir.parent
-    AMI_GO_FILE = project_root / "pkg/controller/machine-set-boot-image/ami.go"
+    AMI_GO_FILE = project_root / "pkg/controller/bootimage/ami.go"
 
     # Check if ami.go exists
     if not AMI_GO_FILE.exists():
