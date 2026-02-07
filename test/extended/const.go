@@ -43,4 +43,6 @@ const (
 	MachineConfigDaemonStateDegraded = "Degraded"
 	// MachineConfigDaemonStateUnreconcilable is set by the daemon when a MachineConfig cannot be applied.
 	MachineConfigDaemonStateUnreconcilable = "Unreconcilable"
+
+	IRIResourceName = "cluster"
 )
