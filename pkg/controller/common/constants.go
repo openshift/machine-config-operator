@@ -156,6 +156,8 @@ const (
 	// NodeSizingEnabledEnvPath is the file path for the node sizing enabled environment file
 	NodeSizingEnabledEnvPath = "/etc/node-sizing-enabled.env"
 
+	MachineConfigPoolRequiredForUpgradeLabel = "operator.machineconfiguration.openshift.io/required-for-upgrade"
+
 	// Current Boot Image Skew Limits
 	// Note: Update units in status_test.go when the following are bumped
 	RHCOSVersionBootImageSkewLimit = "9.2"
