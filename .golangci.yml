@@ -1,4 +1,5 @@
 ---
+version: "2"
 run:
   concurrency: 6
   deadline: 15m
@@ -16,8 +17,8 @@ linters:
     #- gochecknoinits
     - goconst
     - gocritic
-    - gofmt
-    - goimports
+    # - gofmt
+    # - goimports
     - revive
     - gosec
     - govet

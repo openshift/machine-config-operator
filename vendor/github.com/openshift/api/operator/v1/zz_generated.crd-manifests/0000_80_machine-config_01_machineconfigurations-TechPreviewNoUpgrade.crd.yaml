@@ -1524,12 +1524,19 @@ spec:
           rule: 'self.?status.bootImageSkewEnforcementStatus.mode.orValue("") == ''Automatic''
             ? self.?spec.managedBootImages.hasValue() || self.?status.managedBootImagesStatus.hasValue()
             : true'
-        - message: when skew enforcement is in Automatic mode, managedBootImages must
-            contain a MachineManager opting in all MachineAPI MachineSets
+        - message: when skew enforcement is in Automatic mode, managedBootImages.machineManagers
+            must not be an empty list
           rule: 'self.?status.bootImageSkewEnforcementStatus.mode.orValue("") == ''Automatic''
-            ? !(self.?spec.managedBootImages.machineManagers.hasValue()) || self.spec.managedBootImages.machineManagers.exists(m,
-            m.selection.mode == ''All'' && m.resource == ''machinesets'' && m.apiGroup
-            == ''machine.openshift.io'') : true'
+            ? !(self.?spec.managedBootImages.machineManagers.hasValue()) || size(self.spec.managedBootImages.machineManagers)
+            > 0 : true'
+        - message: when skew enforcement is in Automatic mode, any MachineAPI MachineSet
+            MachineManager must use selection mode 'All'
+          rule: 'self.?status.bootImageSkewEnforcementStatus.mode.orValue("") == ''Automatic''
+            ? !(self.?spec.managedBootImages.machineManagers.hasValue()) || !self.spec.managedBootImages.machineManagers.exists(m,
+            m.resource == ''machinesets'' && m.apiGroup == ''machine.openshift.io'')
+            || self.spec.managedBootImages.machineManagers.exists(m, m.resource ==
+            ''machinesets'' && m.apiGroup == ''machine.openshift.io'' && m.selection.mode
+            == ''All'') : true'
         - message: when skew enforcement is in Automatic mode, managedBootImagesStatus
             must contain a MachineManager opting in all MachineAPI MachineSets
           rule: 'self.?status.bootImageSkewEnforcementStatus.mode.orValue("") == ''Automatic''
