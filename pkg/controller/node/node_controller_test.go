@@ -34,6 +34,8 @@ import (
 	configv1informer "github.com/openshift/client-go/config/informers/externalversions"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
+	fakeoperatorclient "github.com/openshift/client-go/operator/clientset/versioned/fake"
+	operatorinformer "github.com/openshift/client-go/operator/informers/externalversions"
 	"github.com/openshift/machine-config-operator/pkg/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -102,17 +104,20 @@ func (f *fixture) newControllerWithStopChan(stopCh <-chan struct{}) *Controller 
 	f.client = fake.NewSimpleClientset(f.objects...)
 	f.kubeclient = k8sfake.NewSimpleClientset(f.kubeobjects...)
 	f.schedulerClient = fakeconfigv1client.NewSimpleClientset(f.schedulerObjects...)
+	operatorClient := fakeoperatorclient.NewSimpleClientset()
 
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
 	k8sI := kubeinformers.NewSharedInformerFactory(f.kubeclient, noResyncPeriodFunc())
 	ci := configv1informer.NewSharedInformerFactory(f.schedulerClient, noResyncPeriodFunc())
+	oi := operatorinformer.NewSharedInformerFactory(operatorClient, noResyncPeriodFunc())
 	c := NewWithCustomUpdateDelay(i.Machineconfiguration().V1().ControllerConfigs(), i.Machineconfiguration().V1().MachineConfigs(), i.Machineconfiguration().V1().MachineConfigPools(), k8sI.Core().V1().Nodes(),
-		k8sI.Core().V1().Pods(), i.Machineconfiguration().V1().MachineOSConfigs(), i.Machineconfiguration().V1().MachineOSBuilds(), i.Machineconfiguration().V1().MachineConfigNodes(), ci.Config().V1().Schedulers(), f.kubeclient, f.client, time.Millisecond, f.fgHandler)
+		k8sI.Core().V1().Pods(), i.Machineconfiguration().V1().MachineOSConfigs(), i.Machineconfiguration().V1().MachineOSBuilds(), i.Machineconfiguration().V1().MachineConfigNodes(), ci.Config().V1().Schedulers(), oi.Operator().V1().MachineConfigurations(), f.kubeclient, f.client, time.Millisecond, f.fgHandler)
 
 	c.ccListerSynced = alwaysReady
 	c.mcpListerSynced = alwaysReady
 	c.nodeListerSynced = alwaysReady
 	c.schedulerListerSynced = alwaysReady
+	c.mcopListerSynced = alwaysReady
 	c.eventRecorder = &record.FakeRecorder{}
 
 	i.Start(stopCh)
