@@ -95,4 +95,16 @@ const (
 	NodeDisruptionPolicyActionRestart      = "Restart"
 	NodeDisruptionPolicyActionDrain        = "Drain"
 	NodeDisruptionPolicyActionDaemonReload = "DaemonReload"
+	// BootImageSkewEnforcement feature constants
+
+	// RHCOSVersionMode is used to signify that the cluster boot image is described via RHCOS version
+	RHCOSVersionMode = "RHCOSVersion"
+	// OCPVersionMode is used to signify that the cluster boot image is described via OCP version
+	OCPVersionMode = "OCPVersion"
+	// SkewEnforcementManualMode indicates boot image updates require manual intervention
+	SkewEnforcementManualMode = "Manual"
+	// SkewEnforcementAutomaticMode indicates boot image updates are applied automatically
+	SkewEnforcementAutomaticMode = "Automatic"
+	// SkewEnforcementNoneMode indicates boot image skew enforcement is disabled
+	SkewEnforcementNoneMode = "None"
 )

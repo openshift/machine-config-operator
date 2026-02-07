@@ -171,3 +171,8 @@ func (matcher *AvailableMatcher) NegatedFailureMessage(actual interface{}) (mess
 func BeAvailable() types.GomegaMatcher {
 	return &DegradedMatcher{&conditionMatcher{conditionType: "Available", field: "status", expected: "True"}}
 }
+
+// BeUpgradeable returns the gomega matcher to check if a resource is upgradeable or not.
+func BeUpgradeable() types.GomegaMatcher {
+	return &conditionMatcher{conditionType: "Upgradeable", field: "status", expected: "True"}
+}
