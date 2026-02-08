@@ -67,6 +67,7 @@ contents:
     pause_image_auth_file = "/var/lib/kubelet/config.json"
     pause_command = "/usr/bin/pod"
     oci_artifact_mount_support = false
+    short_name_mode = "disabled"
 
     [crio.network]
     network_dir = "/etc/kubernetes/cni/net.d/"
