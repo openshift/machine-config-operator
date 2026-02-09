@@ -23,7 +23,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 	g.JustBeforeEach(func() {
 		// Skip if single node
-		SkipIfSNO(oc.AsAdmin())
+		exutil.SkipOnSingleNodeTopology(oc.AsAdmin())
 		// Skip if no machineset
 		SkipTestIfWorkersCannotBeScaled(oc.AsAdmin())
 		// ControlPlaneMachineSet Bootimages Update functionality is only available in GCP, AWS, and Azure (Tech Preview)
@@ -155,7 +155,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	g.It("[PolarionID:85467][OTP] ControlPlaneMachineSets. Bootimage upgrade stub ignition to spec 3 [apigroup:machineconfiguration.openshift.io]", func() {
 
 		var (
-			fakeImageName = GetValidUpdateBootImageValue(oc.AsAdmin())
+			fakeImageName = getBackdatedBootImage(oc.AsAdmin())
 
 			userDataJSONVersionPath = `ignition.version`
 		)
@@ -234,7 +234,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		var (
 			machineConfiguration = GetMachineConfiguration(oc.AsAdmin())
-			fakeImageName        = GetValidUpdateBootImageValue(oc.AsAdmin())
+			fakeImageName        = getBackdatedBootImage(oc.AsAdmin())
 
 			userDataJSONVersionPath = `ignition.version`
 		)
@@ -294,7 +294,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	g.It("[PolarionID:85480][OTP] ControlPlaneMachineSets. Not updated when owner reference [apigroup:machineconfiguration.openshift.io]", func() {
 
 		var (
-			fakeImageName = GetValidUpdateBootImageValue(oc.AsAdmin())
+			fakeImageName = getBackdatedBootImage(oc.AsAdmin())
 
 			userDataJSONVersionPath = `ignition.version`
 		)

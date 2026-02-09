@@ -36,7 +36,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		extpriv.SkipTestIfWorkersCannotBeScaled(oc)
 
 		// Skip on single-node topologies
-		skipOnSingleNodeTopology(oc)
+		exutil.SkipOnSingleNodeTopology(oc)
 
 		machineClient, err = machineclient.NewForConfig(oc.KubeFramework().ClientConfig())
 		o.Expect(err).NotTo(o.HaveOccurred())

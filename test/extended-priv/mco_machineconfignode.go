@@ -294,7 +294,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	})
 
 	g.It("[PolarionID:74644][OTP] Scope each MCN object to only be accessible from its associated MCD [apigroup:machineconfiguration.openshift.io]", func() {
-		SkipIfSNO(oc.AsAdmin())
+		exutil.SkipOnSingleNodeTopology(oc.AsAdmin())
 		var (
 			nodes              = OrFail[[]*Node](NewNodeList(oc.AsAdmin()).GetAllLinux())
 			node0              = nodes[0]

@@ -435,7 +435,7 @@ func checkDrainAndReboot(node *Node, startTime time.Time, controller *Controller
 
 	// A drain operation is always  executed when a reboot opration is executed, even if the drain action is not configured
 	// In SNO clusters the drain operation is not executed if the node is rebooted
-	checkDrainAction(hasDrainAction || (hasRebootAction && !IsSNO(node.GetOC())), node, controller)
+	checkDrainAction(hasDrainAction || (hasRebootAction && !exutil.IsSingleNodeTopology(node.GetOC())), node, controller)
 	checkRebootAction(hasRebootAction, node, startTime)
 }
 
