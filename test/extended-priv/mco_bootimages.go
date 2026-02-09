@@ -54,7 +54,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		var (
 			duplicatedMachinesetName = fmt.Sprintf("cloned-tc-%s", GetCurrentTestPolarionIDNumber())
 			firstMachineSet          = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
-			fakeImageName            = GetValidUpdateBootImageValue(oc.AsAdmin())
+			fakeImageName            = getBackdatedBootImage(oc.AsAdmin())
 		)
 
 		exutil.By("Duplicate machineset for testing")
@@ -112,7 +112,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	g.It("[PolarionID:74240][OTP] ManagedBootImages. Restore All MachineSet images", g.Label("Platform:aws", "Platform:gcp", "Platform:vsphere", "Platform:azure"), func() {
 		var (
 			machineSet                 = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
-			fakeImageName              = GetValidUpdateBootImageValue(oc.AsAdmin())
+			fakeImageName              = getBackdatedBootImage(oc.AsAdmin())
 			clonedMSName               = "cloned-tc-74240"
 			clonedWrongBootImageMSName = "cloned-tc-74240-wrong-boot-image"
 			clonedOwnedMSName          = "cloned-tc-74240-owned"
@@ -219,7 +219,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	g.It("[PolarionID:74239][OTP] ManagedBootImages. Restore Partial MachineSet images", g.Label("Platform:aws", "Platform:gcp", "Platform:vsphere", "Platform:azure"), func() {
 		var (
 			machineSet             = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
-			fakeImageName          = GetValidUpdateBootImageValue(oc.AsAdmin())
+			fakeImageName          = getBackdatedBootImage(oc.AsAdmin())
 			clonedMSLabelName      = "cloned-tc-74239-label"
 			clonedMSNoLabelName    = "cloned-tc-74239-no-label"
 			clonedMSLabelOwnedName = "cloned-tc-74239-label-owned"
@@ -316,7 +316,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		var (
 			machineConfiguration        = GetMachineConfiguration(oc.AsAdmin())
 			machineSet                  = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
-			fakeImageName               = GetValidUpdateBootImageValue(oc.AsAdmin())
+			fakeImageName               = getBackdatedBootImage(oc.AsAdmin())
 			clonedMSName                = "cloned-tc-74751-copy"
 			labelName                   = "test"
 			labelValue                  = "update"
@@ -508,7 +508,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 			machineConfiguration = GetMachineConfiguration(oc.AsAdmin())
 			machineSet           = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
-			fakeImageName        = GetValidUpdateBootImageValue(oc.AsAdmin())
+			fakeImageName        = getBackdatedBootImage(oc.AsAdmin())
 			labelName            = "test"
 			labelValue           = "update"
 
@@ -788,13 +788,27 @@ func getCoreOsBootImageFromConfigMapOrFail(platform, region string, arch archite
 	return image
 }
 
+// GetRHCOSVersionFromConfigMap retrieves the RHCOS release version from the coreos-bootimages ConfigMap
+func GetRHCOSVersionFromConfigMap(oc *exutil.CLI) string {
+	coreosBootimagesCM := NewConfigMap(oc.AsAdmin(), MachineConfigNamespace, "coreos-bootimages")
+	streamJSON, err := coreosBootimagesCM.GetDataValue("stream")
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting stream data from coreos-bootimages configmap")
+
+	parsedStream := gjson.Parse(streamJSON)
+	// Get the release version from  aws artifacts
+	rhcosVersion := parsedStream.Get("architectures.x86_64.artifacts.aws.release").String()
+	o.Expect(rhcosVersion).NotTo(o.BeEmpty(), "RHCOS version not found in coreos-bootimages configmap")
+
+	return rhcosVersion
+}
+
 // testUserDataUpdateFailure function that executes the common parts of the update spec v3 negative test cases
 func testUserDataUpdateFailure(oc *exutil.CLI, clonedMSName, clonedSecretName, expectedFailedMessageRegexp string, userDataModifyFunc func(userData string) (string, error)) {
 
 	var (
 		machineConfiguration     = GetMachineConfiguration(oc.AsAdmin())
 		machineSet               = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
-		fakeImageName            = GetValidUpdateBootImageValue(oc.AsAdmin())
+		fakeImageName            = getBackdatedBootImage(oc.AsAdmin())
 		labelName                = "test"
 		labelValue               = "update"
 		secondLabelValue         = "update2"
@@ -887,9 +901,9 @@ func checkManagedBootImagesStatus(mc *MachineConfiguration, mode string) {
 		Should(o.Equal(mode), "Error: The %s mode does not match even after patched", mode)
 }
 
-// GetValidUpdateBootImageValue returns a valid boot image value for testing based on platform
+// getBackdatedBootImage returns a valid boot image value for testing based on platform
 // MCO will only update images previously published in the installer. This function returns one of those valid images
-func GetValidUpdateBootImageValue(oc *exutil.CLI) string {
+func getBackdatedBootImage(oc *exutil.CLI) string {
 	var (
 		platform = exutil.CheckPlatform(oc)
 	)
