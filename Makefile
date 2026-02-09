@@ -10,6 +10,11 @@ PREFIX ?= /usr
 GO111MODULE?=on
 PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
 
+# Find all of the test OS image Containerfiles so they can be built.
+CUSTOM_OS_TEST_IMAGE_DIR := $(E2E_ROOT_DIR)/custom-os-images
+CUSTOM_OS_TEST_CONTAINERFILES := $(wildcard $(CUSTOM_OS_TEST_IMAGE_DIR)/Containerfile.*)
+CUSTOM_OS_TEST_IMAGE_NAMES := $(patsubst $(CUSTOM_OS_TEST_IMAGE_DIR)/Containerfile.%,%,$(CUSTOM_OS_TEST_CONTAINERFILES))
+
 # Copied from coreos-assembler
 GOARCH := $(shell uname -m)
 ifeq ($(GOARCH),x86_64)
@@ -30,7 +35,7 @@ GOTAGS = "containers_image_openpgp exclude_graphdriver_devicemapper exclude_grap
 
 all: binaries
 
-.PHONY: clean test test-unit test-e2e verify update update-amis install-tools
+.PHONY: clean test test-unit test-e2e verify update update-amis install-tools custom-os-images
 
 # Remove build artifaces
 # Example:
@@ -56,6 +61,28 @@ _verify-e2e-%:
 # Use podman to build the image.
 image:
 	hack/build-image
+
+# Define a template rule to build a specific test image.
+# Accepts the image name suffix (e.g., "rhel-coreos-9") as the
+# sole argument.
+#
+# The images will be produced with the names like localhost/custom-os-image:rhel-coreos-9.
+define custom_os_image_build_template =
+.PHONY: custom-os-image-$(1)
+custom-os-image-$(1):
+	podman build \
+		-f $(CUSTOM_OS_TEST_IMAGE_DIR)/Containerfile.$(1) \
+		-t localhost/custom-os-image:$(1) \
+		$(CUSTOM_OS_TEST_IMAGE_DIR)
+endef
+
+# Create a target for each detected test image (e.g., rhel-coreos-9).
+$(foreach C, $(CUSTOM_OS_TEST_IMAGE_NAMES), $(eval $(call custom_os_image_build_template,$(C))))
+
+# Target to build all detected custom OS test images. This is mostly for use by
+# developers on their workstations since they must be explicitly declared in
+# OpenShift CI.
+custom-os-images: $(patsubst %,custom-os-image-%,$(CUSTOM_OS_TEST_IMAGE_NAMES))
 
 # Run tests
 test: test-unit test-e2e
