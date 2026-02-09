@@ -50,6 +50,7 @@ type ResourceInterface interface {
 	GetLabel(label string) (string, error)
 	Describe() (string, error)
 	ExportToFile(fileName string) error
+	IsGenerationUpToDate() (bool, error)
 	PrettyString() string
 	GetOC() *exutil.CLI
 	GetCleanJSON() (string, error)
@@ -432,6 +433,22 @@ func (r *Resource) ExportToFile(fileName string) error {
 	}
 
 	return err
+}
+
+// IsGenerationUpToDate returns true if the resource has a generation value and this value is up to date
+// If the resource has no generation the function will return an error
+func (r Resource) IsGenerationUpToDate() (bool, error) {
+	generation, err := r.Get(`{.metadata.generation}`)
+	if err != nil {
+		return false, err
+	}
+
+	observedGeneration, err := r.Get(`{.status.observedGeneration}`)
+	if err != nil {
+		return false, err
+	}
+
+	return generation == observedGeneration, nil
 }
 
 // NewMCOTemplate creates a new template using the MCO fixture directory as the base path of the template file
