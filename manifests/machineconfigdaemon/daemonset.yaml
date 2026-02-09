@@ -46,6 +46,10 @@ spec:
           - mountPath: /rootfs
             name: rootfs
             mountPropagation: HostToContainer
+          - mountPath: /var/run/nri
+            name: nri-socket
+          - mountPath: /etc/crio/nri_plugins
+            name: nri-plugins-config
         livenessProbe:
           initialDelaySeconds: 120
           periodSeconds: 30
@@ -110,6 +114,14 @@ spec:
         - name: rootfs
           hostPath:
             path: /
+        - name: nri-socket
+          hostPath:
+            path: /var/run/nri
+            type: DirectoryOrCreate
+        - name: nri-plugins-config
+          hostPath:
+            path: /etc/crio/nri_plugins
+            type: DirectoryOrCreate
         - name: proxy-tls
           secret:
             secretName: proxy-tls
