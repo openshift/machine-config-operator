@@ -42,20 +42,9 @@ func RecvFile(socket *os.File) (_ *os.File, Err error) {
 	oob := make([]byte, oobSpace)
 
 	sockfd := socket.Fd()
-	var (
-		n, oobn int
-		err     error
-	)
-
-	for {
-		n, oobn, _, _, err = unix.Recvmsg(int(sockfd), name, oob, unix.MSG_CMSG_CLOEXEC)
-		if err != unix.EINTR { //nolint:errorlint // unix errors are bare
-			break
-		}
-	}
-
+	n, oobn, _, _, err := unix.Recvmsg(int(sockfd), name, oob, unix.MSG_CMSG_CLOEXEC)
 	if err != nil {
-		return nil, os.NewSyscallError("recvmsg", err)
+		return nil, err
 	}
 	if n >= MaxNameLen || oobn != oobSpace {
 		return nil, fmt.Errorf("recvfile: incorrect number of bytes read (n=%d oobn=%d)", n, oobn)
@@ -126,10 +115,5 @@ func SendFile(socket *os.File, file *os.File) error {
 // SendRawFd sends a specific file descriptor over the given AF_UNIX socket.
 func SendRawFd(socket *os.File, msg string, fd uintptr) error {
 	oob := unix.UnixRights(int(fd))
-	for {
-		err := unix.Sendmsg(int(socket.Fd()), []byte(msg), oob, nil, 0)
-		if err != unix.EINTR { //nolint:errorlint // unix errors are bare
-			return os.NewSyscallError("sendmsg", err)
-		}
-	}
+	return unix.Sendmsg(int(socket.Fd()), []byte(msg), oob, nil, 0)
 }
