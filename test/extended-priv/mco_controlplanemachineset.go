@@ -415,17 +415,7 @@ func testMachineConfigurationStatusUpdate(mc *MachineConfiguration, patchConfig 
 	o.Expect(mc.SetNoneSkew()).To(o.Succeed(), "Error disabling skew enforcement on %s", mc)
 
 	// Wait for the controller to observe and process the spec change
-	o.Eventually(func() (bool, error) {
-		generation, err := mc.Get(`{.metadata.generation}`)
-		if err != nil {
-			return false, err
-		}
-		observedGeneration, err := mc.Get(`{.status.observedGeneration}`)
-		if err != nil {
-			return false, err
-		}
-		return generation == observedGeneration, nil
-	}, "2m", "10s").Should(o.BeTrue(), "MachineConfiguration observedGeneration did not catch up to generation")
+	o.Eventually(mc.IsGenerationUpToDate, "2m", "10s").Should(o.BeTrue(), "MachineConfiguration observedGeneration did not catch up to generation")
 
 	originalStatus, err := mc.GetManagedBootImagesStatus()
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting original status from %s", mc)

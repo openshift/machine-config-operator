@@ -15,7 +15,7 @@ import (
 	e2e "k8s.io/kubernetes/test/e2e/framework"
 )
 
-const mapiBaseErrorMessageTemplate = `1 Degraded MAPI MachineSets | 0 Degraded ControlPlaneMachineSets | 0 Degraded CAPI MachineSets | 0 CAPI MachineDeployments | Error(s):` +
+const mapiBaseErrorMessageTemplate = `1 Degraded MAPI MachineSets | 0 Degraded ControlPlaneMachineSets | 0 Degraded CAPI MachineSets | 0 Degraded CAPI MachineDeployments | Error(s):` +
 	` error syncing MAPI MachineSet %s: failed to reconcile machineset %s, err:`
 
 var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longduration][Serial][Disruptive] MCO Bootimages", func() {
@@ -44,6 +44,20 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		wMcp = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
 		machineConfiguration = GetMachineConfiguration(oc.AsAdmin())
 		PreChecks(oc)
+
+		// Disable skew to avoid collisions
+		exutil.By("Disabling skew functionality")
+		initialMachineConfiguration := machineConfiguration.GetSpecOrFail()
+		o.Expect(machineConfiguration.SetNoneSkew()).To(o.Succeed(), "Error disabing the skew functionality")
+		o.Eventually(machineConfiguration.IsGenerationUpToDate, "2m", "10s").Should(o.BeTrue(), "MachineConfiguration observedGeneration did not catch up to generation")
+
+		g.DeferCleanup(func() {
+			exutil.By("Restoring initial MachineConfiguration spec")
+			o.Expect(machineConfiguration.SetSpec(initialMachineConfiguration)).To(o.Succeed(), "Error restoring initial MachineConfiguration spec")
+			logger.Infof("OK!\n")
+		})
+		logger.Infof("OK!\n")
+
 	})
 
 	g.It("[PolarionID:81403][OTP] In BootImages Machineset should update by default", g.Label("Platform:aws", "Platform:gcp"), func() {
@@ -75,7 +89,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		// For none - mode i.e opt-out MachineSet are not updated with original value if we try to set with any fake value
 		exutil.By("Opt-out boot images update")
-		defer machineConfiguration.SetSpec(machineConfiguration.GetSpecOrFail())
 		o.Expect(
 			machineConfiguration.SetNoneManagedBootImagesConfig(MachineSetResource),
 		).To(o.Succeed(), "Error configuring None managedBootImages in the 'cluster' MachineConfiguration resource")
@@ -127,7 +140,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 
 		exutil.By("Opt-in boot images update")
-		defer machineConfiguration.SetSpec(machineConfiguration.GetSpecOrFail())
 		o.Expect(
 			machineConfiguration.SetAllManagedBootImagesConfig(MachineSetResource),
 		).To(o.Succeed(), "Error configuring ALL managedBootImages in the 'cluster' MachineConfiguration resource")
@@ -229,7 +241,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		exutil.By("Opt-in boot images update")
 
-		defer machineConfiguration.SetSpec(machineConfiguration.GetSpecOrFail())
 		o.Expect(
 			machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, labelName, labelValue),
 		).To(o.Succeed(), "Error configuring Partial managedBootImages in the 'cluster' MachineConfiguration resource")
@@ -329,7 +340,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		)
 		exutil.By("Opt-in boot images update")
 
-		defer machineConfiguration.SetSpec(machineConfiguration.GetSpecOrFail())
 		o.Expect(
 			machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, labelName, labelValue),
 		).To(o.Succeed(), "Error configuring Partial managedBootImages in the 'cluster' MachineConfiguration resource")
@@ -475,7 +485,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 
 		exutil.By("To patch the Partial Mode in machineConfiguration")
-		defer machineConfiguration.SetSpec(machineConfiguration.GetSpecOrFail())
 		o.Expect(
 			machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, "", ""),
 		).To(o.Succeed(), "Error configuring Partial managedBootImages in the 'cluster' MachineConfiguration resource")
@@ -484,7 +493,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK\n")
 
 		exutil.By("To patch the All Mode in machieConfiguration")
-		defer machineConfiguration.SetSpec(machineConfiguration.GetSpecOrFail())
 		o.Expect(
 			machineConfiguration.SetAllManagedBootImagesConfig(MachineSetResource),
 		).To(o.Succeed(), "Error configuring All managedBootImages in the 'cluster' MachineConfiguration resource")
@@ -493,7 +501,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK\n")
 
 		exutil.By("Opt-out boot images update")
-		defer machineConfiguration.SetSpec(machineConfiguration.GetSpecOrFail())
 		o.Expect(machineConfiguration.SetNoneManagedBootImagesConfig(MachineSetResource)).To(o.Succeed(), "Error configuring None managedBootImages in the 'cluster' MachineConfiguration resource")
 		logger.Infof("OK!\n")
 		checkManagedBootImagesStatus(machineConfiguration, "None")
@@ -517,7 +524,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		exutil.By("Opt-in boot images update")
 
-		defer machineConfiguration.SetSpec(machineConfiguration.GetSpecOrFail())
 		o.Expect(
 			machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, labelName, labelValue),
 		).To(o.Succeed(), "Error configuring Partial managedBootImages in the 'cluster' MachineConfiguration resource")
@@ -606,7 +612,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		)
 
 		exutil.By("Opt-in boot images update")
-		defer machineConfiguration.SetSpec(machineConfiguration.GetSpecOrFail())
 		o.Expect(
 			machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, labelName, labelValue),
 		).To(o.Succeed(), "Error configuring Partial managedBootImages in the 'cluster' MachineConfiguration resource")
@@ -806,19 +811,17 @@ func GetRHCOSVersionFromConfigMap(oc *exutil.CLI) string {
 func testUserDataUpdateFailure(oc *exutil.CLI, clonedMSName, clonedSecretName, expectedFailedMessageRegexp string, userDataModifyFunc func(userData string) (string, error)) {
 
 	var (
-		machineConfiguration     = GetMachineConfiguration(oc.AsAdmin())
-		machineSet               = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
-		fakeImageName            = getBackdatedBootImage(oc.AsAdmin())
-		labelName                = "test"
-		labelValue               = "update"
-		secondLabelValue         = "update2"
-		machineClusterOperator   = NewResource(oc.AsAdmin(), "ClusterOperator", "machine-config")
-		initialMachineConfigSpec = machineConfiguration.GetSpecOrFail()
-		clonedSecret             *Secret
+		machineConfiguration   = GetMachineConfiguration(oc.AsAdmin())
+		machineSet             = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
+		fakeImageName          = getBackdatedBootImage(oc.AsAdmin())
+		labelName              = "test"
+		labelValue             = "update"
+		secondLabelValue       = "update2"
+		machineClusterOperator = NewResource(oc.AsAdmin(), "ClusterOperator", "machine-config")
+		clonedSecret           *Secret
 	)
 
 	exutil.By("Opt-in boot images update")
-	defer machineConfiguration.SetSpec(initialMachineConfigSpec)
 	o.Expect(
 		machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, labelName, labelValue),
 	).To(o.Succeed(), "Error configuring Partial managedBootImages in the 'cluster' MachineConfiguration resource")
