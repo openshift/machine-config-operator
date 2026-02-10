@@ -287,7 +287,10 @@ func (s *systemdConnectionImpl) Disable(ctx context.Context, units ...string) er
 // TryRestart tries to restart a systemd unit (only if it's already running). Unit name is automatically normalized.
 func (s *systemdConnectionImpl) TryRestart(ctx context.Context, unit string) error {
 	normalizedName := NormalizeSystemdUnitNames(unit)[0]
-	if _, err := s.conn.TryRestartUnitContext(ctx, normalizedName, "replace", nil); err != nil {
+	if err := syncWrapper(ctx, s.conn, func(c chan string, conn *systemddbus.Conn) error {
+		_, err := conn.TryRestartUnitContext(ctx, normalizedName, "replace", c)
+		return err
+	}); err != nil {
 		return fmt.Errorf("try-restarting systemd unit %q: %w", normalizedName, err)
 	}
 	return nil
@@ -296,7 +299,10 @@ func (s *systemdConnectionImpl) TryRestart(ctx context.Context, unit string) err
 // Restart restarts a systemd unit. Unit name is automatically normalized.
 func (s *systemdConnectionImpl) Restart(ctx context.Context, unit string) error {
 	normalizedName := NormalizeSystemdUnitNames(unit)[0]
-	if _, err := s.conn.RestartUnitContext(ctx, normalizedName, "replace", nil); err != nil {
+	if err := syncWrapper(ctx, s.conn, func(c chan string, conn *systemddbus.Conn) error {
+		_, err := conn.RestartUnitContext(ctx, normalizedName, "replace", c)
+		return err
+	}); err != nil {
 		return fmt.Errorf("restarting systemd unit %q: %w", normalizedName, err)
 	}
 	return nil
@@ -305,7 +311,10 @@ func (s *systemdConnectionImpl) Restart(ctx context.Context, unit string) error 
 // Start starts a systemd unit. Unit name is automatically normalized.
 func (s *systemdConnectionImpl) Start(ctx context.Context, unit string) error {
 	normalizedName := NormalizeSystemdUnitNames(unit)[0]
-	if _, err := s.conn.StartUnitContext(ctx, normalizedName, "replace", nil); err != nil {
+	if err := syncWrapper(ctx, s.conn, func(c chan string, conn *systemddbus.Conn) error {
+		_, err := conn.StartUnitContext(ctx, normalizedName, "replace", c)
+		return err
+	}); err != nil {
 		return fmt.Errorf("starting systemd unit %q: %w", normalizedName, err)
 	}
 	return nil
@@ -314,7 +323,10 @@ func (s *systemdConnectionImpl) Start(ctx context.Context, unit string) error {
 // Stop stops a systemd unit. Unit name is automatically normalized.
 func (s *systemdConnectionImpl) Stop(ctx context.Context, unit string) error {
 	normalizedName := NormalizeSystemdUnitNames(unit)[0]
-	if _, err := s.conn.StopUnitContext(ctx, normalizedName, "replace", nil); err != nil {
+	if err := syncWrapper(ctx, s.conn, func(c chan string, conn *systemddbus.Conn) error {
+		_, err := conn.StopUnitContext(ctx, normalizedName, "replace", c)
+		return err
+	}); err != nil {
 		return fmt.Errorf("stopping systemd unit %q: %w", normalizedName, err)
 	}
 	return nil
@@ -323,7 +335,10 @@ func (s *systemdConnectionImpl) Stop(ctx context.Context, unit string) error {
 // Reload reloads a systemd unit. Unit name is automatically normalized.
 func (s *systemdConnectionImpl) Reload(ctx context.Context, unit string) error {
 	normalizedName := NormalizeSystemdUnitNames(unit)[0]
-	if _, err := s.conn.ReloadUnitContext(ctx, normalizedName, "replace", nil); err != nil {
+	if err := syncWrapper(ctx, s.conn, func(c chan string, conn *systemddbus.Conn) error {
+		_, err := conn.ReloadUnitContext(ctx, normalizedName, "replace", c)
+		return err
+	}); err != nil {
 		return fmt.Errorf("reloading systemd unit %q: %w", normalizedName, err)
 	}
 	return nil
@@ -389,4 +404,22 @@ func (s *systemdConnectionImpl) ListUnits(ctx context.Context) (map[string]syste
 		result[unit.Name] = unit
 	}
 	return result, nil
+}
+
+// syncWrapper executes a dbus unit operation and blocks until the resulting
+// systemd job completes or the context is cancelled.
+func syncWrapper(ctx context.Context, conn *systemddbus.Conn, fn func(chan string, *systemddbus.Conn) error) error {
+	ch := make(chan string, 1)
+	if err := fn(ch, conn); err != nil {
+		return err
+	}
+	select {
+	case result := <-ch:
+		if result != "done" {
+			return fmt.Errorf("job result: %s", result)
+		}
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	return nil
 }
