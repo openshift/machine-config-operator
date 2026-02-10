@@ -24,7 +24,6 @@ type CertificateInfo struct {
 	// signer is the  cert Issuer
 	Signer string `json:"signer"`
 
-	// Date fields have been temporarily removed by devs:  https://github.com/openshift/machine-config-operator/pull/3866
 	// notBefore is the lower boundary for validity
 	NotBefore string `json:"notBefore"`
 
