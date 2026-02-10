@@ -3,12 +3,52 @@ package osimagestream
 import (
 	"archive/tar"
 	"context"
+	"errors"
+	"net"
 	"strings"
 
 	"github.com/containers/common/pkg/retry"
 	"github.com/containers/image/v5/types"
 	"github.com/openshift/machine-config-operator/pkg/imageutils"
 )
+
+// isNetworkErrorRetryable checks if an error is a network-related error that should be retried.
+// This handles DNS and timeout errors that may occur during cluster bootstrap.
+func isNetworkErrorRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Check for net.DNSError (DNS lookup failures)
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return true
+	}
+
+	// Check for timeout errors (net.Error with Timeout() == true)
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	return false
+}
+
+// newImageInspectionRetryOptions creates retry options suitable for image inspection operations.
+// It includes special handling for DNS and network errors that may occur during cluster bootstrap.
+func newImageInspectionRetryOptions() *retry.Options {
+	return &retry.Options{
+		MaxRetry: 50,
+		IsErrorRetryable: func(err error) bool {
+			// Use the default retry logic first
+			if retry.IsErrorRetryable(err) {
+				return true
+			}
+			// Additionally check for network errors that may be wrapped in ways
+			// that don't match the default retry logic's type assertions
+			return isNetworkErrorRetryable(err)
+		},
+	}
+}
 
 // ImagesInspector provides methods for inspecting container images and extracting their contents.
 type ImagesInspector interface {
@@ -29,9 +69,7 @@ func NewImagesInspector(sysCtx *types.SystemContext) *ImagesInspectorImpl {
 	return &ImagesInspectorImpl{
 		sysCtx: sysCtx,
 		bulkInspector: imageutils.NewBulkInspector(&imageutils.BulkInspectorOptions{
-			RetryOpts: &retry.RetryOptions{
-				MaxRetry: 2,
-			},
+			RetryOpts: newImageInspectionRetryOptions(),
 			Count:     5,
 			FailOnErr: false,
 		}),
@@ -48,7 +86,7 @@ func (i *ImagesInspectorImpl) FetchImageFile(ctx context.Context, image, path st
 	targetHeaderPath := strings.TrimLeft(path, "./")
 	return imageutils.ReadImageFileContent(ctx, i.sysCtx, image, func(header *tar.Header) bool {
 		return targetHeaderPath == strings.TrimLeft(header.Name, "./")
-	})
+	}, newImageInspectionRetryOptions())
 }
 
 // ImagesInspectorFactory creates ImagesInspector instances for different system contexts.

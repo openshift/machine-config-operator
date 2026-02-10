@@ -609,6 +609,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.InformerFactory.Machineconfiguration().V1().ContainerRuntimeConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().KubeletConfigs(),
 			ctx.OperatorInformerFactory.Operator().V1().MachineConfigurations(),
+			ctx.InformerFactory.Machineconfiguration().V1alpha1().OSImageStreams(),
 			ctx.ClientBuilder.KubeClientOrDie("render-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("render-controller"),
 			ctx.FeatureGatesHandler,

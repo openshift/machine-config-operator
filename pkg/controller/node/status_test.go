@@ -437,6 +437,7 @@ func TestCalculateStatus(t *testing.T) {
 		nodes         []*corev1.Node
 		currentConfig string
 		paused        bool
+		osStream      mcfgv1.OSImageStreamReference
 		verify        func(mcfgv1.MachineConfigPoolStatus, *testing.T)
 	}{{
 		name: "0 nodes updated, 0 nodes updating, 0 nodes degraded",
@@ -884,6 +885,157 @@ func TestCalculateStatus(t *testing.T) {
 				t.Fatalf("mismatch conddegraded.Status: got %s want: %s", got, want)
 			}
 		},
+	}, {
+		name: "all nodes updated, OSStream defined in MCP Spec",
+		nodes: []*corev1.Node{
+			helpers.NewNodeWithReady("node-0", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-1", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+		},
+		currentConfig: machineConfigV0,
+		osStream: mcfgv1.OSImageStreamReference{
+			Name: "rhel-10",
+		},
+		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+			if got, want := status.MachineCount, int32(3); got != want {
+				t.Fatalf("mismatch MachineCount: got %d want: %d", got, want)
+			}
+
+			if got, want := status.UpdatedMachineCount, int32(3); got != want {
+				t.Fatalf("mismatch UpdatedMachineCount: got %d want: %d", got, want)
+			}
+
+			if got, want := status.ReadyMachineCount, int32(3); got != want {
+				t.Fatalf("mismatch ReadyMachineCount: got %d want: %d", got, want)
+			}
+
+			if got, want := status.UnavailableMachineCount, int32(0); got != want {
+				t.Fatalf("mismatch UnavailableMachineCount: got %d want: %d", got, want)
+			}
+
+			condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
+			if condupdated == nil {
+				t.Fatal("updated condition not found")
+			}
+
+			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
+			if condupdating == nil {
+				t.Fatal("updating condition not found")
+			}
+
+			if got, want := condupdated.Status, corev1.ConditionTrue; got != want {
+				t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
+			}
+
+			if got, want := condupdating.Status, corev1.ConditionFalse; got != want {
+				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
+			}
+
+			statusOSStreamName := status.OSImageStream.Name
+			if statusOSStreamName != "rhel-10" {
+				t.Fatal("OSImageStreamReference in MCP status not updated correctly")
+			}
+		},
+	}, {
+		name: "some nodes still updating, OSStream defined in MCP Spec",
+		nodes: []*corev1.Node{
+			helpers.NewNodeWithReady("node-0", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-1", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+		},
+		currentConfig: machineConfigV1,
+		osStream: mcfgv1.OSImageStreamReference{
+			Name: "rhel-10",
+		},
+		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+			if got, want := status.MachineCount, int32(3); got != want {
+				t.Fatalf("mismatch MachineCount: got %d want: %d", got, want)
+			}
+
+			if got, want := status.UpdatedMachineCount, int32(0); got != want {
+				t.Fatalf("mismatch UpdatedMachineCount: got %d want: %d", got, want)
+			}
+
+			if got, want := status.ReadyMachineCount, int32(0); got != want {
+				t.Fatalf("mismatch ReadyMachineCount: got %d want: %d", got, want)
+			}
+
+			if got, want := status.UnavailableMachineCount, int32(1); got != want {
+				t.Fatalf("mismatch UnavailableMachineCount: got %d want: %d", got, want)
+			}
+
+			condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
+			if condupdated == nil {
+				t.Fatal("updated condition not found")
+			}
+
+			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
+			if condupdating == nil {
+				t.Fatal("updating condition not found")
+			}
+
+			if got, want := condupdated.Status, corev1.ConditionFalse; got != want {
+				t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
+			}
+
+			if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
+				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
+			}
+
+			statusOSStreamName := status.OSImageStream.Name
+			if statusOSStreamName == "rhel-10" {
+				t.Fatal("OSImageStreamReference updated in MCP status, but should not be")
+			}
+		},
+	}, {
+		name: "all nodes updated, OSStream removed from MCP Spec",
+		nodes: []*corev1.Node{
+			helpers.NewNodeWithReady("node-0", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-1", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+		},
+		currentConfig: machineConfigV0,
+		osStream:      mcfgv1.OSImageStreamReference{},
+		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+			if got, want := status.MachineCount, int32(3); got != want {
+				t.Fatalf("mismatch MachineCount: got %d want: %d", got, want)
+			}
+
+			if got, want := status.UpdatedMachineCount, int32(3); got != want {
+				t.Fatalf("mismatch UpdatedMachineCount: got %d want: %d", got, want)
+			}
+
+			if got, want := status.ReadyMachineCount, int32(3); got != want {
+				t.Fatalf("mismatch ReadyMachineCount: got %d want: %d", got, want)
+			}
+
+			if got, want := status.UnavailableMachineCount, int32(0); got != want {
+				t.Fatalf("mismatch UnavailableMachineCount: got %d want: %d", got, want)
+			}
+
+			condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
+			if condupdated == nil {
+				t.Fatal("updated condition not found")
+			}
+
+			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
+			if condupdating == nil {
+				t.Fatal("updating condition not found")
+			}
+
+			if got, want := condupdated.Status, corev1.ConditionTrue; got != want {
+				t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
+			}
+
+			if got, want := condupdating.Status, corev1.ConditionFalse; got != want {
+				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
+			}
+
+			statusOSStream := status.OSImageStream
+			if statusOSStream.Name != "" {
+				t.Fatal("OSImageStreamReference in MCP status not cleared correctly")
+			}
+		},
 	}}
 	for idx, test := range tests {
 		idx := idx
@@ -894,12 +1046,14 @@ func TestCalculateStatus(t *testing.T) {
 				Spec: mcfgv1.MachineConfigPoolSpec{
 					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: test.currentConfig}},
 					Paused:        test.paused,
+					OSImageStream: test.osStream,
 				},
 			}
 			f := newFixtureWithFeatureGates(t,
 				[]apicfgv1.FeatureGateName{
 					features.FeatureGateMachineConfigNodes,
 					features.FeatureGatePinnedImages,
+					features.FeatureGateOSStreams,
 				},
 				[]apicfgv1.FeatureGateName{},
 			)
