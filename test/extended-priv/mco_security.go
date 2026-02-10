@@ -1167,9 +1167,9 @@ func validateCorrectTLSProfileSecurity(oc *exutil.CLI, tlsSecurityProfile, tlsMi
 	exutil.By(fmt.Sprintf("To check the valid tls-min-version for %s in all MCS pods", tlsSecurityProfile))
 	for _, mcsPodName := range mcspod {
 		logger.Infof("Checking MCS pod: %s\n", mcsPodName)
-		mcsLogs, err := exutil.GetSpecificPodLogs(oc, MachineConfigNamespace, MachineConfigServer, mcsPodName, "")
-		o.Expect(err).NotTo(o.HaveOccurred())
-		o.Expect(mcsLogs).To(o.ContainSubstring(tlsMinVersionStr), "Error getting required tls-min-version for %s pod", mcsPodName)
+		o.Eventually(exutil.GetSpecificPodLogs, "3m", "10s").WithArguments(oc, MachineConfigNamespace, MachineConfigServer, mcsPodName, "").
+			Should(o.ContainSubstring(tlsMinVersionStr), "Error getting required tls-min-version for %s pod", mcsPodName)
+
 	}
 	logger.Infof("OK!\n")
 
@@ -1192,7 +1192,13 @@ func validateCorrectTLSProfileSecurity(oc *exutil.CLI, tlsSecurityProfile, tlsMi
 	exutil.By(fmt.Sprintf("To check the valid tls-cipher-suite for %s in all MCS pods", tlsSecurityProfile))
 	for _, mcsPodName := range mcspod {
 		logger.Infof("Checking MCS pod: %s\n", mcsPodName)
-		mcsLogs, err := exutil.GetSpecificPodLogs(oc, MachineConfigNamespace, MachineConfigServer, mcsPodName, "")
+		var mcsLogs string
+		o.Eventually(func() (string, error) {
+			var err error
+			mcsLogs, err = exutil.GetSpecificPodLogs(oc, MachineConfigNamespace, MachineConfigServer, mcsPodName, "")
+			return mcsLogs, err
+		}, "3m", "10s").ShouldNot(o.BeEmpty(), "Cannot get MCS logs")
+
 		o.Expect(err).NotTo(o.HaveOccurred())
 		for i := range cipherSuite {
 			o.Expect(mcsLogs).To(o.ContainSubstring(cipherSuite[i]), "Error getting %s cipher suite for given tlsSecuirtyProfile of %s pod", cipherSuite[i], mcsPodName)
