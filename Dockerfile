@@ -44,7 +44,9 @@ RUN if [ "${TAGS}" = "fcos" ]; then \
     # use the username "build" and the uid 1000 since this matches what is in
     # the official Buildah image.
     # Conditional checks if "build" user does not exist before adding user.
-    if ! id -u "build" >/dev/null 2>&1; then useradd --uid 1000 build; fi
+    if ! id -u "build" >/dev/null 2>&1; then useradd --uid 1000 build; fi && \
+    dnf clean all && \
+    rm -rf /var/cache/dnf/*
 # Copy the binaries *after* we install nmstate so we don't invalidate our cache for local builds.
 COPY --from=rhel9-builder /go/src/github.com/openshift/machine-config-operator/instroot-rhel9.tar /tmp/instroot-rhel9.tar
 RUN cd / && tar xf /tmp/instroot-rhel9.tar && rm -f /tmp/instroot-rhel9.tar
