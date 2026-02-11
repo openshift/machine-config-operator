@@ -3,11 +3,7 @@ FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.24-openshift-4.20 AS 
 ARG TAGS=""
 WORKDIR /go/src/github.com/openshift/machine-config-operator
 COPY . .
-# FIXME once we can depend on a new enough host that supports globs for COPY,
-# just use that.  For now we work around this by copying a tarball.
-ENV GOCACHE="/go/rhel9/.cache"
-ENV GOMODCACHE="/go/rhel9/pkg/mod"
-RUN make install DESTDIR=./instroot-rhel9 && tar -C instroot-rhel9 -cf instroot-rhel9.tar .
+RUN make install DESTDIR=./instroot-rhel9
 
 # Add a RHEL 8 builder to compile the RHEL 8 compatible binaries
 FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.24-openshift-4.20 AS rhel8-builder
@@ -15,9 +11,7 @@ ARG TAGS=""
 WORKDIR /go/src/github.com/openshift/machine-config-operator
 # Copy the RHEL 8 machine-config-daemon binary and rename
 COPY . .
-ENV GOCACHE="/go/rhel8/.cache"
-ENV GOMODCACHE="/go/rhel8/pkg/mod"
-RUN make install DESTDIR=./instroot-rhel8 && tar -C instroot-rhel8 -cf instroot-rhel8.tar .
+RUN make install DESTDIR=./instroot-rhel8
 
 FROM registry.ci.openshift.org/ocp/4.20:base-rhel9
 ARG TAGS=""
@@ -43,9 +37,10 @@ RUN if [ "${TAGS}" = "fcos" ]; then \
     if ! id -u "build" >/dev/null 2>&1; then useradd --uid 1000 build; fi && \
     dnf clean all && \
     rm -rf /var/cache/dnf/*
-# Copy the binaries *after* we install nmstate so we don't invalidate our cache for local builds.
-COPY --from=rhel9-builder /go/src/github.com/openshift/machine-config-operator/instroot-rhel9.tar /tmp/instroot-rhel9.tar
-RUN cd / && tar xf /tmp/instroot-rhel9.tar && rm -f /tmp/instroot-rhel9.tar
+# Copy the binaries directly from their build stages into their final location.
+# Do this after package installation to avoid invalidating state for faster
+# local builds.
+COPY --from=rhel9-builder /go/src/github.com/openshift/machine-config-operator/instroot-rhel9/usr/bin/* /usr/bin/
 # Copy the RHEL 8 machine-config-daemon binary and rename
 COPY --from=rhel8-builder /go/src/github.com/openshift/machine-config-operator/instroot-rhel8/usr/bin/machine-config-daemon /usr/bin/machine-config-daemon.rhel8
 COPY templates /etc/mcc/templates
