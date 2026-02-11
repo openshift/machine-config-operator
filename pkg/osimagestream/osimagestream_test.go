@@ -233,25 +233,27 @@ spec:
 			// ConfigMap source images
 			"quay.io/openshift/os-cm@sha256:111": {
 				Labels: map[string]string{
-					"io.openshift.os.streamclass": "rhel-9",
-					"ostree.linux":                "present",
+					testCoreOSLabelStreamClass: "rhel-9",
+					testCoreOSLabelBootc:       testCoreOSLabelBootcValue1,
 				},
 			},
 			"quay.io/openshift/ext-cm@sha256:222": {
 				Labels: map[string]string{
-					"io.openshift.os.streamclass": "rhel-9",
+					testCoreOSLabelStreamClass: "rhel-9",
+					testCoreOSLabelExtension:   testCoreOSLabelExtensionValue,
 				},
 			},
 			// Network source images
 			"quay.io/openshift/os-net@sha256:333": {
 				Labels: map[string]string{
-					"io.openshift.os.streamclass": "rhel-9",
-					"ostree.linux":                "present",
+					testCoreOSLabelStreamClass: "rhel-9",
+					testCoreOSLabelBootc:       testCoreOSLabelBootcValue1,
 				},
 			},
 			"quay.io/openshift/ext-net@sha256:444": {
 				Labels: map[string]string{
-					"io.openshift.os.streamclass": "rhel-9",
+					testCoreOSLabelStreamClass: "rhel-9",
+					testCoreOSLabelExtension:   testCoreOSLabelExtensionValue,
 				},
 			},
 		},
@@ -301,13 +303,14 @@ func TestDefaultStreamSourceFactory_CreateRuntimeSources_ConfigMapOnly(t *testin
 		inspectData: map[string]*types.ImageInspectInfo{
 			"quay.io/openshift/os@sha256:abc123": {
 				Labels: map[string]string{
-					"io.openshift.os.streamclass": "rhel-9",
-					"ostree.linux":                "present",
+					testCoreOSLabelStreamClass: "rhel-9",
+					testCoreOSLabelBootc:       testCoreOSLabelBootcValue1,
 				},
 			},
 			"quay.io/openshift/ext@sha256:def456": {
 				Labels: map[string]string{
-					"io.openshift.os.streamclass": "rhel-9",
+					testCoreOSLabelStreamClass: "rhel-9",
+					testCoreOSLabelExtension:   testCoreOSLabelExtensionValue,
 				},
 			},
 		},
@@ -395,25 +398,27 @@ spec:
 			// ConfigMap source images (rhel-9)
 			"quay.io/openshift/os@sha256:abc123": {
 				Labels: map[string]string{
-					"io.openshift.os.streamclass": "rhel-9",
-					"ostree.linux":                "present",
+					testCoreOSLabelStreamClass: "rhel-9",
+					testCoreOSLabelBootc:       testCoreOSLabelBootcValue1,
 				},
 			},
 			"quay.io/openshift/ext@sha256:def456": {
 				Labels: map[string]string{
-					"io.openshift.os.streamclass": "rhel-9",
+					testCoreOSLabelStreamClass: "rhel-9",
+					testCoreOSLabelExtension:   testCoreOSLabelExtensionValue,
 				},
 			},
 			// Network source images (rhel-10)
 			"quay.io/openshift/os-10@sha256:aaa111": {
 				Labels: map[string]string{
-					"io.openshift.os.streamclass": "rhel-10",
-					"ostree.linux":                "present",
+					testCoreOSLabelStreamClass: "rhel-10",
+					testCoreOSLabelBootc:       testCoreOSLabelBootcValue1,
 				},
 			},
 			"quay.io/openshift/ext-10@sha256:bbb222": {
 				Labels: map[string]string{
-					"io.openshift.os.streamclass": "rhel-10",
+					testCoreOSLabelStreamClass: "rhel-10",
+					testCoreOSLabelExtension:   testCoreOSLabelExtensionValue,
 				},
 			},
 		},
@@ -489,24 +494,26 @@ func TestDefaultStreamSourceFactory_CreateBootstrapSources_MultipleStreams(t *te
 		inspectData: map[string]*types.ImageInspectInfo{
 			"quay.io/openshift/os-9@sha256:aaa111": {
 				Labels: map[string]string{
-					"io.openshift.os.streamclass": "rhel-9",
-					"ostree.linux":                "present",
+					testCoreOSLabelStreamClass: "rhel-9",
+					testCoreOSLabelBootc:       testCoreOSLabelBootcValue1,
 				},
 			},
 			"quay.io/openshift/ext-9@sha256:bbb222": {
 				Labels: map[string]string{
-					"io.openshift.os.streamclass": "rhel-9",
+					testCoreOSLabelStreamClass: "rhel-9",
+					testCoreOSLabelExtension:   testCoreOSLabelExtensionValue,
 				},
 			},
 			"quay.io/openshift/os-10@sha256:ccc333": {
 				Labels: map[string]string{
-					"io.openshift.os.streamclass": "rhel-10",
-					"ostree.linux":                "present",
+					testCoreOSLabelStreamClass: "rhel-10",
+					testCoreOSLabelBootc:       testCoreOSLabelBootcValue1,
 				},
 			},
 			"quay.io/openshift/ext-10@sha256:ddd444": {
 				Labels: map[string]string{
-					"io.openshift.os.streamclass": "rhel-10",
+					testCoreOSLabelStreamClass: "rhel-10",
+					testCoreOSLabelExtension:   testCoreOSLabelExtensionValue,
 				},
 			},
 		},
@@ -546,13 +553,14 @@ func TestDefaultStreamSourceFactory_CreateBootstrapSources_CliImagesOnly(t *test
 		inspectData: map[string]*types.ImageInspectInfo{
 			"quay.io/openshift/os@sha256:abc123": {
 				Labels: map[string]string{
-					"io.openshift.os.streamclass": "rhel-9",
-					"ostree.linux":                "present",
+					testCoreOSLabelStreamClass: "rhel-9",
+					testCoreOSLabelBootc:       testCoreOSLabelBootcValue1,
 				},
 			},
 			"quay.io/openshift/ext@sha256:def456": {
 				Labels: map[string]string{
-					"io.openshift.os.streamclass": "rhel-9",
+					testCoreOSLabelStreamClass: "rhel-9",
+					testCoreOSLabelExtension:   testCoreOSLabelExtensionValue,
 				},
 			},
 		},
@@ -608,13 +616,14 @@ func TestDefaultStreamSourceFactory_CreateBootstrapSources_ImageStreamOnly(t *te
 		inspectData: map[string]*types.ImageInspectInfo{
 			"quay.io/openshift/os@sha256:abc123": {
 				Labels: map[string]string{
-					"io.openshift.os.streamclass": "rhel-9",
-					"ostree.linux":                "present",
+					testCoreOSLabelStreamClass: "rhel-9",
+					testCoreOSLabelBootc:       testCoreOSLabelBootcValue1,
 				},
 			},
 			"quay.io/openshift/ext@sha256:def456": {
 				Labels: map[string]string{
-					"io.openshift.os.streamclass": "rhel-9",
+					testCoreOSLabelStreamClass: "rhel-9",
+					testCoreOSLabelExtension:   testCoreOSLabelExtensionValue,
 				},
 			},
 		},
@@ -674,24 +683,26 @@ func TestDefaultStreamSourceFactory_CreateBootstrapSources_BothSources(t *testin
 		inspectData: map[string]*types.ImageInspectInfo{
 			"quay.io/openshift/os-cli@sha256:111": {
 				Labels: map[string]string{
-					"io.openshift.os.streamclass": "rhel-9",
-					"ostree.linux":                "present",
+					testCoreOSLabelStreamClass: "rhel-9",
+					testCoreOSLabelBootc:       testCoreOSLabelBootcValue1,
 				},
 			},
 			"quay.io/openshift/ext-cli@sha256:222": {
 				Labels: map[string]string{
-					"io.openshift.os.streamclass": "rhel-9",
+					testCoreOSLabelStreamClass: "rhel-9",
+					testCoreOSLabelExtension:   testCoreOSLabelExtensionValue,
 				},
 			},
 			"quay.io/openshift/os-stream@sha256:333": {
 				Labels: map[string]string{
-					"io.openshift.os.streamclass": "rhel-9",
-					"ostree.linux":                "present",
+					testCoreOSLabelStreamClass: "rhel-9",
+					testCoreOSLabelBootc:       testCoreOSLabelBootcValue1,
 				},
 			},
 			"quay.io/openshift/ext-stream@sha256:444": {
 				Labels: map[string]string{
-					"io.openshift.os.streamclass": "rhel-9",
+					testCoreOSLabelStreamClass: "rhel-9",
+					testCoreOSLabelExtension:   testCoreOSLabelExtensionValue,
 				},
 			},
 		},
