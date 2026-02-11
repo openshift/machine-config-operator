@@ -90,19 +90,14 @@ spec:
                         - maxSizeOfBackupsGb
                         type: object
                       retentionType:
-                        allOf:
-                        - enum:
-                          - RetentionNumber
-                          - RetentionSize
-                        - enum:
-                          - ""
-                          - RetentionNumber
-                          - RetentionSize
                         description: |-
                           retentionType sets the type of retention policy.
                           Currently, the only valid policies are retention by number of backups (RetentionNumber), by the size of backups (RetentionSize). More policies or types may be added in the future.
                           Empty string means no opinion and the platform is left to choose a reasonable default which is subject to change without notice.
                           The current default is RetentionNumber with 15 backups kept.
+                        enum:
+                        - RetentionNumber
+                        - RetentionSize
                         type: string
                     required:
                     - retentionType
