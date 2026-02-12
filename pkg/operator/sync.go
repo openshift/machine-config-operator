@@ -18,6 +18,8 @@ import (
 	"time"
 
 	configclientscheme "github.com/openshift/client-go/config/clientset/versioned/scheme"
+	"github.com/openshift/library-go/pkg/operator/resource/resourcemerge"
+	"github.com/openshift/machine-config-operator/manifests"
 	"github.com/openshift/machine-config-operator/pkg/osimagestream"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -35,6 +37,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/ptr"
 
 	"github.com/openshift/api/annotations"
 	configv1 "github.com/openshift/api/config/v1"
@@ -715,23 +718,41 @@ func getIgnitionHost(infraStatus *configv1.InfrastructureStatus) (string, error)
 }
 
 func (optr *Operator) syncMachineConfigPools(config *renderConfig, _ *configv1.ClusterOperator) error {
-	mcps := []string{
-		"manifests/master.machineconfigpool.yaml",
-		"manifests/worker.machineconfigpool.yaml",
+	generatedPools, err := manifests.GetMachineConfigPools()
+	if err != nil {
+		return fmt.Errorf("failed to get generated MCPs: %w", err)
 	}
-
-	if config.Infra.Status.ControlPlaneTopology == configv1.HighlyAvailableArbiterMode {
-		mcps = append(mcps, "manifests/arbiter.machineconfigpool.yaml")
-	}
-
-	for _, mcp := range mcps {
-		mcpBytes, err := renderAsset(config, mcp)
-		if err != nil {
-			return err
+	for _, mcp := range generatedPools {
+		if config.Infra.Status.ControlPlaneTopology != configv1.HighlyAvailableArbiterMode && mcp.Name == ctrlcommon.MachineConfigPoolArbiter {
+			continue
 		}
-		p := mcoResourceRead.ReadMachineConfigPoolV1OrDie(mcpBytes)
-		_, _, err = mcoResourceApply.ApplyMachineConfigPool(optr.client.MachineconfigurationV1(), p)
-		if err != nil {
+
+		existing, err := optr.client.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), mcp.GetName(), metav1.GetOptions{})
+		if err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get MachineConfigPool %s: %w", mcp.GetName(), err)
+		}
+
+		// If the MCP doesn't exist, create it
+		if apierrors.IsNotFound(err) {
+			klog.Infof("Creating managed MachineConfigPool %s as it does not exist", mcp.GetName())
+			if _, err := optr.client.MachineconfigurationV1().MachineConfigPools().Create(context.TODO(), mcp, metav1.CreateOptions{}); err != nil {
+				return fmt.Errorf("failed to create MachineConfigPool %s: %w", mcp.GetName(), err)
+			}
+			continue
+		}
+
+		// Ensure the metadata we manage and want to enforce is present
+		// We don't care about the spec, the user is free to touch parameters
+		// in the spec, and we don't want to interfere with them. Merge strategies
+		// won't work in the spec as it won't allow a user to reset a field to blank
+		modified := ptr.To(false)
+		resourcemerge.EnsureObjectMeta(modified, &existing.ObjectMeta, mcp.ObjectMeta)
+		if !*modified {
+			continue
+		}
+
+		// The metadata has changed, apply it
+		if _, err := optr.client.MachineconfigurationV1().MachineConfigPools().Update(context.TODO(), existing, metav1.UpdateOptions{}); err != nil {
 			return err
 		}
 	}
