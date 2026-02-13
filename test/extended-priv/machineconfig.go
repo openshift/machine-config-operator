@@ -137,3 +137,8 @@ func (mc *MachineConfig) GetAuthorizedKeysByUserAsList(user string) ([]string, e
 
 	return listKeys, err
 }
+
+// GetIgnitionVersion returns the ignition version used in the MC
+func (mc *MachineConfig) GetIgnitionVersion() (string, error) {
+	return mc.Get(`{.spec.config.ignition.version}`)
+}
