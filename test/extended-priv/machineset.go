@@ -51,6 +51,16 @@ func (ms MachineSet) GetReplicaOfSpec() string {
 	return ms.GetOrFail(`{.spec.replicas}`)
 }
 
+// AddToScale scales the MachineSet adding the given value (positive or negative).
+func (ms MachineSet) AddToScale(delta int) error {
+	currentReplicas, err := strconv.Atoi(ms.GetOrFail(`{.spec.replicas}`))
+	if err != nil {
+		return err
+	}
+
+	return ms.ScaleTo(currentReplicas + delta)
+}
+
 // GetIsReady returns true if the MachineSet instances are ready
 func (ms MachineSet) GetIsReady() bool {
 	configuredReplicasString, err := ms.Get(`{.spec.replicas}`)
