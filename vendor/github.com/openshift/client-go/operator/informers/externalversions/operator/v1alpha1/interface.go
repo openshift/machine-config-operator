@@ -8,6 +8,8 @@ import (
 
 // Interface provides access to all the informers in this group version.
 type Interface interface {
+	// ClusterAPIs returns a ClusterAPIInformer.
+	ClusterAPIs() ClusterAPIInformer
 	// ClusterVersionOperators returns a ClusterVersionOperatorInformer.
 	ClusterVersionOperators() ClusterVersionOperatorInformer
 	// EtcdBackups returns a EtcdBackupInformer.
@@ -27,6 +29,11 @@ type version struct {
 // New returns a new Interface.
 func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakListOptions internalinterfaces.TweakListOptionsFunc) Interface {
 	return &version{factory: f, namespace: namespace, tweakListOptions: tweakListOptions}
+}
+
+// ClusterAPIs returns a ClusterAPIInformer.
+func (v *version) ClusterAPIs() ClusterAPIInformer {
+	return &clusterAPIInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
 // ClusterVersionOperators returns a ClusterVersionOperatorInformer.
