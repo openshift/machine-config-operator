@@ -21,10 +21,11 @@ import (
 var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Serial][OCPFeatureGate:ManagedBootImagesAzure]", g.Label("Platform:azure"), g.Ordered, func() {
 	defer g.GinkgoRecover()
 	var (
-		AllMachineSetFixture     = filepath.Join("machineconfigurations", "managedbootimages-all.yaml")
-		NoneMachineSetFixture    = filepath.Join("machineconfigurations", "managedbootimages-none.yaml")
-		PartialMachineSetFixture = filepath.Join("machineconfigurations", "managedbootimages-partial.yaml")
-		EmptyMachineSetFixture   = filepath.Join("machineconfigurations", "managedbootimages-empty.yaml")
+		AllMachineSetFixture           = filepath.Join("machineconfigurations", "managedbootimages-all.yaml")
+		NoneMachineSetFixture          = filepath.Join("machineconfigurations", "managedbootimages-none.yaml")
+		PartialMachineSetFixture       = filepath.Join("machineconfigurations", "managedbootimages-partial.yaml")
+		EmptyMachineSetFixture         = filepath.Join("machineconfigurations", "managedbootimages-empty.yaml")
+		SkewEnforcementDisabledFixture = filepath.Join("machineconfigurations", "skewenforcement-disabled.yaml")
 
 		oc = exutil.NewCLI("mco-bootimage", exutil.KubeConfigPath()).AsAdmin()
 	)
@@ -36,6 +37,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		skipUnlessFunctionalMachineAPI(oc)
 		// Skip this test on single node platforms
 		exutil.SkipOnSingleNodeTopology(oc)
+		// Disable boot image skew enforcement
+		applyMachineConfigurationFixture(oc, SkewEnforcementDisabledFixture)
 	})
 
 	g.AfterEach(func() {
