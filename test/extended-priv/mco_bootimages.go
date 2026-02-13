@@ -60,10 +60,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 	})
 
-	g.It("[PolarionID:81403][OTP] In BootImages Machineset should update by default", g.Label("Platform:aws", "Platform:gcp"), func() {
+	g.It("[PolarionID:81403][OTP] In BootImages Machineset should update by default", g.Label("Platform:aws", "Platform:gcp", "Platform:vsphere", "Platform:azure"), func() {
 
 		// Not supported in Vsphere
-		skipTestIfSupportedPlatformNotMatched(oc, GCPPlatform, AWSPlatform)
+		skipTestIfSupportedPlatformNotMatched(oc, GCPPlatform, AWSPlatform, VspherePlatform, AzurePlatform)
 
 		var (
 			duplicatedMachinesetName = fmt.Sprintf("cloned-tc-%s", GetCurrentTestPolarionIDNumber())
@@ -471,10 +471,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		testUserDataUpdateFailure(oc, clonedMSName, clonedSecretName, expectedFailedMessageRegexp, setWrongIgnitionVersion)
 	})
 
-	g.It("[PolarionID:81395][OTP] Verify in boot-image by default update is opt-in", g.Label("Platform:aws", "Platform:gcp"), func() {
+	g.It("[PolarionID:81395][OTP] Verify in boot-image by default update is opt-in", g.Label("Platform:aws", "Platform:gcp", "Platform:vsphere", "Platform:azure"), func() {
 
 		// Not supported in Vsphere
-		skipTestIfSupportedPlatformNotMatched(oc, GCPPlatform, AWSPlatform)
+		skipTestIfSupportedPlatformNotMatched(oc, GCPPlatform, AWSPlatform, VspherePlatform, AzurePlatform)
 
 		exutil.By("To check the default opt-in in machieconfiguration")
 		if !strings.Contains(machineConfiguration.GetSpecOrFail(), "managedBootImages") {

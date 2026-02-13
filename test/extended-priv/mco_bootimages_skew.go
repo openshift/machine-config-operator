@@ -89,8 +89,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	})
 
 	g.It("Verify Automatic mode and Upgradeable (Happy Case) [apigroup:machineconfiguration.openshift.io]", func() {
-		// only applicable on GCP, AWS clusters
-		skipTestIfSupportedPlatformNotMatched(oc, GCPPlatform, AWSPlatform)
+		// only applicable on clusters where we support automatic updates: GCP, AWS, Azure and vSphere
+		skipTestIfSupportedPlatformNotMatched(oc, GCPPlatform, AWSPlatform, AzurePlatform, VspherePlatform)
 
 		// No opinion on skew enforcement for these platforms will result in Automatic mode
 		o.Expect(machineConfiguration.RemoveSkew()).To(o.Succeed())
@@ -124,7 +124,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	})
 
 	g.It("Verify Automatic mode and Upgradeable (Sad Case) [apigroup:machineconfiguration.openshift.io]", func(_ context.Context) {
-		// only applicable on clustres where we support automatic updates: A
+		// only applicable on clusters where we support automatic updates: GCP, AWS, Azure and vSphere
 		skipTestIfSupportedPlatformNotMatched(oc, GCPPlatform, AWSPlatform, AzurePlatform, VspherePlatform)
 
 		// No opinion on skew enforcement for these platforms will result in Automatic mode
