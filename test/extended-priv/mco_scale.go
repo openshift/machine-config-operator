@@ -149,7 +149,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	})
 
 	// 4.12 is the last version using rhel8, in 4.13 ocp starts using rhel9
-	g.It("[PolarionID:76471][OTP] Scaleup using 4.12 cloud image", g.Label("Platform:aws", "Platform:gcp", "Platform:vsphere"), func() {
+	g.It("[PolarionID:76471][OTP] Scaleup using 4.12 cloud image", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere"), func() {
 		var (
 			imageVersion = "4.12"
 			numNewNodes  = 1 // the number of nodes scaled up in the new Machineset
