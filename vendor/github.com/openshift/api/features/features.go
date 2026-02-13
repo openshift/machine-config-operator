@@ -930,4 +930,13 @@ var (
 						enhancementPR("https://github.com/openshift/enhancements/pull/1465").
 						enableIn(configv1.DevPreviewNoUpgrade).
 						mustRegister()
+
+	FeatureGateGatewayAPIWithoutOLM = newFeatureGate("GatewayAPIWithoutOLM").
+				reportProblemsToJiraComponent("Routing").
+				contactPerson("miciah").
+				productScope(ocpSpecific).
+				enhancementPR("https://github.com/openshift/enhancements/pull/1933").
+				enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
+				mustRegister()
 )
+

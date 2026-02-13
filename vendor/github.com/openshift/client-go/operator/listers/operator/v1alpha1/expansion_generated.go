@@ -2,6 +2,10 @@
 
 package v1alpha1
 
+// ClusterAPIListerExpansion allows custom methods to be added to
+// ClusterAPILister.
+type ClusterAPIListerExpansion interface{}
+
 // ClusterVersionOperatorListerExpansion allows custom methods to be added to
 // ClusterVersionOperatorLister.
 type ClusterVersionOperatorListerExpansion interface{}
