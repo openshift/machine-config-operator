@@ -175,6 +175,68 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		o.Eventually(mcoCO, "1m", "10s").Should(BeUpgradeable(), "co/machine-config should be upgradeable with restored machineset")
 	})
 
+	// AI-assisted: This test case validates that CPMS boot image config is permitted when skew enforcement is Automatic
+	g.It("Verify Automatic mode permits other machine managers [apigroup:machineconfiguration.openshift.io]", g.Label("Platform:aws", "Platform:gce", "Platform:azure"), func() {
+		// CPMS bootimages update is only allowed in gpc, aws and azure
+		skipTestIfSupportedPlatformNotMatched(oc, GCPPlatform, AWSPlatform, AzurePlatform)
+
+		var (
+			expectedMachineSetError = "when skew enforcement is in Automatic mode, any MachineAPI MachineSet MachineManager must use selection mode 'All'"
+
+			testConfigs = []struct {
+				description   string
+				patchConfig   string
+				shouldSucceed bool
+			}{
+				{
+					description:   "CPMS-only with All mode should succeed",
+					patchConfig:   `{"spec":{"managedBootImages":{"machineManagers":[{"resource":"controlplanemachinesets","apiGroup":"machine.openshift.io","selection":{"mode":"All"}}]}}}`,
+					shouldSucceed: true,
+				},
+				{
+					description:   "CPMS-only with None mode should succeed",
+					patchConfig:   `{"spec":{"managedBootImages":{"machineManagers":[{"resource":"controlplanemachinesets","apiGroup":"machine.openshift.io","selection":{"mode":"None"}}]}}}`,
+					shouldSucceed: true,
+				},
+				{
+					description:   "CPMS All + MachineSet All should succeed",
+					patchConfig:   `{"spec":{"managedBootImages":{"machineManagers":[{"resource":"controlplanemachinesets","apiGroup":"machine.openshift.io","selection":{"mode":"All"}},{"resource":"machinesets","apiGroup":"machine.openshift.io","selection":{"mode":"All"}}]}}}`,
+					shouldSucceed: true,
+				},
+				{
+					description:   "CPMS All + MachineSet None should fail",
+					patchConfig:   `{"spec":{"managedBootImages":{"machineManagers":[{"resource":"controlplanemachinesets","apiGroup":"machine.openshift.io","selection":{"mode":"All"}},{"resource":"machinesets","apiGroup":"machine.openshift.io","selection":{"mode":"None"}}]}}}`,
+					shouldSucceed: false,
+				},
+				{
+					description:   "CPMS None + MachineSet None should fail",
+					patchConfig:   `{"spec":{"managedBootImages":{"machineManagers":[{"resource":"controlplanemachinesets","apiGroup":"machine.openshift.io","selection":{"mode":"None"}},{"resource":"machinesets","apiGroup":"machine.openshift.io","selection":{"mode":"None"}}]}}}`,
+					shouldSucceed: false,
+				},
+			}
+		)
+
+		// No opinion on skew enforcement for these platforms will result in Automatic mode
+		o.Expect(machineConfiguration.RemoveSkew()).To(o.Succeed())
+
+		// Wait for the controller to reflect Automatic mode in skew enforcement status
+		machineConfiguration.WaitForBootImageSkewEnforcementStatusMode(SkewEnforcementAutomaticMode)
+
+		for _, tc := range testConfigs {
+			logger.Infof(tc.description)
+			err := machineConfiguration.Patch("merge", tc.patchConfig)
+			if tc.shouldSucceed {
+				o.Expect(err).NotTo(o.HaveOccurred(), "Config should be accepted when skew enforcement is Automatic: %s", tc.description)
+			} else {
+				o.Expect(err).To(o.HaveOccurred(), "Config should be rejected when skew enforcement is Automatic: %s", tc.description)
+				o.Expect(err).To(o.BeAssignableToTypeOf(&exutil.ExitError{}), "Unexpected error type for: %s", tc.description)
+				o.Expect(err.(*exutil.ExitError).StdErr).To(o.ContainSubstring(expectedMachineSetError),
+					"Error message does not match expected for: %s", tc.description)
+			}
+			logger.Infof("OK!\n")
+		}
+	})
+
 	g.It("Verify None mode [apigroup:machineconfiguration.openshift.io]", func() {
 		// Set None mode, effectively disabling skew enforcement
 		o.Expect(machineConfiguration.SetNoneSkew()).To(o.Succeed())
