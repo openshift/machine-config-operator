@@ -38,7 +38,18 @@ spec:
           annotations:
             summary: "Triggers when nodes in a pool have overlapping labels such as master, worker, and a custom label therefore a choice must be made as to which is honored."
             description: "Node {{ $labels.exported_node }} has triggered a pool alert due to a label change. For more details check MachineConfigController pod logs: oc logs -f -n {{ $labels.namespace }} machine-config-controller-xxxxx -c machine-config-controller"
-            runbook_url: https://github.com/openshift/runbooks/blob/master/alerts/machine-config-operator/MachineConfigControllerPoolAlert.md 
+            runbook_url: https://github.com/openshift/runbooks/blob/master/alerts/machine-config-operator/MachineConfigControllerPoolAlert.md
+    - name: mcc-boot-image-skew-enforcement-none
+      rules:
+        - alert: MCCBootImageSkewEnforcementNone
+          expr: |
+            mcc_boot_image_skew_enforcement_none == 1
+          labels:
+            namespace: openshift-machine-config-operator
+            severity: info
+          annotations:
+            summary: "Boot image skew enforcement is disabled. Scaling operations may not be successful."
+            description: "Boot image skew enforcement mode is set to None. When scaling up, new nodes may be provisioned with older boot images that could introduce compatibility issues. Consider manually updating boot images to match the cluster version. Please refer to docs at [TODO-INSERTLINK] for additional details."            
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
