@@ -274,6 +274,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.OCLInformerFactory.Machineconfiguration().V1().MachineOSBuilds(),
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigNodes(),
 			ctx.ConfigInformerFactory.Config().V1().Schedulers(),
+			ctx.OperatorInformerFactory.Operator().V1().MachineConfigurations(),
 			ctx.ClientBuilder.KubeClientOrDie("node-update-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("node-update-controller"),
 			ctx.FeatureGatesHandler,
