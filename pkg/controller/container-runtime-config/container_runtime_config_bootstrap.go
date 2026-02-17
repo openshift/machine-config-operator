@@ -3,6 +3,7 @@ package containerruntimeconfig
 import (
 	"fmt"
 
+	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -12,7 +13,7 @@ import (
 )
 
 // RunContainerRuntimeBootstrap generates ignition configs at bootstrap
-func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.ContainerRuntimeConfig, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
+func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.ContainerRuntimeConfig, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool, fgHandler ctrlcommon.FeatureGatesHandler) ([]*mcfgv1.MachineConfig, error) {
 	var res []*mcfgv1.MachineConfig
 	managedKeyExist := make(map[string]bool)
 	for _, cfg := range crconfigs {
@@ -39,17 +40,20 @@ func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.Contai
 
 			var configFileList []generatedConfigFile
 			ctrcfg := cfg.Spec.ContainerRuntimeConfig
-			if ctrcfg.OverlaySize != nil && !ctrcfg.OverlaySize.IsZero() {
-				storageTOML, err := mergeConfigChanges(originalStorageIgn, cfg, updateStorageConfig)
+			additionalStorageEnabled := fgHandler != nil && fgHandler.Enabled(features.FeatureGateAdditionalStorageConfig)
+			if needsStorageUpdate(ctrcfg, additionalStorageEnabled) {
+				storageTOML, err := mergeConfigChanges(originalStorageIgn, cfg, func(data []byte, internal *mcfgv1.ContainerRuntimeConfiguration) ([]byte, error) {
+					return updateStorageConfig(data, internal, additionalStorageEnabled)
+				})
 				if err != nil {
-					klog.V(2).Infoln(cfg, err, "error merging user changes to storage.conf: %v", err)
+					klog.V(2).Infof("error merging user changes to storage.conf: %v", err)
 				} else {
 					configFileList = append(configFileList, generatedConfigFile{filePath: storageConfigPath, data: storageTOML})
 				}
 			}
 			// Create the cri-o drop-in files
-			if ctrcfg.LogLevel != "" || ctrcfg.PidsLimit != nil || (ctrcfg.LogSizeMax != nil && !ctrcfg.LogSizeMax.IsZero()) || ctrcfg.DefaultRuntime != mcfgv1.ContainerRuntimeDefaultRuntimeEmpty {
-				crioFileConfigs := createCRIODropinFiles(cfg)
+			if needsCRIODropinUpdate(ctrcfg, additionalStorageEnabled) {
+				crioFileConfigs := createCRIODropinFiles(cfg, additionalStorageEnabled)
 				configFileList = append(configFileList, crioFileConfigs...)
 			}
 

@@ -49,12 +49,15 @@ const (
 	policyConfigPath                       = "/etc/containers/policy.json"
 	// CRIODropInFilePathLogLevel is the path at which changes to the crio config for log-level
 	// will be dropped in this is exported so that we can use it in the e2e-tests
-	CRIODropInFilePathLogLevel       = "/etc/crio/crio.conf.d/01-ctrcfg-logLevel"
-	crioDropInFilePathPidsLimit      = "/etc/crio/crio.conf.d/01-ctrcfg-pidsLimit"
-	crioDropInFilePathLogSizeMax     = "/etc/crio/crio.conf.d/01-ctrcfg-logSizeMax"
-	CRIODropInFilePathDefaultRuntime = "/etc/crio/crio.conf.d/01-ctrcfg-defaultRuntime"
-	imagepolicyType                  = "sigstoreSigned"
-	sigstoreRegistriesConfigFilePath = "/etc/containers/registries.d/sigstore-registries.yaml"
+	CRIODropInFilePathLogLevel   = "/etc/crio/crio.conf.d/01-ctrcfg-logLevel"
+	crioDropInFilePathPidsLimit  = "/etc/crio/crio.conf.d/01-ctrcfg-pidsLimit"
+	crioDropInFilePathLogSizeMax = "/etc/crio/crio.conf.d/01-ctrcfg-logSizeMax"
+	// CRIODropInFilePathDefaultRuntime is the path at which changes to the crio config for default-runtime
+	// will be dropped in this is exported so that we can use it in the e2e-tests
+	CRIODropInFilePathDefaultRuntime           = "/etc/crio/crio.conf.d/01-ctrcfg-defaultRuntime"
+	crioDropInFilePathAdditionalArtifactStores = "/etc/crio/crio.conf.d/01-ctrcfg-additionalArtifactStores"
+	imagepolicyType                            = "sigstoreSigned"
+	sigstoreRegistriesConfigFilePath           = "/etc/containers/registries.d/sigstore-registries.yaml"
 )
 
 var (
@@ -125,6 +128,17 @@ type tomlConfigCRIODefaultRuntime struct {
 	} `toml:"crio"`
 }
 
+// tomlConfigCRIOAdditionalArtifactStores is used for conversions when additional-artifact-stores is changed
+// TOML-friendly (it has all of the explicit tables). It's just used for
+// conversions.
+type tomlConfigCRIOAdditionalArtifactStores struct {
+	Crio struct {
+		Runtime struct {
+			AdditionalArtifactStores []string `toml:"additional_artifact_stores,omitempty"`
+		} `toml:"runtime"`
+	} `toml:"crio"`
+}
+
 type dockerConfig struct {
 	UseSigstoreAttachments bool `json:"use-sigstore-attachments,omitempty"`
 }
@@ -141,6 +155,20 @@ type generatedConfigFile struct {
 }
 
 type updateConfigFunc func(data []byte, internal *mcfgv1.ContainerRuntimeConfiguration) ([]byte, error)
+
+// needsStorageUpdate returns true if the ContainerRuntimeConfig requires storage.conf changes.
+func needsStorageUpdate(ctrcfg *mcfgv1.ContainerRuntimeConfiguration, additionalStorageEnabled bool) bool {
+	return (ctrcfg.OverlaySize != nil && !ctrcfg.OverlaySize.IsZero()) ||
+		(additionalStorageEnabled && (len(ctrcfg.AdditionalLayerStores) > 0 || len(ctrcfg.AdditionalImageStores) > 0))
+}
+
+// needsCRIODropinUpdate returns true if the ContainerRuntimeConfig requires CRI-O drop-in file changes.
+func needsCRIODropinUpdate(ctrcfg *mcfgv1.ContainerRuntimeConfiguration, additionalStorageEnabled bool) bool {
+	return ctrcfg.LogLevel != "" || ctrcfg.PidsLimit != nil ||
+		(ctrcfg.LogSizeMax != nil && !ctrcfg.LogSizeMax.IsZero()) ||
+		ctrcfg.DefaultRuntime != mcfgv1.ContainerRuntimeDefaultRuntimeEmpty ||
+		(additionalStorageEnabled && len(ctrcfg.AdditionalArtifactStores) > 0)
+}
 
 // createNewIgnition takes a map where the key is the path of the file, and the value is the
 // new data in the form of a byte array. The function returns the ignition config with the
@@ -370,8 +398,11 @@ func wrapErrorWithCondition(err error, args ...interface{}) mcfgv1.ContainerRunt
 }
 
 // updateStorageConfig decodes the data rendered from the template, merges the changes in and encodes it
-// back into a TOML format. It returns the bytes of the encoded data
-func updateStorageConfig(data []byte, internal *mcfgv1.ContainerRuntimeConfiguration) ([]byte, error) {
+// back into a TOML format. It returns the bytes of the encoded data.
+// The additionalStorageEnabled flag controls whether additional layer/image store
+// fields are processed. Callers must pass the feature gate state to ensure
+// gated fields are not written when the feature is disabled.
+func updateStorageConfig(data []byte, internal *mcfgv1.ContainerRuntimeConfiguration, additionalStorageEnabled bool) ([]byte, error) {
 	tomlConf := new(tomlConfigStorage)
 	if _, err := toml.NewDecoder(bytes.NewBuffer(data)).Decode(tomlConf); err != nil {
 		return nil, fmt.Errorf("error decoding crio config: %w", err)
@@ -385,6 +416,22 @@ func updateStorageConfig(data []byte, internal *mcfgv1.ContainerRuntimeConfigura
 		if internal.OverlaySize.Value() != 0 {
 			tomlConf.Storage.Options.Size = internal.OverlaySize.String()
 		}
+	}
+
+	if additionalStorageEnabled && len(internal.AdditionalLayerStores) > 0 {
+		paths := make([]string, 0, len(internal.AdditionalLayerStores))
+		for _, store := range internal.AdditionalLayerStores {
+			paths = append(paths, string(store.Path))
+		}
+		tomlConf.Storage.Options.AdditionalLayerStores = paths
+	}
+
+	if additionalStorageEnabled && len(internal.AdditionalImageStores) > 0 {
+		paths := make([]string, 0, len(internal.AdditionalImageStores))
+		for _, store := range internal.AdditionalImageStores {
+			paths = append(paths, string(store.Path))
+		}
+		tomlConf.Storage.Options.AdditionalImageStores = paths
 	}
 
 	var newData bytes.Buffer
@@ -409,8 +456,11 @@ func addTOMLgeneratedConfigFile(configFileList []generatedConfigFile, path strin
 // createCRIODropinFiles gets the data from the CRD and creates the respective drop in file in /etc/crio/crio.conf.d
 // We create different drop-in files for each CRI-O field that can be changed by the ctrcfg CR
 // this ensures that we don't have to rely on hard coded defaults that might cause problems
-// in future if something in cri-o or the templates used by the MCO changes
-func createCRIODropinFiles(cfg *mcfgv1.ContainerRuntimeConfig) []generatedConfigFile {
+// in future if something in cri-o or the templates used by the MCO changes.
+// The additionalStorageEnabled flag controls whether additional artifact store
+// fields are processed. Callers must pass the feature gate state to ensure
+// gated fields are not written when the feature is disabled.
+func createCRIODropinFiles(cfg *mcfgv1.ContainerRuntimeConfig, additionalStorageEnabled bool) []generatedConfigFile {
 	var (
 		generatedConfigFileList []generatedConfigFile
 		err                     error
@@ -421,7 +471,7 @@ func createCRIODropinFiles(cfg *mcfgv1.ContainerRuntimeConfig) []generatedConfig
 		tomlConf.Crio.Runtime.LogLevel = ctrcfg.LogLevel
 		generatedConfigFileList, err = addTOMLgeneratedConfigFile(generatedConfigFileList, CRIODropInFilePathLogLevel, tomlConf)
 		if err != nil {
-			klog.V(2).Infoln(cfg, err, "error updating user changes for log-level to crio.conf.d: %v", err)
+			klog.V(2).Infof("error updating user changes for log-level to crio.conf.d: %v", err)
 		}
 	}
 	if ctrcfg.PidsLimit != nil {
@@ -429,7 +479,7 @@ func createCRIODropinFiles(cfg *mcfgv1.ContainerRuntimeConfig) []generatedConfig
 		tomlConf.Crio.Runtime.PidsLimit = *ctrcfg.PidsLimit
 		generatedConfigFileList, err = addTOMLgeneratedConfigFile(generatedConfigFileList, crioDropInFilePathPidsLimit, tomlConf)
 		if err != nil {
-			klog.V(2).Infoln(cfg, err, "error updating user changes for pids-limit to crio.conf.d: %v", err)
+			klog.V(2).Infof("error updating user changes for pids-limit to crio.conf.d: %v", err)
 		}
 	}
 	if ctrcfg.LogSizeMax != nil && ctrcfg.LogSizeMax.Value() != 0 {
@@ -437,7 +487,7 @@ func createCRIODropinFiles(cfg *mcfgv1.ContainerRuntimeConfig) []generatedConfig
 		tomlConf.Crio.Runtime.LogSizeMax = ctrcfg.LogSizeMax.Value()
 		generatedConfigFileList, err = addTOMLgeneratedConfigFile(generatedConfigFileList, crioDropInFilePathLogSizeMax, tomlConf)
 		if err != nil {
-			klog.V(2).Infoln(cfg, err, "error updating user changes for log-size-max to crio.conf.d: %v", err)
+			klog.V(2).Infof("error updating user changes for log-size-max to crio.conf.d: %v", err)
 		}
 	}
 	if ctrcfg.DefaultRuntime != mcfgv1.ContainerRuntimeDefaultRuntimeEmpty {
@@ -445,7 +495,19 @@ func createCRIODropinFiles(cfg *mcfgv1.ContainerRuntimeConfig) []generatedConfig
 		tomlConf.Crio.Runtime.DefaultRuntime = string(ctrcfg.DefaultRuntime)
 		generatedConfigFileList, err = addTOMLgeneratedConfigFile(generatedConfigFileList, CRIODropInFilePathDefaultRuntime, tomlConf)
 		if err != nil {
-			klog.V(2).Infoln(cfg, err, "error updating user changes for default-runtime to crio.conf.d: %v", err)
+			klog.V(2).Infof("error updating user changes for default-runtime to crio.conf.d: %v", err)
+		}
+	}
+	if additionalStorageEnabled && len(ctrcfg.AdditionalArtifactStores) > 0 {
+		tomlConf := tomlConfigCRIOAdditionalArtifactStores{}
+		paths := make([]string, 0, len(ctrcfg.AdditionalArtifactStores))
+		for _, store := range ctrcfg.AdditionalArtifactStores {
+			paths = append(paths, string(store.Path))
+		}
+		tomlConf.Crio.Runtime.AdditionalArtifactStores = paths
+		generatedConfigFileList, err = addTOMLgeneratedConfigFile(generatedConfigFileList, crioDropInFilePathAdditionalArtifactStores, tomlConf)
+		if err != nil {
+			klog.V(2).Infof("error updating user changes for additional-artifact-stores to crio.conf.d: %v", err)
 		}
 	}
 	return generatedConfigFileList
@@ -623,6 +685,47 @@ func validateUserContainerRuntimeConfig(cfg *mcfgv1.ContainerRuntimeConfig) erro
 		return fmt.Errorf("invalid DefaultRuntime %q, must be one of %s, %s", ctrcfg.DefaultRuntime, mcfgv1.ContainerRuntimeDefaultRuntimeCrun, mcfgv1.ContainerRuntimeDefaultRuntimeRunc)
 	}
 
+	// Validate store paths regardless of feature gate state. This catches
+	// invalid configuration early so that enabling the gate later does not
+	// surface errors that were silently present in the CR.
+	var errs []error
+	for _, store := range ctrcfg.AdditionalLayerStores {
+		if err := validateStorePath(store.Path, "AdditionalLayerStores"); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	for _, store := range ctrcfg.AdditionalImageStores {
+		if err := validateStorePath(store.Path, "AdditionalImageStores"); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	for _, store := range ctrcfg.AdditionalArtifactStores {
+		if err := validateStorePath(store.Path, "AdditionalArtifactStores"); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+// storePathRegexp matches the CRD CEL rule: ^/[a-zA-Z0-9/._-]+$
+var storePathRegexp = regexp.MustCompile(`^/[a-zA-Z0-9/._-]+$`)
+
+// validateStorePath validates that a storage path is absolute, only contains
+// allowed characters (a-z, A-Z, 0-9, '/', '.', '_', '-'), and does not
+// contain consecutive forward slashes. This mirrors the CRD-level CEL
+// validation so that invalid config is caught early.
+func validateStorePath(p mcfgv1.StorePath, field string) error {
+	path := string(p)
+	if path == "" {
+		return fmt.Errorf("invalid %s: path must not be empty", field)
+	}
+	if !storePathRegexp.MatchString(path) {
+		return fmt.Errorf("invalid %s path %q: must be an absolute path containing only alphanumeric characters, '/', '.', '_', and '-'", field, path)
+	}
+	if strings.Contains(path, "//") {
+		return fmt.Errorf("invalid %s path %q: must not contain consecutive forward slashes", field, path)
+	}
 	return nil
 }
 

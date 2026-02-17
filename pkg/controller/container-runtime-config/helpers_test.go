@@ -1271,7 +1271,7 @@ func TestCreateCRIODropinFiles(t *testing.T) {
 
 	for _, test := range zeroValueTests {
 		ctrcfg := newContainerRuntimeConfig(test.name, test.cfg, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "", ""))
-		files := createCRIODropinFiles(ctrcfg)
+		files := createCRIODropinFiles(ctrcfg, false)
 		for _, file := range files {
 			if file.filePath == test.filepath {
 				t.Errorf("%s: failed. should not have created dropin file", test.name)
@@ -1281,7 +1281,7 @@ func TestCreateCRIODropinFiles(t *testing.T) {
 
 	for _, test := range validValueTests {
 		ctrcfg := newContainerRuntimeConfig(test.name, test.cfg, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "", ""))
-		files := createCRIODropinFiles(ctrcfg)
+		files := createCRIODropinFiles(ctrcfg, false)
 		for _, file := range files {
 			if file.filePath == test.filepath {
 				require.Equal(t, test.want, file.data, "createCRIODropinFiles() Diff, want %v, got %v", test.want, string(file.data))
@@ -1335,7 +1335,7 @@ func TestUpdateStorageConfig(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		got, err := updateStorageConfig(templateBytes, test.cfg)
+		got, err := updateStorageConfig(templateBytes, test.cfg, false)
 		require.NoError(t, err)
 		gotConf := tomlConfigStorage{}
 		if _, err := toml.Decode(string(got), &gotConf); err != nil {
@@ -1346,6 +1346,350 @@ func TestUpdateStorageConfig(t *testing.T) {
 			t.Errorf("%s: failed. got %v, want %v", test.name, got, test.want)
 		}
 	}
+}
+
+func TestUpdateStorageConfigAdditionalStores(t *testing.T) {
+	templateStorageConfig := tomlConfigStorage{}
+	buf := bytes.Buffer{}
+	err := toml.NewEncoder(&buf).Encode(templateStorageConfig)
+	require.NoError(t, err)
+	templateBytes := buf.Bytes()
+
+	tests := []struct {
+		name string
+		cfg  *mcfgv1.ContainerRuntimeConfiguration
+		want tomlConfigStorage
+	}{
+		{
+			name: "apply additional layer stores",
+			cfg: &mcfgv1.ContainerRuntimeConfiguration{
+				AdditionalLayerStores: []mcfgv1.AdditionalLayerStore{
+					{Path: "/var/lib/stargz-store"},
+					{Path: "/mnt/nfs-layers"},
+				},
+			},
+			want: tomlConfigStorage{
+				Storage: struct {
+					Driver    string                                "toml:\"driver\""
+					RunRoot   string                                "toml:\"runroot\""
+					GraphRoot string                                "toml:\"graphroot\""
+					Options   struct{ storageconfig.OptionsConfig } "toml:\"options\""
+				}{
+					Options: struct{ storageconfig.OptionsConfig }{
+						storageconfig.OptionsConfig{
+							AdditionalLayerStores: []string{"/var/lib/stargz-store", "/mnt/nfs-layers"},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "apply additional image stores",
+			cfg: &mcfgv1.ContainerRuntimeConfiguration{
+				AdditionalImageStores: []mcfgv1.AdditionalImageStore{
+					{Path: "/mnt/nfs-images"},
+					{Path: "/mnt/ssd-images"},
+				},
+			},
+			want: tomlConfigStorage{
+				Storage: struct {
+					Driver    string                                "toml:\"driver\""
+					RunRoot   string                                "toml:\"runroot\""
+					GraphRoot string                                "toml:\"graphroot\""
+					Options   struct{ storageconfig.OptionsConfig } "toml:\"options\""
+				}{
+					Options: struct{ storageconfig.OptionsConfig }{
+						storageconfig.OptionsConfig{
+							AdditionalImageStores: []string{"/mnt/nfs-images", "/mnt/ssd-images"},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "apply both additional layer and image stores with overlay size",
+			cfg: func() *mcfgv1.ContainerRuntimeConfiguration {
+				overlaySize := resource.MustParse("10G")
+				return &mcfgv1.ContainerRuntimeConfiguration{
+					OverlaySize: &overlaySize,
+					AdditionalLayerStores: []mcfgv1.AdditionalLayerStore{
+						{Path: "/var/lib/stargz-store"},
+					},
+					AdditionalImageStores: []mcfgv1.AdditionalImageStore{
+						{Path: "/mnt/nfs-images"},
+					},
+				}
+			}(),
+			want: tomlConfigStorage{
+				Storage: struct {
+					Driver    string                                "toml:\"driver\""
+					RunRoot   string                                "toml:\"runroot\""
+					GraphRoot string                                "toml:\"graphroot\""
+					Options   struct{ storageconfig.OptionsConfig } "toml:\"options\""
+				}{
+					Options: struct{ storageconfig.OptionsConfig }{
+						storageconfig.OptionsConfig{
+							Size:                  "10G",
+							AdditionalLayerStores: []string{"/var/lib/stargz-store"},
+							AdditionalImageStores: []string{"/mnt/nfs-images"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := updateStorageConfig(templateBytes, test.cfg, true)
+			require.NoError(t, err)
+			gotConf := tomlConfigStorage{}
+			_, err = toml.Decode(string(got), &gotConf)
+			require.NoError(t, err)
+			if !reflect.DeepEqual(gotConf, test.want) {
+				t.Errorf("failed.\ngot:  %+v\nwant: %+v", gotConf, test.want)
+			}
+		})
+	}
+
+	// Verify additional stores are NOT written when the flag is false
+	t.Run("feature gate disabled ignores additional stores", func(t *testing.T) {
+		cfg := &mcfgv1.ContainerRuntimeConfiguration{
+			AdditionalLayerStores: []mcfgv1.AdditionalLayerStore{
+				{Path: "/var/lib/stargz-store"},
+			},
+			AdditionalImageStores: []mcfgv1.AdditionalImageStore{
+				{Path: "/mnt/nfs-images"},
+			},
+		}
+		got, err := updateStorageConfig(templateBytes, cfg, false)
+		require.NoError(t, err)
+		gotConf := tomlConfigStorage{}
+		_, err = toml.Decode(string(got), &gotConf)
+		require.NoError(t, err)
+		assert.Empty(t, gotConf.Storage.Options.AdditionalLayerStores, "layer stores should not be written when feature is disabled")
+		assert.Empty(t, gotConf.Storage.Options.AdditionalImageStores, "image stores should not be written when feature is disabled")
+	})
+}
+
+func TestCreateCRIODropinFilesAdditionalArtifactStores(t *testing.T) {
+	cfg := &mcfgv1.ContainerRuntimeConfig{
+		Spec: mcfgv1.ContainerRuntimeConfigSpec{
+			ContainerRuntimeConfig: &mcfgv1.ContainerRuntimeConfiguration{
+				AdditionalArtifactStores: []mcfgv1.AdditionalArtifactStore{
+					{Path: "/mnt/ssd-artifacts"},
+					{Path: "/mnt/nfs-artifacts"},
+				},
+			},
+		},
+	}
+
+	files := createCRIODropinFiles(cfg, true)
+
+	var found bool
+	for _, f := range files {
+		if f.filePath == crioDropInFilePathAdditionalArtifactStores {
+			found = true
+			gotConf := tomlConfigCRIOAdditionalArtifactStores{}
+			_, err := toml.Decode(string(f.data), &gotConf)
+			require.NoError(t, err)
+			assert.Equal(t, []string{"/mnt/ssd-artifacts", "/mnt/nfs-artifacts"}, gotConf.Crio.Runtime.AdditionalArtifactStores)
+		}
+	}
+	assert.True(t, found, "expected to find additional artifact stores drop-in file at %s", crioDropInFilePathAdditionalArtifactStores)
+
+	// Verify that artifact stores are NOT created when feature is disabled
+	filesDisabled := createCRIODropinFiles(cfg, false)
+	for _, f := range filesDisabled {
+		assert.NotEqual(t, crioDropInFilePathAdditionalArtifactStores, f.filePath,
+			"artifact stores drop-in should not be created when additional storage is disabled")
+	}
+
+	// Verify that non-gated fields are still generated when the gate is disabled
+	cfgMixed := &mcfgv1.ContainerRuntimeConfig{
+		Spec: mcfgv1.ContainerRuntimeConfigSpec{
+			ContainerRuntimeConfig: &mcfgv1.ContainerRuntimeConfiguration{
+				LogLevel: "debug",
+				AdditionalArtifactStores: []mcfgv1.AdditionalArtifactStore{
+					{Path: "/mnt/ssd-artifacts"},
+				},
+			},
+		},
+	}
+	filesMixed := createCRIODropinFiles(cfgMixed, false)
+	var foundLogLevel, foundArtifact bool
+	for _, f := range filesMixed {
+		if f.filePath == CRIODropInFilePathLogLevel {
+			foundLogLevel = true
+		}
+		if f.filePath == crioDropInFilePathAdditionalArtifactStores {
+			foundArtifact = true
+		}
+	}
+	assert.True(t, foundLogLevel, "log-level drop-in should still be created when additional storage is disabled")
+	assert.False(t, foundArtifact, "artifact stores drop-in should not be created when additional storage is disabled")
+}
+
+func TestValidateStorePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		path    mcfgv1.StorePath
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "valid absolute path",
+			path: "/var/lib/stargz-store",
+		},
+		{
+			name: "valid path with dots and dashes",
+			path: "/mnt/nfs-images/cache_v1.0",
+		},
+		{
+			name:    "empty path",
+			path:    "",
+			wantErr: true,
+			errMsg:  "must not be empty",
+		},
+		{
+			name:    "relative path",
+			path:    "var/lib/store",
+			wantErr: true,
+			errMsg:  "must be an absolute path",
+		},
+		{
+			name:    "path with spaces",
+			path:    "/var/lib/my store",
+			wantErr: true,
+			errMsg:  "must be an absolute path",
+		},
+		{
+			name:    "path with special characters",
+			path:    "/var/lib/store@v1",
+			wantErr: true,
+			errMsg:  "must be an absolute path",
+		},
+		{
+			name:    "consecutive forward slashes",
+			path:    "/var//lib/store",
+			wantErr: true,
+			errMsg:  "must not contain consecutive forward slashes",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateStorePath(test.path, "TestField")
+			if test.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), test.errMsg)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestValidateUserContainerRuntimeConfigAdditionalStores(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     *mcfgv1.ContainerRuntimeConfig
+		wantErr bool
+	}{
+		{
+			name: "valid additional stores",
+			cfg: &mcfgv1.ContainerRuntimeConfig{
+				Spec: mcfgv1.ContainerRuntimeConfigSpec{
+					ContainerRuntimeConfig: &mcfgv1.ContainerRuntimeConfiguration{
+						AdditionalLayerStores: []mcfgv1.AdditionalLayerStore{
+							{Path: "/var/lib/stargz-store"},
+						},
+						AdditionalImageStores: []mcfgv1.AdditionalImageStore{
+							{Path: "/mnt/nfs-images"},
+						},
+						AdditionalArtifactStores: []mcfgv1.AdditionalArtifactStore{
+							{Path: "/mnt/ssd-artifacts"},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "invalid layer store path with consecutive slashes",
+			cfg: &mcfgv1.ContainerRuntimeConfig{
+				Spec: mcfgv1.ContainerRuntimeConfigSpec{
+					ContainerRuntimeConfig: &mcfgv1.ContainerRuntimeConfiguration{
+						AdditionalLayerStores: []mcfgv1.AdditionalLayerStore{
+							{Path: "/var//lib/store"},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid image store path not absolute",
+			cfg: &mcfgv1.ContainerRuntimeConfig{
+				Spec: mcfgv1.ContainerRuntimeConfigSpec{
+					ContainerRuntimeConfig: &mcfgv1.ContainerRuntimeConfiguration{
+						AdditionalImageStores: []mcfgv1.AdditionalImageStore{
+							{Path: "relative/path"},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid artifact store path empty",
+			cfg: &mcfgv1.ContainerRuntimeConfig{
+				Spec: mcfgv1.ContainerRuntimeConfigSpec{
+					ContainerRuntimeConfig: &mcfgv1.ContainerRuntimeConfiguration{
+						AdditionalArtifactStores: []mcfgv1.AdditionalArtifactStore{
+							{Path: ""},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateUserContainerRuntimeConfig(test.cfg)
+			if test.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+
+	// Verify that all errors are collected rather than returning on the first one.
+	t.Run("multiple invalid stores reports all errors", func(t *testing.T) {
+		cfg := &mcfgv1.ContainerRuntimeConfig{
+			Spec: mcfgv1.ContainerRuntimeConfigSpec{
+				ContainerRuntimeConfig: &mcfgv1.ContainerRuntimeConfiguration{
+					AdditionalLayerStores: []mcfgv1.AdditionalLayerStore{
+						{Path: "relative/layer"},
+					},
+					AdditionalImageStores: []mcfgv1.AdditionalImageStore{
+						{Path: "relative/image"},
+					},
+					AdditionalArtifactStores: []mcfgv1.AdditionalArtifactStore{
+						{Path: "relative/artifact"},
+					},
+				},
+			},
+		}
+		err := validateUserContainerRuntimeConfig(cfg)
+		require.Error(t, err)
+		errMsg := err.Error()
+		assert.Contains(t, errMsg, "AdditionalLayerStores")
+		assert.Contains(t, errMsg, "AdditionalImageStores")
+		assert.Contains(t, errMsg, "AdditionalArtifactStores")
+	})
 }
 
 func TestGetValidScopePolicies(t *testing.T) {
