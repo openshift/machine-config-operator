@@ -1,0 +1,3 @@
+FROM configs AS final
+RUN rpm-ostree install buildah && \
+	ostree container commit
