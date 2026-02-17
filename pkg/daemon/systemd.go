@@ -125,10 +125,12 @@ func NewSystemdManagerDefault() *SystemdManagerDefault {
 
 // NewConnection creates a new connection to systemd
 func (s *SystemdManagerDefault) NewConnection(ctx context.Context) (SystemdConnection, error) {
+	logSystem("Creating new systemd D-Bus connection")
 	conn, err := systemddbus.NewSystemdConnectionContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to systemd: %w", err)
 	}
+	logSystem("Created new systemd D-Bus connection")
 	return &systemdConnectionImpl{conn: conn}, nil
 }
 
@@ -154,14 +156,17 @@ type systemdConnectionImpl struct {
 
 // Close closes the systemd connection
 func (s *systemdConnectionImpl) Close() {
+	logSystem("Closing systemd D-Bus connection")
 	s.conn.Close()
 }
 
 // ReloadDaemon reloads the systemd daemon configuration
 func (s *systemdConnectionImpl) ReloadDaemon(ctx context.Context) error {
+	logSystem("Reloading systemd daemon configuration")
 	if err := s.conn.ReloadContext(ctx); err != nil {
 		return fmt.Errorf("failed to reload systemd daemon: %w", err)
 	}
+	logSystem("Reloaded systemd daemon configuration")
 	return nil
 }
 
@@ -269,78 +274,92 @@ func SystemdListUnits(result map[string]systemddbus.UnitStatus) SystemdManagerDo
 // Enable enables one or more systemd units. Unit names are automatically normalized.
 func (s *systemdConnectionImpl) Enable(ctx context.Context, force bool, units ...string) error {
 	normalizedUnits := NormalizeSystemdUnitNames(units...)
+	logSystem("Enabling systemd units %v", normalizedUnits)
 	if _, _, err := s.conn.EnableUnitFilesContext(ctx, normalizedUnits, false, force); err != nil {
 		return fmt.Errorf("enabling systemd units %v: %w", normalizedUnits, err)
 	}
+	logSystem("Enabled systemd units %v", normalizedUnits)
 	return nil
 }
 
 // Disable disables one or more systemd units. Unit names are automatically normalized.
 func (s *systemdConnectionImpl) Disable(ctx context.Context, units ...string) error {
 	normalizedUnits := NormalizeSystemdUnitNames(units...)
+	logSystem("Disabling systemd units %v", normalizedUnits)
 	if _, err := s.conn.DisableUnitFilesContext(ctx, normalizedUnits, false); err != nil {
 		return fmt.Errorf("disabling systemd units %v: %w", normalizedUnits, err)
 	}
+	logSystem("Disabled systemd units %v", normalizedUnits)
 	return nil
 }
 
 // TryRestart tries to restart a systemd unit (only if it's already running). Unit name is automatically normalized.
 func (s *systemdConnectionImpl) TryRestart(ctx context.Context, unit string) error {
 	normalizedName := NormalizeSystemdUnitNames(unit)[0]
+	logSystem("Try-restarting systemd unit %q", normalizedName)
 	if err := syncWrapper(ctx, s.conn, func(c chan string, conn *systemddbus.Conn) error {
 		_, err := conn.TryRestartUnitContext(ctx, normalizedName, "replace", c)
 		return err
 	}); err != nil {
 		return fmt.Errorf("try-restarting systemd unit %q: %w", normalizedName, err)
 	}
+	logSystem("Try-restarted systemd unit %q", normalizedName)
 	return nil
 }
 
 // Restart restarts a systemd unit. Unit name is automatically normalized.
 func (s *systemdConnectionImpl) Restart(ctx context.Context, unit string) error {
 	normalizedName := NormalizeSystemdUnitNames(unit)[0]
+	logSystem("Restarting systemd unit %q", normalizedName)
 	if err := syncWrapper(ctx, s.conn, func(c chan string, conn *systemddbus.Conn) error {
 		_, err := conn.RestartUnitContext(ctx, normalizedName, "replace", c)
 		return err
 	}); err != nil {
 		return fmt.Errorf("restarting systemd unit %q: %w", normalizedName, err)
 	}
+	logSystem("Restarted systemd unit %q", normalizedName)
 	return nil
 }
 
 // Start starts a systemd unit. Unit name is automatically normalized.
 func (s *systemdConnectionImpl) Start(ctx context.Context, unit string) error {
 	normalizedName := NormalizeSystemdUnitNames(unit)[0]
+	logSystem("Starting systemd unit %q", normalizedName)
 	if err := syncWrapper(ctx, s.conn, func(c chan string, conn *systemddbus.Conn) error {
 		_, err := conn.StartUnitContext(ctx, normalizedName, "replace", c)
 		return err
 	}); err != nil {
 		return fmt.Errorf("starting systemd unit %q: %w", normalizedName, err)
 	}
+	logSystem("Started systemd unit %q", normalizedName)
 	return nil
 }
 
 // Stop stops a systemd unit. Unit name is automatically normalized.
 func (s *systemdConnectionImpl) Stop(ctx context.Context, unit string) error {
 	normalizedName := NormalizeSystemdUnitNames(unit)[0]
+	logSystem("Stopping systemd unit %q", normalizedName)
 	if err := syncWrapper(ctx, s.conn, func(c chan string, conn *systemddbus.Conn) error {
 		_, err := conn.StopUnitContext(ctx, normalizedName, "replace", c)
 		return err
 	}); err != nil {
 		return fmt.Errorf("stopping systemd unit %q: %w", normalizedName, err)
 	}
+	logSystem("Stopped systemd unit %q", normalizedName)
 	return nil
 }
 
 // Reload reloads a systemd unit. Unit name is automatically normalized.
 func (s *systemdConnectionImpl) Reload(ctx context.Context, unit string) error {
 	normalizedName := NormalizeSystemdUnitNames(unit)[0]
+	logSystem("Reloading systemd unit %q", normalizedName)
 	if err := syncWrapper(ctx, s.conn, func(c chan string, conn *systemddbus.Conn) error {
 		_, err := conn.ReloadUnitContext(ctx, normalizedName, "replace", c)
 		return err
 	}); err != nil {
 		return fmt.Errorf("reloading systemd unit %q: %w", normalizedName, err)
 	}
+	logSystem("Reloaded systemd unit %q", normalizedName)
 	return nil
 }
 
@@ -349,6 +368,8 @@ func (s *systemdConnectionImpl) Reload(ctx context.Context, unit string) error {
 // Note: This method uses the low-level dbus library directly because
 // PresetUnitFiles is not exposed by the coreos/go-systemd library.
 func (s *systemdConnectionImpl) Preset(ctx context.Context, unit string) error {
+	normalizedName := NormalizeSystemdUnitNames(unit)[0]
+	logSystem("Presetting systemd unit %q", normalizedName)
 	dbusConn, err := dbus.SystemBus()
 	if err != nil {
 		return fmt.Errorf("failed to connect to system bus: %w", err)
@@ -361,7 +382,6 @@ func (s *systemdConnectionImpl) Preset(ctx context.Context, unit string) error {
 	var carriesInstallInfo bool
 	var changes [][]interface{}
 
-	normalizedName := NormalizeSystemdUnitNames(unit)[0]
 	err = obj.CallWithContext(
 		ctx,
 		"org.freedesktop.systemd1.Manager.PresetUnitFiles",
@@ -373,12 +393,14 @@ func (s *systemdConnectionImpl) Preset(ctx context.Context, unit string) error {
 		return fmt.Errorf("presetting systemd unit %q: %w", normalizedName, err)
 	}
 
+	logSystem("Preset systemd unit %q", normalizedName)
 	return nil
 }
 
 // IsEnabled checks if a systemd unit is enabled. Unit name is automatically normalized.
 func (s *systemdConnectionImpl) IsEnabled(ctx context.Context, unit string) (bool, error) {
 	normalizedName := NormalizeSystemdUnitNames(unit)[0]
+	logSystem("Checking if systemd unit %q is enabled", normalizedName)
 	enabledUnits, err := s.conn.ListUnitFilesByPatternsContext(
 		ctx,
 		[]string{"enabled", "enabled-runtime"},
@@ -387,13 +409,14 @@ func (s *systemdConnectionImpl) IsEnabled(ctx context.Context, unit string) (boo
 	if err != nil {
 		return false, fmt.Errorf("checking if unit %q is enabled: %w", normalizedName, err)
 	}
-
+	logSystem("Checked systemd unit %q enabled=%v", normalizedName, len(enabledUnits) > 0)
 	return len(enabledUnits) > 0, nil
 }
 
 // ListUnits retrieves all currently loaded systemd units and returns them as a map indexed by unit name.
 // Only units that are both active and/or enabled will be returned.
 func (s *systemdConnectionImpl) ListUnits(ctx context.Context) (map[string]systemddbus.UnitStatus, error) {
+	logSystem("Listing systemd units")
 	units, err := s.conn.ListUnitsContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("getting units list: %w", err)
@@ -403,6 +426,7 @@ func (s *systemdConnectionImpl) ListUnits(ctx context.Context) (map[string]syste
 	for _, unit := range units {
 		result[unit.Name] = unit
 	}
+	logSystem("Listed %d systemd units", len(result))
 	return result, nil
 }
 
