@@ -363,6 +363,10 @@ func (ctrl *Controller) sigstoreAPIEnabled() bool {
 	return ctrl.fgHandler.Enabled(features.FeatureGateSigstoreImageVerification)
 }
 
+func (ctrl *Controller) additionalStorageConfigEnabled() bool {
+	return ctrl.fgHandler.Enabled(features.FeatureGateAdditionalStorageConfig)
+}
+
 func (ctrl *Controller) updateContainerRuntimeConfig(oldObj, newObj interface{}) {
 	oldCtrCfg := oldObj.(*mcfgv1.ContainerRuntimeConfig)
 	newCtrCfg := newObj.(*mcfgv1.ContainerRuntimeConfig)
@@ -753,10 +757,13 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 
 		var configFileList []generatedConfigFile
 		ctrcfg := cfg.Spec.ContainerRuntimeConfig
-		if ctrcfg.OverlaySize != nil && !ctrcfg.OverlaySize.IsZero() {
-			storageTOML, err := mergeConfigChanges(originalStorageIgn, cfg, updateStorageConfig)
+		additionalStorageEnabled := ctrl.additionalStorageConfigEnabled()
+		if needsStorageUpdate(ctrcfg, additionalStorageEnabled) {
+			storageTOML, err := mergeConfigChanges(originalStorageIgn, cfg, func(data []byte, internal *mcfgv1.ContainerRuntimeConfiguration) ([]byte, error) {
+				return updateStorageConfig(data, internal, additionalStorageEnabled)
+			})
 			if err != nil {
-				klog.V(2).Infoln(cfg, err, "error merging user changes to storage.conf: %v", err)
+				klog.V(2).Infof("error merging user changes to storage.conf: %v", err)
 				ctrl.syncStatusOnly(cfg, err)
 			} else {
 				configFileList = append(configFileList, generatedConfigFile{filePath: storageConfigPath, data: storageTOML})
@@ -765,8 +772,8 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		}
 
 		// Create the cri-o drop-in files
-		if ctrcfg.LogLevel != "" || ctrcfg.PidsLimit != nil || (ctrcfg.LogSizeMax != nil && !ctrcfg.LogSizeMax.IsZero()) || ctrcfg.DefaultRuntime != mcfgv1.ContainerRuntimeDefaultRuntimeEmpty {
-			crioFileConfigs := createCRIODropinFiles(cfg)
+		if needsCRIODropinUpdate(ctrcfg, additionalStorageEnabled) {
+			crioFileConfigs := createCRIODropinFiles(cfg, additionalStorageEnabled)
 			configFileList = append(configFileList, crioFileConfigs...)
 		}
 
