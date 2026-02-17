@@ -1348,6 +1348,138 @@ func TestUpdateStorageConfig(t *testing.T) {
 	}
 }
 
+func TestUpdateStorageConfigAdditionalStores(t *testing.T) {
+	templateStorageConfig := tomlConfigStorage{}
+	buf := bytes.Buffer{}
+	err := toml.NewEncoder(&buf).Encode(templateStorageConfig)
+	require.NoError(t, err)
+	templateBytes := buf.Bytes()
+
+	tests := []struct {
+		name string
+		cfg  *mcfgv1.ContainerRuntimeConfiguration
+		want tomlConfigStorage
+	}{
+		{
+			name: "apply additional layer stores",
+			cfg: &mcfgv1.ContainerRuntimeConfiguration{
+				AdditionalLayerStores: []mcfgv1.AdditionalLayerStore{
+					{Path: "/var/lib/stargz-store"},
+					{Path: "/mnt/nfs-layers"},
+				},
+			},
+			want: tomlConfigStorage{
+				Storage: struct {
+					Driver    string                                "toml:\"driver\""
+					RunRoot   string                                "toml:\"runroot\""
+					GraphRoot string                                "toml:\"graphroot\""
+					Options   struct{ storageconfig.OptionsConfig } "toml:\"options\""
+				}{
+					Options: struct{ storageconfig.OptionsConfig }{
+						storageconfig.OptionsConfig{
+							AdditionalLayerStores: []string{"/var/lib/stargz-store", "/mnt/nfs-layers"},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "apply additional image stores",
+			cfg: &mcfgv1.ContainerRuntimeConfiguration{
+				AdditionalImageStores: []mcfgv1.AdditionalImageStore{
+					{Path: "/mnt/nfs-images"},
+					{Path: "/mnt/ssd-images"},
+				},
+			},
+			want: tomlConfigStorage{
+				Storage: struct {
+					Driver    string                                "toml:\"driver\""
+					RunRoot   string                                "toml:\"runroot\""
+					GraphRoot string                                "toml:\"graphroot\""
+					Options   struct{ storageconfig.OptionsConfig } "toml:\"options\""
+				}{
+					Options: struct{ storageconfig.OptionsConfig }{
+						storageconfig.OptionsConfig{
+							AdditionalImageStores: []string{"/mnt/nfs-images", "/mnt/ssd-images"},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "apply both additional layer and image stores with overlay size",
+			cfg: func() *mcfgv1.ContainerRuntimeConfiguration {
+				overlaySize := resource.MustParse("10G")
+				return &mcfgv1.ContainerRuntimeConfiguration{
+					OverlaySize: &overlaySize,
+					AdditionalLayerStores: []mcfgv1.AdditionalLayerStore{
+						{Path: "/var/lib/stargz-store"},
+					},
+					AdditionalImageStores: []mcfgv1.AdditionalImageStore{
+						{Path: "/mnt/nfs-images"},
+					},
+				}
+			}(),
+			want: tomlConfigStorage{
+				Storage: struct {
+					Driver    string                                "toml:\"driver\""
+					RunRoot   string                                "toml:\"runroot\""
+					GraphRoot string                                "toml:\"graphroot\""
+					Options   struct{ storageconfig.OptionsConfig } "toml:\"options\""
+				}{
+					Options: struct{ storageconfig.OptionsConfig }{
+						storageconfig.OptionsConfig{
+							Size:                  "10G",
+							AdditionalLayerStores: []string{"/var/lib/stargz-store"},
+							AdditionalImageStores: []string{"/mnt/nfs-images"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := updateStorageConfig(templateBytes, test.cfg)
+			require.NoError(t, err)
+			gotConf := tomlConfigStorage{}
+			_, err = toml.Decode(string(got), &gotConf)
+			require.NoError(t, err)
+			if !reflect.DeepEqual(gotConf, test.want) {
+				t.Errorf("failed.\ngot:  %+v\nwant: %+v", gotConf, test.want)
+			}
+		})
+	}
+}
+
+func TestCreateCRIODropinFilesAdditionalArtifactStores(t *testing.T) {
+	cfg := &mcfgv1.ContainerRuntimeConfig{
+		Spec: mcfgv1.ContainerRuntimeConfigSpec{
+			ContainerRuntimeConfig: &mcfgv1.ContainerRuntimeConfiguration{
+				AdditionalArtifactStores: []mcfgv1.AdditionalArtifactStore{
+					{Path: "/mnt/ssd-artifacts"},
+					{Path: "/mnt/nfs-artifacts"},
+				},
+			},
+		},
+	}
+
+	files := createCRIODropinFiles(cfg)
+
+	var found bool
+	for _, f := range files {
+		if f.filePath == crioDropInFilePathAdditionalArtifactStores {
+			found = true
+			gotConf := tomlConfigCRIOAdditionalArtifactStores{}
+			_, err := toml.Decode(string(f.data), &gotConf)
+			require.NoError(t, err)
+			assert.Equal(t, []string{"/mnt/ssd-artifacts", "/mnt/nfs-artifacts"}, gotConf.Crio.Runtime.AdditionalArtifactStores)
+		}
+	}
+	assert.True(t, found, "expected to find additional artifact stores drop-in file at %s", crioDropInFilePathAdditionalArtifactStores)
+}
+
 func TestGetValidScopePolicies(t *testing.T) {
 	type testcase struct {
 		name                   string

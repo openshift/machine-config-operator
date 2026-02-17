@@ -2026,3 +2026,112 @@ func TestImagePolicyCreate(t *testing.T) {
 		})
 	}
 }
+
+func TestContainerRuntimeConfigAdditionalStorageConfig(t *testing.T) {
+	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType, apicfgv1.NonePlatformType, "unrecognized"} {
+		t.Run(string(platform), func(t *testing.T) {
+			f := newFixture(t)
+			// Enable the AdditionalStorageConfig feature gate
+			f.fgHandler = ctrlcommon.NewFeatureGatesHardcodedHandler(
+				[]apicfgv1.FeatureGateName{
+					features.FeatureGateSigstoreImageVerification,
+					features.FeatureGateAdditionalStorageConfig,
+				},
+				[]apicfgv1.FeatureGateName{},
+			)
+			f.newController()
+
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
+			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
+			ctrcfg := newContainerRuntimeConfig("set-additional-stores", &mcfgv1.ContainerRuntimeConfiguration{
+				AdditionalLayerStores: []mcfgv1.AdditionalLayerStore{
+					{Path: "/var/lib/stargz-store"},
+				},
+				AdditionalImageStores: []mcfgv1.AdditionalImageStore{
+					{Path: "/mnt/nfs-images"},
+				},
+				AdditionalArtifactStores: []mcfgv1.AdditionalArtifactStore{
+					{Path: "/mnt/ssd-artifacts"},
+				},
+			}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+			ctrCfgKey, _ := getManagedKeyCtrCfg(mcp, f.client, ctrcfg)
+			mcs1 := helpers.NewMachineConfig(getManagedKeyCtrCfgDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
+			mcs2 := mcs1.DeepCopy()
+			mcs2.Name = ctrCfgKey
+
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mcpLister = append(f.mcpLister, mcp2)
+			f.mccrLister = append(f.mccrLister, ctrcfg)
+			f.objects = append(f.objects, ctrcfg)
+
+			f.expectGetMachineConfigAction(mcs2)
+			f.expectGetMachineConfigAction(mcs1)
+			f.expectGetMachineConfigAction(mcs1)
+			f.expectUpdateContainerRuntimeConfig(ctrcfg)
+			f.expectUpdateContainerRuntimeConfigRoot(ctrcfg)
+			f.expectCreateMachineConfigAction(mcs1)
+			f.expectPatchContainerRuntimeConfig(ctrcfg, ctrcfgPatchBytes)
+			f.expectGetMachineConfigAction(mcs2)
+			f.expectUpdateContainerRuntimeConfig(ctrcfg)
+
+			f.run(getKey(ctrcfg, t))
+		})
+	}
+}
+
+func TestContainerRuntimeConfigAdditionalStorageConfigFeatureGateDisabled(t *testing.T) {
+	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType, apicfgv1.NonePlatformType, "unrecognized"} {
+		t.Run(string(platform), func(t *testing.T) {
+			f := newFixture(t)
+			// Disable the AdditionalStorageConfig feature gate
+			f.fgHandler = ctrlcommon.NewFeatureGatesHardcodedHandler(
+				[]apicfgv1.FeatureGateName{features.FeatureGateSigstoreImageVerification},
+				[]apicfgv1.FeatureGateName{features.FeatureGateAdditionalStorageConfig},
+			)
+			f.newController()
+
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
+			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
+			// Even if these fields are set, the controller should not generate config
+			// because the feature gate is disabled
+			ctrcfg := newContainerRuntimeConfig("set-additional-stores-disabled", &mcfgv1.ContainerRuntimeConfiguration{
+				AdditionalLayerStores: []mcfgv1.AdditionalLayerStore{
+					{Path: "/var/lib/stargz-store"},
+				},
+				AdditionalImageStores: []mcfgv1.AdditionalImageStore{
+					{Path: "/mnt/nfs-images"},
+				},
+				AdditionalArtifactStores: []mcfgv1.AdditionalArtifactStore{
+					{Path: "/mnt/ssd-artifacts"},
+				},
+			}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+			ctrCfgKey, _ := getManagedKeyCtrCfg(mcp, f.client, ctrcfg)
+			mcs1 := helpers.NewMachineConfig(getManagedKeyCtrCfgDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
+			mcs2 := mcs1.DeepCopy()
+			mcs2.Name = ctrCfgKey
+
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mcpLister = append(f.mcpLister, mcp2)
+			f.mccrLister = append(f.mccrLister, ctrcfg)
+			f.objects = append(f.objects, ctrcfg)
+
+			// When only additional stores are set and the feature gate is disabled,
+			// the controller creates an MC with empty ignition config (no storage/crio files).
+			// No intermediate syncStatusOnly because needsStorageConfig is false.
+			f.expectGetMachineConfigAction(mcs2)
+			f.expectGetMachineConfigAction(mcs1)
+			f.expectGetMachineConfigAction(mcs1)
+			f.expectUpdateContainerRuntimeConfigRoot(ctrcfg)
+			f.expectCreateMachineConfigAction(mcs1)
+			f.expectPatchContainerRuntimeConfig(ctrcfg, ctrcfgPatchBytes)
+			f.expectGetMachineConfigAction(mcs2)
+			f.expectUpdateContainerRuntimeConfig(ctrcfg)
+
+			f.run(getKey(ctrcfg, t))
+		})
+	}
+}

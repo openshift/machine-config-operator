@@ -363,6 +363,10 @@ func (ctrl *Controller) sigstoreAPIEnabled() bool {
 	return ctrl.fgHandler.Enabled(features.FeatureGateSigstoreImageVerification)
 }
 
+func (ctrl *Controller) additionalStorageConfigEnabled() bool {
+	return ctrl.fgHandler.Enabled(features.FeatureGateAdditionalStorageConfig)
+}
+
 func (ctrl *Controller) updateContainerRuntimeConfig(oldObj, newObj interface{}) {
 	oldCtrCfg := oldObj.(*mcfgv1.ContainerRuntimeConfig)
 	newCtrCfg := newObj.(*mcfgv1.ContainerRuntimeConfig)
@@ -753,7 +757,10 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 
 		var configFileList []generatedConfigFile
 		ctrcfg := cfg.Spec.ContainerRuntimeConfig
-		if ctrcfg.OverlaySize != nil && !ctrcfg.OverlaySize.IsZero() {
+		additionalStorageEnabled := ctrl.additionalStorageConfigEnabled()
+		needsStorageConfig := (ctrcfg.OverlaySize != nil && !ctrcfg.OverlaySize.IsZero()) ||
+			(additionalStorageEnabled && (len(ctrcfg.AdditionalLayerStores) > 0 || len(ctrcfg.AdditionalImageStores) > 0))
+		if needsStorageConfig {
 			storageTOML, err := mergeConfigChanges(originalStorageIgn, cfg, updateStorageConfig)
 			if err != nil {
 				klog.V(2).Infoln(cfg, err, "error merging user changes to storage.conf: %v", err)
@@ -765,7 +772,9 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		}
 
 		// Create the cri-o drop-in files
-		if ctrcfg.LogLevel != "" || ctrcfg.PidsLimit != nil || (ctrcfg.LogSizeMax != nil && !ctrcfg.LogSizeMax.IsZero()) || ctrcfg.DefaultRuntime != mcfgv1.ContainerRuntimeDefaultRuntimeEmpty {
+		needsCRIODropin := ctrcfg.LogLevel != "" || ctrcfg.PidsLimit != nil || (ctrcfg.LogSizeMax != nil && !ctrcfg.LogSizeMax.IsZero()) || ctrcfg.DefaultRuntime != mcfgv1.ContainerRuntimeDefaultRuntimeEmpty ||
+			(additionalStorageEnabled && len(ctrcfg.AdditionalArtifactStores) > 0)
+		if needsCRIODropin {
 			crioFileConfigs := createCRIODropinFiles(cfg)
 			configFileList = append(configFileList, crioFileConfigs...)
 		}
