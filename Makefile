@@ -226,6 +226,12 @@ test-e2e-ocl: install-go-junit-report install-skopeo
 	# Temporarily include /tmp/skopeo/bin in our PATH variable so that the test suite can find skopeo.
 	set -o pipefail; PATH="$(PATH):/tmp/skopeo/bin" go test -tags=$(GOTAGS) -failfast -timeout 190m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-ocl/ | ./hack/test-with-junit.sh $(@)
 
+test-e2e-ocl-1of2: install-go-junit-report install-skopeo
+	set -o pipefail; PATH="$(PATH):/tmp/skopeo/bin" go test -tags=$(GOTAGS) -failfast -timeout 100m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-ocl-1of2/ ./test/e2e-ocl-shared/ | ./hack/test-with-junit.sh $(@)
+
+test-e2e-ocl-2of2: install-go-junit-report install-skopeo
+	set -o pipefail; PATH="$(PATH):/tmp/skopeo/bin" go test -tags=$(GOTAGS) -failfast -timeout 100m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-ocl-2of2/ ./test/e2e-ocl-shared/ | ./hack/test-with-junit.sh $(@)
+
 test-e2e-iri: install-go-junit-report
 	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 120m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-iri/ | ./hack/test-with-junit.sh $(@)
 
