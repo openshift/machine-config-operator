@@ -349,6 +349,146 @@ func TestMCSCARotation(t *testing.T) {
 	}
 }
 
+func TestIRICertificateRotation(t *testing.T) {
+	tests := []struct {
+		name           string
+		forceRotation  bool
+		machineObjects []runtime.Object
+		maoSecrets     []runtime.Object
+		preCreateIRI   bool // whether to pre-create the IRI secret before reconciliation
+	}{
+		{
+			name:           "IRI secret is created on initial sync",
+			maoSecrets:     []runtime.Object{getGoodMAOSecret("test-user-data")},
+			machineObjects: []runtime.Object{getMachineSet("test-machine")},
+			forceRotation:  false,
+			preCreateIRI:   false,
+		},
+		{
+			name:           "IRI secret is updated on CA rotation",
+			maoSecrets:     []runtime.Object{getGoodMAOSecret("test-user-data")},
+			machineObjects: []runtime.Object{getMachineSet("test-machine")},
+			forceRotation:  true,
+			preCreateIRI:   false,
+		},
+		{
+			name:           "IRI secret is updated when it already exists",
+			maoSecrets:     []runtime.Object{getGoodMAOSecret("test-user-data")},
+			machineObjects: []runtime.Object{getMachineSet("test-machine")},
+			forceRotation:  false,
+			preCreateIRI:   true,
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			f := newFixture(t)
+			f.machineObjects = append(f.machineObjects, test.machineObjects...)
+			f.objects = append(f.objects, test.maoSecrets...)
+			for _, obj := range test.maoSecrets {
+				f.maoSecretLister = append(f.maoSecretLister, obj.(*corev1.Secret))
+			}
+			f.controller = f.newController()
+
+			// Initial sync to create CA and MCS TLS cert
+			f.runController()
+
+			if test.preCreateIRI {
+				// Pre-create an IRI secret with dummy data to test the update path
+				dummySecret := &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      ctrlcommon.InternalReleaseImageTLSSecretName,
+						Namespace: ctrlcommon.MCONamespace,
+					},
+					Type: corev1.SecretTypeTLS,
+					Data: map[string][]byte{
+						corev1.TLSCertKey:       []byte("dummy-cert"),
+						corev1.TLSPrivateKeyKey: []byte("dummy-key"),
+					},
+				}
+				_, err := f.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Create(context.TODO(), dummySecret, metav1.CreateOptions{})
+				require.NoError(t, err)
+			}
+
+			if test.forceRotation {
+				t.Log("Forcing CA rotation")
+				secret, err := f.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), ctrlcommon.MachineConfigServerCAName, metav1.GetOptions{})
+				require.NoError(t, err)
+				newSecret := secret.DeepCopy()
+				newSecret.Annotations[certrotation.CertificateNotAfterAnnotation] = time.Now().Add(-time.Hour).Format(time.RFC3339)
+				_, err = f.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Update(context.TODO(), newSecret, metav1.UpdateOptions{})
+				require.NoError(t, err)
+				f.syncListers(t)
+				f.runController()
+			}
+
+			// Reconcile the IRI certificate
+			f.controller.reconcileIRICertificate()
+
+			// Verify the IRI TLS secret was created/updated
+			iriSecret, err := f.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), ctrlcommon.InternalReleaseImageTLSSecretName, metav1.GetOptions{})
+			require.NoError(t, err, "IRI TLS secret should exist after reconciliation")
+			require.Equal(t, corev1.SecretTypeTLS, iriSecret.Type, "IRI secret should be of type TLS")
+
+			// Parse the IRI certificate
+			iriCertData := iriSecret.Data[corev1.TLSCertKey]
+			require.NotEmpty(t, iriCertData, "IRI certificate data should not be empty")
+
+			block, _ := pem.Decode(iriCertData)
+			require.NotNil(t, block, "Should be able to decode IRI PEM certificate")
+
+			iriCert, err := x509.ParseCertificate(block.Bytes)
+			require.NoError(t, err, "Should be able to parse IRI certificate")
+
+			// Get the MCS CA certificate to verify the IRI cert is signed by it
+			caSecret, err := f.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), ctrlcommon.MachineConfigServerCAName, metav1.GetOptions{})
+			require.NoError(t, err)
+			caCertData := caSecret.Data[corev1.TLSCertKey]
+			require.NotEmpty(t, caCertData, "CA certificate data should not be empty")
+
+			caBlock, _ := pem.Decode(caCertData)
+			require.NotNil(t, caBlock, "Should be able to decode CA PEM certificate")
+			caCert, err := x509.ParseCertificate(caBlock.Bytes)
+			require.NoError(t, err, "Should be able to parse CA certificate")
+
+			// Verify the IRI cert is signed by the MCS CA
+			err = iriCert.CheckSignatureFrom(caCert)
+			require.NoError(t, err, "IRI certificate should be signed by the MCS CA")
+
+			// Verify the IRI cert has the correct SANs (hostnames from hostnamesRotation)
+			expectedHostnames := f.controller.hostnamesRotation.GetHostnames()
+			require.NotEmpty(t, expectedHostnames, "Expected hostnames should not be empty")
+
+			for _, hostname := range expectedHostnames {
+				ip := net.ParseIP(hostname)
+				if ip != nil {
+					found := false
+					for _, certIP := range iriCert.IPAddresses {
+						if certIP.Equal(ip) {
+							found = true
+							break
+						}
+					}
+					require.True(t, found, "IP %s should be present in IRI certificate SAN IP addresses", hostname)
+				} else {
+					found := false
+					for _, dnsName := range iriCert.DNSNames {
+						if dnsName == hostname {
+							found = true
+							break
+						}
+					}
+					require.True(t, found, "Hostname %s should be present in IRI certificate SAN DNS names", hostname)
+				}
+			}
+
+			t.Logf("Successfully verified IRI certificate: signed by MCS CA, correct SANs")
+		})
+	}
+}
+
 // Update the controller's indexers to capture the new secrets and configmaps
 func (f *fixture) syncListers(t *testing.T) {
 	signingSecret, err := f.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), ctrlcommon.MachineConfigServerCAName, metav1.GetOptions{})
