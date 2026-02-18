@@ -960,12 +960,12 @@ func getBackdatedBootImage(oc *exutil.CLI) string {
 
 // getReleaseFromVsphereTemplate gets the release version from a vSphere template
 func getReleaseFromVsphereTemplate(oc *exutil.CLI, vsphereTemplate string) (string, error) {
-	server, dataCenter, _, _, user, password, err := getvSphereCredentials(oc.AsAdmin())
+	vsInfo, err := exutil.GetVSphereConnectionInfo(oc.AsAdmin())
 	if err != nil {
 		return "", err
 	}
 
-	return exutil.GetReleaseFromVsphereTemplate(vsphereTemplate, server, dataCenter, user, password)
+	return exutil.GetReleaseFromVsphereTemplate(vsphereTemplate, vsInfo.Server, vsInfo.DataCenter, vsInfo.User, vsInfo.Password)
 }
 
 // CheckCurrentOSImageIsUpdated checks that the machineset/controlplanemachineset is using the bootimage expected in the current cluster version

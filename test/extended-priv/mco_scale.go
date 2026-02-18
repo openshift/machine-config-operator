@@ -14,7 +14,6 @@ import (
 	"github.com/openshift/machine-config-operator/test/extended-priv/util/architecture"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 	"github.com/tidwall/gjson"
-	"gopkg.in/ini.v1"
 )
 
 const (
@@ -913,12 +912,12 @@ func uploadBaseImageToCloud(oc *exutil.CLI, platform, baseImageURL, baseImage st
 		logger.Infof("No need to updload images in GCP")
 		return nil
 	case VspherePlatform:
-		server, dataCenter, dataStore, resourcePool, user, password, err := getvSphereCredentials(oc.AsAdmin())
+		vsInfo, err := exutil.GetVSphereConnectionInfo(oc.AsAdmin())
 		if err != nil {
 			return err
 		}
 
-		err = exutil.UploadBaseImageToVsphere(baseImageURL, baseImage, server, dataCenter, dataStore, resourcePool, user, password)
+		err = exutil.UploadBaseImageToVsphere(baseImageURL, baseImage, vsInfo)
 		if err != nil {
 			return err
 		}
@@ -927,101 +926,6 @@ func uploadBaseImageToCloud(oc *exutil.CLI, platform, baseImageURL, baseImage st
 	default:
 		return fmt.Errorf("Platform %s is not supported, base image cannot be updloaded", platform)
 	}
-}
-
-func getvSphereCredentials(oc *exutil.CLI) (server, dataCenter, dataStore, resourcePool, user, password string, err error) {
-	var (
-		configCM    = NewConfigMap(oc.AsAdmin(), "openshift-config", "cloud-provider-config")
-		credsSecret = NewSecret(oc.AsAdmin(), "kube-system", "vsphere-creds")
-	)
-	config, err := configCM.GetDataValue("config")
-	if err != nil {
-		return
-	}
-
-	cfg, err := ini.Load(strings.NewReader(config))
-	if err == nil {
-		logger.Infof("%s config info is in ini fomart. Extracting data", configCM)
-		server = cfg.Section("Workspace").Key("server").String()
-		dataCenter = cfg.Section("Workspace").Key("datacenter").String()
-		dataStore = cfg.Section("Workspace").Key("default-datastore").String()
-		resourcePool = cfg.Section("Workspace").Key("resourcepool-path").String()
-
-	} else {
-		logger.Infof("%s config info is NOT in ini fomart. Trying to extract the information from the infrastructure resource", configCM)
-		infra := NewResource(oc.AsAdmin(), "infrastructure", "cluster")
-		var failureDomain string
-		failureDomain, err = infra.Get(`{.spec.platformSpec.vsphere.failureDomains[0]}`)
-		if err != nil {
-			logger.Errorf("Cannot get the failureDomain from the infrastructure resource: %s", err)
-			return
-		}
-		if failureDomain == "" {
-			logger.Errorf("Failure domain is empty in the infrastructure resource: %s\n%s", err, infra.PrettyString())
-			err = fmt.Errorf("Empty failure domain in the infrastructure resource")
-			return
-
-		}
-		gserver := gjson.Get(failureDomain, "server")
-		if gserver.Exists() {
-			server = gserver.String()
-		} else {
-			err = fmt.Errorf("Cannot get the server value from failureDomain\n%s", infra.PrettyString())
-			return
-		}
-		gdataCenter := gjson.Get(failureDomain, "topology.datacenter")
-		if gdataCenter.Exists() {
-			dataCenter = gdataCenter.String()
-		} else {
-			err = fmt.Errorf("Cannot get the data center value from failureDomain\n%s", infra.PrettyString())
-			return
-		}
-
-		gdataStore := gjson.Get(failureDomain, "topology.datastore")
-		if gdataStore.Exists() {
-			dataStore = gdataStore.String()
-		} else {
-			err = fmt.Errorf("Cannot get the data store value from failureDomain\n%s", infra.PrettyString())
-			return
-		}
-
-		gresourcePool := gjson.Get(failureDomain, "topology.resourcePool")
-		if gresourcePool.Exists() {
-			resourcePool = gresourcePool.String()
-		} else {
-			err = fmt.Errorf("Cannot get the resourcepool value from failureDomain\n%s", infra.PrettyString())
-			return
-		}
-	}
-
-	decodedData, err := credsSecret.GetDecodedDataMap()
-	if err != nil {
-		return
-	}
-
-	for k, v := range decodedData {
-		item := v
-		if strings.Contains(k, "username") {
-			user = item
-		}
-		if strings.Contains(k, "password") {
-			password = item
-		}
-	}
-
-	if user == "" {
-		logger.Errorf("Empty vsphere user")
-		err = fmt.Errorf("The vsphere user is empty")
-		return
-	}
-
-	if password == "" {
-		logger.Errorf("Empty vsphere password")
-		err = fmt.Errorf("The vsphere password is empty")
-		return
-	}
-
-	return
 }
 
 func IsBootImageUpdateSupported(oc *exutil.CLI) bool {
