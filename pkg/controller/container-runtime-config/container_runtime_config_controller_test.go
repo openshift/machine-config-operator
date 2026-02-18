@@ -91,7 +91,7 @@ func newFixture(t *testing.T) *fixture {
 	f.t = t
 	f.objects = []runtime.Object{}
 	f.fgHandler = ctrlcommon.NewFeatureGatesHardcodedHandler(
-		[]apicfgv1.FeatureGateName{features.FeatureGateSigstoreImageVerification},
+		[]apicfgv1.FeatureGateName{features.FeatureGateSigstoreImageVerification}, //enabled
 		[]apicfgv1.FeatureGateName{},
 	)
 	return f
