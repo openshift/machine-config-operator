@@ -3,6 +3,7 @@ package containerruntimeconfig
 import (
 	"fmt"
 
+	apicfgv1 "github.com/openshift/api/config/v1"
 	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -82,7 +83,43 @@ func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.Contai
 			res = append(res, mc)
 		}
 	}
+
 	return res, nil
+}
+
+// RunTLSBootstrap creates one CRI-O TLS MachineConfig per pool at bootstrap.
+// This is separate from RunContainerRuntimeBootstrap so that TLS is propagated
+// even when there are no ContainerRuntimeConfig CRs.
+func RunTLSBootstrap(mcpPools []*mcfgv1.MachineConfigPool, kubeletConfigs []*mcfgv1.KubeletConfig, apiServer *apicfgv1.APIServer) ([]*mcfgv1.MachineConfig, error) {
+	var res []*mcfgv1.MachineConfig
+	for _, pool := range mcpPools {
+		tlsMinVersion, tlsCipherSuites := getTLSConfigForPoolBootstrap(kubeletConfigs, pool, apiServer)
+		tlsDropinFiles := createCRIOTLSDropinFile(tlsMinVersion, tlsCipherSuites)
+		tlsIgn := createNewIgnition(tlsDropinFiles)
+
+		managedKey, err := getManagedKeyTLS(pool)
+		if err != nil {
+			return nil, fmt.Errorf("could not get TLS managed key for pool %s: %w", pool.Name, err)
+		}
+		mc, err := ctrlcommon.MachineConfigFromIgnConfig(pool.Name, managedKey, tlsIgn)
+		if err != nil {
+			return nil, fmt.Errorf("could not create TLS MachineConfig for pool %s: %w", pool.Name, err)
+		}
+		mc.SetAnnotations(map[string]string{
+			ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
+		})
+		res = append(res, mc)
+	}
+	return res, nil
+}
+
+// getTLSConfigForPoolBootstrap returns the TLS minimum version and cipher suites for the
+// given pool. Uses the shared tlsConfigFromKubeletConfigs helper, with APIServer as fallback.
+func getTLSConfigForPoolBootstrap(kubeletConfigs []*mcfgv1.KubeletConfig, pool *mcfgv1.MachineConfigPool, apiServer *apicfgv1.APIServer) (string, []string) {
+	if v, c := tlsConfigFromKubeletConfigs(kubeletConfigs, pool); v != "" {
+		return v, c
+	}
+	return ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
 }
 
 // generateBootstrapManagedKeyContainerConfig generates the machine config name for a CR during bootstrap, returns error

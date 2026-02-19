@@ -266,6 +266,12 @@ func (b *Bootstrap) Run(destDir string) error {
 		}
 		configs = append(configs, containerRuntimeConfigs...)
 	}
+
+	tlsConfigs, err := containerruntimeconfig.RunTLSBootstrap(pools, kconfigs, apiServer)
+	if err != nil {
+		return err
+	}
+	configs = append(configs, tlsConfigs...)
 	klog.Infof("Successfully generated MachineConfigs from containerruntime.")
 
 	if featureGate != nil {
