@@ -369,15 +369,25 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 	}
 
 	if isOCBEnabled {
-		klog.Infof("On-cluster layering featuregate enabled, starting MachineOSConfig informer")
-		moscInformer := optr.ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().MachineOSConfigs()
-		optr.moscLister = moscInformer.Lister()
-		optr.moscListerSynced = moscInformer.Informer().HasSynced
-		cacheSynced = append(cacheSynced, optr.moscListerSynced)
-		moscInformer.Informer().AddEventHandler(optr.eventHandler())
-		// We have to start this inofrmer ourselves because the caller has started
-		// all of the other informers before calling Run().
-		go moscInformer.Informer().Run(optr.ctrlctx.Stop)
+		// Check if MachineOSConfig CRD exists before starting the informer
+		_, err := apiClient.CustomResourceDefinitions().Get(context.TODO(), "machineosconfigs.machineconfiguration.openshift.io", metav1.GetOptions{})
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				klog.Warningf("On-cluster layering featuregate enabled, but MachineOSConfig CRD not found, skipping informer initialization")
+			} else {
+				klog.Errorf("Error checking for MachineOSConfig CRD: %v", err)
+			}
+		} else {
+			klog.Infof("On-cluster layering featuregate enabled, starting MachineOSConfig informer")
+			moscInformer := optr.ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().MachineOSConfigs()
+			optr.moscLister = moscInformer.Lister()
+			optr.moscListerSynced = moscInformer.Informer().HasSynced
+			cacheSynced = append(cacheSynced, optr.moscListerSynced)
+			moscInformer.Informer().AddEventHandler(optr.eventHandler())
+			// We have to start this inofrmer ourselves because the caller has started
+			// all of the other informers before calling Run().
+			go moscInformer.Informer().Run(optr.ctrlctx.Stop)
+		}
 	}
 
 	if !cache.WaitForCacheSync(stopCh,
