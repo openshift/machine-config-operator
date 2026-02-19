@@ -1,0 +1,9 @@
+FROM quay.io/centos/centos:stream9 AS centos
+RUN dnf install -y epel-release
+
+FROM configs AS final
+COPY --from=centos /etc/yum.repos.d /etc/yum.repos.d
+COPY --from=centos /etc/pki/rpm-gpg/RPM-GPG-KEY-* /etc/pki/rpm-gpg/
+RUN sed -i 's/\$stream/9-stream/g' /etc/yum.repos.d/centos*.repo && \
+    rpm-ostree install cowsay && \
+		ostree container commit

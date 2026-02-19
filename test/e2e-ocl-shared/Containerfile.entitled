@@ -1,0 +1,6 @@
+FROM configs AS final
+
+RUN rm -rf /etc/rhsm-host && \
+  rpm-ostree install buildah && \
+  ln -s /run/secrets/rhsm /etc/rhsm-host && \
+  ostree container commit
