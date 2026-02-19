@@ -109,7 +109,7 @@ func runBootstrapCmd(_ *cobra.Command, _ []string) {
 	// To help debugging, immediately log version
 	klog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
 
-	baseOSContainerImageTag := "rhel-coreos"
+	baseOSContainerImageTag := "rhel-coreos-next"
 	if version.IsFCOS() {
 		baseOSContainerImageTag = "fedora-coreos"
 	} else if version.IsSCOS() {
@@ -138,7 +138,7 @@ func runBootstrapCmd(_ *cobra.Command, _ []string) {
 		if err != nil {
 			klog.Warningf("Base OS container not found: %s", err)
 		}
-		bootstrapOpts.baseOSExtensionsContainerImage, err = findImage(imgstream, fmt.Sprintf("%s-extensions", baseOSContainerImageTag))
+		bootstrapOpts.baseOSExtensionsContainerImage, err = findImage(imgstream, "rhel-coreos-extensions-next")
 		if err != nil {
 			klog.Warningf("Base OS extensions container not found: %s", err)
 		}
