@@ -565,6 +565,13 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 			return err
 		}
 
+		// TODO: add here validation to check if the extension installed correctly?
+		installedSet, err := dn.getCurrentlyInstalledPackages()
+		if err != nil {
+			return err
+		}
+		klog.Errorf("installedSet: %v", installedSet)
+
 		if dn.nodeWriter != nil {
 			var nodeName string
 			var nodeObjRef corev1.ObjectReference
