@@ -313,12 +313,15 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 	moscList, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().List(context.TODO(), metav1.ListOptions{})
 	require.NoError(t, err)
 
-	// Create a dedicated context for cleanup verification with reasonable timeout.
-	// Cleanup should complete quickly - if verification takes >2 minutes, something is wrong.
-	// Use a slower poll interval (3s instead of 1s) to reduce API call rate and avoid rate limiting.
-	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cleanupCancel()
-	kubeassert := helpers.AssertClientSet(t, cs).WithContext(cleanupCtx).WithPollInterval(3 * time.Second).Eventually()
+	// Helper function to create a fresh timeout context for each resource verification.
+	// Each resource gets its own 2-minute timeout to prevent slow deletions from
+	// consuming the timeout budget of other resources. Use a slower poll interval
+	// (3s instead of 1s) to reduce API call rate and avoid rate limiting.
+	newCleanupAssertion := func() *helpers.Assertions {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		t.Cleanup(cancel)
+		return helpers.AssertClientSet(t, cs).WithContext(ctx).WithPollInterval(3 * time.Second).Eventually()
+	}
 
 	if len(secretList.Items) == 0 {
 		t.Logf("No build-time secrets to clean up")
@@ -347,13 +350,13 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 	for _, item := range secretList.Items {
 		t.Logf("Cleaning up build-time Secret %s", item.Name)
 		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace)))
-		kubeassert.SecretDoesNotExist(item.Name)
+		newCleanupAssertion().SecretDoesNotExist(item.Name)
 	}
 
 	for _, item := range cmList.Items {
 		t.Logf("Cleaning up ephemeral ConfigMap %q", item.Name)
 		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace)))
-		kubeassert.ConfigMapDoesNotExist(item.Name)
+		newCleanupAssertion().ConfigMapDoesNotExist(item.Name)
 	}
 
 	for _, item := range jobList.Items {
@@ -363,7 +366,7 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 		require.NoError(t, deleteObjectWithOpts(context.TODO(), t, &item, cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace), metav1.DeleteOptions{
 			PropagationPolicy: &bgDeletion,
 		}))
-		kubeassert.JobDoesNotExist(item.Name)
+		newCleanupAssertion().JobDoesNotExist(item.Name)
 
 		// Delete any pods that were created by the job
 		pods, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{
@@ -372,31 +375,31 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 		require.NoError(t, err)
 		for _, pod := range pods.Items {
 			require.NoError(t, deleteObject(context.TODO(), t, &pod, cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace)))
-			kubeassert.PodDoesNotExist(pod.Name)
+			newCleanupAssertion().PodDoesNotExist(pod.Name)
 		}
 	}
 
 	for _, item := range podList.Items {
 		t.Logf("Cleaning up build pod %q", item.Name)
 		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace)))
-		kubeassert.PodDoesNotExist(item.Name)
+		newCleanupAssertion().PodDoesNotExist(item.Name)
 	}
 
 	for _, item := range moscList.Items {
 		t.Logf("Cleaning up MachineOSConfig %q", item.Name)
 		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.MachineconfigurationV1Interface.MachineOSConfigs()))
-		kubeassert.MachineOSConfigDoesNotExist(&item)
+		newCleanupAssertion().MachineOSConfigDoesNotExist(&item)
 	}
 
 	for _, item := range mosbList.Items {
 		t.Logf("Cleaning up MachineOSBuild %q", item.Name)
 		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.MachineconfigurationV1Interface.MachineOSBuilds()))
-		kubeassert.MachineOSBuildDoesNotExist(&item)
+		newCleanupAssertion().MachineOSBuildDoesNotExist(&item)
 
 		// Also clean up the digest ConfigMap
 		t.Logf("Cleaning up ephemeral digest ConfigMap %q", utils.GetDigestConfigMapName(&item))
 		require.NoError(t, cleanupDigestConfigMap(t, cs, &item))
-		kubeassert.ConfigMapDoesNotExist(utils.GetDigestConfigMapName(&item))
+		newCleanupAssertion().ConfigMapDoesNotExist(utils.GetDigestConfigMapName(&item))
 	}
 
 	// Clean up inspect MC if it exists
@@ -404,7 +407,7 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 	if err == nil {
 		t.Logf("Cleaning up MachineConfig %q", InspectMC)
 		require.NoError(t, deleteObject(context.TODO(), t, machineConfig, cs.MachineConfigs()))
-		kubeassert.MachineConfigDoesNotExist(machineConfig)
+		newCleanupAssertion().MachineConfigDoesNotExist(machineConfig)
 	}
 }
 
