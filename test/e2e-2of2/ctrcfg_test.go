@@ -9,16 +9,20 @@ import (
 	"testing"
 	"time"
 
+	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	ctrcfg "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
+	kcfg "github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
 )
 
 const (
@@ -159,10 +163,15 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfVal1, expec
 	// Verify that the override file doesn't exist in crio.conf.d anymore
 	arr := strings.Split(ctrcfg.CRIODropInFilePathLogLevel, "/")
 	overrideFileName := arr[len(arr)-1]
-	if fileExists(t, cs, node, overrideFileName) {
-		err := fmt.Errorf("override file still exists in crio.conf.d")
-		require.Nil(t, err)
-	}
+	err = wait.PollImmediate(5*time.Second, 3*time.Minute, func() (bool, error) {
+		exists, fErr := fileExists(t, cs, node, overrideFileName)
+		if fErr != nil {
+			t.Logf("retrying fileExists check: %v", fErr)
+			return false, nil
+		}
+		return !exists, nil
+	})
+	require.NoError(t, err, "override file still exists in crio.conf.d after rollback")
 }
 
 // createCtrcfgWithConfig takes a config spec and creates a ContainerRuntimeConfig object
@@ -239,13 +248,16 @@ func getValueFromCrioConfig(t *testing.T, cs *framework.ClientSet, node corev1.N
 	return matches[1]
 }
 
-// fileExists checks whether overrideFile exists in /etc/crio/crio.conf.d
-func fileExists(t *testing.T, cs *framework.ClientSet, node corev1.Node, overrideFile string) bool {
-	// get the contents of the crio drop in directory
-	out := helpers.ExecCmdOnNode(t, cs, node, "ls", filepath.Join("/rootfs", crioDropinDir))
-
-	// Check if the overrideFile name exists in the output
-	return strings.Contains(string(out), overrideFile)
+// fileExists checks whether overrideFile exists in /etc/crio/crio.conf.d.
+// Returns (false, err) on exec errors (e.g. connection refused during node reboot)
+// so callers using wait.Poll can retry.
+func fileExists(t *testing.T, cs *framework.ClientSet, node corev1.Node, overrideFile string) (bool, error) {
+	out, err := helpers.ExecCmdOnNodeWithError(cs, node, "ls", filepath.Join("/rootfs", crioDropinDir))
+	if err != nil {
+		t.Logf("fileExists: exec failed on node %s (may be transient during node reboot): %v, output: %q", node.Name, err, out)
+		return false, err
+	}
+	return strings.Contains(string(out), overrideFile), nil
 }
 
 func runTestWithICSP(t *testing.T, testName, expectedVal string, icspRule *apioperatorsv1alpha1.ImageContentSourcePolicy) {
@@ -329,4 +341,235 @@ func getValueFromRegistriesConfig(t *testing.T, cs *framework.ClientSet, node co
 		return searchKey
 	}
 	return ""
+}
+
+// TestKubeletConfigTLSPropagationToCRIO verifies that setting a TLSSecurityProfile
+// in a KubeletConfig CR causes the ContainerRuntimeConfig controller to generate a
+// CRI-O drop-in config file with the corresponding tls_min_version in the MachineConfig.
+//
+// This is an API-level test: it inspects MachineConfig ignition content directly
+// without SSHing into nodes or causing node reboots. An isolated MCP with no
+// matching nodes is used so that no rollouts are triggered.
+func TestKubeletConfigTLSPropagationToCRIO(t *testing.T) {
+	cs := framework.NewClientSet("")
+
+	const (
+		testPoolName = "tls-api-test"
+		kcName       = "kc-tls-api-test"
+	)
+	testPoolLabel := "pools.operator.machineconfiguration.openshift.io/" + testPoolName
+
+	// Clean up any leftovers from previous failed runs
+	_ = cs.KubeletConfigs().Delete(context.TODO(), kcName, metav1.DeleteOptions{})
+	_ = cs.MachineConfigPools().Delete(context.TODO(), testPoolName, metav1.DeleteOptions{})
+	time.Sleep(5 * time.Second)
+
+	// Deferred cleanup
+	defer func() {
+		_ = cs.KubeletConfigs().Delete(context.TODO(), kcName, metav1.DeleteOptions{})
+		time.Sleep(5 * time.Second)
+		_ = cs.MachineConfigPools().Delete(context.TODO(), testPoolName, metav1.DeleteOptions{})
+	}()
+
+	// Create an MCP that targets no nodes (label won't match any real node),
+	// so the controller creates MachineConfigs without triggering rollouts.
+	mcp := &mcfgv1.MachineConfigPool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   testPoolName,
+			Labels: map[string]string{testPoolLabel: ""},
+		},
+		Spec: mcfgv1.MachineConfigPoolSpec{
+			MachineConfigSelector: &metav1.LabelSelector{
+				MatchExpressions: []metav1.LabelSelectorRequirement{
+					{
+						Key:      "machineconfiguration.openshift.io/role",
+						Operator: metav1.LabelSelectorOpIn,
+						Values:   []string{"worker", testPoolName},
+					},
+				},
+			},
+			NodeSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"node-role.kubernetes.io/" + testPoolName: "",
+				},
+			},
+		},
+	}
+	_, err := cs.MachineConfigPools().Create(context.TODO(), mcp, metav1.CreateOptions{})
+	require.NoError(t, err, "failed to create test MCP")
+	t.Logf("Created empty MCP %q (no matching nodes)", testPoolName)
+
+	// The TLS MC name follows the pattern: 99-<pool>-generated-containerruntime-tls
+	tlsMCName := fmt.Sprintf("99-%s-generated-containerruntime-tls", testPoolName)
+
+	// Wait for the dedicated TLS MC to appear (the controller creates it for every pool)
+	err = wait.PollImmediate(2*time.Second, 3*time.Minute, func() (bool, error) {
+		_, getErr := cs.MachineConfigs().Get(context.TODO(), tlsMCName, metav1.GetOptions{})
+		return getErr == nil, nil
+	})
+	require.NoError(t, err, "timed out waiting for TLS MC %s", tlsMCName)
+	t.Logf("Found dedicated TLS MC %q", tlsMCName)
+
+	// Helper: read the raw CRI-O TLS drop-in content from the dedicated TLS MC
+	getTLSDropInContent := func() string {
+		mc, getErr := cs.MachineConfigs().Get(context.TODO(), tlsMCName, metav1.GetOptions{})
+		if getErr != nil {
+			t.Logf("getTLSDropInContent: error getting MC: %v", getErr)
+			return ""
+		}
+		if len(mc.Spec.Config.Raw) == 0 {
+			return ""
+		}
+		ignCfg, parseErr := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+		if parseErr != nil {
+			t.Logf("getTLSDropInContent: error parsing ignition: %v", parseErr)
+			return ""
+		}
+		for _, f := range ignCfg.Storage.Files {
+			if f.Path != ctrcfg.CRIODropInFilePathTLS {
+				continue
+			}
+			if f.Contents.Source == nil {
+				return ""
+			}
+			data, decErr := ctrlcommon.DecodeIgnitionFileContents(f.Contents.Source, f.Contents.Compression)
+			if decErr != nil {
+				t.Logf("getTLSDropInContent: error decoding file contents: %v", decErr)
+				return ""
+			}
+			return string(data)
+		}
+		return ""
+	}
+
+	getTLSVersionFromMC := func() string {
+		content := getTLSDropInContent()
+		if content == "" {
+			return ""
+		}
+		re := regexp.MustCompile(`tls_min_version = "([^"]+)"`)
+		matches := re.FindStringSubmatch(content)
+		if len(matches) == 2 {
+			return matches[1]
+		}
+		return ""
+	}
+
+	hasCipherSuites := func() bool {
+		content := getTLSDropInContent()
+		return strings.Contains(content, "tls_cipher_suites")
+	}
+
+	createOrUpdateKC := func(profile *configv1.TLSSecurityProfile) {
+		t.Helper()
+		existing, getErr := cs.KubeletConfigs().Get(context.TODO(), kcName, metav1.GetOptions{})
+		if getErr != nil {
+			kcRaw, encErr := kcfg.EncodeKubeletConfig(
+				&kubeletconfigv1beta1.KubeletConfiguration{},
+				kubeletconfigv1beta1.SchemeGroupVersion,
+				runtime.ContentTypeJSON,
+			)
+			require.NoError(t, encErr, "failed to encode kubelet config")
+			kcObj := &mcfgv1.KubeletConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: kcName},
+				Spec: mcfgv1.KubeletConfigSpec{
+					MachineConfigPoolSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{testPoolLabel: ""},
+					},
+					KubeletConfig:      &runtime.RawExtension{Raw: kcRaw},
+					TLSSecurityProfile: profile,
+				},
+			}
+			_, createErr := cs.KubeletConfigs().Create(context.TODO(), kcObj, metav1.CreateOptions{})
+			require.NoError(t, createErr, "failed to create KubeletConfig")
+			return
+		}
+		existing.Spec.TLSSecurityProfile = profile
+		_, updateErr := cs.KubeletConfigs().Update(context.TODO(), existing, metav1.UpdateOptions{})
+		require.NoError(t, updateErr, "failed to update KubeletConfig")
+	}
+
+	waitForTLS := func(expected string) {
+		t.Helper()
+		pollErr := wait.PollImmediate(2*time.Second, 3*time.Minute, func() (bool, error) {
+			return getTLSVersionFromMC() == expected, nil
+		})
+		require.NoError(t, pollErr, "expected TLS MC to contain tls_min_version %q", expected)
+	}
+
+	t.Run("APIServerFallback", func(t *testing.T) {
+		waitForTLS("VersionTLS12")
+		pollErr := wait.PollImmediate(2*time.Second, 1*time.Minute, func() (bool, error) {
+			return hasCipherSuites(), nil
+		})
+		require.NoError(t, pollErr, "APIServer fallback (Intermediate) should include cipher suites")
+		t.Logf("Verified: APIServer fallback includes cipher suites from Intermediate profile")
+	})
+
+	t.Run("CustomProfileTLS12WithCiphers", func(t *testing.T) {
+		createOrUpdateKC(&configv1.TLSSecurityProfile{
+			Type: configv1.TLSProfileCustomType,
+			Custom: &configv1.CustomTLSProfile{
+				TLSProfileSpec: configv1.TLSProfileSpec{
+					MinTLSVersion: configv1.VersionTLS12,
+					Ciphers: []string{
+						"ECDHE-RSA-AES128-GCM-SHA256",
+						"ECDHE-RSA-AES256-GCM-SHA384",
+					},
+				},
+			},
+		})
+		waitForTLS("VersionTLS12")
+		pollErr := wait.PollImmediate(2*time.Second, 1*time.Minute, func() (bool, error) {
+			content := getTLSDropInContent()
+			return strings.Contains(content, "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256") &&
+				strings.Contains(content, "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"), nil
+		})
+		require.NoError(t, pollErr, "Custom profile cipher suites (IANA names) should appear in the drop-in")
+		t.Logf("Verified: Custom profile with TLS 1.2 + specific ciphers propagated to CRI-O")
+	})
+
+	t.Run("CustomProfileTLS13", func(t *testing.T) {
+		createOrUpdateKC(&configv1.TLSSecurityProfile{
+			Type: configv1.TLSProfileCustomType,
+			Custom: &configv1.CustomTLSProfile{
+				TLSProfileSpec: configv1.TLSProfileSpec{
+					MinTLSVersion: configv1.VersionTLS13,
+				},
+			},
+		})
+		waitForTLS("VersionTLS13")
+		t.Logf("Verified: Custom profile with TLS 1.3 propagated to CRI-O")
+	})
+
+	t.Run("IntermediateProfile", func(t *testing.T) {
+		createOrUpdateKC(&configv1.TLSSecurityProfile{
+			Type: configv1.TLSProfileIntermediateType,
+		})
+		waitForTLS("VersionTLS12")
+		pollErr := wait.PollImmediate(2*time.Second, 1*time.Minute, func() (bool, error) {
+			return hasCipherSuites(), nil
+		})
+		require.NoError(t, pollErr, "Intermediate profile should include cipher suites in the drop-in")
+		t.Logf("Verified: Intermediate profile propagated TLS 1.2 + cipher suites to CRI-O")
+	})
+
+	t.Run("ModernProfile", func(t *testing.T) {
+		createOrUpdateKC(&configv1.TLSSecurityProfile{
+			Type: configv1.TLSProfileModernType,
+		})
+		waitForTLS("VersionTLS13")
+		t.Logf("Verified: Modern profile propagated TLS 1.3 to CRI-O")
+	})
+
+	t.Run("RevertOnKubeletConfigDeletion", func(t *testing.T) {
+		delErr := cs.KubeletConfigs().Delete(context.TODO(), kcName, metav1.DeleteOptions{})
+		require.NoError(t, delErr, "failed to delete KubeletConfig")
+		waitForTLS("VersionTLS12")
+		pollErr := wait.PollImmediate(2*time.Second, 1*time.Minute, func() (bool, error) {
+			return hasCipherSuites(), nil
+		})
+		require.NoError(t, pollErr, "After KubeletConfig deletion, fallback should include cipher suites")
+		t.Logf("Verified: Reverted to APIServer fallback with cipher suites after KubeletConfig deletion")
+	})
 }

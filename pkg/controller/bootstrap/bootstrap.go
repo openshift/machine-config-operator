@@ -259,6 +259,12 @@ func (b *Bootstrap) Run(destDir string) error {
 
 	configs = append(configs, rconfigs...)
 
+	tlsConfigs, err := containerruntimeconfig.RunTLSBootstrap(pools, kconfigs, apiServer)
+	if err != nil {
+		return err
+	}
+	configs = append(configs, tlsConfigs...)
+
 	if len(crconfigs) > 0 {
 		containerRuntimeConfigs, err := containerruntimeconfig.RunContainerRuntimeBootstrap(b.templatesDir, crconfigs, cconfig, pools, fgHandler)
 		if err != nil {
