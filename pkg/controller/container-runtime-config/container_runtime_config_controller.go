@@ -118,6 +118,12 @@ type Controller struct {
 	mcpLister       mcfglistersv1.MachineConfigPoolLister
 	mcpListerSynced cache.InformerSynced
 
+	mckLister       mcfglistersv1.KubeletConfigLister
+	mckListerSynced cache.InformerSynced
+
+	apiserverLister       cligolistersv1.APIServerLister
+	apiserverListerSynced cache.InformerSynced
+
 	clusterVersionLister       cligolistersv1.ClusterVersionLister
 	clusterVersionListerSynced cache.InformerSynced
 
@@ -133,6 +139,7 @@ func New(
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mcrInformer mcfginformersv1.ContainerRuntimeConfigInformer,
+	mkuInformer mcfginformersv1.KubeletConfigInformer,
 	imgInformer cligoinformersv1.ImageInformer,
 	idmsInformer cligoinformersv1.ImageDigestMirrorSetInformer,
 	itmsInformer cligoinformersv1.ImageTagMirrorSetInformer,
@@ -190,6 +197,19 @@ func New(
 		DeleteFunc: ctrl.itmsConfDeleted,
 	})
 
+	mkuInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.kubeletConfigAdded,
+		UpdateFunc: ctrl.kubeletConfigUpdated,
+		DeleteFunc: ctrl.kubeletConfigDeleted,
+	})
+
+	apiserverInformer := configInformerFactory.Config().V1().APIServers()
+	apiserverInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.apiserverAdded,
+		UpdateFunc: ctrl.apiserverUpdated,
+		DeleteFunc: ctrl.apiserverDeleted,
+	})
+
 	ctrl.syncHandler = ctrl.syncContainerRuntimeConfig
 	ctrl.syncImgHandler = ctrl.syncImageConfig
 	ctrl.enqueueContainerRuntimeConfig = ctrl.enqueue
@@ -202,6 +222,12 @@ func New(
 
 	ctrl.mccrLister = mcrInformer.Lister()
 	ctrl.mccrListerSynced = mcrInformer.Informer().HasSynced
+
+	ctrl.mckLister = mkuInformer.Lister()
+	ctrl.mckListerSynced = mkuInformer.Informer().HasSynced
+
+	ctrl.apiserverLister = apiserverInformer.Lister()
+	ctrl.apiserverListerSynced = apiserverInformer.Informer().HasSynced
 
 	ctrl.imgLister = imgInformer.Lister()
 	ctrl.imgListerSynced = imgInformer.Informer().HasSynced
@@ -232,7 +258,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer ctrl.queue.ShutDown()
 	defer ctrl.imgQueue.ShutDown()
 	listerCaches := []cache.InformerSynced{ctrl.mcpListerSynced, ctrl.mccrListerSynced, ctrl.ccListerSynced,
-		ctrl.imgListerSynced, ctrl.icspListerSynced, ctrl.idmsListerSynced, ctrl.itmsListerSynced, ctrl.clusterVersionListerSynced}
+		ctrl.mckListerSynced, ctrl.apiserverListerSynced, ctrl.imgListerSynced, ctrl.icspListerSynced, ctrl.idmsListerSynced, ctrl.itmsListerSynced, ctrl.clusterVersionListerSynced}
 
 	if ctrl.sigstoreAPIEnabled() {
 		ctrl.addImagePolicyObservers()
@@ -315,6 +341,76 @@ func (ctrl *Controller) itmsConfUpdated(_, _ interface{}) {
 
 func (ctrl *Controller) itmsConfDeleted(_ interface{}) {
 	ctrl.imgQueue.Add("openshift-config")
+}
+
+func (ctrl *Controller) kubeletConfigAdded(_ interface{}) {
+	ctrl.enqueueAllContainerRuntimeConfigs()
+}
+
+func (ctrl *Controller) kubeletConfigUpdated(_, _ interface{}) {
+	ctrl.enqueueAllContainerRuntimeConfigs()
+}
+
+func (ctrl *Controller) kubeletConfigDeleted(_ interface{}) {
+	ctrl.enqueueAllContainerRuntimeConfigs()
+}
+
+func (ctrl *Controller) filterAPIServer(apiServer *apicfgv1.APIServer) {
+	if apiServer.Name != ctrlcommon.APIServerInstanceName {
+		return
+	}
+	klog.Infof("Re-syncing all ContainerRuntimeConfigs due to APIServer %s change (TLS fallback)", apiServer.Name)
+	ctrl.enqueueAllContainerRuntimeConfigs()
+}
+
+func (ctrl *Controller) apiserverAdded(obj interface{}) {
+	apiServer := obj.(*apicfgv1.APIServer)
+	if apiServer.DeletionTimestamp != nil {
+		ctrl.apiserverDeleted(apiServer)
+		return
+	}
+	klog.V(4).Infof("Add APIServer %v", apiServer)
+	ctrl.filterAPIServer(apiServer)
+}
+
+func (ctrl *Controller) apiserverUpdated(old, cur interface{}) {
+	oldAPIServer := old.(*apicfgv1.APIServer)
+	newAPIServer := cur.(*apicfgv1.APIServer)
+	if !reflect.DeepEqual(oldAPIServer.Spec, newAPIServer.Spec) {
+		klog.V(4).Infof("Update APIServer: %s", newAPIServer.Name)
+		ctrl.filterAPIServer(newAPIServer)
+	}
+}
+
+func (ctrl *Controller) apiserverDeleted(obj interface{}) {
+	apiServer, ok := obj.(*apicfgv1.APIServer)
+	if !ok {
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
+			return
+		}
+		apiServer, ok = tombstone.Obj.(*apicfgv1.APIServer)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not an APIServer %#v", obj))
+			return
+		}
+	}
+	klog.V(4).Infof("Delete APIServer %v", apiServer)
+	ctrl.filterAPIServer(apiServer)
+}
+
+// enqueueAllContainerRuntimeConfigs lists all ContainerRuntimeConfig CRs and
+// enqueues them for re-sync.
+func (ctrl *Controller) enqueueAllContainerRuntimeConfigs() {
+	crConfigs, err := ctrl.mccrLister.List(labels.Everything())
+	if err != nil {
+		klog.Warningf("error listing ContainerRuntimeConfigs for re-sync: %v", err)
+		return
+	}
+	for _, cfg := range crConfigs {
+		ctrl.enqueueContainerRuntimeConfig(cfg)
+	}
 }
 
 func (ctrl *Controller) addImagePolicyObservers() {
@@ -737,12 +833,17 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		if err != nil && !isNotFound {
 			return ctrl.syncStatusOnly(cfg, err, "could not find MachineConfig: %v", managedKey)
 		}
-		// If we have seen this generation and the sync didn't fail, then skip
+		// we can skip re-sync only when controller version and TLS settings (from KubeletConfig or APIServer fallback) are unchanged
 		if !isNotFound && cfg.Status.ObservedGeneration >= cfg.Generation && cfg.Status.Conditions[len(cfg.Status.Conditions)-1].Type == mcfgv1.ContainerRuntimeConfigSuccess {
-			// But we still need to compare the generated controller version because during an upgrade we need a new one
 			mcCtrlVersion := mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey]
-			if mcCtrlVersion == version.Hash {
+			currentTLSVersion := ctrl.getTLSMinVersionForPool(pool)
+			lastTLSVersion := mc.Annotations[ctrlcommon.CRIOTLSMinVersionAnnotationKey]
+
+			if mcCtrlVersion == version.Hash && currentTLSVersion == lastTLSVersion {
 				return nil
+			}
+			if currentTLSVersion != lastTLSVersion {
+				klog.Infof("TLS min version changed from %q to %q for pool %s, forcing re-sync", lastTLSVersion, currentTLSVersion, role)
 			}
 		}
 		// Generate the original ContainerRuntimeConfig
@@ -768,6 +869,13 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		if ctrcfg.LogLevel != "" || ctrcfg.PidsLimit != nil || (ctrcfg.LogSizeMax != nil && !ctrcfg.LogSizeMax.IsZero()) || ctrcfg.DefaultRuntime != mcfgv1.ContainerRuntimeDefaultRuntimeEmpty {
 			crioFileConfigs := createCRIODropinFiles(cfg)
 			configFileList = append(configFileList, crioFileConfigs...)
+		}
+
+		tlsMinVersion := ctrl.getTLSMinVersionForPool(pool)
+		if tlsMinVersion != "" {
+			klog.Infof("Propagating TLS min version %q from KubeletConfig to CRI-O drop-in for pool %s", tlsMinVersion, role)
+			tlsDropinFiles := createCRIOTLSDropinFile(tlsMinVersion)
+			configFileList = append(configFileList, tlsDropinFiles...)
 		}
 
 		if isNotFound {
@@ -806,6 +914,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 
 		mc.SetAnnotations(map[string]string{
 			ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
+			ctrlcommon.CRIOTLSMinVersionAnnotationKey:            tlsMinVersion,
 		})
 		oref := metav1.NewControllerRef(cfg, controllerKind)
 		mc.SetOwnerReferences([]metav1.OwnerReference{*oref})
@@ -1344,6 +1453,59 @@ func (ctrl *Controller) addFinalizerToContainerRuntimeConfig(ctrCfg *mcfgv1.Cont
 		}
 		return ctrl.patchContainerRuntimeConfigs(ctrCfg.Name, patch)
 	})
+}
+
+// getTLSMinVersionFromKubeletConfigs finds the TLS minimum version from
+// KubeletConfig CRs that match the given MachineConfigPool.
+func (ctrl *Controller) getTLSMinVersionFromKubeletConfigs(pool *mcfgv1.MachineConfigPool) string {
+	kubeletConfigs, err := ctrl.mckLister.List(labels.Everything())
+	if err != nil {
+		klog.Warningf("error listing KubeletConfigs for TLS propagation: %v", err)
+		return ""
+	}
+
+	var tlsMinVersion string
+	for _, kc := range kubeletConfigs {
+		if kc.Spec.TLSSecurityProfile == nil {
+			continue
+		}
+		// Check if this KubeletConfig targets the same pool
+		selector, err := metav1.LabelSelectorAsSelector(kc.Spec.MachineConfigPoolSelector)
+		if err != nil {
+			klog.Warningf("invalid label selector in KubeletConfig %s: %v", kc.Name, err)
+			continue
+		}
+		if selector.Empty() || !selector.Matches(labels.Set(pool.Labels)) {
+			continue
+		}
+		// Extract TLS min version from the security profile
+		minVersion, _ := ctrlcommon.GetSecurityProfileCiphers(kc.Spec.TLSSecurityProfile)
+		if minVersion != "" {
+			tlsMinVersion = minVersion
+		}
+	}
+
+	return tlsMinVersion
+}
+
+// getTLSMinVersionForPool returns the TLS minimum version for the given pool.
+// It first checks KubeletConfig CRs targeting the pool if none specify TLS,
+// it falls back to the cluster APIServer config .
+func (ctrl *Controller) getTLSMinVersionForPool(pool *mcfgv1.MachineConfigPool) string {
+	if v := ctrl.getTLSMinVersionFromKubeletConfigs(pool); v != "" {
+		return v
+	}
+	apiServer, err := ctrl.apiserverLister.Get(ctrlcommon.APIServerInstanceName)
+	if err != nil && !errors.IsNotFound(err) {
+		klog.Warningf("error getting APIServer for TLS fallback: %v", err)
+		return ""
+	}
+	var apiServerObj *apicfgv1.APIServer
+	if err == nil {
+		apiServerObj = apiServer
+	}
+	tlsMinVersion, _ := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServerObj)
+	return tlsMinVersion
 }
 
 func (ctrl *Controller) getPoolsForContainerRuntimeConfig(config *mcfgv1.ContainerRuntimeConfig) ([]*mcfgv1.MachineConfigPool, error) {
