@@ -939,7 +939,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		)
 	})
 
-	g.It("[PolarionID:80403][OTP] Validate MCS Certificate Rotation with 2.2.0 User-Data Secret [Disruptive]", func() {
+	g.It("[PolarionID:80403][OTP] Validate MCS Certificate Rotation with 2.2.0 User-Data Secret [Disruptive]", g.Label("Platform:aws"), func() {
 		skipTestIfWorkersCannotBeScaled(oc.AsAdmin())
 		skipTestIfSupportedPlatformNotMatched(oc, AWSPlatform)
 		var (

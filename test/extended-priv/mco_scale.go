@@ -806,7 +806,7 @@ func (gcp GCPRHCOSHandler) GetBaseImageFromRHCOSImageInfo(version string, arch a
 		platform    = GCPPlatform
 	)
 
-	if CompareVersions(version, "==", "4.1") {
+	if CompareVersions(version, "=", "4.1") {
 		return "", fmt.Errorf("There is no image base image supported for platform %s in version %s", platform, version)
 	}
 

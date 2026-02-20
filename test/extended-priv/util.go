@@ -1,6 +1,8 @@
 package extended
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/x509"
 	b64 "encoding/base64"
@@ -110,6 +112,10 @@ func getPullSecret(oc *exutil.CLI) (string, error) {
 
 func setDataForPullSecret(oc *exutil.CLI, configFile string) (string, error) {
 	return oc.AsAdmin().WithoutNamespace().Run("set").Args("data", "secret/pull-secret", "-n", "openshift-config", "--from-file=.dockerconfigjson="+configFile).Output()
+}
+
+func getMachineConfigDetails(oc *exutil.CLI, mcName string) (string, error) {
+	return oc.AsAdmin().WithoutNamespace().Run("get").Args("mc", mcName, "-o", "yaml").Output()
 }
 
 // generateTemplateAbsolutePath manipulates absolute path of test file by
@@ -685,6 +691,43 @@ func getFileConfig(destinationPath, source, mode string) string {
 	return fileConfig
 }
 
+func getBase64EncodedFileConfig(destinationPath, content, mode string) string {
+	return getFileConfig(destinationPath, GetBase64EncodedFileSourceContent(content), mode)
+}
+
+func gZipData(data []byte) (compressedData []byte, err error) {
+	var b bytes.Buffer
+	gz := gzip.NewWriter(&b)
+	defer func() {
+		_ = gz.Close()
+	}()
+
+	_, err = gz.Write(data)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := gz.Flush(); err != nil {
+		return nil, err
+	}
+
+	if err := gz.Close(); err != nil {
+		return nil, err
+	}
+
+	compressedData = b.Bytes()
+
+	return compressedData, nil
+}
+
+func getGzipFileJSONConfig(destinationPath, fileContent string) string {
+	compressedContent, err := gZipData([]byte(fileContent))
+	o.Expect(err).NotTo(o.HaveOccurred())
+	encodedContent := b64.StdEncoding.EncodeToString(compressedContent)
+	fileConfig := fmt.Sprintf(`{"contents": {"compression": "gzip", "source": "data:;base64,%s"}, "path": "%s"}`, encodedContent, destinationPath)
+	return fileConfig
+}
+
 // GetMCSPodNames returns the names of machine-config-server pods
 func GetMCSPodNames(oc *exutil.CLI) ([]string, error) {
 	output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("pods", "-n", MachineConfigNamespace,
@@ -750,6 +793,16 @@ func getSingleUnitConfig(unitName string, unitEnabled bool, unitContents string)
 	// Escape not valid characters in json from the file content
 	escapedContent := jsonEncode(unitContents)
 	return fmt.Sprintf(`{"name": "%s", "enabled": %t, "contents": %s}`, unitName, unitEnabled, escapedContent)
+}
+
+func getMaskServiceWithContentsConfig(name string, mask bool, unitContents string) string {
+	// Escape not valid characters in json from the file content
+	escapedContent := jsonEncode(unitContents)
+	return fmt.Sprintf(`{"name": "%s", "mask": %t, "contents": %s}`, name, mask, escapedContent)
+}
+
+func getMaskServiceConfig(name string, mask bool) string {
+	return fmt.Sprintf(`{"name": "%s", "mask": %t}`, name, mask)
 }
 
 // GetCertificatesInfoFromPemBundle extracts certificate information from a PEM bundle
@@ -901,6 +954,25 @@ func GetBase64EncodedFileSourceContent(fileContent string) string {
 // PtrTo returns a pointer to the given value
 func PtrTo[T any](v T) *T {
 	return &v
+}
+
+// PtrInt returns the pointer to an integer
+func PtrInt(a int) *int {
+	return &a
+}
+
+func ConvertOctalPermissionsToDecimalOrFail(octalPerm string) int {
+
+	o.ExpectWithOffset(1, octalPerm).To(o.And(
+		o.Not(o.BeEmpty()),
+		o.HavePrefix("0")),
+		"Error the octal permissions %s should not be empty and should start with a '0' character")
+
+	// parse the octal string and conver to integer
+	iMode, err := strconv.ParseInt(octalPerm, 8, 64)
+	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error parsing string %s to ocatl", octalPerm)
+
+	return int(iMode)
 }
 
 // RemoveAllMCDPods removes all MCD pods in openshift-machine-config-operator namespace
@@ -1089,6 +1161,17 @@ func getAllKubeProxyPod(oc *exutil.CLI, namespace string) ([]string, error) {
 	}
 	logger.Infof("Get all Kube proxy pod list: %s", kubeRabcProxyPodList)
 	return kubeRabcProxyPodList, err
+}
+
+func validateMcpNodeDegraded(mc *MachineConfig, mcp *MachineConfigPool, expectedNDMessage, expectedNDReason string, checkCODegraded bool) {
+	defer func() {
+		o.Expect(mcp.RecoverFromDegraded()).To(o.Succeed(), "The MCP could not be recovered from Degraded status")
+	}()
+	defer o.Eventually(mc.Delete).Should(o.Succeed(), "Could not delete the offending MC")
+	mc.create()
+	logger.Infof("OK!\n")
+
+	checkDegraded(mcp, expectedNDMessage, expectedNDReason, "NodeDegraded", checkCODegraded, 2)
 }
 
 // validate that the machine config 'mc' degrades machineconfigpool 'mcp', due to RenderDegraded error matching expectedNDMessage, expectedNDReason
