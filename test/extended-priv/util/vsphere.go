@@ -2,12 +2,16 @@ package util
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
+
+	"github.com/tidwall/gjson"
 
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 	"github.com/vmware/govmomi"
@@ -76,17 +80,17 @@ func DownloadOVAIfURL(ovaPath string) (string, error) {
 
 // UploadBaseImageToVsphere uploads a base image OVA to vSphere and converts it to a template.
 // The baseImageSrc can be either a local file path or a URL.
-func UploadBaseImageToVsphere(baseImageSrc, baseImageDest, server, dataCenter, dataStore, resourcePool, user, password string) error {
+func UploadBaseImageToVsphere(baseImageSrc, baseImageDest string, vsInfo *VSphereConnectionInfo) error {
 	ctx := context.Background()
 
 	// Build vSphere URL without credentials
-	u, err := url.Parse(fmt.Sprintf("https://%s/sdk", server))
+	u, err := url.Parse(fmt.Sprintf("https://%s/sdk", vsInfo.Server))
 	if err != nil {
-		return fmt.Errorf("failed to parse vSphere URL for server %s", server)
+		return fmt.Errorf("failed to parse vSphere URL for server %s", vsInfo.Server)
 	}
 
 	// Set credentials separately
-	u.User = url.UserPassword(user, password)
+	u.User = url.UserPassword(vsInfo.User, vsInfo.Password)
 
 	logger.Infof("Uploading base image %s to vsphere with name %s", baseImageSrc, baseImageDest)
 
@@ -101,22 +105,22 @@ func UploadBaseImageToVsphere(baseImageSrc, baseImageDest, server, dataCenter, d
 	finder := find.NewFinder(c.Client, true)
 
 	// Find datacenter
-	dc, err := finder.Datacenter(ctx, dataCenter)
+	dc, err := finder.Datacenter(ctx, vsInfo.DataCenter)
 	if err != nil {
-		return fmt.Errorf("failed to find datacenter %s: %w", dataCenter, err)
+		return fmt.Errorf("failed to find datacenter %s: %w", vsInfo.DataCenter, err)
 	}
 	finder.SetDatacenter(dc)
 
 	// Find datastore
-	ds, err := finder.Datastore(ctx, dataStore)
+	ds, err := finder.Datastore(ctx, vsInfo.DataStore)
 	if err != nil {
-		return fmt.Errorf("failed to find datastore %s: %w", dataStore, err)
+		return fmt.Errorf("failed to find datastore %s: %w", vsInfo.DataStore, err)
 	}
 
 	// Find resource pool
-	pool, err := finder.ResourcePool(ctx, resourcePool)
+	pool, err := finder.ResourcePool(ctx, vsInfo.ResourcePool)
 	if err != nil {
-		return fmt.Errorf("failed to find resource pool %s: %w", resourcePool, err)
+		return fmt.Errorf("failed to find resource pool %s: %w", vsInfo.ResourcePool, err)
 	}
 
 	// Find VM folder
@@ -145,6 +149,33 @@ func UploadBaseImageToVsphere(baseImageSrc, baseImageDest, server, dataCenter, d
 		archive := importer.TapeArchive{Path: localOvaPath}
 		archive.Client = c.Client
 
+		// The OVA contains network adapter definitions that require a valid
+		// vSphere network during import.
+		// We map the OVF networks to the network from the failure domain topology.
+		var networkMapping []importer.Network
+		ovfDescriptor, err := importer.ReadOvf("*.ovf", &archive)
+		if err != nil {
+			return fmt.Errorf("failed to read OVF from OVA: %w", err)
+		}
+		ovfEnvelope, err := importer.ReadEnvelope(ovfDescriptor)
+		if err != nil {
+			return fmt.Errorf("failed to parse OVF envelope: %w", err)
+		}
+		if ovfEnvelope.Network != nil && len(ovfEnvelope.Network.Networks) > 0 {
+			net, err := finder.Network(ctx, vsInfo.Network)
+			if err != nil {
+				return fmt.Errorf("failed to find network %s from failure domain: %w", vsInfo.Network, err)
+			}
+			netRef := net.Reference().String()
+			logger.Infof("Mapping OVF networks to failure domain network %s (%s)", vsInfo.Network, netRef)
+			for _, n := range ovfEnvelope.Network.Networks {
+				networkMapping = append(networkMapping, importer.Network{
+					Name:    n.Name,
+					Network: netRef,
+				})
+			}
+		}
+
 		// Setup importer
 		imp := importer.Importer{
 			Client:       c.Client,
@@ -161,7 +192,8 @@ func UploadBaseImageToVsphere(baseImageSrc, baseImageDest, server, dataCenter, d
 
 		// Import options
 		opts := importer.Options{
-			Name: &baseImageDest,
+			Name:           &baseImageDest,
+			NetworkMapping: networkMapping,
 		}
 
 		// Set archive
@@ -257,4 +289,90 @@ func GetReleaseFromVsphereTemplate(vsphereTemplate, server, dataCenter, user, pa
 	version := moVM.Summary.Config.Product.Version
 	logger.Infof("Version for vm %s: %s", vsphereTemplate, version)
 	return version, nil
+}
+
+// VSphereConnectionInfo holds vSphere connection parameters extracted from the cluster
+type VSphereConnectionInfo struct {
+	Server       string
+	DataCenter   string
+	DataStore    string
+	ResourcePool string
+	Network      string
+	User         string
+	Password     string
+}
+
+// GetVSphereConnectionInfo extracts vSphere connection parameters from the infrastructure resource and credentials secret
+func GetVSphereConnectionInfo(oc *CLI) (*VSphereConnectionInfo, error) {
+	var info VSphereConnectionInfo
+	failureDomain, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("infrastructure", "cluster", "-o", "jsonpath={.spec.platformSpec.vsphere.failureDomains[0]}").Output()
+	if err != nil {
+		return nil, fmt.Errorf("Cannot get the failureDomain from the infrastructure resource: %w", err)
+	}
+	if failureDomain == "" {
+		return nil, fmt.Errorf("Empty failure domain in the infrastructure resource")
+	}
+
+	gserver := gjson.Get(failureDomain, "server")
+	if !gserver.Exists() {
+		return nil, fmt.Errorf("Cannot get the server value from failureDomain")
+	}
+	info.Server = gserver.String()
+
+	gdataCenter := gjson.Get(failureDomain, "topology.datacenter")
+	if !gdataCenter.Exists() {
+		return nil, fmt.Errorf("Cannot get the data center value from failureDomain")
+	}
+	info.DataCenter = gdataCenter.String()
+
+	gdataStore := gjson.Get(failureDomain, "topology.datastore")
+	if !gdataStore.Exists() {
+		return nil, fmt.Errorf("Cannot get the data store value from failureDomain")
+	}
+	info.DataStore = gdataStore.String()
+
+	gresourcePool := gjson.Get(failureDomain, "topology.resourcePool")
+	if !gresourcePool.Exists() {
+		return nil, fmt.Errorf("Cannot get the resourcepool value from failureDomain")
+	}
+	info.ResourcePool = gresourcePool.String()
+
+	gnetwork := gjson.Get(failureDomain, "topology.networks.0")
+	if !gnetwork.Exists() {
+		return nil, fmt.Errorf("Cannot get the network value from failureDomain")
+	}
+	info.Network = gnetwork.String()
+
+	// Get credentials from vsphere-creds secret
+	secretData, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("secret", "vsphere-creds", "-n", "kube-system", "-o", "jsonpath={.data}").Output()
+	if err != nil {
+		return nil, err
+	}
+
+	dataMap := map[string]string{}
+	if err := json.Unmarshal([]byte(secretData), &dataMap); err != nil {
+		return nil, err
+	}
+
+	for k, vb64 := range dataMap {
+		v, decErr := base64.StdEncoding.DecodeString(vb64)
+		if decErr != nil {
+			return nil, fmt.Errorf("Cannot decode secret value for key %s: %w", k, decErr)
+		}
+		if strings.Contains(k, "username") {
+			info.User = string(v)
+		}
+		if strings.Contains(k, "password") {
+			info.Password = string(v)
+		}
+	}
+
+	if info.User == "" {
+		return nil, fmt.Errorf("The vsphere user is empty")
+	}
+	if info.Password == "" {
+		return nil, fmt.Errorf("The vsphere password is empty")
+	}
+
+	return &info, nil
 }
