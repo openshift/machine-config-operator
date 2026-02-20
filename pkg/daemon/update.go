@@ -2736,10 +2736,9 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 }
 
 func (dn *Daemon) isPinnedImageSetConfigured() (bool, error) {
-	if dn.fgHandler == nil || !dn.fgHandler.Enabled(features.FeatureGatePinnedImages) || dn.node == nil || dn.mcpLister == nil {
-		// Two options:
-		// - PIS is not enabled
-		// - MCD first boot run: No connection to the cluster and node not populated -> Cannot check PIS config
+	if dn.node == nil || dn.mcpLister == nil {
+		// If we are here it means we are in the MCD first boot run. No connection to the cluster
+		// and the node not being populated means we cannot check the PIS config.
 		return false, nil
 	}
 
