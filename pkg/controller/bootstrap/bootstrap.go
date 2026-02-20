@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/openshift/machine-config-operator/manifests"
 	"github.com/openshift/machine-config-operator/pkg/imageutils"
 	"github.com/openshift/machine-config-operator/pkg/osimagestream"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -218,6 +219,11 @@ func (b *Bootstrap) Run(destDir string) error {
 		return fmt.Errorf("error creating feature gates handler: %w", err)
 	}
 
+	// Deduplicate pools to avoid generated ones conflict with user overrides
+	if pools, err = filterPools(pools); err != nil {
+		return fmt.Errorf("error filtering pools: %w", err)
+	}
+
 	var osImageStream *mcfgv1alpha1.OSImageStream
 	// Enable OSImageStreams if the FeatureGate is active and the deployment is not OKD
 	if osimagestream.IsFeatureEnabled(fgHandler) {
@@ -401,6 +407,51 @@ func (b *Bootstrap) Run(destDir string) error {
 	klog.Infof("writing the following controllerConfig to disk: %s", string(buf.Bytes()))
 	return os.WriteFile(filepath.Join(cconfigDir, "machine-config-controller.yaml"), buf.Bytes(), 0o664)
 
+}
+
+// filterPools deduplicates MachineConfigPools by name. When multiple pools share the same
+// name, user-provided pools (those not identical to the operator's built-in manifests) are
+// preferred over automatically generated ones.
+func filterPools(pools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfigPool, error) {
+	groupedPools := make(map[string][]*mcfgv1.MachineConfigPool)
+
+	// Group the pools by name
+	for _, pool := range pools {
+		groupedPools[pool.Name] = append(groupedPools[pool.Name], pool)
+	}
+
+	generatedPools, err := manifests.GetMachineConfigPools()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get generated MCPs: %w", err)
+	}
+
+	// Now ensure we have only one pool, no duplicates
+	// Discard generated ones if required
+	var result []*mcfgv1.MachineConfigPool
+	for _, poolObjs := range groupedPools {
+		if len(poolObjs) == 1 {
+			// Nothing to do, it's already unique
+			result = append(result, poolObjs[0])
+			continue
+		}
+
+		// Remove generated ones first
+		var lastPool *mcfgv1.MachineConfigPool
+		for _, poolObj := range poolObjs {
+			if manifests.ContainsMachineConfigPool(generatedPools, poolObj) {
+				// Handle a dev error in case the same pool is
+				// generated more than once. In that case, keep at
+				// least one generated pool
+				if lastPool == nil {
+					lastPool = poolObj
+				}
+				continue
+			}
+			lastPool = poolObj
+		}
+		result = append(result, lastPool)
+	}
+	return result, nil
 }
 
 func (b *Bootstrap) fetchOSImageStream(
