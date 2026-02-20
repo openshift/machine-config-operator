@@ -266,6 +266,7 @@ func (f *fixture) newController() *Controller {
 		i.Machineconfiguration().V1().MachineConfigPools(),
 		i.Machineconfiguration().V1().ControllerConfigs(),
 		i.Machineconfiguration().V1().ContainerRuntimeConfigs(),
+		i.Machineconfiguration().V1().KubeletConfigs(),
 		ci.Config().V1().Images(),
 		ci.Config().V1().ImageDigestMirrorSets(),
 		ci.Config().V1().ImageTagMirrorSets(),
@@ -278,6 +279,7 @@ func (f *fixture) newController() *Controller {
 
 	c.mcpListerSynced = alwaysReady
 	c.mccrListerSynced = alwaysReady
+	c.mckListerSynced = alwaysReady
 	c.ccListerSynced = alwaysReady
 	c.imgListerSynced = alwaysReady
 	c.icspListerSynced = alwaysReady
@@ -376,7 +378,9 @@ func filterInformerActions(actions []core.Action) []core.Action {
 				action.Matches("list", "containerruntimeconfigs") ||
 				action.Matches("watch", "containerruntimeconfigs") ||
 				action.Matches("list", "machineconfigs") ||
-				action.Matches("watch", "machineconfigs")) {
+				action.Matches("watch", "machineconfigs") ||
+				action.Matches("list", "kubeletconfigs") ||
+				action.Matches("watch", "kubeletconfigs")) {
 			continue
 		}
 		ret = append(ret, action)

@@ -9,16 +9,20 @@ import (
 	"testing"
 	"time"
 
+	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	ctrcfg "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
+	kcfg "github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
 )
 
 const (
@@ -329,4 +333,156 @@ func getValueFromRegistriesConfig(t *testing.T, cs *framework.ClientSet, node co
 		return searchKey
 	}
 	return ""
+}
+
+// TestKubeletConfigTLSPropagationToCRIO verifies that setting a TLSSecurityProfile
+// in a KubeletConfig CR causes the ContainerRuntimeConfig controller to generate a
+// CRI-O drop-in config file with the corresponding tls_min_version. This ensures
+// both kubelet and CRI-O use the same TLS settings when configured via KubeletConfig.
+func TestKubeletConfigTLSPropagationToCRIO(t *testing.T) {
+	cs := framework.NewClientSet("")
+	testName := "tls-propagation"
+	poolName := fmt.Sprintf("node-%s", testName)
+	mcName := fmt.Sprintf("mc-%s", testName)
+	ctrcfgName := fmt.Sprintf("ctrcfg-%s", testName)
+	kcName := fmt.Sprintf("kubelet-tls-%s", testName)
+	tlsDropinPath := ctrcfg.CRIODropInFilePathTLSMinVersion
+
+	cleanupFuncs := make([]func(), 0)
+	defer func() {
+		for _, f := range cleanupFuncs {
+			f()
+		}
+	}()
+
+	// Label a worker node for an isolated MCP
+	cleanupFuncs = append(cleanupFuncs, helpers.LabelRandomNodeFromPool(t, cs, "worker", helpers.MCPNameToRole(poolName)))
+	cleanupFuncs = append(cleanupFuncs, func() {
+		time.Sleep(time.Second * 5)
+		if err := helpers.WaitForPoolComplete(t, cs, "worker", helpers.GetMcName(t, cs, "worker")); err != nil {
+			t.Logf("failed to wait for pool %v", err)
+		}
+	})
+
+	node := helpers.GetSingleNodeByRole(t, cs, poolName)
+
+	// Create an isolated MCP
+	cleanupFuncs = append(cleanupFuncs, helpers.CreateMCP(t, cs, poolName))
+
+	// Create a default MC for rollback verification
+	defaultMCConfig := helpers.CreateMC(mcName, poolName)
+	_, err := cs.MachineConfigs().Create(context.TODO(), defaultMCConfig, metav1.CreateOptions{})
+	require.Nil(t, err)
+	cleanupFuncs = append(cleanupFuncs, func() {
+		err := cs.MachineConfigs().Delete(context.TODO(), defaultMCConfig.Name, metav1.DeleteOptions{})
+		require.Nil(t, err, "machine config deletion failed")
+	})
+	helpers.WaitForConfigAndPoolComplete(t, cs, poolName, defaultMCConfig.Name)
+
+	// Create a ContainerRuntimeConfig targeting our pool.
+	ctrcfgObj := &mcfgv1.ContainerRuntimeConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: ctrcfgName},
+		Spec: mcfgv1.ContainerRuntimeConfigSpec{
+			MachineConfigPoolSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{poolName: ""},
+			},
+			ContainerRuntimeConfig: &mcfgv1.ContainerRuntimeConfiguration{
+				LogLevel: "debug",
+			},
+		},
+	}
+	_, err = cs.ContainerRuntimeConfigs().Create(context.TODO(), ctrcfgObj, metav1.CreateOptions{})
+	require.Nil(t, err)
+	cleanupFuncs = append(cleanupFuncs, func() {
+		_ = cs.ContainerRuntimeConfigs().Delete(context.TODO(), ctrcfgName, metav1.DeleteOptions{})
+	})
+
+	// Wait for the ContainerRuntimeConfig MC to appear and pool to converge
+	ctrcfgMCName, err := getMCFromCtrcfg(t, cs, ctrcfgName)
+	require.Nil(t, err, "failed to render machine config from container runtime config")
+	helpers.WaitForConfigAndPoolComplete(t, cs, poolName, ctrcfgMCName)
+
+	// Verify that no TLS drop-in exists yet (no KubeletConfig with TLS)
+	tlsDropinFileName := filepath.Base(tlsDropinPath)
+	require.False(t, fileExists(t, cs, node, tlsDropinFileName),
+		"TLS drop-in should not exist before KubeletConfig with TLS is created")
+
+	// Create a KubeletConfig with TLS 1.3 targeting the same pool.
+	kcRaw, err := kcfg.EncodeKubeletConfig(
+		&kubeletconfigv1beta1.KubeletConfiguration{},
+		kubeletconfigv1beta1.SchemeGroupVersion,
+		runtime.ContentTypeJSON,
+	)
+	require.Nil(t, err, "failed to encode kubelet config")
+
+	kcObj := &mcfgv1.KubeletConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: kcName},
+		Spec: mcfgv1.KubeletConfigSpec{
+			MachineConfigPoolSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{poolName: ""},
+			},
+			KubeletConfig: &runtime.RawExtension{Raw: kcRaw},
+			TLSSecurityProfile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				Custom: &configv1.CustomTLSProfile{
+					TLSProfileSpec: configv1.TLSProfileSpec{
+						MinTLSVersion: configv1.VersionTLS13,
+					},
+				},
+			},
+		},
+	}
+	_, err = cs.KubeletConfigs().Create(context.TODO(), kcObj, metav1.CreateOptions{})
+	require.Nil(t, err)
+	cleanupFuncs = append(cleanupFuncs, func() {
+		_ = cs.KubeletConfigs().Delete(context.TODO(), kcName, metav1.DeleteOptions{})
+	})
+
+	// Wait for the pool to converge after the KubeletConfig is applied.
+	err = wait.PollImmediate(5*time.Second, 15*time.Minute, func() (bool, error) {
+		// Check if the TLS drop-in has appeared on the node
+		return fileExists(t, cs, node, tlsDropinFileName), nil
+	})
+	require.Nil(t, err, "TLS drop-in file did not appear on node after KubeletConfig creation")
+
+	// Verify the drop-in content has the correct TLS version
+	tlsConfValue := getValueFromCrioConfig(t, cs, node, `tls_min_version = "(\S+)"`, tlsDropinPath)
+	require.Equal(t, "VersionTLS13", tlsConfValue,
+		"CRI-O TLS drop-in should contain VersionTLS13")
+	t.Logf("Verified CRI-O TLS drop-in contains tls_min_version = VersionTLS13")
+
+	// Update the KubeletConfig from TLS 1.3 to TLS 1.2.
+	kcUpdated, err := cs.KubeletConfigs().Get(context.TODO(), kcName, metav1.GetOptions{})
+	require.Nil(t, err, "failed to get KubeletConfig for update")
+	kcUpdated.Spec.TLSSecurityProfile = &configv1.TLSSecurityProfile{
+		Type: configv1.TLSProfileCustomType,
+		Custom: &configv1.CustomTLSProfile{
+			TLSProfileSpec: configv1.TLSProfileSpec{
+				MinTLSVersion: configv1.VersionTLS12,
+			},
+		},
+	}
+	_, err = cs.KubeletConfigs().Update(context.TODO(), kcUpdated, metav1.UpdateOptions{})
+	require.Nil(t, err, "failed to update KubeletConfig to TLS 1.2")
+	t.Logf("Updated KubeletConfig %s from TLS 1.3 to TLS 1.2", kcName)
+
+	// Wait for the drop-in to reflect the updated TLS version
+	err = wait.PollImmediate(5*time.Second, 15*time.Minute, func() (bool, error) {
+		val := getValueFromCrioConfig(t, cs, node, `tls_min_version = "(\S+)"`, tlsDropinPath)
+		return val == "VersionTLS12", nil
+	})
+	require.Nil(t, err, "TLS drop-in was not updated to VersionTLS12 after KubeletConfig update")
+	t.Logf("Verified CRI-O TLS drop-in updated to tls_min_version = VersionTLS12")
+
+	// Step 4: Delete the KubeletConfig and verify the TLS drop-in is removed.
+	err = cs.KubeletConfigs().Delete(context.TODO(), kcName, metav1.DeleteOptions{})
+	require.Nil(t, err, "failed to delete KubeletConfig")
+	t.Logf("Deleted KubeletConfig %s", kcName)
+
+	// Wait for the pool to finish the rollback update.
+	err = wait.PollImmediate(10*time.Second, 15*time.Minute, func() (bool, error) {
+		return !fileExists(t, cs, node, tlsDropinFileName), nil
+	})
+	require.Nil(t, err, "TLS drop-in should be removed after KubeletConfig deletion")
+	t.Logf("Verified CRI-O TLS drop-in was removed after KubeletConfig deletion")
 }
