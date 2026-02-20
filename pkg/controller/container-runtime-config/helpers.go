@@ -49,12 +49,15 @@ const (
 	policyConfigPath                       = "/etc/containers/policy.json"
 	// CRIODropInFilePathLogLevel is the path at which changes to the crio config for log-level
 	// will be dropped in this is exported so that we can use it in the e2e-tests
-	CRIODropInFilePathLogLevel       = "/etc/crio/crio.conf.d/01-ctrcfg-logLevel"
-	crioDropInFilePathPidsLimit      = "/etc/crio/crio.conf.d/01-ctrcfg-pidsLimit"
-	crioDropInFilePathLogSizeMax     = "/etc/crio/crio.conf.d/01-ctrcfg-logSizeMax"
-	CRIODropInFilePathDefaultRuntime = "/etc/crio/crio.conf.d/01-ctrcfg-defaultRuntime"
-	imagepolicyType                  = "sigstoreSigned"
-	sigstoreRegistriesConfigFilePath = "/etc/containers/registries.d/sigstore-registries.yaml"
+	CRIODropInFilePathLogLevel   = "/etc/crio/crio.conf.d/01-ctrcfg-logLevel"
+	crioDropInFilePathPidsLimit  = "/etc/crio/crio.conf.d/01-ctrcfg-pidsLimit"
+	crioDropInFilePathLogSizeMax = "/etc/crio/crio.conf.d/01-ctrcfg-logSizeMax"
+	// CRIODropInFilePathDefaultRuntime is the path at which changes to the crio config for default-runtime
+	// will be dropped in this is exported so that we can use it in the e2e-tests
+	CRIODropInFilePathDefaultRuntime           = "/etc/crio/crio.conf.d/01-ctrcfg-defaultRuntime"
+	crioDropInFilePathAdditionalArtifactStores = "/etc/crio/crio.conf.d/01-ctrcfg-additionalArtifactStores"
+	imagepolicyType                            = "sigstoreSigned"
+	sigstoreRegistriesConfigFilePath           = "/etc/containers/registries.d/sigstore-registries.yaml"
 )
 
 var (
@@ -121,6 +124,17 @@ type tomlConfigCRIODefaultRuntime struct {
 	Crio struct {
 		Runtime struct {
 			DefaultRuntime string `toml:"default_runtime,omitempty"`
+		} `toml:"runtime"`
+	} `toml:"crio"`
+}
+
+// tomlConfigCRIOAdditionalArtifactStores is used for conversions when additional-artifact-stores is changed
+// TOML-friendly (it has all of the explicit tables). It's just used for
+// conversions.
+type tomlConfigCRIOAdditionalArtifactStores struct {
+	Crio struct {
+		Runtime struct {
+			AdditionalArtifactStores []string `toml:"additional_artifact_stores,omitempty"`
 		} `toml:"runtime"`
 	} `toml:"crio"`
 }
@@ -387,6 +401,22 @@ func updateStorageConfig(data []byte, internal *mcfgv1.ContainerRuntimeConfigura
 		}
 	}
 
+	if len(internal.AdditionalLayerStores) > 0 {
+		paths := make([]string, 0, len(internal.AdditionalLayerStores))
+		for _, store := range internal.AdditionalLayerStores {
+			paths = append(paths, store.Path)
+		}
+		tomlConf.Storage.Options.AdditionalLayerStores = paths
+	}
+
+	if len(internal.AdditionalImageStores) > 0 {
+		paths := make([]string, 0, len(internal.AdditionalImageStores))
+		for _, store := range internal.AdditionalImageStores {
+			paths = append(paths, store.Path)
+		}
+		tomlConf.Storage.Options.AdditionalImageStores = paths
+	}
+
 	var newData bytes.Buffer
 	encoder := toml.NewEncoder(&newData)
 	if err := encoder.Encode(*tomlConf); err != nil {
@@ -446,6 +476,18 @@ func createCRIODropinFiles(cfg *mcfgv1.ContainerRuntimeConfig) []generatedConfig
 		generatedConfigFileList, err = addTOMLgeneratedConfigFile(generatedConfigFileList, CRIODropInFilePathDefaultRuntime, tomlConf)
 		if err != nil {
 			klog.V(2).Infoln(cfg, err, "error updating user changes for default-runtime to crio.conf.d: %v", err)
+		}
+	}
+	if len(ctrcfg.AdditionalArtifactStores) > 0 {
+		tomlConf := tomlConfigCRIOAdditionalArtifactStores{}
+		paths := make([]string, 0, len(ctrcfg.AdditionalArtifactStores))
+		for _, store := range ctrcfg.AdditionalArtifactStores {
+			paths = append(paths, store.Path)
+		}
+		tomlConf.Crio.Runtime.AdditionalArtifactStores = paths
+		generatedConfigFileList, err = addTOMLgeneratedConfigFile(generatedConfigFileList, crioDropInFilePathAdditionalArtifactStores, tomlConf)
+		if err != nil {
+			klog.V(2).Infoln(cfg, err, "error updating user changes for additional-artifact-stores to crio.conf.d: %v", err)
 		}
 	}
 	return generatedConfigFileList

@@ -892,6 +892,60 @@ type ContainerRuntimeConfiguration struct {
 	// +kubebuilder:validation:Enum=crun;runc
 	// +optional
 	DefaultRuntime ContainerRuntimeDefaultRuntime `json:"defaultRuntime,omitempty"`
+
+	// additionalLayerStores configures additional read-only container image layer store locations for Open Container Initiative (OCI) images.
+	//
+	// Layers are checked in order: additional stores first, then the default location.
+	// Stores are read-only.
+	// Maximum of 5 stores allowed.
+	// Each path must be unique.
+	//
+	// When omitted, only the default layer location is used.
+	// When specified, at least one store must be provided.
+	//
+	// +openshift:enable:FeatureGate=AdditionalStorageConfig
+	// +optional
+	// +listType=atomic
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=5
+	// +kubebuilder:validation:XValidation:rule="self.all(x, self.exists_one(y, x.path == y.path))",message="additionalLayerStores must not contain duplicate paths"
+	AdditionalLayerStores []AdditionalLayerStore `json:"additionalLayerStores,omitempty"`
+
+	// additionalImageStores configures additional read-only container image store locations for Open Container Initiative (OCI) images.
+	//
+	// Images are checked in order: additional stores first, then the default location.
+	// Stores are read-only.
+	// Maximum of 10 stores allowed.
+	// Each path must be unique.
+	//
+	// When omitted, only the default image location is used.
+	// When specified, at least one store must be provided.
+	//
+	// +openshift:enable:FeatureGate=AdditionalStorageConfig
+	// +optional
+	// +listType=atomic
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=10
+	// +kubebuilder:validation:XValidation:rule="self.all(x, self.exists_one(y, x.path == y.path))",message="additionalImageStores must not contain duplicate paths"
+	AdditionalImageStores []AdditionalImageStore `json:"additionalImageStores,omitempty"`
+
+	// additionalArtifactStores configures additional read-only artifact storage locations for Open Container Initiative (OCI) artifacts.
+	//
+	// Artifacts are checked in order: additional stores first, then the default location (/var/lib/containers/storage/artifacts).
+	// Stores are read-only.
+	// Maximum of 10 stores allowed.
+	// Each path must be unique.
+	//
+	// When omitted, only the default artifact location is used.
+	// When specified, at least one store must be provided.
+	//
+	// +openshift:enable:FeatureGate=AdditionalStorageConfig
+	// +optional
+	// +listType=atomic
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=10
+	// +kubebuilder:validation:XValidation:rule="self.all(x, self.exists_one(y, x.path == y.path))",message="additionalArtifactStores must not contain duplicate paths"
+	AdditionalArtifactStores []AdditionalArtifactStore `json:"additionalArtifactStores,omitempty"`
 }
 
 type ContainerRuntimeDefaultRuntime string
@@ -903,6 +957,66 @@ const (
 	ContainerRuntimeDefaultRuntimeCrun    = "crun"
 	ContainerRuntimeDefaultRuntimeDefault = ContainerRuntimeDefaultRuntimeCrun
 )
+
+// AdditionalLayerStore defines a read-only storage location for Open Container Initiative (OCI) container image layers.
+type AdditionalLayerStore struct {
+	// path specifies the absolute location of the additional layer store.
+	//
+	// The path must exist on the node before configuration is applied.
+	// When a container image is requested, layers found at this location will be used instead of
+	// retrieving from the registry.
+	//
+	// This field is required and must:
+	//   - Have length between 1 and 256 characters
+	//   - Start with '/' (absolute path)
+	//   - Contain only: a-z, A-Z, 0-9, '/', '.', '_', '-' (no spaces or special characters)
+	//
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	// +kubebuilder:validation:XValidation:rule="self.matches('^/[a-zA-Z0-9/._-]+$')",message="path must be absolute and contain only alphanumeric characters, '/', '.', '_', and '-'"
+	Path string `json:"path,omitempty"`
+}
+
+// AdditionalImageStore defines an additional read-only storage location for Open Container Initiative (OCI) images.
+type AdditionalImageStore struct {
+	// path specifies the absolute location of the additional image store.
+	//
+	// The path must exist on the node before configuration is applied.
+	// When a container image is requested, images found at this location will be used instead of
+	// retrieving from the registry.
+	//
+	// This field is required and must:
+	//   - Have length between 1 and 256 characters
+	//   - Start with '/' (absolute path)
+	//   - Contain only: a-z, A-Z, 0-9, '/', '.', '_', '-' (no spaces or special characters)
+	//
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	// +kubebuilder:validation:XValidation:rule="self.matches('^/[a-zA-Z0-9/._-]+$')",message="path must be absolute and contain only alphanumeric characters, '/', '.', '_', and '-'"
+	Path string `json:"path,omitempty"`
+}
+
+// AdditionalArtifactStore defines an additional read-only storage location for Open Container Initiative (OCI) artifacts.
+type AdditionalArtifactStore struct {
+	// path specifies the absolute location of the additional artifact store.
+	//
+	// The path must exist on the node before configuration is applied.
+	// When an artifact is requested, artifacts found at this location will be used instead of
+	// retrieving from the registry.
+	//
+	// This field is required and must:
+	//   - Have length between 1 and 256 characters
+	//   - Start with '/' (absolute path)
+	//   - Contain only: a-z, A-Z, 0-9, '/', '.', '_', '-' (no spaces or special characters)
+	//
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	// +kubebuilder:validation:XValidation:rule="self.matches('^/[a-zA-Z0-9/._-]+$')",message="path must be absolute and contain only alphanumeric characters, '/', '.', '_', and '-'"
+	Path string `json:"path,omitempty"`
+}
 
 // ContainerRuntimeConfigStatus defines the observed state of a ContainerRuntimeConfig
 type ContainerRuntimeConfigStatus struct {

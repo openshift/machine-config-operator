@@ -9,3 +9,19 @@ spec:
   containerRuntimeConfig:
     pidsLimit: 2048
     logLevel: debug
+---
+apiVersion: machineconfiguration.openshift.io/v1
+kind: ContainerRuntimeConfig
+metadata:
+  name: set-additional-stores
+spec:
+  machineConfigPoolSelector:
+    matchLabels:
+      custom-crio: config-additional-stores
+  containerRuntimeConfig:
+    additionalLayerStores:
+      - path: /var/lib/stargz-store
+    additionalImageStores:
+      - path: /mnt/nfs-images
+    additionalArtifactStores:
+      - path: /mnt/ssd-artifacts
