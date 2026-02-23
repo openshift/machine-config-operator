@@ -13,6 +13,7 @@ import (
 
 	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -248,13 +249,6 @@ func (ctrl *Controller) calculateStatus(mcns []*mcfgv1.MachineConfigNode, cconfi
 		unavailableMachineCount == 0 &&
 		!isLayeredPoolBuilding(isLayeredPool, mosc, mosb)
 	if allUpdated {
-		// When the pool is fully updated & the `OSStreams` FeatureGate is enabled, set the
-		// `OSImageStream` reference in the MCP status to be consistent to what is defined in the
-		// MCP spec
-		if osimagestream.IsFeatureEnabled(ctrl.fgHandler) {
-			status.OSImageStream = pool.Spec.OSImageStream
-		}
-
 		//TODO: update api to only have one condition regarding status of update.
 		updatedMsg := fmt.Sprintf("All nodes are updated with %s", getPoolUpdateLine(pool, mosc, isLayeredPool))
 		supdated := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdated, corev1.ConditionTrue, "", updatedMsg)
@@ -392,6 +386,13 @@ func (ctrl *Controller) calculateStatus(mcns []*mcfgv1.MachineConfigNode, cconfi
 		apihelpers.SetMachineConfigPoolCondition(&status, *sdegraded)
 	}
 
+	// Get the OSImageStream the pool is targeting & set it in the pool's status
+	// This must be done after all conditions are set, so we use the final calculated state
+	if osimagestream.IsFeatureEnabled(ctrl.fgHandler) {
+		isDegraded := nodeDegraded || renderDegraded || buildDegraded || pinnedImageSetsDegraded
+		status.OSImageStream = ctrl.getOSImageStream(pool, allUpdated, isDegraded)
+	}
+
 	return status
 }
 
@@ -525,4 +526,57 @@ func isLayeredPoolBuilding(isLayeredPool bool, mosc *mcfgv1.MachineOSConfig, mos
 	}
 
 	return false
+}
+
+// getOSImageStream gets the OSImageStream for a pool based on the calculated updated and degraded state
+func (ctrl *Controller) getOSImageStream(pool *mcfgv1.MachineConfigPool, isUpdated, isDegraded bool) mcfgv1.OSImageStreamReference {
+	// Only report OSImageStream status if the pool is Updated and not Degraded
+	if !isUpdated {
+		klog.V(4).Infof("Pool %s is not updated, clearing OSImageStream status", pool.Name)
+		return mcfgv1.OSImageStreamReference{}
+	}
+
+	if isDegraded {
+		klog.V(4).Infof("Pool %s is degraded, clearing OSImageStream status", pool.Name)
+		return mcfgv1.OSImageStreamReference{}
+	}
+
+	// Get the rendered MachineConfig from the pool's status
+	renderedConfigName := pool.Status.Configuration.Name
+	if renderedConfigName == "" {
+		klog.V(4).Infof("Pool %s has no rendered configuration", pool.Name)
+		return mcfgv1.OSImageStreamReference{}
+	}
+
+	renderedMC, err := ctrl.mcLister.Get(renderedConfigName)
+	if err != nil {
+		klog.Warningf("Could not retrieve rendered MachineConfig %s: %v", renderedConfigName, err)
+		return mcfgv1.OSImageStreamReference{}
+	}
+
+	// Get the OSImageStream CR
+	osImageStream, err := ctrl.osImageStreamLister.Get(ctrlcommon.ClusterInstanceNameOSImageStream)
+	if err != nil {
+		klog.V(4).Infof("Could not retrieve OSImageStream CR: %v", err)
+		return mcfgv1.OSImageStreamReference{}
+	}
+
+	// Get the osImageURL from the rendered config
+	osImageURL := renderedMC.Spec.OSImageURL
+	if osImageURL == "" {
+		klog.V(4).Infof("Rendered MachineConfig %s has empty OSImageURL", renderedConfigName)
+		return mcfgv1.OSImageStreamReference{}
+	}
+
+	// Match the osImageURL against available streams
+	for _, streamSet := range osImageStream.Status.AvailableStreams {
+		if streamSet.OSImage == mcfgv1alpha1.ImageDigestFormat(osImageURL) {
+			klog.V(4).Infof("Pool %s osImageURL matched stream %s", pool.Name, streamSet.Name)
+			return mcfgv1.OSImageStreamReference{Name: streamSet.Name}
+		}
+	}
+
+	// No match found - this indicates an override scenario
+	klog.V(4).Infof("Pool %s osImageURL %s does not match any recognized stream (override scenario)", pool.Name, osImageURL)
+	return mcfgv1.OSImageStreamReference{}
 }

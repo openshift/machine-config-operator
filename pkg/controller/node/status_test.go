@@ -9,6 +9,8 @@ import (
 
 	apicfgv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -756,16 +758,13 @@ func TestCalculateStatus(t *testing.T) {
 			}
 		},
 	}, {
-		name: "all nodes updated, OSStream defined in MCP Spec",
+		name: "OSImageStream is empty when OSImageStream CR does not exist",
 		nodes: []*corev1.Node{
 			helpers.NewNodeWithReady("node-0", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
 			helpers.NewNodeWithReady("node-1", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
 			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
 		},
 		currentConfig: machineConfigV0,
-		osStream: mcfgv1.OSImageStreamReference{
-			Name: "rhel-10",
-		},
 		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
 			if got, want := status.MachineCount, int32(3); got != want {
 				t.Fatalf("mismatch MachineCount: got %d want: %d", got, want)
@@ -801,109 +800,163 @@ func TestCalculateStatus(t *testing.T) {
 				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
 			}
 
-			statusOSStreamName := status.OSImageStream.Name
-			if statusOSStreamName != "rhel-10" {
-				t.Fatal("OSImageStreamReference in MCP status not updated correctly")
+			// When OSImageStream CR does not exist, status.OSImageStream should be empty
+			if got, want := status.OSImageStream.Name, ""; got != want {
+				t.Fatalf("mismatch OSImageStream.Name: got %q want: %q - OSImageStream should be empty when CR does not exist", got, want)
 			}
 		},
 	}, {
-		name: "some nodes still updating, OSStream defined in MCP Spec",
+		name: "OSImageStream status populated when pool updated and osImageURL matches stream",
+		nodes: []*corev1.Node{
+			helpers.NewNodeWithReady("node-0", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-1", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+		},
+		currentConfig: machineConfigV0,
+		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+			// Verify pool is fully updated
+			condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
+			if condupdated == nil {
+				t.Fatal("updated condition not found")
+			}
+			if got, want := condupdated.Status, corev1.ConditionTrue; got != want {
+				t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
+			}
+
+			conddegraded := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolDegraded)
+			if conddegraded == nil {
+				t.Fatal("degraded condition not found")
+			}
+			if got, want := conddegraded.Status, corev1.ConditionFalse; got != want {
+				t.Fatalf("mismatch conddegraded.Status: got %s want: %s", got, want)
+			}
+
+			// OSImageStream status should be populated with the matching stream
+			if got, want := status.OSImageStream.Name, "rhel-9"; got != want {
+				t.Fatalf("mismatch OSImageStream.Name: got %q want: %q", got, want)
+			}
+		},
+	}, {
+		name: "OSImageStream status empty when pool updated but osImageURL doesn't match any stream (override)",
+		nodes: []*corev1.Node{
+			helpers.NewNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+		},
+		currentConfig: machineConfigV1,
+		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+			// Verify pool is fully updated
+			condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
+			if condupdated == nil {
+				t.Fatal("updated condition not found")
+			}
+			if got, want := condupdated.Status, corev1.ConditionTrue; got != want {
+				t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
+			}
+
+			// OSImageStream status should be empty (override scenario)
+			if got, want := status.OSImageStream.Name, ""; got != want {
+				t.Fatalf("mismatch OSImageStream.Name: got %q want: %q - should be empty for override scenario", got, want)
+			}
+		},
+	}, {
+		name: "OSImageStream status empty when pool is updating",
 		nodes: []*corev1.Node{
 			helpers.NewNodeWithReady("node-0", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
 			helpers.NewNodeWithReady("node-1", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
 			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
 		},
 		currentConfig: machineConfigV1,
-		osStream: mcfgv1.OSImageStreamReference{
-			Name: "rhel-10",
-		},
 		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-			if got, want := status.MachineCount, int32(3); got != want {
-				t.Fatalf("mismatch MachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.UpdatedMachineCount, int32(0); got != want {
-				t.Fatalf("mismatch UpdatedMachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.ReadyMachineCount, int32(0); got != want {
-				t.Fatalf("mismatch ReadyMachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.UnavailableMachineCount, int32(1); got != want {
-				t.Fatalf("mismatch UnavailableMachineCount: got %d want: %d", got, want)
-			}
-
-			condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
-			if condupdated == nil {
-				t.Fatal("updated condition not found")
-			}
-
+			// Verify pool is updating
 			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
 			if condupdating == nil {
 				t.Fatal("updating condition not found")
 			}
-
-			if got, want := condupdated.Status, corev1.ConditionFalse; got != want {
-				t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
-			}
-
 			if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
 				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
 			}
 
-			statusOSStreamName := status.OSImageStream.Name
-			if statusOSStreamName == "rhel-10" {
-				t.Fatal("OSImageStreamReference updated in MCP status, but should not be")
-			}
-		},
-	}, {
-		name: "all nodes updated, OSStream removed from MCP Spec",
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReady("node-0", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
-			helpers.NewNodeWithReady("node-1", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
-			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
-		},
-		currentConfig: machineConfigV0,
-		osStream:      mcfgv1.OSImageStreamReference{},
-		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-			if got, want := status.MachineCount, int32(3); got != want {
-				t.Fatalf("mismatch MachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.UpdatedMachineCount, int32(3); got != want {
-				t.Fatalf("mismatch UpdatedMachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.ReadyMachineCount, int32(3); got != want {
-				t.Fatalf("mismatch ReadyMachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.UnavailableMachineCount, int32(0); got != want {
-				t.Fatalf("mismatch UnavailableMachineCount: got %d want: %d", got, want)
-			}
-
 			condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
 			if condupdated == nil {
 				t.Fatal("updated condition not found")
 			}
-
-			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-			if condupdating == nil {
-				t.Fatal("updating condition not found")
+			if got, want := condupdated.Status, corev1.ConditionFalse; got != want {
+				t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
 			}
 
+			// OSImageStream status should be empty when pool is updating
+			if got, want := status.OSImageStream.Name, ""; got != want {
+				t.Fatalf("mismatch OSImageStream.Name: got %q want: %q - should be empty when updating", got, want)
+			}
+		},
+	}, {
+		name: "OSImageStream status empty when pool is degraded",
+		nodes: []*corev1.Node{
+			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV0, machineConfigV0, "", "", daemonconsts.MachineConfigDaemonStateDegraded, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-1", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+		},
+		currentConfig: machineConfigV0,
+		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+			// Verify pool is degraded
+			conddegraded := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolDegraded)
+			if conddegraded == nil {
+				t.Fatal("degraded condition not found")
+			}
+			if got, want := conddegraded.Status, corev1.ConditionTrue; got != want {
+				t.Fatalf("mismatch conddegraded.Status: got %s want: %s", got, want)
+			}
+
+			// OSImageStream status should be empty when pool is degraded
+			if got, want := status.OSImageStream.Name, ""; got != want {
+				t.Fatalf("mismatch OSImageStream.Name: got %q want: %q - should be empty when degraded", got, want)
+			}
+		},
+	}, {
+		name: "OSImageStream status empty when rendered config has empty osImageURL",
+		nodes: []*corev1.Node{
+			helpers.NewNodeWithReady("node-0", machineConfigV2, machineConfigV2, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-1", machineConfigV2, machineConfigV2, corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-2", machineConfigV2, machineConfigV2, corev1.ConditionTrue),
+		},
+		currentConfig: machineConfigV2,
+		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+			// Verify pool is fully updated
+			condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
+			if condupdated == nil {
+				t.Fatal("updated condition not found")
+			}
 			if got, want := condupdated.Status, corev1.ConditionTrue; got != want {
 				t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
 			}
 
-			if got, want := condupdating.Status, corev1.ConditionFalse; got != want {
-				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
+			// OSImageStream status should be empty when osImageURL is empty
+			if got, want := status.OSImageStream.Name, ""; got != want {
+				t.Fatalf("mismatch OSImageStream.Name: got %q want: %q - should be empty when osImageURL is empty", got, want)
+			}
+		},
+	}, {
+		name: "OSImageStream status matches second stream when osImageURL matches it",
+		nodes: []*corev1.Node{
+			helpers.NewNodeWithReady("node-0", "rendered-rhel10", "rendered-rhel10", corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-1", "rendered-rhel10", "rendered-rhel10", corev1.ConditionTrue),
+			helpers.NewNodeWithReady("node-2", "rendered-rhel10", "rendered-rhel10", corev1.ConditionTrue),
+		},
+		currentConfig: "rendered-rhel10",
+		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+			// Verify pool is fully updated
+			condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
+			if condupdated == nil {
+				t.Fatal("updated condition not found")
+			}
+			if got, want := condupdated.Status, corev1.ConditionTrue; got != want {
+				t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
 			}
 
-			statusOSStream := status.OSImageStream
-			if statusOSStream.Name != "" {
-				t.Fatal("OSImageStreamReference in MCP status not cleared correctly")
+			// OSImageStream status should match the second stream (rhel-10)
+			if got, want := status.OSImageStream.Name, "rhel-10"; got != want {
+				t.Fatalf("mismatch OSImageStream.Name: got %q want: %q", got, want)
 			}
 		},
 	}}
@@ -912,11 +965,17 @@ func TestCalculateStatus(t *testing.T) {
 		test := test
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
 			t.Parallel()
+
 			pool := &mcfgv1.MachineConfigPool{
 				Spec: mcfgv1.MachineConfigPoolSpec{
 					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: test.currentConfig}},
 					Paused:        test.paused,
 					OSImageStream: test.osStream,
+				},
+				Status: mcfgv1.MachineConfigPoolStatus{
+					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{
+						ObjectReference: corev1.ObjectReference{Name: test.currentConfig},
+					},
 				},
 			}
 			f := newFixtureWithFeatureGates(t,
@@ -928,7 +987,98 @@ func TestCalculateStatus(t *testing.T) {
 				[]apicfgv1.FeatureGateName{},
 			)
 
-			c := f.newController()
+			// Determine which tests need OSImageStream and MC setup
+			needsOSImageStreamSetup := test.name == "OSImageStream status populated when pool updated and osImageURL matches stream" ||
+				test.name == "OSImageStream status empty when pool updated but osImageURL doesn't match any stream (override)" ||
+				test.name == "OSImageStream status empty when pool is updating" ||
+				test.name == "OSImageStream status empty when pool is degraded" ||
+				test.name == "OSImageStream status empty when rendered config has empty osImageURL" ||
+				test.name == "OSImageStream status matches second stream when osImageURL matches it"
+
+			var c *Controller
+			if needsOSImageStreamSetup {
+				// Set pool conditions based on test scenario
+				if test.name == "OSImageStream status empty when pool is degraded" {
+					pool.Status.Conditions = []mcfgv1.MachineConfigPoolCondition{
+						{Type: mcfgv1.MachineConfigPoolUpdated, Status: corev1.ConditionFalse},
+						{Type: mcfgv1.MachineConfigPoolUpdating, Status: corev1.ConditionFalse},
+						{Type: mcfgv1.MachineConfigPoolDegraded, Status: corev1.ConditionTrue},
+					}
+				} else if test.name != "OSImageStream status empty when pool is updating" {
+					pool.Status.Conditions = []mcfgv1.MachineConfigPoolCondition{
+						{Type: mcfgv1.MachineConfigPoolUpdated, Status: corev1.ConditionTrue},
+						{Type: mcfgv1.MachineConfigPoolUpdating, Status: corev1.ConditionFalse},
+						{Type: mcfgv1.MachineConfigPoolDegraded, Status: corev1.ConditionFalse},
+					}
+				}
+
+				// Add MachineConfig objects with different osImageURLs for testing
+				mc0 := &mcfgv1.MachineConfig{
+					ObjectMeta: metav1.ObjectMeta{Name: machineConfigV0},
+					Spec: mcfgv1.MachineConfigSpec{
+						OSImageURL: "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:rhel9image",
+					},
+				}
+				mc1 := &mcfgv1.MachineConfig{
+					ObjectMeta: metav1.ObjectMeta{Name: machineConfigV1},
+					Spec: mcfgv1.MachineConfigSpec{
+						OSImageURL: "quay.io/custom/custom-image:latest", // Custom URL that doesn't match any stream
+					},
+				}
+				mc2 := &mcfgv1.MachineConfig{
+					ObjectMeta: metav1.ObjectMeta{Name: machineConfigV2},
+					Spec: mcfgv1.MachineConfigSpec{
+						OSImageURL: "", // Empty osImageURL
+					},
+				}
+				mcRhel10 := &mcfgv1.MachineConfig{
+					ObjectMeta: metav1.ObjectMeta{Name: "rendered-rhel10"},
+					Spec: mcfgv1.MachineConfigSpec{
+						OSImageURL: "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:rhel10image",
+					},
+				}
+				// Add OSImageStream CR with available streams
+				osImageStream := &mcfgv1alpha1.OSImageStream{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: ctrlcommon.ClusterInstanceNameOSImageStream,
+					},
+					Status: mcfgv1alpha1.OSImageStreamStatus{
+						DefaultStream: "rhel-9",
+						AvailableStreams: []mcfgv1alpha1.OSImageStreamSet{
+							{
+								Name:    "rhel-9",
+								OSImage: "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:rhel9image",
+							},
+							{
+								Name:    "rhel-10",
+								OSImage: "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:rhel10image",
+							},
+						},
+					},
+				}
+
+				// Add all test objects to the fixture
+				f.objects = append(f.objects, mc0, mc1, mc2, mcRhel10, osImageStream)
+
+				c = f.newController()
+
+				// The controller's informers were already created, but we need to add MC and OSImageStream objects
+				// to their indexers. We can't access the informer factory from here, so we'll use the client
+				// that was already created and manually create new informers to populate the listers.
+				tmpInformer := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
+				tmpInformer.Machineconfiguration().V1().MachineConfigs().Informer().GetIndexer().Add(mc0)
+				tmpInformer.Machineconfiguration().V1().MachineConfigs().Informer().GetIndexer().Add(mc1)
+				tmpInformer.Machineconfiguration().V1().MachineConfigs().Informer().GetIndexer().Add(mc2)
+				tmpInformer.Machineconfiguration().V1().MachineConfigs().Informer().GetIndexer().Add(mcRhel10)
+				tmpInformer.Machineconfiguration().V1alpha1().OSImageStreams().Informer().GetIndexer().Add(osImageStream)
+
+				// Replace the controller's listers with the populated ones
+				c.mcLister = tmpInformer.Machineconfiguration().V1().MachineConfigs().Lister()
+				c.osImageStreamLister = tmpInformer.Machineconfiguration().V1alpha1().OSImageStreams().Lister()
+			} else {
+				c = f.newController()
+			}
+
 			status := c.calculateStatus([]*mcfgv1.MachineConfigNode{}, nil, pool, test.nodes, nil, nil)
 			test.verify(status, t)
 		})
