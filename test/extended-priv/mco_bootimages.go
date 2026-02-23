@@ -60,7 +60,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 	})
 
-	g.It("[PolarionID:81403][OTP] In BootImages Machineset should update by default", g.Label("Platform:aws", "Platform:gcp", "Platform:vsphere", "Platform:azure"), func() {
+	g.It("[PolarionID:81403][OTP] In BootImages Machineset should update by default", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
 
 		// Not supported in Vsphere
 		skipTestIfSupportedPlatformNotMatched(oc, GCPPlatform, AWSPlatform, VspherePlatform, AzurePlatform)
@@ -122,7 +122,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 	})
 
-	g.It("[PolarionID:74240][OTP] ManagedBootImages. Restore All MachineSet images", g.Label("Platform:aws", "Platform:gcp", "Platform:vsphere", "Platform:azure"), func() {
+	g.It("[PolarionID:74240][OTP] ManagedBootImages. Restore All MachineSet images", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
 		var (
 			machineSet                 = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
 			fakeImageName              = getBackdatedBootImage(oc.AsAdmin())
@@ -228,7 +228,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 	})
 
-	g.It("[PolarionID:74239][OTP] ManagedBootImages. Restore Partial MachineSet images", g.Label("Platform:aws", "Platform:gcp", "Platform:vsphere", "Platform:azure"), func() {
+	g.It("[PolarionID:74239][OTP] ManagedBootImages. Restore Partial MachineSet images", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
 		var (
 			machineSet             = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
 			fakeImageName          = getBackdatedBootImage(oc.AsAdmin())
@@ -323,7 +323,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 	})
 
-	g.It("[PolarionID:74751][OTP] ManagedBootImages. Fix errors", g.Label("Platform:aws", "Platform:gcp", "Platform:vsphere", "Platform:azure"), func() {
+	g.It("[PolarionID:74751][OTP] ManagedBootImages. Fix errors", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
 		var (
 			machineConfiguration        = GetMachineConfiguration(oc.AsAdmin())
 			machineSet                  = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
@@ -412,7 +412,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 	})
 
-	g.It("[PolarionID:80436][OTP] Bootimage secret doesn't exist error upgrading stub ignition to spec 3", g.Label("Platform:aws", "Platform:gcp", "Platform:vsphere", "Platform:azure"), func() {
+	g.It("[PolarionID:80436][OTP] Bootimage secret doesn't exist error upgrading stub ignition to spec 3", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
 		var (
 			clonedMSName     = fmt.Sprintf("cloned-tc-%s-copy", GetCurrentTestPolarionIDNumber())
 			clonedSecretName = fmt.Sprintf("cloned-user-data-%s-copy", GetCurrentTestPolarionIDNumber())
@@ -425,7 +425,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 	})
 
-	g.It("[PolarionID:80435][OTP] Bootimage no json data error upgrading stub ignition to spec 3", g.Label("Platform:aws", "Platform:gcp", "Platform:vsphere", "Platform:azure"), func() {
+	g.It("[PolarionID:80435][OTP] Bootimage no json data error upgrading stub ignition to spec 3", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
 		var (
 			clonedMSName     = fmt.Sprintf("cloned-tc-%s-copy", GetCurrentTestPolarionIDNumber())
 			clonedSecretName = fmt.Sprintf("cloned-user-data-%s-copy", GetCurrentTestPolarionIDNumber())
@@ -442,7 +442,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		testUserDataUpdateFailure(oc, clonedMSName, clonedSecretName, expectedFailedMessageRegexp, setNotJSONUserData)
 	})
 
-	g.It("[PolarionID:80434][OTP] Bootimage wrong version error upgrading stub ignition to spec 3", g.Label("Platform:aws", "Platform:gcp", "Platform:vsphere", "Platform:azure"), func() {
+	g.It("[PolarionID:80434][OTP] Bootimage wrong version error upgrading stub ignition to spec 3", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
 		var (
 			wrongIgnitionVersion = "1.2.0"
 			clonedMSName         = fmt.Sprintf("cloned-tc-%s-copy", GetCurrentTestPolarionIDNumber())
@@ -471,7 +471,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		testUserDataUpdateFailure(oc, clonedMSName, clonedSecretName, expectedFailedMessageRegexp, setWrongIgnitionVersion)
 	})
 
-	g.It("[PolarionID:81395][OTP] Verify in boot-image by default update is opt-in", g.Label("Platform:aws", "Platform:gcp", "Platform:vsphere", "Platform:azure"), func() {
+	g.It("[PolarionID:81395][OTP] Verify in boot-image by default update is opt-in", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
 
 		// Not supported in Vsphere
 		skipTestIfSupportedPlatformNotMatched(oc, GCPPlatform, AWSPlatform, VspherePlatform, AzurePlatform)
@@ -507,7 +507,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK\n")
 	})
 
-	g.It("[PolarionID:80437][OTP] Bootimage upgrade stub ignition to spec 3", g.Label("Platform:aws", "Platform:gcp", "Platform:vsphere", "Platform:azure"), func() {
+	g.It("[PolarionID:80437][OTP] Bootimage upgrade stub ignition to spec 3", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
 
 		var (
 			clonedMSName     = fmt.Sprintf("cloned-tc-%s-copy", GetCurrentTestPolarionIDNumber())
@@ -591,7 +591,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 	})
 
-	g.It("[PolarionID:82747][OTP] Correctly handle marketplace bootimages", g.Label("Platform:aws", "Platform:gcp"), func() {
+	g.It("[PolarionID:82747][OTP] Correctly handle marketplace bootimages", g.Label("Platform:aws", "Platform:gce"), func() {
 		// There is no marketplace exemption for Vsphere, we skip the test case
 		// After talking with devs this test case doesn't make sense in Azure.
 		// In Azure we shouldn't be allowed to manipulate the values to set invalid values, and we will always update legacy images. Hence, we skip this test case.
@@ -660,7 +660,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 	})
 
-	g.It("[PolarionID:83998][OTP] Check in the boot image controller to work with multiple labels for annotation", g.Label("Platform:aws", "Platform:gcp", "Platform:vsphere", "Platform:azure"), func() {
+	g.It("[PolarionID:83998][OTP] Check in the boot image controller to work with multiple labels for annotation", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
 		var (
 			clonedMSName         = fmt.Sprintf("cloned-tc-%s-copy", GetCurrentTestPolarionIDNumber())
 			machineSet           = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
@@ -960,12 +960,12 @@ func getBackdatedBootImage(oc *exutil.CLI) string {
 
 // getReleaseFromVsphereTemplate gets the release version from a vSphere template
 func getReleaseFromVsphereTemplate(oc *exutil.CLI, vsphereTemplate string) (string, error) {
-	server, dataCenter, _, _, user, password, err := getvSphereCredentials(oc.AsAdmin())
+	vsInfo, err := exutil.GetVSphereConnectionInfo(oc.AsAdmin())
 	if err != nil {
 		return "", err
 	}
 
-	return exutil.GetReleaseFromVsphereTemplate(vsphereTemplate, server, dataCenter, user, password)
+	return exutil.GetReleaseFromVsphereTemplate(vsphereTemplate, vsInfo.Server, vsInfo.DataCenter, vsInfo.User, vsInfo.Password)
 }
 
 // CheckCurrentOSImageIsUpdated checks that the machineset/controlplanemachineset is using the bootimage expected in the current cluster version
