@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"k8s.io/klog/v2"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 var (
@@ -35,6 +36,9 @@ func init() {
 func runStartCmd(_ *cobra.Command, _ []string) {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
+
+	// Initialize controller-runtime logger before any controller-runtime components are used
+	log.SetLogger(klog.NewKlogr())
 
 	// To help debugging, immediately log version
 	klog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
