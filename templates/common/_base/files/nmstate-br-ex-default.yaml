@@ -12,6 +12,7 @@ contents:
       - name: {{`"{{ capture.base-iface.interfaces.0.name }}"`}}
         type: {{`"{{ capture.base-iface.interfaces.0.type }}"`}}
         state: up
+        mtu: {{`"{{ capture.base-iface.interfaces.0.mtu }}"`}}
         ipv4:
           enabled: false
         ipv6:
@@ -31,16 +32,24 @@ contents:
         type: ovs-interface
         state: up
         copy-mac-from: {{`"{{ capture.base-iface.interfaces.0.name }}"`}}
+        mtu: {{`"{{ capture.base-iface.interfaces.0.mtu }}"`}}
+        wait-ip: {{`"{{ capture.base-iface.interfaces.0.wait-ip }}"`}}
         ipv4:
           enabled: {{`"{{ capture.base-iface.interfaces.0.ipv4.enabled }}"`}}
           dhcp: {{`"{{ capture.base-iface.interfaces.0.ipv4.dhcp }}"`}}
           address: {{`"{{ capture.base-iface.interfaces.0.ipv4.address }}"`}}
           auto-route-metric: 48
+          auto-dns: {{`"{{ capture.base-iface.interfaces.0.ipv4.auto-dns }}"`}}
+          auto-gateway: {{`"{{ capture.base-iface.interfaces.0.ipv4.auto-gateway }}"`}}
+          auto-routes: {{`"{{ capture.base-iface.interfaces.0.ipv4.auto-routes }}"`}}
         ipv6:
           enabled: {{`"{{ capture.base-iface.interfaces.0.ipv6.enabled }}"`}}
           dhcp: {{`"{{ capture.base-iface.interfaces.0.ipv6.dhcp }}"`}}
           # Doesn't work right now, can only do ipv4 static
           #address: {{`"{{ capture.base-iface.interfaces.0.ipv6.address }}"`}}
           auto-route-metric: 48
+          auto-dns: {{`"{{ capture.base-iface.interfaces.0.ipv6.auto-dns }}"`}}
+          auto-gateway: {{`"{{ capture.base-iface.interfaces.0.ipv6.auto-gateway }}"`}}
+          auto-routes: {{`"{{ capture.base-iface.interfaces.0.ipv6.auto-routes }}"`}}
       routes:
         config: {{`"{{ capture.bridge-routes.routes.running }}"`}}
