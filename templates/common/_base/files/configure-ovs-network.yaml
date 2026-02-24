@@ -313,6 +313,11 @@ contents:
         extra_phys_args+=( 802-3-ethernet.cloned-mac-address "${iface_mac}" )
       fi
 
+      lldp_mode=$($NMCLI_GET_VALUE connection.lldp conn show ${old_conn})
+      if [[ -n "$lldp_mode" ]]; then
+        extra_phys_args+=( connection.lldp "${lldp_mode}" )
+      fi
+
       # use ${extra_phys_args[@]+"${extra_phys_args[@]}"} instead of ${extra_phys_args[@]} to be compatible with bash 4.2 in RHEL7.9
       if ! nmcli connection show "$bridge_interface_name" &> /dev/null; then
         ovs-vsctl --timeout=30 --if-exists destroy interface ${iface}
