@@ -4,9 +4,9 @@ contents:
   inline: |
     . {
         errors
-        bufsize 512
         health :18080
         forward . {{`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`}} {
+            force_tcp
             policy sequential
         }
         cache 30
