@@ -1001,14 +1001,28 @@ func (dn *Daemon) updateOnClusterLayering(oldConfig, newConfig *mcfgv1.MachineCo
 		}
 	}
 
+	diffFileSet := ctrlcommon.CalculateConfigFileDiffs(&oldIgnConfig, &newIgnConfig)
+	// Get the added and updated units
+	unitDiff := ctrlcommon.GetChangedConfigUnitsByType(&oldIgnConfig, &newIgnConfig)
+	addedOrChangedUnits := slices.Concat(unitDiff.Added, unitDiff.Updated)
+	// Get the names of all units changed in some way (added, removed, or updated)
+	var allChangedUnitNames []string
+	for _, unit := range append(addedOrChangedUnits, unitDiff.Removed...) {
+		allChangedUnitNames = append(allChangedUnitNames, unit.Name)
+	}
+
+	// Check for forcefile before calculatePostConfigChange* functions delete it.
+	// This is needed for updateFiles to know whether to write all units (OCPBUGS-74692).
+	forceFilePresent := forceFileExists()
+
 	// update files on disk that need updating
-	if err := dn.updateFiles(oldIgnConfig, newIgnConfig, skipCertificateWrite); err != nil {
+	if err := dn.updateFiles(oldIgnConfig, newIgnConfig, addedOrChangedUnits, skipCertificateWrite, forceFilePresent); err != nil {
 		return err
 	}
 
 	defer func() {
 		if retErr != nil {
-			if err := dn.updateFiles(newIgnConfig, oldIgnConfig, skipCertificateWrite); err != nil {
+			if err := dn.updateFiles(oldIgnConfig, newIgnConfig, addedOrChangedUnits, skipCertificateWrite, forceFilePresent); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
 				retErr = fmt.Errorf("error rolling back files writes: %w", errs)
 				return
