@@ -1004,11 +1004,6 @@ func (dn *Daemon) updateOnClusterLayering(oldConfig, newConfig *mcfgv1.MachineCo
 	// Get the added and updated units
 	unitDiff := ctrlcommon.GetChangedConfigUnitsByType(&oldIgnConfig, &newIgnConfig)
 	addedOrChangedUnits := slices.Concat(unitDiff.Added, unitDiff.Updated)
-	// Get the names of all units changed in some way (added, removed, or updated)
-	var allChangedUnitNames []string
-	for _, unit := range append(addedOrChangedUnits, unitDiff.Removed...) {
-		allChangedUnitNames = append(allChangedUnitNames, unit.Name)
-	}
 
 	// Check for forcefile before calculatePostConfigChange* functions delete it.
 	// This is needed for updateFiles to know whether to write all units (OCPBUGS-74692).
