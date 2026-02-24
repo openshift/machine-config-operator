@@ -2616,7 +2616,7 @@ func (dn *Daemon) queueRevertKernelSwap() error {
 }
 
 // updateLayeredOS updates the system OS to the one specified in newConfig
-func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
+func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig, isRevertingFromOCL bool) error {
 	newURL := config.Spec.OSImageURL
 	klog.Infof("Updating OS to layered image %q", newURL)
 
@@ -2639,12 +2639,16 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	}
 
 	// If PIS is configured check if the image is locally present. If so, rebase using
-	// the local image
+	// the local image.
+	// IMPORTANT: Skip local storage rebase when reverting from OCL to avoid using stale
+	// IRI certificates. See OCPBUGS-62479.
 	var podmanImageInfo *PodmanImageInfo
-	if isPisConfigured {
+	if isPisConfigured && !isRevertingFromOCL {
 		if podmanImageInfo, err = dn.podmanInterface.GetPodmanImageInfoByReference(newURL); err != nil {
 			return err
 		}
+	} else if isRevertingFromOCL {
+		klog.Info("Skipping local storage rebase during OCL revert to avoid certificate issues")
 	}
 
 	// For image mode status reporting we need the node's MCP association to populate its MCN
@@ -3020,7 +3024,7 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 
 	// Update OS
 	if mcDiff.osUpdate {
-		if err := dn.updateLayeredOS(newConfig); err != nil {
+		if err := dn.updateLayeredOS(newConfig, mcDiff.revertFromOCL); err != nil {
 			mcdPivotErr.Inc()
 			return err
 		}
