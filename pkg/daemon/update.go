@@ -1001,7 +1001,6 @@ func (dn *Daemon) updateOnClusterLayering(oldConfig, newConfig *mcfgv1.MachineCo
 		}
 	}
 
-	diffFileSet := ctrlcommon.CalculateConfigFileDiffs(&oldIgnConfig, &newIgnConfig)
 	// Get the added and updated units
 	unitDiff := ctrlcommon.GetChangedConfigUnitsByType(&oldIgnConfig, &newIgnConfig)
 	addedOrChangedUnits := slices.Concat(unitDiff.Added, unitDiff.Updated)
@@ -1277,7 +1276,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	var actions []string
 	// If FeatureGateNodeDisruptionPolicy is set, calculate NodeDisruptionPolicy based actions for this MC diff
 	if fg != nil && fg.Enabled(features.FeatureGateNodeDisruptionPolicy) {
-		nodeDisruptionActions, err = dn.calculatePostConfigChangeNodeDisruptionAction(diff, diffFileSet, diffUnitSet)
+		nodeDisruptionActions, err = dn.calculatePostConfigChangeNodeDisruptionAction(diff, diffFileSet, allChangedUnitNames)
 	} else {
 		actions, err = calculatePostConfigChangeAction(diff, diffFileSet)
 	}
