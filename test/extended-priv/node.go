@@ -1287,6 +1287,20 @@ func (nl NodeList) GetAllLinux() ([]*Node, error) {
 	return nl.GetAll()
 }
 
+// GetAllMasterNodes returns a list of master Nodes
+func (nl NodeList) GetAllMasterNodes() ([]*Node, error) {
+	nl.ByLabel("node-role.kubernetes.io/master=")
+
+	return nl.GetAll()
+}
+
+// GetAllMasterNodesOrFail returns a list of master Nodes
+func (nl NodeList) GetAllMasterNodesOrFail() []*Node {
+	masters, err := nl.GetAllMasterNodes()
+	o.Expect(err).NotTo(o.HaveOccurred())
+	return masters
+}
+
 // GetAllWorkerNodes returns a list of worker Nodes
 func (nl NodeList) GetAllWorkerNodes() ([]*Node, error) {
 	nl.ByLabel("node-role.kubernetes.io/worker=")
@@ -1390,4 +1404,18 @@ func getReadyNodes(oc *exutil.CLI) (sets.Set[string], error) {
 		node.oc.SetShowInfo()
 	}
 	return nodeSet, nil
+}
+
+// GetIrreconcilableChanges returns the irreconcilable changes for the node from its MachineConfigNode status
+// Returns empty string if there are no irreconcilable changes or if the changes are empty "[]"
+func (n *Node) GetIrreconcilableChanges() (string, error) {
+	mcn := NewMachineConfigNode(n.oc, n.GetName())
+	irreconcilableChanges, err := mcn.Get(`{.status.irreconcilableChanges}`)
+	if err != nil {
+		return "", err
+	}
+	if irreconcilableChanges == "" || irreconcilableChanges == "[]" {
+		return "", nil
+	}
+	return irreconcilableChanges, nil
 }

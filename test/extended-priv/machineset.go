@@ -384,6 +384,31 @@ func (msl *MachineSetList) GetAllOrFail() []*MachineSet {
 	return allMs
 }
 
+// GetReplicas returns a []*Machineset list with all existing machinesets with the replica value matching the condition
+func (msl *MachineSetList) GetReplicas(comparison string, replicas int) ([]*MachineSet, error) {
+	var (
+		allowedComparisson = []string{"<", ">", "==", "!="}
+		validComparisson   = false
+	)
+
+	for _, ac := range allowedComparisson {
+		if comparison == ac {
+			validComparisson = true
+			break
+		}
+	}
+
+	if !validComparisson {
+		return nil, fmt.Errorf("The provided comparison %s is not in the allowed comparisons list %s",
+			comparison, allowedComparisson)
+	}
+
+	filter := fmt.Sprintf(`?(@.spec.replicas%s%d0)`, comparison, replicas)
+	msl.SetItemsFilter(filter)
+
+	return msl.GetAll()
+}
+
 // WaitForRunningMachines waits for the specified number of running machines to be created from this MachineSet
 // Returns the running machines on success
 func (ms MachineSet) WaitForRunningMachines(expectedReplicas int, timeout, pollInterval time.Duration) []Machine {
@@ -488,7 +513,7 @@ func convertUserDataToNewVersion(userData, newIgnitionVersion string) (string, e
 	}
 	currentIgnitionVersion := currentIgnitionVersionResult.String()
 
-	if CompareVersions(currentIgnitionVersion, "==", newIgnitionVersion) {
+	if CompareVersions(currentIgnitionVersion, "=", newIgnitionVersion) {
 		logger.Infof("Current ignition version %s is the same as the new ignition version %s. No need to manipulate the userData info",
 			currentIgnitionVersion, newIgnitionVersion)
 	} else {
@@ -644,4 +669,18 @@ func (ms MachineSet) AllNodesUpdated() (bool, error) {
 	}
 
 	return true, nil
+}
+
+// GetScalableMachineSet return a machineset that can be scaled to add new nodes to the cluster. We select a machineset that already has node to make sure that it is safe to scale it up
+func GetScalableMachineSet(oc *exutil.CLI) (*MachineSet, error) {
+	machinesets, err := NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetReplicas(">", 0)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(machinesets) == 0 {
+		return nil, fmt.Errorf("There is no machineset that can be used to scale nodes safely")
+	}
+
+	return machinesets[0], nil
 }
