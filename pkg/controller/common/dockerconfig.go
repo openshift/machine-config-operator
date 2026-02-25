@@ -1,124 +1,90 @@
+// All of the functions within this file should eventually be replaced by the
+// secrets module at their respective call-sites. However, the unit tests
+// provided alongside these functions provide a valuable check to ensure that
+// the secrets code works as intended given how these functions are used.
 package common
 
 import (
-	"fmt"
+	corev1 "k8s.io/api/core/v1"
 
-	"github.com/clarketm/json"
+	"github.com/openshift/machine-config-operator/pkg/secrets"
 )
 
-// This file contains several functions for working with Docker image pull
-// configs. Instead of maintaining our own implementation here, we should
-// instead use the implementations found under:
-//
-// - https://github.com/containers/image/blob/main/pkg/docker/config/config.go
-// - https://github.com/kubernetes/kubernetes/blob/master/pkg/credentialprovider/config.go
-//
-// These more official implementations are more aware of edgecases than our
-// naive implementation here.
+// MergeDockerConfigstoJSONMap merges kubernetes.io/dockercfg type secrets into a JSON map.
+// It takes raw secret bytes and a map of existing DockerConfigEntry objects.
+// The function uses a SecretMerger to combine the provided secretRaw and the
+// existing auths map, then updates the auths map with the merged content.
+// It returns an error if the incoming secret cannot be marshaled or if any
+// other merging operation fails.
+func MergeDockerConfigstoJSONMap(secretRaw []byte, auths map[string]secrets.DockerConfigEntry) error {
+	merger := secrets.NewSecretMerger()
 
-// DockerConfigJSON represents ~/.docker/config.json file info
-type DockerConfigJSON struct {
-	Auths DockerConfig `json:"auths"`
-}
-
-// DockerConfig represents the config file used by the docker CLI.
-// This config that represents the credentials that should be used
-// when pulling images from specific image repositories.
-type DockerConfig map[string]DockerConfigEntry
-
-// DockerConfigEntry wraps a docker config as a entry
-type DockerConfigEntry struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-	Email    string `json:"email"`
-	Auth     string `json:"auth"`
-}
-
-// Merges kubernetes.io/dockercfg type secrets into a JSON map.
-// Returns an error on failure to marshal the incoming secret.
-func MergeDockerConfigstoJSONMap(secretRaw []byte, auths map[string]DockerConfigEntry) error {
-	var dockerConfig DockerConfig
-	// Unmarshal raw JSON
-	err := json.Unmarshal(secretRaw, &dockerConfig)
-	if err != nil {
-		return fmt.Errorf(" unmarshal failure: %w", err)
+	if err := merger.Insert(secrets.DockerConfig(auths)); err != nil {
+		return err
 	}
-	// Step through the hosts and add them to the JSON map
-	for host := range dockerConfig {
-		auths[host] = dockerConfig[host]
+
+	if err := merger.Insert(secretRaw); err != nil {
+		return err
 	}
+
+	is := merger.ImageRegistrySecret()
+
+	for key, val := range is.DockerConfigJSON().Auths {
+		auths[key] = val
+	}
+
 	return nil
 }
 
-// Converts a kubernetes.io/dockerconfigjson type secret to a
-// kubernetes.io/dockercfg type secret. Returns an error on failure
-// if the incoming secret is not formatted correctly.
+// ConvertSecretTodockercfg converts a kubernetes.io/dockerconfigjson type secret
+// to a kubernetes.io/dockercfg type secret.
+// It takes a byte slice representing the secret and returns the converted
+// byte slice and an error if the conversion fails or if the incoming secret
+// is not formatted correctly.
 func ConvertSecretTodockercfg(secretBytes []byte) ([]byte, error) {
-	type newStyleAuth struct {
-		Auths map[string]interface{} `json:"auths,omitempty"`
-	}
-
-	// Un-marshal the new-style secret first
-	newStyleDecoded := &newStyleAuth{}
-	if err := json.Unmarshal(secretBytes, newStyleDecoded); err != nil {
-		return nil, fmt.Errorf("could not decode new-style pull secret: %w", err)
-	}
-
-	// Marshal with old style, which is everything inside the Auths field
-	out, err := json.Marshal(newStyleDecoded.Auths)
-
-	return out, err
+	bytes, _, err := convertToSecretType(secretBytes, corev1.SecretTypeDockercfg)
+	return bytes, err
 }
 
-// Converts a legacy Docker pull secret into a more modern representation.
-// Essentially, it converts {"registry.hostname.com": {"username": "user"...}}
-// into {"auths": {"registry.hostname.com": {"username": "user"...}}}. If it
-// encounters a pull secret already in this configuration, it will return the
-// input secret as-is. Returns either the supplied data or the newly-configured
-// representation of said data, a boolean to indicate whether it was converted,
-// and any errors resulting from the conversion process.
+// ConvertSecretToDockerconfigJSON converts a legacy Docker pull secret into a more
+// modern representation (kubernetes.io/dockerconfigjson).
+// Specifically, it transforms a structure like {"registry.hostname.com": {"username": "user"...}}
+// into {"auths": {"registry.hostname.com": {"username": "user"...}}}.
+// If the input secret is already in the modern format, it will be returned as-is.
+// The function returns the supplied data or the newly-configured representation,
+// a boolean indicating whether the conversion occurred, and any errors encountered
+// during the conversion process.
 func ConvertSecretToDockerconfigJSON(secretBytes []byte) ([]byte, bool, error) {
-	type newStyleAuth struct {
-		Auths map[string]interface{} `json:"auths,omitempty"`
-	}
-
-	// Try marshaling the new-style secret first:
-	newStyleDecoded := &newStyleAuth{}
-	if err := json.Unmarshal(secretBytes, newStyleDecoded); err != nil {
-		return nil, false, fmt.Errorf("could not decode new-style pull secret: %w", err)
-	}
-
-	// We have an new-style secret, so we can just return here.
-	if len(newStyleDecoded.Auths) != 0 {
-		return secretBytes, false, nil
-	}
-
-	// We need to convert the legacy-style secret to the new-style.
-	oldStyleDecoded := map[string]interface{}{}
-	if err := json.Unmarshal(secretBytes, &oldStyleDecoded); err != nil {
-		return nil, false, fmt.Errorf("could not decode legacy-style pull secret: %w", err)
-	}
-
-	out, err := json.Marshal(&newStyleAuth{
-		Auths: oldStyleDecoded,
-	})
-
-	return out, err == nil, err
+	return convertToSecretType(secretBytes, corev1.SecretTypeDockerConfigJson)
 }
 
-// Converts a provided secret into a kubernetes.io/dockerconfigjson secret then
-// unmarshals it into the appropriate data structure. This means it will handle
-// both legacy and current-style Docker configs.
-func ToDockerConfigJSON(secretBytes []byte) (*DockerConfigJSON, error) {
-	outBytes, _, err := ConvertSecretToDockerconfigJSON(secretBytes)
+// ToDockerConfigJSON converts a provided secret into a kubernetes.io/dockerconfigjson
+// secret and then unmarshals it into the appropriate data structure.
+// This function is designed to handle both legacy and current-style Docker configurations.
+// It takes a byte slice representing the secret and returns a pointer to a
+// secrets.DockerConfigJSON object and an error if the conversion or unmarshaling fails.
+func ToDockerConfigJSON(secretBytes []byte) (*secrets.DockerConfigJSON, error) {
+	is, err := secrets.NewImageRegistrySecret(secretBytes)
 	if err != nil {
 		return nil, err
 	}
 
-	out := &DockerConfigJSON{}
-	if err := json.Unmarshal(outBytes, out); err != nil {
-		return nil, err
+	dcj := is.DockerConfigJSON()
+	return &dcj, nil
+}
+
+// convertToSecretType is an internal helper function that converts a given secret
+// byte slice into a specific Kubernetes secret type (e.g., corev1.SecretTypeDockercfg
+// or corev1.SecretTypeDockerConfigJson).
+// It takes the raw secret bytes and the target corev1.SecretType.
+// It returns the converted byte slice, a boolean indicating if the original secret
+// was in a legacy style, and any error encountered during the conversion.
+func convertToSecretType(secretBytes []byte, secretType corev1.SecretType) ([]byte, bool, error) {
+	is, err := secrets.NewImageRegistrySecret(secretBytes)
+	if err != nil {
+		return nil, false, err
 	}
 
-	return out, nil
+	bytes, err := is.JSONBytes(secretType)
+	return bytes, is.IsLegacyStyle(), err
 }

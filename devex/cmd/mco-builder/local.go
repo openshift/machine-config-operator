@@ -15,6 +15,7 @@ import (
 	"github.com/openshift/machine-config-operator/devex/internal/pkg/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/framework"
+	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	aggerrs "k8s.io/apimachinery/pkg/util/errors"
@@ -192,7 +193,7 @@ func buildLocallyAndPushIntoCluster(cs *framework.ClientSet, buildOpts localBuil
 		}
 	}()
 
-	extHostname, err := rollout.ExposeClusterImageRegistry(cs)
+	extHostname, err := helpers.ExposeClusterImageRegistry(context.TODO(), cs)
 	if err != nil {
 		return err
 	}
