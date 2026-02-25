@@ -2,6 +2,8 @@ package extended
 
 import (
 	"fmt"
+	"slices"
+	"strings"
 
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
@@ -534,4 +536,196 @@ func RebuildImageAndCheck(mosc *MachineOSConfig) {
 		logger.Infof("There is no coreos node configured in %s. We don't wait for the configuration to be applied and we don't execute any verification on the nodes", mcp)
 		logger.Infof("OK!\n")
 	}
+}
+
+// CheckExtensions checks all applicable extensions on the given node
+func CheckExtensions(node *Node, applicableExtensions []string) {
+	if slices.Contains(applicableExtensions, usbguardExtension) {
+		checkUsbguradExtension(node)
+	}
+	if slices.Contains(applicableExtensions, ipsecExtension) {
+		checkIpsecExtension(node)
+	}
+	if slices.Contains(applicableExtensions, kerberosExtension) {
+		checkKerberosExtension(node)
+	}
+	if slices.Contains(applicableExtensions, kernelDevelExtension) {
+		checkKernalDevelExtension(node)
+	}
+	if slices.Contains(applicableExtensions, sysstatExtension) {
+		checkSysstatExtension(node)
+	}
+	if slices.Contains(applicableExtensions, sandboxedContainersExtension) {
+		checkSandboxedContainersExtension(node)
+	}
+}
+
+// To check usbguard is installed and is active after installed
+func checkUsbguradExtension(node *Node) {
+	var (
+		extName          = usbguardExtension
+		rpmName          = AllExtenstions[extName]
+		activeString     = "Active: active (running)"
+		inactiveString   = "Active: inactive (dead)"
+		expectedError    = "missing     /usr/lib/tmpfiles.d/usbguard.conf\nerror: non-zero exit code from debug container"
+		expectedErrorOCL = ".M.......    /var/log/usbguard\nerror: non-zero exit code from debug container"
+	)
+	exutil.By("Verify node includes Usbguard extension")
+	o.Expect(
+		node.RpmIsInstalled(rpmName...)).To(o.BeTrue(), "%s has not been installed", rpmName)
+	logger.Infof("Usbguard is installed\n")
+
+	exutil.By("Enable the USBGuard service")
+	// Even if the extension is removed, the /etc/systemd/system/basic.target.wants/usbguard.service symlink will remain in the node
+	// It means that if we execute this test twice, the second time usbguard will be automatically enabled
+	if !node.IsUnitEnabled(extName) {
+		o.Expect(node.DebugNodeWithChroot("systemctl", "enable", "--now", extName)).Should(o.ContainSubstring("Created symlink"), "%s is still not enabled", extName)
+		logger.Infof("Usbguard service enabled\n")
+	} else {
+		logger.Infof("%s already enabled, nothing to do", extName)
+	}
+
+	exutil.By("Wait for Usbguard to start successfully")
+	o.Expect(node.DebugNodeWithChroot("journalctl", "-xeu", "usbguard.service")).Should(o.MatchRegexp(`(?i)usbguard\.service.*finished successfully`), "Expected journalctl to report that usbguard.service started successfully")
+	logger.Infof("Usbguard start message found in journal\n")
+
+	exutil.By("Verify Usbguard service is active")
+	o.Expect(node.DebugNodeWithChroot("systemctl", "status", extName)).To(o.And(
+		o.ContainSubstring(activeString),
+		o.Not(o.ContainSubstring(inactiveString))), "Error: %s is still not active", extName)
+	logger.Infof("usbguard is active\n")
+
+	exutil.By("Check that all the files in the rpm were correctly deployed ")
+	rpmOut, _ := node.checkRpmFiles(rpmName...)
+	o.Expect(strings.TrimSpace(rpmOut)).Should(o.Or(o.BeEmpty(), o.Equal(expectedErrorOCL), o.Equal(expectedError)), "Error in permissions of rpm files")
+	logger.Infof("OK!\n")
+}
+
+// To check ipsec is installed and is active after installed
+func checkIpsecExtension(node *Node) {
+	var (
+		extName        = ipsecExtension
+		rpmName        = AllExtenstions[extName]
+		activeString   = "Active: active (running)"
+		inactiveString = "Active: inactive (dead)"
+		err            error
+	)
+	exutil.By(fmt.Sprintf("Verify node includes %s packages", rpmName))
+	o.Expect(
+		node.RpmIsInstalled(rpmName...)).To(o.BeTrue(), "%s has not been installed", rpmName)
+	logger.Infof("%s is installed\n", rpmName)
+
+	exutil.By("Enable the Ipsec service")
+	// Same as usbguard. The link /etc/systemd/system/multi-user.target.wants/ipsec.service will not be removed when ipsec extension is removed
+	// Hence if the test case is executed twice, the second time it will be automatically enabled
+	if !node.IsUnitEnabled(extName) {
+		o.Expect(node.DebugNodeWithChroot("systemctl", "enable", extName)).Should(o.ContainSubstring("Created symlink"), "%s is still not enabled", extName)
+		logger.Infof("Ipsec service enabled\n")
+	} else {
+		logger.Infof("%s already enabled, nothing to do", extName)
+	}
+
+	exutil.By("Starting ipsec service on node")
+	_, err = node.DebugNodeWithChroot("systemctl", "start", "ipsec")
+	o.Expect(err).NotTo(o.HaveOccurred(), "Failed to start ipsec service")
+	logger.Infof("systemctl start %s output\n", extName)
+
+	exutil.By(fmt.Sprintf("Verify %s service is active", extName))
+	o.Expect(node.DebugNodeWithChroot("systemctl", "status", extName)).To(o.And(
+		o.ContainSubstring(activeString),
+		o.Not(o.ContainSubstring(inactiveString))))
+	logger.Infof("%s is active\n", extName)
+
+	exutil.By(fmt.Sprintf("Verifying all files from %s RPMs are present ", rpmName))
+	rpmOut, err := node.checkRpmFiles(rpmName...)
+	o.Expect(err).NotTo(o.HaveOccurred())
+	o.Expect(strings.TrimSpace(rpmOut)).To(o.BeEmpty(), "Expected no missing or modified files for %s RPMs", rpmName)
+	logger.Infof("All %s RPM files are present\n", extName)
+}
+
+// To check Kerberos is installed and is active after installed
+func checkKerberosExtension(node *Node) {
+	var (
+		extName = kerberosExtension
+		rpmName = AllExtenstions[extName]
+	)
+	exutil.By(fmt.Sprintf("Verify node includes %s extension", extName))
+	o.Expect(
+		node.RpmIsInstalled(rpmName...)).To(o.BeTrue(), "%s has not been installed", extName)
+	logger.Infof("%s is installed\n", extName)
+
+	exutil.By(fmt.Sprintf("Check the %s is working", extName))
+	out, err := node.DebugNodeWithOptionsAndChroot([]string{"-q"}, "test", "-f", "/etc/krb5.conf")
+	o.Expect(err).NotTo(o.HaveOccurred())
+	o.Expect(strings.TrimSpace(out)).To(o.BeEmpty())
+	o.Expect(node.DebugNodeWithChroot("which", "kinit")).Should(o.ContainSubstring("kinit"))
+	logger.Infof("OK\n")
+
+	exutil.By("Check that all the files in the rpm were correctly deployed ")
+	rpmOut, err := node.checkRpmFiles(rpmName...)
+	o.Expect(err).NotTo(o.HaveOccurred())
+	o.Expect(strings.TrimSpace(rpmOut)).To(o.BeEmpty(), "Expected no missing or modified files for %s and %s RPMs", rpmName[0], rpmName[1])
+	logger.Infof("All %s RPM files are present\n", extName)
+}
+
+// To check Kernal-Devel is installed and is active after installed
+func checkKernalDevelExtension(node *Node) {
+	var (
+		extName = kernelDevelExtension
+		rpmName = AllExtenstions[extName]
+	)
+	exutil.By(fmt.Sprintf("Verify node includes %s extension", extName))
+	o.Expect(
+		node.RpmIsInstalled(rpmName...)).To(o.BeTrue(), "%s has not been installed", rpmName)
+	logger.Infof("%s is installed\n", rpmName)
+
+	exutil.By("Check that all the files in the rpm were correctly deployed ")
+	rpmOut, err := node.checkRpmFiles(rpmName...)
+	o.Expect(err).NotTo(o.HaveOccurred())
+	o.Expect(strings.TrimSpace(rpmOut)).To(o.BeEmpty(), "Expected no missing or modified files for %s RPMs", rpmName)
+	logger.Infof("All %s RPM files are present\n", extName)
+}
+
+// To check Sandboxes-Container is installed and is active after installed
+func checkSandboxedContainersExtension(node *Node) {
+	var (
+		extName = "sandboxed-containers"
+		rpmName = AllExtenstions[extName]
+	)
+	exutil.By(fmt.Sprintf("Verify node includes %s extension", extName))
+	o.Expect(
+		node.RpmIsInstalled(rpmName...)).To(o.BeTrue(), "%s has not been installed", extName)
+	logger.Infof("%s is installed\n", extName)
+
+	o.Expect(node.DebugNodeWithChroot("which", "kata-runtime")).Should(o.ContainSubstring("kata-runtime"))
+	logger.Infof("OK\n")
+
+	exutil.By("Check that all the files in the rpm were correctly deployed ")
+	rpmOut, err := node.checkRpmFiles(rpmName...)
+	o.Expect(err).NotTo(o.HaveOccurred())
+	o.Expect(strings.TrimSpace(rpmOut)).To(o.BeEmpty(), "Expected no missing or modified files for %s RPMs", rpmName)
+	logger.Infof("All %s RPM files are present\n", extName)
+}
+
+// To check Sysstat is installed and is active after installed
+func checkSysstatExtension(node *Node) {
+	var (
+		extName = sysstatExtension
+	)
+	exutil.By(fmt.Sprintf("Verify node includes %s extension", extName))
+	o.Expect(
+		node.RpmIsInstalled(extName)).To(o.BeTrue(), "%s has not been installed", extName)
+	logger.Infof("%s is installed\n", extName)
+
+	exutil.By("Check that sysstat is active and enabled")
+	o.Expect(node.DebugNodeWithChroot("systemctl", "is-enabled", "sysstat")).Should(o.ContainSubstring("enabled"))
+	o.Expect(node.DebugNodeWithChroot("systemctl", "is-active", "sysstat")).Should(o.ContainSubstring("active"))
+	logger.Infof("OK\n")
+
+	exutil.By("Check that all the files in the rpm were correctly deployed ")
+	rpmOut, err := node.checkRpmFiles(extName)
+	o.Expect(err).NotTo(o.HaveOccurred())
+	logger.Infof("%s", rpmOut)
+	o.Expect(strings.TrimSpace(rpmOut)).To(o.BeEmpty(), "Expected no missing or modified files for %s RPMs", extName)
+	logger.Infof("All %s RPM files are present\n", extName)
 }
