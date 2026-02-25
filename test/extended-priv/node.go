@@ -862,6 +862,18 @@ func (n *Node) Is64kPagesKernel() (bool, error) {
 	return n.IsKernelArgEnabled("+64k")
 }
 
+// IsKernelType returns true if the node is using the specified kernel type
+func (n *Node) IsKernelType(kernelType KernelType) (bool, error) {
+	switch kernelType {
+	case KernelTypeRealtime:
+		return n.IsRealTimeKernel()
+	case KernelType64kPages:
+		return n.Is64kPagesKernel()
+	default:
+		return false, fmt.Errorf("unknown kernel type '%s'", kernelType)
+	}
+}
+
 // InstallRpm installs the rpm in the node using rpm-ostree command
 func (n *Node) InstallRpm(rpmName string) (string, error) {
 	logger.Infof("Installing rpm '%s' in node  %s", rpmName, n.GetName())
@@ -1404,6 +1416,13 @@ func getReadyNodes(oc *exutil.CLI) (sets.Set[string], error) {
 		node.oc.SetShowInfo()
 	}
 	return nodeSet, nil
+}
+
+// checkRpmFiles returns files for given rpm.
+func (n *Node) checkRpmFiles(rpmNames ...string) (string, error) {
+	rpmOutput, err := n.DebugNodeWithOptionsAndChroot([]string{"-q"}, append([]string{"rpm", "-V", "--nomtime"}, rpmNames...)...)
+	logger.Infof("Check command output: %s", rpmOutput)
+	return rpmOutput, err
 }
 
 // GetIrreconcilableChanges returns the irreconcilable changes for the node from its MachineConfigNode status

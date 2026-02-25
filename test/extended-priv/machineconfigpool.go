@@ -12,6 +12,7 @@ import (
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
+	"github.com/openshift/machine-config-operator/test/extended-priv/util/architecture"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 	"github.com/tidwall/gjson"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -124,6 +125,22 @@ func (mcp *MachineConfigPool) GetMaxUnavailableInt() (int, error) {
 	}
 
 	return maxUnavailableInt, nil
+}
+
+// SetOsImageStream sets the osImageStream name for the MCP
+func (mcp *MachineConfigPool) SetOsImageStream(streamName string) error {
+	logger.Infof("patch mcp %v, change spec.osImageStream.name to %s", mcp.name, streamName)
+	return mcp.Patch("merge", fmt.Sprintf(`{"spec":{"osImageStream":{"name":"%s"}}}`, streamName))
+}
+
+// GetOsImageStream returns the osImageStream name configured in spec
+func (mcp *MachineConfigPool) GetOsImageStream() (string, error) {
+	return mcp.Get(`{.spec.osImageStream.name}`)
+}
+
+// GetStatusOsImageStream returns the osImageStream from MCP status
+func (mcp *MachineConfigPool) GetStatusOsImageStream() (string, error) {
+	return mcp.Get(`{.status.osImageStream}`)
 }
 
 func (mcp *MachineConfigPool) getConfigNameOfSpec() (string, error) {
@@ -441,6 +458,22 @@ func (mcp *MachineConfigPool) GetNodesByLabel(labels string) ([]*Node, error) {
 // GetNodes returns a list with the nodes that belong to the machine config pool, by default, windows nodes will be excluded
 func (mcp *MachineConfigPool) GetNodes() ([]*Node, error) {
 	return mcp.GetNodesByLabel("")
+}
+
+// GetNodesByArchitecture returns a list of nodes that belong to this pool and use the given architecture
+func (mcp *MachineConfigPool) GetNodesByArchitecture(arch architecture.Architecture, archs ...architecture.Architecture) ([]*Node, error) {
+	archsList := arch.String()
+	for _, itemArch := range archs {
+		archsList = archsList + "," + itemArch.String()
+	}
+	return mcp.GetNodesByLabel(fmt.Sprintf(`%s in (%s)`, architecture.NodeArchitectureLabel, archsList))
+}
+
+// GetNodesByArchitectureOrFail returns a list of nodes that belong to this pool and use the given architecture. It fails the test if any error happens
+func (mcp *MachineConfigPool) GetNodesByArchitectureOrFail(arch architecture.Architecture, archs ...architecture.Architecture) []*Node {
+	nodes, err := mcp.GetNodesByArchitecture(arch)
+	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "In MCP %s. Cannot get the nodes using architectures %s", mcp.GetName(), append(archs, arch))
+	return nodes
 }
 
 // GetNodesOrFail returns a list with the nodes that belong to the machine config pool and fail the test if any error happened
@@ -893,6 +926,38 @@ func (mcp *MachineConfigPool) SanityCheck() error {
 	return nil
 }
 
+// GetArchitectures returns the list of architectures that the nodes in this pool are using
+func (mcp *MachineConfigPool) GetArchitectures() ([]architecture.Architecture, error) {
+	archs := []architecture.Architecture{}
+	nodes, err := mcp.GetNodes()
+	if err != nil {
+		return archs, err
+	}
+
+	for _, node := range nodes {
+		archs = append(archs, node.GetArchitectureOrFail())
+	}
+
+	return archs, nil
+}
+
+// GetArchitecturesOrFail returns the list of architectures that the nodes in this pool are using, if there is any error it fails the test
+func (mcp *MachineConfigPool) GetArchitecturesOrFail() []architecture.Architecture {
+	archs, err := mcp.GetArchitectures()
+	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error getting the architectures used by nodes in MCP %s", mcp.GetName())
+	return archs
+}
+
+// AllNodesUseArch return true if all the nodes in the pool has the given architecture
+func (mcp *MachineConfigPool) AllNodesUseArch(arch architecture.Architecture) bool {
+	for _, currentArch := range mcp.GetArchitecturesOrFail() {
+		if arch != currentArch {
+			return false
+		}
+	}
+	return true
+}
+
 // CaptureAllNodeLogsBeforeRestart will poll the logs of every node in the pool until thy are restarted and will return them once all nodes have been restarted
 func (mcp *MachineConfigPool) CaptureAllNodeLogsBeforeRestart() (map[string]string, error) {
 
@@ -1090,9 +1155,74 @@ func GetCompactCompatiblePool(oc *exutil.CLI) *MachineConfigPool {
 	return nil
 }
 
+// GetCompactCompatibleOrCustomPool returns compact compatible pool or creates custom pool that will use the same stream as the worker pool
+func GetCompactCompatibleOrCustomPool(oc *exutil.CLI, numNodes int) (*MachineConfigPool, func() error, error) {
+	osstream, err := GetEffectiveOsImageStream(NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker))
+	if err != nil {
+		return nil, func() error { return nil }, err
+	}
+
+	compactPool := GetCompactCompatiblePool(oc)
+
+	if !compactPool.IsWorker() {
+		logger.Infof("Compact or SNO cluster. Using %s pool", compactPool.GetName())
+		noopCleanup := func() error { return nil }
+		return compactPool, noopCleanup, nil
+	}
+
+	customName := fmt.Sprintf("custom-%s", exutil.GetRandomString())
+	logger.Infof("HA cluster. Creating custom MCP with name %s and 1 node", customName)
+
+	cleanup := func() error {
+		return DeleteCustomMCP(oc, customName)
+	}
+
+	customMcp, err := CreateCustomMCPWithStream(oc, customName, osstream, numNodes)
+	return customMcp, cleanup, err
+}
+
+// CreateCustomMCPWithStreamByLabel Creates a new custom MCP using the nodes in the worker pool with the given label. If numNodes < 0, we will add all existing nodes to the custom pool
+// If numNodes == 0, no node will be added to the new custom pool.
+func CreateCustomMCPWithStreamByLabel(oc *exutil.CLI, name, label, osstream string, numNodes int) (*MachineConfigPool, error) {
+	wMcp := NewMachineConfigPool(oc, MachineConfigPoolWorker)
+	nodes, err := wMcp.GetNodesByLabel(label)
+	if err != nil {
+		logger.Errorf("Could not get the nodes with %s label", label)
+		return nil, err
+	}
+
+	if len(nodes) < numNodes {
+		return nil, fmt.Errorf("The worker MCP only has %d nodes, it is not possible to take %d nodes from worker pool to create a custom pool",
+			len(nodes), numNodes)
+	}
+
+	customMcpNodes := []*Node{}
+	for i, item := range nodes {
+		n := item
+		if numNodes > 0 && i >= numNodes {
+			break
+		}
+		customMcpNodes = append(customMcpNodes, n)
+	}
+
+	return CreateCustomMCPWithStreamByNodes(oc, name, osstream, customMcpNodes)
+}
+
 // CreateCustomMCP create a new custom MCP with the given name and the given number of nodes
 // Nodes will be taken from the worker pool
+// The Custom pool will be created d using the same osstream configured in the worker pool
 func CreateCustomMCP(oc *exutil.CLI, name string, numNodes int) (*MachineConfigPool, error) {
+	osstream, err := GetEffectiveOsImageStream(NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker))
+	if err != nil {
+		return NewMachineConfigPool(oc, name), err
+	}
+
+	return CreateCustomMCPWithStream(oc, name, osstream, numNodes)
+}
+
+// CreateCustomMCPWithStream create a new custom MCP with the given name, osstream, and number of nodes
+// Nodes will be taken from the worker pool
+func CreateCustomMCPWithStream(oc *exutil.CLI, name, osstream string, numNodes int) (*MachineConfigPool, error) {
 	var (
 		wMcp = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
 	)
@@ -1107,14 +1237,18 @@ func CreateCustomMCP(oc *exutil.CLI, name string, numNodes int) (*MachineConfigP
 			numNodes, len(workerNodes), wMcp.GetName())
 	}
 
-	return CreateCustomMCPByNodes(oc, name, workerNodes[0:numNodes])
+	return CreateCustomMCPWithStreamByNodes(oc, name, osstream, workerNodes[0:numNodes])
 }
 
-// CreateCustomMCPByNodes creates a new MCP containing the nodes provided in the "nodes" parameter
-func CreateCustomMCPByNodes(oc *exutil.CLI, name string, nodes []*Node) (*MachineConfigPool, error) {
+// CreateCustomMCPWithStreamByNodes creates a new MCP containing the nodes provided in the "nodes" parameter
+func CreateCustomMCPWithStreamByNodes(oc *exutil.CLI, name, osstream string, nodes []*Node) (*MachineConfigPool, error) {
 	customMcp := NewMachineConfigPool(oc, name)
 
-	err := NewMCOTemplate(oc, "custom-machine-config-pool.yaml").Create("-p", fmt.Sprintf("NAME=%s", name))
+	err := NewMCOTemplate(oc, "custom-machine-config-pool-osimagestream.yaml").Create(
+		"-p", fmt.Sprintf("NAME=%s", name),
+		"-p", fmt.Sprintf("OSIMAGESTREAM=%s", osstream),
+	)
+
 	if err != nil {
 		logger.Errorf("Could not create a custom MCP for worker nodes with nodes %s", nodes)
 		return customMcp, err
@@ -1197,6 +1331,62 @@ func DeleteCustomMCP(oc *exutil.CLI, name string) error {
 	return nil
 }
 
+// GetPoolAndNodesForArchitectureOrFail returns a MCP in this order of priority:
+// 1) The master pool if it is a arm64 compact/SNO cluster.
+// 2) A custom pool with 1 arm node in it if there are arm nodes in the worker pool. The pool will have the same osstream used by the worker pool
+// 3) Any existing custom MCP with all nodes using arm64
+// 4) The master pools if the master pool is arm64
+func GetPoolAndNodesForArchitectureOrFail(oc *exutil.CLI, createMCPName string, arch architecture.Architecture, numNodes int) (*MachineConfigPool, []*Node) {
+
+	var (
+		wMcp                  = NewMachineConfigPool(oc, MachineConfigPoolWorker)
+		mMcp                  = NewMachineConfigPool(oc, MachineConfigPoolMaster)
+		masterHasTheRightArch = mMcp.AllNodesUseArch(arch)
+		mcpList               = NewMachineConfigPoolList(oc.AsAdmin())
+		osstream              = OrFail[string](GetEffectiveOsImageStream(wMcp))
+	)
+
+	mcpList.PrintDebugCommand()
+
+	if masterHasTheRightArch && IsCompactOrSNOCluster(oc) {
+		return mMcp, mMcp.GetNodesOrFail()
+	}
+
+	// If there are nodes with the rewquested architecture in the worker pool we build our own custom MCP
+	if len(wMcp.GetNodesByArchitectureOrFail(arch)) > 0 {
+		var err error
+
+		mcp, err := CreateCustomMCPWithStreamByLabel(oc.AsAdmin(), createMCPName, fmt.Sprintf(`%s=%s`, architecture.NodeArchitectureLabel, arch), osstream, numNodes)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the custom pool for infrastructure %s", architecture.ARM64)
+		return mcp, mcp.GetNodesOrFail()
+	}
+
+	// we check if there is an already existing pool with all its nodes using the requested architecture
+	for _, pool := range mcpList.GetAllOrFail() {
+		if !pool.IsCustom() {
+			continue
+		}
+
+		// If there isn't a node with the requested architecture in the worker pool,
+		// but there is a custom pool where all nodes have this architecture
+		if !pool.IsEmpty() && pool.AllNodesUseArch(arch) {
+			logger.Infof("Using the predefined MCP %s", pool.GetName())
+			return pool, pool.GetNodesOrFail()
+		}
+		logger.Infof("The predefined %s MCP exists, but it is not suitable for testing", pool.GetName())
+	}
+
+	// If we are in a HA cluster but worker nor custom pools meet the achitecture conditions for the test
+	// we return the master pool if it is using the right architecture
+	if masterHasTheRightArch {
+		logger.Infof("The cluster is not a Compact/SNO cluster and there are no %s worker nodes available for testing. We will use the master pool.", arch)
+		return mMcp, mMcp.GetNodesOrFail()
+	}
+
+	e2e.Failf("Something went wrong. There is no suitable pool to execute the test case using architecture %s", arch)
+	return nil, nil
+}
+
 // DebugDegradedStatus prints the necessary information to debug why a MCP became degraded
 func DebugDegradedStatus(mcp *MachineConfigPool) {
 	var (
@@ -1247,8 +1437,37 @@ func DebugDegradedStatus(mcp *MachineConfigPool) {
 	logger.Infof("END DEBUG")
 }
 
-// MoveNodeToAnotherCustomPool moves a node from one custom pool to another custom pool
+// MoveNodeToAnotherCustomPool modify the role labels in the node so that it is moved from one custom pool to another custom pool in a way that he never belongs to both custom pools at the same time, which is forbidden
 func MoveNodeToAnotherCustomPool(node *Node, origMCP, destMCP string) error {
 	return node.Patch("json",
 		fmt.Sprintf(`[{"op":"remove", "path": "/metadata/labels/node-role.kubernetes.io~1%s"},{"op": "add", "path":"/metadata/labels/node-role.kubernetes.io~1%s", "value": ""}]`, origMCP, destMCP))
+}
+
+// FilterExtensions filters extensions based on architecture, FIPS, and osImageStream and returns the filtered extensions map, extension names list, and packages list
+func FilterExtensions(extensions map[string][]string, hasARM64, fips bool, osImageStream string) (map[string][]string, []string, []string) {
+	filteredExtensions := make(map[string][]string)
+	for ext, pkgs := range extensions {
+		filteredExtensions[ext] = pkgs
+	}
+
+	// sandboxed-containers extension is not supported for ARM64 if FIPS is enabled
+	if fips && hasARM64 {
+		logger.Infof("%s extension not supported in ARM64+FIPS clusters. Skipping extension.", sandboxedContainersExtension)
+		delete(filteredExtensions, sandboxedContainersExtension)
+	}
+
+	// ipsec extension is not supported in rhel-10
+	if osImageStream == OSImageStreamRHEL10 {
+		logger.Infof("%s extension not supported in %s. Skipping extension.", ipsecExtension, OSImageStreamRHEL10)
+		delete(filteredExtensions, ipsecExtension)
+	}
+
+	extensionNames := make([]string, 0, len(filteredExtensions))
+	packages := []string{}
+	for ext, pkgs := range filteredExtensions {
+		extensionNames = append(extensionNames, ext)
+		packages = append(packages, pkgs...)
+	}
+
+	return filteredExtensions, extensionNames, packages
 }

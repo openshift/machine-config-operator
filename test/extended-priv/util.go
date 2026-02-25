@@ -1183,3 +1183,13 @@ func validateMcpRenderDegraded(mc *MachineConfig, mcp *MachineConfigPool, expect
 
 	checkDegraded(mcp, expectedRDMessage, expectedRDReason, "RenderDegraded", false, 2)
 }
+
+// skipTestIfNotSupportedPlatform skips the test if the current platform matches one of the provided not supported platforms
+func skipTestIfNotSupportedPlatform(oc *exutil.CLI, notsupported ...string) {
+	p := exutil.CheckPlatform(oc)
+	for _, nsp := range notsupported {
+		if strings.EqualFold(nsp, p) {
+			g.Skip("Skip this test scenario because it is not supported on the " + p + " platform")
+		}
+	}
+}

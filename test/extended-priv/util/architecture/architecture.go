@@ -6,6 +6,7 @@ import (
 
 	g "github.com/onsi/ginkgo/v2"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
+	"k8s.io/apimachinery/pkg/util/sets"
 	e2e "k8s.io/kubernetes/test/e2e/framework"
 )
 
@@ -115,4 +116,40 @@ func SkipNonAmd64SingleArch(oc *exutil.CLI) (architecture Architecture) {
 		g.Skip(fmt.Sprintf("Skip for cluster architecture: %s", architecture.String()))
 	}
 	return
+}
+
+const (
+	// NodeArchitectureLabel is the label used to identify the architecture of a node
+	NodeArchitectureLabel = "kubernetes.io/arch"
+)
+
+// GetAvailableArchitecturesSet returns multi-arch node cluster's Architectures
+func GetAvailableArchitecturesSet(oc *exutil.CLI) []Architecture {
+	output, err := oc.WithoutNamespace().AsAdmin().Run("get").Args("nodes", "-o=jsonpath={.items[*].status.nodeInfo.architecture}").Output()
+	if err != nil {
+		e2e.Failf("unable to get the cluster architecture: %v", err)
+	}
+	if output == "" {
+		e2e.Failf("the retrieved architecture is empty")
+	}
+	architectureList := strings.Split(output, " ")
+	archMap := make(map[Architecture]bool, 0)
+	var architectures []Architecture
+	for _, nodeArchitecture := range architectureList {
+		if _, ok := archMap[FromString(nodeArchitecture)]; !ok {
+			archMap[FromString(nodeArchitecture)] = true
+			architectures = append(architectures, FromString(nodeArchitecture))
+		}
+	}
+	return architectures
+}
+
+// SkipIfNoNodeWithArchitectures skip the test if the cluster is one of the given architectures
+func SkipIfNoNodeWithArchitectures(oc *exutil.CLI, architectures ...Architecture) {
+	if sets.New(
+		GetAvailableArchitecturesSet(oc)...).IsSuperset(
+		sets.New(architectures...)) {
+		return
+	}
+	g.Skip(fmt.Sprintf("Skip for no nodes with requested architectures"))
 }
