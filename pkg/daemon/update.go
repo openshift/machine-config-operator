@@ -886,11 +886,41 @@ func (dn *Daemon) updateOnClusterLayering(oldConfig, newConfig *mcfgv1.MachineCo
 	diff, reconcilableError := reconcilable(oldConfig, newConfig)
 
 	if reconcilableError != nil {
+		if dn.featureGatesAccessor != nil {
+			Nerr := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+				&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePrepared, Reason: string(mcfgalphav1.MachineConfigNodeUpdateCompatible), Message: fmt.Sprintf("Update Failed during the Checking for Compatibility phase")},
+				&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateCompatible, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdatePrepared), string(mcfgalphav1.MachineConfigNodeUpdateCompatible)), Message: fmt.Sprintf("Error: MachineConfigs %v and %v are not compatible. Err: %s", oldConfigName, newConfigName, reconcilableError.Error())},
+				metav1.ConditionUnknown,
+				metav1.ConditionUnknown,
+				dn.node,
+				dn.mcfgClient,
+				dn.featureGatesAccessor,
+			)
+			if Nerr != nil {
+				klog.Errorf("Error making MCN for Preparing update failed: %v", Nerr)
+			}
+		}
 		wrappedErr := fmt.Errorf("can't reconcile config %s with %s: %w", oldConfigName, newConfigName, reconcilableError)
 		if dn.nodeWriter != nil {
 			dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedToReconcile", wrappedErr.Error())
 		}
 		return &unreconcilableErr{wrappedErr}
+	}
+
+	// Set UpdatePrepared and UpdateCompatible to True since reconcilability check passed
+	if dn.featureGatesAccessor != nil {
+		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
+			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdatePrepared, Reason: string(mcfgalphav1.MachineConfigNodeUpdateCompatible), Message: "Update is Compatible."},
+			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateCompatible, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdatePrepared), string(mcfgalphav1.MachineConfigNodeUpdateCompatible)), Message: "Update Compatible with on-cluster build"},
+			metav1.ConditionTrue,
+			metav1.ConditionTrue,
+			dn.node,
+			dn.mcfgClient,
+			dn.featureGatesAccessor,
+		)
+		if err != nil {
+			klog.Errorf("Error making MCN for Update Compatible: %v", err)
+		}
 	}
 
 	if err := dn.performDrain(); err != nil {
@@ -935,6 +965,30 @@ func (dn *Daemon) updateOnClusterLayering(oldConfig, newConfig *mcfgv1.MachineCo
 			}
 		}
 	}()
+
+	// Set UpdateFilesAndOS condition
+	if dn.featureGatesAccessor != nil {
+		updatesNeeded := []string{"not", "not"}
+		if diff.passwd {
+			updatesNeeded[1] = ""
+		}
+		if diff.osUpdate || diff.extensions || diff.kernelType {
+			updatesNeeded[0] = ""
+		}
+
+		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
+			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgalphav1.MachineConfigNodeUpdateFilesAndOS), Message: fmt.Sprintf("Updating the Files and OS on disk as a part of the in progress phase")},
+			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateFilesAndOS, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdateExecuted), string(mcfgalphav1.MachineConfigNodeUpdateFilesAndOS)), Message: fmt.Sprintf("Applying files and new OS config to node. OS will %s need an update. SSH Keys will %s need an update", updatesNeeded[0], updatesNeeded[1])},
+			metav1.ConditionUnknown,
+			metav1.ConditionUnknown,
+			dn.node,
+			dn.mcfgClient,
+			dn.featureGatesAccessor,
+		)
+		if err != nil {
+			klog.Errorf("Error making MCN for Updating Files and OS: %v", err)
+		}
+	}
 
 	// update files on disk that need updating
 	if err := dn.updateFiles(oldIgnConfig, newIgnConfig, skipCertificateWrite); err != nil {
@@ -1060,6 +1114,30 @@ func (dn *Daemon) updateOnClusterLayering(oldConfig, newConfig *mcfgv1.MachineCo
 			}
 		}
 	}()
+
+	// Set UpdateExecuted and UpdateFilesAndOS to True since files and OS updates completed
+	if dn.featureGatesAccessor != nil {
+		updatesNeeded := []string{"not", "not"}
+		if diff.passwd {
+			updatesNeeded[1] = ""
+		}
+		if diff.osUpdate || diff.extensions || diff.kernelType {
+			updatesNeeded[0] = ""
+		}
+
+		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
+			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgalphav1.MachineConfigNodeUpdateFilesAndOS), Message: fmt.Sprintf("Updated the Files and OS on disk as a part of the in progress phase")},
+			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeUpdateFilesAndOS, Reason: fmt.Sprintf("%s%s", string(mcfgalphav1.MachineConfigNodeUpdateExecuted), string(mcfgalphav1.MachineConfigNodeUpdateFilesAndOS)), Message: fmt.Sprintf("Applied files and new OS config to node. OS did %s need an update. SSH Keys did %s need an update", updatesNeeded[0], updatesNeeded[1])},
+			metav1.ConditionTrue,
+			metav1.ConditionTrue,
+			dn.node,
+			dn.mcfgClient,
+			dn.featureGatesAccessor,
+		)
+		if err != nil {
+			klog.Errorf("Error making MCN for Updated Files and OS: %v", err)
+		}
+	}
 
 	return dn.reboot(fmt.Sprintf("Node will reboot into image %s / MachineConfig %s", canonicalizeMachineConfigImage(newImage, newConfig).Spec.OSImageURL, newConfigName))
 }
