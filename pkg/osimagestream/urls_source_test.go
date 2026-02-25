@@ -86,8 +86,8 @@ func TestOSImagesURLStreamSource_FetchStreams_Success(t *testing.T) {
 				Image: dummyOSImageName,
 				InspectInfo: &types.ImageInspectInfo{
 					Labels: map[string]string{
-						testCoreOSLabelStreamClass: "rhel-coreos",
-						testCoreOSLabelBootc:       testCoreOSLabelBootcValue1,
+						"io.openshift.os.streamclass": "rhel-coreos",
+						"ostree.linux":                "present",
 					},
 				},
 				Error: nil,
@@ -96,8 +96,7 @@ func TestOSImagesURLStreamSource_FetchStreams_Success(t *testing.T) {
 				Image: dummyOSExtensionsImageName,
 				InspectInfo: &types.ImageInspectInfo{
 					Labels: map[string]string{
-						testCoreOSLabelStreamClass: "rhel-coreos",
-						testCoreOSLabelExtension:   testCoreOSLabelExtensionValue,
+						"io.openshift.os.streamclass": "rhel-coreos",
 					},
 				},
 				Error: nil,
