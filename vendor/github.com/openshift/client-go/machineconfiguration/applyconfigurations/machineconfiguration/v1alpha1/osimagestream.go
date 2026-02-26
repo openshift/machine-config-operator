@@ -16,8 +16,8 @@ import (
 type OSImageStreamApplyConfiguration struct {
 	v1.TypeMetaApplyConfiguration    `json:",inline"`
 	*v1.ObjectMetaApplyConfiguration `json:"metadata,omitempty"`
-	Spec                             *machineconfigurationv1alpha1.OSImageStreamSpec `json:"spec,omitempty"`
-	Status                           *OSImageStreamStatusApplyConfiguration          `json:"status,omitempty"`
+	Spec                             *OSImageStreamSpecApplyConfiguration   `json:"spec,omitempty"`
+	Status                           *OSImageStreamStatusApplyConfiguration `json:"status,omitempty"`
 }
 
 // OSImageStream constructs a declarative configuration of the OSImageStream type for use with
@@ -227,8 +227,8 @@ func (b *OSImageStreamApplyConfiguration) ensureObjectMetaApplyConfigurationExis
 // WithSpec sets the Spec field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Spec field is set to the value of the last call.
-func (b *OSImageStreamApplyConfiguration) WithSpec(value machineconfigurationv1alpha1.OSImageStreamSpec) *OSImageStreamApplyConfiguration {
-	b.Spec = &value
+func (b *OSImageStreamApplyConfiguration) WithSpec(value *OSImageStreamSpecApplyConfiguration) *OSImageStreamApplyConfiguration {
+	b.Spec = value
 	return b
 }
 
