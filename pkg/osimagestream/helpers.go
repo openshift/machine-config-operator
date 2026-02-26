@@ -43,3 +43,11 @@ func GetOSImageStreamSetByName(osImageStream *v1alpha1.OSImageStream, name strin
 func IsFeatureEnabled(fgHandler common.FeatureGatesHandler) bool {
 	return fgHandler.Enabled(features.FeatureGateOSStreams) && !version.IsSCOS() && !version.IsFCOS()
 }
+
+// GetOSImageStreamSpecDefault returns the user-requested default stream override, or empty string if not set.
+func GetOSImageStreamSpecDefault(osImageStream *v1alpha1.OSImageStream) string {
+	if osImageStream != nil && osImageStream.Spec != nil {
+		return osImageStream.Spec.DefaultStream
+	}
+	return ""
+}

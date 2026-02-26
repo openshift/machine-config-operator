@@ -125,3 +125,42 @@ func TestGetOSImageStreamSetByName(t *testing.T) {
 		})
 	}
 }
+
+func TestGetOSImageStreamSpecDefault(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    *v1alpha1.OSImageStream
+		expected string
+	}{
+		{
+			name:     "nil OSImageStream",
+			input:    nil,
+			expected: "",
+		},
+		{
+			name:     "nil Spec",
+			input:    &v1alpha1.OSImageStream{},
+			expected: "",
+		},
+		{
+			name: "empty DefaultStream",
+			input: &v1alpha1.OSImageStream{
+				Spec: &v1alpha1.OSImageStreamSpec{},
+			},
+			expected: "",
+		},
+		{
+			name: "DefaultStream set",
+			input: &v1alpha1.OSImageStream{
+				Spec: &v1alpha1.OSImageStreamSpec{DefaultStream: "rhel-10"},
+			},
+			expected: "rhel-10",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, GetOSImageStreamSpecDefault(tt.input))
+		})
+	}
+}
