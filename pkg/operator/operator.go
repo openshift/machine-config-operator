@@ -372,6 +372,8 @@ func New(
 	if osImageStreamInformer != nil && osimagestream.IsFeatureEnabled(optr.fgHandler) {
 		optr.osImageStreamLister = osImageStreamInformer.Lister()
 		optr.osImageStreamListerSynced = osImageStreamInformer.Informer().HasSynced
+		// TODO: Move this AddEventHandler to the main loop when the FG is removed
+		osImageStreamInformer.Informer().AddEventHandler(optr.eventHandler())
 	}
 	if iriInformer != nil {
 		optr.iriLister = iriInformer.Lister()

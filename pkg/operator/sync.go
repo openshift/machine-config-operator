@@ -106,6 +106,8 @@ const (
 	mccUpdateBootImagesValidatingAdmissionPolicyBindingPath               = "manifests/machineconfigcontroller/update-bootimages-validatingadmissionpolicybinding.yaml"
 	mccMachineConfigPoolOSImageStreamValidatingAdmissionPolicyPath        = "manifests/machineconfigcontroller/machineconfigpool-osimagestream-reference-validatingadmissionpolicy.yaml"
 	mccMachineConfigPoolOSImageStreamValidatingAdmissionPolicyBindingPath = "manifests/machineconfigcontroller/machineconfigpool-osimagestream-reference-validatingadmissionpolicybinding.yaml"
+	mccOSImageStreamDeletionGuardValidatingAdmissionPolicyPath            = "manifests/machineconfigcontroller/osimagestream-deletion-guard-validatingadmissionpolicy.yaml"
+	mccOSImageStreamDeletionGuardValidatingAdmissionPolicyBindingPath     = "manifests/machineconfigcontroller/osimagestream-deletion-guard-validatingadmissionpolicybinding.yaml"
 	mccIRIDeletionGuardValidatingAdmissionPolicyPath                      = "manifests/machineconfigcontroller/internalreleaseimage-deletion-guard-validatingadmissionpolicy.yaml"
 	mccIRIDeletionGuardValidatingAdmissionPolicyBindingPath               = "manifests/machineconfigcontroller/internalreleaseimage-deletion-guard-validatingadmissionpolicybinding.yaml"
 	mccUpdateBootImagesCPMSValidatingAdmissionPolicyPath                  = "manifests/machineconfigcontroller/update-bootimages-cpms-validatingadmissionpolicy.yaml"
@@ -1207,8 +1209,14 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig, _ *confi
 
 	// Only deploy OS image stream validating admission policies when the feature is enabled and the cluster isn't OKD
 	if osimagestream.IsFeatureEnabled(optr.fgHandler) {
-		paths.validatingAdmissionPolicies = append(paths.validatingAdmissionPolicies, mccMachineConfigPoolOSImageStreamValidatingAdmissionPolicyPath)
-		paths.validatingAdmissionPolicyBindings = append(paths.validatingAdmissionPolicyBindings, mccMachineConfigPoolOSImageStreamValidatingAdmissionPolicyBindingPath)
+		paths.validatingAdmissionPolicies = append(paths.validatingAdmissionPolicies,
+			mccMachineConfigPoolOSImageStreamValidatingAdmissionPolicyPath,
+			mccOSImageStreamDeletionGuardValidatingAdmissionPolicyPath,
+		)
+		paths.validatingAdmissionPolicyBindings = append(paths.validatingAdmissionPolicyBindings,
+			mccMachineConfigPoolOSImageStreamValidatingAdmissionPolicyBindingPath,
+			mccOSImageStreamDeletionGuardValidatingAdmissionPolicyBindingPath,
+		)
 	}
 	if optr.fgHandler.Enabled(features.FeatureGateManagedBootImagesCPMS) {
 		paths.validatingAdmissionPolicies = append(paths.validatingAdmissionPolicies, mccUpdateBootImagesCPMSValidatingAdmissionPolicyPath)

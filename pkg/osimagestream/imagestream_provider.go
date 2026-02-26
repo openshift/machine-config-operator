@@ -3,6 +3,7 @@ package osimagestream
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	imagev1 "github.com/openshift/api/image/v1"
 	"github.com/openshift/client-go/image/clientset/versioned/scheme"
@@ -37,6 +38,8 @@ func (i *ImageStreamProviderResource) ReadImageStream(_ context.Context) (*image
 type ImageStreamProviderNetwork struct {
 	imagesInspector ImagesInspector
 	imageName       string
+	cacheLock       sync.Mutex
+	imageStream     *imagev1.ImageStream
 }
 
 // NewImageStreamProviderNetwork creates a new ImageStreamProviderNetwork that will fetch
@@ -46,14 +49,27 @@ func NewImageStreamProviderNetwork(imagesInspector ImagesInspector, imageName st
 }
 
 // ReadImageStream fetches the ImageStream manifest from the container image and decodes it.
-// Returns an error if the file cannot be fetched, is empty, contains invalid YAML,
-// or does not contain an ImageStream resource.
+// The result is cached on success; failures are retried on subsequent calls.
 func (i *ImageStreamProviderNetwork) ReadImageStream(ctx context.Context) (*imagev1.ImageStream, error) {
+	i.cacheLock.Lock()
+	defer i.cacheLock.Unlock()
+	if i.imageStream != nil {
+		return i.imageStream, nil
+	}
+	is, err := i.fetchImageStream(ctx)
+	if err != nil {
+		return nil, err
+	}
+	i.imageStream = is
+	return is, nil
+}
+
+func (i *ImageStreamProviderNetwork) fetchImageStream(ctx context.Context) (*imagev1.ImageStream, error) {
 	imageStreamBytes, err := i.imagesInspector.FetchImageFile(ctx, i.imageName, releaseImageStreamLocation)
 	if err != nil {
 		return nil, err
 	}
-	if imageStreamBytes == nil || len(imageStreamBytes) == 0 {
+	if len(imageStreamBytes) == 0 {
 		return nil, fmt.Errorf("no ImageStream found for %s", i.imageName)
 	}
 

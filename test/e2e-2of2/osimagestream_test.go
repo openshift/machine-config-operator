@@ -35,7 +35,11 @@ func TestImageStreamProviderCVO(t *testing.T) {
 	// Wait for the informer cache to sync before querying the lister
 	ctrlctx.ConfigInformerFactory.WaitForCacheSync(ctx.Done())
 
-	image, err := osimagestream.GetReleasePayloadImage(ctrlctx.ConfigInformerFactory.Config().V1().ClusterVersions().Lister())
+	clusterVersion, err := osimagestream.GetClusterVersion(ctrlctx.ConfigInformerFactory.Config().V1().ClusterVersions().Lister())
+	assert.NoError(t, err)
+	assert.NotNil(t, clusterVersion)
+
+	image, err := osimagestream.GetReleasePayloadImage(clusterVersion)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, image)
 
