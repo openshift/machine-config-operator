@@ -3,7 +3,6 @@ package osimagestream
 import (
 	"maps"
 	"slices"
-	"strings"
 
 	"github.com/openshift/api/machineconfiguration/v1alpha1"
 	"k8s.io/klog/v2"
@@ -12,15 +11,8 @@ import (
 const (
 	// coreOSLabelStreamClass is the container image label that identifies the OS stream name.
 	coreOSLabelStreamClass = "io.openshift.os.streamclass"
-
-	// coreOSLabelExtension is the container image label that identifies an extensions image.
-	coreOSLabelExtension      = "io.openshift.os.extensions"
-	coreOSLabelExtensionValue = "true"
-
-	// coreOSLabelBootc is the container image label present on bootc-based OS images.
-	coreOSLabelBootc             = "containers.bootc"
-	coreOSLabelBootcValueBool    = "true"
-	coreOSLabelBootcValueInteger = "1"
+	// coreOSLabelDiscriminator is the container image label that distinguishes OS images from Extensions images.
+	coreOSLabelDiscriminator = "ostree.linux"
 )
 
 // ImageType indicates whether a container image is an OS image or an extensions image.
@@ -48,16 +40,12 @@ type ImageData struct {
 	Stream string    // OS stream name
 }
 
-// ImageLabelMatcher is a function that checks whether a set of container image
-// labels matches a specific criterion.
-type ImageLabelMatcher func(labels map[string]string) bool
-
 // ImageStreamExtractorImpl implements ImageDataExtractor using container image labels
 // to identify and classify OS and extensions images.
 type ImageStreamExtractorImpl struct {
-	streamLabels            []string
-	osImageMatchers         []ImageLabelMatcher
-	extensionsImageMatchers []ImageLabelMatcher
+	imagesInspector      ImagesInspector
+	streamLabels         []string
+	osImageDiscriminator string
 }
 
 // NewImageStreamExtractor creates a new ImageDataExtractor configured to recognize
@@ -66,19 +54,14 @@ func NewImageStreamExtractor() ImageDataExtractor {
 	// The type is thought to allow future extra label addition for
 	// i.e. Allow a customer to bring their own images with their own labels (defining a selector)
 	return &ImageStreamExtractorImpl{
-		streamLabels: []string{coreOSLabelStreamClass},
-		osImageMatchers: []ImageLabelMatcher{
-			labelEquals(coreOSLabelBootc, coreOSLabelBootcValueBool, coreOSLabelBootcValueInteger),
-		},
-		extensionsImageMatchers: []ImageLabelMatcher{
-			labelEquals(coreOSLabelExtension, coreOSLabelExtensionValue),
-		},
+		streamLabels:         []string{coreOSLabelStreamClass},
+		osImageDiscriminator: coreOSLabelDiscriminator,
 	}
 }
 
 // GetImageData analyzes container image labels to extract OS stream metadata.
-// Returns nil if the image does not have the required stream label or if it
-// cannot be classified as either an OS or extensions image.
+// Returns nil if the image does not have the required stream label.
+// Distinguishes between OS and extensions images based on the presence of the ostree discriminator label.
 func (e *ImageStreamExtractorImpl) GetImageData(image string, labels map[string]string) *ImageData {
 	imageData := &ImageData{
 		Image:  image,
@@ -89,14 +72,10 @@ func (e *ImageStreamExtractorImpl) GetImageData(image string, labels map[string]
 		return nil
 	}
 
-	// Determine the type of image. OS or extensions.
-	switch {
-	case matchesAny(labels, e.osImageMatchers):
+	if findLabelValue(labels, e.osImageDiscriminator) != "" {
 		imageData.Type = ImageTypeOS
-	case matchesAny(labels, e.extensionsImageMatchers):
+	} else {
 		imageData.Type = ImageTypeExtensions
-	default:
-		return nil
 	}
 
 	return imageData
@@ -170,30 +149,4 @@ func NewOSImageStreamURLSetFromImageMetadata(imageMetadata *ImageData) *v1alpha1
 		urlSet.OSExtensionsImage = imageName
 	}
 	return urlSet
-}
-
-// labelEquals returns a matcher that checks whether a label has the expected value (case-insensitive).
-func labelEquals(key string, values ...string) ImageLabelMatcher {
-	return func(labels map[string]string) bool {
-		v, ok := labels[key]
-		if !ok {
-			return false
-		}
-		for _, value := range values {
-			if strings.EqualFold(v, value) {
-				return true
-			}
-		}
-		return false
-	}
-}
-
-// matchesAny returns true if any of the matchers match the given labels.
-func matchesAny(labels map[string]string, matchers []ImageLabelMatcher) bool {
-	for _, m := range matchers {
-		if m(labels) {
-			return true
-		}
-	}
-	return false
 }
