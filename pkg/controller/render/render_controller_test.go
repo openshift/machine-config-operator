@@ -442,6 +442,21 @@ func TestGenerateMachineConfigOverrideOSImageURL(t *testing.T) {
 	assert.Equal(t, "dummy-change-2", gmc.Spec.OSImageURL)
 }
 
+func TestGenerateMachineConfigCannotOverrideOSImageURLWhenOSImageStreamSet(t *testing.T) {
+	mcp := helpers.NewMachineConfigPool("test-cluster-master", helpers.MasterSelector, nil, "")
+	mcs := []*mcfgv1.MachineConfig{
+		helpers.NewMachineConfig("00-test-cluster-master", map[string]string{"node-role/master": ""}, "dummy-test-1", []ign3types.File{}),
+		helpers.NewMachineConfig("00-test-cluster-master-0", map[string]string{"node-role/master": ""}, "dummy-change", []ign3types.File{}),
+	}
+
+	mcp.Spec.OSImageStream.Name = "populated-value"
+
+	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
+
+	_, err := generateRenderedMachineConfig(mcp, mcs, cc, nil)
+	assert.Error(t, err)
+}
+
 func TestVersionSkew(t *testing.T) {
 	mcp := helpers.NewMachineConfigPool("test-cluster-master", helpers.MasterSelector, nil, "")
 	mcs := []*mcfgv1.MachineConfig{
