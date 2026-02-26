@@ -20,6 +20,7 @@ const (
 	testReleaseName = "quay.io/openshift/release:4.15.0"
 )
 
+
 func TestImageStreamProviderResource_ReadImageStream(t *testing.T) {
 	imageStream := &imagev1.ImageStream{
 		ObjectMeta: metav1.ObjectMeta{
@@ -137,4 +138,66 @@ func TestImageStreamProviderNetwork_ReadImageStream(t *testing.T) {
 			assert.Equal(t, "test-stream", result.Name)
 		})
 	}
+}
+
+func TestImageStreamProviderNetwork_CachesOnSuccess(t *testing.T) {
+	validImageStream := &imagev1.ImageStream{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "image.openshift.io/v1",
+			Kind:       "ImageStream",
+		},
+		ObjectMeta: metav1.ObjectMeta{Name: "test-stream"},
+	}
+	validBytes, err := runtime.Encode(scheme.Codecs.LegacyCodec(imagev1.SchemeGroupVersion), validImageStream)
+	require.NoError(t, err)
+
+	inspector := &mockImagesInspector{fetchData: validBytes}
+	provider := NewImageStreamProviderNetwork(inspector, testReleaseName)
+	ctx := context.Background()
+
+	first, err := provider.ReadImageStream(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, "test-stream", first.Name)
+	assert.Equal(t, 1, inspector.fetchCount)
+
+	second, err := provider.ReadImageStream(ctx)
+	require.NoError(t, err)
+	assert.Same(t, first, second, "second call should return the cached pointer")
+	assert.Equal(t, 1, inspector.fetchCount, "should not fetch again after a successful call")
+}
+
+func TestImageStreamProviderNetwork_RetriesOnFailure(t *testing.T) {
+	validImageStream := &imagev1.ImageStream{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "image.openshift.io/v1",
+			Kind:       "ImageStream",
+		},
+		ObjectMeta: metav1.ObjectMeta{Name: "test-stream"},
+	}
+	validBytes, err := runtime.Encode(scheme.Codecs.LegacyCodec(imagev1.SchemeGroupVersion), validImageStream)
+	require.NoError(t, err)
+
+	inspector := &mockImagesInspector{fetchErr: errors.New("network error")}
+	provider := NewImageStreamProviderNetwork(inspector, testReleaseName)
+	ctx := context.Background()
+
+	// First call fails
+	_, err = provider.ReadImageStream(ctx)
+	require.Error(t, err)
+	assert.Equal(t, 1, inspector.fetchCount)
+
+	// Fix the inspector so the next call succeeds
+	inspector.fetchErr = nil
+	inspector.fetchData = validBytes
+
+	// Second call should retry and succeed
+	result, err := provider.ReadImageStream(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, "test-stream", result.Name)
+	assert.Equal(t, 2, inspector.fetchCount, "should retry after a failed call")
+
+	// Third call should be cached
+	_, err = provider.ReadImageStream(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 2, inspector.fetchCount, "should not fetch again after success")
 }

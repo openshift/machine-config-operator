@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/blang/semver/v4"
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 
 	"github.com/ghodss/yaml"
@@ -684,14 +685,15 @@ func ensureFeatureGate(t *testing.T, clientSet *framework.ClientSet, objs ...run
 	}
 
 	currentFeatureSet := currentFg.Spec.FeatureSet
-
 	SelfManaged := features.ClusterProfileName("include.release.openshift.io/self-managed-high-availability")
-	if err != nil {
-		t.Fatalf("Error retrieving current feature gates: %v", err)
-	}
-	featureGateStatus, err := features.FeatureSets(features.ClusterProfileName(SelfManaged), currentFeatureSet)
 
-	require.NoError(t, err)
+	cv, err := clientSet.ClusterVersions().Get(ctx, "version", metav1.GetOptions{})
+	require.NoError(t, err, "Error retrieving ClusterVersion")
+
+	payloadVersion, err := semver.ParseTolerant(cv.Status.Desired.Version)
+	require.NoError(t, err, "Error parsing payload version")
+
+	featureGateStatus := features.FeatureSets(payloadVersion.Major, SelfManaged, currentFeatureSet)
 	currentDetails := featuregatescontroller.FeaturesGateDetailsFromFeatureSets(featureGateStatus, controllerConfig.Spec.ReleaseImage)
 
 	// Explicitly disable OSStreams feature. This is because this feature requires a controllerconfig object

@@ -32,16 +32,46 @@ func (optr *Operator) syncOSImageStream(_ *renderConfig, _ *configv1.ClusterOper
 	// This sync runs once per version. Before performing the streams fetching
 	// process, that takes time as it requires inspecting images, ensure this function
 	// needs to build the stream.
-	existingOSImageStream, updateRequired, err := optr.isOSImageStreamBuildRequired()
-	if !updateRequired || err != nil {
+	existingOSImageStream, rebuildRequired, err := optr.isOSImageStreamBuildRequired()
+	if err != nil {
 		return err
 	}
 
-	// If the code reaches this point the OSImageStream CR is not
-	// present (new cluster) or it's out-dated (cluster update).
-	// Build the new OSImageStream and push it.
-	return optr.buildOSImageStream(existingOSImageStream)
+	if rebuildRequired {
+		// If the code reaches this point the OSImageStream status containing
+		// the available OS Image Streams is outdated or doesn't exist.
+		return optr.buildOSImageStream(existingOSImageStream)
+	} else if existingOSImageStream != nil {
+		// We didn't require a rebuild, but check if we need to update the default
+		return optr.updateOSImageStream(existingOSImageStream)
+	}
 
+	return err
+}
+
+func (optr *Operator) updateOSImageStream(existingOSImageStream *v1alpha1.OSImageStream) error {
+	requestedDefault := osimagestream.GetOSImageStreamSpecDefault(existingOSImageStream)
+	if requestedDefault == "" {
+		requestedDefault = osimagestream.GetBuiltinDefault(existingOSImageStream)
+	}
+
+	currentDefault := existingOSImageStream.Status.DefaultStream
+	if currentDefault != requestedDefault {
+		if _, err := osimagestream.GetOSImageStreamSetByName(existingOSImageStream, requestedDefault); err != nil {
+			return fmt.Errorf("error syncing default OSImageStream with OSImageStream %s: %v", requestedDefault, err)
+		}
+
+		existingOSImageStream.Status.DefaultStream = requestedDefault
+		if _, err := optr.client.
+			MachineconfigurationV1alpha1().
+			OSImageStreams().
+			UpdateStatus(context.TODO(), existingOSImageStream, metav1.UpdateOptions{}); err != nil {
+			return fmt.Errorf("error updating the default OSImageStream status: %w", err)
+		}
+
+		klog.Infof("OSImageStream default has changed from %s to %s", currentDefault, requestedDefault)
+	}
+	return nil
 }
 
 func (optr *Operator) buildOSImageStream(existingOSImageStream *v1alpha1.OSImageStream) error {
@@ -76,8 +106,25 @@ func (optr *Operator) buildOSImageStream(existingOSImageStream *v1alpha1.OSImage
 		return fmt.Errorf("could not build SysContext for OSImageStream build: %w", err)
 	}
 
-	imageStreamFactory := osimagestream.NewDefaultStreamSourceFactory(optr.mcoCmLister, &osimagestream.DefaultImagesInspectorFactory{})
-	osImageStream, err := osimagestream.BuildOsImageStreamRuntime(buildCtx, sysCtxBuilder, image, imageStreamFactory)
+	sysCtx, err := sysCtxBuilder.Build()
+	if err != nil {
+		return fmt.Errorf("could not prepare for OSImageStream inspection: %w", err)
+	}
+	defer func() {
+		if err := sysCtx.Cleanup(); err != nil {
+			klog.Warningf("Unable to clean resources after OSImageStream inspection: %s", err)
+		}
+	}()
+
+	factory := osimagestream.NewDefaultStreamSourceFactory(&osimagestream.DefaultImagesInspectorFactory{})
+	osImageStream, err := factory.Create(
+		buildCtx,
+		sysCtx.SysContext,
+		osimagestream.CreateOptions{
+			ReleaseImage:          image,
+			ConfigMapLister:       optr.mcoCmLister,
+			ExistingOSImageStream: existingOSImageStream,
+		})
 	if err != nil {
 		return fmt.Errorf("error building the OSImageStream: %w", err)
 	}
@@ -179,9 +226,9 @@ func (optr *Operator) isOSImageStreamBuildRequired() (*v1alpha1.OSImageStream, b
 	}
 
 	// Check if an update is needed
-	if !osImageStreamRequiresUpdate(existingOSImageStream) {
+	if !osImageStreamRequiresRebuild(existingOSImageStream) {
 		klog.V(4).Info("OSImageStream is already up-to-date, skipping sync")
-		return nil, false, nil
+		return existingOSImageStream, false, nil
 	}
 	return existingOSImageStream, true, nil
 }
@@ -235,12 +282,13 @@ func (optr *Operator) getExistingOSImageStream() (*v1alpha1.OSImageStream, error
 	return osImageStream, nil
 }
 
-// osImageStreamRequiresUpdate checks if the OSImageStream needs to be created or updated.
-// Returns true if osImageStream is nil or if its version annotation doesn't match the current version.
-func osImageStreamRequiresUpdate(osImageStream *v1alpha1.OSImageStream) bool {
+// osImageStreamRequiresRebuild checks if the OSImageStream needs to be created or updated.
+// Returns true if osImageStream is nil, if its version annotation doesn't match the current version,
+// or if the builtin default stream annotation is missing.
+func osImageStreamRequiresRebuild(osImageStream *v1alpha1.OSImageStream) bool {
 	if osImageStream == nil {
 		return true
 	}
 	releaseVersion, ok := osImageStream.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey]
-	return !ok || releaseVersion != version.Hash
+	return !ok || releaseVersion != version.Hash || osimagestream.GetBuiltinDefault(osImageStream) == ""
 }
