@@ -117,6 +117,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		imageStream          *imagev1.ImageStream
 		iri                  *mcfgv1alpha1.InternalReleaseImage
 		iriTLSCert           *corev1.Secret
+		osImageStream        *mcfgv1alpha1.OSImageStream
 	)
 	for _, info := range infos {
 		if info.IsDir() {
@@ -201,6 +202,9 @@ func (b *Bootstrap) Run(destDir string) error {
 				if obj.GetName() == ctrlcommon.InternalReleaseImageTLSSecretName {
 					iriTLSCert = obj
 				}
+			case *mcfgv1alpha1.OSImageStream:
+				// If given, it's treated as user input with config such as the default stream
+				osImageStream = obj
 			default:
 				klog.Infof("skipping %q [%d] manifest because of unhandled %T", file.Name(), idx+1, obji)
 			}
@@ -226,10 +230,17 @@ func (b *Bootstrap) Run(destDir string) error {
 		return fmt.Errorf("error filtering pools: %w", err)
 	}
 
-	var osImageStream *mcfgv1alpha1.OSImageStream
 	// Enable OSImageStreams if the FeatureGate is active and the control plane topology is not external (e.g., Hypershift)
 	if osimagestream.IsFeatureEnabled(fgHandler) && cconfig.Spec.Infra.Status.ControlPlaneTopology != apicfgv1.ExternalTopologyMode {
-		osImageStream, err = b.fetchOSImageStream(imageStream, cconfig, icspRules, idmsRules, itmsRules, imgCfg, pullSecret)
+		osImageStream, err = b.fetchOSImageStream(
+			imageStream,
+			cconfig,
+			icspRules,
+			idmsRules,
+			itmsRules,
+			imgCfg,
+			pullSecret,
+			osImageStream)
 		if err != nil {
 			return err
 		}
@@ -242,6 +253,9 @@ func (b *Bootstrap) Run(destDir string) error {
 		}
 		cconfig.Spec.BaseOSContainerImage = string(defaultStreamSet.OSImage)
 		cconfig.Spec.BaseOSExtensionsContainerImage = string(defaultStreamSet.OSExtensionsImage)
+	} else {
+		// Just ensuring the osImageStream is nil if the FG is disabled
+		osImageStream = nil
 	}
 
 	pullSecretBytes := pullSecret.Data[corev1.DockerConfigJsonKey]
@@ -464,6 +478,7 @@ func (b *Bootstrap) fetchOSImageStream(
 	itmsRules []*apicfgv1.ImageTagMirrorSet,
 	imgCfg *apicfgv1.Image,
 	pullSecret *corev1.Secret,
+	existingOSImageStream *mcfgv1alpha1.OSImageStream,
 ) (*mcfgv1alpha1.OSImageStream, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -481,15 +496,25 @@ func (b *Bootstrap) fetchOSImageStream(
 		sysCtxBuilder.WithRegistriesConfig(registriesConfig)
 	}
 
-	osImageStream, err := osimagestream.BuildOsImageStreamBootstrap(ctx,
-		sysCtxBuilder,
-		imageStream,
-		&osimagestream.OSImageTuple{
+	sysCtx, err := sysCtxBuilder.Build()
+	if err != nil {
+		return nil, fmt.Errorf("could not prepare for OSImageStream inspection: %w", err)
+	}
+	defer func() {
+		if err := sysCtx.Cleanup(); err != nil {
+			klog.Warningf("Unable to clean resources after OSImageStream inspection: %s", err)
+		}
+	}()
+
+	factory := b.getImageStreamFactory()
+	osImageStream, err := factory.Create(ctx, sysCtx.SysContext, osimagestream.CreateOptions{
+		ExistingOSImageStream: existingOSImageStream,
+		ReleaseImageStream:    imageStream,
+		CliImages: &osimagestream.OSImageTuple{
 			OSImage:           cconfig.Spec.BaseOSContainerImage,
 			OSExtensionsImage: cconfig.Spec.BaseOSExtensionsContainerImage,
 		},
-		b.getImageStreamFactory(),
-	)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("error inspecting available OSImageStreams: %w", err)
 	}
@@ -502,7 +527,7 @@ func (b *Bootstrap) getImageStreamFactory() osimagestream.ImageStreamFactory {
 		return b.imageStreamFactory
 	}
 
-	return osimagestream.NewDefaultStreamSourceFactory(nil, &osimagestream.DefaultImagesInspectorFactory{})
+	return osimagestream.NewDefaultStreamSourceFactory(&osimagestream.DefaultImagesInspectorFactory{})
 }
 
 func getValidPullSecretFromBytes(sData []byte) (*corev1.Secret, error) {
