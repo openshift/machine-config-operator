@@ -53,6 +53,7 @@ const (
 	crioDropInFilePathPidsLimit      = "/etc/crio/crio.conf.d/01-ctrcfg-pidsLimit"
 	crioDropInFilePathLogSizeMax     = "/etc/crio/crio.conf.d/01-ctrcfg-logSizeMax"
 	CRIODropInFilePathDefaultRuntime = "/etc/crio/crio.conf.d/01-ctrcfg-defaultRuntime"
+	CRIODropInFilePathTLSMinVersion  = "/etc/crio/crio.conf.d/01-ctrcfg-tlsMinVersion"
 	imagepolicyType                  = "sigstoreSigned"
 	sigstoreRegistriesConfigFilePath = "/etc/containers/registries.d/sigstore-registries.yaml"
 )
@@ -122,6 +123,16 @@ type tomlConfigCRIODefaultRuntime struct {
 		Runtime struct {
 			DefaultRuntime string `toml:"default_runtime,omitempty"`
 		} `toml:"runtime"`
+	} `toml:"crio"`
+}
+
+// tomlConfigCRIOTLSMinVersion is used for conversions when tls_min_version is changed.
+// This sets the minimum TLS version for CRI-O's streaming and metrics servers.
+type tomlConfigCRIOTLSMinVersion struct {
+	Crio struct {
+		API struct {
+			TLSMinVersion string `toml:"tls_min_version,omitempty"`
+		} `toml:"api"`
 	} `toml:"crio"`
 }
 
@@ -447,6 +458,24 @@ func createCRIODropinFiles(cfg *mcfgv1.ContainerRuntimeConfig) []generatedConfig
 		if err != nil {
 			klog.V(2).Infoln(cfg, err, "error updating user changes for default-runtime to crio.conf.d: %v", err)
 		}
+	}
+	return generatedConfigFileList
+}
+
+func createCRIOTLSDropinFile(tlsMinVersion string) []generatedConfigFile {
+	if tlsMinVersion == "" {
+		return nil
+	}
+
+	var (
+		generatedConfigFileList []generatedConfigFile
+		err                     error
+	)
+	tomlConf := tomlConfigCRIOTLSMinVersion{}
+	tomlConf.Crio.API.TLSMinVersion = tlsMinVersion
+	generatedConfigFileList, err = addTOMLgeneratedConfigFile(generatedConfigFileList, CRIODropInFilePathTLSMinVersion, tomlConf)
+	if err != nil {
+		klog.Warningf("error creating CRI-O TLS drop-in config: %v", err)
 	}
 	return generatedConfigFileList
 }

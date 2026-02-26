@@ -3,6 +3,7 @@ package containerruntimeconfig
 import (
 	"fmt"
 
+	apicfgv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -11,8 +12,8 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// RunContainerRuntimeBootstrap generates ignition configs at bootstrap
-func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.ContainerRuntimeConfig, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
+// RunContainerRuntimeBootstrap generates ignition configs at bootstrap.
+func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.ContainerRuntimeConfig, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool, kubeletConfigs []*mcfgv1.KubeletConfig, apiServer *apicfgv1.APIServer) ([]*mcfgv1.MachineConfig, error) {
 	var res []*mcfgv1.MachineConfig
 	managedKeyExist := make(map[string]bool)
 	for _, cfg := range crconfigs {
@@ -53,6 +54,14 @@ func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.Contai
 				configFileList = append(configFileList, crioFileConfigs...)
 			}
 
+			// Propagate TLS min version from KubeletConfig to CRI-O via a drop-in file.
+			// Use APIServer as fallback when no KubeletConfig specifies TLS (matches controller).
+			tlsMinVersion := getTLSMinVersionForPoolBootstrap(kubeletConfigs, pool, apiServer)
+			if tlsMinVersion != "" {
+				tlsDropinFiles := createCRIOTLSDropinFile(tlsMinVersion)
+				configFileList = append(configFileList, tlsDropinFiles...)
+			}
+
 			ctrRuntimeConfigIgn := createNewIgnition(configFileList)
 			managedKey, err := generateBootstrapManagedKeyContainerConfig(pool, managedKeyExist)
 			if err != nil {
@@ -79,6 +88,41 @@ func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.Contai
 		}
 	}
 	return res, nil
+}
+
+// getTLSMinVersionForPoolBootstrap finds the TLS minimum version from KubeletConfig CRs
+// that match the given MachineConfigPool, with APIServer as fallback. Matches the
+// controller's getTLSMinVersionForPool behavior.
+func getTLSMinVersionForPoolBootstrap(kubeletConfigs []*mcfgv1.KubeletConfig, pool *mcfgv1.MachineConfigPool, apiServer *apicfgv1.APIServer) string {
+	if v := getTLSMinVersionFromKubeletConfigsBootstrap(kubeletConfigs, pool); v != "" {
+		return v
+	}
+	tlsMinVersion, _ := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
+	return tlsMinVersion
+}
+
+// getTLSMinVersionFromKubeletConfigsBootstrap finds the TLS minimum version from
+// KubeletConfig CRs that match the given MachineConfigPool.
+func getTLSMinVersionFromKubeletConfigsBootstrap(kubeletConfigs []*mcfgv1.KubeletConfig, pool *mcfgv1.MachineConfigPool) string {
+	var tlsMinVersion string
+	for _, kc := range kubeletConfigs {
+		if kc.Spec.TLSSecurityProfile == nil {
+			continue
+		}
+		selector, err := metav1.LabelSelectorAsSelector(kc.Spec.MachineConfigPoolSelector)
+		if err != nil {
+			klog.Warningf("invalid label selector in KubeletConfig %s: %v", kc.Name, err)
+			continue
+		}
+		if selector.Empty() || !selector.Matches(labels.Set(pool.Labels)) {
+			continue
+		}
+		minVersion, _ := ctrlcommon.GetSecurityProfileCiphers(kc.Spec.TLSSecurityProfile)
+		if minVersion != "" {
+			tlsMinVersion = minVersion
+		}
+	}
+	return tlsMinVersion
 }
 
 // generateBootstrapManagedKeyContainerConfig generates the machine config name for a CR during bootstrap, returns error
