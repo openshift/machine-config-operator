@@ -1934,6 +1934,18 @@ func (ctrl *Controller) syncBootImageSkewEnforcementMetric(obj any) {
 	}
 
 	if mcop.Status.BootImageSkewEnforcementStatus.Mode == opv1.BootImageSkewEnforcementModeStatusNone {
+		// Do not alert for baremetal: None is the expected default since the platform
+		// does not require skew enforcement.
+		cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
+		if err != nil {
+			klog.Warningf("Failed to get ControllerConfig for boot image skew enforcement metric: %v", err)
+			return
+		}
+		if cc.Spec.Infra != nil && cc.Spec.Infra.Status.PlatformStatus != nil &&
+			cc.Spec.Infra.Status.PlatformStatus.Type == configv1.BareMetalPlatformType {
+			ctrlcommon.MCCBootImageSkewEnforcementNone.Set(0)
+			return
+		}
 		ctrlcommon.MCCBootImageSkewEnforcementNone.Set(1)
 	} else {
 		ctrlcommon.MCCBootImageSkewEnforcementNone.Set(0)

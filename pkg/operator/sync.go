@@ -2367,7 +2367,7 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 	}
 
 	// Update skew enforcement status if needed
-	optr.syncBootImageSkewEnforcementStatus(mcop, newMachineConfigurationStatus, supportsBootImageUpdates)
+	optr.syncBootImageSkewEnforcementStatus(mcop, newMachineConfigurationStatus, supportsBootImageUpdates, infra)
 
 	newMachineConfigurationStatus.ObservedGeneration = mcop.GetGeneration()
 	// Check if any changes are required in the Status before making the API call.
@@ -2533,7 +2533,7 @@ func (optr *Operator) syncPreBuiltImageMachineConfigs() error {
 
 // syncBootImageSkewEnforcementStatus determines the appropriate BootImageSkewEnforcementStatus based on
 // the MachineConfiguration spec, platform defaults, and cluster version information.
-func (optr *Operator) syncBootImageSkewEnforcementStatus(mcop *opv1.MachineConfiguration, newMachineConfigurationStatus *opv1.MachineConfigurationStatus, supportsBootImageUpdates bool) {
+func (optr *Operator) syncBootImageSkewEnforcementStatus(mcop *opv1.MachineConfiguration, newMachineConfigurationStatus *opv1.MachineConfigurationStatus, supportsBootImageUpdates bool, infra *configv1.Infrastructure) {
 	// React to any changes in boot image skew enforcement configuration
 	if !optr.fgHandler.Enabled(features.FeatureGateBootImageSkewEnforcement) {
 		return
@@ -2562,6 +2562,9 @@ func (optr *Operator) syncBootImageSkewEnforcementStatus(mcop *opv1.MachineConfi
 		} else { // For any other opinion i.e. admin has overridden boot image opinion to Partial/None => set Mode to Manual.
 			newMachineConfigurationStatus.BootImageSkewEnforcementStatus = apihelpers.GetSkewEnforcementStatusManualWithOCPVersion(ocpVersionAtInstall)
 		}
+	} else if infra.Status.PlatformStatus != nil && infra.Status.PlatformStatus.Type == configv1.BareMetalPlatformType {
+		// Baremetal derives bootimages from the release image and does not need this feature => set Mode to None.
+		newMachineConfigurationStatus.BootImageSkewEnforcementStatus = apihelpers.GetSkewEnforcementStatusNone()
 	} else { // For platforms that do not support automated boot image updates => set Mode to Manual.
 		newMachineConfigurationStatus.BootImageSkewEnforcementStatus = apihelpers.GetSkewEnforcementStatusManualWithOCPVersion(ocpVersionAtInstall)
 	}
