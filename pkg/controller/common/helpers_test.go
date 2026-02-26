@@ -20,6 +20,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
+	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 	"github.com/openshift/machine-config-operator/pkg/controller/common/fixtures"
 	"github.com/openshift/machine-config-operator/test/helpers"
 )
@@ -1829,4 +1831,93 @@ func TestIsMachineUpdatedMCN(t *testing.T) {
 func assertExpectedNodes(t *testing.T, expected []string, actual []*corev1.Node) {
 	t.Helper()
 	assert.Equal(t, expected, helpers.GetNamesFromNodes(actual))
+}
+
+func TestGetEffectiveOSImageStreamName(t *testing.T) {
+	tests := []struct {
+		name           string
+		pool           *mcfgv1.MachineConfigPool
+		workerPool     *mcfgv1.MachineConfigPool
+		expectedStream string
+		expectError    bool
+	}{
+		{
+			name: "custom pool with explicit stream",
+			pool: func() *mcfgv1.MachineConfigPool {
+				p := helpers.NewMachineConfigPool("infra", helpers.InfraSelector, nil, "")
+				p.Spec.OSImageStream.Name = "rhel-10"
+				return p
+			}(),
+			workerPool: func() *mcfgv1.MachineConfigPool {
+				p := helpers.NewMachineConfigPool("worker", helpers.WorkerSelector, nil, "")
+				p.Spec.OSImageStream.Name = "rhel-9"
+				return p
+			}(),
+			expectedStream: "rhel-10",
+			expectError:    false,
+		},
+		{
+			name: "custom pool inherits from worker",
+			pool: helpers.NewMachineConfigPool("infra", helpers.InfraSelector, nil, ""),
+			workerPool: func() *mcfgv1.MachineConfigPool {
+				p := helpers.NewMachineConfigPool("worker", helpers.WorkerSelector, nil, "")
+				p.Spec.OSImageStream.Name = "rhel-9"
+				return p
+			}(),
+			expectedStream: "rhel-9",
+			expectError:    false,
+		},
+		{
+			name:           "custom pool without worker pool uses default",
+			pool:           helpers.NewMachineConfigPool("infra", helpers.InfraSelector, nil, ""),
+			workerPool:     nil,
+			expectedStream: "",
+			expectError:    false,
+		},
+		{
+			name:           "standard pool (worker) uses default",
+			pool:           helpers.NewMachineConfigPool("worker", helpers.WorkerSelector, nil, ""),
+			workerPool:     nil,
+			expectedStream: "",
+			expectError:    false,
+		},
+		{
+			name:           "standard pool (master) uses default",
+			pool:           helpers.NewMachineConfigPool("master", helpers.MasterSelector, nil, ""),
+			workerPool:     nil,
+			expectedStream: "",
+			expectError:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create fake client and informer
+			objects := []runtime.Object{}
+			if tt.workerPool != nil {
+				objects = append(objects, tt.workerPool)
+			}
+
+			fakeClient := fake.NewSimpleClientset(objects...)
+			informerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
+			mcpLister := informerFactory.Machineconfiguration().V1().MachineConfigPools().Lister()
+
+			// Start informer and wait for cache sync
+			stopCh := make(chan struct{})
+			defer close(stopCh)
+			informerFactory.Start(stopCh)
+			informerFactory.WaitForCacheSync(stopCh)
+
+			// Call the function
+			streamName, err := GetEffectiveOSImageStreamName(tt.pool, mcpLister)
+
+			// Check error
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expectedStream, streamName)
+			}
+		})
+	}
 }
