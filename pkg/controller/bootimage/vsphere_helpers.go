@@ -407,7 +407,7 @@ func getClientsFromServerURL(ctx context.Context, server, username, password str
 	}
 	client, err := govmomi.NewClient(ctx, vcenterURL, true)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed in govmomi.NewClient(%s): %w", vcenterURL, err)
+		return nil, nil, fmt.Errorf("failed in govmomi.NewClient login: %w", err)
 	}
 
 	restClient := rest.NewClient(client.Client)
