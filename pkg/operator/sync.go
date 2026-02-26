@@ -1789,7 +1789,12 @@ func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig, co *c
 			_, hasRequiredPoolLabel := pool.Labels[requiredForUpgradeMachineConfigPoolLabelKey]
 
 			if hasRequiredPoolLabel {
-				opURL, _, err := optr.getOsImageURLs(optr.namespace, pool.Spec.OSImageStream.Name)
+				streamName, err := ctrlcommon.GetEffectiveOSImageStreamName(pool, optr.mcpLister)
+				if err != nil {
+					klog.Errorf("Error getting effective osImageStream name for pool %s: %q", pool.Name, err)
+					return false, nil
+				}
+				opURL, _, err := optr.getOsImageURLs(optr.namespace, streamName)
 				if err != nil {
 					klog.Errorf("Error getting OS images: %q", err)
 					return false, nil
