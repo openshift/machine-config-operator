@@ -60,9 +60,6 @@ spec:
   - name: metrics
     port: 9001
     protocol: TCP
-  - name: health
-    port: 8798
-    protocol: TCP
 ---
 apiVersion: v1
 kind: Service

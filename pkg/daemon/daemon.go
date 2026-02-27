@@ -3,7 +3,6 @@ package daemon
 import (
 	"bufio"
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -31,7 +30,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
@@ -151,8 +149,6 @@ type Daemon struct {
 
 	// Used for Hypershift
 	hypershiftConfigMap string
-
-	initializeHealthServer bool
 
 	deferKubeletRestart bool
 
@@ -350,7 +346,6 @@ func New(
 	return &Daemon{
 		mock:                   mock,
 		booting:                true,
-		initializeHealthServer: true,
 		rebootQueued:           false,
 		os:                     hostos,
 		NodeUpdaterClient:      nodeUpdaterClient,
@@ -884,52 +879,6 @@ func (dn *Daemon) syncNode(key string) error {
 		}
 	}
 	klog.V(2).Infof("Node %s is already synced", node.Name)
-	if !dn.booting && dn.initializeHealthServer {
-		// we want to wait until we are done booting AND we only want to do this once
-		// we also want to give ourselves a little extra buffer. The corner case here is sometimes we get thru the first sync, and then the errors
-		// begin ~1 minute later. So, list some api items until then. if we get to here, then we must be safe.
-		if err := wait.PollUntilContextTimeout(context.TODO(), 10*time.Second, 1*time.Minute, false, func(_ context.Context) (bool, error) {
-			_, err := dn.ccLister.List(labels.Everything())
-			if err != nil {
-				return false, err
-			}
-			return false, nil
-		}); err != nil {
-			if !wait.Interrupted(err) {
-				return fmt.Errorf("could not list API items: %v", err)
-			}
-		}
-		go func() {
-			klog.Infof("Starting health listener on 127.0.0.1:8798")
-			mux := http.NewServeMux()
-			mux.Handle("/health", &healthHandler{})
-			s := http.Server{
-				TLSConfig: &tls.Config{
-					MinVersion:   tls.VersionTLS12,
-					NextProtos:   []string{"http/1.1"},
-					CipherSuites: cipherOrder(),
-				},
-				TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
-				Addr:         "127.0.0.1:8798",
-				Handler:      mux}
-
-			go func() {
-				if err := s.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-					klog.Errorf("health listener exited with error: %v", err)
-				}
-			}()
-			<-dn.stopCh
-			if err := s.Shutdown(context.Background()); err != nil {
-				if err != http.ErrServerClosed {
-					klog.Errorf("error stopping health listener: %v", err)
-				}
-			} else {
-				klog.Infof("health listener successfully stopped")
-			}
-
-		}()
-		dn.initializeHealthServer = false
-	}
 	return nil
 }
 
@@ -2865,61 +2814,6 @@ func maybeReportOnMissingMC(err error) {
 	if errors.As(err, &missingMCErr) {
 		mcdMissingMC.WithLabelValues(missingMCErr.MissingMachineConfig()).Inc()
 	}
-}
-
-type healthHandler struct{}
-
-func (h *healthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Length", "0")
-	if r.Method == http.MethodGet || r.Method == http.MethodHead {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	w.WriteHeader(http.StatusMethodNotAllowed)
-}
-
-// Disable insecure cipher suites for CVE-2016-2183
-// cipherOrder returns an ordered list of Ciphers that are considered secure
-// Deprecated ciphers are not returned.
-func cipherOrder() []uint16 {
-	var first []uint16
-	var second []uint16
-
-	allowable := func(c *tls.CipherSuite) bool {
-		// Disallow block ciphers using straight SHA1
-		// See: https://tools.ietf.org/html/rfc7540#appendix-A
-		if strings.HasSuffix(c.Name, "CBC_SHA") {
-			return false
-		}
-		// 3DES is considered insecure
-		if strings.Contains(c.Name, "3DES") {
-			return false
-		}
-		return true
-	}
-
-	for _, c := range tls.CipherSuites() {
-		for _, v := range c.SupportedVersions {
-			if v == tls.VersionTLS13 {
-				first = append(first, c.ID)
-			}
-			if v == tls.VersionTLS12 && allowable(c) {
-				inFirst := false
-				for _, id := range first {
-					if c.ID == id {
-						inFirst = true
-						break
-					}
-				}
-				if !inFirst {
-					second = append(second, c.ID)
-				}
-			}
-		}
-	}
-
-	return append(first, second...)
 }
 
 type Deployment struct {
