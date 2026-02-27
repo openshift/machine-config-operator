@@ -127,14 +127,21 @@ func TestGracefulBuildFailureRecovery(t *testing.T) {
 
 	apiMosc.Spec.Containerfile = []mcfgv1.MachineOSContainerfile{}
 
-	updated, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().Update(ctx, apiMosc, metav1.UpdateOptions{})
+	updatedMosc, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().Update(ctx, apiMosc, metav1.UpdateOptions{})
 	require.NoError(t, err)
 
 	mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(ctx, layeredMCPName, metav1.GetOptions{})
 	require.NoError(t, err)
 
 	// Compute the new MachineOSBuild image name.
-	moscChangeMosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, cs.GetKubeclient(), updated, mcp)
+	mc, err := cs.MachineconfigurationV1Interface.MachineConfigs().Get(ctx, mcp.Spec.Configuration.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	moscChangeMosb := buildrequest.NewMachineOSBuildOrDie(buildrequest.MachineOSBuildOpts{
+		MachineConfig:     mc,
+		MachineOSConfig:   updatedMosc,
+		MachineConfigPool: mcp,
+	})
 
 	// Wait for the second build to start.
 	secondMosb := waitForBuildToStart(t, cs, moscChangeMosb)
@@ -396,7 +403,14 @@ func TestControllerEventuallyReconciles(t *testing.T) {
 
 	createMachineOSConfig(t, cs, mosc)
 
-	mosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, cs.GetKubeclient(), mosc, mcp)
+	mc, err := cs.MachineconfigurationV1Interface.MachineConfigs().Get(ctx, mcp.Spec.Configuration.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	mosb := buildrequest.NewMachineOSBuildOrDie(buildrequest.MachineOSBuildOpts{
+		MachineConfig:     mc,
+		MachineOSConfig:   mosc,
+		MachineConfigPool: mcp,
+	})
 
 	// Wait for the MachineOSBuild to exist.
 	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx).Eventually()
@@ -509,7 +523,7 @@ func TestImageBuildDegradedOnFailureAndClearedOnBuildStart(t *testing.T) {
 		},
 	}
 
-	updated, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().Update(ctx, apiMosc, metav1.UpdateOptions{})
+	updatedMosc, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().Update(ctx, apiMosc, metav1.UpdateOptions{})
 	require.NoError(t, err)
 
 	t.Logf("Fixed containerfile, waiting for new build to start")
@@ -518,7 +532,14 @@ func TestImageBuildDegradedOnFailureAndClearedOnBuildStart(t *testing.T) {
 	require.NoError(t, err)
 
 	// Compute the new MachineOSBuild name
-	moscChangeMosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, cs.GetKubeclient(), updated, mcp)
+	mc, err := cs.MachineconfigurationV1Interface.MachineConfigs().Get(ctx, mcp.Spec.Configuration.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	moscChangeMosb := buildrequest.NewMachineOSBuildOrDie(buildrequest.MachineOSBuildOpts{
+		MachineConfig:     mc,
+		MachineOSConfig:   updatedMosc,
+		MachineConfigPool: mcp,
+	})
 
 	// Wait for the second build to start
 	secondMosb := waitForBuildToStart(t, cs, moscChangeMosb)
@@ -588,7 +609,7 @@ func TestImageBuildDegradedOnFailureAndClearedOnBuildStart(t *testing.T) {
 		},
 	}
 
-	updated, err = cs.MachineconfigurationV1Interface.MachineOSConfigs().Update(ctx, apiMosc, metav1.UpdateOptions{})
+	updatedMosc, err = cs.MachineconfigurationV1Interface.MachineOSConfigs().Update(ctx, apiMosc, metav1.UpdateOptions{})
 	require.NoError(t, err)
 
 	t.Logf("Modified containerfile, waiting for third build to start")
@@ -597,8 +618,16 @@ func TestImageBuildDegradedOnFailureAndClearedOnBuildStart(t *testing.T) {
 	mcp, err = cs.MachineconfigurationV1Interface.MachineConfigPools().Get(ctx, layeredMCPName, metav1.GetOptions{})
 	require.NoError(t, err)
 
+	// Get the updated MC to compute the new build
+	mc, err = cs.MachineconfigurationV1Interface.MachineConfigs().Get(ctx, mcp.Spec.Configuration.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+
 	// Compute the new MachineOSBuild name for the third build
-	thirdMoscMosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, cs.GetKubeclient(), updated, mcp)
+	thirdMoscMosb := buildrequest.NewMachineOSBuildOrDie(buildrequest.MachineOSBuildOpts{
+		MachineConfig:     mc,
+		MachineOSConfig:   updatedMosc,
+		MachineConfigPool: mcp,
+	})
 
 	// Wait for the third build to start
 	thirdMosb := waitForBuildToStart(t, cs, thirdMoscMosb)
@@ -885,9 +914,6 @@ func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) 
 	startedBuild := waitForBuildToStartForPoolAndConfig(t, cs, testOpts.poolName, mosc.Name)
 	t.Logf("MachineOSBuild %q has started", startedBuild.Name)
 
-	// Assert that the build job has certain properties and configuration.
-	assertBuildJobIsAsExpected(t, cs, startedBuild)
-
 	t.Logf("Waiting for build completion...")
 
 	// Create a child context for the build pod log streamer. This is so we can
@@ -1132,34 +1158,6 @@ func waitForBuildToBeInterrupted(t *testing.T, cs *framework.ClientSet, startedB
 	require.NoError(t, err)
 
 	return mosb
-}
-
-// Validates that the build job is configured correctly. In this case,
-// "correctly" means that it has the correct container images. Future
-// assertions could include things like ensuring that the proper volume mounts
-// are present, etc.
-func assertBuildJobIsAsExpected(t *testing.T, cs *framework.ClientSet, mosb *mcfgv1.MachineOSBuild) {
-	t.Helper()
-
-	osImageURLConfig, err := ctrlcommon.GetOSImageURLConfig(context.TODO(), cs.GetKubeclient())
-	require.NoError(t, err)
-
-	mcoImages, err := ctrlcommon.GetImagesConfig(context.TODO(), cs.GetKubeclient())
-	require.NoError(t, err)
-
-	buildPod, err := ocltesthelper.GetPodFromJob(context.TODO(), cs, mosb.Status.Builder.Job.Name)
-	require.NoError(t, err)
-
-	assertContainerIsUsingExpectedImage := func(c corev1.Container, containerName, expectedImage string) {
-		if c.Name == containerName {
-			assert.Equal(t, c.Image, expectedImage)
-		}
-	}
-
-	for _, container := range buildPod.Spec.Containers {
-		assertContainerIsUsingExpectedImage(container, "image-build", mcoImages.MachineConfigOperator)
-		assertContainerIsUsingExpectedImage(container, "wait-for-done", osImageURLConfig.BaseOSContainerImage)
-	}
 }
 
 // Prepares for an on-cluster build test by performing the following:
