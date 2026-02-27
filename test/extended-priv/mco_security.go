@@ -547,7 +547,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 	})
 
-	g.It("[PolarionID:75222][OTP] tlSecurityProfile switch and check the expected tlsMinVersion and cipheres suite are seen in MCS,MSS and rbac-kube-proxy pod logs[Disruptive]", func() {
+	// Issue  https://issues.redhat.com/browse/OCPBUGS-76990 breaks the cluster, it cannot be recovered and tests cannot continue executing. Hence, we don't execute this test until the issue is fixed
+	g.It("[PolarionID:75222][OTP] tlSecurityProfile switch and check the expected tlsMinVersion and cipheres suite are seen in MCS,MSS and rbac-kube-proxy pod logs[Disruptive]", g.Label("Exclude: excluded until OCPBUGS-76990 is fixed"), func() {
 
 		var (
 			apiServer = NewResource(oc.AsAdmin(), "apiserver", "cluster")
@@ -633,7 +634,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 	})
 
-	g.It("[PolarionID:75543][OTP] tlsSecurity setting is also propagated on node in kubelet.conf [Disruptive]", func() {
+	// Issue  https://issues.redhat.com/browse/OCPBUGS-76990 breaks the cluster, it cannot be recovered and tests cannot continue executing. Hence, we don't execute this test until the issue is fixed
+	g.It("[PolarionID:75543][OTP] tlsSecurity setting is also propagated on node in kubelet.conf [Disruptive]", g.Label("Exclude: excluded until OCPBUGS-76990 is fixed"), func() {
 
 		var (
 			node              = wMcp.GetSortedNodesOrFail()[0]
