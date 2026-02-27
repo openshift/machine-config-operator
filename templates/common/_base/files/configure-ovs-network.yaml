@@ -952,139 +952,128 @@ contents:
       # print initial state
       print_state
 
-      if [ "$1" == "OVNKubernetes" ]; then
-        # Configures NICs onto OVS bridge "br-ex"
-        # Configuration is either auto-detected or provided through a config file written already in Network Manager
-        # key files under /etc/NetworkManager/system-connections/
-        # Managing key files is outside of the scope of this script
+      # Configures NICs onto OVS bridge "br-ex"
+      # Configuration is either auto-detected or provided through a config file written already in Network Manager
+      # key files under /etc/NetworkManager/system-connections/
+      # Managing key files is outside of the scope of this script
 
-        # if the interface is of type vmxnet3 add multicast capability for that driver
-        # History: BZ:1854355
-        function configure_driver_options {
-          intf=$1
-          if [ ! -f "/sys/class/net/${intf}/device/uevent" ]; then
-            echo "Device file doesn't exist, skipping setting multicast mode"
-          else
-            driver=$(cat "/sys/class/net/${intf}/device/uevent" | grep DRIVER | awk -F "=" '{print $2}')
-            echo "Driver name is" $driver
-            if [ "$driver" = "vmxnet3" ]; then
-              ip link set dev "${intf}" allmulticast on
-            fi
-          fi
-        }
-
-        ovnk_config_dir='/etc/ovnk'
-        ovnk_var_dir='/var/lib/ovnk'
-        extra_bridge_file="${ovnk_config_dir}/extra_bridge"
-        iface_default_hint_file="${ovnk_var_dir}/iface_default_hint"
-        ip_hint_file="/run/nodeip-configuration/primary-ip"
-        # explicitly specify which interface should be used with the default bridge
-        default_bridge_file="${ovnk_config_dir}/default_bridge"
-
-        # make sure to create ovnk_config_dir if it does not exist, yet
-        mkdir -p "${ovnk_config_dir}"
-        # make sure to create ovnk_var_dir if it does not exist, yet
-        mkdir -p "${ovnk_var_dir}"
-
-        # For upgrade scenarios, make sure that we stabilize what we already configured
-        # before. If we do not have a valid interface hint, find the physical interface
-        # that's attached to ovs-if-phys0.
-        # If we find such an interface, write it to the hint file.
-        iface_default_hint=$(get_iface_default_hint "${iface_default_hint_file}")
-        if [ "${iface_default_hint}" == "" ]; then
-          current_interface=$(get_bridge_physical_interface ovs-if-phys0)
-          if [ "${current_interface}" != "" ]; then
-            write_iface_default_hint "${iface_default_hint_file}" "${current_interface}"
+      # if the interface is of type vmxnet3 add multicast capability for that driver
+      # History: BZ:1854355
+      function configure_driver_options {
+        intf=$1
+        if [ ! -f "/sys/class/net/${intf}/device/uevent" ]; then
+          echo "Device file doesn't exist, skipping setting multicast mode"
+        else
+          driver=$(cat "/sys/class/net/${intf}/device/uevent" | grep DRIVER | awk -F "=" '{print $2}')
+          echo "Driver name is" $driver
+          if [ "$driver" = "vmxnet3" ]; then
+            ip link set dev "${intf}" allmulticast on
           fi
         fi
+      }
 
-        # delete iface_default_hint_file if it has the same content as extra_bridge_file
-        # in that case, we must also force a reconfiguration of our network interfaces
-        # to make sure that we reconcile this conflict
-        if [ -f "${iface_default_hint_file}" ] &&
-          [ -f "${extra_bridge_file}" ] &&
-          [ "$(cat "${iface_default_hint_file}")" == "$(cat "${extra_bridge_file}")" ]; then
-          echo "${iface_default_hint_file} and ${extra_bridge_file} share the same content"
-          echo "Deleting file ${iface_default_hint_file} to choose a different interface"
-          rm -f "${iface_default_hint_file}"
-          rm -f /run/configure-ovs-boot-done
+      ovnk_config_dir='/etc/ovnk'
+      ovnk_var_dir='/var/lib/ovnk'
+      extra_bridge_file="${ovnk_config_dir}/extra_bridge"
+      iface_default_hint_file="${ovnk_var_dir}/iface_default_hint"
+      ip_hint_file="/run/nodeip-configuration/primary-ip"
+      # explicitly specify which interface should be used with the default bridge
+      default_bridge_file="${ovnk_config_dir}/default_bridge"
+
+      # make sure to create ovnk_config_dir if it does not exist, yet
+      mkdir -p "${ovnk_config_dir}"
+      # make sure to create ovnk_var_dir if it does not exist, yet
+      mkdir -p "${ovnk_var_dir}"
+
+      # For upgrade scenarios, make sure that we stabilize what we already configured
+      # before. If we do not have a valid interface hint, find the physical interface
+      # that's attached to ovs-if-phys0.
+      # If we find such an interface, write it to the hint file.
+      iface_default_hint=$(get_iface_default_hint "${iface_default_hint_file}")
+      if [ "${iface_default_hint}" == "" ]; then
+        current_interface=$(get_bridge_physical_interface ovs-if-phys0)
+        if [ "${current_interface}" != "" ]; then
+          write_iface_default_hint "${iface_default_hint_file}" "${current_interface}"
         fi
+      fi
 
-        # on every boot we rollback and generate the configuration again, to take
-        # in any changes that have possibly been applied in the standard
-        # configuration sources
-        if [ ! -f /run/configure-ovs-boot-done ]; then
-          echo "Running on boot, restoring previous configuration before proceeding..."
+      # delete iface_default_hint_file if it has the same content as extra_bridge_file
+      # in that case, we must also force a reconfiguration of our network interfaces
+      # to make sure that we reconcile this conflict
+      if [ -f "${iface_default_hint_file}" ] &&
+        [ -f "${extra_bridge_file}" ] &&
+        [ "$(cat "${iface_default_hint_file}")" == "$(cat "${extra_bridge_file}")" ]; then
+        echo "${iface_default_hint_file} and ${extra_bridge_file} share the same content"
+        echo "Deleting file ${iface_default_hint_file} to choose a different interface"
+        rm -f "${iface_default_hint_file}"
+        rm -f /run/configure-ovs-boot-done
+      fi
+
+      # on every boot we rollback and generate the configuration again, to take
+      # in any changes that have possibly been applied in the standard
+      # configuration sources
+      if [ ! -f /run/configure-ovs-boot-done ]; then
+        echo "Running on boot, restoring previous configuration before proceeding..."
+        rollback_nm
+        print_state
+      fi
+      touch /run/configure-ovs-boot-done
+
+      iface=$(get_default_bridge_interface "${iface_default_hint_file}" "${extra_bridge_file}" "${ip_hint_file}" "${default_bridge_file}")
+
+      if [ "$iface" != "br-ex" ]; then
+        # Specified interface is not br-ex.
+        # Some deployments use a temporary solution where br-ex is moved out from the default gateway interface
+        # and bound to a different nic (https://github.com/trozet/openshift-ovn-migration).
+        # This is now supported through an extra bridge if requested. If that is the case, we rollback.
+        # We also rollback if it looks like we need to configure things, just in case there are any leftovers
+        # from previous attempts.
+        if [ -f "$extra_bridge_file" ] || [ -z "$(nmcli connection show --active br-ex 2> /dev/null)" ]; then
+          echo "Bridge br-ex is not active, restoring previous configuration before proceeding..."
           rollback_nm
           print_state
         fi
-        touch /run/configure-ovs-boot-done
-
-        iface=$(get_default_bridge_interface "${iface_default_hint_file}" "${extra_bridge_file}" "${ip_hint_file}" "${default_bridge_file}")
-
-        if [ "$iface" != "br-ex" ]; then
-          # Specified interface is not br-ex.
-          # Some deployments use a temporary solution where br-ex is moved out from the default gateway interface
-          # and bound to a different nic (https://github.com/trozet/openshift-ovn-migration).
-          # This is now supported through an extra bridge if requested. If that is the case, we rollback.
-          # We also rollback if it looks like we need to configure things, just in case there are any leftovers
-          # from previous attempts.
-          if [ -f "$extra_bridge_file" ] || [ -z "$(nmcli connection show --active br-ex 2> /dev/null)" ]; then
-            echo "Bridge br-ex is not active, restoring previous configuration before proceeding..."
-            rollback_nm
-            print_state
-          fi
-        fi
-
-        convert_to_bridge "$iface" "br-ex" "phys0" "${BRIDGE_METRIC}"
-
-        # Check if we need to configure the second bridge
-        if [ -f "$extra_bridge_file" ] && (! nmcli connection show br-ex1 &> /dev/null || ! nmcli connection show ovs-if-phys1 &> /dev/null); then
-          interface=$(head -n 1 $extra_bridge_file)
-          convert_to_bridge "$interface" "br-ex1" "phys1" "${BRIDGE1_METRIC}"
-        fi
-
-        # Check if we need to remove the second bridge
-        if [ ! -f "$extra_bridge_file" ] && (nmcli connection show br-ex1 &> /dev/null || nmcli connection show ovs-if-phys1 &> /dev/null); then
-          remove_ovn_bridges br-ex1 phys1
-        fi
-
-        # Remove bridges created by openshift-sdn
-        ovs-vsctl --timeout=30 --if-exists del-br br0
-
-        # Make sure everything is activated. Do it in a specific order:
-        # - activate br-ex first, due to autoconnect-slaves this will also
-        #   activate ovs-port-br-ex, ovs-port-phys0 and ovs-if-phys0. It is
-        #   important that ovs-if-phys0 activates with br-ex to avoid the
-        #   ovs-if-phys0 profile being overridden with a profile generated from
-        #   kargs. The activation of ovs-if-phys0, if a bond, might cause the
-        #   slaves to re-activate, but it should be with our profiles since they
-        #   have higher priority
-        # - make sure that ovs-if-phys0 and its slaves, if any, are activated.
-        # - finally activate ovs-if-br-ex which holds the IP configuration.
-        connections=(br-ex ovs-if-phys0)
-        if [ -f "$extra_bridge_file" ]; then
-          connections+=(br-ex1 ovs-if-phys1)
-        fi
-        while IFS= read -r connection; do
-          if [[ $connection == *"$MANAGED_NM_CONN_SUFFIX" ]]; then
-            connections+=("$connection")
-          fi
-        done < <(nmcli -g NAME c)
-        connections+=(ovs-if-br-ex)
-        if [ -f "$extra_bridge_file" ]; then
-          connections+=(ovs-if-br-ex1)
-        fi
-        activate_nm_connections "${connections[@]}"
-        try_to_bind_ipv6_address
-        set_nm_conn_files
-      elif [ "$1" == "OpenShiftSDN" ]; then
-        # Revert changes made by /usr/local/bin/configure-ovs.sh during SDN migration.
-        rollback_nm
-        
-        # Remove bridges created by ovn-kubernetes
-        ovs-vsctl --timeout=30 --if-exists del-br br-int -- --if-exists del-br br-local
       fi
+
+      convert_to_bridge "$iface" "br-ex" "phys0" "${BRIDGE_METRIC}"
+
+      # Check if we need to configure the second bridge
+      if [ -f "$extra_bridge_file" ] && (! nmcli connection show br-ex1 &> /dev/null || ! nmcli connection show ovs-if-phys1 &> /dev/null); then
+        interface=$(head -n 1 $extra_bridge_file)
+        convert_to_bridge "$interface" "br-ex1" "phys1" "${BRIDGE1_METRIC}"
+      fi
+
+      # Check if we need to remove the second bridge
+      if [ ! -f "$extra_bridge_file" ] && (nmcli connection show br-ex1 &> /dev/null || nmcli connection show ovs-if-phys1 &> /dev/null); then
+        remove_ovn_bridges br-ex1 phys1
+      fi
+
+      # Make sure everything is activated. Do it in a specific order:
+      # - activate br-ex first, due to autoconnect-slaves this will also
+      #   activate ovs-port-br-ex, ovs-port-phys0 and ovs-if-phys0. It is
+      #   important that ovs-if-phys0 activates with br-ex to avoid the
+      #   ovs-if-phys0 profile being overridden with a profile generated from
+      #   kargs. The activation of ovs-if-phys0, if a bond, might cause the
+      #   slaves to re-activate, but it should be with our profiles since they
+      #   have higher priority
+      # - make sure that ovs-if-phys0 and its slaves, if any, are activated.
+      # - finally activate ovs-if-br-ex which holds the IP configuration.
+      connections=(br-ex ovs-if-phys0)
+      if [ -f "$extra_bridge_file" ]; then
+        connections+=(br-ex1 ovs-if-phys1)
+      fi
+      while IFS= read -r connection; do
+        if [[ $connection == *"$MANAGED_NM_CONN_SUFFIX" ]]; then
+          connections+=("$connection")
+        fi
+      done < <(nmcli -g NAME c)
+      connections+=(ovs-if-br-ex)
+      if [ -f "$extra_bridge_file" ]; then
+        connections+=(ovs-if-br-ex1)
+      fi
+      activate_nm_connections "${connections[@]}"
+      try_to_bind_ipv6_address
+      set_nm_conn_files
     }
 
     # Retry configure_ovs until it succeeds.
