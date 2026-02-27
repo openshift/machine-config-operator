@@ -742,7 +742,7 @@ func TestSyncMachineConfiguration(t *testing.T) {
 				clusterVersionIndexer.Add(tc.clusterVersion)
 			}
 
-			enabledFeatureGates := []configv1.FeatureGateName{features.FeatureGateManagedBootImages, features.FeatureGateManagedBootImagesAWS, features.FeatureGateManagedBootImagesvSphere, features.FeatureGateManagedBootImagesAzure, features.FeatureGateBootImageSkewEnforcement}
+			enabledFeatureGates := []configv1.FeatureGateName{features.FeatureGateBootImageSkewEnforcement}
 			if tc.enableCPMSFeatureGate {
 				enabledFeatureGates = append(enabledFeatureGates, features.FeatureGateManagedBootImagesCPMS)
 			}
