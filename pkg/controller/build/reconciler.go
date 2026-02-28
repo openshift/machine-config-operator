@@ -556,24 +556,23 @@ func (b *buildReconciler) createNewMachineOSBuildOrReuseExisting(ctx context.Con
 		return fmt.Errorf("could not get MachineConfigPool %s for MachineOSConfig %s: %w", mosc.Spec.MachineConfigPool.Name, mosc.Name, err)
 	}
 
+	mc, err := b.machineConfigLister.Get(mcp.Spec.Configuration.Name)
+	if err != nil {
+		return fmt.Errorf("could not get MachineConfig %s for MachineConfigPool %s: %w", mcp.Spec.Configuration.Name, mcp.Name, err)
+	}
+
 	// Allow builds to retry when pool is degraded only due to BuildDegraded,
 	// but prevent builds for other types of degradation (NodeDegraded, RenderDegraded)
 	if b.shouldPreventBuildDueToDegradation(mcp) {
 		return fmt.Errorf("MachineConfigPool %s is degraded due to non-build issues", mcp.Name)
 	}
 
-	// TODO: Consider using a ConfigMap lister to get this value instead of the API server.
-	osImageURLs, err := ctrlcommon.GetOSImageURLConfig(ctx, b.kubeclient)
-	if err != nil {
-		return fmt.Errorf("could not get OSImageURLConfig: %w", err)
-	}
-
 	// Construct a new MachineOSBuild object which has the hashed name attached
 	// to it.
 	mosb, err := buildrequest.NewMachineOSBuild(buildrequest.MachineOSBuildOpts{
+		MachineConfig:     mc,
 		MachineOSConfig:   mosc,
 		MachineConfigPool: mcp,
-		OSImageURLConfig:  osImageURLs,
 	})
 
 	if err != nil {
@@ -1360,12 +1359,15 @@ func (b *buildReconciler) reconcilePoolChange(ctx context.Context, mcp *mcfgv1.M
 	// This is our trigger point
 	if (oldRendered != newRendered && needsImageRebuild) || firstOptIn == "" {
 		klog.Infof("pool %q: rendered config changed and requires an image rebuild. Verifying if a valid build already exists...", mcp.Name)
+		mc, err := b.machineConfigLister.Get(mcp.Spec.Configuration.Name)
+		if err != nil {
+			return fmt.Errorf("could not get MachineConfig %q for MachineConfigPool %q: %w", mcp.Spec.Configuration.Name, mcp.Name, err)
+		}
 
-		osImageURLs, _ := ctrlcommon.GetOSImageURLConfig(ctx, b.kubeclient)
 		targetMosb, err := buildrequest.NewMachineOSBuild(buildrequest.MachineOSBuildOpts{
+			MachineConfig:     mc,
 			MachineOSConfig:   mosc,
 			MachineConfigPool: mcp,
-			OSImageURLConfig:  osImageURLs,
 		})
 		if err != nil {
 			return fmt.Errorf("could not generate name for target MOSB: %w", err)
@@ -1435,18 +1437,19 @@ func (b *buildReconciler) reuseImageForNewMOSB(ctx context.Context, mosc *mcfgv1
 		return err
 	}
 
-	// Get the osimageurl for our new MOSB object
-	osImageURLs, err := ctrlcommon.GetOSImageURLConfig(ctx, b.kubeclient)
+	mc, err := b.machineConfigLister.Get(mcp.Spec.Configuration.Name)
 	if err != nil {
 		return err
 	}
+
 	// Build the new MOSB object. this is our "promise", we will eventually check if we will proceed with this
 	newMosb, err := buildrequest.NewMachineOSBuild(
 		buildrequest.MachineOSBuildOpts{
+			MachineConfig:     mc,
 			MachineOSConfig:   mosc,
 			MachineConfigPool: mcp,
-			OSImageURLConfig:  osImageURLs,
 		})
+
 	if err != nil {
 		return err
 	}
@@ -1781,7 +1784,17 @@ func (b *buildReconciler) seedMachineOSConfigWithExistingImage(ctx context.Conte
 		return fmt.Errorf("could not get MachineConfigPool %q: %w", mosc.Spec.MachineConfigPool.Name, err)
 	}
 
-	templateMOSB, err := buildrequest.NewMachineOSBuildFromAPI(ctx, b.kubeclient, mosc, mcp)
+	mc, err := b.machineConfigLister.Get(mcp.Spec.Configuration.Name)
+	if err != nil {
+		return fmt.Errorf("could not get MachineConfig: %q: %w", mcp.Spec.Configuration.Name, err)
+	}
+
+	templateMOSB, err := buildrequest.NewMachineOSBuild(buildrequest.MachineOSBuildOpts{
+		MachineConfig:     mc,
+		MachineConfigPool: mcp,
+		MachineOSConfig:   mosc,
+	})
+
 	if err != nil {
 		return fmt.Errorf("could not generate MachineOSBuild template for MachineOSConfig %q: %w", mosc.Name, err)
 	}

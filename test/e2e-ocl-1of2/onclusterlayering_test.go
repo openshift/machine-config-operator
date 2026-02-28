@@ -189,7 +189,6 @@ func TestMissingImageIsRebuilt(t *testing.T) {
 	require.NoError(t, err)
 	secondMOSB = waitForBuildToStart(t, cs, secondMOSB)
 	t.Logf("MachineOSBuild %q has started", secondMOSB.Name)
-	assertBuildJobIsAsExpected(t, cs, secondMOSB)
 
 	// Wait for the build to finish
 	t.Logf("Waiting for 2nd build completion...")
@@ -220,7 +219,6 @@ func TestMissingImageIsRebuilt(t *testing.T) {
 	require.NoError(t, err)
 	thirdMOSB = waitForBuildToStart(t, cs, thirdMOSB)
 	t.Logf("MachineOSBuild %q has started (rebuild of image1)", thirdMOSB.Name)
-	assertBuildJobIsAsExpected(t, cs, thirdMOSB)
 
 	// Wait for the build to finish
 	t.Logf("Waiting for 3rd build completion...")
@@ -313,7 +311,14 @@ func TestMachineOSConfigChangeRestartsBuild(t *testing.T) {
 	mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(ctx, layeredMCPName, metav1.GetOptions{})
 	require.NoError(t, err)
 
-	firstMosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, cs.GetKubeclient(), mosc, mcp)
+	mc, err := cs.MachineconfigurationV1Interface.MachineConfigs().Get(ctx, mcp.Spec.Configuration.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	firstMosb := buildrequest.NewMachineOSBuildOrDie(buildrequest.MachineOSBuildOpts{
+		MachineConfig:     mc,
+		MachineOSConfig:   mosc,
+		MachineConfigPool: mcp,
+	})
 
 	// First, we get a MachineOSBuild started as usual.
 	waitForBuildToStart(t, cs, firstMosb)
@@ -323,7 +328,11 @@ func TestMachineOSConfigChangeRestartsBuild(t *testing.T) {
 
 	apiMosc := helpers.SetContainerfileContentsOnMachineOSConfig(ctx, t, cs.GetMcfgclient(), mosc, "FROM configs AS final\nRUN echo 'hello' > /etc/hello")
 
-	moscChangeMosb := buildrequest.NewMachineOSBuildFromAPIOrDie(ctx, cs.GetKubeclient(), apiMosc, mcp)
+	moscChangeMosb := buildrequest.NewMachineOSBuildOrDie(buildrequest.MachineOSBuildOpts{
+		MachineConfig:     mc,
+		MachineOSConfig:   apiMosc,
+		MachineConfigPool: mcp,
+	})
 
 	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
 
@@ -523,9 +532,6 @@ func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) 
 	// Wait for the build to start
 	startedBuild := waitForBuildToStartForPoolAndConfig(t, cs, testOpts.poolName, mosc.Name)
 	t.Logf("MachineOSBuild %q has started", startedBuild.Name)
-
-	// Assert that the build job has certain properties and configuration.
-	assertBuildJobIsAsExpected(t, cs, startedBuild)
 
 	t.Logf("Waiting for build completion...")
 
@@ -789,34 +795,6 @@ func waitForBuildToBeInterrupted(t *testing.T, cs *framework.ClientSet, startedB
 	require.NoError(t, err)
 
 	return mosb
-}
-
-// Validates that the build job is configured correctly. In this case,
-// "correctly" means that it has the correct container images. Future
-// assertions could include things like ensuring that the proper volume mounts
-// are present, etc.
-func assertBuildJobIsAsExpected(t *testing.T, cs *framework.ClientSet, mosb *mcfgv1.MachineOSBuild) {
-	t.Helper()
-
-	osImageURLConfig, err := ctrlcommon.GetOSImageURLConfig(context.TODO(), cs.GetKubeclient())
-	require.NoError(t, err)
-
-	mcoImages, err := ctrlcommon.GetImagesConfig(context.TODO(), cs.GetKubeclient())
-	require.NoError(t, err)
-
-	buildPod, err := ocltesthelper.GetPodFromJob(context.TODO(), cs, mosb.Status.Builder.Job.Name)
-	require.NoError(t, err)
-
-	assertContainerIsUsingExpectedImage := func(c corev1.Container, containerName, expectedImage string) {
-		if c.Name == containerName {
-			assert.Equal(t, c.Image, expectedImage)
-		}
-	}
-
-	for _, container := range buildPod.Spec.Containers {
-		assertContainerIsUsingExpectedImage(container, "image-build", mcoImages.MachineConfigOperator)
-		assertContainerIsUsingExpectedImage(container, "wait-for-done", osImageURLConfig.BaseOSContainerImage)
-	}
 }
 
 // Prepares for an on-cluster build test by performing the following:

@@ -1,10 +1,12 @@
 package buildrequest
 
 import (
-	"context"
+
 	//nolint:gosec
+
 	"crypto/md5"
 	"fmt"
+	"strings"
 
 	"github.com/distribution/reference"
 	"github.com/ghodss/yaml"
@@ -13,7 +15,6 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	clientset "k8s.io/client-go/kubernetes"
 )
 
 // This is the same salt / pattern from pkg/controller/render/hash.go
@@ -32,13 +33,17 @@ var (
 // Holds the objects that are used to construct a MachineOSBuild with a hashed
 // name.
 type MachineOSBuildOpts struct {
+	MachineConfig     *mcfgv1.MachineConfig
 	MachineOSConfig   *mcfgv1.MachineOSConfig
 	MachineConfigPool *mcfgv1.MachineConfigPool
-	OSImageURLConfig  *ctrlcommon.OSImageURLConfig
 }
 
 // Validates that the required options are provided.
 func (m *MachineOSBuildOpts) validateForHash() error {
+	if err := m.validateMachineConfig(); err != nil {
+		return fmt.Errorf("machineconfig failed validation: %w", err)
+	}
+
 	if m.MachineOSConfig == nil {
 		return fmt.Errorf("missing required MachineOSConfig")
 	}
@@ -51,8 +56,30 @@ func (m *MachineOSBuildOpts) validateForHash() error {
 		return fmt.Errorf("name mismatch, MachineConfigPool has %q, MachineOSConfig has %q", m.MachineConfigPool.Name, m.MachineOSConfig.Spec.MachineConfigPool.Name)
 	}
 
-	if m.OSImageURLConfig == nil {
-		return fmt.Errorf("misssing OSImageURLConfig")
+	return nil
+}
+
+// Validates that a MachineConfig has the necessary metadata for generating a
+// MachineOSBuild.
+func (m *MachineOSBuildOpts) validateMachineConfig() error {
+	if m.MachineConfig == nil {
+		return fmt.Errorf("missing required MachineConfig")
+	}
+
+	if !strings.HasPrefix(m.MachineConfig.Name, ctrlcommon.RenderedMachineConfigPrefix) {
+		return fmt.Errorf("machineconfig %q is not a rendered MachineConfig", m.MachineConfig.Name)
+	}
+
+	requiredAnnos := []string{ctrlcommon.ReleaseImageVersionAnnotationKey, ctrlcommon.GeneratedByControllerVersionAnnotationKey}
+	for _, anno := range requiredAnnos {
+		val, ok := m.MachineConfig.Annotations[anno]
+		if !ok {
+			return fmt.Errorf("missing annotation %q on MachineConfig %q", anno, m.MachineConfig.Name)
+		}
+
+		if val == "" {
+			return fmt.Errorf("empty annotation %q value on MachineConfig %q", anno, m.MachineConfig.Name)
+		}
 	}
 
 	return nil
@@ -60,6 +87,26 @@ func (m *MachineOSBuildOpts) validateForHash() error {
 
 // Creates a list of objects that are consumed by the SHA256 hash.
 func (m *MachineOSBuildOpts) objectsForHash() []interface{} {
+	// Represents a private version of the OSImageURLConfig struct to keep the
+	// hashed name generation stable regardless of the input source. This means
+	// that we can eventually remove the OSImageURLConfig struct.
+	type osImageURLConfig struct {
+		BaseOSContainerImage           string
+		BaseOSExtensionsContainerImage string
+		OSImageURL                     string
+		ReleaseVersion                 string
+	}
+
+	cfg := osImageURLConfig{
+		BaseOSContainerImage:           m.MachineConfig.Spec.OSImageURL,
+		BaseOSExtensionsContainerImage: m.MachineConfig.Spec.BaseOSExtensionsContainerImage,
+		// To maintain stable hashing, this field is purposely left empty because
+		// these values were originally populated from the
+		// "machine-config-osimageurl" ConfigMap. The ConfigMap field which
+		// populates this struct field is blank.
+		OSImageURL:     "",
+		ReleaseVersion: m.MachineConfig.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey],
+	}
 
 	// The objects considered for hashing described inline:
 	out := []interface{}{
@@ -70,8 +117,8 @@ func (m *MachineOSBuildOpts) objectsForHash() []interface{} {
 		m.MachineConfigPool.Spec.Configuration,
 		// The MachineOSConfig Spec field.
 		m.MachineOSConfig.Spec,
-		// The complete OSImageURLConfig object.
-		m.OSImageURLConfig,
+		// The complete osImageURLConfig object.
+		cfg,
 	}
 
 	return out
@@ -118,23 +165,6 @@ func (m *MachineOSBuildOpts) getHashedName() (string, error) {
 	return fmt.Sprintf("%x", hasher.Sum(nil)), nil
 }
 
-// Constructs the MachineOSBuildOpts by retrieving the OSImageURLConfig from
-// the API server.
-func NewMachineOSBuildOpts(ctx context.Context, kubeclient clientset.Interface, mosc *mcfgv1.MachineOSConfig, mcp *mcfgv1.MachineConfigPool) (MachineOSBuildOpts, error) {
-	// TODO: Consider an implementation that uses listers instead of API clients
-	// just to cut down on API server traffic.
-	osImageURLs, err := ctrlcommon.GetOSImageURLConfig(ctx, kubeclient)
-	if err != nil {
-		return MachineOSBuildOpts{}, fmt.Errorf("could not get OSImageURLConfig: %w", err)
-	}
-
-	return MachineOSBuildOpts{
-		MachineOSConfig:   mosc,
-		MachineConfigPool: mcp,
-		OSImageURLConfig:  osImageURLs,
-	}, nil
-}
-
 // Constructs a new MachineOSBuild object or panics trying. Useful for testing
 // scenarios.
 func NewMachineOSBuildOrDie(opts MachineOSBuildOpts) *mcfgv1.MachineOSBuild {
@@ -145,30 +175,6 @@ func NewMachineOSBuildOrDie(opts MachineOSBuildOpts) *mcfgv1.MachineOSBuild {
 	}
 
 	return mosb
-}
-
-// Retrieves the MachineOSBuildOpts from the API and constructs a new
-// MachineOSBuild object or panics trying. Useful for testing scenarios.
-func NewMachineOSBuildFromAPIOrDie(ctx context.Context, kubeclient clientset.Interface, mosc *mcfgv1.MachineOSConfig, mcp *mcfgv1.MachineConfigPool) *mcfgv1.MachineOSBuild {
-	mosb, err := NewMachineOSBuildFromAPI(ctx, kubeclient, mosc, mcp)
-
-	if err != nil {
-		panic(err)
-	}
-
-	return mosb
-}
-
-// Retrieves the MachineOSBuildOpts from the API and constructs a new
-// MachineOSBuild object.
-func NewMachineOSBuildFromAPI(ctx context.Context, kubeclient clientset.Interface, mosc *mcfgv1.MachineOSConfig, mcp *mcfgv1.MachineConfigPool) (*mcfgv1.MachineOSBuild, error) {
-	opts, err := NewMachineOSBuildOpts(ctx, kubeclient, mosc, mcp)
-
-	if err != nil {
-		return nil, fmt.Errorf("could not get MachineOSBuildOpts: %w", err)
-	}
-
-	return NewMachineOSBuild(opts)
 }
 
 // Constructs a new MachineOSBuild object with all of the labels, the tagged
