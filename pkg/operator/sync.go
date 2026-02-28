@@ -817,9 +817,6 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig, _ *configv1.C
 
 // we need to mimic this
 func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.ClusterOperator) error {
-	if !optr.fgHandler.Enabled(features.FeatureGateMachineConfigNodes) {
-		return nil
-	}
 	nodes, err := optr.nodeLister.List(labels.Everything())
 	if err != nil {
 		return err
@@ -1796,7 +1793,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig, co *c
 				}
 				releaseVersion, _ := optr.vStore.Get("operator")
 
-				if err := isMachineConfigPoolConfigurationValid(optr.fgHandler, pool, version.Hash, releaseVersion, opURL, optr.mcLister.Get); err != nil {
+				if err := isMachineConfigPoolConfigurationValid(pool, version.Hash, releaseVersion, opURL, optr.mcLister.Get); err != nil {
 					lastErr = fmt.Errorf("MachineConfigPool %s has not progressed to latest configuration: %w, retrying", pool.Name, err)
 					newCO := co.DeepCopy()
 					syncerr := optr.syncUpgradeableStatus(newCO)
