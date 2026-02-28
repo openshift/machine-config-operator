@@ -9,7 +9,6 @@ import (
 	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/api/features"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
@@ -148,30 +147,30 @@ func IsBootImageControllerRequired(ctx *ControllerContext) bool {
 		klog.Errorf("unable to get infra.Status.PlatformStatus for boot image controller startup: %v", err)
 		return false
 	}
-	supported, _, _ := CheckBootImagePlatform(infra, ctx.FeatureGatesHandler)
+	supported, _, _ := CheckBootImagePlatform(infra)
 	return supported
 }
 
 // CheckBootImagePlatform determines boot image update support for the cluster platform.
 //
 // Current platform support:
-// - GCP: FeatureGateManagedBootImages (opt-out), CPMS supported
-// - AWS: FeatureGateManagedBootImagesAWS (opt-out), CPMS supported
-// - vSphere: FeatureGateManagedBootImagesvSphere (opt-out), CPMS not supported
-// - Azure: FeatureGateManagedBootImagesAzure (opt-out), CPMS supported (except AzureStackCloud)
+// - GCP: MachineSets opt-out, CPMS opt-in
+// - AWS: MachineSets opt-out, CPMS opt-in
+// - vSphere: MachineSets opt-out, CPMS not supported
+// - Azure: MachineSets opt-out, CPMS opt-in (except AzureStackCloud)
 //
 // Returns:
 // - supported: whether the platform supports boot image updates on machinesets
 // - cpmsSupported: whether the platform supports boot image updates on controlplanemachinesets
 // - enabledByDefault: true if opt-out (enabled by default), false if opt-in (disabled by default)
-func CheckBootImagePlatform(infra *configv1.Infrastructure, fgHandler FeatureGatesHandler) (supported, cpmsSupported, enabledByDefault bool) {
+func CheckBootImagePlatform(infra *configv1.Infrastructure) (supported, cpmsSupported, enabledByDefault bool) {
 	switch infra.Status.PlatformStatus.Type {
 	case configv1.AWSPlatformType:
-		return fgHandler.Enabled(features.FeatureGateManagedBootImagesAWS), true, true
+		return true, true, true
 	case configv1.GCPPlatformType:
-		return fgHandler.Enabled(features.FeatureGateManagedBootImages), true, true
+		return true, true, true
 	case configv1.VSpherePlatformType:
-		return fgHandler.Enabled(features.FeatureGateManagedBootImagesvSphere), false, true
+		return true, false, true
 	case configv1.AzurePlatformType:
 		// Special variant check for Azure platforms; AzureStackCloud boot images are defined at install time
 		// See: https://github.com/openshift/installer/blob/bc941c822f06c10a95ddd080ae6345c25968baf4/pkg/asset/installconfig/azure/validation.go#L743-L749
@@ -179,7 +178,7 @@ func CheckBootImagePlatform(infra *configv1.Infrastructure, fgHandler FeatureGat
 			klog.Infof(" %s is not supported for boot image updates; disabling boot image controller", configv1.AzureStackCloud)
 			return false, false, false
 		}
-		return fgHandler.Enabled(features.FeatureGateManagedBootImagesAzure), true, true
+		return true, true, true
 	}
 	return false, false, false
 }
