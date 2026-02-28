@@ -43,4 +43,9 @@ const (
 	MachineConfigDaemonStateDegraded = "Degraded"
 	// MachineConfigDaemonStateUnreconcilable is set by the daemon when a MachineConfig cannot be applied.
 	MachineConfigDaemonStateUnreconcilable = "Unreconcilable"
+
+	// NodeRoleLabelPrefix is the prefix for node role labels
+	NodeRoleLabelPrefix = "node-role.kubernetes.io/"
+	// ControlPlaneNodeRole is the control-plane role label
+	ControlPlaneNodeRole = "control-plane"
 )
