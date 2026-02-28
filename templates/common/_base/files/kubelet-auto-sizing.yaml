@@ -13,28 +13,14 @@ contents:
         total_memory=$(free -g|awk '/^Mem:/{print $2}')
         # total_memory=8 test the recommended values by modifying this value
         recommended_systemreserved_memory=0
-        if (($total_memory <= 4)); then # 25% of the first 4GB of memory
-            recommended_systemreserved_memory=$(echo $total_memory 0.25 | awk '{print $1 * $2}')
+        if (($total_memory <= 8)); then # 1GiB the non dynamic default value
+            recommended_systemreserved_memory=1
             total_memory=0
         else
             recommended_systemreserved_memory=1
-            total_memory=$((total_memory-4))
-        fi
-        if (($total_memory <= 4)); then # 20% of the next 4GB of memory (up to 8GB)
-            recommended_systemreserved_memory=$(echo $recommended_systemreserved_memory $(echo $total_memory 0.20 | awk '{print $1 * $2}') | awk '{print $1 + $2}')
-            total_memory=0
-        else
-            recommended_systemreserved_memory=$(echo $recommended_systemreserved_memory 0.80 | awk '{print $1 + $2}')
-            total_memory=$((total_memory-4))
-        fi
-        if (($total_memory <= 8)); then # 10% of the next 8GB of memory (up to 16GB)
-            recommended_systemreserved_memory=$(echo $recommended_systemreserved_memory $(echo $total_memory 0.10 | awk '{print $1 * $2}') | awk '{print $1 + $2}')
-            total_memory=0
-        else
-            recommended_systemreserved_memory=$(echo $recommended_systemreserved_memory 0.80 | awk '{print $1 + $2}')
             total_memory=$((total_memory-8))
         fi
-        if (($total_memory <= 112)); then # 6% of the next 112GB of memory (up to 128GB)
+        if (($total_memory <= 120)); then # 6% of the next 120GB of memory (up to 128GB)
             recommended_systemreserved_memory=$(echo $recommended_systemreserved_memory $(echo $total_memory 0.06 | awk '{print $1 * $2}') | awk '{print $1 + $2}')
             total_memory=0
         else
