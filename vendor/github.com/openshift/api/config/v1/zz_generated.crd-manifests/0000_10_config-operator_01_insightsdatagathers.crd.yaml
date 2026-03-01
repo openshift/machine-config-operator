@@ -7,7 +7,6 @@ metadata:
     capability.openshift.io/name: Insights
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
-    release.openshift.io/feature-set: DevPreviewNoUpgrade
   name: insightsdatagathers.config.openshift.io
 spec:
   group: config.openshift.io

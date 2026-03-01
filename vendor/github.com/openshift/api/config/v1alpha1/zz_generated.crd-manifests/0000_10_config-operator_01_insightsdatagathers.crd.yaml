@@ -7,7 +7,6 @@ metadata:
     capability.openshift.io/name: Insights
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
-    release.openshift.io/feature-set: CustomNoUpgrade
   name: insightsdatagathers.config.openshift.io
 spec:
   group: config.openshift.io
@@ -87,6 +86,7 @@ spec:
                         rule: self.matches("^[a-z]+[_a-z]*[a-z]([/a-z][_a-z]*)?[a-z]$")
                     maxItems: 100
                     type: array
+                    x-kubernetes-list-type: atomic
                   storage:
                     description: |-
                       storage is an optional field that allows user to define persistent storage for gathering jobs to store the Insights data archive.

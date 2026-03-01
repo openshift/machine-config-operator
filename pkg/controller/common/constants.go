@@ -27,6 +27,9 @@ const (
 	// ReleaseImageVersionAnnotationKey is used to tag the rendered machineconfigs & controller config with the release image version.
 	ReleaseImageVersionAnnotationKey = "machineconfiguration.openshift.io/release-image-version"
 
+	// BuiltinDefaultStreamAnnotationKey is the MCO fallback default stream.
+	BuiltinDefaultStreamAnnotationKey = "machineconfiguration.openshift.io/builtin-default-stream"
+
 	// OSImageURLOverriddenKey is used to tag a rendered machineconfig when OSImageURL has been overridden from default using machineconfig
 	OSImageURLOverriddenKey = "machineconfiguration.openshift.io/os-image-url-overridden"
 

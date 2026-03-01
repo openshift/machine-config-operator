@@ -160,6 +160,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &machineconfigurationv1alpha1.OSImageStreamApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("OSImageStreamSet"):
 		return &machineconfigurationv1alpha1.OSImageStreamSetApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("OSImageStreamSpec"):
+		return &machineconfigurationv1alpha1.OSImageStreamSpecApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("OSImageStreamStatus"):
 		return &machineconfigurationv1alpha1.OSImageStreamStatusApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("PinnedImageRef"):
