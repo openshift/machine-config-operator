@@ -165,6 +165,9 @@ func IsBootImageControllerRequired(ctx *ControllerContext) bool {
 // - cpmsSupported: whether the platform supports boot image updates on controlplanemachinesets
 // - enabledByDefault: true if opt-out (enabled by default), false if opt-in (disabled by default)
 func CheckBootImagePlatform(infra *configv1.Infrastructure, fgHandler FeatureGatesHandler) (supported, cpmsSupported, enabledByDefault bool) {
+	if infra.Status.PlatformStatus == nil {
+		return false, false, false
+	}
 	switch infra.Status.PlatformStatus.Type {
 	case configv1.AWSPlatformType:
 		return fgHandler.Enabled(features.FeatureGateManagedBootImagesAWS), true, true

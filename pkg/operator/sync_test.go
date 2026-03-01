@@ -439,7 +439,7 @@ func TestSyncMachineConfiguration(t *testing.T) {
 			clusterVersion:                  buildClusterVersion("4.18.0"),
 			annotationExpected:              false,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{},
-			expectedSkewEnforcementStatus:   apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.18.0"),
+			expectedSkewEnforcementStatus:   apihelpers.GetSkewEnforcementStatusNone(),
 		},
 		{
 			name:               "vsphere platform, empty list config, no opt-in expected",
@@ -611,7 +611,7 @@ func TestSyncMachineConfiguration(t *testing.T) {
 			clusterVersion:                  buildClusterVersion("4.19.0"),
 			annotationExpected:              false,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{},
-			expectedSkewEnforcementStatus:   apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.19.0"),
+			expectedSkewEnforcementStatus:   apihelpers.GetSkewEnforcementStatusNone(),
 		},
 		{
 			name:                  "vsphere platform, CPMS updates unsupported, MachineSet configuration expected, no CPMS configuration expected",
@@ -694,13 +694,13 @@ func TestSyncMachineConfiguration(t *testing.T) {
 			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.19.1"),
 		},
 		{
-			name:                            "BareMetal platform (unsupported), skew enforcement manual mode expected",
+			name:                            "BareMetal platform (unsupported), skew enforcement none mode expected",
 			infra:                           buildInfra(withPlatformType(configv1.BareMetalPlatformType)),
 			mcop:                            buildMachineConfigurationWithNoBootImageConfiguration(),
 			clusterVersion:                  buildClusterVersion("4.18.0"),
 			annotationExpected:              false,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{},
-			expectedSkewEnforcementStatus:   apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.18.0"),
+			expectedSkewEnforcementStatus:   apihelpers.GetSkewEnforcementStatusNone(),
 		},
 		{
 			name:               "AWS platform, cluster version with multiple history entries",
