@@ -3,6 +3,7 @@ package containerruntimeconfig
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -12,12 +13,14 @@ import (
 	signature "github.com/containers/image/v5/signature"
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	apicfgv1 "github.com/openshift/api/config/v1"
+	apicfgv1alpha1 "github.com/openshift/api/config/v1alpha1"
 	features "github.com/openshift/api/features"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
 	cligoinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	cligolistersv1 "github.com/openshift/client-go/config/listers/config/v1"
+	cligolistersv1alpha1 "github.com/openshift/client-go/config/listers/config/v1alpha1"
 	runtimeutils "github.com/openshift/runtime-utils/pkg/registries"
 
 	operatorinformersv1alpha1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1alpha1"
@@ -26,6 +29,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
@@ -87,6 +91,7 @@ type Controller struct {
 
 	syncHandler                   func(mcp string) error
 	syncImgHandler                func(mcp string) error
+	syncCRIOCPHandler             func(key string) error
 	enqueueContainerRuntimeConfig func(*mcfgv1.ContainerRuntimeConfig)
 
 	ccLister       mcfglistersv1.ControllerConfigLister
@@ -107,6 +112,10 @@ type Controller struct {
 	itmsLister       cligolistersv1.ImageTagMirrorSetLister
 	itmsListerSynced cache.InformerSynced
 
+	criocpLister         cligolistersv1alpha1.CRIOCredentialProviderConfigLister
+	criocpListerSynced   cache.InformerSynced
+	addedCRIOCPObservers bool
+
 	configInformerFactory          configinformers.SharedInformerFactory
 	clusterImagePolicyLister       cligolistersv1.ClusterImagePolicyLister
 	clusterImagePolicyListerSynced cache.InformerSynced
@@ -123,8 +132,9 @@ type Controller struct {
 
 	fgHandler ctrlcommon.FeatureGatesHandler
 
-	queue    workqueue.TypedRateLimitingInterface[string]
-	imgQueue workqueue.TypedRateLimitingInterface[string]
+	queue       workqueue.TypedRateLimitingInterface[string]
+	imgQueue    workqueue.TypedRateLimitingInterface[string]
+	criocpQueue workqueue.TypedRateLimitingInterface[string]
 }
 
 // New returns a new container runtime config controller
@@ -157,7 +167,8 @@ func New(
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
 			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigcontroller-containerruntimeconfigcontroller"}),
-		imgQueue: workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]()),
+		imgQueue:    workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]()),
+		criocpQueue: workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]()),
 	}
 
 	mcrInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -192,6 +203,7 @@ func New(
 
 	ctrl.syncHandler = ctrl.syncContainerRuntimeConfig
 	ctrl.syncImgHandler = ctrl.syncImageConfig
+	ctrl.syncCRIOCPHandler = ctrl.syncCRIOCredentialProviderConfig
 	ctrl.enqueueContainerRuntimeConfig = ctrl.enqueue
 
 	ctrl.mcpLister = mcpInformer.Lister()
@@ -231,15 +243,30 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 	defer ctrl.imgQueue.ShutDown()
+	defer ctrl.criocpQueue.ShutDown()
 	listerCaches := []cache.InformerSynced{ctrl.mcpListerSynced, ctrl.mccrListerSynced, ctrl.ccListerSynced,
 		ctrl.imgListerSynced, ctrl.icspListerSynced, ctrl.idmsListerSynced, ctrl.itmsListerSynced, ctrl.clusterVersionListerSynced}
 
 	if ctrl.sigstoreAPIEnabled() {
 		ctrl.addImagePolicyObservers()
 		klog.Info("addded image policy observers with sigstore featuregate enabled")
+	}
+
+	if ctrl.criocpEnabled() {
+		ctrl.addCRIOCPObservers()
+		klog.Info("added CRIOCredentialProviderConfig observers with CRIOCredentialProviderConfig featuregate enabled")
+	}
+
+	if ctrl.addedPolicyObservers || ctrl.addedCRIOCPObservers {
 		ctrl.configInformerFactory.Start(stopCh)
+	}
+
+	if ctrl.addedPolicyObservers {
 		listerCaches = append(listerCaches, ctrl.clusterImagePolicyListerSynced, ctrl.imagePolicyListerSynced)
-		ctrl.addedPolicyObservers = true
+	}
+
+	if ctrl.addedCRIOCPObservers {
+		listerCaches = append(listerCaches, ctrl.criocpListerSynced)
 	}
 
 	if !cache.WaitForCacheSync(stopCh, listerCaches...) {
@@ -255,6 +282,9 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 
 	// Just need one worker for the image config
 	go wait.Until(ctrl.imgWorker, time.Second, stopCh)
+
+	// Just need one worker for the CRIOCredentialProviderConfig
+	go wait.Until(ctrl.criocpWorker, time.Second, stopCh)
 
 	<-stopCh
 }
@@ -317,6 +347,29 @@ func (ctrl *Controller) itmsConfDeleted(_ interface{}) {
 	ctrl.imgQueue.Add("openshift-config")
 }
 
+func (ctrl *Controller) addCRIOCPObservers() {
+	ctrl.configInformerFactory.Config().V1alpha1().CRIOCredentialProviderConfigs().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.criocpConfAdded,
+		UpdateFunc: ctrl.criocpConfUpdated,
+		DeleteFunc: ctrl.criocpConfDeleted,
+	})
+	ctrl.criocpLister = ctrl.configInformerFactory.Config().V1alpha1().CRIOCredentialProviderConfigs().Lister()
+	ctrl.criocpListerSynced = ctrl.configInformerFactory.Config().V1alpha1().CRIOCredentialProviderConfigs().Informer().HasSynced
+	ctrl.addedCRIOCPObservers = true
+}
+
+func (ctrl *Controller) criocpConfAdded(_ interface{}) {
+	ctrl.criocpQueue.Add("openshift-config")
+}
+
+func (ctrl *Controller) criocpConfUpdated(_, _ interface{}) {
+	ctrl.criocpQueue.Add("openshift-config")
+}
+
+func (ctrl *Controller) criocpConfDeleted(_ interface{}) {
+	ctrl.criocpQueue.Add("openshift-config")
+}
+
 func (ctrl *Controller) addImagePolicyObservers() {
 	ctrl.configInformerFactory.Config().V1().ClusterImagePolicies().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.clusterImagePolicyAdded,
@@ -333,6 +386,7 @@ func (ctrl *Controller) addImagePolicyObservers() {
 	})
 	ctrl.imagePolicyLister = ctrl.configInformerFactory.Config().V1().ImagePolicies().Lister()
 	ctrl.imagePolicyListerSynced = ctrl.configInformerFactory.Config().V1().ImagePolicies().Informer().HasSynced
+	ctrl.addedPolicyObservers = true
 }
 
 func (ctrl *Controller) clusterImagePolicyAdded(_ interface{}) {
@@ -361,6 +415,10 @@ func (ctrl *Controller) imagePolicyDeleted(_ interface{}) {
 
 func (ctrl *Controller) sigstoreAPIEnabled() bool {
 	return ctrl.fgHandler.Enabled(features.FeatureGateSigstoreImageVerification)
+}
+
+func (ctrl *Controller) criocpEnabled() bool {
+	return ctrl.fgHandler.Enabled(features.FeatureGateCRIOCredentialProviderConfig)
 }
 
 func (ctrl *Controller) updateContainerRuntimeConfig(oldObj, newObj interface{}) {
@@ -442,6 +500,11 @@ func (ctrl *Controller) imgWorker() {
 	}
 }
 
+func (ctrl *Controller) criocpWorker() {
+	for ctrl.processNextCRIOCPWorkItem() {
+	}
+}
+
 func (ctrl *Controller) processNextWorkItem() bool {
 	key, quit := ctrl.queue.Get()
 	if quit {
@@ -464,6 +527,19 @@ func (ctrl *Controller) processNextImgWorkItem() bool {
 
 	err := ctrl.syncImgHandler(key)
 	ctrl.handleImgErr(err, key)
+
+	return true
+}
+
+func (ctrl *Controller) processNextCRIOCPWorkItem() bool {
+	key, quit := ctrl.criocpQueue.Get()
+	if quit {
+		return false
+	}
+	defer ctrl.criocpQueue.Done(key)
+
+	err := ctrl.syncCRIOCPHandler(key)
+	ctrl.handleCRIOCPErr(err, key)
 
 	return true
 }
@@ -502,6 +578,24 @@ func (ctrl *Controller) handleImgErr(err error, key string) {
 	klog.V(2).Infof("Dropping image config %q out of the queue: %v", key, err)
 	ctrl.imgQueue.Forget(key)
 	ctrl.imgQueue.AddAfter(key, 1*time.Minute)
+}
+
+func (ctrl *Controller) handleCRIOCPErr(err error, key string) {
+	if err == nil {
+		ctrl.criocpQueue.Forget(key)
+		return
+	}
+
+	if ctrl.criocpQueue.NumRequeues(key) < maxRetries {
+		klog.V(2).Infof("Error syncing CRIOCredentialProviderConfig %v: %v", key, err)
+		ctrl.criocpQueue.AddRateLimited(key)
+		return
+	}
+
+	utilruntime.HandleError(err)
+	klog.V(2).Infof("Dropping CRIOCredentialProviderConfig %q out of the queue: %v", key, err)
+	ctrl.criocpQueue.Forget(key)
+	ctrl.criocpQueue.AddAfter(key, 1*time.Minute)
 }
 
 // generateOriginalContainerRuntimeConfigs returns rendered default storage, registries and policy config files
@@ -549,6 +643,52 @@ func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.Cont
 	}
 
 	return gmcStorageConfig, gmcRegistriesConfig, gmcPolicyJSON, nil
+}
+
+func generateOriginalCredentialProviderConfig(templateDir string, cc *mcfgv1.ControllerConfig, role string) (*ign3types.File, string, error) {
+
+	// Render the default templates
+	rc := &mtmpl.RenderConfig{
+		ControllerConfigSpec: &cc.Spec,
+	}
+	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templateDir)
+	if err != nil {
+		return nil, "", fmt.Errorf("generateMachineConfigsforRole failed with error %w", err)
+	}
+
+	var (
+		config, gmcCredProviderConfig *ign3types.File
+		errCredProvider               error
+		credProviderConfigPath        string
+	)
+
+	// Determine credential provider config path based on platform
+	// staying consistent with path used in pkg/controller/template/render.go
+	credProviderConfigPathFormat := filepath.FromSlash("/etc/kubernetes/credential-providers/%s-credential-provider.yaml")
+	switch cc.Spec.Infra.Status.PlatformStatus.Type {
+	case apicfgv1.AWSPlatformType:
+		credProviderConfigPath = fmt.Sprintf(credProviderConfigPathFormat, "ecr")
+	case apicfgv1.GCPPlatformType:
+		credProviderConfigPath = fmt.Sprintf(credProviderConfigPathFormat, "gcr")
+	case apicfgv1.AzurePlatformType:
+		credProviderConfigPath = fmt.Sprintf(credProviderConfigPathFormat, "acr")
+	default:
+		return nil, "", fmt.Errorf("unsupported platform type: %s", cc.Spec.Infra.Status.PlatformStatus.Type)
+	}
+
+	// Find credential provider config
+	for _, gmc := range generatedConfigs {
+		config, errCredProvider = findCredProviderConfig(gmc, credProviderConfigPath)
+		if errCredProvider == nil {
+			gmcCredProviderConfig = config
+			break
+		}
+	}
+	if errCredProvider != nil {
+		return nil, "", fmt.Errorf("could not generate original credential provider configs: %w", errCredProvider)
+	}
+
+	return gmcCredProviderConfig, credProviderConfigPath, nil
 }
 
 func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.ContainerRuntimeConfig, err error, args ...interface{}) error {
@@ -1028,6 +1168,111 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 	return nil
 }
 
+func (ctrl *Controller) syncCRIOCredentialProviderConfig(key string) error {
+	startTime := time.Now()
+	klog.V(4).Infof("Started syncing CRIOCredentialProvider config %q (%v)", key, startTime)
+	defer func() {
+		klog.V(4).Infof("Finished syncing CRIOCredentialProvider config %q (%v)", key, time.Since(startTime))
+	}()
+
+	var (
+		crioCredentialProviderConfig *apicfgv1alpha1.CRIOCredentialProviderConfig
+		err                          error
+	)
+
+	if ctrl.criocpEnabled() && ctrl.addedCRIOCPObservers {
+		crioCredentialProviderConfig, err = ctrl.criocpLister.Get("cluster")
+		if errors.IsNotFound(err) {
+			klog.V(2).Infof("CRIOCredentialProviderConfig 'cluster' does not exist or has been deleted")
+			return nil
+		} else if err != nil {
+			return err
+		}
+	} else {
+		klog.V(2).Infof("CRIOCredentialProviderConfig observer not added, skipping sync")
+		return nil
+	}
+
+	// Get ControllerConfig
+	controllerConfig, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
+	if err != nil {
+		return fmt.Errorf("could not get ControllerConfig %w", err)
+	}
+
+	sel, err := metav1.LabelSelectorAsSelector(metav1.AddLabelToSelector(&metav1.LabelSelector{}, builtInLabelKey, ""))
+	if err != nil {
+		return err
+	}
+	// Find all the MCO built in MachineConfigPools
+	mcpPools, err := ctrl.mcpLister.List(sel)
+	if err != nil {
+		return err
+	}
+
+	for _, pool := range mcpPools {
+		applied := true
+		role := pool.Name
+
+		managedKeyCredentialProvider, err := getManagedKeyCRIOCredentialProvider(pool)
+		if err != nil {
+			ctrl.syncCRIOCredentialProviderConfigStatusOnly(err, "could not get CRIOCredentialProviderConfig managed key: %v", err)
+		}
+
+		if err := retry.RetryOnConflict(updateBackoff, func() error {
+			if crioCredentialProviderConfig != nil {
+
+				credentialProviderConfigIgn, err := crioCredentialProviderConfigIgnition(ctrl.templatesDir, controllerConfig, role, crioCredentialProviderConfig)
+				if err != nil {
+					return ctrl.syncCRIOCredentialProviderConfigStatusOnly(err, "could not generate CRIOCredentialProvider Ignition config: %v", err)
+				}
+
+				applied, err = ctrl.syncIgnitionConfig(managedKeyCredentialProvider, credentialProviderConfigIgn, pool, ownerReferenceCredentialProviderConfig(crioCredentialProviderConfig))
+				if err != nil {
+					return ctrl.syncCRIOCredentialProviderConfigStatusOnly(err, "could not sync CRIOCredentialProvider Ignition config: %v", err)
+				}
+			}
+
+			return err
+		}); err != nil {
+			return ctrl.syncCRIOCredentialProviderConfigStatusOnly(err, "could not Create/Update MachineConfig: %v", err)
+		}
+
+		if applied {
+			klog.Infof("Applied CRIOCredentialProviderConfig cluster on MachineConfigPool %v", pool.Name)
+			ctrlcommon.UpdateStateMetric(ctrlcommon.MCCSubControllerState, "machine-config-controller-container-runtime-config", "Sync CRIO Credential Provider Config", pool.Name)
+			ctrl.syncCRIOCredentialProviderConfigStatusOnly(nil)
+		}
+	}
+
+	return nil
+}
+
+func (ctrl *Controller) syncCRIOCredentialProviderConfigStatusOnly(err error, args ...interface{}) error {
+	statusUpdateErr := retry.RetryOnConflict(updateBackoff, func() error {
+		newCfg, getErr := ctrl.criocpLister.Get("cluster")
+		if getErr != nil {
+			return getErr
+		}
+
+		newStatusCondition := wrapErrorWithCRIOCredentialProviderConfigCondition(err, args...)
+
+		// Update the observedGeneration
+		if newCfg.GetGeneration() != newStatusCondition.ObservedGeneration {
+			newStatusCondition.ObservedGeneration = newCfg.GetGeneration()
+		}
+
+		meta.SetStatusCondition(&newCfg.Status.Conditions, newStatusCondition)
+		_, updateErr := ctrl.configClient.ConfigV1alpha1().CRIOCredentialProviderConfigs().UpdateStatus(context.TODO(), newCfg, metav1.UpdateOptions{})
+		return updateErr
+	})
+	// If an error occurred in updating the status just log it
+	if statusUpdateErr != nil {
+		klog.Warningf("error updating CRIOCredentialProviderConfig status: %v", statusUpdateErr)
+	}
+	// Want to return the actual error received from the sync function
+	return err
+}
+
 func (ctrl *Controller) syncIgnitionConfig(managedKey string, ignFile *ign3types.Config, pool *mcfgv1.MachineConfigPool, ownerRef metav1.OwnerReference) (bool, error) {
 	rawIgn, err := json.Marshal(ignFile)
 	if err != nil {
@@ -1371,4 +1616,41 @@ func (ctrl *Controller) getPoolsForContainerRuntimeConfig(config *mcfgv1.Contain
 	}
 
 	return pools, nil
+}
+
+func crioCredentialProviderConfigIgnition(templateDir string, controllerConfig *mcfgv1.ControllerConfig, role string, crioCredentialProviderConfig *apicfgv1alpha1.CRIOCredentialProviderConfig) (*ign3types.Config, error) {
+
+	var credProviderConfigYaml []byte
+
+	originalCredProviderConfigIgn, credProviderConfigPath, err := generateOriginalCredentialProviderConfig(templateDir, controllerConfig, role)
+	if err != nil {
+		return nil, fmt.Errorf("could not generate original CRIOCredentialProvider config for role %s: %w", role, err)
+	}
+	contents, err := ctrlcommon.DecodeIgnitionFileContents(originalCredProviderConfigIgn.Contents.Source, originalCredProviderConfigIgn.Contents.Compression)
+	if err != nil {
+		return nil, fmt.Errorf("could not decode CRIOCredentialProvider config for role %s: %w", role, err)
+	}
+
+	matchImages := make(map[string]bool)
+
+	credProviderConfigObject, err := credProviderConfigObject(contents)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, img := range crioCredentialProviderConfig.Spec.MatchImages {
+		imgStr := string(img)
+		matchImages[imgStr] = true
+	}
+
+	if len(matchImages) != 0 {
+		credProviderConfigYaml, err = updateCredentialProviderConfig(credProviderConfigObject, matchImages)
+		if err != nil {
+			return nil, err
+		}
+	}
+	credProviderConfigIgn := createNewIgnition([]generatedConfigFile{
+		{filePath: credProviderConfigPath, data: credProviderConfigYaml},
+	})
+	return &credProviderConfigIgn, nil
 }
