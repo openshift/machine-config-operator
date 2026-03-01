@@ -108,6 +108,40 @@ var (
 					},
 				},
 			},
+			{
+				Path: "/etc/iri-registry",
+				Actions: []opv1.NodeDisruptionPolicyStatusAction{
+					{
+						Type: opv1.NoneStatusAction,
+					},
+				},
+			},
+			{
+				Path: "/usr/local/bin/load-registry-image.sh",
+				Actions: []opv1.NodeDisruptionPolicyStatusAction{
+					{
+						Type: opv1.NoneStatusAction,
+					},
+				},
+			},
+			{
+				Path: "/var/lib/iri-registry",
+				Actions: []opv1.NodeDisruptionPolicyStatusAction{
+					{
+						Type: opv1.NoneStatusAction,
+					},
+				},
+			},
+		},
+		Units: []opv1.NodeDisruptionPolicyStatusUnit{
+			{
+				Name: "iri-registry.service",
+				Actions: []opv1.NodeDisruptionPolicyStatusAction{
+					{
+						Type: opv1.NoneStatusAction,
+					},
+				},
+			},
 		},
 		SSHKey: opv1.NodeDisruptionPolicyStatusSSHKey{
 			Actions: []opv1.NodeDisruptionPolicyStatusAction{
