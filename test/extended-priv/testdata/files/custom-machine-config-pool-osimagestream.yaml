@@ -1,0 +1,24 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: mcp-osimagestream-template
+objects:
+  - kind: MachineConfigPool
+    apiVersion: machineconfiguration.openshift.io/v1
+    metadata:
+      name: "${NAME}"
+      labels:
+        pools.operator.machineconfiguration.openshift.io/${NAME}: ""
+    spec:
+      machineConfigSelector:
+        matchExpressions:
+          - { key: machineconfiguration.openshift.io/role, operator: In, values: [ worker,"${NAME}" ] }
+      nodeSelector:
+        matchLabels:
+          node-role.kubernetes.io/${NAME}: ""
+      osImageStream:
+        name: ${{OSIMAGESTREAM}}
+parameters:
+  - name: NAME
+  - name: OSIMAGESTREAM
+    description: "osImageStream name. Example: rhel-9"
