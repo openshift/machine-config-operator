@@ -565,6 +565,13 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 			return err
 		}
 
+		// TODO: add here validation to check if the extension installed correctly?
+		installedSet, err := dn.getCurrentlyInstalledPackages()
+		if err != nil {
+			return err
+		}
+		klog.Errorf("installedSet: %v", installedSet)
+
 		if dn.nodeWriter != nil {
 			var nodeName string
 			var nodeObjRef corev1.ObjectReference
@@ -1831,6 +1838,53 @@ func (dn *CoreOSDaemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConf
 	args = append([]string{constants.RPMOSTreeUpdateArg}, args...)
 	logSystem("Applying extensions : %+q", args)
 	return runRpmOstree(args...)
+}
+
+// validateExtensions checks that all extension packages specified in the MachineConfig
+// are actually installed on the node. This is called after reboot to verify that
+// extensions were installed correctly. If any required packages are missing, an error
+// is returned which will cause the node (and subsequently the MachineConfigPool) to degrade.
+func (dn *CoreOSDaemon) validateExtensions(currentConfig *mcfgv1.MachineConfig) error {
+	// Skip validation on non-RHCOS nodes since extensions are not supported
+	if !dn.os.IsEL() {
+		return nil
+	}
+
+	// Skip validation if no extensions are specified
+	if len(currentConfig.Spec.Extensions) == 0 {
+		return nil
+	}
+
+	// Get currently installed packages from rpm-ostree status
+	installedSet, err := dn.getCurrentlyInstalledPackages()
+	if err != nil {
+		return fmt.Errorf("failed to get installed packages for extension validation: %w", err)
+	}
+
+	// Validate that all required extension packages are installed
+	supportedExtensions := ctrlcommon.SupportedExtensions()
+	var missingPackages []string
+
+	for _, ext := range currentConfig.Spec.Extensions {
+		packages, exists := supportedExtensions[ext]
+		if !exists {
+			klog.Warningf("Extension %q is not in the supported extensions list, skipping validation", ext)
+			continue
+		}
+
+		for _, pkg := range packages {
+			if !installedSet.Has(pkg) {
+				missingPackages = append(missingPackages, fmt.Sprintf("%s (from extension %s)", pkg, ext))
+			}
+		}
+	}
+
+	if len(missingPackages) > 0 {
+		return fmt.Errorf("extension packages not installed correctly: %v", missingPackages)
+	}
+
+	klog.V(4).Infof("Extension validation passed: all %d extension(s) installed correctly", len(currentConfig.Spec.Extensions))
+	return nil
 }
 
 // switchKernel updates kernel on host with the kernelType specified in MachineConfig.
