@@ -2359,7 +2359,7 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 	}
 
 	defaultOptInEvent := false
-	supportsBootImageUpdates, supportCPMSBootImageUpdates, isDefaultOnPlatform := ctrlcommon.CheckBootImagePlatform(infra, optr.fgHandler)
+	supportsBootImageUpdates, supportCPMSBootImageUpdates, isDefaultOnPlatform := ctrlcommon.CheckBootImagePlatform(infra)
 	// Populate the default boot images configuration in the status, if the cluster is on a
 	// boot image updates supported platform
 	if supportsBootImageUpdates {

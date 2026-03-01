@@ -31,16 +31,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	g.JustBeforeEach(func() {
 		// Skip if no machineset
 		SkipTestIfWorkersCannotBeScaled(oc.AsAdmin())
-		// Bootimages Update functionality is only available in GCP(GA), AWS(GA), Vsphere(TP) and Azure(TP)
+		// Bootimages Update functionality is only available in GCP, AWS, vSphere and Azure
 		skipTestIfSupportedPlatformNotMatched(oc, GCPPlatform, AWSPlatform, VspherePlatform, AzurePlatform)
-		platform := exutil.CheckPlatform(oc)
-		if platform == VspherePlatform {
-			SkipIfNoFeatureGate(oc.AsAdmin(), "ManagedBootImagesvSphere")
-		}
-		if platform == AzurePlatform {
-			SkipIfNoFeatureGate(oc.AsAdmin(), "ManagedBootImagesAzure")
-		}
-
 		wMcp = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
 		machineConfiguration = GetMachineConfiguration(oc.AsAdmin())
 		PreChecks(oc)
