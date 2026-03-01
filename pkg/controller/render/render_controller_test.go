@@ -613,3 +613,298 @@ func TestGenerateMachineConfigValidation(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, gmc)
 }
+
+func TestIsCustomPool(t *testing.T) {
+	tests := []struct {
+		name     string
+		poolName string
+		expected bool
+	}{
+		{
+			name:     "master pool is not custom",
+			poolName: "master",
+			expected: false,
+		},
+		{
+			name:     "worker pool is not custom",
+			poolName: "worker",
+			expected: false,
+		},
+		{
+			name:     "arbiter pool is not custom",
+			poolName: "arbiter",
+			expected: false,
+		},
+		{
+			name:     "infra pool is custom",
+			poolName: "infra",
+			expected: true,
+		},
+		{
+			name:     "custom-role pool is custom",
+			poolName: "custom-role",
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pool := helpers.NewMachineConfigPool(tt.poolName, helpers.WorkerSelector, nil, "")
+			result := ctrlcommon.IsCustomPool(pool)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestGetOSImageStreamNameForPool(t *testing.T) {
+	tests := []struct {
+		name           string
+		pool           *mcfgv1.MachineConfigPool
+		workerPool     *mcfgv1.MachineConfigPool
+		expectedStream string
+	}{
+		{
+			name: "custom pool with explicit stream uses explicit stream",
+			pool: func() *mcfgv1.MachineConfigPool {
+				p := helpers.NewMachineConfigPool("infra", helpers.InfraSelector, nil, "")
+				p.Spec.OSImageStream.Name = "rhel-10"
+				return p
+			}(),
+			workerPool: func() *mcfgv1.MachineConfigPool {
+				p := helpers.NewMachineConfigPool("worker", helpers.WorkerSelector, nil, "")
+				p.Spec.OSImageStream.Name = "rhel-9"
+				return p
+			}(),
+			expectedStream: "rhel-10",
+		},
+		{
+			name: "custom pool without stream inherits from worker",
+			pool: helpers.NewMachineConfigPool("infra", helpers.InfraSelector, nil, ""),
+			workerPool: func() *mcfgv1.MachineConfigPool {
+				p := helpers.NewMachineConfigPool("worker", helpers.WorkerSelector, nil, "")
+				p.Spec.OSImageStream.Name = "rhel-9"
+				return p
+			}(),
+			expectedStream: "rhel-9",
+		},
+		{
+			name:           "custom pool without stream, worker has no stream, uses default",
+			pool:           helpers.NewMachineConfigPool("infra", helpers.InfraSelector, nil, ""),
+			workerPool:     helpers.NewMachineConfigPool("worker", helpers.WorkerSelector, nil, ""),
+			expectedStream: "",
+		},
+		{
+			name:           "custom pool without stream, worker doesn't exist, uses default",
+			pool:           helpers.NewMachineConfigPool("infra", helpers.InfraSelector, nil, ""),
+			workerPool:     nil,
+			expectedStream: "",
+		},
+		{
+			name: "standard pool (master) with explicit stream uses explicit stream",
+			pool: func() *mcfgv1.MachineConfigPool {
+				p := helpers.NewMachineConfigPool("master", helpers.MasterSelector, nil, "")
+				p.Spec.OSImageStream.Name = "rhel-10"
+				return p
+			}(),
+			workerPool: func() *mcfgv1.MachineConfigPool {
+				p := helpers.NewMachineConfigPool("worker", helpers.WorkerSelector, nil, "")
+				p.Spec.OSImageStream.Name = "rhel-9"
+				return p
+			}(),
+			expectedStream: "rhel-10",
+		},
+		{
+			name:           "standard pool (worker) without stream uses default",
+			pool:           helpers.NewMachineConfigPool("worker", helpers.WorkerSelector, nil, ""),
+			workerPool:     nil,
+			expectedStream: "",
+		},
+		{
+			name: "standard pool (arbiter) without stream uses default",
+			pool: helpers.NewMachineConfigPool("arbiter", &metav1.LabelSelector{
+				MatchLabels: map[string]string{"node-role/arbiter": ""},
+			}, nil, ""),
+			workerPool:     nil,
+			expectedStream: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFixture(t)
+
+			// Add worker pool to lister if provided
+			if tt.workerPool != nil {
+				f.mcpLister = append(f.mcpLister, tt.workerPool)
+				f.objects = append(f.objects, tt.workerPool)
+			}
+
+			c := f.newController()
+
+			result := c.getOSImageStreamNameForPool(tt.pool)
+			assert.Equal(t, tt.expectedStream, result, "Expected stream name %q, got %q", tt.expectedStream, result)
+		})
+	}
+}
+
+func TestGetOSImageStreamNameForPoolBootstrap(t *testing.T) {
+	tests := []struct {
+		name           string
+		pool           *mcfgv1.MachineConfigPool
+		pools          []*mcfgv1.MachineConfigPool
+		expectedStream string
+	}{
+		{
+			name: "custom pool with explicit stream uses explicit stream",
+			pool: func() *mcfgv1.MachineConfigPool {
+				p := helpers.NewMachineConfigPool("infra", helpers.InfraSelector, nil, "")
+				p.Spec.OSImageStream.Name = "rhel-10"
+				return p
+			}(),
+			pools: []*mcfgv1.MachineConfigPool{
+				func() *mcfgv1.MachineConfigPool {
+					p := helpers.NewMachineConfigPool("worker", helpers.WorkerSelector, nil, "")
+					p.Spec.OSImageStream.Name = "rhel-9"
+					return p
+				}(),
+			},
+			expectedStream: "rhel-10",
+		},
+		{
+			name: "custom pool without stream inherits from worker",
+			pool: helpers.NewMachineConfigPool("infra", helpers.InfraSelector, nil, ""),
+			pools: []*mcfgv1.MachineConfigPool{
+				helpers.NewMachineConfigPool("master", helpers.MasterSelector, nil, ""),
+				func() *mcfgv1.MachineConfigPool {
+					p := helpers.NewMachineConfigPool("worker", helpers.WorkerSelector, nil, "")
+					p.Spec.OSImageStream.Name = "rhel-9"
+					return p
+				}(),
+			},
+			expectedStream: "rhel-9",
+		},
+		{
+			name: "custom pool without stream, worker has no stream, uses default",
+			pool: helpers.NewMachineConfigPool("infra", helpers.InfraSelector, nil, ""),
+			pools: []*mcfgv1.MachineConfigPool{
+				helpers.NewMachineConfigPool("worker", helpers.WorkerSelector, nil, ""),
+			},
+			expectedStream: "",
+		},
+		{
+			name: "custom pool without stream, no worker pool exists, uses default",
+			pool: helpers.NewMachineConfigPool("infra", helpers.InfraSelector, nil, ""),
+			pools: []*mcfgv1.MachineConfigPool{
+				helpers.NewMachineConfigPool("master", helpers.MasterSelector, nil, ""),
+			},
+			expectedStream: "",
+		},
+		{
+			name: "standard pool (master) with explicit stream uses explicit stream",
+			pool: func() *mcfgv1.MachineConfigPool {
+				p := helpers.NewMachineConfigPool("master", helpers.MasterSelector, nil, "")
+				p.Spec.OSImageStream.Name = "rhel-10"
+				return p
+			}(),
+			pools: []*mcfgv1.MachineConfigPool{
+				func() *mcfgv1.MachineConfigPool {
+					p := helpers.NewMachineConfigPool("worker", helpers.WorkerSelector, nil, "")
+					p.Spec.OSImageStream.Name = "rhel-9"
+					return p
+				}(),
+			},
+			expectedStream: "rhel-10",
+		},
+		{
+			name: "standard pool (worker) without stream uses default",
+			pool: helpers.NewMachineConfigPool("worker", helpers.WorkerSelector, nil, ""),
+			pools: []*mcfgv1.MachineConfigPool{
+				helpers.NewMachineConfigPool("master", helpers.MasterSelector, nil, ""),
+			},
+			expectedStream: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := getOSImageStreamNameForPoolBootstrap(tt.pool, tt.pools)
+			assert.Equal(t, tt.expectedStream, result, "Expected stream name %q, got %q", tt.expectedStream, result)
+		})
+	}
+}
+
+func TestWorkerPoolOSImageStreamChangeEnqueuesCustomPools(t *testing.T) {
+	f := newFixture(t)
+
+	// Create worker pool with osImageStream
+	workerPool := helpers.NewMachineConfigPool("worker", helpers.WorkerSelector, nil, "")
+	workerPool.Spec.OSImageStream.Name = "rhel-9"
+
+	// Create custom pools
+	infraPool := helpers.NewMachineConfigPool("infra", helpers.InfraSelector, nil, "")
+	customPool := helpers.NewMachineConfigPool("custom", helpers.InfraSelector, nil, "")
+
+	// Add pools to lister
+	f.mcpLister = append(f.mcpLister, workerPool, infraPool, customPool)
+	f.objects = append(f.objects, workerPool, infraPool, customPool)
+
+	c := f.newController()
+
+	// Track which pools get enqueued
+	enqueuedPools := []string{}
+	c.enqueueMachineConfigPool = func(pool *mcfgv1.MachineConfigPool) {
+		enqueuedPools = append(enqueuedPools, pool.Name)
+	}
+
+	// Update worker pool with new osImageStream
+	oldWorkerPool := workerPool.DeepCopy()
+	newWorkerPool := workerPool.DeepCopy()
+	newWorkerPool.Spec.OSImageStream.Name = "rhel-10"
+
+	c.updateMachineConfigPool(oldWorkerPool, newWorkerPool)
+
+	// Verify worker pool was enqueued (normal behavior)
+	assert.Contains(t, enqueuedPools, "worker", "Worker pool should be enqueued")
+
+	// Verify custom pools were also enqueued
+	assert.Contains(t, enqueuedPools, "infra", "Infra pool should be enqueued when worker osImageStream changes")
+	assert.Contains(t, enqueuedPools, "custom", "Custom pool should be enqueued when worker osImageStream changes")
+
+	// Verify master pool is NOT enqueued (we only have worker and custom pools)
+	assert.NotContains(t, enqueuedPools, "master", "Master pool should not be enqueued")
+}
+
+func TestWorkerPoolOtherChangeDoesNotEnqueueCustomPools(t *testing.T) {
+	f := newFixture(t)
+
+	// Create worker pool
+	workerPool := helpers.NewMachineConfigPool("worker", helpers.WorkerSelector, nil, "")
+	workerPool.Spec.OSImageStream.Name = "rhel-9"
+
+	// Create custom pool
+	infraPool := helpers.NewMachineConfigPool("infra", helpers.InfraSelector, nil, "")
+
+	// Add pools to lister
+	f.mcpLister = append(f.mcpLister, workerPool, infraPool)
+	f.objects = append(f.objects, workerPool, infraPool)
+
+	c := f.newController()
+
+	// Track which pools get enqueued
+	enqueuedPools := []string{}
+	c.enqueueMachineConfigPool = func(pool *mcfgv1.MachineConfigPool) {
+		enqueuedPools = append(enqueuedPools, pool.Name)
+	}
+
+	// Update worker pool with SAME osImageStream but different field (e.g., paused)
+	oldWorkerPool := workerPool.DeepCopy()
+	newWorkerPool := workerPool.DeepCopy()
+	newWorkerPool.Spec.Paused = true
+
+	c.updateMachineConfigPool(oldWorkerPool, newWorkerPool)
+
+	// Verify only worker pool was enqueued, NOT custom pools
+	assert.Contains(t, enqueuedPools, "worker", "Worker pool should be enqueued")
+	assert.NotContains(t, enqueuedPools, "infra", "Infra pool should NOT be enqueued when osImageStream unchanged")
+	assert.Len(t, enqueuedPools, 1, "Only worker pool should be enqueued")
+}

@@ -192,6 +192,14 @@ func (ctrl *Controller) updateMachineConfigPool(old, cur interface{}) {
 
 	klog.V(4).Infof("Updating MachineConfigPool %s", oldPool.Name)
 	ctrl.enqueueMachineConfigPool(curPool)
+
+	// If the worker pool's osImageStream changed, enqueue all custom pools that might inherit from it
+	if curPool.Name == ctrlcommon.MachineConfigPoolWorker &&
+		oldPool.Spec.OSImageStream.Name != curPool.Spec.OSImageStream.Name {
+		klog.V(4).Infof("Worker pool osImageStream changed from %q to %q, enqueuing custom pools",
+			oldPool.Spec.OSImageStream.Name, curPool.Spec.OSImageStream.Name)
+		ctrl.enqueueCustomPools()
+	}
 }
 
 func (ctrl *Controller) deleteMachineConfigPool(obj interface{}) {
@@ -398,6 +406,23 @@ func (ctrl *Controller) enqueueDefault(pool *mcfgv1.MachineConfigPool) {
 	ctrl.enqueueAfter(pool, renderDelay)
 }
 
+// enqueueCustomPools enqueues all custom pools (pools that are not master, worker, or arbiter).
+// This is used when the worker pool changes in a way that might affect custom pools that inherit from it.
+func (ctrl *Controller) enqueueCustomPools() {
+	pools, err := ctrl.mcpLister.List(labels.Everything())
+	if err != nil {
+		klog.Warningf("Failed to list pools when enqueuing custom pools: %v", err)
+		return
+	}
+
+	for _, pool := range pools {
+		if ctrlcommon.IsCustomPool(pool) {
+			klog.V(4).Infof("Enqueuing custom pool %s due to worker pool change", pool.Name)
+			ctrl.enqueueMachineConfigPool(pool)
+		}
+	}
+}
+
 // worker runs a worker thread that just dequeues items, processes them, and marks them done.
 // It enforces that the syncHandler is never invoked concurrently with the same key.
 func (ctrl *Controller) worker() {
@@ -565,17 +590,51 @@ func (ctrl *Controller) getRenderedMachineConfig(pool *mcfgv1.MachineConfigPool,
 	return generateAndValidateRenderedMachineConfig(currentMC, pool, configs, cc, &mcop.Spec.IrreconcilableValidationOverrides, osImageStreamSet)
 }
 
+// getOSImageStreamNameForPool determines the OS image stream name for a pool,
+// implementing inheritance from the worker pool for custom pools.
+// Returns:
+// - The pool's explicit osImageStream.Name if set
+// - For custom pools: the worker pool's osImageStream.Name if the custom pool has none
+// - Empty string (which will resolve to the default stream)
+func (ctrl *Controller) getOSImageStreamNameForPool(pool *mcfgv1.MachineConfigPool) string {
+	streamName, err := ctrlcommon.GetEffectiveOSImageStreamName(pool, ctrl.mcpLister)
+	if err != nil {
+		klog.V(2).Infof("Failed to get effective osImageStream for pool %s: %v; using default stream", pool.Name, err)
+		return ""
+	}
+
+	// Log what stream is being used
+	if streamName != "" {
+		if pool.Spec.OSImageStream.Name != "" {
+			klog.V(4).Infof("Pool %s using explicit osImageStream: %s", pool.Name, streamName)
+		} else {
+			klog.V(4).Infof("Custom pool %s inheriting osImageStream from worker: %s", pool.Name, streamName)
+		}
+	} else {
+		if ctrlcommon.IsCustomPool(pool) {
+			klog.V(4).Infof("Custom pool %s using default osImageStream (worker also uses default)", pool.Name)
+		} else {
+			klog.V(4).Infof("Standard pool %s using default osImageStream", pool.Name)
+		}
+	}
+
+	return streamName
+}
+
 func (ctrl *Controller) getOSImageStreamForPool(pool *mcfgv1.MachineConfigPool) (*v1alpha1.OSImageStreamSet, error) {
 	if !osimagestream.IsFeatureEnabled(ctrl.fgHandler) || ctrl.osImageStreamLister == nil {
 		return nil, nil
 	}
+
+	// Determine which stream name to use based on inheritance logic
+	streamName := ctrl.getOSImageStreamNameForPool(pool)
 
 	imageStream, err := ctrl.osImageStreamLister.Get(ctrlcommon.ClusterInstanceNameOSImageStream)
 	if err != nil {
 		return nil, fmt.Errorf("could not get OSImageStream for pool %s: %w", pool.Name, err)
 	}
 
-	imageStreamSet, err := osimagestream.GetOSImageStreamSetByName(imageStream, pool.Spec.OSImageStream.Name)
+	imageStreamSet, err := osimagestream.GetOSImageStreamSetByName(imageStream, streamName)
 	if err != nil {
 		return nil, fmt.Errorf("could not get OSImageStreamSet for pool %s: %w", pool.Name, err)
 	}
@@ -778,6 +837,31 @@ func generateAndValidateRenderedMachineConfig(
 	return generated, nil
 }
 
+// getOSImageStreamNameForPoolBootstrap implements the same inheritance logic as
+// getOSImageStreamNameForPool but for the bootstrap scenario where we only have
+// a slice of pools, not a lister.
+func getOSImageStreamNameForPoolBootstrap(pool *mcfgv1.MachineConfigPool, pools []*mcfgv1.MachineConfigPool) string {
+	// If the pool explicitly sets an osImageStream, use it
+	if pool.Spec.OSImageStream.Name != "" {
+		return pool.Spec.OSImageStream.Name
+	}
+
+	// Only custom pools inherit from worker
+	if !ctrlcommon.IsCustomPool(pool) {
+		return ""
+	}
+
+	// Find worker pool in the provided slice
+	for _, p := range pools {
+		if p.Name == ctrlcommon.MachineConfigPoolWorker {
+			return p.Spec.OSImageStream.Name
+		}
+	}
+
+	// Worker not found, use default
+	return ""
+}
+
 // RunBootstrap runs the render controller in bootstrap mode.
 // For each pool, it matches the machineconfigs based on label selector and
 // returns the generated machineconfigs and pool with CurrentMachineConfig status field set.
@@ -793,7 +877,9 @@ func RunBootstrap(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineCo
 		}
 		var osImageStreamSet *v1alpha1.OSImageStreamSet
 		if osImageStream != nil {
-			osImageStreamSet, err = osimagestream.GetOSImageStreamSetByName(osImageStream, pool.Spec.OSImageStream.Name)
+			// Determine which stream name to use based on inheritance logic
+			streamName := getOSImageStreamNameForPoolBootstrap(pool, pools)
+			osImageStreamSet, err = osimagestream.GetOSImageStreamSetByName(osImageStream, streamName)
 			if err != nil {
 				return nil, nil, fmt.Errorf("couldn't get the OSImageStream for pool %s %w", pool.Name, err)
 			}

@@ -49,6 +49,7 @@ import (
 	opv1 "github.com/openshift/api/operator/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
+	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	"github.com/openshift/library-go/pkg/crypto"
 	buildconstants "github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 )
@@ -1429,4 +1430,44 @@ func GetPreBuiltImageMachineConfigsFromList(mcs []*mcfgv1.MachineConfig) map[str
 	}
 
 	return preBuiltMCs
+}
+
+// IsCustomPool returns true if the pool is a custom pool (not master, worker, or arbiter)
+func IsCustomPool(pool *mcfgv1.MachineConfigPool) bool {
+	return pool.Name != MachineConfigPoolMaster &&
+		pool.Name != MachineConfigPoolWorker &&
+		pool.Name != MachineConfigPoolArbiter
+}
+
+// GetEffectiveOSImageStreamName returns the effective osImageStream name for a pool,
+// taking inheritance from the worker pool into account for custom pools.
+// Returns:
+// - The pool's explicit osImageStream.Name if set
+// - For custom pools: the worker pool's osImageStream.Name if the custom pool has none
+// - Empty string (which will resolve to the default stream)
+//
+// This function can return an error if the worker pool cannot be fetched.
+func GetEffectiveOSImageStreamName(pool *mcfgv1.MachineConfigPool, mcpLister mcfglistersv1.MachineConfigPoolLister) (string, error) {
+	// If the pool explicitly sets an osImageStream, use it
+	if pool.Spec.OSImageStream.Name != "" {
+		return pool.Spec.OSImageStream.Name, nil
+	}
+
+	// Only custom pools inherit from worker; standard pools use default directly
+	if !IsCustomPool(pool) {
+		return "", nil
+	}
+
+	// For custom pools with no explicit stream, try to inherit from worker
+	workerPool, err := mcpLister.Get(MachineConfigPoolWorker)
+	if err != nil {
+		// If worker pool doesn't exist or can't be fetched, use default stream
+		if !kerr.IsNotFound(err) {
+			return "", fmt.Errorf("failed to get worker pool for osImageStream inheritance: %w", err)
+		}
+		return "", nil
+	}
+
+	// Return worker pool's stream (which may be empty, indicating default)
+	return workerPool.Spec.OSImageStream.Name, nil
 }
