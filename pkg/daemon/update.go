@@ -1830,7 +1830,66 @@ func (dn *CoreOSDaemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConf
 	// Add "update" to the start of argument list
 	args = append([]string{constants.RPMOSTreeUpdateArg}, args...)
 	logSystem("Applying extensions : %+q", args)
-	return runRpmOstree(args...)
+	if err := runRpmOstree(args...); err != nil {
+		return err
+	}
+
+	// Verify that the extensions were staged successfully
+	if err := dn.verifyExtensionsInStagedDeployment(newConfig); err != nil {
+		return fmt.Errorf("extension verification failed: %w", err)
+	}
+
+	return nil
+}
+
+// verifyExtensionsInStagedDeployment verifies that all required extension packages
+// are present in the staged deployment after rpm-ostree has applied the changes.
+// Assisted by: Cursor
+func (dn *Daemon) verifyExtensionsInStagedDeployment(newConfig *mcfgv1.MachineConfig) error {
+	// Get the staged deployment
+	_, staged, err := dn.NodeUpdaterClient.GetBootedAndStagedDeployment()
+	if err != nil {
+		return fmt.Errorf("failed to get staged deployment: %w", err)
+	}
+	if staged == nil {
+		return fmt.Errorf("no staged deployment found after applying extensions")
+	}
+
+	// Get the required packages for the new config's extensions
+	requiredPackages, err := ctrlcommon.GetPackagesForSupportedExtensions(newConfig.Spec.Extensions)
+	if err != nil {
+		return fmt.Errorf("failed to get required packages for extensions: %w", err)
+	}
+
+	// Verify the extension packages have installed
+	if err := verifyExtensionPackagesInDeployment(requiredPackages, staged.RequestedPackages); err != nil {
+		return err
+	}
+
+	logSystem("Extension verification successful: all required packages are staged")
+	return nil
+}
+
+// verifyExtensionPackagesInDeployment checks that all required packages are present
+// in the deployment's requested packages list.
+// Assisted by: Cursor
+func verifyExtensionPackagesInDeployment(requiredPackages []string, deploymentPackages []string) error {
+	// Build a set of packages in the deployment
+	deploymentPackageSet := sets.New(deploymentPackages...)
+
+	// Check that all required packages are present
+	missingPackages := []string{}
+	for _, pkg := range requiredPackages {
+		if !deploymentPackageSet.Has(pkg) {
+			missingPackages = append(missingPackages, pkg)
+		}
+	}
+
+	if len(missingPackages) > 0 {
+		return fmt.Errorf("extensions not staged correctly, missing packages: %v", missingPackages)
+	}
+
+	return nil
 }
 
 // switchKernel updates kernel on host with the kernelType specified in MachineConfig.
