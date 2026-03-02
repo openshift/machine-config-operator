@@ -8,7 +8,6 @@ import (
 
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
 	ign3types "github.com/coreos/ignition/v2/config/v3_4/types"
-	"github.com/google/go-cmp/cmp"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -248,7 +247,9 @@ func checkFileContentsAndMode(filePath string, expectedContent []byte, mode os.F
 		return fmt.Errorf("could not read file %q: %w", filePath, err)
 	}
 	if !bytes.Equal(contents, expectedContent) {
-		klog.Errorf("content mismatch for file %q (-want +got):\n%s", filePath, cmp.Diff(expectedContent, contents))
+		// Removing file contents logs to prevent accidental exposure of secrets.
+		klog.Errorf("content mismatch for file %q (expected %d bytes, got %d bytes)",
+			filePath, len(expectedContent), len(contents))
 		return fmt.Errorf("content mismatch for file %q", filePath)
 	}
 	return nil
