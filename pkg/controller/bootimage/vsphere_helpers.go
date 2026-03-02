@@ -456,11 +456,13 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 				}
 			}
 
-			// This condition directly follows from https://github.com/openshift/cluster-control-plane-machine-set-operator/blob/main/pkg/machineproviders/providers/openshift/machine/v1beta1/providerconfig/vsphere.go#L194
-			if providerSpec.Workspace.Datastore != failureDomain.Topology.Datastore &&
-				vcenter.Server != failureDomain.Server &&
-				providerSpec.Workspace.VMGroup != vmGroup &&
-				path.Clean(providerSpec.Workspace.ResourcePool) == path.Clean(failureDomain.Topology.ResourcePool) {
+			// Skip failure domains that don't match the providerSpec workspace.
+			// All fields must match — mirroring the logic in https://github.com/openshift/cluster-control-plane-machine-set-operator/blob/main/pkg/machineproviders/providers/openshift/machine/v1beta1/providerconfig/vsphere.go#L194
+			if providerSpec.Workspace.Datacenter != failureDomain.Topology.Datacenter ||
+				providerSpec.Workspace.Datastore != failureDomain.Topology.Datastore ||
+				vcenter.Server != failureDomain.Server ||
+				providerSpec.Workspace.VMGroup != vmGroup ||
+				path.Clean(providerSpec.Workspace.ResourcePool) != path.Clean(failureDomain.Topology.ResourcePool) {
 				continue
 			}
 			infraID := infra.Status.InfrastructureName
