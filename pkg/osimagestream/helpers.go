@@ -6,7 +6,6 @@ import (
 	"github.com/openshift/api/features"
 	"github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/machine-config-operator/pkg/controller/common"
-	"github.com/openshift/machine-config-operator/pkg/version"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
@@ -39,7 +38,7 @@ func GetOSImageStreamSetByName(osImageStream *v1alpha1.OSImageStream, name strin
 }
 
 // IsFeatureEnabled checks if the OSImageStream feature is enabled.
-// Returns true only if the FeatureGateOSStreams is enabled and the cluster is not running SCOS or FCOS.
+// Returns true only if the FeatureGateOSStreams is enabled.
 func IsFeatureEnabled(fgHandler common.FeatureGatesHandler) bool {
-	return fgHandler.Enabled(features.FeatureGateOSStreams) && !version.IsSCOS() && !version.IsFCOS()
+	return fgHandler.Enabled(features.FeatureGateOSStreams)
 }
