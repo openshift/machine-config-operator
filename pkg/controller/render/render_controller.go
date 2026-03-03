@@ -602,6 +602,11 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		return fmt.Errorf("could not generate rendered MachineConfig: %w", err)
 	}
 
+	// Validate that the generated MachineConfig does not exceed etcd size limits
+	if err := ctrlcommon.ValidateMachineConfigSize(generated); err != nil {
+		return fmt.Errorf("size validation failed: %w", err)
+	}
+
 	// Collect metric when OSImageURL was overridden
 	var isOSImageURLOverridden bool
 	if generated.Spec.OSImageURL != ctrlcommon.GetBaseImageContainer(&cc.Spec, osImageStreamSet) {
