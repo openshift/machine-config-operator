@@ -684,6 +684,21 @@ func TestOperatorSyncStatus(t *testing.T) {
 		configMapIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
 		optr.mcoCmLister = corelisterv1.NewConfigMapLister(configMapIndexer)
 
+		clusterCmIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+		optr.clusterCmLister = corelisterv1.NewConfigMapLister(clusterCmIndexer)
+		clusterCmIndexer.Add(&corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      AdminAckGatesConfigMapName,
+				Namespace: ctrlcommon.OpenshiftConfigManagedNamespace,
+			},
+		})
+
+		infraIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+		optr.infraLister = configlistersv1.NewInfrastructureLister(infraIndexer)
+		infraIndexer.Add(&configv1.Infrastructure{
+			ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+		})
+
 		configNode := &configv1.Node{
 			ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.ClusterNodeInstanceName},
 			Spec:       configv1.NodeSpec{},
@@ -778,6 +793,21 @@ func TestInClusterBringUpStayOnErr(t *testing.T) {
 
 	configMapIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
 	optr.mcoCmLister = corelisterv1.NewConfigMapLister(configMapIndexer)
+
+	clusterCmIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	optr.clusterCmLister = corelisterv1.NewConfigMapLister(clusterCmIndexer)
+	clusterCmIndexer.Add(&corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      AdminAckGatesConfigMapName,
+			Namespace: ctrlcommon.OpenshiftConfigManagedNamespace,
+		},
+	})
+
+	infraIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	optr.infraLister = configlistersv1.NewInfrastructureLister(infraIndexer)
+	infraIndexer.Add(&configv1.Infrastructure{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+	})
 
 	fn1 := func(config *renderConfig, co *configv1.ClusterOperator) error {
 		return errors.New("mocked fn1")
