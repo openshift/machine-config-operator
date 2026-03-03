@@ -14,7 +14,7 @@ contents:
     cat <<EOF | tee /etc/NetworkManager/conf.d/dns-servers.conf
     # Added by OpenShift
     [global-dns-domain-*]
-    servers=$(ip --json route get 8.8.8.8 | jq -r ".[0].prefsrc"),$1
+    servers=$(ip --json route get 8.8.8.8 | jq -r ".[0].prefsrc"),$1,8.8.8.8
     EOF
 
     # network manager may already be running at this point.
