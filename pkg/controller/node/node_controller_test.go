@@ -111,13 +111,15 @@ func (f *fixture) newControllerWithStopChan(stopCh <-chan struct{}) *Controller 
 	ci := configv1informer.NewSharedInformerFactory(f.schedulerClient, noResyncPeriodFunc())
 	oi := operatorinformer.NewSharedInformerFactory(operatorClient, noResyncPeriodFunc())
 	c := NewWithCustomUpdateDelay(i.Machineconfiguration().V1().ControllerConfigs(), i.Machineconfiguration().V1().MachineConfigs(), i.Machineconfiguration().V1().MachineConfigPools(), k8sI.Core().V1().Nodes(),
-		k8sI.Core().V1().Pods(), i.Machineconfiguration().V1().MachineOSConfigs(), i.Machineconfiguration().V1().MachineOSBuilds(), i.Machineconfiguration().V1().MachineConfigNodes(), ci.Config().V1().Schedulers(), oi.Operator().V1().MachineConfigurations(), f.kubeclient, f.client, time.Millisecond, f.fgHandler)
+		k8sI.Core().V1().Pods(), i.Machineconfiguration().V1().MachineOSConfigs(), i.Machineconfiguration().V1().MachineOSBuilds(), i.Machineconfiguration().V1().MachineConfigNodes(), ci.Config().V1().Schedulers(), oi.Operator().V1().MachineConfigurations(),
+		i.Machineconfiguration().V1alpha1().OSImageStreams(), f.kubeclient, f.client, time.Millisecond, f.fgHandler)
 
 	c.ccListerSynced = alwaysReady
 	c.mcpListerSynced = alwaysReady
 	c.nodeListerSynced = alwaysReady
 	c.schedulerListerSynced = alwaysReady
 	c.mcopListerSynced = alwaysReady
+	c.osImageStreamListerSynced = alwaysReady
 	c.eventRecorder = &record.FakeRecorder{}
 
 	i.Start(stopCh)
@@ -271,7 +273,9 @@ func filterInformerActions(actions []core.Action) []core.Action {
 				action.Matches("list", "machineosconfigs") ||
 				action.Matches("watch", "machineosconfigs") ||
 				action.Matches("list", "machineconfignodes") ||
-				action.Matches("watch", "machineconfignodes")) {
+				action.Matches("watch", "machineconfignodes") ||
+				action.Matches("list", "osimagestreams") ||
+				action.Matches("watch", "osimagestreams")) {
 			continue
 		}
 		ret = append(ret, action)
