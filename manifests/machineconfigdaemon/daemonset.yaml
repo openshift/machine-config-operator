@@ -22,10 +22,6 @@ spec:
       containers:
       - name: machine-config-daemon
         image: {{.Images.MachineConfigOperator}}
-        ports:
-        - containerPort: 8798
-          name: health
-          protocol: TCP
         command: ["/usr/bin/machine-config-daemon"]
         args:
           - "start"
@@ -46,15 +42,6 @@ spec:
           - mountPath: /run/secrets/os-image-pull-secrets/{{ .Spec.MachineConfigPool.Name }}
             name: {{ .Spec.BuildOutputs.CurrentImagePullSecret.Name }}
           {{- end }}
-        livenessProbe:
-          initialDelaySeconds: 120
-          periodSeconds: 30
-          failureThreshold: 3
-          httpGet:
-            host: 127.0.0.1
-            scheme: HTTP
-            port: 8798
-            path: /health
         env:
           - name: NODE_NAME
             valueFrom:
