@@ -23,10 +23,12 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
+	mcfginformersv1alpha1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
 	mcopinformersv1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
 	mcoplistersv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
+	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 	"github.com/openshift/machine-config-operator/internal"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
@@ -34,6 +36,7 @@ import (
 	buildconstants "github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	"github.com/openshift/machine-config-operator/pkg/osimagestream"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -92,22 +95,24 @@ type Controller struct {
 	syncHandler              func(mcp string) error
 	enqueueMachineConfigPool func(*mcfgv1.MachineConfigPool)
 
-	ccLister   mcfglistersv1.ControllerConfigLister
-	mcLister   mcfglistersv1.MachineConfigLister
-	mcpLister  mcfglistersv1.MachineConfigPoolLister
-	moscLister mcfglistersv1.MachineOSConfigLister
-	mosbLister mcfglistersv1.MachineOSBuildLister
-	nodeLister corelisterv1.NodeLister
-	podLister  corelisterv1.PodLister
-	mcnLister  mcfglistersv1.MachineConfigNodeLister
+	ccLister            mcfglistersv1.ControllerConfigLister
+	mcLister            mcfglistersv1.MachineConfigLister
+	mcpLister           mcfglistersv1.MachineConfigPoolLister
+	moscLister          mcfglistersv1.MachineOSConfigLister
+	mosbLister          mcfglistersv1.MachineOSBuildLister
+	nodeLister          corelisterv1.NodeLister
+	podLister           corelisterv1.PodLister
+	mcnLister           mcfglistersv1.MachineConfigNodeLister
+	osImageStreamLister mcfglistersv1alpha1.OSImageStreamLister
 
-	ccListerSynced   cache.InformerSynced
-	mcListerSynced   cache.InformerSynced
-	mcpListerSynced  cache.InformerSynced
-	moscListerSynced cache.InformerSynced
-	mosbListerSynced cache.InformerSynced
-	nodeListerSynced cache.InformerSynced
-	mcnListerSynced  cache.InformerSynced
+	ccListerSynced            cache.InformerSynced
+	mcListerSynced            cache.InformerSynced
+	mcpListerSynced           cache.InformerSynced
+	moscListerSynced          cache.InformerSynced
+	mosbListerSynced          cache.InformerSynced
+	nodeListerSynced          cache.InformerSynced
+	mcnListerSynced           cache.InformerSynced
+	osImageStreamListerSynced cache.InformerSynced
 
 	schedulerList         cligolistersv1.SchedulerLister
 	schedulerListerSynced cache.InformerSynced
@@ -122,6 +127,9 @@ type Controller struct {
 	// updateDelay is a pause to deal with churn in MachineConfigs; see
 	// https://github.com/openshift/machine-config-operator/issues/301
 	updateDelay time.Duration
+
+	// osStreamsFgEnabled caches whether the OSStreams feature gate is enabled
+	osStreamsFgEnabled bool
 }
 
 func New(
@@ -135,6 +143,7 @@ func New(
 	mcnInformer mcfginformersv1.MachineConfigNodeInformer,
 	schedulerInformer cligoinformersv1.SchedulerInformer,
 	mcopInformer mcopinformersv1.MachineConfigurationInformer,
+	osImageStreamInformer mcfginformersv1alpha1.OSImageStreamInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 	fgHandler ctrlcommon.FeatureGatesHandler,
@@ -150,6 +159,7 @@ func New(
 		mcnInformer,
 		schedulerInformer,
 		mcopInformer,
+		osImageStreamInformer,
 		kubeClient,
 		mcfgClient,
 		defaultUpdateDelay,
@@ -168,6 +178,7 @@ func NewWithCustomUpdateDelay(
 	mcnInformer mcfginformersv1.MachineConfigNodeInformer,
 	schedulerInformer cligoinformersv1.SchedulerInformer,
 	mcopInformer mcopinformersv1.MachineConfigurationInformer,
+	osImageStreamInformer mcfginformersv1alpha1.OSImageStreamInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 	updateDelay time.Duration,
@@ -184,6 +195,7 @@ func NewWithCustomUpdateDelay(
 		mcnInformer,
 		schedulerInformer,
 		mcopInformer,
+		osImageStreamInformer,
 		kubeClient,
 		mcfgClient,
 		updateDelay,
@@ -203,6 +215,7 @@ func newController(
 	mcnInformer mcfginformersv1.MachineConfigNodeInformer,
 	schedulerInformer cligoinformersv1.SchedulerInformer,
 	mcopInformer mcopinformersv1.MachineConfigurationInformer,
+	osImageStreamInformer mcfginformersv1alpha1.OSImageStreamInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 	updateDelay time.Duration,
@@ -219,8 +232,9 @@ func newController(
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
 			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigcontroller-nodecontroller"}),
-		updateDelay: updateDelay,
-		fgHandler:   fgHandler,
+		updateDelay:        updateDelay,
+		fgHandler:          fgHandler,
+		osStreamsFgEnabled: osimagestream.IsFeatureEnabled(fgHandler),
 	}
 	moscInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addMachineOSConfig,
@@ -283,6 +297,12 @@ func newController(
 	ctrl.mcopLister = mcopInformer.Lister()
 	ctrl.mcopListerSynced = mcopInformer.Informer().HasSynced
 
+	// Only initialize OSImageStream lister if feature gate is enabled
+	if ctrl.osStreamsFgEnabled {
+		ctrl.osImageStreamLister = osImageStreamInformer.Lister()
+		ctrl.osImageStreamListerSynced = osImageStreamInformer.Informer().HasSynced
+	}
+
 	return ctrl
 }
 
@@ -291,7 +311,15 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.mcpListerSynced, ctrl.moscListerSynced, ctrl.mosbListerSynced, ctrl.nodeListerSynced, ctrl.schedulerListerSynced, ctrl.mcopListerSynced) {
+	syncers := []cache.InformerSynced{
+		ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.mcpListerSynced, ctrl.moscListerSynced,
+		ctrl.mosbListerSynced, ctrl.nodeListerSynced, ctrl.schedulerListerSynced, ctrl.mcopListerSynced,
+	}
+	// Only wait for the OSImageStream informer to sync if the feature is enabled
+	if ctrl.osStreamsFgEnabled {
+		syncers = append(syncers, ctrl.osImageStreamListerSynced)
+	}
+	if !cache.WaitForCacheSync(stopCh, syncers...) {
 		return
 	}
 
