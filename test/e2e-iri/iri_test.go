@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"net/http"
+	"os"
 	"reflect"
 	"testing"
 	"time"
@@ -38,6 +39,8 @@ func TestIRIResource_Available(t *testing.T) {
 }
 
 func TestIRIController_VerifyIRIRegistryOnAllTheMasterNodes_NoCert(t *testing.T) {
+	skipIfOpenShiftCI(t)
+
 	masterNodes, err := framework.NewClientSet("").CoreV1Interface.Nodes().List(context.TODO(), v1.ListOptions{LabelSelector: "node-role.kubernetes.io/master="})
 	require.NoError(t, err)
 
@@ -71,11 +74,29 @@ func skipIfNoBaremetal(t *testing.T) {
 	}
 }
 
+// Currently some tests are not supported in the OpenShift CI
+// environment (due the proxy settings)
+func skipIfOpenShiftCI(t *testing.T) {
+	items := []string{
+		// Specific to OpenShift CI.
+		"OPENSHIFT_CI",
+		// Common to all CI systems.
+		"CI",
+	}
+
+	for _, item := range items {
+		if _, ok := os.LookupEnv(item); ok {
+			t.Skip("Skipping OpenShift CI environment")
+		}
+	}
+}
+
 func TestIRIController_VerifyIRIRegistryOnApiInt_WithCert(t *testing.T) {
+	skipIfOpenShiftCI(t)
+	skipIfNoBaremetal(t)
+
 	cs := framework.NewClientSet("")
 	ctx := context.Background()
-
-	skipIfNoBaremetal(t)
 
 	// Retrieve the root CA (same of MCS).
 	cm, err := cs.ConfigMaps("openshift-machine-config-operator").Get(ctx, "machine-config-server-ca", v1.GetOptions{})
