@@ -496,9 +496,18 @@ func (tc *configDriftMonitorTestCase) writeIgnitionConfig(t *testing.T, ignConfi
 		return fmt.Errorf("could not write ignition config files: %w", err)
 	}
 
-	// Write systemd units the same way the MCD does.
-	if err := writeUnits(ignConfig.Systemd.Units, tc.systemdPath, true); err != nil {
-		return fmt.Errorf("could not write systemd units: %w", err)
+	// Use a mock systemd connection for testing
+	// Create mock units for all units in the config
+	mockUnits := make(map[string]*mockUnitState)
+	for _, unit := range ignConfig.Systemd.Units {
+		mockUnits[unit.Name] = newMockUnitState(unit.Name)
+	}
+	mockConn := newMockSystemdConnection(mockUnits)
+
+	for _, unit := range ignConfig.Systemd.Units {
+		if err := writeUnit(mockConn, unit, tc.systemdPath, true); err != nil {
+			return fmt.Errorf("could not write unit: %w", err)
+		}
 	}
 
 	return nil
