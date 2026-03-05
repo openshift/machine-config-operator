@@ -1184,7 +1184,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	if err := dn.updateFiles(oldIgnConfig, newIgnConfig, addedOrChangedUnits, skipCertificateWrite, forceFilePresent); err != nil {
 		// When ImageModeStatusReporting is enabled, update the `MachineConfigNodeUpdateFiles` condition to report the experienced error
 		if imageModeStatusReportingEnabled {
-			err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
+			mcnErr := upgrademonitor.GenerateAndApplyMachineConfigNodes(
 				&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgv1.MachineConfigNodeUpdateFiles), Message: fmt.Sprintf("Error updating the Files on disk as a part of the in progress phase")},
 				&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateFiles, Reason: fmt.Sprintf("%s%s", string(mcfgv1.MachineConfigNodeUpdateExecuted), string(mcfgv1.MachineConfigNodeUpdateFiles)), Message: fmt.Sprintf("Update failed applying files to node: %s", err.Error())},
 				metav1.ConditionUnknown,
@@ -1194,6 +1194,9 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 				dn.fgHandler,
 				pool,
 			)
+			if mcnErr != nil {
+				klog.Errorf("Error making MCN for failed file apply: %v", err)
+			}
 		}
 		return err
 	}
@@ -1219,7 +1222,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
 			// When ImageModeStatusReporting is enabled, update the `MachineConfigNodeUpdateFiles` condition to report the experienced error
 			if imageModeStatusReportingEnabled {
-				err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
+				mcnErr := upgrademonitor.GenerateAndApplyMachineConfigNodes(
 					&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgv1.MachineConfigNodeUpdateFiles), Message: fmt.Sprintf("Error updating the Files on disk as a part of the in progress phase")},
 					&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateFiles, Reason: fmt.Sprintf("%s%s", string(mcfgv1.MachineConfigNodeUpdateExecuted), string(mcfgv1.MachineConfigNodeUpdateFiles)), Message: fmt.Sprintf("Update failed applying files to node: %s", err.Error())},
 					metav1.ConditionUnknown,
@@ -1229,6 +1232,9 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 					dn.fgHandler,
 					pool,
 				)
+				if mcnErr != nil {
+					klog.Errorf("Error making MCN for failed SSH update: %v", err)
+				}
 			}
 			return err
 		}
@@ -1269,7 +1275,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		if err := coreOSDaemon.applyOSChanges(*diff, oldConfig, newConfig); err != nil {
 			// When ImageModeStatusReporting is enabled, update the `MachineConfigNodeUpdateOS` condition to report the experienced error
 			if imageModeStatusReportingEnabled {
-				err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
+				mcnErr := upgrademonitor.GenerateAndApplyMachineConfigNodes(
 					&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgv1.MachineConfigNodeUpdateOS), Message: fmt.Sprintf("Error the OS on disk as a part of the in progress phase")},
 					&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateOS, Reason: fmt.Sprintf("%s%s", string(mcfgv1.MachineConfigNodeUpdateExecuted), string(mcfgv1.MachineConfigNodeUpdateOS)), Message: fmt.Sprintf("Update failed applying new OS config to node: %s", err.Error())},
 					metav1.ConditionUnknown,
@@ -1279,6 +1285,9 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 					dn.fgHandler,
 					pool,
 				)
+				if mcnErr != nil {
+					klog.Errorf("Error making MCN for failed OS update: %v", err)
+				}
 			}
 			return err
 		}
