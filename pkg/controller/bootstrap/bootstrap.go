@@ -260,7 +260,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	configs = append(configs, rconfigs...)
 
 	if len(crconfigs) > 0 {
-		containerRuntimeConfigs, err := containerruntimeconfig.RunContainerRuntimeBootstrap(b.templatesDir, crconfigs, cconfig, pools)
+		containerRuntimeConfigs, err := containerruntimeconfig.RunContainerRuntimeBootstrap(b.templatesDir, crconfigs, cconfig, pools, kconfigs, apiServer)
 		if err != nil {
 			return err
 		}
