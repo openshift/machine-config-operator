@@ -129,4 +129,49 @@ const (
 	VersionTLS11 = 0x0302
 	VersionTLS12 = 0x0303
 	VersionTLS13 = 0x0304
+
+	// Extension names
+	ipsecExtension               = "ipsec"
+	usbguardExtension            = "usbguard"
+	kerberosExtension            = "kerberos"
+	kernelDevelExtension         = "kernel-devel"
+	sandboxedContainersExtension = "sandboxed-containers"
+	sysstatExtension             = "sysstat"
+)
+
+// KernelType represents the type of kernel
+type KernelType string
+
+const (
+	// KernelTypeRealtime represents realtime kernel
+	KernelTypeRealtime KernelType = "realtime"
+	// KernelType64kPages represents 64k-pages kernel
+	KernelType64kPages KernelType = "64k-pages"
+)
+
+var (
+	// Map with all available extensions and the packages they install
+	AllExtenstions = map[string][]string{
+		ipsecExtension:               {"NetworkManager-libreswan", "libreswan"},
+		usbguardExtension:            {"usbguard"},
+		kerberosExtension:            {"krb5-workstation", "libkadm5"},
+		kernelDevelExtension:         {"kernel-devel", "kernel-headers"},
+		sandboxedContainersExtension: {"kata-containers"},
+		sysstatExtension:             {"sysstat"},
+	}
+
+	// OSImageStream constants
+	// OSImageStreamRHEL9 represents the RHEL 9 OS image stream
+	OSImageStreamRHEL9 = "rhel-9"
+	// OSImageStreamRHEL10 represents the RHEL 10 OS image stream
+	OSImageStreamRHEL10 = "rhel-10"
+
+	// DefaultOSImageStream is the default OS image stream name
+	DefaultOSImageStream = OSImageStreamRHEL9
+
+	// SupportedOSImageStreams is the list of supported OS image streams
+	SupportedOSImageStreams = []string{
+		OSImageStreamRHEL9,
+		OSImageStreamRHEL10,
+	}
 )
