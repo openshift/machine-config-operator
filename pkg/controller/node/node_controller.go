@@ -120,6 +120,9 @@ type Controller struct {
 	mcopLister       mcoplistersv1.MachineConfigurationLister
 	mcopListerSynced cache.InformerSynced
 
+	infraLister       cligolistersv1.InfrastructureLister
+	infraListerSynced cache.InformerSynced
+
 	queue workqueue.TypedRateLimitingInterface[string]
 
 	fgHandler ctrlcommon.FeatureGatesHandler
@@ -144,6 +147,7 @@ func New(
 	schedulerInformer cligoinformersv1.SchedulerInformer,
 	mcopInformer mcopinformersv1.MachineConfigurationInformer,
 	osImageStreamInformer mcfginformersv1alpha1.OSImageStreamInformer,
+	infraInformer cligoinformersv1.InfrastructureInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 	fgHandler ctrlcommon.FeatureGatesHandler,
@@ -160,6 +164,7 @@ func New(
 		schedulerInformer,
 		mcopInformer,
 		osImageStreamInformer,
+		infraInformer,
 		kubeClient,
 		mcfgClient,
 		defaultUpdateDelay,
@@ -179,6 +184,7 @@ func NewWithCustomUpdateDelay(
 	schedulerInformer cligoinformersv1.SchedulerInformer,
 	mcopInformer mcopinformersv1.MachineConfigurationInformer,
 	osImageStreamInformer mcfginformersv1alpha1.OSImageStreamInformer,
+	infraInformer cligoinformersv1.InfrastructureInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 	updateDelay time.Duration,
@@ -196,6 +202,7 @@ func NewWithCustomUpdateDelay(
 		schedulerInformer,
 		mcopInformer,
 		osImageStreamInformer,
+		infraInformer,
 		kubeClient,
 		mcfgClient,
 		updateDelay,
@@ -216,6 +223,7 @@ func newController(
 	schedulerInformer cligoinformersv1.SchedulerInformer,
 	mcopInformer mcopinformersv1.MachineConfigurationInformer,
 	osImageStreamInformer mcfginformersv1alpha1.OSImageStreamInformer,
+	infraInformer cligoinformersv1.InfrastructureInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 	updateDelay time.Duration,
@@ -297,6 +305,9 @@ func newController(
 	ctrl.mcopLister = mcopInformer.Lister()
 	ctrl.mcopListerSynced = mcopInformer.Informer().HasSynced
 
+	ctrl.infraLister = infraInformer.Lister()
+	ctrl.infraListerSynced = infraInformer.Informer().HasSynced
+
 	// Only initialize OSImageStream lister if feature gate is enabled
 	if ctrl.osStreamsFgEnabled {
 		ctrl.osImageStreamLister = osImageStreamInformer.Lister()
@@ -314,6 +325,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	syncers := []cache.InformerSynced{
 		ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.mcpListerSynced, ctrl.moscListerSynced,
 		ctrl.mosbListerSynced, ctrl.nodeListerSynced, ctrl.schedulerListerSynced, ctrl.mcopListerSynced,
+		ctrl.infraListerSynced,
 	}
 	// Only wait for the OSImageStream informer to sync if the feature is enabled
 	if ctrl.osStreamsFgEnabled {
@@ -1951,8 +1963,8 @@ func (ctrl *Controller) deleteMachineConfiguration(_ any) {
 
 // syncBootImageSkewEnforcementMetric updates the mcc_boot_image_skew_enforcement_none metric
 // based on the current BootImageSkewEnforcementStatus mode in MachineConfiguration.
-// The metric is set to 1 when mode is "None", indicating that scaling operations may
-// not be successful.
+// The metric is set to 1 when mode is "None" on non-SNO clusters, indicating that scaling
+// operations may not be successful. On SNO clusters, None is the default and the alert is suppressed.
 func (ctrl *Controller) syncBootImageSkewEnforcementMetric(obj any) {
 
 	mcop, ok := obj.(*opv1.MachineConfiguration)
@@ -1962,6 +1974,17 @@ func (ctrl *Controller) syncBootImageSkewEnforcementMetric(obj any) {
 	}
 
 	if mcop.Status.BootImageSkewEnforcementStatus.Mode == opv1.BootImageSkewEnforcementModeStatusNone {
+		infra, err := ctrl.infraLister.Get("cluster")
+		if err != nil {
+			klog.Warningf("Failed to get infrastructure for skew enforcement metric: %v", err)
+			ctrlcommon.MCCBootImageSkewEnforcementNone.Set(0)
+			return
+		}
+		// On SNO clusters, None is the default; suppress the alert.
+		if infra.Status.ControlPlaneTopology == configv1.SingleReplicaTopologyMode {
+			ctrlcommon.MCCBootImageSkewEnforcementNone.Set(0)
+			return
+		}
 		ctrlcommon.MCCBootImageSkewEnforcementNone.Set(1)
 	} else {
 		ctrlcommon.MCCBootImageSkewEnforcementNone.Set(0)

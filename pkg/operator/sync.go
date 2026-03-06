@@ -2367,7 +2367,7 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 	}
 
 	// Update skew enforcement status if needed
-	optr.syncBootImageSkewEnforcementStatus(mcop, newMachineConfigurationStatus, supportsBootImageUpdates)
+	optr.syncBootImageSkewEnforcementStatus(mcop, newMachineConfigurationStatus, infra, supportsBootImageUpdates)
 
 	newMachineConfigurationStatus.ObservedGeneration = mcop.GetGeneration()
 	// Check if any changes are required in the Status before making the API call.
@@ -2533,7 +2533,7 @@ func (optr *Operator) syncPreBuiltImageMachineConfigs() error {
 
 // syncBootImageSkewEnforcementStatus determines the appropriate BootImageSkewEnforcementStatus based on
 // the MachineConfiguration spec, platform defaults, and cluster version information.
-func (optr *Operator) syncBootImageSkewEnforcementStatus(mcop *opv1.MachineConfiguration, newMachineConfigurationStatus *opv1.MachineConfigurationStatus, supportsBootImageUpdates bool) {
+func (optr *Operator) syncBootImageSkewEnforcementStatus(mcop *opv1.MachineConfiguration, newMachineConfigurationStatus *opv1.MachineConfigurationStatus, infra *configv1.Infrastructure, supportsBootImageUpdates bool) {
 	// React to any changes in boot image skew enforcement configuration
 	if !optr.fgHandler.Enabled(features.FeatureGateBootImageSkewEnforcement) {
 		return
@@ -2552,6 +2552,9 @@ func (optr *Operator) syncBootImageSkewEnforcementStatus(mcop *opv1.MachineConfi
 		} else { // only other possible opinion is "None"
 			newMachineConfigurationStatus.BootImageSkewEnforcementStatus = apihelpers.GetSkewEnforcementStatusNone()
 		}
+	} else if infra.Status.ControlPlaneTopology == configv1.SingleReplicaTopologyMode {
+		// On SNO clusters, default to None since there are no MachineSets to scale
+		newMachineConfigurationStatus.BootImageSkewEnforcementStatus = apihelpers.GetSkewEnforcementStatusNone()
 	} else if supportsBootImageUpdates {
 		// If an "All" option is specified and BootImageSkewEnforcementStatus is empty or not set to Automatic => set Mode to Automatic.
 		if apihelpers.HasMAPIMachineSetManagerWithMode(newMachineConfigurationStatus.ManagedBootImagesStatus.MachineManagers, opv1.MachineSets, opv1.All) {
