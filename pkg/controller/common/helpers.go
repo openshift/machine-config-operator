@@ -468,6 +468,43 @@ func ValidateMachineConfig(cfg mcfgv1.MachineConfigSpec) error {
 	return nil
 }
 
+// ValidateMachineConfigSize checks if the MachineConfig size exceeds etcd limits.
+// etcd has a default request size limit of 1.5MB. This function validates that the
+// rendered MachineConfig does not exceed this limit to prevent "etcdserver: request
+// is too large" errors.
+func ValidateMachineConfigSize(mc *mcfgv1.MachineConfig) error {
+	// Marshal the MachineConfig to JSON to get its actual size as it will be sent to etcd
+	data, err := json.Marshal(mc)
+	if err != nil {
+		return fmt.Errorf("failed to marshal MachineConfig: %w", err)
+	}
+
+	size := len(data)
+
+	// Check if size exceeds the limit
+	if size > MaxMachineConfigSize {
+		return fmt.Errorf("rendered MachineConfig %s is too large (%d bytes, max %d bytes). "+
+			"This will exceed etcd's size limit. Consider reducing the number or size of MachineConfigs, "+
+			"particularly large registry mirror configurations (ImageDigestMirrorSet/ImageContentSourcePolicy)",
+			mc.Name, size, MaxMachineConfigSize)
+	}
+
+	// Log size information at debug level
+	percentUsed := float64(size) / float64(MaxMachineConfigSize) * 100
+	klog.V(4).Infof("MachineConfig %s size: %d bytes (%.2f%% of %d byte limit)",
+		mc.Name, size, percentUsed, MaxMachineConfigSize)
+
+	// Warn if approaching the limit (> 80%)
+	warningThreshold := (MaxMachineConfigSize * 4) / 5
+	if size > warningThreshold {
+		klog.Warningf("MachineConfig %s is approaching size limit: %d bytes (%.2f%% of %d byte limit). "+
+			"Consider reducing MachineConfig size to avoid hitting the limit.",
+			mc.Name, size, percentUsed, MaxMachineConfigSize)
+	}
+
+	return nil
+}
+
 // Validates that a given MachineConfig's extensions are supported.
 func ValidateMachineConfigExtensions(cfg mcfgv1.MachineConfigSpec) error {
 	return validateExtensions(cfg.Extensions)
