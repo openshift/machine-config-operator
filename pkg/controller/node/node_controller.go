@@ -948,11 +948,9 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 		return
 	}
 
-	if ctrl.fgHandler.Enabled(features.FeatureGatePinnedImages) {
-		for _, pool := range pools {
-			if isPinnedImageSetsInProgressForPool(pool) {
-				changed = true
-			}
+	for _, pool := range pools {
+		if isPinnedImageSetsInProgressForPool(pool) {
+			changed = true
 		}
 	}
 
