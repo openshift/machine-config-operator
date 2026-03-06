@@ -137,6 +137,12 @@ func withPlatformType(platformType configv1.PlatformType) infraOption {
 	}
 }
 
+func withControlPlaneTopology(topology configv1.TopologyMode) infraOption {
+	return func(infra *configv1.Infrastructure) {
+		infra.Status.ControlPlaneTopology = topology
+	}
+}
+
 type kubeCloudConfigOption func(*corev1.ConfigMap)
 
 func buildKubeCloudConfig(opts ...kubeCloudConfigOption) *corev1.ConfigMap {
@@ -727,6 +733,32 @@ func TestSyncMachineConfiguration(t *testing.T) {
 				},
 			},
 			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.18.0"),
+		},
+		{
+			name:               "SNO cluster, no skew enforcement spec, skew enforcement defaults to None",
+			infra:              buildInfra(withPlatformType(configv1.AWSPlatformType), withControlPlaneTopology(configv1.SingleReplicaTopologyMode)),
+			mcop:               buildMachineConfigurationWithNoBootImageConfiguration(),
+			clusterVersion:     buildClusterVersion("4.18.0"),
+			annotationExpected: true,
+			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
+				MachineManagers: []opv1.MachineManager{
+					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
+				},
+			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusNone(),
+		},
+		{
+			name:           "SNO cluster, spec defines manual mode, status should reflect spec",
+			infra:          buildInfra(withPlatformType(configv1.AWSPlatformType), withControlPlaneTopology(configv1.SingleReplicaTopologyMode)),
+			mcop:           buildMachineConfigurationWithSkewEnforcementManual("4.17.0"),
+			clusterVersion: buildClusterVersion("4.18.0"),
+			annotationExpected: true,
+			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
+				MachineManagers: []opv1.MachineManager{
+					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
+				},
+			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.17.0"),
 		},
 	}
 
