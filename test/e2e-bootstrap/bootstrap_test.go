@@ -688,12 +688,7 @@ func ensureFeatureGate(t *testing.T, clientSet *framework.ClientSet, objs ...run
 	currentFeatureSet := currentFg.Spec.FeatureSet
 
 	SelfManaged := features.ClusterProfileName("include.release.openshift.io/self-managed-high-availability")
-	if err != nil {
-		t.Fatalf("Error retrieving current feature gates: %v", err)
-	}
-	featureGateStatus, err := features.FeatureSets(features.ClusterProfileName(SelfManaged), currentFeatureSet)
-
-	require.NoError(t, err)
+	featureGateStatus := features.FeatureSets(4, features.ClusterProfileName(SelfManaged), currentFeatureSet)
 	currentDetails := featuregatescontroller.FeaturesGateDetailsFromFeatureSets(featureGateStatus, controllerConfig.Spec.ReleaseImage)
 
 	// Explicitly disable OSStreams feature. This is because this feature requires a controllerconfig object
