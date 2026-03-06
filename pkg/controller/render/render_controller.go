@@ -714,6 +714,18 @@ func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mc
 		if !strings.Contains(merged.Spec.OSImageURL, "sha256:") {
 			klog.Warningf("OSImageURL %q for MachineConfig %s is set using a tag instead of a digest. It is highly recommended to use a digest", merged.Spec.OSImageURL, merged.Name)
 		}
+
+		// If the cluster admin overrides the OSImageURL field, it means they want
+		// to take over managing the OS image. If they then set osImageStream.name,
+		// this implies they want the MCO to manage the OS, which would override
+		// setting OSImageURL. A cluster admin should only be able to do one or the
+		// other; not both.
+		//
+		// In the future, we may want this to also consider some additional
+		// behaviors based on who set OSImageURL.
+		if pool.Spec.OSImageStream.Name != "" {
+			return nil, fmt.Errorf("cannot override MachineConfig osImageURL and set MachineConfigPool spec.osImageStream.name simultaneously")
+		}
 	}
 
 	return merged, nil
