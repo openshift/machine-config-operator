@@ -90,20 +90,20 @@ func CreateControllerContext(ctx context.Context, cb *clients.Builder) *Controll
 	machineClient := cb.MachineClientOrDie("machine-shared-informer")
 	sharedInformers := mcfginformers.NewSharedInformerFactory(client, resyncPeriod()())
 	sharedTechPreviewInformers := mcfginformers.NewSharedInformerFactory(client, resyncPeriod()())
-	sharedNamespacedInformers := mcfginformers.NewFilteredSharedInformerFactory(client, resyncPeriod()(), MCONamespace, nil)
+	sharedNamespacedInformers := mcfginformers.NewSharedInformerFactoryWithOptions(client, resyncPeriod()(), mcfginformers.WithNamespace(MCONamespace))
 	kubeSharedInformer := informers.NewSharedInformerFactory(kubeClient, resyncPeriod()())
-	kubeNamespacedSharedInformer := informers.NewFilteredSharedInformerFactory(kubeClient, resyncPeriod()(), MCONamespace, nil)
-	openShiftConfigKubeNamespacedSharedInformer := informers.NewFilteredSharedInformerFactory(kubeClient, resyncPeriod()(), OpenshiftConfigNamespace, nil)
-	openShiftConfigManagedKubeNamespacedSharedInformer := informers.NewFilteredSharedInformerFactory(kubeClient, resyncPeriod()(), OpenshiftConfigManagedNamespace, nil)
-	openShiftKubeAPIServerKubeNamespacedSharedInformer := informers.NewFilteredSharedInformerFactory(kubeClient,
+	kubeNamespacedSharedInformer := informers.NewSharedInformerFactoryWithOptions(kubeClient, resyncPeriod()(), informers.WithNamespace(MCONamespace))
+	openShiftConfigKubeNamespacedSharedInformer := informers.NewSharedInformerFactoryWithOptions(kubeClient, resyncPeriod()(), informers.WithNamespace(OpenshiftConfigNamespace))
+	openShiftConfigManagedKubeNamespacedSharedInformer := informers.NewSharedInformerFactoryWithOptions(kubeClient, resyncPeriod()(), informers.WithNamespace(OpenshiftConfigManagedNamespace))
+	openShiftKubeAPIServerKubeNamespacedSharedInformer := informers.NewSharedInformerFactoryWithOptions(kubeClient,
 		resyncPeriod()(),
-		"openshift-kube-apiserver-operator",
-		func(opt *metav1.ListOptions) {
+		informers.WithNamespace("openshift-kube-apiserver-operator"),
+		informers.WithTweakListOptions(func(opt *metav1.ListOptions) {
 			opt.FieldSelector = fields.OneTermEqualSelector("metadata.name", "kube-apiserver-to-kubelet-client-ca").String()
-		},
+		}),
 	)
 	// this is needed to listen for changes in MAO user data secrets to re-apply the ones we define in the MCO (since we manage them)
-	kubeMAOSharedInformer := informers.NewFilteredSharedInformerFactory(kubeClient, resyncPeriod()(), "openshift-machine-api", nil)
+	kubeMAOSharedInformer := informers.NewSharedInformerFactoryWithOptions(kubeClient, resyncPeriod()(), informers.WithNamespace("openshift-machine-api"))
 	imageSharedInformer := imageinformers.NewSharedInformerFactory(imageClient, resyncPeriod()())
 	routeSharedInformer := routeinformers.NewSharedInformerFactory(routeClient, resyncPeriod()())
 

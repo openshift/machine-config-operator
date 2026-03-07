@@ -274,6 +274,7 @@ spec:
                       type: string
                   type: object
                 type: array
+                x-kubernetes-list-type: atomic
               observedGeneration:
                 description: observedGeneration represents the generation observed
                   by the controller.

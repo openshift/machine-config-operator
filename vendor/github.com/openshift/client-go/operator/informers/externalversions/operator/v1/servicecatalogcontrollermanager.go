@@ -40,7 +40,7 @@ func NewServiceCatalogControllerManagerInformer(client versioned.Interface, resy
 // one. This reduces memory footprint and number of connections to the server.
 func NewFilteredServiceCatalogControllerManagerInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
-		&cache.ListWatch{
+		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
@@ -65,7 +65,7 @@ func NewFilteredServiceCatalogControllerManagerInformer(client versioned.Interfa
 				}
 				return client.OperatorV1().ServiceCatalogControllerManagers().Watch(ctx, options)
 			},
-		},
+		}, client),
 		&apioperatorv1.ServiceCatalogControllerManager{},
 		resyncPeriod,
 		indexers,

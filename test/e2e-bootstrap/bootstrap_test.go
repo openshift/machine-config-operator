@@ -11,6 +11,7 @@ import (
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 
+	"github.com/blang/semver/v4"
 	"github.com/ghodss/yaml"
 	configv1 "github.com/openshift/api/config/v1"
 	_ "github.com/openshift/api/config/v1/zz_generated.crd-manifests"
@@ -691,7 +692,13 @@ func ensureFeatureGate(t *testing.T, clientSet *framework.ClientSet, objs ...run
 	if err != nil {
 		t.Fatalf("Error retrieving current feature gates: %v", err)
 	}
-	featureGateStatus, err := features.FeatureSets(features.ClusterProfileName(SelfManaged), currentFeatureSet)
+
+	// Parse the release version to get the major version (e.g., "4.22.0" -> 4)
+	releaseVersion, err := semver.ParseTolerant(controllerConfig.Spec.ReleaseImage)
+	if err != nil {
+		t.Fatalf("Error parsing release version %s: %v", controllerConfig.Spec.ReleaseImage, err)
+	}
+	featureGateStatus := features.FeatureSets(releaseVersion.Major, features.ClusterProfileName(SelfManaged), currentFeatureSet)
 
 	require.NoError(t, err)
 	currentDetails := featuregatescontroller.FeaturesGateDetailsFromFeatureSets(featureGateStatus, controllerConfig.Spec.ReleaseImage)

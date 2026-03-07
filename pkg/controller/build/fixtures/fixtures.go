@@ -14,9 +14,9 @@ import (
 )
 
 func GetEmptyClientsForTest(t *testing.T) (*fakecorev1client.Clientset, *fakeclientmachineconfigv1.Clientset, *testhelpers.Assertions) {
-	kubeclient := fakecorev1client.NewSimpleClientset()
-	mcfgclient := fakeclientmachineconfigv1.NewSimpleClientset()
-	imageclient := fakeclientimagev1.NewSimpleClientset()
+	kubeclient := fakecorev1client.NewClientset()
+	mcfgclient := fakeclientmachineconfigv1.NewClientset()
+	imageclient := fakeclientimagev1.NewClientset()
 	return kubeclient, mcfgclient, testhelpers.Assert(t, kubeclient, mcfgclient, imageclient)
 }
 
@@ -41,10 +41,10 @@ func GetClientsForTestWithAdditionalObjects(t *testing.T, addlKubeObjects, addlM
 
 	addlKubeObjects = append(defaultKubeObjects(), addlKubeObjects...)
 
-	kubeclient := fakecorev1client.NewSimpleClientset(addlKubeObjects...)
-	mcfgclient := fakeclientmachineconfigv1.NewSimpleClientset(mcfgObjects...)
-	imageclient := fakeclientimagev1.NewSimpleClientset()
-	routeclient := fakeclientroutev1.NewSimpleClientset()
+	kubeclient := fakecorev1client.NewClientset(addlKubeObjects...)
+	mcfgclient := fakeclientmachineconfigv1.NewClientset(mcfgObjects...)
+	imageclient := fakeclientimagev1.NewClientset()
+	routeclient := fakeclientroutev1.NewClientset()
 
 	return kubeclient, mcfgclient, imageclient, routeclient, &obj, testhelpers.Assert(t, kubeclient, mcfgclient, imageclient)
 }
