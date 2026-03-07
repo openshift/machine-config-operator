@@ -2355,6 +2355,28 @@ providers:
 		expectedConfig *credentialProviderConfigWithVersion
 	}{
 		{
+			name:           "add crio-credential-provider when template config is nil",
+			matchImages:    []string{"myhost.com", "quay.io"},
+			templateConfig: nil,
+			expectedConfig: &credentialProviderConfigWithVersion{
+				APIVersion: "kubelet.config.k8s.io/v1",
+				Kind:       "CredentialProviderConfig",
+				Providers: []*credentialProviderWithTag{
+					{
+						Name:                 "crio-credential-provider",
+						MatchImages:          []string{"myhost.com", "quay.io"},
+						APIVersion:           "credentialprovider.kubelet.k8s.io/v1",
+						DefaultCacheDuration: &metav1.Duration{Duration: time.Second},
+						TokenAttributes: &serviceAccountTokenAttributesVersioned{
+							ServiceAccountTokenAudience: "https://kubernetes.default.svc",
+							CacheType:                   "Token",
+							RequireServiceAccount:       ptr.To(false),
+						},
+					},
+				},
+			},
+		},
+		{
 			name:           "add crio-credential-provider when not present",
 			matchImages:    []string{"myhost.com", "quay.io"},
 			templateConfig: templateCredProviderConfig,

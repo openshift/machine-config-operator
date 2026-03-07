@@ -147,6 +147,8 @@ const (
 
 	KubernetesCredentialProvidersDir = "/etc/kubernetes/credential-providers"
 
+	KubeletCrioImageCredProviderConfPath = "/etc/systemd/system/kubelet.service.d/40-kubelet-crio-image-credential-provider.conf"
+
 	// rpm-ostree command arguments
 	RPMOSTreeUpdateArg    = "update"
 	RPMOSTreeInstallArg   = "--install"

@@ -64,9 +64,11 @@ const (
 	// 5ms, 10ms, 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s, 20.4s, 41s, 82s
 	maxRetries = 15
 
-	builtInLabelKey    = "machineconfiguration.openshift.io/mco-built-in"
-	configMapName      = "crio-default-container-runtime"
-	forceSyncOnUpgrade = "force-sync-on-upgrade"
+	builtInLabelKey                      = "machineconfiguration.openshift.io/mco-built-in"
+	configMapName                        = "crio-default-container-runtime"
+	forceSyncOnUpgrade                   = "force-sync-on-upgrade"
+	generticCredProviderConfigPath       = "/etc/kubernetes/credential-providers/generic-credential-provider.yaml"
+	kubeletCrioImageCredProviderConfPath = "/etc/systemd/system/kubelet.service.d/40-kubelet-crio-image-credential-provider.conf"
 )
 
 var (
@@ -650,7 +652,9 @@ func generateOriginalCredentialProviderConfig(templateDir string, cc *mcfgv1.Con
 	case apicfgv1.AzurePlatformType:
 		credProviderConfigPath = fmt.Sprintf(credProviderConfigPathFormat, "acr")
 	default:
-		return nil, "", fmt.Errorf("unsupported platform type: %s", cc.Spec.Infra.Status.PlatformStatus.Type)
+		credProviderConfigPath = generticCredProviderConfigPath
+		// return nil, "", fmt.Errorf("unsupported platform type: %s", cc.Spec.Infra.Status.PlatformStatus.Type)
+		return nil, credProviderConfigPath, nil
 	}
 
 	// Find credential provider config
@@ -1598,15 +1602,21 @@ func (ctrl *Controller) getPoolsForContainerRuntimeConfig(config *mcfgv1.Contain
 
 func crioCredentialProviderConfigIgnition(templateDir string, controllerConfig *mcfgv1.ControllerConfig, role string, crioCredentialProviderConfig *apicfgv1alpha1.CRIOCredentialProviderConfig) (*ign3types.Config, error) {
 
-	var credProviderConfigYaml []byte
+	var (
+		credProviderConfigYaml           []byte
+		CredProviderConfigDropInUnitToml []byte
+		contents                         []byte
+	)
 
 	originalCredProviderConfigIgn, credProviderConfigPath, err := generateOriginalCredentialProviderConfig(templateDir, controllerConfig, role)
 	if err != nil {
 		return nil, fmt.Errorf("could not generate original CRIOCredentialProvider config for role %s: %w", role, err)
 	}
-	contents, err := ctrlcommon.DecodeIgnitionFileContents(originalCredProviderConfigIgn.Contents.Source, originalCredProviderConfigIgn.Contents.Compression)
-	if err != nil {
-		return nil, fmt.Errorf("could not decode CRIOCredentialProvider config for role %s: %w", role, err)
+	if originalCredProviderConfigIgn != nil {
+		contents, err = ctrlcommon.DecodeIgnitionFileContents(originalCredProviderConfigIgn.Contents.Source, originalCredProviderConfigIgn.Contents.Compression)
+		if err != nil {
+			return nil, fmt.Errorf("could not decode CRIOCredentialProvider config for role %s: %w", role, err)
+		}
 	}
 
 	matchImages := make(map[string]bool)
@@ -1626,9 +1636,16 @@ func crioCredentialProviderConfigIgnition(templateDir string, controllerConfig *
 		if err != nil {
 			return nil, err
 		}
+		if credProviderConfigPath == generticCredProviderConfigPath {
+			CredProviderConfigDropInUnitToml, err = generateDropinUnitCredProviderConfig(generticCredProviderConfigPath)
+			if err != nil {
+				return nil, fmt.Errorf("could not generate dropin unit for CRIOCredentialProvider config: %w", err)
+			}
+		}
 	}
 	credProviderConfigIgn := createNewIgnition([]generatedConfigFile{
 		{filePath: credProviderConfigPath, data: credProviderConfigYaml},
+		{filePath: kubeletCrioImageCredProviderConfPath, data: CredProviderConfigDropInUnitToml},
 	})
 	return &credProviderConfigIgn, nil
 }

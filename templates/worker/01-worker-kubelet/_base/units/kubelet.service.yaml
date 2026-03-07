@@ -41,7 +41,7 @@ contents: |
         --minimum-container-ttl-duration=6m0s \
         --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
         --cloud-provider={{cloudProvider .}} \
-        {{credentialProviderConfigFlag . }} \
+        {{credentialProviderConfigFlag . }} $KUBELET_CRIO_IMAGE_CREDENTIAL_PROVIDER_FLAGS \
         --hostname-override=${KUBELET_NODE_NAME} \
         --provider-id=${KUBELET_PROVIDERID} \
         --system-reserved=cpu=${SYSTEM_RESERVED_CPU},memory=${SYSTEM_RESERVED_MEMORY},ephemeral-storage=${SYSTEM_RESERVED_ES} \

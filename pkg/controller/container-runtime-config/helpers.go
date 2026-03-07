@@ -1244,8 +1244,12 @@ func imagePolicyConfigFileList(namespaceJSONs map[string][]byte) []generatedConf
 }
 
 func credProviderConfigObject(contents []byte) (*credentialProviderConfigWithVersion, error) {
+
 	// Unmarshal into custom struct first to handle YAML with omitempty fields
-	credProviderConfigObject := &credentialProviderConfigWithVersion{}
+	credProviderConfigObject := &credentialProviderConfigWithVersion{
+		APIVersion: "kubelet.config.k8s.io/v1",
+		Kind:       "CredentialProviderConfig",
+	}
 	err := yaml.Unmarshal(contents, credProviderConfigObject)
 	if err != nil {
 		return nil, fmt.Errorf("error unmarshalling credential provider config: %w", err)
@@ -1324,6 +1328,18 @@ func updateCredentialProviderConfig(credProviderConfigObject *credentialProvider
 	}
 
 	return credProviderConfigsYaml, nil
+}
+
+// generateDropinUnitCredProviderConfig generates the systemd drop-in unit file content
+// for kubelet credential provider configuration. This configures the kubelet with the
+// image credential provider config path via environment variables.
+func generateDropinUnitCredProviderConfig(generticCredProviderConfigPath string) ([]byte, error) {
+	credentialProviderBinDirFlag := "--image-credential-provider-bin-dir=/usr/libexec/kubelet-image-credential-provider-plugins"
+	dropInContent := fmt.Sprintf(`[Service]
+# Prepends the credential provider flags to the existing Kubelet arguments
+Environment="KUBELET_CRIO_IMAGE_CREDENTIAL_PROVIDER_FLAGS=%s --image-credential-provider-config=%s"
+`, credentialProviderBinDirFlag, generticCredProviderConfigPath)
+	return []byte(dropInContent), nil
 }
 
 func wrapErrorWithCRIOCredentialProviderConfigCondition(err error, args ...interface{}) metav1.Condition {
