@@ -20,6 +20,8 @@ type mockImagesInspector struct {
 	results   []imageutils.BulkInspectResult
 	fetchData []byte
 	fetchErr  error
+	// fetchCount tracks the number of FetchImageFile calls
+	fetchCount int
 }
 
 func (m *mockImagesInspector) Inspect(_ context.Context, images ...string) ([]imageutils.BulkInspectResult, error) {
@@ -52,6 +54,7 @@ func (m *mockImagesInspector) Inspect(_ context.Context, images ...string) ([]im
 }
 
 func (m *mockImagesInspector) FetchImageFile(_ context.Context, image, path string) ([]byte, error) {
+	m.fetchCount++
 	if m.err != nil {
 		return nil, m.err
 	}

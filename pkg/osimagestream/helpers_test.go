@@ -5,9 +5,11 @@ import (
 	"testing"
 
 	"github.com/openshift/api/machineconfiguration/v1alpha1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestGetStreamSetsNames(t *testing.T) {
@@ -122,6 +124,85 @@ func TestGetOSImageStreamSetByName(t *testing.T) {
 				require.NoError(t, err)
 				assert.Equal(t, tt.expected, result)
 			}
+		})
+	}
+}
+
+func TestGetBuiltinDefault(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    *v1alpha1.OSImageStream
+		expected string
+	}{
+		{
+			name:     "nil OSImageStream",
+			input:    nil,
+			expected: "",
+		},
+		{
+			name: "no annotation",
+			input: &v1alpha1.OSImageStream{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{},
+				},
+			},
+			expected: "",
+		},
+		{
+			name: "annotation present",
+			input: &v1alpha1.OSImageStream{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						ctrlcommon.BuiltinDefaultStreamAnnotationKey: "rhel-9",
+					},
+				},
+			},
+			expected: "rhel-9",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, GetBuiltinDefault(tt.input))
+		})
+	}
+}
+
+func TestGetOSImageStreamSpecDefault(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    *v1alpha1.OSImageStream
+		expected string
+	}{
+		{
+			name:     "nil OSImageStream",
+			input:    nil,
+			expected: "",
+		},
+		{
+			name:     "nil Spec",
+			input:    &v1alpha1.OSImageStream{},
+			expected: "",
+		},
+		{
+			name: "empty DefaultStream",
+			input: &v1alpha1.OSImageStream{
+				Spec: &v1alpha1.OSImageStreamSpec{},
+			},
+			expected: "",
+		},
+		{
+			name: "DefaultStream set",
+			input: &v1alpha1.OSImageStream{
+				Spec: &v1alpha1.OSImageStreamSpec{DefaultStream: "rhel-10"},
+			},
+			expected: "rhel-10",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, GetOSImageStreamSpecDefault(tt.input))
 		})
 	}
 }
