@@ -1,5 +1,5 @@
 mode: 0644
-path: "/etc/nmstate/openshift/default.yml"
+path: {{ if eq .Infra.Status.BridgeTopology "Default" }}"/etc/nmstate/openshift/default.yml"{{ else }}"/etc/nmstate/openshift/default-disabled.yaml"{{ end }}
 contents:
   inline: |
     capture:
@@ -50,7 +50,7 @@ contents:
           auto-route-metric: 48
           # Not in capture for ipv4
           #auto-dns: {{`"{{ capture.base-iface.interfaces.0.ipv6.auto-dns }}"`}}
-          auto-gateway: {{`"{{ capture.base-iface.interfaces.0.ipv6.auto-gateway }}"`}}
-          auto-routes: {{`"{{ capture.base-iface.interfaces.0.ipv6.auto-routes }}"`}}
+          #auto-gateway: {{`"{{ capture.base-iface.interfaces.0.ipv6.auto-gateway }}"`}}
+          #auto-routes: {{`"{{ capture.base-iface.interfaces.0.ipv6.auto-routes }}"`}}
       routes:
         config: {{`"{{ capture.bridge-routes.routes.running }}"`}}
