@@ -60,9 +60,7 @@ const (
 	// 5ms, 10ms, 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s, 20.4s, 41s, 82s
 	maxRetries = 15
 
-	builtInLabelKey    = "machineconfiguration.openshift.io/mco-built-in"
-	configMapName      = "crio-default-container-runtime"
-	forceSyncOnUpgrade = "force-sync-on-upgrade"
+	builtInLabelKey = "machineconfiguration.openshift.io/mco-built-in"
 )
 
 var (
@@ -81,7 +79,6 @@ type Controller struct {
 	templatesDir string
 
 	client        mcfgclientset.Interface
-	kubeClient    clientset.Interface
 	configClient  configclientset.Interface
 	eventRecorder record.EventRecorder
 
@@ -151,7 +148,6 @@ func New(
 	ctrl := &Controller{
 		templatesDir:  templatesDir,
 		client:        mcfgClient,
-		kubeClient:    kubeClient,
 		configClient:  configClient,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-containerruntimeconfigcontroller"})),
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
@@ -217,7 +213,6 @@ func New(
 
 	ctrl.clusterVersionLister = clusterVersionInformer.Lister()
 	ctrl.clusterVersionListerSynced = clusterVersionInformer.Informer().HasSynced
-	ctrl.queue.Add(forceSyncOnUpgrade)
 
 	ctrl.fgHandler = fgHandler
 
@@ -601,60 +596,6 @@ func (ctrl *Controller) addAnnotation(cfg *mcfgv1.ContainerRuntimeConfig, annota
 	return annotationUpdateErr
 }
 
-// migrateRuncToCrun performs the upgrade migration from runc to crun as the default container runtime.
-// This function checks for the existence of the crio-default-container-runtime ConfigMap. If it exists,
-// it deletes the MachineConfigs for master and worker pools, then deletes the ConfigMap to prevent
-// re-running the migration.
-func (ctrl *Controller) migrateRuncToCrun() error {
-	// Check if the migration ConfigMap exists
-	_, err := ctrl.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), configMapName, metav1.GetOptions{})
-	if errors.IsNotFound(err) {
-		// ConfigMap doesn't exist, no migration needed
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("error checking for crio-default-container-runtime configmap: %w", err)
-	}
-
-	klog.Info("Found crio-default-container-runtime ConfigMap, starting migration from runc to crun")
-
-	// Get all MachineConfigPools
-	pools, err := ctrl.mcpLister.List(labels.Everything())
-	if err != nil {
-		return fmt.Errorf("error listing MachineConfigPools: %w", err)
-	}
-
-	// Only process master and worker pools for the migration
-	for _, pool := range pools {
-		if pool.Name != ctrlcommon.MachineConfigPoolMaster && pool.Name != ctrlcommon.MachineConfigPoolWorker {
-			continue
-		}
-
-		// Get the MachineConfig name for this pool
-		mcName := fmt.Sprintf("00-override-%s-generated-crio-default-container-runtime", pool.Name)
-
-		// Delete the existing MachineConfig
-		err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), mcName, metav1.DeleteOptions{})
-		if errors.IsNotFound(err) {
-			klog.Infof("MachineConfig %s not found, skipping migration for pool %s", mcName, pool.Name)
-			continue
-		}
-		if err != nil {
-			return fmt.Errorf("error deleting MachineConfig %s: %w", mcName, err)
-		}
-
-		klog.Infof("Successfully deleted MachineConfig %s", mcName)
-	}
-
-	// Delete the ConfigMap after successful migration
-	if err := ctrl.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Delete(context.TODO(), configMapName, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
-		return fmt.Errorf("error deleting crio-default-container-runtime configmap: %w", err)
-	}
-
-	klog.Info("Successfully completed migration from runc to crun and deleted migration ConfigMap")
-	return nil
-}
-
 // syncContainerRuntimeConfig will sync the ContainerRuntimeconfig with the given key.
 // This function is not meant to be invoked concurrently with the same key.
 // nolint: gocyclo
@@ -664,17 +605,6 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 	defer func() {
 		klog.V(4).Infof("Finished syncing ContainerRuntimeconfig %q (%v)", key, time.Since(startTime))
 	}()
-
-	// OKD only: Run the migration function at the start of sync
-	if version.IsSCOS() {
-		if err := ctrl.migrateRuncToCrun(); err != nil {
-			return fmt.Errorf("Error during runc to crun migration: %w", err)
-		}
-	}
-
-	if key == forceSyncOnUpgrade {
-		return nil
-	}
 
 	_, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
