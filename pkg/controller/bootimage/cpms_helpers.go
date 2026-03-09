@@ -111,13 +111,23 @@ func (ctrl *Controller) syncControlPlaneMachineSet(controlPlaneMachineSet *machi
 		klog.V(4).Infof("Finished syncing ControlPlaneMachineSet %q (%v)", controlPlaneMachineSet.Name, time.Since(startTime))
 	}()
 
-	// If the machineset has an owner reference, exit and report error. This means
+	// If the machineset has an owner reference, exit and log error. This means
 	// that the machineset may be managed by another workflow and should not be reconciled.
 	if len(controlPlaneMachineSet.GetOwnerReferences()) != 0 {
-		klog.Infof("ControlPlaneMachineSet %s has OwnerReference: %v, skipping boot image update", controlPlaneMachineSet.GetOwnerReferences()[0].Kind+"/"+controlPlaneMachineSet.GetOwnerReferences()[0].Name, controlPlaneMachineSet.Name)
+		klog.Infof("ControlPlaneMachineSet %s has OwnerReference: %v, skipping boot image update", controlPlaneMachineSet.Name, controlPlaneMachineSet.GetOwnerReferences()[0].Kind+"/"+controlPlaneMachineSet.GetOwnerReferences()[0].Name)
 		return nil
 	}
 
+	// Skip if the ControlPlaneMachineSet has a label designating a non default stream. If no stream label is defined,
+	// this is an older, pre "dual stream" ControlPlaneMachineSet and should be reconciled.
+	if streamLabel, ok := controlPlaneMachineSet.GetLabels()[OSStreamLabelKey]; ok {
+		if streamLabel != SupportedOSStream {
+			klog.Infof("ControlPlaneMachineSet %s has unsupported stream: %v, skipping boot image update", controlPlaneMachineSet.Name, streamLabel)
+			return nil
+		}
+	}
+
+	// Skip if this is a windows ControlPlaneMachineSet.
 	if os, ok := controlPlaneMachineSet.Spec.Template.OpenShiftMachineV1Beta1Machine.Spec.Labels[OSLabelKey]; ok {
 		if os == "Windows" {
 			klog.Infof("ControlPlaneMachineSet %s has a windows os label, skipping boot image update", controlPlaneMachineSet.Name)

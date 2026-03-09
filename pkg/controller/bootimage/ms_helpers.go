@@ -111,13 +111,25 @@ func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet
 		klog.V(4).Infof("Finished syncing MAPI machineset %q (%v)", machineSet.Name, time.Since(startTime))
 	}()
 
-	// If the machineset has an owner reference, exit and report error. This means
+	// If the machineset has an owner reference, exit and log error. This means
 	// that the machineset may be managed by another workflow and should not be reconciled.
 	if len(machineSet.GetOwnerReferences()) != 0 {
-		klog.Infof("machineset %s has OwnerReference: %v, skipping boot image update", machineSet.GetOwnerReferences()[0].Kind+"/"+machineSet.GetOwnerReferences()[0].Name, machineSet.Name)
+		klog.Infof("machineset %s has OwnerReference: %v, skipping boot image update", machineSet.Name, machineSet.GetOwnerReferences()[0].Kind+"/"+machineSet.GetOwnerReferences()[0].Name)
 		return true, nil
 	}
 
+	// Skip if the machineset has a label designating a non default stream. Not counted as skipped
+	// since the MCO intentionally excludes non-default streams. If no stream label is defined,
+	// this is an older, pre "dual stream" machineset and should be reconciled.
+	if streamLabel, ok := machineSet.GetLabels()[OSStreamLabelKey]; ok {
+		if streamLabel != SupportedOSStream {
+			klog.Infof("machineset %s has unsupported stream: %v, skipping boot image update", machineSet.Name, streamLabel)
+			return false, nil
+		}
+	}
+
+	// Skip if this is a windows machineset. Not counted as skipped since the MCO
+	// intentionally excludes Windows machinesets.
 	if os, ok := machineSet.Spec.Template.Labels[OSLabelKey]; ok {
 		if os == "Windows" {
 			klog.Infof("machineset %s has a windows os label, skipping boot image update", machineSet.Name)
