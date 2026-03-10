@@ -115,6 +115,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		imageStream          *imagev1.ImageStream
 		iri                  *mcfgv1alpha1.InternalReleaseImage
 		iriTLSCert           *corev1.Secret
+		iriAuthSecret        *corev1.Secret
 	)
 	for _, info := range infos {
 		if info.IsDir() {
@@ -198,6 +199,9 @@ func (b *Bootstrap) Run(destDir string) error {
 			case *corev1.Secret:
 				if obj.GetName() == ctrlcommon.InternalReleaseImageTLSSecretName {
 					iriTLSCert = obj
+				}
+				if obj.GetName() == ctrlcommon.InternalReleaseImageAuthSecretName {
+					iriAuthSecret = obj
 				}
 			default:
 				klog.Infof("skipping %q [%d] manifest because of unhandled %T", file.Name(), idx+1, obji)
@@ -305,7 +309,7 @@ func (b *Bootstrap) Run(destDir string) error {
 
 	if fgHandler != nil && fgHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
 		if iri != nil {
-			iriConfigs, err := internalreleaseimage.RunInternalReleaseImageBootstrap(iri, iriTLSCert, cconfig)
+			iriConfigs, err := internalreleaseimage.RunInternalReleaseImageBootstrap(iri, iriTLSCert, iriAuthSecret, cconfig)
 			if err != nil {
 				return err
 			}

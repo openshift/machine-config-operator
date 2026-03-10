@@ -72,6 +72,9 @@ const (
 	// InternalReleaseImageTLSSecretName is the name of the secret manifest containing the InternalReleaseImage TLS certificate.
 	InternalReleaseImageTLSSecretName = "internal-release-image-tls"
 
+	// InternalReleaseImageAuthSecretName is the name of the secret containing IRI registry htpasswd auth credentials.
+	InternalReleaseImageAuthSecretName = "internal-release-image-registry-auth"
+
 	// APIServerInstanceName is a singleton name for APIServer configuration
 	APIServerBootstrapFileLocation = "/etc/mcs/bootstrap/api-server/api-server.yaml"
 
