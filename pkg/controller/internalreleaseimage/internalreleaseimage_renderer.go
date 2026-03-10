@@ -37,20 +37,22 @@ var (
 // the InternalReleaseImage machine config resources. It can also create
 // a MachineConfig instance when required.
 type Renderer struct {
-	role      string
-	iri       *mcfgv1alpha1.InternalReleaseImage
-	iriSecret *corev1.Secret
-	cconfig   *mcfgv1.ControllerConfig
+	role          string
+	iri           *mcfgv1alpha1.InternalReleaseImage
+	iriSecret     *corev1.Secret
+	iriAuthSecret *corev1.Secret // may be nil
+	cconfig       *mcfgv1.ControllerConfig
 }
 
 // NewRendererByRole creates a new Renderer instance for generating
 // the machine config for the given role.
-func NewRendererByRole(role string, iri *mcfgv1alpha1.InternalReleaseImage, iriSecret *corev1.Secret, cconfig *mcfgv1.ControllerConfig) *Renderer {
+func NewRendererByRole(role string, iri *mcfgv1alpha1.InternalReleaseImage, iriSecret, iriAuthSecret *corev1.Secret, cconfig *mcfgv1.ControllerConfig) *Renderer {
 	return &Renderer{
-		role:      role,
-		iri:       iri,
-		iriSecret: iriSecret,
-		cconfig:   cconfig,
+		role:          role,
+		iri:           iri,
+		iriSecret:     iriSecret,
+		iriAuthSecret: iriAuthSecret,
+		cconfig:       cconfig,
 	}
 }
 
@@ -103,6 +105,7 @@ type renderContext struct {
 	IriTLSKey           string
 	IriTLSCert          string
 	RootCA              string
+	IriHtpasswd         string
 }
 
 // newRenderContext creates a new renderContext instance.
@@ -115,11 +118,19 @@ func (r *Renderer) newRenderContext() (*renderContext, error) {
 	if err != nil {
 		return nil, err
 	}
+	iriHtpasswd := ""
+	if r.iriAuthSecret != nil {
+		if raw, found := r.iriAuthSecret.Data["htpasswd"]; found {
+			iriHtpasswd = string(raw)
+		}
+	}
+
 	return &renderContext{
 		DockerRegistryImage: r.cconfig.Spec.Images[templatectrl.DockerRegistryKey],
 		IriTLSKey:           iriTLSKey,
 		IriTLSCert:          iriTLSCert,
 		RootCA:              string(r.cconfig.Spec.RootCAData),
+		IriHtpasswd:         iriHtpasswd,
 	}, nil
 }
 
