@@ -2,6 +2,7 @@ package internalreleaseimage
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -28,9 +29,10 @@ import (
 
 func TestInternalReleaseImageCreate(t *testing.T) {
 	cases := []struct {
-		name           string
-		initialObjects func() []runtime.Object
-		verify         func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig)
+		name             string
+		initialObjects   func() []runtime.Object
+		verify           func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig)
+		verifyPullSecret func(t *testing.T, f *fixture)
 	}{
 		{
 			name:           "feature inactive",
@@ -70,6 +72,34 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
 				verifyInternalReleaseMasterMachineConfig(t, actualMasterMC)
 				verifyInternalReleaseWorkerMachineConfig(t, actualWorkerMC)
+			},
+		},
+		{
+			name:           "generate iri machine-config with auth",
+			initialObjects: objs(iri(), clusterVersion(), cconfig(), iriCertSecret(), iriAuthSecret()),
+			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
+				verifyInternalReleaseMasterMachineConfigWithAuth(t, actualMasterMC)
+				verifyInternalReleaseWorkerMachineConfig(t, actualWorkerMC)
+			},
+		},
+		{
+			name:           "merge iri auth into pull secret",
+			initialObjects: objs(iri(), clusterVersion(), cconfig().withDNS("example.com"), iriCertSecret(), iriAuthSecret(), pullSecret()),
+			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
+				verifyInternalReleaseMasterMachineConfigWithAuth(t, actualMasterMC)
+				verifyInternalReleaseWorkerMachineConfig(t, actualWorkerMC)
+			},
+			verifyPullSecret: func(t *testing.T, f *fixture) {
+				ps, err := f.k8sClient.CoreV1().Secrets(ctrlcommon.OpenshiftConfigNamespace).Get(
+					context.TODO(), ctrlcommon.GlobalPullSecretName, metav1.GetOptions{})
+				assert.NoError(t, err)
+				var dockerConfig map[string]interface{}
+				err = json.Unmarshal(ps.Data[corev1.DockerConfigJsonKey], &dockerConfig)
+				assert.NoError(t, err)
+				auths := dockerConfig["auths"].(map[string]interface{})
+				iriEntry, ok := auths["api-int.example.com:22625"]
+				assert.True(t, ok, "IRI auth entry should be present in pull secret")
+				assert.NotNil(t, iriEntry)
 			},
 		},
 		{
@@ -154,6 +184,9 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 					}
 				}
 				tc.verify(t, actualIRI, actualMasterMC, actualWorkerMC)
+			}
+			if tc.verifyPullSecret != nil {
+				tc.verifyPullSecret(t, f)
 			}
 
 		})
