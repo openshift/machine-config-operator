@@ -118,6 +118,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		iri                  *mcfgv1alpha1.InternalReleaseImage
 		iriTLSCert           *corev1.Secret
 		osImageStream        *mcfgv1alpha1.OSImageStream
+		iriAuthSecret        *corev1.Secret
 	)
 	for _, info := range infos {
 		if info.IsDir() {
@@ -201,6 +202,9 @@ func (b *Bootstrap) Run(destDir string) error {
 			case *corev1.Secret:
 				if obj.GetName() == ctrlcommon.InternalReleaseImageTLSSecretName {
 					iriTLSCert = obj
+				}
+				if obj.GetName() == ctrlcommon.InternalReleaseImageAuthSecretName {
+					iriAuthSecret = obj
 				}
 			case *mcfgv1alpha1.OSImageStream:
 				// If given, it's treated as user input with config such as the default stream
@@ -321,7 +325,7 @@ func (b *Bootstrap) Run(destDir string) error {
 
 	if fgHandler != nil && fgHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
 		if iri != nil {
-			iriConfigs, err := internalreleaseimage.RunInternalReleaseImageBootstrap(iri, iriTLSCert, cconfig)
+			iriConfigs, err := internalreleaseimage.RunInternalReleaseImageBootstrap(iri, iriTLSCert, iriAuthSecret, cconfig)
 			if err != nil {
 				return err
 			}
