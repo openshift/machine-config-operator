@@ -5,8 +5,8 @@ metadata:
   namespace: {{.TargetNamespace}}
 spec:
   podSelector:
-    matchLabels:
-      k8s-app: {{.ControllerAppLabel}}
+    matchLabels: # TODO: see if the following should be `k8s-app: {{.ControllerAppLabel}}` instead
+      k8s-app: machine-config-controller
   policyTypes:
   - Ingress
   - Egress
