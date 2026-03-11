@@ -75,7 +75,7 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 }
 
 //nolint:gocyclo,gosec
-func (ctrl *Controller) calculateStatus(mcs []*mcfgv1.MachineConfigNode, cconfig *mcfgv1.ControllerConfig, pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node, mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) mcfgv1.MachineConfigPoolStatus {
+func (ctrl *Controller) calculateStatus(mcns []*mcfgv1.MachineConfigNode, cconfig *mcfgv1.ControllerConfig, pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node, mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) mcfgv1.MachineConfigPoolStatus {
 	certExpirys := []mcfgv1.CertExpiry{}
 	if cconfig != nil {
 		for _, cert := range cconfig.Status.ControllerCertificates {
@@ -94,134 +94,28 @@ func (ctrl *Controller) calculateStatus(mcs []*mcfgv1.MachineConfigNode, cconfig
 
 	isLayeredPool := ctrl.isLayeredPool(mosc, mosb)
 
-	var degradedMachines, readyMachines, updatedMachines, unavailableMachines, updatingMachines []*corev1.Node
 	degradedReasons := []string{}
 	pisIsEnabled := ctrl.fgHandler.Enabled(features.FeatureGatePinnedImages)
 	pinnedImageSetsDegraded := false
 
-	// if we represent updating properly here, we will also represent updating properly in the CO
-	// so this solves the cordoning RFE and the upgradeable RFE
-	// updating == updatePrepared, updateExecuted, updatedComplete, postAction, cordoning, draining
-	// updated == nodeResumed, updated
-	// ready == nodeResumed, updated
-	// unavailable == draining, cordoned
-	// degraded == if the condition.Reason == error
-	// this ensures that a MCP only enters Upgradeable==False if the node actually needs to upgrade to the new MC
-	for _, state := range mcs {
-		var ourNode *corev1.Node
-		for _, n := range nodes {
-			if state.Name == n.Name {
-				ourNode = n
-				break
-			}
-		}
-		if ourNode == nil {
-			klog.Errorf("Could not find specified node %s", state.Name)
-		}
-		if len(state.Status.Conditions) == 0 {
-			// not ready yet
-			break
-		}
+	// Set the PIS pool synchronizer to updated based on the MCN
+	for _, mcn := range mcns {
 		if pisIsEnabled {
-			if isPinnedImageSetsUpdated(state) {
+			if isPinnedImageSetsUpdated(mcn) {
 				poolSynchronizer.SetUpdated(mcfgv1.PinnedImageSets)
 			}
 		}
-		for _, cond := range state.Status.Conditions {
-			// populate the degradedReasons from the MachineConfigNodeNodeDegraded condition
-			if mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodeNodeDegraded && cond.Status == metav1.ConditionTrue {
-				degradedMachines = append(degradedMachines, ourNode)
-				// Degraded nodes are also unavailable since they are not in a "Done" state
-				// and cannot be used for further updates (see IsUnavailableForUpdate)
-				unavailableMachines = append(unavailableMachines, ourNode)
-				degradedReasons = append(degradedReasons, fmt.Sprintf("Node %s is reporting: %q", ourNode.Name, cond.Message))
-				break
-			}
-			/*
-				// TODO (ijanssen): This section of code should be implemented as part of OCPBUGS-57177 after OCPBUGS-32745 is addressed.
-				// 	In the current state of the code, the `MachineConfigNodePinnedImageSetsDegraded` condition is wrongly being set to True`
-				// 	even when no unintended functionality is occurring, such as many images taking more than 2 minutes to fetch. Thus, it is
-				//  not wise to degrade an MCP on a PIS degrade while the PIS degrade is not acting as intended. OCPBUGS-57177 has
-				// 	been marked as blocked by OCPBUGS-32745 in Jira, but once the degrade condition is stablilized, this code block should
-				// 	cover the fix for OCPBUGS-57177.
-					// populate the degradedReasons from the MachineConfigNodePinnedImageSetsDegraded condition
-					if pisIsEnabled && mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodePinnedImageSetsDegraded && cond.Status == metav1.ConditionTrue {
-						degradedMachines = append(degradedMachines, ourNode)
-						degradedReasons = append(degradedReasons, fmt.Sprintf("Node %s references an invalid PinnedImageSet. See the node's MachineConfigNode resource for details.", ourNode.Name))
-						if mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodePinnedImageSetsDegraded {
-							pinnedImageSetsDegraded = true
-						}
-						break
-					}
-			*/
-			/*
-				// TODO: (djoshy) Rework this block to use MCN conditions correctly. See: https://issues.redhat.com/browse/MCO-1228
-
-				// Specifically, the main concerns for the following block are:
-				// (i) Why are only unknown conditions being evaluated? Shouldn't True/False conditions be used?
-				// (ii) Multiple conditions can be unknown at the same time, resulting in certain machines being double counted
-
-				// Some background:
-				// The MCN conditions are used to feed MCP statuses if the machine counts add up correctly to the total node count.
-				// If this check fails, node conditions are used to determine machine counts. The MCN counts calculated in this block
-				// seem incorrect most of the time, so the controller almost always defaults to using the node condition based counts.
-				// On occasion, the MCN counts cause a false positive in aformentioned check, resulting in invalid values for the MCP
-				// statuses. Commenting out this block will force the controller to always use node condition based counts to feed the
-				// MCP status.
-
-
-				if cond.Status == metav1.ConditionUnknown {
-					// This switch case will cause a node to be double counted, maybe use a hash for node count
-					switch mcfgv1.StateProgress(cond.Type) {
-					case mcfgv1.MachineConfigNodeUpdatePrepared:
-						updatingMachines = append(updatedMachines, ourNode) //nolint:gocritic
-					case mcfgv1.MachineConfigNodeUpdateExecuted:
-						updatingMachines = append(updatingMachines, ourNode)
-					case mcfgv1.MachineConfigNodeUpdatePostActionComplete:
-						updatingMachines = append(updatingMachines, ourNode)
-					case mcfgv1.MachineConfigNodeUpdateComplete:
-						updatingMachines = append(updatingMachines, ourNode)
-					case mcfgv1.MachineConfigNodeResumed:
-						updatingMachines = append(updatedMachines, ourNode) //nolint:gocritic
-						readyMachines = append(readyMachines, ourNode)
-					// Note (ijanssen): `MachineConfigNodeUpdateCompatible` was removed with MCO-1543. This case will need to be replaced/removed when working on MCO-1228.
-					case mcfgv1.MachineConfigNodeUpdateCompatible:
-						updatingMachines = append(updatedMachines, ourNode) //nolint:gocritic
-					case mcfgv1.MachineConfigNodeUpdateDrained:
-						unavailableMachines = append(unavailableMachines, ourNode)
-						updatingMachines = append(updatingMachines, ourNode)
-					case mcfgv1.MachineConfigNodeUpdateCordoned:
-						unavailableMachines = append(unavailableMachines, ourNode)
-						updatingMachines = append(updatingMachines, ourNode)
-					case mcfgv1.MachineConfigNodeUpdated:
-						updatedMachines = append(updatedMachines, ourNode)
-						readyMachines = append(readyMachines, ourNode)
-					}
-				}
-			*/
-		}
 	}
-	degradedMachineCount := int32(len(degradedMachines))
+
+	// Get the updated, degraded, ready, and unavailable machine counts from the nodes' properties
+	updatedMachines := getUpdatedMachines(pool, nodes, mosc, mosb, isLayeredPool)
 	updatedMachineCount := int32(len(updatedMachines))
-	unavailableMachineCount := int32(len(unavailableMachines))
-	updatingMachineCount := int32(len(updatingMachines))
+	readyMachines := getReadyMachines(pool, nodes, mosc, mosb, isLayeredPool)
 	readyMachineCount := int32(len(readyMachines))
-
-	// this is # 1 priority, get the upgrade states actually reporting
-	if degradedMachineCount+readyMachineCount+unavailableMachineCount+updatingMachineCount != int32(len(nodes)) {
-
-		updatedMachines = getUpdatedMachines(pool, nodes, mosc, mosb, isLayeredPool)
-		updatedMachineCount = int32(len(updatedMachines))
-
-		readyMachines = getReadyMachines(pool, nodes, mosc, mosb, isLayeredPool)
-		readyMachineCount = int32(len(readyMachines))
-
-		unavailableMachines = getUnavailableMachines(nodes, pool)
-		unavailableMachineCount = int32(len(unavailableMachines))
-
-		degradedMachines = getDegradedMachines(nodes)
-		degradedMachineCount = int32(len(degradedMachines))
-	}
+	unavailableMachines := getUnavailableMachines(nodes, pool)
+	unavailableMachineCount := int32(len(unavailableMachines))
+	degradedMachines := getDegradedMachines(nodes)
+	degradedMachineCount := int32(len(degradedMachines))
 
 	for _, n := range degradedMachines {
 		reason, ok := n.Annotations[daemonconsts.MachineConfigDaemonReasonAnnotationKey]
