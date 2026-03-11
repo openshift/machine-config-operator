@@ -1,9 +1,8 @@
 package internalreleaseimage
 
 import (
+	"bytes"
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"time"
@@ -470,12 +469,10 @@ func (ctrl *Controller) mergeIRIAuthIntoPullSecret(cconfig *mcfgv1.ControllerCon
 		return nil
 	}
 
-	// Get cluster domain from ControllerConfig DNS
 	if cconfig.Spec.DNS == nil {
 		return fmt.Errorf("ControllerConfig DNS is not set")
 	}
 	baseDomain := cconfig.Spec.DNS.Spec.BaseDomain
-	iriRegistryHost := fmt.Sprintf("api-int.%s:22625", baseDomain)
 
 	// Fetch current pull secret from openshift-config
 	pullSecret, err := ctrl.kubeClient.CoreV1().Secrets(ctrlcommon.OpenshiftConfigNamespace).Get(
@@ -488,35 +485,14 @@ func (ctrl *Controller) mergeIRIAuthIntoPullSecret(cconfig *mcfgv1.ControllerCon
 		return fmt.Errorf("could not get pull-secret: %w", err)
 	}
 
-	// Parse existing dockerconfigjson
-	raw := pullSecret.Data[corev1.DockerConfigJsonKey]
-	var dockerConfig map[string]interface{}
-	if err := json.Unmarshal(raw, &dockerConfig); err != nil {
-		return fmt.Errorf("could not parse pull secret: %w", err)
-	}
-
-	auths, ok := dockerConfig["auths"].(map[string]interface{})
-	if !ok {
-		return fmt.Errorf("pull secret missing 'auths' field")
-	}
-
-	// Check if IRI entry already exists and is current
-	authValue := base64.StdEncoding.EncodeToString([]byte("openshift:" + password))
-	if existing, ok := auths[iriRegistryHost].(map[string]interface{}); ok {
-		if existing["auth"] == authValue {
-			return nil // Already up to date
-		}
-	}
-
-	// Merge IRI auth entry
-	auths[iriRegistryHost] = map[string]interface{}{
-		"auth": authValue,
-	}
-
-	// Marshal and update
-	mergedBytes, err := json.Marshal(dockerConfig)
+	mergedBytes, err := MergeIRIAuthIntoPullSecret(pullSecret.Data[corev1.DockerConfigJsonKey], password, baseDomain)
 	if err != nil {
-		return fmt.Errorf("could not marshal merged pull secret: %w", err)
+		return err
+	}
+
+	// No change needed
+	if bytes.Equal(mergedBytes, pullSecret.Data[corev1.DockerConfigJsonKey]) {
+		return nil
 	}
 
 	pullSecret.Data[corev1.DockerConfigJsonKey] = mergedBytes
