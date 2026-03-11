@@ -426,7 +426,7 @@ func (dn *Daemon) ClusterConnect(
 
 	// If the IrreconcilableMachineConfig FG is enabled turn on the reporting of irreconcilable differences
 	// MCN is required too, as the irreconcilable diffs report is stored as part of the MCN status
-	if dn.fgHandler.Enabled(features.FeatureGateIrreconcilableMachineConfig) && dn.fgHandler.Enabled(features.FeatureGateMachineConfigNodes) {
+	if dn.fgHandler.Enabled(features.FeatureGateIrreconcilableMachineConfig) {
 		dn.irreconcilableReporter = NewIrreconcilableReporter(dn.mcfgClient)
 	}
 
