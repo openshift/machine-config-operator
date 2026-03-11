@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
@@ -970,6 +971,87 @@ func TestKubeletConfigDenylistedOptions(t *testing.T) {
 		if err != nil {
 			t.Errorf("%s: failed with %v. should have succeeded", test.name, err)
 		}
+	}
+}
+
+func TestKubeletConfigLogLevel(t *testing.T) {
+	// Test cases for valid LogLevel values
+	validLogLevels := []struct {
+		name     string
+		logLevel *int32
+	}{
+		{
+			name:     "LogLevel 0 - minimal logging",
+			logLevel: pointer.Int32Ptr(0),
+		},
+		{
+			name:     "LogLevel 2 - default",
+			logLevel: pointer.Int32Ptr(2),
+		},
+		{
+			name:     "LogLevel 10 - max verbosity",
+			logLevel: pointer.Int32Ptr(10),
+		},
+		{
+			name:     "LogLevel nil - unset",
+			logLevel: nil,
+		},
+	}
+
+	// Test cases for invalid LogLevel values
+	invalidLogLevels := []struct {
+		name     string
+		logLevel *int32
+	}{
+		{
+			name:     "LogLevel -1 - negative",
+			logLevel: pointer.Int32Ptr(-1),
+		},
+		{
+			name:     "LogLevel 11 - above max",
+			logLevel: pointer.Int32Ptr(11),
+		},
+	}
+
+	// Test valid LogLevel values
+	for _, test := range validLogLevels {
+		t.Run(test.name, func(t *testing.T) {
+			kc := &mcfgv1.KubeletConfig{
+				TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
+				ObjectMeta: metav1.ObjectMeta{Name: "test-loglevel", UID: types.UID(utilrand.String(5))},
+				Spec: mcfgv1.KubeletConfigSpec{
+					LogLevel:                  test.logLevel,
+					MachineConfigPoolSelector: metav1.AddLabelToSelector(&metav1.LabelSelector{}, "", ""),
+				},
+			}
+			err := validateUserKubeletConfig(kc)
+			if err != nil {
+				t.Errorf("%s: validation failed with error: %v, but should have succeeded", test.name, err)
+			}
+		})
+	}
+
+	// Test invalid LogLevel values
+	for _, test := range invalidLogLevels {
+		t.Run(test.name, func(t *testing.T) {
+			kc := &mcfgv1.KubeletConfig{
+				TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
+				ObjectMeta: metav1.ObjectMeta{Name: "test-loglevel", UID: types.UID(utilrand.String(5))},
+				Spec: mcfgv1.KubeletConfigSpec{
+					LogLevel:                  test.logLevel,
+					MachineConfigPoolSelector: metav1.AddLabelToSelector(&metav1.LabelSelector{}, "", ""),
+				},
+			}
+			err := validateUserKubeletConfig(kc)
+			if err == nil {
+				t.Errorf("%s: validation succeeded but should have failed for LogLevel %d", test.name, *test.logLevel)
+			} else {
+				expectedErrMsg := fmt.Sprintf("KubeletConfig's LogLevel is not valid [0,10]: %d", *test.logLevel)
+				if !strings.Contains(err.Error(), expectedErrMsg) {
+					t.Errorf("%s: expected error message containing '%s', got '%s'", test.name, expectedErrMsg, err.Error())
+				}
+			}
+		})
 	}
 }
 
