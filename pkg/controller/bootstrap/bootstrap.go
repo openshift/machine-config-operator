@@ -247,6 +247,24 @@ func (b *Bootstrap) Run(destDir string) error {
 	}
 
 	pullSecretBytes := pullSecret.Data[corev1.DockerConfigJsonKey]
+
+	// If IRI auth is enabled, merge the IRI registry credentials into the pull
+	// secret before rendering template MCs. This ensures the bootstrap-rendered
+	// MCs use the same pull secret content as the in-cluster IRI controller
+	// will produce, avoiding a rendered MachineConfig hash mismatch.
+	if fgHandler != nil && fgHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
+		if iriAuthSecret != nil && cconfig.Spec.DNS != nil {
+			password := string(iriAuthSecret.Data["password"])
+			merged, mergeErr := internalreleaseimage.MergeIRIAuthIntoPullSecret(pullSecretBytes, password, cconfig.Spec.DNS.Spec.BaseDomain)
+			if mergeErr != nil {
+				klog.Warningf("Failed to merge IRI auth into pull secret during bootstrap: %v", mergeErr)
+			} else {
+				pullSecretBytes = merged
+				klog.Infof("Merged IRI registry auth into pull secret for bootstrap rendering")
+			}
+		}
+	}
+
 	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, pullSecretBytes, apiServer)
 	if err != nil {
 		return err
