@@ -9,8 +9,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/openshift/api/features"
-
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/client-go/tools/clientcmd"
 
@@ -213,42 +211,34 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		klog.Fatalf("Failed to initialize: %v", err)
 	}
 
+	// Create CRI client and pinned image set manager before starting informers
+	criClient, err := cri.NewClient(ctx, constants.DefaultCRIOSocketPath)
+	if err != nil {
+		klog.Fatalf("Failed to initialize CRI client: %v", err)
+	}
+	prefetchTimeout := 2 * time.Minute
+	pinnedImageSetManager := daemon.NewPinnedImageSetManager(
+		startOpts.nodeName,
+		criClient,
+		ctrlctx.ClientBuilder.MachineConfigClientOrDie(componentName),
+		ctrlctx.InformerFactory.Machineconfiguration().V1().PinnedImageSets(),
+		nodeScopedInformer,
+		ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
+		resource.MustParse(constants.MinFreeStorageAfterPrefetch),
+		constants.DefaultCRIOSocketPath,
+		constants.KubeletAuthFile,
+		constants.ContainerRegistryConfPath,
+		prefetchTimeout,
+		ctrlctx.FeatureGatesHandler,
+	)
+	go pinnedImageSetManager.Run(2, stopCh)
+
 	ctrlctx.KubeInformerFactory.Start(stopCh)
 	ctrlctx.KubeNamespacedInformerFactory.Start(stopCh)
 	ctrlctx.InformerFactory.Start(stopCh)
 	ctrlctx.OperatorInformerFactory.Start(stopCh)
 	nodeScopedInformerStartFunc(ctrlctx.Stop)
 	close(ctrlctx.InformersStarted)
-
-	// ok to start the rest of the informers now that we have observed the initial feature gates
-	if ctrlctx.FeatureGatesHandler.Enabled(features.FeatureGatePinnedImages) && ctrlctx.FeatureGatesHandler.Enabled(features.FeatureGateMachineConfigNodes) {
-		klog.Infof("Feature enabled: %s", features.FeatureGatePinnedImages)
-		criClient, err := cri.NewClient(ctx, constants.DefaultCRIOSocketPath)
-		if err != nil {
-			klog.Fatalf("Failed to initialize CRI client: %v", err)
-		}
-
-		prefetchTimeout := 2 * time.Minute
-		pinnedImageSetManager := daemon.NewPinnedImageSetManager(
-			startOpts.nodeName,
-			criClient,
-			ctrlctx.ClientBuilder.MachineConfigClientOrDie(componentName),
-			ctrlctx.InformerFactory.Machineconfiguration().V1().PinnedImageSets(),
-			nodeScopedInformer,
-			ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
-			resource.MustParse(constants.MinFreeStorageAfterPrefetch),
-			constants.DefaultCRIOSocketPath,
-			constants.KubeletAuthFile,
-			constants.ContainerRegistryConfPath,
-			prefetchTimeout,
-			ctrlctx.FeatureGatesHandler,
-		)
-
-		go pinnedImageSetManager.Run(2, stopCh)
-		// start the informers for the pinned image set again after the feature gate is enabled this is allowed.
-		// see comments in SharedInformerFactory interface.
-		ctrlctx.InformerFactory.Start(stopCh)
-	}
 
 	if err := dn.Run(stopCh, exitCh, errCh); err != nil {
 		ctrlcommon.WriteTerminationError(err)
