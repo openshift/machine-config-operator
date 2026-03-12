@@ -24,7 +24,6 @@ require (
 	github.com/fsnotify/fsnotify v1.7.0
 	github.com/ghodss/yaml v1.0.1-0.20190212211648-25d852aebe32
 	github.com/golangci/golangci-lint v1.59.1
-	github.com/google/go-cmp v0.6.0
 	github.com/google/renameio v0.1.0
 	github.com/imdario/mergo v0.3.16
 	github.com/opencontainers/go-digest v1.0.0
@@ -93,6 +92,7 @@ require (
 	github.com/golangci/plugin-module-register v0.1.1 // indirect
 	github.com/google/btree v1.0.1 // indirect
 	github.com/google/gnostic-models v0.6.8 // indirect
+	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/gregjones/httpcache v0.0.0-20180305231024-9cad4c3443a7 // indirect
@@ -289,7 +289,7 @@ require (
 	github.com/securego/gosec/v2 v2.20.1-0.20240525090044-5f0084eb01a9 // indirect
 	github.com/shazow/go-diff v0.0.0-20160112020656-b6b7b6733b8c // indirect
 	github.com/sigstore/sigstore v1.7.5 // indirect
-	github.com/sirupsen/logrus v1.9.3
+	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/sivchari/containedctx v1.0.3 // indirect
 	github.com/sivchari/tenv v1.7.1 // indirect
 	github.com/sonatard/noctx v0.0.2 // indirect
