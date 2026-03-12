@@ -158,7 +158,7 @@ rules:
     resources: ["serviceaccounts"]
     verbs: ["get", "list"]
   - apiGroups: [""]
-    resources: ["*"]
+    resources: ["https://kubernetes.default.svc"]
     verbs: ["request-serviceaccounts-token-audience"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
