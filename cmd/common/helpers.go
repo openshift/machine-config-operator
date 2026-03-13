@@ -70,6 +70,8 @@ func GetLeaderElectionConfig(restcfg *rest.Config, useDefaultTimings bool) confi
 	)
 
 	if useDefaultTimings {
+		klog.Infof("Using HA default leader election timings (LeaseDuration=%s, RetryPeriod=%s)",
+			defaultLeaderElection.LeaseDuration.Duration, defaultLeaderElection.RetryPeriod.Duration)
 		return defaultLeaderElection
 	}
 
