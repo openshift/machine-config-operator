@@ -40,7 +40,7 @@ func NewInsightsOperatorInformer(client versioned.Interface, resyncPeriod time.D
 // one. This reduces memory footprint and number of connections to the server.
 func NewFilteredInsightsOperatorInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
-		&cache.ListWatch{
+		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
@@ -65,7 +65,7 @@ func NewFilteredInsightsOperatorInformer(client versioned.Interface, resyncPerio
 				}
 				return client.OperatorV1().InsightsOperators().Watch(ctx, options)
 			},
-		},
+		}, client),
 		&apioperatorv1.InsightsOperator{},
 		resyncPeriod,
 		indexers,

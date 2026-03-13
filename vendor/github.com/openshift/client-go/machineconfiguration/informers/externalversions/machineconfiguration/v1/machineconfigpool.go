@@ -40,7 +40,7 @@ func NewMachineConfigPoolInformer(client versioned.Interface, resyncPeriod time.
 // one. This reduces memory footprint and number of connections to the server.
 func NewFilteredMachineConfigPoolInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
-		&cache.ListWatch{
+		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
@@ -65,7 +65,7 @@ func NewFilteredMachineConfigPoolInformer(client versioned.Interface, resyncPeri
 				}
 				return client.MachineconfigurationV1().MachineConfigPools().Watch(ctx, options)
 			},
-		},
+		}, client),
 		&apimachineconfigurationv1.MachineConfigPool{},
 		resyncPeriod,
 		indexers,
