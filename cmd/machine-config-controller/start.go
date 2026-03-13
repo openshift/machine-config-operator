@@ -143,6 +143,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 				ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().InternalReleaseImages(),
 				ctrlctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 				ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
+				ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 				ctrlctx.ConfigInformerFactory.Config().V1().ClusterVersions(),
 				ctrlctx.KubeInformerFactory.Core().V1().Secrets(),
 				ctrlctx.ClientBuilder.KubeClientOrDie("internalreleaseimage-controller"),

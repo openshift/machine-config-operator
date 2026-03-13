@@ -3,6 +3,7 @@ package internalreleaseimage
 // Test builders and helper methods.
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -306,4 +307,98 @@ func clusterVersion() *clusterVersionBuilder {
 
 func (cvb *clusterVersionBuilder) build() runtime.Object {
 	return cvb.obj
+}
+
+// mcpBuilder simplifies the creation of a MachineConfigPool resource in the test.
+type mcpBuilder struct {
+	obj *mcfgv1.MachineConfigPool
+}
+
+func mcp(name string, renderedMCName string) *mcpBuilder {
+	return &mcpBuilder{
+		obj: &mcfgv1.MachineConfigPool{
+			ObjectMeta: v1.ObjectMeta{
+				Name: name,
+			},
+			Status: mcfgv1.MachineConfigPoolStatus{
+				Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{
+					ObjectReference: corev1.ObjectReference{
+						Name: renderedMCName,
+					},
+				},
+				MachineCount:        3,
+				UpdatedMachineCount: 3,
+				ReadyMachineCount:   3,
+			},
+		},
+	}
+}
+
+func (mb *mcpBuilder) notUpdated() *mcpBuilder {
+	mb.obj.Status.UpdatedMachineCount = 1
+	mb.obj.Status.ReadyMachineCount = 1
+	return mb
+}
+
+func (mb *mcpBuilder) build() runtime.Object {
+	return mb.obj
+}
+
+// renderedMCBuilder creates a rendered MachineConfig with a pull secret embedded
+// in ignition at /var/lib/kubelet/config.json.
+type renderedMCBuilder struct {
+	obj        *mcfgv1.MachineConfig
+	pullSecret string
+}
+
+func renderedMC(name string) *renderedMCBuilder {
+	return &renderedMCBuilder{
+		obj: &mcfgv1.MachineConfig{
+			ObjectMeta: v1.ObjectMeta{
+				Name: name,
+			},
+			Spec: mcfgv1.MachineConfigSpec{},
+		},
+	}
+}
+
+func (rb *renderedMCBuilder) withIRICredentials(baseDomain string, username string, password string) *renderedMCBuilder {
+	rb.pullSecret = pullSecretWithIRIAuthAndUsername(baseDomain, username, password)
+	return rb
+}
+
+func (rb *renderedMCBuilder) build() runtime.Object {
+	if rb.pullSecret != "" {
+		ignCfg := ctrlcommon.NewIgnConfig()
+		ignCfg.Storage.Files = append(ignCfg.Storage.Files,
+			ctrlcommon.NewIgnFile("/var/lib/kubelet/config.json", rb.pullSecret))
+		raw, _ := json.Marshal(ignCfg)
+		rb.obj.Spec.Config.Raw = raw
+	}
+	return rb.obj
+}
+
+// iriAuthSecretBuilder simplifies the creation of an IRI auth secret with
+// customizable password and htpasswd fields.
+type iriAuthSecretBuilder struct {
+	obj *corev1.Secret
+}
+
+func iriAuthSecretCustom(password string, htpasswd string) *iriAuthSecretBuilder {
+	return &iriAuthSecretBuilder{
+		obj: &corev1.Secret{
+			ObjectMeta: v1.ObjectMeta{
+				Namespace: ctrlcommon.MCONamespace,
+				Name:      ctrlcommon.InternalReleaseImageAuthSecretName,
+			},
+			Data: map[string][]byte{
+				"htpasswd": []byte(htpasswd),
+				"password": []byte(password),
+			},
+		},
+	}
+}
+
+func (ab *iriAuthSecretBuilder) build() runtime.Object {
+	return ab.obj
 }
