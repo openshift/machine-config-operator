@@ -72,7 +72,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		ctrl.Run(ctx, 3)
 	}
 
-	leaderElectionCfg := common.GetLeaderElectionConfig(cb.GetBuilderConfig(), true)
+	leaderElectionCfg := common.GetLeaderElectionConfig(cb.GetBuilderConfig())
 
 	leaderelection.RunOrDie(ctx, leaderelection.LeaderElectionConfig{
 		Lock:            common.CreateResourceLock(cb, ctrlcommon.MCONamespace, componentName),
