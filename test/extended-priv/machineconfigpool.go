@@ -1454,6 +1454,11 @@ func FilterExtensions(extensions map[string][]string, hasARM64, fips bool, osIma
 	if fips && hasARM64 {
 		logger.Infof("%s extension not supported in ARM64+FIPS clusters. Skipping extension.", sandboxedContainersExtension)
 		delete(filteredExtensions, sandboxedContainersExtension)
+	} else if hasARM64 && osImageStream == OSImageStreamRHEL10 {
+		// TODO Remove with https://issues.redhat.com/browse/MCO-2156
+		// This change is temporal till RHEL 10 ARM64 builds have kata-containers
+		logger.Infof("%s extension is temporarily not supported in RHEL 10 ARM64 clusters. Skipping extension.", sandboxedContainersExtension)
+		delete(filteredExtensions, sandboxedContainersExtension)
 	}
 
 	// ipsec extension is not supported in rhel-10
