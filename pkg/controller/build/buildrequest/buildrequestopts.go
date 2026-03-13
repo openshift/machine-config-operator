@@ -23,11 +23,10 @@ import (
 
 // Holds all of the options used to produce a BuildRequest.
 type BuildRequestOpts struct { //nolint:revive // This name is fine.
-	MachineOSConfig  *mcfgv1.MachineOSConfig
-	MachineOSBuild   *mcfgv1.MachineOSBuild
-	MachineConfig    *mcfgv1.MachineConfig
-	Images           *ctrlcommon.Images
-	OSImageURLConfig *ctrlcommon.OSImageURLConfig
+	MachineOSConfig *mcfgv1.MachineOSConfig
+	MachineOSBuild  *mcfgv1.MachineOSBuild
+	MachineConfig   *mcfgv1.MachineConfig
+	Images          *ctrlcommon.Images
 
 	BaseImagePullSecret  *corev1.Secret
 	FinalImagePushSecret *corev1.Secret
@@ -98,10 +97,6 @@ func newBuildRequestOptsFromAPI(ctx context.Context, kubeclient clientset.Interf
 
 	if opts.Images == nil {
 		return nil, fmt.Errorf("expected images to not be nil")
-	}
-
-	if opts.OSImageURLConfig == nil {
-		return nil, fmt.Errorf("expected osimageurlconfig to not be nil")
 	}
 
 	if opts.BaseImagePullSecret == nil {
@@ -176,11 +171,6 @@ func (o *optsGetter) getOpts(ctx context.Context, mosb *mcfgv1.MachineOSBuild, m
 		return nil, fmt.Errorf("could not get images.json config: %w", err)
 	}
 
-	osImageURLConfig, err := ctrlcommon.GetOSImageURLConfig(ctx, o.kubeclient)
-	if err != nil {
-		return nil, fmt.Errorf("could not get osImageURL config: %w", err)
-	}
-
 	var baseImagePullSecretName string
 	// Check if a base image pull secret was provided
 	opts.hasUserDefinedBaseImagePullSecret = mosc.Spec.BaseImagePullSecret != nil
@@ -214,7 +204,6 @@ func (o *optsGetter) getOpts(ctx context.Context, mosb *mcfgv1.MachineOSBuild, m
 
 	opts.Images = imagesConfig
 	opts.MachineConfig = mc
-	opts.OSImageURLConfig = osImageURLConfig
 	opts.BaseImagePullSecret = baseImagePullSecret
 	opts.FinalImagePushSecret = finalImagePushSecret
 	opts.MachineOSConfig = mosc.DeepCopy()
