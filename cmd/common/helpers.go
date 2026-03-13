@@ -58,8 +58,9 @@ func CreateResourceLock(cb *clients.Builder, componentNamespace, componentName s
 	return lock
 }
 
-// GetLeaderElectionConfig returns leader election configs defaults based on the cluster topology
-func GetLeaderElectionConfig(restcfg *rest.Config) configv1.LeaderElection {
+// GetLeaderElectionConfig returns leader election configs defaults based on the cluster topology.
+// When useDefaultTimings is true, HA default timings are used regardless of topology.
+func GetLeaderElectionConfig(restcfg *rest.Config, useDefaultTimings bool) configv1.LeaderElection {
 
 	// Defaults follow conventions
 	// https://github.com/openshift/enhancements/blob/master/CONVENTIONS.md#high-availability
@@ -68,11 +69,13 @@ func GetLeaderElectionConfig(restcfg *rest.Config) configv1.LeaderElection {
 		"", "",
 	)
 
+	if useDefaultTimings {
+		return defaultLeaderElection
+	}
+
 	if infra, err := clusterstatus.GetClusterInfraStatus(context.TODO(), restcfg); err == nil && infra != nil {
 		if infra.ControlPlaneTopology == configv1.SingleReplicaTopologyMode {
-			// MCO runs a single replica — no lease contention on SNO.
-			klog.Infof("SNO topology detected, using HA leader election defaults for faster lease recovery (LeaseDuration=%s, RetryPeriod=%s)",
-				defaultLeaderElection.LeaseDuration.Duration, defaultLeaderElection.RetryPeriod.Duration)
+			return leaderelection.LeaderElectionSNOConfig(defaultLeaderElection)
 		}
 	} else {
 		klog.Warningf("unable to get cluster infrastructure status, using HA cluster values for leader election: %v", err)
