@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"os"
@@ -20,7 +21,9 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	iri "github.com/openshift/machine-config-operator/pkg/controller/internalreleaseimage"
 	"github.com/openshift/machine-config-operator/test/framework"
+	"github.com/openshift/machine-config-operator/test/helpers"
 )
 
 func TestIRIResource_Available(t *testing.T) {
@@ -177,6 +180,229 @@ func TestIRIController_ShouldPreventDeletionWhenInUse(t *testing.T) {
 	iri, err = cs.InternalReleaseImages().Get(ctx, "cluster", v1.GetOptions{})
 	require.NoError(t, err, "IRI should still exist after failed deletion attempt")
 	require.NotNil(t, iri, "IRI should not be nil")
+}
+
+// getBaseDomain retrieves the cluster's base domain from the ControllerConfig.
+func getBaseDomain(t *testing.T, cs *framework.ClientSet) string {
+	ctx := context.Background()
+	cconfig, err := cs.ControllerConfigs().Get(ctx, ctrlcommon.ControllerConfigName, v1.GetOptions{})
+	require.NoError(t, err)
+	require.NotNil(t, cconfig.Spec.DNS)
+	require.NotEmpty(t, cconfig.Spec.DNS.Spec.BaseDomain)
+	return cconfig.Spec.DNS.Spec.BaseDomain
+}
+
+// getIRIRegistryClient returns an HTTP client configured with the cluster's
+// root CA for making requests to the IRI registry.
+func getIRIRegistryClient(t *testing.T, cs *framework.ClientSet) *http.Client {
+	ctx := context.Background()
+	cm, err := cs.ConfigMaps("openshift-machine-config-operator").Get(ctx, "machine-config-server-ca", v1.GetOptions{})
+	require.NoError(t, err)
+	rootCA := []byte(cm.Data["ca-bundle.crt"])
+	roots := x509.NewCertPool()
+	require.True(t, roots.AppendCertsFromPEM(rootCA))
+
+	return &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				RootCAs: roots,
+			},
+		},
+		Timeout: 30 * time.Second,
+	}
+}
+
+// getAPIIntIP returns the api-int IP address from the infrastructure resource.
+func getAPIIntIP(t *testing.T, cs *framework.ClientSet) string {
+	ctx := context.Background()
+	infra, err := cs.Infrastructures().Get(ctx, "cluster", v1.GetOptions{})
+	require.NoError(t, err)
+	require.NotEmpty(t, infra.Status.PlatformStatus.BareMetal.APIServerInternalIPs)
+	return infra.Status.PlatformStatus.BareMetal.APIServerInternalIPs[0]
+}
+
+func TestIRIAuth_UnauthenticatedRequestReturns401(t *testing.T) {
+	skipIfOpenShiftCI(t)
+	skipIfNoBaremetal(t)
+
+	cs := framework.NewClientSet("")
+
+	// Verify the auth secret exists (auth is enabled).
+	ctx := context.Background()
+	_, err := cs.Secrets(ctrlcommon.MCONamespace).Get(ctx, ctrlcommon.InternalReleaseImageAuthSecretName, v1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		t.Skip("IRI auth secret not found, authentication is not enabled")
+	}
+	require.NoError(t, err)
+
+	client := getIRIRegistryClient(t, cs)
+	apiIntIP := getAPIIntIP(t, cs)
+	url := fmt.Sprintf("https://%s:%d/v2/", apiIntIP, 22625)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	require.NoError(t, err)
+
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	require.Equal(t, http.StatusUnauthorized, resp.StatusCode,
+		"unauthenticated request should return 401 when auth is enabled")
+}
+
+func TestIRIAuth_AuthenticatedRequestSucceeds(t *testing.T) {
+	skipIfOpenShiftCI(t)
+	skipIfNoBaremetal(t)
+
+	cs := framework.NewClientSet("")
+	ctx := context.Background()
+
+	// Get the auth secret to read credentials.
+	authSecret, err := cs.Secrets(ctrlcommon.MCONamespace).Get(ctx, ctrlcommon.InternalReleaseImageAuthSecretName, v1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		t.Skip("IRI auth secret not found, authentication is not enabled")
+	}
+	require.NoError(t, err)
+
+	password := string(authSecret.Data["password"])
+	require.NotEmpty(t, password)
+
+	// Extract the current username from the pull secret.
+	baseDomain := getBaseDomain(t, cs)
+	pullSecret, err := cs.Secrets(ctrlcommon.OpenshiftConfigNamespace).Get(ctx, ctrlcommon.GlobalPullSecretName, v1.GetOptions{})
+	require.NoError(t, err)
+	username, _ := iri.ExtractIRICredentialsFromPullSecret(pullSecret.Data[corev1.DockerConfigJsonKey], baseDomain)
+	if username == "" {
+		username = iri.IRIBaseUsername
+	}
+
+	client := getIRIRegistryClient(t, cs)
+	apiIntIP := getAPIIntIP(t, cs)
+	url := fmt.Sprintf("https://%s:%d/v2/", apiIntIP, 22625)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(username+":"+password)))
+
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	require.Equal(t, http.StatusOK, resp.StatusCode,
+		"authenticated request should succeed")
+	require.Equal(t, "registry/2.0", resp.Header.Get("Docker-Distribution-Api-Version"))
+}
+
+func TestIRIAuth_CredentialRotation(t *testing.T) {
+	skipIfOpenShiftCI(t)
+	skipIfNoBaremetal(t)
+
+	cs := framework.NewClientSet("")
+	ctx := context.Background()
+
+	// Get the auth secret.
+	authSecret, err := cs.Secrets(ctrlcommon.MCONamespace).Get(ctx, ctrlcommon.InternalReleaseImageAuthSecretName, v1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		t.Skip("IRI auth secret not found, authentication is not enabled")
+	}
+	require.NoError(t, err)
+
+	originalPassword := string(authSecret.Data["password"])
+	require.NotEmpty(t, originalPassword)
+
+	baseDomain := getBaseDomain(t, cs)
+
+	// Record the original pull secret credentials.
+	pullSecret, err := cs.Secrets(ctrlcommon.OpenshiftConfigNamespace).Get(ctx, ctrlcommon.GlobalPullSecretName, v1.GetOptions{})
+	require.NoError(t, err)
+	originalUsername, originalPullSecretPassword := iri.ExtractIRICredentialsFromPullSecret(pullSecret.Data[corev1.DockerConfigJsonKey], baseDomain)
+	require.NotEmpty(t, originalPullSecretPassword, "pull secret should have IRI credentials before rotation")
+
+	// Record the current rendered MC names for master and worker pools so we
+	// can detect when the MCP rollout completes.
+	masterMCP, err := cs.MachineConfigPools().Get(ctx, "master", v1.GetOptions{})
+	require.NoError(t, err)
+	workerMCP, err := cs.MachineConfigPools().Get(ctx, "worker", v1.GetOptions{})
+	require.NoError(t, err)
+
+	t.Logf("Before rotation: username=%s, master rendered=%s, worker rendered=%s",
+		originalUsername, masterMCP.Status.Configuration.Name, workerMCP.Status.Configuration.Name)
+
+	// Trigger rotation by updating the password in the auth secret.
+	newPassword := fmt.Sprintf("rotated-%d", time.Now().UnixNano())
+	authSecret.Data["password"] = []byte(newPassword)
+	_, err = cs.Secrets(ctrlcommon.MCONamespace).Update(ctx, authSecret, v1.UpdateOptions{})
+	require.NoError(t, err)
+	t.Logf("Updated auth secret password to trigger rotation")
+
+	// Phase 1: Wait for dual htpasswd to be written to the auth secret.
+	t.Logf("Waiting for phase 1: dual htpasswd deployment...")
+	err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+		secret, err := cs.Secrets(ctrlcommon.MCONamespace).Get(ctx, ctrlcommon.InternalReleaseImageAuthSecretName, v1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		htpasswd := string(secret.Data["htpasswd"])
+		// Dual htpasswd has the new password under a new username.
+		newUsername := iri.NextIRIUsername(originalUsername)
+		return iri.HtpasswdHasValidEntry(htpasswd, newUsername, newPassword), nil
+	})
+	require.NoError(t, err, "timed out waiting for dual htpasswd (phase 1)")
+	t.Logf("Phase 1 complete: dual htpasswd written")
+
+	// Phase 2: Wait for MCP rollout to complete and pull secret to be updated.
+	// The controller waits for all MCPs to be fully updated before writing the
+	// pull secret, so we poll the pull secret for the new credentials.
+	t.Logf("Waiting for phase 2: pull secret update...")
+	expectedUsername := iri.NextIRIUsername(originalUsername)
+	err = wait.PollUntilContextTimeout(ctx, 10*time.Second, 30*time.Minute, true, func(ctx context.Context) (bool, error) {
+		ps, err := cs.Secrets(ctrlcommon.OpenshiftConfigNamespace).Get(ctx, ctrlcommon.GlobalPullSecretName, v1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		u, p := iri.ExtractIRICredentialsFromPullSecret(ps.Data[corev1.DockerConfigJsonKey], baseDomain)
+		return u == expectedUsername && p == newPassword, nil
+	})
+	require.NoError(t, err, "timed out waiting for pull secret update (phase 2)")
+	t.Logf("Phase 2 complete: pull secret updated with username=%s", expectedUsername)
+
+	// Wait for both pools to finish rolling out the updated pull secret.
+	t.Logf("Waiting for MCP rollout after pull secret update...")
+	helpers.WaitForPoolCompleteAny(t, cs, "master")
+	helpers.WaitForPoolCompleteAny(t, cs, "worker")
+
+	// Phase 3: Wait for dual htpasswd to be cleaned up to a single entry.
+	t.Logf("Waiting for phase 3: htpasswd cleanup...")
+	err = wait.PollUntilContextTimeout(ctx, 10*time.Second, 30*time.Minute, true, func(ctx context.Context) (bool, error) {
+		secret, err := cs.Secrets(ctrlcommon.MCONamespace).Get(ctx, ctrlcommon.InternalReleaseImageAuthSecretName, v1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		htpasswd := string(secret.Data["htpasswd"])
+		// After cleanup, the htpasswd should only have the new entry.
+		hasNew := iri.HtpasswdHasValidEntry(htpasswd, expectedUsername, newPassword)
+		hasOld := iri.HtpasswdHasValidEntry(htpasswd, originalUsername, originalPullSecretPassword)
+		return hasNew && !hasOld, nil
+	})
+	require.NoError(t, err, "timed out waiting for htpasswd cleanup (phase 3)")
+	t.Logf("Phase 3 complete: htpasswd cleaned up to single entry")
+
+	// Verify the registry accepts the new credentials.
+	client := getIRIRegistryClient(t, cs)
+	apiIntIP := getAPIIntIP(t, cs)
+	url := fmt.Sprintf("https://%s:%d/v2/", apiIntIP, 22625)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(expectedUsername+":"+newPassword)))
+
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	require.Equal(t, http.StatusOK, resp.StatusCode,
+		"registry should accept the new rotated credentials")
+	t.Logf("Credential rotation completed successfully")
 }
 
 func TestIRIController_ShouldRestoreMachineConfigsWhenModified(t *testing.T) {
