@@ -24,7 +24,6 @@ contents:
     protectKernelDefaults: true
     rotateCertificates: true
     serializeImagePulls: false
-    staticPodPath: /etc/kubernetes/manifests
     memorySwap:
       swapBehavior: NoSwap
     systemCgroups: /system.slice
