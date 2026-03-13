@@ -210,6 +210,21 @@ func newClusterVersionConfig(name, desiredImage string) *apicfgv1.ClusterVersion
 	}
 }
 
+func newAPIServerConfig(name string) *apicfgv1.APIServer {
+	return &apicfgv1.APIServer{
+		TypeMeta:   metav1.TypeMeta{APIVersion: apicfgv1.SchemeGroupVersion.String()},
+		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5)), Generation: 1},
+		Spec: apicfgv1.APIServerSpec{
+			TLSSecurityProfile: &apicfgv1.TLSSecurityProfile{
+				Type: apicfgv1.TLSProfileCustomType,
+				Custom: &apicfgv1.CustomTLSProfile{
+					TLSProfileSpec: apicfgv1.TLSProfileSpec{MinTLSVersion: ""},
+				},
+			},
+		},
+	}
+}
+
 func newClusterImagePolicyWithPublicKey(name string, scopes []string, keyData []byte) *apicfgv1.ClusterImagePolicy {
 	imgScopes := []apicfgv1.ImageScope{}
 	for _, scope := range scopes {
@@ -256,7 +271,9 @@ func newImagePolicyWithPublicKey(name, namespace string, scopes []string, keyDat
 
 func (f *fixture) newController() *Controller {
 	f.client = fake.NewSimpleClientset(f.objects...)
-	f.imgClient = fakeconfigv1client.NewSimpleClientset(f.imgObjects...)
+	imgObjs := append([]runtime.Object{}, f.imgObjects...)
+	imgObjs = append(imgObjs, newAPIServerConfig(ctrlcommon.APIServerInstanceName))
+	f.imgClient = fakeconfigv1client.NewSimpleClientset(imgObjs...)
 	f.operatorClient = fakeoperatorclient.NewSimpleClientset(f.operatorObjects...)
 
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
@@ -266,6 +283,7 @@ func (f *fixture) newController() *Controller {
 		i.Machineconfiguration().V1().MachineConfigPools(),
 		i.Machineconfiguration().V1().ControllerConfigs(),
 		i.Machineconfiguration().V1().ContainerRuntimeConfigs(),
+		i.Machineconfiguration().V1().KubeletConfigs(),
 		ci.Config().V1().Images(),
 		ci.Config().V1().ImageDigestMirrorSets(),
 		ci.Config().V1().ImageTagMirrorSets(),
@@ -278,6 +296,8 @@ func (f *fixture) newController() *Controller {
 
 	c.mcpListerSynced = alwaysReady
 	c.mccrListerSynced = alwaysReady
+	c.mckListerSynced = alwaysReady
+	c.apiserverListerSynced = alwaysReady
 	c.ccListerSynced = alwaysReady
 	c.imgListerSynced = alwaysReady
 	c.icspListerSynced = alwaysReady
@@ -376,7 +396,11 @@ func filterInformerActions(actions []core.Action) []core.Action {
 				action.Matches("list", "containerruntimeconfigs") ||
 				action.Matches("watch", "containerruntimeconfigs") ||
 				action.Matches("list", "machineconfigs") ||
-				action.Matches("watch", "machineconfigs")) {
+				action.Matches("watch", "machineconfigs") ||
+				action.Matches("list", "kubeletconfigs") ||
+				action.Matches("watch", "kubeletconfigs") ||
+				action.Matches("list", "apiservers") ||
+				action.Matches("watch", "apiservers")) {
 			continue
 		}
 		ret = append(ret, action)

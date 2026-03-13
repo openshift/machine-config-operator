@@ -12,6 +12,8 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 
 	"github.com/ghodss/yaml"
+	"k8s.io/klog/v2"
+	ctrlrtlog "sigs.k8s.io/controller-runtime/pkg/log"
 	configv1 "github.com/openshift/api/config/v1"
 	_ "github.com/openshift/api/config/v1/zz_generated.crd-manifests"
 	configv1alpha1 "github.com/openshift/api/config/v1alpha1"
@@ -65,6 +67,8 @@ type fixture struct {
 }
 
 func TestE2EBootstrap(t *testing.T) {
+	// Set controller-runtime logger to avoid "log.SetLogger(...) was never called" warning during testEnv.Stop()
+	ctrlrtlog.SetLogger(klog.NewKlogr())
 
 	ctx := context.Background()
 
@@ -372,7 +376,8 @@ metadata:
 				manifest, err := yaml.Marshal(obj)
 				require.NoError(t, err)
 
-				name := fmt.Sprintf("manifest-%d.yaml", id)
+				// Use zero-padded names so ReadDir returns manifests in the same order as objs
+				name := fmt.Sprintf("manifest-%03d.yaml", id)
 				path := filepath.Join(srcDir, name)
 				err = os.WriteFile(path, manifest, 0644)
 				require.NoError(t, err)
@@ -391,6 +396,8 @@ metadata:
 }
 
 func TestNodeSizingEnabled(t *testing.T) {
+	ctrlrtlog.SetLogger(klog.NewKlogr())
+
 	ctx := context.Background()
 
 	testEnv := framework.NewTestEnv(t)
@@ -588,6 +595,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().ContainerRuntimeConfigs(),
+			ctx.InformerFactory.Machineconfiguration().V1().KubeletConfigs(),
 			ctx.ConfigInformerFactory.Config().V1().Images(),
 			ctx.ConfigInformerFactory.Config().V1().ImageDigestMirrorSets(),
 			ctx.ConfigInformerFactory.Config().V1().ImageTagMirrorSets(),
