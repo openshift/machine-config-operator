@@ -3,11 +3,13 @@ package render
 import (
 	"flag"
 	"fmt"
-	"github.com/openshift/api/features"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/blang/semver/v4"
+	"github.com/openshift/api/features"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -68,6 +70,11 @@ func (o *RenderOpts) Run() error {
 	}
 	clusterProfileAnnotationName := fmt.Sprintf("include.release.openshift.io/%s", o.UnprefixedClusterProfile)
 
+	version, err := semver.ParseTolerant(o.PayloadVersion)
+	if err != nil {
+		return fmt.Errorf("problem parsing payload version: %w", err)
+	}
+
 	for _, featureGateFile := range featureGateFiles {
 		uncastObj, err := featureGateFile.GetDecodedObj()
 		if err != nil {
@@ -84,7 +91,7 @@ func (o *RenderOpts) Run() error {
 
 		if featureGates.Spec.FeatureSet == configv1.CustomNoUpgrade {
 			featureSet = string(featureGates.Spec.FeatureSet)
-			renderedFeatureGates, err := renderCustomNoUpgradeFeatureGate(featureGates, features.ClusterProfileName(clusterProfileAnnotationName), o.PayloadVersion)
+			renderedFeatureGates, err := renderCustomNoUpgradeFeatureGate(featureGates, features.ClusterProfileName(clusterProfileAnnotationName), o.PayloadVersion, version.Major)
 			if err != nil {
 				return err
 			}
@@ -105,10 +112,7 @@ func (o *RenderOpts) Run() error {
 			featureGates.Annotations[clusterProfileAnnotationName] = "true"
 		}
 
-		featureGateStatus, err := features.FeatureSets(features.ClusterProfileName(clusterProfileAnnotationName), featureGates.Spec.FeatureSet)
-		if err != nil {
-			return fmt.Errorf("unable to resolve featureGateStatus: %w", err)
-		}
+		featureGateStatus := features.FeatureSets(version.Major, features.ClusterProfileName(clusterProfileAnnotationName), featureGates.Spec.FeatureSet)
 		currentDetails := FeaturesGateDetailsFromFeatureSets(featureGateStatus, o.PayloadVersion)
 		featureGates.Status.FeatureGates = []configv1.FeatureGateDetails{*currentDetails}
 
@@ -133,7 +137,7 @@ func (o *RenderOpts) Run() error {
 	return nil
 }
 
-func renderCustomNoUpgradeFeatureGate(in *configv1.FeatureGate, clusterProfile features.ClusterProfileName, payloadVersion string) (*configv1.FeatureGate, error) {
+func renderCustomNoUpgradeFeatureGate(in *configv1.FeatureGate, clusterProfile features.ClusterProfileName, payloadVersion string, payloadMajorVersion uint64) (*configv1.FeatureGate, error) {
 	if in.Spec.FeatureSet != configv1.CustomNoUpgrade {
 		return nil, fmt.Errorf("not CustomNoUpgrade")
 	}
@@ -162,10 +166,7 @@ func renderCustomNoUpgradeFeatureGate(in *configv1.FeatureGate, clusterProfile f
 		})
 	}
 
-	defaultFeatureGates, err := features.FeatureSets(clusterProfile, configv1.Default)
-	if err != nil {
-		return nil, err
-	}
+	defaultFeatureGates := features.FeatureSets(payloadMajorVersion, clusterProfile, configv1.Default)
 
 	enabled := []configv1.FeatureGateAttributes{}
 	disabled := []configv1.FeatureGateAttributes{}

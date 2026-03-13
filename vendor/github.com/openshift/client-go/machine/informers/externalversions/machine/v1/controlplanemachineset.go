@@ -41,7 +41,7 @@ func NewControlPlaneMachineSetInformer(client versioned.Interface, namespace str
 // one. This reduces memory footprint and number of connections to the server.
 func NewFilteredControlPlaneMachineSetInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
-		&cache.ListWatch{
+		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
@@ -66,7 +66,7 @@ func NewFilteredControlPlaneMachineSetInformer(client versioned.Interface, names
 				}
 				return client.MachineV1().ControlPlaneMachineSets(namespace).Watch(ctx, options)
 			},
-		},
+		}, client),
 		&apimachinev1.ControlPlaneMachineSet{},
 		resyncPeriod,
 		indexers,

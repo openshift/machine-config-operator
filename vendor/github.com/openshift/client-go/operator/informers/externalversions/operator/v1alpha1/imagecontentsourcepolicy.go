@@ -40,7 +40,7 @@ func NewImageContentSourcePolicyInformer(client versioned.Interface, resyncPerio
 // one. This reduces memory footprint and number of connections to the server.
 func NewFilteredImageContentSourcePolicyInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
-		&cache.ListWatch{
+		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(options v1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
@@ -65,7 +65,7 @@ func NewFilteredImageContentSourcePolicyInformer(client versioned.Interface, res
 				}
 				return client.OperatorV1alpha1().ImageContentSourcePolicies().Watch(ctx, options)
 			},
-		},
+		}, client),
 		&apioperatorv1alpha1.ImageContentSourcePolicy{},
 		resyncPeriod,
 		indexers,
