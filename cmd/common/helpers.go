@@ -71,8 +71,6 @@ func GetLeaderElectionConfig(restcfg *rest.Config) configv1.LeaderElection {
 	if infra, err := clusterstatus.GetClusterInfraStatus(context.TODO(), restcfg); err == nil && infra != nil {
 		if infra.ControlPlaneTopology == configv1.SingleReplicaTopologyMode {
 			// MCO runs a single replica — no lease contention on SNO.
-			// Use HA defaults to avoid ~5min recovery delay after reboots.
-			// See: https://issues.redhat.com/browse/OCPBUGS-78154
 			klog.Infof("SNO topology detected, using HA leader election defaults for faster lease recovery (LeaseDuration=%s, RetryPeriod=%s)",
 				defaultLeaderElection.LeaseDuration.Duration, defaultLeaderElection.RetryPeriod.Duration)
 		}
