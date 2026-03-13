@@ -58,9 +58,8 @@ func CreateResourceLock(cb *clients.Builder, componentNamespace, componentName s
 	return lock
 }
 
-// GetLeaderElectionConfig returns leader election configs defaults based on the cluster topology.
-// When useDefaultTimings is true, HA default timings are used regardless of topology.
-func GetLeaderElectionConfig(restcfg *rest.Config, useDefaultTimings bool) configv1.LeaderElection {
+// GetLeaderElectionConfig returns leader election configs defaults based on the cluster topology
+func GetLeaderElectionConfig(restcfg *rest.Config) configv1.LeaderElection {
 
 	// Defaults follow conventions
 	// https://github.com/openshift/enhancements/blob/master/CONVENTIONS.md#high-availability
@@ -68,12 +67,6 @@ func GetLeaderElectionConfig(restcfg *rest.Config, useDefaultTimings bool) confi
 		configv1.LeaderElection{},
 		"", "",
 	)
-
-	if useDefaultTimings {
-		klog.Infof("Using HA default leader election timings (LeaseDuration=%s, RetryPeriod=%s)",
-			defaultLeaderElection.LeaseDuration.Duration, defaultLeaderElection.RetryPeriod.Duration)
-		return defaultLeaderElection
-	}
 
 	if infra, err := clusterstatus.GetClusterInfraStatus(context.TODO(), restcfg); err == nil && infra != nil {
 		if infra.ControlPlaneTopology == configv1.SingleReplicaTopologyMode {
@@ -83,6 +76,19 @@ func GetLeaderElectionConfig(restcfg *rest.Config, useDefaultTimings bool) confi
 		klog.Warningf("unable to get cluster infrastructure status, using HA cluster values for leader election: %v", err)
 	}
 
+	return defaultLeaderElection
+}
+
+// GetDefaultLeaderElectionConfig returns HA default leader election timings regardless of
+// cluster topology. Use this for components that run a single replica and have no lease
+// contention, where the inflated SNO timings only add unnecessary recovery latency.
+func GetDefaultLeaderElectionConfig() configv1.LeaderElection {
+	defaultLeaderElection := leaderelection.LeaderElectionDefaulting(
+		configv1.LeaderElection{},
+		"", "",
+	)
+	klog.Infof("Using HA default leader election timings (LeaseDuration=%s, RetryPeriod=%s)",
+		defaultLeaderElection.LeaseDuration.Duration, defaultLeaderElection.RetryPeriod.Duration)
 	return defaultLeaderElection
 }
 
