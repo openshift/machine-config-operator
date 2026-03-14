@@ -118,8 +118,12 @@ const (
 	// Labels and Annotations required for determining architecture of a machineset
 	MachineSetArchAnnotationKey = "capacity.cluster-autoscaler.kubernetes.io/labels"
 
-	ArchLabelKey = "kubernetes.io/arch="
-	OSLabelKey   = "machine.openshift.io/os-id"
+	ArchLabelKey     = "kubernetes.io/arch="
+	OSLabelKey       = "machine.openshift.io/os-id"
+	OSStreamLabelKey = "machineconfiguration.openshift.io/osstream"
+
+	// Stream currently supported by the MCO's boot image controller
+	SupportedOSStream = "rhel-9"
 
 	// Threshold for hot loop detection
 	HotLoopLimit = 3
