@@ -349,8 +349,8 @@ func getManagedKubeletConfigKeyDeprecated(pool *mcfgv1.MachineConfigPool) string
 // validates a KubeletConfig and returns an error if invalid
 // nolint:gocyclo
 func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
-	if cfg.Spec.LogLevel != nil && (*cfg.Spec.LogLevel < 1 || *cfg.Spec.LogLevel > 10) {
-		return fmt.Errorf("KubeletConfig's LogLevel is not valid [1,10]: %v", cfg.Spec.LogLevel)
+	if cfg.Spec.LogLevel != nil && (*cfg.Spec.LogLevel < 0 || *cfg.Spec.LogLevel > 10) {
+		return fmt.Errorf("KubeletConfig's LogLevel is not valid [0,10]: %d", *cfg.Spec.LogLevel)
 	}
 	if cfg.Spec.KubeletConfig == nil || cfg.Spec.KubeletConfig.Raw == nil {
 		return nil
