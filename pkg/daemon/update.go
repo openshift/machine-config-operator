@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"reflect"
 	goruntime "runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -951,14 +952,22 @@ func (dn *Daemon) updateOnClusterBuild(oldConfig, newConfig *mcfgv1.MachineConfi
 		}
 	}
 
+	// Get the added and updated units
+	unitDiff := ctrlcommon.GetChangedConfigUnitsByType(&oldIgnConfig, &newIgnConfig)
+	addedOrChangedUnits := slices.Concat(unitDiff.Added, unitDiff.Updated)
+
+	// Check for forcefile before calculatePostConfigChange* functions delete it.
+	// This is needed for updateFiles to know whether to write all units (OCPBUGS-74692).
+	forceFilePresent := forceFileExists()
+
 	// update files on disk that need updating
-	if err := dn.updateFiles(oldIgnConfig, newIgnConfig, skipCertificateWrite); err != nil {
+	if err := dn.updateFiles(oldIgnConfig, newIgnConfig, addedOrChangedUnits, skipCertificateWrite, forceFilePresent); err != nil {
 		return err
 	}
 
 	defer func() {
 		if retErr != nil {
-			if err := dn.updateFiles(newIgnConfig, oldIgnConfig, skipCertificateWrite); err != nil {
+			if err := dn.updateFiles(oldIgnConfig, newIgnConfig, addedOrChangedUnits, skipCertificateWrite, forceFilePresent); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
 				retErr = fmt.Errorf("error rolling back files writes: %w", errs)
 				return
@@ -1139,7 +1148,14 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	logSystem("Starting update from %s to %s: %+v", oldConfigName, newConfigName, diff)
 
 	diffFileSet := ctrlcommon.CalculateConfigFileDiffs(&oldIgnConfig, &newIgnConfig)
-	diffUnitSet := ctrlcommon.CalculateConfigUnitDiffs(&oldIgnConfig, &newIgnConfig)
+	// Get the added and updated units
+	unitDiff := ctrlcommon.GetChangedConfigUnitsByType(&oldIgnConfig, &newIgnConfig)
+	addedOrChangedUnits := slices.Concat(unitDiff.Added, unitDiff.Updated)
+	// Get the names of all units changed in some way (added, removed, or updated)
+	var allChangedUnitNames []string
+	for _, unit := range append(addedOrChangedUnits, unitDiff.Removed...) {
+		allChangedUnitNames = append(allChangedUnitNames, unit.Name)
+	}
 
 	var fg featuregates.FeatureGate
 
@@ -1153,11 +1169,15 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		}
 	}
 
+	// Check for forcefile before calculatePostConfigChange* functions delete it.
+	// This is needed for updateFiles to know whether to write all units (OCPBUGS-74692).
+	forceFilePresent := forceFileExists()
+
 	var nodeDisruptionActions []opv1.NodeDisruptionPolicyStatusAction
 	var actions []string
 	// If FeatureGateNodeDisruptionPolicy is set, calculate NodeDisruptionPolicy based actions for this MC diff
 	if fg != nil && fg.Enabled(features.FeatureGateNodeDisruptionPolicy) {
-		nodeDisruptionActions, err = dn.calculatePostConfigChangeNodeDisruptionAction(diff, diffFileSet, diffUnitSet)
+		nodeDisruptionActions, err = dn.calculatePostConfigChangeNodeDisruptionAction(diff, diffFileSet, allChangedUnitNames)
 	} else {
 		actions, err = calculatePostConfigChangeAction(diff, diffFileSet)
 	}
@@ -1270,13 +1290,13 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	}
 
 	// update files on disk that need updating
-	if err := dn.updateFiles(oldIgnConfig, newIgnConfig, skipCertificateWrite); err != nil {
+	if err := dn.updateFiles(oldIgnConfig, newIgnConfig, addedOrChangedUnits, skipCertificateWrite, forceFilePresent); err != nil {
 		return err
 	}
 
 	defer func() {
 		if retErr != nil {
-			if err := dn.updateFiles(newIgnConfig, oldIgnConfig, skipCertificateWrite); err != nil {
+			if err := dn.updateFiles(newIgnConfig, oldIgnConfig, addedOrChangedUnits, skipCertificateWrite, false); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
 				retErr = fmt.Errorf("error rolling back files writes: %w", errs)
 				return
@@ -1401,15 +1421,21 @@ func (dn *Daemon) updateHypershift(oldConfig, newConfig *mcfgv1.MachineConfig, d
 		return fmt.Errorf("parsing new Ignition config failed: %w", err)
 	}
 
+	unitDiff := ctrlcommon.GetChangedConfigUnitsByType(&oldIgnConfig, &newIgnConfig)
+	addedOrChangedUnits := slices.Concat(unitDiff.Added, unitDiff.Updated)
+
+	// Check for forcefile to support config drift recovery (OCPBUGS-74692)
+	forceFilePresent := forceFileExists()
+
 	// update files on disk that need updating
 	// We should't skip the certificate write in HyperShift since it does not run the extra daemon process
-	if err := dn.updateFiles(oldIgnConfig, newIgnConfig, false); err != nil {
+	if err := dn.updateFiles(oldIgnConfig, newIgnConfig, addedOrChangedUnits, false, forceFilePresent); err != nil {
 		return err
 	}
 
 	defer func() {
 		if retErr != nil {
-			if err := dn.updateFiles(newIgnConfig, oldIgnConfig, false); err != nil {
+			if err := dn.updateFiles(newIgnConfig, oldIgnConfig, addedOrChangedUnits, false, false); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
 				retErr = fmt.Errorf("error rolling back files writes: %w", errs)
 				return
@@ -1884,12 +1910,26 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 // whatever has been written is picked up by the appropriate daemons, if
 // required. in particular, a daemon-reload and restart for any unit files
 // touched.
-func (dn *Daemon) updateFiles(oldIgnConfig, newIgnConfig ign3types.Config, skipCertificateWrite bool) error {
+func (dn *Daemon) updateFiles(oldIgnConfig, newIgnConfig ign3types.Config, addedOrChangedUnits []ign3types.Unit, skipCertificateWrite, forceFilePresent bool) error {
 	klog.Info("Updating files")
 	if err := dn.writeFiles(newIgnConfig.Storage.Files, skipCertificateWrite); err != nil {
 		return err
 	}
-	if err := dn.writeUnits(newIgnConfig.Systemd.Units); err != nil {
+
+	// With OCPBUGS-58023, we updated this flow to only write units that were either added or
+	// updated. As can be seen in OCPBUGS-74692, this impacted the traditional method to recover
+	// from config drifts with systemd units. It makes the `touch /run/machine-config-daemon-force`
+	// command useless since the new flow does not rewrite all files, only the ones that have been
+	// added or changed with the latest MC. To keep the fix for OCPBUGS-58023 and allow continue
+	// supporting the traditional config drift recovery for systemd units, all units should be
+	// written when a forcefile exists.
+	unitsToWrite := addedOrChangedUnits
+	if forceFilePresent {
+		klog.Info("Forcefile exists, writing all units")
+		unitsToWrite = newIgnConfig.Systemd.Units
+	}
+
+	if err := dn.writeUnits(unitsToWrite); err != nil {
 		return err
 	}
 	return dn.deleteStaleData(oldIgnConfig, newIgnConfig)
