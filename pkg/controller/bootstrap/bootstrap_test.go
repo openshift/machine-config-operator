@@ -1,20 +1,26 @@
 package bootstrap
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/containers/image/v5/types"
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/util/diff"
 
+	imagev1 "github.com/openshift/api/image/v1"
+	"github.com/openshift/api/machineconfiguration/v1alpha1"
 	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/osimagestream"
 )
 
 func TestParseManifests(t *testing.T) {
@@ -157,13 +163,85 @@ spec:
 	}
 }
 
-func TestBootstrapRun(t *testing.T) {
-	destDir, err := os.MkdirTemp("", "controller-bootstrap")
-	require.NoError(t, err)
-	defer os.RemoveAll(destDir)
+// Implements a fake ImageStreamFactory.
+type fakeImageStreamFactory struct {
+	// The OSImageStream to return.
+	stream *v1alpha1.OSImageStream
+	// Whether the CreateRuntimeSources method was called.
+	createRuntimeSourcesCalled bool
+	// Whether the CreateBootsrapSources method was called.
+	createBootstrapSourcesCalled bool
+}
 
-	bootstrap := New("../../../templates", "testdata/bootstrap", "testdata/bootstrap/machineconfigcontroller-pull-secret")
-	err = bootstrap.Run(destDir)
+func (f *fakeImageStreamFactory) CreateRuntimeSources(_ context.Context, _ string, _ *types.SystemContext) (*v1alpha1.OSImageStream, error) {
+	f.createRuntimeSourcesCalled = true
+	return f.stream, nil
+}
+
+func (f *fakeImageStreamFactory) CreateBootstrapSources(_ context.Context, _ *imagev1.ImageStream, _ *osimagestream.OSImageTuple, _ *types.SystemContext) (*v1alpha1.OSImageStream, error) {
+	f.createBootstrapSourcesCalled = true
+	return f.stream, nil
+}
+
+// Instantiates a new instance of the Bootstrap struct for testing. This also
+// does the following:
+// 1. Copies the data from testdata/bootstrap into a temp directory so that it
+// may be safely overwritten to test specific scenarios.
+// 2. Creates a fake ImageStreamFactory instance and wires it up to return an
+// OSImageStream.
+func setupForBootstrapTest(t *testing.T) (*Bootstrap, *fakeImageStreamFactory, string, string) {
+	t.Helper()
+
+	srcDir := t.TempDir()
+	destDir := t.TempDir()
+
+	require.NoError(t, exec.Command("cp", "-r", "testdata/bootstrap/.", srcDir).Run())
+
+	bootstrap := New("../../../templates", srcDir, filepath.Join(srcDir, "machineconfigcontroller-pull-secret"))
+
+	fakeFactory := &fakeImageStreamFactory{
+		stream: &v1alpha1.OSImageStream{
+			Status: v1alpha1.OSImageStreamStatus{
+				AvailableStreams: []v1alpha1.OSImageStreamSet{
+					{
+						Name:              "stream-1",
+						OSImage:           v1alpha1.ImageDigestFormat("registry.host.com/os:latest"),
+						OSExtensionsImage: v1alpha1.ImageDigestFormat("registry.host.com/extensions:latest"),
+					},
+				},
+				DefaultStream: "stream-1",
+			},
+		},
+	}
+
+	bootstrap.imageStreamFactory = fakeFactory
+
+	return bootstrap, fakeFactory, srcDir, destDir
+}
+
+// Ensures that when Hypershift is enabled that the OSImageStream value is not consumed.
+func TestBootstrapRunHypershift(t *testing.T) {
+	bootstrap, fakeFactory, srcDir, destDir := setupForBootstrapTest(t)
+
+	// Overwrite the default ControllerConfig with one that specifies an
+	// external control plane value e.g., Hypershift.
+	require.NoError(t, exec.Command("cp", "testdata/bootstrap-hypershift/machineconfigcontroller-controllerconfig.yaml", srcDir).Run())
+
+	err := bootstrap.Run(destDir)
+	require.NoError(t, err)
+
+	// Ensure that the values from the OSImageStream are *not* populated into the ControllerConfig.
+	assert.False(t, fakeFactory.createBootstrapSourcesCalled)
+	cconfigBytes, err := os.ReadFile(filepath.Join(destDir, "controller-config", "machine-config-controller.yaml"))
+	require.NoError(t, err)
+	assert.NotContains(t, string(cconfigBytes), "baseOSContainerImage: registry.host.com/os:latest")
+	assert.NotContains(t, string(cconfigBytes), "baseOSExtensionsContainerImage: registry.host.com/extensions:latest")
+}
+
+func TestBootstrapRun(t *testing.T) {
+	bootstrap, fakeFactory, _, destDir := setupForBootstrapTest(t)
+
+	err := bootstrap.Run(destDir)
 	require.NoError(t, err)
 
 	for _, poolName := range []string{"master", "worker"} {
@@ -188,15 +266,22 @@ func TestBootstrapRun(t *testing.T) {
 				require.False(t, f.Path == "/etc/kubernetes/kubelet-ca.crt")
 			}
 			require.NotNil(t, registriesConfig)
-			contents, err := ctrlcommon.DecodeIgnitionFileContents(registriesConfig.Contents.Source, registriesConfig.Contents.Compression)
+			ignContents, err := ctrlcommon.DecodeIgnitionFileContents(registriesConfig.Contents.Source, registriesConfig.Contents.Compression)
 			require.NoError(t, err)
 			// Only a minimal presence check; more comprehensive tests that the contents correspond to the ICSP semantics are
 			// maintained in pkg/controller/container-runtime-config.
-			assert.Contains(t, string(contents), "registry.mirror.example.com/ocp")
-			assert.Contains(t, string(contents), "insecure-reg-1.io")
-			assert.Contains(t, string(contents), "insecure-reg-2.io")
-			assert.Contains(t, string(contents), "blocked-reg.io")
-			assert.NotContains(t, string(contents), "release-registry.product.example.org")
+			assert.Contains(t, string(ignContents), "registry.mirror.example.com/ocp")
+			assert.Contains(t, string(ignContents), "insecure-reg-1.io")
+			assert.Contains(t, string(ignContents), "insecure-reg-2.io")
+			assert.Contains(t, string(ignContents), "blocked-reg.io")
+			assert.NotContains(t, string(ignContents), "release-registry.product.example.org")
+
+			// Ensure that the values from the OSImageStream are populated into the ControllerConfig.
+			assert.True(t, fakeFactory.createBootstrapSourcesCalled)
+			cconfigBytes, err := os.ReadFile(filepath.Join(destDir, "controller-config", "machine-config-controller.yaml"))
+			require.NoError(t, err)
+			assert.Contains(t, string(cconfigBytes), "baseOSContainerImage: registry.host.com/os:latest")
+			assert.Contains(t, string(cconfigBytes), "baseOSExtensionsContainerImage: registry.host.com/extensions:latest")
 		})
 	}
 }
