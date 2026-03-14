@@ -34,6 +34,8 @@ RUN if [ "${TAGS}" = "fcos" ]; then \
     if ! rpm -q util-linux; then dnf install -y util-linux; fi && \
     # We also need to install fuse-overlayfs and cpp for Buildah to work correctly.
     if ! rpm -q buildah; then dnf install -y buildah fuse-overlayfs cpp --exclude container-selinux; fi && \
+    # Install the oc binary.
+    if ! rpm -q openshift-clients; then dnf install -y openshift-clients; fi && \
     # Create the build user which will be used for doing OS image builds. We
     # use the username "build" and the uid 1000 since this matches what is in
     # the official Buildah image.
