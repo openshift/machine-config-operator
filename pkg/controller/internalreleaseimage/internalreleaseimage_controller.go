@@ -54,6 +54,7 @@ var (
 // Controller defines the InternalReleaseImage controller.
 type Controller struct {
 	client        mcfgclientset.Interface
+	kubeClient    clientset.Interface
 	eventRecorder record.EventRecorder
 
 	syncHandler                 func(mcp string) error
@@ -93,6 +94,7 @@ func New(
 
 	ctrl := &Controller{
 		client:        mcfgClient,
+		kubeClient:    kubeClient,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-internalreleaseimagecontroller"})),
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
@@ -278,7 +280,8 @@ func (ctrl *Controller) updateSecret(obj, _ interface{}) {
 	secret := obj.(*corev1.Secret)
 
 	// Skip any event not related to the InternalReleaseImage secrets
-	if secret.Name != ctrlcommon.InternalReleaseImageTLSSecretName {
+	if secret.Name != ctrlcommon.InternalReleaseImageTLSSecretName &&
+		secret.Name != ctrlcommon.InternalReleaseImageAuthSecretName {
 		return
 	}
 
@@ -341,8 +344,11 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) error {
 		return fmt.Errorf("could not get Secret %s: %w", ctrlcommon.InternalReleaseImageTLSSecretName, err)
 	}
 
+	// Auth secret may not exist during upgrades from non-auth clusters
+	iriAuthSecret, _ := ctrl.secretLister.Secrets(ctrlcommon.MCONamespace).Get(ctrlcommon.InternalReleaseImageAuthSecretName)
+
 	for _, role := range SupportedRoles {
-		r := NewRendererByRole(role, iri, iriSecret, cconfig)
+		r := NewRendererByRole(role, iri, iriSecret, iriAuthSecret, cconfig)
 
 		mc, err := ctrl.mcLister.Get(r.GetMachineConfigName())
 		isNotFound := errors.IsNotFound(err)
@@ -366,6 +372,13 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) error {
 		}
 		if err := ctrl.addFinalizerToInternalReleaseImage(iri, mc); err != nil {
 			return err // syncStatus , could not add finalizers
+		}
+	}
+
+	// Merge IRI auth credentials into the global pull secret
+	if iriAuthSecret != nil {
+		if err := ctrl.mergeIRIAuthIntoPullSecret(cconfig, iriAuthSecret); err != nil {
+			klog.Warningf("Failed to merge IRI auth into pull secret: %v", err)
 		}
 	}
 
@@ -446,6 +459,43 @@ func (ctrl *Controller) addFinalizerToInternalReleaseImage(iri *mcfgv1alpha1.Int
 
 	iri.Finalizers = append(iri.Finalizers, mc.Name)
 	_, err := ctrl.client.MachineconfigurationV1alpha1().InternalReleaseImages().Update(context.TODO(), iri, metav1.UpdateOptions{})
+	return err
+}
+
+func (ctrl *Controller) mergeIRIAuthIntoPullSecret(cconfig *mcfgv1.ControllerConfig, authSecret *corev1.Secret) error {
+	password := string(authSecret.Data["password"])
+	if password == "" {
+		return nil
+	}
+
+	if cconfig.Spec.DNS == nil {
+		return fmt.Errorf("ControllerConfig DNS is not set")
+	}
+	baseDomain := cconfig.Spec.DNS.Spec.BaseDomain
+
+	// Fetch current pull secret from openshift-config
+	pullSecret, err := ctrl.kubeClient.CoreV1().Secrets(ctrlcommon.OpenshiftConfigNamespace).Get(
+		context.TODO(), ctrlcommon.GlobalPullSecretName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("could not get pull-secret: %w", err)
+	}
+
+	mergedBytes, err := MergeIRIAuthIntoPullSecret(pullSecret.Data[corev1.DockerConfigJsonKey], password, baseDomain)
+	if err != nil {
+		return err
+	}
+
+	// No change needed
+	if string(mergedBytes) == string(pullSecret.Data[corev1.DockerConfigJsonKey]) {
+		return nil
+	}
+
+	pullSecret.Data[corev1.DockerConfigJsonKey] = mergedBytes
+	_, err = ctrl.kubeClient.CoreV1().Secrets(ctrlcommon.OpenshiftConfigNamespace).Update(
+		context.TODO(), pullSecret, metav1.UpdateOptions{})
+	if err == nil {
+		klog.Infof("Updated pull secret with IRI registry auth credentials from secret %s/%s (uid=%s, resourceVersion=%s)", authSecret.Namespace, authSecret.Name, authSecret.UID, authSecret.ResourceVersion)
+	}
 	return err
 }
 
