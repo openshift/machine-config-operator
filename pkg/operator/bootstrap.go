@@ -148,7 +148,7 @@ func buildSpec(dependencies *BootstrapDependencies, imgs *ctrlcommon.Images, rel
 	}
 
 	config := getRenderConfig("", dependencies.KubeAPIServerServingCA, spec,
-		&imgs.RenderConfigImages, dependencies.Infrastructure, nil, nil, "2")
+		&imgs.RenderConfigImages, dependencies.Infrastructure, nil, nil, "2", "")
 	return config, nil
 }
 

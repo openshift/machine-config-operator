@@ -653,7 +653,13 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		optr.setOperatorLogLevel(mcop.Spec.OperatorLogLevel)
 	}
 
-	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra, pointerConfigData, apiServer, fmt.Sprintf("%d", optr.logLevel))
+	// Get the Cluster Network CIDR for the MCC's allow NetworkPolicy
+	clusterNetworkCIDR, err := optr.getClusterNetworkCIDR()
+	if err != nil {
+		return err
+	}
+
+	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra, pointerConfigData, apiServer, fmt.Sprintf("%d", optr.logLevel), clusterNetworkCIDR)
 
 	return nil
 }
@@ -1991,6 +1997,21 @@ func (optr *Operator) getOsImageURLs(namespace, osImageStreamName string) (strin
 	return cfg.BaseOSContainerImage, cfg.BaseOSExtensionsContainerImage, nil
 }
 
+func (optr *Operator) getClusterNetworkCIDR() (string, error) {
+	// Fetch the cluster-wide Network configuration
+	network, err := optr.networkLister.Get("cluster")
+	if err != nil {
+		return "", err
+	}
+
+	// Always use Status as it represents the current reality of the CNI
+	if len(network.Status.ClusterNetwork) > 0 {
+		return network.Status.ClusterNetwork[0].CIDR, nil
+	}
+
+	return "", fmt.Errorf("no cluster network CIDR found in status")
+}
+
 func (optr *Operator) getCAsFromConfigMap(namespace, name, key string) ([]byte, error) {
 	cm, err := optr.clusterCmLister.ConfigMaps(namespace).Get(name)
 	if err != nil {
@@ -2135,7 +2156,7 @@ func setGVK(obj runtime.Object, scheme *runtime.Scheme) error {
 	return nil
 }
 
-func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *ctrlcommon.RenderConfigImages, infra *configv1.Infrastructure, pointerConfigData []byte, apiServer *configv1.APIServer, logLevel string) *renderConfig {
+func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *ctrlcommon.RenderConfigImages, infra *configv1.Infrastructure, pointerConfigData []byte, apiServer *configv1.APIServer, logLevel, clusterNetworkCIDR string) *renderConfig {
 	tlsMinVersion, tlsCipherSuites := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
 	return &renderConfig{
 		TargetNamespace:        tnamespace,
@@ -2150,6 +2171,7 @@ func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.C
 		TLSMinVersion:          tlsMinVersion,
 		TLSCipherSuites:        tlsCipherSuites,
 		LogLevel:               logLevel,
+		ClusterNetworkCIDR:     clusterNetworkCIDR,
 	}
 }
 
@@ -2606,4 +2628,53 @@ func (optr *Operator) getOCPVersionFromClusterVersion() string {
 		return "0.0.0"
 	}
 	return fmt.Sprintf("%d.%d.%d", parsedVersion.Major(), parsedVersion.Minor(), parsedVersion.Patch())
+}
+
+func (optr *Operator) syncNetworkPolicies(config *renderConfig, _ *configv1.ClusterOperator) error {
+	// 1. Define your manifest list
+	manifests := []string{
+		// "common/network-policies/00-default-deny-all.yaml",
+		"common/network-policies/machine-config-controller-allow.yaml",
+		// "common/network-policies/03-allow-operator.yaml",
+	}
+
+	// if config.IsImageBuildEnabled {
+	//     manifests = append(manifests, "common/network-policies/02-allow-os-builder.yaml")
+	// }
+
+	// 2. Iterate and Apply using Server-Side Apply
+	for _, path := range manifests {
+		// Render the template using the operator's internal asset renderer
+		npBytes, err := renderAsset(config, path)
+		if err != nil {
+			return fmt.Errorf("failed to render %s: %w", path, err)
+		}
+
+		// Convert raw bytes to a NetworkPolicy object
+		netPol := resourceread.ReadNetworkPolicyV1OrDie(npBytes)
+
+		// Marshal the NetworkPolicy to JSON for Server-Side Apply
+		netPolBytes, err := json.Marshal(netPol)
+		if err != nil {
+			return fmt.Errorf("failed to marshal network policy %s: %w", netPol.Name, err)
+		}
+
+		// Apply with ForceOwnership to ensure the Operator is the source of truth
+		// Apply via Server-Side Apply with ForceOwnership
+		// This ensures the MCO 'owns' these fields and reverts manual drifts
+		_, err = optr.kubeClient.NetworkingV1().NetworkPolicies(netPol.Namespace).Patch(
+			context.TODO(),
+			netPol.Name,
+			types.ApplyPatchType,
+			netPolBytes,
+			metav1.PatchOptions{
+				FieldManager: "machine-config-operator",
+				Force:        ptr.To(true),
+			},
+		)
+		if err != nil {
+			return fmt.Errorf("failed to apply network policy %s: %w", netPol.Name, err)
+		}
+	}
+	return nil
 }
