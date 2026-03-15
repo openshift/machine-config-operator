@@ -599,6 +599,11 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 
 	for _, pool := range mcpPools {
 		role := pool.Name
+
+		if err := validateStaticPodPathGivenPool(cfg, pool); err != nil {
+			return ctrl.syncStatusOnly(cfg, err)
+		}
+
 		// Get MachineConfig
 		managedKey, err := getManagedKubeletConfigKey(pool, ctrl.client, cfg)
 		if err != nil {
