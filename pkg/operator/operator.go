@@ -12,6 +12,7 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
 
+	configv1 "github.com/openshift/api/config/v1"
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -31,6 +32,10 @@ import (
 	appslisterv1 "k8s.io/client-go/listers/apps/v1"
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
 
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/dynamic/dynamicinformer"
+	"k8s.io/client-go/dynamic/dynamiclister"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/client-go/tools/record"
@@ -89,40 +94,42 @@ type Operator struct {
 
 	syncHandler func(ic string) error
 
-	imgLister             configlistersv1.ImageLister
-	idmsLister            configlistersv1.ImageDigestMirrorSetLister
-	itmsLister            configlistersv1.ImageTagMirrorSetLister
-	icspLister            operatorlistersv1alpha1.ImageContentSourcePolicyLister
-	crdLister             apiextlistersv1.CustomResourceDefinitionLister
-	mcpLister             mcfglistersv1.MachineConfigPoolLister
-	msLister              mcfglistersv1.MachineConfigNodeLister
-	ccLister              mcfglistersv1.ControllerConfigLister
-	mcLister              mcfglistersv1.MachineConfigLister
-	deployLister          appslisterv1.DeploymentLister
-	daemonsetLister       appslisterv1.DaemonSetLister
-	infraLister           configlistersv1.InfrastructureLister
-	networkLister         configlistersv1.NetworkLister
-	mcoCmLister           corelisterv1.ConfigMapLister
-	clusterCmLister       corelisterv1.ConfigMapLister
-	proxyLister           configlistersv1.ProxyLister
-	oseKubeAPILister      corelisterv1.ConfigMapLister
-	nodeLister            corelisterv1.NodeLister
-	dnsLister             configlistersv1.DNSLister
-	mcoSALister           corelisterv1.ServiceAccountLister
-	mcoSecretLister       corelisterv1.SecretLister
-	ocCmLister            corelisterv1.ConfigMapLister
-	ocSecretLister        corelisterv1.SecretLister
-	ocManagedSecretLister corelisterv1.SecretLister
-	clusterOperatorLister configlistersv1.ClusterOperatorLister
-	mcopLister            mcoplistersv1.MachineConfigurationLister
-	mckLister             mcfglistersv1.KubeletConfigLister
-	crcLister             mcfglistersv1.ContainerRuntimeConfigLister
-	nodeClusterLister     configlistersv1.NodeLister
-	moscLister            mcfglistersv1.MachineOSConfigLister
-	apiserverLister       configlistersv1.APIServerLister
-	clusterVersionLister  configlistersv1.ClusterVersionLister
-	osImageStreamLister   mcfglistersv1alpha1.OSImageStreamLister
-	iriLister             mcfglistersv1alpha1.InternalReleaseImageLister
+	imgLister                configlistersv1.ImageLister
+	idmsLister               configlistersv1.ImageDigestMirrorSetLister
+	itmsLister               configlistersv1.ImageTagMirrorSetLister
+	icspLister               operatorlistersv1alpha1.ImageContentSourcePolicyLister
+	crdLister                apiextlistersv1.CustomResourceDefinitionLister
+	mcpLister                mcfglistersv1.MachineConfigPoolLister
+	msLister                 mcfglistersv1.MachineConfigNodeLister
+	ccLister                 mcfglistersv1.ControllerConfigLister
+	mcLister                 mcfglistersv1.MachineConfigLister
+	deployLister             appslisterv1.DeploymentLister
+	daemonsetLister          appslisterv1.DaemonSetLister
+	infraLister              configlistersv1.InfrastructureLister
+	networkLister            configlistersv1.NetworkLister
+	mcoCmLister              corelisterv1.ConfigMapLister
+	clusterCmLister          corelisterv1.ConfigMapLister
+	proxyLister              configlistersv1.ProxyLister
+	oseKubeAPILister         corelisterv1.ConfigMapLister
+	nodeLister               corelisterv1.NodeLister
+	dnsLister                configlistersv1.DNSLister
+	mcoSALister              corelisterv1.ServiceAccountLister
+	mcoSecretLister          corelisterv1.SecretLister
+	ocCmLister               corelisterv1.ConfigMapLister
+	ocSecretLister           corelisterv1.SecretLister
+	ocManagedSecretLister    corelisterv1.SecretLister
+	clusterOperatorLister    configlistersv1.ClusterOperatorLister
+	mcopLister               mcoplistersv1.MachineConfigurationLister
+	mckLister                mcfglistersv1.KubeletConfigLister
+	crcLister                mcfglistersv1.ContainerRuntimeConfigLister
+	nodeClusterLister        configlistersv1.NodeLister
+	moscLister               mcfglistersv1.MachineOSConfigLister
+	apiserverLister          configlistersv1.APIServerLister
+	clusterVersionLister     configlistersv1.ClusterVersionLister
+	osImageStreamLister      mcfglistersv1alpha1.OSImageStreamLister
+	iriLister                mcfglistersv1alpha1.InternalReleaseImageLister
+	provisioningLister       dynamiclister.Lister
+	provisioningListerSynced cache.InformerSynced
 
 	crdListerSynced                  cache.InformerSynced
 	deployListerSynced               cache.InformerSynced
@@ -172,6 +179,8 @@ type Operator struct {
 	fgHandler ctrlcommon.FeatureGatesHandler
 
 	ctrlctx *ctrlcommon.ControllerContext
+
+	provisioningInformerFactory dynamicinformer.DynamicSharedInformerFactory
 }
 
 // New returns a new machine config operator.
@@ -380,6 +389,25 @@ func New(
 		optr.iriListerSynced = iriInformer.Informer().HasSynced
 	}
 
+	// Set up a dynamic informer for the Provisioning CR (metal3.io/v1alpha1).
+	// The informer is only started in Run() when the cluster is on BareMetal to avoid
+	// unnecessary watch noise on other platforms where the CRD may not exist.
+	dynamicClient, err := dynamic.NewForConfig(ctrlctx.ClientBuilder.GetBuilderConfig())
+	if err != nil {
+		klog.Fatalf("error creating dynamic client for Provisioning informer: %v", err)
+	}
+	provisioningGVR := schema.GroupVersionResource{
+		Group:    "metal3.io",
+		Version:  "v1alpha1",
+		Resource: "provisionings",
+	}
+	provisioningFactory := dynamicinformer.NewDynamicSharedInformerFactory(dynamicClient, 0)
+	provisioningInformer := provisioningFactory.ForResource(provisioningGVR)
+	provisioningInformer.Informer().AddEventHandler(optr.eventHandler())
+	optr.provisioningLister = dynamiclister.New(provisioningInformer.Informer().GetIndexer(), provisioningGVR)
+	optr.provisioningListerSynced = provisioningInformer.Informer().HasSynced
+	optr.provisioningInformerFactory = provisioningFactory
+
 	optr.vStore.Set("operator", version.ReleaseVersion)
 	optr.vStore.Set("operator-image", version.OperatorImage)
 
@@ -447,6 +475,21 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		cacheSynced...) {
 		klog.Error("failed to sync caches")
 		return
+	}
+
+	// On BareMetal clusters, start the Provisioning informer so that
+	// syncBootImageSkewEnforcementStatus can check provisioningOSDownloadURL
+	// without making live API calls. The informer is not started on other platforms
+	// to avoid watch errors against a CRD that may not exist.
+	// We do not block on WaitForCacheSync here because the provisionings.metal3.io
+	// CRD is installed by CBO which may not be ready yet at operator startup.
+	// isBareMetalOnLegacyProvisioningPath handles lister errors conservatively
+	// until the cache is warm.
+	if infra, err := optr.infraLister.Get("cluster"); err == nil &&
+		infra.Status.PlatformStatus != nil &&
+		infra.Status.PlatformStatus.Type == configv1.BareMetalPlatformType &&
+		optr.provisioningInformerFactory != nil {
+		optr.provisioningInformerFactory.Start(stopCh)
 	}
 
 	// these can only be synced after CRDs are installed
