@@ -3,6 +3,7 @@ package internalreleaseimage
 import (
 	"encoding/base64"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -100,9 +101,247 @@ func TestMergeIRIAuthIntoPullSecret(t *testing.T) {
 	}
 }
 
-// pullSecretWithIRIAuth creates a pull secret JSON that already contains an IRI auth entry.
+func TestExtractIRICredentialsFromPullSecret(t *testing.T) {
+	tests := []struct {
+		name             string
+		pullSecret       string
+		baseDomain       string
+		expectedUsername string
+		expectedPassword string
+	}{
+		{
+			name:             "extracts credentials from valid entry",
+			pullSecret:       pullSecretWithIRIAuth("example.com", "mypassword"),
+			baseDomain:       "example.com",
+			expectedUsername: "openshift",
+			expectedPassword: "mypassword",
+		},
+		{
+			name:             "extracts credentials with generation username",
+			pullSecret:       pullSecretWithIRIAuthAndUsername("example.com", "openshift2", "mypassword"),
+			baseDomain:       "example.com",
+			expectedUsername: "openshift2",
+			expectedPassword: "mypassword",
+		},
+		{
+			name:             "returns empty for missing IRI entry",
+			pullSecret:       `{"auths":{"quay.io":{"auth":"dGVzdDp0ZXN0"}}}`,
+			baseDomain:       "example.com",
+			expectedUsername: "",
+			expectedPassword: "",
+		},
+		{
+			name:             "returns empty for wrong domain",
+			pullSecret:       pullSecretWithIRIAuth("other.com", "mypassword"),
+			baseDomain:       "example.com",
+			expectedUsername: "",
+			expectedPassword: "",
+		},
+		{
+			name:             "returns empty for invalid JSON",
+			pullSecret:       "not-json",
+			baseDomain:       "example.com",
+			expectedUsername: "",
+			expectedPassword: "",
+		},
+		{
+			name:             "returns empty for missing auths",
+			pullSecret:       `{"registry":"quay.io"}`,
+			baseDomain:       "example.com",
+			expectedUsername: "",
+			expectedPassword: "",
+		},
+		{
+			name:             "returns empty for invalid base64",
+			pullSecret:       `{"auths":{"api-int.example.com:22625":{"auth":"!!!invalid"}}}`,
+			baseDomain:       "example.com",
+			expectedUsername: "",
+			expectedPassword: "",
+		},
+		{
+			name:             "returns empty for auth without colon",
+			pullSecret:       `{"auths":{"api-int.example.com:22625":{"auth":"bm9jb2xvbg=="}}}`,
+			baseDomain:       "example.com",
+			expectedUsername: "",
+			expectedPassword: "",
+		},
+		{
+			name:             "handles password containing colon",
+			pullSecret:       pullSecretWithIRIAuth("example.com", "pass:word"),
+			baseDomain:       "example.com",
+			expectedUsername: "openshift",
+			expectedPassword: "pass:word",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			username, password := ExtractIRICredentialsFromPullSecret([]byte(tt.pullSecret), tt.baseDomain)
+			assert.Equal(t, tt.expectedUsername, username)
+			assert.Equal(t, tt.expectedPassword, password)
+		})
+	}
+}
+
+func TestNextIRIUsername(t *testing.T) {
+	tests := []struct {
+		current  string
+		expected string
+	}{
+		{"openshift", "openshift1"},
+		{"openshift1", "openshift2"},
+		{"openshift2", "openshift3"},
+		{"openshift99", "openshift100"},
+		{"unknown", "openshift1"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.current+"->"+tt.expected, func(t *testing.T) {
+			assert.Equal(t, tt.expected, NextIRIUsername(tt.current))
+		})
+	}
+}
+
+func TestHtpasswdHasValidEntry(t *testing.T) {
+	entry, err := GenerateHtpasswdEntry("openshift", "mypassword")
+	assert.NoError(t, err)
+
+	dual, err := GenerateDualHtpasswd("openshift", "oldpass", "openshift1", "newpass")
+	assert.NoError(t, err)
+
+	tests := []struct {
+		name     string
+		htpasswd string
+		username string
+		password string
+		expected bool
+	}{
+		{"valid single entry", entry, "openshift", "mypassword", true},
+		{"wrong password", entry, "openshift", "wrongpassword", false},
+		{"wrong username", entry, "other", "mypassword", false},
+		{"dual entry matches first", dual, "openshift", "oldpass", true},
+		{"dual entry matches second", dual, "openshift1", "newpass", true},
+		{"dual entry wrong password", dual, "openshift1", "oldpass", false},
+		{"empty htpasswd", "", "openshift", "mypassword", false},
+		{"malformed line", "nocolon", "openshift", "mypassword", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, HtpasswdHasValidEntry(tt.htpasswd, tt.username, tt.password))
+		})
+	}
+}
+
+func TestGenerateHtpasswdEntry(t *testing.T) {
+	entry, err := GenerateHtpasswdEntry("openshift", "testpassword")
+	assert.NoError(t, err)
+	assert.True(t, strings.HasPrefix(entry, "openshift:$2"), "should start with username and bcrypt prefix")
+	assert.True(t, strings.HasSuffix(entry, "\n"), "should end with newline")
+}
+
+func TestGenerateDualHtpasswd(t *testing.T) {
+	dual, err := GenerateDualHtpasswd("openshift", "oldpass", "openshift1", "newpass")
+	assert.NoError(t, err)
+
+	lines := strings.Split(strings.TrimSpace(dual), "\n")
+	assert.Equal(t, 2, len(lines), "should have two htpasswd entries")
+	assert.True(t, strings.HasPrefix(lines[0], "openshift:$2"), "first entry should be current username")
+	assert.True(t, strings.HasPrefix(lines[1], "openshift1:$2"), "second entry should be new username")
+
+	// Duplicate usernames must be rejected
+	_, err = GenerateDualHtpasswd("openshift", "oldpass", "openshift", "newpass")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "must differ")
+}
+
+func TestValidatePullSecretAuthsPreserved(t *testing.T) {
+	tests := []struct {
+		name            string
+		original        string
+		merged          string
+		iriRegistryHost string
+		expectError     bool
+		errorContains   string
+	}{
+		{
+			name:            "all entries preserved with IRI added",
+			original:        `{"auths":{"quay.io":{"auth":"abc"},"registry.redhat.io":{"auth":"def"}}}`,
+			merged:          `{"auths":{"quay.io":{"auth":"abc"},"registry.redhat.io":{"auth":"def"},"api-int.example.com:22625":{"auth":"ghi"}}}`,
+			iriRegistryHost: "api-int.example.com:22625",
+		},
+		{
+			name:            "entry removed",
+			original:        `{"auths":{"quay.io":{"auth":"abc"},"registry.redhat.io":{"auth":"def"}}}`,
+			merged:          `{"auths":{"quay.io":{"auth":"abc"}}}`,
+			iriRegistryHost: "api-int.example.com:22625",
+			expectError:     true,
+			errorContains:   "missing after merge",
+		},
+		{
+			name:            "non-IRI entry value changed",
+			original:        `{"auths":{"quay.io":{"auth":"abc"}}}`,
+			merged:          `{"auths":{"quay.io":{"auth":"xyz"}}}`,
+			iriRegistryHost: "api-int.example.com:22625",
+			expectError:     true,
+			errorContains:   "was modified during IRI merge",
+		},
+		{
+			name:            "IRI entry value changed is allowed",
+			original:        `{"auths":{"quay.io":{"auth":"abc"},"api-int.example.com:22625":{"auth":"old"}}}`,
+			merged:          `{"auths":{"quay.io":{"auth":"abc"},"api-int.example.com:22625":{"auth":"new"}}}`,
+			iriRegistryHost: "api-int.example.com:22625",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validatePullSecretAuthsPreserved([]byte(tt.original), []byte(tt.merged), tt.iriRegistryHost)
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorContains)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestMergeIRIAuthPreservesExistingEntries(t *testing.T) {
+	pullSecret := `{"auths":{"quay.io":{"auth":"abc"},"registry.redhat.io":{"auth":"def"},"cloud.openshift.com":{"auth":"ghi"}}}`
+
+	result, err := MergeIRIAuthIntoPullSecret([]byte(pullSecret), "testpassword", "example.com")
+	assert.NoError(t, err)
+
+	var dockerConfig map[string]interface{}
+	err = json.Unmarshal(result, &dockerConfig)
+	assert.NoError(t, err)
+
+	auths := dockerConfig["auths"].(map[string]interface{})
+
+	// All original entries must be preserved with identical values
+	origValues := map[string]string{"quay.io": "abc", "registry.redhat.io": "def", "cloud.openshift.com": "ghi"}
+	for host, expectedAuth := range origValues {
+		entry, ok := auths[host].(map[string]interface{})
+		assert.True(t, ok, "original entry %q should be preserved", host)
+		assert.Equal(t, expectedAuth, entry["auth"], "original entry %q value should be unchanged", host)
+	}
+
+	// IRI entry should be added
+	_, ok := auths["api-int.example.com:22625"]
+	assert.True(t, ok, "IRI entry should be added")
+}
+
+// pullSecretWithIRIAuth creates a pull secret JSON with an IRI auth entry using
+// the default "openshift" username (generation 0).
 func pullSecretWithIRIAuth(baseDomain string, password string) string {
-	authValue := base64.StdEncoding.EncodeToString([]byte("openshift:" + password))
+	return pullSecretWithIRIAuthAndUsername(baseDomain, "openshift", password)
+}
+
+// pullSecretWithIRIAuthAndUsername creates a pull secret JSON with an IRI auth
+// entry using the specified username.
+func pullSecretWithIRIAuthAndUsername(baseDomain string, username string, password string) string {
+	authValue := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
 	host := "api-int." + baseDomain + ":22625"
 	dockerConfig := map[string]interface{}{
 		"auths": map[string]interface{}{

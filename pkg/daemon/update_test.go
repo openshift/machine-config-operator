@@ -557,6 +557,8 @@ func TestCalculatePostConfigChangeAction(t *testing.T) {
 		"containers-gpg2": ctrlcommon.NewIgnFile("/etc/machine-config-daemon/no-reboot/containers-gpg.pub", "containers-gpg2"),
 		"restart-crio1":   ctrlcommon.NewIgnFile("/etc/pki/ca-trust/source/anchors/openshift-config-user-ca-bundle.crt", "restart-crio1"),
 		"restart-crio2":   ctrlcommon.NewIgnFile("/etc/pki/ca-trust/source/anchors/openshift-config-user-ca-bundle.crt", "restart-crio2"),
+		"iri-htpasswd1":   ctrlcommon.NewIgnFile("/etc/iri-registry/auth/htpasswd", "openshift:$2y$05$hash1"),
+		"iri-htpasswd2":   ctrlcommon.NewIgnFile("/etc/iri-registry/auth/htpasswd", "openshift1:$2y$05$hash2"),
 	}
 
 	tests := []struct {
@@ -646,6 +648,18 @@ func TestCalculatePostConfigChangeAction(t *testing.T) {
 			oldConfig:      helpers.NewMachineConfig("00-test", nil, "dummy://", []ign3types.File{files["restart-crio1"]}),
 			newConfig:      helpers.NewMachineConfig("01-test", nil, "dummy://", []ign3types.File{files["restart-crio2"], files["containers-gpg1"]}),
 			expectedAction: []string{postConfigChangeActionRestartCrio},
+		},
+		{
+			// test that an IRI registry htpasswd change is none
+			oldConfig:      helpers.NewMachineConfig("00-test", nil, "dummy://", []ign3types.File{files["iri-htpasswd1"]}),
+			newConfig:      helpers.NewMachineConfig("01-test", nil, "dummy://", []ign3types.File{files["iri-htpasswd2"]}),
+			expectedAction: []string{postConfigChangeActionNone},
+		},
+		{
+			// test that an IRI registry htpasswd change with pull secret change is still none
+			oldConfig:      helpers.NewMachineConfig("00-test", nil, "dummy://", []ign3types.File{files["iri-htpasswd1"], files["pullsecret1"]}),
+			newConfig:      helpers.NewMachineConfig("01-test", nil, "dummy://", []ign3types.File{files["iri-htpasswd2"], files["pullsecret2"]}),
+			expectedAction: []string{postConfigChangeActionNone},
 		},
 	}
 
