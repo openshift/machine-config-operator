@@ -1,5 +1,3 @@
-//go:build !fcos && !scos
-
 package operator
 
 import (
