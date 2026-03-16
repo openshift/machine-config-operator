@@ -9,35 +9,89 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestImageStreamExtractorImpl_GetImageData_OSImage(t *testing.T) {
+const (
+	testCoreOSLabelStreamClass    = "io.openshift.os.streamclass"
+	testCoreOSLabelExtension      = "io.openshift.os.extensions"
+	testCoreOSLabelExtensionValue = "true"
+	testCoreOSLabelBootc          = "containers.bootc"
+	testCoreOSLabelBootcValue1    = "1"
+	testCoreOSLabelBootcValueTrue = "true"
+)
+
+func TestImageStreamExtractorImpl_GetImageData_ImageType(t *testing.T) {
 	extractor := NewImageStreamExtractor()
 
-	labels := map[string]string{
-		"io.openshift.os.streamclass": "rhel-9",
-		"ostree.linux":                "present",
+	tests := []struct {
+		name        string
+		label       string
+		labelValue  string
+		imageType   ImageType
+		shouldMatch bool
+	}{
+		{
+			name:        "With bootc label 'true'",
+			label:       testCoreOSLabelBootc,
+			labelValue:  testCoreOSLabelBootcValueTrue,
+			shouldMatch: true,
+			imageType:   ImageTypeOS,
+		},
+		{
+			name:        "With bootc label '1'",
+			label:       testCoreOSLabelBootc,
+			labelValue:  testCoreOSLabelBootcValue1,
+			shouldMatch: true,
+			imageType:   ImageTypeOS,
+		},
+		{
+			name:        "With bootc label incorrect numerical value",
+			label:       testCoreOSLabelBootc,
+			labelValue:  "2",
+			shouldMatch: false,
+		},
+		{
+			name:        "With bootc label incorrect string value",
+			label:       testCoreOSLabelBootc,
+			labelValue:  "nope",
+			shouldMatch: false,
+		},
+		{
+			name:        "With extensions label and value",
+			label:       testCoreOSLabelExtension,
+			labelValue:  testCoreOSLabelExtensionValue,
+			shouldMatch: true,
+			imageType:   ImageTypeExtensions,
+		},
+		{
+			name:        "With extensions label without value",
+			label:       testCoreOSLabelExtension,
+			shouldMatch: false,
+		},
+		{
+			name:        "No extensions or OS label",
+			label:       "do.not.match",
+			shouldMatch: false,
+		},
 	}
 
-	result := extractor.GetImageData("quay.io/openshift/os@sha256:abc123", labels)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
 
-	require.NotNil(t, result)
-	assert.Equal(t, "quay.io/openshift/os@sha256:abc123", result.Image)
-	assert.EqualValues(t, ImageTypeOS, result.Type)
-	assert.Equal(t, "rhel-9", result.Stream)
-}
-
-func TestImageStreamExtractorImpl_GetImageData_ExtensionsImage(t *testing.T) {
-	extractor := NewImageStreamExtractor()
-
-	labels := map[string]string{
-		"io.openshift.os.streamclass": "rhel-9",
+			result := extractor.GetImageData(
+				"quay.io/openshift/os@sha256:abc123",
+				map[string]string{
+					testCoreOSLabelStreamClass: "rhel-9",
+					tt.label:                   tt.labelValue,
+				})
+			if tt.shouldMatch {
+				require.NotNil(t, result)
+				assert.Equal(t, "quay.io/openshift/os@sha256:abc123", result.Image)
+				assert.EqualValues(t, tt.imageType, result.Type)
+				assert.Equal(t, "rhel-9", result.Stream)
+			} else {
+				assert.Nil(t, result)
+			}
+		})
 	}
-
-	result := extractor.GetImageData("quay.io/openshift/ext@sha256:def456", labels)
-
-	require.NotNil(t, result)
-	assert.Equal(t, "quay.io/openshift/ext@sha256:def456", result.Image)
-	assert.EqualValues(t, ImageTypeExtensions, result.Type)
-	assert.Equal(t, "rhel-9", result.Stream)
 }
 
 func TestImageStreamExtractorImpl_GetImageData_MissingStreamLabel(t *testing.T) {
