@@ -137,6 +137,11 @@ const (
 	// KubeletAuthFile is the path to the kubelet auth file.
 	KubeletAuthFile = "/var/lib/kubelet/config.json"
 
+	// IRIRegistryAuthFile is the path to the IRI registry htpasswd file.
+	// The distribution registry re-reads this file on modification, so
+	// changes do not require a service restart or node reboot.
+	IRIRegistryAuthFile = "/etc/iri-registry/auth/htpasswd"
+
 	// MinFreeStorageAfterPrefetch is the minimum amount of storage
 	// available on the root filesystem after prefetching images.
 	MinFreeStorageAfterPrefetch = "16Gi"
