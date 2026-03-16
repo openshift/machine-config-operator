@@ -314,13 +314,14 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 	require.NoError(t, err)
 
 	// Helper function to create a fresh timeout context for each resource verification.
-	// Each resource gets its own 2-minute timeout to prevent slow deletions from
-	// consuming the timeout budget of other resources. Use a slower poll interval
-	// (3s instead of 1s) to reduce API call rate and avoid rate limiting.
+	// Each resource gets its own 3-minute timeout to prevent slow deletions from
+	// consuming the timeout budget of other resources. Use a 5-second poll interval
+	// to significantly reduce API call rate and avoid exhausting the rate limiter
+	// (~36 attempts per resource, vs 120 attempts with 1s interval).
 	newCleanupAssertion := func() *helpers.Assertions {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		t.Cleanup(cancel)
-		return helpers.AssertClientSet(t, cs).WithContext(ctx).WithPollInterval(3 * time.Second).Eventually()
+		return helpers.AssertClientSet(t, cs).WithContext(ctx).WithPollInterval(5 * time.Second).Eventually()
 	}
 
 	if len(secretList.Items) == 0 {
