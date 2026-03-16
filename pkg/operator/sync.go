@@ -25,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/selection"
@@ -2564,6 +2565,13 @@ func (optr *Operator) syncBootImageSkewEnforcementStatus(mcop *opv1.MachineConfi
 		return
 	}
 
+	// On BareMetal clusters using the machine-os-images provisioning path (provisioningOSDownloadURL
+	// is unset), boot images are managed by CVO and have no skew risk.
+	if infra.Status.PlatformStatus != nil && infra.Status.PlatformStatus.Type == configv1.BareMetalPlatformType && !optr.isBareMetalOnLegacyProvisioningPath() {
+		newMachineConfigurationStatus.BootImageSkewEnforcementStatus = apihelpers.GetSkewEnforcementStatusNone()
+		return
+	}
+
 	// SNO clusters do not scale; skew enforcement is not applicable.
 	if infra.Status.ControlPlaneTopology == configv1.SingleReplicaTopologyMode {
 		newMachineConfigurationStatus.BootImageSkewEnforcementStatus = apihelpers.GetSkewEnforcementStatusNone()
@@ -2617,4 +2625,39 @@ func (optr *Operator) getOCPVersionFromClusterVersion() string {
 		return "0.0.0"
 	}
 	return fmt.Sprintf("%d.%d.%d", parsedVersion.Major(), parsedVersion.Minor(), parsedVersion.Patch())
+}
+
+// isBareMetalOnLegacyProvisioningPath checks whether the BareMetal cluster is still using the
+// legacy qcow2-based provisioning path. It does so by inspecting the provisioningOSDownloadURL
+// field of the singleton Provisioning CR (metal3.io/v1alpha1).
+//
+// Returns true when the field is non-empty, meaning boot images are not managed via the machine-os-images
+// path and may be out of date (skew enforcement should be set to Manual mode). Also returns true when
+// when the field is not ready to be used yet, for safety.
+//
+// Returns false when:
+//   - The CR does not exist (cluster is using the machine-os-images path introduced in 4.10)
+//   - The field is empty (same as above)
+func (optr *Operator) isBareMetalOnLegacyProvisioningPath() bool {
+
+	if optr.provisioningListerSynced != nil && !optr.provisioningListerSynced() {
+		klog.V(2).Info("Provisioning informer not synced yet; assuming legacy provisioning path for safety")
+		return true
+	}
+	provisioning, err := optr.provisioningLister.Get("provisioning-configuration")
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			// CR not found, cluster is on machine-os-images path, no skew risk
+			return false
+		}
+		// Unexpected get error, assume legacy path for safety
+		klog.Warningf("Failed to get Provisioning CR: %v; assuming legacy provisioning path for BareMetal", err)
+		return true
+	}
+	url, _, err := unstructured.NestedString(provisioning.Object, "spec", "provisioningOSDownloadURL")
+	if err != nil {
+		klog.Warningf("Failed to parse provisioningOSDownloadURL: %v; assuming legacy provisioning path for BareMetal", err)
+		return true
+	}
+	return url != ""
 }
