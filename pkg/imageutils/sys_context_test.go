@@ -108,15 +108,15 @@ MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuOSW8w==
 
 func TestSysContextBuilder(t *testing.T) {
 	testCases := []struct {
-		name              string
-		secret            *corev1.Secret
-		controllerConfig  *mcfgv1.ControllerConfig
-		registriesConfig  *sysregistriesv2.V2RegistriesConf
-		expectTempDir     bool
-		expectAuthFile    bool
-		expectCerts       bool
-		expectProxy       bool
-		expectRegistries  bool
+		name             string
+		secret           *corev1.Secret
+		controllerConfig *mcfgv1.ControllerConfig
+		registriesConfig *sysregistriesv2.V2RegistriesConf
+		expectTempDir    bool
+		expectAuthFile   bool
+		expectCerts      bool
+		expectProxy      bool
+		expectRegistries bool
 	}{
 		{
 			name:          "Empty context - no options",
