@@ -38,6 +38,7 @@ contents: |
         --minimum-container-ttl-duration=6m0s \
         --cloud-provider={{cloudProvider .}} \
         --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
+        $KUBELET_CRIO_IMAGE_CREDENTIAL_PROVIDER_FLAGS \
         --hostname-override=${KUBELET_NODE_NAME} \
         --register-with-taints=node-role.kubernetes.io/master=:NoSchedule \
         --system-reserved=cpu=${SYSTEM_RESERVED_CPU},memory=${SYSTEM_RESERVED_MEMORY},ephemeral-storage=${SYSTEM_RESERVED_ES} \

@@ -6,6 +6,7 @@ import (
 
 	clientbuildv1 "github.com/openshift/client-go/build/clientset/versioned/typed/build/v1"
 	clientconfigv1 "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
+	clientconfigv1alpha1 "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1alpha1"
 	imagev1clientset "github.com/openshift/client-go/image/clientset/versioned"
 	clientimagev1 "github.com/openshift/client-go/image/clientset/versioned/typed/image/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
@@ -29,6 +30,7 @@ type ClientSet struct {
 	batchv1client.BatchV1Interface
 	appsv1client.AppsV1Interface
 	clientconfigv1.ConfigV1Interface
+	clientconfigv1alpha1.ConfigV1alpha1Interface
 	clientmachineconfigv1.MachineconfigurationV1Interface
 	clientapiextensionsv1.ApiextensionsV1Interface
 	clientoperatorsv1alpha1.OperatorV1alpha1Interface
@@ -117,6 +119,7 @@ func NewClientSetFromConfig(config *rest.Config) *ClientSet {
 		BatchV1Interface:                      kubeclient.BatchV1(),
 		AppsV1Interface:                       kubeclient.AppsV1(),
 		ConfigV1Interface:                     clientconfigv1.NewForConfigOrDie(config),
+		ConfigV1alpha1Interface:               clientconfigv1alpha1.NewForConfigOrDie(config),
 		MachineconfigurationV1Interface:       mcfgclient.MachineconfigurationV1(),
 		ApiextensionsV1Interface:              clientapiextensionsv1.NewForConfigOrDie(config),
 		OperatorV1alpha1Interface:             clientoperatorsv1alpha1.NewForConfigOrDie(config),

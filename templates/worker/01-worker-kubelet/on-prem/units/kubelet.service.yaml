@@ -39,6 +39,7 @@ contents: |
         --address=${KUBELET_NODE_IP} \
         --minimum-container-ttl-duration=6m0s \
         --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
+        $KUBELET_CRIO_IMAGE_CREDENTIAL_PROVIDER_FLAGS \
         --cloud-provider={{cloudProvider .}} \
         --hostname-override=${KUBELET_NODE_NAME} \
         --system-reserved=cpu=${SYSTEM_RESERVED_CPU},memory=${SYSTEM_RESERVED_MEMORY},ephemeral-storage=${SYSTEM_RESERVED_ES} \
