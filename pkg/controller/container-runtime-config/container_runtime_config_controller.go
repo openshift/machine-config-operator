@@ -268,6 +268,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	}
 
 	if ctrl.addedCRIOCPObservers {
+		time.Sleep(time.Minute)
 		listerCaches = append(listerCaches, ctrl.criocpListerSynced)
 	}
 
