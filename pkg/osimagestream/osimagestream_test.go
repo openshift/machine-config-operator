@@ -56,13 +56,14 @@ func newTestInspectData(defs ...testImageDef) map[string]*types.ImageInspectInfo
 	for _, d := range defs {
 		data[d.osImage] = &types.ImageInspectInfo{
 			Labels: map[string]string{
-				"io.openshift.os.streamclass": d.streamClass,
-				"ostree.linux":                "present",
+				testCoreOSLabelStreamClass: d.streamClass,
+				testCoreOSLabelBootc:       testCoreOSLabelBootcValueTrue,
 			},
 		}
 		data[d.extImage] = &types.ImageInspectInfo{
 			Labels: map[string]string{
-				"io.openshift.os.streamclass": d.streamClass,
+				testCoreOSLabelStreamClass: d.streamClass,
+				testCoreOSLabelExtension:   testCoreOSLabelExtensionValue,
 			},
 		}
 	}
