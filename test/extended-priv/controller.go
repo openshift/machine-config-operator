@@ -2,6 +2,7 @@ package extended
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -128,7 +129,8 @@ func (mcc *Controller) HasAcquiredLease() (bool, error) {
 		return false, err
 	}
 
-	return strings.Contains(podAllLogs, "successfully acquired lease"), nil
+	re := regexp.MustCompile(`(?i)successfully acquired lease`)
+	return re.MatchString(podAllLogs), nil
 }
 
 // GetNode return the node where the machine controller is running
