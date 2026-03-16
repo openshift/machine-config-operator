@@ -48,9 +48,11 @@ contents:
           # Doesn't work right now, can only do ipv4 static
           #address: {{`"{{ capture.base-iface.interfaces.0.ipv6.address }}"`}}
           auto-route-metric: 48
+          {{ if or (eq .IPFamilies "IPv6") (or (eq .IPFamilies "DualStack") (eq .IPFamilies "DualStackIPv6Primary"))}}
           # Not in capture for ipv4
-          #auto-dns: {{`"{{ capture.base-iface.interfaces.0.ipv6.auto-dns }}"`}}
-          #auto-gateway: {{`"{{ capture.base-iface.interfaces.0.ipv6.auto-gateway }}"`}}
-          #auto-routes: {{`"{{ capture.base-iface.interfaces.0.ipv6.auto-routes }}"`}}
+          auto-dns: {{`"{{ capture.base-iface.interfaces.0.ipv6.auto-dns }}"`}}
+          auto-gateway: {{`"{{ capture.base-iface.interfaces.0.ipv6.auto-gateway }}"`}}
+          auto-routes: {{`"{{ capture.base-iface.interfaces.0.ipv6.auto-routes }}"`}}
+          {{ end }}
       routes:
         config: {{`"{{ capture.bridge-routes.routes.running }}"`}}
