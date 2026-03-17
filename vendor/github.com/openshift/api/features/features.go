@@ -392,14 +392,6 @@ var (
 				enable(inDefault(), inOKD(), inTechPreviewNoUpgrade(), inDevPreviewNoUpgrade()).
 				mustRegister()
 
-	FeatureGateAdditionalStorageConfig = newFeatureGate("AdditionalStorageConfig").
-						reportProblemsToJiraComponent("node").
-						contactPerson("saschagrunert").
-						productScope(ocpSpecific).
-						enhancementPR("https://github.com/openshift/enhancements/pull/1934").
-						enable(inDevPreviewNoUpgrade(), inTechPreviewNoUpgrade()).
-						mustRegister()
-
 	FeatureGateUpgradeStatus = newFeatureGate("UpgradeStatus").
 					reportProblemsToJiraComponent("Cluster Version Operator").
 					contactPerson("pmuller").

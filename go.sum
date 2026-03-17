@@ -623,8 +623,8 @@ github.com/opencontainers/selinux v1.13.0 h1:Zza88GWezyT7RLql12URvoxsbLfjFx988+L
 github.com/opencontainers/selinux v1.13.0/go.mod h1:XxWTed+A/s5NNq4GmYScVy+9jzXhGBVEOAyucdRUY8s=
 github.com/openshift-eng/openshift-tests-extension v0.0.0-20260127124016-0fed2b824818 h1:jJLE/aCAqDf8U4wc3bE1IEKgIxbb0ICjCNVFA49x/8s=
 github.com/openshift-eng/openshift-tests-extension v0.0.0-20260127124016-0fed2b824818/go.mod h1:6gkP5f2HL0meusT0Aim8icAspcD1cG055xxBZ9yC68M=
-github.com/openshift/api v0.0.0-20260304160726-df03ea1d00f4 h1:ftsNdfcCuNp7Ft0gv7qXkwskggQlIyJoNKA8jPdBlLI=
-github.com/openshift/api v0.0.0-20260304160726-df03ea1d00f4/go.mod h1:pyVjK0nZ4sRs4fuQVQ4rubsJdahI1PB94LnQ8sGdvxo=
+github.com/openshift/api v0.0.0-20260302174620-dcac36b908db h1:MOQ5JSIlbP4apwTrEdNpApT6PsnB0/1S6y9aKODp5Ks=
+github.com/openshift/api v0.0.0-20260302174620-dcac36b908db/go.mod h1:pyVjK0nZ4sRs4fuQVQ4rubsJdahI1PB94LnQ8sGdvxo=
 github.com/openshift/client-go v0.0.0-20260302182750-20813ce71ca6 h1:wJv4Ia+R4OxoaJcTUyvMtBc5rWFvfTiEA8d5f1MBPqI=
 github.com/openshift/client-go v0.0.0-20260302182750-20813ce71ca6/go.mod h1:3lkVff575BlbDUUhMsrD1IyvfkZ+oKUB7iZuVy1m0W0=
 github.com/openshift/kubernetes v1.30.1-0.20260305123649-d18f3f005eaa h1:/gPMWR7fdCC3S4wHALD6Em+vztl1q9/cOpdMkFZwDus=
