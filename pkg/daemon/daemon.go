@@ -261,11 +261,14 @@ var (
 )
 
 // rebootCommand creates a new transient systemd unit to reboot the system.
-// With the upstream implementation of kubelet graceful shutdown feature,
-// we don't explicitly stop the kubelet so that kubelet can gracefully shutdown
-// pods when `GracefulNodeShutdown` feature gate is enabled.
-// kubelet uses systemd inhibitor locks to delay node shutdown to terminate pods.
-// https://kubernetes.io/docs/concepts/architecture/nodes/#graceful-node-shutdown
+// Before rebooting, it gracefully stops kube-apiserver containers to prevent
+// non-graceful termination. Without GracefulNodeShutdown configured, kubelet
+// exits immediately on SIGTERM without terminating pods. This causes
+// kube-apiserver to be SIGKILLed by systemd before completing its graceful
+// shutdown (up to 194s on AWS), since systemd's DefaultTimeoutStopSec is
+// only 90s. The graceful stop runs inside the transient systemd unit so
+// that kubelet is still alive when systemd-run is invoked, preserving MCD
+// error recovery if the unit fails to start.
 func rebootCommand(rationale string, workaroundOCPBUGS51150 bool) *exec.Cmd {
 	systemdRunArgs := []string{"--unit", "machine-config-daemon-reboot",
 		"--description", fmt.Sprintf("machine-config-daemon: %s", rationale)}
@@ -273,7 +276,40 @@ func rebootCommand(rationale string, workaroundOCPBUGS51150 bool) *exec.Cmd {
 	if workaroundOCPBUGS51150 {
 		systemdRunArgs = append(systemdRunArgs, "-p", "Requires=ostree-finalize-staged.service", "-p", "After=ostree-finalize-staged.service")
 	}
-	systemdRunArgs = append(systemdRunArgs, "/bin/sh", "-c", "systemctl reboot")
+	// Cap how long the transient unit can run. The script can take up to ~230s
+	// (30s kubelet stop + 200s crictl stop) so 300s provides headroom while
+	// preventing an indefinite hang if CRI-O is stuck.
+	systemdRunArgs = append(systemdRunArgs, "-p", "TimeoutStartSec=300")
+	// Gracefully stop kube-apiserver before rebooting. Only runs on control
+	// plane nodes (workers have no kube-apiserver containers, so the crictl
+	// query returns empty and the script skips straight to reboot).
+	// The 200s crictl timeout covers the worst-case kube-apiserver
+	// terminationGracePeriodSeconds of 194s (AWS).
+	rebootScript := `
+CONTAINERS=$(crictl ps -q --label io.kubernetes.container.name=kube-apiserver 2>/dev/null)
+if [ -n "$CONTAINERS" ]; then
+  logger 'machine-config-daemon: stopping kubelet to prevent static pod restarts'
+  if ! timeout 30 systemctl stop kubelet; then
+    logger 'machine-config-daemon: WARNING: failed to stop kubelet within 30s'
+  fi
+  # Re-list after kubelet stop to catch any container restarted during the gap.
+  CONTAINERS=$(crictl ps -q --label io.kubernetes.container.name=kube-apiserver 2>/dev/null)
+  STOP_FAILED=0
+  for cid in $CONTAINERS; do
+    logger "machine-config-daemon: gracefully stopping kube-apiserver container $cid"
+    if ! crictl stop --timeout 200 "$cid"; then
+      STOP_FAILED=1
+      logger "machine-config-daemon: WARNING: failed to stop kube-apiserver container $cid"
+    fi
+  done
+  if [ "$STOP_FAILED" -eq 0 ]; then
+    logger 'machine-config-daemon: kube-apiserver containers stopped'
+  else
+    logger 'machine-config-daemon: WARNING: kube-apiserver stop had failures; proceeding with reboot'
+  fi
+fi
+systemctl reboot`
+	systemdRunArgs = append(systemdRunArgs, "/bin/sh", "-c", rebootScript)
 	return exec.Command("systemd-run", systemdRunArgs...)
 }
 
