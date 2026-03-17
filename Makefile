@@ -106,15 +106,9 @@ else
 	go install -mod= github.com/jstemmer/go-junit-report@latest
 endif
 
-GOLANGCI_LINT := $(shell command -v golangci-lint 2> /dev/null)
 install-golangci-lint:
-ifdef GOLANGCI_LINT
-	@echo "Found golangci-lint"
-	golangci-lint --version
-else
-	@echo "Installing golangci-lint"
+	@echo "Installing golangci-lint from vendor"
 	GO111MODULE=on go build -o $(GOPATH)/bin/golangci-lint ./vendor/github.com/golangci/golangci-lint/cmd/golangci-lint
-endif
 
 SKOPEO := $(shell command -v skopeo 2> /dev/null)
 install-skopeo:
