@@ -124,6 +124,9 @@ const (
 	// DaemonReloadCommand is used to specify reloads and restarts of the systemd manager configuration
 	DaemonReloadCommand = "daemon-reload"
 
+	// IRIRegistryServiceName is the systemd unit for the InternalReleaseImage registry
+	IRIRegistryServiceName = "iri-registry.service"
+
 	// UpdateCATrustServiceName is a service present on CoresOS nodes that runs the update-ca-trust command
 	UpdateCATrustServiceName = "coreos-update-ca-trust.service"
 
