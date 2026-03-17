@@ -392,10 +392,8 @@ func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 		return fmt.Errorf("KubeletConfiguration: autoSizingReserved and systemdReserved cannot be set together")
 	}
 	// Validate that systemReservedCgroup matches systemCgroups if both are set
-	if kcDecoded.SystemReservedCgroup != "" && kcDecoded.SystemCgroups != "" {
-		if kcDecoded.SystemReservedCgroup != kcDecoded.SystemCgroups {
-			return fmt.Errorf("KubeletConfiguration: systemReservedCgroup (%s) must match systemCgroups (%s)", kcDecoded.SystemReservedCgroup, kcDecoded.SystemCgroups)
-		}
+	if kcDecoded.SystemReservedCgroup != "" && kcDecoded.SystemCgroups != "" && kcDecoded.SystemReservedCgroup != kcDecoded.SystemCgroups {
+		return fmt.Errorf("KubeletConfiguration: systemReservedCgroup (%s) must match systemCgroups (%s)", kcDecoded.SystemReservedCgroup, kcDecoded.SystemCgroups)
 	}
 	return nil
 }
