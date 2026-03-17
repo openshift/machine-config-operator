@@ -128,7 +128,7 @@ func (mcc *Controller) HasAcquiredLease() (bool, error) {
 		return false, err
 	}
 
-	return strings.Contains(podAllLogs, "successfully acquired lease"), nil
+	return strings.Contains(strings.ToLower(podAllLogs), "successfully acquired lease"), nil
 }
 
 // GetNode return the node where the machine controller is running
