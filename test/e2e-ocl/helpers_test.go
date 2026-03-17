@@ -313,7 +313,12 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 	moscList, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().List(context.TODO(), metav1.ListOptions{})
 	require.NoError(t, err)
 
-	kubeassert := helpers.AssertClientSet(t, cs)
+	// Create a dedicated context for cleanup verification with reasonable timeout.
+	// Cleanup should complete quickly - if verification takes >2 minutes, something is wrong.
+	// Use a slower poll interval (3s instead of 1s) to reduce API call rate and avoid rate limiting.
+	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cleanupCancel()
+	kubeassert := helpers.AssertClientSet(t, cs).WithContext(cleanupCtx).WithPollInterval(3 * time.Second).Eventually()
 
 	if len(secretList.Items) == 0 {
 		t.Logf("No build-time secrets to clean up")
@@ -736,7 +741,7 @@ func streamContainerLogToFile(ctx context.Context, t *testing.T, cs *framework.C
 			if err != nil {
 				// If the container is waiting to start (e.g., PodInitializing), wait and retry
 				if strings.Contains(err.Error(), "waiting to start") || strings.Contains(err.Error(), "PodInitializing") {
-					time.Sleep(2 * time.Second)
+					time.Sleep(5 * time.Second)
 					continue
 				}
 				return fmt.Errorf("could not get logs for container %s in pod %s: %w", container.Name, pod.Name, err)
