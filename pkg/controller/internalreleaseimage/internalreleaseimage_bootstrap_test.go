@@ -8,7 +8,7 @@ import (
 )
 
 func TestRunInternalReleaseImageBootstrap(t *testing.T) {
-	configs, err := RunInternalReleaseImageBootstrap(&mcfgv1alpha1.InternalReleaseImage{}, iriCertSecret().obj, cconfig().obj)
+	configs, err := RunInternalReleaseImageBootstrap(&mcfgv1alpha1.InternalReleaseImage{}, iriCertSecret().obj, cconfig().obj, nil)
 	assert.NoError(t, err)
 	verifyAllInternalReleaseImageMachineConfigs(t, configs)
 }
