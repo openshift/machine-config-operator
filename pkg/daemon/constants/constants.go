@@ -145,6 +145,10 @@ const (
 	// changes to this path. Note that other files added to the parent directory will not be handled specially
 	GPGNoRebootPath = "/etc/machine-config-daemon/no-reboot/containers-gpg.pub"
 
+	KubernetesCredentialProvidersDir = "/etc/kubernetes/credential-providers"
+
+	KubeletCrioImageCredProviderConfPath = "/etc/systemd/system/kubelet.service.d/40-kubelet-crio-image-credential-provider.conf"
+
 	// rpm-ostree command arguments
 	RPMOSTreeUpdateArg    = "update"
 	RPMOSTreeInstallArg   = "--install"

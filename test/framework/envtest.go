@@ -116,6 +116,7 @@ func NewTestEnv(t *testing.T) *envtest.Environment {
 				filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "operator", "v1", "zz_generated.crd-manifests"),
 				filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "operator", "v1alpha1", "zz_generated.crd-manifests"),
 				filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "config", "v1", "zz_generated.crd-manifests"),
+				filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "config", "v1alpha1", "zz_generated.crd-manifests", "0000_10_config-operator_01_criocredentialproviderconfigs.crd.yaml"),
 				filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "machineconfiguration", "v1", "zz_generated.crd-manifests"),
 				filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "machineconfiguration", "v1alpha1", "zz_generated.crd-manifests"),
 			},
