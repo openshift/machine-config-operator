@@ -25,8 +25,8 @@ contents:
     elif [ -s "$src_path/$default_file" ]; then
       config_file=$default_file
     else
-      echo "No configuration found at $src_path/$host_file or $src_path/$cluster_file"
-      exit 1
+      echo "No configuration found at $src_path/$host_file, $src_path/$cluster_file, or $src_path/$default_file"
+      exit 0
     fi
     
     if [ -e "$src_path/applied" ]; then
