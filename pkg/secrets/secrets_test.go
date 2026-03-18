@@ -182,7 +182,7 @@ type: kubernetes.io/dockercfg`
 		{
 			name:     "Empty JSON object without auths key",
 			bytes:    []byte(`{}`),
-			expected: &DockerConfigJSON{Auths: nil},
+			expected: &DockerConfigJSON{Auths: newDockerConfig()},
 		},
 		{
 			name:        "JSON null literal",
@@ -217,8 +217,8 @@ type: kubernetes.io/dockercfg`
 }
 
 func TestEquality(t *testing.T) {
-	dockerconfigJSON := []byte(`{"auths":{"registry.hostname.com":{"username":"user","email":"user@hostname.com","auth":"s00pers3kr1t"}}}`)
-	dockercfgJSON := []byte(`{"registry.hostname.com":{"username":"user","email":"user@hostname.com","auth":"s00pers3kr1t"}}`)
+	dockerconfigJSONbytes := []byte(`{"auths":{"registry.hostname.com":{"username":"user","email":"user@hostname.com","auth":"s00pers3kr1t"}}}`)
+	dockercfgJSONbytes := []byte(`{"registry.hostname.com":{"username":"user","email":"user@hostname.com","auth":"s00pers3kr1t"}}`)
 
 	k8sDockerConfigJsonSecret := `apiVersion: v1
 data:
@@ -244,27 +244,95 @@ type: kubernetes.io/dockercfg`
 
 	k8sDockercfgYAMLBytes := []byte(k8sDockercfgSecret)
 
-	unequalDockerconfigJSON := []byte(`{"auths":{"other-registry.hostname.com":{"username":"user","email":"user@hostname.com","auth":"s00pers3kr1t"}}}`)
+	unequalDockerconfigJSONbytes := []byte(`{"auths":{"other-registry.hostname.com":{"username":"user","email":"user@hostname.com","auth":"s00pers3kr1t"}}}`)
 
-	is1, err := NewImageRegistrySecret(dockerconfigJSON)
-	assert.NoError(t, err)
+	dockerConfigJSON := DockerConfigJSON{
+		Auths: map[string]DockerConfigEntry{
+			"registry.hostname.com": DockerConfigEntry{
+				Username: "user",
+				Email:    "user@hostname.com",
+				Auth:     "s00pers3kr1t",
+			},
+		},
+	}
 
-	is2, err := NewImageRegistrySecret(dockercfgJSON)
-	assert.NoError(t, err)
+	dockerConfig := DockerConfig{
+		"registry.hostname.com": DockerConfigEntry{
+			Username: "user",
+			Email:    "user@hostname.com",
+			Auth:     "s00pers3kr1t",
+		},
+	}
 
-	is3, err := NewImageRegistrySecret(k8sDockerConfigYAMLBytes)
-	assert.NoError(t, err)
+	testCases := []struct {
+		name          string
+		input1        interface{}
+		input2        interface{}
+		expectedEqual bool
+	}{
+		{
+			name:          "DockerConfigJSON bytes and Dockercfg bytes",
+			input1:        dockerconfigJSONbytes,
+			input2:        dockercfgJSONbytes,
+			expectedEqual: true,
+		},
+		{
+			name:          "Dockercfg bytes and K8s DockerConfig YAML Bytes",
+			input1:        dockercfgJSONbytes,
+			input2:        k8sDockerConfigYAMLBytes,
+			expectedEqual: true,
+		},
+		{
+			name:          "K8s DockerConfig YAML Bytes and K8s DockerCfg YAML Bytes",
+			input1:        k8sDockerConfigYAMLBytes,
+			input2:        k8sDockercfgYAMLBytes,
+			expectedEqual: true,
+		},
+		{
+			name:          "K8s DockerCfg YAML Bytes and unequal DockerConfigJSON bytes",
+			input1:        k8sDockercfgYAMLBytes,
+			input2:        unequalDockerconfigJSONbytes,
+			expectedEqual: false,
+		},
+		{
+			name:          "DockerConfigJSON and DockerConfigJSON bytes",
+			input1:        dockerConfigJSON,
+			input2:        dockerconfigJSONbytes,
+			expectedEqual: true,
+		},
+		{
+			name:          "DockerConfigJSON and DockerConfig",
+			input1:        dockerConfigJSON,
+			input2:        dockerConfig,
+			expectedEqual: true,
+		},
+		{
+			name:          "DockerConfigJSON and DockerConfigJSON bytes with credHelpers ignored",
+			input1:        []byte(`{"auths":{"registry.hostname.com":{"username":"user","email":"user@hostname.com","auth":"s00pers3kr1t"}}, "credHelpers": {"helper-1": "helper"}}`),
+			input2:        dockerconfigJSONbytes,
+			expectedEqual: true,
+		},
+		{
+			name:          "DockerConfigJSON and DockerConfigJSON bytes with credHelpers ignored",
+			input1:        []byte(`{"auths":{"registry.hostname.com":{"username":"user","email":"user@hostname.com","auth":"s00pers3kr1t"}}, "credsStore": {"cred-store-1": "cred-store"}}`),
+			input2:        dockerconfigJSONbytes,
+			expectedEqual: true,
+		},
+	}
 
-	is4, err := NewImageRegistrySecret(k8sDockercfgYAMLBytes)
-	assert.NoError(t, err)
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			// This test uses the private newImageRegistrySecretFromAny() constructor
+			// for easier instantiation with less TDD boilerplate.
+			is1, err := newImageRegistrySecretFromAny(testCase.input1)
+			assert.NoError(t, err)
 
-	is5, err := NewImageRegistrySecret(unequalDockerconfigJSON)
-	assert.NoError(t, err)
+			is2, err := newImageRegistrySecretFromAny(testCase.input2)
+			assert.NoError(t, err)
 
-	assert.True(t, is1.Equal(is2))
-	assert.True(t, is2.Equal(is3))
-	assert.True(t, is3.Equal(is4))
-	assert.False(t, is1.Equal(is5))
+			assert.Equal(t, testCase.expectedEqual, is1.Equal(is2))
+		})
+	}
 }
 
 func TestImageRegistrySecretFromK8s(t *testing.T) {
