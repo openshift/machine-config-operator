@@ -46,6 +46,34 @@ type: kubernetes.io/dockercfg`
 	k8sDockercfgJSONBytes, err := yaml.YAMLToJSON(k8sDockercfgYAMLBytes)
 	require.NoError(t, err)
 
+	k8sDockerConfigJsonSecretMissingKind := `apiVersion: v1
+data:
+  .dockerconfigjson: eyJhdXRocyI6eyJyZWdpc3RyeS5ob3N0bmFtZS5jb20iOnsidXNlcm5hbWUiOiJ1c2VyIiwiZW1haWwiOiJ1c2VyQGhvc3RuYW1lLmNvbSIsImF1dGgiOiJzMDBwZXJzM2tyMXQifX19
+metadata:
+  name: secret
+  # This is needed
+  creationTimestamp:
+type: kubernetes.io/dockerconfigjson`
+
+	k8sDockerConfigYAMLBytesMissingKind := []byte(k8sDockerConfigJsonSecretMissingKind)
+
+	k8sDockerConfigJSONBytesMissingKind, err := yaml.YAMLToJSON(k8sDockerConfigYAMLBytesMissingKind)
+	require.NoError(t, err)
+
+	k8sDockercfgSecretMissingKind := `apiVersion: v1
+data:
+  .dockercfg: eyJyZWdpc3RyeS5ob3N0bmFtZS5jb20iOnsidXNlcm5hbWUiOiJ1c2VyIiwiZW1haWwiOiJ1c2VyQGhvc3RuYW1lLmNvbSIsImF1dGgiOiJzMDBwZXJzM2tyMXQifX0=
+metadata:
+  name: secret
+  # This is needed
+  creationTimestamp:
+type: kubernetes.io/dockercfg`
+
+	k8sDockercfgYAMLBytesMissingKind := []byte(k8sDockercfgSecretMissingKind)
+
+	k8sDockercfgJSONBytesMissingKind, err := yaml.YAMLToJSON(k8sDockercfgYAMLBytesMissingKind)
+	require.NoError(t, err)
+
 	mismatchedK8sDockerConfigJSONSecret := `apiVersion: v1
 data:
   .dockerconfigjson: eyJyZWdpc3RyeS5ob3N0bmFtZS5jb20iOnsidXNlcm5hbWUiOiJ1c2VyIiwiZW1haWwiOiJ1c2VyQGhvc3RuYW1lLmNvbSIsImF1dGgiOiJzMDBwZXJzM2tyMXQifX0=
@@ -192,6 +220,26 @@ type: kubernetes.io/dockercfg`
 		{
 			name:        "Invalid K8s object bytes",
 			bytes:       []byte(`{"kind":"ConfigMap","apiVersion":"v1","metadata":{"name":"configmap"},"data":{"key":"value"}}`),
+			errExpected: true,
+		},
+		{
+			name:        "K8s DockerConfigJSON secret YAML missing kind",
+			bytes:       k8sDockerConfigYAMLBytesMissingKind,
+			errExpected: true,
+		},
+		{
+			name:        "K8s DockerConfigJSON secret JSON missing kind",
+			bytes:       k8sDockerConfigJSONBytesMissingKind,
+			errExpected: true,
+		},
+		{
+			name:        "K8s Dockercfg secret YAML missing kind",
+			bytes:       k8sDockercfgYAMLBytesMissingKind,
+			errExpected: true,
+		},
+		{
+			name:        "K8s Dockercfg secret JSON missing kind",
+			bytes:       k8sDockercfgJSONBytesMissingKind,
 			errExpected: true,
 		},
 	}
