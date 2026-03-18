@@ -14,7 +14,6 @@ import (
 	"github.com/coreos/go-semver/semver"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
@@ -80,7 +79,6 @@ func (a *APIServer) Serve() {
 		mcs.TLSConfig.GetCertificate = certWatcher.GetCertificate
 
 		go func() {
-			log.SetLogger(klog.NewKlogr())
 			if err := certWatcher.Start(context.Background()); err != nil {
 				klog.Fatalf("Certificate watcher failed to start: %v", err)
 			}
