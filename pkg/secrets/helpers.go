@@ -1,6 +1,8 @@
 package secrets
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
@@ -78,4 +80,80 @@ func getSecretTypeMap() map[corev1.SecretType]string {
 		corev1.SecretTypeDockerConfigJson: corev1.DockerConfigJsonKey,
 		corev1.SecretTypeDockercfg:        corev1.DockerConfigKey,
 	}
+}
+
+// Wraps imageRegistrySecretImpl and implements UnmarshalJSON so that
+// progressive JSON decoding may be used.
+type dockerConfigJSONDecoder struct {
+	imageRegistrySecretImpl
+}
+
+// Custom unmarshal method that supports both old-style and new-style
+// DockerConfig unmarshalling.
+func (d *dockerConfigJSONDecoder) UnmarshalJSON(in []byte) error {
+	// Check if we have a nil or zero-length payload.
+	if in == nil || len(in) == 0 {
+		return fmt.Errorf("empty dockerconfig bytes")
+	}
+
+	// Check if the input is just the JSON null literal
+	if bytes.TrimSpace(in) != nil && string(bytes.TrimSpace(in)) == "null" {
+		return fmt.Errorf("dockerconfig bytes contain JSON null")
+	}
+
+	// Next, determine if the JSON payload is valid, but empty (e.g., `{}`).
+	empty := map[string]interface{}{}
+
+	if err := json.Unmarshal(in, &empty); err != nil {
+		return err
+	}
+
+	if len(empty) == 0 {
+		d.cfg.Auths = nil
+		return nil
+	}
+
+	// The JSON payload is not empty, but we don't know what fields are present.
+	// So we decode into a private struct with an Auths field.
+	type cfg struct {
+		Auths json.RawMessage `json:"auths"`
+	}
+
+	c := &cfg{}
+	if err := json.Unmarshal(in, c); err != nil {
+		return fmt.Errorf("could not unmarshal top-level: %w", err)
+	}
+
+	// We determine whether this is a DockerConfigJSON or a DockerConfig by
+	// looking at the length of the Auths field. These are decoded with extra
+	// strictness.
+	if len(c.Auths) > 0 {
+		// If there is an Auths field, we decode into a DockerConfigJSON instance.
+		dcJSON := DockerConfigJSON{}
+		if err := strictJSONDecode(in, &dcJSON); err != nil {
+			return fmt.Errorf("could not decode DockerConfigJSON: %w", err)
+		}
+
+		d.isLegacyStyle = false
+		d.cfg.Auths = dcJSON.Auths
+		return nil
+	}
+
+	// If there is no auths field, we try decoding into a DockerConfig.
+	dc := DockerConfig{}
+	if err := strictJSONDecode(in, &dc); err != nil {
+		return fmt.Errorf("could not decode DockerConfig: %w", err)
+	}
+
+	d.cfg.Auths = dc
+	d.isLegacyStyle = true
+	return nil
+}
+
+// Adds additional strictness to the unmarshalling process by disallowing
+// unknown fields.
+func strictJSONDecode(in []byte, target interface{}) error {
+	decoder := json.NewDecoder(bytes.NewReader(in))
+	decoder.DisallowUnknownFields()
+	return decoder.Decode(target)
 }

@@ -10,7 +10,6 @@
 package secrets
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -182,68 +181,12 @@ func newImageRegistrySecretFromDockerConfig(dc DockerConfig) ImageRegistrySecret
 // to decode a given byte slice into either a DockerConfigJSON or a DockerConfig
 // structure, and then returns an ImageRegistrySecret. It prioritizes DockerConfigJSON.
 func newImageRegistrySecretFromDockerConfigBytes(in []byte) (ImageRegistrySecret, error) {
-	if in == nil || len(in) == 0 {
-		return nil, fmt.Errorf("empty dockerconfig bytes")
+	d := &dockerConfigJSONDecoder{}
+	if err := json.Unmarshal(in, d); err != nil {
+		return nil, err
 	}
 
-	// Check if the input is just the JSON null literal
-	if bytes.TrimSpace(in) != nil && string(bytes.TrimSpace(in)) == "null" {
-		return nil, fmt.Errorf("dockerconfig bytes contain JSON null")
-	}
-
-	errs := []error{}
-
-	cfg, err := decodeDockerConfigJSONBytes(in)
-	if err == nil {
-		if cfg == nil {
-			return nil, fmt.Errorf("decoded DockerConfigJSONBytes is nil")
-		}
-		return &imageRegistrySecretImpl{cfg: *cfg, isLegacyStyle: false}, nil
-	}
-
-	errs = append(errs, err)
-
-	auths, err := decodeDockercfgBytes(in)
-	if err == nil {
-		if auths == nil {
-			return nil, fmt.Errorf("decoded DockercfgBytes is nil")
-		}
-		return &imageRegistrySecretImpl{cfg: DockerConfigJSON{Auths: *auths}, isLegacyStyle: true}, nil
-	}
-
-	errs = append(errs, err)
-
-	return nil, fmt.Errorf("input bytes not dockerconfigjson or dockercfg secret(s): %w", errors.Join(errs...))
-}
-
-// decodeDockerConfigJSONBytes decodes a byte slice into a DockerConfigJSON struct.
-func decodeDockerConfigJSONBytes(in []byte) (*DockerConfigJSON, error) {
-	cfg := &DockerConfigJSON{}
-	err := decodeDockerConfigBytes(in, &cfg)
-	if err != nil {
-		return nil, fmt.Errorf("could not decode dockerconfigjson bytes: %w", err)
-	}
-
-	return cfg, nil
-}
-
-// decodeDockercfgBytes decodes a byte slice into a DockerConfig struct.
-func decodeDockercfgBytes(in []byte) (*DockerConfig, error) {
-	cfg := &DockerConfig{}
-	err := decodeDockerConfigBytes(in, &cfg)
-	if err != nil {
-		return nil, fmt.Errorf("could not decode dockercfg bytes: %w", err)
-	}
-
-	return cfg, nil
-}
-
-// decodeDockerConfigBytes creates a JSON decoder instance with strict settings
-// and attempts to decode the input bytes into the provided target interface.
-func decodeDockerConfigBytes(in []byte, target interface{}) error {
-	decoder := json.NewDecoder(bytes.NewReader(in))
-	decoder.DisallowUnknownFields()
-	return decoder.Decode(target)
+	return &d.imageRegistrySecretImpl, nil
 }
 
 // K8sSecret converts the internal representation of the secret into a format

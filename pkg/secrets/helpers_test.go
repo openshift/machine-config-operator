@@ -160,3 +160,275 @@ func TestNormalizeFuncs(t *testing.T) {
 		})
 	}
 }
+
+func TestDockerConfigJSONDecoder(t *testing.T) {
+	legacySecret := `{"registry.hostname.com":{"username":"user","password":"s3kr1t","auth":"s00pers3kr1t","email":"user@hostname.com"}}`
+	newSecret := `{"auths":` + legacySecret + `}`
+
+	testCases := []struct {
+		name          string
+		input         []byte
+		expected      *dockerConfigJSONDecoder
+		expectError   bool
+		errorContains string
+	}{
+		// Nil and Empty Input
+		{
+			name:          "nil bytes",
+			input:         nil,
+			expectError:   true,
+			errorContains: "empty dockerconfig bytes",
+		},
+		{
+			name:          "zero-length byte slice",
+			input:         []byte{},
+			expectError:   true,
+			errorContains: "empty dockerconfig bytes",
+		},
+		{
+			name:          "JSON null literal",
+			input:         []byte("null"),
+			expectError:   true,
+			errorContains: "dockerconfig bytes contain JSON null",
+		},
+		{
+			name:          "JSON null with whitespace",
+			input:         []byte("  null  "),
+			expectError:   true,
+			errorContains: "dockerconfig bytes contain JSON null",
+		},
+
+		// Valid Empty Object
+		{
+			name:  "empty JSON object",
+			input: []byte("{}"),
+			expected: &dockerConfigJSONDecoder{
+				imageRegistrySecretImpl: imageRegistrySecretImpl{
+					cfg:           DockerConfigJSON{Auths: nil},
+					isLegacyStyle: false,
+				},
+			},
+		},
+
+		// Invalid JSON
+		{
+			name:          "malformed JSON - unclosed brace",
+			input:         []byte(`{"auths":`),
+			expectError:   true,
+			errorContains: "unexpected end of JSON input",
+		},
+		{
+			name:          "malformed JSON - invalid syntax",
+			input:         []byte(`{"auths": invalid}`),
+			expectError:   true,
+			errorContains: "invalid character",
+		},
+		{
+			name:          "invalid JSON - array instead of object",
+			input:         []byte(`["not", "an", "object"]`),
+			expectError:   true,
+			errorContains: "cannot unmarshal array",
+		},
+
+		// Unknown Fields
+		{
+			name:          "unknown field in DockerConfigJSON format",
+			input:         []byte(`{"auths":{},"unknownField":"value"}`),
+			expectError:   true,
+			errorContains: "unknown field",
+		},
+		{
+			name:          "unknown field in DockerConfig format",
+			input:         []byte(`{"registry.hostname.com":{"username":"user","unknownField":"value"}}`),
+			expectError:   true,
+			errorContains: "unknown field",
+		},
+		{
+			name:          "unknown field in DockerConfigEntry",
+			input:         []byte(`{"auths":{"registry.hostname.com":{"username":"user","unknownField":"value"}}}`),
+			expectError:   true,
+			errorContains: "unknown field",
+		},
+
+		// Valid DockerConfigJSON Format
+		{
+			name:  "DockerConfigJSON with empty auths",
+			input: []byte(`{"auths":{}}`),
+			expected: &dockerConfigJSONDecoder{
+				imageRegistrySecretImpl: imageRegistrySecretImpl{
+					cfg: DockerConfigJSON{
+						Auths: DockerConfig{},
+					},
+					isLegacyStyle: false,
+				},
+			},
+		},
+		{
+			name:  "DockerConfigJSON with single registry",
+			input: []byte(newSecret),
+			expected: &dockerConfigJSONDecoder{
+				imageRegistrySecretImpl: imageRegistrySecretImpl{
+					cfg: DockerConfigJSON{
+						Auths: DockerConfig{
+							"registry.hostname.com": {
+								Username: "user",
+								Password: "s3kr1t",
+								Auth:     "s00pers3kr1t",
+								Email:    "user@hostname.com",
+							},
+						},
+					},
+					isLegacyStyle: false,
+				},
+			},
+		},
+		{
+			name: "DockerConfigJSON with multiple registries",
+			input: []byte(`{"auths":{
+				"registry1.com":{"username":"user1","password":"pass1","auth":"auth1","email":"user1@example.com"},
+				"registry2.com":{"username":"user2","password":"pass2","auth":"auth2","email":"user2@example.com"}
+			}}`),
+			expected: &dockerConfigJSONDecoder{
+				imageRegistrySecretImpl: imageRegistrySecretImpl{
+					cfg: DockerConfigJSON{
+						Auths: DockerConfig{
+							"registry1.com": {
+								Username: "user1",
+								Password: "pass1",
+								Auth:     "auth1",
+								Email:    "user1@example.com",
+							},
+							"registry2.com": {
+								Username: "user2",
+								Password: "pass2",
+								Auth:     "auth2",
+								Email:    "user2@example.com",
+							},
+						},
+					},
+					isLegacyStyle: false,
+				},
+			},
+		},
+		{
+			name:  "DockerConfigJSON with minimal fields",
+			input: []byte(`{"auths":{"registry.example.com":{"auth":"dXNlcjpwYXNz"}}}`),
+			expected: &dockerConfigJSONDecoder{
+				imageRegistrySecretImpl: imageRegistrySecretImpl{
+					cfg: DockerConfigJSON{
+						Auths: DockerConfig{
+							"registry.example.com": {
+								Auth: "dXNlcjpwYXNz",
+							},
+						},
+					},
+					isLegacyStyle: false,
+				},
+			},
+		},
+
+		// Valid DockerConfig Format
+		{
+			name:  "DockerConfig with single registry",
+			input: []byte(legacySecret),
+			expected: &dockerConfigJSONDecoder{
+				imageRegistrySecretImpl: imageRegistrySecretImpl{
+					cfg: DockerConfigJSON{
+						Auths: DockerConfig{
+							"registry.hostname.com": {
+								Username: "user",
+								Password: "s3kr1t",
+								Auth:     "s00pers3kr1t",
+								Email:    "user@hostname.com",
+							},
+						},
+					},
+					isLegacyStyle: true,
+				},
+			},
+		},
+		{
+			name: "DockerConfig with multiple registries",
+			input: []byte(`{
+				"registry1.com":{"username":"user1","password":"pass1","auth":"auth1","email":"user1@example.com"},
+				"registry2.com":{"username":"user2","password":"pass2","auth":"auth2","email":"user2@example.com"}
+			}`),
+			expected: &dockerConfigJSONDecoder{
+				imageRegistrySecretImpl: imageRegistrySecretImpl{
+					cfg: DockerConfigJSON{
+						Auths: DockerConfig{
+							"registry1.com": {
+								Username: "user1",
+								Password: "pass1",
+								Auth:     "auth1",
+								Email:    "user1@example.com",
+							},
+							"registry2.com": {
+								Username: "user2",
+								Password: "pass2",
+								Auth:     "auth2",
+								Email:    "user2@example.com",
+							},
+						},
+					},
+					isLegacyStyle: true,
+				},
+			},
+		},
+		{
+			name:  "DockerConfig with minimal fields",
+			input: []byte(`{"registry.example.com":{"auth":"dXNlcjpwYXNz"}}`),
+			expected: &dockerConfigJSONDecoder{
+				imageRegistrySecretImpl: imageRegistrySecretImpl{
+					cfg: DockerConfigJSON{
+						Auths: DockerConfig{
+							"registry.example.com": {
+								Auth: "dXNlcjpwYXNz",
+							},
+						},
+					},
+					isLegacyStyle: true,
+				},
+			},
+		},
+
+		// Malformed Structure
+		{
+			name:          "invalid DockerConfigEntry structure (string instead of object)",
+			input:         []byte(`{"registry.hostname.com":"invalid-string-value"}`),
+			expectError:   true,
+			errorContains: "cannot unmarshal string",
+		},
+		{
+			name:          "invalid auth value type in legacy format",
+			input:         []byte(`{"registry.hostname.com":{"auth":123}}`),
+			expectError:   true,
+			errorContains: "cannot unmarshal number",
+		},
+		{
+			name:          "auths field with invalid value type",
+			input:         []byte(`{"auths":"invalid-string"}`),
+			expectError:   true,
+			errorContains: "cannot unmarshal string",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := &dockerConfigJSONDecoder{}
+			err := d.UnmarshalJSON(tc.input)
+
+			if tc.expectError {
+				assert.Error(t, err)
+				if tc.errorContains != "" {
+					assert.Contains(t, err.Error(), tc.errorContains)
+				}
+				return
+			}
+
+			assert.NoError(t, err)
+			assert.Equal(t, tc.expected.isLegacyStyle, d.isLegacyStyle)
+			assert.Equal(t, tc.expected.cfg.Auths, d.cfg.Auths)
+		})
+	}
+}
