@@ -1,0 +1,29 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    release.openshift.io/major-version: "5"
+    release.openshift.io/feature-gate":  "Example"
+  name: version5-gate-false.test.io
+spec:
+  group: test.io
+  names:
+    kind: major-version-manifest
+    plural: version5-gate-false
+  scope: Cluster
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              image:
+                type: string
+              replicas:
+                type: integer
+                minimum: 1
