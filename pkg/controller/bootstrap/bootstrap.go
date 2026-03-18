@@ -51,6 +51,8 @@ type Bootstrap struct {
 	manifestDir string
 	// pull secret file
 	pullSecretFile string
+	// OSImageStreams factory. Used for testing purposes.
+	imageStreamFactory osimagestream.ImageStreamFactory
 }
 
 // New returns controller for bootstrap
@@ -225,8 +227,8 @@ func (b *Bootstrap) Run(destDir string) error {
 	}
 
 	var osImageStream *mcfgv1alpha1.OSImageStream
-	// Enable OSImageStreams if the FeatureGate is active and the deployment is not OKD
-	if osimagestream.IsFeatureEnabled(fgHandler) {
+	// Enable OSImageStreams if the FeatureGate is active and the control plane topology is not external (e.g., Hypershift)
+	if osimagestream.IsFeatureEnabled(fgHandler) && cconfig.Spec.Infra.Status.ControlPlaneTopology != apicfgv1.ExternalTopologyMode {
 		osImageStream, err = b.fetchOSImageStream(imageStream, cconfig, icspRules, idmsRules, itmsRules, imgCfg, pullSecret)
 		if err != nil {
 			return err
@@ -486,12 +488,21 @@ func (b *Bootstrap) fetchOSImageStream(
 			OSImage:           cconfig.Spec.BaseOSContainerImage,
 			OSExtensionsImage: cconfig.Spec.BaseOSExtensionsContainerImage,
 		},
-		osimagestream.NewDefaultStreamSourceFactory(nil, &osimagestream.DefaultImagesInspectorFactory{}),
+		b.getImageStreamFactory(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error inspecting available OSImageStreams: %w", err)
 	}
 	return osImageStream, nil
+}
+
+// Returns the embedded ImageStreamFactory or constructs a new default one. Used primarily for testing.
+func (b *Bootstrap) getImageStreamFactory() osimagestream.ImageStreamFactory {
+	if b.imageStreamFactory != nil {
+		return b.imageStreamFactory
+	}
+
+	return osimagestream.NewDefaultStreamSourceFactory(nil, &osimagestream.DefaultImagesInspectorFactory{})
 }
 
 func getValidPullSecretFromBytes(sData []byte) (*corev1.Secret, error) {
