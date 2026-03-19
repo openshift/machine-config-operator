@@ -16,7 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/util/diff"
 
-	imagev1 "github.com/openshift/api/image/v1"
 	"github.com/openshift/api/machineconfiguration/v1alpha1"
 	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -167,19 +166,12 @@ spec:
 type fakeImageStreamFactory struct {
 	// The OSImageStream to return.
 	stream *v1alpha1.OSImageStream
-	// Whether the CreateRuntimeSources method was called.
-	createRuntimeSourcesCalled bool
-	// Whether the CreateBootsrapSources method was called.
-	createBootstrapSourcesCalled bool
+	// Whether the Create method was called.
+	createCalled bool
 }
 
-func (f *fakeImageStreamFactory) CreateRuntimeSources(_ context.Context, _ string, _ *types.SystemContext) (*v1alpha1.OSImageStream, error) {
-	f.createRuntimeSourcesCalled = true
-	return f.stream, nil
-}
-
-func (f *fakeImageStreamFactory) CreateBootstrapSources(_ context.Context, _ *imagev1.ImageStream, _ *osimagestream.OSImageTuple, _ *types.SystemContext) (*v1alpha1.OSImageStream, error) {
-	f.createBootstrapSourcesCalled = true
+func (f *fakeImageStreamFactory) Create(ctx context.Context, sysCtx *types.SystemContext, createOptions osimagestream.CreateOptions) (*v1alpha1.OSImageStream, error) {
+	f.createCalled = true
 	return f.stream, nil
 }
 
@@ -231,7 +223,7 @@ func TestBootstrapRunHypershift(t *testing.T) {
 	require.NoError(t, err)
 
 	// Ensure that the values from the OSImageStream are *not* populated into the ControllerConfig.
-	assert.False(t, fakeFactory.createBootstrapSourcesCalled)
+	assert.False(t, fakeFactory.createCalled)
 	cconfigBytes, err := os.ReadFile(filepath.Join(destDir, "controller-config", "machine-config-controller.yaml"))
 	require.NoError(t, err)
 	assert.NotContains(t, string(cconfigBytes), "baseOSContainerImage: registry.host.com/os:latest")
@@ -277,7 +269,7 @@ func TestBootstrapRun(t *testing.T) {
 			assert.NotContains(t, string(ignContents), "release-registry.product.example.org")
 
 			// Ensure that the values from the OSImageStream are populated into the ControllerConfig.
-			assert.True(t, fakeFactory.createBootstrapSourcesCalled)
+			assert.True(t, fakeFactory.createCalled)
 			cconfigBytes, err := os.ReadFile(filepath.Join(destDir, "controller-config", "machine-config-controller.yaml"))
 			require.NoError(t, err)
 			assert.Contains(t, string(cconfigBytes), "baseOSContainerImage: registry.host.com/os:latest")

@@ -150,6 +150,9 @@ func New(
 	if osImageStreamInformer != nil && osimagestream.IsFeatureEnabled(ctrl.fgHandler) {
 		ctrl.osImageStreamLister = osImageStreamInformer.Lister()
 		ctrl.osImageStreamListerSynced = osImageStreamInformer.Informer().HasSynced
+		osImageStreamInformer.Informer().AddEventHandler(
+			cache.ResourceEventHandlerFuncs{UpdateFunc: ctrl.updateOSImageStream},
+		)
 	}
 	return ctrl
 }
@@ -279,6 +282,28 @@ func (ctrl *Controller) updateMachineConfig(old, cur interface{}) {
 		return
 	}
 	for _, p := range pools {
+		ctrl.enqueueMachineConfigPool(p)
+	}
+}
+
+func (ctrl *Controller) updateOSImageStream(old, cur interface{}) {
+	oldOSImageStream := old.(*v1alpha1.OSImageStream)
+	curOSImageStream := cur.(*v1alpha1.OSImageStream)
+
+	// return if status hasn't changed
+	// The operator components only reacts to what the OSImageStream
+	// publish in its status subresource.
+	if reflect.DeepEqual(oldOSImageStream.Status, curOSImageStream.Status) {
+		return
+	}
+	klog.V(4).Info("OSImageStream updated")
+
+	pList, err := ctrl.mcpLister.List(labels.Everything())
+	if err != nil {
+		klog.Errorf("error listing MCPs for OSImageStream update: %v", err)
+	}
+
+	for _, p := range pList {
 		ctrl.enqueueMachineConfigPool(p)
 	}
 }

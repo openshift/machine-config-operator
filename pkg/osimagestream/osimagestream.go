@@ -1,20 +1,20 @@
 package osimagestream
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"maps"
 	"slices"
-	"strings"
 
 	"github.com/containers/image/v5/types"
 	imagev1 "github.com/openshift/api/image/v1"
 	"github.com/openshift/api/machineconfiguration/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	"github.com/openshift/machine-config-operator/pkg/imageutils"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sversion "k8s.io/apimachinery/pkg/util/version"
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 )
@@ -30,100 +30,83 @@ type StreamSource interface {
 
 // ImageStreamFactory creates OS image streams for different runtime contexts.
 type ImageStreamFactory interface {
-	// CreateRuntimeSources builds an OSImageStream for runtime operation.
-	CreateRuntimeSources(ctx context.Context, releaseImage string, sysCtx *types.SystemContext) (*v1alpha1.OSImageStream, error)
-	// CreateBootstrapSources builds an OSImageStream for bootstrap operation.
-	CreateBootstrapSources(ctx context.Context, imageStream *imagev1.ImageStream, cliImages *OSImageTuple, sysCtx *types.SystemContext) (*v1alpha1.OSImageStream, error)
+	// Create builds an OSImageStream from the configured sources and options.
+	Create(ctx context.Context, sysCtx *types.SystemContext, opts CreateOptions) (*v1alpha1.OSImageStream, error)
+}
+
+// CreateOptions configures how an OSImageStream is built.
+// One of ReleaseImage or ReleaseImageStream must be provided.
+type CreateOptions struct {
+	// ReleaseImage is the release payload image to be pulled over the network.
+	// This field is ignored if ReleaseImageStream is given.
+	ReleaseImage string
+	// ReleaseImageStream is the payload ImageStream provided.
+	ReleaseImageStream *imagev1.ImageStream
+	// CliImages are OS images provided via CLI flags.
+	CliImages *OSImageTuple
+	// ConfigMapLister provides access to the osimageurl ConfigMap.
+	ConfigMapLister corelisterv1.ConfigMapLister
+	// ExistingOSImageStream is the current CR used to load user defined configuration in the spec.
+	ExistingOSImageStream *v1alpha1.OSImageStream
+	// InstallVersion is the OCP version the cluster was originally installed with.
+	// Optional: used as a fallback when the ImageStream name cannot be parsed as a version.
+	InstallVersion *k8sversion.Version
 }
 
 // DefaultStreamSourceFactory is the production implementation of ImageStreamFactory.
 type DefaultStreamSourceFactory struct {
 	imagesExtractor  ImageDataExtractor
-	cmLister         corelisterv1.ConfigMapLister
 	inspectorFactory ImagesInspectorFactory
 }
 
 // NewDefaultStreamSourceFactory creates a new DefaultStreamSourceFactory with the provided dependencies.
-func NewDefaultStreamSourceFactory(cmLister corelisterv1.ConfigMapLister, inspectorFactory ImagesInspectorFactory) *DefaultStreamSourceFactory {
-	return &DefaultStreamSourceFactory{imagesExtractor: NewImageStreamExtractor(), cmLister: cmLister, inspectorFactory: inspectorFactory}
+func NewDefaultStreamSourceFactory(inspectorFactory ImagesInspectorFactory) *DefaultStreamSourceFactory {
+	return &DefaultStreamSourceFactory{imagesExtractor: NewImageStreamExtractor(), inspectorFactory: inspectorFactory}
 }
 
-// CreateRuntimeSources builds an OSImageStream for runtime operation.
-func (f *DefaultStreamSourceFactory) CreateRuntimeSources(ctx context.Context, releaseImage string, sysCtx *types.SystemContext) (*v1alpha1.OSImageStream, error) {
-	imagesInspector := f.inspectorFactory.ForContext(sysCtx)
-	sources := []StreamSource{
-		NewOSImagesURLStreamSource(NewConfigMapURLProviders(f.cmLister), f.imagesExtractor, imagesInspector),
-		NewImageStreamStreamSource(imagesInspector, NewImageStreamProviderNetwork(imagesInspector, releaseImage), f.imagesExtractor),
-	}
-	return BuildOSImageStreamFromSources(ctx, sources)
-}
-
-// CreateBootstrapSources builds an OSImageStream for bootstrap operation.
-func (f *DefaultStreamSourceFactory) CreateBootstrapSources(ctx context.Context, imageStream *imagev1.ImageStream, cliImages *OSImageTuple, sysCtx *types.SystemContext) (*v1alpha1.OSImageStream, error) {
+// Create builds an OSImageStream from the configured sources and options.
+func (f *DefaultStreamSourceFactory) Create(ctx context.Context, sysCtx *types.SystemContext, createOptions CreateOptions) (*v1alpha1.OSImageStream, error) {
 	var sources []StreamSource
 	imagesInspector := f.inspectorFactory.ForContext(sysCtx)
-	if cliImages != nil {
-		sources = append(sources, NewOSImagesURLStreamSource(NewStaticURLProvider(*cliImages), f.imagesExtractor, imagesInspector))
+	if createOptions.CliImages != nil {
+		sources = append(sources, NewOSImagesURLStreamSource(NewStaticURLProvider(*createOptions.CliImages), f.imagesExtractor, imagesInspector))
 	}
-	if imageStream != nil {
-		sources = append(sources, NewImageStreamStreamSource(imagesInspector, NewImageStreamProviderResource(imageStream), f.imagesExtractor))
+	if createOptions.ConfigMapLister != nil {
+		sources = append(sources, NewOSImagesURLStreamSource(NewConfigMapURLProviders(createOptions.ConfigMapLister), f.imagesExtractor, imagesInspector))
 	}
-	return BuildOSImageStreamFromSources(ctx, sources)
-}
+	var imageStreamProvider ImageStreamProvider
+	//nolint:gocritic // I disagree that this would be more readable with a switch case @pablintino
+	if createOptions.ReleaseImageStream != nil {
+		imageStreamProvider = NewImageStreamProviderResource(createOptions.ReleaseImageStream)
+	} else if createOptions.ReleaseImage != "" {
+		imageStreamProvider = NewImageStreamProviderNetwork(imagesInspector, createOptions.ReleaseImage)
+	} else {
+		return nil, errors.New("one of ReleaseImageStream or ReleaseImage must be specified")
+	}
+	sources = append(sources, NewImageStreamStreamSource(imagesInspector, imageStreamProvider, f.imagesExtractor))
 
-// BuildOsImageStreamBootstrap builds an OSImageStream for bootstrap using the provided factory.
-func BuildOsImageStreamBootstrap(
-	ctx context.Context,
-	sysCtxBuilder *imageutils.SysContextBuilder,
-	imageStream *imagev1.ImageStream,
-	cliImages *OSImageTuple,
-	factory ImageStreamFactory,
-) (*v1alpha1.OSImageStream, error) {
-	sysCtx, err := sysCtxBuilder.Build()
-	if err != nil {
-		return nil, fmt.Errorf("could not prepare for image inspection: %w", err)
-	}
-	defer func() {
-		if err := sysCtx.Cleanup(); err != nil {
-			klog.Warningf("Unable to clean resources after OSImageStream inspection: %s", err)
-		}
-	}()
-	return factory.CreateBootstrapSources(ctx, imageStream, cliImages, sysCtx.SysContext)
-}
-
-// BuildOsImageStreamRuntime builds an OSImageStream for runtime using the provided factory.
-func BuildOsImageStreamRuntime(
-	ctx context.Context,
-	sysCtxBuilder *imageutils.SysContextBuilder,
-	releaseImage string,
-	factory ImageStreamFactory,
-) (*v1alpha1.OSImageStream, error) {
-	sysCtx, err := sysCtxBuilder.Build()
-	if err != nil {
-		return nil, fmt.Errorf("could not prepare for image inspection: %w", err)
-	}
-	defer func() {
-		if err := sysCtx.Cleanup(); err != nil {
-			klog.Warningf("Unable to clean resources after OSImageStream inspection: %s", err)
-		}
-	}()
-	return factory.CreateRuntimeSources(ctx, releaseImage, sysCtx.SysContext)
-}
-
-// BuildOSImageStreamFromSources aggregates streams from multiple sources into a single OSImageStream.
-func BuildOSImageStreamFromSources(ctx context.Context, sources []StreamSource) (*v1alpha1.OSImageStream, error) {
 	streams := collect(ctx, sources)
 	if len(streams) == 0 {
 		return nil, ErrorNoOSImageStreamAvailable
 	}
 
-	// TODO: This logic is temporal till we make an agreement on
-	// how to propagate the default stream value (ie, injected by
-	// the installer)
-	defaultStream, err := getDefaultStreamSet(streams)
+	defaultStream, err := getDefaultStreamSet(streams, &createOptions)
 	if err != nil {
 		return nil, fmt.Errorf("could not find default OSImageStream in the available streams: %w", err)
 	}
+
+	return newOSImageStream(createOptions.ExistingOSImageStream, streams, defaultStream), nil
+}
+
+// newOSImageStream assembles the OSImageStream CR from the resolved streams, default, and existing spec.
+func newOSImageStream(existing *v1alpha1.OSImageStream, streams []v1alpha1.OSImageStreamSet, defaultStream string) *v1alpha1.OSImageStream {
+	var spec *v1alpha1.OSImageStreamSpec
+	if existing != nil && existing.Spec != nil {
+		spec = existing.Spec.DeepCopy()
+	} else {
+		spec = &v1alpha1.OSImageStreamSpec{}
+	}
+
 	return &v1alpha1.OSImageStream{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: ctrlcommon.ClusterInstanceNameOSImageStream,
@@ -131,30 +114,42 @@ func BuildOSImageStreamFromSources(ctx context.Context, sources []StreamSource) 
 				ctrlcommon.ReleaseImageVersionAnnotationKey: version.Hash,
 			},
 		},
-		Spec: &v1alpha1.OSImageStreamSpec{},
+		Spec: spec,
 		Status: v1alpha1.OSImageStreamStatus{
 			DefaultStream:    defaultStream,
 			AvailableStreams: streams,
 		},
-	}, nil
+	}
 }
 
-func getDefaultStreamSet(streams []v1alpha1.OSImageStreamSet) (string, error) {
-	// TODO This logic is temporal. For now, try to locate the RHEL 9 one in best effort
-	// Make a copy to avoid modifying the input slice
+// getDefaultStreamSet returns the effective default stream: the user override if valid, otherwise the builtin.
+func getDefaultStreamSet(streams []v1alpha1.OSImageStreamSet, createOptions *CreateOptions) (string, error) {
 	streamNames := GetStreamSetsNames(streams)
 
-	// Sort by name length (shortest first) to prefer simpler names
-	slices.SortFunc(streamNames, func(a, b string) int {
-		return len(a) - len(b)
-	})
-
-	for _, stream := range streamNames {
-		if (strings.Contains(stream, "coreos-9") || strings.Contains(stream, "9-coreos") || strings.Contains(stream, "9")) && !strings.Contains(stream, "10") {
-			return stream, nil
-		}
+	existingOSImageStream := createOptions.ExistingOSImageStream
+	requestedDefaultStream := GetOSImageStreamSpecDefault(existingOSImageStream)
+	if requestedDefaultStream == "" && existingOSImageStream != nil && existingOSImageStream.Status.DefaultStream != "" {
+		// If the spec is empty but the CR is already populated pick whatever existed
+		requestedDefaultStream = existingOSImageStream.Status.DefaultStream
 	}
-	return "", errors.New("could not find default stream in the list of OSImageStreams. No stream points to RHEL9")
+	if requestedDefaultStream == "" {
+		// No user preference: if there's only one stream just use it,
+		// otherwise fall back to the builtin default.
+		if len(streams) == 1 {
+			return streams[0].Name, nil
+		}
+		builtinDefault, err := GetBuiltinDefaultStreamName(createOptions.InstallVersion)
+		if err != nil {
+			return "", fmt.Errorf("could not determine the builtin default stream: %w", err)
+		}
+		requestedDefaultStream = builtinDefault
+	}
+
+	if slices.Contains(streamNames, requestedDefaultStream) {
+		return requestedDefaultStream, nil
+	}
+
+	return "", fmt.Errorf("could not find the requested %s default stream in the list of OSImageStreams %s", requestedDefaultStream, streamNames)
 }
 
 func collect(ctx context.Context, sources []StreamSource) []v1alpha1.OSImageStreamSet {
@@ -175,5 +170,10 @@ func collect(ctx context.Context, sources []StreamSource) []v1alpha1.OSImageStre
 			result[stream.Name] = *stream
 		}
 	}
-	return slices.Collect(maps.Values(result))
+	// Sort by name for consistent ordering across reconciliations
+	streams := slices.Collect(maps.Values(result))
+	slices.SortFunc(streams, func(a, b v1alpha1.OSImageStreamSet) int {
+		return cmp.Compare(a.Name, b.Name)
+	})
+	return streams
 }

@@ -389,7 +389,11 @@ func (ctrl *Controller) initializeInternalReleaseImageStatus(iri *mcfgv1alpha1.I
 	klog.V(4).Infof("Initializing status for InternalReleaseImage %s", iri.Name)
 
 	// Get the release payload image from ClusterVersion
-	releaseImage, err := osimagestream.GetReleasePayloadImage(ctrl.clusterVersionLister)
+	clusterVersion, err := osimagestream.GetClusterVersion(ctrl.clusterVersionLister)
+	if err != nil {
+		return fmt.Errorf("error getting ClusterVersion for InternalReleaseImage status initialization: %w", err)
+	}
+	releaseImage, err := osimagestream.GetReleasePayloadImage(clusterVersion)
 	if err != nil {
 		return fmt.Errorf("error getting Release Image from ClusterVersion for InternalReleaseImage status initialization: %w", err)
 	}

@@ -1,0 +1,19 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: "osimagestream-prevent-deletion"
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    matchPolicy: Equivalent
+    namespaceSelector: {}
+    objectSelector: {}
+    resourceRules:
+    - apiGroups:   ["machineconfiguration.openshift.io"]
+      apiVersions: ["v1alpha1"]
+      operations:  ["DELETE"]
+      resources:   ["osimagestreams"]
+      scope: "*"
+  validations:
+    - expression: "false"
+      message: "Deletion of OSImageStream resources is not allowed"
