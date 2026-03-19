@@ -432,7 +432,10 @@ func checkFiredAlert(oc *exutil.CLI, mcp *MachineConfigPool, params checkFiredAl
 
 	logger.Infof("Found %s alerts: %v", params.expectedAlertName, alertJSON)
 	alert := alertJSON[0]
-	annotationsMap := alert["annotations"].(map[string]interface{})
+	annotationsVal, ok := alert["annotations"]
+	o.Expect(ok).To(o.BeTrue(), "Alert does not contain 'annotations' key")
+	annotationsMap, ok := annotationsVal.(map[string]interface{})
+	o.Expect(ok).To(o.BeTrue(), "Alert 'annotations' is not a map[string]interface{}")
 	logger.Infof("OK!\n")
 
 	if params.expectedAlertAnnotations != nil {
@@ -450,7 +453,10 @@ func checkFiredAlert(oc *exutil.CLI, mcp *MachineConfigPool, params checkFiredAl
 	}
 
 	exutil.By("Verify alert's labels")
-	labelsMap := alert["labels"].(map[string]interface{})
+	labelsVal, ok := alert["labels"]
+	o.Expect(ok).To(o.BeTrue(), "Alert does not contain 'labels' key")
+	labelsMap, ok := labelsVal.(map[string]interface{})
+	o.Expect(ok).To(o.BeTrue(), "Alert 'labels' is not a map[string]interface{}")
 
 	// Since OCPBUGS-904 we need to check that the namespace is reported properly in all the alerts
 	o.Expect(labelsMap).To(o.HaveKeyWithValue("namespace", MachineConfigNamespace),
@@ -498,7 +504,7 @@ func checkFiredAlert(oc *exutil.CLI, mcp *MachineConfigPool, params checkFiredAl
 	logger.Infof("OK!\n")
 
 	if params.stillPresentDuration.Minutes() != 0 {
-		exutil.By(fmt.Sprintf("Verfiy that the alert is not removed after %s", params.stillPresentDuration))
+		exutil.By(fmt.Sprintf("Verify that the alert is not removed after %s", params.stillPresentDuration))
 		o.Consistently(getAlertsByName, params.stillPresentDuration, params.stillPresentDuration/3).WithArguments(oc, params.expectedAlertName).
 			Should(o.HaveLen(1),
 				"Expected %s alert to be present, but the alert was removed for no reason!", params.expectedAlertName)
@@ -508,13 +514,15 @@ func checkFiredAlert(oc *exutil.CLI, mcp *MachineConfigPool, params checkFiredAl
 }
 
 func checkFixedAlert(oc *exutil.CLI, mcp *MachineConfigPool, expectedAlertName string) {
-	exutil.By("Verfiy that the pool stops being degraded")
-	o.Eventually(mcp,
-		"10m", "30s").ShouldNot(BeDegraded(),
-		"After fixing the reboot process the %s MCP should stop being degraded", mcp.GetName())
-	logger.Infof("OK!\n")
+	if mcp != nil {
+		exutil.By("Verify that the pool stops being degraded")
+		o.Eventually(mcp,
+			"10m", "30s").ShouldNot(BeDegraded(),
+			"After fixing the reboot process the %s MCP should stop being degraded", mcp.GetName())
+		logger.Infof("OK!\n")
+	}
 
-	exutil.By("Verfiy that the alert is not triggered anymore")
+	exutil.By("Verify that the alert is not triggered anymore")
 	o.Eventually(getAlertsByName, "5m", "20s").WithArguments(oc, expectedAlertName).
 		Should(o.HaveLen(0),
 			"Expected %s alert to be removed after the problem is fixed!", expectedAlertName)

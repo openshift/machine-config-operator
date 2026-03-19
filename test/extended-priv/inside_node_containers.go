@@ -169,7 +169,6 @@ func (b *OsImageBuilderInNode) preparePushToInternalRegistry() error {
 		logger.Errorf("Error getting token for SA %s", layeringRegistryAdminSAName)
 		return err
 	}
-	logger.Debugf("SA TOKEN: %s", saToken)
 	logger.Infof("OK!\n")
 
 	logger.Infof("Loging as registry admin to internal registry")
