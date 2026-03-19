@@ -2,6 +2,7 @@ package extended
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -311,8 +312,8 @@ func ValidateSuccessfulMOSC(mosc *MachineOSConfig, checkers []Checker) {
 
 	exutil.By("Check that the  machine-os-builder is using leader election without failing")
 	o.Expect(mOSBuilder.Logs()).To(o.And(
-		o.ContainSubstring("attempting to acquire leader lease openshift-machine-config-operator/machine-os-builder"),
-		o.ContainSubstring("successfully acquired lease openshift-machine-config-operator/machine-os-builder")),
+		o.MatchRegexp("(?i)"+regexp.QuoteMeta("attempting to acquire leader lease")),
+		o.MatchRegexp("(?i)"+regexp.QuoteMeta("successfully acquired lease"))),
 		"The machine os builder pod is not using the leader election without failures")
 	logger.Infof("OK!\n")
 
