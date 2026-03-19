@@ -15,6 +15,7 @@ import (
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 	"github.com/openshift/machine-config-operator/test/extended-priv/util/architecture"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
+	"github.com/tidwall/gjson"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
@@ -1306,18 +1307,18 @@ func (nl NodeList) GetAllMasterNodes() ([]*Node, error) {
 	return nl.GetAll()
 }
 
-// GetAllMasterNodesOrFail returns a list of master Nodes
-func (nl NodeList) GetAllMasterNodesOrFail() []*Node {
-	masters, err := nl.GetAllMasterNodes()
-	o.Expect(err).NotTo(o.HaveOccurred())
-	return masters
-}
-
 // GetAllWorkerNodes returns a list of worker Nodes
 func (nl NodeList) GetAllWorkerNodes() ([]*Node, error) {
 	nl.ByLabel("node-role.kubernetes.io/worker=")
 
 	return nl.GetAll()
+}
+
+// GetAllMasterNodesOrFail returns a list of master Nodes
+func (nl NodeList) GetAllMasterNodesOrFail() []*Node {
+	masters, err := nl.GetAllMasterNodes()
+	o.Expect(err).NotTo(o.HaveOccurred())
+	return masters
 }
 
 // GetAllLinuxWorkerNodes returns a list of linux worker Nodes
@@ -1375,6 +1376,41 @@ func quietRecoverNamespaceRestricted(oc *exutil.CLI, namespace string) error {
 
 	logger.Debugf("Recovering namespace %s from privileged", namespace)
 	return exutil.RecoverNamespaceRestricted(oc, namespace)
+}
+
+// BreakRebootInNode breaks the reboot process in a node
+func BreakRebootInNode(node *Node) error {
+	logger.Infof("Breaking reboot process in node %s", node.GetName())
+	_, err := node.DebugNodeWithChroot("sh", "-c", "touch /tmp/dummy-systemd-run; nsenter --mount=/proc/1/ns/mnt mount --bind /tmp/dummy-systemd-run /usr/bin/systemd-run")
+	return err
+}
+
+// FixRebootInNode fixes the reboot process in a node
+func FixRebootInNode(node *Node) error {
+	logger.Infof("Fixing reboot process in node %s", node.GetName())
+	_, err := node.DebugNodeWithChroot("sh", "-c", "nsenter --mount=/proc/1/ns/mnt umount /usr/bin/systemd-run")
+	return err
+}
+
+// BreakRebaseInNode breaks the rpm-ostree rebase process in a node
+func BreakRebaseInNode(node *Node) error {
+	logger.Infof("Breaking rpm-ostree rebase process in node %s", node.GetName())
+	brokenRpmOstree := generateTemplateAbsolutePath("rpm-ostree-force-pivot-error.sh")
+	node.CopyFromLocal(brokenRpmOstree, "/tmp/rpm-ostree.broken")
+	_, err := node.DebugNodeWithChroot("sh", "-c",
+		"chmod +x /tmp/rpm-ostree.broken; "+
+			"cp /usr/bin/rpm-ostree /tmp/rpm-ostree; "+
+			"nsenter --mount=/proc/1/ns/mnt mount --bind /tmp/rpm-ostree.broken /usr/bin/rpm-ostree; "+
+			"restorecon -v /usr/bin/rpm-ostree")
+	return err
+}
+
+// FixRebaseInNode fixes the rpm-ostree rebase process in a node
+func FixRebaseInNode(node *Node) error {
+	logger.Infof("Fixing rpm-ostree rebase process in node %s", node.GetName())
+
+	_, err := node.DebugNodeWithChroot("sh", "-c", "pkill -9 rpm-ostree; nsenter --mount=/proc/1/ns/mnt umount /usr/bin/rpm-ostree")
+	return err
 }
 
 // GetOperatorNode returns the node running the MCO operator pod
@@ -1437,4 +1473,19 @@ func (n *Node) GetIrreconcilableChanges() (string, error) {
 		return "", nil
 	}
 	return irreconcilableChanges, nil
+}
+
+// GetRHCOSVersion returns the RHCOS version of the node
+func (n *Node) GetRHCOSVersion() (string, error) {
+	deployment, err := n.GetBootedOsTreeDeployment(true)
+	if err != nil {
+		return "", fmt.Errorf("failed to get booted ostree deployment from node %s: %w", n.GetName(), err)
+	}
+
+	rhcosVersion := gjson.Get(deployment, "version").String()
+	if rhcosVersion == "" {
+		return "", fmt.Errorf("RHCOS version is empty for node %s", n.GetName())
+	}
+
+	return rhcosVersion, nil
 }
