@@ -23,6 +23,9 @@ const (
 	// ControllerLabelValue value used to identify the controller pod
 	ControllerLabelValue = "machine-config-controller"
 
+	// EnvVarLayeringTestImageRepository environment variable to define the image repository used by layering test cases
+	EnvVarLayeringTestImageRepository = "LAYERING_TEST_IMAGE_REPOSITORY"
+
 	// DefaultLayeringQuayRepository the quay repository that will be used by default to push auxiliary layering images
 	DefaultLayeringQuayRepository = "quay.io/mcoqe/layering"
 	// InternalRegistrySvcURL is the url to reach the internal registry service from inside a cluster
@@ -30,6 +33,8 @@ const (
 
 	// LayeringBaseImageReleaseInfo is the name of the layering base image in release info
 	LayeringBaseImageReleaseInfo = "rhel-coreos"
+	// LayeringBaseImageReleaseInfoRhel10 is the name of the RHEL10 layering base image in release info
+	LayeringBaseImageReleaseInfoRhel10 = "rhel-coreos-10"
 	// GenericMCTemplate is the name of a MachineConfig template that can be fully configured by parameters
 	GenericMCTemplate = "generic-machine-config-template.yml"
 
@@ -47,6 +52,9 @@ const (
 
 	// ExpirationDockerfileLabel Expiration label in Dockerfile
 	ExpirationDockerfileLabel = `LABEL maintainer="mco-qe-team" quay.expires-after=24h`
+
+	layeringTestsTmpNamespace   = "layering-tests-imagestreams"
+	layeringRegistryAdminSAName = "test-registry-sa"
 
 	// DefaultExpectTimeout is the default timeout for expect operations
 	DefaultExpectTimeout = 10 * time.Second

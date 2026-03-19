@@ -155,6 +155,11 @@ func remoteShPod(oc *CLI, namespace, podName string, needBash, needChroot bool, 
 	return oc.AsAdmin().WithoutNamespace().Run("rsh").Args(containerArgs...).Output()
 }
 
+// RemoteShPod creates a remote shell of the given pod
+func RemoteShPod(oc *CLI, namespace, podName string, cmd ...string) (string, error) {
+	return remoteShPod(oc, namespace, podName, false, false, "", cmd...)
+}
+
 // RemoteShContainer creates a remote shell of the given container inside the pod
 func RemoteShContainer(oc *CLI, namespace, podName, container string, cmd ...string) (string, error) {
 	return remoteShPod(oc, namespace, podName, false, false, container, cmd...)

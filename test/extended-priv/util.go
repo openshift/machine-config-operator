@@ -1193,3 +1193,46 @@ func skipTestIfNotSupportedPlatform(oc *exutil.CLI, notsupported ...string) {
 		}
 	}
 }
+
+func getAlertsByName(oc *exutil.CLI, alertName string) ([]map[string]interface{}, error) {
+
+	mon, monErr := exutil.NewPrometheusMonitor(oc.AsAdmin())
+	if monErr != nil {
+		return nil, monErr
+	}
+
+	allAlerts, allAlertsErr := mon.GetAlerts()
+
+	if allAlertsErr != nil {
+		return nil, allAlertsErr
+	}
+
+	logger.Infof("get all alerts: %s\n", allAlerts)
+
+	// Validate JSON
+	if !gjson.Valid(allAlerts) {
+		return nil, fmt.Errorf("Cannot parse json string: %s", allAlerts)
+	}
+
+	// Use gjson to filter alerts by name - translate JSONPath to gjson syntax
+	// Original JSONPath: {.data.alerts[?(@.labels.alertname=="%s")]}
+	// gjson syntax: data.alerts.#(labels.alertname=="%s")#
+	gjsonPath := fmt.Sprintf(`data.alerts.#(labels.alertname=="%s")#`, alertName)
+	filteredAlertsResult := gjson.Get(allAlerts, gjsonPath)
+
+	if !filteredAlertsResult.IsArray() {
+		return nil, fmt.Errorf("Expected filtered alerts to be an array, but got: %s", filteredAlertsResult.String())
+	}
+
+	// Convert gjson.Result array to []map[string]interface{} using Value()
+	filteredAlerts := []map[string]interface{}{}
+	for _, alert := range filteredAlertsResult.Array() {
+		alertMap, ok := alert.Value().(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("Error converting alert to map: %v", alert)
+		}
+		filteredAlerts = append(filteredAlerts, alertMap)
+	}
+
+	return filteredAlerts, nil
+}
