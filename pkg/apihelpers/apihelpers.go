@@ -32,6 +32,14 @@ var (
 				},
 			},
 			{
+				Path: constants.IRIRegistryAuthFile,
+				Actions: []opv1.NodeDisruptionPolicyStatusAction{
+					{
+						Type: opv1.NoneStatusAction,
+					},
+				},
+			},
+			{
 				Path: constants.GPGNoRebootPath,
 				Actions: []opv1.NodeDisruptionPolicyStatusAction{
 					{

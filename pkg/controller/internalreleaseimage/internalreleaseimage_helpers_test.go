@@ -3,6 +3,7 @@ package internalreleaseimage
 // Test builders and helper methods.
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -35,10 +36,32 @@ func verifyInternalReleaseMasterMachineConfig(t *testing.T, mc *mcfgv1.MachineCo
 	assert.Len(t, ignCfg.Systemd.Units, 1)
 	assert.Contains(t, *ignCfg.Systemd.Units[0].Contents, "docker-registry-image-pullspec")
 
-	assert.Len(t, ignCfg.Storage.Files, 4, "Found an unexpected file")
+	assert.Len(t, ignCfg.Storage.Files, 5, "Found an unexpected file")
 	verifyIgnitionFile(t, &ignCfg, "/etc/pki/ca-trust/source/anchors/iri-root-ca.crt", "iri-root-ca-data")
 	verifyIgnitionFile(t, &ignCfg, "/etc/iri-registry/certs/tls.key", "iri-tls-key")
 	verifyIgnitionFile(t, &ignCfg, "/etc/iri-registry/certs/tls.crt", "iri-tls-crt")
+	verifyIgnitionFile(t, &ignCfg, "/etc/iri-registry/auth/htpasswd", "")
+	verifyIgnitionFileContains(t, &ignCfg, "/usr/local/bin/load-registry-image.sh", "docker-registry-image-pullspec")
+}
+
+func verifyInternalReleaseMasterMachineConfigWithAuth(t *testing.T, mc *mcfgv1.MachineConfig) {
+	assert.Equal(t, masterName(), mc.Name)
+	assert.Equal(t, ctrlcommon.MachineConfigPoolMaster, mc.Labels[mcfgv1.MachineConfigRoleLabelKey])
+	assert.Equal(t, controllerKind.Kind, mc.OwnerReferences[0].Kind)
+
+	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+	assert.NoError(t, err, mc.Name)
+
+	assert.Len(t, ignCfg.Systemd.Units, 1)
+	assert.Contains(t, *ignCfg.Systemd.Units[0].Contents, "docker-registry-image-pullspec")
+	assert.Contains(t, *ignCfg.Systemd.Units[0].Contents, "REGISTRY_AUTH_HTPASSWD_REALM")
+	assert.Contains(t, *ignCfg.Systemd.Units[0].Contents, "REGISTRY_AUTH_HTPASSWD_PATH")
+
+	assert.Len(t, ignCfg.Storage.Files, 5, "Found an unexpected file")
+	verifyIgnitionFile(t, &ignCfg, "/etc/pki/ca-trust/source/anchors/iri-root-ca.crt", "iri-root-ca-data")
+	verifyIgnitionFile(t, &ignCfg, "/etc/iri-registry/certs/tls.key", "iri-tls-key")
+	verifyIgnitionFile(t, &ignCfg, "/etc/iri-registry/certs/tls.crt", "iri-tls-crt")
+	verifyIgnitionFile(t, &ignCfg, "/etc/iri-registry/auth/htpasswd", "openshift:$2y$05$testhash")
 	verifyIgnitionFileContains(t, &ignCfg, "/usr/local/bin/load-registry-image.sh", "docker-registry-image-pullspec")
 }
 
@@ -140,6 +163,15 @@ func cconfig() *controllerConfigBuilder {
 	}
 }
 
+func (ccb *controllerConfigBuilder) withDNS(baseDomain string) *controllerConfigBuilder {
+	ccb.obj.Spec.DNS = &configv1.DNS{
+		Spec: configv1.DNSSpec{
+			BaseDomain: baseDomain,
+		},
+	}
+	return ccb
+}
+
 func (ccb *controllerConfigBuilder) dockerRegistryImage(image string) *controllerConfigBuilder {
 	ccb.obj.Spec.Images[templatectrl.DockerRegistryKey] = image
 	return ccb
@@ -224,6 +256,35 @@ func (sb *secretBuilder) build() runtime.Object {
 	return sb.obj
 }
 
+func pullSecret() *secretBuilder {
+	return &secretBuilder{
+		obj: &corev1.Secret{
+			ObjectMeta: v1.ObjectMeta{
+				Namespace: ctrlcommon.OpenshiftConfigNamespace,
+				Name:      ctrlcommon.GlobalPullSecretName,
+			},
+			Data: map[string][]byte{
+				corev1.DockerConfigJsonKey: []byte(`{"auths":{"quay.io":{"auth":"dGVzdDp0ZXN0"}}}`),
+			},
+		},
+	}
+}
+
+func iriAuthSecret() *secretBuilder {
+	return &secretBuilder{
+		obj: &corev1.Secret{
+			ObjectMeta: v1.ObjectMeta{
+				Namespace: ctrlcommon.MCONamespace,
+				Name:      ctrlcommon.InternalReleaseImageAuthSecretName,
+			},
+			Data: map[string][]byte{
+				"htpasswd": []byte("openshift:$2y$05$testhash"),
+				"password": []byte("testpassword"),
+			},
+		},
+	}
+}
+
 // clusterVersionBuilder simplifies the creation of a Secret resource in the test.
 type clusterVersionBuilder struct {
 	obj *configv1.ClusterVersion
@@ -246,4 +307,105 @@ func clusterVersion() *clusterVersionBuilder {
 
 func (cvb *clusterVersionBuilder) build() runtime.Object {
 	return cvb.obj
+}
+
+// mcpBuilder simplifies the creation of a MachineConfigPool resource in the test.
+type mcpBuilder struct {
+	obj *mcfgv1.MachineConfigPool
+}
+
+func mcp(name string, renderedMCName string) *mcpBuilder {
+	return &mcpBuilder{
+		obj: &mcfgv1.MachineConfigPool{
+			ObjectMeta: v1.ObjectMeta{
+				Name: name,
+			},
+			Spec: mcfgv1.MachineConfigPoolSpec{
+				Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{
+					ObjectReference: corev1.ObjectReference{
+						Name: renderedMCName,
+					},
+				},
+			},
+			Status: mcfgv1.MachineConfigPoolStatus{
+				Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{
+					ObjectReference: corev1.ObjectReference{
+						Name: renderedMCName,
+					},
+				},
+				MachineCount:        3,
+				UpdatedMachineCount: 3,
+				ReadyMachineCount:   3,
+			},
+		},
+	}
+}
+
+func (mb *mcpBuilder) notUpdated() *mcpBuilder {
+	mb.obj.Status.UpdatedMachineCount = 1
+	mb.obj.Status.ReadyMachineCount = 1
+	return mb
+}
+
+func (mb *mcpBuilder) build() runtime.Object {
+	return mb.obj
+}
+
+// renderedMCBuilder creates a rendered MachineConfig with a pull secret embedded
+// in ignition at /var/lib/kubelet/config.json.
+type renderedMCBuilder struct {
+	obj        *mcfgv1.MachineConfig
+	pullSecret string
+}
+
+func renderedMC(name string) *renderedMCBuilder {
+	return &renderedMCBuilder{
+		obj: &mcfgv1.MachineConfig{
+			ObjectMeta: v1.ObjectMeta{
+				Name: name,
+			},
+			Spec: mcfgv1.MachineConfigSpec{},
+		},
+	}
+}
+
+func (rb *renderedMCBuilder) withIRICredentials(baseDomain string, username string, password string) *renderedMCBuilder {
+	rb.pullSecret = pullSecretWithIRIAuthAndUsername(baseDomain, username, password)
+	return rb
+}
+
+func (rb *renderedMCBuilder) build() runtime.Object {
+	if rb.pullSecret != "" {
+		ignCfg := ctrlcommon.NewIgnConfig()
+		ignCfg.Storage.Files = append(ignCfg.Storage.Files,
+			ctrlcommon.NewIgnFile("/var/lib/kubelet/config.json", rb.pullSecret))
+		raw, _ := json.Marshal(ignCfg)
+		rb.obj.Spec.Config.Raw = raw
+	}
+	return rb.obj
+}
+
+// iriAuthSecretBuilder simplifies the creation of an IRI auth secret with
+// customizable password and htpasswd fields.
+type iriAuthSecretBuilder struct {
+	obj *corev1.Secret
+}
+
+func iriAuthSecretCustom(password string, htpasswd string) *iriAuthSecretBuilder {
+	return &iriAuthSecretBuilder{
+		obj: &corev1.Secret{
+			ObjectMeta: v1.ObjectMeta{
+				Namespace: ctrlcommon.MCONamespace,
+				Name:      ctrlcommon.InternalReleaseImageAuthSecretName,
+			},
+			Data: map[string][]byte{
+				"htpasswd": []byte(htpasswd),
+				"password": []byte(password),
+			},
+		},
+	}
+}
+
+func (ab *iriAuthSecretBuilder) build() runtime.Object {
+	return ab.obj
 }

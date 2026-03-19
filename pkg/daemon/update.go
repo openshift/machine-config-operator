@@ -608,6 +608,7 @@ func calculatePostConfigChangeActionFromMCDiffs(diffFileSet []string) (actions [
 	filesPostConfigChangeActionNone := []string{
 		caBundleFilePath,
 		constants.KubeletAuthFile,
+		constants.IRIRegistryAuthFile,
 	}
 	directoriesPostConfigChangeActionNone := []string{
 		constants.OpenShiftNMStateConfigDir,
