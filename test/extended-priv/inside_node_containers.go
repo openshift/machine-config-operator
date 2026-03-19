@@ -2,6 +2,7 @@ package extended
 
 import (
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"strings"
 
@@ -9,6 +10,31 @@ import (
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 	e2e "k8s.io/kubernetes/test/e2e/framework"
 )
+
+// sanitizeProxy redacts userinfo (credentials) from a proxy URL for safe logging.
+// If the value is not a valid URL it is returned as-is.
+func sanitizeProxy(proxy string) string {
+	u, err := url.Parse(proxy)
+	if err != nil || u.User == nil {
+		return proxy
+	}
+	u.User = url.User("<redacted>")
+	return u.String()
+}
+
+// sanitizeCommand returns the command string with proxy credentials redacted for logging.
+func (b *OsImageBuilderInNode) sanitizeCommand(cmd string) string {
+	var oldnew []string
+	for _, p := range []string{b.httpProxy, b.httpsProxy, b.noProxy} {
+		if p != "" && sanitizeProxy(p) != p {
+			oldnew = append(oldnew, p, sanitizeProxy(p))
+		}
+	}
+	if len(oldnew) == 0 {
+		return cmd
+	}
+	return strings.NewReplacer(oldnew...).Replace(cmd)
+}
 
 // OsImageBuilderInNode encapsulates the functionality to build custom osImages inside a cluster node
 type OsImageBuilderInNode struct {
@@ -22,7 +48,6 @@ type OsImageBuilderInNode struct {
 	noProxy,
 	tmpDir,
 	remoteTmpDir,
-	remoteKubeconfig,
 	remoteDockerConfig,
 	remoteDockerfile string
 	UseInternalRegistry,
@@ -61,9 +86,6 @@ func (b *OsImageBuilderInNode) prepareEnvironment() error {
 		return fmt.Errorf("Error creating tmp dir %s in node %s. Error: %s", b.remoteTmpDir, b.node.GetName(), err)
 	}
 
-	if b.remoteKubeconfig == "" {
-		b.remoteKubeconfig = filepath.Join(b.remoteTmpDir, "kubeconfig")
-	}
 	if b.remoteDockerConfig == "" {
 		b.remoteDockerConfig = filepath.Join(b.remoteTmpDir, ".dockerconfigjson")
 	}
@@ -169,10 +191,11 @@ func (b *OsImageBuilderInNode) preparePushToInternalRegistry() error {
 		logger.Errorf("Error getting token for SA %s", layeringRegistryAdminSAName)
 		return err
 	}
-	logger.Debugf("SA TOKEN: %s", saToken)
 	logger.Infof("OK!\n")
 
 	logger.Infof("Loging as registry admin to internal registry")
+	b.node.GetOC().NotShowInfo()
+	defer b.node.GetOC().SetShowInfo()
 	loginOut, loginErr := b.node.DebugNodeWithChroot("podman", "login", InternalRegistrySvcURL, "-u", layeringRegistryAdminSAName, "-p", saToken, "--authfile", b.remoteDockerConfig)
 	if loginErr != nil {
 		return fmt.Errorf("Error trying to login to internal registry:\nOutput:%s\nError:%s", loginOut, loginErr)
@@ -243,8 +266,10 @@ func (b *OsImageBuilderInNode) buildImage() error {
 		buildCommand = "NO_PROXY=" + b.noProxy + " HTTPS_PROXY=" + b.httpsProxy + " HTTP_PROXY=" + b.httpProxy + " podman build  --network host " + buildPath + " --tag " + b.osImage + " --authfile " + b.remoteDockerConfig
 		logger.Infof("Building as single image")
 	}
-	logger.Infof("Executing build command: %s", buildCommand)
+	logger.Infof("Executing build command: %s", b.sanitizeCommand(buildCommand))
 
+	b.node.GetOC().NotShowInfo()
+	defer b.node.GetOC().SetShowInfo()
 	output, err := b.node.DebugNodeWithChroot("bash", "-c", buildCommand)
 	if err != nil {
 		msg := fmt.Sprintf("Podman failed building image %s:\n%s\n%s", b.osImage, output, err)
@@ -273,8 +298,10 @@ func (b *OsImageBuilderInNode) pushImage() error {
 		pushCommand = "NO_PROXY=" + b.noProxy + " HTTPS_PROXY=" + b.httpsProxy + " HTTP_PROXY=" + b.httpProxy + " podman push " + b.osImage + " --authfile " + b.remoteDockerConfig
 		logger.Infof("Pushing as single image")
 	}
-	logger.Infof("Executing push command: %s", pushCommand)
+	logger.Infof("Executing push command: %s", b.sanitizeCommand(pushCommand))
 
+	b.node.GetOC().NotShowInfo()
+	defer b.node.GetOC().SetShowInfo()
 	output, err := b.node.DebugNodeWithChroot("bash", "-c", pushCommand)
 	if err != nil {
 		msg := fmt.Sprintf("Podman failed pushing image %s:\n%s\n%s", b.osImage, output, err)
@@ -295,7 +322,7 @@ func (b *OsImageBuilderInNode) pushImage() error {
 	return nil
 }
 
-// removeImage removes the built OS image from the node to free up space by:
+// removeImage removes the built OS image from the node to free up space
 func (b *OsImageBuilderInNode) removeImage() error {
 	exutil.By("Remove osImage")
 	var rmOutput string
@@ -318,12 +345,14 @@ func (b *OsImageBuilderInNode) removeImage() error {
 	return nil
 }
 
-// digestImage inspects the pushed image and returns its digest reference by:
+// digestImage inspects the pushed image and returns its digest reference
 func (b *OsImageBuilderInNode) digestImage() (string, error) {
 	exutil.By("Digest osImage")
 	skopeoCommand := "NO_PROXY=" + b.noProxy + " HTTPS_PROXY=" + b.httpsProxy + " HTTP_PROXY=" + b.httpProxy + " skopeo inspect docker://" + b.osImage + " --authfile " + b.remoteDockerConfig
-	logger.Infof("Executing skopeo command: %s", skopeoCommand)
+	logger.Infof("Executing skopeo command: %s", b.sanitizeCommand(skopeoCommand))
 
+	b.node.GetOC().NotShowInfo()
+	defer b.node.GetOC().SetShowInfo()
 	inspectInfo, _, err := b.node.DebugNodeWithChrootStd("bash", "-c", skopeoCommand)
 	if err != nil {
 		msg := fmt.Sprintf("Skopeo failed inspecting image %s:\n%s\n%s", b.osImage, inspectInfo, err)

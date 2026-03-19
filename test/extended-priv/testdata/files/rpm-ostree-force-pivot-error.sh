@@ -4,9 +4,9 @@
 # Remember to use the right selinux type when you replace the orinal rpm-ostree file
 if [ "$1" == "rebase" ];
 then
-exit -1
+exit 255
 else
-/tmp/rpm-ostree $@
+/tmp/rpm-ostree "$@"
 fi
 exit $?
 

@@ -1396,7 +1396,9 @@ func FixRebootInNode(node *Node) error {
 func BreakRebaseInNode(node *Node) error {
 	logger.Infof("Breaking rpm-ostree rebase process in node %s", node.GetName())
 	brokenRpmOstree := generateTemplateAbsolutePath("rpm-ostree-force-pivot-error.sh")
-	node.CopyFromLocal(brokenRpmOstree, "/tmp/rpm-ostree.broken")
+	if err := node.CopyFromLocal(brokenRpmOstree, "/tmp/rpm-ostree.broken"); err != nil {
+		return fmt.Errorf("Error copying %s to node %s: %w", brokenRpmOstree, node, err)
+	}
 	_, err := node.DebugNodeWithChroot("sh", "-c",
 		"chmod +x /tmp/rpm-ostree.broken; "+
 			"cp /usr/bin/rpm-ostree /tmp/rpm-ostree; "+
