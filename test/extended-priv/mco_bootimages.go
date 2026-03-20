@@ -33,6 +33,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		SkipTestIfWorkersCannotBeScaled(oc.AsAdmin())
 		// Bootimages Update functionality is only available in GCP, AWS, vSphere and Azure
 		skipTestIfSupportedPlatformNotMatched(oc, GCPPlatform, AWSPlatform, VspherePlatform, AzurePlatform)
+		// Skip if any MachineSet carries an unsupported OS stream label
+		exutil.SkipIfUnsupportedOSStreamLabel(oc.AsAdmin())
 		wMcp = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
 		machineConfiguration = GetMachineConfiguration(oc.AsAdmin())
 		PreChecks(oc)
