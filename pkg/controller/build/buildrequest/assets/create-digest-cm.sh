@@ -6,20 +6,7 @@
 
 set -xeuo
 
-# Check if the oc command is available.
-if command -v "oc" &> /dev/null; then
-    echo "Using built-in oc command"
-else
-    # If the oc command is not available, check under /tmp/done/oc.
-    if [[ -x /tmp/done/oc ]]; then
-        # Add this to our PATH if found.
-        export PATH="$PATH:/tmp/done"
-    else
-        # If it cannot be found, return a non-zero exit code.
-        echo "oc command not found"
-        exit 1
-    fi
-fi
+# Inject the contents of the digestfile into a ConfigMap.
 
 # Create and label the digestfile ConfigMap
 if ! oc create configmap \
