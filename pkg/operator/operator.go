@@ -572,6 +572,7 @@ func (optr *Operator) sync(key string) error {
 		// "RenderConfig" should be the first one to run (except OSImageStream) as it sets the renderConfig in
 		// the operator for the sync funcs below
 		{"RenderConfig", optr.syncRenderConfig},
+		{"NetworkPolicies", optr.syncNetworkPolicies},
 		{"MachineConfiguration", optr.syncMachineConfiguration},
 		{"MachineConfigNode", optr.syncMachineConfigNodes},
 		{"MachineConfigPools", optr.syncMachineConfigPools},

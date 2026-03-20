@@ -1,0 +1,12 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: machine-config-server-deny-all
+  namespace: {{.TargetNamespace}}
+spec:
+  podSelector:
+    matchLabels:
+      k8s-app: machine-config-server
+  policyTypes:
+  - Ingress
+  - Egress

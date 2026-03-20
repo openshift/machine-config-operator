@@ -1,0 +1,43 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mco-allow-controller
+  namespace: {{.TargetNamespace}}
+spec:
+  podSelector:
+    matchLabels: # TODO: see if the following should be `k8s-app: {{.ControllerAppLabel}}` instead
+      k8s-app: machine-config-controller
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+    - from: # Allow Prometheus Metrics Scraping
+      - namespaceSelector:
+          matchLabels:
+            network.openshift.io/policy-group: monitoring
+      ports:
+      - protocol: TCP
+        port: 9001
+    - from: # Allow Kubelet Health Probes (from Node Network)
+      - ipBlock:
+          cidr: {{.ClusterNetworkCIDR}}
+      ports:
+      - protocol: TCP
+        port: 9443
+  egress:
+    - to: # Allow API Server Access
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: openshift-kube-apiserver
+      ports:
+      - protocol: TCP
+        port: 6443
+    - to: # Allow DNS Lookups
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: openshift-dns
+      ports:
+      - protocol: UDP
+        port: 53
+      - protocol: TCP
+        port: 53
