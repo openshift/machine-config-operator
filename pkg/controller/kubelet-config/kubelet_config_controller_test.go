@@ -914,12 +914,6 @@ func TestKubeletConfigDenylistedOptions(t *testing.T) {
 			},
 		},
 		{
-			name: "test banned staticpodpath",
-			config: &kubeletconfigv1beta1.KubeletConfiguration{
-				StaticPodPath: "some_value",
-			},
-		},
-		{
 			name: "user cannot supply features gates",
 			config: &kubeletconfigv1beta1.KubeletConfiguration{
 				FeatureGates: map[string]bool{
@@ -971,6 +965,56 @@ func TestKubeletConfigDenylistedOptions(t *testing.T) {
 		if err != nil {
 			t.Errorf("%s: failed with %v. should have succeeded", test.name, err)
 		}
+	}
+}
+
+func TestStaticPodPathPoolValidation(t *testing.T) {
+	kcWithNonEmptyStaticPodPath := newKubeletConfig(
+		"test-staticpodpath-nonempty",
+		&kubeletconfigv1beta1.KubeletConfiguration{
+			StaticPodPath: "/some/path",
+		},
+		metav1.AddLabelToSelector(&metav1.LabelSelector{}, "", ""),
+	)
+
+	// non-empty staticPodPath should be rejected for all pools
+	err := validateStaticPodPathForPool(kcWithNonEmptyStaticPodPath, ctrlcommon.MachineConfigPoolMaster)
+	if err == nil {
+		t.Error("expected error for non-empty staticPodPath on master pool, got nil")
+	}
+
+	err = validateStaticPodPathForPool(kcWithNonEmptyStaticPodPath, ctrlcommon.MachineConfigPoolArbiter)
+	if err == nil {
+		t.Error("expected error for non-empty staticPodPath on arbiter pool, got nil")
+	}
+
+	err = validateStaticPodPathForPool(kcWithNonEmptyStaticPodPath, ctrlcommon.MachineConfigPoolWorker)
+	if err == nil {
+		t.Error("expected error for non-empty staticPodPath on worker pool, got nil")
+	}
+
+	err = validateStaticPodPathForPool(kcWithNonEmptyStaticPodPath, "custom-pool")
+	if err == nil {
+		t.Error("expected error for non-empty staticPodPath on custom pool, got nil")
+	}
+
+	// empty staticPodPath should be allowed for worker and custom pools
+	kcWithEmptyStaticPodPath := newKubeletConfig(
+		"test-staticpodpath-empty",
+		&kubeletconfigv1beta1.KubeletConfiguration{
+			StaticPodPath: "",
+		},
+		metav1.AddLabelToSelector(&metav1.LabelSelector{}, "", ""),
+	)
+
+	err = validateStaticPodPathForPool(kcWithEmptyStaticPodPath, ctrlcommon.MachineConfigPoolWorker)
+	if err != nil {
+		t.Errorf("expected no error for empty staticPodPath on worker pool, got: %v", err)
+	}
+
+	err = validateStaticPodPathForPool(kcWithEmptyStaticPodPath, "custom-pool")
+	if err != nil {
+		t.Errorf("expected no error for empty staticPodPath on custom pool, got: %v", err)
 	}
 }
 
