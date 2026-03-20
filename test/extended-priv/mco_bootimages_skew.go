@@ -237,6 +237,51 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		}
 	})
 
+	g.It("Verify BareMetal defaults to None mode and flips to Manual on legacy provisioning path [apigroup:machineconfiguration.openshift.io]", func() {
+		// Only applicable on BareMetal clusters
+		skipTestIfSupportedPlatformNotMatched(oc, BaremetalPlatform)
+
+		provisioningCRName := "provisioning-configuration"
+
+		// machine-os-images path (default on 4.10+): provisioning URL should be empty
+		exutil.By("Verify provisioning CR URL is empty (machine-os-images path)")
+		originalURL, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"provisioning", provisioningCRName,
+			"-o", "jsonpath={.spec.provisioningOSDownloadURL}",
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to get provisioning CR")
+		o.Expect(originalURL).To(o.BeEmpty(), "Expected provisioningOSDownloadURL to be empty on machine-os-images path")
+		logger.Infof("Provisioning URL is empty as expected")
+
+		exutil.By("Verify bootImageSkewEnforcementStatus.mode is None on BareMetal (machine-os-images path)")
+		machineConfiguration.WaitForBootImageSkewEnforcementStatusMode(SkewEnforcementNoneMode)
+		logger.Infof("bootImageSkewEnforcementStatus.mode is None as expected")
+
+		// Legacy qcow2 path (simulated): patch the provisioning CR with a URL to trigger Manual mode
+		exutil.By("Simulate legacy qcow2 path by patching provisioning CR with a URL")
+		defer func() {
+			exutil.By("Restoring provisioning CR: clearing provisioningOSDownloadURL")
+			patchErr := oc.AsAdmin().WithoutNamespace().Run("patch").Args(
+				"provisioning", provisioningCRName,
+				"--type=merge",
+				"-p", `{"spec":{"provisioningOSDownloadURL":""}}`,
+			).Execute()
+			o.Expect(patchErr).NotTo(o.HaveOccurred(), "Failed to restore provisioning CR")
+			machineConfiguration.WaitForBootImageSkewEnforcementStatusMode(SkewEnforcementNoneMode)
+		}()
+
+		err = oc.AsAdmin().WithoutNamespace().Run("patch").Args(
+			"provisioning", provisioningCRName,
+			"--type=merge",
+			"-p", `{"spec":{"provisioningOSDownloadURL":"https://example.com/rhcos.qcow2"}}`,
+		).Execute()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to patch provisioning CR with legacy URL")
+
+		exutil.By("Verify bootImageSkewEnforcementStatus.mode flips to Manual (legacy qcow2 path)")
+		machineConfiguration.WaitForBootImageSkewEnforcementStatusMode(SkewEnforcementManualMode)
+		logger.Infof("bootImageSkewEnforcementStatus.mode is Manual as expected")
+	})
+
 	g.It("Verify None mode [apigroup:machineconfiguration.openshift.io]", func() {
 		// Set None mode, effectively disabling skew enforcement
 		o.Expect(machineConfiguration.SetNoneSkew()).To(o.Succeed())
