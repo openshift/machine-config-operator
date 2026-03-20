@@ -31,6 +31,10 @@ contents:
     nodeStatusUpdateFrequency: 10s
     nodeStatusReportFrequency: 5m
     serverTLSBootstrap: true
+    {{- if ne .Infra.Status.ControlPlaneTopology "SingleReplica" }}
+    shutdownGracePeriod: 270s
+    shutdownGracePeriodCriticalPods: 240s
+    {{- end }}
     tlsMinVersion: {{.TLSMinVersion}}
     tlsCipherSuites:
       {{- range .TLSCipherSuites }}
