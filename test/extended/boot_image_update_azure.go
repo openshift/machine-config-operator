@@ -37,6 +37,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		skipUnlessFunctionalMachineAPI(oc)
 		// Skip this test on single node platforms
 		exutil.SkipOnSingleNodeTopology(oc)
+		// Skip if any MachineSet carries an unsupported OS stream label
+		exutil.SkipIfUnsupportedOSStreamLabel(oc)
 		// Disable boot image skew enforcement
 		applyMachineConfigurationFixture(oc, SkewEnforcementDisabledFixture)
 	})

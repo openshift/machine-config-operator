@@ -30,6 +30,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		skipTestIfSupportedPlatformNotMatched(oc, GCPPlatform, AWSPlatform, AzurePlatform)
 		// Skip if ManagedBootImagesCPMS feature gate is not enabled
 		SkipIfNoFeatureGate(oc.AsAdmin(), "ManagedBootImagesCPMS")
+		// Skip if the ControlPlaneMachineSet carries an unsupported OS stream label
+		exutil.SkipIfCPMSHasUnsupportedOSStreamLabel(oc.AsAdmin())
 
 		PreChecks(oc)
 
