@@ -34,6 +34,7 @@ func verifyInternalReleaseMasterMachineConfig(t *testing.T, mc *mcfgv1.MachineCo
 
 	assert.Len(t, ignCfg.Systemd.Units, 1)
 	assert.Contains(t, *ignCfg.Systemd.Units[0].Contents, "docker-registry-image-pullspec")
+	assert.Contains(t, *ignCfg.Systemd.Units[0].Contents, "REGISTRY_HTTP_TLS_MINIMUMTLS=tls1.2")
 
 	assert.Len(t, ignCfg.Storage.Files, 4, "Found an unexpected file")
 	verifyIgnitionFile(t, &ignCfg, "/etc/pki/ca-trust/source/anchors/iri-root-ca.crt", "iri-root-ca-data")
@@ -246,4 +247,30 @@ func clusterVersion() *clusterVersionBuilder {
 
 func (cvb *clusterVersionBuilder) build() runtime.Object {
 	return cvb.obj
+}
+
+// apiServerBuilder simplifies the creation of an APIServer resource in the test.
+type apiServerBuilder struct {
+	obj *configv1.APIServer
+}
+
+func apiServer() *apiServerBuilder {
+	return &apiServerBuilder{
+		obj: &configv1.APIServer{
+			ObjectMeta: v1.ObjectMeta{
+				Name: ctrlcommon.APIServerInstanceName,
+			},
+		},
+	}
+}
+
+func (asb *apiServerBuilder) tlsProfile(profileType configv1.TLSProfileType) *apiServerBuilder {
+	asb.obj.Spec.TLSSecurityProfile = &configv1.TLSSecurityProfile{
+		Type: profileType,
+	}
+	return asb
+}
+
+func (asb *apiServerBuilder) build() runtime.Object {
+	return asb.obj
 }
