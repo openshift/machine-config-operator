@@ -28,6 +28,9 @@ contents:
       - name: nm-resolv
         hostPath:
           path: "/var/run/NetworkManager"
+      - name: hosts-dir
+        hostPath:
+          path: "/etc/hosts"
       initContainers:
       - name: render-config-coredns
         image: {{ .Images.baremetalRuntimeCfgImage }}
@@ -59,6 +62,9 @@ contents:
         - name: conf-dir
           mountPath: "/etc/coredns"
           mountPropagation: HostToContainer
+        - name: hosts-dir
+          mountPath: "/etc/hosts"
+          mountPropagation: HostToContainer
         imagePullPolicy: IfNotPresent
         terminationMessagePolicy: FallbackToLogsOnError
       containers:
@@ -74,6 +80,8 @@ contents:
         volumeMounts:
         - name: conf-dir
           mountPath: "/etc/coredns"
+        - name: hosts-dir
+          mountPath: "/etc/hosts"
         livenessProbe:
           httpGet:
             path: /health
@@ -120,6 +128,9 @@ contents:
         - name: nm-resolv
           mountPath: "/var/run/NetworkManager"
           mountPropagation: HostToContainer 
+        - name: hosts-dir
+          mountPath: "/etc/hosts"
+          mountPropagation: HostToContainer
         imagePullPolicy: IfNotPresent        
       hostNetwork: true
       tolerations:
