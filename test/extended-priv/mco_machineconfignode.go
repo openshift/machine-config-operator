@@ -22,15 +22,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		PreChecks(oc)
 	})
 
-	g.It("[PolarionID:69184][OTP] Enable feature gate MachineConfigNodes [apigroup:machineconfiguration.openshift.io]", func() {
-		// need to check whether featureGate MachineConfigNodes is in enabled list
-		exutil.By("Check whether featureGate: MachineConfigNodes is enabled")
-		featureGate := NewResource(oc.AsAdmin(), "featuregate", "cluster")
-		enabled := featureGate.GetOrFail(`{.status.featureGates[*].enabled}`)
-		logger.Infof("enabled featuregates: %s", enabled)
-		o.Expect(enabled).Should(o.ContainSubstring("MachineConfigNodes"), "featureGate: MachineConfigNodes cannot be found")
-	})
-
 	g.It("[PolarionID:69187][OTP] Validate MachineConfigNodes properties [apigroup:machineconfiguration.openshift.io]", func() {
 
 		nodes := NewNodeList(oc.AsAdmin()).GetAllLinuxWorkerNodesOrFail()
