@@ -51,19 +51,24 @@ const (
 	registriesConfigPath                   = "/etc/containers/registries.conf"
 	searchRegDropInFilePath                = "/etc/containers/registries.conf.d/01-image-searchRegistries.conf"
 	policyConfigPath                       = "/etc/containers/policy.json"
-	// CRIODropInFilePathLogLevel is the path at which changes to the crio config for log-level
-	// will be dropped in this is exported so that we can use it in the e2e-tests
-	CRIODropInFilePathLogLevel   = "/etc/crio/crio.conf.d/01-ctrcfg-logLevel"
-	crioDropInFilePathPidsLimit  = "/etc/crio/crio.conf.d/01-ctrcfg-pidsLimit"
-	crioDropInFilePathLogSizeMax = "/etc/crio/crio.conf.d/01-ctrcfg-logSizeMax"
-	// CRIODropInFilePathDefaultRuntime is the path at which changes to the crio config for default-runtime
-	// will be dropped in this is exported so that we can use it in the e2e-tests
-	CRIODropInFilePathDefaultRuntime           = "/etc/crio/crio.conf.d/01-ctrcfg-defaultRuntime"
 	crioDropInFilePathAdditionalArtifactStores = "/etc/crio/crio.conf.d/01-ctrcfg-additionalArtifactStores"
 	imagepolicyType                            = "sigstoreSigned"
 	sigstoreRegistriesConfigFilePath           = "/etc/containers/registries.d/sigstore-registries.yaml"
 	crioCredentialProviderName                 = "crio-credential-provider"
 	credentialProviderAPIVersion               = "credentialprovider.kubelet.k8s.io/v1"
+	// CRIODropInFilePathLogLevel is the path at which changes to the crio config for log-level
+	// will be dropped in. This is exported so that we can use it in the e2e-tests.
+	CRIODropInFilePathLogLevel       = "/etc/crio/crio.conf.d/01-ctrcfg-logLevel"
+	crioDropInFilePathPidsLimit      = "/etc/crio/crio.conf.d/01-ctrcfg-pidsLimit"
+	crioDropInFilePathLogSizeMax     = "/etc/crio/crio.conf.d/01-ctrcfg-logSizeMax"
+	// CRIODropInFilePathDefaultRuntime is the path at which changes to the crio config for default-runtime
+	// will be dropped in. This is exported so that we can use it in the e2e-tests.
+	CRIODropInFilePathDefaultRuntime = "/etc/crio/crio.conf.d/01-ctrcfg-defaultRuntime"
+	// CRIODropInFilePathTLSMinVersion is the path at which TLS settings (min version and cipher suites)
+	// will be dropped in. This is exported so that we can use it in the e2e-tests.
+	CRIODropInFilePathTLSMinVersion = "/etc/crio/crio.conf.d/01-ctrcfg-tlsMinVersion"
+	managedTLSConfigKeyPrefix       = "99"
+	managedTLSConfigKeySuffix       = "containerruntime-tls"
 )
 
 var (
@@ -142,6 +147,17 @@ type tomlConfigCRIOAdditionalArtifactStores struct {
 		Runtime struct {
 			AdditionalArtifactStores []string `toml:"additional_artifact_stores,omitempty"`
 		} `toml:"runtime"`
+	} `toml:"crio"`
+}
+
+// tomlConfigCRIOTLS is used for conversions when TLS settings are changed.
+// This sets the minimum TLS version and cipher suites for CRI-O's streaming and metrics servers.
+type tomlConfigCRIOTLS struct {
+	Crio struct {
+		API struct {
+			TLSMinVersion   string   `toml:"tls_min_version,omitempty"`
+			TLSCipherSuites []string `toml:"tls_cipher_suites,omitempty"`
+		} `toml:"api"`
 	} `toml:"crio"`
 }
 
@@ -387,6 +403,10 @@ func getManagedKeyCRIOCredentialProvider(pool *mcfgv1.MachineConfigPool) (string
 	return ctrlcommon.GetManagedKey(pool, nil, "97", "credentialproviderconfig", "")
 }
 
+func getManagedKeyTLS(pool *mcfgv1.MachineConfigPool) (string, error) {
+	return ctrlcommon.GetManagedKey(pool, nil, managedTLSConfigKeyPrefix, managedTLSConfigKeySuffix, "")
+}
+
 // Deprecated: use getManagedKeyReg
 func getManagedKeyRegDeprecated(pool *mcfgv1.MachineConfigPool) string {
 	return fmt.Sprintf("99-%s-%s-registries", pool.Name, pool.ObjectMeta.UID)
@@ -532,6 +552,53 @@ func createCRIODropinFiles(cfg *mcfgv1.ContainerRuntimeConfig, additionalStorage
 		if err != nil {
 			klog.V(2).Infof("error updating user changes for additional-artifact-stores to crio.conf.d: %v", err)
 		}
+	}
+	return generatedConfigFileList
+}
+
+// tlsConfigFromKubeletConfigs finds the TLS minimum version and cipher suites from the
+// KubeletConfig CRs that match the given MachineConfigPool. When multiple KubeletConfigs
+// match, the most recently created one wins for deterministic behavior.
+// Used by both the controller and bootstrap paths.
+func tlsConfigFromKubeletConfigs(kubeletConfigs []*mcfgv1.KubeletConfig, pool *mcfgv1.MachineConfigPool) (string, []string) {
+	var newest *mcfgv1.KubeletConfig
+	for _, kc := range kubeletConfigs {
+		if kc.Spec.TLSSecurityProfile == nil {
+			continue
+		}
+		selector, err := metav1.LabelSelectorAsSelector(kc.Spec.MachineConfigPoolSelector)
+		if err != nil {
+			klog.Warningf("invalid label selector in KubeletConfig %s: %v", kc.Name, err)
+			continue
+		}
+		if selector.Empty() || !selector.Matches(labels.Set(pool.Labels)) {
+			continue
+		}
+		if newest == nil || kc.CreationTimestamp.After(newest.CreationTimestamp.Time) {
+			newest = kc
+		}
+	}
+	if newest == nil {
+		return "", nil
+	}
+	return ctrlcommon.GetSecurityProfileCiphers(newest.Spec.TLSSecurityProfile)
+}
+
+func createCRIOTLSDropinFile(tlsMinVersion string, tlsCipherSuites []string) []generatedConfigFile {
+	if tlsMinVersion == "" {
+		return nil
+	}
+
+	var (
+		generatedConfigFileList []generatedConfigFile
+		err                     error
+	)
+	tomlConf := tomlConfigCRIOTLS{}
+	tomlConf.Crio.API.TLSMinVersion = tlsMinVersion
+	tomlConf.Crio.API.TLSCipherSuites = tlsCipherSuites
+	generatedConfigFileList, err = addTOMLgeneratedConfigFile(generatedConfigFileList, CRIODropInFilePathTLSMinVersion, tomlConf)
+	if err != nil {
+		klog.Warningf("error creating CRI-O TLS drop-in config: %v", err)
 	}
 	return generatedConfigFileList
 }
