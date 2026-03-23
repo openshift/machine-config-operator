@@ -216,7 +216,11 @@ def main():
     """Main function to update AMIs."""
     # Configuration
     REPO_URL = "https://github.com/openshift/installer"
-    FILE_PATH = "data/data/coreos/rhcos.json"
+    FILE_PATHS = [
+        "data/data/coreos/rhcos.json",          # older release-4.x branches
+        "data/data/coreos/coreos-rhel-9.json",  # main (RHEL 9)
+        "data/data/coreos/coreos-rhel-10.json", # main (RHEL 10)
+    ]
 
     # Determine the project root (parent of hack directory)
     script_dir = Path(__file__).parent.resolve()
@@ -241,7 +245,7 @@ def main():
     with tempfile.TemporaryDirectory() as temp_dir:
         repo_path = Path(temp_dir)
 
-        log_info(f"Cloning repository with full history for {FILE_PATH}...")
+        log_info("Cloning repository with full history...")
 
         # Clone with --filter=blob:none --no-checkout for faster cloning
         # Don't use --single-branch since we need multiple branches
@@ -260,36 +264,33 @@ def main():
 
         log_info(f"Found {len(branches)} branches to process: {', '.join(branches)}")
 
-        # Get all commits from these branches
-        log_info("Getting commit history from all branches...")
-        commits = get_all_commits_from_branches(repo_path, branches, FILE_PATH)
-
-        if not commits:
-            log_error("No commits found for file")
-            sys.exit(1)
-
-        log_info(f"Found {len(commits)} commit(s) to process")
-
-        # Track all AMIs found across all commits
+        # Track all AMIs found across all file paths and commits
         all_amis_from_history: Set[str] = set()
 
-        # Process each commit
-        for commit in commits:
-            log_info(f"Processing commit: {commit[:8]}...")
+        for file_path in FILE_PATHS:
+            log_info(f"Getting commit history for {file_path}...")
+            commits = get_all_commits_from_branches(repo_path, branches, file_path)
 
-            # Get file content at this commit
-            content = get_file_at_commit(repo_path, commit, FILE_PATH)
-
-            if not content:
-                log_warn(f"Could not retrieve {FILE_PATH} at commit {commit[:8]}, skipping...")
+            if not commits:
+                log_warn(f"No commits found for {file_path}, skipping...")
                 continue
 
-            # Extract AMIs from this version
-            commit_amis = extract_amis_from_json(content)
+            log_info(f"Found {len(commits)} commit(s) to process for {file_path}")
 
-            if commit_amis:
-                log_info(f"  Found {len(commit_amis)} AMI(s) in this commit")
-                all_amis_from_history.update(commit_amis)
+            for commit in commits:
+                log_info(f"Processing commit: {commit[:8]}...")
+
+                content = get_file_at_commit(repo_path, commit, file_path)
+
+                if not content:
+                    log_warn(f"Could not retrieve {file_path} at commit {commit[:8]}, skipping...")
+                    continue
+
+                commit_amis = extract_amis_from_json(content)
+
+                if commit_amis:
+                    log_info(f"  Found {len(commit_amis)} AMI(s) in this commit")
+                    all_amis_from_history.update(commit_amis)
 
         # Check if we found any AMIs
         if not all_amis_from_history:
