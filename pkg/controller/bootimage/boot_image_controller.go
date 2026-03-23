@@ -39,6 +39,7 @@ import (
 	mcopinformersv1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
 	mcoplistersv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/osimagestream"
 )
 
 // Controller defines the machine-set-boot-image controller.
@@ -123,7 +124,8 @@ const (
 	OSStreamLabelKey = "machineconfiguration.openshift.io/osstream"
 
 	// Stream currently supported by the MCO's boot image controller
-	SupportedOSStream = "rhel-9"
+	// Note: This should be updated along with supportedOSStream in test/extended-priv/util/clusters.go
+	SupportedOSStream = osimagestream.StreamNameRHEL9
 
 	// Threshold for hot loop detection
 	HotLoopLimit = 3
