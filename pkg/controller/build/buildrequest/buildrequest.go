@@ -414,10 +414,9 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 		},
 		{
 			Name: "DIGEST_CONFIGMAP_LABELS",
-			// Gets the labels for all objects created by imageBuildRequest, converts
-			// them into a string representation, and replaces the separating commas
-			// with spaces.
-			Value: strings.ReplaceAll(labels.Set(br.getLabelsForObjectMeta()).String(), ",", " "),
+			// Gets the labels for all objects created by imageBuildRequest and
+			// converts them into a string representation.
+			Value: labels.Set(br.getLabelsForObjectMeta()).String(),
 		},
 		{
 			Name:  "HOME",
@@ -664,14 +663,15 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 			},
 			Containers: []corev1.Container{
 				{
-					// This container waits for the init container doing the build to finish
-					// building so we can get the final image SHA. We do this by using
-					// the base OS image (which contains the "oc" binary) to create a
-					// ConfigMap from the digestfile that Buildah creates, which allows
-					// us to avoid parsing log files.
+					// This container waits for the init container doing the build to
+					// finish building so we can get the final image SHA. We do this by
+					// using an option built into the machine-os-builder binary to create
+					// a ConfigMap from the digestfile created by Buildah. This approach
+					// allows us to avoid parsing log files and also avoids the need for
+					// an oc / kubectl binary to be present.
 					Name:            "create-digest-configmap",
 					Command:         append(command, digestCMScript),
-					Image:           br.opts.OSImageURLConfig.BaseOSContainerImage,
+					Image:           br.opts.Images.MachineConfigOperator,
 					Env:             env,
 					ImagePullPolicy: corev1.PullAlways,
 					SecurityContext: securityContext,
