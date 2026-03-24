@@ -121,6 +121,21 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 				assert.Nil(t, actualWorkerMC)
 			},
 		},
+		{
+			name: "status condition Degraded=False on successful sync",
+			initialObjects: objs(
+				iri().finalizer(masterName(), workerName()),
+				clusterVersion(), cconfig(), iriCertSecret(),
+				machineconfigmaster(), machineconfigworker()),
+			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
+				assert.NotNil(t, actualIRI)
+				assert.Len(t, actualIRI.Status.Conditions, 1)
+				assert.Equal(t, string(mcfgv1alpha1.InternalReleaseImageStatusConditionTypeDegraded), actualIRI.Status.Conditions[0].Type)
+				assert.Equal(t, metav1.ConditionFalse, actualIRI.Status.Conditions[0].Status)
+				assert.Equal(t, "AsExpected", actualIRI.Status.Conditions[0].Reason)
+				assert.Equal(t, "InternalReleaseImage controller sync successful", actualIRI.Status.Conditions[0].Message)
+			},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -156,6 +171,64 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 				tc.verify(t, actualIRI, actualMasterMC, actualWorkerMC)
 			}
 
+		})
+	}
+}
+
+func TestInternalReleaseImageStatusOnError(t *testing.T) {
+	cases := []struct {
+		name           string
+		initialObjects func() []runtime.Object
+		verify         func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage)
+	}{
+		{
+			name: "status condition Degraded=True when ControllerConfig is missing",
+			initialObjects: objs(
+				iri(),
+				clusterVersion(), iriCertSecret()),
+			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage) {
+				assert.NotNil(t, actualIRI)
+				assert.Len(t, actualIRI.Status.Conditions, 1)
+				assert.Equal(t, string(mcfgv1alpha1.InternalReleaseImageStatusConditionTypeDegraded), actualIRI.Status.Conditions[0].Type)
+				assert.Equal(t, metav1.ConditionTrue, actualIRI.Status.Conditions[0].Status)
+				assert.Equal(t, "SyncError", actualIRI.Status.Conditions[0].Reason)
+				assert.Contains(t, actualIRI.Status.Conditions[0].Message, "could not get ControllerConfig")
+			},
+		},
+		{
+			name: "status condition Degraded=True when Secret is missing",
+			initialObjects: objs(
+				iri(),
+				clusterVersion(), cconfig()),
+			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage) {
+				assert.NotNil(t, actualIRI)
+				assert.Len(t, actualIRI.Status.Conditions, 1)
+				assert.Equal(t, string(mcfgv1alpha1.InternalReleaseImageStatusConditionTypeDegraded), actualIRI.Status.Conditions[0].Type)
+				assert.Equal(t, metav1.ConditionTrue, actualIRI.Status.Conditions[0].Status)
+				assert.Equal(t, "SyncError", actualIRI.Status.Conditions[0].Reason)
+				assert.Contains(t, actualIRI.Status.Conditions[0].Message, "could not get Secret")
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			objs := tc.initialObjects()
+			f := newFixture(t, objs)
+			// Run the controller and expect an error
+			f.runController(ctrlcommon.InternalReleaseImageInstanceName, true)
+
+			if tc.verify != nil {
+				actualIRI, err := f.client.MachineconfigurationV1alpha1().InternalReleaseImages().Get(context.TODO(), ctrlcommon.InternalReleaseImageInstanceName, v1.GetOptions{})
+				if err != nil {
+					if !errors.IsNotFound(err) {
+						t.Errorf("Error getting IRI: %v", err)
+					} else {
+						actualIRI = nil
+					}
+				}
+				tc.verify(t, actualIRI)
+			}
 		})
 	}
 }
