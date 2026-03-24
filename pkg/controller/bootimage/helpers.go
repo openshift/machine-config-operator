@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	osconfigv1 "github.com/openshift/api/config/v1"
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 	opv1 "github.com/openshift/api/operator/v1"
 
@@ -129,6 +130,21 @@ func upgradeStubIgnitionIfRequired(secretName string, secretClient clientset.Int
 
 	}
 	return nil
+}
+
+// isClusterStable returns true if the cluster is in a stable state, meaning
+// the most recent ClusterVersion history entry is a completed update. This
+// returns false during the initial installation (no completed entry yet) and
+// during upgrades (most recent entry is partial).
+func (ctrl *Controller) isClusterStable() (bool, error) {
+	clusterVersion, err := ctrl.clusterVersionLister.Get("version")
+	if err != nil {
+		return false, fmt.Errorf("failed to fetch clusterversion: %w", err)
+	}
+	if len(clusterVersion.Status.History) == 0 {
+		return false, nil
+	}
+	return clusterVersion.Status.History[0].State == osconfigv1.CompletedUpdate, nil
 }
 
 // waitForMachineConfigurationReady waits for the MachineConfiguration to be ready
