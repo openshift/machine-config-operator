@@ -1983,6 +1983,12 @@ func (ctrl *Controller) syncBootImageSkewEnforcementMetric(obj any) {
 			ctrlcommon.MCCBootImageSkewEnforcementNone.Set(0)
 			return
 		}
+		// On BareMetal clusters using the machine-os-images provisioning path, boot images
+		// are automatically managed; None is expected; suppress the alert.
+		if infra.Status.PlatformStatus != nil && infra.Status.PlatformStatus.Type == configv1.BareMetalPlatformType {
+			ctrlcommon.MCCBootImageSkewEnforcementNone.Set(0)
+			return
+		}
 		ctrlcommon.MCCBootImageSkewEnforcementNone.Set(1)
 	} else {
 		ctrlcommon.MCCBootImageSkewEnforcementNone.Set(0)
