@@ -25,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/selection"
@@ -2544,15 +2545,14 @@ func (optr *Operator) syncPreBuiltImageMachineConfigs() error {
 // syncBootImageSkewEnforcementStatus determines the appropriate BootImageSkewEnforcementStatus based on
 // the MachineConfiguration spec, platform defaults, and cluster version information.
 func (optr *Operator) syncBootImageSkewEnforcementStatus(mcop *opv1.MachineConfiguration, newMachineConfigurationStatus *opv1.MachineConfigurationStatus, infra *configv1.Infrastructure, supportsBootImageUpdates bool) {
-	// React to any changes in boot image skew enforcement configuration
 	if !optr.fgHandler.Enabled(features.FeatureGateBootImageSkewEnforcement) {
 		return
 	}
 
-	// First, estimate an OCPVersion from ClusterVersion.
+	// Grab install time OCP version
 	ocpVersionAtInstall := optr.getOCPVersionFromClusterVersion()
-	// If BootImageSkewEnforcement spec is defined, reflect that to status
-	//nolint:gocritic
+
+	// Spec override takes priority over all platform defaults.
 	if mcop.Spec.BootImageSkewEnforcement != (opv1.BootImageSkewEnforcementConfig{}) {
 		if mcop.Spec.BootImageSkewEnforcement.Mode == opv1.BootImageSkewEnforcementConfigModeManual {
 			newMachineConfigurationStatus.BootImageSkewEnforcementStatus = opv1.BootImageSkewEnforcementStatus{
@@ -2562,22 +2562,33 @@ func (optr *Operator) syncBootImageSkewEnforcementStatus(mcop *opv1.MachineConfi
 		} else { // only other possible opinion is "None"
 			newMachineConfigurationStatus.BootImageSkewEnforcementStatus = apihelpers.GetSkewEnforcementStatusNone()
 		}
-	} else if infra.Status.ControlPlaneTopology == configv1.SingleReplicaTopologyMode {
-		// On SNO clusters, default to None since there are no MachineSets to scale
-		newMachineConfigurationStatus.BootImageSkewEnforcementStatus = apihelpers.GetSkewEnforcementStatusNone()
-	} else if supportsBootImageUpdates {
-		// If an "All" option is specified and BootImageSkewEnforcementStatus is empty or not set to Automatic => set Mode to Automatic.
-		if apihelpers.HasMAPIMachineSetManagerWithMode(newMachineConfigurationStatus.ManagedBootImagesStatus.MachineManagers, opv1.MachineSets, opv1.All) {
-			if (newMachineConfigurationStatus.BootImageSkewEnforcementStatus.Mode != opv1.BootImageSkewEnforcementModeStatusAutomatic ||
-				mcop.Status.BootImageSkewEnforcementStatus == opv1.BootImageSkewEnforcementStatus{}) {
-				newMachineConfigurationStatus.BootImageSkewEnforcementStatus = apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion(ocpVersionAtInstall)
-			}
-		} else { // For any other opinion i.e. admin has overridden boot image opinion to Partial/None => set Mode to Manual.
-			newMachineConfigurationStatus.BootImageSkewEnforcementStatus = apihelpers.GetSkewEnforcementStatusManualWithOCPVersion(ocpVersionAtInstall)
-		}
-	} else { // For platforms that do not support automated boot image updates => set Mode to Manual.
-		newMachineConfigurationStatus.BootImageSkewEnforcementStatus = apihelpers.GetSkewEnforcementStatusManualWithOCPVersion(ocpVersionAtInstall)
+		return
 	}
+
+	// On BareMetal clusters using the machine-os-images provisioning path (provisioningOSDownloadURL
+	// is unset), boot images are managed by CVO and have no skew risk.
+	if infra.Status.PlatformStatus != nil && infra.Status.PlatformStatus.Type == configv1.BareMetalPlatformType && !optr.isBareMetalOnLegacyProvisioningPath() {
+		newMachineConfigurationStatus.BootImageSkewEnforcementStatus = apihelpers.GetSkewEnforcementStatusNone()
+		return
+	}
+
+	// SNO clusters do not scale; skew enforcement is not applicable.
+	if infra.Status.ControlPlaneTopology == configv1.SingleReplicaTopologyMode {
+		newMachineConfigurationStatus.BootImageSkewEnforcementStatus = apihelpers.GetSkewEnforcementStatusNone()
+		return
+	}
+
+	// Platforms with automated boot image updates: mode follows ManagedBootImages configuration.
+	if supportsBootImageUpdates && apihelpers.HasMAPIMachineSetManagerWithMode(newMachineConfigurationStatus.ManagedBootImagesStatus.MachineManagers, opv1.MachineSets, opv1.All) {
+		if (newMachineConfigurationStatus.BootImageSkewEnforcementStatus.Mode != opv1.BootImageSkewEnforcementModeStatusAutomatic ||
+			mcop.Status.BootImageSkewEnforcementStatus == opv1.BootImageSkewEnforcementStatus{}) {
+			newMachineConfigurationStatus.BootImageSkewEnforcementStatus = apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion(ocpVersionAtInstall)
+		}
+		return
+	}
+
+	// All remaining cases require manual boot image tracking.
+	newMachineConfigurationStatus.BootImageSkewEnforcementStatus = apihelpers.GetSkewEnforcementStatusManualWithOCPVersion(ocpVersionAtInstall)
 }
 
 // getOCPVersionFromClusterVersion extracts the OCP version from ClusterVersion history.
@@ -2614,4 +2625,39 @@ func (optr *Operator) getOCPVersionFromClusterVersion() string {
 		return "0.0.0"
 	}
 	return fmt.Sprintf("%d.%d.%d", parsedVersion.Major(), parsedVersion.Minor(), parsedVersion.Patch())
+}
+
+// isBareMetalOnLegacyProvisioningPath checks whether the BareMetal cluster is still using the
+// legacy qcow2-based provisioning path. It does so by inspecting the provisioningOSDownloadURL
+// field of the singleton Provisioning CR (metal3.io/v1alpha1).
+//
+// Returns true when the field is non-empty, meaning boot images are not managed via the machine-os-images
+// path and may be out of date (skew enforcement should be set to Manual mode). Also returns true when
+// when the field is not ready to be used yet, for safety.
+//
+// Returns false when:
+//   - The CR does not exist (cluster is using the machine-os-images path introduced in 4.10)
+//   - The field is empty (same as above)
+func (optr *Operator) isBareMetalOnLegacyProvisioningPath() bool {
+
+	if optr.provisioningListerSynced != nil && !optr.provisioningListerSynced() {
+		klog.V(2).Info("Provisioning informer not synced yet; assuming legacy provisioning path for safety")
+		return true
+	}
+	provisioning, err := optr.provisioningLister.Get("provisioning-configuration")
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			// CR not found, cluster is on machine-os-images path, no skew risk
+			return false
+		}
+		// Unexpected get error, assume legacy path for safety
+		klog.Warningf("Failed to get Provisioning CR: %v; assuming legacy provisioning path for BareMetal", err)
+		return true
+	}
+	url, _, err := unstructured.NestedString(provisioning.Object, "spec", "provisioningOSDownloadURL")
+	if err != nil {
+		klog.Warningf("Failed to parse provisioningOSDownloadURL: %v; assuming legacy provisioning path for BareMetal", err)
+		return true
+	}
+	return url != ""
 }

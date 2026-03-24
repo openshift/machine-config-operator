@@ -26,6 +26,9 @@ import (
 	mcfginformers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 	fakemcopclientset "github.com/openshift/client-go/operator/clientset/versioned/fake"
 	mcoplistersv1 "github.com/openshift/client-go/operator/listers/operator/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic/dynamiclister"
 )
 
 func TestSyncCloudConfig(t *testing.T) {
@@ -315,6 +318,8 @@ func TestSyncMachineConfiguration(t *testing.T) {
 		expectedSkewEnforcementStatus   opv1.BootImageSkewEnforcementStatus
 		annotationExpected              bool
 		enableCPMSFeatureGate           bool
+		provisioningCRPresent           bool
+		provisioningOSDownloadURL       string
 	}{
 		{
 			name:               "AWS platform, no existing config, opt-in expected",
@@ -445,7 +450,7 @@ func TestSyncMachineConfiguration(t *testing.T) {
 			clusterVersion:                  buildClusterVersion("4.18.0"),
 			annotationExpected:              false,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{},
-			expectedSkewEnforcementStatus:   apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.18.0"),
+			expectedSkewEnforcementStatus:   apihelpers.GetSkewEnforcementStatusNone(),
 		},
 		{
 			name:               "vsphere platform, empty list config, no opt-in expected",
@@ -617,7 +622,7 @@ func TestSyncMachineConfiguration(t *testing.T) {
 			clusterVersion:                  buildClusterVersion("4.19.0"),
 			annotationExpected:              false,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{},
-			expectedSkewEnforcementStatus:   apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.19.0"),
+			expectedSkewEnforcementStatus:   apihelpers.GetSkewEnforcementStatusNone(),
 		},
 		{
 			name:                  "vsphere platform, CPMS updates unsupported, MachineSet configuration expected, no CPMS configuration expected",
@@ -700,13 +705,35 @@ func TestSyncMachineConfiguration(t *testing.T) {
 			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.19.1"),
 		},
 		{
-			name:                            "BareMetal platform (unsupported), skew enforcement manual mode expected",
+			name:                            "BareMetal platform, Provisioning CR absent, skew enforcement None expected",
 			infra:                           buildInfra(withPlatformType(configv1.BareMetalPlatformType)),
 			mcop:                            buildMachineConfigurationWithNoBootImageConfiguration(),
 			clusterVersion:                  buildClusterVersion("4.18.0"),
 			annotationExpected:              false,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{},
-			expectedSkewEnforcementStatus:   apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.18.0"),
+			expectedSkewEnforcementStatus:   apihelpers.GetSkewEnforcementStatusNone(),
+		},
+		{
+			name:                            "BareMetal platform, Provisioning CR present with empty URL, skew enforcement None expected",
+			infra:                           buildInfra(withPlatformType(configv1.BareMetalPlatformType)),
+			mcop:                            buildMachineConfigurationWithNoBootImageConfiguration(),
+			clusterVersion:                  buildClusterVersion("4.18.0"),
+			annotationExpected:              false,
+			provisioningCRPresent:           true,
+			provisioningOSDownloadURL:       "",
+			expectedManagedBootImagesStatus: opv1.ManagedBootImages{},
+			expectedSkewEnforcementStatus:   apihelpers.GetSkewEnforcementStatusNone(),
+		},
+		{
+			name:                            "BareMetal platform, legacy qcow2 path (provisioningOSDownloadURL set), skew enforcement Manual expected",
+			infra:                           buildInfra(withPlatformType(configv1.BareMetalPlatformType)),
+			mcop:                            buildMachineConfigurationWithNoBootImageConfiguration(),
+			clusterVersion:                  buildClusterVersion("4.9.0"),
+			annotationExpected:              false,
+			provisioningCRPresent:           true,
+			provisioningOSDownloadURL:       "https://example.com/rhcos.qcow2",
+			expectedManagedBootImagesStatus: opv1.ManagedBootImages{},
+			expectedSkewEnforcementStatus:   apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.9.0"),
 		},
 		{
 			name:               "AWS platform, cluster version with multiple history entries",
@@ -748,10 +775,10 @@ func TestSyncMachineConfiguration(t *testing.T) {
 			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusNone(),
 		},
 		{
-			name:           "SNO cluster, spec defines manual mode, status should reflect spec",
-			infra:          buildInfra(withPlatformType(configv1.AWSPlatformType), withControlPlaneTopology(configv1.SingleReplicaTopologyMode)),
-			mcop:           buildMachineConfigurationWithSkewEnforcementManual("4.17.0"),
-			clusterVersion: buildClusterVersion("4.18.0"),
+			name:               "SNO cluster, spec defines manual mode, status should reflect spec",
+			infra:              buildInfra(withPlatformType(configv1.AWSPlatformType), withControlPlaneTopology(configv1.SingleReplicaTopologyMode)),
+			mcop:               buildMachineConfigurationWithSkewEnforcementManual("4.17.0"),
+			clusterVersion:     buildClusterVersion("4.18.0"),
 			annotationExpected: true,
 			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
 				MachineManagers: []opv1.MachineManager{
@@ -778,6 +805,17 @@ func TestSyncMachineConfiguration(t *testing.T) {
 			if tc.enableCPMSFeatureGate {
 				enabledFeatureGates = append(enabledFeatureGates, features.FeatureGateManagedBootImagesCPMS)
 			}
+
+			provisioningGVR := schema.GroupVersionResource{Group: "metal3.io", Version: "v1alpha1", Resource: "provisionings"}
+			provisioningIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+			if tc.provisioningCRPresent {
+				provisioningIndexer.Add(&unstructured.Unstructured{Object: map[string]interface{}{
+					"apiVersion": "metal3.io/v1alpha1",
+					"kind":       "Provisioning",
+					"metadata":   map[string]interface{}{"name": "provisioning-configuration"},
+					"spec":       map[string]interface{}{"provisioningOSDownloadURL": tc.provisioningOSDownloadURL},
+				}})
+			}
 			optr := &Operator{
 				eventRecorder: &record.FakeRecorder{},
 				fgHandler: ctrlcommon.NewFeatureGatesHardcodedHandler(
@@ -788,6 +826,7 @@ func TestSyncMachineConfiguration(t *testing.T) {
 				mcopClient:           fakemcopclientset.NewSimpleClientset(tc.mcop),
 				mcpLister:            mcplister.NewMachineConfigPoolLister(mcpIndexer),
 				clusterVersionLister: configlistersv1.NewClusterVersionLister(clusterVersionIndexer),
+				provisioningLister:   dynamiclister.New(provisioningIndexer, provisioningGVR),
 			}
 			err := optr.syncMachineConfiguration(nil, nil)
 			assert.NoError(t, err)

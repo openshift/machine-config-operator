@@ -44,6 +44,8 @@ const (
 	AzurePlatform = "azure"
 	// VspherePlatform value used to identify Vsphere infrastructure
 	VspherePlatform = "vsphere"
+	// BaremetalPlatform value used to identify BareMetal infrastructure
+	BaremetalPlatform = "baremetal"
 
 	// ExpirationDockerfileLabel Expiration label in Dockerfile
 	ExpirationDockerfileLabel = `LABEL maintainer="mco-qe-team" quay.expires-after=24h`
