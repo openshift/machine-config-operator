@@ -99,9 +99,21 @@ func (mcn *MachineConfigNode) GetUpdateCompatible() string {
 	return mcn.GetConditionStatusByType("UpdateCompatible")
 }
 
-// GetAppliedFilesAndOS get condition status of `AppliedFilesAndOS`
-func (mcn *MachineConfigNode) GetAppliedFilesAndOS() string {
-	return mcn.GetConditionStatusByType("AppliedFilesAndOS")
+// GetAppliedFiles get condition status of `AppliedFiles`
+func (mcn *MachineConfigNode) GetAppliedFiles() string {
+	return mcn.GetConditionStatusByType("AppliedFiles")
+}
+
+// GetAppliedConditionStatus returns the status of the appropriate Applied condition.
+// It checks for AppliedFilesAndOS first (non-TP clusters), then falls back to AppliedFiles (TP clusters)
+func (mcn *MachineConfigNode) GetAppliedConditionStatus() string {
+	// Try AppliedFilesAndOS first (non-TechPreview clusters)
+	status, err := mcn.Get(`{.status.conditions[?(@.type=="AppliedFilesAndOS")].status}`)
+	if err == nil && status != "" {
+		return status
+	}
+	// Fall back to AppliedFiles (TechPreview clusters)
+	return mcn.GetAppliedFiles()
 }
 
 // GetCordoned get condition status of `Cordoned`
