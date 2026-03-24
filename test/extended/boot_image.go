@@ -146,16 +146,19 @@ func marshalProviderSpec(providerSpec interface{}) (string, error) {
 
 // createFakeUpdatePatch creates an update patch for the MachineSet object based on the platform
 func createFakeUpdatePatch(oc *exutil.CLI, machineSet machinev1beta1.MachineSet) (string, string, string, string) {
+	backdatedImage := exutil.GetBackdatedBootImage(oc)
 	infra, err := oc.AdminConfigClient().ConfigV1().Infrastructures().Get(context.Background(), "cluster", metav1.GetOptions{})
 	o.Expect(err).NotTo(o.HaveOccurred())
 
 	switch infra.Status.PlatformStatus.Type {
 	case osconfigv1.AWSPlatformType:
-		return generateAWSProviderSpecPatch(machineSet)
+		return generateAWSProviderSpecPatch(machineSet, backdatedImage)
 	case osconfigv1.GCPPlatformType:
-		return generateGCPProviderSpecPatch(machineSet)
+		return generateGCPProviderSpecPatch(machineSet, backdatedImage)
 	case osconfigv1.AzurePlatformType:
-		return generateAzureProviderSpecPatch(machineSet)
+		return generateAzureProviderSpecPatch(machineSet, backdatedImage)
+	case osconfigv1.VSpherePlatformType:
+		return generateVSphereProviderSpecPatch(machineSet, backdatedImage)
 	default:
 		e2e.Failf("unexpected platform type; should not be here")
 		return "", "", "", ""
@@ -163,66 +166,85 @@ func createFakeUpdatePatch(oc *exutil.CLI, machineSet machinev1beta1.MachineSet)
 }
 
 // generateAWSProviderSpecPatch generates a fake update patch for the AWS MachineSet
-func generateAWSProviderSpecPatch(machineSet machinev1beta1.MachineSet) (string, string, string, string) {
+func generateAWSProviderSpecPatch(machineSet machinev1beta1.MachineSet, backdatedImage string) (string, string, string, string) {
 	providerSpec := new(machinev1beta1.AWSMachineProviderConfig)
 	err := unmarshalProviderSpec(&machineSet, providerSpec)
 	o.Expect(err).NotTo(o.HaveOccurred())
 
-	// Modify the boot image to an older known AMI value
-	// See: https://issues.redhat.com/browse/OCPBUGS-57426
 	originalBootImage := *providerSpec.AMI.ID
-	newBootImage := "ami-000145e5a91e9ac22"
 	newProviderSpec := providerSpec.DeepCopy()
-	newProviderSpec.AMI.ID = &newBootImage
+	newProviderSpec.AMI.ID = &backdatedImage
 
 	newProviderSpecPatch, err := marshalProviderSpec(newProviderSpec)
 	o.Expect(err).NotTo(o.HaveOccurred())
 	originalProviderSpecPatch, err := marshalProviderSpec(providerSpec)
 	o.Expect(err).NotTo(o.HaveOccurred())
 
-	return newProviderSpecPatch, originalProviderSpecPatch, newBootImage, originalBootImage
-
+	return newProviderSpecPatch, originalProviderSpecPatch, backdatedImage, originalBootImage
 }
 
 // generateGCPProviderSpecPatch generates a fake update patch for the GCP MachineSet
-func generateGCPProviderSpecPatch(machineSet machinev1beta1.MachineSet) (string, string, string, string) {
+func generateGCPProviderSpecPatch(machineSet machinev1beta1.MachineSet, backdatedImage string) (string, string, string, string) {
 	providerSpec := new(machinev1beta1.GCPMachineProviderSpec)
 	err := unmarshalProviderSpec(&machineSet, providerSpec)
 	o.Expect(err).NotTo(o.HaveOccurred())
 
-	// Modify the boot image to a older known value.
-	// See: https://issues.redhat.com/browse/OCPBUGS-57426
-	originalBootImage := providerSpec.Disks[0].Image
-	newBootImage := "projects/rhcos-cloud/global/images/rhcos-410-84-202210040010-0-gcp-x86-64"
+	var originalBootImage string
+	for _, disk := range providerSpec.Disks {
+		if disk.Boot {
+			originalBootImage = disk.Image
+			break
+		}
+	}
 	newProviderSpec := providerSpec.DeepCopy()
 	for idx := range newProviderSpec.Disks {
-		newProviderSpec.Disks[idx].Image = newBootImage
+		if newProviderSpec.Disks[idx].Boot {
+			newProviderSpec.Disks[idx].Image = backdatedImage
+		}
 	}
 	newProviderSpecPatch, err := marshalProviderSpec(newProviderSpec)
 	o.Expect(err).NotTo(o.HaveOccurred())
 	originalProviderSpecPatch, err := marshalProviderSpec(providerSpec)
 	o.Expect(err).NotTo(o.HaveOccurred())
 
-	return newProviderSpecPatch, originalProviderSpecPatch, newBootImage, originalBootImage
+	return newProviderSpecPatch, originalProviderSpecPatch, backdatedImage, originalBootImage
 }
 
 // generateAzureProviderSpecPatch generates a fake update patch for the Azure MachineSet
-func generateAzureProviderSpecPatch(machineSet machinev1beta1.MachineSet) (string, string, string, string) {
+func generateAzureProviderSpecPatch(machineSet machinev1beta1.MachineSet, backdatedImage string) (string, string, string, string) {
 	providerSpec := new(machinev1beta1.AzureMachineProviderSpec)
 	err := unmarshalProviderSpec(&machineSet, providerSpec)
 	o.Expect(err).NotTo(o.HaveOccurred())
 
-	// Use JSON patch to precisely replace just the image field with marketplace image
-	// This avoids any merge conflicts with existing fields
-	// Use an older known 4.18 boot image that is available in the marketplace
-	jsonPatch := `[{"op": "replace", "path": "/spec/template/spec/providerSpec/value/image", "value": {"offer": "aro4", "publisher": "azureopenshift", "resourceID": "", "sku": "418-v2", "version": "418.94.20250122", "type": "MarketplaceNoPlan"}}]`
+	// Use JSON patch to replace just the image field with the backdated image struct.
+	// This avoids any merge conflicts with existing fields.
+	jsonPatch := fmt.Sprintf(`[{"op": "replace", "path": "/spec/template/spec/providerSpec/value/image", "value": %s}]`, backdatedImage)
 
 	// Create JSON patch to restore original image
 	originalImage := providerSpec.Image
 	originalJSONPatch := fmt.Sprintf(`[{"op": "replace", "path": "/spec/template/spec/providerSpec/value/image", "value": {"offer": "%s", "publisher": "%s", "resourceID": "%s", "sku": "%s", "version": "%s", "type": "%s"}}]`,
 		originalImage.Offer, originalImage.Publisher, originalImage.ResourceID, originalImage.SKU, originalImage.Version, originalImage.Type)
 
-	return jsonPatch, originalJSONPatch, "418.94.20250122", providerSpec.Image.Version
+	// "fake-499nn-rg" is a unique substring of the backdated resourceID, used to identify the image in assertions
+	return jsonPatch, originalJSONPatch, "fake-499nn-rg", providerSpec.Image.Version
+}
+
+// generateVSphereProviderSpecPatch generates a fake update patch for the vSphere MachineSet
+func generateVSphereProviderSpecPatch(machineSet machinev1beta1.MachineSet, backdatedImage string) (string, string, string, string) {
+	providerSpec := new(machinev1beta1.VSphereMachineProviderSpec)
+	err := unmarshalProviderSpec(&machineSet, providerSpec)
+	o.Expect(err).NotTo(o.HaveOccurred())
+
+	originalBootImage := providerSpec.Template
+	newProviderSpec := providerSpec.DeepCopy()
+	newProviderSpec.Template = backdatedImage
+
+	newProviderSpecPatch, err := marshalProviderSpec(newProviderSpec)
+	o.Expect(err).NotTo(o.HaveOccurred())
+	originalProviderSpecPatch, err := marshalProviderSpec(providerSpec)
+	o.Expect(err).NotTo(o.HaveOccurred())
+
+	return newProviderSpecPatch, originalProviderSpecPatch, backdatedImage, originalBootImage
 }
 
 // generateLegacyAzureProviderSpecPatch generates a fake legacy update patch for the Azure MachineSet
