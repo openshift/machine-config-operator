@@ -8,7 +8,6 @@ import (
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
-	"github.com/openshift/machine-config-operator/test/extended-priv/util/architecture"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -62,7 +61,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		var (
 			duplicatedMachinesetName = fmt.Sprintf("cloned-tc-%s", GetCurrentTestPolarionIDNumber())
 			firstMachineSet          = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
-			fakeImageName            = getBackdatedBootImage(oc.AsAdmin())
+			fakeImageName            = exutil.GetBackdatedBootImage(oc.AsAdmin())
 		)
 
 		exutil.By("Duplicate machineset for testing")
@@ -119,7 +118,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	g.It("[PolarionID:74240][OTP] ManagedBootImages. Restore All MachineSet images", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
 		var (
 			machineSet                 = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
-			fakeImageName              = getBackdatedBootImage(oc.AsAdmin())
+			fakeImageName              = exutil.GetBackdatedBootImage(oc.AsAdmin())
 			clonedMSName               = "cloned-tc-74240"
 			clonedWrongBootImageMSName = "cloned-tc-74240-wrong-boot-image"
 			clonedOwnedMSName          = "cloned-tc-74240-owned"
@@ -225,7 +224,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	g.It("[PolarionID:74239][OTP] ManagedBootImages. Restore Partial MachineSet images", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
 		var (
 			machineSet             = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
-			fakeImageName          = getBackdatedBootImage(oc.AsAdmin())
+			fakeImageName          = exutil.GetBackdatedBootImage(oc.AsAdmin())
 			clonedMSLabelName      = "cloned-tc-74239-label"
 			clonedMSNoLabelName    = "cloned-tc-74239-no-label"
 			clonedMSLabelOwnedName = "cloned-tc-74239-label-owned"
@@ -321,7 +320,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		var (
 			machineConfiguration        = GetMachineConfiguration(oc.AsAdmin())
 			machineSet                  = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
-			fakeImageName               = getBackdatedBootImage(oc.AsAdmin())
+			fakeImageName               = exutil.GetBackdatedBootImage(oc.AsAdmin())
 			clonedMSName                = "cloned-tc-74751-copy"
 			labelName                   = "test"
 			labelValue                  = "update"
@@ -509,7 +508,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 			machineConfiguration = GetMachineConfiguration(oc.AsAdmin())
 			machineSet           = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
-			fakeImageName        = getBackdatedBootImage(oc.AsAdmin())
+			fakeImageName        = exutil.GetBackdatedBootImage(oc.AsAdmin())
 			labelName            = "test"
 			labelValue           = "update"
 
@@ -738,7 +737,7 @@ func DuplicateMachineSetWithCustomBootImage(ms *MachineSet, newBootImage, newNam
 }
 
 // getCoreOsBootImageFromConfigMap retrieves the boot image from the coreos-bootimages ConfigMap for the given platform and architecture
-func getCoreOsBootImageFromConfigMap(platform, region string, arch architecture.Architecture, coreosBootimagesCM *ConfigMap) (string, error) {
+func getCoreOsBootImageFromConfigMap(platform, region string, arch exutil.Architecture, coreosBootimagesCM *ConfigMap) (string, error) {
 	var (
 		coreOsBootImagePath string
 		// transform amd64 naming to x86_64 naming
@@ -781,7 +780,7 @@ func getCoreOsBootImageFromConfigMap(platform, region string, arch architecture.
 }
 
 // getCoreOsBootImageFromConfigMapOrFail gets the boot image and fails the test if there's an error
-func getCoreOsBootImageFromConfigMapOrFail(platform, region string, arch architecture.Architecture, coreosBootimagesCM *ConfigMap) string {
+func getCoreOsBootImageFromConfigMapOrFail(platform, region string, arch exutil.Architecture, coreosBootimagesCM *ConfigMap) string {
 	image, err := getCoreOsBootImageFromConfigMap(platform, region, arch, coreosBootimagesCM)
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the boot image from %s for platform %s and arch %s", coreosBootimagesCM, platform, arch)
 	return image
@@ -807,7 +806,7 @@ func testUserDataUpdateFailure(oc *exutil.CLI, clonedMSName, clonedSecretName, e
 	var (
 		machineConfiguration   = GetMachineConfiguration(oc.AsAdmin())
 		machineSet             = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
-		fakeImageName          = getBackdatedBootImage(oc.AsAdmin())
+		fakeImageName          = exutil.GetBackdatedBootImage(oc.AsAdmin())
 		labelName              = "test"
 		labelValue             = "update"
 		secondLabelValue       = "update2"
@@ -898,60 +897,6 @@ func checkManagedBootImagesStatus(mc *MachineConfiguration, mode string) {
 		Should(o.Equal(mode), "Error: The %s mode does not match even after patched", mode)
 }
 
-// getBackdatedBootImage returns a valid boot image value for testing based on platform
-// MCO will only update images previously published in the installer. This function returns one of those valid images
-func getBackdatedBootImage(oc *exutil.CLI) string {
-	var (
-		platform = exutil.CheckPlatform(oc)
-	)
-
-	switch platform {
-	case AWSPlatform:
-		// MCO will only update AMIS present in the list defined here https://github.com/openshift/machine-config-operator/pull/5122
-		// We choose one of them
-		return "ami-0ffec236307e00b94"
-	case GCPPlatform:
-		// In GCP all images located in projects/rhcos-cloud/global/images are considered valid for update
-		return "projects/rhcos-cloud/global/images" + "/updateble-fake-image"
-	case AzurePlatform:
-		// In Azure we need to configure the whole image, not only one field. We need an image in resourceID and an empty sku field
-		// We use a similar resourceID as the one generated in a normal installation. Note that it contains "gen2", so it should use "hyperVGen2"
-		return `{"offer":"","publisher":"","resourceID":"/resourceGroups/fake-499nn-rg/providers/Microsoft.Compute/galleries/gallery_fake21az_499nn/images/fake-499nn-gen2/versions/latest","sku":"","version":""}`
-	case VspherePlatform:
-		// In Vsphere we need the image to be present in the vcenter, so we need to manually upload it
-		var (
-			// We will use 4.16 as the original version that will be updated to the current version
-			imageVersion = "4.16"
-			// Vsphere only support AMD64
-			arch = architecture.AMD64
-		)
-
-		// Get the right base image name from the rhcos json info stored in the github repositories
-		exutil.By(fmt.Sprintf("Get the base image for version %s", imageVersion))
-		rhcosHandler, err := GetRHCOSHandler(platform)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the rhcos handler")
-
-		baseImage, err := rhcosHandler.GetBaseImageFromRHCOSImageInfo(imageVersion, arch, "")
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the base image")
-		logger.Infof("Using base image %s", baseImage)
-
-		baseImageURL, err := rhcosHandler.GetBaseImageURLFromRHCOSImageInfo(imageVersion, arch)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the base image URL")
-
-		// To avoid collisions we will add prefix to identify our image
-		baseImage = "mcotest-" + baseImage
-		o.Expect(
-			uploadBaseImageToCloud(oc, platform, baseImageURL, baseImage),
-		).To(o.Succeed(), "Error uploading the base image %s to the cloud", baseImageURL)
-		logger.Infof("Uplodated: %s", baseImage)
-		logger.Infof("OK!\n")
-
-		return baseImage
-	default:
-		return ""
-	}
-}
-
 // getReleaseFromVsphereTemplate gets the release version from a vSphere template
 func getReleaseFromVsphereTemplate(oc *exutil.CLI, vsphereTemplate string) (string, error) {
 	vsInfo, err := exutil.GetVSphereConnectionInfo(oc.AsAdmin())
@@ -1013,7 +958,7 @@ func CheckCurrentOSImageIsUpdated(bir BootImageResource) {
 func setArchitectureAndCheckStatus(clonedMS *MachineSet, machineConfiguration *MachineConfiguration, archValue string) {
 	exutil.By(fmt.Sprintf("Set a %s architecture in the cloned machineset", archValue))
 	o.Expect(clonedMS.SetArchitecture(archValue)).To(o.Succeed(), "Error setting architecture %s in %s", archValue, clonedMS)
-	logger.Infof("Architecture %s set in %s\n", archValue, clonedMS)
+	logger.Infof("exutil.Architecture %s set in %s\n", archValue, clonedMS)
 
 	exutil.By("Check that no failures are being reported")
 	o.Eventually(machineConfiguration, "5m", "20s").Should(HaveConditionField("BootImageUpdateDegraded", "status", "False"),

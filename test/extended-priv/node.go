@@ -13,7 +13,6 @@ import (
 	expect "github.com/google/goexpect"
 	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
-	"github.com/openshift/machine-config-operator/test/extended-priv/util/architecture"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -1202,16 +1201,16 @@ func (n *Node) ExecIP6Tables(rules []string) error {
 }
 
 // GetArchitecture get the architecture used in the node
-func (n *Node) GetArchitecture() (architecture.Architecture, error) {
+func (n *Node) GetArchitecture() (exutil.Architecture, error) {
 	arch, err := n.Get(`{.status.nodeInfo.architecture}`)
 	if err != nil {
-		return architecture.UNKNOWN, err
+		return exutil.UNKNOWN, err
 	}
-	return architecture.FromString(arch), nil
+	return exutil.FromString(arch), nil
 }
 
 // GetArchitectureOrFail get the architecture used in the node and fail the test if any error happens while doing it
-func (n *Node) GetArchitectureOrFail() architecture.Architecture {
+func (n *Node) GetArchitectureOrFail() exutil.Architecture {
 	arch, err := n.GetArchitecture()
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the architecture of node %s", n.GetName())
 

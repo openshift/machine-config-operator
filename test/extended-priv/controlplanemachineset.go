@@ -8,7 +8,7 @@ import (
 
 	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
-	"github.com/openshift/machine-config-operator/test/extended-priv/util/architecture"
+	
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 	"github.com/tidwall/gjson"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -23,7 +23,7 @@ const (
 // BootImageResource is an interface for resources that have boot images (MachineSet and ControlPlaneMachineSet)
 type BootImageResource interface {
 	GetOC() *exutil.CLI
-	GetArchitectureOrFail() architecture.Architecture
+	GetArchitectureOrFail() exutil.Architecture
 	GetCoreOsBootImage() (string, error)
 	String() string
 }
@@ -210,34 +210,34 @@ func (cpms ControlPlaneMachineSet) SetCoreOsBootImage(coreosBootImage string) er
 }
 
 // GetArchitecture returns the architecture for this ControlPlaneMachineSet
-func (cpms ControlPlaneMachineSet) GetArchitecture() (architecture.Architecture, error) {
+func (cpms ControlPlaneMachineSet) GetArchitecture() (exutil.Architecture, error) {
 	platform := exutil.CheckPlatform(cpms.GetOC())
 	if platform == VspherePlatform {
-		// In vsphere only the AMD64 architecture is supported
-		return architecture.AMD64, nil
+		// In vsphere only the exutil.AMD64 architecture is supported
+		return exutil.AMD64, nil
 	}
 
 	// Get machines created by the ControlPlaneMachineSet
 	machines, err := cpms.GetMachines()
 	if err != nil {
-		return architecture.UNKNOWN, err
+		return exutil.UNKNOWN, err
 	}
 
 	if len(machines) == 0 {
-		return architecture.UNKNOWN, fmt.Errorf("ControlPlaneMachineSet %s has no machines, so we cannot get the architecture from any existing machine", cpms.GetName())
+		return exutil.UNKNOWN, fmt.Errorf("ControlPlaneMachineSet %s has no machines, so we cannot get the architecture from any existing machine", cpms.GetName())
 	}
 
 	// Get the node associated with the first machine
 	node, err := machines[0].GetNode()
 	if err != nil {
-		return architecture.UNKNOWN, err
+		return exutil.UNKNOWN, err
 	}
 
 	return node.GetArchitecture()
 }
 
 // GetArchitectureOrFail returns the architecture and fails the test if any error happens
-func (cpms ControlPlaneMachineSet) GetArchitectureOrFail() architecture.Architecture {
+func (cpms ControlPlaneMachineSet) GetArchitectureOrFail() exutil.Architecture {
 	arch, err := cpms.GetArchitecture()
 	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error getting the architecture in %s", cpms)
 	return arch

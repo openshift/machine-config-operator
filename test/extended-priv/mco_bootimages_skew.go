@@ -109,7 +109,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		}()
 
 		// Patch the boot image to an older version to trigger an update loop
-		backdatedBootImage := getBackdatedBootImage(oc)
+		backdatedBootImage := exutil.GetBackdatedBootImage(oc)
 		o.Expect(machineSetUnderTest.SetCoreOsBootImage(backdatedBootImage)).To(o.Succeed())
 		logger.Infof("Set backdated boot image '%s' in MachineSet %s to trigger update loop", backdatedBootImage, machineSetUnderTest.name)
 
@@ -149,7 +149,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("Set non-existent user data secret '%s' in MachineSet %s", nonExistentSecret, machineSetUnderTest.name)
 
 		// Patch the boot image to an older version to trigger an update loop
-		backdatedBootImage := getBackdatedBootImage(oc)
+		backdatedBootImage := exutil.GetBackdatedBootImage(oc)
 		o.Expect(machineSetUnderTest.SetCoreOsBootImage(backdatedBootImage)).To(o.Succeed())
 		logger.Infof("Set backdated boot image '%s' in MachineSet %s to trigger update loop", backdatedBootImage, machineSetUnderTest.name)
 

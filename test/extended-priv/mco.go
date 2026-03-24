@@ -74,7 +74,7 @@ func skipTestIfRHELVersion(node *Node, operator, constraintVersion string) {
 	actualVersion, err := node.GetRHELVersion()
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting RHEL version from node %s", node.GetName())
 
-	if CompareVersions(actualVersion, operator, constraintVersion) {
+	if exutil.CompareVersions(actualVersion, operator, constraintVersion) {
 		g.Skip(fmt.Sprintf("Test requires RHEL version NOT %s %s, but node has %s", operator, constraintVersion, actualVersion))
 	}
 }

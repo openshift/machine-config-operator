@@ -1,15 +1,15 @@
-package architecture
+package util
 
 import (
 	"fmt"
 	"strings"
 
 	g "github.com/onsi/ginkgo/v2"
-	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 	"k8s.io/apimachinery/pkg/util/sets"
 	e2e "k8s.io/kubernetes/test/e2e/framework"
 )
 
+// Architecture represents a CPU architecture.
 type Architecture int
 
 const (
@@ -30,6 +30,11 @@ const (
 	multiString   = "multi"
 	x86_64String  = "x86_64"
 	aarch64String = "aarch64"
+)
+
+const (
+	// NodeArchitectureLabel is the label used to identify the architecture of a node
+	NodeArchitectureLabel = "kubernetes.io/arch"
 )
 
 // FromString returns the Architecture value for the given string
@@ -90,7 +95,7 @@ func (a Architecture) GNUString() string {
 }
 
 // ClusterArchitecture determines the architecture of the cluster
-func ClusterArchitecture(oc *exutil.CLI) (architecture Architecture) {
+func ClusterArchitecture(oc *CLI) (architecture Architecture) {
 	output, err := oc.WithoutNamespace().AsAdmin().Run("get").Args("nodes", "-o=jsonpath={.items[*].status.nodeInfo.architecture}").Output()
 	if err != nil {
 		e2e.Failf("unable to get the cluster architecture: %v", err)
@@ -110,7 +115,7 @@ func ClusterArchitecture(oc *exutil.CLI) (architecture Architecture) {
 }
 
 // SkipNonAmd64SingleArch skips the test if the cluster architecture is not AMD64
-func SkipNonAmd64SingleArch(oc *exutil.CLI) (architecture Architecture) {
+func SkipNonAmd64SingleArch(oc *CLI) (architecture Architecture) {
 	architecture = ClusterArchitecture(oc)
 	if architecture != AMD64 {
 		g.Skip(fmt.Sprintf("Skip for cluster architecture: %s", architecture.String()))
@@ -118,13 +123,8 @@ func SkipNonAmd64SingleArch(oc *exutil.CLI) (architecture Architecture) {
 	return
 }
 
-const (
-	// NodeArchitectureLabel is the label used to identify the architecture of a node
-	NodeArchitectureLabel = "kubernetes.io/arch"
-)
-
 // GetAvailableArchitecturesSet returns multi-arch node cluster's Architectures
-func GetAvailableArchitecturesSet(oc *exutil.CLI) []Architecture {
+func GetAvailableArchitecturesSet(oc *CLI) []Architecture {
 	output, err := oc.WithoutNamespace().AsAdmin().Run("get").Args("nodes", "-o=jsonpath={.items[*].status.nodeInfo.architecture}").Output()
 	if err != nil {
 		e2e.Failf("unable to get the cluster architecture: %v", err)
@@ -144,8 +144,8 @@ func GetAvailableArchitecturesSet(oc *exutil.CLI) []Architecture {
 	return architectures
 }
 
-// SkipIfNoNodeWithArchitectures skip the test if the cluster is one of the given architectures
-func SkipIfNoNodeWithArchitectures(oc *exutil.CLI, architectures ...Architecture) {
+// SkipIfNoNodeWithArchitectures skips the test if the cluster has none of the given architectures
+func SkipIfNoNodeWithArchitectures(oc *CLI, architectures ...Architecture) {
 	if sets.New(
 		GetAvailableArchitecturesSet(oc)...).IsSuperset(
 		sets.New(architectures...)) {

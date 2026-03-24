@@ -9,7 +9,6 @@ import (
 
 	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
-	"github.com/openshift/machine-config-operator/test/extended-priv/util/architecture"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -261,42 +260,42 @@ func (ms MachineSet) SetCoreOsBootImage(coreosBootImage string) error {
 }
 
 // GetArchitecture returns the architecture configured for this Machineset
-func (ms MachineSet) GetArchitecture() (architecture.Architecture, error) {
+func (ms MachineSet) GetArchitecture() (exutil.Architecture, error) {
 	labeledArch, err := ms.Get(`{.metadata.annotations.capacity\.cluster-autoscaler\.kubernetes\.io/labels}`)
 	if err != nil {
-		return architecture.UNKNOWN, err
+		return exutil.UNKNOWN, err
 	}
 
 	if !strings.Contains(labeledArch, "kubernetes.io/arch=") {
 		platform := exutil.CheckPlatform(ms.GetOC())
 		if platform == VspherePlatform {
-			// In vsphere only the AMD64 architecture is supported
-			return architecture.AMD64, nil
+			// In vsphere only the exutil.AMD64 architecture is supported
+			return exutil.AMD64, nil
 		}
 
 		logger.Infof("No arch annotation in the machineset. Not Vsphere. We need to get the architecture from the existing nodes created by the machineset %s", ms.GetName())
 		nodes, err := ms.GetNodes()
 		if err != nil {
-			return architecture.UNKNOWN, err
+			return exutil.UNKNOWN, err
 		}
 
 		if len(nodes) == 0 {
-			return architecture.UNKNOWN, fmt.Errorf("Machineset %s has no replicas, so we cannot get the architecture from any existing node", ms.GetName())
+			return exutil.UNKNOWN, fmt.Errorf("Machineset %s has no replicas, so we cannot get the architecture from any existing node", ms.GetName())
 		}
 
 		narch, err := nodes[0].GetArchitecture()
 		if err != nil {
-			return architecture.UNKNOWN, err
+			return exutil.UNKNOWN, err
 		}
 
 		return narch, nil
 	}
 
-	return architecture.FromString(strings.Split(labeledArch, "kubernetes.io/arch=")[1]), nil
+	return exutil.FromString(strings.Split(labeledArch, "kubernetes.io/arch=")[1]), nil
 }
 
 // GetArchitectureOrFail returns the architecture configured for this Machineset and fails the test if any error happens
-func (ms MachineSet) GetArchitectureOrFail() architecture.Architecture {
+func (ms MachineSet) GetArchitectureOrFail() exutil.Architecture {
 	arch, err := ms.GetArchitecture()
 	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error getting the annotated architecture in %s", ms)
 	return arch
@@ -513,11 +512,11 @@ func convertUserDataToNewVersion(userData, newIgnitionVersion string) (string, e
 	}
 	currentIgnitionVersion := currentIgnitionVersionResult.String()
 
-	if CompareVersions(currentIgnitionVersion, "=", newIgnitionVersion) {
+	if exutil.CompareVersions(currentIgnitionVersion, "=", newIgnitionVersion) {
 		logger.Infof("Current ignition version %s is the same as the new ignition version %s. No need to manipulate the userData info",
 			currentIgnitionVersion, newIgnitionVersion)
 	} else {
-		if CompareVersions(newIgnitionVersion, "<", "3.0.0") {
+		if exutil.CompareVersions(newIgnitionVersion, "<", "3.0.0") {
 			logger.Infof("New ignition version is %s, we need to adapt the userData ignition config to 2.0 config", newIgnitionVersion)
 			userData, err = ConvertUserDataIgnition3ToIgnition2(userData)
 			if err != nil {
@@ -597,10 +596,10 @@ func getUserDataIgnitionVersionFromOCPVersion(baseImageVersion string) string {
 	   4.1: 2.2.0
 	*/
 
-	if CompareVersions(baseImageVersion, "<", "4.6") {
+	if exutil.CompareVersions(baseImageVersion, "<", "4.6") {
 		return "2.2.0"
 	}
-	if CompareVersions(baseImageVersion, "<", "4.10") {
+	if exutil.CompareVersions(baseImageVersion, "<", "4.10") {
 		return "3.1.0"
 	}
 	return "3.2.0"

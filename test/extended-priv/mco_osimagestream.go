@@ -6,7 +6,6 @@ import (
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
-	"github.com/openshift/machine-config-operator/test/extended-priv/util/architecture"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 )
 
@@ -117,27 +116,27 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 	// AI-assisted: Test case to validate real-time kernel configuration across OS image streams
 	g.It("[PolarionID:87095][OTP] Realtime kernel from rhel9 stream to rhel10 stream [Disruptive] [apigroup:machineconfiguration.openshift.io]", g.Label("Platform:aws", "Platform:gce"), func() {
-		architecture.SkipIfNoNodeWithArchitectures(oc.AsAdmin(), architecture.AMD64)
+		exutil.SkipIfNoNodeWithArchitectures(oc.AsAdmin(), exutil.AMD64)
 		skipTestIfSupportedPlatformNotMatched(oc.AsAdmin(), AWSPlatform, GCPPlatform)
 
 		testID := GetCurrentTestPolarionIDNumber()
-		createdCustomPoolName := fmt.Sprintf("tc-%s-%s", testID, architecture.AMD64)
+		createdCustomPoolName := fmt.Sprintf("tc-%s-%s", testID, exutil.AMD64)
 		defer DeleteCustomMCP(oc.AsAdmin(), createdCustomPoolName)
 
-		mcp, _ := GetPoolAndNodesForArchitectureOrFail(oc.AsAdmin(), createdCustomPoolName, architecture.AMD64, 1)
+		mcp, _ := GetPoolAndNodesForArchitectureOrFail(oc.AsAdmin(), createdCustomPoolName, exutil.AMD64, 1)
 		testKernelTypeAcrossOSImageStreams(oc, osis, mcp, testID, KernelTypeRealtime, "set-realtime-kernel.yaml")
 	})
 
 	// AI-assisted: Test case to validate 64k-pages kernel configuration across OS image streams
 	g.It("[PolarionID:87096][OTP] 64k pages kernel from rhel9 stream to rhel10 stream [Disruptive] [apigroup:machineconfiguration.openshift.io]", g.Label("NoPlatform:gce"), func() {
-		architecture.SkipIfNoNodeWithArchitectures(oc.AsAdmin(), architecture.ARM64)
+		exutil.SkipIfNoNodeWithArchitectures(oc.AsAdmin(), exutil.ARM64)
 		skipTestIfNotSupportedPlatform(oc.AsAdmin(), GCPPlatform)
 
 		testID := GetCurrentTestPolarionIDNumber()
-		createdCustomPoolName := fmt.Sprintf("tc-%s-%s", testID, architecture.ARM64)
+		createdCustomPoolName := fmt.Sprintf("tc-%s-%s", testID, exutil.ARM64)
 		defer DeleteCustomMCP(oc.AsAdmin(), createdCustomPoolName)
 
-		mcp, _ := GetPoolAndNodesForArchitectureOrFail(oc.AsAdmin(), createdCustomPoolName, architecture.ARM64, 1)
+		mcp, _ := GetPoolAndNodesForArchitectureOrFail(oc.AsAdmin(), createdCustomPoolName, exutil.ARM64, 1)
 		testKernelTypeAcrossOSImageStreams(oc, osis, mcp, testID, KernelType64kPages, "set-64k-pages-kernel.yaml")
 	})
 
@@ -180,7 +179,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		exutil.By("Get extensions compatible with rhel-10 stream")
 		fips := isFIPSEnabledInClusterConfig(oc.AsAdmin())
-		armNodes, err := mcp.GetNodesByArchitecture(architecture.ARM64)
+		armNodes, err := mcp.GetNodesByArchitecture(exutil.ARM64)
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the list of ARM nodes in %s", mcp)
 		_, rhel10CompatibleExtensions, expectedRpmPackages := FilterExtensions(AllExtenstions, len(armNodes) > 0, fips, OSImageStreamRHEL10)
 		logger.Infof("Extensions compatible with rhel-10: %v", rhel10CompatibleExtensions)

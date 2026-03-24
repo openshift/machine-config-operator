@@ -12,7 +12,6 @@ import (
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
-	"github.com/openshift/machine-config-operator/test/extended-priv/util/architecture"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 	"github.com/tidwall/gjson"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -461,16 +460,16 @@ func (mcp *MachineConfigPool) GetNodes() ([]*Node, error) {
 }
 
 // GetNodesByArchitecture returns a list of nodes that belong to this pool and use the given architecture
-func (mcp *MachineConfigPool) GetNodesByArchitecture(arch architecture.Architecture, archs ...architecture.Architecture) ([]*Node, error) {
+func (mcp *MachineConfigPool) GetNodesByArchitecture(arch exutil.Architecture, archs ...exutil.Architecture) ([]*Node, error) {
 	archsList := arch.String()
 	for _, itemArch := range archs {
 		archsList = archsList + "," + itemArch.String()
 	}
-	return mcp.GetNodesByLabel(fmt.Sprintf(`%s in (%s)`, architecture.NodeArchitectureLabel, archsList))
+	return mcp.GetNodesByLabel(fmt.Sprintf(`%s in (%s)`, exutil.NodeArchitectureLabel, archsList))
 }
 
-// GetNodesByArchitectureOrFail returns a list of nodes that belong to this pool and use the given architecture. It fails the test if any error happens
-func (mcp *MachineConfigPool) GetNodesByArchitectureOrFail(arch architecture.Architecture, archs ...architecture.Architecture) []*Node {
+// GetNodesByArchitectureOrFail returns a list of nodes that belong to this pool and use the given  It fails the test if any error happens
+func (mcp *MachineConfigPool) GetNodesByArchitectureOrFail(arch exutil.Architecture, archs ...exutil.Architecture) []*Node {
 	nodes, err := mcp.GetNodesByArchitecture(arch)
 	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "In MCP %s. Cannot get the nodes using architectures %s", mcp.GetName(), append(archs, arch))
 	return nodes
@@ -927,8 +926,8 @@ func (mcp *MachineConfigPool) SanityCheck() error {
 }
 
 // GetArchitectures returns the list of architectures that the nodes in this pool are using
-func (mcp *MachineConfigPool) GetArchitectures() ([]architecture.Architecture, error) {
-	archs := []architecture.Architecture{}
+func (mcp *MachineConfigPool) GetArchitectures() ([]exutil.Architecture, error) {
+	archs := []exutil.Architecture{}
 	nodes, err := mcp.GetNodes()
 	if err != nil {
 		return archs, err
@@ -942,14 +941,14 @@ func (mcp *MachineConfigPool) GetArchitectures() ([]architecture.Architecture, e
 }
 
 // GetArchitecturesOrFail returns the list of architectures that the nodes in this pool are using, if there is any error it fails the test
-func (mcp *MachineConfigPool) GetArchitecturesOrFail() []architecture.Architecture {
+func (mcp *MachineConfigPool) GetArchitecturesOrFail() []exutil.Architecture {
 	archs, err := mcp.GetArchitectures()
 	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error getting the architectures used by nodes in MCP %s", mcp.GetName())
 	return archs
 }
 
 // AllNodesUseArch return true if all the nodes in the pool has the given architecture
-func (mcp *MachineConfigPool) AllNodesUseArch(arch architecture.Architecture) bool {
+func (mcp *MachineConfigPool) AllNodesUseArch(arch exutil.Architecture) bool {
 	for _, currentArch := range mcp.GetArchitecturesOrFail() {
 		if arch != currentArch {
 			return false
@@ -1336,7 +1335,7 @@ func DeleteCustomMCP(oc *exutil.CLI, name string) error {
 // 2) A custom pool with 1 arm node in it if there are arm nodes in the worker pool. The pool will have the same osstream used by the worker pool
 // 3) Any existing custom MCP with all nodes using arm64
 // 4) The master pools if the master pool is arm64
-func GetPoolAndNodesForArchitectureOrFail(oc *exutil.CLI, createMCPName string, arch architecture.Architecture, numNodes int) (*MachineConfigPool, []*Node) {
+func GetPoolAndNodesForArchitectureOrFail(oc *exutil.CLI, createMCPName string, arch exutil.Architecture, numNodes int) (*MachineConfigPool, []*Node) {
 
 	var (
 		wMcp                  = NewMachineConfigPool(oc, MachineConfigPoolWorker)
@@ -1356,8 +1355,8 @@ func GetPoolAndNodesForArchitectureOrFail(oc *exutil.CLI, createMCPName string, 
 	if len(wMcp.GetNodesByArchitectureOrFail(arch)) > 0 {
 		var err error
 
-		mcp, err := CreateCustomMCPWithStreamByLabel(oc.AsAdmin(), createMCPName, fmt.Sprintf(`%s=%s`, architecture.NodeArchitectureLabel, arch), osstream, numNodes)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the custom pool for infrastructure %s", architecture.ARM64)
+		mcp, err := CreateCustomMCPWithStreamByLabel(oc.AsAdmin(), createMCPName, fmt.Sprintf(`%s=%s`, exutil.NodeArchitectureLabel, arch), osstream, numNodes)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the custom pool for infrastructure %s", exutil.ARM64)
 		return mcp, mcp.GetNodesOrFail()
 	}
 
@@ -1450,14 +1449,14 @@ func FilterExtensions(extensions map[string][]string, hasARM64, fips bool, osIma
 		filteredExtensions[ext] = pkgs
 	}
 
-	// sandboxed-containers extension is not supported for ARM64 if FIPS is enabled
+	// sandboxed-containers extension is not supported for exutil.ARM64 if FIPS is enabled
 	if fips && hasARM64 {
-		logger.Infof("%s extension not supported in ARM64+FIPS clusters. Skipping extension.", sandboxedContainersExtension)
+		logger.Infof("%s extension not supported in exutil.ARM64+FIPS clusters. Skipping extension.", sandboxedContainersExtension)
 		delete(filteredExtensions, sandboxedContainersExtension)
 	} else if hasARM64 && osImageStream == OSImageStreamRHEL10 {
 		// TODO Remove with https://issues.redhat.com/browse/MCO-2156
-		// This change is temporal till RHEL 10 ARM64 builds have kata-containers
-		logger.Infof("%s extension is temporarily not supported in RHEL 10 ARM64 clusters. Skipping extension.", sandboxedContainersExtension)
+		// This change is temporal till RHEL 10 exutil.ARM64 builds have kata-containers
+		logger.Infof("%s extension is temporarily not supported in RHEL 10 exutil.ARM64 clusters. Skipping extension.", sandboxedContainersExtension)
 		delete(filteredExtensions, sandboxedContainersExtension)
 	}
 

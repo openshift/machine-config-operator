@@ -2,18 +2,12 @@ package extended
 
 import (
 	"fmt"
-	"io"
-	"net/http"
-	"path"
-	"strings"
 	"time"
 
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
-	"github.com/openshift/machine-config-operator/test/extended-priv/util/architecture"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
-	"github.com/tidwall/gjson"
 )
 
 const (
@@ -88,7 +82,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		skipTestIfSupportedPlatformNotMatched(oc, AWSPlatform) // Scale up using 4.1 is only supported in AWS. GCP is only supported in versions 4.6+, and Vsphere in 4.2+
 		skipTestIfFIPSIsEnabled(oc.AsAdmin())                  // fips was supported for the first time in 4.3, hence it is not supported to scale 4.1 and 4.2 base images in clusters with fips=true
-		architecture.SkipNonAmd64SingleArch(oc)                // arm64 is not supported until 4.12
+		exutil.SkipNonAmd64SingleArch(oc)                      // arm64 is not supported until 4.12
 
 		// Apply workaround
 		// Because of https://issues.redhat.com/browse/OCPBUGS-27273 this test case fails when the cluster has imagecontentsourcepolicies
@@ -142,7 +136,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		)
 
 		skipTestIfSupportedPlatformNotMatched(oc, AWSPlatform, VspherePlatform) // Scale up using 4.3 is only supported in AWS, and Vsphere. GCP is only supported by our automation in versions 4.6+
-		architecture.SkipNonAmd64SingleArch(oc)                                 // arm64 is not supported by OCP until 4.12
+		exutil.SkipNonAmd64SingleArch(oc)                                       // arm64 is not supported by OCP until 4.12
 
 		SimpleScaleUPTest(oc, wMcp, imageVersion, getUserDataIgnitionVersionFromOCPVersion(imageVersion), numNewNodes)
 	})
@@ -175,7 +169,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		)
 
 		skipTestIfSupportedPlatformNotMatched(oc, AWSPlatform, VspherePlatform) // Scale up using 4.5 is only supported for AWS and Vsphere. GCP is only supported in versions 4.6+
-		architecture.SkipNonAmd64SingleArch(oc)                                 // arm64 is not supported until 4.11
+		exutil.SkipNonAmd64SingleArch(oc)                                       // arm64 is not supported until 4.11
 
 		if IsBootImageUpdateSupported(oc.AsAdmin()) {
 			exutil.By("Opt-out boot images update")
@@ -558,25 +552,25 @@ func cloneMachineSet(oc *exutil.CLI, ms *MachineSet, newMsName, imageVersion, ig
 
 	// Get the right base image name from the rhcos json info stored in the github repositories
 	exutil.By(fmt.Sprintf("Get the base image for version %s", imageVersion))
-	rhcosHandler, err := GetRHCOSHandler(platform)
+	rhcosHandler, err := exutil.GetRHCOSHandler(platform)
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the rhcos handler")
 
-	architecture, err := ms.GetArchitecture()
+	arch, err := ms.GetArchitecture()
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the arechitecture from machineset %s", ms.GetName())
 
-	baseImage, err := rhcosHandler.GetBaseImageFromRHCOSImageInfo(imageVersion, architecture, getCurrentRegionOrFail(oc.AsAdmin()))
+	baseImage, err := rhcosHandler.GetBaseImageFromRHCOSImageInfo(imageVersion, arch, getCurrentRegionOrFail(oc.AsAdmin()))
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the base image")
 	logger.Infof("Using base image %s", baseImage)
 
-	baseImageURL, err := rhcosHandler.GetBaseImageURLFromRHCOSImageInfo(imageVersion, architecture)
+	baseImageURL, err := rhcosHandler.GetBaseImageURLFromRHCOSImageInfo(imageVersion, arch)
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the base image URL")
 
-	// In vshpere we will upload the image. To avoid collisions we will add prefix to identify our image
+	// In vsphere we will upload the image. To avoid collisions we will add prefix to identify our image
 	if platform == VspherePlatform {
 		baseImage = "mcotest-" + baseImage
 	}
 	o.Expect(
-		uploadBaseImageToCloud(oc, platform, baseImageURL, baseImage),
+		exutil.UploadBaseImageToCloud(oc, platform, baseImageURL, baseImage),
 	).To(o.Succeed(), "Error uploading the base image %s to the cloud", baseImageURL)
 	logger.Infof("OK!\n")
 
@@ -624,45 +618,6 @@ func removeClonedMachineSet(ms *MachineSet, mcp *MachineConfigPool, expectedNumW
 		o.Expect(clonedSecret.Delete()).To(o.Succeed(),
 			"Error deleting  %s", ms.GetName())
 	}
-}
-
-func getRHCOSImagesInfo(version string) (string, error) {
-	var (
-		err        error
-		resp       *http.Response
-		numRetries = 3
-		retryDelay = time.Minute
-		rhcosURL   = fmt.Sprintf("https://raw.githubusercontent.com/openshift/installer/release-%s/data/data/rhcos.json", version)
-	)
-
-	if CompareVersions(version, ">=", "4.10") {
-		rhcosURL = fmt.Sprintf("https://raw.githubusercontent.com/openshift/installer/release-%s/data/data/coreos/rhcos.json", version)
-	}
-
-	// To mitigate network errors we will retry in case of failure
-	logger.Infof("Getting rhcos image info from: %s", rhcosURL)
-	for i := 0; i < numRetries; i++ {
-		if i > 0 {
-			logger.Infof("Error while getting the rhcos mages json data: %s.\nWaiting %s and retrying. Num retries: %d", err, retryDelay, i)
-			time.Sleep(retryDelay)
-		}
-		resp, err = http.Get(rhcosURL)
-		if err == nil {
-			break
-		}
-	}
-
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	// We Read the response body
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-	return string(body), nil
 }
 
 // getCurrentRegionOrFail returns the current region if we are in AWS or an empty string if any other platform
@@ -737,195 +692,6 @@ func SimpleScaleUPTest(oc *exutil.CLI, mcp *MachineConfigPool, imageVersion, ign
 
 func getClonedSecretName(msName string) string {
 	return clonedPrefix + msName
-}
-
-func GetRHCOSHandler(platform string) (RHCOSHandler, error) {
-	switch platform {
-	case AWSPlatform:
-		return AWSRHCOSHandler{}, nil
-	case GCPPlatform:
-		return GCPRHCOSHandler{}, nil
-	case VspherePlatform:
-		return VsphereRHCOSHandler{}, nil
-	default:
-		return nil, fmt.Errorf("Platform %s is not supported and cannot get RHCOSHandler", platform)
-	}
-}
-
-type RHCOSHandler interface {
-	GetBaseImageFromRHCOSImageInfo(version string, arch architecture.Architecture, region string) (string, error)
-	GetBaseImageURLFromRHCOSImageInfo(version string, arch architecture.Architecture) (string, error)
-}
-
-type AWSRHCOSHandler struct{}
-
-func (aws AWSRHCOSHandler) GetBaseImageFromRHCOSImageInfo(version string, arch architecture.Architecture, region string) (string, error) {
-	var (
-		path       string
-		stringArch = arch.GNUString()
-		platform   = AWSPlatform
-	)
-
-	rhcosImageInfo, err := getRHCOSImagesInfo(version)
-	if err != nil {
-		return "", err
-	}
-
-	if region == "" {
-		return "", fmt.Errorf("Region cannot have an empty value when we try to get the base image in platform %s", platform)
-	}
-	if CompareVersions(version, "<", "4.10") {
-		path = `amis.` + region + `.hvm`
-	} else {
-		path = fmt.Sprintf("architectures.%s.images.%s.regions.%s.image", stringArch, platform, region)
-
-	}
-
-	logger.Infof("Looking for rhcos base image info in path %s", path)
-	baseImage := gjson.Get(rhcosImageInfo, path)
-	if !baseImage.Exists() {
-		logger.Infof("rhcos info:\n%s", rhcosImageInfo)
-		return "", fmt.Errorf("Could not find the base image for version <%s> in platform <%s> architecture <%s> and region <%s> with path %s",
-			version, platform, arch, region, path)
-	}
-	return baseImage.String(), nil
-}
-
-func (aws AWSRHCOSHandler) GetBaseImageURLFromRHCOSImageInfo(version string, arch architecture.Architecture) (string, error) {
-	return getBaseImageURLFromRHCOSImageInfo(version, "aws", "vmdk.gz", arch.GNUString())
-}
-
-type GCPRHCOSHandler struct{}
-
-func (gcp GCPRHCOSHandler) GetBaseImageFromRHCOSImageInfo(version string, arch architecture.Architecture, region string) (string, error) {
-	var (
-		imagePath   string
-		projectPath string
-		stringArch  = arch.GNUString()
-		platform    = GCPPlatform
-	)
-
-	if CompareVersions(version, "=", "4.1") {
-		return "", fmt.Errorf("There is no image base image supported for platform %s in version %s", platform, version)
-	}
-
-	rhcosImageInfo, err := getRHCOSImagesInfo(version)
-	if err != nil {
-		return "", err
-	}
-
-	if CompareVersions(version, "<", "4.10") {
-		imagePath = "gcp.image"
-		projectPath = "gcp.project"
-	} else {
-		imagePath = fmt.Sprintf("architectures.%s.images.%s.name", stringArch, platform)
-		projectPath = fmt.Sprintf("architectures.%s.images.%s.project", stringArch, platform)
-	}
-
-	logger.Infof("Looking for rhcos base image name in path %s", imagePath)
-	baseImage := gjson.Get(rhcosImageInfo, imagePath)
-	if !baseImage.Exists() {
-		logger.Infof("rhcos info:\n%s", rhcosImageInfo)
-		return "", fmt.Errorf("Could not find the base image for version <%s> in platform <%s> architecture <%s> and region <%s> with path %s",
-			version, platform, arch, region, imagePath)
-	}
-
-	logger.Infof("Looking for rhcos base image project in path %s", projectPath)
-	project := gjson.Get(rhcosImageInfo, projectPath)
-	if !project.Exists() {
-		logger.Infof("rhcos info:\n%s", rhcosImageInfo)
-		return "", fmt.Errorf("Could not find the project where the base image is stored with version <%s> in platform <%s> architecture <%s> and region <%s> with path %s",
-			version, platform, arch, region, projectPath)
-	}
-
-	return fmt.Sprintf("projects/%s/global/images/%s", project.String(), baseImage.String()), nil
-}
-
-func (gcp GCPRHCOSHandler) GetBaseImageURLFromRHCOSImageInfo(version string, arch architecture.Architecture) (string, error) {
-	return getBaseImageURLFromRHCOSImageInfo(version, "gcp", "tar.gz", arch.GNUString())
-}
-
-type VsphereRHCOSHandler struct{}
-
-func (vsp VsphereRHCOSHandler) GetBaseImageFromRHCOSImageInfo(version string, arch architecture.Architecture, _ string) (string, error) {
-	baseImageURL, err := vsp.GetBaseImageURLFromRHCOSImageInfo(version, arch)
-	if err != nil {
-		return "", err
-	}
-
-	return path.Base(baseImageURL), nil
-}
-
-func (vsp VsphereRHCOSHandler) GetBaseImageURLFromRHCOSImageInfo(version string, arch architecture.Architecture) (string, error) {
-	return getBaseImageURLFromRHCOSImageInfo(version, "vmware", "ova", arch.GNUString())
-}
-
-func getBaseImageURLFromRHCOSImageInfo(version, platform, format, stringArch string) (string, error) {
-	var (
-		imagePath    string
-		baseURIPath  string
-		olderThan410 = CompareVersions(version, "<", "4.10")
-	)
-
-	rhcosImageInfo, err := getRHCOSImagesInfo(version)
-	if err != nil {
-		return "", err
-	}
-
-	if olderThan410 {
-		imagePath = fmt.Sprintf("images.%s.path", platform)
-		baseURIPath = "baseURI"
-	} else {
-		imagePath = fmt.Sprintf("architectures.%s.artifacts.%s.formats.%s.disk.location", stringArch, platform, strings.ReplaceAll(format, ".", `\.`))
-	}
-
-	logger.Infof("Looking for rhcos base image path name in path %s", imagePath)
-	baseImageURL := gjson.Get(rhcosImageInfo, imagePath)
-	if !baseImageURL.Exists() {
-		logger.Infof("rhcos info:\n%s", rhcosImageInfo)
-		return "", fmt.Errorf("Could not find the base image for version <%s> in platform <%s> architecture <%s> and format <%s> with path %s",
-			version, platform, stringArch, format, imagePath)
-	}
-
-	if !olderThan410 {
-		return baseImageURL.String(), nil
-	}
-
-	logger.Infof("Looking for baseURL in path %s", baseURIPath)
-	baseURI := gjson.Get(rhcosImageInfo, baseURIPath)
-	if !baseURI.Exists() {
-		logger.Infof("rhcos info:\n%s", rhcosImageInfo)
-		return "", fmt.Errorf("Could not find the base URI with version <%s> in platform <%s> architecture <%s> and format <%s> with path %s",
-			version, platform, stringArch, format, baseURIPath)
-	}
-
-	return fmt.Sprintf("%s/%s", strings.Replace(strings.Trim(baseURI.String(), "/"), "releases-art-rhcos.svc.ci.openshift.org", "rhcos.mirror.openshift.com", 1), strings.Trim(baseImageURL.String(), "/")), nil
-}
-
-func uploadBaseImageToCloud(oc *exutil.CLI, platform, baseImageURL, baseImage string) error {
-
-	switch platform {
-	case AWSPlatform:
-		logger.Infof("No need to updload images in AWS")
-		return nil
-	case GCPPlatform:
-		logger.Infof("No need to updload images in GCP")
-		return nil
-	case VspherePlatform:
-		vsInfo, err := exutil.GetVSphereConnectionInfo(oc.AsAdmin())
-		if err != nil {
-			return err
-		}
-
-		err = exutil.UploadBaseImageToVsphere(baseImageURL, baseImage, vsInfo)
-		if err != nil {
-			return err
-		}
-
-		return nil
-	default:
-		return fmt.Errorf("Platform %s is not supported, base image cannot be updloaded", platform)
-	}
 }
 
 func IsBootImageUpdateSupported(oc *exutil.CLI) bool {
