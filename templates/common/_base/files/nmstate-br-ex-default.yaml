@@ -1,5 +1,5 @@
 mode: 0644
-path: {{ if eq .Infra.Status.BridgeTopology "Default" }}"/etc/nmstate/openshift/default.yml"{{ else }}"/etc/nmstate/openshift/default-disabled.yaml"{{ end }}
+path: "/etc/nmstate/openshift/default-disabled.yaml"
 contents:
   inline: |
     capture:
