@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 
@@ -173,4 +174,16 @@ func GetAllPodsWithLabel(oc *CLI, namespace, label string) ([]string, error) {
 		return []string{}, err
 	}
 	return strings.Split(pods, " "), err
+}
+
+// LogsContainInOrder returns true if all statements appear in the log in the given order.
+func LogsContainInOrder(log string, statements ...string) bool {
+	if len(statements) == 0 {
+		return false
+	}
+	parts := make([]string, len(statements))
+	for i, s := range statements {
+		parts[i] = regexp.QuoteMeta(s)
+	}
+	return regexp.MustCompile("(?s)"+strings.Join(parts, ".*")).MatchString(log)
 }
