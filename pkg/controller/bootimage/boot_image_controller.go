@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"time"
 
+	osconfigv1 "github.com/openshift/api/config/v1"
 	opv1 "github.com/openshift/api/operator/v1"
 	configinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
@@ -163,6 +164,10 @@ func New(
 		AddFunc:    ctrl.addMachineConfiguration,
 		UpdateFunc: ctrl.updateMachineConfiguration,
 		DeleteFunc: ctrl.deleteMachineConfiguration,
+	})
+
+	clusterVersionInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		UpdateFunc: ctrl.updateClusterVersion,
 	})
 
 	ctrl.fgHandler = fgHandler
@@ -390,6 +395,28 @@ func (ctrl *Controller) deleteMachineConfiguration(obj interface{}) {
 	ctrl.enqueueEvent("BootImageUpdateConfigurationDeleted")
 }
 
+// updateClusterVersion handles updates to the ClusterVersion object. It triggers
+// a reconciliation only when the cluster transitions to a stable state (i.e. the
+// most recent history entry flips from partial to completed), which signals that
+// an install or upgrade just finished.
+func (ctrl *Controller) updateClusterVersion(oldCV, newCV interface{}) {
+	oldClusterVersion := oldCV.(*osconfigv1.ClusterVersion)
+	newClusterVersion := newCV.(*osconfigv1.ClusterVersion)
+
+	oldHistory := oldClusterVersion.Status.History
+	newHistory := newClusterVersion.Status.History
+
+	oldStable := len(oldHistory) > 0 && oldHistory[0].State == osconfigv1.CompletedUpdate
+	newStable := len(newHistory) > 0 && newHistory[0].State == osconfigv1.CompletedUpdate
+
+	if !oldStable && newStable {
+		klog.Infof("Cluster reached stable state (version %s), triggering boot image reconciliation", newHistory[0].Version)
+		ctrl.enqueueEvent("ClusterVersionStable")
+	}
+}
+
+// updateConditions updates the boot image update conditions on the MachineConfiguration status
+// based on the current state of machine resource reconciliation.
 func (ctrl *Controller) updateConditions(newReason string, syncError error, targetConditionType string) {
 
 	mcop, err := ctrl.mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, metav1.GetOptions{})
@@ -491,6 +518,19 @@ func (ctrl *Controller) syncAll(event string) error {
 	if err := ctrl.waitForMachineConfigurationReady(); err != nil {
 		ctrl.updateConditions(event, fmt.Errorf("MachineConfiguration was not ready: %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
 		return err
+	}
+
+	// Skip reconciliation while the cluster is installing or upgrading.
+	// External services may not yet be reachable during these transitions
+	// (e.g. vCenter on vSphere), and boot image updates are only meaningful
+	// once the cluster has reached a stable state.
+	stable, err := ctrl.isClusterStable()
+	if err != nil {
+		return fmt.Errorf("failed to check cluster stability: %w", err)
+	}
+	if !stable {
+		klog.Infof("Cluster install or upgrade in progress, deferring boot image reconciliation")
+		return nil
 	}
 
 	ctrl.syncMAPIMachineSets(event)
