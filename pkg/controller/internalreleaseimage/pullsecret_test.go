@@ -100,6 +100,23 @@ func TestMergeIRIAuthIntoPullSecret(t *testing.T) {
 	}
 }
 
+func TestGenerateHtpasswdEntry(t *testing.T) {
+	entry, err := GenerateHtpasswdEntry("openshift", "testpassword")
+	assert.NoError(t, err)
+	assert.True(t, HtpasswdMatchesPassword(entry, "openshift", "testpassword"))
+	assert.False(t, HtpasswdMatchesPassword(entry, "openshift", "wrongpassword"))
+}
+
+func TestHtpasswdMatchesPassword(t *testing.T) {
+	entry, err := GenerateHtpasswdEntry("openshift", "mypassword")
+	assert.NoError(t, err)
+
+	assert.True(t, HtpasswdMatchesPassword(entry, "openshift", "mypassword"), "correct credentials should match")
+	assert.False(t, HtpasswdMatchesPassword(entry, "openshift", "wrongpassword"), "wrong password should not match")
+	assert.False(t, HtpasswdMatchesPassword(entry, "otheruser", "mypassword"), "wrong username should not match")
+	assert.False(t, HtpasswdMatchesPassword("", "openshift", "mypassword"), "empty htpasswd should not match")
+}
+
 // pullSecretWithIRIAuth creates a pull secret JSON that already contains an IRI auth entry.
 func pullSecretWithIRIAuth(baseDomain string, password string) string {
 	authValue := base64.StdEncoding.EncodeToString([]byte("openshift:" + password))

@@ -5,7 +5,33 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"golang.org/x/crypto/bcrypt"
 )
+
+// IRIRegistryUsername is the fixed username used for IRI registry htpasswd authentication.
+const IRIRegistryUsername = "openshift"
+
+// GenerateHtpasswdEntry generates an htpasswd-formatted line for the given username
+// and password using bcrypt hashing.
+func GenerateHtpasswdEntry(username, password string) (string, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate bcrypt hash: %w", err)
+	}
+	return fmt.Sprintf("%s:%s", username, string(hash)), nil
+}
+
+// HtpasswdMatchesPassword reports whether the given htpasswd line matches
+// the provided username and password.
+func HtpasswdMatchesPassword(htpasswd, username, password string) bool {
+	prefix := username + ":"
+	if !strings.HasPrefix(htpasswd, prefix) {
+		return false
+	}
+	hash := []byte(strings.TrimPrefix(htpasswd, prefix))
+	return bcrypt.CompareHashAndPassword(hash, []byte(password)) == nil
+}
 
 // MergeIRIAuthIntoPullSecret merges IRI registry authentication credentials
 // into a dockerconfigjson pull secret. It adds an auth entry for the IRI
@@ -35,7 +61,7 @@ func MergeIRIAuthIntoPullSecret(pullSecretRaw []byte, password, baseDomain strin
 		return nil, fmt.Errorf("pull secret missing 'auths' field")
 	}
 
-	authValue := base64.StdEncoding.EncodeToString([]byte("openshift:" + password))
+	authValue := base64.StdEncoding.EncodeToString([]byte(IRIRegistryUsername + ":" + password))
 
 	// Check if IRI entry already exists and is current
 	if existing, ok := auths[iriRegistryHost].(map[string]interface{}); ok {

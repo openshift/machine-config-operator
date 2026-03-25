@@ -35,7 +35,7 @@ func verifyInternalReleaseMasterMachineConfig(t *testing.T, mc *mcfgv1.MachineCo
 	verifyIgnitionFile(t, &ignCfg, "/etc/pki/ca-trust/source/anchors/iri-root-ca.crt", "iri-root-ca-data")
 	verifyIgnitionFile(t, &ignCfg, "/etc/iri-registry/certs/tls.key", "iri-tls-key")
 	verifyIgnitionFile(t, &ignCfg, "/etc/iri-registry/certs/tls.crt", "iri-tls-crt")
-	verifyIgnitionFile(t, &ignCfg, "/etc/iri-registry/auth/htpasswd", "openshift:$2y$05$testhash")
+	verifyIgnitionFileMatches(t, &ignCfg, "/etc/iri-registry/auth/htpasswd", IRIRegistryUsername, "testpassword")
 	verifyIgnitionFileContains(t, &ignCfg, "/usr/local/bin/load-registry-image.sh", "docker-registry-image-pullspec")
 }
 
@@ -62,6 +62,16 @@ func verifyIgnitionFileContains(t *testing.T, ignCfg *ign3types.Config, path str
 	data, err := ctrlcommon.GetIgnitionFileDataByPath(ignCfg, path)
 	assert.NoError(t, err)
 	assert.Contains(t, string(data), expectedContent, path)
+}
+
+// verifyIgnitionFileMatches verifies that the ignition file at path contains a
+// valid htpasswd entry matching the given username and password.
+func verifyIgnitionFileMatches(t *testing.T, ignCfg *ign3types.Config, path, username, password string) {
+	t.Helper()
+	data, err := ctrlcommon.GetIgnitionFileDataByPath(ignCfg, path)
+	assert.NoError(t, err)
+	assert.True(t, HtpasswdMatchesPassword(string(data), username, password),
+		"htpasswd at %s should match %s:<password>", path, username)
 }
 
 // objs is an helper func to improve the test readability.
@@ -245,6 +255,10 @@ func pullSecret() *secretBuilder {
 }
 
 func iriAuthSecret() *secretBuilder {
+	htpasswd, err := GenerateHtpasswdEntry(IRIRegistryUsername, "testpassword")
+	if err != nil {
+		panic(err)
+	}
 	return &secretBuilder{
 		obj: &corev1.Secret{
 			ObjectMeta: v1.ObjectMeta{
@@ -252,8 +266,8 @@ func iriAuthSecret() *secretBuilder {
 				Name:      ctrlcommon.InternalReleaseImageAuthSecretName,
 			},
 			Data: map[string][]byte{
-				"htpasswd": []byte("openshift:$2y$05$testhash"),
 				"password": []byte("testpassword"),
+				"htpasswd": []byte(htpasswd),
 			},
 		},
 	}

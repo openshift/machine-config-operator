@@ -40,7 +40,7 @@ type Renderer struct {
 	role          string
 	iri           *mcfgv1alpha1.InternalReleaseImage
 	iriSecret     *corev1.Secret
-	iriAuthSecret *corev1.Secret // may be nil
+	iriAuthSecret *corev1.Secret
 	cconfig       *mcfgv1.ControllerConfig
 }
 
@@ -118,12 +118,7 @@ func (r *Renderer) newRenderContext() (*renderContext, error) {
 	if err != nil {
 		return nil, err
 	}
-	iriHtpasswd := ""
-	if r.iriAuthSecret != nil {
-		if raw, found := r.iriAuthSecret.Data["htpasswd"]; found {
-			iriHtpasswd = string(raw)
-		}
-	}
+	iriHtpasswd := string(r.iriAuthSecret.Data["htpasswd"])
 
 	return &renderContext{
 		DockerRegistryImage: r.cconfig.Spec.Images[templatectrl.DockerRegistryKey],

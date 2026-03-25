@@ -261,6 +261,76 @@ func TestInternalReleaseImageStatusOnError(t *testing.T) {
 	}
 }
 
+func TestReconcileAuthSecret(t *testing.T) {
+	cases := []struct {
+		name             string
+		password         string
+		existingHtpasswd string
+		expectUpdate     bool
+	}{
+		{
+			name:             "htpasswd already matches password, no update",
+			password:         "mypassword",
+			existingHtpasswd: mustGenerateHtpasswd(t, "mypassword"),
+			expectUpdate:     false,
+		},
+		{
+			name:             "htpasswd missing, generates new",
+			password:         "mypassword",
+			existingHtpasswd: "",
+			expectUpdate:     true,
+		},
+		{
+			name:             "password changed, regenerates htpasswd",
+			password:         "newpassword",
+			existingHtpasswd: mustGenerateHtpasswd(t, "oldpassword"),
+			expectUpdate:     true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      ctrlcommon.InternalReleaseImageAuthSecretName,
+					Namespace: ctrlcommon.MCONamespace,
+				},
+				Data: map[string][]byte{
+					"password": []byte(tc.password),
+					"htpasswd": []byte(tc.existingHtpasswd),
+				},
+			}
+
+			f := newFixture(t, []runtime.Object{secret})
+			result, err := f.controller.reconcileAuthSecret(secret)
+			assert.NoError(t, err)
+
+			if tc.expectUpdate {
+				// Verify the returned secret has a valid htpasswd
+				assert.True(t, HtpasswdMatchesPassword(string(result.Data["htpasswd"]), IRIRegistryUsername, tc.password),
+					"updated htpasswd should match the password")
+
+				// Verify the secret was updated in the API
+				updated, err := f.k8sClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(
+					context.TODO(), ctrlcommon.InternalReleaseImageAuthSecretName, metav1.GetOptions{})
+				assert.NoError(t, err)
+				assert.True(t, HtpasswdMatchesPassword(string(updated.Data["htpasswd"]), IRIRegistryUsername, tc.password),
+					"secret in API should have updated htpasswd")
+			} else {
+				// Verify the htpasswd was not changed
+				assert.Equal(t, tc.existingHtpasswd, string(result.Data["htpasswd"]),
+					"htpasswd should not change when already matching")
+			}
+		})
+	}
+}
+
+func mustGenerateHtpasswd(t *testing.T, password string) string {
+	t.Helper()
+	entry, err := GenerateHtpasswdEntry(IRIRegistryUsername, password)
+	assert.NoError(t, err)
+	return entry
+}
 // The fixture used to setup and run the controller.
 type fixture struct {
 	t *testing.T
