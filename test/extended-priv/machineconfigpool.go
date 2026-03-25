@@ -1155,6 +1155,21 @@ func GetCompactCompatiblePool(oc *exutil.CLI) *MachineConfigPool {
 	return nil
 }
 
+// GetCoreOsCompatiblePool returns worker pool if it has CoreOs nodes. If there is no CoreOs node in the worker pool, then it returns master pool.
+func GetCoreOsCompatiblePool(oc *exutil.CLI) *MachineConfigPool {
+	var (
+		wMcp = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
+		mMcp = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolMaster)
+	)
+
+	if len(wMcp.GetCoreOsNodesOrFail()) == 0 {
+		logger.Infof("No CoreOs nodes in the worker pool. Using master pool for testing")
+		return mMcp
+	}
+
+	return wMcp
+}
+
 // GetCompactCompatibleOrCustomPool returns compact compatible pool or creates custom pool that will use the same stream as the worker pool
 func GetCompactCompatibleOrCustomPool(oc *exutil.CLI, numNodes int) (*MachineConfigPool, func() error, error) {
 	osstream, err := GetEffectiveOsImageStream(NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker))
