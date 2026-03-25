@@ -269,15 +269,14 @@ func (b *Bootstrap) Run(destDir string) error {
 	// MCs use the same pull secret content as the in-cluster IRI controller
 	// will produce, avoiding a rendered MachineConfig hash mismatch.
 	if fgHandler != nil && fgHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
-		if iriAuthSecret != nil && cconfig.Spec.DNS != nil {
+		if iri != nil && iriAuthSecret != nil {
 			password := string(iriAuthSecret.Data["password"])
 			merged, mergeErr := internalreleaseimage.MergeIRIAuthIntoPullSecret(pullSecretBytes, password, cconfig.Spec.DNS.Spec.BaseDomain)
 			if mergeErr != nil {
-				klog.Warningf("Failed to merge IRI auth into pull secret during bootstrap: %v", mergeErr)
-			} else {
-				pullSecretBytes = merged
-				klog.Infof("Merged IRI registry auth into pull secret for bootstrap rendering")
+				return fmt.Errorf("failed to merge IRI auth into pull secret during bootstrap: %w", mergeErr)
 			}
+			pullSecretBytes = merged
+			klog.Infof("Merged IRI registry auth into pull secret for bootstrap rendering")
 		}
 	}
 

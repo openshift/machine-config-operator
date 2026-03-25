@@ -37,11 +37,7 @@ contents:
         
     # As a fallback, let's try to fetch the registry image remotely
     echo "Trying to pull ${registryImage} from remote registry..."
-    pull_args=()
-    if [[ -f /var/lib/kubelet/config.json ]]; then
-        pull_args+=(--authfile /var/lib/kubelet/config.json)
-    fi
-    if podman pull "${pull_args[@]}" "${registryImage}"; then
+    if podman pull --authfile /var/lib/kubelet/config.json "${registryImage}"; then
         echo "Successfully pulled ${registryImage} from remote registry"
         exit 0
     fi
