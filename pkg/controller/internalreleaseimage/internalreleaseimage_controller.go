@@ -359,8 +359,10 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) (syncErr error) {
 		return fmt.Errorf("could not get Secret %s: %w", ctrlcommon.InternalReleaseImageTLSSecretName, err)
 	}
 
-	// Auth secret may not exist during upgrades from non-auth clusters
-	iriAuthSecret, _ := ctrl.secretLister.Secrets(ctrlcommon.MCONamespace).Get(ctrlcommon.InternalReleaseImageAuthSecretName)
+	iriAuthSecret, err := ctrl.secretLister.Secrets(ctrlcommon.MCONamespace).Get(ctrlcommon.InternalReleaseImageAuthSecretName)
+	if err != nil {
+		return fmt.Errorf("could not get Secret %s: %w", ctrlcommon.InternalReleaseImageAuthSecretName, err)
+	}
 
 	for _, role := range SupportedRoles {
 		r := NewRendererByRole(role, iri, iriSecret, iriAuthSecret, cconfig)
@@ -391,10 +393,8 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) (syncErr error) {
 	}
 
 	// Merge IRI auth credentials into the global pull secret
-	if iriAuthSecret != nil {
-		if err := ctrl.mergeIRIAuthIntoPullSecret(cconfig, iriAuthSecret); err != nil {
-			return fmt.Errorf("failed to merge IRI auth into pull secret: %w", err)
-		}
+	if err := ctrl.mergeIRIAuthIntoPullSecret(cconfig, iriAuthSecret); err != nil {
+		return fmt.Errorf("failed to merge IRI auth into pull secret: %w", err)
 	}
 
 	// Initialize status if empty
@@ -530,21 +530,14 @@ func (ctrl *Controller) addFinalizerToInternalReleaseImage(iri *mcfgv1alpha1.Int
 func (ctrl *Controller) mergeIRIAuthIntoPullSecret(cconfig *mcfgv1.ControllerConfig, authSecret *corev1.Secret) error {
 	password := string(authSecret.Data["password"])
 	if password == "" {
-		return nil
+		return fmt.Errorf("IRI auth secret %s/%s has empty password", authSecret.Namespace, authSecret.Name)
 	}
 
-	if cconfig.Spec.DNS == nil {
-		return fmt.Errorf("ControllerConfig DNS is not set")
-	}
 	baseDomain := cconfig.Spec.DNS.Spec.BaseDomain
 
 	// Fetch current pull secret from openshift-config
 	pullSecret, err := ctrl.kubeClient.CoreV1().Secrets(ctrlcommon.OpenshiftConfigNamespace).Get(
 		context.TODO(), ctrlcommon.GlobalPullSecretName, metav1.GetOptions{})
-	if errors.IsNotFound(err) {
-		klog.V(4).Infof("Pull secret %s/%s not found, will retry on next sync", ctrlcommon.OpenshiftConfigNamespace, ctrlcommon.GlobalPullSecretName)
-		return nil
-	}
 	if err != nil {
 		return fmt.Errorf("could not get pull-secret: %w", err)
 	}
