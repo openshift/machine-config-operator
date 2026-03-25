@@ -18,32 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-func verifyAllInternalReleaseImageMachineConfigs(t *testing.T, configs []*mcfgv1.MachineConfig) {
-	assert.Len(t, configs, 2)
-	verifyInternalReleaseMasterMachineConfig(t, configs[0])
-	verifyInternalReleaseWorkerMachineConfig(t, configs[1])
-}
-
 func verifyInternalReleaseMasterMachineConfig(t *testing.T, mc *mcfgv1.MachineConfig) {
-	assert.Equal(t, masterName(), mc.Name)
-	assert.Equal(t, ctrlcommon.MachineConfigPoolMaster, mc.Labels[mcfgv1.MachineConfigRoleLabelKey])
-	assert.Equal(t, controllerKind.Kind, mc.OwnerReferences[0].Kind)
-
-	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
-	assert.NoError(t, err, mc.Name)
-
-	assert.Len(t, ignCfg.Systemd.Units, 1)
-	assert.Contains(t, *ignCfg.Systemd.Units[0].Contents, "docker-registry-image-pullspec")
-
-	assert.Len(t, ignCfg.Storage.Files, 5, "Found an unexpected file")
-	verifyIgnitionFile(t, &ignCfg, "/etc/pki/ca-trust/source/anchors/iri-root-ca.crt", "iri-root-ca-data")
-	verifyIgnitionFile(t, &ignCfg, "/etc/iri-registry/certs/tls.key", "iri-tls-key")
-	verifyIgnitionFile(t, &ignCfg, "/etc/iri-registry/certs/tls.crt", "iri-tls-crt")
-	verifyIgnitionFile(t, &ignCfg, "/etc/iri-registry/auth/htpasswd", "")
-	verifyIgnitionFileContains(t, &ignCfg, "/usr/local/bin/load-registry-image.sh", "docker-registry-image-pullspec")
-}
-
-func verifyInternalReleaseMasterMachineConfigWithAuth(t *testing.T, mc *mcfgv1.MachineConfig) {
 	assert.Equal(t, masterName(), mc.Name)
 	assert.Equal(t, ctrlcommon.MachineConfigPoolMaster, mc.Labels[mcfgv1.MachineConfigRoleLabelKey])
 	assert.Equal(t, controllerKind.Kind, mc.OwnerReferences[0].Kind)
