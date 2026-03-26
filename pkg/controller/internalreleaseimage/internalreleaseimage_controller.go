@@ -8,6 +8,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
@@ -298,7 +299,7 @@ func (ctrl *Controller) enqueue(iri *mcfgv1alpha1.InternalReleaseImage) {
 // syncInternalReleaseImage will sync the InternalReleaseImage with the given key.
 // This function is not meant to be invoked concurrently with the same key.
 // nolint: gocyclo
-func (ctrl *Controller) syncInternalReleaseImage(key string) error {
+func (ctrl *Controller) syncInternalReleaseImage(key string) (syncErr error) {
 	startTime := time.Now()
 	klog.V(4).Infof("Started syncing InternalReleaseImage %q (%v)", key, startTime)
 	defer func() {
@@ -331,9 +332,22 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) error {
 		return nil
 	}
 
+	// Update status condition on function exit based on sync result
+	defer func() {
+		if statusErr := ctrl.updateInternalReleaseImageStatus(iri, syncErr); statusErr != nil {
+			if syncErr != nil {
+				// Already have a sync error, just log the status update failure
+				klog.Warningf("Error updating InternalReleaseImage status: %v", statusErr)
+			} else {
+				// Sync succeeded but status update failed, propagate the error
+				syncErr = fmt.Errorf("failed to update InternalReleaseImage status: %w", statusErr)
+			}
+		}
+	}()
+
 	cconfig, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
-		return fmt.Errorf("could not get ControllerConfig %w", err)
+		return fmt.Errorf("could not get ControllerConfig: %w", err)
 	}
 
 	iriSecret, err := ctrl.secretLister.Secrets(ctrlcommon.MCONamespace).Get(ctrlcommon.InternalReleaseImageTLSSecretName)
@@ -347,31 +361,31 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) error {
 		mc, err := ctrl.mcLister.Get(r.GetMachineConfigName())
 		isNotFound := errors.IsNotFound(err)
 		if err != nil && !isNotFound {
-			return err // syncStatus, could not find MachineConfig
+			return fmt.Errorf("could not get MachineConfig: %w", err)
 		}
 		if isNotFound {
 			mc, err = r.CreateEmptyMachineConfig()
 			if err != nil {
-				return err // syncStatusOnly, could not create MachineConfig
+				return fmt.Errorf("could not create MachineConfig: %w", err)
 			}
 		}
 
 		err = r.RenderAndSetIgnition(mc)
 		if err != nil {
-			return err // syncStatus, could not generate IRI configs
+			return fmt.Errorf("could not generate IRI configs: %w", err)
 		}
 		err = ctrl.createOrUpdateMachineConfig(isNotFound, mc)
 		if err != nil {
-			return err // syncStatus, could not Create/Update MachineConfig
+			return fmt.Errorf("could not create/update MachineConfig: %w", err)
 		}
 		if err := ctrl.addFinalizerToInternalReleaseImage(iri, mc); err != nil {
-			return err // syncStatus , could not add finalizers
+			return fmt.Errorf("could not add finalizer: %w", err)
 		}
 	}
 
 	// Initialize status if empty
 	if err := ctrl.initializeInternalReleaseImageStatus(iri); err != nil {
-		return err
+		return fmt.Errorf("could not initialize status: %w", err)
 	}
 
 	return nil
@@ -429,6 +443,52 @@ func (ctrl *Controller) initializeInternalReleaseImageStatus(iri *mcfgv1alpha1.I
 
 	klog.V(2).Infof("Initialized status for InternalReleaseImage %s with %d releases", iri.Name, len(statusReleases))
 	return nil
+}
+
+// updateInternalReleaseImageStatus updates the InternalReleaseImage status conditions
+// based on the provided error. If err is nil, it sets Degraded=False, otherwise Degraded=True.
+func (ctrl *Controller) updateInternalReleaseImageStatus(iri *mcfgv1alpha1.InternalReleaseImage, err error) error {
+	return retry.RetryOnConflict(updateBackoff, func() error {
+		// Get the latest version of the IRI directly from the API server to avoid conflicts
+		latestIRI, getErr := ctrl.client.MachineconfigurationV1alpha1().InternalReleaseImages().Get(context.TODO(), iri.Name, metav1.GetOptions{})
+		if getErr != nil {
+			return getErr
+		}
+		newIRI := latestIRI.DeepCopy()
+
+		// Prepare the condition based on error state
+		var condition metav1.Condition
+		if err != nil {
+			// Set Degraded=True when there's an error
+			condition = metav1.Condition{
+				Type:               string(mcfgv1alpha1.InternalReleaseImageStatusConditionTypeDegraded),
+				Status:             metav1.ConditionTrue,
+				Reason:             "SyncError",
+				Message:            fmt.Sprintf("Error syncing InternalReleaseImage: %v", err),
+				ObservedGeneration: newIRI.Generation,
+			}
+		} else {
+			// Set Degraded=False when sync is successful
+			condition = metav1.Condition{
+				Type:               string(mcfgv1alpha1.InternalReleaseImageStatusConditionTypeDegraded),
+				Status:             metav1.ConditionFalse,
+				Reason:             "AsExpected",
+				Message:            "InternalReleaseImage controller sync successful",
+				ObservedGeneration: newIRI.Generation,
+			}
+		}
+
+		// Update the condition and check if it actually changed
+		changed := meta.SetStatusCondition(&newIRI.Status.Conditions, condition)
+		if !changed {
+			// No changes needed, skip the API call
+			return nil
+		}
+
+		// Update the status subresource only if the condition changed
+		_, updateErr := ctrl.client.MachineconfigurationV1alpha1().InternalReleaseImages().UpdateStatus(context.TODO(), newIRI, metav1.UpdateOptions{})
+		return updateErr
+	})
 }
 
 func (ctrl *Controller) createOrUpdateMachineConfig(isNotFound bool, mc *mcfgv1.MachineConfig) error {
