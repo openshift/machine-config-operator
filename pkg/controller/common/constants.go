@@ -160,6 +160,11 @@ const (
 	// Note: Update units in status_test.go when the following are bumped
 	RHCOSVersionBootImageSkewLimit = "9.2"
 	OCPVersionBootImageSkewLimit   = "4.13.0"
+
+	// MaxMachineConfigSize is the maximum size for a MachineConfig object in bytes.
+	// This matches etcd's default request size limit of 1.5MB (1572864 bytes).
+	// Reference: https://issues.redhat.com/browse/OCPBUGS-62619
+	MaxMachineConfigSize = 1572864
 )
 
 // Commonly-used MCO ConfigMap names
