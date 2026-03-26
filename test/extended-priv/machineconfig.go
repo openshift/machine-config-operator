@@ -142,3 +142,10 @@ func (mc *MachineConfig) GetAuthorizedKeysByUserAsList(user string) ([]string, e
 func (mc *MachineConfig) GetIgnitionVersion() (string, error) {
 	return mc.Get(`{.spec.config.ignition.version}`)
 }
+
+func DisableSkew(machineConfiguration *MachineConfiguration) {
+	logger.Infof("Disabling the Skew functionality")
+	o.Expect(machineConfiguration.SetNoneSkew()).To(o.Succeed(), "Error disabling the skew functionality")
+	o.Eventually(machineConfiguration.IsGenerationUpToDate, "2m", "10s").Should(o.BeTrue(), "MachineConfiguration observedGeneration did not catch up to generation")
+	logger.Infof("Skew functionality has been disabled")
+}
