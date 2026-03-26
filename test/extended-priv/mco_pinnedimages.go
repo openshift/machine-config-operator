@@ -524,50 +524,21 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			allNodes      = mcp.GetNodesOrFail()
 			pisOneName    = fmt.Sprintf("tc-%s-pis-one", GetCurrentTestPolarionIDNumber())
 			pisTwoName    = fmt.Sprintf("tc-%s-pis-two", GetCurrentTestPolarionIDNumber())
+			pisDupName    = fmt.Sprintf("tc-%s-pis-duplicate", GetCurrentTestPolarionIDNumber())
 		)
 
 		exutil.By("Remove the test image from all nodes in the pool")
-		for _, node := range allNodes {
-			_ = NewRemoteImage(node, pinnedImage).Rmi()
-		}
+		removeImageFromNodes(allNodes, pinnedImage)
 		logger.Infof("OK!\n")
 
-		exutil.By("Create first PinnedImageSet with alpine image")
-		pisOne, err := CreateGenericPinnedImageSet(oc.AsAdmin(), pisOneName, mcp.GetName(), []string{pinnedImage})
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating pinnedimageset %s", pisOne)
+		exutil.By("Create first PinnedImageSet with alpine image and verify it is pinned")
+		pisOne := createPinnedImageSetAndWait(oc.AsAdmin(), pisOneName, mcp, []string{pinnedImage}, allNodes, waitForPinned)
 		defer pisOne.DeleteAndWait(waitForPinned)
 		logger.Infof("OK!\n")
 
-		exutil.By("Wait for the first PinnedImageSet to be applied")
-		o.Expect(mcp.waitForPinComplete(waitForPinned)).To(o.Succeed(),
-			"Pinned image operation is not completed in %s", mcp)
-		logger.Infof("OK!\n")
-
-		exutil.By("Verify the image is pinned on all nodes after creating the first PinnedImageSet")
-		for _, node := range allNodes {
-			ri := NewRemoteImage(node, pinnedImage)
-			o.Expect(ri.IsPinned()).To(o.BeTrue(),
-				"%s is not pinned, but it should be", ri)
-		}
-		logger.Infof("OK!\n")
-
-		exutil.By("Create second PinnedImageSet with the same alpine image")
-		pisTwo, err := CreateGenericPinnedImageSet(oc.AsAdmin(), pisTwoName, mcp.GetName(), []string{pinnedImage})
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating pinnedimageset %s", pisTwo)
+		exutil.By("Create second PinnedImageSet with the same alpine image and verify it is pinned")
+		pisTwo := createPinnedImageSetAndWait(oc.AsAdmin(), pisTwoName, mcp, []string{pinnedImage}, allNodes, waitForPinned)
 		defer pisTwo.DeleteAndWait(waitForPinned)
-		logger.Infof("OK!\n")
-
-		exutil.By("Wait for the second PinnedImageSet to be applied")
-		o.Expect(mcp.waitForPinComplete(waitForPinned)).To(o.Succeed(),
-			"Pinned image operation is not completed in %s", mcp)
-		logger.Infof("OK!\n")
-
-		exutil.By("Verify the image is still pinned on all nodes after creating the second PinnedImageSet")
-		for _, node := range allNodes {
-			ri := NewRemoteImage(node, pinnedImage)
-			o.Expect(ri.IsPinned()).To(o.BeTrue(),
-				"%s is not pinned, but it should be", ri)
-		}
 		logger.Infof("OK!\n")
 
 		exutil.By("Verify all MachineConfigNodes report healthy pinned image conditions")
@@ -615,8 +586,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 
 		exutil.By("Verify that a PinnedImageSet with duplicate images is rejected by the API")
-		pisDupName := fmt.Sprintf("tc-%s-pis-duplicate", GetCurrentTestPolarionIDNumber())
-		_, err = CreateGenericPinnedImageSet(oc.AsAdmin(), pisDupName, mcp.GetName(), []string{pinnedImage, pinnedImage})
+		_, err := CreateGenericPinnedImageSet(oc.AsAdmin(), pisDupName, mcp.GetName(), []string{pinnedImage, pinnedImage})
 		o.Expect(err).To(o.HaveOccurred(),
 			"Creating a PinnedImageSet with duplicate images should fail, but it succeeded")
 		o.Expect(err).To(o.BeAssignableToTypeOf(&exutil.ExitError{}),
@@ -810,4 +780,31 @@ func basicPinnedImageTest(mcp *MachineConfigPool, pinnedImageSetName string) {
 	o.Expect(firstPinnedImage.IsPinned()).To(o.BeFalse(), "%s is pinned, but it should NOT", firstPinnedImage)
 	o.Expect(secondPinnedImage.IsPinned()).To(o.BeFalse(), "%s is pinned, but it should NOT", secondPinnedImage)
 	logger.Infof("OK!\n")
+}
+
+// removeImageFromNodes removes the given image from all provided nodes, ignoring errors since the image may not be present
+func removeImageFromNodes(nodes []*Node, image string) {
+	for _, node := range nodes {
+		_ = NewRemoteImage(node, image).Rmi()
+	}
+}
+
+// createPinnedImageSetAndWait creates a PinnedImageSet, waits for the pool to complete pinning,
+// and verifies the images are pinned on all provided nodes
+func createPinnedImageSetAndWait(oc *exutil.CLI, name string, mcp *MachineConfigPool, images []string, nodes []*Node, waitForPinned time.Duration) *PinnedImageSet {
+	pis, err := CreateGenericPinnedImageSet(oc, name, mcp.GetName(), images)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error creating pinnedimageset %s", pis)
+
+	o.Expect(mcp.waitForPinComplete(waitForPinned)).To(o.Succeed(),
+		"Pinned image operation is not completed in %s", mcp)
+
+	for _, node := range nodes {
+		for _, image := range images {
+			ri := NewRemoteImage(node, image)
+			o.Expect(ri.IsPinned()).To(o.BeTrue(),
+				"%s is not pinned, but it should be", ri)
+		}
+	}
+
+	return pis
 }
