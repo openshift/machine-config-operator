@@ -613,6 +613,23 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 				"MachineConfigNode %s should not be PinnedImageSetsProgressing after deleting %s.\n%s", node.GetName(), pisOne, mcn.PrettyString())
 		}
 		logger.Infof("OK!\n")
+
+		exutil.By("Verify that a PinnedImageSet with duplicate images is rejected by the API")
+		pisDupName := fmt.Sprintf("tc-%s-pis-duplicate", GetCurrentTestPolarionIDNumber())
+		_, err = CreateGenericPinnedImageSet(oc.AsAdmin(), pisDupName, mcp.GetName(), []string{pinnedImage, pinnedImage})
+		o.Expect(err).To(o.HaveOccurred(),
+			"Creating a PinnedImageSet with duplicate images should fail, but it succeeded")
+		o.Expect(err).To(o.BeAssignableToTypeOf(&exutil.ExitError{}),
+			"Expected an ExitError from the API server rejection")
+		o.Expect(err.(*exutil.ExitError).StdErr).To(o.ContainSubstring("Duplicate value"),
+			"API error should indicate duplicate image entries")
+		logger.Infof("OK!\n")
+
+		exutil.By("Verify the duplicate PinnedImageSet was not created")
+		pisDup := NewPinnedImageSet(oc.AsAdmin(), pisDupName)
+		o.Expect(pisDup.Exists()).To(o.BeFalse(),
+			"%s should not exist because the API rejected it", pisDup)
+		logger.Infof("OK!\n")
 	})
 })
 
