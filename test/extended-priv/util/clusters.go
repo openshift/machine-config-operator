@@ -6,7 +6,6 @@ import (
 
 	o "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
-	machineclient "github.com/openshift/client-go/machine/clientset/versioned"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -54,16 +53,16 @@ func IsSingleNodeTopology(oc *CLI) bool {
 // the machineconfiguration.openshift.io/osstream label with a value other than "rhel-9".
 // MachineSets that do not carry the label at all are treated as compatible.
 func SkipIfUnsupportedOSStreamLabel(oc *CLI) {
-	mc, err := machineclient.NewForConfig(oc.KubeFramework().ClientConfig())
-	o.Expect(err).NotTo(o.HaveOccurred(), "failed to create machine client")
-	machineSets, err := mc.MachineV1beta1().MachineSets("openshift-machine-api").List(context.TODO(), metav1.ListOptions{})
+	// The label selector matches only MachineSets that have the osstream label set to a value
+	// other than the supported one. An empty result means all MachineSets are compatible.
+	out, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"machinesets.machine.openshift.io", "-n", "openshift-machine-api",
+		"-l", osStreamLabelKey+","+osStreamLabelKey+"!="+supportedOSStream,
+		"-o", "jsonpath={range .items[*]}{.metadata.name}{end}",
+	).Output()
 	o.Expect(err).NotTo(o.HaveOccurred(), "failed to list machinesets")
-	for _, ms := range machineSets.Items {
-		val, present := ms.Labels[osStreamLabelKey]
-		if present && val != supportedOSStream {
-			e2eskipper.Skipf("MachineSet %q has %s=%s; only %s is supported",
-				ms.Name, osStreamLabelKey, val, supportedOSStream)
-		}
+	if out != "" {
+		e2eskipper.Skipf("MachineSet %q has unsupported %s; only %s is supported", out, osStreamLabelKey, supportedOSStream)
 	}
 }
 
@@ -71,17 +70,16 @@ func SkipIfUnsupportedOSStreamLabel(oc *CLI) {
 // carries the machineconfiguration.openshift.io/osstream label with a value other than "rhel-9".
 // A missing label or a missing CPMS is treated as compatible.
 func SkipIfCPMSHasUnsupportedOSStreamLabel(oc *CLI) {
-	mc, err := machineclient.NewForConfig(oc.KubeFramework().ClientConfig())
-	o.Expect(err).NotTo(o.HaveOccurred(), "failed to create machine client")
-	cpms, err := mc.MachineV1().ControlPlaneMachineSets("openshift-machine-api").Get(context.TODO(), "cluster", metav1.GetOptions{})
-	if err != nil {
-		// CPMS not present — no label to check
-		return
-	}
-	val, present := cpms.Labels[osStreamLabelKey]
-	if present && val != supportedOSStream {
-		e2eskipper.Skipf("ControlPlaneMachineSet %q has %s=%s; only %s is supported",
-			cpms.Name, osStreamLabelKey, val, supportedOSStream)
+	// The label selector matches only a CPMS that has the osstream label set to an unsupported value.
+	// An empty result means that the CPMS is compatible.
+	out, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"controlplanemachinesets.machine.openshift.io", "-n", "openshift-machine-api",
+		"-l", osStreamLabelKey+","+osStreamLabelKey+"!="+supportedOSStream,
+		"-o", "jsonpath={range .items[*]}{.metadata.name}{end}",
+	).Output()
+	o.Expect(err).NotTo(o.HaveOccurred(), "failed to list machinesets")
+	if out != "" {
+		e2eskipper.Skipf("ControlPlaneMachineSet %q has unsupported %s; only %s is supported", out, osStreamLabelKey, supportedOSStream)
 	}
 }
 
