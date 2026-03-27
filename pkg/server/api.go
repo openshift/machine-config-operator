@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net/http"
 	"path"
@@ -12,10 +13,10 @@ import (
 
 	"github.com/clarketm/json"
 	"github.com/coreos/go-semver/semver"
+	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
-
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
 
 const (
@@ -288,8 +289,19 @@ func detectSpecVersionFromAcceptHeader(acceptHeader string) (*semver.Version, er
 		if reqVersion.Compare(*v22Version) >= 0 && reqVersion.Major == v22Version.Major {
 			reqVersion = v22Version
 		}
+
 		version, err := ctrlcommon.IgnitionConverterSingleton().GetSupportedMinorVersion(*reqVersion)
 		if err != nil {
+			// Check if the error is because the client is asking for a minor version we still don't support
+			// We can assume it's safe to return our latest minor if the requested version is of the same
+			// major but higher minor version.
+			newerMinorRequested := ign3types.MaxVersion.Major == reqVersion.Major && ign3types.MaxVersion.Minor < reqVersion.Minor
+			if errors.Is(err, ctrlcommon.ErrIgnitionConverterUnknownVersion) && newerMinorRequested {
+				// The requested version is not in our supported list, but it's safe to return the latest supported
+				// version if the major version matches
+				return &ign3types.MaxVersion, nil
+
+			}
 			return nil, fmt.Errorf("unsupported Ignition version in Accept header: %s", acceptHeader)
 		}
 		return &version, nil
