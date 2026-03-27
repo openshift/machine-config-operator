@@ -27,9 +27,9 @@ import (
 )
 
 var (
-	errIgnitionConverterWrongSourceType       = errors.New("wrong source type for the conversion")
-	errIgnitionConverterUnknownVersion        = errors.New("the requested version is unknown")
-	errIgnitionConverterUnsupportedConversion = errors.New("the requested conversion is not supported")
+	ErrIgnitionConverterWrongSourceType       = errors.New("wrong source type for the conversion")
+	ErrIgnitionConverterUnknownVersion        = errors.New("the requested version is unknown")
+	ErrIgnitionConverterUnsupportedConversion = errors.New("the requested conversion is not supported")
 	ignitionConverter                         = newIgnitionConverter(buildConverterList())
 )
 
@@ -100,7 +100,7 @@ func newFunctionConverterTyped[S any, T any](sourceVersion, targetVersion semver
 				return conversionFunc(input)
 			}
 			var empty T
-			return empty, errIgnitionConverterWrongSourceType
+			return empty, ErrIgnitionConverterWrongSourceType
 		})
 }
 
@@ -112,7 +112,7 @@ func newFunctionConverterTypedNoError[S any, T any](sourceVersion, targetVersion
 
 func (c *functionConverter) Convert(source any) (any, error) {
 	result, err := c.conversionFunc(source)
-	if err != nil && errors.Is(err, errIgnitionConverterWrongSourceType) {
+	if err != nil && errors.Is(err, ErrIgnitionConverterWrongSourceType) {
 		return result, fmt.Errorf("conversion from %v to %v failed: %w", c.tuple.sourceVersion, c.tuple.targetVersion, err)
 	}
 	return result, err
@@ -192,12 +192,12 @@ func newConverterConversionPathFromExisting(conversionPath *converterConversionP
 type IgnitionConverter interface {
 	// Convert performs the Ignition conversion of source (that uses Ignition version sourceVersion)
 	// to the version given by targetVersion.
-	// The conversion may fail with errIgnitionConverterUnsupportedConversion if there is no available conversion
+	// The conversion may fail with ErrIgnitionConverterUnsupportedConversion if there is no available conversion
 	// for the source-target version tuple.
 	Convert(source any, sourceVersion, targetVersion semver.Version) (any, error)
 
 	// GetSupportedMinorVersion retrieves the [semver.Version] that performs a translation of the given version.
-	// The method may return errIgnitionConverterUnknownVersion if the given version minor version (X.Y) does not
+	// The method may return ErrIgnitionConverterUnknownVersion if the given version minor version (X.Y) does not
 	// have a compatible version in the converter.
 	GetSupportedMinorVersion(version semver.Version) (semver.Version, error)
 
@@ -295,7 +295,7 @@ func (m *ignitionConverterImpl) Convert(source any, sourceVersion, targetVersion
 	tuple := conversionTuple{sourceVersion: sourceVersion, targetVersion: targetVersion}
 	conversionPath, ok := m.converterPaths[tuple]
 	if !ok {
-		return nil, fmt.Errorf("conversion for source version %v to target version %v is not supported %w", sourceVersion, targetVersion, errIgnitionConverterUnsupportedConversion)
+		return nil, fmt.Errorf("conversion for source version %v to target version %v is not supported %w", sourceVersion, targetVersion, ErrIgnitionConverterUnsupportedConversion)
 	}
 
 	var err error
@@ -315,7 +315,7 @@ func (m *ignitionConverterImpl) GetSupportedMinorVersion(version semver.Version)
 			return *ver, nil
 		}
 	}
-	return semver.Version{}, errIgnitionConverterUnknownVersion
+	return semver.Version{}, ErrIgnitionConverterUnknownVersion
 }
 
 func (m *ignitionConverterImpl) GetSupportedMinorVersions() []string {
