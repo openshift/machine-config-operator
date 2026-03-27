@@ -2,6 +2,8 @@ package internalreleaseimage
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -28,9 +30,10 @@ import (
 
 func TestInternalReleaseImageCreate(t *testing.T) {
 	cases := []struct {
-		name           string
-		initialObjects func() []runtime.Object
-		verify         func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig)
+		name             string
+		initialObjects   func() []runtime.Object
+		verify           func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig)
+		verifyPullSecret func(t *testing.T, f *fixture)
 	}{
 		{
 			name:           "feature inactive",
@@ -43,7 +46,7 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 		},
 		{
 			name:           "add finalizer if not present",
-			initialObjects: objs(iri(), clusterVersion(), cconfig(), iriCertSecret()),
+			initialObjects: objs(iri(), clusterVersion(), cconfig().withDNS("example.com"), iriCertSecret(), iriAuthSecret(), pullSecret()),
 			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
 				assert.Len(t, actualIRI.Finalizers, 2)
 				assert.Contains(t, actualIRI.Finalizers, masterName())
@@ -54,7 +57,7 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 			name: "update status if not set",
 			initialObjects: objs(
 				iri().finalizer(masterName(), workerName()),
-				clusterVersion(), cconfig(), iriCertSecret()),
+				clusterVersion(), cconfig().withDNS("example.com"), iriCertSecret(), iriAuthSecret(), pullSecret()),
 			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
 				assert.Len(t, actualIRI.Status.Releases, 1)
 				assert.Equal(t, actualIRI.Status.Releases[0].Name, "ocp-release-bundle-4.21.5-x86_64")
@@ -66,17 +69,39 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 		},
 		{
 			name:           "generate iri machine-config if not present",
-			initialObjects: objs(iri(), clusterVersion(), cconfig(), iriCertSecret()),
+			initialObjects: objs(iri(), clusterVersion(), cconfig().withDNS("example.com"), iriCertSecret(), iriAuthSecret(), pullSecret()),
 			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
 				verifyInternalReleaseMasterMachineConfig(t, actualMasterMC)
 				verifyInternalReleaseWorkerMachineConfig(t, actualWorkerMC)
 			},
 		},
 		{
+			name:           "merge iri auth into pull secret",
+			initialObjects: objs(iri(), clusterVersion(), cconfig().withDNS("example.com"), iriCertSecret(), iriAuthSecret(), pullSecret()),
+			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
+				verifyInternalReleaseMasterMachineConfig(t, actualMasterMC)
+				verifyInternalReleaseWorkerMachineConfig(t, actualWorkerMC)
+			},
+			verifyPullSecret: func(t *testing.T, f *fixture) {
+				ps, err := f.k8sClient.CoreV1().Secrets(ctrlcommon.OpenshiftConfigNamespace).Get(
+					context.TODO(), ctrlcommon.GlobalPullSecretName, metav1.GetOptions{})
+				assert.NoError(t, err)
+				var dockerConfig map[string]interface{}
+				err = json.Unmarshal(ps.Data[corev1.DockerConfigJsonKey], &dockerConfig)
+				assert.NoError(t, err)
+				auths, ok := dockerConfig["auths"].(map[string]interface{})
+				assert.True(t, ok, "pull secret should have auths field")
+				iriEntry, ok := auths["api-int.example.com:22625"].(map[string]interface{})
+				assert.True(t, ok, "IRI auth entry should be present in pull secret")
+				expectedAuth := base64.StdEncoding.EncodeToString([]byte("openshift:testpassword"))
+				assert.Equal(t, expectedAuth, iriEntry["auth"], "IRI auth entry should have correct credentials")
+			},
+		},
+		{
 			name: "avoid machine-config drifting",
 			initialObjects: objs(
 				iri().finalizer(masterName(), workerName()),
-				clusterVersion(), cconfig(), iriCertSecret(),
+				clusterVersion(), cconfig().withDNS("example.com"), iriCertSecret(), iriAuthSecret(), pullSecret(),
 				machineconfigmaster().ignition("some garbage"),
 				machineconfigworker().ignition("other garbage")),
 			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
@@ -88,7 +113,7 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 			name: "refresh machine-config on controllerConfig update",
 			initialObjects: objs(
 				iri().finalizer(masterName(), workerName()),
-				clusterVersion(), cconfig().dockerRegistryImage("a-new-docker-registry-image-pullspec"), iriCertSecret(),
+				clusterVersion(), cconfig().dockerRegistryImage("a-new-docker-registry-image-pullspec").withDNS("example.com"), iriCertSecret(), iriAuthSecret(), pullSecret(),
 				machineconfigmaster(), machineconfigworker()),
 			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
 				verifyInternalReleaseMasterMachineConfig(t, actualMasterMC)
@@ -125,7 +150,7 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 			name: "status condition Degraded=False on successful sync",
 			initialObjects: objs(
 				iri().finalizer(masterName(), workerName()),
-				clusterVersion(), cconfig(), iriCertSecret(),
+				clusterVersion(), cconfig().withDNS("example.com"), iriCertSecret(), iriAuthSecret(), pullSecret(),
 				machineconfigmaster(), machineconfigworker()),
 			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
 				assert.NotNil(t, actualIRI)
@@ -169,6 +194,9 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 					}
 				}
 				tc.verify(t, actualIRI, actualMasterMC, actualWorkerMC)
+			}
+			if tc.verifyPullSecret != nil {
+				tc.verifyPullSecret(t, f)
 			}
 
 		})
