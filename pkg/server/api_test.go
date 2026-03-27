@@ -40,10 +40,11 @@ type scenario struct {
 const expectedContentLength int = 32
 
 type acceptHeaderScenario struct {
-	name       string
-	input      string
-	headerVals []acceptHeaderValue
-	versionOut *semver.Version
+	name        string
+	input       string
+	headerVals  []acceptHeaderValue
+	versionOut  *semver.Version
+	errExpected bool
 }
 
 func float32ToPtr(f32 float32) *float32 {
@@ -211,6 +212,44 @@ func TestAcceptHeaders(t *testing.T) {
 			headerVals: nil,
 			versionOut: v2_2,
 		},
+		{
+			name:  "IgnV3_unsupported_newer_minor_falls_back_to_max",
+			input: "application/vnd.coreos.ignition+json;version=3.99.0, */*;q=0.1",
+			headerVals: []acceptHeaderValue{
+				{
+					MIMEType:    "application",
+					MIMESubtype: "vnd.coreos.ignition+json",
+					SemVer:      semver.New("3.99.0"),
+					QValue:      float32ToPtr(1.0),
+				},
+				{
+					MIMEType:    "*",
+					MIMESubtype: "*",
+					SemVer:      nil,
+					QValue:      float32ToPtr(0.1),
+				},
+			},
+			versionOut: v3_5,
+		},
+		{
+			name:  "IgnV4_unsupported_major_errors",
+			input: "application/vnd.coreos.ignition+json;version=4.0.0, */*;q=0.1",
+			headerVals: []acceptHeaderValue{
+				{
+					MIMEType:    "application",
+					MIMESubtype: "vnd.coreos.ignition+json",
+					SemVer:      semver.New("4.0.0"),
+					QValue:      float32ToPtr(1.0),
+				},
+				{
+					MIMEType:    "*",
+					MIMESubtype: "*",
+					SemVer:      nil,
+					QValue:      float32ToPtr(0.1),
+				},
+			},
+			errExpected: true,
+		},
 	}
 
 	for _, header := range headers {
@@ -218,8 +257,12 @@ func TestAcceptHeaders(t *testing.T) {
 			headers, _ := parseAcceptHeader(header.input)
 			assert.Equal(t, header.headerVals, headers)
 			version, err := detectSpecVersionFromAcceptHeader(header.input)
-			assert.Equal(t, header.versionOut, version)
-			require.NoError(t, err)
+			if header.errExpected {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, header.versionOut, version)
+			}
 		})
 	}
 }
