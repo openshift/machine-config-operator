@@ -158,7 +158,7 @@ func TestIgnitionConverterGetSupportedMinorVersion(t *testing.T) {
 	assert.True(t, matchingMinorVersion.Equal(*v350))
 
 	_, err = converter.GetSupportedMinorVersion(*semver.New("7.7.7"))
-	assert.ErrorIs(t, err, errIgnitionConverterUnknownVersion)
+	assert.ErrorIs(t, err, ErrIgnitionConverterUnknownVersion)
 }
 
 // TestIgnitionConverterConvert tests that the Ignition converter is able to handle the expected
@@ -231,13 +231,13 @@ func TestIgnitionConverterConvert(t *testing.T) {
 			inputConfig:   ign2Config,
 			inputVersion:  "3.5.0",
 			outputVersion: "3.1.0",
-			err:           errIgnitionConverterWrongSourceType,
+			err:           ErrIgnitionConverterWrongSourceType,
 		}, {
 			name:          "Conversion not supported",
 			inputConfig:   ign3Config,
 			inputVersion:  "3.1.0",
 			outputVersion: "3.5.0",
-			err:           errIgnitionConverterUnsupportedConversion,
+			err:           ErrIgnitionConverterUnsupportedConversion,
 		},
 	}
 
