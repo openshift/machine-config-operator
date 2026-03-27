@@ -3018,7 +3018,7 @@ func (dn *Daemon) reboot(rationale string) error {
 		return fmt.Errorf("reboot command failed, something is seriously wrong")
 	}
 	// if we're here, reboot went through successfully, so we set rebootQueued
-	// and we wait for GracefulNodeShutdown
+	// and we wait for the system to shut down
 	dn.rebootQueued = true
 	logSystem("reboot successful")
 
