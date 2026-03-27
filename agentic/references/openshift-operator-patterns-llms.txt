@@ -1,0 +1,257 @@
+# OpenShift Operator Patterns
+
+## ClusterOperator Status (CORE OPERATORS ONLY)
+
+**When**: Core platform operators managed by cluster-version-operator (CVO)
+**NOT for**: Ecosystem operators, OLM-managed operators
+**Location in this repo**: pkg/operator/status.go
+
+**Pattern**:
+```go
+import configv1 "github.com/openshift/api/config/v1"
+
+// Report status to CVO
+clusterOperator := &configv1.ClusterOperator{
+    ObjectMeta: metav1.ObjectMeta{Name: "machine-config"},
+    Status: configv1.ClusterOperatorStatus{
+        Conditions: []configv1.ClusterOperatorStatusCondition{
+            {
+                Type:   configv1.OperatorAvailable,
+                Status: configv1.ConditionTrue,
+            },
+            {
+                Type:   configv1.OperatorProgressing,
+                Status: configv1.ConditionFalse,
+            },
+            {
+                Type:   configv1.OperatorDegraded,
+                Status: configv1.ConditionFalse,
+            },
+        },
+    },
+}
+```
+
+**Conditions**:
+- Available: Operator is functional
+- Progressing: Update/reconciliation in progress
+- Degraded: Operator or components in bad state
+- Upgradeable: Safe to upgrade (optional, defaults to True)
+
+**library-go helper**: `pkg/operator/status`
+
+## Leader Election Pattern
+
+**When**: Multiple replicas of controller, only one should be active
+**Location in this repo**: cmd/machine-config-controller/main.go
+
+**Pattern** (using library-go):
+```go
+import "github.com/openshift/library-go/pkg/operator/leaderelection"
+
+leaderElection := leaderelection.LeaderElectionDefaulting(
+    configv1.LeaderElection{},
+    "machine-config-controller",
+    "openshift-machine-config-operator",
+)
+
+leaderelection.RunOrDie(ctx, leaderElection, func(ctx context.Context) {
+    // Controller logic runs only on leader
+    controller.Run(ctx)
+})
+```
+
+**Why**: Prevents multiple controllers from conflicting, ensures single reconciliation
+
+## Event Recording Pattern
+
+**When**: Recording Kubernetes events for user visibility
+**Location in this repo**: pkg/daemon/daemon.go, pkg/controller/*/
+
+**Pattern** (using library-go):
+```go
+import "github.com/openshift/library-go/pkg/operator/events"
+
+eventRecorder := events.NewKubeRecorder(
+    kubeClient.CoreV1().Events("openshift-machine-config-operator"),
+    "machine-config-daemon",
+    &corev1.ObjectReference{Name: nodeName, Kind: "Node"},
+)
+
+// Record event
+eventRecorder.Event("ConfigDriftDetected", "Detected drift in /etc/kubernetes/kubelet.conf")
+eventRecorder.Warningf("DrainFailed", "Failed to drain node: %v", err)
+```
+
+**Why**: Events visible in `oc get events`, `oc describe node`, useful for debugging
+
+## Controller Pattern
+
+**When**: Watching Kubernetes resources and reconciling
+**Location in this repo**: pkg/controller/*/
+
+**Pattern** (using controller-runtime or client-go informers):
+```go
+import "sigs.k8s.io/controller-runtime/pkg/controller"
+
+// Watch MachineConfigPool
+poolInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+    AddFunc:    func(obj interface{}) { controller.enqueueMachineConfigPool(obj) },
+    UpdateFunc: func(old, new interface{}) { controller.enqueueMachineConfigPool(new) },
+    DeleteFunc: func(obj interface{}) { controller.enqueueMachineConfigPool(obj) },
+})
+
+// Reconcile loop
+func (c *Controller) sync(key string) error {
+    pool := c.getMachineConfigPool(key)
+    // Reconcile logic
+    return c.updatePoolStatus(pool)
+}
+```
+
+**Why**: React to changes, ensure desired state
+
+## DaemonSet for Node Agents Pattern
+
+**When**: Need pod on every node for node-local operations
+**Location in this repo**: manifests/machineconfigdaemon/
+
+**Pattern**:
+```yaml
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: machine-config-daemon
+spec:
+  template:
+    spec:
+      hostNetwork: true
+      hostPID: true
+      hostIPC: true
+      priorityClassName: system-node-critical
+      containers:
+      - name: machine-config-daemon
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: rootfs
+          mountPath: /rootfs
+      volumes:
+      - name: rootfs
+        hostPath:
+          path: /
+```
+
+**Why**: MCD needs full node access (privileged, hostPath) to configure OS
+
+## ServiceAccount and RBAC Pattern
+
+**When**: Every component needs authentication and authorization
+**Location in this repo**: manifests/*/sa.yaml, manifests/*/rbac.yaml
+
+**Pattern**:
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: machine-config-daemon
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: machine-config-daemon
+rules:
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list", "watch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: machine-config-daemon
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: machine-config-daemon
+subjects:
+- kind: ServiceAccount
+  name: machine-config-daemon
+  namespace: openshift-machine-config-operator
+```
+
+**Why**: Least privilege, clear permission boundaries
+
+## Annotation-Based Coordination Pattern
+
+**When**: Coordinating between controllers via node/resource annotations
+**Location in this repo**: pkg/controller/node/, pkg/daemon/
+
+**Pattern**:
+```go
+// MCC sets desired config
+node.Annotations["machineconfiguration.openshift.io/desiredConfig"] = "rendered-worker-abc123"
+// Update node
+client.Update(ctx, node)
+
+// MCD reads desired, applies, then sets current
+desiredConfig := node.Annotations["machineconfiguration.openshift.io/desiredConfig"]
+if currentConfig != desiredConfig {
+    applyConfig(desiredConfig)
+    node.Annotations["machineconfiguration.openshift.io/currentConfig"] = desiredConfig
+    node.Annotations["machineconfiguration.openshift.io/state"] = "Done"
+    client.Update(ctx, node)
+}
+```
+
+**Why**: Simple coordination, survives restarts, visible in `oc describe node`
+
+## Resource Ownership Pattern (OwnerReferences)
+
+**When**: One resource owns/manages another
+**Location in this repo**: pkg/controller/template/
+
+**Pattern**:
+```go
+machineConfig.OwnerReferences = []metav1.OwnerReference{
+    {
+        APIVersion: "machineconfiguration.openshift.io/v1",
+        Kind:       "ControllerConfig",
+        Name:       controllerConfig.Name,
+        UID:        controllerConfig.UID,
+        Controller: &trueVar,
+    },
+}
+```
+
+**Why**: Automatic garbage collection when owner is deleted
+
+## Deployment Pattern for Controllers
+
+**When**: Stateless controllers that can have multiple replicas
+**Location in this repo**: manifests/machineconfigcontroller/
+
+**Pattern**:
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: machine-config-controller
+spec:
+  replicas: 3  # Can scale for HA
+  template:
+    spec:
+      priorityClassName: system-cluster-critical
+      containers:
+      - name: machine-config-controller
+        # Non-privileged
+```
+
+**Why**: High availability, can scale independently
+
+## Additional library-go Patterns
+
+See `vendor/github.com/openshift/library-go/pkg/operator/` for:
+- Resource application: `pkg/operator/resource/`
+- Certificate management: `pkg/operator/certrotation/`
+- Condition management: `pkg/operator/v1helpers/`
+- Static pod management: `pkg/operator/staticpod/`

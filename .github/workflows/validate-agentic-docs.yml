@@ -1,0 +1,206 @@
+name: Validate Agentic Documentation
+
+on:
+  pull_request:
+    paths:
+      - 'agentic/**'
+      - '*.md'
+      - '.github/workflows/validate-agentic-docs.yml'
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  structure:
+    name: Validate Structure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check AGENTS.md length
+        run: |
+          lines=$(wc -l < AGENTS.md)
+          echo "AGENTS.md has $lines lines"
+          if [ $lines -gt 150 ]; then
+            echo "❌ AGENTS.md too long ($lines lines). Keep under 150."
+            exit 1
+          fi
+          echo "✅ AGENTS.md length OK ($lines lines)"
+
+      - name: Verify directory structure
+        run: |
+          required_dirs="design-docs domain exec-plans product-specs decisions references generated"
+          for dir in $required_dirs; do
+            if [ ! -d "agentic/$dir" ]; then
+              echo "❌ Missing required directory: agentic/$dir"
+              exit 1
+            fi
+          done
+          echo "✅ Directory structure OK"
+
+      - name: Check index files exist
+        run: |
+          required_indexes="design-docs/index.md domain/index.md product-specs/index.md decisions/index.md references/index.md"
+          for index in $required_indexes; do
+            if [ ! -f "agentic/$index" ]; then
+              echo "❌ Missing required index: agentic/$index"
+              exit 1
+            fi
+          done
+          echo "✅ Index files OK"
+
+      - name: Check required top-level files exist
+        run: |
+          required_files="DESIGN.md DEVELOPMENT.md TESTING.md RELIABILITY.md SECURITY.md QUALITY_SCORE.md"
+          for file in $required_files; do
+            if [ ! -f "agentic/$file" ]; then
+              echo "❌ Missing REQUIRED file: agentic/$file"
+              echo "   These 6 files are mandatory for ALL repositories."
+              exit 1
+            fi
+          done
+          echo "✅ All required top-level files present"
+
+      - name: Check for unreplaced placeholders
+        run: |
+          # Check for common placeholder patterns (excluding valid markdown links)
+          if grep -r '\[REPO-NAME\]\|\[Component1\]\|\[Concept1\]' agentic/ AGENTS.md ARCHITECTURE.md 2>/dev/null | grep -v ']('; then
+            echo "❌ Found unreplaced placeholders (see above)"
+            exit 1
+          fi
+          echo "✅ No unreplaced placeholders found"
+
+  links:
+    name: Validate Links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check markdown links
+        uses: lycheeverse/lychee-action@v1
+        with:
+          args: --verbose --no-progress 'agentic/**/*.md' '*.md' --exclude-path './vendor' --exclude-path './.git'
+          fail: true
+
+  frontmatter:
+    name: Validate Frontmatter
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check exec-plan frontmatter
+        run: |
+          error=0
+          for file in agentic/exec-plans/active/*.md agentic/exec-plans/completed/*.md; do
+            if [ -f "$file" ] && [ "$(basename "$file")" != "template.md" ]; then
+              if ! head -n 1 "$file" | grep -q "^---$"; then
+                echo "❌ $file missing YAML frontmatter (should start with ---)"
+                error=1
+              fi
+            fi
+          done
+          if [ $error -eq 0 ]; then
+            echo "✅ Exec-plan frontmatter OK"
+          else
+            exit 1
+          fi
+
+      - name: Check ADR frontmatter
+        run: |
+          error=0
+          for file in agentic/decisions/adr-*.md; do
+            if [ -f "$file" ] && [ "$(basename "$file")" != "adr-template.md" ]; then
+              if ! head -n 1 "$file" | grep -q "^---$"; then
+                echo "❌ $file missing YAML frontmatter (should start with ---)"
+                error=1
+              fi
+            fi
+          done
+          if [ $error -eq 0 ]; then
+            echo "✅ ADR frontmatter OK"
+          else
+            exit 1
+          fi
+
+      - name: Check concept doc frontmatter
+        run: |
+          error=0
+          for file in agentic/domain/concepts/*.md; do
+            if [ -f "$file" ]; then
+              if ! head -n 1 "$file" | grep -q "^---$"; then
+                echo "❌ $file missing YAML frontmatter (should start with ---)"
+                error=1
+              fi
+            fi
+          done
+          if [ $error -eq 0 ]; then
+            echo "✅ Concept doc frontmatter OK"
+          else
+            exit 1
+          fi
+
+  content-quality:
+    name: Content Quality Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify minimum ADR count
+        run: |
+          adr_count=$(find agentic/decisions -name "adr-*.md" -not -name "*template*" | wc -l)
+          if [ $adr_count -lt 2 ]; then
+            echo "❌ Need at least 2 ADRs (found $adr_count). Document existing architectural decisions."
+            exit 1
+          fi
+          echo "✅ ADR count OK ($adr_count ADRs)"
+
+      - name: Verify exec-plans exist
+        run: |
+          plan_count=$(find agentic/exec-plans/active -name "*.md" 2>/dev/null | wc -l)
+          if [ $plan_count -lt 1 ]; then
+            echo "❌ Need at least 1 active exec-plan (found $plan_count)"
+            exit 1
+          fi
+          echo "✅ Active exec-plan exists ($plan_count plans)"
+
+      - name: Check AGENTS.md has required sections
+        run: |
+          required_sections="What This Repository Does|Quick Navigation|Core Concepts|Build & Test"
+          for section in $required_sections; do
+            if ! grep -q "$section" AGENTS.md; then
+              echo "❌ AGENTS.md missing required section: $section"
+              exit 1
+            fi
+          done
+          echo "✅ AGENTS.md required sections present"
+
+  freshness:
+    name: Check Freshness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for stale TODOs
+        run: |
+          stale_count=0
+          while IFS= read -r file; do
+            if [ -f "$file" ]; then
+              last_modified=$(git log -1 --format=%ct "$file" 2>/dev/null || echo $(date +%s))
+              now=$(date +%s)
+              days=$(( ($now - $last_modified) / 86400 ))
+
+              if [ $days -gt 30 ] && grep -q "TODO" "$file"; then
+                echo "⚠️  $file has TODO and hasn't been updated in $days days"
+                stale_count=$((stale_count + 1))
+              fi
+            fi
+          done < <(find agentic -name "*.md" -type f)
+
+          if [ $stale_count -gt 5 ]; then
+            echo "❌ Too many stale TODOs ($stale_count). Update or move to tech-debt-tracker.md"
+            exit 1
+          fi
+          echo "✅ TODO freshness OK ($stale_count stale TODOs, threshold is 5)"
