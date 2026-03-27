@@ -516,6 +516,91 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		basicPinnedImageTest(infraMcp, pinnedImageSetName)
 
 	})
+
+	g.It("[PolarionID:88378][OTP] Deleting a PinnedImageSet does not affect images pinned by another PinnedImageSet", func() {
+		var (
+			waitForPinned = 10 * time.Minute
+			pinnedImage   = AlpineImage
+			allNodes      = mcp.GetNodesOrFail()
+			pisOneName    = fmt.Sprintf("tc-%s-pis-one", GetCurrentTestPolarionIDNumber())
+			pisTwoName    = fmt.Sprintf("tc-%s-pis-two", GetCurrentTestPolarionIDNumber())
+			pisDupName    = fmt.Sprintf("tc-%s-pis-duplicate", GetCurrentTestPolarionIDNumber())
+		)
+
+		exutil.By("Remove the test image from all nodes in the pool")
+		removeImageFromNodes(allNodes, pinnedImage)
+		logger.Infof("OK!\n")
+
+		exutil.By("Create first PinnedImageSet with alpine image and verify it is pinned")
+		pisOne := createPinnedImageSetAndWait(oc.AsAdmin(), pisOneName, mcp, []string{pinnedImage}, allNodes, waitForPinned)
+		defer pisOne.DeleteAndWait(waitForPinned)
+		logger.Infof("OK!\n")
+
+		exutil.By("Create second PinnedImageSet with the same alpine image and verify it is pinned")
+		pisTwo := createPinnedImageSetAndWait(oc.AsAdmin(), pisTwoName, mcp, []string{pinnedImage}, allNodes, waitForPinned)
+		defer pisTwo.DeleteAndWait(waitForPinned)
+		logger.Infof("OK!\n")
+
+		exutil.By("Verify all MachineConfigNodes report healthy pinned image conditions")
+		for _, node := range allNodes {
+			mcn := node.GetMachineConfigNode()
+			o.Eventually(mcn, "2m", "20s").Should(HaveConditionField("PinnedImageSetsDegraded", "status", FalseString),
+				"MachineConfigNode %s should not be PinnedImageSetsDegraded.\n%s", node.GetName(), mcn.PrettyString())
+			o.Eventually(mcn, "2m", "20s").Should(HaveConditionField("PinnedImageSetsProgressing", "status", FalseString),
+				"MachineConfigNode %s should not be PinnedImageSetsProgressing.\n%s", node.GetName(), mcn.PrettyString())
+		}
+		logger.Infof("OK!\n")
+
+		exutil.By("Delete the first PinnedImageSet")
+		o.Expect(pisOne.Delete()).To(o.Succeed(), "Error deleting %s", pisOne)
+		logger.Infof("OK!\n")
+
+		exutil.By("Wait for the pool to reconcile after deleting the first PinnedImageSet")
+		o.Expect(mcp.waitForPinComplete(waitForPinned)).To(o.Succeed(),
+			"Pinned image operation is not completed in %s after deleting %s", mcp, pisOne)
+		logger.Infof("OK!\n")
+
+		exutil.By("Verify the first PinnedImageSet is deleted and the second still exists")
+		o.Expect(pisOne.Exists()).To(o.BeFalse(),
+			"%s should not exist after deletion", pisOne)
+		o.Expect(pisTwo.Exists()).To(o.BeTrue(),
+			"%s should still exist", pisTwo)
+		logger.Infof("OK!\n")
+
+		exutil.By("Verify the image is STILL pinned on all nodes after deleting the first PinnedImageSet")
+		for _, node := range allNodes {
+			ri := NewRemoteImage(node, pinnedImage)
+			o.Expect(ri.IsPinned()).To(o.BeTrue(),
+				"%s should still be pinned because %s still references it", ri, pisTwo)
+		}
+		logger.Infof("OK!\n")
+
+		exutil.By("Verify MachineConfigNodes remain healthy after the deletion")
+		for _, node := range allNodes {
+			mcn := node.GetMachineConfigNode()
+			o.Eventually(mcn, "2m", "20s").Should(HaveConditionField("PinnedImageSetsDegraded", "status", FalseString),
+				"MachineConfigNode %s should not be PinnedImageSetsDegraded after deleting %s.\n%s", node.GetName(), pisOne, mcn.PrettyString())
+			o.Eventually(mcn, "2m", "20s").Should(HaveConditionField("PinnedImageSetsProgressing", "status", FalseString),
+				"MachineConfigNode %s should not be PinnedImageSetsProgressing after deleting %s.\n%s", node.GetName(), pisOne, mcn.PrettyString())
+		}
+		logger.Infof("OK!\n")
+
+		exutil.By("Verify that a PinnedImageSet with duplicate images is rejected by the API")
+		_, err := CreateGenericPinnedImageSet(oc.AsAdmin(), pisDupName, mcp.GetName(), []string{pinnedImage, pinnedImage})
+		o.Expect(err).To(o.HaveOccurred(),
+			"Creating a PinnedImageSet with duplicate images should fail, but it succeeded")
+		o.Expect(err).To(o.BeAssignableToTypeOf(&exutil.ExitError{}),
+			"Expected an ExitError from the API server rejection")
+		o.Expect(err.(*exutil.ExitError).StdErr).To(o.ContainSubstring("Duplicate value"),
+			"API error should indicate duplicate image entries")
+		logger.Infof("OK!\n")
+
+		exutil.By("Verify the duplicate PinnedImageSet was not created")
+		pisDup := NewPinnedImageSet(oc.AsAdmin(), pisDupName)
+		o.Expect(pisDup.Exists()).To(o.BeFalse(),
+			"%s should not exist because the API rejected it", pisDup)
+		logger.Infof("OK!\n")
+	})
 })
 
 // getReleaseInfoPullspecOrFail returns a list of strings containing the names of the pullspec images
@@ -695,4 +780,31 @@ func basicPinnedImageTest(mcp *MachineConfigPool, pinnedImageSetName string) {
 	o.Expect(firstPinnedImage.IsPinned()).To(o.BeFalse(), "%s is pinned, but it should NOT", firstPinnedImage)
 	o.Expect(secondPinnedImage.IsPinned()).To(o.BeFalse(), "%s is pinned, but it should NOT", secondPinnedImage)
 	logger.Infof("OK!\n")
+}
+
+// removeImageFromNodes removes the given image from all provided nodes, ignoring errors since the image may not be present
+func removeImageFromNodes(nodes []*Node, image string) {
+	for _, node := range nodes {
+		_ = NewRemoteImage(node, image).Rmi()
+	}
+}
+
+// createPinnedImageSetAndWait creates a PinnedImageSet, waits for the pool to complete pinning,
+// and verifies the images are pinned on all provided nodes
+func createPinnedImageSetAndWait(oc *exutil.CLI, name string, mcp *MachineConfigPool, images []string, nodes []*Node, waitForPinned time.Duration) *PinnedImageSet {
+	pis, err := CreateGenericPinnedImageSet(oc, name, mcp.GetName(), images)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error creating pinnedimageset %s", pis)
+
+	o.Expect(mcp.waitForPinComplete(waitForPinned)).To(o.Succeed(),
+		"Pinned image operation is not completed in %s", mcp)
+
+	for _, node := range nodes {
+		for _, image := range images {
+			ri := NewRemoteImage(node, image)
+			o.Expect(ri.IsPinned()).To(o.BeTrue(),
+				"%s is not pinned, but it should be", ri)
+		}
+	}
+
+	return pis
 }
