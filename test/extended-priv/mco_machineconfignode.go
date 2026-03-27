@@ -96,11 +96,13 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		o.Eventually(mcn.GetDrained, "1m", "2s").Should(o.Equal("Unknown"))
 		logger.Infof("Checking Drained")
 		o.Eventually(mcn.GetDrained, "5m", "2s").Should(o.Equal("True"))
-		// This transition is too fast and we can't check it without introducing instability. It is left commented so that we know that this transition exists.
-		// logger.Infof("Checking AppliedFilesAndOS Unknown")
-		// o.Eventually(mcn.GetAppliedFilesAndOS, "1m", "1s").Should(o.Equal("Unknown"))
-		logger.Infof("Checking AppliedFilesAndOS")
-		o.Eventually(mcn.GetAppliedFilesAndOS, "3m", "2s").Should(o.Equal("True"))
+		// Check APPLIEDFILESANDOS condition for non-TechPreviewNoUpgrade cluster
+		// Check APPLIEDFILES condition for TechPreviewNoUpgrade cluster
+		// Use dynamic check based on which condition exists in the MCN resource
+		logger.Infof("Checking Applied condition Unknown")
+		o.Eventually(mcn.GetAppliedConditionStatus, "1m", "1s").Should(o.Equal("Unknown"))
+		logger.Infof("Checking Applied condition")
+		o.Eventually(mcn.GetAppliedConditionStatus, "3m", "2s").Should(o.Equal("True"))
 		logger.Infof("Checking UpdateExecuted")
 		o.Eventually(mcn.GetUpdateExecuted, "20s", "5s").Should(o.Equal("True"))
 		logger.Infof("Checking RebootedNode Unknown")
@@ -165,7 +167,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK\n")
 
 		exutil.By("Check MCN conditions")
-		o.Expect(mcn.GetAppliedFilesAndOS()).Should(o.Equal(expectedMCNStatus), "status of MCN condition UPDATEDFILESANDOS is not expected")
+		// Check APPLIEDFILESANDOS condition for non-TechPreviewNoUpgrade cluster
+		// Check APPLIEDFILES condition for TechPreviewNoUpgrade cluster
+		// Use dynamic check based on which condition exists in the MCN resource
+		o.Expect(mcn.GetAppliedConditionStatus()).Should(o.Equal(expectedMCNStatus), "status of MCN Applied condition is not expected")
 		o.Expect(mcn.GetUpdateExecuted()).Should(o.Equal(expectedMCNStatus), "status of MCN condition UPDATEEXECUTED is not expected")
 		o.Expect(mcn).Should(HaveNodeDegradedMessage(o.And(
 			o.ContainSubstring(degradedNode.GetName()),
