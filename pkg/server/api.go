@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/clarketm/json"
 	"github.com/coreos/go-semver/semver"
@@ -73,6 +74,7 @@ func (a *APIServer) Serve() {
 			klog.Exitf("Machine Config Server exited with error: %v", err)
 		}
 	} else {
+		time.Sleep(35 * time.Second)
 		certWatcher, err := certwatcher.New(a.cert, a.key)
 		if err != nil {
 			klog.Exitf("failed to load serving cert: %v", err)
