@@ -59,7 +59,8 @@ func newImageRegistrySecretFromAny(in any) (ImageRegistrySecret, error) {
 // DockerConfigJSON represents the ~/.docker/config.json file information.
 // This is the newer-style format which maps to `kubernetes.io/dockerconfigjson` secret type.
 type DockerConfigJSON struct {
-	Auths DockerConfig `json:"auths,omitempty"`
+	Auths       DockerConfig      `json:"auths,omitempty"`
+	CredHelpers map[string]string `json:"credHelpers,omitempty"`
 }
 
 // newDockerConfigJSON creates and returns a new, empty DockerConfigJSON struct.

@@ -170,3 +170,11 @@ func TestMergeDockerConfigstoJSONMap(t *testing.T) {
 		})
 	}
 }
+
+func TestCredHelpers(t *testing.T) {
+	raw := `{"auths": {"foo": {"auth": "bar", "email": "baz"}}, "credHelpers": {}}`
+	_, err := ConvertSecretTodockercfg([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+}
