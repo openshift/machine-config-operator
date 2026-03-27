@@ -121,8 +121,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		// We sort the coreOs list to make sure that we break the first updated not to make the test faster
 		node := sortNodeList(coMcp.GetCoreOsNodesOrFail())[0]
 		defer func() {
-			_ = FixRebaseInNode(node)
-			coMcp.WaitForUpdatedStatus()
+			defer coMcp.WaitForUpdatedStatus()
+			if OrFail[string](coMcp.GetDegradedStatus()) == TrueString {
+				o.Expect(FixRebaseInNode(node)).To(o.Succeed())
+			}
 		}()
 		o.Expect(BreakRebaseInNode(node)).To(o.Succeed(),
 			"Error breaking the rpm-ostree rebase process in node %s", node.GetName())
