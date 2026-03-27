@@ -140,7 +140,7 @@ func TestValidateIgnition(t *testing.T) {
 // the expected supported minor versions in a sorted slice of strings
 func TestIgnitionConverterGetSupportedMinorVersions(t *testing.T) {
 	converter := newIgnitionConverter(buildConverterList())
-	supported := []string{"2.2", "3.0", "3.1", "3.2", "3.3", "3.4", "3.5"}
+	supported := []string{"2.2", "3.0", "3.1", "3.2", "3.3", "3.4", "3.5", "3.6"}
 	assert.Equal(t, supported, converter.GetSupportedMinorVersions())
 }
 
