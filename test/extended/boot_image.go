@@ -80,12 +80,20 @@ func skipUnlessFunctionalMachineAPI(oc *exutil.CLI) {
 
 // getRandomMachineSet picks a random machineset present on the cluster
 func getRandomMachineSet(machineClient *machineclient.Clientset) machinev1beta1.MachineSet {
-	machineSets, err := machineClient.MachineV1beta1().MachineSets("openshift-machine-api").List(context.TODO(), metav1.ListOptions{})
-	o.Expect(err).NotTo(o.HaveOccurred())
+	machineSets := getAllMachineSets(machineClient)
 	// #nosec Not sure why this is needed, we are using math/rand
 	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
 	machineSetUnderTest := machineSets.Items[rnd.Intn(len(machineSets.Items))]
 	return machineSetUnderTest
+}
+
+// getAllMachineSets returns all the MachineSets in a cluster
+func getAllMachineSets(machineClient *machineclient.Clientset) *machinev1beta1.MachineSetList {
+	machineSets, err := machineClient.MachineV1beta1().MachineSets("openshift-machine-api").List(context.TODO(), metav1.ListOptions{})
+	o.Expect(err).NotTo(o.HaveOccurred())
+	o.Expect(machineSets.Items).NotTo(o.BeEmpty(), "No MachineSets found")
+
+	return machineSets
 }
 
 // verifyMachineSetUpdate verifies that the the boot image values of a MachineSet are reconciled correctly
