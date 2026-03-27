@@ -545,7 +545,7 @@ func (l *ResourceList) SetItemsFilter(filter string) {
 }
 
 // GetAll returns a list of Resource structs with the resources found in this list
-func (l ResourceList) GetAll() ([]Resource, error) {
+func (l ResourceList) GetAll() ([]*Resource, error) {
 	if l.itemsFilter == "" {
 		l.itemsFilter = "*"
 	}
@@ -562,11 +562,11 @@ func (l ResourceList) GetAll() ([]Resource, error) {
 
 	allNames := strings.Split(strings.Trim(allItemsNames, " "), " ")
 
-	allResources := []Resource{}
+	allResources := []*Resource{}
 	for _, name := range allNames {
 		if name != "" {
 			newResource := Resource{ocGetter: ocGetter{l.oc, l.kind, l.namespace, name}}
-			allResources = append(allResources, newResource)
+			allResources = append(allResources, &newResource)
 		}
 	}
 
