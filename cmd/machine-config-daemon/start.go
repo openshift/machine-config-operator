@@ -17,6 +17,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/daemon"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/daemon/cri"
+	"github.com/openshift/machine-config-operator/pkg/daemon/internalreleaseimage"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
 	"k8s.io/klog/v2"
@@ -233,10 +234,20 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	)
 	go pinnedImageSetManager.Run(2, stopCh)
 
+	internalReleaseImageManager := internalreleaseimage.NewInternalReleaseImageManager(
+		startOpts.nodeName,
+		ctrlctx.ClientBuilder.MachineConfigClientOrDie(componentName),
+		ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().InternalReleaseImages(),
+		nodeScopedInformer,
+		ctrlctx.ConfigInformerFactory.Config().V1().Infrastructures(),
+	)
+	go internalReleaseImageManager.Run(2, stopCh)
+
 	ctrlctx.KubeInformerFactory.Start(stopCh)
 	ctrlctx.KubeNamespacedInformerFactory.Start(stopCh)
 	ctrlctx.InformerFactory.Start(stopCh)
 	ctrlctx.OperatorInformerFactory.Start(stopCh)
+	ctrlctx.ConfigInformerFactory.Start(stopCh)
 	nodeScopedInformerStartFunc(ctrlctx.Stop)
 	close(ctrlctx.InformersStarted)
 
