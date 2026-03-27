@@ -18,7 +18,7 @@ import (
 // emitAlloc emits to f a new Alloc instruction allocating a variable
 // of type typ.
 //
-// The caller must set Alloc.Heap=true (for an heap-allocated variable)
+// The caller must set Alloc.Heap=true (for a heap-allocated variable)
 // or add the Alloc to f.Locals (for a frame-allocated variable).
 //
 // During building, a variable in f.Locals may have its Heap flag
@@ -81,7 +81,7 @@ func emitDebugRef(f *Function, e ast.Expr, v Value, isAddr bool) {
 		panic("nil")
 	}
 	var obj types.Object
-	e = unparen(e)
+	e = ast.Unparen(e)
 	if id, ok := e.(*ast.Ident); ok {
 		if isBlankIdent(id) {
 			return
@@ -249,20 +249,13 @@ func emitConv(f *Function, val Value, typ types.Type) Value {
 		// non-parameterized, as they are the set of runtime types.
 		t := val.Type()
 		if f.typeparams.Len() == 0 || !f.Prog.isParameterized(t) {
-			addRuntimeType(f.Prog, t)
+			addMakeInterfaceType(f.Prog, t)
 		}
 
 		mi := &MakeInterface{X: val}
 		mi.setType(typ)
 		return f.emit(mi)
 	}
-
-	// In the common case, the typesets of src and dst are singletons
-	// and we emit an appropriate conversion. But if either contains
-	// a type parameter, the conversion may represent a cross product,
-	// in which case which we emit a MultiConvert.
-	dst_terms := typeSetOf(ut_dst)
-	src_terms := typeSetOf(ut_src)
 
 	// conversionCase describes an instruction pattern that maybe emitted to
 	// model d <- s for d in dst_terms and s in src_terms.
@@ -321,13 +314,14 @@ func emitConv(f *Function, val Value, typ types.Type) Value {
 	}
 
 	var classifications conversionCase
-	for _, s := range src_terms {
-		us := s.Type().Underlying()
-		for _, d := range dst_terms {
-			ud := d.Type().Underlying()
-			classifications |= classify(us, ud)
-		}
-	}
+	underIs(ut_src, func(us types.Type) bool {
+		return underIs(ut_dst, func(ud types.Type) bool {
+			if us != nil && ud != nil {
+				classifications |= classify(us, ud)
+			}
+			return classifications != 0
+		})
+	})
 	if classifications == 0 {
 		panic(fmt.Sprintf("in %s: cannot convert %s (%s) to %s", f, val, val.Type(), typ))
 	}
@@ -381,8 +375,8 @@ func emitConv(f *Function, val Value, typ types.Type) Value {
 		c.setType(typ)
 		return f.emit(c)
 
-	default: // multiple conversion
-		c := &MultiConvert{X: val, from: src_terms, to: dst_terms}
+	default: // The conversion represents a cross product.
+		c := &MultiConvert{X: val, from: t_src, to: typ}
 		c.setType(typ)
 		return f.emit(c)
 	}
@@ -494,7 +488,7 @@ func emitTailCall(f *Function, call *Call) {
 	} else {
 		call.typ = tresults
 	}
-	tuple := f.emit(call)
+	tuple := emitCall(f, call)
 	var ret Return
 	switch nr {
 	case 0:
@@ -502,7 +496,7 @@ func emitTailCall(f *Function, call *Call) {
 	case 1:
 		ret.Results = []Value{tuple}
 	default:
-		for i := 0; i < nr; i++ {
+		for i := range nr {
 			v := emitExtract(f, tuple, i)
 			// TODO(adonovan): in principle, this is required:
 			//   v = emitConv(f, o.Type, f.Signature.Results[i].Type)
@@ -513,6 +507,27 @@ func emitTailCall(f *Function, call *Call) {
 	}
 	f.emit(&ret)
 	f.currentBlock = nil
+}
+
+// emitCall emits a call instruction. If the callee is "no return",
+// it also emits a panic to eliminate infeasible CFG edges.
+func emitCall(fn *Function, call *Call) Value {
+	res := fn.emit(call)
+
+	callee := call.Call.StaticCallee()
+	if callee != nil &&
+		callee.object != nil &&
+		fn.Prog.noReturn != nil &&
+		fn.Prog.noReturn(callee.object) {
+		// Call cannot return. Insert a panic after it.
+		fn.emit(&Panic{
+			X:   emitConv(fn, vNoReturn, tEface),
+			pos: call.Pos(),
+		})
+		fn.currentBlock = fn.newBasicBlock("unreachable.noreturn")
+	}
+
+	return res
 }
 
 // emitImplicitSelections emits to f code to apply the sequence of
