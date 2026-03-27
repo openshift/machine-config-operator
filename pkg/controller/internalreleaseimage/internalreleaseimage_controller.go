@@ -1,6 +1,7 @@
 package internalreleaseimage
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"reflect"
@@ -55,6 +56,7 @@ var (
 // Controller defines the InternalReleaseImage controller.
 type Controller struct {
 	client        mcfgclientset.Interface
+	kubeClient    clientset.Interface
 	eventRecorder record.EventRecorder
 
 	syncHandler                 func(mcp string) error
@@ -94,6 +96,7 @@ func New(
 
 	ctrl := &Controller{
 		client:        mcfgClient,
+		kubeClient:    kubeClient,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-internalreleaseimagecontroller"})),
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
@@ -279,7 +282,8 @@ func (ctrl *Controller) updateSecret(obj, _ interface{}) {
 	secret := obj.(*corev1.Secret)
 
 	// Skip any event not related to the InternalReleaseImage secrets
-	if secret.Name != ctrlcommon.InternalReleaseImageTLSSecretName {
+	if secret.Name != ctrlcommon.InternalReleaseImageTLSSecretName &&
+		secret.Name != ctrlcommon.InternalReleaseImageAuthSecretName {
 		return
 	}
 
@@ -355,8 +359,21 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) (syncErr error) {
 		return fmt.Errorf("could not get Secret %s: %w", ctrlcommon.InternalReleaseImageTLSSecretName, err)
 	}
 
+	iriAuthSecret, err := ctrl.secretLister.Secrets(ctrlcommon.MCONamespace).Get(ctrlcommon.InternalReleaseImageAuthSecretName)
+	if err != nil {
+		return fmt.Errorf("could not get Secret %s: %w", ctrlcommon.InternalReleaseImageAuthSecretName, err)
+	}
+
+	// Ensure the htpasswd field is in sync with the password field. If the
+	// password was rotated, this generates a new bcrypt hash and updates the
+	// secret before re-rendering the MachineConfig.
+	iriAuthSecret, err = ctrl.reconcileAuthSecret(iriAuthSecret)
+	if err != nil {
+		return fmt.Errorf("failed to reconcile IRI auth secret: %w", err)
+	}
+
 	for _, role := range SupportedRoles {
-		r := NewRendererByRole(role, iri, iriSecret, cconfig)
+		r := NewRendererByRole(role, iri, iriSecret, iriAuthSecret, cconfig)
 
 		mc, err := ctrl.mcLister.Get(r.GetMachineConfigName())
 		isNotFound := errors.IsNotFound(err)
@@ -381,6 +398,11 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) (syncErr error) {
 		if err := ctrl.addFinalizerToInternalReleaseImage(iri, mc); err != nil {
 			return fmt.Errorf("could not add finalizer: %w", err)
 		}
+	}
+
+	// Merge IRI auth credentials into the global pull secret
+	if err := ctrl.mergeIRIAuthIntoPullSecret(cconfig, iriAuthSecret); err != nil {
+		return fmt.Errorf("failed to merge IRI auth into pull secret: %w", err)
 	}
 
 	// Initialize status if empty
@@ -511,6 +533,74 @@ func (ctrl *Controller) addFinalizerToInternalReleaseImage(iri *mcfgv1alpha1.Int
 	iri.Finalizers = append(iri.Finalizers, mc.Name)
 	_, err := ctrl.client.MachineconfigurationV1alpha1().InternalReleaseImages().Update(context.TODO(), iri, metav1.UpdateOptions{})
 	return err
+}
+
+func (ctrl *Controller) mergeIRIAuthIntoPullSecret(cconfig *mcfgv1.ControllerConfig, authSecret *corev1.Secret) error {
+	password := string(authSecret.Data["password"])
+	if password == "" {
+		return fmt.Errorf("IRI auth secret %s/%s has empty password", authSecret.Namespace, authSecret.Name)
+	}
+
+	baseDomain := cconfig.Spec.DNS.Spec.BaseDomain
+
+	// Fetch current pull secret from openshift-config
+	pullSecret, err := ctrl.kubeClient.CoreV1().Secrets(ctrlcommon.OpenshiftConfigNamespace).Get(
+		context.TODO(), ctrlcommon.GlobalPullSecretName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("could not get pull-secret: %w", err)
+	}
+
+	mergedBytes, err := MergeIRIAuthIntoPullSecret(pullSecret.Data[corev1.DockerConfigJsonKey], password, baseDomain)
+	if err != nil {
+		return err
+	}
+
+	// No change needed
+	if bytes.Equal(mergedBytes, pullSecret.Data[corev1.DockerConfigJsonKey]) {
+		return nil
+	}
+
+	pullSecret.Data[corev1.DockerConfigJsonKey] = mergedBytes
+	_, err = ctrl.kubeClient.CoreV1().Secrets(ctrlcommon.OpenshiftConfigNamespace).Update(
+		context.TODO(), pullSecret, metav1.UpdateOptions{})
+	if err == nil {
+		klog.Infof("Updated pull secret with IRI registry auth credentials from secret %s/%s (uid=%s, resourceVersion=%s)", authSecret.Namespace, authSecret.Name, authSecret.UID, authSecret.ResourceVersion)
+	}
+	return err
+}
+
+// reconcileAuthSecret ensures the htpasswd field in the IRI auth secret is in
+// sync with the password field. If the password has changed (or htpasswd is
+// missing), it generates a new bcrypt hash and updates the secret. This is the
+// trigger for single-phase credential rotation: the updated htpasswd causes the
+// MachineConfig to be re-rendered, which MCDs roll out to nodes. Brief registry
+// downtime during the rollout is accepted.
+func (ctrl *Controller) reconcileAuthSecret(authSecret *corev1.Secret) (*corev1.Secret, error) {
+	password := string(authSecret.Data["password"])
+	htpasswd := string(authSecret.Data["htpasswd"])
+
+	if HtpasswdMatchesPassword(htpasswd, IRIRegistryUsername, password) {
+		return authSecret, nil
+	}
+
+	klog.V(4).Infof("IRI auth secret htpasswd does not match password, regenerating for credential rotation")
+
+	newHtpasswd, err := GenerateHtpasswdEntry(IRIRegistryUsername, password)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate htpasswd: %w", err)
+	}
+
+	updated := authSecret.DeepCopy()
+	updated.Data["htpasswd"] = []byte(newHtpasswd)
+
+	result, err := ctrl.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Update(
+		context.TODO(), updated, metav1.UpdateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to update IRI auth secret: %w", err)
+	}
+
+	klog.Infof("Regenerated IRI auth secret htpasswd for credential rotation (secret %s/%s)", authSecret.Namespace, authSecret.Name)
+	return result, nil
 }
 
 func (ctrl *Controller) cascadeDelete(iri *mcfgv1alpha1.InternalReleaseImage) error {
