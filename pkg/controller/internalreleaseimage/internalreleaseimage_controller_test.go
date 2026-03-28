@@ -96,6 +96,36 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 			},
 		},
 		{
+			name: "apply Modern TLS profile from APIServer",
+			initialObjects: objs(
+				iri(), clusterVersion(), cconfig(), iriCertSecret(),
+				apiServer().tlsProfile(configv1.TLSProfileModernType)),
+			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
+				ignCfg, err := ctrlcommon.ParseAndConvertConfig(actualMasterMC.Spec.Config.Raw)
+				assert.NoError(t, err)
+				assert.Contains(t, *ignCfg.Systemd.Units[0].Contents, "REGISTRY_HTTP_TLS_MINIMUMTLS=tls1.3")
+				assert.NotContains(t, *ignCfg.Systemd.Units[0].Contents, "REGISTRY_HTTP_TLS_CIPHERSUITES")
+			},
+		},
+		{
+			name: "cipher suites with spaces are quoted in systemd unit to prevent word splitting",
+			initialObjects: objs(
+				iri(), clusterVersion(), cconfig(), iriCertSecret(),
+				apiServer().tlsProfile(configv1.TLSProfileIntermediateType)),
+			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
+				ignCfg, err := ctrlcommon.ParseAndConvertConfig(actualMasterMC.Spec.Config.Raw)
+				assert.NoError(t, err)
+				unitContents := *ignCfg.Systemd.Units[0].Contents
+				assert.Contains(t, unitContents, "REGISTRY_HTTP_TLS_MINIMUMTLS=tls1.2")
+				assert.Contains(t, unitContents, "REGISTRY_HTTP_TLS_CIPHERSUITES=")
+				// The cipher suites value (a YAML array with spaces) must be quoted
+				// in the systemd unit to prevent word splitting. Without quotes,
+				// systemd splits on spaces and podman interprets cipher names as
+				// container image references.
+				assert.Contains(t, unitContents, `-e "REGISTRY_HTTP_TLS_CIPHERSUITES=[`)
+			},
+		},
+		{
 			name: "machine-config cascade delete on iri removal - removes the first machineconfig",
 			initialObjects: objs(
 				iri().finalizer(masterName(), workerName()).setDeletionTimestamp(),
@@ -246,6 +276,7 @@ type fixture struct {
 	mcLister             []*mcfgv1.MachineConfig
 	secretLister         []*corev1.Secret
 	clusterVersionLister []*configv1.ClusterVersion
+	apiServerLister      []*configv1.APIServer
 
 	controller    *Controller
 	objects       []runtime.Object
@@ -271,6 +302,9 @@ func (f *fixture) setupObjects(objs []runtime.Object) {
 			}
 		case *configv1.ClusterVersion:
 			f.configObjects = append(f.configObjects, obj)
+		case *configv1.APIServer:
+			f.configObjects = append(f.configObjects, obj)
+			f.apiServerLister = append(f.apiServerLister, obj.(*configv1.APIServer))
 		default:
 			f.objects = append(f.objects, obj)
 			switch o := obj.(type) {
@@ -299,6 +333,7 @@ func (f *fixture) newController() *Controller {
 		i.Machineconfiguration().V1().ControllerConfigs(),
 		i.Machineconfiguration().V1().MachineConfigs(),
 		ci.Config().V1().ClusterVersions(),
+		ci.Config().V1().APIServers(),
 		k.Core().V1().Secrets(),
 		f.k8sClient,
 		f.client,
@@ -309,6 +344,7 @@ func (f *fixture) newController() *Controller {
 	c.ccListerSynced = alwaysReady
 	c.mcListerSynced = alwaysReady
 	c.clusterVersionListerSynced = alwaysReady
+	c.apiServerListerSynced = alwaysReady
 	c.secretListerSynced = alwaysReady
 	c.eventRecorder = &record.FakeRecorder{}
 
@@ -336,6 +372,9 @@ func (f *fixture) newController() *Controller {
 	}
 	for _, c := range f.clusterVersionLister {
 		ci.Config().V1().ClusterVersions().Informer().GetIndexer().Add(c)
+	}
+	for _, c := range f.apiServerLister {
+		ci.Config().V1().APIServers().Informer().GetIndexer().Add(c)
 	}
 
 	return c
