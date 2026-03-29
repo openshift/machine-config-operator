@@ -153,3 +153,13 @@ func MCPIsUpdatedToNewConfig(machineConfigClient *machineconfigclient.Clientset,
 
 	return false
 }
+
+// IsMachineConfigPoolConditionTrue returns true when the conditionType is present and set to `ConditionTrue`
+func IsMachineConfigPoolConditionTrue(conditions []mcfgv1.MachineConfigPoolCondition, conditionType mcfgv1.MachineConfigPoolConditionType) bool {
+	for _, condition := range conditions {
+		if condition.Type == conditionType {
+			return condition.Status == corev1.ConditionTrue
+		}
+	}
+	return false
+}
