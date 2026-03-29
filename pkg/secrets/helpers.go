@@ -1,9 +1,13 @@
 package secrets
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/klog/v2"
 )
 
 // NormalizeDockerConfigJSONSecret reads in a RegistrySecret and converts it
@@ -78,4 +82,89 @@ func getSecretTypeMap() map[corev1.SecretType]string {
 		corev1.SecretTypeDockerConfigJson: corev1.DockerConfigJsonKey,
 		corev1.SecretTypeDockercfg:        corev1.DockerConfigKey,
 	}
+}
+
+// Wraps imageRegistrySecretImpl and implements the Unmarshaller interface for
+// better control over unmarshalling.
+type dockerConfigJSONDecoder struct {
+	imageRegistrySecretImpl
+}
+
+// Custom unmarshal method that supports both old-style and new-style
+// DockerConfig unmarshalling.
+func (d *dockerConfigJSONDecoder) UnmarshalJSON(in []byte) error {
+	// Check if we have a nil or zero-length payload.
+	if in == nil || len(in) == 0 {
+		return fmt.Errorf("empty dockerconfig bytes")
+	}
+
+	// Check if the input is just the JSON null literal
+	if bytes.TrimSpace(in) != nil && string(bytes.TrimSpace(in)) == "null" {
+		return fmt.Errorf("dockerconfig bytes contain JSON null")
+	}
+
+	if bytes.Equal(in, []byte(strings.TrimSpace(`{}`))) {
+		d.cfg.Auths = nil
+		return nil
+	}
+
+	// Attempt to decode into DockerConfigJSON first. It is likely that we will
+	// get an unknown field error. This error can be ignored provided that
+	// decoding into a DockerConfig does not produce any errors.
+	if err := d.decodeDockerConfigJSON(in); err == nil {
+		return nil
+	}
+
+	if err := d.decodeDockerConfig(in); err != nil {
+		return fmt.Errorf("decoding DockerConfig / DockerConfigJSON: %w", err)
+	}
+
+	return nil
+}
+
+// Strictly decodes bytes into a DockerConfig object.
+func (d *dockerConfigJSONDecoder) decodeDockerConfig(in []byte) error {
+	dc := DockerConfig{}
+	if err := strictJSONDecode(in, &dc); err != nil {
+		return fmt.Errorf("could not decode DockerConfig: %w", err)
+	}
+
+	d.cfg.Auths = dc
+	d.isLegacyStyle = true
+	return nil
+}
+
+// Strictly decodes JSON bytes into a DockerConfigJSON object.
+func (d *dockerConfigJSONDecoder) decodeDockerConfigJSON(in []byte) error {
+	// Private version of the DockerConfigJSON struct with a CredHelpers field.
+	// This prevents an unknown field error from occurring if this field is
+	// present. However, this field will be ignored by everything else here.
+	// Strict decoding is necessary because we need to distinguish between the
+	// DockerConfigJSON and DockerConfig schemas.
+	type withCredHelpers struct {
+		DockerConfigJSON
+		CredHelpers json.RawMessage `json:"credHelpers"`
+	}
+
+	dcJSON := withCredHelpers{}
+
+	if err := strictJSONDecode(in, &dcJSON); err != nil {
+		return fmt.Errorf("could not decode DockerConfigJSON: %w", err)
+	}
+
+	if len(dcJSON.CredHelpers) != 0 {
+		klog.Warning("Found credHelpers in DockerConfigJSON, ignoring")
+	}
+
+	d.isLegacyStyle = false
+	d.cfg.Auths = dcJSON.Auths
+	return nil
+}
+
+// Adds additional strictness to the unmarshalling process by disallowing
+// unknown fields.
+func strictJSONDecode(in []byte, target interface{}) error {
+	decoder := json.NewDecoder(bytes.NewReader(in))
+	decoder.DisallowUnknownFields()
+	return decoder.Decode(target)
 }
