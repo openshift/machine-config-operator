@@ -3,6 +3,7 @@ package extended
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"time"
 
 	g "github.com/onsi/ginkgo/v2"
@@ -243,3 +244,13 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("Verified that node %s is now in the worker pool with custom pool count at 0", newNodeName)
 	})
 })
+
+// getRandomMachineSet picks a random machineset present on the cluster
+func getRandomMachineSet(machineClient *machineclient.Clientset) machinev1beta1.MachineSet {
+	machineSets, err := machineClient.MachineV1beta1().MachineSets("openshift-machine-api").List(context.TODO(), metav1.ListOptions{})
+	o.Expect(err).NotTo(o.HaveOccurred())
+	// #nosec Not sure why this is needed, we are using math/rand
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
+	machineSetUnderTest := machineSets.Items[rnd.Intn(len(machineSets.Items))]
+	return machineSetUnderTest
+}

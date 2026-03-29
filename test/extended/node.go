@@ -8,30 +8,13 @@ import (
 
 	o "github.com/onsi/gomega"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	extpriv "github.com/openshift/machine-config-operator/test/extended-priv"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/util/sets"
 )
-
-// Returns the set of ready nodes in the cluster
-func getReadyNodes(oc *exutil.CLI) (sets.Set[string], error) {
-	nodeList := extpriv.NewNodeList(oc.AsAdmin())
-	nodes, err := nodeList.GetAllReady()
-	if err != nil {
-		return nil, err
-	}
-
-	nodeSet := sets.New[string]()
-	for _, node := range nodes {
-		nodeSet.Insert(node.GetName())
-	}
-	return nodeSet, nil
-}
 
 // `GetNodesByRole` gets all nodes labeled with the desired role
 func GetNodesByRole(oc *exutil.CLI, role string) ([]corev1.Node, error) {
