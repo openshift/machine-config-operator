@@ -5,10 +5,140 @@ import (
 
 	osconfigv1 "github.com/openshift/api/config/v1"
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
+	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/util/workqueue"
 )
+
+func TestIsClusterStable(t *testing.T) {
+	cases := []struct {
+		name         string
+		history      []osconfigv1.UpdateHistory
+		expectStable bool
+	}{
+		{
+			name:         "empty history - install in progress",
+			history:      []osconfigv1.UpdateHistory{},
+			expectStable: false,
+		},
+		{
+			name: "only partial entry - install in progress",
+			history: []osconfigv1.UpdateHistory{
+				{State: osconfigv1.PartialUpdate, Version: "4.18.0"},
+			},
+			expectStable: false,
+		},
+		{
+			name: "completed entry - stable after initial install",
+			history: []osconfigv1.UpdateHistory{
+				{State: osconfigv1.CompletedUpdate, Version: "4.18.0"},
+			},
+			expectStable: true,
+		},
+		{
+			name: "upgrade in progress",
+			history: []osconfigv1.UpdateHistory{
+				{State: osconfigv1.PartialUpdate, Version: "4.19.0"},
+				{State: osconfigv1.CompletedUpdate, Version: "4.18.0"},
+			},
+			expectStable: false,
+		},
+		{
+			name: "upgrade complete - stable",
+			history: []osconfigv1.UpdateHistory{
+				{State: osconfigv1.CompletedUpdate, Version: "4.19.0"},
+				{State: osconfigv1.CompletedUpdate, Version: "4.18.0"},
+			},
+			expectStable: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cv := &osconfigv1.ClusterVersion{
+				ObjectMeta: v1.ObjectMeta{Name: "version"},
+				Status:     osconfigv1.ClusterVersionStatus{History: tc.history},
+			}
+			indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+			require.NoError(t, indexer.Add(cv))
+			ctrl := &Controller{
+				clusterVersionLister: configlistersv1.NewClusterVersionLister(indexer),
+			}
+			stable, err := ctrl.isClusterStable()
+			require.NoError(t, err)
+			assert.Equal(t, tc.expectStable, stable)
+		})
+	}
+}
+
+func TestUpdateClusterVersion(t *testing.T) {
+	cases := []struct {
+		name          string
+		oldHistory    []osconfigv1.UpdateHistory
+		newHistory    []osconfigv1.UpdateHistory
+		expectEnqueue bool
+	}{
+		{
+			name:          "partial to completed - install finishes",
+			oldHistory:    []osconfigv1.UpdateHistory{{State: osconfigv1.PartialUpdate, Version: "4.18.0"}},
+			newHistory:    []osconfigv1.UpdateHistory{{State: osconfigv1.CompletedUpdate, Version: "4.18.0"}},
+			expectEnqueue: true,
+		},
+		{
+			// not sure this is possible, added for safety
+			name:          "empty to completed - install finishes from scratch",
+			oldHistory:    []osconfigv1.UpdateHistory{},
+			newHistory:    []osconfigv1.UpdateHistory{{State: osconfigv1.CompletedUpdate, Version: "4.18.0"}},
+			expectEnqueue: true,
+		},
+		{
+			name: "upgrade partial to completed - upgrade finishes",
+			oldHistory: []osconfigv1.UpdateHistory{
+				{State: osconfigv1.PartialUpdate, Version: "4.19.0"},
+				{State: osconfigv1.CompletedUpdate, Version: "4.18.0"},
+			},
+			newHistory: []osconfigv1.UpdateHistory{
+				{State: osconfigv1.CompletedUpdate, Version: "4.19.0"},
+				{State: osconfigv1.CompletedUpdate, Version: "4.18.0"},
+			},
+			expectEnqueue: true,
+		},
+		{
+			name:          "completed to completed - no change in stability",
+			oldHistory:    []osconfigv1.UpdateHistory{{State: osconfigv1.CompletedUpdate, Version: "4.18.0"}},
+			newHistory:    []osconfigv1.UpdateHistory{{State: osconfigv1.CompletedUpdate, Version: "4.18.0"}},
+			expectEnqueue: false,
+		},
+		{
+			name:          "partial to partial - still in progress",
+			oldHistory:    []osconfigv1.UpdateHistory{{State: osconfigv1.PartialUpdate, Version: "4.18.0"}},
+			newHistory:    []osconfigv1.UpdateHistory{{State: osconfigv1.PartialUpdate, Version: "4.18.0"}},
+			expectEnqueue: false,
+		},
+		{
+			name:          "completed to partial - new upgrade started",
+			oldHistory:    []osconfigv1.UpdateHistory{{State: osconfigv1.CompletedUpdate, Version: "4.18.0"}},
+			newHistory:    []osconfigv1.UpdateHistory{{State: osconfigv1.PartialUpdate, Version: "4.19.0"}, {State: osconfigv1.CompletedUpdate, Version: "4.18.0"}},
+			expectEnqueue: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := &Controller{
+				queue: workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]()),
+			}
+			oldCV := &osconfigv1.ClusterVersion{Status: osconfigv1.ClusterVersionStatus{History: tc.oldHistory}}
+			newCV := &osconfigv1.ClusterVersion{Status: osconfigv1.ClusterVersionStatus{History: tc.newHistory}}
+			ctrl.updateClusterVersion(oldCV, newCV)
+			assert.Equal(t, tc.expectEnqueue, ctrl.queue.Len() > 0)
+		})
+	}
+}
 
 func TestHotLoop(t *testing.T) {
 	cases := []struct {
