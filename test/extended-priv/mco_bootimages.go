@@ -42,8 +42,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		// Disable skew to avoid collisions
 		exutil.By("Disabling skew functionality")
 		initialMachineConfiguration := machineConfiguration.GetSpecOrFail()
-		o.Expect(machineConfiguration.SetNoneSkew()).To(o.Succeed(), "Error disabing the skew functionality")
-		o.Eventually(machineConfiguration.IsGenerationUpToDate, "2m", "10s").Should(o.BeTrue(), "MachineConfiguration observedGeneration did not catch up to generation")
+		DisableSkew(machineConfiguration)
 
 		g.DeferCleanup(func() {
 			exutil.By("Restoring initial MachineConfiguration spec")
