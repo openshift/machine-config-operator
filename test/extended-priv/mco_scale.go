@@ -178,9 +178,13 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		architecture.SkipNonAmd64SingleArch(oc)                                 // arm64 is not supported until 4.11
 
 		if IsBootImageUpdateSupported(oc.AsAdmin()) {
+			defer machineConfiguration.SetSpec(machineConfiguration.GetSpecOrFail())
+			exutil.By("Disabling skew functionality")
+			DisableSkew(machineConfiguration)
+			logger.Infof("OK!\n")
+
 			exutil.By("Opt-out boot images update")
 			logger.Infof("Disabling the bootimages update so that our images are not overridden by MCO")
-			defer machineConfiguration.SetSpec(machineConfiguration.GetSpecOrFail())
 			o.Expect(
 				machineConfiguration.SetNoneManagedBootImagesConfig(MachineSetResource),
 			).To(o.Succeed(), "Error configuring None managedBootImages in the 'cluster' MachineConfiguration resource")
@@ -681,9 +685,14 @@ func SimpleScaleUPTest(oc *exutil.CLI, mcp *MachineConfigPool, imageVersion, ign
 	)
 
 	if IsBootImageUpdateSupported(oc.AsAdmin()) {
+
+		defer machineConfiguration.SetSpec(machineConfiguration.GetSpecOrFail())
+		exutil.By("Disabling skew functionality")
+		DisableSkew(machineConfiguration)
+		logger.Infof("OK!\n")
+
 		exutil.By("Opt-out boot images update")
 		logger.Infof("Disabling the bootimages update so that our images are not overridden by MCO")
-		defer machineConfiguration.SetSpec(machineConfiguration.GetSpecOrFail())
 		o.Expect(
 			machineConfiguration.SetNoneManagedBootImagesConfig(MachineSetResource),
 		).To(o.Succeed(), "Error configuring None managedBootImages in the 'cluster' MachineConfiguration resource")
