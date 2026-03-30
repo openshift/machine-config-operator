@@ -218,6 +218,23 @@ spec:
                       When image is set, architecture cannot be specified.
                       If both version and image are set, the version extracted from the referenced image must match the specified version.
                     type: string
+                  mode:
+                    description: |-
+                      mode determines how an update should be processed.
+                      The only valid value is "Preflight".
+                      When omitted, the cluster performs a normal update by applying the specified version or image to the cluster.
+                      This is the standard update behavior.
+                      When set to "Preflight", the cluster runs compatibility checks against the target release without
+                      performing an actual update. Compatibility results, including any detected risks, are reported
+                      in status.conditionalUpdates and status.conditionalUpdateRisks alongside risks from the update
+                      recommendation service.
+                      This allows administrators to assess update readiness and address issues before committing to the update.
+                      Preflight mode is particularly useful for skip-level updates where upgrade compatibility needs to be
+                      verified across multiple minor versions.
+                      When mode is set to "Preflight", the same rules for version, image, and architecture apply as for normal updates.
+                    enum:
+                    - Preflight
+                    type: string
                   version:
                     description: |-
                       version is a semantic version identifying the update version.

@@ -132,7 +132,7 @@ spec:
                               x-kubernetes-int-or-string: true
                               x-kubernetes-validations:
                               - message: limit must be a positive, non-zero quantity
-                                rule: isQuantity(self) && quantity(self).isGreaterThan(quantity('0'))
+                                rule: quantity(self).isGreaterThan(quantity('0'))
                             name:
                               description: |-
                                 name of the resource (e.g. "cpu", "memory", "hugepages-2Mi").
@@ -160,7 +160,7 @@ spec:
                               x-kubernetes-int-or-string: true
                               x-kubernetes-validations:
                               - message: request must be a positive, non-zero quantity
-                                rule: isQuantity(self) && quantity(self).isGreaterThan(quantity('0'))
+                                rule: quantity(self).isGreaterThan(quantity('0'))
                           required:
                           - name
                           type: object
@@ -454,12 +454,10 @@ spec:
                         x-kubernetes-list-type: map
                       volumeClaimTemplate:
                         description: |-
-                          volumeClaimTemplate Defines persistent storage for Alertmanager. Use this setting to
-                          configure the persistent volume claim, including storage class, volume
-                          size, and name.
+                          volumeClaimTemplate defines persistent storage for Alertmanager. Use this setting to
+                          configure the persistent volume claim, including storage class and volume size.
                           If omitted, the Pod uses ephemeral storage and alert data will not persist
                           across restarts.
-                          This field is optional.
                         properties:
                           apiVersion:
                             description: |-
@@ -982,7 +980,7 @@ spec:
                           x-kubernetes-int-or-string: true
                           x-kubernetes-validations:
                           - message: limit must be a positive, non-zero quantity
-                            rule: isQuantity(self) && quantity(self).isGreaterThan(quantity('0'))
+                            rule: quantity(self).isGreaterThan(quantity('0'))
                         name:
                           description: |-
                             name of the resource (e.g. "cpu", "memory", "hugepages-2Mi").
@@ -1010,7 +1008,7 @@ spec:
                           x-kubernetes-int-or-string: true
                           x-kubernetes-validations:
                           - message: request must be a positive, non-zero quantity
-                            rule: isQuantity(self) && quantity(self).isGreaterThan(quantity('0'))
+                            rule: quantity(self).isGreaterThan(quantity('0'))
                       required:
                       - name
                       type: object
@@ -1286,6 +1284,2707 @@ spec:
                     - TraceAll
                     type: string
                 type: object
+              openShiftStateMetricsConfig:
+                description: |-
+                  openShiftStateMetricsConfig is an optional field that can be used to configure the openshift-state-metrics
+                  agent that runs in the openshift-monitoring namespace. The openshift-state-metrics agent generates metrics
+                  about the state of OpenShift-specific Kubernetes objects, such as routes, builds, and deployments.
+                  When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+                minProperties: 1
+                properties:
+                  nodeSelector:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      nodeSelector defines the nodes on which the Pods are scheduled.
+                      nodeSelector is optional.
+
+                      When omitted, this means the user has no opinion and the platform is left
+                      to choose reasonable defaults. These defaults are subject to change over time.
+                      The current default value is `kubernetes.io/os: linux`.
+                      When specified, nodeSelector must contain at least 1 entry and must not contain more than 10 entries.
+                    maxProperties: 10
+                    minProperties: 1
+                    type: object
+                  resources:
+                    description: |-
+                      resources defines the compute resource requests and limits for the openshift-state-metrics container.
+                      This includes CPU, memory and HugePages constraints to help control scheduling and resource usage.
+                      When not specified, defaults are used by the platform. Requests cannot exceed limits.
+                      This field is optional.
+                      More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                      This is a simplified API that maps to Kubernetes ResourceRequirements.
+                      The current default values are:
+                        resources:
+                         - name: cpu
+                           request: 1m
+                           limit: null
+                         - name: memory
+                           request: 32Mi
+                           limit: null
+                      Maximum length for this list is 10.
+                      Minimum length for this list is 1.
+                      Each resource name must be unique within this list.
+                    items:
+                      description: ContainerResource defines a single resource requirement
+                        for a container.
+                      properties:
+                        limit:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: |-
+                            limit is the maximum amount of the resource allowed (e.g. "2Mi", "1Gi").
+                            This field is optional.
+                            When request is specified, limit cannot be less than request.
+                            The value must be greater than 0 when specified.
+                          maxLength: 20
+                          minLength: 1
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                          x-kubernetes-validations:
+                          - message: limit must be a positive, non-zero quantity
+                            rule: quantity(self).isGreaterThan(quantity('0'))
+                        name:
+                          description: |-
+                            name of the resource (e.g. "cpu", "memory", "hugepages-2Mi").
+                            This field is required.
+                            name must consist only of alphanumeric characters, `-`, `_` and `.` and must start and end with an alphanumeric character.
+                          maxLength: 253
+                          minLength: 1
+                          type: string
+                          x-kubernetes-validations:
+                          - message: name must consist only of alphanumeric characters,
+                              `-`, `_` and `.` and must start and end with an alphanumeric
+                              character
+                            rule: '!format.qualifiedName().validate(self).hasValue()'
+                        request:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: |-
+                            request is the minimum amount of the resource required (e.g. "2Mi", "1Gi").
+                            This field is optional.
+                            When limit is specified, request cannot be greater than limit.
+                          maxLength: 20
+                          minLength: 1
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                          x-kubernetes-validations:
+                          - message: request must be a positive, non-zero quantity
+                            rule: quantity(self).isGreaterThan(quantity('0'))
+                      required:
+                      - name
+                      type: object
+                      x-kubernetes-validations:
+                      - message: at least one of request or limit must be set
+                        rule: has(self.request) || has(self.limit)
+                      - message: limit must be greater than or equal to request
+                        rule: '!(has(self.request) && has(self.limit)) || quantity(self.limit).compareTo(quantity(self.request))
+                          >= 0'
+                    maxItems: 10
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
+                  tolerations:
+                    description: |-
+                      tolerations defines tolerations for the pods.
+                      tolerations is optional.
+
+                      When omitted, this means the user has no opinion and the platform is left
+                      to choose reasonable defaults. These defaults are subject to change over time.
+                      Defaults are empty/unset.
+                      Maximum length for this list is 10.
+                      Minimum length for this list is 1.
+                    items:
+                      description: |-
+                        The pod this Toleration is attached to tolerates any taint that matches
+                        the triple <key,value,effect> using the matching operator <operator>.
+                      properties:
+                        effect:
+                          description: |-
+                            Effect indicates the taint effect to match. Empty means match all taint effects.
+                            When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                          type: string
+                        key:
+                          description: |-
+                            Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                            If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                          type: string
+                        operator:
+                          description: |-
+                            Operator represents a key's relationship to the value.
+                            Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
+                            Exists is equivalent to wildcard for value, so that a pod can
+                            tolerate all taints of a particular category.
+                            Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
+                          type: string
+                        tolerationSeconds:
+                          description: |-
+                            TolerationSeconds represents the period of time the toleration (which must be
+                            of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                            it is not set, which means tolerate the taint forever (do not evict). Zero and
+                            negative values will be treated as 0 (evict immediately) by the system.
+                          format: int64
+                          type: integer
+                        value:
+                          description: |-
+                            Value is the taint value the toleration matches to.
+                            If the operator is Exists, the value should be empty, otherwise just a regular string.
+                          type: string
+                      type: object
+                    maxItems: 10
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  topologySpreadConstraints:
+                    description: |-
+                      topologySpreadConstraints defines rules for how openshift-state-metrics Pods should be distributed
+                      across topology domains such as zones, nodes, or other user-defined labels.
+                      topologySpreadConstraints is optional.
+                      This helps improve high availability and resource efficiency by avoiding placing
+                      too many replicas in the same failure domain.
+
+                      When omitted, this means no opinion and the platform is left to choose a default, which is subject to change over time.
+                      This field maps directly to the `topologySpreadConstraints` field in the Pod spec.
+                      Default is empty list.
+                      Maximum length for this list is 10.
+                      Minimum length for this list is 1.
+                      Entries must have unique topologyKey and whenUnsatisfiable pairs.
+                    items:
+                      description: TopologySpreadConstraint specifies how to spread
+                        matching pods among the given topology.
+                      properties:
+                        labelSelector:
+                          description: |-
+                            LabelSelector is used to find matching pods.
+                            Pods that match this label selector are counted to determine the number of pods
+                            in their corresponding topology domain.
+                          properties:
+                            matchExpressions:
+                              description: matchExpressions is a list of label selector
+                                requirements. The requirements are ANDed.
+                              items:
+                                description: |-
+                                  A label selector requirement is a selector that contains values, a key, and an operator that
+                                  relates the key and values.
+                                properties:
+                                  key:
+                                    description: key is the label key that the selector
+                                      applies to.
+                                    type: string
+                                  operator:
+                                    description: |-
+                                      operator represents a key's relationship to a set of values.
+                                      Valid operators are In, NotIn, Exists and DoesNotExist.
+                                    type: string
+                                  values:
+                                    description: |-
+                                      values is an array of string values. If the operator is In or NotIn,
+                                      the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                      the values array must be empty. This array is replaced during a strategic
+                                      merge patch.
+                                    items:
+                                      type: string
+                                    type: array
+                                    x-kubernetes-list-type: atomic
+                                required:
+                                - key
+                                - operator
+                                type: object
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            matchLabels:
+                              additionalProperties:
+                                type: string
+                              description: |-
+                                matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                                map is equivalent to an element of matchExpressions, whose key field is "key", the
+                                operator is "In", and the values array contains only "value". The requirements are ANDed.
+                              type: object
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        matchLabelKeys:
+                          description: |-
+                            MatchLabelKeys is a set of pod label keys to select the pods over which
+                            spreading will be calculated. The keys are used to lookup values from the
+                            incoming pod labels, those key-value labels are ANDed with labelSelector
+                            to select the group of existing pods over which spreading will be calculated
+                            for the incoming pod. The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
+                            MatchLabelKeys cannot be set when LabelSelector isn't set.
+                            Keys that don't exist in the incoming pod labels will
+                            be ignored. A null or empty list means only match against labelSelector.
+
+                            This is a beta field and requires the MatchLabelKeysInPodTopologySpread feature gate to be enabled (enabled by default).
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: atomic
+                        maxSkew:
+                          description: |-
+                            MaxSkew describes the degree to which pods may be unevenly distributed.
+                            When `whenUnsatisfiable=DoNotSchedule`, it is the maximum permitted difference
+                            between the number of matching pods in the target topology and the global minimum.
+                            The global minimum is the minimum number of matching pods in an eligible domain
+                            or zero if the number of eligible domains is less than MinDomains.
+                            For example, in a 3-zone cluster, MaxSkew is set to 1, and pods with the same
+                            labelSelector spread as 2/2/1:
+                            In this case, the global minimum is 1.
+                            | zone1 | zone2 | zone3 |
+                            |  P P  |  P P  |   P   |
+                            - if MaxSkew is 1, incoming pod can only be scheduled to zone3 to become 2/2/2;
+                            scheduling it onto zone1(zone2) would make the ActualSkew(3-1) on zone1(zone2)
+                            violate MaxSkew(1).
+                            - if MaxSkew is 2, incoming pod can be scheduled onto any zone.
+                            When `whenUnsatisfiable=ScheduleAnyway`, it is used to give higher precedence
+                            to topologies that satisfy it.
+                            It's a required field. Default value is 1 and 0 is not allowed.
+                          format: int32
+                          type: integer
+                        minDomains:
+                          description: |-
+                            MinDomains indicates a minimum number of eligible domains.
+                            When the number of eligible domains with matching topology keys is less than minDomains,
+                            Pod Topology Spread treats "global minimum" as 0, and then the calculation of Skew is performed.
+                            And when the number of eligible domains with matching topology keys equals or greater than minDomains,
+                            this value has no effect on scheduling.
+                            As a result, when the number of eligible domains is less than minDomains,
+                            scheduler won't schedule more than maxSkew Pods to those domains.
+                            If value is nil, the constraint behaves as if MinDomains is equal to 1.
+                            Valid values are integers greater than 0.
+                            When value is not nil, WhenUnsatisfiable must be DoNotSchedule.
+
+                            For example, in a 3-zone cluster, MaxSkew is set to 2, MinDomains is set to 5 and pods with the same
+                            labelSelector spread as 2/2/2:
+                            | zone1 | zone2 | zone3 |
+                            |  P P  |  P P  |  P P  |
+                            The number of domains is less than 5(MinDomains), so "global minimum" is treated as 0.
+                            In this situation, new pod with the same labelSelector cannot be scheduled,
+                            because computed skew will be 3(3 - 0) if new Pod is scheduled to any of the three zones,
+                            it will violate MaxSkew.
+                          format: int32
+                          type: integer
+                        nodeAffinityPolicy:
+                          description: |-
+                            NodeAffinityPolicy indicates how we will treat Pod's nodeAffinity/nodeSelector
+                            when calculating pod topology spread skew. Options are:
+                            - Honor: only nodes matching nodeAffinity/nodeSelector are included in the calculations.
+                            - Ignore: nodeAffinity/nodeSelector are ignored. All nodes are included in the calculations.
+
+                            If this value is nil, the behavior is equivalent to the Honor policy.
+                          type: string
+                        nodeTaintsPolicy:
+                          description: |-
+                            NodeTaintsPolicy indicates how we will treat node taints when calculating
+                            pod topology spread skew. Options are:
+                            - Honor: nodes without taints, along with tainted nodes for which the incoming pod
+                            has a toleration, are included.
+                            - Ignore: node taints are ignored. All nodes are included.
+
+                            If this value is nil, the behavior is equivalent to the Ignore policy.
+                          type: string
+                        topologyKey:
+                          description: |-
+                            TopologyKey is the key of node labels. Nodes that have a label with this key
+                            and identical values are considered to be in the same topology.
+                            We consider each <key, value> as a "bucket", and try to put balanced number
+                            of pods into each bucket.
+                            We define a domain as a particular instance of a topology.
+                            Also, we define an eligible domain as a domain whose nodes meet the requirements of
+                            nodeAffinityPolicy and nodeTaintsPolicy.
+                            e.g. If TopologyKey is "kubernetes.io/hostname", each Node is a domain of that topology.
+                            And, if TopologyKey is "topology.kubernetes.io/zone", each zone is a domain of that topology.
+                            It's a required field.
+                          type: string
+                        whenUnsatisfiable:
+                          description: |-
+                            WhenUnsatisfiable indicates how to deal with a pod if it doesn't satisfy
+                            the spread constraint.
+                            - DoNotSchedule (default) tells the scheduler not to schedule it.
+                            - ScheduleAnyway tells the scheduler to schedule the pod in any location,
+                              but giving higher precedence to topologies that would help reduce the
+                              skew.
+                            A constraint is considered "Unsatisfiable" for an incoming pod
+                            if and only if every possible node assignment for that pod would violate
+                            "MaxSkew" on some topology.
+                            For example, in a 3-zone cluster, MaxSkew is set to 1, and pods with the same
+                            labelSelector spread as 3/1/1:
+                            | zone1 | zone2 | zone3 |
+                            | P P P |   P   |   P   |
+                            If WhenUnsatisfiable is set to DoNotSchedule, incoming pod can only be scheduled
+                            to zone2(zone3) to become 3/2/1(3/1/2) as ActualSkew(2-1) on zone2(zone3) satisfies
+                            MaxSkew(1). In other words, the cluster can still be imbalanced, but scheduler
+                            won't make it *more* imbalanced.
+                            It's a required field.
+                          type: string
+                      required:
+                      - maxSkew
+                      - topologyKey
+                      - whenUnsatisfiable
+                      type: object
+                    maxItems: 10
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - topologyKey
+                    - whenUnsatisfiable
+                    x-kubernetes-list-type: map
+                type: object
+              prometheusConfig:
+                description: |-
+                  prometheusConfig provides configuration options for the default platform Prometheus instance
+                  that runs in the `openshift-monitoring` namespace. This configuration applies only to the
+                  platform Prometheus instance; user-workload Prometheus instances are configured separately.
+
+                  This field allows you to customize how the platform Prometheus is deployed and operated, including:
+                    - Pod scheduling (node selectors, tolerations, topology spread constraints)
+                    - Resource allocation (CPU, memory requests/limits)
+                    - Retention policies (how long metrics are stored)
+                    - External integrations (remote write, additional alertmanagers)
+
+                  This field is optional. When omitted, the platform chooses reasonable defaults, which may change over time.
+                minProperties: 1
+                properties:
+                  additionalAlertmanagerConfigs:
+                    description: |-
+                      additionalAlertmanagerConfigs configures additional Alertmanager instances that receive alerts from
+                      the Prometheus component. This is useful for organizations that need to:
+                        - Send alerts to external monitoring systems (like PagerDuty, Slack, or custom webhooks)
+                        - Route different types of alerts to different teams or systems
+                        - Integrate with existing enterprise alerting infrastructure
+                        - Maintain separate alert routing for compliance or organizational requirements
+                      When omitted, no additional Alertmanager instances are configured (default behavior).
+                      When provided, at least one configuration must be specified (minimum 1, maximum 10 items).
+                      Entries must have unique names (name is the list key).
+                    items:
+                      description: |-
+                        AdditionalAlertmanagerConfig represents configuration for additional Alertmanager instances.
+                        The `AdditionalAlertmanagerConfig` resource defines settings for how a
+                        component communicates with additional Alertmanager instances.
+                      properties:
+                        authorization:
+                          description: |-
+                            authorization configures the authentication method for Alertmanager connections.
+                            Supports bearer token authentication. When omitted, no authentication is used.
+                          properties:
+                            bearerToken:
+                              description: |-
+                                bearerToken defines the secret reference containing the bearer token.
+                                Required when type is "BearerToken", and forbidden otherwise.
+                                The secret must exist in the openshift-monitoring namespace.
+                              properties:
+                                key:
+                                  description: |-
+                                    key is the key of the secret to select from.
+                                    Must consist of alphanumeric characters, '-', '_', or '.'.
+                                    Must be between 1 and 253 characters in length.
+                                  maxLength: 253
+                                  minLength: 1
+                                  type: string
+                                  x-kubernetes-validations:
+                                  - message: must contain only alphanumeric characters,
+                                      '-', '_', or '.'
+                                    rule: self.matches('^[a-zA-Z0-9._-]+$')
+                                name:
+                                  description: |-
+                                    name is the name of the secret in the `openshift-monitoring` namespace to select from.
+                                    Must be a valid Kubernetes secret name (lowercase alphanumeric, '-' or '.', start/end with alphanumeric).
+                                    Must be between 1 and 253 characters in length.
+                                  maxLength: 253
+                                  minLength: 1
+                                  type: string
+                                  x-kubernetes-validations:
+                                  - message: must be a valid secret name (lowercase
+                                      alphanumeric characters, '-' or '.', start and
+                                      end with alphanumeric)
+                                    rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                              required:
+                              - key
+                              - name
+                              type: object
+                              x-kubernetes-map-type: atomic
+                            type:
+                              description: |-
+                                type specifies the authentication type to use.
+                                Valid value is "BearerToken" (bearer token authentication).
+                                When set to BearerToken, the bearerToken field must be specified.
+                              enum:
+                              - BearerToken
+                              type: string
+                          required:
+                          - type
+                          type: object
+                          x-kubernetes-validations:
+                          - message: bearerToken is required when type is BearerToken
+                            rule: 'has(self.type) && self.type == ''BearerToken''
+                              ? has(self.bearerToken) : !has(self.bearerToken)'
+                        name:
+                          description: |-
+                            name is a unique identifier for this Alertmanager configuration entry.
+                            The name must be a valid DNS subdomain (RFC 1123): lowercase alphanumeric characters,
+                            hyphens, or periods, and must start and end with an alphanumeric character.
+                            Minimum length is 1 character (empty string is invalid).
+                            Maximum length is 253 characters.
+                          maxLength: 253
+                          minLength: 1
+                          type: string
+                          x-kubernetes-validations:
+                          - message: a lowercase RFC 1123 subdomain must consist of
+                              lower case alphanumeric characters, '-' or '.', and
+                              must start and end with an alphanumeric character.
+                            rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                        pathPrefix:
+                          description: |-
+                            pathPrefix defines an optional URL path prefix to prepend to the Alertmanager API endpoints.
+                            For example, if your Alertmanager is behind a reverse proxy at "/alertmanager/",
+                            set this to "/alertmanager" so requests go to "/alertmanager/api/v1/alerts" instead of "/api/v1/alerts".
+                            This is commonly needed when Alertmanager is deployed behind ingress controllers or load balancers.
+                            When no prefix is needed, omit this field; do not set it to "/" as that would produce paths with double slashes (e.g. "//api/v1/alerts").
+                            Must start with "/", must not end with "/", and must not be exactly "/".
+                            Must not contain query strings ("?") or fragments ("#").
+                          maxLength: 255
+                          minLength: 2
+                          type: string
+                          x-kubernetes-validations:
+                          - message: pathPrefix must start with '/'
+                            rule: self.startsWith('/')
+                          - message: pathPrefix must not end with '/'
+                            rule: '!self.endsWith(''/'')'
+                          - message: pathPrefix must not be '/' (would produce double
+                              slashes in request path); omit for no prefix
+                            rule: self != '/'
+                          - message: pathPrefix must not contain '?' or '#'
+                            rule: '!self.contains(''?'') && !self.contains(''#'')'
+                        scheme:
+                          description: |-
+                            scheme defines the URL scheme to use when communicating with Alertmanager
+                            instances.
+                            Possible values are `HTTP` or `HTTPS`.
+                            When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+                            The current default value is `HTTP`.
+                          enum:
+                          - HTTP
+                          - HTTPS
+                          type: string
+                        staticConfigs:
+                          description: |-
+                            staticConfigs is a list of statically configured Alertmanager endpoints in the form
+                            of `<host>:<port>`. Each entry must be a valid hostname, IPv4 address, or IPv6 address
+                            (in brackets) followed by a colon and a valid port number (1-65535).
+                            Examples: "alertmanager.example.com:9093", "192.168.1.100:9093", "[::1]:9093"
+                            At least one endpoint must be specified (minimum 1, maximum 10 endpoints).
+                            Each entry must be unique and non-empty (empty string is invalid).
+                          items:
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                            x-kubernetes-validations:
+                            - message: must be a valid 'host:port' where host is a
+                                DNS name, IPv4, or IPv6 address (in brackets), and
+                                port is 1-65535
+                              rule: isURL('http://' + self) && size(url('http://'
+                                + self).getHostname()) > 0 && size(url('http://' +
+                                self).getPort()) > 0 && int(url('http://' + self).getPort())
+                                >= 1 && int(url('http://' + self).getPort()) <= 65535
+                          maxItems: 10
+                          minItems: 1
+                          type: array
+                          x-kubernetes-list-type: set
+                        timeoutSeconds:
+                          description: |-
+                            timeoutSeconds defines the timeout in seconds for requests to Alertmanager.
+                            When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+                            Currently the default is 10 seconds.
+                            Minimum value is 1 second.
+                            Maximum value is 600 seconds (10 minutes).
+                          format: int32
+                          maximum: 600
+                          minimum: 1
+                          type: integer
+                        tlsConfig:
+                          description: |-
+                            tlsConfig defines the TLS settings to use for Alertmanager connections.
+                            When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+                          minProperties: 1
+                          properties:
+                            ca:
+                              description: |-
+                                ca is an optional CA certificate to use for TLS connections.
+                                When omitted, the system's default CA bundle is used.
+                              properties:
+                                key:
+                                  description: |-
+                                    key is the key of the secret to select from.
+                                    Must consist of alphanumeric characters, '-', '_', or '.'.
+                                    Must be between 1 and 253 characters in length.
+                                  maxLength: 253
+                                  minLength: 1
+                                  type: string
+                                  x-kubernetes-validations:
+                                  - message: must contain only alphanumeric characters,
+                                      '-', '_', or '.'
+                                    rule: self.matches('^[a-zA-Z0-9._-]+$')
+                                name:
+                                  description: |-
+                                    name is the name of the secret in the `openshift-monitoring` namespace to select from.
+                                    Must be a valid Kubernetes secret name (lowercase alphanumeric, '-' or '.', start/end with alphanumeric).
+                                    Must be between 1 and 253 characters in length.
+                                  maxLength: 253
+                                  minLength: 1
+                                  type: string
+                                  x-kubernetes-validations:
+                                  - message: must be a valid secret name (lowercase
+                                      alphanumeric characters, '-' or '.', start and
+                                      end with alphanumeric)
+                                    rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                              required:
+                              - key
+                              - name
+                              type: object
+                              x-kubernetes-map-type: atomic
+                            cert:
+                              description: |-
+                                cert is an optional client certificate to use for mutual TLS connections.
+                                When omitted, no client certificate is presented.
+                              properties:
+                                key:
+                                  description: |-
+                                    key is the key of the secret to select from.
+                                    Must consist of alphanumeric characters, '-', '_', or '.'.
+                                    Must be between 1 and 253 characters in length.
+                                  maxLength: 253
+                                  minLength: 1
+                                  type: string
+                                  x-kubernetes-validations:
+                                  - message: must contain only alphanumeric characters,
+                                      '-', '_', or '.'
+                                    rule: self.matches('^[a-zA-Z0-9._-]+$')
+                                name:
+                                  description: |-
+                                    name is the name of the secret in the `openshift-monitoring` namespace to select from.
+                                    Must be a valid Kubernetes secret name (lowercase alphanumeric, '-' or '.', start/end with alphanumeric).
+                                    Must be between 1 and 253 characters in length.
+                                  maxLength: 253
+                                  minLength: 1
+                                  type: string
+                                  x-kubernetes-validations:
+                                  - message: must be a valid secret name (lowercase
+                                      alphanumeric characters, '-' or '.', start and
+                                      end with alphanumeric)
+                                    rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                              required:
+                              - key
+                              - name
+                              type: object
+                              x-kubernetes-map-type: atomic
+                            certificateVerification:
+                              description: |-
+                                certificateVerification determines the policy for TLS certificate verification.
+                                Allowed values are "Verify" (performs certificate verification, secure) and "SkipVerify" (skips verification, insecure).
+                                When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+                                The default value is "Verify".
+                              enum:
+                              - Verify
+                              - SkipVerify
+                              type: string
+                            key:
+                              description: |-
+                                key is an optional client key to use for mutual TLS connections.
+                                When omitted, no client key is used.
+                              properties:
+                                key:
+                                  description: |-
+                                    key is the key of the secret to select from.
+                                    Must consist of alphanumeric characters, '-', '_', or '.'.
+                                    Must be between 1 and 253 characters in length.
+                                  maxLength: 253
+                                  minLength: 1
+                                  type: string
+                                  x-kubernetes-validations:
+                                  - message: must contain only alphanumeric characters,
+                                      '-', '_', or '.'
+                                    rule: self.matches('^[a-zA-Z0-9._-]+$')
+                                name:
+                                  description: |-
+                                    name is the name of the secret in the `openshift-monitoring` namespace to select from.
+                                    Must be a valid Kubernetes secret name (lowercase alphanumeric, '-' or '.', start/end with alphanumeric).
+                                    Must be between 1 and 253 characters in length.
+                                  maxLength: 253
+                                  minLength: 1
+                                  type: string
+                                  x-kubernetes-validations:
+                                  - message: must be a valid secret name (lowercase
+                                      alphanumeric characters, '-' or '.', start and
+                                      end with alphanumeric)
+                                    rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                              required:
+                              - key
+                              - name
+                              type: object
+                              x-kubernetes-map-type: atomic
+                            serverName:
+                              description: |-
+                                serverName is an optional server name to use for TLS connections.
+                                When specified, must be a valid DNS subdomain as per RFC 1123.
+                                When omitted, the server name is derived from the URL.
+                                Must be between 1 and 253 characters in length.
+                              maxLength: 253
+                              minLength: 1
+                              type: string
+                              x-kubernetes-validations:
+                              - message: must be a valid DNS subdomain (lowercase
+                                  alphanumeric characters, '-' or '.', start and end
+                                  with alphanumeric)
+                                rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                          type: object
+                          x-kubernetes-validations:
+                          - message: cert and key must both be specified together
+                              for mutual TLS, or both be omitted
+                            rule: (has(self.cert) && has(self.key)) || (!has(self.cert)
+                              && !has(self.key))
+                      required:
+                      - name
+                      - staticConfigs
+                      type: object
+                    maxItems: 10
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
+                  collectionProfile:
+                    description: |-
+                      collectionProfile defines the metrics collection profile that Prometheus uses to collect
+                      metrics from the platform components. Supported values are `Full` or
+                      `Minimal`. In the `Full` profile (default), Prometheus collects all
+                      metrics that are exposed by the platform components. In the `Minimal`
+                      profile, Prometheus only collects metrics necessary for the default
+                      platform alerts, recording rules, telemetry and console dashboards.
+                      When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+                      The default value is `Full`.
+                    enum:
+                    - Full
+                    - Minimal
+                    type: string
+                  enforcedBodySizeLimitBytes:
+                    description: |-
+                      enforcedBodySizeLimitBytes enforces a body size limit (in bytes) for Prometheus scraped metrics.
+                      If a scraped target's body response is larger than the limit, the scrape will fail.
+                      This helps protect Prometheus from targets that return excessively large responses.
+                      The value is specified in bytes (e.g., 4194304 for 4MB, 1073741824 for 1GB).
+                      When omitted, the Cluster Monitoring Operator automatically calculates an appropriate
+                      limit based on cluster capacity. Set an explicit value to override the automatic calculation.
+                      Minimum value is 10240 (10kB).
+                      Maximum value is 1073741824 (1GB).
+                    format: int64
+                    maximum: 1073741824
+                    minimum: 10240
+                    type: integer
+                  externalLabels:
+                    description: |-
+                      externalLabels defines labels to be attached to time series and alerts
+                      when communicating with external systems such as federation, remote storage,
+                      and Alertmanager. These labels are not stored with metrics on disk; they are
+                      only added when data leaves Prometheus (e.g., during federation queries,
+                      remote write, or alert notifications).
+                      At least 1 label must be specified when set, with a maximum of 50 labels allowed.
+                      Each label key must be unique within this list.
+                      When omitted, no external labels are applied.
+                    items:
+                      description: Label represents a key/value pair for external
+                        labels.
+                      properties:
+                        key:
+                          description: |-
+                            key is the name of the label.
+                            Prometheus supports UTF-8 label names, so any valid UTF-8 string is allowed.
+                            Must be between 1 and 128 characters in length.
+                          maxLength: 128
+                          minLength: 1
+                          type: string
+                        value:
+                          description: |-
+                            value is the value of the label.
+                            Must be between 1 and 128 characters in length.
+                          maxLength: 128
+                          minLength: 1
+                          type: string
+                      required:
+                      - key
+                      - value
+                      type: object
+                    maxItems: 50
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - key
+                    x-kubernetes-list-type: map
+                  logLevel:
+                    description: |-
+                      logLevel defines the verbosity of logs emitted by Prometheus.
+                      This field allows users to control the amount and severity of logs generated, which can be useful
+                      for debugging issues or reducing noise in production environments.
+                      Allowed values are Error, Warn, Info, and Debug.
+                      When set to Error, only errors will be logged.
+                      When set to Warn, both warnings and errors will be logged.
+                      When set to Info, general information, warnings, and errors will all be logged.
+                      When set to Debug, detailed debugging information will be logged.
+                      When omitted, this means no opinion and the platform is left to choose a reasonable default, that is subject to change over time.
+                      The current default value is `Info`.
+                    enum:
+                    - Error
+                    - Warn
+                    - Info
+                    - Debug
+                    type: string
+                  nodeSelector:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      nodeSelector defines the nodes on which the Pods are scheduled.
+                      nodeSelector is optional.
+
+                      When omitted, this means the user has no opinion and the platform is left
+                      to choose reasonable defaults. These defaults are subject to change over time.
+                      The current default value is `kubernetes.io/os: linux`.
+                      When specified, nodeSelector must contain at least one key-value pair (minimum of 1)
+                      and must not contain more than 10 entries.
+                    maxProperties: 10
+                    minProperties: 1
+                    type: object
+                  queryLogFile:
+                    description: |-
+                      queryLogFile specifies the file to which PromQL queries are logged.
+                      This setting can be either a filename, in which
+                      case the queries are saved to an `emptyDir` volume
+                      at `/var/log/prometheus`, or a full path to a location where
+                      an `emptyDir` volume will be mounted and the queries saved.
+                      Writing to `/dev/stderr`, `/dev/stdout` or `/dev/null` is supported, but
+                      writing to any other `/dev/` path is not supported. Relative paths are
+                      also not supported.
+                      By default, PromQL queries are not logged.
+                      Must be an absolute path starting with `/` or a simple filename without path separators.
+                      Must not contain consecutive slashes, end with a slash, or include '..' path traversal.
+                      Must contain only alphanumeric characters, '.', '_', '-', or '/'.
+                      Must be between 1 and 255 characters in length.
+                    maxLength: 255
+                    minLength: 1
+                    type: string
+                    x-kubernetes-validations:
+                    - message: must contain only alphanumeric characters, '.', '_',
+                        '-', or '/'
+                      rule: self.matches('^[a-zA-Z0-9._/-]+$')
+                    - message: must be an absolute path starting with '/' or a simple
+                        filename without '/'
+                      rule: self.startsWith('/') || !self.contains('/')
+                    - message: only /dev/stdout, /dev/stderr, and /dev/null are allowed
+                        as /dev/ paths
+                      rule: '!self.startsWith(''/dev/'') || self in [''/dev/stdout'',
+                        ''/dev/stderr'', ''/dev/null'']'
+                    - message: must not contain '//', end with '/', or contain '..'
+                      rule: '!self.contains(''//'') && !self.endsWith(''/'') && !self.contains(''..'')'
+                  remoteWrite:
+                    description: |-
+                      remoteWrite defines the remote write configuration, including URL, authentication, and relabeling settings.
+                      Remote write allows Prometheus to send metrics it collects to external long-term storage systems.
+                      When omitted, no remote write endpoints are configured.
+                      When provided, at least one configuration must be specified (minimum 1, maximum 10 items).
+                      Entries must have unique names (name is the list key).
+                    items:
+                      description: RemoteWriteSpec represents configuration for remote
+                        write endpoints.
+                      properties:
+                        authorization:
+                          description: |-
+                            authorization defines the authorization method for the remote write endpoint.
+                            When omitted, no authorization is performed.
+                            When set, type must be one of BearerToken, BasicAuth, OAuth2, SigV4, SafeAuthorization, or ServiceAccount; the corresponding nested config must be set (ServiceAccount has no config).
+                          properties:
+                            basicAuth:
+                              description: |-
+                                basicAuth defines HTTP basic authentication credentials.
+                                Required when type is "BasicAuth", and forbidden otherwise.
+                              properties:
+                                password:
+                                  description: |-
+                                    password defines the secret reference containing the password for basic authentication.
+                                    The secret must exist in the openshift-monitoring namespace.
+                                  properties:
+                                    key:
+                                      description: |-
+                                        key is the key of the secret to select from.
+                                        Must consist of alphanumeric characters, '-', '_', or '.'.
+                                        Must be between 1 and 253 characters in length.
+                                      maxLength: 253
+                                      minLength: 1
+                                      type: string
+                                      x-kubernetes-validations:
+                                      - message: must contain only alphanumeric characters,
+                                          '-', '_', or '.'
+                                        rule: self.matches('^[a-zA-Z0-9._-]+$')
+                                    name:
+                                      description: |-
+                                        name is the name of the secret in the `openshift-monitoring` namespace to select from.
+                                        Must be a valid Kubernetes secret name (lowercase alphanumeric, '-' or '.', start/end with alphanumeric).
+                                        Must be between 1 and 253 characters in length.
+                                      maxLength: 253
+                                      minLength: 1
+                                      type: string
+                                      x-kubernetes-validations:
+                                      - message: must be a valid secret name (lowercase
+                                          alphanumeric characters, '-' or '.', start
+                                          and end with alphanumeric)
+                                        rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                                  required:
+                                  - key
+                                  - name
+                                  type: object
+                                  x-kubernetes-map-type: atomic
+                                username:
+                                  description: |-
+                                    username defines the secret reference containing the username for basic authentication.
+                                    The secret must exist in the openshift-monitoring namespace.
+                                  properties:
+                                    key:
+                                      description: |-
+                                        key is the key of the secret to select from.
+                                        Must consist of alphanumeric characters, '-', '_', or '.'.
+                                        Must be between 1 and 253 characters in length.
+                                      maxLength: 253
+                                      minLength: 1
+                                      type: string
+                                      x-kubernetes-validations:
+                                      - message: must contain only alphanumeric characters,
+                                          '-', '_', or '.'
+                                        rule: self.matches('^[a-zA-Z0-9._-]+$')
+                                    name:
+                                      description: |-
+                                        name is the name of the secret in the `openshift-monitoring` namespace to select from.
+                                        Must be a valid Kubernetes secret name (lowercase alphanumeric, '-' or '.', start/end with alphanumeric).
+                                        Must be between 1 and 253 characters in length.
+                                      maxLength: 253
+                                      minLength: 1
+                                      type: string
+                                      x-kubernetes-validations:
+                                      - message: must be a valid secret name (lowercase
+                                          alphanumeric characters, '-' or '.', start
+                                          and end with alphanumeric)
+                                        rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                                  required:
+                                  - key
+                                  - name
+                                  type: object
+                                  x-kubernetes-map-type: atomic
+                              required:
+                              - password
+                              - username
+                              type: object
+                            bearerToken:
+                              description: |-
+                                bearerToken defines the secret reference containing the bearer token.
+                                Required when type is "BearerToken", and forbidden otherwise.
+                              properties:
+                                key:
+                                  description: |-
+                                    key is the key of the secret to select from.
+                                    Must consist of alphanumeric characters, '-', '_', or '.'.
+                                    Must be between 1 and 253 characters in length.
+                                  maxLength: 253
+                                  minLength: 1
+                                  type: string
+                                  x-kubernetes-validations:
+                                  - message: must contain only alphanumeric characters,
+                                      '-', '_', or '.'
+                                    rule: self.matches('^[a-zA-Z0-9._-]+$')
+                                name:
+                                  description: |-
+                                    name is the name of the secret in the `openshift-monitoring` namespace to select from.
+                                    Must be a valid Kubernetes secret name (lowercase alphanumeric, '-' or '.', start/end with alphanumeric).
+                                    Must be between 1 and 253 characters in length.
+                                  maxLength: 253
+                                  minLength: 1
+                                  type: string
+                                  x-kubernetes-validations:
+                                  - message: must be a valid secret name (lowercase
+                                      alphanumeric characters, '-' or '.', start and
+                                      end with alphanumeric)
+                                    rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                              required:
+                              - key
+                              - name
+                              type: object
+                              x-kubernetes-map-type: atomic
+                            oauth2:
+                              description: |-
+                                oauth2 defines OAuth2 client credentials authentication.
+                                Required when type is "OAuth2", and forbidden otherwise.
+                              properties:
+                                clientId:
+                                  description: |-
+                                    clientId defines the secret reference containing the OAuth2 client ID.
+                                    The secret must exist in the openshift-monitoring namespace.
+                                  properties:
+                                    key:
+                                      description: |-
+                                        key is the key of the secret to select from.
+                                        Must consist of alphanumeric characters, '-', '_', or '.'.
+                                        Must be between 1 and 253 characters in length.
+                                      maxLength: 253
+                                      minLength: 1
+                                      type: string
+                                      x-kubernetes-validations:
+                                      - message: must contain only alphanumeric characters,
+                                          '-', '_', or '.'
+                                        rule: self.matches('^[a-zA-Z0-9._-]+$')
+                                    name:
+                                      description: |-
+                                        name is the name of the secret in the `openshift-monitoring` namespace to select from.
+                                        Must be a valid Kubernetes secret name (lowercase alphanumeric, '-' or '.', start/end with alphanumeric).
+                                        Must be between 1 and 253 characters in length.
+                                      maxLength: 253
+                                      minLength: 1
+                                      type: string
+                                      x-kubernetes-validations:
+                                      - message: must be a valid secret name (lowercase
+                                          alphanumeric characters, '-' or '.', start
+                                          and end with alphanumeric)
+                                        rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                                  required:
+                                  - key
+                                  - name
+                                  type: object
+                                  x-kubernetes-map-type: atomic
+                                clientSecret:
+                                  description: |-
+                                    clientSecret defines the secret reference containing the OAuth2 client secret.
+                                    The secret must exist in the openshift-monitoring namespace.
+                                  properties:
+                                    key:
+                                      description: |-
+                                        key is the key of the secret to select from.
+                                        Must consist of alphanumeric characters, '-', '_', or '.'.
+                                        Must be between 1 and 253 characters in length.
+                                      maxLength: 253
+                                      minLength: 1
+                                      type: string
+                                      x-kubernetes-validations:
+                                      - message: must contain only alphanumeric characters,
+                                          '-', '_', or '.'
+                                        rule: self.matches('^[a-zA-Z0-9._-]+$')
+                                    name:
+                                      description: |-
+                                        name is the name of the secret in the `openshift-monitoring` namespace to select from.
+                                        Must be a valid Kubernetes secret name (lowercase alphanumeric, '-' or '.', start/end with alphanumeric).
+                                        Must be between 1 and 253 characters in length.
+                                      maxLength: 253
+                                      minLength: 1
+                                      type: string
+                                      x-kubernetes-validations:
+                                      - message: must be a valid secret name (lowercase
+                                          alphanumeric characters, '-' or '.', start
+                                          and end with alphanumeric)
+                                        rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                                  required:
+                                  - key
+                                  - name
+                                  type: object
+                                  x-kubernetes-map-type: atomic
+                                endpointParams:
+                                  description: |-
+                                    endpointParams defines additional parameters to append to the token URL.
+                                    When omitted, no additional parameters are sent.
+                                    Maximum of 20 parameters can be specified. Entries must have unique names (name is the list key).
+                                  items:
+                                    description: OAuth2EndpointParam defines a name/value
+                                      parameter for the OAuth2 token URL.
+                                    properties:
+                                      name:
+                                        description: name is the parameter name. Must
+                                          be between 1 and 256 characters.
+                                        maxLength: 256
+                                        minLength: 1
+                                        type: string
+                                      value:
+                                        description: |-
+                                          value is the optional parameter value. When omitted, the query parameter is applied as ?name (no value).
+                                          When set (including to the empty string), it is applied as ?name=value. Empty string may be used when the
+                                          external system expects a parameter with an empty value (e.g. ?parameter="").
+                                          Must be between 0 and 2048 characters when present (aligned with common URL length recommendations).
+                                        maxLength: 2048
+                                        minLength: 0
+                                        type: string
+                                    required:
+                                    - name
+                                    type: object
+                                  maxItems: 20
+                                  minItems: 0
+                                  type: array
+                                  x-kubernetes-list-map-keys:
+                                  - name
+                                  x-kubernetes-list-type: map
+                                scopes:
+                                  description: |-
+                                    scopes is a list of OAuth2 scopes to request.
+                                    When omitted, no scopes are requested.
+                                    Maximum of 20 scopes can be specified.
+                                    Each scope must be between 1 and 256 characters.
+                                  items:
+                                    maxLength: 256
+                                    minLength: 1
+                                    type: string
+                                  maxItems: 20
+                                  minItems: 0
+                                  type: array
+                                  x-kubernetes-list-type: atomic
+                                tokenUrl:
+                                  description: |-
+                                    tokenUrl is the URL to fetch the token from.
+                                    Must be a valid URL with http or https scheme.
+                                    Must be between 1 and 2048 characters in length.
+                                  maxLength: 2048
+                                  minLength: 1
+                                  type: string
+                                  x-kubernetes-validations:
+                                  - message: must be a valid URL
+                                    rule: isURL(self)
+                                  - message: must use http or https scheme
+                                    rule: '!isURL(self) || url(self).getScheme() ==
+                                      ''http'' || url(self).getScheme() == ''https'''
+                              required:
+                              - clientId
+                              - clientSecret
+                              - tokenUrl
+                              type: object
+                            safeAuthorization:
+                              description: |-
+                                safeAuthorization defines the secret reference containing the credentials for authentication (e.g. Bearer token).
+                                Required when type is "SafeAuthorization", and forbidden otherwise. Maps to Prometheus SafeAuthorization. The secret must exist in the openshift-monitoring namespace.
+                              properties:
+                                key:
+                                  description: The key of the secret to select from.  Must
+                                    be a valid secret key.
+                                  type: string
+                                name:
+                                  default: ""
+                                  description: |-
+                                    Name of the referent.
+                                    This field is effectively required, but due to backwards compatibility is
+                                    allowed to be empty. Instances of this type with an empty value here are
+                                    almost certainly wrong.
+                                    More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                  type: string
+                                optional:
+                                  description: Specify whether the Secret or its key
+                                    must be defined
+                                  type: boolean
+                              required:
+                              - key
+                              type: object
+                              x-kubernetes-map-type: atomic
+                            sigv4:
+                              description: |-
+                                sigv4 defines AWS Signature Version 4 authentication.
+                                Required when type is "SigV4", and forbidden otherwise.
+                              minProperties: 1
+                              properties:
+                                accessKey:
+                                  description: |-
+                                    accessKey defines the secret reference containing the AWS access key ID.
+                                    The secret must exist in the openshift-monitoring namespace.
+                                    When omitted, the access key is derived from the environment or instance metadata.
+                                  properties:
+                                    key:
+                                      description: |-
+                                        key is the key of the secret to select from.
+                                        Must consist of alphanumeric characters, '-', '_', or '.'.
+                                        Must be between 1 and 253 characters in length.
+                                      maxLength: 253
+                                      minLength: 1
+                                      type: string
+                                      x-kubernetes-validations:
+                                      - message: must contain only alphanumeric characters,
+                                          '-', '_', or '.'
+                                        rule: self.matches('^[a-zA-Z0-9._-]+$')
+                                    name:
+                                      description: |-
+                                        name is the name of the secret in the `openshift-monitoring` namespace to select from.
+                                        Must be a valid Kubernetes secret name (lowercase alphanumeric, '-' or '.', start/end with alphanumeric).
+                                        Must be between 1 and 253 characters in length.
+                                      maxLength: 253
+                                      minLength: 1
+                                      type: string
+                                      x-kubernetes-validations:
+                                      - message: must be a valid secret name (lowercase
+                                          alphanumeric characters, '-' or '.', start
+                                          and end with alphanumeric)
+                                        rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                                  required:
+                                  - key
+                                  - name
+                                  type: object
+                                  x-kubernetes-map-type: atomic
+                                profile:
+                                  description: |-
+                                    profile is the named AWS profile used to authenticate.
+                                    When omitted, the default profile is used.
+                                    Must be between 1 and 128 characters.
+                                  maxLength: 128
+                                  minLength: 1
+                                  type: string
+                                region:
+                                  description: |-
+                                    region is the AWS region.
+                                    When omitted, the region is derived from the environment or instance metadata.
+                                    Must be between 1 and 128 characters.
+                                  maxLength: 128
+                                  minLength: 1
+                                  type: string
+                                roleArn:
+                                  description: |-
+                                    roleArn is the AWS Role ARN, an alternative to using AWS API keys.
+                                    When omitted, API keys are used for authentication.
+                                    Must be a valid AWS ARN format (e.g., "arn:aws:iam::123456789012:role/MyRole").
+                                    Must be between 1 and 512 characters.
+                                  maxLength: 512
+                                  minLength: 1
+                                  type: string
+                                  x-kubernetes-validations:
+                                  - message: must be a valid AWS IAM role ARN (e.g.,
+                                      arn:aws:iam::123456789012:role/MyRole)
+                                    rule: self.startsWith('arn:aws') && self.matches('^arn:aws(-[a-z]+)?:iam::[0-9]{12}:role/.+$')
+                                secretKey:
+                                  description: |-
+                                    secretKey defines the secret reference containing the AWS secret access key.
+                                    The secret must exist in the openshift-monitoring namespace.
+                                    When omitted, the secret key is derived from the environment or instance metadata.
+                                  properties:
+                                    key:
+                                      description: |-
+                                        key is the key of the secret to select from.
+                                        Must consist of alphanumeric characters, '-', '_', or '.'.
+                                        Must be between 1 and 253 characters in length.
+                                      maxLength: 253
+                                      minLength: 1
+                                      type: string
+                                      x-kubernetes-validations:
+                                      - message: must contain only alphanumeric characters,
+                                          '-', '_', or '.'
+                                        rule: self.matches('^[a-zA-Z0-9._-]+$')
+                                    name:
+                                      description: |-
+                                        name is the name of the secret in the `openshift-monitoring` namespace to select from.
+                                        Must be a valid Kubernetes secret name (lowercase alphanumeric, '-' or '.', start/end with alphanumeric).
+                                        Must be between 1 and 253 characters in length.
+                                      maxLength: 253
+                                      minLength: 1
+                                      type: string
+                                      x-kubernetes-validations:
+                                      - message: must be a valid secret name (lowercase
+                                          alphanumeric characters, '-' or '.', start
+                                          and end with alphanumeric)
+                                        rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                                  required:
+                                  - key
+                                  - name
+                                  type: object
+                                  x-kubernetes-map-type: atomic
+                              type: object
+                            type:
+                              description: |-
+                                type specifies the authorization method to use.
+                                Allowed values are BearerToken, BasicAuth, OAuth2, SigV4, SafeAuthorization, ServiceAccount.
+
+                                When set to BearerToken, the bearer token is read from a Secret referenced by the bearerToken field.
+
+                                When set to BasicAuth, HTTP basic authentication is used; the basicAuth field (username and password from Secrets) must be set.
+
+                                When set to OAuth2, OAuth2 client credentials flow is used; the oauth2 field (clientId, clientSecret, tokenUrl) must be set.
+
+                                When set to SigV4, AWS Signature Version 4 is used for authentication; the sigv4 field must be set.
+
+                                When set to SafeAuthorization, credentials are read from a single Secret key (Prometheus SafeAuthorization pattern). The secret key typically contains a Bearer token. Use the safeAuthorization field.
+
+                                When set to ServiceAccount, the pod's service account token is used for machine identity. No additional field is required; the operator configures the token path.
+                              enum:
+                              - BearerToken
+                              - BasicAuth
+                              - OAuth2
+                              - SigV4
+                              - SafeAuthorization
+                              - ServiceAccount
+                              type: string
+                          required:
+                          - type
+                          type: object
+                          x-kubernetes-validations:
+                          - message: bearerToken is required when type is BearerToken,
+                              and forbidden otherwise
+                            rule: 'has(self.type) && self.type == ''BearerToken''
+                              ? has(self.bearerToken) : !has(self.bearerToken)'
+                          - message: basicAuth is required when type is BasicAuth,
+                              and forbidden otherwise
+                            rule: 'has(self.type) && self.type == ''BasicAuth'' ?
+                              has(self.basicAuth) : !has(self.basicAuth)'
+                          - message: oauth2 is required when type is OAuth2, and forbidden
+                              otherwise
+                            rule: 'has(self.type) && self.type == ''OAuth2'' ? has(self.oauth2)
+                              : !has(self.oauth2)'
+                          - message: sigv4 is required when type is SigV4, and forbidden
+                              otherwise
+                            rule: 'has(self.type) && self.type == ''SigV4'' ? has(self.sigv4)
+                              : !has(self.sigv4)'
+                          - message: safeAuthorization is required when type is SafeAuthorization,
+                              and forbidden otherwise
+                            rule: 'has(self.type) && self.type == ''SafeAuthorization''
+                              ? has(self.safeAuthorization) : !has(self.safeAuthorization)'
+                        exemplarsMode:
+                          description: |-
+                            exemplarsMode controls whether exemplars are sent via remote write.
+                            Valid values are "Send", "DoNotSend" and omitted.
+                            When set to "Send", Prometheus is configured to store a maximum of 100,000 exemplars in memory and send them with remote write.
+                            Note that this setting only applies to user-defined monitoring. It is not applicable to default in-cluster monitoring.
+                            When omitted or set to "DoNotSend", exemplars are not sent.
+                          enum:
+                          - Send
+                          - DoNotSend
+                          type: string
+                        headers:
+                          description: |-
+                            headers specifies the custom HTTP headers to be sent along with each remote write request.
+                            Sending custom headers makes the configuration of a proxy in between optional and helps the
+                            receiver recognize the given source better.
+                            Clients MAY allow users to send custom HTTP headers; they MUST NOT allow users to configure
+                            them in such a way as to send reserved headers. Headers set by Prometheus cannot be overwritten.
+                            When omitted, no custom headers are sent.
+                            Maximum of 50 headers can be specified. Each header name must be unique.
+                            Each header name must contain only alphanumeric characters, hyphens, and underscores, and must not be a reserved Prometheus header (Host, Authorization, Content-Encoding, Content-Type, X-Prometheus-Remote-Write-Version, User-Agent, Connection, Keep-Alive, Proxy-Authenticate, Proxy-Authorization, WWW-Authenticate).
+                          items:
+                            description: |-
+                              PrometheusRemoteWriteHeader defines a custom HTTP header for remote write requests.
+                              The header name must not be one of the reserved headers set by Prometheus (Host, Authorization, Content-Encoding, Content-Type, X-Prometheus-Remote-Write-Version, User-Agent, Connection, Keep-Alive, Proxy-Authenticate, Proxy-Authorization, WWW-Authenticate).
+                              Header names must contain only case-insensitive alphanumeric characters, hyphens (-), and underscores (_); other characters (e.g. emoji) are rejected by validation.
+                              Validation is enforced on the Headers field in RemoteWriteSpec.
+                            properties:
+                              name:
+                                description: |-
+                                  name is the HTTP header name. Must not be a reserved header (see type documentation).
+                                  Must contain only alphanumeric characters, hyphens, and underscores; invalid characters are rejected. Must be between 1 and 256 characters.
+                                maxLength: 256
+                                minLength: 1
+                                type: string
+                              value:
+                                description: value is the HTTP header value. Must
+                                  be at most 4096 characters.
+                                maxLength: 4096
+                                minLength: 0
+                                type: string
+                            required:
+                            - name
+                            - value
+                            type: object
+                            x-kubernetes-validations:
+                            - message: header name must contain only alphanumeric
+                                characters, hyphens, and underscores
+                              rule: self.name.matches('^[a-zA-Z0-9_-]+$')
+                            - message: header name must not be a reserved Prometheus
+                                header (Host, Authorization, Content-Encoding, Content-Type,
+                                X-Prometheus-Remote-Write-Version, User-Agent, Connection,
+                                Keep-Alive, Proxy-Authenticate, Proxy-Authorization,
+                                WWW-Authenticate)
+                              rule: '!self.name.matches(''(?i)^(host|authorization|content-encoding|content-type|x-prometheus-remote-write-version|user-agent|connection|keep-alive|proxy-authenticate|proxy-authorization|www-authenticate)$'')'
+                          maxItems: 50
+                          minItems: 0
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - name
+                          x-kubernetes-list-type: map
+                        metadataConfig:
+                          description: |-
+                            metadataConfig configures the sending of series metadata to remote storage.
+                            When omitted, no metadata is sent.
+                            When set to sendPolicy: Default, metadata is sent using platform-chosen defaults (e.g. send interval 30 seconds).
+                            When set to sendPolicy: Custom, metadata is sent using the settings in the custom field (e.g. custom.sendIntervalSeconds).
+                          properties:
+                            custom:
+                              description: custom defines custom metadata send settings.
+                                Required when sendPolicy is Custom (must have at least
+                                one property), and forbidden when sendPolicy is Default.
+                              minProperties: 1
+                              properties:
+                                sendIntervalSeconds:
+                                  description: |-
+                                    sendIntervalSeconds is the interval in seconds at which metadata is sent.
+                                    When omitted, the platform chooses a reasonable default (e.g. 30 seconds).
+                                    Minimum value is 1 second. Maximum value is 86400 seconds (24 hours).
+                                  format: int32
+                                  maximum: 86400
+                                  minimum: 1
+                                  type: integer
+                              type: object
+                            sendPolicy:
+                              description: |-
+                                sendPolicy specifies whether to send metadata and how it is configured.
+                                Default: send metadata using platform-chosen defaults (e.g. send interval 30 seconds).
+                                Custom: send metadata using the settings in the custom field.
+                              enum:
+                              - Default
+                              - Custom
+                              type: string
+                          required:
+                          - sendPolicy
+                          type: object
+                          x-kubernetes-validations:
+                          - message: custom is forbidden when sendPolicy is Default
+                            rule: 'self.sendPolicy == ''Default'' ? self.custom.sendIntervalSeconds
+                              == 0 : true'
+                        name:
+                          description: |-
+                            name is a required identifier for this remote write configuration (name is the list key for the remoteWrite list).
+                            This name is used in metrics and logging to differentiate remote write queues.
+                            Must contain only alphanumeric characters, hyphens, and underscores.
+                            Must be between 1 and 63 characters in length.
+                          maxLength: 63
+                          minLength: 1
+                          type: string
+                          x-kubernetes-validations:
+                          - message: must contain only alphanumeric characters, hyphens,
+                              and underscores
+                            rule: self.matches('^[a-zA-Z0-9_-]+$')
+                        proxyUrl:
+                          description: |-
+                            proxyUrl defines an optional proxy URL.
+                            If the cluster-wide proxy is enabled, it replaces the proxyUrl setting.
+                            The cluster-wide proxy supports both HTTP and HTTPS proxies, with HTTPS taking precedence.
+                            When omitted, no proxy is used.
+                            Must be a valid URL with http or https scheme.
+                            Must be between 1 and 2048 characters in length.
+                          maxLength: 2048
+                          minLength: 1
+                          type: string
+                          x-kubernetes-validations:
+                          - message: must be a valid URL with http or https scheme
+                            rule: isURL(self) && (url(self).getScheme() == 'http'
+                              || url(self).getScheme() == 'https')
+                        queueConfig:
+                          description: |-
+                            queueConfig allows tuning configuration for remote write queue parameters.
+                            When omitted, default queue configuration is used.
+                          minProperties: 1
+                          properties:
+                            batchSendDeadlineSeconds:
+                              description: |-
+                                batchSendDeadlineSeconds is the maximum time in seconds a sample will wait in buffer before being sent.
+                                When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+                                Minimum value is 1 second.
+                                Maximum value is 3600 seconds (1 hour).
+                              format: int32
+                              maximum: 3600
+                              minimum: 1
+                              type: integer
+                            capacity:
+                              description: |-
+                                capacity is the number of samples to buffer per shard before we start dropping them.
+                                When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+                                The default value is 10000.
+                                Minimum value is 1.
+                                Maximum value is 1000000.
+                              format: int32
+                              maximum: 1000000
+                              minimum: 1
+                              type: integer
+                            maxBackoffMilliseconds:
+                              description: |-
+                                maxBackoffMilliseconds is the maximum retry delay in milliseconds.
+                                When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+                                Minimum value is 1 millisecond.
+                                Maximum value is 3600000 milliseconds (1 hour).
+                              format: int32
+                              maximum: 3600000
+                              minimum: 1
+                              type: integer
+                            maxSamplesPerSend:
+                              description: |-
+                                maxSamplesPerSend is the maximum number of samples per send.
+                                When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+                                The default value is 1000.
+                                Minimum value is 1.
+                                Maximum value is 100000.
+                              format: int32
+                              maximum: 100000
+                              minimum: 1
+                              type: integer
+                            maxShards:
+                              description: |-
+                                maxShards is the maximum number of shards, i.e. amount of concurrency.
+                                When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+                                The default value is 200.
+                                Minimum value is 1.
+                                Maximum value is 10000.
+                              format: int32
+                              maximum: 10000
+                              minimum: 1
+                              type: integer
+                            minBackoffMilliseconds:
+                              description: |-
+                                minBackoffMilliseconds is the minimum retry delay in milliseconds.
+                                When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+                                Minimum value is 1 millisecond.
+                                Maximum value is 3600000 milliseconds (1 hour).
+                              format: int32
+                              maximum: 3600000
+                              minimum: 1
+                              type: integer
+                            minShards:
+                              description: |-
+                                minShards is the minimum number of shards, i.e. amount of concurrency.
+                                When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+                                The default value is 1.
+                                Minimum value is 1.
+                                Maximum value is 10000.
+                              format: int32
+                              maximum: 10000
+                              minimum: 1
+                              type: integer
+                            rateLimitedAction:
+                              description: |-
+                                rateLimitedAction controls what to do when the remote write endpoint returns HTTP 429 (Too Many Requests).
+                                When omitted, no retries are performed on rate limit responses.
+                                When set to "Retry", Prometheus will retry such requests using the backoff settings above.
+                                Valid value when set is "Retry".
+                              enum:
+                              - Retry
+                              type: string
+                          type: object
+                        remoteTimeoutSeconds:
+                          description: |-
+                            remoteTimeoutSeconds defines the timeout in seconds for requests to the remote write endpoint.
+                            When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+                            Minimum value is 1 second.
+                            Maximum value is 600 seconds (10 minutes).
+                          format: int32
+                          maximum: 600
+                          minimum: 1
+                          type: integer
+                        tlsConfig:
+                          description: |-
+                            tlsConfig defines TLS authentication settings for the remote write endpoint.
+                            When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+                          minProperties: 1
+                          properties:
+                            ca:
+                              description: |-
+                                ca is an optional CA certificate to use for TLS connections.
+                                When omitted, the system's default CA bundle is used.
+                              properties:
+                                key:
+                                  description: |-
+                                    key is the key of the secret to select from.
+                                    Must consist of alphanumeric characters, '-', '_', or '.'.
+                                    Must be between 1 and 253 characters in length.
+                                  maxLength: 253
+                                  minLength: 1
+                                  type: string
+                                  x-kubernetes-validations:
+                                  - message: must contain only alphanumeric characters,
+                                      '-', '_', or '.'
+                                    rule: self.matches('^[a-zA-Z0-9._-]+$')
+                                name:
+                                  description: |-
+                                    name is the name of the secret in the `openshift-monitoring` namespace to select from.
+                                    Must be a valid Kubernetes secret name (lowercase alphanumeric, '-' or '.', start/end with alphanumeric).
+                                    Must be between 1 and 253 characters in length.
+                                  maxLength: 253
+                                  minLength: 1
+                                  type: string
+                                  x-kubernetes-validations:
+                                  - message: must be a valid secret name (lowercase
+                                      alphanumeric characters, '-' or '.', start and
+                                      end with alphanumeric)
+                                    rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                              required:
+                              - key
+                              - name
+                              type: object
+                              x-kubernetes-map-type: atomic
+                            cert:
+                              description: |-
+                                cert is an optional client certificate to use for mutual TLS connections.
+                                When omitted, no client certificate is presented.
+                              properties:
+                                key:
+                                  description: |-
+                                    key is the key of the secret to select from.
+                                    Must consist of alphanumeric characters, '-', '_', or '.'.
+                                    Must be between 1 and 253 characters in length.
+                                  maxLength: 253
+                                  minLength: 1
+                                  type: string
+                                  x-kubernetes-validations:
+                                  - message: must contain only alphanumeric characters,
+                                      '-', '_', or '.'
+                                    rule: self.matches('^[a-zA-Z0-9._-]+$')
+                                name:
+                                  description: |-
+                                    name is the name of the secret in the `openshift-monitoring` namespace to select from.
+                                    Must be a valid Kubernetes secret name (lowercase alphanumeric, '-' or '.', start/end with alphanumeric).
+                                    Must be between 1 and 253 characters in length.
+                                  maxLength: 253
+                                  minLength: 1
+                                  type: string
+                                  x-kubernetes-validations:
+                                  - message: must be a valid secret name (lowercase
+                                      alphanumeric characters, '-' or '.', start and
+                                      end with alphanumeric)
+                                    rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                              required:
+                              - key
+                              - name
+                              type: object
+                              x-kubernetes-map-type: atomic
+                            certificateVerification:
+                              description: |-
+                                certificateVerification determines the policy for TLS certificate verification.
+                                Allowed values are "Verify" (performs certificate verification, secure) and "SkipVerify" (skips verification, insecure).
+                                When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+                                The default value is "Verify".
+                              enum:
+                              - Verify
+                              - SkipVerify
+                              type: string
+                            key:
+                              description: |-
+                                key is an optional client key to use for mutual TLS connections.
+                                When omitted, no client key is used.
+                              properties:
+                                key:
+                                  description: |-
+                                    key is the key of the secret to select from.
+                                    Must consist of alphanumeric characters, '-', '_', or '.'.
+                                    Must be between 1 and 253 characters in length.
+                                  maxLength: 253
+                                  minLength: 1
+                                  type: string
+                                  x-kubernetes-validations:
+                                  - message: must contain only alphanumeric characters,
+                                      '-', '_', or '.'
+                                    rule: self.matches('^[a-zA-Z0-9._-]+$')
+                                name:
+                                  description: |-
+                                    name is the name of the secret in the `openshift-monitoring` namespace to select from.
+                                    Must be a valid Kubernetes secret name (lowercase alphanumeric, '-' or '.', start/end with alphanumeric).
+                                    Must be between 1 and 253 characters in length.
+                                  maxLength: 253
+                                  minLength: 1
+                                  type: string
+                                  x-kubernetes-validations:
+                                  - message: must be a valid secret name (lowercase
+                                      alphanumeric characters, '-' or '.', start and
+                                      end with alphanumeric)
+                                    rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                              required:
+                              - key
+                              - name
+                              type: object
+                              x-kubernetes-map-type: atomic
+                            serverName:
+                              description: |-
+                                serverName is an optional server name to use for TLS connections.
+                                When specified, must be a valid DNS subdomain as per RFC 1123.
+                                When omitted, the server name is derived from the URL.
+                                Must be between 1 and 253 characters in length.
+                              maxLength: 253
+                              minLength: 1
+                              type: string
+                              x-kubernetes-validations:
+                              - message: must be a valid DNS subdomain (lowercase
+                                  alphanumeric characters, '-' or '.', start and end
+                                  with alphanumeric)
+                                rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                          type: object
+                          x-kubernetes-validations:
+                          - message: cert and key must both be specified together
+                              for mutual TLS, or both be omitted
+                            rule: (has(self.cert) && has(self.key)) || (!has(self.cert)
+                              && !has(self.key))
+                        url:
+                          description: |-
+                            url is the URL of the remote write endpoint.
+                            Must be a valid URL with http or https scheme and a non-empty hostname.
+                            Query parameters, fragments, and user information (e.g. user:password@host) are not allowed.
+                            Empty string is invalid. Must be between 1 and 2048 characters in length.
+                          maxLength: 2048
+                          minLength: 1
+                          type: string
+                          x-kubernetes-validations:
+                          - message: must be a valid URL
+                            rule: isURL(self)
+                          - message: must use http or https scheme
+                            rule: '!isURL(self) || url(self).getScheme() == ''http''
+                              || url(self).getScheme() == ''https'''
+                          - message: must have a non-empty hostname
+                            rule: '!isURL(self) || size(url(self).getHostname()) >
+                              0'
+                          - message: query parameters are not allowed
+                            rule: '!isURL(self) || url(self).getQuery().size() ==
+                              0'
+                          - message: fragments are not allowed
+                            rule: '!self.matches(''.*#.*'')'
+                          - message: user information (e.g. user:password@host) is
+                              not allowed
+                            rule: '!self.matches(''.*@.*'')'
+                        writeRelabelConfigs:
+                          description: |-
+                            writeRelabelConfigs is a list of relabeling rules to apply before sending data to the remote endpoint.
+                            When omitted, no relabeling is performed and all metrics are sent as-is.
+                            Minimum of 1 and maximum of 10 relabeling rules can be specified.
+                            Each rule must have a unique name.
+                          items:
+                            description: RelabelConfig represents a relabeling rule.
+                            properties:
+                              action:
+                                description: |-
+                                  action defines the action to perform on the matched labels and its configuration.
+                                  Exactly one action-specific configuration must be specified based on the action type.
+                                properties:
+                                  dropEqual:
+                                    description: |-
+                                      dropEqual configures the DropEqual action.
+                                      Required when type is DropEqual, and forbidden otherwise.
+                                      Requires Prometheus >= v2.41.0.
+                                    properties:
+                                      targetLabel:
+                                        description: |-
+                                          targetLabel is the label name whose value is compared to the concatenated source_labels; targets that match are dropped.
+                                          Must be between 1 and 128 characters in length.
+                                        maxLength: 128
+                                        minLength: 1
+                                        type: string
+                                    required:
+                                    - targetLabel
+                                    type: object
+                                  hashMod:
+                                    description: |-
+                                      hashMod configures the HashMod action.
+                                      Required when type is HashMod, and forbidden otherwise.
+                                    properties:
+                                      modulus:
+                                        description: |-
+                                          modulus is the divisor applied to the hash of the concatenated source label values (target = hash % modulus).
+                                          Required when using the HashMod action so the intended behavior is explicit.
+                                          Must be between 1 and 1000000.
+                                        format: int64
+                                        maximum: 1000000
+                                        minimum: 1
+                                        type: integer
+                                      targetLabel:
+                                        description: |-
+                                          targetLabel is the label name where the hash modulus result is written.
+                                          Must be between 1 and 128 characters in length.
+                                        maxLength: 128
+                                        minLength: 1
+                                        type: string
+                                    required:
+                                    - modulus
+                                    - targetLabel
+                                    type: object
+                                  keepEqual:
+                                    description: |-
+                                      keepEqual configures the KeepEqual action.
+                                      Required when type is KeepEqual, and forbidden otherwise.
+                                      Requires Prometheus >= v2.41.0.
+                                    properties:
+                                      targetLabel:
+                                        description: |-
+                                          targetLabel is the label name whose value is compared to the concatenated source_labels; targets that do not match are dropped.
+                                          Must be between 1 and 128 characters in length.
+                                        maxLength: 128
+                                        minLength: 1
+                                        type: string
+                                    required:
+                                    - targetLabel
+                                    type: object
+                                  labelMap:
+                                    description: |-
+                                      labelMap configures the LabelMap action.
+                                      Required when type is LabelMap, and forbidden otherwise.
+                                    properties:
+                                      replacement:
+                                        description: |-
+                                          replacement is the template for new label names; match group references (${1}, ${2}, ...) are substituted from the matched label name.
+                                          Required when using the LabelMap action so the intended behavior is explicit and the platform does not need to apply defaults.
+                                          Use "$1" for the first capture group, "$2" for the second, etc.
+                                          Must be between 1 and 255 characters in length. Empty string is invalid as it would produce invalid label names.
+                                        maxLength: 255
+                                        minLength: 1
+                                        type: string
+                                    required:
+                                    - replacement
+                                    type: object
+                                  lowercase:
+                                    description: |-
+                                      lowercase configures the Lowercase action.
+                                      Required when type is Lowercase, and forbidden otherwise.
+                                      Requires Prometheus >= v2.36.0.
+                                    properties:
+                                      targetLabel:
+                                        description: |-
+                                          targetLabel is the label name where the lower-cased value is written.
+                                          Must be between 1 and 128 characters in length.
+                                        maxLength: 128
+                                        minLength: 1
+                                        type: string
+                                    required:
+                                    - targetLabel
+                                    type: object
+                                  replace:
+                                    description: |-
+                                      replace configures the Replace action.
+                                      Required when type is Replace, and forbidden otherwise.
+                                    properties:
+                                      replacement:
+                                        description: |-
+                                          replacement is the value written to target_label when regex matches; match group references (${1}, ${2}, ...) are substituted.
+                                          Required when using the Replace action so the intended behavior is explicit and the platform does not need to apply defaults.
+                                          Use "$1" for the first capture group, "$2" for the second, etc. Use an empty string ("") to explicitly clear the target label value.
+                                          Must be between 0 and 255 characters in length.
+                                        maxLength: 255
+                                        minLength: 0
+                                        type: string
+                                      targetLabel:
+                                        description: |-
+                                          targetLabel is the label name where the replacement result is written.
+                                          Must be between 1 and 128 characters in length.
+                                        maxLength: 128
+                                        minLength: 1
+                                        type: string
+                                    required:
+                                    - replacement
+                                    - targetLabel
+                                    type: object
+                                  type:
+                                    description: |-
+                                      type specifies the action to perform on the matched labels.
+                                      Allowed values are Replace, Lowercase, Uppercase, Keep, Drop, KeepEqual, DropEqual, HashMod, LabelMap, LabelDrop, LabelKeep.
+
+                                      When set to Replace, regex is matched against the concatenated source_labels; target_label is set to replacement with match group references (${1}, ${2}, ...) substituted. If regex does not match, no replacement takes place.
+
+                                      When set to Lowercase, the concatenated source_labels are mapped to their lower case. Requires Prometheus >= v2.36.0.
+
+                                      When set to Uppercase, the concatenated source_labels are mapped to their upper case. Requires Prometheus >= v2.36.0.
+
+                                      When set to Keep, targets for which regex does not match the concatenated source_labels are dropped.
+
+                                      When set to Drop, targets for which regex matches the concatenated source_labels are dropped.
+
+                                      When set to KeepEqual, targets for which the concatenated source_labels do not match target_label are dropped. Requires Prometheus >= v2.41.0.
+
+                                      When set to DropEqual, targets for which the concatenated source_labels do match target_label are dropped. Requires Prometheus >= v2.41.0.
+
+                                      When set to HashMod, target_label is set to the modulus of a hash of the concatenated source_labels.
+
+                                      When set to LabelMap, regex is matched against all source label names (not just source_labels); matching label values are copied to new names given by replacement with ${1}, ${2}, ... substituted.
+
+                                      When set to LabelDrop, regex is matched against all label names; any label that matches is removed.
+
+                                      When set to LabelKeep, regex is matched against all label names; any label that does not match is removed.
+                                    enum:
+                                    - Replace
+                                    - Keep
+                                    - Drop
+                                    - HashMod
+                                    - LabelMap
+                                    - LabelDrop
+                                    - LabelKeep
+                                    - Lowercase
+                                    - Uppercase
+                                    - KeepEqual
+                                    - DropEqual
+                                    type: string
+                                  uppercase:
+                                    description: |-
+                                      uppercase configures the Uppercase action.
+                                      Required when type is Uppercase, and forbidden otherwise.
+                                      Requires Prometheus >= v2.36.0.
+                                    properties:
+                                      targetLabel:
+                                        description: |-
+                                          targetLabel is the label name where the upper-cased value is written.
+                                          Must be between 1 and 128 characters in length.
+                                        maxLength: 128
+                                        minLength: 1
+                                        type: string
+                                    required:
+                                    - targetLabel
+                                    type: object
+                                required:
+                                - type
+                                type: object
+                                x-kubernetes-validations:
+                                - message: replace is required when type is Replace,
+                                    and forbidden otherwise
+                                  rule: 'has(self.type) && self.type == ''Replace''
+                                    ? has(self.replace) : !has(self.replace)'
+                                - message: hashMod is required when type is HashMod,
+                                    and forbidden otherwise
+                                  rule: 'has(self.type) && self.type == ''HashMod''
+                                    ? has(self.hashMod) : !has(self.hashMod)'
+                                - message: lowercase is required when type is Lowercase,
+                                    and forbidden otherwise
+                                  rule: 'has(self.type) && self.type == ''Lowercase''
+                                    ? has(self.lowercase) : !has(self.lowercase)'
+                                - message: uppercase is required when type is Uppercase,
+                                    and forbidden otherwise
+                                  rule: 'has(self.type) && self.type == ''Uppercase''
+                                    ? has(self.uppercase) : !has(self.uppercase)'
+                                - message: keepEqual is required when type is KeepEqual,
+                                    and forbidden otherwise
+                                  rule: 'has(self.type) && self.type == ''KeepEqual''
+                                    ? has(self.keepEqual) : !has(self.keepEqual)'
+                                - message: dropEqual is required when type is DropEqual,
+                                    and forbidden otherwise
+                                  rule: 'has(self.type) && self.type == ''DropEqual''
+                                    ? has(self.dropEqual) : !has(self.dropEqual)'
+                                - message: labelMap is required when type is LabelMap,
+                                    and forbidden otherwise
+                                  rule: 'has(self.type) && self.type == ''LabelMap''
+                                    ? has(self.labelMap) : !has(self.labelMap)'
+                              name:
+                                description: |-
+                                  name is a unique identifier for this relabel configuration.
+                                  Must contain only alphanumeric characters, hyphens, and underscores.
+                                  Must be between 1 and 63 characters in length.
+                                maxLength: 63
+                                minLength: 1
+                                type: string
+                                x-kubernetes-validations:
+                                - message: must contain only alphanumeric characters,
+                                    hyphens, and underscores
+                                  rule: self.matches('^[a-zA-Z0-9_-]+$')
+                              regex:
+                                description: |-
+                                  regex is the regular expression to match against the concatenated source label values.
+                                  Must be a valid RE2 regular expression (https://github.com/google/re2/wiki/Syntax).
+                                  When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+                                  The default value is "(.*)" to match everything.
+                                  Must be between 1 and 1000 characters in length when specified.
+                                maxLength: 1000
+                                minLength: 1
+                                type: string
+                              separator:
+                                description: |-
+                                  separator is the character sequence used to join source label values.
+                                  Common examples: ";", ",", "::", "|||".
+                                  When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+                                  The default value is ";".
+                                  Must be between 1 and 5 characters in length when specified.
+                                maxLength: 5
+                                minLength: 1
+                                type: string
+                              sourceLabels:
+                                description: |-
+                                  sourceLabels specifies which label names to extract from each series for this relabeling rule.
+                                  The values of these labels are joined together using the configured separator,
+                                  and the resulting string is then matched against the regular expression.
+                                  If a referenced label does not exist on a series, Prometheus substitutes an empty string.
+                                  When omitted, the rule operates without extracting source labels (useful for actions like labelmap).
+                                  Minimum of 1 and maximum of 10 source labels can be specified, each between 1 and 128 characters.
+                                  Each entry must be unique.
+                                  Label names beginning with "__" (two underscores) are reserved for internal Prometheus use and are not allowed.
+                                  Label names SHOULD start with a letter (a-z, A-Z) or underscore (_), followed by zero or more letters, digits (0-9), or underscores for best compatibility.
+                                  While Prometheus supports UTF-8 characters in label names (since v3.0.0), using the recommended character set
+                                  ensures better compatibility with the wider ecosystem (tooling, third-party instrumentation, etc.).
+                                items:
+                                  maxLength: 128
+                                  minLength: 1
+                                  type: string
+                                  x-kubernetes-validations:
+                                  - message: label names beginning with '__' (two
+                                      underscores) are reserved for internal Prometheus
+                                      use and are not allowed
+                                    rule: '!self.startsWith(''__'')'
+                                maxItems: 10
+                                minItems: 1
+                                type: array
+                                x-kubernetes-list-type: set
+                            required:
+                            - action
+                            - name
+                            type: object
+                          maxItems: 10
+                          minItems: 1
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - name
+                          x-kubernetes-list-type: map
+                      required:
+                      - name
+                      - url
+                      type: object
+                    maxItems: 10
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
+                  resources:
+                    description: |-
+                      resources defines the compute resource requests and limits for the Prometheus container.
+                      This includes CPU, memory and HugePages constraints to help control scheduling and resource usage.
+                      When not specified, defaults are used by the platform. Requests cannot exceed limits.
+                      Each entry must have a unique resource name.
+                      Minimum of 1 and maximum of 10 resource entries can be specified.
+                      The current default values are:
+                        resources:
+                         - name: cpu
+                           request: 4m
+                         - name: memory
+                           request: 40Mi
+                    items:
+                      description: ContainerResource defines a single resource requirement
+                        for a container.
+                      properties:
+                        limit:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: |-
+                            limit is the maximum amount of the resource allowed (e.g. "2Mi", "1Gi").
+                            This field is optional.
+                            When request is specified, limit cannot be less than request.
+                            The value must be greater than 0 when specified.
+                          maxLength: 20
+                          minLength: 1
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                          x-kubernetes-validations:
+                          - message: limit must be a positive, non-zero quantity
+                            rule: quantity(self).isGreaterThan(quantity('0'))
+                        name:
+                          description: |-
+                            name of the resource (e.g. "cpu", "memory", "hugepages-2Mi").
+                            This field is required.
+                            name must consist only of alphanumeric characters, `-`, `_` and `.` and must start and end with an alphanumeric character.
+                          maxLength: 253
+                          minLength: 1
+                          type: string
+                          x-kubernetes-validations:
+                          - message: name must consist only of alphanumeric characters,
+                              `-`, `_` and `.` and must start and end with an alphanumeric
+                              character
+                            rule: '!format.qualifiedName().validate(self).hasValue()'
+                        request:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: |-
+                            request is the minimum amount of the resource required (e.g. "2Mi", "1Gi").
+                            This field is optional.
+                            When limit is specified, request cannot be greater than limit.
+                          maxLength: 20
+                          minLength: 1
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                          x-kubernetes-validations:
+                          - message: request must be a positive, non-zero quantity
+                            rule: quantity(self).isGreaterThan(quantity('0'))
+                      required:
+                      - name
+                      type: object
+                      x-kubernetes-validations:
+                      - message: at least one of request or limit must be set
+                        rule: has(self.request) || has(self.limit)
+                      - message: limit must be greater than or equal to request
+                        rule: '!(has(self.request) && has(self.limit)) || quantity(self.limit).compareTo(quantity(self.request))
+                          >= 0'
+                    maxItems: 10
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
+                  retention:
+                    description: |-
+                      retention configures how long Prometheus retains metrics data and how much storage it can use.
+                      When omitted, the platform chooses reasonable defaults (currently 15 days retention, no size limit).
+                    minProperties: 1
+                    properties:
+                      durationInDays:
+                        description: |-
+                          durationInDays specifies how many days Prometheus will retain metrics data.
+                          Prometheus automatically deletes data older than this duration.
+                          When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+                          The default value is 15.
+                          Minimum value is 1 day.
+                          Maximum value is 365 days (1 year).
+                        format: int32
+                        maximum: 365
+                        minimum: 1
+                        type: integer
+                      sizeInGiB:
+                        description: |-
+                          sizeInGiB specifies the maximum storage size in gibibytes (GiB) that Prometheus
+                          can use for data blocks and the write-ahead log (WAL).
+                          When the limit is reached, Prometheus will delete oldest data first.
+                          When omitted, no size limit is enforced and Prometheus uses available PersistentVolume capacity.
+                          Minimum value is 1 GiB.
+                          Maximum value is 16384 GiB (16 TiB).
+                        format: int32
+                        maximum: 16384
+                        minimum: 1
+                        type: integer
+                    type: object
+                  tolerations:
+                    description: |-
+                      tolerations defines tolerations for the pods.
+                      tolerations is optional.
+
+                      When omitted, this means the user has no opinion and the platform is left
+                      to choose reasonable defaults. These defaults are subject to change over time.
+                      Defaults are empty/unset.
+                      Maximum length for this list is 10
+                      Minimum length for this list is 1
+                    items:
+                      description: |-
+                        The pod this Toleration is attached to tolerates any taint that matches
+                        the triple <key,value,effect> using the matching operator <operator>.
+                      properties:
+                        effect:
+                          description: |-
+                            Effect indicates the taint effect to match. Empty means match all taint effects.
+                            When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                          type: string
+                        key:
+                          description: |-
+                            Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                            If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                          type: string
+                        operator:
+                          description: |-
+                            Operator represents a key's relationship to the value.
+                            Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
+                            Exists is equivalent to wildcard for value, so that a pod can
+                            tolerate all taints of a particular category.
+                            Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
+                          type: string
+                        tolerationSeconds:
+                          description: |-
+                            TolerationSeconds represents the period of time the toleration (which must be
+                            of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                            it is not set, which means tolerate the taint forever (do not evict). Zero and
+                            negative values will be treated as 0 (evict immediately) by the system.
+                          format: int64
+                          type: integer
+                        value:
+                          description: |-
+                            Value is the taint value the toleration matches to.
+                            If the operator is Exists, the value should be empty, otherwise just a regular string.
+                          type: string
+                      type: object
+                    maxItems: 10
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  topologySpreadConstraints:
+                    description: |-
+                      topologySpreadConstraints defines rules for how Prometheus Pods should be distributed
+                      across topology domains such as zones, nodes, or other user-defined labels.
+                      topologySpreadConstraints is optional.
+                      This helps improve high availability and resource efficiency by avoiding placing
+                      too many replicas in the same failure domain.
+
+                      When omitted, this means no opinion and the platform is left to choose a default, which is subject to change over time.
+                      This field maps directly to the `topologySpreadConstraints` field in the Pod spec.
+                      Default is empty list.
+                      Maximum length for this list is 10.
+                      Minimum length for this list is 1
+                      Entries must have unique topologyKey and whenUnsatisfiable pairs.
+                    items:
+                      description: TopologySpreadConstraint specifies how to spread
+                        matching pods among the given topology.
+                      properties:
+                        labelSelector:
+                          description: |-
+                            LabelSelector is used to find matching pods.
+                            Pods that match this label selector are counted to determine the number of pods
+                            in their corresponding topology domain.
+                          properties:
+                            matchExpressions:
+                              description: matchExpressions is a list of label selector
+                                requirements. The requirements are ANDed.
+                              items:
+                                description: |-
+                                  A label selector requirement is a selector that contains values, a key, and an operator that
+                                  relates the key and values.
+                                properties:
+                                  key:
+                                    description: key is the label key that the selector
+                                      applies to.
+                                    type: string
+                                  operator:
+                                    description: |-
+                                      operator represents a key's relationship to a set of values.
+                                      Valid operators are In, NotIn, Exists and DoesNotExist.
+                                    type: string
+                                  values:
+                                    description: |-
+                                      values is an array of string values. If the operator is In or NotIn,
+                                      the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                      the values array must be empty. This array is replaced during a strategic
+                                      merge patch.
+                                    items:
+                                      type: string
+                                    type: array
+                                    x-kubernetes-list-type: atomic
+                                required:
+                                - key
+                                - operator
+                                type: object
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            matchLabels:
+                              additionalProperties:
+                                type: string
+                              description: |-
+                                matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                                map is equivalent to an element of matchExpressions, whose key field is "key", the
+                                operator is "In", and the values array contains only "value". The requirements are ANDed.
+                              type: object
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        matchLabelKeys:
+                          description: |-
+                            MatchLabelKeys is a set of pod label keys to select the pods over which
+                            spreading will be calculated. The keys are used to lookup values from the
+                            incoming pod labels, those key-value labels are ANDed with labelSelector
+                            to select the group of existing pods over which spreading will be calculated
+                            for the incoming pod. The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
+                            MatchLabelKeys cannot be set when LabelSelector isn't set.
+                            Keys that don't exist in the incoming pod labels will
+                            be ignored. A null or empty list means only match against labelSelector.
+
+                            This is a beta field and requires the MatchLabelKeysInPodTopologySpread feature gate to be enabled (enabled by default).
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: atomic
+                        maxSkew:
+                          description: |-
+                            MaxSkew describes the degree to which pods may be unevenly distributed.
+                            When `whenUnsatisfiable=DoNotSchedule`, it is the maximum permitted difference
+                            between the number of matching pods in the target topology and the global minimum.
+                            The global minimum is the minimum number of matching pods in an eligible domain
+                            or zero if the number of eligible domains is less than MinDomains.
+                            For example, in a 3-zone cluster, MaxSkew is set to 1, and pods with the same
+                            labelSelector spread as 2/2/1:
+                            In this case, the global minimum is 1.
+                            | zone1 | zone2 | zone3 |
+                            |  P P  |  P P  |   P   |
+                            - if MaxSkew is 1, incoming pod can only be scheduled to zone3 to become 2/2/2;
+                            scheduling it onto zone1(zone2) would make the ActualSkew(3-1) on zone1(zone2)
+                            violate MaxSkew(1).
+                            - if MaxSkew is 2, incoming pod can be scheduled onto any zone.
+                            When `whenUnsatisfiable=ScheduleAnyway`, it is used to give higher precedence
+                            to topologies that satisfy it.
+                            It's a required field. Default value is 1 and 0 is not allowed.
+                          format: int32
+                          type: integer
+                        minDomains:
+                          description: |-
+                            MinDomains indicates a minimum number of eligible domains.
+                            When the number of eligible domains with matching topology keys is less than minDomains,
+                            Pod Topology Spread treats "global minimum" as 0, and then the calculation of Skew is performed.
+                            And when the number of eligible domains with matching topology keys equals or greater than minDomains,
+                            this value has no effect on scheduling.
+                            As a result, when the number of eligible domains is less than minDomains,
+                            scheduler won't schedule more than maxSkew Pods to those domains.
+                            If value is nil, the constraint behaves as if MinDomains is equal to 1.
+                            Valid values are integers greater than 0.
+                            When value is not nil, WhenUnsatisfiable must be DoNotSchedule.
+
+                            For example, in a 3-zone cluster, MaxSkew is set to 2, MinDomains is set to 5 and pods with the same
+                            labelSelector spread as 2/2/2:
+                            | zone1 | zone2 | zone3 |
+                            |  P P  |  P P  |  P P  |
+                            The number of domains is less than 5(MinDomains), so "global minimum" is treated as 0.
+                            In this situation, new pod with the same labelSelector cannot be scheduled,
+                            because computed skew will be 3(3 - 0) if new Pod is scheduled to any of the three zones,
+                            it will violate MaxSkew.
+                          format: int32
+                          type: integer
+                        nodeAffinityPolicy:
+                          description: |-
+                            NodeAffinityPolicy indicates how we will treat Pod's nodeAffinity/nodeSelector
+                            when calculating pod topology spread skew. Options are:
+                            - Honor: only nodes matching nodeAffinity/nodeSelector are included in the calculations.
+                            - Ignore: nodeAffinity/nodeSelector are ignored. All nodes are included in the calculations.
+
+                            If this value is nil, the behavior is equivalent to the Honor policy.
+                          type: string
+                        nodeTaintsPolicy:
+                          description: |-
+                            NodeTaintsPolicy indicates how we will treat node taints when calculating
+                            pod topology spread skew. Options are:
+                            - Honor: nodes without taints, along with tainted nodes for which the incoming pod
+                            has a toleration, are included.
+                            - Ignore: node taints are ignored. All nodes are included.
+
+                            If this value is nil, the behavior is equivalent to the Ignore policy.
+                          type: string
+                        topologyKey:
+                          description: |-
+                            TopologyKey is the key of node labels. Nodes that have a label with this key
+                            and identical values are considered to be in the same topology.
+                            We consider each <key, value> as a "bucket", and try to put balanced number
+                            of pods into each bucket.
+                            We define a domain as a particular instance of a topology.
+                            Also, we define an eligible domain as a domain whose nodes meet the requirements of
+                            nodeAffinityPolicy and nodeTaintsPolicy.
+                            e.g. If TopologyKey is "kubernetes.io/hostname", each Node is a domain of that topology.
+                            And, if TopologyKey is "topology.kubernetes.io/zone", each zone is a domain of that topology.
+                            It's a required field.
+                          type: string
+                        whenUnsatisfiable:
+                          description: |-
+                            WhenUnsatisfiable indicates how to deal with a pod if it doesn't satisfy
+                            the spread constraint.
+                            - DoNotSchedule (default) tells the scheduler not to schedule it.
+                            - ScheduleAnyway tells the scheduler to schedule the pod in any location,
+                              but giving higher precedence to topologies that would help reduce the
+                              skew.
+                            A constraint is considered "Unsatisfiable" for an incoming pod
+                            if and only if every possible node assignment for that pod would violate
+                            "MaxSkew" on some topology.
+                            For example, in a 3-zone cluster, MaxSkew is set to 1, and pods with the same
+                            labelSelector spread as 3/1/1:
+                            | zone1 | zone2 | zone3 |
+                            | P P P |   P   |   P   |
+                            If WhenUnsatisfiable is set to DoNotSchedule, incoming pod can only be scheduled
+                            to zone2(zone3) to become 3/2/1(3/1/2) as ActualSkew(2-1) on zone2(zone3) satisfies
+                            MaxSkew(1). In other words, the cluster can still be imbalanced, but scheduler
+                            won't make it *more* imbalanced.
+                            It's a required field.
+                          type: string
+                      required:
+                      - maxSkew
+                      - topologyKey
+                      - whenUnsatisfiable
+                      type: object
+                    maxItems: 10
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - topologyKey
+                    - whenUnsatisfiable
+                    x-kubernetes-list-type: map
+                  volumeClaimTemplate:
+                    description: |-
+                      volumeClaimTemplate defines persistent storage for Prometheus. Use this setting to
+                      configure the persistent volume claim, including storage class and volume size.
+                      If omitted, the Pod uses ephemeral storage and Prometheus data will not persist
+                      across restarts.
+                    properties:
+                      apiVersion:
+                        description: |-
+                          APIVersion defines the versioned schema of this representation of an object.
+                          Servers should convert recognized schemas to the latest internal value, and
+                          may reject unrecognized values.
+                          More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+                        type: string
+                      kind:
+                        description: |-
+                          Kind is a string value representing the REST resource this object represents.
+                          Servers may infer this from the endpoint the client submits requests to.
+                          Cannot be updated.
+                          In CamelCase.
+                          More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                        type: string
+                      metadata:
+                        description: |-
+                          Standard object's metadata.
+                          More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+                        type: object
+                      spec:
+                        description: |-
+                          spec defines the desired characteristics of a volume requested by a pod author.
+                          More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims
+                        properties:
+                          accessModes:
+                            description: |-
+                              accessModes contains the desired access modes the volume should have.
+                              More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#access-modes-1
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
+                          dataSource:
+                            description: |-
+                              dataSource field can be used to specify either:
+                              * An existing VolumeSnapshot object (snapshot.storage.k8s.io/VolumeSnapshot)
+                              * An existing PVC (PersistentVolumeClaim)
+                              If the provisioner or an external controller can support the specified data source,
+                              it will create a new volume based on the contents of the specified data source.
+                              When the AnyVolumeDataSource feature gate is enabled, dataSource contents will be copied to dataSourceRef,
+                              and dataSourceRef contents will be copied to dataSource when dataSourceRef.namespace is not specified.
+                              If the namespace is specified, then dataSourceRef will not be copied to dataSource.
+                            properties:
+                              apiGroup:
+                                description: |-
+                                  APIGroup is the group for the resource being referenced.
+                                  If APIGroup is not specified, the specified Kind must be in the core API group.
+                                  For any other third-party types, APIGroup is required.
+                                type: string
+                              kind:
+                                description: Kind is the type of resource being referenced
+                                type: string
+                              name:
+                                description: Name is the name of resource being referenced
+                                type: string
+                            required:
+                            - kind
+                            - name
+                            type: object
+                            x-kubernetes-map-type: atomic
+                          dataSourceRef:
+                            description: |-
+                              dataSourceRef specifies the object from which to populate the volume with data, if a non-empty
+                              volume is desired. This may be any object from a non-empty API group (non
+                              core object) or a PersistentVolumeClaim object.
+                              When this field is specified, volume binding will only succeed if the type of
+                              the specified object matches some installed volume populator or dynamic
+                              provisioner.
+                              This field will replace the functionality of the dataSource field and as such
+                              if both fields are non-empty, they must have the same value. For backwards
+                              compatibility, when namespace isn't specified in dataSourceRef,
+                              both fields (dataSource and dataSourceRef) will be set to the same
+                              value automatically if one of them is empty and the other is non-empty.
+                              When namespace is specified in dataSourceRef,
+                              dataSource isn't set to the same value and must be empty.
+                              There are three important differences between dataSource and dataSourceRef:
+                              * While dataSource only allows two specific types of objects, dataSourceRef
+                                allows any non-core object, as well as PersistentVolumeClaim objects.
+                              * While dataSource ignores disallowed values (dropping them), dataSourceRef
+                                preserves all values, and generates an error if a disallowed value is
+                                specified.
+                              * While dataSource only allows local objects, dataSourceRef allows objects
+                                in any namespaces.
+                              (Beta) Using this field requires the AnyVolumeDataSource feature gate to be enabled.
+                              (Alpha) Using the namespace field of dataSourceRef requires the CrossNamespaceVolumeDataSource feature gate to be enabled.
+                            properties:
+                              apiGroup:
+                                description: |-
+                                  APIGroup is the group for the resource being referenced.
+                                  If APIGroup is not specified, the specified Kind must be in the core API group.
+                                  For any other third-party types, APIGroup is required.
+                                type: string
+                              kind:
+                                description: Kind is the type of resource being referenced
+                                type: string
+                              name:
+                                description: Name is the name of resource being referenced
+                                type: string
+                              namespace:
+                                description: |-
+                                  Namespace is the namespace of resource being referenced
+                                  Note that when a namespace is specified, a gateway.networking.k8s.io/ReferenceGrant object is required in the referent namespace to allow that namespace's owner to accept the reference. See the ReferenceGrant documentation for details.
+                                  (Alpha) This field requires the CrossNamespaceVolumeDataSource feature gate to be enabled.
+                                type: string
+                            required:
+                            - kind
+                            - name
+                            type: object
+                          resources:
+                            description: |-
+                              resources represents the minimum resources the volume should have.
+                              Users are allowed to specify resource requirements
+                              that are lower than previous value but must still be higher than capacity recorded in the
+                              status field of the claim.
+                              More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#resources
+                            properties:
+                              limits:
+                                additionalProperties:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
+                                description: |-
+                                  Limits describes the maximum amount of compute resources allowed.
+                                  More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                                type: object
+                              requests:
+                                additionalProperties:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
+                                description: |-
+                                  Requests describes the minimum amount of compute resources required.
+                                  If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                                  otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                                  More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                                type: object
+                            type: object
+                          selector:
+                            description: selector is a label query over volumes to
+                              consider for binding.
+                            properties:
+                              matchExpressions:
+                                description: matchExpressions is a list of label selector
+                                  requirements. The requirements are ANDed.
+                                items:
+                                  description: |-
+                                    A label selector requirement is a selector that contains values, a key, and an operator that
+                                    relates the key and values.
+                                  properties:
+                                    key:
+                                      description: key is the label key that the selector
+                                        applies to.
+                                      type: string
+                                    operator:
+                                      description: |-
+                                        operator represents a key's relationship to a set of values.
+                                        Valid operators are In, NotIn, Exists and DoesNotExist.
+                                      type: string
+                                    values:
+                                      description: |-
+                                        values is an array of string values. If the operator is In or NotIn,
+                                        the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                        the values array must be empty. This array is replaced during a strategic
+                                        merge patch.
+                                      items:
+                                        type: string
+                                      type: array
+                                      x-kubernetes-list-type: atomic
+                                  required:
+                                  - key
+                                  - operator
+                                  type: object
+                                type: array
+                                x-kubernetes-list-type: atomic
+                              matchLabels:
+                                additionalProperties:
+                                  type: string
+                                description: |-
+                                  matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                                  map is equivalent to an element of matchExpressions, whose key field is "key", the
+                                  operator is "In", and the values array contains only "value". The requirements are ANDed.
+                                type: object
+                            type: object
+                            x-kubernetes-map-type: atomic
+                          storageClassName:
+                            description: |-
+                              storageClassName is the name of the StorageClass required by the claim.
+                              More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1
+                            type: string
+                          volumeAttributesClassName:
+                            description: |-
+                              volumeAttributesClassName may be used to set the VolumeAttributesClass used by this claim.
+                              If specified, the CSI driver will create or update the volume with the attributes defined
+                              in the corresponding VolumeAttributesClass. This has a different purpose than storageClassName,
+                              it can be changed after the claim is created. An empty string or nil value indicates that no
+                              VolumeAttributesClass will be applied to the claim. If the claim enters an Infeasible error state,
+                              this field can be reset to its previous value (including nil) to cancel the modification.
+                              If the resource referred to by volumeAttributesClass does not exist, this PersistentVolumeClaim will be
+                              set to a Pending state, as reflected by the modifyVolumeStatus field, until such as a resource
+                              exists.
+                              More info: https://kubernetes.io/docs/concepts/storage/volume-attributes-classes/
+                            type: string
+                          volumeMode:
+                            description: |-
+                              volumeMode defines what type of volume is required by the claim.
+                              Value of Filesystem is implied when not included in claim spec.
+                            type: string
+                          volumeName:
+                            description: volumeName is the binding reference to the
+                              PersistentVolume backing this claim.
+                            type: string
+                        type: object
+                      status:
+                        description: |-
+                          status represents the current information/status of a persistent volume claim.
+                          Read-only.
+                          More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims
+                        properties:
+                          accessModes:
+                            description: |-
+                              accessModes contains the actual access modes the volume backing the PVC has.
+                              More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#access-modes-1
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
+                          allocatedResourceStatuses:
+                            additionalProperties:
+                              description: |-
+                                When a controller receives persistentvolume claim update with ClaimResourceStatus for a resource
+                                that it does not recognizes, then it should ignore that update and let other controllers
+                                handle it.
+                              type: string
+                            description: "allocatedResourceStatuses stores status
+                              of resource being resized for the given PVC.\nKey names
+                              follow standard Kubernetes label syntax. Valid values
+                              are either:\n\t* Un-prefixed keys:\n\t\t- storage -
+                              the capacity of the volume.\n\t* Custom resources must
+                              use implementation-defined prefixed names such as \"example.com/my-custom-resource\"\nApart
+                              from above values - keys that are unprefixed or have
+                              kubernetes.io prefix are considered\nreserved and hence
+                              may not be used.\n\nClaimResourceStatus can be in any
+                              of following states:\n\t- ControllerResizeInProgress:\n\t\tState
+                              set when resize controller starts resizing the volume
+                              in control-plane.\n\t- ControllerResizeFailed:\n\t\tState
+                              set when resize has failed in resize controller with
+                              a terminal error.\n\t- NodeResizePending:\n\t\tState
+                              set when resize controller has finished resizing the
+                              volume but further resizing of\n\t\tvolume is needed
+                              on the node.\n\t- NodeResizeInProgress:\n\t\tState set
+                              when kubelet starts resizing the volume.\n\t- NodeResizeFailed:\n\t\tState
+                              set when resizing has failed in kubelet with a terminal
+                              error. Transient errors don't set\n\t\tNodeResizeFailed.\nFor
+                              example: if expanding a PVC for more capacity - this
+                              field can be one of the following states:\n\t- pvc.status.allocatedResourceStatus['storage']
+                              = \"ControllerResizeInProgress\"\n     - pvc.status.allocatedResourceStatus['storage']
+                              = \"ControllerResizeFailed\"\n     - pvc.status.allocatedResourceStatus['storage']
+                              = \"NodeResizePending\"\n     - pvc.status.allocatedResourceStatus['storage']
+                              = \"NodeResizeInProgress\"\n     - pvc.status.allocatedResourceStatus['storage']
+                              = \"NodeResizeFailed\"\nWhen this field is not set,
+                              it means that no resize operation is in progress for
+                              the given PVC.\n\nA controller that receives PVC update
+                              with previously unknown resourceName or ClaimResourceStatus\nshould
+                              ignore the update for the purpose it was designed. For
+                              example - a controller that\nonly is responsible for
+                              resizing capacity of the volume, should ignore PVC updates
+                              that change other valid\nresources associated with PVC."
+                            type: object
+                            x-kubernetes-map-type: granular
+                          allocatedResources:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: "allocatedResources tracks the resources
+                              allocated to a PVC including its capacity.\nKey names
+                              follow standard Kubernetes label syntax. Valid values
+                              are either:\n\t* Un-prefixed keys:\n\t\t- storage -
+                              the capacity of the volume.\n\t* Custom resources must
+                              use implementation-defined prefixed names such as \"example.com/my-custom-resource\"\nApart
+                              from above values - keys that are unprefixed or have
+                              kubernetes.io prefix are considered\nreserved and hence
+                              may not be used.\n\nCapacity reported here may be larger
+                              than the actual capacity when a volume expansion operation\nis
+                              requested.\nFor storage quota, the larger value from
+                              allocatedResources and PVC.spec.resources is used.\nIf
+                              allocatedResources is not set, PVC.spec.resources alone
+                              is used for quota calculation.\nIf a volume expansion
+                              capacity request is lowered, allocatedResources is only\nlowered
+                              if there are no expansion operations in progress and
+                              if the actual volume capacity\nis equal or lower than
+                              the requested capacity.\n\nA controller that receives
+                              PVC update with previously unknown resourceName\nshould
+                              ignore the update for the purpose it was designed. For
+                              example - a controller that\nonly is responsible for
+                              resizing capacity of the volume, should ignore PVC updates
+                              that change other valid\nresources associated with PVC."
+                            type: object
+                          capacity:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: capacity represents the actual resources
+                              of the underlying volume.
+                            type: object
+                          conditions:
+                            description: |-
+                              conditions is the current Condition of persistent volume claim. If underlying persistent volume is being
+                              resized then the Condition will be set to 'Resizing'.
+                            items:
+                              description: PersistentVolumeClaimCondition contains
+                                details about state of pvc
+                              properties:
+                                lastProbeTime:
+                                  description: lastProbeTime is the time we probed
+                                    the condition.
+                                  format: date-time
+                                  type: string
+                                lastTransitionTime:
+                                  description: lastTransitionTime is the time the
+                                    condition transitioned from one status to another.
+                                  format: date-time
+                                  type: string
+                                message:
+                                  description: message is the human-readable message
+                                    indicating details about last transition.
+                                  type: string
+                                reason:
+                                  description: |-
+                                    reason is a unique, this should be a short, machine understandable string that gives the reason
+                                    for condition's last transition. If it reports "Resizing" that means the underlying
+                                    persistent volume is being resized.
+                                  type: string
+                                status:
+                                  description: |-
+                                    Status is the status of the condition.
+                                    Can be True, False, Unknown.
+                                    More info: https://kubernetes.io/docs/reference/kubernetes-api/config-and-storage-resources/persistent-volume-claim-v1/#:~:text=state%20of%20pvc-,conditions.status,-(string)%2C%20required
+                                  type: string
+                                type:
+                                  description: |-
+                                    Type is the type of the condition.
+                                    More info: https://kubernetes.io/docs/reference/kubernetes-api/config-and-storage-resources/persistent-volume-claim-v1/#:~:text=set%20to%20%27ResizeStarted%27.-,PersistentVolumeClaimCondition,-contains%20details%20about
+                                  type: string
+                              required:
+                              - status
+                              - type
+                              type: object
+                            type: array
+                            x-kubernetes-list-map-keys:
+                            - type
+                            x-kubernetes-list-type: map
+                          currentVolumeAttributesClassName:
+                            description: |-
+                              currentVolumeAttributesClassName is the current name of the VolumeAttributesClass the PVC is using.
+                              When unset, there is no VolumeAttributeClass applied to this PersistentVolumeClaim
+                            type: string
+                          modifyVolumeStatus:
+                            description: |-
+                              ModifyVolumeStatus represents the status object of ControllerModifyVolume operation.
+                              When this is unset, there is no ModifyVolume operation being attempted.
+                            properties:
+                              status:
+                                description: "status is the status of the ControllerModifyVolume
+                                  operation. It can be in any of following states:\n
+                                  - Pending\n   Pending indicates that the PersistentVolumeClaim
+                                  cannot be modified due to unmet requirements, such
+                                  as\n   the specified VolumeAttributesClass not existing.\n
+                                  - InProgress\n   InProgress indicates that the volume
+                                  is being modified.\n - Infeasible\n  Infeasible
+                                  indicates that the request has been rejected as
+                                  invalid by the CSI driver. To\n\t  resolve the error,
+                                  a valid VolumeAttributesClass needs to be specified.\nNote:
+                                  New statuses can be added in the future. Consumers
+                                  should check for unknown statuses and fail appropriately."
+                                type: string
+                              targetVolumeAttributesClassName:
+                                description: targetVolumeAttributesClassName is the
+                                  name of the VolumeAttributesClass the PVC currently
+                                  being reconciled
+                                type: string
+                            required:
+                            - status
+                            type: object
+                          phase:
+                            description: phase represents the current phase of PersistentVolumeClaim.
+                            type: string
+                        type: object
+                    type: object
+                type: object
               prometheusOperatorAdmissionWebhookConfig:
                 description: |-
                   prometheusOperatorAdmissionWebhookConfig is an optional field that can be used to configure the
@@ -1335,7 +4034,7 @@ spec:
                           x-kubernetes-int-or-string: true
                           x-kubernetes-validations:
                           - message: limit must be a positive, non-zero quantity
-                            rule: isQuantity(self) && quantity(self).isGreaterThan(quantity('0'))
+                            rule: quantity(self).isGreaterThan(quantity('0'))
                         name:
                           description: |-
                             name of the resource (e.g. "cpu", "memory", "hugepages-2Mi").
@@ -1363,7 +4062,7 @@ spec:
                           x-kubernetes-int-or-string: true
                           x-kubernetes-validations:
                           - message: request must be a positive, non-zero quantity
-                            rule: isQuantity(self) && quantity(self).isGreaterThan(quantity('0'))
+                            rule: quantity(self).isGreaterThan(quantity('0'))
                       required:
                       - name
                       type: object
@@ -1649,7 +4348,7 @@ spec:
                           x-kubernetes-int-or-string: true
                           x-kubernetes-validations:
                           - message: limit must be a positive, non-zero quantity
-                            rule: isQuantity(self) && quantity(self).isGreaterThan(quantity('0'))
+                            rule: quantity(self).isGreaterThan(quantity('0'))
                         name:
                           description: |-
                             name of the resource (e.g. "cpu", "memory", "hugepages-2Mi").
@@ -1677,7 +4376,7 @@ spec:
                           x-kubernetes-int-or-string: true
                           x-kubernetes-validations:
                           - message: request must be a positive, non-zero quantity
-                            rule: isQuantity(self) && quantity(self).isGreaterThan(quantity('0'))
+                            rule: quantity(self).isGreaterThan(quantity('0'))
                       required:
                       - name
                       type: object

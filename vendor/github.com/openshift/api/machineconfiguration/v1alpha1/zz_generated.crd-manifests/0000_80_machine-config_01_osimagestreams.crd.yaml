@@ -62,6 +62,17 @@ spec:
                   status.availableStreams to apply as the default for MachineConfigPools
                   that do not specify a stream override.
 
+                  When status.availableStreams has been populated by the operator, updating
+                  this field requires that the new value references the name of one of the
+                  streams in status.availableStreams. Status-only updates by the operator
+                  are not subject to this constraint, allowing the operator to update
+                  availableStreams independently of this field.
+                  During initial creation, before the operator has populated status, any
+                  valid value is accepted.
+
+                  When omitted, the operator determines the default stream automatically.
+                  Once set, this field cannot be removed.
+
                   It must be a valid RFC 1123 subdomain between 1 and 253 characters in length,
                   consisting of lowercase alphanumeric characters, hyphens ('-'), and periods ('.').
                 maxLength: 253
@@ -73,6 +84,9 @@ spec:
                     character.
                   rule: '!format.dns1123Subdomain().validate(self).hasValue()'
             type: object
+            x-kubernetes-validations:
+            - message: spec.defaultStream cannot be removed once set
+              rule: '!has(oldSelf.defaultStream) || has(self.defaultStream)'
           status:
             description: |-
               status describes the last observed state of this OSImageStream.
@@ -184,6 +198,10 @@ spec:
         x-kubernetes-validations:
         - message: osimagestream is a singleton, .metadata.name must be 'cluster'
           rule: self.metadata.name == 'cluster'
+        - message: spec.defaultStream must reference an existing stream name from
+            status.availableStreams
+          rule: self.spec == oldSelf.spec || !has(self.spec.defaultStream) || !has(self.status)
+            || self.spec.defaultStream in self.status.availableStreams.map(s, s.name)
     served: true
     storage: true
     subresources:
