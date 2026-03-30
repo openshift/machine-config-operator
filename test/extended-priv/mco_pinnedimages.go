@@ -285,10 +285,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		defer nodeList.PrintDebugCommand() // for debugging purpose in case of failed deployment
 
 		exutil.By("Remove the image from all nodes in the pool")
-		for _, node := range allNodes {
-			// We ignore errors, since the image can be present or not in the nodes
-			_ = NewRemoteImage(node, pinnedImage).Rmi()
-		}
+		removeImageFromNodes(allNodes, pinnedImage)
 		logger.Infof("OK!\n")
 
 		exutil.By("Create pinnedimageset")
@@ -686,10 +683,7 @@ func DigestMirrorTest(oc *exutil.CLI, mcp *MachineConfigPool, idmsName, idmsMirr
 	)
 
 	exutil.By("Remove the image from all nodes in the pool")
-	for _, node := range allNodes {
-		// We ignore errors, since the image can be present or not in the nodes
-		_ = NewRemoteImage(node, pinnedImage).Rmi()
-	}
+	removeImageFromNodes(allNodes, pinnedImage)
 	logger.Infof("OK!\n")
 
 	exutil.By("Create new machine config to deploy a ImageDigestMirrorSet configuring a mirror registry")
