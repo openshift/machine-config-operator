@@ -21,7 +21,7 @@ contents:
         exit 0
     fi
 
-    localRegistryImageDir="${REGISTRY_DIR}/images/registry"
+    localRegistryImageDir="${REGISTRY_DIR}/images/registry/${imageDigest}"
     
     if [[ -d "${localRegistryImageDir}" ]]; then
         # Load registry image into the local container storage
