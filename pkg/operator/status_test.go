@@ -797,6 +797,7 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 		mcop               *opv1.MachineConfiguration
 		mcopNotFound       bool
 		mcopGetError       error
+		clusterVersion     *configv1.ClusterVersion
 		expectUpgradeBlock bool
 		expectMessage      string
 		expectError        bool
@@ -944,6 +945,9 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 		{
 			name:               "mode is Automatic with OCP version below limit",
 			featureGateEnabled: true,
+			// History spans 4.12 (install) through 4.22 (current upgrade in progress),
+			// reflecting a cluster that never updated its boot images across many upgrades.
+			clusterVersion: buildClusterVersionWithMultipleHistory("4.22.0", "4.21.0", "4.20.0", "4.19.0", "4.18.0", "4.17.0", "4.16.0", "4.15.0", "4.14.0", "4.13.0", "4.12.0"),
 			mcop: &opv1.MachineConfiguration{
 				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
 				Status: opv1.MachineConfigurationStatus{
@@ -962,7 +966,32 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 				},
 			},
 			expectUpgradeBlock: true,
-			expectMessage:      "Upgrades have been disabled because the cluster is using OCP boot image version 4.12.0, which is below the minimum required version " + ctrlcommon.OCPVersionBootImageSkewLimit + ". To enable upgrades, please update your boot images following the documentation at [TODO: insert link], or disable boot image skew enforcement at [TODO: insert link]",
+			expectMessage:      "Upgrades have been disabled because the cluster is using OCP boot image version 4.12.0, which is below the minimum required version " + ctrlcommon.OCPVersionBootImageSkewLimit + ". To enable upgrades, please update your boot images or disable boot image skew enforcement by following the documentation at https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html/machine_configuration/mco-update-boot-skew-mgmt",
+			expectError:        false,
+		},
+		{
+			name:               "mode is Automatic with OCP version below limit and no ClusterVersion",
+			featureGateEnabled: true,
+			// No clusterVersion set — getCurrentOCPVersionFromClusterVersion returns "", docs URL falls back to "latest".
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   opv1.MachineConfigurationBootImageUpdateProgressing,
+							Status: metav1.ConditionFalse,
+						},
+					},
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
+						Automatic: opv1.ClusterBootImageAutomatic{
+							OCPVersion: "4.12.0",
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: true,
+			expectMessage:      "Upgrades have been disabled because the cluster is using OCP boot image version 4.12.0, which is below the minimum required version " + ctrlcommon.OCPVersionBootImageSkewLimit + ". To enable upgrades, please update your boot images or disable boot image skew enforcement by following the documentation at https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/machine_configuration/mco-update-boot-skew-mgmt",
 			expectError:        false,
 		},
 		// OCP version tests in manual mode
@@ -988,6 +1017,9 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 		{
 			name:               "mode is Manual with OCP version below limit",
 			featureGateEnabled: true,
+			// History spans 4.10 (install) through 4.22 (current upgrade in progress),
+			// reflecting a cluster that never updated its boot images across many upgrades.
+			clusterVersion: buildClusterVersionWithMultipleHistory("4.22.0", "4.21.0", "4.20.0", "4.19.0", "4.18.0", "4.17.0", "4.16.0", "4.15.0", "4.14.0", "4.13.0", "4.12.0", "4.11.0", "4.10.0"),
 			mcop: &opv1.MachineConfiguration{
 				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
 				Status: opv1.MachineConfigurationStatus{
@@ -1001,7 +1033,7 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 				},
 			},
 			expectUpgradeBlock: true,
-			expectMessage:      "Upgrades have been disabled because the cluster is using OCP boot image version 4.10.0, which is below the minimum required version " + ctrlcommon.OCPVersionBootImageSkewLimit + ". To enable upgrades, please update your boot images following the documentation at [TODO: insert link], or disable boot image skew enforcement at [TODO: insert link]",
+			expectMessage:      "Upgrades have been disabled because the cluster is using OCP boot image version 4.10.0, which is below the minimum required version " + ctrlcommon.OCPVersionBootImageSkewLimit + ". To enable upgrades, please update your boot images or disable boot image skew enforcement by following the documentation at https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html/machine_configuration/mco-update-boot-skew-mgmt",
 			expectError:        false,
 		},
 		{
@@ -1056,6 +1088,8 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 		{
 			name:               "mode is Automatic with modern RHCOS version below limit",
 			featureGateEnabled: true,
+			// RHEL 9 boot images were introduced in 4.13; history spans from there to 4.22.
+			clusterVersion: buildClusterVersionWithMultipleHistory("4.22.0", "4.21.0", "4.20.0", "4.19.0", "4.18.0", "4.17.0", "4.16.0", "4.15.0", "4.14.0", "4.13.0"),
 			mcop: &opv1.MachineConfiguration{
 				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
 				Status: opv1.MachineConfigurationStatus{
@@ -1074,7 +1108,7 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 				},
 			},
 			expectUpgradeBlock: true,
-			expectMessage:      "Upgrades have been disabled because the cluster is using RHCOS boot image version 9.0.20251023-0(RHEL version: 9.0), which is below the minimum required RHEL version " + ctrlcommon.RHCOSVersionBootImageSkewLimit + ". To enable upgrades, please update your boot images following the documentation at [TODO: insert link], or disable boot image skew enforcement at [TODO: insert link]",
+			expectMessage:      "Upgrades have been disabled because the cluster is using RHCOS boot image version 9.0.20251023-0(RHEL version: 9.0), which is below the minimum required RHEL version " + ctrlcommon.RHCOSVersionBootImageSkewLimit + ". To enable upgrades, please update your boot images or disable boot image skew enforcement by following the documentation at https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html/machine_configuration/mco-update-boot-skew-mgmt",
 			expectError:        false,
 		},
 		{
@@ -1104,6 +1138,8 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 		{
 			name:               "mode is Automatic with legacy RHCOS version below limit",
 			featureGateEnabled: true,
+			// Legacy RHEL 8 (411.x) boot images originate from 4.11; history spans from there to 4.22.
+			clusterVersion: buildClusterVersionWithMultipleHistory("4.22.0", "4.21.0", "4.20.0", "4.19.0", "4.18.0", "4.17.0", "4.16.0", "4.15.0", "4.14.0", "4.13.0", "4.12.0", "4.11.0"),
 			mcop: &opv1.MachineConfiguration{
 				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
 				Status: opv1.MachineConfigurationStatus{
@@ -1122,7 +1158,7 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 				},
 			},
 			expectUpgradeBlock: true,
-			expectMessage:      "Upgrades have been disabled because the cluster is using RHCOS boot image version 411.86.202308081056-0(RHEL version: 8.6), which is below the minimum required RHEL version " + ctrlcommon.RHCOSVersionBootImageSkewLimit + ". To enable upgrades, please update your boot images following the documentation at [TODO: insert link], or disable boot image skew enforcement at [TODO: insert link]",
+			expectMessage:      "Upgrades have been disabled because the cluster is using RHCOS boot image version 411.86.202308081056-0(RHEL version: 8.6), which is below the minimum required RHEL version " + ctrlcommon.RHCOSVersionBootImageSkewLimit + ". To enable upgrades, please update your boot images or disable boot image skew enforcement by following the documentation at https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html/machine_configuration/mco-update-boot-skew-mgmt",
 			expectError:        false,
 		},
 
@@ -1173,6 +1209,8 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 		{
 			name:               "mode is Manual with modern RHCOS version below limit",
 			featureGateEnabled: true,
+			// RHEL 9 boot images were introduced in 4.13; history spans from there to 4.22.
+			clusterVersion: buildClusterVersionWithMultipleHistory("4.22.0", "4.21.0", "4.20.0", "4.19.0", "4.18.0", "4.17.0", "4.16.0", "4.15.0", "4.14.0", "4.13.0"),
 			mcop: &opv1.MachineConfiguration{
 				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
 				Status: opv1.MachineConfigurationStatus{
@@ -1186,7 +1224,7 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 				},
 			},
 			expectUpgradeBlock: true,
-			expectMessage:      "Upgrades have been disabled because the cluster is using RHCOS boot image version 9.1.20251023-0(RHEL version: 9.1), which is below the minimum required RHEL version " + ctrlcommon.RHCOSVersionBootImageSkewLimit + ". To enable upgrades, please update your boot images following the documentation at [TODO: insert link], or disable boot image skew enforcement at [TODO: insert link]",
+			expectMessage:      "Upgrades have been disabled because the cluster is using RHCOS boot image version 9.1.20251023-0(RHEL version: 9.1), which is below the minimum required RHEL version " + ctrlcommon.RHCOSVersionBootImageSkewLimit + ". To enable upgrades, please update your boot images or disable boot image skew enforcement by following the documentation at https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html/machine_configuration/mco-update-boot-skew-mgmt",
 			expectError:        false,
 		},
 		{
@@ -1211,6 +1249,8 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 		{
 			name:               "mode is Manual with legacy RHCOS version below limit",
 			featureGateEnabled: true,
+			// Legacy RHEL 8 (411.x) boot images originate from 4.11; history spans from there to 4.22.
+			clusterVersion: buildClusterVersionWithMultipleHistory("4.22.0", "4.21.0", "4.20.0", "4.19.0", "4.18.0", "4.17.0", "4.16.0", "4.15.0", "4.14.0", "4.13.0", "4.12.0", "4.11.0"),
 			mcop: &opv1.MachineConfiguration{
 				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
 				Status: opv1.MachineConfigurationStatus{
@@ -1224,7 +1264,7 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 				},
 			},
 			expectUpgradeBlock: true,
-			expectMessage:      "Upgrades have been disabled because the cluster is using RHCOS boot image version 411.86.202308081056-0(RHEL version: 8.6), which is below the minimum required RHEL version " + ctrlcommon.RHCOSVersionBootImageSkewLimit + ". To enable upgrades, please update your boot images following the documentation at [TODO: insert link], or disable boot image skew enforcement at [TODO: insert link]",
+			expectMessage:      "Upgrades have been disabled because the cluster is using RHCOS boot image version 411.86.202308081056-0(RHEL version: 8.6), which is below the minimum required RHEL version " + ctrlcommon.RHCOSVersionBootImageSkewLimit + ". To enable upgrades, please update your boot images or disable boot image skew enforcement by following the documentation at https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html/machine_configuration/mco-update-boot-skew-mgmt",
 			expectError:        false,
 		},
 		{
@@ -1264,9 +1304,17 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 			}
 			mcopLister := mcoplistersv1.NewMachineConfigurationLister(mcopIndexer)
 
+			// Set up clusterVersionLister
+			clusterVersionIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+			if tc.clusterVersion != nil {
+				clusterVersionIndexer.Add(tc.clusterVersion)
+			}
+			clusterVersionLister := configlistersv1.NewClusterVersionLister(clusterVersionIndexer)
+
 			optr := &Operator{
-				fgHandler:  fgHandler,
-				mcopLister: mcopLister,
+				fgHandler:            fgHandler,
+				mcopLister:           mcopLister,
+				clusterVersionLister: clusterVersionLister,
 			}
 
 			upgradeBlock, message, err := optr.checkBootImageSkewUpgradeableGuard()
