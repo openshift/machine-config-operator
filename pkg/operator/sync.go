@@ -2550,7 +2550,7 @@ func (optr *Operator) syncBootImageSkewEnforcementStatus(mcop *opv1.MachineConfi
 	}
 
 	// Grab install time OCP version
-	ocpVersionAtInstall := optr.getOCPVersionFromClusterVersion()
+	ocpVersionAtInstall := optr.getOCPInstallVersionFromClusterVersion()
 
 	// Spec override takes priority over all platform defaults.
 	if mcop.Spec.BootImageSkewEnforcement != (opv1.BootImageSkewEnforcementConfig{}) {
@@ -2591,10 +2591,10 @@ func (optr *Operator) syncBootImageSkewEnforcementStatus(mcop *opv1.MachineConfi
 	newMachineConfigurationStatus.BootImageSkewEnforcementStatus = apihelpers.GetSkewEnforcementStatusManualWithOCPVersion(ocpVersionAtInstall)
 }
 
-// getOCPVersionFromClusterVersion extracts the OCP version from ClusterVersion history.
-// It finds the last completed update in history (install version) and parses it to a clean version string.
+// getOCPInstallVersionFromClusterVersion extracts the original install version from ClusterVersion history.
+// It finds the oldest completed update in history and parses it to a clean version string.
 // Returns an empty string if ClusterVersion cannot be retrieved or parsed.
-func (optr *Operator) getOCPVersionFromClusterVersion() string {
+func (optr *Operator) getOCPInstallVersionFromClusterVersion() string {
 	clusterVersion, err := optr.clusterVersionLister.Get("version")
 	if err != nil {
 		klog.Warningf("Failed to get ClusterVersion: %v, skipping boot image skew enforcement configuration", err)
@@ -2623,6 +2623,29 @@ func (optr *Operator) getOCPVersionFromClusterVersion() string {
 	if err != nil {
 		klog.Warningf("Failed to parse install version %q: %v, use a placeholder for now", installVersion, err)
 		return "0.0.0"
+	}
+	return fmt.Sprintf("%d.%d.%d", parsedVersion.Major(), parsedVersion.Minor(), parsedVersion.Patch())
+}
+
+// getCurrentOCPVersionFromClusterVersion extracts the latest OCP version from ClusterVersion history.
+// It takes the most recent history entry regardless of update state, so that docs links always
+// point to the newest version even during an in-progress upgrade.
+// Returns an empty string if ClusterVersion cannot be retrieved or parsed.
+func (optr *Operator) getCurrentOCPVersionFromClusterVersion() string {
+	clusterVersion, err := optr.clusterVersionLister.Get("version")
+	if err != nil {
+		klog.Warningf("Failed to get ClusterVersion: %v", err)
+		return ""
+	}
+	if len(clusterVersion.Status.History) == 0 {
+		klog.Warningf("ClusterVersion has no history")
+		return ""
+	}
+	latest := clusterVersion.Status.History[0].Version
+	parsedVersion, err := k8sversion.ParseGeneric(latest)
+	if err != nil {
+		klog.Warningf("Failed to parse current OCP version %q: %v", latest, err)
+		return ""
 	}
 	return fmt.Sprintf("%d.%d.%d", parsedVersion.Major(), parsedVersion.Minor(), parsedVersion.Patch())
 }

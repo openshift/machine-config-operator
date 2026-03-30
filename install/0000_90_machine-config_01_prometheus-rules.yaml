@@ -49,7 +49,7 @@ spec:
             severity: info
           annotations:
             summary: "Boot image skew enforcement is disabled. Scaling operations may not be successful."
-            description: "Boot image skew enforcement mode is set to None. When scaling up, new nodes may be provisioned with older boot images that could introduce compatibility issues. Consider manually updating boot images to match the cluster version. Please refer to docs at [TODO-INSERTLINK] for additional details."            
+            description: "Boot image skew enforcement mode is set to None. When scaling up, new nodes may be provisioned with older boot images that could introduce compatibility issues. Consider manually updating boot images to match the cluster version. Please refer to docs at https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/machine_configuration/mco-update-boot-skew-mgmt for additional details."            
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
