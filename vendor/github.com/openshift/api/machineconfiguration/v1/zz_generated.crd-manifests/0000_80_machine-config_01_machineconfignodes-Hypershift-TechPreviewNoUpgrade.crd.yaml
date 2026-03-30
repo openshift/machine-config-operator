@@ -210,6 +210,7 @@ spec:
                   and PinnedImageSetsDegraded.
                   The following types are only available when the ImageModeStatusReporting feature gate is enabled: ImagePulledFromRegistry,
                   AppliedOSImage, AppliedFiles
+                  The following types are only available when the NoRegistryClusterInstall feature gate is enabled: InternalReleaseImageDegraded
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.

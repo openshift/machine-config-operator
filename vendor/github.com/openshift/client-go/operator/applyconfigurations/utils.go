@@ -50,6 +50,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &operatorv1.AzureCSIDriverConfigSpecApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("AzureDiskEncryptionSet"):
 		return &operatorv1.AzureDiskEncryptionSetApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("BGPManagedConfig"):
+		return &operatorv1.BGPManagedConfigApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("BootImageSkewEnforcementConfig"):
 		return &operatorv1.BootImageSkewEnforcementConfigApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("BootImageSkewEnforcementStatus"):
@@ -318,6 +320,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &operatorv1.NodePortStrategyApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("NodeStatus"):
 		return &operatorv1.NodeStatusApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("NoOverlayConfig"):
+		return &operatorv1.NoOverlayConfigApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("OAuthAPIServerStatus"):
 		return &operatorv1.OAuthAPIServerStatusApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("OLM"):

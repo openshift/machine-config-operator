@@ -10,12 +10,8 @@ import (
 type Interface interface {
 	// InternalReleaseImages returns a InternalReleaseImageInformer.
 	InternalReleaseImages() InternalReleaseImageInformer
-	// MachineConfigNodes returns a MachineConfigNodeInformer.
-	MachineConfigNodes() MachineConfigNodeInformer
 	// OSImageStreams returns a OSImageStreamInformer.
 	OSImageStreams() OSImageStreamInformer
-	// PinnedImageSets returns a PinnedImageSetInformer.
-	PinnedImageSets() PinnedImageSetInformer
 }
 
 type version struct {
@@ -34,17 +30,7 @@ func (v *version) InternalReleaseImages() InternalReleaseImageInformer {
 	return &internalReleaseImageInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// MachineConfigNodes returns a MachineConfigNodeInformer.
-func (v *version) MachineConfigNodes() MachineConfigNodeInformer {
-	return &machineConfigNodeInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
-}
-
 // OSImageStreams returns a OSImageStreamInformer.
 func (v *version) OSImageStreams() OSImageStreamInformer {
 	return &oSImageStreamInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
-}
-
-// PinnedImageSets returns a PinnedImageSetInformer.
-func (v *version) PinnedImageSets() PinnedImageSetInformer {
-	return &pinnedImageSetInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
