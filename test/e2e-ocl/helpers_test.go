@@ -348,18 +348,28 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 		t.Logf("No MachineOSConfigs to clean up")
 	}
 
-	for _, item := range secretList.Items {
-		t.Logf("Cleaning up build-time Secret %s", item.Name)
-		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace)))
-		newCleanupAssertion().SecretDoesNotExist(item.Name)
+	// Delete owners first (MachineOSConfigs, MachineOSBuilds) before their dependents.
+	// MachineOSBuilds have FinalizerDeleteDependents which blocks deletion until owned
+	// resources are gone. Deleting ConfigMaps/Secrets before their owners creates a race
+	// with Kubernetes GC that causes intermittent timeout failures.
+	for _, item := range moscList.Items {
+		t.Logf("Cleaning up MachineOSConfig %q", item.Name)
+		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.MachineconfigurationV1Interface.MachineOSConfigs()))
+		newCleanupAssertion().MachineOSConfigDoesNotExist(&item)
 	}
 
-	for _, item := range cmList.Items {
-		t.Logf("Cleaning up ephemeral ConfigMap %q", item.Name)
-		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace)))
-		newCleanupAssertion().ConfigMapDoesNotExist(item.Name)
+	for _, item := range mosbList.Items {
+		t.Logf("Cleaning up MachineOSBuild %q", item.Name)
+		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.MachineconfigurationV1Interface.MachineOSBuilds()))
+		newCleanupAssertion().MachineOSBuildDoesNotExist(&item)
+
+		// Also clean up the digest ConfigMap
+		t.Logf("Cleaning up ephemeral digest ConfigMap %q", utils.GetDigestConfigMapName(&item))
+		require.NoError(t, cleanupDigestConfigMap(t, cs, &item))
+		newCleanupAssertion().ConfigMapDoesNotExist(utils.GetDigestConfigMapName(&item))
 	}
 
+	// Now delete Jobs and their dependent resources
 	for _, item := range jobList.Items {
 		jobUID := string(item.UID)
 		t.Logf("Cleaning up build job %q", item.Name)
@@ -386,21 +396,17 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 		newCleanupAssertion().PodDoesNotExist(item.Name)
 	}
 
-	for _, item := range moscList.Items {
-		t.Logf("Cleaning up MachineOSConfig %q", item.Name)
-		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.MachineconfigurationV1Interface.MachineOSConfigs()))
-		newCleanupAssertion().MachineOSConfigDoesNotExist(&item)
+	// Clean up remaining ConfigMaps and Secrets after their owners are deleted
+	for _, item := range cmList.Items {
+		t.Logf("Cleaning up ephemeral ConfigMap %q", item.Name)
+		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace)))
+		newCleanupAssertion().ConfigMapDoesNotExist(item.Name)
 	}
 
-	for _, item := range mosbList.Items {
-		t.Logf("Cleaning up MachineOSBuild %q", item.Name)
-		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.MachineconfigurationV1Interface.MachineOSBuilds()))
-		newCleanupAssertion().MachineOSBuildDoesNotExist(&item)
-
-		// Also clean up the digest ConfigMap
-		t.Logf("Cleaning up ephemeral digest ConfigMap %q", utils.GetDigestConfigMapName(&item))
-		require.NoError(t, cleanupDigestConfigMap(t, cs, &item))
-		newCleanupAssertion().ConfigMapDoesNotExist(utils.GetDigestConfigMapName(&item))
+	for _, item := range secretList.Items {
+		t.Logf("Cleaning up build-time Secret %s", item.Name)
+		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace)))
+		newCleanupAssertion().SecretDoesNotExist(item.Name)
 	}
 
 	// Clean up inspect MC if it exists
