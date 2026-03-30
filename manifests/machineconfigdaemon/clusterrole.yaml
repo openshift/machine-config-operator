@@ -13,7 +13,7 @@ rules:
   resources: ["machineconfigs", "controllerconfigs"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["machineconfiguration.openshift.io"]
-  resources: ["machineconfigpools", "pinnedimagesets"]
+  resources: ["machineconfigpools", "pinnedimagesets", "internalreleaseimages"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["machineconfiguration.openshift.io"]
   resources: ["machineconfignodes", "machineconfignodes/status"]
