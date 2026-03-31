@@ -6,7 +6,7 @@ contents: |
   [Unit]
   Description=Writes IP address configuration so that kubelet and crio services select a valid node IP
   Wants=NetworkManager-wait-online.service
-  After=NetworkManager-wait-online.service firstboot-osupdate.target
+  After=NetworkManager-wait-online.service
   Before=kubelet-dependencies.target ovs-configuration.service
 
   [Service]
