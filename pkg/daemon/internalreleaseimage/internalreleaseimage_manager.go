@@ -2,19 +2,19 @@ package internalreleaseimage
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
+	"net/http"
 	"reflect"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
-	coreinformersv1 "k8s.io/client-go/informers/core/v1"
-	corev1lister "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
@@ -37,9 +37,6 @@ const (
 	// controller configuration
 	maxRetriesController = 15
 	syncRetryInterval    = 30 * time.Second
-
-	// mcn looks for conditions with this prefix if seen will degrade the pool
-	degradeMessagePrefix = "Error:"
 )
 
 // Manager manages the IRI registry data on disk
@@ -48,17 +45,15 @@ type Manager struct {
 	nodeName string
 	backoff  wait.Backoff
 
-	mcfgClient mcfgclientset.Interface
+	mcfgClient     mcfgclientset.Interface
+	registryClient *http.Client
 
-	syncHandler                 func(mcp string) error
+	syncHandler                 func(iri string) error
 	enqueueInternalReleaseImage func(*mcfgv1alpha1.InternalReleaseImage)
 	queue                       workqueue.TypedRateLimitingInterface[string]
 
 	iriLister       mcfglistersv1alpha1.InternalReleaseImageLister
 	iriListerSynced cache.InformerSynced
-
-	nodeLister       corev1lister.NodeLister
-	nodeListerSynced cache.InformerSynced
 }
 
 // NewInternalReleaseImageManager creates a new internal release image manager.
@@ -66,7 +61,6 @@ func New(
 	nodeName string,
 	mcfgClient mcfgclientset.Interface,
 	iriInformer mcfginformersv1alpha1.InternalReleaseImageInformer,
-	nodeInformer coreinformersv1.NodeInformer,
 ) *Manager {
 	i := &Manager{
 		nodeName: nodeName,
@@ -89,9 +83,6 @@ func New(
 	i.iriLister = iriInformer.Lister()
 	i.iriListerSynced = iriInformer.Informer().HasSynced
 
-	i.nodeLister = nodeInformer.Lister()
-	i.nodeListerSynced = nodeInformer.Informer().HasSynced
-
 	iriInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    i.addInternalReleaseImage,
 		UpdateFunc: i.updateInternalReleaseImage,
@@ -108,10 +99,19 @@ func (i *Manager) Run(workers int, stopCh <-chan struct{}) {
 	if !cache.WaitForCacheSync(
 		stopCh,
 		i.iriListerSynced,
-		i.nodeListerSynced,
 	) {
 		klog.Errorf("failed to sync initial listers cache")
 		return
+	}
+
+	if i.registryClient == nil {
+		i.registryClient = &http.Client{Timeout: 3 * time.Second,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: true,
+				},
+			},
+		}
 	}
 
 	klog.Infof("Starting InternalReleaseImage Manager")
@@ -215,28 +215,11 @@ func (i *Manager) deleteInternalReleaseImage(obj interface{}) {
 	i.enqueueInternalReleaseImage(iri)
 }
 
-// getNodeWithRetry gets the node with retries. This avoids some races when the local node
-// is new but not found during startup.
-func (i *Manager) getNodeWithRetry(nodeName string) (*corev1.Node,
-	error) {
-	var node *corev1.Node
-	err := wait.ExponentialBackoff(i.backoff, func() (bool, error) {
-		var err error
-		node, err = i.nodeLister.Get(nodeName)
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				// log warning and retry because we are tolerating unexpected behavior from the informer
-				klog.Warningf("Node %q not found, retrying", nodeName)
-				return false, nil
-			}
-			return false, err
-		}
-		return true, nil
-	})
-	return node, err
-}
+func (i *Manager) updateMCNStatus(mcnOld, mcn *v1.MachineConfigNode) error {
+	if equality.Semantic.DeepEqual(&mcnOld.Status, &mcn.Status) {
+		return nil
+	}
 
-func (i *Manager) updateMCNStatus(mcn *v1.MachineConfigNode) error {
 	_, err := i.mcfgClient.MachineconfigurationV1().MachineConfigNodes().UpdateStatus(context.Background(), mcn, metav1.UpdateOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to update MCN %s InternalReleaseImage Status conditions: %w", mcn.Name, err)
@@ -285,7 +268,9 @@ func (i *Manager) refreshMachineConfigNodeStatus(mcn *v1.MachineConfigNode, iriR
 		mcnUpdated.Status.InternalReleaseImage.Releases = append(mcnUpdated.Status.InternalReleaseImage.Releases, iriRelease)
 	}
 
-	// Check release availability for each bundle
+	// Check release availability for each bundle. If at least one release image is not available
+	// then mark the MCN as degraded.
+	mcnDegraded := false
 	for n := range mcnUpdated.Status.InternalReleaseImage.Releases {
 		r := &mcnUpdated.Status.InternalReleaseImage.Releases[n]
 
@@ -304,6 +289,8 @@ func (i *Manager) refreshMachineConfigNodeStatus(mcn *v1.MachineConfigNode, iriR
 				Message: "The specified release image is available",
 			})
 		} else {
+			mcnDegraded = true
+			klog.Errorf("Release image %s not available for bundle %s. Error: %v", r.Image, r.Name, err)
 			meta.SetStatusCondition(&r.Conditions, metav1.Condition{
 				Type:    string(mcfgv1alpha1.InternalReleaseImageConditionTypeDegraded),
 				Status:  metav1.ConditionTrue,
@@ -318,15 +305,36 @@ func (i *Manager) refreshMachineConfigNodeStatus(mcn *v1.MachineConfigNode, iriR
 			})
 		}
 	}
+	if !mcnDegraded {
+		meta.SetStatusCondition(&mcnUpdated.Status.Conditions, metav1.Condition{
+			Type:    string(v1.MachineConfigNodeInternalReleaseImageDegraded),
+			Status:  metav1.ConditionFalse,
+			Reason:  "AllReleasesAvailable",
+			Message: "All the release images are available",
+		})
+	} else {
+		meta.SetStatusCondition(&mcnUpdated.Status.Conditions, metav1.Condition{
+			Type:    string(v1.MachineConfigNodeInternalReleaseImageDegraded),
+			Status:  metav1.ConditionTrue,
+			Reason:  "ReleaseImageNotFound",
+			Message: "One or more release bundle are not available",
+		})
+	}
 
-	return i.updateMCNStatus(mcnUpdated)
+	return i.updateMCNStatus(mcn, mcnUpdated)
 }
 
 func (i *Manager) setMachineConfigNodeAsDegraded(mcn *v1.MachineConfigNode, registryErr error) error {
 	reason := "RegistryUnreachable"
 
 	mcnUpdated := mcn.DeepCopy()
-	// TODO: Update mcnUpdated.Status.Conditions with InternalReleaseImageDegraded
+	meta.SetStatusCondition(&mcnUpdated.Status.Conditions, metav1.Condition{
+		Type:    string(v1.MachineConfigNodeInternalReleaseImageDegraded),
+		Status:  metav1.ConditionTrue,
+		Reason:  reason,
+		Message: registryErr.Error(),
+	})
+
 	// Mark all the current releases as Degraded and not Available.
 	for n := range mcnUpdated.Status.InternalReleaseImage.Releases {
 		r := &mcnUpdated.Status.InternalReleaseImage.Releases[n]
@@ -345,7 +353,7 @@ func (i *Manager) setMachineConfigNodeAsDegraded(mcn *v1.MachineConfigNode, regi
 		})
 	}
 
-	return i.updateMCNStatus(mcnUpdated)
+	return i.updateMCNStatus(mcn, mcnUpdated)
 }
 
 func (i *Manager) syncInternalReleaseImage(key string) error {
@@ -361,12 +369,6 @@ func (i *Manager) syncInternalReleaseImage(key string) error {
 		return err
 	}
 
-	// Get the current node.
-	node, err := i.getNodeWithRetry(i.nodeName)
-	if err != nil {
-		return fmt.Errorf("failed to get node %q: %v", i.nodeName, err)
-	}
-
 	// Get the MachineConfigNode for the current node.
 	mcn, err := i.mcfgClient.MachineconfigurationV1().MachineConfigNodes().Get(context.TODO(), i.nodeName, metav1.GetOptions{})
 	if err != nil {
@@ -377,9 +379,8 @@ func (i *Manager) syncInternalReleaseImage(key string) error {
 		return err
 	}
 
-	iriReg := newIRIRegistry(node)
+	iriReg := newIRIRegistry(i.nodeName, i.registryClient)
 	if registryErr := iriReg.CheckLocalRegistry(); registryErr != nil {
-		klog.Errorf("No available local InternalReleaseImage registry found for node %s. Error: %v", i.nodeName, registryErr)
 		err = i.setMachineConfigNodeAsDegraded(mcn, registryErr)
 	} else {
 		err = i.refreshMachineConfigNodeStatus(mcn, iriReg)
@@ -389,6 +390,6 @@ func (i *Manager) syncInternalReleaseImage(key string) error {
 		return err
 	}
 
-	i.queue.AddAfter(key, syncRetryInterval)
+	i.queue.AddAfter(common.InternalReleaseImageInstanceName, syncRetryInterval)
 	return nil
 }
