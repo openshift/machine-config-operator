@@ -153,3 +153,14 @@ func SkipIfNoNodeWithArchitectures(oc *exutil.CLI, architectures ...Architecture
 	}
 	g.Skip(fmt.Sprintf("Skip for no nodes with requested architectures"))
 }
+
+// SkipArchitectures skip the test if the cluster is one of the given architectures
+func SkipArchitectures(oc *exutil.CLI, architectures ...Architecture) (architecture Architecture) {
+	architecture = ClusterArchitecture(oc)
+	for _, arch := range architectures {
+		if arch == architecture {
+			g.Skip(fmt.Sprintf("Skip for cluster architecture: %s", arch.String()))
+		}
+	}
+	return
+}

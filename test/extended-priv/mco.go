@@ -122,3 +122,33 @@ func verifyRenderedMcs(oc *exutil.CLI, renderSuffix string, allRes []ResourceInt
 
 	return allMcs
 }
+
+func createMcAndVerifyMCValue(oc *exutil.CLI, stepText, mcName string, node *Node, textToVerify TextToVerify, cmd ...string) {
+	exutil.By(fmt.Sprintf("Create new MC to add the %s", stepText))
+	mcTemplate := mcName + ".yaml"
+	mc := NewMachineConfig(oc.AsAdmin(), mcName, node.GetPrimaryPoolOrFail().GetName()).SetMCOTemplate(mcTemplate)
+	defer mc.DeleteWithWait()
+	// TODO: When we extract the "mcp.waitForComplete" from the "create" method, we need to take into account that if
+	// we are configuring a rt-kernel we need to wait longer. Same for extensions, we need to wait longer if an extension is configured.
+	mc.create()
+	logger.Infof("Machine config is created successfully!")
+
+	exutil.By(fmt.Sprintf("Check %s in the created machine config", stepText))
+	mcOut, err := getMachineConfigDetails(oc, mc.name)
+	o.Expect(err).NotTo(o.HaveOccurred())
+	o.Expect(mcOut).Should(o.MatchRegexp(textToVerify.textToVerifyForMC))
+	logger.Infof("%s is verified in the created machine config!", stepText)
+
+	exutil.By(fmt.Sprintf("Check %s in the machine config daemon", stepText))
+	var podOut string
+	if textToVerify.needBash { // nolint:all
+		podOut, err = exutil.RemoteShPodWithBash(oc, MachineConfigNamespace, node.GetMachineConfigDaemon(), cmd...)
+	} else if textToVerify.needChroot {
+		podOut, err = exutil.RemoteShPodWithChroot(oc, MachineConfigNamespace, node.GetMachineConfigDaemon(), cmd...)
+	} else {
+		podOut, err = exutil.RemoteShPod(oc, MachineConfigNamespace, node.GetMachineConfigDaemon(), cmd...)
+	}
+	o.Expect(err).NotTo(o.HaveOccurred())
+	o.Expect(podOut).Should(o.MatchRegexp(textToVerify.textToVerifyForNode))
+	logger.Infof("%s is verified in the machine config daemon!", stepText)
+}
