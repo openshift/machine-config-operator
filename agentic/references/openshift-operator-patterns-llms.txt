@@ -1,0 +1,209 @@
+# OpenShift Operator Patterns for machine-config-operator
+
+## ClusterOperator Status (CORE OPERATORS ONLY)
+
+**When**: Core platform operators managed by cluster-version-operator (CVO)
+**NOT for**: Ecosystem operators, OLM-managed operators
+**Location in this repo**: pkg/operator/status.go
+
+**Pattern**:
+- Create/update ClusterOperator CR (config.openshift.io/v1)
+- Report conditions: Available, Progressing, Degraded, Upgradeable
+- Set relatedObjects to list managed resources
+- Update versions to reflect current/target versions
+
+**MCO Implementation**:
+```go
+// pkg/operator/status.go
+func (optr *Operator) syncVersion(co *configv1.ClusterOperator) {
+    co.Status.Versions = []configv1.OperandVersion{
+        {Name: "operator", Version: version.String()},
+    }
+    co.Status.Conditions = optr.getOperatorConditions()
+}
+```
+
+**Conditions used by MCO**:
+- Available: All sub-components (controller, server, daemons) running
+- Progressing: Pool updates in progress
+- Degraded: Update failures, daemon degraded states
+- Upgradeable: Safe to upgrade (no critical operations in progress)
+
+**Reference**: library-go/pkg/operator/status
+
+---
+
+## Leader Election (MULTI-REPLICA COMPONENTS)
+
+**When**: Components that may have multiple replicas but need single active leader
+**Location in this repo**: pkg/operator/leaderelection.go, pkg/controller/controller_context.go
+
+**Pattern**:
+- Use library-go/pkg/operator/leaderelection
+- Acquire lock before starting reconciliation
+- Release lock on shutdown
+- Standby replicas wait for leader failure
+
+**MCO Implementation**:
+- Operator: Uses leader election (single active operator pod)
+- Controller: Uses leader election (single active controller)
+- Daemon: No leader election (each node runs own daemon)
+- Server: No leader election (stateless, all replicas active)
+
+**Reference**: library-go/pkg/operator/leaderelection
+
+---
+
+## Event Recording
+
+**When**: Recording events for user visibility and debugging
+**Location in this repo**: pkg/operator/sync.go, pkg/daemon/writer.go
+
+**Pattern**:
+- Use library-go/pkg/operator/events for structured event recording
+- Record events on relevant objects (Node, MachineConfigPool, ClusterOperator)
+- Use Warning for errors/degraded states, Normal for info
+- Include actionable information in event messages
+
+**MCO Implementation**:
+```go
+// pkg/daemon/writer.go
+recorder.Eventf(node, corev1.EventTypeNormal, "Updating", "Starting update to %s", targetConfig)
+```
+
+**Reference**: library-go/pkg/operator/events
+
+---
+
+## Resource Apply Pattern
+
+**When**: Creating/updating resources with ownership and conflict resolution
+**Location in this repo**: pkg/operator/sync.go
+
+**Pattern**:
+- Use library-go/pkg/operator/resource/resourceapply
+- Apply resources with ownership and labels
+- Handle conflicts gracefully
+- Record events on changes
+
+**MCO Implementation**:
+```go
+// pkg/operator/sync.go
+resourceapply.ApplyDaemonSet(...)
+resourceapply.ApplyDeployment(...)
+```
+
+**Reference**: library-go/pkg/operator/resource/resourceapply
+
+---
+
+## Informer-Based Reconciliation
+
+**When**: Watching Kubernetes resources for changes
+**Location in this repo**: pkg/controller/controller_context.go, pkg/daemon/daemon.go
+
+**Pattern**:
+- Use SharedInformerFactory for efficient caching
+- Register event handlers for Add/Update/Delete
+- Queue items for reconciliation (workqueue pattern)
+- Use lister instead of direct API calls
+
+**MCO Implementation**:
+- Controller watches MachineConfigPool, MachineConfig, ControllerConfig
+- Daemon watches MachineConfig, MachineConfigPool for its node
+
+**Reference**: client-go informers, controller-runtime
+
+---
+
+## DaemonSet Pattern for Node-Level Agents
+
+**When**: Need agent running on every node
+**Location in this repo**: manifests/machineconfigdaemon.yaml, pkg/daemon/
+
+**Pattern**:
+- DaemonSet deployed to all or labeled nodes
+- Runs privileged with host namespace access
+- Updates node labels/annotations for status
+- Tolerates all taints (for control plane nodes)
+
+**MCO Implementation**:
+- MachineConfigDaemon: Runs on all nodes, applies configuration
+- Uses node annotations for state tracking:
+  - machineconfiguration.openshift.io/currentConfig
+  - machineconfiguration.openshift.io/desiredConfig
+  - machineconfiguration.openshift.io/state
+
+**Reference**: Kubernetes DaemonSet documentation
+
+---
+
+## Config Rendering Pattern
+
+**When**: Merging multiple config sources into single rendered config
+**Location in this repo**: pkg/controller/template/render.go
+
+**Pattern**:
+- Select configs matching pool's machineConfigSelector
+- Sort by name (00-xx, 01-xx, 99-xx for precedence)
+- Merge using defined merge strategy
+- Generate rendered-<pool>-<hash> config
+- Hash includes all content for change detection
+
+**MCO Implementation**:
+```go
+// pkg/controller/template/render.go
+func GenerateRenderedMachineConfig(configs []*mcfgv1.MachineConfig) (*mcfgv1.MachineConfig, error)
+```
+
+**Reference**: MCO-specific pattern (docs/MachineConfig.md)
+
+---
+
+## Rollout Control Pattern
+
+**When**: Managing gradual rollout of changes to nodes
+**Location in this repo**: pkg/daemon/daemon.go, pkg/controller/node/node_controller.go
+
+**Pattern**:
+- Respect maxUnavailable constraint
+- Drain node before disruptive changes
+- Update one node at a time (or limited by maxUnavailable)
+- Verify health before proceeding to next node
+
+**MCO Implementation**:
+- Controller counts nodes in Updating state
+- Blocks new updates if maxUnavailable reached
+- Daemon updates node annotation to signal progress
+- Pool status reflects update progress
+
+**Reference**: Kubernetes RollingUpdate strategy
+
+---
+
+## Degraded State Handling
+
+**When**: Detecting and reporting component failures
+**Location in this repo**: pkg/operator/status.go, pkg/daemon/update.go
+
+**Pattern**:
+- Detect failure conditions (update failures, validation errors)
+- Set Degraded condition with reason and message
+- Continue operating in degraded mode if possible
+- Provide remediation guidance in condition message
+
+**MCO Implementation**:
+- Daemon sets state=Degraded on update failure
+- Operator sets ClusterOperator Degraded=true
+- Pool shows Degraded condition
+- Events recorded for troubleshooting
+
+**Reference**: library-go/pkg/operator/status
+
+---
+
+## Related Documentation
+
+- library-go documentation: https://github.com/openshift/library-go
+- OpenShift operator development guide: https://github.com/openshift/enhancements/tree/master/dev-guide
+- Kubernetes controller patterns: https://kubernetes.io/docs/concepts/architecture/controller/
