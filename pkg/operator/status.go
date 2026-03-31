@@ -692,8 +692,14 @@ func (optr *Operator) checkBootImageSkewUpgradeableGuard() (bool, string, error)
 	}
 
 	if skewLimitExceeded {
-		// TODO: Update error message; tracked in https://issues.redhat.com/browse/MCO-2034
-		return true, fmt.Sprintf("Upgrades have been disabled because %s. To enable upgrades, please update your boot images following the documentation at [TODO: insert link], or disable boot image skew enforcement at [TODO: insert link]", skewLimitExceededMessage), nil
+		docsVersion := "latest"
+		if ocpVersion := optr.getCurrentOCPVersionFromClusterVersion(); ocpVersion != "" {
+			if parts := strings.SplitN(ocpVersion, ".", 3); len(parts) >= 2 {
+				docsVersion = parts[0] + "." + parts[1]
+			}
+		}
+		docsURL := fmt.Sprintf("https://docs.redhat.com/en/documentation/openshift_container_platform/%s/html/machine_configuration/mco-update-boot-skew-mgmt", docsVersion)
+		return true, fmt.Sprintf("Upgrades have been disabled because %s. To enable upgrades, please update your boot images or disable boot image skew enforcement by following the documentation at %s", skewLimitExceededMessage, docsURL), nil
 	}
 
 	return false, "", nil
