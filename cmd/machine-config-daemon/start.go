@@ -240,16 +240,14 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			startOpts.nodeName,
 			ctrlctx.ClientBuilder.MachineConfigClientOrDie(componentName),
 			ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().InternalReleaseImages(),
-			nodeScopedInformer,
 		)
-		go internalReleaseImageManager.Run(2, stopCh)
+		go internalReleaseImageManager.Run(1, stopCh)
 	}
 
 	ctrlctx.KubeInformerFactory.Start(stopCh)
 	ctrlctx.KubeNamespacedInformerFactory.Start(stopCh)
 	ctrlctx.InformerFactory.Start(stopCh)
 	ctrlctx.OperatorInformerFactory.Start(stopCh)
-	ctrlctx.ConfigInformerFactory.Start(stopCh)
 	nodeScopedInformerStartFunc(ctrlctx.Stop)
 	close(ctrlctx.InformersStarted)
 

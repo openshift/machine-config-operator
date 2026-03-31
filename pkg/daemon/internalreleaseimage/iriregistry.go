@@ -7,9 +7,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
-	"time"
 
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 )
 
@@ -22,7 +20,7 @@ const (
 )
 
 type iriRegistry struct {
-	node             *corev1.Node
+	nodeName         string
 	registryHostPort string
 	client           *http.Client
 }
@@ -32,12 +30,20 @@ type registryTagsList struct {
 	Tags []string `json:"tags"`
 }
 
-func newIRIRegistry(node *corev1.Node) *iriRegistry {
+type registryErrorCode struct {
+	Code    string      `json:"code"`
+	Message string      `json:"message"`
+	Detail  interface{} `json:"detail"`
+}
+
+type registryErrorResponse struct {
+	Errors []registryErrorCode `json:"errors"`
+}
+
+func newIRIRegistry(nodeName string, client *http.Client) *iriRegistry {
 	return &iriRegistry{
-		node: node,
-		client: &http.Client{
-			Timeout: 3 * time.Second,
-		},
+		nodeName: nodeName,
+		client:   client,
 		// The IRI registry runs on the current node.
 		registryHostPort: fmt.Sprintf("%s:%d", iriRegistryHost, iriRegistryPort),
 	}
@@ -57,26 +63,37 @@ func (r *iriRegistry) query(endpoint string, headers ...map[string]string) (*htt
 	}
 	resp, err := r.client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("registry query %s failed with error: %v", regURL, err)
 	}
+
+	if resp.StatusCode != http.StatusOK {
+		defer resp.Body.Close()
+		errMsg := fmt.Sprintf("registry query %s failed with code %d", regURL, resp.StatusCode)
+
+		// Check if additional error details are reported in the message body.
+		var errResp registryErrorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&errResp); err == nil {
+			if len(errResp.Errors) > 0 {
+				errMsg = fmt.Sprintf("%s. Message: %s. Details: %v", errMsg, errResp.Errors[0].Message, errResp.Errors[0].Detail)
+			}
+		}
+		return nil, fmt.Errorf("%s", errMsg)
+	}
+
 	return resp, nil
 }
 
 func (r *iriRegistry) CheckLocalRegistry() error {
-	klog.V(2).Infof("Checking local InternalReleaseImage registry status for node %s at %s", r.node.Name, r.registryHostPort)
+	klog.V(2).Infof("Checking local InternalReleaseImage registry status for node %s at %s", r.nodeName, r.registryHostPort)
 
 	resp, err := r.query("")
 	if err != nil {
+		klog.Errorf("No available local InternalReleaseImage registry found for node %s. Error: %v", r.nodeName, err)
 		return err
 	}
-	statusCode := resp.StatusCode
-	resp.Body.Close()
+	defer resp.Body.Close()
 
-	if statusCode != http.StatusOK {
-		return fmt.Errorf("Registry check for for node %s (%s) failed with status code %d", r.node.Name, r.registryHostPort, statusCode)
-	}
-
-	klog.V(2).Infof("The local InternalReleaseImage registry is available for node %s (%s)", r.node.Name, r.registryHostPort)
+	klog.V(2).Infof("The local InternalReleaseImage registry is available for node %s (%s)", r.nodeName, r.registryHostPort)
 	return nil
 }
 
@@ -104,16 +121,13 @@ func (r *iriRegistry) getRepositoryTags(repo string) (*registryTagsList, error) 
 	klog.V(2).Infof("Retrieving repository tags for %s", repo)
 	resp, err := r.query(endpoint)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error while retrieving repository tags for %s: %w", endpoint, err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("error while retrieving registry tags for %s. Status code: %d", repo, resp.StatusCode)
-	}
 	releaseTags, err := r.parseTagsList(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error while parsing repository tags for %s: %w", endpoint, err)
 	}
 	return releaseTags, nil
 }
@@ -123,7 +137,7 @@ func (r *iriRegistry) GetOCPBundlesTags() (*registryTagsList, error) {
 }
 
 func (r *iriRegistry) GetOCPBundleReleaseTag(_ string) (string, error) {
-	// Currently the IRI resource supports only one release bundle, and thus one OCP release. Since the release bundle
+	// Note: currently the IRI resource supports only one release bundle, and thus one OCP release. Since the release bundle
 	// image does not yet contain the necessary release metadata (see https://redhat.atlassian.net/browse/AGENT-1312),
 	// let's fetch directly the current release image.
 	ocpReleases, err := r.getRepositoryTags(ocpReleasesRepo)
@@ -154,18 +168,16 @@ func (r *iriRegistry) CheckImageAvailability(pullspec string) error {
 		return fmt.Errorf("pullspec %s not owned by the current registry", pullspec)
 	}
 
-	manifestsQuery := fmt.Sprintf("/%s/manifests/%s", repo, digest)
-	resp, err := r.query(manifestsQuery, map[string]string{
-		"Accept": "application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json",
-	})
+	endpoint := fmt.Sprintf("/%s/manifests/%s", repo, digest)
+	resp, err := r.query(endpoint, map[string]string{
+		"Accept": "application/vnd.oci.image.index.v1+json, " +
+			"application/vnd.oci.image.manifest.v1+json, " +
+			"application/vnd.docker.distribution.manifest.list.v2+json, " +
+			"application/vnd.docker.distribution.manifest.v2+json"})
 	if err != nil {
-		return err
+		return fmt.Errorf("error while checking image availability for %s: %w", endpoint, err)
 	}
-	statusCode := resp.StatusCode
-	resp.Body.Close()
+	defer resp.Body.Close()
 
-	if statusCode != http.StatusOK {
-		return fmt.Errorf("error while checking release availability: %w", err)
-	}
 	return nil
 }
