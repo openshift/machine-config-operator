@@ -292,44 +292,55 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 	}
 
 	klog.Infof("Certificate was synced from controllerconfig resourceVersion %s", controllerConfig.ObjectMeta.ResourceVersion)
-	if controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] == ctrlcommon.ServiceCARotateTrue && oldAnno != controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] && cmErr == nil && kubeConfigDiff && !allCertsThere && !dn.deferKubeletRestart {
+	if controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] == ctrlcommon.ServiceCARotateTrue && oldAnno != controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] && cmErr == nil && kubeConfigDiff && !allCertsThere {
 		if len(onDiskKC.Clusters[0].Cluster.CertificateAuthorityData) > 0 {
-			logSystem("restarting kubelet due to server-ca rotation")
-			if err := runCmdSync("systemctl", "stop", "kubelet"); err != nil {
-				return err
-			}
-			f, err := os.ReadFile("/var/lib/kubelet/kubeconfig")
-			if err != nil && os.IsNotExist(err) {
-				klog.Warningf("Failed to get kubeconfig file: %v", err)
-				return err
-			} else if err != nil {
-				return fmt.Errorf("unexpected error reading kubeconfig file, %v", err)
-			}
-			kubeletKC := clientcmdv1.Config{}
-			err = yaml.Unmarshal(f, &kubeletKC)
-			if err != nil {
-				return err
-			}
-			// set CA data to the one we just parsed above, the rest of the data should be preserved.
-			kubeletKC.Clusters[0].Cluster.CertificateAuthorityData = onDiskKC.Clusters[0].Cluster.CertificateAuthorityData
-			newData, err := yaml.Marshal(kubeletKC)
-			if err != nil {
-				return fmt.Errorf("could not marshal kubeconfig into bytes. Error: %v", err)
-			}
-			filesToWrite := make(map[string][]byte)
-			filesToWrite["/var/lib/kubelet/kubeconfig"] = newData
-			err = writeToDisk(filesToWrite)
-			if err != nil {
-				return err
+			// Restart kubelet only if deferKubeletRestart is false
+			if !dn.deferKubeletRestart {
+				logSystem("restarting kubelet due to server-ca rotation")
+				if err := runCmdSync("systemctl", "stop", "kubelet"); err != nil {
+					return err
+				}
+				f, err := os.ReadFile("/var/lib/kubelet/kubeconfig")
+				if err != nil && os.IsNotExist(err) {
+					klog.Warningf("Failed to get kubeconfig file: %v", err)
+					return err
+				} else if err != nil {
+					return fmt.Errorf("unexpected error reading kubeconfig file, %v", err)
+				}
+				kubeletKC := clientcmdv1.Config{}
+				err = yaml.Unmarshal(f, &kubeletKC)
+				if err != nil {
+					return err
+				}
+				// set CA data to the one we just parsed above, the rest of the data should be preserved.
+				kubeletKC.Clusters[0].Cluster.CertificateAuthorityData = onDiskKC.Clusters[0].Cluster.CertificateAuthorityData
+				newData, err := yaml.Marshal(kubeletKC)
+				if err != nil {
+					return fmt.Errorf("could not marshal kubeconfig into bytes. Error: %v", err)
+				}
+				filesToWrite := make(map[string][]byte)
+				filesToWrite["/var/lib/kubelet/kubeconfig"] = newData
+				err = writeToDisk(filesToWrite)
+				if err != nil {
+					return err
+				}
+
+				if err := runCmdSync("systemctl", "daemon-reload"); err != nil {
+					return err
+				}
+
+				if err := runCmdSync("systemctl", "start", "kubelet"); err != nil {
+					return err
+				}
 			}
 
-			if err := runCmdSync("systemctl", "daemon-reload"); err != nil {
-				return err
-			}
-
-			if err := runCmdSync("systemctl", "start", "kubelet"); err != nil {
-				return err
-			}
+			// Always exit MCD when kubeconfig changes, regardless of kubelet restart.
+			// The NodeWriter's Kubernetes client was initialized at startup with the old CA bundle,
+			// and it cannot be reloaded without restarting the pod. Since MCD runs as a DaemonSet,
+			// kubelet will automatically restart it.
+			logSystem("Exiting machine-config-daemon to reload certificates after rotation")
+			klog.Infof("Exiting machine-config-daemon to reload certificates after server CA rotation")
+			os.Exit(0)
 		}
 
 		klog.V(4).Infof("Finished syncing ControllerConfig %q (%v)", key, time.Since(startTime))
