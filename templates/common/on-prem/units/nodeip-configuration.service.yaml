@@ -7,7 +7,7 @@ contents: |
   # address picking logic is flawed and may end up selecting an address from a
   # different subnet or a deprecated address
   Wants=NetworkManager-wait-online.service
-  After=NetworkManager-wait-online.service firstboot-osupdate.target
+  After=NetworkManager-wait-online.service
   Before=kubelet-dependencies.target ovs-configuration.service
 
   [Service]
