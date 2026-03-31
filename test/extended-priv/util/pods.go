@@ -160,6 +160,16 @@ func RemoteShPod(oc *CLI, namespace, podName string, cmd ...string) (string, err
 	return remoteShPod(oc, namespace, podName, false, false, "", cmd...)
 }
 
+// RemoteShPodWithChroot creates a remote shell of the pod with chroot
+func RemoteShPodWithChroot(oc *CLI, namespace, podName string, cmd ...string) (string, error) {
+	return remoteShPod(oc, namespace, podName, false, true, "", cmd...)
+}
+
+// RemoteShPodWithBash creates a remote shell of the pod with bash
+func RemoteShPodWithBash(oc *CLI, namespace, podName string, cmd ...string) (string, error) {
+	return remoteShPod(oc, namespace, podName, true, false, "", cmd...)
+}
+
 // RemoteShContainer creates a remote shell of the given container inside the pod
 func RemoteShContainer(oc *CLI, namespace, podName, container string, cmd ...string) (string, error) {
 	return remoteShPod(oc, namespace, podName, false, false, container, cmd...)
