@@ -789,6 +789,12 @@ func generateTempFilePath(dir, pattern string) string {
 	return filepath.Join(dir, strings.ReplaceAll(pattern, "*", exutil.GetRandomString()))
 }
 
+func getDropinFileConfig(unitName string, enabled bool, fileName, fileContent string) string {
+	// Escape not valid characters in json from the file content
+	escapedContent := jsonEncode(fileContent)
+	return fmt.Sprintf(`{"name": "%s", "enabled": %t, "dropins": [{"name": "%s", "contents": %s}]}`, unitName, enabled, fileName, escapedContent)
+}
+
 func getSingleUnitConfig(unitName string, unitEnabled bool, unitContents string) string {
 	// Escape not valid characters in json from the file content
 	escapedContent := jsonEncode(unitContents)

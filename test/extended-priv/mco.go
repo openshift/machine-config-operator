@@ -2,11 +2,13 @@ package extended
 
 import (
 	"fmt"
+	"strings"
 
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
+	"github.com/tidwall/gjson"
 )
 
 func checkDegraded(mcp *MachineConfigPool, expectedMessage, expectedReason, degradedConditionType string, checkCODegraded bool, offset int) {
@@ -77,4 +79,46 @@ func skipTestIfRHELVersion(node *Node, operator, constraintVersion string) {
 	if CompareVersions(actualVersion, operator, constraintVersion) {
 		g.Skip(fmt.Sprintf("Test requires RHEL version NOT %s %s, but node has %s", operator, constraintVersion, actualVersion))
 	}
+}
+
+func verifyRenderedMcs(oc *exutil.CLI, renderSuffix string, allRes []ResourceInterface) []*Resource {
+	// TODO: Use MachineConfigList when MC code is refactored
+	allMcs, err := NewResourceList(oc.AsAdmin(), "mc").GetAll()
+	o.Expect(err).NotTo(o.HaveOccurred())
+	o.Expect(allMcs).NotTo(o.BeEmpty())
+
+	// cache all MCs owners to avoid too many oc binary executions while searching
+	mcOwners := make(map[*Resource]gjson.Result, len(allMcs))
+	for _, mc := range allMcs {
+		ownersJSON := mc.GetOrFail(`{.metadata.ownerReferences}`)
+		mcOwners[mc] = gjson.Parse(ownersJSON)
+	}
+
+	// Every resource should own one MC
+	for _, res := range allRes {
+		var ownedMc *Resource
+		for mc, owners := range mcOwners {
+			if owners.Exists() {
+				ownersArray := owners.Array()
+				for _, owner := range ownersArray {
+					if !(strings.EqualFold(owner.Get("kind").String(), res.GetKind()) && strings.EqualFold(owner.Get("name").String(), res.GetName())) {
+						continue
+					}
+					logger.Infof("Resource '%s' '%s' owns MC '%s'", res.GetKind(), res.GetName(), mc.GetName())
+					// Each resource can only own one MC
+					o.Expect(ownedMc).To(o.BeNil(), "Resource %s owns more than 1 MC: %s and %s", res.GetName(), mc.GetName(), ownedMc)
+					ownedMc = mc
+					break
+				}
+			} else {
+				logger.Infof("MC '%s' has no owner.", mc.name)
+			}
+
+		}
+		o.Expect(ownedMc).NotTo(o.BeNil(), fmt.Sprintf("Resource '%s' '%s' should have generated a MC but it has not. It owns no MC.", res.GetKind(), res.GetName()))
+		o.Expect(ownedMc.name).To(o.ContainSubstring(renderSuffix), "Mc '%s' is owned by '%s' '%s' but its name does not contain the expected substring '%s'",
+			ownedMc.GetName(), res.GetKind(), res.GetName(), renderSuffix)
+	}
+
+	return allMcs
 }
