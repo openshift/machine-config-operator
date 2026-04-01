@@ -48,7 +48,7 @@ func (cr ContainerRuntimeConfig) waitUntilSuccess(timeout string) {
 func (cr ContainerRuntimeConfig) waitUntilFailure(expectedMsg, timeout string) {
 	logger.Infof("wait for %s to report failure", cr.name)
 	o.EventuallyWithOffset(1, &cr, timeout, "2s").Should(o.SatisfyAll(
-		HaveConditionField("Failure", "status", "False"),
+		HaveConditionField("Failure", "status", "True"),
 		HaveConditionField("Failure", "message", o.ContainSubstring(expectedMsg)),
 	))
 }

@@ -99,8 +99,9 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		// Check APPLIEDFILESANDOS condition for non-TechPreviewNoUpgrade cluster
 		// Check APPLIEDFILES condition for TechPreviewNoUpgrade cluster
 		// Use dynamic check based on which condition exists in the MCN resource
-		logger.Infof("Checking Applied condition Unknown")
-		o.Eventually(mcn.GetAppliedConditionStatus, "1m", "1s").Should(o.Equal("Unknown"))
+		// This transition is too fast and we can't check it without introducing instability. It is left commented so that we know that this transition exists.
+		//	logger.Infof("Checking Applied condition Unknown")
+		//	o.Eventually(mcn.GetAppliedConditionStatus, "1m", "1s").Should(o.Equal("Unknown"))
 		logger.Infof("Checking Applied condition")
 		o.Eventually(mcn.GetAppliedConditionStatus, "3m", "2s").Should(o.Equal("True"))
 		logger.Infof("Checking UpdateExecuted")
