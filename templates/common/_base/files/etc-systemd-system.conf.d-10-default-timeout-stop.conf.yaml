@@ -1,6 +1,0 @@
-mode: 0644
-path: "/etc/systemd/system.conf.d/10-default-timeout-stop.conf"
-contents:
-  inline: |
-    [Manager]
-    DefaultTimeoutStopSec=200
