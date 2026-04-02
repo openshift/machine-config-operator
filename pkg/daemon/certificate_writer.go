@@ -282,6 +282,7 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 	oldAnno := dn.node.Annotations[constants.ControllerConfigSyncServerCA]
 
 	klog.Infof("Certificate was synced from controllerconfig resourceVersion %s", controllerConfig.ObjectMeta.ResourceVersion)
+	rotationInProgress := false
 	if controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] == ctrlcommon.ServiceCARotateTrue && oldAnno != controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] && cmErr == nil && kubeConfigDiff && !allCertsThere {
 		if len(onDiskKC.Clusters[0].Cluster.CertificateAuthorityData) > 0 {
 			// Always update kubelet's kubeconfig with new CA bundle
@@ -324,38 +325,49 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 				if err := runCmdSync("systemctl", "start", "kubelet"); err != nil {
 					return err
 				}
+
+				// Update node annotation only after successfully restarting kubelet.
+				// This ensures we retry if MCD restarts before completing the rotation.
+				annos := map[string]string{
+					constants.ControllerConfigResourceVersionKey: controllerConfig.ObjectMeta.ResourceVersion,
+				}
+				if dn.node.Annotations[constants.ControllerConfigSyncServerCA] != controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] {
+					annos[constants.ControllerConfigSyncServerCA] = controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation]
+				}
+				if _, err := dn.nodeWriter.SetAnnotations(annos); err != nil {
+					return fmt.Errorf("failed to set annotations on node: %w", err)
+				}
+
+				// Exit MCD after restarting kubelet to reload MCD's own certificates.
+				// The NodeWriter's Kubernetes client was initialized at startup with the old CA bundle,
+				// and it cannot be reloaded without restarting the pod. Since MCD runs as a DaemonSet,
+				// kubelet will automatically restart it.
+				logSystem("Exiting machine-config-daemon to reload certificates after rotation")
+				klog.Infof("Exiting machine-config-daemon to reload certificates after server CA rotation")
+				os.Exit(0)
 			} else {
-				logSystem("Deferring kubelet restart - kubeconfig updated but kubelet will pick up changes on next restart")
+				// Deferred restart case: kubeconfig is updated but kubelet restart is deferred.
+				// DO NOT exit MCD or update annotation yet. Keep rotation in progress to allow retry.
+				// The deferred restart will be triggered by:
+				// - Next sync when conditions change (e.g., all certs present, or new rotation)
+				// - stopCh handler (pkg/daemon/daemon.go) when MCD receives shutdown signal
+				// - x509 error handler when kubelet encounters cert errors
+				// This preserves the in-memory deferKubeletRestart state so the restart can happen later.
+				rotationInProgress = true
+				logSystem("Deferring kubelet restart - kubeconfig updated but kubelet will pick up changes on next restart or when triggered by x509 errors")
+				klog.Infof("Kubelet kubeconfig updated with new CA bundle, restart deferred for localhost signers")
 			}
-
-			// Update node annotation only after successfully handling kubelet kubeconfig.
-			// This ensures we retry if MCD restarts before completing the rotation.
-			annos := map[string]string{
-				constants.ControllerConfigResourceVersionKey: controllerConfig.ObjectMeta.ResourceVersion,
-			}
-			if dn.node.Annotations[constants.ControllerConfigSyncServerCA] != controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] {
-				annos[constants.ControllerConfigSyncServerCA] = controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation]
-			}
-			if _, err := dn.nodeWriter.SetAnnotations(annos); err != nil {
-				return fmt.Errorf("failed to set annotations on node: %w", err)
-			}
-
-			// Always exit MCD when kubeconfig changes, regardless of kubelet restart.
-			// The NodeWriter's Kubernetes client was initialized at startup with the old CA bundle,
-			// and it cannot be reloaded without restarting the pod. Since MCD runs as a DaemonSet,
-			// kubelet will automatically restart it.
-			logSystem("Exiting machine-config-daemon to reload certificates after rotation")
-			klog.Infof("Exiting machine-config-daemon to reload certificates after server CA rotation")
-			os.Exit(0)
 		}
 	}
 
-	// Update annotation for non-rotation syncs
-	annos := map[string]string{
-		constants.ControllerConfigResourceVersionKey: controllerConfig.ObjectMeta.ResourceVersion,
-	}
-	if _, err := dn.nodeWriter.SetAnnotations(annos); err != nil {
-		return fmt.Errorf("failed to set annotations on node: %w", err)
+	// Only update annotation if not in deferred rotation state
+	if !rotationInProgress {
+		annos := map[string]string{
+			constants.ControllerConfigResourceVersionKey: controllerConfig.ObjectMeta.ResourceVersion,
+		}
+		if _, err := dn.nodeWriter.SetAnnotations(annos); err != nil {
+			return fmt.Errorf("failed to set annotations on node: %w", err)
+		}
 	}
 
 	klog.V(4).Infof("Finished syncing ControllerConfig %q (%v)", key, time.Since(startTime))
