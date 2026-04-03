@@ -134,6 +134,55 @@ var (
 					},
 				},
 			},
+			{
+				Path: constants.IRIRegistryConfigPath,
+				Actions: []opv1.NodeDisruptionPolicyStatusAction{
+					{
+						Type: opv1.RestartStatusAction,
+						Restart: &opv1.RestartService{
+							ServiceName: constants.IRIRegistryServiceName,
+						},
+					},
+				},
+			},
+			{
+				Path: constants.IRILoadImageScriptPath,
+				Actions: []opv1.NodeDisruptionPolicyStatusAction{
+					{
+						Type: opv1.RestartStatusAction,
+						Restart: &opv1.RestartService{
+							ServiceName: constants.IRIRegistryServiceName,
+						},
+					},
+				},
+			},
+			{
+				Path: constants.IRIRootCAPath,
+				Actions: []opv1.NodeDisruptionPolicyStatusAction{
+					{
+						Type: opv1.RestartStatusAction,
+						Restart: &opv1.RestartService{
+							ServiceName: constants.UpdateCATrustServiceName,
+						},
+					},
+				},
+			},
+		},
+		Units: []opv1.NodeDisruptionPolicyStatusUnit{
+			{
+				Name: constants.IRIRegistryServiceName,
+				Actions: []opv1.NodeDisruptionPolicyStatusAction{
+					{
+						Type: opv1.DaemonReloadStatusAction,
+					},
+					{
+						Type: opv1.RestartStatusAction,
+						Restart: &opv1.RestartService{
+							ServiceName: constants.IRIRegistryServiceName,
+						},
+					},
+				},
+			},
 		},
 		SSHKey: opv1.NodeDisruptionPolicyStatusSSHKey{
 			Actions: []opv1.NodeDisruptionPolicyStatusAction{
