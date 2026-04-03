@@ -1786,8 +1786,6 @@ func (dn *Daemon) getStateAndConfigs() (*stateAndConfigs, error) {
 		klog.Infof("Desired image: %s", desiredImage)
 	}
 
-	klog.Infof("state: %s", state)
-
 	var degradedReason string
 	if state == constants.MachineConfigDaemonStateDegraded {
 		degradedReason, err = getNodeAnnotation(dn.node, constants.MachineConfigDaemonReasonAnnotationKey)
@@ -2386,6 +2384,9 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, bool, erro
 		if err := dn.nodeWriter.SetDone(state); err != nil {
 			return missingODC, true, fmt.Errorf("error setting node's state to Done: %w", err)
 		}
+
+		// Log state after node has been successfully marked as Done
+		klog.Infof("state: %s", state.state)
 
 		// If we're degraded here, it means we got an error likely on startup and we retried.
 		// If that's the case, clear it out.
