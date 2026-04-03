@@ -68,7 +68,7 @@ func TestMergeIRIAuthIntoPullSecret(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := MergeIRIAuthIntoPullSecret([]byte(tt.pullSecret), tt.password, tt.baseDomain)
+			result, changed, err := MergeIRIAuthIntoPullSecret([]byte(tt.pullSecret), tt.password, tt.baseDomain)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -77,9 +77,11 @@ func TestMergeIRIAuthIntoPullSecret(t *testing.T) {
 			assert.NoError(t, err)
 
 			if !tt.expectChanged {
+				assert.False(t, changed, "pull secret should not be marked changed")
 				assert.Equal(t, tt.pullSecret, string(result), "pull secret should not change")
 				return
 			}
+			assert.True(t, changed, "pull secret should be marked changed")
 
 			// Verify the IRI auth entry was added
 			var dockerConfig map[string]interface{}

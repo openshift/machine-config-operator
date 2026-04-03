@@ -21,6 +21,14 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/version"
 )
 
+const (
+	// IRIRegistryPort is the port on which the IRI registry listens on master nodes.
+	IRIRegistryPort = 22625
+
+	// IRIRegistryUsername is the fixed username used for IRI registry htpasswd authentication.
+	IRIRegistryUsername = "openshift"
+)
+
 var (
 	//go:embed templates/*
 	templatesFS embed.FS
@@ -40,7 +48,7 @@ type Renderer struct {
 	role          string
 	iri           *mcfgv1alpha1.InternalReleaseImage
 	iriSecret     *corev1.Secret
-	iriAuthSecret *corev1.Secret // may be nil
+	iriAuthSecret *corev1.Secret
 	cconfig       *mcfgv1.ControllerConfig
 }
 
@@ -118,12 +126,7 @@ func (r *Renderer) newRenderContext() (*renderContext, error) {
 	if err != nil {
 		return nil, err
 	}
-	iriHtpasswd := ""
-	if r.iriAuthSecret != nil {
-		if raw, found := r.iriAuthSecret.Data["htpasswd"]; found {
-			iriHtpasswd = string(raw)
-		}
-	}
+	iriHtpasswd := string(r.iriAuthSecret.Data["htpasswd"])
 
 	return &renderContext{
 		DockerRegistryImage: r.cconfig.Spec.Images[templatectrl.DockerRegistryKey],

@@ -271,7 +271,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	if fgHandler != nil && fgHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
 		if iri != nil && iriAuthSecret != nil {
 			password := string(iriAuthSecret.Data["password"])
-			merged, mergeErr := internalreleaseimage.MergeIRIAuthIntoPullSecret(pullSecretBytes, password, cconfig.Spec.DNS.Spec.BaseDomain)
+			merged, _, mergeErr := internalreleaseimage.MergeIRIAuthIntoPullSecret(pullSecretBytes, password, cconfig.Spec.DNS.Spec.BaseDomain)
 			if mergeErr != nil {
 				return fmt.Errorf("failed to merge IRI auth into pull secret during bootstrap: %w", mergeErr)
 			}
