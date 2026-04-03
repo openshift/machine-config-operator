@@ -9,38 +9,40 @@ import (
 
 // MergeIRIAuthIntoPullSecret merges IRI registry authentication credentials
 // into a dockerconfigjson pull secret. It adds an auth entry for the IRI
-// registry host (api-int.<baseDomain>:22625) so that kubelet can pull from it.
+// registry host (api-int.<baseDomain>:<IRIRegistryPort>) so that kubelet can
+// pull from it. Returns the merged bytes, a boolean indicating whether the
+// pull secret was changed, and any error.
 //
 // This must be called during both bootstrap and in-cluster rendering to ensure
 // the pull secret content is consistent, avoiding a rendered MachineConfig
 // hash mismatch between bootstrap and in-cluster.
-func MergeIRIAuthIntoPullSecret(pullSecretRaw []byte, password, baseDomain string) ([]byte, error) {
+func MergeIRIAuthIntoPullSecret(pullSecretRaw []byte, password, baseDomain string) ([]byte, bool, error) {
 	if password == "" {
-		return pullSecretRaw, nil
+		return pullSecretRaw, false, nil
 	}
 
 	if strings.TrimSpace(baseDomain) == "" {
-		return nil, fmt.Errorf("baseDomain must not be empty")
+		return nil, false, fmt.Errorf("baseDomain must not be empty")
 	}
 
-	iriRegistryHost := fmt.Sprintf("api-int.%s:22625", baseDomain)
+	iriRegistryHost := fmt.Sprintf("api-int.%s:%d", baseDomain, IRIRegistryPort)
 
 	var dockerConfig map[string]interface{}
 	if err := json.Unmarshal(pullSecretRaw, &dockerConfig); err != nil {
-		return nil, fmt.Errorf("could not parse pull secret: %w", err)
+		return nil, false, fmt.Errorf("could not parse pull secret: %w", err)
 	}
 
 	auths, ok := dockerConfig["auths"].(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("pull secret missing 'auths' field")
+		return nil, false, fmt.Errorf("pull secret missing 'auths' field")
 	}
 
-	authValue := base64.StdEncoding.EncodeToString([]byte("openshift:" + password))
+	authValue := base64.StdEncoding.EncodeToString([]byte(IRIRegistryUsername + ":" + password))
 
-	// Check if IRI entry already exists and is current
+	// Check if IRI entry already exists and is current — no update needed.
 	if existing, ok := auths[iriRegistryHost].(map[string]interface{}); ok {
 		if existing["auth"] == authValue {
-			return pullSecretRaw, nil
+			return pullSecretRaw, false, nil
 		}
 	}
 
@@ -50,8 +52,8 @@ func MergeIRIAuthIntoPullSecret(pullSecretRaw []byte, password, baseDomain strin
 
 	mergedBytes, err := json.Marshal(dockerConfig)
 	if err != nil {
-		return nil, fmt.Errorf("could not marshal merged pull secret: %w", err)
+		return nil, false, fmt.Errorf("could not marshal merged pull secret: %w", err)
 	}
 
-	return mergedBytes, nil
+	return mergedBytes, true, nil
 }

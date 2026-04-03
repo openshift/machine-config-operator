@@ -1,7 +1,6 @@
 package internalreleaseimage
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"reflect"
@@ -542,13 +541,12 @@ func (ctrl *Controller) mergeIRIAuthIntoPullSecret(cconfig *mcfgv1.ControllerCon
 		return fmt.Errorf("could not get pull-secret: %w", err)
 	}
 
-	mergedBytes, err := MergeIRIAuthIntoPullSecret(pullSecret.Data[corev1.DockerConfigJsonKey], password, baseDomain)
+	mergedBytes, changed, err := MergeIRIAuthIntoPullSecret(pullSecret.Data[corev1.DockerConfigJsonKey], password, baseDomain)
 	if err != nil {
 		return err
 	}
 
-	// No change needed
-	if bytes.Equal(mergedBytes, pullSecret.Data[corev1.DockerConfigJsonKey]) {
+	if !changed {
 		return nil
 	}
 
