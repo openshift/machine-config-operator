@@ -49,17 +49,19 @@ type Renderer struct {
 	iri           *mcfgv1alpha1.InternalReleaseImage
 	iriSecret     *corev1.Secret
 	iriAuthSecret *corev1.Secret
+	pullSecret    []byte
 	cconfig       *mcfgv1.ControllerConfig
 }
 
 // NewRendererByRole creates a new Renderer instance for generating
 // the machine config for the given role.
-func NewRendererByRole(role string, iri *mcfgv1alpha1.InternalReleaseImage, iriSecret, iriAuthSecret *corev1.Secret, cconfig *mcfgv1.ControllerConfig) *Renderer {
+func NewRendererByRole(role string, iri *mcfgv1alpha1.InternalReleaseImage, iriSecret, iriAuthSecret *corev1.Secret, pullSecret []byte, cconfig *mcfgv1.ControllerConfig) *Renderer {
 	return &Renderer{
 		role:          role,
 		iri:           iri,
 		iriSecret:     iriSecret,
 		iriAuthSecret: iriAuthSecret,
+		pullSecret:    pullSecret,
 		cconfig:       cconfig,
 	}
 }
@@ -114,6 +116,7 @@ type renderContext struct {
 	IriTLSCert          string
 	RootCA              string
 	IriHtpasswd         string
+	PullSecret          string
 }
 
 // newRenderContext creates a new renderContext instance.
@@ -128,12 +131,23 @@ func (r *Renderer) newRenderContext() (*renderContext, error) {
 	}
 	iriHtpasswd := string(r.iriAuthSecret.Data["htpasswd"])
 
+	// Merge IRI registry credentials into the pull secret so that kubelet
+	// and CRI-O on all nodes can authenticate to the IRI registry without
+	// writing to the user-controlled global pull secret.
+	password := string(r.iriAuthSecret.Data["password"])
+	baseDomain := r.cconfig.Spec.DNS.Spec.BaseDomain
+	mergedPullSecret, _, err := MergeIRIAuthIntoPullSecret(r.pullSecret, password, baseDomain)
+	if err != nil {
+		return nil, fmt.Errorf("failed to merge IRI auth into pull secret: %w", err)
+	}
+
 	return &renderContext{
 		DockerRegistryImage: r.cconfig.Spec.Images[templatectrl.DockerRegistryKey],
 		IriTLSKey:           iriTLSKey,
 		IriTLSCert:          iriTLSCert,
 		RootCA:              string(r.cconfig.Spec.RootCAData),
 		IriHtpasswd:         iriHtpasswd,
+		PullSecret:          string(mergedPullSecret),
 	}, nil
 }
 

@@ -264,22 +264,6 @@ func (b *Bootstrap) Run(destDir string) error {
 
 	pullSecretBytes := pullSecret.Data[corev1.DockerConfigJsonKey]
 
-	// If IRI auth is enabled, merge the IRI registry credentials into the pull
-	// secret before rendering template MCs. This ensures the bootstrap-rendered
-	// MCs use the same pull secret content as the in-cluster IRI controller
-	// will produce, avoiding a rendered MachineConfig hash mismatch.
-	if fgHandler != nil && fgHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
-		if iri != nil && iriAuthSecret != nil {
-			password := string(iriAuthSecret.Data["password"])
-			merged, _, mergeErr := internalreleaseimage.MergeIRIAuthIntoPullSecret(pullSecretBytes, password, cconfig.Spec.DNS.Spec.BaseDomain)
-			if mergeErr != nil {
-				return fmt.Errorf("failed to merge IRI auth into pull secret during bootstrap: %w", mergeErr)
-			}
-			pullSecretBytes = merged
-			klog.Infof("Merged IRI registry auth into pull secret for bootstrap rendering")
-		}
-	}
-
 	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, pullSecretBytes, apiServer)
 	if err != nil {
 		return err
@@ -342,7 +326,7 @@ func (b *Bootstrap) Run(destDir string) error {
 
 	if fgHandler != nil && fgHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
 		if iri != nil {
-			iriConfigs, err := internalreleaseimage.RunInternalReleaseImageBootstrap(iri, iriTLSCert, iriAuthSecret, cconfig)
+			iriConfigs, err := internalreleaseimage.RunInternalReleaseImageBootstrap(iri, iriTLSCert, iriAuthSecret, pullSecretBytes, cconfig)
 			if err != nil {
 				return err
 			}

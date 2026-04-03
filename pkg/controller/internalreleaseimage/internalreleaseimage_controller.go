@@ -1,6 +1,7 @@
 package internalreleaseimage
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"reflect"
@@ -76,6 +77,8 @@ type Controller struct {
 	secretLister       corelistersv1.SecretLister
 	secretListerSynced cache.InformerSynced
 
+	ocSecretListerSynced cache.InformerSynced
+
 	queue workqueue.TypedRateLimitingInterface[string]
 }
 
@@ -86,6 +89,7 @@ func New(
 	mcInformer mcfginformersv1.MachineConfigInformer,
 	clusterVersionInformer configinformersv1.ClusterVersionInformer,
 	secretInformer coreinformersv1.SecretInformer,
+	ocSecretInformer coreinformersv1.SecretInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 ) *Controller {
@@ -124,6 +128,13 @@ func New(
 		UpdateFunc: ctrl.updateSecret,
 	})
 
+	// Watch the global pull secret in openshift-config so that when the user
+	// updates it, the IRI MachineConfig is re-rendered with the merged credentials.
+	ocSecretInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addOCSecret,
+		UpdateFunc: ctrl.updateOCSecret,
+	})
+
 	ctrl.iriLister = iriInformer.Lister()
 	ctrl.iriListerSynced = iriInformer.Informer().HasSynced
 
@@ -139,6 +150,8 @@ func New(
 	ctrl.secretLister = secretInformer.Lister()
 	ctrl.secretListerSynced = secretInformer.Informer().HasSynced
 
+	ctrl.ocSecretListerSynced = ocSecretInformer.Informer().HasSynced
+
 	return ctrl
 }
 
@@ -147,7 +160,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.iriListerSynced, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.clusterVersionListerSynced, ctrl.secretListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, ctrl.iriListerSynced, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.clusterVersionListerSynced, ctrl.secretListerSynced, ctrl.ocSecretListerSynced) {
 		return
 	}
 
@@ -290,6 +303,28 @@ func (ctrl *Controller) updateSecret(obj, _ interface{}) {
 	ctrl.queue.Add(ctrlcommon.InternalReleaseImageInstanceName)
 }
 
+func (ctrl *Controller) addOCSecret(obj interface{}) {
+	secret := obj.(*corev1.Secret)
+	if secret.Name != ctrlcommon.GlobalPullSecretName {
+		return
+	}
+	klog.V(4).Infof("Global pull secret %s added, re-queuing IRI sync", secret.Name)
+	ctrl.queue.Add(ctrlcommon.InternalReleaseImageInstanceName)
+}
+
+func (ctrl *Controller) updateOCSecret(old, cur interface{}) {
+	oldSecret := old.(*corev1.Secret)
+	newSecret := cur.(*corev1.Secret)
+	if newSecret.Name != ctrlcommon.GlobalPullSecretName {
+		return
+	}
+	if bytes.Equal(oldSecret.Data[corev1.DockerConfigJsonKey], newSecret.Data[corev1.DockerConfigJsonKey]) {
+		return
+	}
+	klog.V(4).Infof("Global pull secret %s updated, re-queuing IRI sync", newSecret.Name)
+	ctrl.queue.Add(ctrlcommon.InternalReleaseImageInstanceName)
+}
+
 func (ctrl *Controller) enqueue(iri *mcfgv1alpha1.InternalReleaseImage) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(iri)
 	if err != nil {
@@ -363,8 +398,14 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) (syncErr error) {
 		return fmt.Errorf("could not get Secret %s: %w", ctrlcommon.InternalReleaseImageAuthSecretName, err)
 	}
 
+	pullSecret, err := ctrl.kubeClient.CoreV1().Secrets(ctrlcommon.OpenshiftConfigNamespace).Get(
+		context.TODO(), ctrlcommon.GlobalPullSecretName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("could not get pull secret: %w", err)
+	}
+
 	for _, role := range SupportedRoles {
-		r := NewRendererByRole(role, iri, iriSecret, iriAuthSecret, cconfig)
+		r := NewRendererByRole(role, iri, iriSecret, iriAuthSecret, pullSecret.Data[corev1.DockerConfigJsonKey], cconfig)
 
 		mc, err := ctrl.mcLister.Get(r.GetMachineConfigName())
 		isNotFound := errors.IsNotFound(err)
@@ -389,11 +430,6 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) (syncErr error) {
 		if err := ctrl.addFinalizerToInternalReleaseImage(iri, mc); err != nil {
 			return fmt.Errorf("could not add finalizer: %w", err)
 		}
-	}
-
-	// Merge IRI auth credentials into the global pull secret
-	if err := ctrl.mergeIRIAuthIntoPullSecret(cconfig, iriAuthSecret); err != nil {
-		return fmt.Errorf("failed to merge IRI auth into pull secret: %w", err)
 	}
 
 	// Initialize status if empty
@@ -523,39 +559,6 @@ func (ctrl *Controller) addFinalizerToInternalReleaseImage(iri *mcfgv1alpha1.Int
 
 	iri.Finalizers = append(iri.Finalizers, mc.Name)
 	_, err := ctrl.client.MachineconfigurationV1alpha1().InternalReleaseImages().Update(context.TODO(), iri, metav1.UpdateOptions{})
-	return err
-}
-
-func (ctrl *Controller) mergeIRIAuthIntoPullSecret(cconfig *mcfgv1.ControllerConfig, authSecret *corev1.Secret) error {
-	password := string(authSecret.Data["password"])
-	if password == "" {
-		return fmt.Errorf("IRI auth secret %s/%s has empty password", authSecret.Namespace, authSecret.Name)
-	}
-
-	baseDomain := cconfig.Spec.DNS.Spec.BaseDomain
-
-	// Fetch current pull secret from openshift-config
-	pullSecret, err := ctrl.kubeClient.CoreV1().Secrets(ctrlcommon.OpenshiftConfigNamespace).Get(
-		context.TODO(), ctrlcommon.GlobalPullSecretName, metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("could not get pull-secret: %w", err)
-	}
-
-	mergedBytes, changed, err := MergeIRIAuthIntoPullSecret(pullSecret.Data[corev1.DockerConfigJsonKey], password, baseDomain)
-	if err != nil {
-		return err
-	}
-
-	if !changed {
-		return nil
-	}
-
-	pullSecret.Data[corev1.DockerConfigJsonKey] = mergedBytes
-	_, err = ctrl.kubeClient.CoreV1().Secrets(ctrlcommon.OpenshiftConfigNamespace).Update(
-		context.TODO(), pullSecret, metav1.UpdateOptions{})
-	if err == nil {
-		klog.Infof("Updated pull secret with IRI registry auth credentials from secret %s/%s (uid=%s, resourceVersion=%s)", authSecret.Namespace, authSecret.Name, authSecret.UID, authSecret.ResourceVersion)
-	}
 	return err
 }
 

@@ -3,6 +3,8 @@ package internalreleaseimage
 // Test builders and helper methods.
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -31,7 +33,7 @@ func verifyInternalReleaseMasterMachineConfig(t *testing.T, mc *mcfgv1.MachineCo
 	assert.Contains(t, *ignCfg.Systemd.Units[0].Contents, "REGISTRY_AUTH_HTPASSWD_REALM")
 	assert.Contains(t, *ignCfg.Systemd.Units[0].Contents, "REGISTRY_AUTH_HTPASSWD_PATH")
 
-	assert.Len(t, ignCfg.Storage.Files, 5, "Found an unexpected file")
+	assert.Len(t, ignCfg.Storage.Files, 6, "Found an unexpected file")
 	verifyIgnitionFile(t, &ignCfg, "/etc/pki/ca-trust/source/anchors/iri-root-ca.crt", "iri-root-ca-data")
 	verifyIgnitionFile(t, &ignCfg, "/etc/iri-registry/certs/tls.key", "iri-tls-key")
 	verifyIgnitionFile(t, &ignCfg, "/etc/iri-registry/certs/tls.crt", "iri-tls-crt")
@@ -39,6 +41,7 @@ func verifyInternalReleaseMasterMachineConfig(t *testing.T, mc *mcfgv1.MachineCo
 	verifyIgnitionFileContains(t, &ignCfg, "/usr/local/bin/load-registry-image.sh", "docker-registry-image-pullspec")
 	assert.Contains(t, *ignCfg.Systemd.Units[0].Contents, `REGISTRY_STORAGE_MAINTENANCE_READONLY={"enabled":true}`)
 	assert.NotContains(t, *ignCfg.Systemd.Units[0].Contents, "REGISTRY_STORAGE_MAINTENANCE_READONLY_ENABLED")
+	verifyKubeletPullSecretHasIRIAuth(t, &ignCfg, "api-int.example.com:22625", "openshift", "testpassword")
 }
 
 func verifyInternalReleaseWorkerMachineConfig(t *testing.T, mc *mcfgv1.MachineConfig) {
@@ -50,8 +53,9 @@ func verifyInternalReleaseWorkerMachineConfig(t *testing.T, mc *mcfgv1.MachineCo
 	assert.NoError(t, err)
 
 	assert.Len(t, ignCfg.Systemd.Units, 0)
-	assert.Len(t, ignCfg.Storage.Files, 1)
+	assert.Len(t, ignCfg.Storage.Files, 2)
 	verifyIgnitionFile(t, &ignCfg, "/etc/pki/ca-trust/source/anchors/iri-root-ca.crt", "iri-root-ca-data")
+	verifyKubeletPullSecretHasIRIAuth(t, &ignCfg, "api-int.example.com:22625", "openshift", "testpassword")
 }
 
 func verifyIgnitionFile(t *testing.T, ignCfg *ign3types.Config, path string, expectedContent string) {
@@ -64,6 +68,26 @@ func verifyIgnitionFileContains(t *testing.T, ignCfg *ign3types.Config, path str
 	data, err := ctrlcommon.GetIgnitionFileDataByPath(ignCfg, path)
 	assert.NoError(t, err)
 	assert.Contains(t, string(data), expectedContent, path)
+}
+
+// verifyKubeletPullSecretHasIRIAuth verifies that the /var/lib/kubelet/config.json
+// embedded in the ignition config contains the IRI registry auth entry.
+func verifyKubeletPullSecretHasIRIAuth(t *testing.T, ignCfg *ign3types.Config, iriHost, username, password string) {
+	t.Helper()
+	data, err := ctrlcommon.GetIgnitionFileDataByPath(ignCfg, "/var/lib/kubelet/config.json")
+	assert.NoError(t, err)
+
+	var dockerConfig map[string]interface{}
+	assert.NoError(t, json.Unmarshal(data, &dockerConfig))
+
+	auths, ok := dockerConfig["auths"].(map[string]interface{})
+	assert.True(t, ok, "pull secret should have auths field")
+
+	iriEntry, ok := auths[iriHost].(map[string]interface{})
+	assert.True(t, ok, "IRI auth entry should be present for %s", iriHost)
+
+	expectedAuth := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
+	assert.Equal(t, expectedAuth, iriEntry["auth"], "IRI auth entry should have correct credentials")
 }
 
 // objs is an helper func to improve the test readability.
