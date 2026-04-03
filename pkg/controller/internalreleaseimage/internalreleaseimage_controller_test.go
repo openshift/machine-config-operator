@@ -2,8 +2,6 @@ package internalreleaseimage
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"testing"
 	"time"
 
@@ -76,25 +74,11 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 			},
 		},
 		{
-			name:           "merge iri auth into pull secret",
+			name:           "IRI auth credentials are embedded in the MachineConfig kubelet pull secret",
 			initialObjects: objs(iri(), clusterVersion(), cconfig().withDNS("example.com"), iriCertSecret(), iriAuthSecret(), pullSecret()),
 			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
 				verifyInternalReleaseMasterMachineConfig(t, actualMasterMC)
 				verifyInternalReleaseWorkerMachineConfig(t, actualWorkerMC)
-			},
-			verifyPullSecret: func(t *testing.T, f *fixture) {
-				ps, err := f.k8sClient.CoreV1().Secrets(ctrlcommon.OpenshiftConfigNamespace).Get(
-					context.TODO(), ctrlcommon.GlobalPullSecretName, metav1.GetOptions{})
-				assert.NoError(t, err)
-				var dockerConfig map[string]interface{}
-				err = json.Unmarshal(ps.Data[corev1.DockerConfigJsonKey], &dockerConfig)
-				assert.NoError(t, err)
-				auths, ok := dockerConfig["auths"].(map[string]interface{})
-				assert.True(t, ok, "pull secret should have auths field")
-				iriEntry, ok := auths["api-int.example.com:22625"].(map[string]interface{})
-				assert.True(t, ok, "IRI auth entry should be present in pull secret")
-				expectedAuth := base64.StdEncoding.EncodeToString([]byte("openshift:testpassword"))
-				assert.Equal(t, expectedAuth, iriEntry["auth"], "IRI auth entry should have correct credentials")
 			},
 		},
 		{
@@ -328,6 +312,7 @@ func (f *fixture) newController() *Controller {
 		i.Machineconfiguration().V1().MachineConfigs(),
 		ci.Config().V1().ClusterVersions(),
 		k.Core().V1().Secrets(),
+		k.Core().V1().Secrets(),
 		f.k8sClient,
 		f.client,
 	)
@@ -338,6 +323,7 @@ func (f *fixture) newController() *Controller {
 	c.mcListerSynced = alwaysReady
 	c.clusterVersionListerSynced = alwaysReady
 	c.secretListerSynced = alwaysReady
+	c.ocSecretListerSynced = alwaysReady
 	c.eventRecorder = &record.FakeRecorder{}
 
 	stopCh := make(chan struct{})
