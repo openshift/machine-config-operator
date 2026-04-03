@@ -25,7 +25,12 @@ func MergeIRIAuthIntoPullSecret(pullSecretRaw []byte, password, baseDomain strin
 		return nil, false, fmt.Errorf("baseDomain must not be empty")
 	}
 
-	iriRegistryHost := fmt.Sprintf("api-int.%s:%d", baseDomain, IRIRegistryPort)
+	// The IRI registry is reachable via api-int on all nodes, and also via
+	// localhost on master nodes where it runs locally. registries.conf mirror
+	// rules on masters use localhost:22625, so credentials must be present for
+	// both hostnames to avoid authentication failures.
+	iriRegistryAPIIntHost := fmt.Sprintf("api-int.%s:%d", baseDomain, IRIRegistryPort)
+	iriRegistryLocalHost := fmt.Sprintf("localhost:%d", IRIRegistryPort)
 
 	var dockerConfig map[string]interface{}
 	if err := json.Unmarshal(pullSecretRaw, &dockerConfig); err != nil {
@@ -39,14 +44,23 @@ func MergeIRIAuthIntoPullSecret(pullSecretRaw []byte, password, baseDomain strin
 
 	authValue := base64.StdEncoding.EncodeToString([]byte(IRIRegistryUsername + ":" + password))
 
-	// Check if IRI entry already exists and is current — no update needed.
-	if existing, ok := auths[iriRegistryHost].(map[string]interface{}); ok {
-		if existing["auth"] == authValue {
-			return pullSecretRaw, false, nil
-		}
+	// Check if both IRI entries already exist and are current — no update needed.
+	apiIntCurrent := func() bool {
+		e, ok := auths[iriRegistryAPIIntHost].(map[string]interface{})
+		return ok && e["auth"] == authValue
+	}
+	localCurrent := func() bool {
+		e, ok := auths[iriRegistryLocalHost].(map[string]interface{})
+		return ok && e["auth"] == authValue
+	}
+	if apiIntCurrent() && localCurrent() {
+		return pullSecretRaw, false, nil
 	}
 
-	auths[iriRegistryHost] = map[string]interface{}{
+	auths[iriRegistryAPIIntHost] = map[string]interface{}{
+		"auth": authValue,
+	}
+	auths[iriRegistryLocalHost] = map[string]interface{}{
 		"auth": authValue,
 	}
 

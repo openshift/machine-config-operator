@@ -3,6 +3,7 @@ package internalreleaseimage
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -90,10 +91,16 @@ func TestMergeIRIAuthIntoPullSecret(t *testing.T) {
 
 			auths := dockerConfig["auths"].(map[string]interface{})
 			iriEntry, ok := auths[tt.verifyAuthHost].(map[string]interface{})
-			assert.True(t, ok, "IRI auth entry should be present")
+			assert.True(t, ok, "IRI auth entry should be present for %s", tt.verifyAuthHost)
 
 			expectedAuth := base64.StdEncoding.EncodeToString([]byte("openshift:" + tt.password))
 			assert.Equal(t, expectedAuth, iriEntry["auth"])
+
+			// Verify localhost entry is also present for master nodes where registries.conf
+			// mirror rules use localhost:22625 instead of api-int.
+			localEntry, ok := auths[fmt.Sprintf("localhost:%d", IRIRegistryPort)].(map[string]interface{})
+			assert.True(t, ok, "IRI auth entry should be present for localhost:%d", IRIRegistryPort)
+			assert.Equal(t, expectedAuth, localEntry["auth"])
 
 			// Verify original entries are preserved
 			_, hasQuay := auths["quay.io"]
@@ -105,13 +112,17 @@ func TestMergeIRIAuthIntoPullSecret(t *testing.T) {
 // pullSecretWithIRIAuth creates a pull secret JSON that already contains an IRI auth entry.
 func pullSecretWithIRIAuth(baseDomain string, password string) string {
 	authValue := base64.StdEncoding.EncodeToString([]byte("openshift:" + password))
-	host := "api-int." + baseDomain + ":22625"
+	apiIntHost := fmt.Sprintf("api-int.%s:%d", baseDomain, IRIRegistryPort)
+	localHost := fmt.Sprintf("localhost:%d", IRIRegistryPort)
 	dockerConfig := map[string]interface{}{
 		"auths": map[string]interface{}{
 			"quay.io": map[string]interface{}{
 				"auth": "dGVzdDp0ZXN0",
 			},
-			host: map[string]interface{}{
+			apiIntHost: map[string]interface{}{
+				"auth": authValue,
+			},
+			localHost: map[string]interface{}{
 				"auth": authValue,
 			},
 		},
