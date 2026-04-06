@@ -240,6 +240,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			startOpts.nodeName,
 			ctrlctx.ClientBuilder.MachineConfigClientOrDie(componentName),
 			ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().InternalReleaseImages(),
+			ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigNodes(),
 		)
 		go internalReleaseImageManager.Run(1, stopCh)
 	}

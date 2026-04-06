@@ -19,17 +19,6 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/common"
 )
 
-func verifyCondition(t *testing.T, conditions []v1.Condition, eCondType string, eCondStatus v1.ConditionStatus) {
-	t.Helper()
-	for _, c := range conditions {
-		if c.Type == eCondType {
-			assert.Equal(t, eCondStatus, c.Status)
-			return
-		}
-	}
-	assert.Failf(t, "expected condition type %s with status %s not found", eCondType)
-}
-
 func TestInternalReleaseImageManager(t *testing.T) {
 	cases := []struct {
 		name string
@@ -68,8 +57,8 @@ func TestInternalReleaseImageManager(t *testing.T) {
 
 				assert.Len(t, mcn.Status.InternalReleaseImage.Releases, 1)
 				r := mcn.Status.InternalReleaseImage.Releases[0]
-				assert.Equal(t, r.Name, "ocp-release-bundle-4.22.0-0.ci-2026-04-01-050515")
-				assert.Equal(t, r.Image, "localhost:22625/openshift/release-images@sha256:68bdf24405449be5c78a1f27a7b64fc9ee980e4bc3c9b169e8b3da08e50e0389")
+				assert.Equal(t, "ocp-release-bundle-4.22.0-0.ci-2026-04-01-050515", r.Name)
+				assert.Equal(t, "localhost:22625/openshift/release-images@sha256:68bdf24405449be5c78a1f27a7b64fc9ee980e4bc3c9b169e8b3da08e50e0389", r.Image)
 				verifyCondition(t, r.Conditions, string(mcfgv1alpha1.InternalReleaseImageConditionTypeAvailable), metav1.ConditionTrue)
 				verifyCondition(t, r.Conditions, string(mcfgv1alpha1.InternalReleaseImageConditionTypeDegraded), metav1.ConditionFalse)
 			},
@@ -106,8 +95,8 @@ func TestInternalReleaseImageManager(t *testing.T) {
 
 				assert.Len(t, mcn.Status.InternalReleaseImage.Releases, 1)
 				r := mcn.Status.InternalReleaseImage.Releases[0]
-				assert.Equal(t, r.Name, "ocp-release-bundle-4.22.0-0.ci-2026-04-01-050515")
-				assert.Equal(t, r.Image, "localhost:22625/openshift/release-images@sha256:68bdf24405449be5c78a1f27a7b64fc9ee980e4bc3c9b169e8b3da08e50e0389")
+				assert.Equal(t, "ocp-release-bundle-4.22.0-0.ci-2026-04-01-050515", r.Name)
+				assert.Equal(t, "localhost:22625/openshift/release-images@sha256:68bdf24405449be5c78a1f27a7b64fc9ee980e4bc3c9b169e8b3da08e50e0389", r.Image)
 				verifyCondition(t, r.Conditions, string(mcfgv1alpha1.InternalReleaseImageConditionTypeAvailable), metav1.ConditionFalse)
 				verifyCondition(t, r.Conditions, string(mcfgv1alpha1.InternalReleaseImageConditionTypeDegraded), metav1.ConditionTrue)
 			},
@@ -121,9 +110,12 @@ func TestInternalReleaseImageManager(t *testing.T) {
 			fakeMCClient := fake.NewClientset(tc.mcn.obj)
 			mcInformerFactory := mcfginformers.NewSharedInformerFactory(fakeMCClient, func() time.Duration { return 0 }())
 			iriInformer := mcInformerFactory.Machineconfiguration().V1alpha1().InternalReleaseImages()
+			mcnInformer := mcInformerFactory.Machineconfiguration().V1().MachineConfigNodes()
+
 			mcInformerFactory.Start(ctx.Done())
 			mcInformerFactory.WaitForCacheSync(ctx.Done())
 
+			require.NoError(t, mcnInformer.Informer().GetIndexer().Add(tc.mcn.build()))
 			if tc.iri != nil {
 				require.NoError(t, iriInformer.Informer().GetIndexer().Add(tc.iri.build()))
 			}
@@ -137,7 +129,7 @@ func TestInternalReleaseImageManager(t *testing.T) {
 				defer fakeRegistry.Close()
 			}
 
-			iriManager := New(tc.nodeName, fakeMCClient, iriInformer)
+			iriManager := New(tc.nodeName, fakeMCClient, iriInformer, mcnInformer)
 			iriManager.registryClient = &http.Client{
 				Transport: &http.Transport{
 					TLSClientConfig: &tls.Config{
@@ -154,4 +146,15 @@ func TestInternalReleaseImageManager(t *testing.T) {
 			}
 		})
 	}
+}
+
+func verifyCondition(t *testing.T, conditions []v1.Condition, eCondType string, eCondStatus v1.ConditionStatus) {
+	t.Helper()
+	for _, c := range conditions {
+		if c.Type == eCondType {
+			assert.Equal(t, eCondStatus, c.Status)
+			return
+		}
+	}
+	assert.Failf(t, "expected condition type %s not found", eCondType)
 }

@@ -116,7 +116,7 @@ func (r *iriRegistry) parseTagsList(reader io.Reader) (*registryTagsList, error)
 }
 
 func (r *iriRegistry) getRepositoryTags(repo string) (*registryTagsList, error) {
-	endpoint := fmt.Sprintf("/%s/tags/list", repo)
+	endpoint := fmt.Sprintf("%s/tags/list", repo)
 
 	klog.V(2).Infof("Retrieving repository tags for %s", repo)
 	resp, err := r.query(endpoint)
