@@ -2,7 +2,6 @@ package internalreleaseimage
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -19,10 +18,12 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 
-	v1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
+	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
 	mcfginformersv1alpha1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
+	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 	"github.com/openshift/machine-config-operator/pkg/controller/common"
 )
@@ -54,6 +55,9 @@ type Manager struct {
 
 	iriLister       mcfglistersv1alpha1.InternalReleaseImageLister
 	iriListerSynced cache.InformerSynced
+
+	mcnLister       mcfglistersv1.MachineConfigNodeLister
+	mcnListerSynced cache.InformerSynced
 }
 
 // NewInternalReleaseImageManager creates a new internal release image manager.
@@ -61,6 +65,7 @@ func New(
 	nodeName string,
 	mcfgClient mcfgclientset.Interface,
 	iriInformer mcfginformersv1alpha1.InternalReleaseImageInformer,
+	mcnInformer mcfginformersv1.MachineConfigNodeInformer,
 ) *Manager {
 	i := &Manager{
 		nodeName: nodeName,
@@ -83,10 +88,17 @@ func New(
 	i.iriLister = iriInformer.Lister()
 	i.iriListerSynced = iriInformer.Informer().HasSynced
 
+	i.mcnLister = mcnInformer.Lister()
+	i.mcnListerSynced = mcnInformer.Informer().HasSynced
+
 	iriInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    i.addInternalReleaseImage,
 		UpdateFunc: i.updateInternalReleaseImage,
 		DeleteFunc: i.deleteInternalReleaseImage,
+	})
+
+	mcnInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: i.addMachineConfigNode,
 	})
 
 	return i
@@ -99,19 +111,14 @@ func (i *Manager) Run(workers int, stopCh <-chan struct{}) {
 	if !cache.WaitForCacheSync(
 		stopCh,
 		i.iriListerSynced,
+		i.mcnListerSynced,
 	) {
 		klog.Errorf("failed to sync initial listers cache")
 		return
 	}
 
 	if i.registryClient == nil {
-		i.registryClient = &http.Client{Timeout: 3 * time.Second,
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: true,
-				},
-			},
-		}
+		i.registryClient = &http.Client{Timeout: 3 * time.Second}
 	}
 
 	klog.Infof("Starting InternalReleaseImage Manager")
@@ -215,7 +222,16 @@ func (i *Manager) deleteInternalReleaseImage(obj interface{}) {
 	i.enqueueInternalReleaseImage(iri)
 }
 
-func (i *Manager) updateMCNStatus(mcnOld, mcn *v1.MachineConfigNode) error {
+func (i *Manager) addMachineConfigNode(obj interface{}) {
+	curMCN := obj.(*mcfgv1.MachineConfigNode)
+
+	if curMCN.Name == i.nodeName {
+		klog.V(4).Infof("MachineConfigNode %s added", curMCN.Name)
+		i.queue.Add(common.InternalReleaseImageInstanceName)
+	}
+}
+
+func (i *Manager) updateMCNStatus(mcnOld, mcn *mcfgv1.MachineConfigNode) error {
 	if equality.Semantic.DeepEqual(&mcnOld.Status, &mcn.Status) {
 		return nil
 	}
@@ -227,7 +243,7 @@ func (i *Manager) updateMCNStatus(mcnOld, mcn *v1.MachineConfigNode) error {
 	return nil
 }
 
-func (i *Manager) refreshMachineConfigNodeStatus(mcn *v1.MachineConfigNode, iriReg *iriRegistry) error {
+func (i *Manager) refreshMachineConfigNodeStatus(mcn *mcfgv1.MachineConfigNode, iriReg *iriRegistry) error {
 	// Get the current OCP releases bundles stored in the local IRI registry.
 	registryBundles, err := iriReg.GetOCPBundlesTags()
 	if err != nil {
@@ -261,7 +277,7 @@ func (i *Manager) refreshMachineConfigNodeStatus(mcn *v1.MachineConfigNode, iriR
 		}
 		pullSpec := iriReg.GetOCPReleasePullSpec(ocpReleaseTag)
 
-		iriRelease := v1.MachineConfigNodeStatusInternalReleaseImageRef{
+		iriRelease := mcfgv1.MachineConfigNodeStatusInternalReleaseImageRef{
 			Name:  bundle,
 			Image: pullSpec,
 		}
@@ -307,14 +323,14 @@ func (i *Manager) refreshMachineConfigNodeStatus(mcn *v1.MachineConfigNode, iriR
 	}
 	if !mcnDegraded {
 		meta.SetStatusCondition(&mcnUpdated.Status.Conditions, metav1.Condition{
-			Type:    string(v1.MachineConfigNodeInternalReleaseImageDegraded),
+			Type:    string(mcfgv1.MachineConfigNodeInternalReleaseImageDegraded),
 			Status:  metav1.ConditionFalse,
 			Reason:  "AllReleasesAvailable",
 			Message: "All the release images are available",
 		})
 	} else {
 		meta.SetStatusCondition(&mcnUpdated.Status.Conditions, metav1.Condition{
-			Type:    string(v1.MachineConfigNodeInternalReleaseImageDegraded),
+			Type:    string(mcfgv1.MachineConfigNodeInternalReleaseImageDegraded),
 			Status:  metav1.ConditionTrue,
 			Reason:  "ReleaseImageNotFound",
 			Message: "One or more release bundle are not available",
@@ -324,12 +340,12 @@ func (i *Manager) refreshMachineConfigNodeStatus(mcn *v1.MachineConfigNode, iriR
 	return i.updateMCNStatus(mcn, mcnUpdated)
 }
 
-func (i *Manager) setMachineConfigNodeAsDegraded(mcn *v1.MachineConfigNode, registryErr error) error {
+func (i *Manager) setMachineConfigNodeAsDegraded(mcn *mcfgv1.MachineConfigNode, registryErr error) error {
 	reason := "RegistryUnreachable"
 
 	mcnUpdated := mcn.DeepCopy()
 	meta.SetStatusCondition(&mcnUpdated.Status.Conditions, metav1.Condition{
-		Type:    string(v1.MachineConfigNodeInternalReleaseImageDegraded),
+		Type:    string(mcfgv1.MachineConfigNodeInternalReleaseImageDegraded),
 		Status:  metav1.ConditionTrue,
 		Reason:  reason,
 		Message: registryErr.Error(),
@@ -370,7 +386,7 @@ func (i *Manager) syncInternalReleaseImage(key string) error {
 	}
 
 	// Get the MachineConfigNode for the current node.
-	mcn, err := i.mcfgClient.MachineconfigurationV1().MachineConfigNodes().Get(context.TODO(), i.nodeName, metav1.GetOptions{})
+	mcn, err := i.mcnLister.Get(i.nodeName)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			klog.V(2).Infof("MachineConfigNode %s not yet present, waiting for its creation", i.nodeName)
