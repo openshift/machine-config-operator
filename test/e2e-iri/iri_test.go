@@ -19,11 +19,14 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/framework"
 )
 
 func TestIRIResource_Available(t *testing.T) {
+	skipIfNoBaremetal(t)
+
 	cs := framework.NewClientSet("")
 	ctx := context.Background()
 
@@ -38,8 +41,44 @@ func TestIRIResource_Available(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestMachineConfigNodesStatus(t *testing.T) {
+	skipIfNoBaremetal(t)
+
+	cs := framework.NewClientSet("")
+	ctx := context.Background()
+
+	cv, err := cs.ClusterVersions().Get(ctx, "version", v1.GetOptions{})
+	require.NoError(t, err)
+
+	mcnList, err := cs.MachineConfigNodes().List(ctx, v1.ListOptions{})
+	require.NoError(t, err)
+
+	for _, mcn := range mcnList.Items {
+		requireCondition(t, mcn.Status.Conditions, string(mcfgv1.MachineConfigNodeInternalReleaseImageDegraded), v1.ConditionFalse)
+
+		require.Len(t, mcn.Status.InternalReleaseImage.Releases, 1)
+		r := mcn.Status.InternalReleaseImage.Releases[0]
+		require.Contains(t, r.Name, cv.Status.Desired.Version)
+		require.NotEmpty(t, r.Image, "OCP release pullspec cannot be empty")
+
+		requireCondition(t, r.Conditions, string(mcfgv1alpha1.InternalReleaseImageConditionTypeAvailable), v1.ConditionTrue)
+		requireCondition(t, r.Conditions, string(mcfgv1alpha1.InternalReleaseImageConditionTypeDegraded), v1.ConditionFalse)
+	}
+}
+
+func requireCondition(t *testing.T, conditions []v1.Condition, condType string, condStatus v1.ConditionStatus) {
+	t.Helper()
+	for _, c := range conditions {
+		if c.Type == condType && c.Status == condStatus {
+			return
+		}
+	}
+	t.Fatalf("expected condition %q with status %q not found", condType, condStatus)
+}
+
 func TestIRIController_VerifyIRIRegistryOnAllTheMasterNodes_NoCert(t *testing.T) {
 	skipIfOpenShiftCI(t)
+	skipIfNoBaremetal(t)
 
 	masterNodes, err := framework.NewClientSet("").CoreV1Interface.Nodes().List(context.TODO(), v1.ListOptions{LabelSelector: "node-role.kubernetes.io/master="})
 	require.NoError(t, err)
@@ -138,6 +177,8 @@ func pingIRIRegistry(t *testing.T, client *http.Client, ipAddr string) {
 }
 
 func TestIRIController_ShouldPreventDeletionWhenInUse(t *testing.T) {
+	skipIfNoBaremetal(t)
+
 	cs := framework.NewClientSet("")
 	ctx := context.Background()
 
@@ -180,6 +221,8 @@ func TestIRIController_ShouldPreventDeletionWhenInUse(t *testing.T) {
 }
 
 func TestIRIController_ShouldRestoreMachineConfigsWhenModified(t *testing.T) {
+	skipIfNoBaremetal(t)
+
 	cases := []struct {
 		name       string
 		userAction func(t *testing.T, ctx context.Context, cs *framework.ClientSet, configs []*mcfgv1.MachineConfig)
