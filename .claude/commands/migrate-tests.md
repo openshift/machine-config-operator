@@ -29,10 +29,10 @@ The `/migrate-tests` command automates the migration of MCO (Machine Config Oper
 
 **Key Features:**
 
-- **Two migration modes** - Migrate a whole test file (e.g., `mco_configdrift.go`) or extract a test suite from any file by keyword
+- **Two migration modes** - Migrate a whole test file (e.g., `mco_configdrift.go`) or extract a test suite from any file by keyword (e.g., `mco.go:kernel`)
 - **Accurate test name transformation** - Converts `Author:USERNAME-Qualifiers-ID-[Tags] Description` format to `[PolarionID:ID][OTP] Description` format
 - **Import rewriting** - Replaces all `compat_otp` references with `exutil` equivalents
-- **Live migration dashboard** - Scans source and destination repos at runtime to show what's already migrated, what's in open PRs, and what's available — with discoverable topic filters for suite extraction
+- **Targeted analysis** - Only scans the selected file for duplicates and open PR conflicts, keeping the workflow fast
 - **Duplicate detection** - Skips tests already present in destination and warns about tests being migrated in open (unmerged) PRs on GitHub
 - **Code preservation** - Migrates code as-is without simplification or refactoring
 - **Template migration** - Copies referenced testdata YAML files to the correct destination path
@@ -97,16 +97,14 @@ The command will:
 1. Ask for the source repository path (openshift-tests-private)
 2. Ask for the destination repository path (machine-config-operator)
 3. Ask for the compat_otp library path (optional)
-4. Scan both repos and open PRs to build a live migration dashboard
-5. Present available migration options with status (done/in-PR/available)
-6. Let user pick from the dashboard or type a custom keyword
-7. Display configuration summary for confirmation
-8. Analyze source and destination patterns
-9. Execute the migration transformations
-10. Build and verify the test binary
-11. Provide summary and next steps
+4. Ask what to migrate (filename or filename:keyword)
+5. Analyze only the selected file for duplicates and open PR conflicts
+6. Display configuration summary for confirmation
+7. Execute the migration transformations
+8. Build and verify the test binary
+9. Provide summary and next steps
 
-### Example interaction
+### Example interaction — whole file
 
 ```text
 User: /migrate-tests
@@ -120,38 +118,34 @@ User: /home/user/repos/machine-config-operator
 AI: What is the path to the compat_otp library? (press Enter to skip)
 User: /home/user/repos/origin/test/extended/util/compat_otp
 
-AI: Scanning source and destination repos...
-    Checking open PRs for in-flight migrations...
+AI: What do you want to migrate? Enter a filename (e.g., mco_configdrift.go)
+    or filename:keyword to extract a subset (e.g., mco.go:kernel)
+User: mco_configdrift.go
 
-    ========================================
-    MCO Test Migration Dashboard
-    ========================================
+AI: mco_configdrift.go — 5 tests, 0 already migrated, 0 in open PRs, 5 available
+    [shows confirmation summary]
+    Proceed? [Y/n]
+User: Y
 
-    Whole-file migration options:
-      #  File                                Total  Done  In-PR  Available
-      1. mco_configdrift.go                     5     0      0       5
-      2. mco_alerts.go                          5     2      1       2
-      3. mco_bootimages.go                     11    11      0       0  DONE
-      ...
-
-    Suite extraction options (files with 6+ available tests):
-
-      mco.go (72 tests, 15 done, 2 in-PR, 55 available):
-        #   Topic          Available
-        a.  kernel             9
-        b.  registry           2
-        c.  drain              4
-        ...
-
-    Enter your choice:
-    - A number (e.g., 1) to migrate a whole file
-    - A file.topic (e.g., mco.kernel) to extract a suite
-    - Or type a custom keyword to search
-
-User: 1
-
-AI: [shows confirmation summary, then executes migration]
+AI: [executes migration]
     Migration complete! 5 tests migrated successfully.
+```
+
+### Example interaction — suite extraction
+
+```text
+AI: What do you want to migrate?
+User: mco.go:kernel
+
+AI: Found 9 tests matching "kernel" in mco.go:
+    1. 42365 - add real time kernel argument
+    2. 67787 - switch kernel type to 64k-pages for arm64
+    ...
+    0 already migrated, 0 in open PRs, 9 available
+    These will be extracted into mco_kernel.go. Proceed? [Y/n]
+User: Y
+
+AI: [executes migration]
 ```
 
 ## Arguments
@@ -164,10 +158,9 @@ This command takes no arguments. All configuration is collected interactively du
 - **Code preservation**: The migration does NOT simplify or refactor code - it only changes package names, imports, and function reference prefixes
 - **Function order**: Functions are written in the same order as in the original source file
 - **File naming**: For compat_otp utility functions, the same file names as the original are used
-- **Live dashboard**: The migration dashboard is built in real-time by scanning source files, destination files, and open PRs — nothing is hardcoded. Topic keywords for suite extraction are auto-discovered from test descriptions each run
 - **Duplicate detection**: Tests already migrated (by PolarionID) in destination are skipped. Open PRs on GitHub are also checked for in-flight migrations of the same tests (requires `gh` CLI)
 - **Template files**: Referenced testdata YAML files are copied from `testdata/mco/` to `testdata/files/`
-- **Suite extraction**: Available for any source file with 6+ available tests, not just `mco.go`. Topics are discovered dynamically from test descriptions
+- **Suite extraction**: Use `filename:keyword` syntax to extract a subset of tests from any file (e.g., `mco.go:kernel`, `mco_security.go:cipher`)
 - **Build verification**: The command builds the test binary using `make machine-config-tests-ext` and verifies migrated tests appear in the listing
 
 ## See Also
