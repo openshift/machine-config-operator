@@ -156,6 +156,39 @@ grep -n 'g\.It("' "$SOURCE_TEST_DIR/mco.go" | grep -i "$KEYWORD" | nl -w2 -s'. '
 - `<dest-filename>` = `mco_<keyword>.go`
 - `<selected-tests>` = list of test names/line numbers to extract
 
+#### Input 4b: Check for In-Flight Migration PRs
+
+After the user selects the migration target, immediately check GitHub for open (unmerged) PRs that may already be migrating the same tests. This runs before the confirmation summary so the user can see conflicts before deciding to proceed.
+
+```bash
+# Extract PolarionIDs from the selected source tests
+SOURCE_IDS=$(grep 'g\.It("' "$SOURCE_FILE" | grep -oP '\d{5,}' | sort -u)
+
+# For each source PolarionID, search open PRs for references
+for id in $SOURCE_IDS; do
+    MATCHING_PRS=$(gh pr list --repo openshift/machine-config-operator --state open --search "PolarionID:$id" --json number,title,url,author --jq '.[] | "#\(.number) by @\(.author.login): \(.title) (\(.url))"')
+    if [ -n "$MATCHING_PRS" ]; then
+        echo "WARNING: PolarionID $id found in open PR(s):"
+        echo "$MATCHING_PRS"
+    fi
+done
+```
+
+If `gh` is not available or the search fails (e.g., no network), log a warning and continue — this check is best-effort.
+
+**Note:** The `gh pr list --search` query searches PR titles and bodies. For more thorough detection, also check PR diffs if the initial search returns no results but you suspect overlap:
+
+```bash
+# Fallback: search PR diffs directly (slower, use only if needed)
+for pr_number in $(gh pr list --repo openshift/machine-config-operator --state open --json number --jq '.[].number'); do
+    if gh pr diff --repo openshift/machine-config-operator "$pr_number" 2>/dev/null | grep -q "PolarionID:$id"; then
+        echo "WARNING: PolarionID $id found in diff of PR #$pr_number"
+    fi
+done
+```
+
+Include any warnings in the confirmation summary (Input 5) so the user can decide whether to skip those tests or continue.
+
 #### Input 5: Configuration Summary and Confirmation
 
 Display all collected inputs for user review:
@@ -171,8 +204,15 @@ Migration Mode:      <migration-mode>
 Source File:         <source-file>
 Destination File:    <dest-filename>
 Tests to Migrate:    <count> test cases
+
+⚠ Tests found in open PRs:
+  - PolarionID:NNNNN → PR #XX by @author (title)
 ========================================
 ```
+
+If there are tests found in open PRs, ask the user whether to:
+- **Skip** those tests (recommended to avoid duplicate work)
+- **Continue anyway** (e.g., if the existing PR is stale or will be closed)
 
 Ask: "Proceed with migration? [Y/n]:"
 
@@ -238,43 +278,6 @@ done
 ```
 
 Report any tests that will be skipped due to already being migrated.
-
-#### Step 3b: Check for In-Flight Migration PRs
-
-Check GitHub for open (unmerged) PRs in the destination repository that may already be migrating the same tests. This prevents duplicate migration work.
-
-```bash
-# For each source PolarionID, search open PRs for references
-for id in $SOURCE_IDS; do
-    # Search open PR diffs for this PolarionID
-    MATCHING_PRS=$(gh pr list --repo openshift/machine-config-operator --state open --search "PolarionID:$id" --json number,title,url,author --jq '.[] | "#\(.number) by @\(.author.login): \(.title) (\(.url))"')
-    if [ -n "$MATCHING_PRS" ]; then
-        echo "WARNING: PolarionID $id found in open PR(s):"
-        echo "$MATCHING_PRS"
-    fi
-done
-```
-
-If `gh` is not available or the search fails (e.g., no network), log a warning and continue — this check is best-effort.
-
-**If any PolarionIDs are found in open PRs:**
-
-1. Display a clear warning to the user listing each affected test ID and the PR(s) that reference it
-2. Ask the user whether to:
-   - **Skip** those tests (recommended to avoid duplicate work)
-   - **Continue anyway** (e.g., if the existing PR is stale or will be closed)
-3. Record the user's decision and apply it during Phase 3
-
-**Note:** The `gh pr list --search` query searches PR titles and bodies. For more thorough detection, also check PR diffs if the initial search returns no results but you suspect overlap:
-
-```bash
-# Fallback: search PR diffs directly (slower, use only if needed)
-for pr_number in $(gh pr list --repo openshift/machine-config-operator --state open --json number --jq '.[].number'); do
-    if gh pr diff --repo openshift/machine-config-operator "$pr_number" 2>/dev/null | grep -q "PolarionID:$id"; then
-        echo "WARNING: PolarionID $id found in diff of PR #$pr_number"
-    fi
-done
-```
 
 #### Step 4: Identify Template Files to Copy
 
