@@ -521,7 +521,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			allNodes      = mcp.GetNodesOrFail()
 			pisOneName    = fmt.Sprintf("tc-%s-pis-one", GetCurrentTestPolarionIDNumber())
 			pisTwoName    = fmt.Sprintf("tc-%s-pis-two", GetCurrentTestPolarionIDNumber())
-			pisDupName    = fmt.Sprintf("tc-%s-pis-duplicate", GetCurrentTestPolarionIDNumber())
 		)
 
 		exutil.By("Remove the test image from all nodes in the pool")
@@ -581,6 +580,14 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 				"MachineConfigNode %s should not be PinnedImageSetsProgressing after deleting %s.\n%s", node.GetName(), pisOne, mcn.PrettyString())
 		}
 		logger.Infof("OK!\n")
+
+	})
+
+	g.It("[PolarionID:88562][OTP] PinnedImageSet rejects duplicate images within a single PinnedImageSet", func() {
+		var (
+			pinnedImage = AlpineImage
+			pisDupName  = fmt.Sprintf("tc-%s-pis-duplicate", GetCurrentTestPolarionIDNumber())
+		)
 
 		exutil.By("Verify that a PinnedImageSet with duplicate images is rejected by the API")
 		_, err := CreateGenericPinnedImageSet(oc.AsAdmin(), pisDupName, mcp.GetName(), []string{pinnedImage, pinnedImage})
