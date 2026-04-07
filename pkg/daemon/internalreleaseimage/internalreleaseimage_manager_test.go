@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
@@ -140,7 +139,7 @@ func TestInternalReleaseImageManager(t *testing.T) {
 			require.NoError(t, iriManager.syncHandler(common.InternalReleaseImageInstanceName))
 
 			if tc.mcn != nil {
-				mcnUpdated, err := fakeMCClient.MachineconfigurationV1().MachineConfigNodes().Get(context.Background(), tc.mcn.obj.Name, v1.GetOptions{})
+				mcnUpdated, err := fakeMCClient.MachineconfigurationV1().MachineConfigNodes().Get(context.Background(), tc.mcn.obj.Name, metav1.GetOptions{})
 				require.NoError(t, err)
 				tc.verify(t, mcnUpdated)
 			}
@@ -148,7 +147,7 @@ func TestInternalReleaseImageManager(t *testing.T) {
 	}
 }
 
-func verifyCondition(t *testing.T, conditions []v1.Condition, eCondType string, eCondStatus v1.ConditionStatus) {
+func verifyCondition(t *testing.T, conditions []metav1.Condition, eCondType string, eCondStatus metav1.ConditionStatus) {
 	t.Helper()
 	for _, c := range conditions {
 		if c.Type == eCondType {
