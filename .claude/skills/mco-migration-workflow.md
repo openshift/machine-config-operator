@@ -52,9 +52,11 @@ Collect all necessary information from the user before starting the migration.
 
 #### Input 1: Source Repository Path
 
-If a saved source path exists in memory, ask: "What is the path to your `openshift-tests-private` repository? (last used: `<saved-path>`, press Enter to reuse)"
+If a saved source path exists in memory, ask: "What is the path to your `openshift-tests-private` repository? (last used: `<saved-path>`, type `y` to reuse)"
 
 Otherwise ask: "What is the path to your `openshift-tests-private` repository?"
+
+**Handling the response:** If the user responds with `y`, `yes`, or any affirmative AND a saved path exists in memory, use the saved path as the value and proceed to Input 2.
 
 **Validation:**
 ```bash
@@ -78,9 +80,11 @@ SOURCE_TESTDATA_DIR="$SOURCE_REPO/test/extended/testdata/mco"
 
 #### Input 2: Destination Repository Path
 
-If a saved destination path exists in memory, ask: "What is the path to your `machine-config-operator` repository? (last used: `<saved-path>`, press Enter to reuse)"
+If a saved destination path exists in memory, ask: "What is the path to your `machine-config-operator` repository? (last used: `<saved-path>`, type `y` to reuse)"
 
 Otherwise ask: "What is the path to your `machine-config-operator` repository?"
+
+**Handling the response:** If the user responds with `y`, `yes`, or any affirmative AND a saved path exists in memory, use the saved path as the value and proceed to Input 3.
 
 **Validation:**
 ```bash
@@ -105,11 +109,13 @@ DEST_UTIL_DIR="$DEST_REPO/test/extended-priv/util"
 
 #### Input 3: compat_otp Library Path (Optional)
 
-If a saved compat_otp path exists in memory, ask: "What is the path to the compat_otp library? (last used: `<saved-path>`, press Enter to reuse, or type `skip` to skip)"
+If a saved compat_otp path exists in memory, ask: "What is the path to the compat_otp library? (last used: `<saved-path>`, type `y` to reuse, or type `skip` to skip)"
 
-Otherwise ask: "What is the path to the compat_otp library? (press Enter to skip)
+Otherwise ask: "What is the path to the compat_otp library? (type `skip` to skip)
 This is typically at: `<origin-repo>/test/extended/util/compat_otp/`
 It is needed if the source tests use compat_otp sub-package functions (architecture, clusterinfra, logext, bootstrap) that don't already exist in the destination."
+
+**Handling the response:** If the user responds with `y`, `yes`, or any affirmative AND a saved path exists in memory, use the saved path. If the user responds with `skip`, set the value to empty/skipped.
 
 **Store in variable:** `<compat-otp-path>` (empty if skipped)
 
@@ -135,125 +141,66 @@ This ensures:
 
 If `git pull` fails (e.g., uncommitted local changes), warn the user but continue — they may be working on a branch intentionally.
 
-#### Input 4: Migration Dashboard
+#### Input 4: Migration Target
 
-Instead of asking the user to guess filenames or keywords, build a live dashboard by scanning source and destination repos at runtime.
+Ask the user directly: "What do you want to migrate? Enter:
+- A **filename** to migrate the whole file (e.g., `mco_configdrift.go`)
+- A **filename:keyword** to extract matching tests from a file (e.g., `mco.go:kernel`, `mco_security.go:cipher`)"
 
-**Step 4a: Collect all PolarionIDs from destination (already migrated)**
-
+**Validate the file exists:**
 ```bash
-DEST_IDS=$(grep -roh 'PolarionID:[0-9]*' "$DEST_TEST_DIR"/*.go 2>/dev/null | grep -oP '\d+' | sort -u)
-```
-
-**Step 4b: Collect in-flight PolarionIDs from open PRs (best-effort)**
-
-If `gh` CLI is available, check open PRs on `openshift/machine-config-operator` for PolarionID references:
-
-```bash
-IN_FLIGHT=""
-if command -v gh &>/dev/null; then
-    for pr_num in $(gh pr list --repo openshift/machine-config-operator --state open --json number --jq '.[].number' 2>/dev/null); do
-        PR_BODY=$(gh pr view --repo openshift/machine-config-operator "$pr_num" --json body --jq '.body' 2>/dev/null)
-        for id in $(echo "$PR_BODY" | grep -oP 'PolarionID:\K\d+' | sort -u); do
-            IN_FLIGHT="$IN_FLIGHT $id:#$pr_num"
-        done
-    done
+# Extract filename (before the colon, if present)
+FILENAME=$(echo "$USER_INPUT" | cut -d: -f1)
+SOURCE_FILE="$SOURCE_TEST_DIR/$FILENAME"
+if [ ! -f "$SOURCE_FILE" ]; then
+    echo "ERROR: File not found: $SOURCE_FILE"
+    # Re-ask the user
 fi
 ```
 
-If `gh` is not available or fails, log a warning and continue without PR data.
+**Determine migration mode:**
 
-**Step 4c: Scan each source test file and classify tests**
-
-For each `mco*.go` file in `$SOURCE_TEST_DIR` that contains `g.It(` calls:
-
-1. Extract all PolarionIDs from the file:
-   ```bash
-   grep 'g\.It("' "$FILE" | grep -oP '\d{5,}' | sort -u
-   ```
-
-2. For each PolarionID, classify as:
-   - **Done** — ID found in `$DEST_IDS`
-   - **In-PR** — ID found in `$IN_FLIGHT` (note which PR#)
-   - **Available** — ID not in either list
-
-3. Count total, done, in-PR, and available tests for the file
-4. Skip files where available count is 0 (fully migrated)
-
-**Step 4d: Discover topic keywords for suite extraction candidates**
-
-For files with **6 or more available tests**, dynamically discover topic groupings:
-
-1. For each available (non-migrated) test in the file, extract the description:
-   - Strip the `Author:*-NNNNN-` prefix and all `[tag]` brackets
-   - Take the remaining plain-text description
-2. Tokenize descriptions into lowercase words
-3. Filter out stop words: `the`, `a`, `an`, `is`, `in`, `on`, `to`, `for`, `with`, `and`, `or`, `of`, `should`, `not`, `be`, `if`, `when`, `that`, `it`, `as`, `by`
-4. Count how many tests each remaining word appears in
-5. Keep words that appear in **2 or more** available tests as topic keywords
-6. Sort by test count descending
-7. Tests not matching any discovered topic go into an "other" group
-
-**Step 4e: Display the dashboard**
-
-Present the results to the user as a numbered table with two sections:
-
-**Section 1: Whole-file migration options**
-- List each source test file as a numbered row
-- Show columns: file name, total tests, done, in-PR, available
-- Mark files with 0 available as "DONE"
-- Only show files that contain `g.It(` calls (skip pure helper files)
-
-**Section 2: Suite extraction options**
-- For each file with 6+ available tests, show the discovered topic keywords
-- Show columns: topic keyword, total matching tests, done, in-PR, available
-- Each topic is labeled with a letter (a, b, c, ...)
-
-Include a legend explaining: Done = already in destination, In-PR = in an open PR, Available = ready to migrate
-
-**Step 4f: User selection**
-
-Ask: "Enter your choice:
-- A **number** to migrate a whole file
-- A **file.topic** (e.g., `mco.kernel`) to extract a test suite by topic
-- Or type a **custom keyword** to search across all files"
-
-**If user picks a number (whole file):**
-```
-MIGRATION_MODE="whole-file"
-SOURCE_FILE="<path to selected file>"
-DEST_FILENAME="<same filename>"
-```
-
-**If user picks a file.topic (suite extraction):**
+If input contains a colon (`filename:keyword`):
 ```
 MIGRATION_MODE="suite-extraction"
-SOURCE_FILE="<path to the file>"
-EXTRACTION_KEYWORD="<topic keyword>"
+EXTRACTION_KEYWORD=$(echo "$USER_INPUT" | cut -d: -f2)
 ```
 
-Derive the destination filename:
+Derive destination filename:
 - If source is `mco.go`: destination is `mco_<keyword>.go`
 - If source is `mco_<topic>.go`: destination is `mco_<topic>_<keyword>.go`
 
-Show the matching tests and ask user to confirm:
-```bash
-grep -n 'g\.It("' "$SOURCE_FILE" | grep -i "$KEYWORD" | nl -w2 -s'. '
+Show matching tests **grouped by functionality**. For each matching test:
+1. Extract the PolarionID and plain-text description (strip Author/qualifier prefix and tags)
+2. Group tests that share a common action or subject (e.g., "add kernel argument", "switch kernel type", "reject MC with kernel")
+3. Present them grouped so the user can see the functional areas at a glance:
+
+```text
+Found 9 tests matching "kernel" in mco.go:
+
+  Kernel arguments:
+    1. 42365 - add real time kernel argument
+    2. 42364 - add selinux kernel argument
+    3. 67825 - Use duplicated kernel arguments
+    4. 54922 - daemon: add check before updating kernelArgs
+    5. 72136 - Reject MCs with ignition containing kernelArguments
+
+  Kernel type (64k-pages):
+    6. 67787 - switch kernel type to 64k-pages for arm64
+    7. 67788 - kernel type 64k-pages not supported on non-arm64
+    8. 67790 - create MC with extensions, 64k-pages kernel type and kernel argument
+
+  FIPS + kernel:
+    9. 53668 - FIPS and realtime kernel both enabled, node should NOT be degraded
 ```
 
-**If user types a custom keyword:**
-Search across all source files for matching tests:
-```bash
-for f in "$SOURCE_TEST_DIR"/mco*.go; do
-    matches=$(grep -c "g\.It(\".*$KEYWORD" "$f" 2>/dev/null || true)
-    if [ "$matches" -gt 0 ]; then
-        echo "$(basename $f): $matches matching tests"
-        grep -n 'g\.It("' "$f" | grep -i "$KEYWORD"
-    fi
-done
-```
+The grouping is done by reading the test descriptions and clustering by shared keywords/subject matter. This is best-effort — the goal is to help the user understand what the tests cover, not to create a perfect taxonomy.
 
-If matches span multiple files, ask the user which file to extract from, then proceed as suite extraction.
+If no input contains a colon (whole file):
+```
+MIGRATION_MODE="whole-file"
+DEST_FILENAME="$FILENAME"
+```
 
 **Store in variables:**
 - `<migration-mode>` = "whole-file" or "suite-extraction"
@@ -262,21 +209,43 @@ If matches span multiple files, ask the user which file to extract from, then pr
 - `<extraction-keyword>` = keyword (suite extraction only)
 - `<selected-tests>` = list of test names/line numbers to extract (suite extraction only)
 
-#### Input 4g: Warn about in-flight conflicts
+#### Input 4b: Analyze the selected target
 
-If any of the selected tests have PolarionIDs that were detected as in-flight (from Step 4b), display warnings:
+Once the user has selected a file (and optionally a keyword), run targeted checks on **only that file**:
 
-```text
-WARNING: The following tests are already being migrated in open PRs:
-  - PolarionID:NNNNN → PR #XX
-  - PolarionID:NNNNN → PR #YY
-```
+1. **Check which tests are already migrated:**
+   ```bash
+   DEST_IDS=$(grep -roh 'PolarionID:[0-9]*' "$DEST_TEST_DIR"/*.go 2>/dev/null | grep -oP '\d+' | sort -u)
+   SOURCE_IDS=$(grep 'g\.It("' "$SOURCE_FILE" | grep -oP '\d{5,}' | sort -u)
+   # For suite extraction, filter to only tests matching the keyword
+   ```
 
-Include these warnings in the confirmation summary (Input 5) so the user can decide whether to skip those tests or continue.
+   For each source PolarionID, check if it exists in `$DEST_IDS`. Report skipped tests.
+
+2. **Check open PRs for in-flight migrations (best-effort):**
+   ```bash
+   if command -v gh &>/dev/null; then
+       for id in $SOURCE_IDS; do
+           MATCH=$(gh pr list --repo openshift/machine-config-operator --state open --search "PolarionID:$id" --json number,title,url --jq '.[0]' 2>/dev/null)
+           if [ -n "$MATCH" ] && [ "$MATCH" != "null" ]; then
+               echo "WARNING: PolarionID $id found in open PR: $MATCH"
+           fi
+       done
+   fi
+   ```
+
+   If `gh` is not available or fails, log a warning and continue.
+
+3. **Display summary for the selected target:**
+   ```text
+   <filename> — <total> tests, <done> already migrated, <in-pr> in open PRs, <available> ready to migrate
+   ```
+
+   If there are in-flight conflicts, warn the user and ask whether to skip those tests or continue anyway.
 
 #### Input 5: Configuration Summary and Confirmation
 
-Display all collected inputs for user review, including any in-flight PR warnings from Step 4g:
+Display all collected inputs for user review:
 
 ```text
 ========================================
@@ -292,7 +261,7 @@ Tests to Migrate:    <count> test cases
 Tests Skipped:       <count> (already migrated)
 ```
 
-If any in-flight conflicts were detected in Step 4g, include them here and ask the user whether to:
+If any in-flight conflicts were detected, include them here and ask the user whether to:
 - **Skip** those tests (recommended to avoid duplicate work)
 - **Continue anyway** (e.g., if the existing PR is stale or will be closed)
 
