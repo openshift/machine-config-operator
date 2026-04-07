@@ -129,97 +129,148 @@ This ensures:
 
 If `git pull` fails (e.g., uncommitted local changes), warn the user but continue — they may be working on a branch intentionally.
 
-#### Input 4: Migration Target
+#### Input 4: Migration Dashboard
 
-First, list available source test files:
+Instead of asking the user to guess filenames or keywords, build a live dashboard by scanning source and destination repos at runtime.
+
+**Step 4a: Collect all PolarionIDs from destination (already migrated)**
 
 ```bash
-echo "Available test files in $SOURCE_TEST_DIR:"
-ls -1 "$SOURCE_TEST_DIR"/*.go | while read f; do
-    filename=$(basename "$f")
-    lines=$(wc -l < "$f")
-    echo "  $filename ($lines lines)"
-done
+DEST_IDS=$(grep -roh 'PolarionID:[0-9]*' "$DEST_TEST_DIR"/*.go 2>/dev/null | grep -oP '\d+' | sort -u)
 ```
 
-Then ask: "Choose migration mode:
-a) **Whole file** - enter filename (e.g., `mco_configdrift.go`)
-b) **Suite extraction from mco.go** - enter keyword to filter tests (e.g., `kernel`, `ssh`, `fips`)"
+**Step 4b: Collect in-flight PolarionIDs from open PRs (best-effort)**
 
-**Mode A: Whole File Migration**
+If `gh` CLI is available, check open PRs on `openshift/machine-config-operator` for PolarionID references:
 
-If user provides a filename:
 ```bash
-SOURCE_FILE="$SOURCE_TEST_DIR/$FILENAME"
-if [ ! -f "$SOURCE_FILE" ]; then
-    echo "ERROR: File not found: $SOURCE_FILE"
-    exit 1
+IN_FLIGHT=""
+if command -v gh &>/dev/null; then
+    for pr_num in $(gh pr list --repo openshift/machine-config-operator --state open --json number --jq '.[].number' 2>/dev/null); do
+        PR_BODY=$(gh pr view --repo openshift/machine-config-operator "$pr_num" --json body --jq '.body' 2>/dev/null)
+        for id in $(echo "$PR_BODY" | grep -oP 'PolarionID:\K\d+' | sort -u); do
+            IN_FLIGHT="$IN_FLIGHT $id:#$pr_num"
+        done
+    done
 fi
+```
+
+If `gh` is not available or fails, log a warning and continue without PR data.
+
+**Step 4c: Scan each source test file and classify tests**
+
+For each `mco*.go` file in `$SOURCE_TEST_DIR` that contains `g.It(` calls:
+
+1. Extract all PolarionIDs from the file:
+   ```bash
+   grep 'g\.It("' "$FILE" | grep -oP '\d{5,}' | sort -u
+   ```
+
+2. For each PolarionID, classify as:
+   - **Done** — ID found in `$DEST_IDS`
+   - **In-PR** — ID found in `$IN_FLIGHT` (note which PR#)
+   - **Available** — ID not in either list
+
+3. Count total, done, in-PR, and available tests for the file
+4. Skip files where available count is 0 (fully migrated)
+
+**Step 4d: Discover topic keywords for suite extraction candidates**
+
+For files with **6 or more available tests**, dynamically discover topic groupings:
+
+1. For each available (non-migrated) test in the file, extract the description:
+   - Strip the `Author:*-NNNNN-` prefix and all `[tag]` brackets
+   - Take the remaining plain-text description
+2. Tokenize descriptions into lowercase words
+3. Filter out stop words: `the`, `a`, `an`, `is`, `in`, `on`, `to`, `for`, `with`, `and`, `or`, `of`, `should`, `not`, `be`, `if`, `when`, `that`, `it`, `as`, `by`
+4. Count how many tests each remaining word appears in
+5. Keep words that appear in **2 or more** available tests as topic keywords
+6. Sort by test count descending
+7. Tests not matching any discovered topic go into an "other" group
+
+**Step 4e: Display the dashboard**
+
+Present the results to the user as a numbered table with two sections:
+
+**Section 1: Whole-file migration options**
+- List each source test file as a numbered row
+- Show columns: file name, total tests, done, in-PR, available
+- Mark files with 0 available as "DONE"
+- Only show files that contain `g.It(` calls (skip pure helper files)
+
+**Section 2: Suite extraction options**
+- For each file with 6+ available tests, show the discovered topic keywords
+- Show columns: topic keyword, total matching tests, done, in-PR, available
+- Each topic is labeled with a letter (a, b, c, ...)
+
+Include a legend explaining: Done = already in destination, In-PR = in an open PR, Available = ready to migrate
+
+**Step 4f: User selection**
+
+Ask: "Enter your choice:
+- A **number** to migrate a whole file
+- A **file.topic** (e.g., `mco.kernel`) to extract a test suite by topic
+- Or type a **custom keyword** to search across all files"
+
+**If user picks a number (whole file):**
+```
 MIGRATION_MODE="whole-file"
-DEST_FILENAME="$FILENAME"
+SOURCE_FILE="<path to selected file>"
+DEST_FILENAME="<same filename>"
 ```
 
+**If user picks a file.topic (suite extraction):**
+```
+MIGRATION_MODE="suite-extraction"
+SOURCE_FILE="<path to the file>"
+EXTRACTION_KEYWORD="<topic keyword>"
+```
+
+Derive the destination filename:
+- If source is `mco.go`: destination is `mco_<keyword>.go`
+- If source is `mco_<topic>.go`: destination is `mco_<topic>_<keyword>.go`
+
+Show the matching tests and ask user to confirm:
+```bash
+grep -n 'g\.It("' "$SOURCE_FILE" | grep -i "$KEYWORD" | nl -w2 -s'. '
+```
+
+**If user types a custom keyword:**
+Search across all source files for matching tests:
+```bash
+for f in "$SOURCE_TEST_DIR"/mco*.go; do
+    matches=$(grep -c "g\.It(\".*$KEYWORD" "$f" 2>/dev/null || true)
+    if [ "$matches" -gt 0 ]; then
+        echo "$(basename $f): $matches matching tests"
+        grep -n 'g\.It("' "$f" | grep -i "$KEYWORD"
+    fi
+done
+```
+
+If matches span multiple files, ask the user which file to extract from, then proceed as suite extraction.
+
 **Store in variables:**
-- `<migration-mode>` = "whole-file"
+- `<migration-mode>` = "whole-file" or "suite-extraction"
 - `<source-file>` = full path to source file
-- `<dest-filename>` = same filename for destination
+- `<dest-filename>` = destination filename
+- `<extraction-keyword>` = keyword (suite extraction only)
+- `<selected-tests>` = list of test names/line numbers to extract (suite extraction only)
 
-**Mode B: Suite Extraction from mco.go**
+#### Input 4g: Warn about in-flight conflicts
 
-If user provides a keyword:
+If any of the selected tests have PolarionIDs that were detected as in-flight (from Step 4b), display warnings:
 
-1. Search for matching tests in mco.go:
-```bash
-echo "Tests matching '$KEYWORD' in mco.go:"
-grep -n 'g\.It("' "$SOURCE_TEST_DIR/mco.go" | grep -i "$KEYWORD" | nl -w2 -s'. '
+```text
+WARNING: The following tests are already being migrated in open PRs:
+  - PolarionID:NNNNN → PR #XX
+  - PolarionID:NNNNN → PR #YY
 ```
 
-2. Display the matching tests and ask user to confirm
-3. The extracted tests will be placed in a new file named `mco_<keyword>.go`
-
-**Store in variables:**
-- `<migration-mode>` = "suite-extraction"
-- `<source-file>` = path to mco.go
-- `<extraction-keyword>` = the keyword used
-- `<dest-filename>` = `mco_<keyword>.go`
-- `<selected-tests>` = list of test names/line numbers to extract
-
-#### Input 4b: Check for In-Flight Migration PRs
-
-After the user selects the migration target, immediately check GitHub for open (unmerged) PRs that may already be migrating the same tests. This runs before the confirmation summary so the user can see conflicts before deciding to proceed.
-
-```bash
-# Extract PolarionIDs from the selected source tests
-SOURCE_IDS=$(grep 'g\.It("' "$SOURCE_FILE" | grep -oP '\d{5,}' | sort -u)
-
-# For each source PolarionID, search open PRs for references
-for id in $SOURCE_IDS; do
-    MATCHING_PRS=$(gh pr list --repo openshift/machine-config-operator --state open --search "PolarionID:$id" --json number,title,url,author --jq '.[] | "#\(.number) by @\(.author.login): \(.title) (\(.url))"')
-    if [ -n "$MATCHING_PRS" ]; then
-        echo "WARNING: PolarionID $id found in open PR(s):"
-        echo "$MATCHING_PRS"
-    fi
-done
-```
-
-If `gh` is not available or the search fails (e.g., no network), log a warning and continue — this check is best-effort.
-
-**Note:** The `gh pr list --search` query searches PR titles and bodies. For more thorough detection, also check PR diffs if the initial search returns no results but you suspect overlap:
-
-```bash
-# Fallback: search PR diffs directly (slower, use only if needed)
-for pr_number in $(gh pr list --repo openshift/machine-config-operator --state open --json number --jq '.[].number'); do
-    if gh pr diff --repo openshift/machine-config-operator "$pr_number" 2>/dev/null | grep -q "PolarionID:$id"; then
-        echo "WARNING: PolarionID $id found in diff of PR #$pr_number"
-    fi
-done
-```
-
-Include any warnings in the confirmation summary (Input 5) so the user can decide whether to skip those tests or continue.
+Include these warnings in the confirmation summary (Input 5) so the user can decide whether to skip those tests or continue.
 
 #### Input 5: Configuration Summary and Confirmation
 
-Display all collected inputs for user review:
+Display all collected inputs for user review, including any in-flight PR warnings from Step 4g:
 
 ```text
 ========================================
@@ -232,13 +283,10 @@ Migration Mode:      <migration-mode>
 Source File:         <source-file>
 Destination File:    <dest-filename>
 Tests to Migrate:    <count> test cases
-
-⚠ Tests found in open PRs:
-  - PolarionID:NNNNN → PR #XX by @author (title)
-========================================
+Tests Skipped:       <count> (already migrated)
 ```
 
-If there are tests found in open PRs, ask the user whether to:
+If any in-flight conflicts were detected in Step 4g, include them here and ask the user whether to:
 - **Skip** those tests (recommended to avoid duplicate work)
 - **Continue anyway** (e.g., if the existing PR is stale or will be closed)
 
