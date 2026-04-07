@@ -5,17 +5,17 @@ argument-hint: ""
 
 ## Name
 
-migrate
+migrate-tests
 
 ## Synopsis
 
 ```bash
-/migrate
+/migrate-tests
 ```
 
 ## Description
 
-The `/migrate` command automates the migration of MCO (Machine Config Operator) test cases from the `openshift-tests-private` repository to the `machine-config-operator` repository. It handles all transformations required to port tests between these repositories, including package renaming, import rewriting, test name reformatting, template file copying, and utility function migration.
+The `/migrate-tests` command automates the migration of MCO (Machine Config Operator) test cases from the `openshift-tests-private` repository to the `machine-config-operator` repository. It handles all transformations required to port tests between these repositories, including package renaming, import rewriting, test name reformatting, template file copying, and utility function migration.
 
 **What it does:**
 
@@ -32,7 +32,7 @@ The `/migrate` command automates the migration of MCO (Machine Config Operator) 
 - **Two migration modes** - Migrate a whole test file (e.g., `mco_configdrift.go`) or extract a test suite from the large `mco.go` file by keyword
 - **Accurate test name transformation** - Converts `Author:USERNAME-Qualifiers-ID-[Tags] Description` format to `[PolarionID:ID][OTP] Description` format
 - **Import rewriting** - Replaces all `compat_otp` references with `exutil` equivalents
-- **Duplicate detection** - Skips tests and helper functions already present in destination
+- **Duplicate detection** - Skips tests already present in destination and warns about tests being migrated in open (unmerged) PRs on GitHub
 - **Code preservation** - Migrates code as-is without simplification or refactoring
 - **Template migration** - Copies referenced testdata YAML files to the correct destination path
 - **Build verification** - Compiles the binary and verifies migrated tests are listed
@@ -106,7 +106,7 @@ The command will:
 ### Example interaction - whole file migration
 
 ```text
-User: /migrate
+User: /migrate-tests
 
 AI: What is the path to your openshift-tests-private repository?
 
@@ -155,7 +155,7 @@ AI: [executes migration phases 2-4]
 ### Example interaction - suite extraction from mco.go
 
 ```text
-User: /migrate
+User: /migrate-tests
 
 ...
 
@@ -191,7 +191,7 @@ This command takes no arguments. All configuration is collected interactively du
 - **Code preservation**: The migration does NOT simplify or refactor code - it only changes package names, imports, and function reference prefixes
 - **Function order**: Functions are written in the same order as in the original source file
 - **File naming**: For compat_otp utility functions, the same file names as the original are used
-- **Duplicate detection**: Tests already migrated (by PolarionID) and helper functions already present in destination are skipped
+- **Duplicate detection**: Tests already migrated (by PolarionID) in destination are skipped. Open PRs on GitHub are also checked for in-flight migrations of the same tests (requires `gh` CLI)
 - **Template files**: Referenced testdata YAML files are copied from `testdata/mco/` to `testdata/files/`
 - **Large mco.go**: The `mco.go` file is 4000+ lines - use suite extraction mode to break it into smaller, focused test files before migrating
 - **Build verification**: The command builds the test binary using `make machine-config-tests-ext` and verifies migrated tests appear in the listing
