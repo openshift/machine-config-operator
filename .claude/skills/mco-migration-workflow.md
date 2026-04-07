@@ -74,6 +74,8 @@ SOURCE_TEST_DIR="$SOURCE_REPO/test/extended/mco"
 SOURCE_TESTDATA_DIR="$SOURCE_REPO/test/extended/testdata/mco"
 ```
 
+**Save to memory immediately:** After validation passes, write (or update) the `migrate_tests_config.md` memory file with the source_repo path. If the memory file doesn't exist yet, create it with the full frontmatter. If it already exists, update only the `source_repo` line under `## Last-Used Paths`. Also ensure `MEMORY.md` has an entry pointing to this file.
+
 #### Input 2: Destination Repository Path
 
 If a saved destination path exists in memory, ask: "What is the path to your `machine-config-operator` repository? (last used: `<saved-path>`, press Enter to reuse)"
@@ -99,6 +101,8 @@ DEST_TESTDATA_DIR="$DEST_REPO/test/extended-priv/testdata/files"
 DEST_UTIL_DIR="$DEST_REPO/test/extended-priv/util"
 ```
 
+**Save to memory immediately:** After validation passes, update the `migrate_tests_config.md` memory file with the dest_repo path under `## Last-Used Paths`.
+
 #### Input 3: compat_otp Library Path (Optional)
 
 If a saved compat_otp path exists in memory, ask: "What is the path to the compat_otp library? (last used: `<saved-path>`, press Enter to reuse, or type `skip` to skip)"
@@ -108,6 +112,8 @@ This is typically at: `<origin-repo>/test/extended/util/compat_otp/`
 It is needed if the source tests use compat_otp sub-package functions (architecture, clusterinfra, logext, bootstrap) that don't already exist in the destination."
 
 **Store in variable:** `<compat-otp-path>` (empty if skipped)
+
+**Save to memory immediately:** After the user provides a path (or skips), update the `migrate_tests_config.md` memory file with the compat_otp_path under `## Last-Used Paths`. If the user skipped, save `compat_otp_path: skipped`.
 
 #### Input 3b: Sync Repositories
 
@@ -730,22 +736,11 @@ Next Steps:
 ========================================
 ```
 
-#### Step 5: Save Configuration and Context to Memory
+#### Step 5: Save Migration History to Memory
 
-After a successful migration, save the configuration and repo context to the project memory file `migrate_tests_config.md` so future runs have full context. Write (or update) the memory file with:
+After a successful migration, update the `migrate_tests_config.md` memory file with the migration history. The `## Last-Used Paths` section is already up-to-date (paths are saved immediately during Phase 1 as each path is entered). Only update the migration history sections:
 
 ```markdown
----
-name: migrate-tests configuration and context
-description: Last-used paths, migrated tests, and repo context for the /migrate-tests command
-type: reference
----
-
-## Last-Used Paths
-- source_repo: <source-repo>
-- dest_repo: <dest-repo>
-- compat_otp_path: <compat-otp-path or "skipped">
-
 ## Already Migrated PolarionIDs
 <list all PolarionIDs currently in dest-repo test files, including ones just migrated>
 
@@ -755,10 +750,8 @@ type: reference
 - tests migrated: <list of PolarionIDs migrated in this run>
 ```
 
-Also update `MEMORY.md` if this is the first time saving this memory.
-
 On subsequent runs, this memory provides:
-- Saved paths so the user can press Enter to reuse them
+- Saved paths so the user can press Enter to reuse them (saved immediately during Input 1/2/3)
 - A cached list of already-migrated PolarionIDs for faster duplicate detection
 - Context about what was last migrated and when
 
