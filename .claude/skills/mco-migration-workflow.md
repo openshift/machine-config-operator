@@ -21,13 +21,14 @@ Use this skill when executing the `/migrate-tests` command to automate the migra
 
 ## Overview
 
-The migration is a **4-phase workflow** that collects configuration, analyzes source and destination code, executes the migration transformations, and verifies the result.
+The migration is a **multi-phase workflow** that collects configuration, analyzes source and destination code, optionally mirrors changes in the source repo, executes the migration transformations, and verifies the result.
 
-**ALL 4 PHASES ARE MANDATORY - EXECUTE EACH PHASE IN ORDER:**
+**EXECUTE EACH PHASE IN ORDER (Phase 3A is conditional — only for suite extraction with mirroring enabled):**
 
-1. User Input Collection (5 inputs)
+1. User Input Collection (6 inputs — the 6th is only asked for suite extraction mode)
 2. Analysis (source/destination code analysis, dependency mapping)
-3. Migration Execution (code transformation, file creation, template copying)
+3A. Source Repository Mirroring (suite extraction only — create extracted file, remove from original, commit and PR in openshift-tests-private)
+3B. MCO Migration Execution (code transformation, file creation, template copying)
 4. Verification (build, test listing, optional test run)
 
 **Key Design Principles:**
@@ -39,7 +40,7 @@ The migration is a **4-phase workflow** that collects configuration, analyzes so
 
 ## Migration Phases
 
-### Phase 1: User Input Collection (5 inputs)
+### Phase 1: User Input Collection (6 inputs)
 
 Collect all necessary information from the user before starting the migration.
 
@@ -166,9 +167,13 @@ MIGRATION_MODE="suite-extraction"
 EXTRACTION_KEYWORD=$(echo "$USER_INPUT" | cut -d: -f2)
 ```
 
-Derive destination filename:
-- If source is `mco.go`: destination is `mco_<keyword>.go`
-- If source is `mco_<topic>.go`: destination is `mco_<topic>_<keyword>.go`
+Derive a **suggested** destination filename:
+- If source is `mco.go`: suggest `mco_<keyword>.go`
+- If source is `mco_<topic>.go`: suggest `mco_<topic>_<keyword>.go`
+
+Then ask the user: "The extracted tests will be saved as `<suggested-filename>`. Enter a custom filename or press Enter to accept:"
+
+**Handling the response:** If the user presses Enter (empty response), use the suggested filename. Otherwise, use the user-provided filename. Ensure the filename ends with `.go` — append it if missing.
 
 Show matching tests **grouped by functionality**. For each matching test:
 1. Extract the PolarionID and plain-text description (strip Author/qualifier prefix and tags)
@@ -266,6 +271,18 @@ If any in-flight conflicts were detected, include them here and ask the user whe
 - **Continue anyway** (e.g., if the existing PR is stale or will be closed)
 
 Ask: "Proceed with migration? [Y/n]:"
+
+#### Input 6: Source Repo Mirroring (Suite Extraction Only)
+
+**This input is ONLY asked when migration mode is `suite-extraction`.** Skip for whole-file migration.
+
+After the user confirms the migration (Input 5), ask:
+
+"Do you also want to create `<dest-filename>` in the `openshift-tests-private` repo and remove the extracted tests from `<original-filename>`? This keeps the private repo organized and enables verification. [Y/n]:"
+
+**Store in variable:** `<mirror-source>` = true/false
+
+If yes, the migration will handle the **source repo changes first** (create new file, remove tests from original, commit, and PR in `openshift-tests-private` in Phase 3A), then proceed with the MCO migration (Phase 3B).
 
 ### Phase 2: Analysis
 
@@ -372,7 +389,157 @@ For each sub-package used:
 2. If it exists, just update the import path
 3. If it doesn't exist, mark the required functions for migration from compat_otp source
 
-### Phase 3: Migration Execution
+### Phase 3A: Source Repository Mirroring (Suite Extraction Only)
+
+**This phase runs ONLY when both conditions are met:**
+1. Migration mode is `suite-extraction`
+2. User confirmed source mirroring (`<mirror-source>` = true)
+
+**Skip this phase entirely** for whole-file migration or if user declined mirroring. Jump directly to Phase 3B.
+
+**This phase runs BEFORE Phase 3B (MCO Migration).** The source repo PR must be created first, then the MCO migration follows.
+
+#### Step 1: Create Branch and Capture Original Test Count
+
+First, create a new branch in the source repo so all changes happen on a clean branch (not the user's working branch):
+
+```bash
+cd "$SOURCE_REPO"
+MIRROR_BRANCH="extract-${EXTRACTION_KEYWORD}-from-$(basename ${SOURCE_FILE} .go)"
+# e.g., extract-kernel-from-mco
+git checkout -b "$MIRROR_BRANCH"
+```
+
+If the branch already exists (e.g., from a previous run), delete it first or use a unique suffix:
+```bash
+git checkout -b "$MIRROR_BRANCH" 2>/dev/null || {
+    echo "Branch $MIRROR_BRANCH already exists. Deleting and recreating..."
+    git branch -D "$MIRROR_BRANCH"
+    git checkout -b "$MIRROR_BRANCH"
+}
+```
+
+Then, record the original test count for verification later:
+
+```bash
+ORIGINAL_TEST_COUNT=$(grep -c 'g\.It("' "$SOURCE_FILE")
+echo "Original test count in $(basename $SOURCE_FILE): $ORIGINAL_TEST_COUNT"
+```
+
+#### Step 2: Create the Extracted File in Source Repo
+
+Create a new file in the source test directory with the user-chosen filename:
+
+```bash
+SOURCE_EXTRACTED_FILE="$SOURCE_TEST_DIR/$DEST_FILENAME"
+# e.g., openshift-tests-private/test/extended/mco/mco_kernel.go
+```
+
+This file must contain the extracted tests in their **original format** — NO migration transformations:
+1. The **original** package declaration (`package mco`)
+2. The **original** imports (keep `compat_otp`, `exutil "github.com/openshift/origin/..."`, etc.)
+3. A `g.Describe()` block with the **original** tags from the source file (NOT destination suite tags)
+4. The `g.JustBeforeEach()` setup block (copied from the original source's Describe block)
+5. **Only** the `g.It()` blocks that matched the extraction keyword, in their **original format** (keep `Author:USERNAME-...` naming)
+6. Any helper functions used **exclusively** by the extracted tests and defined in the same source file
+
+**Critical:** This file must compile within the `openshift-tests-private` repo. Do NOT apply any migration transformations — keep everything exactly as it was in the source, just moved to a new file.
+
+#### Step 3: Remove Extracted Tests from Original Source File
+
+Edit the original source file to remove the `g.It()` blocks that were extracted:
+
+1. Read the original source file
+2. Identify the exact `g.It()` blocks (including their complete function body) that were extracted
+3. Remove those blocks from the file
+4. Keep everything else: the `g.Describe()` block, `g.JustBeforeEach()`, remaining `g.It()` blocks, helper functions, imports
+5. Clean up any imports that are no longer used after removing the test blocks
+6. If the `g.Describe()` block is now empty (all tests were extracted), warn the user:
+   ```text
+   WARNING: All tests have been extracted from <original-filename>.
+   The file now contains an empty Describe block. You may want to remove this file entirely.
+   ```
+
+#### Step 4: Format the Source Repo Files
+
+```bash
+cd "$SOURCE_REPO"
+goimports -w "$SOURCE_EXTRACTED_FILE"
+goimports -w "$SOURCE_FILE"
+```
+
+#### Step 5: Verify Source Repo Test Count
+
+After mirroring, verify that the total test count in the source repo is preserved:
+
+```bash
+# Count tests in the new extracted file
+NEW_COUNT=$(grep -c 'g\.It("' "$SOURCE_EXTRACTED_FILE")
+
+# Count tests remaining in the original file
+REMAINING_COUNT=$(grep -c 'g\.It("' "$SOURCE_FILE")
+
+echo "Original: $ORIGINAL_TEST_COUNT tests"
+echo "Extracted: $NEW_COUNT tests -> $(basename $SOURCE_EXTRACTED_FILE)"
+echo "Remaining: $REMAINING_COUNT tests -> $(basename $SOURCE_FILE)"
+echo "Total: $((NEW_COUNT + REMAINING_COUNT)) tests (should equal $ORIGINAL_TEST_COUNT)"
+
+if [ $((NEW_COUNT + REMAINING_COUNT)) -ne $ORIGINAL_TEST_COUNT ]; then
+    echo "WARNING: Test count mismatch! Review the changes manually."
+fi
+```
+
+#### Step 6: Commit, Push, and Create PR in openshift-tests-private
+
+After verifying the source repo changes are correct (the branch `$MIRROR_BRANCH` was already created in Step 1):
+
+1. **Stage and commit** the changes (remember to use `-s` for sign-off):
+   ```bash
+   cd "$SOURCE_REPO"
+   git add "$SOURCE_EXTRACTED_FILE" "$SOURCE_FILE"
+   git commit -s -m "$(cat <<'EOF'
+   Extract <keyword> tests from <original-filename> into <dest-filename>
+
+   Move <N> test cases related to <keyword> from <original-filename> into
+   a dedicated file <dest-filename> for better organization. This is part
+   of the ongoing MCO test migration effort.
+   EOF
+   )"
+   ```
+
+2. **Push and create PR** in `openshift-tests-private`:
+   ```bash
+   git push -u origin "$MIRROR_BRANCH"
+   gh pr create \
+     --repo openshift/openshift-tests-private \
+     --title "Extract <keyword> tests from <original-filename>" \
+     --body "$(cat <<'EOF'
+   ## Summary
+   - Extract <N> <keyword>-related test cases from `<original-filename>` into `<dest-filename>`
+   - Part of MCO test migration to `machine-config-operator` repo
+   - No test logic changes — only structural reorganization
+
+   ## Changes
+   - **NEW:** `test/extended/mco/<dest-filename>` — <N> extracted tests
+   - **MODIFIED:** `test/extended/mco/<original-filename>` — removed extracted tests (<M> tests remaining)
+
+   ## Verification
+   - Total test count preserved: <N> extracted + <M> remaining = <original-count> original
+   EOF
+   )"
+   ```
+
+3. **Report the PR URL** to the user and switch back to the original branch:
+   ```bash
+   cd "$SOURCE_REPO"
+   git checkout -  # go back to previous branch
+   ```
+
+   **Important:** After `git checkout -`, the source file (`$SOURCE_FILE`) reverts to its original state on the previous branch — it still contains all tests including the extracted ones. This is correct and expected. Phase 3B reads the original source file (with all tests) to perform the MCO migration transformations.
+
+**After the source repo PR is created**, proceed with Phase 3B below.
+
+### Phase 3B: MCO Migration Execution
 
 Execute the migration transformations based on the analysis from Phase 2.
 
@@ -383,7 +550,24 @@ Execute the migration transformations based on the analysis from Phase 2.
 - For compat_otp functions, use the same file names as in compat_otp
 - If a new file has to be created in destination, create it
 
-#### Step 1: Transform Package Declaration
+#### Step 1: Create Branch in Destination Repo
+
+Before writing any files, create a new branch in the MCO repo so all migration changes happen on a clean branch:
+
+```bash
+cd "$DEST_REPO"
+MCO_BRANCH="migrate-$(basename ${DEST_FILENAME} .go)-tests"
+# e.g., migrate-mco_kernel-tests
+git checkout -b "$MCO_BRANCH" 2>/dev/null || {
+    echo "Branch $MCO_BRANCH already exists. Deleting and recreating..."
+    git branch -D "$MCO_BRANCH"
+    git checkout -b "$MCO_BRANCH"
+}
+```
+
+All subsequent steps in Phase 3B and Phase 4 operate on this branch.
+
+#### Step 2: Transform Package Declaration
 
 Change:
 ```go
@@ -394,7 +578,7 @@ To:
 package extended
 ```
 
-#### Step 2: Transform Imports
+#### Step 3: Transform Imports
 
 Apply the complete import mapping:
 
@@ -411,7 +595,7 @@ Apply the complete import mapping:
 
 Remove any imports that are no longer needed after transformation. Add any imports that are newly needed (e.g., if the destination uses `logger` but the source didn't import it).
 
-#### Step 3: Transform Function References
+#### Step 4: Transform Function References
 
 Replace all function call prefixes throughout the code:
 
@@ -423,7 +607,7 @@ Replace all function call prefixes throughout the code:
 
 **Important:** Do NOT change function arguments or logic. Only change the package prefix.
 
-#### Step 4: Transform Describe Block
+#### Step 5: Transform Describe Block
 
 Transform the `g.Describe()` block signature.
 
@@ -450,7 +634,7 @@ g.Describe("[sig-mco] MCO ControlPlaneMachineSet", g.Label("Platform:gce", "Plat
 g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Serial][Disruptive] MCO ControlPlaneMachineSet", g.Label("Platform:gce", "Platform:aws", "Platform:azure"), func() {
 ```
 
-#### Step 5: Transform Test Names (g.It blocks)
+#### Step 6: Transform Test Names (g.It blocks)
 
 This is the most critical transformation. Apply the following algorithm to each `g.It()` test name:
 
@@ -510,14 +694,14 @@ g.It("Author:sregidor-...-81403-[P1] In BootImages Machineset should update by d
 g.It("[PolarionID:81403][OTP] In BootImages Machineset should update by default", g.Label("Platform:aws", "Platform:gce"), func() {
 ```
 
-#### Step 6: Transform Step Logging
+#### Step 7: Transform Step Logging
 
 Replace test step logging calls:
 - `compat_otp.By(` -> `exutil.By(`
 
 No other changes needed. The `exutil.By()` function in the destination wraps `g.By()` similarly to `compat_otp.By()`.
 
-#### Step 7: Migrate Helper Functions
+#### Step 8: Migrate Helper Functions
 
 For each helper function identified in Phase 2 Step 5:
 
@@ -530,7 +714,7 @@ For each helper function identified in Phase 2 Step 5:
    c. Only change `compat_otp.` references to `exutil.` and update imports
    d. Preserve the function order from the original file
 
-#### Step 8: Migrate compat_otp Utility Functions
+#### Step 9: Migrate compat_otp Utility Functions
 
 For each compat_otp sub-package function identified in Phase 2 Step 6:
 
@@ -544,7 +728,7 @@ For each compat_otp sub-package function identified in Phase 2 Step 6:
 
 **If compat_otp path was not provided**: Check if the required functions already exist in destination. If not, report which functions need to be manually migrated.
 
-#### Step 9: Copy Template/Testdata Files
+#### Step 10: Copy Template/Testdata Files
 
 For each template file identified in Phase 2 Step 4:
 
@@ -565,7 +749,7 @@ fi
 
 **Important:** After adding new testdata files, the embedded testdata assets may need regeneration. Check if the destination has a `go:embed` directive or asset generation step and follow the existing pattern.
 
-#### Step 10: Write the Destination File
+#### Step 11: Write the Destination File
 
 Assemble the transformed code and write it to the destination:
 
@@ -582,7 +766,7 @@ DEST_FILE="$DEST_TEST_DIR/$DEST_FILENAME"
 4. Only the selected `g.It()` test blocks
 5. Any helper functions used exclusively by the selected tests
 
-#### Step 11: Format the Code
+#### Step 12: Format the Code
 
 Run goimports to fix import ordering and formatting:
 
@@ -646,7 +830,62 @@ If a test is missing from the listing, check:
 2. The `g.Describe` and `g.It` blocks are properly formed
 3. The file is in `test/extended-priv/` directory
 
-#### Step 3: Optional Test Execution
+#### Step 3: Commit, Push, and Create PR in machine-config-operator
+
+After build and test listing verification pass, commit and create a PR in the MCO repo (the branch `$MCO_BRANCH` was already created in Phase 3B Step 1):
+
+1. **Stage all migrated files** (remember to use `-s` for sign-off):
+   ```bash
+   cd "$DEST_REPO"
+   # Add the migrated test file
+   git add "$DEST_FILE"
+   # Add any template/testdata files that were copied
+   git add "$DEST_TESTDATA_DIR"/*.yaml 2>/dev/null
+   # Add any utility files that were created/modified
+   git add "$DEST_UTIL_DIR"/ 2>/dev/null
+   # Add any other modified files in test/extended-priv/
+   git add "$DEST_TEST_DIR"/*.go 2>/dev/null
+
+   git commit -s -m "$(cat <<'EOF'
+   Migrate <keyword-or-filename> tests from openshift-tests-private
+
+   Migrate <N> test cases from openshift-tests-private/test/extended/mco/<source-filename>
+   to machine-config-operator/test/extended-priv/<dest-filename>.
+
+   Migrated PolarionIDs: <comma-separated list of IDs>
+   EOF
+   )"
+   ```
+
+2. **Push and create PR** in `machine-config-operator`:
+   ```bash
+   git push -u origin "$MCO_BRANCH"
+   gh pr create \
+     --repo openshift/machine-config-operator \
+     --title "Migrate <keyword-or-filename> tests from openshift-tests-private" \
+     --body "$(cat <<'EOF'
+   ## Summary
+   - Migrate <N> test cases from `openshift-tests-private/test/extended/mco/<source-filename>`
+   - Tests are transformed and placed in `test/extended-priv/<dest-filename>`
+
+   ## Migrated Tests
+   <numbered list of [PolarionID:NNNNN][OTP] descriptions>
+
+   ## Changes
+   - **NEW:** `test/extended-priv/<dest-filename>` — <N> migrated tests
+   - **COPIED:** testdata files (if any)
+   - **MODIFIED:** utility files (if any)
+
+   ## Verification
+   - Build: PASSED (`make machine-config-tests-ext`)
+   - Test listing: All <N> migrated tests found in binary
+   EOF
+   )"
+   ```
+
+3. **Report the PR URL** to the user.
+
+#### Step 4: Optional Test Execution
 
 Ask the user: "Would you like to run a specific migrated test? This requires a KUBECONFIG pointing to a running cluster. [y/N]:"
 
@@ -670,7 +909,7 @@ Run the selected test:
 ./_output/linux/amd64/machine-config-tests-ext run-test "$TEST_NAME"
 ```
 
-#### Step 4: Migration Summary
+#### Step 5: Migration Summary
 
 Provide a comprehensive summary:
 
@@ -679,11 +918,20 @@ Provide a comprehensive summary:
 MCO Migration Summary
 ========================================
 
-Files Created/Modified:
+Source Repo Changes (openshift-tests-private):
+  (Only shown if source mirroring was enabled)
+  - CREATED: test/extended/mco/<dest-filename> (<N> tests extracted)
+  - MODIFIED: test/extended/mco/<original-filename> (<M> tests remaining)
+  - Branch: <mirror-branch>
+  - PR: <source-pr-url>
+
+Destination Repo Changes (machine-config-operator):
   - <dest-test-dir>/<dest-filename> (NEW)
   - <dest-testdata-dir>/<template1>.yaml (COPIED)
   - <dest-testdata-dir>/<template2>.yaml (COPIED)
   - <dest-util-dir>/<util-file>.go (MODIFIED - added functions)
+  - Branch: <mco-branch>
+  - PR: <mco-pr-url>
 
 Tests Migrated:
   1. [PolarionID:NNNNN][OTP] Test description 1
@@ -697,15 +945,15 @@ Build: PASSED
 Test Listing: ALL MIGRATED TESTS FOUND
 
 Next Steps:
-  1. Review the migrated code in <dest-filename>
-  2. Run the tests against a cluster:
+  1. Review the MCO PR: <mco-pr-url>
+  2. (Optional) Run the tests against a cluster:
      export KUBECONFIG=/path/to/kubeconfig
      ./_output/linux/amd64/machine-config-tests-ext run-test "<test-name>"
-  3. Commit the changes when satisfied
+  3. (If source mirroring) Ensure the openshift-tests-private PR is reviewed and merged: <source-pr-url>
 ========================================
 ```
 
-#### Step 5: Save Migration History to Memory
+#### Step 6: Save Migration History to Memory
 
 After a successful migration, update the `migrate_tests_config.md` memory file with the migration history. The `## Last-Used Paths` section is already up-to-date (paths are saved immediately during Phase 1 as each path is entered). Only update the migration history sections:
 

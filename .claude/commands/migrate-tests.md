@@ -21,15 +21,18 @@ The `/migrate-tests` command automates the migration of MCO (Machine Config Oper
 
 1. Collects source, destination, and migration target configuration
 2. Analyzes source test files and destination patterns
-3. Transforms and migrates test code (package, imports, naming, references)
-4. Migrates helper functions and compat_otp utilities
-5. Copies referenced template/testdata files
-6. Builds the test binary and verifies migrated tests appear
-7. Optionally runs a specific test against a cluster
+3. For suite extraction: optionally mirrors changes in `openshift-tests-private` (creates extracted file, removes tests from original, commits and opens PR)
+4. Transforms and migrates test code (package, imports, naming, references)
+5. Migrates helper functions and compat_otp utilities
+6. Copies referenced template/testdata files
+7. Builds the test binary and verifies migrated tests appear
+8. Commits, pushes, and creates PR in `machine-config-operator`
+9. Optionally runs a specific test against a cluster
 
 **Key Features:**
 
 - **Two migration modes** - Migrate a whole test file (e.g., `mco_configdrift.go`) or extract a test suite from any file by keyword (e.g., `mco.go:kernel`)
+- **Source repo mirroring** - For suite extraction, optionally creates the same new file in `openshift-tests-private` and removes extracted tests from the original file. The source repo PR is created first, then the MCO migration PR follows.
 - **Accurate test name transformation** - Converts `Author:USERNAME-Qualifiers-ID-[Tags] Description` format to `[PolarionID:ID][OTP] Description` format
 - **Import rewriting** - Replaces all `compat_otp` references with `exutil` equivalents
 - **Targeted analysis** - Only scans the selected file for duplicates and open PR conflicts, keeping the workflow fast
@@ -42,18 +45,19 @@ The `/migrate-tests` command automates the migration of MCO (Machine Config Oper
 
 **IMPORTANT: Use the MCO Migration Workflow skill for implementation.**
 
-This command uses the `mco-migration-workflow` skill which provides detailed step-by-step implementation guidance for all 4 phases of the migration.
+This command uses the `mco-migration-workflow` skill which provides detailed step-by-step implementation guidance for all phases of the migration.
 
 To execute this command:
 
 1. **Invoke the skill** to get detailed implementation instructions:
    - The skill is located at: `.claude/skills/mco-migration-workflow.md`
-   - Follow the skill's 4-phase workflow exactly as documented
+   - Follow the skill's workflow phases exactly as documented
 
 2. **The workflow phases are:**
-   - **Phase 1**: User Input Collection (5 inputs - source repo, dest repo, compat_otp path, migration target, confirmation)
+   - **Phase 1**: User Input Collection (6 inputs - source repo, dest repo, compat_otp path, migration target, confirmation, source repo mirroring)
    - **Phase 2**: Analysis (read source/dest files, identify dependencies, map test names)
-   - **Phase 3**: Migration Execution (transform and write code, copy templates, migrate utilities)
+   - **Phase 3A**: Source Repository Mirroring (suite extraction only — extract tests into new file in openshift-tests-private, remove from original, commit and PR)
+   - **Phase 3B**: MCO Migration Execution (transform and write code, copy templates, migrate utilities)
    - **Phase 4**: Verification (build binary, list tests, optional test run, summary)
 
 3. **Critical implementation notes:**
@@ -72,7 +76,8 @@ To execute this command:
 
 **On success:**
 
-- List of all files created/modified in destination repo
+- Source repo changes and PR URL (if source mirroring was enabled)
+- Destination repo changes, branch name, and PR URL
 - List of all tests migrated with their new names
 - Build verification result (pass/fail)
 - Test listing verification showing migrated tests
@@ -100,9 +105,11 @@ The command will:
 4. Ask what to migrate (filename or filename:keyword)
 5. Analyze only the selected file for duplicates and open PR conflicts
 6. Display configuration summary for confirmation
-7. Execute the migration transformations
-8. Build and verify the test binary
-9. Provide summary and next steps
+7. Create a new branch in the destination repo
+8. Execute the migration transformations
+9. Build and verify the test binary
+10. Commit, push, and create PR in machine-config-operator
+11. Provide summary and next steps
 
 ### Example interaction — whole file
 
@@ -129,6 +136,7 @@ User: Y
 
 AI: [executes migration]
     Migration complete! 5 tests migrated successfully.
+    PR created: https://github.com/openshift/machine-config-operator/pull/XXX
 ```
 
 ### Example interaction — suite extraction
@@ -136,6 +144,10 @@ AI: [executes migration]
 ```text
 AI: What do you want to migrate?
 User: mco.go:kernel
+
+AI: The extracted tests will be saved as mco_kernel.go.
+    Enter a custom filename or press Enter to accept:
+User: [presses Enter]
 
 AI: Found 9 tests matching "kernel" in mco.go:
     1. 42365 - add real time kernel argument
@@ -145,7 +157,36 @@ AI: Found 9 tests matching "kernel" in mco.go:
     These will be extracted into mco_kernel.go. Proceed? [Y/n]
 User: Y
 
-AI: [executes migration]
+AI: Do you also want to create mco_kernel.go in openshift-tests-private
+    and remove the extracted tests from mco.go? [Y/n]
+User: Y
+
+AI: [Phase 3A: Source repo mirroring]
+    Created openshift-tests-private/test/extended/mco/mco_kernel.go (9 tests)
+    Modified openshift-tests-private/test/extended/mco/mco.go (removed 9 tests)
+    PR created: https://github.com/openshift/openshift-tests-private/pull/XXX
+
+    [Phase 3B: MCO migration]
+    Migrating tests to machine-config-operator...
+    Build: PASSED
+    Test listing: All 9 migrated tests found
+    PR created: https://github.com/openshift/machine-config-operator/pull/YYY
+```
+
+### Example interaction — suite extraction with custom filename
+
+```text
+AI: What do you want to migrate?
+User: mco.go:kernel
+
+AI: The extracted tests will be saved as mco_kernel.go.
+    Enter a custom filename or press Enter to accept:
+User: mco_kernel_args.go
+
+AI: Found 9 tests matching "kernel" in mco.go:
+    ...
+    These will be extracted into mco_kernel_args.go. Proceed? [Y/n]
+User: Y
 ```
 
 ## Arguments
