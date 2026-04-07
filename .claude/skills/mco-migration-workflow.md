@@ -47,10 +47,14 @@ Collect all necessary information from the user before starting the migration.
 - Ask each input explicitly using AskUserQuestion tool or direct prompts
 - WAIT for user response before proceeding to the next input
 - Validate paths exist before accepting them
+- Check for a memory file named `migrate_tests_config.md` in the project memory directory — if it exists, read the saved paths and offer them as defaults so the user can press Enter to reuse them
+- After paths are confirmed, run `git pull` on the source and destination repos to ensure you have the latest test cases and already-migrated tests before proceeding
 
 #### Input 1: Source Repository Path
 
-Ask: "What is the path to your `openshift-tests-private` repository?"
+If a saved source path exists in memory, ask: "What is the path to your `openshift-tests-private` repository? (last used: `<saved-path>`, press Enter to reuse)"
+
+Otherwise ask: "What is the path to your `openshift-tests-private` repository?"
 
 **Validation:**
 ```bash
@@ -72,7 +76,9 @@ SOURCE_TESTDATA_DIR="$SOURCE_REPO/test/extended/testdata/mco"
 
 #### Input 2: Destination Repository Path
 
-Ask: "What is the path to your `machine-config-operator` repository?"
+If a saved destination path exists in memory, ask: "What is the path to your `machine-config-operator` repository? (last used: `<saved-path>`, press Enter to reuse)"
+
+Otherwise ask: "What is the path to your `machine-config-operator` repository?"
 
 **Validation:**
 ```bash
@@ -95,11 +101,33 @@ DEST_UTIL_DIR="$DEST_REPO/test/extended-priv/util"
 
 #### Input 3: compat_otp Library Path (Optional)
 
-Ask: "What is the path to the compat_otp library? (press Enter to skip)
+If a saved compat_otp path exists in memory, ask: "What is the path to the compat_otp library? (last used: `<saved-path>`, press Enter to reuse, or type `skip` to skip)"
+
+Otherwise ask: "What is the path to the compat_otp library? (press Enter to skip)
 This is typically at: `<origin-repo>/test/extended/util/compat_otp/`
 It is needed if the source tests use compat_otp sub-package functions (architecture, clusterinfra, logext, bootstrap) that don't already exist in the destination."
 
 **Store in variable:** `<compat-otp-path>` (empty if skipped)
+
+#### Input 3b: Sync Repositories
+
+Once all paths are confirmed, pull the latest changes so the migration works with up-to-date code:
+
+```bash
+echo "Syncing repositories to latest..."
+
+# Pull latest in source repo
+cd "$SOURCE_REPO" && git pull --ff-only 2>/dev/null || echo "WARNING: Could not pull source repo (may have local changes)"
+
+# Pull latest in destination repo
+cd "$DEST_REPO" && git pull --ff-only 2>/dev/null || echo "WARNING: Could not pull destination repo (may have local changes)"
+```
+
+This ensures:
+- Source repo has the latest test cases available for migration
+- Destination repo has the latest already-migrated tests for accurate duplicate detection
+
+If `git pull` fails (e.g., uncommitted local changes), warn the user but continue — they may be working on a branch intentionally.
 
 #### Input 4: Migration Target
 
@@ -653,6 +681,40 @@ Next Steps:
   3. Commit the changes when satisfied
 ========================================
 ```
+
+#### Step 5: Save Configuration and Context to Memory
+
+After a successful migration, save the configuration and repo context to the project memory file `migrate_tests_config.md` so future runs have full context. Write (or update) the memory file with:
+
+```markdown
+---
+name: migrate-tests configuration and context
+description: Last-used paths, migrated tests, and repo context for the /migrate-tests command
+type: reference
+---
+
+## Last-Used Paths
+- source_repo: <source-repo>
+- dest_repo: <dest-repo>
+- compat_otp_path: <compat-otp-path or "skipped">
+
+## Already Migrated PolarionIDs
+<list all PolarionIDs currently in dest-repo test files, including ones just migrated>
+
+## Last Migration
+- date: <current date>
+- file: <dest-filename>
+- tests migrated: <list of PolarionIDs migrated in this run>
+```
+
+Also update `MEMORY.md` if this is the first time saving this memory.
+
+On subsequent runs, this memory provides:
+- Saved paths so the user can press Enter to reuse them
+- A cached list of already-migrated PolarionIDs for faster duplicate detection
+- Context about what was last migrated and when
+
+**Important:** Always run `git pull` (Input 3b) and re-scan destination files (Phase 2 Step 3) even if memory has cached PolarionIDs — the memory is a hint to speed things up, not a substitute for checking current state.
 
 ## Troubleshooting
 
