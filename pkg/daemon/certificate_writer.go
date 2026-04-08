@@ -367,6 +367,12 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 		annos := map[string]string{
 			constants.ControllerConfigResourceVersionKey: controllerConfig.ObjectMeta.ResourceVersion,
 		}
+		// Also update ServiceCA annotation if it changed, to mark deferred rotations complete
+		if dn.node.Annotations[constants.ControllerConfigSyncServerCA] !=
+			controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] {
+			annos[constants.ControllerConfigSyncServerCA] =
+				controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation]
+		}
 		if _, err := dn.nodeWriter.SetAnnotations(annos); err != nil {
 			return fmt.Errorf("failed to set annotations on node: %w", err)
 		}
