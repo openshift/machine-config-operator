@@ -137,9 +137,9 @@ func (r *iriRegistry) GetOCPBundlesTags() (*registryTagsList, error) {
 }
 
 func (r *iriRegistry) GetOCPBundleReleaseTag(_ string) (string, error) {
-	// Note: currently the IRI resource supports only one release bundle, and thus one OCP release. Since the release bundle
-	// image does not yet contain the necessary release metadata (see https://redhat.atlassian.net/browse/AGENT-1312),
-	// let's fetch directly the current release image.
+	//TODO: Replace this temporary implementation by reading the associated
+	//release tag via manifest annotation in the bundle image, as soon as
+	//https://github.com/openshift/appliance/pull/685 will be completed.
 	ocpReleases, err := r.getRepositoryTags(ocpReleasesRepo)
 	if err != nil {
 		return "", err

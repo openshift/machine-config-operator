@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/equality"
-	"k8s.io/apimachinery/pkg/api/errors"
+
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,22 +29,15 @@ import (
 )
 
 const (
-	// backoff configuration
-	maxRetries    = 5
-	retryDuration = 1 * time.Second
-	retryFactor   = 2.0
-	retryCap      = 10 * time.Second
-
 	// controller configuration
 	maxRetriesController = 15
-	syncRetryInterval    = 30 * time.Second
+	syncRetryInterval    = 60 * time.Second
 )
 
 // Manager manages the IRI registry data on disk
 // and takes care of updating the MCN status IRI fields for the current node.
 type Manager struct {
 	nodeName string
-	backoff  wait.Backoff
 
 	mcfgClient     mcfgclientset.Interface
 	registryClient *http.Client
@@ -69,15 +62,9 @@ func New(
 ) *Manager {
 	i := &Manager{
 		nodeName: nodeName,
-		queue: workqueue.NewTypedRateLimitingQueueWithConfig[string](
+		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
 			workqueue.TypedRateLimitingQueueConfig[string]{Name: "internal-release-image-manager"}),
-		backoff: wait.Backoff{
-			Steps:    maxRetries,
-			Duration: retryDuration,
-			Factor:   retryFactor,
-			Cap:      retryCap,
-		},
 	}
 
 	i.mcfgClient = mcfgClient
@@ -286,6 +273,8 @@ func (i *Manager) refreshMachineConfigNodeStatus(mcn *mcfgv1.MachineConfigNode, 
 
 	// Check release availability for each bundle. If at least one release image is not available
 	// then mark the MCN as degraded.
+	// When the bundle deletion will be supported, it will be required also to check for missing bundles
+	// and update properly the MachineConfigNode resource.
 	mcnDegraded := false
 	for n := range mcnUpdated.Status.InternalReleaseImage.Releases {
 		r := &mcnUpdated.Status.InternalReleaseImage.Releases[n]
@@ -377,7 +366,7 @@ func (i *Manager) syncInternalReleaseImage(key string) error {
 
 	// Fetch the InternalReleaseImage.
 	_, err := i.iriLister.Get(common.InternalReleaseImageInstanceName)
-	if errors.IsNotFound(err) {
+	if apierrors.IsNotFound(err) {
 		// Manage the feature only when the IRI resource was defined.
 		return nil
 	}
