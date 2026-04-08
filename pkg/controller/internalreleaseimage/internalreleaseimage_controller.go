@@ -77,8 +77,6 @@ type Controller struct {
 	secretLister       corelistersv1.SecretLister
 	secretListerSynced cache.InformerSynced
 
-	ocSecretListerSynced cache.InformerSynced
-
 	queue workqueue.TypedRateLimitingInterface[string]
 }
 
@@ -89,7 +87,6 @@ func New(
 	mcInformer mcfginformersv1.MachineConfigInformer,
 	clusterVersionInformer configinformersv1.ClusterVersionInformer,
 	secretInformer coreinformersv1.SecretInformer,
-	ocSecretInformer coreinformersv1.SecretInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 ) *Controller {
@@ -124,15 +121,12 @@ func New(
 		DeleteFunc: ctrl.deleteMachineConfig,
 	})
 
+	// Watch IRI secrets (TLS, auth) and the global pull secret. All are served
+	// by the cluster-wide KubeInformerFactory, so a single informer covers all
+	// namespaces.
 	secretInformer.Informer().AddEventHandler(cache.ResourceEventHandlerDetailedFuncs{
+		AddFunc:    ctrl.addSecret,
 		UpdateFunc: ctrl.updateSecret,
-	})
-
-	// Watch the global pull secret in openshift-config so that when the user
-	// updates it, the IRI MachineConfig is re-rendered with the merged credentials.
-	ocSecretInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    ctrl.addOCSecret,
-		UpdateFunc: ctrl.updateOCSecret,
 	})
 
 	ctrl.iriLister = iriInformer.Lister()
@@ -150,8 +144,6 @@ func New(
 	ctrl.secretLister = secretInformer.Lister()
 	ctrl.secretListerSynced = secretInformer.Informer().HasSynced
 
-	ctrl.ocSecretListerSynced = ocSecretInformer.Informer().HasSynced
-
 	return ctrl
 }
 
@@ -160,7 +152,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.iriListerSynced, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.clusterVersionListerSynced, ctrl.secretListerSynced, ctrl.ocSecretListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, ctrl.iriListerSynced, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.clusterVersionListerSynced, ctrl.secretListerSynced) {
 		return
 	}
 
@@ -290,38 +282,34 @@ func (ctrl *Controller) processMachineConfigEvent(obj interface{}, logMsg string
 	ctrl.queue.Add(ctrlcommon.InternalReleaseImageInstanceName)
 }
 
-func (ctrl *Controller) updateSecret(obj, _ interface{}) {
+func (ctrl *Controller) addSecret(obj interface{}, _ bool) {
 	secret := obj.(*corev1.Secret)
-
-	// Skip any event not related to the InternalReleaseImage secrets
 	if secret.Name != ctrlcommon.InternalReleaseImageTLSSecretName &&
-		secret.Name != ctrlcommon.InternalReleaseImageAuthSecretName {
+		secret.Name != ctrlcommon.InternalReleaseImageAuthSecretName &&
+		secret.Name != ctrlcommon.GlobalPullSecretName {
 		return
 	}
-
-	klog.V(4).Infof("Secret %s update", secret.Name)
+	klog.V(4).Infof("Secret %s added, re-queuing IRI sync", secret.Name)
 	ctrl.queue.Add(ctrlcommon.InternalReleaseImageInstanceName)
 }
 
-func (ctrl *Controller) addOCSecret(obj interface{}) {
-	secret := obj.(*corev1.Secret)
-	if secret.Name != ctrlcommon.GlobalPullSecretName {
-		return
-	}
-	klog.V(4).Infof("Global pull secret %s added, re-queuing IRI sync", secret.Name)
-	ctrl.queue.Add(ctrlcommon.InternalReleaseImageInstanceName)
-}
-
-func (ctrl *Controller) updateOCSecret(old, cur interface{}) {
+func (ctrl *Controller) updateSecret(old, cur interface{}) {
 	oldSecret := old.(*corev1.Secret)
 	newSecret := cur.(*corev1.Secret)
-	if newSecret.Name != ctrlcommon.GlobalPullSecretName {
+
+	if newSecret.Name != ctrlcommon.InternalReleaseImageTLSSecretName &&
+		newSecret.Name != ctrlcommon.InternalReleaseImageAuthSecretName &&
+		newSecret.Name != ctrlcommon.GlobalPullSecretName {
 		return
 	}
-	if bytes.Equal(oldSecret.Data[corev1.DockerConfigJsonKey], newSecret.Data[corev1.DockerConfigJsonKey]) {
+
+	// For the global pull secret, skip if the docker config data hasn't changed.
+	if newSecret.Name == ctrlcommon.GlobalPullSecretName &&
+		bytes.Equal(oldSecret.Data[corev1.DockerConfigJsonKey], newSecret.Data[corev1.DockerConfigJsonKey]) {
 		return
 	}
-	klog.V(4).Infof("Global pull secret %s updated, re-queuing IRI sync", newSecret.Name)
+
+	klog.V(4).Infof("Secret %s updated, re-queuing IRI sync", newSecret.Name)
 	ctrl.queue.Add(ctrlcommon.InternalReleaseImageInstanceName)
 }
 

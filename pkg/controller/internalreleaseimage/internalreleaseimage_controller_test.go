@@ -28,10 +28,9 @@ import (
 
 func TestInternalReleaseImageCreate(t *testing.T) {
 	cases := []struct {
-		name             string
-		initialObjects   func() []runtime.Object
-		verify           func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig)
-		verifyPullSecret func(t *testing.T, f *fixture)
+		name           string
+		initialObjects func() []runtime.Object
+		verify         func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig)
 	}{
 		{
 			name:           "feature inactive",
@@ -179,9 +178,6 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 				}
 				tc.verify(t, actualIRI, actualMasterMC, actualWorkerMC)
 			}
-			if tc.verifyPullSecret != nil {
-				tc.verifyPullSecret(t, f)
-			}
 
 		})
 	}
@@ -312,7 +308,6 @@ func (f *fixture) newController() *Controller {
 		i.Machineconfiguration().V1().MachineConfigs(),
 		ci.Config().V1().ClusterVersions(),
 		k.Core().V1().Secrets(),
-		k.Core().V1().Secrets(),
 		f.k8sClient,
 		f.client,
 	)
@@ -323,7 +318,6 @@ func (f *fixture) newController() *Controller {
 	c.mcListerSynced = alwaysReady
 	c.clusterVersionListerSynced = alwaysReady
 	c.secretListerSynced = alwaysReady
-	c.ocSecretListerSynced = alwaysReady
 	c.eventRecorder = &record.FakeRecorder{}
 
 	stopCh := make(chan struct{})

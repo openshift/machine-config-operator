@@ -30,11 +30,11 @@ func TestMergeIRIAuthIntoPullSecret(t *testing.T) {
 			verifyAuthHost: "api-int.example.com:22625",
 		},
 		{
-			name:          "empty password returns unchanged",
-			pullSecret:    basePullSecret,
-			password:      "",
-			baseDomain:    "example.com",
-			expectChanged: false,
+			name:        "empty password returns error",
+			pullSecret:  basePullSecret,
+			password:    "",
+			baseDomain:  "example.com",
+			expectError: true,
 		},
 		{
 			name:          "already up-to-date returns unchanged",

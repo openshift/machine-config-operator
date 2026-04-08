@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"k8s.io/klog/v2"
 )
 
 // MergeIRIAuthIntoPullSecret merges IRI registry authentication credentials
@@ -18,7 +20,7 @@ import (
 // hash mismatch between bootstrap and in-cluster.
 func MergeIRIAuthIntoPullSecret(pullSecretRaw []byte, password, baseDomain string) ([]byte, bool, error) {
 	if password == "" {
-		return pullSecretRaw, false, nil
+		return nil, false, fmt.Errorf("IRI registry password must not be empty")
 	}
 
 	if strings.TrimSpace(baseDomain) == "" {
@@ -45,18 +47,11 @@ func MergeIRIAuthIntoPullSecret(pullSecretRaw []byte, password, baseDomain strin
 	authValue := base64.StdEncoding.EncodeToString([]byte(IRIRegistryUsername + ":" + password))
 
 	// Check if both IRI entries already exist and are current — no update needed.
-	apiIntCurrent := func() bool {
-		e, ok := auths[iriRegistryAPIIntHost].(map[string]interface{})
-		return ok && e["auth"] == authValue
-	}
-	localCurrent := func() bool {
-		e, ok := auths[iriRegistryLocalHost].(map[string]interface{})
-		return ok && e["auth"] == authValue
-	}
-	if apiIntCurrent() && localCurrent() {
+	if pullSecretHasAuth(auths, iriRegistryAPIIntHost, authValue) && pullSecretHasAuth(auths, iriRegistryLocalHost, authValue) {
 		return pullSecretRaw, false, nil
 	}
 
+	klog.V(4).Infof("Merging IRI auth credentials into pull secret for %s and %s", iriRegistryAPIIntHost, iriRegistryLocalHost)
 	auths[iriRegistryAPIIntHost] = map[string]interface{}{
 		"auth": authValue,
 	}
@@ -70,4 +65,11 @@ func MergeIRIAuthIntoPullSecret(pullSecretRaw []byte, password, baseDomain strin
 	}
 
 	return mergedBytes, true, nil
+}
+
+// pullSecretHasAuth returns true if auths[host] exists and its "auth" field
+// matches expected.
+func pullSecretHasAuth(auths map[string]interface{}, host, expected string) bool {
+	e, ok := auths[host].(map[string]interface{})
+	return ok && e["auth"] == expected
 }
