@@ -361,18 +361,29 @@ func (i *Manager) setMachineConfigNodeAsDegraded(mcn *mcfgv1.MachineConfigNode, 
 	return i.updateMCNStatus(mcn, mcnUpdated)
 }
 
-func (i *Manager) syncInternalReleaseImage(key string) error {
-	klog.V(4).Infof("Syncing InternalReleaseImage %q", key)
-
-	// Fetch the InternalReleaseImage.
-	_, err := i.iriLister.Get(common.InternalReleaseImageInstanceName)
-	if apierrors.IsNotFound(err) {
-		// Manage the feature only when the IRI resource was defined.
+func (i *Manager) cleanupMachineConfigNodeStatus(mcn *mcfgv1.MachineConfigNode) error {
+	if len(mcn.Status.InternalReleaseImage.Releases) == 0 {
 		return nil
 	}
-	if err != nil {
-		return err
+
+	// Remove the IRI condition.
+	mcnUpdated := mcn.DeepCopy()
+	var filtered []metav1.Condition
+	for _, c := range mcnUpdated.Status.Conditions {
+		if c.Type != string(mcfgv1.MachineConfigNodeInternalReleaseImageDegraded) {
+			filtered = append(filtered, c)
+		}
 	}
+	mcnUpdated.Status.Conditions = filtered
+
+	// Cleanup the IRI status field.
+	mcnUpdated.Status.InternalReleaseImage = mcfgv1.MachineConfigNodeStatusInternalReleaseImage{}
+
+	return i.updateMCNStatus(mcn, mcnUpdated)
+}
+
+func (i *Manager) syncInternalReleaseImage(key string) error {
+	klog.V(4).Infof("Syncing InternalReleaseImage %q", key)
 
 	// Get the MachineConfigNode for the current node.
 	mcn, err := i.mcnLister.Get(i.nodeName)
@@ -381,6 +392,21 @@ func (i *Manager) syncInternalReleaseImage(key string) error {
 			klog.V(2).Infof("MachineConfigNode %s not yet present, waiting for its creation", i.nodeName)
 			return nil
 		}
+		return err
+	}
+
+	// Fetch the InternalReleaseImage.
+	_, err = i.iriLister.Get(common.InternalReleaseImageInstanceName)
+	if apierrors.IsNotFound(err) {
+		// Manage the feature only when the IRI resource was defined.
+		// If not present, refresh the related MCN resource if required.
+		err = i.cleanupMachineConfigNodeStatus(mcn)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+	if err != nil {
 		return err
 	}
 

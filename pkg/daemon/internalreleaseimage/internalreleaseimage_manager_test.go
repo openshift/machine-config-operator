@@ -31,8 +31,23 @@ func TestInternalReleaseImageManager(t *testing.T) {
 		registryDisabled bool
 	}{
 		{
-			name: "feature not enabled",
-			mcn:  machineConfigNode("master-0"),
+			name:     "cleanup MachineConfigNode status when IRI is deleted",
+			mcn:      machineConfigNode("master-0").withIRIBundle("ocp-release-bundle-4.22.0-0.ci-2026-04-01-050515", "localhost:22625/openshift/release-images@sha256:68bdf24405449be5c78a1f27a7b64fc9ee980e4bc3c9b169e8b3da08e50e0389"),
+			nodeName: "master-0",
+			iri:      nil,
+
+			verify: func(t *testing.T, mcn *mcfgv1.MachineConfigNode) {
+				for _, c := range mcn.Status.Conditions {
+					assert.NotEqual(t, string(mcfgv1.MachineConfigNodeInternalReleaseImageDegraded), c.Type)
+				}
+				assert.Empty(t, mcn.Status.InternalReleaseImage)
+			},
+		},
+		{
+			name:     "feature not enabled",
+			mcn:      machineConfigNode("master-0"),
+			nodeName: "master-0",
+			iri:      nil,
 
 			verify: func(t *testing.T, mcn *mcfgv1.MachineConfigNode) {
 				assert.Empty(t, mcn.Status.InternalReleaseImage)
