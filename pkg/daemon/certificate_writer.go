@@ -354,8 +354,10 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 				// - x509 error handler when kubelet encounters cert errors
 				// This preserves the in-memory deferKubeletRestart state so the restart can happen later.
 				rotationInProgress = true
-				logSystem("Deferring kubelet restart - kubeconfig updated but kubelet will pick up changes on next restart or when triggered by x509 errors")
-				klog.Infof("Kubelet kubeconfig updated with new CA bundle, restart deferred for localhost signers")
+				logSystem("Deferring kubelet restart - kubeconfig updated but kubelet will pick up " +
+					"changes on next restart or when triggered by x509 errors")
+				klog.Infof("Kubelet kubeconfig updated with new CA bundle, " +
+					"restart deferred for localhost signers")
 			}
 		}
 	}
