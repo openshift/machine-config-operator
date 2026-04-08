@@ -134,6 +134,11 @@ func (r *Renderer) newRenderContext() (*renderContext, error) {
 	// Merge IRI registry credentials into the pull secret so that kubelet
 	// and CRI-O on all nodes can authenticate to the IRI registry without
 	// writing to the user-controlled global pull secret.
+	// cconfig.Spec.DNS is always populated by the template controller at bootstrap
+	// from the cluster Infrastructure object, so a nil value here is a bug.
+	if r.cconfig.Spec.DNS == nil {
+		return nil, fmt.Errorf("ControllerConfig %s has no DNS configuration", r.cconfig.Name)
+	}
 	password := string(r.iriAuthSecret.Data["password"])
 	baseDomain := r.cconfig.Spec.DNS.Spec.BaseDomain
 	mergedPullSecret, _, err := MergeIRIAuthIntoPullSecret(r.pullSecret, password, baseDomain)
