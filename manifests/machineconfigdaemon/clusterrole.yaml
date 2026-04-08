@@ -17,7 +17,7 @@ rules:
   verbs: ["get", "list", "watch"]
 - apiGroups: ["machineconfiguration.openshift.io"]
   resources: ["machineconfignodes", "machineconfignodes/status"]
-  verbs: ["create", "update", "patch", "get"]
+  verbs: ["create", "update", "patch", "get", "list", "watch"]
 - apiGroups: ["security.openshift.io"]
   resourceNames: ["privileged"]
   resources: ["securitycontextconstraints"]
