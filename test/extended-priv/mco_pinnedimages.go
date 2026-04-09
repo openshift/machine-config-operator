@@ -521,7 +521,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			allNodes      = mcp.GetNodesOrFail()
 			pisOneName    = fmt.Sprintf("tc-%s-pis-one", GetCurrentTestPolarionIDNumber())
 			pisTwoName    = fmt.Sprintf("tc-%s-pis-two", GetCurrentTestPolarionIDNumber())
-			pisDupName    = fmt.Sprintf("tc-%s-pis-duplicate", GetCurrentTestPolarionIDNumber())
 		)
 
 		exutil.By("Remove the test image from all nodes in the pool")
@@ -582,8 +581,18 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		}
 		logger.Infof("OK!\n")
 
+	})
+
+	g.It("[PolarionID:88562][OTP] PinnedImageSet rejects duplicate images within a single PinnedImageSet", func() {
+		var (
+			pinnedImage   = AlpineImage
+			pisDupName    = fmt.Sprintf("tc-%s-pis-duplicate", GetCurrentTestPolarionIDNumber())
+			waitForPinned = 5 * time.Minute
+		)
+
 		exutil.By("Verify that a PinnedImageSet with duplicate images is rejected by the API")
-		_, err := CreateGenericPinnedImageSet(oc.AsAdmin(), pisDupName, mcp.GetName(), []string{pinnedImage, pinnedImage})
+		pisDup, err := CreateGenericPinnedImageSet(oc.AsAdmin(), pisDupName, mcp.GetName(), []string{pinnedImage, pinnedImage})
+		defer pisDup.DeleteAndWait(waitForPinned)
 		o.Expect(err).To(o.HaveOccurred(),
 			"Creating a PinnedImageSet with duplicate images should fail, but it succeeded")
 		o.Expect(err).To(o.BeAssignableToTypeOf(&exutil.ExitError{}),
@@ -593,7 +602,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 
 		exutil.By("Verify the duplicate PinnedImageSet was not created")
-		pisDup := NewPinnedImageSet(oc.AsAdmin(), pisDupName)
 		o.Expect(pisDup.Exists()).To(o.BeFalse(),
 			"%s should not exist because the API rejected it", pisDup)
 		logger.Infof("OK!\n")
