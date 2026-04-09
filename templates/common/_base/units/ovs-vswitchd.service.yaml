@@ -9,3 +9,9 @@ dropins:
       ExecStartPre=-/bin/sh -c '/usr/bin/chown -R :$${OVS_USER_ID##*:} /run/openvswitch'
       ExecStartPost=-/usr/bin/ovs-appctl vlog/set syslog:info
       ExecReload=-/usr/bin/ovs-appctl vlog/set syslog:info
+  - name: 20-ovs-vswitchd-cpu-priority.conf
+    contents: |
+      [Service]
+      CPUSchedulingPolicy=fifo
+      CPUSchedulingPriority=10
+      Nice=-10
