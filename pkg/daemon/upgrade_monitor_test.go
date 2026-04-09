@@ -10,7 +10,6 @@ import (
 	apicfgv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
 
-	features "github.com/openshift/api/features"
 	v1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
@@ -111,9 +110,7 @@ func (tc upgradeMonitorTestCase) run(t *testing.T) {
 
 	f.oclient = mcopfake.NewSimpleClientset(f.objects...)
 	fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler(
-		[]apicfgv1.FeatureGateName{
-			features.FeatureGateMachineConfigNodes,
-		},
+		[]apicfgv1.FeatureGateName{},
 		[]apicfgv1.FeatureGateName{},
 	)
 
