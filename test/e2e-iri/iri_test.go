@@ -58,7 +58,13 @@ func TestMachineConfigNodesStatus(t *testing.T) {
 
 		require.Len(t, mcn.Status.InternalReleaseImage.Releases, 1)
 		r := mcn.Status.InternalReleaseImage.Releases[0]
-		require.Contains(t, r.Name, cv.Status.Desired.Version)
+
+		expectedVersion := "ocp-release-bundle-" + cv.Status.Desired.Version
+		// MCN IRI Name field max len is 64 chars
+		if len(expectedVersion) > 64 {
+			expectedVersion = expectedVersion[:64]
+		}
+		require.Equal(t, expectedVersion, r.Name)
 		require.NotEmpty(t, r.Image, "OCP release pullspec cannot be empty")
 
 		requireCondition(t, r.Conditions, string(mcfgv1alpha1.InternalReleaseImageConditionTypeAvailable), v1.ConditionTrue)
