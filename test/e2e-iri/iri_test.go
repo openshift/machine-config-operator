@@ -23,7 +23,6 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	iri "github.com/openshift/machine-config-operator/pkg/controller/internalreleaseimage"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
 )
@@ -116,7 +115,7 @@ func TestIRIController_VerifyIRIRegistryOnAllTheMasterNodes_NoCert(t *testing.T)
 			},
 			Timeout: 30 * time.Second,
 		}
-		pingIRIRegistry(t, client, nodeAddr, iri.IRIRegistryUsername, password)
+		pingIRIRegistry(t, client, nodeAddr, ctrlcommon.IRIRegistryUsername, password)
 	}
 }
 
@@ -176,11 +175,11 @@ func TestIRIController_VerifyIRIRegistryOnApiInt_WithCert(t *testing.T) {
 
 	authSecret, err := cs.Secrets(ctrlcommon.MCONamespace).Get(ctx, ctrlcommon.InternalReleaseImageAuthSecretName, v1.GetOptions{})
 	require.NoError(t, err)
-	pingIRIRegistry(t, client, infra.Status.PlatformStatus.BareMetal.APIServerInternalIPs[0], iri.IRIRegistryUsername, string(authSecret.Data["password"]))
+	pingIRIRegistry(t, client, infra.Status.PlatformStatus.BareMetal.APIServerInternalIPs[0], ctrlcommon.IRIRegistryUsername, string(authSecret.Data["password"]))
 }
 
 func pingIRIRegistry(t *testing.T, client *http.Client, ipAddr, username, password string) {
-	iriRegistryUrl := fmt.Sprintf("https://%s:%d/v2/", ipAddr, iri.IRIRegistryPort)
+	iriRegistryUrl := fmt.Sprintf("https://%s:%d/v2/", ipAddr, ctrlcommon.IRIRegistryPort)
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, iriRegistryUrl, nil)
 	require.NoError(t, err)
@@ -212,7 +211,7 @@ func getBaseDomain(t *testing.T, cs *framework.ClientSet) string {
 func curlIRIRegistry(t *testing.T, cs *framework.ClientSet, node corev1.Node, baseDomain string, extraArgs ...string) string {
 	t.Helper()
 	const iriRootCAPath = "/rootfs/etc/pki/ca-trust/source/anchors/iri-root-ca.crt"
-	url := fmt.Sprintf("https://api-int.%s:%d/v2/", baseDomain, iri.IRIRegistryPort)
+	url := fmt.Sprintf("https://api-int.%s:%d/v2/", baseDomain, ctrlcommon.IRIRegistryPort)
 	args := []string{"curl", "-s", "--cacert", iriRootCAPath, "-o", "/dev/null", "-w", "%{http_code}"}
 	args = append(args, extraArgs...)
 	args = append(args, url)
@@ -251,7 +250,7 @@ func TestIRIAuth_AuthenticatedRequestSucceeds(t *testing.T) {
 
 	baseDomain := getBaseDomain(t, cs)
 	node := helpers.GetRandomNode(t, cs, "master")
-	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(iri.IRIRegistryUsername+":"+password))
+	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(ctrlcommon.IRIRegistryUsername+":"+password))
 
 	statusCode := curlIRIRegistry(t, cs, node, baseDomain, "-H", "Authorization: "+authHeader)
 	require.Equal(t, "200", statusCode, "authenticated request should succeed")

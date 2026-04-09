@@ -70,8 +70,9 @@ type Controller struct {
 	apiserverLister       configlistersv1.APIServerLister
 	apiserverListerSynced cache.InformerSynced
 
-	ccListerSynced        cache.InformerSynced
-	secretsInformerSynced cache.InformerSynced
+	ccListerSynced           cache.InformerSynced
+	secretsInformerSynced    cache.InformerSynced
+	iriSecretsInformerSynced cache.InformerSynced
 
 	queue workqueue.TypedRateLimitingInterface[string]
 
@@ -83,6 +84,7 @@ func New(
 	templatesDir string,
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	secretsInformer coreinformersv1.SecretInformer,
+	iriSecretsInformer coreinformersv1.SecretInformer,
 	apiserverInformer configinformersv1.APIServerInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
@@ -114,6 +116,13 @@ func New(
 		DeleteFunc: ctrl.deleteSecret,
 	})
 
+	// Watch the IRI auth secret in the MCO namespace so that when credentials
+	// are rotated the pull secret rendered into 00-master/00-worker is updated.
+	iriSecretsInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addSecret,
+		UpdateFunc: ctrl.updateSecret,
+	})
+
 	apiserverInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addAPIServer,
 		UpdateFunc: ctrl.updateAPIServer,
@@ -126,6 +135,7 @@ func New(
 	ctrl.ccLister = ccInformer.Lister()
 	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
 	ctrl.secretsInformerSynced = secretsInformer.Informer().HasSynced
+	ctrl.iriSecretsInformerSynced = iriSecretsInformer.Informer().HasSynced
 
 	ctrl.apiserverLister = apiserverInformer.Lister()
 	ctrl.apiserverListerSynced = apiserverInformer.Informer().HasSynced
@@ -134,7 +144,7 @@ func New(
 }
 
 func (ctrl *Controller) filterSecret(secret *corev1.Secret) {
-	if secret.Name == "pull-secret" {
+	if secret.Name == "pull-secret" || secret.Name == ctrlcommon.InternalReleaseImageAuthSecretName {
 		ctrl.enqueueController()
 		klog.Infof("Re-syncing ControllerConfig due to secret %s change", secret.Name)
 	}
@@ -287,7 +297,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.secretsInformerSynced) {
+	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.secretsInformerSynced, ctrl.iriSecretsInformerSynced) {
 		return
 	}
 
@@ -553,6 +563,24 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 			return ctrl.syncFailingStatus(cfg, fmt.Errorf("expected secret type %s found %s", corev1.SecretTypeDockerConfigJson, clusterPullSecret.Type))
 		}
 		clusterPullSecretRaw = clusterPullSecret.Data[corev1.DockerConfigJsonKey]
+	}
+
+	// If the IRI auth secret exists, merge IRI registry credentials into the pull
+	// secret so that kubelet and CRI-O on all nodes can authenticate to the IRI
+	// registry. Credentials are merged at render time rather than writing back to
+	// the user-controlled global pull secret, avoiding ownership conflicts and the
+	// timing window where 00-master/00-worker could be rendered without IRI creds.
+	iriRegistryCredentialsSecret, err := ctrl.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(
+		context.TODO(), ctrlcommon.InternalReleaseImageAuthSecretName, metav1.GetOptions{})
+	if err != nil && !apierrors.IsNotFound(err) {
+		return ctrl.syncFailingStatus(cfg, err)
+	}
+	if apierrors.IsNotFound(err) {
+		iriRegistryCredentialsSecret = nil
+	}
+	clusterPullSecretRaw, err = ctrlcommon.MergeIRIRegistryCredentials(clusterPullSecretRaw, iriRegistryCredentialsSecret, cfg)
+	if err != nil {
+		return ctrl.syncFailingStatus(cfg, fmt.Errorf("could not merge IRI registry credentials into pull secret: %w", err))
 	}
 
 	// Grab the tlsSecurityProfile from the apiserver object

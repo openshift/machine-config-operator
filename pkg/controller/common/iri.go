@@ -1,4 +1,4 @@
-package internalreleaseimage
+package common
 
 import (
 	"encoding/base64"
@@ -6,19 +6,43 @@ import (
 	"fmt"
 	"strings"
 
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 )
 
-// MergeIRIAuthIntoPullSecret merges IRI registry authentication credentials
-// into a dockerconfigjson pull secret. It adds an auth entry for the IRI
-// registry host (api-int.<baseDomain>:<IRIRegistryPort>) so that kubelet can
-// pull from it. Returns the merged bytes, a boolean indicating whether the
-// pull secret was changed, and any error.
-//
-// This must be called during both bootstrap and in-cluster rendering to ensure
-// the pull secret content is consistent, avoiding a rendered MachineConfig
-// hash mismatch between bootstrap and in-cluster.
-func MergeIRIAuthIntoPullSecret(pullSecretRaw []byte, password, baseDomain string) ([]byte, bool, error) {
+const (
+	// IRIRegistryPort is the port on which the IRI registry listens on master nodes.
+	IRIRegistryPort = 22625
+
+	// IRIRegistryUsername is the fixed username used for IRI registry htpasswd authentication.
+	IRIRegistryUsername = "openshift"
+)
+
+// MergeIRIRegistryCredentials merges IRI registry credentials from iriRegistryCredentialsSecret into
+// pullSecretRaw, using the baseDomain from cconfig. Returns pullSecretRaw unchanged
+// if iriRegistryCredentialsSecret or cconfig.Spec.DNS is nil.
+func MergeIRIRegistryCredentials(pullSecretRaw []byte, iriRegistryCredentialsSecret *corev1.Secret, cconfig *mcfgv1.ControllerConfig) ([]byte, error) {
+	if iriRegistryCredentialsSecret == nil || cconfig.Spec.DNS == nil {
+		return pullSecretRaw, nil
+	}
+	password := string(iriRegistryCredentialsSecret.Data["password"])
+	baseDomain := cconfig.Spec.DNS.Spec.BaseDomain
+	merged, changed, err := mergeIRIRegistryCredentialsIntoPullSecret(pullSecretRaw, password, baseDomain)
+	if err != nil {
+		return nil, err
+	}
+	if changed {
+		klog.V(4).Info("Merged IRI registry credentials into pull secret")
+	}
+	return merged, nil
+}
+
+// mergeIRIRegistryCredentialsIntoPullSecret merges IRI registry authentication credentials into a
+// dockerconfigjson pull secret. It adds auth entries for api-int.<baseDomain>:<IRIRegistryPort>
+// (all nodes) and localhost:<IRIRegistryPort> (masters, where the registry runs locally).
+// Returns the merged bytes, a boolean indicating whether the pull secret was changed, and any error.
+func mergeIRIRegistryCredentialsIntoPullSecret(pullSecretRaw []byte, password, baseDomain string) ([]byte, bool, error) {
 	if password == "" {
 		return nil, false, fmt.Errorf("IRI registry password must not be empty")
 	}

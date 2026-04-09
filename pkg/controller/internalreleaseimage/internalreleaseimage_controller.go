@@ -1,7 +1,6 @@
 package internalreleaseimage
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"reflect"
@@ -56,7 +55,6 @@ var (
 // Controller defines the InternalReleaseImage controller.
 type Controller struct {
 	client        mcfgclientset.Interface
-	kubeClient    clientset.Interface
 	eventRecorder record.EventRecorder
 
 	syncHandler                 func(mcp string) error
@@ -96,7 +94,6 @@ func New(
 
 	ctrl := &Controller{
 		client:        mcfgClient,
-		kubeClient:    kubeClient,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-internalreleaseimagecontroller"})),
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
@@ -285,31 +282,22 @@ func (ctrl *Controller) processMachineConfigEvent(obj interface{}, logMsg string
 func (ctrl *Controller) addSecret(obj interface{}, _ bool) {
 	secret := obj.(*corev1.Secret)
 	if secret.Name != ctrlcommon.InternalReleaseImageTLSSecretName &&
-		secret.Name != ctrlcommon.InternalReleaseImageAuthSecretName &&
-		secret.Name != ctrlcommon.GlobalPullSecretName {
+		secret.Name != ctrlcommon.InternalReleaseImageAuthSecretName {
 		return
 	}
 	klog.V(4).Infof("Secret %s added, re-queuing IRI sync", secret.Name)
 	ctrl.queue.Add(ctrlcommon.InternalReleaseImageInstanceName)
 }
 
-func (ctrl *Controller) updateSecret(old, cur interface{}) {
-	oldSecret := old.(*corev1.Secret)
-	newSecret := cur.(*corev1.Secret)
+func (ctrl *Controller) updateSecret(_, cur interface{}) {
+	secret := cur.(*corev1.Secret)
 
-	if newSecret.Name != ctrlcommon.InternalReleaseImageTLSSecretName &&
-		newSecret.Name != ctrlcommon.InternalReleaseImageAuthSecretName &&
-		newSecret.Name != ctrlcommon.GlobalPullSecretName {
+	if secret.Name != ctrlcommon.InternalReleaseImageTLSSecretName &&
+		secret.Name != ctrlcommon.InternalReleaseImageAuthSecretName {
 		return
 	}
 
-	// For the global pull secret, skip if the docker config data hasn't changed.
-	if newSecret.Name == ctrlcommon.GlobalPullSecretName &&
-		bytes.Equal(oldSecret.Data[corev1.DockerConfigJsonKey], newSecret.Data[corev1.DockerConfigJsonKey]) {
-		return
-	}
-
-	klog.V(4).Infof("Secret %s updated, re-queuing IRI sync", newSecret.Name)
+	klog.V(4).Infof("Secret %s updated, re-queuing IRI sync", secret.Name)
 	ctrl.queue.Add(ctrlcommon.InternalReleaseImageInstanceName)
 }
 
@@ -381,19 +369,13 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) (syncErr error) {
 		return fmt.Errorf("could not get Secret %s: %w", ctrlcommon.InternalReleaseImageTLSSecretName, err)
 	}
 
-	iriAuthSecret, err := ctrl.secretLister.Secrets(ctrlcommon.MCONamespace).Get(ctrlcommon.InternalReleaseImageAuthSecretName)
+	iriRegistryCredentialsSecret, err := ctrl.secretLister.Secrets(ctrlcommon.MCONamespace).Get(ctrlcommon.InternalReleaseImageAuthSecretName)
 	if err != nil {
 		return fmt.Errorf("could not get Secret %s: %w", ctrlcommon.InternalReleaseImageAuthSecretName, err)
 	}
 
-	pullSecret, err := ctrl.kubeClient.CoreV1().Secrets(ctrlcommon.OpenshiftConfigNamespace).Get(
-		context.TODO(), ctrlcommon.GlobalPullSecretName, metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("could not get pull secret: %w", err)
-	}
-
 	for _, role := range SupportedRoles {
-		r := NewRendererByRole(role, iri, iriSecret, iriAuthSecret, pullSecret.Data[corev1.DockerConfigJsonKey], cconfig)
+		r := NewRendererByRole(role, iri, iriSecret, iriRegistryCredentialsSecret, cconfig)
 
 		mc, err := ctrl.mcLister.Get(r.GetMachineConfigName())
 		isNotFound := errors.IsNotFound(err)
