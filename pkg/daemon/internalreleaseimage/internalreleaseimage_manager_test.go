@@ -72,7 +72,7 @@ func TestInternalReleaseImageManager(t *testing.T) {
 				assert.Len(t, mcn.Status.InternalReleaseImage.Releases, 1)
 				r := mcn.Status.InternalReleaseImage.Releases[0]
 				assert.Equal(t, "ocp-release-bundle-4.22.0-0.ci-2026-04-01-050515", r.Name)
-				assert.Equal(t, "localhost:22625/openshift/release-images@sha256:68bdf24405449be5c78a1f27a7b64fc9ee980e4bc3c9b169e8b3da08e50e0389", r.Image)
+				assert.Equal(t, "localhost.localdomain:22625/openshift/release-images@sha256:68bdf24405449be5c78a1f27a7b64fc9ee980e4bc3c9b169e8b3da08e50e0389", r.Image)
 				verifyCondition(t, r.Conditions, string(mcfgv1alpha1.InternalReleaseImageConditionTypeAvailable), metav1.ConditionTrue)
 				verifyCondition(t, r.Conditions, string(mcfgv1alpha1.InternalReleaseImageConditionTypeDegraded), metav1.ConditionFalse)
 			},
@@ -110,7 +110,7 @@ func TestInternalReleaseImageManager(t *testing.T) {
 				assert.Len(t, mcn.Status.InternalReleaseImage.Releases, 1)
 				r := mcn.Status.InternalReleaseImage.Releases[0]
 				assert.Equal(t, "ocp-release-bundle-4.22.0-0.ci-2026-04-01-050515", r.Name)
-				assert.Equal(t, "localhost:22625/openshift/release-images@sha256:68bdf24405449be5c78a1f27a7b64fc9ee980e4bc3c9b169e8b3da08e50e0389", r.Image)
+				assert.Equal(t, "localhost.localdomain:22625/openshift/release-images@sha256:68bdf24405449be5c78a1f27a7b64fc9ee980e4bc3c9b169e8b3da08e50e0389", r.Image)
 				verifyCondition(t, r.Conditions, string(mcfgv1alpha1.InternalReleaseImageConditionTypeAvailable), metav1.ConditionFalse)
 				verifyCondition(t, r.Conditions, string(mcfgv1alpha1.InternalReleaseImageConditionTypeDegraded), metav1.ConditionTrue)
 			},
