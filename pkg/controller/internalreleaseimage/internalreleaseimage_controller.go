@@ -3,10 +3,11 @@ package internalreleaseimage
 import (
 	"context"
 	"fmt"
-	"reflect"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -57,8 +58,7 @@ type Controller struct {
 	client        mcfgclientset.Interface
 	eventRecorder record.EventRecorder
 
-	syncHandler                 func(mcp string) error
-	enqueueInternalReleaseImage func(*mcfgv1alpha1.InternalReleaseImage)
+	syncHandler func(mcp string) error
 
 	iriLister       mcfglistersv1alpha1.InternalReleaseImageLister
 	iriListerSynced cache.InformerSynced
@@ -75,6 +75,15 @@ type Controller struct {
 	secretLister       corelistersv1.SecretLister
 	secretListerSynced cache.InformerSynced
 
+	mcnLister       mcfglistersv1.MachineConfigNodeLister
+	mcnListerSynced cache.InformerSynced
+
+	nodeLister       corelistersv1.NodeLister
+	nodeListerSynced cache.InformerSynced
+
+	infraLister       configlistersv1.InfrastructureLister
+	infraListerSynced cache.InformerSynced
+
 	queue workqueue.TypedRateLimitingInterface[string]
 }
 
@@ -85,6 +94,9 @@ func New(
 	mcInformer mcfginformersv1.MachineConfigInformer,
 	clusterVersionInformer configinformersv1.ClusterVersionInformer,
 	secretInformer coreinformersv1.SecretInformer,
+	mcnInformer mcfginformersv1.MachineConfigNodeInformer,
+	nodeInformer coreinformersv1.NodeInformer,
+	infraInformer configinformersv1.InfrastructureInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 ) *Controller {
@@ -101,7 +113,6 @@ func New(
 	}
 
 	ctrl.syncHandler = ctrl.syncInternalReleaseImage
-	ctrl.enqueueInternalReleaseImage = ctrl.enqueue
 
 	iriInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addInternalReleaseImage,
@@ -122,6 +133,16 @@ func New(
 		UpdateFunc: ctrl.updateSecret,
 	})
 
+	mcnInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addMachineConfigNode,
+		UpdateFunc: ctrl.updateMachineConfigNode,
+		DeleteFunc: ctrl.deleteMachineConfigNode,
+	})
+
+	nodeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		UpdateFunc: ctrl.updateNode,
+	})
+
 	ctrl.iriLister = iriInformer.Lister()
 	ctrl.iriListerSynced = iriInformer.Informer().HasSynced
 
@@ -137,6 +158,15 @@ func New(
 	ctrl.secretLister = secretInformer.Lister()
 	ctrl.secretListerSynced = secretInformer.Informer().HasSynced
 
+	ctrl.mcnLister = mcnInformer.Lister()
+	ctrl.mcnListerSynced = mcnInformer.Informer().HasSynced
+
+	ctrl.nodeLister = nodeInformer.Lister()
+	ctrl.nodeListerSynced = nodeInformer.Informer().HasSynced
+
+	ctrl.infraLister = infraInformer.Lister()
+	ctrl.infraListerSynced = infraInformer.Informer().HasSynced
+
 	return ctrl
 }
 
@@ -145,7 +175,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.iriListerSynced, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.clusterVersionListerSynced, ctrl.secretListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, ctrl.iriListerSynced, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.clusterVersionListerSynced, ctrl.secretListerSynced, ctrl.mcnListerSynced, ctrl.nodeListerSynced, ctrl.infraListerSynced) {
 		return
 	}
 
@@ -200,7 +230,7 @@ func (ctrl *Controller) handleErr(err error, key string) {
 func (ctrl *Controller) addInternalReleaseImage(obj interface{}) {
 	iri := obj.(*mcfgv1alpha1.InternalReleaseImage)
 	klog.V(4).Infof("Adding InternalReleaseImage %s", iri.Name)
-	ctrl.enqueueInternalReleaseImage(iri)
+	ctrl.enqueueInternalReleaseImage()
 }
 
 func (ctrl *Controller) updateInternalReleaseImage(old, cur interface{}) {
@@ -209,7 +239,7 @@ func (ctrl *Controller) updateInternalReleaseImage(old, cur interface{}) {
 
 	if ctrl.internalReleaseImageChanged(oldInternalReleaseImage, newInternalReleaseImage) {
 		klog.V(4).Infof("mcfgv1alpha1.InternalReleaseImage %s updated", newInternalReleaseImage.Name)
-		ctrl.enqueueInternalReleaseImage(newInternalReleaseImage)
+		ctrl.enqueueInternalReleaseImage()
 	}
 }
 
@@ -217,7 +247,7 @@ func (ctrl *Controller) internalReleaseImageChanged(old, newIRI *mcfgv1alpha1.In
 	if old.DeletionTimestamp != newIRI.DeletionTimestamp {
 		return true
 	}
-	if !reflect.DeepEqual(old.Spec, newIRI.Spec) {
+	if !equality.Semantic.DeepEqual(old.Spec, newIRI.Spec) {
 		return true
 	}
 	return false
@@ -239,7 +269,7 @@ func (ctrl *Controller) deleteInternalReleaseImage(obj interface{}) {
 	}
 
 	klog.V(4).Infof("InternalReleaseImage %s deleted", iri.Name)
-	ctrl.enqueueInternalReleaseImage(iri)
+	ctrl.enqueueInternalReleaseImage()
 }
 
 func (ctrl *Controller) updateControllerConfig(old, cur interface{}) {
@@ -252,7 +282,7 @@ func (ctrl *Controller) updateControllerConfig(old, cur interface{}) {
 	}
 
 	klog.V(4).Infof("ControllerConfig %s update", oldCfg.Name)
-	ctrl.queue.Add(ctrlcommon.InternalReleaseImageInstanceName)
+	ctrl.enqueueInternalReleaseImage()
 }
 
 func (ctrl *Controller) updateMachineConfig(old, _ interface{}) {
@@ -272,7 +302,7 @@ func (ctrl *Controller) processMachineConfigEvent(obj interface{}, logMsg string
 	}
 
 	klog.V(4).Infof(logMsg, mc.Name)
-	ctrl.queue.Add(ctrlcommon.InternalReleaseImageInstanceName)
+	ctrl.enqueueInternalReleaseImage()
 }
 
 func (ctrl *Controller) updateSecret(obj, _ interface{}) {
@@ -284,6 +314,153 @@ func (ctrl *Controller) updateSecret(obj, _ interface{}) {
 	}
 
 	klog.V(4).Infof("Secret %s update", secret.Name)
+	ctrl.enqueueInternalReleaseImage()
+}
+
+func (ctrl *Controller) addMachineConfigNode(obj interface{}) {
+	mcn := obj.(*mcfgv1.MachineConfigNode)
+	klog.V(4).Infof("Adding MachineConfigNode %s", mcn.Name)
+
+	if ctrl.isControlPlaneNode(mcn.Name) {
+		ctrl.enqueueInternalReleaseImage()
+	}
+}
+
+func (ctrl *Controller) updateMachineConfigNode(old, cur interface{}) {
+	oldMCN := old.(*mcfgv1.MachineConfigNode)
+	newMCN := cur.(*mcfgv1.MachineConfigNode)
+
+	if !ctrl.isControlPlaneNode(newMCN.Name) {
+		return
+	}
+
+	// Check if IRI releases changed
+	iriChanged := !equality.Semantic.DeepEqual(oldMCN.Status.InternalReleaseImage, newMCN.Status.InternalReleaseImage)
+
+	// Check if InternalReleaseImageDegraded condition changed
+	oldDegraded := meta.FindStatusCondition(oldMCN.Status.Conditions, string(mcfgv1.MachineConfigNodeInternalReleaseImageDegraded))
+	newDegraded := meta.FindStatusCondition(newMCN.Status.Conditions, string(mcfgv1.MachineConfigNodeInternalReleaseImageDegraded))
+	degradedChanged := !equality.Semantic.DeepEqual(oldDegraded, newDegraded)
+
+	if iriChanged || degradedChanged {
+		klog.V(4).Infof("MachineConfigNode %s IRI status or degraded condition updated", newMCN.Name)
+		ctrl.enqueueInternalReleaseImage()
+	}
+}
+
+func (ctrl *Controller) deleteMachineConfigNode(obj interface{}) {
+	mcn, ok := obj.(*mcfgv1.MachineConfigNode)
+	if !ok {
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("failed to get object from tombstone %#v", obj))
+			return
+		}
+		mcn, ok = tombstone.Obj.(*mcfgv1.MachineConfigNode)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a MachineConfigNode %#v", obj))
+			return
+		}
+	}
+
+	if !ctrl.isControlPlaneNode(mcn.Name) {
+		return
+	}
+
+	klog.V(4).Infof("MachineConfigNode %s deleted", mcn.Name)
+	ctrl.enqueueInternalReleaseImage()
+}
+
+func (ctrl *Controller) updateNode(old, cur interface{}) {
+	oldNode := old.(*corev1.Node)
+	newNode := cur.(*corev1.Node)
+
+	if !ctrl.isControlPlaneNode(newNode.Name) {
+		return
+	}
+
+	// Check if the Ready condition changed
+	oldReady := getNodeReadyCondition(oldNode)
+	newReady := getNodeReadyCondition(newNode)
+
+	if oldReady != newReady {
+		klog.V(4).Infof("Node %s Ready condition changed from %v to %v", newNode.Name, oldReady, newReady)
+		ctrl.enqueueInternalReleaseImage()
+	}
+}
+
+// getNodeReadyCondition returns the status of the Ready condition for a node.
+// Returns corev1.ConditionUnknown if the condition is not found.
+func getNodeReadyCondition(node *corev1.Node) corev1.ConditionStatus {
+	for _, cond := range node.Status.Conditions {
+		if cond.Type == corev1.NodeReady {
+			return cond.Status
+		}
+	}
+	return corev1.ConditionUnknown
+}
+
+// isControlPlaneNode checks if a node is a control plane node by checking its labels.
+// Returns true if the node has the master or control-plane role label.
+func (ctrl *Controller) isControlPlaneNode(nodeName string) bool {
+	node, err := ctrl.nodeLister.Get(nodeName)
+	if err != nil {
+		klog.V(4).Infof("Failed to get node %s: %v", nodeName, err)
+		return false
+	}
+
+	// Check for control plane labels
+	if _, ok := node.Labels["node-role.kubernetes.io/master"]; ok {
+		return true
+	}
+	if _, ok := node.Labels["node-role.kubernetes.io/control-plane"]; ok {
+		return true
+	}
+
+	return false
+}
+
+// isNodeReady checks if a node is ready by examining its Ready condition.
+func (ctrl *Controller) isNodeReady(nodeName string) bool {
+	node, err := ctrl.nodeLister.Get(nodeName)
+	if err != nil {
+		klog.V(4).Infof("Failed to get node %s: %v", nodeName, err)
+		return false
+	}
+
+	for _, cond := range node.Status.Conditions {
+		if cond.Type == corev1.NodeReady {
+			return cond.Status == corev1.ConditionTrue
+		}
+	}
+	return false
+}
+
+// getClusterDomain returns the cluster domain from the Infrastructure resource.
+func (ctrl *Controller) getClusterDomain() (string, error) {
+	infra, err := ctrl.infraLister.Get("cluster")
+	if err != nil {
+		return "", fmt.Errorf("failed to get Infrastructure: %w", err)
+	}
+
+	// Get the internal API server URL from Infrastructure status.
+	// This is the api-int URL used by nodes to contact the API server.
+	// Format: https://api-int.<cluster-domain>:6443
+	apiServerURL := infra.Status.APIServerInternalURL
+	if apiServerURL == "" {
+		return "", fmt.Errorf("Infrastructure APIServerInternalURL is empty")
+	}
+
+	// Parse "https://api-int.<cluster-domain>:6443" to extract <cluster-domain>
+	domain := strings.TrimPrefix(apiServerURL, "https://api-int.")
+	domain = strings.TrimSuffix(domain, apiServerInternalURLPort)
+
+	return domain, nil
+}
+
+// enqueueInternalReleaseImage enqueues the IRI resource for reconciliation.
+// IRI is a singleton resource named "cluster".
+func (ctrl *Controller) enqueueInternalReleaseImage() {
 	ctrl.queue.Add(ctrlcommon.InternalReleaseImageInstanceName)
 }
 
@@ -334,7 +511,7 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) (syncErr error) {
 
 	// Update status condition on function exit based on sync result
 	defer func() {
-		if statusErr := ctrl.updateInternalReleaseImageStatus(iri, syncErr); statusErr != nil {
+		if statusErr := ctrl.updateInternalReleaseImageStatusWithReleases(iri, syncErr); statusErr != nil {
 			if syncErr != nil {
 				// Already have a sync error, just log the status update failure
 				klog.Warningf("Error updating InternalReleaseImage status: %v", statusErr)
@@ -445,9 +622,20 @@ func (ctrl *Controller) initializeInternalReleaseImageStatus(iri *mcfgv1alpha1.I
 	return nil
 }
 
-// updateInternalReleaseImageStatus updates the InternalReleaseImage status conditions
-// based on the provided error. If err is nil, it sets Degraded=False, otherwise Degraded=True.
-func (ctrl *Controller) updateInternalReleaseImageStatus(iri *mcfgv1alpha1.InternalReleaseImage, err error) error {
+// updateInternalReleaseImageStatusWithReleases updates the InternalReleaseImage status conditions
+// and aggregated release status based on the provided error.
+// If err is nil, it sets Degraded=False, otherwise Degraded=True.
+// This method also aggregates MCN IRI status to centralize all status update logic.
+func (ctrl *Controller) updateInternalReleaseImageStatusWithReleases(
+	iri *mcfgv1alpha1.InternalReleaseImage,
+	err error,
+) error {
+	// Aggregate MCN IRI status before entering retry loop
+	aggregatedReleases, iriStatus, degradedNodes, notReadyNodes, aggErr := ctrl.aggregateMCNIRIStatus(iri)
+	if aggErr != nil {
+		klog.Warningf("Failed to aggregate MCN IRI status: %v", aggErr)
+	}
+
 	return retry.RetryOnConflict(updateBackoff, func() error {
 		// Get the latest version of the IRI directly from the API server to avoid conflicts
 		latestIRI, getErr := ctrl.client.MachineconfigurationV1alpha1().InternalReleaseImages().Get(context.TODO(), iri.Name, metav1.GetOptions{})
@@ -456,10 +644,10 @@ func (ctrl *Controller) updateInternalReleaseImageStatus(iri *mcfgv1alpha1.Inter
 		}
 		newIRI := latestIRI.DeepCopy()
 
-		// Prepare the condition based on error state
+		// Prepare the condition based on error state or IRI status
 		var condition metav1.Condition
 		if err != nil {
-			// Set Degraded=True when there's an error
+			// Set Degraded=True when there's a sync error
 			condition = metav1.Condition{
 				Type:               string(mcfgv1alpha1.InternalReleaseImageStatusConditionTypeDegraded),
 				Status:             metav1.ConditionTrue,
@@ -468,24 +656,78 @@ func (ctrl *Controller) updateInternalReleaseImageStatus(iri *mcfgv1alpha1.Inter
 				ObservedGeneration: newIRI.Generation,
 			}
 		} else {
-			// Set Degraded=False when sync is successful
-			condition = metav1.Condition{
-				Type:               string(mcfgv1alpha1.InternalReleaseImageStatusConditionTypeDegraded),
-				Status:             metav1.ConditionFalse,
-				Reason:             "AsExpected",
-				Message:            "InternalReleaseImage controller sync successful",
-				ObservedGeneration: newIRI.Generation,
+			// Use IRIStatus from aggregation to determine condition
+			switch iriStatus {
+			case IRIStatusAllReleasesAvailable:
+				condition = metav1.Condition{
+					Type:               string(mcfgv1alpha1.InternalReleaseImageStatusConditionTypeDegraded),
+					Status:             metav1.ConditionFalse,
+					Reason:             IRIStatusAllReleasesAvailable,
+					Message:            "All the release images are available",
+					ObservedGeneration: newIRI.Generation,
+				}
+			case IRIStatusAPIIntNotAvailable:
+				// Extract the api-int URL from the release image for the error message
+				apiIntURL := "api-int"
+				if len(aggregatedReleases) > 0 && aggregatedReleases[0].Image != "" {
+					// Extract just the host:port from the full pullspec
+					// Image format: "api-int.<domain>:22625/openshift/release-images@sha256:..."
+					parts := strings.SplitN(aggregatedReleases[0].Image, "/", 2)
+					if len(parts) > 0 {
+						apiIntURL = parts[0]
+					}
+				}
+				condition = metav1.Condition{
+					Type:               string(mcfgv1alpha1.InternalReleaseImageStatusConditionTypeDegraded),
+					Status:             metav1.ConditionTrue,
+					Reason:             IRIStatusAPIIntNotAvailable,
+					Message:            fmt.Sprintf("Unable to reach any registry via %s", apiIntURL),
+					ObservedGeneration: newIRI.Generation,
+				}
+			case IRIStatusSomeNodesNotAvailable:
+				condition = metav1.Condition{
+					Type:               string(mcfgv1alpha1.InternalReleaseImageStatusConditionTypeDegraded),
+					Status:             metav1.ConditionTrue,
+					Reason:             IRIStatusSomeNodesNotAvailable,
+					Message:            fmt.Sprintf("The following nodes are not ready: [%s]. See the related Node resource status for more details.", strings.Join(notReadyNodes, ", ")),
+					ObservedGeneration: newIRI.Generation,
+				}
+			case IRIStatusSomeRegistriesUnavailable:
+				condition = metav1.Condition{
+					Type:               string(mcfgv1alpha1.InternalReleaseImageStatusConditionTypeDegraded),
+					Status:             metav1.ConditionTrue,
+					Reason:             IRIStatusSomeRegistriesUnavailable,
+					Message:            fmt.Sprintf("The following nodes are degraded: [%s]. See the related MachineConfigNode resource status for more details.", strings.Join(degradedNodes, ", ")),
+					ObservedGeneration: newIRI.Generation,
+				}
+			default:
+				condition = metav1.Condition{
+					Type:               string(mcfgv1alpha1.InternalReleaseImageStatusConditionTypeDegraded),
+					Status:             metav1.ConditionFalse,
+					Reason:             IRIStatusAllReleasesAvailable,
+					Message:            "All the release images are available",
+					ObservedGeneration: newIRI.Generation,
+				}
 			}
 		}
 
 		// Update the condition and check if it actually changed
-		changed := meta.SetStatusCondition(&newIRI.Status.Conditions, condition)
-		if !changed {
-			// No changes needed, skip the API call
+		conditionChanged := meta.SetStatusCondition(&newIRI.Status.Conditions, condition)
+
+		// Check if releases changed
+		releasesChanged := aggregatedReleases != nil && !equality.Semantic.DeepEqual(newIRI.Status.Releases, aggregatedReleases)
+
+		// Only update if something changed
+		if !conditionChanged && !releasesChanged {
 			return nil
 		}
 
-		// Update the status subresource only if the condition changed
+		// Update the releases with aggregated data
+		if aggregatedReleases != nil {
+			newIRI.Status.Releases = aggregatedReleases
+		}
+
+		// Update the status subresource only if something changed
 		_, updateErr := ctrl.client.MachineconfigurationV1alpha1().InternalReleaseImages().UpdateStatus(context.TODO(), newIRI, metav1.UpdateOptions{})
 		return updateErr
 	})

@@ -132,8 +132,8 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 				assert.Len(t, actualIRI.Status.Conditions, 1)
 				assert.Equal(t, string(mcfgv1alpha1.InternalReleaseImageStatusConditionTypeDegraded), actualIRI.Status.Conditions[0].Type)
 				assert.Equal(t, metav1.ConditionFalse, actualIRI.Status.Conditions[0].Status)
-				assert.Equal(t, "AsExpected", actualIRI.Status.Conditions[0].Reason)
-				assert.Equal(t, "InternalReleaseImage controller sync successful", actualIRI.Status.Conditions[0].Message)
+				assert.Equal(t, "AllReleasesAvailable", actualIRI.Status.Conditions[0].Reason)
+				assert.Equal(t, "All the release images are available", actualIRI.Status.Conditions[0].Message)
 			},
 		},
 	}
@@ -300,6 +300,9 @@ func (f *fixture) newController() *Controller {
 		i.Machineconfiguration().V1().MachineConfigs(),
 		ci.Config().V1().ClusterVersions(),
 		k.Core().V1().Secrets(),
+		i.Machineconfiguration().V1().MachineConfigNodes(),
+		k.Core().V1().Nodes(),
+		ci.Config().V1().Infrastructures(),
 		f.k8sClient,
 		f.client,
 	)
@@ -310,6 +313,9 @@ func (f *fixture) newController() *Controller {
 	c.mcListerSynced = alwaysReady
 	c.clusterVersionListerSynced = alwaysReady
 	c.secretListerSynced = alwaysReady
+	c.mcnListerSynced = alwaysReady
+	c.infraListerSynced = alwaysReady
+	c.nodeListerSynced = alwaysReady
 	c.eventRecorder = &record.FakeRecorder{}
 
 	stopCh := make(chan struct{})
