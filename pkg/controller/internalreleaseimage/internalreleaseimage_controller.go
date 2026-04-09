@@ -75,6 +75,9 @@ type Controller struct {
 	secretLister       corelistersv1.SecretLister
 	secretListerSynced cache.InformerSynced
 
+	mcnLister       mcfglistersv1.MachineConfigNodeLister
+	mcnListerSynced cache.InformerSynced
+
 	queue workqueue.TypedRateLimitingInterface[string]
 }
 
@@ -85,6 +88,7 @@ func New(
 	mcInformer mcfginformersv1.MachineConfigInformer,
 	clusterVersionInformer configinformersv1.ClusterVersionInformer,
 	secretInformer coreinformersv1.SecretInformer,
+	mcnInformer mcfginformersv1.MachineConfigNodeInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 ) *Controller {
@@ -122,6 +126,12 @@ func New(
 		UpdateFunc: ctrl.updateSecret,
 	})
 
+	mcnInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addMachineConfigNode,
+		UpdateFunc: ctrl.updateMachineConfigNode,
+		DeleteFunc: ctrl.deleteMachineConfigNode,
+	})
+
 	ctrl.iriLister = iriInformer.Lister()
 	ctrl.iriListerSynced = iriInformer.Informer().HasSynced
 
@@ -137,6 +147,9 @@ func New(
 	ctrl.secretLister = secretInformer.Lister()
 	ctrl.secretListerSynced = secretInformer.Informer().HasSynced
 
+	ctrl.mcnLister = mcnInformer.Lister()
+	ctrl.mcnListerSynced = mcnInformer.Informer().HasSynced
+
 	return ctrl
 }
 
@@ -145,7 +158,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.iriListerSynced, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.clusterVersionListerSynced, ctrl.secretListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, ctrl.iriListerSynced, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.clusterVersionListerSynced, ctrl.secretListerSynced, ctrl.mcnListerSynced) {
 		return
 	}
 
@@ -287,6 +300,55 @@ func (ctrl *Controller) updateSecret(obj, _ interface{}) {
 	ctrl.queue.Add(ctrlcommon.InternalReleaseImageInstanceName)
 }
 
+func (ctrl *Controller) addMachineConfigNode(obj interface{}) {
+	mcn := obj.(*mcfgv1.MachineConfigNode)
+	klog.V(4).Infof("Adding MachineConfigNode %s", mcn.Name)
+
+	if mcn.Spec.Pool.Name == "master" {
+		ctrl.enqueueAllInternalReleaseImages()
+	}
+}
+
+func (ctrl *Controller) updateMachineConfigNode(old, cur interface{}) {
+	oldMCN := old.(*mcfgv1.MachineConfigNode)
+	newMCN := cur.(*mcfgv1.MachineConfigNode)
+
+	membershipChanged := oldMCN.Spec.Pool.Name != newMCN.Spec.Pool.Name
+	iriStatusChanged := !reflect.DeepEqual(oldMCN.Status.InternalReleaseImage, newMCN.Status.InternalReleaseImage)
+	if (oldMCN.Spec.Pool.Name == "master" || newMCN.Spec.Pool.Name == "master") && (membershipChanged || iriStatusChanged) {
+		klog.V(4).Infof("MachineConfigNode %s IRI status updated", newMCN.Name)
+		ctrl.enqueueAllInternalReleaseImages()
+	}
+}
+
+func (ctrl *Controller) deleteMachineConfigNode(obj interface{}) {
+	mcn, ok := obj.(*mcfgv1.MachineConfigNode)
+	if !ok {
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("failed to get object from tombstone %#v", obj))
+			return
+		}
+		mcn, ok = tombstone.Obj.(*mcfgv1.MachineConfigNode)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a MachineConfigNode %#v", obj))
+			return
+		}
+	}
+
+	klog.V(4).Infof("MachineConfigNode %s deleted", mcn.Name)
+	if mcn.Spec.Pool.Name == "master" {
+		ctrl.enqueueAllInternalReleaseImages()
+	}
+}
+
+// enqueueAllInternalReleaseImages enqueues all IRI resources for reconciliation.
+// Since IRI is a singleton named "cluster", this just enqueues that one resource.
+func (ctrl *Controller) enqueueAllInternalReleaseImages() {
+	// IRI is a singleton resource named "cluster"
+	ctrl.queue.Add(ctrlcommon.InternalReleaseImageInstanceName)
+}
+
 func (ctrl *Controller) enqueue(iri *mcfgv1alpha1.InternalReleaseImage) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(iri)
 	if err != nil {
@@ -332,9 +394,12 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) (syncErr error) {
 		return nil
 	}
 
+	// Variable to hold aggregated release status
+	var aggregatedReleases []mcfgv1alpha1.InternalReleaseImageBundleStatus
+
 	// Update status condition on function exit based on sync result
 	defer func() {
-		if statusErr := ctrl.updateInternalReleaseImageStatus(iri, syncErr); statusErr != nil {
+		if statusErr := ctrl.updateInternalReleaseImageStatusWithReleases(iri, aggregatedReleases, syncErr); statusErr != nil {
 			if syncErr != nil {
 				// Already have a sync error, just log the status update failure
 				klog.Warningf("Error updating InternalReleaseImage status: %v", statusErr)
@@ -386,6 +451,13 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) (syncErr error) {
 	// Initialize status if empty
 	if err := ctrl.initializeInternalReleaseImageStatus(iri); err != nil {
 		return fmt.Errorf("could not initialize status: %w", err)
+	}
+
+	// Aggregate MCN IRI status into cluster-wide IRI status
+	var aggErr error
+	aggregatedReleases, aggErr = ctrl.aggregateMCNIRIStatus(iri)
+	if aggErr != nil {
+		return fmt.Errorf("failed to aggregate MCN IRI status: %w", aggErr)
 	}
 
 	return nil
@@ -445,9 +517,14 @@ func (ctrl *Controller) initializeInternalReleaseImageStatus(iri *mcfgv1alpha1.I
 	return nil
 }
 
-// updateInternalReleaseImageStatus updates the InternalReleaseImage status conditions
-// based on the provided error. If err is nil, it sets Degraded=False, otherwise Degraded=True.
-func (ctrl *Controller) updateInternalReleaseImageStatus(iri *mcfgv1alpha1.InternalReleaseImage, err error) error {
+// updateInternalReleaseImageStatusWithReleases updates the InternalReleaseImage status conditions
+// and aggregated release status based on the provided error and aggregated data.
+// If err is nil, it sets Degraded=False, otherwise Degraded=True.
+func (ctrl *Controller) updateInternalReleaseImageStatusWithReleases(
+	iri *mcfgv1alpha1.InternalReleaseImage,
+	aggregatedReleases []mcfgv1alpha1.InternalReleaseImageBundleStatus,
+	err error,
+) error {
 	return retry.RetryOnConflict(updateBackoff, func() error {
 		// Get the latest version of the IRI directly from the API server to avoid conflicts
 		latestIRI, getErr := ctrl.client.MachineconfigurationV1alpha1().InternalReleaseImages().Get(context.TODO(), iri.Name, metav1.GetOptions{})
@@ -479,13 +556,22 @@ func (ctrl *Controller) updateInternalReleaseImageStatus(iri *mcfgv1alpha1.Inter
 		}
 
 		// Update the condition and check if it actually changed
-		changed := meta.SetStatusCondition(&newIRI.Status.Conditions, condition)
-		if !changed {
-			// No changes needed, skip the API call
+		conditionChanged := meta.SetStatusCondition(&newIRI.Status.Conditions, condition)
+
+		// Check if releases changed
+		releasesChanged := aggregatedReleases != nil && !reflect.DeepEqual(newIRI.Status.Releases, aggregatedReleases)
+
+		// Only update if something changed
+		if !conditionChanged && !releasesChanged {
 			return nil
 		}
 
-		// Update the status subresource only if the condition changed
+		// Update the releases with aggregated data
+		if aggregatedReleases != nil {
+			newIRI.Status.Releases = aggregatedReleases
+		}
+
+		// Update the status subresource only if something changed
 		_, updateErr := ctrl.client.MachineconfigurationV1alpha1().InternalReleaseImages().UpdateStatus(context.TODO(), newIRI, metav1.UpdateOptions{})
 		return updateErr
 	})
