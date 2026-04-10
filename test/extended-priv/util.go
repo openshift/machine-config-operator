@@ -1267,3 +1267,48 @@ func skipTestIfOsIsNotCoreOs(oc *exutil.CLI) *Node {
 	}
 	return allCoreOs[0]
 }
+
+// containsMultipleStrings checks if sourceString contains all expectedStrings
+func containsMultipleStrings(sourceString string, expectedStrings []string) bool {
+	o.Expect(sourceString).NotTo(o.BeEmpty())
+	o.Expect(expectedStrings).NotTo(o.BeEmpty())
+
+	var count int
+	for _, element := range expectedStrings {
+		if strings.Contains(sourceString, element) {
+			count++
+		}
+	}
+	return len(expectedStrings) == count
+}
+
+// skipTestIfNotIPI skips the test if the cluster is not IPI
+func skipTestIfNotIPI(oc *exutil.CLI) {
+	// We assume that if nodes cannot be scaled then the cluster is UPI
+	skipTestIfWorkersCannotBeScaled(oc)
+}
+
+// IsInstalledWithAssistedInstallerOrFail checks if the cluster was installed using assisted-installer
+func IsInstalledWithAssistedInstallerOrFail(oc *exutil.CLI) bool {
+	logger.Infof("Checking if the cluster was installed using assisted-installer")
+	assistedInstallerNS := NewResource(oc, "ns", "assisted-installer")
+	return assistedInstallerNS.Exists()
+}
+
+// IsOnPremPlatform returns true if the platform is an on-prem platform
+func IsOnPremPlatform(platform string) bool {
+	switch platform {
+	case BaremetalPlatform, OvirtPlatform, OpenstackPlatform, VspherePlatform, NutanixPlatform:
+		return true
+	default:
+		return false
+	}
+}
+
+// SkipIfNotOnPremPlatform skips the test if the current platform is not an on-prem platform
+func SkipIfNotOnPremPlatform(oc *exutil.CLI) {
+	platform := exutil.CheckPlatform(oc)
+	if !IsOnPremPlatform(platform) {
+		g.Skip(fmt.Sprintf("Current platform: %s. This test can only be execute in OnPrem platforms.", platform))
+	}
+}

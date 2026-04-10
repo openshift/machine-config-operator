@@ -1225,6 +1225,12 @@ func (n *Node) GetMachineConfigNode() *MachineConfigNode {
 	return NewMachineConfigNode(n.oc.AsAdmin(), n.GetName())
 }
 
+// GetJournalLogs returns the journal logs for a node
+func (n *Node) GetJournalLogs(args ...string) (string, error) {
+	cmd := []string{"journalctl", "-o", "with-unit"}
+	return n.DebugNodeWithChroot(append(cmd, args...)...)
+}
+
 // GetFileSystemSpaceUsage returns the space usage in the node
 // Parse command
 // $ df -B1 --output=used,avail /
@@ -1585,4 +1591,13 @@ func (n *Node) GetRHCOSVersion() (string, error) {
 	}
 
 	return rhcosVersion, nil
+}
+
+// GetAllCoreOsNodesOrFail returns all RHCOS nodes. Fails the test if an error happens.
+func (nl NodeList) GetAllCoreOsNodesOrFail() []*Node {
+	nl.ByLabel("node.openshift.io/os_id=rhel")
+
+	allRhcos, err := nl.GetAll()
+	o.Expect(err).NotTo(o.HaveOccurred())
+	return allRhcos
 }
