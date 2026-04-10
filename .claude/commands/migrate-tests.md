@@ -56,7 +56,7 @@ To execute this command:
 
 3. **Critical implementation notes:**
    - Do NOT simplify or refactor migrated code - only change references
-   - All functions in the destination file must be placed in the same order as they appear in the source file, not appended at the end
+   - **IMPORTANT**: All migrated functions in the destination file must be placed in the same order as they appear in the source file, not appended at the end
    - For compat_otp functions, use the same file names as the original
    - Check for existing functions in destination before creating duplicates
    - `ConnectedOnly` in source maps to `[Skipped:Disconnected]` in destination
@@ -177,7 +177,7 @@ This command takes no arguments. All configuration is collected interactively du
 
 - **Prerequisites**: Go toolchain, Git, access to both openshift-tests-private and machine-config-operator repositories
 - **Code preservation**: The migration does NOT simplify or refactor code - it only changes package names, imports, and function reference prefixes
-- **Function order**: All functions in the destination file are placed in the same order as they appear in the source file, not appended at the end
+- **IMPORTANT — Function order**: All migrated functions in the destination file must be placed in the same order as they appear in the source file, not appended at the end
 - **File naming**: For compat_otp utility functions, the same file names as the original are used
 - **Duplicate detection**: Tests already migrated (by PolarionID) in destination are skipped
 - **Template files**: Referenced testdata files are copied from `testdata/mco/` to `testdata/files/`

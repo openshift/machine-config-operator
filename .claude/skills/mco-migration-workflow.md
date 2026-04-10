@@ -32,7 +32,7 @@ The migration is a **multi-phase workflow** that collects configuration, analyze
 
 **Key Design Principles:**
 - **Code preservation**: Do NOT simplify, refactor, or modify function logic - only change references
-- **Function order**: All functions in the destination file must be placed in the same order as they appear in the source file, not appended at the end
+- **IMPORTANT — Function order**: All migrated functions in the destination file must be placed in the same order as they appear in the source file, not appended at the end
 - **File naming**: Use the same file names as the original for compat_otp utility functions
 - **Duplicate detection**: Skip tests and functions already present in destination
 - **Accurate name transformation**: Follow the precise test naming algorithm documented below
@@ -363,7 +363,7 @@ Execute the migration transformations based on the analysis from Phase 2.
 **CRITICAL RULES:**
 - Do NOT simplify or refactor any function logic
 - Migrate code as-is, only changing references
-- All functions in the destination file must be placed in the same order as they appear in the source file, not appended at the end
+- **IMPORTANT**: All migrated functions in the destination file must be placed in the same order as they appear in the source file, not appended at the end
 - For compat_otp functions, use the same file names as in compat_otp
 - If a new file has to be created in destination, create it
 
@@ -514,7 +514,7 @@ For each helper function identified in Phase 2 Step 5:
       - If the function is in a shared helper file (e.g., `util.go`, `resource.go`, `node.go`) -> place it in the corresponding file in `<dest-test-dir>/`
    b. Copy the function body exactly as-is
    c. Only change `compat_otp.` references to `exutil.` and update imports
-   d. Preserve the function order from the original file
+   d. **IMPORTANT**: Preserve the migrated function order from the original source file
 
 #### Step 8: Migrate compat_otp Utility Functions
 
