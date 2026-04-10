@@ -1514,6 +1514,11 @@ func (mcp *MachineConfigPool) IsRealTimeKernel() (bool, error) {
 		return false, err
 	}
 
+	if len(nodes) == 0 {
+		logger.Infof("Pool %s has no nodes, skipping RT kernel check", mcp.GetName())
+		return false, nil
+	}
+
 	return nodes[0].IsRealTimeKernel()
 }
 
