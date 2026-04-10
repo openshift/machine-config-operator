@@ -109,6 +109,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			ctrlctx.KubeNamespacedInformerFactory.Core().V1().Secrets(),
 			ctrlctx.KubeNamespacedInformerFactory.Core().V1().ConfigMaps(),
 			ctrlctx.ConfigInformerFactory.Config().V1().Infrastructures(),
+			ctrlctx.ConfigInformerFactory,
 			ctrlctx.FeatureGatesHandler,
 			ctrlctx.ClientBuilder.MachineConfigClientOrDie("cert-rotation-controller"),
 		)
