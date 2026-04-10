@@ -107,6 +107,8 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			ctrlctx.KubeNamespacedInformerFactory.Core().V1().Secrets(),
 			ctrlctx.KubeNamespacedInformerFactory.Core().V1().ConfigMaps(),
 			ctrlctx.ConfigInformerFactory.Config().V1().Infrastructures(),
+			ctrlctx.ConfigInformerFactory,
+			ctrlctx.FeatureGatesHandler,
 		)
 		if err != nil {
 			klog.Fatalf("unable to start cert rotation controller: %v", err)
