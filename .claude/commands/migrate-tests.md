@@ -60,6 +60,7 @@ To execute this command:
    - For compat_otp functions, use the same file names as the original
    - Check for existing functions in destination before creating duplicates
    - `ConnectedOnly` in source maps to `[Skipped:Disconnected]` in destination
+   - `[Serial][Disruptive]` is always added to the Describe block — in the new framework `[Disruptive]` no longer implies `[Serial]` as it did in the old one
    - Tags like `[Skipped:Disconnected]` and `[OCPFeatureGate:XXX]` stay on individual `g.It()` blocks since not all tests in the same Describe section share the same tags
 
 **For complete implementation details, transformation rules, and verification steps, refer to the skill documentation.**
