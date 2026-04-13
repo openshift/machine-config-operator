@@ -96,11 +96,10 @@ The command will:
 2. Ask for the destination repository path (machine-config-operator)
 3. Ask for the compat_otp library path (optional)
 4. Ask what to migrate (filename)
-5. Analyze the selected file for duplicates
-6. Display configuration summary for confirmation
-7. Execute the migration transformations
-8. Build and verify the test binary
-9. Provide summary and next steps
+5. Display configuration summary for confirmation
+6. Execute the migration transformations
+7. Build and verify the test binary
+8. Provide summary and next steps
 
 ### Example interaction — whole file
 
@@ -119,8 +118,7 @@ User: /home/user/repos/origin/test/extended/util/compat_otp
 AI: What do you want to migrate? Enter a filename (e.g., mco_configdrift.go)
 User: mco_configdrift.go
 
-AI: mco_configdrift.go — 5 tests, 0 already migrated, 5 available
-    [shows confirmation summary]
+AI: [shows confirmation summary]
     Proceed? [Y/n]
 User: Y
 
@@ -140,7 +138,6 @@ This command takes no arguments. All configuration is collected interactively du
 - **Code preservation**: The migration does NOT simplify or refactor code - it only changes package names, imports, and function reference prefixes
 - **IMPORTANT — Function order**: All migrated functions in the destination file must be placed in the same order as they appear in the source file, not appended at the end
 - **File naming**: For compat_otp utility functions, the same file names as the original are used
-- **Duplicate detection**: Tests already migrated (by PolarionID) in destination are skipped
 - **Template files**: Referenced testdata files are copied from `testdata/mco/` to `testdata/files/`
 - **Build verification**: The command builds the test binary using `make machine-config-tests-ext` and verifies migrated tests appear in the listing
 
