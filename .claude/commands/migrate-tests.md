@@ -28,7 +28,7 @@ The `/migrate-tests` command automates the migration of MCO (Machine Config Oper
 
 **Key Features:**
 
-- **Two migration modes** - Migrate a whole test file (e.g., `mco_configdrift.go`) or extract a test suite from any file by keyword (e.g., `mco.go:kernel`)
+- **Whole-file migration** - Migrate complete test files (e.g., `mco_configdrift.go`)
 - **Accurate test name transformation** - Converts `Author:USERNAME-Qualifiers-ID-[Tags] Description` format to `[PolarionID:ID][OTP] Description` format
 - **Import rewriting** - Replaces all `compat_otp` references with `exutil` equivalents
 - **Duplicate detection** - Skips tests already present in destination
@@ -95,7 +95,7 @@ The command will:
 1. Ask for the source repository path (openshift-tests-private)
 2. Ask for the destination repository path (machine-config-operator)
 3. Ask for the compat_otp library path (optional)
-4. Ask what to migrate (filename or filename:keyword)
+4. Ask what to migrate (filename)
 5. Analyze the selected file for duplicates
 6. Display configuration summary for confirmation
 7. Execute the migration transformations
@@ -117,7 +117,6 @@ AI: What is the path to the compat_otp library? (press Enter to skip)
 User: /home/user/repos/origin/test/extended/util/compat_otp
 
 AI: What do you want to migrate? Enter a filename (e.g., mco_configdrift.go)
-    or filename:keyword to extract a subset (e.g., mco.go:kernel)
 User: mco_configdrift.go
 
 AI: mco_configdrift.go — 5 tests, 0 already migrated, 5 available
@@ -129,45 +128,6 @@ AI: [executes migration]
     Migration complete! 5 tests migrated successfully.
     Build: PASSED
     Test listing: All 5 migrated tests found
-```
-
-### Example interaction — suite extraction
-
-```text
-AI: What do you want to migrate?
-User: mco.go:kernel
-
-AI: The extracted tests will be saved as mco_kernel.go.
-    Enter a custom filename or press Enter to accept:
-User: [presses Enter]
-
-AI: Found 9 tests matching "kernel" in mco.go:
-    1. 42365 - add real time kernel argument
-    2. 67787 - switch kernel type to 64k-pages for arm64
-    ...
-    0 already migrated, 9 available
-    These will be extracted into mco_kernel.go. Proceed? [Y/n]
-User: Y
-
-AI: Migrating tests to machine-config-operator...
-    Build: PASSED
-    Test listing: All 9 migrated tests found
-```
-
-### Example interaction — suite extraction with custom filename
-
-```text
-AI: What do you want to migrate?
-User: mco.go:kernel
-
-AI: The extracted tests will be saved as mco_kernel.go.
-    Enter a custom filename or press Enter to accept:
-User: mco_kernel_args.go
-
-AI: Found 9 tests matching "kernel" in mco.go:
-    ...
-    These will be extracted into mco_kernel_args.go. Proceed? [Y/n]
-User: Y
 ```
 
 ## Arguments
@@ -182,7 +142,6 @@ This command takes no arguments. All configuration is collected interactively du
 - **File naming**: For compat_otp utility functions, the same file names as the original are used
 - **Duplicate detection**: Tests already migrated (by PolarionID) in destination are skipped
 - **Template files**: Referenced testdata files are copied from `testdata/mco/` to `testdata/files/`
-- **Suite extraction**: Use `filename:keyword` syntax to extract a subset of tests from any file (e.g., `mco.go:kernel`, `mco_security.go:cipher`)
 - **Build verification**: The command builds the test binary using `make machine-config-tests-ext` and verifies migrated tests appear in the listing
 
 ## See Also
