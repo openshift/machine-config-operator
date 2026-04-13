@@ -424,9 +424,7 @@ g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longduration][Seri
 **Suite tag selection:**
 - Default: `[Suite:openshift/machine-config-operator/longduration]` for most MCO tests
 - Use `[Suite:openshift/machine-config-operator/disruptive]` if the tests are specifically disruptive-only (check existing destination patterns for the same test area)
-- `[Serial][Disruptive]` after the suite tag is the standard for MCO extended-priv tests
-
-**Note:** Be careful with `[Serial]` and `[Disruptive]` on the Describe block — not all tests in the same Describe section necessarily share these tags. Check the source tests to confirm they are all serial/disruptive before adding these tags to the Describe block. If some tests are not serial or disruptive, they may need to be in a separate Describe block.
+- `[Serial][Disruptive]` after the suite tag is **always required** for MCO extended-priv tests. In the old framework `[Disruptive]` implied `[Serial]`, but in the new framework it does not — both must be explicitly specified.
 
 **Preserve existing `g.Label(...)` decorators** if present:
 ```go
