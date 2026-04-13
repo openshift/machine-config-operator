@@ -159,23 +159,6 @@ fi
 - `<source-file>` = full path to source file
 - `<dest-filename>` = same as the source filename
 
-#### Input 4b: Analyze the selected target
-
-Once the user has selected a file, run targeted checks on **only that file**:
-
-1. **Check which tests are already migrated:**
-   ```bash
-   DEST_IDS=$(grep -roh 'PolarionID:[0-9]*' "$DEST_TEST_DIR"/*.go 2>/dev/null | grep -oP '\d+' | sort -u)
-   SOURCE_IDS=$(grep 'g\.It("' "$SOURCE_FILE" | grep -oP '\d{5,}' | sort -u)
-   ```
-
-   For each source PolarionID, check if it exists in `$DEST_IDS`. Report skipped tests.
-
-2. **Display summary for the selected target:**
-   ```text
-   <filename> — <total> tests, <done> already migrated, <available> ready to migrate
-   ```
-
 #### Input 5: Configuration Summary and Confirmation
 
 Display all collected inputs for user review:
@@ -189,8 +172,6 @@ Destination Repo:    <dest-repo>
 compat_otp Path:     <compat-otp-path or "skipped">
 Source File:         <source-file>
 Destination File:    <dest-filename>
-Tests to Migrate:    <count> test cases
-Tests Skipped:       <count> (already migrated)
 ```
 
 Ask: "Proceed with migration? [Y/n]:"
