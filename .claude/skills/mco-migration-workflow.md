@@ -143,14 +143,11 @@ If `git pull` fails (e.g., uncommitted local changes), warn the user but continu
 
 #### Input 4: Migration Target
 
-Ask the user directly: "What do you want to migrate? Enter:
-- A **filename** to migrate the whole file (e.g., `mco_configdrift.go`)
-- A **filename:keyword** to extract matching tests from a file (e.g., `mco.go:kernel`, `mco_security.go:cipher`)"
+Ask the user directly: "What do you want to migrate? Enter a filename (e.g., `mco_configdrift.go`)"
 
 **Validate the file exists:**
 ```bash
-# Extract filename (before the colon, if present)
-FILENAME=$(echo "$USER_INPUT" | cut -d: -f1)
+FILENAME="$USER_INPUT"
 SOURCE_FILE="$SOURCE_TEST_DIR/$FILENAME"
 if [ ! -f "$SOURCE_FILE" ]; then
     echo "ERROR: File not found: $SOURCE_FILE"
@@ -158,70 +155,18 @@ if [ ! -f "$SOURCE_FILE" ]; then
 fi
 ```
 
-**Determine migration mode:**
-
-If input contains a colon (`filename:keyword`):
-```
-MIGRATION_MODE="suite-extraction"
-EXTRACTION_KEYWORD=$(echo "$USER_INPUT" | cut -d: -f2)
-```
-
-Derive a **suggested** destination filename:
-- If source is `mco.go`: suggest `mco_<keyword>.go`
-- If source is `mco_<topic>.go`: suggest `mco_<topic>_<keyword>.go`
-
-Then ask the user: "The extracted tests will be saved as `<suggested-filename>`. Enter a custom filename or press Enter to accept:"
-
-**Handling the response:** If the user presses Enter (empty response), use the suggested filename. Otherwise, use the user-provided filename. Ensure the filename ends with `.go` — append it if missing.
-
-Show matching tests **grouped by functionality**. For each matching test:
-1. Extract the PolarionID and plain-text description (strip Author/qualifier prefix and tags)
-2. Group tests that share a common action or subject (e.g., "add kernel argument", "switch kernel type", "reject MC with kernel")
-3. Present them grouped so the user can see the functional areas at a glance:
-
-```text
-Found 9 tests matching "kernel" in mco.go:
-
-  Kernel arguments:
-    1. 42365 - add real time kernel argument
-    2. 42364 - add selinux kernel argument
-    3. 67825 - Use duplicated kernel arguments
-    4. 54922 - daemon: add check before updating kernelArgs
-    5. 72136 - Reject MCs with ignition containing kernelArguments
-
-  Kernel type (64k-pages):
-    6. 67787 - switch kernel type to 64k-pages for arm64
-    7. 67788 - kernel type 64k-pages not supported on non-arm64
-    8. 67790 - create MC with extensions, 64k-pages kernel type and kernel argument
-
-  FIPS + kernel:
-    9. 53668 - FIPS and realtime kernel both enabled, node should NOT be degraded
-```
-
-The grouping is done by reading the test descriptions and clustering by shared keywords/subject matter. This is best-effort — the goal is to help the user understand what the tests cover, not to create a perfect taxonomy.
-
-If no input contains a colon (whole file):
-```
-MIGRATION_MODE="whole-file"
-DEST_FILENAME="$FILENAME"
-```
-
 **Store in variables:**
-- `<migration-mode>` = "whole-file" or "suite-extraction"
 - `<source-file>` = full path to source file
-- `<dest-filename>` = destination filename
-- `<extraction-keyword>` = keyword (suite extraction only)
-- `<selected-tests>` = list of test names/line numbers to extract (suite extraction only)
+- `<dest-filename>` = same as the source filename
 
 #### Input 4b: Analyze the selected target
 
-Once the user has selected a file (and optionally a keyword), run targeted checks on **only that file**:
+Once the user has selected a file, run targeted checks on **only that file**:
 
 1. **Check which tests are already migrated:**
    ```bash
    DEST_IDS=$(grep -roh 'PolarionID:[0-9]*' "$DEST_TEST_DIR"/*.go 2>/dev/null | grep -oP '\d+' | sort -u)
    SOURCE_IDS=$(grep 'g\.It("' "$SOURCE_FILE" | grep -oP '\d{5,}' | sort -u)
-   # For suite extraction, filter to only tests matching the keyword
    ```
 
    For each source PolarionID, check if it exists in `$DEST_IDS`. Report skipped tests.
@@ -242,7 +187,6 @@ MCO Migration Configuration Summary
 Source Repository:   <source-repo>
 Destination Repo:    <dest-repo>
 compat_otp Path:     <compat-otp-path or "skipped">
-Migration Mode:      <migration-mode>
 Source File:         <source-file>
 Destination File:    <dest-filename>
 Tests to Migrate:    <count> test cases
@@ -265,11 +209,6 @@ Read the source file and extract:
 4. **It blocks**: Extract all `g.It(...)` test case names with line numbers
 5. **Helper functions**: List all non-test functions defined in the file
 6. **Template references**: Find all calls to `generateTemplateAbsolutePath()` or other testdata references
-
-For suite extraction mode, also extract:
-- The `g.JustBeforeEach` block (shared setup code)
-- Variable declarations at the top of the Describe block
-- Only the `g.It()` blocks matching the extraction keyword
 
 #### Step 2: Read Destination Patterns
 
