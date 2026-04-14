@@ -79,6 +79,19 @@ func GetLeaderElectionConfig(restcfg *rest.Config) configv1.LeaderElection {
 	return defaultLeaderElection
 }
 
+// GetDefaultLeaderElectionConfig returns HA default leader election timings regardless of
+// cluster topology. Use this for components that run a single replica and have no lease
+// contention, where the inflated SNO timings only add unnecessary recovery latency.
+func GetDefaultLeaderElectionConfig() configv1.LeaderElection {
+	defaultLeaderElection := leaderelection.LeaderElectionDefaulting(
+		configv1.LeaderElection{},
+		"", "",
+	)
+	klog.Infof("Using HA default leader election timings (LeaseDuration=%s, RetryPeriod=%s)",
+		defaultLeaderElection.LeaseDuration.Duration, defaultLeaderElection.RetryPeriod.Duration)
+	return defaultLeaderElection
+}
+
 // SignalHandler catches SIGINT/SIGTERM signals and makes sure the passed context gets cancelled when those signals happen. This allows us to use a
 // context to shut down our operations cleanly when we are signalled to shutdown.
 func SignalHandler(runCancel context.CancelFunc) {
