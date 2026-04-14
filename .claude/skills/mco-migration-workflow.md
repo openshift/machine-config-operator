@@ -40,13 +40,19 @@ Source:
 g.Describe("[sig-mco] MCO <SuiteName>", func() {
 ```
 
-Destination:
+Destination (longduration — default):
 ```go
 g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longduration][Serial][Disruptive] MCO <SuiteName>", func() {
 ```
 
+Destination (disruptive):
+```go
+g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Serial][Disruptive] MCO <SuiteName>", func() {
+```
+
+- Ask the user which suite to use: `longduration` (default) or `disruptive`
 - `[Serial][Disruptive]` is **always required** — in the new framework `[Disruptive]` no longer implies `[Serial]`
-- Preserve any existing `g.Label(...)` decorators
+- Preserve any existing `g.Label(...)` decorators on Describe blocks
 
 ## Test Name Transformation (g.It blocks)
 
@@ -70,7 +76,7 @@ Destination pattern:
 - `[OCPFeatureGate:XXX]` → preserve as-is
 - Tags like `[Skipped:Disconnected]` and `[OCPFeatureGate:XXX]` stay on individual `g.It()` blocks (not all tests in a Describe share them)
 
-**Stripped qualifiers** (not carried to destination): `Author:USERNAME`, `NonHyperShiftHOST`, `NonPreRelease`, `Longduration`, `LEVEL0`, priority words (`Critical`/`High`/`Medium`/`Low`), `[P1]`/`[P2]`/`[P3]`, `[OnCLayer]`
+**Stripped qualifiers** (not carried to destination): `Author:USERNAME`, `NonHyperShiftHOST`, `NonPreRelease`, `Longduration`, priority words (`Critical`/`High`/`Medium`/`Low`), `[P1]`/`[P2]`/`[P3]`, `[OnCLayer]`
 
 **Examples:**
 
@@ -78,9 +84,18 @@ Destination pattern:
 |---|---|
 | `Author:sregidor-Longduration-NonPreRelease-High-46943-[P1][OnCLayer] Config Drift. Config file. [Serial]` | `[PolarionID:46943][OTP] Config Drift. Config file.` |
 | `Author:sregidor-ConnectedOnly-NonHyperShiftHOST-NonPreRelease-Longduration-High-81921-[OnCLayer] Pinned images with IDMS [Disruptive]` | `[PolarionID:81921][OTP][Skipped:Disconnected] Pinned images with IDMS` |
-| `Author:sregidor-NonHyperShiftHOST-NonPreRelease-Medium-81955-[P2][OnCLayer] Pinnedimageset invalid [Disruptive]` | `[PolarionID:81955][OTP] Pinnedimageset invalid` |
+| `Author:mhanss-LEVEL0-Longduration-NonPreRelease-Critical-42438-[P2][OnCLayer] add journald systemd config [Disruptive]` | `[PolarionID:42438][OTP][LEVEL0] add journald systemd config` |
 
-Preserve `g.Label(...)` decorators on individual tests.
+## Platform Filtering
+
+Convert `skipTestIfSupportedPlatformNotMatched` calls to `g.Label(...)` on the `g.It()` line and remove the call.
+
+| Source Constant | g.Label Value |
+|---|---|
+| `AWSPlatform` | `"Platform:aws"` |
+| `GCPPlatform` | `"Platform:gce"` (note: gcp → gce) |
+| `AzurePlatform` | `"Platform:azure"` |
+| `VspherePlatform` | `"Platform:vsphere"` |
 
 ## Path Mappings
 
@@ -99,7 +114,7 @@ make machine-config-tests-ext
 
 ## Workflow
 
-1. **Collect inputs** — source repo path, destination repo path, compat_otp path (optional), filename to migrate. Check memory (`migrate_tests_config.md`) for saved paths.
+1. **Collect inputs** — source repo path, destination repo path, compat_otp path (optional), filename to migrate, and target suite (`longduration` default, or `disruptive`). Check memory (`migrate_tests_config.md`) for saved paths.
 2. **Analyze** — read source file, identify tests/helpers/templates/compat_otp deps, check what already exists in destination.
 3. **Migrate** — apply all transformations above, copy templates, migrate helper functions and compat_otp utilities as needed.
 4. **Verify** — build and confirm migrated tests appear in listing. Fix any build errors iteratively.
