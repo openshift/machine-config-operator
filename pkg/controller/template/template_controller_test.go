@@ -507,7 +507,7 @@ func TestKubeletAutoNodeSizingEnabled(t *testing.T) {
 	}
 }
 
-func TestKubeletAutoNodeSizingDisabledForHypershift(t *testing.T) {
+func TestKubeletAutoNodeSizingEnabledForHypershift(t *testing.T) {
 	cc := newControllerConfig("test-cluster")
 	// Set ControlPlaneTopology to External to simulate Hypershift
 	cc.Spec.Infra.Status.ControlPlaneTopology = configv1.ExternalTopologyMode
@@ -539,9 +539,16 @@ func TestKubeletAutoNodeSizingDisabledForHypershift(t *testing.T) {
 
 				contentsStr := string(contents)
 
-				// Verify NODE_SIZING_ENABLED=false is present for Hypershift
-				if !strings.Contains(contentsStr, "NODE_SIZING_ENABLED=false") {
-					t.Errorf("Expected NODE_SIZING_ENABLED=false for Hypershift in %s, got: %s", mc.Name, contentsStr)
+				// Master nodes are always disabled and worker nodes should now be enabled even for Hypershift
+				isMasterNode := strings.Contains(mc.Name, "master")
+				if isMasterNode {
+					if !strings.Contains(contentsStr, "NODE_SIZING_ENABLED=false") {
+						t.Errorf("Expected NODE_SIZING_ENABLED=false for Hypershift master in %s, got: %s", mc.Name, contentsStr)
+					}
+				} else {
+					if !strings.Contains(contentsStr, "NODE_SIZING_ENABLED=true") {
+						t.Errorf("Expected NODE_SIZING_ENABLED=true for Hypershift worker in %s, got: %s", mc.Name, contentsStr)
+					}
 				}
 
 				// Verify other expected values are still present
