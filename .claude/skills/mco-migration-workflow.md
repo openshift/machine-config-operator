@@ -52,7 +52,6 @@ g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Serial
 
 - Ask the user which suite to use: `longduration` (default) or `disruptive`
 - `[Serial][Disruptive]` is **always required** — in the new framework `[Disruptive]` no longer implies `[Serial]`
-- Preserve any existing `g.Label(...)` decorators on Describe blocks
 
 ## Test Name Transformation (g.It blocks)
 
