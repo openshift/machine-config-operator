@@ -40,6 +40,8 @@ func verifyInternalReleaseMasterMachineConfig(t *testing.T, mc *mcfgv1.MachineCo
 	verifyIgnitionFile(t, &ignCfg, "/etc/iri-registry/certs/tls.key", "iri-tls-key")
 	verifyIgnitionFile(t, &ignCfg, "/etc/iri-registry/certs/tls.crt", "iri-tls-crt")
 	verifyIgnitionFileContains(t, &ignCfg, "/usr/local/bin/load-registry-image.sh", "docker-registry-image-pullspec")
+	assert.Contains(t, *ignCfg.Systemd.Units[0].Contents, `REGISTRY_STORAGE_MAINTENANCE_READONLY={"enabled":true}`)
+	assert.NotContains(t, *ignCfg.Systemd.Units[0].Contents, "REGISTRY_STORAGE_MAINTENANCE_READONLY_ENABLED")
 }
 
 func verifyInternalReleaseWorkerMachineConfig(t *testing.T, mc *mcfgv1.MachineConfig) {
