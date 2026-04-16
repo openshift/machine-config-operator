@@ -1,0 +1,10 @@
+name: "ovs-configuration.service"
+dropins:
+  - name: 10-skip-rerun.conf
+    contents: |
+      [Unit]
+      # Prevent re-execution within the same boot. configure-ovs.sh clears
+      # ovn-remote on every run; a second run while OVN is active breaks
+      # pod networking. The marker is on tmpfs, so it resets on reboot.
+      # OCPEDGE-2447
+      ConditionPathExists=!/var/run/ovs-config-executed
