@@ -1181,7 +1181,7 @@ func validateMcpNodeDegraded(mc *MachineConfig, mcp *MachineConfigPool, expected
 }
 
 // validate that the machine config 'mc' degrades machineconfigpool 'mcp', due to RenderDegraded error matching expectedNDMessage, expectedNDReason
-func validateMcpRenderDegraded(mc *MachineConfig, mcp *MachineConfigPool, expectedRDMessage, expectedRDReason string) {
+func validateMcpRenderDegraded(mc *MachineConfig, mcp *MachineConfigPool, expectedRDMessage, expectedRDReason string) { //nolint:unparam
 	defer o.Eventually(mcp, "5m", "20s").ShouldNot(BeDegraded(), "The MCP was not recovered from Degraded status after deleting the offending MC")
 	defer o.Eventually(mc.Delete).Should(o.Succeed(), "Could not delete the offending MC")
 	mc.create()
@@ -1241,4 +1241,74 @@ func getAlertsByName(oc *exutil.CLI, alertName string) ([]map[string]interface{}
 	}
 
 	return filteredAlerts, nil
+}
+
+// skipTestIfRTKernel skips the current test if the cluster is using real time kernel
+func skipTestIfRTKernel(oc *exutil.CLI) {
+	wMcp := NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
+	mMcp := NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolMaster)
+
+	isWorkerRT, err := wMcp.IsRealTimeKernel()
+	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error trying to know if realtime kernel is active worker pool")
+
+	isMasterRT, err := mMcp.IsRealTimeKernel()
+	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error trying to know if realtime kernel is active master pool")
+
+	if isWorkerRT || isMasterRT {
+		g.Skip("Pools are using real time kernel configuration. This test cannot be executed if the cluster is using RT kernel.")
+	}
+}
+
+// skipTestIfOsIsNotCoreOs it will either skip the test case in case of worker node is not CoreOS or will return the CoreOS worker node
+func skipTestIfOsIsNotCoreOs(oc *exutil.CLI) *Node {
+	allCoreOs := NewNodeList(oc.AsAdmin()).GetAllCoreOsWokerNodesOrFail()
+	if len(allCoreOs) == 0 {
+		g.Skip("CoreOs is required to execute this test case!")
+	}
+	return allCoreOs[0]
+}
+
+// containsMultipleStrings checks if sourceString contains all expectedStrings
+func containsMultipleStrings(sourceString string, expectedStrings []string) bool {
+	o.Expect(sourceString).NotTo(o.BeEmpty())
+	o.Expect(expectedStrings).NotTo(o.BeEmpty())
+
+	var count int
+	for _, element := range expectedStrings {
+		if strings.Contains(sourceString, element) {
+			count++
+		}
+	}
+	return len(expectedStrings) == count
+}
+
+// skipTestIfNotIPI skips the test if the cluster is not IPI
+func skipTestIfNotIPI(oc *exutil.CLI) {
+	// We assume that if nodes cannot be scaled then the cluster is UPI
+	skipTestIfWorkersCannotBeScaled(oc)
+}
+
+// IsInstalledWithAssistedInstallerOrFail checks if the cluster was installed using assisted-installer
+func IsInstalledWithAssistedInstallerOrFail(oc *exutil.CLI) bool {
+	logger.Infof("Checking if the cluster was installed using assisted-installer")
+	assistedInstallerNS := NewResource(oc, "ns", "assisted-installer")
+	return assistedInstallerNS.Exists()
+}
+
+// IsOnPremPlatform returns true if the platform is an on-prem platform
+func IsOnPremPlatform(platform string) bool {
+	switch platform {
+	case BaremetalPlatform, OvirtPlatform, OpenstackPlatform, VspherePlatform, NutanixPlatform:
+		return true
+	default:
+		return false
+	}
+}
+
+// SkipIfNotOnPremPlatform skips the test if the current platform is not an on-prem platform
+func SkipIfNotOnPremPlatform(oc *exutil.CLI) {
+	platform := exutil.CheckPlatform(oc)
+	if !IsOnPremPlatform(platform) {
+		g.Skip(fmt.Sprintf("Current platform: %s. This test can only be execute in OnPrem platforms.", platform))
+	}
 }

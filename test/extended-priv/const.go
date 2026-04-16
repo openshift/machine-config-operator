@@ -51,6 +51,14 @@ const (
 	VspherePlatform = "vsphere"
 	// BaremetalPlatform value used to identify BareMetal infrastructure
 	BaremetalPlatform = "baremetal"
+	// AlibabaCloudPlatform value used to identify AlibabaCloud infrastructure
+	AlibabaCloudPlatform = "alibabacloud"
+	// NutanixPlatform value used to identify Nutanix infrastructure
+	NutanixPlatform = "nutanix"
+	// OpenstackPlatform value used to identify Openstack infrastructure
+	OpenstackPlatform = "openstack"
+	// OvirtPlatform value used to identify Ovirt infrastructure
+	OvirtPlatform = "ovirt"
 
 	// ExpirationDockerfileLabel Expiration label in Dockerfile
 	ExpirationDockerfileLabel = `LABEL maintainer="mco-qe-team" quay.expires-after=24h`
@@ -168,6 +176,16 @@ var (
 		kernelDevelExtension:         {"kernel-devel", "kernel-headers"},
 		sandboxedContainersExtension: {"kata-containers"},
 		sysstatExtension:             {"sysstat"},
+	}
+
+	// OnPremPlatforms describes all the on-prem platforms
+	// xref: https://github.com/openshift/machine-config-operator/blob/752667ba9dfcdefd12222ab422201fa3f9846aca/pkg/controller/template/render.go#L593
+	OnPremPlatforms = map[string]string{
+		BaremetalPlatform: "openshift-kni-infra",
+		NutanixPlatform:   "openshift-nutanix-infra",
+		OpenstackPlatform: "openshift-openstack-infra",
+		OvirtPlatform:     "openshift-ovirt-infra",
+		VspherePlatform:   "openshift-vsphere-infra",
 	}
 
 	// OSImageStream constants
