@@ -467,6 +467,7 @@ func generateOriginalKubeletConfigIgn(cc *mcfgv1.ControllerConfig, templatesDir,
 	return nil, fmt.Errorf("could not generate old kubelet config")
 }
 
+// syncStatusOnly updates the status conditions of a KubeletConfig CR without modifying its spec.
 func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.KubeletConfig, err error, args ...interface{}) error {
 	statusUpdateError := retry.RetryOnConflict(updateBackoff, func() error {
 		newcfg, getErr := ctrl.mckLister.Get(cfg.Name)
@@ -528,6 +529,8 @@ func (ctrl *Controller) addAnnotation(cfg *mcfgv1.KubeletConfig, annotationKey, 
 
 // syncKubeletConfig will sync the kubeletconfig with the given key.
 // This function is not meant to be invoked concurrently with the same key.
+// syncKubeletConfig synchronizes the KubeletConfig CR identified by key, generating or updating
+// the corresponding MachineConfig to reflect the desired kubelet configuration for matching pools.
 //
 //nolint:gocyclo
 func (ctrl *Controller) syncKubeletConfig(key string) error {

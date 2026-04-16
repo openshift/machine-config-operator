@@ -398,6 +398,9 @@ func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 	return nil
 }
 
+// wrapErrorWithCondition converts an error into a KubeletConfigCondition with type KubeletConfigIsApplied.
+// If err is non-nil, the condition status is set to False; otherwise it is set to True.
+// Optional args can provide a format string and values to override the default condition message.
 func wrapErrorWithCondition(err error, args ...interface{}) mcfgv1.KubeletConfigCondition {
 	var condition *mcfgv1.KubeletConfigCondition
 	if err != nil {

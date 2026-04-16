@@ -37,6 +37,7 @@ func (kc *KubeletConfig) create(parameters ...string) {
 	exutil.CreateClusterResourceFromTemplate(kc.oc, allParams...)
 }
 
+// waitUntilSuccess polls until the KubeletConfig reports a KubeletConfigIsApplied=True condition.
 func (kc KubeletConfig) waitUntilSuccess(timeout string) {
 	logger.Infof("wait for %s to report success", kc.name)
 	o.EventuallyWithOffset(1, &kc, timeout, "2s").Should(o.SatisfyAll(
@@ -45,6 +46,7 @@ func (kc KubeletConfig) waitUntilSuccess(timeout string) {
 	), "KubeletConfig '%s' should report KubeletConfigIsApplied=True in status.conditions, but the current status is not success", kc.GetName())
 }
 
+// waitUntilFailure polls until the KubeletConfig reports a KubeletConfigIsApplied=False condition with the expected message.
 func (kc KubeletConfig) waitUntilFailure(expectedMsg, timeout string) {
 	logger.Infof("wait for %s to report failure", kc.name)
 	o.EventuallyWithOffset(1, &kc, timeout, "2s").Should(o.SatisfyAll(
