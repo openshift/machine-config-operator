@@ -467,6 +467,7 @@ func generateOriginalKubeletConfigIgn(cc *mcfgv1.ControllerConfig, templatesDir,
 	return nil, fmt.Errorf("could not generate old kubelet config")
 }
 
+// syncStatusOnly updates the status conditions of a KubeletConfig CR without modifying its spec.
 func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.KubeletConfig, err error, args ...interface{}) error {
 	statusUpdateError := retry.RetryOnConflict(updateBackoff, func() error {
 		newcfg, getErr := ctrl.mckLister.Get(cfg.Name)
@@ -633,7 +634,9 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			}
 			configSuccess := false
 			if len(cfg.Status.Conditions) > 0 {
-				configSuccess = cfg.Status.Conditions[len(cfg.Status.Conditions)-1].Type == mcfgv1.KubeletConfigSuccess
+				lastCondition := cfg.Status.Conditions[len(cfg.Status.Conditions)-1]
+				configSuccess = (lastCondition.Type == mcfgv1.KubeletConfigAccepted && lastCondition.Status == corev1.ConditionTrue) ||
+					lastCondition.Type == mcfgv1.KubeletConfigSuccess // backwards compatibility
 			}
 			if match && cfg.Status.ObservedGeneration >= cfg.Generation && configSuccess {
 				// But we still need to compare the generated controller version because during an upgrade we need a new one
