@@ -402,13 +402,13 @@ func wrapErrorWithCondition(err error, args ...interface{}) mcfgv1.KubeletConfig
 	var condition *mcfgv1.KubeletConfigCondition
 	if err != nil {
 		condition = apihelpers.NewKubeletConfigCondition(
-			mcfgv1.KubeletConfigFailure,
-			corev1.ConditionTrue,
+			mcfgv1.KubeletConfigApplied,
+			corev1.ConditionFalse,
 			fmt.Sprintf("Error: %v", err),
 		)
 	} else {
 		condition = apihelpers.NewKubeletConfigCondition(
-			mcfgv1.KubeletConfigSuccess,
+			mcfgv1.KubeletConfigApplied,
 			corev1.ConditionTrue,
 			"Success",
 		)

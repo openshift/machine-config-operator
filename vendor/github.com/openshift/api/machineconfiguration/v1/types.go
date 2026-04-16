@@ -803,10 +803,17 @@ type KubeletConfigCondition struct {
 type KubeletConfigStatusConditionType string
 
 const (
-	// KubeletConfigSuccess designates a successful application of a KubeletConfig CR.
+	// KubeletConfigApplied designates whether a KubeletConfig CR has been successfully applied.
+	// When the condition status is True, the KubeletConfig has been applied successfully.
+	// When the condition status is False, the KubeletConfig application has failed.
+	KubeletConfigApplied KubeletConfigStatusConditionType = "KubeletConfigIsApplied"
+
+	// Deprecated: KubeletConfigSuccess is kept for backwards compatibility.
+	// Use KubeletConfigApplied with status True instead.
 	KubeletConfigSuccess KubeletConfigStatusConditionType = "Success"
 
-	// KubeletConfigFailure designates a failure applying a KubeletConfig CR.
+	// Deprecated: KubeletConfigFailure is kept for backwards compatibility.
+	// Use KubeletConfigApplied with status False instead.
 	KubeletConfigFailure KubeletConfigStatusConditionType = "Failure"
 )
 

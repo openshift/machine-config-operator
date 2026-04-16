@@ -633,7 +633,9 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			}
 			configSuccess := false
 			if len(cfg.Status.Conditions) > 0 {
-				configSuccess = cfg.Status.Conditions[len(cfg.Status.Conditions)-1].Type == mcfgv1.KubeletConfigSuccess
+				lastCondition := cfg.Status.Conditions[len(cfg.Status.Conditions)-1]
+				configSuccess = (lastCondition.Type == mcfgv1.KubeletConfigApplied && lastCondition.Status == corev1.ConditionTrue) ||
+					lastCondition.Type == mcfgv1.KubeletConfigSuccess // backwards compatibility
 			}
 			if match && cfg.Status.ObservedGeneration >= cfg.Generation && configSuccess {
 				// But we still need to compare the generated controller version because during an upgrade we need a new one
