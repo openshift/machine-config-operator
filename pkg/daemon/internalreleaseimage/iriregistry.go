@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"regexp"
 
 	"k8s.io/klog/v2"
+
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 )
 
 const (
@@ -23,6 +26,9 @@ type iriRegistry struct {
 	nodeName         string
 	registryHostPort string
 	client           *http.Client
+	// authToken is the base64-encoded "user:password" value from the kubelet
+	// auth file for localhost:22625. Empty if the registry is unauthenticated.
+	authToken string
 }
 
 type registryTagsList struct {
@@ -41,12 +47,39 @@ type registryErrorResponse struct {
 }
 
 func newIRIRegistry(nodeName string, client *http.Client) *iriRegistry {
-	return &iriRegistry{
+	r := &iriRegistry{
 		nodeName: nodeName,
 		client:   client,
 		// The IRI registry runs on the current node.
 		registryHostPort: fmt.Sprintf("%s:%d", iriRegistryHost, iriRegistryPort),
 	}
+	r.authToken = readIRIAuthToken(r.registryHostPort)
+	return r
+}
+
+// readIRIAuthToken reads the base64-encoded auth token for the IRI registry
+// from the kubelet auth file (/var/lib/kubelet/config.json).
+func readIRIAuthToken(registryHostPort string) string {
+	data, err := os.ReadFile(constants.KubeletAuthFile)
+	if err != nil {
+		klog.V(4).Infof("Could not read %s for IRI registry auth: %v", constants.KubeletAuthFile, err)
+		return ""
+	}
+
+	var dockerConfig struct {
+		Auths map[string]struct {
+			Auth string `json:"auth"`
+		} `json:"auths"`
+	}
+	if err := json.Unmarshal(data, &dockerConfig); err != nil {
+		klog.V(4).Infof("Could not parse %s for IRI registry auth: %v", constants.KubeletAuthFile, err)
+		return ""
+	}
+
+	if entry, ok := dockerConfig.Auths[registryHostPort]; ok && entry.Auth != "" {
+		return entry.Auth
+	}
+	return ""
 }
 
 func (r *iriRegistry) query(endpoint string, headers ...map[string]string) (*http.Response, error) {
@@ -55,6 +88,9 @@ func (r *iriRegistry) query(endpoint string, headers ...map[string]string) (*htt
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, regURL, nil)
 	if err != nil {
 		return nil, err
+	}
+	if r.authToken != "" {
+		req.Header.Set("Authorization", "Basic "+r.authToken)
 	}
 	if len(headers) > 0 {
 		for k, v := range headers[0] {
