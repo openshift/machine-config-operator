@@ -118,6 +118,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		iri                  *mcfgv1alpha1.InternalReleaseImage
 		iriTLSCert           *corev1.Secret
 		osImageStream        *mcfgv1alpha1.OSImageStream
+		iriCredentialsSecret        *corev1.Secret
 	)
 	for _, info := range infos {
 		if info.IsDir() {
@@ -202,6 +203,9 @@ func (b *Bootstrap) Run(destDir string) error {
 				if obj.GetName() == ctrlcommon.InternalReleaseImageTLSSecretName {
 					iriTLSCert = obj
 				}
+				if obj.GetName() == ctrlcommon.InternalReleaseImageAuthSecretName {
+					iriCredentialsSecret = obj
+				}
 			case *mcfgv1alpha1.OSImageStream:
 				// If given, it's treated as user input with config such as the default stream
 				osImageStream = obj
@@ -259,6 +263,15 @@ func (b *Bootstrap) Run(destDir string) error {
 	}
 
 	pullSecretBytes := pullSecret.Data[corev1.DockerConfigJsonKey]
+
+	// Merge IRI registry credentials into the pull secret for first-boot authentication.
+	// The template controller has not yet run at this point, so machine-config-daemon-pull.service
+	// would otherwise fail to authenticate against the IRI registry.
+	pullSecretBytes, err = ctrlcommon.MergeIRIRegistryCredentials(pullSecretBytes, iriCredentialsSecret, cconfig)
+	if err != nil {
+		return fmt.Errorf("could not merge IRI credentials into pull secret for bootstrap: %w", err)
+	}
+
 	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, pullSecretBytes, apiServer)
 	if err != nil {
 		return err
@@ -321,7 +334,7 @@ func (b *Bootstrap) Run(destDir string) error {
 
 	if fgHandler != nil && fgHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
 		if iri != nil {
-			iriConfigs, err := internalreleaseimage.RunInternalReleaseImageBootstrap(iri, iriTLSCert, cconfig)
+			iriConfigs, err := internalreleaseimage.RunInternalReleaseImageBootstrap(iri, iriTLSCert, iriCredentialsSecret, cconfig)
 			if err != nil {
 				return err
 			}
