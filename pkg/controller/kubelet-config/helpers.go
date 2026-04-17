@@ -378,9 +378,6 @@ func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 	if len(kcDecoded.FeatureGates) > 0 {
 		return fmt.Errorf("KubeletConfiguration: featureGates is not allowed to be set, but contains: %v", kcDecoded.FeatureGates)
 	}
-	if kcDecoded.StaticPodPath != "" {
-		return fmt.Errorf("KubeletConfiguration: staticPodPath is not allowed to be set, but contains: %s", kcDecoded.StaticPodPath)
-	}
 	if kcDecoded.FailSwapOn != nil {
 		return fmt.Errorf("KubeletConfiguration: failSwapOn is not allowed to be set, but contains: %v", *kcDecoded.FailSwapOn)
 	}
@@ -396,6 +393,26 @@ func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 		return fmt.Errorf("KubeletConfiguration: systemReservedCgroup (%s) must match systemCgroups (%s)", kcDecoded.SystemReservedCgroup, kcDecoded.SystemCgroups)
 	}
 	return nil
+}
+
+// validateStaticPodPathForPool checks that staticPodPath is not set to a non-empty value.
+// Control plane pools (master, arbiter) cannot set staticPodPath at all.
+// Worker and custom pools may only set staticPodPath to "" to disable static pods.
+func validateStaticPodPathForPool(cfg *mcfgv1.KubeletConfig, poolName string) error {
+	if cfg.Spec.KubeletConfig == nil || cfg.Spec.KubeletConfig.Raw == nil {
+		return nil
+	}
+	kcDecoded, err := DecodeKubeletConfig(cfg.Spec.KubeletConfig.Raw)
+	if err != nil {
+		return fmt.Errorf("KubeletConfig could not be unmarshalled, err: %w", err)
+	}
+	if kcDecoded.StaticPodPath == "" {
+		return nil
+	}
+	if poolName == ctrlcommon.MachineConfigPoolMaster || poolName == ctrlcommon.MachineConfigPoolArbiter {
+		return fmt.Errorf("KubeletConfiguration: staticPodPath is not allowed to be set for pool %q, but contains: %s", poolName, kcDecoded.StaticPodPath)
+	}
+	return fmt.Errorf("KubeletConfiguration: staticPodPath must be empty for non-control-plane pool %q, but contains: %s", poolName, kcDecoded.StaticPodPath)
 }
 
 func wrapErrorWithCondition(err error, args ...interface{}) mcfgv1.KubeletConfigCondition {

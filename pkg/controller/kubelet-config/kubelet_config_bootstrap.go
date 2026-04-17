@@ -40,6 +40,11 @@ func RunKubeletBootstrap(templateDir string, kubeletConfigs []*mcfgv1.KubeletCon
 			}
 			role := pool.Name
 
+			// Validate staticPodPath is not set for control plane pools
+			if err := validateStaticPodPathForPool(kubeletConfig, role); err != nil {
+				return nil, err
+			}
+
 			originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(controllerConfig, templateDir, role, fgHandler, apiServer)
 			if err != nil {
 				return nil, err
