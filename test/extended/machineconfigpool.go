@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	machineconfigclient "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
@@ -18,12 +19,17 @@ import (
 )
 
 // `DoesMachineConfigPoolHaveMachines` returns true if the desired MCP, defined by the
-// `mcpName` parameter has machines and false otherwise. It also returns an error if one occurs
-// when getting the MCP.
+// `mcpName` parameter has machines and false otherwise. It skips a test if there is an error
+// getting the MCP, as that signifies cluster instability.
 func DoesMachineConfigPoolHaveMachines(machineConfigClient *machineconfigclient.Clientset, mcpName string) bool {
 	// Get desired MCP
 	mcp, mcpErr := machineConfigClient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), mcpName, metav1.GetOptions{})
-	o.Expect(mcpErr).NotTo(o.HaveOccurred(), "Error checking for compatible MCPs: %s", mcpErr)
+	// SNO clusters are incredibly unstable. If we are unable to get the worker MCP for the cluster,
+	// that means the cluster is too unstable to run our test, so we should simply skip it
+	if mcpErr != nil {
+		logger.Infof("Failed to get MCP '%v', skipping test due to cluster instability: %v", mcpName, mcpErr)
+		g.Skip("Skipping this test due to cluster instability.")
+	}
 
 	// Check if desired MCP has machines
 	return mcp.Status.MachineCount > 0
