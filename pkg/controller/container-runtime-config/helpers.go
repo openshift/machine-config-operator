@@ -713,7 +713,7 @@ func validateUserContainerRuntimeConfig(cfg *mcfgv1.ContainerRuntimeConfig) erro
 	// surface errors that were silently present in the CR.
 	var errs []error
 	for _, store := range ctrcfg.AdditionalLayerStores {
-		if err := validateStorePath(store.Path, "AdditionalLayerStores"); err != nil {
+		if err := validateLayerStorePath(store.Path, "AdditionalLayerStores"); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -734,6 +734,10 @@ func validateUserContainerRuntimeConfig(cfg *mcfgv1.ContainerRuntimeConfig) erro
 // storePathRegexp matches the CRD CEL rule: ^/[a-zA-Z0-9/._-]+$
 var storePathRegexp = regexp.MustCompile(`^/[a-zA-Z0-9/._-]+$`)
 
+// layerStorePathRegexp matches the CRD CEL rule: ^/[a-zA-Z0-9/._-]+(:ref)?$
+// This allows the optional :ref suffix for reference-based layer organization (e.g., stargz-store)
+var layerStorePathRegexp = regexp.MustCompile(`^/[a-zA-Z0-9/._-]+(:ref)?$`)
+
 // validateStorePath validates that a storage path is absolute, only contains
 // allowed characters (a-z, A-Z, 0-9, '/', '.', '_', '-'), and does not
 // contain consecutive forward slashes. This mirrors the CRD-level CEL
@@ -745,6 +749,24 @@ func validateStorePath(p mcfgv1.StorePath, field string) error {
 	}
 	if !storePathRegexp.MatchString(path) {
 		return fmt.Errorf("invalid %s path %q: must be an absolute path containing only alphanumeric characters, '/', '.', '_', and '-'", field, path)
+	}
+	if strings.Contains(path, "//") {
+		return fmt.Errorf("invalid %s path %q: must not contain consecutive forward slashes", field, path)
+	}
+	return nil
+}
+
+// validateLayerStorePath validates that a layer store path is absolute, only contains
+// allowed characters (a-z, A-Z, 0-9, '/', '.', '_', '-', and optionally ':ref' suffix),
+// and does not contain consecutive forward slashes. This mirrors the CRD-level CEL
+// validation for LayerStorePath so that invalid config is caught early.
+func validateLayerStorePath(p mcfgv1.StorePath, field string) error {
+	path := string(p)
+	if path == "" {
+		return fmt.Errorf("invalid %s: path must not be empty", field)
+	}
+	if !layerStorePathRegexp.MatchString(path) {
+		return fmt.Errorf("invalid %s path %q: must be an absolute path containing only alphanumeric characters, '/', '.', '_', '-', and optionally end with ':ref'", field, path)
 	}
 	if strings.Contains(path, "//") {
 		return fmt.Errorf("invalid %s path %q: must not contain consecutive forward slashes", field, path)
