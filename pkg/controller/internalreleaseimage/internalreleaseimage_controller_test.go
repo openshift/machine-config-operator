@@ -300,6 +300,7 @@ func (f *fixture) newController() *Controller {
 		i.Machineconfiguration().V1().MachineConfigs(),
 		ci.Config().V1().ClusterVersions(),
 		k.Core().V1().Secrets(),
+		i.Machineconfiguration().V1().MachineConfigNodes(),
 		f.k8sClient,
 		f.client,
 	)
@@ -310,6 +311,7 @@ func (f *fixture) newController() *Controller {
 	c.mcListerSynced = alwaysReady
 	c.clusterVersionListerSynced = alwaysReady
 	c.secretListerSynced = alwaysReady
+	c.mcnListerSynced = alwaysReady
 	c.eventRecorder = &record.FakeRecorder{}
 
 	stopCh := make(chan struct{})
@@ -352,4 +354,67 @@ func (f *fixture) runController(key string, expectError bool) {
 	} else if expectError && err == nil {
 		f.t.Error("expected error syncing internalreleaseimage, got nil")
 	}
+}
+
+// TestMCNEventHandlersEnqueueIRI verifies that MachineConfigNode event handlers
+// correctly enqueue the IRI resource for reconciliation.
+func TestMCNEventHandlersEnqueueIRI(t *testing.T) {
+	f := newFixture(t, objs(iri(), cconfig(), clusterVersion(), iriCertSecret())())
+	c := f.controller
+
+	// Helper function to verify the correct IRI key is enqueued
+	assertQueuedIRIKey := func(t *testing.T, expectedLen int, scenario string) {
+		t.Helper()
+		if c.queue.Len() != expectedLen {
+			t.Fatalf("%s: expected queue length %d, got %d", scenario, expectedLen, c.queue.Len())
+		}
+		if expectedLen > 0 {
+			key, _ := c.queue.Get()
+			if key != ctrlcommon.InternalReleaseImageInstanceName {
+				t.Fatalf("%s: expected key %q, got %q", scenario, ctrlcommon.InternalReleaseImageInstanceName, key)
+			}
+			c.queue.Done(key)
+		}
+	}
+
+	// Create a MCN with IRI status
+	mcn := &mcfgv1.MachineConfigNode{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "master-0",
+		},
+		Spec: mcfgv1.MachineConfigNodeSpec{
+			Pool: mcfgv1.MCOObjectReference{
+				Name: "master",
+			},
+		},
+		Status: mcfgv1.MachineConfigNodeStatus{
+			InternalReleaseImage: mcfgv1.MachineConfigNodeStatusInternalReleaseImage{
+				Releases: []mcfgv1.MachineConfigNodeStatusInternalReleaseImageRef{
+					{
+						Name:  "ocp-release-bundle-4.22.0",
+						Image: "localhost:22625/openshift/release-images@sha256:abc123",
+					},
+				},
+			},
+		},
+	}
+
+	// Test addMachineConfigNode - should enqueue when MCN has IRI status
+	c.addMachineConfigNode(mcn)
+	assertQueuedIRIKey(t, 1, "addMachineConfigNode")
+
+	// Test updateMachineConfigNode with changed IRI status - should enqueue
+	oldMCN := mcn.DeepCopy()
+	mcn.Status.InternalReleaseImage.Releases[0].Name = "ocp-release-bundle-4.22.1"
+	c.updateMachineConfigNode(oldMCN, mcn)
+	assertQueuedIRIKey(t, 1, "updateMachineConfigNode")
+
+	// Test updateMachineConfigNode with no IRI status change - should NOT enqueue
+	oldMCN = mcn.DeepCopy()
+	c.updateMachineConfigNode(oldMCN, mcn)
+	assertQueuedIRIKey(t, 0, "updateMachineConfigNode (no change)")
+
+	// Test deleteMachineConfigNode - should enqueue
+	c.deleteMachineConfigNode(mcn)
+	assertQueuedIRIKey(t, 1, "deleteMachineConfigNode")
 }
