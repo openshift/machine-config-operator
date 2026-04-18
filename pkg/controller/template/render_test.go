@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
+	"github.com/vincent-petithory/dataurl"
 	"k8s.io/client-go/kubernetes/scheme"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -432,6 +433,150 @@ func TestGetPaths(t *testing.T) {
 			got := getPaths(&RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil}, config.Spec.Platform)
 			if reflect.DeepEqual(got, c.res) {
 				t.Fatalf("mismatch got: %s want: %s", got, c.res)
+			}
+		})
+	}
+}
+
+// TestRenderCloudAltDNSIPOrder verifies that the cloud platform load balancer
+// IP template functions render IPs in the same order as the
+// configv1.Infrastructure status values. See OCPBUGS-81761.
+func TestRenderCloudAltDNSIPOrder(t *testing.T) {
+	t.Parallel()
+
+	joinIPs := func(ips []configv1.IP) string {
+		s := make([]string, len(ips))
+		for i, ip := range ips {
+			s[i] = string(ip)
+		}
+		return strings.Join(s, ",")
+	}
+
+	renderAndFindIgnFile := func(t *testing.T, controllerConfig *mcfgv1.ControllerConfig, filePath string) string {
+		t.Helper()
+		cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil}, templateDir)
+		if err != nil {
+			t.Fatalf("failed to generate machine configs: %v", err)
+		}
+
+		for _, cfg := range cfgs {
+			ign, err := ctrlcommon.ParseAndConvertConfig(cfg.Spec.Config.Raw)
+			if err != nil {
+				t.Fatalf("failed to parse ignition config for %s: %v", cfg.Name, err)
+			}
+			for _, f := range ign.Storage.Files {
+				if f.Path == filePath {
+					if f.Contents.Source == nil {
+						t.Fatalf("%s has no contents", filePath)
+					}
+					du, err := dataurl.DecodeString(*f.Contents.Source)
+					if err != nil {
+						t.Fatalf("failed to decode %s data URL: %v", filePath, err)
+					}
+					return string(du.Data)
+				}
+			}
+		}
+		t.Fatalf("%s not found in rendered machine configs", filePath)
+		return ""
+	}
+
+	setCloudLBIPs := func(controllerConfig *mcfgv1.ControllerConfig, clusterHosted *configv1.CloudLoadBalancerIPs) {
+		lbConfig := &configv1.CloudLoadBalancerConfig{
+			DNSType:       configv1.ClusterHostedDNSType,
+			ClusterHosted: clusterHosted,
+		}
+
+		ps := controllerConfig.Spec.Infra.Status.PlatformStatus
+		switch ps.Type {
+		case configv1.GCPPlatformType:
+			ps.GCP = &configv1.GCPPlatformStatus{CloudLoadBalancerConfig: lbConfig}
+		case configv1.AWSPlatformType:
+			ps.AWS = &configv1.AWSPlatformStatus{CloudLoadBalancerConfig: lbConfig}
+		}
+	}
+
+	type ipSet struct {
+		name string
+		ips  func(*configv1.CloudLoadBalancerIPs) []configv1.IP
+	}
+
+	ipSets := []ipSet{
+		{"APIIntLoadBalancerIPs", func(ch *configv1.CloudLoadBalancerIPs) []configv1.IP { return ch.APIIntLoadBalancerIPs }},
+		{"APILoadBalancerIPs", func(ch *configv1.CloudLoadBalancerIPs) []configv1.IP { return ch.APILoadBalancerIPs }},
+		{"IngressLoadBalancerIPs", func(ch *configv1.CloudLoadBalancerIPs) []configv1.IP { return ch.IngressLoadBalancerIPs }},
+	}
+
+	for _, configKey := range []string{"gcp-custom-dns"} {
+		t.Run(configKey, func(t *testing.T) {
+			t.Parallel()
+
+			// Use a non-sorted IP order to ensure the test is meaningful.
+			clusterHosted := &configv1.CloudLoadBalancerIPs{
+				APIIntLoadBalancerIPs:  []configv1.IP{"10.10.10.5", "10.10.10.4", "10.10.10.6"},
+				APILoadBalancerIPs:     []configv1.IP{"196.78.125.5", "196.78.125.4", "196.78.125.6"},
+				IngressLoadBalancerIPs: []configv1.IP{"172.22.32.59", "172.22.5.151", "172.22.10.20"},
+			}
+
+			// Reverse the IP order to confirm the MCO consumes IPs as-is.
+			clusterHostedReversed := &configv1.CloudLoadBalancerIPs{
+				APIIntLoadBalancerIPs:  []configv1.IP{"10.10.10.6", "10.10.10.4", "10.10.10.5"},
+				APILoadBalancerIPs:     []configv1.IP{"196.78.125.6", "196.78.125.4", "196.78.125.5"},
+				IngressLoadBalancerIPs: []configv1.IP{"172.22.10.20", "172.22.5.151", "172.22.32.59"},
+			}
+
+			controllerConfig, err := controllerConfigFromFile(configs[configKey])
+			if err != nil {
+				t.Fatalf("failed to get controllerconfig: %v", err)
+			}
+			setCloudLBIPs(controllerConfig, clusterHosted)
+
+			controllerConfigReversed, err := controllerConfigFromFile(configs[configKey])
+			if err != nil {
+				t.Fatalf("failed to get controllerconfig: %v", err)
+			}
+			setCloudLBIPs(controllerConfigReversed, clusterHostedReversed)
+
+			// coredns.yaml renders all IPs as comma-separated lists via
+			// range, so we can verify the exact ordering.
+			corednsPath := "/etc/kubernetes/manifests/coredns.yaml"
+			rendered := renderAndFindIgnFile(t, controllerConfig, corednsPath)
+			renderedReversed := renderAndFindIgnFile(t, controllerConfigReversed, corednsPath)
+			for _, is := range ipSets {
+				expected := joinIPs(is.ips(clusterHosted))
+				if !strings.Contains(rendered, expected) {
+					t.Errorf("%s: expected rendered coredns.yaml to contain %q", is.name, expected)
+				}
+				expectedReversed := joinIPs(is.ips(clusterHostedReversed))
+				if !strings.Contains(renderedReversed, expectedReversed) {
+					t.Errorf("%s: expected reversed rendered coredns.yaml to contain %q", is.name, expectedReversed)
+				}
+			}
+			if rendered == renderedReversed {
+				t.Errorf("changing the IP order in the Infrastructure config must change the rendered coredns.yaml output, but both rendered identically")
+			}
+
+			// Corefile.tmpl accesses IPs by index (0 and 1), so verify
+			// that the first two IPs from each set appear in order.
+			corefilePath := "/etc/kubernetes/static-pod-resources/coredns/Corefile.tmpl"
+			renderedCorefile := renderAndFindIgnFile(t, controllerConfig, corefilePath)
+			renderedCorefileReversed := renderAndFindIgnFile(t, controllerConfigReversed, corefilePath)
+			for _, is := range ipSets {
+				ips := is.ips(clusterHosted)
+				for i := 0; i < 2 && i < len(ips); i++ {
+					if !strings.Contains(renderedCorefile, string(ips[i])) {
+						t.Errorf("%s[%d]: expected rendered Corefile.tmpl to contain %q", is.name, i, ips[i])
+					}
+				}
+				ipsReversed := is.ips(clusterHostedReversed)
+				for i := 0; i < 2 && i < len(ipsReversed); i++ {
+					if !strings.Contains(renderedCorefileReversed, string(ipsReversed[i])) {
+						t.Errorf("%s[%d]: expected reversed rendered Corefile.tmpl to contain %q", is.name, i, ipsReversed[i])
+					}
+				}
+			}
+			if renderedCorefile == renderedCorefileReversed {
+				t.Errorf("changing the IP order in the Infrastructure config must change the rendered Corefile.tmpl output, but both rendered identically")
 			}
 		})
 	}
