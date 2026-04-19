@@ -576,7 +576,11 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 		return ctrl.syncFailingStatus(cfg, err)
 	}
 	if err == nil {
-		clusterPullSecretRaw, err = ctrlcommon.MergeIRIRegistryCredentials(clusterPullSecretRaw, iriRegistryCredentialsSecret, cfg)
+		merger, mergeErr := ctrlcommon.NewIRISecretMerger(iriRegistryCredentialsSecret, cfg)
+		if mergeErr != nil {
+			return ctrl.syncFailingStatus(cfg, fmt.Errorf("could not create IRI secret merger: %w", mergeErr))
+		}
+		clusterPullSecretRaw, err = merger.Merge(clusterPullSecretRaw)
 		if err != nil {
 			return ctrl.syncFailingStatus(cfg, fmt.Errorf("could not merge IRI registry credentials into pull secret: %w", err))
 		}

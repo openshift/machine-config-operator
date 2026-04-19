@@ -268,7 +268,11 @@ func (b *Bootstrap) Run(destDir string) error {
 		// Merge IRI registry credentials into the pull secret for first-boot authentication.
 		// The template controller has not yet run at this point, so machine-config-daemon-pull.service
 		// would otherwise fail to authenticate against the IRI registry.
-		pullSecretBytes, err = ctrlcommon.MergeIRIRegistryCredentials(pullSecretBytes, iriCredentialsSecret, cconfig)
+		merger, mergeErr := ctrlcommon.NewIRISecretMerger(iriCredentialsSecret, cconfig)
+		if mergeErr != nil {
+			return fmt.Errorf("could not create IRI secret merger: %w", mergeErr)
+		}
+		pullSecretBytes, err = merger.Merge(pullSecretBytes)
 		if err != nil {
 			return fmt.Errorf("could not merge IRI credentials into pull secret for bootstrap: %w", err)
 		}

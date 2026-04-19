@@ -11,18 +11,42 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// MergeIRIRegistryCredentials merges IRI registry credentials from iriRegistryCredentialsSecret into
-// pullSecretRaw, using the baseDomain from cconfig.
-func MergeIRIRegistryCredentials(pullSecretRaw []byte, iriRegistryCredentialsSecret *corev1.Secret, cconfig *mcfgv1.ControllerConfig) ([]byte, error) {
-	if iriRegistryCredentialsSecret == nil {
+// IRISecretMerger merges IRI registry credentials into a pull secret.
+// Construct via NewIRISecretMerger; then call Merge for each pull secret.
+type IRISecretMerger struct {
+	password   string
+	baseDomain string
+}
+
+// NewIRISecretMerger creates an IRISecretMerger from the IRI credentials secret
+// and the ControllerConfig. Returns an error if either is nil or incomplete.
+func NewIRISecretMerger(secret *corev1.Secret, cconfig *mcfgv1.ControllerConfig) (*IRISecretMerger, error) {
+	if secret == nil {
 		return nil, fmt.Errorf("IRI registry credentials secret must not be nil")
 	}
 	if cconfig.Spec.DNS == nil {
 		return nil, fmt.Errorf("ControllerConfig DNS spec must not be nil")
 	}
-	password := string(iriRegistryCredentialsSecret.Data["password"])
+	password, ok := secret.Data["password"]
+	if !ok || len(password) == 0 {
+		return nil, fmt.Errorf("IRI registry credentials secret missing or empty \"password\" field")
+	}
 	baseDomain := cconfig.Spec.DNS.Spec.BaseDomain
-	merged, changed, err := mergeIRIRegistryCredentialsIntoPullSecret(pullSecretRaw, password, baseDomain)
+	if strings.TrimSpace(baseDomain) == "" {
+		return nil, fmt.Errorf("ControllerConfig baseDomain must not be empty")
+	}
+	return &IRISecretMerger{
+		password:   string(password),
+		baseDomain: baseDomain,
+	}, nil
+}
+
+// Merge merges IRI registry credentials into pullSecretRaw, adding auth entries
+// for api-int.<baseDomain>:<IRIRegistryPort> (all nodes) and
+// localhost:<IRIRegistryPort> (masters, where the registry runs locally).
+// Returns the merged bytes and any error.
+func (m *IRISecretMerger) Merge(pullSecretRaw []byte) ([]byte, error) {
+	merged, changed, err := mergeIRIRegistryCredentialsIntoPullSecret(pullSecretRaw, m.password, m.baseDomain)
 	if err != nil {
 		return nil, err
 	}
@@ -32,19 +56,13 @@ func MergeIRIRegistryCredentials(pullSecretRaw []byte, iriRegistryCredentialsSec
 	return merged, nil
 }
 
-// mergeIRIRegistryCredentialsIntoPullSecret merges IRI registry authentication credentials into a
-// dockerconfigjson pull secret. It adds auth entries for api-int.<baseDomain>:<IRIRegistryPort>
-// (all nodes) and localhost:<IRIRegistryPort> (masters, where the registry runs locally).
-// Returns the merged bytes, a boolean indicating whether the pull secret was changed, and any error.
+// mergeIRIRegistryCredentialsIntoPullSecret merges IRI registry authentication
+// credentials into a dockerconfigjson pull secret. It adds auth entries for
+// api-int.<baseDomain>:<IRIRegistryPort> (all nodes) and
+// localhost:<IRIRegistryPort> (masters, where the registry runs locally).
+// Returns the merged bytes, a boolean indicating whether the pull secret was
+// changed, and any error.
 func mergeIRIRegistryCredentialsIntoPullSecret(pullSecretRaw []byte, password, baseDomain string) ([]byte, bool, error) {
-	if password == "" {
-		return nil, false, fmt.Errorf("IRI registry password must not be empty")
-	}
-
-	if strings.TrimSpace(baseDomain) == "" {
-		return nil, false, fmt.Errorf("baseDomain must not be empty")
-	}
-
 	// The IRI registry is reachable via api-int on all nodes, and also via
 	// localhost on master nodes where it runs locally. registries.conf mirror
 	// rules on masters use localhost:22625, so credentials must be present for
