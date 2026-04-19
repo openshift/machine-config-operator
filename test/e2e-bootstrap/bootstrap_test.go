@@ -539,7 +539,6 @@ func newTestFixture(t *testing.T, cfg *rest.Config, objs []runtime.Object) *fixt
 	ctrlctx.InformerFactory.Start(ctrlctx.Stop)
 	ctrlctx.KubeInformerFactory.Start(ctrlctx.Stop)
 	ctrlctx.OpenShiftConfigKubeNamespacedInformerFactory.Start(ctrlctx.Stop)
-	ctrlctx.KubeMAOSharedInformer.Start(ctrlctx.Stop)
 	ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
 	ctrlctx.OperatorInformerFactory.Start(ctrlctx.Stop)
 
@@ -567,7 +566,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			templatesDir,
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 			ctx.OpenShiftConfigKubeNamespacedInformerFactory.Core().V1().Secrets(),
-			ctx.KubeMAOSharedInformer.Core().V1().Secrets(),
+			ctx.KubeInformerFactory.Core().V1().Secrets(),
 			ctx.ConfigInformerFactory.Config().V1().APIServers(),
 			ctx.ClientBuilder.KubeClientOrDie("template-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("template-controller"),

@@ -9,6 +9,7 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -35,7 +36,7 @@ func cconfigWithDNS(baseDomain string) *mcfgv1.ControllerConfig {
 	}
 }
 
-func TestMergeIRIRegistryCredentials(t *testing.T) {
+func TestIRISecretMerger(t *testing.T) {
 	basePullSecret := `{"auths":{"quay.io":{"auth":"dGVzdDp0ZXN0"}}}`
 
 	tests := []struct {
@@ -107,7 +108,12 @@ func TestMergeIRIRegistryCredentials(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := MergeIRIRegistryCredentials([]byte(tt.pullSecret), tt.secret, tt.cconfig)
+			merger, err := NewIRISecretMerger(tt.secret, tt.cconfig)
+			if tt.expectError && err != nil {
+				return
+			}
+			require.NoError(t, err)
+			result, err := merger.Merge([]byte(tt.pullSecret))
 
 			if tt.expectError {
 				assert.Error(t, err)
