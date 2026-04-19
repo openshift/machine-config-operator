@@ -46,24 +46,21 @@ type registryErrorResponse struct {
 	Errors []registryErrorCode `json:"errors"`
 }
 
-func newIRIRegistry(nodeName string, client *http.Client) *iriRegistry {
-	r := &iriRegistry{
-		nodeName: nodeName,
-		client:   client,
-		// The IRI registry runs on the current node.
+func newIRIRegistry(nodeName string, client *http.Client, authToken string) *iriRegistry {
+	return &iriRegistry{
+		nodeName:         nodeName,
+		client:           client,
 		registryHostPort: fmt.Sprintf("%s:%d", iriRegistryHost, iriRegistryPort),
+		authToken:        authToken,
 	}
-	r.authToken = readIRIAuthToken(r.registryHostPort)
-	return r
 }
 
 // readIRIAuthToken reads the base64-encoded auth token for the IRI registry
 // from the kubelet auth file (/var/lib/kubelet/config.json).
-func readIRIAuthToken(registryHostPort string) string {
+func readIRIAuthToken(registryHostPort string) (string, error) {
 	data, err := os.ReadFile(constants.KubeletAuthFile)
 	if err != nil {
-		klog.V(4).Infof("Could not read %s for IRI registry auth: %v", constants.KubeletAuthFile, err)
-		return ""
+		return "", fmt.Errorf("could not read %s for IRI registry auth: %w", constants.KubeletAuthFile, err)
 	}
 
 	var dockerConfig struct {
@@ -72,14 +69,13 @@ func readIRIAuthToken(registryHostPort string) string {
 		} `json:"auths"`
 	}
 	if err := json.Unmarshal(data, &dockerConfig); err != nil {
-		klog.V(4).Infof("Could not parse %s for IRI registry auth: %v", constants.KubeletAuthFile, err)
-		return ""
+		return "", fmt.Errorf("could not parse %s for IRI registry auth: %w", constants.KubeletAuthFile, err)
 	}
 
 	if entry, ok := dockerConfig.Auths[registryHostPort]; ok && entry.Auth != "" {
-		return entry.Auth
+		return entry.Auth, nil
 	}
-	return ""
+	return "", fmt.Errorf("no auth entry found for %s in %s", registryHostPort, constants.KubeletAuthFile)
 }
 
 func (r *iriRegistry) query(endpoint string, headers ...map[string]string) (*http.Response, error) {

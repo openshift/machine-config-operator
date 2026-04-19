@@ -75,6 +75,12 @@ const (
 	// InternalReleaseImageAuthSecretName is the name of the secret containing IRI registry htpasswd auth credentials.
 	InternalReleaseImageAuthSecretName = "internal-release-image-registry-auth"
 
+	// IRIRegistryPort is the port on which the IRI registry listens on master nodes.
+	IRIRegistryPort = 22625
+
+	// IRIRegistryUsername is the fixed username used for IRI registry htpasswd authentication.
+	IRIRegistryUsername = "openshift"
+
 	// APIServerInstanceName is a singleton name for APIServer configuration
 	APIServerBootstrapFileLocation = "/etc/mcs/bootstrap/api-server/api-server.yaml"
 

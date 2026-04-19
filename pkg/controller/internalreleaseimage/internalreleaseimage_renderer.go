@@ -118,6 +118,8 @@ func (r *Renderer) newRenderContext() (*renderContext, error) {
 	if err != nil {
 		return nil, err
 	}
+	// iriRegistryCredentialsSecret is always non-nil here: the IRI controller
+	// fetches it and fails loudly if not found (auth is mandatory).
 	iriHtpasswd := string(r.iriRegistryCredentialsSecret.Data["htpasswd"])
 
 	return &renderContext{

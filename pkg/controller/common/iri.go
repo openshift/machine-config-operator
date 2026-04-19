@@ -11,20 +11,14 @@ import (
 	"k8s.io/klog/v2"
 )
 
-const (
-	// IRIRegistryPort is the port on which the IRI registry listens on master nodes.
-	IRIRegistryPort = 22625
-
-	// IRIRegistryUsername is the fixed username used for IRI registry htpasswd authentication.
-	IRIRegistryUsername = "openshift"
-)
-
 // MergeIRIRegistryCredentials merges IRI registry credentials from iriRegistryCredentialsSecret into
-// pullSecretRaw, using the baseDomain from cconfig. Returns pullSecretRaw unchanged
-// if iriRegistryCredentialsSecret or cconfig.Spec.DNS is nil.
+// pullSecretRaw, using the baseDomain from cconfig.
 func MergeIRIRegistryCredentials(pullSecretRaw []byte, iriRegistryCredentialsSecret *corev1.Secret, cconfig *mcfgv1.ControllerConfig) ([]byte, error) {
-	if iriRegistryCredentialsSecret == nil || cconfig.Spec.DNS == nil {
-		return pullSecretRaw, nil
+	if iriRegistryCredentialsSecret == nil {
+		return nil, fmt.Errorf("IRI registry credentials secret must not be nil")
+	}
+	if cconfig.Spec.DNS == nil {
+		return nil, fmt.Errorf("ControllerConfig DNS spec must not be nil")
 	}
 	password := string(iriRegistryCredentialsSecret.Data["password"])
 	baseDomain := cconfig.Spec.DNS.Spec.BaseDomain
