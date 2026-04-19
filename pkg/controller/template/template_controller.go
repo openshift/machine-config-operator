@@ -575,12 +575,11 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 	if err != nil && !apierrors.IsNotFound(err) {
 		return ctrl.syncFailingStatus(cfg, err)
 	}
-	if apierrors.IsNotFound(err) {
-		iriRegistryCredentialsSecret = nil
-	}
-	clusterPullSecretRaw, err = ctrlcommon.MergeIRIRegistryCredentials(clusterPullSecretRaw, iriRegistryCredentialsSecret, cfg)
-	if err != nil {
-		return ctrl.syncFailingStatus(cfg, fmt.Errorf("could not merge IRI registry credentials into pull secret: %w", err))
+	if err == nil {
+		clusterPullSecretRaw, err = ctrlcommon.MergeIRIRegistryCredentials(clusterPullSecretRaw, iriRegistryCredentialsSecret, cfg)
+		if err != nil {
+			return ctrl.syncFailingStatus(cfg, fmt.Errorf("could not merge IRI registry credentials into pull secret: %w", err))
+		}
 	}
 
 	// Grab the tlsSecurityProfile from the apiserver object

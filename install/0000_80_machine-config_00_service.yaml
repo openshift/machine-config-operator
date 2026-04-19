@@ -93,6 +93,9 @@ metadata:
   namespace: openshift-machine-config-operator
   labels:
     k8s-app: internal-release-image-registry
+    # This Service has no backing pods. It exists solely to document port 22625
+    # in the OCP communication flows matrix (see enhancements/network/communication-flows-matrix-ingress.md).
+    not-active-service: "true"
   annotations:
     include.release.openshift.io/self-managed-high-availability: "true"
 spec:
