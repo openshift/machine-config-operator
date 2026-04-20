@@ -170,22 +170,6 @@ var (
 		},
 		Units: []opv1.NodeDisruptionPolicyStatusUnit{
 			{
-				Name: constants.IRIRegistryServiceName,
-				Actions: []opv1.NodeDisruptionPolicyStatusAction{
-					{
-						Type: opv1.DaemonReloadStatusAction,
-					},
-					{
-						Type: opv1.RestartStatusAction,
-						Restart: &opv1.RestartService{
-							ServiceName: constants.IRIRegistryServiceName,
-						},
-					},
-				},
-			},
-		},
-		Units: []opv1.NodeDisruptionPolicyStatusUnit{
-			{
 				Name: opv1.NodeDisruptionPolicyServiceName(constants.IRIRegistryServiceName),
 				Actions: []opv1.NodeDisruptionPolicyStatusAction{
 					{

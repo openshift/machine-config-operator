@@ -248,10 +248,11 @@ func tlsVersionsFromProfile(t *testing.T, profile *configv1.TLSSecurityProfile) 
 		profileName = string(profile.Type)
 		switch profile.Type {
 		case configv1.TLSProfileCustomType:
-			if profile.Custom != nil {
+			if profile.Custom != nil && profile.Custom.MinTLSVersion != "" {
 				minTLSVersion = profile.Custom.MinTLSVersion
 			} else {
-				// Custom profile with no spec, fall back to Intermediate.
+				// Custom profile with no spec or unset MinTLSVersion: fall back to
+				// Intermediate, matching the controller's behaviour.
 				minTLSVersion = configv1.TLSProfiles[configv1.TLSProfileIntermediateType].MinTLSVersion
 			}
 		default:

@@ -15,6 +15,7 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/klog/v2"
 
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -124,6 +125,12 @@ func (r *Renderer) newRenderContext() (*renderContext, error) {
 	}
 
 	tlsMinVersion, tlsCipherSuites := registryTLSFromProfile(r.tlsProfile)
+
+	profileType := "nil (defaulting to Intermediate)"
+	if r.tlsProfile != nil {
+		profileType = string(r.tlsProfile.Type)
+	}
+	klog.V(4).Infof("IRI registry TLS profile: %s, minimum version: %s, cipher suites: %q", profileType, tlsMinVersion, tlsCipherSuites)
 
 	return &renderContext{
 		DockerRegistryImage: r.cconfig.Spec.Images[templatectrl.DockerRegistryKey],

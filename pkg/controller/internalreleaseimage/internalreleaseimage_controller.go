@@ -80,8 +80,6 @@ type Controller struct {
 	secretListerSynced cache.InformerSynced
 
 	queue workqueue.TypedRateLimitingInterface[string]
-
-	lastLoggedTLSProfile string
 }
 
 // New returns a new InternalReleaseImage controller.
@@ -386,25 +384,9 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) (syncErr error) {
 		return fmt.Errorf("could not get Secret %s: %w", ctrlcommon.InternalReleaseImageTLSSecretName, err)
 	}
 
-	// Fetch the APIServer TLS profile. If not found, use nil (defaults to Intermediate).
-	apiServer, err := ctrl.apiServerLister.Get(ctrlcommon.APIServerInstanceName)
-	if err != nil && !errors.IsNotFound(err) {
-		return fmt.Errorf("could not get APIServer: %w", err)
-	}
-	var tlsProfile *configv1.TLSSecurityProfile
-	if apiServer != nil {
-		tlsProfile = apiServer.Spec.TLSSecurityProfile
-	}
-
-	profileType := "nil (defaulting to Intermediate)"
-	if tlsProfile != nil {
-		profileType = string(tlsProfile.Type)
-	}
-	tlsMinVersion, tlsCipherSuites := registryTLSFromProfile(tlsProfile)
-	tlsLogMsg := fmt.Sprintf("APIServer TLS profile: %s, IRI registry TLS minimum version: %s, cipher suites: %q", profileType, tlsMinVersion, tlsCipherSuites)
-	if tlsLogMsg != ctrl.lastLoggedTLSProfile {
-		klog.Infof("%s", tlsLogMsg)
-		ctrl.lastLoggedTLSProfile = tlsLogMsg
+	tlsProfile, err := ctrl.getTLSProfile()
+	if err != nil {
+		return err
 	}
 
 	for _, role := range SupportedRoles {
@@ -563,6 +545,24 @@ func (ctrl *Controller) addFinalizerToInternalReleaseImage(iri *mcfgv1alpha1.Int
 	iri.Finalizers = append(iri.Finalizers, mc.Name)
 	_, err := ctrl.client.MachineconfigurationV1alpha1().InternalReleaseImages().Update(context.TODO(), iri, metav1.UpdateOptions{})
 	return err
+}
+
+// getTLSProfile fetches the cluster APIServer TLS security profile.
+// Returns nil (which defaults to Intermediate) if the APIServer object is not found.
+//
+// IRI is a new Tech Preview component with no prior TLS behavior, so we always
+// honor the cluster TLS profile regardless of APIServer.Spec.TLSAdherence.
+// The tlsAdherence field exists to provide a migration path for existing components
+// that historically ignored the cluster profile; that concern does not apply here.
+func (ctrl *Controller) getTLSProfile() (*configv1.TLSSecurityProfile, error) {
+	apiServer, err := ctrl.apiServerLister.Get(ctrlcommon.APIServerInstanceName)
+	if err != nil && !errors.IsNotFound(err) {
+		return nil, fmt.Errorf("could not get APIServer: %w", err)
+	}
+	if apiServer != nil {
+		return apiServer.Spec.TLSSecurityProfile, nil
+	}
+	return nil, nil
 }
 
 func (ctrl *Controller) cascadeDelete(iri *mcfgv1alpha1.InternalReleaseImage) error {
