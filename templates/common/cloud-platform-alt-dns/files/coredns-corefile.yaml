@@ -18,7 +18,6 @@ contents:
         }
         template IN {{`{{ .Cluster.CloudLBEmptyType }}`}} {{ .DNS.Spec.BaseDomain }} {
             match .*[.]apps.{{ .DNS.Spec.BaseDomain }}
-            {{ if gt (len (cloudPlatformIngressLoadBalancerIPs .)) 1 }}answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ index (cloudPlatformIngressLoadBalancerIPs .) 1 }}"{{ end }}
             fallthrough
         }
         template IN {{`{{ .Cluster.CloudLBRecordType }}`}} {{ .DNS.Spec.BaseDomain }} {
@@ -28,7 +27,6 @@ contents:
         }
         template IN {{`{{ .Cluster.CloudLBEmptyType }}`}} {{ .DNS.Spec.BaseDomain }} {
             match ^api.{{ .DNS.Spec.BaseDomain }}
-            {{ if gt (len (cloudPlatformAPILoadBalancerIPs .)) 1 }}answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ index (cloudPlatformAPILoadBalancerIPs .) 1 }}"{{ end }}
             fallthrough
         }
         template IN {{`{{ .Cluster.CloudLBRecordType }}`}} {{ .DNS.Spec.BaseDomain }} {
@@ -38,7 +36,6 @@ contents:
         }
         template IN {{`{{ .Cluster.CloudLBEmptyType }}`}} {{ .DNS.Spec.BaseDomain }} {
             match ^api-int.{{ .DNS.Spec.BaseDomain }}
-            {{ if gt (len (cloudPlatformAPIIntLoadBalancerIPs .)) 1 }}answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ index (cloudPlatformAPIIntLoadBalancerIPs .) 1 }}"{{ end }}
             fallthrough
         }
         hosts {
