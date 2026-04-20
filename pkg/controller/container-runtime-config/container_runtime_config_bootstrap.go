@@ -3,6 +3,7 @@ package containerruntimeconfig
 import (
 	"fmt"
 
+	apicfgv1 "github.com/openshift/api/config/v1"
 	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -81,6 +82,50 @@ func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.Contai
 			mc.SetOwnerReferences([]metav1.OwnerReference{oref})
 			res = append(res, mc)
 		}
+	}
+
+	return res, nil
+}
+
+// RunTLSBootstrap creates one CRI-O TLS MachineConfig per pool at bootstrap.
+// This is separate from RunContainerRuntimeBootstrap so that TLS is propagated
+// even when there are no ContainerRuntimeConfig CRs.
+func RunTLSBootstrap(mcpPools []*mcfgv1.MachineConfigPool, kubeletConfigs []*mcfgv1.KubeletConfig, apiServer *apicfgv1.APIServer) ([]*mcfgv1.MachineConfig, error) {
+	// Validate KubeletConfig selectors upfront.
+	for _, kc := range kubeletConfigs {
+		if kc.Spec.MachineConfigPoolSelector != nil {
+			if _, err := metav1.LabelSelectorAsSelector(kc.Spec.MachineConfigPoolSelector); err != nil {
+				return nil, fmt.Errorf("invalid MachineConfigPoolSelector in KubeletConfig %s: %w", kc.Name, err)
+			}
+		}
+	}
+
+	// Iterate pools (not kubeletConfigs) because every pool needs a TLS MC,
+	// even when no KubeletConfig matches — the APIServer profile is the fallback.
+	var res []*mcfgv1.MachineConfig
+	for _, pool := range mcpPools {
+		tlsMinVersion, tlsCipherSuites := tlsConfigFromKubeletConfigs(kubeletConfigs, pool)
+		if tlsMinVersion == "" {
+			tlsMinVersion, tlsCipherSuites = ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
+		}
+		tlsDropinFiles, err := createCRIOTLSDropinFile(tlsMinVersion, tlsCipherSuites)
+		if err != nil {
+			return nil, fmt.Errorf("could not create TLS drop-in for pool %s: %w", pool.Name, err)
+		}
+		tlsIgn := createNewIgnition(tlsDropinFiles)
+
+		managedKey, err := getManagedKeyTLS(pool)
+		if err != nil {
+			return nil, fmt.Errorf("could not get TLS managed key for pool %s: %w", pool.Name, err)
+		}
+		mc, err := ctrlcommon.MachineConfigFromIgnConfig(pool.Name, managedKey, tlsIgn)
+		if err != nil {
+			return nil, fmt.Errorf("could not create TLS MachineConfig for pool %s: %w", pool.Name, err)
+		}
+		mc.SetAnnotations(map[string]string{
+			ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
+		})
+		res = append(res, mc)
 	}
 	return res, nil
 }

@@ -1293,6 +1293,262 @@ func TestCreateCRIODropinFiles(t *testing.T) {
 	}
 }
 
+func TestCreateCRIOTLSDropinFile(t *testing.T) {
+	tests := []struct {
+		name           string
+		tlsMinVersion  string
+		cipherSuites   []string
+		expectError    bool
+		expectContains string
+	}{
+		{
+			name:           "TLS 1.2 generates drop-in",
+			tlsMinVersion:  "VersionTLS12",
+			cipherSuites:   nil,
+			expectContains: "VersionTLS12",
+		},
+		{
+			name:           "TLS 1.3 generates drop-in",
+			tlsMinVersion:  "VersionTLS13",
+			cipherSuites:   nil,
+			expectContains: "VersionTLS13",
+		},
+		{
+			name:        "Empty version returns error",
+			tlsMinVersion: "",
+			cipherSuites:  nil,
+			expectError: true,
+		},
+		{
+			name:           "TLS 1.2 with cipher suites",
+			tlsMinVersion:  "VersionTLS12",
+			cipherSuites:   []string{"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"},
+			expectContains: "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			files, err := createCRIOTLSDropinFile(tc.tlsMinVersion, tc.cipherSuites)
+			if tc.expectError {
+				assert.Error(t, err)
+				assert.Nil(t, files)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, files, 1)
+			assert.Equal(t, CRIODropInFilePathTLS, files[0].filePath)
+			assert.Contains(t, string(files[0].data), tc.expectContains)
+			assert.Contains(t, string(files[0].data), "tls_min_version")
+		})
+	}
+}
+
+func TestTLSConfigFromKubeletConfigs(t *testing.T) {
+	workerPool := &mcfgv1.MachineConfigPool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "worker",
+			Labels: map[string]string{"pools.operator.machineconfiguration.openshift.io/worker": ""},
+		},
+	}
+	masterPool := &mcfgv1.MachineConfigPool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "master",
+			Labels: map[string]string{"pools.operator.machineconfiguration.openshift.io/master": ""},
+		},
+	}
+
+	tests := []struct {
+		name            string
+		kubeletConfigs  []*mcfgv1.KubeletConfig
+		pool            *mcfgv1.MachineConfigPool
+		expectedVersion string
+		expectCiphers   bool
+	}{
+		{
+			name:            "No KubeletConfigs returns empty",
+			kubeletConfigs:  nil,
+			pool:            workerPool,
+			expectedVersion: "",
+			expectCiphers:   false,
+		},
+		{
+			name: "KubeletConfig without TLS returns empty",
+			kubeletConfigs: []*mcfgv1.KubeletConfig{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "no-tls"},
+					Spec: mcfgv1.KubeletConfigSpec{
+						MachineConfigPoolSelector: metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/worker", ""),
+					},
+				},
+			},
+			pool:            workerPool,
+			expectedVersion: "",
+			expectCiphers:   false,
+		},
+		{
+			name: "KubeletConfig with TLS 1.3 matching worker pool",
+			kubeletConfigs: []*mcfgv1.KubeletConfig{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "tls13"},
+					Spec: mcfgv1.KubeletConfigSpec{
+						MachineConfigPoolSelector: metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/worker", ""),
+						TLSSecurityProfile: &apicfgv1.TLSSecurityProfile{
+							Type: apicfgv1.TLSProfileCustomType,
+							Custom: &apicfgv1.CustomTLSProfile{
+								TLSProfileSpec: apicfgv1.TLSProfileSpec{
+									MinTLSVersion: apicfgv1.VersionTLS13,
+								},
+							},
+						},
+					},
+				},
+			},
+			pool:            workerPool,
+			expectedVersion: "VersionTLS13",
+			expectCiphers:   false,
+		},
+		{
+			name: "KubeletConfig with TLS targeting different pool returns empty",
+			kubeletConfigs: []*mcfgv1.KubeletConfig{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "tls13-master"},
+					Spec: mcfgv1.KubeletConfigSpec{
+						MachineConfigPoolSelector: metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""),
+						TLSSecurityProfile: &apicfgv1.TLSSecurityProfile{
+							Type: apicfgv1.TLSProfileCustomType,
+							Custom: &apicfgv1.CustomTLSProfile{
+								TLSProfileSpec: apicfgv1.TLSProfileSpec{
+									MinTLSVersion: apicfgv1.VersionTLS13,
+								},
+							},
+						},
+					},
+				},
+			},
+			pool:            workerPool,
+			expectedVersion: "",
+			expectCiphers:   false,
+		},
+		{
+			name: "KubeletConfig with TLS matching master pool",
+			kubeletConfigs: []*mcfgv1.KubeletConfig{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "tls13-master"},
+					Spec: mcfgv1.KubeletConfigSpec{
+						MachineConfigPoolSelector: metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""),
+						TLSSecurityProfile: &apicfgv1.TLSSecurityProfile{
+							Type: apicfgv1.TLSProfileCustomType,
+							Custom: &apicfgv1.CustomTLSProfile{
+								TLSProfileSpec: apicfgv1.TLSProfileSpec{
+									MinTLSVersion: apicfgv1.VersionTLS13,
+								},
+							},
+						},
+					},
+				},
+			},
+			pool:            masterPool,
+			expectedVersion: "VersionTLS13",
+			expectCiphers:   false,
+		},
+		{
+			name: "Multiple matching KubeletConfigs: newest wins",
+			kubeletConfigs: []*mcfgv1.KubeletConfig{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "tls13-newer",
+						CreationTimestamp: metav1.NewTime(time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)),
+					},
+					Spec: mcfgv1.KubeletConfigSpec{
+						MachineConfigPoolSelector: metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/worker", ""),
+						TLSSecurityProfile: &apicfgv1.TLSSecurityProfile{
+							Type: apicfgv1.TLSProfileCustomType,
+							Custom: &apicfgv1.CustomTLSProfile{
+								TLSProfileSpec: apicfgv1.TLSProfileSpec{
+									MinTLSVersion: apicfgv1.VersionTLS13,
+								},
+							},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "tls12-older",
+						CreationTimestamp: metav1.NewTime(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)),
+					},
+					Spec: mcfgv1.KubeletConfigSpec{
+						MachineConfigPoolSelector: metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/worker", ""),
+						TLSSecurityProfile: &apicfgv1.TLSSecurityProfile{
+							Type: apicfgv1.TLSProfileCustomType,
+							Custom: &apicfgv1.CustomTLSProfile{
+								TLSProfileSpec: apicfgv1.TLSProfileSpec{
+									MinTLSVersion: apicfgv1.VersionTLS12,
+								},
+							},
+						},
+					},
+				},
+			},
+			pool:            workerPool,
+			expectedVersion: "VersionTLS13",
+			expectCiphers:   false,
+		},
+		{
+			name: "Custom profile with ciphers returns ciphers",
+			kubeletConfigs: []*mcfgv1.KubeletConfig{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "custom-ciphers"},
+					Spec: mcfgv1.KubeletConfigSpec{
+						MachineConfigPoolSelector: metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/worker", ""),
+						TLSSecurityProfile: &apicfgv1.TLSSecurityProfile{
+							Type: apicfgv1.TLSProfileCustomType,
+							Custom: &apicfgv1.CustomTLSProfile{
+								TLSProfileSpec: apicfgv1.TLSProfileSpec{
+									MinTLSVersion: apicfgv1.VersionTLS12,
+									Ciphers:       []string{"ECDHE-RSA-AES128-GCM-SHA256"},
+								},
+							},
+						},
+					},
+				},
+			},
+			pool:            workerPool,
+			expectedVersion: "VersionTLS12",
+			expectCiphers:   true,
+		},
+		{
+			name: "Intermediate profile returns ciphers",
+			kubeletConfigs: []*mcfgv1.KubeletConfig{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "intermediate"},
+					Spec: mcfgv1.KubeletConfigSpec{
+						MachineConfigPoolSelector: metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/worker", ""),
+						TLSSecurityProfile: &apicfgv1.TLSSecurityProfile{
+							Type: apicfgv1.TLSProfileIntermediateType,
+						},
+					},
+				},
+			},
+			pool:            workerPool,
+			expectedVersion: "VersionTLS12",
+			expectCiphers:   true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			version, ciphers := tlsConfigFromKubeletConfigs(tc.kubeletConfigs, tc.pool)
+			assert.Equal(t, tc.expectedVersion, version)
+			if tc.expectCiphers {
+				assert.NotEmpty(t, ciphers, "expected cipher suites to be non-empty")
+			} else {
+				assert.Empty(t, ciphers)
+			}
+		})
+	}
+}
+
 func TestUpdateStorageConfig(t *testing.T) {
 	templateStorageConfig := tomlConfigStorage{}
 	buf := bytes.Buffer{}
