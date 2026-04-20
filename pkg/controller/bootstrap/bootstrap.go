@@ -264,18 +264,14 @@ func (b *Bootstrap) Run(destDir string) error {
 
 	pullSecretBytes := pullSecret.Data[corev1.DockerConfigJsonKey]
 
-	if fgHandler != nil && fgHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) && iri != nil {
-		// Merge IRI registry credentials into the pull secret for first-boot authentication.
-		// The template controller has not yet run at this point, so machine-config-daemon-pull.service
-		// would otherwise fail to authenticate against the IRI registry.
-		merger, mergeErr := ctrlcommon.NewIRISecretMerger(iriCredentialsSecret, cconfig)
-		if mergeErr != nil {
-			return fmt.Errorf("could not create IRI secret merger: %w", mergeErr)
-		}
-		pullSecretBytes, err = merger.Merge(pullSecretBytes)
-		if err != nil {
-			return fmt.Errorf("could not merge IRI credentials into pull secret for bootstrap: %w", err)
-		}
+	// Merge IRI registry credentials into the pull secret for first-boot authentication.
+	// The template controller has not yet run at this point, so machine-config-daemon-pull.service
+	// would otherwise fail to authenticate against the IRI registry.
+	// Merge is a no-op if the feature gate is off or the IRI resource is absent.
+	merger := ctrlcommon.NewIRISecretMergerFromObjects(iriCredentialsSecret, cconfig, fgHandler, iri)
+	pullSecretBytes, err = merger.Merge(pullSecretBytes)
+	if err != nil {
+		return fmt.Errorf("could not merge IRI credentials into pull secret for bootstrap: %w", err)
 	}
 
 	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, pullSecretBytes, apiServer)

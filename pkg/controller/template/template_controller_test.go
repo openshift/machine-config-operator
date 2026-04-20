@@ -28,7 +28,9 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 
+	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
@@ -57,6 +59,13 @@ type fixture struct {
 	objects     []runtime.Object
 	oseobjects  []runtime.Object
 	apiservers  []runtime.Object
+
+	// iriObjects are loaded into a separate fake client used only for the IRI
+	// informer, so that IRI list/watch calls do not pollute the main f.actions list.
+	iriObjects []runtime.Object
+	// fgHandler overrides the feature gate handler used by the controller.
+	// Defaults to all gates disabled (nil, nil) if not set.
+	fgHandler ctrlcommon.FeatureGatesHandler
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -65,6 +74,8 @@ func newFixture(t *testing.T) *fixture {
 	f.objects = []runtime.Object{}
 	f.kubeobjects = []runtime.Object{}
 	f.oseobjects = []runtime.Object{}
+	f.iriObjects = []runtime.Object{}
+	f.fgHandler = ctrlcommon.NewFeatureGatesHardcodedHandler(nil, nil)
 	return f
 }
 
@@ -112,16 +123,25 @@ func (f *fixture) newController() *Controller {
 	apiserverinformer := configinformers.NewSharedInformerFactory(f.apiserverclient, noResyncPeriodFunc())
 
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
+
+	// Use a separate fake client for the IRI informer so that its list/watch
+	// calls do not appear in f.client's action list and break action-count tests.
+	iriClient := fake.NewSimpleClientset(f.iriObjects...)
+	iriInformers := informers.NewSharedInformerFactory(iriClient, noResyncPeriodFunc())
+
 	c := New(templateDir,
 		i.Machineconfiguration().V1().ControllerConfigs(),
 		cinformer.Core().V1().Secrets(),
 		cinformer.Core().V1().Secrets(), // iriSecretsInformer: reuse same factory in tests; not exercised here
+		iriInformers.Machineconfiguration().V1alpha1().InternalReleaseImages(),
 		apiserverinformer.Config().V1().APIServers(),
-		f.kubeclient, f.client)
+		f.kubeclient, f.client,
+		f.fgHandler)
 
 	c.ccListerSynced = alwaysReady
 	c.secretsInformerSynced = alwaysReady
 	c.iriSecretsInformerSynced = alwaysReady
+	c.iriInformerSynced = alwaysReady
 	c.apiserverListerSynced = alwaysReady
 	c.eventRecorder = &record.FakeRecorder{}
 
@@ -129,9 +149,18 @@ func (f *fixture) newController() *Controller {
 	defer close(stopCh)
 	i.Start(stopCh)
 	i.WaitForCacheSync(stopCh)
+	iriInformers.Start(stopCh)
+	iriInformers.WaitForCacheSync(stopCh)
 
 	for _, c := range f.ccLister {
 		i.Machineconfiguration().V1().ControllerConfigs().Informer().GetIndexer().Add(c)
+	}
+	// Pre-populate the secrets informer cache directly to avoid API calls from
+	// starting the informer factory, which would pollute f.kubeclient.Actions().
+	for _, obj := range f.kubeobjects {
+		if s, ok := obj.(*corev1.Secret); ok {
+			cinformer.Core().V1().Secrets().Informer().GetIndexer().Add(s)
+		}
 	}
 
 	return c
@@ -277,15 +306,6 @@ func (f *fixture) expectGetSecretAction(secret *corev1.Secret) {
 	f.kubeactions = append(f.kubeactions, core.NewGetAction(schema.GroupVersionResource{Resource: "secrets"}, secret.Namespace, secret.Name))
 }
 
-// expectGetIRIRegistryCredentialsSecretAction adds the expected Get for the IRI auth secret that
-// syncControllerConfig always performs to check for IRI registry credentials.
-func (f *fixture) expectGetIRIRegistryCredentialsSecretAction() {
-	f.kubeactions = append(f.kubeactions, core.NewGetAction(
-		schema.GroupVersionResource{Resource: "secrets"},
-		ctrlcommon.MCONamespace,
-		ctrlcommon.InternalReleaseImageAuthSecretName,
-	))
-}
 
 func (f *fixture) expectUpdateControllerConfigStatus(status *mcfgv1.ControllerConfig) {
 	f.actions = append(f.actions, core.NewRootUpdateSubresourceAction(schema.GroupVersionResource{Resource: "controllerconfigs"}, "status", status))
@@ -322,7 +342,6 @@ func TestCreatesMachineConfigs(t *testing.T) {
 		{Type: mcfgv1.TemplateControllerFailing, Status: corev1.ConditionFalse},
 	}
 	f.expectUpdateControllerConfigStatus(ccc)
-	f.expectGetIRIRegistryCredentialsSecretAction()
 	f.run(getKey(cc, t))
 }
 
@@ -359,7 +378,6 @@ func TestDoNothing(t *testing.T) {
 		{Type: mcfgv1.TemplateControllerFailing, Status: corev1.ConditionFalse},
 	}
 	f.expectUpdateControllerConfigStatus(ccc)
-	f.expectGetIRIRegistryCredentialsSecretAction()
 	f.run(getKey(cc, t))
 }
 
@@ -398,7 +416,6 @@ func TestRecreateMachineConfig(t *testing.T) {
 		{Type: mcfgv1.TemplateControllerFailing, Status: corev1.ConditionFalse},
 	}
 	f.expectUpdateControllerConfigStatus(ccc)
-	f.expectGetIRIRegistryCredentialsSecretAction()
 	f.run(getKey(cc, t))
 }
 
@@ -447,7 +464,6 @@ func TestUpdateMachineConfig(t *testing.T) {
 		{Type: mcfgv1.TemplateControllerFailing, Status: corev1.ConditionFalse},
 	}
 	f.expectUpdateControllerConfigStatus(ccc)
-	f.expectGetIRIRegistryCredentialsSecretAction()
 	f.run(getKey(cc, t))
 }
 
@@ -612,6 +628,11 @@ func TestMergesIRIRegistryCredentialsIntoPullSecret(t *testing.T) {
 	f.ccLister = append(f.ccLister, cc)
 	f.objects = append(f.objects, cc)
 	f.kubeobjects = append(f.kubeobjects, ps, iriRegistryCredentialsSecret)
+	f.iriObjects = append(f.iriObjects, &mcfgv1alpha1.InternalReleaseImage{
+		ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.InternalReleaseImageInstanceName},
+	})
+	f.fgHandler = ctrlcommon.NewFeatureGatesHardcodedHandler(
+		[]configv1.FeatureGateName{features.FeatureGateNoRegistryClusterInstall}, nil)
 
 	ctrl := f.newController()
 	if err := ctrl.syncHandler(ctrlcommon.ControllerConfigName); err != nil {
