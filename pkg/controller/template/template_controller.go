@@ -20,6 +20,7 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
+	mcfginformersv1alpha1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -73,6 +74,9 @@ type Controller struct {
 	ccListerSynced           cache.InformerSynced
 	secretsInformerSynced    cache.InformerSynced
 	iriSecretsInformerSynced cache.InformerSynced
+	iriInformerSynced        cache.InformerSynced
+
+	iriMerger *ctrlcommon.IRISecretMerger
 
 	queue workqueue.TypedRateLimitingInterface[string]
 
@@ -85,9 +89,11 @@ func New(
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	secretsInformer coreinformersv1.SecretInformer,
 	iriSecretsInformer coreinformersv1.SecretInformer,
+	iriInformer mcfginformersv1alpha1.InternalReleaseImageInformer,
 	apiserverInformer configinformersv1.APIServerInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
+	fgHandler ctrlcommon.FeatureGatesHandler,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -136,6 +142,9 @@ func New(
 	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
 	ctrl.secretsInformerSynced = secretsInformer.Informer().HasSynced
 	ctrl.iriSecretsInformerSynced = iriSecretsInformer.Informer().HasSynced
+	ctrl.iriInformerSynced = iriInformer.Informer().HasSynced
+
+	ctrl.iriMerger = ctrlcommon.NewIRISecretMerger(iriSecretsInformer.Lister(), ctrl.ccLister, iriInformer.Lister(), fgHandler)
 
 	ctrl.apiserverLister = apiserverInformer.Lister()
 	ctrl.apiserverListerSynced = apiserverInformer.Informer().HasSynced
@@ -297,7 +306,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.secretsInformerSynced, ctrl.iriSecretsInformerSynced) {
+	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.secretsInformerSynced, ctrl.iriSecretsInformerSynced, ctrl.iriInformerSynced) {
 		return
 	}
 
@@ -565,25 +574,14 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 		clusterPullSecretRaw = clusterPullSecret.Data[corev1.DockerConfigJsonKey]
 	}
 
-	// If the IRI auth secret exists, merge IRI registry credentials into the pull
-	// secret so that kubelet and CRI-O on all nodes can authenticate to the IRI
-	// registry. Credentials are merged at render time rather than writing back to
-	// the user-controlled global pull secret, avoiding ownership conflicts and the
+	// If IRI is in use, merge its registry credentials into the pull secret so
+	// that kubelet and CRI-O on all nodes can authenticate to the IRI registry.
+	// Credentials are merged at render time rather than writing back to the
+	// user-controlled global pull secret, avoiding ownership conflicts and the
 	// timing window where 00-master/00-worker could be rendered without IRI creds.
-	iriRegistryCredentialsSecret, err := ctrl.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(
-		context.TODO(), ctrlcommon.InternalReleaseImageAuthSecretName, metav1.GetOptions{})
-	if err != nil && !apierrors.IsNotFound(err) {
-		return ctrl.syncFailingStatus(cfg, err)
-	}
-	if err == nil {
-		merger, mergeErr := ctrlcommon.NewIRISecretMerger(iriRegistryCredentialsSecret, cfg)
-		if mergeErr != nil {
-			return ctrl.syncFailingStatus(cfg, fmt.Errorf("could not create IRI secret merger: %w", mergeErr))
-		}
-		clusterPullSecretRaw, err = merger.Merge(clusterPullSecretRaw)
-		if err != nil {
-			return ctrl.syncFailingStatus(cfg, fmt.Errorf("could not merge IRI registry credentials into pull secret: %w", err))
-		}
+	clusterPullSecretRaw, err = ctrl.iriMerger.Merge(clusterPullSecretRaw)
+	if err != nil {
+		return ctrl.syncFailingStatus(cfg, fmt.Errorf("could not merge IRI registry credentials into pull secret: %w", err))
 	}
 
 	// Grab the tlsSecurityProfile from the apiserver object
