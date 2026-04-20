@@ -296,27 +296,48 @@ func (r *RpmOstreeClient) patchPoliciesForContainerStorage(podmanImageInfo *Podm
 		return err
 	}
 
-	policy, err := signature.NewPolicyFromBytes(policyOriginalContent)
-	if err != nil {
-		return err
-	}
+	var policy *signature.Policy
 
-	_, containerStoragePoliciesPresent := policy.Transports[imagePolicyTransportContainerStorage]
-	if (reflect.DeepEqual(policy.Default[0], signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()}) && !containerStoragePoliciesPresent) {
-		// Temporary patching the policies.json file can be skipped, with warranties, and without re-implementing the
-		// logic that evaluates the policies or importing it under the following circumstances (must match all):
-		//  1. The default policy should be "insecureAcceptAnything"
-		//  2. Transport-specific policies for containers-storage shouldn't be in place.
-		return nil
-	}
+	// Skopeo (< 1.22.2) fails on multi-arch manifest-lists Sigstore verification , overrides
+	// policy to avoid "A signature was required, but no signature exists" errors during
+	// rpm-ostree rebase operations on older boot images.
+	// See https://issues.redhat.com/browse/OCPBUGS-81187 for details.
+	if !skopeoSupportsMultiArchSigstore() {
+		klog.Infof("skopeo does not support multi-arch Sigstore, using fully permissive policy for rpm-ostree")
+		policy = &signature.Policy{
+			Default: signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
+			Transports: map[string]signature.PolicyTransportScopes{
+				"docker": {
+					"": signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
+				},
+				imagePolicyTransportContainerStorage: {
+					"": signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
+				},
+			},
+		}
+	} else {
+		policy, err = signature.NewPolicyFromBytes(policyOriginalContent)
+		if err != nil {
+			return err
+		}
 
-	// At this point there's no warranty the policy will allow rpm-ostree to fetch the image
-	// from local storage -> Add a specific rule to allow the image
-	if !containerStoragePoliciesPresent {
-		policy.Transports[imagePolicyTransportContainerStorage] = make(map[string]signature.PolicyRequirements)
-	}
-	policy.Transports[imagePolicyTransportContainerStorage][url] = signature.PolicyRequirements{
-		signature.NewPRInsecureAcceptAnything(),
+		_, containerStoragePoliciesPresent := policy.Transports[imagePolicyTransportContainerStorage]
+		if (reflect.DeepEqual(policy.Default[0], signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()}) && !containerStoragePoliciesPresent) {
+			// Temporary patching the policies.json file can be skipped, with warranties, and without re-implementing the
+			// logic that evaluates the policies or importing it under the following circumstances (must match all):
+			//  1. The default policy should be "insecureAcceptAnything"
+			//  2. Transport-specific policies for containers-storage shouldn't be in place.
+			return nil
+		}
+
+		// At this point there's no warranty the policy will allow rpm-ostree to fetch the image
+		// from local storage -> Add a specific rule to allow the image
+		if !containerStoragePoliciesPresent {
+			policy.Transports[imagePolicyTransportContainerStorage] = make(map[string]signature.PolicyRequirements)
+		}
+		policy.Transports[imagePolicyTransportContainerStorage][url] = signature.PolicyRequirements{
+			signature.NewPRInsecureAcceptAnything(),
+		}
 	}
 
 	// Prepare the json patched content
