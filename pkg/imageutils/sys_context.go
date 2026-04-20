@@ -95,7 +95,8 @@ func (b *SysContextBuilder) hasCerts() bool {
 	return b.controllerConfig != nil &&
 		(len(b.controllerConfig.Spec.ImageRegistryBundleData) > 0 ||
 			len(b.controllerConfig.Spec.ImageRegistryBundleUserData) > 0 ||
-			len(b.controllerConfig.Spec.AdditionalTrustBundle) > 0)
+			len(b.controllerConfig.Spec.AdditionalTrustBundle) > 0 ||
+			len(b.controllerConfig.Spec.RootCAData) > 0)
 }
 
 // buildAuth configures authentication by writing the Docker secret as authfile.json
@@ -210,7 +211,7 @@ func (b *SysContextBuilder) buildCerts(sysContext *SysContext) error {
 	// a common CA bundle is given by AdditionalTrustBundle we need to create a temporal bundle
 	// that concatenates all the bundles into a single file and pass that to the lib.
 	// We loose the ability to isolate CAs per registry till the fix in the library lands
-	if len(b.controllerConfig.Spec.AdditionalTrustBundle) > 0 {
+	if len(b.controllerConfig.Spec.AdditionalTrustBundle) > 0 || len(b.controllerConfig.Spec.RootCAData) > 0 {
 		var certBundle bytes.Buffer
 
 		for _, irb := range b.controllerConfig.Spec.ImageRegistryBundleData {
@@ -225,6 +226,12 @@ func (b *SysContextBuilder) buildCerts(sysContext *SysContext) error {
 		// Append AdditionalTrustBundle
 		if len(b.controllerConfig.Spec.AdditionalTrustBundle) > 0 {
 			certBundle.Write(b.controllerConfig.Spec.AdditionalTrustBundle)
+			certBundle.WriteString("\n")
+		}
+
+		// Append RootCA data. This is required to access the InternalReleaseImage registry
+		if len(b.controllerConfig.Spec.RootCAData) > 0 {
+			certBundle.Write(b.controllerConfig.Spec.RootCAData)
 			certBundle.WriteString("\n")
 		}
 
