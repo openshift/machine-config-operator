@@ -2722,6 +2722,9 @@ func (dn *Daemon) validateOnDiskStateImpl(currentConfig *mcfgv1.MachineConfig, i
 		if err := coreOSDaemon.validateKernelArguments(currentConfig); err != nil {
 			return err
 		}
+		if err := coreOSDaemon.validateExtensions(currentConfig); err != nil {
+			return err
+		}
 	}
 
 	return validateOnDiskState(currentConfig, pathSystemd)
