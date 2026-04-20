@@ -152,11 +152,10 @@ const (
 
 	KubeletCrioImageCredProviderConfPath = "/etc/systemd/system/kubelet.service.d/40-kubelet-crio-image-credential-provider.conf"
 
-	// IRI (InternalReleaseImage) registry paths and service
+	// IRI (InternalReleaseImage) registry paths
 	IRIRegistryConfigPath  = "/etc/iri-registry"
 	IRILoadImageScriptPath = "/usr/local/bin/load-registry-image.sh"
 	IRIRootCAPath          = "/etc/pki/ca-trust/source/anchors/iri-root-ca.crt"
-	IRIRegistryServiceName = "iri-registry.service"
 
 	// rpm-ostree command arguments
 	RPMOSTreeUpdateArg    = "update"
