@@ -124,6 +124,15 @@ Then when the node boots into e.g. `rendered-worker-0x1234`, the `machine-config
 (also written by Ignition) reads that file and handles the bits (kernel arguments, extensions, )
 that weren't handled by the "main Ignition" process.
 
+Note: the `spec.config` portion of the encapsulated MachineConfig is intentionally stripped down
+to a bare Ignition stub (no files, no systemd units) because those were already delivered by the
+outer Ignition document.  The Ignition version in that stub is taken from the rendered MachineConfig's
+own `spec.config.ignition.version`.  This is important during rolling upgrades: while the
+MachineConfigPool is in progress (`status.updatedMachineCount == 0`), the MCS serves the previous
+rendered config which may target an older RHCOS version with a lower maximum Ignition version.
+Writing a higher Ignition version into the encapsulated stub would cause `machine-config-daemon-firstboot.service`
+to fail to parse it on those older nodes.
+
 These OS level changes are done along with the OS update process described above.
 
 This ensures that for example if one specifies `nosmt` as a kernel argument,

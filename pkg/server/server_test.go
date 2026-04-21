@@ -119,6 +119,144 @@ func TestEncapsulated(t *testing.T) {
 	}
 }
 
+// TestEncapsulatedVersionMatchesMC verifies that when the MachineConfig stores a v3 Ignition
+// config (e.g. a rendered MC from a 4.18 cluster with ignition 3.4.0), appendEncapsulated
+// preserves that version in the encapsulated stub instead of always using MaxVersion.
+// This prevents firstboot failures on older RHCOS nodes during a rolling upgrade where the
+// MCS is still serving the previous MC (UpdatedMachineCount == 0).
+func TestEncapsulatedVersionMatchesMC(t *testing.T) {
+	tests := []struct {
+		name            string
+		mcIgnVersion    string
+		requestVersion  string
+		expectedVersion string
+	}{
+		{
+			name:            "3.4.0 MC with 3.4.0 request preserves 3.4.0",
+			mcIgnVersion:    "3.4.0",
+			requestVersion:  "3.4.0",
+			expectedVersion: "3.4.0",
+		},
+		{
+			name:            "3.5.0 MC with 3.5.0 request preserves 3.5.0",
+			mcIgnVersion:    "3.5.0",
+			requestVersion:  "3.5.0",
+			expectedVersion: "3.5.0",
+		},
+		{
+			name:            "3.4.0 MC with 3.5.0 request preserves 3.4.0",
+			mcIgnVersion:    "3.4.0",
+			requestVersion:  "3.5.0",
+			expectedVersion: "3.4.0",
+		},
+	}
+
+	maxVersion := ctrlcommon.NewIgnConfig().Ignition.Version
+
+	// Negative / fallback cases: all expect MaxVersion in the encapsulated stub.
+	fallbackCases := []struct {
+		name string
+		mc   *mcfgv1.MachineConfig
+	}{
+		{
+			name: "nil spec.config.raw falls back to MaxVersion",
+			mc: &mcfgv1.MachineConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-mc"},
+				Spec:       mcfgv1.MachineConfigSpec{},
+			},
+		},
+		{
+			name: "malformed JSON falls back to MaxVersion",
+			mc: &mcfgv1.MachineConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-mc"},
+				Spec: mcfgv1.MachineConfigSpec{
+					Config: runtime.RawExtension{Raw: []byte(`{not valid json`)},
+				},
+			},
+		},
+		{
+			name: "missing ignition version falls back to MaxVersion",
+			mc: &mcfgv1.MachineConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-mc"},
+				Spec: mcfgv1.MachineConfigSpec{
+					Config: runtime.RawExtension{Raw: []byte(`{"ignition":{}}`)},
+				},
+			},
+		},
+		{
+			name: "v2 ignition version falls back to MaxVersion",
+			mc: &mcfgv1.MachineConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-mc"},
+				Spec: mcfgv1.MachineConfigSpec{
+					Config: runtime.RawExtension{Raw: []byte(`{"ignition":{"version":"2.2.0"}}`)},
+				},
+			},
+		},
+	}
+
+	t.Run("fallback cases", func(t *testing.T) {
+		for _, fc := range fallbackCases {
+			t.Run(fc.name, func(t *testing.T) {
+				ignCfg := ctrlcommon.NewIgnConfig()
+				err := appendEncapsulated(&ignCfg, fc.mc, semver.New("3.5.0"))
+				require.Nil(t, err)
+				require.Equal(t, 1, len(ignCfg.Storage.Files))
+				encapSource := *ignCfg.Storage.Files[0].Contents.Source
+				encapDataStr, err := url.PathUnescape(encapSource[len("data:,"):])
+				require.Nil(t, err)
+				var encapMC mcfgv1.MachineConfig
+				err = json.Unmarshal([]byte(encapDataStr), &encapMC)
+				require.Nil(t, err)
+				var encapIgn ign3types.Config
+				err = json.Unmarshal(encapMC.Spec.Config.Raw, &encapIgn)
+				require.Nil(t, err)
+				assert.Equal(t, maxVersion, encapIgn.Ignition.Version,
+					"expected fallback to MaxVersion (%s)", maxVersion)
+			})
+		}
+	})
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Build a minimal MC with the specified ignition version in spec.config.raw
+			rawIgn, err := json.Marshal(map[string]interface{}{
+				"ignition": map[string]interface{}{
+					"version": tt.mcIgnVersion,
+				},
+			})
+			require.Nil(t, err)
+
+			mc := &mcfgv1.MachineConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-mc"},
+				Spec: mcfgv1.MachineConfigSpec{
+					Config: runtime.RawExtension{Raw: rawIgn},
+				},
+			}
+
+			ignCfg := ctrlcommon.NewIgnConfig()
+			requestVer := semver.New(tt.requestVersion)
+			err = appendEncapsulated(&ignCfg, mc, requestVer)
+			require.Nil(t, err)
+
+			require.Equal(t, 1, len(ignCfg.Storage.Files))
+			encapSource := *ignCfg.Storage.Files[0].Contents.Source
+			encapDataStr, err := url.PathUnescape(encapSource[len("data:,"):])
+			require.Nil(t, err)
+
+			var encapMC mcfgv1.MachineConfig
+			err = json.Unmarshal([]byte(encapDataStr), &encapMC)
+			require.Nil(t, err)
+
+			var encapIgn ign3types.Config
+			err = json.Unmarshal(encapMC.Spec.Config.Raw, &encapIgn)
+			require.Nil(t, err)
+
+			assert.Equal(t, tt.expectedVersion, encapIgn.Ignition.Version,
+				"encapsulated ignition version should match MC's stored version")
+		})
+	}
+}
+
 // TestBootstrapServer tests the behavior of the machine config server
 // when it's running in bootstrap mode.
 // The test does the following:

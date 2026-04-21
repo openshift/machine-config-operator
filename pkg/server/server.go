@@ -145,7 +145,25 @@ func appendEncapsulated(conf *ign3types.Config, mc *mcfgv1.MachineConfig, versio
 	// we're just adding a version to make it be a valid MachineConfig which currently
 	// requires an empty Ignition version.
 	if version == nil || version.Slice()[0] == 3 {
+		// Use the version from the rendered MachineConfig's spec.config so that the
+		// encapsulated file remains compatible with the MCD container image version
+		// referenced in that MC's rendered systemd units. Using NewIgnConfig() (MaxVersion)
+		// here would break firstboot during a rolling upgrade when the MCS is serving the
+		// previous MC with an older MCD image that has an older Ignition library.
 		tmpIgnCfg := ctrlcommon.NewIgnConfig()
+		if mc.Spec.Config.Raw != nil {
+			// Use a minimal struct to avoid coupling to the full v3.5 schema.
+			var minIgn struct {
+				Ignition struct {
+					Version string `json:"version"`
+				} `json:"ignition"`
+			}
+			if err = json.Unmarshal(mc.Spec.Config.Raw, &minIgn); err == nil && minIgn.Ignition.Version != "" {
+				if v, parseErr := semver.NewVersion(minIgn.Ignition.Version); parseErr == nil && v.Slice()[0] == 3 {
+					tmpIgnCfg.Ignition.Version = minIgn.Ignition.Version
+				}
+			}
+		}
 		rawTmpIgnCfg, err = json.Marshal(tmpIgnCfg)
 		if err != nil {
 			return fmt.Errorf("error marshalling Ignition config: %w", err)
