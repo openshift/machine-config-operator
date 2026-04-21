@@ -2758,8 +2758,10 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	// If the host isn't new enough to understand the new container model natively, run as a privileged container.
 	// See https://github.com/coreos/rpm-ostree/pull/3961 and https://issues.redhat.com/browse/MCO-356
 	// This currently will incur a double reboot; see https://github.com/coreos/rpm-ostree/issues/4018
-	if !newEnough {
-		logSystem("rpm-ostree is not new enough for layering; forcing an update via container")
+	// If Skopeo used by rpm-ostree is an older version supporting multi-arch Sigstore verificaiton, run as a privileged container which has updated skopeo.
+	// See https://redhat.atlassian.net/browse/OCPBUGS-83826 and https://redhat.atlassian.net/browse/OCPBUGS-81187
+	if !newEnough || !skopeoSupportsMultiArchSigstore() {
+		logSystem("rpm-ostree or skopeo is not new enough for layering; forcing an update via container")
 		return dn.InplaceUpdateViaNewContainer(newURL)
 	}
 
@@ -2936,6 +2938,46 @@ func podmanSupportsSigstore() bool {
 		podmanSigstoreSupportedValue = imgPodmanVersion.Compare(*semver.New(sigstorePodman)) >= 0
 	})
 	return podmanSigstoreSupportedValue
+}
+
+var (
+	skopeoMultiArchSigstoreSupported      sync.Once
+	skopeoMultiArchSigstoreSupportedValue bool
+)
+
+func skopeoSupportsMultiArchSigstore() bool {
+	skopeoMultiArchSigstoreSupported.Do(func() {
+		// https://issues.redhat.com/browse/OCPBUGS-81187
+		// Multi-arch Sigstore fixed in skopeo 1.22.2
+		cmd := exec.Command("skopeo", "--version")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			klog.Errorf("failed to run skopeo --version: %v", err)
+			skopeoMultiArchSigstoreSupportedValue = false
+			return
+		}
+		// Output format: "skopeo version 1.21.0-dev commit: d8be59c1ecc5c1860b7bab4f60721d55da2cda9a"
+		fields := strings.Fields(strings.TrimSpace(string(out)))
+		if len(fields) < 3 {
+			klog.Errorf("unexpected skopeo version output format: %s", string(out))
+			skopeoMultiArchSigstoreSupportedValue = false
+			return
+		}
+
+		versionStr := fields[2]
+		if dashIdx := strings.Index(versionStr, "-"); dashIdx != -1 {
+			versionStr = versionStr[:dashIdx]
+		}
+		skopeoVersion, err := semver.NewVersion(versionStr)
+		if err != nil {
+			klog.Errorf("failed to parse skopeo version %s: %v", versionStr, err)
+			skopeoMultiArchSigstoreSupportedValue = false
+			return
+		}
+		minSkopeoVersionForMultiArchSigstore := "1.22.2"
+		skopeoMultiArchSigstoreSupportedValue = skopeoVersion.Compare(*semver.New(minSkopeoVersionForMultiArchSigstore)) >= 0
+	})
+	return skopeoMultiArchSigstoreSupportedValue
 }
 
 // Log a message to the systemd journal as well as our stdout
