@@ -2909,15 +2909,6 @@ func runCmdSync(cmdName string, args ...string) error {
 	return nil
 }
 
-const (
-	// minPodmanVersionForSigstore is the minimum podman version that supports Sigstore verification
-	// https://issues.redhat.com/browse/OCPBUGS-38809
-	minPodmanVersionForSigstore = "4.4.1"
-	// minSkopeoVersionForMultiArchSigstore is the minimum skopeo version that supports multi-arch Sigstore verification
-	// https://issues.redhat.com/browse/OCPBUGS-81187
-	minSkopeoVersionForMultiArchSigstore = "1.22.2"
-)
-
 var (
 	podmanSigstoreSupported      sync.Once
 	podmanSigstoreSupportedValue bool
@@ -2925,6 +2916,8 @@ var (
 
 func podmanSupportsSigstore() bool {
 	podmanSigstoreSupported.Do(func() {
+		// https://issues.redhat.com/browse/OCPBUGS-38809 failed for base image 4.11 or older, OCP 4.12 is with podman 4.4.1
+		// returns false if podman version is less than 4.4.1
 		cmd := exec.Command("podman", "version", "-f", "{{.APIVersion}}")
 		out, err := cmd.CombinedOutput()
 		if err != nil {
@@ -2932,58 +2925,17 @@ func podmanSupportsSigstore() bool {
 			podmanSigstoreSupportedValue = false
 			return
 		}
+		sigstorePodman := "4.4.1"
+		// Example version format: 5.3.0-rc1
 		imgPodmanVersion, err := semver.NewVersion(strings.TrimSpace(string(out)))
 		if err != nil {
 			klog.Errorf("failed to parse podman version: %v", err)
 			podmanSigstoreSupportedValue = false
 			return
 		}
-		podmanSigstoreSupportedValue = imgPodmanVersion.Compare(*semver.New(minPodmanVersionForSigstore)) >= 0
+		podmanSigstoreSupportedValue = imgPodmanVersion.Compare(*semver.New(sigstorePodman)) >= 0
 	})
 	return podmanSigstoreSupportedValue
-}
-
-var (
-	skopeoMultiArchSigstoreSupported      sync.Once
-	skopeoMultiArchSigstoreSupportedValue bool
-)
-
-func skopeoSupportsMultiArchSigstore() bool {
-	skopeoMultiArchSigstoreSupported.Do(func() {
-		// Multi-arch Sigstore verification requires skopeo >= 1.22.2.
-		// Older boot images will fail with "A signature was required, but no signature exists"
-		// when rpm-ostree attempts to pull multi-arch images with Sigstore enforcement.
-		cmd := exec.Command("skopeo", "--version")
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			klog.Errorf("failed to run skopeo --version: %v", err)
-			skopeoMultiArchSigstoreSupportedValue = false
-			return
-		}
-		// Example output: "skopeo version 1.21.0-dev commit: d8be59c1ecc5c1860b7bab4f60721d55da2cda9a"
-		outStr := strings.TrimSpace(string(out))
-		fields := strings.Fields(outStr)
-		if len(fields) < 3 {
-			klog.Errorf("failed to parse skopeo version output: %s", outStr)
-			skopeoMultiArchSigstoreSupportedValue = false
-			return
-		}
-
-		versionStr := fields[2]
-		if dashIdx := strings.Index(versionStr, "-"); dashIdx != -1 {
-			versionStr = versionStr[:dashIdx]
-		}
-
-		skopeoVersion, err := semver.NewVersion(versionStr)
-		if err != nil {
-			klog.Errorf("failed to parse skopeo version %s: %v", versionStr, err)
-			skopeoMultiArchSigstoreSupportedValue = false
-			return
-		}
-		skopeoMultiArchSigstoreSupportedValue = skopeoVersion.Compare(*semver.New(minSkopeoVersionForMultiArchSigstore)) >= 0
-		klog.Infof("skopeo version %s, multi-arch Sigstore support: %v", versionStr, skopeoMultiArchSigstoreSupportedValue)
-	})
-	return skopeoMultiArchSigstoreSupportedValue
 }
 
 // Log a message to the systemd journal as well as our stdout
