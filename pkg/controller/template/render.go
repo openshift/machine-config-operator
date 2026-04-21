@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"maps"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -817,22 +818,45 @@ func cloudPlatformLoadBalancerIPs(cfg RenderConfig, lbType LoadBalancerType) (in
 	}
 }
 
+// cloneAndSortIPs clones and sorts IP addresses to ensure consistent ordering.
+func cloneAndSortIPs(ips []configv1.IP) []configv1.IP {
+	ipsSorted := slices.Clone(ips)
+	slices.SortFunc(ipsSorted, func(a, b configv1.IP) int {
+		addrA := netip.MustParseAddr(string(a))
+		addrB := netip.MustParseAddr(string(b))
+		return addrA.Compare(addrB)
+	})
+	return ipsSorted
+}
+
 // cloudPlatformAPIIntLoadBalancerIPs provides the API-Int Server IPs for
 // supported cloud platforms when the DNSType is set to `ClusterHosted`.
 func cloudPlatformAPIIntLoadBalancerIPs(cfg RenderConfig) (interface{}, error) {
-	return cloudPlatformLoadBalancerIPs(cfg, apiIntLB)
+	ips, err := cloudPlatformLoadBalancerIPs(cfg, apiIntLB)
+	if err != nil {
+		return nil, err
+	}
+	return cloneAndSortIPs(ips.([]configv1.IP)), nil
 }
 
 // cloudPlatformAPILoadBalancerIPs provides the API Server IPs for supported
 // cloud platforms when the DNSType is set to `ClusterHosted`.
 func cloudPlatformAPILoadBalancerIPs(cfg RenderConfig) (interface{}, error) {
-	return cloudPlatformLoadBalancerIPs(cfg, apiLB)
+	ips, err := cloudPlatformLoadBalancerIPs(cfg, apiLB)
+	if err != nil {
+		return nil, err
+	}
+	return cloneAndSortIPs(ips.([]configv1.IP)), nil
 }
 
 // cloudPlatformIngressLoadBalancerIPs provides the Ingress IPs for supported
 // cloud platforms when the DNSType is set to `ClusterHosted`.
 func cloudPlatformIngressLoadBalancerIPs(cfg RenderConfig) (interface{}, error) {
-	return cloudPlatformLoadBalancerIPs(cfg, ingressLB)
+	ips, err := cloudPlatformLoadBalancerIPs(cfg, ingressLB)
+	if err != nil {
+		return nil, err
+	}
+	return cloneAndSortIPs(ips.([]configv1.IP)), nil
 }
 
 // cloudPlatformLoadBalancerIPState is a helper function that determines if
