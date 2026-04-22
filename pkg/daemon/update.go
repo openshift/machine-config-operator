@@ -2166,8 +2166,8 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 		// to not go through.
 
 		if u.Enabled != nil {
-			// Only when a unit has contents should we attempt to enable or disable it.
-			// See: https://issues.redhat.com/browse/OCPBUGS-56648
+			// Only when a unit has contents or a unit file exists should we attempt to enable or disable it.
+			// See: https://redhat.atlassian.net/browse/OCPBUGS-56648 &  https://redhat.atlassian.net/browse/OCPBUGS-78524
 			_, unitExists := systemdUnits[u.Name]
 			if unitHasContent(u) || unitExists {
 				if *u.Enabled {
@@ -2203,7 +2203,10 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 	return nil
 }
 
-func (dn *Daemon) listSystemdUnits() (result map[string]systemddbus.UnitStatus, err error) {
+// `listSystemdUnits` returns all systemd unit files on disk, keyed by unit name, including loaded
+// and unloaded units. This is necessary for detecting units provided by extensions or RPM packages
+// that have not been started.
+func (dn *Daemon) listSystemdUnits() (result map[string]systemddbus.UnitFile, err error) {
 	conn, err := systemddbus.NewSystemdConnectionContext(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to system bus to list units: %w", err)
@@ -2212,14 +2215,16 @@ func (dn *Daemon) listSystemdUnits() (result map[string]systemddbus.UnitStatus, 
 		conn.Close()
 	}()
 
-	units, err := conn.ListUnitsContext(context.Background())
+	unitFiles, err := conn.ListUnitFilesContext(context.Background())
 	if err != nil {
-		return nil, fmt.Errorf("failed to list systemd units: %w", err)
+		return nil, fmt.Errorf("failed to list systemd unit files: %w", err)
 	}
 
-	result = make(map[string]systemddbus.UnitStatus)
-	for _, unit := range units {
-		result[unit.Name] = unit
+	result = make(map[string]systemddbus.UnitFile)
+	for _, unitFile := range unitFiles {
+		// Extract just the filename from the full path
+		unitName := filepath.Base(unitFile.Path)
+		result[unitName] = unitFile
 	}
 	return result, nil
 
