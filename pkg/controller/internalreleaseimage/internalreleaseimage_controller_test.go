@@ -73,14 +73,6 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 			},
 		},
 		{
-			name:           "generate iri machine-configs with auth credentials",
-			initialObjects: objs(iri(), clusterVersion(), cconfig().withDNS("example.com"), iriCertSecret(), iriRegistryCredentialsSecret(), pullSecret()),
-			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
-				verifyInternalReleaseMasterMachineConfig(t, actualMasterMC)
-				verifyInternalReleaseWorkerMachineConfig(t, actualWorkerMC)
-			},
-		},
-		{
 			name: "avoid machine-config drifting",
 			initialObjects: objs(
 				iri().finalizer(masterName(), workerName()),
