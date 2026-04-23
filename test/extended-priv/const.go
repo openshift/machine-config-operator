@@ -10,6 +10,10 @@ const (
 	MachineConfigNamespace = "openshift-machine-config-operator"
 	// MachineConfigDaemon mcd container name
 	MachineConfigDaemon = "machine-config-daemon"
+	// MachineConfigOperator mco container name
+	MachineConfigOperator = "machine-config-operator"
+	// MachineConfigDaemonEvents cluster role binding
+	MachineConfigDaemonEvents = "machine-config-daemon-events"
 
 	// MachineConfigPoolMaster master pool name
 	MachineConfigPoolMaster = "master"
@@ -47,18 +51,22 @@ const (
 	GCPPlatform = "gcp"
 	// AzurePlatform value used to identify azure infrastructure
 	AzurePlatform = "azure"
-	// VspherePlatform value used to identify Vsphere infrastructure
-	VspherePlatform = "vsphere"
-	// BaremetalPlatform value used to identify BareMetal infrastructure
+	// NonePlatform value used to identify a None Platform value
+	NonePlatform = "none"
+	// BaremetalPlatform value used to identify baremetal infrastructure
 	BaremetalPlatform = "baremetal"
-	// AlibabaCloudPlatform value used to identify AlibabaCloud infrastructure
-	AlibabaCloudPlatform = "alibabacloud"
+	// KniPlatform value used to identify KNI infrastructure
+	KniPlatform = "kni"
 	// NutanixPlatform value used to identify Nutanix infrastructure
 	NutanixPlatform = "nutanix"
 	// OpenstackPlatform value used to identify Openstack infrastructure
 	OpenstackPlatform = "openstack"
 	// OvirtPlatform value used to identify Ovirt infrastructure
 	OvirtPlatform = "ovirt"
+	// VspherePlatform value used to identify Vsphere infrastructure
+	VspherePlatform = "vsphere"
+	// AlibabaCloudPlatform value used to identify AlibabaCloud infrastructure
+	AlibabaCloudPlatform = "alibabacloud"
 
 	// ExpirationDockerfileLabel Expiration label in Dockerfile
 	ExpirationDockerfileLabel = `LABEL maintainer="mco-qe-team" quay.expires-after=24h`
@@ -168,16 +176,6 @@ const (
 )
 
 var (
-	// Map with all available extensions and the packages they install
-	AllExtenstions = map[string][]string{
-		ipsecExtension:               {"NetworkManager-libreswan", "libreswan"},
-		usbguardExtension:            {"usbguard"},
-		kerberosExtension:            {"krb5-workstation", "libkadm5"},
-		kernelDevelExtension:         {"kernel-devel", "kernel-headers"},
-		sandboxedContainersExtension: {"kata-containers"},
-		sysstatExtension:             {"sysstat"},
-	}
-
 	// OnPremPlatforms describes all the on-prem platforms
 	// xref: https://github.com/openshift/machine-config-operator/blob/752667ba9dfcdefd12222ab422201fa3f9846aca/pkg/controller/template/render.go#L593
 	OnPremPlatforms = map[string]string{
@@ -186,6 +184,16 @@ var (
 		OpenstackPlatform: "openshift-openstack-infra",
 		OvirtPlatform:     "openshift-ovirt-infra",
 		VspherePlatform:   "openshift-vsphere-infra",
+	}
+
+	// Map with all available extensions and the packages they install
+	AllExtenstions = map[string][]string{
+		ipsecExtension:               {"NetworkManager-libreswan", "libreswan"},
+		usbguardExtension:            {"usbguard"},
+		kerberosExtension:            {"krb5-workstation", "libkadm5"},
+		kernelDevelExtension:         {"kernel-devel", "kernel-headers"},
+		sandboxedContainersExtension: {"kata-containers"},
+		sysstatExtension:             {"sysstat"},
 	}
 
 	// OSImageStream constants
