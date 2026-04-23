@@ -1175,6 +1175,7 @@ func (ctrl *Controller) getConfigAndBuild(pool *mcfgv1.MachineConfigPool) (*mcfg
 
 	// First, try to get the MOSB from the current-machine-os-build annotation on the MOSC
 	// This ensures we get the correct build when multiple MOSBs exist for the same rendered MC
+	staleAnnotation := false
 	if currentBuildName, hasAnnotation := ourConfig.Annotations[buildconstants.CurrentMachineOSBuildAnnotationKey]; hasAnnotation {
 		for _, build := range buildList {
 			if build.Name == currentBuildName {
@@ -1186,11 +1187,24 @@ func (ctrl *Controller) getConfigAndBuild(pool *mcfgv1.MachineConfigPool) (*mcfg
 					return ourConfig, ourBuild, nil
 				}
 				klog.Warningf("MachineOSBuild %q from annotation is for rendered config %q, but pool has %q - annotation is stale", currentBuildName, build.Spec.MachineConfig.Name, pool.Spec.Configuration.Name)
-				// Don't return here - fall through to the fallback logic
+				staleAnnotation = true
 				break
 			}
 		}
-		klog.Warningf("MachineOSConfig %q has current-machine-os-build annotation pointing to %q, but that build was not found", ourConfig.Name, currentBuildName)
+		if !staleAnnotation {
+			klog.Warningf("MachineOSConfig %q has current-machine-os-build annotation pointing to %q, but that build was not found", ourConfig.Name, currentBuildName)
+			staleAnnotation = true
+		}
+
+		// Clear stale annotation to allow build controller to create a new build
+		if staleAnnotation {
+			klog.Infof("Clearing stale current-machine-os-build annotation %q from MachineOSConfig %q", currentBuildName, ourConfig.Name)
+			configCopy := ourConfig.DeepCopy()
+			delete(configCopy.Annotations, buildconstants.CurrentMachineOSBuildAnnotationKey)
+			if _, err := ctrl.client.MachineconfigurationV1().MachineOSConfigs().Update(context.TODO(), configCopy, metav1.UpdateOptions{}); err != nil {
+				return nil, nil, fmt.Errorf("failed to clear stale annotation from MachineOSConfig %q: %w", ourConfig.Name, err)
+			}
+		}
 	}
 
 	// Fallback: if annotation is not present or build not found, use the old logic
