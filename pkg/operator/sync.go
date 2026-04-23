@@ -1742,6 +1742,13 @@ func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig, co *c
 		}
 	}
 
+	// Check if any pool has layering enabled (OCL/MOSB)
+	layeredMCPs, err := optr.getLayeredMachineConfigPools()
+	if err != nil {
+		return fmt.Errorf("error getting layered machine config pools: %w", err)
+	}
+	hasLayeredPools := len(layeredMCPs) > 0
+
 	// Let's start with a 10 minute timeout per "required" node.
 	if err := wait.PollUntilContextTimeout(ctx, time.Second, time.Duration(requiredMachineCount*10)*time.Minute, false, func(_ context.Context) (bool, error) {
 		if lastErr != nil {
@@ -1794,9 +1801,13 @@ func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig, co *c
 
 			_, hasRequiredPoolLabel := pool.Labels[requiredForUpgradeMachineConfigPoolLabelKey]
 
-			// Check all pools (not just required ones) to see if they're updated
-			// This ensures that upgrades don't complete while non-required pools
-			// (e.g., worker) are still updating with custom image builds
+			// For clusters with layered pools (OCL/MOSB), check ALL pools to prevent
+			// upgrades from completing while worker pools have failing custom image builds.
+			// For non-layered clusters, only check required-for-upgrade pools (preserve existing behavior).
+			if !hasRequiredPoolLabel && !hasLayeredPools {
+				continue
+			}
+
 			streamName, err := ctrlcommon.GetEffectiveOSImageStreamName(pool, optr.mcpLister)
 			if err != nil {
 				klog.Errorf("Error getting effective osImageStream name for pool %s: %q", pool.Name, err)
