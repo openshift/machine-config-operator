@@ -300,3 +300,57 @@ func TestIRIController_ShouldRestoreMachineConfigsWhenModified(t *testing.T) {
 		})
 	}
 }
+
+// TestCertRotation_IRICertIsRegeneratedOnCARotation verifies that when the MCS CA
+// rotates, the cert rotation controller regenerates the IRI TLS certificate and
+// signs it with the new CA.
+func TestCertRotation_IRICertIsRegeneratedOnCARotation(t *testing.T) {
+	skipIfNoBaremetal(t)
+
+	cs := framework.NewClientSet("")
+	ctx := context.Background()
+
+	// Record the current IRI TLS cert so we can detect when it changes.
+	iriSecret, err := cs.Secrets(ctrlcommon.MCONamespace).Get(ctx, ctrlcommon.InternalReleaseImageTLSSecretName, v1.GetOptions{})
+	require.NoError(t, err)
+	originalCert := iriSecret.Data[corev1.TLSCertKey]
+	require.NotEmpty(t, originalCert, "IRI TLS cert should be present before rotation")
+
+	// Trigger MCS CA rotation by deleting the CA secret. library-go's
+	// CertRotationController recreates the secret with a new keypair and then
+	// reconciles the machine-config-server-ca ConfigMap (the CA bundle). The
+	// configmap update event fires updateConfigMap(), which calls
+	// reconcileIRICertificate() to regenerate the IRI TLS cert.
+	err = cs.Secrets(ctrlcommon.MCONamespace).Delete(ctx, ctrlcommon.MachineConfigServerCAName, v1.DeleteOptions{})
+	require.NoError(t, err)
+
+	// Wait for the IRI TLS cert to be replaced.
+	err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+		updated, err := cs.Secrets(ctrlcommon.MCONamespace).Get(ctx, ctrlcommon.InternalReleaseImageTLSSecretName, v1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		return !bytes.Equal(updated.Data[corev1.TLSCertKey], originalCert), nil
+	})
+	require.NoError(t, err, "IRI TLS cert should have been rotated after MCS CA rotation")
+
+	// Verify the new cert is signed by the new MCS CA bundle.
+	cm, err := cs.ConfigMaps(ctrlcommon.MCONamespace).Get(ctx, ctrlcommon.MachineConfigServerCAName, v1.GetOptions{})
+	require.NoError(t, err)
+	roots := x509.NewCertPool()
+	require.True(t, roots.AppendCertsFromPEM([]byte(cm.Data["ca-bundle.crt"])))
+
+	iriSecret, err = cs.Secrets(ctrlcommon.MCONamespace).Get(ctx, ctrlcommon.InternalReleaseImageTLSSecretName, v1.GetOptions{})
+	require.NoError(t, err)
+
+	block, _ := pem.Decode(iriSecret.Data[corev1.TLSCertKey])
+	require.NotNil(t, block, "Should be able to decode rotated IRI TLS cert PEM")
+	iriCert, err := x509.ParseCertificate(block.Bytes)
+	require.NoError(t, err)
+
+	_, err = iriCert.Verify(x509.VerifyOptions{
+		Roots:     roots,
+		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	})
+	require.NoError(t, err, "Rotated IRI TLS cert should be signed by the new MCS CA")
+}
