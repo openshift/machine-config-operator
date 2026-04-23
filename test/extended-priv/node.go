@@ -1586,3 +1586,30 @@ func (n *Node) GetRHCOSVersion() (string, error) {
 
 	return rhcosVersion, nil
 }
+
+// GetJournalLogs gets the journal logs from a node
+func (n *Node) GetJournalLogs(args ...string) (string, error) {
+	cmd := []string{"journalctl", "-o", "with-unit"}
+	return n.DebugNodeWithChroot(append(cmd, args...)...)
+}
+
+// GetAllCoreOsNodesOrFail returns a list with all CoreOs nodes including master and workers. Fail the test case if an error happens
+func (nl NodeList) GetAllCoreOsNodesOrFail() []*Node {
+	nl.ByLabel("node.openshift.io/os_id=rhel")
+
+	allRhcos, err := nl.GetAll()
+	o.Expect(err).NotTo(o.HaveOccurred())
+	return allRhcos
+}
+
+// FilterSchedulableNodesOrFail filters a list of nodes to return only schedulable ones
+func FilterSchedulableNodesOrFail(nodes []*Node) []*Node {
+	returnNodes := []*Node{}
+	for _, item := range nodes {
+		node := item
+		if node.IsSchedulableOrFail() {
+			returnNodes = append(returnNodes, node)
+		}
+	}
+	return returnNodes
+}

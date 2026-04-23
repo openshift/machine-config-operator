@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"os/exec"
@@ -1266,4 +1267,118 @@ func skipTestIfOsIsNotCoreOs(oc *exutil.CLI) *Node {
 		g.Skip("CoreOs is required to execute this test case!")
 	}
 	return allCoreOs[0]
+}
+// containsMultipleStrings checks if sourceString contains all the strings in expectedStrings
+func containsMultipleStrings(sourceString string, expectedStrings []string) bool {
+	o.Expect(sourceString).NotTo(o.BeEmpty())
+	o.Expect(expectedStrings).NotTo(o.BeEmpty())
+
+	var count int
+	for _, element := range expectedStrings {
+		if strings.Contains(sourceString, element) {
+			count++
+		}
+	}
+	return count == len(expectedStrings)
+}
+
+// getSATokenFromContainer gets the service account token from a container
+func getSATokenFromContainer(oc *exutil.CLI, podName, podNamespace, container string) string {
+	podOut, err := exutil.RemoteShContainer(oc, podNamespace, podName, container, "cat", "/var/run/secrets/kubernetes.io/serviceaccount/token")
+	o.Expect(err).NotTo(o.HaveOccurred())
+
+	return podOut
+}
+
+// getHostFromRoute gets the host from a route
+func getHostFromRoute(oc *exutil.CLI, routeName, routeNamespace string) string {
+	stdout, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("route", routeName, "-n", routeNamespace, "-o", "jsonpath='{.spec.host}'").Output()
+	o.Expect(err).NotTo(o.HaveOccurred())
+
+	return stdout
+}
+
+// getPrometheusQueryResults executes a Prometheus query and returns the results
+func getPrometheusQueryResults(oc *exutil.CLI, query string) string {
+
+	token := getSATokenFromContainer(oc, "prometheus-k8s-0", "openshift-monitoring", "prometheus")
+
+	routeHost := getHostFromRoute(oc, "prometheus-k8s", "openshift-monitoring")
+	url := fmt.Sprintf("https://%s/api/v1/query?query=%s", routeHost, query)
+	headers := fmt.Sprintf("Authorization: Bearer %s", token)
+
+	curlCmd := fmt.Sprintf("curl -ks -H '%s' %s", headers, url)
+	logger.Infof("curl cmd:\n %s", curlCmd)
+
+	curlOutput, cmdErr := exec.Command("bash", "-c", curlCmd).Output()
+	logger.Infof("curl output:\n%s", curlOutput)
+	o.Expect(cmdErr).NotTo(o.HaveOccurred())
+
+	return string(curlOutput)
+}
+
+// getMachineConfigOperatorPod gets the machine-config-operator pod name
+func getMachineConfigOperatorPod(oc *exutil.CLI) (string, error) {
+	pods, err := exutil.GetAllPodsWithLabel(oc.AsAdmin(), MachineConfigNamespace, "k8s-app=machine-config-operator")
+	logger.Infof("machine-config-operator pod name is %s", pods[0])
+	return pods[0], err
+}
+
+// WrapWithBracketsIfIpv6 wraps IPv6 addresses with brackets for use in URLs
+func WrapWithBracketsIfIpv6(ip string) (string, error) {
+	parsedIP := net.ParseIP(ip)
+	if parsedIP == nil {
+		return "", fmt.Errorf("The string %s is not a valid IP", ip)
+	}
+
+	// If it is an IPV6 address, wrap it
+	if parsedIP.To4() == nil {
+		return "[" + ip + "]", nil
+	}
+
+	return ip, nil
+}
+
+// skipTestIfNotIPI skips the test if the cluster is not IPI
+func skipTestIfNotIPI(oc *exutil.CLI) {
+	// We assume that if nodes cannot be scaled then the cluster is UPI
+	skipTestIfWorkersCannotBeScaled(oc)
+}
+
+// ToInterfaceSlice converts a gjson.Result array to a slice of interfaces
+func ToInterfaceSlice(r gjson.Result) []interface{} {
+	if !r.IsArray() {
+		return nil
+	}
+	arr := r.Array()
+	result := make([]interface{}, len(arr))
+	for i, elem := range arr {
+		result[i] = elem.Value()
+	}
+	return result
+}
+
+// IsInstalledWithAssistedInstallerOrFail checks if the cluster was installed using assisted-installer
+func IsInstalledWithAssistedInstallerOrFail(oc *exutil.CLI) bool {
+	logger.Infof("Checking if the cluster was installed using assisted-installer")
+	assistedInstallerNS := NewResource(oc, "ns", "assisted-installer")
+	return assistedInstallerNS.Exists()
+}
+
+// IsOnPremPlatform checks if the platform is an on-prem platform
+func IsOnPremPlatform(platform string) bool {
+	switch platform {
+	case BaremetalPlatform, OvirtPlatform, OpenstackPlatform, VspherePlatform, NutanixPlatform:
+		return true
+	default:
+		return false
+	}
+}
+
+// SkipIfNotOnPremPlatform skips the test if the cluster is not on an on-prem platform
+func SkipIfNotOnPremPlatform(oc *exutil.CLI) {
+	platform := exutil.CheckPlatform(oc)
+	if !IsOnPremPlatform(platform) {
+		g.Skip(fmt.Sprintf("Current platform: %s. This test can only be execute in OnPrem platforms.", platform))
+	}
 }
