@@ -1357,3 +1357,290 @@ func containsMiddle(s, substr string) bool {
 	}
 	return false
 }
+
+// TestStaleAnnotationClearedOnLayerOnlyChange reproduces OCPBUGS-84150 / OCP-83755.
+//
+// Bug scenario from QE:
+// 1. Enable ImageMode and create initial build for rendered-worker-1
+// 2. Add SSH key MC (layer-only) -> creates rendered-worker-2
+// 3. Annotation becomes stale (points to build for rendered-worker-1 but pool has rendered-worker-2)
+// 4. Add another SSH key MC -> creates rendered-worker-3
+//
+// Without fix:
+//   - Node controller sees stale annotation and logs "build was not found"
+//   - Returns error "Image is not ready yet"
+//   - No new MOSB is created
+//   - Pool stuck at 0 machines configured
+//
+// With fix:
+//   - Node controller detects stale annotation
+//   - Clears it (not just logs it)
+//   - Build controller creates new MOSB
+//   - Pool updates normally
+func TestStaleAnnotationClearedOnLayerOnlyChange(t *testing.T) {
+	cs := framework.NewClientSet("")
+
+	// Label a node from worker pool to trigger node controller reconciliation
+	unlabelFunc := helpers.LabelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/layered")
+	t.Cleanup(unlabelFunc)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
+
+	// Step 1: Setup OCL with initial successful build
+	t.Logf("Step 1: Setting up On-Cluster Layering with initial build")
+	firstImagePullspec, firstMOSB := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
+		poolName: layeredMCPName,
+		customDockerfiles: map[string]string{
+			layeredMCPName: ocltesthelper.SimpleDockerfile,
+		},
+	})
+	t.Logf("Initial build %s completed with image: %s", firstMOSB.Name, firstImagePullspec)
+
+	moscName := layeredMCPName
+
+	// Verify annotation is set to first build
+	mosc, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().Get(ctx, moscName, metav1.GetOptions{})
+	require.NoError(t, err)
+	firstAnnotation := mosc.Annotations[constants.CurrentMachineOSBuildAnnotationKey]
+	require.Equal(t, firstMOSB.Name, firstAnnotation, "annotation should point to first build")
+
+	// Get the first rendered config
+	mcp, err := cs.MachineConfigPools().Get(ctx, layeredMCPName, metav1.GetOptions{})
+	require.NoError(t, err)
+	firstRenderedConfig := mcp.Spec.Configuration.Name
+	t.Logf("First rendered config: %s", firstRenderedConfig)
+
+	// Wait for pool to finish updating before applying next MC
+	t.Logf("Waiting for pool to finish initial update")
+	err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 10*time.Minute, true, func(ctx context.Context) (bool, error) {
+		mcp, err := cs.MachineConfigPools().Get(ctx, layeredMCPName, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		updatedCond := apihelpers.GetMachineConfigPoolCondition(mcp.Status, mcfgv1.MachineConfigPoolUpdated)
+		return updatedCond != nil && updatedCond.Status == corev1.ConditionTrue, nil
+	})
+	require.NoError(t, err, "pool did not reach Updated=True")
+
+	// Step 2: Apply first SSH key MC (layer-only change) -> rendered-worker-2
+	t.Logf("Step 2: Applying first SSH key (layer-only change)")
+	sshKey1Config := ign3types.Config{
+		Ignition: ign3types.Ignition{
+			Version: "3.2.0",
+		},
+		Passwd: ign3types.Passwd{
+			Users: []ign3types.PasswdUser{
+				{
+					Name: "core",
+					SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{
+						"ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC9G+7L1BaEwcB+89F7NksdTLmKdQGu61pgP9v8G0lG0VsgU30UYT6E6UVO6kD5zG/yq2VSkO7gfboG9EmArNKu7U1P/s8GkZqoGPUwN/HAcOzvYf6K5w+Rx7xU6676K2ECPRRXVgG7j4T8HaDwhgEwsUr2fDD/ie5TEni9HwqjFVQbtXNxorU7uSN3OLWgggoj9bDSJXcO3j964DDepQVwjJBXumAcQoKZCa7OLVZZXIZtVu+tFSnCuP7Dqc5CYBARgABvMIq9t5vX64FNv1Da/lwiSxRJsnYxESmV0t0V3mPuFMq79GVtyShQvRxJ6v6n0TdKBu9DGAUz0B21P09D test1@example.com",
+					},
+				},
+			},
+		},
+	}
+	sshKey1MC := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "test-ssh-key-1",
+			Labels: helpers.MCLabelForRole(layeredMCPName),
+		},
+		Spec: mcfgv1.MachineConfigSpec{
+			Config: runtime.RawExtension{
+				Raw: helpers.MarshalOrDie(sshKey1Config),
+			},
+		},
+	}
+	helpers.SetMetadataOnObject(t, sshKey1MC)
+	applyMC(t, cs, sshKey1MC)
+
+	// Wait for second MOSB to be created
+	t.Logf("Waiting for second build to be created")
+	var secondMOSBName string
+	err = wait.PollUntilContextTimeout(ctx, 2*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+		mosc, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().Get(ctx, moscName, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		currentAnnotation := mosc.Annotations[constants.CurrentMachineOSBuildAnnotationKey]
+		if currentAnnotation != "" && currentAnnotation != firstMOSB.Name {
+			secondMOSBName = currentAnnotation
+			return true, nil
+		}
+		return false, nil
+	})
+	require.NoError(t, err, "annotation did not update to new build name")
+
+	secondMOSB, err := cs.MachineconfigurationV1Interface.MachineOSBuilds().Get(ctx, secondMOSBName, metav1.GetOptions{})
+	require.NoError(t, err)
+	t.Logf("Second build created: %s (for %s)", secondMOSB.Name, secondMOSB.Spec.MachineConfig.Name)
+
+	// Wait for second build to complete
+	secondMOSB = waitForBuildToComplete(t, cs, secondMOSB)
+	secondImagePullspec := string(secondMOSB.Status.DigestedImagePushSpec)
+	t.Logf("Second build completed with image: %s", secondImagePullspec)
+
+	// Get the second rendered config
+	mcp, err = cs.MachineConfigPools().Get(ctx, layeredMCPName, metav1.GetOptions{})
+	require.NoError(t, err)
+	secondRenderedConfig := mcp.Spec.Configuration.Name
+	require.NotEqual(t, firstRenderedConfig, secondRenderedConfig, "should have new rendered config")
+
+	// Step 3: SIMULATE THE BUG - Manually set stale annotation
+	t.Logf("Step 3: Simulating bug - setting stale annotation to %s (pool is at %s)", firstMOSB.Name, secondRenderedConfig)
+	err = wait.PollUntilContextTimeout(ctx, 1*time.Second, 30*time.Second, true, func(ctx context.Context) (bool, error) {
+		mosc, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().Get(ctx, moscName, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		if mosc.Annotations == nil {
+			mosc.Annotations = make(map[string]string)
+		}
+		mosc.Annotations[constants.CurrentMachineOSBuildAnnotationKey] = firstMOSB.Name
+		_, err = cs.MachineconfigurationV1Interface.MachineOSConfigs().Update(ctx, mosc, metav1.UpdateOptions{})
+		if err != nil {
+			return false, nil
+		}
+		return true, nil
+	})
+	require.NoError(t, err, "failed to set stale annotation")
+
+	// Verify stale annotation is set
+	mosc, err = cs.MachineconfigurationV1Interface.MachineOSConfigs().Get(ctx, moscName, metav1.GetOptions{})
+	require.NoError(t, err)
+	staleAnnotation := mosc.Annotations[constants.CurrentMachineOSBuildAnnotationKey]
+	require.Equal(t, firstMOSB.Name, staleAnnotation, "stale annotation should be set")
+
+	// Step 4: Apply another layer-only MC -> triggers stale annotation detection
+	t.Logf("Step 4: Applying file MC to trigger stale annotation detection")
+	fileContents := "test-stale-annotation-file"
+	fileMode := 420 // 0644 in octal
+	fileConfig := ign3types.Config{
+		Ignition: ign3types.Ignition{
+			Version: "3.2.0",
+		},
+		Storage: ign3types.Storage{
+			Files: []ign3types.File{
+				{
+					Node: ign3types.Node{
+						Path: "/etc/test-stale-annotation",
+					},
+					FileEmbedded1: ign3types.FileEmbedded1{
+						Contents: ign3types.Resource{
+							Source: helpers.StrToPtr("data:," + fileContents),
+						},
+						Mode: &fileMode,
+					},
+				},
+			},
+		},
+	}
+	fileMC := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "test-file-layer-only",
+			Labels: helpers.MCLabelForRole(layeredMCPName),
+		},
+		Spec: mcfgv1.MachineConfigSpec{
+			Config: runtime.RawExtension{
+				Raw: helpers.MarshalOrDie(fileConfig),
+			},
+		},
+	}
+	helpers.SetMetadataOnObject(t, fileMC)
+	applyMC(t, cs, fileMC)
+
+	// Wait for MCO to render the third config
+	t.Logf("Waiting for MCO to render new config")
+	var thirdRenderedConfig string
+	err = wait.PollUntilContextTimeout(ctx, 2*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+		mcp, err := cs.MachineConfigPools().Get(ctx, layeredMCPName, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		currentRendered := mcp.Spec.Configuration.Name
+		if currentRendered != secondRenderedConfig {
+			thirdRenderedConfig = currentRendered
+			return true, nil
+		}
+		return false, nil
+	})
+	require.NoError(t, err, "pool did not get new rendered config")
+	t.Logf("Third rendered config: %s", thirdRenderedConfig)
+
+	// Step 5: VALIDATE THE FIX
+	t.Logf("Step 5: Validating fix - checking if stale annotation is cleared")
+
+	// Stale annotation should be cleared or updated (not pointing to first build)
+	var clearedAnnotation string
+	err = wait.PollUntilContextTimeout(ctx, 2*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+		mosc, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().Get(ctx, moscName, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		clearedAnnotation = mosc.Annotations[constants.CurrentMachineOSBuildAnnotationKey]
+		return clearedAnnotation != firstMOSB.Name, nil
+	})
+	require.NoError(t, err, "stale annotation was not cleared")
+	t.Logf("Stale annotation was cleared/updated: changed from %s to %s", firstMOSB.Name, clearedAnnotation)
+
+	// Third MOSB should be created for the new rendered config
+	t.Logf("Validating fix - checking if third build is created")
+	var thirdMOSB *mcfgv1.MachineOSBuild
+	err = wait.PollUntilContextTimeout(ctx, 2*time.Second, 3*time.Minute, true, func(ctx context.Context) (bool, error) {
+		mosbList, err := cs.MachineconfigurationV1Interface.MachineOSBuilds().List(ctx, metav1.ListOptions{
+			LabelSelector: "machineconfiguration.openshift.io/target-machine-config-pool=" + layeredMCPName,
+		})
+		if err != nil {
+			return false, err
+		}
+
+		for i := range mosbList.Items {
+			if mosbList.Items[i].Spec.MachineConfig.Name == thirdRenderedConfig {
+				thirdMOSB = &mosbList.Items[i]
+				return true, nil
+			}
+		}
+		return false, nil
+	})
+	require.NoError(t, err, "third MachineOSBuild was not created for %s", thirdRenderedConfig)
+	require.NotNil(t, thirdMOSB, "third MOSB should exist")
+	t.Logf("Third build created: %s (for %s)", thirdMOSB.Name, thirdMOSB.Spec.MachineConfig.Name)
+
+	// Verify it's a layer-only build (Succeeded=True immediately, no job)
+	thirdMOSB = waitForBuildToComplete(t, cs, thirdMOSB)
+	t.Logf("Third build completed (layer-only, no image rebuild)")
+
+	// Verify no job was created for the layer-only build
+	jobName := "build-" + thirdMOSB.Name
+	kubeassert.JobDoesNotExist(jobName)
+
+	// Final verification: pool should not be stuck
+	mcp, err = cs.MachineConfigPools().Get(ctx, layeredMCPName, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	updatedCond := apihelpers.GetMachineConfigPoolCondition(mcp.Status, mcfgv1.MachineConfigPoolUpdated)
+	updatingCond := apihelpers.GetMachineConfigPoolCondition(mcp.Status, mcfgv1.MachineConfigPoolUpdating)
+	degradedCond := apihelpers.GetMachineConfigPoolCondition(mcp.Status, mcfgv1.MachineConfigPoolDegraded)
+
+	// Assert pool is not degraded
+	require.False(t, degradedCond != nil && degradedCond.Status == corev1.ConditionTrue,
+		"Pool should not be degraded after fix, but got degraded=%v with message: %s",
+		degradedCond != nil && degradedCond.Status == corev1.ConditionTrue,
+		func() string {
+			if degradedCond != nil {
+				return degradedCond.Message
+			}
+			return ""
+		}())
+
+	// Assert pool is either updating or updated (not stuck)
+	isUpdating := updatingCond != nil && updatingCond.Status == corev1.ConditionTrue
+	isUpdated := updatedCond != nil && updatedCond.Status == corev1.ConditionTrue
+	require.True(t, isUpdating || isUpdated,
+		"Pool should be either updating or updated (not stuck), but got updating=%v, updated=%v",
+		isUpdating, isUpdated)
+
+	t.Logf("OCPBUGS-84150 fix validated: stale annotation cleared, third MOSB created, pool not stuck")
+}
