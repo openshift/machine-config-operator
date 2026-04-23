@@ -1134,6 +1134,29 @@ func (b *buildReconciler) syncMachineOSBuild(ctx context.Context, mosb *mcfgv1.M
 			}
 			if oldRendered != newRendered && !needsImageRebuild {
 				klog.Infof("MachineOSBuild %q: No new image needs to be created, reusing last MOSB", mosb.Name)
+
+				// If this is a layer-only MOSB and it has no status yet, populate it from the previous MOSB
+				if mosb.Status.DigestedImagePushSpec == "" {
+					klog.Infof("MachineOSBuild %q: layer-only MOSB has no status, populating from previous MOSB", mosb.Name)
+					mosc, err := utils.GetMachineOSConfigForMachineOSBuild(mosb, b.utilListers())
+					if err != nil {
+						return err
+					}
+
+					// Find the previous MOSB to copy status from
+					prevPullSpec := mosc.Status.CurrentImagePullSpec
+					if prevPullSpec == "" {
+						return fmt.Errorf("MachineOSBuild %q: cannot populate status, MOSC has no CurrentImagePullSpec yet - will retry", mosb.Name)
+					}
+
+					oldMOSB, err := utils.GetMachineOSBuildForImagePullspec(string(prevPullSpec), b.utilListers())
+					if err != nil {
+						return fmt.Errorf("MachineOSBuild %q: failed to find previous MOSB for pullspec %q: %w", mosb.Name, prevPullSpec, err)
+					}
+
+					// Reuse the existing reuseImageForNewMOSB logic
+					return b.reuseImageForNewMOSB(ctx, mosc, oldMOSB)
+				}
 				return nil
 			}
 		}
@@ -1347,18 +1370,24 @@ func (b *buildReconciler) reconcilePoolChange(ctx context.Context, mcp *mcfgv1.M
 	// old pool
 	old := mcp.DeepCopy()
 	old.Spec.Configuration.Name = mcp.Status.Configuration.Name
-	if firstOptIn == "" {
-		return fmt.Errorf("no current build annotation on MachineOSConfig %q", mosc.Name)
-	}
 
+	// Always determine if this change requires an image rebuild or is layer-only
 	needsImageRebuild, err := b.reconcileImageRebuild(old, mcp)
 	if err != nil {
 		return err
 	}
 
+	// If annotation is empty, this is either:
+	// 1. First time opting into OCL, or
+	// 2. Node controller cleared a stale annotation
+	// In both cases, we need to create/continue a build
+	missingAnnotation := firstOptIn == ""
+
 	// This is our trigger point
-	if (oldRendered != newRendered && needsImageRebuild) || firstOptIn == "" {
-		klog.Infof("pool %q: rendered config changed and requires an image rebuild. Verifying if a valid build already exists...", mcp.Name)
+	// Create/continue a build if:
+	// 1. Config changed AND needs image rebuild, OR
+	// 2. Annotation is missing (first opt-in or cleared due to staleness)
+	if (oldRendered != newRendered && needsImageRebuild) || missingAnnotation {
 		mc, err := b.machineConfigLister.Get(mcp.Spec.Configuration.Name)
 		if err != nil {
 			return fmt.Errorf("could not get MachineConfig %q for MachineConfigPool %q: %w", mcp.Spec.Configuration.Name, mcp.Name, err)
@@ -1413,7 +1442,7 @@ func (b *buildReconciler) reconcilePoolChange(ctx context.Context, mcp *mcfgv1.M
 		}
 
 	} else if oldRendered != newRendered && !needsImageRebuild {
-		klog.Infof("pool %q: No new image needs to be created, reusing last MOSB", mcp.Name)
+		klog.Infof("pool %q: No new image needs to be created, reusing last MOSB (layer-only change)", mcp.Name)
 		prevPullSpec := mosc.Status.CurrentImagePullSpec
 		oldMOSB, err := utils.GetMachineOSBuildForImagePullspec(string(prevPullSpec), b.utilListers())
 		if err != nil {
@@ -1421,8 +1450,6 @@ func (b *buildReconciler) reconcilePoolChange(ctx context.Context, mcp *mcfgv1.M
 		}
 		return b.reuseImageForNewMOSB(ctx, mosc, oldMOSB)
 	}
-
-	klog.Infof("pool %q: detected extension/kernel/kargs/OSImageURL change → will rebuild image", mcp.Name)
 	return b.createNewMachineOSBuildOrReuseExisting(ctx, mosc, needsImageRebuild)
 
 }
