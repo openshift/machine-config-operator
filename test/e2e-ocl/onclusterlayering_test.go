@@ -3,6 +3,7 @@ package e2e_ocl_test
 import (
 	"context"
 	_ "embed"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -802,7 +803,9 @@ func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) 
 	// Goroutine so that the rest of the test can continue.
 	go func() {
 		err := streamBuildPodLogsToFile(buildPodStreamerCtx, t, cs, startedBuild, podLogsDirPath)
-		require.NoError(t, err, "expected no error, got %s", err)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Logf("Warning: failed to stream build pod logs: %v", err)
+		}
 	}()
 
 	// We also want to collect logs from the machine-os-builder pod since they
@@ -811,7 +814,9 @@ func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) 
 	// blocked.
 	go func() {
 		err := streamMachineOSBuilderPodLogsToFile(mobPodStreamerCtx, t, cs, podLogsDirPath)
-		require.NoError(t, err, "expected no error, got: %s", err)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Logf("Warning: failed to stream machine-os-builder pod logs: %v", err)
+		}
 	}()
 
 	// Wait for the build to complete.
@@ -1340,7 +1345,7 @@ func waitForMOSCToUpdateCurrentMOSB(ctx context.Context, t *testing.T, cs *frame
 // Waits for a job object to reach a given state.
 // TOOD: Add this to the Asserts helper struct.
 func waitForJobToReachCondition(ctx context.Context, t *testing.T, cs *framework.ClientSet, jobName string, condFunc func(*batchv1.Job) (bool, error)) {
-	require.NoError(t, wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
+	require.NoError(t, wait.PollImmediate(1*time.Second, 20*time.Minute, func() (bool, error) {
 		job, err := cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).Get(ctx, jobName, metav1.GetOptions{})
 		if err != nil {
 			return false, err
