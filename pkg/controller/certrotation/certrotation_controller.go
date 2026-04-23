@@ -3,16 +3,18 @@ package certrotationcontroller
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/vincent-petithory/dataurl"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
@@ -23,6 +25,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
@@ -31,6 +34,7 @@ import (
 	"github.com/openshift/api/features"
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
 	machineclientset "github.com/openshift/client-go/machine/clientset/versioned"
+	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 
 	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/openshift/library-go/pkg/crypto"
@@ -59,6 +63,7 @@ const (
 type CertRotationController struct {
 	kubeClient   kubernetes.Interface
 	configClient configclientset.Interface
+	mcfgClient   mcfgclientset.Interface
 	aroClient    aroclientset.Interface
 
 	mcoConfigMapInfomer coreinformersv1.ConfigMapInformer
@@ -92,6 +97,7 @@ func New(
 	mcoConfigMapInfomer coreinformersv1.ConfigMapInformer,
 	infraInformer configinformers.InfrastructureInformer,
 	featureGatesHandler ctrlcommon.FeatureGatesHandler,
+	mcfgClient mcfgclientset.Interface,
 ) (*CertRotationController, error) {
 
 	recorder := events.NewLoggingEventRecorder(componentName, clock.RealClock{})
@@ -99,6 +105,7 @@ func New(
 	c := &CertRotationController{
 		kubeClient:          kubeClient,
 		configClient:        configClient,
+		mcfgClient:          mcfgClient,
 		aroClient:           aroClient,
 		recorder:            recorder,
 		maoSecretInformer:   maoSecretInformer,
@@ -346,8 +353,6 @@ func (c *CertRotationController) addConfigMap(obj interface{}) {
 
 	go func() {
 		c.reconcileUserDataSecrets()
-	}()
-	go func() {
 		c.reconcileIRICertificate()
 	}()
 }
@@ -369,11 +374,8 @@ func (c *CertRotationController) updateConfigMap(oldCM, newCM interface{}) {
 
 	klog.Infof("configMap %s updated, reconciling user data secrets and IRI certificate", oldConfigMap.Name)
 
-	// Reconcile all user data secrets
 	go func() {
 		c.reconcileUserDataSecrets()
-	}()
-	go func() {
 		c.reconcileIRICertificate()
 	}()
 }
@@ -490,101 +492,130 @@ func (c *CertRotationController) reconcileIRICertificate() {
 		klog.V(4).Infof("Skipping IRI certificate reconciliation: %s feature gate is not enabled", features.FeatureGateNoRegistryClusterInstall)
 		return
 	}
+
+	// Check that the IRI cluster resource exists to confirm the feature is actually enabled
+	if _, err := c.mcfgClient.MachineconfigurationV1alpha1().InternalReleaseImages().Get(context.TODO(), ctrlcommon.InternalReleaseImageInstanceName, metav1.GetOptions{}); err != nil {
+		if k8serrors.IsNotFound(err) {
+			klog.V(4).Infof("Skipping IRI certificate reconciliation: InternalReleaseImage %q not found", ctrlcommon.InternalReleaseImageInstanceName)
+		} else {
+			klog.Errorf("Error checking InternalReleaseImage %q resource: %v", ctrlcommon.InternalReleaseImageInstanceName, err)
+		}
+		return
+	}
+
 	klog.Infof("Reconciling IRI certificate")
 
-	// Get the MCS CA secret (fresh get, not from lister)
-	caSecret, err := c.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), ctrlcommon.MachineConfigServerCAName, metav1.GetOptions{})
+	ca, err := c.loadMCSCA()
 	if err != nil {
-		klog.Errorf("Cannot get MCS CA secret for IRI cert reconciliation: %v", err)
+		klog.Errorf("Cannot load MCS CA for IRI cert reconciliation: %v", err)
 		return
 	}
 
-	caCert := caSecret.Data[corev1.TLSCertKey]
-	caKey := caSecret.Data[corev1.TLSPrivateKeyKey]
-	if len(caCert) == 0 || len(caKey) == 0 {
-		klog.Errorf("MCS CA secret %s is missing cert or key data", ctrlcommon.MachineConfigServerCAName)
-		return
-	}
-
-	// Load the CA
-	ca, err := crypto.GetCAFromBytes(caCert, caKey)
+	hostnames, err := c.getIRIHostnames()
 	if err != nil {
-		klog.Errorf("Cannot load MCS CA for IRI cert generation: %v", err)
+		klog.Errorf("Cannot determine IRI hostnames: %v", err)
 		return
 	}
 
-	// Check if the existing IRI cert is already valid under the current CA
 	iriSecret, err := c.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), ctrlcommon.InternalReleaseImageTLSSecretName, metav1.GetOptions{})
-	secretExists := err == nil
-	if secretExists {
-		if c.isIRICertValid(iriSecret, ca) {
-			klog.Infof("IRI TLS certificate is still valid under the current MCS CA, skipping rotation")
-			return
-		}
-	} else if !errors.IsNotFound(err) {
-		klog.Errorf("Cannot get IRI TLS secret: %v", err)
+	if err != nil {
+		klog.Errorf("Cannot get IRI TLS secret %s: %v", ctrlcommon.InternalReleaseImageTLSSecretName, err)
 		return
 	}
 
-	// Get hostnames from the dynamic serving rotation (includes api-int hostname and platform VIPs)
-	hostnames := c.hostnamesRotation.GetHostnames()
-	if len(hostnames) == 0 {
-		klog.Errorf("No hostnames available for IRI cert generation")
+	if c.isIRICertValid(iriSecret, ca, hostnames) {
+		klog.Infof("IRI TLS certificate is still valid under the current MCS CA, skipping rotation")
 		return
 	}
-	// IRI registry also serves locally on each master node, matching the installer's SANs
-	hostnames = append(hostnames, "localhost", "127.0.0.1", "::1")
 
-	// Generate a new IRI TLS certificate signed by the MCS CA
-	certConfig, err := ca.MakeServerCert(sets.New(hostnames...), iriTLSKeyExpiry)
+	certPEM, keyPEM, err := c.generateIRICert(ca, hostnames)
 	if err != nil {
 		klog.Errorf("Cannot generate IRI TLS certificate: %v", err)
 		return
 	}
 
-	certPEM, keyPEM, err := certConfig.GetPEMBytes()
-	if err != nil {
-		klog.Errorf("Cannot get PEM bytes for IRI TLS certificate: %v", err)
-		return
-	}
-
-	if !secretExists {
-		// Create new secret
-		newSecret := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      ctrlcommon.InternalReleaseImageTLSSecretName,
-				Namespace: ctrlcommon.MCONamespace,
-			},
-			Type: corev1.SecretTypeTLS,
-			Data: map[string][]byte{
-				corev1.TLSCertKey:       certPEM,
-				corev1.TLSPrivateKeyKey: keyPEM,
-			},
+	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		current, err := c.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), ctrlcommon.InternalReleaseImageTLSSecretName, metav1.GetOptions{})
+		if err != nil {
+			return err
 		}
-		if _, err := c.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Create(context.TODO(), newSecret, metav1.CreateOptions{}); err != nil {
-			klog.Errorf("Cannot create IRI TLS secret: %v", err)
-			return
+		updated := current.DeepCopy()
+		if updated.Data == nil {
+			updated.Data = map[string][]byte{}
 		}
-		klog.Infof("Successfully created IRI TLS secret %s", ctrlcommon.InternalReleaseImageTLSSecretName)
-		return
-	}
-
-	// Update existing secret
-	updatedSecret := iriSecret.DeepCopy()
-	updatedSecret.Data[corev1.TLSCertKey] = certPEM
-	updatedSecret.Data[corev1.TLSPrivateKeyKey] = keyPEM
-	if _, err := c.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Update(context.TODO(), updatedSecret, metav1.UpdateOptions{}); err != nil {
+		updated.Data[corev1.TLSCertKey] = certPEM
+		updated.Data[corev1.TLSPrivateKeyKey] = keyPEM
+		_, err = c.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Update(context.TODO(), updated, metav1.UpdateOptions{})
+		return err
+	}); err != nil {
 		klog.Errorf("Cannot update IRI TLS secret: %v", err)
 		return
 	}
 	klog.Infof("Successfully updated IRI TLS secret %s", ctrlcommon.InternalReleaseImageTLSSecretName)
 }
 
-// isIRICertValid checks whether the existing IRI certificate is signed by the given CA
-// and has not expired.
-func (c *CertRotationController) isIRICertValid(iriSecret *corev1.Secret, ca *crypto.CA) bool {
+// loadMCSCA retrieves the MCS CA secret and returns the parsed CA.
+func (c *CertRotationController) loadMCSCA() (*crypto.CA, error) {
+	caSecret, err := c.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), ctrlcommon.MachineConfigServerCAName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("cannot get MCS CA secret: %w", err)
+	}
+
+	caCert := caSecret.Data[corev1.TLSCertKey]
+	caKey := caSecret.Data[corev1.TLSPrivateKeyKey]
+	if len(caCert) == 0 || len(caKey) == 0 {
+		return nil, fmt.Errorf("MCS CA secret %s is missing cert or key data", ctrlcommon.MachineConfigServerCAName)
+	}
+
+	return crypto.GetCAFromBytes(caCert, caKey)
+}
+
+// getIRIHostnames returns the SANs for the IRI TLS certificate: apiInt hostname + localhost.
+func (c *CertRotationController) getIRIHostnames() ([]string, error) {
+	cfg, err := c.infraLister.Get("cluster")
+	if err != nil {
+		return nil, fmt.Errorf("unable to get cluster infrastructure resource: %w", err)
+	}
+
+	if cfg.Status.APIServerInternalURL == "" {
+		return nil, fmt.Errorf("no APIServerInternalURL found in cluster infrastructure resource")
+	}
+
+	apiserverIntURL, err := url.Parse(cfg.Status.APIServerInternalURL)
+	if err != nil {
+		return nil, fmt.Errorf("cannot parse APIServerInternalURL: %w", err)
+	}
+
+	return []string{apiserverIntURL.Hostname(), "localhost", "127.0.0.1", "::1"}, nil
+}
+
+// generateIRICert generates a new IRI TLS certificate signed by the given CA.
+func (c *CertRotationController) generateIRICert(ca *crypto.CA, hostnames []string) (certPEM, keyPEM []byte, err error) {
+	certConfig, err := ca.MakeServerCert(sets.New(hostnames...), iriTLSKeyExpiry)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot generate IRI TLS certificate: %w", err)
+	}
+
+	certPEM, keyPEM, err = certConfig.GetPEMBytes()
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot get PEM bytes for IRI TLS certificate: %w", err)
+	}
+
+	return certPEM, keyPEM, nil
+}
+
+// isIRICertValid checks whether the existing IRI certificate is signed by the given CA,
+// has not expired, and covers all expected hostnames in its SANs.
+func (c *CertRotationController) isIRICertValid(iriSecret *corev1.Secret, ca *crypto.CA, expectedHostnames []string) bool {
 	certPEM := iriSecret.Data[corev1.TLSCertKey]
-	if len(certPEM) == 0 {
+	keyPEM := iriSecret.Data[corev1.TLSPrivateKeyKey]
+	if len(certPEM) == 0 || len(keyPEM) == 0 {
+		return false
+	}
+
+	// Verify cert and key form a valid keypair before doing anything else
+	if _, err := tls.X509KeyPair(certPEM, keyPEM); err != nil {
+		klog.Infof("Existing IRI TLS secret has an invalid keypair: %v", err)
 		return false
 	}
 
@@ -615,6 +646,19 @@ func (c *CertRotationController) isIRICertValid(iriSecret *corev1.Secret, ca *cr
 	})
 	if err != nil {
 		klog.Infof("Existing IRI TLS certificate is not valid under current MCS CA: %v", err)
+		return false
+	}
+
+	// Verify the cert SANs exactly match the expected hostname set; any drift
+	// (missing or extra SANs) means the cert must be rotated.
+	// MakeServerCert adds all hostnames to DNSNames and also adds IP strings to
+	// IPAddresses, so compare a unified set of all SAN strings.
+	certSANs := sets.New(iriCert.DNSNames...)
+	for _, ip := range iriCert.IPAddresses {
+		certSANs.Insert(ip.String())
+	}
+	if !certSANs.Equal(sets.New(expectedHostnames...)) {
+		klog.Infof("IRI TLS certificate SANs differ from expected set, rotation needed")
 		return false
 	}
 
