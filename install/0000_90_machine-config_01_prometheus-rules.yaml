@@ -15,6 +15,22 @@ spec:
       rules:
         - expr: sum(os_image_url_override)
           record: os_image_url_override:sum
+    - name: runc-deprecated
+      rules:
+        - alert: RuncDeprecated
+          expr: |
+            count(container_runtime_crio_default_runtime{runtime="runc"}) > 0
+          for: 10m
+          labels:
+            namespace: openshift-machine-config-operator
+            severity: info
+          annotations:
+            summary: "This cluster is using the deprecated runc container runtime"
+            description: >-
+              The runc OCI runtime has been deprecated and support will be removed in a future release. Migrate to crun before upgrading to a future OpenShift release.
+              See https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/machine_configuration/machine-configs-custom#config-container-runtime_machine-configs-custom
+              for migration steps.
+            runbook_url: https://github.com/openshift/runbooks/blob/master/alerts/machine-config-operator/RuncDeprecated.md
     - name: mcc-drain-error
       rules:
         - alert: MCCDrainError
