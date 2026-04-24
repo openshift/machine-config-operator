@@ -23,6 +23,7 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	iripkg "github.com/openshift/machine-config-operator/pkg/controller/internalreleaseimage"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
 )
@@ -254,6 +255,86 @@ func TestIRIAuth_AuthenticatedRequestSucceeds(t *testing.T) {
 
 	statusCode := curlIRIRegistry(t, cs, node, baseDomain, "-H", "Authorization: "+authHeader)
 	require.Equal(t, "200", statusCode, "authenticated request should succeed")
+}
+
+func TestIRIAuth_CredentialRotation(t *testing.T) {
+	cs := framework.NewClientSet("")
+	ctx := context.Background()
+
+	authSecret, err := cs.Secrets(ctrlcommon.MCONamespace).Get(ctx, ctrlcommon.InternalReleaseImageAuthSecretName, v1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		t.Skip("IRI auth secret not found, authentication is not enabled")
+	}
+	require.NoError(t, err)
+
+	originalPassword := string(authSecret.Data["password"])
+	originalHtpasswd := string(authSecret.Data["htpasswd"])
+	require.NotEmpty(t, originalPassword)
+
+	baseDomain := getBaseDomain(t, cs)
+
+	// Restore credentials on test completion.
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		defer cancel()
+
+		secret, err := cs.Secrets(ctrlcommon.MCONamespace).Get(cleanupCtx, ctrlcommon.InternalReleaseImageAuthSecretName, v1.GetOptions{})
+		if err != nil {
+			t.Errorf("cleanup: failed to get auth secret: %v", err)
+			return
+		}
+		secret.Data["password"] = []byte(originalPassword)
+		secret.Data["htpasswd"] = []byte(originalHtpasswd)
+		if _, err := cs.Secrets(ctrlcommon.MCONamespace).Update(cleanupCtx, secret, v1.UpdateOptions{}); err != nil {
+			t.Errorf("cleanup: failed to restore auth secret: %v", err)
+			return
+		}
+		t.Logf("Cleanup: restored auth secret, waiting for MCP rollout...")
+		if err := helpers.WaitForPoolCompleteAny(t, cs, "master"); err != nil {
+			t.Errorf("cleanup: MCP rollout did not complete: %v", err)
+		}
+		t.Logf("Cleanup: credential restoration complete")
+	})
+
+	// Trigger rotation by writing a new password.
+	newPassword := fmt.Sprintf("rotated-%d", time.Now().UnixNano())
+	authSecret.Data["password"] = []byte(newPassword)
+	delete(authSecret.Data, "htpasswd") // controller will regenerate
+	_, err = cs.Secrets(ctrlcommon.MCONamespace).Update(ctx, authSecret, v1.UpdateOptions{})
+	require.NoError(t, err)
+	t.Logf("Updated auth secret password to trigger rotation")
+
+	// Wait for the controller to regenerate htpasswd.
+	t.Logf("Waiting for controller to regenerate htpasswd...")
+	err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+		secret, err := cs.Secrets(ctrlcommon.MCONamespace).Get(ctx, ctrlcommon.InternalReleaseImageAuthSecretName, v1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		return iripkg.HtpasswdMatchesPassword(string(secret.Data["htpasswd"]), ctrlcommon.IRIRegistryUsername, newPassword), nil
+	})
+	require.NoError(t, err, "timed out waiting for htpasswd regeneration")
+	t.Logf("Controller regenerated htpasswd")
+
+	// Poll until the new credentials are accepted. The registry only accepts
+	// them once MCD has written the new htpasswd file to the node, so this
+	// also serves as the rollout completion check.
+	node := helpers.GetRandomNode(t, cs, "master")
+	newAuthHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(ctrlcommon.IRIRegistryUsername+":"+newPassword))
+	oldAuthHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(ctrlcommon.IRIRegistryUsername+":"+originalPassword))
+
+	t.Logf("Waiting for new credentials to be accepted on node...")
+	err = wait.PollUntilContextTimeout(ctx, 10*time.Second, 10*time.Minute, true, func(ctx context.Context) (bool, error) {
+		return curlIRIRegistry(t, cs, node, baseDomain, "-H", "Authorization: "+newAuthHeader) == "200", nil
+	})
+	require.NoError(t, err, "timed out waiting for new credentials to be accepted after rotation")
+	t.Logf("New credentials accepted")
+
+	statusCode := curlIRIRegistry(t, cs, node, baseDomain, "-H", "Authorization: "+oldAuthHeader)
+	require.Equal(t, "401", statusCode, "old credentials should be rejected after rotation")
+	t.Logf("Old credentials correctly rejected with %s", statusCode)
+
+	t.Logf("Credential rotation completed successfully")
 }
 
 func TestIRIController_ShouldPreventDeletionWhenInUse(t *testing.T) {

@@ -35,7 +35,7 @@ func verifyInternalReleaseMasterMachineConfig(t *testing.T, mc *mcfgv1.MachineCo
 	verifyIgnitionFile(t, &ignCfg, "/etc/pki/ca-trust/source/anchors/iri-root-ca.crt", "iri-root-ca-data")
 	verifyIgnitionFile(t, &ignCfg, "/etc/iri-registry/certs/tls.key", "iri-tls-key")
 	verifyIgnitionFile(t, &ignCfg, "/etc/iri-registry/certs/tls.crt", "iri-tls-crt")
-	verifyIgnitionFile(t, &ignCfg, "/etc/iri-registry/auth/htpasswd", "openshift:$2y$05$testhash")
+	verifyIgnitionFileMatches(t, &ignCfg, "/etc/iri-registry/auth/htpasswd", ctrlcommon.IRIRegistryUsername, "testpassword")
 	verifyIgnitionFileContains(t, &ignCfg, "/usr/local/bin/load-registry-image.sh", "docker-registry-image-pullspec")
 	assert.Contains(t, *ignCfg.Systemd.Units[0].Contents, `REGISTRY_STORAGE_MAINTENANCE_READONLY={"enabled":true}`)
 	assert.NotContains(t, *ignCfg.Systemd.Units[0].Contents, "REGISTRY_STORAGE_MAINTENANCE_READONLY_ENABLED")
@@ -66,6 +66,15 @@ func verifyIgnitionFileContains(t *testing.T, ignCfg *ign3types.Config, path str
 	assert.Contains(t, string(data), expectedContent, path)
 }
 
+// verifyIgnitionFileMatches verifies that the ignition file at path contains a
+// valid htpasswd entry matching the given username and password.
+func verifyIgnitionFileMatches(t *testing.T, ignCfg *ign3types.Config, path, username, password string) {
+	t.Helper()
+	data, err := ctrlcommon.GetIgnitionFileDataByPath(ignCfg, path)
+	assert.NoError(t, err)
+	assert.True(t, HtpasswdMatchesPassword(string(data), username, password),
+		"htpasswd at %s should match %s:<password>", path, username)
+}
 
 // objs is an helper func to improve the test readability.
 func objs(builders ...objBuilder) func() []runtime.Object {
@@ -247,7 +256,14 @@ func pullSecret() *secretBuilder {
 	}
 }
 
-func iriRegistryCredentialsSecret() *secretBuilder {
+// iriAuthSecret returns an auth secret with a testpassword and pre-generated
+// bcrypt htpasswd, suitable for both bootstrap and controller tests.
+// The controller's reconcileHtpasswd will verify the htpasswd matches and leave it unchanged.
+func iriAuthSecret() *secretBuilder {
+	htpasswd, err := generateHtpasswdEntry(ctrlcommon.IRIRegistryUsername, "testpassword")
+	if err != nil {
+		panic(err)
+	}
 	return &secretBuilder{
 		obj: &corev1.Secret{
 			ObjectMeta: v1.ObjectMeta{
@@ -255,8 +271,8 @@ func iriRegistryCredentialsSecret() *secretBuilder {
 				Name:      ctrlcommon.InternalReleaseImageAuthSecretName,
 			},
 			Data: map[string][]byte{
-				"htpasswd": []byte("openshift:$2y$05$testhash"),
 				"password": []byte("testpassword"),
+				"htpasswd": []byte(htpasswd),
 			},
 		},
 	}

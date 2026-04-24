@@ -55,6 +55,7 @@ var (
 // Controller defines the InternalReleaseImage controller.
 type Controller struct {
 	client        mcfgclientset.Interface
+	kubeClient    clientset.Interface
 	eventRecorder record.EventRecorder
 
 	syncHandler                 func(mcp string) error
@@ -94,6 +95,7 @@ func New(
 
 	ctrl := &Controller{
 		client:        mcfgClient,
+		kubeClient:    kubeClient,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-internalreleaseimagecontroller"})),
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
@@ -374,6 +376,14 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) (syncErr error) {
 		return fmt.Errorf("could not get Secret %s: %w", ctrlcommon.InternalReleaseImageAuthSecretName, err)
 	}
 
+	// Ensure the htpasswd field is in sync with the password field. If the
+	// password was rotated, this generates a new bcrypt hash and updates the
+	// secret before re-rendering the MachineConfig.
+	iriRegistryCredentialsSecret, err = reconcileHtpasswd(ctrl.kubeClient, iriRegistryCredentialsSecret)
+	if err != nil {
+		return fmt.Errorf("failed to reconcile IRI registry htpasswd: %w", err)
+	}
+
 	for _, role := range SupportedRoles {
 		r := NewRendererByRole(role, iri, iriSecret, iriRegistryCredentialsSecret, cconfig)
 
@@ -531,7 +541,6 @@ func (ctrl *Controller) addFinalizerToInternalReleaseImage(iri *mcfgv1alpha1.Int
 	_, err := ctrl.client.MachineconfigurationV1alpha1().InternalReleaseImages().Update(context.TODO(), iri, metav1.UpdateOptions{})
 	return err
 }
-
 func (ctrl *Controller) cascadeDelete(iri *mcfgv1alpha1.InternalReleaseImage) error {
 	mcName := iri.GetFinalizers()[0]
 	err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), mcName, metav1.DeleteOptions{})
