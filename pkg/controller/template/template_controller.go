@@ -124,10 +124,17 @@ func New(
 
 	// Watch the IRI auth secret in the MCO namespace so that when credentials
 	// are rotated the pull secret rendered into 00-master/00-worker is updated.
-	iriSecretsInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    ctrl.addSecret,
-		UpdateFunc: ctrl.updateSecret,
-	})
+	// Both informers are nil when the NoRegistryClusterInstall feature gate is
+	// off (the CRD doesn't exist on those clusters).
+	if iriSecretsInformer != nil {
+		iriSecretsInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc:    ctrl.addSecret,
+			UpdateFunc: ctrl.updateSecret,
+		})
+		ctrl.iriSecretsInformerSynced = iriSecretsInformer.Informer().HasSynced
+	} else {
+		ctrl.iriSecretsInformerSynced = func() bool { return true }
+	}
 
 	apiserverInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addAPIServer,
@@ -141,10 +148,14 @@ func New(
 	ctrl.ccLister = ccInformer.Lister()
 	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
 	ctrl.secretsInformerSynced = secretsInformer.Informer().HasSynced
-	ctrl.iriSecretsInformerSynced = iriSecretsInformer.Informer().HasSynced
-	ctrl.iriInformerSynced = iriInformer.Informer().HasSynced
 
-	ctrl.iriMerger = ctrlcommon.NewIRISecretMerger(iriSecretsInformer.Lister(), ctrl.ccLister, iriInformer.Lister(), fgHandler)
+	if iriInformer != nil {
+		ctrl.iriInformerSynced = iriInformer.Informer().HasSynced
+		ctrl.iriMerger = ctrlcommon.NewIRISecretMerger(iriSecretsInformer.Lister(), ctrl.ccLister, iriInformer.Lister(), fgHandler)
+	} else {
+		ctrl.iriInformerSynced = func() bool { return true }
+		ctrl.iriMerger = ctrlcommon.NewIRISecretMerger(nil, ctrl.ccLister, nil, fgHandler)
+	}
 
 	ctrl.apiserverLister = apiserverInformer.Lister()
 	ctrl.apiserverListerSynced = apiserverInformer.Informer().HasSynced

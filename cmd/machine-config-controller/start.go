@@ -7,6 +7,7 @@ import (
 	"os"
 
 	features "github.com/openshift/api/features"
+	mcfginformersv1alpha1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	bootimagecontroller "github.com/openshift/machine-config-operator/pkg/controller/bootimage"
@@ -23,6 +24,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/klog/v2"
 )
@@ -201,6 +203,16 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 }
 
 func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controller {
+	// Only watch IRI informers when the feature gate is enabled. The
+	// InternalReleaseImages CRD is not installed on clusters where the gate is
+	// off, so the informer list call would fail and WaitForCacheSync in the
+	// template controller would block forever.
+	var iriSecretsInformer coreinformersv1.SecretInformer
+	var iriInformer mcfginformersv1alpha1.InternalReleaseImageInformer
+	if ctx.FeatureGatesHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
+		iriSecretsInformer = ctx.KubeInformerFactory.Core().V1().Secrets()
+		iriInformer = ctx.InformerFactory.Machineconfiguration().V1alpha1().InternalReleaseImages()
+	}
 
 	var controllers []ctrlcommon.Controller
 	controllers = append(controllers,
@@ -209,8 +221,8 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			rootOpts.templates,
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 			ctx.OpenShiftConfigKubeNamespacedInformerFactory.Core().V1().Secrets(),
-			ctx.KubeInformerFactory.Core().V1().Secrets(),
-			ctx.InformerFactory.Machineconfiguration().V1alpha1().InternalReleaseImages(),
+			iriSecretsInformer,
+			iriInformer,
 			ctx.ConfigInformerFactory.Config().V1().APIServers(),
 			ctx.ClientBuilder.KubeClientOrDie("template-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("template-controller"),
