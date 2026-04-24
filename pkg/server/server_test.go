@@ -13,7 +13,11 @@ import (
 
 	"github.com/coreos/go-semver/semver"
 	ign2 "github.com/coreos/ignition/config/v2_2"
-	ign3 "github.com/coreos/ignition/v2/config/v3_5"
+	ign3_1 "github.com/coreos/ignition/v2/config/v3_1"
+	ign3_2 "github.com/coreos/ignition/v2/config/v3_2"
+	ign3_3 "github.com/coreos/ignition/v2/config/v3_3"
+	ign3_4 "github.com/coreos/ignition/v2/config/v3_4"
+	ign3_5 "github.com/coreos/ignition/v2/config/v3_5"
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	yaml "github.com/ghodss/yaml"
 	"github.com/stretchr/testify/assert"
@@ -40,6 +44,31 @@ const (
 var (
 	testKubeConfig = fmt.Sprintf("%s/kubeconfig", testDir)
 )
+
+func parseIgnitionByVersion(raw []byte, version *semver.Version) (string, error) {
+	switch {
+	case version.Major == 2:
+		cfg, _, err := ign2.Parse(raw)
+		return cfg.Ignition.Version, err
+	case version.Equal(*semver.New("3.1.0")):
+		cfg, _, err := ign3_1.Parse(raw)
+		return cfg.Ignition.Version, err
+	case version.Equal(*semver.New("3.2.0")):
+		cfg, _, err := ign3_2.Parse(raw)
+		return cfg.Ignition.Version, err
+	case version.Equal(*semver.New("3.3.0")):
+		cfg, _, err := ign3_3.Parse(raw)
+		return cfg.Ignition.Version, err
+	case version.Equal(*semver.New("3.4.0")):
+		cfg, _, err := ign3_4.Parse(raw)
+		return cfg.Ignition.Version, err
+	case version.Equal(*semver.New("3.5.0")):
+		cfg, _, err := ign3_5.Parse(raw)
+		return cfg.Ignition.Version, err
+	default:
+		return "", fmt.Errorf("unsupported test version %s", version)
+	}
+}
 
 func TestStringEncode(t *testing.T) {
 	inp := "Hello, world!"
@@ -84,7 +113,6 @@ func TestEncapsulated(t *testing.T) {
 		semver.New("3.2.0"), semver.New("3.1.0"), semver.New("2.2.0")}
 	t.Logf("vers: %v\n", vers)
 	for _, v := range vers {
-		major := v.Slice()[0]
 		mcIgnCfg, err = ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
 		assert.Nil(t, err)
 		err = appendEncapsulated(&mcIgnCfg, mc, v)
@@ -107,15 +135,9 @@ func TestEncapsulated(t *testing.T) {
 		var mc mcfgv1.MachineConfig
 		err = json.Unmarshal(encapData, &mc)
 		assert.Nil(t, err)
-		// TODO(jkyros): the encap only supplies what the current internal version is, and 3.1 was able to parse a 3.2 config
-		// because it's weird so we should probably revisit whether it's okay if the encap is now supplying 3.5
-		if major == 3 {
-			_, _, err := ign3.Parse(mc.Spec.Config.Raw)
-			assert.Nil(t, err)
-		} else {
-			_, _, err := ign2.Parse(mc.Spec.Config.Raw)
-			assert.Nil(t, err)
-		}
+		parsedVersion, err := parseIgnitionByVersion(mc.Spec.Config.Raw, v)
+		assert.Nil(t, err)
+		assert.Equal(t, v.String(), parsedVersion)
 	}
 }
 

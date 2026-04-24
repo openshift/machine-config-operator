@@ -9,7 +9,6 @@ import (
 
 	"github.com/clarketm/json"
 	"github.com/coreos/go-semver/semver"
-	ign2types "github.com/coreos/ignition/config/v2_2/types"
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	"github.com/vincent-petithory/dataurl"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -136,30 +135,23 @@ func appendCerts(cfg *ign3types.Config, certs []string, serverDir string) error 
 // machine-config-daemon-firstboot.service to process the bits that the main Ignition (that runs in the initramfs)
 // didn't handle such as kernel arguments.
 func appendEncapsulated(conf *ign3types.Config, mc *mcfgv1.MachineConfig, version *semver.Version) error {
-	var rawTmpIgnCfg []byte
-	var err error
 	// In order to handle old RHCOS versions with the MCD baked in (i.e. before the MCS has
 	// https://github.com/openshift/machine-config-operator/pull/1766 )
 	// we need to ensure that the Ignition version we're putting in here is compatible.
 	// It's kind of silly because there isn't *actually* an Ignition config here,
 	// we're just adding a version to make it be a valid MachineConfig which currently
 	// requires an empty Ignition version.
-	if version == nil || version.Slice()[0] == 3 {
-		tmpIgnCfg := ctrlcommon.NewIgnConfig()
-		rawTmpIgnCfg, err = json.Marshal(tmpIgnCfg)
+	var rawCfg any = ctrlcommon.NewIgnConfig()
+	if version != nil {
+		var err error
+		rawCfg, err = ctrlcommon.IgnitionConverterSingleton().Convert(rawCfg, ign3types.MaxVersion, *version)
 		if err != nil {
-			return fmt.Errorf("error marshalling Ignition config: %w", err)
+			return err
 		}
-	} else {
-		tmpIgnCfg := ign2types.Config{
-			Ignition: ign2types.Ignition{
-				Version: ign2types.MaxVersion.String(),
-			},
-		}
-		rawTmpIgnCfg, err = json.Marshal(tmpIgnCfg)
-		if err != nil {
-			return fmt.Errorf("error marshalling Ignition config: %w", err)
-		}
+	}
+	rawTmpIgnCfg, err := json.Marshal(rawCfg)
+	if err != nil {
+		return fmt.Errorf("error marshalling Ignition config: %w", err)
 	}
 
 	tmpcfg := mc.DeepCopy()
