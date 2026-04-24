@@ -1593,6 +1593,110 @@ func TestValidateStorePath(t *testing.T) {
 	}
 }
 
+func TestValidateLayerStorePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		path    mcfgv1.StorePath
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "valid absolute path without :ref",
+			path: "/var/lib/stargz-store",
+		},
+		{
+			name: "valid absolute path with :ref suffix",
+			path: "/var/lib/stargz-store/store:ref",
+		},
+		{
+			name: "valid path with dots, dashes and :ref",
+			path: "/mnt/nfs-layers/cache_v1.0:ref",
+		},
+		{
+			name: "valid path with subdirectories and :ref",
+			path: "/opt/layer-store/subdir:ref",
+		},
+		{
+			name:    "empty path",
+			path:    "",
+			wantErr: true,
+			errMsg:  "must not be empty",
+		},
+		{
+			name:    "relative path without :ref",
+			path:    "var/lib/store",
+			wantErr: true,
+			errMsg:  "must be an absolute path",
+		},
+		{
+			name:    "relative path with :ref",
+			path:    "var/lib/store:ref",
+			wantErr: true,
+			errMsg:  "must be an absolute path",
+		},
+		{
+			name:    "path with spaces",
+			path:    "/var/lib/my store:ref",
+			wantErr: true,
+			errMsg:  "must be an absolute path",
+		},
+		{
+			name:    "path with invalid characters",
+			path:    "/var/lib/store@v1:ref",
+			wantErr: true,
+			errMsg:  "must be an absolute path",
+		},
+		{
+			name:    "path with wrong suffix :other",
+			path:    "/var/lib/stargz-store:other",
+			wantErr: true,
+			errMsg:  "must be an absolute path",
+		},
+		{
+			name:    "path with :digest suffix",
+			path:    "/var/lib/stargz-store:digest",
+			wantErr: true,
+			errMsg:  "must be an absolute path",
+		},
+		{
+			name:    "path with :ref in the middle",
+			path:    "/var/lib:ref/stargz-store",
+			wantErr: true,
+			errMsg:  "must be an absolute path",
+		},
+		{
+			name:    "consecutive forward slashes without :ref",
+			path:    "/var//lib/store",
+			wantErr: true,
+			errMsg:  "must not contain consecutive forward slashes",
+		},
+		{
+			name:    "consecutive forward slashes with :ref",
+			path:    "/var//lib/store:ref",
+			wantErr: true,
+			errMsg:  "must not contain consecutive forward slashes",
+		},
+		{
+			name:    "path with multiple colons",
+			path:    "/var/lib/store:ref:extra",
+			wantErr: true,
+			errMsg:  "must be an absolute path",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateLayerStorePath(test.path, "TestField")
+			if test.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), test.errMsg)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestValidateUserContainerRuntimeConfigAdditionalStores(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -1650,6 +1754,71 @@ func TestValidateUserContainerRuntimeConfigAdditionalStores(t *testing.T) {
 					ContainerRuntimeConfig: &mcfgv1.ContainerRuntimeConfiguration{
 						AdditionalArtifactStores: []mcfgv1.AdditionalArtifactStore{
 							{Path: ""},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "valid layer store path with :ref suffix",
+			cfg: &mcfgv1.ContainerRuntimeConfig{
+				Spec: mcfgv1.ContainerRuntimeConfigSpec{
+					ContainerRuntimeConfig: &mcfgv1.ContainerRuntimeConfiguration{
+						AdditionalLayerStores: []mcfgv1.AdditionalLayerStore{
+							{Path: "/var/lib/stargz-store/store:ref"},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "valid layer store paths with mixed :ref",
+			cfg: &mcfgv1.ContainerRuntimeConfig{
+				Spec: mcfgv1.ContainerRuntimeConfigSpec{
+					ContainerRuntimeConfig: &mcfgv1.ContainerRuntimeConfiguration{
+						AdditionalLayerStores: []mcfgv1.AdditionalLayerStore{
+							{Path: "/var/lib/stargz-store/store:ref"},
+							{Path: "/mnt/nydus-store"},
+							{Path: "/opt/layer-cache:ref"},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "invalid layer store path with wrong suffix :other",
+			cfg: &mcfgv1.ContainerRuntimeConfig{
+				Spec: mcfgv1.ContainerRuntimeConfigSpec{
+					ContainerRuntimeConfig: &mcfgv1.ContainerRuntimeConfiguration{
+						AdditionalLayerStores: []mcfgv1.AdditionalLayerStore{
+							{Path: "/var/lib/stargz-store:other"},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid image store path with :ref suffix (not allowed)",
+			cfg: &mcfgv1.ContainerRuntimeConfig{
+				Spec: mcfgv1.ContainerRuntimeConfigSpec{
+					ContainerRuntimeConfig: &mcfgv1.ContainerRuntimeConfiguration{
+						AdditionalImageStores: []mcfgv1.AdditionalImageStore{
+							{Path: "/mnt/nfs-images:ref"},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid artifact store path with :ref suffix (not allowed)",
+			cfg: &mcfgv1.ContainerRuntimeConfig{
+				Spec: mcfgv1.ContainerRuntimeConfigSpec{
+					ContainerRuntimeConfig: &mcfgv1.ContainerRuntimeConfiguration{
+						AdditionalArtifactStores: []mcfgv1.AdditionalArtifactStore{
+							{Path: "/mnt/ssd-artifacts:ref"},
 						},
 					},
 				},
