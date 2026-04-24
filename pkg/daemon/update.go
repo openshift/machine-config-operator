@@ -2758,6 +2758,10 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	newURL := config.Spec.OSImageURL
 	klog.Infof("Updating OS to layered image %q", newURL)
 
+	if err := dn.runBootupdViaContainer(newURL); err != nil {
+		klog.Warningf("bootloader update failed: %s", err)
+	}
+
 	newEnough, err := dn.NodeUpdaterClient.IsNewEnoughForLayering()
 	if err != nil {
 		return err
