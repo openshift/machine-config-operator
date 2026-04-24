@@ -46,6 +46,11 @@ func (ms MachineSet) ScaleTo(scale int) error {
 	return ms.Patch("merge", fmt.Sprintf(`{"spec": {"replicas": %d}}`, scale))
 }
 
+// AddOSStreamLabel adds or updates the machineconfiguration.openshift.io/osstream label on the MachineSet
+func (ms MachineSet) AddOSStreamLabel(streamName string) error {
+	return ms.Patch("merge", fmt.Sprintf(`{"metadata":{"labels":{"machineconfiguration.openshift.io/osstream":"%s"}}}`, streamName))
+}
+
 // GetReplicaOfSpec return replica number of spec
 func (ms MachineSet) GetReplicaOfSpec() string {
 	return ms.GetOrFail(`{.spec.replicas}`)
