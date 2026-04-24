@@ -1548,3 +1548,30 @@ func GetPoolWithArchDifferentFromOrFail(oc *exutil.CLI, arch architecture.Archit
 	e2e.Failf("Something went wrong. There is no suitable pool to execute the test case. There is no pool with nodes using  an architecture different from %s", arch)
 	return nil
 }
+
+// AddNodeToPool adds a node to the MCP and waits for the MCP to recognize it
+func (mcp *MachineConfigPool) AddNodeToPool(node *Node) error {
+	currentNodes, err := mcp.GetNodes()
+	if err != nil {
+		return fmt.Errorf("error getting current nodes from %s: %w", mcp.GetName(), err)
+	}
+	expectedCount := len(currentNodes) + 1
+
+	err = node.AddLabel(fmt.Sprintf("node-role.kubernetes.io/%s", mcp.GetName()), "")
+	if err != nil {
+		return fmt.Errorf("error labeling node %s to add it to pool %s: %w", node.GetName(), mcp.GetName(), err)
+	}
+	logger.Infof("Node %s added to pool %s", node.GetName(), mcp.GetName())
+
+	err = mcp.WaitForMachineCount(expectedCount, 5*time.Minute)
+	if err != nil {
+		return fmt.Errorf("the %s MCP is not reporting the expected machine count: %w", mcp.GetName(), err)
+	}
+
+	err = mcp.WaitImmediateForUpdatedStatus()
+	if err != nil {
+		return fmt.Errorf("the %s MCP is not updated: %w", mcp.GetName(), err)
+	}
+
+	return nil
+}
