@@ -60,6 +60,7 @@ func (c *CertRotationController) processHostnames() bool {
 	err := c.syncHostnames()
 	if err == nil {
 		c.hostnamesQueue.Forget(dsKey)
+		go c.reconcileIRICertificate()
 		return true
 	}
 
