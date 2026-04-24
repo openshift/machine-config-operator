@@ -10,6 +10,10 @@ const (
 	MachineConfigNamespace = "openshift-machine-config-operator"
 	// MachineConfigDaemon mcd container name
 	MachineConfigDaemon = "machine-config-daemon"
+	// MachineConfigOperator mco container name
+	MachineConfigOperator = "machine-config-operator"
+	// MachineConfigDaemonEvents cluster role binding
+	MachineConfigDaemonEvents = "machine-config-daemon-events"
 
 	// MachineConfigPoolMaster master pool name
 	MachineConfigPoolMaster = "master"
@@ -47,10 +51,18 @@ const (
 	GCPPlatform = "gcp"
 	// AzurePlatform value used to identify azure infrastructure
 	AzurePlatform = "azure"
+	// BaremetalPlatform value used to identify baremetal infrastructure
+	BaremetalPlatform = "baremetal"
+	// NutanixPlatform value used to identify Nutanix infrastructure
+	NutanixPlatform = "nutanix"
+	// OpenstackPlatform value used to identify Openstack infrastructure
+	OpenstackPlatform = "openstack"
+	// OvirtPlatform value used to identify Ovirt infrastructure
+	OvirtPlatform = "ovirt"
 	// VspherePlatform value used to identify Vsphere infrastructure
 	VspherePlatform = "vsphere"
-	// BaremetalPlatform value used to identify BareMetal infrastructure
-	BaremetalPlatform = "baremetal"
+	// AlibabaCloudPlatform value used to identify AlibabaCloud infrastructure
+	AlibabaCloudPlatform = "alibabacloud"
 
 	// ExpirationDockerfileLabel Expiration label in Dockerfile
 	ExpirationDockerfileLabel = `LABEL maintainer="mco-qe-team" quay.expires-after=24h`
@@ -160,6 +172,16 @@ const (
 )
 
 var (
+	// OnPremPlatforms describes all the on-prem platforms
+	// xref: https://github.com/openshift/machine-config-operator/blob/752667ba9dfcdefd12222ab422201fa3f9846aca/pkg/controller/template/render.go#L593
+	OnPremPlatforms = map[string]string{
+		BaremetalPlatform: "openshift-kni-infra",
+		NutanixPlatform:   "openshift-nutanix-infra",
+		OpenstackPlatform: "openshift-openstack-infra",
+		OvirtPlatform:     "openshift-ovirt-infra",
+		VspherePlatform:   "openshift-vsphere-infra",
+	}
+
 	// Map with all available extensions and the packages they install
 	AllExtenstions = map[string][]string{
 		ipsecExtension:               {"NetworkManager-libreswan", "libreswan"},
