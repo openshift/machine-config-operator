@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agentic Documentation Metrics Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 2rem;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1rem;
+        }
+
+        .dashboard {
+            background: white;
+            border-radius: 1rem;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        .score-banner {
+            background: #3b82f6;
+            color: white;
+            padding: 3rem 2rem;
+            text-align: center;
+        }
+
+        .score-circle {
+            width: 200px;
+            height: 200px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.2);
+            margin: 0 auto 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            border: 8px solid rgba(255,255,255,0.3);
+        }
+
+        .score-number {
+            font-size: 4rem;
+            font-weight: bold;
+            line-height: 1;
+        }
+
+        .score-label {
+            font-size: 1.5rem;
+            margin-top: 0.5rem;
+            opacity: 0.9;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            padding: 2rem;
+        }
+
+        .metric-card {
+            background: #f8fafc;
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            border-left: 4px solid #cbd5e1;
+        }
+
+        .metric-card.pass {
+            border-left-color: #10b981;
+        }
+
+        .metric-card.fail {
+            border-left-color: #ef4444;
+        }
+
+        .metric-card h3 {
+            font-size: 1.25rem;
+            margin-bottom: 1rem;
+            color: #1e293b;
+        }
+
+        .metric-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #334155;
+            margin-bottom: 0.5rem;
+        }
+
+        .metric-detail {
+            color: #64748b;
+            font-size: 0.9rem;
+            margin-top: 0.5rem;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e2e8f0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 1rem 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+            transition: width 0.3s ease;
+        }
+
+        .progress-fill.pass {
+            background: linear-gradient(90deg, #10b981, #059669);
+        }
+
+        .progress-fill.fail {
+            background: linear-gradient(90deg, #ef4444, #dc2626);
+        }
+
+        .workflow-list {
+            margin-top: 1rem;
+        }
+
+        .workflow-item {
+            background: white;
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            border-radius: 0.25rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .workflow-name {
+            font-weight: 500;
+            color: #1e293b;
+        }
+
+        .workflow-status {
+            padding: 0.25rem 0.75rem;
+            border-radius: 1rem;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+
+        .workflow-status.pass {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .workflow-status.fail {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 1rem;
+            font-size: 0.85rem;
+            font-weight: 500;
+            margin-left: 0.5rem;
+        }
+
+        .badge.success {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .badge.warning {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .badge.error {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .timestamp {
+            text-align: center;
+            padding: 1rem;
+            color: #64748b;
+            font-size: 0.9rem;
+            border-top: 1px solid #e2e8f0;
+        }
+
+        .detail-section {
+            padding: 2rem;
+            border-top: 1px solid #e2e8f0;
+        }
+
+        .detail-section h2 {
+            font-size: 1.5rem;
+            color: #1e293b;
+            margin-bottom: 1rem;
+        }
+
+        .stats-row {
+            display: flex;
+            gap: 2rem;
+            margin-top: 1rem;
+        }
+
+        .stat {
+            flex: 1;
+        }
+
+        .stat-label {
+            color: #64748b;
+            font-size: 0.875rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #1e293b;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 Documentation Metrics Dashboard</h1>
+            <p>machine-config-operator</p>
+        </div>
+
+        <div class="dashboard">
+            <div class="score-banner">
+                <div class="score-circle">
+                    <div class="score-number">87</div>
+                    <div class="score-label">/100</div>
+                </div>
+                <h2>GOOD</h2>
+                <p>Overall Documentation Quality</p>
+            </div>
+
+            <div class="metrics-grid">
+                <!-- Navigation Depth -->
+                <div class="metric-card fail">
+                    <h3>🧭 Navigation Depth</h3>
+                    <div class="metric-value">6 hops</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill fail" style="width: 50%"></div>
+                    </div>
+                    <div class="metric-detail">
+                        <strong>Score:</strong> 50/100
+                        <span class="badge error">✗ FAILED</span>
+                    </div>
+                    <div class="metric-detail">
+                        Average: 2.5 hops |
+                        Reachable: 17/32 docs
+                    </div>
+                    <div class="metric-detail"><span class="badge warning">15 unreachable</span></div>
+                    <div class="metric-detail"><span class="badge error">6 over limit</span></div>
+                </div>
+
+                <!-- Context Budget -->
+                <div class="metric-card pass">
+                    <h3>📝 Context Budget</h3>
+                    <div class="metric-value">676 lines</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill pass" style="width: 100%"></div>
+                    </div>
+                    <div class="metric-detail">
+                        <strong>Score:</strong> 100/100
+                        <span class="badge success">✓ PASSED</span>
+                    </div>
+                    <div class="metric-detail">
+                        Average: 434 lines |
+                        Passing: 5/5 workflows
+                    </div>
+                </div>
+            </div>
+
+            <!-- Workflow Details -->
+            <div class="detail-section">
+                <h2>Workflow Analysis</h2>
+                <div class="workflow-list">
+
+                    <div class="workflow-item">
+                        <div>
+                            <div class="workflow-name">Bug Fix (Simple)</div>
+                            <small style="color: #64748b;">315/700 lines</small>
+                        </div>
+                        <div class="workflow-status pass">✓ OK</div>
+                    </div>
+
+                    <div class="workflow-item">
+                        <div>
+                            <div class="workflow-name">Bug Fix (Complex)</div>
+                            <small style="color: #64748b;">525/700 lines</small>
+                        </div>
+                        <div class="workflow-status pass">✓ OK</div>
+                    </div>
+
+                    <div class="workflow-item">
+                        <div>
+                            <div class="workflow-name">Feature Implementation</div>
+                            <small style="color: #64748b;">676/700 lines</small>
+                        </div>
+                        <div class="workflow-status pass">✓ OK</div>
+                    </div>
+
+                    <div class="workflow-item">
+                        <div>
+                            <div class="workflow-name">Understanding System</div>
+                            <small style="color: #64748b;">313/700 lines</small>
+                        </div>
+                        <div class="workflow-status pass">✓ OK</div>
+                    </div>
+
+                    <div class="workflow-item">
+                        <div>
+                            <div class="workflow-name">Security Review</div>
+                            <small style="color: #64748b;">340/700 lines</small>
+                        </div>
+                        <div class="workflow-status pass">✓ OK</div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Statistics -->
+            <div class="detail-section">
+                <h2>Quick Stats</h2>
+                <div class="stats-row">
+                    <div class="stat">
+                        <div class="stat-label">Total Documents</div>
+                        <div class="stat-value">32</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Reachable</div>
+                        <div class="stat-value">17</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Max Depth</div>
+                        <div class="stat-value">6 hops</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Avg Context</div>
+                        <div class="stat-value">434 lines</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="timestamp">
+                Generated on 2026-03-30 22:56:15 by <code>scripts/generate-metrics-dashboard.py</code>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
