@@ -40,18 +40,13 @@ Source:
 g.Describe("[sig-mco] MCO <SuiteName>", func() {
 ```
 
-Destination (longduration — default):
+Destination:
 ```go
 g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longduration][Serial][Disruptive] MCO <SuiteName>", func() {
 ```
 
-Destination (disruptive):
-```go
-g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Serial][Disruptive] MCO <SuiteName>", func() {
-```
-
-- Ask the user which suite to use: `longduration` (default) or `disruptive`
-- `[Serial][Disruptive]` is **always required** — in the new framework `[Disruptive]` no longer implies `[Serial]`
+- Both `[Serial]` and `[Disruptive]` are **always applied by default** — do not ask which suite to use
+- In the new framework `[Disruptive]` no longer implies `[Serial]`, so both must be present
 
 ## Test Name Transformation (g.It blocks)
 
@@ -113,8 +108,9 @@ make machine-config-tests-ext
 
 ## Workflow
 
-1. **Collect inputs** — source repo path, destination repo path, compat_otp path (optional), filename to migrate, and target suite (`longduration` default, or `disruptive`). Check memory (`migrate_tests_config.md`) for saved paths.
+1. **Collect inputs** — source repo path, destination repo path, compat_otp path (optional), and filename to migrate. Both `[Serial]` and `[Disruptive]` labels are always applied by default (do not ask). Check memory (`migrate_tests_config.md`) for saved paths.
 2. **Analyze** — read source file, identify tests/helpers/templates/compat_otp deps, check what already exists in destination.
 3. **Migrate** — apply all transformations above, copy templates, migrate helper functions and compat_otp utilities as needed.
-4. **Verify** — build and confirm migrated tests appear in listing. Fix any build errors iteratively.
-5. **Save paths** to memory for next run.
+4. **Verify build** — build and confirm migrated tests appear in listing. Fix any build errors iteratively.
+5. **Verify ordering** — compare the sequence of all functions (test case functions, helper functions, and `g.It` blocks) in the destination file against their order in the source file. List any mismatches and fix them before proceeding.
+6. **Save paths** to memory for next run.
