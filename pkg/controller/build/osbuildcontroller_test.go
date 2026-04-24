@@ -892,3 +892,112 @@ func TestOSBuildControllerSkipsBuildForLayerOnlyChanges(t *testing.T) {
 
 	kubeassert.JobDoesNotExist(jobName, "layering-only MOSB should not spawn a build Job")
 }
+
+// TestOSBuildControllerClearsStaleAnnotation validates that when a MachineOSConfig
+// has a stale current-machine-os-build annotation, the node controller clears it
+// and allows a new build to be created. This tests the fix for the bug where pools
+// get stuck at 0 machines configured with "Image is not ready yet" errors.
+//
+// Test scenario:
+// 1. Create initial successful build for rendered-worker-1
+// 2. Manually create a stale annotation pointing to the old build
+// 3. Apply a layer-only MachineConfig change (e.g., SSH key) -> rendered-worker-2
+// 4. Verify stale annotation is cleared
+// 5. Verify new build is created for rendered-worker-2
+func TestOSBuildControllerClearsStaleAnnotation(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	t.Cleanup(cancel)
+	poolName := "worker"
+
+	// Setup: Create initial successful build
+	_, mcfgclient, _, _, mosc, firstMosb, mcp, _, kubeassert := setupOSBuildControllerForTestWithSuccessfulBuild(ctx, t, poolName)
+	
+	// Verify first build exists and gets annotation
+	isMachineOSBuildReachedExpectedCount(ctx, t, mcfgclient, mosc, 1)
+	assertMachineOSConfigGetsCurrentBuildAnnotation(ctx, t, mcfgclient, mosc, firstMosb)
+
+	t.Logf("Initial build %s created successfully for %s", firstMosb.Name, mosc.Name)
+
+	// Now apply a layer-only change (SSH key addition, doesn't need image rebuild)
+	// This will create a new rendered config: rendered-worker-2
+	insertNewRenderedMachineConfigWithoutImageChangeAndUpdatePool(ctx, t, mcfgclient, mcp.Name, "rendered-worker-2")
+
+	// Give the controller time to process
+	time.Sleep(300 * time.Millisecond)
+
+	// At this point, a new MOSB should be created for the layer-only change
+	// The annotation should point to the new build, not the old one
+	mosbList, err := mcfgclient.MachineconfigurationV1().
+		MachineOSBuilds().
+		List(ctx, metav1.ListOptions{LabelSelector: utils.MachineOSBuildForPoolSelector(mosc).String()})
+	require.NoError(t, err)
+	require.Len(t, mosbList.Items, 2, "expected a new MOSB to be created for layering-only change")
+
+	// Find the new build (not the first one)
+	var secondMosb *mcfgv1.MachineOSBuild
+	for i := range mosbList.Items {
+		if mosbList.Items[i].Name != firstMosb.Name {
+			secondMosb = &mosbList.Items[i]
+			break
+		}
+	}
+	require.NotNil(t, secondMosb, "second MOSB should exist")
+	assert.Equal(t, "rendered-worker-2", secondMosb.Spec.MachineConfig.Name, "second MOSB should be for rendered-worker-2")
+
+	t.Logf("Second build %s created for new rendered config %s", secondMosb.Name, secondMosb.Spec.MachineConfig.Name)
+
+	// Now simulate the bug: Manually set a stale annotation pointing to the old build
+	// while the pool has moved on to rendered-worker-3
+	apiMosc, err := mcfgclient.MachineconfigurationV1().MachineOSConfigs().Get(ctx, mosc.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	// Set stale annotation pointing to first build
+	apiMosc.Annotations[constants.CurrentMachineOSBuildAnnotationKey] = firstMosb.Name
+	apiMosc, err = mcfgclient.MachineconfigurationV1().MachineOSConfigs().Update(ctx, apiMosc, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	t.Logf("Manually set stale annotation to %s", firstMosb.Name)
+
+	// Apply another layer-only change -> rendered-worker-3
+	// This should trigger the stale annotation detection and cleanup
+	insertNewRenderedMachineConfigWithoutImageChangeAndUpdatePool(ctx, t, mcfgclient, mcp.Name, "rendered-worker-3")
+
+	// Give the controller time to detect stale annotation and create new build
+	time.Sleep(500 * time.Millisecond)
+
+	// Verify that:
+	// 1. The stale annotation was cleared or updated to point to a new build
+	// 2. A new MOSB was created for rendered-worker-3
+	apiMosc, err = mcfgclient.MachineconfigurationV1().MachineOSConfigs().Get(ctx, mosc.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	currentAnnotation := apiMosc.Annotations[constants.CurrentMachineOSBuildAnnotationKey]
+	assert.NotEqual(t, firstMosb.Name, currentAnnotation, 
+		"stale annotation pointing to first build should be cleared/updated")
+
+	mosbList, err = mcfgclient.MachineconfigurationV1().
+		MachineOSBuilds().
+		List(ctx, metav1.ListOptions{LabelSelector: utils.MachineOSBuildForPoolSelector(mosc).String()})
+	require.NoError(t, err)
+	require.Len(t, mosbList.Items, 3, "expected third MOSB to be created after stale annotation cleanup")
+
+	// Find the third build for rendered-worker-3
+	var thirdMosb *mcfgv1.MachineOSBuild
+	for i := range mosbList.Items {
+		if mosbList.Items[i].Spec.MachineConfig.Name == "rendered-worker-3" {
+			thirdMosb = &mosbList.Items[i]
+			break
+		}
+	}
+	require.NotNil(t, thirdMosb, "third MOSB should exist for rendered-worker-3")
+	t.Logf("Third build %s created successfully after stale annotation cleanup", thirdMosb.Name)
+
+	// Verify job was NOT created for layer-only builds
+	for _, mosb := range mosbList.Items {
+		if mosb.Name != firstMosb.Name {
+			jobName := utils.GetBuildJobName(&mosb)
+			kubeassert.JobDoesNotExist(jobName, "layering-only MOSB %s should not spawn a build Job", mosb.Name)
+		}
+	}
+
+	t.Logf("Test passed: stale annotation was cleaned up and new builds were created correctly")
+}
