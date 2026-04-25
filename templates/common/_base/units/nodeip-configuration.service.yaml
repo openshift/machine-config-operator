@@ -5,8 +5,8 @@ enabled: {{if or (eq .Infra.Status.PlatformStatus.Type "None") (eq .Infra.Status
 contents: |
   [Unit]
   Description=Writes IP address configuration so that kubelet and crio services select a valid node IP
-  Wants=NetworkManager-wait-online.service
-  After=NetworkManager-wait-online.service firstboot-osupdate.target
+  Wants=NetworkManager-wait-online.service crio.service
+  After=NetworkManager-wait-online.service crio.service
   Before=kubelet-dependencies.target ovs-configuration.service
 
   [Service]
