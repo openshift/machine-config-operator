@@ -21,6 +21,7 @@ import (
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	configv1 "github.com/openshift/api/config/v1"
 	configinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
@@ -72,6 +73,9 @@ type Controller struct {
 	clusterVersionLister       configlistersv1.ClusterVersionLister
 	clusterVersionListerSynced cache.InformerSynced
 
+	apiServerLister       configlistersv1.APIServerLister
+	apiServerListerSynced cache.InformerSynced
+
 	secretLister       corelistersv1.SecretLister
 	secretListerSynced cache.InformerSynced
 
@@ -84,6 +88,7 @@ func New(
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mcInformer mcfginformersv1.MachineConfigInformer,
 	clusterVersionInformer configinformersv1.ClusterVersionInformer,
+	apiServerInformer configinformersv1.APIServerInformer,
 	secretInformer coreinformersv1.SecretInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
@@ -122,6 +127,11 @@ func New(
 		UpdateFunc: ctrl.updateSecret,
 	})
 
+	apiServerInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addAPIServer,
+		UpdateFunc: ctrl.updateAPIServer,
+	})
+
 	ctrl.iriLister = iriInformer.Lister()
 	ctrl.iriListerSynced = iriInformer.Informer().HasSynced
 
@@ -134,6 +144,9 @@ func New(
 	ctrl.clusterVersionLister = clusterVersionInformer.Lister()
 	ctrl.clusterVersionListerSynced = clusterVersionInformer.Informer().HasSynced
 
+	ctrl.apiServerLister = apiServerInformer.Lister()
+	ctrl.apiServerListerSynced = apiServerInformer.Informer().HasSynced
+
 	ctrl.secretLister = secretInformer.Lister()
 	ctrl.secretListerSynced = secretInformer.Informer().HasSynced
 
@@ -145,7 +158,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.iriListerSynced, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.clusterVersionListerSynced, ctrl.secretListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, ctrl.iriListerSynced, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.clusterVersionListerSynced, ctrl.apiServerListerSynced, ctrl.secretListerSynced) {
 		return
 	}
 
@@ -287,6 +300,22 @@ func (ctrl *Controller) updateSecret(obj, _ interface{}) {
 	ctrl.queue.Add(ctrlcommon.InternalReleaseImageInstanceName)
 }
 
+func (ctrl *Controller) addAPIServer(obj interface{}) {
+	apiServer := obj.(*configv1.APIServer)
+	klog.V(4).Infof("APIServer %s added", apiServer.Name)
+	ctrl.queue.Add(ctrlcommon.InternalReleaseImageInstanceName)
+}
+
+func (ctrl *Controller) updateAPIServer(old, cur interface{}) {
+	oldAPIServer := old.(*configv1.APIServer)
+	newAPIServer := cur.(*configv1.APIServer)
+	if reflect.DeepEqual(oldAPIServer.Spec.TLSSecurityProfile, newAPIServer.Spec.TLSSecurityProfile) {
+		return
+	}
+	klog.V(4).Infof("APIServer %s TLS profile updated", newAPIServer.Name)
+	ctrl.queue.Add(ctrlcommon.InternalReleaseImageInstanceName)
+}
+
 func (ctrl *Controller) enqueue(iri *mcfgv1alpha1.InternalReleaseImage) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(iri)
 	if err != nil {
@@ -355,8 +384,13 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) (syncErr error) {
 		return fmt.Errorf("could not get Secret %s: %w", ctrlcommon.InternalReleaseImageTLSSecretName, err)
 	}
 
+	tlsProfile, err := ctrl.getTLSProfile()
+	if err != nil {
+		return err
+	}
+
 	for _, role := range SupportedRoles {
-		r := NewRendererByRole(role, iri, iriSecret, cconfig)
+		r := NewRendererByRole(role, iri, iriSecret, cconfig, tlsProfile)
 
 		mc, err := ctrl.mcLister.Get(r.GetMachineConfigName())
 		isNotFound := errors.IsNotFound(err)
@@ -511,6 +545,24 @@ func (ctrl *Controller) addFinalizerToInternalReleaseImage(iri *mcfgv1alpha1.Int
 	iri.Finalizers = append(iri.Finalizers, mc.Name)
 	_, err := ctrl.client.MachineconfigurationV1alpha1().InternalReleaseImages().Update(context.TODO(), iri, metav1.UpdateOptions{})
 	return err
+}
+
+// getTLSProfile fetches the cluster APIServer TLS security profile.
+// Returns nil (which defaults to Intermediate) if the APIServer object is not found.
+//
+// IRI is a new Tech Preview component with no prior TLS behavior, so we always
+// honor the cluster TLS profile regardless of APIServer.Spec.TLSAdherence.
+// The tlsAdherence field exists to provide a migration path for existing components
+// that historically ignored the cluster profile; that concern does not apply here.
+func (ctrl *Controller) getTLSProfile() (*configv1.TLSSecurityProfile, error) {
+	apiServer, err := ctrl.apiServerLister.Get(ctrlcommon.APIServerInstanceName)
+	if err != nil && !errors.IsNotFound(err) {
+		return nil, fmt.Errorf("could not get APIServer: %w", err)
+	}
+	if apiServer != nil {
+		return apiServer.Spec.TLSSecurityProfile, nil
+	}
+	return nil, nil
 }
 
 func (ctrl *Controller) cascadeDelete(iri *mcfgv1alpha1.InternalReleaseImage) error {

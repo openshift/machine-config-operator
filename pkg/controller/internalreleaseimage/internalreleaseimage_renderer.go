@@ -2,18 +2,22 @@ package internalreleaseimage
 
 import (
 	"bytes"
+	"crypto/tls"
 	"embed"
 	"errors"
 	"fmt"
 	"io/fs"
 	"path/filepath"
+	"strings"
 	"text/template"
 
 	"github.com/clarketm/json"
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/klog/v2"
 
+	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -37,20 +41,22 @@ var (
 // the InternalReleaseImage machine config resources. It can also create
 // a MachineConfig instance when required.
 type Renderer struct {
-	role      string
-	iri       *mcfgv1alpha1.InternalReleaseImage
-	iriSecret *corev1.Secret
-	cconfig   *mcfgv1.ControllerConfig
+	role       string
+	iri        *mcfgv1alpha1.InternalReleaseImage
+	iriSecret  *corev1.Secret
+	cconfig    *mcfgv1.ControllerConfig
+	tlsProfile *configv1.TLSSecurityProfile
 }
 
 // NewRendererByRole creates a new Renderer instance for generating
 // the machine config for the given role.
-func NewRendererByRole(role string, iri *mcfgv1alpha1.InternalReleaseImage, iriSecret *corev1.Secret, cconfig *mcfgv1.ControllerConfig) *Renderer {
+func NewRendererByRole(role string, iri *mcfgv1alpha1.InternalReleaseImage, iriSecret *corev1.Secret, cconfig *mcfgv1.ControllerConfig, tlsProfile *configv1.TLSSecurityProfile) *Renderer {
 	return &Renderer{
-		role:      role,
-		iri:       iri,
-		iriSecret: iriSecret,
-		cconfig:   cconfig,
+		role:       role,
+		iri:        iri,
+		iriSecret:  iriSecret,
+		cconfig:    cconfig,
+		tlsProfile: tlsProfile,
 	}
 }
 
@@ -103,6 +109,8 @@ type renderContext struct {
 	IriTLSKey           string
 	IriTLSCert          string
 	RootCA              string
+	TLSMinVersion       string
+	TLSCipherSuites     string
 }
 
 // newRenderContext creates a new renderContext instance.
@@ -115,12 +123,95 @@ func (r *Renderer) newRenderContext() (*renderContext, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	tlsMinVersion, tlsCipherSuites := registryTLSFromProfile(r.tlsProfile)
+
+	profileType := "nil (defaulting to Intermediate)"
+	if r.tlsProfile != nil {
+		profileType = string(r.tlsProfile.Type)
+	}
+	klog.V(4).Infof("IRI registry TLS profile: %s, minimum version: %s, cipher suites: %q", profileType, tlsMinVersion, tlsCipherSuites)
+
 	return &renderContext{
 		DockerRegistryImage: r.cconfig.Spec.Images[templatectrl.DockerRegistryKey],
 		IriTLSKey:           iriTLSKey,
 		IriTLSCert:          iriTLSCert,
 		RootCA:              string(r.cconfig.Spec.RootCAData),
+		TLSMinVersion:       tlsMinVersion,
+		TLSCipherSuites:     tlsCipherSuites,
 	}, nil
+}
+
+// registryTLSFromProfile converts an OpenShift TLSSecurityProfile to the
+// Distribution registry's environment variable values for REGISTRY_HTTP_TLS_MINIMUMTLS
+// and REGISTRY_HTTP_TLS_CIPHERSUITES.
+func registryTLSFromProfile(profile *configv1.TLSSecurityProfile) (minVersion, cipherSuites string) {
+	tlsVersion, ciphers := ctrlcommon.GetSecurityProfileCiphers(profile)
+	minVersion = openShiftTLSVersionToRegistryVersion(tlsVersion)
+
+	// Filter to only configurable cipher suites (TLS 1.2 and below). TLS 1.3+
+	// cipher suites are fixed by the protocol and cannot be configured, so they
+	// are excluded. This is future-proof: if a future TLS version also uses
+	// fixed cipher suites, its ciphers won't appear in Go's configurable set
+	// and will be filtered out automatically.
+	configurableCiphers := buildConfigurableCipherSet()
+	var filtered []string
+	for _, c := range ciphers {
+		if configurableCiphers[c] {
+			filtered = append(filtered, c)
+		}
+	}
+
+	if len(filtered) == 0 {
+		return minVersion, ""
+	}
+	// Format as a YAML array because the Distribution registry parses environment
+	// variables as YAML values, and CIPHERSUITES is a []string field.
+	return minVersion, "[" + strings.Join(filtered, ", ") + "]"
+}
+
+// buildConfigurableCipherSet returns a set of IANA cipher suite names that
+// can be configured via tls.Config.CipherSuites (i.e., TLS 1.2 and below).
+// TLS 1.3+ cipher suites are not included because they are fixed by the protocol.
+func buildConfigurableCipherSet() map[string]bool {
+	cipherSet := make(map[string]bool)
+	for _, cs := range tls.CipherSuites() {
+		if isConfigurableCipher(cs) {
+			cipherSet[cs.Name] = true
+		}
+	}
+	for _, cs := range tls.InsecureCipherSuites() {
+		cipherSet[cs.Name] = true
+	}
+	return cipherSet
+}
+
+// isConfigurableCipher returns true if the cipher suite supports any TLS version
+// below 1.3. Cipher suites that only support TLS 1.3+ are fixed by the protocol
+// and cannot be configured, so they should not be passed to the registry.
+func isConfigurableCipher(cs *tls.CipherSuite) bool {
+	for _, v := range cs.SupportedVersions {
+		if v < tls.VersionTLS13 {
+			return true
+		}
+	}
+	return false
+}
+
+// openShiftTLSVersionToRegistryVersion converts an OpenShift TLS version string
+// (e.g. "VersionTLS12") to the Distribution registry format (e.g. "tls1.2").
+// The conversion is done programmatically so future TLS versions (e.g. "VersionTLS14")
+// are handled automatically without code changes.
+func openShiftTLSVersionToRegistryVersion(version string) string {
+	const prefix = "VersionTLS"
+	if !strings.HasPrefix(version, prefix) {
+		return "tls1.2" // default to Intermediate
+	}
+	digits := strings.TrimPrefix(version, prefix)
+	if len(digits) < 2 {
+		return "tls1.2"
+	}
+	return "tls" + string(digits[0]) + "." + digits[1:]
 }
 
 // extractTLSCertFieldFromSecret is an helper func to get the specified secret field data.
