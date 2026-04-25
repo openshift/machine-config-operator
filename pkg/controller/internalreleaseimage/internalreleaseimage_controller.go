@@ -55,6 +55,7 @@ var (
 // Controller defines the InternalReleaseImage controller.
 type Controller struct {
 	client        mcfgclientset.Interface
+	kubeClient    clientset.Interface
 	eventRecorder record.EventRecorder
 
 	syncHandler                 func(mcp string) error
@@ -94,6 +95,7 @@ func New(
 
 	ctrl := &Controller{
 		client:        mcfgClient,
+		kubeClient:    kubeClient,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-internalreleaseimagecontroller"})),
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
@@ -118,7 +120,11 @@ func New(
 		DeleteFunc: ctrl.deleteMachineConfig,
 	})
 
+	// Watch IRI secrets (TLS, auth) and the global pull secret. All are served
+	// by the cluster-wide KubeInformerFactory, so a single informer covers all
+	// namespaces.
 	secretInformer.Informer().AddEventHandler(cache.ResourceEventHandlerDetailedFuncs{
+		AddFunc:    ctrl.addSecret,
 		UpdateFunc: ctrl.updateSecret,
 	})
 
@@ -275,15 +281,25 @@ func (ctrl *Controller) processMachineConfigEvent(obj interface{}, logMsg string
 	ctrl.queue.Add(ctrlcommon.InternalReleaseImageInstanceName)
 }
 
-func (ctrl *Controller) updateSecret(obj, _ interface{}) {
+func (ctrl *Controller) addSecret(obj interface{}, _ bool) {
 	secret := obj.(*corev1.Secret)
+	if secret.Name != ctrlcommon.InternalReleaseImageTLSSecretName &&
+		secret.Name != ctrlcommon.InternalReleaseImageAuthSecretName {
+		return
+	}
+	klog.V(4).Infof("Secret %s added, re-queuing IRI sync", secret.Name)
+	ctrl.queue.Add(ctrlcommon.InternalReleaseImageInstanceName)
+}
 
-	// Skip any event not related to the InternalReleaseImage secrets
-	if secret.Name != ctrlcommon.InternalReleaseImageTLSSecretName {
+func (ctrl *Controller) updateSecret(_, cur interface{}) {
+	secret := cur.(*corev1.Secret)
+
+	if secret.Name != ctrlcommon.InternalReleaseImageTLSSecretName &&
+		secret.Name != ctrlcommon.InternalReleaseImageAuthSecretName {
 		return
 	}
 
-	klog.V(4).Infof("Secret %s update", secret.Name)
+	klog.V(4).Infof("Secret %s updated, re-queuing IRI sync", secret.Name)
 	ctrl.queue.Add(ctrlcommon.InternalReleaseImageInstanceName)
 }
 
@@ -355,8 +371,21 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) (syncErr error) {
 		return fmt.Errorf("could not get Secret %s: %w", ctrlcommon.InternalReleaseImageTLSSecretName, err)
 	}
 
+	iriRegistryCredentialsSecret, err := ctrl.secretLister.Secrets(ctrlcommon.MCONamespace).Get(ctrlcommon.InternalReleaseImageAuthSecretName)
+	if err != nil {
+		return fmt.Errorf("could not get Secret %s: %w", ctrlcommon.InternalReleaseImageAuthSecretName, err)
+	}
+
+	// Ensure the htpasswd field is in sync with the password field. If the
+	// password was rotated, this generates a new bcrypt hash and updates the
+	// secret before re-rendering the MachineConfig.
+	iriRegistryCredentialsSecret, err = reconcileHtpasswd(ctrl.kubeClient, iriRegistryCredentialsSecret)
+	if err != nil {
+		return fmt.Errorf("failed to reconcile IRI registry htpasswd: %w", err)
+	}
+
 	for _, role := range SupportedRoles {
-		r := NewRendererByRole(role, iri, iriSecret, cconfig)
+		r := NewRendererByRole(role, iri, iriSecret, iriRegistryCredentialsSecret, cconfig)
 
 		mc, err := ctrl.mcLister.Get(r.GetMachineConfigName())
 		isNotFound := errors.IsNotFound(err)
@@ -512,7 +541,6 @@ func (ctrl *Controller) addFinalizerToInternalReleaseImage(iri *mcfgv1alpha1.Int
 	_, err := ctrl.client.MachineconfigurationV1alpha1().InternalReleaseImages().Update(context.TODO(), iri, metav1.UpdateOptions{})
 	return err
 }
-
 func (ctrl *Controller) cascadeDelete(iri *mcfgv1alpha1.InternalReleaseImage) error {
 	mcName := iri.GetFinalizers()[0]
 	err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), mcName, metav1.DeleteOptions{})

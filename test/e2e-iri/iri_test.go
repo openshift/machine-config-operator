@@ -4,10 +4,12 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -21,7 +23,9 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	iripkg "github.com/openshift/machine-config-operator/pkg/controller/internalreleaseimage"
 	"github.com/openshift/machine-config-operator/test/framework"
+	"github.com/openshift/machine-config-operator/test/helpers"
 )
 
 func TestIRIResource_Available(t *testing.T) {
@@ -86,7 +90,12 @@ func TestIRIController_VerifyIRIRegistryOnAllTheMasterNodes_NoCert(t *testing.T)
 	skipIfOpenShiftCI(t)
 	skipIfNoBaremetal(t)
 
-	masterNodes, err := framework.NewClientSet("").CoreV1Interface.Nodes().List(context.TODO(), v1.ListOptions{LabelSelector: "node-role.kubernetes.io/master="})
+	cs := framework.NewClientSet("")
+	authSecret, err := cs.Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), ctrlcommon.InternalReleaseImageAuthSecretName, v1.GetOptions{})
+	require.NoError(t, err)
+	password := string(authSecret.Data["password"])
+
+	masterNodes, err := cs.CoreV1Interface.Nodes().List(context.TODO(), v1.ListOptions{LabelSelector: "node-role.kubernetes.io/master="})
 	require.NoError(t, err)
 
 	// For every control plane node, ping the IRI registry at port 22625,
@@ -107,7 +116,7 @@ func TestIRIController_VerifyIRIRegistryOnAllTheMasterNodes_NoCert(t *testing.T)
 			},
 			Timeout: 30 * time.Second,
 		}
-		pingIRIRegistry(t, client, nodeAddr)
+		pingIRIRegistry(t, client, nodeAddr, ctrlcommon.IRIRegistryUsername, password)
 	}
 }
 
@@ -165,21 +174,167 @@ func TestIRIController_VerifyIRIRegistryOnApiInt_WithCert(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, infra.Status.PlatformStatus.BareMetal.APIServerInternalIPs)
 
-	pingIRIRegistry(t, client, infra.Status.PlatformStatus.BareMetal.APIServerInternalIPs[0])
+	authSecret, err := cs.Secrets(ctrlcommon.MCONamespace).Get(ctx, ctrlcommon.InternalReleaseImageAuthSecretName, v1.GetOptions{})
+	require.NoError(t, err)
+	pingIRIRegistry(t, client, infra.Status.PlatformStatus.BareMetal.APIServerInternalIPs[0], ctrlcommon.IRIRegistryUsername, string(authSecret.Data["password"]))
 }
 
-func pingIRIRegistry(t *testing.T, client *http.Client, ipAddr string) {
-	iriRegistryUrl := fmt.Sprintf("https://%s:%d/v2/", ipAddr, 22625)
+func pingIRIRegistry(t *testing.T, client *http.Client, ipAddr, username, password string) {
+	iriRegistryUrl := fmt.Sprintf("https://%s:%d/v2/", ipAddr, ctrlcommon.IRIRegistryPort)
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, iriRegistryUrl, nil)
 	require.NoError(t, err)
+	req.SetBasicAuth(username, password)
 	resp, err := client.Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	require.Equal(t, resp.StatusCode, http.StatusOK)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
 	apiVersion := resp.Header.Get("Docker-Distribution-Api-Version")
-	require.Equal(t, apiVersion, "registry/2.0")
+	require.Equal(t, "registry/2.0", apiVersion)
+}
+
+// getBaseDomain retrieves the cluster's base domain from the ControllerConfig.
+func getBaseDomain(t *testing.T, cs *framework.ClientSet) string {
+	t.Helper()
+	cconfig, err := cs.ControllerConfigs().Get(context.Background(), ctrlcommon.ControllerConfigName, v1.GetOptions{})
+	require.NoError(t, err)
+	require.NotNil(t, cconfig.Spec.DNS)
+	require.NotEmpty(t, cconfig.Spec.DNS.Spec.BaseDomain)
+	return cconfig.Spec.DNS.Spec.BaseDomain
+}
+
+// curlIRIRegistry runs curl against the IRI registry /v2/ endpoint via
+// ExecCmdOnNode, which executes inside the MCD pod on the given master node.
+// The MCD pod runs on the host network and can reach api-int:22625, making
+// this approach work in CI where the port is not reachable from the test runner.
+// Returns the HTTP status code string (e.g. "200", "401").
+func curlIRIRegistry(t *testing.T, cs *framework.ClientSet, node corev1.Node, baseDomain string, extraArgs ...string) string {
+	t.Helper()
+	const iriRootCAPath = "/rootfs/etc/pki/ca-trust/source/anchors/iri-root-ca.crt"
+	url := fmt.Sprintf("https://api-int.%s:%d/v2/", baseDomain, ctrlcommon.IRIRegistryPort)
+	args := []string{"curl", "-s", "--cacert", iriRootCAPath, "-o", "/dev/null", "-w", "%{http_code}"}
+	args = append(args, extraArgs...)
+	args = append(args, url)
+	return strings.TrimSpace(helpers.ExecCmdOnNode(t, cs, node, args...))
+}
+
+func TestIRIAuth_UnauthenticatedRequestReturns401(t *testing.T) {
+	cs := framework.NewClientSet("")
+	ctx := context.Background()
+
+	_, err := cs.Secrets(ctrlcommon.MCONamespace).Get(ctx, ctrlcommon.InternalReleaseImageAuthSecretName, v1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		t.Skip("IRI auth secret not found, authentication is not enabled")
+	}
+	require.NoError(t, err)
+
+	baseDomain := getBaseDomain(t, cs)
+	node := helpers.GetRandomNode(t, cs, "master")
+
+	statusCode := curlIRIRegistry(t, cs, node, baseDomain)
+	require.Equal(t, "401", statusCode, "unauthenticated request should return 401")
+}
+
+func TestIRIAuth_AuthenticatedRequestSucceeds(t *testing.T) {
+	cs := framework.NewClientSet("")
+	ctx := context.Background()
+
+	authSecret, err := cs.Secrets(ctrlcommon.MCONamespace).Get(ctx, ctrlcommon.InternalReleaseImageAuthSecretName, v1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		t.Skip("IRI auth secret not found, authentication is not enabled")
+	}
+	require.NoError(t, err)
+
+	password := string(authSecret.Data["password"])
+	require.NotEmpty(t, password)
+
+	baseDomain := getBaseDomain(t, cs)
+	node := helpers.GetRandomNode(t, cs, "master")
+	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(ctrlcommon.IRIRegistryUsername+":"+password))
+
+	statusCode := curlIRIRegistry(t, cs, node, baseDomain, "-H", "Authorization: "+authHeader)
+	require.Equal(t, "200", statusCode, "authenticated request should succeed")
+}
+
+func TestIRIAuth_CredentialRotation(t *testing.T) {
+	cs := framework.NewClientSet("")
+	ctx := context.Background()
+
+	authSecret, err := cs.Secrets(ctrlcommon.MCONamespace).Get(ctx, ctrlcommon.InternalReleaseImageAuthSecretName, v1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		t.Skip("IRI auth secret not found, authentication is not enabled")
+	}
+	require.NoError(t, err)
+
+	originalPassword := string(authSecret.Data["password"])
+	originalHtpasswd := string(authSecret.Data["htpasswd"])
+	require.NotEmpty(t, originalPassword)
+
+	baseDomain := getBaseDomain(t, cs)
+
+	// Restore credentials on test completion.
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		defer cancel()
+
+		secret, err := cs.Secrets(ctrlcommon.MCONamespace).Get(cleanupCtx, ctrlcommon.InternalReleaseImageAuthSecretName, v1.GetOptions{})
+		if err != nil {
+			t.Errorf("cleanup: failed to get auth secret: %v", err)
+			return
+		}
+		secret.Data["password"] = []byte(originalPassword)
+		secret.Data["htpasswd"] = []byte(originalHtpasswd)
+		if _, err := cs.Secrets(ctrlcommon.MCONamespace).Update(cleanupCtx, secret, v1.UpdateOptions{}); err != nil {
+			t.Errorf("cleanup: failed to restore auth secret: %v", err)
+			return
+		}
+		t.Logf("Cleanup: restored auth secret, waiting for MCP rollout...")
+		if err := helpers.WaitForPoolCompleteAny(t, cs, "master"); err != nil {
+			t.Errorf("cleanup: MCP rollout did not complete: %v", err)
+		}
+		t.Logf("Cleanup: credential restoration complete")
+	})
+
+	// Trigger rotation by writing a new password.
+	newPassword := fmt.Sprintf("rotated-%d", time.Now().UnixNano())
+	authSecret.Data["password"] = []byte(newPassword)
+	delete(authSecret.Data, "htpasswd") // controller will regenerate
+	_, err = cs.Secrets(ctrlcommon.MCONamespace).Update(ctx, authSecret, v1.UpdateOptions{})
+	require.NoError(t, err)
+	t.Logf("Updated auth secret password to trigger rotation")
+
+	// Wait for the controller to regenerate htpasswd.
+	t.Logf("Waiting for controller to regenerate htpasswd...")
+	err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+		secret, err := cs.Secrets(ctrlcommon.MCONamespace).Get(ctx, ctrlcommon.InternalReleaseImageAuthSecretName, v1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		return iripkg.HtpasswdMatchesPassword(string(secret.Data["htpasswd"]), ctrlcommon.IRIRegistryUsername, newPassword), nil
+	})
+	require.NoError(t, err, "timed out waiting for htpasswd regeneration")
+	t.Logf("Controller regenerated htpasswd")
+
+	// Poll until the new credentials are accepted. The registry only accepts
+	// them once MCD has written the new htpasswd file to the node, so this
+	// also serves as the rollout completion check.
+	node := helpers.GetRandomNode(t, cs, "master")
+	newAuthHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(ctrlcommon.IRIRegistryUsername+":"+newPassword))
+	oldAuthHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(ctrlcommon.IRIRegistryUsername+":"+originalPassword))
+
+	t.Logf("Waiting for new credentials to be accepted on node...")
+	err = wait.PollUntilContextTimeout(ctx, 10*time.Second, 10*time.Minute, true, func(ctx context.Context) (bool, error) {
+		return curlIRIRegistry(t, cs, node, baseDomain, "-H", "Authorization: "+newAuthHeader) == "200", nil
+	})
+	require.NoError(t, err, "timed out waiting for new credentials to be accepted after rotation")
+	t.Logf("New credentials accepted")
+
+	statusCode := curlIRIRegistry(t, cs, node, baseDomain, "-H", "Authorization: "+oldAuthHeader)
+	require.Equal(t, "401", statusCode, "old credentials should be rejected after rotation")
+	t.Logf("Old credentials correctly rejected with %s", statusCode)
+
+	t.Logf("Credential rotation completed successfully")
 }
 
 func TestIRIController_ShouldPreventDeletionWhenInUse(t *testing.T) {

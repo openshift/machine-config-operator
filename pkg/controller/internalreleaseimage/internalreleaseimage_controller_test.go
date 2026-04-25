@@ -43,7 +43,7 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 		},
 		{
 			name:           "add finalizer if not present",
-			initialObjects: objs(iri(), clusterVersion(), cconfig(), iriCertSecret()),
+			initialObjects: objs(iri(), clusterVersion(), cconfig().withDNS("example.com"), iriCertSecret(), iriAuthSecret(), pullSecret()),
 			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
 				assert.Len(t, actualIRI.Finalizers, 2)
 				assert.Contains(t, actualIRI.Finalizers, masterName())
@@ -54,7 +54,7 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 			name: "update status if not set",
 			initialObjects: objs(
 				iri().finalizer(masterName(), workerName()),
-				clusterVersion(), cconfig(), iriCertSecret()),
+				clusterVersion(), cconfig().withDNS("example.com"), iriCertSecret(), iriAuthSecret(), pullSecret()),
 			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
 				assert.Len(t, actualIRI.Status.Releases, 1)
 				assert.Equal(t, actualIRI.Status.Releases[0].Name, "ocp-release-bundle-4.21.5-x86_64")
@@ -66,7 +66,7 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 		},
 		{
 			name:           "generate iri machine-config if not present",
-			initialObjects: objs(iri(), clusterVersion(), cconfig(), iriCertSecret()),
+			initialObjects: objs(iri(), clusterVersion(), cconfig().withDNS("example.com"), iriCertSecret(), iriAuthSecret(), pullSecret()),
 			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
 				verifyInternalReleaseMasterMachineConfig(t, actualMasterMC)
 				verifyInternalReleaseWorkerMachineConfig(t, actualWorkerMC)
@@ -76,7 +76,7 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 			name: "avoid machine-config drifting",
 			initialObjects: objs(
 				iri().finalizer(masterName(), workerName()),
-				clusterVersion(), cconfig(), iriCertSecret(),
+				clusterVersion(), cconfig().withDNS("example.com"), iriCertSecret(), iriAuthSecret(), pullSecret(),
 				machineconfigmaster().ignition("some garbage"),
 				machineconfigworker().ignition("other garbage")),
 			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
@@ -88,7 +88,7 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 			name: "refresh machine-config on controllerConfig update",
 			initialObjects: objs(
 				iri().finalizer(masterName(), workerName()),
-				clusterVersion(), cconfig().dockerRegistryImage("a-new-docker-registry-image-pullspec"), iriCertSecret(),
+				clusterVersion(), cconfig().dockerRegistryImage("a-new-docker-registry-image-pullspec").withDNS("example.com"), iriCertSecret(), iriAuthSecret(), pullSecret(),
 				machineconfigmaster(), machineconfigworker()),
 			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
 				verifyInternalReleaseMasterMachineConfig(t, actualMasterMC)
@@ -125,7 +125,7 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 			name: "status condition Degraded=False on successful sync",
 			initialObjects: objs(
 				iri().finalizer(masterName(), workerName()),
-				clusterVersion(), cconfig(), iriCertSecret(),
+				clusterVersion(), cconfig().withDNS("example.com"), iriCertSecret(), iriAuthSecret(), pullSecret(),
 				machineconfigmaster(), machineconfigworker()),
 			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
 				assert.NotNil(t, actualIRI)
@@ -233,6 +233,91 @@ func TestInternalReleaseImageStatusOnError(t *testing.T) {
 	}
 }
 
+func TestReconcileHtpasswd(t *testing.T) {
+	cases := []struct {
+		name             string
+		password         string
+		existingHtpasswd string
+		expectUpdate     bool
+	}{
+		{
+			name:             "htpasswd already matches password, no update",
+			password:         "mypassword",
+			existingHtpasswd: mustGenerateHtpasswd(t, "mypassword"),
+			expectUpdate:     false,
+		},
+		{
+			name:             "htpasswd missing, generates new",
+			password:         "mypassword",
+			existingHtpasswd: "",
+			expectUpdate:     true,
+		},
+		{
+			name:             "password changed, regenerates htpasswd",
+			password:         "newpassword",
+			existingHtpasswd: mustGenerateHtpasswd(t, "oldpassword"),
+			expectUpdate:     true,
+		},
+	}
+
+	t.Run("empty password returns error", func(t *testing.T) {
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      ctrlcommon.InternalReleaseImageAuthSecretName,
+				Namespace: ctrlcommon.MCONamespace,
+			},
+			Data: map[string][]byte{
+				"password": []byte(""),
+			},
+		}
+		f := newFixture(t, []runtime.Object{secret})
+		_, err := reconcileHtpasswd(f.k8sClient, secret)
+		assert.Error(t, err)
+	})
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      ctrlcommon.InternalReleaseImageAuthSecretName,
+					Namespace: ctrlcommon.MCONamespace,
+				},
+				Data: map[string][]byte{
+					"password": []byte(tc.password),
+					"htpasswd": []byte(tc.existingHtpasswd),
+				},
+			}
+
+			f := newFixture(t, []runtime.Object{secret})
+			result, err := reconcileHtpasswd(f.k8sClient, secret)
+			assert.NoError(t, err)
+
+			if tc.expectUpdate {
+				// Verify the returned secret has a valid htpasswd
+				assert.True(t, HtpasswdMatchesPassword(string(result.Data["htpasswd"]), ctrlcommon.IRIRegistryUsername, tc.password),
+					"updated htpasswd should match the password")
+
+				// Verify the secret was updated in the API
+				updated, err := f.k8sClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(
+					context.TODO(), ctrlcommon.InternalReleaseImageAuthSecretName, metav1.GetOptions{})
+				assert.NoError(t, err)
+				assert.True(t, HtpasswdMatchesPassword(string(updated.Data["htpasswd"]), ctrlcommon.IRIRegistryUsername, tc.password),
+					"secret in API should have updated htpasswd")
+			} else {
+				// Verify the htpasswd was not changed
+				assert.Equal(t, tc.existingHtpasswd, string(result.Data["htpasswd"]),
+					"htpasswd should not change when already matching")
+			}
+		})
+	}
+}
+
+func mustGenerateHtpasswd(t *testing.T, password string) string {
+	t.Helper()
+	entry, err := generateHtpasswdEntry(ctrlcommon.IRIRegistryUsername, password)
+	assert.NoError(t, err)
+	return entry
+}
 // The fixture used to setup and run the controller.
 type fixture struct {
 	t *testing.T
