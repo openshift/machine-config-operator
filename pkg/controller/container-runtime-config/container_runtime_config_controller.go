@@ -1,6 +1,7 @@
 package containerruntimeconfig
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"path/filepath"
@@ -94,6 +95,7 @@ type Controller struct {
 	syncHandler                   func(mcp string) error
 	syncImgHandler                func(mcp string) error
 	syncCRIOCPHandler             func(key string) error
+	syncTLSHandler                func(key string) error
 	enqueueContainerRuntimeConfig func(*mcfgv1.ContainerRuntimeConfig)
 
 	ccLister       mcfglistersv1.ControllerConfigLister
@@ -129,6 +131,12 @@ type Controller struct {
 	mcpLister       mcfglistersv1.MachineConfigPoolLister
 	mcpListerSynced cache.InformerSynced
 
+	kcLister       mcfglistersv1.KubeletConfigLister
+	kcListerSynced cache.InformerSynced
+
+	apiserverLister       cligolistersv1.APIServerLister
+	apiserverListerSynced cache.InformerSynced
+
 	clusterVersionLister       cligolistersv1.ClusterVersionLister
 	clusterVersionListerSynced cache.InformerSynced
 
@@ -137,6 +145,7 @@ type Controller struct {
 	queue       workqueue.TypedRateLimitingInterface[string]
 	imgQueue    workqueue.TypedRateLimitingInterface[string]
 	criocpQueue workqueue.TypedRateLimitingInterface[string]
+	tlsQueue    workqueue.TypedRateLimitingInterface[string]
 }
 
 // New returns a new container runtime config controller
@@ -145,6 +154,8 @@ func New(
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mcrInformer mcfginformersv1.ContainerRuntimeConfigInformer,
+	kcInformer mcfginformersv1.KubeletConfigInformer,
+	apiserverInformer cligoinformersv1.APIServerInformer,
 	imgInformer cligoinformersv1.ImageInformer,
 	idmsInformer cligoinformersv1.ImageDigestMirrorSetInformer,
 	itmsInformer cligoinformersv1.ImageTagMirrorSetInformer,
@@ -171,6 +182,7 @@ func New(
 			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigcontroller-containerruntimeconfigcontroller"}),
 		imgQueue:    workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]()),
 		criocpQueue: workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]()),
+		tlsQueue:    workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]()),
 	}
 
 	mcrInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -203,9 +215,42 @@ func New(
 		DeleteFunc: ctrl.itmsConfDeleted,
 	})
 
+	mcpInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(_ interface{}) {
+			ctrl.tlsQueue.Add("mcp-change")
+		},
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			oldMCP := oldObj.(*mcfgv1.MachineConfigPool)
+			newMCP := newObj.(*mcfgv1.MachineConfigPool)
+			// Only re-sync TLS when labels change, since labels determine
+			// which KubeletConfigs match this pool. Skip status-only updates.
+			if !reflect.DeepEqual(oldMCP.Labels, newMCP.Labels) {
+				ctrl.tlsQueue.Add("mcp-change")
+			}
+		},
+		DeleteFunc: func(_ interface{}) {
+			ctrl.tlsQueue.Add("mcp-change")
+		},
+	})
+
+	kcInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.kubeletConfigAdded,
+		UpdateFunc: ctrl.kubeletConfigUpdated,
+		DeleteFunc: ctrl.kubeletConfigDeleted,
+	})
+
+	// Re-sync CRI-O TLS config when the cluster APIServer changes, e.g.:
+	//   oc patch apiserver cluster --type=merge -p '{"spec":{"tlsSecurityProfile":{"type":"Modern"}}}'
+	apiserverInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.apiserverAdded,
+		UpdateFunc: ctrl.apiserverUpdated,
+		DeleteFunc: ctrl.apiserverDeleted,
+	})
+
 	ctrl.syncHandler = ctrl.syncContainerRuntimeConfig
 	ctrl.syncImgHandler = ctrl.syncImageConfig
 	ctrl.syncCRIOCPHandler = ctrl.syncCRIOCredentialProviderConfig
+	ctrl.syncTLSHandler = ctrl.syncTLSConfig
 	ctrl.enqueueContainerRuntimeConfig = ctrl.enqueue
 
 	ctrl.mcpLister = mcpInformer.Lister()
@@ -216,6 +261,12 @@ func New(
 
 	ctrl.mccrLister = mcrInformer.Lister()
 	ctrl.mccrListerSynced = mcrInformer.Informer().HasSynced
+
+	ctrl.kcLister = kcInformer.Lister()
+	ctrl.kcListerSynced = kcInformer.Informer().HasSynced
+
+	ctrl.apiserverLister = apiserverInformer.Lister()
+	ctrl.apiserverListerSynced = apiserverInformer.Informer().HasSynced
 
 	ctrl.imgLister = imgInformer.Lister()
 	ctrl.imgListerSynced = imgInformer.Informer().HasSynced
@@ -246,8 +297,9 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer ctrl.queue.ShutDown()
 	defer ctrl.imgQueue.ShutDown()
 	defer ctrl.criocpQueue.ShutDown()
+	defer ctrl.tlsQueue.ShutDown()
 	listerCaches := []cache.InformerSynced{ctrl.mcpListerSynced, ctrl.mccrListerSynced, ctrl.ccListerSynced,
-		ctrl.imgListerSynced, ctrl.icspListerSynced, ctrl.idmsListerSynced, ctrl.itmsListerSynced, ctrl.clusterVersionListerSynced}
+		ctrl.kcListerSynced, ctrl.apiserverListerSynced, ctrl.imgListerSynced, ctrl.icspListerSynced, ctrl.idmsListerSynced, ctrl.itmsListerSynced, ctrl.clusterVersionListerSynced}
 
 	if ctrl.sigstoreAPIEnabled() {
 		ctrl.addImagePolicyObservers()
@@ -287,6 +339,12 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 
 	// Just need one worker for the CRIOCredentialProviderConfig
 	go wait.Until(ctrl.criocpWorker, time.Second, stopCh)
+
+	// One worker for TLS config propagation from KubeletConfig/APIServer to CRI-O
+	go wait.Until(ctrl.tlsWorker, time.Second, stopCh)
+
+	// Seed the TLS queue on startup so every pool gets a TLS MC
+	ctrl.tlsQueue.Add("initial-sync")
 
 	<-stopCh
 }
@@ -370,6 +428,88 @@ func (ctrl *Controller) criocpConfUpdated(_, _ interface{}) {
 
 func (ctrl *Controller) criocpConfDeleted(_ interface{}) {
 	ctrl.criocpQueue.Add("openshift-config")
+}
+
+func (ctrl *Controller) kubeletConfigAdded(obj interface{}) {
+	kc := obj.(*mcfgv1.KubeletConfig)
+	if kc.DeletionTimestamp != nil {
+		ctrl.kubeletConfigDeleted(kc)
+		return
+	}
+	klog.V(4).Infof("Add KubeletConfig %s", kc.Name)
+	ctrl.tlsQueue.Add("kubeletconfig-change")
+}
+
+func (ctrl *Controller) kubeletConfigUpdated(oldObj, newObj interface{}) {
+	oldKC := oldObj.(*mcfgv1.KubeletConfig)
+	newKC := newObj.(*mcfgv1.KubeletConfig)
+	if !reflect.DeepEqual(oldKC.Spec, newKC.Spec) {
+		klog.V(4).Infof("Update KubeletConfig: %s", newKC.Name)
+		ctrl.tlsQueue.Add("kubeletconfig-change")
+	}
+}
+
+func (ctrl *Controller) kubeletConfigDeleted(obj interface{}) {
+	kc, ok := obj.(*mcfgv1.KubeletConfig)
+	if !ok {
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
+			return
+		}
+		kc, ok = tombstone.Obj.(*mcfgv1.KubeletConfig)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a KubeletConfig %#v", obj))
+			return
+		}
+	}
+	klog.V(4).Infof("Delete KubeletConfig %s", kc.Name)
+	ctrl.tlsQueue.Add("kubeletconfig-change")
+}
+
+func (ctrl *Controller) filterAPIServer(apiServer *apicfgv1.APIServer) {
+	if apiServer.Name != ctrlcommon.APIServerInstanceName {
+		return
+	}
+	klog.Infof("Re-syncing CRI-O TLS config due to APIServer %s change", apiServer.Name)
+	ctrl.tlsQueue.Add("apiserver-change")
+}
+
+func (ctrl *Controller) apiserverAdded(obj interface{}) {
+	apiServer := obj.(*apicfgv1.APIServer)
+	if apiServer.DeletionTimestamp != nil {
+		ctrl.apiserverDeleted(apiServer)
+		return
+	}
+	klog.V(4).Infof("Add APIServer %v", apiServer)
+	ctrl.filterAPIServer(apiServer)
+}
+
+func (ctrl *Controller) apiserverUpdated(old, cur interface{}) {
+	oldAPIServer := old.(*apicfgv1.APIServer)
+	newAPIServer := cur.(*apicfgv1.APIServer)
+	if !reflect.DeepEqual(oldAPIServer.Spec, newAPIServer.Spec) {
+		klog.V(4).Infof("Update APIServer: %s", newAPIServer.Name)
+		ctrl.filterAPIServer(newAPIServer)
+	}
+}
+
+func (ctrl *Controller) apiserverDeleted(obj interface{}) {
+	apiServer, ok := obj.(*apicfgv1.APIServer)
+	if !ok {
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
+			return
+		}
+		apiServer, ok = tombstone.Obj.(*apicfgv1.APIServer)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not an APIServer %#v", obj))
+			return
+		}
+	}
+	klog.V(4).Infof("Delete APIServer %v", apiServer)
+	ctrl.filterAPIServer(apiServer)
 }
 
 func (ctrl *Controller) addImagePolicyObservers() {
@@ -511,6 +651,11 @@ func (ctrl *Controller) criocpWorker() {
 	}
 }
 
+func (ctrl *Controller) tlsWorker() {
+	for ctrl.processNextTLSWorkItem() {
+	}
+}
+
 func (ctrl *Controller) processNextWorkItem() bool {
 	key, quit := ctrl.queue.Get()
 	if quit {
@@ -546,6 +691,19 @@ func (ctrl *Controller) processNextCRIOCPWorkItem() bool {
 
 	err := ctrl.syncCRIOCPHandler(key)
 	ctrl.handleQueueErr(ctrl.criocpQueue, "CRIOCredentialProviderConfig", err, key)
+
+	return true
+}
+
+func (ctrl *Controller) processNextTLSWorkItem() bool {
+	key, quit := ctrl.tlsQueue.Get()
+	if quit {
+		return false
+	}
+	defer ctrl.tlsQueue.Done(key)
+
+	err := ctrl.syncTLSHandler(key)
+	ctrl.handleQueueErr(ctrl.tlsQueue, "CRI-O TLS config", err, key)
 
 	return true
 }
@@ -850,8 +1008,8 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 			return ctrl.syncStatusOnly(cfg, err, "could not find MachineConfig: %v", managedKey)
 		}
 		// If we have seen this generation and the sync didn't fail, then skip
+		// But we still need to compare the generated controller version because during an upgrade we need a new one
 		if !isNotFound && cfg.Status.ObservedGeneration >= cfg.Generation && cfg.Status.Conditions[len(cfg.Status.Conditions)-1].Type == mcfgv1.ContainerRuntimeConfigSuccess {
-			// But we still need to compare the generated controller version because during an upgrade we need a new one
 			mcCtrlVersion := mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey]
 			if mcCtrlVersion == version.Hash {
 				return nil
@@ -1569,6 +1727,154 @@ func (ctrl *Controller) addFinalizerToContainerRuntimeConfig(ctrCfg *mcfgv1.Cont
 		}
 		return ctrl.patchContainerRuntimeConfigs(ctrCfg.Name, patch)
 	})
+}
+
+// syncTLSConfig creates or updates a dedicated CRI-O TLS MachineConfig for each
+// MachineConfigPool. This runs independently of ContainerRuntimeConfig CRs, so
+// every pool gets TLS propagation regardless of whether a CTRCFG exists.
+// This follows the same pattern as kubelet_config_nodes.go syncNodeConfigHandler.
+func (ctrl *Controller) syncTLSConfig(key string) error {
+	startTime := time.Now()
+	klog.V(4).Infof("Started syncing CRI-O TLS config %q", key)
+	defer func() {
+		klog.V(4).Infof("Finished syncing CRI-O TLS config %q (%v)", key, time.Since(startTime))
+	}()
+
+	pools, err := ctrl.mcpLister.List(labels.Everything())
+	if err != nil {
+		return fmt.Errorf("error listing MachineConfigPools for TLS sync: %w", err)
+	}
+
+	for _, pool := range pools {
+		role := pool.Name
+		managedKey, err := getManagedKeyTLS(pool)
+		if err != nil {
+			return fmt.Errorf("could not get TLS managed key for pool %s: %w", role, err)
+		}
+
+		tlsMinVersion, tlsCipherSuites, err := ctrl.getTLSConfigForPool(pool)
+		if err != nil {
+			return fmt.Errorf("could not get TLS config for pool %s: %w", role, err)
+		}
+		tlsDropinFiles, err := createCRIOTLSDropinFile(tlsMinVersion, tlsCipherSuites)
+		if err != nil {
+			return fmt.Errorf("could not create TLS drop-in for pool %s: %w", role, err)
+		}
+		tlsIgn := createNewIgnition(tlsDropinFiles)
+		rawIgn, err := json.Marshal(tlsIgn)
+		if err != nil {
+			return fmt.Errorf("could not encode TLS Ignition config: %w", err)
+		}
+
+		if err := retry.RetryOnConflict(updateBackoff, func() error {
+			mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), managedKey, metav1.GetOptions{})
+			isNotFound := errors.IsNotFound(err)
+			if err != nil && !isNotFound {
+				return fmt.Errorf("could not get MachineConfig %s: %w", managedKey, err)
+			}
+			if isNotFound {
+				ignConfig := ctrlcommon.NewIgnConfig()
+				mc, err = ctrlcommon.MachineConfigFromIgnConfig(role, managedKey, ignConfig)
+				if err != nil {
+					return fmt.Errorf("could not create MachineConfig from Ignition config: %w", err)
+				}
+			}
+
+			if !isNotFound && bytes.Equal(mc.Spec.Config.Raw, rawIgn) &&
+				mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] == version.Hash {
+				return nil
+			}
+
+			mc.Spec.Config.Raw = rawIgn
+			if mc.ObjectMeta.Annotations == nil {
+				mc.ObjectMeta.Annotations = map[string]string{}
+			}
+			mc.ObjectMeta.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] = version.Hash
+
+			if isNotFound {
+				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
+			} else {
+				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Update(context.TODO(), mc, metav1.UpdateOptions{})
+			}
+			return err
+		}); err != nil {
+			return fmt.Errorf("could not Create/Update MachineConfig: %w", err)
+		}
+		klog.Infof("Applied CRI-O TLS config %s on MachineConfigPool %s (TLS min version: %s)", managedKey, role, tlsMinVersion)
+		ctrlcommon.UpdateStateMetric(ctrlcommon.MCCSubControllerState, "machine-config-controller-container-runtime-config", "Sync TLS Config", role)
+	}
+
+	// Clean up orphaned TLS MachineConfigs for pools that no longer exist
+	if err := ctrl.cleanupOrphanedTLSMachineConfigs(pools); err != nil {
+		return fmt.Errorf("error cleaning up orphaned TLS MachineConfigs: %w", err)
+	}
+
+	return nil
+}
+
+// cleanupOrphanedTLSMachineConfigs deletes TLS MachineConfigs that belong to
+// pools which have been deleted.
+func (ctrl *Controller) cleanupOrphanedTLSMachineConfigs(activePools []*mcfgv1.MachineConfigPool) error {
+	expectedMCs := make(map[string]bool)
+	for _, pool := range activePools {
+		key, err := getManagedKeyTLS(pool)
+		if err != nil {
+			return err
+		}
+		expectedMCs[key] = true
+	}
+
+	mcList, err := ctrl.client.MachineconfigurationV1().MachineConfigs().List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		return fmt.Errorf("error listing MachineConfigs for TLS cleanup: %w", err)
+	}
+	for _, mc := range mcList.Items {
+		if !strings.Contains(mc.Name, "generated-"+managedTLSConfigKeySuffix) {
+			continue
+		}
+		if expectedMCs[mc.Name] {
+			continue
+		}
+		if err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), mc.Name, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
+			return fmt.Errorf("error deleting orphaned TLS MachineConfig %s: %w", mc.Name, err)
+		}
+		klog.Infof("Deleted orphaned TLS MachineConfig %s", mc.Name)
+	}
+	return nil
+}
+
+// getTLSConfigFromKubeletConfigs finds the TLS minimum version and cipher suites from
+// KubeletConfig CRs that match the given MachineConfigPool.
+func (ctrl *Controller) getTLSConfigFromKubeletConfigs(pool *mcfgv1.MachineConfigPool) (string, []string, error) {
+	kubeletConfigs, err := ctrl.kcLister.List(labels.Everything())
+	if err != nil {
+		return "", nil, fmt.Errorf("error listing KubeletConfigs for TLS propagation: %w", err)
+	}
+	v, c := tlsConfigFromKubeletConfigs(kubeletConfigs, pool)
+	return v, c, nil
+}
+
+// getTLSConfigForPool returns the TLS minimum version and cipher suites for the given pool.
+// It first checks KubeletConfig CRs targeting the pool; if none specify TLS,
+// it falls back to the cluster APIServer config.
+func (ctrl *Controller) getTLSConfigForPool(pool *mcfgv1.MachineConfigPool) (string, []string, error) {
+	v, c, err := ctrl.getTLSConfigFromKubeletConfigs(pool)
+	if err != nil {
+		return "", nil, err
+	}
+	if v != "" {
+		return v, c, nil
+	}
+	apiServer, err := ctrl.apiserverLister.Get(ctrlcommon.APIServerInstanceName)
+	if err != nil && !errors.IsNotFound(err) {
+		return "", nil, fmt.Errorf("error getting APIServer for TLS fallback: %w", err)
+	}
+	var apiServerObj *apicfgv1.APIServer
+	if err == nil {
+		apiServerObj = apiServer
+	}
+	v, c = ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServerObj)
+	return v, c, nil
 }
 
 func (ctrl *Controller) getPoolsForContainerRuntimeConfig(config *mcfgv1.ContainerRuntimeConfig) ([]*mcfgv1.MachineConfigPool, error) {
