@@ -1742,6 +1742,13 @@ func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig, co *c
 		}
 	}
 
+	// Check if any pool has layering enabled (OCL/MOSB)
+	layeredMCPs, err := optr.getLayeredMachineConfigPools()
+	if err != nil {
+		return fmt.Errorf("error getting layered machine config pools: %w", err)
+	}
+	hasLayeredPools := len(layeredMCPs) > 0
+
 	// Let's start with a 10 minute timeout per "required" node.
 	if err := wait.PollUntilContextTimeout(ctx, time.Second, time.Duration(requiredMachineCount*10)*time.Minute, false, func(_ context.Context) (bool, error) {
 		if lastErr != nil {
@@ -1794,38 +1801,27 @@ func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig, co *c
 
 			_, hasRequiredPoolLabel := pool.Labels[requiredForUpgradeMachineConfigPoolLabelKey]
 
-			if hasRequiredPoolLabel {
-				streamName, err := ctrlcommon.GetEffectiveOSImageStreamName(pool, optr.mcpLister)
-				if err != nil {
-					klog.Errorf("Error getting effective osImageStream name for pool %s: %q", pool.Name, err)
-					return false, nil
-				}
-				opURL, _, err := optr.getOsImageURLs(optr.namespace, streamName)
-				if err != nil {
-					klog.Errorf("Error getting OS images: %q", err)
-					return false, nil
-				}
-				releaseVersion, _ := optr.vStore.Get("operator")
+			// For clusters with layered pools (OCL/MOSB), check ALL pools to prevent
+			// upgrades from completing while worker pools have failing custom image builds.
+			// For non-layered clusters, only check required-for-upgrade pools (preserve existing behavior).
+			if !hasRequiredPoolLabel && !hasLayeredPools {
+				continue
+			}
 
-				if err := isMachineConfigPoolConfigurationValid(pool, version.Hash, releaseVersion, opURL, optr.mcLister.Get); err != nil {
-					lastErr = fmt.Errorf("MachineConfigPool %s has not progressed to latest configuration: %w, retrying", pool.Name, err)
-					newCO := co.DeepCopy()
-					syncerr := optr.syncUpgradeableStatus(newCO)
-					if syncerr != nil {
-						klog.Errorf("Error syncingUpgradeableStatus: %q", syncerr)
-					}
-					co, syncerr = optr.updateClusterOperatorStatus(co, &newCO.Status, lastErr)
-					if syncerr != nil {
-						klog.Errorf("Error updating cluster operator status: %q", syncerr)
-					}
-					return false, nil
-				}
+			streamName, err := ctrlcommon.GetEffectiveOSImageStreamName(pool, optr.mcpLister)
+			if err != nil {
+				klog.Errorf("Error getting effective osImageStream name for pool %s: %q", pool.Name, err)
+				return false, nil
+			}
+			opURL, _, err := optr.getOsImageURLs(optr.namespace, streamName)
+			if err != nil {
+				klog.Errorf("Error getting OS images: %q", err)
+				return false, nil
+			}
+			releaseVersion, _ := optr.vStore.Get("operator")
 
-				if pool.Generation <= pool.Status.ObservedGeneration &&
-					isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolUpdated) {
-					continue
-				}
-				lastErr = fmt.Errorf("error required MachineConfigPool %s is not ready, retrying. Status: (total: %d, ready %d, updated: %d, unavailable: %d, degraded: %d)", pool.Name, pool.Status.MachineCount, pool.Status.ReadyMachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount, pool.Status.DegradedMachineCount)
+			if err := isMachineConfigPoolConfigurationValid(pool, version.Hash, releaseVersion, opURL, optr.mcLister.Get); err != nil {
+				lastErr = fmt.Errorf("MachineConfigPool %s has not progressed to latest configuration: %w, retrying", pool.Name, err)
 				newCO := co.DeepCopy()
 				syncerr := optr.syncUpgradeableStatus(newCO)
 				if syncerr != nil {
@@ -1835,15 +1831,37 @@ func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig, co *c
 				if syncerr != nil {
 					klog.Errorf("Error updating cluster operator status: %q", syncerr)
 				}
-				// If we don't account for pause here, we will spin in this loop until we hit the 10 minute timeout because paused pools can't sync.
-				if pool.Spec.Paused {
-					if isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolUpdated) {
-						return false, fmt.Errorf("the required MachineConfigPool %s was paused with no pending updates; no further syncing will occur until it is unpaused", pool.Name)
-					}
-					return false, fmt.Errorf("error required MachineConfigPool %s is paused and cannot sync until it is unpaused", pool.Name)
-				}
 				return false, nil
 			}
+
+			if pool.Generation <= pool.Status.ObservedGeneration &&
+				isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolUpdated) {
+				continue
+			}
+
+			// Format the error message based on whether this is a required pool
+			poolType := "required"
+			if !hasRequiredPoolLabel {
+				poolType = "non-required"
+			}
+			lastErr = fmt.Errorf("error %s MachineConfigPool %s is not ready, retrying. Status: (total: %d, ready %d, updated: %d, unavailable: %d, degraded: %d)", poolType, pool.Name, pool.Status.MachineCount, pool.Status.ReadyMachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount, pool.Status.DegradedMachineCount)
+			newCO := co.DeepCopy()
+			syncerr := optr.syncUpgradeableStatus(newCO)
+			if syncerr != nil {
+				klog.Errorf("Error syncingUpgradeableStatus: %q", syncerr)
+			}
+			co, syncerr = optr.updateClusterOperatorStatus(co, &newCO.Status, lastErr)
+			if syncerr != nil {
+				klog.Errorf("Error updating cluster operator status: %q", syncerr)
+			}
+			// If we don't account for pause here, we will spin in this loop until we hit the 10 minute timeout because paused pools can't sync.
+			if pool.Spec.Paused {
+				if isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolUpdated) {
+					return false, fmt.Errorf("the %s MachineConfigPool %s was paused with no pending updates; no further syncing will occur until it is unpaused", poolType, pool.Name)
+				}
+				return false, fmt.Errorf("error %s MachineConfigPool %s is paused and cannot sync until it is unpaused", poolType, pool.Name)
+			}
+			return false, nil
 		}
 		return true, nil
 	}); err != nil {
