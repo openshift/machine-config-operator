@@ -203,7 +203,7 @@ func ValidateTransitionThroughConditions(machineConfigClient *machineconfigclien
 	updatingWaitTime := 1 * time.Minute
 	updatingWaitInterval := 1 * time.Second
 	if isImageMode {
-		updatingWaitTime = 15 * time.Minute
+		updatingWaitTime = 25 * time.Minute
 		updatingWaitInterval = 5 * time.Second
 	}
 
