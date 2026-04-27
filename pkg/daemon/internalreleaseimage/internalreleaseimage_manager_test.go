@@ -151,6 +151,9 @@ func TestInternalReleaseImageManager(t *testing.T) {
 					},
 				},
 			}
+			// Provide a dummy auth token so the manager doesn't try to read
+			// /var/lib/kubelet/config.json (which doesn't exist in unit tests).
+			iriManager.authToken = "dGVzdDp0ZXN0" // base64("test:test")
 			require.NoError(t, iriManager.syncHandler(common.InternalReleaseImageInstanceName))
 
 			if tc.mcn != nil {
