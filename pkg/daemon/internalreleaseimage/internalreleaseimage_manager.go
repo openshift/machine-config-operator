@@ -42,6 +42,8 @@ type Manager struct {
 
 	mcfgClient     mcfgclientset.Interface
 	registryClient *http.Client
+	// authToken overrides the token read from the kubelet auth file; used in tests.
+	authToken string
 
 	syncHandler                 func(iri string) error
 	enqueueInternalReleaseImage func(*mcfgv1alpha1.InternalReleaseImage)
@@ -425,8 +427,17 @@ func (i *Manager) syncInternalReleaseImage(key string) error {
 		return err
 	}
 
-	iriReg := newIRIRegistry(i.nodeName, i.registryClient)
-	if registryErr := iriReg.CheckLocalRegistry(); registryErr != nil {
+	authToken := i.authToken
+	var registryErr error
+	if authToken == "" {
+		authToken, registryErr = readIRIAuthToken(fmt.Sprintf("%s:%d", iriRegistryHost, iriRegistryPort))
+	}
+	var iriReg *iriRegistry
+	if registryErr == nil {
+		iriReg = newIRIRegistry(i.nodeName, i.registryClient, authToken)
+		registryErr = iriReg.CheckLocalRegistry()
+	}
+	if registryErr != nil {
 		err = i.setMachineConfigNodeAsDegraded(mcn, registryErr)
 	} else {
 		err = i.refreshMachineConfigNodeStatus(mcn, iriReg)

@@ -118,7 +118,11 @@ func New(
 		DeleteFunc: ctrl.deleteMachineConfig,
 	})
 
+	// Watch IRI secrets (TLS, auth) and the global pull secret. All are served
+	// by the cluster-wide KubeInformerFactory, so a single informer covers all
+	// namespaces.
 	secretInformer.Informer().AddEventHandler(cache.ResourceEventHandlerDetailedFuncs{
+		AddFunc:    ctrl.addSecret,
 		UpdateFunc: ctrl.updateSecret,
 	})
 
@@ -275,15 +279,25 @@ func (ctrl *Controller) processMachineConfigEvent(obj interface{}, logMsg string
 	ctrl.queue.Add(ctrlcommon.InternalReleaseImageInstanceName)
 }
 
-func (ctrl *Controller) updateSecret(obj, _ interface{}) {
+func (ctrl *Controller) addSecret(obj interface{}, _ bool) {
 	secret := obj.(*corev1.Secret)
+	if secret.Name != ctrlcommon.InternalReleaseImageTLSSecretName &&
+		secret.Name != ctrlcommon.InternalReleaseImageAuthSecretName {
+		return
+	}
+	klog.V(4).Infof("Secret %s added, re-queuing IRI sync", secret.Name)
+	ctrl.queue.Add(ctrlcommon.InternalReleaseImageInstanceName)
+}
 
-	// Skip any event not related to the InternalReleaseImage secrets
-	if secret.Name != ctrlcommon.InternalReleaseImageTLSSecretName {
+func (ctrl *Controller) updateSecret(_, cur interface{}) {
+	secret := cur.(*corev1.Secret)
+
+	if secret.Name != ctrlcommon.InternalReleaseImageTLSSecretName &&
+		secret.Name != ctrlcommon.InternalReleaseImageAuthSecretName {
 		return
 	}
 
-	klog.V(4).Infof("Secret %s update", secret.Name)
+	klog.V(4).Infof("Secret %s updated, re-queuing IRI sync", secret.Name)
 	ctrl.queue.Add(ctrlcommon.InternalReleaseImageInstanceName)
 }
 
@@ -355,8 +369,13 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) (syncErr error) {
 		return fmt.Errorf("could not get Secret %s: %w", ctrlcommon.InternalReleaseImageTLSSecretName, err)
 	}
 
+	iriRegistryCredentialsSecret, err := ctrl.secretLister.Secrets(ctrlcommon.MCONamespace).Get(ctrlcommon.InternalReleaseImageAuthSecretName)
+	if err != nil {
+		return fmt.Errorf("could not get Secret %s: %w", ctrlcommon.InternalReleaseImageAuthSecretName, err)
+	}
+
 	for _, role := range SupportedRoles {
-		r := NewRendererByRole(role, iri, iriSecret, cconfig)
+		r := NewRendererByRole(role, iri, iriSecret, iriRegistryCredentialsSecret, cconfig)
 
 		mc, err := ctrl.mcLister.Get(r.GetMachineConfigName())
 		isNotFound := errors.IsNotFound(err)
