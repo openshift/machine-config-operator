@@ -27,7 +27,11 @@ SYSTEM_RESERVED_ES=1Gi
 `
 )
 
-// ensureAutoSizingMachineConfigs ensures auto-sizing MachineConfigs exist for all MachineConfigPools
+func isDefaultPool(poolName string) bool {
+	return poolName == "master" || poolName == "worker"
+}
+
+// ensureAutoSizingMachineConfigs ensures auto-sizing MachineConfigs exist for the master and worker MachineConfigPools
 func (ctrl *Controller) ensureAutoSizingMachineConfigs(ctx context.Context) error {
 	mcpPools, err := ctrl.mcpLister.List(labels.Everything())
 	if err != nil {
@@ -35,6 +39,10 @@ func (ctrl *Controller) ensureAutoSizingMachineConfigs(ctx context.Context) erro
 	}
 
 	for _, pool := range mcpPools {
+		if !isDefaultPool(pool.Name) {
+			klog.V(4).Infof("Skipping auto-sizing MachineConfig for non-default pool %v", pool.Name)
+			continue
+		}
 		if err := ctrl.createAutoSizingMCIfNeeded(ctx, pool); err != nil {
 			return fmt.Errorf("could not ensure auto-sizing MachineConfig for pool %v: %w", pool.Name, err)
 		}
@@ -77,12 +85,16 @@ func (ctrl *Controller) createAutoSizingMCIfNeeded(ctx context.Context, pool *mc
 	return nil
 }
 
-// RunAutoSizingBootstrap generates auto-sizing MachineConfig objects for all mcpPools
+// RunAutoSizingBootstrap generates auto-sizing MachineConfig objects for master and worker mcpPools
 func RunAutoSizingBootstrap(mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
 	configs := make([]*mcfgv1.MachineConfig, 0, len(mcpPools))
 
-	// Create auto-sizing MachineConfigs for each pool
+	// Create auto-sizing MachineConfigs only for master and worker pools
 	for _, pool := range mcpPools {
+		if !isDefaultPool(pool.Name) {
+			klog.V(4).Infof("Skipping auto-sizing MachineConfig for non-default pool %v during bootstrap", pool.Name)
+			continue
+		}
 		autoSizingMC, err := newAutoSizingMachineConfig(pool)
 		if err != nil {
 			return nil, err
