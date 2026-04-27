@@ -211,47 +211,21 @@ func TestEnsureAutoSizingMachineConfigs(t *testing.T) {
 			"should have created MC for master pool")
 	})
 
-	t.Run("skips custom pools", func(t *testing.T) {
-		// Setup: Initialize test fixture with a custom pool
-		f := newFixture(t)
-		f.skipActionsValidation = true
-
-		// Setup: Create a custom machine config pool with specific selector
-		customPool := helpers.NewMachineConfigPool("custom", nil, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/custom", ""), "v0")
-		f.mcpLister = append(f.mcpLister, customPool)
-
-		ctrl := f.newController(nil)
-
-		// Execute: Ensure auto-sizing MCs - custom pool should be skipped
-		ctx := context.Background()
-		err := ctrl.ensureAutoSizingMachineConfigs(ctx)
-		require.NoError(t, err, "ensureAutoSizingMachineConfigs should succeed even with custom pool")
-
-		// Verify: No MachineConfigs should be created for custom pools
-		mcList, err := ctrl.client.MachineconfigurationV1().MachineConfigs().List(ctx, metav1.ListOptions{})
-		require.NoError(t, err, "listing MachineConfigs should succeed")
-		require.Len(t, mcList.Items, 0,
-			"should have no MachineConfigs since custom pools are skipped")
-	})
-
-	t.Run("creates MCs only for master and worker when mixed with custom pools", func(t *testing.T) {
-		// Setup: Initialize test fixture with worker, master, and custom pools
+	t.Run("skips custom pools and creates MCs only for master and worker", func(t *testing.T) {
 		f := newFixture(t)
 		f.skipActionsValidation = true
 
 		workerPool := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 		masterPool := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
-		customPool := helpers.NewMachineConfigPool("infra", nil, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/infra", ""), "v0")
-		f.mcpLister = append(f.mcpLister, workerPool, masterPool, customPool)
+		infraPool := helpers.NewMachineConfigPool("infra", nil, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role.kubernetes.io/infra", ""), "v0")
+		f.mcpLister = append(f.mcpLister, workerPool, masterPool, infraPool)
 
 		ctrl := f.newController(nil)
 
-		// Execute: Ensure auto-sizing MCs exist
 		ctx := context.Background()
 		err := ctrl.ensureAutoSizingMachineConfigs(ctx)
 		require.NoError(t, err, "ensureAutoSizingMachineConfigs should succeed")
 
-		// Verify: Only master and worker MCs should be created, not infra
 		mcList, err := ctrl.client.MachineconfigurationV1().MachineConfigs().List(ctx, metav1.ListOptions{})
 		require.NoError(t, err, "listing MachineConfigs should succeed")
 		require.Len(t, mcList.Items, 2,
@@ -324,25 +298,12 @@ func TestRunAutoSizingBootstrap(t *testing.T) {
 		require.Len(t, mcs, 0, "should generate no MachineConfigs for empty pool list")
 	})
 
-	t.Run("skips custom pools", func(t *testing.T) {
-		// Setup: Create a single custom pool
-		customPool := helpers.NewMachineConfigPool("custom", nil, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/custom", ""), "v0")
-		pools := []*mcfgv1.MachineConfigPool{customPool}
-
-		// Execute: Generate auto-sizing MCs - custom pool should be skipped
-		mcs, err := RunAutoSizingBootstrap(pools)
-		require.NoError(t, err, "RunAutoSizingBootstrap should handle custom pool gracefully")
-		require.Len(t, mcs, 0, "should generate no MachineConfigs for custom pools")
-	})
-
-	t.Run("generates MCs only for master and worker when mixed with custom pools", func(t *testing.T) {
-		// Setup: Create worker, master, and custom pools
+	t.Run("skips custom pools and generates MCs only for master and worker", func(t *testing.T) {
 		workerPool := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 		masterPool := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
-		infraPool := helpers.NewMachineConfigPool("infra", nil, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/infra", ""), "v0")
+		infraPool := helpers.NewMachineConfigPool("infra", nil, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role.kubernetes.io/infra", ""), "v0")
 		pools := []*mcfgv1.MachineConfigPool{workerPool, masterPool, infraPool}
 
-		// Execute: Generate auto-sizing MCs
 		mcs, err := RunAutoSizingBootstrap(pools)
 		require.NoError(t, err, "RunAutoSizingBootstrap should not return an error")
 		require.Len(t, mcs, 2, "should generate 2 MachineConfigs (worker and master only)")
