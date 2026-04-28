@@ -1302,12 +1302,13 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	}
 
 	var controlPlaneTopology configv1.TopologyMode
-	if cc.Spec.Infra != nil {
+	switch {
+	case cc.Spec.Infra != nil:
 		controlPlaneTopology = cc.Spec.Infra.Status.ControlPlaneTopology
-	} else if pool.Name == ctrlcommon.MachineConfigPoolMaster {
+	case pool.Name == ctrlcommon.MachineConfigPoolMaster:
 		klog.Warningf("controllerconfig %q has no infra spec; cannot determine topology for master pool, syncing status only", ctrlcommon.ControllerConfigName)
 		return ctrl.syncStatusOnly(pool)
-	} else {
+	default:
 		klog.Warningf("controllerconfig %q has no infra spec, continuing without topology information", ctrlcommon.ControllerConfigName)
 	}
 
@@ -1315,12 +1316,13 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	poolsToUpdate := []*mcfgv1.MachineConfigPool{pool}
 	if pool.Name == ctrlcommon.MachineConfigPoolMaster && controlPlaneTopology == configv1.HighlyAvailableArbiterMode {
 		arbiterObj, err := ctrl.mcpLister.Get(ctrlcommon.MachineConfigPoolArbiter)
-		if err == nil {
+		switch {
+		case err == nil:
 			poolsToUpdate = append(poolsToUpdate, arbiterObj.DeepCopy())
-		} else if errors.IsNotFound(err) {
+		case errors.IsNotFound(err):
 			klog.Warningf("Arbiter pool %q not found in HighlyAvailableArbiterMode, syncing status only", ctrlcommon.MachineConfigPoolArbiter)
 			return ctrl.syncStatusOnly(pool)
-		} else {
+		default:
 			return fmt.Errorf("error getting arbiter pool %q, error: %w", ctrlcommon.MachineConfigPoolArbiter, err)
 		}
 	}
