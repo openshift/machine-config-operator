@@ -1304,8 +1304,11 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	var controlPlaneTopology configv1.TopologyMode
 	if cc.Spec.Infra != nil {
 		controlPlaneTopology = cc.Spec.Infra.Status.ControlPlaneTopology
+	} else if pool.Name == ctrlcommon.MachineConfigPoolMaster {
+		klog.Warningf("controllerconfig %q has no infra spec; cannot determine topology for master pool, syncing status only", ctrlcommon.ControllerConfigName)
+		return ctrl.syncStatusOnly(pool)
 	} else {
-		klog.Warningf("controllerconfig %q has no infra spec, continuing with out topology information", ctrlcommon.ControllerConfigName)
+		klog.Warningf("controllerconfig %q has no infra spec, continuing without topology information", ctrlcommon.ControllerConfigName)
 	}
 
 	// If master pool and arbiter mode, add arbiter pool as well
