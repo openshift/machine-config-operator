@@ -1380,7 +1380,7 @@ func TestUpdateStorageConfigAdditionalStores(t *testing.T) {
 				}{
 					Options: struct{ storageconfig.OptionsConfig }{
 						storageconfig.OptionsConfig{
-							AdditionalLayerStores: []string{"/var/lib/stargz-store", "/mnt/nfs-layers"},
+							AdditionalLayerStores: []string{"/var/lib/stargz-store:ref", "/mnt/nfs-layers:ref"},
 						},
 					},
 				},
@@ -1433,8 +1433,30 @@ func TestUpdateStorageConfigAdditionalStores(t *testing.T) {
 					Options: struct{ storageconfig.OptionsConfig }{
 						storageconfig.OptionsConfig{
 							Size:                  "10G",
-							AdditionalLayerStores: []string{"/var/lib/stargz-store"},
+							AdditionalLayerStores: []string{"/var/lib/stargz-store:ref"},
 							AdditionalImageStores: []string{"/mnt/nfs-images"},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "path with :ref suffix is not doubled",
+			cfg: &mcfgv1.ContainerRuntimeConfiguration{
+				AdditionalLayerStores: []mcfgv1.AdditionalLayerStore{
+					{Path: "/var/lib/stargz-store/store:ref"},
+				},
+			},
+			want: tomlConfigStorage{
+				Storage: struct {
+					Driver    string                                "toml:\"driver\""
+					RunRoot   string                                "toml:\"runroot\""
+					GraphRoot string                                "toml:\"graphroot\""
+					Options   struct{ storageconfig.OptionsConfig } "toml:\"options\""
+				}{
+					Options: struct{ storageconfig.OptionsConfig }{
+						storageconfig.OptionsConfig{
+							AdditionalLayerStores: []string{"/var/lib/stargz-store/store:ref"},
 						},
 					},
 				},
