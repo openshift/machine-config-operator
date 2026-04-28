@@ -1329,6 +1329,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 // updatePools processes pools sequentially, coordinating updates between master and arbiter pools
 // in HighlyAvailableArbiterMode. The arbiter pool only updates after all master nodes have completed
 // their updates to prevent concurrent master and arbiter updates which could impact cluster availability.
+//nolint:gocyclo
 func (ctrl *Controller) updatePools(pools []*mcfgv1.MachineConfigPool, controlPlaneTopology configv1.TopologyMode) error {
 	everything := metav1.LabelSelector{}
 
@@ -1387,6 +1388,28 @@ func (ctrl *Controller) updatePools(pools []*mcfgv1.MachineConfigPool, controlPl
 				return fmt.Errorf("error getting max unavailable count for pool %q, sync error: %w", pool.Name, errs)
 			}
 			return err
+		}
+		// For the master pool in HighlyAvailableArbiterMode, also account for any
+		// unavailable arbiter nodes. This prevents master updates from starting while
+		// the arbiter is updating, which would put two control-plane nodes down at once
+		// and risk etcd quorum loss.
+		if pool.Name == ctrlcommon.MachineConfigPoolMaster && controlPlaneTopology == configv1.HighlyAvailableArbiterMode {
+			for _, p := range pools {
+				if p.Name == ctrlcommon.MachineConfigPoolArbiter {
+					arbiterNodes, err := ctrl.getNodesForPool(p)
+					if err == nil {
+						arbiterUnavailable := len(getUnavailableMachines(arbiterNodes, p))
+						if arbiterUnavailable > 0 {
+							klog.Infof("Pool %s: arbiter has %d unavailable node(s), reducing master capacity to prevent simultaneous updates", pool.Name, arbiterUnavailable)
+							maxunavail -= arbiterUnavailable
+							if maxunavail < 0 {
+								maxunavail = 0
+							}
+						}
+					}
+					break
+				}
+			}
 		}
 		if err := ctrl.setClusterConfigAnnotation(nodes, controlPlaneTopology); err != nil {
 			return fmt.Errorf("error setting clusterConfig Annotation for node in pool %q, error: %w", pool.Name, err)
