@@ -20,6 +20,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/BurntSushi/toml"
 	"github.com/clarketm/json"
 	fcctbase "github.com/coreos/fcct/base/v0_1"
 	"github.com/coreos/go-semver/semver"
@@ -1507,4 +1508,66 @@ func GetEffectiveOSImageStreamName(pool *mcfgv1.MachineConfigPool, mcpLister mcf
 
 	// Return worker pool's stream (which may be empty, indicating default)
 	return workerPool.Spec.OSImageStream.Name, nil
+}
+
+const CRIODropInDir = "/etc/crio/crio.conf.d/"
+
+type crioRuntimeConfig struct {
+	Crio struct {
+		Runtime struct {
+			DefaultRuntime string `toml:"default_runtime,omitempty"`
+		} `toml:"runtime"`
+	} `toml:"crio"`
+}
+
+// DetectRuncInMachineConfig inspects a MachineConfig's Ignition config for CRI-O
+// drop-in files under /etc/crio/crio.conf.d/ and returns the MC name if the
+// effective default container runtime is runc. Drop-ins are processed in
+// lexicographic order (matching CRI-O's layering behavior) so the last file's
+// default_runtime wins.
+func DetectRuncInMachineConfig(mc *mcfgv1.MachineConfig) (string, error) {
+	if mc.Spec.Config.Raw == nil || len(mc.Spec.Config.Raw) == 0 {
+		return "", nil
+	}
+
+	ignCfg, err := ParseAndConvertConfig(mc.Spec.Config.Raw)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse Ignition config for MC %q: %w", mc.Name, err)
+	}
+
+	type crioDropIn struct {
+		path string
+		file ign3types.File
+	}
+	var crioFiles []crioDropIn
+	for _, f := range ignCfg.Storage.Files {
+		if strings.HasPrefix(f.Path, CRIODropInDir) {
+			crioFiles = append(crioFiles, crioDropIn{path: f.Path, file: f})
+		}
+	}
+	sort.Slice(crioFiles, func(i, j int) bool { return crioFiles[i].path < crioFiles[j].path })
+
+	effectiveRuntime := ""
+	for _, dropin := range crioFiles {
+		fileData, err := DecodeIgnitionFileContents(dropin.file.Contents.Source, dropin.file.Contents.Compression)
+		if err != nil {
+			return "", fmt.Errorf("failed to decode CRI-O drop-in %q in MC %q: %w", dropin.path, mc.Name, err)
+		}
+		if len(fileData) == 0 {
+			continue
+		}
+
+		var cfg crioRuntimeConfig
+		if _, err := toml.NewDecoder(bytes.NewReader(fileData)).Decode(&cfg); err != nil {
+			return "", fmt.Errorf("failed to parse TOML from CRI-O drop-in %q in MC %q: %w", dropin.path, mc.Name, err)
+		}
+		if cfg.Crio.Runtime.DefaultRuntime != "" {
+			effectiveRuntime = cfg.Crio.Runtime.DefaultRuntime
+		}
+	}
+
+	if effectiveRuntime == mcfgv1.ContainerRuntimeDefaultRuntimeRunc {
+		return mc.Name, nil
+	}
+	return "", nil
 }

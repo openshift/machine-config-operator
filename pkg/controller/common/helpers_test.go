@@ -1921,3 +1921,84 @@ func TestGetEffectiveOSImageStreamName(t *testing.T) {
 		})
 	}
 }
+
+func makeCRIODropIn(runtime string) string {
+	return "[crio.runtime]\ndefault_runtime = \"" + runtime + "\"\n"
+}
+
+func TestDetectRuncInMachineConfig(t *testing.T) {
+	tests := []struct {
+		name       string
+		mc         *mcfgv1.MachineConfig
+		expectedMC string
+	}{
+		{
+			name:       "no CRI-O drop-ins",
+			mc:         helpers.NewMachineConfig("test", nil, "", nil),
+			expectedMC: "",
+		},
+		{
+			name: "runc in single drop-in",
+			mc: helpers.NewMachineConfig("test-runc", nil, "", []ign3types.File{
+				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0644),
+			}),
+			expectedMC: "test-runc",
+		},
+		{
+			name: "crun in single drop-in",
+			mc: helpers.NewMachineConfig("test", nil, "", []ign3types.File{
+				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("crun"), 0644),
+			}),
+			expectedMC: "",
+		},
+		{
+			name: "runc overridden by crun in later drop-in",
+			mc: helpers.NewMachineConfig("test", nil, "", []ign3types.File{
+				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0644),
+				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/01-ctrcfg", makeCRIODropIn("crun"), 0644),
+			}),
+			expectedMC: "",
+		},
+		{
+			name: "crun overridden by runc in later drop-in",
+			mc: helpers.NewMachineConfig("test-runc-override", nil, "", []ign3types.File{
+				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("crun"), 0644),
+				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/01-ctrcfg", makeCRIODropIn("runc"), 0644),
+			}),
+			expectedMC: "test-runc-override",
+		},
+		{
+			name: "non-CRI-O files are ignored",
+			mc: helpers.NewMachineConfig("test", nil, "", []ign3types.File{
+				helpers.CreateEncodedIgn3File("/etc/other/config", makeCRIODropIn("runc"), 0644),
+			}),
+			expectedMC: "",
+		},
+		{
+			name: "empty config raw",
+			mc: &mcfgv1.MachineConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			},
+			expectedMC: "",
+		},
+		{
+			name: "runc in gzip-compressed drop-in",
+			mc: func() *mcfgv1.MachineConfig {
+				gzFile, err := helpers.CreateGzippedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0644)
+				if err != nil {
+					t.Fatalf("failed to create gzipped file: %v", err)
+				}
+				return helpers.NewMachineConfig("test-runc-gzip", nil, "", []ign3types.File{gzFile})
+			}(),
+			expectedMC: "test-runc-gzip",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mcName, err := DetectRuncInMachineConfig(tt.mc)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedMC, mcName)
+		})
+	}
+}

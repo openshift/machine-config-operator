@@ -7,11 +7,13 @@ import (
 	"reflect"
 	"testing"
 
+	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/utils/clock"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/tools/record"
@@ -25,6 +27,7 @@ import (
 	opv1 "github.com/openshift/api/operator/v1"
 	fakeconfigclientset "github.com/openshift/client-go/config/clientset/versioned/fake"
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
+	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	mcoplistersv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 	cov1helpers "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -1326,6 +1329,176 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 			}
 			assert.Equal(t, tc.expectUpgradeBlock, upgradeBlock, "upgrade block mismatch")
 			assert.Equal(t, tc.expectMessage, message, "message mismatch")
+		})
+	}
+}
+
+func makeCRIODropIn(runtime string) string {
+	return fmt.Sprintf("[crio.runtime]\ndefault_runtime = \"%s\"\n", runtime)
+}
+
+type mockMCLister struct {
+	configs []*mcfgv1.MachineConfig
+}
+
+func (mcl *mockMCLister) List(selector labels.Selector) (ret []*mcfgv1.MachineConfig, err error) {
+	return mcl.configs, nil
+}
+
+func (mcl *mockMCLister) Get(name string) (*mcfgv1.MachineConfig, error) {
+	for _, mc := range mcl.configs {
+		if mc.Name == name {
+			return mc, nil
+		}
+	}
+	return nil, apierrors.NewNotFound(mcfgv1.Resource("machineconfig"), name)
+}
+
+func newCRC(name string, runtime mcfgv1.ContainerRuntimeDefaultRuntime) *mcfgv1.ContainerRuntimeConfig {
+	return &mcfgv1.ContainerRuntimeConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Spec: mcfgv1.ContainerRuntimeConfigSpec{
+			ContainerRuntimeConfig: &mcfgv1.ContainerRuntimeConfiguration{
+				DefaultRuntime: runtime,
+			},
+		},
+	}
+}
+
+func newCRCNilSpec(name string) *mcfgv1.ContainerRuntimeConfig {
+	return &mcfgv1.ContainerRuntimeConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Spec:       mcfgv1.ContainerRuntimeConfigSpec{},
+	}
+}
+
+func makeCRCLister(crcs ...*mcfgv1.ContainerRuntimeConfig) mcfglistersv1.ContainerRuntimeConfigLister {
+	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	for _, crc := range crcs {
+		indexer.Add(crc)
+	}
+	return mcfglistersv1.NewContainerRuntimeConfigLister(indexer)
+}
+
+func TestCfeEvalRunc(t *testing.T) {
+	tests := []struct {
+		name     string
+		crcObjs  []*mcfgv1.ContainerRuntimeConfig
+		pools    []*mcfgv1.MachineConfigPool
+		configs  []*mcfgv1.MachineConfig
+		expected bool
+	}{
+		{
+			name:     "nil crcLister returns false",
+			crcObjs:  nil,
+			pools:    nil,
+			configs:  nil,
+			expected: false,
+		},
+		{
+			name:     "no ContainerRuntimeConfigs and no rendered runc",
+			crcObjs:  []*mcfgv1.ContainerRuntimeConfig{},
+			pools:    nil,
+			configs:  nil,
+			expected: false,
+		},
+		{
+			name: "CRC with runc detected",
+			crcObjs: []*mcfgv1.ContainerRuntimeConfig{
+				newCRC("set-runc", mcfgv1.ContainerRuntimeDefaultRuntimeRunc),
+			},
+			pools:    nil,
+			configs:  nil,
+			expected: true,
+		},
+		{
+			name: "CRC with crun does not trigger",
+			crcObjs: []*mcfgv1.ContainerRuntimeConfig{
+				newCRC("set-crun", "crun"),
+			},
+			pools:    nil,
+			configs:  nil,
+			expected: false,
+		},
+		{
+			name: "CRC with nil ContainerRuntimeConfig spec is skipped",
+			crcObjs: []*mcfgv1.ContainerRuntimeConfig{
+				newCRCNilSpec("nil-spec"),
+			},
+			pools:    nil,
+			configs:  nil,
+			expected: false,
+		},
+		{
+			name: "multiple CRCs only one with runc",
+			crcObjs: []*mcfgv1.ContainerRuntimeConfig{
+				newCRC("set-crun", "crun"),
+				newCRC("set-runc", mcfgv1.ContainerRuntimeDefaultRuntimeRunc),
+			},
+			pools:    nil,
+			configs:  nil,
+			expected: true,
+		},
+		{
+			name:    "no CRC but runc in rendered config is not detected by CRC check",
+			crcObjs: []*mcfgv1.ContainerRuntimeConfig{},
+			pools: []*mcfgv1.MachineConfigPool{
+				helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "rendered-worker"),
+			},
+			configs: []*mcfgv1.MachineConfig{
+				helpers.NewMachineConfig("rendered-worker", nil, "", []ign3types.File{
+					helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0644),
+				}),
+			},
+			expected: false,
+		},
+		{
+			name:    "no CRC and crun in rendered config",
+			crcObjs: []*mcfgv1.ContainerRuntimeConfig{},
+			pools: []*mcfgv1.MachineConfigPool{
+				helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "rendered-worker"),
+			},
+			configs: []*mcfgv1.MachineConfig{
+				helpers.NewMachineConfig("rendered-worker", nil, "", []ign3types.File{
+					helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("crun"), 0644),
+				}),
+			},
+			expected: false,
+		},
+		{
+			name: "CRC with runc short-circuits before rendered config check",
+			crcObjs: []*mcfgv1.ContainerRuntimeConfig{
+				newCRC("set-runc", mcfgv1.ContainerRuntimeDefaultRuntimeRunc),
+			},
+			pools: []*mcfgv1.MachineConfigPool{
+				helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "rendered-worker"),
+			},
+			configs: []*mcfgv1.MachineConfig{
+				helpers.NewMachineConfig("rendered-worker", nil, "", []ign3types.File{
+					helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("crun"), 0644),
+				}),
+			},
+			expected: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			optr := &Operator{}
+
+			if tc.crcObjs != nil {
+				optr.crcLister = makeCRCLister(tc.crcObjs...)
+			}
+			if tc.pools != nil {
+				optr.mcpLister = &mockMCPLister{pools: tc.pools}
+			}
+			if tc.configs != nil {
+				optr.mcLister = &mockMCLister{configs: tc.configs}
+			}
+
+			result, err := optr.cfeEvalRunc()
+			assert.NoError(t, err)
+			assert.Equal(t, tc.expected, result)
 		})
 	}
 }
