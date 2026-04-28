@@ -291,7 +291,11 @@ func TestGetUnavailableMachines(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			unavailableNodes := getUnavailableMachines(test.nodes)
+			pb := helpers.NewMachineConfigPoolBuilder("")
+
+			pool := pb.MachineConfigPool()
+
+			unavailableNodes := getUnavailableMachines(test.nodes, pool)
 			assertExpectedNodes(t, test.unavail, unavailableNodes)
 		})
 	}

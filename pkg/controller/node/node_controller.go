@@ -1405,7 +1405,12 @@ func (ctrl *Controller) updatePools(pools []*mcfgv1.MachineConfigPool, controlPl
 						klog.Warningf("Pool %s: failed to get arbiter nodes, treating as unavailable to be safe: %v", pool.Name, err)
 						maxunavail = 0
 					} else {
-						arbiterUnavailable := len(getUnavailableMachines(arbiterNodes))
+						var arbiterUnavailable int
+					for _, n := range arbiterNodes {
+						if ctrlcommon.NewLayeredNodeState(n).IsUnavailableForUpdate() {
+							arbiterUnavailable++
+						}
+					}
 						if arbiterUnavailable > 0 {
 							klog.Infof("Pool %s: arbiter has %d unavailable node(s), reducing master capacity to prevent simultaneous updates", pool.Name, arbiterUnavailable)
 							maxunavail -= arbiterUnavailable
@@ -1464,7 +1469,13 @@ func (ctrl *Controller) updatePools(pools []*mcfgv1.MachineConfigPool, controlPl
 
 		// Track master unavailable count for arbiter coordination
 		if pool.Name == ctrlcommon.MachineConfigPoolMaster && controlPlaneTopology == configv1.HighlyAvailableArbiterMode {
-			masterUnavailableCount = len(getUnavailableMachines(nodes)) + len(candidates)
+			var masterUnav int
+			for _, n := range nodes {
+				if ctrlcommon.NewLayeredNodeState(n).IsUnavailableForUpdate() {
+					masterUnav++
+				}
+			}
+			masterUnavailableCount = masterUnav + len(candidates)
 		}
 
 		if len(candidates) > 0 {
@@ -1608,7 +1619,7 @@ func (ctrl *Controller) updateCandidateNode(mosc *mcfgv1.MachineOSConfig, mosb *
 // getAllCandidateMachines returns all possible nodes which can be updated to the target config, along with a maximum
 // capacity.  It is the reponsibility of the caller to choose a subset of the nodes given the capacity.
 func getAllCandidateMachines(layered bool, config *mcfgv1.MachineOSConfig, build *mcfgv1.MachineOSBuild, pool *mcfgv1.MachineConfigPool, nodesInPool []*corev1.Node, maxUnavailable int) ([]*corev1.Node, uint) {
-	unavail := getUnavailableMachines(nodesInPool)
+	unavail := getUnavailableMachines(nodesInPool, pool)
 	if len(unavail) >= maxUnavailable {
 		klog.V(4).Infof("getAllCandidateMachines: No capacity left for pool %s (unavail=%d >= maxUnavailable=%d)",
 			pool.Name, len(unavail), maxUnavailable)

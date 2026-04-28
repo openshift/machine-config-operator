@@ -426,14 +426,16 @@ func isNodeManaged(node *corev1.Node) bool {
 // node *may* go unschedulable in the future, so we don't want to
 // potentially start another node update exceeding our maxUnavailable.
 // Somewhat the opposite of getReadyNodes().
-func getUnavailableMachines(nodes []*corev1.Node) []*corev1.Node {
+func getUnavailableMachines(nodes []*corev1.Node, pool *mcfgv1.MachineConfigPool) []*corev1.Node {
 	var unavail []*corev1.Node
 	for _, node := range nodes {
 		lns := ctrlcommon.NewLayeredNodeState(node)
 		if lns.IsUnavailableForUpdate() {
 			unavail = append(unavail, node)
+			klog.V(4).Infof("getUnavailableMachines: Found unavailable node %s in pool %s", node.Name, pool.Name)
 		}
 	}
+	klog.V(4).Infof("getUnavailableMachines: Found %d unavailable in pool %s", len(unavail), pool.Name)
 	return unavail
 }
 
