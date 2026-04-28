@@ -1316,8 +1316,11 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	if pool.Name == ctrlcommon.MachineConfigPoolMaster && controlPlaneTopology == configv1.HighlyAvailableArbiterMode {
 		arbiterObj, err := ctrl.mcpLister.Get(ctrlcommon.MachineConfigPoolArbiter)
 		if err == nil {
-			poolsToUpdate = append(poolsToUpdate, arbiterObj)
-		} else if !errors.IsNotFound(err) {
+			poolsToUpdate = append(poolsToUpdate, arbiterObj.DeepCopy())
+		} else if errors.IsNotFound(err) {
+			klog.Warningf("Arbiter pool %q not found in HighlyAvailableArbiterMode, syncing status only", ctrlcommon.MachineConfigPoolArbiter)
+			return ctrl.syncStatusOnly(pool)
+		} else {
 			return fmt.Errorf("error getting arbiter pool %q, error: %w", ctrlcommon.MachineConfigPoolArbiter, err)
 		}
 	}
