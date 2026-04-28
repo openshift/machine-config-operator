@@ -1426,8 +1426,10 @@ func (ctrl *Controller) updatePools(pools []*mcfgv1.MachineConfigPool, controlPl
 				}
 			}
 		}
-		if err := ctrl.setClusterConfigAnnotation(nodes, controlPlaneTopology); err != nil {
-			return fmt.Errorf("error setting clusterConfig Annotation for node in pool %q, error: %w", pool.Name, err)
+		if controlPlaneTopology != "" {
+			if err := ctrl.setClusterConfigAnnotation(nodes, controlPlaneTopology); err != nil {
+				return fmt.Errorf("error setting clusterConfig Annotation for node in pool %q, error: %w", pool.Name, err)
+			}
 		}
 
 		// Taint all the nodes in the node pool, irrespective of their upgrade status.
@@ -1551,6 +1553,9 @@ func (ctrl *Controller) getNodesForPool(pool *mcfgv1.MachineConfigPool) ([]*core
 // and add/updates required annotation to node such as ControlPlaneTopology
 // from infrastructure object.
 func (ctrl *Controller) setClusterConfigAnnotation(nodes []*corev1.Node, controlPlaneTopology configv1.TopologyMode) error {
+	if controlPlaneTopology == "" {
+		return nil
+	}
 	for _, node := range nodes {
 		if node.Annotations[daemonconsts.ClusterControlPlaneTopologyAnnotationKey] != string(controlPlaneTopology) {
 			oldAnn := node.Annotations[daemonconsts.ClusterControlPlaneTopologyAnnotationKey]
