@@ -444,7 +444,12 @@ func updateStorageConfig(data []byte, internal *mcfgv1.ContainerRuntimeConfigura
 	if additionalStorageEnabled && len(internal.AdditionalLayerStores) > 0 {
 		paths := make([]string, 0, len(internal.AdditionalLayerStores))
 		for _, store := range internal.AdditionalLayerStores {
-			paths = append(paths, string(store.Path))
+			path := string(store.Path)
+			// containers/storage requires :ref for reference-based layer resolution
+			if !strings.HasSuffix(path, ":ref") {
+				path += ":ref"
+			}
+			paths = append(paths, path)
 		}
 		tomlConf.Storage.Options.AdditionalLayerStores = paths
 	}
