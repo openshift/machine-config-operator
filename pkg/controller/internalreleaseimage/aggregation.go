@@ -2,6 +2,7 @@ package internalreleaseimage
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net/http"
 	"sort"
@@ -10,6 +11,7 @@ import (
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -22,8 +24,6 @@ const (
 	IRIStatusSomeNodesNotAvailable     = "SomeNodesUnavailable"
 	IRIStatusSomeRegistriesUnavailable = "SomeRegistriesUnavailable"
 
-	// IRI registry constants
-	iriRegistryPort          = 22625
 	iriRegistryPath          = "/openshift/release-images"
 	iriRegistryPingTimeout   = 5 * time.Second
 	apiServerInternalURLPort = ":6443"
@@ -46,26 +46,90 @@ func (ctrl *Controller) aggregateMCNIRIStatus(iri *mcfgv1alpha1.InternalReleaseI
 		return nil, IRIStatusAllReleasesAvailable, nil, nil, nil
 	}
 
+	sort.Slice(controlPlaneMCNs, func(i, j int) bool {
+		return controlPlaneMCNs[i].Name < controlPlaneMCNs[j].Name
+	})
+
 	klog.V(4).Infof("Aggregating IRI status from %d control plane nodes", len(controlPlaneMCNs))
 
-	// Get cluster domain and build api-int registry URL
-	clusterDomain, err := ctrl.getClusterDomain()
+	// Check if api-int registry is available
+	clusterDomain, apiIntRegistryHost, apiIntAvailable, err := ctrl.checkAPIIntRegistryAvailability()
 	if err != nil {
-		klog.Warningf("Failed to get cluster domain: %v", err)
-		// Can't determine api-int URL without cluster domain
 		return buildAPIIntUnavailableReleases(iri.Spec.Releases, ""), IRIStatusAPIIntNotAvailable, nil, nil, nil
 	}
-
-	apiIntRegistryHost := fmt.Sprintf("api-int.%s:%d", clusterDomain, iriRegistryPort)
-	apiIntAvailable := pingRegistry(apiIntRegistryHost)
-	klog.V(4).Infof("api-int registry available: %v (URL: %s)", apiIntAvailable, apiIntRegistryHost)
 
 	if !apiIntAvailable {
 		klog.V(2).Info("api-int registry is not available, marking all releases as unavailable")
 		return buildAPIIntUnavailableReleases(iri.Spec.Releases, apiIntRegistryHost), IRIStatusAPIIntNotAvailable, nil, nil, nil
 	}
 
-	// Scan through nodes
+	// Process MCN releases and build release map
+	result := ctrl.processMCNReleases(controlPlaneMCNs, clusterDomain)
+
+	// Sort node lists for deterministic output
+	sort.Strings(result.degradedNodes)
+	sort.Strings(result.notReadyNodes)
+
+	// Build final aggregated releases
+	aggregatedReleases := buildAggregatedReleases(
+		iri,
+		result.releaseMap,
+		result.iriStatus,
+		result.degradedNodes,
+		result.notReadyNodes,
+		apiIntRegistryHost,
+	)
+
+	klog.V(4).Infof("Aggregation complete. IRIStatus: %s, Not ready nodes: %v, Degraded nodes: %v",
+		result.iriStatus, result.notReadyNodes, result.degradedNodes)
+
+	return aggregatedReleases, result.iriStatus, result.degradedNodes, result.notReadyNodes, nil
+}
+
+// filterControlPlaneMCNs returns only MachineConfigNodes that are control plane nodes.
+// Uses the Node lister to check for control-plane labels.
+func (ctrl *Controller) filterControlPlaneMCNs(mcns []*mcfgv1.MachineConfigNode) []*mcfgv1.MachineConfigNode {
+	var controlPlaneMCNs []*mcfgv1.MachineConfigNode
+	for _, mcn := range mcns {
+		if ctrl.isControlPlaneNode(mcn.Name) {
+			controlPlaneMCNs = append(controlPlaneMCNs, mcn)
+		}
+	}
+	return controlPlaneMCNs
+}
+
+// checkAPIIntRegistryAvailability checks if the api-int registry is available.
+// Returns the cluster domain, api-int registry host, and availability status.
+func (ctrl *Controller) checkAPIIntRegistryAvailability() (string, string, bool, error) {
+	clusterDomain, err := ctrl.getClusterDomain()
+	if err != nil {
+		klog.Warningf("Failed to get cluster domain: %v", err)
+		return "", "", false, fmt.Errorf("failed to get cluster domain: %w", err)
+	}
+
+	cconfig, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
+	if err != nil {
+		klog.Warningf("Failed to get ControllerConfig for CA cert: %v", err)
+		return "", "", false, fmt.Errorf("failed to get ControllerConfig: %w", err)
+	}
+
+	apiIntRegistryHost := fmt.Sprintf("api-int.%s:%d", clusterDomain, ctrlcommon.IRIRegistryPort)
+	apiIntAvailable := pingRegistry(apiIntRegistryHost, cconfig.Spec.RootCAData)
+	klog.V(4).Infof("api-int registry available: %v (URL: %s)", apiIntAvailable, apiIntRegistryHost)
+
+	return clusterDomain, apiIntRegistryHost, apiIntAvailable, nil
+}
+
+// mcnReleaseProcessingResult contains the results of processing MCN releases.
+type mcnReleaseProcessingResult struct {
+	releaseMap    map[string]mcfgv1alpha1.InternalReleaseImageBundleStatus
+	iriStatus     string
+	degradedNodes []string
+	notReadyNodes []string
+}
+
+// processMCNReleases scans through MCNs and builds a release map with node health tracking.
+func (ctrl *Controller) processMCNReleases(controlPlaneMCNs []*mcfgv1.MachineConfigNode, clusterDomain string) mcnReleaseProcessingResult {
 	releaseMap := make(map[string]mcfgv1alpha1.InternalReleaseImageBundleStatus)
 	var notReadyNodes []string
 	var degradedNodes []string
@@ -79,7 +143,6 @@ func (ctrl *Controller) aggregateMCNIRIStatus(iri *mcfgv1alpha1.InternalReleaseI
 			iriStatus = IRIStatusSomeNodesNotAvailable
 			notReadyNodes = append(notReadyNodes, mcn.Name)
 			nodeHealthy = false
-			// Don't continue - still process releases from this node
 		}
 
 		iriDegradedCond := meta.FindStatusCondition(mcn.Status.Conditions, string(mcfgv1.MachineConfigNodeInternalReleaseImageDegraded))
@@ -88,12 +151,10 @@ func (ctrl *Controller) aggregateMCNIRIStatus(iri *mcfgv1alpha1.InternalReleaseI
 			iriStatus = IRIStatusSomeRegistriesUnavailable
 			degradedNodes = append(degradedNodes, mcn.Name)
 			nodeHealthy = false
-			// Don't continue - still process releases from this node
 		}
 
 		// Process releases from this MCN (both healthy and unhealthy nodes)
 		for _, release := range mcn.Status.InternalReleaseImage.Releases {
-			// Transform localhost image to api-int
 			apiIntImage := transformToAPIIntURL(release.Image, clusterDomain)
 
 			if _, exists := releaseMap[release.Name]; !exists {
@@ -114,12 +175,27 @@ func (ctrl *Controller) aggregateMCNIRIStatus(iri *mcfgv1alpha1.InternalReleaseI
 		}
 	}
 
-	// Build final aggregated releases from releaseMap
+	return mcnReleaseProcessingResult{
+		releaseMap:    releaseMap,
+		iriStatus:     iriStatus,
+		degradedNodes: degradedNodes,
+		notReadyNodes: notReadyNodes,
+	}
+}
+
+// buildAggregatedReleases builds the final aggregated releases list from the release map.
+func buildAggregatedReleases(
+	iri *mcfgv1alpha1.InternalReleaseImage,
+	releaseMap map[string]mcfgv1alpha1.InternalReleaseImageBundleStatus,
+	iriStatus string,
+	degradedNodes, notReadyNodes []string,
+	apiIntRegistryHost string,
+) []mcfgv1alpha1.InternalReleaseImageBundleStatus {
 	aggregatedReleases := []mcfgv1alpha1.InternalReleaseImageBundleStatus{}
+
 	for _, specRelease := range iri.Spec.Releases {
 		if releaseStatus, exists := releaseMap[specRelease.Name]; exists {
 			// Found the release in at least one MCN
-			// If cluster is degraded, update the Degraded condition to reflect cluster status
 			if iriStatus != IRIStatusAllReleasesAvailable {
 				releaseStatus.Conditions = updateDegradedCondition(releaseStatus.Conditions, iriStatus, degradedNodes, notReadyNodes)
 			}
@@ -141,7 +217,6 @@ func (ctrl *Controller) aggregateMCNIRIStatus(iri *mcfgv1alpha1.InternalReleaseI
 				degradedMessage = "The specified release image is not available"
 			}
 
-			// Use placeholder digest for unavailable release
 			imageRef := fmt.Sprintf("%s%s@sha256:%s", apiIntRegistryHost, iriRegistryPath, unavailableImageDigest)
 
 			aggregatedReleases = append(aggregatedReleases, mcfgv1alpha1.InternalReleaseImageBundleStatus{
@@ -167,31 +242,12 @@ func (ctrl *Controller) aggregateMCNIRIStatus(iri *mcfgv1alpha1.InternalReleaseI
 		}
 	}
 
-	klog.V(4).Infof("Aggregation complete. IRIStatus: %s, Not ready nodes: %v, Degraded nodes: %v", iriStatus, notReadyNodes, degradedNodes)
-
-	// Sort node lists for deterministic output
-	sort.Strings(degradedNodes)
-	sort.Strings(notReadyNodes)
-
-	return aggregatedReleases, iriStatus, degradedNodes, notReadyNodes, nil
-}
-
-// filterControlPlaneMCNs returns only MachineConfigNodes that are control plane nodes.
-// Uses the Node lister to check for control-plane labels.
-func (ctrl *Controller) filterControlPlaneMCNs(mcns []*mcfgv1.MachineConfigNode) []*mcfgv1.MachineConfigNode {
-	var controlPlaneMCNs []*mcfgv1.MachineConfigNode
-	for _, mcn := range mcns {
-		if ctrl.isControlPlaneNode(mcn.Name) {
-			controlPlaneMCNs = append(controlPlaneMCNs, mcn)
-		}
-	}
-	return controlPlaneMCNs
+	return aggregatedReleases
 }
 
 const (
 	// unavailableImageDigest is a placeholder SHA256 digest used when the actual image
 	// digest cannot be determined (e.g., when the registry is unreachable).
-	// This satisfies OCI image reference validation while clearly indicating unavailability.
 	unavailableImageDigest = "0000000000000000000000000000000000000000000000000000000000000000"
 )
 
@@ -232,8 +288,8 @@ func transformToAPIIntURL(localhostURL, clusterDomain string) string {
 	return strings.Replace(localhostURL, "localhost", "api-int."+clusterDomain, 1)
 }
 
-// pingRegistry checks if the registry at the given URL is reachable
-func pingRegistry(registryURL string) bool {
+// pingRegistry checks if the registry at the given URL is reachable.
+func pingRegistry(registryURL string, caCert []byte) bool {
 	// Extract host:port from the URL
 	// registryURL is like "api-int.cluster.example.com:22625/openshift/release-images@sha256:..."
 	parts := strings.SplitN(registryURL, "/", 2)
@@ -242,12 +298,20 @@ func pingRegistry(registryURL string) bool {
 	}
 	baseURL := "https://" + parts[0] + "/v2/"
 
+	// Create a CA cert pool with the provided CA certificate
+	caCertPool := x509.NewCertPool()
+	if !caCertPool.AppendCertsFromPEM(caCert) {
+		klog.Warningf("Failed to parse CA certificate for registry ping")
+		return false
+	}
+
 	client := &http.Client{
 		Timeout: iriRegistryPingTimeout,
 		Transport: &http.Transport{
-			// #nosec G402
-			// deepcode ignore TooPermissiveTrustManager: Internal IRI registry uses self-signed certificates
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			TLSClientConfig: &tls.Config{
+				RootCAs:    caCertPool,
+				MinVersion: tls.VersionTLS12,
+			},
 		},
 	}
 
@@ -281,7 +345,6 @@ func updateDegradedCondition(conditions []metav1.Condition, iriStatus string, de
 		return conditions
 	}
 
-	// Update or add Degraded condition
 	updatedConditions := make([]metav1.Condition, len(conditions))
 	copy(updatedConditions, conditions)
 
