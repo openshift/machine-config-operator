@@ -1312,10 +1312,11 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	poolsToUpdate := []*mcfgv1.MachineConfigPool{pool}
 	if pool.Name == ctrlcommon.MachineConfigPoolMaster && controlPlaneTopology == configv1.HighlyAvailableArbiterMode {
 		arbiterObj, err := ctrl.mcpLister.Get(ctrlcommon.MachineConfigPoolArbiter)
-		if err != nil {
+		if err == nil {
+			poolsToUpdate = append(poolsToUpdate, arbiterObj)
+		} else if !errors.IsNotFound(err) {
 			return fmt.Errorf("error getting arbiter pool %q, error: %w", ctrlcommon.MachineConfigPoolArbiter, err)
 		}
-		poolsToUpdate = append(poolsToUpdate, arbiterObj)
 	}
 
 	if err := ctrl.updatePools(poolsToUpdate, controlPlaneTopology); err != nil {
@@ -1397,7 +1398,10 @@ func (ctrl *Controller) updatePools(pools []*mcfgv1.MachineConfigPool, controlPl
 			for _, p := range pools {
 				if p.Name == ctrlcommon.MachineConfigPoolArbiter {
 					arbiterNodes, err := ctrl.getNodesForPool(p)
-					if err == nil {
+					if err != nil {
+						klog.Warningf("Pool %s: failed to get arbiter nodes, treating as unavailable to be safe: %v", pool.Name, err)
+						maxunavail = 0
+					} else {
 						arbiterUnavailable := len(getUnavailableMachines(arbiterNodes, p))
 						if arbiterUnavailable > 0 {
 							klog.Infof("Pool %s: arbiter has %d unavailable node(s), reducing master capacity to prevent simultaneous updates", pool.Name, arbiterUnavailable)
