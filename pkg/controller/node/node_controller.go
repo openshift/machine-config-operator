@@ -1402,7 +1402,7 @@ func (ctrl *Controller) updatePools(pools []*mcfgv1.MachineConfigPool, controlPl
 						klog.Warningf("Pool %s: failed to get arbiter nodes, treating as unavailable to be safe: %v", pool.Name, err)
 						maxunavail = 0
 					} else {
-						arbiterUnavailable := len(getUnavailableMachines(arbiterNodes, p))
+						arbiterUnavailable := len(getUnavailableMachines(arbiterNodes))
 						if arbiterUnavailable > 0 {
 							klog.Infof("Pool %s: arbiter has %d unavailable node(s), reducing master capacity to prevent simultaneous updates", pool.Name, arbiterUnavailable)
 							maxunavail -= arbiterUnavailable
@@ -1461,7 +1461,7 @@ func (ctrl *Controller) updatePools(pools []*mcfgv1.MachineConfigPool, controlPl
 
 		// Track master unavailable count for arbiter coordination
 		if pool.Name == ctrlcommon.MachineConfigPoolMaster && controlPlaneTopology == configv1.HighlyAvailableArbiterMode {
-			masterUnavailableCount = len(getUnavailableMachines(nodes, pool)) + len(candidates)
+			masterUnavailableCount = len(getUnavailableMachines(nodes)) + len(candidates)
 		}
 
 		if len(candidates) > 0 {
