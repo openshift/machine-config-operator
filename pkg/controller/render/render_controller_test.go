@@ -1010,3 +1010,84 @@ func TestGetOSImageStreamVersionGuard(t *testing.T) {
 		})
 	}
 }
+
+func makeCRIODropIn(runtime string) string {
+	return "[crio.runtime]\ndefault_runtime = \"" + runtime + "\"\n"
+}
+
+func TestValidateNoRuncOnRHEL10(t *testing.T) {
+	tests := []struct {
+		name             string
+		mc               *mcfgv1.MachineConfig
+		osImageStreamSet *mcfgv1.OSImageStreamSet
+		expectError      bool
+	}{
+		{
+			name: "runc on RHEL 10 should error",
+			mc: helpers.NewMachineConfig("rendered-worker", nil, "", []ign3types.File{
+				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0644),
+			}),
+			osImageStreamSet: &mcfgv1.OSImageStreamSet{Name: "rhel-10"},
+			expectError:      true,
+		},
+		{
+			name: "crun on RHEL 10 should succeed",
+			mc: helpers.NewMachineConfig("rendered-worker", nil, "", []ign3types.File{
+				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("crun"), 0644),
+			}),
+			osImageStreamSet: &mcfgv1.OSImageStreamSet{Name: "rhel-10"},
+			expectError:      false,
+		},
+		{
+			name: "runc on RHEL 9 should succeed",
+			mc: helpers.NewMachineConfig("rendered-worker", nil, "", []ign3types.File{
+				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0644),
+			}),
+			osImageStreamSet: &mcfgv1.OSImageStreamSet{Name: "rhel-9"},
+			expectError:      false,
+		},
+		{
+			name: "runc with nil OSImageStreamSet should succeed",
+			mc: helpers.NewMachineConfig("rendered-worker", nil, "", []ign3types.File{
+				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0644),
+			}),
+			osImageStreamSet: nil,
+			expectError:      false,
+		},
+		{
+			name: "runc on CentOS 10 should error",
+			mc: helpers.NewMachineConfig("rendered-worker", nil, "", []ign3types.File{
+				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0644),
+			}),
+			osImageStreamSet: &mcfgv1.OSImageStreamSet{Name: "centos-10"},
+			expectError:      true,
+		},
+		{
+			name:             "no CRI-O drop-ins on RHEL 10 should succeed",
+			mc:               helpers.NewMachineConfig("rendered-worker", nil, "", nil),
+			osImageStreamSet: &mcfgv1.OSImageStreamSet{Name: "rhel-10"},
+			expectError:      false,
+		},
+		{
+			name: "runc overridden by crun on RHEL 10 should succeed",
+			mc: helpers.NewMachineConfig("rendered-worker", nil, "", []ign3types.File{
+				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0644),
+				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/01-ctrcfg", makeCRIODropIn("crun"), 0644),
+			}),
+			osImageStreamSet: &mcfgv1.OSImageStreamSet{Name: "rhel-10"},
+			expectError:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateNoRuncOnRHEL10("worker", tt.mc, tt.osImageStreamSet)
+			if tt.expectError {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "runc")
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
