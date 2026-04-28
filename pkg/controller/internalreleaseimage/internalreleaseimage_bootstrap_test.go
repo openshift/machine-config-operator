@@ -21,7 +21,7 @@ func TestRunInternalReleaseImageBootstrap_WithTLSProfile(t *testing.T) {
 	modernProfile := &configv1.TLSSecurityProfile{
 		Type: configv1.TLSProfileModernType,
 	}
-	configs, err := RunInternalReleaseImageBootstrap(&mcfgv1alpha1.InternalReleaseImage{}, iriCertSecret().obj, cconfig().obj, modernProfile)
+	configs, err := RunInternalReleaseImageBootstrap(&mcfgv1alpha1.InternalReleaseImage{}, iriCertSecret().obj, iriRegistryCredentialsSecret().obj, cconfig().obj, modernProfile)
 	assert.NoError(t, err)
 	assert.Len(t, configs, 2)
 

@@ -263,6 +263,13 @@ func TestIRIAuth_AuthenticatedRequestSucceeds(t *testing.T) {
 // directly, since port 22625 is not accessible from the CI test runner.
 func TestIRIController_VerifyTLSProfileEnforced(t *testing.T) {
 	cs := framework.NewClientSet("")
+	ctx := context.Background()
+
+	// Fetch authentication credentials for the IRI registry.
+	authSecret, err := cs.Secrets(ctrlcommon.MCONamespace).Get(ctx, ctrlcommon.InternalReleaseImageAuthSecretName, v1.GetOptions{})
+	require.NoError(t, err)
+	password := string(authSecret.Data["password"])
+	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(ctrlcommon.IRIRegistryUsername+":"+password))
 
 	// Read the cluster's APIServer TLS profile to determine the expected minimum version.
 	apiServerCfg, err := cs.ConfigV1Interface.APIServers().Get(context.Background(), "cluster", v1.GetOptions{})
@@ -280,6 +287,7 @@ func TestIRIController_VerifyTLSProfileEnforced(t *testing.T) {
 	// Verify the minimum TLS version succeeds.
 	t.Run(fmt.Sprintf("minimum version succeeds with %s profile", profileName), func(t *testing.T) {
 		out := helpers.ExecCmdOnNode(t, cs, node, "curl", "-s", "-k", "-o", "/dev/null", "-w", "%{http_code}",
+			"-H", "Authorization: "+authHeader,
 			"--tlsv"+expectedMinVersion, "--tls-max", expectedMinVersion,
 			"https://localhost:22625/v2/")
 		require.Equal(t, "200", out, "expected TLS %s to succeed", expectedMinVersion)
@@ -290,6 +298,7 @@ func TestIRIController_VerifyTLSProfileEnforced(t *testing.T) {
 	// rejects the TLS version during the handshake.
 	t.Run(fmt.Sprintf("below minimum is rejected with %s profile", profileName), func(t *testing.T) {
 		_, err := helpers.ExecCmdOnNodeWithError(cs, node, "curl", "-s", "-k", "-o", "/dev/null", "-w", "%{http_code}",
+			"-H", "Authorization: "+authHeader,
 			"--tlsv"+rejectedVersion, "--tls-max", rejectedVersion,
 			"https://localhost:22625/v2/")
 		require.Error(t, err, "TLS %s should be rejected with %s profile", rejectedVersion, profileName)

@@ -98,7 +98,7 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 		{
 			name: "apply Modern TLS profile from APIServer",
 			initialObjects: objs(
-				iri(), clusterVersion(), cconfig(), iriCertSecret(),
+				iri(), clusterVersion(), cconfig(), iriCertSecret(), iriRegistryCredentialsSecret(),
 				apiServer().tlsProfile(configv1.TLSProfileModernType)),
 			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
 				ignCfg, err := ctrlcommon.ParseAndConvertConfig(actualMasterMC.Spec.Config.Raw)
@@ -110,7 +110,7 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 		{
 			name: "cipher suites with spaces are quoted in systemd unit to prevent word splitting",
 			initialObjects: objs(
-				iri(), clusterVersion(), cconfig(), iriCertSecret(),
+				iri(), clusterVersion(), cconfig(), iriCertSecret(), iriRegistryCredentialsSecret(),
 				apiServer().tlsProfile(configv1.TLSProfileIntermediateType)),
 			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
 				ignCfg, err := ctrlcommon.ParseAndConvertConfig(actualMasterMC.Spec.Config.Raw)
