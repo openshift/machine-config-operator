@@ -1667,20 +1667,52 @@ func (ctrl *Controller) applyCustomPoolLabels(node *corev1.Node, poolName string
 	}
 
 	// Extract labels from the pool's node selector
-	if pool.Spec.NodeSelector == nil || pool.Spec.NodeSelector.MatchLabels == nil {
-		klog.V(4).Infof("MachineConfigPool %s has no node selector labels", poolName)
+	if pool.Spec.NodeSelector == nil {
+		klog.Infof("MachineConfigPool %s has no node selector", poolName)
 		return nil
 	}
 
-	labelsToApply := pool.Spec.NodeSelector.MatchLabels
+	labelsToApply := map[string]string{}
+
+	maps.Copy(labelsToApply, pool.Spec.NodeSelector.MatchLabels)
+
+	// For matchExpressions, derive a label only when the value is unambiguous:
+	// - In with a single value, key=value
+	// - Exists, key=""
+	// On a conflict with an existing key, priortize the value from MatchLabels
+	for _, expr := range pool.Spec.NodeSelector.MatchExpressions {
+		switch expr.Operator {
+		case metav1.LabelSelectorOpIn:
+			if len(expr.Values) == 1 {
+				if _, alreadySet := labelsToApply[expr.Key]; !alreadySet {
+					labelsToApply[expr.Key] = expr.Values[0]
+				}
+			} else {
+				klog.Infof("MachineConfigPool %s matchExpression key %q has multiple values, skipping", poolName, expr.Key)
+			}
+		case metav1.LabelSelectorOpExists:
+			if _, alreadySet := labelsToApply[expr.Key]; !alreadySet {
+				labelsToApply[expr.Key] = ""
+			}
+		}
+	}
+
 	if len(labelsToApply) == 0 {
+		klog.Infof("MachineConfigPool %s has no applicable node selector labels", poolName)
 		return nil
 	}
 
-	klog.Infof("Node %s was booted into custom pool %s; applying node selector labels: %v", poolName, node.Name, labelsToApply)
+	klog.Infof("Node %s was booted into custom pool %s; applying node selector labels: %v", node.Name, poolName, labelsToApply)
 
 	// Apply the labels to the node and add annotation indicating custom pool labels were applied
 	_, err = internal.UpdateNodeRetry(ctrl.kubeClient.CoreV1().Nodes(), ctrl.nodeLister, node.Name, func(node *corev1.Node) {
+		// Highly unlikely, but check to be safe
+		if node.Labels == nil {
+			node.Labels = map[string]string{}
+		}
+		if node.Annotations == nil {
+			node.Annotations = map[string]string{}
+		}
 		// Apply the custom pool labels
 		maps.Copy(node.Labels, labelsToApply)
 
