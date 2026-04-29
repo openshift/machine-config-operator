@@ -586,7 +586,12 @@ func (c *CertRotationController) getIRIHostnames() ([]string, error) {
 		return nil, fmt.Errorf("cannot parse APIServerInternalURL: %w", err)
 	}
 
-	return []string{apiserverIntURL.Hostname(), "localhost", "127.0.0.1", "::1"}, nil
+	// Include platform VIPs to match the SANs the installer generates for the IRI cert.
+	// The installer adds platform VIPs as both DNS names and IP addresses; we include
+	// them here so isIRICertValid passes for the installer-generated cert without
+	// triggering a spurious rotation during cluster installation.
+	hostnames := append([]string{apiserverIntURL.Hostname(), "localhost", "127.0.0.1", "::1"}, getServerIPsFromInfra(cfg)...)
+	return hostnames, nil
 }
 
 // generateIRICert generates a new IRI TLS certificate signed by the given CA.
