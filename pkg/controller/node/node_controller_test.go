@@ -2238,6 +2238,199 @@ func TestFilterCustomPoolBootedNodes(t *testing.T) {
 	}
 }
 
+func TestApplyCustomPoolLabels(t *testing.T) {
+	t.Parallel()
+
+	baseNode := func(name string) *corev1.Node {
+		return &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        name,
+				Labels:      map[string]string{"node-role.kubernetes.io/worker": ""},
+				Annotations: map[string]string{},
+			},
+		}
+	}
+
+	pool := func(name string, sel *metav1.LabelSelector) *mcfgv1.MachineConfigPool {
+		return helpers.NewMachineConfigPoolBuilder(name).WithNodeSelector(sel).MachineConfigPool()
+	}
+
+	tests := []struct {
+		name           string
+		pool           *mcfgv1.MachineConfigPool
+		poolName       string
+		expectErr      bool
+		expectedLabels map[string]string
+		expectAnnot    bool // whether CustomPoolLabelsAppliedAnnotationKey should be set
+	}{
+		{
+			name:     "matchLabels only",
+			poolName: "infra",
+			pool: pool("infra", &metav1.LabelSelector{
+				MatchLabels: map[string]string{"node-role.kubernetes.io/infra": ""},
+			}),
+			expectedLabels: map[string]string{
+				"node-role.kubernetes.io/worker": "",
+				"node-role.kubernetes.io/infra":  "",
+			},
+			expectAnnot: true,
+		},
+		{
+			name:     "matchExpressions In single value",
+			poolName: "infra",
+			pool: pool("infra", &metav1.LabelSelector{
+				MatchExpressions: []metav1.LabelSelectorRequirement{
+					{Key: "node-role.kubernetes.io/infra", Operator: metav1.LabelSelectorOpIn, Values: []string{""}},
+				},
+			}),
+			expectedLabels: map[string]string{
+				"node-role.kubernetes.io/worker": "",
+				"node-role.kubernetes.io/infra":  "",
+			},
+			expectAnnot: true,
+		},
+		{
+			name:     "matchExpressions In multiple values skipped",
+			poolName: "infra",
+			pool: pool("infra", &metav1.LabelSelector{
+				MatchExpressions: []metav1.LabelSelectorRequirement{
+					{Key: "zone", Operator: metav1.LabelSelectorOpIn, Values: []string{"us-east-1a", "us-east-1b"}},
+				},
+			}),
+			// no new labels — ambiguous In is skipped, nothing to apply
+			expectedLabels: map[string]string{
+				"node-role.kubernetes.io/worker": "",
+			},
+			expectAnnot: false,
+		},
+		{
+			name:     "matchExpressions Exists",
+			poolName: "infra",
+			pool: pool("infra", &metav1.LabelSelector{
+				MatchExpressions: []metav1.LabelSelectorRequirement{
+					{Key: "node-role.kubernetes.io/infra", Operator: metav1.LabelSelectorOpExists},
+				},
+			}),
+			expectedLabels: map[string]string{
+				"node-role.kubernetes.io/worker": "",
+				"node-role.kubernetes.io/infra":  "",
+			},
+			expectAnnot: true,
+		},
+		{
+			name:     "matchExpressions NotIn and DoesNotExist are skipped",
+			poolName: "infra",
+			pool: pool("infra", &metav1.LabelSelector{
+				MatchExpressions: []metav1.LabelSelectorRequirement{
+					{Key: "bad-key", Operator: metav1.LabelSelectorOpNotIn, Values: []string{"val"}},
+					{Key: "another-key", Operator: metav1.LabelSelectorOpDoesNotExist},
+				},
+			}),
+			expectedLabels: map[string]string{
+				"node-role.kubernetes.io/worker": "",
+			},
+			expectAnnot: false,
+		},
+		{
+			name:     "matchLabels and matchExpressions both applied",
+			poolName: "infra",
+			pool: pool("infra", &metav1.LabelSelector{
+				MatchLabels: map[string]string{"node-role.kubernetes.io/infra": ""},
+				MatchExpressions: []metav1.LabelSelectorRequirement{
+					{Key: "topology.kubernetes.io/zone", Operator: metav1.LabelSelectorOpIn, Values: []string{"us-east-1a"}},
+				},
+			}),
+			expectedLabels: map[string]string{
+				"node-role.kubernetes.io/worker": "",
+				"node-role.kubernetes.io/infra":  "",
+				"topology.kubernetes.io/zone":    "us-east-1a",
+			},
+			expectAnnot: true,
+		},
+		{
+			name:     "matchLabels wins over Exists for same key",
+			poolName: "infra",
+			pool: pool("infra", &metav1.LabelSelector{
+				MatchLabels: map[string]string{"node-role.kubernetes.io/infra": "specific-value"},
+				MatchExpressions: []metav1.LabelSelectorRequirement{
+					{Key: "node-role.kubernetes.io/infra", Operator: metav1.LabelSelectorOpExists},
+				},
+			}),
+			expectedLabels: map[string]string{
+				"node-role.kubernetes.io/worker": "",
+				"node-role.kubernetes.io/infra":  "specific-value",
+			},
+			expectAnnot: true,
+		},
+		{
+			name:     "matchLabels wins over In for same key",
+			poolName: "infra",
+			pool: pool("infra", &metav1.LabelSelector{
+				MatchLabels: map[string]string{"node-role.kubernetes.io/infra": "from-matchlabels"},
+				MatchExpressions: []metav1.LabelSelectorRequirement{
+					{Key: "node-role.kubernetes.io/infra", Operator: metav1.LabelSelectorOpIn, Values: []string{"from-expression"}},
+				},
+			}),
+			expectedLabels: map[string]string{
+				"node-role.kubernetes.io/worker": "",
+				"node-role.kubernetes.io/infra":  "from-matchlabels",
+			},
+			expectAnnot: true,
+		},
+		{
+			name:     "nil node selector returns without error",
+			poolName: "infra",
+			pool:     pool("infra", nil),
+			expectedLabels: map[string]string{
+				"node-role.kubernetes.io/worker": "",
+			},
+			expectAnnot: false,
+		},
+		{
+			name:      "pool not found returns error",
+			poolName:  "nonexistent",
+			pool:      nil,
+			expectErr: true,
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFixture(t)
+			node := baseNode("test-node")
+
+			f.nodeLister = append(f.nodeLister, node)
+			f.kubeobjects = append(f.kubeobjects, node)
+
+			if test.pool != nil {
+				f.mcpLister = append(f.mcpLister, test.pool)
+				f.objects = append(f.objects, test.pool)
+			}
+
+			c := f.newController()
+
+			err := c.applyCustomPoolLabels(node, test.poolName)
+
+			if test.expectErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+
+			updated, getErr := f.kubeclient.CoreV1().Nodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
+			require.NoError(t, getErr)
+
+			assert.Equal(t, test.expectedLabels, updated.Labels)
+
+			_, hasAnnot := updated.Annotations[daemonconsts.CustomPoolLabelsAppliedAnnotationKey]
+			assert.Equal(t, test.expectAnnot, hasAnnot, "CustomPoolLabelsAppliedAnnotationKey presence mismatch")
+		})
+	}
+}
+
 // adds annotation to the node
 func addNodeAnnotations(node *corev1.Node, annotations map[string]string) {
 	if node.Annotations == nil {
