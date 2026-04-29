@@ -58,6 +58,7 @@ Before generating, read existing code to understand available utilities and patt
 11. **Prefer Resource struct methods** over `oc.AsAdmin().Run`
 12. **RemoteFile** with gomega checkers for verifying files inside nodes
 13. **Concise comments** — one or two lines maximum
+14. **Skip on SNO/Compact** when the test requires multiple nodes or a dedicated worker pool: `if IsCompactOrSNOCluster(oc.AsAdmin()) { g.Skip("...") }` or `exutil.SkipOnSingleNodeTopology(oc.AsAdmin())`
 
 ## New File Structure
 
@@ -93,6 +94,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/<suite-typ
 
 Insert new `g.It` block inside the existing `g.Describe`, after the last test. Add new imports as needed. Do not modify existing code.
 
+If the test requires new helper functions, append them **after all existing functions** at the end of the file — never insert between existing functions. Helper functions belong outside the `g.Describe` block, after its closing `})`.
+
 ## Test Body Pattern
 
 ```go
@@ -122,7 +125,17 @@ g.It("[PolarionID:<id>][OTP] <description> [Disruptive]", g.Label("Platform:aws"
 - Platform labels: `g.Label("Platform:aws", "Platform:gce")` based on spec tags
 - Feature gate labels: `g.Label("OCPFeatureGate:XXX")` if the spec requires it
 - Skip functions for platform/architecture: `skipTestIfSupportedPlatformNotMatched(oc, AWSPlatform, GCPPlatform)`, `architecture.SkipNonAmd64SingleArch(oc)`
+- Skip on SNO/Compact: if the test needs more than one node or a dedicated worker pool, add `if IsCompactOrSNOCluster(oc.AsAdmin()) { g.Skip("This test requires multiple nodes and cannot run on SNO/Compact clusters") }` at the start of the test body
 - If the test requires new YAML templates, create them in `test/extended-priv/testdata/files/` and reference with `SetMCOTemplate("<name>.yaml")`
+
+## Post-Generation Verification
+
+After generating the test code, verify completeness:
+
+1. Extract every numbered step, precondition check, and expected result from the specification
+2. Map each to an `exutil.By()` block in the generated code
+3. Confirm 1:1 coverage — every spec step must have a corresponding `exutil.By()` block
+4. Report any missing steps and add the missing `exutil.By()` blocks before finalizing
 
 ## Platform Constants
 
