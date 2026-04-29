@@ -2764,7 +2764,6 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	}
 	// If the host isn't new enough to understand the new container model natively, run as a privileged container.
 	// See https://github.com/coreos/rpm-ostree/pull/3961 and https://issues.redhat.com/browse/MCO-356
-	// This currently will incur a double reboot; see https://github.com/coreos/rpm-ostree/issues/4018
 	if !newEnough {
 		logSystem("rpm-ostree is not new enough for layering; forcing an update via container")
 		return dn.InplaceUpdateViaNewContainer(newURL)
@@ -2943,6 +2942,78 @@ func podmanSupportsSigstore() bool {
 		podmanSigstoreSupportedValue = imgPodmanVersion.Compare(*semver.New(sigstorePodman)) >= 0
 	})
 	return podmanSigstoreSupportedValue
+}
+
+var (
+	skopeoVersionChecked   sync.Once
+	skopeoVersionNewEnough bool
+)
+
+// skopeoVersionSupportsMultiArchSigstore checks (once) whether the host skopeo is >= 1.22.2.
+// Returns false on any version check or parse failure (OCPBUGS-81187).
+func skopeoVersionSupportsMultiArchSigstore() bool {
+	skopeoVersionChecked.Do(func() {
+		cmd := exec.Command("skopeo", "--version")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			klog.Errorf("failed to run skopeo --version: %v", err)
+			return
+		}
+		klog.Infof("skopeo version output: %s", strings.TrimSpace(string(out)))
+		// Output format: "skopeo version X.Y.Z commit: abcdefg"
+		fields := strings.Fields(strings.TrimSpace(string(out)))
+		if len(fields) < 3 {
+			klog.Errorf("unexpected skopeo version output format: %s", string(out))
+			return
+		}
+		skopeoVersion, err := semver.NewVersion(fields[2])
+		if err != nil {
+			klog.Errorf("failed to parse skopeo version %s: %v", fields[2], err)
+			return
+		}
+		minVersion := "1.22.2"
+		skopeoVersionNewEnough = skopeoVersion.Compare(*semver.New(minVersion)) >= 0
+	})
+	return skopeoVersionNewEnough
+}
+
+// skopeoSupportsMultiArchSigstore returns false when skopeo < 1.22.2 and the image is a multi-arch
+func skopeoSupportsMultiArchSigstore(imageURL string) bool {
+	if skopeoVersionSupportsMultiArchSigstore() {
+		return true
+	}
+
+	multiArch, err := isMultiArchImage(imageURL)
+	if err != nil {
+		klog.Warningf("Failed to determine if image %s is multi-arch: %v", imageURL, err)
+		return false
+	}
+	return !multiArch
+}
+
+func isMultiArchImage(imageURL string) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	args := []string{"inspect", "--raw"}
+	if _, err := os.Stat(kubeletAuthFile); err == nil {
+		args = append(args, "--authfile", kubeletAuthFile)
+	}
+	args = append(args, "docker://"+imageURL)
+	cmd := exec.CommandContext(ctx, "skopeo", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return false, fmt.Errorf("skopeo inspect failed for %s: %w", imageURL, err)
+	}
+	var manifest struct {
+		MediaType string `json:"mediaType"`
+	}
+	if err := json.Unmarshal(out, &manifest); err != nil {
+		return false, fmt.Errorf("failed to parse manifest for %s: %w", imageURL, err)
+	}
+	multiArch := manifest.MediaType == "application/vnd.docker.distribution.manifest.list.v2+json" ||
+		manifest.MediaType == "application/vnd.oci.image.index.v1+json"
+	klog.Infof("Image %s mediaType: %s, multi-arch: %v", imageURL, manifest.MediaType, multiArch)
+	return multiArch, nil
 }
 
 // Log a message to the systemd journal as well as our stdout
