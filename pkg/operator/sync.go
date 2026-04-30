@@ -504,15 +504,9 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 	}
 
 	// Sync up machine-config-server-ca bundle
-	// Attempt the managed bundle in the MCO namespace first. If not found, use the unmanaged rootCA bundle instead
-	machineConfigServerCABundle, err := optr.getCAsFromConfigMap(ctrlcommon.MCONamespace, ctrlcommon.MachineConfigServerCAName, "ca-bundle.crt")
+	machineConfigServerCABundle, err := optr.getMCSCABundle()
 	if err != nil {
-		if apierrors.IsNotFound(err) {
-			machineConfigServerCABundle, err = optr.getCAsFromConfigMap("kube-system", ctrlcommon.RootCAConfigMapName, "ca.crt")
-		}
-		if err != nil {
-			return err
-		}
+		return fmt.Errorf("could not get MCSC CA bundle: %w", err)
 	}
 
 	bootstrapComplete := false
@@ -659,6 +653,18 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra, pointerConfigData, apiServer, fmt.Sprintf("%d", optr.logLevel))
 
 	return nil
+}
+
+func (optr *Operator) getMCSCABundle() ([]byte, error) {
+	// Attempt the managed bundle in the MCO namespace first. If not found, use the unmanaged rootCA bundle instead
+	machineConfigServerCABundle, err := optr.getCAsFromConfigMap(ctrlcommon.MCONamespace, ctrlcommon.MachineConfigServerCAName, "ca-bundle.crt")
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return optr.getCAsFromConfigMap("kube-system", ctrlcommon.RootCAConfigMapName, "ca.crt")
+		}
+		return nil, err
+	}
+	return machineConfigServerCABundle, nil
 }
 
 func (optr *Operator) getTrustedBundle(proxy *configv1.Proxy) ([]byte, error) {
