@@ -12,11 +12,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
-// MachineConfigList handles list of nodes
-type MachineConfigList struct {
-	ResourceList
-}
-
 // MachineConfig struct is used to handle MachineConfig resources in OCP
 type MachineConfig struct {
 	Resource
@@ -30,6 +25,16 @@ type MachineConfig struct {
 func NewMachineConfig(oc *exutil.CLI, name, pool string) *MachineConfig {
 	mc := &MachineConfig{Resource: *NewResource(oc, "mc", name), pool: pool}
 	return mc.SetTemplate(*NewMCOTemplate(oc, GenericMCTemplate))
+}
+
+// MachineConfigList handles list of nodes
+type MachineConfigList struct {
+	ResourceList
+}
+
+// NewMachineConfigList construct a new node list struct to handle all existing nodes
+func NewMachineConfigList(oc *exutil.CLI) *MachineConfigList {
+	return &MachineConfigList{*NewResourceList(oc, "mc")}
 }
 
 // SetTemplate sets the template that will be used by the "create" method in order to create the MC
@@ -148,4 +153,37 @@ func DisableSkew(machineConfiguration *MachineConfiguration) {
 	o.Expect(machineConfiguration.SetNoneSkew()).To(o.Succeed(), "Error disabling the skew functionality")
 	o.Eventually(machineConfiguration.IsGenerationUpToDate, "2m", "10s").Should(o.BeTrue(), "MachineConfiguration observedGeneration did not catch up to generation")
 	logger.Infof("Skew functionality has been disabled")
+}
+
+// GetRenderedMachineConfigForMaster returns a list with all the MCs  whose name starts with "render-master"
+func (mcl *MachineConfigList) GetRenderedMachineConfigForMaster() ([]*MachineConfig, error) {
+	mcl.SetItemsFilter(`?(@.metadata.ownerReferences[0].name=="master")`)
+	allMCs, err := mcl.GetAll()
+	if err != nil {
+		return nil, err
+	}
+
+	returnMCs := []*MachineConfig{}
+
+	for _, mc := range allMCs {
+		if strings.HasPrefix(mc.GetName(), "rendered-master") {
+			returnMCs = append(returnMCs, &MachineConfig{Resource: *mc})
+		}
+	}
+
+	return returnMCs, nil
+}
+
+func (mcl *MachineConfigList) GetRenderedMachineConfigForMasterOrFail() []*MachineConfig {
+	renderedMcMasterList, err := mcl.GetRenderedMachineConfigForMaster()
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the list of the machineconfigs that were created by a MCP ")
+	return renderedMcMasterList
+
+}
+
+// GetMachineConfigCreatedByMCPs returns a list of the machineconfigs that were created by a MCP
+func (mcl *MachineConfigList) GetMCPRenderedMachineConfigsOrFail() []*MachineConfig {
+	renderedMcList, err := mcl.GetRenderedMachineConfigForMaster()
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the list of the machineconfigs that were created by a MCP ")
+	return renderedMcList
 }
