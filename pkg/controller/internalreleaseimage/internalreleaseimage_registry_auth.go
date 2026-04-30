@@ -61,7 +61,7 @@ func reconcileHtpasswd(kubeClient clientset.Interface, authSecret *corev1.Secret
 	updated := authSecret.DeepCopy()
 	updated.Data["htpasswd"] = []byte(newHtpasswd)
 
-	result, err := kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Update(
+	result, err := kubeClient.CoreV1().Secrets(authSecret.Namespace).Update(
 		context.TODO(), updated, metav1.UpdateOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to update IRI auth secret: %w", err)
