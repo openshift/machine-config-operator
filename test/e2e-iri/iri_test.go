@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -263,71 +264,109 @@ func TestIRIAuth_AuthenticatedRequestSucceeds(t *testing.T) {
 }
 
 // getIRIReleasePullSpec queries the IRI registry's release-images tags list and
-// returns a pullspec of the form api-int.<baseDomain>:<port>/openshift/release-images@sha256:<digest>.
+// returns a pullspec of the form api-int.<baseDomain>:<port>/openshift/release-images:<tag>.
+// It retries until tags are available to handle brief registry stabilization delays
+// after credential restores or pool rollouts.
 func getIRIReleasePullSpec(t *testing.T, cs *framework.ClientSet, node corev1.Node, baseDomain, password string) string {
 	t.Helper()
 	const iriRootCAPath = "/rootfs/etc/pki/ca-trust/source/anchors/iri-root-ca.crt"
 	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(ctrlcommon.IRIRegistryUsername+":"+password))
 	url := fmt.Sprintf("https://api-int.%s:%d/v2/openshift/release-images/tags/list", baseDomain, ctrlcommon.IRIRegistryPort)
-	body := strings.TrimSpace(helpers.ExecCmdOnNode(t, cs, node,
-		"curl", "-s", "--cacert", iriRootCAPath, "-H", "Authorization: "+authHeader, url))
 
-	var tagsResp struct {
-		Tags []string `json:"tags"`
-	}
-	require.NoError(t, json.Unmarshal([]byte(body), &tagsResp), "failed to parse IRI tags list response: %s", body)
-	require.NotEmpty(t, tagsResp.Tags, "IRI release-images repository has no tags")
+	var tag string
+	err := wait.PollUntilContextTimeout(context.Background(), 10*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+		body := strings.TrimSpace(helpers.ExecCmdOnNode(t, cs, node,
+			"curl", "-s", "--cacert", iriRootCAPath, "-H", "Authorization: "+authHeader, url))
+		var tagsResp struct {
+			Tags []string `json:"tags"`
+		}
+		if err := json.Unmarshal([]byte(body), &tagsResp); err != nil || len(tagsResp.Tags) == 0 {
+			return false, nil
+		}
+		tag = tagsResp.Tags[0]
+		return true, nil
+	})
+	require.NoError(t, err, "timed out waiting for IRI release-images tags to be available")
 
-	return fmt.Sprintf("api-int.%s:%d/openshift/release-images:%s", baseDomain, ctrlcommon.IRIRegistryPort, tagsResp.Tags[0])
+	return fmt.Sprintf("api-int.%s:%d/openshift/release-images:%s", baseDomain, ctrlcommon.IRIRegistryPort, tag)
 }
 
 // verifyCanPullFromIRI creates a pod with imagePullPolicy:Always using the
 // given IRI registry image and verifies the kubelet can authenticate and pull
 // it. Returns nil when the image is pulled successfully (pod reaches Running,
-// Succeeded, or Failed phase — all indicate auth succeeded). Returns an error
-// if the pull fails due to authentication (ImagePullBackOff/ErrImagePull).
+// Succeeded, or Failed phase — all indicate auth succeeded). If the pod hits
+// ImagePullBackOff (CRI-O may cache auth failures briefly), it is deleted and
+// recreated to force a fresh authentication attempt.
 func verifyCanPullFromIRI(t *testing.T, cs *framework.ClientSet, ctx context.Context, imageRef, podName string) error {
 	t.Helper()
-	pod := &corev1.Pod{
-		ObjectMeta: v1.ObjectMeta{
-			Name:      podName,
-			Namespace: ctrlcommon.MCONamespace,
-		},
-		Spec: corev1.PodSpec{
-			RestartPolicy: corev1.RestartPolicyNever,
-			Containers: []corev1.Container{
-				{
-					Name:            "iri-pull-test",
-					Image:           imageRef,
-					ImagePullPolicy: corev1.PullAlways,
-					// The command may fail if the image has no shell; that is
-					// acceptable — we only care that the image was pulled.
-					Command: []string{"sh", "-c", "exit 0"},
+	newPod := func(name string) *corev1.Pod {
+		return &corev1.Pod{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      name,
+				Namespace: ctrlcommon.MCONamespace,
+			},
+			Spec: corev1.PodSpec{
+				RestartPolicy: corev1.RestartPolicyNever,
+				Containers: []corev1.Container{
+					{
+						Name:            "iri-pull-test",
+						Image:           imageRef,
+						ImagePullPolicy: corev1.PullAlways,
+						// The command may fail if the image has no shell; that is
+						// acceptable — we only care that the image was pulled.
+						Command: []string{"sh", "-c", "exit 0"},
+					},
 				},
 			},
-		},
+		}
 	}
-	if _, err := cs.Pods(ctrlcommon.MCONamespace).Create(ctx, pod, v1.CreateOptions{}); err != nil {
-		return fmt.Errorf("failed to create pull-test pod: %w", err)
-	}
-	defer cs.Pods(ctrlcommon.MCONamespace).Delete(context.Background(), podName, v1.DeleteOptions{})
 
+	attempt := 0
 	return wait.PollUntilContextTimeout(ctx, 5*time.Second, 10*time.Minute, true, func(ctx context.Context) (bool, error) {
+		name := fmt.Sprintf("%s-%d", podName, attempt)
+		attempt++
+		if _, err := cs.Pods(ctrlcommon.MCONamespace).Create(ctx, newPod(name), v1.CreateOptions{}); err != nil {
+			return false, fmt.Errorf("failed to create pull-test pod: %w", err)
+		}
+		defer cs.Pods(ctrlcommon.MCONamespace).Delete(context.Background(), name, v1.DeleteOptions{})
+
+		err := waitForPodImagePull(ctx, cs, name)
+		if errors.Is(err, errImagePullBackOff) {
+			// CRI-O cached the auth failure — outer loop retries with a new pod.
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		return true, nil
+	})
+}
+
+// errImagePullBackOff is returned by waitForPodImagePull when the pod hits
+// ImagePullBackOff or ErrImagePull, indicating a cached auth failure.
+var errImagePullBackOff = errors.New("ImagePullBackOff")
+
+// waitForPodImagePull polls the given pod until its image is pulled (pod
+// reaches Running/Succeeded/Failed) or returns errImagePullBackOff if CRI-O
+// rejects the pull due to a cached auth failure.
+func waitForPodImagePull(ctx context.Context, cs *framework.ClientSet, podName string) error {
+	return wait.PollUntilContextTimeout(ctx, 3*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
 		p, err := cs.Pods(ctrlcommon.MCONamespace).Get(ctx, podName, v1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
-		for _, cs := range p.Status.ContainerStatuses {
-			if cs.State.Waiting != nil {
-				switch cs.State.Waiting.Reason {
-				case "ImagePullBackOff", "ErrImagePull":
-					return false, fmt.Errorf("IRI image pull failed (%s): auth rejected", cs.State.Waiting.Reason)
-				}
+		for _, s := range p.Status.ContainerStatuses {
+			if s.State.Waiting == nil {
+				continue
+			}
+			switch s.State.Waiting.Reason {
+			case "ImagePullBackOff", "ErrImagePull":
+				return false, errImagePullBackOff
 			}
 		}
 		switch p.Status.Phase {
 		case corev1.PodRunning, corev1.PodSucceeded, corev1.PodFailed:
-			return true, nil // image was pulled; command result is irrelevant
+			return true, nil
 		}
 		return false, nil
 	})
@@ -428,6 +467,28 @@ func TestIRIAuth_CredentialRotation(t *testing.T) {
 	statusCode := curlIRIRegistry(t, cs, node, baseDomain, "-H", "Authorization: "+oldAuthHeader)
 	require.Equal(t, "401", statusCode, "old credentials should be rejected after rotation")
 	t.Logf("Old credentials correctly rejected with %s", statusCode)
+
+	// Wait for the template controller to re-render 00-master with the new pull
+	// secret credentials and for MCD to apply it. Rotation triggers two sequential
+	// MC rollouts: first 02-master (htpasswd), then 00-master (pull secret).
+	// WaitForPoolCompleteAny returns after the first; we need the second to complete
+	// before the kubelet pull check so /var/lib/kubelet/config.json is updated.
+	t.Logf("Waiting for pull secret credentials to be updated on node...")
+	iriHost := fmt.Sprintf("api-int.%s:%d", baseDomain, ctrlcommon.IRIRegistryPort)
+	newAuthB64 := base64.StdEncoding.EncodeToString([]byte(ctrlcommon.IRIRegistryUsername + ":" + newPassword))
+	err = wait.PollUntilContextTimeout(ctx, 10*time.Second, 10*time.Minute, true, func(ctx context.Context) (bool, error) {
+		out := strings.TrimSpace(helpers.ExecCmdOnNode(t, cs, node,
+			"cat", "/rootfs/var/lib/kubelet/config.json"))
+		var cfg map[string]interface{}
+		if jsonErr := json.Unmarshal([]byte(out), &cfg); jsonErr != nil {
+			return false, nil
+		}
+		auths, _ := cfg["auths"].(map[string]interface{})
+		entry, _ := auths[iriHost].(map[string]interface{})
+		return entry["auth"] == newAuthB64, nil
+	})
+	require.NoError(t, err, "timed out waiting for kubelet config.json to be updated with new IRI credentials")
+	t.Logf("Kubelet config.json updated with new credentials")
 
 	// Verify kubelet can still pull from the IRI registry with the new credentials.
 	// This exercises the full kubelet pull path (/var/lib/kubelet/config.json) rather
