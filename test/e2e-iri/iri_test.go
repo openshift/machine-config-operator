@@ -417,6 +417,14 @@ func TestIRIAuth_CredentialRotation(t *testing.T) {
 	require.NoError(t, err, "timed out waiting for new credentials to be accepted after rotation")
 	t.Logf("New credentials accepted")
 
+	// Wait for the full master pool rollout to complete before asserting old
+	// credentials are rejected. The curlIRIRegistry check above only proves one
+	// backend accepted the new htpasswd; without waiting for pool completion the
+	// old-credential probe could land on an unrotated master via the api-int VIP.
+	t.Logf("Waiting for master pool rollout to complete...")
+	require.NoError(t, helpers.WaitForPoolCompleteAny(t, cs, "master"), "master pool rollout did not complete after credential rotation")
+	t.Logf("Master pool rollout complete")
+
 	statusCode := curlIRIRegistry(t, cs, node, baseDomain, "-H", "Authorization: "+oldAuthHeader)
 	require.Equal(t, "401", statusCode, "old credentials should be rejected after rotation")
 	t.Logf("Old credentials correctly rejected with %s", statusCode)
