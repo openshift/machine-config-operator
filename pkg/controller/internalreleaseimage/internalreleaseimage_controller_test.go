@@ -12,6 +12,7 @@ import (
 	mcfginformers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -299,9 +300,10 @@ func TestReconcileHtpasswd(t *testing.T) {
 func mustGenerateHtpasswd(t *testing.T, password string) string {
 	t.Helper()
 	entry, err := generateHtpasswdEntry(ctrlcommon.IRIRegistryUsername, password)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	return entry
 }
+
 // The fixture used to setup and run the controller.
 type fixture struct {
 	t *testing.T
