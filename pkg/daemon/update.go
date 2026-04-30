@@ -3041,6 +3041,18 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 		mcDiff.osUpdate = false
 	}
 
+	// If either of our old or new configs have extensions OR kerneltype (which just
+	// uses extensions under the hood) set then we need to fetch/extract and add the
+	// extensions repo so our operation won't fail because of a missing repo. It doesn't
+	// matter if there are no changes between the old and new configs (i.e. mcDiff.extensions
+	// and mcDiff.kerneltype can't be used), because when we do an os update if the yum
+	// repo isn't there rpm-ostree will fail if there are layered packages.
+	// See https://redhat.atlassian.net/browse/OCPBUGS-2269
+	haveExtensions := len(oldConfig.Spec.Extensions) != 0 || len(newConfig.Spec.Extensions) != 0
+	haveKernelType :=
+		helpers.CanonicalizeKernelType(oldConfig.Spec.KernelType) != ctrlcommon.KernelTypeDefault ||
+			helpers.CanonicalizeKernelType(newConfig.Spec.KernelType) != ctrlcommon.KernelTypeDefault
+
 	var osExtensionsContentDir string
 	var err error
 
@@ -3054,7 +3066,7 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 		}
 	}
 
-	if newConfig.Spec.BaseOSExtensionsContainerImage != "" && (mcDiff.osUpdate || mcDiff.extensions || mcDiff.kernelType) && !mcDiff.oclEnabled {
+	if newConfig.Spec.BaseOSExtensionsContainerImage != "" && (haveExtensions || haveKernelType) && !mcDiff.oclEnabled {
 		// TODO(jkyros): the original intent was that we use the extensions container as a service, but that currently results
 		// in a lot of complexity due to boostrap and firstboot where the service isn't easily available, so for now we are going
 		// to extract them to disk like we did previously.
