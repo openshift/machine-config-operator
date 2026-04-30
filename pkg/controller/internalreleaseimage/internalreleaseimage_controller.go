@@ -313,8 +313,9 @@ func (ctrl *Controller) processMachineConfigEvent(obj interface{}, logMsg string
 
 func (ctrl *Controller) addSecret(obj interface{}, _ bool) {
 	secret := obj.(*corev1.Secret)
-	if secret.Name != ctrlcommon.InternalReleaseImageTLSSecretName &&
-		secret.Name != ctrlcommon.InternalReleaseImageAuthSecretName {
+	if secret.Namespace != ctrlcommon.MCONamespace ||
+		(secret.Name != ctrlcommon.InternalReleaseImageTLSSecretName &&
+			secret.Name != ctrlcommon.InternalReleaseImageAuthSecretName) {
 		return
 	}
 	klog.V(4).Infof("Secret %s added, re-queuing IRI sync", secret.Name)
@@ -324,8 +325,9 @@ func (ctrl *Controller) addSecret(obj interface{}, _ bool) {
 func (ctrl *Controller) updateSecret(_, cur interface{}) {
 	secret := cur.(*corev1.Secret)
 
-	if secret.Name != ctrlcommon.InternalReleaseImageTLSSecretName &&
-		secret.Name != ctrlcommon.InternalReleaseImageAuthSecretName {
+	if secret.Namespace != ctrlcommon.MCONamespace ||
+		(secret.Name != ctrlcommon.InternalReleaseImageTLSSecretName &&
+			secret.Name != ctrlcommon.InternalReleaseImageAuthSecretName) {
 		return
 	}
 
