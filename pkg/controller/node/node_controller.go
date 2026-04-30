@@ -1338,6 +1338,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 // updatePools processes pools sequentially, coordinating updates between master and arbiter pools
 // in HighlyAvailableArbiterMode. The arbiter pool only updates after all master nodes have completed
 // their updates to prevent concurrent master and arbiter updates which could impact cluster availability.
+//
 //nolint:gocyclo
 func (ctrl *Controller) updatePools(pools []*mcfgv1.MachineConfigPool, controlPlaneTopology configv1.TopologyMode) error {
 	everything := metav1.LabelSelector{}
@@ -1411,27 +1412,22 @@ func (ctrl *Controller) updatePools(pools []*mcfgv1.MachineConfigPool, controlPl
 						maxunavail = 0
 					} else {
 						var arbiterUnavailable int
-					for _, n := range arbiterNodes {
-						if ctrlcommon.NewLayeredNodeState(n).IsUnavailableForUpdate() {
-							arbiterUnavailable++
-						}
-					}
-						if arbiterUnavailable > 0 {
-							klog.Infof("Pool %s: arbiter has %d unavailable node(s), reducing master capacity to prevent simultaneous updates", pool.Name, arbiterUnavailable)
-							maxunavail -= arbiterUnavailable
-							if maxunavail < 0 {
-								maxunavail = 0
+						for _, n := range arbiterNodes {
+							if ctrlcommon.NewLayeredNodeState(n).IsUnavailableForUpdate() {
+								arbiterUnavailable++
 							}
+						}
+						if arbiterUnavailable > 0 {
+							klog.Infof("Pool %s: arbiter has %d unavailable node(s), setting master capacity to zero to prevent simultaneous updates", pool.Name, arbiterUnavailable)
+							maxunavail = 0
 						}
 					}
 					break
 				}
 			}
 		}
-		if controlPlaneTopology != "" {
-			if err := ctrl.setClusterConfigAnnotation(nodes, controlPlaneTopology); err != nil {
-				return fmt.Errorf("error setting clusterConfig Annotation for node in pool %q, error: %w", pool.Name, err)
-			}
+		if err := ctrl.setClusterConfigAnnotation(nodes, controlPlaneTopology); err != nil {
+			return fmt.Errorf("error setting clusterConfig Annotation for node in pool %q, error: %w", pool.Name, err)
 		}
 
 		// Taint all the nodes in the node pool, irrespective of their upgrade status.
