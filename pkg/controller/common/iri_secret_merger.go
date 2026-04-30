@@ -42,9 +42,14 @@ func NewIRISecretMerger(
 	iriLister mcfglistersv1alpha1.InternalReleaseImageLister,
 	fgHandler FeatureGatesHandler,
 ) *IRISecretMerger {
+	// Evaluate the feature gate once at construction time. Using a live check
+	// inside the closure would race with the informer factory startup: the gate
+	// could be off when New() runs (nil listers) but on by the time Merge() is
+	// called, causing a nil-lister dereference.
+	iriEnabled := fgHandler.Enabled(features.FeatureGateNoRegistryClusterInstall)
 	return &IRISecretMerger{
 		resolve: func() (string, string, error) {
-			if !fgHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
+			if !iriEnabled {
 				return "", "", errIRIDisabled
 			}
 			_, err := iriLister.Get(InternalReleaseImageInstanceName)
