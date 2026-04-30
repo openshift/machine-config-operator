@@ -51,8 +51,6 @@ const (
 	GCPPlatform = "gcp"
 	// AzurePlatform value used to identify azure infrastructure
 	AzurePlatform = "azure"
-	// NonePlatform value used to identify a None Platform value
-	NonePlatform = "none"
 	// BaremetalPlatform value used to identify baremetal infrastructure
 	BaremetalPlatform = "baremetal"
 	// KniPlatform value used to identify KNI infrastructure
@@ -63,6 +61,8 @@ const (
 	OpenstackPlatform = "openstack"
 	// OvirtPlatform value used to identify Ovirt infrastructure
 	OvirtPlatform = "ovirt"
+	// NonePlatform value used to identify a None Platform value
+	NonePlatform = "none"
 	// VspherePlatform value used to identify Vsphere infrastructure
 	VspherePlatform = "vsphere"
 	// AlibabaCloudPlatform value used to identify AlibabaCloud infrastructure

@@ -1604,7 +1604,7 @@ func (n *Node) GetRHCOSVersion() (string, error) {
 	return rhcosVersion, nil
 }
 
-// FilterSchedulableNodesOrFail filters a list of nodes to return only schedulable ones
+// FilterSchedulableNodesOrFail removes from a list of nodes the nodes that are not schedulable
 func FilterSchedulableNodesOrFail(nodes []*Node) []*Node {
 	returnNodes := []*Node{}
 	for _, item := range nodes {
