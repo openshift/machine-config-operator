@@ -4,14 +4,20 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"golang.org/x/crypto/bcrypt"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 )
+
+// htpasswdUpdateTimeout bounds the get/update retry loop that syncs the
+// htpasswd field, so a wedged API server cannot block the sync loop.
+const htpasswdUpdateTimeout = 30 * time.Second
 
 // generateHtpasswdEntry generates an htpasswd-formatted line for the given username
 // and password using bcrypt hashing.
@@ -53,20 +59,48 @@ func reconcileHtpasswd(kubeClient clientset.Interface, authSecret *corev1.Secret
 
 	klog.V(4).Infof("IRI auth secret htpasswd is out of sync with password, regenerating")
 
-	newHtpasswd, err := generateHtpasswdEntry(ctrlcommon.IRIRegistryUsername, password)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate htpasswd: %w", err)
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), htpasswdUpdateTimeout)
+	defer cancel()
 
-	updated := authSecret.DeepCopy()
-	updated.Data["htpasswd"] = []byte(newHtpasswd)
+	var result *corev1.Secret
+	if err := retry.RetryOnConflict(updateBackoff, func() error {
+		// Re-read the secret so the htpasswd is applied on top of the latest
+		// resourceVersion. The password may have been rotated again since the
+		// lister copy was taken, so re-derive everything from what we just read.
+		latest, err := kubeClient.CoreV1().Secrets(authSecret.Namespace).Get(ctx, authSecret.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
 
-	result, err := kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Update(
-		context.TODO(), updated, metav1.UpdateOptions{})
-	if err != nil {
+		latestPassword := string(latest.Data["password"])
+		if latestPassword == "" {
+			return fmt.Errorf("IRI auth secret %s/%s missing or empty \"password\" field", latest.Namespace, latest.Name)
+		}
+		if HtpasswdMatchesPassword(string(latest.Data["htpasswd"]), ctrlcommon.IRIRegistryUsername, latestPassword) {
+			// Another writer already synced it.
+			result = latest
+			return nil
+		}
+
+		newHtpasswd, err := generateHtpasswdEntry(ctrlcommon.IRIRegistryUsername, latestPassword)
+		if err != nil {
+			return fmt.Errorf("failed to generate htpasswd: %w", err)
+		}
+		if latest.Data == nil {
+			latest.Data = map[string][]byte{}
+		}
+		latest.Data["htpasswd"] = []byte(newHtpasswd)
+
+		result, err = kubeClient.CoreV1().Secrets(latest.Namespace).Update(ctx, latest, metav1.UpdateOptions{})
+		if err != nil {
+			return err
+		}
+
+		klog.Infof("Regenerated IRI auth secret htpasswd for credential rotation (secret %s/%s)", latest.Namespace, latest.Name)
+		return nil
+	}); err != nil {
 		return nil, fmt.Errorf("failed to update IRI auth secret: %w", err)
 	}
 
-	klog.Infof("Regenerated IRI auth secret htpasswd for credential rotation (secret %s/%s)", authSecret.Namespace, authSecret.Name)
 	return result, nil
 }

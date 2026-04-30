@@ -164,9 +164,9 @@ func New(
 		DeleteFunc: ctrl.deleteMachineConfig,
 	})
 
-	// Watch IRI secrets (TLS, auth) and the global pull secret. All are served
-	// by the cluster-wide KubeInformerFactory, so a single informer covers all
-	// namespaces.
+	// Watch IRI secrets (TLS, auth). They are served by the cluster-wide
+	// KubeInformerFactory, so a single informer covers all namespaces and the
+	// handlers filter down to MCONamespace.
 	secretInformer.Informer().AddEventHandler(cache.ResourceEventHandlerDetailedFuncs{
 		AddFunc:    ctrl.addSecret,
 		UpdateFunc: ctrl.updateSecret,
@@ -327,8 +327,9 @@ func (ctrl *Controller) processMachineConfigEvent(obj interface{}, logMsg string
 
 func (ctrl *Controller) addSecret(obj interface{}, _ bool) {
 	secret := obj.(*corev1.Secret)
-	if secret.Name != ctrlcommon.InternalReleaseImageTLSSecretName &&
-		secret.Name != ctrlcommon.InternalReleaseImageAuthSecretName {
+	if secret.Namespace != ctrlcommon.MCONamespace ||
+		(secret.Name != ctrlcommon.InternalReleaseImageTLSSecretName &&
+			secret.Name != ctrlcommon.InternalReleaseImageAuthSecretName) {
 		return
 	}
 	klog.V(4).Infof("Secret %s added, re-queuing IRI sync", secret.Name)
@@ -338,8 +339,9 @@ func (ctrl *Controller) addSecret(obj interface{}, _ bool) {
 func (ctrl *Controller) updateSecret(_, cur interface{}) {
 	secret := cur.(*corev1.Secret)
 
-	if secret.Name != ctrlcommon.InternalReleaseImageTLSSecretName &&
-		secret.Name != ctrlcommon.InternalReleaseImageAuthSecretName {
+	if secret.Namespace != ctrlcommon.MCONamespace ||
+		(secret.Name != ctrlcommon.InternalReleaseImageTLSSecretName &&
+			secret.Name != ctrlcommon.InternalReleaseImageAuthSecretName) {
 		return
 	}
 
