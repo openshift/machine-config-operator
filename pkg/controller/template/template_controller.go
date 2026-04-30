@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	apiv1features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
@@ -122,11 +123,10 @@ func New(
 		DeleteFunc: ctrl.deleteSecret,
 	})
 
-	// Watch the IRI auth secret in the MCO namespace so that when credentials
-	// are rotated the pull secret rendered into 00-master/00-worker is updated.
-	// Both informers are nil when the NoRegistryClusterInstall feature gate is
-	// off (the CRD doesn't exist on those clusters).
-	if iriSecretsInformer != nil {
+	// Watch the IRI auth secret and InternalReleaseImage informer only when the
+	// NoRegistryClusterInstall feature gate is enabled. When the gate is off,
+	// the CRD is not installed and the informers are nil.
+	if fgHandler.Enabled(apiv1features.FeatureGateNoRegistryClusterInstall) {
 		iriSecretsInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc:    ctrl.addSecret,
 			UpdateFunc: ctrl.updateSecret,
@@ -149,7 +149,7 @@ func New(
 	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
 	ctrl.secretsInformerSynced = secretsInformer.Informer().HasSynced
 
-	if iriInformer != nil {
+	if fgHandler.Enabled(apiv1features.FeatureGateNoRegistryClusterInstall) {
 		ctrl.iriInformerSynced = iriInformer.Informer().HasSynced
 		ctrl.iriMerger = ctrlcommon.NewIRISecretMerger(iriSecretsInformer.Lister(), ctrl.ccLister, iriInformer.Lister(), fgHandler)
 	} else {
