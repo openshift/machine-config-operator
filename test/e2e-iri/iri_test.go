@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"net/http"
@@ -261,6 +262,77 @@ func TestIRIAuth_AuthenticatedRequestSucceeds(t *testing.T) {
 	require.Equal(t, "200", statusCode, "authenticated request should succeed")
 }
 
+// getIRIReleasePullSpec queries the IRI registry's release-images tags list and
+// returns a pullspec of the form api-int.<baseDomain>:<port>/openshift/release-images@sha256:<digest>.
+func getIRIReleasePullSpec(t *testing.T, cs *framework.ClientSet, node corev1.Node, baseDomain, password string) string {
+	t.Helper()
+	const iriRootCAPath = "/rootfs/etc/pki/ca-trust/source/anchors/iri-root-ca.crt"
+	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(ctrlcommon.IRIRegistryUsername+":"+password))
+	url := fmt.Sprintf("https://api-int.%s:%d/v2/openshift/release-images/tags/list", baseDomain, ctrlcommon.IRIRegistryPort)
+	body := strings.TrimSpace(helpers.ExecCmdOnNode(t, cs, node,
+		"curl", "-s", "--cacert", iriRootCAPath, "-H", "Authorization: "+authHeader, url))
+
+	var tagsResp struct {
+		Tags []string `json:"tags"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(body), &tagsResp), "failed to parse IRI tags list response: %s", body)
+	require.NotEmpty(t, tagsResp.Tags, "IRI release-images repository has no tags")
+
+	return fmt.Sprintf("api-int.%s:%d/openshift/release-images:%s", baseDomain, ctrlcommon.IRIRegistryPort, tagsResp.Tags[0])
+}
+
+// verifyCanPullFromIRI creates a pod with imagePullPolicy:Always using the
+// given IRI registry image and verifies the kubelet can authenticate and pull
+// it. Returns nil when the image is pulled successfully (pod reaches Running,
+// Succeeded, or Failed phase — all indicate auth succeeded). Returns an error
+// if the pull fails due to authentication (ImagePullBackOff/ErrImagePull).
+func verifyCanPullFromIRI(t *testing.T, cs *framework.ClientSet, ctx context.Context, imageRef, podName string) error {
+	t.Helper()
+	pod := &corev1.Pod{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      podName,
+			Namespace: ctrlcommon.MCONamespace,
+		},
+		Spec: corev1.PodSpec{
+			RestartPolicy: corev1.RestartPolicyNever,
+			Containers: []corev1.Container{
+				{
+					Name:            "iri-pull-test",
+					Image:           imageRef,
+					ImagePullPolicy: corev1.PullAlways,
+					// The command may fail if the image has no shell; that is
+					// acceptable — we only care that the image was pulled.
+					Command: []string{"sh", "-c", "exit 0"},
+				},
+			},
+		},
+	}
+	if _, err := cs.Pods(ctrlcommon.MCONamespace).Create(ctx, pod, v1.CreateOptions{}); err != nil {
+		return fmt.Errorf("failed to create pull-test pod: %w", err)
+	}
+	defer cs.Pods(ctrlcommon.MCONamespace).Delete(context.Background(), podName, v1.DeleteOptions{})
+
+	return wait.PollUntilContextTimeout(ctx, 5*time.Second, 10*time.Minute, true, func(ctx context.Context) (bool, error) {
+		p, err := cs.Pods(ctrlcommon.MCONamespace).Get(ctx, podName, v1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		for _, cs := range p.Status.ContainerStatuses {
+			if cs.State.Waiting != nil {
+				switch cs.State.Waiting.Reason {
+				case "ImagePullBackOff", "ErrImagePull":
+					return false, fmt.Errorf("IRI image pull failed (%s): auth rejected", cs.State.Waiting.Reason)
+				}
+			}
+		}
+		switch p.Status.Phase {
+		case corev1.PodRunning, corev1.PodSucceeded, corev1.PodFailed:
+			return true, nil // image was pulled; command result is irrelevant
+		}
+		return false, nil
+	})
+}
+
 func TestIRIAuth_CredentialRotation(t *testing.T) {
 	cs := framework.NewClientSet("")
 	ctx := context.Background()
@@ -276,6 +348,12 @@ func TestIRIAuth_CredentialRotation(t *testing.T) {
 	require.NotEmpty(t, originalPassword)
 
 	baseDomain := getBaseDomain(t, cs)
+
+	// Get the IRI release image pullspec for pod-based pull verification.
+	// The pullspec is constructed from the registry's tags list so it references
+	// the local IRI registry, not the original quay.io source.
+	node := helpers.GetRandomNode(t, cs, "master")
+	iriImageRef := getIRIReleasePullSpec(t, cs, node, baseDomain, originalPassword)
 
 	// Restore credentials on test completion.
 	t.Cleanup(func() {
@@ -300,6 +378,12 @@ func TestIRIAuth_CredentialRotation(t *testing.T) {
 		t.Logf("Cleanup: credential restoration complete")
 	})
 
+	// Verify kubelet can pull from the IRI registry with the current credentials.
+	t.Logf("Verifying kubelet can pull from IRI registry before rotation...")
+	require.NoError(t, verifyCanPullFromIRI(t, cs, ctx, iriImageRef, "iri-pull-pre-rotation"),
+		"kubelet should be able to pull from IRI registry before credential rotation")
+	t.Logf("Pre-rotation pull verified")
+
 	// Trigger rotation by writing a new password.
 	newPassword := fmt.Sprintf("rotated-%d", time.Now().UnixNano())
 	authSecret.Data["password"] = []byte(newPassword)
@@ -323,7 +407,6 @@ func TestIRIAuth_CredentialRotation(t *testing.T) {
 	// Poll until the new credentials are accepted. The registry only accepts
 	// them once MCD has written the new htpasswd file to the node, so this
 	// also serves as the rollout completion check.
-	node := helpers.GetRandomNode(t, cs, "master")
 	newAuthHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(ctrlcommon.IRIRegistryUsername+":"+newPassword))
 	oldAuthHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(ctrlcommon.IRIRegistryUsername+":"+originalPassword))
 
@@ -337,6 +420,14 @@ func TestIRIAuth_CredentialRotation(t *testing.T) {
 	statusCode := curlIRIRegistry(t, cs, node, baseDomain, "-H", "Authorization: "+oldAuthHeader)
 	require.Equal(t, "401", statusCode, "old credentials should be rejected after rotation")
 	t.Logf("Old credentials correctly rejected with %s", statusCode)
+
+	// Verify kubelet can still pull from the IRI registry with the new credentials.
+	// This exercises the full kubelet pull path (/var/lib/kubelet/config.json) rather
+	// than just raw HTTP auth.
+	t.Logf("Verifying kubelet can pull from IRI registry after rotation...")
+	require.NoError(t, verifyCanPullFromIRI(t, cs, ctx, iriImageRef, "iri-pull-post-rotation"),
+		"kubelet should be able to pull from IRI registry after credential rotation")
+	t.Logf("Post-rotation pull verified")
 
 	t.Logf("Credential rotation completed successfully")
 }
