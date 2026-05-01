@@ -1733,8 +1733,11 @@ func generateKargs(oldKernelArguments, newKernelArguments []string) []string {
 	// kernel arguments which have been applied by MCO previously and append all of the
 	// kernel arguments present in the new rendered MachineConfig.
 	// See https://bugzilla.redhat.com/show_bug.cgi?id=1866546#c10.
+	// Use --delete-if-present instead of --delete to tolerate drift between
+	// the old MachineConfig spec and the actual state.
+	// See https://issues.redhat.com/browse/OCPBUGS-75894.
 	for _, arg := range oldKargs {
-		cmdArgs = append(cmdArgs, "--delete="+arg)
+		cmdArgs = append(cmdArgs, "--delete-if-present="+arg)
 	}
 	for _, arg := range newKargs {
 		cmdArgs = append(cmdArgs, "--append="+arg)
