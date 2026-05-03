@@ -1,0 +1,107 @@
+apis:
+  - group: machineconfiguration.openshift.io
+    kind: MachineConfig
+    version: v1
+    source: vendor/github.com/openshift/api/machineconfiguration/v1/types_machineconfig.go
+    enhancement: "machine-config-operator/docs/MachineConfig.md"
+    upstream: false
+    description: "Declarative specification for node configuration"
+
+  - group: machineconfiguration.openshift.io
+    kind: MachineConfigPool
+    version: v1
+    source: vendor/github.com/openshift/api/machineconfiguration/v1/types_machineconfigpool.go
+    enhancement: "machine-config-operator/docs/MachineConfig.md"
+    upstream: false
+    description: "Groups nodes and manages rollout of MachineConfig changes"
+
+  - group: machineconfiguration.openshift.io
+    kind: ControllerConfig
+    version: v1
+    source: vendor/github.com/openshift/api/machineconfiguration/v1/types_controllerconfig.go
+    enhancement: "machine-config-operator/docs/MachineConfigController.md"
+    upstream: false
+    description: "Configuration for MachineConfigController"
+
+  - group: machineconfiguration.openshift.io
+    kind: KubeletConfig
+    version: v1
+    source: vendor/github.com/openshift/api/machineconfiguration/v1/types_kubeletconfig.go
+    enhancement: "machine-config-operator/docs/KubeletConfigDesign.md"
+    upstream: false
+    description: "High-level kubelet configuration (generates MachineConfig)"
+
+  - group: machineconfiguration.openshift.io
+    kind: ContainerRuntimeConfig
+    version: v1
+    source: vendor/github.com/openshift/api/machineconfiguration/v1/types_containerruntimeconfig.go
+    enhancement: "machine-config-operator/docs/ContainerRuntimeConfigDesign.md"
+    upstream: false
+    description: "CRI-O configuration (generates MachineConfig)"
+
+  - group: config.openshift.io
+    kind: ClusterOperator
+    version: v1
+    source: vendor/github.com/openshift/api/config/v1/types_cluster_operator.go
+    enhancement: null
+    upstream: false
+    description: "Status reporting for MCO (core operator pattern)"
+    usage: "pkg/operator/status.go"
+
+  - group: config.openshift.io
+    kind: Infrastructure
+    version: v1
+    source: vendor/github.com/openshift/api/config/v1/types_infrastructure.go
+    enhancement: null
+    upstream: false
+    description: "Cluster infrastructure details (platform, region)"
+    usage: "pkg/controller/template/render.go (rendering context)"
+
+  - group: config.openshift.io
+    kind: Network
+    version: v1
+    source: vendor/github.com/openshift/api/config/v1/types_network.go
+    enhancement: null
+    upstream: false
+    description: "Cluster network configuration"
+    usage: "pkg/controller/template/render.go (network config injection)"
+
+  # Upstream Kubernetes APIs used
+  - group: ""
+    kind: Node
+    version: v1
+    upstream: true
+    description: "Kubernetes Node API"
+    modifications:
+      - field: "metadata.annotations"
+        enhancement: "MCO annotations for update state"
+        values:
+          - "machineconfiguration.openshift.io/currentConfig"
+          - "machineconfiguration.openshift.io/desiredConfig"
+          - "machineconfiguration.openshift.io/state"
+
+  - group: ""
+    kind: Secret
+    version: v1
+    upstream: true
+    description: "Kubernetes Secret API (pull secrets, certs)"
+    usage: "pkg/server/server.go (TLS certs), pkg/controller/template/render.go (pull secret)"
+
+vendor-dependencies:
+  - repo: github.com/openshift/api
+    version: "v0.0.0-20260304160726-df03ea1d00f4"
+    description: "OpenShift API type definitions"
+
+  - repo: github.com/openshift/client-go
+    version: "v0.0.0-20260302182750-20813ce71ca6"
+    description: "OpenShift API clients"
+
+  - repo: github.com/openshift/library-go
+    version: "v0.0.0-20260303171201-5d9eb6295ff6"
+    description: "Shared operator patterns (resource syncing, status reporting)"
+
+notes: |
+  - All MCO-specific APIs are in machineconfiguration.openshift.io group
+  - Controller uses config.openshift.io APIs for cluster context
+  - MCO is a core operator (uses ClusterOperator for status)
+  - See docs/MachineConfig.md for API usage examples

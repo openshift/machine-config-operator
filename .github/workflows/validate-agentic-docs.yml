@@ -1,0 +1,146 @@
+name: Validate Agentic Documentation
+
+on:
+  pull_request:
+    paths:
+      - 'agentic/**'
+      - '*.md'
+      - '.github/workflows/validate-agentic-docs.yml'
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  structure:
+    name: Validate Structure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check AGENTS.md length
+        run: |
+          lines=$(wc -l < AGENTS.md)
+          echo "AGENTS.md has $lines lines"
+          if [ $lines -gt 150 ]; then
+            echo "❌ AGENTS.md too long ($lines lines). Keep under 150."
+            exit 1
+          fi
+          echo "✅ AGENTS.md length OK"
+
+      - name: Verify directory structure
+        run: |
+          required_dirs="design-docs domain exec-plans decisions references generated scripts"
+          for dir in $required_dirs; do
+            if [ ! -d "agentic/$dir" ]; then
+              echo "❌ Missing required directory: agentic/$dir"
+              exit 1
+            fi
+          done
+          echo "✅ Directory structure OK"
+
+      - name: Check index files exist
+        run: |
+          required_indexes="design-docs/index.md domain/index.md decisions/index.md references/index.md"
+          for index in $required_indexes; do
+            if [ ! -f "agentic/$index" ]; then
+              echo "❌ Missing required index: agentic/$index"
+              exit 1
+            fi
+          done
+          echo "✅ Index files OK"
+
+      - name: Check required top-level files exist
+        run: |
+          required_files="DESIGN.md DEVELOPMENT.md TESTING.md RELIABILITY.md SECURITY.md QUALITY_SCORE.md"
+          for file in $required_files; do
+            if [ ! -f "agentic/$file" ]; then
+              echo "❌ Missing REQUIRED file: agentic/$file"
+              echo "   These 6 files are mandatory for ALL repositories."
+              exit 1
+            fi
+          done
+          echo "✅ All required top-level files present"
+
+      - name: Check for unreplaced placeholders
+        run: |
+          if grep -r '\[REPO-NAME\]\|\[Component1\]\|\[Concept1\]' agentic/ AGENTS.md ARCHITECTURE.md 2>/dev/null | grep -v '\[.*\](.*\.md)'; then
+            echo "❌ Found unreplaced placeholders (excluding markdown links)"
+            exit 1
+          fi
+          echo "✅ No unreplaced placeholders"
+
+  content:
+    name: Validate Content
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check minimum content requirements
+        run: |
+          echo "Checking minimum content..."
+
+          # Check for ADRs (exclude template)
+          adr_count=$(find agentic/decisions -name "adr-*.md" -not -name "*template*" 2>/dev/null | wc -l)
+          if [ "$adr_count" -lt 2 ]; then
+            echo "❌ Found $adr_count ADRs, need at least 2 (excluding template)"
+            exit 1
+          fi
+          echo "✅ Found $adr_count ADRs"
+
+          # Check for concept docs
+          concept_count=$(find agentic/domain/concepts -name "*.md" 2>/dev/null | wc -l)
+          if [ "$concept_count" -lt 5 ]; then
+            echo "❌ Found $concept_count concept docs, need at least 5"
+            exit 1
+          fi
+          echo "✅ Found $concept_count concept docs"
+
+          # Check for exec-plans (at least template should exist)
+          if [ ! -f "agentic/exec-plans/template.md" ]; then
+            echo "❌ Missing exec-plan template"
+            exit 1
+          fi
+          echo "✅ Exec-plan template exists"
+
+  frontmatter:
+    name: Validate Frontmatter
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check concept frontmatter
+        run: |
+          for file in agentic/domain/concepts/*.md; do
+            if [ -f "$file" ]; then
+              if ! head -n 1 "$file" | grep -q "^---$"; then
+                echo "❌ $file missing YAML frontmatter"
+                exit 1
+              fi
+            fi
+          done
+          echo "✅ Concept frontmatter OK"
+
+      - name: Check ADR frontmatter
+        run: |
+          for file in agentic/decisions/adr-*.md; do
+            if [ -f "$file" ] && [ "$(basename "$file")" != "adr-template.md" ]; then
+              if ! head -n 1 "$file" | grep -q "^---$"; then
+                echo "❌ $file missing YAML frontmatter"
+                exit 1
+              fi
+            fi
+          done
+          echo "✅ ADR frontmatter OK"
+
+      - name: Check exec-plan frontmatter
+        run: |
+          for file in agentic/exec-plans/active/*.md agentic/exec-plans/completed/*.md; do
+            if [ -f "$file" ]; then
+              if ! head -n 1 "$file" | grep -q "^---$"; then
+                echo "❌ $file missing YAML frontmatter"
+                exit 1
+              fi
+            fi
+          done
+          echo "✅ Exec-plan frontmatter OK (or no plans yet)"
