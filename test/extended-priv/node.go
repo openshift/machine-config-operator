@@ -1220,6 +1220,12 @@ func (n *Node) GetArchitectureOrFail() architecture.Architecture {
 	return arch
 }
 
+// GetJournalLogs returns the journal logs for a node
+func (n *Node) GetJournalLogs(args ...string) (string, error) {
+	cmd := []string{"journalctl", "-o", "with-unit"}
+	return n.DebugNodeWithChroot(append(cmd, args...)...)
+}
+
 // GetMachineConfigNode returns the MachineConfigNode resource linked to this node
 func (n *Node) GetMachineConfigNode() *MachineConfigNode {
 	return NewMachineConfigNode(n.oc.AsAdmin(), n.GetName())
@@ -1387,6 +1393,15 @@ func (nl NodeList) GetAllCoreOsWokerNodesOrFail() []*Node {
 	workers, err := nl.GetAll()
 	o.Expect(err).NotTo(o.HaveOccurred())
 	return workers
+}
+
+// GetAllCoreOsNodesOrFail returns all RHCOS nodes. Fails the test if an error happens.
+func (nl NodeList) GetAllCoreOsNodesOrFail() []*Node {
+	nl.ByLabel("node.openshift.io/os_id=rhel")
+
+	allRhcos, err := nl.GetAll()
+	o.Expect(err).NotTo(o.HaveOccurred())
+	return allRhcos
 }
 
 // GetAllReady returns all nodes that are in Ready status
