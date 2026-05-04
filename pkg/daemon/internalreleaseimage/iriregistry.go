@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"regexp"
@@ -50,7 +51,7 @@ func newIRIRegistry(nodeName string, client *http.Client, authToken string) *iri
 	return &iriRegistry{
 		nodeName:         nodeName,
 		client:           client,
-		registryHostPort: fmt.Sprintf("%s:%d", iriRegistryHost, iriRegistryPort),
+		registryHostPort: net.JoinHostPort(iriRegistryHost, fmt.Sprintf("%d", iriRegistryPort)),
 		authToken:        authToken,
 	}
 }

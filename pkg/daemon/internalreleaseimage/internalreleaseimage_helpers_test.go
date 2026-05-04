@@ -31,6 +31,12 @@ func iri() *iriBuilder {
 	}
 }
 
+func (ib *iriBuilder) withDeletionTimestamp() *iriBuilder {
+	now := metav1.Now()
+	ib.obj.DeletionTimestamp = &now
+	return ib
+}
+
 func (ib *iriBuilder) build() runtime.Object {
 	return ib.obj
 }
