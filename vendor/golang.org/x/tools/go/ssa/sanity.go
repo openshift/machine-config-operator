@@ -132,6 +132,11 @@ func (s *sanity) checkInstr(idx int, instr Instruction) {
 
 	case *BinOp:
 	case *Call:
+		if common := instr.Call; common.IsInvoke() {
+			if !types.IsInterface(common.Value.Type()) {
+				s.errorf("invoke on %s (%s) which is not an interface type (or type param)", common.Value, common.Value.Type())
+			}
+		}
 	case *ChangeInterface:
 	case *ChangeType:
 	case *SliceToArrayPointer:
@@ -344,7 +349,7 @@ func (s *sanity) checkBlock(b *BasicBlock, index int) {
 
 			// Check that "untyped" types only appear on constant operands.
 			if _, ok := (*op).(*Const); !ok {
-				if basic, ok := (*op).Type().(*types.Basic); ok {
+				if basic, ok := (*op).Type().Underlying().(*types.Basic); ok {
 					if basic.Info()&types.IsUntyped != 0 {
 						s.errorf("operand #%d of %s is untyped: %s", i, instr, basic)
 					}
