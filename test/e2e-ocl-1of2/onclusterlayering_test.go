@@ -911,7 +911,10 @@ func waitForMOSCToUpdateCurrentMOSB(ctx context.Context, t *testing.T, cs *frame
 		}
 
 		currentMOSB = mosc.GetAnnotations()[constants.CurrentMachineOSBuildAnnotationKey]
-		return currentMOSB != mosbName, nil
+		// Wait for annotation to be non-empty AND different from the old MOSB.
+		// The stale annotation fix may temporarily clear the annotation, so we need
+		// to wait for the new MOSB to be created and annotation set.
+		return currentMOSB != "" && currentMOSB != mosbName, nil
 
 	}))
 	return currentMOSB
