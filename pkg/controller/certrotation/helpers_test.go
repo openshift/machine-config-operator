@@ -1,7 +1,13 @@
 package certrotationcontroller
 
 import (
+	"context"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -47,4 +53,30 @@ func getAROCluster(apiIntIP string) *arov1alpha1.Cluster {
 			APIIntIP: apiIntIP,
 		},
 	}
+}
+
+func getIRIClusterResource() *mcfgv1alpha1.InternalReleaseImage {
+	return &mcfgv1alpha1.InternalReleaseImage{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: ctrlcommon.InternalReleaseImageInstanceName,
+		},
+	}
+}
+
+// createIRISecret creates an empty IRI TLS secret, simulating what the IRI controller
+// would create during cluster bootstrap.
+func (f *fixture) createIRISecret(t *testing.T) {
+	t.Helper()
+	_, err := f.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Create(context.TODO(), &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      ctrlcommon.InternalReleaseImageTLSSecretName,
+			Namespace: ctrlcommon.MCONamespace,
+		},
+		Type: corev1.SecretTypeTLS,
+		Data: map[string][]byte{
+			corev1.TLSCertKey:       {},
+			corev1.TLSPrivateKeyKey: {},
+		},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
 }
