@@ -1,0 +1,28 @@
+Scenario,,All registries unavailable,,,,
+,,"Given an OVE cluster with 3 control plane nodes
+And all the IRI registries are accessible
+
+When all the IRI registries become not accessible
+
+Then all the MachineConfigNodes should be degraded
+And the InternalReleaseImage resource should be degraded
+And no release will be available (and degraded) via api-int",,,,
+,,,,,,
+,,MasterConfigNode ,,,,InternalReleaseImage
+resource,,master-0,master-1,master-2,,cluster
+"status 
+condition",Type,InternalReleaseImageDegraded,InternalReleaseImageDegraded,InternalReleaseImageDegraded,,Degraded
+,Status,True,True,True,,True
+,Reason,RegistryUnreachable,RegistryUnreachable,RegistryUnreachable,,SomeRegistriesUnavailable
+,Message,registry query...connection refused,registry query...connection refused,registry query...connection refused,,"The following nodes are degraded: [master-0, master-1, master-2]. See the related MachineConfigNode resource status for more details."
+"releases[0]
+conditions",name,ocp-release-bundle-4.22,ocp-release-bundle-4.22,ocp-release-bundle-4.22,,ocp-release-bundle-4.22
+,image,localhost:22625/openshift/release-images@<digest>,localhost:22625/openshift/release-images@<digest>,localhost:22625/openshift/release-images@<digest>,,api-int.<cluster-name>.<base-domain>:22625/openshift/release-images@<digest>
+,Type,Available,Available,Available,,Available
+,Status,False,False,False,,False
+,Reason,RegistryUnreachable,RegistryUnreachable,RegistryUnreachable,,ReleaseImageNotAvailable
+,Message,Release bundle is unavailable: failed to reach the registry,Release bundle is unavailable: failed to reach the registry,Release bundle is unavailable: failed to reach the registry,,The specified release image is not available
+,Type,Degraded,Degraded,Degraded,,Degraded
+,Status,True,True,True,,True
+,Reason,RegistryUnreachable,RegistryUnreachable,RegistryUnreachable,,SomeRegistriesUnavailable
+,Message,registry query...connection refused,registry query...connection refused,registry query...connection refused,,"The following nodes are degraded: [master-0, master-1, master-2]. See the related MachineConfigNode resource status for more details."
