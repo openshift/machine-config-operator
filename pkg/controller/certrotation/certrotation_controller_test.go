@@ -111,7 +111,7 @@ func (f *fixture) newController() *CertRotationController {
 		f.infraLister = append(f.infraLister, infra.(*configv1.Infrastructure))
 	}
 
-	c, err := New(f.kubeClient, f.configClient, f.machineClient, f.aroClient, f.k8sI.Core().V1().Secrets(), f.k8sI.Core().V1().Secrets(), f.k8sI.Core().V1().ConfigMaps(), f.infraInformer.Config().V1().Infrastructures())
+	c, err := New(f.kubeClient, f.configClient, f.machineClient, f.aroClient, f.k8sI.Core().V1().Secrets(), f.k8sI.Core().V1().Secrets(), f.k8sI.Core().V1().ConfigMaps(), f.infraInformer.Config().V1().Infrastructures(), nil, nil)
 	require.NoError(f.t, err)
 
 	c.StartInformers()

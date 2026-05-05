@@ -47,22 +47,37 @@ spec:
             description: spec contains the desired kubelet configuration.
             properties:
               autoSizingReserved:
+                description: |-
+                  autoSizingReserved controls whether system-reserved CPU and memory are automatically
+                  calculated based on each node's installed capacity. When set to true, this prevents node failure
+                  from resource starvation of system components (kubelet, CRI-O) without manual configuration.
+                  When omitted, this means the user has no opinion and the platform is left to choose a reasonable default,
+                  which is subject to change over time. The current default is true for worker nodes and false for control plane nodes.
+                  When set to false, automatic resource reservation is disabled and manual settings must be configured.
                 type: boolean
               kubeletConfig:
                 description: |-
-                  kubeletConfig fields are defined in kubernetes upstream. Please refer to the types defined in the version/commit used by
-                  OpenShift of the upstream kubernetes. It's important to note that, since the fields of the kubelet configuration are directly fetched from
-                  upstream the validation of those values is handled directly by the kubelet. Please refer to the upstream version of the relevant kubernetes
-                  for the valid values of these fields. Invalid values of the kubelet configuration fields may render cluster nodes unusable.
+                  kubeletConfig contains upstream Kubernetes kubelet configuration fields.
+                  Values are validated by the kubelet itself. Invalid values may render nodes unusable.
+                  Refer to OpenShift documentation for the Kubernetes version corresponding to your
+                  OpenShift release to find valid kubelet configuration options.
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
               logLevel:
+                description: |-
+                  logLevel sets the kubelet log verbosity, controlling the amount of detail in kubelet logs.
+                  Valid values range from 0 (minimal logging) to 10 (maximum verbosity with trace-level detail).
+                  Higher log levels may impact node performance. When omitted, the platform chooses a reasonable default,
+                  which is subject to change over time. The current default is 2 (standard informational logging).
                 format: int32
+                maximum: 10
+                minimum: 0
                 type: integer
               machineConfigPoolSelector:
                 description: |-
-                  machineConfigPoolSelector selects which pools the KubeletConfig shoud apply to.
-                  A nil selector will result in no pools being selected.
+                  machineConfigPoolSelector selects which pools the KubeletConfig should apply to.
+                  When omitted or set to an empty selector {}, no pools are selected, which is equivalent
+                  to not matching any MachineConfigPool.
                 properties:
                   matchExpressions:
                     description: matchExpressions is a list of label selector requirements.
@@ -109,9 +124,9 @@ spec:
                 x-kubernetes-map-type: atomic
               tlsSecurityProfile:
                 description: |-
-                  If unset, the default is based on the apiservers.config.openshift.io/cluster resource.
-                  Note that only Old and Intermediate profiles are currently supported, and
-                  the maximum available minTLSVersion is VersionTLS12.
+                  tlsSecurityProfile configures TLS settings for the kubelet.
+                  When omitted, the TLS configuration defaults to the value from apiservers.config.openshift.io/cluster.
+                  When specified, the type field can be set to either "Old", "Intermediate", "Modern", "Custom" or omitted for backward compatibility.
                 properties:
                   custom:
                     description: |-
