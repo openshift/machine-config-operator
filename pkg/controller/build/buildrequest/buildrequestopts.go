@@ -55,7 +55,7 @@ func (b BuildRequestOpts) getKernelPackages() (string, map[string][]string, erro
 	}
 
 	// 64K memory pages kernel is only supported for aarch64
-	if newKtype == ctrlcommon.KernelType64kPages && goruntime.GOARCH != "arm64" {
+	if newKtype == ctrlcommon.KernelType64kPages && goruntime.GOARCH != ctrlcommon.GoArchARM64 {
 		return "", nil, fmt.Errorf("64k-pages is only supported for aarch64 architecture")
 	}
 
