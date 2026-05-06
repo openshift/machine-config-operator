@@ -6,9 +6,12 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/util/uuid"
+
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
 
 // runGetOut executes a command on the host and returns its stdout output.
@@ -47,7 +50,7 @@ func (dn *Daemon) runBootupdViaContainer(imageURL string) error {
 	}
 	// For now, only attempt bootloader updates on x86_64 and aarch64 as they are the ones
 	// affected by the secure boot issue.
-	if runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64" {
+	if runtime.GOARCH != ctrlcommon.GoArchAMD64 && runtime.GOARCH != ctrlcommon.GoArchARM64 {
 		return nil
 	}
 	logSystem("runBootupdViaContainer: attempting bootloader update")
@@ -327,6 +330,74 @@ func findAnyESP(devices []lsblkDevice) string {
 		}
 	}
 	return ""
+}
+
+// isSecureBootEnabled returns true if mokutil reports Secure Boot is active.
+// If mokutil is unavailable or fails, it returns true to fail open (conservative).
+func isSecureBootEnabled() bool {
+	out, err := runGetOut("mokutil", "--sb-state")
+	if err != nil {
+		logSystem("isSecureBootEnabled: mokutil failed, assuming Secure Boot may be enabled: %v", err)
+		return true
+	}
+	return strings.Contains(string(out), "SecureBoot enabled")
+}
+
+// shimIsSafe returns true if no bootloader update is required: either Secure Boot
+// is not enabled, or the installed shim is at or above 15.8-3.el9_2 (the minimum
+// version with safe signing keys). On non-UEFI arches this always returns true.
+func shimIsSafe() bool {
+	if !isSecureBootEnabled() {
+		logSystem("shimIsSafe: Secure Boot not enabled, bootloader update not required")
+		return true
+	}
+
+	var pkgName string
+	switch runtime.GOARCH {
+	case ctrlcommon.GoArchAMD64:
+		pkgName = "shim-x64"
+	case ctrlcommon.GoArchARM64:
+		pkgName = "shim-aa64"
+	default:
+		return true
+	}
+
+	out, err := runGetOut("rpm", "-q", "--queryformat", "%{VERSION}-%{RELEASE}", pkgName)
+	if err != nil {
+		// Package not installed or rpm failed — fail open so bootupd runs.
+		logSystem("shimIsSafe: could not query %s, proceeding with bootloader update: %v", pkgName, err)
+		return false
+	}
+
+	installed := strings.TrimSpace(string(out))
+	const safeVersion = "15.8-3.el9_2"
+	cmp, err := rpmVercmp(installed, safeVersion)
+	if err != nil {
+		logSystem("shimIsSafe: could not compare versions, proceeding with bootloader update: %v", err)
+		return false
+	}
+	safe := cmp >= 0
+	if safe {
+		logSystem("shimIsSafe: %s %s >= %s, bootloader update not required", pkgName, installed, safeVersion)
+	} else {
+		logSystem("shimIsSafe: %s %s < %s, bootloader update required", pkgName, installed, safeVersion)
+	}
+	return safe
+}
+
+// rpmVercmp compares two RPM version strings using rpm's built-in Lua vercmp.
+// Returns negative if a < b, 0 if equal, positive if a > b.
+func rpmVercmp(a, b string) (int, error) {
+	luaExpr := "%{lua:print(rpm.vercmp('" + a + "', '" + b + "'))}"
+	out, err := runGetOut("rpm", "--eval", luaExpr)
+	if err != nil {
+		return 0, err
+	}
+	result, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	if err != nil {
+		return 0, fmt.Errorf("unexpected rpm vercmp output %q: %w", string(out), err)
+	}
+	return result, nil
 }
 
 // findRAIDESPs returns the ESP partition on every disk that is a member of the

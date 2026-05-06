@@ -174,6 +174,10 @@ const (
 	// This matches etcd's default request size limit of 1.5MB (1572864 bytes).
 	// Reference: https://issues.redhat.com/browse/OCPBUGS-62619
 	MaxMachineConfigSize = 1572864
+
+	// Go GOARCH values for architecture matching
+	GoArchAMD64 = "amd64"
+	GoArchARM64 = "arm64"
 )
 
 // Commonly-used MCO ConfigMap names
