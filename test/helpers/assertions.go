@@ -674,6 +674,9 @@ func (a *Assertions) machineOSBuildHasConditionTrue(mosb *mcfgv1.MachineOSBuild,
 
 	stateFunc := func(apiMosb *mcfgv1.MachineOSBuild, err error) (bool, error) {
 		if err != nil {
+			if a.poll && k8serrors.IsNotFound(err) {
+				return false, nil
+			}
 			return false, err
 		}
 
