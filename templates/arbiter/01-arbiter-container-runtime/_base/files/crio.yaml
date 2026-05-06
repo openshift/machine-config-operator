@@ -101,5 +101,6 @@ contents:
       "image_pulls_failure_total",
       "image_layer_reuse_total",
       "containers_oom_count_total",
-      "processes_defunct"
+      "processes_defunct",
+      "default_runtime"
     ]
