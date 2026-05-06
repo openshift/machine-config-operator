@@ -191,6 +191,13 @@ func (b *buildReconciler) deleteMachineOSConfig(ctx context.Context, mosc *mcfgv
 	}
 
 	for _, mosb := range mosbList {
+		// Only delete MOSBs owned by this specific MOSC instance. A new MOSC
+		// with the same name (but different UID) may already exist and have
+		// created new MOSBs that match the same label selector.
+		if !metav1.IsControlledBy(mosb, mosc) {
+			klog.Infof("Skipping MachineOSBuild %s: not owned by deleted MachineOSConfig %s (UID %s)", mosb.Name, mosc.Name, mosc.UID)
+			continue
+		}
 		if err := b.deleteMachineOSBuild(ctx, mosb); err != nil {
 			return fmt.Errorf("could not delete MachineOSBuild %s for MachineOSConfig %s: %w", mosb.Name, mosc.Name, err)
 		}
