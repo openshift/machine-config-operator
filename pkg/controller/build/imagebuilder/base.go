@@ -17,6 +17,10 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 )
 
+const (
+	DigestConfigMapKey string = "digest"
+)
+
 // Holds the common objects and methods needed to implement an ImageBuilder.
 type baseImageBuilder struct {
 	kubeclient   clientset.Interface
@@ -147,9 +151,9 @@ func (b *baseImageBuilder) getFinalImagePullspec(ctx context.Context) (string, e
 		return "", fmt.Errorf("could not get final image digest configmap %q: %w", name, err)
 	}
 
-	sha, err := utils.ParseImagePullspec(string(b.mosc.Spec.RenderedImagePushSpec), digestConfigMap.Data["digest"])
+	sha, err := utils.ParseImagePullspec(string(b.mosc.Spec.RenderedImagePushSpec), digestConfigMap.Data[DigestConfigMapKey])
 	if err != nil {
-		return "", fmt.Errorf("could not create digested image pullspec from the pullspec %q and the digest %q: %w", b.mosc.Status.CurrentImagePullSpec, digestConfigMap.Data["digest"], err)
+		return "", fmt.Errorf("could not create digested image pullspec from the pullspec %q and the digest %q: %w", b.mosc.Status.CurrentImagePullSpec, digestConfigMap.Data[DigestConfigMapKey], err)
 	}
 
 	return sha, nil

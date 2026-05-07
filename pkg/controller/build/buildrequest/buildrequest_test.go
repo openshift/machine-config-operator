@@ -231,8 +231,7 @@ func assertBuildJobIsCorrect(t *testing.T, buildJob *batchv1.Job, opts BuildRequ
 	)
 
 	assert.Equal(t, buildJob.Spec.Template.Spec.InitContainers[0].Image, mcoImagePullspec)
-
-	assert.Equal(t, fixtures.BaseOSContainerImage, buildJob.Spec.Template.Spec.Containers[0].Image)
+	assert.Equal(t, buildJob.Spec.Template.Spec.Containers[0].Image, mcoImagePullspec)
 
 	assertPodHasVolume(t, buildJob.Spec.Template.Spec, corev1.Volume{
 		Name: "final-image-push-creds",
