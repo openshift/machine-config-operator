@@ -1864,7 +1864,7 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 	}
 
 	// 64K memory pages kernel is only supported for aarch64
-	if newKtype == ctrlcommon.KernelType64kPages && goruntime.GOARCH != "arm64" {
+	if newKtype == ctrlcommon.KernelType64kPages && goruntime.GOARCH != ctrlcommon.GoArchARM64 {
 		return fmt.Errorf("64k-pages is only supported for aarch64 architecture")
 	}
 
@@ -2758,8 +2758,10 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	newURL := config.Spec.OSImageURL
 	klog.Infof("Updating OS to layered image %q", newURL)
 
-	if err := dn.runBootupdViaContainer(newURL); err != nil {
-		klog.Warningf("bootloader update failed: %s", err)
+	if !shimIsSafe() {
+		if err := dn.runBootupdViaContainer(newURL); err != nil {
+			klog.Warningf("bootloader update failed: %s", err)
+		}
 	}
 
 	newEnough, err := dn.NodeUpdaterClient.IsNewEnoughForLayering()
