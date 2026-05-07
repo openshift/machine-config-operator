@@ -25,9 +25,12 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
 )
+
+const iriRootCAPath = "/rootfs" + constants.IRIRootCAPath
 
 func TestIRIResource_Available(t *testing.T) {
 	skipIfNoBaremetal(t)
@@ -212,7 +215,6 @@ func getBaseDomain(t *testing.T, cs *framework.ClientSet) string {
 // Returns the HTTP status code string (e.g. "200", "401").
 func curlIRIRegistry(t *testing.T, cs *framework.ClientSet, node corev1.Node, baseDomain string, extraArgs ...string) string {
 	t.Helper()
-	const iriRootCAPath = "/rootfs/etc/pki/ca-trust/source/anchors/iri-root-ca.crt"
 	url := fmt.Sprintf("https://api-int.%s:%d/v2/", baseDomain, ctrlcommon.IRIRegistryPort)
 	args := []string{"curl", "-s", "--cacert", iriRootCAPath, "-o", "/dev/null", "-w", "%{http_code}"}
 	args = append(args, extraArgs...)
@@ -429,4 +431,29 @@ func TestCertRotation_IRICertIsRegeneratedOnCARotation(t *testing.T) {
 		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	})
 	require.NoError(t, err, "Rotated IRI TLS cert should be signed by the new MCS CA")
+}
+
+// TestIRIController_VerifyMLKEMSupport verifies that the IRI registry supports
+// ML-KEM (post-quantum) key exchange as required for OpenShift 4.22+.
+func TestIRIController_VerifyMLKEMSupport(t *testing.T) {
+	skipIfNoBaremetal(t)
+
+	cs := framework.NewClientSet("")
+
+	baseDomain := getBaseDomain(t, cs)
+	node := helpers.GetRandomNode(t, cs, "master")
+
+	target := fmt.Sprintf("api-int.%s:%d", baseDomain, ctrlcommon.IRIRegistryPort)
+
+	output := helpers.ExecCmdOnNode(t, cs, node,
+		"bash", "-c",
+		fmt.Sprintf("echo | openssl s_client -connect %s -CAfile %s -groups X25519MLKEM768 -tls1_3 -verify_return_error 2>&1 | grep -E 'Cipher|TLSv1.3|group'",
+			target, iriRootCAPath))
+
+	t.Logf("openssl s_client output:\n%s", output)
+
+	require.Contains(t, output, "TLSv1.3", "IRI registry should support TLS 1.3")
+	require.True(t,
+		strings.Contains(output, "X25519MLKEM768") || strings.Contains(output, "x25519_mlkem768"),
+		"IRI registry should support X25519MLKEM768 (ML-KEM) key exchange. Output: %s", output)
 }
