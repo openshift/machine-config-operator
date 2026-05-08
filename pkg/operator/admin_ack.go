@@ -17,7 +17,7 @@ import (
 
 const (
 	BootImageAzureVSphereKey = "ack-4.21-boot-image-opt-out-in-4.22"
-	BootImageAzureVSphereMsg = "This cluster is Azure or vSphere but lacks a boot image configuration. OCP will automatically opt this cluster into boot image management in 4.22. Please add a configuration to disable boot image updates if this is not desired. See https://docs.redhat.com/en/documentation/openshift_container_platform/4.21/html/machine_configuration/mco-update-boot-images#mco-update-boot-images-disable_machine-configs-configure for more details."
+	BootImageAzureVSphereMsg = "This cluster is Azure or vSphere but lacks a boot image configuration. OCP will automatically opt this cluster into boot image management in 4.22. Please add a configuration to disable boot image updates if this is not desired. See https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html/machine_configuration/mco-update-boot-images#mco-update-boot-images-disable_machine-configs-configure for more details."
 
 	AdminAckGatesConfigMapName = "admin-gates"
 )
