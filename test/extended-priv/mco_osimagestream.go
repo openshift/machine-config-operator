@@ -235,7 +235,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("OK!\n")
 	})
 
-	g.It("[PolarionID:88366][OTP][Skipped:Disconnected] osImageStream should be empty when osImageURL is set [apigroup:machineconfiguration.openshift.io]", func() {
+	g.It("[PolarionID:88366][Skipped:Disconnected] osImageStream should be empty when osImageURL is set [apigroup:machineconfiguration.openshift.io]", func() {
 		var (
 			testID        = GetCurrentTestPolarionIDNumber()
 			osLayerMCName = fmt.Sprintf("tc-%s-os-layer-custom", testID)
@@ -301,7 +301,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("OK!\n")
 	})
 
-	g.It("[PolarionID:88814][OTP][Skipped:Disconnected] osImageStream should be empty when pool is degraded with invalid osImageURL [apigroup:machineconfiguration.openshift.io]", func() {
+	g.It("[PolarionID:88814][Skipped:Disconnected] Invalid osImageURL degrades MCP and clears osImageStream status [apigroup:machineconfiguration.openshift.io]", func() {
 		var (
 			testID          = GetCurrentTestPolarionIDNumber()
 			invalidMCName   = fmt.Sprintf("tc-%s-invalid-osimage", testID)
