@@ -336,10 +336,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("%s is degraded (as expected)", mcp)
 		logger.Infof("OK!\n")
 
-		exutil.By("Verify osImageStream is still present when pool is degraded without osImageURL")
-		o.Eventually(mcp.GetStatusOsImageStream, "2m", "20s").Should(o.ContainSubstring(OSImageStreamRHEL9),
-			"In %v status.osImageStream should still report rhel-9 when degraded without osImageURL", mcp)
-		logger.Infof("osImageStream still reports rhel-9 when degraded (as expected)")
+		exutil.By("Verify osImageStream is empty when pool is degraded")
+		o.Expect(mcp.GetStatusOsImageStream()).To(o.BeEmpty(),
+			"In %v status.osImageStream should be empty when pool is degraded", mcp)
+		logger.Infof("osImageStream is empty when degraded (as expected)")
 		logger.Infof("OK!\n")
 
 		exutil.By("Delete invalid MachineConfig to recover pool")
