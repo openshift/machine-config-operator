@@ -3,6 +3,7 @@ package extended
 import (
 	"fmt"
 	"os/exec"
+	"strings"
 
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
@@ -358,5 +359,54 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 
 		behaviourValidatorRemove.Validate()
+	})
+
+	g.It("[PolarionID:72025][OTP] nmstate keeps service yamls [Disruptive]", func() {
+		var (
+			node                             = GetCompactCompatiblePool(oc.AsAdmin()).GetNodesOrFail()[0]
+			nmstateConfigFileFullPath        = "/etc/nmstate/mco-tc-72025-basic-nmsconfig.yml"
+			nmstateConfigFileAppliedFullPath = strings.ReplaceAll(nmstateConfigFileFullPath, ".yml", ".applied")
+
+			nmstateConfigRemote        = NewRemoteFile(node, nmstateConfigFileFullPath)
+			nmstateConfigAppliedRemote = NewRemoteFile(node, nmstateConfigFileAppliedFullPath)
+
+			nmstateBasicConfig = `
+desiredState:
+  interfaces:
+  - name: dummytc72025
+    type: dummy
+    state: absent
+`
+		)
+
+		exutil.By(fmt.Sprintf("Create a config file for nmstate in node %s", node.GetName()))
+
+		logger.Infof("Config content:\n%s", nmstateBasicConfig)
+		defer func() {
+			nmstateConfigRemote.Rm("-f")
+			nmstateConfigAppliedRemote.Rm("-f")
+			logger.Infof("Restarting nmstate service")
+			_, err := node.DebugNodeWithChroot("systemctl", "restart", "nmstate")
+			o.Expect(err).NotTo(o.HaveOccurred(), "Error restarting the nsmtate service in node %s", node.GetName())
+		}()
+		logger.Infof("Creating the config file")
+		o.Expect(nmstateConfigRemote.Create([]byte(nmstateBasicConfig), 0o600)).To(o.Succeed(),
+			"Error creating the basic config file %s in node %s", nmstateConfigFileFullPath, node.GetName())
+
+		nmstateConfigRemote.PrintDebugInfo()
+		logger.Infof("OK!\n")
+
+		exutil.By(fmt.Sprintf("Restart nmstate service in node %s", node.GetName()))
+		_, err := node.DebugNodeWithChroot("systemctl", "restart", "nmstate")
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error restarting the nsmtate service in node %s", node.GetName())
+		logger.Infof("OK!\n")
+
+		exutil.By("Check that the configuration file was not removed and it was correctly cloned")
+		o.Expect(nmstateConfigRemote.Exists()).To(o.BeTrue(),
+			"The configuration file %s does not exist after restarting the nmstate service, but it should exist", nmstateConfigRemote.GetFullPath())
+
+		o.Expect(nmstateConfigAppliedRemote.Exists()).To(o.BeTrue(),
+			"The applied configuration file %s does not exist after restarting the nmstate service, but it should exist", nmstateConfigAppliedRemote.GetFullPath())
+		logger.Infof("OK!\n")
 	})
 })
