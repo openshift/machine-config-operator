@@ -237,11 +237,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 	g.It("[PolarionID:88366][OTP][Skipped:Disconnected] osImageStream should be empty when osImageURL is set [apigroup:machineconfiguration.openshift.io]", func() {
 		var (
-			testID         = GetCurrentTestPolarionIDNumber()
-			osLayerMCName  = fmt.Sprintf("tc-%s-os-layer-custom", testID)
-			degradedMCName = fmt.Sprintf("tc-%s-degraded-test", testID)
-			crd            = NewResource(oc.AsAdmin(), "crd", "osimagestreams.machineconfiguration.openshift.io")
-			node           *Node
+			testID        = GetCurrentTestPolarionIDNumber()
+			osLayerMCName = fmt.Sprintf("tc-%s-os-layer-custom", testID)
+			crd           = NewResource(oc.AsAdmin(), "crd", "osimagestreams.machineconfiguration.openshift.io")
+			node          *Node
 		)
 
 		exutil.By("Check osimagestreams CRD exists")
@@ -300,27 +299,59 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			"Node %s should be running the custom osImageURL", node)
 		logger.Infof("Custom osImageURL is deployed on %s", node)
 		logger.Infof("OK!\n")
+	})
 
-		exutil.By("Apply invalid MachineConfig to degrade pool")
-		degradedMC := NewMachineConfig(oc.AsAdmin(), degradedMCName, mcp.GetName())
-		degradedMC.parameters = []string{"IGNITION_VERSION=99.99.0"}
-		degradedMC.skipWaitForMcp = true
+	g.It("[PolarionID:88814][OTP][Skipped:Disconnected] osImageStream should be empty when pool is degraded with invalid osImageURL [apigroup:machineconfiguration.openshift.io]", func() {
+		var (
+			testID          = GetCurrentTestPolarionIDNumber()
+			invalidMCName   = fmt.Sprintf("tc-%s-invalid-osimage", testID)
+			invalidOsImage  = "quay.io/mcoqe/invalid-image@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+			crd             = NewResource(oc.AsAdmin(), "crd", "osimagestreams.machineconfiguration.openshift.io")
+		)
 
-		defer degradedMC.DeleteWithWait()
-		degradedMC.create()
-		logger.Infof("Invalid MachineConfig %s created", degradedMC.GetName())
+		exutil.By("Check osimagestreams CRD exists")
+		o.Eventually(crd, "10s", "2s").Should(Exist(),
+			"osimagestreams CRD should exist in the cluster")
+		logger.Infof("osimagestreams CRD found")
+		logger.Infof("OK!\n")
+
+		exutil.By("Verify MCP reports rhel-9 osImageStream in status")
+		o.Eventually(mcp.GetStatusOsImageStream, "2m", "20s").Should(o.ContainSubstring(OSImageStreamRHEL9),
+			"%s should report rhel-9 in status.osImageStream", mcp)
+		logger.Infof("%s osImageStream: %s", mcp, mcp.GetSafe(`{.status.osImageStream}`, ""))
+		logger.Infof("OK!\n")
+
+		exutil.By("Apply MachineConfig with invalid osImageURL to pool")
+		invalidMC := NewMachineConfig(oc.AsAdmin(), invalidMCName, mcp.GetName())
+		invalidMC.parameters = []string{"OS_IMAGE=" + invalidOsImage}
+		invalidMC.skipWaitForMcp = true
+
+		defer invalidMC.DeleteWithWait()
+		invalidMC.create()
+		logger.Infof("MachineConfig %s created with invalid osImageURL", invalidMC.GetName())
 		logger.Infof("OK!\n")
 
 		exutil.By("Wait for pool to become degraded")
 		o.Eventually(mcp, "5m", "20s").Should(BeDegraded(),
-			"%s should become degraded after applying invalid MC", mcp)
+			"%s should become degraded after applying invalid osImageURL MC", mcp)
 		logger.Infof("%s is degraded (as expected)", mcp)
 		logger.Infof("OK!\n")
 
-		exutil.By("Verify osImageStream is still empty when pool is degraded with osImageURL configured")
+		exutil.By("Verify osImageStream is empty when pool is degraded with osImageURL set")
 		o.Expect(mcp.GetStatusOsImageStream()).To(o.BeEmpty(),
 			"In %v status.osImageStream should be empty when pool is degraded with osImageURL set", mcp)
-		logger.Infof("osImageStream is empty when degraded (as expected)")
+		logger.Infof("osImageStream is empty when degraded with osImageURL (as expected)")
+		logger.Infof("OK!\n")
+
+		exutil.By("Delete invalid MachineConfig to recover pool")
+		invalidMC.DeleteWithWait()
+		logger.Infof("Invalid MachineConfig %s deleted, pool recovered", invalidMC.GetName())
+		logger.Infof("OK!\n")
+
+		exutil.By("Verify osImageStream recovers to rhel-9 after cleanup")
+		o.Eventually(mcp.GetStatusOsImageStream, "2m", "20s").Should(o.ContainSubstring(OSImageStreamRHEL9),
+			"%s should report rhel-9 in status.osImageStream after recovery", mcp)
+		logger.Infof("%s osImageStream recovered: %s", mcp, mcp.GetSafe(`{.status.osImageStream}`, ""))
 		logger.Infof("OK!\n")
 	})
 })
