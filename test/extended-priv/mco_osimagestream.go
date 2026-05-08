@@ -326,7 +326,14 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		invalidMC.parameters = []string{"OS_IMAGE=" + invalidOsImage}
 		invalidMC.skipWaitForMcp = true
 
-		defer invalidMC.DeleteWithWait()
+		defer func() {
+			if invalidMC.Exists() {
+				invalidMC.DeleteOrFail()
+				o.Eventually(mcp, "5m", "20s").ShouldNot(BeDegraded(),
+					"%s should recover after removing invalid MC", mcp)
+				mcp.waitForComplete()
+			}
+		}()
 		invalidMC.create()
 		logger.Infof("MachineConfig %s created with invalid osImageURL", invalidMC.GetName())
 		logger.Infof("OK!\n")
@@ -344,7 +351,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("OK!\n")
 
 		exutil.By("Delete invalid MachineConfig to recover pool")
-		invalidMC.DeleteWithWait()
+		invalidMC.DeleteOrFail()
+		o.Eventually(mcp, "5m", "20s").ShouldNot(BeDegraded(),
+			"%s should recover after removing invalid MC", mcp)
+		mcp.waitForComplete()
 		logger.Infof("Invalid MachineConfig %s deleted, pool recovered", invalidMC.GetName())
 		logger.Infof("OK!\n")
 
