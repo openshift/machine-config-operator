@@ -2,6 +2,7 @@ package util
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	o "github.com/onsi/gomega"
@@ -88,4 +89,28 @@ func SkipOnSingleNodeTopology(oc *CLI) {
 	if IsSingleNodeTopology(oc) {
 		e2eskipper.Skipf("This test does not apply to single-node topologies")
 	}
+}
+
+// GetClusterVersion returns (short version like "4.15", full build version, error)
+func GetClusterVersion(oc *CLI) (string, string, error) {
+	clusterBuild, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"clusterversion", "cluster",
+		"-o", "jsonpath={.status.desired.version}",
+	).Output()
+	if err != nil {
+		return "", "", err
+	}
+	clusterBuild = strings.TrimSpace(clusterBuild)
+	if clusterBuild == "" {
+		return "", "", fmt.Errorf("clusterversion cluster returned an empty desired.version")
+	}
+	if strings.ContainsAny(clusterBuild, " \t\n") {
+		return "", "", fmt.Errorf("unexpected multi-token clusterversion output: %q", clusterBuild)
+	}
+	splitValues := strings.Split(clusterBuild, ".")
+	if len(splitValues) < 2 {
+		return "", "", fmt.Errorf("clusterversion %q does not match expected X.Y[.Z] format", clusterBuild)
+	}
+	clusterVersion := splitValues[0] + "." + splitValues[1]
+	return clusterVersion, clusterBuild, nil
 }

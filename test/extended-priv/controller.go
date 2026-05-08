@@ -173,6 +173,24 @@ func (mcc *Controller) GetPreviousLogs() (string, error) {
 	return prevLogs, nil
 }
 
+// RemovePod removes the controller pod forcing the creation of a new one
+func (mcc *Controller) RemovePod() error {
+	cachedPodName, err := mcc.GetCachedPodName()
+	if err != nil {
+		return err
+	}
+	if cachedPodName == "" {
+		err := fmt.Errorf("Cannot get controller pod name. Failed getting MCO controller logs")
+		logger.Errorf("Error getting controller pod name. Error: %s", err)
+		return err
+	}
+
+	// remove the cached podname, since it will not be valid anymore
+	mcc.podName = ""
+
+	return mcc.oc.WithoutNamespace().Run("delete").Args("pod", "-n", MachineConfigNamespace, cachedPodName).Execute()
+}
+
 // checkMCCPanic checks the machine-config-controller logs for panics
 func checkMCCPanic(oc *exutil.CLI) {
 	var (
