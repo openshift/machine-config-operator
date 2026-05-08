@@ -140,7 +140,7 @@ func (mcp *MachineConfigPool) GetOsImageStream() (string, error) {
 
 // GetStatusOsImageStream returns the osImageStream from MCP status
 func (mcp *MachineConfigPool) GetStatusOsImageStream() (string, error) {
-	return mcp.Get(`{.status.osImageStream}`)
+	return mcp.Get(`{.status.osImageStream.name}`)
 }
 
 func (mcp *MachineConfigPool) getConfigNameOfSpec() (string, error) {
