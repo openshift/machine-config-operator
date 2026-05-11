@@ -45,6 +45,7 @@ type renderConfig struct {
 	ControllerConfig       mcfgv1.ControllerConfigSpec
 	KubeAPIServerServingCA string
 	APIServerURL           string
+	MCSURL                 string
 	Images                 *ctrlcommon.RenderConfigImages
 	Infra                  configv1.Infrastructure
 	Constants              map[string]string

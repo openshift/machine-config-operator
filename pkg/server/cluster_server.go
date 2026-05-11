@@ -56,6 +56,7 @@ type clusterServer struct {
 
 	kubeconfigFunc kubeconfigFunc
 	apiserverURL   string
+	mcsURL         string
 }
 
 const minResyncPeriod = 20 * time.Minute
@@ -76,7 +77,7 @@ func resyncPeriod() func() time.Duration {
 // It accepts a kubeConfig, which is not required when it's
 // run from within a cluster(useful in testing).
 // It accepts the apiserverURL which is the location of the KubeAPIServer.
-func NewClusterServer(kubeConfig, apiserverURL string) (Server, error) {
+func NewClusterServer(kubeConfig, apiserverURL, mcsURL string) (Server, error) {
 	clientsBuilder, err := clients.NewBuilder(kubeConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Kubernetes rest client: %w", err)
@@ -123,6 +124,7 @@ func NewClusterServer(kubeConfig, apiserverURL string) (Server, error) {
 		routeclient:             routeClient,
 		kubeconfigFunc:          func() ([]byte, []byte, error) { return kubeconfigFromSecret(bootstrapTokenDir, apiserverURL, nil) },
 		apiserverURL:            apiserverURL,
+		mcsURL:                  mcsURL,
 	}, nil
 }
 
@@ -187,7 +189,7 @@ func (cs *clusterServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error
 	desiredImage := cs.resolveDesiredImageForPool(mp)
 
 	appenders := newAppendersBuilder(cr.version, cs.kubeconfigFunc, []string{}, "").
-		WithNodeAnnotations(currConf, desiredImage).
+		WithNodeAnnotations(currConf, desiredImage, cs.mcsURL).
 		WithCustomAppender(appendDesiredOSImage(desiredImage)).
 		build()
 
