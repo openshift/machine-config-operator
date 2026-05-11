@@ -4,6 +4,7 @@ metadata:
   name: machine-config-controller
   namespace: {{.TargetNamespace}}
 spec:
+  replicas: 1
   selector:
     matchLabels:
       k8s-app: machine-config-controller

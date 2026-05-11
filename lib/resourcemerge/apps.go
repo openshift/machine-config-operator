@@ -20,6 +20,14 @@ func EnsureDeployment(modified *bool, existing *appsv1.Deployment, required apps
 		existing.Spec.Selector = required.Spec.Selector
 	}
 
+	if required.Spec.Replicas != nil {
+		if existing.Spec.Replicas == nil || *existing.Spec.Replicas != *required.Spec.Replicas {
+			*modified = true
+			r := *required.Spec.Replicas
+			existing.Spec.Replicas = &r
+		}
+	}
+
 	ensurePodTemplateSpec(modified, &existing.Spec.Template, required.Spec.Template)
 }
 
