@@ -206,10 +206,13 @@ func (ctrl *Controller) handleNodeEvent(oldObj, newObj interface{}) {
 		return
 	}
 
-	// If the desiredDrain annotation are identical between oldNode and newNode, no new action is required by the drain controller
-	if oldNode.Annotations[daemonconsts.DesiredDrainerAnnotationKey] == newNode.Annotations[daemonconsts.DesiredDrainerAnnotationKey] {
+	// Enqueue if the drain annotation changed OR if Spec.Unschedulable changed (e.g. external uncordon during drain).
+	if oldNode.Annotations[daemonconsts.DesiredDrainerAnnotationKey] == newNode.Annotations[daemonconsts.DesiredDrainerAnnotationKey] &&
+		oldNode.Spec.Unschedulable == newNode.Spec.Unschedulable {
 		return
 	}
+	klog.V(4).Infof("node %s: enqueueing (desiredDrainer=%q unschedulable=%v)", newNode.Name,
+		newNode.Annotations[daemonconsts.DesiredDrainerAnnotationKey], newNode.Spec.Unschedulable)
 	ctrl.enqueueNode(newNode)
 }
 
@@ -290,8 +293,12 @@ func (ctrl *Controller) syncNode(key string) error {
 	}
 
 	desiredState := node.Annotations[daemonconsts.DesiredDrainerAnnotationKey]
+	desiredVerb := strings.Split(desiredState, "-")[0]
+
+	// lastAppliedDrain is only written on success, so desired == lastApplied means
+	// the controller already completed this request.
 	if desiredState == node.Annotations[daemonconsts.LastAppliedDrainerAnnotationKey] {
-		klog.V(4).Infof("Node %v has the correct drain", key)
+		klog.Infof("Node %v has the correct drain request state", key)
 		return nil
 	}
 
@@ -320,7 +327,6 @@ func (ctrl *Controller) syncNode(key string) error {
 		return err
 	}
 
-	desiredVerb := strings.Split(desiredState, "-")[0]
 	switch desiredVerb {
 	case daemonconsts.DrainerStateUncordon:
 		ctrl.logNode(node, "uncordoning")
@@ -360,6 +366,19 @@ func (ctrl *Controller) syncNode(key string) error {
 			// If we get an error from drainNode, that means the drain failed.
 			// However, we want to requeue and try again. So we need to return nil
 			// from here so that we can requeue.
+			return nil
+		}
+		// Re-fetch the node before writing lastApplied. If the node was externally
+		// uncordoned during the drain, new pods may have been scheduled; writing
+		// lastApplied would falsely signal to the MCD that it is safe to proceed.
+		// The handleNodeEvent will have already re-queued the node on the Spec.Unschedulable
+		// change, so just return without writing the annotation.
+		node, err = ctrl.nodeLister.Get(name)
+		if err != nil {
+			return err
+		}
+		if !node.Spec.Unschedulable {
+			klog.Infof("node %s: externally uncordoned during drain, skipping completion annotation", name)
 			return nil
 		}
 	default:
