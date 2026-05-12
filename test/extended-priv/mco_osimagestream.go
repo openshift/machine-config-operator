@@ -279,12 +279,11 @@ func validateOsImageStreamInPool(mcp *MachineConfigPool, osis *OSImageStream, st
 
 	logger.Infof("%s is correctly using osImage from stream '%s'", firstNode, streamName)
 
-	// TODO: Uncomment when status.osImageStream is populated by MCO
-	// logger.Infof("Checking MCP status.osImageStream")
-	// o.Eventually(mcp.GetStatusOsImageStream, "2m", "20s").Should(o.Equal(streamName),
-	// 	"%s should report stream '%s' in status.osImageStream",
-	// 	mcp, streamName)
-	// logger.Infof("%s correctly reports osImageStream '%s' in status", mcp, streamName)
+	logger.Infof("Checking MCP status.osImageStream")
+	o.Eventually(mcp.GetStatusOsImageStream, "2m", "20s").Should(o.Equal(streamName),
+		"%s should report stream '%s' in status.osImageStream",
+		mcp, streamName)
+	logger.Infof("%s correctly reports osImageStream '%s' in status", mcp, streamName)
 
 	// If stream name is of form "rhel-X", validate RHEL version starts with X
 	var expectedMajorVersion string
