@@ -259,10 +259,16 @@ func (optr *Operator) buildMinimalControllerConfigForOSImageStream() (*mcfgv1.Co
 		return nil, fmt.Errorf("could not get image registry bundles: %w", err)
 	}
 
+	mcsCABundle, err := optr.getMCSCABundle()
+	if err != nil {
+		return nil, fmt.Errorf("could not get MCSC CA bundle: %w", err)
+	}
+
 	cc := &mcfgv1.ControllerConfig{
 		Spec: mcfgv1.ControllerConfigSpec{
 			ImageRegistryBundleData:     imgRegistryData,
 			ImageRegistryBundleUserData: imgRegistryUsrData,
+			RootCAData:                  mcsCABundle,
 		},
 	}
 
