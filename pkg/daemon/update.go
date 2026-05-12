@@ -3173,7 +3173,11 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 		}
 	}
 
-	if newConfig.Spec.BaseOSExtensionsContainerImage != "" && (haveExtensions || haveKernelType) && !mcDiff.oclEnabled {
+	// Extract extensions when needed:
+	// - For non-OCL updates (!mcDiff.oclEnabled)
+	// - For OCL revert (mcDiff.revertFromOCL) - needed to access RHEL repos for kernel packages
+	// See https://redhat.atlassian.net/browse/OCPBUGS-62479
+	if newConfig.Spec.BaseOSExtensionsContainerImage != "" && (haveExtensions || haveKernelType) && (!mcDiff.oclEnabled || mcDiff.revertFromOCL) {
 		// TODO(jkyros): the original intent was that we use the extensions container as a service, but that currently results
 		// in a lot of complexity due to boostrap and firstboot where the service isn't easily available, so for now we are going
 		// to extract them to disk like we did previously.
@@ -3300,7 +3304,9 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 	}
 
 	// If on-cluster layering is enabled, we can skip the rest of this process.
-	if mcDiff.oclEnabled {
+	// However, when reverting from OCL, we need to apply kernel changes and extensions.
+	// See https://redhat.atlassian.net/browse/OCPBUGS-62479
+	if mcDiff.oclEnabled && !mcDiff.revertFromOCL {
 		return nil
 	}
 
