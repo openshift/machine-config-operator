@@ -1380,16 +1380,12 @@ func containsMiddle(s, substr string) bool {
 func TestStaleAnnotationClearedOnLayerOnlyChange(t *testing.T) {
 	cs := framework.NewClientSet("")
 
-	// Label a node from worker pool to trigger node controller reconciliation
-	unlabelFunc := helpers.LabelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/layered")
-	t.Cleanup(unlabelFunc)
-
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
 	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
 
-	// Step 1: Setup OCL with initial successful build
+	// Step 1: Setup OCL with initial successful build (pool starts with no nodes)
 	t.Logf("Step 1: Setting up On-Cluster Layering with initial build")
 	firstImagePullspec, firstMOSB := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
@@ -1414,8 +1410,8 @@ func TestStaleAnnotationClearedOnLayerOnlyChange(t *testing.T) {
 	t.Logf("First rendered config: %s", firstRenderedConfig)
 
 	// Wait for pool to finish updating before applying next MC
-	t.Logf("Waiting for pool to finish initial update")
-	err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 10*time.Minute, true, func(ctx context.Context) (bool, error) {
+	t.Logf("Waiting for pool to finish initial update (pool has no nodes yet)")
+	err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
 		mcp, err := cs.MachineConfigPools().Get(ctx, layeredMCPName, metav1.GetOptions{})
 		if err != nil {
 			return false, err
@@ -1424,6 +1420,10 @@ func TestStaleAnnotationClearedOnLayerOnlyChange(t *testing.T) {
 		return updatedCond != nil && updatedCond.Status == corev1.ConditionTrue, nil
 	})
 	require.NoError(t, err, "pool did not reach Updated=True")
+
+	t.Logf("Adding a node to the pool to enable stale annotation testing")
+	unlabelFunc := helpers.LabelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/layered")
+	t.Cleanup(unlabelFunc)
 
 	// Step 2: Apply first SSH key MC (layer-only change) -> rendered-worker-2
 	t.Logf("Step 2: Applying first SSH key (layer-only change)")
