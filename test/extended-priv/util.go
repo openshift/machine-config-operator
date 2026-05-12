@@ -69,6 +69,11 @@ type ImageTagMirrorSet struct {
 	Template
 }
 
+// NewImageTagMirrorSet creates a new ImageTagMirrorSet struct
+func NewImageTagMirrorSet(oc *exutil.CLI, name string, t Template) *ImageTagMirrorSet {
+	return &ImageTagMirrorSet{Resource: *NewResource(oc, "ImageTagMirrorSet", name), Template: t}
+}
+
 // TextToVerify is a helper struct to verify configurations using the `createMcAndVerifyMCValue` function
 type TextToVerify struct {
 	textToVerifyForMC   string
@@ -1311,4 +1316,34 @@ func skipTestIfOsIsNotCoreOs(oc *exutil.CLI) *Node {
 		g.Skip("CoreOs is required to execute this test case!")
 	}
 	return allCoreOs[0]
+}
+
+// GetDataFromConfigMap returns a map[string]string with the information of the ".data" section of a configmap
+func GetDataFromConfigMap(oc *exutil.CLI, namespace, name string) (map[string]string, error) {
+	data := map[string]string{}
+	cm := NewNamespacedResource(oc.AsAdmin(), "ConfigMap", namespace, name)
+	dataJSON, err := cm.Get(`{.data}`)
+	if err != nil {
+		return nil, err
+	}
+
+	if dataJSON == "" {
+		return data, nil
+	}
+
+	if err := json.Unmarshal([]byte(dataJSON), &data); err != nil {
+		return nil, err
+	}
+
+	return data, nil
+}
+
+// GetImageRegistryCertificates returns a map with image registry certificates from the image-registry-ca configmap
+func GetImageRegistryCertificates(oc *exutil.CLI) (map[string]string, error) {
+	return GetDataFromConfigMap(oc.AsAdmin(), "openshift-config-managed", "image-registry-ca")
+}
+
+// GetManagedMergedTrustedImageRegistryCertificates returns a map with the merged trusted image registry certificates
+func GetManagedMergedTrustedImageRegistryCertificates(oc *exutil.CLI) (map[string]string, error) {
+	return GetDataFromConfigMap(oc.AsAdmin(), "openshift-config-managed", "merged-trusted-image-registry-ca")
 }

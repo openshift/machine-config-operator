@@ -152,3 +152,51 @@ func createMcAndVerifyMCValue(oc *exutil.CLI, stepText, mcName string, node *Nod
 	o.Expect(podOut).Should(o.MatchRegexp(textToVerify.textToVerifyForNode))
 	logger.Infof("%s is verified in the machine config daemon!", stepText)
 }
+
+func getClusterVersion(oc *exutil.CLI) (string, error) {
+	clusterBuild, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("clusterversion", "-o", "jsonpath={..desired.version}").Output()
+	if err != nil {
+		return "", err
+	}
+	clusterBuild = strings.TrimSpace(clusterBuild)
+	splitValues := strings.Split(clusterBuild, ".")
+	if len(splitValues) < 2 {
+		return "", fmt.Errorf("unexpected cluster version format: %q", clusterBuild)
+	}
+	return splitValues[0] + "." + splitValues[1], nil
+}
+
+func skipTestIfClusterVersion(oc *exutil.CLI, operator, constraintVersion string) {
+	clusterVersion, err := getClusterVersion(oc)
+	o.Expect(err).NotTo(o.HaveOccurred())
+
+	if CompareVersions(clusterVersion, operator, constraintVersion) {
+		g.Skip(fmt.Sprintf("Test case skipped because current cluster version %s %s %s",
+			clusterVersion, operator, constraintVersion))
+	}
+}
+
+func skipTestIfExtensionsAreUsed(oc *exutil.CLI) {
+	wMcp := NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
+	mMcp := NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolMaster)
+
+	wCurrentMC, err := wMcp.GetConfiguredMachineConfig()
+	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error trying to get the current MC configured in worker pool")
+
+	mCurrentMC, err := mMcp.GetConfiguredMachineConfig()
+	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error trying to get the current MC configured in master pool")
+
+	wExtensions, err := wCurrentMC.Get(`{.spec.extensions}`)
+	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error trying to get the extensions configured in MC: %s", wCurrentMC.GetName())
+
+	mExtensions, err := mCurrentMC.Get(`{.spec.extensions}`)
+	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error trying to get the extensions configured in MC: %s", mCurrentMC.GetName())
+
+	hasExt := func(v string) bool {
+		v = strings.TrimSpace(v)
+		return v != "" && v != "[]" && v != "<no value>"
+	}
+	if hasExt(wExtensions) || hasExt(mExtensions) {
+		g.Skip("Current cluster is using extensions. This test cannot be execute in a cluster using extensions")
+	}
+}

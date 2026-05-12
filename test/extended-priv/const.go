@@ -202,4 +202,7 @@ var (
 		OSImageStreamRHEL9,
 		OSImageStreamRHEL10,
 	}
+
+	// MCDCrioReloadedRegexp is the regexp to match crio reload success message in MCD logs
+	MCDCrioReloadedRegexp = "crio.* reloaded successfully"
 )
