@@ -14,6 +14,7 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/yaml"
 )
@@ -630,6 +631,129 @@ func TestRenderCloudAltDNSManifests(t *testing.T) {
 			if strings.HasSuffix(manifestPath, ".yaml") {
 				assertRenderedCanBeRead(t, buf)
 			}
+		})
+	}
+}
+
+// TestRenderCloudAltDNSIPOrder verifies that the rendered coredns.yaml
+// template produces load balancer IP arguments that match the order from the
+// configv1.Infrastructure status. See OCPBUGS-81761.
+func TestRenderCloudAltDNSIPOrder(t *testing.T) {
+	t.Parallel()
+
+	joinIPs := func(ips []configv1.IP) string {
+		s := make([]string, len(ips))
+		for i, ip := range ips {
+			s[i] = string(ip)
+		}
+		return strings.Join(s, ",")
+	}
+
+	type untypedRenderConfig struct {
+		Role             string
+		PointerConfig    string
+		ControllerConfig mcfgv1.ControllerConfigSpec
+		Images           *ctrlcommon.RenderConfigImages
+	}
+
+	makePlatformStatus := func(platform configv1.PlatformType, clusterHosted *configv1.CloudLoadBalancerIPs) *configv1.PlatformStatus {
+		lbConfig := &configv1.CloudLoadBalancerConfig{
+			DNSType:       configv1.ClusterHostedDNSType,
+			ClusterHosted: clusterHosted,
+		}
+		ps := &configv1.PlatformStatus{Type: platform}
+		switch platform {
+		case configv1.GCPPlatformType:
+			ps.GCP = &configv1.GCPPlatformStatus{CloudLoadBalancerConfig: lbConfig}
+		case configv1.AWSPlatformType:
+			ps.AWS = &configv1.AWSPlatformStatus{CloudLoadBalancerConfig: lbConfig}
+		}
+		return ps
+	}
+
+	makeConfig := func(platformStatus *configv1.PlatformStatus) untypedRenderConfig {
+		return untypedRenderConfig{
+			Role:          "control-plane",
+			PointerConfig: "cG9pbnRlci1jb25maWctZGF0YQo=",
+			ControllerConfig: mcfgv1.ControllerConfigSpec{
+				DNS: &configv1.DNS{
+					Spec: configv1.DNSSpec{BaseDomain: "local"},
+				},
+				Infra: &configv1.Infrastructure{
+					Status: configv1.InfrastructureStatus{
+						PlatformStatus: platformStatus,
+					},
+				},
+			},
+			Images: &ctrlcommon.RenderConfigImages{
+				MachineConfigOperator: "mco-operator-image",
+				KeepalivedBootstrap:   "keepalived-bootstrap-image",
+			},
+		}
+	}
+
+	assertInitContainerIPsMatchInfra := func(t *testing.T, pod *corev1.Pod, clusterHosted *configv1.CloudLoadBalancerIPs) {
+		t.Helper()
+
+		expectedByFlag := map[string]string{
+			"--cloud-int-lb-ips":     joinIPs(clusterHosted.APIIntLoadBalancerIPs),
+			"--cloud-ext-lb-ips":     joinIPs(clusterHosted.APILoadBalancerIPs),
+			"--cloud-ingress-lb-ips": joinIPs(clusterHosted.IngressLoadBalancerIPs),
+		}
+
+		for _, container := range pod.Spec.InitContainers {
+			if container.Name != "render-config" {
+				continue
+			}
+
+			for flag, expectedIPs := range expectedByFlag {
+				for i, arg := range container.Command {
+					if arg == flag {
+						require.Less(t, i+1, len(container.Command), "flag %s has no value", flag)
+						assert.Equal(t, expectedIPs, container.Command[i+1],
+							"rendered IPs for %s must match the Infrastructure config values", flag)
+					}
+				}
+			}
+		}
+	}
+
+	manifestPath := "cloud-platform-alt-dns/coredns.yaml"
+
+	for _, platform := range []configv1.PlatformType{configv1.GCPPlatformType, configv1.AWSPlatformType} {
+		t.Run(string(platform), func(t *testing.T) {
+			t.Parallel()
+
+			// Use a non-sorted IP order to ensure the test is meaningful.
+			clusterHosted := &configv1.CloudLoadBalancerIPs{
+				APIIntLoadBalancerIPs:  []configv1.IP{"10.10.10.5", "10.10.10.4", "10.10.10.6"},
+				APILoadBalancerIPs:     []configv1.IP{"196.78.125.5", "196.78.125.4", "196.78.125.6"},
+				IngressLoadBalancerIPs: []configv1.IP{"172.22.32.59", "172.22.5.151", "172.22.10.20"},
+			}
+
+			cfg := makeConfig(makePlatformStatus(platform, clusterHosted))
+			buf, err := renderUntypedAsset(cfg, manifestPath)
+			require.NoError(t, err)
+			pod := resourceread.ReadPodV1OrDie(buf)
+			assertInitContainerIPsMatchInfra(t, pod, clusterHosted)
+
+			// Reverse the IP order and render again.
+			clusterHostedReversed := &configv1.CloudLoadBalancerIPs{
+				APIIntLoadBalancerIPs:  []configv1.IP{"10.10.10.6", "10.10.10.4", "10.10.10.5"},
+				APILoadBalancerIPs:     []configv1.IP{"196.78.125.6", "196.78.125.4", "196.78.125.5"},
+				IngressLoadBalancerIPs: []configv1.IP{"172.22.10.20", "172.22.5.151", "172.22.32.59"},
+			}
+
+			cfgReversed := makeConfig(makePlatformStatus(platform, clusterHostedReversed))
+			bufReversed, err := renderUntypedAsset(cfgReversed, manifestPath)
+			require.NoError(t, err)
+			podReversed := resourceread.ReadPodV1OrDie(bufReversed)
+			assertInitContainerIPsMatchInfra(t, podReversed, clusterHostedReversed)
+
+			// Changing the IP order in the Infrastructure config must change the
+			// rendered output, confirming the MCO consumes IPs as-is.
+			assert.NotEqual(t, string(buf), string(bufReversed),
+				"changing the IP order in the Infrastructure config must change the rendered output")
 		})
 	}
 }
