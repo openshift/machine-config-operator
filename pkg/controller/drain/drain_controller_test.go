@@ -11,6 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	kubeinformers "k8s.io/client-go/informers"
+	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 	core "k8s.io/client-go/testing"
 
@@ -72,7 +73,7 @@ func createTestMCP(name string) *mcfgv1.MachineConfigPool {
 	}
 }
 
-func createTestController(nodes []*corev1.Node, mcps []*mcfgv1.MachineConfigPool) (*Controller, *k8sfake.Clientset, *fakemcfgclientset.Clientset) {
+func createTestController(nodes []*corev1.Node, mcps []*mcfgv1.MachineConfigPool) (*Controller, *k8sfake.Clientset, *fakemcfgclientset.Clientset, coreinformersv1.NodeInformer) {
 	kubeObjs := make([]runtime.Object, len(nodes))
 	for i, node := range nodes {
 		kubeObjs[i] = node
@@ -117,7 +118,7 @@ func createTestController(nodes []*corev1.Node, mcps []*mcfgv1.MachineConfigPool
 	// Initialize ongoing drains map for testing
 	ctrl.ongoingDrains = make(map[string]time.Time)
 
-	return ctrl, kubeClient, mcfgClient
+	return ctrl, kubeClient, mcfgClient, nodeInformer
 }
 
 func createDrainTestNode(nodeName string, unschedulable bool, desiredState, lastAppliedState string) *corev1.Node {
@@ -132,12 +133,65 @@ func createDrainTestNode(nodeName string, unschedulable bool, desiredState, last
 }
 
 func setupControllerAndSync(node *corev1.Node, ongoingDrains map[string]time.Time) (*Controller, *k8sfake.Clientset, error) {
-	ctrl, kubeClient, _ := createTestController([]*corev1.Node{node}, []*mcfgv1.MachineConfigPool{createTestMCP(testPoolName)})
+	ctrl, kubeClient, _, _ := createTestController([]*corev1.Node{node}, []*mcfgv1.MachineConfigPool{createTestMCP(testPoolName)})
 
 	if ongoingDrains != nil {
 		ctrl.ongoingDrains = ongoingDrains
 	}
 
+	err := ctrl.syncNode(testNodeName)
+	return ctrl, kubeClient, err
+}
+
+// updateNodeInIndexer returns a fake client reactor that writes unschedulable into the
+// informer indexer whenever a node patch containing spec.unschedulable fires. Passing
+// true mirrors the patch faithfully (normal cordon); passing false simulates an external
+// actor immediately uncordoning the node after the controller's cordon patch lands.
+func updateNodeInIndexer(nodeInformer coreinformersv1.NodeInformer, unschedulable bool) func(core.Action) (bool, runtime.Object, error) {
+	return func(action core.Action) (bool, runtime.Object, error) {
+		patchAction := action.(core.PatchAction)
+		var patch map[string]interface{}
+		if err := json.Unmarshal(patchAction.GetPatch(), &patch); err != nil {
+			return false, nil, nil
+		}
+		spec, ok := patch["spec"].(map[string]interface{})
+		if !ok {
+			return false, nil, nil
+		}
+		if _, ok := spec["unschedulable"]; !ok {
+			return false, nil, nil
+		}
+		for _, obj := range nodeInformer.Informer().GetIndexer().List() {
+			n := obj.(*corev1.Node)
+			if n.Name == patchAction.GetName() {
+				updated := n.DeepCopy()
+				updated.Spec.Unschedulable = unschedulable
+				nodeInformer.Informer().GetIndexer().Update(updated)
+				break
+			}
+		}
+		return false, nil, nil
+	}
+}
+
+// setupControllerAndSyncWithIndexerUpdate runs syncNode with a reactor that mirrors cordon
+// patches into the informer indexer. The fake client does not emit watch events, so without
+// this the lister would return stale data after drainNode cordons the node. This models
+// the happy path where no external actor interferes.
+func setupControllerAndSyncWithIndexerUpdate(node *corev1.Node) (*Controller, *k8sfake.Clientset, error) {
+	ctrl, kubeClient, _, nodeInformer := createTestController([]*corev1.Node{node}, []*mcfgv1.MachineConfigPool{createTestMCP(testPoolName)})
+	kubeClient.PrependReactor("patch", "nodes", updateNodeInIndexer(nodeInformer, true))
+	err := ctrl.syncNode(testNodeName)
+	return ctrl, kubeClient, err
+}
+
+// setupControllerAndSyncWithExternalUncordon runs syncNode with a reactor that sets
+// unschedulable=false in the indexer on every cordon patch, explicitly modeling an external
+// actor uncordoning the node before the re-fetch at the end of drainNode. syncNode should
+// detect this and skip writing lastApplied rather than falsely signalling the MCD.
+func setupControllerAndSyncWithExternalUncordon(node *corev1.Node) (*Controller, *k8sfake.Clientset, error) {
+	ctrl, kubeClient, _, nodeInformer := createTestController([]*corev1.Node{node}, []*mcfgv1.MachineConfigPool{createTestMCP(testPoolName)})
+	kubeClient.PrependReactor("patch", "nodes", updateNodeInIndexer(nodeInformer, false))
 	err := ctrl.syncNode(testNodeName)
 	return ctrl, kubeClient, err
 }
@@ -193,23 +247,34 @@ func TestSyncNode(t *testing.T) {
 
 	t.Run("drain requested", func(t *testing.T) {
 		node := createDrainTestNode(testNodeName, false, testDrainState, "")
-		_, kubeClient, err := setupControllerAndSync(node, nil)
+		_, kubeClient, err := setupControllerAndSyncWithIndexerUpdate(node)
 		assert.NoError(t, err, "syncNode should not error for drain action")
 
 		// Verify patch operations: cordon (unschedulable=true) + completion annotation
 		verifyDrainPatches(t, kubeClient, true, testDrainState)
 	})
 
-	t.Run("re-cordon required", func(t *testing.T) {
+	t.Run("externally uncordoned during drain", func(t *testing.T) {
+		// Drain succeeds but the node is schedulable when re-fetched afterward.
+		// lastApplied must NOT be written: it is the signal to the MCD that the node
+		// is safely drained and cordoned, and writing it while schedulable would allow
+		// the MCD to proceed with the config change while new pods can still land.
 		node := createDrainTestNode(testNodeName, false, testDrainState, "")
-		// Simulate ongoing drain (but node is not cordoned - external uncordon)
-		ongoingDrains := map[string]time.Time{
-			testNodeName: time.Now().Add(-5 * time.Minute),
-		}
-		_, kubeClient, err := setupControllerAndSync(node, ongoingDrains)
-		assert.NoError(t, err, "syncNode should not error for re-cordon action")
+		_, kubeClient, err := setupControllerAndSyncWithExternalUncordon(node)
+		assert.NoError(t, err, "syncNode should not error when externally uncordoned during drain")
 
-		// Verify patch operations: re-cordon (unschedulable=true) + completion annotation
-		verifyDrainPatches(t, kubeClient, true, testDrainState)
+		patchActions := []core.PatchAction{}
+		for _, action := range kubeClient.Actions() {
+			if patchAction, ok := action.(core.PatchAction); ok {
+				patchActions = append(patchActions, patchAction)
+			}
+		}
+		assert.Len(t, patchActions, 1, "should have made only the cordon patch, not the completion annotation")
+
+		var patch map[string]any
+		assert.NoError(t, json.Unmarshal(patchActions[0].GetPatch(), &patch))
+		if spec, ok := patch["spec"].(map[string]any); ok {
+			assert.Equal(t, true, spec["unschedulable"], "only patch should be the cordon")
+		}
 	})
 }
