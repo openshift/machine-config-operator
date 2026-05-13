@@ -1365,6 +1365,13 @@ func (nl NodeList) GetAllWorkerNodes() ([]*Node, error) {
 	return nl.GetAll()
 }
 
+// GetAllWorkerNodesOrFail returns a list of worker Nodes
+func (nl NodeList) GetAllWorkerNodesOrFail() []*Node {
+	workers, err := nl.GetAllWorkerNodes()
+	o.Expect(err).NotTo(o.HaveOccurred())
+	return workers
+}
+
 // GetAllMasterNodesOrFail returns a list of master Nodes
 func (nl NodeList) GetAllMasterNodesOrFail() []*Node {
 	masters, err := nl.GetAllMasterNodes()
