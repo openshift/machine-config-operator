@@ -8,6 +8,8 @@ import (
 
 // EnsureDeployment ensures that the existing matches the required.
 // modified is set to true when existing had to be updated with required.
+// When required.Spec.Replicas is set, it is merged into existing so manual scale
+// of the live Deployment cannot diverge from the rendered manifest (RFE-9213).
 func EnsureDeployment(modified *bool, existing *appsv1.Deployment, required appsv1.Deployment) {
 	resourcemerge.EnsureObjectMeta(modified, &existing.ObjectMeta, required.ObjectMeta)
 
@@ -20,6 +22,7 @@ func EnsureDeployment(modified *bool, existing *appsv1.Deployment, required apps
 		existing.Spec.Selector = required.Spec.Selector
 	}
 
+	// spec.replicas: keep cluster object aligned with rendered manifest when required sets it.
 	if required.Spec.Replicas != nil {
 		if existing.Spec.Replicas == nil || *existing.Spec.Replicas != *required.Spec.Replicas {
 			*modified = true

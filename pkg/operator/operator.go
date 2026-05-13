@@ -424,7 +424,7 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 	// (or return early) without ever reaching the worker loop, leaving MCC scaled to 0 with no fix.
 	optr.stopCh = stopCh
 	go wait.Until(func() {
-		changed, err := optr.ensureMachineConfigControllerReplicaCount(1)
+		changed, err := optr.ensureMachineConfigControllerReplicaCount(ctrlcommon.DefaultMachineConfigControllerReplicas)
 		if err != nil {
 			klog.Errorf("periodic machine-config-controller replica reconcile: %v", err)
 			return

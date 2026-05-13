@@ -1190,7 +1190,7 @@ func (optr *Operator) syncControllerConfig(config *renderConfig) error {
 // repair is not skipped when that call or later sync steps fail.
 func (optr *Operator) syncMachineConfigControllerReplicasEarly(_ *renderConfig, _ *configv1.ClusterOperator) error {
 	klog.V(4).Info("MachineConfigControllerReplicas: running early replica check")
-	changed, err := optr.ensureMachineConfigControllerReplicaCount(1)
+	changed, err := optr.ensureMachineConfigControllerReplicaCount(ctrlcommon.DefaultMachineConfigControllerReplicas)
 	if err != nil {
 		klog.Errorf("MachineConfigControllerReplicas: %v", err)
 		return err
@@ -1209,6 +1209,7 @@ func (optr *Operator) syncMachineConfigControllerReplicasEarly(_ *renderConfig, 
 // Replica enforcement is also covered by: replicas in manifests/machineconfigcontroller/deployment.yaml,
 // merge in lib/resourcemerge EnsureDeployment, this function from syncMachineConfigController, pre-sync
 // in syncAll, and a 30s loop in Operator.Run (so repair is not blocked by a long syncAll).
+// The minimum desired count is ctrlcommon.DefaultMachineConfigControllerReplicas.
 func (optr *Operator) ensureMachineConfigControllerReplicaCount(desired int32) (bool, error) {
 	name := ctrlcommon.ControllerConfigName
 	ns := ctrlcommon.MCONamespace
@@ -1324,7 +1325,7 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig, _ *confi
 
 	// Reconcile replica count after ApplyDeployment: the merge path updates spec.replicas from the
 	// rendered manifest, but a manual scale-to-0 can still diverge until this runs.
-	desiredReplicas := int32(1)
+	desiredReplicas := ctrlcommon.DefaultMachineConfigControllerReplicas
 	if mcc.Spec.Replicas != nil {
 		desiredReplicas = *mcc.Spec.Replicas
 	}
