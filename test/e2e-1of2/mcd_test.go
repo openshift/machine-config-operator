@@ -1174,12 +1174,15 @@ func TestInstallRPMAndCheckMCDMetrics(t *testing.T) {
 
 	// Download the RPM package on the node
 	t.Logf("Downloading the RPM package on node %s", node.Name)
+	pkg := "epel-release-latest-10.noarch.rpm"
+	pkgSrc := "https://dl.fedoraproject.org/pub/epel/" + pkg
+	pkgDest := filepath.Join("/tmp", pkg)
 	downloadCmd := []string{
-		"chroot", "/rootfs", "curl", "-KL", "https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm", "-o", "/tmp/epel-release-latest-9.noarch.rpm",
+		"chroot", "/rootfs", "curl", "-L", pkgSrc, "-o", pkgDest,
 	}
 
-	_, err := helpers.ExecCmdOnNodeWithError(cs, node, downloadCmd...)
-	require.NoError(t, err, "Failed to download RPM package on node %s: %v", node.Name, err)
+	output, err := helpers.ExecCmdOnNodeWithError(cs, node, downloadCmd...)
+	require.NoError(t, err, "Failed to download RPM package on node %s: %v: error: %v", node.Name, output, err)
 	t.Logf("RPM package downloaded successfully")
 
 	// Reboot the node to apply changes
@@ -1191,7 +1194,7 @@ func TestInstallRPMAndCheckMCDMetrics(t *testing.T) {
 	t.Logf("Executing rpm-ostree install command on node %s", node.Name)
 	// Install the RPM package
 	installCmd := []string{
-		"chroot", "/rootfs", "rpm-ostree", "install", "/tmp/epel-release-latest-9.noarch.rpm",
+		"chroot", "/rootfs", "rpm-ostree", "install", pkgDest,
 	}
 
 	out, err := helpers.ExecCmdOnNodeWithError(cs, node, installCmd...)
