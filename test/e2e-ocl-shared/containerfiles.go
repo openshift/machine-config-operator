@@ -2,13 +2,23 @@ package e2e_ocl_shared_test
 
 import (
 	_ "embed"
+	"fmt"
+	"testing"
+
+	"github.com/openshift/machine-config-operator/test/framework"
+	"github.com/openshift/machine-config-operator/test/helpers"
 )
 
 var (
 	// Provides a Containerfile that installs cowsayusing the Centos Stream 9
 	// EPEL repository to do so without requiring any entitlements.
-	//go:embed Containerfile.cowsay
-	CowsayDockerfile string
+	//go:embed Containerfile.cowsay-rhel9
+	CowsayDockerfileRHEL9 string
+
+	// Provides a Containerfile that installs cowsayusing the Centos Stream 10
+	// EPEL repository to do so without requiring any entitlements.
+	//go:embed Containerfile.cowsay-rhel10
+	CowsayDockerfileRHEL10 string
 
 	// Provides a Containerfile that installs Buildah from the default RHCOS RPM
 	// repositories. If the installation succeeds, the entitlement certificate is
@@ -28,3 +38,19 @@ var (
 	//go:embed Containerfile.simple
 	SimpleDockerfile string
 )
+
+// Determines which Cowsay Dockerfile to return based upon the OS on the nodes' worker OS.
+func GetCowsayDockerfileForCluster(t *testing.T, cs *framework.ClientSet) (string, error) {
+	node := helpers.GetRandomNode(t, cs, "worker")
+
+	nodeOS := helpers.GetOSReleaseForNode(t, cs, node)
+	if nodeOS.OS.IsEL9() {
+		return CowsayDockerfileRHEL9, nil
+	}
+
+	if nodeOS.OS.IsEL10() {
+		return CowsayDockerfileRHEL10, nil
+	}
+
+	return "", fmt.Errorf("unknown node OS detected")
+}
