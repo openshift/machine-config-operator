@@ -36,3 +36,7 @@ contents:
       {{- range .TLSCipherSuites }}
         - {{ . }}
       {{- end }}
+    {{- if eq .Infra.Status.ControlPlaneTopology "DualReplica" }}
+    shutdownGracePeriod: 60s
+    shutdownGracePeriodCriticalPods: 30s
+    {{- end }}
