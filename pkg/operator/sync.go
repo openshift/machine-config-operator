@@ -152,6 +152,12 @@ const (
 	// Machine OS puller manifest paths
 	mopRoleBindingManifestPath    = "manifests/machine-os-puller/rolebinding.yaml"
 	mopServiceAccountManifestPath = "manifests/machine-os-puller/sa.yaml"
+
+	// Network policy manifest paths
+	npDefaultDenyAllManifestPath            = "manifests/networkpolicy/00-default-deny-all.yaml"
+	npAllowMachineConfigOperatorManifestPath = "manifests/networkpolicy/01-allow-machine-config-operator.yaml"
+	npAllowMachineConfigControllerManifestPath = "manifests/networkpolicy/02-allow-machine-config-controller.yaml"
+	npAllowMachineOSBuilderManifestPath     = "manifests/networkpolicy/03-allow-machine-os-builder.yaml"
 )
 
 type syncFunc struct {
