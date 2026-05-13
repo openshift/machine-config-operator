@@ -1271,6 +1271,64 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig, _ *confi
 	return optr.syncControllerConfig(config)
 }
 
+func (optr *Operator) syncNetworkPolicies(config *renderConfig, _ *configv1.ClusterOperator) error {
+	klog.V(4).Info("Network policy sync started")
+	defer func() {
+		klog.V(4).Info("Network policy sync complete")
+	}()
+
+	staticPolicyPaths := []string{
+		npDefaultDenyAllManifestPath,
+		npAllowMachineConfigOperatorManifestPath,
+		npAllowMachineConfigControllerManifestPath,
+	}
+
+	noCache := resourceapply.NewResourceCache()
+
+	if err := retry.OnError(retry.DefaultRetry, mcoResourceApply.IsApplyErrorRetriable, func() error {
+		for _, path := range staticPolicyPaths {
+			npBytes, err := renderAsset(config, path)
+			if err != nil {
+				return err
+			}
+			np := resourceread.ReadNetworkPolicyV1OrDie(npBytes)
+			_, _, err = resourceapply.ApplyNetworkPolicy(context.TODO(), optr.kubeClient.NetworkingV1(), optr.libgoRecorder, np, noCache)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to apply network policies: %w", err)
+	}
+
+	layeredMCPs, err := optr.getLayeredMachineConfigPools()
+	if err != nil {
+		return fmt.Errorf("could not get layered MachineConfigPools: %w", err)
+	}
+
+	mobNPBytes, err := renderAsset(config, npAllowMachineOSBuilderManifestPath)
+	if err != nil {
+		return fmt.Errorf("could not render machine-os-builder network policy: %w", err)
+	}
+	mobNP := resourceread.ReadNetworkPolicyV1OrDie(mobNPBytes)
+
+	if len(layeredMCPs) != 0 {
+		if err := retry.OnError(retry.DefaultRetry, mcoResourceApply.IsApplyErrorRetriable, func() error {
+			_, _, err := resourceapply.ApplyNetworkPolicy(context.TODO(), optr.kubeClient.NetworkingV1(), optr.libgoRecorder, mobNP, noCache)
+			return err
+		}); err != nil {
+			return fmt.Errorf("failed to apply machine-os-builder network policy: %w", err)
+		}
+	} else {
+		if _, _, err := resourceapply.DeleteNetworkPolicy(context.TODO(), optr.kubeClient.NetworkingV1(), optr.libgoRecorder, mobNP); err != nil {
+			return fmt.Errorf("failed to delete machine-os-builder network policy: %w", err)
+		}
+	}
+
+	return nil
+}
+
 // syncs machine os builder
 func (optr *Operator) syncMachineOSBuilder(config *renderConfig, _ *configv1.ClusterOperator) error {
 	klog.V(4).Info("Machine OS Builder sync started")
