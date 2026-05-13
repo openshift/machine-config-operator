@@ -7,3 +7,7 @@ junit*.xml
 checkstyle*.xml
 mco-unit-test-coverage.out
 mco-unit-test-coverage.html
+
+# MCP configuration with sensitive tokens
+.mcp.json
+.claude/settings.local.json
