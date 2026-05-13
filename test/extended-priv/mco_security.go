@@ -988,7 +988,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 	})
 
-	g.It("[PolarionID:88729][OTP] Verify USBGuard extension can be installed and enabled via MachineConfig on worker nodes [Disruptive]", func() {
+	g.It("[PolarionID:88729] Verify USBGuard extension can be installed and enabled via MachineConfig on worker nodes [Disruptive]", func() {
 		testID := GetCurrentTestPolarionIDNumber()
 		mcp := GetCompactCompatiblePool(oc.AsAdmin())
 
