@@ -344,7 +344,7 @@ func TestIRIController_ShouldRestoreMachineConfigsWhenModified(t *testing.T) {
 			require.NoError(t, err)
 			iriMachineConfigs := []*mcfgv1.MachineConfig{}
 			for _, mc := range machineConfigs.Items {
-				if len(mc.OwnerReferences) != 0 && mc.OwnerReferences[0].Kind == "InternalReleaseImage" && mc.OwnerReferences[0].Name == "cluster" {
+				if strings.HasSuffix(mc.Name, "-internalreleaseimage") {
 					iriMachineConfigs = append(iriMachineConfigs, mc.DeepCopy())
 				}
 			}

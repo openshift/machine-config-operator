@@ -1,6 +1,7 @@
 name: iri-registry.service
 enabled: true
 contents: |
+{{ if .RegistryEnabled }}
   [Unit]
   Description=InternalReleaseImage Registry
   Wants=network.target
@@ -27,6 +28,14 @@ contents: |
   RestartSec=10
   TimeoutStartSec=9000
   TimeoutStopSec=300
-  
+
   [Install]
   WantedBy=multi-user.target
+{{ else }}
+  [Unit]
+  Description=InternalReleaseImage Registry (disabled)
+
+  [Service]
+  Type=oneshot
+  ExecStart=/bin/true
+{{ end }}

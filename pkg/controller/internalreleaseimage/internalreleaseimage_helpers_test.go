@@ -21,7 +21,6 @@ import (
 func verifyInternalReleaseMasterMachineConfig(t *testing.T, mc *mcfgv1.MachineConfig) {
 	assert.Equal(t, masterName(), mc.Name)
 	assert.Equal(t, ctrlcommon.MachineConfigPoolMaster, mc.Labels[mcfgv1.MachineConfigRoleLabelKey])
-	assert.Equal(t, controllerKind.Kind, mc.OwnerReferences[0].Kind)
 
 	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
 	assert.NoError(t, err, mc.Name)
@@ -41,10 +40,24 @@ func verifyInternalReleaseMasterMachineConfig(t *testing.T, mc *mcfgv1.MachineCo
 	assert.NotContains(t, *ignCfg.Systemd.Units[0].Contents, "REGISTRY_STORAGE_MAINTENANCE_READONLY_ENABLED")
 }
 
+func verifyDisabledMasterMachineConfig(t *testing.T, mc *mcfgv1.MachineConfig) {
+	assert.NotNil(t, mc)
+	assert.Equal(t, masterName(), mc.Name)
+
+	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+	assert.NoError(t, err)
+
+	assert.Len(t, ignCfg.Systemd.Units, 1)
+	assert.Equal(t, "iri-registry.service", ignCfg.Systemd.Units[0].Name)
+	assert.Contains(t, *ignCfg.Systemd.Units[0].Contents, "ExecStart=/bin/true")
+	assert.Contains(t, *ignCfg.Systemd.Units[0].Contents, "Type=oneshot")
+	assert.NotContains(t, *ignCfg.Systemd.Units[0].Contents, "podman")
+	assert.Len(t, ignCfg.Storage.Files, 0)
+}
+
 func verifyInternalReleaseWorkerMachineConfig(t *testing.T, mc *mcfgv1.MachineConfig) {
 	assert.Equal(t, workerName(), mc.Name)
 	assert.Equal(t, ctrlcommon.MachineConfigPoolWorker, mc.Labels[mcfgv1.MachineConfigRoleLabelKey])
-	assert.Equal(t, controllerKind.Kind, mc.OwnerReferences[0].Kind)
 
 	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
 	assert.NoError(t, err)
@@ -65,7 +78,6 @@ func verifyIgnitionFileContains(t *testing.T, ignCfg *ign3types.Config, path str
 	assert.NoError(t, err)
 	assert.Contains(t, string(data), expectedContent, path)
 }
-
 
 // objs is an helper func to improve the test readability.
 func objs(builders ...objBuilder) func() []runtime.Object {
@@ -186,11 +198,6 @@ func machineconfig(role string) *machineConfigBuilder {
 				Name: fmt.Sprintf(machineConfigNameFmt, role),
 				Labels: map[string]string{
 					mcfgv1.MachineConfigRoleLabelKey: role,
-				},
-				OwnerReferences: []v1.OwnerReference{
-					{
-						Kind: "InternalReleaseImage",
-					},
 				},
 			},
 			Spec: mcfgv1.MachineConfigSpec{
