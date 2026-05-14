@@ -102,7 +102,12 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) {
 	}
 }
 
-// syncMAPIMachineSet will attempt to reconcile the provided machineset
+// syncMAPIMachineSet will attempt to reconcile the provided machineset.
+// Returns (patchSkipped, error): patchSkipped=true means something blocked the
+// boot image update that requires manual intervention; rather than returning an
+// error immediately, the condition is surfaced via skew enforcement.
+// patchSkipped=false means a patch was applied, the MachineSet was already up to
+// date, or it is out of scope for the MAPI path (e.g. migrated to CAPI authority).
 func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet) (bool, error) {
 
 	startTime := time.Now()
