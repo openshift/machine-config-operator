@@ -357,3 +357,18 @@ func getValueFromKubeletConfig(t *testing.T, cs *framework.ClientSet, node corev
 	require.NotEmpty(t, matches[1], "regex %s attempted on kubelet config of node %s came back empty", node.Name, regexKey)
 	return matches[1], true
 }
+
+// TestKubeletAutoSizingDropIn verifies that the worker kubelet.service no longer passes
+// systemReserved via --system-reserved flags or reads EnvironmentFile=/etc/node-sizing.env.
+func TestKubeletAutoSizingDropIn(t *testing.T) {
+	cs := framework.NewClientSet("")
+
+	node := helpers.GetRandomNode(t, cs, "worker")
+
+	kubeletServicePath := "/etc/systemd/system/kubelet.service"
+	kubeletService := helpers.ExecCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", kubeletServicePath))
+	require.NotContains(t, kubeletService, "--system-reserved",
+		"worker kubelet.service should NOT contain --system-reserved flag")
+	require.NotContains(t, kubeletService, "EnvironmentFile=/etc/node-sizing.env",
+		"worker kubelet.service should NOT contain EnvironmentFile=/etc/node-sizing.env")
+}
