@@ -427,14 +427,8 @@ func (i *Manager) syncInternalReleaseImage(key string) error {
 		return err
 	}
 
-	authToken := i.authToken
-	var registryErr error
-	if authToken == "" {
-		authToken, registryErr = readIRIAuthToken(fmt.Sprintf("%s:%d", iriRegistryHost, iriRegistryPort))
-	}
-	var iriReg *iriRegistry
+	iriReg, registryErr := newIRIRegistry(i.nodeName, i.registryClient, i.authToken)
 	if registryErr == nil {
-		iriReg = newIRIRegistry(i.nodeName, i.registryClient, authToken)
 		registryErr = iriReg.CheckLocalRegistry()
 	}
 	if registryErr != nil {
