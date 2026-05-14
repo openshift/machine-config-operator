@@ -217,7 +217,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("OK!\n")
 	})
 
-	g.It("[PolarionID:88202][OTP][Skipped:Disconnected] Both off-cluster and on-cluster layering can coexist on the same pool [Disruptive]", func() {
+	g.It("[PolarionID:88202][Skipped:Disconnected] Both off-cluster and on-cluster layering can coexist on the same pool [Disruptive]", func() {
 		var (
 			testID         = GetCurrentTestPolarionIDNumber()
 			mcpName        = fmt.Sprintf("tc-%s-custom", testID)
