@@ -217,6 +217,78 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("OK!\n")
 	})
 
+	g.It("[PolarionID:88202][OTP][Skipped:Disconnected] Both off-cluster and on-cluster layering can coexist on the same pool [Disruptive]", func() {
+		var (
+			testID         = GetCurrentTestPolarionIDNumber()
+			mcpName        = fmt.Sprintf("tc-%s-custom", testID)
+			osLayerMCName  = fmt.Sprintf("tc-%s-os-layer", testID)
+			osImageURL     = "quay.io/mcoqe/layering@sha256:3760b74a58b882494c5e99d7191647822a2dfea43983cb5882887325b99327a7"
+			offClusterFile = "/etc/test-offlayering.test"
+			onClusterFile  = "/etc/test-onlayering.test"
+			containerFiles = []ContainerFile{{Content: fmt.Sprintf("RUN echo \"on-cluster layering %s\" > %s", testID, onClusterFile)}}
+		)
+
+		exutil.By("Create a custom MachineConfigPool")
+		customMcp, err := CreateCustomMCP(oc.AsAdmin(), mcpName, 1)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating custom MCP %s", mcpName)
+		defer customMcp.delete()
+		logger.Infof("Custom MCP %s created", customMcp)
+		logger.Infof("OK!\n")
+
+		node := customMcp.GetSortedNodesOrFail()[0]
+
+		exutil.By("Apply osImageURL MachineConfig to pool (off-cluster layering)")
+		osLayerMC := NewMachineConfig(oc.AsAdmin(), osLayerMCName, customMcp.GetName())
+		osLayerMC.parameters = []string{"OS_IMAGE=" + osImageURL}
+		defer osLayerMC.DeleteWithWait()
+		osLayerMC.create()
+		logger.Infof("MachineConfig %s created with osImageURL %s", osLayerMC.GetName(), osImageURL)
+		logger.Infof("OK!\n")
+
+		exutil.By("Verify off-cluster layering is applied on the node")
+		o.Expect(node.GetCurrentBootOSImage()).To(o.ContainSubstring("quay.io/mcoqe/layering"),
+			"Node %s should be running the off-cluster osImageURL", node)
+		offClusterRF := NewRemoteFile(node, offClusterFile)
+		o.Expect(offClusterRF.Exists()).To(o.BeTrue(),
+			"%s should exist on %s after off-cluster layering", offClusterFile, node)
+		logger.Infof("Off-cluster layering verified: %s exists on %s", offClusterFile, node)
+		logger.Infof("OK!\n")
+
+		exutil.By("Enable on-cluster layering (OCL) with a containerFile")
+		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, customMcp.GetName(), customMcp.GetName(), containerFiles)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating MachineOSConfig for %s", customMcp.GetName())
+		defer DisableOCL(mosc)
+		logger.Infof("OK!\n")
+
+		exutil.By("Validate OCL build succeeds")
+		ValidateSuccessfulMOSC(mosc, nil)
+		logger.Infof("OK!\n")
+
+		exutil.By("Verify both off-cluster and on-cluster layering files are present")
+		o.Expect(offClusterRF.Exists()).To(o.BeTrue(),
+			"%s should still exist alongside on-cluster layering", offClusterFile)
+		onClusterRF := NewRemoteFile(node, onClusterFile)
+		o.Expect(onClusterRF.Exists()).To(o.BeTrue(),
+			"%s should exist after on-cluster layering is applied", onClusterFile)
+		logger.Infof("Both %s and %s are present on %s", offClusterFile, onClusterFile, node)
+		logger.Infof("OK!\n")
+
+		exutil.By("Delete the off-cluster MC and verify a new MachineOSBuild is triggered")
+		osLayerMC.DeleteWithWait()
+		logger.Infof("Off-cluster MachineConfig %s deleted", osLayerMCName)
+		logger.Infof("OK!\n")
+
+		exutil.By("Verify only on-cluster layering content remains after MC deletion")
+		offClusterRF = NewRemoteFile(node, offClusterFile)
+		o.Expect(offClusterRF.Exists()).To(o.BeFalse(),
+			"%s should be removed after off-cluster MC is deleted", offClusterFile)
+		onClusterRF = NewRemoteFile(node, onClusterFile)
+		o.Expect(onClusterRF.Exists()).To(o.BeTrue(),
+			"%s should still exist after off-cluster MC is deleted", onClusterFile)
+		logger.Infof("Only on-cluster layering file remains on %s (as expected)", node)
+		logger.Infof("OK!\n")
+	})
+
 })
 
 func testContainerFile(containerFiles []ContainerFile, imageNamespace string, mcp *MachineConfigPool, checkers []Checker, defaultPullSecret bool) {
