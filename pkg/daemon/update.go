@@ -1841,7 +1841,68 @@ func (dn *CoreOSDaemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConf
 	// Add "update" to the start of argument list
 	args = append([]string{constants.RPMOSTreeUpdateArg}, args...)
 	logSystem("Applying extensions : %+q", args)
-	return runRpmOstree(args...)
+	if err := runRpmOstree(args...); err != nil {
+		return err
+	}
+
+	// Verify extension packages are staged before rebooting
+	// See: https://redhat.atlassian.net/browse/OCPBUGS-65645
+	return dn.verifyExtensionsStaged(newConfig)
+}
+
+// verifyExtensionsStaged verifies that all extension packages specified in a
+// MachineConfig are staged in the rpm-ostree deployment before rebooting.
+// This catches issues early, before the node reboots and potentially fails to boot.
+// See: https://redhat.atlassian.net/browse/OCPBUGS-65645
+func (dn *CoreOSDaemon) verifyExtensionsStaged(config *mcfgv1.MachineConfig) error {
+	// Only verify on RHCOS/SCOS nodes
+	if !dn.os.IsEL() {
+		return nil
+	}
+
+	// Get the list of extensions from the config
+	extensions := config.Spec.Extensions
+	if len(extensions) == 0 {
+		// No extensions to verify
+		return nil
+	}
+
+	// Map extensions to actual package names using the existing helper
+	expectedPackages, err := ctrlcommon.GetPackagesForSupportedExtensions(extensions)
+	if err != nil {
+		return fmt.Errorf("failed to get packages for extensions: %w", err)
+	}
+
+	klog.Infof("Verifying %d extension packages are staged for config %s", len(expectedPackages), config.GetName())
+
+	// Get the staged deployment
+	_, staged, err := dn.NodeUpdaterClient.GetBootedAndStagedDeployment()
+	if err != nil {
+		return fmt.Errorf("failed to get staged deployment: %w", err)
+	}
+
+	if staged == nil {
+		return fmt.Errorf("no staged deployment found after applying extensions")
+	}
+
+	// Create a set of requested packages in the staged deployment for quick lookup
+	stagedPackages := sets.New(staged.RequestedPackages...)
+
+	// Verify each expected package is in the staged deployment
+	var missingPackages []string
+	for _, pkg := range expectedPackages {
+		if !stagedPackages.Has(pkg) {
+			missingPackages = append(missingPackages, pkg)
+			klog.Warningf("Extension package %s not found in staged deployment", pkg)
+		}
+	}
+
+	if len(missingPackages) > 0 {
+		return fmt.Errorf("the following extension packages are missing from the staged deployment: %v", missingPackages)
+	}
+
+	klog.Infof("Successfully verified all %d extension packages are staged", len(expectedPackages))
+	return nil
 }
 
 // verifyExtensionPackages verifies that all extension packages specified in a
