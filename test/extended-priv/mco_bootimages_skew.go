@@ -261,13 +261,14 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		machineConfiguration.WaitForBootImageSkewEnforcementStatusMode(SkewEnforcementNoneMode)
 		logger.Infof("bootImageSkewEnforcementStatus.mode is None as expected")
 
-		// Legacy qcow2 path (simulated): patch the provisioning CR with a URL to trigger Manual mode
+		// Legacy qcow2 path (simulated): patch the provisioning CR with a URL to trigger Manual mode.
+		// The URL must satisfy vprovisioning.kb.io validation: .qcow2.gz/.qcow2.xz extension and
+		// a sha256 query parameter (64 hex chars).
 		exutil.By("Simulate legacy qcow2 path by patching provisioning CR with a URL")
 		defer func() {
-			exutil.By("Restoring provisioning CR: clearing provisioningOSDownloadURL")
+			exutil.By("Restoring provisioning CR")
 			patchErr := oc.AsAdmin().WithoutNamespace().Run("patch").Args(
-				"provisioning", provisioningCRName,
-				"--type=merge",
+				"provisioning", provisioningCRName, "--type=merge",
 				"-p", `{"spec":{"provisioningOSDownloadURL":""}}`,
 			).Execute()
 			o.Expect(patchErr).NotTo(o.HaveOccurred(), "Failed to restore provisioning CR")
@@ -275,9 +276,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		}()
 
 		err = oc.AsAdmin().WithoutNamespace().Run("patch").Args(
-			"provisioning", provisioningCRName,
-			"--type=merge",
-			"-p", `{"spec":{"provisioningOSDownloadURL":"https://example.com/rhcos.qcow2"}}`,
+			"provisioning", provisioningCRName, "--type=merge",
+			"-p", `{"spec":{"provisioningOSDownloadURL":"https://example.com/rhcos.qcow2.gz?sha256=0000000000000000000000000000000000000000000000000000000000000000"}}`,
 		).Execute()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to patch provisioning CR with legacy URL")
 
