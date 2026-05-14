@@ -57,9 +57,12 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	klog.Infof("Launching server with tls min version: %v & cipher suites %v", rootOpts.tlsminversion, rootOpts.tlsciphersuites)
 	tlsConfig := ctrlcommon.GetGoTLSConfig(rootOpts.tlsminversion, rootOpts.tlsciphersuites)
 
+	failureReporter := server.NewClusterFailureReporter(cs.GetKubeClient())
+	failureHandler := server.NewNodeFailureHandler(failureReporter)
+
 	apiHandler := server.NewServerAPIHandler(cs)
-	secureServer := server.NewAPIServer(apiHandler, rootOpts.sport, false, rootOpts.cert, rootOpts.key, tlsConfig)
-	insecureServer := server.NewAPIServer(apiHandler, rootOpts.isport, true, "", "", tlsConfig)
+	secureServer := server.NewAPIServer(apiHandler, failureHandler, rootOpts.sport, false, rootOpts.cert, rootOpts.key, tlsConfig)
+	insecureServer := server.NewAPIServer(apiHandler, failureHandler, rootOpts.isport, true, "", "", tlsConfig)
 
 	stopCh := make(chan struct{})
 	go secureServer.Serve()

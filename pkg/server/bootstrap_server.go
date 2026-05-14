@@ -8,6 +8,7 @@ import (
 
 	yaml "github.com/ghodss/yaml"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes"
 	clientcmd "k8s.io/client-go/tools/clientcmd/api/v1"
 	"k8s.io/klog/v2"
 
@@ -30,6 +31,11 @@ type bootstrapServer struct {
 	certs []string
 
 	mcsURL string
+}
+
+// GetKubeClient returns nil for bootstrap server (no k8s access during bootstrap)
+func (bsc *bootstrapServer) GetKubeClient() kubernetes.Interface {
+	return nil
 }
 
 // NewBootstrapServer initializes a new Bootstrap server that implements

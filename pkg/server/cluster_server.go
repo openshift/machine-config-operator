@@ -22,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes"
 	clientset "k8s.io/client-go/kubernetes"
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
@@ -370,4 +371,9 @@ func appendDesiredOSImage(desired string) appenderFunc {
 		}
 		return nil
 	}
+}
+
+// GetKubeClient returns the Kubernetes client for this cluster server
+func (cs *clusterServer) GetKubeClient() kubernetes.Interface {
+	return cs.kubeclient
 }

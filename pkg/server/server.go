@@ -12,6 +12,7 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	"github.com/vincent-petithory/dataurl"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -45,6 +46,7 @@ type appenderFunc func(*ign3types.Config, *mcfgv1.MachineConfig) error
 // machine config server implementations.
 type Server interface {
 	GetConfig(poolRequest) (*runtime.RawExtension, error)
+	GetKubeClient() kubernetes.Interface
 }
 
 // appendersBuilder builds a slice of appenderFunc with guaranteed ordering.

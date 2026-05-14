@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/http2"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes"
 
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/helpers"
@@ -26,6 +27,10 @@ type mockServer struct {
 
 func (ms *mockServer) GetConfig(pr poolRequest) (*runtime.RawExtension, error) {
 	return ms.GetConfigFn(pr)
+}
+
+func (ms *mockServer) GetKubeClient() kubernetes.Interface {
+	return nil
 }
 
 type checkResponse func(t *testing.T, response *http.Response)
@@ -717,7 +722,7 @@ func TestAPIServer(t *testing.T) {
 			ms := &mockServer{
 				GetConfigFn: scenario.serverFunc,
 			}
-			server := NewAPIServer(NewServerAPIHandler(ms), 0, false, "", "", nil)
+			server := NewAPIServer(NewServerAPIHandler(ms), nil, 0, false, "", "", nil)
 			server.handler.ServeHTTP(w, scenario.request)
 
 			resp := w.Result()

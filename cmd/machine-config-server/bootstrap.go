@@ -42,9 +42,8 @@ func runBootstrapCmd(_ *cobra.Command, _ []string) {
 	klog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
 
 	bs, err := server.NewBootstrapServer(bootstrapOpts.serverBaseDir, bootstrapOpts.serverKubeConfig, bootstrapOpts.mcsURL, bootstrapOpts.certificates)
-
 	if err != nil {
-		klog.Exitf("Machine Config Server exited with error: %v", err)
+		klog.Fatal(err)
 	}
 
 	// Read-in bootstrap apiserver file /etc/mcs/bootstrap/api-server/apiserver.yaml.
@@ -61,9 +60,12 @@ func runBootstrapCmd(_ *cobra.Command, _ []string) {
 	klog.Infof("Launching bootstrap server with tls min version: %v & cipher suites %v", tlsminversion, tlsciphersuites)
 	tlsConfig := ctrlcommon.GetGoTLSConfig(tlsminversion, tlsciphersuites)
 
+	failureReporter := server.NewBootstrapFailureReporter()
+	failureHandler := server.NewNodeFailureHandler(failureReporter)
+
 	apiHandler := server.NewServerAPIHandler(bs)
-	secureServer := server.NewAPIServer(apiHandler, rootOpts.sport, false, rootOpts.cert, rootOpts.key, tlsConfig)
-	insecureServer := server.NewAPIServer(apiHandler, rootOpts.isport, true, "", "", tlsConfig)
+	secureServer := server.NewAPIServer(apiHandler, failureHandler, rootOpts.sport, false, rootOpts.cert, rootOpts.key, tlsConfig)
+	insecureServer := server.NewAPIServer(apiHandler, failureHandler, rootOpts.isport, true, "", "", tlsConfig)
 
 	stopCh := make(chan struct{})
 	go secureServer.Serve()
