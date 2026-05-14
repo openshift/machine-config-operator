@@ -10,6 +10,7 @@ contents: |
   [Service]
   Type=notify
   ExecStartPre=/bin/mkdir --parents /etc/kubernetes/manifests
+  ExecStartPre=/bin/mkdir --parents /etc/openshift/kubelet.conf.d
   ExecStartPre=-/usr/sbin/restorecon -ri /var/lib/kubelet/pod-resources /usr/local/bin/kubenswrapper /usr/bin/kubensenter
 {{- if or (eq .IPFamilies "IPv6") (eq .IPFamilies "DualStackIPv6Primary") }}
   Environment="KUBELET_NODE_IP=::"
@@ -21,11 +22,11 @@ contents: |
   EnvironmentFile=/etc/os-release
   EnvironmentFile=-/etc/kubernetes/kubelet-workaround
   EnvironmentFile=-/etc/kubernetes/kubelet-env
-  EnvironmentFile=/etc/node-sizing.env
 
   ExecStart=/usr/local/bin/kubenswrapper \
       /usr/bin/kubelet \
         --config=/etc/kubernetes/kubelet.conf \
+        --config-dir=/etc/openshift/kubelet.conf.d \
         --bootstrap-kubeconfig=/etc/kubernetes/kubeconfig \
         --kubeconfig=/var/lib/kubelet/kubeconfig \
         --container-runtime-endpoint=/var/run/crio/crio.sock \
@@ -43,7 +44,6 @@ contents: |
         --hostname-override=${KUBELET_NODE_NAME} \
         --provider-id=${KUBELET_PROVIDERID} \
         --register-with-taints=node-role.kubernetes.io/arbiter=:NoSchedule \
-        --system-reserved=cpu=${SYSTEM_RESERVED_CPU},memory=${SYSTEM_RESERVED_MEMORY},ephemeral-storage=${SYSTEM_RESERVED_ES} \
         --v=${KUBELET_LOG_LEVEL}
 
   Restart=always
