@@ -80,7 +80,7 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) {
 	ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
 
 	for _, machineSet := range mapiMachineSets {
-		patchSkipped, err := ctrl.syncMAPIMachineSet(machineSet)
+		reconcileSkipped, err := ctrl.syncMAPIMachineSet(machineSet)
 		if err == nil {
 			ctrl.mapiStats.inProgress++
 		} else {
@@ -88,7 +88,7 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) {
 			syncErrors = append(syncErrors, fmt.Errorf("error syncing MAPI MachineSet %s: %w", machineSet.Name, err))
 			ctrl.mapiStats.erroredCount++
 		}
-		if patchSkipped {
+		if reconcileSkipped {
 			ctrl.mapiStats.skippedCount++
 		}
 		// Update progressing conditions every step of the loop
@@ -104,7 +104,12 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) {
 	}
 }
 
-// syncMAPIMachineSet will attempt to reconcile the provided machineset
+// syncMAPIMachineSet will attempt to reconcile the provided machineset.
+// Returns (reconcileSkipped, error): reconcileSkipped=true means something blocked the
+// boot image update that requires manual intervention; rather than returning an
+// error immediately, the condition is surfaced via skew enforcement.
+// reconcileSkipped=false means a patch was applied, the MachineSet was already up to
+// date, or it is out of scope for the MAPI path (e.g. migrated to CAPI authority).
 func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet) (bool, error) {
 
 	startTime := time.Now()
@@ -190,7 +195,7 @@ func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet
 	}
 
 	// Check if the this MachineSet requires an update
-	patchRequired, patchSkipped, newMachineSet, err := checkMachineSet(infra, machineSet, configMap, arch, ctrl.kubeClient)
+	patchRequired, reconcileSkipped, newMachineSet, err := checkMachineSet(infra, machineSet, configMap, arch, ctrl.kubeClient)
 	if err != nil {
 		return false, fmt.Errorf("failed to reconcile machineset %s, err: %w", machineSet.Name, err)
 	}
@@ -208,7 +213,7 @@ func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet
 		return false, nil
 	}
 	klog.Infof("No patching required for MAPI machineset %s", machineSet.Name)
-	return patchSkipped, nil
+	return reconcileSkipped, nil
 }
 
 // getMAPIBootImageValue returns the value used for hot loop detection.
