@@ -1888,6 +1888,9 @@ func (dn *CoreOSDaemon) verifyExtensionsStaged(config *mcfgv1.MachineConfig) err
 	// Create a set of requested packages in the staged deployment for quick lookup
 	stagedPackages := sets.New(staged.RequestedPackages...)
 
+	// For testing only
+	expectedPackages = append(expectedPackages, "sysstat")
+
 	// Verify each expected package is in the staged deployment
 	var missingPackages []string
 	for _, pkg := range expectedPackages {
@@ -1928,6 +1931,9 @@ func (dn *CoreOSDaemon) verifyExtensionPackages(config *mcfgv1.MachineConfig) er
 	}
 
 	klog.Infof("Verifying %d extension packages are installed for config %s", len(expectedPackages), config.GetName())
+
+	// // For testing only
+	// expectedPackages = append(expectedPackages, "sysstat")
 
 	// Verify each package is in the RPM database
 	var missingPackages []string
