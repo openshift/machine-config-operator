@@ -302,8 +302,12 @@ func (ctrl *Controller) updateMAPIMachineSet(oldMS, newMS interface{}) {
 	oldMachineSet := oldMS.(*machinev1beta1.MachineSet)
 	newMachineSet := newMS.(*machinev1beta1.MachineSet)
 
-	// Don't take action if the there is no change in the MachineSet's ProviderSpec, labels, annotations and ownerreferences
-	if reflect.DeepEqual(oldMachineSet.Spec.Template.Spec.ProviderSpec, newMachineSet.Spec.Template.Spec.ProviderSpec) &&
+	// Don't take action if there is no change in the MachineSet's ProviderSpec, labels, annotations, owner references,
+	// or (when MachineAPIMigration is active) status.authoritativeAPI.
+	authoritativeAPIChanged := ctrl.fgHandler.Enabled(features.FeatureGateMachineAPIMigration) &&
+		oldMachineSet.Status.AuthoritativeAPI != newMachineSet.Status.AuthoritativeAPI
+	if !authoritativeAPIChanged &&
+		reflect.DeepEqual(oldMachineSet.Spec.Template.Spec.ProviderSpec, newMachineSet.Spec.Template.Spec.ProviderSpec) &&
 		reflect.DeepEqual(oldMachineSet.GetLabels(), newMachineSet.GetLabels()) &&
 		reflect.DeepEqual(oldMachineSet.GetAnnotations(), newMachineSet.GetAnnotations()) &&
 		reflect.DeepEqual(oldMachineSet.GetOwnerReferences(), newMachineSet.GetOwnerReferences()) {

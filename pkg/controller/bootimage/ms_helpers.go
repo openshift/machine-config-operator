@@ -111,6 +111,22 @@ func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet
 		klog.V(4).Infof("Finished syncing MAPI machineset %q (%v)", machineSet.Name, time.Since(startTime))
 	}()
 
+	// If MachineAPIMigration is enabled, skip MachineSets that have been migrated to
+	// CAPI authority or are currently migrating. Writing to the MAPI copy at this point
+	// would conflict with the cluster-capi-operator sync controller, which treats the
+	// CAPI copy as the source of truth once migration is complete.
+	if ctrl.fgHandler.Enabled(features.FeatureGateMachineAPIMigration) {
+		switch machineSet.Status.AuthoritativeAPI {
+		case machinev1beta1.MachineAuthorityClusterAPI, machinev1beta1.MachineAuthorityMigrating:
+			klog.Infof("MachineSet %s has authoritativeAPI=%s, removing from MAPI boot image tracking", machineSet.Name, machineSet.Status.AuthoritativeAPI)
+			// Remove from MAPI hot loop state — this MachineSet is no longer in scope
+			// for the MAPI path. Returning false (not patchSkipped) so it does not
+			// block skew enforcement on the MAPI side; the CAPI sync path owns it now.
+			delete(ctrl.mapiBootImageState, machineSet.Name)
+			return false, nil
+		}
+	}
+
 	// If the machineset has an owner reference, exit and log error. This means
 	// that the machineset may be managed by another workflow and should not be reconciled.
 	if len(machineSet.GetOwnerReferences()) != 0 {
