@@ -597,6 +597,13 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		return ctrl.syncStatusOnly(cfg, err, "could not get the TLSSecurityProfile from %v: %v", ctrlcommon.APIServerInstanceName, err)
 	}
 
+	// Validate staticPodPath for all pools before applying any changes
+	for _, pool := range mcpPools {
+		if err := validateStaticPodPathForPool(cfg, pool.Name); err != nil {
+			return ctrl.syncStatusOnly(cfg, err)
+		}
+	}
+
 	for _, pool := range mcpPools {
 		role := pool.Name
 		// Get MachineConfig
