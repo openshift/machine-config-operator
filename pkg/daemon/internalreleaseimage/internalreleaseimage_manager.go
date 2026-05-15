@@ -3,7 +3,10 @@ package internalreleaseimage
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"time"
@@ -27,6 +30,7 @@ import (
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 	"github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 )
 
 const (
@@ -44,6 +48,8 @@ type Manager struct {
 	registryClient *http.Client
 	// authToken overrides the token read from the kubelet auth file; used in tests.
 	authToken string
+	// registryDataPath overrides the default registry data path; used in tests.
+	registryDataPath string
 
 	syncHandler                 func(iri string) error
 	enqueueInternalReleaseImage func(*mcfgv1alpha1.InternalReleaseImage)
@@ -399,8 +405,160 @@ func (i *Manager) cleanupMachineConfigNodeStatus(mcn *mcfgv1.MachineConfigNode) 
 	return i.updateMCNStatus(mcn, mcnUpdated)
 }
 
+// reclaimRegistryStorage removes the IRI registry data directory contents when safe.
+// Returns an error if the directory cannot be removed, or nil if removal succeeded
+// or if the directory doesn't exist.
+func (i *Manager) reclaimRegistryStorage() error {
+	registryDataPath := i.registryDataPath
+	if registryDataPath == "" {
+		registryDataPath = constants.IRIRegistryDataPath
+	}
+
+	// Check if directory exists
+	info, err := os.Stat(registryDataPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			klog.V(2).Infof("Registry data directory %s does not exist, nothing to reclaim", registryDataPath)
+			return nil
+		}
+		return fmt.Errorf("failed to stat registry data path %s: %w", registryDataPath, err)
+	}
+
+	// Verify it's a directory
+	if !info.IsDir() {
+		return fmt.Errorf("registry data path %s exists but is not a directory", registryDataPath)
+	}
+
+	base, err := filepath.Abs(registryDataPath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve registry data path %q: %w", registryDataPath, err)
+	}
+	base = filepath.Clean(base)
+
+	if base == string(os.PathSeparator) {
+		return fmt.Errorf("invalid registry data path")
+	}
+
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		return fmt.Errorf("failed to read registry data path %q: %w", base, err)
+	}
+
+	for _, entry := range entries {
+		path := filepath.Join(base, entry.Name())
+
+		rel, err := filepath.Rel(base, path)
+		if err != nil {
+			return fmt.Errorf("failed to validate registry data path %q: %w", path, err)
+		}
+
+		if rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+			return fmt.Errorf("refusing to remove path outside registry data path: %q", path)
+		}
+
+		if err := os.RemoveAll(path); err != nil {
+			return fmt.Errorf("failed to remove registry data path %q: %w", path, err)
+		}
+
+		klog.V(2).Infof("Removed registry data path: %s", path)
+	}
+
+	klog.Infof("Successfully reclaimed storage: removed %d entries from %s", len(entries), registryDataPath)
+	return nil
+}
+
+// getIRIRegistry creates and returns an IRI registry client.
+// Returns the registry and an error indicating whether the registry is reachable.
+func (i *Manager) getIRIRegistry() (*iriRegistry, error) {
+	authToken := i.authToken
+	if authToken == "" {
+		var err error
+		authToken, err = readIRIAuthToken(net.JoinHostPort(iriRegistryHost, fmt.Sprintf("%d", iriRegistryPort)))
+		if err != nil {
+			return nil, fmt.Errorf("could not read IRI auth token: %w", err)
+		}
+	}
+
+	iriReg := newIRIRegistry(i.nodeName, i.registryClient, authToken)
+	err := iriReg.CheckLocalRegistry()
+	return iriReg, err
+}
+
+// wasFeatureActivated checks if the NoRegistryClusterInstall feature was ever activated on this node.
+// Returns true if the registry data directory exists (feature was activated),
+// false if the directory doesn't exist (feature never used),
+// or an error if the check failed (permission denied, I/O error, etc.).
+func (i *Manager) wasFeatureActivated() (bool, error) {
+	registryDataPath := i.registryDataPath
+	if registryDataPath == "" {
+		registryDataPath = constants.IRIRegistryDataPath
+	}
+	_, err := os.Stat(registryDataPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil // Directory doesn't exist - feature never activated
+		}
+		return false, fmt.Errorf("failed to check registry data path %s: %w", registryDataPath, err)
+	}
+	return true, nil
+}
+
+// isRegistryPortListening checks if the registry port is accepting connections.
+// Returns true if port is listening (registry service is running), false otherwise.
+// This is a cheap TCP dial check (~microseconds for localhost) that provides a stronger
+// signal than HTTP errors, which can occur for reasons other than service being down.
+func (i *Manager) isRegistryPortListening() bool {
+	address := net.JoinHostPort(iriRegistryHost, fmt.Sprintf("%d", iriRegistryPort))
+	conn, err := net.DialTimeout("tcp", address, 100*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
+}
+
+// handleIRIDeletion handles the IRI deletion scenario (both in-progress and completed).
+// This method is only called when the registry directory exists (feature was activated).
+// If registry port is still listening, it waits for shutdown.
+// If registry port is down, it cleans up MCN status and reclaims storage.
+func (i *Manager) handleIRIDeletion(mcn *mcfgv1.MachineConfigNode) error {
+	// Check if registry port is listening
+	if i.isRegistryPortListening() {
+		// Registry port is still listening - wait for shutdown and avoid any other task
+		klog.V(2).Infof("Registry port is still listening, waiting for shutdown before cleanup")
+		i.queue.AddAfter(common.InternalReleaseImageInstanceName, syncRetryInterval)
+		return nil
+	}
+
+	// Registry port is not listening - safe to clean up and reclaim storage
+	klog.V(2).Infof("Registry port is not listening - proceeding with cleanup")
+
+	// Clean up MCN status
+	if err := i.cleanupMachineConfigNodeStatus(mcn); err != nil {
+		return fmt.Errorf("failed to cleanup MCN: %w", err)
+	}
+
+	// Reclaim storage
+	if err := i.reclaimRegistryStorage(); err != nil {
+		return fmt.Errorf("failed to reclaim registry storage: %w", err)
+	}
+
+	return nil
+}
+
 func (i *Manager) syncInternalReleaseImage(key string) error {
 	klog.V(4).Infof("Syncing InternalReleaseImage %q", key)
+
+	// Check if feature was ever activated - if not, skip all work
+	wasActivated, err := i.wasFeatureActivated()
+	if err != nil {
+		return err
+	}
+	if !wasActivated {
+		klog.V(4).Infof("InternalReleaseImage feature never activated")
+		i.queue.AddAfter(common.InternalReleaseImageInstanceName, 5*time.Minute)
+		return nil
+	}
 
 	// Get the MachineConfigNode for the current node.
 	mcn, err := i.mcnLister.Get(i.nodeName)
@@ -412,31 +570,22 @@ func (i *Manager) syncInternalReleaseImage(key string) error {
 		return err
 	}
 
-	// Fetch the InternalReleaseImage.
-	_, err = i.iriLister.Get(common.InternalReleaseImageInstanceName)
-	if apierrors.IsNotFound(err) {
-		// Manage the feature only when the IRI resource was defined.
-		// If not present, refresh the related MCN resource if required.
-		err = i.cleanupMachineConfigNodeStatus(mcn)
-		if err != nil {
-			return err
-		}
-		return nil
-	}
+	// Check if IRI resource exists
+	iri, err := i.iriLister.Get(common.InternalReleaseImageInstanceName)
 	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return i.handleIRIDeletion(mcn)
+		}
 		return err
 	}
 
-	authToken := i.authToken
-	var registryErr error
-	if authToken == "" {
-		authToken, registryErr = readIRIAuthToken(fmt.Sprintf("%s:%d", iriRegistryHost, iriRegistryPort))
+	// Check if IRI is being deleted
+	if !iri.DeletionTimestamp.IsZero() {
+		return i.handleIRIDeletion(mcn)
 	}
-	var iriReg *iriRegistry
-	if registryErr == nil {
-		iriReg = newIRIRegistry(i.nodeName, i.registryClient, authToken)
-		registryErr = iriReg.CheckLocalRegistry()
-	}
+
+	// Update MCN status based on registry availability
+	iriReg, registryErr := i.getIRIRegistry()
 	if registryErr != nil {
 		err = i.setMachineConfigNodeAsDegraded(mcn, registryErr)
 	} else {
