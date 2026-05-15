@@ -2780,7 +2780,7 @@ func (dn *Daemon) queueRevertKernelSwap() error {
 }
 
 // updateLayeredOS updates the system OS to the one specified in newConfig
-func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
+func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig, isRevertingFromOCL bool) error {
 	newURL := config.Spec.OSImageURL
 	klog.Infof("Updating OS to layered image %q", newURL)
 
@@ -2808,12 +2808,16 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	}
 
 	// If PIS is configured check if the image is locally present. If so, rebase using
-	// the local image
+	// the local image.
+	// IMPORTANT: Skip local storage rebase when reverting from OCL to avoid using stale
+	// IRI certificates. See OCPBUGS-62479.
 	var podmanImageInfo *PodmanImageInfo
-	if isPisConfigured {
+	if isPisConfigured && !isRevertingFromOCL {
 		if podmanImageInfo, err = dn.podmanInterface.GetPodmanImageInfoByReference(newURL); err != nil {
 			return err
 		}
+	} else if isRevertingFromOCL {
+		klog.Info("Skipping local storage rebase during OCL revert to avoid certificate issues")
 	}
 
 	// For image mode status reporting we need the node's MCP association to populate its MCN
@@ -3169,7 +3173,11 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 		}
 	}
 
-	if newConfig.Spec.BaseOSExtensionsContainerImage != "" && (haveExtensions || haveKernelType) && !mcDiff.oclEnabled {
+	// Extract extensions when needed:
+	// - For non-OCL updates (!mcDiff.oclEnabled)
+	// - For OCL revert (mcDiff.revertFromOCL) - needed to access RHEL repos for kernel packages
+	// See https://redhat.atlassian.net/browse/OCPBUGS-62479
+	if newConfig.Spec.BaseOSExtensionsContainerImage != "" && (haveExtensions || haveKernelType) && (!mcDiff.oclEnabled || mcDiff.revertFromOCL) {
 		// TODO(jkyros): the original intent was that we use the extensions container as a service, but that currently results
 		// in a lot of complexity due to boostrap and firstboot where the service isn't easily available, so for now we are going
 		// to extract them to disk like we did previously.
@@ -3272,7 +3280,7 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 
 	// Update OS
 	if mcDiff.osUpdate {
-		if err := dn.updateLayeredOS(newConfig); err != nil {
+		if err := dn.updateLayeredOS(newConfig, mcDiff.revertFromOCL); err != nil {
 			mcdPivotErr.Inc()
 			return err
 		}
@@ -3296,7 +3304,9 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 	}
 
 	// If on-cluster layering is enabled, we can skip the rest of this process.
-	if mcDiff.oclEnabled {
+	// However, when reverting from OCL, we need to apply kernel changes and extensions.
+	// See https://redhat.atlassian.net/browse/OCPBUGS-62479
+	if mcDiff.oclEnabled && !mcDiff.revertFromOCL {
 		return nil
 	}
 

@@ -2210,7 +2210,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		if !osMatch {
 			logSystem("Bootstrap pivot required to: %s", targetOSImageURL)
 
-			if err := dn.updateLayeredOS(state.currentConfig); err != nil {
+			if err := dn.updateLayeredOS(state.currentConfig, false); err != nil {
 				return err
 			}
 
