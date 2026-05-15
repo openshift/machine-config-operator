@@ -437,7 +437,12 @@ func AreMCGeneratingSubControllersCompletedForPool(crcLister func(labels.Selecto
 				return fmt.Errorf("status for KubeletConfig %s is being reported for %d, expecting it for %d", mck.ObjectMeta.Name, mck.Status.ObservedGeneration, mck.Generation)
 			}
 
-			if mck.Status.Conditions[len(mck.Status.Conditions)-1].Type != mcfgv1.KubeletConfigSuccess {
+			if len(mck.Status.Conditions) == 0 {
+				return fmt.Errorf("KubeletConfig has not completed")
+			}
+			lastCondition := mck.Status.Conditions[len(mck.Status.Conditions)-1]
+			if !((lastCondition.Type == mcfgv1.KubeletConfigAccepted && lastCondition.Status == corev1.ConditionTrue) ||
+				lastCondition.Type == mcfgv1.KubeletConfigSuccess) { // backwards compatibility
 				return fmt.Errorf("KubeletConfig has not completed")
 			}
 		}
