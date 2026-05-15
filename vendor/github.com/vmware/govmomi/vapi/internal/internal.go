@@ -1,18 +1,6 @@
-/*
-Copyright (c) 2018-2024 VMware, Inc. All Rights Reserved.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
+// © Broadcom. All Rights Reserved.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: Apache-2.0
 
 package internal
 
@@ -27,6 +15,7 @@ const (
 	CategoryPath                   = "/com/vmware/cis/tagging/category"
 	TagPath                        = "/com/vmware/cis/tagging/tag"
 	AssociationPath                = "/com/vmware/cis/tagging/tag-association"
+	APILibraryPath                 = "/api/content/library"
 	LibraryPath                    = "/com/vmware/content/library"
 	LibraryItemFileData            = "/com/vmware/cis/data"
 	LibraryItemPath                = "/com/vmware/content/library/item"
@@ -36,6 +25,7 @@ const (
 	LibraryItemUpdateSessionFile   = "/com/vmware/content/library/item/updatesession/file"
 	LibraryItemDownloadSession     = "/com/vmware/content/library/item/download-session"
 	LibraryItemDownloadSessionFile = "/com/vmware/content/library/item/downloadsession/file"
+	LibraryUsages                  = "usages"
 	LocalLibraryPath               = "/com/vmware/content/local-library"
 	SubscribedLibraryPath          = "/com/vmware/content/subscribed-library"
 	SecurityPoliciesPath           = "/api/content/security-policies"
@@ -47,6 +37,22 @@ const (
 	SessionCookieName              = "vmware-api-session-id"
 	UseHeaderAuthn                 = "vmware-use-header-authn"
 	DebugEcho                      = "/vc-sim/debug/echo"
+)
+
+// VAPI sub path
+const (
+	LibraryUsagesSubPath = "usages"
+)
+
+// VAPI URL params
+const (
+	LibraryParam      = "library"
+	LibraryUsageParam = "usage"
+)
+
+// VAPI actions
+const (
+	LibraryUsageAddAction = "add"
 )
 
 // AssociatedObject is the same structure as types.ManagedObjectReference,
@@ -91,4 +97,8 @@ type SubscriptionDestinationSpec struct {
 type SubscriptionItemDestinationSpec struct {
 	Force         bool                      `json:"force_sync_content"`
 	Subscriptions []SubscriptionDestination `json:"subscriptions,omitempty"`
+}
+
+type LibraryUsageDestination struct {
+	ID string `json:"usage"`
 }

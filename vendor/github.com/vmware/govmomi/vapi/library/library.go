@@ -1,18 +1,6 @@
-/*
-Copyright (c) 2018-2024 VMware, Inc. All Rights Reserved.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
+// © Broadcom. All Rights Reserved.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: Apache-2.0
 
 package library
 
@@ -52,6 +40,7 @@ type Library struct {
 	UnsetSecurityPolicyID bool             `json:"unset_security_policy_id,omitempty"`
 	ServerGUID            string           `json:"server_guid,omitempty"`
 	StateInfo             *StateInfo       `json:"state_info,omitempty"`
+	Configuration         *Configuration   `json:"configuration_info,omitempty"`
 }
 
 // StateInfo provides the state info of a content library.
@@ -133,6 +122,9 @@ func (l *Library) Patch(src *Library) {
 	}
 	if src.Version != "" {
 		l.Version = src.Version
+	}
+	if src.Configuration != nil {
+		l.Configuration = src.Configuration
 	}
 }
 
@@ -228,8 +220,9 @@ func (c *Manager) UpdateLibrary(ctx context.Context, l *Library) error {
 		Library `json:"update_spec"`
 	}{
 		Library{
-			Name:        l.Name,
-			Description: l.Description,
+			Name:          l.Name,
+			Description:   l.Description,
+			Configuration: l.Configuration,
 		},
 	}
 	url := c.Resource(internal.LibraryPath).WithID(l.ID)
@@ -243,6 +236,16 @@ func (c *Manager) DeleteLibrary(ctx context.Context, library *Library) error {
 		path = internal.SubscribedLibraryPath
 	}
 	url := c.Resource(path).WithID(library.ID)
+	return c.Do(ctx, url.Request(http.MethodDelete), nil)
+}
+
+// ForceDeleteLibrary Force deletes the specified library by skipping the usage check.
+func (c *Manager) ForceDeleteLibrary(ctx context.Context, library *Library) error {
+	path := internal.LocalLibraryPath
+	if library.Type == "SUBSCRIBED" {
+		path = internal.SubscribedLibraryPath
+	}
+	url := c.Resource(path).WithID(library.ID).WithAction("force-delete")
 	return c.Do(ctx, url.Request(http.MethodDelete), nil)
 }
 

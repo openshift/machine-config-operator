@@ -1,18 +1,6 @@
-/*
-   Copyright (c) 2022 VMware, Inc. All Rights Reserved.
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-*/
+// © Broadcom. All Rights Reserved.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: Apache-2.0
 
 package methods
 
@@ -41,4 +29,24 @@ func PlaceVmsXCluster(ctx context.Context, r soap.RoundTripper, req *types.Place
 	}
 
 	return resBody.Res, nil
+}
+
+type UpdatePodVMPropertyBody struct {
+	Req    *types.UpdatePodVMProperty         `xml:"urn:vim25 UpdatePodVMProperty"`
+	Res    *types.UpdatePodVMPropertyResponse `xml:"UpdatePodVMPropertyResponse,omitempty"`
+	Fault_ *soap.Fault                        `xml:"http://schemas.xmlsoap.org/soap/envelope/ Fault,omitempty"`
+}
+
+func (b *UpdatePodVMPropertyBody) Fault() *soap.Fault { return b.Fault_ }
+
+func UpdatePodVMProperty(ctx context.Context, r soap.RoundTripper, req *types.UpdatePodVMProperty) (*types.UpdatePodVMPropertyResponse, error) {
+	var reqBody, resBody UpdatePodVMPropertyBody
+
+	reqBody.Req = req
+
+	if err := r.RoundTrip(ctx, &reqBody, &resBody); err != nil {
+		return nil, err
+	}
+
+	return reqBody.Res, nil
 }
