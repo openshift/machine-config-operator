@@ -1155,21 +1155,6 @@ func GetCompactCompatiblePool(oc *exutil.CLI) *MachineConfigPool {
 	return nil
 }
 
-// GetCoreOsCompatiblePool returns worker pool if it has CoreOs nodes. If there is no CoreOs node in the worker pool, then it returns master pool.
-func GetCoreOsCompatiblePool(oc *exutil.CLI) *MachineConfigPool {
-	var (
-		wMcp = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
-		mMcp = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolMaster)
-	)
-
-	if len(wMcp.GetCoreOsNodesOrFail()) == 0 {
-		logger.Infof("No CoreOs nodes in the worker pool. Using master pool for testing")
-		return mMcp
-	}
-
-	return wMcp
-}
-
 // GetCompactCompatibleOrCustomPool returns compact compatible pool or creates custom pool that will use the same stream as the worker pool
 func GetCompactCompatibleOrCustomPool(oc *exutil.CLI, numNodes int) (*MachineConfigPool, func() error, error) {
 	osstream, err := GetEffectiveOsImageStream(NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker))
@@ -1194,6 +1179,21 @@ func GetCompactCompatibleOrCustomPool(oc *exutil.CLI, numNodes int) (*MachineCon
 
 	customMcp, err := CreateCustomMCPWithStream(oc, customName, osstream, numNodes)
 	return customMcp, cleanup, err
+}
+
+// GetCoreOsCompatiblePool returns worker pool if it has CoreOs nodes. If there is no CoreOs node in the worker pool, then it returns master pool.
+func GetCoreOsCompatiblePool(oc *exutil.CLI) *MachineConfigPool {
+	var (
+		wMcp = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
+		mMcp = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolMaster)
+	)
+
+	if len(wMcp.GetCoreOsNodesOrFail()) == 0 {
+		logger.Infof("No CoreOs nodes in the worker pool. Using master pool for testing")
+		return mMcp
+	}
+
+	return wMcp
 }
 
 // CreateCustomMCPWithStreamByLabel Creates a new custom MCP using the nodes in the worker pool with the given label. If numNodes < 0, we will add all existing nodes to the custom pool
@@ -1490,4 +1490,61 @@ func FilterExtensions(extensions map[string][]string, hasARM64, fips bool, osIma
 	}
 
 	return filteredExtensions, extensionNames, packages
+}
+
+func (mcp *MachineConfigPool) GetNodesWithoutArchitecture(arch architecture.Architecture, archs ...architecture.Architecture) ([]*Node, error) {
+	archsList := arch.String()
+	for _, itemArch := range archs {
+		archsList = archsList + "," + itemArch.String()
+	}
+	return mcp.GetNodesByLabel(fmt.Sprintf(`%s notin (%s)`, architecture.NodeArchitectureLabel, archsList))
+}
+
+// GetNodesWithoutArchitectureOrFail returns a list of nodes that belong to this pool and do NOT use the given architectures. It fails the test if any error happens
+func (mcp *MachineConfigPool) GetNodesWithoutArchitectureOrFail(arch architecture.Architecture, archs ...architecture.Architecture) []*Node {
+	nodes, err := mcp.GetNodesWithoutArchitecture(arch, archs...)
+	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "In MCP %s. Cannot get the nodes NOT using architectures %s", mcp.GetName(), append(archs, arch))
+	return nodes
+}
+
+func (mcp *MachineConfigPool) IsRealTimeKernel() (bool, error) {
+	nodes, err := mcp.GetNodes()
+	if err != nil {
+		logger.Errorf("Error getting the nodes in pool %s", mcp.GetName())
+		return false, err
+	}
+
+	return nodes[0].IsRealTimeKernel()
+}
+
+// GetPoolWithArchDifferentFromOrFail returns an existing pool that has nodes with different architecture than the provided one
+func GetPoolWithArchDifferentFromOrFail(oc *exutil.CLI, arch architecture.Architecture) *MachineConfigPool {
+	var (
+		mcpList = NewMachineConfigPoolList(oc.AsAdmin())
+		mMcp    = NewMachineConfigPool(oc, MachineConfigPoolMaster)
+	)
+
+	mcpList.PrintDebugCommand()
+
+	// we check if there is an already existing pool with all its nodes using the requested architecture
+	for _, pool := range mcpList.GetAllOrFail() {
+		if pool.IsMaster() {
+			continue
+		}
+
+		// If there isn't a node with the requested architecture in the worker pool,
+		// but there is a custom pool where all nodes have this architecture
+		if !pool.IsEmpty() && len(pool.GetNodesWithoutArchitectureOrFail(arch)) > 0 {
+			logger.Infof("Using pool %s", pool.GetName())
+			return pool
+		}
+	}
+
+	// It includes compact and SNO
+	if len(mMcp.GetNodesWithoutArchitectureOrFail(arch)) > 0 {
+		return mMcp
+	}
+
+	e2e.Failf("Something went wrong. There is no suitable pool to execute the test case. There is no pool with nodes using  an architecture different from %s", arch)
+	return nil
 }
