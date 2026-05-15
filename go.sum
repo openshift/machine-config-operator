@@ -146,8 +146,8 @@ github.com/containers/common v0.62.1 h1:durvu7Kelb8PYgX7bwuAg/d5LKj2hs3cAaqcU7Vn
 github.com/containers/common v0.62.1/go.mod h1:n9cEboBmY3AnTk1alkq4t7sLM4plwkDCiaWbsf67YxE=
 github.com/containers/image/v5 v5.35.0 h1:T1OeyWp3GjObt47bchwD9cqiaAm/u4O4R9hIWdrdrP8=
 github.com/containers/image/v5 v5.35.0/go.mod h1:8vTsgb+1gKcBL7cnjyNOInhJQfTUQjJoO2WWkKDoebM=
-github.com/containers/kubensmnt v1.2.0 h1:BDtkaOFQ5fN7FnB9kC6peMW50KkwI1KI8E9ROBFeQIg=
-github.com/containers/kubensmnt v1.2.0/go.mod h1:1/HG09N/a1+WSD3zkurzeWtqlKRSfUUnlIF/08zloqk=
+github.com/containers/kubensmnt v1.3.0 h1:h1U1ECFw9R3emwRkjuBcA+6mTMt8a/bCMc8hCsFA/4c=
+github.com/containers/kubensmnt v1.3.0/go.mod h1:1/HG09N/a1+WSD3zkurzeWtqlKRSfUUnlIF/08zloqk=
 github.com/containers/libtrust v0.0.0-20230121012942-c1716e8a8d01 h1:Qzk5C6cYglewc+UyGf6lc8Mj2UaPTHy/iF2De0/77CA=
 github.com/containers/libtrust v0.0.0-20230121012942-c1716e8a8d01/go.mod h1:9rfv8iPl1ZP7aqh9YA68wnZv2NUDbXdcdPHVz0pFbPY=
 github.com/containers/ocicrypt v1.2.1 h1:0qIOTT9DoYwcKmxSt8QJt+VzMY18onl9jUXsxpVhSmM=
