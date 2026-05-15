@@ -173,25 +173,25 @@ func TestCreateAutoSizingMachineConfigIfNeeded(t *testing.T) {
 }
 
 // TestEnsureAutoSizingMachineConfigs verifies that the controller correctly ensures auto-sizing
-// MachineConfigs exist for all machine config pools in the cluster. This tests the high-level
-// orchestration function that processes multiple pools.
+// MachineConfigs exist for the master and worker pools. This tests the high-level
+// orchestration function that fetches and processes master and worker pools directly.
 func TestEnsureAutoSizingMachineConfigs(t *testing.T) {
-	t.Run("creates MCs for all pools", func(t *testing.T) {
+	t.Run("creates MCs for master and worker pools", func(t *testing.T) {
 		// Setup: Initialize test fixture and disable action validation for simplicity
 		f := newFixture(t)
 		f.skipActionsValidation = true
 
-		// Setup: Create multiple machine config pools (worker and master)
+		// Setup: Create master and worker machine config pools
 		workerPool := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 		masterPool := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 		f.mcpLister = append(f.mcpLister, workerPool, masterPool)
 
 		ctrl := f.newController(nil)
 
-		// Execute: Ensure auto-sizing MCs exist for all pools
+		// Execute: Ensure auto-sizing MCs exist for master and worker
 		ctx := context.Background()
 		err := ctrl.ensureAutoSizingMachineConfigs(ctx)
-		require.NoError(t, err, "ensureAutoSizingMachineConfigs should succeed for multiple pools")
+		require.NoError(t, err, "ensureAutoSizingMachineConfigs should succeed")
 
 		// Verify: Confirm MachineConfigs were created for both pools
 		mcList, err := ctrl.client.MachineconfigurationV1().MachineConfigs().List(ctx, metav1.ListOptions{})
@@ -209,38 +209,6 @@ func TestEnsureAutoSizingMachineConfigs(t *testing.T) {
 			"should have created MC for worker pool")
 		require.True(t, mcNames["50-master-auto-sizing-disabled"],
 			"should have created MC for master pool")
-	})
-
-	t.Run("skips custom pools and creates MCs only for master and worker", func(t *testing.T) {
-		f := newFixture(t)
-		f.skipActionsValidation = true
-
-		workerPool := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
-		masterPool := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
-		infraPool := helpers.NewMachineConfigPool("infra", nil, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role.kubernetes.io/infra", ""), "v0")
-		f.mcpLister = append(f.mcpLister, workerPool, masterPool, infraPool)
-
-		ctrl := f.newController(nil)
-
-		ctx := context.Background()
-		err := ctrl.ensureAutoSizingMachineConfigs(ctx)
-		require.NoError(t, err, "ensureAutoSizingMachineConfigs should succeed")
-
-		mcList, err := ctrl.client.MachineconfigurationV1().MachineConfigs().List(ctx, metav1.ListOptions{})
-		require.NoError(t, err, "listing MachineConfigs should succeed")
-		require.Len(t, mcList.Items, 2,
-			"should have exactly 2 MachineConfigs (worker and master only)")
-
-		mcNames := make(map[string]bool)
-		for _, mc := range mcList.Items {
-			mcNames[mc.Name] = true
-		}
-		require.True(t, mcNames["50-worker-auto-sizing-disabled"],
-			"should have created MC for worker pool")
-		require.True(t, mcNames["50-master-auto-sizing-disabled"],
-			"should have created MC for master pool")
-		require.False(t, mcNames["50-infra-auto-sizing-disabled"],
-			"should NOT have created MC for infra pool")
 	})
 }
 
@@ -319,16 +287,6 @@ func TestRunAutoSizingBootstrap(t *testing.T) {
 		require.False(t, mcNames["50-infra-auto-sizing-disabled"],
 			"should NOT contain infra auto-sizing MC")
 	})
-}
-
-// TestIsDefaultPool validates the isDefaultPool helper function that determines
-// which MachineConfigPools should receive auto-sizing MachineConfigs.
-func TestIsDefaultPool(t *testing.T) {
-	require.True(t, isDefaultPool("master"), "master should be a default pool")
-	require.True(t, isDefaultPool("worker"), "worker should be a default pool")
-	require.False(t, isDefaultPool("custom"), "custom should not be a default pool")
-	require.False(t, isDefaultPool("infra"), "infra should not be a default pool")
-	require.False(t, isDefaultPool(""), "empty string should not be a default pool")
 }
 
 // TestAutoSizingConstants validates that critical auto-sizing constants have the expected values.
