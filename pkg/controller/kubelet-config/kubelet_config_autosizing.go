@@ -8,7 +8,6 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 
@@ -27,16 +26,15 @@ SYSTEM_RESERVED_ES=1Gi
 `
 )
 
-// ensureAutoSizingMachineConfigs ensures auto-sizing MachineConfigs exist for all MachineConfigPools
+// ensureAutoSizingMachineConfigs ensures auto-sizing MachineConfigs exist for the master and worker MachineConfigPools
 func (ctrl *Controller) ensureAutoSizingMachineConfigs(ctx context.Context) error {
-	mcpPools, err := ctrl.mcpLister.List(labels.Everything())
-	if err != nil {
-		return fmt.Errorf("could not list MachineConfigPools: %w", err)
-	}
-
-	for _, pool := range mcpPools {
+	for _, poolName := range []string{ctrlcommon.MachineConfigPoolMaster, ctrlcommon.MachineConfigPoolWorker} {
+		pool, err := ctrl.mcpLister.Get(poolName)
+		if err != nil {
+			return fmt.Errorf("could not get MachineConfigPool %v: %w", poolName, err)
+		}
 		if err := ctrl.createAutoSizingMCIfNeeded(ctx, pool); err != nil {
-			return fmt.Errorf("could not ensure auto-sizing MachineConfig for pool %v: %w", pool.Name, err)
+			return fmt.Errorf("could not ensure auto-sizing MachineConfig for pool %v: %w", poolName, err)
 		}
 	}
 
@@ -77,12 +75,15 @@ func (ctrl *Controller) createAutoSizingMCIfNeeded(ctx context.Context, pool *mc
 	return nil
 }
 
-// RunAutoSizingBootstrap generates auto-sizing MachineConfig objects for all mcpPools
+// RunAutoSizingBootstrap generates auto-sizing MachineConfig objects for master and worker mcpPools
 func RunAutoSizingBootstrap(mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
-	configs := make([]*mcfgv1.MachineConfig, 0, len(mcpPools))
+	var configs []*mcfgv1.MachineConfig
 
-	// Create auto-sizing MachineConfigs for each pool
 	for _, pool := range mcpPools {
+		if pool.Name != ctrlcommon.MachineConfigPoolMaster && pool.Name != ctrlcommon.MachineConfigPoolWorker {
+			klog.V(4).Infof("Skipping auto-sizing MachineConfig for non-default pool %v during bootstrap", pool.Name)
+			continue
+		}
 		autoSizingMC, err := newAutoSizingMachineConfig(pool)
 		if err != nil {
 			return nil, err
