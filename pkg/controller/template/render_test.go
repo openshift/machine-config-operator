@@ -410,10 +410,10 @@ func TestKubeletGracefulShutdownTNF(t *testing.T) {
 
 					kubeletConf := string(contents)
 					if tc.expectGraceful {
-						if !strings.Contains(kubeletConf, "shutdownGracePeriod: 60s") {
+						if !strings.Contains(kubeletConf, "shutdownGracePeriod: 90s") {
 							t.Errorf("expected shutdownGracePeriod in kubelet.conf for DualReplica")
 						}
-						if !strings.Contains(kubeletConf, "shutdownGracePeriodCriticalPods: 30s") {
+						if !strings.Contains(kubeletConf, "shutdownGracePeriodCriticalPods: 60s") {
 							t.Errorf("expected shutdownGracePeriodCriticalPods in kubelet.conf for DualReplica")
 						}
 					} else {
