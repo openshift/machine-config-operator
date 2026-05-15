@@ -133,6 +133,39 @@ func (mcc *Controller) HasAcquiredLease() (bool, error) {
 	return re.MatchString(podAllLogs), nil
 }
 
+// GetLogsAsList returns the MCO controller logs as a list strings. One string per line
+func (mcc *Controller) GetLogsAsList() ([]string, error) {
+	logs, err := mcc.GetLogs()
+	if err != nil {
+		return nil, err
+	}
+
+	return strings.Split(logs, "\n"), nil
+}
+
+// GetFilteredLogsAsList returns the filtered logs as a list of strings, one string per line.
+func (mcc *Controller) GetFilteredLogsAsList(regex string) ([]string, error) {
+	logs, err := mcc.GetLogsAsList()
+	if err != nil {
+		return nil, err
+	}
+
+	filteredLogs := []string{}
+	for _, line := range logs {
+		match, err := regexp.MatchString(regex, line)
+		if err != nil {
+			logger.Errorf("Error filtering log lines. Error: %s", err)
+			return nil, err
+		}
+
+		if match {
+			filteredLogs = append(filteredLogs, line)
+		}
+	}
+
+	return filteredLogs, nil
+}
+
 // GetNode return the node where the machine controller is running
 func (mcc *Controller) GetNode() (*Node, error) {
 	controllerPodName, err := mcc.GetCachedPodName()

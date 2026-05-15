@@ -8,6 +8,7 @@ import (
 	b64 "encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -548,7 +549,7 @@ func WorkersCanBeScaled(oc *exutil.CLI) (bool, error) {
 	logger.Infof("Checking if in this cluster workers can be scaled using machinesets")
 
 	// Baremetal and None platforms cannot scale workers
-	if platform == "baremetal" || platform == "none" || platform == "" {
+	if platform == BaremetalPlatform || platform == NonePlatform || platform == "" {
 		logger.Infof("Baremetal/None platform. Can't scale up nodes in Baremetal test environments. Nodes cannot be scaled")
 		return false, nil
 	}
@@ -1235,6 +1236,22 @@ func validateMcpRenderDegraded(mc *MachineConfig, mcp *MachineConfigPool, expect
 	checkDegraded(mcp, expectedRDMessage, expectedRDReason, "RenderDegraded", false, 2)
 }
 
+func createMcAndVerifyIgnitionVersion(oc *exutil.CLI, stepText, mcName, ignitionVersion string) {
+	var (
+		mcTemplate        = "change-worker-ign-version.yaml"
+		mcp               = GetCompactCompatiblePool(oc.AsAdmin())
+		expectedRDMessage = `parsing Ignition config failed: (unknown|invalid) version\. Supported spec versions: 2\.2,3\.0,3\.1,3\.2,3\.3,3\.4,3\.5$`
+		expectedRDReason  = "^$" // empty string
+	)
+	exutil.By(fmt.Sprintf("Create machine config with %s", stepText))
+
+	mc := NewMachineConfig(oc.AsAdmin(), mcName, mcp.GetName()).SetMCOTemplate(mcTemplate)
+	mc.parameters = []string{"IGNITION_VERSION=" + ignitionVersion}
+	mc.skipWaitForMcp = true
+
+	validateMcpRenderDegraded(mc, mcp, expectedRDMessage, expectedRDReason)
+}
+
 // skipTestIfNotSupportedPlatform skips the test if the current platform matches one of the provided not supported platforms
 func skipTestIfNotSupportedPlatform(oc *exutil.CLI, notsupported ...string) {
 	p := exutil.CheckPlatform(oc)
@@ -1311,4 +1328,158 @@ func skipTestIfOsIsNotCoreOs(oc *exutil.CLI) *Node {
 		g.Skip("CoreOs is required to execute this test case!")
 	}
 	return allCoreOs[0]
+}
+
+// SkipIfCompactOrSNO skips the test case if the cluster is a compact or SNO cluster
+func SkipIfCompactOrSNO(oc *exutil.CLI) {
+	if IsCompactOrSNOCluster(oc) {
+		g.Skip("The test is not supported in Compact or SNO clusters")
+	}
+}
+
+// IsSNO returns true if the cluster is a SNO cluster
+func IsSNO(oc *exutil.CLI) bool {
+	return len(exutil.OrFail[[]*Node](NewNodeList(oc.AsAdmin()).GetAll())) == 1
+}
+
+// IsExecShellError returns true if the error is due to a failure in the command execution, and not a failue elsewhere (for example, a system failure previous to the shell command execution)
+func IsExecShellError(err error) bool {
+	if unwrapped := errors.Unwrap(err); unwrapped != nil {
+		_, ok := unwrapped.(*exec.ExitError)
+		return ok
+	}
+	_, ok := err.(*exec.ExitError)
+	return ok
+}
+
+// UnwrapExecCode unwraps the error and extracts the stderr string if possible
+func UnwrapExecCode(err error) (int, error) {
+	if unwrapped := errors.Unwrap(err); unwrapped != nil {
+		exitError, ok := unwrapped.(*exec.ExitError)
+		if ok {
+			return exitError.ExitCode(), nil
+		}
+	}
+	return -1, fmt.Errorf("No exit code available in the provided error %s", err)
+}
+
+func getTimeDifferenceInMinute(oldTimestamp, newTimestamp string) float64 {
+	// Parse timestamps using time.Parse with proper layout
+	// Layout matches format: HH:MM:SS.ffffff (1-6 digit fractional seconds)
+	y, m, d := time.Now().Date()
+	datePrefix := fmt.Sprintf("%04d-%02d-%02d ", y, m, d)
+
+	// Parse old timestamp
+	oldTime, err := time.Parse("2006-01-02 15:04:05.999999999", datePrefix+oldTimestamp)
+	if err != nil {
+		// Fallback: try parsing without fractional seconds
+		oldTime, err = time.Parse("2006-01-02 15:04:05", datePrefix+strings.Split(oldTimestamp, ".")[0])
+		if err != nil {
+			logger.Errorf("Failed to parse old timestamp '%s': %v", oldTimestamp, err)
+			return 0
+		}
+	}
+
+	// Parse new timestamp
+	newTime, err := time.Parse("2006-01-02 15:04:05.999999999", datePrefix+newTimestamp)
+	if err != nil {
+		// Fallback: try parsing without fractional seconds
+		newTime, err = time.Parse("2006-01-02 15:04:05", datePrefix+strings.Split(newTimestamp, ".")[0])
+		if err != nil {
+			logger.Errorf("Failed to parse new timestamp '%s': %v", newTimestamp, err)
+			return 0
+		}
+	}
+
+	return newTime.Sub(oldTime).Minutes()
+}
+
+func filterTimestampFromLogs(logs string, numberOfTimestamp int) []string {
+	return regexp.MustCompile(`(?m)\b[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}\.[0-9]{1,6}\b`).FindAllString(logs, numberOfTimestamp)
+}
+
+// AddToAllMachineSets adds a delta to all MachineSets replicas and wait for the MachineSets to be ready
+func AddToAllMachineSets(oc *exutil.CLI, delta int) error {
+	allMs, err := NewMachineSetList(oc.AsAdmin(), "openshift-machine-api").GetAll()
+	o.Expect(err).NotTo(o.HaveOccurred())
+
+	var addErr error
+	modifiedMSs := []*MachineSet{}
+	for _, ms := range allMs {
+		addErr = ms.AddToScale(delta)
+		if addErr == nil {
+			modifiedMSs = append(modifiedMSs, ms)
+		} else {
+			break
+		}
+	}
+
+	if addErr != nil {
+		logger.Infof("Error reconfiguring MachineSets. Restoring original replicas.")
+		for _, ms := range modifiedMSs {
+			_ = ms.AddToScale(-1 * delta)
+		}
+
+		return addErr
+	}
+
+	var waitErr error
+	for _, ms := range allMs {
+		immediate := true
+		waitErr = wait.PollUntilContextTimeout(context.TODO(), 30*time.Second, 20*time.Minute, immediate, func(_ context.Context) (bool, error) { return ms.GetIsReady(), nil })
+		if waitErr != nil {
+			logger.Errorf("MachineSet %s is not ready. Restoring original replicas.", ms.GetName())
+			for _, ms := range modifiedMSs {
+				_ = ms.AddToScale(-1 * delta)
+			}
+			break
+		}
+	}
+
+	return waitErr
+}
+
+// checkUpdatedLists Compares that 2 lists are ordered in steps.
+// when we update nodes with maxUnavailable>1, since we are polling, we cannot make sure
+// that the sorted lists have the same order one by one. We can only make sure that the steps
+// defined by maxUnavailable have the right order.
+// If step=1, it is the same as comparing that both lists are equal.
+func checkUpdatedLists(l, r []*Node, step int) bool {
+	if len(l) != len(r) {
+		logger.Errorf("Compared lists have different size")
+		return false
+	}
+
+	indexStart := 0
+	for i := 0; i < len(l); i += step {
+		indexEnd := i + step
+		if (i + step) > (len(l)) {
+			indexEnd = len(l)
+		}
+
+		// Create 2 sublists with the size of the step
+		stepL := l[indexStart:indexEnd]
+		stepR := r[indexStart:indexEnd]
+		indexStart += step
+
+		// All elements in one sublist should exist in the other one
+		// but they dont have to be in the same order.
+		for _, nl := range stepL {
+			found := false
+			for _, nr := range stepR {
+				if nl.GetName() == nr.GetName() {
+					found = true
+					break
+				}
+
+			}
+			if !found {
+				logger.Errorf("Nodes were not updated in the right order. Comparing steps %s and %s\n", stepL, stepR)
+				return false
+			}
+		}
+
+	}
+	return true
+
 }

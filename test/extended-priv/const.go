@@ -59,6 +59,8 @@ const (
 	OpenstackPlatform = "openstack"
 	// OvirtPlatform value used to identify Ovirt infrastructure
 	OvirtPlatform = "ovirt"
+	// NonePlatform value used to identify a None Platform value
+	NonePlatform = "none"
 
 	// ExpirationDockerfileLabel Expiration label in Dockerfile
 	ExpirationDockerfileLabel = `LABEL maintainer="mco-qe-team" quay.expires-after=24h`
