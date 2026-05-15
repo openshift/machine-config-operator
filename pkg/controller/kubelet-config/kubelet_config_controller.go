@@ -637,7 +637,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			configSuccess := false
 			if len(cfg.Status.Conditions) > 0 {
 				lastCondition := cfg.Status.Conditions[len(cfg.Status.Conditions)-1]
-				configSuccess = (lastCondition.Type == mcfgv1.KubeletConfigApplied && lastCondition.Status == corev1.ConditionTrue) ||
+				configSuccess = (lastCondition.Type == mcfgv1.KubeletConfigAccepted && lastCondition.Status == corev1.ConditionTrue) ||
 					lastCondition.Type == mcfgv1.KubeletConfigSuccess // backwards compatibility
 			}
 			if match && cfg.Status.ObservedGeneration >= cfg.Generation && configSuccess {
