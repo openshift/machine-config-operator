@@ -1392,6 +1392,7 @@ func (nl NodeList) GetAllCoreOsWokerNodesOrFail() []*Node {
 
 	workers, err := nl.GetAll()
 	o.Expect(err).NotTo(o.HaveOccurred())
+	o.Expect(len(workers)).NotTo(o.Equal(0), "no RHCOS worker nodes found for selector node-role.kubernetes.io/worker=,node.openshift.io/os_id=rhel")
 	return workers
 }
 
@@ -1401,6 +1402,7 @@ func (nl NodeList) GetAllCoreOsNodesOrFail() []*Node {
 
 	allRhcos, err := nl.GetAll()
 	o.Expect(err).NotTo(o.HaveOccurred())
+	o.Expect(len(allRhcos)).NotTo(o.Equal(0), "no RHCOS nodes found for selector node.openshift.io/os_id=rhel")
 	return allRhcos
 }
 
@@ -1600,4 +1602,16 @@ func (n *Node) GetRHCOSVersion() (string, error) {
 	}
 
 	return rhcosVersion, nil
+}
+
+// FilterSchedulableNodesOrFail filters a list of nodes to return only schedulable ones
+func FilterSchedulableNodesOrFail(nodes []*Node) []*Node {
+	returnNodes := []*Node{}
+	for _, item := range nodes {
+		node := item
+		if node.IsSchedulableOrFail() {
+			returnNodes = append(returnNodes, node)
+		}
+	}
+	return returnNodes
 }
