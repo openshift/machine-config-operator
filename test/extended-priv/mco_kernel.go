@@ -335,4 +335,74 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			"The kernel arguments are not the expected ones")
 		logger.Infof("OK!\n")
 	})
+
+	g.It("[PolarionID:72132][OTP] enable FIPS by Machine-Config-Operator not supported [Disruptive]", func() {
+		var (
+			mcTemplate = "change-fips.yaml"
+			mcName     = "mco-tc-25819-master-fips"
+			wMcp       = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
+			mMcp       = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolMaster)
+
+			expectedRDMessage = regexp.QuoteMeta("detected change to FIPS flag; refusing to modify FIPS on a running cluster")
+			expectedRDReason  = ""
+		)
+
+		// If FIPS is already enabled, we skip the test case
+		skipTestIfFIPSIsEnabled(oc.AsAdmin())
+
+		exutil.By("Try to enable FIPS in master pool")
+		mMc := NewMachineConfig(oc.AsAdmin(), mcName, MachineConfigPoolMaster).SetMCOTemplate(mcTemplate)
+		mMc.parameters = []string{"FIPS=true"}
+		mMc.skipWaitForMcp = true
+
+		validateMcpRenderDegraded(mMc, mMcp, expectedRDMessage, expectedRDReason)
+		logger.Infof("OK!\n")
+
+		exutil.By("Try to enable FIPS in worker pool")
+		wMc := NewMachineConfig(oc.AsAdmin(), mcName, MachineConfigPoolWorker).SetMCOTemplate(mcTemplate)
+		wMc.parameters = []string{"FIPS=true"}
+		wMc.skipWaitForMcp = true
+
+		validateMcpRenderDegraded(wMc, wMcp, expectedRDMessage, expectedRDReason)
+		logger.Infof("OK!\n")
+
+	})
+
+	g.It("[PolarionID:72135][OTP] Refuse to disable FIPS mode by Machine-Config-Operator [Disruptive]", func() {
+		var (
+			mMcName = "99-master-fips"
+			wMcName = "99-worker-fips"
+			wMcp    = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
+			mMcp    = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolMaster)
+			mMc     = NewMachineConfig(oc.AsAdmin(), mMcName, MachineConfigPoolMaster)
+			wMc     = NewMachineConfig(oc.AsAdmin(), wMcName, MachineConfigPoolWorker)
+
+			expectedRDMessage = regexp.QuoteMeta("detected change to FIPS flag; refusing to modify FIPS on a running cluster")
+			expectedRDReason  = ""
+		)
+
+		// If FIPS is already disabled, we skip the test case
+		skipTestIfFIPSIsNotEnabled(oc.AsAdmin())
+
+		defer func() {
+			logger.Infof("Starting defer logic")
+			o.Expect(mMc.Patch("merge", `{"spec":{"fips": true}}`)).To(o.Succeed(),
+				"Failed to restore FIPS=true in master MC")
+			o.Expect(wMc.Patch("merge", `{"spec":{"fips": true}}`)).To(o.Succeed(),
+				"Failed to restore FIPS=true in worker MC")
+			wMcp.RecoverFromDegraded()
+			mMcp.RecoverFromDegraded()
+		}()
+
+		exutil.By("Patch the master-fips MC and set fips=false")
+		o.Expect(mMc.Patch("merge", `{"spec":{"fips": false}}`)).To(o.Succeed(),
+			"Failed to patch master MC with fips=false")
+		checkDegraded(mMcp, expectedRDMessage, expectedRDReason, "RenderDegraded", false, 1)
+
+		exutil.By("Try to disasble FIPS in worker pool")
+		o.Expect(wMc.Patch("merge", `{"spec":{"fips": false}}`)).To(o.Succeed(),
+			"Failed to patch worker MC with fips=false")
+		checkDegraded(wMcp, expectedRDMessage, expectedRDReason, "RenderDegraded", false, 1)
+
+	})
 })

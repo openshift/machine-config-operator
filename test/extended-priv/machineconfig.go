@@ -26,6 +26,11 @@ type MachineConfig struct {
 	skipWaitForMcp bool
 }
 
+// NewMachineConfigList construct a new machine config list struct to handle all existing machine configs
+func NewMachineConfigList(oc *exutil.CLI) *MachineConfigList {
+	return &MachineConfigList{ResourceList: *NewResourceList(oc, "mc")}
+}
+
 // NewMachineConfig create a NewMachineConfig struct
 func NewMachineConfig(oc *exutil.CLI, name, pool string) *MachineConfig {
 	mc := &MachineConfig{Resource: *NewResource(oc, "mc", name), pool: pool}
