@@ -37,6 +37,6 @@ contents:
         - {{ . }}
       {{- end }}
     {{- if eq .Infra.Status.ControlPlaneTopology "DualReplica" }}
-    shutdownGracePeriod: 60s
-    shutdownGracePeriodCriticalPods: 30s
+    shutdownGracePeriod: 90s
+    shutdownGracePeriodCriticalPods: 60s
     {{- end }}
