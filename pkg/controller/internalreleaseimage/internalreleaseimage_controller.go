@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -39,6 +40,8 @@ import (
 
 const (
 	maxRetries = 15
+
+	iriFinalizerName = "internalreleaseimage.machineconfiguration.openshift.io"
 )
 
 var (
@@ -270,8 +273,7 @@ func (ctrl *Controller) deleteMachineConfig(obj interface{}) {
 func (ctrl *Controller) processMachineConfigEvent(obj interface{}, logMsg string) {
 	mc := obj.(*mcfgv1.MachineConfig)
 
-	// Skip any event not related to the InternalReleaseImage machine configs
-	if len(mc.OwnerReferences) == 0 || mc.OwnerReferences[0].Kind != controllerKind.Kind {
+	if !strings.HasSuffix(mc.Name, "-internalreleaseimage") {
 		return
 	}
 
@@ -338,10 +340,12 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) (syncErr error) {
 	// Deep-copy otherwise we are mutating our cache.
 	iri = iri.DeepCopy()
 
-	// Check for Deleted InternalReleaseImage and optionally delete finalizers.
+	// Check for Deleted InternalReleaseImage. Re-render MCs with a disabled
+	// service so the MCD stops the registry via the normal NDP restart cycle,
+	// then remove finalizers to garbage-collect the IRI.
 	if !iri.DeletionTimestamp.IsZero() {
 		if len(iri.GetFinalizers()) > 0 {
-			return ctrl.cascadeDelete(iri)
+			return ctrl.disableAndRemoveFinalizer(iri)
 		}
 		return nil
 	}
@@ -397,9 +401,10 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) (syncErr error) {
 		if err != nil {
 			return fmt.Errorf("could not create/update MachineConfig: %w", err)
 		}
-		if err := ctrl.addFinalizerToInternalReleaseImage(iri, mc); err != nil {
-			return fmt.Errorf("could not add finalizer: %w", err)
-		}
+	}
+
+	if err := ctrl.addFinalizerToInternalReleaseImage(iri); err != nil {
+		return fmt.Errorf("could not add finalizer: %w", err)
 	}
 
 	// Initialize status if empty
@@ -522,24 +527,40 @@ func (ctrl *Controller) createOrUpdateMachineConfig(isNotFound bool, mc *mcfgv1.
 	})
 }
 
-func (ctrl *Controller) addFinalizerToInternalReleaseImage(iri *mcfgv1alpha1.InternalReleaseImage, mc *mcfgv1.MachineConfig) error {
-	if ctrlcommon.InSlice(mc.Name, iri.Finalizers) {
+func (ctrl *Controller) addFinalizerToInternalReleaseImage(iri *mcfgv1alpha1.InternalReleaseImage) error {
+	if ctrlcommon.InSlice(iriFinalizerName, iri.Finalizers) {
 		return nil
 	}
 
-	iri.Finalizers = append(iri.Finalizers, mc.Name)
+	iri.Finalizers = append(iri.Finalizers, iriFinalizerName)
 	_, err := ctrl.client.MachineconfigurationV1alpha1().InternalReleaseImages().Update(context.TODO(), iri, metav1.UpdateOptions{})
 	return err
 }
 
-func (ctrl *Controller) cascadeDelete(iri *mcfgv1alpha1.InternalReleaseImage) error {
-	mcName := iri.GetFinalizers()[0]
-	err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), mcName, metav1.DeleteOptions{})
-	if err != nil && !errors.IsNotFound(err) {
-		return err
+// disableAndRemoveFinalizer re-renders the master IRI MachineConfig with a
+// disabled service (no-op ExecStart=/bin/true), then removes the finalizer so
+// the IRI can be garbage-collected. Only the master role is updated because the
+// iri-registry service runs exclusively on control-plane nodes. The MCD picks
+// up the updated MC through its normal sync cycle: NDP fires DaemonReload+Restart,
+// which stops the old podman container and starts the no-op service.
+func (ctrl *Controller) disableAndRemoveFinalizer(iri *mcfgv1alpha1.InternalReleaseImage) error {
+	r := NewSimpleRenderer("master")
+
+	mc, err := ctrl.mcLister.Get(r.GetMachineConfigName())
+	if err != nil {
+		return fmt.Errorf("could not get MachineConfig %s: %w", r.GetMachineConfigName(), err)
 	}
 
-	iri.Finalizers = append([]string{}, iri.Finalizers[1:]...)
+	mc = mc.DeepCopy()
+	if err := r.RenderDisabledRegistryService(mc); err != nil {
+		return fmt.Errorf("could not render disabled registry service for %s: %w", r.GetMachineConfigName(), err)
+	}
+
+	if err := ctrl.createOrUpdateMachineConfig(false, mc); err != nil {
+		return fmt.Errorf("could not update MachineConfig %s: %w", r.GetMachineConfigName(), err)
+	}
+
+	iri.Finalizers = []string{}
 	_, err = ctrl.client.MachineconfigurationV1alpha1().InternalReleaseImages().Update(context.TODO(), iri, metav1.UpdateOptions{})
 	return err
 }
