@@ -2801,19 +2801,12 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 		return dn.InplaceUpdateViaNewContainer(newURL)
 	}
 
-	isPisConfigured, err := dn.isPinnedImageSetConfigured()
+	// Check to see if the new container image is already present.
+	// This could happen if PIS is configured or if the bootloader
+	// update happened (which pulls the container down).
+	podmanImageInfo, err := dn.podmanInterface.GetPodmanImageInfoByReference(newURL)
 	if err != nil {
-		// Ignore the error and default to remote pull
-		klog.Errorf("Failed to determine if pinned image set is configured: %v", err)
-	}
-
-	// If PIS is configured check if the image is locally present. If so, rebase using
-	// the local image
-	var podmanImageInfo *PodmanImageInfo
-	if isPisConfigured {
-		if podmanImageInfo, err = dn.podmanInterface.GetPodmanImageInfoByReference(newURL); err != nil {
-			return err
-		}
+		return err
 	}
 
 	// For image mode status reporting we need the node's MCP association to populate its MCN
@@ -2902,28 +2895,6 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	}
 
 	return nil
-}
-
-func (dn *Daemon) isPinnedImageSetConfigured() (bool, error) {
-	if dn.node == nil || dn.mcpLister == nil {
-		// If we are here it means we are in the MCD first boot run. No connection to the cluster
-		// and the node not being populated means we cannot check the PIS config.
-		return false, nil
-	}
-
-	// PIS is enabled. Check if it's configured in any of its pools
-	pools, _, err := helpers.GetPoolsForNode(dn.mcpLister, dn.node)
-	if err != nil {
-		return false, fmt.Errorf("failed to get pools for node %q: %w", dn.node.Name, err)
-	}
-
-	for _, pool := range pools {
-		if pool.Spec.PinnedImageSets != nil && len(pool.Spec.PinnedImageSets) > 0 {
-			return true, nil
-		}
-	}
-	// No pools with PIS configured
-	return false, nil
 }
 
 // TODO: Delete this function to always consume the CommandRunner interface instance
