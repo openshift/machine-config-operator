@@ -13,7 +13,7 @@ require (
 	github.com/clarketm/json v1.17.1
 	github.com/containers/common v0.62.1
 	github.com/containers/image/v5 v5.35.0
-	github.com/containers/kubensmnt v1.2.0
+	github.com/containers/kubensmnt v1.3.0
 	github.com/containers/storage v1.58.0
 	github.com/coreos/fcct v0.5.0
 	github.com/coreos/go-semver v0.3.1
