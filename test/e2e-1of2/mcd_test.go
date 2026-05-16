@@ -112,7 +112,7 @@ func TestRunShared(t *testing.T) {
 func TestKernelArguments(t *testing.T) {
 	cs := framework.NewClientSet("")
 
-	delete := helpers.CreateMCP(t, cs, "infra")
+	deleteMCP := helpers.CreateMCP(t, cs, "infra")
 	workerOldMc := helpers.GetMcName(t, cs, "worker")
 
 	unlabelFunc := helpers.LabelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
@@ -124,7 +124,7 @@ func TestKernelArguments(t *testing.T) {
 		if err := helpers.WaitForPoolComplete(t, cs, "worker", workerOldMc); err != nil {
 			t.Fatal(err)
 		}
-		delete()
+		deleteMCP()
 		require.Nil(t, cs.MachineConfigs().Delete(context.TODO(), oldInfraConfig.Name, metav1.DeleteOptions{}))
 	})
 	// create old mc to have something to verify we successfully rolled back
@@ -204,7 +204,7 @@ func TestKernelType(t *testing.T) {
 		t.Skip("skipping test on OKD")
 	}
 
-	delete := helpers.CreateMCP(t, cs, "infra")
+	deleteMCP := helpers.CreateMCP(t, cs, "infra")
 	workerOldMc := helpers.GetMcName(t, cs, "worker")
 
 	unlabelFunc := helpers.LabelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
@@ -216,9 +216,8 @@ func TestKernelType(t *testing.T) {
 		if err := helpers.WaitForPoolComplete(t, cs, "worker", workerOldMc); err != nil {
 			t.Fatal(err)
 		}
-		delete()
+		deleteMCP()
 		require.Nil(t, cs.MachineConfigs().Delete(context.TODO(), oldInfraConfig.Name, metav1.DeleteOptions{}))
-
 	})
 
 	_, err = cs.MachineConfigs().Create(context.TODO(), oldInfraConfig, metav1.CreateOptions{})
@@ -296,12 +295,11 @@ func TestKernelType(t *testing.T) {
 	}
 	err = helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
 	require.Nil(t, err)
-
 }
 
 func TestNoReboot(t *testing.T) {
 	cs := framework.NewClientSet("")
-	delete := helpers.CreateMCP(t, cs, "infra")
+	deleteMCP := helpers.CreateMCP(t, cs, "infra")
 	workerOldMc := helpers.GetMcName(t, cs, "worker")
 
 	unlabelFunc := helpers.LabelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
@@ -313,13 +311,14 @@ func TestNoReboot(t *testing.T) {
 		if err := helpers.WaitForPoolComplete(t, cs, "worker", workerOldMc); err != nil {
 			t.Fatal(err)
 		}
-		delete()
+		deleteMCP()
 		require.Nil(t, cs.MachineConfigs().Delete(context.TODO(), oldInfraConfig.Name, metav1.DeleteOptions{}))
-
 	})
 	_, err := cs.MachineConfigs().Create(context.TODO(), oldInfraConfig, metav1.CreateOptions{})
 	require.Nil(t, err)
 	oldInfraRenderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", oldInfraConfig.Name)
+	require.NoError(t, err)
+
 	infraNode := helpers.GetSingleNodeByRole(t, cs, "infra")
 
 	sshKeyContent := "test adding authorized key without node reboot"
@@ -550,7 +549,7 @@ func TestPoolDegradedOnFailToRender(t *testing.T) {
 func TestDontDeleteRPMFiles(t *testing.T) {
 	cs := framework.NewClientSet("")
 
-	delete := helpers.CreateMCP(t, cs, "infra")
+	deleteMCP := helpers.CreateMCP(t, cs, "infra")
 	workerOldMc := helpers.GetMcName(t, cs, "worker")
 
 	unlabelFunc := helpers.LabelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
@@ -562,9 +561,8 @@ func TestDontDeleteRPMFiles(t *testing.T) {
 		if err := helpers.WaitForPoolComplete(t, cs, "worker", workerOldMc); err != nil {
 			t.Fatal(err)
 		}
-		delete()
+		deleteMCP()
 		require.Nil(t, cs.MachineConfigs().Delete(context.TODO(), oldInfraConfig.Name, metav1.DeleteOptions{}))
-
 	})
 
 	_, err := cs.MachineConfigs().Create(context.TODO(), oldInfraConfig, metav1.CreateOptions{})
@@ -1176,12 +1174,15 @@ func TestInstallRPMAndCheckMCDMetrics(t *testing.T) {
 
 	// Download the RPM package on the node
 	t.Logf("Downloading the RPM package on node %s", node.Name)
+	pkg := "epel-release-latest-10.noarch.rpm"
+	pkgSrc := "https://dl.fedoraproject.org/pub/epel/" + pkg
+	pkgDest := filepath.Join("/tmp", pkg)
 	downloadCmd := []string{
-		"chroot", "/rootfs", "curl", "-KL", "https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm", "-o", "/tmp/epel-release-latest-9.noarch.rpm",
+		"chroot", "/rootfs", "curl", "-L", pkgSrc, "-o", pkgDest,
 	}
 
-	_, err := helpers.ExecCmdOnNodeWithError(cs, node, downloadCmd...)
-	require.NoError(t, err, "Failed to download RPM package on node %s: %v", node.Name, err)
+	output, err := helpers.ExecCmdOnNodeWithError(cs, node, downloadCmd...)
+	require.NoError(t, err, "Failed to download RPM package on node %s: %v: error: %v", node.Name, output, err)
 	t.Logf("RPM package downloaded successfully")
 
 	// Reboot the node to apply changes
@@ -1193,7 +1194,7 @@ func TestInstallRPMAndCheckMCDMetrics(t *testing.T) {
 	t.Logf("Executing rpm-ostree install command on node %s", node.Name)
 	// Install the RPM package
 	installCmd := []string{
-		"chroot", "/rootfs", "rpm-ostree", "install", "/tmp/epel-release-latest-9.noarch.rpm",
+		"chroot", "/rootfs", "rpm-ostree", "install", pkgDest,
 	}
 
 	out, err := helpers.ExecCmdOnNodeWithError(cs, node, installCmd...)

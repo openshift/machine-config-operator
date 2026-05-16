@@ -1,9 +1,11 @@
-FROM quay.io/centos/centos:stream9 AS centos
-RUN dnf install -y epel-release
+FROM quay.io/centos/centos:stream10 AS centos
+RUN dnf install -y epel-release && \
+  sed -i 's/\$stream/10-stream/g' /etc/yum.repos.d/centos*.repo && \
+  sed -i 's/EPEL\-\$releasever_major/EPEL-10/g' /etc/yum.repos.d/epel*.repo && \
+  sed -i -E 's/\$\{releasever_minor\:\+\-z\}//g' /etc/yum.repos.d/epel*.repo
 
 FROM configs AS final
 COPY --from=centos /etc/yum.repos.d /etc/yum.repos.d
 COPY --from=centos /etc/pki/rpm-gpg/RPM-GPG-KEY-* /etc/pki/rpm-gpg/
-RUN sed -i 's/\$stream/9-stream/g' /etc/yum.repos.d/centos*.repo && \
-    rpm-ostree install cowsay && \
-		ostree container commit
+RUN dnf install -y cowsay && \
+  ostree container commit

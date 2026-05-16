@@ -29,7 +29,10 @@ RUN if [ "${TAGS}" = "fcos" ]; then \
     # comment out rhel-coreos-10 for scos
     sed -i '/- name: rhel-coreos-10/,+3 s/^/#/' /manifests/* && \
     # rewrite image names for scos
-    sed -i 's/rhel-coreos/stream-coreos/g' /manifests/*; fi && \
+    sed -i 's/rhel-coreos/stream-coreos/g' /manifests/*; \
+    else \
+    # rewrite image names for rhel-coreos-10
+    sed -i 's/rhel-coreos/rhel-coreos-10/g' /manifests/0000_80_machine-config_05_osimageurl.yaml; fi && \
     dnf -y install 'nmstate >= 2.2.10' && \
     if ! rpm -q util-linux; then dnf install -y util-linux; fi && \
     # We also need to install fuse-overlayfs and cpp for Buildah to work correctly.

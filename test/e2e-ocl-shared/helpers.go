@@ -861,7 +861,7 @@ func SkipIfEntitlementNotPresent(t *testing.T, cs *framework.ClientSet) {
 	require.NoError(t, err)
 }
 
-// Uses the centos stream 9 container and extracts the contents of both the
+// Uses the centos stream 10 container and extracts the contents of both the
 // /etc/yum.repos.d and /etc/pki/rpm-gpg directories and injects those into a
 // ConfigMap and Secret, respectively. This is so that the build process will
 // consume those objects as part of the build process, injecting them into the
@@ -872,7 +872,7 @@ func InjectYumRepos(t *testing.T, cs *framework.ClientSet, skipCleanupAlways, sk
 	yumReposPath := filepath.Join(tempDir, "yum-repos-d")
 	require.NoError(t, os.MkdirAll(yumReposPath, 0o755))
 
-	centosPullspec := "quay.io/centos/centos:stream9"
+	centosPullspec := "quay.io/centos/centos:stream10"
 	yumReposContents := ConvertFilesFromContainerImageToBytesMap(t, centosPullspec, "/etc/yum.repos.d/")
 	rpmGpgContents := ConvertFilesFromContainerImageToBytesMap(t, centosPullspec, "/etc/pki/rpm-gpg/")
 

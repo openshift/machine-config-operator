@@ -114,8 +114,11 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 			containerFileContent = `
 	# Pull the centos base image and enable the EPEL repository.
-        FROM quay.io/centos/centos:stream9 AS centos
-        RUN dnf install -y epel-release
+        FROM quay.io/centos/centos:stream10 AS centos
+        RUN dnf install -y epel-release && \
+	          sed -i 's/\$stream/10-stream/g' /etc/yum.repos.d/centos*.repo && \
+	          sed -i 's/EPEL\-\$releasever_major/EPEL-10/g' /etc/yum.repos.d/epel*.repo && \
+	          sed -i -E 's/\$\{releasever_minor\:\+\-z\}//g' /etc/yum.repos.d/epel*.repo
 
         # Pull an image containing the yq utility.
         FROM quay.io/multi-arch/yq:4.25.3 AS yq
@@ -130,8 +133,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
         # Install cowsay and ripgrep from the EPEL repository into the final image,
         # along with a custom cow file.
-        RUN sed -i 's/\$stream/9-stream/g' /etc/yum.repos.d/centos*.repo && \
-            rpm-ostree install cowsay ripgrep
+        RUN dnf install -y cowsay ripgrep
 `
 
 			checkers = []Checker{
