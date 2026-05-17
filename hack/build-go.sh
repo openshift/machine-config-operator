@@ -5,7 +5,7 @@ set -eu
 REPO=github.com/openshift/machine-config-operator
 WHAT=${WHAT:-machine-config-operator}
 WHAT_PATH="${WHAT_PATH:-cmd/${WHAT}}"
-GOTAGS="${GOTAGS:-} ${TAGS:-}"
+GOTAGS="${GOTAGS:-}"
 GLDFLAGS=${GLDFLAGS:-}
 
 eval $(go env | grep -e "GOHOSTOS" -e "GOHOSTARCH")
