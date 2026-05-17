@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-machine-config-operator
+  namespace: {{.TargetNamespace}}
+spec:
+  podSelector:
+    matchLabels:
+      k8s-app: machine-config-operator
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    ports:
+    - protocol: TCP
+      port: 6443
+  - to:
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
