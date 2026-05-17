@@ -80,6 +80,42 @@ func TestMachineConfigNodesStatus(t *testing.T) {
 	}
 }
 
+func TestInternalReleaseImageAggregatedStatus(t *testing.T) {
+	skipIfNoBaremetal(t)
+
+	cs := framework.NewClientSet("")
+	ctx := context.Background()
+
+	iri, err := cs.InternalReleaseImages().Get(ctx, "cluster", v1.GetOptions{})
+	require.NoError(t, err)
+
+	require.NotEmpty(t, iri.Status.Releases, "Cluster-level IRI should have aggregated releases")
+	baseDomain := getBaseDomain(t, cs)
+
+	// Verify each release in the aggregated status
+	for _, release := range iri.Status.Releases {
+		// Release should use api-int URL format, not localhost
+		require.Contains(t, release.Image, "api-int."+baseDomain, "Aggregated release should use api-int URL")
+		require.NotContains(t, release.Image, "localhost", "Aggregated release should not use localhost")
+
+		require.NotEmpty(t, release.Conditions, "Release should have conditions")
+	}
+
+	requireCondition(t, iri.Status.Conditions, string(mcfgv1alpha1.InternalReleaseImageStatusConditionTypeDegraded), v1.ConditionFalse)
+
+	// The reason should be AllReleasesAvailable in a healthy cluster
+	for _, cond := range iri.Status.Conditions {
+		if cond.Type == string(mcfgv1alpha1.InternalReleaseImageStatusConditionTypeDegraded) {
+			require.Equal(t, "AllReleasesAvailable", cond.Reason, "In a healthy cluster, reason should be AllReleasesAvailable")
+		}
+	}
+
+	require.Len(t, iri.Status.Releases, len(iri.Spec.Releases), "Status releases should match spec releases count")
+	for i, specRelease := range iri.Spec.Releases {
+		require.Equal(t, specRelease.Name, iri.Status.Releases[i].Name, "Release names should match between spec and status")
+	}
+}
+
 func requireCondition(t *testing.T, conditions []v1.Condition, condType string, condStatus v1.ConditionStatus) {
 	t.Helper()
 	for _, c := range conditions {

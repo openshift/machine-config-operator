@@ -4,6 +4,7 @@ package internalreleaseimage
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
@@ -284,4 +285,128 @@ func clusterVersion() *clusterVersionBuilder {
 
 func (cvb *clusterVersionBuilder) build() runtime.Object {
 	return cvb.obj
+}
+
+// machineConfigNodeBuilder simplifies the creation of a MachineConfigNode resource in the test.
+type machineConfigNodeBuilder struct {
+	obj *mcfgv1.MachineConfigNode
+}
+
+func mcn(name string) *machineConfigNodeBuilder {
+	return &machineConfigNodeBuilder{
+		obj: &mcfgv1.MachineConfigNode{
+			ObjectMeta: v1.ObjectMeta{
+				Name: name,
+			},
+			Status: mcfgv1.MachineConfigNodeStatus{
+				InternalReleaseImage: mcfgv1.MachineConfigNodeStatusInternalReleaseImage{
+					Releases: []mcfgv1.MachineConfigNodeStatusInternalReleaseImageRef{
+						{
+							Name:  "ocp-release-bundle-4.21.5-x86_64",
+							Image: "localhost:22625/openshift/release-images@sha256:abc123",
+							Conditions: []v1.Condition{
+								{
+									Type:   string(mcfgv1alpha1.InternalReleaseImageConditionTypeAvailable),
+									Status: v1.ConditionTrue,
+									Reason: "ReleaseImageAvailable",
+								},
+								{
+									Type:   string(mcfgv1alpha1.InternalReleaseImageConditionTypeDegraded),
+									Status: v1.ConditionFalse,
+									Reason: "ReleaseImageAvailable",
+								},
+							},
+						},
+					},
+				},
+				Conditions: []v1.Condition{
+					{
+						Type:   string(mcfgv1.MachineConfigNodeInternalReleaseImageDegraded),
+						Status: v1.ConditionFalse,
+						Reason: "AllReleasesAvailable",
+					},
+				},
+			},
+		},
+	}
+}
+
+func (mb *machineConfigNodeBuilder) degraded() *machineConfigNodeBuilder {
+	// Mark MCN as degraded
+	for i := range mb.obj.Status.Conditions {
+		if mb.obj.Status.Conditions[i].Type == string(mcfgv1.MachineConfigNodeInternalReleaseImageDegraded) {
+			mb.obj.Status.Conditions[i].Status = v1.ConditionTrue
+			mb.obj.Status.Conditions[i].Reason = "RegistryUnreachable"
+		}
+	}
+	// Mark release as degraded
+	for i := range mb.obj.Status.InternalReleaseImage.Releases {
+		for j := range mb.obj.Status.InternalReleaseImage.Releases[i].Conditions {
+			if mb.obj.Status.InternalReleaseImage.Releases[i].Conditions[j].Type == string(mcfgv1alpha1.InternalReleaseImageConditionTypeDegraded) {
+				mb.obj.Status.InternalReleaseImage.Releases[i].Conditions[j].Status = v1.ConditionTrue
+				mb.obj.Status.InternalReleaseImage.Releases[i].Conditions[j].Reason = "RegistryUnreachable"
+			}
+		}
+	}
+	return mb
+}
+
+func (mb *machineConfigNodeBuilder) build() runtime.Object {
+	return mb.obj
+}
+
+// nodeBuilder simplifies the creation of a Node resource in the test.
+type nodeBuilder struct {
+	obj *corev1.Node
+}
+
+func node(name string) *nodeBuilder {
+	labels := make(map[string]string)
+	// Control plane nodes have "master" in the name
+	if strings.Contains(name, "master") {
+		labels["node-role.kubernetes.io/master"] = ""
+	}
+
+	return &nodeBuilder{
+		obj: &corev1.Node{
+			ObjectMeta: v1.ObjectMeta{
+				Name:   name,
+				Labels: labels,
+			},
+			Status: corev1.NodeStatus{
+				Conditions: []corev1.NodeCondition{
+					{
+						Type:   corev1.NodeReady,
+						Status: corev1.ConditionTrue,
+					},
+				},
+			},
+		},
+	}
+}
+
+func (nb *nodeBuilder) build() runtime.Object {
+	return nb.obj
+}
+
+// infrastructureBuilder simplifies the creation of an Infrastructure resource in the test.
+type infrastructureBuilder struct {
+	obj *configv1.Infrastructure
+}
+
+func infrastructure() *infrastructureBuilder {
+	return &infrastructureBuilder{
+		obj: &configv1.Infrastructure{
+			ObjectMeta: v1.ObjectMeta{
+				Name: "cluster",
+			},
+			Status: configv1.InfrastructureStatus{
+				APIServerInternalURL: "https://api-int.example.com:6443",
+			},
+		},
+	}
+}
+
+func (ib *infrastructureBuilder) build() runtime.Object {
+	return ib.obj
 }
