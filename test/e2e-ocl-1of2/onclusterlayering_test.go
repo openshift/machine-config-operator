@@ -40,8 +40,10 @@ const (
 	mcNameUsbguard string = "inspect-usbguard"
 )
 
-var skipCleanupAlways bool
-var skipCleanupOnlyAfterFailure bool
+var (
+	skipCleanupAlways           bool
+	skipCleanupOnlyAfterFailure bool
+)
 
 func init() {
 	// Skips running the cleanup functions. Useful for debugging tests.
@@ -79,7 +81,7 @@ func TestOnClusterLayering(t *testing.T) {
 	_, firstMosb := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
-			layeredMCPName: ocltesthelper.CowsayDockerfile,
+			layeredMCPName: ocltesthelper.CowsayDockerfileRHEL10,
 		},
 	})
 
@@ -115,18 +117,18 @@ func TestOnClusterBuildRollsOutImage(t *testing.T) {
 		requiredKernelType = ctrlcommon.KernelType64kPages
 	}
 
+	cs := framework.NewClientSet("")
+	node := helpers.GetRandomNode(t, cs, "worker")
+
 	imagePullspec, _ := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
-			layeredMCPName: ocltesthelper.CowsayDockerfile,
+			layeredMCPName: ocltesthelper.GetCowsayDockerfileForNode(t, cs, node),
 		},
 		machineConfigs: []*mcfgv1.MachineConfig{
 			ocltesthelper.NewMachineConfigWithKernelType(fmt.Sprintf("%s-kernel-machineconfig", requiredKernelType), layeredMCPName, requiredKernelType),
 		},
 	})
-
-	cs := framework.NewClientSet("")
-	node := helpers.GetRandomNode(t, cs, "worker")
 
 	unlabelFunc := ocltesthelper.MakeIdempotentAndRegisterAlwaysRun(t, helpers.LabelNode(t, cs, node, helpers.MCPNameToRole(layeredMCPName)))
 	helpers.WaitForNodeImageChange(t, cs, node, imagePullspec)
@@ -166,7 +168,7 @@ func TestMissingImageIsRebuilt(t *testing.T) {
 	firstImagePullspec, firstMOSB := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
-			layeredMCPName: ocltesthelper.CowsayDockerfile,
+			layeredMCPName: ocltesthelper.CowsayDockerfileRHEL10,
 		},
 	})
 
@@ -302,7 +304,7 @@ func TestMachineOSConfigChangeRestartsBuild(t *testing.T) {
 	mosc := prepareForOnClusterLayeringTest(t, cs, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
-			layeredMCPName: ocltesthelper.CowsayDockerfile,
+			layeredMCPName: ocltesthelper.CowsayDockerfileRHEL10,
 		},
 	})
 
@@ -361,7 +363,7 @@ func TestMachineConfigPoolChangeRestartsBuild(t *testing.T) {
 	mosc := prepareForOnClusterLayeringTest(t, cs, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
-			layeredMCPName: ocltesthelper.CowsayDockerfile,
+			layeredMCPName: ocltesthelper.CowsayDockerfileRHEL10,
 		},
 	})
 
@@ -401,7 +403,7 @@ func TestRebuildAnnotationRestartsBuild(t *testing.T) {
 	mosc := prepareForOnClusterLayeringTest(t, cs, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
-			layeredMCPName: ocltesthelper.CowsayDockerfile,
+			layeredMCPName: ocltesthelper.CowsayDockerfileRHEL10,
 		},
 	})
 
@@ -915,7 +917,6 @@ func waitForMOSCToUpdateCurrentMOSB(ctx context.Context, t *testing.T, cs *frame
 		// The stale annotation fix may temporarily clear the annotation, so we need
 		// to wait for the new MOSB to be created and annotation set.
 		return currentMOSB != "" && currentMOSB != mosbName, nil
-
 	}))
 	return currentMOSB
 }

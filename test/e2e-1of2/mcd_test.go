@@ -1177,7 +1177,8 @@ func TestInstallRPMAndCheckMCDMetrics(t *testing.T) {
 	// Download the RPM package on the node
 	t.Logf("Downloading the RPM package on node %s", node.Name)
 	downloadCmd := []string{
-		"chroot", "/rootfs", "curl", "-KL", "https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm", "-o", "/tmp/epel-release-latest-9.noarch.rpm",
+		// TODO: Switch this to use epel-release-latest-10 in the future.
+		"chroot", "/rootfs", "curl", "-L", "https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm", "-o", "/tmp/epel-release-latest-9.noarch.rpm",
 	}
 
 	_, err := helpers.ExecCmdOnNodeWithError(cs, node, downloadCmd...)

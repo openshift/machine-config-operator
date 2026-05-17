@@ -112,8 +112,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		var (
 			mcp = GetCompactCompatiblePool(oc.AsAdmin())
 
-			containerFileContent = `
-	# Pull the centos base image and enable the EPEL repository.
+			rhel9ContainerFileContent = `
+        # Pull the centos base image and enable the EPEL repository.
         FROM quay.io/centos/centos:stream9 AS centos
         RUN dnf install -y epel-release
 
@@ -134,6 +134,33 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
             rpm-ostree install cowsay ripgrep
 `
 
+			rhel10ContainerFileContent = `
+        # Pull the centos base image and enable the EPEL repository.
+        FROM quay.io/centos/centos:stream10 AS centos
+        RUN dnf install -y epel-release && \
+	          sed -i 's/\$stream/10-stream/g' /etc/yum.repos.d/centos*.repo && \
+	          sed -i 's/EPEL\-\$releasever_major/EPEL-10/g' /etc/yum.repos.d/epel*.repo && \
+	          sed -i -E 's/\$\{releasever_minor\:\+\-z\}//g' /etc/yum.repos.d/epel*.repo
+
+        # Pull an image containing the yq utility.
+        FROM quay.io/multi-arch/yq:4.25.3 AS yq
+
+        # Build the final OS image for this MachineConfigPool.
+        FROM configs AS final
+
+        # Copy the EPEL configs into the final image.
+        COPY --from=yq /usr/bin/yq /usr/bin/yq
+        COPY --from=centos /etc/yum.repos.d /etc/yum.repos.d
+        COPY --from=centos /etc/pki/rpm-gpg/RPM-GPG-KEY-* /etc/pki/rpm-gpg/
+
+        # Install cowsay and ripgrep from the EPEL repository into the final image,
+        # along with a custom cow file.
+        RUN dnf install -y cowsay ripgrep
+`
+
+			// Default to the RHEL 10 Containerfile.
+			containerFileContent = rhel10ContainerFileContent
+
 			checkers = []Checker{
 				CommandOutputChecker{
 					Command:  []string{"cowsay", "-t", "hello"},
@@ -143,6 +170,15 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 				},
 			}
 		)
+
+		// Get a worker node and determine which OS it is running so that the correct Containerfile can be used.
+		workerNode := NewNodeList(oc.AsAdmin()).GetAllWorkerNodesOrFail()[0]
+		rhelVersion, err := workerNode.GetRHELVersion()
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		if !strings.Contains(rhelVersion, "10.") {
+			containerFileContent = rhel9ContainerFileContent
+		}
 
 		testContainerFile([]ContainerFile{{Content: containerFileContent}}, MachineConfigNamespace, mcp, checkers, false)
 	})

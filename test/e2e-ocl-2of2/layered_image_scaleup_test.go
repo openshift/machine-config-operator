@@ -39,20 +39,20 @@ func TestLayeredImageServingDuringNodeScaleUp(t *testing.T) {
 
 	cs := framework.NewClientSet("")
 
+	existingNode := helpers.GetRandomNode(t, cs, "worker")
+
 	// Step 1: Build the layered image (this creates the MCP and MOSC)
 	t.Logf("Creating layered image build for pool %q", layeredMCPName)
 	imagePullspec, _ := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
-			layeredMCPName: e2e_ocl_shared_test.CowsayDockerfile,
+			layeredMCPName: e2e_ocl_shared_test.GetCowsayDockerfileForNode(t, cs, existingNode),
 		},
 	})
 
 	t.Logf("Layered image build completed, image pullspec: %s", imagePullspec)
 
-	// Step 2: Get a random worker node and label it to opt into the layered pool
-	t.Logf("Selecting a random worker node to opt into pool %q", layeredMCPName)
-	existingNode := helpers.GetRandomNode(t, cs, "worker")
+	// Step 2: Label the worker node to opt into the layered pool
 	t.Logf("Selected node %s to opt into layered pool", existingNode.Name)
 
 	// Label the node to add it to the layered pool
