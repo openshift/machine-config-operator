@@ -183,6 +183,20 @@ MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuOSW8w==
 			expectProxy:   true,
 		},
 		{
+			name: "WithControllerConfig only - just rootCA",
+			controllerConfig: &mcfgv1.ControllerConfig{
+				Spec: mcfgv1.ControllerConfigSpec{
+					RootCAData: []byte(`-----BEGIN CERTIFICATE-----
+MIICljCCAX4CCQCKz8Vz4VR5+jANBgkqhkiG9w0BAQsFADANMQswCQYDVQQGEwJV
+UzAeFw0yMDAxMDEwMDAwMDBaFw0zMDAxMDEwMDAwMDBaMA0xCzAJBgNVBAYTAlVT
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuOSW8w==
+-----END CERTIFICATE-----`),
+				},
+			},
+			expectTempDir: true,
+			expectCerts:   true,
+		},
+		{
 			name: "Both WithSecret and WithControllerConfig",
 			secret: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
