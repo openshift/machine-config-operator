@@ -216,6 +216,7 @@ var (
 		"nutanix":           "./test_data/controller_config_nutanix.yaml",
 		"gcp-custom-dns":    "./test_data/controller_config_gcp_custom_dns.yaml",
 		"gcp-default-dns":   "./test_data/controller_config_gcp_default_dns.yaml",
+		"baremetal-tnf":     "./test_data/controller_config_baremetal_tnf.yaml",
 	}
 )
 
@@ -351,6 +352,84 @@ func TestGenerateMachineConfigs(t *testing.T) {
 	}
 }
 
+func TestKubeletGracefulShutdownTNF(t *testing.T) {
+	cases := []struct {
+		name             string
+		controllerConfig string
+		expectGraceful   bool
+	}{
+		{
+			name:             "DualReplica has graceful shutdown",
+			controllerConfig: "./test_data/controller_config_baremetal_tnf.yaml",
+			expectGraceful:   true,
+		},
+		{
+			name:             "HA does not have graceful shutdown",
+			controllerConfig: "./test_data/controller_config_baremetal.yaml",
+			expectGraceful:   false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			controllerConfig, err := controllerConfigFromFile(tc.controllerConfig)
+			if err != nil {
+				t.Fatalf("failed to load controller config: %v", err)
+			}
+
+			cfgs, err := generateTemplateMachineConfigs(
+				&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil},
+				templateDir,
+			)
+			if err != nil {
+				t.Fatalf("failed to generate machine configs: %v", err)
+			}
+
+			found := false
+			for _, cfg := range cfgs {
+				role := cfg.Labels[mcfgv1.MachineConfigRoleLabelKey]
+				if role != masterRole {
+					continue
+				}
+
+				ign, err := ctrlcommon.ParseAndConvertConfig(cfg.Spec.Config.Raw)
+				if err != nil {
+					t.Fatalf("failed to parse ignition config: %v", err)
+				}
+
+				for _, file := range ign.Storage.Files {
+					if file.Path != "/etc/kubernetes/kubelet.conf" {
+						continue
+					}
+
+					found = true
+					contents, err := ctrlcommon.DecodeIgnitionFileContents(file.Contents.Source, file.Contents.Compression)
+					if err != nil {
+						t.Fatalf("failed to decode kubelet.conf contents: %v", err)
+					}
+
+					kubeletConf := string(contents)
+					if tc.expectGraceful {
+						if !strings.Contains(kubeletConf, "shutdownGracePeriod: 90s") {
+							t.Errorf("expected shutdownGracePeriod in kubelet.conf for DualReplica")
+						}
+						if !strings.Contains(kubeletConf, "shutdownGracePeriodCriticalPods: 60s") {
+							t.Errorf("expected shutdownGracePeriodCriticalPods in kubelet.conf for DualReplica")
+						}
+					} else {
+						if strings.Contains(kubeletConf, "shutdownGracePeriod") {
+							t.Errorf("unexpected shutdownGracePeriod in kubelet.conf for non-DualReplica")
+						}
+					}
+				}
+			}
+			if !found {
+				t.Fatal("kubelet.conf file not found in any master ignition config")
+			}
+		})
+	}
+}
+
 func TestGetPaths(t *testing.T) {
 	APIIntLBIP := configv1.IP("10.10.10.4")
 	APILBIP := configv1.IP("196.78.125.4")
@@ -369,6 +448,10 @@ func TestGetPaths(t *testing.T) {
 		platform: configv1.BareMetalPlatformType,
 		res:      []string{strings.ToLower(string(configv1.BareMetalPlatformType)), "on-prem"},
 		topology: configv1.HighlyAvailableTopologyMode,
+	}, {
+		platform: configv1.BareMetalPlatformType,
+		res:      []string{strings.ToLower(string(configv1.BareMetalPlatformType)), "on-prem", tnf},
+		topology: configv1.DualReplicaTopologyMode,
 	}, {
 		platform: configv1.GCPPlatformType,
 		res:      []string{strings.ToLower(string(configv1.GCPPlatformType))},
