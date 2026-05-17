@@ -22,7 +22,6 @@ contents: |
   EnvironmentFile=/etc/os-release
   EnvironmentFile=-/etc/kubernetes/kubelet-workaround
   EnvironmentFile=-/etc/kubernetes/kubelet-env
-  EnvironmentFile=/etc/node-sizing.env
 
   ExecStart=/usr/local/bin/kubenswrapper \
       /usr/bin/kubelet \
@@ -44,7 +43,6 @@ contents: |
         {{credentialProviderConfigFlag . }} \
         --hostname-override=${KUBELET_NODE_NAME} \
         --provider-id=${KUBELET_PROVIDERID} \
-        --system-reserved=cpu=${SYSTEM_RESERVED_CPU},memory=${SYSTEM_RESERVED_MEMORY},ephemeral-storage=${SYSTEM_RESERVED_ES} \
         --v=${KUBELET_LOG_LEVEL}
 
   Restart=always
