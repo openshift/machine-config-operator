@@ -32,6 +32,16 @@ var (
 				},
 			},
 			{
+				// The Distribution registry re-reads htpasswd on mtime change,
+				// so credential rotation does not require a service restart.
+				Path: "/etc/iri-registry/auth/htpasswd",
+				Actions: []opv1.NodeDisruptionPolicyStatusAction{
+					{
+						Type: opv1.NoneStatusAction,
+					},
+				},
+			},
+			{
 				Path: constants.GPGNoRebootPath,
 				Actions: []opv1.NodeDisruptionPolicyStatusAction{
 					{

@@ -46,18 +46,30 @@ type registryErrorResponse struct {
 	Errors []registryErrorCode `json:"errors"`
 }
 
-func newIRIRegistry(nodeName string, client *http.Client, authToken string) *iriRegistry {
-	return &iriRegistry{
+// newIRIRegistry creates an iriRegistry. If authTokenOverride is non-empty it
+// is used directly (for testing); otherwise the auth token is read from the
+// kubelet auth file at construction time.
+func newIRIRegistry(nodeName string, client *http.Client, authTokenOverride string) (*iriRegistry, error) {
+	r := &iriRegistry{
 		nodeName:         nodeName,
 		client:           client,
 		registryHostPort: fmt.Sprintf("%s:%d", iriRegistryHost, iriRegistryPort),
-		authToken:        authToken,
 	}
+	if authTokenOverride != "" {
+		r.authToken = authTokenOverride
+		return r, nil
+	}
+	authToken, err := r.readAuthToken()
+	if err != nil {
+		return nil, err
+	}
+	r.authToken = authToken
+	return r, nil
 }
 
-// readIRIAuthToken reads the base64-encoded auth token for the IRI registry
-// from the kubelet auth file (/var/lib/kubelet/config.json).
-func readIRIAuthToken(registryHostPort string) (string, error) {
+// readAuthToken reads the base64-encoded auth token for this registry from the
+// kubelet auth file (/var/lib/kubelet/config.json).
+func (r *iriRegistry) readAuthToken() (string, error) {
 	data, err := os.ReadFile(constants.KubeletAuthFile)
 	if err != nil {
 		return "", fmt.Errorf("could not read %s for IRI registry auth: %w", constants.KubeletAuthFile, err)
@@ -72,10 +84,10 @@ func readIRIAuthToken(registryHostPort string) (string, error) {
 		return "", fmt.Errorf("could not parse %s for IRI registry auth: %w", constants.KubeletAuthFile, err)
 	}
 
-	if entry, ok := dockerConfig.Auths[registryHostPort]; ok && entry.Auth != "" {
+	if entry, ok := dockerConfig.Auths[r.registryHostPort]; ok && entry.Auth != "" {
 		return entry.Auth, nil
 	}
-	return "", fmt.Errorf("no auth entry found for %s in %s", registryHostPort, constants.KubeletAuthFile)
+	return "", fmt.Errorf("no auth entry found for %s in %s", r.registryHostPort, constants.KubeletAuthFile)
 }
 
 func (r *iriRegistry) query(endpoint string, headers ...map[string]string) (*http.Response, error) {
