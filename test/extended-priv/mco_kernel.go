@@ -136,7 +136,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 			expectedLogArg1Regex = regexp.QuoteMeta("Running rpm-ostree [kargs") + ".*" + regexp.QuoteMeta(fmt.Sprintf("--append=%s", kernelArg1)) +
 				".*" + regexp.QuoteMeta("]")
-			expectedLogArg2Regex = regexp.QuoteMeta("Running rpm-ostree [kargs") + ".*" + regexp.QuoteMeta(fmt.Sprintf("--delete=%s", kernelArg1)) +
+			expectedLogArg2Regex = regexp.QuoteMeta("Running rpm-ostree [kargs") + ".*" + regexp.QuoteMeta(fmt.Sprintf("--delete-if-present=%s", kernelArg1)) +
 				".*" + regexp.QuoteMeta(fmt.Sprintf("--append=%s", kernelArg1)) +
 				".*" + regexp.QuoteMeta(fmt.Sprintf("--append=%s", kernelArg2)) +
 				".*" + regexp.QuoteMeta("]")
