@@ -151,6 +151,9 @@ const (
 	mcsNodeBootstrapperServiceAccountManifestPath = "manifests/machineconfigserver/node-bootstrapper-sa.yaml"
 	mcsNodeBootstrapperTokenManifestPath          = "manifests/machineconfigserver/node-bootstrapper-token.yaml"
 	mcsDaemonsetManifestPath                      = "manifests/machineconfigserver/daemonset.yaml"
+	mcsEventsClusterRoleManifestPath              = "manifests/machineconfigserver/events-clusterrole.yaml"
+	mcsEventsRoleBindingDefaultManifestPath       = "manifests/machineconfigserver/events-rolebinding-default.yaml"
+	mcsEventsRoleBindingTargetManifestPath        = "manifests/machineconfigserver/events-rolebinding-target.yaml"
 
 	// Machine OS puller manifest paths
 	mopRoleBindingManifestPath    = "manifests/machine-os-puller/rolebinding.yaml"
@@ -1670,6 +1673,11 @@ func (optr *Operator) syncMachineConfigServer(config *renderConfig, _ *configv1.
 	paths := manifestPaths{
 		clusterRoles: []string{
 			mcsClusterRoleManifestPath,
+			mcsEventsClusterRoleManifestPath,
+		},
+		roleBindings: []string{
+			mcsEventsRoleBindingDefaultManifestPath,
+			mcsEventsRoleBindingTargetManifestPath,
 		},
 		clusterRoleBindings: []string{
 			mcsClusterRoleBindingManifestPath,
