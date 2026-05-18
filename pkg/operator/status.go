@@ -407,6 +407,7 @@ func (optr *Operator) cfeEvalRunc() (bool, error) {
 			return true, nil
 		}
 	}
+
 	return false, nil
 }
 
