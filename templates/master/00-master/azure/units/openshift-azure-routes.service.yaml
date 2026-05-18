@@ -8,6 +8,6 @@ contents: |
   
   [Service]
   Type=simple
-  ExecStart=/bin/bash /opt/libexec/openshift-azure-routes.sh start
+  ExecStart=/usr/bin/flock --exclusive --nonblock /run/azure-routes.lock /bin/bash /opt/libexec/openshift-azure-routes.sh start
   User=root
   SyslogIdentifier=openshift-azure-routes
