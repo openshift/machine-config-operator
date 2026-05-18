@@ -1385,7 +1385,8 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 
 	defer func() {
 		if retErr != nil {
-			if err := dn.updateFiles(newIgnConfig, oldIgnConfig, addedOrChangedUnits, skipCertificateWrite, false); err != nil {
+			rollbackUnitDiff := ctrlcommon.GetChangedConfigUnitsByType(&newIgnConfig, &oldIgnConfig)
+			if err := dn.updateFiles(newIgnConfig, oldIgnConfig, slices.Concat(rollbackUnitDiff.Added, rollbackUnitDiff.Updated), skipCertificateWrite, false); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
 				retErr = fmt.Errorf("error rolling back files writes: %w", errs)
 				return
@@ -1525,7 +1526,8 @@ func (dn *Daemon) updateHypershift(oldConfig, newConfig *mcfgv1.MachineConfig, d
 
 	defer func() {
 		if retErr != nil {
-			if err := dn.updateFiles(newIgnConfig, oldIgnConfig, addedOrChangedUnits, false, false); err != nil {
+			rollbackUnitDiff := ctrlcommon.GetChangedConfigUnitsByType(&newIgnConfig, &oldIgnConfig)
+			if err := dn.updateFiles(newIgnConfig, oldIgnConfig, slices.Concat(rollbackUnitDiff.Added, rollbackUnitDiff.Updated), false, false); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
 				retErr = fmt.Errorf("error rolling back files writes: %w", errs)
 				return
