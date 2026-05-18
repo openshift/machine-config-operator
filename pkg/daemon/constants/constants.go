@@ -124,6 +124,9 @@ const (
 	// DaemonReloadCommand is used to specify reloads and restarts of the systemd manager configuration
 	DaemonReloadCommand = "daemon-reload"
 
+	// IRIRegistryServiceName is the systemd unit for the InternalReleaseImage registry
+	IRIRegistryServiceName = "iri-registry.service"
+
 	// UpdateCATrustServiceName is a service present on CoresOS nodes that runs the update-ca-trust command
 	UpdateCATrustServiceName = "coreos-update-ca-trust.service"
 
@@ -149,11 +152,10 @@ const (
 
 	KubeletCrioImageCredProviderConfPath = "/etc/systemd/system/kubelet.service.d/40-kubelet-crio-image-credential-provider.conf"
 
-	// IRI (InternalReleaseImage) registry paths and service
+	// IRI (InternalReleaseImage) registry paths
 	IRIRegistryConfigPath  = "/etc/iri-registry"
 	IRILoadImageScriptPath = "/usr/local/bin/load-registry-image.sh"
 	IRIRootCAPath          = "/etc/pki/ca-trust/source/anchors/iri-root-ca.crt"
-	IRIRegistryServiceName = "iri-registry.service"
 
 	// rpm-ostree command arguments
 	RPMOSTreeUpdateArg    = "update"

@@ -170,7 +170,7 @@ var (
 		},
 		Units: []opv1.NodeDisruptionPolicyStatusUnit{
 			{
-				Name: constants.IRIRegistryServiceName,
+				Name: opv1.NodeDisruptionPolicyServiceName(constants.IRIRegistryServiceName),
 				Actions: []opv1.NodeDisruptionPolicyStatusAction{
 					{
 						Type: opv1.DaemonReloadStatusAction,

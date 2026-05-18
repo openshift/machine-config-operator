@@ -336,7 +336,11 @@ func (b *Bootstrap) Run(destDir string) error {
 
 	if fgHandler != nil && fgHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
 		if iri != nil {
-			iriConfigs, err := internalreleaseimage.RunInternalReleaseImageBootstrap(iri, iriTLSCert, iriCredentialsSecret, cconfig)
+			var tlsProfile *apicfgv1.TLSSecurityProfile
+			if apiServer != nil {
+				tlsProfile = apiServer.Spec.TLSSecurityProfile
+			}
+			iriConfigs, err := internalreleaseimage.RunInternalReleaseImageBootstrap(iri, iriTLSCert, iriCredentialsSecret, cconfig, tlsProfile)
 			if err != nil {
 				return err
 			}

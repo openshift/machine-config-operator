@@ -260,6 +260,110 @@ func TestIRIAuth_AuthenticatedRequestSucceeds(t *testing.T) {
 	require.Equal(t, "200", statusCode, "authenticated request should succeed")
 }
 
+// TestIRIController_VerifyTLSProfileEnforced verifies that the IRI registry
+// enforces the TLS minimum version derived from the cluster's APIServer TLS profile.
+// It connects with the expected minimum version (should succeed) and one version
+// below it (should be rejected). Uses ExecCmdOnNode to run curl on the node
+// directly, since port 22625 is not accessible from the CI test runner.
+func TestIRIController_VerifyTLSProfileEnforced(t *testing.T) {
+	cs := framework.NewClientSet("")
+	ctx := context.Background()
+
+	// Fetch authentication credentials for the IRI registry.
+	authSecret, err := cs.Secrets(ctrlcommon.MCONamespace).Get(ctx, ctrlcommon.InternalReleaseImageAuthSecretName, v1.GetOptions{})
+	require.NoError(t, err)
+	password := string(authSecret.Data["password"])
+	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(ctrlcommon.IRIRegistryUsername+":"+password))
+
+	// Read the cluster's APIServer TLS profile to determine the expected minimum version.
+	apiServerCfg, err := cs.ConfigV1Interface.APIServers().Get(context.Background(), "cluster", v1.GetOptions{})
+	require.NoError(t, err)
+
+	profileName, expectedMinVersion, rejectedVersion := tlsVersionsFromProfile(t, apiServerCfg.Spec.TLSSecurityProfile)
+	t.Logf("Cluster TLS profile: %s, expected minimum TLS version: %s", profileName, expectedMinVersion)
+
+	// Find a master node to exec commands on.
+	masterNodes, err := cs.CoreV1Interface.Nodes().List(context.TODO(), v1.ListOptions{LabelSelector: "node-role.kubernetes.io/master="})
+	require.NoError(t, err)
+	require.NotEmpty(t, masterNodes.Items)
+	node := masterNodes.Items[0]
+
+	// Verify the minimum TLS version succeeds.
+	t.Run(fmt.Sprintf("minimum version succeeds with %s profile", profileName), func(t *testing.T) {
+		out := helpers.ExecCmdOnNode(t, cs, node, "curl", "-s", "-k", "-o", "/dev/null", "-w", "%{http_code}",
+			"-H", "Authorization: "+authHeader,
+			"--tlsv"+expectedMinVersion, "--tls-max", expectedMinVersion,
+			"https://localhost:22625/v2/")
+		require.Equal(t, "200", out, "expected TLS %s to succeed", expectedMinVersion)
+	})
+
+	// Verify that one version below the minimum is rejected at the TLS layer.
+	// curl exits with status 35 (CURLE_SSL_CONNECT_ERROR) when the server
+	// rejects the TLS version during the handshake.
+	t.Run(fmt.Sprintf("below minimum is rejected with %s profile", profileName), func(t *testing.T) {
+		_, err := helpers.ExecCmdOnNodeWithError(cs, node, "curl", "-s", "-k", "-o", "/dev/null", "-w", "%{http_code}",
+			"-H", "Authorization: "+authHeader,
+			"--tlsv"+rejectedVersion, "--tls-max", rejectedVersion,
+			"https://localhost:22625/v2/")
+		require.Error(t, err, "TLS %s should be rejected with %s profile", rejectedVersion, profileName)
+		require.Contains(t, err.Error(), "exit status 35", "expected TLS handshake failure (exit status 35), got: %v", err)
+	})
+}
+
+// tlsVersionsFromProfile returns the profile name, expected minimum TLS version,
+// and the rejected TLS version (one below the minimum) for the given profile.
+// The versions are returned in curl format (e.g. "1.2", "1.3").
+func tlsVersionsFromProfile(t *testing.T, profile *configv1.TLSSecurityProfile) (profileName, expectedMinVersion, rejectedVersion string) {
+	t.Helper()
+
+	// Map from OpenShift TLS version strings to curl-compatible versions
+	// and the version below them for rejection testing.
+	tlsVersionMap := map[configv1.TLSProtocolVersion]struct{ curlVersion, belowVersion string }{
+		configv1.VersionTLS10: {"1.0", ""},
+		configv1.VersionTLS11: {"1.1", "1.0"},
+		configv1.VersionTLS12: {"1.2", "1.1"},
+		configv1.VersionTLS13: {"1.3", "1.2"},
+	}
+
+	// Determine the profile spec and name.
+	var minTLSVersion configv1.TLSProtocolVersion
+	if profile == nil {
+		profileName = "Intermediate (default)"
+		minTLSVersion = configv1.TLSProfiles[configv1.TLSProfileIntermediateType].MinTLSVersion
+	} else {
+		profileName = string(profile.Type)
+		switch profile.Type {
+		case configv1.TLSProfileCustomType:
+			if profile.Custom != nil && profile.Custom.MinTLSVersion != "" {
+				minTLSVersion = profile.Custom.MinTLSVersion
+			} else {
+				// Custom profile with no spec or unset MinTLSVersion: fall back to
+				// Intermediate, matching the controller's behaviour.
+				minTLSVersion = configv1.TLSProfiles[configv1.TLSProfileIntermediateType].MinTLSVersion
+			}
+		default:
+			spec, ok := configv1.TLSProfiles[profile.Type]
+			if !ok {
+				t.Fatalf("Unknown TLS profile type: %s", profile.Type)
+			}
+			minTLSVersion = spec.MinTLSVersion
+		}
+	}
+
+	versions, ok := tlsVersionMap[minTLSVersion]
+	if !ok {
+		t.Fatalf("Unknown TLS version: %s", minTLSVersion)
+	}
+	expectedMinVersion = versions.curlVersion
+	rejectedVersion = versions.belowVersion
+
+	if rejectedVersion == "" {
+		t.Skipf("Skipping rejection test: no TLS version below %s to test against", expectedMinVersion)
+	}
+
+	return profileName, expectedMinVersion, rejectedVersion
+}
+
 func TestIRIController_ShouldPreventDeletionWhenInUse(t *testing.T) {
 	skipIfNoBaremetal(t)
 
