@@ -236,6 +236,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	})
 
 	g.It("[PolarionID:88366][Skipped:Disconnected] osImageStream should be empty when osImageURL is set [apigroup:machineconfiguration.openshift.io]", func() {
+		SkipTestIfCannotUseInternalRegistry(oc.AsAdmin())
+
 		var (
 			testID        = GetCurrentTestPolarionIDNumber()
 			osLayerMCName = fmt.Sprintf("tc-%s-os-layer-custom", testID)
@@ -254,9 +256,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			"%s should report rhel-9 in status.osImageStream", mcp)
 		logger.Infof("%s osImageStream: %s", mcp, mcp.GetSafe(`{.status.osImageStream}`, ""))
 		logger.Infof("OK!\n")
-
-		exutil.By("Skip if the internal registry cannot be used")
-		SkipTestIfCannotUseInternalRegistry(oc.AsAdmin())
 
 		exutil.By("Build a custom OS image to use as osImageURL")
 		node = mcp.GetSortedNodesOrFail()[0]
