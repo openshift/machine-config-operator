@@ -45,15 +45,14 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 			name:           "add finalizer if not present",
 			initialObjects: objs(iri(), clusterVersion(), cconfig().withDNS("example.com"), iriCertSecret(), iriRegistryCredentialsSecret(), pullSecret()),
 			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
-				assert.Len(t, actualIRI.Finalizers, 2)
-				assert.Contains(t, actualIRI.Finalizers, masterName())
-				assert.Contains(t, actualIRI.Finalizers, workerName())
+				assert.Len(t, actualIRI.Finalizers, 1)
+				assert.Contains(t, actualIRI.Finalizers, iriFinalizerName)
 			},
 		},
 		{
 			name: "update status if not set",
 			initialObjects: objs(
-				iri().finalizer(masterName(), workerName()),
+				iri().finalizer(iriFinalizerName),
 				clusterVersion(), cconfig().withDNS("example.com"), iriCertSecret(), iriRegistryCredentialsSecret(), pullSecret()),
 			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
 				assert.Len(t, actualIRI.Status.Releases, 1)
@@ -75,7 +74,7 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 		{
 			name: "avoid machine-config drifting",
 			initialObjects: objs(
-				iri().finalizer(masterName(), workerName()),
+				iri().finalizer(iriFinalizerName),
 				clusterVersion(), cconfig().withDNS("example.com"), iriCertSecret(), iriRegistryCredentialsSecret(), pullSecret(),
 				machineconfigmaster().ignition("some garbage"),
 				machineconfigworker().ignition("other garbage")),
@@ -87,7 +86,7 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 		{
 			name: "refresh machine-config on controllerConfig update",
 			initialObjects: objs(
-				iri().finalizer(masterName(), workerName()),
+				iri().finalizer(iriFinalizerName),
 				clusterVersion(), cconfig().dockerRegistryImage("a-new-docker-registry-image-pullspec").withDNS("example.com"), iriCertSecret(), iriRegistryCredentialsSecret(), pullSecret(),
 				machineconfigmaster(), machineconfigworker()),
 			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
@@ -96,35 +95,21 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 			},
 		},
 		{
-			name: "machine-config cascade delete on iri removal - removes the first machineconfig",
+			name: "disables service and removes finalizer on iri deletion",
 			initialObjects: objs(
-				iri().finalizer(masterName(), workerName()).setDeletionTimestamp(),
+				iri().finalizer(iriFinalizerName).setDeletionTimestamp(),
 				clusterVersion(), cconfig(), iriCertSecret(),
 				machineconfigmaster(), machineconfigworker()),
 			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
-				assert.NotNil(t, iri)
-				assert.Equal(t, []string{workerName()}, actualIRI.Finalizers)
-				assert.Nil(t, actualMasterMC)
-				assert.NotNil(t, actualWorkerMC)
-			},
-		},
-		{
-			name: "machine-config cascade delete on iri removal - then removes the remaining machineconfig",
-			initialObjects: objs(
-				iri().finalizer(workerName()).setDeletionTimestamp(),
-				clusterVersion(), cconfig(), iriCertSecret(),
-				machineconfigworker()),
-			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
-				assert.NotNil(t, iri)
+				assert.NotNil(t, actualIRI)
 				assert.Empty(t, actualIRI.Finalizers)
-				assert.Nil(t, actualMasterMC)
-				assert.Nil(t, actualWorkerMC)
+				verifyDisabledMasterMachineConfig(t, actualMasterMC)
 			},
 		},
 		{
 			name: "status condition Degraded=False on successful sync",
 			initialObjects: objs(
-				iri().finalizer(masterName(), workerName()),
+				iri().finalizer(iriFinalizerName),
 				clusterVersion(), cconfig().withDNS("example.com"), iriCertSecret(), iriRegistryCredentialsSecret(), pullSecret(),
 				machineconfigmaster(), machineconfigworker()),
 			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {

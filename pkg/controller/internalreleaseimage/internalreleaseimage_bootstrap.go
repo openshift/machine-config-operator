@@ -13,7 +13,7 @@ func RunInternalReleaseImageBootstrap(iri *mcfgv1alpha1.InternalReleaseImage, ir
 
 	for _, role := range SupportedRoles {
 		r := NewRendererByRole(role, iri, iriSecret, iriRegistryCredentialsSecret, cconfig)
-		mc, err := r.CreateEmptyMachineConfig()
+		mc, err := r.createEmptyMachineConfig()
 		if err != nil {
 			return nil, err
 		}
