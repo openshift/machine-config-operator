@@ -638,12 +638,13 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 			Containers: []corev1.Container{
 				{
 					// This container performs the image build / push process.
-					Name:            "image-build",
-					Image:           br.opts.Images.MachineConfigOperator,
-					Env:             env,
-					Command:         append(command, buildahBuildScript),
-					ImagePullPolicy: corev1.PullAlways,
-					SecurityContext: securityContext,
+					Name:                     "image-build",
+					Image:                    br.opts.Images.MachineConfigOperator,
+					Env:                      env,
+					Command:                  append(command, buildahBuildScript),
+					ImagePullPolicy:          corev1.PullAlways,
+					SecurityContext:          securityContext,
+					TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 					// Only attach the buildah-cache volume mount to the buildah container.
 					VolumeMounts: append(volumeMounts, corev1.VolumeMount{
 						Name:      "buildah-cache",
@@ -656,13 +657,14 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 					// the base OS image (which contains the "oc" binary) to create a
 					// ConfigMap from the digestfile that Buildah creates, which allows
 					// us to avoid parsing log files.
-					Name:            "wait-for-done",
-					Command:         append(command, waitScript),
-					Image:           br.opts.OSImageURLConfig.BaseOSContainerImage,
-					Env:             env,
-					ImagePullPolicy: corev1.PullAlways,
-					SecurityContext: securityContext,
-					VolumeMounts:    volumeMounts,
+					Name:                     "wait-for-done",
+					Command:                  append(command, waitScript),
+					Image:                    br.opts.OSImageURLConfig.BaseOSContainerImage,
+					Env:                      env,
+					ImagePullPolicy:          corev1.PullAlways,
+					SecurityContext:          securityContext,
+					TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
+					VolumeMounts:             volumeMounts,
 				},
 			},
 			ServiceAccountName:            "machine-os-builder",
