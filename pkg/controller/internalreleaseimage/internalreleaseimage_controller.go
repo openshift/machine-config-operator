@@ -56,6 +56,7 @@ var (
 // Controller defines the InternalReleaseImage controller.
 type Controller struct {
 	client        mcfgclientset.Interface
+	kubeClient    clientset.Interface
 	eventRecorder record.EventRecorder
 
 	syncHandler func(mcp string) error
@@ -106,6 +107,7 @@ func New(
 
 	ctrl := &Controller{
 		client:        mcfgClient,
+		kubeClient:    kubeClient,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-internalreleaseimagecontroller"})),
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
@@ -556,6 +558,86 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) (syncErr error) {
 	if err := ctrl.initializeInternalReleaseImageStatus(iri); err != nil {
 		return fmt.Errorf("could not initialize status: %w", err)
 	}
+
+	// Sync IRI credentials into the global pull secret
+	if err := ctrl.syncGlobalPullSecret(cconfig, iriRegistryCredentialsSecret); err != nil {
+		return fmt.Errorf("could not sync global pull secret: %w", err)
+	}
+
+	return nil
+}
+
+// syncGlobalPullSecret merges IRI registry credentials into the global pull secret
+// referenced by ControllerConfig.Spec.PullSecret. This ensures that all components
+// that use the global pull secret (including kubelet/CRI-O) can authenticate to the
+// IRI registry. The template controller renders this updated global pull secret to
+// /var/lib/kubelet/config.json on all nodes.
+//
+// Feature gate check: This method is only called when the IRI controller is running,
+// which only happens when FeatureGateNoRegistryClusterInstall is enabled.
+func (ctrl *Controller) syncGlobalPullSecret(cconfig *mcfgv1.ControllerConfig, iriAuthSecret *corev1.Secret) error {
+	// If there's no pull secret configured, nothing to do
+	if cconfig.Spec.PullSecret == nil {
+		klog.V(4).Info("No global pull secret configured in ControllerConfig, skipping IRI credential sync")
+		return nil
+	}
+
+	// Get the global pull secret
+	globalPullSecret, err := ctrl.kubeClient.CoreV1().Secrets(cconfig.Spec.PullSecret.Namespace).Get(
+		context.TODO(),
+		cconfig.Spec.PullSecret.Name,
+		metav1.GetOptions{},
+	)
+	if err != nil {
+		return fmt.Errorf("could not get global pull secret %s/%s: %w",
+			cconfig.Spec.PullSecret.Namespace, cconfig.Spec.PullSecret.Name, err)
+	}
+
+	if globalPullSecret.Type != corev1.SecretTypeDockerConfigJson {
+		return fmt.Errorf("expected global pull secret type %s found %s",
+			corev1.SecretTypeDockerConfigJson, globalPullSecret.Type)
+	}
+
+	// Get the current pull secret data
+	pullSecretData := globalPullSecret.Data[corev1.DockerConfigJsonKey]
+	if pullSecretData == nil {
+		return fmt.Errorf("global pull secret missing %s key", corev1.DockerConfigJsonKey)
+	}
+
+	// Extract IRI credentials (password and baseDomain)
+	password, baseDomain, err := ctrlcommon.ExtractIRICredentials(iriAuthSecret, cconfig)
+	if err != nil {
+		return fmt.Errorf("could not extract IRI credentials: %w", err)
+	}
+
+	// Merge IRI credentials into the pull secret
+	mergedData, changed, err := ctrlcommon.MergeIRIRegistryCredentialsIntoPullSecret(pullSecretData, password, baseDomain)
+	if err != nil {
+		return fmt.Errorf("could not merge IRI credentials into global pull secret: %w", err)
+	}
+
+	// If the data didn't change, no need to update
+	if !changed {
+		klog.V(4).Infof("Global pull secret %s/%s already contains IRI credentials, no update needed",
+			cconfig.Spec.PullSecret.Namespace, cconfig.Spec.PullSecret.Name)
+		return nil
+	}
+
+	// Update the secret with merged credentials
+	globalPullSecret.Data[corev1.DockerConfigJsonKey] = mergedData
+
+	_, err = ctrl.kubeClient.CoreV1().Secrets(cconfig.Spec.PullSecret.Namespace).Update(
+		context.TODO(),
+		globalPullSecret,
+		metav1.UpdateOptions{},
+	)
+	if err != nil {
+		return fmt.Errorf("could not update global pull secret %s/%s: %w",
+			cconfig.Spec.PullSecret.Namespace, cconfig.Spec.PullSecret.Name, err)
+	}
+
+	klog.Infof("Successfully merged IRI credentials into global pull secret %s/%s",
+		cconfig.Spec.PullSecret.Namespace, cconfig.Spec.PullSecret.Name)
 
 	return nil
 }
