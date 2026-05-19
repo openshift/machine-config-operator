@@ -255,9 +255,12 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("%s osImageStream: %s", mcp, mcp.GetSafe(`{.status.osImageStream}`, ""))
 		logger.Infof("OK!\n")
 
+		exutil.By("Skip if the internal registry cannot be used")
+		SkipTestIfCannotUseInternalRegistry(oc.AsAdmin())
+
 		exutil.By("Build a custom OS image to use as osImageURL")
 		node = mcp.GetSortedNodesOrFail()[0]
-		osImageBuilder := OsImageBuilderInNode{node: node, dockerFileCommands: "RUN ostree container commit"}
+		osImageBuilder := OsImageBuilderInNode{node: node, dockerFileCommands: "RUN ostree container commit", UseInternalRegistry: true}
 		digestedImage, err := osImageBuilder.CreateAndDigestOsImage()
 		o.Expect(err).NotTo(o.HaveOccurred(),
 			"Error creating the custom osImage")
