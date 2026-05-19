@@ -361,4 +361,71 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		o.Eventually(NewRemoteFile(node, "/etc/kubernetes/kubelet.conf").Read, "2m", "30s").Should(HaveContent(o.ContainSubstring(`maxPods: 200`)), "Kubelet config was not correctly applied")
 		logger.Infof("OK!\n")
 	})
+
+	g.It("[PolarionID:74540][OTP] kubelet does not start after reboot due to dependency issue [Disruptive]", func() {
+		var (
+			unitEnabled    = true
+			unitName       = "hello.service"
+			filePath       = "/etc/systemd/system/default.target.wants/hello.service"
+			fileContent    = "[Unit]\nDescription=A hello world unit\nAfter=network-online.target\nRequires=network-online.target\n[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=/usr/bin/echo Hello, World\n[Install]\nWantedBy="
+			unitConfig     = getSingleUnitConfig(unitName, unitEnabled, fileContent+"default.target")
+			mcName         = "tc-74540"
+			mcp            = GetCompactCompatiblePool(oc.AsAdmin())
+			node           = mcp.GetSortedNodesOrFail()[0]
+			activeString   = "Active: active"
+			inactiveString = "Active: inactive"
+		)
+
+		exutil.By("Create a MC to deploy a unit.")
+		mc := NewMachineConfig(oc.AsAdmin(), mcName, MachineConfigPoolWorker)
+		mc.parameters = []string{fmt.Sprintf("UNITS=[%s]", unitConfig)}
+		defer mc.DeleteWithWait()
+		mc.create()
+		logger.Infof("OK \n")
+
+		exutil.By("Wait until worker MCP has finished the configuration. No machine should be degraded.")
+		mcp.waitForComplete()
+		logger.Infof("OK \n")
+
+		exutil.By("Verfiy file content is properly applied")
+		rf := NewRemoteFile(node, filePath)
+		o.Expect(rf.Read()).To(HaveContent(fileContent + "default.target"))
+		logger.Infof("OK \n")
+
+		exutil.By("Validate that the hello unit service is active")
+		o.Expect(
+			node.DebugNodeWithChroot("systemctl", "status", unitName),
+		).To(o.And(o.ContainSubstring(activeString), o.Not(o.ContainSubstring(inactiveString))),
+			"%s unit is not active", unitName)
+		logger.Infof("OK \n")
+
+		exutil.By("Update the unit of MC")
+
+		o.Expect(
+			mc.Patch("json", fmt.Sprintf(`[{ "op": "replace", "path": "/spec/config/systemd/units/0/contents", "value": %s}]`, jsonEncode(fileContent+"multi-user.target"))),
+		).To(o.Succeed(), "Error patching %s with the new WantedBy value", fileContent+"multi-user.target")
+
+		logger.Infof("OK \n")
+
+		exutil.By("Wait until worker MCP has finished the configuration. No machine should be degraded.")
+		mcp.waitForComplete()
+		logger.Infof("OK \n")
+
+		exutil.By("To verify that previous file does not exist")
+		o.Expect(rf).NotTo(Exist())
+		logger.Infof("OK \n")
+
+		exutil.By("To verify that new file does exist")
+		filePath = "/etc/systemd/system/multi-user.target.wants/hello.service"
+		rf = NewRemoteFile(node, filePath)
+		o.Expect(rf.Read()).To(HaveContent(fileContent + "multi-user.target"))
+		logger.Infof("OK \n")
+
+		exutil.By("Validate that the hello unit service is active after update")
+		o.Expect(
+			node.DebugNodeWithChroot("systemctl", "status", unitName),
+		).To(o.And(o.ContainSubstring(activeString), o.Not(o.ContainSubstring(inactiveString))),
+			"%s unit is not active", unitName)
+		logger.Infof("OK \n")
+	})
 })
