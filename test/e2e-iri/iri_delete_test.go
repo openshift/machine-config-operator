@@ -33,13 +33,23 @@ func TestIRIController_IRIDelete(t *testing.T) {
 	_, err = cs.MachineConfigs().Get(ctx, "02-master-internalreleaseimage", v1.GetOptions{})
 	require.NoError(t, err, "Master MC should exist before deletion")
 
-	// Remove the VAP binding that prevents IRI deletion.
+	// Remove the VAP binding and delete the IRI in a retry loop.
+	// The operator sync may re-create the binding between the two operations.
 	vapBindingName := "internalreleaseimage-deletion-guard-binding"
-	err = cs.GetKubeclient().AdmissionregistrationV1().ValidatingAdmissionPolicyBindings().Delete(ctx, vapBindingName, v1.DeleteOptions{})
-	require.NoError(t, err, "Should be able to delete VAP binding")
+	err = wait.PollUntilContextTimeout(ctx, 2*time.Second, 1*time.Minute, true, func(ctx context.Context) (bool, error) {
+		delErr := cs.GetKubeclient().AdmissionregistrationV1().ValidatingAdmissionPolicyBindings().Delete(ctx, vapBindingName, v1.DeleteOptions{})
+		if delErr != nil && !k8serrors.IsNotFound(delErr) {
+			t.Logf("Failed to delete VAP binding (will retry): %v", delErr)
+			return false, nil
+		}
 
-	// Delete the IRI resource.
-	err = cs.InternalReleaseImages().Delete(ctx, "cluster", v1.DeleteOptions{})
+		delErr = cs.InternalReleaseImages().Delete(ctx, "cluster", v1.DeleteOptions{})
+		if delErr == nil {
+			return true, nil
+		}
+		t.Logf("Failed to delete IRI (will retry): %v", delErr)
+		return false, nil
+	})
 	require.NoError(t, err, "Should be able to delete IRI after VAP binding removal")
 
 	// Wait for the IRI to be fully garbage-collected (finalizer removed).
