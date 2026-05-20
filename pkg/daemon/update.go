@@ -1173,22 +1173,22 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 				}
 			}
 		}()
-	}
 
-	// Set password hash
-	if err := dn.SetPasswordHash(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
-		return err
-	}
-
-	defer func() {
-		if retErr != nil {
-			if err := dn.SetPasswordHash(oldIgnConfig.Passwd.Users, newIgnConfig.Passwd.Users); err != nil {
-				errs := kubeErrs.NewAggregate([]error{err, retErr})
-				retErr = fmt.Errorf("error rolling back password hash updates: %w", errs)
-				return
-			}
+		// Set password hash
+		if err := dn.SetPasswordHash(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
+			return err
 		}
-	}()
+
+		defer func() {
+			if retErr != nil {
+				if err := dn.SetPasswordHash(oldIgnConfig.Passwd.Users, newIgnConfig.Passwd.Users); err != nil {
+					errs := kubeErrs.NewAggregate([]error{err, retErr})
+					retErr = fmt.Errorf("error rolling back password hash updates: %w", errs)
+					return
+				}
+			}
+		}()
+	}
 
 	if dn.os.IsCoreOSVariant() {
 		coreOSDaemon := CoreOSDaemon{dn}
@@ -2318,7 +2318,21 @@ func (dn *Daemon) atomicallyWriteSSHKey(authKeyPath, keys string) error {
 	return nil
 }
 
-// Set a given PasswdUser's Password Hash
+func getUserPasswordHash(user string) (string, error) {
+	shadowOut, err := exec.Command("getent", "shadow", user).CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("Failed to check password hash for %s: %w", user, err)
+	}
+	shadowSlice := strings.SplitN(strings.TrimSpace(string(shadowOut)), ":", 3)
+	if len(shadowSlice) >= 2 {
+		return shadowSlice[1], nil
+	}
+	return "", nil
+
+}
+
+// SetPasswordHash updates the password for each user in newUsers, skipping
+// users whose password already matches the desired configuration.
 func (dn *Daemon) SetPasswordHash(newUsers, oldUsers []ign3types.PasswdUser) error {
 	// confirm that user exits
 	klog.Info("Checking if absent users need to be disconfigured")
@@ -2341,6 +2355,15 @@ func (dn *Daemon) SetPasswordHash(newUsers, oldUsers []ign3types.PasswdUser) err
 		pwhash := "*"
 		if u.PasswordHash != nil && *u.PasswordHash != "" {
 			pwhash = *u.PasswordHash
+		}
+
+		// Check if hash update is needed. Skip if not.
+		currentHash, err := getUserPasswordHash(u.Name)
+		if err != nil {
+			return err
+		}
+		if currentHash == pwhash {
+			continue
 		}
 
 		if out, err := exec.Command("usermod", "-p", pwhash, u.Name).CombinedOutput(); err != nil {

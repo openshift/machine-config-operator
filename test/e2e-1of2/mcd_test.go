@@ -408,8 +408,11 @@ func TestNoReboot(t *testing.T) {
 
 	currentEtcShadowContents := helpers.ExecCmdOnNode(t, cs, infraNode, "grep", "^core:", "/rootfs/etc/shadow")
 
-	if currentEtcShadowContents == initialEtcShadowContents {
-		t.Fatalf("updated password hash not found in etc/shadow, got %s", currentEtcShadowContents)
+	initialPasswordHash := extractPasswordHashFromShadowLine(initialEtcShadowContents)
+	currentPasswordHash := extractPasswordHashFromShadowLine(currentEtcShadowContents)
+
+	if currentPasswordHash == initialPasswordHash {
+		t.Fatalf("updated password hash not found in etc/shadow")
 	}
 
 	t.Logf("Node %s has Password Hash", infraNode.Name)
@@ -489,7 +492,9 @@ func TestNoReboot(t *testing.T) {
 	require.Nil(t, err)
 
 	rollbackEtcShadowContents := helpers.ExecCmdOnNode(t, cs, infraNode, "grep", "^core:", "/rootfs/etc/shadow")
-	assert.Equal(t, initialEtcShadowContents, rollbackEtcShadowContents)
+
+	assert.Equal(t, extractPasswordHashFromShadowLine(initialEtcShadowContents), extractPasswordHashFromShadowLine(rollbackEtcShadowContents),
+		"password hash should match after rollback")
 }
 
 func TestPoolDegradedOnFailToRender(t *testing.T) {
@@ -942,6 +947,17 @@ func assertExpectedPerms(t *testing.T, cs *framework.ClientSet, node corev1.Node
 
 	actualPerms := strings.Split(strings.TrimSuffix(helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "stat", "--format=%U %G %a", path), "\n"), " ")
 	assert.Equal(t, expectedPerms, actualPerms, "expected %s to have perms %v, got: %v", path, expectedPerms, actualPerms)
+}
+
+// extractPasswordHashFromShadowLine extracts the password hash field from an /etc/shadow line.
+// The shadow file format is: username:password:lastchg:min:max:warn:inactive:expire:reserved
+// This function returns the password hash (field index 1).
+func extractPasswordHashFromShadowLine(shadowLine string) string {
+	fields := strings.Split(strings.TrimSpace(shadowLine), ":")
+	if len(fields) < 2 {
+		return ""
+	}
+	return fields[1]
 }
 
 // Tests that changes to the internal image registry pull secret has the
