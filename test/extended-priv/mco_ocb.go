@@ -144,6 +144,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			}
 		)
 
+		logger.Infof("mcp name for test: %v", mcp.GetName())
 		testContainerFile([]ContainerFile{{Content: containerFileContent}}, MachineConfigNamespace, mcp, checkers, false)
 	})
 

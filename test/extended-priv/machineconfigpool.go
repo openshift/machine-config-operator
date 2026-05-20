@@ -1136,8 +1136,10 @@ func GetCompactCompatiblePool(oc *exutil.CLI) *MachineConfigPool {
 	mcpList.PrintDebugCommand()
 
 	if IsCompactOrSNOCluster(oc) {
+		logger.Infof("correctly in IsCompactOrSNOCluster check")
 		return mMcp
 	}
+	logger.Infof("correctly past IsCompactOrSNOCluster check")
 
 	if !wMcp.IsEmpty() {
 		return wMcp

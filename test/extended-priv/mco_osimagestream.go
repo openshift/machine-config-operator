@@ -122,6 +122,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		testID := GetCurrentTestPolarionIDNumber()
 		createdCustomPoolName := fmt.Sprintf("tc-%s-%s", testID, architecture.AMD64)
+		logger.Infof("createdCustomPoolName for test: %v", createdCustomPoolName)
 		defer DeleteCustomMCP(oc.AsAdmin(), createdCustomPoolName)
 
 		mcp, _ := GetPoolAndNodesForArchitectureOrFail(oc.AsAdmin(), createdCustomPoolName, architecture.AMD64, 1)
@@ -149,6 +150,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		)
 
 		mcp, cleanup, err := GetCompactCompatibleOrCustomPool(oc.AsAdmin(), 1)
+		logger.Infof("MCP for test: %v", mcp.name)
 		defer cleanup()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting pool for testing")
 
@@ -315,6 +317,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("OK!\n")
 
 		exutil.By("Verify MCP reports rhel-9 osImageStream in status")
+		logger.Infof("MCP for test: %v", mcp.name)
 		o.Eventually(mcp.GetStatusOsImageStream, "2m", "20s").Should(o.ContainSubstring(OSImageStreamRHEL9),
 			"%s should report rhel-9 in status.osImageStream", mcp)
 		logger.Infof("%s osImageStream: %s", mcp, mcp.GetSafe(`{.status.osImageStream}`, ""))
