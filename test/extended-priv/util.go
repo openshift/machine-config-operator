@@ -70,6 +70,11 @@ type ImageTagMirrorSet struct {
 	Template
 }
 
+// NewImageTagMirrorSet create a new ImageTagMirrorSet struct
+func NewImageTagMirrorSet(oc *exutil.CLI, name string, t Template) *ImageTagMirrorSet {
+	return &ImageTagMirrorSet{Resource: *NewResource(oc, "ImageTagMirrorSet", name), Template: t}
+}
+
 // TextToVerify is a helper struct to verify configurations using the `createMcAndVerifyMCValue` function
 type TextToVerify struct {
 	textToVerifyForMC   string
@@ -1387,4 +1392,57 @@ func ToInterfaceSlice(r gjson.Result) []interface{} {
 		result[i] = elem.Value()
 	}
 	return result
+}
+
+// skipTestIfExtensionsAreUsed skips the current test if any extension has been deployed in the nodes
+func skipTestIfExtensionsAreUsed(oc *exutil.CLI) {
+	wMcp := NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
+	mMcp := NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolMaster)
+
+	wCurrentMC, err := wMcp.GetConfiguredMachineConfig()
+	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error trying to get the current MC configured in worker pool")
+
+	mCurrentMC, err := mMcp.GetConfiguredMachineConfig()
+	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error trying to get the current MC configured in master pool")
+
+	wExtensions, err := wCurrentMC.GetExtensions()
+	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error trying to get the extensions configured in MC: %s", wCurrentMC.GetName())
+
+	mExtensions, err := mCurrentMC.GetExtensions()
+	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error trying to get the extensions configured in MC: %s", mCurrentMC.GetName())
+
+	if wExtensions != "[]" || mExtensions != "[]" {
+		g.Skip("Current cluster is using extensions. This test cannot be execute in a cluster using extensions")
+	}
+
+}
+
+// GetImageRegistryCertificates returns a map with the image registry certificates content. Key=certificate file name, Value=certificate content
+func GetImageRegistryCertificates(oc *exutil.CLI) (map[string]string, error) {
+	return GetDataFromConfigMap(oc.AsAdmin(), "openshift-config-managed", "image-registry-ca")
+}
+
+// GetManagedMergedTrustedImageRegistryCertificates returns a map with the merged trusted image registry certificates content. Key=certificate file name, Value=certificate content
+func GetManagedMergedTrustedImageRegistryCertificates(oc *exutil.CLI) (map[string]string, error) {
+	return GetDataFromConfigMap(oc.AsAdmin(), "openshift-config-managed", "merged-trusted-image-registry-ca")
+}
+
+// GetDataFromConfigMap returns a map[string]string with the information of the ".data" section of a configmap
+func GetDataFromConfigMap(oc *exutil.CLI, namespace, name string) (map[string]string, error) {
+	data := map[string]string{}
+	cm := NewNamespacedResource(oc.AsAdmin(), "ConfigMap", namespace, name)
+	dataJSON, err := cm.Get(`{.data}`)
+	if err != nil {
+		return nil, err
+	}
+
+	if dataJSON == "" {
+		return data, nil
+	}
+
+	if err := json.Unmarshal([]byte(dataJSON), &data); err != nil {
+		return nil, err
+	}
+
+	return data, nil
 }

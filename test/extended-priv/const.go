@@ -134,6 +134,13 @@ const (
 	NodeDisruptionPolicyActionRestart      = "Restart"
 	NodeDisruptionPolicyActionDrain        = "Drain"
 	NodeDisruptionPolicyActionDaemonReload = "DaemonReload"
+	NodeDisruptionPolicyFiles              = "files"
+	NodeDisruptionPolicyUnits              = "units"
+	NodeDisruptionPolicySshkey             = "sshkey"
+
+	// Regexp used to know if MCD logs is reporting that crio was reloaded
+	MCDCrioReloadedRegexp = "crio.* reloaded successfully"
+
 	// BootImageSkewEnforcement feature constants
 
 	// RHCOSVersionMode is used to signify that the cluster boot image is described via RHCOS version

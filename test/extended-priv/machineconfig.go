@@ -143,6 +143,11 @@ func (mc *MachineConfig) GetIgnitionVersion() (string, error) {
 	return mc.Get(`{.spec.config.ignition.version}`)
 }
 
+// GetExtensions returns all the extensions configured in this MC
+func (mc *MachineConfig) GetExtensions() (string, error) {
+	return mc.Get(`{.spec.extensions}`)
+}
+
 func DisableSkew(machineConfiguration *MachineConfiguration) {
 	logger.Infof("Disabling the Skew functionality")
 	o.Expect(machineConfiguration.SetNoneSkew()).To(o.Succeed(), "Error disabling the skew functionality")

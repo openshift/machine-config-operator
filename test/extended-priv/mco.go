@@ -312,3 +312,14 @@ func createMcAndVerifyMCValue(oc *exutil.CLI, stepText, mcName string, node *Nod
 	o.Expect(podOut).Should(o.MatchRegexp(textToVerify.textToVerifyForNode))
 	logger.Infof("%s is verified in the machine config daemon!", stepText)
 }
+
+// skipTestIfClusterVersion skips the test case if the provided version matches the constraints.
+func skipTestIfClusterVersion(oc *exutil.CLI, operator, constraintVersion string) {
+	clusterVersion, _, err := exutil.GetClusterVersion(oc)
+	o.Expect(err).NotTo(o.HaveOccurred())
+
+	if CompareVersions(clusterVersion, operator, constraintVersion) {
+		g.Skip(fmt.Sprintf("Test case skipped because current cluster version %s %s %s",
+			clusterVersion, operator, constraintVersion))
+	}
+}
