@@ -63,7 +63,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		o.Expect(err).ShouldNot(o.HaveOccurred(), "Error getting nodes linked to the worker pool")
 		for _, node := range workerNodes {
 			// We look for the cordon taint. We can't look for "any taint", because in "edge" clusters the "edge" nodes are tained and unschedulable.
-			o.Expect(node.IsCordoned()).To(o.BeFalse(), "% is tainted and cordoned. There should be no cordoned worker node after applying the configuration.",
+			o.Expect(node.IsCordoned()).To(o.BeFalse(), "%s is tainted and cordoned. There should be no cordoned worker node after applying the configuration.",
 				node.GetName())
 		}
 		logger.Infof("OK!\n")
@@ -325,13 +325,13 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		mEvents, meErr := firstUpdatedMaster.GetEvents()
 		o.Expect(meErr).ShouldNot(o.HaveOccurred(), "Error getting drain events for node %s", firstUpdatedMaster.GetName())
 		o.Expect(mEvents).To(HaveEventsSequence("Drain", "Reboot"),
-			"Error, the expected sequence of events is not found in node %s", firstUpdatedWorker.GetName())
+			"Error, the expected sequence of events is not found in node %s", firstUpdatedMaster.GetName())
 
 		exutil.By("Verify that the node was actually rebooted")
 		o.Expect(firstUpdatedWorker.GetUptime()).Should(o.BeTemporally(">", startTime),
-			"The node %s should have been rebooted after the configurion. Uptime didnt happen after start config time.")
+			"The node %s should have been rebooted after the configurion. Uptime didnt happen after start config time.", firstUpdatedWorker.GetName())
 		o.Expect(firstUpdatedMaster.GetUptime()).Should(o.BeTemporally(">", startTime),
-			"The node %s should have been rebooted after the configurion. Uptime didnt happen after start config time.")
+			"The node %s should have been rebooted after the configurion. Uptime didnt happen after start config time.", firstUpdatedMaster.GetName())
 
 		exutil.By("Verify dropin file's content in worker node")
 		wdropinFile := NewRemoteFile(firstUpdatedWorker, expectedDropinFilePath)
@@ -543,7 +543,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 
 		exutil.By("Check that drain events were triggered")
-		o.Expect(nodeEvents).To(HaveEventsSequence("Drain"), "Error, a Drain event was triggered but it shouldn't")
+		o.Expect(nodeEvents).To(HaveEventsSequence("Drain"), "Error, a Drain event was expected but none was triggered")
 		logger.Infof("OK!\n")
 
 		exutil.By("Check that the  /etc/containers/registries.conf file was configured")
@@ -627,13 +627,13 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			exutil.By(fmt.Sprintf("Check that the file %s has been added to the managed merged trusted image registry configmap", certFile))
 
 			o.Eventually(GetManagedMergedTrustedImageRegistryCertificates, "20s", "10s").WithArguments(oc.AsAdmin()).Should(o.HaveKey(certFile),
-				"The certificate for file %s has not been included in the configmap merged-trusted-image-registry-ca -n openshift-config-managed")
+				"The certificate for file %s has not been included in the configmap merged-trusted-image-registry-ca -n openshift-config-managed", certFile)
 
 			mmtImageRegistryCert, err := GetManagedMergedTrustedImageRegistryCertificates(oc.AsAdmin())
 			o.Expect(err).NotTo(o.HaveOccurred(), "Error getting managed merged trusted image registry certificates values")
 
 			o.Expect(mmtImageRegistryCert[certFile] == certValue).To(o.BeTrue(),
-				"The certificate in file %s was added to configmap merged-trusted-image-registry-ca -n openshift-config-managed but it has the wrong content")
+				"The certificate in file %s was added to configmap merged-trusted-image-registry-ca -n openshift-config-managed but it has the wrong content", certFile)
 
 			logger.Infof("OK!\n")
 

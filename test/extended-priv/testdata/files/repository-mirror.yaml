@@ -1,0 +1,15 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: repository-mirror
+objects:
+  - kind: ImageContentSourcePolicy
+    apiVersion: operator.openshift.io/v1alpha1
+    metadata:
+      name: "${NAME}"
+    spec:
+      repositoryDigestMirrors: ${{REPOSITORYDIGESTMIRRORS}}
+parameters:
+  - name: NAME
+  - name: REPOSITORYDIGESTMIRRORS
+    value: '[{"mirrors":["example.io/example/ubi-minimal", "example.com/example/ubi-minimal"], "source": "registry.access.redhat.com/ubi8/ubi-minimal"}]'

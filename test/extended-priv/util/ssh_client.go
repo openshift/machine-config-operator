@@ -3,7 +3,9 @@ package util
 import (
 	"bytes"
 	"fmt"
+	"net"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -31,15 +33,15 @@ func (sb *synchronizedBuffer) String() string {
 	return sb.buf.String()
 }
 
-// SshClient handles SSH connections to remote machines
-type SshClient struct {
+// SSHClient handles SSH connections to remote machines
+type SSHClient struct {
 	User       string
 	Host       string
 	Port       int
 	PrivateKey string
 }
 
-func (sshClient *SshClient) getConfig() (*ssh.ClientConfig, error) {
+func (sshClient *SSHClient) getConfig() (*ssh.ClientConfig, error) {
 	pemBytes, err := os.ReadFile(sshClient.PrivateKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read private key %s: %v", sshClient.PrivateKey, err)
@@ -57,13 +59,14 @@ func (sshClient *SshClient) getConfig() (*ssh.ClientConfig, error) {
 }
 
 // RunOutput runs cmd on the remote host and returns its combined standard output and standard error.
-func (sshClient *SshClient) RunOutput(cmd string) (string, error) {
+func (sshClient *SSHClient) RunOutput(cmd string) (string, error) {
 	config, err := sshClient.getConfig()
 	if err != nil {
 		return "", fmt.Errorf("failed to get SSH config: %v", err)
 	}
 
-	connection, err := ssh.Dial("tcp", fmt.Sprintf("%v:%v", sshClient.Host, sshClient.Port), config)
+	address := net.JoinHostPort(sshClient.Host, strconv.Itoa(sshClient.Port))
+	connection, err := ssh.Dial("tcp", address, config)
 	if err != nil {
 		return "", fmt.Errorf("failed to dial %s:%d: %v", sshClient.Host, sshClient.Port, err)
 	}

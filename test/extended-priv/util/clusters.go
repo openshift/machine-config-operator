@@ -2,6 +2,7 @@ package util
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	o "github.com/onsi/gomega"
@@ -27,8 +28,11 @@ func GetClusterVersion(oc *CLI) (string, string, error) {
 		return "", "", err
 	}
 	splitValues := strings.Split(clusterBuild, ".")
+	if len(splitValues) < 2 {
+		return "", "", fmt.Errorf("malformed cluster version %q: expected at least major.minor format", clusterBuild)
+	}
 	clusterVersion := splitValues[0] + "." + splitValues[1]
-	return clusterVersion, clusterBuild, err
+	return clusterVersion, clusterBuild, nil
 }
 
 // GetInfraID returns the infra id

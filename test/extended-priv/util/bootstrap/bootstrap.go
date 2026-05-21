@@ -30,7 +30,7 @@ type BSInfoProvider interface {
 
 // Bootstrap contains the functionality regarding the bootstrap machine
 type Bootstrap struct {
-	SSH util.SshClient
+	SSH util.SSHClient
 	IPs Ips
 }
 
@@ -75,7 +75,7 @@ func buildBootstrap(user string, bootstrapIPs Ips, port int) *Bootstrap {
 	logger.Infof("Creating bootstrap with ip '%s', user: '%s', private key: '%s', port '%d'",
 		publicIP, user, privateKey, port)
 	return &Bootstrap{
-		SSH: util.SshClient{User: user, Host: publicIP, Port: port, PrivateKey: privateKey},
+		SSH: util.SSHClient{User: user, Host: publicIP, Port: port, PrivateKey: privateKey},
 		IPs: bootstrapIPs,
 	}
 }

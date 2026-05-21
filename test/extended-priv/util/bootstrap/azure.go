@@ -16,7 +16,10 @@ type AzureBSInfoProvider struct{}
 // GetIPs returns the IPs of the bootstrap machine if this machine exists in Azure.
 // Azure bootstrap discovery is not yet implemented; returns InstanceNotFound so the test skips.
 func (a AzureBSInfoProvider) GetIPs(oc *util.CLI) (*Ips, error) {
-	infraName, _ := oc.WithoutNamespace().AsAdmin().Run("get").Args("infrastructure", "cluster", "-o=jsonpath={.status.infrastructureName}").Output()
+	infraName, err := oc.WithoutNamespace().AsAdmin().Run("get").Args("infrastructure", "cluster", "-o=jsonpath={.status.infrastructureName}").Output()
+	if err != nil {
+		return nil, err
+	}
 	bootstrapName := infraName + "-bootstrap"
 	logger.Infof("Azure bootstrap discovery is not yet implemented, skipping bootstrap machine: %s", bootstrapName)
 	return nil, &InstanceNotFound{bootstrapName}

@@ -83,6 +83,17 @@ func skipTestIfRHELVersion(node *Node, operator, constraintVersion string) {
 	}
 }
 
+// skipTestIfClusterVersion skips the test case if the provided version matches the constraints.
+func skipTestIfClusterVersion(oc *exutil.CLI, operator, constraintVersion string) {
+	clusterVersion, _, err := exutil.GetClusterVersion(oc)
+	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred())
+
+	if CompareVersions(clusterVersion, operator, constraintVersion) {
+		g.Skip(fmt.Sprintf("Test case skipped because current cluster version %s %s %s",
+			clusterVersion, operator, constraintVersion))
+	}
+}
+
 func verifyRenderedMcs(oc *exutil.CLI, renderSuffix string, allRes []ResourceInterface) []*Resource {
 	// TODO: Use MachineConfigList when MC code is refactored
 	allMcs, err := NewResourceList(oc.AsAdmin(), "mc").GetAll()
@@ -311,15 +322,4 @@ func createMcAndVerifyMCValue(oc *exutil.CLI, stepText, mcName string, node *Nod
 	o.Expect(err).NotTo(o.HaveOccurred())
 	o.Expect(podOut).Should(o.MatchRegexp(textToVerify.textToVerifyForNode))
 	logger.Infof("%s is verified in the machine config daemon!", stepText)
-}
-
-// skipTestIfClusterVersion skips the test case if the provided version matches the constraints.
-func skipTestIfClusterVersion(oc *exutil.CLI, operator, constraintVersion string) {
-	clusterVersion, _, err := exutil.GetClusterVersion(oc)
-	o.Expect(err).NotTo(o.HaveOccurred())
-
-	if CompareVersions(clusterVersion, operator, constraintVersion) {
-		g.Skip(fmt.Sprintf("Test case skipped because current cluster version %s %s %s",
-			clusterVersion, operator, constraintVersion))
-	}
 }
