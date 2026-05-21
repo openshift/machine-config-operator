@@ -329,6 +329,20 @@ func (mosc MachineOSConfig) GetCurrentMachineOSBuild() (*MachineOSBuild, error) 
 	return NewMachineOSBuild(mosc.GetOC(), mosbName), nil
 }
 
+// SetRenderedImagePushspec patches the MOSC resource in order to configure a new renderedImagePushspec
+func (mosc MachineOSConfig) SetRenderedImagePushspec(rips string) error {
+	escaped, err := json.Marshal(rips)
+	if err != nil {
+		return err
+	}
+	return mosc.Patch("json", `[{"op":"replace","path":"/spec/renderedImagePushSpec","value":`+string(escaped)+`}]`)
+}
+
+// GetRenderedImagePushspec returns the current valude of renderedImagePushspec
+func (mosc MachineOSConfig) GetRenderedImagePushspec() (string, error) {
+	return mosc.Get(`{.spec.renderedImagePushSpec}`)
+}
+
 // SetContainerfiles sets the container files used by this MOSC
 func (mosc MachineOSConfig) SetContainerfiles(containerFiles []ContainerFile) error {
 	containerFilesBytes, err := json.Marshal(containerFiles)
@@ -471,4 +485,13 @@ func SkipTestIfCannotUseInternalRegistry(oc *exutil.CLI) {
 	if !CanUseInternalRegistryToStoreOSImage(oc) {
 		g.Skip("The internal registry cannot be used to store the osImage in this cluster. Skipping test case")
 	}
+}
+
+// IsUsingInternalRegistry checks if the current image is from the internal registry
+func (mosc MachineOSConfig) IsUsingInternalRegistry() (bool, error) {
+	currentImage, err := mosc.GetStatusCurrentImagePullSpec()
+	if err != nil {
+		return false, err
+	}
+	return strings.Contains(currentImage, InternalRegistrySvcURL), nil
 }
