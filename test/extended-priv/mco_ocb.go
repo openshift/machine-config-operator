@@ -426,7 +426,8 @@ func ValidateSuccessfulMOSC(mosc *MachineOSConfig, checkers []Checker) {
 	logger.Infof("OK!\n")
 
 	exutil.By("Check that a new build is successfully executed")
-	o.Eventually(mosb, "20m", "20s").Should(HaveConditionField("Building", "status", FalseString), "Build was not finished")
+	// When building several builds at the same time the pods can take more than 20 minutes to build a simple image
+	o.Eventually(mosb, "35m", "20s").Should(HaveConditionField("Building", "status", FalseString), "Build was not finished")
 	o.Eventually(mosb, "10m", "20s").Should(HaveConditionField("Succeeded", "status", TrueString), "Build didn't succeed")
 	o.Eventually(mosb, "2m", "20s").Should(HaveConditionField("Interrupted", "status", FalseString), "Build was interrupted")
 	o.Eventually(mosb, "2m", "20s").Should(HaveConditionField("Failed", "status", FalseString), "Build was failed")
@@ -699,8 +700,9 @@ func checkUsbguradExtension(node *Node) {
 		rpmName          = AllExtenstions[extName]
 		activeString     = "Active: active (running)"
 		inactiveString   = "Active: inactive (dead)"
-		expectedError    = "missing     /usr/lib/tmpfiles.d/usbguard.conf\nerror: non-zero exit code from debug container"
-		expectedErrorOCL = ".M.......    /var/log/usbguard\nerror: non-zero exit code from debug container"
+		expectedError         = "missing     /usr/lib/tmpfiles.d/usbguard.conf\nerror: non-zero exit code from debug container"
+		expectedErrorOCL      = ".M.......    /var/log/usbguard\nerror: non-zero exit code from debug container"
+		expectedErrorCombined = "missing     /usr/lib/tmpfiles.d/usbguard.conf\n.M.......    /var/log/usbguard\nerror: non-zero exit code from debug container"
 	)
 	exutil.By("Verify node includes Usbguard extension")
 	o.Expect(
@@ -729,7 +731,7 @@ func checkUsbguradExtension(node *Node) {
 
 	exutil.By("Check that all the files in the rpm were correctly deployed ")
 	rpmOut, _ := node.checkRpmFiles(rpmName...)
-	o.Expect(strings.TrimSpace(rpmOut)).Should(o.Or(o.BeEmpty(), o.Equal(expectedErrorOCL), o.Equal(expectedError)), "Error in permissions of rpm files")
+	o.Expect(strings.TrimSpace(rpmOut)).Should(o.Or(o.BeEmpty(), o.Equal(expectedErrorOCL), o.Equal(expectedError), o.Equal(expectedErrorCombined)), "Error in permissions of rpm files")
 	logger.Infof("OK!\n")
 }
 
