@@ -8,6 +8,7 @@ import (
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
+	"github.com/openshift/machine-config-operator/test/extended-priv/util/bootstrap"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 )
 
@@ -147,6 +148,34 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		o.Expect(err).NotTo(o.HaveOccurred())
 		o.Expect(svcUnMaskedOuput).Should(o.ContainSubstring(activeString))
 		o.Expect(svcUnMaskedOuput).ShouldNot(o.ContainSubstring(inactiveString))
+	})
+
+	g.It("[PolarionID:53960][OTP] No failed units in the bootstrap machine", g.Label("Platform:aws", "Platform:azure"), func() {
+		failedUnitsCommand := "sudo systemctl list-units --failed --all"
+
+		// If no bootstrap is found, we skip the case.
+		// The test can only be executed in deployments that didn't remove the bootstrap machine
+		bs, err := bootstrap.GetBootstrap(oc)
+		if err != nil {
+			if _, notFound := err.(*bootstrap.InstanceNotFound); notFound {
+				g.Skip("skip test because bootstrap machine does not exist in the current cluster")
+			}
+		}
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		exutil.By("Verify that there is no failed units in the bootstrap machine")
+		// ssh client is a bit unstable, and it can return an empty string for no apparent reason every now and then.
+		// Hence we use 'Eventually' to verify the command to make the test robust.
+		o.Eventually(func() string {
+			logger.Infof("Executing command in bootstrap: %s", failedUnitsCommand)
+			failedUnits, err := bs.SSH.RunOutput(failedUnitsCommand)
+			logger.Infof("Command output:\n%s", failedUnits)
+			if err != nil {
+				logger.Errorf("Command Error:\n%s", err)
+			}
+			return failedUnits
+		}, "3m", "15s").Should(o.ContainSubstring("0 loaded units listed"),
+			"There are failed units in the bootstrap machine")
 	})
 
 	g.It("[PolarionID:56614][OTP] Create unit with content and mask=true[Disruptive]", func() {
