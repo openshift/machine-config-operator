@@ -941,52 +941,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		)
 	})
 
-	g.It("[PolarionID:80403][OTP] Validate MCS Certificate Rotation with 2.2.0 User-Data Secret [Disruptive]", g.Label("Platform:aws"), func() {
-		skipTestIfWorkersCannotBeScaled(oc.AsAdmin())
-		skipTestIfSupportedPlatformNotMatched(oc, AWSPlatform)
-		var (
-			machineConfiguration = GetMachineConfiguration(oc.AsAdmin())
-			mcsCaSecret          = NewSecret(oc.AsAdmin(), "openshift-machine-config-operator", "machine-config-server-ca")
-			newMsName            = fmt.Sprintf("mco-machinesets-%s-clone", GetCurrentTestPolarionIDNumber())
-			imageVersion         = "4.5"
-			ignitionVersion      = getUserDataIgnitionVersionFromOCPVersion(imageVersion)
-			initialNumWorkers    = len(wMcp.GetNodesOrFail())
-		)
-
-		if IsBootImageUpdateSupported(oc.AsAdmin()) {
-			defer machineConfiguration.SetSpec(machineConfiguration.GetSpecOrFail())
-			exutil.By("Disabling skew functionality")
-			DisableSkew(machineConfiguration)
-			logger.Infof("OK!\n")
-
-			exutil.By("Opt-out boot images update")
-			logger.Infof("Disabling the bootimages update so that our images are not overridden by MCO")
-			o.Expect(
-				machineConfiguration.SetNoneManagedBootImagesConfig(MachineSetResource),
-			).To(o.Succeed(), "Error configuring None managedBootImages in the 'cluster' MachineConfiguration resource")
-			logger.Infof("OK!\n")
-		}
-
-		exutil.By("Create the clone of existing Machinesets")
-		allMs, err := NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAll()
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting a list of MachineSet resources")
-		ms := allMs[0]
-		newMs := cloneMachineSet(oc.AsAdmin(), ms, newMsName, imageVersion, ignitionVersion)
-		defer removeClonedMachineSet(newMs, wMcp, initialNumWorkers)
-		logger.Infof("OK!\n")
-
-		newUserDataSecret, err := newMs.GetUserDataSecret()
-		o.Expect(err).NotTo(o.HaveOccurred())
-
-		verifyMcsCASecretRotateOrFail(mcsCaSecret, newUserDataSecret)
-
-		exutil.By("Scale MachineSet up")
-		o.Expect(newMs.AddToScale(1)).NotTo(o.HaveOccurred())
-		logger.Infof("OK!\n")
-		exutil.By("Verify the MachineSet is Ready")
-		o.Eventually(newMs.GetIsReady, "20m", "2m").Should(o.BeTrue(), "MachineSet %s is not ready.", newMs.GetName())
-		logger.Infof("OK!\n")
-	})
+	// OCPBUGS-86332: Starting in 4.22 we will no longer fix any bootimage related bugs from bootimages earlier than 4.13
+	// Removed test: PolarionID:80403 (4.5)
 })
 
 // EventuallyFileExistsInNode fails the test if the certificate file does not exist in the node after the time specified as parameters
