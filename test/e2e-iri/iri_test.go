@@ -460,14 +460,20 @@ func TestIRIController_ShouldPreventDeletionWhenInUse(t *testing.T) {
 	require.NotEmpty(t, cv.Status.Desired.Image, "ClusterVersion should have a desired image")
 
 	// Verify that at least one release in IRI matches the current cluster version
+	// Note: Compare SHA256 digests, not full URLs, because IRI uses api-int registry
+	// while ClusterVersion uses the external registry
+	cvDigest := extractSHA256Digest(cv.Status.Desired.Image)
+	require.NotEmpty(t, cvDigest, "ClusterVersion image should have a SHA256 digest")
+
 	matchFound := false
 	for _, release := range iri.Status.Releases {
-		if release.Image == cv.Status.Desired.Image {
+		releaseDigest := extractSHA256Digest(release.Image)
+		if releaseDigest == cvDigest {
 			matchFound = true
 			break
 		}
 	}
-	require.True(t, matchFound, "IRI should contain a release matching the current cluster version")
+	require.True(t, matchFound, "IRI should contain a release matching the current cluster version (digest: %s)", cvDigest)
 
 	// Attempt to delete the InternalReleaseImage - this should fail
 	err = cs.InternalReleaseImages().Delete(ctx, "cluster", v1.DeleteOptions{})
@@ -637,4 +643,21 @@ func TestIRIController_VerifyMLKEMSupport(t *testing.T) {
 	require.True(t,
 		strings.Contains(output, "X25519MLKEM768") || strings.Contains(output, "x25519_mlkem768"),
 		"IRI registry should support X25519MLKEM768 (ML-KEM) key exchange. Output: %s", output)
+}
+
+// extractSHA256Digest extracts the SHA256 digest from an OCI image reference.
+// Example: "registry.example.com/repo/image@sha256:abc123..." → "sha256:abc123..."
+// Returns empty string if no digest is found.
+func extractSHA256Digest(imageRef string) string {
+	// Split on @ to get the digest part
+	parts := strings.SplitN(imageRef, "@", 2)
+	if len(parts) != 2 {
+		return ""
+	}
+	digest := parts[1]
+	// Verify it's a sha256 digest
+	if strings.HasPrefix(digest, "sha256:") {
+		return digest
+	}
+	return ""
 }
