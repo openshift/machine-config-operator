@@ -17,7 +17,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 )
 
 // This test sets the OSImageStream name on a MachineConfigPool, then it
@@ -117,8 +116,8 @@ func TestOSImageStreamOSImageURL(t *testing.T) {
 
 // Fetches the OSImageStream, checks that only a single OSImageStream instance
 // is present, and that the defaultStream value is populated.
-func getOSImageStream(ctx context.Context, cs *framework.ClientSet) (*mcfgv1alpha1.OSImageStream, error) {
-	osiList, err := cs.GetMcfgclient().MachineconfigurationV1alpha1().OSImageStreams().List(ctx, metav1.ListOptions{})
+func getOSImageStream(ctx context.Context, cs *framework.ClientSet) (*mcfgv1.OSImageStream, error) {
+	osiList, err := cs.GetMcfgclient().MachineconfigurationV1().OSImageStreams().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("could not get OSImageStream: %w", err)
 	}

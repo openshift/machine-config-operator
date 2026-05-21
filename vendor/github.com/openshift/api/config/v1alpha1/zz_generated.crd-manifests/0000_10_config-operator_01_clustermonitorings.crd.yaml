@@ -110,7 +110,7 @@ spec:
                              - name: memory
                                request: 40Mi
                                limit: null
-                          Maximum length for this list is 10.
+                          Maximum length for this list is 5.
                           Minimum length for this list is 1.
                           Each resource name must be unique within this list.
                         items:
@@ -154,6 +154,7 @@ spec:
                                 request is the minimum amount of the resource required (e.g. "2Mi", "1Gi").
                                 This field is optional.
                                 When limit is specified, request cannot be greater than limit.
+                                The value must be greater than 0 when specified.
                               maxLength: 20
                               minLength: 1
                               pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
@@ -170,7 +171,7 @@ spec:
                           - message: limit must be greater than or equal to request
                             rule: '!(has(self.request) && has(self.limit)) || quantity(self.limit).compareTo(quantity(self.request))
                               >= 0'
-                        maxItems: 10
+                        maxItems: 5
                         minItems: 1
                         type: array
                         x-kubernetes-list-map-keys:
@@ -958,7 +959,7 @@ spec:
                          - name: memory
                            request: 40Mi
                            limit: null
-                      Maximum length for this list is 10.
+                      Maximum length for this list is 5.
                       Minimum length for this list is 1.
                       Each resource name must be unique within this list.
                     items:
@@ -1002,6 +1003,7 @@ spec:
                             request is the minimum amount of the resource required (e.g. "2Mi", "1Gi").
                             This field is optional.
                             When limit is specified, request cannot be greater than limit.
+                            The value must be greater than 0 when specified.
                           maxLength: 20
                           minLength: 1
                           pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
@@ -1018,7 +1020,7 @@ spec:
                       - message: limit must be greater than or equal to request
                         rule: '!(has(self.request) && has(self.limit)) || quantity(self.limit).compareTo(quantity(self.request))
                           >= 0'
-                    maxItems: 10
+                    maxItems: 5
                     minItems: 1
                     type: array
                     x-kubernetes-list-map-keys:
@@ -1284,6 +1286,819 @@ spec:
                     - TraceAll
                     type: string
                 type: object
+              monitoringPluginConfig:
+                description: |-
+                  monitoringPluginConfig is an optional field that can be used to configure the monitoring plugin
+                  that runs as a dynamic plugin of the OpenShift web console. The monitoring plugin provides
+                  the monitoring UI in the OpenShift web console for visualizing metrics, alerts, and dashboards.
+                  When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+                  The current default deploys the monitoring-plugin as a single-replica Deployment
+                  on linux nodes with 10m CPU and 50Mi memory requests, and no custom tolerations
+                  or topology spread constraints.
+                  When set, at least one field must be specified within monitoringPluginConfig.
+                minProperties: 1
+                properties:
+                  nodeSelector:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      nodeSelector defines the nodes on which the Pods are scheduled.
+                      nodeSelector is optional.
+
+                      When omitted, this means the user has no opinion and the platform is left
+                      to choose reasonable defaults. These defaults are subject to change over time.
+                      The current default value is `kubernetes.io/os: linux`.
+                      When specified, nodeSelector must contain at least 1 entry and must not contain more than 10 entries.
+                    maxProperties: 10
+                    minProperties: 1
+                    type: object
+                  resources:
+                    description: |-
+                      resources defines the compute resource requests and limits for the monitoring-plugin container.
+                      This includes CPU, memory and HugePages constraints to help control scheduling and resource usage.
+                      When not specified, defaults are used by the platform. Requests cannot exceed limits.
+                      This field is optional.
+                      More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                      This is a simplified API that maps to Kubernetes ResourceRequirements.
+                      The current default values are:
+                        resources:
+                         - name: cpu
+                           request: 10m
+                         - name: memory
+                           request: 50Mi
+
+                      When specified, resources must contain at least 1 entry and must not exceed 5 entries.
+                    items:
+                      description: ContainerResource defines a single resource requirement
+                        for a container.
+                      properties:
+                        limit:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: |-
+                            limit is the maximum amount of the resource allowed (e.g. "2Mi", "1Gi").
+                            This field is optional.
+                            When request is specified, limit cannot be less than request.
+                            The value must be greater than 0 when specified.
+                          maxLength: 20
+                          minLength: 1
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                          x-kubernetes-validations:
+                          - message: limit must be a positive, non-zero quantity
+                            rule: quantity(self).isGreaterThan(quantity('0'))
+                        name:
+                          description: |-
+                            name of the resource (e.g. "cpu", "memory", "hugepages-2Mi").
+                            This field is required.
+                            name must consist only of alphanumeric characters, `-`, `_` and `.` and must start and end with an alphanumeric character.
+                          maxLength: 253
+                          minLength: 1
+                          type: string
+                          x-kubernetes-validations:
+                          - message: name must consist only of alphanumeric characters,
+                              `-`, `_` and `.` and must start and end with an alphanumeric
+                              character
+                            rule: '!format.qualifiedName().validate(self).hasValue()'
+                        request:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: |-
+                            request is the minimum amount of the resource required (e.g. "2Mi", "1Gi").
+                            This field is optional.
+                            When limit is specified, request cannot be greater than limit.
+                            The value must be greater than 0 when specified.
+                          maxLength: 20
+                          minLength: 1
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                          x-kubernetes-validations:
+                          - message: request must be a positive, non-zero quantity
+                            rule: quantity(self).isGreaterThan(quantity('0'))
+                      required:
+                      - name
+                      type: object
+                      x-kubernetes-validations:
+                      - message: at least one of request or limit must be set
+                        rule: has(self.request) || has(self.limit)
+                      - message: limit must be greater than or equal to request
+                        rule: '!(has(self.request) && has(self.limit)) || quantity(self.limit).compareTo(quantity(self.request))
+                          >= 0'
+                    maxItems: 5
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
+                  tolerations:
+                    description: |-
+                      tolerations defines the tolerations required for the monitoring-plugin Pods.
+                      This field is optional.
+
+                      When omitted, the monitoring-plugin Pods will not have any tolerations, which
+                      means they will only be scheduled on nodes with no taints.
+                      When specified, tolerations must contain at least 1 entry and must not contain more than 10 entries.
+                    items:
+                      description: |-
+                        The pod this Toleration is attached to tolerates any taint that matches
+                        the triple <key,value,effect> using the matching operator <operator>.
+                      properties:
+                        effect:
+                          description: |-
+                            Effect indicates the taint effect to match. Empty means match all taint effects.
+                            When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                          type: string
+                        key:
+                          description: |-
+                            Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                            If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                          type: string
+                        operator:
+                          description: |-
+                            Operator represents a key's relationship to the value.
+                            Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
+                            Exists is equivalent to wildcard for value, so that a pod can
+                            tolerate all taints of a particular category.
+                            Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
+                          type: string
+                        tolerationSeconds:
+                          description: |-
+                            TolerationSeconds represents the period of time the toleration (which must be
+                            of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                            it is not set, which means tolerate the taint forever (do not evict). Zero and
+                            negative values will be treated as 0 (evict immediately) by the system.
+                          format: int64
+                          type: integer
+                        value:
+                          description: |-
+                            Value is the taint value the toleration matches to.
+                            If the operator is Exists, the value should be empty, otherwise just a regular string.
+                          type: string
+                      type: object
+                    maxItems: 10
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  topologySpreadConstraints:
+                    description: |-
+                      topologySpreadConstraints defines rules for how monitoring-plugin Pods should be distributed
+                      across topology domains such as zones, nodes, or other user-defined labels.
+                      topologySpreadConstraints is optional.
+                      This helps improve high availability and resource efficiency by avoiding placing
+                      too many replicas in the same failure domain.
+
+                      When omitted, this means no opinion and the platform is left to choose a default, which is subject to change over time.
+                      This field maps directly to the `topologySpreadConstraints` field in the Pod spec.
+                      Default is empty list.
+                      When specified, this list must contain at least 1 entry and must not exceed 10 entries.
+                    items:
+                      description: TopologySpreadConstraint specifies how to spread
+                        matching pods among the given topology.
+                      properties:
+                        labelSelector:
+                          description: |-
+                            LabelSelector is used to find matching pods.
+                            Pods that match this label selector are counted to determine the number of pods
+                            in their corresponding topology domain.
+                          properties:
+                            matchExpressions:
+                              description: matchExpressions is a list of label selector
+                                requirements. The requirements are ANDed.
+                              items:
+                                description: |-
+                                  A label selector requirement is a selector that contains values, a key, and an operator that
+                                  relates the key and values.
+                                properties:
+                                  key:
+                                    description: key is the label key that the selector
+                                      applies to.
+                                    type: string
+                                  operator:
+                                    description: |-
+                                      operator represents a key's relationship to a set of values.
+                                      Valid operators are In, NotIn, Exists and DoesNotExist.
+                                    type: string
+                                  values:
+                                    description: |-
+                                      values is an array of string values. If the operator is In or NotIn,
+                                      the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                      the values array must be empty. This array is replaced during a strategic
+                                      merge patch.
+                                    items:
+                                      type: string
+                                    type: array
+                                    x-kubernetes-list-type: atomic
+                                required:
+                                - key
+                                - operator
+                                type: object
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            matchLabels:
+                              additionalProperties:
+                                type: string
+                              description: |-
+                                matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                                map is equivalent to an element of matchExpressions, whose key field is "key", the
+                                operator is "In", and the values array contains only "value". The requirements are ANDed.
+                              type: object
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        matchLabelKeys:
+                          description: |-
+                            MatchLabelKeys is a set of pod label keys to select the pods over which
+                            spreading will be calculated. The keys are used to lookup values from the
+                            incoming pod labels, those key-value labels are ANDed with labelSelector
+                            to select the group of existing pods over which spreading will be calculated
+                            for the incoming pod. The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
+                            MatchLabelKeys cannot be set when LabelSelector isn't set.
+                            Keys that don't exist in the incoming pod labels will
+                            be ignored. A null or empty list means only match against labelSelector.
+
+                            This is a beta field and requires the MatchLabelKeysInPodTopologySpread feature gate to be enabled (enabled by default).
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: atomic
+                        maxSkew:
+                          description: |-
+                            MaxSkew describes the degree to which pods may be unevenly distributed.
+                            When `whenUnsatisfiable=DoNotSchedule`, it is the maximum permitted difference
+                            between the number of matching pods in the target topology and the global minimum.
+                            The global minimum is the minimum number of matching pods in an eligible domain
+                            or zero if the number of eligible domains is less than MinDomains.
+                            For example, in a 3-zone cluster, MaxSkew is set to 1, and pods with the same
+                            labelSelector spread as 2/2/1:
+                            In this case, the global minimum is 1.
+                            | zone1 | zone2 | zone3 |
+                            |  P P  |  P P  |   P   |
+                            - if MaxSkew is 1, incoming pod can only be scheduled to zone3 to become 2/2/2;
+                            scheduling it onto zone1(zone2) would make the ActualSkew(3-1) on zone1(zone2)
+                            violate MaxSkew(1).
+                            - if MaxSkew is 2, incoming pod can be scheduled onto any zone.
+                            When `whenUnsatisfiable=ScheduleAnyway`, it is used to give higher precedence
+                            to topologies that satisfy it.
+                            It's a required field. Default value is 1 and 0 is not allowed.
+                          format: int32
+                          type: integer
+                        minDomains:
+                          description: |-
+                            MinDomains indicates a minimum number of eligible domains.
+                            When the number of eligible domains with matching topology keys is less than minDomains,
+                            Pod Topology Spread treats "global minimum" as 0, and then the calculation of Skew is performed.
+                            And when the number of eligible domains with matching topology keys equals or greater than minDomains,
+                            this value has no effect on scheduling.
+                            As a result, when the number of eligible domains is less than minDomains,
+                            scheduler won't schedule more than maxSkew Pods to those domains.
+                            If value is nil, the constraint behaves as if MinDomains is equal to 1.
+                            Valid values are integers greater than 0.
+                            When value is not nil, WhenUnsatisfiable must be DoNotSchedule.
+
+                            For example, in a 3-zone cluster, MaxSkew is set to 2, MinDomains is set to 5 and pods with the same
+                            labelSelector spread as 2/2/2:
+                            | zone1 | zone2 | zone3 |
+                            |  P P  |  P P  |  P P  |
+                            The number of domains is less than 5(MinDomains), so "global minimum" is treated as 0.
+                            In this situation, new pod with the same labelSelector cannot be scheduled,
+                            because computed skew will be 3(3 - 0) if new Pod is scheduled to any of the three zones,
+                            it will violate MaxSkew.
+                          format: int32
+                          type: integer
+                        nodeAffinityPolicy:
+                          description: |-
+                            NodeAffinityPolicy indicates how we will treat Pod's nodeAffinity/nodeSelector
+                            when calculating pod topology spread skew. Options are:
+                            - Honor: only nodes matching nodeAffinity/nodeSelector are included in the calculations.
+                            - Ignore: nodeAffinity/nodeSelector are ignored. All nodes are included in the calculations.
+
+                            If this value is nil, the behavior is equivalent to the Honor policy.
+                          type: string
+                        nodeTaintsPolicy:
+                          description: |-
+                            NodeTaintsPolicy indicates how we will treat node taints when calculating
+                            pod topology spread skew. Options are:
+                            - Honor: nodes without taints, along with tainted nodes for which the incoming pod
+                            has a toleration, are included.
+                            - Ignore: node taints are ignored. All nodes are included.
+
+                            If this value is nil, the behavior is equivalent to the Ignore policy.
+                          type: string
+                        topologyKey:
+                          description: |-
+                            TopologyKey is the key of node labels. Nodes that have a label with this key
+                            and identical values are considered to be in the same topology.
+                            We consider each <key, value> as a "bucket", and try to put balanced number
+                            of pods into each bucket.
+                            We define a domain as a particular instance of a topology.
+                            Also, we define an eligible domain as a domain whose nodes meet the requirements of
+                            nodeAffinityPolicy and nodeTaintsPolicy.
+                            e.g. If TopologyKey is "kubernetes.io/hostname", each Node is a domain of that topology.
+                            And, if TopologyKey is "topology.kubernetes.io/zone", each zone is a domain of that topology.
+                            It's a required field.
+                          type: string
+                        whenUnsatisfiable:
+                          description: |-
+                            WhenUnsatisfiable indicates how to deal with a pod if it doesn't satisfy
+                            the spread constraint.
+                            - DoNotSchedule (default) tells the scheduler not to schedule it.
+                            - ScheduleAnyway tells the scheduler to schedule the pod in any location,
+                              but giving higher precedence to topologies that would help reduce the
+                              skew.
+                            A constraint is considered "Unsatisfiable" for an incoming pod
+                            if and only if every possible node assignment for that pod would violate
+                            "MaxSkew" on some topology.
+                            For example, in a 3-zone cluster, MaxSkew is set to 1, and pods with the same
+                            labelSelector spread as 3/1/1:
+                            | zone1 | zone2 | zone3 |
+                            | P P P |   P   |   P   |
+                            If WhenUnsatisfiable is set to DoNotSchedule, incoming pod can only be scheduled
+                            to zone2(zone3) to become 3/2/1(3/1/2) as ActualSkew(2-1) on zone2(zone3) satisfies
+                            MaxSkew(1). In other words, the cluster can still be imbalanced, but scheduler
+                            won't make it *more* imbalanced.
+                            It's a required field.
+                          type: string
+                      required:
+                      - maxSkew
+                      - topologyKey
+                      - whenUnsatisfiable
+                      type: object
+                    maxItems: 10
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - topologyKey
+                    - whenUnsatisfiable
+                    x-kubernetes-list-type: map
+                type: object
+              nodeExporterConfig:
+                description: |-
+                  nodeExporterConfig is an optional field that can be used to configure the node-exporter agent
+                  that runs as a DaemonSet in the openshift-monitoring namespace. The node-exporter agent collects
+                  hardware and OS-level metrics from every node in the cluster.
+                  When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+                minProperties: 1
+                properties:
+                  collectors:
+                    description: |-
+                      collectors configures which node-exporter metric collectors are enabled.
+                      collectors is optional.
+                      Each collector can be individually enabled or disabled. Some collectors may have
+                      additional configuration options.
+
+                      When omitted, this means no opinion and the platform is left to choose a reasonable
+                      default, which is subject to change over time.
+                    minProperties: 1
+                    properties:
+                      buddyInfo:
+                        description: |-
+                          buddyInfo configures the buddyinfo collector, which collects statistics about memory
+                          fragmentation from the node_buddyinfo_blocks metric. This metric collects data from /proc/buddyinfo.
+                          buddyInfo is optional.
+                          When omitted, this means no opinion and the platform is left to choose a reasonable default,
+                          which is subject to change over time. The current default is disabled.
+                          Enable when investigating kernel memory fragmentation; typically for advanced troubleshooting only.
+                        properties:
+                          collectionPolicy:
+                            description: |-
+                              collectionPolicy declares whether the buddyinfo collector collects metrics.
+                              This field is required.
+                              Valid values are "Collect" and "DoNotCollect".
+                              When set to "Collect", the buddyinfo collector is active and memory fragmentation statistics are collected.
+                              When set to "DoNotCollect", the buddyinfo collector is inactive.
+                            enum:
+                            - Collect
+                            - DoNotCollect
+                            type: string
+                        required:
+                        - collectionPolicy
+                        type: object
+                      cpuFreq:
+                        description: |-
+                          cpuFreq configures the cpufreq collector, which collects CPU frequency statistics.
+                          cpuFreq is optional.
+                          When omitted, this means no opinion and the platform is left to choose a reasonable default,
+                          which is subject to change over time. The current default is disabled.
+                          Consider enabling when you need to observe CPU frequency scaling; expect higher CPU usage on
+                          many-core nodes when collectionPolicy is Collect.
+                        properties:
+                          collectionPolicy:
+                            description: |-
+                              collectionPolicy declares whether the cpufreq collector collects metrics.
+                              This field is required.
+                              Valid values are "Collect" and "DoNotCollect".
+                              When set to "Collect", the cpufreq collector is active and CPU frequency statistics are collected.
+                              When set to "DoNotCollect", the cpufreq collector is inactive.
+                            enum:
+                            - Collect
+                            - DoNotCollect
+                            type: string
+                        required:
+                        - collectionPolicy
+                        type: object
+                      ethtool:
+                        description: |-
+                          ethtool configures the ethtool collector, which collects ethernet device statistics.
+                          ethtool is optional.
+                          When omitted, this means no opinion and the platform is left to choose a reasonable default,
+                          which is subject to change over time. The current default is disabled.
+                          Enable when you need NIC driver-level ethtool metrics beyond generic netdev counters.
+                        properties:
+                          collectionPolicy:
+                            description: |-
+                              collectionPolicy declares whether the ethtool collector collects metrics.
+                              This field is required.
+                              Valid values are "Collect" and "DoNotCollect".
+                              When set to "Collect", the ethtool collector is active and ethernet device statistics are collected.
+                              When set to "DoNotCollect", the ethtool collector is inactive.
+                            enum:
+                            - Collect
+                            - DoNotCollect
+                            type: string
+                        required:
+                        - collectionPolicy
+                        type: object
+                      ksmd:
+                        description: |-
+                          ksmd configures the ksmd collector, which collects statistics from the kernel same-page
+                          merger daemon.
+                          ksmd is optional.
+                          When omitted, this means no opinion and the platform is left to choose a reasonable default,
+                          which is subject to change over time. The current default is disabled.
+                          Enable on nodes where KSM is in use and you want visibility into merging activity.
+                        properties:
+                          collectionPolicy:
+                            description: |-
+                              collectionPolicy declares whether the ksmd collector collects metrics.
+                              This field is required.
+                              Valid values are "Collect" and "DoNotCollect".
+                              When set to "Collect", the ksmd collector is active and kernel same-page merger statistics are collected.
+                              When set to "DoNotCollect", the ksmd collector is inactive.
+                            enum:
+                            - Collect
+                            - DoNotCollect
+                            type: string
+                        required:
+                        - collectionPolicy
+                        type: object
+                      mountStats:
+                        description: |-
+                          mountStats configures the mountstats collector, which collects statistics about NFS volume
+                          I/O activities.
+                          mountStats is optional.
+                          When omitted, this means no opinion and the platform is left to choose a reasonable default,
+                          which is subject to change over time. The current default is disabled.
+                          Enabling this collector may produce metrics with high cardinality. If you enable this
+                          collector, closely monitor the prometheus-k8s deployment for excessive memory usage.
+                          Enable when you care about per-mount NFS client statistics.
+                        properties:
+                          collectionPolicy:
+                            description: |-
+                              collectionPolicy declares whether the mountstats collector collects metrics.
+                              This field is required.
+                              Valid values are "Collect" and "DoNotCollect".
+                              When set to "Collect", the mountstats collector is active and NFS volume I/O statistics are collected.
+                              When set to "DoNotCollect", the mountstats collector is inactive.
+                            enum:
+                            - Collect
+                            - DoNotCollect
+                            type: string
+                        required:
+                        - collectionPolicy
+                        type: object
+                      netClass:
+                        description: |-
+                          netClass configures the netclass collector, which collects information about network devices.
+                          netClass is optional.
+                          When omitted, this means no opinion and the platform is left to choose a reasonable default,
+                          which is subject to change over time. The current default is enabled with netlink mode active.
+                          Use statsGatherer when sysfs vs netlink implementation matters or when matching node_exporter tuning.
+                        properties:
+                          collect:
+                            description: |-
+                              collect contains configuration options that apply only when the netclass collector is actively collecting metrics
+                              (i.e. when collectionPolicy is Collect).
+                              collect is optional and may be omitted even when collectionPolicy is Collect.
+                              collect may only be set when collectionPolicy is Collect.
+                              When set, at least one field must be specified within collect.
+                            minProperties: 1
+                            properties:
+                              statsGatherer:
+                                description: |-
+                                  statsGatherer selects which implementation the netclass collector uses to gather statistics (sysfs or netlink).
+                                  statsGatherer is optional.
+                                  Valid values are "Sysfs" and "Netlink".
+                                  When set to "Netlink", the netlink implementation is used; when set to "Sysfs", the sysfs implementation is used.
+                                  When omitted, this means no opinion and the platform is left to choose a reasonable default,
+                                  which is subject to change over time. The current default is Netlink.
+                                enum:
+                                - Sysfs
+                                - Netlink
+                                type: string
+                            type: object
+                          collectionPolicy:
+                            description: |-
+                              collectionPolicy declares whether the netclass collector collects metrics.
+                              This field is required.
+                              Valid values are "Collect" and "DoNotCollect".
+                              When set to "Collect", the netclass collector is active and network class information is collected.
+                              When set to "DoNotCollect", the netclass collector is inactive and the corresponding metrics become unavailable.
+                              When set to "DoNotCollect", the collect field must not be set.
+                            enum:
+                            - Collect
+                            - DoNotCollect
+                            type: string
+                        required:
+                        - collectionPolicy
+                        type: object
+                        x-kubernetes-validations:
+                        - message: collect is forbidden when collectionPolicy is not
+                            Collect
+                          rule: 'has(self.collectionPolicy) && self.collectionPolicy
+                            == ''Collect'' ? true : !has(self.collect)'
+                      netDev:
+                        description: |-
+                          netDev configures the netdev collector, which collects network device statistics.
+                          netDev is optional.
+                          When omitted, this means no opinion and the platform is left to choose a reasonable default,
+                          which is subject to change over time. The current default is enabled.
+                          Turn off if you must reduce per-interface metric cardinality on hosts with many virtual interfaces.
+                        properties:
+                          collectionPolicy:
+                            description: |-
+                              collectionPolicy declares whether the netdev collector collects metrics.
+                              This field is required.
+                              Valid values are "Collect" and "DoNotCollect".
+                              When set to "Collect", the netdev collector is active and network device statistics are collected.
+                              When set to "DoNotCollect", the netdev collector is inactive and the corresponding metrics become unavailable.
+                            enum:
+                            - Collect
+                            - DoNotCollect
+                            type: string
+                        required:
+                        - collectionPolicy
+                        type: object
+                      processes:
+                        description: |-
+                          processes configures the processes collector, which collects statistics from processes and
+                          threads running in the system.
+                          processes is optional.
+                          When omitted, this means no opinion and the platform is left to choose a reasonable default,
+                          which is subject to change over time. The current default is disabled.
+                          Enable for process/thread-level insight; can be expensive on busy nodes.
+                        properties:
+                          collectionPolicy:
+                            description: |-
+                              collectionPolicy declares whether the processes collector collects metrics.
+                              This field is required.
+                              Valid values are "Collect" and "DoNotCollect".
+                              When set to "Collect", the processes collector is active and process/thread statistics are collected.
+                              When set to "DoNotCollect", the processes collector is inactive.
+                            enum:
+                            - Collect
+                            - DoNotCollect
+                            type: string
+                        required:
+                        - collectionPolicy
+                        type: object
+                      softirqs:
+                        description: |-
+                          softirqs configures the softirqs collector, which exposes detailed softirq statistics
+                          from /proc/softirqs.
+                          softirqs is optional.
+                          When omitted, this means no opinion and the platform is left to choose a reasonable default,
+                          which is subject to change over time. The current default is disabled.
+                          Enable when you need visibility into kernel softirq processing across CPUs.
+                        properties:
+                          collectionPolicy:
+                            description: |-
+                              collectionPolicy declares whether the softirqs collector collects metrics.
+                              This field is required.
+                              Valid values are "Collect" and "DoNotCollect".
+                              When set to "Collect", the softirqs collector is active and softirq statistics are collected.
+                              When set to "DoNotCollect", the softirqs collector is inactive.
+                            enum:
+                            - Collect
+                            - DoNotCollect
+                            type: string
+                        required:
+                        - collectionPolicy
+                        type: object
+                      systemd:
+                        description: |-
+                          systemd configures the systemd collector, which collects statistics on the systemd daemon
+                          and its managed services.
+                          systemd is optional.
+                          When omitted, this means no opinion and the platform is left to choose a reasonable default,
+                          which is subject to change over time. The current default is disabled.
+                          Enabling this collector with a long list of selected units may produce metrics with high
+                          cardinality. If you enable this collector, closely monitor the prometheus-k8s deployment
+                          for excessive memory usage.
+                          Enable when you need metrics for specific units; scope units carefully.
+                        properties:
+                          collect:
+                            description: |-
+                              collect contains configuration options that apply only when the systemd collector is actively collecting metrics
+                              (i.e. when collectionPolicy is Collect).
+                              collect is optional and may be omitted even when collectionPolicy is Collect.
+                              collect may only be set when collectionPolicy is Collect.
+                              When set, at least one field must be specified within collect.
+                            minProperties: 1
+                            properties:
+                              units:
+                                description: |-
+                                  units is a list of regular expression patterns that match systemd units to be included
+                                  by the systemd collector.
+                                  units is optional.
+                                  By default, the list is empty, so the collector exposes no metrics for systemd units.
+                                  Each entry is a regular expression pattern and must be at least 1 character and at most 1024 characters.
+                                  Maximum length for this list is 50.
+                                  Minimum length for this list is 1.
+                                  Entries in this list must be unique.
+                                items:
+                                  description: |-
+                                    NodeExporterSystemdUnit is a string that is interpreted as a Go regular expression
+                                    pattern by the controller to match systemd unit names.
+                                    Invalid regular expressions will cause a controller-level error at runtime.
+                                    Must be at least 1 character and at most 1024 characters.
+                                  maxLength: 1024
+                                  minLength: 1
+                                  type: string
+                                maxItems: 50
+                                minItems: 1
+                                type: array
+                                x-kubernetes-list-type: set
+                            type: object
+                          collectionPolicy:
+                            description: |-
+                              collectionPolicy declares whether the systemd collector collects metrics.
+                              This field is required.
+                              Valid values are "Collect" and "DoNotCollect".
+                              When set to "Collect", the systemd collector is active and systemd unit statistics are collected.
+                              When set to "DoNotCollect", the systemd collector is inactive and the collect field must not be set.
+                            enum:
+                            - Collect
+                            - DoNotCollect
+                            type: string
+                        required:
+                        - collectionPolicy
+                        type: object
+                        x-kubernetes-validations:
+                        - message: collect is forbidden when collectionPolicy is not
+                            Collect
+                          rule: 'has(self.collectionPolicy) && self.collectionPolicy
+                            == ''Collect'' ? true : !has(self.collect)'
+                      tcpStat:
+                        description: |-
+                          tcpStat configures the tcpstat collector, which collects TCP connection statistics.
+                          tcpStat is optional.
+                          When omitted, this means no opinion and the platform is left to choose a reasonable default,
+                          which is subject to change over time. The current default is disabled.
+                          Enable when debugging TCP connection behavior or capacity at the node level.
+                        properties:
+                          collectionPolicy:
+                            description: |-
+                              collectionPolicy declares whether the tcpstat collector collects metrics.
+                              This field is required.
+                              Valid values are "Collect" and "DoNotCollect".
+                              When set to "Collect", the tcpstat collector is active and TCP connection statistics are collected.
+                              When set to "DoNotCollect", the tcpstat collector is inactive.
+                            enum:
+                            - Collect
+                            - DoNotCollect
+                            type: string
+                        required:
+                        - collectionPolicy
+                        type: object
+                    type: object
+                  ignoredNetworkDevices:
+                    description: |-
+                      ignoredNetworkDevices is a list of regular expression patterns that match network devices
+                      to be excluded from the relevant collector configuration such as netdev, netclass, and ethtool.
+                      ignoredNetworkDevices is optional.
+
+                      When omitted, the Cluster Monitoring Operator uses a predefined list of devices to be excluded
+                      to minimize the impact on memory usage.
+                      When set as an empty list, no devices are excluded.
+                      If you modify this setting, monitor the prometheus-k8s deployment closely for excessive memory usage.
+                      Maximum length for this list is 50.
+                      Each entry must be at least 1 character and at most 1024 characters long.
+                    items:
+                      description: |-
+                        NodeExporterIgnoredNetworkDevice is a string that is interpreted as a Go regular expression
+                        pattern by the controller to match network device names to exclude from node-exporter
+                        metric collection for collectors such as netdev, netclass, and ethtool.
+                        Invalid regular expressions will cause a controller-level error at runtime.
+                        Must be at least 1 character and at most 1024 characters.
+                      maxLength: 1024
+                      minLength: 1
+                      type: string
+                    maxItems: 50
+                    minItems: 0
+                    type: array
+                    x-kubernetes-list-type: set
+                  maxProcs:
+                    description: |-
+                      maxProcs sets the target number of CPUs on which the node-exporter process will run.
+                      maxProcs is optional.
+                      Use this setting to override the default value, which is set either to 4 or to the number
+                      of CPUs on the host, whichever is smaller.
+                      The default value is computed at runtime and set via the GOMAXPROCS environment variable before
+                      node-exporter is launched.
+                      If a kernel deadlock occurs or if performance degrades when reading from sysfs concurrently,
+                      you can change this value to 1, which limits node-exporter to running on one CPU.
+                      For nodes with a high CPU count, setting the limit to a low number saves resources by preventing
+                      Go routines from being scheduled to run on all CPUs. However, I/O performance degrades if the
+                      maxProcs value is set too low and there are many metrics to collect.
+                      The minimum value is 1 and the maximum value is 1024.
+                      When omitted, this means no opinion and the platform is left to choose a reasonable default,
+                      which is subject to change over time. The current default is min(4, number of host CPUs).
+                    format: int32
+                    maximum: 1024
+                    minimum: 1
+                    type: integer
+                  resources:
+                    description: |-
+                      resources defines the compute resource requests and limits for the node-exporter container.
+                      This includes CPU, memory and HugePages constraints to help control scheduling and resource usage.
+                      When not specified, defaults are used by the platform. Requests cannot exceed limits.
+                      This field is optional.
+                      More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                      This is a simplified API that maps to Kubernetes ResourceRequirements.
+                      The current default values are:
+                        resources:
+                         - name: cpu
+                           request: 8m
+                           limit: null
+                         - name: memory
+                           request: 32Mi
+                           limit: null
+                    items:
+                      description: ContainerResource defines a single resource requirement
+                        for a container.
+                      properties:
+                        limit:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: |-
+                            limit is the maximum amount of the resource allowed (e.g. "2Mi", "1Gi").
+                            This field is optional.
+                            When request is specified, limit cannot be less than request.
+                            The value must be greater than 0 when specified.
+                          maxLength: 20
+                          minLength: 1
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                          x-kubernetes-validations:
+                          - message: limit must be a positive, non-zero quantity
+                            rule: quantity(self).isGreaterThan(quantity('0'))
+                        name:
+                          description: |-
+                            name of the resource (e.g. "cpu", "memory", "hugepages-2Mi").
+                            This field is required.
+                            name must consist only of alphanumeric characters, `-`, `_` and `.` and must start and end with an alphanumeric character.
+                          maxLength: 253
+                          minLength: 1
+                          type: string
+                          x-kubernetes-validations:
+                          - message: name must consist only of alphanumeric characters,
+                              `-`, `_` and `.` and must start and end with an alphanumeric
+                              character
+                            rule: '!format.qualifiedName().validate(self).hasValue()'
+                        request:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: |-
+                            request is the minimum amount of the resource required (e.g. "2Mi", "1Gi").
+                            This field is optional.
+                            When limit is specified, request cannot be greater than limit.
+                            The value must be greater than 0 when specified.
+                          maxLength: 20
+                          minLength: 1
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                          x-kubernetes-validations:
+                          - message: request must be a positive, non-zero quantity
+                            rule: quantity(self).isGreaterThan(quantity('0'))
+                      required:
+                      - name
+                      type: object
+                      x-kubernetes-validations:
+                      - message: at least one of request or limit must be set
+                        rule: has(self.request) || has(self.limit)
+                      - message: limit must be greater than or equal to request
+                        rule: '!(has(self.request) && has(self.limit)) || quantity(self.limit).compareTo(quantity(self.request))
+                          >= 0'
+                    maxItems: 5
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
+                type: object
               openShiftStateMetricsConfig:
                 description: |-
                   openShiftStateMetricsConfig is an optional field that can be used to configure the openshift-state-metrics
@@ -1322,7 +2137,7 @@ spec:
                          - name: memory
                            request: 32Mi
                            limit: null
-                      Maximum length for this list is 10.
+                      Maximum length for this list is 5.
                       Minimum length for this list is 1.
                       Each resource name must be unique within this list.
                     items:
@@ -1366,6 +2181,7 @@ spec:
                             request is the minimum amount of the resource required (e.g. "2Mi", "1Gi").
                             This field is optional.
                             When limit is specified, request cannot be greater than limit.
+                            The value must be greater than 0 when specified.
                           maxLength: 20
                           minLength: 1
                           pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
@@ -1382,7 +2198,7 @@ spec:
                       - message: limit must be greater than or equal to request
                         rule: '!(has(self.request) && has(self.limit)) || quantity(self.limit).compareTo(quantity(self.request))
                           >= 0'
-                    maxItems: 10
+                    maxItems: 5
                     minItems: 1
                     type: array
                     x-kubernetes-list-map-keys:
@@ -3233,14 +4049,20 @@ spec:
                       resources defines the compute resource requests and limits for the Prometheus container.
                       This includes CPU, memory and HugePages constraints to help control scheduling and resource usage.
                       When not specified, defaults are used by the platform. Requests cannot exceed limits.
-                      Each entry must have a unique resource name.
-                      Minimum of 1 and maximum of 10 resource entries can be specified.
+                      This field is optional.
+                      More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                      This is a simplified API that maps to Kubernetes ResourceRequirements.
                       The current default values are:
                         resources:
                          - name: cpu
                            request: 4m
+                           limit: null
                          - name: memory
                            request: 40Mi
+                           limit: null
+                      Maximum length for this list is 5.
+                      Minimum length for this list is 1.
+                      Each resource name must be unique within this list.
                     items:
                       description: ContainerResource defines a single resource requirement
                         for a container.
@@ -3282,6 +4104,7 @@ spec:
                             request is the minimum amount of the resource required (e.g. "2Mi", "1Gi").
                             This field is optional.
                             When limit is specified, request cannot be greater than limit.
+                            The value must be greater than 0 when specified.
                           maxLength: 20
                           minLength: 1
                           pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
@@ -3298,7 +4121,7 @@ spec:
                       - message: limit must be greater than or equal to request
                         rule: '!(has(self.request) && has(self.limit)) || quantity(self.limit).compareTo(quantity(self.request))
                           >= 0'
-                    maxItems: 10
+                    maxItems: 5
                     minItems: 1
                     type: array
                     x-kubernetes-list-map-keys:
@@ -4012,7 +4835,7 @@ spec:
                          - name: memory
                            request: 30Mi
                            limit: null
-                      Maximum length for this list is 10.
+                      Maximum length for this list is 5.
                       Minimum length for this list is 1.
                       Each resource name must be unique within this list.
                     items:
@@ -4056,6 +4879,7 @@ spec:
                             request is the minimum amount of the resource required (e.g. "2Mi", "1Gi").
                             This field is optional.
                             When limit is specified, request cannot be greater than limit.
+                            The value must be greater than 0 when specified.
                           maxLength: 20
                           minLength: 1
                           pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
@@ -4072,7 +4896,7 @@ spec:
                       - message: limit must be greater than or equal to request
                         rule: '!(has(self.request) && has(self.limit)) || quantity(self.limit).compareTo(quantity(self.request))
                           >= 0'
-                    maxItems: 10
+                    maxItems: 5
                     minItems: 1
                     type: array
                     x-kubernetes-list-map-keys:
@@ -4326,7 +5150,7 @@ spec:
                          - name: memory
                            request: 40Mi
                            limit: null
-                      Maximum length for this list is 10.
+                      Maximum length for this list is 5.
                       Minimum length for this list is 1.
                       Each resource name must be unique within this list.
                     items:
@@ -4370,6 +5194,7 @@ spec:
                             request is the minimum amount of the resource required (e.g. "2Mi", "1Gi").
                             This field is optional.
                             When limit is specified, request cannot be greater than limit.
+                            The value must be greater than 0 when specified.
                           maxLength: 20
                           minLength: 1
                           pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
@@ -4386,7 +5211,7 @@ spec:
                       - message: limit must be greater than or equal to request
                         rule: '!(has(self.request) && has(self.limit)) || quantity(self.limit).compareTo(quantity(self.request))
                           >= 0'
-                    maxItems: 10
+                    maxItems: 5
                     minItems: 1
                     type: array
                     x-kubernetes-list-map-keys:
@@ -4454,6 +5279,761 @@ spec:
                       When omitted, this means no opinion and the platform is left to choose a default, which is subject to change over time.
                       This field maps directly to the `topologySpreadConstraints` field in the Pod spec.
                       Default is empty list.
+                      Maximum length for this list is 10.
+                      Minimum length for this list is 1.
+                      Entries must have unique topologyKey and whenUnsatisfiable pairs.
+                    items:
+                      description: TopologySpreadConstraint specifies how to spread
+                        matching pods among the given topology.
+                      properties:
+                        labelSelector:
+                          description: |-
+                            LabelSelector is used to find matching pods.
+                            Pods that match this label selector are counted to determine the number of pods
+                            in their corresponding topology domain.
+                          properties:
+                            matchExpressions:
+                              description: matchExpressions is a list of label selector
+                                requirements. The requirements are ANDed.
+                              items:
+                                description: |-
+                                  A label selector requirement is a selector that contains values, a key, and an operator that
+                                  relates the key and values.
+                                properties:
+                                  key:
+                                    description: key is the label key that the selector
+                                      applies to.
+                                    type: string
+                                  operator:
+                                    description: |-
+                                      operator represents a key's relationship to a set of values.
+                                      Valid operators are In, NotIn, Exists and DoesNotExist.
+                                    type: string
+                                  values:
+                                    description: |-
+                                      values is an array of string values. If the operator is In or NotIn,
+                                      the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                      the values array must be empty. This array is replaced during a strategic
+                                      merge patch.
+                                    items:
+                                      type: string
+                                    type: array
+                                    x-kubernetes-list-type: atomic
+                                required:
+                                - key
+                                - operator
+                                type: object
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            matchLabels:
+                              additionalProperties:
+                                type: string
+                              description: |-
+                                matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                                map is equivalent to an element of matchExpressions, whose key field is "key", the
+                                operator is "In", and the values array contains only "value". The requirements are ANDed.
+                              type: object
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        matchLabelKeys:
+                          description: |-
+                            MatchLabelKeys is a set of pod label keys to select the pods over which
+                            spreading will be calculated. The keys are used to lookup values from the
+                            incoming pod labels, those key-value labels are ANDed with labelSelector
+                            to select the group of existing pods over which spreading will be calculated
+                            for the incoming pod. The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
+                            MatchLabelKeys cannot be set when LabelSelector isn't set.
+                            Keys that don't exist in the incoming pod labels will
+                            be ignored. A null or empty list means only match against labelSelector.
+
+                            This is a beta field and requires the MatchLabelKeysInPodTopologySpread feature gate to be enabled (enabled by default).
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: atomic
+                        maxSkew:
+                          description: |-
+                            MaxSkew describes the degree to which pods may be unevenly distributed.
+                            When `whenUnsatisfiable=DoNotSchedule`, it is the maximum permitted difference
+                            between the number of matching pods in the target topology and the global minimum.
+                            The global minimum is the minimum number of matching pods in an eligible domain
+                            or zero if the number of eligible domains is less than MinDomains.
+                            For example, in a 3-zone cluster, MaxSkew is set to 1, and pods with the same
+                            labelSelector spread as 2/2/1:
+                            In this case, the global minimum is 1.
+                            | zone1 | zone2 | zone3 |
+                            |  P P  |  P P  |   P   |
+                            - if MaxSkew is 1, incoming pod can only be scheduled to zone3 to become 2/2/2;
+                            scheduling it onto zone1(zone2) would make the ActualSkew(3-1) on zone1(zone2)
+                            violate MaxSkew(1).
+                            - if MaxSkew is 2, incoming pod can be scheduled onto any zone.
+                            When `whenUnsatisfiable=ScheduleAnyway`, it is used to give higher precedence
+                            to topologies that satisfy it.
+                            It's a required field. Default value is 1 and 0 is not allowed.
+                          format: int32
+                          type: integer
+                        minDomains:
+                          description: |-
+                            MinDomains indicates a minimum number of eligible domains.
+                            When the number of eligible domains with matching topology keys is less than minDomains,
+                            Pod Topology Spread treats "global minimum" as 0, and then the calculation of Skew is performed.
+                            And when the number of eligible domains with matching topology keys equals or greater than minDomains,
+                            this value has no effect on scheduling.
+                            As a result, when the number of eligible domains is less than minDomains,
+                            scheduler won't schedule more than maxSkew Pods to those domains.
+                            If value is nil, the constraint behaves as if MinDomains is equal to 1.
+                            Valid values are integers greater than 0.
+                            When value is not nil, WhenUnsatisfiable must be DoNotSchedule.
+
+                            For example, in a 3-zone cluster, MaxSkew is set to 2, MinDomains is set to 5 and pods with the same
+                            labelSelector spread as 2/2/2:
+                            | zone1 | zone2 | zone3 |
+                            |  P P  |  P P  |  P P  |
+                            The number of domains is less than 5(MinDomains), so "global minimum" is treated as 0.
+                            In this situation, new pod with the same labelSelector cannot be scheduled,
+                            because computed skew will be 3(3 - 0) if new Pod is scheduled to any of the three zones,
+                            it will violate MaxSkew.
+                          format: int32
+                          type: integer
+                        nodeAffinityPolicy:
+                          description: |-
+                            NodeAffinityPolicy indicates how we will treat Pod's nodeAffinity/nodeSelector
+                            when calculating pod topology spread skew. Options are:
+                            - Honor: only nodes matching nodeAffinity/nodeSelector are included in the calculations.
+                            - Ignore: nodeAffinity/nodeSelector are ignored. All nodes are included in the calculations.
+
+                            If this value is nil, the behavior is equivalent to the Honor policy.
+                          type: string
+                        nodeTaintsPolicy:
+                          description: |-
+                            NodeTaintsPolicy indicates how we will treat node taints when calculating
+                            pod topology spread skew. Options are:
+                            - Honor: nodes without taints, along with tainted nodes for which the incoming pod
+                            has a toleration, are included.
+                            - Ignore: node taints are ignored. All nodes are included.
+
+                            If this value is nil, the behavior is equivalent to the Ignore policy.
+                          type: string
+                        topologyKey:
+                          description: |-
+                            TopologyKey is the key of node labels. Nodes that have a label with this key
+                            and identical values are considered to be in the same topology.
+                            We consider each <key, value> as a "bucket", and try to put balanced number
+                            of pods into each bucket.
+                            We define a domain as a particular instance of a topology.
+                            Also, we define an eligible domain as a domain whose nodes meet the requirements of
+                            nodeAffinityPolicy and nodeTaintsPolicy.
+                            e.g. If TopologyKey is "kubernetes.io/hostname", each Node is a domain of that topology.
+                            And, if TopologyKey is "topology.kubernetes.io/zone", each zone is a domain of that topology.
+                            It's a required field.
+                          type: string
+                        whenUnsatisfiable:
+                          description: |-
+                            WhenUnsatisfiable indicates how to deal with a pod if it doesn't satisfy
+                            the spread constraint.
+                            - DoNotSchedule (default) tells the scheduler not to schedule it.
+                            - ScheduleAnyway tells the scheduler to schedule the pod in any location,
+                              but giving higher precedence to topologies that would help reduce the
+                              skew.
+                            A constraint is considered "Unsatisfiable" for an incoming pod
+                            if and only if every possible node assignment for that pod would violate
+                            "MaxSkew" on some topology.
+                            For example, in a 3-zone cluster, MaxSkew is set to 1, and pods with the same
+                            labelSelector spread as 3/1/1:
+                            | zone1 | zone2 | zone3 |
+                            | P P P |   P   |   P   |
+                            If WhenUnsatisfiable is set to DoNotSchedule, incoming pod can only be scheduled
+                            to zone2(zone3) to become 3/2/1(3/1/2) as ActualSkew(2-1) on zone2(zone3) satisfies
+                            MaxSkew(1). In other words, the cluster can still be imbalanced, but scheduler
+                            won't make it *more* imbalanced.
+                            It's a required field.
+                          type: string
+                      required:
+                      - maxSkew
+                      - topologyKey
+                      - whenUnsatisfiable
+                      type: object
+                    maxItems: 10
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - topologyKey
+                    - whenUnsatisfiable
+                    x-kubernetes-list-type: map
+                type: object
+              telemeterClientConfig:
+                description: |-
+                  telemeterClientConfig is an optional field that can be used to configure the Telemeter Client
+                  component that runs in the openshift-monitoring namespace. The Telemeter Client collects
+                  selected monitoring metrics and forwards them to Red Hat for telemetry purposes.
+                  When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+                  When set, at least one field must be specified within telemeterClientConfig.
+                minProperties: 1
+                properties:
+                  nodeSelector:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      nodeSelector defines the nodes on which the Pods are scheduled.
+                      nodeSelector is optional.
+
+                      When omitted, this means the user has no opinion and the platform is left
+                      to choose reasonable defaults. These defaults are subject to change over time.
+                      The current default value is `kubernetes.io/os: linux`.
+                      When specified, nodeSelector must contain at least 1 entry and must not contain more than 10 entries.
+                    maxProperties: 10
+                    minProperties: 1
+                    type: object
+                  resources:
+                    description: |-
+                      resources defines the compute resource requests and limits for the Telemeter Client container.
+                      This includes CPU, memory and HugePages constraints to help control scheduling and resource usage.
+                      When not specified, defaults are used by the platform. Requests cannot exceed limits.
+                      This field is optional.
+                      More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                      This is a simplified API that maps to Kubernetes ResourceRequirements.
+                      The current default values are:
+                        resources:
+                         - name: cpu
+                           request: 1m
+                           limit: null
+                         - name: memory
+                           request: 40Mi
+                           limit: null
+                      Maximum length for this list is 5.
+                      Minimum length for this list is 1.
+                      Each resource name must be unique within this list.
+                    items:
+                      description: ContainerResource defines a single resource requirement
+                        for a container.
+                      properties:
+                        limit:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: |-
+                            limit is the maximum amount of the resource allowed (e.g. "2Mi", "1Gi").
+                            This field is optional.
+                            When request is specified, limit cannot be less than request.
+                            The value must be greater than 0 when specified.
+                          maxLength: 20
+                          minLength: 1
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                          x-kubernetes-validations:
+                          - message: limit must be a positive, non-zero quantity
+                            rule: quantity(self).isGreaterThan(quantity('0'))
+                        name:
+                          description: |-
+                            name of the resource (e.g. "cpu", "memory", "hugepages-2Mi").
+                            This field is required.
+                            name must consist only of alphanumeric characters, `-`, `_` and `.` and must start and end with an alphanumeric character.
+                          maxLength: 253
+                          minLength: 1
+                          type: string
+                          x-kubernetes-validations:
+                          - message: name must consist only of alphanumeric characters,
+                              `-`, `_` and `.` and must start and end with an alphanumeric
+                              character
+                            rule: '!format.qualifiedName().validate(self).hasValue()'
+                        request:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: |-
+                            request is the minimum amount of the resource required (e.g. "2Mi", "1Gi").
+                            This field is optional.
+                            When limit is specified, request cannot be greater than limit.
+                            The value must be greater than 0 when specified.
+                          maxLength: 20
+                          minLength: 1
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                          x-kubernetes-validations:
+                          - message: request must be a positive, non-zero quantity
+                            rule: quantity(self).isGreaterThan(quantity('0'))
+                      required:
+                      - name
+                      type: object
+                      x-kubernetes-validations:
+                      - message: at least one of request or limit must be set
+                        rule: has(self.request) || has(self.limit)
+                      - message: limit must be greater than or equal to request
+                        rule: '!(has(self.request) && has(self.limit)) || quantity(self.limit).compareTo(quantity(self.request))
+                          >= 0'
+                    maxItems: 5
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
+                  tolerations:
+                    description: |-
+                      tolerations defines tolerations for the pods.
+                      tolerations is optional.
+
+                      When omitted, this means the user has no opinion and the platform is left
+                      to choose reasonable defaults. These defaults are subject to change over time.
+                      Defaults are empty/unset.
+                      Maximum length for this list is 10.
+                      Minimum length for this list is 1.
+                    items:
+                      description: |-
+                        The pod this Toleration is attached to tolerates any taint that matches
+                        the triple <key,value,effect> using the matching operator <operator>.
+                      properties:
+                        effect:
+                          description: |-
+                            Effect indicates the taint effect to match. Empty means match all taint effects.
+                            When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                          type: string
+                        key:
+                          description: |-
+                            Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                            If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                          type: string
+                        operator:
+                          description: |-
+                            Operator represents a key's relationship to the value.
+                            Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
+                            Exists is equivalent to wildcard for value, so that a pod can
+                            tolerate all taints of a particular category.
+                            Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
+                          type: string
+                        tolerationSeconds:
+                          description: |-
+                            TolerationSeconds represents the period of time the toleration (which must be
+                            of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                            it is not set, which means tolerate the taint forever (do not evict). Zero and
+                            negative values will be treated as 0 (evict immediately) by the system.
+                          format: int64
+                          type: integer
+                        value:
+                          description: |-
+                            Value is the taint value the toleration matches to.
+                            If the operator is Exists, the value should be empty, otherwise just a regular string.
+                          type: string
+                      type: object
+                    maxItems: 10
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  topologySpreadConstraints:
+                    description: |-
+                      topologySpreadConstraints defines rules for how Telemeter Client Pods should be distributed
+                      across topology domains such as zones, nodes, or other user-defined labels.
+                      topologySpreadConstraints is optional.
+                      This helps improve high availability and resource efficiency by avoiding placing
+                      too many replicas in the same failure domain.
+
+                      When omitted, this means no opinion and the platform is left to choose a default, which is subject to change over time.
+                      This field maps directly to the `topologySpreadConstraints` field in the Pod spec.
+                      Default is empty list.
+                      Maximum length for this list is 10.
+                      Minimum length for this list is 1.
+                      Entries must have unique topologyKey and whenUnsatisfiable pairs.
+                    items:
+                      description: TopologySpreadConstraint specifies how to spread
+                        matching pods among the given topology.
+                      properties:
+                        labelSelector:
+                          description: |-
+                            LabelSelector is used to find matching pods.
+                            Pods that match this label selector are counted to determine the number of pods
+                            in their corresponding topology domain.
+                          properties:
+                            matchExpressions:
+                              description: matchExpressions is a list of label selector
+                                requirements. The requirements are ANDed.
+                              items:
+                                description: |-
+                                  A label selector requirement is a selector that contains values, a key, and an operator that
+                                  relates the key and values.
+                                properties:
+                                  key:
+                                    description: key is the label key that the selector
+                                      applies to.
+                                    type: string
+                                  operator:
+                                    description: |-
+                                      operator represents a key's relationship to a set of values.
+                                      Valid operators are In, NotIn, Exists and DoesNotExist.
+                                    type: string
+                                  values:
+                                    description: |-
+                                      values is an array of string values. If the operator is In or NotIn,
+                                      the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                      the values array must be empty. This array is replaced during a strategic
+                                      merge patch.
+                                    items:
+                                      type: string
+                                    type: array
+                                    x-kubernetes-list-type: atomic
+                                required:
+                                - key
+                                - operator
+                                type: object
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            matchLabels:
+                              additionalProperties:
+                                type: string
+                              description: |-
+                                matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                                map is equivalent to an element of matchExpressions, whose key field is "key", the
+                                operator is "In", and the values array contains only "value". The requirements are ANDed.
+                              type: object
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        matchLabelKeys:
+                          description: |-
+                            MatchLabelKeys is a set of pod label keys to select the pods over which
+                            spreading will be calculated. The keys are used to lookup values from the
+                            incoming pod labels, those key-value labels are ANDed with labelSelector
+                            to select the group of existing pods over which spreading will be calculated
+                            for the incoming pod. The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
+                            MatchLabelKeys cannot be set when LabelSelector isn't set.
+                            Keys that don't exist in the incoming pod labels will
+                            be ignored. A null or empty list means only match against labelSelector.
+
+                            This is a beta field and requires the MatchLabelKeysInPodTopologySpread feature gate to be enabled (enabled by default).
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: atomic
+                        maxSkew:
+                          description: |-
+                            MaxSkew describes the degree to which pods may be unevenly distributed.
+                            When `whenUnsatisfiable=DoNotSchedule`, it is the maximum permitted difference
+                            between the number of matching pods in the target topology and the global minimum.
+                            The global minimum is the minimum number of matching pods in an eligible domain
+                            or zero if the number of eligible domains is less than MinDomains.
+                            For example, in a 3-zone cluster, MaxSkew is set to 1, and pods with the same
+                            labelSelector spread as 2/2/1:
+                            In this case, the global minimum is 1.
+                            | zone1 | zone2 | zone3 |
+                            |  P P  |  P P  |   P   |
+                            - if MaxSkew is 1, incoming pod can only be scheduled to zone3 to become 2/2/2;
+                            scheduling it onto zone1(zone2) would make the ActualSkew(3-1) on zone1(zone2)
+                            violate MaxSkew(1).
+                            - if MaxSkew is 2, incoming pod can be scheduled onto any zone.
+                            When `whenUnsatisfiable=ScheduleAnyway`, it is used to give higher precedence
+                            to topologies that satisfy it.
+                            It's a required field. Default value is 1 and 0 is not allowed.
+                          format: int32
+                          type: integer
+                        minDomains:
+                          description: |-
+                            MinDomains indicates a minimum number of eligible domains.
+                            When the number of eligible domains with matching topology keys is less than minDomains,
+                            Pod Topology Spread treats "global minimum" as 0, and then the calculation of Skew is performed.
+                            And when the number of eligible domains with matching topology keys equals or greater than minDomains,
+                            this value has no effect on scheduling.
+                            As a result, when the number of eligible domains is less than minDomains,
+                            scheduler won't schedule more than maxSkew Pods to those domains.
+                            If value is nil, the constraint behaves as if MinDomains is equal to 1.
+                            Valid values are integers greater than 0.
+                            When value is not nil, WhenUnsatisfiable must be DoNotSchedule.
+
+                            For example, in a 3-zone cluster, MaxSkew is set to 2, MinDomains is set to 5 and pods with the same
+                            labelSelector spread as 2/2/2:
+                            | zone1 | zone2 | zone3 |
+                            |  P P  |  P P  |  P P  |
+                            The number of domains is less than 5(MinDomains), so "global minimum" is treated as 0.
+                            In this situation, new pod with the same labelSelector cannot be scheduled,
+                            because computed skew will be 3(3 - 0) if new Pod is scheduled to any of the three zones,
+                            it will violate MaxSkew.
+                          format: int32
+                          type: integer
+                        nodeAffinityPolicy:
+                          description: |-
+                            NodeAffinityPolicy indicates how we will treat Pod's nodeAffinity/nodeSelector
+                            when calculating pod topology spread skew. Options are:
+                            - Honor: only nodes matching nodeAffinity/nodeSelector are included in the calculations.
+                            - Ignore: nodeAffinity/nodeSelector are ignored. All nodes are included in the calculations.
+
+                            If this value is nil, the behavior is equivalent to the Honor policy.
+                          type: string
+                        nodeTaintsPolicy:
+                          description: |-
+                            NodeTaintsPolicy indicates how we will treat node taints when calculating
+                            pod topology spread skew. Options are:
+                            - Honor: nodes without taints, along with tainted nodes for which the incoming pod
+                            has a toleration, are included.
+                            - Ignore: node taints are ignored. All nodes are included.
+
+                            If this value is nil, the behavior is equivalent to the Ignore policy.
+                          type: string
+                        topologyKey:
+                          description: |-
+                            TopologyKey is the key of node labels. Nodes that have a label with this key
+                            and identical values are considered to be in the same topology.
+                            We consider each <key, value> as a "bucket", and try to put balanced number
+                            of pods into each bucket.
+                            We define a domain as a particular instance of a topology.
+                            Also, we define an eligible domain as a domain whose nodes meet the requirements of
+                            nodeAffinityPolicy and nodeTaintsPolicy.
+                            e.g. If TopologyKey is "kubernetes.io/hostname", each Node is a domain of that topology.
+                            And, if TopologyKey is "topology.kubernetes.io/zone", each zone is a domain of that topology.
+                            It's a required field.
+                          type: string
+                        whenUnsatisfiable:
+                          description: |-
+                            WhenUnsatisfiable indicates how to deal with a pod if it doesn't satisfy
+                            the spread constraint.
+                            - DoNotSchedule (default) tells the scheduler not to schedule it.
+                            - ScheduleAnyway tells the scheduler to schedule the pod in any location,
+                              but giving higher precedence to topologies that would help reduce the
+                              skew.
+                            A constraint is considered "Unsatisfiable" for an incoming pod
+                            if and only if every possible node assignment for that pod would violate
+                            "MaxSkew" on some topology.
+                            For example, in a 3-zone cluster, MaxSkew is set to 1, and pods with the same
+                            labelSelector spread as 3/1/1:
+                            | zone1 | zone2 | zone3 |
+                            | P P P |   P   |   P   |
+                            If WhenUnsatisfiable is set to DoNotSchedule, incoming pod can only be scheduled
+                            to zone2(zone3) to become 3/2/1(3/1/2) as ActualSkew(2-1) on zone2(zone3) satisfies
+                            MaxSkew(1). In other words, the cluster can still be imbalanced, but scheduler
+                            won't make it *more* imbalanced.
+                            It's a required field.
+                          type: string
+                      required:
+                      - maxSkew
+                      - topologyKey
+                      - whenUnsatisfiable
+                      type: object
+                    maxItems: 10
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - topologyKey
+                    - whenUnsatisfiable
+                    x-kubernetes-list-type: map
+                type: object
+              thanosQuerierConfig:
+                description: |-
+                  thanosQuerierConfig is an optional field that can be used to configure the Thanos Querier
+                  component that runs in the openshift-monitoring namespace. The Thanos Querier provides
+                  a global query view by aggregating and deduplicating metrics from multiple Prometheus instances.
+                  When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+                  The current default deploys the Thanos Querier on linux nodes with 5m CPU and 12Mi memory
+                  requests, and no custom tolerations or topology spread constraints.
+                  When set, at least one field must be specified within thanosQuerierConfig.
+                minProperties: 1
+                properties:
+                  crossOriginRequestPolicy:
+                    description: |-
+                      crossOriginRequestPolicy configures the CORS (Cross-Origin Resource Sharing) policy
+                      for Thanos Querier's HTTP endpoints.
+                      crossOriginRequestPolicy is optional.
+                      Valid values are "AllowAll" and "DenyAll".
+                      When set to "AllowAll", CORS headers are added to responses, allowing cross-origin requests from any domain.
+                      When set to "DenyAll", no CORS headers are added and cross-origin requests are rejected by the browser.
+                      When omitted, this means no opinion and the platform is left to choose a reasonable default, that is subject to change over time.
+                      The current default value is "DenyAll".
+                    enum:
+                    - AllowAll
+                    - DenyAll
+                    type: string
+                  logLevel:
+                    description: |-
+                      logLevel defines the verbosity of logs emitted by Thanos Querier.
+                      logLevel is optional.
+                      Allowed values are Error, Warn, Info, and Debug.
+                      When set to Error, only errors will be logged.
+                      When set to Warn, both warnings and errors will be logged.
+                      When set to Info, general information, warnings, and errors will all be logged.
+                      When set to Debug, detailed debugging information will be logged.
+                      When omitted, this means no opinion and the platform is left to choose a reasonable default, that is subject to change over time.
+                      The current default value is `Info`.
+                    enum:
+                    - Error
+                    - Warn
+                    - Info
+                    - Debug
+                    type: string
+                  nodeSelector:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      nodeSelector defines the nodes on which the Pods are scheduled.
+                      nodeSelector is optional.
+
+                      When omitted, this means the user has no opinion and the platform is left
+                      to choose reasonable defaults. These defaults are subject to change over time.
+                      The current default value is `kubernetes.io/os: linux`.
+                      When specified, nodeSelector must contain at least 1 entry and must not contain more than 10 entries.
+                    maxProperties: 10
+                    minProperties: 1
+                    type: object
+                  requestLogging:
+                    description: |-
+                      requestLogging configures request logging for Thanos Querier.
+                      requestLogging is optional.
+                      When provided, the policy field within is required.
+                      When omitted, this means no opinion and the platform is left to choose a reasonable default, that is subject to change over time.
+                      The current default behavior is to not log any requests.
+                    properties:
+                      policy:
+                        description: |-
+                          policy determines which HTTP and gRPC requests are logged by Thanos Querier.
+                          Valid values are "AllRequests" and "NoRequests".
+                          When set to "AllRequests", every request received by Thanos Querier is logged with method, path, and response status.
+                          The log level for request logs is derived from the logLevel field.
+                          When set to "NoRequests", request logging is turned off.
+                        enum:
+                        - AllRequests
+                        - NoRequests
+                        type: string
+                    required:
+                    - policy
+                    type: object
+                  resources:
+                    description: |-
+                      resources defines the compute resource requests and limits for the Thanos Querier container.
+                      resources is optional.
+
+                      When omitted, this means the user has no opinion and the platform is left
+                      to choose reasonable defaults. These defaults are subject to change over time.
+                      Requests cannot exceed limits.
+                      More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                      This is a simplified API that maps to Kubernetes ResourceRequirements.
+                      The current default values are:
+                        resources:
+                         - name: cpu
+                           request: 5m
+                         - name: memory
+                           request: 12Mi
+                      Maximum length for this list is 5.
+                      Minimum length for this list is 1.
+                      Each resource name must be unique within this list.
+                    items:
+                      description: ContainerResource defines a single resource requirement
+                        for a container.
+                      properties:
+                        limit:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: |-
+                            limit is the maximum amount of the resource allowed (e.g. "2Mi", "1Gi").
+                            This field is optional.
+                            When request is specified, limit cannot be less than request.
+                            The value must be greater than 0 when specified.
+                          maxLength: 20
+                          minLength: 1
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                          x-kubernetes-validations:
+                          - message: limit must be a positive, non-zero quantity
+                            rule: quantity(self).isGreaterThan(quantity('0'))
+                        name:
+                          description: |-
+                            name of the resource (e.g. "cpu", "memory", "hugepages-2Mi").
+                            This field is required.
+                            name must consist only of alphanumeric characters, `-`, `_` and `.` and must start and end with an alphanumeric character.
+                          maxLength: 253
+                          minLength: 1
+                          type: string
+                          x-kubernetes-validations:
+                          - message: name must consist only of alphanumeric characters,
+                              `-`, `_` and `.` and must start and end with an alphanumeric
+                              character
+                            rule: '!format.qualifiedName().validate(self).hasValue()'
+                        request:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: |-
+                            request is the minimum amount of the resource required (e.g. "2Mi", "1Gi").
+                            This field is optional.
+                            When limit is specified, request cannot be greater than limit.
+                            The value must be greater than 0 when specified.
+                          maxLength: 20
+                          minLength: 1
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                          x-kubernetes-validations:
+                          - message: request must be a positive, non-zero quantity
+                            rule: quantity(self).isGreaterThan(quantity('0'))
+                      required:
+                      - name
+                      type: object
+                      x-kubernetes-validations:
+                      - message: at least one of request or limit must be set
+                        rule: has(self.request) || has(self.limit)
+                      - message: limit must be greater than or equal to request
+                        rule: '!(has(self.request) && has(self.limit)) || quantity(self.limit).compareTo(quantity(self.request))
+                          >= 0'
+                    maxItems: 5
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
+                  tolerations:
+                    description: |-
+                      tolerations defines tolerations for the pods.
+                      tolerations is optional.
+
+                      When omitted, this means the user has no opinion and the platform is left
+                      to choose reasonable defaults. These defaults are subject to change over time.
+                      Defaults are empty/unset.
+                      Maximum length for this list is 10.
+                      Minimum length for this list is 1.
+                    items:
+                      description: |-
+                        The pod this Toleration is attached to tolerates any taint that matches
+                        the triple <key,value,effect> using the matching operator <operator>.
+                      properties:
+                        effect:
+                          description: |-
+                            Effect indicates the taint effect to match. Empty means match all taint effects.
+                            When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                          type: string
+                        key:
+                          description: |-
+                            Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                            If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                          type: string
+                        operator:
+                          description: |-
+                            Operator represents a key's relationship to the value.
+                            Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
+                            Exists is equivalent to wildcard for value, so that a pod can
+                            tolerate all taints of a particular category.
+                            Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
+                          type: string
+                        tolerationSeconds:
+                          description: |-
+                            TolerationSeconds represents the period of time the toleration (which must be
+                            of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                            it is not set, which means tolerate the taint forever (do not evict). Zero and
+                            negative values will be treated as 0 (evict immediately) by the system.
+                          format: int64
+                          type: integer
+                        value:
+                          description: |-
+                            Value is the taint value the toleration matches to.
+                            If the operator is Exists, the value should be empty, otherwise just a regular string.
+                          type: string
+                      type: object
+                    maxItems: 10
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  topologySpreadConstraints:
+                    description: |-
+                      topologySpreadConstraints defines rules for how Thanos Querier Pods should be distributed
+                      across topology domains such as zones, nodes, or other user-defined labels.
+                      topologySpreadConstraints is optional.
+                      This helps improve high availability and resource efficiency by avoiding placing
+                      too many replicas in the same failure domain.
+
+                      When omitted, this means no opinion and the platform is left to choose a default, which is subject to change over time.
+                      This field maps directly to the `topologySpreadConstraints` field in the Pod spec.
+                      Defaults are empty/unset.
                       Maximum length for this list is 10.
                       Minimum length for this list is 1.
                       Entries must have unique topologyKey and whenUnsatisfiable pairs.

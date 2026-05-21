@@ -4,7 +4,7 @@ package osimagestream
 import (
 	"testing"
 
-	"github.com/openshift/api/machineconfiguration/v1alpha1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -13,24 +13,24 @@ import (
 func TestGetStreamSetsNames(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    []v1alpha1.OSImageStreamSet
+		input    []mcfgv1.OSImageStreamSet
 		expected []string
 	}{
 		{
 			name:     "empty slice",
-			input:    []v1alpha1.OSImageStreamSet{},
+			input:    []mcfgv1.OSImageStreamSet{},
 			expected: []string{},
 		},
 		{
 			name: "single stream",
-			input: []v1alpha1.OSImageStreamSet{
+			input: []mcfgv1.OSImageStreamSet{
 				{Name: "rhel-9"},
 			},
 			expected: []string{"rhel-9"},
 		},
 		{
 			name: "multiple streams",
-			input: []v1alpha1.OSImageStreamSet{
+			input: []mcfgv1.OSImageStreamSet{
 				{Name: "rhel-9"},
 				{Name: "rhel-10"},
 				{Name: "custom-stream"},
@@ -47,11 +47,11 @@ func TestGetStreamSetsNames(t *testing.T) {
 	}
 }
 
-func getStubOSImageStream() *v1alpha1.OSImageStream {
-	return &v1alpha1.OSImageStream{
-		Status: v1alpha1.OSImageStreamStatus{
+func getStubOSImageStream() *mcfgv1.OSImageStream {
+	return &mcfgv1.OSImageStream{
+		Status: mcfgv1.OSImageStreamStatus{
 			DefaultStream: "rhel-9",
-			AvailableStreams: []v1alpha1.OSImageStreamSet{
+			AvailableStreams: []mcfgv1.OSImageStreamSet{
 				{Name: "rhel-9", OSImage: "image1", OSExtensionsImage: "ext1"},
 				{Name: "rhel-10", OSImage: "image2", OSExtensionsImage: "ext2"},
 			},
@@ -62,9 +62,9 @@ func getStubOSImageStream() *v1alpha1.OSImageStream {
 func TestGetOSImageStreamSetByName(t *testing.T) {
 	tests := []struct {
 		name                 string
-		osImageStreamFactory func() *v1alpha1.OSImageStream
+		osImageStreamFactory func() *mcfgv1.OSImageStream
 		streamName           string
-		expected             *v1alpha1.OSImageStreamSet
+		expected             *mcfgv1.OSImageStreamSet
 		errorContains        string
 		errorCheckFn         func(*testing.T, error)
 	}{
@@ -72,19 +72,19 @@ func TestGetOSImageStreamSetByName(t *testing.T) {
 			name:                 "find existing stream",
 			osImageStreamFactory: getStubOSImageStream,
 			streamName:           "rhel-9",
-			expected:             &v1alpha1.OSImageStreamSet{Name: "rhel-9", OSImage: "image1", OSExtensionsImage: "ext1"},
+			expected:             &mcfgv1.OSImageStreamSet{Name: "rhel-9", OSImage: "image1", OSExtensionsImage: "ext1"},
 		},
 		{
 			name:                 "find another existing stream",
 			osImageStreamFactory: getStubOSImageStream,
 			streamName:           "rhel-10",
-			expected:             &v1alpha1.OSImageStreamSet{Name: "rhel-10", OSImage: "image2", OSExtensionsImage: "ext2"},
+			expected:             &mcfgv1.OSImageStreamSet{Name: "rhel-10", OSImage: "image2", OSExtensionsImage: "ext2"},
 		},
 		{
 			name:                 "empty name returns default stream",
 			osImageStreamFactory: getStubOSImageStream,
 			streamName:           "",
-			expected:             &v1alpha1.OSImageStreamSet{Name: "rhel-9", OSImage: "image1", OSExtensionsImage: "ext1"},
+			expected:             &mcfgv1.OSImageStreamSet{Name: "rhel-9", OSImage: "image1", OSExtensionsImage: "ext1"},
 		},
 		{
 			name:                 "non-existent stream",
@@ -105,7 +105,7 @@ func TestGetOSImageStreamSetByName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var osImageStream *v1alpha1.OSImageStream
+			var osImageStream *mcfgv1.OSImageStream
 			if tt.osImageStreamFactory != nil {
 				osImageStream = tt.osImageStreamFactory()
 			}
@@ -129,7 +129,7 @@ func TestGetOSImageStreamSetByName(t *testing.T) {
 func TestGetOSImageStreamSpecDefault(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    *v1alpha1.OSImageStream
+		input    *mcfgv1.OSImageStream
 		expected string
 	}{
 		{
@@ -139,20 +139,20 @@ func TestGetOSImageStreamSpecDefault(t *testing.T) {
 		},
 		{
 			name:     "nil Spec",
-			input:    &v1alpha1.OSImageStream{},
+			input:    &mcfgv1.OSImageStream{},
 			expected: "",
 		},
 		{
 			name: "empty DefaultStream",
-			input: &v1alpha1.OSImageStream{
-				Spec: &v1alpha1.OSImageStreamSpec{},
+			input: &mcfgv1.OSImageStream{
+				Spec: mcfgv1.OSImageStreamSpec{},
 			},
 			expected: "",
 		},
 		{
 			name: "DefaultStream set",
-			input: &v1alpha1.OSImageStream{
-				Spec: &v1alpha1.OSImageStreamSpec{DefaultStream: "rhel-10"},
+			input: &mcfgv1.OSImageStream{
+				Spec: mcfgv1.OSImageStreamSpec{DefaultStream: "rhel-10"},
 			},
 			expected: "rhel-10",
 		},

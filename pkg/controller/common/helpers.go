@@ -28,8 +28,6 @@ import (
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
 	validate2 "github.com/coreos/ignition/config/validate"
 	ign3error "github.com/coreos/ignition/v2/config/shared/errors"
-	"github.com/openshift/api/machineconfiguration/v1alpha1"
-
 	ign3 "github.com/coreos/ignition/v2/config/v3_5"
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	validate3 "github.com/coreos/ignition/v2/config/validate"
@@ -69,7 +67,7 @@ func boolToPtr(b bool) *bool {
 // It uses the Ignition config from first object as base and appends all the rest.
 // Kernel arguments are concatenated.
 // It defaults to the OSImageURL provided by the CVO but allows a MC provided OSImageURL to take precedence.
-func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig, imageStream *v1alpha1.OSImageStreamSet) (*mcfgv1.MachineConfig, error) {
+func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig, imageStream *mcfgv1.OSImageStreamSet) (*mcfgv1.MachineConfig, error) {
 	if len(configs) == 0 {
 		return nil, nil
 	}
@@ -1093,7 +1091,7 @@ func GetIgnitionFileDataByPath(config *ign3types.Config, path string) ([]byte, e
 }
 
 // GetBaseImageContainer returns the default bootable host base image.
-func GetBaseImageContainer(cconfigspec *mcfgv1.ControllerConfigSpec, imageStream *v1alpha1.OSImageStreamSet) string {
+func GetBaseImageContainer(cconfigspec *mcfgv1.ControllerConfigSpec, imageStream *mcfgv1.OSImageStreamSet) string {
 	if imageStream == nil {
 		return cconfigspec.BaseOSContainerImage
 	}
@@ -1101,7 +1099,7 @@ func GetBaseImageContainer(cconfigspec *mcfgv1.ControllerConfigSpec, imageStream
 }
 
 // GetBaseExtensionsImageContainer returns the default bootable host base image.
-func GetBaseExtensionsImageContainer(cconfigspec *mcfgv1.ControllerConfigSpec, imageStream *v1alpha1.OSImageStreamSet) string {
+func GetBaseExtensionsImageContainer(cconfigspec *mcfgv1.ControllerConfigSpec, imageStream *mcfgv1.OSImageStreamSet) string {
 	if imageStream == nil {
 		return cconfigspec.BaseOSExtensionsContainerImage
 	}

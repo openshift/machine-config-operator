@@ -7,6 +7,7 @@ metadata:
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     release.openshift.io/bootstrap-required: "true"
+    release.openshift.io/feature-set: DevPreviewNoUpgrade
   name: networks.config.openshift.io
 spec:
   group: config.openshift.io
@@ -259,6 +260,25 @@ spec:
                         type: array
                         x-kubernetes-list-type: atomic
                     type: object
+                type: object
+              networkObservability:
+                description: |-
+                  networkObservability is an optional field that configures network observability installation
+                  during cluster deployment (day-0).
+                  When omitted, unless this is a SNO cluster, network observability will be installed if not already present, after that, no action taken.
+                properties:
+                  installationPolicy:
+                    description: |-
+                      installationPolicy controls whether network observability is installed during cluster deployment.
+                      Valid values are "InstallAndEnable" and "NoAction".
+                      When set to "InstallAndEnable", ensure that network observability will be installed and enabled on the cluster. If already installed, no action taken, but if it gets uninstalled, it will install it again.
+                      When set to "NoAction", nothing will be done regarding Network observability.
+                    enum:
+                    - InstallAndEnable
+                    - NoAction
+                    type: string
+                required:
+                - installationPolicy
                 type: object
               networkType:
                 description: |-

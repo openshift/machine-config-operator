@@ -117,8 +117,8 @@ func (b *Bootstrap) Run(destDir string) error {
 		imageStream          *imagev1.ImageStream
 		iri                  *mcfgv1alpha1.InternalReleaseImage
 		iriTLSCert           *corev1.Secret
-		osImageStream        *mcfgv1alpha1.OSImageStream
-		iriCredentialsSecret        *corev1.Secret
+		osImageStream        *mcfgv1.OSImageStream
+		iriCredentialsSecret *corev1.Secret
 	)
 	for _, info := range infos {
 		if info.IsDir() {
@@ -206,7 +206,7 @@ func (b *Bootstrap) Run(destDir string) error {
 				if obj.GetName() == ctrlcommon.InternalReleaseImageAuthSecretName {
 					iriCredentialsSecret = obj
 				}
-			case *mcfgv1alpha1.OSImageStream:
+			case *mcfgv1.OSImageStream:
 				// If given, it's treated as user input with config such as the default stream
 				osImageStream = obj
 			default:
@@ -493,8 +493,8 @@ func (b *Bootstrap) fetchOSImageStream(
 	itmsRules []*apicfgv1.ImageTagMirrorSet,
 	imgCfg *apicfgv1.Image,
 	pullSecret *corev1.Secret,
-	existingOSImageStream *mcfgv1alpha1.OSImageStream,
-) (*mcfgv1alpha1.OSImageStream, error) {
+	existingOSImageStream *mcfgv1.OSImageStream,
+) (*mcfgv1.OSImageStream, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()

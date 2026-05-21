@@ -126,7 +126,7 @@ type Operator struct {
 	moscLister               mcfglistersv1.MachineOSConfigLister
 	apiserverLister          configlistersv1.APIServerLister
 	clusterVersionLister     configlistersv1.ClusterVersionLister
-	osImageStreamLister      mcfglistersv1alpha1.OSImageStreamLister
+	osImageStreamLister      mcfglistersv1.OSImageStreamLister
 	iriLister                mcfglistersv1alpha1.InternalReleaseImageLister
 	provisioningLister       dynamiclister.Lister
 	provisioningListerSynced cache.InformerSynced
@@ -227,7 +227,7 @@ func New(
 	apiserverInformer configinformersv1.APIServerInformer,
 	moscInformer mcfginformersv1.MachineOSConfigInformer,
 	clusterVersionInformer configinformersv1.ClusterVersionInformer,
-	osImageStreamInformer mcfginformersv1alpha1.OSImageStreamInformer,
+	osImageStreamInformer mcfginformersv1.OSImageStreamInformer,
 	iriInformer mcfginformersv1alpha1.InternalReleaseImageInformer,
 	ctrlctx *ctrlcommon.ControllerContext,
 ) *Operator {

@@ -118,7 +118,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			ctrlctx.ConfigInformerFactory.Config().V1().APIServers(),
 			ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1().MachineOSConfigs(),
 			ctrlctx.ConfigInformerFactory.Config().V1().ClusterVersions(),
-			ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().OSImageStreams(),
+			ctrlctx.InformerFactory.Machineconfiguration().V1().OSImageStreams(),
 			iriInformer,
 			ctrlctx,
 		)

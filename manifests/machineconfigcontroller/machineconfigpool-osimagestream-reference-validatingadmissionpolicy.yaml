@@ -5,7 +5,7 @@ metadata:
 spec:
   failurePolicy: Fail
   paramKind:
-    apiVersion: machineconfiguration.openshift.io/v1alpha1
+    apiVersion: machineconfiguration.openshift.io/v1
     kind: OSImageStream
   matchConstraints:
     matchPolicy: Equivalent

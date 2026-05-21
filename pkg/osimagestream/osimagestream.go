@@ -10,7 +10,7 @@ import (
 
 	"github.com/containers/image/v5/types"
 	imagev1 "github.com/openshift/api/image/v1"
-	"github.com/openshift/api/machineconfiguration/v1alpha1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -25,13 +25,13 @@ var (
 
 // StreamSource represents a source that can provide OS image stream sets.
 type StreamSource interface {
-	FetchStreams(ctx context.Context) ([]*v1alpha1.OSImageStreamSet, error)
+	FetchStreams(ctx context.Context) ([]*mcfgv1.OSImageStreamSet, error)
 }
 
 // ImageStreamFactory creates OS image streams for different runtime contexts.
 type ImageStreamFactory interface {
 	// Create builds an OSImageStream from the configured sources and options.
-	Create(ctx context.Context, sysCtx *types.SystemContext, opts CreateOptions) (*v1alpha1.OSImageStream, error)
+	Create(ctx context.Context, sysCtx *types.SystemContext, opts CreateOptions) (*mcfgv1.OSImageStream, error)
 }
 
 // CreateOptions configures how an OSImageStream is built.
@@ -47,7 +47,7 @@ type CreateOptions struct {
 	// ConfigMapLister provides access to the osimageurl ConfigMap.
 	ConfigMapLister corelisterv1.ConfigMapLister
 	// ExistingOSImageStream is the current CR used to load user defined configuration in the spec.
-	ExistingOSImageStream *v1alpha1.OSImageStream
+	ExistingOSImageStream *mcfgv1.OSImageStream
 	// InstallVersion is the OCP version the cluster was originally installed with.
 	// Optional: used as a fallback when the ImageStream name cannot be parsed as a version.
 	InstallVersion *k8sversion.Version
@@ -65,7 +65,7 @@ func NewDefaultStreamSourceFactory(inspectorFactory ImagesInspectorFactory) *Def
 }
 
 // Create builds an OSImageStream from the configured sources and options.
-func (f *DefaultStreamSourceFactory) Create(ctx context.Context, sysCtx *types.SystemContext, createOptions CreateOptions) (*v1alpha1.OSImageStream, error) {
+func (f *DefaultStreamSourceFactory) Create(ctx context.Context, sysCtx *types.SystemContext, createOptions CreateOptions) (*mcfgv1.OSImageStream, error) {
 	var sources []StreamSource
 	imagesInspector := f.inspectorFactory.ForContext(sysCtx)
 	if createOptions.CliImages != nil {
@@ -99,23 +99,22 @@ func (f *DefaultStreamSourceFactory) Create(ctx context.Context, sysCtx *types.S
 }
 
 // newOSImageStream assembles the OSImageStream CR from the resolved streams, default, and existing spec.
-func newOSImageStream(existing *v1alpha1.OSImageStream, streams []v1alpha1.OSImageStreamSet, defaultStream string) *v1alpha1.OSImageStream {
-	var spec *v1alpha1.OSImageStreamSpec
-	if existing != nil && existing.Spec != nil {
-		spec = existing.Spec.DeepCopy()
-	} else {
-		spec = &v1alpha1.OSImageStreamSpec{}
+func newOSImageStream(existing *mcfgv1.OSImageStream, streams []mcfgv1.OSImageStreamSet, defaultStream string) *mcfgv1.OSImageStream {
+	if existing != nil {
+		defaultStream = existing.Spec.DefaultStream
 	}
 
-	return &v1alpha1.OSImageStream{
+	return &mcfgv1.OSImageStream{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: ctrlcommon.ClusterInstanceNameOSImageStream,
 			Annotations: map[string]string{
 				ctrlcommon.ReleaseImageVersionAnnotationKey: version.Hash,
 			},
 		},
-		Spec: spec,
-		Status: v1alpha1.OSImageStreamStatus{
+		Spec: mcfgv1.OSImageStreamSpec{
+			DefaultStream: defaultStream,
+		},
+		Status: mcfgv1.OSImageStreamStatus{
 			DefaultStream:    defaultStream,
 			AvailableStreams: streams,
 		},
@@ -123,7 +122,7 @@ func newOSImageStream(existing *v1alpha1.OSImageStream, streams []v1alpha1.OSIma
 }
 
 // getDefaultStreamSet returns the effective default stream: the user override if valid, otherwise the builtin.
-func getDefaultStreamSet(streams []v1alpha1.OSImageStreamSet, createOptions *CreateOptions) (string, error) {
+func getDefaultStreamSet(streams []mcfgv1.OSImageStreamSet, createOptions *CreateOptions) (string, error) {
 	streamNames := GetStreamSetsNames(streams)
 
 	existingOSImageStream := createOptions.ExistingOSImageStream
@@ -152,8 +151,8 @@ func getDefaultStreamSet(streams []v1alpha1.OSImageStreamSet, createOptions *Cre
 	return "", fmt.Errorf("could not find the requested %s default stream in the list of OSImageStreams %s", requestedDefaultStream, streamNames)
 }
 
-func collect(ctx context.Context, sources []StreamSource) []v1alpha1.OSImageStreamSet {
-	result := make(map[string]v1alpha1.OSImageStreamSet)
+func collect(ctx context.Context, sources []StreamSource) []mcfgv1.OSImageStreamSet {
+	result := make(map[string]mcfgv1.OSImageStreamSet)
 	for _, source := range sources {
 		streams, err := source.FetchStreams(ctx)
 		if err != nil {
@@ -172,7 +171,7 @@ func collect(ctx context.Context, sources []StreamSource) []v1alpha1.OSImageStre
 	}
 	// Sort by name for consistent ordering across reconciliations
 	streams := slices.Collect(maps.Values(result))
-	slices.SortFunc(streams, func(a, b v1alpha1.OSImageStreamSet) int {
+	slices.SortFunc(streams, func(a, b mcfgv1.OSImageStreamSet) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
 	return streams

@@ -12,7 +12,6 @@ import (
 
 	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -562,7 +561,7 @@ func (ctrl *Controller) getOSImageStream(pool *mcfgv1.MachineConfigPool, isUpdat
 
 	// Match the osImageURL against available streams
 	for _, streamSet := range osImageStream.Status.AvailableStreams {
-		if streamSet.OSImage == mcfgv1alpha1.ImageDigestFormat(osImageURL) {
+		if streamSet.OSImage == mcfgv1.ImageDigestFormat(osImageURL) {
 			klog.V(4).Infof("Pool %s osImageURL matched stream %s", pool.Name, streamSet.Name)
 			return mcfgv1.OSImageStreamReference{Name: streamSet.Name}
 		}

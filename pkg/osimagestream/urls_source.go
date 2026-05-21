@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/openshift/api/machineconfiguration/v1alpha1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/imageutils"
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
@@ -35,7 +35,7 @@ func NewOSImagesURLStreamSource(urlsProvider URLsProvider, imageStreamExtractor 
 
 // FetchStreams retrieves and inspects OS and extensions images from the configured URLs,
 // returning the extracted OS image stream metadata.
-func (s *OSImagesURLStreamSource) FetchStreams(ctx context.Context) ([]*v1alpha1.OSImageStreamSet, error) {
+func (s *OSImagesURLStreamSource) FetchStreams(ctx context.Context) ([]*mcfgv1.OSImageStreamSet, error) {
 	urls, err := s.urlsProvider.GetUrls()
 	if err != nil {
 		return nil, err
@@ -62,7 +62,7 @@ func (s *OSImagesURLStreamSource) FetchStreams(ctx context.Context) ([]*v1alpha1
 			klog.V(4).Infof("image %s does not contain stream labels. Image discarded.", inspectionResult.Image)
 
 			// Both imageData should be fine to consider the source URLs valid
-			return []*v1alpha1.OSImageStreamSet{}, nil
+			return []*mcfgv1.OSImageStreamSet{}, nil
 		}
 		imagesData = append(imagesData, imageData)
 	}

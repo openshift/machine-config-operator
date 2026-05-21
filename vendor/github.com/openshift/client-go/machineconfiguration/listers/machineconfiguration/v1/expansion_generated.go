@@ -34,6 +34,10 @@ type MachineOSBuildListerExpansion interface{}
 // MachineOSConfigLister.
 type MachineOSConfigListerExpansion interface{}
 
+// OSImageStreamListerExpansion allows custom methods to be added to
+// OSImageStreamLister.
+type OSImageStreamListerExpansion interface{}
+
 // PinnedImageSetListerExpansion allows custom methods to be added to
 // PinnedImageSetLister.
 type PinnedImageSetListerExpansion interface{}

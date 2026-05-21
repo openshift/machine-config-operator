@@ -1031,10 +1031,11 @@ spec:
                       vcenters:
                         description: |-
                           vcenters holds the connection details for services to communicate with vCenter.
-                          Currently, only a single vCenter is supported, but in tech preview 3 vCenters are supported.
+                          Up to 3 vCenters are supported.
                           Once the cluster has been installed, you are unable to change the current number of defined
-                          vCenters except in the case where the cluster has been upgraded from a version of OpenShift
-                          where the vsphere platform spec was not present.  You may make modifications to the existing
+                          vCenters except when 1.) the cluster has been upgraded from a version of OpenShift
+                          where the vsphere platform spec was not present or 2.) in TechPreview you are able to add and
+                          remove vCenters but may not remove all vCenters.  You may make modifications to the existing
                           vCenters that are defined in the vcenters list in order to match with any added or modified
                           failure domains.
                         items:
@@ -1079,27 +1080,29 @@ spec:
                           - server
                           type: object
                         maxItems: 3
-                        minItems: 0
+                        minItems: 1
                         type: array
                         x-kubernetes-list-type: atomic
                         x-kubernetes-validations:
-                        - message: vcenters cannot be added or removed once set
-                          rule: 'size(self) != size(oldSelf) ? size(oldSelf) == 0
-                            && size(self) < 2 : true'
+                        - message: Cannot add and remove vCenters at the same time
+                          rule: 'size(self) >= size(oldSelf) ? oldSelf.all(x, self.exists(y,
+                            y.server == x.server)) : true'
+                        - message: Cannot add and remove vCenters at the same time
+                          rule: 'size(self) < size(oldSelf) ? self.all(x, oldSelf.exists(y,
+                            y.server == x.server)) : true'
+                        - message: vcenters must have unique server values
+                          rule: self.all(x, self.exists_one(y, y.server == x.server))
                     type: object
                     x-kubernetes-validations:
                     - message: apiServerInternalIPs list is required once set
                       rule: '!has(oldSelf.apiServerInternalIPs) || has(self.apiServerInternalIPs)'
                     - message: ingressIPs list is required once set
                       rule: '!has(oldSelf.ingressIPs) || has(self.ingressIPs)'
-                    - message: vcenters can have at most 1 item when configured post-install
-                      rule: '!has(oldSelf.vcenters) && has(self.vcenters) ? size(self.vcenters)
-                        < 2 : true'
                 type: object
                 x-kubernetes-validations:
-                - message: vcenters can have at most 1 item when configured post-install
-                  rule: '!has(oldSelf.vsphere) && has(self.vsphere) ? size(self.vsphere.vcenters)
-                    < 2 : true'
+                - message: vcenters is required once set and cannot be removed
+                  rule: 'oldSelf.?vsphere.vcenters.hasValue() ? self.?vsphere.vcenters.hasValue()
+                    : true'
             type: object
           status:
             description: status holds observed values from the cluster. They may not

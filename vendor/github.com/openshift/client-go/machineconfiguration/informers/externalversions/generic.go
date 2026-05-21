@@ -54,6 +54,8 @@ func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Machineconfiguration().V1().MachineOSBuilds().Informer()}, nil
 	case v1.SchemeGroupVersion.WithResource("machineosconfigs"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Machineconfiguration().V1().MachineOSConfigs().Informer()}, nil
+	case v1.SchemeGroupVersion.WithResource("osimagestreams"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Machineconfiguration().V1().OSImageStreams().Informer()}, nil
 	case v1.SchemeGroupVersion.WithResource("pinnedimagesets"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Machineconfiguration().V1().PinnedImageSets().Informer()}, nil
 
