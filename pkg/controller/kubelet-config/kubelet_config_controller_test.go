@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -13,6 +14,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -32,6 +34,7 @@ import (
 	oseinformersv1 "github.com/openshift/client-go/config/informers/externalversions"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
+	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/openshift/machine-config-operator/test/helpers"
@@ -880,12 +883,106 @@ func TestMachineConfigSkipUpdate(t *testing.T) {
 
 			f.expectGetMachineConfigAction(mcs)
 			f.expectGetMachineConfigAction(mcs)
+			f.expectGetMachineConfigAction(mcs)
+			f.expectUpdateKubeletConfig(kc1)
 
 			f.validateActions()
 			f.validateMachineConfig()
 
 			close(stopCh)
 
+		})
+	}
+}
+
+// sortedMCPLister wraps a MachineConfigPoolLister and returns pools sorted by
+// name, making pool iteration order deterministic in tests.
+type sortedMCPLister struct {
+	mcfglistersv1.MachineConfigPoolLister
+}
+
+func (s *sortedMCPLister) List(selector labels.Selector) ([]*mcfgv1.MachineConfigPool, error) {
+	pools, err := s.MachineConfigPoolLister.List(selector)
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(pools, func(i, j int) bool { return pools[i].Name < pools[j].Name })
+	return pools, nil
+}
+
+// TestSkipUpdateContinuesToNextPool verifies that when one pool's MC is already
+// up-to-date the controller continues regenerating MCs for remaining pools
+// instead of returning early (OCPBUGS-84661).
+func TestSkipUpdateContinuesToNextPool(t *testing.T) {
+	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
+		t.Run(string(platform), func(t *testing.T) {
+			f := newFixture(t)
+			f.skipActionsValidation = true
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
+
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+
+			// Both pools share a label so a single KubeletConfig targets them.
+			// "pool-a" sorts before "pool-b"; with the sorted lister pool-a is always processed first.
+			sharedLabel := "custom-kubelet-label"
+			poolA := helpers.NewMachineConfigPool("pool-a", nil, helpers.MasterSelector, "v0")
+			poolA.Labels[sharedLabel] = ""
+			poolB := helpers.NewMachineConfigPool("pool-b", nil, helpers.WorkerSelector, "v0")
+			poolB.Labels[sharedLabel] = ""
+
+			kc := newKubeletConfig("multi-pool-kc", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100},
+				metav1.AddLabelToSelector(&metav1.LabelSelector{}, sharedLabel, ""))
+			kc.SetAnnotations(map[string]string{ctrlcommon.MCNameSuffixAnnotationKey: ""})
+			kc.Status.ObservedGeneration = kc.Generation
+			kc.Status.Conditions = []mcfgv1.KubeletConfigCondition{
+				{Type: mcfgv1.KubeletConfigSuccess, Status: corev1.ConditionTrue, Message: "Success"},
+			}
+
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, poolA, poolB)
+			f.mckLister = append(f.mckLister, kc)
+			f.objects = append(f.objects, kc)
+
+			// Build both MCs with correct kubelet content so feature-gates match.
+			f.newController(fgHandler)
+			managedKeyA, err := getManagedKubeletConfigKey(poolA, f.client, kc)
+			require.NoError(t, err)
+			managedKeyB, err := getManagedKubeletConfigKey(poolB, f.client, kc)
+			require.NoError(t, err)
+
+			originalKubeletCfg := kubeletconfigv1beta1.KubeletConfiguration{
+				MaxPods: 100, FeatureGates: map[string]bool{"Example": true},
+			}
+			cfgIgn, err := kubeletConfigToIgnFile(&originalKubeletCfg)
+			require.NoError(t, err)
+
+			// pool-a MC: fully up-to-date (current controller version).
+			mcA := helpers.NewMachineConfig(managedKeyA, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{*cfgIgn})
+			mcA.SetAnnotations(map[string]string{
+				ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
+			})
+
+			// pool-b MC: exists but carries an old controller version → needs regeneration.
+			mcB := helpers.NewMachineConfig(managedKeyB, map[string]string{"node-role/worker": ""}, "dummy://", []ign3types.File{*cfgIgn})
+			mcB.SetAnnotations(map[string]string{
+				ctrlcommon.GeneratedByControllerVersionAnnotationKey: "old-controller-version",
+			})
+
+			f.objects = append(f.objects, mcA, mcB)
+
+			c := f.newController(fgHandler)
+			c.mcpLister = &sortedMCPLister{c.mcpLister}
+
+			err = c.syncHandler(getKey(kc, t))
+			require.NoError(t, err)
+
+			// pool-a is processed first (sorted) and skipped (up-to-date).
+			// With the old "return nil" bug the function would exit here and
+			// pool-b would never be regenerated.
+			mcBUpdated, err := c.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), managedKeyB, metav1.GetOptions{})
+			require.NoError(t, err)
+			assert.Equal(t, version.Hash, mcBUpdated.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey],
+				"pool-b MC should have been regenerated even though pool-a was already up-to-date")
 		})
 	}
 }
