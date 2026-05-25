@@ -350,11 +350,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		exutil.By("Create a MachineConfig to enable the usbguard systemd unit on worker nodes")
 		mcEnable := NewMachineConfig(oc.AsAdmin(), fmt.Sprintf("test-%s-enable", testID), mcp.GetName())
 		mcEnable.SetParams(fmt.Sprintf(`UNITS=[{"enabled": true, "name": "usbguard.service"}]`))
-		defer func() {
-			exutil.By("Cleanup: delete both MachineConfigs in one shot and wait for a single pool rollout")
-			oc.AsAdmin().WithoutNamespace().Run("delete").Args("mc", mcEnable.GetName(), mcExt.GetName(), "--ignore-not-found=true").Execute()
-			mcp.waitForComplete()
-		}()
+		defer mcEnable.DeleteWithWait()
 		mcEnable.create()
 		logger.Infof("OK!\n")
 
