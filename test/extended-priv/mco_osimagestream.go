@@ -116,9 +116,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	})
 
 	// AI-assisted: Test case to validate real-time kernel configuration across OS image streams
-	g.It("[PolarionID:87095][OTP] Realtime kernel from rhel9 stream to rhel10 stream [Disruptive] [apigroup:machineconfiguration.openshift.io]", g.Label("Platform:aws", "Platform:gce"), func() {
+	g.It("[PolarionID:87095][OTP] Realtime kernel from rhel9 stream to rhel10 stream [Disruptive] [apigroup:machineconfiguration.openshift.io]", func() {
 		architecture.SkipIfNoNodeWithArchitectures(oc.AsAdmin(), architecture.AMD64)
-		skipTestIfSupportedPlatformNotMatched(oc.AsAdmin(), AWSPlatform, GCPPlatform)
 
 		testID := GetCurrentTestPolarionIDNumber()
 		createdCustomPoolName := fmt.Sprintf("tc-%s-%s", testID, architecture.AMD64)
