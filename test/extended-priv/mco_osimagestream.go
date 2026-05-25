@@ -289,7 +289,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("OK!\n")
 
 		exutil.By("Verify osImageStream remains empty after osImageURL is applied")
-		o.Expect(mcp.GetStatusOsImageStream()).To(o.BeEmpty(),
+		o.Eventually(mcp.GetStatusOsImageStream, "2m", "20s").Should(o.BeEmpty(),
 			"In %v status.osImageStream should be empty when osImageURL is set", mcp)
 		logger.Infof("osImageStream is empty with osImageURL applied (as expected)")
 		logger.Infof("OK!\n")
