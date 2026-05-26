@@ -28,11 +28,15 @@ func platformBasedDisksNames(platform string) []string {
 		return []string{
 			"/dev/nvme1n1",
 			"/dev/nvme2n1",
+			"/dev/nvme3n1",
+			"/dev/nvme4n1",
 		}
 	case GCPPlatform:
 		return []string{
 			"/dev/sda1",
 			"/dev/sda2",
+			"/dev/sda3",
+			"/dev/sda4",
 		}
 	}
 	return []string{}
@@ -80,12 +84,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		exutil.By("Step 2: Apply extra-disks MachineConfig")
 		platform := exutil.CheckPlatform(oc)
-		device1, device2 := "/dev/sdb", "/dev/sdc"
-		if platform == AWSPlatform {
-			device1, device2 = "/dev/nvme1n1", "/dev/nvme2n1"
-		}
 
-		mc.SetParams("-p", "DEVICE1="+device1, "-p", "DEVICE2="+device2)
+		disks := platformBasedDisksNames(platform)
+
+		mc.SetParams("-p", "DEVICE1="+disks[0], "-p", "DEVICE2="+disks[1])
 		defer mc.DeleteWithWait()
 		mc.create()
 		logger.Infof("OK!\n")
@@ -114,13 +116,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			}
 		}()
 
-		if platform == AWSPlatform {
-			err = newMS.Patch("json", `[{"op":"add","path":"/spec/template/spec/providerSpec/value/blockDevices/-","value":{"ebs":{"encrypted":false,"iops":0,"volumeSize":120,"volumeType":"gp3"},"deviceName":"/dev/sdb"}},{"op":"add","path":"/spec/template/spec/providerSpec/value/blockDevices/-","value":{"ebs":{"encrypted":false,"iops":0,"volumeSize":120,"volumeType":"gp3"},"deviceName":"/dev/sdc"}}]`)
-			o.Expect(err).NotTo(o.HaveOccurred())
-		} else {
-			err = newMS.Patch("json", `[{"op":"add","path":"/spec/template/spec/providerSpec/value/disks/-","value":{"autoDelete":true,"boot":false,"sizeGb":16,"type":"pd-standard"}},{"op":"add","path":"/spec/template/spec/providerSpec/value/disks/-","value":{"autoDelete":true,"boot":false,"sizeGb":16,"type":"pd-standard"}}]`)
-			o.Expect(err).NotTo(o.HaveOccurred())
-		}
+		err = platformBasedDisksPatch(platform, newMS)
+		o.Expect(err).NotTo(o.HaveOccurred())
 
 		o.Expect(newMS.ScaleTo(1)).To(o.Succeed())
 		o.Expect(newMS.WaitUntilReady("15m")).To(o.Succeed())
@@ -339,16 +336,14 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		err = mc2.Create(
 			"-p", "NAME="+newMcName,
 			"-p", "POOL="+mcpool,
-			"-p", "DEVICE1="+"/dev/nvme3n1",
-			"-p", "DEVICE2="+"/dev/nvme4n1",
+			"-p", "DEVICE1="+disks[2],
+			"-p", "DEVICE2="+disks[3],
 		)
 		o.Expect(err).NotTo(o.HaveOccurred())
 
 		o.Eventually(func() (string, error) {
 			return mcp.Get(`{.status.conditions[?(@.type=="RenderDegraded")].status}`)
 		}, "5m", "10s").Should(o.Equal("True"), "MCP should be RenderDegraded after applying irreconcilable MC without override")
-
-		defer mc2.DeleteWithWait()
 
 		mc2.DeleteWithWait()
 		o.Expect(mcp.WaitForNotDegradedStatus()).To(o.Succeed())

@@ -722,8 +722,8 @@ func skipTestIfSupportedPlatformNotMatched(oc *exutil.CLI, supported ...string) 
 
 // SkipTestIfSNOCluster skips the test if the specified cluster is a SNO cluster
 func skipTestIfSNOCluster(oc *exutil.CLI) {
-	sno, _ := IsSNOSafe(oc)
-	if sno {
+	sno, err := IsSNOSafe(oc)
+	if sno || err != nil {
 		g.Skip("skip test because current cluster is a SNO cluster")
 	}
 }
