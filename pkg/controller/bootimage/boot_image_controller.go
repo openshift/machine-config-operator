@@ -82,6 +82,11 @@ type Controller struct {
 	capiMachineDeploymentLister       dynamiclister.NamespaceLister
 	capiMachineDeploymentListerSynced cache.InformerSynced
 
+	// Cache-backed lister for the platform-specific CAPI infrastructure template type.
+	// Wired lazily in Run() after the infra cache has synced, so we know which CRD to watch.
+	capiInfraTemplateLister       dynamiclister.NamespaceLister
+	capiInfraTemplateListerSynced cache.InformerSynced
+
 	mapiStats                  MachineResourceStats
 	cpmsStats                  MachineResourceStats
 	capiMachineSetStats        MachineResourceStats
@@ -125,11 +130,13 @@ func (mrs MachineResourceStats) getDegradedStatusMessage(name string) string {
 	return fmt.Sprintf("%d Degraded %s", mrs.erroredCount, name)
 }
 
-// GVRs for CAPI core resources
+// GVRs for CAPI core resources and per-platform infrastructure templates
 var (
 	capiMachineSetGVR        = clusterv1.GroupVersion.WithResource("machinesets")
 	capiMachineDeploymentGVR = clusterv1.GroupVersion.WithResource("machinedeployments")
 )
+
+// Infrastructure template GVRs are defined in capi_platform_helpers.go alongside their provider imports.
 
 const (
 	// Name of machine api namespace
@@ -264,6 +271,9 @@ func New(
 		})
 		ctrl.capiMachineDeploymentLister = dynamiclister.New(capiMDInformer.Informer().GetIndexer(), capiMachineDeploymentGVR).Namespace(CAPINamespace)
 		ctrl.capiMachineDeploymentListerSynced = capiMDInformer.Informer().HasSynced
+
+		// Infrastructure template informer is wired in Run() after the infra cache syncs,
+		// so we know which platform-specific CRD to watch without an API call here.
 	}
 
 	return ctrl
@@ -274,6 +284,8 @@ func (ctrl *Controller) Run(stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
+	// Phase 1: sync core informers. The infra lister must be warm before we can
+	// determine which platform-specific CAPI template CRD to watch.
 	synced := []cache.InformerSynced{ctrl.mcoCmListerSynced, ctrl.mapiMachineSetListerSynced, ctrl.infraListerSynced, ctrl.mcopListerSynced, ctrl.clusterVersionListerSynced}
 
 	if ctrl.capiInformerFactory != nil {
@@ -285,6 +297,18 @@ func (ctrl *Controller) Run(stopCh <-chan struct{}) {
 		return
 	}
 
+	// Phase 2: infra cache is warm — wire the platform-specific template informer and sync it.
+	if ctrl.capiInformerFactory != nil {
+		if err := ctrl.wireCAPITemplateInformer(); err != nil {
+			klog.Errorf("Failed to wire CAPI infrastructure template informer: %v", err)
+			return
+		}
+		ctrl.capiInformerFactory.Start(stopCh)
+		if !cache.WaitForCacheSync(stopCh, ctrl.capiInfraTemplateListerSynced) {
+			return
+		}
+	}
+
 	klog.Info("Starting MachineConfigController-MachineSetBootImageController")
 	defer klog.Info("Shutting down MachineConfigController-MachineSetBootImageController")
 
@@ -293,6 +317,25 @@ func (ctrl *Controller) Run(stopCh <-chan struct{}) {
 	go wait.Until(ctrl.worker, time.Second, stopCh)
 
 	<-stopCh
+}
+
+// wireCAPITemplateInformer reads the platform from the (now-warm) infra lister and
+// registers a dynamic informer for the matching infrastructure template CRD.
+// Called from Run() after the Phase 1 cache sync.
+func (ctrl *Controller) wireCAPITemplateInformer() error {
+	infra, err := ctrl.infraLister.Get("cluster")
+	if err != nil {
+		return fmt.Errorf("failed to get infrastructure object: %w", err)
+	}
+	platform := infra.Status.PlatformStatus.Type
+	templateGVR, err := capiInfraTemplateGVR(platform)
+	if err != nil {
+		return err
+	}
+	tmplInf := ctrl.capiInformerFactory.ForResource(templateGVR)
+	ctrl.capiInfraTemplateLister = dynamiclister.New(tmplInf.Informer().GetIndexer(), templateGVR).Namespace(CAPINamespace)
+	ctrl.capiInfraTemplateListerSynced = tmplInf.Informer().HasSynced
+	return nil
 }
 
 // enqueueEvent adds a event to the work queue.
