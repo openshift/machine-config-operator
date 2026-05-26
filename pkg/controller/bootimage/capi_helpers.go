@@ -19,6 +19,7 @@ import (
 	kubeApiErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
@@ -41,28 +42,30 @@ func (ctrl *Controller) syncCAPIMachineSets(reason string) {
 		return
 	}
 
-	mcop, err := ctrl.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
-	if err != nil {
-		klog.Errorf("Failed to get MachineConfiguration: %v", err)
-		ctrl.updateConditions(reason, fmt.Errorf("failed to get MachineConfiguration while enqueueing CAPI MachineSets: %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
-		return
-	}
-
-	machineManagerFound, machineResourceSelector, err := getMachineResourceSelectorFromMachineManagers(mcop.Status.ManagedBootImagesStatus.MachineManagers, capiAPIGroup, opv1.MachineSets)
-	if err != nil {
-		klog.Errorf("failed to create a machineset selector while enqueueing CAPI MachineSets: %v", err)
-		ctrl.updateConditions(reason, fmt.Errorf("failed to create a machineset selector while enqueueing CAPI MachineSets: %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
-		return
-	}
-	if !machineManagerFound {
-		klog.V(4).Infof("No CAPI MachineSet manager found, clearing CAPI boot image state")
-		for k := range ctrl.capiBootImageState {
-			delete(ctrl.capiBootImageState, k)
+	/*
+		mcop, err := ctrl.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
+		if err != nil {
+			klog.Errorf("Failed to get MachineConfiguration: %v", err)
+			ctrl.updateConditions(reason, fmt.Errorf("failed to get MachineConfiguration while enqueueing CAPI MachineSets: %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+			return
 		}
-		return
-	}
 
-	objs, err := ctrl.capiMachineSetLister.List(machineResourceSelector)
+		machineManagerFound, machineResourceSelector, err := getMachineResourceSelectorFromMachineManagers(mcop.Status.ManagedBootImagesStatus.MachineManagers, capiAPIGroup, opv1.MachineSets)
+		if err != nil {
+			klog.Errorf("failed to create a machineset selector while enqueueing CAPI MachineSets: %v", err)
+			ctrl.updateConditions(reason, fmt.Errorf("failed to create a machineset selector while enqueueing CAPI MachineSets: %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+			return
+		}
+		if !machineManagerFound {
+			klog.V(4).Infof("No CAPI MachineSet manager found, clearing CAPI boot image state")
+			for k := range ctrl.capiBootImageState {
+				delete(ctrl.capiBootImageState, k)
+			}
+			return
+		}
+
+	*/
+	objs, err := ctrl.capiMachineSetLister.List(labels.Everything())
 	if err != nil {
 		klog.Errorf("failed to list CAPI MachineSets: %v", err)
 		ctrl.updateConditions(reason, fmt.Errorf("failed to list CAPI MachineSets: %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
