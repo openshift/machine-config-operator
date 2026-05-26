@@ -301,29 +301,29 @@ func TestKernelAguments(t *testing.T) {
 		{
 			oldKargs: []string{"hello=world"},
 			newKargs: nil,
-			out:      []string{"--delete=hello=world"},
+			out:      []string{"--delete-if-present=hello=world"},
 		},
 		{
 			oldKargs: []string{"foo", "bar=1", "hello=world"},
 			newKargs: []string{"hello=world"},
-			out:      []string{"--delete=foo", "--delete=bar=1", "--delete=hello=world", "--append=hello=world"},
+			out:      []string{"--delete-if-present=foo", "--delete-if-present=bar=1", "--delete-if-present=hello=world", "--append=hello=world"},
 		},
 		{
 			oldKargs: []string{"foo", "bar=1 hello=world", "baz"},
 			newKargs: []string{"foo", "bar=1", "hello=world"},
-			out: []string{"--delete=foo", "--delete=bar=1", "--delete=hello=world", "--delete=baz",
+			out: []string{"--delete-if-present=foo", "--delete-if-present=bar=1", "--delete-if-present=hello=world", "--delete-if-present=baz",
 				"--append=foo", "--append=bar=1", "--append=hello=world"},
 		},
 		{
 			oldKargs: []string{" baz=test bar=\"hello world\""},
 			newKargs: []string{" baz=test bar=\"hello world\"", "foo"},
-			out: []string{"--delete=baz=test", "--delete=bar=\"hello world\"",
+			out: []string{"--delete-if-present=baz=test", "--delete-if-present=bar=\"hello world\"",
 				"--append=baz=test", "--append=bar=\"hello world\"", "--append=foo"},
 		},
 		{
 			oldKargs: []string{"hugepagesz=1G hugepages=4", "hugepagesz=2M hugepages=4"},
 			newKargs: []string{"hugepagesz=1G hugepages=4", "hugepagesz=2M hugepages=6"},
-			out: []string{"--delete=hugepagesz=1G", "--delete=hugepages=4", "--delete=hugepagesz=2M", "--delete=hugepages=4",
+			out: []string{"--delete-if-present=hugepagesz=1G", "--delete-if-present=hugepages=4", "--delete-if-present=hugepagesz=2M", "--delete-if-present=hugepages=4",
 				"--append=hugepagesz=1G", "--append=hugepages=4", "--append=hugepagesz=2M", "--append=hugepages=6"},
 		},
 	}
