@@ -48,8 +48,108 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 	g.JustBeforeEach(func() {
 		PreChecks(oc)
+		skipIfNoTechPreview(oc)
 		skipTestIfSupportedPlatformNotMatched(oc, AWSPlatform, GCPPlatform)
 		skipTestIfSNOCluster(oc)
+	})
+
+	g.It("[PolarionID:84219][OTP] Ensure new nodes adopt irreconcilable config while in old nodes surf [Disruptive]", g.Label("Platform:aws", "Platform:gce"), func() {
+		var (
+			mcp                  = GetCompactCompatiblePool(oc.AsAdmin())
+			machineconfiguration = GetMachineConfiguration(oc.AsAdmin())
+			mcName               = "extra-disks-" + GetCurrentTestPolarionIDNumber()
+			mc                   = NewMachineConfig(oc.AsAdmin(), mcName, mcp.GetName()).SetMCOTemplate("extra-disks.yaml")
+			nodes                = mcp.GetSortedNodesOrFail()
+		)
+
+		exutil.By("Save initial MachineConfiguration spec")
+		initialMachineConfigSpec := machineconfiguration.GetSpecOrFail()
+		logger.Infof("Initial MachineConfiguration spec: %s", initialMachineConfigSpec)
+
+		defer func() {
+			logger.Infof("Restore initial MachineConfiguration spec")
+			err := machineconfiguration.SetSpec(initialMachineConfigSpec)
+			o.Expect(err).NotTo(o.HaveOccurred())
+		}()
+
+		exutil.By("Step 1: Enable irreconcilableValidationOverrides")
+		err := machineconfiguration.EnableIrreconcilableValidationOverrides()
+		o.Expect(err).NotTo(o.HaveOccurred())
+		mcp.waitForComplete()
+		logger.Infof("OK!\n")
+
+		exutil.By("Step 2: Apply extra-disks MachineConfig")
+		platform := exutil.CheckPlatform(oc)
+		device1, device2 := "/dev/sdb", "/dev/sdc"
+		if platform == AWSPlatform {
+			device1, device2 = "/dev/nvme1n1", "/dev/nvme2n1"
+		}
+
+		mc.SetParams("-p", "DEVICE1="+device1, "-p", "DEVICE2="+device2)
+		defer mc.DeleteWithWait()
+		mc.create()
+		logger.Infof("OK!\n")
+
+		exutil.By("Step 3: Check irreconcilable differences for existing worker nodes")
+		for _, node := range nodes {
+			irreconcilableChanges := OrFail[string](node.GetIrreconcilableChanges())
+			o.Expect(irreconcilableChanges).To(o.ContainSubstring("spec.config.storage.disks"))
+			o.Expect(irreconcilableChanges).To(o.ContainSubstring("spec.config.storage.raid"))
+			o.Expect(irreconcilableChanges).To(o.ContainSubstring("spec.config.storage.filesystems"))
+			logger.Infof("Node %s has irreconcilable changes as expected", node.GetName())
+		}
+		logger.Infof("All worker nodes have irreconcilable changes as expected!\n")
+
+		exutil.By("Step 4: Create duplicate machineset with custom disks")
+		machineset := OrFail[*MachineSet](GetScalableMachineSet(oc.AsAdmin()))
+		newMSName := machineset.GetName() + "-custom-ms"
+		newMS, err := machineset.Duplicate(newMSName)
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		defer func() {
+			if newMS.Exists() {
+				newMS.ScaleTo(0)
+				newMS.WaitUntilReady("10m")
+				newMS.Delete()
+			}
+		}()
+
+		if platform == AWSPlatform {
+			err = newMS.Patch("json", `[{"op":"add","path":"/spec/template/spec/providerSpec/value/blockDevices/-","value":{"ebs":{"encrypted":false,"iops":0,"volumeSize":120,"volumeType":"gp3"},"deviceName":"/dev/sdb"}},{"op":"add","path":"/spec/template/spec/providerSpec/value/blockDevices/-","value":{"ebs":{"encrypted":false,"iops":0,"volumeSize":120,"volumeType":"gp3"},"deviceName":"/dev/sdc"}}]`)
+			o.Expect(err).NotTo(o.HaveOccurred())
+		} else {
+			err = newMS.Patch("json", `[{"op":"add","path":"/spec/template/spec/providerSpec/value/disks/-","value":{"autoDelete":true,"boot":false,"sizeGb":16,"type":"pd-standard"}},{"op":"add","path":"/spec/template/spec/providerSpec/value/disks/-","value":{"autoDelete":true,"boot":false,"sizeGb":16,"type":"pd-standard"}}]`)
+			o.Expect(err).NotTo(o.HaveOccurred())
+		}
+
+		o.Expect(newMS.ScaleTo(1)).To(o.Succeed())
+		o.Expect(newMS.WaitUntilReady("15m")).To(o.Succeed())
+
+		exutil.By("Step 5: Verify new node has no irreconcilable differences")
+		newNodes := newMS.GetNodesOrFail()
+		o.Expect(newNodes).To(o.HaveLen(1))
+		newNode := newNodes[0]
+		logger.Infof("New node is: %s", newNode.GetName())
+
+		newNodeMCN := NewMachineConfigNode(oc.AsAdmin(), newNode.GetName())
+		o.Eventually(func() string {
+			return newNodeMCN.GetOrFail(`{.status.irreconcilableChanges}`)
+		}, "5m", "10s").Should(o.Or(o.BeEmpty(), o.Equal("[]")), "New node should have no irreconcilable changes")
+
+		logger.Infof("OK!\n")
+
+		exutil.By("Step 6: Verify storage configuration on new node")
+
+		// Mount the RAID device
+		_, err = newNode.DebugNodeWithChroot("mount", "/dev/md/data", "/var/lib/data")
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		// Check mdadm details
+		stdout, err := newNode.DebugNodeWithChroot("mdadm", "--detail", "--scan")
+		o.Expect(err).NotTo(o.HaveOccurred())
+		o.Expect(stdout).Should(o.ContainSubstring("/dev/md/data"))
+
+		logger.Infof("OK!\n")
 	})
 
 	g.It("Scale up with a mix of irreconcilable and supported fields", g.Label("Platform:aws", "Platform:gce"), func() {
