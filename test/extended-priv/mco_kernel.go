@@ -20,9 +20,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		PreChecks(oc)
 	})
 
-	g.It("[PolarionID:42365][OTP] add real time kernel argument [Disruptive]", g.Label("Platform:aws", "Platform:gce"), func() {
+	g.It("[PolarionID:42365][OTP] add real time kernel argument [Disruptive]", func() {
 		architecture.SkipNonAmd64SingleArch(oc)
-		skipTestIfSupportedPlatformNotMatched(oc, AWSPlatform, GCPPlatform)
 		mcp := GetCompactCompatiblePool(oc.AsAdmin())
 
 		node := mcp.GetSortedNodesOrFail()[0]
@@ -81,13 +80,11 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		createMcAndVerifyMCValue(oc, "Duplicated kernel argument", "change-worker-duplicated-kernel-argument", workerNode, textToVerify, "cat", "/rootfs/proc/cmdline")
 	})
 
-	g.It("[PolarionID:53668][OTP] when FIPS and realtime kernel are both enabled node should NOT be degraded [Disruptive]", g.Label("Platform:aws", "Platform:gce"), func() {
+	g.It("[PolarionID:53668][OTP] when FIPS and realtime kernel are both enabled node should NOT be degraded [Disruptive]", func() {
 		// skip if arm64. realtime kernel is not supported.
 		architecture.SkipNonAmd64SingleArch(oc)
 		// skip the test if fips is not enabled
 		skipTestIfFIPSIsNotEnabled(oc)
-		// skip the test if platform is not aws or gcp. realtime kargs currently supported on these platforms
-		skipTestIfSupportedPlatformNotMatched(oc, AWSPlatform, GCPPlatform)
 
 		exutil.By("create machine config to enable fips ")
 		fipsMcName := "50-fips-bz-poc"
