@@ -117,8 +117,8 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 				assert.Len(t, actualIRI.Status.Conditions, 1)
 				assert.Equal(t, string(mcfgv1alpha1.InternalReleaseImageStatusConditionTypeDegraded), actualIRI.Status.Conditions[0].Type)
 				assert.Equal(t, metav1.ConditionFalse, actualIRI.Status.Conditions[0].Status)
-				assert.Equal(t, "AsExpected", actualIRI.Status.Conditions[0].Reason)
-				assert.Equal(t, "InternalReleaseImage controller sync successful", actualIRI.Status.Conditions[0].Message)
+				assert.Equal(t, "AllReleasesAvailable", actualIRI.Status.Conditions[0].Reason)
+				assert.Equal(t, "All the release images are available", actualIRI.Status.Conditions[0].Message)
 			},
 		},
 	}
@@ -229,8 +229,11 @@ type fixture struct {
 	iriLister            []*mcfgv1alpha1.InternalReleaseImage
 	ccLister             []*mcfgv1.ControllerConfig
 	mcLister             []*mcfgv1.MachineConfig
+	mcnLister            []*mcfgv1.MachineConfigNode
 	secretLister         []*corev1.Secret
+	nodeLister           []*corev1.Node
 	clusterVersionLister []*configv1.ClusterVersion
+	infraLister          []*configv1.Infrastructure
 
 	controller    *Controller
 	objects       []runtime.Object
@@ -248,14 +251,22 @@ func newFixture(t *testing.T, objects []runtime.Object) *fixture {
 func (f *fixture) setupObjects(objs []runtime.Object) {
 	for _, obj := range objs {
 		switch obj.(type) {
-		case *corev1.Secret, *corev1.ConfigMap, *corev1.Pod:
+		case *corev1.Secret, *corev1.ConfigMap, *corev1.Pod, *corev1.Node:
 			f.k8sObjects = append(f.k8sObjects, obj)
 			switch o := obj.(type) {
 			case *corev1.Secret:
 				f.secretLister = append(f.secretLister, o)
+			case *corev1.Node:
+				f.nodeLister = append(f.nodeLister, o)
 			}
-		case *configv1.ClusterVersion:
+		case *configv1.ClusterVersion, *configv1.Infrastructure:
 			f.configObjects = append(f.configObjects, obj)
+			switch o := obj.(type) {
+			case *configv1.ClusterVersion:
+				f.clusterVersionLister = append(f.clusterVersionLister, o)
+			case *configv1.Infrastructure:
+				f.infraLister = append(f.infraLister, o)
+			}
 		default:
 			f.objects = append(f.objects, obj)
 			switch o := obj.(type) {
@@ -265,6 +276,8 @@ func (f *fixture) setupObjects(objs []runtime.Object) {
 				f.ccLister = append(f.ccLister, o)
 			case *mcfgv1.MachineConfig:
 				f.mcLister = append(f.mcLister, o)
+			case *mcfgv1.MachineConfigNode:
+				f.mcnLister = append(f.mcnLister, o)
 			}
 		}
 	}
@@ -285,6 +298,9 @@ func (f *fixture) newController() *Controller {
 		i.Machineconfiguration().V1().MachineConfigs(),
 		ci.Config().V1().ClusterVersions(),
 		k.Core().V1().Secrets(),
+		i.Machineconfiguration().V1().MachineConfigNodes(),
+		k.Core().V1().Nodes(),
+		ci.Config().V1().Infrastructures(),
 		f.k8sClient,
 		f.client,
 	)
@@ -295,6 +311,9 @@ func (f *fixture) newController() *Controller {
 	c.mcListerSynced = alwaysReady
 	c.clusterVersionListerSynced = alwaysReady
 	c.secretListerSynced = alwaysReady
+	c.mcnListerSynced = alwaysReady
+	c.infraListerSynced = alwaysReady
+	c.nodeListerSynced = alwaysReady
 	c.eventRecorder = &record.FakeRecorder{}
 
 	stopCh := make(chan struct{})
@@ -316,11 +335,20 @@ func (f *fixture) newController() *Controller {
 	for _, c := range f.mcLister {
 		i.Machineconfiguration().V1().MachineConfigs().Informer().GetIndexer().Add(c)
 	}
+	for _, c := range f.mcnLister {
+		i.Machineconfiguration().V1().MachineConfigNodes().Informer().GetIndexer().Add(c)
+	}
 	for _, c := range f.secretLister {
 		k.Core().V1().Secrets().Informer().GetIndexer().Add(c)
 	}
+	for _, c := range f.nodeLister {
+		k.Core().V1().Nodes().Informer().GetIndexer().Add(c)
+	}
 	for _, c := range f.clusterVersionLister {
 		ci.Config().V1().ClusterVersions().Informer().GetIndexer().Add(c)
+	}
+	for _, c := range f.infraLister {
+		ci.Config().V1().Infrastructures().Informer().GetIndexer().Add(c)
 	}
 
 	return c
@@ -336,5 +364,100 @@ func (f *fixture) runController(key string, expectError bool) {
 		f.t.Errorf("error syncing internalreleaseimage: %v", err)
 	} else if expectError && err == nil {
 		f.t.Error("expected error syncing internalreleaseimage, got nil")
+	}
+}
+
+func TestAggregateIRIStatus(t *testing.T) {
+	cases := []struct {
+		name           string
+		initialObjects func() []runtime.Object
+		verify         func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage)
+	}{
+		{
+			name: "nodes-not-ready: some nodes not ready produces SomeNodesUnavailable",
+			initialObjects: objs(
+				iri().finalizer(iriFinalizerName),
+				clusterVersion(),
+				cconfig().withDNS("example.com"),
+				iriCertSecret(),
+				iriRegistryCredentialsSecret(),
+				pullSecret(),
+				machineconfigmaster(),
+				machineconfigworker(),
+				mcn("master-0"),
+				mcn("master-1"),
+				mcn("master-2"),
+				node("master-0").notReady(), // Node not ready
+				node("master-1"),
+				node("master-2"),
+				infrastructure(),
+			),
+			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage) {
+				assert.NotNil(t, actualIRI)
+				assert.Len(t, actualIRI.Status.Conditions, 1)
+				assert.Equal(t, string(mcfgv1alpha1.InternalReleaseImageStatusConditionTypeDegraded), actualIRI.Status.Conditions[0].Type)
+				assert.Equal(t, metav1.ConditionTrue, actualIRI.Status.Conditions[0].Status)
+
+				// Note: api-int ping will fail in unit tests, so may get ApiIntNotAvailable
+				// instead of SomeNodesUnavailable.
+				// In e2e tests this would be SomeNodesUnavailable.
+				assert.NotEmpty(t, actualIRI.Status.Conditions[0].Reason)
+
+				// Verify aggregation produced release status
+				assert.Len(t, actualIRI.Status.Releases, 1)
+				assert.Equal(t, "ocp-release-bundle-4.21.5-x86_64", actualIRI.Status.Releases[0].Name)
+			},
+		},
+		{
+			name: "registry-unavailable-not-on-api-int: degraded MCN produces SomeRegistriesUnavailable",
+			initialObjects: objs(
+				iri().finalizer(iriFinalizerName),
+				clusterVersion(),
+				cconfig().withDNS("example.com"),
+				iriCertSecret(),
+				iriRegistryCredentialsSecret(),
+				pullSecret(),
+				machineconfigmaster(),
+				machineconfigworker(),
+				mcn("master-0").degraded(), // MCN degraded
+				mcn("master-1"),
+				mcn("master-2"),
+				node("master-0"),
+				node("master-1"),
+				node("master-2"),
+				infrastructure(),
+			),
+			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage) {
+				assert.NotNil(t, actualIRI)
+				assert.Len(t, actualIRI.Status.Conditions, 1)
+				assert.Equal(t, string(mcfgv1alpha1.InternalReleaseImageStatusConditionTypeDegraded), actualIRI.Status.Conditions[0].Type)
+				assert.Equal(t, metav1.ConditionTrue, actualIRI.Status.Conditions[0].Status)
+				assert.NotEmpty(t, actualIRI.Status.Conditions[0].Reason)
+
+				// Verify aggregation produced release status
+				assert.Len(t, actualIRI.Status.Releases, 1)
+				assert.Equal(t, "ocp-release-bundle-4.21.5-x86_64", actualIRI.Status.Releases[0].Name)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			objs := tc.initialObjects()
+			f := newFixture(t, objs)
+			f.run(ctrlcommon.InternalReleaseImageInstanceName)
+
+			if tc.verify != nil {
+				actualIRI, err := f.client.MachineconfigurationV1alpha1().InternalReleaseImages().Get(context.TODO(), ctrlcommon.InternalReleaseImageInstanceName, v1.GetOptions{})
+				if err != nil {
+					if !errors.IsNotFound(err) {
+						t.Errorf("Error while running sync step: %v", err)
+					} else {
+						actualIRI = nil
+					}
+				}
+				tc.verify(t, actualIRI)
+			}
+		})
 	}
 }

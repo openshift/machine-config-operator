@@ -80,6 +80,187 @@ func TestMachineConfigNodesStatus(t *testing.T) {
 	}
 }
 
+func TestInternalReleaseImageAggregatedStatusHappyPath(t *testing.T) {
+	skipIfNoBaremetal(t)
+
+	cs := framework.NewClientSet("")
+	ctx := context.Background()
+
+	iri, err := cs.InternalReleaseImages().Get(ctx, "cluster", v1.GetOptions{})
+	require.NoError(t, err)
+
+	require.NotEmpty(t, iri.Status.Releases, "Cluster-level IRI should have aggregated releases")
+	baseDomain := getBaseDomain(t, cs)
+
+	// Verify each release in the aggregated status
+	for _, release := range iri.Status.Releases {
+		// Release should use api-int URL format, not localhost
+		require.Contains(t, release.Image, "api-int."+baseDomain, "Aggregated release should use api-int URL")
+		require.NotContains(t, release.Image, "localhost", "Aggregated release should not use localhost")
+
+		require.NotEmpty(t, release.Conditions, "Release should have conditions")
+	}
+
+	requireCondition(t, iri.Status.Conditions, string(mcfgv1alpha1.InternalReleaseImageStatusConditionTypeDegraded), v1.ConditionFalse)
+
+	// The reason should be AllReleasesAvailable in a healthy cluster
+	for _, cond := range iri.Status.Conditions {
+		if cond.Type == string(mcfgv1alpha1.InternalReleaseImageStatusConditionTypeDegraded) {
+			require.Equal(t, "AllReleasesAvailable", cond.Reason, "In a healthy cluster, reason should be AllReleasesAvailable")
+		}
+	}
+
+	require.Len(t, iri.Status.Releases, len(iri.Spec.Releases), "Status releases should match spec releases count")
+	for i, specRelease := range iri.Spec.Releases {
+		require.Equal(t, specRelease.Name, iri.Status.Releases[i].Name, "Release names should match between spec and status")
+	}
+}
+
+func TestInternalReleaseImageAggregatesFromMCNs(t *testing.T) {
+	skipIfNoBaremetal(t)
+
+	cs := framework.NewClientSet("")
+	ctx := context.Background()
+
+	// Get the cluster-level IRI
+	iri, err := cs.InternalReleaseImages().Get(ctx, "cluster", v1.GetOptions{})
+	require.NoError(t, err)
+	require.NotEmpty(t, iri.Status.Releases, "Cluster IRI should have releases")
+
+	// Get all MachineConfigNodes
+	mcnList, err := cs.MachineConfigNodes().List(ctx, v1.ListOptions{})
+	require.NoError(t, err)
+
+	// Filter to control plane nodes (IRI only runs on control plane)
+	masterNodes, err := cs.CoreV1Interface.Nodes().List(ctx, v1.ListOptions{
+		LabelSelector: "node-role.kubernetes.io/master=",
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, masterNodes.Items, "Should have control plane nodes")
+
+	controlPlaneMCNs := 0
+	for _, mcn := range mcnList.Items {
+		// Check if this MCN corresponds to a control plane node
+		isMaster := false
+		for _, node := range masterNodes.Items {
+			if node.Name == mcn.Name {
+				isMaster = true
+				break
+			}
+		}
+
+		if !isMaster {
+			continue
+		}
+
+		controlPlaneMCNs++
+
+		// Verify each control plane MCN has IRI status
+		require.NotEmpty(t, mcn.Status.InternalReleaseImage.Releases,
+			"Control plane MCN %s should have IRI releases", mcn.Name)
+
+		// Verify MCN releases match the cluster IRI spec
+		require.Len(t, mcn.Status.InternalReleaseImage.Releases, len(iri.Spec.Releases),
+			"MCN %s should have same number of releases as IRI spec", mcn.Name)
+
+		// Verify MCN has the InternalReleaseImageDegraded condition
+		hasIRIDegradedCondition := false
+		for _, cond := range mcn.Status.Conditions {
+			if cond.Type == string(mcfgv1.MachineConfigNodeInternalReleaseImageDegraded) {
+				hasIRIDegradedCondition = true
+				// In a healthy cluster, this should be False
+				require.Equal(t, v1.ConditionFalse, cond.Status,
+					"MCN %s should not be degraded in healthy cluster", mcn.Name)
+				break
+			}
+		}
+		require.True(t, hasIRIDegradedCondition,
+			"MCN %s should have InternalReleaseImageDegraded condition", mcn.Name)
+	}
+
+	require.Greater(t, controlPlaneMCNs, 0, "Should have at least one control plane MCN")
+
+	// Verify cluster IRI aggregates release names from MCNs
+	for _, specRelease := range iri.Spec.Releases {
+		found := false
+		for _, statusRelease := range iri.Status.Releases {
+			if statusRelease.Name == specRelease.Name {
+				found = true
+				break
+			}
+		}
+		require.True(t, found, "Cluster IRI should aggregate release %s from MCNs", specRelease.Name)
+	}
+}
+
+func TestInternalReleaseImageStatusConditions(t *testing.T) {
+	skipIfNoBaremetal(t)
+
+	cs := framework.NewClientSet("")
+	ctx := context.Background()
+
+	iri, err := cs.InternalReleaseImages().Get(ctx, "cluster", v1.GetOptions{})
+	require.NoError(t, err)
+
+	// Verify cluster-level IRI has Degraded condition
+	require.NotEmpty(t, iri.Status.Conditions, "IRI should have status conditions")
+
+	foundDegraded := false
+	for _, cond := range iri.Status.Conditions {
+		if cond.Type == string(mcfgv1alpha1.InternalReleaseImageStatusConditionTypeDegraded) {
+			foundDegraded = true
+
+			// Verify condition has reason and message
+			require.NotEmpty(t, cond.Reason, "Degraded condition should have a reason")
+			require.NotEmpty(t, cond.Message, "Degraded condition should have a message")
+
+			// Verify LastTransitionTime is set
+			require.False(t, cond.LastTransitionTime.IsZero(),
+				"Degraded condition should have LastTransitionTime set")
+
+			// In a healthy cluster, should be False with AllReleasesAvailable
+			require.Equal(t, v1.ConditionFalse, cond.Status,
+				"Degraded condition should be False in healthy cluster")
+			require.Equal(t, "AllReleasesAvailable", cond.Reason,
+				"Degraded condition reason should be AllReleasesAvailable in healthy cluster")
+		}
+	}
+	require.True(t, foundDegraded, "IRI should have Degraded condition")
+
+	// Verify each release has proper conditions
+	require.NotEmpty(t, iri.Status.Releases, "IRI should have releases")
+	for _, release := range iri.Status.Releases {
+		require.NotEmpty(t, release.Conditions, "Release %s should have conditions", release.Name)
+
+		// Check for Available condition
+		foundAvailable := false
+		foundReleaseDegraded := false
+
+		for _, cond := range release.Conditions {
+			require.NotEmpty(t, cond.Reason, "Condition in release %s should have a reason", release.Name)
+			require.NotEmpty(t, cond.Message, "Condition in release %s should have a message", release.Name)
+			require.False(t, cond.LastTransitionTime.IsZero(),
+				"Condition in release %s should have LastTransitionTime", release.Name)
+
+			switch cond.Type {
+			case string(mcfgv1alpha1.InternalReleaseImageConditionTypeAvailable):
+				foundAvailable = true
+				// In healthy cluster, Available should be True
+				require.Equal(t, v1.ConditionTrue, cond.Status,
+					"Available condition should be True for release %s in healthy cluster", release.Name)
+			case string(mcfgv1alpha1.InternalReleaseImageConditionTypeDegraded):
+				foundReleaseDegraded = true
+				// In healthy cluster, Degraded should be False
+				require.Equal(t, v1.ConditionFalse, cond.Status,
+					"Degraded condition should be False for release %s in healthy cluster", release.Name)
+			}
+		}
+
+		require.True(t, foundAvailable, "Release %s should have Available condition", release.Name)
+		require.True(t, foundReleaseDegraded, "Release %s should have Degraded condition", release.Name)
+	}
+}
+
 func requireCondition(t *testing.T, conditions []v1.Condition, condType string, condStatus v1.ConditionStatus) {
 	t.Helper()
 	for _, c := range conditions {
@@ -279,14 +460,20 @@ func TestIRIController_ShouldPreventDeletionWhenInUse(t *testing.T) {
 	require.NotEmpty(t, cv.Status.Desired.Image, "ClusterVersion should have a desired image")
 
 	// Verify that at least one release in IRI matches the current cluster version
+	// Note: Compare SHA256 digests, not full URLs, because IRI uses api-int registry
+	// while ClusterVersion uses the external registry
+	cvDigest := extractSHA256Digest(cv.Status.Desired.Image)
+	require.NotEmpty(t, cvDigest, "ClusterVersion image should have a SHA256 digest")
+
 	matchFound := false
 	for _, release := range iri.Status.Releases {
-		if release.Image == cv.Status.Desired.Image {
+		releaseDigest := extractSHA256Digest(release.Image)
+		if releaseDigest == cvDigest {
 			matchFound = true
 			break
 		}
 	}
-	require.True(t, matchFound, "IRI should contain a release matching the current cluster version")
+	require.True(t, matchFound, "IRI should contain a release matching the current cluster version (digest: %s)", cvDigest)
 
 	// Attempt to delete the InternalReleaseImage - this should fail
 	err = cs.InternalReleaseImages().Delete(ctx, "cluster", v1.DeleteOptions{})
@@ -456,4 +643,21 @@ func TestIRIController_VerifyMLKEMSupport(t *testing.T) {
 	require.True(t,
 		strings.Contains(output, "X25519MLKEM768") || strings.Contains(output, "x25519_mlkem768"),
 		"IRI registry should support X25519MLKEM768 (ML-KEM) key exchange. Output: %s", output)
+}
+
+// extractSHA256Digest extracts the SHA256 digest from an OCI image reference.
+// Example: "registry.example.com/repo/image@sha256:abc123..." → "sha256:abc123..."
+// Returns empty string if no digest is found.
+func extractSHA256Digest(imageRef string) string {
+	// Split on @ to get the digest part
+	parts := strings.SplitN(imageRef, "@", 2)
+	if len(parts) != 2 {
+		return ""
+	}
+	digest := parts[1]
+	// Verify it's a sha256 digest
+	if strings.HasPrefix(digest, "sha256:") {
+		return digest
+	}
+	return ""
 }
