@@ -123,6 +123,7 @@ func New(
 	})
 
 	ccInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addControllerConfig,
 		UpdateFunc: ctrl.updateControllerConfig,
 	})
 
@@ -137,6 +138,7 @@ func New(
 	secretInformer.Informer().AddEventHandler(cache.ResourceEventHandlerDetailedFuncs{
 		AddFunc:    ctrl.addSecret,
 		UpdateFunc: ctrl.updateSecret,
+		DeleteFunc: ctrl.deleteSecret,
 	})
 
 	mcnInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -278,11 +280,28 @@ func (ctrl *Controller) deleteInternalReleaseImage(obj interface{}) {
 	ctrl.enqueueInternalReleaseImage()
 }
 
+func (ctrl *Controller) addControllerConfig(obj interface{}) {
+	cfg := obj.(*mcfgv1.ControllerConfig)
+	klog.V(4).Infof("ControllerConfig %s added", cfg.Name)
+	ctrl.queue.Add(ctrlcommon.InternalReleaseImageInstanceName)
+}
+
 func (ctrl *Controller) updateControllerConfig(old, cur interface{}) {
 	oldCfg := old.(*mcfgv1.ControllerConfig)
 	curCfg := cur.(*mcfgv1.ControllerConfig)
 
-	if oldCfg.Spec.Images[templatectrl.DockerRegistryKey] == curCfg.Spec.Images[templatectrl.DockerRegistryKey] {
+	// Check if any fields relevant to syncGlobalPullSecret have changed
+	dockerRegistryChanged := oldCfg.Spec.Images[templatectrl.DockerRegistryKey] != curCfg.Spec.Images[templatectrl.DockerRegistryKey]
+	pullSecretChanged := !equality.Semantic.DeepEqual(oldCfg.Spec.PullSecret, curCfg.Spec.PullSecret)
+	baseDomainChanged := false
+	if oldCfg.Spec.DNS != nil && curCfg.Spec.DNS != nil {
+		baseDomainChanged = oldCfg.Spec.DNS.Spec.BaseDomain != curCfg.Spec.DNS.Spec.BaseDomain
+	} else if (oldCfg.Spec.DNS == nil) != (curCfg.Spec.DNS == nil) {
+		// One is nil, the other is not
+		baseDomainChanged = true
+	}
+
+	if !dockerRegistryChanged && !pullSecretChanged && !baseDomainChanged {
 		// Not a relevant update for the IRI controller, it can be skipped
 		return
 	}
@@ -312,24 +331,69 @@ func (ctrl *Controller) processMachineConfigEvent(obj interface{}, logMsg string
 
 func (ctrl *Controller) addSecret(obj interface{}, _ bool) {
 	secret := obj.(*corev1.Secret)
-	if secret.Name != ctrlcommon.InternalReleaseImageTLSSecretName &&
-		secret.Name != ctrlcommon.InternalReleaseImageAuthSecretName {
-		return
+	if ctrl.filterSecret(secret) {
+		klog.V(4).Infof("Secret %s/%s added, re-queuing IRI sync", secret.Namespace, secret.Name)
+		ctrl.queue.Add(ctrlcommon.InternalReleaseImageInstanceName)
 	}
-	klog.V(4).Infof("Secret %s added, re-queuing IRI sync", secret.Name)
-	ctrl.enqueueInternalReleaseImage()
 }
 
 func (ctrl *Controller) updateSecret(_, cur interface{}) {
 	secret := cur.(*corev1.Secret)
+	if ctrl.filterSecret(secret) {
+		klog.V(4).Infof("Secret %s/%s updated, re-queuing IRI sync", secret.Namespace, secret.Name)
+		ctrl.queue.Add(ctrlcommon.InternalReleaseImageInstanceName)
+	}
+}
 
-	if secret.Name != ctrlcommon.InternalReleaseImageTLSSecretName &&
-		secret.Name != ctrlcommon.InternalReleaseImageAuthSecretName {
-		return
+func (ctrl *Controller) deleteSecret(obj interface{}) {
+	secret, ok := obj.(*corev1.Secret)
+	if !ok {
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("failed to get object from tombstone %#v", obj))
+			return
+		}
+		secret, ok = tombstone.Obj.(*corev1.Secret)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a Secret %#v", obj))
+			return
+		}
 	}
 
-	klog.V(4).Infof("Secret %s updated, re-queuing IRI sync", secret.Name)
-	ctrl.enqueueInternalReleaseImage()
+	if ctrl.filterSecret(secret) {
+		klog.V(4).Infof("Secret %s/%s deleted, re-queuing IRI sync", secret.Namespace, secret.Name)
+		ctrl.queue.Add(ctrlcommon.InternalReleaseImageInstanceName)
+	}
+}
+
+// filterSecret returns true if the secret is relevant to the IRI controller:
+// - IRI-owned secrets (TLS and auth)
+// - The global pull secret (from ControllerConfig.Spec.PullSecret)
+func (ctrl *Controller) filterSecret(secret *corev1.Secret) bool {
+	// Check if this is an IRI-owned secret
+	if secret.Namespace == ctrlcommon.MCONamespace &&
+		(secret.Name == ctrlcommon.InternalReleaseImageTLSSecretName ||
+			secret.Name == ctrlcommon.InternalReleaseImageAuthSecretName) {
+		return true
+	}
+
+	// Check if this is the configured global pull secret
+	cfg, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
+	if err != nil {
+		// If we can't get the ControllerConfig, we can't determine if this secret
+		// is the global pull secret, so we skip the check. The controller will
+		// eventually sync when the ControllerConfig is available.
+		klog.V(4).Infof("Could not get ControllerConfig to check secret %s/%s: %v", secret.Namespace, secret.Name, err)
+		return false
+	}
+
+	if cfg.Spec.PullSecret != nil &&
+		secret.Namespace == cfg.Spec.PullSecret.Namespace &&
+		secret.Name == cfg.Spec.PullSecret.Name {
+		return true
+	}
+
+	return false
 }
 
 func (ctrl *Controller) addMachineConfigNode(obj interface{}) {
