@@ -1181,7 +1181,7 @@ func validateMcpNodeDegraded(mc *MachineConfig, mcp *MachineConfigPool, expected
 }
 
 // validate that the machine config 'mc' degrades machineconfigpool 'mcp', due to RenderDegraded error matching expectedNDMessage, expectedNDReason
-func validateMcpRenderDegraded(mc *MachineConfig, mcp *MachineConfigPool, expectedRDMessage, expectedRDReason string) {
+func validateMcpRenderDegraded(mc *MachineConfig, mcp *MachineConfigPool, expectedRDMessage, expectedRDReason string) { //nolint:unparam
 	defer o.Eventually(mcp, "5m", "20s").ShouldNot(BeDegraded(), "The MCP was not recovered from Degraded status after deleting the offending MC")
 	defer o.Eventually(mc.Delete).Should(o.Succeed(), "Could not delete the offending MC")
 	mc.create()
@@ -1241,4 +1241,29 @@ func getAlertsByName(oc *exutil.CLI, alertName string) ([]map[string]interface{}
 	}
 
 	return filteredAlerts, nil
+}
+
+// skipTestIfRTKernel skips the current test if the cluster is using real time kernel
+func skipTestIfRTKernel(oc *exutil.CLI) {
+	wMcp := NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
+	mMcp := NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolMaster)
+
+	isWorkerRT, err := wMcp.IsRealTimeKernel()
+	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error trying to know if realtime kernel is active worker pool")
+
+	isMasterRT, err := mMcp.IsRealTimeKernel()
+	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error trying to know if realtime kernel is active master pool")
+
+	if isWorkerRT || isMasterRT {
+		g.Skip("Pools are using real time kernel configuration. This test cannot be executed if the cluster is using RT kernel.")
+	}
+}
+
+// skipTestIfOsIsNotCoreOs it will either skip the test case in case of worker node is not CoreOS or will return the CoreOS worker node
+func skipTestIfOsIsNotCoreOs(oc *exutil.CLI) *Node {
+	allCoreOs := NewNodeList(oc.AsAdmin()).GetAllCoreOsWokerNodesOrFail()
+	if len(allCoreOs) == 0 {
+		g.Skip("CoreOs is required to execute this test case!")
+	}
+	return allCoreOs[0]
 }
