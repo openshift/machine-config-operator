@@ -1,0 +1,10 @@
+name: "taint-node@.service"
+contents: |
+  [Unit]
+  Description=Taint fenced node %i in Kubernetes
+  After=network.target
+
+  [Service]
+  Type=oneshot
+  ExecStart=/usr/local/bin/taint-fenced-node.sh %i
+  TimeoutStartSec=600
