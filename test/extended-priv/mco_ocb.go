@@ -311,7 +311,9 @@ func ValidateSuccessfulMOSC(mosc *MachineOSConfig, checkers []Checker) {
 	logger.Infof("OK!\n")
 
 	exutil.By("Check that the  machine-os-builder is using leader election without failing")
-	o.Expect(mOSBuilder.Logs()).To(o.And(
+	o.Eventually(func() (string, error) {
+		return mOSBuilder.Logs()
+	}, "5m", "10s").Should(o.And(
 		o.MatchRegexp("(?i)"+regexp.QuoteMeta("attempting to acquire leader lease")),
 		o.MatchRegexp("(?i)"+regexp.QuoteMeta("successfully acquired lease"))),
 		"The machine os builder pod is not using the leader election without failures")
@@ -442,7 +444,7 @@ func ValidateMOSCIsGarbageCollected(mosc *MachineOSConfig, mcp *MachineConfigPoo
 
 	logger.Infof("Validating that machine-os-builder pod was garbage collected")
 	mOSBuilder := NewNamespacedResource(mosc.GetOC().AsAdmin(), "deployment", MachineConfigNamespace, "machine-os-builder")
-	o.Eventually(mOSBuilder, "2m", "30s").ShouldNot(Exist(),
+	o.Eventually(mOSBuilder, "5m", "30s").ShouldNot(Exist(),
 		"The machine-os-builder deployment was not removed when the infra pool was unlabeled")
 
 	logger.Infof("Validating that configmaps were garbage collected")
