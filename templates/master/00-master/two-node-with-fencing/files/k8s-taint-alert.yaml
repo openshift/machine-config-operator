@@ -1,0 +1,14 @@
+mode: 0755
+path: "/var/lib/pacemaker/alerts/k8s-taint-alert.sh"
+contents:
+  inline: |
+    #!/bin/bash
+    # Pacemaker alert agent for fencing events.
+    # CRM_alert_kind=fencing + CRM_alert_rc=0 identifies a successful fence
+    # completion. Device-add/remove/topology notifications never set
+    # CRM_alert_kind=fencing, so they are already excluded.
+    if [ "$CRM_alert_kind" = "fencing" ] && [ "$CRM_alert_rc" = "0" ] && [ -n "$CRM_alert_node" ]; then
+        logger -t k8s-taint-alert "Fencing succeeded for ${CRM_alert_node}, triggering taint service"
+        sudo systemctl start --no-block "taint-node@${CRM_alert_node}.service"
+    fi
+    exit 0
