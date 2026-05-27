@@ -33,10 +33,10 @@ func platformBasedDisksNames(platform string) []string {
 		}
 	case GCPPlatform:
 		return []string{
-			"/dev/sda1",
-			"/dev/sda2",
-			"/dev/sda3",
-			"/dev/sda4",
+			"/dev/sda",
+			"/dev/sdb",
+			"/dev/sdc",
+			"/dev/sdd",
 		}
 	}
 	return []string{}
