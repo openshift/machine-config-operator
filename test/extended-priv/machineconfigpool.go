@@ -1523,6 +1523,18 @@ func GetAllApplicableExtensionsToMCPOrFail(mcp *MachineConfigPool) (extensions, 
 	return extensions, packages
 }
 
+// FilterExtensionsForStreams returns extensions compatible with all the given OS image streams
+func FilterExtensionsForStreams(extensions map[string][]string, hasARM64, fips bool, osImageStreams ...string) (map[string][]string, []string, []string) {
+	var filtered map[string][]string
+	var names []string
+	var packages []string
+	for _, stream := range osImageStreams {
+		filtered, names, packages = FilterExtensions(extensions, hasARM64, fips, stream)
+		extensions = filtered
+	}
+	return filtered, names, packages
+}
+
 func (mcp *MachineConfigPool) GetNodesWithoutArchitecture(arch architecture.Architecture, archs ...architecture.Architecture) ([]*Node, error) {
 	archsList := arch.String()
 	for _, itemArch := range archs {

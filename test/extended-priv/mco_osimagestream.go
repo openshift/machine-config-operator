@@ -124,7 +124,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		defer DeleteCustomMCP(oc.AsAdmin(), createdCustomPoolName)
 
 		mcp, _ := GetPoolAndNodesForArchitectureOrFail(oc.AsAdmin(), createdCustomPoolName, architecture.AMD64, 1)
-		testKernelTypeAcrossOSImageStreams(oc, osis, mcp, testID, KernelTypeRealtime, "set-realtime-kernel.yaml")
+		testKernelTypeAcrossOSImageStreams(oc, osis, mcp, testID, KernelTypeRealtime, "set-realtime-kernel.yaml", OSImageStreamRHEL9, OSImageStreamRHEL10)
 	})
 
 	// AI-assisted: Test case to validate 64k-pages kernel configuration across OS image streams
@@ -137,101 +137,12 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		defer DeleteCustomMCP(oc.AsAdmin(), createdCustomPoolName)
 
 		mcp, _ := GetPoolAndNodesForArchitectureOrFail(oc.AsAdmin(), createdCustomPoolName, architecture.ARM64, 1)
-		testKernelTypeAcrossOSImageStreams(oc, osis, mcp, testID, KernelType64kPages, "set-64k-pages-kernel.yaml")
+		testKernelTypeAcrossOSImageStreams(oc, osis, mcp, testID, KernelType64kPages, "set-64k-pages-kernel.yaml", OSImageStreamRHEL9, OSImageStreamRHEL10)
 	})
 
 	// AI-assisted: Test case to validate extensions configuration survives osImageStream changes
 	g.It("[PolarionID:87097][OTP] Extensions from rhel9 stream to rhel10 stream [Disruptive] [apigroup:machineconfiguration.openshift.io]", func() {
-		var (
-			testID = GetCurrentTestPolarionIDNumber()
-			mcName = fmt.Sprintf("tc-%s-extensions", testID)
-		)
-
-		mcp, cleanup, err := GetCompactCompatibleOrCustomPool(oc.AsAdmin(), 1)
-		defer cleanup()
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting pool for testing")
-
-		defer mcp.waitForComplete()
-		defer mcp.SetSpec(mcp.GetSpecOrFail())
-
-		exutil.By("Verify rhel-9 and rhel-10 streams are available")
-		o.Eventually(osis.GetAvailableStreamNames, "2m", "20s").Should(o.ContainElements(OSImageStreamRHEL9, OSImageStreamRHEL10),
-			"Both streams '%s' and '%s' should be available", OSImageStreamRHEL9, OSImageStreamRHEL10)
-		logger.Infof("Both rhel-9 and rhel-10 streams are available")
-		logger.Infof("OK!\n")
-
-		exutil.By("Check current osImageStream and configure rhel-9 if necessary")
-		currentStream, err := GetEffectiveOsImageStream(mcp)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting effective osImageStream from %s", mcp)
-		logger.Infof("Current stream: '%s'", currentStream)
-
-		if currentStream != OSImageStreamRHEL9 {
-			logger.Infof("Configuring osImageStream to '%s' in %s", OSImageStreamRHEL9, mcp)
-			o.Expect(mcp.SetOsImageStream(OSImageStreamRHEL9)).To(o.Succeed(), "Error setting osImageStream to '%s' in %s", OSImageStreamRHEL9, mcp)
-			mcp.waitForComplete()
-			logger.Infof("OK!\n")
-		} else {
-			logger.Infof("%s is already using rhel-9 stream", mcp)
-			logger.Infof("OK!\n")
-		}
-
-		validateOsImageStreamInPool(mcp, osis, OSImageStreamRHEL9)
-
-		exutil.By("Get extensions compatible with rhel-10 stream")
-		fips := isFIPSEnabledInClusterConfig(oc.AsAdmin())
-		armNodes, err := mcp.GetNodesByArchitecture(architecture.ARM64)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the list of ARM nodes in %s", mcp)
-		_, rhel10CompatibleExtensions, expectedRpmPackages := FilterExtensions(AllExtenstions, len(armNodes) > 0, fips, OSImageStreamRHEL10)
-		logger.Infof("Extensions compatible with rhel-10: %v", rhel10CompatibleExtensions)
-		logger.Infof("Expected RPM packages: %v", expectedRpmPackages)
-		logger.Infof("OK!\n")
-
-		exutil.By(fmt.Sprintf("Configure rhel-10 compatible extensions in %s while on rhel-9", mcp))
-		mc := NewMachineConfig(oc.AsAdmin(), mcName, mcp.GetName())
-		mc.parameters = []string{fmt.Sprintf(`EXTENSIONS=%s`, string(MarshalOrFail(rhel10CompatibleExtensions)))}
-		mc.skipWaitForMcp = true
-
-		defer mc.DeleteWithWait()
-		mc.create()
-		logger.Infof("OK!\n")
-
-		exutil.By(fmt.Sprintf("Wait for %s to be updated after applying extensions", mcp))
-		mcp.SetWaitingTimeForExtensionsChange()
-		mcp.waitForComplete()
-		logger.Infof("OK!\n")
-
-		exutil.By("Verify rhel-10 compatible extensions are installed on rhel-9")
-		firstNode := mcp.GetSortedNodesOrFail()[0]
-		CheckExtensions(firstNode, rhel10CompatibleExtensions)
-		logger.Infof("OK!\n")
-
-		exutil.By(fmt.Sprintf("Configure osImageStream to '%s' in %s", OSImageStreamRHEL10, mcp))
-		o.Expect(mcp.SetOsImageStream(OSImageStreamRHEL10)).To(o.Succeed(), "Error setting osImageStream to '%s' in %s", OSImageStreamRHEL10, mcp)
-		mcp.waitForComplete()
-		logger.Infof("OK!\n")
-
-		exutil.By("Verify rhel-10 stream is configured and extensions are still installed")
-		validateOsImageStreamInPool(mcp, osis, OSImageStreamRHEL10)
-
-		CheckExtensions(firstNode, rhel10CompatibleExtensions)
-		logger.Infof("Extensions are still correctly installed after switching to rhel-10")
-		logger.Infof("OK!\n")
-
-		exutil.By("Remove the extensions configuration")
-		mc.DeleteWithWait()
-		logger.Infof("OK!\n")
-
-		exutil.By("Verify extensions are uninstalled and rhel-10 stream is still configured")
-		for _, pkg := range expectedRpmPackages {
-			o.Expect(firstNode.RpmIsInstalled(pkg)).To(
-				o.BeFalse(),
-				"Package %s should be uninstalled when we remove the extensions MC", pkg)
-		}
-		logger.Infof("All extension packages are correctly uninstalled")
-
-		validateOsImageStreamInPool(mcp, osis, OSImageStreamRHEL10)
-		logger.Infof("%s is still correctly using rhel-10 stream", firstNode)
-		logger.Infof("OK!\n")
+		testExtensionsAcrossOSImageStreams(oc, osis, OSImageStreamRHEL9, OSImageStreamRHEL10)
 	})
 
 	g.It("[PolarionID:88366][Skipped:Disconnected] osImageStream should be empty when osImageURL is set [apigroup:machineconfiguration.openshift.io]", func() {
@@ -246,12 +157,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		o.Eventually(crd, "10s", "2s").Should(Exist(),
 			"osimagestreams CRD should exist in the cluster")
 		logger.Infof("osimagestreams CRD found")
-		logger.Infof("OK!\n")
-
-		exutil.By("Verify MCP reports rhel-9 osImageStream in status")
-		o.Eventually(mcp.GetStatusOsImageStream, "2m", "20s").Should(o.ContainSubstring(OSImageStreamRHEL9),
-			"%s should report rhel-9 in status.osImageStream", mcp)
-		logger.Infof("%s osImageStream: %s", mcp, mcp.GetSafe(`{.status.osImageStream}`, ""))
 		logger.Infof("OK!\n")
 
 		exutil.By("Build a custom OS image to use as osImageURL")
@@ -300,7 +205,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("OK!\n")
 	})
 
-	g.It("[PolarionID:88814][Skipped:Disconnected] Invalid osImageURL degrades MCP and clears osImageStream status [apigroup:machineconfiguration.openshift.io]", func() {
+	g.It("[PolarionID:88814] Invalid osImageURL degrades MCP and clears osImageStream status [apigroup:machineconfiguration.openshift.io]", func() {
 		var (
 			testID         = GetCurrentTestPolarionIDNumber()
 			degradedMCName = fmt.Sprintf("tc-%s-degraded-test", testID)
@@ -311,12 +216,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		o.Eventually(crd, "10s", "2s").Should(Exist(),
 			"osimagestreams CRD should exist in the cluster")
 		logger.Infof("osimagestreams CRD found")
-		logger.Infof("OK!\n")
-
-		exutil.By("Verify MCP reports rhel-9 osImageStream in status")
-		o.Eventually(mcp.GetStatusOsImageStream, "2m", "20s").Should(o.ContainSubstring(OSImageStreamRHEL9),
-			"%s should report rhel-9 in status.osImageStream", mcp)
-		logger.Infof("%s osImageStream: %s", mcp, mcp.GetSafe(`{.status.osImageStream}`, ""))
 		logger.Infof("OK!\n")
 
 		exutil.By("Apply invalid MachineConfig to degrade pool")
@@ -346,9 +245,11 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("Invalid MachineConfig %s deleted, pool recovered", degradedMC.GetName())
 		logger.Infof("OK!\n")
 
-		exutil.By("Verify osImageStream is still rhel-9 after recovery")
-		o.Eventually(mcp.GetStatusOsImageStream, "2m", "20s").Should(o.ContainSubstring(OSImageStreamRHEL9),
-			"%s should report rhel-9 in status.osImageStream after recovery", mcp)
+		exutil.By("Verify osImageStream is restored after recovery")
+		expectedStream, err := GetEffectiveOsImageStream(mcp)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting effective osImageStream from %s", mcp)
+		o.Eventually(mcp.GetStatusOsImageStream, "2m", "20s").Should(o.Equal(expectedStream),
+			"%s should report '%s' in status.osImageStream after recovery", mcp, expectedStream)
 		logger.Infof("%s osImageStream: %s", mcp, mcp.GetSafe(`{.status.osImageStream}`, ""))
 		logger.Infof("OK!\n")
 	})
@@ -383,8 +284,6 @@ func GetEffectiveOsImageStream(mcp *MachineConfigPool) (string, error) {
 
 // validateOsImageStreamInPool validates that a pool is using the expected osImage for a stream
 func validateOsImageStreamInPool(mcp *MachineConfigPool, osis *OSImageStream, streamName string) {
-	exutil.By(fmt.Sprintf("Validate that %s is using osImageStream '%s'", mcp, streamName))
-
 	expectedOsImage, err := osis.GetOsImageByName(streamName)
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting osImage for stream '%s'", streamName)
 
@@ -414,39 +313,43 @@ func validateOsImageStreamInPool(mcp *MachineConfigPool, osis *OSImageStream, st
 	} else {
 		logger.Infof("Skipping RHEL version check - stream name '%s' doesn't match 'rhel-X' pattern", streamName)
 	}
+}
 
-	logger.Infof("OK!\n")
+// ensureOsImageStream checks the current osImageStream and configures it to the desired stream if necessary
+func ensureOsImageStream(mcp *MachineConfigPool, stream string) {
+	currentStream, err := GetEffectiveOsImageStream(mcp)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting effective osImageStream from %s", mcp)
+	logger.Infof("Current stream: '%s'", currentStream)
+
+	if currentStream != stream {
+		logger.Infof("Configuring osImageStream to '%s' in %s", stream, mcp)
+		o.Expect(mcp.SetOsImageStream(stream)).To(o.Succeed(), "Error setting osImageStream to '%s' in %s", stream, mcp)
+		mcp.waitForComplete()
+	} else {
+		logger.Infof("%s is already using %s stream", mcp, stream)
+	}
 }
 
 // testKernelTypeAcrossOSImageStreams tests kernel type configuration across OS image streams
-func testKernelTypeAcrossOSImageStreams(oc *exutil.CLI, osis *OSImageStream, mcp *MachineConfigPool, testID string, kernelType KernelType, mcTemplate string) {
+func testKernelTypeAcrossOSImageStreams(oc *exutil.CLI, osis *OSImageStream, mcp *MachineConfigPool, testID string, kernelType KernelType, mcTemplate, initialStream, targetStream string) {
 	mcName := fmt.Sprintf("tc-%s-%s-kernel", testID, kernelType)
 
 	defer mcp.waitForComplete()
 	defer mcp.SetSpec(mcp.GetSpecOrFail())
 
-	exutil.By("Verify rhel-9 and rhel-10 streams are available")
-	o.Eventually(osis.GetAvailableStreamNames, "2m", "20s").Should(o.ContainElements(OSImageStreamRHEL9, OSImageStreamRHEL10),
-		"Both streams '%s' and '%s' should be available", OSImageStreamRHEL9, OSImageStreamRHEL10)
-	logger.Infof("Both rhel-9 and rhel-10 streams are available")
+	exutil.By(fmt.Sprintf("Verify %s and %s streams are available", initialStream, targetStream))
+	o.Eventually(osis.GetAvailableStreamNames, "2m", "20s").Should(o.ContainElements(initialStream, targetStream),
+		"Both streams '%s' and '%s' should be available", initialStream, targetStream)
+	logger.Infof("Both %s and %s streams are available", initialStream, targetStream)
 	logger.Infof("OK!\n")
 
-	exutil.By("Check current osImageStream and configure rhel-9 if necessary")
-	currentStream, err := GetEffectiveOsImageStream(mcp)
-	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting effective osImageStream from %s", mcp)
-	logger.Infof("Current stream: '%s'", currentStream)
+	exutil.By(fmt.Sprintf("Check current osImageStream and configure %s if necessary", initialStream))
+	ensureOsImageStream(mcp, initialStream)
+	logger.Infof("OK!\n")
 
-	if currentStream != OSImageStreamRHEL9 {
-		logger.Infof("Configuring osImageStream to '%s' in %s", OSImageStreamRHEL9, mcp)
-		o.Expect(mcp.SetOsImageStream(OSImageStreamRHEL9)).To(o.Succeed(), "Error setting osImageStream to '%s' in %s", OSImageStreamRHEL9, mcp)
-		mcp.waitForComplete()
-		logger.Infof("OK!\n")
-	} else {
-		logger.Infof("%s is already using rhel-9 stream", mcp)
-		logger.Infof("OK!\n")
-	}
-
-	validateOsImageStreamInPool(mcp, osis, OSImageStreamRHEL9)
+	exutil.By(fmt.Sprintf("Validate that %s is using osImageStream '%s'", mcp, initialStream))
+	validateOsImageStreamInPool(mcp, osis, initialStream)
+	logger.Infof("OK!\n")
 
 	exutil.By(fmt.Sprintf("Configure %s kernel in %s", kernelType, mcp))
 	mc := NewMachineConfig(oc.AsAdmin(), mcName, mcp.GetName())
@@ -469,16 +372,16 @@ func testKernelTypeAcrossOSImageStreams(oc *exutil.CLI, osis *OSImageStream, mcp
 	logger.Infof("%s kernel is correctly configured on %s", kernelType, firstNode)
 	logger.Infof("OK!\n")
 
-	exutil.By(fmt.Sprintf("Configure osImageStream to '%s' in %s", OSImageStreamRHEL10, mcp))
-	o.Expect(mcp.SetOsImageStream(OSImageStreamRHEL10)).To(o.Succeed(), "Error setting osImageStream to '%s' in %s", OSImageStreamRHEL10, mcp)
+	exutil.By(fmt.Sprintf("Configure osImageStream to '%s' in %s", targetStream, mcp))
+	o.Expect(mcp.SetOsImageStream(targetStream)).To(o.Succeed(), "Error setting osImageStream to '%s' in %s", targetStream, mcp)
 	mcp.waitForComplete()
 	logger.Infof("OK!\n")
 
-	exutil.By(fmt.Sprintf("Verify rhel-10 stream is configured and %s kernel is still active", kernelType))
-	validateOsImageStreamInPool(mcp, osis, OSImageStreamRHEL10)
+	exutil.By(fmt.Sprintf("Verify %s stream is configured and %s kernel is still active", targetStream, kernelType))
+	validateOsImageStreamInPool(mcp, osis, targetStream)
 
 	o.Eventually(firstNode.IsKernelType, "2m", "20s").WithArguments(kernelType).Should(o.BeTrue(),
-		"%s kernel should still be active on %s after switching to rhel-10", kernelType, firstNode)
+		"%s kernel should still be active on %s after switching to %s", kernelType, firstNode, targetStream)
 	logger.Infof("%s kernel is still correctly configured on %s", kernelType, firstNode)
 	logger.Infof("OK!\n")
 
@@ -486,12 +389,101 @@ func testKernelTypeAcrossOSImageStreams(oc *exutil.CLI, osis *OSImageStream, mcp
 	mc.DeleteWithWait()
 	logger.Infof("OK!\n")
 
-	exutil.By(fmt.Sprintf("Verify %s kernel is not active and rhel-10 stream is still configured", kernelType))
+	exutil.By(fmt.Sprintf("Verify %s kernel is not active and %s stream is still configured", kernelType, targetStream))
 	o.Eventually(firstNode.IsKernelType, "2m", "20s").WithArguments(kernelType).Should(o.BeFalse(),
 		"%s kernel should not be active on %s", kernelType, firstNode)
 	logger.Infof("%s kernel is correctly removed from %s", kernelType, firstNode)
 
-	validateOsImageStreamInPool(mcp, osis, OSImageStreamRHEL10)
-	logger.Infof("%s is still correctly using rhel-10 stream", firstNode)
+	validateOsImageStreamInPool(mcp, osis, targetStream)
+	logger.Infof("%s is still correctly using %s stream", firstNode, targetStream)
+	logger.Infof("OK!\n")
+}
+
+// testExtensionsAcrossOSImageStreams tests extensions configuration across OS image streams
+func testExtensionsAcrossOSImageStreams(oc *exutil.CLI, osis *OSImageStream, initialStream, targetStream string) {
+	var (
+		testID = GetCurrentTestPolarionIDNumber()
+		mcName = fmt.Sprintf("tc-%s-extensions", testID)
+	)
+
+	exutil.By(fmt.Sprintf("Verify %s and %s streams are available", initialStream, targetStream))
+	o.Eventually(osis.GetAvailableStreamNames, "2m", "20s").Should(o.ContainElements(initialStream, targetStream),
+		"Both streams '%s' and '%s' should be available", initialStream, targetStream)
+	logger.Infof("Both %s and %s streams are available", initialStream, targetStream)
+	logger.Infof("OK!\n")
+
+	exutil.By("Get the MCP used to execute this test")
+	mcp, cleanup, err := GetCompactCompatibleOrCustomPool(oc.AsAdmin(), 1)
+	defer cleanup()
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting pool for testing")
+
+	defer mcp.waitForComplete()
+	defer mcp.SetSpec(mcp.GetSpecOrFail())
+	logger.Infof("OK!\n")
+
+	exutil.By(fmt.Sprintf("Check current osImageStream and configure %s if necessary", initialStream))
+	ensureOsImageStream(mcp, initialStream)
+	logger.Infof("OK!\n")
+
+	exutil.By(fmt.Sprintf("Validate that %s is using osImageStream '%s'", mcp, initialStream))
+	validateOsImageStreamInPool(mcp, osis, initialStream)
+	logger.Infof("OK!\n")
+
+	exutil.By(fmt.Sprintf("Get extensions compatible with both %s and %s streams", initialStream, targetStream))
+	fips := isFIPSEnabledInClusterConfig(oc.AsAdmin())
+	armNodes, err := mcp.GetNodesByArchitecture(architecture.ARM64)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the list of ARM nodes in %s", mcp)
+	_, compatibleExtensions, expectedRpmPackages := FilterExtensionsForStreams(AllExtenstions, len(armNodes) > 0, fips, initialStream, targetStream)
+	o.Expect(compatibleExtensions).NotTo(o.BeEmpty(),
+		"No extensions are compatible with both %s and %s streams", initialStream, targetStream)
+	logger.Infof("Extensions compatible with both %s and %s: %v", initialStream, targetStream, compatibleExtensions)
+	logger.Infof("Expected RPM packages: %v", expectedRpmPackages)
+	logger.Infof("OK!\n")
+
+	exutil.By(fmt.Sprintf("Configure %s compatible extensions in %s while on %s", targetStream, mcp, initialStream))
+	mc := NewMachineConfig(oc.AsAdmin(), mcName, mcp.GetName())
+	mc.parameters = []string{fmt.Sprintf(`EXTENSIONS=%s`, string(MarshalOrFail(compatibleExtensions)))}
+	mc.skipWaitForMcp = true
+
+	defer mc.DeleteWithWait()
+	mc.create()
+	logger.Infof("OK!\n")
+
+	exutil.By(fmt.Sprintf("Wait for %s to be updated after applying extensions", mcp))
+	mcp.SetWaitingTimeForExtensionsChange()
+	mcp.waitForComplete()
+	logger.Infof("OK!\n")
+
+	exutil.By(fmt.Sprintf("Verify %s compatible extensions are installed on %s", targetStream, initialStream))
+	firstNode := mcp.GetSortedNodesOrFail()[0]
+	CheckExtensions(firstNode, compatibleExtensions)
+	logger.Infof("OK!\n")
+
+	exutil.By(fmt.Sprintf("Configure osImageStream to '%s' in %s", targetStream, mcp))
+	o.Expect(mcp.SetOsImageStream(targetStream)).To(o.Succeed(), "Error setting osImageStream to '%s' in %s", targetStream, mcp)
+	mcp.waitForComplete()
+	logger.Infof("OK!\n")
+
+	exutil.By(fmt.Sprintf("Verify %s stream is configured and extensions are still installed", targetStream))
+	validateOsImageStreamInPool(mcp, osis, targetStream)
+
+	CheckExtensions(firstNode, compatibleExtensions)
+	logger.Infof("Extensions are still correctly installed after switching to %s", targetStream)
+	logger.Infof("OK!\n")
+
+	exutil.By("Remove the extensions configuration")
+	mc.DeleteWithWait()
+	logger.Infof("OK!\n")
+
+	exutil.By(fmt.Sprintf("Verify extensions are uninstalled and %s stream is still configured", targetStream))
+	for _, pkg := range expectedRpmPackages {
+		o.Expect(firstNode.RpmIsInstalled(pkg)).To(
+			o.BeFalse(),
+			"Package %s should be uninstalled when we remove the extensions MC", pkg)
+	}
+	logger.Infof("All extension packages are correctly uninstalled")
+
+	validateOsImageStreamInPool(mcp, osis, targetStream)
+	logger.Infof("%s is still correctly using %s stream", firstNode, targetStream)
 	logger.Infof("OK!\n")
 }
