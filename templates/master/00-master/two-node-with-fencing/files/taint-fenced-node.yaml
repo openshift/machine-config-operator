@@ -22,28 +22,46 @@ contents:
     # Phase 1: wait for API server to become writable (etcd quorum recovery)
     # Read-only checks (oc get nodes) can pass from kube-apiserver watch cache
     # before etcd is fully writable. Use a write probe to confirm writes work.
-    until $OC annotate node "$(hostname)" --overwrite __taint-probe-="" &>/dev/null; do
+    until $OC annotate node "$(hostname)" --overwrite tnf-taint-probe="" &>/dev/null; do
         sleep 5
     done
 
     # Phase 2: verify the fenced node exists
     if ! $OC get node "$FENCED_NODE" &>/dev/null; then
-        logger -t taint-fenced-node "ERROR: Node ${FENCED_NODE} not found in cluster — name mismatch?"
+        logger -t taint-fenced-node "ERROR: Node ${FENCED_NODE} not found in cluster - name mismatch?"
         exit 1
     fi
 
-    # Phase 3: only taint if the node is still NotReady (see Open Issues — race condition)
+    # Phase 3: check if fenced node is still an active etcd voter.
+    # After fencing, CEO removes the dead member from etcd. If the node
+    # is no longer a voter, fencing is confirmed and the node's Ready
+    # status may be stale (node controller hasn't caught up yet).
+    node_is_etcd_voter() {
+        local node="$1"
+        local members
+        members=$(podman exec etcd sh -lc 'etcdctl member list -w json' 2>/dev/null) || return 1
+        echo "$members" | python3 -c "
+    import sys, json
+    data = json.load(sys.stdin)
+    for m in data.get('members', []):
+        if m.get('name') == '$node' and not m.get('isLearner', False):
+            sys.exit(0)
+    sys.exit(1)
+    " 2>/dev/null
+    }
+
     NODE_READY=$($OC get node "$FENCED_NODE" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')
     if [ "$NODE_READY" = "True" ]; then
-        logger -t taint-fenced-node "Node ${FENCED_NODE} is already Ready — skipping taint"
-        exit 0
+        if node_is_etcd_voter "$FENCED_NODE"; then
+            logger -t taint-fenced-node "Node ${FENCED_NODE} is Ready and still an etcd voter - skipping taint"
+            exit 0
+        fi
+        logger -t taint-fenced-node "Node ${FENCED_NODE} shows Ready but is no longer an etcd voter - status is stale, proceeding with taint"
     fi
 
-    logger -t taint-fenced-node "API server responsive, node ${FENCED_NODE} is NotReady — applying annotation and taint"
+    logger -t taint-fenced-node "API server responsive, applying annotation and taint to ${FENCED_NODE}"
 
     # Apply annotation + taint atomically via a single strategic-merge patch.
-    # This eliminates the crash-safety concern of two separate API calls
-    # (annotation-then-taint ordering) — both land in one etcd write.
     PATCH=$(cat <<PATCHEOF
     {"metadata":{"annotations":{"${ANNOTATION_KEY}":"${ANNOTATION_VALUE}"}},
      "spec":{"taints":[{"key":"${TAINT_KEY}","value":"${TAINT_VALUE}","effect":"NoExecute"}]}}
@@ -53,10 +71,13 @@ contents:
     MAX_RETRIES=12
     RETRY_INTERVAL=5
     for attempt in $(seq 1 $MAX_RETRIES); do
-        # Re-check NotReady on every attempt to close the TOCTOU window
-        NODE_READY=$($OC get node "$FENCED_NODE" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null) || true
-        if [ "$NODE_READY" = "True" ]; then
-            logger -t taint-fenced-node "Node ${FENCED_NODE} became Ready before taint could be applied — aborting"
+        # Re-check node existence and status on every attempt
+        if ! NODE_READY=$($OC get node "$FENCED_NODE" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null); then
+            logger -t taint-fenced-node "ERROR: Node ${FENCED_NODE} no longer exists - aborting"
+            exit 1
+        fi
+        if [ "$NODE_READY" = "True" ] && node_is_etcd_voter "$FENCED_NODE"; then
+            logger -t taint-fenced-node "Node ${FENCED_NODE} became Ready and rejoined etcd - aborting"
             exit 0
         fi
 
