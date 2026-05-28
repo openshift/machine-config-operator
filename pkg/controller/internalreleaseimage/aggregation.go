@@ -283,9 +283,24 @@ func buildAPIIntUnavailableReleases(specReleases []mcfgv1alpha1.InternalReleaseI
 	return releases
 }
 
-// transformToAPIIntURL converts localhost:22625/path to api-int.<domain>:22625/path
+// transformToAPIIntURL converts a localhost URL (e.g. localhost:22625/path or
+// localhost.localdomain:22625/path) to api-int.<domain>:22625/path by replacing
+// the hostname before the port with the api-int hostname.
 func transformToAPIIntURL(localhostURL, clusterDomain string) string {
-	return strings.Replace(localhostURL, "localhost", "api-int."+clusterDomain, 1)
+	// Find the host:port boundary by looking for ":" before the first "/"
+	slashIdx := strings.Index(localhostURL, "/")
+	hostPort := localhostURL
+	if slashIdx >= 0 {
+		hostPort = localhostURL[:slashIdx]
+	}
+
+	colonIdx := strings.Index(hostPort, ":")
+	if colonIdx < 0 {
+		// No port found — return unchanged to avoid mangling the URL
+		return localhostURL
+	}
+
+	return "api-int." + clusterDomain + localhostURL[colonIdx:]
 }
 
 // pingRegistry checks if the registry at the given URL is reachable.

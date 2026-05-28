@@ -461,3 +461,50 @@ func TestAggregateIRIStatus(t *testing.T) {
 		})
 	}
 }
+
+func TestTransformToAPIIntURL(t *testing.T) {
+	cases := []struct {
+		name          string
+		localhostURL  string
+		clusterDomain string
+		expected      string
+	}{
+		{
+			name:          "localhost without localdomain",
+			localhostURL:  "localhost:22625/openshift/release-images@sha256:abc123",
+			clusterDomain: "ostest.test.metalkube.org",
+			expected:      "api-int.ostest.test.metalkube.org:22625/openshift/release-images@sha256:abc123",
+		},
+		{
+			name:          "localhost.localdomain",
+			localhostURL:  "localhost.localdomain:22625/openshift/release-images@sha256:abc123",
+			clusterDomain: "ostest.test.metalkube.org",
+			expected:      "api-int.ostest.test.metalkube.org:22625/openshift/release-images@sha256:abc123",
+		},
+		{
+			name:          "no port returns input unchanged",
+			localhostURL:  "localhost",
+			clusterDomain: "example.com",
+			expected:      "localhost",
+		},
+		{
+			name:          "no port with sha256 digest returns input unchanged",
+			localhostURL:  "localhost/openshift/release-images@sha256:abc123",
+			clusterDomain: "example.com",
+			expected:      "localhost/openshift/release-images@sha256:abc123",
+		},
+		{
+			name:          "non-localhost host with port",
+			localhostURL:  "virthost.example.com:5000/openshift/release-images@sha256:abc123",
+			clusterDomain: "ostest.test.metalkube.org",
+			expected:      "api-int.ostest.test.metalkube.org:5000/openshift/release-images@sha256:abc123",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := transformToAPIIntURL(tc.localhostURL, tc.clusterDomain)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
