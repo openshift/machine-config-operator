@@ -187,13 +187,15 @@ func TestHotLoop(t *testing.T) {
 			// No hot loops should be detected in the first (updateCount - 1) calls
 			var hotLoopDetected bool
 			for range tc.updateCount - 1 {
-				hotLoopDetected = ctrl.checkMAPIMachineSetHotLoop(tc.machineset)
+				hotLoopDetected = ctrl.checkMAPIMachineSetHotLoop(tc.machineset, nil, nil, "")
 				assert.Equal(t, false, hotLoopDetected)
+				// Simulate a successful patch by recording the state
+				ctrl.recordMAPIBootImageState(tc.machineset, nil, nil, "")
 				// Change target boot image for next iteration
 				setMachineSetBootImage(tc.machineset, tc.generateBootImageFunc)
 			}
 			// Check for hot loop on the last iteration
-			hotLoopDetected = ctrl.checkMAPIMachineSetHotLoop(tc.machineset)
+			hotLoopDetected = ctrl.checkMAPIMachineSetHotLoop(tc.machineset, nil, nil, "")
 			assert.Equal(t, tc.expectHotLoop, hotLoopDetected)
 		})
 	}
