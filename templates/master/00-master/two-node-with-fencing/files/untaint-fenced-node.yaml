@@ -1,0 +1,79 @@
+mode: 0755
+path: "/usr/local/bin/untaint-fenced-node.sh"
+contents:
+  inline: |
+    #!/bin/bash
+    set -euo pipefail
+    REJOINED_NODE="$1"
+    KUBECONFIG="/etc/kubernetes/static-pod-resources/kube-apiserver-certs/secrets/node-kubeconfigs/localhost.kubeconfig"
+    TAINT_KEY="node.kubernetes.io/out-of-service"
+    ANNOTATION_KEY="node.kubernetes.io/out-of-service-applied-by"
+    ANNOTATION_VALUE="pacemaker"
+    OC="oc --kubeconfig=$KUBECONFIG"
+
+    if [[ ! "$REJOINED_NODE" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]]; then
+        logger -t untaint-fenced-node "ERROR: Invalid or empty node name: '${REJOINED_NODE:-}'"
+        exit 1
+    fi
+
+    logger -t untaint-fenced-node "Node ${REJOINED_NODE} rejoined cluster, checking if untaint is needed"
+
+    # Phase 1: wait for API server to become writable
+    until $OC annotate node "$(hostname)" --overwrite tnf-taint-probe="" &>/dev/null; do
+        sleep 5
+    done
+
+    # Phase 2: verify the node exists
+    if ! $OC get node "$REJOINED_NODE" &>/dev/null; then
+        logger -t untaint-fenced-node "ERROR: Node ${REJOINED_NODE} not found in cluster - name mismatch?"
+        exit 1
+    fi
+
+    # Phase 3: check if we applied the taint (annotation guard)
+    APPLIED_BY=$($OC get node "$REJOINED_NODE" -o jsonpath="{.metadata.annotations['${ANNOTATION_KEY}']}" 2>/dev/null) || true
+    if [ "$APPLIED_BY" != "$ANNOTATION_VALUE" ]; then
+        logger -t untaint-fenced-node "Node ${REJOINED_NODE} has no pacemaker out-of-service annotation - nothing to do"
+        exit 0
+    fi
+
+    # Phase 4: wait for the node to become Ready (kubelet is running)
+    MAX_READY_WAIT=60
+    READY_INTERVAL=5
+    for i in $(seq 1 $((MAX_READY_WAIT / READY_INTERVAL))); do
+        NODE_READY=$($OC get node "$REJOINED_NODE" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null) || true
+        if [ "$NODE_READY" = "True" ]; then
+            break
+        fi
+        logger -t untaint-fenced-node "Waiting for node ${REJOINED_NODE} to become Ready (attempt ${i})"
+        sleep $READY_INTERVAL
+    done
+
+    if [ "$NODE_READY" != "True" ]; then
+        logger -t untaint-fenced-node "WARNING: Node ${REJOINED_NODE} not Ready after ${MAX_READY_WAIT}s - proceeding with untaint anyway"
+    fi
+
+    logger -t untaint-fenced-node "Removing out-of-service taint and annotation from ${REJOINED_NODE}"
+
+    # Phase 5: remove taint and annotation with retries
+    MAX_RETRIES=12
+    RETRY_INTERVAL=5
+    for attempt in $(seq 1 $MAX_RETRIES); do
+        # Re-check annotation in case another process already cleaned up
+        APPLIED_BY=$($OC get node "$REJOINED_NODE" -o jsonpath="{.metadata.annotations['${ANNOTATION_KEY}']}" 2>/dev/null) || true
+        if [ "$APPLIED_BY" != "$ANNOTATION_VALUE" ]; then
+            logger -t untaint-fenced-node "Annotation already removed from ${REJOINED_NODE} - done"
+            exit 0
+        fi
+
+        if $OC adm taint node "$REJOINED_NODE" "${TAINT_KEY}-" 2>/dev/null && \
+           $OC annotate node "$REJOINED_NODE" "${ANNOTATION_KEY}-" 2>/dev/null; then
+            logger -t untaint-fenced-node "Successfully untainted and removed annotation from ${REJOINED_NODE}"
+            exit 0
+        fi
+
+        logger -t untaint-fenced-node "Attempt ${attempt}/${MAX_RETRIES} failed, retrying in ${RETRY_INTERVAL}s"
+        sleep $RETRY_INTERVAL
+    done
+
+    logger -t untaint-fenced-node "ERROR: Failed to untaint ${REJOINED_NODE} after ${MAX_RETRIES} attempts"
+    exit 1

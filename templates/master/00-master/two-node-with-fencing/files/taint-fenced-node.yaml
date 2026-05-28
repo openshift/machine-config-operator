@@ -32,33 +32,6 @@ contents:
         exit 1
     fi
 
-    # Phase 3: check if fenced node is still an active etcd voter.
-    # After fencing, CEO removes the dead member from etcd. If the node
-    # is no longer a voter, fencing is confirmed and the node's Ready
-    # status may be stale (node controller hasn't caught up yet).
-    node_is_etcd_voter() {
-        local node="$1"
-        local members
-        members=$(podman exec etcd sh -lc 'etcdctl member list -w json' 2>/dev/null) || return 1
-        echo "$members" | python3 -c "
-    import sys, json
-    data = json.load(sys.stdin)
-    for m in data.get('members', []):
-        if m.get('name') == '$node' and not m.get('isLearner', False):
-            sys.exit(0)
-    sys.exit(1)
-    " 2>/dev/null
-    }
-
-    NODE_READY=$($OC get node "$FENCED_NODE" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')
-    if [ "$NODE_READY" = "True" ]; then
-        if node_is_etcd_voter "$FENCED_NODE"; then
-            logger -t taint-fenced-node "Node ${FENCED_NODE} is Ready and still an etcd voter - skipping taint"
-            exit 0
-        fi
-        logger -t taint-fenced-node "Node ${FENCED_NODE} shows Ready but is no longer an etcd voter - status is stale, proceeding with taint"
-    fi
-
     logger -t taint-fenced-node "API server responsive, applying annotation and taint to ${FENCED_NODE}"
 
     # Apply annotation + taint atomically via a single strategic-merge patch.
@@ -71,16 +44,6 @@ contents:
     MAX_RETRIES=12
     RETRY_INTERVAL=5
     for attempt in $(seq 1 $MAX_RETRIES); do
-        # Re-check node existence and status on every attempt
-        if ! NODE_READY=$($OC get node "$FENCED_NODE" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null); then
-            logger -t taint-fenced-node "ERROR: Node ${FENCED_NODE} no longer exists - aborting"
-            exit 1
-        fi
-        if [ "$NODE_READY" = "True" ] && node_is_etcd_voter "$FENCED_NODE"; then
-            logger -t taint-fenced-node "Node ${FENCED_NODE} became Ready and rejoined etcd - aborting"
-            exit 0
-        fi
-
         if $OC patch node "$FENCED_NODE" --type=strategic -p "$PATCH" 2>/dev/null; then
             logger -t taint-fenced-node "Successfully tainted and annotated ${FENCED_NODE}"
             exit 0

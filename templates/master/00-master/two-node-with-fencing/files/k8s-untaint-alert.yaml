@@ -1,0 +1,17 @@
+mode: 0755
+path: "/var/lib/pacemaker/alerts/k8s-untaint-alert.sh"
+contents:
+  inline: |
+    #!/bin/bash
+    # Pacemaker alert agent for node-rejoin events.
+    # CRM_alert_kind=node + CRM_alert_desc=member identifies a node
+    # that has rejoined the cluster after being fenced.
+    if [ "$CRM_alert_kind" = "node" ] && [ "$CRM_alert_desc" = "member" ] && [ -n "$CRM_alert_node" ]; then
+        if ! [[ "$CRM_alert_node" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+            logger -t k8s-untaint-alert "ERROR: Invalid node name from pacemaker: '${CRM_alert_node}'"
+            exit 0
+        fi
+        logger -t k8s-untaint-alert "Node ${CRM_alert_node} rejoined cluster, triggering untaint service"
+        sudo systemctl start --no-block "untaint-node@${CRM_alert_node}.service"
+    fi
+    exit 0
