@@ -13,8 +13,8 @@ objects:
       config:
         ignition:
           version: ${IGNITION_VERSION}
-    kernelArguments:
-      - enforcing=0
+      kernelArguments:
+        - enforcing=0
 parameters:
   - name: NAME
   - name: POOL

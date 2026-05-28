@@ -384,11 +384,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		}
 
 		var (
-			mcp    = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
-			mcName = "mco-test-75149"
-			// to make the test execution faster we will use a password configuration for the automation
-			passwordHash = "fake-hash"
-			user         = "core"
+			mcp          = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
+			mcName       = "mco-test-75149"
+			password     = exutil.GetRandomString()
+			passwordHash = OrFail[string](getHashPasswd(password))
 			nodeList     = NewNodeList(oc.AsAdmin())
 			initNumNodes = len(mcp.GetNodesOrFail())
 
@@ -431,7 +430,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		exutil.By("Create a new MachineConfiguration resource")
 		mc := NewMachineConfig(oc.AsAdmin(), mcName, mcp.GetName())
-		mc.parameters = []string{fmt.Sprintf(`PWDUSERS=[{"name":"%s", "passwordHash": "%s" }]`, user, passwordHash)}
+		mc.parameters = []string{fmt.Sprintf(`PWDUSERS=[{"name": "core", "passwordHash": "%s" }]`, passwordHash)}
 		mc.skipWaitForMcp = true
 
 		defer mc.DeleteWithWait()
