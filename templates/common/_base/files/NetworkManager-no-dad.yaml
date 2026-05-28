@@ -1,0 +1,12 @@
+mode: 0644
+path: "/etc/NetworkManager/conf.d/01-no-dad.conf"
+contents:
+  inline: |
+    # Disable IPv4 DAD (Duplicate Address Detection / Address Conflict Detection).
+    # RHEL 10 enables this by default, which delays IPv4 address assignment by ~3s
+    # while ACD probing runs. This causes a race condition where
+    # nodeip-configuration.service may run before the IPv4 address is assigned,
+    # resulting in IPv6-only kubelet configuration on dual-stack clusters.
+    # See: https://issues.redhat.com/browse/OCPBUGS-86571
+    [connection]
+    ipv4.dad-timeout=0
