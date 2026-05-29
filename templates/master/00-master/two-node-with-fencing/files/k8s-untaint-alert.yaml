@@ -7,11 +7,14 @@ contents:
     # CRM_alert_kind=node + CRM_alert_desc=member identifies a node
     # that has rejoined the cluster after being fenced.
     if [ "$CRM_alert_kind" = "node" ] && [ "$CRM_alert_desc" = "member" ] && [ -n "$CRM_alert_node" ]; then
-        if ! [[ "$CRM_alert_node" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+        if ! [[ "$CRM_alert_node" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]]; then
             logger -t k8s-untaint-alert "ERROR: Invalid node name from pacemaker: '${CRM_alert_node}'"
             exit 0
         fi
         logger -t k8s-untaint-alert "Node ${CRM_alert_node} rejoined cluster, triggering untaint service"
-        sudo systemctl start --no-block "untaint-node@${CRM_alert_node}.service"
+        if ! sudo systemctl start --no-block "untaint-node@${CRM_alert_node}.service"; then
+            logger -t k8s-untaint-alert "ERROR: Failed to start untaint-node@${CRM_alert_node}.service"
+            exit 1
+        fi
     fi
     exit 0

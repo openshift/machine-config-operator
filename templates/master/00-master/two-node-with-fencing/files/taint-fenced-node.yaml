@@ -17,31 +17,15 @@ contents:
         exit 1
     fi
 
-    logger -t taint-fenced-node "Waiting for API server to taint fenced node ${FENCED_NODE}"
+    logger -t taint-fenced-node "Applying out-of-service taint to fenced node ${FENCED_NODE}"
 
-    # Phase 1: wait for API server to become writable (etcd quorum recovery)
-    # Read-only checks (oc get nodes) can pass from kube-apiserver watch cache
-    # before etcd is fully writable. Use a write probe to confirm writes work.
-    until $OC annotate node "$(hostname)" --overwrite tnf-taint-probe="" &>/dev/null; do
-        sleep 5
-    done
-
-    # Phase 2: verify the fenced node exists
-    if ! $OC get node "$FENCED_NODE" &>/dev/null; then
-        logger -t taint-fenced-node "ERROR: Node ${FENCED_NODE} not found in cluster - name mismatch?"
-        exit 1
-    fi
-
-    logger -t taint-fenced-node "API server responsive, applying annotation and taint to ${FENCED_NODE}"
-
-    # Apply annotation + taint atomically via a single strategic-merge patch.
     PATCH=$(cat <<PATCHEOF
     {"metadata":{"annotations":{"${ANNOTATION_KEY}":"${ANNOTATION_VALUE}"}},
      "spec":{"taints":[{"key":"${TAINT_KEY}","value":"${TAINT_VALUE}","effect":"NoExecute"}]}}
     PATCHEOF
     )
 
-    MAX_RETRIES=12
+    MAX_RETRIES=120
     RETRY_INTERVAL=5
     for attempt in $(seq 1 $MAX_RETRIES); do
         if $OC patch node "$FENCED_NODE" --type=strategic -p "$PATCH" 2>/dev/null; then

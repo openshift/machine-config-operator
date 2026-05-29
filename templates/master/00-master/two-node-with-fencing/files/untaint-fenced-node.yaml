@@ -18,25 +18,38 @@ contents:
 
     logger -t untaint-fenced-node "Node ${REJOINED_NODE} rejoined cluster, checking if untaint is needed"
 
-    # Phase 1: wait for API server to become writable
-    until $OC annotate node "$(hostname)" --overwrite tnf-taint-probe="" &>/dev/null; do
-        sleep 5
+    # Phase 1: wait for pacemaker to report the node as Online.
+    # The alert fires on corosync membership ("member"), but pacemaker Online
+    # confirms the full cluster join protocol succeeded — the node has probed
+    # its resources and registered with the DC. This prevents untainting a node
+    # that joined corosync but may still fail pacemaker startup and get re-fenced.
+    MAX_PCMK_WAIT=120
+    PCMK_INTERVAL=5
+    PCMK_ONLINE=false
+    for i in $(seq 1 $((MAX_PCMK_WAIT / PCMK_INTERVAL))); do
+        if crm_mon -1 2>/dev/null | grep "Online:" | grep -qw "$REJOINED_NODE"; then
+            PCMK_ONLINE=true
+            break
+        fi
+        logger -t untaint-fenced-node "Waiting for pacemaker to report ${REJOINED_NODE} as Online (attempt ${i})"
+        sleep $PCMK_INTERVAL
     done
 
-    # Phase 2: verify the node exists
-    if ! $OC get node "$REJOINED_NODE" &>/dev/null; then
-        logger -t untaint-fenced-node "ERROR: Node ${REJOINED_NODE} not found in cluster - name mismatch?"
+    if [ "$PCMK_ONLINE" != "true" ]; then
+        logger -t untaint-fenced-node "ERROR: Pacemaker does not report ${REJOINED_NODE} as Online after ${MAX_PCMK_WAIT}s - aborting untaint"
         exit 1
     fi
 
-    # Phase 3: check if we applied the taint (annotation guard)
+    logger -t untaint-fenced-node "Pacemaker reports ${REJOINED_NODE} as Online"
+
+    # Phase 2: check if we applied the taint (annotation guard)
     APPLIED_BY=$($OC get node "$REJOINED_NODE" -o jsonpath="{.metadata.annotations['${ANNOTATION_KEY}']}" 2>/dev/null) || true
     if [ "$APPLIED_BY" != "$ANNOTATION_VALUE" ]; then
         logger -t untaint-fenced-node "Node ${REJOINED_NODE} has no pacemaker out-of-service annotation - nothing to do"
         exit 0
     fi
 
-    # Phase 4: wait for the node to become Ready (kubelet is running)
+    # Phase 3: wait for the node to become Ready (kubelet is running)
     MAX_READY_WAIT=60
     READY_INTERVAL=5
     for i in $(seq 1 $((MAX_READY_WAIT / READY_INTERVAL))); do
@@ -54,7 +67,9 @@ contents:
 
     logger -t untaint-fenced-node "Removing out-of-service taint and annotation from ${REJOINED_NODE}"
 
-    # Phase 5: remove taint and annotation with retries
+    # Phase 4: remove taint and annotation with retries.
+    # Operations are independent — if taint was already removed (partial prior run),
+    # we still proceed to remove the annotation.
     MAX_RETRIES=12
     RETRY_INTERVAL=5
     for attempt in $(seq 1 $MAX_RETRIES); do
@@ -65,13 +80,18 @@ contents:
             exit 0
         fi
 
-        if $OC adm taint node "$REJOINED_NODE" "${TAINT_KEY}-" 2>/dev/null && \
-           $OC annotate node "$REJOINED_NODE" "${ANNOTATION_KEY}-" 2>/dev/null; then
+        $OC adm taint node "$REJOINED_NODE" "${TAINT_KEY}-" 2>/dev/null || true
+        $OC annotate node "$REJOINED_NODE" "${ANNOTATION_KEY}-" 2>/dev/null || true
+
+        # Verify both are actually gone
+        REMAINING_TAINT=$($OC get node "$REJOINED_NODE" -o jsonpath="{.spec.taints[?(@.key=='${TAINT_KEY}')].key}" 2>/dev/null) || true
+        REMAINING_ANNOT=$($OC get node "$REJOINED_NODE" -o jsonpath="{.metadata.annotations['${ANNOTATION_KEY}']}" 2>/dev/null) || true
+        if [ -z "$REMAINING_TAINT" ] && [ -z "$REMAINING_ANNOT" ]; then
             logger -t untaint-fenced-node "Successfully untainted and removed annotation from ${REJOINED_NODE}"
             exit 0
         fi
 
-        logger -t untaint-fenced-node "Attempt ${attempt}/${MAX_RETRIES} failed, retrying in ${RETRY_INTERVAL}s"
+        logger -t untaint-fenced-node "Attempt ${attempt}/${MAX_RETRIES}: taint='${REMAINING_TAINT}' annotation='${REMAINING_ANNOT}' - retrying in ${RETRY_INTERVAL}s"
         sleep $RETRY_INTERVAL
     done
 
