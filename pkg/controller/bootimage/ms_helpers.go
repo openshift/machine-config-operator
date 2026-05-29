@@ -27,23 +27,25 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/bootimage/marketplace"
 )
 
-// syncMAPIMachineSets will attempt to enqueue every machineset
+// syncMAPIMachineSets will attempt to enqueue every machineset.
+// Returns the oldest RHCOS version across all marketplace MAPI MachineSets
+// (empty for non-marketplace clusters). The caller uses this for skew enforcement.
 // nolint:dupl // I separated this from syncControlPlaneMachineSets for readability
-func (ctrl *Controller) syncMAPIMachineSets(reason string) {
+func (ctrl *Controller) syncMAPIMachineSets(reason string) string {
 
 	// Get MachineConfiguration to determine which resources are enrolled
 	mcop, err := ctrl.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
 	if err != nil {
 		klog.Errorf("Failed to get MachineConfiguration: %v", err)
 		ctrl.updateConditions(reason, fmt.Errorf("failed to get MachineConfiguration while enqueueing MAPI MachineSets: %w", err), opv1.MachineConfigurationBootImageUpdateDegraded)
-		return
+		return ""
 	}
 
 	machineManagerFound, machineResourceSelector, err := getMachineResourceSelectorFromMachineManagers(mcop.Status.ManagedBootImagesStatus.MachineManagers, opv1.MachineAPI, opv1.MachineSets)
 	if err != nil {
 		klog.Errorf("failed to create a machineset selector while enqueueing MAPI machineset %v", err)
 		ctrl.updateConditions(reason, fmt.Errorf("failed to create a machineset selector while enqueueing MAPI machineset %w", err), opv1.MachineConfigurationBootImageUpdateDegraded)
-		return
+		return ""
 	}
 	if !machineManagerFound {
 		klog.V(4).Infof("No MAPI machineset manager was found, so no MAPI machinesets will be enrolled.")
@@ -58,7 +60,7 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) {
 	if err != nil {
 		klog.Errorf("failed to fetch MachineSet list while enqueueing MAPI MachineSets %v", err)
 		ctrl.updateConditions(reason, fmt.Errorf("failed to fetch MachineSet list while enqueueing MAPI MachineSets %w", err), opv1.MachineConfigurationBootImageUpdateDegraded)
-		return
+		return ""
 	}
 
 	// If no machine resources were enrolled; exit the enqueue process without errors.
@@ -77,7 +79,7 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) {
 		if err != nil {
 			klog.Errorf("failed to fetch coreos-bootimages config map: %v", err)
 			ctrl.updateConditions(reason, fmt.Errorf("failed to fetch coreos-bootimages config map: %w", err), opv1.MachineConfigurationBootImageUpdateDegraded)
-			return
+			return ""
 		}
 	}
 
@@ -116,21 +118,7 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) {
 	}
 	// Update/Clear degrade conditions based on errors from this loop
 	ctrl.updateConditions(reason, kubeErrs.NewAggregate(syncErrors), opv1.MachineConfigurationBootImageUpdateDegraded)
-	if ctrl.fgHandler.Enabled(features.FeatureGateBootImageSkewEnforcement) {
-		switch {
-		case ctrl.mapiStats.skippedCount == 0 && len(syncErrors) == 0:
-			// All MachineSets reconciled cleanly — record the current OCP version.
-			ctrl.updateClusterBootImage(rhcosVersion)
-		case ctrl.mapiStats.skippedCount > 0 && len(syncErrors) == 0:
-			// One or more MachineSets were reconcileSkipped without an error. The existing
-			// ClusterBootImageAutomatic value is no longer trustworthy (a new or changed
-			// MachineSet may be running an older image), so reset it to the cluster install
-			// version to ensure the skew check surfaces a violation if warranted.
-			ctrl.resetClusterBootImage()
-		}
-		// Errors (syncErrors > 0) are already surfaced via the Degraded condition, which
-		// checkBootImageControllerReady checks first — no boot image record update needed.
-	}
+	return rhcosVersion
 }
 
 // syncMAPIMachineSet will attempt to reconcile the provided machineset.
