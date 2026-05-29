@@ -44,6 +44,7 @@ import (
 	mcopinformersv1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
 	mcoplistersv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 	apihelpers "github.com/openshift/machine-config-operator/pkg/apihelpers"
+	"github.com/openshift/machine-config-operator/pkg/controller/bootimage/marketplace"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/osimagestream"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
@@ -961,10 +962,44 @@ func (ctrl *Controller) syncAll(event string) error {
 	}
 
 	ctrl.syncControlPlaneMachineSets(event)
-	ctrl.syncMAPIMachineSets(event)
+	rhcosVersion := ctrl.syncMAPIMachineSets(event)
 	if ctrl.fgHandler.Enabled(features.FeatureGateClusterAPIMachineManagement) {
-		ctrl.syncCAPIMachineSets(event)
-		ctrl.syncCAPIMachineDeployments(event)
+		for _, v := range []string{
+			ctrl.syncCAPIMachineSets(event),
+			ctrl.syncCAPIMachineDeployments(event),
+		} {
+			if v != "" && (rhcosVersion == "" || marketplace.CmpRHCOSVersion(v, rhcosVersion) < 0) {
+				rhcosVersion = v
+			}
+		}
 	}
+
+	if ctrl.fgHandler.Enabled(features.FeatureGateBootImageSkewEnforcement) {
+		noSkips := ctrl.mapiStats.skippedCount == 0 && ctrl.mapiStats.erroredCount == 0
+		noErrors := ctrl.mapiStats.erroredCount == 0
+		if ctrl.fgHandler.Enabled(features.FeatureGateClusterAPIMachineManagement) {
+			noSkips = noSkips &&
+				ctrl.capiMachineSetStats.skippedCount == 0 &&
+				ctrl.capiMachineSetStats.erroredCount == 0 &&
+				ctrl.capiMachineDeploymentStats.skippedCount == 0 &&
+				ctrl.capiMachineDeploymentStats.erroredCount == 0
+			noErrors = noErrors &&
+				ctrl.capiMachineSetStats.erroredCount == 0 &&
+				ctrl.capiMachineDeploymentStats.erroredCount == 0
+		}
+		switch {
+		case noSkips:
+			// All machine resources reconciled cleanly — record the current boot image version.
+			ctrl.updateClusterBootImage(rhcosVersion)
+		case noErrors:
+			// One or more machine resources were reconcileSkipped without an error. The existing
+			// ClusterBootImageAutomatic value is no longer trustworthy, so reset it to the
+			// cluster install version to ensure skew enforcement surfaces a violation if warranted.
+			ctrl.resetClusterBootImage()
+		}
+		// Errors are already surfaced via the Degraded condition, which
+		// checkBootImageControllerReady checks first — no boot image record update needed.
+	}
+
 	return nil
 }
