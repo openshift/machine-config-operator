@@ -12,8 +12,8 @@ contents:
     ANNOTATION_VALUE="pacemaker"
     OC="oc --kubeconfig=$KUBECONFIG"
 
-    if [[ ! "$FENCED_NODE" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]]; then
-        logger -t taint-fenced-node "ERROR: Invalid or empty node name: '${FENCED_NODE:-}'"
+    if [[ -z "${FENCED_NODE:-}" ]]; then
+        logger -t taint-fenced-node "ERROR: Node name is empty or not set"
         exit 1
     fi
 

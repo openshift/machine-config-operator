@@ -1,0 +1,14 @@
+mode: 0755
+path: "/var/lib/pacemaker/alerts/tnf-taint-alert.sh"
+contents:
+  inline: |
+    #!/bin/bash
+    # Pacemaker alert agent for fencing events.
+    # CRM_alert_kind=fencing, CRM_alert_rc=0 identifies a successful fence
+    # completion.
+    # CRM_alert_kind=fencing, so they are already excluded.
+    if [ "$CRM_alert_kind" = "fencing" ] && [ "$CRM_alert_rc" = "0" ] && [ -n "$CRM_alert_node" ]; then
+        logger -t tnf-taint-alert "Fencing succeeded for ${CRM_alert_node}, triggering taint service"
+        sudo systemctl start --no-block "taint-node@${CRM_alert_node}.service"
+    fi
+    exit 0
