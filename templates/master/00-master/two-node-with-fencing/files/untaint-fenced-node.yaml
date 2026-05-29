@@ -41,18 +41,15 @@ contents:
 
     logger -t untaint-fenced-node "Pacemaker reports ${REJOINED_NODE} as Online"
 
-    # Check if the taint was applied by pacemaker
-    APPLIED_BY=$($OC get node "$REJOINED_NODE" -o jsonpath="{.metadata.annotations['${ANNOTATION_KEY}']}" 2>/dev/null) || true
-    if [ "$APPLIED_BY" != "$ANNOTATION_VALUE" ]; then
-        logger -t untaint-fenced-node "Node ${REJOINED_NODE} has no pacemaker out-of-service annotation - nothing to do"
-        exit 0
-    fi
-
-    # Wait for the node to become Ready (kubelet is running)
+    # Wait for the rejoined node's kubelet to become Ready.
+    # This must happen before the annotation check: the taint script may still
+    # be retrying against the API while etcd recovers quorum, and kubelet Ready
+    # is a natural signal that the cluster is healthy enough
+    # for the taint write to have completed.
     MAX_READY_WAIT=120
     READY_INTERVAL=5
     for i in $(seq 1 $((MAX_READY_WAIT / READY_INTERVAL))); do
-        NODE_READY=$($OC get node "$REJOINED_NODE" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null) || true
+        NODE_READY=$($OC get node "$REJOINED_NODE" -o json 2>/dev/null | jq -r '.status.conditions[] | select(.type=="Ready") | .status // empty') || true
         if [ "$NODE_READY" = "True" ]; then
             break
         fi
@@ -64,6 +61,13 @@ contents:
         logger -t untaint-fenced-node "WARNING: Node ${REJOINED_NODE} not Ready after ${MAX_READY_WAIT}s - proceeding with untaint anyway"
     fi
 
+    # Check if the taint was applied by pacemaker
+    APPLIED_BY=$($OC get node "$REJOINED_NODE" -o json 2>/dev/null | jq -r --arg key "$ANNOTATION_KEY" '.metadata.annotations[$key] // empty') || true
+    if [ "$APPLIED_BY" != "$ANNOTATION_VALUE" ]; then
+        logger -t untaint-fenced-node "Node ${REJOINED_NODE} has no pacemaker out-of-service annotation - nothing to do"
+        exit 0
+    fi
+
     logger -t untaint-fenced-node "Removing out-of-service taint and annotation from ${REJOINED_NODE}"
 
     # Remove taint and annotation with retries.
@@ -72,7 +76,7 @@ contents:
     RETRY_INTERVAL=5
     for attempt in $(seq 1 $MAX_RETRIES); do
         # Re-check annotation in case another process already cleaned up
-        APPLIED_BY=$($OC get node "$REJOINED_NODE" -o jsonpath="{.metadata.annotations['${ANNOTATION_KEY}']}" 2>/dev/null) || true
+        APPLIED_BY=$($OC get node "$REJOINED_NODE" -o json 2>/dev/null | jq -r --arg key "$ANNOTATION_KEY" '.metadata.annotations[$key] // empty') || true
         if [ "$APPLIED_BY" != "$ANNOTATION_VALUE" ]; then
             logger -t untaint-fenced-node "Annotation already removed from ${REJOINED_NODE} - done"
             exit 0
@@ -82,16 +86,13 @@ contents:
         $OC annotate node "$REJOINED_NODE" "${ANNOTATION_KEY}-" 2>/dev/null || true
 
         # Verify both are actually gone - treat oc failures as retryable
-        if ! REMAINING_TAINT=$($OC get node "$REJOINED_NODE" -o jsonpath="{.spec.taints[?(@.key=='${TAINT_KEY}')].key}"); then
-            logger -t untaint-fenced-node "Attempt ${attempt}/${MAX_RETRIES}: oc get failed during taint verification - retrying in ${RETRY_INTERVAL}s"
+        NODE_JSON=$($OC get node "$REJOINED_NODE" -o json 2>/dev/null) || {
+            logger -t untaint-fenced-node "Attempt ${attempt}/${MAX_RETRIES}: oc get failed during verification - retrying in ${RETRY_INTERVAL}s"
             sleep $RETRY_INTERVAL
             continue
-        fi
-        if ! REMAINING_ANNOT=$($OC get node "$REJOINED_NODE" -o jsonpath="{.metadata.annotations['${ANNOTATION_KEY}']}"); then
-            logger -t untaint-fenced-node "Attempt ${attempt}/${MAX_RETRIES}: oc get failed during annotation verification - retrying in ${RETRY_INTERVAL}s"
-            sleep $RETRY_INTERVAL
-            continue
-        fi
+        }
+        REMAINING_TAINT=$(echo "$NODE_JSON" | jq -r --arg key "$TAINT_KEY" '.spec.taints // [] | map(select(.key == $key)) | .[0].key // empty')
+        REMAINING_ANNOT=$(echo "$NODE_JSON" | jq -r --arg key "$ANNOTATION_KEY" '.metadata.annotations[$key] // empty')
         if [ -z "$REMAINING_TAINT" ] && [ -z "$REMAINING_ANNOT" ]; then
             logger -t untaint-fenced-node "Successfully untainted and removed annotation from ${REJOINED_NODE}"
             exit 0

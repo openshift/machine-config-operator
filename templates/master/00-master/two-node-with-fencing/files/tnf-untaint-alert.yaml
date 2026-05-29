@@ -4,10 +4,24 @@ contents:
   inline: |
     #!/bin/bash
     # Pacemaker alert agent for node-rejoin events.
-    # CRM_alert_kind=node + CRM_alert_desc=member identifies a node
-    # that has rejoined the cluster after being fenced.
+    # Registered with: select_nodes + select_attributes
+    #
+    # Triggers on two event types:
+    #   1. CRM_alert_kind=node  + CRM_alert_desc=member  → corosync membership (normal rejoin after fence)
+    #   2. CRM_alert_kind=attribute + standby=off         → pacemaker standby→online transition
+    TRIGGER=false
+
     if [ "$CRM_alert_kind" = "node" ] && [ "$CRM_alert_desc" = "member" ] && [ -n "$CRM_alert_node" ]; then
-        logger -t tnf-untaint-alert "Node ${CRM_alert_node} rejoined cluster, triggering untaint service"
+        logger -t tnf-untaint-alert "Node ${CRM_alert_node} rejoined cluster (membership), triggering untaint service"
+        TRIGGER=true
+    fi
+
+    if [ "$CRM_alert_kind" = "attribute" ] && [ "$CRM_alert_attribute_name" = "standby" ] && [ "$CRM_alert_attribute_value" = "off" ] && [ -n "$CRM_alert_node" ]; then
+        logger -t tnf-untaint-alert "Node ${CRM_alert_node} left standby, triggering untaint service"
+        TRIGGER=true
+    fi
+
+    if [ "$TRIGGER" = "true" ]; then
         if ! sudo systemctl start --no-block "untaint-node@${CRM_alert_node}.service"; then
             logger -t tnf-untaint-alert "ERROR: Failed to start untaint-node@${CRM_alert_node}.service"
             exit 1
