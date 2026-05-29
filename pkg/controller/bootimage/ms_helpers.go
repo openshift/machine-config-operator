@@ -94,12 +94,6 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) {
 	}
 	// Update/Clear degrade conditions based on errors from this loop
 	ctrl.updateConditions(reason, kubeErrs.NewAggregate(syncErrors), opv1.MachineConfigurationBootImageUpdateDegraded)
-	// If no machinesets were skipped, update the cluster boot image record
-	if ctrl.fgHandler.Enabled(features.FeatureGateBootImageSkewEnforcement) {
-		if ctrl.mapiStats.skippedCount == 0 {
-			ctrl.updateClusterBootImage()
-		}
-	}
 }
 
 // syncMAPIMachineSet will attempt to reconcile the provided machineset.

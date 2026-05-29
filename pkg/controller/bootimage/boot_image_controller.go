@@ -886,5 +886,23 @@ func (ctrl *Controller) syncAll(event string) error {
 		ctrl.syncCAPIMachineSets(event)
 		ctrl.syncCAPIMachineDeployments(event)
 	}
+
+	// Update the cluster boot image record when all enrolled resources have been reconciled
+	// without any skips. The API enforces that Automatic skew mode requires All selection for
+	// MAPI MachineSets; the equivalent restriction for CAPI resources is a pending API change.
+	if ctrl.fgHandler.Enabled(features.FeatureGateBootImageSkewEnforcement) {
+		noSkips := ctrl.mapiStats.skippedCount == 0
+		if ctrl.fgHandler.Enabled(features.FeatureGateMachineAPIMigration) {
+			// Only check CAPI stats when CAPI is active; avoids acting on stale counts
+			// from a prior cycle where the gate was enabled but is now off.
+			noSkips = noSkips &&
+				ctrl.capiMachineSetStats.skippedCount == 0 &&
+				ctrl.capiMachineDeploymentStats.skippedCount == 0
+		}
+		if noSkips {
+			ctrl.updateClusterBootImage()
+		}
+	}
+
 	return nil
 }
