@@ -2,7 +2,7 @@ name: "untaint-node@.service"
 contents: |
   [Unit]
   Description=Untaint rejoined node %i in Kubernetes
-  After=network.target
+  After=network.target taint-node@%i.service
 
   [Service]
   Type=oneshot
