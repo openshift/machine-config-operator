@@ -26,9 +26,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	var (
 		oc = exutil.NewCLI("mco-scale", exutil.KubeConfigPath())
 		// worker MachineConfigPool
-		wMcp                 *MachineConfigPool
-		mMcp                 *MachineConfigPool
-		machineConfiguration *MachineConfiguration
+		wMcp *MachineConfigPool
 	)
 
 	g.JustBeforeEach(func() {
@@ -36,8 +34,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		SkipTestIfWorkersCannotBeScaled(oc.AsAdmin())
 
 		wMcp = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
-		mMcp = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolMaster)
-		machineConfiguration = GetMachineConfiguration(oc.AsAdmin())
 		PreChecks(oc)
 
 		failureHandler := func(message string, callerSkip ...int) {
@@ -80,248 +76,19 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 	})
 
-	g.It("[PolarionID:63894][OTP] Scaleup using 4.1 cloud image", g.Label("Platform:aws"), func() {
+	// OCPBUGS-86332: Starting in 4.22 we will no longer fix any bootimage related bugs from bootimages earlier than 4.13
+	// Removed tests: PolarionID:63894 (4.1), PolarionID:77051 (4.3), PolarionID:76471 (4.12), PolarionID:52822 (4.5)
+
+	// 4.13 is the oldest boot image supported. Starting in 4.22 we will no longer fix any bootimage related bugs from bootimages earlier than 4.13
+	g.It("[PolarionID:89097][OTP] Scaleup using 4.13 cloud image", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere"), func() {
 		var (
-			imageVersion = "4.1" // OCP4.1 ami for AWS and use-east2 zone: https://github.com/openshift/installer/blob/release-4.1/data/data/rhcos.json
-			numNewNodes  = 1     // the number of nodes scaled up in the new Machineset
-		)
-
-		skipTestIfSupportedPlatformNotMatched(oc, AWSPlatform) // Scale up using 4.1 is only supported in AWS. GCP is only supported in versions 4.6+, and Vsphere in 4.2+
-		skipTestIfFIPSIsEnabled(oc.AsAdmin())                  // fips was supported for the first time in 4.3, hence it is not supported to scale 4.1 and 4.2 base images in clusters with fips=true
-		architecture.SkipNonAmd64SingleArch(oc)                // arm64 is not supported until 4.12
-
-		// Apply workaround
-		// Because of https://issues.redhat.com/browse/OCPBUGS-27273 this test case fails when the cluster has imagecontentsourcepolicies
-		// In prow jobs clusters have 2 imagecontentsourcepolicies (brew-registry and ), we try to remove them to execute this test
-		// It only happens using 4.1 base images. The issue was fixed in 4.2
-
-		// For debugging purposes
-		oc.AsAdmin().Run("get").Args("ImageContentSourcePolicy").Execute()
-		oc.AsAdmin().Run("get").Args("ImageTagMirrorSet").Execute()
-		oc.AsAdmin().Run("get").Args("ImageDigestMirrorSet").Execute()
-
-		cleanedICSPs := []*Resource{NewResource(oc.AsAdmin(), "ImageContentSourcePolicy", "brew-registry"), NewResource(oc.AsAdmin(), "ImageContentSourcePolicy", "image-policy")}
-
-		logger.Warnf("APPLYING WORKAROUND FOR  https://issues.redhat.com/browse/OCPBUGS-27273. Removing expected imageocontentsourcepolicies")
-
-		removedICSP := false
-		defer func() {
-			if removedICSP {
-				wMcp.waitForComplete()
-				mMcp.WaitImmediateForUpdatedStatus()
-			}
-		}()
-
-		for _, item := range cleanedICSPs {
-			icsp := item
-			if icsp.Exists() {
-				logger.Infof("Cleaning the spec of %s", icsp)
-				defer icsp.SetSpec(icsp.GetSpecOrFail())
-				o.Expect(icsp.SetSpec("{}")).To(o.Succeed(),
-					"Error cleaning %s spec", icsp)
-
-				removedICSP = true
-			}
-		}
-
-		if removedICSP {
-			wMcp.waitForComplete()
-			o.Expect(mMcp.WaitImmediateForUpdatedStatus()).To(o.Succeed())
-		} else {
-			logger.Infof("No ICSP was removed!!")
-		}
-
-		SimpleScaleUPTest(oc, wMcp, imageVersion, getUserDataIgnitionVersionFromOCPVersion(imageVersion), numNewNodes)
-	})
-
-	// 4.3 is the first image supporting fips
-	g.It("[PolarionID:77051][OTP] Scaleup using 4.3 cloud image", g.Label("Platform:aws", "Platform:vsphere"), func() {
-		var (
-			imageVersion = "4.3"
+			imageVersion = "4.13"
 			numNewNodes  = 1 // the number of nodes scaled up in the new Machineset
 		)
 
-		skipTestIfSupportedPlatformNotMatched(oc, AWSPlatform, VspherePlatform) // Scale up using 4.3 is only supported in AWS, and Vsphere. GCP is only supported by our automation in versions 4.6+
-		architecture.SkipNonAmd64SingleArch(oc)                                 // arm64 is not supported by OCP until 4.12
+		skipTestIfSupportedPlatformNotMatched(oc, AWSPlatform, GCPPlatform, VspherePlatform)
 
 		SimpleScaleUPTest(oc, wMcp, imageVersion, getUserDataIgnitionVersionFromOCPVersion(imageVersion), numNewNodes)
-	})
-
-	// 4.12 is the last version using rhel8, in 4.13 ocp starts using rhel9
-	g.It("[PolarionID:76471][OTP] Scaleup using 4.12 cloud image", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere"), func() {
-		var (
-			imageVersion = "4.12"
-			numNewNodes  = 1 // the number of nodes scaled up in the new Machineset
-		)
-
-		skipTestIfSupportedPlatformNotMatched(oc, AWSPlatform, GCPPlatform, VspherePlatform) // Scale up using 4.12 is only supported in AWS, GCP and Vsphere
-
-		SimpleScaleUPTest(oc, wMcp, imageVersion, getUserDataIgnitionVersionFromOCPVersion(imageVersion), numNewNodes)
-	})
-
-	g.It("[PolarionID:52822][OTP] Create new config resources with 2.2.0 ignition boot image nodes", g.Label("Platform:aws", "Platform:vsphere"), func() {
-		var (
-			newMsName  = "copied-machineset-modified-tc-52822"
-			kcName     = "change-maxpods-kubelet-config"
-			kcTemplate = generateTemplateAbsolutePath(kcName + ".yaml")
-			crName     = "change-ctr-cr-config"
-			crTemplate = generateTemplateAbsolutePath(crName + ".yaml")
-			mcName     = "generic-config-file-test-52822"
-			mcpWorker  = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
-			// Set the 4.5 boot image ami for east-2 zone.
-			// the right ami should be selected from here https://github.com/openshift/installer/blob/release-4.5/data/data/rhcos.json
-			imageVersion = "4.5"
-			numNewNodes  = 1 // the number of nodes scaled up in the new Machineset
-		)
-
-		skipTestIfSupportedPlatformNotMatched(oc, AWSPlatform, VspherePlatform) // Scale up using 4.5 is only supported for AWS and Vsphere. GCP is only supported in versions 4.6+
-		architecture.SkipNonAmd64SingleArch(oc)                                 // arm64 is not supported until 4.11
-
-		if IsBootImageUpdateSupported(oc.AsAdmin()) {
-			defer machineConfiguration.SetSpec(machineConfiguration.GetSpecOrFail())
-			exutil.By("Disabling skew functionality")
-			DisableSkew(machineConfiguration)
-			logger.Infof("OK!\n")
-
-			exutil.By("Opt-out boot images update")
-			logger.Infof("Disabling the bootimages update so that our images are not overridden by MCO")
-			o.Expect(
-				machineConfiguration.SetNoneManagedBootImagesConfig(MachineSetResource),
-			).To(o.Succeed(), "Error configuring None managedBootImages in the 'cluster' MachineConfiguration resource")
-			logger.Infof("OK!\n")
-		}
-
-		initialNumWorkers := len(wMcp.GetNodesOrFail())
-
-		defer func() {
-			logger.Infof("Start TC defer block")
-			newMs := NewMachineSet(oc.AsAdmin(), MachineAPINamespace, newMsName)
-			errors := o.InterceptGomegaFailures(func() { // We don't want gomega to fail and stop the deferred cleanup process
-				removeClonedMachineSet(newMs, wMcp, initialNumWorkers)
-
-				cr := NewContainerRuntimeConfig(oc.AsAdmin(), crName, crTemplate)
-				if cr.Exists() {
-					logger.Infof("Removing ContainerRuntimeConfig %s", cr.GetName())
-					o.Expect(cr.Delete()).To(o.Succeed(), "Error removing %s", cr)
-				}
-				kc := NewKubeletConfig(oc.AsAdmin(), kcName, kcTemplate)
-				if kc.Exists() {
-					logger.Infof("Removing KubeletConfig %s", kc.GetName())
-					o.Expect(kc.Delete()).To(o.Succeed(), "Error removing %s", kc)
-				}
-
-				// MachineConfig struct has not been refactored to compose the "Resource" struct
-				// so there is no "Exists" method available. Use it after refactoring MachineConfig
-				mc := NewMachineConfig(oc.AsAdmin(), mcName, MachineConfigPoolWorker)
-				logger.Infof("Removing machineconfig %s", mcName)
-				mc.DeleteWithWait()
-
-			})
-
-			if len(errors) != 0 {
-				logger.Infof("There were errors restoring the original MachineSet resources in the cluster")
-				for _, e := range errors {
-					logger.Errorf(e)
-				}
-			}
-
-			logger.Infof("Waiting for worker pool to be updated")
-			mcpWorker.waitForComplete()
-
-			// We don't want the test to pass if there were errors while restoring the initial state
-			o.Expect(len(errors)).To(o.BeZero(),
-				"There were %d errors while recovering the cluster's initial state", len(errors))
-
-			logger.Infof("End TC defer block")
-		}()
-
-		// Duplicate an existing MachineSet
-		allMs, err := NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAll()
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting a list of MachineSet resources")
-		ms := allMs[0]
-		newMs := cloneMachineSet(oc.AsAdmin(), ms, newMsName, imageVersion, getUserDataIgnitionVersionFromOCPVersion(imageVersion))
-
-		// KubeletConfig
-		exutil.By("Create KubeletConfig")
-		kc := NewKubeletConfig(oc.AsAdmin(), kcName, kcTemplate)
-		kc.create()
-		kc.waitUntilSuccess("10s")
-		logger.Infof("OK!\n")
-
-		// ContainterRuntimeConfig
-		exutil.By("Create ContainterRuntimeConfig")
-		cr := NewContainerRuntimeConfig(oc.AsAdmin(), crName, crTemplate)
-		cr.create()
-		cr.waitUntilSuccess("10s")
-		logger.Infof("OK!\n")
-
-		// Generic machineconfig
-		exutil.By("Create generic config file")
-		genericConfigFilePath := "/etc/test-52822"
-		genericConfig := "config content for test case 52822"
-
-		fileConfig := getURLEncodedFileConfig(genericConfigFilePath, genericConfig, "420")
-		template := NewMCOTemplate(oc, "generic-machine-config-template.yml")
-		errCreate := template.Create("-p", "NAME="+mcName, "-p", "POOL=worker", "-p", fmt.Sprintf("FILES=[%s]", fileConfig))
-		o.Expect(errCreate).NotTo(o.HaveOccurred(), "Error creating MachineConfig %s", mcName)
-		logger.Infof("OK!\n")
-
-		// Wait for all pools to apply the configs
-		exutil.By("Wait for worker MCP to be updated")
-		mcpWorker.waitForComplete()
-		logger.Infof("OK!\n")
-
-		// Scale up the MachineSet
-		exutil.By("Scale MachineSet up")
-		logger.Infof("Scaling up machineset %s", newMs.GetName())
-		scaleErr := newMs.ScaleTo(numNewNodes)
-		o.Expect(scaleErr).NotTo(o.HaveOccurred(), "Error scaling up MachineSet %s", newMs.GetName())
-
-		logger.Infof("Waiting %s machineset for being ready", newMsName)
-		o.Eventually(newMs.GetIsReady, "20m", "2m").Should(o.BeTrue(), "MachineSet %s is not ready", newMs.GetName())
-		logger.Infof("OK!\n")
-
-		exutil.By("Check that worker pool is increased and updated")
-		o.Eventually(wMcp.GetNodesOrFail, "5m", "30s").Should(o.HaveLen(initialNumWorkers+numNewNodes),
-			"The worker pool has not added the new nodes created by the new Machineset.\n%s", wMcp.PrettyString())
-
-		// Verify that the scaled nodes has been configured properly
-		exutil.By("Check config in the new node")
-		newNodes, nErr := newMs.GetNodes()
-		o.Expect(nErr).NotTo(o.HaveOccurred(), "Error getting the nodes created by MachineSet %s", newMs.GetName())
-		o.Expect(newNodes).To(o.HaveLen(numNewNodes), "Only %d nodes should have been created by MachineSet %s", numNewNodes, newMs.GetName())
-		newNode := newNodes[0]
-		logger.Infof("New node: %s", newNode.GetName())
-		logger.Infof("OK!\n")
-
-		exutil.By("Check kubelet config")
-		kcFile := NewRemoteFile(newNode, "/etc/kubernetes/kubelet.conf")
-		kcrErr := kcFile.Fetch()
-		o.Expect(kcrErr).NotTo(o.HaveOccurred(), "Error reading kubelet config in node %s", newNode.GetName())
-		o.Expect(kcFile.GetTextContent()).Should(o.Or(o.ContainSubstring(`"maxPods": 500`), o.ContainSubstring(`maxPods: 500`)),
-			"File /etc/kubernetes/kubelet.conf has not the expected content")
-		logger.Infof("OK!\n")
-
-		exutil.By("Check container runtime config")
-		crFile := NewRemoteFile(newNode, "/etc/containers/storage.conf")
-		crrErr := crFile.Fetch()
-		o.Expect(crrErr).NotTo(o.HaveOccurred(), "Error reading container runtime config in node %s", newNode.GetName())
-		o.Expect(crFile.GetTextContent()).Should(o.ContainSubstring("size = \"8G\""),
-			"File /etc/containers/storage.conf has not the expected content")
-		logger.Infof("OK!\n")
-
-		exutil.By("Check generic machine config")
-		cFile := NewRemoteFile(newNode, genericConfigFilePath)
-		crErr := cFile.Fetch()
-		o.Expect(crErr).NotTo(o.HaveOccurred(), "Error reading generic config file in node %s", newNode.GetName())
-		o.Expect(cFile.GetTextContent()).Should(o.Equal(genericConfig),
-			"File %s has not the expected content", genericConfigFilePath)
-		logger.Infof("OK!\n")
-
-		exutil.By("Scale down and remove the cloned Machineset")
-		removeClonedMachineSet(newMs, wMcp, initialNumWorkers)
-		logger.Infof("OK!\n")
-
 	})
 
 	g.It("[PolarionID:65923][OTP] SSH key in scaled clusters", func() {
