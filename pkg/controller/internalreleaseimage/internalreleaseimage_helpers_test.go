@@ -28,8 +28,8 @@ func verifyInternalReleaseMasterMachineConfig(t *testing.T, mc *mcfgv1.MachineCo
 
 	assert.Len(t, ignCfg.Systemd.Units, 1)
 	assert.Contains(t, *ignCfg.Systemd.Units[0].Contents, "docker-registry-image-pullspec")
-	assert.Contains(t, *ignCfg.Systemd.Units[0].Contents, "REGISTRY_AUTH_HTPASSWD_REALM")
-	assert.Contains(t, *ignCfg.Systemd.Units[0].Contents, "REGISTRY_AUTH_HTPASSWD_PATH")
+	assert.NotContains(t, *ignCfg.Systemd.Units[0].Contents, "REGISTRY_AUTH_HTPASSWD_REALM")
+	assert.NotContains(t, *ignCfg.Systemd.Units[0].Contents, "REGISTRY_AUTH_HTPASSWD_PATH")
 
 	assert.Len(t, ignCfg.Storage.Files, 5, "Found an unexpected file")
 	verifyIgnitionFile(t, &ignCfg, "/etc/pki/ca-trust/source/anchors/iri-root-ca.crt", "iri-root-ca-data")
