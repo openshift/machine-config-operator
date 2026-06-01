@@ -67,7 +67,7 @@ func logInitionProvisioning() error {
 	if err := json.Unmarshal(contents, &ignProvisioning); err != nil {
 		return err
 	}
-	klog.Infof("Ignition provisioning: time=%v\n", ignProvisioning.ProvisioningDate)
+	klog.Infof("Ignition provisioning: time=%v", ignProvisioning.ProvisioningDate)
 	return nil
 }
 

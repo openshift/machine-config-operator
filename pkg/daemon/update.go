@@ -2694,7 +2694,7 @@ func (dn *Daemon) updateSSHKeys(newUsers, oldUsers []ign3types.PasswdUser) error
 func deconfigureAbsentUsers(newUsers, oldUsers []ign3types.PasswdUser) {
 	for _, oldUser := range oldUsers {
 		if !isUserPresent(oldUser, newUsers) {
-			klog.Infof("Absent user detected, deconfiguring the password for user %s\n", oldUser.Name)
+			klog.Infof("Absent user detected, deconfiguring the password for user %s", oldUser.Name)
 			deconfigureUser(oldUser)
 		}
 	}
