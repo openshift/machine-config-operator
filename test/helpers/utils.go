@@ -772,28 +772,6 @@ func CreateMCP(t *testing.T, cs *framework.ClientSet, mcpName string) func() {
 	}
 }
 
-type SSHPaths struct {
-	// The path where SSH keys are expected to be found.
-	Expected string
-	// The path where SSH keys are *not* expected to be found.
-	NotExpected string
-}
-
-// Determines where to expect SSH keys for the core user on a given node based upon the node's OS.
-func GetSSHPaths(os osrelease.OperatingSystem) SSHPaths {
-	if os.IsEL9() || os.IsSCOS() || os.IsFCOS() {
-		return SSHPaths{
-			Expected:    constants.RHCOS9SSHKeyPath,
-			NotExpected: constants.RHCOS8SSHKeyPath,
-		}
-	}
-
-	return SSHPaths{
-		Expected:    constants.RHCOS8SSHKeyPath,
-		NotExpected: constants.RHCOS9SSHKeyPath,
-	}
-}
-
 // MCPNameToRole converts a mcpName to a node role label
 func MCPNameToRole(mcpName string) string {
 	return fmt.Sprintf("node-role.kubernetes.io/%s", mcpName)
@@ -1695,8 +1673,7 @@ func CollectDebugInfoFromNode(t *testing.T, cs *framework.ClientSet, node *corev
 		"/etc/machine-config-daemon/currentconfig",
 		"/etc/os-release",
 		"/usr/lib/osrelease",
-		constants.RHCOS8SSHKeyPath,
-		constants.RHCOS9SSHKeyPath,
+		constants.RHCOSDefaultSSHKeyPath,
 		"/etc/machine-config-daemon/node-annotation.json.bak",
 		"/etc/ignition-machine-config-encapsulated.json.bak",
 	}

@@ -99,11 +99,6 @@ func (os OperatingSystem) IsEL() bool {
 	return os.id == rhcos || os.id == scos || (os.id == rhel && os.variantID == coreos)
 }
 
-// IsEL8 is true if the OS is RHCOS 8 or SCOS 8
-func (os OperatingSystem) IsEL8() bool {
-	return os.IsEL() && strings.HasPrefix(os.version, "8.") || os.version == "8"
-}
-
 // IsEL9 is true if the OS is RHCOS 9 or SCOS 9
 func (os OperatingSystem) IsEL9() bool {
 	return os.IsEL() && strings.HasPrefix(os.version, "9.") || os.version == "9"
@@ -198,15 +193,6 @@ func getOSVersion(or osrelease.OSRelease) string {
 			// Strip the OpenShift Version prefix from the VERSION field, if it is found.
 			return strings.ReplaceAll(or.VERSION, openshiftVersion, "")
 		}
-	}
-	// 4.1 and 4.2 bootimages doesn't ship RHEL_VERSION and OPENSHIFT_VERSION
-	// into /etc/os-release and hence we need to interpret ourself RHEL Version
-	// from VERSION_ID . See https://issues.redhat.com/browse/OCPBUGS-28974
-	if or.VERSION_ID == "4.1" {
-		return "8.1"
-	}
-	if or.VERSION_ID == "4.2" {
-		return "8.2"
 	}
 
 	// Fallback to the VERSION_ID field
