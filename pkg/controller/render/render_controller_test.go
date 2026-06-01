@@ -27,9 +27,12 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 
+	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	"github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
+	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -922,4 +925,89 @@ func TestWorkerPoolOtherChangeDoesNotEnqueueCustomPools(t *testing.T) {
 	assert.Contains(t, enqueuedPools, "worker", "Worker pool should be enqueued")
 	assert.NotContains(t, enqueuedPools, "infra", "Infra pool should NOT be enqueued when osImageStream unchanged")
 	assert.Len(t, enqueuedPools, 1, "Only worker pool should be enqueued")
+}
+
+// TestGetOSImageStreamVersionGuard verifies that getOSImageStreamForPool refuses to
+// use an OSImageStream whose version annotation does not match the running MCC version.
+// This guards against an old MCC rendering from a new OSImageStream written by the new
+// operator during an upgrade, which would produce configs with mixed provenance.
+func TestGetOSImageStreamVersionGuard(t *testing.T) {
+	pool := helpers.NewMachineConfigPool("worker", helpers.WorkerSelector, nil, "")
+
+	makeStream := func(annotationValue *string) *v1alpha1.OSImageStream {
+		s := &v1alpha1.OSImageStream{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        ctrlcommon.ClusterInstanceNameOSImageStream,
+				Annotations: map[string]string{},
+			},
+			Status: v1alpha1.OSImageStreamStatus{
+				AvailableStreams: []v1alpha1.OSImageStreamSet{
+					{
+						Name:    "rhel-9",
+						OSImage: v1alpha1.ImageDigestFormat("registry.example.com/os@sha256:abc"),
+					},
+				},
+				DefaultStream: "rhel-9",
+			},
+		}
+		if annotationValue != nil {
+			s.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey] = *annotationValue
+		}
+		return s
+	}
+
+	myVersion := version.Hash
+	otherVersion := myVersion + "-other"
+
+	tests := []struct {
+		name        string
+		stream      *v1alpha1.OSImageStream
+		wantErr     bool
+		wantNilSet  bool
+	}{
+		{
+			name:       "matching version returns stream set",
+			stream:     makeStream(&myVersion),
+			wantErr:    false,
+			wantNilSet: false,
+		},
+		{
+			name:    "mismatched version returns error",
+			stream:  makeStream(&otherVersion),
+			wantErr: true,
+		},
+		{
+			name:    "missing annotation returns error",
+			stream:  makeStream(nil),
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+			require.NoError(t, indexer.Add(tt.stream))
+
+			ctrl := &Controller{
+				osImageStreamLister: mcfglistersv1alpha1.NewOSImageStreamLister(indexer),
+				fgHandler: ctrlcommon.NewFeatureGatesHardcodedHandler(
+					[]apicfgv1.FeatureGateName{features.FeatureGateOSStreams},
+					[]apicfgv1.FeatureGateName{},
+				),
+			}
+
+			set, err := ctrl.getOSImageStreamForPool(pool)
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Nil(t, set)
+			} else {
+				require.NoError(t, err)
+				if tt.wantNilSet {
+					assert.Nil(t, set)
+				} else {
+					assert.NotNil(t, set)
+				}
+			}
+		})
+	}
 }
