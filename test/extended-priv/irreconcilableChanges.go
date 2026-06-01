@@ -104,15 +104,18 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		exutil.By("Step 4: Create duplicate machineset with custom disks")
 		machineset := OrFail[*MachineSet](GetScalableMachineSet(oc.AsAdmin()))
-		newMSName := machineset.GetName() + "-custom-ms"
+		newMSName := machineset.GetName() + "-custom-ms-irreconcilable-t1"
 		newMS, err := machineset.Duplicate(newMSName)
 		o.Expect(err).NotTo(o.HaveOccurred())
 
 		defer func() {
 			if newMS.Exists() {
-				newMS.ScaleTo(0)
-				newMS.WaitUntilReady("10m")
-				newMS.Delete()
+				err := newMS.ScaleTo(0)
+				o.Expect(err).NotTo(o.HaveOccurred())
+				err = newMS.WaitUntilReady("10m")
+				o.Expect(err).NotTo(o.HaveOccurred())
+				err = newMS.Delete()
+				o.Expect(err).NotTo(o.HaveOccurred())
 			}
 		}()
 
@@ -210,7 +213,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		exutil.By("Step 3: Create duplicate machineset with custom disks")
 		machineset := OrFail[*MachineSet](GetScalableMachineSet(oc.AsAdmin()))
-		newMSName := machineset.GetName() + "-custom-ms"
+		newMSName := machineset.GetName() + "-custom-ms-irreconcilable-t2"
 		newMS, err := machineset.Duplicate(newMSName)
 		o.Expect(err).NotTo(o.HaveOccurred())
 
