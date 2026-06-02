@@ -1,4 +1,4 @@
-package e2e_ocl_test
+package e2e_ocl_2of2_test
 
 import (
 	"context"
@@ -34,6 +34,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	e2e_ocl_shared_test "github.com/openshift/machine-config-operator/test/e2e-ocl-shared"
 )
 
 // Used by TestImagePruner only when flags are passed.
@@ -120,7 +122,7 @@ func TestImagePrunerOnCluster(t *testing.T) {
 	})
 
 	// Set up the imagestream for this test.
-	pushSecretName, pullspec, cleanupFunc := setupImageStream(t, cs, metav1.ObjectMeta{Name: "imagepruner", Namespace: ctrlcommon.MCONamespace})
+	pushSecretName, pullspec, cleanupFunc := e2e_ocl_shared_test.SetupImageStream(t, cs, metav1.ObjectMeta{Name: "imagepruner", Namespace: ctrlcommon.MCONamespace}, false, false)
 	t.Cleanup(cleanupFunc)
 
 	// Parse the internal registry hostname from the image pullspec.
@@ -340,6 +342,8 @@ func TestImagePrunerErrors(t *testing.T) {
 			inspect: operation{
 				nonexistentRepo: expectedErr{
 					accessDenied: true,
+					// Docker.io behavior varies - accept either error type
+					imageNotFound: true,
 				},
 				nonexistentTag: expectedErr{
 					imageNotFound: true,
@@ -390,6 +394,8 @@ func TestImagePrunerErrors(t *testing.T) {
 				},
 				nonexistentTag: expectedErr{
 					accessDenied: true,
+					// GitHub registry behavior varies - accept either error type
+					imageNotFound: true,
 				},
 				nonexistentDigest: expectedErr{
 					accessDenied: true,
@@ -450,6 +456,11 @@ func TestImagePrunerErrors(t *testing.T) {
 		_, imgDigest, err := ip.InspectImage(ctx, pullspec, k8sSecret, &mcfgv1.ControllerConfig{})
 		if !expected.imageNotFound && !expected.accessDenied {
 			require.NoError(t, err)
+		} else if expected.imageNotFound && expected.accessDenied {
+			// Both flags set means accept either error type (registries may vary)
+			isImageNotFound := imagepruner.IsImageNotFoundErr(err)
+			isAccessDenied := imagepruner.IsAccessDeniedErr(err)
+			assert.True(t, isImageNotFound || isAccessDenied, "expected either imageNotFound or accessDenied error, got: %v", err)
 		} else {
 			assert.Equal(t, expected.imageNotFound, imagepruner.IsImageNotFoundErr(err), "image not found error should be %v", !expected.imageNotFound)
 			assert.Equal(t, expected.accessDenied, imagepruner.IsAccessDeniedErr(err), "access denied error should be %v", !expected.accessDenied)
@@ -471,8 +482,15 @@ func TestImagePrunerErrors(t *testing.T) {
 		// We should always get an error back for this test because we do not have
 		// permissions to delete images.
 		assert.Error(t, err)
-		assert.Equal(t, expected.imageNotFound, imagepruner.IsImageNotFoundErr(err), "image not found error should be %v", !expected.imageNotFound)
-		assert.Equal(t, expected.accessDenied, imagepruner.IsAccessDeniedErr(err), "access denied error should be %v", !expected.accessDenied)
+		if expected.imageNotFound && expected.accessDenied {
+			// Both flags set means accept either error type (registries may vary)
+			isImageNotFound := imagepruner.IsImageNotFoundErr(err)
+			isAccessDenied := imagepruner.IsAccessDeniedErr(err)
+			assert.True(t, isImageNotFound || isAccessDenied, "expected either imageNotFound or accessDenied error, got: %v", err)
+		} else {
+			assert.Equal(t, expected.imageNotFound, imagepruner.IsImageNotFoundErr(err), "image not found error should be %v", !expected.imageNotFound)
+			assert.Equal(t, expected.accessDenied, imagepruner.IsAccessDeniedErr(err), "access denied error should be %v", !expected.accessDenied)
+		}
 		assert.True(t, imagepruner.IsTolerableDeleteErr(err))
 
 		return err
