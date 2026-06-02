@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -349,7 +350,7 @@ func TestSSHKeyAndPasswordForOSBuilder(t *testing.T) {
 	osNode = helpers.GetSingleNodeByRole(t, cs, layeredMCPName) // Re-fetch node with updated configurations
 
 	foundSSHKey := helpers.ExecCmdOnNode(t, cs, osNode, "cat", "/rootfs/home/core/.ssh/authorized_keys.d/ignition")
-	if !contains(foundSSHKey, sshKeyContent) {
+	if !strings.Contains(foundSSHKey, sshKeyContent) {
 		t.Fatalf("updated ssh key not found, got %s", foundSSHKey)
 	}
 	t.Logf("updated ssh hash found, got %s", foundSSHKey)
@@ -885,6 +886,8 @@ func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) 
 	startedBuild := waitForBuildToStartForPoolAndConfig(t, cs, testOpts.poolName, mosc.Name)
 	t.Logf("MachineOSBuild %q has started", startedBuild.Name)
 
+	assertBuildJobIsAsExpected(t, cs, startedBuild)
+
 	t.Logf("Waiting for build completion...")
 
 	// Create a child context for the build pod log streamer. This is so we can
@@ -968,6 +971,30 @@ func waitForBuildToStartForPoolAndConfig(t *testing.T, cs *framework.ClientSet, 
 	}
 
 	return waitForBuildToStart(t, cs, mosb)
+}
+
+func assertBuildJobIsAsExpected(t *testing.T, cs *framework.ClientSet, mosb *mcfgv1.MachineOSBuild) {
+	t.Helper()
+
+	osImageURLConfig, err := ctrlcommon.GetOSImageURLConfig(context.TODO(), cs.GetKubeclient())
+	require.NoError(t, err)
+
+	mcoImages, err := ctrlcommon.GetImagesConfig(context.TODO(), cs.GetKubeclient())
+	require.NoError(t, err)
+
+	buildPod, err := ocltesthelper.GetPodFromJob(context.TODO(), cs, mosb.Status.Builder.Job.Name)
+	require.NoError(t, err)
+
+	assertContainerIsUsingExpectedImage := func(c corev1.Container, containerName, expectedImage string) {
+		if c.Name == containerName {
+			assert.Equal(t, c.Image, expectedImage)
+		}
+	}
+
+	for _, container := range buildPod.Spec.Containers {
+		assertContainerIsUsingExpectedImage(container, "image-build", mcoImages.MachineConfigOperator)
+		assertContainerIsUsingExpectedImage(container, "wait-for-done", osImageURLConfig.BaseOSContainerImage)
+	}
 }
 
 // Waits for a MachineOSBuild to start building.
@@ -1245,7 +1272,7 @@ func waitForMOSCToUpdateCurrentMOSB(ctx context.Context, t *testing.T, cs *frame
 		}
 
 		currentMOSB = mosc.GetAnnotations()[constants.CurrentMachineOSBuildAnnotationKey]
-		return currentMOSB != mosbName, nil
+		return currentMOSB != "" && currentMOSB != mosbName, nil
 
 	}))
 	return currentMOSB
@@ -1315,16 +1342,3 @@ func archiveBuildPodLogs(t *testing.T, podLogsDirPath string) error {
 	return archive.WriteArchive()
 }
 
-// Helper function to check if a string contains a substring (used in SSH key test)
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || containsMiddle(s, substr))
-}
-
-func containsMiddle(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}

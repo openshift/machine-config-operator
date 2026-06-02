@@ -189,6 +189,7 @@ func TestMissingImageIsRebuilt(t *testing.T) {
 	require.NoError(t, err)
 	secondMOSB = waitForBuildToStart(t, cs, secondMOSB)
 	t.Logf("MachineOSBuild %q has started", secondMOSB.Name)
+	assertBuildJobIsAsExpected(t, cs, secondMOSB)
 
 	// Wait for the build to finish
 	t.Logf("Waiting for 2nd build completion...")
@@ -219,6 +220,7 @@ func TestMissingImageIsRebuilt(t *testing.T) {
 	require.NoError(t, err)
 	thirdMOSB = waitForBuildToStart(t, cs, thirdMOSB)
 	t.Logf("MachineOSBuild %q has started (rebuild of image1)", thirdMOSB.Name)
+	assertBuildJobIsAsExpected(t, cs, thirdMOSB)
 
 	// Wait for the build to finish
 	t.Logf("Waiting for 3rd build completion...")
@@ -522,6 +524,8 @@ func runOnClusterLayeringTest(t *testing.T, testOpts onClusterLayeringTestOpts) 
 	startedBuild := waitForBuildToStartForPoolAndConfig(t, cs, testOpts.poolName, mosc.Name)
 	t.Logf("MachineOSBuild %q has started", startedBuild.Name)
 
+	assertBuildJobIsAsExpected(t, cs, startedBuild)
+
 	t.Logf("Waiting for build completion...")
 
 	// Create a child context for the build pod log streamer. This is so we can
@@ -623,6 +627,30 @@ func waitForBuildToStartForPoolAndConfig(t *testing.T, cs *framework.ClientSet, 
 	}
 
 	return waitForBuildToStart(t, cs, mosb)
+}
+
+func assertBuildJobIsAsExpected(t *testing.T, cs *framework.ClientSet, mosb *mcfgv1.MachineOSBuild) {
+	t.Helper()
+
+	osImageURLConfig, err := ctrlcommon.GetOSImageURLConfig(context.TODO(), cs.GetKubeclient())
+	require.NoError(t, err)
+
+	mcoImages, err := ctrlcommon.GetImagesConfig(context.TODO(), cs.GetKubeclient())
+	require.NoError(t, err)
+
+	buildPod, err := ocltesthelper.GetPodFromJob(context.TODO(), cs, mosb.Status.Builder.Job.Name)
+	require.NoError(t, err)
+
+	assertContainerIsUsingExpectedImage := func(c corev1.Container, containerName, expectedImage string) {
+		if c.Name == containerName {
+			assert.Equal(t, c.Image, expectedImage)
+		}
+	}
+
+	for _, container := range buildPod.Spec.Containers {
+		assertContainerIsUsingExpectedImage(container, "image-build", mcoImages.MachineConfigOperator)
+		assertContainerIsUsingExpectedImage(container, "wait-for-done", osImageURLConfig.BaseOSContainerImage)
+	}
 }
 
 // Waits for a MachineOSBuild to start building.
