@@ -44,7 +44,7 @@ func IsTechPreviewNoUpgrade(oc *CLI) bool {
 
 // IsSingleNodeTopology returns true if the cluster is a SNO cluster
 func IsSingleNodeTopology(oc *CLI) bool {
-	output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("infrastructure", "cluster", "-o=jsonpath={.status.platformStatus.controlPlaneTopology}").Output()
+	output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("infrastructure", "cluster", "-o=jsonpath={.status.controlPlaneTopology}").Output()
 	o.Expect(err).NotTo(o.HaveOccurred())
 	return output == string(configv1.SingleReplicaTopologyMode)
 }
