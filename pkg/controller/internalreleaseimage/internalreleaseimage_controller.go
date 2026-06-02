@@ -475,7 +475,7 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) (syncErr error) {
 	// Fetch the InternalReleaseImage
 	iri, err := ctrl.iriLister.Get(name)
 	if errors.IsNotFound(err) {
-		klog.V(2).Infof("InternalReleaseImage %v has been deleted", key)
+		klog.V(4).Infof("InternalReleaseImage %v has been deleted", key)
 		return nil
 	}
 	if err != nil {
