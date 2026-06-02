@@ -659,6 +659,20 @@ func (ctrl *Controller) getOSImageStreamForPool(pool *mcfgv1.MachineConfigPool) 
 		return nil, fmt.Errorf("could not get OSImageStream for pool %s: %w", pool.Name, err)
 	}
 
+	// Guard against using an OSImageStream written by a different operator version.
+	// Unlike ControllerConfig (which has its own generated-by-version guard), the
+	// OSImageStream is fetched independently and directly supplies the OS image URL,
+	// bypassing the ControllerConfig path entirely. Without this check, an old MCC
+	// could render from a new OSImageStream mid-upgrade, producing configs with a new
+	// OS image URL but old config data from the ControllerConfig.
+	streamVersion, ok := imageStream.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey]
+	if !ok {
+		return nil, fmt.Errorf("ignoring OSImageStream without %s annotation (my version: %s)", ctrlcommon.ReleaseImageVersionAnnotationKey, version.Hash)
+	}
+	if streamVersion != version.Hash {
+		return nil, fmt.Errorf("ignoring OSImageStream with version %s (my version: %s)", streamVersion, version.Hash)
+	}
+
 	imageStreamSet, err := osimagestream.GetOSImageStreamSetByName(imageStream, streamName)
 	if err != nil {
 		return nil, fmt.Errorf("could not get OSImageStreamSet for pool %s: %w", pool.Name, err)
