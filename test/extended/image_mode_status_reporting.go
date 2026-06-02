@@ -2,8 +2,10 @@ package extended
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	g "github.com/onsi/ginkgo/v2"
@@ -101,7 +103,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		// Run this test against the `worker` MCP if it has machines, otherwise default to `master`
 		mcpName := "master"
 		if DoesMachineConfigPoolHaveMachines(machineConfigClient, "worker") {
-			logger.Infof("`worker` MCP has machines, running test in against that MCP.")
+			logger.Infof("`worker` MCP has machines, running test against that MCP.")
 			mcpName = "worker"
 		}
 
@@ -306,33 +308,49 @@ func runMachineCountTest(machineConfigClient *machineconfigclient.Clientset, oc 
 func validateMCPMachineCountTransitions(machineConfigClient *machineconfigclient.Clientset, oc *exutil.CLI, mcpName string, startTime metav1.Time, mosc *extpriv.MachineOSConfig, layered bool) {
 	timeout := 15 * time.Minute
 	interval := 10 * time.Second
+	loopCount := 3
 	// For on-cluster image mode updates, set the timeout to be longer
 	if layered {
 		logger.Infof("Layered update, setting longer update timeout.")
 		timeout = 45 * time.Minute
 		interval = 30 * time.Second
+		// SNO clusters require a longer time to reconcile due to the MCC restart in
+		// reboot-required updates, so allow for more retries.
+		if isSNO, _ := extpriv.IsSNOSafe(oc); isSNO {
+			logger.Infof("Cluster is SNO, setting higher retry count.")
+			loopCount = 10
+		}
 	}
+
 	o.Eventually(func() bool {
 		// Check if the MCP machine counts match what is expected from the pool's node annotation
 		// values. Note that there is some latency between when the node annotations are set and
 		// when the MCP machine counts are updates, so we'll try this a few times to make sure we
 		// don't fail just because of unlucky timing.
-		for i := 0; i < 3; i++ {
+		for i := 0; i <= loopCount; i++ {
 			logger.Infof("Checking if the MCP machine counts match the expected values...")
+			countsMatch, isConnErr := mcnAndNodeAnnotationMachineCountsMatch(machineConfigClient, oc, mcpName, mosc)
 
 			// Handle success case
-			if mcnAndNodeAnnotationMachineCountsMatch(machineConfigClient, oc, mcpName, mosc) {
+			if countsMatch {
 				break
+			}
+
+			// Continue to next retry if there is a connection error. Connection errors are common
+			// in SNO suite runs, so we may need additional tries times to get the machine counts.
+			if isConnErr {
+				logger.Infof("Got connection error. Waiting %v seconds then trying again.", interval)
+				return false
 			}
 
 			// Handle case when the counts are not as expected. If we reach this point in the third
 			// itteration, we've exhausted our attempts and are likely seeing a true discrepancy
 			// between the expected and actual machine counts.
-			o.Expect(i).NotTo(o.BeNumerically("==", 2), "The actual MCP machine counts did not match the expected machine counts")
+			o.Expect(i).NotTo(o.BeNumerically("==", loopCount), "The actual MCP machine counts did not match the expected machine counts")
 			// If we have not exhausted our attempts, wait a few seconds and check again
 			if i != 2 {
-				logger.Infof("The MCP machine counts did match the expected values. Waiting 4 seconds then trying again.")
-				time.Sleep(4 * time.Second)
+				logger.Infof("The MCP machine counts did match the expected values.  Waiting %v seconds then trying again.", (i+1)*4)
+				time.Sleep(time.Duration((i+1)*4) * time.Second)
 			}
 		}
 
@@ -345,17 +363,38 @@ func validateMCPMachineCountTransitions(machineConfigClient *machineconfigclient
 
 // `mcnAndNodeAnnotationMachineCountsMatch` checks whether the updated and degraded machine counts
 // in the desired MCP match the expected machine counts calculated by checking the annotations of
-// each node in the pool. It returns `true` if the counts match and false otherwise.
-func mcnAndNodeAnnotationMachineCountsMatch(machineConfigClient *machineconfigclient.Clientset, oc *exutil.CLI, mcpName string, mosc *extpriv.MachineOSConfig) bool {
+// each node in the pool. The first boolean return is `true` if the counts match and `false`
+// otherwise. The second boolean return is `true`if there was a connection error when trying to get
+// a resource (this allows for resiliency in SNO clsuters).
+func mcnAndNodeAnnotationMachineCountsMatch(machineConfigClient *machineconfigclient.Clientset, oc *exutil.CLI,
+	mcpName string, mosc *extpriv.MachineOSConfig) (countsMatch, isConnErr bool) {
 	// Get machine counts from MCP
 	mcp, mcpErr := machineConfigClient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), mcpName, metav1.GetOptions{})
-	o.Expect(mcpErr).NotTo(o.HaveOccurred(), "Error getting MCP `%v`: %s", mcpName, mcpErr)
+	// If we fail to get the MCP, it could be due to a connection error or other infrastructure
+	// instability, so we should log a warning but not error out. This is especially important for SNO.
+	if mcpErr != nil {
+		if errors.Is(mcpErr, syscall.ECONNREFUSED) {
+			logger.Infof("Error connecting to cluster when getting MCP `%v`, will retry.", mcpName)
+			return false, true
+		}
+		logger.Infof("Errored getting MCP `%v`, but not connection err.", mcpName)
+		return false, false
+	}
 	actualUpdatedCount := mcp.Status.UpdatedMachineCount
 	actualDegradedCount := mcp.Status.DegradedMachineCount
 
 	// Get the expected machine counts from the node annotation values
 	nodes, nodesErr := GetNodesByRole(oc, mcpName)
-	o.Expect(nodesErr).NotTo(o.HaveOccurred(), "Error getting nodes in MCP `%v`: %s", mcpName, nodesErr)
+	// If we fail to get the nodes, it could be due to a connection error or other infrastructure
+	// instability, so we should log a warning but not error out. This is especially important for SNO.
+	if nodesErr != nil {
+		if errors.Is(nodesErr, syscall.ECONNREFUSED) {
+			logger.Infof("Error getting nodes in MCP `%v`, will retry.", mcpName)
+			return false, true
+		}
+		logger.Infof("Errored getting nodes in MCP `%v`, but not connection err.", mcpName)
+		return false, false
+	}
 	var expectedUpdatedCount int32
 	var expectedDegradedCount int32
 	for _, node := range nodes {
@@ -411,7 +450,7 @@ func mcnAndNodeAnnotationMachineCountsMatch(machineConfigClient *machineconfigcl
 	if actualUpdatedCount != expectedUpdatedCount || actualDegradedCount != expectedDegradedCount {
 		// Log when the counts are not the same so debugging is easier
 		logger.Infof("actualUpdatedCount: %v; expectedUpdatedCount: %v; actualDegradedCount: %v; expectedDegradedCount: %v", actualUpdatedCount, expectedUpdatedCount, actualDegradedCount, expectedDegradedCount)
-		return false
+		return false, false
 	}
-	return true
+	return true, false
 }
