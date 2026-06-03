@@ -4,7 +4,7 @@ package osimagestream
 import (
 	"testing"
 
-	"github.com/openshift/api/machineconfiguration/v1alpha1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -132,8 +132,8 @@ func TestGroupOSContainerImageMetadataToStream_SingleStream(t *testing.T) {
 
 	require.Len(t, result, 1)
 	assert.Equal(t, "rhel-9", result[0].Name)
-	assert.Equal(t, v1alpha1.ImageDigestFormat("quay.io/openshift/os@sha256:abc123"), result[0].OSImage)
-	assert.Equal(t, v1alpha1.ImageDigestFormat("quay.io/openshift/ext@sha256:def456"), result[0].OSExtensionsImage)
+	assert.Equal(t, mcfgv1.ImageDigestFormat("quay.io/openshift/os@sha256:abc123"), result[0].OSImage)
+	assert.Equal(t, mcfgv1.ImageDigestFormat("quay.io/openshift/ext@sha256:def456"), result[0].OSExtensionsImage)
 }
 
 func TestGroupOSContainerImageMetadataToStream_MultipleStreams(t *testing.T) {
@@ -165,20 +165,20 @@ func TestGroupOSContainerImageMetadataToStream_MultipleStreams(t *testing.T) {
 	require.Len(t, result, 2)
 
 	// Verify both streams are present (order-independent)
-	streamMap := make(map[string]*v1alpha1.OSImageStreamSet)
+	streamMap := make(map[string]*mcfgv1.OSImageStreamSet)
 	for _, stream := range result {
 		streamMap[stream.Name] = stream
 	}
 
 	rhel9 := streamMap["rhel-9"]
 	require.NotNil(t, rhel9)
-	assert.Equal(t, v1alpha1.ImageDigestFormat("quay.io/openshift/os-9@sha256:aaa111"), rhel9.OSImage)
-	assert.Equal(t, v1alpha1.ImageDigestFormat("quay.io/openshift/ext-9@sha256:bbb222"), rhel9.OSExtensionsImage)
+	assert.Equal(t, mcfgv1.ImageDigestFormat("quay.io/openshift/os-9@sha256:aaa111"), rhel9.OSImage)
+	assert.Equal(t, mcfgv1.ImageDigestFormat("quay.io/openshift/ext-9@sha256:bbb222"), rhel9.OSExtensionsImage)
 
 	rhel10 := streamMap["rhel-10"]
 	require.NotNil(t, rhel10)
-	assert.Equal(t, v1alpha1.ImageDigestFormat("quay.io/openshift/os-10@sha256:ccc333"), rhel10.OSImage)
-	assert.Equal(t, v1alpha1.ImageDigestFormat("quay.io/openshift/ext-10@sha256:ddd444"), rhel10.OSExtensionsImage)
+	assert.Equal(t, mcfgv1.ImageDigestFormat("quay.io/openshift/os-10@sha256:ccc333"), rhel10.OSImage)
+	assert.Equal(t, mcfgv1.ImageDigestFormat("quay.io/openshift/ext-10@sha256:ddd444"), rhel10.OSExtensionsImage)
 }
 
 func TestGroupOSContainerImageMetadataToStream_PartialURLs(t *testing.T) {
@@ -263,7 +263,7 @@ func TestNewOSImageStreamURLSetFromImageMetadata_OSImage(t *testing.T) {
 	result := NewOSImageStreamURLSetFromImageMetadata(imageMetadata)
 
 	assert.Equal(t, "rhel-9", result.Name)
-	assert.Equal(t, v1alpha1.ImageDigestFormat("quay.io/openshift/os@sha256:abc123"), result.OSImage)
+	assert.Equal(t, mcfgv1.ImageDigestFormat("quay.io/openshift/os@sha256:abc123"), result.OSImage)
 	assert.Empty(t, result.OSExtensionsImage)
 }
 
@@ -278,5 +278,5 @@ func TestNewOSImageStreamURLSetFromImageMetadata_ExtensionsImage(t *testing.T) {
 
 	assert.Equal(t, "rhel-9", result.Name)
 	assert.Empty(t, result.OSImage)
-	assert.Equal(t, v1alpha1.ImageDigestFormat("quay.io/openshift/ext@sha256:def456"), result.OSExtensionsImage)
+	assert.Equal(t, mcfgv1.ImageDigestFormat("quay.io/openshift/ext@sha256:def456"), result.OSExtensionsImage)
 }

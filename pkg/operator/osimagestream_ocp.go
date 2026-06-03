@@ -5,12 +5,11 @@ package operator
 import (
 	"context"
 	"fmt"
+	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	"github.com/openshift/api/machineconfiguration/v1alpha1"
-	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/imageutils"
 	"github.com/openshift/machine-config-operator/pkg/osimagestream"
@@ -49,7 +48,7 @@ func (optr *Operator) syncOSImageStream(_ *renderConfig, _ *configv1.ClusterOper
 	return err
 }
 
-func (optr *Operator) updateOSImageStream(existingOSImageStream *v1alpha1.OSImageStream) error {
+func (optr *Operator) updateOSImageStream(existingOSImageStream *mcfgv1.OSImageStream) error {
 	requestedDefault := osimagestream.GetOSImageStreamSpecDefault(existingOSImageStream)
 	if requestedDefault == "" {
 		// Nothing to do. Empty requests are ignored
@@ -66,7 +65,7 @@ func (optr *Operator) updateOSImageStream(existingOSImageStream *v1alpha1.OSImag
 		osImageStream := existingOSImageStream.DeepCopy()
 		osImageStream.Status.DefaultStream = requestedDefault
 		if _, err := optr.client.
-			MachineconfigurationV1alpha1().
+			MachineconfigurationV1().
 			OSImageStreams().
 			UpdateStatus(context.TODO(), osImageStream, metav1.UpdateOptions{}); err != nil {
 			return fmt.Errorf("error updating the default OSImageStream status: %w", err)
@@ -77,7 +76,7 @@ func (optr *Operator) updateOSImageStream(existingOSImageStream *v1alpha1.OSImag
 	return nil
 }
 
-func (optr *Operator) buildOSImageStream(existingOSImageStream *v1alpha1.OSImageStream) error {
+func (optr *Operator) buildOSImageStream(existingOSImageStream *mcfgv1.OSImageStream) error {
 	klog.Info("Starting building of the OSImageStream instance")
 
 	// Get the release payload image from ClusterVersion
@@ -144,10 +143,10 @@ func (optr *Operator) buildOSImageStream(existingOSImageStream *v1alpha1.OSImage
 	}
 
 	// Create or update the OSImageStream resource
-	var updateOSImageStream *v1alpha1.OSImageStream
+	var updateOSImageStream *mcfgv1.OSImageStream
 	if existingOSImageStream == nil {
 		klog.V(4).Info("Creating OSImageStream singleton instance")
-		updateOSImageStream, err = optr.client.MachineconfigurationV1alpha1().OSImageStreams().Create(context.TODO(), osImageStream, metav1.CreateOptions{})
+		updateOSImageStream, err = optr.client.MachineconfigurationV1().OSImageStreams().Create(context.TODO(), osImageStream, metav1.CreateOptions{})
 		if err != nil {
 			return fmt.Errorf("error creating the OSImageStream: %w", err)
 		}
@@ -160,7 +159,7 @@ func (optr *Operator) buildOSImageStream(existingOSImageStream *v1alpha1.OSImage
 		// DeepCopy to avoid mutating the shared informer cache
 		desired := existingOSImageStream.DeepCopy()
 		desired.ObjectMeta.Annotations = osImageStream.ObjectMeta.Annotations
-		updateOSImageStream, err = optr.client.MachineconfigurationV1alpha1().OSImageStreams().Update(context.TODO(), desired, metav1.UpdateOptions{})
+		updateOSImageStream, err = optr.client.MachineconfigurationV1().OSImageStreams().Update(context.TODO(), desired, metav1.UpdateOptions{})
 		if err != nil {
 			return fmt.Errorf("error updating the OSImageStream: %w", err)
 		}
@@ -169,7 +168,7 @@ func (optr *Operator) buildOSImageStream(existingOSImageStream *v1alpha1.OSImage
 	// Update the status subresource (both for newly created and updated resources)
 	updateOSImageStream.Status = osImageStream.Status
 	if _, err = optr.client.
-		MachineconfigurationV1alpha1().
+		MachineconfigurationV1().
 		OSImageStreams().
 		UpdateStatus(context.TODO(), updateOSImageStream, metav1.UpdateOptions{}); err != nil {
 		return fmt.Errorf("error updating the OSImageStream status: %w", err)
@@ -228,7 +227,7 @@ func (optr *Operator) getSysContextBuilder(clusterPullSecret *corev1.Secret, min
 	return sysCtxBuilder, nil
 }
 
-func (optr *Operator) isOSImageStreamBuildRequired() (*v1alpha1.OSImageStream, bool, error) {
+func (optr *Operator) isOSImageStreamBuildRequired() (*mcfgv1.OSImageStream, bool, error) {
 	// Check if the feature is enabled
 	if !osimagestream.IsFeatureEnabled(optr.fgHandler) {
 		klog.V(4).Info("OSImageStream feature is not enabled, skipping sync")
@@ -293,7 +292,7 @@ func (optr *Operator) buildMinimalControllerConfigForOSImageStream() (*mcfgv1.Co
 
 // getExistingOSImageStream retrieves the existing OSImageStream from the lister.
 // Returns nil if the OSImageStream does not exist.
-func (optr *Operator) getExistingOSImageStream() (*v1alpha1.OSImageStream, error) {
+func (optr *Operator) getExistingOSImageStream() (*mcfgv1.OSImageStream, error) {
 	osImageStream, err := optr.osImageStreamLister.Get(ctrlcommon.ClusterInstanceNameOSImageStream)
 	if err != nil {
 		if !apierrors.IsNotFound(err) {
@@ -306,7 +305,7 @@ func (optr *Operator) getExistingOSImageStream() (*v1alpha1.OSImageStream, error
 
 // osImageStreamRequiresRebuild checks if the OSImageStream needs to be created or updated.
 // Returns true if osImageStream is nil, if its version annotation doesn't match the current version.
-func osImageStreamRequiresRebuild(osImageStream *v1alpha1.OSImageStream) bool {
+func osImageStreamRequiresRebuild(osImageStream *mcfgv1.OSImageStream) bool {
 	if osImageStream == nil {
 		return true
 	}

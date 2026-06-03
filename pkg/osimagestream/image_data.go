@@ -1,11 +1,11 @@
 package osimagestream
 
 import (
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"maps"
 	"slices"
 	"strings"
 
-	"github.com/openshift/api/machineconfiguration/v1alpha1"
 	"k8s.io/klog/v2"
 )
 
@@ -116,8 +116,8 @@ func findLabelValue(m map[string]string, keys ...string) string {
 // GroupOSContainerImageMetadataToStream groups OS and extensions images by stream name.
 // Combines pairs of OS and extensions images that share the same stream name into OSImageStreamSet objects.
 // If multiple images are found for the same stream and type, the last one wins.
-func GroupOSContainerImageMetadataToStream(imagesMetadata []*ImageData) []*v1alpha1.OSImageStreamSet {
-	streamMap := make(map[string]*v1alpha1.OSImageStreamSet)
+func GroupOSContainerImageMetadataToStream(imagesMetadata []*ImageData) []*mcfgv1.OSImageStreamSet {
+	streamMap := make(map[string]*mcfgv1.OSImageStreamSet)
 	for _, imageMetadata := range imagesMetadata {
 		streamURLSet, exists := streamMap[imageMetadata.Stream]
 		if !exists {
@@ -126,7 +126,7 @@ func GroupOSContainerImageMetadataToStream(imagesMetadata []*ImageData) []*v1alp
 		}
 
 		// The stream already exists. Maybe it has not both urls yet
-		imageName := v1alpha1.ImageDigestFormat(imageMetadata.Image)
+		imageName := mcfgv1.ImageDigestFormat(imageMetadata.Image)
 		if imageMetadata.Type == ImageTypeOS {
 			if streamURLSet.OSImage != "" && streamURLSet.OSImage != imageName {
 				// Looks like we have a conflict. Log it and override
@@ -159,11 +159,11 @@ func GroupOSContainerImageMetadataToStream(imagesMetadata []*ImageData) []*v1alp
 
 // NewOSImageStreamURLSetFromImageMetadata creates an OSImageStreamSet from image metadata.
 // Populates either the OSImage or OSExtensionsImage field based on the image type.
-func NewOSImageStreamURLSetFromImageMetadata(imageMetadata *ImageData) *v1alpha1.OSImageStreamSet {
-	urlSet := &v1alpha1.OSImageStreamSet{
+func NewOSImageStreamURLSetFromImageMetadata(imageMetadata *ImageData) *mcfgv1.OSImageStreamSet {
+	urlSet := &mcfgv1.OSImageStreamSet{
 		Name: imageMetadata.Stream,
 	}
-	imageName := v1alpha1.ImageDigestFormat(imageMetadata.Image)
+	imageName := mcfgv1.ImageDigestFormat(imageMetadata.Image)
 	if imageMetadata.Type == ImageTypeOS {
 		urlSet.OSImage = imageName
 	} else {

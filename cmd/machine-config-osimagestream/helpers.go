@@ -13,7 +13,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	imagev1 "github.com/openshift/api/image/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -29,7 +29,7 @@ const (
 )
 
 // Retrieves the OSImageStream for the given release image or ImageStream path.
-func getOSImageStreamFromReleaseImageOrImageStream(opts getOpts) (_ *mcfgv1alpha1.OSImageStream, errOut error) {
+func getOSImageStreamFromReleaseImageOrImageStream(opts getOpts) (_ *mcfgv1.OSImageStream, errOut error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*5)
 	defer cancel()
 
@@ -92,7 +92,7 @@ func getOSImageStreamFromReleaseImageOrImageStream(opts getOpts) (_ *mcfgv1alpha
 
 // Wraps osimagestream.GetOSImageStreamSetByName() and provides more helpful
 // output whenever a not found error is returned.
-func getOSImageStreamSetFromOSImageStream(osImageStream *mcfgv1alpha1.OSImageStream, name string) (*mcfgv1alpha1.OSImageStreamSet, error) {
+func getOSImageStreamSetFromOSImageStream(osImageStream *mcfgv1.OSImageStream, name string) (*mcfgv1.OSImageStreamSet, error) {
 	if name == "" {
 		return nil, fmt.Errorf("empty OSImageStream name")
 	}
@@ -151,7 +151,7 @@ func detectFormatFromFilepath(filepath, fallbackFormat string) string {
 }
 
 // Writes the OSImageStream to a file or stdout in the desired format.
-func writeOutput(osImageStream *mcfgv1alpha1.OSImageStream, format, outputFile string) error {
+func writeOutput(osImageStream *mcfgv1.OSImageStream, format, outputFile string) error {
 	// Detect format from file extension if outputFile is provided
 	finalFormat := format
 	if outputFile != "" {

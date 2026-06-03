@@ -9,7 +9,6 @@ import (
 
 	apicfgv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -1051,13 +1050,13 @@ func TestCalculateStatus(t *testing.T) {
 					},
 				}
 				// Add OSImageStream CR with available streams
-				osImageStream := &mcfgv1alpha1.OSImageStream{
+				osImageStream := &mcfgv1.OSImageStream{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: ctrlcommon.ClusterInstanceNameOSImageStream,
 					},
-					Status: mcfgv1alpha1.OSImageStreamStatus{
+					Status: mcfgv1.OSImageStreamStatus{
 						DefaultStream: "rhel-9",
-						AvailableStreams: []mcfgv1alpha1.OSImageStreamSet{
+						AvailableStreams: []mcfgv1.OSImageStreamSet{
 							{
 								Name:    "rhel-9",
 								OSImage: "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:rhel9image",
@@ -1083,11 +1082,11 @@ func TestCalculateStatus(t *testing.T) {
 				tmpInformer.Machineconfiguration().V1().MachineConfigs().Informer().GetIndexer().Add(mc1)
 				tmpInformer.Machineconfiguration().V1().MachineConfigs().Informer().GetIndexer().Add(mc2)
 				tmpInformer.Machineconfiguration().V1().MachineConfigs().Informer().GetIndexer().Add(mcRhel10)
-				tmpInformer.Machineconfiguration().V1alpha1().OSImageStreams().Informer().GetIndexer().Add(osImageStream)
+				tmpInformer.Machineconfiguration().V1().OSImageStreams().Informer().GetIndexer().Add(osImageStream)
 
 				// Replace the controller's listers with the populated ones
 				c.mcLister = tmpInformer.Machineconfiguration().V1().MachineConfigs().Lister()
-				c.osImageStreamLister = tmpInformer.Machineconfiguration().V1alpha1().OSImageStreams().Lister()
+				c.osImageStreamLister = tmpInformer.Machineconfiguration().V1().OSImageStreams().Lister()
 			} else {
 				c = f.newController()
 			}

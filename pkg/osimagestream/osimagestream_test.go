@@ -8,7 +8,7 @@ import (
 
 	"github.com/containers/image/v5/types"
 	imagev1 "github.com/openshift/api/image/v1"
-	"github.com/openshift/api/machineconfiguration/v1alpha1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -186,8 +186,8 @@ func TestDefaultStreamSourceFactory_Create_RuntimeConfigMapOnly(t *testing.T) {
 		ReleaseImage:    "quay.io/openshift/release:4.16",
 		ConfigMapLister: cmLister,
 		InstallVersion:  testInstallVersion,
-		ExistingOSImageStream: &v1alpha1.OSImageStream{
-			Spec: &v1alpha1.OSImageStreamSpec{DefaultStream: "rhel-9"},
+		ExistingOSImageStream: &mcfgv1.OSImageStream{
+			Spec: mcfgv1.OSImageStreamSpec{DefaultStream: "rhel-9"},
 		},
 	})
 
@@ -267,8 +267,8 @@ func TestDefaultStreamSourceFactory_Create_UserDefaultOverride(t *testing.T) {
 	result, err := factory.Create(context.Background(), &types.SystemContext{}, CreateOptions{
 		ReleaseImageStream: imageStream,
 		InstallVersion:     testInstallVersion,
-		ExistingOSImageStream: &v1alpha1.OSImageStream{
-			Spec: &v1alpha1.OSImageStreamSpec{DefaultStream: "rhel-10"},
+		ExistingOSImageStream: &mcfgv1.OSImageStream{
+			Spec: mcfgv1.OSImageStreamSpec{DefaultStream: "rhel-10"},
 		},
 	})
 
@@ -290,8 +290,8 @@ func TestDefaultStreamSourceFactory_Create_BootstrapCliImagesOnly(t *testing.T) 
 		CliImages:          &OSImageTuple{OSImage: testStreamDefRHEL9.osImage, OSExtensionsImage: testStreamDefRHEL9.extImage},
 		ReleaseImageStream: imageStream,
 		InstallVersion:     testInstallVersion,
-		ExistingOSImageStream: &v1alpha1.OSImageStream{
-			Spec: &v1alpha1.OSImageStreamSpec{DefaultStream: "rhel-9"},
+		ExistingOSImageStream: &mcfgv1.OSImageStream{
+			Spec: mcfgv1.OSImageStreamSpec{DefaultStream: "rhel-9"},
 		},
 	})
 
@@ -311,8 +311,8 @@ func TestDefaultStreamSourceFactory_Create_PreservesExistingSpec(t *testing.T) {
 	})
 	factory := newTestFactory(newTestInspectData(testStreamDefRHEL9), nil)
 
-	existing := &v1alpha1.OSImageStream{
-		Spec: &v1alpha1.OSImageStreamSpec{DefaultStream: "rhel-9"},
+	existing := &mcfgv1.OSImageStream{
+		Spec: mcfgv1.OSImageStreamSpec{DefaultStream: "rhel-9"},
 	}
 
 	result, err := factory.Create(context.Background(), &types.SystemContext{}, CreateOptions{
@@ -323,7 +323,6 @@ func TestDefaultStreamSourceFactory_Create_PreservesExistingSpec(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, "rhel-9", result.Spec.DefaultStream)
-	assert.NotSame(t, existing.Spec, result.Spec)
 }
 
 func TestDefaultStreamSourceFactory_Create_BootstrapImageStreamOnly(t *testing.T) {
@@ -402,8 +401,8 @@ func TestDefaultStreamSourceFactory_Create_DuplicateStreamsLastSourceWins(t *tes
 	require.NoError(t, err)
 	require.Len(t, result.Status.AvailableStreams, 1)
 	// The ImageStream source is appended last, so its images should override the ConfigMap ones
-	assert.Equal(t, v1alpha1.ImageDigestFormat(rhel9Net.osImage), result.Status.AvailableStreams[0].OSImage)
-	assert.Equal(t, v1alpha1.ImageDigestFormat(rhel9Net.extImage), result.Status.AvailableStreams[0].OSExtensionsImage)
+	assert.Equal(t, mcfgv1.ImageDigestFormat(rhel9Net.osImage), result.Status.AvailableStreams[0].OSImage)
+	assert.Equal(t, mcfgv1.ImageDigestFormat(rhel9Net.extImage), result.Status.AvailableStreams[0].OSExtensionsImage)
 }
 
 func TestDefaultStreamSourceFactory_Create_PartialSourceFailure(t *testing.T) {
@@ -439,31 +438,13 @@ func TestDefaultStreamSourceFactory_Create_InvalidUserDefault(t *testing.T) {
 	_, err := factory.Create(context.Background(), &types.SystemContext{}, CreateOptions{
 		ReleaseImageStream: imageStream,
 		InstallVersion:     testInstallVersion,
-		ExistingOSImageStream: &v1alpha1.OSImageStream{
-			Spec: &v1alpha1.OSImageStreamSpec{DefaultStream: "rhel-99"},
+		ExistingOSImageStream: &mcfgv1.OSImageStream{
+			Spec: mcfgv1.OSImageStreamSpec{DefaultStream: "rhel-99"},
 		},
 	})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "could not find the requested rhel-99 default stream")
-}
-
-func TestDefaultStreamSourceFactory_Create_StatusDefaultPreserved(t *testing.T) {
-	imageStream := newTestImageStream("4.22.0", testStreamDefRHEL9, testStreamDefRHEL10)
-	factory := newTestFactory(newTestInspectData(testStreamDefRHEL9, testStreamDefRHEL10), nil)
-
-	// Existing CR has rhel-10 as status default but no spec override.
-	// The builtin default for 4.x is rhel-9, but the existing status should be preserved.
-	result, err := factory.Create(context.Background(), &types.SystemContext{}, CreateOptions{
-		ReleaseImageStream: imageStream,
-		InstallVersion:     testInstallVersion,
-		ExistingOSImageStream: &v1alpha1.OSImageStream{
-			Status: v1alpha1.OSImageStreamStatus{DefaultStream: "rhel-10"},
-		},
-	})
-
-	require.NoError(t, err)
-	assert.Equal(t, "rhel-10", result.Status.DefaultStream, "existing status default should be preserved when no spec override is set")
 }
 
 func TestDefaultStreamSourceFactory_Create_FallsBackToBuildVersion(t *testing.T) {

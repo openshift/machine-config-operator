@@ -29,10 +29,9 @@ import (
 
 	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	"github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
-	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
+	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -84,7 +83,7 @@ func (f *fixture) newController() *Controller {
 	c := New(i.Machineconfiguration().V1().MachineConfigPools(), i.Machineconfiguration().V1().MachineConfigs(),
 		i.Machineconfiguration().V1().ControllerConfigs(), i.Machineconfiguration().V1().ContainerRuntimeConfigs(),
 		i.Machineconfiguration().V1().KubeletConfigs(), oi.Operator().V1().MachineConfigurations(),
-		i.Machineconfiguration().V1alpha1().OSImageStreams(), k8sfake.NewSimpleClientset(), f.client, f.fgHandler)
+		i.Machineconfiguration().V1().OSImageStreams(), k8sfake.NewSimpleClientset(), f.client, f.fgHandler)
 
 	c.mcpListerSynced = alwaysReady
 	c.mcListerSynced = alwaysReady
@@ -934,17 +933,17 @@ func TestWorkerPoolOtherChangeDoesNotEnqueueCustomPools(t *testing.T) {
 func TestGetOSImageStreamVersionGuard(t *testing.T) {
 	pool := helpers.NewMachineConfigPool("worker", helpers.WorkerSelector, nil, "")
 
-	makeStream := func(annotationValue *string) *v1alpha1.OSImageStream {
-		s := &v1alpha1.OSImageStream{
+	makeStream := func(annotationValue *string) *mcfgv1.OSImageStream {
+		s := &mcfgv1.OSImageStream{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:        ctrlcommon.ClusterInstanceNameOSImageStream,
 				Annotations: map[string]string{},
 			},
-			Status: v1alpha1.OSImageStreamStatus{
-				AvailableStreams: []v1alpha1.OSImageStreamSet{
+			Status: mcfgv1.OSImageStreamStatus{
+				AvailableStreams: []mcfgv1.OSImageStreamSet{
 					{
 						Name:    "rhel-9",
-						OSImage: v1alpha1.ImageDigestFormat("registry.example.com/os@sha256:abc"),
+						OSImage: mcfgv1.ImageDigestFormat("registry.example.com/os@sha256:abc"),
 					},
 				},
 				DefaultStream: "rhel-9",
@@ -960,10 +959,10 @@ func TestGetOSImageStreamVersionGuard(t *testing.T) {
 	otherVersion := myVersion + "-other"
 
 	tests := []struct {
-		name        string
-		stream      *v1alpha1.OSImageStream
-		wantErr     bool
-		wantNilSet  bool
+		name       string
+		stream     *mcfgv1.OSImageStream
+		wantErr    bool
+		wantNilSet bool
 	}{
 		{
 			name:       "matching version returns stream set",
@@ -989,7 +988,7 @@ func TestGetOSImageStreamVersionGuard(t *testing.T) {
 			require.NoError(t, indexer.Add(tt.stream))
 
 			ctrl := &Controller{
-				osImageStreamLister: mcfglistersv1alpha1.NewOSImageStreamLister(indexer),
+				osImageStreamLister: mcfglistersv1.NewOSImageStreamLister(indexer),
 				fgHandler: ctrlcommon.NewFeatureGatesHardcodedHandler(
 					[]apicfgv1.FeatureGateName{features.FeatureGateOSStreams},
 					[]apicfgv1.FeatureGateName{},

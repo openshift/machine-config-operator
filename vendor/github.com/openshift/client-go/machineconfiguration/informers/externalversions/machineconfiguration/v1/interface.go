@@ -24,6 +24,8 @@ type Interface interface {
 	MachineOSBuilds() MachineOSBuildInformer
 	// MachineOSConfigs returns a MachineOSConfigInformer.
 	MachineOSConfigs() MachineOSConfigInformer
+	// OSImageStreams returns a OSImageStreamInformer.
+	OSImageStreams() OSImageStreamInformer
 	// PinnedImageSets returns a PinnedImageSetInformer.
 	PinnedImageSets() PinnedImageSetInformer
 }
@@ -77,6 +79,11 @@ func (v *version) MachineOSBuilds() MachineOSBuildInformer {
 // MachineOSConfigs returns a MachineOSConfigInformer.
 func (v *version) MachineOSConfigs() MachineOSConfigInformer {
 	return &machineOSConfigInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
+// OSImageStreams returns a OSImageStreamInformer.
+func (v *version) OSImageStreams() OSImageStreamInformer {
+	return &oSImageStreamInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
 // PinnedImageSets returns a PinnedImageSetInformer.

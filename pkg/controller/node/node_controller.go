@@ -23,12 +23,10 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
-	mcfginformersv1alpha1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
 	mcopinformersv1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
 	mcoplistersv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
-	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 	"github.com/openshift/machine-config-operator/internal"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
@@ -103,7 +101,7 @@ type Controller struct {
 	nodeLister          corelisterv1.NodeLister
 	podLister           corelisterv1.PodLister
 	mcnLister           mcfglistersv1.MachineConfigNodeLister
-	osImageStreamLister mcfglistersv1alpha1.OSImageStreamLister
+	osImageStreamLister mcfglistersv1.OSImageStreamLister
 
 	ccListerSynced            cache.InformerSynced
 	mcListerSynced            cache.InformerSynced
@@ -146,7 +144,7 @@ func New(
 	mcnInformer mcfginformersv1.MachineConfigNodeInformer,
 	schedulerInformer cligoinformersv1.SchedulerInformer,
 	mcopInformer mcopinformersv1.MachineConfigurationInformer,
-	osImageStreamInformer mcfginformersv1alpha1.OSImageStreamInformer,
+	osImageStreamInformer mcfginformersv1.OSImageStreamInformer,
 	infraInformer cligoinformersv1.InfrastructureInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
@@ -183,7 +181,7 @@ func NewWithCustomUpdateDelay(
 	mcnInformer mcfginformersv1.MachineConfigNodeInformer,
 	schedulerInformer cligoinformersv1.SchedulerInformer,
 	mcopInformer mcopinformersv1.MachineConfigurationInformer,
-	osImageStreamInformer mcfginformersv1alpha1.OSImageStreamInformer,
+	osImageStreamInformer mcfginformersv1.OSImageStreamInformer,
 	infraInformer cligoinformersv1.InfrastructureInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
@@ -222,7 +220,7 @@ func newController(
 	mcnInformer mcfginformersv1.MachineConfigNodeInformer,
 	schedulerInformer cligoinformersv1.SchedulerInformer,
 	mcopInformer mcopinformersv1.MachineConfigurationInformer,
-	osImageStreamInformer mcfginformersv1alpha1.OSImageStreamInformer,
+	osImageStreamInformer mcfginformersv1.OSImageStreamInformer,
 	infraInformer cligoinformersv1.InfrastructureInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,

@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/util/diff"
 
-	"github.com/openshift/api/machineconfiguration/v1alpha1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/osimagestream"
@@ -165,12 +165,12 @@ spec:
 // Implements a fake ImageStreamFactory.
 type fakeImageStreamFactory struct {
 	// The OSImageStream to return.
-	stream *v1alpha1.OSImageStream
+	stream *mcfgv1.OSImageStream
 	// Whether the Create method was called.
 	createCalled bool
 }
 
-func (f *fakeImageStreamFactory) Create(ctx context.Context, sysCtx *types.SystemContext, createOptions osimagestream.CreateOptions) (*v1alpha1.OSImageStream, error) {
+func (f *fakeImageStreamFactory) Create(ctx context.Context, sysCtx *types.SystemContext, createOptions osimagestream.CreateOptions) (*mcfgv1.OSImageStream, error) {
 	f.createCalled = true
 	return f.stream, nil
 }
@@ -192,13 +192,13 @@ func setupForBootstrapTest(t *testing.T) (*Bootstrap, *fakeImageStreamFactory, s
 	bootstrap := New("../../../templates", srcDir, filepath.Join(srcDir, "machineconfigcontroller-pull-secret"))
 
 	fakeFactory := &fakeImageStreamFactory{
-		stream: &v1alpha1.OSImageStream{
-			Status: v1alpha1.OSImageStreamStatus{
-				AvailableStreams: []v1alpha1.OSImageStreamSet{
+		stream: &mcfgv1.OSImageStream{
+			Status: mcfgv1.OSImageStreamStatus{
+				AvailableStreams: []mcfgv1.OSImageStreamSet{
 					{
 						Name:              "stream-1",
-						OSImage:           v1alpha1.ImageDigestFormat("registry.host.com/os:latest"),
-						OSExtensionsImage: v1alpha1.ImageDigestFormat("registry.host.com/extensions:latest"),
+						OSImage:           mcfgv1.ImageDigestFormat("registry.host.com/os:latest"),
+						OSExtensionsImage: mcfgv1.ImageDigestFormat("registry.host.com/extensions:latest"),
 					},
 				},
 				DefaultStream: "stream-1",

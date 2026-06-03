@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	imagev1 "github.com/openshift/api/image/v1"
-	"github.com/openshift/api/machineconfiguration/v1alpha1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"k8s.io/klog/v2"
 )
 
@@ -31,7 +31,7 @@ func NewImageStreamStreamSource(imageInspector ImagesInspector, imageStreamProvi
 
 // FetchStreams retrieves an ImageStream, filters and inspects relevant OS images,
 // and returns the extracted OS image stream metadata.
-func (r *ImageStreamStreamSource) FetchStreams(ctx context.Context) ([]*v1alpha1.OSImageStreamSet, error) {
+func (r *ImageStreamStreamSource) FetchStreams(ctx context.Context) ([]*mcfgv1.OSImageStreamSet, error) {
 	imageStream, err := r.imageStreamProvider.ReadImageStream(ctx)
 	if err != nil {
 		return nil, err
