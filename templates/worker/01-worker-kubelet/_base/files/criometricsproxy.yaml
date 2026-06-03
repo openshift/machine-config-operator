@@ -29,13 +29,14 @@ contents:
         imagePullPolicy: IfNotPresent
         volumeMounts:
         - name: var-lib-kubelet
-          mountPath: "/var"
+          mountPath: "/var/lib/kubelet"
           mountPropagation: HostToContainer
+          readOnly: true
         command: ['/bin/bash', '-ec']
         args:
         - |
           echo -n "Waiting for kubelet key and certificate to be available"
-          while [ -n "$(test -e /var/lib/kubelet/pki/kubelet-server-current.pem)" ] ; do
+          while [ ! -e /var/lib/kubelet/pki/kubelet-server-current.pem ] ; do
             echo -n "."
             sleep 1
             (( tries += 1 ))
