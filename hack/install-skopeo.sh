@@ -32,7 +32,7 @@ install_skopeo() {
   fi
 
   # Get the most recent tagged version of skopeo.
-  skopeo_version="$(curl -s https://api.github.com/repos/containers/skopeo/releases/latest | python3 -c 'import sys, json; print(json.load(sys.stdin)["tag_name"])')"
+  skopeo_version="$(curl -sL https://api.github.com/repos/containers/skopeo/releases/latest | python3 -c 'import sys, json; print(json.load(sys.stdin)["tag_name"])')"
 
   echo "Installing skopeo $skopeo_version from source"
 
