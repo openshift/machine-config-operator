@@ -104,7 +104,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		exutil.By("Step 4: Create duplicate machineset with custom disks")
 		machineset := OrFail[*MachineSet](GetScalableMachineSet(oc.AsAdmin()))
-		newMSName := machineset.GetName() + "-custom-ms-irreconcilable-t1"
+		newMSName := machineset.GetName() + "-ms-ic-t1"
 		newMS, err := machineset.Duplicate(newMSName)
 		o.Expect(err).NotTo(o.HaveOccurred())
 
@@ -213,7 +213,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		exutil.By("Step 3: Create duplicate machineset with custom disks")
 		machineset := OrFail[*MachineSet](GetScalableMachineSet(oc.AsAdmin()))
-		newMSName := machineset.GetName() + "-custom-ms-irreconcilable-t2"
+		newMSName := machineset.GetName() + "-ms-ic-t2"
 		newMS, err := machineset.Duplicate(newMSName)
 		o.Expect(err).NotTo(o.HaveOccurred())
 
@@ -405,7 +405,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		exutil.By("Step 3: Scale up new machineset with extra EBS disks")
 		machineset := OrFail[*MachineSet](GetScalableMachineSet(oc.AsAdmin()))
-		newMSName := machineset.GetName() + "-irreconcilable-t4"
+		newMSName := machineset.GetName() + "-ms-ic-t4"
 		newMS, err := machineset.Duplicate(newMSName)
 		o.Expect(err).NotTo(o.HaveOccurred())
 
