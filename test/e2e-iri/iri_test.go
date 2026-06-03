@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"net/http"
@@ -276,10 +275,6 @@ func TestIRIController_VerifyIRIRegistryOnAllTheMasterNodes_NoCert(t *testing.T)
 	skipIfNoBaremetal(t)
 
 	cs := framework.NewClientSet("")
-	authSecret, err := cs.Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), ctrlcommon.InternalReleaseImageAuthSecretName, v1.GetOptions{})
-	require.NoError(t, err)
-	password := string(authSecret.Data["password"])
-
 	masterNodes, err := cs.CoreV1Interface.Nodes().List(context.TODO(), v1.ListOptions{LabelSelector: "node-role.kubernetes.io/master="})
 	require.NoError(t, err)
 
@@ -301,7 +296,7 @@ func TestIRIController_VerifyIRIRegistryOnAllTheMasterNodes_NoCert(t *testing.T)
 			},
 			Timeout: 30 * time.Second,
 		}
-		pingIRIRegistry(t, client, nodeAddr, ctrlcommon.IRIRegistryUsername, password)
+		pingIRIRegistry(t, client, nodeAddr)
 	}
 }
 
@@ -359,17 +354,14 @@ func TestIRIController_VerifyIRIRegistryOnApiInt_WithCert(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, infra.Status.PlatformStatus.BareMetal.APIServerInternalIPs)
 
-	authSecret, err := cs.Secrets(ctrlcommon.MCONamespace).Get(ctx, ctrlcommon.InternalReleaseImageAuthSecretName, v1.GetOptions{})
-	require.NoError(t, err)
-	pingIRIRegistry(t, client, infra.Status.PlatformStatus.BareMetal.APIServerInternalIPs[0], ctrlcommon.IRIRegistryUsername, string(authSecret.Data["password"]))
+	pingIRIRegistry(t, client, infra.Status.PlatformStatus.BareMetal.APIServerInternalIPs[0])
 }
 
-func pingIRIRegistry(t *testing.T, client *http.Client, ipAddr, username, password string) {
+func pingIRIRegistry(t *testing.T, client *http.Client, ipAddr string) {
 	iriRegistryUrl := fmt.Sprintf("https://%s:%d/v2/", ipAddr, ctrlcommon.IRIRegistryPort)
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, iriRegistryUrl, nil)
 	require.NoError(t, err)
-	req.SetBasicAuth(username, password)
 	resp, err := client.Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
@@ -389,56 +381,16 @@ func getBaseDomain(t *testing.T, cs *framework.ClientSet) string {
 	return cconfig.Spec.DNS.Spec.BaseDomain
 }
 
-// curlIRIRegistry runs curl against the IRI registry /v2/ endpoint via
-// ExecCmdOnNode, which executes inside the MCD pod on the given master node.
-// The MCD pod runs on the host network and can reach api-int:22625, making
-// this approach work in CI where the port is not reachable from the test runner.
-// Returns the HTTP status code string (e.g. "200", "401").
-func curlIRIRegistry(t *testing.T, cs *framework.ClientSet, node corev1.Node, baseDomain string, extraArgs ...string) string {
-	t.Helper()
+func TestIRIRegistry_UnauthenticatedReadSucceeds(t *testing.T) {
+	cs := framework.NewClientSet("")
+
+	baseDomain := getBaseDomain(t, cs)
+	node := helpers.GetRandomNode(t, cs, "master")
+
 	url := fmt.Sprintf("https://api-int.%s:%d/v2/", baseDomain, ctrlcommon.IRIRegistryPort)
-	args := []string{"curl", "-s", "--cacert", iriRootCAPath, "-o", "/dev/null", "-w", "%{http_code}"}
-	args = append(args, extraArgs...)
-	args = append(args, url)
-	return strings.TrimSpace(helpers.ExecCmdOnNode(t, cs, node, args...))
-}
-
-func TestIRIAuth_UnauthenticatedRequestReturns401(t *testing.T) {
-	cs := framework.NewClientSet("")
-	ctx := context.Background()
-
-	_, err := cs.Secrets(ctrlcommon.MCONamespace).Get(ctx, ctrlcommon.InternalReleaseImageAuthSecretName, v1.GetOptions{})
-	if k8serrors.IsNotFound(err) {
-		t.Skip("IRI auth secret not found, authentication is not enabled")
-	}
-	require.NoError(t, err)
-
-	baseDomain := getBaseDomain(t, cs)
-	node := helpers.GetRandomNode(t, cs, "master")
-
-	statusCode := curlIRIRegistry(t, cs, node, baseDomain)
-	require.Equal(t, "401", statusCode, "unauthenticated request should return 401")
-}
-
-func TestIRIAuth_AuthenticatedRequestSucceeds(t *testing.T) {
-	cs := framework.NewClientSet("")
-	ctx := context.Background()
-
-	authSecret, err := cs.Secrets(ctrlcommon.MCONamespace).Get(ctx, ctrlcommon.InternalReleaseImageAuthSecretName, v1.GetOptions{})
-	if k8serrors.IsNotFound(err) {
-		t.Skip("IRI auth secret not found, authentication is not enabled")
-	}
-	require.NoError(t, err)
-
-	password := string(authSecret.Data["password"])
-	require.NotEmpty(t, password)
-
-	baseDomain := getBaseDomain(t, cs)
-	node := helpers.GetRandomNode(t, cs, "master")
-	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(ctrlcommon.IRIRegistryUsername+":"+password))
-
-	statusCode := curlIRIRegistry(t, cs, node, baseDomain, "-H", "Authorization: "+authHeader)
-	require.Equal(t, "200", statusCode, "authenticated request should succeed")
+	args := []string{"curl", "-s", "--cacert", iriRootCAPath, "-o", "/dev/null", "-w", "%{http_code}", url}
+	statusCode := strings.TrimSpace(helpers.ExecCmdOnNode(t, cs, node, args...))
+	require.Equal(t, "200", statusCode, "unauthenticated read request should succeed")
 }
 
 func TestIRIController_ShouldPreventDeletionWhenInUse(t *testing.T) {
