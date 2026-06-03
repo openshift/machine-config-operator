@@ -453,6 +453,25 @@ spec:
                         - topologyKey
                         - whenUnsatisfiable
                         x-kubernetes-list-type: map
+                      userAlertmanagerConfigSelection:
+                        description: |-
+                          userAlertmanagerConfigSelection is an optional field that controls whether user-defined
+                          namespaces can be selected for AlertmanagerConfig lookups on the platform Alertmanager
+                          instance in the `openshift-monitoring` namespace.
+                          Valid values are Selectable and None.
+                          When set to Selectable, the platform Alertmanager discovers AlertmanagerConfig resources
+                          in user-defined namespaces. This is equivalent to `enableUserAlertmanagerConfig: true` in
+                          the cluster-monitoring-config ConfigMap.
+                          When set to None, user-defined namespaces are not selected for AlertmanagerConfig lookups
+                          on the platform Alertmanager. This is equivalent to `enableUserAlertmanagerConfig: false`
+                          in the cluster-monitoring-config ConfigMap.
+                          This setting only applies when the user-workload monitoring Alertmanager is not enabled.
+                          When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+                          The current default value is `None`.
+                        enum:
+                        - Selectable
+                        - None
+                        type: string
                       volumeClaimTemplate:
                         description: |-
                           volumeClaimTemplate defines persistent storage for Alertmanager. Use this setting to
