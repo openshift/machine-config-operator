@@ -1,6 +1,8 @@
 package extended
 
 import (
+	"fmt"
+
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
@@ -8,16 +10,22 @@ import (
 )
 
 const (
-	IrreconcilableChangesLabelKey = "machineconfiguration.openshift.io/irreconcilable"
-	workerLabelKey                = "machineconfiguration.openshift.io/worker"
+	workerLabelKey = "machineconfiguration.openshift.io/worker"
 )
 
 func platformBasedDisksPatch(platform string, ms *MachineSet) error {
 	var err error
-	if platform == AWSPlatform {
+	switch platform {
+	case AWSPlatform:
 		err = ms.Patch("json", `[{"op":"add","path":"/spec/template/spec/providerSpec/value/blockDevices/-","value":{"ebs":{"encrypted":false,"iops":0,"volumeSize":120,"volumeType":"gp3"},"deviceName":"/dev/sdb"}},{"op":"add","path":"/spec/template/spec/providerSpec/value/blockDevices/-","value":{"ebs":{"encrypted":false,"iops":0,"volumeSize":120,"volumeType":"gp3"},"deviceName":"/dev/sdc"}}]`)
-	} else {
+	case GCPPlatform:
 		err = ms.Patch("json", `[{"op":"add","path":"/spec/template/spec/providerSpec/value/disks/-","value":{"autoDelete":true,"boot":false,"sizeGb":16,"type":"pd-standard"}},{"op":"add","path":"/spec/template/spec/providerSpec/value/disks/-","value":{"autoDelete":true,"boot":false,"sizeGb":16,"type":"pd-standard"}}]`)
+	case AzurePlatform:
+		err = ms.Patch("json", `[{"op":"add","path":"/spec/template/spec/providerSpec/value/dataDisks","value":[{"nameSuffix":"disk1","diskSizeGB":16,"lun":0,"deletionPolicy":"Delete"},{"nameSuffix":"disk2","diskSizeGB":16,"lun":1,"deletionPolicy":"Delete"}]}]`)
+	case VspherePlatform:
+		err = ms.Patch("json", `[{"op":"add","path":"/spec/template/spec/providerSpec/value/dataDisks","value":[{"name":"data-disk-1","sizeGiB":16},{"name":"data-disk-2","sizeGiB":16}]}]`)
+	default:
+		err = fmt.Errorf("Unknown platform: %v", platform)
 	}
 	return err
 }
@@ -31,12 +39,19 @@ func platformBasedDisksNames(platform string) []string {
 			"/dev/nvme3n1",
 			"/dev/nvme4n1",
 		}
-	case GCPPlatform:
+	case GCPPlatform, VspherePlatform:
 		return []string{
-			"/dev/sda",
 			"/dev/sdb",
 			"/dev/sdc",
 			"/dev/sdd",
+			"/dev/sde",
+		}
+	case AzurePlatform:
+		return []string{
+			"/dev/disk/azure/scsi1/lun0",
+			"/dev/disk/azure/scsi1/lun1",
+			"/dev/disk/azure/scsi1/lun2",
+			"/dev/disk/azure/scsi1/lun3",
 		}
 	}
 	return []string{}
@@ -53,11 +68,11 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	g.JustBeforeEach(func() {
 		PreChecks(oc)
 		skipIfNoTechPreview(oc)
-		skipTestIfSupportedPlatformNotMatched(oc, AWSPlatform, GCPPlatform)
+		skipTestIfSupportedPlatformNotMatched(oc, AWSPlatform, GCPPlatform, AzurePlatform, VspherePlatform)
 		skipTestIfSNOCluster(oc)
 	})
 
-	g.It("[PolarionID:84219][OTP] Ensure new nodes adopt irreconcilable config while in old nodes surf [Disruptive]", g.Label("Platform:aws", "Platform:gce"), func() {
+	g.It("[PolarionID:84219][OTP] Ensure new nodes adopt irreconcilable config while in old nodes surf [Disruptive]", g.Label("Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere"), func() {
 		var (
 			mcp                  = GetCompactCompatiblePool(oc.AsAdmin())
 			machineconfiguration = GetMachineConfiguration(oc.AsAdmin())
@@ -83,7 +98,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("OK!\n")
 
 		exutil.By("Step 2: Apply extra-disks MachineConfig")
-		platform := exutil.CheckPlatform(oc)
+		platform = exutil.CheckPlatform(oc)
 
 		disks := platformBasedDisksNames(platform)
 
@@ -152,7 +167,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("OK!\n")
 	})
 
-	g.It("Scale up with a mix of irreconcilable and supported fields", g.Label("Platform:aws", "Platform:gce"), func() {
+	g.It("Scale up with a mix of irreconcilable and supported fields", g.Label("Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere"), func() {
 		var (
 			machineconfiguration = GetMachineConfiguration(oc)
 			mcName               = "irreconcilable-mix-test-1"
@@ -248,15 +263,13 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("OK!\n")
 	})
 
-	g.It("Irreconcilable changes persists after feature has been disabled. New Irreconcilable configs will be rejected", g.Label("Platform:aws", "Platform:gce"), func() {
+	g.It("Irreconcilable changes persists after feature has been disabled. New Irreconcilable configs will be rejected", g.Label("Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere"), func() {
 		var (
 			machineconfiguration = GetMachineConfiguration(oc)
 			mcName               = "irreconcilable-mix-test-3"
 			initialMcSpecs       = machineconfiguration.GetSpecOrFail()
 			mcpool               = "worker"
 		)
-
-		SkipTestIfWorkersCannotBeScaled(oc)
 
 		mcp := NewMachineConfigPool(oc, mcpool)
 
@@ -303,10 +316,13 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		o.Expect(err).NotTo(o.HaveOccurred())
 
 		for _, node := range workerNodes {
-			irreconcilableChanges := OrFail[string](node.GetIrreconcilableChanges())
-			o.Expect(irreconcilableChanges).To(o.ContainSubstring("spec.config.storage.disks"))
-			o.Expect(irreconcilableChanges).To(o.ContainSubstring("spec.config.storage.raid"))
-			o.Expect(irreconcilableChanges).To(o.ContainSubstring("spec.config.storage.filesystems"))
+			o.Eventually(func() (string, error) {
+				return node.GetIrreconcilableChanges()
+			}, "5m", "10s").Should(o.SatisfyAll(
+				o.ContainSubstring("spec.config.storage.disks"),
+				o.ContainSubstring("spec.config.storage.raid"),
+				o.ContainSubstring("spec.config.storage.filesystems"),
+			), "Node %s should have irreconcilable changes", node.GetName())
 			logger.Infof("Node %s has irreconcilable changes as expected", node.GetName())
 		}
 
@@ -323,10 +339,13 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		exutil.By("Step 4: Verify nodes report irreconcilablevalidationoverride changes in their MCN")
 
 		for _, node := range workerNodes {
-			irreconcilableChanges := OrFail[string](node.GetIrreconcilableChanges())
-			o.Expect(irreconcilableChanges).To(o.ContainSubstring("spec.config.storage.disks"))
-			o.Expect(irreconcilableChanges).To(o.ContainSubstring("spec.config.storage.raid"))
-			o.Expect(irreconcilableChanges).To(o.ContainSubstring("spec.config.storage.filesystems"))
+			o.Eventually(func() (string, error) {
+				return node.GetIrreconcilableChanges()
+			}, "5m", "10s").Should(o.SatisfyAll(
+				o.ContainSubstring("spec.config.storage.disks"),
+				o.ContainSubstring("spec.config.storage.raid"),
+				o.ContainSubstring("spec.config.storage.filesystems"),
+			), "Node %s should have irreconcilable changes", node.GetName())
 			logger.Infof("Node %s has irreconcilable changes as expected", node.GetName())
 		}
 
@@ -352,7 +371,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		o.Expect(mcp.WaitForNotDegradedStatus()).To(o.Succeed())
 	})
 
-	g.It("Irreconcilable changes cleared after reverting MC. New node reports changes", g.Label("Platform:aws", "Platform:gce"), func() {
+	g.It("Irreconcilable changes cleared after reverting MC. New node reports changes", g.Label("Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere"), func() {
 		var (
 			machineconfiguration = GetMachineConfiguration(oc)
 			mcName               = "irreconcilable-mix-test-4"
@@ -403,7 +422,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		}
 		logger.Infof("All existing worker nodes have irreconcilable changes as expected!\n")
 
-		exutil.By("Step 3: Scale up new machineset with extra EBS disks")
+		exutil.By("Step 3: Scale up new machineset with extra disks")
 		machineset := OrFail[*MachineSet](GetScalableMachineSet(oc.AsAdmin()))
 		newMSName := machineset.GetName() + "-ms-ic-t4"
 		newMS, err := machineset.Duplicate(newMSName)
