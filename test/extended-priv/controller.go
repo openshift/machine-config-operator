@@ -143,7 +143,7 @@ func (mcc *Controller) GetLogsAsList() ([]string, error) {
 	return strings.Split(logs, "\n"), nil
 }
 
-// GetFilteredLogsAsList returns the filtered logs as a lit of strings, one string per line.
+// GetFilteredLogsAsList returns the filtered logs as a list of strings, one string per line.
 func (mcc *Controller) GetFilteredLogsAsList(regex string) ([]string, error) {
 	logs, err := mcc.GetLogsAsList()
 	if err != nil {
