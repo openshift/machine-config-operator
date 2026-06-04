@@ -857,7 +857,7 @@ func GetCertificatesInfoFromPemBundle(bundleName string, pemBundle []byte) ([]Ce
 	var certificatesInfo []CertificateInfo
 
 	if pemBundle == nil {
-		return nil, fmt.Errorf("Provided pem bundle is nil")
+		return nil, fmt.Errorf("provided pem bundle is nil")
 	}
 
 	if len(pemBundle) == 0 {
@@ -873,7 +873,7 @@ func GetCertificatesInfoFromPemBundle(bundleName string, pemBundle []byte) ([]Ce
 
 		logger.Infof("FOUND: %s", block.Type)
 		if block.Type != "CERTIFICATE" {
-			return nil, fmt.Errorf("Only CERTIFICATES are expected in the bundle, but a type %s was found in it", block.Type)
+			return nil, fmt.Errorf("only CERTIFICATES are expected in the bundle, but a type %s was found in it", block.Type)
 		}
 
 		cert, err := x509.ParseCertificate(block.Bytes)
@@ -962,21 +962,21 @@ func getCertsFromKubeconfig(kubeconfig string) (string, error) {
 	currentCtx := gjson.Get(JSONstring, "current-context")
 	logger.Debugf("Context: %s\n", currentCtx)
 	if !currentCtx.Exists() || currentCtx.String() == "" {
-		return "", fmt.Errorf("No current-contenxt in the provided kubeconfig")
+		return "", fmt.Errorf("no current-contenxt in the provided kubeconfig")
 	}
 
 	logger.Debugf("Current context: %s", currentCtx.String())
 
 	cluster := gjson.Get(JSONstring, `contexts.#(name=="`+currentCtx.String()+`").context.cluster`)
 	if !cluster.Exists() || cluster.String() == "" {
-		return "", fmt.Errorf("No current cluster information for context %s in the provided kubeconfig", currentCtx.String())
+		return "", fmt.Errorf("no current cluster information for context %s in the provided kubeconfig", currentCtx.String())
 	}
 
 	logger.Debugf("Cluster: %s\n", cluster.String())
 
 	cert64 := gjson.Get(JSONstring, `clusters.#(name=="`+cluster.String()+`").cluster.certificate-authority-data`)
 	if !cert64.Exists() || cert64.String() == "" {
-		return "", fmt.Errorf("No current certificate-authority-data information for context %s and cluster %s in the provided kubeconfig", currentCtx.String(), cluster.String())
+		return "", fmt.Errorf("no current certificate-authority-data information for context %s and cluster %s in the provided kubeconfig", currentCtx.String(), cluster.String())
 	}
 
 	cert, err := b64.StdEncoding.DecodeString(cert64.String())
@@ -1066,7 +1066,7 @@ func waitForAllMCOPodsReady(oc *exutil.CLI, timeout time.Duration) error {
 
 	if waitErr != nil {
 		_ = oc.AsAdmin().WithoutNamespace().Run("get").Args("pods", "-n", MachineConfigNamespace).Execute()
-		return fmt.Errorf("MCO pods were deleted in namespace %s, but they did not become ready", MachineConfigNamespace)
+		return fmt.Errorf("mco pods were deleted in namespace %s, but they did not become ready", MachineConfigNamespace)
 	}
 
 	return nil
@@ -1264,7 +1264,7 @@ func getAlertsByName(oc *exutil.CLI, alertName string) ([]map[string]interface{}
 
 	// Validate JSON
 	if !gjson.Valid(allAlerts) {
-		return nil, fmt.Errorf("Cannot parse json string: %s", allAlerts)
+		return nil, fmt.Errorf("cannot parse json string: %s", allAlerts)
 	}
 
 	// Use gjson to filter alerts by name - translate JSONPath to gjson syntax
@@ -1274,7 +1274,7 @@ func getAlertsByName(oc *exutil.CLI, alertName string) ([]map[string]interface{}
 	filteredAlertsResult := gjson.Get(allAlerts, gjsonPath)
 
 	if !filteredAlertsResult.IsArray() {
-		return nil, fmt.Errorf("Expected filtered alerts to be an array, but got: %s", filteredAlertsResult.String())
+		return nil, fmt.Errorf("expected filtered alerts to be an array, but got: %s", filteredAlertsResult.String())
 	}
 
 	// Convert gjson.Result array to []map[string]interface{} using Value()
@@ -1282,7 +1282,7 @@ func getAlertsByName(oc *exutil.CLI, alertName string) ([]map[string]interface{}
 	for _, alert := range filteredAlertsResult.Array() {
 		alertMap, ok := alert.Value().(map[string]interface{})
 		if !ok {
-			return nil, fmt.Errorf("Error converting alert to map: %v", alert)
+			return nil, fmt.Errorf("error converting alert to map: %v", alert)
 		}
 		filteredAlerts = append(filteredAlerts, alertMap)
 	}
@@ -1345,7 +1345,7 @@ func UnwrapExecCode(err error) (int, error) {
 			return exitError.ExitCode(), nil
 		}
 	}
-	return -1, fmt.Errorf("No exit code available in the provided error %s", err)
+	return -1, fmt.Errorf("no exit code available in the provided error %s", err)
 }
 
 func getTimeDifferenceInMinute(oldTimestamp, newTimestamp string) float64 {
@@ -1520,7 +1520,7 @@ func getMachineConfigOperatorPod(oc *exutil.CLI) (string, error) {
 func WrapWithBracketsIfIpv6(ip string) (string, error) {
 	parsedIP := net.ParseIP(ip)
 	if parsedIP == nil {
-		return "", fmt.Errorf("The string %s is not a valid IP", ip)
+		return "", fmt.Errorf("the string %s is not a valid IP", ip)
 	}
 
 	// If it is an IPV6 address, wrap it

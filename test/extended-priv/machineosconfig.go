@@ -111,7 +111,7 @@ func CreateMachineOSConfigUsingInternalRegistry(oc *exutil.CLI, namespace, name,
 		return NewMachineOSConfig(oc, name), err
 	}
 	if !renderedImagePushSecret.Exists() {
-		return NewMachineOSConfig(oc, name), fmt.Errorf("Rendered image push secret does not exist: %s", renderedImagePushSecret)
+		return NewMachineOSConfig(oc, name), fmt.Errorf("rendered image push secret does not exist: %s", renderedImagePushSecret)
 	}
 
 	if namespace != MachineConfigNamespace { // If the secret is not in MCO, we copy it there
@@ -123,28 +123,28 @@ func CreateMachineOSConfigUsingInternalRegistry(oc *exutil.CLI, namespace, name,
 			return NewMachineOSConfig(oc, name), err
 		}
 		if !namespacedPullSecret.Exists() {
-			return NewMachineOSConfig(oc, name), fmt.Errorf("Current image pull secret does not exist: %s", namespacedPullSecret)
+			return NewMachineOSConfig(oc, name), fmt.Errorf("current image pull secret does not exist: %s", namespacedPullSecret)
 		}
 
 		namespacedDockerConfig, err := namespacedPullSecret.GetDataValue(".dockerconfigjson")
 		if err != nil {
-			return NewMachineOSConfig(oc, name), fmt.Errorf("Could not extract dockerConfig from the namespaced pull secret")
+			return NewMachineOSConfig(oc, name), fmt.Errorf("could not extract dockerConfig from the namespaced pull secret")
 		}
 
 		pullSecret := GetPullSecret(oc.AsAdmin())
 		pullSecretDockerConfig, err := pullSecret.GetDataValue(".dockerconfigjson")
 		if err != nil {
-			return NewMachineOSConfig(oc, name), fmt.Errorf("Could not extract dockerConfig from the cluster's pull secret")
+			return NewMachineOSConfig(oc, name), fmt.Errorf("could not extract dockerConfig from the cluster's pull secret")
 		}
 
 		mergedDockerConfig, err := MergeDockerConfigs(pullSecretDockerConfig, namespacedDockerConfig)
 		if err != nil {
-			return NewMachineOSConfig(oc, name), fmt.Errorf("Could not merge the namespaced pull-secret dockerconfig and the cluster's pull-secret docker config")
+			return NewMachineOSConfig(oc, name), fmt.Errorf("could not merge the namespaced pull-secret dockerconfig and the cluster's pull-secret docker config")
 		}
 
 		err = pullSecret.SetDataValue(".dockerconfigjson", mergedDockerConfig)
 		if err != nil {
-			return NewMachineOSConfig(oc, name), fmt.Errorf("Could not configure the cluster's pull-secret with the merged dockerconfig")
+			return NewMachineOSConfig(oc, name), fmt.Errorf("could not configure the cluster's pull-secret with the merged dockerconfig")
 		}
 
 		logger.Infof("Waiting for the secret to be updated in all pools")
@@ -302,7 +302,7 @@ func (mosc MachineOSConfig) GetMachineConfigPool() (*MachineConfigPool, error) {
 	}
 	if poolName == "" {
 		logger.Errorf("Empty MachineConfigPool configured in %s", mosc)
-		return nil, fmt.Errorf("Empty MachineConfigPool configured in %s", mosc)
+		return nil, fmt.Errorf("empty MachineConfigPool configured in %s", mosc)
 	}
 
 	return NewMachineConfigPool(mosc.oc, poolName), nil
@@ -323,7 +323,7 @@ func (mosc MachineOSConfig) GetCurrentMachineOSBuild() (*MachineOSBuild, error) 
 	}
 
 	if mosbName == "" {
-		return nil, fmt.Errorf("Cannot find the current MOSB for %s. Annotation empty", mosc)
+		return nil, fmt.Errorf("cannot find the current MOSB for %s. Annotation empty", mosc)
 	}
 
 	return NewMachineOSBuild(mosc.GetOC(), mosbName), nil
@@ -427,14 +427,14 @@ func CreateInternalRegistrySecretFromSA(oc *exutil.CLI, saName, saNamespace, sec
 	logger.Infof("Use a master node to login to the internal registry using the new token")
 	loginOut, loginErr := masterNode.DebugNodeWithChroot("podman", "login", InternalRegistrySvcURL, "-u", saName, "-p", saToken, "--authfile", tmpDockerConfigFile)
 	if loginErr != nil {
-		return nil, fmt.Errorf("Error trying to login to internal registry:\nOutput:%s\nError:%s", loginOut, loginErr)
+		return nil, fmt.Errorf("error trying to login to internal registry:\nOutput:%s\nError:%s", loginOut, loginErr)
 	}
 
 	logger.Infof("Copy the docker.json file to local")
 	// Because several MOSCs can be applied at the same time, MCDs can be restarted several times and it can cause a failure in the CopyToLocal method. We retry to mitigate this scenario
 	err = Retry(5, 5*time.Second, func() error { return masterNode.CopyToLocal(tmpDockerConfigFile, tmpDockerConfigFile) })
 	if err != nil {
-		return nil, fmt.Errorf("Error copying the resulting authorization file to local")
+		return nil, fmt.Errorf("error copying the resulting authorization file to local")
 	}
 
 	logger.Infof("OK!")

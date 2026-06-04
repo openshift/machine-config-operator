@@ -30,7 +30,7 @@ func NewMachineOSBuildList(oc *exutil.CLI) *MachineOSBuildList {
 func (mosb MachineOSBuild) GetMachineOSConfig() (*MachineOSConfig, error) {
 	moscName, err := mosb.Get(`{.spec.machineOSConfig.name}`)
 	if moscName == "" {
-		return nil, fmt.Errorf("Could not get the MachineOSCOnfig name from %s", mosb)
+		return nil, fmt.Errorf("could not get the MachineOSCOnfig name from %s", mosb)
 	}
 
 	return NewMachineOSConfig(mosb.GetOC(), moscName), err
@@ -58,11 +58,11 @@ func (mosb MachineOSBuild) GetJob() (*Job, error) {
 	}
 
 	if jobName == "" {
-		return nil, fmt.Errorf("Could not get the job name from %s", mosb)
+		return nil, fmt.Errorf("could not get the job name from %s", mosb)
 	}
 
 	if jobNamespace == "" {
-		return nil, fmt.Errorf("Could not get the job namespace from %s", mosb)
+		return nil, fmt.Errorf("could not get the job namespace from %s", mosb)
 	}
 
 	return NewJob(mosb.GetOC(), jobNamespace, jobName), nil

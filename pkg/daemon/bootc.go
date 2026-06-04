@@ -167,7 +167,7 @@ func (b *BootcClient) Initialize() error {
 	// make sure we get access to them when we Initialize
 	err := useMergedPullSecrets(bootcSystem)
 	if err != nil {
-		return fmt.Errorf("Error while ensuring access to pull secrets: %w", err)
+		return fmt.Errorf("error while ensuring access to pull secrets: %w", err)
 	}
 	return nil
 }
@@ -210,7 +210,7 @@ func (b *BootcClient) GetBootedImageInfo() (*BootedImageInfo, error) {
 func (b *BootcClient) Switch(imgURL string) error {
 	// Try to re-link the merged pull secrets if they exist, since it could have been populated without a daemon reboot
 	if err := useMergedPullSecrets(bootcSystem); err != nil {
-		return fmt.Errorf("Error while ensuring access to pull secrets: %w", err)
+		return fmt.Errorf("error while ensuring access to pull secrets: %w", err)
 	}
 	klog.Infof("Executing switch to %s", imgURL)
 	return runBootc("switch", imgURL)

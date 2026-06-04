@@ -280,7 +280,7 @@ func (br buildRequestImpl) ignitionFileToConfigMapData(mc *mcfgv1.MachineConfig,
 		// Extract and decode the encoded data
 		decodedData, err := chelpers.DecodeIgnitionFileContents(file.Contents.Source, file.Contents.Compression)
 		if err != nil {
-			return nil, fmt.Errorf("error decoding %s: %v", file.Path, err)
+			return nil, fmt.Errorf("error decoding %s: %w", file.Path, err)
 		}
 
 		// Key in the configmap is the path without the prefix

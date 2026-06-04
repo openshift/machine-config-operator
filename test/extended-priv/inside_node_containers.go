@@ -73,7 +73,7 @@ func (b *OsImageBuilderInNode) prepareEnvironment() error {
 		pullSecret := GetPullSecret(b.node.oc.AsAdmin())
 		tokenDir, err := pullSecret.Extract()
 		if err != nil {
-			return fmt.Errorf("Error extracting pull-secret. Error: %s", err)
+			return fmt.Errorf("error extracting pull-secret. Error: %s", err)
 		}
 		logger.Infof("Pull secret has been extracted to: %s\n", tokenDir)
 		b.dockerConfig = filepath.Join(tokenDir, ".dockerconfigjson")
@@ -83,7 +83,7 @@ func (b *OsImageBuilderInNode) prepareEnvironment() error {
 	b.remoteTmpDir = filepath.Join("/root", e2e.TestContext.OutputDir, fmt.Sprintf("mco-test-%s", exutil.GetRandomString()))
 	_, err = b.node.DebugNodeWithChroot("mkdir", "-p", b.remoteTmpDir)
 	if err != nil {
-		return fmt.Errorf("Error creating tmp dir %s in node %s. Error: %s", b.remoteTmpDir, b.node.GetName(), err)
+		return fmt.Errorf("error creating tmp dir %s in node %s. Error: %s", b.remoteTmpDir, b.node.GetName(), err)
 	}
 
 	if b.remoteDockerConfig == "" {
@@ -103,18 +103,18 @@ func (b *OsImageBuilderInNode) prepareEnvironment() error {
 
 	pool, poolErr := b.node.GetPrimaryPool()
 	if poolErr != nil {
-		return fmt.Errorf("Error getting the primary pool for node %s. Error: %s", b.node.GetName(), poolErr)
+		return fmt.Errorf("error getting the primary pool for node %s. Error: %s", b.node.GetName(), poolErr)
 	}
 
 	stream, streamErr := GetEffectiveOsImageStream(pool)
 	if streamErr != nil {
-		return fmt.Errorf("Error getting the effective osImageStream for pool %s. Error: %s", pool.GetName(), streamErr)
+		return fmt.Errorf("error getting the effective osImageStream for pool %s. Error: %s", pool.GetName(), streamErr)
 	}
 	logger.Infof("Builder node %s stream: %s", b.node.GetName(), stream)
 
 	b.baseImage, err = GetLayeringBaseImageByStream(b.node.oc.AsAdmin(), stream, b.dockerConfig)
 	if err != nil {
-		return fmt.Errorf("Error getting the base image to build new osImages. Error: %s", err)
+		return fmt.Errorf("error getting the base image to build new osImages. Error: %s", err)
 	}
 
 	uniqueTag, err := generateUniqueTag(b.node.oc.AsAdmin())
@@ -162,7 +162,7 @@ func (b *OsImageBuilderInNode) preparePushToInternalRegistry() error {
 	if nsExistsErr != nil {
 		err := b.node.oc.Run("create").Args("namespace", layeringTestsTmpNamespace).Execute()
 		if err != nil {
-			return fmt.Errorf("Error creating namespace %s to store the tmp SAs. Error: %s",
+			return fmt.Errorf("error creating namespace %s to store the tmp SAs. Error: %s",
 				layeringTestsTmpNamespace, err)
 		}
 	} else {
@@ -174,7 +174,7 @@ func (b *OsImageBuilderInNode) preparePushToInternalRegistry() error {
 	if saExistsErr != nil {
 		cErr := b.node.oc.Run("create").Args("-n", layeringTestsTmpNamespace, "serviceaccount", layeringRegistryAdminSAName).Execute()
 		if cErr != nil {
-			return fmt.Errorf("Error creating ServiceAccount %s/%s: %s", layeringTestsTmpNamespace, layeringRegistryAdminSAName, cErr)
+			return fmt.Errorf("error creating ServiceAccount %s/%s: %s", layeringTestsTmpNamespace, layeringRegistryAdminSAName, cErr)
 		}
 	} else {
 		logger.Infof("SA %s/%s already exists. Skip SA creation", layeringTestsTmpNamespace, layeringRegistryAdminSAName)
@@ -182,7 +182,7 @@ func (b *OsImageBuilderInNode) preparePushToInternalRegistry() error {
 
 	admErr := b.node.oc.Run("adm").Args("-n", layeringTestsTmpNamespace, "policy", "add-cluster-role-to-user", "registry-admin", "-z", layeringRegistryAdminSAName).Execute()
 	if admErr != nil {
-		return fmt.Errorf("Error creating ServiceAccount %s: %s", layeringRegistryAdminSAName, admErr)
+		return fmt.Errorf("error creating ServiceAccount %s: %s", layeringRegistryAdminSAName, admErr)
 	}
 
 	logger.Infof("Get SA token")
@@ -198,7 +198,7 @@ func (b *OsImageBuilderInNode) preparePushToInternalRegistry() error {
 	defer b.node.GetOC().SetShowInfo()
 	loginOut, loginErr := b.node.DebugNodeWithChroot("podman", "login", InternalRegistrySvcURL, "-u", layeringRegistryAdminSAName, "-p", saToken, "--authfile", b.remoteDockerConfig)
 	if loginErr != nil {
-		return fmt.Errorf("Error trying to login to internal registry:\nOutput:%s\nError:%s", loginOut, loginErr)
+		return fmt.Errorf("error trying to login to internal registry:\nOutput:%s\nError:%s", loginOut, loginErr)
 	}
 	logger.Infof("OK!\n")
 
@@ -212,7 +212,7 @@ func (b *OsImageBuilderInNode) CleanUp() error {
 		logger.Infof("Removing namespace %s", layeringTestsTmpNamespace)
 		err := b.node.oc.Run("delete").Args("namespace", layeringTestsTmpNamespace, "--ignore-not-found").Execute()
 		if err != nil {
-			return fmt.Errorf("Error deleting namespace %s. Error: %s",
+			return fmt.Errorf("error deleting namespace %s. Error: %s",
 				layeringTestsTmpNamespace, err)
 		}
 
@@ -240,12 +240,12 @@ func (b *OsImageBuilderInNode) buildImage() error {
 
 	localBuildDir, err := prepareDockerfileDirectory(b.tmpDir, dockerFile)
 	if err != nil {
-		return fmt.Errorf("Error creating the build directory with the Dockerfile. Error: %s", err)
+		return fmt.Errorf("error creating the build directory with the Dockerfile. Error: %s", err)
 	}
 
 	cpErr := b.node.CopyFromLocal(filepath.Join(localBuildDir, "Dockerfile"), b.remoteDockerfile)
 	if cpErr != nil {
-		return fmt.Errorf("Error creating the Dockerfile in the remote node. Error: %s", cpErr)
+		return fmt.Errorf("error creating the Dockerfile in the remote node. Error: %s", cpErr)
 	}
 	logger.Infof("OK!\n")
 

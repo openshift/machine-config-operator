@@ -110,7 +110,7 @@ func runRunCmd(_ *cobra.Command, _ []string) error {
 	}})
 
 	if err := h.Start(); err != nil {
-		return fmt.Errorf("failed to start heath checker: %v", err)
+		return fmt.Errorf("failed to start heath checker: %w", err)
 	}
 
 	c := make(chan os.Signal, 1)
@@ -129,7 +129,7 @@ func runRunCmd(_ *cobra.Command, _ []string) error {
 		select {
 		case err := <-errCh:
 			if err != nil {
-				return fmt.Errorf("error running health checker: %v", err)
+				return fmt.Errorf("error running health checker: %w", err)
 			}
 		}
 	}
@@ -138,7 +138,7 @@ func runRunCmd(_ *cobra.Command, _ []string) error {
 func newHandler(uri *url.URL) (*handler, error) {
 	addrs, err := net.LookupHost(uri.Hostname())
 	if err != nil {
-		return nil, fmt.Errorf("failed to lookup host %s: %v", uri.Hostname(), err)
+		return nil, fmt.Errorf("failed to lookup host %s: %w", uri.Hostname(), err)
 	}
 	if len(addrs) == 0 {
 		return nil, fmt.Errorf("hostname %s has no addresses, expected at least 1 - aborting", uri.Hostname())
@@ -186,7 +186,7 @@ func writeVipStateFile(vip, state string) error {
 	// #nosec
 	err := os.WriteFile(file, nil, 0o644)
 	if err != nil {
-		return fmt.Errorf("failed to create file (%s): %v", file, err)
+		return fmt.Errorf("failed to create file (%s): %w", file, err)
 	}
 	return nil
 }
@@ -195,7 +195,7 @@ func removeVipStateFile(vip, state string) error {
 	file := path.Join(runOpts.rootMount, downFileDir, fmt.Sprintf("%s.%s", vip, state))
 	err := os.Remove(file)
 	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to remove file (%s): %v", file, err)
+		return fmt.Errorf("failed to remove file (%s): %w", file, err)
 	}
 	return nil
 }

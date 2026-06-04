@@ -33,12 +33,12 @@ func (m Machine) GetNode() (*Node, error) {
 	}
 	numNodes := len(nodes)
 	if numNodes > 1 {
-		return nil, fmt.Errorf("More than one nodes linked to this Machine. Machine: %s. Num nodes:%d",
+		return nil, fmt.Errorf("more than one nodes linked to this Machine. Machine: %s. Num nodes:%d",
 			m.GetName(), numNodes)
 	}
 
 	if numNodes == 0 {
-		return nil, fmt.Errorf("No node linked to this Machine. Machine: %s", m.GetName())
+		return nil, fmt.Errorf("no node linked to this Machine. Machine: %s", m.GetName())
 	}
 
 	return nodes[0], nil

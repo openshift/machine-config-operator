@@ -60,7 +60,7 @@ func (kc KubeletConfig) GetGeneratedMCName() (string, error) {
 		return "", err
 	}
 	if mcName == "" {
-		return "", fmt.Errorf("It was not possible to get the finalizer from %s %s: %s", kc.GetKind(), kc.GetName(), kc.PrettyString())
+		return "", fmt.Errorf("it was not possible to get the finalizer from %s %s: %s", kc.GetKind(), kc.GetName(), kc.PrettyString())
 	}
 	return mcName, nil
 }

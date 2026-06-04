@@ -684,7 +684,7 @@ func (ctrl *Controller) syncAll(event string) error {
 
 	// Wait for MachineConfiguration/cluster to be ready before syncing any machine resources
 	if err := ctrl.waitForMachineConfigurationReady(); err != nil {
-		ctrl.updateConditions(event, fmt.Errorf("MachineConfiguration was not ready: %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.updateConditions(event, fmt.Errorf("MachineConfiguration was not ready: %w", err), opv1.MachineConfigurationBootImageUpdateDegraded)
 		return err
 	}
 

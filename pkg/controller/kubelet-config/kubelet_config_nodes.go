@@ -90,7 +90,7 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 	// Grab APIServer to populate TLS settings in the default kubelet config
 	apiServer, err := ctrl.apiserverLister.Get(ctrlcommon.APIServerInstanceName)
 	if err != nil && !errors.IsNotFound(err) {
-		return fmt.Errorf("could not get the TLSSecurityProfile from %v: %v", ctrlcommon.APIServerInstanceName, err)
+		return fmt.Errorf("could not get the TLSSecurityProfile from %v: %w", ctrlcommon.APIServerInstanceName, err)
 	}
 
 	for _, pool := range mcpPools {
@@ -157,7 +157,7 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 			}
 			return err
 		}); err != nil {
-			return fmt.Errorf("Could not Create/Update MachineConfig, error: %w", err)
+			return fmt.Errorf("could not Create/Update MachineConfig, error: %w", err)
 		}
 		klog.Infof("Applied Node configuration %v on MachineConfigPool %v", key, pool.Name)
 		ctrlcommon.UpdateStateMetric(ctrlcommon.MCCSubControllerState, "machine-config-controller-kubelet-config", "Sync NodeConfig", pool.Name)
@@ -189,7 +189,7 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 func (ctrl *Controller) enqueueNodeConfig(nodeConfig *osev1.Node) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(nodeConfig)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %w", nodeConfig, err))
+		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %w", nodeConfig, err))
 		return
 	}
 	ctrl.nodeConfigQueue.Add(key)
@@ -199,12 +199,12 @@ func (ctrl *Controller) updateNodeConfig(old, cur interface{}) {
 	isValidWorkerLatencyProfleTransition := true
 	oldNode, ok := old.(*osev1.Node)
 	if !ok {
-		utilruntime.HandleError(fmt.Errorf("Couldn't retrieve the old object from the Update Node Config event %#v", old))
+		utilruntime.HandleError(fmt.Errorf("couldn't retrieve the old object from the Update Node Config event %#v", old))
 		return
 	}
 	newNode, ok := cur.(*osev1.Node)
 	if !ok {
-		utilruntime.HandleError(fmt.Errorf("Couldn't retrieve the new object from the Update Node Config event %#v", cur))
+		utilruntime.HandleError(fmt.Errorf("couldn't retrieve the new object from the Update Node Config event %#v", cur))
 		return
 	}
 	if newNode.Name != ctrlcommon.ClusterNodeInstanceName {
@@ -241,7 +241,7 @@ func (ctrl *Controller) updateNodeConfig(old, cur interface{}) {
 func (ctrl *Controller) addNodeConfig(obj interface{}) {
 	nodeConfig, ok := obj.(*osev1.Node)
 	if !ok {
-		utilruntime.HandleError(fmt.Errorf("Couldn't retrieve the object from the Add Node Config event %#v", obj))
+		utilruntime.HandleError(fmt.Errorf("couldn't retrieve the object from the Add Node Config event %#v", obj))
 		return
 	}
 	if nodeConfig.Name != ctrlcommon.ClusterNodeInstanceName {
@@ -259,12 +259,12 @@ func (ctrl *Controller) deleteNodeConfig(obj interface{}) {
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
 		if !ok {
-			utilruntime.HandleError(fmt.Errorf("Couldn't get object from tombstone %#v", obj))
+			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
 			return
 		}
 		nodeConfig, ok = tombstone.Obj.(*osev1.Node)
 		if !ok {
-			utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a NodeConfig %#v", obj))
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a NodeConfig %#v", obj))
 			return
 		}
 	}

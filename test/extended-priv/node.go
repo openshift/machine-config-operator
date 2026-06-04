@@ -390,12 +390,12 @@ func (n *Node) GetBootedOsTreeDeployment(asJSON bool) (string, error) {
 func (n *Node) GetCurrentBootOSImage() (string, error) {
 	deployment, err := n.GetBootedOsTreeDeployment(true)
 	if err != nil {
-		return "", fmt.Errorf("Error getting the rpm-ostree status value.\n%s", err)
+		return "", fmt.Errorf("error getting the rpm-ostree status value.\n%s", err)
 	}
 
 	containerRef, jerr := JSON(deployment).GetSafe("container-image-reference")
 	if jerr != nil {
-		return "", fmt.Errorf("We cant get 'container-image-reference' from the deployment status. Wrong rpm-ostree status!.\n%s\n%s", jerr, deployment)
+		return "", fmt.Errorf("we cant get 'container-image-reference' from the deployment status. Wrong rpm-ostree status!.\n%s\n%s", jerr, deployment)
 	}
 
 	logger.Infof("Current booted container-image-reference: %s", containerRef)
@@ -403,7 +403,7 @@ func (n *Node) GetCurrentBootOSImage() (string, error) {
 	imageSplit := strings.Split(containerRef.ToString(), ":")
 	lenImageSplit := len(imageSplit)
 	if lenImageSplit < 2 {
-		return "", fmt.Errorf("Wrong container-image-reference in deployment:\n%s\n%s", err, deployment)
+		return "", fmt.Errorf("wrong container-image-reference in deployment:\n%s\n%s", err, deployment)
 	}
 
 	// remove the "ostree-unverified-registry:" part of the image
@@ -1061,7 +1061,7 @@ func (n *Node) GetRHELVersion() (string, error) {
 	if len(match) == 0 {
 		msg := fmt.Sprintf("No RHEL_VERSION available in /etc/os-release file: %s", vContent)
 		logger.Errorf("%s", msg)
-		return "", fmt.Errorf("Error: %s", msg)
+		return "", fmt.Errorf("error: %s", msg)
 	}
 
 	rhelvIndex := r.SubexpIndex("rhel_version")
@@ -1099,14 +1099,14 @@ func (n *Node) GetPrimaryPool() (*MachineConfigPool, error) {
 				primaryPool = pool
 			} else if pool.IsCustom() && primaryPool != nil && primaryPool.IsCustom() {
 				// Error condition: the node belongs to 2 custom pools
-				return nil, fmt.Errorf("Forbidden configuration. The node %s belongs to 2 custom pools: %s and %s",
+				return nil, fmt.Errorf("forbidden configuration. The node %s belongs to 2 custom pools: %s and %s",
 					node.GetName(), primaryPool.GetName(), pool.GetName())
 			}
 		}
 	}
 
 	if primaryPool == nil {
-		return nil, fmt.Errorf("Could not find the primary pool for %s", n)
+		return nil, fmt.Errorf("could not find the primary pool for %s", n)
 	}
 
 	return primaryPool, nil
@@ -1251,7 +1251,7 @@ func (n *Node) GetFileSystemSpaceUsage(path string) (*SpaceUsage, error) {
 
 	lines := strings.Split(stdout, "\n")
 	if len(lines) != 2 {
-		return nil, fmt.Errorf("Expected 2 lines, and got:\n%s", stdout)
+		return nil, fmt.Errorf("expected 2 lines, and got:\n%s", stdout)
 	}
 
 	logger.Debugf("parsing: %s", lines[1])
@@ -1265,21 +1265,21 @@ func (n *Node) GetFileSystemSpaceUsage(path string) (*SpaceUsage, error) {
 
 	usedIndex := re.SubexpIndex("Used")
 	if usedIndex < 0 {
-		return nil, fmt.Errorf("Could not parse Used bytes from\n%s", stdout)
+		return nil, fmt.Errorf("could not parse Used bytes from\n%s", stdout)
 	}
 	used, err := strconv.ParseInt(match[usedIndex], 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("Could convert parsed Used data [%s] into float64 from\n%s", match[usedIndex], stdout)
+		return nil, fmt.Errorf("could convert parsed Used data [%s] into float64 from\n%s", match[usedIndex], stdout)
 
 	}
 
 	availIndex := re.SubexpIndex("Avail")
 	if usedIndex < 0 {
-		return nil, fmt.Errorf("Could not parse Avail bytes from\n%s", stdout)
+		return nil, fmt.Errorf("could not parse Avail bytes from\n%s", stdout)
 	}
 	avail, err := strconv.ParseInt(match[availIndex], 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("Could convert parsed Avail data [%s] into float64 from\n%s", match[availIndex], stdout)
+		return nil, fmt.Errorf("could convert parsed Avail data [%s] into float64 from\n%s", match[availIndex], stdout)
 	}
 
 	return &SpaceUsage{Used: used, Avail: avail}, nil
@@ -1459,7 +1459,7 @@ func BreakRebaseInNode(node *Node) error {
 	logger.Infof("Breaking rpm-ostree rebase process in node %s", node.GetName())
 	brokenRpmOstree := generateTemplateAbsolutePath("rpm-ostree-force-pivot-error.sh")
 	if err := node.CopyFromLocal(brokenRpmOstree, "/tmp/rpm-ostree.broken"); err != nil {
-		return fmt.Errorf("Error copying %s to node %s: %w", brokenRpmOstree, node, err)
+		return fmt.Errorf("error copying %s to node %s: %w", brokenRpmOstree, node, err)
 	}
 	_, err := node.DebugNodeWithChroot("sh", "-c",
 		"chmod +x /tmp/rpm-ostree.broken; "+
@@ -1488,7 +1488,7 @@ func GetOperatorNode(oc *exutil.CLI) (*Node, error) {
 	}
 
 	if len(mcoPods) != 1 {
-		return nil, fmt.Errorf("There should be 1 and only 1 MCO operator pod. Found operator pods: %s", mcoPods)
+		return nil, fmt.Errorf("there should be 1 and only 1 MCO operator pod. Found operator pods: %s", mcoPods)
 	}
 
 	nodeName, err := mcoPods[0].Get(`{.spec.nodeName}`)

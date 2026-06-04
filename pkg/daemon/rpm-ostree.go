@@ -196,7 +196,7 @@ func (r *RpmOstreeClient) IsNewEnoughForLayering() (bool, error) {
 func (r *RpmOstreeClient) RebaseLayered(imgURL string) error {
 	// Try to re-link the merged pull secrets if they exist, since it could have been populated without a daemon reboot
 	if err := useMergedPullSecrets(rpmOstreeSystem); err != nil {
-		return fmt.Errorf("Error while ensuring access to pull secrets: %w", err)
+		return fmt.Errorf("error while ensuring access to pull secrets: %w", err)
 	}
 	klog.Infof("Executing rebase to %s", imgURL)
 	return runRpmOstree("rebase", "--experimental", "ostree-unverified-registry:"+imgURL)
@@ -206,7 +206,7 @@ func (r *RpmOstreeClient) RebaseLayered(imgURL string) error {
 func (r *RpmOstreeClient) RebaseLayeredFromContainerStorage(podmanImageInfo *PodmanImageInfo) error {
 	// Try to re-link the merged pull secrets if they exist, since it could have been populated without a daemon reboot
 	if err := useMergedPullSecrets(rpmOstreeSystem); err != nil {
-		return fmt.Errorf("Error while ensuring access to pull secrets: %w", err)
+		return fmt.Errorf("error while ensuring access to pull secrets: %w", err)
 	}
 
 	defer func() {

@@ -60,7 +60,7 @@ func (cr ContainerRuntimeConfig) GetGeneratedMCName() (string, error) {
 		return "", err
 	}
 	if mcName == "" {
-		return "", fmt.Errorf("It was not possible to get the finalizer from %s %s: %s", cr.GetKind(), cr.GetName(), cr.PrettyString())
+		return "", fmt.Errorf("it was not possible to get the finalizer from %s %s: %s", cr.GetKind(), cr.GetName(), cr.PrettyString())
 	}
 	return mcName, nil
 }

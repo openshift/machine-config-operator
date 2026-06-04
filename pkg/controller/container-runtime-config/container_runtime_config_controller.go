@@ -780,7 +780,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 	// OKD only: Run the migration function at the start of sync
 	if version.IsSCOS() {
 		if err := ctrl.migrateRuncToCrun(); err != nil {
-			return fmt.Errorf("Error during runc to crun migration: %w", err)
+			return fmt.Errorf("error during runc to crun migration: %w", err)
 		}
 	}
 

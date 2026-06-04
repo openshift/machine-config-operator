@@ -110,7 +110,7 @@ func RunKubeletBootstrap(templateDir string, kubeletConfigs []*mcfgv1.KubeletCon
 // we can simplify the logic for the bootstrap generation and avoid some edge cases.
 func generateBootstrapManagedKeyKubelet(pool *mcfgv1.MachineConfigPool, managedKeyExist map[string]bool) (string, error) {
 	if _, ok := managedKeyExist[pool.Name]; ok {
-		return "", fmt.Errorf("Error found multiple KubeletConfigs targeting MachineConfigPool %v. Please apply only one KubeletConfig manifest for each pool during installation", pool.Name)
+		return "", fmt.Errorf("error found multiple KubeletConfigs targeting MachineConfigPool %v. Please apply only one KubeletConfig manifest for each pool during installation", pool.Name)
 	}
 	managedKey, err := ctrlcommon.GetManagedKey(pool, nil, "99", "kubelet", "")
 	if err != nil {

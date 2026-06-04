@@ -188,7 +188,7 @@ type IrreconcilableReporter interface {
 	CheckReportIrreconcilableDifferences(targetMachineConfig *mcfgv1.MachineConfig, nodeName string) error
 }
 
-var ErrAuxiliary = errors.New("Error from auxiliary packages")
+var ErrAuxiliary = errors.New("error from auxiliary packages")
 
 const (
 	// pathSystemd is the path systemd modifiable units, services, etc.. reside
@@ -1431,7 +1431,7 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error, errCh chan er
 func (dn *Daemon) kubeletRebootstrap(ctx context.Context) error {
 	dn.deferKubeletRestart = false
 	if err := os.Remove("/var/lib/kubelet/kubeconfig"); err != nil {
-		return fmt.Errorf("could not remove kubelet's kubeconfig file: %v", err)
+		return fmt.Errorf("could not remove kubelet's kubeconfig file: %w", err)
 	}
 	if err := runCmdSync("systemctl", "restart", "kubelet"); err != nil {
 		return err
@@ -1442,12 +1442,12 @@ func (dn *Daemon) kubeletRebootstrap(ctx context.Context) error {
 			klog.Warningf("Failed to get kubeconfig file: %v", err)
 			return false, nil
 		} else if err != nil {
-			return false, fmt.Errorf("unexpected error reading kubeconfig file, %v", err)
+			return false, fmt.Errorf("unexpected error reading kubeconfig file, %w", err)
 		}
 
 		return true, nil
 	}); err != nil {
-		return fmt.Errorf("something went wrong while waiting for kubeconfig file to generate: %v", err)
+		return fmt.Errorf("something went wrong while waiting for kubeconfig file to generate: %w", err)
 	}
 
 	return nil
@@ -2088,7 +2088,7 @@ func PersistNetworkInterfaces(osRoot string) error {
 			rpmOstreeArgs = append(rpmOstreeArgs, "--remove", karg)
 		}
 	default:
-		return fmt.Errorf("Unexpected host OS %s", hostos.ToPrometheusLabel())
+		return fmt.Errorf("unexpected host OS %s", hostos.ToPrometheusLabel())
 	}
 
 	if osRoot != "/" {
@@ -2606,7 +2606,7 @@ func (dn *Daemon) completeUpdate(desiredConfigName string) error {
 			dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedToUncordon", failMsg)
 			return errors.New(failMsg)
 		}
-		return fmt.Errorf("something went wrong while attempting to uncordon node: %v", err)
+		return fmt.Errorf("something went wrong while attempting to uncordon node: %w", err)
 	}
 
 	logSystem("Update completed for config %s and node has been successfully uncordoned", desiredConfigName)

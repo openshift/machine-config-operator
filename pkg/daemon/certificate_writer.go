@@ -98,7 +98,7 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 
 	controllerConfig, err := dn.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
-		return fmt.Errorf("could not get ControllerConfig: %v", err)
+		return fmt.Errorf("could not get ControllerConfig: %w", err)
 	}
 
 	if dn.node == nil {
@@ -148,7 +148,7 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 					if kcBytes != nil {
 						err = yaml.Unmarshal(kcBytes, &onDiskKC)
 						if err != nil {
-							return fmt.Errorf("could not unmarshal kubeconfig into struct. Data: %s, Error: %v", string(kcBytes), err)
+							return fmt.Errorf("could not unmarshal kubeconfig into struct. Data: %s, Error: %w", string(kcBytes), err)
 						}
 						kubeConfigDiff = !bytes.Equal(bytes.TrimSpace(onDiskKC.Clusters[0].Cluster.CertificateAuthorityData), bytes.TrimSpace(data))
 
@@ -217,7 +217,7 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 							onDiskKC.Clusters[0].Cluster.CertificateAuthorityData = []byte(strings.Join(fullCA, ""))
 							newData, err = yaml.Marshal(onDiskKC)
 							if err != nil {
-								return fmt.Errorf("could not marshal kubeconfig into bytes. Error: %v", err)
+								return fmt.Errorf("could not marshal kubeconfig into bytes. Error: %w", err)
 							}
 
 							pathToData[kubeConfigPath] = newData
@@ -303,7 +303,7 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 				klog.Warningf("Failed to get kubeconfig file: %v", err)
 				return err
 			} else if err != nil {
-				return fmt.Errorf("unexpected error reading kubeconfig file, %v", err)
+				return fmt.Errorf("unexpected error reading kubeconfig file, %w", err)
 			}
 			kubeletKC := clientcmdv1.Config{}
 			err = yaml.Unmarshal(f, &kubeletKC)
@@ -314,7 +314,7 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 			kubeletKC.Clusters[0].Cluster.CertificateAuthorityData = onDiskKC.Clusters[0].Cluster.CertificateAuthorityData
 			newData, err := yaml.Marshal(kubeletKC)
 			if err != nil {
-				return fmt.Errorf("could not marshal kubeconfig into bytes. Error: %v", err)
+				return fmt.Errorf("could not marshal kubeconfig into bytes. Error: %w", err)
 			}
 			filesToWrite := make(map[string][]byte)
 			filesToWrite["/var/lib/kubelet/kubeconfig"] = newData
@@ -352,7 +352,7 @@ func (dn *Daemon) syncInternalRegistryPullSecrets(controllerConfig *mcfgv1.Contr
 	if controllerConfig == nil {
 		cfg, err := dn.ccLister.Get(ctrlcommon.ControllerConfigName)
 		if err != nil {
-			return fmt.Errorf("could not get ControllerConfig: %v", err)
+			return fmt.Errorf("could not get ControllerConfig: %w", err)
 		}
 
 		controllerConfig = cfg

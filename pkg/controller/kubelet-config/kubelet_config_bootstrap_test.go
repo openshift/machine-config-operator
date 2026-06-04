@@ -188,7 +188,7 @@ func TestGenerateDefaultManagedKeyKubelet(t *testing.T) {
 			},
 			masterPool,
 			"",
-			fmt.Errorf("Error found multiple KubeletConfigs targeting MachineConfigPool master. Please apply only one KubeletConfig manifest for each pool during installation"),
+			fmt.Errorf("error found multiple KubeletConfigs targeting MachineConfigPool master. Please apply only one KubeletConfig manifest for each pool during installation"),
 		},
 	} {
 		res, err := generateBootstrapManagedKeyKubelet(tc.pool, managedKeyExist)

@@ -76,7 +76,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		waitErr := wait.PollUntilContextTimeout(context.TODO(), 1*time.Minute, 15*time.Minute, immediate, func(_ context.Context) (bool, error) {
 			logs, err := mcc.GetFilteredLogsAsList(workerNode.GetName() + ".*Drain failed")
 			if err != nil {
-				return false, fmt.Errorf("Error getting filtered logs for node %s from %v: %w", workerNode.GetName(), mcc, err)
+				return false, fmt.Errorf("error getting filtered logs for node %s from %v: %w", workerNode.GetName(), mcc, err)
 			}
 			if len(logs) > 2 {
 				// Get only 3 lines to avoid flooding the test logs, ignore the rest if any.
@@ -100,7 +100,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		lWaitErr := wait.PollUntilContextTimeout(context.TODO(), 1*time.Minute, 15*time.Minute, immediate, func(_ context.Context) (bool, error) {
 			logs, err := mcc.GetFilteredLogsAsList(workerNode.GetName() + ".*Drain has been failing for more than 10 minutes. Waiting 5 minutes")
 			if err != nil {
-				return false, fmt.Errorf("Error getting filtered logs for node %s from %v: %w", workerNode.GetName(), mcc, err)
+			return false, fmt.Errorf("error getting filtered logs for node %s from %v: %w", workerNode.GetName(), mcc, err)
 			}
 			if len(logs) > 1 {
 				// Get only 2 lines to avoid flooding the test logs, ignore the rest if any.

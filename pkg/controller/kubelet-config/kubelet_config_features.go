@@ -69,7 +69,7 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 	// Grab APIServer to populate TLS settings in the default kubelet config
 	apiServer, err := ctrl.apiserverLister.Get(ctrlcommon.APIServerInstanceName)
 	if err != nil && !errors.IsNotFound(err) {
-		return fmt.Errorf("could not get the TLSSecurityProfile from %v: %v", ctrlcommon.APIServerInstanceName, err)
+		return fmt.Errorf("could not get the TLSSecurityProfile from %v: %w", ctrlcommon.APIServerInstanceName, err)
 	}
 
 	for _, pool := range mcpPools {
@@ -132,7 +132,7 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 func (ctrl *Controller) enqueueFeature(feat *osev1.FeatureGate) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(feat)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %w", feat, err))
+		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %w", feat, err))
 		return
 	}
 	ctrl.featureQueue.Add(key)
@@ -158,12 +158,12 @@ func (ctrl *Controller) deleteFeature(obj interface{}) {
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
 		if !ok {
-			utilruntime.HandleError(fmt.Errorf("Couldn't get object from tombstone %#v", obj))
+			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
 			return
 		}
 		features, ok = tombstone.Obj.(*osev1.FeatureGate)
 		if !ok {
-			utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a KubeletConfig %#v", obj))
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a KubeletConfig %#v", obj))
 			return
 		}
 	}

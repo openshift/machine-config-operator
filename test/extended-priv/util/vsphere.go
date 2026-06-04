@@ -307,39 +307,39 @@ func GetVSphereConnectionInfo(oc *CLI) (*VSphereConnectionInfo, error) {
 	var info VSphereConnectionInfo
 	failureDomain, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("infrastructure", "cluster", "-o", "jsonpath={.spec.platformSpec.vsphere.failureDomains[0]}").Output()
 	if err != nil {
-		return nil, fmt.Errorf("Cannot get the failureDomain from the infrastructure resource: %w", err)
+		return nil, fmt.Errorf("cannot get the failureDomain from the infrastructure resource: %w", err)
 	}
 	if failureDomain == "" {
-		return nil, fmt.Errorf("Empty failure domain in the infrastructure resource")
+		return nil, fmt.Errorf("empty failure domain in the infrastructure resource")
 	}
 
 	gserver := gjson.Get(failureDomain, "server")
 	if !gserver.Exists() {
-		return nil, fmt.Errorf("Cannot get the server value from failureDomain")
+		return nil, fmt.Errorf("cannot get the server value from failureDomain")
 	}
 	info.Server = gserver.String()
 
 	gdataCenter := gjson.Get(failureDomain, "topology.datacenter")
 	if !gdataCenter.Exists() {
-		return nil, fmt.Errorf("Cannot get the data center value from failureDomain")
+		return nil, fmt.Errorf("cannot get the data center value from failureDomain")
 	}
 	info.DataCenter = gdataCenter.String()
 
 	gdataStore := gjson.Get(failureDomain, "topology.datastore")
 	if !gdataStore.Exists() {
-		return nil, fmt.Errorf("Cannot get the data store value from failureDomain")
+		return nil, fmt.Errorf("cannot get the data store value from failureDomain")
 	}
 	info.DataStore = gdataStore.String()
 
 	gresourcePool := gjson.Get(failureDomain, "topology.resourcePool")
 	if !gresourcePool.Exists() {
-		return nil, fmt.Errorf("Cannot get the resourcepool value from failureDomain")
+		return nil, fmt.Errorf("cannot get the resourcepool value from failureDomain")
 	}
 	info.ResourcePool = gresourcePool.String()
 
 	gnetwork := gjson.Get(failureDomain, "topology.networks.0")
 	if !gnetwork.Exists() {
-		return nil, fmt.Errorf("Cannot get the network value from failureDomain")
+		return nil, fmt.Errorf("cannot get the network value from failureDomain")
 	}
 	info.Network = gnetwork.String()
 
@@ -357,7 +357,7 @@ func GetVSphereConnectionInfo(oc *CLI) (*VSphereConnectionInfo, error) {
 	for k, vb64 := range dataMap {
 		v, decErr := base64.StdEncoding.DecodeString(vb64)
 		if decErr != nil {
-			return nil, fmt.Errorf("Cannot decode secret value for key %s: %w", k, decErr)
+			return nil, fmt.Errorf("cannot decode secret value for key %s: %w", k, decErr)
 		}
 		if strings.Contains(k, "username") {
 			info.User = string(v)
@@ -368,10 +368,10 @@ func GetVSphereConnectionInfo(oc *CLI) (*VSphereConnectionInfo, error) {
 	}
 
 	if info.User == "" {
-		return nil, fmt.Errorf("The vsphere user is empty")
+		return nil, fmt.Errorf("the vsphere user is empty")
 	}
 	if info.Password == "" {
-		return nil, fmt.Errorf("The vsphere password is empty")
+		return nil, fmt.Errorf("the vsphere password is empty")
 	}
 
 	return &info, nil

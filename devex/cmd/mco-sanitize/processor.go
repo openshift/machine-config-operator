@@ -62,7 +62,7 @@ func (p *FileProcessorImpl) Process(_ context.Context, path string) (changed boo
 func writeOutput(outputWriter io.Writer, outputContent interface{}, marshaller contentMarshaler) error {
 	encoded, err := marshaller(outputContent)
 	if err != nil {
-		return fmt.Errorf("could not encode redacted data back to the original format: %v", err)
+		return fmt.Errorf("could not encode redacted data back to the original format: %w", err)
 	}
 
 	if _, err = outputWriter.Write(encoded); err != nil {

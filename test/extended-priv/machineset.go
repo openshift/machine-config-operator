@@ -275,7 +275,7 @@ func (ms MachineSet) GetArchitecture() (architecture.Architecture, error) {
 		}
 
 		if len(nodes) == 0 {
-			return architecture.UNKNOWN, fmt.Errorf("Machineset %s has no replicas, so we cannot get the architecture from any existing node", ms.GetName())
+			return architecture.UNKNOWN, fmt.Errorf("machineset %s has no replicas, so we cannot get the architecture from any existing node", ms.GetName())
 		}
 
 		narch, err := nodes[0].GetArchitecture()
@@ -393,7 +393,7 @@ func (msl *MachineSetList) GetReplicas(comparison string, replicas int) ([]*Mach
 	}
 
 	if !validComparisson {
-		return nil, fmt.Errorf("The provided comparison %s is not in the allowed comparisons list %s",
+		return nil, fmt.Errorf("the provided comparison %s is not in the allowed comparisons list %s",
 			comparison, allowedComparisson)
 	}
 
@@ -503,7 +503,7 @@ func convertUserDataToNewVersion(userData, newIgnitionVersion string) (string, e
 	currentIgnitionVersionResult := gjson.Get(userData, "ignition.version")
 	if !currentIgnitionVersionResult.Exists() || currentIgnitionVersionResult.String() == "" {
 		logger.Debugf("Could not get ignition version from ignition userData: %s", userData)
-		return "", fmt.Errorf("Could not get ignition version from ignition userData. Enable debug GINKGO_TEST_ENABLE_DEBUG_LOG to get more info")
+		return "", fmt.Errorf("could not get ignition version from ignition userData. Enable debug GINKGO_TEST_ENABLE_DEBUG_LOG to get more info")
 	}
 	currentIgnitionVersion := currentIgnitionVersionResult.String()
 
@@ -542,7 +542,7 @@ func ConvertUserDataIgnition3ToIgnition2(ignition3 string) (string, error) {
 	merge := gjson.Get(ignition3, "ignition.config.merge")
 	if !merge.Exists() {
 		logger.Debugf("Could not find the 'merge' information in the ignition3 ignition config: %s", ignition3)
-		return "", fmt.Errorf("Could not find the 'merge' information in the ignition3 ignition config. Enable debug GINKGO_TEST_ENABLE_DEBUG_LOG to get more info")
+		return "", fmt.Errorf("could not find the 'merge' information in the ignition3 ignition config. Enable debug GINKGO_TEST_ENABLE_DEBUG_LOG to get more info")
 	}
 	ignition2, err = sjson.SetRaw(ignition2, "ignition.config.append", merge.String())
 	if err != nil {
@@ -630,7 +630,7 @@ func GCPGetMachineSetBootDiskIndex(ms MachineSet) (int, error) {
 	// Get the disks array from the MachineSet spec
 	disksJSON, err := ms.Get(`{.spec.template.spec.providerSpec.value.disks}`)
 	if err != nil {
-		return -1, fmt.Errorf("Failed to get disks array: %v", err)
+		return -1, fmt.Errorf("failed to get disks array: %v", err)
 	}
 
 	// Parse the disks array and find the boot disk
@@ -642,7 +642,7 @@ func GCPGetMachineSetBootDiskIndex(ms MachineSet) (int, error) {
 		}
 	}
 
-	return -1, fmt.Errorf("No boot disk found in disks array (no disk with boot: true)")
+	return -1, fmt.Errorf("no boot disk found in disks array (no disk with boot: true)")
 }
 
 // AllNodesUpdated returns true if all nodes in this machineset are updated
@@ -673,7 +673,7 @@ func GetScalableMachineSet(oc *exutil.CLI) (*MachineSet, error) {
 	}
 
 	if len(machinesets) == 0 {
-		return nil, fmt.Errorf("There is no machineset that can be used to scale nodes safely")
+		return nil, fmt.Errorf("there is no machineset that can be used to scale nodes safely")
 	}
 
 	return machinesets[0], nil

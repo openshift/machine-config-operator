@@ -279,7 +279,7 @@ func MigrateKernelArgsIfNecessary(conf *ign3types.Config, mc *mcfgv1.MachineConf
 	if version != nil && version.LessThan(*semver.New("3.3.0")) {
 		// we're converting to a version that doesn't support kargs, so we need to stuff them in machineconfig
 		if len(conf.KernelArguments.ShouldNotExist) > 0 {
-			return fmt.Errorf("Can't serve version %s with ignition KernelArguments.ShouldNotExist populated", version)
+			return fmt.Errorf("can't serve version %s with ignition KernelArguments.ShouldNotExist populated", version)
 		}
 
 		for _, karg := range conf.KernelArguments.ShouldExist {

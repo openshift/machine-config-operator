@@ -84,7 +84,7 @@ func (fr *FakeIRIRegistry) Start() error {
 func (fr *FakeIRIRegistry) newTLSServer(handler http.HandlerFunc) error {
 	listener, err := net.Listen("tcp", "127.0.0.1:22625")
 	if err != nil {
-		return fmt.Errorf("failed to bind port: %v", err)
+		return fmt.Errorf("failed to bind port: %w", err)
 	}
 	fr.server = httptest.NewUnstartedServer(handler)
 	fr.server.Listener = listener

@@ -340,12 +340,12 @@ func (ctrl *OSBuildController) deleteMachineOSConfig(cur interface{}) {
 	if !ok {
 		tombstone, ok := cur.(cache.DeletedFinalStateUnknown)
 		if !ok {
-			utilruntime.HandleError(fmt.Errorf("Couldn't get object from tombstone %#v", cur))
+			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", cur))
 			return
 		}
 		mosc, ok = tombstone.Obj.(*mcfgv1.MachineOSConfig)
 		if !ok {
-			utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a MachineOSConfig %#v", cur))
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a MachineOSConfig %#v", cur))
 			return
 		}
 	}

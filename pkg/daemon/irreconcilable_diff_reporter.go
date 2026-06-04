@@ -241,7 +241,7 @@ func (r *IrreconcilableReporterImpl) CheckReportIrreconcilableDifferences(
 
 	diffs, err := r.diffGenerator.GenerateReport(targetMachineConfig)
 	if err != nil {
-		return fmt.Errorf("error generating the irreconcilable differences list of changes. %v", err)
+		return fmt.Errorf("error generating the irreconcilable differences list of changes. %w", err)
 	}
 	mcNode.Status.IrreconcilableChanges = diffs
 

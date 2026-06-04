@@ -93,7 +93,7 @@ func (dn *Daemon) performDrain() error {
 
 	// TODO (jerzhang): definitely don't have to block here, but as an initial PoC, this is easier
 	if err := dn.nodeWriter.SetDesiredDrainer(desiredDrainAnnotationValue); err != nil {
-		return fmt.Errorf("Could not set drain annotation: %w", err)
+		return fmt.Errorf("could not set drain annotation: %w", err)
 	}
 
 	ctx := context.TODO()
@@ -116,7 +116,7 @@ func (dn *Daemon) performDrain() error {
 			return errors.New(failMsg)
 
 		}
-		return fmt.Errorf("Something went wrong while attempting to drain node: %v", err)
+		return fmt.Errorf("something went wrong while attempting to drain node: %w", err)
 	}
 
 	logSystem("drain complete")

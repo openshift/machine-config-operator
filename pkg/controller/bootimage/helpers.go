@@ -111,7 +111,7 @@ func upgradeStubIgnitionIfRequired(secretName string, secretClient clientset.Int
 		klog.Infof("Out of date version=%s stub Ignition detected in %s, attempting upgrade", version, secret.Name)
 		userDataIgnUpgraded, err := ctrlcommon.ParseAndConvertConfig(userData)
 		if err != nil {
-			return fmt.Errorf("converting ignition stub failed: %v", err)
+			return fmt.Errorf("converting ignition stub failed: %w", err)
 		}
 		klog.Infof("ignition stub upgrade to %s successful", userDataIgnUpgraded.Ignition.Version)
 		// Annotate the secret if an Ignition upgrade took place

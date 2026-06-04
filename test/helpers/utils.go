@@ -524,7 +524,7 @@ func GetMonitoringToken(_ *testing.T, cs *framework.ClientSet) (string, error) {
 			metav1.CreateOptions{},
 		)
 	if err != nil {
-		return "", fmt.Errorf("Could not request openshift-monitoring token")
+		return "", fmt.Errorf("could not request openshift-monitoring token")
 	}
 	return token.Status.Token, nil
 }
@@ -620,12 +620,12 @@ func ForceImageRegistryCertRotationCertificateRotation(cs *framework.ClientSet) 
 func GetKubeletCABundleFromConfigmap(cs *framework.ClientSet) (string, error) {
 	certBundle, err := cs.ConfigMaps("openshift-config-managed").Get(context.TODO(), "kube-apiserver-client-ca", metav1.GetOptions{})
 	if err != nil {
-		return "", fmt.Errorf("Could not get in-cluster kube-apiserver-client-ca configmap")
+		return "", fmt.Errorf("could not get in-cluster kube-apiserver-client-ca configmap")
 	}
 	if cert, ok := certBundle.Data["ca-bundle.crt"]; ok {
 		return cert, nil
 	}
-	return "", fmt.Errorf("Could not find ca-bundle")
+	return "", fmt.Errorf("could not find ca-bundle")
 }
 
 // Applies a given label to a node and returns an unlabel function.

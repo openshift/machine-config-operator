@@ -567,7 +567,7 @@ type manifest struct {
 // UnmarshalJSON unmarshals bytes of single kubernetes object to manifest.
 func (m *manifest) UnmarshalJSON(in []byte) error {
 	if m == nil {
-		return errors.New("Manifest: UnmarshalJSON on nil pointer")
+		return errors.New("manifest: UnmarshalJSON on nil pointer")
 	}
 
 	// This happens when marshalling

@@ -325,7 +325,7 @@ func getManagedKeyCtrCfg(pool *mcfgv1.MachineConfigPool, client mcfgclientset.In
 			if err != nil {
 				key, err := ctrlcommon.GetManagedKey(pool, nil, managedContainerRuntimeConfigKeyPrefix, "containerruntime", getManagedKeyCtrCfgDeprecated(pool))
 				if err != nil {
-					klog.Infof("skipping error: %v", fmt.Errorf("error generating managedKey for suffix %s: %v", key, err))
+					klog.Infof("skipping error: %v", fmt.Errorf("error generating managedKey for suffix %s: %w", key, err))
 					continue
 				}
 				if f != key {
@@ -1040,13 +1040,13 @@ func policyItemFromSpec(policy apicfgv1.ImageSigstoreVerificationPolicy) (signat
 		case apicfgv1.IdentityMatchPolicyRemapIdentity:
 			identity, err := signature.NewPRMRemapIdentity(string(policy.SignedIdentity.PolicyMatchRemapIdentity.Prefix), string(policy.SignedIdentity.PolicyMatchRemapIdentity.SignedPrefix))
 			if err != nil {
-				return nil, fmt.Errorf("error getting signedIdentity for %s: %v", apicfgv1.IdentityMatchPolicyRemapIdentity, err)
+				return nil, fmt.Errorf("error getting signedIdentity for %s: %w", apicfgv1.IdentityMatchPolicyRemapIdentity, err)
 			}
 			signedIdentity = identity
 		case apicfgv1.IdentityMatchPolicyExactRepository:
 			identity, err := signature.NewPRMExactRepository(string(policy.SignedIdentity.PolicyMatchExactRepository.Repository))
 			if err != nil {
-				return nil, fmt.Errorf("error getting signedIdentity for %s: %v", apicfgv1.IdentityMatchPolicyExactRepository, err)
+				return nil, fmt.Errorf("error getting signedIdentity for %s: %w", apicfgv1.IdentityMatchPolicyExactRepository, err)
 			}
 			signedIdentity = identity
 		case apicfgv1.IdentityMatchPolicyMatchRepository:
@@ -1481,7 +1481,7 @@ func updateCredentialProviderConfig(credProviderConfigObject *credentialProvider
 
 	credProviderConfigsYaml, err := yaml.Marshal(credProviderConfigObject)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error marshalling credential provider config: %v", err)
+		return nil, nil, fmt.Errorf("error marshalling credential provider config: %w", err)
 	}
 
 	return credProviderConfigsYaml, conflictList, nil

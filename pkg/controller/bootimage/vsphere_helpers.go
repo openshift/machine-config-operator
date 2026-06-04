@@ -483,7 +483,7 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 			var vmMo mo.VirtualMachine
 			err = existingTemplateVM.Properties(ctx, existingTemplateVM.Reference(), nil, &vmMo)
 			if err != nil {
-				return "", false, fmt.Errorf("Unable to extract properties from existing Template VM: %w", err)
+				return "", false, fmt.Errorf("unable to extract properties from existing Template VM: %w", err)
 			}
 
 			if vmMo.Summary.Config.Product != nil {
@@ -503,11 +503,11 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 
 					ovaPath, err := cache.DownloadOva(ova)
 					if err != nil {
-						return "", false, fmt.Errorf("Failed to download %s: %w", ova.Location, err)
+						return "", false, fmt.Errorf("failed to download %s: %w", ova.Location, err)
 					}
 
 					if len(name) > 80 {
-						return "", false, fmt.Errorf("Length of VM template name `%s` exceeds the permitted limit of 80 characters", name)
+						return "", false, fmt.Errorf("length of VM template name `%s` exceeds the permitted limit of 80 characters", name)
 					}
 
 					diskType := getDiskTypeFromExistingVM(vmMo)

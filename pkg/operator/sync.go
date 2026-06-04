@@ -215,7 +215,7 @@ func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
 		// If there was no sync error for this function, attempt to clear degrade
 		updatedCO, err = optr.clearDegradedStatus(updatedCO, sf.name)
 		if err != nil {
-			return fmt.Errorf("error clearing degraded status: %v", err)
+			return fmt.Errorf("clearing degraded status: %w", err)
 		}
 	}
 
@@ -235,16 +235,16 @@ func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
 	// syncRequiredMachineConfigPools has done an update prior to this. In such a case,
 	// updateClusterOperatorStatus will refetch the Cluster Operator object before updating the new status.
 	if _, err := optr.updateClusterOperatorStatus(co, &updatedCO.Status, nil); err != nil {
-		return fmt.Errorf("error updating cluster operator status: %w", err)
+		return fmt.Errorf("updating cluster operator status: %w", err)
 	}
 
 	// Handle these errors after as CO status updates should have priority over this
 	if syncUpgradeableStatusErr != nil {
-		return fmt.Errorf("error syncingUpgradeableStatus: %w", syncUpgradeableStatusErr)
+		return fmt.Errorf("syncingUpgradeableStatus: %w", syncUpgradeableStatusErr)
 
 	}
 	if syncClusterFleetEvaluationErr != nil {
-		return fmt.Errorf("error updating cluster operator status: %w", syncClusterFleetEvaluationErr)
+		return fmt.Errorf("updating cluster operator status: %w", syncClusterFleetEvaluationErr)
 	}
 
 	if optr.inClusterBringup && syncErr.err == nil {
@@ -408,7 +408,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		return true, nil
 	}); err != nil {
 		errs := kubeErrs.NewAggregate([]error{err, lastErr})
-		return fmt.Errorf("error during operator version check: %w", errs)
+		return fmt.Errorf("during operator version check: %w", errs)
 	}
 
 	// handle image registry certificates.
@@ -498,7 +498,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 				}
 				_, err = optr.kubeClient.CoreV1().ConfigMaps("openshift-config-managed").Patch(context.TODO(), "merged-trusted-image-registry-ca", types.MergePatchType, patchBytes, metav1.PatchOptions{})
 				if err != nil {
-					return fmt.Errorf("Could not patch merged-trusted-image-registry-ca with data %s: %w", string(patchBytes), err)
+					return fmt.Errorf("could not patch merged-trusted-image-registry-ca with data %s: %w", string(patchBytes), err)
 				}
 				break
 			}
@@ -1045,7 +1045,7 @@ func (optr *Operator) safetySyncControllerConfig(config *renderConfig) error {
 	// we can't render a new one here, it won't succeed because the existing controller won't touch it
 	// and we'll time out waiting.
 	if existingCc.Annotations[daemonconsts.GeneratedByVersionAnnotationKey] != version.Raw {
-		return fmt.Errorf("Our version (%s) differs from controllerconfig (%s), can't do 'safety' controllerconfig sync until controller is updated", version.Raw, existingCc.Annotations[daemonconsts.GeneratedByVersionAnnotationKey])
+		return fmt.Errorf("our version (%s) differs from controllerconfig (%s), can't do 'safety' controllerconfig sync until controller is updated", version.Raw, existingCc.Annotations[daemonconsts.GeneratedByVersionAnnotationKey])
 	}
 
 	// If we made it here, we should be able to sync controllerconfig, and the existing controller should handle it
@@ -1131,21 +1131,21 @@ func (optr *Operator) syncControllerConfig(config *renderConfig) error {
 				cmNew.BinaryData = binData
 				cmMarshal, err := json.Marshal(mcoCM)
 				if err != nil {
-					return fmt.Errorf("could not marshal old configmap data. Err: %v ", err)
+					return fmt.Errorf("could not marshal old configmap data: %w", err)
 				}
 				// new mco CM Data
 				newCMMarshal, err := json.Marshal(cmNew)
 				if err != nil {
-					return fmt.Errorf("could not marshal new configmap data. Data: %s Err: %v ", string(data), err)
+					return fmt.Errorf("could not marshal new configmap data: %w", err)
 				}
 				// patch mco CM
 				patchBytes, err := jsonmergepatch.CreateThreeWayJSONMergePatch(cmMarshal, newCMMarshal, cmMarshal)
 				if err != nil {
-					return fmt.Errorf("Could not create a three way json merge patch: %w", err)
+					return fmt.Errorf("could not create a three way json merge patch: %w", err)
 				}
 				_, err = optr.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Patch(context.TODO(), "kubeconfig-data", types.MergePatchType, patchBytes, metav1.PatchOptions{})
 				if err != nil {
-					return fmt.Errorf("Could not patch kubeconfig-data with data %s: %w", string(patchBytes), err)
+					return fmt.Errorf("could not patch kubeconfig-data with data %s: %w", string(patchBytes), err)
 				}
 				editCCAnno = true
 			} else if getErr != nil {
@@ -1154,7 +1154,7 @@ func (optr *Operator) syncControllerConfig(config *renderConfig) error {
 				cmNew.BinaryData = binData
 				_, err := optr.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Create(context.TODO(), &cmNew, metav1.CreateOptions{})
 				if err != nil {
-					return fmt.Errorf("Could not make kubeconfig-data CM, %v", err)
+					return fmt.Errorf("could not make kubeconfig-data CM, %w", err)
 				}
 				editCCAnno = true
 			}
@@ -1565,7 +1565,7 @@ func (optr *Operator) reconcileGlobalPullSecretCopy(layeredMCPs []*mcfgv1.Machin
 	// Atleast one pool is opted-in, let's create or update the copy if needed. First, grab the global pull secret.
 	globalPullSecret, err := optr.ocSecretLister.Secrets(ctrlcommon.OpenshiftConfigNamespace).Get("pull-secret")
 	if err != nil {
-		return fmt.Errorf("error fetching cluster pull secret: %w", err)
+		return fmt.Errorf("fetching cluster pull secret: %w", err)
 	}
 
 	// Create a clone of clusterPullSecret, and modify it to be in the MCO namespace.
@@ -1741,7 +1741,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig, co *c
 	// Calculate total timeout for "required"(aka master) nodes in the pool.
 	pools, err := optr.mcpLister.List(labels.Everything())
 	if err != nil {
-		return fmt.Errorf("error during syncRequiredMachineConfigPools: %w", err)
+		return fmt.Errorf("during syncRequiredMachineConfigPools: %w", err)
 	}
 
 	requiredMachineCount := 0
@@ -1788,7 +1788,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig, co *c
 
 			degraded := isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolDegraded)
 			if degraded {
-				lastErr = fmt.Errorf("error MachineConfigPool %s is not ready, retrying. Status: (pool degraded: %v total: %d, ready %d, updated: %d, unavailable: %d, reason: %s)", pool.Name, degraded, pool.Status.MachineCount, pool.Status.ReadyMachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount, getPoolStatusConditionMessage(pool, mcfgv1.MachineConfigPoolDegraded))
+				lastErr = fmt.Errorf("MachineConfigPool %s is not ready, retrying. Status: (pool degraded: %v total: %d, ready %d, updated: %d, unavailable: %d, reason: %s)", pool.Name, degraded, pool.Status.MachineCount, pool.Status.ReadyMachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount, getPoolStatusConditionMessage(pool, mcfgv1.MachineConfigPoolDegraded))
 				klog.Errorf("Error syncing Required MachineConfigPools: %q", lastErr)
 				newCO := co.DeepCopy()
 				syncerr := optr.syncUpgradeableStatus(newCO)
@@ -1835,7 +1835,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig, co *c
 					isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolUpdated) {
 					continue
 				}
-				lastErr = fmt.Errorf("error required MachineConfigPool %s is not ready, retrying. Status: (total: %d, ready %d, updated: %d, unavailable: %d, degraded: %d)", pool.Name, pool.Status.MachineCount, pool.Status.ReadyMachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount, pool.Status.DegradedMachineCount)
+				lastErr = fmt.Errorf("required MachineConfigPool %s is not ready, retrying. Status: (total: %d, ready %d, updated: %d, unavailable: %d, degraded: %d)", pool.Name, pool.Status.MachineCount, pool.Status.ReadyMachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount, pool.Status.DegradedMachineCount)
 				newCO := co.DeepCopy()
 				syncerr := optr.syncUpgradeableStatus(newCO)
 				if syncerr != nil {
@@ -1850,7 +1850,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig, co *c
 					if isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolUpdated) {
 						return false, fmt.Errorf("the required MachineConfigPool %s was paused with no pending updates; no further syncing will occur until it is unpaused", pool.Name)
 					}
-					return false, fmt.Errorf("error required MachineConfigPool %s is paused and cannot sync until it is unpaused", pool.Name)
+					return false, fmt.Errorf("required MachineConfigPool %s is paused and cannot sync until it is unpaused", pool.Name)
 				}
 				return false, nil
 			}
@@ -1860,7 +1860,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig, co *c
 		if wait.Interrupted(err) {
 			klog.Errorf("Error syncing Required MachineConfigPools: %q", lastErr)
 			errs := kubeErrs.NewAggregate([]error{err, lastErr})
-			return fmt.Errorf("error during syncRequiredMachineConfigPools: %w", errs)
+			return fmt.Errorf("during syncRequiredMachineConfigPools: %w", errs)
 		}
 		return err
 	}
@@ -1895,7 +1895,7 @@ func (optr *Operator) waitForDeploymentRollout(resource *appsv1.Deployment) erro
 		if err != nil {
 			// Do not return error here, as we could be updating the API Server itself, in which case we
 			// want to continue waiting.
-			lastErr = fmt.Errorf("error getting Deployment %s during rollout: %w", resource.Name, err)
+			lastErr = fmt.Errorf("getting Deployment %s during rollout: %w", resource.Name, err)
 			return false, nil
 		}
 
@@ -1911,7 +1911,7 @@ func (optr *Operator) waitForDeploymentRollout(resource *appsv1.Deployment) erro
 	}); err != nil {
 		if wait.Interrupted(err) {
 			errs := kubeErrs.NewAggregate([]error{err, lastErr})
-			return fmt.Errorf("error during waitForDeploymentRollout: %w", errs)
+			return fmt.Errorf("during waitForDeploymentRollout: %w", errs)
 		}
 		return err
 	}
@@ -1932,7 +1932,7 @@ func (optr *Operator) waitForDaemonsetRollout(resource *appsv1.DaemonSet) error 
 		if err != nil {
 			// Do not return error here, as we could be updating the API Server itself, in which case we
 			// want to continue waiting.
-			lastErr = fmt.Errorf("error getting Daemonset %s during rollout: %w", resource.Name, err)
+			lastErr = fmt.Errorf("getting Daemonset %s during rollout: %w", resource.Name, err)
 			return false, nil
 		}
 
@@ -1948,7 +1948,7 @@ func (optr *Operator) waitForDaemonsetRollout(resource *appsv1.DaemonSet) error 
 	}); err != nil {
 		if wait.Interrupted(err) {
 			errs := kubeErrs.NewAggregate([]error{err, lastErr})
-			return fmt.Errorf("error during waitForDaemonsetRollout: %w", errs)
+			return fmt.Errorf("during waitForDaemonsetRollout: %w", errs)
 		}
 		return err
 	}
@@ -1968,7 +1968,7 @@ func (optr *Operator) waitForControllerConfigToBeCompleted(resource *mcfgv1.Cont
 	}); err != nil {
 		if wait.Interrupted(err) {
 			errs := kubeErrs.NewAggregate([]error{err, lastErr})
-			return fmt.Errorf("error during waitForControllerConfigToBeCompleted: %w", errs)
+			return fmt.Errorf("during waitForControllerConfigToBeCompleted: %w", errs)
 		}
 		return err
 	}
@@ -2123,12 +2123,12 @@ func (optr *Operator) getGlobalConfig() (*configv1.Infrastructure, *configv1.Net
 	infra = infra.DeepCopy()
 	err = setGVK(infra, configclientscheme.Scheme)
 	if err != nil {
-		return nil, nil, nil, nil, nil, fmt.Errorf("Failed setting gvk for infra object: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("failed setting gvk for infra object: %w", err)
 	}
 	dns = dns.DeepCopy()
 	err = setGVK(dns, configclientscheme.Scheme)
 	if err != nil {
-		return nil, nil, nil, nil, nil, fmt.Errorf("Failed setting gvk for dns object: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("failed setting gvk for dns object: %w", err)
 	}
 
 	return infra, network, proxy, dns, apiServer, nil
@@ -2268,7 +2268,7 @@ func (optr *Operator) getImageRegistryPullSecrets() ([]byte, error) {
 	// Fetch the cluster pull secret
 	clusterPullSecret, err := optr.ocSecretLister.Secrets(ctrlcommon.OpenshiftConfigNamespace).Get("pull-secret")
 	if err != nil {
-		return nil, fmt.Errorf("error fetching cluster pull secret: %w", err)
+		return nil, fmt.Errorf("fetching cluster pull secret: %w", err)
 	}
 	if clusterPullSecret.Type != corev1.SecretTypeDockerConfigJson {
 		return nil, fmt.Errorf("expected secret type %s found %s", corev1.SecretTypeDockerConfigJson, clusterPullSecret.Type)
@@ -2354,7 +2354,7 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 			// This causes a re-sync and allows the cache for the lister to refresh.
 			return nil
 		}
-		return fmt.Errorf("grabbing MachineConfiguration/%s CR failed: %v", ctrlcommon.MCOOperatorKnobsObjectName, err)
+		return fmt.Errorf("grabbing MachineConfiguration/%s CR failed: %w", ctrlcommon.MCOOperatorKnobsObjectName, err)
 	}
 
 	// Set the log level to the value defined in the MachineConfiguration object
@@ -2399,7 +2399,7 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 			annoPatch := fmt.Sprintf(`{"metadata": {"annotations": {"%s": "%s"}}}`, ctrlcommon.BootImageOptedInAnnotation, metav1.Now().Format(time.RFC3339))
 			mcop, err = optr.mcopClient.OperatorV1().MachineConfigurations().Patch(context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, types.MergePatchType, []byte(annoPatch), metav1.PatchOptions{})
 			if err != nil {
-				return fmt.Errorf("failed to apply MachineConfiguration bootimage updates opt-in annotation : %v", err)
+				return fmt.Errorf("failed to apply MachineConfiguration bootimage updates opt-in annotation : %w", err)
 			}
 		}
 		mcop.Status = *newMachineConfigurationStatus
@@ -2415,7 +2415,7 @@ func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.Clus
 			_, err = optr.mcopClient.OperatorV1().MachineConfigurations().UpdateStatus(context.TODO(), mcop, metav1.UpdateOptions{})
 			return err
 		}); err != nil {
-			return fmt.Errorf("error updating MachineConfiguration status: %v", err)
+			return fmt.Errorf("updating MachineConfiguration status: %w", err)
 		}
 	}
 

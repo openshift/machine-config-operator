@@ -28,7 +28,7 @@ func (matcher *conditionMatcher) Match(actual interface{}) (success bool, err er
 	resource, ok := actual.(ResourceInterface)
 	if !ok {
 		logger.Errorf("Wrong type. Matcher expects a type implementing 'ResourceInterface'")
-		return false, fmt.Errorf(`Wrong type. Matcher expects a type "ResourceInterface" in test case %v`, g.CurrentSpecReport().FullText())
+		return false, fmt.Errorf(`wrong type. Matcher expects a type "ResourceInterface" in test case %v`, g.CurrentSpecReport().FullText())
 	}
 
 	// Extract the value of the condition that we want to check
@@ -38,7 +38,7 @@ func (matcher *conditionMatcher) Match(actual interface{}) (success bool, err er
 	}
 
 	if matcher.currentCondition == "" {
-		return false, fmt.Errorf(`Condition type "%s" cannot be found in resource %s in test case %v`, matcher.conditionType, resource, g.CurrentSpecReport().FullText())
+		return false, fmt.Errorf(`condition type "%s" cannot be found in resource %s in test case %v`, matcher.conditionType, resource, g.CurrentSpecReport().FullText())
 	}
 
 	var conditionMap map[string]string
@@ -49,7 +49,7 @@ func (matcher *conditionMatcher) Match(actual interface{}) (success bool, err er
 
 	matcher.value, ok = conditionMap[matcher.field]
 	if !ok {
-		return false, fmt.Errorf(`Condition field "%s" cannot be found in condition %s for resource %s in test case %v`,
+		return false, fmt.Errorf(`condition field "%s" cannot be found in condition %s for resource %s in test case %v`,
 			matcher.field, matcher.conditionType, resource, g.CurrentSpecReport().FullText())
 	}
 

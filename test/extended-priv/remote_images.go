@@ -35,7 +35,7 @@ func (ri RemoteImage) IsPinned() (bool, error) {
 	pinned := gjson.Get(stdout, "images.0.pinned")
 	if !pinned.Exists() {
 		logger.Infof("%s:%s", ri, stdout)
-		return false, fmt.Errorf("Could not get pinned information for %s", ri)
+		return false, fmt.Errorf("could not get pinned information for %s", ri)
 	}
 
 	return pinned.Bool(), nil

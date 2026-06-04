@@ -416,7 +416,7 @@ func (optr *Operator) GetAllManagedNodes(pools []*mcfgv1.MachineConfigPool) ([]*
 	for _, pool := range pools {
 		selector, err := metav1.LabelSelectorAsSelector(pool.Spec.NodeSelector)
 		if err != nil {
-			return nil, fmt.Errorf("label selector for pool %v failed %v", pool.Name, err)
+			return nil, fmt.Errorf("label selector for pool %v failed %w", pool.Name, err)
 		}
 		poolNodes, err := optr.nodeLister.List(selector)
 		if err != nil {
@@ -582,7 +582,7 @@ func isMachineConfigPoolConfigurationValid(pool *mcfgv1.MachineConfigPool, versi
 	}
 
 	if !ok {
-		return fmt.Errorf("Unable to access annotation %s for %s expected: %s", ctrlcommon.ReleaseImageVersionAnnotationKey, renderedMC.Name, releaseVersion)
+		return fmt.Errorf("unable to access annotation %s for %s expected: %s", ctrlcommon.ReleaseImageVersionAnnotationKey, renderedMC.Name, releaseVersion)
 	}
 
 	return nil
@@ -621,7 +621,7 @@ func checkBootImageControllerReady(mcop *opv1.MachineConfiguration) (bool, error
 	// If boot image controller is degraded, return Upgradable=false and an error
 	if meta.IsStatusConditionTrue(mcop.Status.Conditions, opv1.MachineConfigurationBootImageUpdateDegraded) {
 		degradedCondition := meta.FindStatusCondition(mcop.Status.Conditions, opv1.MachineConfigurationBootImageUpdateDegraded)
-		return false, fmt.Errorf("Boot image controller is degraded: %s", degradedCondition.Message)
+		return false, fmt.Errorf("boot image controller is degraded: %s", degradedCondition.Message)
 	}
 
 	// If boot image controller is still progressing or hasn't completed its first pass, return true for statusReady

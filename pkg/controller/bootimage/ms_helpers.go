@@ -32,14 +32,14 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) {
 	mcop, err := ctrl.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
 	if err != nil {
 		klog.Errorf("Failed to get MachineConfiguration: %v", err)
-		ctrl.updateConditions(reason, fmt.Errorf("failed to get MachineConfiguration while enqueueing MAPI MachineSets: %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.updateConditions(reason, fmt.Errorf("failed to get MachineConfiguration while enqueueing MAPI MachineSets: %w", err), opv1.MachineConfigurationBootImageUpdateDegraded)
 		return
 	}
 
 	machineManagerFound, machineResourceSelector, err := getMachineResourceSelectorFromMachineManagers(mcop.Status.ManagedBootImagesStatus.MachineManagers, opv1.MachineAPI, opv1.MachineSets)
 	if err != nil {
 		klog.Errorf("failed to create a machineset selector while enqueueing MAPI machineset %v", err)
-		ctrl.updateConditions(reason, fmt.Errorf("failed to create a machineset selector while enqueueing MAPI machineset %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.updateConditions(reason, fmt.Errorf("failed to create a machineset selector while enqueueing MAPI machineset %w", err), opv1.MachineConfigurationBootImageUpdateDegraded)
 		return
 	}
 	if !machineManagerFound {
@@ -54,7 +54,7 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) {
 	mapiMachineSets, err := ctrl.mapiMachineSetLister.List(machineResourceSelector)
 	if err != nil {
 		klog.Errorf("failed to fetch MachineSet list while enqueueing MAPI MachineSets %v", err)
-		ctrl.updateConditions(reason, fmt.Errorf("failed to fetch MachineSet list while enqueueing MAPI MachineSets %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.updateConditions(reason, fmt.Errorf("failed to fetch MachineSet list while enqueueing MAPI MachineSets %w", err), opv1.MachineConfigurationBootImageUpdateDegraded)
 		return
 	}
 
@@ -83,7 +83,7 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) {
 			ctrl.mapiStats.inProgress++
 		} else {
 			klog.Errorf("Error syncing MAPI MachineSet %v", err)
-			syncErrors = append(syncErrors, fmt.Errorf("error syncing MAPI MachineSet %s: %v", machineSet.Name, err))
+			syncErrors = append(syncErrors, fmt.Errorf("error syncing MAPI MachineSet %s: %w", machineSet.Name, err))
 			ctrl.mapiStats.erroredCount++
 		}
 		if patchSkipped {
@@ -140,7 +140,7 @@ func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet
 	// Fetch the ClusterVersion to determine if this is a multi-arch cluster
 	clusterVersion, err := ctrl.clusterVersionLister.Get("version")
 	if err != nil {
-		return false, fmt.Errorf("failed to fetch clusterversion during machineset sync: %v, defaulting to single-arch behavior", err)
+		return false, fmt.Errorf("failed to fetch clusterversion during machineset sync: %w", err)
 	}
 
 	// Fetch the architecture type of this machineset

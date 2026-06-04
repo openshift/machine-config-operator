@@ -224,7 +224,7 @@ func (ctrl *Controller) filterAPIServer(apiServer *configv1.APIServer) {
 	// to do them here again. Do a direct get call here in case the node config
 	// lister's cache is empty.
 	if nodeConfig, err := ctrl.configClient.ConfigV1().Nodes().Get(context.TODO(), ctrlcommon.ClusterNodeInstanceName, metav1.GetOptions{}); err != nil {
-		utilruntime.HandleError(fmt.Errorf("could not get NodeConfigs, err: %v", err))
+		utilruntime.HandleError(fmt.Errorf("could not get NodeConfigs, err: %w", err))
 	} else {
 		ctrl.enqueueNodeConfig(nodeConfig)
 	}
@@ -306,7 +306,7 @@ func (ctrl *Controller) deleteKubeletConfig(obj interface{}) {
 		}
 		cfg, ok = tombstone.Obj.(*mcfgv1.KubeletConfig)
 		if !ok {
-			utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a KubeletConfig %#v", obj))
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a KubeletConfig %#v", obj))
 			return
 		}
 	}
@@ -787,16 +787,16 @@ func machineConfigFeatureGatesMatchesOriginalFeatureGates(mc *mcfgv1.MachineConf
 func findMachineConfigKubeletConfig(mc *mcfgv1.MachineConfig) (*kubeletconfigv1beta1.KubeletConfiguration, error) {
 	file, err := findKubeletConfig(mc)
 	if err != nil {
-		return nil, fmt.Errorf("Error finding kubelet config: %v", err)
+		return nil, fmt.Errorf("error finding kubelet config: %w", err)
 	}
 	// Extract and decode the encoded data
 	decodedData, err := ctrlcommon.DecodeIgnitionFileContents(file.Contents.Source, file.Contents.Compression)
 	if err != nil {
-		return nil, fmt.Errorf("Error decoding actual kubelet config: %v", err)
+		return nil, fmt.Errorf("error decoding actual kubelet config: %w", err)
 	}
 	mckubeConfig, err := DecodeKubeletConfig(decodedData)
 	if err != nil {
-		return nil, fmt.Errorf("Error decoding actual kubelet config: %v", err)
+		return nil, fmt.Errorf("error decoding actual kubelet config: %w", err)
 	}
 	return mckubeConfig, nil
 }

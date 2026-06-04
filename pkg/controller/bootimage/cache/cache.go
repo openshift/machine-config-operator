@@ -24,7 +24,7 @@ const (
 func getFileHashBuffered(filePath string) (string, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
-		return "", fmt.Errorf("couldn't open file %v", err)
+		return "", fmt.Errorf("couldn't open file %w", err)
 	}
 	defer file.Close()
 
@@ -40,7 +40,7 @@ func getFileHashBuffered(filePath string) (string, error) {
 			break
 		}
 		if err != nil {
-			return "", fmt.Errorf("error reading file: %v", err)
+			return "", fmt.Errorf("error reading file: %w", err)
 		}
 	}
 
@@ -58,7 +58,7 @@ func getFileFromCache(fileName, cacheDir string) (string, string, error) {
 		klog.Infof("The file was found in cache: %v. Reusing...", filePath)
 		hash, err := getFileHashBuffered(filePath)
 		if err != nil {
-			return "", "", fmt.Errorf("error calculating SHA256 hash of filepath %v: %v", filePath, err)
+			return "", "", fmt.Errorf("error calculating SHA256 hash of filepath %v: %w", filePath, err)
 		}
 		return filePath, hash, nil
 	}

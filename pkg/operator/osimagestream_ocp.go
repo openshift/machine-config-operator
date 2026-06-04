@@ -58,7 +58,7 @@ func (optr *Operator) updateOSImageStream(existingOSImageStream *mcfgv1.OSImageS
 	currentDefault := existingOSImageStream.Status.DefaultStream
 	if currentDefault != requestedDefault {
 		if _, err := osimagestream.GetOSImageStreamSetByName(existingOSImageStream, requestedDefault); err != nil {
-			return fmt.Errorf("error syncing default OSImageStream with OSImageStream %s: %v", requestedDefault, err)
+			return fmt.Errorf("syncing default OSImageStream with OSImageStream %s: %w", requestedDefault, err)
 		}
 
 		// DeepCopy to avoid mutating the shared informer cache
@@ -68,7 +68,7 @@ func (optr *Operator) updateOSImageStream(existingOSImageStream *mcfgv1.OSImageS
 			MachineconfigurationV1().
 			OSImageStreams().
 			UpdateStatus(context.TODO(), osImageStream, metav1.UpdateOptions{}); err != nil {
-			return fmt.Errorf("error updating the default OSImageStream status: %w", err)
+			return fmt.Errorf("updating the default OSImageStream status: %w", err)
 		}
 
 		klog.Infof("OSImageStream default has changed from %s to %s", currentDefault, requestedDefault)
@@ -82,11 +82,11 @@ func (optr *Operator) buildOSImageStream(existingOSImageStream *mcfgv1.OSImageSt
 	// Get the release payload image from ClusterVersion
 	clusterVersion, err := osimagestream.GetClusterVersion(optr.clusterVersionLister)
 	if err != nil {
-		return fmt.Errorf("error getting cluster version for OSImageStream inspection: %w", err)
+		return fmt.Errorf("getting cluster version for OSImageStream inspection: %w", err)
 	}
 	image, err := osimagestream.GetReleasePayloadImage(clusterVersion)
 	if err != nil {
-		return fmt.Errorf("error getting the Release Image digest from the ClusterVersion for OSImageStream sync: %w", err)
+		return fmt.Errorf("getting the Release Image digest from the ClusterVersion for OSImageStream sync: %w", err)
 	}
 
 	// The original cluster version is used as a fallback to infer the default stream
@@ -139,7 +139,7 @@ func (optr *Operator) buildOSImageStream(existingOSImageStream *mcfgv1.OSImageSt
 			InstallVersion:        installVersion,
 		})
 	if err != nil {
-		return fmt.Errorf("error building the OSImageStream: %w", err)
+		return fmt.Errorf("building the OSImageStream: %w", err)
 	}
 
 	// Create or update the OSImageStream resource
@@ -296,7 +296,7 @@ func (optr *Operator) getExistingOSImageStream() (*mcfgv1.OSImageStream, error) 
 	osImageStream, err := optr.osImageStreamLister.Get(ctrlcommon.ClusterInstanceNameOSImageStream)
 	if err != nil {
 		if !apierrors.IsNotFound(err) {
-			return nil, fmt.Errorf("failed to retrieve existing OSImageStream: %v", err)
+			return nil, fmt.Errorf("failed to retrieve existing OSImageStream: %w", err)
 		}
 		return nil, nil
 	}

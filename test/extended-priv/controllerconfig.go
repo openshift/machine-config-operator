@@ -118,7 +118,7 @@ func (cc *ControllerConfig) GetImageRegistryBundleDataByFileName(fileName string
 
 	data, ok := certs[fileName]
 	if !ok {
-		return "", fmt.Errorf("There is no image registry bundle with file name %s", fileName)
+		return "", fmt.Errorf("there is no image registry bundle with file name %s", fileName)
 	}
 
 	return data, nil
@@ -133,7 +133,7 @@ func (cc *ControllerConfig) GetImageRegistryBundleUserDataByFileName(fileName st
 
 	data, ok := certs[fileName]
 	if !ok {
-		return "", fmt.Errorf("There is no image registry bundle with file name %s", fileName)
+		return "", fmt.Errorf("there is no image registry bundle with file name %s", fileName)
 	}
 
 	return data, nil

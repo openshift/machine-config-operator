@@ -109,7 +109,7 @@ func (mcc *Controller) GetRawLogs() (string, error) {
 		return "", err
 	}
 	if cachedPodName == "" {
-		err := fmt.Errorf("Cannot get controller pod name. Failed getting MCO controller logs")
+		err := fmt.Errorf("cannot get controller pod name. Failed getting MCO controller logs")
 		logger.Errorf("Error getting controller pod name. Error: %s", err)
 		return "", err
 	}
@@ -200,7 +200,7 @@ func (mcc *Controller) GetPreviousLogs() (string, error) {
 		return "", err
 	}
 	if cachedPodName == "" {
-		err := fmt.Errorf("Cannot get controller pod name. Failed getting MCO controller logs")
+		err := fmt.Errorf("cannot get controller pod name. Failed getting MCO controller logs")
 		logger.Errorf("Error getting controller pod name. Error: %s", err)
 		return "", err
 	}
