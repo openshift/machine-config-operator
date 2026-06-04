@@ -150,57 +150,82 @@ func reconcileGCPProviderSpec(streamData *stream.Stream, arch string, _ *osconfi
 	return patchRequired, false, newProviderSpec, nil
 }
 
-// reconcileAWSProviderSpec reconciles the AWS provider spec by updating AMIs
-// Returns whether a patch is required, the updated provider spec, and any error
+// reconcileAWSProviderSpec reconciles the AWS provider spec by updating AMIs.
+// Returns whether a patch is required, the updated provider spec, and any error.
 func reconcileAWSProviderSpec(streamData *stream.Stream, arch string, _ *osconfigv1.Infrastructure, providerSpec *machinev1beta1.AWSMachineProviderConfig, machineSetName string, secretClient clientset.Interface) (bool, bool, *machinev1beta1.AWSMachineProviderConfig, error) {
-
-	// Extract the region from the Placement field
+	ctx := context.TODO()
 	region := providerSpec.Placement.Region
 
-	// Use the GetAwsRegionImage function to find the correct AMI for the region and architecture
-	awsRegionImage, err := streamData.GetAwsRegionImage(arch, region)
-	if err != nil {
-		// On a region not found error, log and skip this MachineSet
-		klog.Infof("failed to get AMI for region %s: %v, skipping update of MachineSet %s", region, err, machineSetName)
-		return false, true, nil, nil
-	}
-
-	newAMI := awsRegionImage.Image
-
-	// Perform rest of bootimage logic here
-	newProviderSpec := providerSpec.DeepCopy()
-
-	// If the MachineSet does not use an AMI ID, this is unsupported, log and skip the MachineSet
-	// This happens when the installer has copied an AMI at install-time
+	// If the MachineSet does not use an AMI ID, this is unsupported, log and skip.
+	// This happens when the installer has copied an AMI at install-time.
 	// Related bug: https://issues.redhat.com/browse/OCPBUGS-57506
-	if newProviderSpec.AMI.ID == nil {
+	if providerSpec.AMI.ID == nil {
 		klog.Infof("current AMI.ID is undefined, skipping update of MachineSet %s", machineSetName)
 		return false, true, nil, nil
 	}
+	currentAMI := *providerSpec.AMI.ID
 
-	currentAMI := *newProviderSpec.AMI.ID
-
-	// If the current AMI matches target AMI, nothing to do here
-	if newAMI == currentAMI {
-		return false, false, nil, nil
+	ec2Client, err := getAWSEC2Client(ctx, region, secretClient)
+	if err != nil {
+		return false, false, nil, err
 	}
 
-	// Validate that we're allowed to update from the current AMI
-	if !AllowedAMIs.Has(currentAMI) {
-		klog.Infof("current AMI %s is unknown, skipping update of MachineSet %s", currentAMI, machineSetName)
+	currentImage, err := describeAMI(ctx, ec2Client, currentAMI)
+	if err != nil {
+		return false, false, nil, err
+	}
+
+	kind, productID := detectAMIKind(currentImage)
+
+	var newAMI string
+	switch kind {
+	case amiKindStandard:
+		klog.Infof("MachineSet %s: detected standard RHCOS AMI %s", machineSetName, currentAMI)
+		awsRegionImage, err := streamData.GetAwsRegionImage(arch, region)
+		if err != nil {
+			klog.Infof("failed to get AMI for region %s: %v, skipping update of MachineSet %s", region, err, machineSetName)
+			return false, true, nil, nil
+		}
+		newAMI = awsRegionImage.Image
+
+	case amiKindMarketplace:
+		klog.Infof("MachineSet %s: detected marketplace AMI %s (%s)", machineSetName, currentAMI, productName(productID))
+		newAMI, err = resolveMarketplaceAMI(ctx, ec2Client, streamData, arch, productID, machineSetName)
+		if err != nil {
+			return false, false, nil, err
+		}
+		if newAMI == "" {
+			return false, true, nil, nil
+		}
+
+	case amiKindROSA:
+		klog.Infof("MachineSet %s: detected ROSA marketplace AMI %s (%s)", machineSetName, currentAMI, productName(productID))
+		newAMI, err = resolveMarketplaceAMI(ctx, ec2Client, streamData, arch, productID, machineSetName)
+		if err != nil {
+			return false, false, nil, err
+		}
+		if newAMI == "" {
+			return false, true, nil, nil
+		}
+
+	default:
+		klog.Infof("MachineSet %s: AMI %s has unrecognised owner, skipping boot image update", machineSetName, currentAMI)
 		return false, true, nil, nil
+	}
+
+	if newAMI == currentAMI {
+		return false, false, nil, nil
 	}
 
 	klog.Infof("Current image: %s: %s", region, currentAMI)
 	klog.Infof("New target boot image: %s: %s", region, newAMI)
 
-	// Only one of ID, ARN or Filters in the AMI may be specified, so define
-	// a new AMI object with only an ID field.
+	newProviderSpec := providerSpec.DeepCopy()
+	// Only one of ID, ARN or Filters in the AMI may be specified.
 	newProviderSpec.AMI = machinev1beta1.AWSResourceReference{
 		ID: &newAMI,
 	}
 
-	// Ensure the ignition stub is the minimum acceptable spec required for boot image updates
 	if err := upgradeStubIgnitionIfRequired(providerSpec.UserDataSecret.Name, secretClient); err != nil {
 		return false, false, nil, err
 	}
@@ -250,8 +275,8 @@ func reconcileVSphereProviderSpec(streamData *stream.Stream, arch string, infra 
 	return patchRequired, false, newProviderSpec, nil
 }
 
-// reconcileAzureProviderSpec reconciles the Azure provider spec by updating AMIs
-// Returns whether a patch is required, the updated provider spec, and any error
+// reconcileAzureProviderSpec reconciles the Azure provider spec by updating boot images.
+// Returns whether a patch is required, the updated provider spec, and any error.
 func reconcileAzureProviderSpec(streamData *stream.Stream, arch string, _ *osconfigv1.Infrastructure, providerSpec *machinev1beta1.AzureMachineProviderSpec, machineSetName string, secretClient clientset.Interface) (bool, bool, *machinev1beta1.AzureMachineProviderSpec, error) {
 
 	if arch == "ppc64le" || arch == "s390x" {
@@ -363,7 +388,7 @@ func getAzureImageFromStreamImage(streamImage rhcos.AzureMarketplaceImage, isPai
 
 // determineAzureVariant determines which Azure marketplace variant to use based on the current image configuration
 func determineAzureVariant(usesLegacyImageUpload bool, currentImage machinev1beta1.Image) (AzureVariant, error) {
-	// Unpaid images(ARO) are publised under the "azureopenshift" published
+	// Unpaid images(ARO) are published under the "azureopenshift" publisher
 	if usesLegacyImageUpload || currentImage.Publisher == "azureopenshift" {
 		return AzureVariantMarketplaceNoPlan, nil
 	}
