@@ -16,7 +16,7 @@ import (
 
 // runImpl is the actual shell execution implementation used by other functions.
 func runImpl(command string, args ...string) ([]byte, error) {
-	klog.Infof("Running: %s %s\n", command, strings.Join(args, " "))
+	klog.Infof("Running: %s %s", command, strings.Join(args, " "))
 	cmd := exec.Command(command, args...)
 	// multiplex writes to std streams so we keep seeing logs in MCD/systemd
 	// but we'll still be able to give out something here

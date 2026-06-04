@@ -472,7 +472,7 @@ func (c *CertRotationController) reconcileSecret(secret corev1.Secret) error {
 	}
 
 	if bytes.Equal(userData, updatedIgnition) {
-		klog.V(4).Infof("Secret %s already updated to use the latest CA, nothing to do\n", secret.Name)
+		klog.V(4).Infof("Secret %s already updated to use the latest CA, nothing to do", secret.Name)
 		return nil
 	}
 
@@ -483,7 +483,7 @@ func (c *CertRotationController) reconcileSecret(secret corev1.Secret) error {
 		return fmt.Errorf("could not update secret %s: %w", secret.Name, err)
 	}
 
-	klog.Infof("Successfully modified %s secret \n", secret.Name)
+	klog.Infof("Successfully modified %s secret", secret.Name)
 	return nil
 }
 

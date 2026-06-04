@@ -67,7 +67,7 @@ func executeFirstbootCompleteMachineConfig(cmd *cobra.Command, args []string) {
 	for {
 		err := runFirstBootCompleteMachineConfig(cmd, args)
 		if err != nil {
-			klog.Warningf("error: %v\n", err)
+			klog.Warningf("error: %v", err)
 			klog.Info("Sleeping 1 minute for retry")
 			time.Sleep(time.Minute)
 		} else {
