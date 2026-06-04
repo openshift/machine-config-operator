@@ -61,6 +61,38 @@ contents:
         logger -t untaint-fenced-node "WARNING: Node ${REJOINED_NODE} not Ready after ${MAX_READY_WAIT}s - proceeding with untaint anyway"
     fi
 
+    # Wait for VolumeAttachments to drain from the fenced node.
+    # The out-of-service taint triggers immediate pod eviction and volume
+    # detachment. We must wait for this to complete before removing the
+    # taint, otherwise pods remain on the rebooted node and wait for the
+    # local storage stack to recover instead of failing over to the
+    # surviving node where volumes can attach immediately.
+    MAX_VA_WAIT=300
+    VA_INTERVAL=5
+    VA_COUNT=$($OC get volumeattachments -o json 2>/dev/null \
+      | jq --arg node "$REJOINED_NODE" '[.items[] | select(.spec.nodeName == $node)] | length') || VA_COUNT="0"
+
+    if [ "$VA_COUNT" -gt 0 ]; then
+        logger -t untaint-fenced-node "Waiting for ${VA_COUNT} VolumeAttachment(s) to detach from ${REJOINED_NODE}"
+        for i in $(seq 1 $((MAX_VA_WAIT / VA_INTERVAL))); do
+            VA_COUNT=$($OC get volumeattachments -o json 2>/dev/null \
+              | jq --arg node "$REJOINED_NODE" '[.items[] | select(.spec.nodeName == $node)] | length') || VA_COUNT="-1"
+            if [ "$VA_COUNT" = "0" ]; then
+                logger -t untaint-fenced-node "All VolumeAttachments detached from ${REJOINED_NODE}"
+                break
+            fi
+            if [ "$VA_COUNT" = "-1" ]; then
+                logger -t untaint-fenced-node "API unavailable checking VolumeAttachments (attempt ${i})"
+            else
+                logger -t untaint-fenced-node "Waiting for ${VA_COUNT} VolumeAttachment(s) to detach from ${REJOINED_NODE} (attempt ${i})"
+            fi
+            sleep $VA_INTERVAL
+        done
+        if [ "$VA_COUNT" != "0" ]; then
+            logger -t untaint-fenced-node "WARNING: ${VA_COUNT} VolumeAttachment(s) still on ${REJOINED_NODE} after ${MAX_VA_WAIT}s - proceeding with untaint"
+        fi
+    fi
+
     # Check if the taint was applied by pacemaker
     APPLIED_BY=$($OC get node "$REJOINED_NODE" -o json 2>/dev/null | jq -r --arg key "$ANNOTATION_KEY" '.metadata.annotations[$key] // empty') || true
     if [ "$APPLIED_BY" != "$ANNOTATION_VALUE" ]; then
