@@ -283,9 +283,9 @@ func buildAPIIntUnavailableReleases(specReleases []mcfgv1alpha1.InternalReleaseI
 	return releases
 }
 
-// transformToAPIIntURL converts a localhost URL (e.g. localhost:22625/path or
-// localhost.localdomain:22625/path) to api-int.<domain>:22625/path by replacing
-// the hostname before the port with the api-int hostname.
+// transformToAPIIntURL converts a localhost URL (e.g. localhost:22625/path)
+// to api-int.<domain>:22625/path by replacing the hostname before the port
+// with the api-int hostname.
 func transformToAPIIntURL(localhostURL, clusterDomain string) string {
 	// Find the host:port boundary by looking for ":" before the first "/"
 	slashIdx := strings.Index(localhostURL, "/")
