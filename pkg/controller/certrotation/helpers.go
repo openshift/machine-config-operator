@@ -35,7 +35,7 @@ func isUserDataSecret(secret corev1.Secret) bool {
 	_, isIgn, err := unstructured.NestedMap(userDataIgn.(map[string]interface{}), ctrlcommon.IgnFieldIgnition)
 	if !isIgn || err != nil {
 		// Didn't find ignition in user-data, warn but continue
-		klog.Infof("Unable to find ignition in user-data, skipping secret %s\n", secret.Name)
+		klog.Infof("Unable to find ignition in user-data, skipping secret %s", secret.Name)
 		return false
 	}
 	return true

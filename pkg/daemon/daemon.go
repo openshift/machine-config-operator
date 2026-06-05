@@ -1827,7 +1827,7 @@ func (dn *Daemon) LogSystemData() {
 	if err != nil {
 		klog.Errorf("Listing boots: %v", err)
 	}
-	klog.Info("journalctl --list-boots:\n" + string(boots))
+	klog.Info("journalctl --list-boots:" + string(boots))
 
 	// Since nothing in the cluster today watches systemd units, let's
 	// at least capture them in our logs to start.  See also
@@ -1841,7 +1841,7 @@ func (dn *Daemon) LogSystemData() {
 	case err != nil:
 		klog.Errorf("Listing failed systemd services: %v", err)
 	case len(failedServices) > 0:
-		klog.Info("systemctl --failed:\n" + string(failedServices))
+		klog.Info("systemctl --failed:" + string(failedServices))
 	default:
 		klog.Info("systemd service state: OK")
 	}
