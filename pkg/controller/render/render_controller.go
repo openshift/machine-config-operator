@@ -697,10 +697,6 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		return fmt.Errorf("could not generate rendered MachineConfig: %w", err)
 	}
 
-	if err := validateNoRuncOnRHEL10(pool.Name, generated, osImageStreamSet); err != nil {
-		return err
-	}
-
 	// Validate that the generated MachineConfig does not exceed etcd size limits
 	if err := ctrlcommon.ValidateMachineConfigSize(generated); err != nil {
 		return fmt.Errorf("size validation failed: %w", err)
@@ -830,6 +826,10 @@ func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mc
 		if pool.Spec.OSImageStream.Name != "" {
 			return nil, fmt.Errorf("cannot override MachineConfig osImageURL and set MachineConfigPool spec.osImageStream.name simultaneously")
 		}
+	}
+
+	if err := validateNoRuncOnRHEL10(pool.Name, merged, osImageStreamSet); err != nil {
+		return nil, err
 	}
 
 	return merged, nil
