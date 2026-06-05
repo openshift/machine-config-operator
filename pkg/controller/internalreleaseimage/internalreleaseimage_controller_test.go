@@ -476,12 +476,6 @@ func TestTransformToAPIIntURL(t *testing.T) {
 			expected:      "api-int.ostest.test.metalkube.org:22625/openshift/release-images@sha256:abc123",
 		},
 		{
-			name:          "localhost.localdomain",
-			localhostURL:  "localhost.localdomain:22625/openshift/release-images@sha256:abc123",
-			clusterDomain: "ostest.test.metalkube.org",
-			expected:      "api-int.ostest.test.metalkube.org:22625/openshift/release-images@sha256:abc123",
-		},
-		{
 			name:          "no port returns input unchanged",
 			localhostURL:  "localhost",
 			clusterDomain: "example.com",

@@ -239,20 +239,6 @@ func (i *Manager) updateMCNStatus(mcnOld, mcn *mcfgv1.MachineConfigNode) error {
 	return nil
 }
 
-// TODO: Remove this method once the MCN IRI CEL validation rule for the image field will be fixed,
-// since currently it does not accept the plain 'localhost' value
-func (i *Manager) sanitizeImagePullspec(image string) string {
-	const (
-		short = "localhost"
-		long  = "localhost.localdomain"
-	)
-
-	if strings.Contains(image, long) {
-		return strings.ReplaceAll(image, long, short)
-	}
-	return strings.ReplaceAll(image, short, long)
-}
-
 func (i *Manager) refreshMachineConfigNodeStatus(mcn *mcfgv1.MachineConfigNode, iriReg *iriRegistry) error {
 	// Get the current OCP releases bundles stored in the local IRI registry.
 	registryBundles, err := iriReg.GetOCPBundlesTags()
@@ -289,7 +275,7 @@ func (i *Manager) refreshMachineConfigNodeStatus(mcn *mcfgv1.MachineConfigNode, 
 
 		iriRelease := mcfgv1.MachineConfigNodeStatusInternalReleaseImageRef{
 			Name:  bundle,
-			Image: i.sanitizeImagePullspec(pullSpec),
+			Image: pullSpec,
 		}
 		mcnUpdated.Status.InternalReleaseImage.Releases = append(mcnUpdated.Status.InternalReleaseImage.Releases, iriRelease)
 	}
@@ -302,7 +288,7 @@ func (i *Manager) refreshMachineConfigNodeStatus(mcn *mcfgv1.MachineConfigNode, 
 	for n := range mcnUpdated.Status.InternalReleaseImage.Releases {
 		r := &mcnUpdated.Status.InternalReleaseImage.Releases[n]
 
-		err := iriReg.CheckImageAvailability(i.sanitizeImagePullspec(r.Image))
+		err := iriReg.CheckImageAvailability(r.Image)
 		if err == nil {
 			meta.SetStatusCondition(&r.Conditions, metav1.Condition{
 				Type:    string(mcfgv1alpha1.InternalReleaseImageConditionTypeDegraded),
