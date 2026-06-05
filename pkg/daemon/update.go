@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"math/rand"
 	"sync"
 	"syscall"
 	"time"
@@ -1493,6 +1494,14 @@ func (dn *Daemon) removeRollback() error {
 		// do not attempt to rollback on non-RHCOS/FCOS machines
 		return nil
 	}
+	// Defer cleanup to reduce I/O contention during node bootstrap. The rpm-ostree cleanup
+	// syncfs calls (~43s total) run concurrently with CNI image pulls and compete for disk
+	// bandwidth during the kubelet-to-ready window. Sleeping here lets the node reach Ready
+	// before the heavy I/O starts. Jitter spreads cleanup across nodes that scale up in the
+	// same burst so they don't all hit the disk simultaneously after the delay expires.
+	delay := 60*time.Second + time.Duration(rand.Int63n(int64(30*time.Second)))
+	klog.Infof("Deferring rpm-ostree rollback cleanup by %s to reduce boot I/O contention", delay.Round(time.Second))
+	time.Sleep(delay)
 	return runRpmOstree("cleanup", "-r")
 }
 
