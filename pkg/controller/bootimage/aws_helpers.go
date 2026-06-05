@@ -228,10 +228,12 @@ func marketplaceVersionToken(releaseString string) (string, error) {
 
 // resolveMarketplaceAMI derives the version token from the stream configmap and delegates to
 // findMarketplaceAMI. Shared by the marketplace and ROSA variant paths.
-func resolveMarketplaceAMI(ctx context.Context, client *ec2.Client, streamData *coreosstream.Stream, arch, productID, machineSetName string) (string, error) {
+// Returns the selected AMI ID and the RHCOS version token that was actually used (which may be
+// one minor version older than the target when the target has not yet replicated to the region).
+func resolveMarketplaceAMI(ctx context.Context, client *ec2.Client, streamData *coreosstream.Stream, arch, productID, machineSetName string) (string, string, error) {
 	streamArch, err := streamData.GetArchitecture(arch)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	awsArtifact, ok := streamArch.Artifacts["aws"]
 	if !ok {
@@ -240,24 +242,40 @@ func resolveMarketplaceAMI(ctx context.Context, client *ec2.Client, streamData *
 	releaseString := awsArtifact.Release
 	versionToken, err := marketplaceVersionToken(releaseString)
 	if err != nil {
-		return "", fmt.Errorf("MachineSet %s: %w", machineSetName, err)
+		return "", "", fmt.Errorf("MachineSet %s: %w", machineSetName, err)
 	}
 	return findMarketplaceAMI(ctx, client, productID, versionToken, machineSetName)
 }
 
-// descriptionVersionRe extracts the N.M version token from marketplace AMI descriptions.
-// It handles both formats in use:
-//   - RHEL marketplace: "RHEL CoreOS 9.6 9.6.20260210-0 x86_64"
-//   - ROSA:             "rhcos-9.6.20250701-0-x86_64"
-var descriptionVersionRe = regexp.MustCompile(`(?:CoreOS |rhcos-)(\d+\.\d+)[ .]`)
+// descriptionVersionRe matches the full RHCOS release string embedded in marketplace AMI descriptions.
+// The full match is the API-valid release string; group 1 is the N.M token for version comparison.
+// Both description formats in use embed the full release string inline:
+//   - RHEL marketplace: "RHEL CoreOS 9.6 9.6.20260210-0 x86_64"   → "9.6.20260210-0" / "9.6"
+//   - ROSA:             "rhcos-9.6.20250701-0-x86_64"              → "9.6.20250701-0"  / "9.6"
+var descriptionVersionRe = regexp.MustCompile(`(\d+\.\d+)\.(?:[0-9]{8}|[0-9]{12})-\d+`)
 
-// extractVersionFromDescription parses the N.M version token from a marketplace AMI description.
-func extractVersionFromDescription(description string) (string, bool) {
+// extractVersionFromDescription parses the RHCOS release string from a marketplace AMI description.
+// Returns the full release string (e.g. "9.6.20260210-0") suitable for ClusterBootImageAutomatic.RHCOSVersion,
+// the N.M token (e.g. "9.6") for version comparison, and whether parsing succeeded.
+func extractVersionFromDescription(description string) (fullVersion, token string, ok bool) {
 	m := descriptionVersionRe.FindStringSubmatch(description)
 	if m == nil {
-		return "", false
+		return "", "", false
 	}
-	return m[1], true
+	return m[0], m[1], true
+}
+
+// cmpRHCOSVersion compares two full RHCOS release strings (e.g. "9.6.20260210-0") by their
+// major.minor version only. Returns negative if a < b, zero if equal, positive if a > b.
+func cmpRHCOSVersion(a, b string) int {
+	tokenOf := func(v string) string {
+		p := strings.SplitN(v, ".", 3)
+		if len(p) < 2 {
+			return v
+		}
+		return p[0] + "." + p[1]
+	}
+	return cmpVersionToken(tokenOf(a), tokenOf(b))
 }
 
 // cmpVersionToken compares two "major.minor" version tokens.
@@ -280,12 +298,12 @@ func cmpVersionToken(a, b string) int {
 	return aMin - bMin
 }
 
-// findMarketplaceAMI returns the AMI ID of the best marketplace AMI for the given product ID
-// and version token. It fetches all AMIs for the product ID, discards any whose description
-// version exceeds the target, then returns the newest AMI at the highest version ≤ target.
+// findMarketplaceAMI returns the AMI ID and RHCOS version of the best marketplace AMI for the
+// given product ID and version token. It fetches all AMIs for the product ID, discards any whose
+// description version exceeds the target, then returns the newest AMI at the highest version ≤ target.
 // Accepting one version older prevents stalling when the target version has not yet replicated
-// to this region. Returns an empty string (and no error) if no suitable AMI is found.
-func findMarketplaceAMI(ctx context.Context, client *ec2.Client, productID, versionToken, machineSetName string) (string, error) {
+// to this region. Returns empty strings (and no error) if no suitable AMI is found.
+func findMarketplaceAMI(ctx context.Context, client *ec2.Client, productID, versionToken, machineSetName string) (string, string, error) {
 	out, err := client.DescribeImages(ctx, &ec2.DescribeImagesInput{
 		Owners: []string{awsMarketplaceOwnerAlias},
 		Filters: []ec2types.Filter{
@@ -296,43 +314,44 @@ func findMarketplaceAMI(ctx context.Context, client *ec2.Client, productID, vers
 		},
 	})
 	if err != nil {
-		return "", fmt.Errorf("DescribeImages failed for product ID %s: %w", productID, err)
+		return "", "", fmt.Errorf("DescribeImages failed for product ID %s: %w", productID, err)
 	}
 
 	type candidate struct {
-		image   ec2types.Image
-		version string
+		image       ec2types.Image
+		token       string // N.M token for comparison (e.g. "9.6")
+		fullVersion string // full release string for the API (e.g. "9.6.20260210-0")
 	}
 
 	// DescribeImages filtered by name glob already narrows to the right product ID;
 	// parse each description to get its version and discard anything ahead of the target.
 	var matches []candidate
 	for _, img := range out.Images {
-		v, ok := extractVersionFromDescription(aws.ToString(img.Description))
+		fullVersion, token, ok := extractVersionFromDescription(aws.ToString(img.Description))
 		if !ok {
 			continue
 		}
-		if cmpVersionToken(v, versionToken) <= 0 {
-			matches = append(matches, candidate{img, v})
+		if cmpVersionToken(token, versionToken) <= 0 {
+			matches = append(matches, candidate{img, token, fullVersion})
 		}
 	}
 
 	if len(matches) == 0 {
 		klog.Infof("no marketplace AMI found for product ID %s version ≤ %s in region, will retry on next reconcile, skipping update of MachineSet %s", productID, versionToken, machineSetName)
-		return "", nil
+		return "", "", nil
 	}
 
 	// Prefer the highest version not exceeding the target; break ties by newest CreationDate.
 	sort.Slice(matches, func(i, j int) bool {
-		if cmp := cmpVersionToken(matches[i].version, matches[j].version); cmp != 0 {
+		if cmp := cmpVersionToken(matches[i].token, matches[j].token); cmp != 0 {
 			return cmp > 0
 		}
 		return aws.ToString(matches[i].image.CreationDate) > aws.ToString(matches[j].image.CreationDate)
 	})
 
 	best := matches[0]
-	if best.version != versionToken {
-		klog.Infof("MachineSet %s: target version %s not yet available in region, using %s (%s)", machineSetName, versionToken, best.version, aws.ToString(best.image.ImageId))
+	if best.token != versionToken {
+		klog.Infof("MachineSet %s: target version %s not yet available in region, using %s (%s)", machineSetName, versionToken, best.token, aws.ToString(best.image.ImageId))
 	}
-	return aws.ToString(best.image.ImageId), nil
+	return aws.ToString(best.image.ImageId), best.fullVersion, nil
 }

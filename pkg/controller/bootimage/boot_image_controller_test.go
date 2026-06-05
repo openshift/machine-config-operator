@@ -948,7 +948,7 @@ func TestReconcileAzureProviderSpec(t *testing.T) {
 				testStreamData = tt.streamData
 			}
 
-			patchRequired, _, updatedProviderSpec, err := reconcileAzureProviderSpec(
+			patchRequired, _, updatedProviderSpec, _, err := reconcileAzureProviderSpec(
 				testStreamData,
 				tt.arch,
 				infra,
