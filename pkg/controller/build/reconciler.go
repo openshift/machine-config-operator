@@ -1371,6 +1371,12 @@ func (b *buildReconciler) reconcilePoolChange(ctx context.Context, mcp *mcfgv1.M
 		return err
 	}
 
+	// No action needed if the rendered config has not changed.
+	if oldRendered == newRendered && firstOptIn != "" {
+		klog.V(4).Infof("pool %q: Configuration unchanged (%s), no action needed", mcp.Name, oldRendered)
+		return nil
+	}
+
 	// This is our trigger point
 	if (oldRendered != newRendered && needsImageRebuild) || firstOptIn == "" {
 		klog.Infof("pool %q: rendered config changed and requires an image rebuild. Verifying if a valid build already exists...", mcp.Name)
