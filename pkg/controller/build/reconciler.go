@@ -1391,7 +1391,7 @@ func (b *buildReconciler) reconcilePoolChange(ctx context.Context, mcp *mcfgv1.M
 	missingAnnotation := firstOptIn == ""
 
 	// No action needed if the rendered config has not changed.
-	if oldRendered == newRendered {
+	if oldRendered == newRendered && !missingAnnotation {
 		klog.V(4).Infof("pool %q: Configuration unchanged (%s), no action needed", mcp.Name, oldRendered)
 		return nil
 	}
