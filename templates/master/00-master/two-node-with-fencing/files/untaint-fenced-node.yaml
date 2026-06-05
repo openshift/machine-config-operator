@@ -26,7 +26,7 @@ contents:
     PCMK_INTERVAL=5
     PCMK_ONLINE=false
     for i in $(seq 1 $((MAX_PCMK_WAIT / PCMK_INTERVAL))); do
-        if crm_mon -1 2>/dev/null | grep "Online:" | grep -qw "$REJOINED_NODE"; then
+        if crm_mon -1 2>/dev/null | grep "Online:" | grep -cw "$REJOINED_NODE" >/dev/null; then
             PCMK_ONLINE=true
             break
         fi
@@ -94,7 +94,11 @@ contents:
     fi
 
     # Check if the taint was applied by pacemaker
-    APPLIED_BY=$($OC get node "$REJOINED_NODE" -o json 2>/dev/null | jq -r --arg key "$ANNOTATION_KEY" '.metadata.annotations[$key] // empty') || true
+    NODE_JSON=$($OC get node "$REJOINED_NODE" -o json 2>/dev/null) || {
+        logger -t untaint-fenced-node "ERROR: Cannot reach API to check annotation - aborting"
+        exit 1
+    }
+    APPLIED_BY=$(echo "$NODE_JSON" | jq -r --arg key "$ANNOTATION_KEY" '.metadata.annotations[$key] // empty')
     if [ "$APPLIED_BY" != "$ANNOTATION_VALUE" ]; then
         logger -t untaint-fenced-node "Node ${REJOINED_NODE} has no pacemaker out-of-service annotation - nothing to do"
         exit 0
@@ -108,7 +112,12 @@ contents:
     RETRY_INTERVAL=5
     for attempt in $(seq 1 $MAX_RETRIES); do
         # Re-check annotation in case another process already cleaned up
-        APPLIED_BY=$($OC get node "$REJOINED_NODE" -o json 2>/dev/null | jq -r --arg key "$ANNOTATION_KEY" '.metadata.annotations[$key] // empty') || true
+        NODE_JSON=$($OC get node "$REJOINED_NODE" -o json 2>/dev/null) || {
+            logger -t untaint-fenced-node "Attempt ${attempt}/${MAX_RETRIES}: oc get failed during annotation re-check - retrying in ${RETRY_INTERVAL}s"
+            sleep $RETRY_INTERVAL
+            continue
+        }
+        APPLIED_BY=$(echo "$NODE_JSON" | jq -r --arg key "$ANNOTATION_KEY" '.metadata.annotations[$key] // empty')
         if [ "$APPLIED_BY" != "$ANNOTATION_VALUE" ]; then
             logger -t untaint-fenced-node "Annotation already removed from ${REJOINED_NODE} - done"
             exit 0

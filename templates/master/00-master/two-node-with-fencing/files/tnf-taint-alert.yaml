@@ -9,6 +9,9 @@ contents:
     # CRM_alert_kind=fencing, so they are already excluded.
     if [ "$CRM_alert_kind" = "fencing" ] && [ "$CRM_alert_rc" = "0" ] && [ -n "$CRM_alert_node" ]; then
         logger -t tnf-taint-alert "Fencing succeeded for ${CRM_alert_node}, triggering taint service"
-        sudo systemctl start --no-block "taint-node@${CRM_alert_node}.service"
+        if ! sudo systemctl start --no-block "taint-node@${CRM_alert_node}.service"; then
+            logger -t tnf-taint-alert "ERROR: Failed to start taint-node@${CRM_alert_node}.service"
+            exit 1
+        fi
     fi
     exit 0

@@ -28,12 +28,12 @@ contents:
     MAX_RETRIES=120
     RETRY_INTERVAL=5
     for attempt in $(seq 1 $MAX_RETRIES); do
-        if $OC patch node "$FENCED_NODE" --type=strategic -p "$PATCH" 2>/dev/null; then
+        OC_ERR=$($OC patch node "$FENCED_NODE" --type=strategic -p "$PATCH" 2>&1) && {
             logger -t taint-fenced-node "Successfully tainted and annotated ${FENCED_NODE}"
             exit 0
-        fi
+        }
 
-        logger -t taint-fenced-node "Attempt ${attempt}/${MAX_RETRIES} failed, retrying in ${RETRY_INTERVAL}s"
+        logger -t taint-fenced-node "Attempt ${attempt}/${MAX_RETRIES} failed: ${OC_ERR}, retrying in ${RETRY_INTERVAL}s"
         sleep $RETRY_INTERVAL
     done
 
