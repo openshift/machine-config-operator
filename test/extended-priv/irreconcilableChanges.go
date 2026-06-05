@@ -72,132 +72,31 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		skipTestIfSNOCluster(oc)
 	})
 
-	g.It("[PolarionID:84219][OTP] Ensure new nodes adopt irreconcilable config while in old nodes surf [Disruptive]", g.Label("Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere"), func() {
-		var (
-			mcp                  = GetCompactCompatiblePool(oc.AsAdmin())
-			machineconfiguration = GetMachineConfiguration(oc.AsAdmin())
-			mcName               = "extra-disks-" + GetCurrentTestPolarionIDNumber()
-			mc                   = NewMachineConfig(oc.AsAdmin(), mcName, mcp.GetName()).SetMCOTemplate("extra-disks.yaml")
-			nodes                = mcp.GetSortedNodesOrFail()
-		)
-
-		exutil.By("Save initial MachineConfiguration spec")
-		initialMachineConfigSpec := machineconfiguration.GetSpecOrFail()
-		logger.Infof("Initial MachineConfiguration spec: %s", initialMachineConfigSpec)
-
-		defer func() {
-			logger.Infof("Restore initial MachineConfiguration spec")
-			err := machineconfiguration.SetSpec(initialMachineConfigSpec)
-			o.Expect(err).NotTo(o.HaveOccurred())
-		}()
-
-		exutil.By("Step 1: Enable irreconcilableValidationOverrides")
-		err := machineconfiguration.EnableIrreconcilableValidationOverrides()
-		o.Expect(err).NotTo(o.HaveOccurred())
-		mcp.waitForComplete()
-		logger.Infof("OK!\n")
-
-		exutil.By("Step 2: Apply extra-disks MachineConfig")
-		platform = exutil.CheckPlatform(oc)
-
-		disks := platformBasedDisksNames(platform)
-
-		mc.SetParams("-p", "DEVICE1="+disks[0], "-p", "DEVICE2="+disks[1])
-		defer mc.DeleteWithWait()
-		mc.create()
-		logger.Infof("OK!\n")
-
-		exutil.By("Step 3: Check irreconcilable differences for existing worker nodes")
-		for _, node := range nodes {
-			irreconcilableChanges := OrFail[string](node.GetIrreconcilableChanges())
-			o.Expect(irreconcilableChanges).To(o.ContainSubstring("spec.config.storage.disks"))
-			o.Expect(irreconcilableChanges).To(o.ContainSubstring("spec.config.storage.raid"))
-			o.Expect(irreconcilableChanges).To(o.ContainSubstring("spec.config.storage.filesystems"))
-			logger.Infof("Node %s has irreconcilable changes as expected", node.GetName())
-		}
-		logger.Infof("All worker nodes have irreconcilable changes as expected!\n")
-
-		exutil.By("Step 4: Create duplicate machineset with custom disks")
-		machineset := OrFail[*MachineSet](GetScalableMachineSet(oc.AsAdmin()))
-		newMSName := machineset.GetName() + "-ms-ic-t1"
-		newMS, err := machineset.Duplicate(newMSName)
-		o.Expect(err).NotTo(o.HaveOccurred())
-
-		defer func() {
-			if newMS.Exists() {
-				err := newMS.ScaleTo(0)
-				o.Expect(err).NotTo(o.HaveOccurred())
-				err = newMS.WaitUntilReady("10m")
-				o.Expect(err).NotTo(o.HaveOccurred())
-				err = newMS.Delete()
-				o.Expect(err).NotTo(o.HaveOccurred())
-			}
-		}()
-
-		err = platformBasedDisksPatch(platform, newMS)
-		o.Expect(err).NotTo(o.HaveOccurred())
-
-		o.Expect(newMS.ScaleTo(1)).To(o.Succeed())
-		o.Expect(newMS.WaitUntilReady("15m")).To(o.Succeed())
-
-		exutil.By("Step 5: Verify new node has no irreconcilable differences")
-		newNodes := newMS.GetNodesOrFail()
-		o.Expect(newNodes).To(o.HaveLen(1))
-		newNode := newNodes[0]
-		logger.Infof("New node is: %s", newNode.GetName())
-
-		newNodeMCN := NewMachineConfigNode(oc.AsAdmin(), newNode.GetName())
-		o.Eventually(func() string {
-			return newNodeMCN.GetOrFail(`{.status.irreconcilableChanges}`)
-		}, "5m", "10s").Should(o.Or(o.BeEmpty(), o.Equal("[]")), "New node should have no irreconcilable changes")
-
-		logger.Infof("OK!\n")
-
-		exutil.By("Step 6: Verify storage configuration on new node")
-
-		// Mount the RAID device
-		_, err = newNode.DebugNodeWithChroot("mount", "/dev/md/data", "/var/lib/data")
-		o.Expect(err).NotTo(o.HaveOccurred())
-
-		// Check mdadm details
-		stdout, err := newNode.DebugNodeWithChroot("mdadm", "--detail", "--scan")
-		o.Expect(err).NotTo(o.HaveOccurred())
-		o.Expect(stdout).Should(o.ContainSubstring("/dev/md/data"))
-
-		logger.Infof("OK!\n")
-	})
-
-	g.It("Scale up with a mix of irreconcilable and supported fields", g.Label("Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere"), func() {
+	g.It("Base irreconcilable changes detection on existing nodes", g.Label("Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere"), func() {
 		var (
 			machineconfiguration = GetMachineConfiguration(oc)
-			mcName               = "irreconcilable-mix-test-1"
+			mcName               = "irreconcilable-base-test"
 			initialMcSpecs       = machineconfiguration.GetSpecOrFail()
 			mcpool               = "worker"
 		)
 
-		SkipTestIfWorkersCannotBeScaled(oc)
-
 		mcp := NewMachineConfigPool(oc, mcpool)
 
-		exutil.By("Step 1: Enable irreconcilablevalidationoverride")
-
+		exutil.By("Step 1: Enable irreconcilableValidationOverrides")
 		err := machineconfiguration.EnableIrreconcilableValidationOverrides()
 		o.Expect(err).NotTo(o.HaveOccurred())
-
 		err = mcp.WaitForUpdatedStatus()
 		o.Expect(err).NotTo(o.HaveOccurred())
 
-		mc := NewMachineConfig(oc, mcName, mcpool).SetMCOTemplate("extra-disks-with-files.yaml")
-
+		mc := NewMachineConfig(oc, mcName, mcpool).SetMCOTemplate("extra-disks.yaml")
 		disks := platformBasedDisksNames(platform)
 
+		exutil.By("Step 2: Apply extra-disks MachineConfig")
 		err = mc.Create(
 			"-p", "NAME="+mcName,
 			"-p", "POOL="+mcpool,
 			"-p", "DEVICE1="+disks[0],
 			"-p", "DEVICE2="+disks[1],
-			"-p", "FILE_PATH="+"/etc/temp_config.conf",
-			"-p", "FILE_CONTENT="+"THIS_IS_A_TEST_FILE_CONF",
 		)
 		o.Expect(err).NotTo(o.HaveOccurred())
 		logger.Infof("MC %s created successfully", mcName)
@@ -206,13 +105,72 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		o.Expect(err).NotTo(o.HaveOccurred())
 
 		defer func() {
-			logger.Infof("restore initial machineConfiguration specs")
+			logger.Infof("Restore initial MachineConfiguration spec")
 			err = machineconfiguration.SetSpec(initialMcSpecs)
 			o.Expect(err).NotTo(o.HaveOccurred())
 		}()
 		defer mc.DeleteWithWait()
 
-		exutil.By("Step 2: Verify old nodes report irreconcilablevalidationoverride changes in their MCN")
+		exutil.By("Step 3: Verify all worker nodes report irreconcilable changes")
+		workerNodes, err := mcp.getSelectedNodes(workerLabelKey)
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		for _, node := range workerNodes {
+			o.Eventually(func() (string, error) {
+				return node.GetIrreconcilableChanges()
+			}, "5m", "10s").Should(o.SatisfyAll(
+				o.ContainSubstring("spec.config.storage.disks"),
+				o.ContainSubstring("spec.config.storage.raid"),
+				o.ContainSubstring("spec.config.storage.filesystems"),
+			), "Node %s should have irreconcilable changes", node.GetName())
+			logger.Infof("Node %s has irreconcilable changes as expected", node.GetName())
+		}
+		logger.Infof("All worker nodes have irreconcilable changes as expected!\n")
+	})
+
+	g.It("[PolarionID:84219] Scale up with a mix of irreconcilable and supported fields [Disruptive]", g.Label("Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere"), func() {
+		var (
+			machineconfiguration = GetMachineConfiguration(oc)
+			mcName               = "irreconcilable-scaleup-test"
+			initialMcSpecs       = machineconfiguration.GetSpecOrFail()
+			mcpool               = "worker"
+		)
+
+		SkipTestIfWorkersCannotBeScaled(oc)
+		mcp := NewMachineConfigPool(oc, mcpool)
+
+		exutil.By("Step 1: Enable irreconcilableValidationOverrides")
+		err := machineconfiguration.EnableIrreconcilableValidationOverrides()
+		o.Expect(err).NotTo(o.HaveOccurred())
+		err = mcp.WaitForUpdatedStatus()
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		mc := NewMachineConfig(oc, mcName, mcpool).SetMCOTemplate("extra-disks-with-files.yaml")
+		disks := platformBasedDisksNames(platform)
+
+		exutil.By("Step 2: Apply extra-disks-with-files MachineConfig")
+		err = mc.Create(
+			"-p", "NAME="+mcName,
+			"-p", "POOL="+mcpool,
+			"-p", "DEVICE1="+disks[0],
+			"-p", "DEVICE2="+disks[1],
+			"-p", "FILE_PATH=/etc/temp_config.conf",
+			"-p", "FILE_CONTENT=THIS_IS_A_TEST_FILE_CONF",
+		)
+		o.Expect(err).NotTo(o.HaveOccurred())
+		logger.Infof("MC %s created successfully", mcName)
+
+		err = mcp.WaitForUpdatedStatus()
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		defer func() {
+			logger.Infof("Restore initial MachineConfiguration spec")
+			err = machineconfiguration.SetSpec(initialMcSpecs)
+			o.Expect(err).NotTo(o.HaveOccurred())
+		}()
+		defer mc.DeleteWithWait()
+
+		exutil.By("Step 3: Verify old nodes report only storage irreconcilable changes (not files)")
 		workerNodes, err := mcp.getSelectedNodes(workerLabelKey)
 		o.Expect(err).NotTo(o.HaveOccurred())
 
@@ -223,10 +181,9 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 				"Node %s should have irreconcilable changes for storage.disks", node.GetName())
 			logger.Infof("Node %s has irreconcilable changes as expected", node.GetName())
 		}
+		logger.Infof("All worker nodes report irreconcilable storage changes!\n")
 
-		logger.Infof("All worker nodes have irreconcilable changes as expected!\n")
-
-		exutil.By("Step 3: Create duplicate machineset with custom disks")
+		exutil.By("Step 4: Create duplicate machineset with custom disks")
 		machineset := OrFail[*MachineSet](GetScalableMachineSet(oc.AsAdmin()))
 		newMSName := machineset.GetName() + "-ms-ic-t2"
 		newMS, err := machineset.Duplicate(newMSName)
@@ -249,42 +206,71 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		o.Expect(newMS.ScaleTo(1)).To(o.Succeed())
 		o.Expect(newMS.WaitUntilReady("15m")).To(o.Succeed())
 
-		exutil.By("Step 4: Verify new node has no irreconcilable differences")
+		exutil.By("Step 5: Verify new node has no irreconcilable changes")
 		newNodes := newMS.GetNodesOrFail()
 		o.Expect(newNodes).To(o.HaveLen(1))
 		newNode := newNodes[0]
 		logger.Infof("New node is: %s", newNode.GetName())
 
-		newNodeMCN := NewMachineConfigNode(oc.AsAdmin(), newNode.GetName())
-		o.Eventually(func() string {
-			return newNodeMCN.GetOrFail(`{.status.irreconcilableChanges}`)
-		}, "5m", "10s").Should(o.Or(o.BeEmpty(), o.Equal("[]")), "New node should have no irreconcilable changes")
+		newExtNode := NewNode(oc.AsAdmin(), newNode.GetName())
+		o.Eventually(func() (string, error) {
+			return newExtNode.GetIrreconcilableChanges()
+		}, "5m", "10s").Should(o.BeEmpty(), "New node should have no irreconcilable changes")
+		logger.Infof("New node %s has no irreconcilable changes as expected\n", newNode.GetName())
 
-		logger.Infof("OK!\n")
+		exutil.By("Step 6: Verify storage configuration on new node")
+		_, err = newExtNode.DebugNodeWithChroot("mount", "/dev/md/data", "/var/lib/data")
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		stdout, err := newExtNode.DebugNodeWithChroot("mdadm", "--detail", "--scan")
+		o.Expect(err).NotTo(o.HaveOccurred())
+		o.Expect(stdout).Should(o.ContainSubstring("/dev/md/data"))
+		logger.Infof("Storage configuration verified on new node\n")
+
+		exutil.By("Step 7: Delete the irreconcilable MC")
+		mc.DeleteWithWait()
+
+		exutil.By("Step 8: Verify old nodes have irreconcilable changes cleared")
+		for _, node := range workerNodes {
+			o.Eventually(func() (string, error) {
+				return node.GetIrreconcilableChanges()
+			}, "5m", "10s").Should(o.BeEmpty(),
+				"Node %s should have cleared irreconcilable changes after MC removal", node.GetName())
+			logger.Infof("Node %s has cleared irreconcilable changes as expected", node.GetName())
+		}
+		logger.Infof("All existing worker nodes have cleared irreconcilable changes!\n")
+
+		exutil.By("Step 9: Verify new node now reports irreconcilable changes")
+		o.Eventually(func() (string, error) {
+			return newExtNode.GetIrreconcilableChanges()
+		}, "5m", "10s").Should(o.SatisfyAll(
+			o.ContainSubstring("spec.config.storage.disks"),
+			o.ContainSubstring("spec.config.storage.raid"),
+			o.ContainSubstring("spec.config.storage.filesystems"),
+		), "New node should report irreconcilable changes after MC removal")
+		logger.Infof("New node %s correctly reports irreconcilable changes after MC removal\n", newNode.GetName())
 	})
 
-	g.It("Irreconcilable changes persists after feature has been disabled. New Irreconcilable configs will be rejected", g.Label("Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere"), func() {
+	g.It("Irreconcilable changes persist after feature has been disabled. New irreconcilable configs will be rejected", g.Label("Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere"), func() {
 		var (
 			machineconfiguration = GetMachineConfiguration(oc)
-			mcName               = "irreconcilable-mix-test-3"
+			mcName               = "irreconcilable-persist-test"
 			initialMcSpecs       = machineconfiguration.GetSpecOrFail()
 			mcpool               = "worker"
 		)
 
 		mcp := NewMachineConfigPool(oc, mcpool)
 
-		exutil.By("Step 1: Enable irreconcilablevalidationoverride")
-
+		exutil.By("Step 1: Enable irreconcilableValidationOverrides")
 		err := machineconfiguration.EnableIrreconcilableValidationOverrides()
 		o.Expect(err).NotTo(o.HaveOccurred())
-
 		err = mcp.WaitForUpdatedStatus()
 		o.Expect(err).NotTo(o.HaveOccurred())
 
 		mc := NewMachineConfig(oc, mcName, mcpool).SetMCOTemplate("extra-disks.yaml")
-
 		disks := platformBasedDisksNames(platform)
 
+		exutil.By("Step 2: Apply extra-disks MachineConfig")
 		err = mc.Create(
 			"-p", "NAME="+mcName,
 			"-p", "POOL="+mcpool,
@@ -298,7 +284,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		o.Expect(err).NotTo(o.HaveOccurred())
 
 		defer func() {
-			logger.Infof("restore initial machineConfiguration specs")
+			logger.Infof("Restore initial MachineConfiguration spec")
 			err = machineconfiguration.SetSpec(initialMcSpecs)
 			o.Expect(err).NotTo(o.HaveOccurred())
 		}()
@@ -311,7 +297,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			mc.DeleteWithWait()
 		}()
 
-		exutil.By("Step 2: Verify nodes report irreconcilablevalidationoverride changes in their MCN")
+		exutil.By("Step 3: Verify nodes report irreconcilable changes")
 		workerNodes, err := mcp.getSelectedNodes(workerLabelKey)
 		o.Expect(err).NotTo(o.HaveOccurred())
 
@@ -325,19 +311,15 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			), "Node %s should have irreconcilable changes", node.GetName())
 			logger.Infof("Node %s has irreconcilable changes as expected", node.GetName())
 		}
-
 		logger.Infof("All worker nodes have irreconcilable changes as expected!\n")
 
-		exutil.By("Step 3: Disable Irreconcilable feature")
-
+		exutil.By("Step 4: Disable irreconcilable feature")
 		err = machineconfiguration.RemoveIrreconcilableValidationOverrides()
 		o.Expect(err).NotTo(o.HaveOccurred())
-
 		err = mcp.WaitForUpdatedStatus()
 		o.Expect(err).NotTo(o.HaveOccurred())
 
-		exutil.By("Step 4: Verify nodes report irreconcilablevalidationoverride changes in their MCN")
-
+		exutil.By("Step 5: Verify irreconcilable changes persist after disabling")
 		for _, node := range workerNodes {
 			o.Eventually(func() (string, error) {
 				return node.GetIrreconcilableChanges()
@@ -345,14 +327,13 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 				o.ContainSubstring("spec.config.storage.disks"),
 				o.ContainSubstring("spec.config.storage.raid"),
 				o.ContainSubstring("spec.config.storage.filesystems"),
-			), "Node %s should have irreconcilable changes", node.GetName())
-			logger.Infof("Node %s has irreconcilable changes as expected", node.GetName())
+			), "Node %s should still have irreconcilable changes after disabling", node.GetName())
+			logger.Infof("Node %s irreconcilable changes persisted as expected", node.GetName())
 		}
+		logger.Infof("All worker nodes still have irreconcilable changes!\n")
 
-		logger.Infof("All worker nodes have irreconcilable changes as expected!\n")
-
+		exutil.By("Step 6: Apply new irreconcilable MC and verify rejection")
 		newMcName := mcName + "-2"
-
 		mc2 := NewMachineConfig(oc, newMcName, mcpool).SetMCOTemplate("extra-disks.yaml")
 
 		err = mc2.Create(
@@ -371,22 +352,23 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		o.Expect(mcp.WaitForNotDegradedStatus()).To(o.Succeed())
 	})
 
-	g.It("Irreconcilable changes cleared after reverting MC. New node reports changes", g.Label("Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere"), func() {
+	g.It("Irreconcilable changes cleared after reverting MC", g.Label("Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere"), func() {
 		var (
 			machineconfiguration = GetMachineConfiguration(oc)
-			mcName               = "irreconcilable-mix-test-4"
+			mcName               = "irreconcilable-clear-test"
 			initialMcSpecs       = machineconfiguration.GetSpecOrFail()
 			mcpool               = "worker"
 		)
-		SkipTestIfWorkersCannotBeScaled(oc)
+
 		mcp := NewMachineConfigPool(oc, mcpool)
-		exutil.By("Step 1: Enable irreconcilablevalidationoverride and apply irreconcilable MC")
+
+		exutil.By("Step 1: Enable irreconcilableValidationOverrides and apply MC")
 		err := machineconfiguration.EnableIrreconcilableValidationOverrides()
 		o.Expect(err).NotTo(o.HaveOccurred())
 		err = mcp.WaitForUpdatedStatus()
 		o.Expect(err).NotTo(o.HaveOccurred())
-		mc := NewMachineConfig(oc, mcName, mcpool).SetMCOTemplate("extra-disks.yaml")
 
+		mc := NewMachineConfig(oc, mcName, mcpool).SetMCOTemplate("extra-disks.yaml")
 		disks := platformBasedDisksNames(platform)
 
 		err = mc.Create(
@@ -397,16 +379,18 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		)
 		o.Expect(err).NotTo(o.HaveOccurred())
 		logger.Infof("MC %s created successfully", mcName)
+
 		err = mcp.WaitForUpdatedStatus()
 		o.Expect(err).NotTo(o.HaveOccurred())
+
 		defer func() {
-			logger.Infof("restore initial machineConfiguration specs")
+			logger.Infof("Restore initial MachineConfiguration spec")
 			err = machineconfiguration.SetSpec(initialMcSpecs)
 			o.Expect(err).NotTo(o.HaveOccurred())
 		}()
 		defer mc.DeleteWithWait()
 
-		exutil.By("Step 2: Verify existing nodes report irreconcilable changes in their MCN")
+		exutil.By("Step 2: Verify nodes report irreconcilable changes")
 		workerNodes, err := mcp.getSelectedNodes(workerLabelKey)
 		o.Expect(err).NotTo(o.HaveOccurred())
 
@@ -420,44 +404,12 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			), "Node %s should have irreconcilable changes", node.GetName())
 			logger.Infof("Node %s has irreconcilable changes as expected", node.GetName())
 		}
-		logger.Infof("All existing worker nodes have irreconcilable changes as expected!\n")
+		logger.Infof("All worker nodes have irreconcilable changes as expected!\n")
 
-		exutil.By("Step 3: Scale up new machineset with extra disks")
-		machineset := OrFail[*MachineSet](GetScalableMachineSet(oc.AsAdmin()))
-		newMSName := machineset.GetName() + "-ms-ic-t4"
-		newMS, err := machineset.Duplicate(newMSName)
-		o.Expect(err).NotTo(o.HaveOccurred())
-
-		defer func() {
-			if newMS.Exists() {
-				err := newMS.ScaleTo(0)
-				o.Expect(err).NotTo(o.HaveOccurred())
-				err = newMS.WaitUntilReady("10m")
-				o.Expect(err).NotTo(o.HaveOccurred())
-				err = newMS.Delete()
-				o.Expect(err).NotTo(o.HaveOccurred())
-			}
-		}()
-		err = platformBasedDisksPatch(platform, newMS)
-		o.Expect(err).NotTo(o.HaveOccurred())
-		o.Expect(newMS.ScaleTo(1)).To(o.Succeed())
-		o.Expect(newMS.WaitUntilReady("15m")).To(o.Succeed())
-		newNodes := newMS.GetNodesOrFail()
-		o.Expect(newNodes).To(o.HaveLen(1))
-		newNode := newNodes[0]
-		logger.Infof("New node is: %s", newNode.GetName())
-
-		exutil.By("Step 4: Verify new node has no irreconcilable changes (booted with disks MC active)")
-		newExtNode := NewNode(oc.AsAdmin(), newNode.GetName())
-		o.Eventually(func() (string, error) {
-			return newExtNode.GetIrreconcilableChanges()
-		}, "5m", "10s").Should(o.BeEmpty(), "New node should have no irreconcilable changes since it was provisioned with the disks MC")
-		logger.Infof("New node %s has no irreconcilable changes as expected\n", newNode.GetName())
-
-		exutil.By("Step 5: Delete the irreconcilable MC")
+		exutil.By("Step 3: Delete the irreconcilable MC")
 		mc.DeleteWithWait()
 
-		exutil.By("Step 6: Verify existing nodes have irreconcilable changes cleared")
+		exutil.By("Step 4: Verify irreconcilable changes cleared on all nodes")
 		for _, node := range workerNodes {
 			o.Eventually(func() (string, error) {
 				return node.GetIrreconcilableChanges()
@@ -465,17 +417,36 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 				"Node %s should have cleared irreconcilable changes after MC removal", node.GetName())
 			logger.Infof("Node %s has cleared irreconcilable changes as expected", node.GetName())
 		}
-		logger.Infof("All existing worker nodes have cleared irreconcilable changes as expected!\n")
+		logger.Infof("All worker nodes have cleared irreconcilable changes!\n")
+	})
 
-		exutil.By("Step 7: Verify new node now reports irreconcilable changes")
+	g.It("Irreconcilable MC rejected without override enabled", g.Label("Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere"), func() {
+		var (
+			mcName = "irreconcilable-reject-test"
+			mcpool = "worker"
+		)
+
+		mcp := NewMachineConfigPool(oc, mcpool)
+		mc := NewMachineConfig(oc, mcName, mcpool).SetMCOTemplate("extra-disks.yaml")
+		disks := platformBasedDisksNames(platform)
+
+		exutil.By("Step 1: Apply irreconcilable MC without enabling override")
+		err := mc.Create(
+			"-p", "NAME="+mcName,
+			"-p", "POOL="+mcpool,
+			"-p", "DEVICE1="+disks[0],
+			"-p", "DEVICE2="+disks[1],
+		)
+		o.Expect(err).NotTo(o.HaveOccurred())
+		defer mc.DeleteWithWait()
+
+		exutil.By("Step 2: Verify MCP becomes RenderDegraded")
 		o.Eventually(func() (string, error) {
-			return newExtNode.GetIrreconcilableChanges()
-		}, "5m", "10s").Should(o.SatisfyAll(
-			o.ContainSubstring("spec.config.storage.disks"),
-			o.ContainSubstring("spec.config.storage.raid"),
-			o.ContainSubstring("spec.config.storage.filesystems"),
-		), "New node should report irreconcilable changes after MC removal (its install-time MC had disks, current rendered does not)")
+			return mcp.Get(`{.status.conditions[?(@.type=="RenderDegraded")].status}`)
+		}, "5m", "10s").Should(o.Equal("True"), "MCP should be RenderDegraded after applying irreconcilable MC without override")
 
-		logger.Infof("New node %s correctly reports irreconcilable changes after MC removal\n", newNode.GetName())
+		exutil.By("Step 3: Delete MC and verify pool recovers")
+		mc.DeleteWithWait()
+		o.Expect(mcp.WaitForNotDegradedStatus()).To(o.Succeed())
 	})
 })
