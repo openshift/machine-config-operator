@@ -7,3 +7,12 @@ junit*.xml
 checkstyle*.xml
 mco-unit-test-coverage.out
 mco-unit-test-coverage.html
+
+# MCO QE Tooling
+.env
+.claude/.env
+.claude/settings.local.json
+
+# MCO QE Tooling outputs
+/test-specs/
+.claude/__pycache__/

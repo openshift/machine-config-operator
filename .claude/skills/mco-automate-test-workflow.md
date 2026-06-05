@@ -9,11 +9,32 @@ Generate new e2e test code in `test/extended-priv/` from test specifications.
 
 ## Input Detection
 
-- **Text file**: path exists on disk -> read and parse it for test case ID, title, preconditions, steps, expected results, tags
-- **Polarion ID**: matches `OCP-\d+` or purely numeric -> future (MCO-2220)
-- **Jira ID**: matches `MCO-\d+` -> future (MCO-2221)
+- **Text file**: path exists on disk → read and parse it for test case ID, title, preconditions, steps, expected results, tags
+- **Polarion ID**: matches `OCP-\d+` or `OSE-\d+` → fetch via `fetch_polarion.py`, use `/tmp/test-specs/<id>.txt`
+- **Jira ID**: matches `MCO-\d+` → future (MCO-2221)
 
-Only text file input is supported now.
+### Polarion ID Workflow
+
+When `<spec-source>` is a Polarion ID (e.g., `OCP-88122`):
+
+1. **Fetch test case**:
+   ```bash
+   python3 .claude/scripts/fetch_polarion.py <id>
+   ```
+   - Outputs JSON to stdout
+   - Saves `/tmp/test-specs/<id>.txt` (formatted spec)
+
+2. **Parse fetched spec**:
+   - Read `/tmp/test-specs/<id>.txt`
+   - Extract test steps from "Test Steps:" section
+   - Extract metadata from "Metadata:" section
+   - Use title from "Title:" line
+
+3. **Validate**:
+   - Ensure test steps have commands (not just narrative)
+   - Verify required fields present (Component, Sub Team, Version)
+
+4. **Generate test code** following the same conventions as text file input
 
 ## Target File Resolution
 
