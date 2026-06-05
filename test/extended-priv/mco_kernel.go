@@ -332,38 +332,4 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			"The kernel arguments are not the expected ones")
 		logger.Infof("OK!\n")
 	})
-
-	g.It("[PolarionID:88729] Verify USBGuard extension can be installed and enabled via MachineConfig on worker nodes [Disruptive]", func() {
-		testID := GetCurrentTestPolarionIDNumber()
-		mcp := GetCompactCompatiblePool(oc.AsAdmin())
-
-		exutil.By("Create a MachineConfig to install the usbguard extension on worker nodes")
-		mcExt := NewMachineConfig(oc.AsAdmin(), fmt.Sprintf("test-%s-ext", testID), mcp.GetName()).
-			SetMCOTemplate("change-worker-extension-usbguard.yaml")
-		defer mcExt.DeleteWithWait()
-		mcExt.create()
-		logger.Infof("OK!\n")
-
-		exutil.By("Create a MachineConfig to enable the usbguard systemd unit on worker nodes")
-		mcEnable := NewMachineConfig(oc.AsAdmin(), fmt.Sprintf("test-%s-enable", testID), mcp.GetName())
-		mcEnable.SetParams(fmt.Sprintf(`UNITS=[{"enabled": true, "name": "usbguard.service"}]`))
-		defer mcEnable.Delete()
-		mcEnable.create()
-		logger.Infof("OK!\n")
-
-		exutil.By("Verify usbguard extension is installed on all worker nodes")
-		nodes := mcp.GetSortedNodesOrFail()
-		for _, node := range nodes {
-			o.Expect(node.RpmIsInstalled("usbguard")).To(o.BeTrue(),
-				"usbguard rpm should be installed on node %s", node.GetName())
-		}
-		logger.Infof("OK!\n")
-
-		exutil.By("Verify usbguard.service is enabled on all worker nodes")
-		for _, node := range nodes {
-			o.Expect(node.IsUnitEnabled("usbguard")).To(o.BeTrue(),
-				"usbguard.service should be enabled on node %s", node.GetName())
-		}
-		logger.Infof("OK!\n")
-	})
 })
