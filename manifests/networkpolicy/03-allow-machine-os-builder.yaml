@@ -1,0 +1,29 @@
+# Network policy for the machine-os-builder pod.
+# This policy is only applied when layered MachineConfigPools exist,
+# and is deleted when no layered pools are present.
+#
+# Egress:
+# - Allow all egress for API server communication, container registry access,
+#   and DNS resolution. All egress is permitted because destination addresses
+#   (registries, API server) vary by cluster configuration.
+#
+# Ingress:
+# - Allow ingress on port 9001 (metrics) so that Prometheus can scrape metrics.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-machine-os-builder
+  namespace: {{.TargetNamespace}}
+spec:
+  podSelector:
+    matchLabels:
+      k8s-app: machine-os-builder
+  ingress:
+  - ports:
+    - protocol: TCP
+      port: 9001
+  egress:
+  - {}
+  policyTypes:
+  - Ingress
+  - Egress

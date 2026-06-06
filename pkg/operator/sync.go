@@ -154,6 +154,12 @@ const (
 	// Machine OS puller manifest paths
 	mopRoleBindingManifestPath    = "manifests/machine-os-puller/rolebinding.yaml"
 	mopServiceAccountManifestPath = "manifests/machine-os-puller/sa.yaml"
+
+	// NetworkPolicy manifest paths
+	npDefaultDenyPath  = "manifests/networkpolicy/00-default-deny.yaml"
+	npAllowMCOPath     = "manifests/networkpolicy/01-allow-machine-config-operator.yaml"
+	npAllowMCCPath     = "manifests/networkpolicy/02-allow-machine-config-controller.yaml"
+	npAllowMOBPath     = "manifests/networkpolicy/03-allow-machine-os-builder.yaml"
 )
 
 type syncFunc struct {
@@ -1629,6 +1635,54 @@ func (optr *Operator) getLayeredMachineConfigPools() ([]*mcfgv1.MachineConfigPoo
 	}
 
 	return pools, nil
+}
+
+func (optr *Operator) syncNetworkPolicies(config *renderConfig, _ *configv1.ClusterOperator) error {
+	return retry.OnError(retry.DefaultRetry, mcoResourceApply.IsApplyErrorRetriable, func() error {
+		npCache := resourceapply.NewResourceCache()
+
+		staticPolicies := []string{
+			npDefaultDenyPath,
+			npAllowMCOPath,
+			npAllowMCCPath,
+		}
+		for _, path := range staticPolicies {
+			npBytes, err := renderAsset(config, path)
+			if err != nil {
+				return err
+			}
+			np := resourceread.ReadNetworkPolicyV1OrDie(npBytes)
+			_, _, err = resourceapply.ApplyNetworkPolicy(context.TODO(), optr.kubeClient.NetworkingV1(), optr.libgoRecorder, np, npCache)
+			if err != nil {
+				return err
+			}
+		}
+
+		layeredMCPs, err := optr.getLayeredMachineConfigPools()
+		if err != nil {
+			return err
+		}
+
+		mobNPBytes, err := renderAsset(config, npAllowMOBPath)
+		if err != nil {
+			return err
+		}
+		mobNP := resourceread.ReadNetworkPolicyV1OrDie(mobNPBytes)
+
+		if len(layeredMCPs) > 0 {
+			_, _, err = resourceapply.ApplyNetworkPolicy(context.TODO(), optr.kubeClient.NetworkingV1(), optr.libgoRecorder, mobNP, npCache)
+			if err != nil {
+				return err
+			}
+		} else {
+			_, _, err = resourceapply.DeleteNetworkPolicy(context.TODO(), optr.kubeClient.NetworkingV1(), optr.libgoRecorder, mobNP)
+			if err != nil && !apierrors.IsNotFound(err) {
+				return err
+			}
+		}
+
+		return nil
+	})
 }
 
 func (optr *Operator) syncMachineConfigDaemon(config *renderConfig, _ *configv1.ClusterOperator) error {
