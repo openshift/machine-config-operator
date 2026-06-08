@@ -1,0 +1,99 @@
+package operator
+
+import (
+	"context"
+
+	configv1 "github.com/openshift/api/config/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	metav1ac "k8s.io/client-go/applyconfigurations/meta/v1"
+	networkingv1ac "k8s.io/client-go/applyconfigurations/networking/v1"
+)
+
+const networkPolicyFieldManager = "machine-config-operator"
+
+func defaultDenyNetworkPolicy(namespace string) *networkingv1ac.NetworkPolicyApplyConfiguration {
+	return networkingv1ac.NetworkPolicy("default-deny", namespace).
+		WithSpec(networkingv1ac.NetworkPolicySpec().
+			WithPodSelector(metav1ac.LabelSelector()).
+			WithPolicyTypes(networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress))
+}
+
+func allowMCONetworkPolicy(namespace string) *networkingv1ac.NetworkPolicyApplyConfiguration {
+	return networkingv1ac.NetworkPolicy("allow-machine-config-operator", namespace).
+		WithSpec(networkingv1ac.NetworkPolicySpec().
+			WithPodSelector(metav1ac.LabelSelector().
+				WithMatchLabels(map[string]string{"k8s-app": "machine-config-operator"})).
+			WithIngress(networkingv1ac.NetworkPolicyIngressRule().
+				WithPorts(networkingv1ac.NetworkPolicyPort().
+					WithProtocol(corev1.ProtocolTCP).
+					WithPort(intstr.FromInt32(9001)))).
+			WithEgress(networkingv1ac.NetworkPolicyEgressRule()).
+			WithPolicyTypes(networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress))
+}
+
+func allowMCCNetworkPolicy(namespace string) *networkingv1ac.NetworkPolicyApplyConfiguration {
+	return networkingv1ac.NetworkPolicy("allow-machine-config-controller", namespace).
+		WithSpec(networkingv1ac.NetworkPolicySpec().
+			WithPodSelector(metav1ac.LabelSelector().
+				WithMatchLabels(map[string]string{"k8s-app": "machine-config-controller"})).
+			WithIngress(networkingv1ac.NetworkPolicyIngressRule().
+				WithPorts(networkingv1ac.NetworkPolicyPort().
+					WithProtocol(corev1.ProtocolTCP).
+					WithPort(intstr.FromInt32(9001)))).
+			WithEgress(networkingv1ac.NetworkPolicyEgressRule()).
+			WithPolicyTypes(networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress))
+}
+
+func allowMOBNetworkPolicy(namespace string) *networkingv1ac.NetworkPolicyApplyConfiguration {
+	return networkingv1ac.NetworkPolicy("allow-machine-os-builder", namespace).
+		WithSpec(networkingv1ac.NetworkPolicySpec().
+			WithPodSelector(metav1ac.LabelSelector().
+				WithMatchLabels(map[string]string{"k8s-app": "machine-os-builder"})).
+			WithIngress(networkingv1ac.NetworkPolicyIngressRule().
+				WithPorts(networkingv1ac.NetworkPolicyPort().
+					WithProtocol(corev1.ProtocolTCP).
+					WithPort(intstr.FromInt32(9001)))).
+			WithEgress(networkingv1ac.NetworkPolicyEgressRule()).
+			WithPolicyTypes(networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress))
+}
+
+func (optr *Operator) syncNetworkPolicies(_ *renderConfig, _ *configv1.ClusterOperator) error {
+	ctx := context.TODO()
+	ns := ctrlcommon.MCONamespace
+	applyOpts := metav1.ApplyOptions{FieldManager: networkPolicyFieldManager, Force: true}
+
+	staticPolicies := []*networkingv1ac.NetworkPolicyApplyConfiguration{
+		defaultDenyNetworkPolicy(ns),
+		allowMCONetworkPolicy(ns),
+		allowMCCNetworkPolicy(ns),
+	}
+
+	for _, policy := range staticPolicies {
+		if _, err := optr.kubeClient.NetworkingV1().NetworkPolicies(ns).Apply(ctx, policy, applyOpts); err != nil {
+			return err
+		}
+	}
+
+	layeredMCPs, err := optr.getLayeredMachineConfigPools()
+	if err != nil {
+		return err
+	}
+
+	if len(layeredMCPs) > 0 {
+		if _, err := optr.kubeClient.NetworkingV1().NetworkPolicies(ns).Apply(ctx, allowMOBNetworkPolicy(ns), applyOpts); err != nil {
+			return err
+		}
+	} else {
+		err := optr.kubeClient.NetworkingV1().NetworkPolicies(ns).Delete(ctx, "allow-machine-os-builder", metav1.DeleteOptions{})
+		if err != nil && !apierrors.IsNotFound(err) {
+			return err
+		}
+	}
+
+	return nil
+}

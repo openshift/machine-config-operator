@@ -26,7 +26,7 @@ func testRenderConfig() *renderConfig {
 func testOperatorForNetworkPolicies(t *testing.T, pools []*mcfgv1.MachineConfigPool) *Operator {
 	t.Helper()
 
-	kubeClient := fake.NewSimpleClientset()
+	kubeClient := fake.NewClientset()
 	mcfgClient := fakeclientmachineconfigv1.NewSimpleClientset()
 	mcfgInformerFactory := mcfginformers.NewSharedInformerFactory(mcfgClient, 0)
 	mcpInformer := mcfgInformerFactory.Machineconfiguration().V1().MachineConfigPools()
