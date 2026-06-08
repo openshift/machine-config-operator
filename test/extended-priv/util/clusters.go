@@ -2,6 +2,7 @@ package util
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	o "github.com/onsi/gomega"
@@ -19,6 +20,20 @@ const (
 	// Note: This should be updated along with SupportedOSStream in pkg/controller/bootimage/boot_image_controller.go
 	supportedOSStream = "rhel-9"
 )
+
+// GetClusterVersion returns the cluster version as string value (Ex: 4.8) and cluster build (Ex: 4.8.0-0.nightly-2021-09-28-165247)
+func GetClusterVersion(oc *CLI) (string, string, error) {
+	clusterBuild, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("clusterversion", "-o", "jsonpath={..desired.version}").Output()
+	if err != nil {
+		return "", "", err
+	}
+	splitValues := strings.Split(clusterBuild, ".")
+	if len(splitValues) < 2 {
+		return "", "", fmt.Errorf("malformed cluster version %q: expected at least major.minor format", clusterBuild)
+	}
+	clusterVersion := splitValues[0] + "." + splitValues[1]
+	return clusterVersion, clusterBuild, nil
+}
 
 // GetInfraID returns the infra id
 func GetInfraID(oc *CLI) (string, error) {

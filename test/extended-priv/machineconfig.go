@@ -143,6 +143,11 @@ func (mc *MachineConfig) GetAuthorizedKeysByUserAsList(user string) ([]string, e
 	return listKeys, err
 }
 
+// GetExtensions returns all the extensions configured in this MC
+func (mc *MachineConfig) GetExtensions() (string, error) {
+	return mc.Get(`{.spec.extensions}`)
+}
+
 // GetIgnitionVersion returns the ignition version used in the MC
 func (mc *MachineConfig) GetIgnitionVersion() (string, error) {
 	return mc.Get(`{.spec.config.ignition.version}`)
