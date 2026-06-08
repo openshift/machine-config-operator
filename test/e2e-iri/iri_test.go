@@ -1,3 +1,5 @@
+//go:build !iri_delete
+
 package e2e_iri_test
 
 import (
