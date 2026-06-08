@@ -269,7 +269,7 @@ func getManagedKubeletConfigKey(pool *mcfgv1.MachineConfigPool, client mcfgclien
 			if err != nil {
 				key, err := ctrlcommon.GetManagedKey(pool, nil, managedKubeletConfigKeyPrefix, "kubelet", getManagedKubeletConfigKeyDeprecated(pool))
 				if err != nil {
-					klog.Infof("skipping error: %v", fmt.Errorf("error generating managedKey for suffix %s: %v", key, err))
+					klog.Infof("skipping error: %v", fmt.Errorf("error generating managedKey for suffix %s: %w", key, err))
 					continue
 				}
 				if f != key {

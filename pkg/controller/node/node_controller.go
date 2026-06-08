@@ -496,7 +496,7 @@ func (ctrl *Controller) addMachineOSConfig(obj interface{}) {
 	klog.V(4).Infof("Adding MachineOSConfig %s", curMOSC.Name)
 	mcp, err := ctrl.mcpLister.Get(curMOSC.Spec.MachineConfigPool.Name)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get MachineConfigPool from MachineOSConfig %#v", curMOSC))
+		utilruntime.HandleError(fmt.Errorf("couldn't get MachineConfigPool from MachineOSConfig %#v", curMOSC))
 		return
 	}
 	klog.V(4).Infof("MachineConfigPool %s opt in to OCL", mcp.Name)
@@ -513,7 +513,7 @@ func (ctrl *Controller) updateMachineOSConfig(old, cur interface{}) {
 	klog.V(4).Infof("Updating MachineOSConfig %s", oldMOSC.Name)
 	mcp, err := ctrl.mcpLister.Get(curMOSC.Spec.MachineConfigPool.Name)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get Machine Config Pool from MachineOSConfig %#v", curMOSC))
+		utilruntime.HandleError(fmt.Errorf("couldn't get Machine Config Pool from MachineOSConfig %#v", curMOSC))
 		return
 	}
 	klog.V(4).Infof("Image is ready for MachineConfigPool %s", mcp.Name)
@@ -538,7 +538,7 @@ func (ctrl *Controller) deleteMachineOSConfig(cur interface{}) {
 
 	mcp, err := ctrl.mcpLister.Get(curMOSC.Spec.MachineConfigPool.Name)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get MachineConfigPool from MachineOSConfig %#v", curMOSC))
+		utilruntime.HandleError(fmt.Errorf("couldn't get MachineConfigPool from MachineOSConfig %#v", curMOSC))
 		return
 	}
 	ctrl.enqueueMachineConfigPool(mcp)
@@ -577,7 +577,7 @@ func (ctrl *Controller) addMachineOSBuild(obj interface{}) {
 
 	mcp, err := ctrl.mcpLister.Get(poolName)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get MachineConfigPool from MachineOSBuild %#v: %v", curMOSB, err))
+		utilruntime.HandleError(fmt.Errorf("couldn't get MachineConfigPool from MachineOSBuild %#v: %w", curMOSB, err))
 		return
 	}
 	klog.V(4).Infof("MachineOSBuild %s affects MachineConfigPool %s", curMOSB.Name, mcp.Name)
@@ -609,7 +609,7 @@ func (ctrl *Controller) updateMachineOSBuild(old, cur interface{}) {
 
 	mcp, err := ctrl.mcpLister.Get(poolName)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get MachineConfigPool from MachineOSBuild %#v: %v", curMOSB, err))
+		utilruntime.HandleError(fmt.Errorf("couldn't get MachineConfigPool from MachineOSBuild %#v: %w", curMOSB, err))
 		return
 	}
 	klog.V(4).Infof("MachineOSBuild %s status changed for MachineConfigPool %s", curMOSB.Name, mcp.Name)
@@ -629,7 +629,7 @@ func (ctrl *Controller) addMachineConfigNode(obj interface{}) {
 
 	mcp, err := ctrl.mcpLister.Get(poolName)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get MachineConfigPool from MachineConfigNode %v: %v", curMCN, err))
+		utilruntime.HandleError(fmt.Errorf("couldn't get MachineConfigPool from MachineConfigNode %v: %w", curMCN, err))
 		return
 	}
 	klog.V(4).Infof("MachineConfigNode %s affects MachineConfigPool %s", curMCN.Name, mcp.Name)
@@ -654,7 +654,7 @@ func (ctrl *Controller) updateMachineConfigNode(old, cur interface{}) {
 
 	mcp, err := ctrl.mcpLister.Get(curPoolName)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get MachineConfigPool from MachineConfigNode %v: %v", curMCN.Name, err))
+		utilruntime.HandleError(fmt.Errorf("couldn't get MachineConfigPool from MachineConfigNode %v: %w", curMCN.Name, err))
 		return
 	}
 	klog.V(4).Infof("MachineConfigNode %s status changed for MachineConfigPool %s", curMCN.Name, mcp.Name)
@@ -685,7 +685,7 @@ func (ctrl *Controller) deleteMachineConfigNode(obj interface{}) {
 	}
 	mcp, err := ctrl.mcpLister.Get(mcpName)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get MachineConfigPool from MachineConfigNode %v", curMCN.Name))
+		utilruntime.HandleError(fmt.Errorf("couldn't get MachineConfigPool from MachineConfigNode %v", curMCN.Name))
 		return
 	}
 	ctrl.enqueueMachineConfigPool(mcp)
@@ -1857,7 +1857,7 @@ func (ctrl *Controller) setUpdateInProgressTaint(ctx context.Context, nodeName s
 
 		patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldData, newData, corev1.Node{})
 		if err != nil {
-			return fmt.Errorf("failed to create patch for node %q: %v", nodeName, err)
+			return fmt.Errorf("failed to create patch for node %q: %w", nodeName, err)
 		}
 		_, err = ctrl.kubeClient.CoreV1().Nodes().Patch(ctx, nodeName, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
 		return err
@@ -1910,7 +1910,7 @@ func maxUnavailable(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) (int, 
 	}
 	maxunavail, err := intstrutil.GetScaledValueFromIntOrPercent(&intOrPercent, len(nodes), false)
 	if err != nil {
-		return 0, fmt.Errorf("\"maxUnavailable\" %v", err)
+		return 0, fmt.Errorf("maxUnavailable: %w", err)
 	}
 	if maxunavail == 0 {
 		maxunavail = 1

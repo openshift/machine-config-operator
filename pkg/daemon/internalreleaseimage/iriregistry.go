@@ -96,7 +96,7 @@ func (r *iriRegistry) query(endpoint string, headers ...map[string]string) (*htt
 	}
 	resp, err := r.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("registry query %s failed with error: %v", regURL, err)
+		return nil, fmt.Errorf("registry query %s failed with error: %w", regURL, err)
 	}
 
 	if resp.StatusCode != http.StatusOK {

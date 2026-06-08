@@ -438,7 +438,7 @@ func (c *CertRotationController) reconcileSecret(secret corev1.Secret) error {
 	// Do a fresh get here since the lister will be likely out of date
 	mcsCABundle, err := c.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), ctrlcommon.MachineConfigServerCAName, metav1.GetOptions{})
 	if err != nil {
-		return fmt.Errorf("cannot read MCS CA bundle configmap: %v", err)
+		return fmt.Errorf("cannot read MCS CA bundle configmap: %w", err)
 
 	}
 

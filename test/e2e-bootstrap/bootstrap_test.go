@@ -791,7 +791,7 @@ func loadRawManifests(t *testing.T, rawObjs [][]byte) []runtime.Object {
 // both directories must exist, does not copy recursively
 func copyDir(src string, dest string) error {
 	if strings.HasPrefix(dest, src) {
-		return fmt.Errorf("Cannot copy a folder into the folder itself!")
+		return fmt.Errorf("cannot copy a folder into the folder itself!")
 	}
 
 	f, err := os.Open(src)
@@ -804,7 +804,7 @@ func copyDir(src string, dest string) error {
 		return err
 	}
 	if !file.IsDir() {
-		return fmt.Errorf("Source %v is not a directory!", file.Name())
+		return fmt.Errorf("source %v is not a directory!", file.Name())
 	}
 
 	files, err := ctrlcommon.ReadDir(src)

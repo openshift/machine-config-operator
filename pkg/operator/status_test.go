@@ -32,7 +32,7 @@ import (
 )
 
 func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
-	configNotFound := errors.New("Config Not Found")
+	configNotFound := errors.New("config not found")
 	type config struct {
 		name                 string
 		version              string
@@ -871,7 +871,7 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 				},
 			},
 			expectUpgradeBlock: true,
-			expectMessage:      "Upgrades have been disabled due to boot image update failures: Boot image controller is degraded: failed to update boot images",
+			expectMessage:      "Upgrades have been disabled due to boot image update failures: boot image controller is degraded: failed to update boot images",
 			expectError:        false,
 		},
 		{

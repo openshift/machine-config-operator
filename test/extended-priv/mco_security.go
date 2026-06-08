@@ -976,11 +976,11 @@ func BundleFileIsCATrusted(bundleFile string, node *Node) (bool, error) {
 	)
 
 	if !bundleRemote.Exists() {
-		return false, fmt.Errorf("File %s does not exist", bundleRemote.GetFullPath())
+		return false, fmt.Errorf("file %s does not exist", bundleRemote.GetFullPath())
 	}
 
 	if !objsignCABundleRemote.Exists() {
-		return false, fmt.Errorf("File %s does not exist", objsignCABundleRemote.GetFullPath())
+		return false, fmt.Errorf("file %s does not exist", objsignCABundleRemote.GetFullPath())
 	}
 
 	err := bundleRemote.Fetch()
@@ -1044,7 +1044,7 @@ func splitBundleCertificates(pemBundle []byte) ([]*x509.Certificate, error) {
 				pemBundle = rest
 				continue
 			}
-			return nil, fmt.Errorf("Error parsing certificate: %s", err)
+			return nil, fmt.Errorf("error parsing certificate: %s", err)
 		}
 
 		certsList = append(certsList, cert)

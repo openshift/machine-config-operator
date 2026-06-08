@@ -93,7 +93,7 @@ func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.Contai
 // we can simplify the logic for the bootstrap generation and avoid some edge cases.
 func generateBootstrapManagedKeyContainerConfig(pool *mcfgv1.MachineConfigPool, managedKeyExist map[string]bool) (string, error) {
 	if _, ok := managedKeyExist[pool.Name]; ok {
-		return "", fmt.Errorf("Error found multiple ContainerConfig targeting MachineConfigPool %v. Please apply only one ContainerConfig manifest for each pool during installation", pool.Name)
+		return "", fmt.Errorf("error found multiple ContainerConfig targeting MachineConfigPool %v. Please apply only one ContainerConfig manifest for each pool during installation", pool.Name)
 	}
 	managedKey, err := ctrlcommon.GetManagedKey(pool, nil, "99", "containerruntime", "")
 	if err != nil {

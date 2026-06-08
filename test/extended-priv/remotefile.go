@@ -119,7 +119,7 @@ func (rf *RemoteFile) PushNewContent(newContent []byte) error {
 		return err
 	}
 	if !exists {
-		return fmt.Errorf("Node %s. file %s. Refuse to modify the content of a file that does not exist", rf.node.GetName(), rf.fullPath)
+		return fmt.Errorf("node %s. file %s. Refuse to modify the content of a file that does not exist", rf.node.GetName(), rf.fullPath)
 	}
 
 	tmpFile := filepath.Join(e2e.TestContext.OutputDir, fmt.Sprintf("fetch-%s", exutil.GetRandomString()))

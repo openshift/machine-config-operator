@@ -27,7 +27,7 @@ func (matcher *remoteFileMethodMatcher) Match(actual interface{}) (success bool,
 	if !ok {
 		remoteFileObj, ok := actual.(RemoteFile)
 		if !ok {
-			return false, fmt.Errorf(`Wrong type. Matcher expects a type "RemoteFile" or "*RemoteFile"`)
+			return false, fmt.Errorf(`wrong type. Matcher expects a type "RemoteFile" or "*RemoteFile"`)
 		}
 		remoteFilePtr = &remoteFileObj
 	}

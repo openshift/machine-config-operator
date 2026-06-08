@@ -524,7 +524,7 @@ func GetRHCOSHandler(platform string) (RHCOSHandler, error) {
 	case VspherePlatform:
 		return VsphereRHCOSHandler{}, nil
 	default:
-		return nil, fmt.Errorf("Platform %s is not supported and cannot get RHCOSHandler", platform)
+		return nil, fmt.Errorf("platform %s is not supported and cannot get RHCOSHandler", platform)
 	}
 }
 
@@ -548,7 +548,7 @@ func (aws AWSRHCOSHandler) GetBaseImageFromRHCOSImageInfo(version string, arch a
 	}
 
 	if region == "" {
-		return "", fmt.Errorf("Region cannot have an empty value when we try to get the base image in platform %s", platform)
+		return "", fmt.Errorf("region cannot have an empty value when we try to get the base image in platform %s", platform)
 	}
 	if CompareVersions(version, "<", "4.10") {
 		path = `amis.` + region + `.hvm`
@@ -561,7 +561,7 @@ func (aws AWSRHCOSHandler) GetBaseImageFromRHCOSImageInfo(version string, arch a
 	baseImage := gjson.Get(rhcosImageInfo, path)
 	if !baseImage.Exists() {
 		logger.Infof("rhcos info:\n%s", rhcosImageInfo)
-		return "", fmt.Errorf("Could not find the base image for version <%s> in platform <%s> architecture <%s> and region <%s> with path %s",
+		return "", fmt.Errorf("could not find the base image for version <%s> in platform <%s> architecture <%s> and region <%s> with path %s",
 			version, platform, arch, region, path)
 	}
 	return baseImage.String(), nil
@@ -582,7 +582,7 @@ func (gcp GCPRHCOSHandler) GetBaseImageFromRHCOSImageInfo(version string, arch a
 	)
 
 	if CompareVersions(version, "=", "4.1") {
-		return "", fmt.Errorf("There is no image base image supported for platform %s in version %s", platform, version)
+		return "", fmt.Errorf("there is no image base image supported for platform %s in version %s", platform, version)
 	}
 
 	rhcosImageInfo, err := getRHCOSImagesInfo(version)
@@ -602,7 +602,7 @@ func (gcp GCPRHCOSHandler) GetBaseImageFromRHCOSImageInfo(version string, arch a
 	baseImage := gjson.Get(rhcosImageInfo, imagePath)
 	if !baseImage.Exists() {
 		logger.Infof("rhcos info:\n%s", rhcosImageInfo)
-		return "", fmt.Errorf("Could not find the base image for version <%s> in platform <%s> architecture <%s> and region <%s> with path %s",
+		return "", fmt.Errorf("could not find the base image for version <%s> in platform <%s> architecture <%s> and region <%s> with path %s",
 			version, platform, arch, region, imagePath)
 	}
 
@@ -610,7 +610,7 @@ func (gcp GCPRHCOSHandler) GetBaseImageFromRHCOSImageInfo(version string, arch a
 	project := gjson.Get(rhcosImageInfo, projectPath)
 	if !project.Exists() {
 		logger.Infof("rhcos info:\n%s", rhcosImageInfo)
-		return "", fmt.Errorf("Could not find the project where the base image is stored with version <%s> in platform <%s> architecture <%s> and region <%s> with path %s",
+		return "", fmt.Errorf("could not find the project where the base image is stored with version <%s> in platform <%s> architecture <%s> and region <%s> with path %s",
 			version, platform, arch, region, projectPath)
 	}
 
@@ -659,7 +659,7 @@ func getBaseImageURLFromRHCOSImageInfo(version, platform, format, stringArch str
 	baseImageURL := gjson.Get(rhcosImageInfo, imagePath)
 	if !baseImageURL.Exists() {
 		logger.Infof("rhcos info:\n%s", rhcosImageInfo)
-		return "", fmt.Errorf("Could not find the base image for version <%s> in platform <%s> architecture <%s> and format <%s> with path %s",
+		return "", fmt.Errorf("could not find the base image for version <%s> in platform <%s> architecture <%s> and format <%s> with path %s",
 			version, platform, stringArch, format, imagePath)
 	}
 
@@ -671,7 +671,7 @@ func getBaseImageURLFromRHCOSImageInfo(version, platform, format, stringArch str
 	baseURI := gjson.Get(rhcosImageInfo, baseURIPath)
 	if !baseURI.Exists() {
 		logger.Infof("rhcos info:\n%s", rhcosImageInfo)
-		return "", fmt.Errorf("Could not find the base URI with version <%s> in platform <%s> architecture <%s> and format <%s> with path %s",
+		return "", fmt.Errorf("could not find the base URI with version <%s> in platform <%s> architecture <%s> and format <%s> with path %s",
 			version, platform, stringArch, format, baseURIPath)
 	}
 
@@ -700,7 +700,7 @@ func uploadBaseImageToCloud(oc *exutil.CLI, platform, baseImageURL, baseImage st
 
 		return nil
 	default:
-		return fmt.Errorf("Platform %s is not supported, base image cannot be updloaded", platform)
+		return fmt.Errorf("platform %s is not supported, base image cannot be updloaded", platform)
 	}
 }
 

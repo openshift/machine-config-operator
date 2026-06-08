@@ -755,7 +755,7 @@ func getCoreOsBootImageFromConfigMap(platform, region string, arch architecture.
 	switch platform {
 	case AWSPlatform:
 		if region == "" {
-			return "", fmt.Errorf("Region is empty for platform %s. The region is mandatory if we want to get the boot image value", platform)
+			return "", fmt.Errorf("region is empty for platform %s. The region is mandatory if we want to get the boot image value", platform)
 		}
 		coreOsBootImagePath = fmt.Sprintf(`architectures.%s.images.%s.regions.%s.image`, stringArch, platform, region)
 	case GCPPlatform:

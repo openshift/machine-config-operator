@@ -56,7 +56,7 @@ func (cm *ConfigMap) GetDataValue(key string) (string, error) {
 
 	data, ok := dataMap[key]
 	if !ok {
-		return "", fmt.Errorf("Key %s does not exist in the .data in Configmap -n %s %s",
+		return "", fmt.Errorf("key %s does not exist in the .data in Configmap -n %s %s",
 			key, cm.GetNamespace(), cm.GetName())
 	}
 

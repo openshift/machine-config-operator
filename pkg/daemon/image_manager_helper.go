@@ -85,7 +85,7 @@ func validateImageSystem(imgSys imageSystem) error {
 		return nil
 	}
 
-	return fmt.Errorf("Invalid system %s! Valid systems are: %v", imgSys, sets.List(valid))
+	return fmt.Errorf("invalid system %s! Valid systems are: %v", imgSys, sets.List(valid))
 }
 
 // linkAuthFile gives rpm-ostree / bootc client access to secrets in the file located at `path` by symlinking so that

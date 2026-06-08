@@ -546,7 +546,7 @@ func (mcp *MachineConfigPool) GetCordonedNodes() []*Node {
 	err := wait.PollUntilContextTimeout(context.TODO(), 5*time.Second, 10*time.Minute, true, func(_ context.Context) (bool, error) {
 		nodes, nerr := mcp.GetNodes()
 		if nerr != nil {
-			return false, fmt.Errorf("Get all linux node failed, will try again in next run %v", nerr)
+			return false, fmt.Errorf("get all linux node failed, will try again in next run %v", nerr)
 		}
 		for _, node := range nodes {
 			schedulable, serr := node.IsSchedulable()
@@ -858,14 +858,14 @@ func (mcp *MachineConfigPool) RecoverFromDegraded() error {
 		logger.Infof("Restoring desired config in node: %s", node)
 		isUpdated, err := node.IsUpdated()
 		if err != nil {
-			return fmt.Errorf("Error checking if node %s is updated: %s", node.GetName(), err)
+			return fmt.Errorf("error checking if node %s is updated: %s", node.GetName(), err)
 		}
 		if isUpdated {
 			logger.Infof("node is updated, don't need to recover")
 		} else {
 			err := node.RestoreDesiredConfig()
 			if err != nil {
-				return fmt.Errorf("Error restoring desired config in node %s. Error: %s",
+				return fmt.Errorf("error restoring desired config in node %s. Error: %s",
 					mcp.GetName(), err)
 			}
 		}
@@ -1047,7 +1047,7 @@ func (mcp *MachineConfigPool) GetPinnedImageSets() ([]*PinnedImageSet, error) {
 	}
 
 	if labelsString == "" {
-		return nil, fmt.Errorf("No machineConfigSelector found in %s", mcp)
+		return nil, fmt.Errorf("no machineConfigSelector found in %s", mcp)
 	}
 
 	labels := gjson.Parse(labelsString)
@@ -1059,7 +1059,7 @@ func (mcp *MachineConfigPool) GetPinnedImageSets() ([]*PinnedImageSet, error) {
 	})
 
 	if requiredLabel == "" {
-		return nil, fmt.Errorf("No labels matcher could be built for %s", mcp)
+		return nil, fmt.Errorf("no labels matcher could be built for %s", mcp)
 	}
 	// remove the last comma
 	requiredLabel = strings.TrimSuffix(requiredLabel, ",")
@@ -1080,7 +1080,7 @@ func (mcp MachineConfigPool) GetMOSC() (*MachineOSConfig, error) {
 	}
 	if len(moscs) > 1 {
 		moscList.PrintDebugCommand()
-		return nil, fmt.Errorf("There are more than one MOSC for pool %s", mcp.GetName())
+		return nil, fmt.Errorf("there are more than one MOSC for pool %s", mcp.GetName())
 	}
 
 	if len(moscs) == 0 {
@@ -1221,7 +1221,7 @@ func CreateCustomMCPWithStreamByLabel(oc *exutil.CLI, name, label, osstream stri
 	}
 
 	if len(nodes) < numNodes {
-		return nil, fmt.Errorf("The worker MCP only has %d nodes, it is not possible to take %d nodes from worker pool to create a custom pool",
+		return nil, fmt.Errorf("the worker MCP only has %d nodes, it is not possible to take %d nodes from worker pool to create a custom pool",
 			len(nodes), numNodes)
 	}
 
@@ -1262,7 +1262,7 @@ func CreateCustomMCPWithStream(oc *exutil.CLI, name, osstream string, numNodes i
 	}
 
 	if numNodes > len(workerNodes) {
-		return NewMachineConfigPool(oc, name), fmt.Errorf("A %d nodes custom pool cannot be created because there are only %d nodes in the %s pool",
+		return NewMachineConfigPool(oc, name), fmt.Errorf("a %d nodes custom pool cannot be created because there are only %d nodes in the %s pool",
 			numNodes, len(workerNodes), wMcp.GetName())
 	}
 
@@ -1619,7 +1619,7 @@ func (mcp *MachineConfigPool) GetSortedUpdatedNodes(maxUnavailable int) []*Node 
 
 		if degradedstdout != 0 {
 			logger.Errorf("Degraded MC:\n%s", mcp.PrettyString())
-			exutil.AssertWaitPollNoErr(fmt.Errorf("Degraded machines"), fmt.Sprintf("mcp %s has degraded %d machines", mcp.name, degradedstdout))
+			exutil.AssertWaitPollNoErr(fmt.Errorf("degraded machines"), fmt.Sprintf("mcp %s has degraded %d machines", mcp.name, degradedstdout))
 		}
 
 		// Check that there aren't more thatn maxUpdatingNodes updating at the same time

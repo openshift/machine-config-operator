@@ -92,12 +92,12 @@ func (jd *JSONData) String() string {
 // GetSafe returns the value of a key in the data and an error
 func (jd *JSONData) GetSafe(key string) (*JSONData, error) {
 	if jd.data == nil {
-		return nil, fmt.Errorf("Data does not exist. It is empty: %v", jd.data)
+		return nil, fmt.Errorf("data does not exist. It is empty: %v", jd.data)
 	}
 
 	mapData, ok := jd.data.(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("Data is not a map: %v", jd.data)
+		return nil, fmt.Errorf("data is not a map: %v", jd.data)
 	}
 	value, found := mapData[key]
 	if found {
@@ -109,12 +109,12 @@ func (jd *JSONData) GetSafe(key string) (*JSONData, error) {
 // ItemSafe returns the value of a given item in a list and an error
 func (jd *JSONData) ItemSafe(index int) (*JSONData, error) {
 	if jd.data == nil {
-		return nil, fmt.Errorf("Data does not exist. It is empty: %v", jd.data)
+		return nil, fmt.Errorf("data does not exist. It is empty: %v", jd.data)
 	}
 
 	listData, ok := jd.data.([]interface{})
 	if !ok {
-		return nil, fmt.Errorf("Data is not a list: %v", jd.data)
+		return nil, fmt.Errorf("data is not a list: %v", jd.data)
 	}
 	return &JSONData{listData[index]}, nil
 }

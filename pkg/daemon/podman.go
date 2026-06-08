@@ -56,7 +56,7 @@ func (p *PodmanExecInterface) GetPodmanImageInfoByReference(reference string) (*
 	}
 	var podmanInfos []PodmanImageInfo
 	if err := json.Unmarshal(output, &podmanInfos); err != nil {
-		return nil, fmt.Errorf("failed to decode podman image ls output: %v", err)
+		return nil, fmt.Errorf("failed to decode podman image ls output: %w", err)
 	}
 	if len(podmanInfos) == 0 {
 
@@ -85,7 +85,7 @@ func (p *PodmanExecInterface) GetPodmanInfo() (*PodmanInfo, error) {
 	}
 	var podmanInfo PodmanInfo
 	if err := json.Unmarshal(output, &podmanInfo); err != nil {
-		return nil, fmt.Errorf("failed to decode podman system info output: %v", err)
+		return nil, fmt.Errorf("failed to decode podman system info output: %w", err)
 	}
 	return &podmanInfo, nil
 }

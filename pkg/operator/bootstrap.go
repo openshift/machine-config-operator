@@ -27,12 +27,12 @@ func RenderBootstrap(
 ) error {
 	dependencies, err := NewBootstrapDependencies(dependenciesFiles)
 	if err != nil {
-		return fmt.Errorf("error parsing dependencies for MCO bootstrap: %w", err)
+		return fmt.Errorf("parsing dependencies for MCO bootstrap: %w", err)
 	}
 
 	config, err := buildSpec(dependencies, imgs, releaseImage)
 	if err != nil {
-		return fmt.Errorf("error building spec for MCO bootstrap: %w", err)
+		return fmt.Errorf("building spec for MCO bootstrap: %w", err)
 	}
 
 	manifests := []manifest{

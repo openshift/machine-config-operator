@@ -64,7 +64,7 @@ func (c *CertRotationController) processHostnames() bool {
 		return true
 	}
 
-	utilruntime.HandleError(fmt.Errorf("%v failed with : %v", dsKey, err))
+	utilruntime.HandleError(fmt.Errorf("%v failed with : %w", dsKey, err))
 	c.hostnamesQueue.AddRateLimited(dsKey)
 
 	return true

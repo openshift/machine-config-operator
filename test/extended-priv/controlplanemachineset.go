@@ -368,7 +368,7 @@ func GCPGetControlPlaneMachinesetBootDiskIndex(cpms ControlPlaneMachineSet) (int
 	// Get the disks array from the ControlPlaneMachineSet spec
 	disksJSON, err := cpms.Get(`{.spec.template.machines_v1beta1_machine_openshift_io.spec.providerSpec.value.disks}`)
 	if err != nil {
-		return -1, fmt.Errorf("Failed to get disks array: %v", err)
+		return -1, fmt.Errorf("failed to get disks array: %v", err)
 	}
 
 	// Parse the disks array and find the boot disk
@@ -380,5 +380,5 @@ func GCPGetControlPlaneMachinesetBootDiskIndex(cpms ControlPlaneMachineSet) (int
 		}
 	}
 
-	return -1, fmt.Errorf("No boot disk found in disks array (no disk with boot: true)")
+	return -1, fmt.Errorf("no boot disk found in disks array (no disk with boot: true)")
 }

@@ -59,7 +59,7 @@ func NewFeatureGatesAccessHandler(featureGateAccess featuregates.FeatureGateAcce
 func NewFeatureGatesHardcodedHandler(enabled, disabled []configv1.FeatureGateName) *FeatureGatesHandlerImpl {
 	fgHandler := NewFeatureGatesAccessHandler(featuregates.NewHardcodedFeatureGateAccess(enabled, disabled))
 	if err := fgHandler.Connect(context.Background()); err != nil {
-		panic(fmt.Errorf("hardcoded feature gate impossible failure: %v", err))
+		panic(fmt.Errorf("hardcoded feature gate impossible failure: %w", err))
 	}
 	return fgHandler
 }
@@ -73,7 +73,7 @@ func NewFeatureGatesCRHandlerImpl(featureGate *configv1.FeatureGate, desiredVers
 	}
 	fgHandler := NewFeatureGatesAccessHandler(fgAccess)
 	if err = fgHandler.Connect(context.Background()); err != nil {
-		panic(fmt.Errorf("hardcoded feature gate impossible failure: %v", err))
+		panic(fmt.Errorf("hardcoded feature gate impossible failure: %w", err))
 	}
 	return fgHandler, nil
 }
@@ -125,7 +125,7 @@ func (h *FeatureGatesHandlerImpl) Connect(ctx context.Context) error {
 	case <-h.fgAccess.InitialFeatureGatesObserved():
 		fgs, err := h.fgAccess.CurrentFeatureGates()
 		if err != nil {
-			return fmt.Errorf("unable to get initial features: %v", err)
+			return fmt.Errorf("unable to get initial features: %w", err)
 		}
 		h.registerFeatureGates(fgs)
 		h.connectionDone = true

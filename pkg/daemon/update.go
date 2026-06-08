@@ -2528,11 +2528,11 @@ func (dn *Daemon) atomicallyWriteSSHKey(authKeyPath, keys string) error {
 		if userInfo, err := user.LookupId(fmt.Sprint(uid)); err == nil {
 			if userInfo.Username != constants.CoreUserName {
 				if err := os.RemoveAll(constants.CoreUserSSHPath); err != nil {
-					return fmt.Errorf("Failed to remove existing root user owned .ssh path %s:%w", constants.CoreUserSSHPath, err)
+					return fmt.Errorf("failed to remove existing root user owned .ssh path %s:%w", constants.CoreUserSSHPath, err)
 				}
 			}
 		} else {
-			return fmt.Errorf("Failed to look up the user of the .ssh path %s:%w", constants.CoreUserSSHPath, err)
+			return fmt.Errorf("failed to look up the user of the .ssh path %s:%w", constants.CoreUserSSHPath, err)
 		}
 	} else if !os.IsNotExist(err) {
 		return err
@@ -2559,7 +2559,7 @@ func (dn *Daemon) atomicallyWriteSSHKey(authKeyPath, keys string) error {
 func getUserPasswordHash(user string) (string, error) {
 	shadowOut, err := exec.Command("getent", "shadow", user).CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("Failed to check password hash for %s: %w", user, err)
+		return "", fmt.Errorf("failed to check password hash for %s: %w", user, err)
 	}
 	shadowSlice := strings.SplitN(strings.TrimSpace(string(shadowOut)), ":", 3)
 	if len(shadowSlice) >= 2 {
@@ -2605,7 +2605,7 @@ func (dn *Daemon) SetPasswordHash(newUsers, oldUsers []ign3types.PasswdUser) err
 		}
 
 		if out, err := exec.Command("usermod", "-p", pwhash, u.Name).CombinedOutput(); err != nil {
-			return fmt.Errorf("Failed to reset password for %s: %s:%w", u.Name, out, err)
+			return fmt.Errorf("failed to reset password for %s: %s:%w", u.Name, out, err)
 		}
 		klog.Info("Password has been configured")
 	}
@@ -2622,10 +2622,10 @@ func (dn *Daemon) updateKubeConfigPermission() error {
 	// Checking if kubeconfig is existed in the expected path:
 	if _, err := os.Stat(kubeConfigPath); err == nil {
 		if err := os.Chmod(kubeConfigPath, 0o600); err != nil {
-			return fmt.Errorf("Failed to reset permission for %s:%w", kubeConfigPath, err)
+			return fmt.Errorf("failed to reset permission for %s:%w", kubeConfigPath, err)
 		}
 	} else {
-		return fmt.Errorf("Cannot stat %s: %w", kubeConfigPath, err)
+		return fmt.Errorf("cannot stat %s: %w", kubeConfigPath, err)
 	}
 	return nil
 }
@@ -2715,7 +2715,7 @@ func deconfigureUser(user ign3types.PasswdUser) error {
 	user.PasswordHash = &pwhash
 
 	if out, err := exec.Command("usermod", "-p", *user.PasswordHash, user.Name).CombinedOutput(); err != nil {
-		return fmt.Errorf("Failed to change password for %s: %s:%w", user.Name, out, err)
+		return fmt.Errorf("failed to change password for %s: %s:%w", user.Name, out, err)
 	}
 	return nil
 }
@@ -2985,7 +2985,7 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 					klog.Errorf("Error setting ImagePulledFromRegistry condition to false: %v", mcnErr)
 				}
 			}
-			return fmt.Errorf("Failed to update OS to %s after retries: %w", newURL, err)
+			return fmt.Errorf("failed to update OS to %s after retries: %w", newURL, err)
 		}
 
 		// Report ImagePulledFromRegistry condition as true (success)

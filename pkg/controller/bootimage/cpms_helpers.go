@@ -43,14 +43,14 @@ func (ctrl *Controller) syncControlPlaneMachineSets(reason string) {
 	mcop, err := ctrl.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
 	if err != nil {
 		klog.Errorf("Failed to get MachineConfiguration: %v", err)
-		ctrl.updateConditions(reason, fmt.Errorf("failed to get MachineConfiguration while enqueueing ControlPlaneMachineSet: %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.updateConditions(reason, fmt.Errorf("failed to get MachineConfiguration while enqueueing ControlPlaneMachineSet: %w", err), opv1.MachineConfigurationBootImageUpdateDegraded)
 		return
 	}
 
 	machineManagerFound, machineResourceSelector, err := getMachineResourceSelectorFromMachineManagers(mcop.Status.ManagedBootImagesStatus.MachineManagers, opv1.MachineAPI, opv1.ControlPlaneMachineSets)
 	if err != nil {
 		klog.Errorf("failed to create a machineset selector while enqueueing controlplanemachineset %v", err)
-		ctrl.updateConditions(reason, fmt.Errorf("failed to create a machineset selector while enqueueing ControlPlaneMachineSet %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.updateConditions(reason, fmt.Errorf("failed to create a machineset selector while enqueueing ControlPlaneMachineSet %w", err), opv1.MachineConfigurationBootImageUpdateDegraded)
 		return
 	}
 	if !machineManagerFound {
@@ -64,7 +64,7 @@ func (ctrl *Controller) syncControlPlaneMachineSets(reason string) {
 	controlPlaneMachineSets, err := ctrl.cpmsLister.List(machineResourceSelector)
 	if err != nil {
 		klog.Errorf("failed to fetch ControlPlaneMachineSet list while enqueueing ControlPlaneMachineSet %v", err)
-		ctrl.updateConditions(reason, fmt.Errorf("failed to fetch ControlPlaneMachineSet list while enqueueing ControlPlaneMachineSet %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.updateConditions(reason, fmt.Errorf("failed to fetch ControlPlaneMachineSet list while enqueueing ControlPlaneMachineSet %w", err), opv1.MachineConfigurationBootImageUpdateDegraded)
 		return
 	}
 
@@ -92,7 +92,7 @@ func (ctrl *Controller) syncControlPlaneMachineSets(reason string) {
 			ctrl.cpmsStats.inProgress++
 		} else {
 			klog.Errorf("Error syncing ControlPlaneMachineSet %v", err)
-			syncErrors = append(syncErrors, fmt.Errorf("error syncing ControlPlaneMachineSet %s: %v", controlPlaneMachineSet.Name, err))
+			syncErrors = append(syncErrors, fmt.Errorf("error syncing ControlPlaneMachineSet %s: %w", controlPlaneMachineSet.Name, err))
 			ctrl.cpmsStats.erroredCount++
 		}
 		// Update progressing conditions every step of the loop

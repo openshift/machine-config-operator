@@ -765,7 +765,7 @@ func cloudPlatformLoadBalancerIPs(cfg RenderConfig, lbType LoadBalancerType) (in
 				case ingressLB:
 					return cfg.Infra.Status.PlatformStatus.GCP.CloudLoadBalancerConfig.ClusterHosted.IngressLoadBalancerIPs, nil
 				default:
-					return nil, fmt.Errorf("Invalid GCP Load Balancer Type provided : %s", lbType)
+					return nil, fmt.Errorf("invalid GCP Load Balancer Type provided : %s", lbType)
 				}
 
 			case absentLBIPState:
@@ -784,7 +784,7 @@ func cloudPlatformLoadBalancerIPs(cfg RenderConfig, lbType LoadBalancerType) (in
 				case ingressLB:
 					return cfg.Infra.Status.PlatformStatus.AWS.CloudLoadBalancerConfig.ClusterHosted.IngressLoadBalancerIPs, nil
 				default:
-					return nil, fmt.Errorf("Invalid AWS Load Balancer Type provided : %s", lbType)
+					return nil, fmt.Errorf("invalid AWS Load Balancer Type provided : %s", lbType)
 				}
 			case absentLBIPState:
 				return nil, fmt.Errorf("AWS %s Load Balancer IPs unavailable when the DNSType is ClusterHosted", lbType)
@@ -802,10 +802,10 @@ func cloudPlatformLoadBalancerIPs(cfg RenderConfig, lbType LoadBalancerType) (in
 				case ingressLB:
 					return cfg.Infra.Status.PlatformStatus.Azure.CloudLoadBalancerConfig.ClusterHosted.IngressLoadBalancerIPs, nil
 				default:
-					return nil, fmt.Errorf("Invalid Azure Load Balancer Type provided : %s", lbType)
+					return nil, fmt.Errorf("invalid Azure Load Balancer Type provided : %s", lbType)
 				}
 			case absentLBIPState:
-				return nil, fmt.Errorf("Azure %s Load Balancer IPs unavailable when the DNSType is ClusterHosted", lbType)
+				return nil, fmt.Errorf("azure %s Load Balancer IPs unavailable when the DNSType is ClusterHosted", lbType)
 			default:
 				return nil, fmt.Errorf("")
 			}

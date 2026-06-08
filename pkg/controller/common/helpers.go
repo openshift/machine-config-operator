@@ -81,7 +81,7 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.Contro
 	for _, config := range configs {
 		if config.ObjectMeta.Labels == nil {
 			// This shouldn't really be possible
-			return nil, fmt.Errorf("Cannot find label in MachineConfig %s", config.ObjectMeta.Name)
+			return nil, fmt.Errorf("cannot find label in MachineConfig %s", config.ObjectMeta.Name)
 		}
 		if config.ObjectMeta.Labels[MachineConfigRoleLabel] == MachineConfigPoolWorker {
 			workerConfigs = append(workerConfigs, config)
@@ -532,7 +532,7 @@ func GetPackagesForSupportedKernelType(kernelType string) (string, map[string][]
 	if _, ok := kernelPackages[kernelType]; ok {
 		return kernelType, kernelPackages, nil
 	}
-	return "", nil, fmt.Errorf("Unhandled kernel type %s", kernelType)
+	return "", nil, fmt.Errorf("unhandled kernel type %s", kernelType)
 }
 
 // Resolves a list of supported extensions to the individual packages required

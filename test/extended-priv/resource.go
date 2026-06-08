@@ -363,7 +363,7 @@ func (r *Resource) GetLabel(label string) (string, error) {
 		return "", err
 	}
 	if labelsJSON == "" {
-		return "", fmt.Errorf("Labels not defined. Could not get .metadata.labels attribute")
+		return "", fmt.Errorf("labels not defined. Could not get .metadata.labels attribute")
 	}
 
 	if err := json.Unmarshal([]byte(labelsJSON), &labels); err != nil {
@@ -467,7 +467,7 @@ func (t *Template) SetTemplate(template string) {
 // provide the "-p NAMESPACE" argument to this function.
 func (t *Template) Create(parameters ...string) error {
 	if t.templateFile == "" {
-		return fmt.Errorf("There is no template configured")
+		return fmt.Errorf("there is no template configured")
 	}
 
 	allParams := []string{"--ignore-unknown-parameters=true", "-f", t.templateFile}
@@ -482,7 +482,7 @@ func (t *Template) Create(parameters ...string) error {
 // provide the "-p NAMESPACE" argument to this function.
 func (t *Template) Apply(parameters ...string) error {
 	if t.templateFile == "" {
-		return fmt.Errorf("There is no template configured")
+		return fmt.Errorf("there is no template configured")
 	}
 
 	allParams := []string{"--ignore-unknown-parameters=true", "-f", t.templateFile}
@@ -589,7 +589,7 @@ type existMatcher struct {
 func (matcher *existMatcher) Match(actual interface{}) (success bool, err error) {
 	resource, ok := actual.(Exister)
 	if !ok {
-		return false, fmt.Errorf("Exist matcher expects a resource implementing the Exister interface")
+		return false, fmt.Errorf("exist matcher expects a resource implementing the Exister interface")
 	}
 
 	return resource.Exists(), nil
