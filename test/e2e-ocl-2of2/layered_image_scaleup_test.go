@@ -1,17 +1,20 @@
-package e2e_ocl_test
+package e2e_ocl_2of2_test
 
 import (
 	"context"
 	"testing"
 	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
+
 	machineclientset "github.com/openshift/client-go/machine/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/require"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/wait"
+
+	e2e_ocl_shared_test "github.com/openshift/machine-config-operator/test/e2e-ocl-shared"
 )
 
 // TestLayeredImageServingDuringNodeScaleUp tests the 1-reboot vs 2-reboot behavior when scaling up nodes
@@ -41,7 +44,7 @@ func TestLayeredImageServingDuringNodeScaleUp(t *testing.T) {
 	imagePullspec, _ := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
-			layeredMCPName: cowsayDockerfile,
+			layeredMCPName: e2e_ocl_shared_test.CowsayDockerfile,
 		},
 	})
 
@@ -53,7 +56,7 @@ func TestLayeredImageServingDuringNodeScaleUp(t *testing.T) {
 	t.Logf("Selected node %s to opt into layered pool", existingNode.Name)
 
 	// Label the node to add it to the layered pool
-	unlabelFunc := makeIdempotentAndRegisterAlwaysRun(t, helpers.LabelNode(t, cs, existingNode, helpers.MCPNameToRole(layeredMCPName)))
+	unlabelFunc := e2e_ocl_shared_test.MakeIdempotentAndRegisterAlwaysRun(t, helpers.LabelNode(t, cs, existingNode, helpers.MCPNameToRole(layeredMCPName)))
 
 	// Step 3: Wait for the existing node to adopt the layered image
 	t.Logf("Waiting for existing node %s to adopt layered image", existingNode.Name)
@@ -97,7 +100,7 @@ func TestLayeredImageServingDuringNodeScaleUp(t *testing.T) {
 	t.Logf("New node %s has been created and is ready", newNode.Name)
 
 	// Label the new node to add it to the layered pool
-	newNodeUnlabelFunc := makeIdempotentAndRegisterAlwaysRun(t, helpers.LabelNode(t, cs, *newNode, helpers.MCPNameToRole(layeredMCPName)))
+	newNodeUnlabelFunc := e2e_ocl_shared_test.MakeIdempotentAndRegisterAlwaysRun(t, helpers.LabelNode(t, cs, *newNode, helpers.MCPNameToRole(layeredMCPName)))
 
 	// Step 5: Verify the new node gets the layered image
 	t.Logf("Waiting for new node %s to adopt layered image during bootstrap", newNode.Name)
