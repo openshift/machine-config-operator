@@ -361,6 +361,37 @@ func (ctrl *Controller) syncNode(key string) error {
 		if err != nil {
 			klog.Errorf("Error making MCN for UnCordon success: %v", err)
 		}
+	case daemonconsts.DrainerStateCordon:
+		ctrl.logNode(node, "cordoning (no drain, single-node topology)")
+		if err := ctrl.cordonOrUncordonNode(true, node, drainer); err != nil {
+			nErr := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+				&upgrademonitor.Condition{State: v1.MachineConfigNodeUpdateExecuted, Reason: string(v1.MachineConfigNodeUpdateCordoned), Message: "Failed to Cordon Node (cordon-only mode)"},
+				&upgrademonitor.Condition{State: v1.MachineConfigNodeUpdateCordoned, Reason: fmt.Sprintf("%s%s", string(v1.MachineConfigNodeUpdateExecuted), string(v1.MachineConfigNodeUpdateCordoned)), Message: fmt.Sprintf("Error: Failed to Cordon node. Error is %s, The node is reporting Unschedulable = %t", err.Error(), node.Spec.Unschedulable)},
+				metav1.ConditionUnknown,
+				metav1.ConditionUnknown,
+				node,
+				ctrl.client,
+				ctrl.fgHandler,
+				pool,
+			)
+			if nErr != nil {
+				klog.Errorf("Error making MCN for Cordon-only Failure: %v", nErr)
+			}
+			return fmt.Errorf("node %s: failed to cordon (cordon-only): %v", node.Name, err)
+		}
+		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
+			&upgrademonitor.Condition{State: v1.MachineConfigNodeUpdateExecuted, Reason: string(v1.MachineConfigNodeUpdateCordoned), Message: "Cordoned Node without drain (single-node topology)"},
+			&upgrademonitor.Condition{State: v1.MachineConfigNodeUpdateCordoned, Reason: fmt.Sprintf("%s%s", string(v1.MachineConfigNodeUpdateExecuted), string(v1.MachineConfigNodeUpdateCordoned)), Message: fmt.Sprintf("Cordoned node without drain. The node is reporting Unschedulable = %t", node.Spec.Unschedulable)},
+			metav1.ConditionUnknown,
+			metav1.ConditionTrue,
+			node,
+			ctrl.client,
+			ctrl.fgHandler,
+			pool,
+		)
+		if err != nil {
+			klog.Errorf("Error making MCN for Cordon-only Success: %v", err)
+		}
 	case daemonconsts.DrainerStateDrain:
 
 		if err := ctrl.drainNode(node, drainer); err != nil {

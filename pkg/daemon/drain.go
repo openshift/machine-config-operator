@@ -40,29 +40,8 @@ func (dn *Daemon) performDrain() error {
 	}
 
 	if !dn.drainRequired() {
-		logSystem("Drain not required, skipping")
-
-		// Get MCP associated with node
-		pool, err := helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
-		if err != nil {
-			return err
-		}
-
-		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
-			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgv1.MachineConfigNodeUpdateDrained), Message: "Node Drain Not required for this update."},
-			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateDrained, Reason: fmt.Sprintf("%s%s", string(mcfgv1.MachineConfigNodeUpdateExecuted), string(mcfgv1.MachineConfigNodeUpdateDrained)), Message: "Node Drain Not required for this update."},
-			metav1.ConditionUnknown,
-			metav1.ConditionFalse,
-			dn.node,
-			dn.mcfgClient,
-			dn.fgHandler,
-			pool,
-		)
-		if err != nil {
-			klog.Errorf("Error making MCN for Drain not required: %v", err)
-		}
-		dn.nodeWriter.Eventf(corev1.EventTypeNormal, "Drain", "Drain not required, skipping")
-		return nil
+		logSystem("Drain not required on single-node topology, requesting cordon only")
+		return dn.performCordonOnly()
 	}
 
 	desiredConfigName, err := getNodeAnnotation(dn.node, constants.DesiredMachineConfigAnnotationKey)
@@ -123,6 +102,72 @@ func (dn *Daemon) performDrain() error {
 
 	t := time.Since(startTime).Seconds()
 	klog.Infof("Successful drain took %v seconds", t)
+
+	return nil
+}
+
+// performCordonOnly requests the DrainController to cordon the node (mark unschedulable)
+// without draining pods. Used on single-node clusters where drain would deadlock on PDBs
+// but we still want to prevent new workloads from being scheduled during updates.
+func (dn *Daemon) performCordonOnly() error {
+	desiredConfigName, err := getNodeAnnotation(dn.node, constants.DesiredMachineConfigAnnotationKey)
+	if err != nil {
+		return err
+	}
+	desiredCordonValue := fmt.Sprintf("%s-%s", constants.DrainerStateCordon, desiredConfigName)
+	if dn.node.Annotations[constants.LastAppliedDrainerAnnotationKey] == desiredCordonValue {
+		logSystem("cordon is already completed on this node")
+		return nil
+	}
+
+	// Get MCP associated with node
+	pool, err := helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
+	if err != nil {
+		return err
+	}
+
+	logSystem("Update prepared; requesting cordon (no drain) via annotation to controller")
+	dn.nodeWriter.Eventf(corev1.EventTypeNormal, "Cordon", "Cordoning node for update (drain skipped on single-node topology)")
+
+	if err := dn.nodeWriter.SetDesiredDrainer(desiredCordonValue); err != nil {
+		return fmt.Errorf("could not set cordon annotation: %w", err)
+	}
+
+	ctx := context.TODO()
+	if err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 10*time.Minute, false, func(ctx context.Context) (bool, error) {
+		node, err := dn.kubeClient.CoreV1().Nodes().Get(ctx, dn.name, metav1.GetOptions{})
+		if err != nil {
+			klog.Warningf("Failed to get node: %v", err)
+			return false, nil
+		}
+		if node.Annotations[constants.DesiredDrainerAnnotationKey] != node.Annotations[constants.LastAppliedDrainerAnnotationKey] {
+			return false, nil
+		}
+		return true, nil
+	}); err != nil {
+		if wait.Interrupted(err) {
+			failMsg := fmt.Sprintf("failed to cordon node: %s after 10 minutes. Please see machine-config-controller logs for more information", dn.node.Name)
+			dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedToCordon", failMsg)
+			return errors.New(failMsg)
+		}
+		return fmt.Errorf("something went wrong while attempting to cordon node: %v", err)
+	}
+
+	logSystem("cordon complete (drain skipped)")
+
+	err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
+		&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgv1.MachineConfigNodeUpdateDrained), Message: "Node cordoned without drain (single-node topology)."},
+		&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateDrained, Reason: fmt.Sprintf("%s%s", string(mcfgv1.MachineConfigNodeUpdateExecuted), string(mcfgv1.MachineConfigNodeUpdateDrained)), Message: "Node cordoned without drain (single-node topology)."},
+		metav1.ConditionUnknown,
+		metav1.ConditionFalse,
+		dn.node,
+		dn.mcfgClient,
+		dn.fgHandler,
+		pool,
+	)
+	if err != nil {
+		klog.Errorf("Error making MCN for cordon-only completion: %v", err)
+	}
 
 	return nil
 }
