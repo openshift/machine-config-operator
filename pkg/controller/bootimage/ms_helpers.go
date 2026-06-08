@@ -22,6 +22,8 @@ import (
 	"k8s.io/klog/v2"
 
 	archtranslater "github.com/coreos/stream-metadata-go/arch"
+	"github.com/coreos/stream-metadata-go/stream"
+	corev1 "k8s.io/api/core/v1"
 )
 
 // syncMAPIMachineSets will attempt to enqueue every machineset
@@ -195,42 +197,58 @@ func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet
 
 	// Patch the machineset if required
 	if patchRequired {
-		// First, check if we're hot looping
-		if ctrl.checkMAPIMachineSetHotLoop(newMachineSet) {
+		if ctrl.checkMAPIMachineSetHotLoop(newMachineSet, configMap, infra, arch) {
 			return false, fmt.Errorf("refusing to reconcile machineset %s, hot loop detected. Please opt-out of boot image updates, adjust your machine provisioning workflow to prevent hot loops and opt back in to resume boot image updates", machineSet.Name)
 		}
 		klog.Infof("Patching MAPI machineset %s", machineSet.Name)
-		return false, ctrl.patchMachineSet(machineSet, newMachineSet)
+		if err := ctrl.patchMachineSet(machineSet, newMachineSet); err != nil {
+			return false, err
+		}
+		ctrl.recordMAPIBootImageState(newMachineSet, configMap, infra, arch)
+		return false, nil
 	}
 	klog.Infof("No patching required for MAPI machineset %s", machineSet.Name)
 	return patchSkipped, nil
 }
 
-// Checks against a local store of boot image updates to detect hot looping
-func (ctrl *Controller) checkMAPIMachineSetHotLoop(machineSet *machinev1beta1.MachineSet) bool {
-	bis, ok := ctrl.mapiBootImageState[machineSet.Name]
-	if !ok {
-		// If the machineset doesn't currently have a record, create a new one.
-		ctrl.mapiBootImageState[machineSet.Name] = BootImageState{
-			value:        machineSet.Spec.Template.Spec.ProviderSpec.Value.Raw,
-			hotLoopCount: 1,
-		}
-	} else {
-		hotLoopCount := 1
-		// If the controller is updating to a value that was previously updated to, increase the hot loop counter
-		if bytes.Equal(bis.value, machineSet.Spec.Template.Spec.ProviderSpec.Value.Raw) {
-			hotLoopCount = (bis.hotLoopCount) + 1
-		}
-		// Return an error and degrade if the hot loop counter is above threshold
-		if hotLoopCount > HotLoopLimit {
-			return true
-		}
-		ctrl.mapiBootImageState[machineSet.Name] = BootImageState{
-			value:        machineSet.Spec.Template.Spec.ProviderSpec.Value.Raw,
-			hotLoopCount: hotLoopCount,
+// getMAPIBootImageValue returns the value used for hot loop detection.
+// For vSphere, templates are updated in-place so providerSpec bytes never change;
+// the OVA release version is used instead.
+func getMAPIBootImageValue(machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap, infra *osconfigv1.Infrastructure, arch string) []byte {
+	value := machineSet.Spec.Template.Spec.ProviderSpec.Value.Raw
+	if infra != nil && infra.Status.PlatformStatus != nil && configMap != nil &&
+		infra.Status.PlatformStatus.Type == osconfigv1.VSpherePlatformType {
+		streamData := new(stream.Stream)
+		if err := unmarshalStreamDataConfigMap(configMap, streamData); err != nil {
+			klog.Warningf("Failed to unmarshal stream data for vSphere hot loop check: %v", err)
+		} else if streamArch, err := streamData.GetArchitecture(arch); err == nil {
+			if release := streamArch.Artifacts["vmware"].Release; release != "" {
+				value = []byte(release)
+			}
 		}
 	}
-	return false
+	return value
+}
+
+// checkMAPIMachineSetHotLoop returns true if the next patch to this machineset
+// would exceed the hot loop limit. Does not modify the store.
+func (ctrl *Controller) checkMAPIMachineSetHotLoop(machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap, infra *osconfigv1.Infrastructure, arch string) bool {
+	value := getMAPIBootImageValue(machineSet, configMap, infra, arch)
+	bis, ok := ctrl.mapiBootImageState[machineSet.Name]
+	return ok && bytes.Equal(bis.value, value) && bis.hotLoopCount >= HotLoopLimit
+}
+
+// recordMAPIBootImageState updates the local boot image store after a successful patch.
+func (ctrl *Controller) recordMAPIBootImageState(machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap, infra *osconfigv1.Infrastructure, arch string) {
+	value := getMAPIBootImageValue(machineSet, configMap, infra, arch)
+	hotLoopCount := 1
+	if bis, ok := ctrl.mapiBootImageState[machineSet.Name]; ok && bytes.Equal(bis.value, value) {
+		hotLoopCount = bis.hotLoopCount + 1
+	}
+	ctrl.mapiBootImageState[machineSet.Name] = BootImageState{
+		value:        value,
+		hotLoopCount: hotLoopCount,
+	}
 }
 
 // This function patches the machineset object using the machineClient
