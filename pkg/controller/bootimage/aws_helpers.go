@@ -298,6 +298,14 @@ func cmpVersionToken(a, b string) int {
 	return aMin - bMin
 }
 
+// isPreRHELAlignedToken reports whether a version token uses the pre-4.19 OCP-based RHCOS
+// versioning scheme (e.g. "418.94") rather than the RHEL-aligned scheme (e.g. "9.6").
+// Pre-RHEL-aligned tokens have a major component > 100 (encoding the OCP major version * 100 + minor).
+func isPreRHELAlignedToken(token string) bool {
+	major, _ := strconv.Atoi(strings.SplitN(token, ".", 2)[0])
+	return major > 100
+}
+
 // findMarketplaceAMI returns the AMI ID and RHCOS version of the best marketplace AMI for the
 // given product ID and version token. It fetches all AMIs for the product ID, discards any whose
 // description version exceeds the target, then returns the newest AMI at the highest version ≤ target.
@@ -326,6 +334,7 @@ func findMarketplaceAMI(ctx context.Context, client *ec2.Client, productID, vers
 	// DescribeImages filtered by name glob already narrows to the right product ID;
 	// parse each description to get its version and discard anything ahead of the target.
 	var matches []candidate
+	var sawPreRHELAligned bool
 	for _, img := range out.Images {
 		fullVersion, token, ok := extractVersionFromDescription(aws.ToString(img.Description))
 		if !ok {
@@ -333,11 +342,20 @@ func findMarketplaceAMI(ctx context.Context, client *ec2.Client, productID, vers
 		}
 		if cmpVersionToken(token, versionToken) <= 0 {
 			matches = append(matches, candidate{img, token, fullVersion})
+		} else if isPreRHELAlignedToken(token) {
+			sawPreRHELAligned = true
 		}
 	}
 
 	if len(matches) == 0 {
-		klog.Infof("no marketplace AMI found for product ID %s version ≤ %s in region, will retry on next reconcile, skipping update of MachineSet %s", productID, versionToken, machineSetName)
+		if sawPreRHELAligned {
+			// All available AMIs use the pre-4.19 RHCOS versioning scheme (e.g. "418.94.X").
+			// These are incompatible with the RHEL-aligned versioning used by 4.19+ clusters.
+			// The patch is skipped and the boot image skew remains until newer AMIs are published.
+			klog.Warningf("MachineSet %s: marketplace product %s has only pre-4.19 RHCOS AMIs in this region; boot image is out of date and cannot be updated until newer AMIs are available", machineSetName, productID)
+		} else {
+			klog.Infof("no marketplace AMI found for product ID %s version ≤ %s in region, will retry on next reconcile, skipping update of MachineSet %s", productID, versionToken, machineSetName)
+		}
 		return "", "", nil
 	}
 
