@@ -192,14 +192,41 @@ func (r *RpmOstreeClient) IsNewEnoughForLayering() (bool, error) {
 	return false, nil
 }
 
+func layeredRegistryRebaseRef(imgURL string) string {
+	return "ostree-unverified-registry:" + imgURL
+}
+
+func (r *RpmOstreeClient) ensurePullSecretsForRebase() error {
+	return useMergedPullSecrets(rpmOstreeSystem)
+}
+
+// DownloadOSImage fetches the target ostree layers without staging a deployment.
+// This is used to pre-cache OS images before a node enters cordon/drain during upgrades.
+func (r *RpmOstreeClient) DownloadOSImage(imgURL string) error {
+	if err := r.ensurePullSecretsForRebase(); err != nil {
+		return fmt.Errorf("error while ensuring access to pull secrets: %w", err)
+	}
+	klog.Infof("Downloading OS image layers for %s", imgURL)
+	return runRpmOstree("rebase", "--experimental", layeredRegistryRebaseRef(imgURL), "--download-only")
+}
+
+// RebaseFromCache applies a rebase using previously downloaded ostree layers.
+func (r *RpmOstreeClient) RebaseFromCache(imgURL string) error {
+	if err := r.ensurePullSecretsForRebase(); err != nil {
+		return fmt.Errorf("error while ensuring access to pull secrets: %w", err)
+	}
+	klog.Infof("Executing cached rebase to %s", imgURL)
+	return runRpmOstree("rebase", "--experimental", layeredRegistryRebaseRef(imgURL), "--cache-only")
+}
+
 // RebaseLayered rebases system or errors if already rebased.
 func (r *RpmOstreeClient) RebaseLayered(imgURL string) error {
 	// Try to re-link the merged pull secrets if they exist, since it could have been populated without a daemon reboot
-	if err := useMergedPullSecrets(rpmOstreeSystem); err != nil {
+	if err := r.ensurePullSecretsForRebase(); err != nil {
 		return fmt.Errorf("error while ensuring access to pull secrets: %w", err)
 	}
 	klog.Infof("Executing rebase to %s", imgURL)
-	return runRpmOstree("rebase", "--experimental", "ostree-unverified-registry:"+imgURL)
+	return runRpmOstree("rebase", "--experimental", layeredRegistryRebaseRef(imgURL))
 }
 
 // RebaseLayeredFromContainerStorage rebases the system from an existing local container storage image.
