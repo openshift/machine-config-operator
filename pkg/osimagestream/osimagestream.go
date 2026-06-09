@@ -137,11 +137,12 @@ func getDefaultStreamSet(streams []mcfgv1.OSImageStreamSet, createOptions *Creat
 		if len(streams) == 1 {
 			return streams[0].Name, nil
 		}
-		builtinDefault, err := GetBuiltinDefaultStreamName(createOptions.InstallVersion)
-		if err != nil {
-			return "", fmt.Errorf("could not determine the builtin default stream: %w", err)
-		}
-		requestedDefaultStream = builtinDefault
+		// TODO MCO-2343: Restore as soon as the full GA of the feature finishes
+		// builtinDefault, err := GetBuiltinDefaultStreamName(createOptions.InstallVersion)
+		// if err != nil {
+		//   return "", fmt.Errorf("could not determine the builtin default stream: %w", err)
+		// }
+		requestedDefaultStream = StreamNameRHEL9
 	}
 
 	if slices.Contains(streamNames, requestedDefaultStream) {
