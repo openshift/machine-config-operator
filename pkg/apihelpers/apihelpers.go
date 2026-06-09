@@ -7,6 +7,7 @@ package apihelpers
 import (
 	"fmt"
 
+	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	opv1 "github.com/openshift/api/operator/v1"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -16,6 +17,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/sets"
+	k8sversion "k8s.io/apimachinery/pkg/util/version"
 	"k8s.io/klog/v2"
 )
 
@@ -656,4 +658,33 @@ func GetSkewEnforcementStatusNone() opv1.BootImageSkewEnforcementStatus {
 	return opv1.BootImageSkewEnforcementStatus{
 		Mode: opv1.BootImageSkewEnforcementModeStatusNone,
 	}
+}
+
+// GetOCPInstallVersion extracts the install-time OCP version from
+// ClusterVersion history — the oldest completed update entry, normalised to Major.Minor.Patch.
+// Returns "0.0.0" as a conservative fallback if the history is empty or the version cannot be parsed.
+func GetOCPInstallVersion(clusterVersion *configv1.ClusterVersion) string {
+	// This is not possible, but return a sane value to avoid API validation failures.
+	if len(clusterVersion.Status.History) == 0 {
+		klog.Warning("ClusterVersion has no history, cannot determine install version")
+		return "0.0.0"
+	}
+	var installVersion string
+	for i := len(clusterVersion.Status.History) - 1; i >= 0; i-- {
+		if clusterVersion.Status.History[i].State == configv1.CompletedUpdate {
+			installVersion = clusterVersion.Status.History[i].Version
+			break
+		}
+	}
+	if installVersion == "" {
+		installVersion = clusterVersion.Status.History[len(clusterVersion.Status.History)-1].Version
+	}
+	parsedVersion, err := k8sversion.ParseGeneric(installVersion)
+	if err != nil {
+		// Version strings from ClusterVersion history are always valid semver in practice.
+		// Log a warning and return 0.0.0 as a sanity check.
+		klog.Warningf("Failed to parse install version %q: %v", installVersion, err)
+		return "0.0.0"
+	}
+	return fmt.Sprintf("%d.%d.%d", parsedVersion.Major(), parsedVersion.Minor(), parsedVersion.Patch())
 }

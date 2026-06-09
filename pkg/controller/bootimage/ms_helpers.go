@@ -106,11 +106,20 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) {
 	}
 	// Update/Clear degrade conditions based on errors from this loop
 	ctrl.updateConditions(reason, kubeErrs.NewAggregate(syncErrors), opv1.MachineConfigurationBootImageUpdateDegraded)
-	// If no machinesets were skipped, update the cluster boot image record
 	if ctrl.fgHandler.Enabled(features.FeatureGateBootImageSkewEnforcement) {
-		if ctrl.mapiStats.skippedCount == 0 {
+		switch {
+		case ctrl.mapiStats.skippedCount == 0 && len(syncErrors) == 0:
+			// All MachineSets reconciled cleanly — record the current OCP version.
 			ctrl.updateClusterBootImage()
+		case ctrl.mapiStats.skippedCount > 0 && len(syncErrors) == 0:
+			// One or more MachineSets were reconcileSkipped without an error. The existing
+			// ClusterBootImageAutomatic value is no longer trustworthy (a new or changed
+			// MachineSet may be running an older image), so reset it to the cluster install
+			// version to ensure the skew check surfaces a violation if warranted.
+			ctrl.resetClusterBootImage()
 		}
+		// Errors (syncErrors > 0) are already surfaced via the Degraded condition, which
+		// checkBootImageControllerReady checks first — no boot image record update needed.
 	}
 }
 
@@ -120,7 +129,7 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) {
 // error immediately, the condition is surfaced via skew enforcement.
 // reconcileSkipped=false means a patch was applied, the MachineSet was already up to
 // date, or it is out of scope for the MAPI path (e.g. migrated to CAPI authority).
-func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet) (bool, error) {
+func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap) (bool, error) {
 
 	startTime := time.Now()
 	klog.V(4).Infof("Started syncing MAPI machineset %q (%v)", machineSet.Name, startTime)
