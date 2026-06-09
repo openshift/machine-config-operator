@@ -2560,7 +2560,7 @@ func (optr *Operator) syncBootImageSkewEnforcementStatus(mcop *opv1.MachineConfi
 	}
 
 	// Grab install time OCP version
-	ocpVersionAtInstall := optr.getOCPInstallVersionFromClusterVersion()
+	ocpVersionAtInstall := optr.getOCPInstallVersion()
 
 	// Spec override takes priority over all platform defaults.
 	if mcop.Spec.BootImageSkewEnforcement != (opv1.BootImageSkewEnforcementConfig{}) {
@@ -2601,40 +2601,15 @@ func (optr *Operator) syncBootImageSkewEnforcementStatus(mcop *opv1.MachineConfi
 	newMachineConfigurationStatus.BootImageSkewEnforcementStatus = apihelpers.GetSkewEnforcementStatusManualWithOCPVersion(ocpVersionAtInstall)
 }
 
-// getOCPInstallVersionFromClusterVersion extracts the original install version from ClusterVersion history.
-// It finds the oldest completed update in history and parses it to a clean version string.
-// Returns an empty string if ClusterVersion cannot be retrieved or parsed.
-func (optr *Operator) getOCPInstallVersionFromClusterVersion() string {
+// getOCPInstallVersion extracts the original install version from ClusterVersion history.
+// Returns "0.0.0" if the version cannot be determined, so that downstream skew checks always have a value to compare.
+func (optr *Operator) getOCPInstallVersion() string {
 	clusterVersion, err := optr.clusterVersionLister.Get("version")
 	if err != nil {
 		klog.Warningf("Failed to get ClusterVersion: %v, skipping boot image skew enforcement configuration", err)
-		return ""
-	}
-	if len(clusterVersion.Status.History) == 0 {
-		klog.Warningf("ClusterVersion has no history, skipping boot image skew enforcement configuration")
-		return ""
-	}
-
-	// History is ordered by recency (newest first), so find the last completed entry (install version)
-	var installVersion string
-	for i := len(clusterVersion.Status.History) - 1; i >= 0; i-- {
-		if clusterVersion.Status.History[i].State == configv1.CompletedUpdate {
-			installVersion = clusterVersion.Status.History[i].Version
-			break
-		}
-	}
-	// ClusterVersion has no completed updates in history(install likely on-going), default to last value
-	if installVersion == "" {
-		klog.Warningf("ClusterVersion has no completed updates in history(install likely on-going), default to last value")
-		installVersion = clusterVersion.Status.History[len(clusterVersion.Status.History)-1].Version
-	}
-	// Scrape away CI/nightly tags if needed
-	parsedVersion, err := k8sversion.ParseGeneric(installVersion)
-	if err != nil {
-		klog.Warningf("Failed to parse install version %q: %v, use a placeholder for now", installVersion, err)
 		return "0.0.0"
 	}
-	return fmt.Sprintf("%d.%d.%d", parsedVersion.Major(), parsedVersion.Minor(), parsedVersion.Patch())
+	return apihelpers.GetOCPInstallVersion(clusterVersion)
 }
 
 // getCurrentOCPVersionFromClusterVersion extracts the latest OCP version from ClusterVersion history.
