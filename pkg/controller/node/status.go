@@ -381,7 +381,7 @@ func (ctrl *Controller) calculateStatus(mcns []*mcfgv1.MachineConfigNode, cconfi
 	// This must be done after all conditions are set, so we use the final calculated state
 	if ctrl.osStreamsFgEnabled {
 		isDegraded := nodeDegraded || renderDegraded || buildDegraded || pinnedImageSetsDegraded
-		status.OSImageStream = ctrl.getOSImageStream(pool, allUpdated, isDegraded)
+		status.OSImageStream = ctrl.getOSImageStream(pool, &status, allUpdated, isDegraded)
 	}
 
 	return status
@@ -520,7 +520,7 @@ func isLayeredPoolBuilding(isLayeredPool bool, mosc *mcfgv1.MachineOSConfig, mos
 }
 
 // getOSImageStream gets the OSImageStream for a pool based on the calculated updated and degraded state
-func (ctrl *Controller) getOSImageStream(pool *mcfgv1.MachineConfigPool, isUpdated, isDegraded bool) mcfgv1.OSImageStreamReference {
+func (ctrl *Controller) getOSImageStream(pool *mcfgv1.MachineConfigPool, status *mcfgv1.MachineConfigPoolStatus, isUpdated, isDegraded bool) mcfgv1.OSImageStreamReference {
 	// Only report OSImageStream status if the pool is Updated and not Degraded
 	if !isUpdated {
 		klog.V(4).Infof("Pool %s is not updated, clearing OSImageStream status", pool.Name)
@@ -532,8 +532,8 @@ func (ctrl *Controller) getOSImageStream(pool *mcfgv1.MachineConfigPool, isUpdat
 		return mcfgv1.OSImageStreamReference{}
 	}
 
-	// Get the rendered MachineConfig from the pool's status
-	renderedConfigName := pool.Status.Configuration.Name
+	// Use the current fresh status instead of the MCP's old one
+	renderedConfigName := status.Configuration.Name
 	if renderedConfigName == "" {
 		klog.V(4).Infof("Pool %s has no rendered configuration", pool.Name)
 		return mcfgv1.OSImageStreamReference{}
@@ -550,6 +550,19 @@ func (ctrl *Controller) getOSImageStream(pool *mcfgv1.MachineConfigPool, isUpdat
 	if err != nil {
 		klog.V(4).Infof("Could not retrieve OSImageStream CR: %v", err)
 		return mcfgv1.OSImageStreamReference{}
+	}
+
+	// If any source MC has osImageURL set, the OS image is user-managed
+	for _, srcRef := range status.Configuration.Source {
+		srcMC, err := ctrl.mcLister.Get(srcRef.Name)
+		if err != nil {
+			klog.Warningf("Could not retrieve source MachineConfig %s for pool %s: %v", srcRef.Name, pool.Name, err)
+			continue
+		}
+		if srcMC.Spec.OSImageURL != "" {
+			klog.V(4).Infof("Source MachineConfig %s has osImageURL set, skipping OSImageStream status for pool %s", srcMC.Name, pool.Name)
+			return mcfgv1.OSImageStreamReference{}
+		}
 	}
 
 	// Get the osImageURL from the rendered config
