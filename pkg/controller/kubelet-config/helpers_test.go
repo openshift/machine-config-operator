@@ -77,6 +77,37 @@ func TestWrapErrorWithCondition(t *testing.T) {
 	}
 }
 
+func TestLegacyConditionFromAccepted(t *testing.T) {
+	tests := []struct {
+		name         string
+		input        mcfgv1.KubeletConfigCondition
+		expectedType mcfgv1.KubeletConfigStatusConditionType
+		expectedMsg  string
+	}{
+		{
+			name:         "accepted True maps to Success True",
+			input:        mcfgv1.KubeletConfigCondition{Type: mcfgv1.KubeletConfigAccepted, Status: corev1.ConditionTrue, Message: "Success"},
+			expectedType: mcfgv1.KubeletConfigSuccess,
+			expectedMsg:  "Success",
+		},
+		{
+			name:         "accepted False maps to Failure True",
+			input:        mcfgv1.KubeletConfigCondition{Type: mcfgv1.KubeletConfigAccepted, Status: corev1.ConditionFalse, Message: "Error: validation failed"},
+			expectedType: mcfgv1.KubeletConfigFailure,
+			expectedMsg:  "Error: validation failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			legacy := legacyConditionFromAccepted(tt.input)
+			require.Equal(t, tt.expectedType, legacy.Type)
+			require.Equal(t, corev1.ConditionTrue, legacy.Status)
+			require.Equal(t, tt.expectedMsg, legacy.Message)
+		})
+	}
+}
+
 // TestReserveSystemCPUs tests that when reservedSystemCPUs is set,
 // the systemReservedCgroup is cleared and system-reserved enforcement keys are removed
 // from enforceNodeAllocatable while preserving other user-provided values.
