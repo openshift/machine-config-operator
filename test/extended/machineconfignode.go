@@ -163,6 +163,7 @@ func waitForMCNConditionStatus(machineConfigClient *machineconfigclient.Clientse
 
 	conditionMet := false
 	var conditionErr error
+	var transientErr error
 	var workerNodeMCN *mcfgv1.MachineConfigNode
 	if err := wait.PollUntilContextTimeout(context.TODO(), interval, timeout, true, func(_ context.Context) (bool, error) {
 		logger.Infof("Waiting for MCN '%v' %v condition to be %v.", mcnName, conditionType, status)
@@ -183,6 +184,9 @@ func waitForMCNConditionStatus(machineConfigClient *machineconfigclient.Clientse
 			if conditionMet {
 				logger.Infof("MCN '%v' %v condition was %v, missed transition through %v.", mcnName, conditionType, metav1.ConditionTrue, status)
 			}
+			if transientErr == nil && isTransientConnectionError(conditionErr) {
+				transientErr = conditionErr
+			}
 		}
 		return conditionMet, nil
 	}); err != nil {
@@ -195,6 +199,10 @@ func waitForMCNConditionStatus(machineConfigClient *machineconfigclient.Clientse
 			}
 			logger.Infof("An error occurred waiting for MCN '%v' %v condition to be %v: %v", mcnName, conditionType, status, conditionErr)
 			return conditionMet, fmt.Errorf("MCN '%v' %v condition was not %v: %w", mcnName, conditionType, status, conditionErr)
+		}
+		if transientErr != nil {
+			logger.Infof("Got a transient connection error waiting for MCN '%v' %v condition to be %v: %v", mcnName, conditionType, status, transientErr)
+			return conditionMet, transientErr
 		}
 		// Handle case when no errors occur grabbing the MCN, but we time out waiting for the condition to be in the desired state
 		logger.Infof("A timeout occurred waiting for MCN '%v' %v condition was not %v.", mcnName, conditionType, status)
