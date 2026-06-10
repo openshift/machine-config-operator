@@ -209,9 +209,6 @@ var (
 	// OSImageStreamRHEL10 represents the RHEL 10 OS image stream
 	OSImageStreamRHEL10 = "rhel-10"
 
-	// DefaultOSImageStream is the default OS image stream name
-	DefaultOSImageStream = OSImageStreamRHEL9
-
 	// SupportedOSImageStreams is the list of supported OS image streams
 	SupportedOSImageStreams = []string{
 		OSImageStreamRHEL9,
