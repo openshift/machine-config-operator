@@ -313,4 +313,197 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 
 	})
+
+	g.It("[PolarionID:68684][OTP] machine-config-controller pod restart should not make nodes unschedulable [Disruptive]", func() {
+		var (
+			controller = NewController(oc.AsAdmin())
+			masterNode = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolMaster).GetNodesOrFail()[0]
+		)
+
+		exutil.By("Check that nodes are not modified when the controller pod is removed")
+		labels, err := masterNode.Get(`{.metadata.labels}`)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the labels in node %s", masterNode.GetName())
+
+		masterNode.oc.NotShowInfo()        // avoid spamming the logs
+		o.Consistently(func(gm o.Gomega) { // Passing o.Gomega as parameter we can use assertions inside the Consistently function without breaking the retries.
+			logger.Infof("Remove controller pod")
+			gm.Expect(controller.RemovePod()).To(o.Succeed(), "Could not remove the controller pod")
+
+			logger.Infof("Check that the node was not modified")
+			gm.Consistently(func(gm o.Gomega) {
+				gm.Expect(masterNode.Get(`{.metadata.labels}`)).To(o.MatchJSON(labels),
+					"Labels in node %s have changed after removing the controller pod, and they should not change", masterNode.GetName())
+				gm.Expect(masterNode.IsCordoned()).To(o.BeFalse(),
+					"The node %s was cordoned after removing the controller pod. Node: \n%s",
+					masterNode.GetName(), masterNode.PrettyString())
+			}, "10s", "0s").
+				Should(o.Succeed(),
+					"The node %s was modified when the controller pod was removed")
+		}, "4m", "1s").
+			Should(o.Succeed(),
+				"When we remove the controller pod the node %s is modified")
+
+		logger.Infof("OK!\n")
+	})
+
+	g.It("[PolarionID:82299][OTP] Check race condition in rpm-ostree update logic [Disruptive]", func() {
+		mcp, cleanup, err := GetCompactCompatibleOrCustomPool(oc.AsAdmin(), 1)
+		defer cleanup()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting pool for testing")
+
+		var (
+			node = mcp.GetSortedNodesOrFail()[0]
+
+			overrideContent = `[Service]
+ExecStartPre=/bin/bash -c "echo 'exec start pre'; /bin/sleep 15; echo 'exec start pre end'"`
+			overridePath = "/etc/systemd/system/ostree-finalize-staged-hold.service.d/override.conf"
+			overrideMode = "0600"
+
+			fileConfig = getBase64EncodedFileConfig(overridePath, overrideContent, overrideMode)
+
+			mcOverrideName = fmt.Sprintf("99-%s-tc-%s-override", mcp.GetName(), GetCurrentTestPolarionIDNumber())
+			mcOverride     = NewMachineConfig(oc.AsAdmin(), mcOverrideName, mcp.GetName())
+
+			kernelArgs = "abc=def"
+
+			mcKernelArgsName = fmt.Sprintf("99-%s-tc-%s-kernelargs", mcp.GetName(), GetCurrentTestPolarionIDNumber())
+			mcKernelArgs     = NewMachineConfig(oc.AsAdmin(), mcKernelArgsName, mcp.GetName())
+		)
+
+		exutil.By("Override ostree finalizer")
+		mcOverride.parameters = []string{fmt.Sprintf("FILES=[%s]", fileConfig)}
+		mcOverride.skipWaitForMcp = true
+		defer mcOverride.DeleteWithWait()
+		mcOverride.create()
+		logger.Infof("OK!\n")
+
+		exutil.By("Wait for the override MC to be applied")
+		mcp.waitForComplete()
+		logger.Infof("OK!\n")
+
+		exutil.By("Check that the file was correctly deployed")
+		o.Eventually(NewRemoteFile(node, overridePath), "2m", "10s").Should(HaveContent(overrideContent),
+			"Wrong content in file %s", overridePath)
+		logger.Infof("OK!\n")
+
+		exutil.By("Configure kernel args")
+		mcKernelArgs.parameters = []string{fmt.Sprintf(`KERNEL_ARGS=["%s"]`, kernelArgs)}
+		mcKernelArgs.skipWaitForMcp = true
+		defer mcKernelArgs.Delete()
+		mcKernelArgs.create()
+		logger.Infof("OK!\n")
+
+		exutil.By("Wait for the kernelargs MC to be applied")
+		mcp.waitForComplete()
+		logger.Infof("OK!\n")
+
+		exutil.By("Check that the kernel args were correctly applied")
+		o.Expect(node.IsKernelArgEnabled(kernelArgs)).To(o.BeTrue(),
+			"Kernel argument %s was not enabled in the node %s", kernelArgs, node.GetName())
+		logger.Infof("OK!\n")
+	})
+
+	g.It("[PolarionID:83134][OTP] Check that MCC can find all requested resources [Serial]", func() {
+		var (
+			mcc                      = NewController(oc.AsAdmin())
+			resourceNotFoundErrorMsg = "the server could not find the requested resource"
+			listFailureErrorMsg      = "failed to list"
+		)
+
+		exutil.By("Check that MCC can find all requested resources")
+		o.Eventually(mcc.GetLogs, "1m", "20s").ShouldNot(o.Or(
+			o.ContainSubstring(resourceNotFoundErrorMsg),
+			o.ContainSubstring(listFailureErrorMsg)),
+			"MCC is reporting that some resources cannot be found or listed")
+		logger.Infof("OK!\n")
+
+	})
+
+	g.It("[PolarionID:83943][OTP] CoreDNS Static Pod Redeploy Causes DNS Failure and rpm-ostree disable on vSphere IPI [Disruptive]", func() {
+		skipTestIfSupportedPlatformNotMatched(oc, VspherePlatform)
+		var (
+			mcName              = "custom-coredns-and-osimage"
+			coreDNSManifestPath = "/etc/kubernetes/manifests/coredns.yaml"
+			newCPU              = "50m"
+			newMemory           = "50Mi"
+			mcp                 = GetCompactCompatiblePool(oc.AsAdmin())
+			node                = mcp.GetNodesOrFail()[0]
+			dockerFileCommands  = `RUN echo "hello" > /etc/test.txt`
+		)
+
+		exutil.By("Get current CoreDNS manifest from the node")
+		coreDNSFile := NewRemoteFile(node, coreDNSManifestPath)
+		o.Expect(coreDNSFile.Fetch()).NotTo(o.HaveOccurred(),
+			"Failed to get CoreDNS manifest from node %s", node.GetName())
+		coreDNSContent := coreDNSFile.GetTextContent()
+		o.Expect(coreDNSContent).NotTo(o.BeEmpty(), "CoreDNS manifest is empty")
+		logger.Infof("OK!\n")
+
+		exutil.By("Modify CoreDNS manifest to change CPU and memory")
+		cpuRegex := regexp.MustCompile(`cpu:\s*\d+m`)
+		memoryRegex := regexp.MustCompile(`memory:\s*\d+Mi`)
+		modifiedCoreDNS := cpuRegex.ReplaceAllString(coreDNSContent, "cpu: "+newCPU)
+		modifiedCoreDNS = memoryRegex.ReplaceAllString(modifiedCoreDNS, "memory: "+newMemory)
+		logger.Infof("OK!\n")
+
+		exutil.By("Pause the MCP")
+		mcp.pause(true)
+		defer mcp.pause(false)
+		o.Expect(mcp.IsPaused()).Should(o.BeTrue(), "%s pool is not paused", mcp.GetName())
+		logger.Infof("OK!\n")
+
+		// Build the new osImage
+		osImageBuilder := OsImageBuilderInNode{
+			node:               node,
+			dockerFileCommands: dockerFileCommands,
+		}
+		digestedImage, err := osImageBuilder.CreateAndDigestOsImage()
+		o.Expect(err).NotTo(o.HaveOccurred(),
+			"Error creating the new osImage")
+		logger.Infof("OK\n")
+		logger.Infof("Digested image: %s\n", digestedImage)
+
+		exutil.By("Create MC with modified CoreDNS manifest and custom osImage")
+		mc := NewMachineConfig(oc.AsAdmin(), mcName, mcp.GetName())
+		fileConfig := getBase64EncodedFileConfig(coreDNSManifestPath, modifiedCoreDNS, "420")
+		mc.parameters = []string{fmt.Sprintf("FILES=[%s]", fileConfig), "OS_IMAGE=" + digestedImage}
+		defer mc.DeleteWithWait()
+		mc.skipWaitForMcp = true
+		mc.create()
+		logger.Infof("OK!\n")
+
+		exutil.By("Get initial CoreDNS pod creation time before unpause")
+		initialCreationTime, err := getCoreDNSWorkerPodCreationTime(oc)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to get initial creation time")
+		o.Expect(initialCreationTime).NotTo(o.BeEmpty(), "No CoreDNS pods found on worker nodes")
+		logger.Infof("OK!\n")
+
+		exutil.By("Unpause the MCP")
+		mcp.pause(false)
+		logger.Infof("OK!\n")
+
+		exutil.By("Verify CoreDNS pods are recreated when MCP starts updating")
+		o.Eventually(getCoreDNSWorkerPodCreationTime, "15m", "30s").
+			WithArguments(oc).
+			ShouldNot(o.Or(o.Equal(initialCreationTime), o.BeEmpty()),
+				"CoreDNS pods were not recreated after MCP update started")
+		logger.Infof("OK!\n")
+
+		exutil.By("Verify MCP completes update without getting stuck")
+		mcp.waitForComplete()
+		logger.Infof("OK!\n")
+
+		exutil.By("Verify CoreDNS manifest changes are applied on the node")
+		o.Expect(coreDNSFile.Fetch()).NotTo(o.HaveOccurred(),
+			"Failed to re-fetch CoreDNS manifest from node %s", node.GetName())
+		o.Expect(coreDNSFile).To(HaveContent(o.ContainSubstring("cpu: "+newCPU)),
+			"CPU value not updated in CoreDNS manifest on node %s", node.GetName())
+		o.Expect(coreDNSFile).To(HaveContent(o.ContainSubstring("memory: "+newMemory)),
+			"Memory value not updated in CoreDNS manifest on node %s", node.GetName())
+		logger.Infof("OK!\n")
+
+		exutil.By("Verify osImage is applied on the node")
+		o.Expect(node.GetCurrentBootOSImage()).Should(o.Equal(digestedImage), "Custom osImage not applied on the node")
+		logger.Infof("OK!\n")
+	})
 })

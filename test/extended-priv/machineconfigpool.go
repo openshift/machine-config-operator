@@ -2,6 +2,7 @@ package extended
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -1087,6 +1088,24 @@ func (mcp MachineConfigPool) GetMOSC() (*MachineOSConfig, error) {
 		return nil, nil
 	}
 	return moscs[0], nil
+}
+
+// GetCertsExpiry returns the information about the certificates tracked by the MCP
+func (mcp *MachineConfigPool) GetCertsExpiry() ([]CertExpiry, error) {
+	expiryString, err := mcp.Get(`{.status.certExpirys}`)
+	if err != nil {
+		return nil, err
+	}
+
+	var certsExp []CertExpiry
+
+	jsonerr := json.Unmarshal([]byte(expiryString), &certsExp)
+
+	if jsonerr != nil {
+		return nil, jsonerr
+	}
+
+	return certsExp, nil
 }
 
 // GetAll returns a []*MachineConfigPool list with all existing machine config pools sorted by creation time
