@@ -57,7 +57,7 @@ func platformBasedDisksNames(platform string) []string {
 	return []string{}
 }
 
-var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Disruptive][OCPFeatureGate:IrreconcilableMachineConfig]", g.Ordered, func() {
+var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Disruptive][OCPFeatureGate:IrreconcilableMachineConfig][Serial]", g.Ordered, func() {
 	defer g.GinkgoRecover()
 
 	var (
