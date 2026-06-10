@@ -10,7 +10,9 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -119,6 +121,61 @@ func getPullSecret(oc *exutil.CLI) (string, error) {
 
 func setDataForPullSecret(oc *exutil.CLI, configFile string) (string, error) {
 	return oc.AsAdmin().WithoutNamespace().Run("set").Args("data", "secret/pull-secret", "-n", "openshift-config", "--from-file=.dockerconfigjson="+configFile).Output()
+}
+
+func getCommitID(oc *exutil.CLI, component, clusterVersion string) (string, error) {
+	secretFile, secretErr := getPullSecret(oc)
+	if secretErr != nil {
+		return "", secretErr
+	}
+	outFilePath, ocErr := oc.AsAdmin().WithoutNamespace().Run("adm").Args("release", "info", "--registry-config="+secretFile, "--commits", clusterVersion, "--insecure=true").OutputToFile("commitIdLogs.txt")
+	if ocErr != nil {
+		return "", ocErr
+	}
+	rawBytes, cmdErr := os.ReadFile(outFilePath)
+	if cmdErr != nil {
+		return "", cmdErr
+	}
+	for _, line := range strings.Split(string(rawBytes), "\n") {
+		if strings.Contains(line, component) {
+			fields := strings.Fields(line)
+			if len(fields) >= 3 {
+				return fields[2], nil
+			}
+		}
+	}
+	return "", fmt.Errorf("component %q not found in release info output", component)
+}
+
+func getGoVersion(component, commitID string) (float64, error) {
+	url := fmt.Sprintf("https://raw.githubusercontent.com/openshift/%s/%s/go.mod", component, commitID)
+	resp, err := http.Get(url)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("unexpected HTTP status %d fetching go.mod for %s@%s", resp.StatusCode, component, commitID)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, err
+	}
+	for _, line := range strings.Split(string(body), "\n") {
+		if !strings.HasPrefix(line, "go ") {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
+			return 0, fmt.Errorf("malformed go directive: %q", line)
+		}
+		segs := strings.SplitN(parts[1], ".", 3)
+		if len(segs) < 2 {
+			return 0, fmt.Errorf("wrong go version string %q", parts[1])
+		}
+		return strconv.ParseFloat(segs[0]+"."+segs[1], 64)
+	}
+	return 0, fmt.Errorf("go directive not found in go.mod for %s@%s", component, commitID)
 }
 
 func getMachineConfigDetails(oc *exutil.CLI, mcName string) (string, error) {
