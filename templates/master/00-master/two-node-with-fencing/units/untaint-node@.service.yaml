@@ -3,6 +3,8 @@ contents: |
   [Unit]
   Description=Untaint pacemaker-annotated nodes (triggered by %i rejoin)
   After=network.target taint-node@%i.service
+  StartLimitIntervalSec=600
+  StartLimitBurst=10
 
   [Service]
   Type=oneshot
@@ -10,5 +12,3 @@ contents: |
   TimeoutStartSec=1200
   Restart=on-failure
   RestartSec=10
-  StartLimitIntervalSec=600
-  StartLimitBurst=10
