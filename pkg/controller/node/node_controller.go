@@ -1285,31 +1285,36 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	// TODO: Deep-copy only when needed.
 	pool := machineconfigpool.DeepCopy()
 
-	// If arbiter pool, requeue master pool update and only sync status
-	if pool.Name == ctrlcommon.MachineConfigPoolArbiter {
-		masterPool, err := ctrl.mcpLister.Get(ctrlcommon.MachineConfigPoolMaster)
-		if err == nil {
-			ctrl.enqueue(masterPool)
-		} else if !errors.IsNotFound(err) {
-			return err
-		}
-		return ctrl.syncStatusOnly(pool)
-	}
-
 	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
 		return fmt.Errorf("error getting controllerconfig %q, error: %w", ctrlcommon.ControllerConfigName, err)
 	}
 
 	var controlPlaneTopology configv1.TopologyMode
-	switch {
-	case cc.Spec.Infra != nil:
+	if cc.Spec.Infra != nil {
 		controlPlaneTopology = cc.Spec.Infra.Status.ControlPlaneTopology
-	case pool.Name == ctrlcommon.MachineConfigPoolMaster:
-		klog.Warningf("controllerconfig %q has no infra spec; cannot determine topology for master pool, syncing status only", ctrlcommon.ControllerConfigName)
-		return ctrl.syncStatusOnly(pool)
-	default:
+	} else {
 		klog.Warningf("controllerconfig %q has no infra spec, continuing without topology information", ctrlcommon.ControllerConfigName)
+	}
+
+	// Arbiter pool generally defers to master pool coordination. The exception is when
+	// master is paused in HighlyAvailableArbiterMode: allow arbiter to reconcile directly
+	// so arbiter status and updates are not indefinitely blocked by a paused master pool.
+	if pool.Name == ctrlcommon.MachineConfigPoolArbiter {
+		masterPool, err := ctrl.mcpLister.Get(ctrlcommon.MachineConfigPoolMaster)
+		switch {
+		case err == nil:
+			if controlPlaneTopology == configv1.HighlyAvailableArbiterMode && masterPool.Spec.Paused {
+				klog.Infof("Master pool is paused in HighlyAvailableArbiterMode; reconciling arbiter pool directly")
+			} else {
+				ctrl.enqueue(masterPool)
+				return ctrl.syncStatusOnly(pool)
+			}
+		case errors.IsNotFound(err):
+			return ctrl.syncStatusOnly(pool)
+		default:
+			return err
+		}
 	}
 
 	// If master pool and arbiter mode, add arbiter pool as well
@@ -1320,8 +1325,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		case err == nil:
 			poolsToUpdate = append(poolsToUpdate, arbiterObj.DeepCopy())
 		case errors.IsNotFound(err):
-			klog.Warningf("Arbiter pool %q not found in HighlyAvailableArbiterMode, syncing status only", ctrlcommon.MachineConfigPoolArbiter)
-			return ctrl.syncStatusOnly(pool)
+			return fmt.Errorf("arbiter pool %q not found in HighlyAvailableArbiterMode; cluster may be misconfigured", ctrlcommon.MachineConfigPoolArbiter)
 		default:
 			return fmt.Errorf("error getting arbiter pool %q, error: %w", ctrlcommon.MachineConfigPoolArbiter, err)
 		}
@@ -1405,25 +1409,24 @@ func (ctrl *Controller) updatePools(pools []*mcfgv1.MachineConfigPool, controlPl
 		// and risk etcd quorum loss.
 		if pool.Name == ctrlcommon.MachineConfigPoolMaster && controlPlaneTopology == configv1.HighlyAvailableArbiterMode {
 			for _, p := range pools {
-				if p.Name == ctrlcommon.MachineConfigPoolArbiter {
-					arbiterNodes, err := ctrl.getNodesForPool(p)
-					if err != nil {
-						klog.Warningf("Pool %s: failed to get arbiter nodes, treating as unavailable to be safe: %v", pool.Name, err)
-						maxunavail = 0
-					} else {
-						var arbiterUnavailable int
-						for _, n := range arbiterNodes {
-							if ctrlcommon.NewLayeredNodeState(n).IsUnavailableForUpdate() {
-								arbiterUnavailable++
-							}
-						}
-						if arbiterUnavailable > 0 {
-							klog.Infof("Pool %s: arbiter has %d unavailable node(s), setting master capacity to zero to prevent simultaneous updates", pool.Name, arbiterUnavailable)
-							maxunavail = 0
-						}
-					}
-					break
+				if p.Name != ctrlcommon.MachineConfigPoolArbiter {
+					continue
 				}
+				arbiterNodes, err := ctrl.getNodesForPool(p)
+				if err != nil {
+					return fmt.Errorf("pool %s: failed to get arbiter nodes: %w", pool.Name, err)
+				}
+				var arbiterUnavailable int
+				for _, n := range arbiterNodes {
+					if ctrlcommon.NewLayeredNodeState(n).IsUnavailableForUpdate() {
+						arbiterUnavailable++
+					}
+				}
+				if arbiterUnavailable > 0 {
+					klog.Infof("Pool %s: arbiter has %d unavailable node(s), setting master capacity to zero to prevent simultaneous updates", pool.Name, arbiterUnavailable)
+					maxunavail = 0
+				}
+				break
 			}
 		}
 		if err := ctrl.setClusterConfigAnnotation(nodes, controlPlaneTopology); err != nil {

@@ -2340,3 +2340,68 @@ func TestArbiterPoolCoordination(t *testing.T) {
 	// Should have patches for both master and arbiter nodes
 	assert.GreaterOrEqual(t, nodePatches, 2, "Expected at least 2 node patches (master and arbiter nodes)")
 }
+
+func TestArbiterPoolSyncWhenMasterPaused(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	// Create controller config with HighlyAvailableArbiterMode.
+	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.HighlyAvailableArbiterMode)
+	f.ccLister = append(f.ccLister, cc)
+	f.objects = append(f.objects, cc)
+
+	// Create paused master pool with new config.
+	masterPool := helpers.NewMachineConfigPool(ctrlcommon.MachineConfigPoolMaster, nil, helpers.MasterSelector, machineConfigV1)
+	masterPool.Spec.Configuration.Name = machineConfigV2
+	masterPool.Spec.Paused = true
+	f.mcpLister = append(f.mcpLister, masterPool)
+	f.objects = append(f.objects, masterPool)
+
+	// Create arbiter pool with new config.
+	arbiterSelector := metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role.kubernetes.io/arbiter", "")
+	arbiterPool := helpers.NewMachineConfigPool(ctrlcommon.MachineConfigPoolArbiter, nil, arbiterSelector, machineConfigV1)
+	arbiterPool.Spec.Configuration.Name = machineConfigV2
+	f.mcpLister = append(f.mcpLister, arbiterPool)
+	f.objects = append(f.objects, arbiterPool)
+
+	// Create master node.
+	masterNode := helpers.NewNodeWithReady("master-node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue)
+	masterNode.Labels = map[string]string{
+		"node-role/master": "",
+	}
+	f.nodeLister = append(f.nodeLister, masterNode)
+	f.kubeobjects = append(f.kubeobjects, masterNode)
+
+	// Create arbiter node.
+	arbiterNode := helpers.NewNodeWithReady("arbiter-node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue)
+	arbiterNode.Labels = map[string]string{
+		"node-role.kubernetes.io/arbiter": "",
+	}
+	f.nodeLister = append(f.nodeLister, arbiterNode)
+	f.kubeobjects = append(f.kubeobjects, arbiterNode)
+
+	// Sync arbiter pool. Even with master paused, arbiter should still reconcile.
+	c := f.newController()
+	err := c.syncHandler(ctrlcommon.MachineConfigPoolArbiter)
+	require.NoError(t, err)
+
+	k8sActions := filterInformerActions(f.kubeclient.Actions())
+	arbiterPatched := false
+	masterPatched := false
+	for _, action := range k8sActions {
+		if !action.Matches("patch", "nodes") {
+			continue
+		}
+		patchAction, ok := action.(core.PatchAction)
+		require.True(t, ok)
+		switch patchAction.GetName() {
+		case arbiterNode.Name:
+			arbiterPatched = true
+		case masterNode.Name:
+			masterPatched = true
+		}
+	}
+
+	assert.True(t, arbiterPatched, "Expected arbiter node to be patched when master pool is paused")
+	assert.False(t, masterPatched, "Expected master node not to be patched during arbiter sync")
+}
