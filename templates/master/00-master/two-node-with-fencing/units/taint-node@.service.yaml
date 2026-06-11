@@ -7,4 +7,4 @@ contents: |
   [Service]
   Type=oneshot
   ExecStart=/usr/local/bin/taint-fenced-node.sh %i
-  TimeoutStartSec=600
+  TimeoutStartSec=660
