@@ -9,13 +9,11 @@ import (
 
 	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
-	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/klog/v2"
 	corelistersv1 "k8s.io/client-go/listers/core/v1"
+	"k8s.io/klog/v2"
 )
 
 // errIRIDisabled is returned by resolve when the NoRegistryClusterInstall
@@ -39,7 +37,7 @@ type IRISecretMerger struct {
 func NewIRISecretMerger(
 	secretLister corelistersv1.SecretLister,
 	ccLister mcfglistersv1.ControllerConfigLister,
-	iriLister mcfglistersv1alpha1.InternalReleaseImageLister,
+	iriLister mcfglistersv1.InternalReleaseImageLister,
 	fgHandler FeatureGatesHandler,
 ) *IRISecretMerger {
 	return &IRISecretMerger{
@@ -75,7 +73,7 @@ func NewIRISecretMergerFromObjects(
 	secret *corev1.Secret,
 	cconfig *mcfgv1.ControllerConfig,
 	fgHandler FeatureGatesHandler,
-	iri *mcfgv1alpha1.InternalReleaseImage,
+	iri *mcfgv1.InternalReleaseImage,
 ) *IRISecretMerger {
 	return &IRISecretMerger{
 		resolve: func() (string, string, error) {
