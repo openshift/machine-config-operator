@@ -36,9 +36,7 @@ func skipIfNoNetworkPolicies(t *testing.T) {
 	policies, err := cs.GetKubeclient().NetworkingV1().NetworkPolicies(ctrlcommon.MCONamespace).List(
 		context.Background(), metav1.ListOptions{})
 	require.NoError(t, err)
-	if len(policies.Items) == 0 {
-		t.Skip("skipping: no network policies found in MCO namespace")
-	}
+	require.NotEmpty(t, policies.Items, "expected at least one NetworkPolicy in MCO namespace")
 }
 
 func TestNetworkPolicies_DefaultPoliciesExist(t *testing.T) {
@@ -175,16 +173,21 @@ func TestNetworkPolicies_MCOProcessesContinueWorking(t *testing.T) {
 	co, err := cs.ClusterOperators().Get(ctx, "machine-config", metav1.GetOptions{})
 	require.NoError(t, err, "should be able to get machine-config ClusterOperator")
 
+	foundAvailable, foundDegraded := false, false
 	for _, cond := range co.Status.Conditions {
 		switch cond.Type {
 		case configv1.OperatorAvailable:
+			foundAvailable = true
 			assert.Equal(t, configv1.ConditionTrue, cond.Status,
 				"machine-config operator should be Available")
 		case configv1.OperatorDegraded:
+			foundDegraded = true
 			assert.Equal(t, configv1.ConditionFalse, cond.Status,
 				"machine-config operator should not be Degraded")
 		}
 	}
+	assert.True(t, foundAvailable, "OperatorAvailable condition must be present on machine-config ClusterOperator")
+	assert.True(t, foundDegraded, "OperatorDegraded condition must be present on machine-config ClusterOperator")
 
 	pods, err := cs.Pods(ns).List(ctx, metav1.ListOptions{})
 	require.NoError(t, err)
