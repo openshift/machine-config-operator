@@ -1507,7 +1507,7 @@ github.com/openshift/client-go/user/applyconfigurations/user/v1
 github.com/openshift/client-go/user/clientset/versioned
 github.com/openshift/client-go/user/clientset/versioned/scheme
 github.com/openshift/client-go/user/clientset/versioned/typed/user/v1
-# github.com/openshift/library-go v0.0.0-20260303171201-5d9eb6295ff6
+# github.com/openshift/library-go v0.0.0-20260611115129-21dd5809a4b2
 ## explicit; go 1.25.0
 github.com/openshift/library-go/pkg/apiserver/jsonpatch
 github.com/openshift/library-go/pkg/authorization/hardcodedauthorizer
@@ -1532,6 +1532,7 @@ github.com/openshift/library-go/pkg/operator/resource/resourcemerge
 github.com/openshift/library-go/pkg/operator/resource/resourceread
 github.com/openshift/library-go/pkg/operator/resourcesynccontroller
 github.com/openshift/library-go/pkg/operator/v1helpers
+github.com/openshift/library-go/pkg/pki
 # github.com/openshift/runtime-utils v0.0.0-20230921210328-7bdb5b9c177b
 ## explicit; go 1.18
 github.com/openshift/runtime-utils/pkg/registries
