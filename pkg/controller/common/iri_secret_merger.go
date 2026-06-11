@@ -10,7 +10,6 @@ import (
 	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
-	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	corelistersv1 "k8s.io/client-go/listers/core/v1"
@@ -38,7 +37,7 @@ type IRISecretMerger struct {
 func NewIRISecretMerger(
 	secretLister corelistersv1.SecretLister,
 	ccLister mcfglistersv1.ControllerConfigLister,
-	iriLister mcfglistersv1alpha1.InternalReleaseImageLister,
+	iriLister mcfglistersv1.InternalReleaseImageLister,
 	fgHandler FeatureGatesHandler,
 ) *IRISecretMerger {
 	return &IRISecretMerger{
