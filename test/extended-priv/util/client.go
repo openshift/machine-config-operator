@@ -1021,3 +1021,7 @@ func (c *CLI) SilentOutput() (string, error) {
 		return "", nil
 	}
 }
+
+func (e *ExitError) Unwrap() error {
+	return e.ExitError
+}

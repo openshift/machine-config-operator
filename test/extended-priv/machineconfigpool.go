@@ -127,6 +127,20 @@ func (mcp *MachineConfigPool) GetMaxUnavailableInt() (int, error) {
 	return maxUnavailableInt, nil
 }
 
+// SetMaxUnavailable sets the value for maxUnavailable
+func (mcp *MachineConfigPool) SetMaxUnavailable(maxUnavailable int) {
+	logger.Infof("patch mcp %v, change spec.maxUnavailable to %d", mcp.name, maxUnavailable)
+	err := mcp.Patch("merge", fmt.Sprintf(`{"spec":{"maxUnavailable": %d}}`, maxUnavailable))
+	o.Expect(err).NotTo(o.HaveOccurred())
+}
+
+// RemoveMaxUnavailable removes spec.maxUnavailable attribute from the pool config
+func (mcp *MachineConfigPool) RemoveMaxUnavailable() {
+	logger.Infof("patch mcp %v, removing spec.maxUnavailable", mcp.name)
+	err := mcp.Patch("json", `[{ "op": "remove", "path": "/spec/maxUnavailable" }]`)
+	o.Expect(err).NotTo(o.HaveOccurred())
+}
+
 // SetOsImageStream sets the osImageStream name for the MCP
 func (mcp *MachineConfigPool) SetOsImageStream(streamName string) error {
 	logger.Infof("patch mcp %v, change spec.osImageStream.name to %s", mcp.name, streamName)
@@ -1492,6 +1506,23 @@ func FilterExtensions(extensions map[string][]string, hasARM64, fips bool, osIma
 	return filteredExtensions, extensionNames, packages
 }
 
+// GetAllApplicableExtensionsToMCPOrFail returns all the extensions that are supported for the given MCP, and all the packages that will install those extensions
+func GetAllApplicableExtensionsToMCPOrFail(mcp *MachineConfigPool) (extensions, packages []string) {
+	fips := isFIPSEnabledInClusterConfig(mcp.GetOC().AsAdmin())
+
+	armNodes, err := mcp.GetNodesByArchitecture(architecture.ARM64)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the list of ARM nodes in %s", mcp)
+
+	osImageStream, err := GetEffectiveOsImageStream(mcp)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting effective osImageStream from MCP %s", mcp.GetName())
+
+	_, extensions, packages = FilterExtensions(AllExtenstions, len(armNodes) > 0, fips, osImageStream)
+
+	logger.Infof("All extensions that can be applied to %s: %s", mcp, extensions)
+	logger.Infof("All packages that will be installed with those extensions: %s", packages)
+	return extensions, packages
+}
+
 func (mcp *MachineConfigPool) GetNodesWithoutArchitecture(arch architecture.Architecture, archs ...architecture.Architecture) ([]*Node, error) {
 	archsList := arch.String()
 	for _, itemArch := range archs {
@@ -1547,4 +1578,98 @@ func GetPoolWithArchDifferentFromOrFail(oc *exutil.CLI, arch architecture.Archit
 
 	e2e.Failf("Something went wrong. There is no suitable pool to execute the test case. There is no pool with nodes using  an architecture different from %s", arch)
 	return nil
+}
+
+// GetSortedUpdatedNodes returns a list of nodes in the order that they are being updated by the MCO
+// If maxUnavailable>0, then the function will fail if more that maxUpdatingNodes are being updated at the same time
+func (mcp *MachineConfigPool) GetSortedUpdatedNodes(maxUnavailable int) []*Node {
+	timeToWait := mcp.estimateWaitDuration()
+	logger.Infof("Waiting %s in pool %s for all nodes to start updating.", timeToWait, mcp.name)
+
+	poolNodes, errget := mcp.GetNodes()
+	o.Expect(errget).NotTo(o.HaveOccurred(), fmt.Sprintf("Cannot get nodes in pool %s", mcp.GetName()))
+
+	pendingNodes := poolNodes
+	updatedNodes := []*Node{}
+	immediate := false
+	err := wait.PollUntilContextTimeout(context.TODO(), 20*time.Second, timeToWait, immediate, func(_ context.Context) (bool, error) {
+		// If there are degraded machines, stop polling, directly fail
+		degradedstdout, degradederr := mcp.getDegradedMachineCount()
+		if degradederr != nil {
+			logger.Errorf("the err:%v, and try next round", degradederr)
+			return false, nil
+		}
+
+		if degradedstdout != 0 {
+			logger.Errorf("Degraded MC:\n%s", mcp.PrettyString())
+			exutil.AssertWaitPollNoErr(fmt.Errorf("Degraded machines"), fmt.Sprintf("mcp %s has degraded %d machines", mcp.name, degradedstdout))
+		}
+
+		// Check that there aren't more thatn maxUpdatingNodes updating at the same time
+		if maxUnavailable > 0 {
+			totalUpdating := 0
+			for _, node := range poolNodes {
+				isUpdating, err := node.IsUpdating()
+				if err != nil {
+					logger.Errorf("Error getting IsUpdating state for node %s: %v", node.GetName(), err)
+					return false, err
+				}
+				if isUpdating {
+					totalUpdating++
+				}
+			}
+			if totalUpdating > maxUnavailable {
+				// print nodes for debug
+				mcp.oc.Run("get").Args("nodes").Execute()
+				exutil.AssertWaitPollNoErr(fmt.Errorf("maxUnavailable Not Honored. Pool %s, error: %d nodes were updating at the same time. Only %d nodes should be updating at the same time", mcp.GetName(), totalUpdating, maxUnavailable), "")
+			}
+		}
+
+		remainingNodes := []*Node{}
+		for _, node := range pendingNodes {
+			isUpdating, err := node.IsUpdating()
+			if err != nil {
+				logger.Errorf("Error getting IsUpdating state for node %s: %v", node.GetName(), err)
+				return false, err
+			}
+			if isUpdating {
+				logger.Infof("Node %s is UPDATING", node.GetName())
+				updatedNodes = append(updatedNodes, node)
+			} else {
+				remainingNodes = append(remainingNodes, node)
+			}
+		}
+
+		if len(remainingNodes) == 0 {
+			logger.Infof("All nodes have started to be updated on mcp %s", mcp.name)
+			return true, nil
+
+		}
+		logger.Infof(" %d remaining nodes", len(remainingNodes))
+		pendingNodes = remainingNodes
+		return false, nil
+	})
+
+	exutil.AssertWaitPollNoErr(err, fmt.Sprintf("Could not get the list of updated nodes on mcp %s", mcp.name))
+	return updatedNodes
+}
+
+// IsOCL returns true if the pool is using On Cluster Layering functionality
+func (mcp MachineConfigPool) IsOCL() (bool, error) {
+	isOCLEnabled, err := IsFeaturegateEnabled(mcp.GetOC(), "OnClusterBuild")
+	if err != nil {
+		return false, err
+	}
+	if !isOCLEnabled {
+		logger.Infof("IS pool %s OCL: false", mcp.GetName())
+		return false, nil
+	}
+
+	mosc, err := mcp.GetMOSC()
+	if err != nil {
+		return false, err
+	}
+	isOCL := mosc != nil
+	logger.Infof("IS pool %s OCL: %t", mcp.GetName(), isOCL)
+	return isOCL, err
 }
