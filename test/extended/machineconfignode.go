@@ -347,11 +347,11 @@ func ValidateTransitionThroughConditions(oc *exutil.CLI, machineConfigClient *ma
 		o.Expect(conditionMet).To(o.BeTrue(), "Error, could not detect UpdatePostActionComplete=True.")
 	} else { // On standard, non-rebootless, update, check that node transitions through "RebootedNode" phase
 		logger.Infof("Waiting for RebootedNode=Unknown")
-		conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateRebooted, metav1.ConditionUnknown, 15*time.Second, 1*time.Second, false)
-		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for RebootedNode=Unknown: %v", err))
-		if !conditionMet {
-			logger.Infof("Warning, could not detect RebootedNode=Unknown.")
+		conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateRebooted, metav1.ConditionUnknown, 15*time.Second, 1*time.Second, true)
+		if isSNO && isTransientConnectionError(err) {
+			logger.Infof("Warning, got connection error detecting RebootedNode=Unknown. The node likely started rebooting.")
 		} else {
+			o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for RebootedNode=Unknown: %v", err))
 			o.Expect(conditionMet).To(o.BeTrue(), "Error, could not detect RebootedNode=Unknown.")
 		}
 
