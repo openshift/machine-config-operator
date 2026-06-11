@@ -48,10 +48,8 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
-	mcfginformersv1alpha1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
 
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
-	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 
 	mcopclientset "github.com/openshift/client-go/operator/clientset/versioned"
 	mcopinformersv1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
@@ -127,7 +125,7 @@ type Operator struct {
 	apiserverLister          configlistersv1.APIServerLister
 	clusterVersionLister     configlistersv1.ClusterVersionLister
 	osImageStreamLister      mcfglistersv1.OSImageStreamLister
-	iriLister                mcfglistersv1alpha1.InternalReleaseImageLister
+	iriLister                mcfglistersv1.InternalReleaseImageLister
 	provisioningLister       dynamiclister.Lister
 	provisioningListerSynced cache.InformerSynced
 
@@ -228,7 +226,7 @@ func New(
 	moscInformer mcfginformersv1.MachineOSConfigInformer,
 	clusterVersionInformer configinformersv1.ClusterVersionInformer,
 	osImageStreamInformer mcfginformersv1.OSImageStreamInformer,
-	iriInformer mcfginformersv1alpha1.InternalReleaseImageInformer,
+	iriInformer mcfginformersv1.InternalReleaseImageInformer,
 	ctrlctx *ctrlcommon.ControllerContext,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()
