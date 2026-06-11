@@ -1,10 +1,14 @@
 name: "untaint-node@.service"
 contents: |
   [Unit]
-  Description=Untaint rejoined node %i in Kubernetes
+  Description=Untaint pacemaker-annotated nodes (triggered by %i rejoin)
   After=network.target taint-node@%i.service
 
   [Service]
   Type=oneshot
   ExecStart=/usr/local/bin/untaint-fenced-node.sh %i
-  TimeoutStartSec=600
+  TimeoutStartSec=1200
+  Restart=on-failure
+  RestartSec=10
+  StartLimitIntervalSec=600
+  StartLimitBurst=10

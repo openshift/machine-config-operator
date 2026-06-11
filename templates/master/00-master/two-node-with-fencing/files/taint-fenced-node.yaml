@@ -4,7 +4,7 @@ contents:
   inline: |
     #!/bin/bash
     set -euo pipefail
-    FENCED_NODE="$1"
+    FENCED_NODE="${1:-}"
     KUBECONFIG="/etc/kubernetes/static-pod-resources/kube-apiserver-certs/secrets/node-kubeconfigs/localhost.kubeconfig"
     TAINT_KEY="node.kubernetes.io/out-of-service"
     TAINT_VALUE="nodeshutdown"
