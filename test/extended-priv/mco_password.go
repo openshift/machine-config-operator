@@ -155,8 +155,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			allMasters     = mMcp.GetNodesOrFail()
 		)
 
-		skipTestIfRHELVersion(allCoreOsNodes[0], "<", "9.0")
-
 		exutil.By("Get currently configured authorizedkeys in the cluster")
 		wMc, err := wMcp.GetConfiguredMachineConfig()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the current configuration for worker pool")
