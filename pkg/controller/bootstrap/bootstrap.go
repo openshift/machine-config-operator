@@ -30,7 +30,6 @@ import (
 	"github.com/openshift/api/features"
 	imagev1 "github.com/openshift/api/image/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	buildconstants "github.com/openshift/machine-config-operator/pkg/controller/build/constants"
@@ -85,7 +84,6 @@ func (b *Bootstrap) Run(destDir string) error {
 
 	scheme := runtime.NewScheme()
 	mcfgv1.Install(scheme)
-	mcfgv1alpha1.Install(scheme)
 	apioperatorsv1alpha1.Install(scheme)
 	apicfgv1.Install(scheme)
 	apicfgv1alpha1.Install(scheme)
@@ -95,8 +93,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	decoder := codecFactory.UniversalDecoder(
 		mcfgv1.GroupVersion, apioperatorsv1alpha1.GroupVersion,
 		apicfgv1.GroupVersion, apicfgv1alpha1.GroupVersion,
-		corev1.SchemeGroupVersion, mcfgv1alpha1.GroupVersion,
-		imagev1.SchemeGroupVersion)
+		corev1.SchemeGroupVersion, imagev1.SchemeGroupVersion)
 
 	var (
 		cconfig              *mcfgv1.ControllerConfig
@@ -115,7 +112,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		imgCfg               *apicfgv1.Image
 		apiServer            *apicfgv1.APIServer
 		imageStream          *imagev1.ImageStream
-		iri                  *mcfgv1alpha1.InternalReleaseImage
+		iri                  *mcfgv1.InternalReleaseImage
 		iriTLSCert           *corev1.Secret
 		osImageStream        *mcfgv1.OSImageStream
 		iriCredentialsSecret *corev1.Secret
@@ -184,7 +181,7 @@ func (b *Bootstrap) Run(destDir string) error {
 				if obj.GetName() == ctrlcommon.APIServerInstanceName {
 					apiServer = obj
 				}
-			case *mcfgv1alpha1.InternalReleaseImage:
+			case *mcfgv1.InternalReleaseImage:
 				if obj.GetName() == ctrlcommon.InternalReleaseImageInstanceName {
 					iri = obj
 				}
