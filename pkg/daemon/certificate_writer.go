@@ -117,6 +117,10 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 	onDiskKC := clientcmdv1.Config{}
 
 	if currentNodeControllerConfigResource != controllerConfig.ObjectMeta.ResourceVersion || controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] == ctrlcommon.ServiceCARotateTrue {
+		klog.Infof("CERT-ROTATION: Starting certificate sync. ControllerConfig RV: %s, ServiceCARotate annotation: %s",
+			controllerConfig.ObjectMeta.ResourceVersion, controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation])
+		klog.Infof("CERT-ROTATION: Current node annotation: %s", dn.node.Annotations[constants.ControllerConfigSyncServerCA])
+
 		pathToData := make(map[string][]byte)
 		kubeAPIServerServingCABytes := controllerConfig.Spec.KubeAPIServerServingCAData
 		cloudCA := controllerConfig.Spec.CloudProviderCAData
@@ -133,14 +137,17 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 		}
 
 		if controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] == ctrlcommon.ServiceCARotateTrue && dn.node.Annotations[constants.ControllerConfigSyncServerCA] != controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] {
+			klog.Infof("CERT-ROTATION: ServiceCA rotation detected - annotation mismatch")
 			cm, cmErr = dn.kubeClient.CoreV1().ConfigMaps("openshift-machine-config-operator").Get(context.TODO(), "kubeconfig-data", v1.GetOptions{})
 			if cmErr != nil {
-				klog.Errorf("Error retrieving kubeconfig-data. %v", cmErr)
+				klog.Errorf("CERT-ROTATION: Error retrieving kubeconfig-data. %v", cmErr)
 			} else {
+				klog.Infof("CERT-ROTATION: Successfully retrieved kubeconfig-data ConfigMap")
 				data, err = cmToData(cm, "ca-bundle.crt")
 				if err != nil {
-					klog.Errorf("kubeconfig-data ConfigMap not populated yet. %v", err)
+					klog.Errorf("CERT-ROTATION: kubeconfig-data ConfigMap not populated yet. %v", err)
 				} else if data != nil {
+					klog.Infof("CERT-ROTATION: Extracted ca-bundle.crt from ConfigMap (%d bytes)", len(data))
 					kcBytes, err := os.ReadFile(kubeConfigPath)
 					if err != nil {
 						return err
@@ -151,11 +158,13 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 							return fmt.Errorf("could not unmarshal kubeconfig into struct. Data: %s, Error: %v", string(kcBytes), err)
 						}
 						kubeConfigDiff = !bytes.Equal(bytes.TrimSpace(onDiskKC.Clusters[0].Cluster.CertificateAuthorityData), bytes.TrimSpace(data))
+						klog.Infof("CERT-ROTATION: kubeConfigDiff=%v (on-disk CA matches ConfigMap: %v)", kubeConfigDiff, !kubeConfigDiff)
 
 						// We should always write the latest certs from the configmap onto disk, but we should check what was changed/modified
 						// if any certs were added or updated, determine if we need to defer the kubelet restarting
 						certsConfigmap := strings.SplitAfter(strings.TrimSpace(string(data)), "-----END CERTIFICATE-----")
 						certsDisk := strings.SplitAfter(strings.TrimSpace(string(onDiskKC.Clusters[0].Cluster.CertificateAuthorityData)), "-----END CERTIFICATE-----")
+						klog.Infof("CERT-ROTATION: Comparing certificates - ConfigMap has %d certs, on-disk has %d certs", len(certsConfigmap), len(certsDisk))
 						var addedOrUpdatedCAs []string
 
 						for _, cert := range certsConfigmap {
@@ -185,8 +194,9 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 							fullCA = append(fullCA, cert)
 						}
 
+						klog.Infof("CERT-ROTATION: Found %d new/updated certificates", len(addedOrUpdatedCAs))
 						dn.deferKubeletRestart = true
-						for _, cert := range addedOrUpdatedCAs {
+						for i, cert := range addedOrUpdatedCAs {
 							b, _ := pem.Decode([]byte(cert))
 							if b == nil {
 								klog.Infof("Unable to decode cert into a pem block. Cert is either empty or invalid.")
@@ -197,18 +207,23 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 								logSystem("Malformed Cert, not syncing: %s", cert)
 								continue
 							}
-							logSystem("Cert not found in kubeconfig. This means we need to write to disk. Subject is: %s", c.Subject.CommonName)
+							klog.Infof("CERT-ROTATION: New cert #%d - Subject: %s, Issuer: %s, NotBefore: %s, NotAfter: %s",
+								i+1, c.Subject.CommonName, c.Issuer.CommonName, c.NotBefore, c.NotAfter)
 							// these rotate randomly during upgrades. need to ignore. DO NOT restart kubelet until we error.
 							// TODO(jerzhang): handle this better
-							if !strings.Contains(c.Subject.CommonName, "kube-apiserver-localhost-signer") && !strings.Contains(c.Subject.CommonName, "openshift-kube-apiserver-operator_localhost-recovery-serving-signer") && !strings.Contains(c.Subject.CommonName, "kube-apiserver-lb-signer") {
-								logSystem("Need to restart kubelet")
+							// Note: loadbalancer-serving-signer (kube-apiserver-lb-signer) is NOT in this list
+							// because it needs immediate kubelet restart when it rotates (OCPBUGS-73800)
+							if !strings.Contains(c.Subject.CommonName, "kube-apiserver-localhost-signer") && !strings.Contains(c.Subject.CommonName, "openshift-kube-apiserver-operator_localhost-recovery-serving-signer") {
+								klog.Infof("CERT-ROTATION: Certificate '%s' requires immediate kubelet restart - setting deferKubeletRestart=false", c.Subject.CommonName)
 								dn.deferKubeletRestart = false
 							} else {
-								logSystem("Skipping kubelet restart")
+								klog.Infof("CERT-ROTATION: Certificate '%s' is a localhost signer - deferring kubelet restart", c.Subject.CommonName)
 							}
 						}
+						klog.Infof("CERT-ROTATION: Final decision - deferKubeletRestart=%v, allCertsThere=%v", dn.deferKubeletRestart, allCertsThere)
 
 						if kubeConfigDiff && !allCertsThere {
+							klog.Infof("CERT-ROTATION: Updating /etc/kubernetes/kubeconfig (kubeConfigDiff=%v, allCertsThere=%v)", kubeConfigDiff, allCertsThere)
 							var newData []byte
 							if onDiskKC.Clusters == nil {
 								return errors.New("clusters cannot be nil")
@@ -221,7 +236,9 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 							}
 
 							pathToData[kubeConfigPath] = newData
-							klog.Infof("Writing new Data to /etc/kubernetes/kubeconfig")
+							klog.Infof("CERT-ROTATION: Queued /etc/kubernetes/kubeconfig for update with %d certificates", len(fullCA))
+						} else {
+							klog.Infof("CERT-ROTATION: Skipping kubeconfig update (kubeConfigDiff=%v, allCertsThere=%v)", kubeConfigDiff, allCertsThere)
 						}
 					} else {
 						klog.Info("Could not read kubeconfig file, or data does not need to be changed")
@@ -292,15 +309,21 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 	}
 
 	klog.Infof("Certificate was synced from controllerconfig resourceVersion %s", controllerConfig.ObjectMeta.ResourceVersion)
+	klog.Infof("CERT-ROTATION: Checking if kubelet restart needed - ServiceCARotate=%s, oldAnno=%s, cmErr=%v, kubeConfigDiff=%v, allCertsThere=%v, deferKubeletRestart=%v",
+		controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation], oldAnno, cmErr, kubeConfigDiff, allCertsThere, dn.deferKubeletRestart)
+
 	if controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] == ctrlcommon.ServiceCARotateTrue && oldAnno != controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] && cmErr == nil && kubeConfigDiff && !allCertsThere && !dn.deferKubeletRestart {
+		klog.Infof("CERT-ROTATION: ✅ All conditions met for immediate kubelet restart!")
 		if len(onDiskKC.Clusters[0].Cluster.CertificateAuthorityData) > 0 {
-			logSystem("restarting kubelet due to server-ca rotation")
+			klog.Infof("CERT-ROTATION: Stopping kubelet for certificate update...")
 			if err := runCmdSync("systemctl", "stop", "kubelet"); err != nil {
 				return err
 			}
+			klog.Infof("CERT-ROTATION: Kubelet stopped successfully")
+			klog.Infof("CERT-ROTATION: Reading kubelet's kubeconfig at /var/lib/kubelet/kubeconfig...")
 			f, err := os.ReadFile("/var/lib/kubelet/kubeconfig")
 			if err != nil && os.IsNotExist(err) {
-				klog.Warningf("Failed to get kubeconfig file: %v", err)
+				klog.Warningf("CERT-ROTATION: Failed to get kubeconfig file: %v", err)
 				return err
 			} else if err != nil {
 				return fmt.Errorf("unexpected error reading kubeconfig file, %v", err)
@@ -310,6 +333,7 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 			if err != nil {
 				return err
 			}
+			klog.Infof("CERT-ROTATION: Updating kubelet's kubeconfig with new CA bundle...")
 			// set CA data to the one we just parsed above, the rest of the data should be preserved.
 			kubeletKC.Clusters[0].Cluster.CertificateAuthorityData = onDiskKC.Clusters[0].Cluster.CertificateAuthorityData
 			newData, err := yaml.Marshal(kubeletKC)
@@ -322,17 +346,30 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 			if err != nil {
 				return err
 			}
+			klog.Infof("CERT-ROTATION: Kubelet kubeconfig updated successfully")
 
+			klog.Infof("CERT-ROTATION: Running systemctl daemon-reload...")
 			if err := runCmdSync("systemctl", "daemon-reload"); err != nil {
 				return err
 			}
 
+			klog.Infof("CERT-ROTATION: Starting kubelet...")
 			if err := runCmdSync("systemctl", "start", "kubelet"); err != nil {
 				return err
 			}
-		}
+			klog.Infof("CERT-ROTATION: Kubelet started successfully")
 
-		klog.V(4).Infof("Finished syncing ControllerConfig %q (%v)", key, time.Since(startTime))
+			// Exit MCD so kubelet can restart the DaemonSet pod with fresh certificates.
+			// This is critical for fixing OCPBUGS-73800: MCD's in-memory Kubernetes client
+			// was initialized with the old CA bundle and can't reload it without pod restart.
+			// After kubelet restarts, it will recreate this pod with the updated certs.
+			klog.Infof("CERT-ROTATION: 🔄 Exiting MCD to allow pod restart with fresh certificates (OCPBUGS-73800 fix)")
+			return fmt.Errorf("MCD exiting to reload certificates after loadbalancer-serving-signer rotation")
+		} else {
+			klog.Infof("CERT-ROTATION: ⚠️ Skipping kubelet restart - no CA data in onDiskKC")
+		}
+	} else {
+		klog.Infof("CERT-ROTATION: Kubelet restart not needed or deferred")
 	}
 
 	klog.V(4).Infof("Finished syncing ControllerConfig %q (%v)", key, time.Since(startTime))
