@@ -128,7 +128,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("All worker nodes have irreconcilable changes as expected!\n")
 	})
 
-	g.It("[PolarionID:84219] Scale up with a mix of irreconcilable and supported fields [Disruptive]", g.Label("Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere"), func() {
+	g.It("[PolarionID:84219] Verify irreconcilable changes on new and existing nodes after scale up [Disruptive]", g.Label("Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere"), func() {
 		var (
 			machineconfiguration = GetMachineConfiguration(oc)
 			mcName               = "irreconcilable-scaleup-test"
