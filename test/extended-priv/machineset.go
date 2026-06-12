@@ -134,22 +134,16 @@ func (ms MachineSet) GetMachines() ([]*Machine, error) {
 
 // GetMachinesByPhase get machine by phase e.g. Running, Provisioning, Provisioned, Deleting etc.
 func (ms MachineSet) GetMachinesByPhase(phase string) ([]*Machine, error) {
-	// add poller to check machine phase periodically.
 	machines := []*Machine{}
-	pollerr := wait.PollUntilContextTimeout(context.TODO(), 3*time.Second, 20*time.Second, true, func(_ context.Context) (bool, error) {
-		ml, err := ms.GetMachines()
+	pollerr := wait.PollUntilContextTimeout(context.TODO(), 1*time.Second, 20*time.Second, true, func(_ context.Context) (bool, error) {
+		ml := NewMachineList(ms.oc, ms.GetNamespace())
+		ml.ByLabel("machine.openshift.io/cluster-api-machineset=" + ms.GetName())
+		ml.SetItemsFilter(fmt.Sprintf(`?(@.status.phase=="%s")`, phase))
+		allMachines, err := ml.GetAll()
 		if err != nil {
 			return false, err
 		}
-		for _, m := range ml {
-			mPhase, err := m.GetPhase()
-			if err != nil {
-				return false, err
-			}
-			if mPhase == phase {
-				machines = append(machines, m)
-			}
-		}
+		machines = allMachines
 		return len(machines) > 0, nil
 	})
 
