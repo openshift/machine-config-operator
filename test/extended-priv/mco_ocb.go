@@ -289,19 +289,19 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("OK!\n")
 
 		exutil.By("Wait for a new MachineOSBuild to be triggered after MC deletion")
+		var newMOSB *MachineOSBuild
 		o.Eventually(func() string {
-			newMOSB, err := mosc.GetCurrentMachineOSBuild()
+			mosb, err := mosc.GetCurrentMachineOSBuild()
 			if err != nil {
 				return currentMOSBName
 			}
-			return newMOSB.GetName()
+			newMOSB = mosb
+			return mosb.GetName()
 		}, "5m", "20s").ShouldNot(o.Equal(currentMOSBName),
 			"A new MOSB should be created after deleting the off-cluster MC")
 		logger.Infof("OK!\n")
 
 		exutil.By("Wait for the new build to succeed and deploy")
-		newMOSB, err := mosc.GetCurrentMachineOSBuild()
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the new MOSB")
 		o.Eventually(newMOSB, "20m", "20s").Should(HaveConditionField("Succeeded", "status", TrueString),
 			"New MachineOSBuild didn't succeed after MC deletion")
 		logger.Infof("New MOSB %s built successfully", newMOSB.GetName())
