@@ -364,7 +364,8 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 			// was initialized with the old CA bundle and can't reload it without pod restart.
 			// After kubelet restarts, it will recreate this pod with the updated certs.
 			klog.Infof("CERT-ROTATION: 🔄 Exiting MCD to allow pod restart with fresh certificates (OCPBUGS-73800 fix)")
-			return fmt.Errorf("MCD exiting to reload certificates after loadbalancer-serving-signer rotation")
+			klog.Flush()
+			os.Exit(0)
 		} else {
 			klog.Infof("CERT-ROTATION: ⚠️ Skipping kubelet restart - no CA data in onDiskKC")
 		}
