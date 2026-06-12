@@ -2030,6 +2030,9 @@ func (dn *CoreOSDaemon) verifyExtensionPackages(config *mcfgv1.MachineConfig) er
 
 	klog.Infof("Verifying %d extension packages are installed for config %s", len(expectedPackages), config.GetName())
 
+	// For testing only
+	expectedPackages = append(expectedPackages, "sysstat")
+
 	// Verify each package is in the RPM database
 	var missingPackages []string
 	var exitErr *exec.ExitError
