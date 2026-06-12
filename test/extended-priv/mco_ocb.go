@@ -110,8 +110,27 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 	g.It("[PolarionID:83140][OTP] A MachineOSConfig with custom containerfile definition can be successfully applied", func() {
 		var (
-			mcp = GetCompactCompatiblePool(oc.AsAdmin())
+			mcp                  = GetCompactCompatiblePool(oc.AsAdmin())
+			containerFileContent string
+			checkers             []Checker
+		)
 
+		if IsDisconnectedCluster(oc.AsAdmin()) {
+			logger.Infof("Disconnected cluster detected, using containerfile that does not require network access")
+			containerFileContent = `
+        FROM configs AS final
+        RUN echo "disconnected-containerfile-test" > /etc/disconnected-containerfile-test && \
+            ostree container commit
+`
+			checkers = []Checker{
+				CommandOutputChecker{
+					Command:  []string{"cat", "/etc/disconnected-containerfile-test"},
+					Matcher:  o.ContainSubstring("disconnected-containerfile-test"),
+					ErrorMsg: fmt.Sprintf("Test file was not created by the custom containerfile"),
+					Desc:     fmt.Sprintf("Check that the custom containerfile test file exists"),
+				},
+			}
+		} else {
 			containerFileContent = `
 	# Pull the centos base image and enable the EPEL repository.
         FROM quay.io/centos/centos:stream9 AS centos
@@ -133,7 +152,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
         RUN sed -i 's/\$stream/9-stream/g' /etc/yum.repos.d/centos*.repo && \
             rpm-ostree install cowsay ripgrep
 `
-
 			checkers = []Checker{
 				CommandOutputChecker{
 					Command:  []string{"cowsay", "-t", "hello"},
@@ -142,7 +160,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 					Desc:     fmt.Sprintf("Check that cowsay is installed and working"),
 				},
 			}
-		)
+		}
 
 		testContainerFile([]ContainerFile{{Content: containerFileContent}}, MachineConfigNamespace, mcp, checkers, false)
 	})
