@@ -617,3 +617,15 @@ func skipTestIfSupportedPlatformNotMatched(oc *exutil.CLI, supported ...string) 
 		g.Skip(fmt.Sprintf("skip test because current platform %s is not in supported list %v", p, supported))
 	}
 }
+
+// IsDisconnectedCluster returns true if the cluster has no external network
+// access by attempting to reach an external endpoint from a node.
+func IsDisconnectedCluster(oc *exutil.CLI) bool {
+	nodes, err := NewNodeList(oc.AsAdmin()).GetAll()
+	if err != nil || len(nodes) == 0 {
+		return false
+	}
+	output, _ := nodes[0].DebugNodeWithChroot("sh", "-c",
+		"curl -s --connect-timeout 5 https://fedoraproject.org/static/hotspot.txt &>/dev/null && echo Connected || echo Disconnected")
+	return !strings.Contains(output, "Connected")
+}
