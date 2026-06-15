@@ -117,7 +117,6 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 	onDiskKC := clientcmdv1.Config{}
 
 	if currentNodeControllerConfigResource != controllerConfig.ObjectMeta.ResourceVersion || controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] == ctrlcommon.ServiceCARotateTrue {
-
 		pathToData := make(map[string][]byte)
 		kubeAPIServerServingCABytes := controllerConfig.Spec.KubeAPIServerServingCAData
 		cloudCA := controllerConfig.Spec.CloudProviderCAData
@@ -136,11 +135,11 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 		if controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] == ctrlcommon.ServiceCARotateTrue && dn.node.Annotations[constants.ControllerConfigSyncServerCA] != controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] {
 			cm, cmErr = dn.kubeClient.CoreV1().ConfigMaps("openshift-machine-config-operator").Get(context.TODO(), "kubeconfig-data", v1.GetOptions{})
 			if cmErr != nil {
-				klog.Errorf("Error retrieving kubeconfig-data ConfigMap: %v", cmErr)
+				klog.Errorf("Error retrieving kubeconfig-data. %v", cmErr)
 			} else {
 				data, err = cmToData(cm, "ca-bundle.crt")
 				if err != nil {
-					klog.Errorf("kubeconfig-data ConfigMap not populated yet: %v", err)
+					klog.Errorf("kubeconfig-data ConfigMap not populated yet. %v", err)
 				} else if data != nil {
 					kcBytes, err := os.ReadFile(kubeConfigPath)
 					if err != nil {
@@ -201,7 +200,7 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 							// these rotate randomly during upgrades. need to ignore. DO NOT restart kubelet until we error.
 							// TODO(jerzhang): handle this better
 							// Note: loadbalancer-serving-signer (kube-apiserver-lb-signer) is NOT in this list
-							// because it needs immediate kubelet restart when it rotates (OCPBUGS-73800)
+							// because it needs immediate kubelet restart when it rotates
 							if !strings.Contains(c.Subject.CommonName, "kube-apiserver-localhost-signer") && !strings.Contains(c.Subject.CommonName, "openshift-kube-apiserver-operator_localhost-recovery-serving-signer") {
 								dn.deferKubeletRestart = false
 							}
@@ -291,6 +290,10 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 
 	klog.Infof("Certificate was synced from controllerconfig resourceVersion %s", controllerConfig.ObjectMeta.ResourceVersion)
 
+	// Log all decision variables for troubleshooting certificate rotation behavior
+	klog.Infof("Certificate rotation decision: ServiceCARotate=%s, oldAnno=%q, cmErr=%v, kubeConfigDiff=%v, allCertsThere=%v, deferKubeletRestart=%v",
+		controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation], oldAnno, cmErr, kubeConfigDiff, allCertsThere, dn.deferKubeletRestart)
+
 	// Only perform immediate kubelet restart if:
 	// 1. ServiceCARotate annotation is true (rotation is happening)
 	// 2. oldAnno exists and differs (not first boot, actual rotation event)
@@ -337,9 +340,8 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 			}
 
 			// Exit MCD so kubelet can restart the DaemonSet pod with fresh certificates.
-			// This is critical for fixing OCPBUGS-73800: MCD's in-memory Kubernetes client
-			// was initialized with the old CA bundle and can't reload it without pod restart.
-			// After kubelet restarts, it will recreate this pod with the updated certs.
+			// MCD's in-memory Kubernetes client was initialized with the old CA bundle and can't reload
+			// it without pod restart. After kubelet restarts, it will recreate this pod with the updated certs.
 			klog.Info("Exiting MCD to allow pod restart with fresh certificates")
 			klog.Flush()
 			os.Exit(0)
