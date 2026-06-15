@@ -161,6 +161,11 @@ func TestMissingImageIsRebuilt(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
+	// Cleanup: ensure inspect-usbguard MachineConfig is deleted even if test fails
+	t.Cleanup(func() {
+		_ = cs.MachineConfigs().Delete(context.Background(), mcNameUsbguard, metav1.DeleteOptions{})
+	})
+
 	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
 
 	firstImagePullspec, firstMOSB := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
@@ -249,7 +254,7 @@ func TestMissingImageIsRebuilt(t *testing.T) {
 	t.Logf("Deleted MachineOSBuild %q", thirdMOSB.Name)
 
 	deletedIst := fmt.Sprintf("os-image:%s", thirdMOSBName)
-	kubeassert.ImageDoesNotExist(deletedIst)
+	kubeassert.Eventually().ImageDoesNotExist(deletedIst)
 	t.Logf("ImageStreamTag %q has been pruned", deletedIst)
 
 	t.Logf("Deleting MachineConfig %q for cleanup", secondMC.Name)
