@@ -347,8 +347,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		o.Eventually(func() (string, error) {
 			return mcp.Get(`{.status.conditions[?(@.type=="RenderDegraded")].status}`)
 		}, "5m", "10s").Should(o.Equal("True"), "MCP should be RenderDegraded after applying irreconcilable MC without override")
+		o.Expect(mcp).Should(HaveConditionField("RenderDegraded", "message",
+			o.ContainSubstring("ignition disks section contains changes")))
 
-		mc2.DeleteWithWait()
+		defer mc2.DeleteWithWait()
 		o.Expect(mcp.WaitForNotDegradedStatus()).To(o.Succeed())
 	})
 
@@ -444,6 +446,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		o.Eventually(func() (string, error) {
 			return mcp.Get(`{.status.conditions[?(@.type=="RenderDegraded")].status}`)
 		}, "5m", "10s").Should(o.Equal("True"), "MCP should be RenderDegraded after applying irreconcilable MC without override")
+		o.Expect(mcp).Should(HaveConditionField("RenderDegraded", "message",
+			o.ContainSubstring("ignition disks section contains changes")))
 
 		exutil.By("Step 3: Delete MC and verify pool recovers")
 		mc.DeleteWithWait()
