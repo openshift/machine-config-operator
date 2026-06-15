@@ -291,7 +291,13 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 
 	klog.Infof("Certificate was synced from controllerconfig resourceVersion %s", controllerConfig.ObjectMeta.ResourceVersion)
 
-	if controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] == ctrlcommon.ServiceCARotateTrue && oldAnno != controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] && cmErr == nil && kubeConfigDiff && !allCertsThere && !dn.deferKubeletRestart {
+	// Only perform immediate kubelet restart if:
+	// 1. ServiceCARotate annotation is true (rotation is happening)
+	// 2. oldAnno exists and differs (not first boot, actual rotation event)
+	// 3. No errors retrieving ConfigMap
+	// 4. kubeconfig has changed and new certs were added
+	// 5. We're not deferring the restart (non-localhost cert)
+	if controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] == ctrlcommon.ServiceCARotateTrue && oldAnno != "" && oldAnno != controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] && cmErr == nil && kubeConfigDiff && !allCertsThere && !dn.deferKubeletRestart {
 		if len(onDiskKC.Clusters[0].Cluster.CertificateAuthorityData) > 0 {
 			klog.Info("Certificate rotation detected - performing immediate kubelet restart")
 			if err := runCmdSync("systemctl", "stop", "kubelet"); err != nil {
