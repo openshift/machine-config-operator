@@ -173,10 +173,9 @@ func TestCreateAutoSizingMachineConfigIfNeeded(t *testing.T) {
 }
 
 // TestEnsureAutoSizingMachineConfigs verifies that the controller correctly ensures auto-sizing
-// MachineConfigs exist for the master and worker pools. This tests the high-level
-// orchestration function that fetches and processes master and worker pools directly.
+// MachineConfigs exist only for the worker pool.
 func TestEnsureAutoSizingMachineConfigs(t *testing.T) {
-	t.Run("creates MCs for master and worker pools", func(t *testing.T) {
+	t.Run("creates MC only for worker pool", func(t *testing.T) {
 		// Setup: Initialize test fixture and disable action validation for simplicity
 		f := newFixture(t)
 		f.skipActionsValidation = true
@@ -188,35 +187,27 @@ func TestEnsureAutoSizingMachineConfigs(t *testing.T) {
 
 		ctrl := f.newController(nil)
 
-		// Execute: Ensure auto-sizing MCs exist for master and worker
+		// Execute: Ensure auto-sizing MCs exist for worker
 		ctx := context.Background()
 		err := ctrl.ensureAutoSizingMachineConfigs(ctx)
 		require.NoError(t, err, "ensureAutoSizingMachineConfigs should succeed")
 
-		// Verify: Confirm MachineConfigs were created for both pools
+		// Verify: Confirm MachineConfig was created only for worker pool
 		mcList, err := ctrl.client.MachineconfigurationV1().MachineConfigs().List(ctx, metav1.ListOptions{})
 		require.NoError(t, err, "listing MachineConfigs should succeed")
-		require.Len(t, mcList.Items, 2,
-			"should have exactly 2 MachineConfigs (one for worker, one for master)")
+		require.Len(t, mcList.Items, 1,
+			"should have exactly 1 MachineConfig (worker only)")
 
-		// Verify: Check that both expected MCs are present by name
-		mcNames := make(map[string]bool)
-		for _, mc := range mcList.Items {
-			mcNames[mc.Name] = true
-		}
-
-		require.True(t, mcNames["50-worker-auto-sizing-disabled"],
-			"should have created MC for worker pool")
-		require.True(t, mcNames["50-master-auto-sizing-disabled"],
-			"should have created MC for master pool")
+		// Verify: Check that only worker MC is present
+		require.Equal(t, "50-worker-auto-sizing-disabled", mcList.Items[0].Name,
+			"should have created MC for worker pool only")
 	})
 }
 
 // TestRunAutoSizingBootstrap validates the bootstrap function that generates auto-sizing MachineConfigs
-// for cluster initialization. This function is used during cluster bootstrap to ensure all pools
-// have auto-sizing configurations from the start.
+// for cluster initialization. Only the worker pool should get an auto-sizing MC.
 func TestRunAutoSizingBootstrap(t *testing.T) {
-	t.Run("generates MCs for all pools", func(t *testing.T) {
+	t.Run("generates MC only for worker pool", func(t *testing.T) {
 		// Setup: Create worker and master pools for a typical cluster
 		workerPool := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 		masterPool := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
@@ -225,30 +216,21 @@ func TestRunAutoSizingBootstrap(t *testing.T) {
 		// Execute: Generate auto-sizing MachineConfigs for bootstrap
 		mcs, err := RunAutoSizingBootstrap(pools)
 		require.NoError(t, err, "RunAutoSizingBootstrap should not return an error")
-		require.Len(t, mcs, 2, "should generate 2 MachineConfigs (one for each pool)")
+		require.Len(t, mcs, 1, "should generate 1 MachineConfig (worker only)")
 
-		// Verify: Build a map of MC names to MC objects for easy lookup
-		mcNames := make(map[string]*mcfgv1.MachineConfig)
-		for _, mc := range mcs {
-			mcNames[mc.Name] = mc
-		}
-
-		// Verify: Check that both expected MCs were generated
-		require.Contains(t, mcNames, "50-worker-auto-sizing-disabled",
+		// Verify: Only worker MC should be generated
+		require.Equal(t, "50-worker-auto-sizing-disabled", mcs[0].Name,
 			"should contain worker auto-sizing MC")
-		require.Contains(t, mcNames, "50-master-auto-sizing-disabled",
-			"should contain master auto-sizing MC")
 
 		// Verify: Validate the worker MC has correct labels and annotations
-		workerMC := mcNames["50-worker-auto-sizing-disabled"]
-		require.Equal(t, "worker", workerMC.Labels[mcfgv1.MachineConfigRoleLabelKey],
+		require.Equal(t, "worker", mcs[0].Labels[mcfgv1.MachineConfigRoleLabelKey],
 			"worker MC should have correct role label")
 		require.Equal(t, "machineConfig-to-set-the-default-behavior-of-NODE_SIZING_ENABLED",
-			workerMC.Annotations["openshift-patch-reference"],
+			mcs[0].Annotations["openshift-patch-reference"],
 			"worker MC should have correct patch reference annotation")
 
 		// Verify: Validate the ignition config structure
-		ignConfig, err := ctrlcommon.ParseAndConvertConfig(workerMC.Spec.Config.Raw)
+		ignConfig, err := ctrlcommon.ParseAndConvertConfig(mcs[0].Spec.Config.Raw)
 		require.NoError(t, err, "parsing worker MC ignition config should succeed")
 		require.Len(t, ignConfig.Storage.Files, 1,
 			"worker MC ignition config should contain exactly one file")
@@ -266,7 +248,7 @@ func TestRunAutoSizingBootstrap(t *testing.T) {
 		require.Len(t, mcs, 0, "should generate no MachineConfigs for empty pool list")
 	})
 
-	t.Run("skips custom pools and generates MCs only for master and worker", func(t *testing.T) {
+	t.Run("skips master and custom pools, generates MC only for worker", func(t *testing.T) {
 		workerPool := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 		masterPool := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 		infraPool := helpers.NewMachineConfigPool("infra", nil, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role.kubernetes.io/infra", ""), "v0")
@@ -274,18 +256,10 @@ func TestRunAutoSizingBootstrap(t *testing.T) {
 
 		mcs, err := RunAutoSizingBootstrap(pools)
 		require.NoError(t, err, "RunAutoSizingBootstrap should not return an error")
-		require.Len(t, mcs, 2, "should generate 2 MachineConfigs (worker and master only)")
+		require.Len(t, mcs, 1, "should generate 1 MachineConfig (worker only)")
 
-		mcNames := make(map[string]bool)
-		for _, mc := range mcs {
-			mcNames[mc.Name] = true
-		}
-		require.True(t, mcNames["50-worker-auto-sizing-disabled"],
+		require.Equal(t, "50-worker-auto-sizing-disabled", mcs[0].Name,
 			"should contain worker auto-sizing MC")
-		require.True(t, mcNames["50-master-auto-sizing-disabled"],
-			"should contain master auto-sizing MC")
-		require.False(t, mcNames["50-infra-auto-sizing-disabled"],
-			"should NOT contain infra auto-sizing MC")
 	})
 }
 
