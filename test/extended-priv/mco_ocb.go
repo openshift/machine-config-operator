@@ -131,27 +131,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 				},
 			}
 		} else {
-			containerFileContent = `
-	# Pull the centos base image and enable the EPEL repository.
-        FROM quay.io/centos/centos:stream9 AS centos
-        RUN dnf install -y epel-release
-
-        # Pull an image containing the yq utility.
-        FROM quay.io/multi-arch/yq:4.25.3 AS yq
-
-        # Build the final OS image for this MachineConfigPool.
-        FROM configs AS final
-
-        # Copy the EPEL configs into the final image.
-        COPY --from=yq /usr/bin/yq /usr/bin/yq
-        COPY --from=centos /etc/yum.repos.d /etc/yum.repos.d
-        COPY --from=centos /etc/pki/rpm-gpg/RPM-GPG-KEY-* /etc/pki/rpm-gpg/
-
-        # Install cowsay and ripgrep from the EPEL repository into the final image,
-        # along with a custom cow file.
-        RUN sed -i 's/\$stream/9-stream/g' /etc/yum.repos.d/centos*.repo && \
-            rpm-ostree install cowsay ripgrep
-`
+			containerFileContent = getConnectedCustomContainerFileContent(mcp)
 			checkers = []Checker{
 				CommandOutputChecker{
 					Command:  []string{"cowsay", "-t", "hello"},
@@ -509,6 +489,40 @@ func checkMisconfiguredMOSC(oc *exutil.CLI, moscAndMcpName, baseImagePullSecret,
 	o.Eventually(machineConfigCO, "5m", "20s").ShouldNot(BeDegraded(),
 		"%s should stop being degraded when the offending MOSC is deleted", machineConfigCO)
 
+}
+
+// getConnectedCustomContainerFileContent returns a containerfile content that installs cowsay and ripgrep
+// using the CentOS stream repos matching the MCP's effective OS image stream (e.g. rhel-9 -> stream9, rhel-10 -> stream10).
+// This containerfile requires network access and should not be used in disconnected environments.
+func getConnectedCustomContainerFileContent(mcp *MachineConfigPool) string {
+	stream, err := GetEffectiveOsImageStream(mcp)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting effective osImageStream from %s", mcp)
+	logger.Infof("Generating custom containerfile for stream '%s'", stream)
+
+	majorVersion := GetOSImageStreamMajorVersion(stream)
+
+	return fmt.Sprintf(`
+        # Pull the centos base image and enable the EPEL repository.
+        FROM quay.io/centos/centos:stream%s AS centos
+        RUN dnf install -y epel-release
+
+        # Pull an image containing the yq utility.
+        FROM quay.io/multi-arch/yq:4.25.3 AS yq
+
+        # Build the final OS image for this MachineConfigPool.
+        FROM configs AS final
+
+        # Copy the EPEL configs into the final image.
+        COPY --from=yq /usr/bin/yq /usr/bin/yq
+        COPY --from=centos /etc/yum.repos.d /etc/yum.repos.d
+        COPY --from=centos /etc/pki/rpm-gpg/RPM-GPG-KEY-* /etc/pki/rpm-gpg/
+
+        # Install cowsay and ripgrep from the EPEL repository into the final image.
+        # The ncurses override handles package incompatibilities across streams.
+        RUN sed -i 's/\$stream/%s-stream/g' /etc/yum.repos.d/centos*.repo && \
+            rpm-ostree override replace --experimental --from repo=baseos ncurses ncurses-libs ncurses-base || true && \
+            rpm-ostree install cowsay ripgrep
+`, majorVersion, majorVersion)
 }
 
 // RebuildImageAndCheck rebuild the latest image of the MachineOSConfig resource and checks that it is properly built and applied
