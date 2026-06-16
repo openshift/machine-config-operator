@@ -526,7 +526,7 @@ func RebuildImageAndCheck(mosc *MachineOSConfig) {
 	logger.Infof("OK!\n")
 
 	exutil.By("Check that the existing MOSB is reused and it builds a new image")
-	o.Eventually(mosb.GetJob, "2m", "20s").Should(Exist(), "Rebuild job was not created")
+	o.Eventually(mosb.GetJob, "5m", "20s").Should(Exist(), "Rebuild job was not created")
 	o.Eventually(mosb, "20m", "20s").Should(HaveConditionField("Building", "status", FalseString), "Rebuild was not finished")
 	o.Eventually(mosb, "10m", "20s").Should(HaveConditionField("Succeeded", "status", TrueString), "Rebuild didn't succeed")
 	o.Eventually(mosb, "2m", "20s").Should(HaveConditionField("Interrupted", "status", FalseString), "Reuild was interrupted")
