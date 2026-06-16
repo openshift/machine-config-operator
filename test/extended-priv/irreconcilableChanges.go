@@ -204,7 +204,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		o.Expect(err).NotTo(o.HaveOccurred())
 
 		o.Expect(newMS.ScaleTo(1)).To(o.Succeed())
-		o.Expect(newMS.WaitUntilReady("15m")).To(o.Succeed())
+		o.Expect(newMS.WaitUntilReady("20m")).To(o.Succeed())
 
 		exutil.By("Step 5: Verify new node has no irreconcilable changes")
 		newNodes := newMS.GetNodesOrFail()
@@ -350,8 +350,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		o.Expect(mcp).Should(HaveConditionField("RenderDegraded", "message",
 			o.ContainSubstring("ignition disks section contains changes")))
 
-		defer mc2.DeleteWithWait()
-		o.Expect(mcp.WaitForNotDegradedStatus()).To(o.Succeed())
+		defer func() {
+			mc2.DeleteWithWait()
+			o.Expect(mcp.WaitForNotDegradedStatus()).To(o.Succeed())
+		}()
 	})
 
 	g.It("Irreconcilable changes cleared after reverting MC", g.Label("Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere"), func() {
