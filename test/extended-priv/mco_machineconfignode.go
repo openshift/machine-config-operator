@@ -303,7 +303,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		)
 
 		exutil.By("Check that a machineconfignode cannot be patched from another MCD")
-		cmd := []string{"./rootfs/usr/bin/oc", "patch", "machineconfignodes/" + machineConfigNode1.GetName(), "--type=merge", "-p", patchMCN1}
+		cmd := []string{"chroot", "/rootfs", "oc", "patch", "machineconfignodes/" + machineConfigNode1.GetName(), "--type=merge", "-p", patchMCN1}
 		_, err := exutil.RemoteShContainer(oc.AsAdmin(), MachineConfigNamespace, node0.GetMachineConfigDaemon(), MachineConfigDaemon, cmd...)
 		o.Expect(err).To(o.HaveOccurred(), "It should not be allowed to patch a machineconfignode from a different machineconfigdaemon")
 		o.Expect(err).To(o.BeAssignableToTypeOf(&exutil.ExitError{}), "Unexpected error while patching the machineconfignode resource from another MCD. %s", err)
