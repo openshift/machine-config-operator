@@ -116,18 +116,6 @@ else
 	GO111MODULE=on go build -o $(GOPATH)/bin/golangci-lint ./vendor/github.com/golangci/golangci-lint/cmd/golangci-lint
 endif
 
-SKOPEO := $(shell command -v skopeo 2> /dev/null)
-install-skopeo:
-ifdef SKOPEO
-	@echo "Found skopeo"
-	skopeo --version
-else
-	@echo "Installing skopeo"
-	./hack/install-skopeo.sh
-endif
-
-# install-skopeo is purposely omitted from this target because it is only
-# needed for the e2e-ocl test targets (test-e2e-ocl-1of2, test-e2e-ocl-2of2).
 install-tools: install-golangci-lint install-go-junit-report install-setup-envtest
 
 # Runs golangci-lint
@@ -222,11 +210,11 @@ test-e2e-techpreview: install-go-junit-report
 test-e2e-single-node: install-go-junit-report
 	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 120m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-single-node/ | ./hack/test-with-junit.sh $(@)
 
-test-e2e-ocl-1of2: install-go-junit-report install-skopeo
-	set -o pipefail; PATH="$(PATH):/tmp/skopeo/bin" go test -tags=$(GOTAGS) -failfast -timeout 120m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-ocl-1of2/ ./test/e2e-ocl-shared/ | ./hack/test-with-junit.sh $(@)
+test-e2e-ocl-1of2: install-go-junit-report
+	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 120m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-ocl-1of2/ ./test/e2e-ocl-shared/ | ./hack/test-with-junit.sh $(@)
 
-test-e2e-ocl-2of2: install-go-junit-report install-skopeo
-	set -o pipefail; PATH="$(PATH):/tmp/skopeo/bin" go test -tags=$(GOTAGS) -failfast -timeout 150m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-ocl-2of2/ ./test/e2e-ocl-shared/ | ./hack/test-with-junit.sh $(@)
+test-e2e-ocl-2of2: install-go-junit-report
+	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 150m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-ocl-2of2/ ./test/e2e-ocl-shared/ | ./hack/test-with-junit.sh $(@)
 
 test-e2e-iri: install-go-junit-report
 	set -o pipefail; go test -tags=$(GOTAGS) -failfast -timeout 120m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-iri/ | ./hack/test-with-junit.sh $(@)
