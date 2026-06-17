@@ -747,7 +747,17 @@ func (ctrl *Controller) isMaster(node *corev1.Node) bool {
 // Given a master Node, ensure it reflects the current mastersSchedulable
 // setting and make sure the control-plane label is set.
 func (ctrl *Controller) reconcileMaster(node *corev1.Node) {
-	err := ctrl.updateMasterNodeControlPlaneLabel(node)
+	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
+	if err != nil {
+		klog.Errorf("failed to get controller config for master reconciliation: %v", err)
+		return
+	}
+	if cc.Spec.Infra.Status.ControlPlaneTopology == configv1.ExternalTopologyMode {
+		// HyperShift hosted clusters have no in-cluster control plane nodes.
+		return
+	}
+
+	err = ctrl.updateMasterNodeControlPlaneLabel(node)
 	if err != nil {
 		err = fmt.Errorf("failed adding the control-plane label to master Node: %w", err)
 		klog.Error(err)
