@@ -2,6 +2,7 @@ package extended
 
 import (
 	"fmt"
+	"strings"
 
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
@@ -302,6 +303,11 @@ func GetDefaultOSImageStream(oc *exutil.CLI) string {
 		return OSImageStreamRHEL9
 	}
 	return OSImageStreamRHEL10
+}
+
+// GetOSImageStreamMajorVersion extracts the major version from a stream name (e.g. "rhel-9" -> "9", "rhel-10" -> "10").
+func GetOSImageStreamMajorVersion(stream string) string {
+	return strings.TrimPrefix(stream, "rhel-")
 }
 
 // SkipIfDefaultOSImageStream skips the test if the cluster's default OS image stream matches the given stream.
