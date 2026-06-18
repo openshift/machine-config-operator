@@ -29,9 +29,9 @@ func DoesMachineConfigPoolHaveMachines(machineConfigClient *machineconfigclient.
 	return mcp.Status.MachineCount > 0
 }
 
-// `WaitForMCPToBeReady` waits up to 5 minutes for a pool to be in an updated state with
+// `WaitForMCPToBeReady` waits up to a specified timeout for a pool to be in an updated state with
 // a specified number of ready machines
-func WaitForMCPToBeReady(machineConfigClient *machineconfigclient.Clientset, poolName string, readyMachineCount int32, oldRenderedMC string) {
+func WaitForMCPToBeReady(machineConfigClient *machineconfigclient.Clientset, poolName string, readyMachineCount int32, oldRenderedMC string, timeout time.Duration) {
 	o.Eventually(func() bool {
 		mcp, err := machineConfigClient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), poolName, metav1.GetOptions{})
 		if err != nil {
@@ -61,7 +61,7 @@ func WaitForMCPToBeReady(machineConfigClient *machineconfigclient.Clientset, poo
 			logger.Infof("MCP '%v' has %v ready machines. Waiting for the desired ready machine count of %v.", poolName, mcp.Status.UpdatedMachineCount, readyMachineCount)
 		}
 		return false
-	}, 5*time.Minute, 10*time.Second).Should(o.BeTrue(), "Timed out waiting for MCP '%v' to be in 'Updated' state with %v ready machines.", poolName, readyMachineCount)
+	}, timeout, 10*time.Second).Should(o.BeTrue(), "Timed out waiting for MCP '%v' to be in 'Updated' state with %v ready machines.", poolName, readyMachineCount)
 }
 
 // `CleanupCustomMCP` cleans up a custom MCP if it exists through the following steps:
@@ -92,7 +92,7 @@ func CleanupCustomMCP(oc *exutil.CLI, machineConfigClient *machineconfigclient.C
 
 	// Wait for custom MCP to report no ready nodes
 	logger.Infof("Waiting for %v MCP to be updated with %v ready machines.", customMCPName, 0)
-	WaitForMCPToBeReady(machineConfigClient, customMCPName, 0, "")
+	WaitForMCPToBeReady(machineConfigClient, customMCPName, 0, "", 5*time.Minute)
 
 	// Wait for node to have a current config version equal to the worker MCP's config version
 	workerMcp, workerMcpErr := machineConfigClient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
@@ -115,7 +115,7 @@ func CleanupCustomMCP(oc *exutil.CLI, machineConfigClient *machineconfigclient.C
 
 // `DeleteMCAndWaitForMCPUpdate` deletes the desired MC and waits for the associated MCP
 // to return to an updated state
-func DeleteMCAndWaitForMCPUpdate(oc *exutil.CLI, machineConfigClient *machineconfigclient.Clientset, mcName, mcpName string) {
+func DeleteMCAndWaitForMCPUpdate(oc *exutil.CLI, machineConfigClient *machineconfigclient.Clientset, mcName, mcpName string, isSNO bool) {
 	oldRenderedMC := ""
 	// Get the rendered config of the MCP before the MC deletion, if the MCP still exists
 	mcp, mcpErr := machineConfigClient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), mcpName, metav1.GetOptions{})
@@ -131,8 +131,13 @@ func DeleteMCAndWaitForMCPUpdate(oc *exutil.CLI, machineConfigClient *machinecon
 	// Only wait for the MCP to return to an updated state if the MC existed and needed deletion
 	// and if the targeted MCP still exists
 	if mcDeleted && mcpErr == nil {
+		timeout := 8 * time.Minute
+		// SNO clusters can take a bit longer to finish an update, so set a longer timeout
+		if isSNO {
+			timeout = 15 * time.Minute
+		}
 		logger.Infof("Waiting for %v MCP to be updated with %v ready machines.", mcpName, 1)
-		WaitForMCPToBeReady(machineConfigClient, mcpName, 1, oldRenderedMC)
+		WaitForMCPToBeReady(machineConfigClient, mcpName, 1, oldRenderedMC, timeout)
 	}
 }
 

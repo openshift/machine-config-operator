@@ -28,7 +28,7 @@ func GetNodesByRole(oc *exutil.CLI, role string) ([]corev1.Node, error) {
 	return nodes.Items, nil
 }
 
-// `WaitForNodeCurrentConfig` waits up to 5 minutes for a input node to have a current
+// `WaitForNodeCurrentConfig` waits up to 8 minutes for a input node to have a current
 // config equal to the `config` parameter
 func WaitForNodeCurrentConfig(oc *exutil.CLI, nodeName, config string) {
 	o.Eventually(func() bool {
@@ -46,5 +46,5 @@ func WaitForNodeCurrentConfig(oc *exutil.CLI, nodeName, config string) {
 		}
 		logger.Infof("Node '%v' has a current config version of '%v'. Waiting for the node's current config version to be '%v'.", nodeName, nodeCurrentConfig, config)
 		return false
-	}, 5*time.Minute, 10*time.Second).Should(o.BeTrue(), "Timed out waiting for node '%v' to have a current config version of '%v'.", nodeName, config)
+	}, 8*time.Minute, 10*time.Second).Should(o.BeTrue(), "Timed out waiting for node '%v' to have a current config version of '%v'.", nodeName, config)
 }

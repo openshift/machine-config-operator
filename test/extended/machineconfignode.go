@@ -3,13 +3,18 @@ package extended
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"net"
+	"syscall"
 	"time"
 
 	o "github.com/onsi/gomega"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	machineconfigclient "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	extpriv "github.com/openshift/machine-config-operator/test/extended-priv"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -135,11 +140,18 @@ func getMCNConditionStatus(mcn *mcfgv1.MachineConfigNode, conditionType mcfgv1.S
 // confirm "Updated" is "False")
 func checkMCNConditionStatus(mcn *mcfgv1.MachineConfigNode, conditionType mcfgv1.StateProgress, status metav1.ConditionStatus) bool {
 	conditionStatus := getMCNConditionStatus(mcn, conditionType)
-	if conditionStatus != status && conditionType == mcfgv1.MachineConfigNodeResumed {
-		condition := getMCNCondition(mcn, conditionType)
-		logger.Infof("LastTransitionTime: %v, Message: %v, ObservedGeneration: %v, Reason: %v, Status: %v, Type: %v", condition.LastTransitionTime, condition.Message, condition.ObservedGeneration, condition.Reason, condition.Status, condition.Type)
-	}
 	return conditionStatus == status
+}
+
+// `isTransientConnectionError` returns true if the error indicates the API server is temporarily
+// unreachable. On SNO this happens during node reboots.
+func isTransientConnectionError(err error) bool {
+	var netErr net.Error
+	return err != nil &&
+		(errors.Is(err, syscall.ECONNREFUSED) ||
+			errors.Is(err, io.EOF) ||
+			errors.Is(err, io.ErrUnexpectedEOF) ||
+			(errors.As(err, &netErr) && netErr.Timeout()))
 }
 
 // `WaitForMCNConditionStatus` waits up to a specified timeout for the desired MCN condition to
@@ -147,7 +159,7 @@ func checkMCNConditionStatus(mcn *mcfgv1.MachineConfigNode, conditionType mcfgv1
 // "Unknown," the function will also return true if the condition is "True," which ensures that we
 // do not fail when an update progresses quickly through the intermediary "Unknown" phase.
 func waitForMCNConditionStatus(machineConfigClient *machineconfigclient.Clientset, mcnName string, conditionType mcfgv1.StateProgress, status metav1.ConditionStatus,
-	timeout time.Duration, interval time.Duration) (bool, error) {
+	timeout time.Duration, interval time.Duration, stopOnTransientError bool) (bool, error) {
 
 	conditionMet := false
 	var conditionErr error
@@ -156,9 +168,11 @@ func waitForMCNConditionStatus(machineConfigClient *machineconfigclient.Clientse
 		logger.Infof("Waiting for MCN '%v' %v condition to be %v.", mcnName, conditionType, status)
 
 		workerNodeMCN, conditionErr = machineConfigClient.MachineconfigurationV1().MachineConfigNodes().Get(context.TODO(), mcnName, metav1.GetOptions{})
-		// Record if an error occurs when getting the MCN resource
 		if conditionErr != nil {
 			logger.Infof("Error getting MCN for node '%v': %v", mcnName, conditionErr)
+			if stopOnTransientError && isTransientConnectionError(conditionErr) {
+				return false, conditionErr
+			}
 			return false, nil
 		}
 
@@ -168,17 +182,25 @@ func waitForMCNConditionStatus(machineConfigClient *machineconfigclient.Clientse
 		// trough the "Unknown" phase, check if the condition has flipped to `True`.
 		if !conditionMet && status == metav1.ConditionUnknown {
 			conditionMet = checkMCNConditionStatus(workerNodeMCN, conditionType, metav1.ConditionTrue)
-			logger.Infof("MCN '%v' %v condition was %v, missed transition through %v.", mcnName, conditionType, metav1.ConditionTrue, status)
+			if conditionMet {
+				logger.Infof("MCN '%v' %v condition was %v, missed transition through %v.", mcnName, conditionType, metav1.ConditionTrue, status)
+			}
 		}
 		return conditionMet, nil
 	}); err != nil {
-		logger.Infof("The desired MCN condition was never met: %v", err)
-		// Handle the situation where there were errors getting the MCN resource
-		if conditionErr != nil {
-			logger.Infof("An error occurred waiting for MCN '%v' %v condition to be %v: %v", mcnName, conditionType, status, conditionErr)
-			return conditionMet, fmt.Errorf("MCN '%v' %v condition was not %v: %v", mcnName, conditionType, status, conditionErr)
+		if isTransientConnectionError(err) {
+			logger.Infof("Got a transient connection error waiting for MCN '%v' %v condition to be %v: %v", mcnName, conditionType, status, err)
+			return conditionMet, err
 		}
-		// Handle case when no errors occur grabbing the MCN, but we time out waiting for the condition to be in the desired state
+		logger.Infof("The desired MCN condition was never met: %v", err)
+		if conditionErr != nil {
+			if isTransientConnectionError(conditionErr) {
+				logger.Infof("Timed out with transient connection error waiting for MCN '%v' %v condition to be %v: %v", mcnName, conditionType, status, conditionErr)
+				return conditionMet, nil
+			}
+			logger.Infof("An error occurred waiting for MCN '%v' %v condition to be %v: %v", mcnName, conditionType, status, conditionErr)
+			return conditionMet, fmt.Errorf("MCN '%v' %v condition was not %v: %w", mcnName, conditionType, status, conditionErr)
+		}
 		logger.Infof("A timeout occurred waiting for MCN '%v' %v condition was not %v.", mcnName, conditionType, status)
 		return conditionMet, nil
 	}
@@ -192,7 +214,7 @@ func waitForMCNConditionStatus(machineConfigClient *machineconfigclient.Clientse
 // status, a warning will be logged instead of erroring out the test.
 //
 //nolint:dupl // (ijanssen): Ignoring a duplication error the linter is throwing because of two similar, but unique if blocks.
-func ValidateTransitionThroughConditions(machineConfigClient *machineconfigclient.Clientset, updatingNodeName string, isRebootless, isImageMode bool) {
+func ValidateTransitionThroughConditions(oc *exutil.CLI, machineConfigClient *machineconfigclient.Clientset, updatingNodeName string, isImageMode bool) {
 	// Get the start time of the update
 	updateStartTime := metav1.Now()
 
@@ -202,41 +224,50 @@ func ValidateTransitionThroughConditions(machineConfigClient *machineconfigclien
 	// long for the condition to flip (that would mean something is wrong and would waste time).
 	updatingWaitTime := 1 * time.Minute
 	updatingWaitInterval := 1 * time.Second
+	isSNO, isSNOErr := extpriv.IsSNOSafe(oc)
+	o.Expect(isSNOErr).NotTo(o.HaveOccurred(), fmt.Sprintf("Error checking if cluster is SNO: %v", isSNOErr))
 	if isImageMode {
 		updatingWaitTime = 25 * time.Minute
+		updatingWaitInterval = 5 * time.Second
+	} else if isSNO {
+		// SNO transition times can also be a bit longer due to cluster connection instability, so
+		// set the times for longer in such clusters. (Longer image updates timing takes precedence.)
+		updatingWaitTime = 5 * time.Minute
 		updatingWaitInterval = 5 * time.Second
 	}
 
 	// Test the condition transitions.
 	logger.Infof("Waiting for Updated=False")
-	conditionMet, err := waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdated, metav1.ConditionFalse, updatingWaitTime, updatingWaitInterval)
+	conditionMet, err := waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdated, metav1.ConditionFalse, updatingWaitTime, updatingWaitInterval, false)
 	o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for Updated=False: %v", err))
 	o.Expect(conditionMet).To(o.BeTrue(), "Error, could not detect Updated=False.")
 
 	logger.Infof("Waiting for UpdatePrepared=True")
-	conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdatePrepared, metav1.ConditionTrue, 1*time.Minute, 1*time.Second)
+	conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdatePrepared, metav1.ConditionTrue, 1*time.Minute, 1*time.Second, false)
 	o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for UpdatePrepared=True: %v", err))
 	o.Expect(conditionMet).To(o.BeTrue(), "Error, could not detect UpdatePrepared=True.")
 
 	logger.Infof("Waiting for UpdateExecuted=Unknown")
-	conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateExecuted, metav1.ConditionUnknown, 30*time.Second, 1*time.Second)
+	conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateExecuted, metav1.ConditionUnknown, 30*time.Second, 1*time.Second, false)
 	o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for UpdateExecuted=Unknown: %v", err))
 	o.Expect(conditionMet).To(o.BeTrue(), "Error, could not detect UpdateExecuted=Unknown.")
 
-	// On standard, non-rebootless, update, check that node transitions through "Cordoned" and "Drained" phases
-	if !isRebootless {
+	// On standard, non-rebootless (image based), update, check that node transitions through
+	// "Cordoned" and "Drained" phases.
+	// Nodes do not cordon or drain on SNO, so also skip these checks if the cluster is SNO.
+	if isImageMode && !isSNO {
 		logger.Infof("Waiting for Cordoned=True")
-		conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateCordoned, metav1.ConditionTrue, 30*time.Second, 1*time.Second)
+		conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateCordoned, metav1.ConditionTrue, 30*time.Second, 1*time.Second, false)
 		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for Cordoned=True: %v", err))
 		o.Expect(conditionMet).To(o.BeTrue(), "Error, could not detect Cordoned=True.")
 
 		logger.Infof("Waiting for Drained=Unknown")
-		conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateDrained, metav1.ConditionUnknown, 15*time.Second, 1*time.Second)
+		conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateDrained, metav1.ConditionUnknown, 15*time.Second, 1*time.Second, false)
 		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for Drained=Unknown: %v", err))
 		o.Expect(conditionMet).To(o.BeTrue(), "Error, could not detect Drained=Unknown.")
 
 		logger.Infof("Waiting for Drained=True")
-		conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateDrained, metav1.ConditionTrue, 4*time.Minute, 1*time.Second)
+		conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateDrained, metav1.ConditionTrue, 4*time.Minute, 1*time.Second, false)
 		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for Drained=True: %v", err))
 		o.Expect(conditionMet).To(o.BeTrue(), "Error, could not detect Drained=True.")
 	}
@@ -245,60 +276,87 @@ func ValidateTransitionThroughConditions(machineConfigClient *machineconfigclien
 	// "ImagePulledFromRegistry" phases
 	if isImageMode {
 		logger.Infof("Waiting for AppliedOSImage=Unknown")
-		conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateOS, metav1.ConditionUnknown, 30*time.Second, 1*time.Second)
+		conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateOS, metav1.ConditionUnknown, 30*time.Second, 1*time.Second, false)
 		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for AppliedOSImage=Unknown: %v", err))
 		o.Expect(conditionMet).To(o.BeTrue(), "Error, could not detect AppliedOSImage=Unknown.")
 
 		logger.Infof("Waiting for ImagePulledFromRegistry=Unknown")
-		conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeImagePulledFromRegistry, metav1.ConditionUnknown, 30*time.Second, 1*time.Second)
+		timeout := 30 * time.Second
+		if isSNO {
+			timeout = 1 * time.Minute
+		}
+		conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeImagePulledFromRegistry, metav1.ConditionUnknown, timeout, 1*time.Second, false)
 		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for ImagePulledFromRegistry=Unknown: %v", err))
 		o.Expect(conditionMet).To(o.BeTrue(), "Error, could not detect ImagePulledFromRegistry=Unknown.")
 
 		logger.Infof("Waiting for AppliedOSImage=True")
-		conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateOS, metav1.ConditionTrue, 3*time.Minute, 1*time.Second)
-		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for AppliedOSImage=True: %v", err))
-		o.Expect(conditionMet).To(o.BeTrue(), "Error, could not detect AppliedOSImage=True.")
+		conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateOS, metav1.ConditionTrue, 4*time.Minute, 2*time.Second, true)
+		if isSNO && isTransientConnectionError(err) {
+			logger.Infof("Warning, got connection error detecting AppliedOSImage=True. The node likely started rebooting.")
+		} else {
+			o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for AppliedOSImage=True: %v", err))
+			o.Expect(conditionMet).To(o.BeTrue(), "Error, could not detect AppliedOSImage=True.")
+		}
 	} else { // On a non-image mode update, check that node transitions through the "AppliedFiles" phase
 		logger.Infof("Waiting for AppliedFiles=Unknown")
-		conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateFiles, metav1.ConditionUnknown, 30*time.Second, 1*time.Second)
+		conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateFiles, metav1.ConditionUnknown, 30*time.Second, 1*time.Second, false)
 		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for AppliedFiles=Unknown: %v", err))
 		if !conditionMet {
 			logger.Infof("Warning, could not detect AppliedFiles=Unknown.")
 		}
 
 		logger.Infof("Waiting for AppliedFiles=True")
-		conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateFiles, metav1.ConditionTrue, 3*time.Minute, 1*time.Second)
-		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for AppliedFiles=True: %v", err))
-		o.Expect(conditionMet).To(o.BeTrue(), "Error, could not detect AppliedFiles=True.")
+		conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateFiles, metav1.ConditionTrue, 3*time.Minute, 1*time.Second, true)
+		if isSNO && isTransientConnectionError(err) {
+			logger.Infof("Warning, got connection error detecting AppliedFiles=True. The node likely started rebooting.")
+		} else {
+			o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for AppliedFiles=True: %v", err))
+			o.Expect(conditionMet).To(o.BeTrue(), "Error, could not detect AppliedFiles=True.")
+		}
 	}
 
 	logger.Infof("Waiting for UpdateExecuted=True")
-	conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateExecuted, metav1.ConditionTrue, 20*time.Second, 1*time.Second)
-	o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for UpdateExecuted=True: %v", err))
-	o.Expect(conditionMet).To(o.BeTrue(), "Error, could not detect UpdateExecuted=True.")
+	conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateExecuted, metav1.ConditionTrue, 20*time.Second, 1*time.Second, true)
+	// A node update in SNO can quickly transition through the "UpdateExecuted" state and cause
+	// us to catch the update during the node reboot. During reboot, we will get connection
+	// errors and, thus, should not error out on such errors.
+	if isSNO && isTransientConnectionError(err) {
+		logger.Infof("Warning, got connection error detecting UpdateExecuted=True. The node likely started rebooting.")
+	} else {
+		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for UpdateExecuted=True: %v", err))
+		o.Expect(conditionMet).To(o.BeTrue(), "Error, could not detect UpdateExecuted=True.")
+	}
 
 	// On image mode update, check that node transitions through the "ImagePulledFromRegistry" phase
 	if isImageMode {
 		logger.Infof("Waiting for ImagePulledFromRegistry=True")
-		conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeImagePulledFromRegistry, metav1.ConditionTrue, 1*time.Minute, 1*time.Second)
-		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for ImagePulledFromRegistry=True: %v", err))
-		o.Expect(conditionMet).To(o.BeTrue(), "Error, could not detect ImagePulledFromRegistry=True.")
+		conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeImagePulledFromRegistry, metav1.ConditionTrue, 1*time.Minute, 1*time.Second, true)
+		if isSNO && isTransientConnectionError(err) {
+			logger.Infof("Warning, got connection error detecting ImagePulledFromRegistry=True. The node likely started rebooting.")
+		} else {
+			o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for ImagePulledFromRegistry=True: %v", err))
+			o.Expect(conditionMet).To(o.BeTrue(), "Error, could not detect ImagePulledFromRegistry=True.")
+		}
 	}
 
-	// On rebootless update, check that node transitions through "UpdatePostActionComplete" phase
-	if isRebootless {
+	// On rebootless (non-image based) update, check that node transitions through "UpdatePostActionComplete" phase
+	if !isImageMode {
 		logger.Infof("Waiting for UpdatePostActionComplete=True")
-		conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdatePostActionComplete, metav1.ConditionTrue, 1*time.Minute, 1*time.Second)
+		conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdatePostActionComplete, metav1.ConditionTrue, 1*time.Minute, 1*time.Second, false)
 		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for UpdatePostActionComplete=True: %v", err))
 		o.Expect(conditionMet).To(o.BeTrue(), "Error, could not detect UpdatePostActionComplete=True.")
 	} else { // On standard, non-rebootless, update, check that node transitions through "RebootedNode" phase
 		logger.Infof("Waiting for RebootedNode=Unknown")
-		conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateRebooted, metav1.ConditionUnknown, 15*time.Second, 1*time.Second)
-		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for RebootedNode=Unknown: %v", err))
-		o.Expect(conditionMet).To(o.BeTrue(), "Error, could not detect RebootedNode=Unknown.")
+		conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateRebooted, metav1.ConditionUnknown, 15*time.Second, 1*time.Second, true)
+		if isSNO && isTransientConnectionError(err) {
+			logger.Infof("Warning, got connection error detecting RebootedNode=Unknown. The node likely started rebooting.")
+		} else {
+			o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for RebootedNode=Unknown: %v", err))
+			o.Expect(conditionMet).To(o.BeTrue(), "Error, could not detect RebootedNode=Unknown.")
+		}
 
 		logger.Infof("Waiting for RebootedNode=True")
-		conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateRebooted, metav1.ConditionTrue, 10*time.Minute, 1*time.Second)
+		conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateRebooted, metav1.ConditionTrue, 15*time.Minute, 1*time.Second, false)
 		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for RebootedNode=True: %v", err))
 		o.Expect(conditionMet).To(o.BeTrue(), "Error, could not detect RebootedNode=True.")
 	}
@@ -306,26 +364,38 @@ func ValidateTransitionThroughConditions(machineConfigClient *machineconfigclien
 	// The final steps of the update happen quickly, so sometimes we can miss the final condition
 	// transitions. If we do, we will not error out, but record that the condition was missed.
 	logger.Infof("Waiting for Resumed=True")
-	conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeResumed, metav1.ConditionTrue, 5*time.Second, 1*time.Second)
+	timeout := 45 * time.Second
+	if isSNO {
+		timeout = 3 * time.Minute
+	}
+	conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeResumed, metav1.ConditionTrue, timeout, 1*time.Second, false)
 	o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for Resumed=True: %v", err))
 	if !conditionMet {
 		logger.Infof("Warning, could not detect Resumed=True.")
 	}
-	logger.Infof("Waiting for UpdateComplete=True")
-	conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateComplete, metav1.ConditionTrue, 10*time.Second, 1*time.Second)
-	o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for UpdateComplete=True: %v", err))
-	if !conditionMet {
-		logger.Infof("Warning, could not detect UpdateComplete=True.")
-	}
-	logger.Infof("Waiting for Uncordoned=True")
-	conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateUncordoned, metav1.ConditionTrue, 10*time.Second, 1*time.Second)
-	o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for UpdateComplete=True: %v", err))
-	if !conditionMet {
-		logger.Infof("Warning, could not detect UpdateComplete=True.")
+	// Only nodes that cordon and drain go through the "UpdateComplete" and "Uncordoned" stages, so
+	// skip these checks for standard, non-rebootless (non-image based), updates and in SNO clusters.
+	if isImageMode && !isSNO {
+		logger.Infof("Waiting for UpdateComplete=True")
+		conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateComplete, metav1.ConditionTrue, 10*time.Second, 1*time.Second, false)
+		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for UpdateComplete=True: %v", err))
+		if !conditionMet {
+			logger.Infof("Warning, could not detect UpdateComplete=True.")
+		}
+		logger.Infof("Waiting for Uncordoned=True")
+		conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdateUncordoned, metav1.ConditionTrue, 10*time.Second, 1*time.Second, false)
+		o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for Uncordoned=True: %v", err))
+		if !conditionMet {
+			logger.Infof("Warning, could not detect Uncordoned=True.")
+		}
 	}
 
 	logger.Infof("Waiting for Updated=True")
-	conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdated, metav1.ConditionTrue, 1*time.Minute, 1*time.Second)
+	timeout = 1 * time.Minute
+	if isSNO {
+		timeout = 10 * time.Minute
+	}
+	conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdated, metav1.ConditionTrue, timeout, 1*time.Second, false)
 	o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for Updated=True: %v", err))
 	o.Expect(conditionMet).To(o.BeTrue(), "Error, could not detect Updated=True.")
 
