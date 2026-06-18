@@ -116,6 +116,10 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 	allCertsThere := true
 	onDiskKC := clientcmdv1.Config{}
 
+	// this determins if we should run the certificate sync logic, we want to run this logic if either:
+	// 1. we haven't processed any ControllerConfig yet (currentNodeControllerConfigResource == "")
+	// 2. the ControllerConfig resourceVersion has updated since the last time we processed (currentNodeControllerConfigResource != controllerConfig.ObjectMeta.ResourceVersion)
+	// 3. the ServiceCARotate annotation is set to true, which indicates a rotation event, and our node annotation doesn't reflect that yet, which means we haven't processed a config since the rotation event started.
 	if currentNodeControllerConfigResource != controllerConfig.ObjectMeta.ResourceVersion || controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] == ctrlcommon.ServiceCARotateTrue {
 		klog.Infof("CERT-ROTATION: Starting certificate sync. ControllerConfig RV: %s, ServiceCARotate annotation: %s",
 			controllerConfig.ObjectMeta.ResourceVersion, controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation])
@@ -296,14 +300,22 @@ func (dn *Daemon) syncControllerConfigHandler(key string) error {
 		}
 	}
 
+	// Update the annotation to reflect the latest ControllerConfig we've processed
+	// true == saw a rotation event
+	// false == no rotation event
+	// "" == haven't processed any ControllerConfig yet.
 	oldAnno := dn.node.Annotations[constants.ControllerConfigSyncServerCA]
+	// We always want to update the resource version annotation, but we only want to update the ServiceCARotate annotation if it has changed, since that's what triggers the kubelet restart logic
 	annos := map[string]string{
 		constants.ControllerConfigResourceVersionKey: controllerConfig.ObjectMeta.ResourceVersion,
 	}
+	// if the old annotation on the node is different than controller configs ServiceCARotate annotation, update it.
 	if dn.node.Annotations[constants.ControllerConfigSyncServerCA] != controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation] {
+		// copy the value from the controllerconfig annotation to the node annotation, since that's what we use to determine if we've seen a rotation event before or not
 		annos[constants.ControllerConfigSyncServerCA] = controllerConfig.Annotations[ctrlcommon.ServiceCARotateAnnotation]
-
 	}
+
+	// setting annotations on node
 	if _, err := dn.nodeWriter.SetAnnotations(annos); err != nil {
 		return fmt.Errorf("failed to set annotations on node: %w", err)
 	}

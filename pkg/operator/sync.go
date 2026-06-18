@@ -1070,14 +1070,17 @@ func (optr *Operator) syncControllerConfig(config *renderConfig) error {
 	// https://bugzilla.redhat.com/show_bug.cgi?id=1879099
 
 	editCCAnno := false
+	klog.Infof("CERT-ROTATION-OPERATOR: Starting CA rotation check in syncControllerConfig")
 	kubeConfigData, err := optr.clusterCmLister.ConfigMaps("openshift-config-managed").Get("kube-apiserver-server-ca")
 	if err != nil {
-		klog.Errorf("Could not get in-cluster server-ca data %v", err)
+		klog.Errorf("CERT-ROTATION-OPERATOR: Could not get in-cluster server-ca data %v", err)
 	} else {
+		klog.Infof("CERT-ROTATION-OPERATOR: Successfully retrieved kube-apiserver-server-ca ConfigMap")
 		data, err := cmToData(kubeConfigData, "ca-bundle.crt")
 		if err != nil {
-			klog.Errorf("kube-apiserver-server-ca ConfigMap not populated yet. %v", err)
+			klog.Errorf("CERT-ROTATION-OPERATOR: kube-apiserver-server-ca ConfigMap not populated yet. %v", err)
 		} else if data != nil {
+			klog.Infof("CERT-ROTATION-OPERATOR: Retrieved CA bundle data from kube-apiserver-server-ca (%d bytes)", len(data))
 			cmNew := corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "kubeconfig-data",
@@ -1085,15 +1088,18 @@ func (optr *Operator) syncControllerConfig(config *renderConfig) error {
 			}
 			mcoCM, getErr := optr.kubeClient.CoreV1().ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), "kubeconfig-data", metav1.GetOptions{})
 			if getErr != nil {
-				klog.Errorf("Issue getting the kubeconfig-data configmap: %v", getErr)
+				klog.Errorf("CERT-ROTATION-OPERATOR: Issue getting the kubeconfig-data configmap: %v", getErr)
 				if !apierrors.IsNotFound(getErr) && !apierrors.IsTimeout(getErr) && !apierrors.IsServerTimeout(getErr) {
 					return getErr
 				}
+			} else {
+				klog.Infof("CERT-ROTATION-OPERATOR: Successfully retrieved kubeconfig-data ConfigMap from MCO namespace")
 			}
 			dataOld, err := cmToData(mcoCM, "ca-bundle.crt")
 			if err != nil && getErr == nil {
-				klog.Errorf("Could not get ca-bundle.crt from kubeconfig-data cm %v", err)
+				klog.Errorf("CERT-ROTATION-OPERATOR: Could not get ca-bundle.crt from kubeconfig-data cm %v", err)
 			} else if !bytes.Equal(data, dataOld) && getErr == nil {
+				klog.Infof("CERT-ROTATION-OPERATOR: *** CA DATA MISMATCH DETECTED *** MCO ConfigMap != kube-apiserver-server-ca ConfigMap (old: %d bytes, new: %d bytes)", len(dataOld), len(data))
 				// -1 == mcoCM < kubeCM
 				// 1 == mcoCM > kubeCM
 				klog.Infof("the MCO configmap for the server-ca and the openshift-config-managed one do not match. Diff: (0 means equal -1 means data has been removed 1 means data has been added) %d.", bytes.Compare(dataOld, data))
@@ -1147,8 +1153,10 @@ func (optr *Operator) syncControllerConfig(config *renderConfig) error {
 				if err != nil {
 					return fmt.Errorf("Could not patch kubeconfig-data with data %s: %w", string(patchBytes), err)
 				}
+				klog.Infof("CERT-ROTATION-OPERATOR: Successfully patched kubeconfig-data ConfigMap - setting editCCAnno=true")
 				editCCAnno = true
 			} else if getErr != nil {
+				klog.Infof("CERT-ROTATION-OPERATOR: kubeconfig-data ConfigMap not found - creating it with new CA data")
 				binData := make(map[string][]byte)
 				binData["ca-bundle.crt"] = data
 				cmNew.BinaryData = binData
@@ -1156,15 +1164,21 @@ func (optr *Operator) syncControllerConfig(config *renderConfig) error {
 				if err != nil {
 					return fmt.Errorf("Could not make kubeconfig-data CM, %v", err)
 				}
+				klog.Infof("CERT-ROTATION-OPERATOR: Successfully created kubeconfig-data ConfigMap - setting editCCAnno=true")
 				editCCAnno = true
+			} else {
+				klog.Infof("CERT-ROTATION-OPERATOR: CA data is identical - no rotation needed (data: %d bytes, dataOld: %d bytes)", len(data), len(dataOld))
 			}
 
 		}
 	}
+	klog.Infof("CERT-ROTATION-OPERATOR: Finished CA rotation check - editCCAnno=%v", editCCAnno)
 	cc.Annotations[daemonconsts.GeneratedByVersionAnnotationKey] = version.Raw
 	if editCCAnno {
+		klog.Infof("CERT-ROTATION-OPERATOR: *** SETTING ServiceCARotate=true ***")
 		cc.Annotations[ctrlcommon.ServiceCARotateAnnotation] = ctrlcommon.ServiceCARotateTrue
 	} else {
+		klog.Infof("CERT-ROTATION-OPERATOR: Setting ServiceCARotate=false (no CA changes detected)")
 		cc.Annotations[ctrlcommon.ServiceCARotateAnnotation] = ctrlcommon.ServiceCARotateFalse
 	}
 	// add ocp release version as annotation to controller config, for use when
