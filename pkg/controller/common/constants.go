@@ -30,6 +30,16 @@ const (
 	// OSImageURLOverriddenKey is used to tag a rendered machineconfig when OSImageURL has been overridden from default using machineconfig
 	OSImageURLOverriddenKey = "machineconfiguration.openshift.io/os-image-url-overridden"
 
+	// OSImageStreamClassAnnotationKey caches the stream class (e.g. "rhel-9", "rhel-10")
+	// determined by inspecting the OS container image's io.openshift.os.streamclass label.
+	// TODO(OCP 5.3): Remove when runc is removed.
+	OSImageStreamClassAnnotationKey = "machineconfiguration.openshift.io/os-image-stream-class"
+
+	// OSImageURLInspectedAnnotationKey tracks which OSImageURL was inspected to produce
+	// the cached stream class. When the OSImageURL changes, the cache is invalidated.
+	// TODO(OCP 5.3): Remove when runc is removed.
+	OSImageURLInspectedAnnotationKey = "machineconfiguration.openshift.io/os-image-url-inspected"
+
 	// RenderedMachineConfigPrefix is the name prefix for rendered MachineConfigs
 	RenderedMachineConfigPrefix = "rendered-"
 

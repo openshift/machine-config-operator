@@ -11,12 +11,16 @@ import (
 	"github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	opv1 "github.com/openshift/api/operator/v1"
+	cligoinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
+	cligolistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	mcopinformersv1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
+	operatorinformersv1alpha1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1alpha1"
 	mcoplistersv1 "github.com/openshift/client-go/operator/listers/operator/v1"
+	operatorlistersv1alpha1 "github.com/openshift/client-go/operator/listers/operator/v1alpha1"
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -58,6 +62,14 @@ var (
 	machineconfigKind = mcfgv1.SchemeGroupVersion.WithKind("MachineConfig")
 )
 
+// osImageStreamClassInspector abstracts OS image stream class inspection to
+// enable test mocking. The default implementation inspects the container
+// image's io.openshift.os.streamclass label via the cluster's pull secret.
+// TODO(OCP 5.3): Remove when runc is removed.
+type osImageStreamClassInspector interface {
+	GetStreamClass(ctx context.Context, imageURL string, cc *mcfgv1.ControllerConfig) (string, error)
+}
+
 // Controller defines the render controller.
 type Controller struct {
 	client        mcfgclientset.Interface
@@ -86,7 +98,14 @@ type Controller struct {
 	mcopLister       mcoplistersv1.MachineConfigurationLister
 	mcopListerSynced cache.InformerSynced
 
+	imgListerSynced  cache.InformerSynced
+	icspListerSynced cache.InformerSynced
+	idmsListerSynced cache.InformerSynced
+	itmsListerSynced cache.InformerSynced
+
 	fgHandler ctrlcommon.FeatureGatesHandler
+
+	imageInspector osImageStreamClassInspector
 
 	queue workqueue.TypedRateLimitingInterface[string]
 }
@@ -100,6 +119,10 @@ func New(
 	mckInformer mcfginformersv1.KubeletConfigInformer,
 	mcopInformer mcopinformersv1.MachineConfigurationInformer,
 	osImageStreamInformer mcfginformersv1.OSImageStreamInformer,
+	imgInformer cligoinformersv1.ImageInformer,
+	idmsInformer cligoinformersv1.ImageDigestMirrorSetInformer,
+	itmsInformer cligoinformersv1.ImageTagMirrorSetInformer,
+	icspInformer operatorinformersv1alpha1.ImageContentSourcePolicyInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 	featureGatesHandler ctrlcommon.FeatureGatesHandler,
@@ -115,6 +138,13 @@ func New(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
 			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigcontroller-rendercontroller"}),
 		fgHandler: featureGatesHandler,
+		imageInspector: &defaultOSImageStreamClassInspector{
+			kubeClient: kubeClient,
+			imgLister:  imgInformer.Lister(),
+			icspLister: icspInformer.Lister(),
+			idmsLister: idmsInformer.Lister(),
+			itmsLister: itmsInformer.Lister(),
+		},
 	}
 
 	mcpInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -143,6 +173,10 @@ func New(
 	ctrl.mckListerSynced = mckInformer.Informer().HasSynced
 	ctrl.mcopLister = mcopInformer.Lister()
 	ctrl.mcopListerSynced = mcopInformer.Informer().HasSynced
+	ctrl.imgListerSynced = imgInformer.Informer().HasSynced
+	ctrl.icspListerSynced = icspInformer.Informer().HasSynced
+	ctrl.idmsListerSynced = idmsInformer.Informer().HasSynced
+	ctrl.itmsListerSynced = itmsInformer.Informer().HasSynced
 
 	if osImageStreamInformer != nil && osimagestream.IsFeatureEnabled(ctrl.fgHandler) {
 		ctrl.osImageStreamLister = osImageStreamInformer.Lister()
@@ -159,7 +193,10 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	listerCaches := []cache.InformerSynced{ctrl.mcpListerSynced, ctrl.mcListerSynced, ctrl.ccListerSynced}
+	listerCaches := []cache.InformerSynced{
+		ctrl.mcpListerSynced, ctrl.mcListerSynced, ctrl.ccListerSynced,
+		ctrl.imgListerSynced, ctrl.icspListerSynced, ctrl.idmsListerSynced, ctrl.itmsListerSynced,
+	}
 
 	// OSImageStreams and MCPs fetched only if FeatureGateOSStreams active
 	if ctrl.osImageStreamListerSynced != nil {
@@ -702,6 +739,16 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		return fmt.Errorf("size validation failed: %w", err)
 	}
 
+	// When OSImageStream is not in use, check for runc on RHEL 10 via OSImageURL
+	// inspection. When OSImageStream IS in use, the check is already performed
+	// inside generateRenderedMachineConfig() via validateNoRuncOnRHEL10().
+	// TODO(OCP 5.3): Remove when runc is removed.
+	if osImageStreamSet == nil {
+		if err := ctrl.validateNoRuncFromOSImageURL(pool, generated, cc); err != nil {
+			return err
+		}
+	}
+
 	// Collect metric when OSImageURL was overridden
 	var isOSImageURLOverridden bool
 	if generated.Spec.OSImageURL != ctrlcommon.GetBaseImageContainer(&cc.Spec, osImageStreamSet) {
@@ -812,7 +859,7 @@ func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mc
 		merged.Annotations[ctrlcommon.OSImageURLOverriddenKey] = "true"
 		// Log a warning if the osImageURL is set using a tag instead of a digest
 		if !strings.Contains(merged.Spec.OSImageURL, "sha256:") {
-			klog.Warningf("OSImageURL %q for MachineConfig %s is set using a tag instead of a digest. It is highly recommended to use a digest", merged.Spec.OSImageURL, merged.Name)
+			klog.Warningf("OSImageURL for MachineConfig %s is set using a tag instead of a digest. It is highly recommended to use a digest", merged.Name)
 		}
 
 		// If the cluster admin overrides the OSImageURL field, it means they want
@@ -922,7 +969,7 @@ func getOSImageStreamNameForPoolBootstrap(pool *mcfgv1.MachineConfigPool, pools 
 // RunBootstrap runs the render controller in bootstrap mode.
 // For each pool, it matches the machineconfigs based on label selector and
 // returns the generated machineconfigs and pool with CurrentMachineConfig status field set.
-func RunBootstrap(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig, osImageStream *mcfgv1.OSImageStream) ([]*mcfgv1.MachineConfigPool, []*mcfgv1.MachineConfig, error) {
+func RunBootstrap(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig, osImageStream *mcfgv1.OSImageStream, baseStreamClass string) ([]*mcfgv1.MachineConfigPool, []*mcfgv1.MachineConfig, error) {
 	var (
 		opools   []*mcfgv1.MachineConfigPool
 		oconfigs []*mcfgv1.MachineConfig
@@ -947,6 +994,16 @@ func RunBootstrap(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineCo
 			return nil, nil, err
 		}
 
+		// When OSImageStream is not in use, check for runc on RHEL 10 using the
+		// base stream class determined by the caller from OSImageURL inspection.
+		// TODO(OCP 5.3): Remove when runc is removed.
+		if osImageStreamSet == nil && osimagestream.IsRHEL10Stream(baseStreamClass) {
+			if err := checkRuncBlockedOnStream(pool.Name, generated,
+				fmt.Sprintf("OS image with stream class %q", baseStreamClass)); err != nil {
+				return nil, nil, err
+			}
+		}
+
 		source := getMachineConfigRefs(configs)
 
 		pool.Spec.Configuration.Name = generated.Name
@@ -957,6 +1014,31 @@ func RunBootstrap(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineCo
 		oconfigs = append(oconfigs, generated)
 	}
 	return opools, oconfigs, nil
+}
+
+// runcBlockedError returns an actionable error message explaining that runc is
+// not available on the target stream and how to migrate to crun.
+// TODO(OCP 5.3): Remove when runc is removed.
+func runcBlockedError(poolName, streamIdentifier string) error {
+	return fmt.Errorf(
+		"MachineConfigPool %s targets %s where runc is not available. "+
+			"To unblock, migrate to crun by removing any ContainerRuntimeConfig that sets defaultRuntime to runc, "+
+			"and removing any MachineConfig that sets default_runtime = \"runc\" in CRI-O configuration under /etc/crio/crio.conf.d/",
+		poolName, streamIdentifier)
+}
+
+// checkRuncBlockedOnStream returns an error if the MachineConfig uses runc as
+// the default container runtime on a stream where runc is not available.
+// TODO(OCP 5.3): Remove when runc is removed.
+func checkRuncBlockedOnStream(poolName string, mc *mcfgv1.MachineConfig, streamIdentifier string) error {
+	runcMCName, err := ctrlcommon.DetectRuncInMachineConfig(mc)
+	if err != nil {
+		return fmt.Errorf("failed to check runc in generated MachineConfig for pool %s: %w", poolName, err)
+	}
+	if runcMCName != "" {
+		return runcBlockedError(poolName, streamIdentifier)
+	}
+	return nil
 }
 
 // validateNoRuncOnRHEL10 returns an error if the generated MachineConfig uses runc
@@ -971,19 +1053,120 @@ func validateNoRuncOnRHEL10(poolName string, mc *mcfgv1.MachineConfig, osImageSt
 	if !osimagestream.IsRHEL10Stream(osImageStreamSet.Name) {
 		return nil
 	}
+	return checkRuncBlockedOnStream(poolName, mc, fmt.Sprintf("OS image stream %q", osImageStreamSet.Name))
+}
 
-	runcMCName, err := ctrlcommon.DetectRuncInMachineConfig(mc)
+// getCachedStreamClass returns the cached stream class from the pool's current
+// rendered MachineConfig, if the OSImageURL has not changed since it was inspected.
+// TODO(OCP 5.3): Remove when runc is removed.
+func (ctrl *Controller) getCachedStreamClass(pool *mcfgv1.MachineConfigPool, osImageURL string) string {
+	if pool.Spec.Configuration.Name == "" {
+		return ""
+	}
+
+	currentMC, err := ctrl.mcLister.Get(pool.Spec.Configuration.Name)
 	if err != nil {
-		return fmt.Errorf("failed to check runc in generated MachineConfig for pool %s: %w", poolName, err)
+		klog.V(4).Infof("Pool %s: could not get current rendered MC %s for stream class cache: %v",
+			pool.Name, pool.Spec.Configuration.Name, err)
+		return ""
 	}
-	if runcMCName != "" {
-		return fmt.Errorf(
-			"MachineConfigPool %s targets OS image stream %q where runc is not available. "+
-				"To unblock, migrate to crun by removing any ContainerRuntimeConfig that sets defaultRuntime to runc, "+
-				"and removing any MachineConfig that sets default_runtime = \"runc\" in CRI-O configuration under /etc/crio/crio.conf.d/",
-			poolName, osImageStreamSet.Name)
+
+	cachedURL := currentMC.Annotations[ctrlcommon.OSImageURLInspectedAnnotationKey]
+	if cachedURL == osImageURL {
+		return currentMC.Annotations[ctrlcommon.OSImageStreamClassAnnotationKey]
 	}
-	return nil
+	return ""
+}
+
+// validateNoRuncFromOSImageURL checks whether the generated MachineConfig uses
+// runc on a RHEL 10 image when OSImageStream is not available. It determines the
+// OS version by inspecting the container image's io.openshift.os.streamclass label,
+// caching the result as annotations on the rendered MachineConfig.
+// TODO(OCP 5.3): Remove when runc is removed.
+func (ctrl *Controller) validateNoRuncFromOSImageURL(pool *mcfgv1.MachineConfigPool, generated *mcfgv1.MachineConfig, cc *mcfgv1.ControllerConfig) error {
+	osImageURL := generated.Spec.OSImageURL
+	if osImageURL == "" {
+		return nil
+	}
+
+	// Short-circuit: only inspect the image if runc is actually in use.
+	runcMCName, err := ctrlcommon.DetectRuncInMachineConfig(generated)
+	if err != nil {
+		return fmt.Errorf("pool %s: failed to check runc in generated MachineConfig: %w", pool.Name, err)
+	}
+	if runcMCName == "" {
+		return nil
+	}
+
+	// Try the annotation cache first to avoid a registry round-trip on every sync.
+	streamClass := ctrl.getCachedStreamClass(pool, osImageURL)
+
+	if streamClass == "" {
+		// Cache miss or OSImageURL changed — inspect the container image.
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		streamClass, err = ctrl.imageInspector.GetStreamClass(ctx, osImageURL, cc)
+		if err != nil {
+			return fmt.Errorf("pool %s: failed to inspect OS image for stream class: %w", pool.Name, err)
+		}
+		if streamClass == "" {
+			klog.V(4).Infof("Pool %s: OS image has no stream class label; skipping runc check", pool.Name)
+			return nil
+		}
+	}
+
+	// Cache the result on the rendered MC so subsequent syncs skip the registry call.
+	generated.Annotations[ctrlcommon.OSImageStreamClassAnnotationKey] = streamClass
+	generated.Annotations[ctrlcommon.OSImageURLInspectedAnnotationKey] = osImageURL
+
+	if !osimagestream.IsRHEL10Stream(streamClass) {
+		return nil
+	}
+
+	return runcBlockedError(pool.Name,
+		fmt.Sprintf("OS image (stream class %q)", streamClass))
+}
+
+// defaultOSImageStreamClassInspector is the production implementation of
+// osImageStreamClassInspector. It fetches the cluster pull secret and registry
+// mirror rules (ICSP/IDMS/ITMS), builds an authenticated image system context,
+// and inspects the container image's io.openshift.os.streamclass label.
+// TODO(OCP 5.3): Remove when runc is removed.
+type defaultOSImageStreamClassInspector struct {
+	kubeClient clientset.Interface
+	imgLister  cligolistersv1.ImageLister
+	icspLister operatorlistersv1alpha1.ImageContentSourcePolicyLister
+	idmsLister cligolistersv1.ImageDigestMirrorSetLister
+	itmsLister cligolistersv1.ImageTagMirrorSetLister
+}
+
+// GetStreamClass fetches the cluster pull secret and registry mirror rules,
+// then inspects the container image to return its OS stream class label.
+func (d *defaultOSImageStreamClassInspector) GetStreamClass(ctx context.Context, imageURL string, cc *mcfgv1.ControllerConfig) (string, error) {
+	secret, err := d.kubeClient.CoreV1().Secrets(ctrlcommon.OpenshiftConfigNamespace).Get(ctx, ctrlcommon.GlobalPullSecretName, metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("failed to get pull secret: %w", err)
+	}
+
+	imgCfg, err := d.imgLister.Get("cluster")
+	if err != nil && !apierrors.IsNotFound(err) {
+		return "", fmt.Errorf("failed to get cluster image config: %w", err)
+	}
+	icspRules, err := d.icspLister.List(labels.Everything())
+	if err != nil {
+		return "", fmt.Errorf("failed to list ICSP rules: %w", err)
+	}
+	idmsRules, err := d.idmsLister.List(labels.Everything())
+	if err != nil {
+		return "", fmt.Errorf("failed to list IDMS rules: %w", err)
+	}
+	itmsRules, err := d.itmsLister.List(labels.Everything())
+	if err != nil {
+		return "", fmt.Errorf("failed to list ITMS rules: %w", err)
+	}
+
+	return osimagestream.InspectStreamClassWithMirrors(ctx, secret, cc, imgCfg, icspRules, idmsRules, itmsRules, imageURL)
 }
 
 // getMachineConfigsForPool is called by RunBootstrap and returns configs that match label from configs for a pool.
