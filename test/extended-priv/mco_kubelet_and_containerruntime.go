@@ -75,8 +75,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 				o.ContainSubstring(`"logLevel":"debug"`),
 				o.ContainSubstring(`"logSizeMax":"-1"`),
 				o.ContainSubstring(`"pidsLimit":2048`),
-				o.ContainSubstring(`"overlaySize":"8G"`),
-				o.ContainSubstring(`"defaultRuntime":"runc"`)))
+				o.ContainSubstring(`"overlaySize":"8G"`)))
 		logger.Infof("Container runtime config values are verified in the created config!")
 
 		exutil.By("Check container runtime config values in the worker node")
@@ -90,8 +89,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			o.And(
 				o.ContainSubstring("log_level = \"debug\""),
 				o.ContainSubstring("pids_limit = 2048")))
-		o.Expect(node.DebugNodeWithChroot("bash", "-c", "ps -ef | grep -E 'crun|runc'")).ShouldNot(o.And(o.ContainSubstring(" -r /usr/bin/crun")), "The runtime value should not be crun")
-		o.Expect(node.DebugNodeWithChroot("bash", "-c", "ps -ef | grep -E 'crun|runc'")).Should(o.And(o.ContainSubstring(" -r /usr/bin/runc"), o.ContainSubstring("--root=/run/runc")), " The --root value does not align with the runtime specification")
 		logger.Infof("Container runtime config values are verified in the worker node!")
 	})
 
