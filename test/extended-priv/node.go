@@ -1609,3 +1609,9 @@ func FilterSchedulableNodesOrFail(nodes []*Node) []*Node {
 	}
 	return returnNodes
 }
+
+// GetJournalLogs returns the journal logs from the node with the given args
+func (n *Node) GetJournalLogs(args ...string) (string, error) {
+	cmd := []string{"journalctl", "-o", "with-unit"}
+	return n.DebugNodeWithChroot(append(cmd, args...)...)
+}

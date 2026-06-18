@@ -10,7 +10,9 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -114,6 +116,61 @@ func getPullSecret(oc *exutil.CLI) (string, error) {
 
 func setDataForPullSecret(oc *exutil.CLI, configFile string) (string, error) {
 	return oc.AsAdmin().WithoutNamespace().Run("set").Args("data", "secret/pull-secret", "-n", "openshift-config", "--from-file=.dockerconfigjson="+configFile).Output()
+}
+
+func getCommitID(oc *exutil.CLI, component, clusterVersion string) (string, error) {
+	secretFile, secretErr := getPullSecret(oc)
+	if secretErr != nil {
+		return "", secretErr
+	}
+	outFilePath, ocErr := oc.AsAdmin().WithoutNamespace().Run("adm").Args("release", "info", "--registry-config="+secretFile, "--commits", clusterVersion, "--insecure=true").OutputToFile("commitIdLogs.txt")
+	if ocErr != nil {
+		return "", ocErr
+	}
+	rawBytes, cmdErr := os.ReadFile(outFilePath)
+	if cmdErr != nil {
+		return "", cmdErr
+	}
+	for _, line := range strings.Split(string(rawBytes), "\n") {
+		if strings.Contains(line, component) {
+			fields := strings.Fields(line)
+			if len(fields) >= 3 {
+				return fields[2], nil
+			}
+		}
+	}
+	return "", fmt.Errorf("component %q not found in release info output", component)
+}
+
+func getGoVersion(component, commitID string) (float64, error) {
+	url := fmt.Sprintf("https://raw.githubusercontent.com/openshift/%s/%s/go.mod", component, commitID)
+	resp, err := http.Get(url)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("unexpected HTTP status %d fetching go.mod for %s@%s", resp.StatusCode, component, commitID)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, err
+	}
+	for _, line := range strings.Split(string(body), "\n") {
+		if !strings.HasPrefix(line, "go ") {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
+			return 0, fmt.Errorf("malformed go directive: %q", line)
+		}
+		segs := strings.SplitN(parts[1], ".", 3)
+		if len(segs) < 2 {
+			return 0, fmt.Errorf("wrong go version string %q", parts[1])
+		}
+		return strconv.ParseFloat(segs[0]+"."+segs[1], 64)
+	}
+	return 0, fmt.Errorf("go directive not found in go.mod for %s@%s", component, commitID)
 }
 
 func getMachineConfigDetails(oc *exutil.CLI, mcName string) (string, error) {
@@ -1142,6 +1199,48 @@ func getMachineConfigControllerPod(oc *exutil.CLI) (string, error) {
 	pod, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("pod", "-n", MachineConfigNamespace, "-l", ControllerLabel+"="+ControllerLabelValue, "-o", `jsonpath={.items[?(@.status.phase=="Running")].metadata.name}`).Output()
 	logger.Infof("machine-config-controller pod name is %s", pod)
 	return pod, err
+}
+
+func containsMultipleStrings(sourceString string, expectedStrings []string) bool {
+	o.Expect(sourceString).NotTo(o.BeEmpty())
+	o.Expect(expectedStrings).NotTo(o.BeEmpty())
+
+	var count int
+	for _, element := range expectedStrings {
+		if strings.Contains(sourceString, element) {
+			count++
+		}
+	}
+	return len(expectedStrings) == count
+}
+
+func IsInstalledWithAssistedInstallerOrFail(oc *exutil.CLI) bool {
+	logger.Infof("Checking if the cluster was installed using assisted-installer")
+	assistedInstallerNS := NewResource(oc, "ns", "assisted-installer")
+	return assistedInstallerNS.Exists()
+}
+
+// IsOnPremPlatform returns true if the platform is an on-prem platform
+func IsOnPremPlatform(platform string) bool {
+	switch platform {
+	case BaremetalPlatform, OvirtPlatform, OpenstackPlatform, VspherePlatform, NutanixPlatform:
+		return true
+	default:
+		return false
+	}
+}
+
+// SkipIfNotOnPremPlatform skips the test if the current platform is not an on-prem platform
+func SkipIfNotOnPremPlatform(oc *exutil.CLI) {
+	platform := exutil.CheckPlatform(oc)
+	if !IsOnPremPlatform(platform) {
+		g.Skip(fmt.Sprintf("Current platform: %s. This test can only be execute in OnPrem platforms.", platform))
+	}
+}
+
+func skipTestIfNotIPI(oc *exutil.CLI) {
+	// We assume that if nodes cannot be scaled then the cluster is UPI
+	skipTestIfWorkersCannotBeScaled(oc)
 }
 
 // skipTestIfWorkersCannotBeScaled skips the current test if the worker pool cannot be scaled via machineset

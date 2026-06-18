@@ -2,6 +2,7 @@ package util
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	o "github.com/onsi/gomega"
@@ -40,6 +41,30 @@ func IsTechPreviewNoUpgrade(oc *CLI) bool {
 	}
 
 	return featureGate.Spec.FeatureSet == configv1.TechPreviewNoUpgrade
+}
+
+// GetClusterVersion returns the cluster version as string value (Ex: 4.8) and cluster build (Ex: 4.8.0-0.nightly-2021-09-28-165247)
+func GetClusterVersion(oc *CLI) (string, string, error) {
+	clusterBuild, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"clusterversion",
+		"-o", "jsonpath={..desired.version}",
+	).Output()
+	if err != nil {
+		return "", "", err
+	}
+	clusterBuild = strings.TrimSpace(clusterBuild)
+	if clusterBuild == "" {
+		return "", "", fmt.Errorf("clusterversion returned an empty desired.version")
+	}
+	if strings.ContainsAny(clusterBuild, " \t\n") {
+		return "", "", fmt.Errorf("unexpected multi-token clusterversion output: %q", clusterBuild)
+	}
+	splitValues := strings.Split(clusterBuild, ".")
+	if len(splitValues) < 2 {
+		return "", "", fmt.Errorf("clusterversion %q does not match expected X.Y[.Z] format", clusterBuild)
+	}
+	clusterVersion := splitValues[0] + "." + splitValues[1]
+	return clusterVersion, clusterBuild, nil
 }
 
 // IsSingleNodeTopology returns true if the cluster is a SNO cluster

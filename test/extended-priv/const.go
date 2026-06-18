@@ -126,6 +126,8 @@ const (
 	AlpineImage = "quay.io/openshifttest/alpine@sha256:dc1536cbff0ba235d4219462aeccd4caceab9def96ae8064257d049166890083"
 	// TestSSLImage the testssl image stored in openshiftest
 	TestSSLImage = "quay.io/openshifttest/testssl@sha256:ad6fb8002cb9cfce3ddc8829fd6e7e0d997aeb1faf972650f3e5d7603f90c6ef"
+	// MCDCrioReloadedRegexp is the regexp used to verify that crio was reloaded by the MCD
+	MCDCrioReloadedRegexp = "crio.* reloaded successfully"
 
 	// Constants for NodeDisruptionPolicy
 	NodeDisruptionPolicyActionNone         = "None"
