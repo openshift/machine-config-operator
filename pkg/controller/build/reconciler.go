@@ -159,6 +159,13 @@ func (b *buildReconciler) rebuildMachineOSConfig(ctx context.Context, mosc *mcfg
 // Runs whenever a new MachineOSConfig is added. Determines if a new
 // MachineOSBuild should be created and then creates it, if needed.
 func (b *buildReconciler) addMachineOSConfig(ctx context.Context, mosc *mcfgv1.MachineOSConfig) error {
+	// If the rebuild annotation is present (e.g., pod restarted while a rebuild
+	// was pending), process it now instead of falling through to the normal sync
+	// path which would see the existing MOSB and return early.
+	if hasRebuildAnnotation(mosc) {
+		return b.rebuildMachineOSConfig(ctx, mosc)
+	}
+
 	// Check for pre-built image seeding annotation - only seed if not already seeded
 	if preBuiltImage, hasImage := getPreBuiltImage(mosc); hasImage {
 		if shouldSeedWithPreBuiltImage(mosc) {
