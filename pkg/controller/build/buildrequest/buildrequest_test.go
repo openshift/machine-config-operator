@@ -334,3 +334,194 @@ RUN rpm-ostree install && \
 		},
 	}
 }
+
+// TestValidateContainerfileSyntax tests the Containerfile validation logic
+func TestValidateContainerfileSyntax(t *testing.T) {
+	t.Parallel()
+
+	br := &buildRequestImpl{}
+
+	testCases := []struct {
+		name          string
+		containerfile string
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name: "Valid simple Containerfile",
+			containerfile: `FROM registry.example.com/base:latest
+RUN echo "hello"
+COPY . /app`,
+			expectError: false,
+		},
+		{
+			name:          "Empty Containerfile",
+			containerfile: "",
+			expectError:   false,
+		},
+		{
+			name:          "No FROM instruction",
+			containerfile: `RUN echo "hello"
+COPY . /app`,
+			expectError:   true,
+			errorContains: "must contain at least one FROM instruction",
+		},
+		{
+			name:          "FROM without arguments",
+			containerfile: `FROM`,
+			expectError:   true,
+			errorContains: "FROM instruction requires a base image",
+		},
+		{
+			name: "RUN without arguments",
+			containerfile: `FROM registry.example.com/base:latest
+RUN`,
+			expectError:   true,
+			errorContains: "RUN instruction requires a command",
+		},
+		{
+			name: "COPY without arguments",
+			containerfile: `FROM registry.example.com/base:latest
+COPY`,
+			expectError:   true,
+			errorContains: "COPY instruction requires source and destination paths",
+		},
+		{
+			name: "WORKDIR without arguments",
+			containerfile: `FROM registry.example.com/base:latest
+WORKDIR`,
+			expectError:   true,
+			errorContains: "WORKDIR instruction requires a directory path",
+		},
+		{
+			name: "Valid Containerfile with comments",
+			containerfile: `# Base image
+FROM registry.example.com/base:latest
+# Install dependencies
+RUN yum install -y python3`,
+			expectError: false,
+		},
+		{
+			name: "Advanced syntax with heredoc - should pass",
+			containerfile: `FROM registry.example.com/base:latest
+RUN bash <<'EOF'
+set -xeuo pipefail
+echo "hello"
+EOF
+`,
+			expectError: false, // Hybrid validator allows advanced syntax
+		},
+		{
+			name: "Comments only - should pass",
+			containerfile: `# This Containerfile is temporarily disabled for testing
+# FROM registry.example.com/base:latest
+# RUN echo "hello"`,
+			expectError: false,
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := br.validateContainerfileSyntax(testCase.containerfile)
+
+			if testCase.expectError {
+				assert.Error(t, err)
+				if testCase.errorContains != "" {
+					assert.Contains(t, err.Error(), testCase.errorContains)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestValidateContainerfileInBuildRequest tests that validation happens during the build request flow
+func TestValidateContainerfileInBuildRequest(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Valid user Containerfile renders successfully", func(t *testing.T) {
+		opts := getBuildRequestOpts()
+		opts.MachineOSConfig.Spec.Containerfile[0].Content = `FROM configs AS final
+RUN rpm-ostree install vim && ostree container commit`
+
+		br := newBuildRequest(opts)
+		configMaps, err := br.ConfigMaps()
+
+		assert.NoError(t, err)
+		assert.NotNil(t, configMaps)
+		// Verify the Containerfile ConfigMap was created
+		assert.Greater(t, len(configMaps), 0)
+	})
+}
+
+func TestValidateUnknownInstruction(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name          string
+		containerfile string
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name: "Unknown instruction BADINSTRUCTION",
+			containerfile: `FROM registry.example.com/base:latest
+BADINSTRUCTION this should fail
+RUN echo "test"`,
+			expectError:   true,
+			errorContains: "unknown Dockerfile instruction",
+		},
+		{
+			name: "Unknown instruction INVALIDCMD",
+			containerfile: `FROM registry.example.com/base:latest
+RUN echo "valid"
+INVALIDCMD foo bar`,
+			expectError:   true,
+			errorContains: "unknown Dockerfile instruction",
+		},
+		{
+			name: "Valid instructions only",
+			containerfile: `FROM registry.example.com/base:latest
+RUN echo "test"
+COPY . /app
+ENV FOO=bar`,
+			expectError: false,
+		},
+		{
+			name: "Malformed ENV without equals sign - should fail",
+			containerfile: `FROM registry.example.com/base:latest
+ENV INVALID_NO_EQUALS`,
+			expectError:   true,
+			errorContains: "failed to parse Containerfile",
+		},
+		{
+			name: "Malformed LABEL without equals sign - should fail",
+			containerfile: `FROM registry.example.com/base:latest
+LABEL badlabel`,
+			expectError:   true,
+			errorContains: "failed to parse Containerfile",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			br := &buildRequestImpl{}
+			err := br.validateContainerfileSyntax(tc.containerfile)
+
+			if tc.expectError {
+				assert.Error(t, err)
+				if tc.errorContains != "" {
+					assert.Contains(t, err.Error(), tc.errorContains)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
