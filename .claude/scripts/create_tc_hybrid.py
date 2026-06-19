@@ -14,11 +14,14 @@ Workflow:
 5. Create Polarion TC
 """
 
+import copy
 import json
 import os
 import re
 import sys
 import subprocess
+
+SUBPROCESS_TIMEOUT_SECONDS = 300
 
 
 def run_script(script_name: str, args: list) -> dict:
@@ -33,12 +36,16 @@ def run_script(script_name: str, args: list) -> dict:
             cmd,
             capture_output=True,
             text=True,
-            check=True
+            check=True,
+            timeout=SUBPROCESS_TIMEOUT_SECONDS
         )
 
         # Parse JSON from stdout
         return json.loads(result.stdout)
 
+    except subprocess.TimeoutExpired:
+        print(f"Error: {script_name} timed out after {SUBPROCESS_TIMEOUT_SECONDS}s", file=sys.stderr)
+        sys.exit(1)
     except subprocess.CalledProcessError as e:
         print(f"Error running {script_name}:", file=sys.stderr)
         print(e.stderr, file=sys.stderr)
@@ -61,7 +68,7 @@ def merge_jira_pr_drafts(jira_draft: dict, pr_draft: dict) -> dict:
     """
 
     # Start with Jira draft
-    merged = jira_draft.copy()
+    merged = copy.deepcopy(jira_draft)
 
     # Override test steps from PR
     if pr_draft.get('test_steps'):
@@ -165,7 +172,8 @@ Output:
         ['python3', 'validate_tc.py', draft_file],
         cwd=os.path.dirname(os.path.abspath(__file__)),
         capture_output=True,
-        text=True
+        text=True,
+        timeout=SUBPROCESS_TIMEOUT_SECONDS
     )
 
     if validate_result.returncode != 0:
@@ -185,7 +193,8 @@ Output:
         print()
         result = subprocess.run(
             ['python3', 'create_polarion_tc.py', draft_file, '--dry-run'],
-            cwd=os.path.dirname(os.path.abspath(__file__))
+            cwd=os.path.dirname(os.path.abspath(__file__)),
+            timeout=SUBPROCESS_TIMEOUT_SECONDS
         )
         sys.exit(result.returncode)
     else:
@@ -193,7 +202,8 @@ Output:
         print()
         result = subprocess.run(
             ['python3', 'create_polarion_tc.py', draft_file],
-            cwd=os.path.dirname(os.path.abspath(__file__))
+            cwd=os.path.dirname(os.path.abspath(__file__)),
+            timeout=SUBPROCESS_TIMEOUT_SECONDS
         )
         sys.exit(result.returncode)
 

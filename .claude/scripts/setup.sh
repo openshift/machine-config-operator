@@ -36,17 +36,19 @@ echo
 
 # Check/install requests library
 echo "Checking Python dependencies..."
-if ! python3 -c "import requests" 2>/dev/null; then
-    if [[ "$VERIFY_MODE" == true ]]; then
-        echo "❌ requests library not installed"
-        exit 1
+for pkg in requests defusedxml; do
+    if ! python3 -c "import $pkg" 2>/dev/null; then
+        if [[ "$VERIFY_MODE" == true ]]; then
+            echo "❌ $pkg library not installed"
+            exit 1
+        fi
+        echo "Installing $pkg library..."
+        python3 -m pip install --user "$pkg"
+        echo "✓ $pkg installed"
+    else
+        echo "✓ $pkg already installed"
     fi
-    echo "Installing requests library..."
-    python3 -m pip install --user requests
-    echo "✓ requests installed"
-else
-    echo "✓ requests already installed"
-fi
+done
 echo
 
 # Check gh CLI

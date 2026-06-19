@@ -37,7 +37,7 @@ def load_env():
             line = line.strip()
             if line and not line.startswith('#') and '=' in line:
                 key, value = line.split('=', 1)
-                env_vars[key] = value
+                env_vars[key] = value.strip('"').strip("'")
 
     return env_vars
 
@@ -50,7 +50,6 @@ def parse_test_case_id(tc_id: str) -> tuple:
         raise ValueError(f"Invalid test case ID format: {tc_id}")
 
     prefix = match.group(1)
-    number = match.group(2)
 
     # Map prefix to project
     project_map = {
@@ -301,22 +300,21 @@ def fetch_test_case(tc_id: str, project: str = None) -> Dict:
 
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python3 fetch_polarion.py <test-case-id> [--project <project>]")
-        print()
-        print("Examples:")
-        print("  python3 fetch_polarion.py OCP-88122")
-        print("  python3 fetch_polarion.py OSE-12345 --project OSE")
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Fetch Polarion test case')
+    parser.add_argument('tc_id', help='Test case ID (e.g., OCP-88122)')
+    parser.add_argument('--project', default=None, help='Polarion project ID (default: auto-detect from ID prefix)')
+
+    args = parser.parse_args()
+
+    if not re.match(r'^[A-Z]+-\d+$', args.tc_id):
+        print(f"Error: Invalid test case ID format: {args.tc_id}", file=sys.stderr)
+        print("Expected format: OCP-88122", file=sys.stderr)
         sys.exit(1)
 
-    tc_id = sys.argv[1]
-    project = None
-
-    # Parse optional --project flag
-    if '--project' in sys.argv:
-        idx = sys.argv.index('--project')
-        if idx + 1 < len(sys.argv):
-            project = sys.argv[idx + 1]
+    tc_id = args.tc_id
+    project = args.project
 
     # Fetch test case
     tc_data = fetch_test_case(tc_id, project)

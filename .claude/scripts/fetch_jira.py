@@ -34,7 +34,7 @@ def load_env():
                 line = line.strip()
                 if line and not line.startswith('#') and '=' in line:
                     key, value = line.split('=', 1)
-                    env_vars[key] = value
+                    env_vars[key] = value.strip('"').strip("'")
 
     return env_vars
 
@@ -70,13 +70,13 @@ def fetch_jira_issue(issue_key: str, jira_url: str, jira_token: Optional[str] = 
 
     except requests.HTTPError as e:
         if e.response.status_code == 401:
-            raise Exception("Authentication failed. Check JIRA_TOKEN in .env")
+            raise Exception("Authentication failed. Check JIRA_TOKEN in .env") from e
         elif e.response.status_code == 404:
-            raise Exception(f"Jira issue not found: {issue_key}")
+            raise Exception(f"Jira issue not found: {issue_key}") from e
         else:
-            raise Exception(f"Jira API error: {e.response.status_code} - {e.response.text}")
-    except Exception as e:
-        raise Exception(f"Failed to fetch Jira issue: {e}")
+            raise Exception(f"Jira API error: HTTP {e.response.status_code}") from e
+    except requests.RequestException as e:
+        raise Exception(f"Failed to fetch Jira issue: {type(e).__name__}") from e
 
 
 def parse_jira_to_draft(issue_data: Dict, issue_key: str) -> Dict[str, Any]:

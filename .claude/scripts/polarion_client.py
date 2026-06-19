@@ -3,10 +3,18 @@ Polarion REST API Client
 Adapted from ~/VSCode/polarion-mcp-server/polarion_client.py
 """
 
-import os
+import html
+import re
 import requests
 import base64
 from typing import Optional, Dict, Any, List
+
+
+def _validate_polarion_id(value: str, label: str) -> str:
+    """Validate that a Polarion ID contains only safe characters."""
+    if not re.fullmatch(r'[A-Za-z0-9_\-]+', value):
+        raise ValueError(f"Invalid {label}: {value!r} — must be alphanumeric/dash/underscore only")
+    return value
 
 
 class PolarionClient:
@@ -150,6 +158,9 @@ class PolarionClient:
                 "error": "SOAP API requires username and password. Set POLARION_USERNAME and POLARION_PASSWORD in .env"
             }
 
+        _validate_polarion_id(test_case_id, "test_case_id")
+        _validate_polarion_id(project_id, "project_id")
+
         # Build SOAP request to get test steps
         work_item_uri = f"subterra:data-service:objects:/default/{project_id}${{WorkItem}}{test_case_id}"
 
@@ -182,8 +193,13 @@ class PolarionClient:
             )
 
             if response.status_code == 200:
-                # Parse SOAP response to extract test steps
-                import xml.etree.ElementTree as ET
+                if "<Fault" in response.text or ":Fault" in response.text:
+                    return {
+                        "status": "failed",
+                        "error": f"SOAP fault while fetching test steps: {response.text[:500]}"
+                    }
+
+                import defusedxml.ElementTree as ET
 
                 root = ET.fromstring(response.text)
                 steps = []
@@ -239,6 +255,9 @@ class PolarionClient:
                 "status": "failed",
                 "error": "SOAP API requires username and password. Set POLARION_USERNAME and POLARION_PASSWORD in .env"
             }
+
+        _validate_polarion_id(test_case_id, "test_case_id")
+        _validate_polarion_id(project_id, "project_id")
 
         # Build SOAP request
         work_item_uri = f"subterra:data-service:objects:/default/{project_id}${{WorkItem}}{test_case_id}"
@@ -365,8 +384,8 @@ class PolarionClient:
                     "attributes": {
                         "keys": ["step", "expectedResult"],
                         "values": [
-                            {"type": "text/html", "value": step.get("step", "").replace("\n", "<br/>")},
-                            {"type": "text/html", "value": step.get("expected_result", "").replace("\n", "<br/>")}
+                            {"type": "text/html", "value": html.escape(step.get("step", ""), quote=False).replace("\n", "<br/>")},
+                            {"type": "text/html", "value": html.escape(step.get("expected_result", ""), quote=False).replace("\n", "<br/>")}
                         ]
                     }
                 }

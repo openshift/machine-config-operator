@@ -13,6 +13,7 @@ Workflow:
 5. Return OCP-xxxxx URL
 """
 
+import html
 import json
 import os
 import sys
@@ -37,7 +38,7 @@ def load_env():
             line = line.strip()
             if line and not line.startswith('#') and '=' in line:
                 key, value = line.split('=', 1)
-                env_vars[key] = value
+                env_vars[key] = value.strip('"').strip("'")
 
     return env_vars
 
@@ -69,7 +70,7 @@ def create_test_case(
                 "title": draft['title'],
                 "description": {
                     "type": "text/html",
-                    "value": draft.get('description', '').replace("\n", "<br/>")
+                    "value": html.escape(draft.get('description', ''), quote=False).replace("\n", "<br/>")
                 },
                 "status": "draft"
             }
@@ -150,11 +151,11 @@ def create_test_case(
                     "values": [
                         {
                             "type": "text/html",
-                            "value": step.get("step", "").replace("\n", "<br/>")
+                            "value": html.escape(step.get("step", ""), quote=False).replace("\n", "<br/>")
                         },
                         {
                             "type": "text/html",
-                            "value": step.get("expected_result", "").replace("\n", "<br/>")
+                            "value": html.escape(step.get("expected_result", ""), quote=False).replace("\n", "<br/>")
                         }
                     ]
                 }

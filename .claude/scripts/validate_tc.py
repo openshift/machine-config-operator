@@ -179,7 +179,7 @@ class TCValidator:
         if narrative_count >= 2:
             has_technical = any(
                 pattern in text
-                for pattern in ['$', 'oc ', 'kubectl', 'apiVersion', ':', '{', '}']
+                for pattern in ['$', 'oc ', 'kubectl', 'apiVersion', '{', '}']
             )
             return not has_technical
 
@@ -203,6 +203,8 @@ class TCValidator:
         if not self.errors and not self.warnings:
             print("✓ VALIDATION PASSED")
             print("  All checks passed. TC is ready for creation.")
+        elif not self.errors and self.strict:
+            print("❌ VALIDATION FAILED (strict mode: warnings treated as errors)")
         elif not self.errors:
             print("✓ VALIDATION PASSED (with warnings)")
             print("  TC meets minimum requirements but has warnings.")

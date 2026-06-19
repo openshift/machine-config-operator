@@ -11,7 +11,6 @@
 
 ### Documentation
 - [ ] README.md is accurate (no references to non-existent scripts)
-- [ ] QUICKSTART.md provides working 5-minute setup
 - [ ] All script paths in docs match actual file locations
 - [ ] Examples use real script names (not `polarion_cli.py`, etc.)
 
@@ -114,11 +113,6 @@ python3 scripts/create_polarion_tc.py \
 - [ ] "Command Reference" table has valid commands
 - [ ] No broken internal links
 - [ ] Examples are copy-pasteable
-
-### QUICKSTART.md Verification
-- [ ] Setup steps work end-to-end
-- [ ] Script paths are correct
-- [ ] Example commands succeed (or fail gracefully without credentials)
 
 ## Edge Cases
 

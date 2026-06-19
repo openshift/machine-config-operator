@@ -204,12 +204,16 @@ TC_ID = "OCP-XXXXX"
 # Loop-delete: Polarion re-indexes IDs after each delete, so fetch fresh each round
 for attempt in range(10):
     result = client._make_request("GET", f"projects/OSE/workitems/{TC_ID}/teststeps")
+    if "error" in result:
+        raise RuntimeError(f"Failed to list test steps: {result['error']}")
     remaining = result.get("data", [])
     if not remaining:
         break
     for s in remaining:
         sid = s.get('id', '').split('/')[-1]
-        client._make_request("DELETE", f"projects/OSE/workitems/{TC_ID}/teststeps/{sid}")
+        del_result = client._make_request("DELETE", f"projects/OSE/workitems/{TC_ID}/teststeps/{sid}")
+        if "error" in del_result:
+            raise RuntimeError(f"Failed to delete step {sid}: {del_result['error']}")
     time.sleep(0.5)
 ```
 

@@ -131,16 +131,6 @@ Create Polarion test case from a Jira issue or QE comment.
 
 **Output**: OCP-xxxxx URL
 
-### /mco-update-tc *(future scope — MCO-2220)*
-
-> **TODO**: Standalone update command not yet active. Use `update_polarion_tc.py` directly in the meantime (called automatically by the create workflow).
->
-> ```bash
-> python3 scripts/update_polarion_tc.py OCP-88941 --fix-metadata --version 4.18 --trello-jira OCPBUGS-83830
-> python3 scripts/update_polarion_tc.py OCP-88122 --title "[MCO][MCO-2136] New title"
-> python3 scripts/update_polarion_tc.py OCP-88122 --steps-file /tmp/test-specs/steps/new-steps.json
-> ```
-
 ### /automate-test
 
 Generate Go e2e test from Polarion test case.
@@ -241,11 +231,9 @@ python3 scripts/create_tc_hybrid.py OCPBUGS-74223 \
 - Test steps: From GitHub PR QE comment
 - Jira ID: From Jira issue key
 
-### Workflow 4: Fix Existing TC (wrong.pdf scenario)
+### Workflow 4: Fix Existing TC
 
 **Use when**: TC has empty required fields (Component, Sub Team, etc.).
-
-See `wrong.pdf` in repo root for bad example vs `OCP-88122.pdf` for good format.
 
 ```bash
 # Fix metadata
@@ -497,7 +485,7 @@ If using Claude Code assistant:
 /mco-create-tc-from-jira https://redhat.atlassian.net/browse/OCPBUGS-74223
 ```
 
-### Fix bad TC *(direct script — /mco-update-tc is future scope)*
+### Fix bad TC
 ```bash
 python3 .claude/scripts/update_polarion_tc.py OCP-88941 --fix-metadata --version 4.18 --trello-jira OCPBUGS-83830
 ```
@@ -554,29 +542,9 @@ When updating test steps via SOAP, use this JSON format:
 ]
 ```
 
-### Jira Integration (No MCP)
+### Jira Integration
 
-Uses direct Atlassian REST API v3. Authentication is Basic Auth with email:token (not Red Hat SSO).
-
-**Why email + token?** Atlassian Cloud requires this authentication method.
-
----
-
-## Pilot Test
-
-Want to verify the workflow end-to-end? See pilot test checklist in appendix:
-
-```bash
-# Run full pilot (PR 5691 → Create TC → Verify)
-# See PILOT_PR5691.md for step-by-step checklist
-```
-
-Or test fetch verification:
-
-```bash
-# Verify OCP-88122 fetch matches PDF
-# See TEST_FETCH.md for verification checklist
-```
+Uses Atlassian MCP tools when available, with fallback to direct REST API v3 (Basic Auth with email:token).
 
 ---
 
@@ -584,8 +552,6 @@ Or test fetch verification:
 
 - **README.md** (this file) - Complete guide
 - **TESTING.md** - Test plan for reviewers
-- **PILOT_PR5691.md** - Pilot test checklist (PR 5691 → TC creation)
-- **TEST_FETCH.md** - Fetch verification (OCP-88122)
 
 ---
 
@@ -609,22 +575,12 @@ python3 scripts/<script>.py --help
 
 ### Remove Obsolete /tmp Files
 
-After migrating scripts to use repo `test-specs/` directory, old `/tmp` files are no longer needed:
+Scripts output to `/tmp/test-specs/`. To clean up old files from previous runs:
 
 ```bash
-# Remove old test-specs cache
-rm -rf /tmp/test-specs
-
 # Remove old draft files
 rm -f /tmp/ocp88122.json /tmp/test.json
 
 # Remove other temp files from early testing
 rm -f /tmp/pr5691_comment.txt /tmp/parsing_gaps.md /tmp/ocp88122_analysis.md
 ```
-
-**Note**: Current scripts still use `/tmp/test-specs/` for output. This cleanup is only for obsolete files from migration testing.
-
----
-
-**Version**: 1.0  
-**Last Updated**: 2026-06-04

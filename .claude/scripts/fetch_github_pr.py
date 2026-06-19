@@ -31,7 +31,7 @@ def load_env():
                 line = line.strip()
                 if line and not line.startswith('#') and '=' in line:
                     key, value = line.split('=', 1)
-                    env_vars[key] = value
+                    env_vars[key] = value.strip('"').strip("'")
 
     return env_vars
 
@@ -69,8 +69,9 @@ def fetch_pr_comments(repo: str, pr_number: int, github_token: Optional[str] = N
 
     all_comments = []
     page = 1
+    max_pages = 50
 
-    while True:
+    while page <= max_pages:
         try:
             response = requests.get(url, headers=headers, params={"per_page": 100, "page": page}, timeout=30)
             response.raise_for_status()
@@ -275,8 +276,11 @@ def parse_qe_comment(comment_body: str, pr_title: str, pr_body: str) -> Dict:
     # Parse test steps
     test_steps = parse_test_steps(comment_body)
 
-    # Extract description from comment (before ## sections)
-    description_match = re.search(r'^(.*?)(?=\n##|\Z)', comment_body, re.DOTALL)
+    # Extract description — text before the first section header
+    description_match = re.search(
+        r'^(.*?)(?=\n(?:##|(?:Environment\s+)?Setup:|(?:Test(?:ing)?\s+)?Steps:|Scenario\s)|\Z)',
+        comment_body, re.DOTALL | re.IGNORECASE
+    )
     description = description_match.group(1).strip() if description_match else ''
 
     # Build draft
