@@ -1256,19 +1256,18 @@ func CreateCustomMCPWithStreamByLabel(oc *exutil.CLI, name, label, osstream stri
 	return CreateCustomMCPWithStreamByNodes(oc, name, osstream, customMcpNodes)
 }
 
-// CreateCustomMCP create a new custom MCP with the given name and the given number of nodes
+// CreateCustomMCP creates a new custom MCP with the given name and number of nodes
+// No osstream field is set - MCP will inherit from worker pool automatically
 // Nodes will be taken from the worker pool
-// The Custom pool will be created d using the same osstream configured in the worker pool
 func CreateCustomMCP(oc *exutil.CLI, name string, numNodes int) (*MachineConfigPool, error) {
-	osstream, err := GetEffectiveOsImageStream(NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker))
-	if err != nil {
-		return NewMachineConfigPool(oc, name), err
-	}
-
-	return CreateCustomMCPWithStream(oc, name, osstream, numNodes)
+	// Delegate to CreateCustomMCPWithStream with empty osstream
+	// This reuses the template selection logic in CreateCustomMCPWithStreamByNodes
+	return CreateCustomMCPWithStream(oc, name, "", numNodes)
 }
 
-// CreateCustomMCPWithStream create a new custom MCP with the given name, osstream, and number of nodes
+// CreateCustomMCPWithStream creates a new custom MCP with the given name, osstream, and number of nodes
+// If osstream is empty, creates MCP without osImageStream field (inherits from worker pool)
+// If osstream is provided, creates MCP with the specified osImageStream
 // Nodes will be taken from the worker pool
 func CreateCustomMCPWithStream(oc *exutil.CLI, name, osstream string, numNodes int) (*MachineConfigPool, error) {
 	var (
@@ -1289,37 +1288,34 @@ func CreateCustomMCPWithStream(oc *exutil.CLI, name, osstream string, numNodes i
 }
 
 // CreateCustomMCPWithStreamByNodes creates a new MCP containing the nodes provided in the "nodes" parameter
+// If osstream is empty, creates MCP without osImageStream field (inherits from worker pool)
+// If osstream is provided, creates MCP with the specified osImageStream
 func CreateCustomMCPWithStreamByNodes(oc *exutil.CLI, name, osstream string, nodes []*Node) (*MachineConfigPool, error) {
 	customMcp := NewMachineConfigPool(oc, name)
 
-	err := NewMCOTemplate(oc, "custom-machine-config-pool-osimagestream.yaml").Create(
-		"-p", fmt.Sprintf("NAME=%s", name),
-		"-p", fmt.Sprintf("OSIMAGESTREAM=%s", osstream),
-	)
+	var err error
+	// Choose template based on whether osstream is provided
+	if osstream == "" {
+		// Use basic template without osImageStream
+		err = NewMCOTemplate(oc, "custom-machine-config-pool.yaml").Create(
+			"-p", fmt.Sprintf("NAME=%s", name),
+		)
+	} else {
+		// Use template with osImageStream
+		err = NewMCOTemplate(oc, "custom-machine-config-pool-osimagestream.yaml").Create(
+			"-p", fmt.Sprintf("NAME=%s", name),
+			"-p", fmt.Sprintf("OSIMAGESTREAM=%s", osstream),
+		)
+	}
 
 	if err != nil {
 		logger.Errorf("Could not create a custom MCP for worker nodes with nodes %s", nodes)
 		return customMcp, err
 	}
 
-	for _, n := range nodes {
-		err := n.AddLabel(fmt.Sprintf("node-role.kubernetes.io/%s", name), "")
-		if err != nil {
-			logger.Infof("Error labeling node %s to add it to pool %s", n.GetName(), customMcp.GetName())
-		}
-		logger.Infof("Node %s added to custom pool %s", n.GetName(), customMcp.GetName())
-	}
-
-	expectedNodes := len(nodes)
-	err = customMcp.WaitForMachineCount(expectedNodes, 5*time.Minute)
+	// Reuse AddNodesToMachineConfigPool to add nodes and wait for MCP to be ready
+	err = AddNodesToMachineConfigPool(oc, name, nodes)
 	if err != nil {
-		logger.Errorf("The %s MCP is not reporting the expected machine count", customMcp.GetName())
-		return customMcp, err
-	}
-
-	err = customMcp.WaitImmediateForUpdatedStatus()
-	if err != nil {
-		logger.Errorf("The %s MCP is not updated", customMcp.GetName())
 		return customMcp, err
 	}
 
@@ -1391,7 +1387,6 @@ func GetPoolAndNodesForArchitectureOrFail(oc *exutil.CLI, createMCPName string, 
 		mMcp                  = NewMachineConfigPool(oc, MachineConfigPoolMaster)
 		masterHasTheRightArch = mMcp.AllNodesUseArch(arch)
 		mcpList               = NewMachineConfigPoolList(oc.AsAdmin())
-		osstream              = OrFail[string](GetEffectiveOsImageStream(wMcp))
 	)
 
 	mcpList.PrintDebugCommand()
@@ -1401,10 +1396,11 @@ func GetPoolAndNodesForArchitectureOrFail(oc *exutil.CLI, createMCPName string, 
 	}
 
 	// If there are nodes with the rewquested architecture in the worker pool we build our own custom MCP
+	// Pass empty osstream so the custom MCP inherits osImageStream from the worker pool
 	if len(wMcp.GetNodesByArchitectureOrFail(arch)) > 0 {
 		var err error
 
-		mcp, err := CreateCustomMCPWithStreamByLabel(oc.AsAdmin(), createMCPName, fmt.Sprintf(`%s=%s`, architecture.NodeArchitectureLabel, arch), osstream, numNodes)
+		mcp, err := CreateCustomMCPWithStreamByLabel(oc.AsAdmin(), createMCPName, fmt.Sprintf(`%s=%s`, architecture.NodeArchitectureLabel, arch), "", numNodes)
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the custom pool for infrastructure %s", architecture.ARM64)
 		return mcp, mcp.GetNodesOrFail()
 	}
@@ -1613,6 +1609,38 @@ func GetPoolWithArchDifferentFromOrFail(oc *exutil.CLI, arch architecture.Archit
 	}
 
 	e2e.Failf("Something went wrong. There is no suitable pool to execute the test case. There is no pool with nodes using  an architecture different from %s", arch)
+	return nil
+}
+
+// AddNodesToMachineConfigPool adds nodes to an existing MCP by labeling them and waiting for the MCP to be updated
+// This function is similar to CreateCustomMCPWithStreamByNodes but for adding nodes to existing pools
+func AddNodesToMachineConfigPool(oc *exutil.CLI, mcpName string, nodes []*Node) error {
+	mcp := NewMachineConfigPool(oc, mcpName)
+
+	currentNodes, err := mcp.GetNodes()
+	if err != nil {
+		return fmt.Errorf("error getting current nodes from %s: %w", mcpName, err)
+	}
+	expectedCount := len(currentNodes) + len(nodes)
+
+	for _, n := range nodes {
+		err := n.AddLabel(fmt.Sprintf("node-role.kubernetes.io/%s", mcpName), "")
+		if err != nil {
+			return fmt.Errorf("error labeling node %s to add it to pool %s: %w", n.GetName(), mcpName, err)
+		}
+		logger.Infof("Node %s added to pool %s", n.GetName(), mcpName)
+	}
+
+	err = mcp.WaitForMachineCount(expectedCount, 5*time.Minute)
+	if err != nil {
+		return fmt.Errorf("the %s MCP is not reporting the expected machine count: %w", mcpName, err)
+	}
+
+	err = mcp.WaitImmediateForUpdatedStatus()
+	if err != nil {
+		return fmt.Errorf("the %s MCP is not updated: %w", mcpName, err)
+	}
+
 	return nil
 }
 
