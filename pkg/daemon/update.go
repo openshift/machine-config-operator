@@ -748,7 +748,6 @@ func calculatePostConfigChangeAction(diff *machineConfigDiff, diffFileSet []stri
 
 // calculatePostConfigChangeNodeDisruptionAction takes action based on the cluster's Node disruption policies.
 func (dn *Daemon) calculatePostConfigChangeNodeDisruptionAction(diff *machineConfigDiff, diffFileSet, diffUnitSet []string) ([]opv1.NodeDisruptionPolicyStatusAction, error) {
-
 	var mcop *opv1.MachineConfiguration
 	var pollErr error
 	// Wait for mcop.Status.NodeDisruptionPolicyStatus to populate, otherwise error out. This shouldn't take very long
@@ -819,7 +818,6 @@ func (dn *Daemon) calculatePostConfigChangeNodeDisruptionAction(diff *machineCon
 	}
 
 	return nodeDisruptionActions, nil
-
 }
 
 // Finalizes the revert process by enabling a special systemd unit prior to
@@ -1775,7 +1773,6 @@ func (dn *Daemon) getCurrentlyInstalledPackages() (sets.Set[string], error) {
 // generateExtensionsArgs generates extension arguments for rpm-ostree, based on the target config
 // and currently installed extension packages.
 func generateExtensionsArgs(installedSet sets.Set[string], newConfig *mcfgv1.MachineConfig) []string {
-
 	// Get packages that should be installed based on new config
 	supportedExtensions := ctrlcommon.SupportedExtensions()
 	requiredSet := sets.New[string]()
@@ -2470,7 +2467,6 @@ func (dn *Daemon) listSystemdUnits() (result map[string]systemddbus.UnitFile, er
 		result[unitName] = unitFile
 	}
 	return result, nil
-
 }
 
 // writeFiles writes the given files to disk.
@@ -2483,13 +2479,7 @@ func (dn *Daemon) writeFiles(files []ign3types.File, skipCertificateWrite bool) 
 // subdirectories are created with the correct (0700) permissions.
 func createSSHKeyDir(authKeyDir string) error {
 	klog.Infof("Creating missing SSH key dir at %q", authKeyDir)
-
-	mkdir := func(dir string) error {
-		return exec.Command("runuser", "-u", constants.CoreUserName, "--", "mkdir", "-m", "0700", "-p", dir).Run()
-	}
-
-	// Create the SSH key directory (/home/core/.ssh/authorized_keys.d).
-	return mkdir(filepath.Dir(constants.RHCOSDefaultSSHKeyPath))
+	return exec.Command("runuser", "-u", constants.CoreUserName, "--", "mkdir", "-m", "0700", "-p", authKeyDir).Run()
 }
 
 func (dn *Daemon) atomicallyWriteSSHKey(authKeyPath, keys string) error {
@@ -2554,7 +2544,6 @@ func getUserPasswordHash(user string) (string, error) {
 		return shadowSlice[1], nil
 	}
 	return "", nil
-
 }
 
 // SetPasswordHash updates the password for each user in newUsers, skipping

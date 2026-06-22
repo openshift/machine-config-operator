@@ -316,7 +316,8 @@ func TestNoReboot(t *testing.T) {
 	})
 	_, err := cs.MachineConfigs().Create(context.TODO(), oldInfraConfig, metav1.CreateOptions{})
 	require.Nil(t, err)
-	oldInfraRenderedConfig, _ := helpers.WaitForRenderedConfig(t, cs, "infra", oldInfraConfig.Name)
+	oldInfraRenderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", oldInfraConfig.Name)
+	require.Nil(t, err)
 	infraNode := helpers.GetSingleNodeByRole(t, cs, "infra")
 
 	sshKeyContent := "test adding authorized key without node reboot"
@@ -384,6 +385,8 @@ func TestNoReboot(t *testing.T) {
 	assertExpectedPerms(t, cs, infraNode, constants.CoreUserSSHPath, []string{constants.CoreUserName, constants.CoreGroupName, "700"})
 	// /home/core/.ssh/authorized_keys.d
 	assertExpectedPerms(t, cs, infraNode, filepath.Dir(constants.RHCOSDefaultSSHKeyPath), []string{constants.CoreUserName, constants.CoreGroupName, "700"})
+	// /home/core/.ssh/authorized_keys.d/ignition
+	assertExpectedPerms(t, cs, infraNode, constants.RHCOSDefaultSSHKeyPath, []string{constants.CoreUserName, constants.CoreGroupName, "600"})
 
 	currentEtcShadowContents := helpers.ExecCmdOnNode(t, cs, infraNode, "grep", "^core:", "/rootfs/etc/shadow")
 
