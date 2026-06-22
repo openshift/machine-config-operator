@@ -40,8 +40,10 @@ const (
 	mcNameUsbguard string = "inspect-usbguard"
 )
 
-var skipCleanupAlways bool
-var skipCleanupOnlyAfterFailure bool
+var (
+	skipCleanupAlways           bool
+	skipCleanupOnlyAfterFailure bool
+)
 
 func init() {
 	// Skips running the cleanup functions. Useful for debugging tests.
@@ -76,10 +78,15 @@ type onClusterLayeringTestOpts struct {
 
 // Tests that an on-cluster build can be performed with the Custom Pod Builder.
 func TestOnClusterLayering(t *testing.T) {
+	cs := framework.NewClientSet("")
+
+	dockerfile, err := ocltesthelper.GetCowsayDockerfileForCluster(t, cs)
+	require.NoError(t, err)
+
 	_, firstMosb := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
-			layeredMCPName: ocltesthelper.CowsayDockerfile,
+			layeredMCPName: dockerfile,
 		},
 	})
 
@@ -90,8 +97,6 @@ func TestOnClusterLayering(t *testing.T) {
 	t.Cleanup(cancel)
 
 	t.Logf("Applying rebuild annotation (%q) to MachineOSConfig (%q) to cause a rebuild", constants.RebuildMachineOSConfigAnnotationKey, layeredMCPName)
-
-	cs := framework.NewClientSet("")
 
 	mosc, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().Get(ctx, layeredMCPName, metav1.GetOptions{})
 	require.NoError(t, err)
@@ -115,18 +120,21 @@ func TestOnClusterBuildRollsOutImage(t *testing.T) {
 		requiredKernelType = ctrlcommon.KernelType64kPages
 	}
 
+	cs := framework.NewClientSet("")
+	node := helpers.GetRandomNode(t, cs, "worker")
+
+	dockerfile, err := ocltesthelper.GetCowsayDockerfileForCluster(t, cs)
+	require.NoError(t, err)
+
 	imagePullspec, _ := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
-			layeredMCPName: ocltesthelper.CowsayDockerfile,
+			layeredMCPName: dockerfile,
 		},
 		machineConfigs: []*mcfgv1.MachineConfig{
 			ocltesthelper.NewMachineConfigWithKernelType(fmt.Sprintf("%s-kernel-machineconfig", requiredKernelType), layeredMCPName, requiredKernelType),
 		},
 	})
-
-	cs := framework.NewClientSet("")
-	node := helpers.GetRandomNode(t, cs, "worker")
 
 	unlabelFunc := ocltesthelper.MakeIdempotentAndRegisterAlwaysRun(t, helpers.LabelNode(t, cs, node, helpers.MCPNameToRole(layeredMCPName)))
 	helpers.WaitForNodeImageChange(t, cs, node, imagePullspec)
@@ -163,10 +171,13 @@ func TestMissingImageIsRebuilt(t *testing.T) {
 
 	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
 
+	dockerfile, err := ocltesthelper.GetCowsayDockerfileForCluster(t, cs)
+	require.NoError(t, err)
+
 	firstImagePullspec, firstMOSB := runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
-			layeredMCPName: ocltesthelper.CowsayDockerfile,
+			layeredMCPName: dockerfile,
 		},
 	})
 
@@ -299,10 +310,13 @@ func TestMachineOSConfigChangeRestartsBuild(t *testing.T) {
 
 	cs := framework.NewClientSet("")
 
+	dockerfile, err := ocltesthelper.GetCowsayDockerfileForCluster(t, cs)
+	require.NoError(t, err)
+
 	mosc := prepareForOnClusterLayeringTest(t, cs, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
-			layeredMCPName: ocltesthelper.CowsayDockerfile,
+			layeredMCPName: dockerfile,
 		},
 	})
 
@@ -358,10 +372,13 @@ func TestMachineOSConfigChangeRestartsBuild(t *testing.T) {
 func TestMachineConfigPoolChangeRestartsBuild(t *testing.T) {
 	cs := framework.NewClientSet("")
 
+	dockerfile, err := ocltesthelper.GetCowsayDockerfileForCluster(t, cs)
+	require.NoError(t, err)
+
 	mosc := prepareForOnClusterLayeringTest(t, cs, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
-			layeredMCPName: ocltesthelper.CowsayDockerfile,
+			layeredMCPName: dockerfile,
 		},
 	})
 
@@ -377,7 +394,7 @@ func TestMachineConfigPoolChangeRestartsBuild(t *testing.T) {
 	mc := ocltesthelper.NewMachineConfigTriggersImageRebuild(mcName, layeredMCPName, []string{"usbguard"})
 	applyMC(t, cs, mc)
 
-	_, err := helpers.WaitForRenderedConfig(t, cs, layeredMCPName, mcName)
+	_, err = helpers.WaitForRenderedConfig(t, cs, layeredMCPName, mcName)
 	require.NoError(t, err)
 
 	// We wait for the first build to be deleted.
@@ -398,10 +415,13 @@ func TestRebuildAnnotationRestartsBuild(t *testing.T) {
 
 	cs := framework.NewClientSet("")
 
+	dockerfile, err := ocltesthelper.GetCowsayDockerfileForCluster(t, cs)
+	require.NoError(t, err)
+
 	mosc := prepareForOnClusterLayeringTest(t, cs, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
-			layeredMCPName: ocltesthelper.CowsayDockerfile,
+			layeredMCPName: dockerfile,
 		},
 	})
 
@@ -915,7 +935,6 @@ func waitForMOSCToUpdateCurrentMOSB(ctx context.Context, t *testing.T, cs *frame
 		// The stale annotation fix may temporarily clear the annotation, so we need
 		// to wait for the new MOSB to be created and annotation set.
 		return currentMOSB != "" && currentMOSB != mosbName, nil
-
 	}))
 	return currentMOSB
 }

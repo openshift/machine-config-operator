@@ -1130,6 +1130,20 @@ func TestInstallRPMAndCheckMCDMetrics(t *testing.T) {
 	node := helpers.GetRandomNode(t, cs, "worker")
 	t.Logf("Selected node: %s", node.Name)
 
+	nodeOS := helpers.GetOSReleaseForNode(t, cs, node).OS
+
+	var rpmFilename string
+	switch {
+	case nodeOS.IsEL9():
+		rpmFilename = "epel-release-latest-9.noarch.rpm"
+	case nodeOS.IsEL10():
+		rpmFilename = "epel-release-latest-10.noarch.rpm"
+	default:
+		t.Fatalf("Unsupported OS for node %s: %v", node.Name, nodeOS)
+	}
+
+	t.Logf("Using RPM package %s for node %s", rpmFilename, node.Name)
+
 	// Define cleanup function to uninstall the RPM and reboot the node
 	uninstallRpmFunc := helpers.MakeIdempotent(func() {
 		t.Log("Starting cleanup: Uninstalling the RPM")
@@ -1177,7 +1191,7 @@ func TestInstallRPMAndCheckMCDMetrics(t *testing.T) {
 	// Download the RPM package on the node
 	t.Logf("Downloading the RPM package on node %s", node.Name)
 	downloadCmd := []string{
-		"chroot", "/rootfs", "curl", "-KL", "https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm", "-o", "/tmp/epel-release-latest-9.noarch.rpm",
+		"chroot", "/rootfs", "curl", "-L", "https://dl.fedoraproject.org/pub/epel/" + rpmFilename, "-o", "/tmp/" + rpmFilename,
 	}
 
 	_, err := helpers.ExecCmdOnNodeWithError(cs, node, downloadCmd...)
@@ -1193,7 +1207,7 @@ func TestInstallRPMAndCheckMCDMetrics(t *testing.T) {
 	t.Logf("Executing rpm-ostree install command on node %s", node.Name)
 	// Install the RPM package
 	installCmd := []string{
-		"chroot", "/rootfs", "rpm-ostree", "install", "/tmp/epel-release-latest-9.noarch.rpm",
+		"chroot", "/rootfs", "rpm-ostree", "install", "/tmp/" + rpmFilename,
 	}
 
 	out, err := helpers.ExecCmdOnNodeWithError(cs, node, installCmd...)

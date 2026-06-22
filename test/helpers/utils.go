@@ -781,7 +781,7 @@ type SSHPaths struct {
 
 // Determines where to expect SSH keys for the core user on a given node based upon the node's OS.
 func GetSSHPaths(os osrelease.OperatingSystem) SSHPaths {
-	if os.IsEL9() || os.IsSCOS() || os.IsFCOS() {
+	if os.IsEL9() || os.IsEL10() || os.IsSCOS() || os.IsFCOS() {
 		return SSHPaths{
 			Expected:    constants.RHCOS9SSHKeyPath,
 			NotExpected: constants.RHCOS8SSHKeyPath,
