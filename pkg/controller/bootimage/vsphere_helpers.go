@@ -306,7 +306,7 @@ func createNewVMTemplateWithNameForFailureDomain(ctx context.Context, providerSp
 		string(ovfDescriptor),
 		vr.resourcePool.Reference(),
 		vr.datastore.Reference(),
-		cisp)
+		&cisp)
 
 	if err != nil {
 		return fmt.Errorf("failed to create import spec: %w", err)

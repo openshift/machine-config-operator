@@ -15,9 +15,13 @@ import (
 	mcopclientset "github.com/openshift/client-go/operator/clientset/versioned"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	k8sversion "k8s.io/apimachinery/pkg/util/version"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/dynamic/dynamicinformer"
+	"k8s.io/client-go/dynamic/dynamiclister"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -41,6 +45,7 @@ import (
 	mcoplistersv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/osimagestream"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 )
 
 // Controller defines the machine-set-boot-image controller.
@@ -68,12 +73,27 @@ type Controller struct {
 
 	queue workqueue.TypedRateLimitingInterface[string]
 
+	// dynamic client and informer factory for CAPI resources
+	dynamicClient       dynamic.Interface
+	capiInformerFactory dynamicinformer.DynamicSharedInformerFactory
+
+	capiMachineSetLister              dynamiclister.NamespaceLister
+	capiMachineSetListerSynced        cache.InformerSynced
+	capiMachineDeploymentLister       dynamiclister.NamespaceLister
+	capiMachineDeploymentListerSynced cache.InformerSynced
+
+	// Cache-backed lister for the platform-specific CAPI infrastructure template type.
+	// Wired lazily in Run() after the infra cache has synced, so we know which CRD to watch.
+	capiInfraTemplateLister       dynamiclister.NamespaceLister
+	capiInfraTemplateListerSynced cache.InformerSynced
+
 	mapiStats                  MachineResourceStats
 	cpmsStats                  MachineResourceStats
 	capiMachineSetStats        MachineResourceStats
 	capiMachineDeploymentStats MachineResourceStats
 	mapiBootImageState         map[string]BootImageState
 	cpmsBootImageState         map[string]BootImageState
+	capiBootImageState         map[string]BootImageState
 
 	fgHandler ctrlcommon.FeatureGatesHandler
 }
@@ -110,9 +130,20 @@ func (mrs MachineResourceStats) getDegradedStatusMessage(name string) string {
 	return fmt.Sprintf("%d Degraded %s", mrs.erroredCount, name)
 }
 
+// GVRs for CAPI core resources and per-platform infrastructure templates
+var (
+	capiMachineSetGVR        = clusterv1.GroupVersion.WithResource("machinesets")
+	capiMachineDeploymentGVR = clusterv1.GroupVersion.WithResource("machinedeployments")
+)
+
+// Infrastructure template GVRs are defined in capi_platform_helpers.go alongside their provider imports.
+
 const (
 	// Name of machine api namespace
 	MachineAPINamespace = "openshift-machine-api"
+
+	// Name of the CAPI namespace
+	CAPINamespace = "openshift-cluster-api"
 
 	// Key to access stream data from the boot images configmap
 	StreamConfigMapKey = "stream"
@@ -139,6 +170,7 @@ const (
 func New(
 	kubeClient clientset.Interface,
 	machineClient machineclientset.Interface,
+	dynamicClient dynamic.Interface,
 	mcoCmInfomer coreinformersv1.ConfigMapInformer,
 	mapiMachineSetInformer mapimachineinformersv1beta1.MachineSetInformer,
 	cpmsInformer mapimachineinformersv1.ControlPlaneMachineSetInformer,
@@ -210,9 +242,39 @@ func New(
 	})
 
 	ctrl.fgHandler = fgHandler
+	ctrl.dynamicClient = dynamicClient
 
 	ctrl.mapiBootImageState = map[string]BootImageState{}
 	ctrl.cpmsBootImageState = map[string]BootImageState{}
+	ctrl.capiBootImageState = map[string]BootImageState{}
+
+	// TODO: gate on ManagedBootImagesCAPI once added to openshift/api; using MachineAPIMigration for now.
+	if fgHandler.Enabled(features.FeatureGateMachineAPIMigration) {
+		klog.V(4).Infof("MachineAPIMigration feature gate is enabled, adding CAPI MachineSet/MachineDeployment event handlers")
+		capiFactory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(dynamicClient, 0, CAPINamespace, nil)
+		ctrl.capiInformerFactory = capiFactory
+
+		capiMSInformer := capiFactory.ForResource(capiMachineSetGVR)
+		capiMSInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc:    ctrl.addCAPIMachineSet,
+			UpdateFunc: ctrl.updateCAPIMachineSet,
+			DeleteFunc: ctrl.deleteCAPIMachineSet,
+		})
+		ctrl.capiMachineSetLister = dynamiclister.New(capiMSInformer.Informer().GetIndexer(), capiMachineSetGVR).Namespace(CAPINamespace)
+		ctrl.capiMachineSetListerSynced = capiMSInformer.Informer().HasSynced
+
+		capiMDInformer := capiFactory.ForResource(capiMachineDeploymentGVR)
+		capiMDInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc:    ctrl.addCAPIMachineDeployment,
+			UpdateFunc: ctrl.updateCAPIMachineDeployment,
+			DeleteFunc: ctrl.deleteCAPIMachineDeployment,
+		})
+		ctrl.capiMachineDeploymentLister = dynamiclister.New(capiMDInformer.Informer().GetIndexer(), capiMachineDeploymentGVR).Namespace(CAPINamespace)
+		ctrl.capiMachineDeploymentListerSynced = capiMDInformer.Informer().HasSynced
+
+		// Infrastructure template informer is wired in Run() after the infra cache syncs,
+		// so we know which platform-specific CRD to watch without an API call here.
+	}
 
 	return ctrl
 }
@@ -222,8 +284,29 @@ func (ctrl *Controller) Run(stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.mcoCmListerSynced, ctrl.mapiMachineSetListerSynced, ctrl.infraListerSynced, ctrl.mcopListerSynced, ctrl.clusterVersionListerSynced) {
+	// Phase 1: sync core informers. The infra lister must be warm before we can
+	// determine which platform-specific CAPI template CRD to watch.
+	synced := []cache.InformerSynced{ctrl.mcoCmListerSynced, ctrl.mapiMachineSetListerSynced, ctrl.infraListerSynced, ctrl.mcopListerSynced, ctrl.clusterVersionListerSynced}
+
+	if ctrl.capiInformerFactory != nil {
+		ctrl.capiInformerFactory.Start(stopCh)
+		synced = append(synced, ctrl.capiMachineSetListerSynced, ctrl.capiMachineDeploymentListerSynced)
+	}
+
+	if !cache.WaitForCacheSync(stopCh, synced...) {
 		return
+	}
+
+	// Phase 2: infra cache is warm — wire the platform-specific template informer and sync it.
+	if ctrl.capiInformerFactory != nil {
+		if err := ctrl.wireCAPITemplateInformer(); err != nil {
+			klog.Errorf("Failed to wire CAPI infrastructure template informer: %v", err)
+			return
+		}
+		ctrl.capiInformerFactory.Start(stopCh)
+		if !cache.WaitForCacheSync(stopCh, ctrl.capiInfraTemplateListerSynced) {
+			return
+		}
 	}
 
 	klog.Info("Starting MachineConfigController-MachineSetBootImageController")
@@ -234,6 +317,25 @@ func (ctrl *Controller) Run(stopCh <-chan struct{}) {
 	go wait.Until(ctrl.worker, time.Second, stopCh)
 
 	<-stopCh
+}
+
+// wireCAPITemplateInformer reads the platform from the (now-warm) infra lister and
+// registers a dynamic informer for the matching infrastructure template CRD.
+// Called from Run() after the Phase 1 cache sync.
+func (ctrl *Controller) wireCAPITemplateInformer() error {
+	infra, err := ctrl.infraLister.Get("cluster")
+	if err != nil {
+		return fmt.Errorf("failed to get infrastructure object: %w", err)
+	}
+	platform := infra.Status.PlatformStatus.Type
+	templateGVR, err := capiInfraTemplateGVR(platform)
+	if err != nil {
+		return err
+	}
+	tmplInf := ctrl.capiInformerFactory.ForResource(templateGVR)
+	ctrl.capiInfraTemplateLister = dynamiclister.New(tmplInf.Informer().GetIndexer(), templateGVR).Namespace(CAPINamespace)
+	ctrl.capiInfraTemplateListerSynced = tmplInf.Informer().HasSynced
+	return nil
 }
 
 // enqueueEvent adds a event to the work queue.
@@ -302,8 +404,12 @@ func (ctrl *Controller) updateMAPIMachineSet(oldMS, newMS interface{}) {
 	oldMachineSet := oldMS.(*machinev1beta1.MachineSet)
 	newMachineSet := newMS.(*machinev1beta1.MachineSet)
 
-	// Don't take action if the there is no change in the MachineSet's ProviderSpec, labels, annotations and ownerreferences
-	if reflect.DeepEqual(oldMachineSet.Spec.Template.Spec.ProviderSpec, newMachineSet.Spec.Template.Spec.ProviderSpec) &&
+	// Don't take action if there is no change in the MachineSet's ProviderSpec, labels, annotations, owner references,
+	// or (when MachineAPIMigration is active) status.authoritativeAPI.
+	authoritativeAPIChanged := ctrl.fgHandler.Enabled(features.FeatureGateMachineAPIMigration) &&
+		oldMachineSet.Status.AuthoritativeAPI != newMachineSet.Status.AuthoritativeAPI
+	if !authoritativeAPIChanged &&
+		reflect.DeepEqual(oldMachineSet.Spec.Template.Spec.ProviderSpec, newMachineSet.Spec.Template.Spec.ProviderSpec) &&
 		reflect.DeepEqual(oldMachineSet.GetLabels(), newMachineSet.GetLabels()) &&
 		reflect.DeepEqual(oldMachineSet.GetAnnotations(), newMachineSet.GetAnnotations()) &&
 		reflect.DeepEqual(oldMachineSet.GetOwnerReferences(), newMachineSet.GetOwnerReferences()) {
@@ -381,6 +487,78 @@ func (ctrl *Controller) deleteControlPlaneMachineSet(deletedCPMS interface{}) {
 	// store of machineset conditions. As this is using a lister, it is relatively inexpensive to do
 	// this.
 	ctrl.enqueueEvent("ControlPlaneMachineSetDeleted")
+}
+
+// addCAPIMachineSet handles the addition of a CAPI MachineSet by triggering
+// a reconciliation of all enrolled CAPI MachineSets.
+func (ctrl *Controller) addCAPIMachineSet(obj interface{}) {
+	ms := obj.(*unstructured.Unstructured)
+	klog.Infof("CAPI MachineSet %s added, reconciling enrolled machine resources", ms.GetName())
+	ctrl.enqueueEvent("CAPIMachineSetAdded")
+}
+
+// updateCAPIMachineSet handles updates to a CAPI MachineSet by triggering
+// a reconciliation if the spec, labels, annotations, or owner references changed.
+func (ctrl *Controller) updateCAPIMachineSet(oldMS, newMS interface{}) {
+	oldMachineSet := oldMS.(*unstructured.Unstructured)
+	newMachineSet := newMS.(*unstructured.Unstructured)
+
+	oldSpec, _, _ := unstructured.NestedMap(oldMachineSet.Object, "spec")
+	newSpec, _, _ := unstructured.NestedMap(newMachineSet.Object, "spec")
+
+	if reflect.DeepEqual(oldSpec, newSpec) &&
+		reflect.DeepEqual(oldMachineSet.GetLabels(), newMachineSet.GetLabels()) &&
+		reflect.DeepEqual(oldMachineSet.GetAnnotations(), newMachineSet.GetAnnotations()) &&
+		reflect.DeepEqual(oldMachineSet.GetOwnerReferences(), newMachineSet.GetOwnerReferences()) {
+		return
+	}
+
+	klog.Infof("CAPI MachineSet %s updated, reconciling enrolled machine resources", oldMachineSet.GetName())
+	ctrl.enqueueEvent("CAPIMachineSetUpdated")
+}
+
+// deleteCAPIMachineSet handles the deletion of a CAPI MachineSet by triggering
+// a reconciliation of all enrolled CAPI MachineSets.
+func (ctrl *Controller) deleteCAPIMachineSet(obj interface{}) {
+	ms := obj.(*unstructured.Unstructured)
+	klog.Infof("CAPI MachineSet %s deleted, reconciling enrolled machine resources", ms.GetName())
+	ctrl.enqueueEvent("CAPIMachineSetDeleted")
+}
+
+// addCAPIMachineDeployment handles the addition of a CAPI MachineDeployment by triggering
+// a reconciliation of all enrolled CAPI MachineDeployments.
+func (ctrl *Controller) addCAPIMachineDeployment(obj interface{}) {
+	md := obj.(*unstructured.Unstructured)
+	klog.Infof("CAPI MachineDeployment %s added, reconciling enrolled machine resources", md.GetName())
+	ctrl.enqueueEvent("CAPIMachineDeploymentAdded")
+}
+
+// updateCAPIMachineDeployment handles updates to a CAPI MachineDeployment by triggering
+// a reconciliation if the spec, labels, annotations, or owner references changed.
+func (ctrl *Controller) updateCAPIMachineDeployment(oldMD, newMD interface{}) {
+	oldMachineDeployment := oldMD.(*unstructured.Unstructured)
+	newMachineDeployment := newMD.(*unstructured.Unstructured)
+
+	oldSpec, _, _ := unstructured.NestedMap(oldMachineDeployment.Object, "spec")
+	newSpec, _, _ := unstructured.NestedMap(newMachineDeployment.Object, "spec")
+
+	if reflect.DeepEqual(oldSpec, newSpec) &&
+		reflect.DeepEqual(oldMachineDeployment.GetLabels(), newMachineDeployment.GetLabels()) &&
+		reflect.DeepEqual(oldMachineDeployment.GetAnnotations(), newMachineDeployment.GetAnnotations()) &&
+		reflect.DeepEqual(oldMachineDeployment.GetOwnerReferences(), newMachineDeployment.GetOwnerReferences()) {
+		return
+	}
+
+	klog.Infof("CAPI MachineDeployment %s updated, reconciling enrolled machine resources", oldMachineDeployment.GetName())
+	ctrl.enqueueEvent("CAPIMachineDeploymentUpdated")
+}
+
+// deleteCAPIMachineDeployment handles the deletion of a CAPI MachineDeployment by triggering
+// a reconciliation of all enrolled CAPI MachineDeployments.
+func (ctrl *Controller) deleteCAPIMachineDeployment(obj interface{}) {
+	md := obj.(*unstructured.Unstructured)
+	klog.Infof("CAPI MachineDeployment %s deleted, reconciling enrolled machine resources", md.GetName())
+	ctrl.enqueueEvent("CAPIMachineDeploymentDeleted")
 }
 
 // addConfigMap handles the addition of the boot images ConfigMap by triggering
@@ -703,5 +881,28 @@ func (ctrl *Controller) syncAll(event string) error {
 
 	ctrl.syncControlPlaneMachineSets(event)
 	ctrl.syncMAPIMachineSets(event)
+	// TODO: gate on ManagedBootImagesCAPI once added to openshift/api
+	if ctrl.fgHandler.Enabled(features.FeatureGateMachineAPIMigration) {
+		ctrl.syncCAPIMachineSets(event)
+		ctrl.syncCAPIMachineDeployments(event)
+	}
+
+	// Update the cluster boot image record when all enrolled resources have been reconciled
+	// without any skips. The API enforces that Automatic skew mode requires All selection for
+	// MAPI MachineSets; the equivalent restriction for CAPI resources is a pending API change.
+	if ctrl.fgHandler.Enabled(features.FeatureGateBootImageSkewEnforcement) {
+		noSkips := ctrl.mapiStats.skippedCount == 0
+		if ctrl.fgHandler.Enabled(features.FeatureGateMachineAPIMigration) {
+			// Only check CAPI stats when CAPI is active; avoids acting on stale counts
+			// from a prior cycle where the gate was enabled but is now off.
+			noSkips = noSkips &&
+				ctrl.capiMachineSetStats.skippedCount == 0 &&
+				ctrl.capiMachineDeploymentStats.skippedCount == 0
+		}
+		if noSkips {
+			ctrl.updateClusterBootImage()
+		}
+	}
+
 	return nil
 }

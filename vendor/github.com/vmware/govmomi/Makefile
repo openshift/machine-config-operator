@@ -1,4 +1,5 @@
-# Copyright (c) 2021 VMware, Inc. All Rights Reserved.
+# © Broadcom. All Rights Reserved.
+# The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
 # SPDX-License-Identifier: Apache-2.0
 
 # If you update this file, please follow
@@ -94,13 +95,21 @@ install: ## Install govc and vcsim
 ## Generate
 ## --------------------------------------
 
-.PHONY: mod
-mod: ## Runs go mod tidy to validate modules
-	go mod tidy -v
+GO_MOD_FILES := $(filter-out ./hack/tools/go.mod,$(shell find . -name go.mod))
+GO_MOD_OP := tidy
 
-.PHONY: mod-get
-mod-get: ## Downloads and caches the modules
-	go mod download
+.PHONY: $(GO_MOD_FILES)
+$(GO_MOD_FILES):
+	go -C $(@D) mod $(GO_MOD_OP)
+
+.PHONY: mod
+mod: $(GO_MOD_FILES)
+mod: ## Validates the modules
+
+.PHONY: modules-download
+mod-download: GO_MOD_OP=download
+mod-download: $(GO_MOD_FILES)
+mod-download: ## Downloads and caches the modules
 
 .PHONY: doc
 doc: install
@@ -143,6 +152,11 @@ go-test: ## Runs go unit tests with race detector enabled
   -v $(TEST_OPTS) \
   ./...
 
+.PHONY: go-fips140-test
+go-fips140-test: ## Test simulator can be used with fips140=only
+	GODEBUG=fips140=only $(GO) test ./property
+
+go-test: ## Runs go unit tests with race detector enabled
 .PHONY: govc-test
 govc-test: install
 govc-test: ## Runs govc bats tests
@@ -150,4 +164,4 @@ govc-test: ## Runs govc bats tests
 	(cd govc/test && ./vendor/github.com/bats-core/bats-core/bin/bats -t .)
 
 .PHONY: test
-test: go-test govc-test	## Runs go-test and govc-test
+test: go-test go-fips140-test govc-test	## Runs go-test and govc-test

@@ -1,18 +1,6 @@
-/*
-Copyright (c) 2015 VMware, Inc. All Rights Reserved.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
+// © Broadcom. All Rights Reserved.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: Apache-2.0
 
 package ovf
 
@@ -44,28 +32,28 @@ const (
 )
 
 type Env struct {
-	XMLName xml.Name `xml:"http://schemas.dmtf.org/ovf/environment/1 Environment"`
-	ID      string   `xml:"id,attr"`
-	EsxID   string   `xml:"http://www.vmware.com/schema/ovfenv esxId,attr"`
+	XMLName xml.Name `xml:"http://schemas.dmtf.org/ovf/environment/1 Environment" json:"xmlName"`
+	ID      string   `xml:"id,attr" json:"id"`
+	EsxID   string   `xml:"http://www.vmware.com/schema/ovfenv esxId,attr" json:"esxID"`
 
-	Platform *PlatformSection `xml:"PlatformSection"`
-	Property *PropertySection `xml:"PropertySection"`
+	Platform *PlatformSection `xml:"PlatformSection" json:"platformSection,omitempty"`
+	Property *PropertySection `xml:"PropertySection" json:"propertySection,omitempty"`
 }
 
 type PlatformSection struct {
-	Kind    string `xml:"Kind"`
-	Version string `xml:"Version"`
-	Vendor  string `xml:"Vendor"`
-	Locale  string `xml:"Locale"`
+	Kind    string `xml:"Kind" json:"kind,omitempty"`
+	Version string `xml:"Version" json:"version,omitempty"`
+	Vendor  string `xml:"Vendor" json:"vendor,omitempty"`
+	Locale  string `xml:"Locale" json:"locale,omitempty"`
 }
 
 type PropertySection struct {
-	Properties []EnvProperty `xml:"Property"`
+	Properties []EnvProperty `xml:"Property" json:"property,omitempty"`
 }
 
 type EnvProperty struct {
-	Key   string `xml:"key,attr"`
-	Value string `xml:"value,attr"`
+	Key   string `xml:"key,attr" json:"key"`
+	Value string `xml:"value,attr" json:"value,omitempty"`
 }
 
 // Marshal marshals Env to xml by using xml.Marshal.

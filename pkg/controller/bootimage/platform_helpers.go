@@ -42,9 +42,11 @@ type publisherOffer struct {
 	publisher, offer string
 }
 
-// This function calls the appropriate reconcile function based on the infra type
-// On success, it will return a bool indicating if a patch is required, and an updated
-// machineset object if any. It will return an error if any of the above steps fail.
+// checkMachineSet calls the appropriate reconcile function based on the infra type.
+// Returns (patchRequired, patchSkipped, newMachineSet, error).
+// patchSkipped=true means the boot image could not be updated automatically (e.g.
+// custom or unknown image) and requires manual intervention; the condition is surfaced
+// via skew enforcement rather than returned as an error.
 func checkMachineSet(infra *osconfigv1.Infrastructure, machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap, arch string, secretClient clientset.Interface) (bool, bool, *machinev1beta1.MachineSet, error) {
 	switch infra.Status.PlatformStatus.Type {
 	case osconfigv1.AWSPlatformType:
@@ -61,7 +63,8 @@ func checkMachineSet(infra *osconfigv1.Infrastructure, machineSet *machinev1beta
 	}
 }
 
-// Generic reconcile function that handles the common pattern across all platforms
+// reconcilePlatform is a generic reconcile function that handles the common pattern across all platforms.
+// Returns (patchRequired, patchSkipped, newMachineSet, error). See checkMachineSet for patchSkipped semantics.
 // nolint:dupl // I separated this from reconcilePlatformCPMS for readability
 func reconcilePlatform[T any](
 	machineSet *machinev1beta1.MachineSet,
