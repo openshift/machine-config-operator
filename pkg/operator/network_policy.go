@@ -16,12 +16,15 @@ import (
 const networkPolicyFieldManager = "machine-config-operator"
 
 func defaultDenyNetworkPolicy(namespace string) *networkingv1ac.NetworkPolicyApplyConfiguration {
-	return networkingv1ac.NetworkPolicy("default-deny", namespace).
-		WithSpec(networkingv1ac.NetworkPolicySpec().
-			WithPodSelector(metav1ac.LabelSelector()).
-			WithPolicyTypes(networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress).
-			WithIngress().
-			WithEgress())
+	spec := networkingv1ac.NetworkPolicySpec().
+		WithPodSelector(metav1ac.LabelSelector()).
+		WithPolicyTypes(networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress)
+	// Explicitly set empty slices so SSA claims ownership of ingress/egress
+	// fields and reverts any externally-added rules. WithIngress()/WithEgress()
+	// with no args is a no-op, and omitempty drops nil slices from the payload.
+	spec.Ingress = []networkingv1ac.NetworkPolicyIngressRuleApplyConfiguration{}
+	spec.Egress = []networkingv1ac.NetworkPolicyEgressRuleApplyConfiguration{}
+	return networkingv1ac.NetworkPolicy("default-deny", namespace).WithSpec(spec)
 }
 
 func allowMCONetworkPolicy(namespace string) *networkingv1ac.NetworkPolicyApplyConfiguration {
