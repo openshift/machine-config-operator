@@ -39,6 +39,10 @@ const (
 	LayeringBaseImageReleaseInfo = "rhel-coreos"
 	// LayeringBaseImageReleaseInfoRhel10 is the name of the RHEL10 layering base image in release info
 	LayeringBaseImageReleaseInfoRhel10 = "rhel-coreos-10"
+	// CoreExtensionsImageReleaseInfo is the name of the core extensions image in release info
+	CoreExtensionsImageReleaseInfo = "rhel-coreos-extensions"
+	// CoreExtensionsImageReleaseInfoRhel10 is the name of the RHEL10 core extensions image in release info
+	CoreExtensionsImageReleaseInfoRhel10 = "rhel-coreos-10-extensions"
 	// GenericMCTemplate is the name of a MachineConfig template that can be fully configured by parameters
 	GenericMCTemplate = "generic-machine-config-template.yml"
 

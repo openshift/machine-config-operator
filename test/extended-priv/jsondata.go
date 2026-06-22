@@ -116,7 +116,22 @@ func (jd *JSONData) ItemSafe(index int) (*JSONData, error) {
 	if !ok {
 		return nil, fmt.Errorf("data is not a list: %v", jd.data)
 	}
+
+	if index < 0 || index >= len(listData) {
+		return nil, fmt.Errorf("Index %d out of range for list of length %d", index, len(listData))
+	}
+
 	return &JSONData{listData[index]}, nil
+}
+
+// Item returns the value of a given item in a list, in case of error it fails the test
+func (jd *JSONData) Item(index int) *JSONData {
+	value, err := jd.ItemSafe(index)
+	if err != nil {
+		e2e.Failf("Could not get item [%d]. Error: %v", index, err)
+	}
+
+	return value
 }
 
 // Get returns the value of a key in the data, in case of error the returned value is nil
