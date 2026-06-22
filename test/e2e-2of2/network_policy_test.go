@@ -28,6 +28,7 @@ var staticPolicyNames = []string{
 	"default-deny",
 	"allow-machine-config-operator",
 	"allow-machine-config-controller",
+	"allow-machine-os-builder",
 }
 
 func skipIfNoNetworkPolicies(t *testing.T) {
@@ -73,6 +74,7 @@ func TestNetworkPolicies_DefaultPoliciesExist(t *testing.T) {
 	}{
 		{"allow-machine-config-operator", "machine-config-operator"},
 		{"allow-machine-config-controller", "machine-config-controller"},
+		{"allow-machine-os-builder", "machine-os-builder"},
 	} {
 		policy := policyMap[tc.name]
 		if policy == nil {
@@ -217,6 +219,51 @@ func TestNetworkPolicies_MCOProcessesContinueWorking(t *testing.T) {
 		assert.Contains(t, policyNames, expected,
 			"policy %s should exist while MCO processes are running", expected)
 	}
+}
+
+func TestNetworkPolicies_DefaultDenyModificationReverted(t *testing.T) {
+	skipIfNoNetworkPolicies(t)
+
+	cs := framework.NewClientSet("")
+	ctx := context.Background()
+	ns := ctrlcommon.MCONamespace
+	npClient := cs.GetKubeclient().NetworkingV1().NetworkPolicies(ns)
+
+	deny, err := npClient.Get(ctx, "default-deny", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Empty(t, deny.Spec.Ingress, "default-deny should have no ingress rules before modification")
+
+	deny.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
+		{
+			Ports: []networkingv1.NetworkPolicyPort{
+				{
+					Protocol: npProtocolPtr(corev1.ProtocolTCP),
+					Port:     npPortPtr(8080),
+				},
+			},
+		},
+	}
+	_, err = npClient.Update(ctx, deny, metav1.UpdateOptions{})
+	require.NoError(t, err)
+
+	modified, err := npClient.Get(ctx, "default-deny", metav1.GetOptions{})
+	require.NoError(t, err)
+	require.NotEmpty(t, modified.Spec.Ingress, "default-deny should have injected ingress rule after modification")
+
+	err = wait.PollUntilContextTimeout(ctx, networkPolicySyncPollInterval, networkPolicySyncPollTimeout, true,
+		func(ctx context.Context) (bool, error) {
+			restored, err := npClient.Get(ctx, "default-deny", metav1.GetOptions{})
+			if err != nil {
+				return false, err
+			}
+			return len(restored.Spec.Ingress) == 0, nil
+		})
+	require.NoError(t, err, "operator should revert injected ingress rules on default-deny")
+
+	restored, err := npClient.Get(ctx, "default-deny", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Empty(t, restored.Spec.Ingress, "default-deny should have no ingress rules after revert")
+	assert.Empty(t, restored.Spec.Egress, "default-deny should have no egress rules after revert")
 }
 
 func TestNetworkPolicies_AdminNetworkPolicyOverride(t *testing.T) {

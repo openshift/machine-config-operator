@@ -7,7 +7,6 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	metav1ac "k8s.io/client-go/applyconfigurations/meta/v1"
@@ -20,7 +19,9 @@ func defaultDenyNetworkPolicy(namespace string) *networkingv1ac.NetworkPolicyApp
 	return networkingv1ac.NetworkPolicy("default-deny", namespace).
 		WithSpec(networkingv1ac.NetworkPolicySpec().
 			WithPodSelector(metav1ac.LabelSelector()).
-			WithPolicyTypes(networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress))
+			WithPolicyTypes(networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress).
+			WithIngress().
+			WithEgress())
 }
 
 func allowMCONetworkPolicy(namespace string) *networkingv1ac.NetworkPolicyApplyConfiguration {
@@ -67,30 +68,15 @@ func (optr *Operator) syncNetworkPolicies(_ *renderConfig, _ *configv1.ClusterOp
 	ns := ctrlcommon.MCONamespace
 	applyOpts := metav1.ApplyOptions{FieldManager: networkPolicyFieldManager, Force: true}
 
-	staticPolicies := []*networkingv1ac.NetworkPolicyApplyConfiguration{
+	policies := []*networkingv1ac.NetworkPolicyApplyConfiguration{
 		defaultDenyNetworkPolicy(ns),
 		allowMCONetworkPolicy(ns),
 		allowMCCNetworkPolicy(ns),
+		allowMOBNetworkPolicy(ns),
 	}
 
-	for _, policy := range staticPolicies {
+	for _, policy := range policies {
 		if _, err := optr.kubeClient.NetworkingV1().NetworkPolicies(ns).Apply(ctx, policy, applyOpts); err != nil {
-			return err
-		}
-	}
-
-	layeredMCPs, err := optr.getLayeredMachineConfigPools()
-	if err != nil {
-		return err
-	}
-
-	if len(layeredMCPs) > 0 {
-		if _, err := optr.kubeClient.NetworkingV1().NetworkPolicies(ns).Apply(ctx, allowMOBNetworkPolicy(ns), applyOpts); err != nil {
-			return err
-		}
-	} else {
-		err := optr.kubeClient.NetworkingV1().NetworkPolicies(ns).Delete(ctx, "allow-machine-os-builder", metav1.DeleteOptions{})
-		if err != nil && !apierrors.IsNotFound(err) {
 			return err
 		}
 	}
