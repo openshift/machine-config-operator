@@ -2210,6 +2210,16 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, bool, erro
 	if inDesiredConfig {
 		// Great, we've successfully rebooted for the desired config,
 		// let's mark it done!
+
+		// Verify extension packages are actually installed before marking as done
+		// See: https://redhat.atlassian.net/browse/OCPBUGS-65645
+		if dn.os.IsCoreOSVariant() {
+			coreOSDaemon := CoreOSDaemon{dn}
+			if err := coreOSDaemon.verifyExtensionPackages(state.currentConfig); err != nil {
+				return missingODC, inDesiredConfig, fmt.Errorf("extension package verification failed: %w", err)
+			}
+		}
+
 		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
 			&upgrademonitor.Condition{State: mcfgalphav1.MachineConfigNodeResumed, Reason: string(mcfgalphav1.MachineConfigNodeResumed), Message: fmt.Sprintf("In desired config %s. Resumed normal operations. Applying proper annotations.", state.currentConfig.Name)},
 			nil,
