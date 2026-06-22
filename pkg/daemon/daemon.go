@@ -2331,6 +2331,15 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, bool, erro
 		// Great, we've successfully rebooted for the desired config,
 		// let's mark it done!
 
+		// Verify extension packages are actually installed before marking as done
+		// See: https://redhat.atlassian.net/browse/OCPBUGS-65645
+		if dn.os.IsCoreOSVariant() {
+			coreOSDaemon := CoreOSDaemon{dn}
+			if err := coreOSDaemon.verifyExtensionPackages(state.currentConfig); err != nil {
+				return missingODC, inDesiredConfig, fmt.Errorf("extension package verification failed: %w", err)
+			}
+		}
+
 		// Get MCP associated with node
 		pool, err := helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
 		if err != nil {
