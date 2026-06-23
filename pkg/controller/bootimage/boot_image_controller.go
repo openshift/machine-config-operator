@@ -39,6 +39,7 @@ import (
 
 	mcopinformersv1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
 	mcoplistersv1 "github.com/openshift/client-go/operator/listers/operator/v1"
+	apihelpers "github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/osimagestream"
 )
@@ -628,7 +629,42 @@ func (ctrl *Controller) updateClusterBootImage() {
 	}
 
 	// Only make an API call if there is an update to the skew enforcement status
-	if !reflect.DeepEqual(mcop.Status.BootImageSkewEnforcementStatus, newBootImageSkewEnforcementStatus) {
+	if !reflect.DeepEqual(mcop.Status.BootImageSkewEnforcementStatus, *newBootImageSkewEnforcementStatus) {
+		mcop.Status.BootImageSkewEnforcementStatus = *newBootImageSkewEnforcementStatus
+		ctrl.updateMachineConfigurationStatus(mcop.Status)
+	}
+}
+
+// resetClusterBootImage writes the cluster's install OCP version into ClusterBootImageAutomatic when
+// one or more MachineSets were reconcileSkipped. The recorded value can no longer be trusted as an
+// accurate description of the full cluster state (a newly-added or changed MachineSet may be on an
+// older image), so we fall back to the install version — the oldest version we can reliably claim —
+// so that the skew check correctly surfaces a violation if the cluster is genuinely out of date.
+func (ctrl *Controller) resetClusterBootImage() {
+	mcop, err := ctrl.mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, metav1.GetOptions{})
+	if err != nil {
+		klog.Errorf("error resetting cluster boot image record: %s", err)
+		return
+	}
+	if mcop.Status.BootImageSkewEnforcementStatus.Mode != opv1.BootImageSkewEnforcementModeStatusAutomatic {
+		return
+	}
+
+	// Default to a conservative value to be on the safe side.
+	ocpVersion := "0.0.0"
+	clusterVersion, err := ctrl.clusterVersionLister.Get("version")
+	if err != nil {
+		klog.Warningf("Failed to get ClusterVersion for boot image reset: %v", err)
+	} else {
+		ocpVersion = apihelpers.GetOCPInstallVersion(clusterVersion)
+	}
+
+	newBootImageSkewEnforcementStatus := mcop.Status.BootImageSkewEnforcementStatus.DeepCopy()
+	newBootImageSkewEnforcementStatus.Automatic = opv1.ClusterBootImageAutomatic{
+		OCPVersion: ocpVersion,
+	}
+	if !reflect.DeepEqual(mcop.Status.BootImageSkewEnforcementStatus, *newBootImageSkewEnforcementStatus) {
+		klog.Infof("Resetting cluster boot image record to install version %s due to reconcileSkipped MachineSets", ocpVersion)
 		mcop.Status.BootImageSkewEnforcementStatus = *newBootImageSkewEnforcementStatus
 		ctrl.updateMachineConfigurationStatus(mcop.Status)
 	}
