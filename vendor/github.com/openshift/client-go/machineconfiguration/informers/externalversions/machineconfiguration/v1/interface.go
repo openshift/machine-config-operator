@@ -12,6 +12,8 @@ type Interface interface {
 	ContainerRuntimeConfigs() ContainerRuntimeConfigInformer
 	// ControllerConfigs returns a ControllerConfigInformer.
 	ControllerConfigs() ControllerConfigInformer
+	// InternalReleaseImages returns a InternalReleaseImageInformer.
+	InternalReleaseImages() InternalReleaseImageInformer
 	// KubeletConfigs returns a KubeletConfigInformer.
 	KubeletConfigs() KubeletConfigInformer
 	// MachineConfigs returns a MachineConfigInformer.
@@ -49,6 +51,11 @@ func (v *version) ContainerRuntimeConfigs() ContainerRuntimeConfigInformer {
 // ControllerConfigs returns a ControllerConfigInformer.
 func (v *version) ControllerConfigs() ControllerConfigInformer {
 	return &controllerConfigInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
+// InternalReleaseImages returns a InternalReleaseImageInformer.
+func (v *version) InternalReleaseImages() InternalReleaseImageInformer {
+	return &internalReleaseImageInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
 // KubeletConfigs returns a KubeletConfigInformer.
