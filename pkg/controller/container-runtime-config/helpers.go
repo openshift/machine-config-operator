@@ -32,6 +32,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -60,6 +61,7 @@ const (
 	// will be dropped in this is exported so that we can use it in the e2e-tests
 	CRIODropInFilePathDefaultRuntime           = "/etc/crio/crio.conf.d/01-ctrcfg-defaultRuntime"
 	crioDropInFilePathAdditionalArtifactStores = "/etc/crio/crio.conf.d/01-ctrcfg-additionalArtifactStores"
+	crioDropInFilePathMinInjectedGomaxprocs    = "/etc/crio/crio.conf.d/01-ctrcfg-minInjectedGomaxprocs"
 	imagepolicyType                            = "sigstoreSigned"
 	sigstoreRegistriesConfigFilePath           = "/etc/containers/registries.d/sigstore-registries.yaml"
 	crioCredentialProviderName                 = "crio-credential-provider"
@@ -141,6 +143,17 @@ type tomlConfigCRIOAdditionalArtifactStores struct {
 	Crio struct {
 		Runtime struct {
 			AdditionalArtifactStores []string `toml:"additional_artifact_stores,omitempty"`
+		} `toml:"runtime"`
+	} `toml:"crio"`
+}
+
+// tomlConfigCRIOMinInjectedGomaxprocs is used for setting min_injected_gomaxprocs
+// TOML-friendly (it has all of the explicit tables). It's just used for
+// conversions.
+type tomlConfigCRIOMinInjectedGomaxprocs struct {
+	Crio struct {
+		Runtime struct {
+			MinInjectedGomaxprocs int64 `toml:"min_injected_gomaxprocs,omitempty"`
 		} `toml:"runtime"`
 	} `toml:"crio"`
 }
@@ -1552,4 +1565,42 @@ func wrapErrorWithCRIOCredentialProviderConfigCondition(err error, conditionType
 		reason,
 		message,
 	)
+}
+
+// getMaxCPUCountFromPool returns the maximum CPU count from any node in the given pool.
+// Returns 0 if no nodes are found or if there's an error querying nodes.
+func getMaxCPUCountFromPool(kubeClient clientset.Interface, pool *mcfgv1.MachineConfigPool) int64 {
+	// Get the node selector from the pool
+	selector, err := metav1.LabelSelectorAsSelector(pool.Spec.NodeSelector)
+	if err != nil {
+		klog.V(2).Infof("error converting node selector to selector for pool %s: %v", pool.Name, err)
+		return 0
+	}
+
+	// List nodes matching the pool's node selector
+	nodes, err := kubeClient.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{
+		LabelSelector: selector.String(),
+	})
+	if err != nil {
+		klog.V(2).Infof("error listing nodes for pool %s: %v", pool.Name, err)
+		return 0
+	}
+
+	if len(nodes.Items) == 0 {
+		klog.V(2).Infof("no nodes found for pool %s", pool.Name)
+		return 0
+	}
+
+	// Find the maximum CPU count across all nodes
+	var maxCPU int64
+	for _, node := range nodes.Items {
+		cpuQuantity := node.Status.Capacity[corev1.ResourceCPU]
+		cpuCount := cpuQuantity.Value()
+		if cpuCount > maxCPU {
+			maxCPU = cpuCount
+		}
+	}
+
+	klog.V(4).Infof("pool %s has max CPU count of %d across %d nodes", pool.Name, maxCPU, len(nodes.Items))
+	return maxCPU
 }

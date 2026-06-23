@@ -85,6 +85,7 @@ type Controller struct {
 	templatesDir string
 
 	client        mcfgclientset.Interface
+	kubeClient    clientset.Interface
 	configClient  configclientset.Interface
 	eventRecorder record.EventRecorder
 
@@ -160,6 +161,7 @@ func New(
 	ctrl := &Controller{
 		templatesDir:  templatesDir,
 		client:        mcfgClient,
+		kubeClient:    kubeClient,
 		configClient:  configClient,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-containerruntimeconfigcontroller"})),
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
@@ -813,6 +815,19 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		if needsCRIODropinUpdate(ctrcfg, additionalStorageEnabled) {
 			crioFileConfigs := createCRIODropinFiles(cfg, additionalStorageEnabled)
 			configFileList = append(configFileList, crioFileConfigs...)
+		}
+
+		// For pools with >= 128 CPUs, enable min_injected_gomaxprocs
+		maxCPU := getMaxCPUCountFromPool(ctrl.kubeClient, pool)
+		if maxCPU >= 128 {
+			tomlConf := tomlConfigCRIOMinInjectedGomaxprocs{}
+			tomlConf.Crio.Runtime.MinInjectedGomaxprocs = 1
+			gomaxprocsConfig, err := addTOMLgeneratedConfigFile([]generatedConfigFile{}, crioDropInFilePathMinInjectedGomaxprocs, tomlConf)
+			if err != nil {
+				return ctrl.syncStatusOnly(cfg, err, "could not create min_injected_gomaxprocs config for pool %s: %v", pool.Name, err)
+			}
+			configFileList = append(configFileList, gomaxprocsConfig...)
+			klog.Infof("Enabling min_injected_gomaxprocs for pool %s with %d CPUs", pool.Name, maxCPU)
 		}
 
 		if isNotFound {

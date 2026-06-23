@@ -26,8 +26,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/diff"
 	"k8s.io/apimachinery/pkg/util/yaml"
+	k8sfake "k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/utils/ptr"
 )
 
@@ -2967,4 +2970,249 @@ providers:
 		})
 	}
 
+}
+
+func TestGetMaxCPUCountFromPool(t *testing.T) {
+	tests := []struct {
+		name           string
+		pool           *mcfgv1.MachineConfigPool
+		nodes          []corev1.Node
+		expectedCPU    int64
+		expectedErrLog bool
+	}{
+		{
+			name: "single node with 128 CPUs",
+			pool: &mcfgv1.MachineConfigPool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "worker",
+				},
+				Spec: mcfgv1.MachineConfigPoolSpec{
+					NodeSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"node-role.kubernetes.io/worker": "",
+						},
+					},
+				},
+			},
+			nodes: []corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "worker-1",
+						Labels: map[string]string{
+							"node-role.kubernetes.io/worker": "",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Capacity: corev1.ResourceList{
+							corev1.ResourceCPU: *resource.NewQuantity(128, resource.DecimalSI),
+						},
+					},
+				},
+			},
+			expectedCPU: 128,
+		},
+		{
+			name: "multiple nodes with different CPU counts",
+			pool: &mcfgv1.MachineConfigPool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "worker",
+				},
+				Spec: mcfgv1.MachineConfigPoolSpec{
+					NodeSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"node-role.kubernetes.io/worker": "",
+						},
+					},
+				},
+			},
+			nodes: []corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "worker-1",
+						Labels: map[string]string{
+							"node-role.kubernetes.io/worker": "",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Capacity: corev1.ResourceList{
+							corev1.ResourceCPU: *resource.NewQuantity(64, resource.DecimalSI),
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "worker-2",
+						Labels: map[string]string{
+							"node-role.kubernetes.io/worker": "",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Capacity: corev1.ResourceList{
+							corev1.ResourceCPU: *resource.NewQuantity(256, resource.DecimalSI),
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "worker-3",
+						Labels: map[string]string{
+							"node-role.kubernetes.io/worker": "",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Capacity: corev1.ResourceList{
+							corev1.ResourceCPU: *resource.NewQuantity(128, resource.DecimalSI),
+						},
+					},
+				},
+			},
+			expectedCPU: 256, // Should return the maximum
+		},
+		{
+			name: "node with low CPU count",
+			pool: &mcfgv1.MachineConfigPool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "worker",
+				},
+				Spec: mcfgv1.MachineConfigPoolSpec{
+					NodeSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"node-role.kubernetes.io/worker": "",
+						},
+					},
+				},
+			},
+			nodes: []corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "worker-1",
+						Labels: map[string]string{
+							"node-role.kubernetes.io/worker": "",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Capacity: corev1.ResourceList{
+							corev1.ResourceCPU: *resource.NewQuantity(16, resource.DecimalSI),
+						},
+					},
+				},
+			},
+			expectedCPU: 16,
+		},
+		{
+			name: "no nodes matching selector",
+			pool: &mcfgv1.MachineConfigPool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "worker",
+				},
+				Spec: mcfgv1.MachineConfigPoolSpec{
+					NodeSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"node-role.kubernetes.io/worker": "",
+						},
+					},
+				},
+			},
+			nodes: []corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "master-1",
+						Labels: map[string]string{
+							"node-role.kubernetes.io/master": "",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Capacity: corev1.ResourceList{
+							corev1.ResourceCPU: *resource.NewQuantity(32, resource.DecimalSI),
+						},
+					},
+				},
+			},
+			expectedCPU: 0,
+		},
+		{
+			name: "no nodes in cluster",
+			pool: &mcfgv1.MachineConfigPool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "worker",
+				},
+				Spec: mcfgv1.MachineConfigPoolSpec{
+					NodeSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"node-role.kubernetes.io/worker": "",
+						},
+					},
+				},
+			},
+			nodes:       []corev1.Node{},
+			expectedCPU: 0,
+		},
+		{
+			name: "invalid node selector",
+			pool: &mcfgv1.MachineConfigPool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "worker",
+				},
+				Spec: mcfgv1.MachineConfigPoolSpec{
+					NodeSelector: &metav1.LabelSelector{
+						MatchExpressions: []metav1.LabelSelectorRequirement{
+							{
+								Key:      "invalid",
+								Operator: "InvalidOperator",
+								Values:   []string{"value"},
+							},
+						},
+					},
+				},
+			},
+			nodes:          []corev1.Node{},
+			expectedCPU:    0,
+			expectedErrLog: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create fake kubernetes client with the test nodes
+			objects := []runtime.Object{}
+			for i := range tt.nodes {
+				objects = append(objects, &tt.nodes[i])
+			}
+
+			fakeKubeClient := k8sfake.NewSimpleClientset(objects...)
+
+			// Call the function
+			maxCPU := getMaxCPUCountFromPool(fakeKubeClient, tt.pool)
+
+			// Assert the result
+			assert.Equal(t, tt.expectedCPU, maxCPU, "unexpected CPU count")
+		})
+	}
+}
+
+func TestGetMaxCPUCountFromPool_APIFailure(t *testing.T) {
+	pool := &mcfgv1.MachineConfigPool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "worker",
+		},
+		Spec: mcfgv1.MachineConfigPoolSpec{
+			NodeSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"node-role.kubernetes.io/worker": "",
+				},
+			},
+		},
+	}
+
+	// Create fake client with a reactor that returns an error on list
+	fakeKubeClient := k8sfake.NewSimpleClientset()
+	fakeKubeClient.PrependReactor("list", "nodes", func(action k8stesting.Action) (handled bool, ret runtime.Object, err error) {
+		return true, nil, fmt.Errorf("simulated API error")
+	})
+
+	// Call the function - should handle the error gracefully
+	maxCPU := getMaxCPUCountFromPool(fakeKubeClient, pool)
+
+	// Should return 0 when API call fails
+	assert.Equal(t, int64(0), maxCPU, "expected 0 CPU count when API fails")
 }
