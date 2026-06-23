@@ -22,6 +22,7 @@ type InternalReleaseImageBundleStatusApplyConfiguration struct {
 	//
 	// In general, after installing a new release bundle, it is required to wait for the Conditions "Available" to become "True" (and all
 	// the other conditions to be equal to "False") before being able to pull its content.
+	// When present, conditions must contain at least 1 entry and must not exceed 5 entries.
 	Conditions []metav1.ConditionApplyConfiguration `json:"conditions,omitempty"`
 	// name indicates the desired release bundle identifier. This field is required and must be between 1 and 64 characters long.
 	// The expected name format is ocp-release-bundle-<version>-<arch|stream>.
