@@ -236,6 +236,10 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &operatorv1.IPv6OVNKubernetesConfigApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("IrreconcilableValidationOverrides"):
 		return &operatorv1.IrreconcilableValidationOverridesApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("KMSEncryptionStatus"):
+		return &operatorv1.KMSEncryptionStatusApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("KMSPluginHealthReport"):
+		return &operatorv1.KMSPluginHealthReportApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("KubeAPIServer"):
 		return &operatorv1.KubeAPIServerApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("KubeAPIServerSpec"):
