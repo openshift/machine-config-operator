@@ -229,6 +229,64 @@ func getDiskTypeFromExistingVM(vmMo mo.VirtualMachine) string {
 	return diskType
 }
 
+// atomicTempName returns a short, fixed-length (17-char) VM name for use during atomic template
+// swaps. The hash makes it deterministic and unique per final name, bypassing the 80-char limit.
+func atomicTempName(prefix, name string) string {
+	h := sha256.Sum256([]byte(name))
+	return fmt.Sprintf("%s-%x", prefix, h[:4])
+}
+
+// destroyVMIfPresent destroys the named VM if it exists, and is a no-op if it does not.
+func destroyVMIfPresent(ctx context.Context, finder *find.Finder, name string) error {
+	vm, err := finder.VirtualMachine(ctx, name)
+	if err != nil {
+		if _, ok := err.(*find.NotFoundError); ok {
+			return nil
+		}
+		return fmt.Errorf("finder had error looking up VM %s: %w", name, err)
+	}
+	klog.Infof("Destroying stale VM %s", name)
+	destroyTask, err := vm.Destroy(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to initiate destroy of VM %s: %w", name, err)
+	}
+	if err = destroyTask.Wait(ctx); err != nil {
+		return fmt.Errorf("failed to destroy VM %s: %w", name, err)
+	}
+	return nil
+}
+
+// swapTemplate atomically replaces the existing template with the new one using two fast renames,
+// minimising the window where the production name is absent.
+func swapTemplate(ctx context.Context, existingVM, newVM *object.VirtualMachine, name, oldTempName string) error {
+	klog.Infof("VM Template with name %s already exists, swapping atomically", name)
+	renameTask, err := existingVM.Rename(ctx, oldTempName)
+	if err != nil {
+		return fmt.Errorf("failed to rename existing VM to %s: %w", oldTempName, err)
+	}
+	if err = renameTask.Wait(ctx); err != nil {
+		return fmt.Errorf("failed to complete renaming existing VM to %s: %w", oldTempName, err)
+	}
+
+	renameTask, err = newVM.Rename(ctx, name)
+	if err != nil {
+		return fmt.Errorf("failed to rename new VM to %s: %w", name, err)
+	}
+	if err = renameTask.Wait(ctx); err != nil {
+		return fmt.Errorf("failed to complete renaming new VM to %s: %w", name, err)
+	}
+
+	destroyTask, err := existingVM.Destroy(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to initiate destroy of old VM: %w", err)
+	}
+	if err = destroyTask.Wait(ctx); err != nil {
+		return fmt.Errorf("failed to destroy old VM: %w", err)
+	}
+	klog.Infof("VM %s successfully replaced", name)
+	return nil
+}
+
 // getCISP generates an OVF CreateImportSpecParams based on network and disk configuration
 func getCISP(ovfEnvelope *ovf.Envelope, networkRef object.NetworkReference, name, diskType string) (types.OvfCreateImportSpecParams, error) {
 	// Create mapping between OVF and the network object
@@ -260,8 +318,21 @@ func getCISP(ovfEnvelope *ovf.Envelope, networkRef object.NetworkReference, name
 }
 
 func createNewVMTemplateWithNameForFailureDomain(ctx context.Context, providerSpec *machinev1beta1.VSphereMachineProviderSpec, failureDomain osconfigv1.VSpherePlatformFailureDomainSpec, finder *find.Finder, client *govmomi.Client, tagManager *tags.Manager, name, ovaPath, infraID, diskType string) error {
+	// tempName is where the new OVA is imported; oldTempName holds the existing template during
+	// the swap. Both are fixed-length (17 chars) so they always fit within vSphere's 80-char limit.
+	tempName := atomicTempName("mco-tmp", name)
+	oldTempName := atomicTempName("mco-old", name)
+
 	vr, err := findAllRequiredResources(ctx, finder, providerSpec, failureDomain, name)
 	if err != nil {
+		return err
+	}
+
+	// Clean up stale VMs if they exist
+	if err := destroyVMIfPresent(ctx, finder, tempName); err != nil {
+		return err
+	}
+	if err := destroyVMIfPresent(ctx, finder, oldTempName); err != nil {
 		return err
 	}
 
@@ -296,7 +367,8 @@ func createNewVMTemplateWithNameForFailureDomain(ctx context.Context, providerSp
 		return fmt.Errorf("the vCenter cluster %s has no ESXi nodes", failureDomain.Topology.ComputeCluster)
 	}
 
-	cisp, err := getCISP(ovfEnvelope, vr.networkRef, name, diskType)
+	// Import under tempName so the existing template remains live throughout the upload.
+	cisp, err := getCISP(ovfEnvelope, vr.networkRef, tempName, diskType)
 	if err != nil {
 		return fmt.Errorf("failed to get CISP: %w", err)
 	}
@@ -318,19 +390,6 @@ func createNewVMTemplateWithNameForFailureDomain(ctx context.Context, providerSp
 	hostSystem, err := findAvailableHostSystems(ctx, clusterHostSystems, vr.networkRef, vr.datastore)
 	if err != nil {
 		return fmt.Errorf("failed to find available host system: %w", err)
-	}
-
-	if vr.existingVM != nil {
-		klog.Infof("VM Template with name %s already exists", name)
-		destroyTask, err := vr.existingVM.Destroy(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to initiate destroy existing VM: %w", err)
-		}
-		err = destroyTask.Wait(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to complete destroying existing VM: %w", err)
-		}
-		klog.Infof("VM %s successfully destroyed", name)
 	}
 
 	lease, err := vr.resourcePool.ImportVApp(ctx, spec.ImportSpec, vr.folder, hostSystem)
@@ -393,6 +452,20 @@ func createNewVMTemplateWithNameForFailureDomain(ctx context.Context, providerSp
 			return fmt.Errorf("failed to attach tag: %w", err)
 		}
 	}
+
+	// Atomic swap: the new template is fully ready; now replace the old one.
+	if vr.existingVM != nil {
+		return swapTemplate(ctx, vr.existingVM, vm, name, oldTempName)
+	}
+	// Swap not needed; just do a single rename
+	renameTask, err := vm.Rename(ctx, name)
+	if err != nil {
+		return fmt.Errorf("failed to rename new VM to %s: %w", name, err)
+	}
+	if err = renameTask.Wait(ctx); err != nil {
+		return fmt.Errorf("failed to complete renaming new VM to %s: %w", name, err)
+	}
+	klog.Infof("VM Template %s created", name)
 
 	return nil
 }
@@ -477,7 +550,32 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 
 			existingTemplateVM, err := finder.VirtualMachine(ctx, name)
 			if err != nil {
-				return "", false, fmt.Errorf("finder had error: %w", err)
+				if _, ok := err.(*find.NotFoundError); !ok {
+					return "", false, fmt.Errorf("finder had error: %w", err)
+				}
+				// Template not found; update likely crashed between the two rename steps of a prior
+				// atomic swap. Check for the old template under its rollback name and restore it
+				// so the next reconciliation loop can proceed normally.
+				oldTempName := atomicTempName("mco-old", name)
+				oldVM, oldErr := finder.VirtualMachine(ctx, oldTempName)
+				if oldErr != nil {
+					return "", false, fmt.Errorf("template %s not found : %w and no rollback VM %s present: %w", name, err, oldTempName, oldErr)
+				}
+				klog.Infof("Recovering from mid-swap crash: renaming %s back to %s", oldTempName, name)
+				renameTask, renameErr := oldVM.Rename(ctx, name)
+				if renameErr != nil {
+					return "", false, fmt.Errorf("failed to initiate rollback rename of %s to %s: %w", oldTempName, name, renameErr)
+				}
+				if renameErr = renameTask.Wait(ctx); renameErr != nil {
+					return "", false, fmt.Errorf("failed to complete rollback rename of %s to %s: %w", oldTempName, name, renameErr)
+				}
+				// Fresh fetch by name to confirm the rollback succeeded and get a clean reference.
+				// Any stale mco-tmp-* VM will be cleaned up by createNewVMTemplateWithNameForFailureDomain
+				// if an update is subsequently needed.
+				existingTemplateVM, err = finder.VirtualMachine(ctx, name)
+				if err != nil {
+					return "", false, fmt.Errorf("failed to fetch rolled-back template %s: %w", name, err)
+				}
 			}
 
 			var vmMo mo.VirtualMachine
