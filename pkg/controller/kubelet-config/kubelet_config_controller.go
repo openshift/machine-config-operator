@@ -138,6 +138,12 @@ func New(
 		fgHandler: fgHandler,
 	}
 
+	mcpInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addMachineConfigPool,
+		UpdateFunc: ctrl.updateMachineConfigPool,
+		DeleteFunc: ctrl.deleteMachineConfigPool,
+	})
+
 	mkuInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addKubeletConfig,
 		UpdateFunc: ctrl.updateKubeletConfig,
@@ -314,6 +320,62 @@ func (ctrl *Controller) deleteKubeletConfig(obj interface{}) {
 		utilruntime.HandleError(fmt.Errorf("couldn't delete object %#v: %w", cfg, err))
 	} else {
 		klog.V(4).Infof("Deleted KubeletConfig %s and restored default config", cfg.Name)
+	}
+}
+
+func (ctrl *Controller) addMachineConfigPool(obj interface{}) {
+	pool := obj.(*mcfgv1.MachineConfigPool)
+	klog.V(4).Infof("MachineConfigPool %s added, re-syncing kubelet config controller", pool.Name)
+	ctrl.requeueKubeletConfigsForPool()
+}
+
+func (ctrl *Controller) updateMachineConfigPool(old, cur interface{}) {
+	oldPool := old.(*mcfgv1.MachineConfigPool)
+	curPool := cur.(*mcfgv1.MachineConfigPool)
+	if !reflect.DeepEqual(oldPool.Labels, curPool.Labels) {
+		klog.V(4).Infof("MachineConfigPool %s labels changed, re-syncing kubelet config controller", curPool.Name)
+		ctrl.requeueKubeletConfigsForPool()
+	}
+}
+
+func (ctrl *Controller) deleteMachineConfigPool(obj interface{}) {
+	pool, ok := obj.(*mcfgv1.MachineConfigPool)
+	if !ok {
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
+			return
+		}
+		pool, ok = tombstone.Obj.(*mcfgv1.MachineConfigPool)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a MachineConfigPool %#v", obj))
+			return
+		}
+	}
+	klog.V(4).Infof("MachineConfigPool %s deleted", pool.Name)
+}
+
+// requeueKubeletConfigsForPool triggers reconciliation of all kubelet-related
+// controllers so that generated MachineConfigs are created for any new or
+// updated MachineConfigPool.
+func (ctrl *Controller) requeueKubeletConfigsForPool() {
+	kcs, err := ctrl.mckLister.List(labels.Everything())
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("could not list KubeletConfigs for MCP re-sync: %w", err))
+	} else {
+		for _, kc := range kcs {
+			ctrl.enqueueKubeletConfig(kc)
+		}
+	}
+
+	features, err := ctrl.featLister.Get(ctrlcommon.ClusterFeatureInstanceName)
+	if err == nil {
+		ctrl.enqueueFeature(features)
+	}
+
+	nodeConfig, err := ctrl.nodeConfigLister.Get(ctrlcommon.ClusterNodeInstanceName)
+	if err == nil {
+		ctrl.enqueueNodeConfig(nodeConfig)
 	}
 }
 
