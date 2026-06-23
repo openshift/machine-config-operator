@@ -203,7 +203,7 @@ var (
 		usbguardExtension:            {"usbguard"},
 		kerberosExtension:            {"krb5-workstation", "libkadm5"},
 		kernelDevelExtension:         {"kernel-devel", "kernel-headers"},
-		sandboxedContainersExtension: {"kata-containers"},
+		// sandboxedContainersExtension: {"kata-containers"}, // Temporarily disabled until kata-containers builds are available again (MCO-2389)
 		sysstatExtension:             {"sysstat"},
 	}
 
