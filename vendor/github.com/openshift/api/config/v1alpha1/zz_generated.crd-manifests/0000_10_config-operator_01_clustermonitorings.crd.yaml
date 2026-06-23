@@ -915,6 +915,452 @@ spec:
                     and forbidden otherwise
                   rule: 'self.deploymentMode == ''CustomConfig'' ? has(self.customConfig)
                     : !has(self.customConfig)'
+              kubeStateMetricsConfig:
+                description: |-
+                  kubeStateMetricsConfig is an optional field that can be used to configure the kube-state-metrics
+                  agent that runs in the openshift-monitoring namespace. kube-state-metrics generates metrics about
+                  the state of Kubernetes objects such as Deployments, Nodes, and Pods.
+                  When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+                minProperties: 1
+                properties:
+                  additionalResourceLabels:
+                    description: |-
+                      additionalResourceLabels defines additional Kubernetes resource labels to expose as metrics
+                      in kube-state-metrics.
+                      Currently, only "Job" and "CronJob" resources are supported due to cardinality concerns.
+                      Each entry specifies a resource name and a list of Kubernetes label names to expose.
+                      Use "*" in the labels list to expose all labels for a given resource.
+                      additionalResourceLabels is optional.
+                      When omitted, no additional Kubernetes object labels are exposed as metrics
+                      by kube-state-metrics beyond its built-in metric labels (e.g. namespace, job_name).
+                      Use this field to opt in to exposing specific Kubernetes labels as metric labels
+                      for the supported resource types.
+                      Minimum length for this list is 1.
+                      Maximum length for this list is 2.
+                      Each resource name must be unique within this list.
+                    items:
+                      description: |-
+                        KubeStateMetricsResourceLabels defines which Kubernetes labels to expose as metrics
+                        for a given resource type in kube-state-metrics.
+                      properties:
+                        labels:
+                          description: |-
+                            labels is the list of Kubernetes label names to expose as metrics for this resource.
+                            Use "*" to expose all labels for the specified resource.
+                            When "*" is specified, it must be the only entry in the list; mixing "*" with
+                            specific label names is not allowed.
+                            This field is required.
+                            Each label name must be unique within this list.
+                            Minimum length for this list is 1.
+                            Maximum length for this list is 50.
+                          items:
+                            description: |-
+                              KubeStateMetricsLabelName is the name of a Kubernetes label to expose as a metric
+                              via kube-state-metrics. Use "*" to expose all labels for a resource.
+                              Must be either the wildcard "*" or a valid Kubernetes label key.
+                              A valid label key has an optional DNS subdomain prefix followed by a "/" and a name segment,
+                              or just a name segment without a prefix. The name segment must be 63 characters or fewer,
+                              beginning and ending with an alphanumeric character, with dashes, underscores, dots, and
+                              alphanumerics in between.
+                              Must be at least 1 character and at most 253 characters in length.
+                            maxLength: 253
+                            minLength: 1
+                            type: string
+                            x-kubernetes-validations:
+                            - message: must be a valid Kubernetes label key or the
+                                wildcard '*'
+                              rule: self == '*' || !format.qualifiedName().validate(self).hasValue()
+                          maxItems: 50
+                          minItems: 1
+                          type: array
+                          x-kubernetes-list-type: set
+                          x-kubernetes-validations:
+                          - message: when '*' is specified, no other labels may be
+                              listed
+                            rule: '!self.exists(l, l == ''*'') || self.size() == 1'
+                        resource:
+                          description: |-
+                            resource is the Kubernetes resource name whose labels should be exposed as metrics.
+                            Currently, only "Job" and "CronJob" are supported due to cardinality concerns.
+                            Valid values are "Job" and "CronJob".
+                            This field is required.
+                          enum:
+                          - Job
+                          - CronJob
+                          type: string
+                      required:
+                      - labels
+                      - resource
+                      type: object
+                    maxItems: 2
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - resource
+                    x-kubernetes-list-type: map
+                  nodeSelector:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      nodeSelector defines the nodes on which the Pods are scheduled.
+                      nodeSelector is optional.
+
+                      When omitted, this means the user has no opinion and the platform is left
+                      to choose reasonable defaults. These defaults are subject to change over time.
+                      The current default value is `kubernetes.io/os: linux`.
+                      When specified, nodeSelector must contain at least 1 entry and must not contain more than 10 entries.
+                    maxProperties: 10
+                    minProperties: 1
+                    type: object
+                  resources:
+                    description: |-
+                      resources defines the compute resource requests and limits for the kube-state-metrics container.
+                      This includes CPU, memory and HugePages constraints to help control scheduling and resource usage.
+                      When not specified, defaults are used by the platform. Requests cannot exceed limits.
+                      This field is optional.
+                      More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                      This is a simplified API that maps to Kubernetes ResourceRequirements.
+                      The current default values are:
+                        resources:
+                         - name: cpu
+                           request: 4m
+                           limit: null
+                         - name: memory
+                           request: 40Mi
+                           limit: null
+                      Maximum length for this list is 5.
+                      Minimum length for this list is 1.
+                      Each resource name must be unique within this list.
+                    items:
+                      description: ContainerResource defines a single resource requirement
+                        for a container.
+                      properties:
+                        limit:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: |-
+                            limit is the maximum amount of the resource allowed (e.g. "2Mi", "1Gi").
+                            This field is optional.
+                            When request is specified, limit cannot be less than request.
+                            The value must be greater than 0 when specified.
+                          maxLength: 20
+                          minLength: 1
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                          x-kubernetes-validations:
+                          - message: limit must be a positive, non-zero quantity
+                            rule: quantity(self).isGreaterThan(quantity('0'))
+                        name:
+                          description: |-
+                            name of the resource (e.g. "cpu", "memory", "hugepages-2Mi").
+                            This field is required.
+                            name must consist only of alphanumeric characters, `-`, `_` and `.` and must start and end with an alphanumeric character.
+                          maxLength: 253
+                          minLength: 1
+                          type: string
+                          x-kubernetes-validations:
+                          - message: name must consist only of alphanumeric characters,
+                              `-`, `_` and `.` and must start and end with an alphanumeric
+                              character
+                            rule: '!format.qualifiedName().validate(self).hasValue()'
+                        request:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: |-
+                            request is the minimum amount of the resource required (e.g. "2Mi", "1Gi").
+                            This field is optional.
+                            When limit is specified, request cannot be greater than limit.
+                            The value must be greater than 0 when specified.
+                          maxLength: 20
+                          minLength: 1
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                          x-kubernetes-validations:
+                          - message: request must be a positive, non-zero quantity
+                            rule: quantity(self).isGreaterThan(quantity('0'))
+                      required:
+                      - name
+                      type: object
+                      x-kubernetes-validations:
+                      - message: at least one of request or limit must be set
+                        rule: has(self.request) || has(self.limit)
+                      - message: limit must be greater than or equal to request
+                        rule: '!(has(self.request) && has(self.limit)) || quantity(self.limit).compareTo(quantity(self.request))
+                          >= 0'
+                    maxItems: 5
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
+                  tolerations:
+                    description: |-
+                      tolerations defines tolerations for the pods.
+                      tolerations is optional.
+
+                      When omitted, no tolerations are applied. This default is subject to change over time.
+                      When specified, tolerations must contain at least 1 entry and must not contain more than 10 entries.
+                      Each toleration's operator, when specified, must be either "Exists" or "Equal".
+                      Each toleration's effect, when specified, must be one of "NoSchedule", "PreferNoSchedule", or "NoExecute".
+                      An empty or unset effect means match all effects.
+                    items:
+                      description: |-
+                        The pod this Toleration is attached to tolerates any taint that matches
+                        the triple <key,value,effect> using the matching operator <operator>.
+                      properties:
+                        effect:
+                          description: |-
+                            Effect indicates the taint effect to match. Empty means match all taint effects.
+                            When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                          type: string
+                        key:
+                          description: |-
+                            Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                            If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                          type: string
+                        operator:
+                          description: |-
+                            Operator represents a key's relationship to the value.
+                            Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
+                            Exists is equivalent to wildcard for value, so that a pod can
+                            tolerate all taints of a particular category.
+                            Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
+                          type: string
+                        tolerationSeconds:
+                          description: |-
+                            TolerationSeconds represents the period of time the toleration (which must be
+                            of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                            it is not set, which means tolerate the taint forever (do not evict). Zero and
+                            negative values will be treated as 0 (evict immediately) by the system.
+                          format: int64
+                          type: integer
+                        value:
+                          description: |-
+                            Value is the taint value the toleration matches to.
+                            If the operator is Exists, the value should be empty, otherwise just a regular string.
+                          type: string
+                      type: object
+                    maxItems: 10
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-type: atomic
+                    x-kubernetes-validations:
+                    - message: operator must be either Exists or Equal
+                      rule: self.all(t, !has(t.operator) || t.operator == 'Exists'
+                        || t.operator == 'Equal')
+                    - message: effect must be NoSchedule, PreferNoSchedule, NoExecute,
+                        or empty
+                      rule: self.all(t, !has(t.effect) || t.effect == 'NoSchedule'
+                        || t.effect == 'PreferNoSchedule' || t.effect == 'NoExecute'
+                        || t.effect == '')
+                  topologySpreadConstraints:
+                    description: |-
+                      topologySpreadConstraints defines rules for how kube-state-metrics Pods should be distributed
+                      across topology domains such as zones, nodes, or other user-defined labels.
+                      topologySpreadConstraints is optional.
+                      This helps improve high availability and resource efficiency by avoiding placing
+                      too many replicas in the same failure domain.
+
+                      This field maps directly to the `topologySpreadConstraints` field in the Pod spec.
+                      When omitted, no topology spread constraints are applied. This default is subject to change over time.
+                      When specified, topologySpreadConstraints must contain at least 1 entry and must not contain more than 10 entries.
+                      Entries must have unique topologyKey and whenUnsatisfiable pairs.
+                      Each entry's whenUnsatisfiable must be either "DoNotSchedule" or "ScheduleAnyway".
+                      Each entry's maxSkew must be at least 1.
+                      When minDomains is specified, it must be at least 1 and whenUnsatisfiable must be "DoNotSchedule".
+                    items:
+                      description: TopologySpreadConstraint specifies how to spread
+                        matching pods among the given topology.
+                      properties:
+                        labelSelector:
+                          description: |-
+                            LabelSelector is used to find matching pods.
+                            Pods that match this label selector are counted to determine the number of pods
+                            in their corresponding topology domain.
+                          properties:
+                            matchExpressions:
+                              description: matchExpressions is a list of label selector
+                                requirements. The requirements are ANDed.
+                              items:
+                                description: |-
+                                  A label selector requirement is a selector that contains values, a key, and an operator that
+                                  relates the key and values.
+                                properties:
+                                  key:
+                                    description: key is the label key that the selector
+                                      applies to.
+                                    type: string
+                                  operator:
+                                    description: |-
+                                      operator represents a key's relationship to a set of values.
+                                      Valid operators are In, NotIn, Exists and DoesNotExist.
+                                    type: string
+                                  values:
+                                    description: |-
+                                      values is an array of string values. If the operator is In or NotIn,
+                                      the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                      the values array must be empty. This array is replaced during a strategic
+                                      merge patch.
+                                    items:
+                                      type: string
+                                    type: array
+                                    x-kubernetes-list-type: atomic
+                                required:
+                                - key
+                                - operator
+                                type: object
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            matchLabels:
+                              additionalProperties:
+                                type: string
+                              description: |-
+                                matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                                map is equivalent to an element of matchExpressions, whose key field is "key", the
+                                operator is "In", and the values array contains only "value". The requirements are ANDed.
+                              type: object
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        matchLabelKeys:
+                          description: |-
+                            MatchLabelKeys is a set of pod label keys to select the pods over which
+                            spreading will be calculated. The keys are used to lookup values from the
+                            incoming pod labels, those key-value labels are ANDed with labelSelector
+                            to select the group of existing pods over which spreading will be calculated
+                            for the incoming pod. The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
+                            MatchLabelKeys cannot be set when LabelSelector isn't set.
+                            Keys that don't exist in the incoming pod labels will
+                            be ignored. A null or empty list means only match against labelSelector.
+
+                            This is a beta field and requires the MatchLabelKeysInPodTopologySpread feature gate to be enabled (enabled by default).
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: atomic
+                        maxSkew:
+                          description: |-
+                            MaxSkew describes the degree to which pods may be unevenly distributed.
+                            When `whenUnsatisfiable=DoNotSchedule`, it is the maximum permitted difference
+                            between the number of matching pods in the target topology and the global minimum.
+                            The global minimum is the minimum number of matching pods in an eligible domain
+                            or zero if the number of eligible domains is less than MinDomains.
+                            For example, in a 3-zone cluster, MaxSkew is set to 1, and pods with the same
+                            labelSelector spread as 2/2/1:
+                            In this case, the global minimum is 1.
+                            | zone1 | zone2 | zone3 |
+                            |  P P  |  P P  |   P   |
+                            - if MaxSkew is 1, incoming pod can only be scheduled to zone3 to become 2/2/2;
+                            scheduling it onto zone1(zone2) would make the ActualSkew(3-1) on zone1(zone2)
+                            violate MaxSkew(1).
+                            - if MaxSkew is 2, incoming pod can be scheduled onto any zone.
+                            When `whenUnsatisfiable=ScheduleAnyway`, it is used to give higher precedence
+                            to topologies that satisfy it.
+                            It's a required field. Default value is 1 and 0 is not allowed.
+                          format: int32
+                          type: integer
+                        minDomains:
+                          description: |-
+                            MinDomains indicates a minimum number of eligible domains.
+                            When the number of eligible domains with matching topology keys is less than minDomains,
+                            Pod Topology Spread treats "global minimum" as 0, and then the calculation of Skew is performed.
+                            And when the number of eligible domains with matching topology keys equals or greater than minDomains,
+                            this value has no effect on scheduling.
+                            As a result, when the number of eligible domains is less than minDomains,
+                            scheduler won't schedule more than maxSkew Pods to those domains.
+                            If value is nil, the constraint behaves as if MinDomains is equal to 1.
+                            Valid values are integers greater than 0.
+                            When value is not nil, WhenUnsatisfiable must be DoNotSchedule.
+
+                            For example, in a 3-zone cluster, MaxSkew is set to 2, MinDomains is set to 5 and pods with the same
+                            labelSelector spread as 2/2/2:
+                            | zone1 | zone2 | zone3 |
+                            |  P P  |  P P  |  P P  |
+                            The number of domains is less than 5(MinDomains), so "global minimum" is treated as 0.
+                            In this situation, new pod with the same labelSelector cannot be scheduled,
+                            because computed skew will be 3(3 - 0) if new Pod is scheduled to any of the three zones,
+                            it will violate MaxSkew.
+                          format: int32
+                          type: integer
+                        nodeAffinityPolicy:
+                          description: |-
+                            NodeAffinityPolicy indicates how we will treat Pod's nodeAffinity/nodeSelector
+                            when calculating pod topology spread skew. Options are:
+                            - Honor: only nodes matching nodeAffinity/nodeSelector are included in the calculations.
+                            - Ignore: nodeAffinity/nodeSelector are ignored. All nodes are included in the calculations.
+
+                            If this value is nil, the behavior is equivalent to the Honor policy.
+                          type: string
+                        nodeTaintsPolicy:
+                          description: |-
+                            NodeTaintsPolicy indicates how we will treat node taints when calculating
+                            pod topology spread skew. Options are:
+                            - Honor: nodes without taints, along with tainted nodes for which the incoming pod
+                            has a toleration, are included.
+                            - Ignore: node taints are ignored. All nodes are included.
+
+                            If this value is nil, the behavior is equivalent to the Ignore policy.
+                          type: string
+                        topologyKey:
+                          description: |-
+                            TopologyKey is the key of node labels. Nodes that have a label with this key
+                            and identical values are considered to be in the same topology.
+                            We consider each <key, value> as a "bucket", and try to put balanced number
+                            of pods into each bucket.
+                            We define a domain as a particular instance of a topology.
+                            Also, we define an eligible domain as a domain whose nodes meet the requirements of
+                            nodeAffinityPolicy and nodeTaintsPolicy.
+                            e.g. If TopologyKey is "kubernetes.io/hostname", each Node is a domain of that topology.
+                            And, if TopologyKey is "topology.kubernetes.io/zone", each zone is a domain of that topology.
+                            It's a required field.
+                          type: string
+                        whenUnsatisfiable:
+                          description: |-
+                            WhenUnsatisfiable indicates how to deal with a pod if it doesn't satisfy
+                            the spread constraint.
+                            - DoNotSchedule (default) tells the scheduler not to schedule it.
+                            - ScheduleAnyway tells the scheduler to schedule the pod in any location,
+                              but giving higher precedence to topologies that would help reduce the
+                              skew.
+                            A constraint is considered "Unsatisfiable" for an incoming pod
+                            if and only if every possible node assignment for that pod would violate
+                            "MaxSkew" on some topology.
+                            For example, in a 3-zone cluster, MaxSkew is set to 1, and pods with the same
+                            labelSelector spread as 3/1/1:
+                            | zone1 | zone2 | zone3 |
+                            | P P P |   P   |   P   |
+                            If WhenUnsatisfiable is set to DoNotSchedule, incoming pod can only be scheduled
+                            to zone2(zone3) to become 3/2/1(3/1/2) as ActualSkew(2-1) on zone2(zone3) satisfies
+                            MaxSkew(1). In other words, the cluster can still be imbalanced, but scheduler
+                            won't make it *more* imbalanced.
+                            It's a required field.
+                          type: string
+                      required:
+                      - maxSkew
+                      - topologyKey
+                      - whenUnsatisfiable
+                      type: object
+                    maxItems: 10
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - topologyKey
+                    - whenUnsatisfiable
+                    x-kubernetes-list-type: map
+                    x-kubernetes-validations:
+                    - message: whenUnsatisfiable must be either DoNotSchedule or ScheduleAnyway
+                      rule: self.all(c, c.whenUnsatisfiable == 'DoNotSchedule' ||
+                        c.whenUnsatisfiable == 'ScheduleAnyway')
+                    - message: maxSkew must be at least 1
+                      rule: self.all(c, c.maxSkew >= 1)
+                    - message: minDomains must be at least 1
+                      rule: self.all(c, !has(c.minDomains) || c.minDomains >= 1)
+                    - message: minDomains can only be used when whenUnsatisfiable
+                        is DoNotSchedule
+                      rule: self.all(c, !has(c.minDomains) || c.whenUnsatisfiable
+                        == 'DoNotSchedule')
+                type: object
               metricsServerConfig:
                 description: |-
                   metricsServerConfig is an optional field that can be used to configure the Kubernetes Metrics Server that runs in the openshift-monitoring namespace.
@@ -4149,33 +4595,47 @@ spec:
                   retention:
                     description: |-
                       retention configures how long Prometheus retains metrics data and how much storage it can use.
-                      When omitted, the platform chooses reasonable defaults (currently 15 days retention, no size limit).
+                      When omitted, the platform chooses reasonable defaults (currently 15d retention, no size limit).
                     minProperties: 1
                     properties:
-                      durationInDays:
+                      duration:
                         description: |-
-                          durationInDays specifies how many days Prometheus will retain metrics data.
+                          duration is an optional field that specifies how long Prometheus retains metrics data.
+                          Valid values are Prometheus-style duration strings with unit suffixes y, w, d, h, m, s, or ms
+                          (for example, "15d", "24h", or "5d1h30m"). Each unit value must be a positive integer.
+                          Composite durations must follow the fixed unit order y, w, d, h, m, s, ms.
+                          Must be at least 1 character and at most 64 characters.
+                          When set to "0", time-based retention is disabled. This is the only supported form for disabling
+                          time-based retention; other zero-duration representations such as "0d", "0h", or "0y" are rejected.
                           Prometheus automatically deletes data older than this duration.
                           When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
-                          The default value is 15.
-                          Minimum value is 1 day.
-                          Maximum value is 365 days (1 year).
-                        format: int32
-                        maximum: 365
-                        minimum: 1
-                        type: integer
-                      sizeInGiB:
+                          The current default value is `15d`.
+                        maxLength: 64
+                        minLength: 1
+                        type: string
+                        x-kubernetes-validations:
+                        - message: must be "0" to disable time-based retention, or
+                            a duration string with only positive unit values
+                          rule: self == "0" || self.matches('^([1-9][0-9]*y)?([1-9][0-9]*w)?([1-9][0-9]*d)?([1-9][0-9]*h)?([1-9][0-9]*m)?([1-9][0-9]*s)?([1-9][0-9]*ms)?$')
+                      size:
                         description: |-
-                          sizeInGiB specifies the maximum storage size in gibibytes (GiB) that Prometheus
+                          size is an optional field that specifies the maximum storage size that Prometheus
                           can use for data blocks and the write-ahead log (WAL).
-                          When the limit is reached, Prometheus will delete oldest data first.
+                          Valid values are byte-size strings with an optional decimal prefix and a unit suffix B, KB, MB, GB,
+                          TB, EB, PB, or their binary equivalents KiB, MiB, GiB, TiB, EiB, PiB (for example, "500MiB", "10GiB").
+                          The numeric value must be greater than zero.
+                          Must be at least 1 character and at most 32 characters.
+                          When set to "0", no size limit is enforced. This is the only supported form for disabling size-based
+                          retention; other zero-size representations such as "0B" or "0MiB" are rejected.
+                          When the limit is reached, Prometheus deletes oldest data first.
                           When omitted, no size limit is enforced and Prometheus uses available PersistentVolume capacity.
-                          Minimum value is 1 GiB.
-                          Maximum value is 16384 GiB (16 TiB).
-                        format: int32
-                        maximum: 16384
-                        minimum: 1
-                        type: integer
+                        maxLength: 32
+                        minLength: 1
+                        type: string
+                        x-kubernetes-validations:
+                        - message: must be "0" to disable size-based retention, or
+                            a positive byte-size string
+                          rule: self == "0" || self.matches('^([1-9][0-9]*([.][0-9]+)?|[0-9]*[.][1-9][0-9]*)((K|M|G|T|E|P)i?)?B$')
                     type: object
                   tolerations:
                     description: |-

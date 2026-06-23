@@ -13,14 +13,12 @@ import (
 	signature "github.com/containers/image/v5/signature"
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	apicfgv1 "github.com/openshift/api/config/v1"
-	apicfgv1alpha1 "github.com/openshift/api/config/v1alpha1"
 	features "github.com/openshift/api/features"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
 	cligoinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	cligolistersv1 "github.com/openshift/client-go/config/listers/config/v1"
-	cligolistersv1alpha1 "github.com/openshift/client-go/config/listers/config/v1alpha1"
 	runtimeutils "github.com/openshift/runtime-utils/pkg/registries"
 
 	operatorinformersv1alpha1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1alpha1"
@@ -111,7 +109,7 @@ type Controller struct {
 	itmsLister       cligolistersv1.ImageTagMirrorSetLister
 	itmsListerSynced cache.InformerSynced
 
-	criocpLister         cligolistersv1alpha1.CRIOCredentialProviderConfigLister
+	criocpLister         cligolistersv1.CRIOCredentialProviderConfigLister
 	criocpListerSynced   cache.InformerSynced
 	addedCRIOCPObservers bool
 
@@ -345,13 +343,13 @@ func (ctrl *Controller) itmsConfDeleted(_ interface{}) {
 }
 
 func (ctrl *Controller) addCRIOCPObservers() {
-	ctrl.configInformerFactory.Config().V1alpha1().CRIOCredentialProviderConfigs().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+	ctrl.configInformerFactory.Config().V1().CRIOCredentialProviderConfigs().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.criocpConfAdded,
 		UpdateFunc: ctrl.criocpConfUpdated,
 		DeleteFunc: ctrl.criocpConfDeleted,
 	})
-	ctrl.criocpLister = ctrl.configInformerFactory.Config().V1alpha1().CRIOCredentialProviderConfigs().Lister()
-	ctrl.criocpListerSynced = ctrl.configInformerFactory.Config().V1alpha1().CRIOCredentialProviderConfigs().Informer().HasSynced
+	ctrl.criocpLister = ctrl.configInformerFactory.Config().V1().CRIOCredentialProviderConfigs().Lister()
+	ctrl.criocpListerSynced = ctrl.configInformerFactory.Config().V1().CRIOCredentialProviderConfigs().Informer().HasSynced
 	ctrl.addedCRIOCPObservers = true
 }
 
@@ -1086,7 +1084,7 @@ func (ctrl *Controller) syncCRIOCredentialProviderConfig(key string) error {
 	}
 
 	var (
-		crioCredentialProviderConfig *apicfgv1alpha1.CRIOCredentialProviderConfig
+		crioCredentialProviderConfig *apicfgv1.CRIOCredentialProviderConfig
 		err                          error
 	)
 
@@ -1119,7 +1117,7 @@ func (ctrl *Controller) syncCRIOCredentialProviderConfig(key string) error {
 
 		managedKeyCredentialProvider, err := getManagedKeyCRIOCredentialProvider(pool)
 		if err != nil {
-			ctrl.syncCRIOCredentialProviderConfigStatusOnly(err, apicfgv1alpha1.ConditionTypeMachineConfigRendered, apicfgv1alpha1.ReasonMachineConfigRenderingFailed, "could not get CRIOCredentialProviderConfig managed key: %v", err)
+			ctrl.syncCRIOCredentialProviderConfigStatusOnly(err, apicfgv1.ConditionTypeMachineConfigRendered, apicfgv1.ReasonMachineConfigRenderingFailed, "could not get CRIOCredentialProviderConfig managed key: %v", err)
 			return err
 		}
 
@@ -1127,24 +1125,24 @@ func (ctrl *Controller) syncCRIOCredentialProviderConfig(key string) error {
 
 			credentialProviderConfigIgn, overlappedEntries, err := crioCredentialProviderConfigIgnition(ctrl.templatesDir, controllerConfig, pool.Name, crioCredentialProviderConfig)
 			if err != nil {
-				ctrl.syncCRIOCredentialProviderConfigStatusOnly(err, apicfgv1alpha1.ConditionTypeMachineConfigRendered, apicfgv1alpha1.ReasonMachineConfigRenderingFailed, "could not generate CRIOCredentialProvider Ignition config: %v", err)
+				ctrl.syncCRIOCredentialProviderConfigStatusOnly(err, apicfgv1.ConditionTypeMachineConfigRendered, apicfgv1.ReasonMachineConfigRenderingFailed, "could not generate CRIOCredentialProvider Ignition config: %v", err)
 				return err
 			}
 			if len(overlappedEntries) > 0 {
-				ctrl.syncCRIOCredentialProviderConfigStatusOnly(nil, apicfgv1alpha1.ConditionTypeValidated, apicfgv1alpha1.ReasonConfigurationPartiallyApplied, "CRIOCredentialProviderConfig has one or multiple entries that overlap with the original credential provider config. Skip rendering entries: %v.", overlappedEntries)
+				ctrl.syncCRIOCredentialProviderConfigStatusOnly(nil, apicfgv1.ConditionTypeValidated, apicfgv1.ReasonConfigurationPartiallyApplied, "CRIOCredentialProviderConfig has one or multiple entries that overlap with the original credential provider config. Skip rendering entries: %v.", overlappedEntries)
 			} else {
-				ctrl.syncCRIOCredentialProviderConfigStatusOnly(nil, apicfgv1alpha1.ConditionTypeValidated, "")
+				ctrl.syncCRIOCredentialProviderConfigStatusOnly(nil, apicfgv1.ConditionTypeValidated, "")
 			}
 
 			applied, err = ctrl.syncIgnitionConfig(managedKeyCredentialProvider, credentialProviderConfigIgn, pool, ownerReferenceCredentialProviderConfig(crioCredentialProviderConfig))
 			if err != nil {
-				ctrl.syncCRIOCredentialProviderConfigStatusOnly(err, apicfgv1alpha1.ConditionTypeMachineConfigRendered, apicfgv1alpha1.ReasonMachineConfigRenderingFailed, "could not sync CRIOCredentialProvider Ignition config: %v", err)
+				ctrl.syncCRIOCredentialProviderConfigStatusOnly(err, apicfgv1.ConditionTypeMachineConfigRendered, apicfgv1.ReasonMachineConfigRenderingFailed, "could not sync CRIOCredentialProvider Ignition config: %v", err)
 				return err
 			}
 
 			return nil
 		}); err != nil {
-			ctrl.syncCRIOCredentialProviderConfigStatusOnly(err, apicfgv1alpha1.ConditionTypeMachineConfigRendered, apicfgv1alpha1.ReasonMachineConfigRenderingFailed, "could not Create/Update MachineConfig: %v", err)
+			ctrl.syncCRIOCredentialProviderConfigStatusOnly(err, apicfgv1.ConditionTypeMachineConfigRendered, apicfgv1.ReasonMachineConfigRenderingFailed, "could not Create/Update MachineConfig: %v", err)
 			return err
 		}
 
@@ -1152,7 +1150,7 @@ func (ctrl *Controller) syncCRIOCredentialProviderConfig(key string) error {
 			klog.Infof("Applied CRIOCredentialProviderConfig cluster on MachineConfigPool %v", pool.Name)
 			ctrlcommon.UpdateStateMetric(ctrlcommon.MCCSubControllerState, "machine-config-controller-container-runtime-config", "Sync CRIO Credential Provider Config", pool.Name)
 		}
-		ctrl.syncCRIOCredentialProviderConfigStatusOnly(nil, apicfgv1alpha1.ConditionTypeMachineConfigRendered, apicfgv1alpha1.ReasonMachineConfigRenderingSucceeded)
+		ctrl.syncCRIOCredentialProviderConfigStatusOnly(nil, apicfgv1.ConditionTypeMachineConfigRendered, apicfgv1.ReasonMachineConfigRenderingSucceeded)
 	}
 
 	return nil
@@ -1174,7 +1172,7 @@ func (ctrl *Controller) syncCRIOCredentialProviderConfigStatusOnly(err error, co
 		}
 
 		meta.SetStatusCondition(&newCfg.Status.Conditions, newStatusCondition)
-		_, updateErr := ctrl.configClient.ConfigV1alpha1().CRIOCredentialProviderConfigs().UpdateStatus(context.TODO(), newCfg, metav1.UpdateOptions{})
+		_, updateErr := ctrl.configClient.ConfigV1().CRIOCredentialProviderConfigs().UpdateStatus(context.TODO(), newCfg, metav1.UpdateOptions{})
 		return updateErr
 	})
 	// If an error occurred in updating the status just log it
@@ -1528,7 +1526,7 @@ func (ctrl *Controller) getPoolsForContainerRuntimeConfig(config *mcfgv1.Contain
 	return pools, nil
 }
 
-func crioCredentialProviderConfigIgnition(templateDir string, controllerConfig *mcfgv1.ControllerConfig, role string, crioCredentialProviderConfig *apicfgv1alpha1.CRIOCredentialProviderConfig) (*ign3types.Config, []string, error) {
+func crioCredentialProviderConfigIgnition(templateDir string, controllerConfig *mcfgv1.ControllerConfig, role string, crioCredentialProviderConfig *apicfgv1.CRIOCredentialProviderConfig) (*ign3types.Config, []string, error) {
 
 	var (
 		credProviderConfigYaml           []byte

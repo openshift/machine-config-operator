@@ -30,7 +30,6 @@ import (
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	apicfgv1 "github.com/openshift/api/config/v1"
-	apicfgv1alpha1 "github.com/openshift/api/config/v1alpha1"
 	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
@@ -76,7 +75,7 @@ type fixture struct {
 	itmsLister               []*apicfgv1.ImageTagMirrorSet
 	clusterImagePolicyLister []*apicfgv1.ClusterImagePolicy
 	imagePolicyLister        []*apicfgv1.ImagePolicy
-	criocpLister             []*apicfgv1alpha1.CRIOCredentialProviderConfig
+	criocpLister             []*apicfgv1.CRIOCredentialProviderConfig
 
 	actions               []core.Action
 	skipActionsValidation bool
@@ -334,7 +333,7 @@ func (f *fixture) newController() *Controller {
 		ci.Config().V1().ImagePolicies().Informer().GetIndexer().Add(c)
 	}
 	for _, c := range f.criocpLister {
-		ci.Config().V1alpha1().CRIOCredentialProviderConfigs().Informer().GetIndexer().Add(c)
+		ci.Config().V1().CRIOCredentialProviderConfigs().Informer().GetIndexer().Add(c)
 	}
 
 	return c
@@ -648,7 +647,7 @@ type criocpConfigVerifyOptions struct {
 	expectMCNilContent bool
 }
 
-func (f *fixture) verifyCRIOCredentialProviderConfigContents(t *testing.T, mcName string, criocp *apicfgv1alpha1.CRIOCredentialProviderConfig, verifyOpts criocpConfigVerifyOptions) {
+func (f *fixture) verifyCRIOCredentialProviderConfigContents(t *testing.T, mcName string, criocp *apicfgv1.CRIOCredentialProviderConfig, verifyOpts criocpConfigVerifyOptions) {
 	updatedMC, err := f.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), mcName, metav1.GetOptions{})
 	require.NoError(t, err)
 
@@ -2337,7 +2336,7 @@ func TestCrioCredentialProviderConfigUpdate(t *testing.T) {
 
 			f = newFixture(t)
 			criocpUpdate := criocp.DeepCopy()
-			criocpUpdate.Spec.MatchImages = []apicfgv1alpha1.MatchImage{"example.com", "example1.com"}
+			criocpUpdate.Spec.MatchImages = []apicfgv1.MatchImage{"example.com", "example1.com"}
 
 			f.criocpLister = append(f.criocpLister, criocpUpdate)
 			f.ccLister = append(f.ccLister, cc)
@@ -2366,21 +2365,21 @@ func TestCrioCredentialProviderConfigUpdate(t *testing.T) {
 	}
 }
 
-func newCrioCredentialProviderConfig(name string, matchImages []string) *apicfgv1alpha1.CRIOCredentialProviderConfig {
-	var images []apicfgv1alpha1.MatchImage
+func newCrioCredentialProviderConfig(name string, matchImages []string) *apicfgv1.CRIOCredentialProviderConfig {
+	var images []apicfgv1.MatchImage
 	for _, img := range matchImages {
-		images = append(images, apicfgv1alpha1.MatchImage(img))
+		images = append(images, apicfgv1.MatchImage(img))
 	}
 
-	return &apicfgv1alpha1.CRIOCredentialProviderConfig{
+	return &apicfgv1.CRIOCredentialProviderConfig{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: apicfgv1alpha1.SchemeGroupVersion.String(),
+			APIVersion: apicfgv1.SchemeGroupVersion.String(),
 			Kind:       "CrioCredentialProviderConfig",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 		},
-		Spec: &apicfgv1alpha1.CRIOCredentialProviderConfigSpec{
+		Spec: &apicfgv1.CRIOCredentialProviderConfigSpec{
 			MatchImages: images,
 		},
 	}
