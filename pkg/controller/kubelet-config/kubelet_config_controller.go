@@ -371,11 +371,15 @@ func (ctrl *Controller) requeueKubeletConfigsForPool() {
 	features, err := ctrl.featLister.Get(ctrlcommon.ClusterFeatureInstanceName)
 	if err == nil {
 		ctrl.enqueueFeature(features)
+	} else if !macherrors.IsNotFound(err) {
+		utilruntime.HandleError(fmt.Errorf("could not get FeatureGate for MCP re-sync: %w", err))
 	}
 
 	nodeConfig, err := ctrl.nodeConfigLister.Get(ctrlcommon.ClusterNodeInstanceName)
 	if err == nil {
 		ctrl.enqueueNodeConfig(nodeConfig)
+	} else if !macherrors.IsNotFound(err) {
+		utilruntime.HandleError(fmt.Errorf("could not get NodeConfig for MCP re-sync: %w", err))
 	}
 }
 
