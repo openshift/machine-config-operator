@@ -159,6 +159,13 @@ func (b *buildReconciler) rebuildMachineOSConfig(ctx context.Context, mosc *mcfg
 // Runs whenever a new MachineOSConfig is added. Determines if a new
 // MachineOSBuild should be created and then creates it, if needed.
 func (b *buildReconciler) addMachineOSConfig(ctx context.Context, mosc *mcfgv1.MachineOSConfig) error {
+	// If the rebuild annotation is present (e.g., pod restarted while a rebuild
+	// was pending), process it now instead of falling through to the normal sync
+	// path which would see the existing MOSB and return early.
+	if hasRebuildAnnotation(mosc) {
+		return b.rebuildMachineOSConfig(ctx, mosc)
+	}
+
 	// Check for pre-built image seeding annotation - only seed if not already seeded
 	if preBuiltImage, hasImage := getPreBuiltImage(mosc); hasImage {
 		if shouldSeedWithPreBuiltImage(mosc) {
@@ -1389,6 +1396,12 @@ func (b *buildReconciler) reconcilePoolChange(ctx context.Context, mcp *mcfgv1.M
 	// 2. Node controller cleared a stale annotation
 	// In both cases, we need to create/continue a build
 	missingAnnotation := firstOptIn == ""
+
+	// No action needed if the rendered config has not changed.
+	if oldRendered == newRendered && !missingAnnotation {
+		klog.V(4).Infof("pool %q: Configuration unchanged (%s), no action needed", mcp.Name, oldRendered)
+		return nil
+	}
 
 	// This is our trigger point
 	// Create/continue a build if:

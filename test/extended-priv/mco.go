@@ -323,3 +323,50 @@ func createMcAndVerifyMCValue(oc *exutil.CLI, stepText, mcName string, node *Nod
 	o.Expect(podOut).Should(o.MatchRegexp(textToVerify.textToVerifyForNode))
 	logger.Infof("%s is verified in the machine config daemon!", stepText)
 }
+
+// getCoreDNSWorkerPodCreationTime returns the latest creation timestamp for CoreDNS worker pods
+// this func help to verify CoreDNS pods are recreated when MCP starts updating
+func getCoreDNSWorkerPodCreationTime(oc *exutil.CLI) (string, error) {
+	vsphereInfraNamespace := OnPremPlatforms[VspherePlatform]
+
+	// Get all CoreDNS pods
+	coreDNSPods := NewNamespacedResourceList(oc.AsAdmin(), "pod", vsphereInfraNamespace)
+	coreDNSPods.ByLabel("app=vsphere-infra-coredns")
+
+	// Get pod names, node names, and creation timestamps
+	podNames, err := coreDNSPods.Get(`{.items[*].metadata.name}`)
+	if err != nil {
+		return "", fmt.Errorf("failed to get pod names: %w", err)
+	}
+
+	nodeNames, err := coreDNSPods.Get(`{.items[*].spec.nodeName}`)
+	if err != nil {
+		return "", fmt.Errorf("failed to get node names: %w", err)
+	}
+
+	creationTimes, err := coreDNSPods.Get(`{.items[*].metadata.creationTimestamp}`)
+	if err != nil {
+		return "", fmt.Errorf("failed to get creation timestamps: %w", err)
+	}
+
+	// Parse the results
+	pods := strings.Fields(podNames)
+	nodes := strings.Fields(nodeNames)
+	timestamps := strings.Fields(creationTimes)
+
+	// Find the latest creation timestamp for CoreDNS pods on worker nodes
+	var latestTimestamp string
+	for i, pod := range pods {
+		if i >= len(nodes) || i >= len(timestamps) {
+			break
+		}
+		// Only check CoreDNS pods on worker nodes
+		if strings.HasPrefix(pod, "coredns-") && strings.Contains(nodes[i], "worker") {
+			if latestTimestamp == "" || timestamps[i] > latestTimestamp {
+				latestTimestamp = timestamps[i]
+			}
+		}
+	}
+
+	return latestTimestamp, nil
+}

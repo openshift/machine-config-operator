@@ -6,17 +6,23 @@ approvers:
   - yuqi-zhang
   - cheesesashimi
   - umohnani8
-  - RishabhSaini
   - isabella-janssen
   - pablintino
+  - sergiordlr
+  - ptalgulk01
+  - HarshwardhanPatil07
+  - proietfb
 reviewers:
   - djoshy
   - dkhater-redhat
   - yuqi-zhang
   - cheesesashimi
   - umohnani8
-  - RishabhSaini
   - isabella-janssen
   - pablintino
+  - sergiordlr
+  - ptalgulk01
+  - HarshwardhanPatil07
+  - proietfb
 
 component: "Machine Config Operator"

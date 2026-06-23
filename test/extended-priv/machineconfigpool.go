@@ -2,6 +2,7 @@ package extended
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -850,6 +851,38 @@ func (mcp *MachineConfigPool) waitForPinComplete(timeToWait time.Duration) error
 	return err
 }
 
+// GetReportedOsImageOverrideValue gets the os_image_url_override metric value for this MCP
+func (mcp *MachineConfigPool) GetReportedOsImageOverrideValue() (string, error) {
+	query := fmt.Sprintf(`os_image_url_override{pool="%s"}`, strings.ToLower(mcp.GetName()))
+
+	mon, err := exutil.NewMonitor(mcp.oc.AsAdmin())
+	if err != nil {
+		return "", err
+	}
+
+	osImageOverride, err := mon.SimpleQuery(query)
+	if err != nil {
+		return "", err
+	}
+
+	jsonOsImageOverride := JSON(osImageOverride)
+	status := jsonOsImageOverride.Get("status").ToString()
+	if status != "success" {
+		return "", fmt.Errorf("Query %s execution failed: %s", query, osImageOverride)
+	}
+
+	logger.Infof("%s metric is:%s", query, osImageOverride)
+
+	results := jsonOsImageOverride.Get("data").Get("result")
+	resultList := results.ToList()
+	if len(resultList) == 0 {
+		return "", fmt.Errorf("Query %s returned no results", query)
+	}
+
+	metricValue := results.Item(0).Get("value").Item(1).ToString()
+	return metricValue, nil
+}
+
 // RecoverFromDegraded updates the current and desired machine configs so that the pool can recover from degraded state once the offending MC is deleted
 func (mcp *MachineConfigPool) RecoverFromDegraded() error {
 	logger.Infof("Recovering %s pool from degraded status", mcp.GetName())
@@ -1087,6 +1120,24 @@ func (mcp MachineConfigPool) GetMOSC() (*MachineOSConfig, error) {
 		return nil, nil
 	}
 	return moscs[0], nil
+}
+
+// GetCertsExpiry returns the information about the certificates tracked by the MCP
+func (mcp *MachineConfigPool) GetCertsExpiry() ([]CertExpiry, error) {
+	expiryString, err := mcp.Get(`{.status.certExpirys}`)
+	if err != nil {
+		return nil, err
+	}
+
+	var certsExp []CertExpiry
+
+	jsonerr := json.Unmarshal([]byte(expiryString), &certsExp)
+
+	if jsonerr != nil {
+		return nil, jsonerr
+	}
+
+	return certsExp, nil
 }
 
 // GetAll returns a []*MachineConfigPool list with all existing machine config pools sorted by creation time

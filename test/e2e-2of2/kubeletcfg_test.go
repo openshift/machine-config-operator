@@ -357,3 +357,21 @@ func getValueFromKubeletConfig(t *testing.T, cs *framework.ClientSet, node corev
 	require.NotEmpty(t, matches[1], "regex %s attempted on kubelet config of node %s came back empty", node.Name, regexKey)
 	return matches[1], true
 }
+
+// TestKubeletAutoSizingDropIn verifies that the auto-sizing script creates a
+// KubeletConfiguration drop-in with systemReserved values on each node.
+func TestKubeletAutoSizingDropIn(t *testing.T) {
+	cs := framework.NewClientSet("")
+	dropInPath := "/etc/openshift/kubelet.conf.d/20-auto-sizing.conf"
+
+	for _, role := range []string{"worker", "master"} {
+		t.Run(role, func(t *testing.T) {
+			node := helpers.GetRandomNode(t, cs, role)
+			dropIn := helpers.ExecCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", dropInPath))
+			require.Contains(t, dropIn, "kind: KubeletConfiguration",
+				"%s drop-in should be a KubeletConfiguration", role)
+			require.Contains(t, dropIn, "systemReserved:",
+				"%s drop-in should contain systemReserved", role)
+		})
+	}
+}

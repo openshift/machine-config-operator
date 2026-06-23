@@ -39,6 +39,10 @@ const (
 	LayeringBaseImageReleaseInfo = "rhel-coreos"
 	// LayeringBaseImageReleaseInfoRhel10 is the name of the RHEL10 layering base image in release info
 	LayeringBaseImageReleaseInfoRhel10 = "rhel-coreos-10"
+	// CoreExtensionsImageReleaseInfo is the name of the core extensions image in release info
+	CoreExtensionsImageReleaseInfo = "rhel-coreos-extensions"
+	// CoreExtensionsImageReleaseInfoRhel10 is the name of the RHEL10 core extensions image in release info
+	CoreExtensionsImageReleaseInfoRhel10 = "rhel-coreos-10-extensions"
 	// GenericMCTemplate is the name of a MachineConfig template that can be fully configured by parameters
 	GenericMCTemplate = "generic-machine-config-template.yml"
 
@@ -208,9 +212,6 @@ var (
 	OSImageStreamRHEL9 = "rhel-9"
 	// OSImageStreamRHEL10 represents the RHEL 10 OS image stream
 	OSImageStreamRHEL10 = "rhel-10"
-
-	// DefaultOSImageStream is the default OS image stream name
-	DefaultOSImageStream = OSImageStreamRHEL9
 
 	// SupportedOSImageStreams is the list of supported OS image streams
 	SupportedOSImageStreams = []string{

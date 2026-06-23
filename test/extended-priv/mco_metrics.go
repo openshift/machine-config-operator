@@ -25,6 +25,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	})
 
 	g.It("[PolarionID:77356][OTP] Test mcd_local_unsupported_packages metric [Disruptive]", func() {
+		majorVersion := GetOSImageStreamMajorVersion(exutil.OrFail[string](GetEffectiveOsImageStream(mcp)))
+
 		var (
 			node                        = mcp.GetSortedNodesOrFail()[0]
 			query                       = `mcd_local_unsupported_packages{node="` + node.GetName() + `"}`
@@ -32,11 +34,13 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			valueJSONPath               = `data.result.0.value.1`
 			expectedUnsupportedPackages = "5"
 			deferredReesetNeeded        = true
+			centosStreamRepo            = majorVersion + "-stream"
+			epelRpmName                 = fmt.Sprintf("epel-release-latest-%s.noarch.rpm", majorVersion)
 		)
 
 		exutil.By("Configure coreos stream repo in a node")
 		defer RemoveConfiguredStreamCentosRepo(node)
-		o.Expect(ConfigureStreamCentosRepo(node, "9-stream")).To(o.Succeed(),
+		o.Expect(ConfigureStreamCentosRepo(node, centosStreamRepo)).To(o.Succeed(),
 			"Error configuring the centos repo in %s", node)
 		logger.Infof("OK!\n")
 
@@ -73,10 +77,11 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		exutil.By("Install package locally")
 		logger.Infof("Dowload package")
-		_, err = node.DebugNodeWithChroot("sh", "-c", useProxyInCommand("curl -kL https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm -o /tmp/epel-release-latest-9.noarch.rpm"))
+		epelURL := fmt.Sprintf("https://dl.fedoraproject.org/pub/epel/%s", epelRpmName)
+		_, err = node.DebugNodeWithChroot("sh", "-c", useProxyInCommand(fmt.Sprintf("curl -kL %s -o /tmp/%s", epelURL, epelRpmName)))
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error downloading the epel rpm package")
 		logger.Infof("Install")
-		_, err = node.InstallRpm("/tmp/epel-release-latest-9.noarch.rpm")
+		_, err = node.InstallRpm(fmt.Sprintf("/tmp/%s", epelRpmName))
 		o.Expect(err).NotTo(o.HaveOccurred(),
 			"Error installing %s package in %s", "epel-release", node)
 		logger.Infof("OK!\n")

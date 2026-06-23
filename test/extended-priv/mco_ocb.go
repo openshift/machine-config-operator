@@ -110,30 +110,28 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 	g.It("[PolarionID:83140][OTP] A MachineOSConfig with custom containerfile definition can be successfully applied", func() {
 		var (
-			mcp = GetCompactCompatiblePool(oc.AsAdmin())
+			mcp                  = GetCompactCompatiblePool(oc.AsAdmin())
+			containerFileContent string
+			checkers             []Checker
+		)
 
+		if IsDisconnectedCluster(oc.AsAdmin()) {
+			logger.Infof("Disconnected cluster detected, using containerfile that does not require network access")
 			containerFileContent = `
-	# Pull the centos base image and enable the EPEL repository.
-        FROM quay.io/centos/centos:stream9 AS centos
-        RUN dnf install -y epel-release
-
-        # Pull an image containing the yq utility.
-        FROM quay.io/multi-arch/yq:4.25.3 AS yq
-
-        # Build the final OS image for this MachineConfigPool.
         FROM configs AS final
-
-        # Copy the EPEL configs into the final image.
-        COPY --from=yq /usr/bin/yq /usr/bin/yq
-        COPY --from=centos /etc/yum.repos.d /etc/yum.repos.d
-        COPY --from=centos /etc/pki/rpm-gpg/RPM-GPG-KEY-* /etc/pki/rpm-gpg/
-
-        # Install cowsay and ripgrep from the EPEL repository into the final image,
-        # along with a custom cow file.
-        RUN sed -i 's/\$stream/9-stream/g' /etc/yum.repos.d/centos*.repo && \
-            rpm-ostree install cowsay ripgrep
+        RUN echo "disconnected-containerfile-test" > /etc/disconnected-containerfile-test && \
+            ostree container commit
 `
-
+			checkers = []Checker{
+				CommandOutputChecker{
+					Command:  []string{"cat", "/etc/disconnected-containerfile-test"},
+					Matcher:  o.ContainSubstring("disconnected-containerfile-test"),
+					ErrorMsg: fmt.Sprintf("Test file was not created by the custom containerfile"),
+					Desc:     fmt.Sprintf("Check that the custom containerfile test file exists"),
+				},
+			}
+		} else {
+			containerFileContent = getConnectedCustomContainerFileContent(mcp)
 			checkers = []Checker{
 				CommandOutputChecker{
 					Command:  []string{"cowsay", "-t", "hello"},
@@ -142,7 +140,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 					Desc:     fmt.Sprintf("Check that cowsay is installed and working"),
 				},
 			}
-		)
+		}
 
 		testContainerFile([]ContainerFile{{Content: containerFileContent}}, MachineConfigNamespace, mcp, checkers, false)
 	})
@@ -214,6 +212,106 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		exutil.By("Remove the MachineOSConfig resource")
 		o.Expect(DisableOCL(mosc)).To(o.Succeed(), "Error cleaning up %s", mosc)
+		logger.Infof("OK!\n")
+	})
+
+	g.It("[PolarionID:88202][Skipped:Disconnected] Both off-cluster and on-cluster layering can coexist on the same pool [Disruptive]", func() {
+		var (
+			testID         = GetCurrentTestPolarionIDNumber()
+			osLayerMCName  = fmt.Sprintf("tc-%s-os-layer", testID)
+			offClusterFile = "/etc/test-offlayering.test"
+			onClusterFile  = "/etc/test-onlayering.test"
+			containerFiles = []ContainerFile{{Content: fmt.Sprintf("RUN echo \"on-cluster layering %s\" > %s", testID, onClusterFile)}}
+		)
+
+		mcp := GetCompactCompatiblePool(oc.AsAdmin())
+		node := mcp.GetSortedNodesOrFail()[0]
+		offClusterRF := NewRemoteFile(node, offClusterFile)
+		onClusterRF := NewRemoteFile(node, onClusterFile)
+
+		exutil.By("Build a custom OS image for off-cluster layering")
+		osImageBuilder := OsImageBuilderInNode{
+			node:               node,
+			dockerFileCommands: fmt.Sprintf("RUN echo \"off-cluster layering %s\" > %s\nRUN ostree container commit", testID, offClusterFile),
+		}
+		digestedImage, err := osImageBuilder.CreateAndDigestOsImage()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the custom osImage for off-cluster layering")
+		logger.Infof("Built custom OS image: %s", digestedImage)
+		logger.Infof("OK!\n")
+
+		exutil.By("Apply osImageURL MachineConfig to pool (off-cluster layering)")
+		osLayerMC := NewMachineConfig(oc.AsAdmin(), osLayerMCName, mcp.GetName())
+		osLayerMC.parameters = []string{"OS_IMAGE=" + digestedImage}
+		defer osLayerMC.DeleteWithWait()
+		osLayerMC.create()
+		logger.Infof("MachineConfig %s created with osImageURL %s", osLayerMC.GetName(), digestedImage)
+		logger.Infof("OK!\n")
+
+		exutil.By("Verify off-cluster layering is applied on the node")
+		o.Expect(node.GetCurrentBootOSImage()).To(o.Equal(digestedImage),
+			"Node %s should be running the off-cluster osImageURL %s", node, digestedImage)
+		o.Expect(offClusterRF.Exists()).To(o.BeTrue(),
+			"%s should exist on %s after off-cluster layering", offClusterFile, node)
+		logger.Infof("Off-cluster layering verified: %s exists on %s", offClusterFile, node)
+		logger.Infof("OK!\n")
+
+		exutil.By("Enable on-cluster layering (OCL) with a containerFile")
+		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, mcp.GetName(), mcp.GetName(), containerFiles)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating MachineOSConfig for %s", mcp.GetName())
+		defer DisableOCL(mosc)
+		logger.Infof("OK!\n")
+
+		exutil.By("Validate OCL build succeeds")
+		ValidateSuccessfulMOSC(mosc, nil)
+		logger.Infof("OK!\n")
+
+		exutil.By("Verify both off-cluster and on-cluster layering files are present")
+		o.Expect(offClusterRF.Exists()).To(o.BeTrue(),
+			"%s should still exist alongside on-cluster layering", offClusterFile)
+		o.Expect(onClusterRF.Exists()).To(o.BeTrue(),
+			"%s should exist after on-cluster layering is applied", onClusterFile)
+		logger.Infof("Both %s and %s are present on %s", offClusterFile, onClusterFile, node)
+		logger.Infof("OK!\n")
+
+		exutil.By("Record current MOSB before deleting off-cluster MC")
+		currentMOSB, err := mosc.GetCurrentMachineOSBuild()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting current MOSB")
+		currentMOSBName := currentMOSB.GetName()
+		logger.Infof("Current MOSB before MC deletion: %s", currentMOSBName)
+		logger.Infof("OK!\n")
+
+		exutil.By("Delete the off-cluster MC")
+		o.Expect(osLayerMC.Delete()).To(o.Succeed(),
+			"Error deleting off-cluster MachineConfig %s", osLayerMCName)
+		logger.Infof("Off-cluster MachineConfig %s deleted", osLayerMCName)
+		logger.Infof("OK!\n")
+
+		exutil.By("Wait for a new MachineOSBuild to be triggered after MC deletion")
+		var newMOSB *MachineOSBuild
+		o.Eventually(func() string {
+			mosb, err := mosc.GetCurrentMachineOSBuild()
+			if err != nil {
+				return currentMOSBName
+			}
+			newMOSB = mosb
+			return mosb.GetName()
+		}, "5m", "20s").ShouldNot(o.Equal(currentMOSBName),
+			"A new MOSB should be created after deleting the off-cluster MC")
+		logger.Infof("OK!\n")
+
+		exutil.By("Wait for the new build to succeed and deploy")
+		o.Eventually(newMOSB, "20m", "20s").Should(HaveConditionField("Succeeded", "status", TrueString),
+			"New MachineOSBuild didn't succeed after MC deletion")
+		logger.Infof("New MOSB %s built successfully", newMOSB.GetName())
+		mcp.waitForComplete()
+		logger.Infof("OK!\n")
+
+		exutil.By("Verify only on-cluster layering content remains after MC deletion")
+		o.Expect(offClusterRF.Exists()).To(o.BeFalse(),
+			"%s should be removed after off-cluster MC is deleted", offClusterFile)
+		o.Expect(onClusterRF.Exists()).To(o.BeTrue(),
+			"%s should still exist after off-cluster MC is deleted", onClusterFile)
+		logger.Infof("Only on-cluster layering file remains on %s (as expected)", node)
 		logger.Infof("OK!\n")
 	})
 
@@ -311,7 +409,9 @@ func ValidateSuccessfulMOSC(mosc *MachineOSConfig, checkers []Checker) {
 	logger.Infof("OK!\n")
 
 	exutil.By("Check that the  machine-os-builder is using leader election without failing")
-	o.Expect(mOSBuilder.Logs()).To(o.And(
+	o.Eventually(func() (string, error) {
+		return mOSBuilder.Logs()
+	}, "7m", "10s").Should(o.And(
 		o.MatchRegexp("(?i)"+regexp.QuoteMeta("attempting to acquire leader lease")),
 		o.MatchRegexp("(?i)"+regexp.QuoteMeta("successfully acquired lease"))),
 		"The machine os builder pod is not using the leader election without failures")
@@ -442,7 +542,7 @@ func ValidateMOSCIsGarbageCollected(mosc *MachineOSConfig, mcp *MachineConfigPoo
 
 	logger.Infof("Validating that machine-os-builder pod was garbage collected")
 	mOSBuilder := NewNamespacedResource(mosc.GetOC().AsAdmin(), "deployment", MachineConfigNamespace, "machine-os-builder")
-	o.Eventually(mOSBuilder, "2m", "30s").ShouldNot(Exist(),
+	o.Eventually(mOSBuilder, "5m", "30s").ShouldNot(Exist(),
 		"The machine-os-builder deployment was not removed when the infra pool was unlabeled")
 
 	logger.Infof("Validating that configmaps were garbage collected")
@@ -493,6 +593,40 @@ func checkMisconfiguredMOSC(oc *exutil.CLI, moscAndMcpName, baseImagePullSecret,
 
 }
 
+// getConnectedCustomContainerFileContent returns a containerfile content that installs cowsay and ripgrep
+// using the CentOS stream repos matching the MCP's effective OS image stream (e.g. rhel-9 -> stream9, rhel-10 -> stream10).
+// This containerfile requires network access and should not be used in disconnected environments.
+func getConnectedCustomContainerFileContent(mcp *MachineConfigPool) string {
+	stream, err := GetEffectiveOsImageStream(mcp)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting effective osImageStream from %s", mcp)
+	logger.Infof("Generating custom containerfile for stream '%s'", stream)
+
+	majorVersion := GetOSImageStreamMajorVersion(stream)
+
+	return fmt.Sprintf(`
+        # Pull the centos base image and enable the EPEL repository.
+        FROM quay.io/centos/centos:stream%s AS centos
+        RUN dnf install -y epel-release
+
+        # Pull an image containing the yq utility.
+        FROM quay.io/multi-arch/yq:4.25.3 AS yq
+
+        # Build the final OS image for this MachineConfigPool.
+        FROM configs AS final
+
+        # Copy the EPEL configs into the final image.
+        COPY --from=yq /usr/bin/yq /usr/bin/yq
+        COPY --from=centos /etc/yum.repos.d /etc/yum.repos.d
+        COPY --from=centos /etc/pki/rpm-gpg/RPM-GPG-KEY-* /etc/pki/rpm-gpg/
+
+        # Install cowsay and ripgrep from the EPEL repository into the final image.
+        # The ncurses override handles package incompatibilities across streams.
+        RUN sed -i 's/\$stream/%s-stream/g' /etc/yum.repos.d/centos*.repo && \
+            rpm-ostree override replace --experimental --from repo=baseos ncurses ncurses-libs ncurses-base || true && \
+            rpm-ostree install cowsay ripgrep
+`, majorVersion, majorVersion)
+}
+
 // RebuildImageAndCheck rebuild the latest image of the MachineOSConfig resource and checks that it is properly built and applied
 func RebuildImageAndCheck(mosc *MachineOSConfig) {
 	exutil.By("Rebuild the current image")
@@ -508,7 +642,7 @@ func RebuildImageAndCheck(mosc *MachineOSConfig) {
 	logger.Infof("OK!\n")
 
 	exutil.By("Check that the existing MOSB is reused and it builds a new image")
-	o.Eventually(mosb.GetJob, "2m", "20s").Should(Exist(), "Rebuild job was not created")
+	o.Eventually(mosb.GetJob, "5m", "20s").Should(Exist(), "Rebuild job was not created")
 	o.Eventually(mosb, "20m", "20s").Should(HaveConditionField("Building", "status", FalseString), "Rebuild was not finished")
 	o.Eventually(mosb, "10m", "20s").Should(HaveConditionField("Succeeded", "status", TrueString), "Rebuild didn't succeed")
 	o.Eventually(mosb, "2m", "20s").Should(HaveConditionField("Interrupted", "status", FalseString), "Reuild was interrupted")

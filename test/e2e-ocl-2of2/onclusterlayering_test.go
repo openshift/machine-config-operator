@@ -44,8 +44,10 @@ const (
 	mcNameUsbguard string = "inspect-usbguard"
 )
 
-var skipCleanupAlways bool
-var skipCleanupOnlyAfterFailure bool
+var (
+	skipCleanupAlways           bool
+	skipCleanupOnlyAfterFailure bool
+)
 
 func init() {
 	// Skips running the cleanup functions. Useful for debugging tests.
@@ -99,10 +101,13 @@ func TestGracefulBuildFailureRecovery(t *testing.T) {
 
 	cs := framework.NewClientSet("")
 
+	dockerfile, err := ocltesthelper.GetCowsayDockerfileForCluster(t, cs)
+	require.NoError(t, err)
+
 	mosc := prepareForOnClusterLayeringTest(t, cs, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
-			layeredMCPName: ocltesthelper.CowsayDockerfile,
+			layeredMCPName: dockerfile,
 		},
 	})
 
@@ -165,10 +170,13 @@ func TestDeletedBuilderInterruptsMachineOSBuild(t *testing.T) {
 
 	poolName := layeredMCPName
 
+	dockerfile, err := ocltesthelper.GetCowsayDockerfileForCluster(t, cs)
+	require.NoError(t, err)
+
 	mosc := prepareForOnClusterLayeringTest(t, cs, onClusterLayeringTestOpts{
 		poolName: poolName,
 		customDockerfiles: map[string]string{
-			layeredMCPName: ocltesthelper.CowsayDockerfile,
+			layeredMCPName: dockerfile,
 		},
 	})
 
@@ -207,10 +215,13 @@ func TestDeletedPodDoesNotInterruptMachineOSBuild(t *testing.T) {
 
 	poolName := layeredMCPName
 
+	dockerfile, err := ocltesthelper.GetCowsayDockerfileForCluster(t, cs)
+	require.NoError(t, err)
+
 	mosc := prepareForOnClusterLayeringTest(t, cs, onClusterLayeringTestOpts{
 		poolName: poolName,
 		customDockerfiles: map[string]string{
-			layeredMCPName: ocltesthelper.CowsayDockerfile,
+			layeredMCPName: dockerfile,
 		},
 	})
 
@@ -252,10 +263,13 @@ func TestDeletedTransientMachineOSBuildIsRecreated(t *testing.T) {
 
 	poolName := layeredMCPName
 
+	dockerfile, err := ocltesthelper.GetCowsayDockerfileForCluster(t, cs)
+	require.NoError(t, err)
+
 	mosc := prepareForOnClusterLayeringTest(t, cs, onClusterLayeringTestOpts{
 		poolName: poolName,
 		customDockerfiles: map[string]string{
-			layeredMCPName: ocltesthelper.CowsayDockerfile,
+			layeredMCPName: dockerfile,
 		},
 	})
 
@@ -391,10 +405,13 @@ func TestControllerEventuallyReconciles(t *testing.T) {
 
 	poolName := layeredMCPName
 
+	dockerfile, err := ocltesthelper.GetCowsayDockerfileForCluster(t, cs)
+	require.NoError(t, err)
+
 	mosc := prepareForOnClusterLayeringTest(t, cs, onClusterLayeringTestOpts{
 		poolName: poolName,
 		customDockerfiles: map[string]string{
-			layeredMCPName: ocltesthelper.CowsayDockerfile,
+			layeredMCPName: dockerfile,
 		},
 	})
 
@@ -478,10 +495,13 @@ func TestImageBuildDegradedOnFailureAndClearedOnBuildStart(t *testing.T) {
 
 	cs := framework.NewClientSet("")
 
+	dockerfile, err := ocltesthelper.GetCowsayDockerfileForCluster(t, cs)
+	require.NoError(t, err)
+
 	mosc := prepareForOnClusterLayeringTest(t, cs, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
-			layeredMCPName: ocltesthelper.CowsayDockerfile,
+			layeredMCPName: dockerfile,
 		},
 	})
 
@@ -519,7 +539,7 @@ func TestImageBuildDegradedOnFailureAndClearedOnBuildStart(t *testing.T) {
 	apiMosc.Spec.Containerfile = []mcfgv1.MachineOSContainerfile{
 		{
 			ContainerfileArch: mcfgv1.NoArch,
-			Content:           ocltesthelper.CowsayDockerfile,
+			Content:           dockerfile,
 		},
 	}
 
@@ -601,7 +621,7 @@ func TestImageBuildDegradedOnFailureAndClearedOnBuildStart(t *testing.T) {
 	require.NoError(t, err)
 
 	// Add a comment to the containerfile to change it and trigger a new build
-	modifiedDockerfile := ocltesthelper.CowsayDockerfile + "\n# Comment to trigger new build"
+	modifiedDockerfile := dockerfile + "\n# Comment to trigger new build"
 	apiMosc.Spec.Containerfile = []mcfgv1.MachineOSContainerfile{
 		{
 			ContainerfileArch: mcfgv1.NoArch,
@@ -1275,7 +1295,6 @@ func waitForMOSCToUpdateCurrentMOSB(ctx context.Context, t *testing.T, cs *frame
 
 		currentMOSB = mosc.GetAnnotations()[constants.CurrentMachineOSBuildAnnotationKey]
 		return currentMOSB != mosbName, nil
-
 	}))
 	return currentMOSB
 }
