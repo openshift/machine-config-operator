@@ -941,6 +941,407 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		)
 	})
 
+	g.It("[PolarionID:43278][OTP] security fix for unsafe cipher [Serial]", func() {
+		exutil.By("check go version >= 1.15")
+		_, clusterVersion, cvErr := exutil.GetClusterVersion(oc)
+		o.Expect(cvErr).NotTo(o.HaveOccurred())
+		o.Expect(clusterVersion).NotTo(o.BeEmpty())
+		logger.Infof("cluster version is %s", clusterVersion)
+		commitID, commitErr := getCommitID(oc, "machine-config", clusterVersion)
+		o.Expect(commitErr).NotTo(o.HaveOccurred())
+		// there is a case that in the payload no commit id from mco
+		if commitID == "" {
+			g.Skip("No code change from MCO, skip this case")
+		}
+		logger.Infof("machine config commit id is %s", commitID)
+		goVersion, verErr := getGoVersion("machine-config-operator", commitID)
+		o.Expect(verErr).NotTo(o.HaveOccurred())
+		logger.Infof("go version is: %f", goVersion)
+		o.Expect(goVersion).Should(o.BeNumerically(">=", 1.15))
+
+		exutil.By("verify TLS protocol version is 1.3")
+		intAPIServerURI, err := GetAPIServerInternalURI(oc.AsAdmin())
+		o.Expect(err).NotTo(o.HaveOccurred())
+		masterNode := NewNodeList(oc.AsAdmin()).GetAllMasterNodesOrFail()[0]
+		sslOutput, sslErr := masterNode.DebugNodeWithChroot("bash", "-c", fmt.Sprintf("printf 'Q\\n' | openssl s_client -connect %s:6443", intAPIServerURI))
+		logger.Infof("ssl protocol version is:\n %s", sslOutput)
+		o.Expect(sslErr).NotTo(o.HaveOccurred())
+		o.Expect(sslOutput).Should(o.ContainSubstring("TLSv1.3"))
+
+		exutil.By("verify whether the unsafe cipher is disabled")
+		cipherOutput, cipherErr := masterNode.DebugNodeWithOptions([]string{"--image=" + TestSSLImage, "-n", MachineConfigNamespace}, "testssl.sh", "--quiet", "--sweet32", "localhost:6443")
+		logger.Infof("test ssh script output:\n %s", cipherOutput)
+		o.Expect(cipherErr).NotTo(o.HaveOccurred())
+		o.Expect(cipherOutput).Should(o.ContainSubstring("not vulnerable (OK)"))
+	})
+
+	g.It("[PolarionID:46965][OTP] Avoid workload disruption for GPG Public Key Rotation [Serial]", func() {
+
+		exutil.By("create new machine config with base64 encoded gpg public key")
+		workerNode := NewNodeList(oc.AsAdmin()).GetAllLinuxWorkerNodesOrFail()[0]
+		startTime := workerNode.GetDateOrFail()
+		mcName := "add-gpg-pub-key"
+		mcTemplate := "add-gpg-pub-key.yaml"
+		mc := NewMachineConfig(oc.AsAdmin(), mcName, MachineConfigPoolWorker).SetMCOTemplate(mcTemplate)
+		defer mc.DeleteWithWait()
+		mc.create()
+
+		exutil.By("checkout machine config daemon logs to verify ")
+		log, err := exutil.GetSpecificPodLogs(oc, MachineConfigNamespace, MachineConfigDaemon, workerNode.GetMachineConfigDaemon(), "")
+		o.Expect(err).NotTo(o.HaveOccurred())
+		o.Expect(log).Should(o.ContainSubstring("/etc/machine-config-daemon/no-reboot/containers-gpg.pub"))
+		o.Expect(log).Should(o.ContainSubstring("Changes do not require drain, skipping"))
+		o.Expect(log).Should(o.MatchRegexp(MCDCrioReloadedRegexp))
+
+		o.Expect(workerNode.GetUptime()).Should(o.BeTemporally("<", startTime),
+			"The node %s must NOT be rebooted, but it was rebooted. Uptime date happened after the start config time.", workerNode.GetName())
+
+		exutil.By("verify crio.service status")
+		cmdOut, cmdErr := workerNode.DebugNodeWithChroot("systemctl", "is-active", "crio.service")
+		o.Expect(cmdErr).NotTo(o.HaveOccurred())
+		o.Expect(cmdOut).Should(o.ContainSubstring("active"))
+
+	})
+
+	g.It("[PolarionID:47062][OTP] change policy.json on worker nodes [Serial]", func() {
+
+		exutil.By("create new machine config to change /etc/containers/policy.json")
+		workerNode := NewNodeList(oc.AsAdmin()).GetAllLinuxWorkerNodesOrFail()[0]
+		startTime := workerNode.GetDateOrFail()
+		mcName := "change-policy-json"
+		mcTemplate := "change-policy-json.yaml"
+		mc := NewMachineConfig(oc.AsAdmin(), mcName, MachineConfigPoolWorker).SetMCOTemplate(mcTemplate)
+		defer mc.DeleteWithWait()
+		mc.create()
+
+		exutil.By("verify file content changes")
+		fileContent, fileErr := workerNode.DebugNodeWithChroot("cat", "/etc/containers/policy.json")
+		o.Expect(fileErr).NotTo(o.HaveOccurred())
+		logger.Infof(fileContent)
+		o.Expect(fileContent).Should(o.ContainSubstring(`{"default": [{"type": "insecureAcceptAnything"}]}`))
+		o.Expect(fileContent).ShouldNot(o.ContainSubstring("transports"))
+
+		exutil.By("checkout machine config daemon logs to make sure node drain/reboot are skipped")
+		log, err := exutil.GetSpecificPodLogs(oc, MachineConfigNamespace, MachineConfigDaemon, workerNode.GetMachineConfigDaemon(), "")
+		o.Expect(err).NotTo(o.HaveOccurred())
+		o.Expect(log).Should(o.ContainSubstring("/etc/containers/policy.json"))
+		o.Expect(log).Should(o.ContainSubstring("Changes do not require drain, skipping"))
+		o.Expect(log).Should(o.MatchRegexp(MCDCrioReloadedRegexp))
+
+		o.Expect(workerNode.GetUptime()).Should(o.BeTemporally("<", startTime),
+			"The node %s must NOT be rebooted, but it was rebooted. Uptime date happened after the start config time.", workerNode.GetName())
+
+		exutil.By("verify crio.service status")
+		cmdOut, cmdErr := workerNode.DebugNodeWithChroot("systemctl", "is-active", "crio.service")
+		o.Expect(cmdErr).NotTo(o.HaveOccurred())
+		o.Expect(cmdOut).Should(o.ContainSubstring("active"))
+
+	})
+
+	g.It("[PolarionID:62084][OTP] Certificate rotation in paused pools [Disruptive]", func() {
+		var (
+			wMcp       = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
+			mMcp       = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolMaster)
+			certSecret = NewSecret(oc.AsAdmin(), "openshift-kube-apiserver-operator", "kube-apiserver-to-kubelet-signer")
+		)
+
+		exutil.By("Pause MachineConfigPools")
+		defer mMcp.waitForComplete()
+		defer wMcp.waitForComplete()
+
+		defer wMcp.pause(false)
+		wMcp.pause(true)
+		defer mMcp.pause(false)
+		mMcp.pause(true)
+		logger.Infof("OK!\n")
+
+		exutil.By("Get current kube-apiserver certificate")
+		initialCert := certSecret.GetDataValueOrFail("tls.crt")
+		logger.Infof("Current certificate length: %d", len(initialCert))
+		logger.Infof("OK!\n")
+
+		exutil.By("Rotate certificate")
+		o.Expect(
+			certSecret.Patch("merge", `{"metadata": {"annotations": {"auth.openshift.io/certificate-not-after": null}}}`),
+		).To(o.Succeed(),
+			"The secret could not be patched in order to rotate the certificate")
+		logger.Infof("OK!\n")
+
+		exutil.By("Get current kube-apiserver certificate")
+		logger.Infof("Wait for certificate rotation")
+		o.Eventually(certSecret.GetDataValueOrFail, "5m", "10s").WithArguments("tls.crt").
+			ShouldNot(o.Equal(initialCert),
+				"The certificate was not rotated")
+
+		newCert := certSecret.GetDataValueOrFail("tls.crt")
+		logger.Infof("New certificate length: %d", len(newCert))
+		logger.Infof("OK!\n")
+
+		o.Expect(initialCert).NotTo(o.Equal(newCert),
+			"The certificate was not rotated")
+		logger.Infof("OK!\n")
+
+		// We verify all nodes in the pools (be aware that windows nodes do not belong to any pool, we are skipping them)
+		for _, node := range append(wMcp.GetNodesOrFail(), mMcp.GetNodesOrFail()...) {
+			logger.Infof("Checking certificate in node: %s", node.GetName())
+
+			rfCert := NewRemoteFile(node, "/etc/kubernetes/kubelet-ca.crt")
+
+			// Eventually the certificate file in all nodes should contain the new rotated certificate
+			o.Eventually(func(gm o.Gomega) string { // Passing o.Gomega as parameter we can use assertions inside the Eventually function without breaking the retries.
+				gm.Expect(rfCert.Fetch()).To(o.Succeed(),
+					"Cannot read the certificate file in node:%s ", node.GetName())
+				return rfCert.GetTextContent()
+			}, "5m", "10s").
+				Should(o.ContainSubstring(newCert),
+					"The certificate file %s in node %s does not contain the new rotated certificate.", rfCert.GetFullPath(), node.GetName())
+			logger.Infof("OK!\n")
+		}
+
+		exutil.By("Unpause MachineConfigPools")
+		logger.Infof("Check that once we unpause the pools the pending config can be applied without problems")
+		wMcp.pause(false)
+		mMcp.pause(false)
+		wMcp.waitForComplete()
+		mMcp.waitForComplete()
+
+		logger.Infof("OK!\n")
+	})
+
+	g.It("[PolarionID:65208][OTP] Check the visibility of certificates [Serial]", func() {
+		var (
+			cc   = NewControllerConfig(oc.AsAdmin(), "machine-config-controller")
+			mMcp = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolMaster)
+		)
+
+		exutil.By("Check that the ControllerConfig resource is storing the right kube-apiserver-client-ca information")
+		kubeAPIServerClientCACM := NewNamespacedResource(oc.AsAdmin(), "ConfigMap", "openshift-config-managed", "kube-apiserver-client-ca")
+		kubeAPIServerClientCA := kubeAPIServerClientCACM.GetOrFail(`{.data.ca-bundle\.crt}`)
+
+		ccKubeAPIServerClientCA, err := cc.GetKubeAPIServerServingCAData()
+		o.Expect(err).NotTo(o.HaveOccurred(),
+			"Error getting the kubeAPIServerServingCAData information from the ControllerConfig")
+
+		// We write the Expect command so that the certificates are not printed in case of failure
+		o.Expect(strings.Trim(ccKubeAPIServerClientCA, "\n") == strings.Trim(kubeAPIServerClientCA, "\n")).To(o.BeTrue(),
+			"The value of kubeAPIServerServingCAData in the ControllerConfig does not equal the value of configmap -n openshift-config-managed kube-apiserver-client-ca")
+		logger.Infof("OK!\n")
+
+		exutil.By("Check that the ControllerConfig resource is storing the right rootCAData  information")
+		rootCADataCM := NewNamespacedResource(oc.AsAdmin(), "ConfigMap", "kube-system", "root-ca")
+		rootCAData := rootCADataCM.GetOrFail(`{.data.ca\.crt}`)
+
+		ccRootCAData, err := cc.GetRootCAData()
+		o.Expect(err).NotTo(o.HaveOccurred(),
+			"Error getting the rootCAData information from the ControllerConfig")
+
+		// We write the Expect command so that the certificates are not printed in case of failure
+		o.Expect(strings.Trim(ccRootCAData, "\n") == strings.Trim(rootCAData, "\n")).To(o.BeTrue(),
+			"The value of rootCAData in the ControllerConfig does not equal the value of configmap -n kube-system root-ca")
+		logger.Infof("OK!\n")
+
+		exutil.By("Check the information from the KubeAPIServerServingCAData certificates")
+
+		ccKCertsInfo, err := cc.GetCertificatesInfoByBundleFileName("KubeAPIServerServingCAData")
+		o.Expect(err).NotTo(o.HaveOccurred(),
+			"Error getting the controller config information for KubeAPIServerServingCAData certificates")
+
+		kubeAPIServerCertsInfo, err := GetCertificatesInfoFromPemBundle("KubeAPIServerServingCAData", []byte(ccKubeAPIServerClientCA))
+		o.Expect(err).NotTo(o.HaveOccurred(),
+			"Error extracting certificate info from KubeAPIServerServingCAData pem bundle")
+
+		o.Expect(kubeAPIServerCertsInfo).To(o.Equal(ccKCertsInfo),
+			"The ControllerConfig is not reporting the right information about the certificates in KubeAPIServerServingCAData bundle")
+
+		logger.Infof("OK!\n")
+
+		exutil.By("Check the information from the rootCAData certificates")
+
+		ccRCertsInfo, err := cc.GetCertificatesInfoByBundleFileName("RootCAData")
+		o.Expect(err).NotTo(o.HaveOccurred(),
+			"Error getting the controller config information for rootCAData certificates")
+
+		rootCACertsInfo, err := GetCertificatesInfoFromPemBundle("RootCAData", []byte(ccRootCAData))
+		o.Expect(err).NotTo(o.HaveOccurred(),
+			"Error extracting certificate info from RootCAData pem bundle")
+
+		o.Expect(rootCACertsInfo).To(o.Equal(ccRCertsInfo),
+			"The ControllerConfig is not reporting the right information about the certificates in rootCAData bundle")
+		logger.Infof("OK!\n")
+
+		exutil.By("Check that MCPs are reporting information regarding kubeapiserverserviccadata certificates")
+		certsExpiry, err := mMcp.GetCertsExpiry()
+		o.Expect(err).NotTo(o.HaveOccurred(),
+			"Error getting the certificates expiry information from master MCP")
+
+		o.Expect(certsExpiry).To(o.HaveLen(len(ccKCertsInfo)),
+			"The expry certs info reported in master MCP has len %d, but the list of kubeAPIServer certs has len %d.\nExpiry:%s\nKubeAPIServer:%s",
+			len(certsExpiry), len(ccKCertsInfo), certsExpiry, ccKCertsInfo)
+
+		for i, certInfo := range ccKCertsInfo {
+			certExpry := certsExpiry[i]
+
+			logger.Infof("%s", certExpry)
+
+			o.Expect(certExpry.Bundle).To(o.Equal(certInfo.BundleFile),
+				"Bundle mismatch at index %d", i)
+			// Date fields have been temporarily removed by devs:  https://github.com/openshift/machine-config-operator/pull/3866
+			o.Expect(certExpry.Expiry).To(o.Equal(certInfo.NotAfter),
+				"Expiry information does not match ControllerConfig at index %d", i)
+			o.Expect(certExpry.Subject).To(o.Equal(certInfo.Subject),
+				"Subject mismatch at index %d", i)
+		}
+
+		logger.Infof("OK!\n")
+
+		exutil.By("Check that the description of ControllerConfig includes the certificates info")
+		ccDesc, err := cc.Describe()
+		o.Expect(err).NotTo(o.HaveOccurred(),
+			"Error describing the ControllerConfig resource")
+
+		o.Expect(ccDesc).To(o.And(
+			o.ContainSubstring("Controller Certificates:"),
+			o.ContainSubstring("Bundle File"),
+			// Date fields have been temporarily removed by devs:  https://github.com/openshift/machine-config-operator/pull/3866
+			o.ContainSubstring("Not After"),
+			o.ContainSubstring("Not Before"),
+			o.ContainSubstring("Signer"),
+			o.ContainSubstring("Subject"),
+		),
+			"The ControllerConfig description should include information about the certificate, but it does not:\n%s", ccDesc)
+		logger.Infof("OK!\n")
+
+		exutil.By("Check that the description of MCP includes the certificates info")
+		mMcpDesc, err := mMcp.Describe()
+		o.Expect(err).NotTo(o.HaveOccurred(),
+			"Error describing the master MCP resource")
+
+		o.Expect(mMcpDesc).To(o.And(
+			o.ContainSubstring("Cert Expirys"),
+			o.ContainSubstring("Bundle"),
+			// Date fields have been temporarily removed by devs:  https://github.com/openshift/machine-config-operator/pull/3866
+			o.ContainSubstring("Expiry"),
+		),
+			"The master MCP description should include information about the certificate, but it does not:\n%s", mMcpDesc)
+		logger.Infof("OK!\n")
+	})
+
+	g.It("[PolarionID:66436][OTP] disable weak SSH cipher suites [Serial]", func() {
+
+		var (
+			// the list of weak cipher suites can be found here:  https://issues.redhat.com/browse/OCPBUGS-15202
+			weakSuites = []string{"TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+				"TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA",
+				"TLS_RSA_WITH_AES_128_CBC_SHA",
+				"TLS_RSA_WITH_AES_256_CBC_SHA",
+				"TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256"}
+		)
+
+		exutil.By("Verify that the controller pod is not using weakSuites")
+		ccRbacProxyArgs, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("pod", "-n", MachineConfigNamespace, "-l", ControllerLabel+"="+ControllerLabelValue,
+			"-o", `jsonpath={.items[0].spec.containers[?(@.name=="kube-rbac-proxy")].args}`).Output()
+
+		o.Expect(err).NotTo(o.HaveOccurred(),
+			"Error getting the arguments used in kube-rbac-proxy container in the controller pod")
+
+		o.Expect(ccRbacProxyArgs).To(o.ContainSubstring("--tls-cipher-suites"),
+			"Controller's kube-rbac-proxy container is not declaring the list of allowed cipher suites")
+
+		for _, weakSuite := range weakSuites {
+			logger.Infof("Verifying that %s is not used", weakSuite)
+			o.Expect(ccRbacProxyArgs).NotTo(o.ContainSubstring(weakSuite),
+				"Controller's kube-rbac-proxy container is using the weak cipher suite %s, and it should not", weakSuite)
+			logger.Infof("Suite ok")
+		}
+		logger.Infof("OK!\n")
+
+		exutil.By("Connect to the rbac-proxy service to verify the cipher")
+		mMcp := NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolMaster)
+		masterNode := mMcp.GetNodesOrFail()[0]
+		cipherOutput, cipherErr := masterNode.DebugNodeWithOptions([]string{"--image=" + TestSSLImage, "-n", MachineConfigNamespace}, "testssl.sh", "--color", "0", "localhost:9001")
+		logger.Infof("test ssh script output:\n %s", cipherOutput)
+		o.Expect(cipherErr).NotTo(o.HaveOccurred())
+		o.Expect(cipherOutput).Should(o.MatchRegexp(`Obsoleted CBC ciphers \(AES, ARIA etc.\) +not offered`))
+
+		for _, weakSuite := range weakSuites {
+			logger.Infof("Verifying that %s is not used", weakSuite)
+			o.Expect(cipherOutput).NotTo(o.ContainSubstring(weakSuite),
+				"The rbac-proxy service cipher test is reporting weak cipher suite: %s", weakSuite)
+			logger.Infof("Suite ok")
+		}
+		logger.Infof("OK!\n")
+	})
+
+	g.It("[PolarionID:67395][OTP] rotate kubernetes certificate authority. Certificates managed via non-MC path [Disruptive]", func() {
+
+		var (
+			wMcp       = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
+			mMcp       = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolMaster)
+			mcList     = NewMachineConfigList(oc.AsAdmin())
+			certSecret = NewSecret(oc.AsAdmin(), "openshift-kube-apiserver-operator", "kube-apiserver-to-kubelet-signer")
+		)
+
+		logger.Infof("Get currently rendered MCs")
+		initialMCs, err := mcList.GetAll()
+		o.Expect(err).NotTo(o.HaveOccurred(),
+			"Error getting the list of rendered MCs")
+		logger.Infof("%d rendered MCs", len(initialMCs))
+		logger.Infof("OK!\n")
+
+		exutil.By("Get start time and start collecting events.")
+		// be aware that windows nodes do not belong to any pool, we are skipping them
+		checkedNodes := append(mMcp.GetNodesOrFail(), wMcp.GetNodesOrFail()...)
+
+		startTime, dErr := checkedNodes[0].GetDate()
+		o.Expect(dErr).ShouldNot(o.HaveOccurred(), "Error getting date in node %s", checkedNodes[0].GetName())
+
+		for i := range checkedNodes {
+			o.Expect(checkedNodes[i].IgnoreEventsBeforeNow()).NotTo(o.HaveOccurred(),
+				"Error getting the latest event in node %s", checkedNodes[i].GetName())
+		}
+		logger.Infof("OK!\n")
+
+		exutil.By("Rotate certificate")
+		newCert := rotateTLSSecretOrFail(certSecret)
+		logger.Infof("OK!\n")
+
+		exutil.By("Check that no new MC is created")
+		o.Consistently(mcList.GetAll, "5m", "1m").Should(o.HaveLen(len(initialMCs)),
+			"New machine configs have been created, but they should not be created")
+		logger.Infof("OK!\n")
+
+		for _, node := range checkedNodes {
+			exutil.By(fmt.Sprintf("Checking that the certificate is rotated in node: %s", node.GetName()))
+
+			rfCert := NewRemoteFile(node, "/etc/kubernetes/kubelet-ca.crt")
+
+			// Eventually the certificate file in all nodes should contain the new rotated certificate
+			o.Eventually(func(gm o.Gomega) string { // Passing o.Gomega as parameter we can use assertions inside the Eventually function without breaking the retries.
+				gm.Expect(rfCert.Fetch()).To(o.Succeed(),
+					"Cannot read the certificate file in node:%s ", node.GetName())
+				return rfCert.GetTextContent()
+			}, "5m", "10s").
+				Should(o.ContainSubstring(newCert),
+					"The certificate file %s in node %s does not contain the new rotated certificate.", rfCert.GetFullPath(), node.GetName())
+			logger.Infof("OK!\n")
+
+			exutil.By(fmt.Sprintf("Checking that node: %s was not rebooted", node.GetName()))
+			o.Expect(node.GetUptime()).Should(o.BeTemporally("<", startTime),
+				"The node %s must NOT be rebooted after rotating the certificate, but it was rebooted. Uptime date happened after the start config time.", node.GetName())
+
+			logger.Infof("OK!\n")
+
+			exutil.By(fmt.Sprintf("Checking events in node: %s", node.GetName()))
+			o.Expect(node.GetEvents()).NotTo(HaveEventsSequence("Drain"),
+				"Error, a Drain event was triggered but it shouldn't")
+			o.Expect(node.GetEvents()).NotTo(HaveEventsSequence("Reboot"),
+				"Error, a Reboot event was triggered but it shouldn't")
+
+			logger.Infof("OK!\n")
+
+		}
+	})
+
 	// OCPBUGS-86332: Starting in 4.22 we will no longer fix any bootimage related bugs from bootimages earlier than 4.13
 	// Removed test: PolarionID:80403 (4.5)
 })

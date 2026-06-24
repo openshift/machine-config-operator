@@ -12,6 +12,16 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
+// MachineConfigList handles list of nodes
+type MachineConfigList struct {
+	ResourceList
+}
+
+// NewMachineConfigList construct a new node list struct to handle all existing nodes
+func NewMachineConfigList(oc *exutil.CLI) *MachineConfigList {
+	return &MachineConfigList{*NewResourceList(oc, "mc")}
+}
+
 // MachineConfig struct is used to handle MachineConfig resources in OCP
 type MachineConfig struct {
 	Resource
@@ -25,16 +35,6 @@ type MachineConfig struct {
 func NewMachineConfig(oc *exutil.CLI, name, pool string) *MachineConfig {
 	mc := &MachineConfig{Resource: *NewResource(oc, "mc", name), pool: pool}
 	return mc.SetTemplate(*NewMCOTemplate(oc, GenericMCTemplate))
-}
-
-// MachineConfigList handles list of nodes
-type MachineConfigList struct {
-	ResourceList
-}
-
-// NewMachineConfigList construct a new node list struct to handle all existing nodes
-func NewMachineConfigList(oc *exutil.CLI) *MachineConfigList {
-	return &MachineConfigList{*NewResourceList(oc, "mc")}
 }
 
 // SetTemplate sets the template that will be used by the "create" method in order to create the MC
