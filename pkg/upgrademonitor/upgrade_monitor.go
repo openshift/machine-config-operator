@@ -11,6 +11,7 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/utils/ptr"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -308,6 +309,12 @@ func generateAndApplyMachineConfigNodes(
 
 	// if we do not need a new MCN, generate the apply configurations for this object
 	if !needNewMCNode {
+		// No-diff guard: when no explicit image-set update is requested, skip the
+		// SSA call if conditions, ConfigVersion, and ConfigImage are all unchanged.
+		if imageSetApplyConfig == nil && mcnStatusUnchanged(mcNode, newMCNode) {
+			klog.V(4).Infof("MCN status for node %q is unchanged, skipping SSA apply", node.Name)
+			return nil
+		}
 		statusconfigVersionApplyConfig := machineconfigurationv1.MachineConfigNodeStatusMachineConfigVersion().WithDesired(newMCNode.Status.ConfigVersion.Desired)
 		if node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] != "" {
 			statusconfigVersionApplyConfig = statusconfigVersionApplyConfig.WithCurrent(newMCNode.Status.ConfigVersion.Current)
@@ -394,6 +401,38 @@ func generateAndApplyMachineConfigNodes(
 
 func isParentConditionChanged(old, newCondition metav1.Condition) bool {
 	return old.Status != newCondition.Status || old.Message != newCondition.Message
+}
+
+// mcnStatusUnchanged returns true when the MCN status fields sent via ApplyStatus
+// (conditions, ConfigVersion, ConfigImage) are semantically identical to what is
+// already stored.  LastTransitionTime is excluded from condition comparison because
+// it is always reset to the current time on every call.
+func mcnStatusUnchanged(old, updated *mcfgv1.MachineConfigNode) bool {
+	// The SSA payload always sends Generation+1 as ObservedGeneration; if it
+	// doesn't match what is stored, the call is not a no-op.
+	if old.Generation+1 != old.Status.ObservedGeneration {
+		return false
+	}
+	if len(old.Status.Conditions) != len(updated.Status.Conditions) {
+		return false
+	}
+	oldByType := make(map[string]metav1.Condition, len(old.Status.Conditions))
+	for _, c := range old.Status.Conditions {
+		oldByType[c.Type] = c
+	}
+	for _, nc := range updated.Status.Conditions {
+		oc, ok := oldByType[nc.Type]
+		if !ok {
+			return false
+		}
+		if oc.Status != nc.Status || oc.Message != nc.Message || oc.Reason != nc.Reason {
+			return false
+		}
+	}
+	if !equality.Semantic.DeepEqual(old.Status.ConfigVersion, updated.Status.ConfigVersion) {
+		return false
+	}
+	return equality.Semantic.DeepEqual(old.Status.ConfigImage, updated.Status.ConfigImage)
 }
 
 // isSingletonCondition checks if the condition is a singleton condition which means it will never have a child.
@@ -494,6 +533,14 @@ func GenerateAndApplyMachineConfigNodeSpec(fgHandler ctrlcommon.FeatureGatesHand
 
 	// Update the existing MCN with the new Spec values or create a new MCN
 	if !needNewMCNode {
+		// No-diff guard: only the three fields below are included in the SSA
+		// payload, so skip the call if they are all unchanged.
+		if mcNode.Spec.Node.Name == newMCNode.Spec.Node.Name &&
+			mcNode.Spec.Pool.Name == newMCNode.Spec.Pool.Name &&
+			mcNode.Spec.ConfigVersion.Desired == newMCNode.Spec.ConfigVersion.Desired {
+			klog.V(4).Infof("MCN spec for node %q is unchanged, skipping SSA apply", node.Name)
+			return nil
+		}
 		nodeRefApplyConfig := machineconfigurationv1.MCOObjectReference().WithName(newMCNode.Spec.Node.Name)
 		poolRefApplyConfig := machineconfigurationv1.MCOObjectReference().WithName(newMCNode.Spec.Pool.Name)
 		specconfigVersionApplyConfig := machineconfigurationv1.MachineConfigNodeSpecMachineConfigVersion().WithDesired(newMCNode.Spec.ConfigVersion.Desired)
