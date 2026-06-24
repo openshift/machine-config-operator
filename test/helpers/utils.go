@@ -285,29 +285,6 @@ func WaitForPoolComplete(t *testing.T, cs *framework.ClientSet, pool, target str
 	return nil
 }
 
-// WaitForOneMasterNode waits until atleast one master node has completed an update
-func WaitForOneMasterNodeToBeReady(t *testing.T, cs *framework.ClientSet) error {
-	startTime := time.Now()
-	ctx := context.TODO()
-
-	if err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 12*time.Minute, false, func(ctx context.Context) (bool, error) {
-		mcp, err := cs.MachineConfigPools().Get(ctx, "master", metav1.GetOptions{})
-		if err != nil {
-			return false, err
-		}
-		// Check if the pool has atleast one updated node(mid-upgrade), or if the pool has completed the upgrade to the new config(the additional check for spec==status here is
-		// to ensure we are not checking an older "Updated" condition and the MCP fields haven't caught up yet
-		if (apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdating) && mcp.Status.UpdatedMachineCount > 0) ||
-			(apihelpers.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdated) && (mcp.Spec.Configuration.Name == mcp.Status.Configuration.Name)) {
-			return true, nil
-		}
-		return false, nil
-	}); err != nil {
-		return fmt.Errorf("the master pool has failed to update a node in time (waited %s): %w", time.Since(startTime), err)
-	}
-	t.Logf("The master pool has atleast one updated node (waited %v)", time.Since(startTime))
-	return nil
-}
 
 // Waits for both the node image and config to change.
 func WaitForNodeConfigAndImageChange(t *testing.T, cs *framework.ClientSet, node corev1.Node, mcName, image string) error {
