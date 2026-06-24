@@ -1,13 +1,16 @@
 package bootimage
 
 import (
+	"context"
 	"testing"
 
 	"github.com/coreos/stream-metadata-go/stream"
 	"github.com/coreos/stream-metadata-go/stream/rhcos"
 	osconfigv1 "github.com/openshift/api/config/v1"
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
+	opv1 "github.com/openshift/api/operator/v1"
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
+	fakemcopclient "github.com/openshift/client-go/operator/clientset/versioned/fake"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -16,6 +19,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
 
 func TestIsClusterStable(t *testing.T) {
@@ -533,7 +537,7 @@ func TestReconcileAzureProviderSpec(t *testing.T) {
 		},
 	}
 
-	fakeClient := fake.NewSimpleClientset(testSecret)
+	fakeClient := fake.NewClientset(testSecret)
 
 	tests := []struct {
 		name            string
@@ -966,6 +970,109 @@ func TestReconcileAzureProviderSpec(t *testing.T) {
 				require.NotNil(t, updatedProviderSpec, "Updated provider spec should not be nil when patch is required")
 				assert.Equal(t, tt.expectedImage, updatedProviderSpec.Image, "Updated image mismatch")
 			}
+		})
+	}
+}
+
+func TestResetClusterBootImage(t *testing.T) {
+	cases := []struct {
+		name              string
+		history           []osconfigv1.UpdateHistory
+		mode              opv1.BootImageSkewEnforcementModeStatus
+		initialOCPVersion string
+		expectedVersion   string
+	}{
+		{
+			name: "resets to oldest completed entry (install version)",
+			history: []osconfigv1.UpdateHistory{
+				{State: osconfigv1.CompletedUpdate, Version: "4.19.0"},
+				{State: osconfigv1.CompletedUpdate, Version: "4.18.0"},
+			},
+			mode:              opv1.BootImageSkewEnforcementModeStatusAutomatic,
+			initialOCPVersion: "4.19.0",
+			expectedVersion:   "4.18.0",
+		},
+		{
+			name: "no-op when mode is not automatic",
+			history: []osconfigv1.UpdateHistory{
+				{State: osconfigv1.CompletedUpdate, Version: "4.18.0"},
+			},
+			mode:              opv1.BootImageSkewEnforcementModeStatusNone,
+			initialOCPVersion: "4.19.0",
+			expectedVersion:   "4.19.0",
+		},
+		{
+			name: "no-op when already at install version",
+			history: []osconfigv1.UpdateHistory{
+				{State: osconfigv1.CompletedUpdate, Version: "4.18.0"},
+			},
+			mode:              opv1.BootImageSkewEnforcementModeStatusAutomatic,
+			initialOCPVersion: "4.18.0",
+			expectedVersion:   "4.18.0",
+		},
+		{
+			name:              "falls back to 0.0.0 when history is empty",
+			history:           []osconfigv1.UpdateHistory{},
+			mode:              opv1.BootImageSkewEnforcementModeStatusAutomatic,
+			initialOCPVersion: "4.19.0",
+			expectedVersion:   "0.0.0",
+		},
+		{
+			name: "uses last entry when no completed update exists",
+			history: []osconfigv1.UpdateHistory{
+				{State: osconfigv1.PartialUpdate, Version: "4.18.0"},
+			},
+			mode:              opv1.BootImageSkewEnforcementModeStatusAutomatic,
+			initialOCPVersion: "4.19.0",
+			expectedVersion:   "4.18.0",
+		},
+		{
+			// history==nil is the sentinel for "do not populate the lister",
+			// exercising the clusterVersionLister.Get() error path.
+			name:              "falls back to 0.0.0 when ClusterVersion unavailable",
+			history:           nil,
+			mode:              opv1.BootImageSkewEnforcementModeStatusAutomatic,
+			initialOCPVersion: "4.19.0",
+			expectedVersion:   "0.0.0",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mcop := &opv1.MachineConfiguration{
+				ObjectMeta: v1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: tc.mode,
+						Automatic: opv1.ClusterBootImageAutomatic{
+							OCPVersion: tc.initialOCPVersion,
+						},
+					},
+				},
+			}
+
+			cvIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+			if tc.history != nil {
+				cv := &osconfigv1.ClusterVersion{
+					ObjectMeta: v1.ObjectMeta{Name: "version"},
+					Status:     osconfigv1.ClusterVersionStatus{History: tc.history},
+				}
+				require.NoError(t, cvIndexer.Add(cv))
+			}
+
+			fakeMcopClient := fakemcopclient.NewClientset(mcop)
+			ctrl := &Controller{
+				mcopClient:           fakeMcopClient,
+				clusterVersionLister: configlistersv1.NewClusterVersionLister(cvIndexer),
+			}
+
+			ctrl.resetClusterBootImage()
+
+			updated, err := fakeMcopClient.OperatorV1().MachineConfigurations().Get(
+				context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, v1.GetOptions{})
+			require.NoError(t, err)
+			assert.Equal(t, tc.expectedVersion,
+				updated.Status.BootImageSkewEnforcementStatus.Automatic.OCPVersion)
 		})
 	}
 }

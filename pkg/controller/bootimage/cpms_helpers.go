@@ -14,7 +14,6 @@ import (
 	machinev1 "github.com/openshift/api/machine/v1"
 	opv1 "github.com/openshift/api/operator/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	operatorversion "github.com/openshift/machine-config-operator/pkg/version"
 	"sigs.k8s.io/yaml"
 
 	corev1 "k8s.io/api/core/v1"
@@ -145,31 +144,9 @@ func (ctrl *Controller) syncControlPlaneMachineSet(controlPlaneMachineSet *machi
 		return fmt.Errorf("failed to fetch infra object during ControlPlaneMachineSet sync: %w", err)
 	}
 
-	// Fetch the bootimage configmap & ensure it has been stamped by the operator. This is done by
-	// the operator when a master node successfully updates to a new image. This is
-	// to prevent machinesets from being updated before the operator itself has updated.
-	// If it hasn't been updated, exit and wait for a resync.
 	configMap, err := ctrl.mcoCmLister.ConfigMaps(ctrlcommon.MCONamespace).Get(ctrlcommon.BootImagesConfigMapName)
 	if err != nil {
-		return fmt.Errorf("failed to fetch coreos-bootimages config map duringControlPlaneMachineSet sync: %w", err)
-	}
-	versionHashFromCM, versionHashFound := configMap.Data[ctrlcommon.MCOVersionHashKey]
-	if !versionHashFound {
-		klog.Infof("failed to find mco version hash in %s configmap, sync will exit to wait for the MCO upgrade to complete", ctrlcommon.BootImagesConfigMapName)
-		return nil
-	}
-	if versionHashFromCM != operatorversion.Hash {
-		klog.Infof("mismatch between MCO hash version stored in configmap and current MCO version; sync will exit to wait for the MCO upgrade to complete")
-		return nil
-	}
-	releaseVersionFromCM, releaseVersionFound := configMap.Data[ctrlcommon.OCPReleaseVersionKey]
-	if !releaseVersionFound {
-		klog.Infof("failed to find OCP release version in %s configmap, sync will exit to wait for the MCO upgrade to complete", ctrlcommon.BootImagesConfigMapName)
-		return nil
-	}
-	if releaseVersionFromCM != operatorversion.ReleaseVersion {
-		klog.Infof("mismatch between OCP release version stored in configmap and current MCO release version; sync will exit to wait for the MCO upgrade to complete")
-		return nil
+		return fmt.Errorf("failed to fetch coreos-bootimages config map during ControlPlaneMachineSet sync: %w", err)
 	}
 
 	// Check if the this ControlPlaneMachineSet requires an update

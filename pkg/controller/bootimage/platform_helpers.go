@@ -42,9 +42,11 @@ type publisherOffer struct {
 	publisher, offer string
 }
 
-// This function calls the appropriate reconcile function based on the infra type
-// On success, it will return a bool indicating if a patch is required, and an updated
-// machineset object if any. It will return an error if any of the above steps fail.
+// checkMachineSet calls the appropriate reconcile function based on the infra type.
+// Returns (patchRequired, reconcileSkipped, newMachineSet, error).
+// reconcileSkipped=true means the boot image could not be updated automatically (e.g.
+// custom or unknown image) and requires manual intervention; the condition is surfaced
+// via skew enforcement rather than returned as an error.
 func checkMachineSet(infra *osconfigv1.Infrastructure, machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap, arch string, secretClient clientset.Interface) (bool, bool, *machinev1beta1.MachineSet, error) {
 	switch infra.Status.PlatformStatus.Type {
 	case osconfigv1.AWSPlatformType:
@@ -61,7 +63,8 @@ func checkMachineSet(infra *osconfigv1.Infrastructure, machineSet *machinev1beta
 	}
 }
 
-// Generic reconcile function that handles the common pattern across all platforms
+// reconcilePlatform is a generic reconcile function that handles the common pattern across all platforms.
+// Returns (patchRequired, reconcileSkipped, newMachineSet, error). See checkMachineSet for reconcileSkipped semantics.
 // nolint:dupl // I separated this from reconcilePlatformCPMS for readability
 func reconcilePlatform[T any](
 	machineSet *machinev1beta1.MachineSet,
@@ -70,7 +73,7 @@ func reconcilePlatform[T any](
 	arch string,
 	secretClient clientset.Interface,
 	reconcileProviderSpec func(*stream.Stream, string, *osconfigv1.Infrastructure, *T, string, clientset.Interface) (bool, bool, *T, error),
-) (patchRequired, patchSkipped bool, newMachineSet *machinev1beta1.MachineSet, err error) {
+) (patchRequired, reconcileSkipped bool, newMachineSet *machinev1beta1.MachineSet, err error) {
 	klog.Infof("Reconciling MAPI machineset %s on %s, with arch %s", machineSet.Name, string(infra.Status.PlatformStatus.Type), arch)
 
 	// Unmarshal the provider spec
@@ -86,14 +89,14 @@ func reconcilePlatform[T any](
 	}
 
 	// Reconcile the provider spec
-	patchRequired, patchSkipped, newProviderSpec, err := reconcileProviderSpec(streamData, arch, infra, providerSpec, machineSet.Name, secretClient)
+	patchRequired, reconcileSkipped, newProviderSpec, err := reconcileProviderSpec(streamData, arch, infra, providerSpec, machineSet.Name, secretClient)
 	if err != nil {
 		return false, false, nil, err
 	}
 
 	// If no patch is required, exit early
 	if !patchRequired {
-		return false, patchSkipped, nil, nil
+		return false, reconcileSkipped, nil, nil
 	}
 
 	// If patch is required, marshal the new providerspec into the machineset
