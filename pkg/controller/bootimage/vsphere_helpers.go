@@ -229,6 +229,89 @@ func getDiskTypeFromExistingVM(vmMo mo.VirtualMachine) string {
 	return diskType
 }
 
+// resolveExistingTemplateVM locates the template VM for a failure domain using a two-step lookup: providerSpec.Template first
+// then the infra computed name. If neither exists, it creates a fresh template from the OVA and signals the caller via created=true.
+// resolvedName is the vSphere name of the VM that was actually found, which may differ from name when the VM was located
+// via providerSpec.Template; callers must use resolvedName (not name) for divergence checks.
+func resolveExistingTemplateVM(
+	ctx context.Context,
+	finder *find.Finder,
+	providerSpec *machinev1beta1.VSphereMachineProviderSpec,
+	failureDomain osconfigv1.VSpherePlatformFailureDomainSpec,
+	streamData *stream.Stream,
+	client *govmomi.Client,
+	tagManager *tags.Manager,
+	infraID, arch string,
+) (vm *object.VirtualMachine, resolvedName string, created bool, err error) {
+
+	computedName := fmt.Sprintf("%s-rhcos-%s", infraID, failureDomain.Name)
+	var notFoundErr *find.NotFoundError
+
+	// Check providerSpec.Template first so a freshly-added failure domain whose MachineSet
+	// already has a valid template doesn't fail just because the infra computed name isn't a match.
+	if providerSpec.Template != "" && providerSpec.Template != computedName {
+		tmplVM, tmplErr := finder.VirtualMachine(ctx, providerSpec.Template)
+		if tmplErr == nil {
+			return tmplVM, providerSpec.Template, false, nil
+		}
+
+		if errors.As(tmplErr, &notFoundErr) {
+			klog.Infof("providerSpec.Template %s not found in vSphere; falling back to computed name %s", providerSpec.Template, computedName)
+		} else {
+			klog.Warningf("Unexpected error looking up providerSpec.Template %s: %v; falling back to computed name %s", providerSpec.Template, tmplErr, computedName)
+		}
+	}
+
+	vm, err = finder.VirtualMachine(ctx, computedName)
+	if err == nil {
+		return vm, computedName, false, nil
+	}
+
+	if !errors.As(err, &notFoundErr) {
+		return nil, "", false, fmt.Errorf("finder had error: %w", err)
+	}
+
+	// Computed name not found; check for a rollback VM left by a prior mid-swap crash.
+	oldTempName := atomicTempName("mco-old", computedName)
+	oldVM, oldErr := finder.VirtualMachine(ctx, oldTempName)
+	if oldErr != nil {
+		// No template exists anywhere — failure domain is newly added; create from OVA.
+		klog.Infof("No existing template found for failure domain %s; creating new template %s from OVA", failureDomain.Name, computedName)
+		if len(computedName) > 80 {
+			return nil, "", false, fmt.Errorf("length of VM template name `%s` exceeds the permitted limit of 80 characters", computedName)
+		}
+		ova, ovaErr := streamData.QueryDisk(arch, "vmware", "ova")
+		if ovaErr != nil {
+			return nil, "", false, ovaErr
+		}
+		ovaPath, ovaErr := cache.DownloadOva(ova)
+		if ovaErr != nil {
+			return nil, "", false, fmt.Errorf("failed to download %s: %w", ova.Location, ovaErr)
+		}
+		if createErr := createNewVMTemplateWithNameForFailureDomain(ctx, providerSpec, failureDomain, finder, client, tagManager, computedName, ovaPath, infraID, "thin"); createErr != nil {
+			return nil, "", false, createErr
+		}
+		return nil, computedName, true, nil
+	}
+
+	// Rollback: restore the old template renamed away during a crashed atomic swap.
+	klog.Infof("Recovering from mid-swap crash: renaming %s back to %s", oldTempName, computedName)
+	renameTask, renameErr := oldVM.Rename(ctx, computedName)
+	if renameErr != nil {
+		return nil, "", false, fmt.Errorf("failed to initiate rollback rename of %s to %s: %w", oldTempName, computedName, renameErr)
+	}
+	if renameErr = renameTask.Wait(ctx); renameErr != nil {
+		return nil, "", false, fmt.Errorf("failed to complete rollback rename of %s to %s: %w", oldTempName, computedName, renameErr)
+	}
+	// Confirm the rollback succeeded; any stale mco-tmp-* VM will be cleaned up by
+	// createNewVMTemplateWithNameForFailureDomain if an update is subsequently needed.
+	vm, err = finder.VirtualMachine(ctx, computedName)
+	if err != nil {
+		return nil, "", false, fmt.Errorf("failed to fetch rolled-back template %s: %w", computedName, err)
+	}
+	return vm, computedName, false, nil
+}
+
 // atomicTempName returns a short, fixed-length (17-char) VM name for use during atomic template
 // swaps. The hash makes it deterministic and unique per final name, bypassing the 80-char limit.
 func atomicTempName(prefix, name string) string {
@@ -503,7 +586,6 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	var name string
 	for _, vcenter := range infra.Spec.PlatformSpec.VSphere.VCenters {
 		if vcenter.Server != providerSpec.Workspace.Server {
 			continue
@@ -546,36 +628,12 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 			}
 			finder = finder.SetDatacenter(datacenter)
 
-			name = fmt.Sprintf("%s-rhcos-%s", infraID, failureDomain.Name)
-
-			existingTemplateVM, err := finder.VirtualMachine(ctx, name)
+			existingTemplateVM, resolvedName, created, err := resolveExistingTemplateVM(ctx, finder, providerSpec, failureDomain, streamData, client, tagManager, infraID, arch)
 			if err != nil {
-				if _, ok := err.(*find.NotFoundError); !ok {
-					return "", false, fmt.Errorf("finder had error: %w", err)
-				}
-				// Template not found; update likely crashed between the two rename steps of a prior
-				// atomic swap. Check for the old template under its rollback name and restore it
-				// so the next reconciliation loop can proceed normally.
-				oldTempName := atomicTempName("mco-old", name)
-				oldVM, oldErr := finder.VirtualMachine(ctx, oldTempName)
-				if oldErr != nil {
-					return "", false, fmt.Errorf("template %s not found : %w and no rollback VM %s present: %w", name, err, oldTempName, oldErr)
-				}
-				klog.Infof("Recovering from mid-swap crash: renaming %s back to %s", oldTempName, name)
-				renameTask, renameErr := oldVM.Rename(ctx, name)
-				if renameErr != nil {
-					return "", false, fmt.Errorf("failed to initiate rollback rename of %s to %s: %w", oldTempName, name, renameErr)
-				}
-				if renameErr = renameTask.Wait(ctx); renameErr != nil {
-					return "", false, fmt.Errorf("failed to complete rollback rename of %s to %s: %w", oldTempName, name, renameErr)
-				}
-				// Fresh fetch by name to confirm the rollback succeeded and get a clean reference.
-				// Any stale mco-tmp-* VM will be cleaned up by createNewVMTemplateWithNameForFailureDomain
-				// if an update is subsequently needed.
-				existingTemplateVM, err = finder.VirtualMachine(ctx, name)
-				if err != nil {
-					return "", false, fmt.Errorf("failed to fetch rolled-back template %s: %w", name, err)
-				}
+				return "", false, err
+			}
+			if created {
+				return resolvedName, true, nil
 			}
 
 			var vmMo mo.VirtualMachine
@@ -604,23 +662,23 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 						return "", false, fmt.Errorf("failed to download %s: %w", ova.Location, err)
 					}
 
-					if len(name) > 80 {
-						return "", false, fmt.Errorf("length of VM template name `%s` exceeds the permitted limit of 80 characters", name)
+					if len(resolvedName) > 80 {
+						return "", false, fmt.Errorf("length of VM template name `%s` exceeds the permitted limit of 80 characters", resolvedName)
 					}
 
 					diskType := getDiskTypeFromExistingVM(vmMo)
 
-					err = createNewVMTemplateWithNameForFailureDomain(ctx, providerSpec, failureDomain, finder, client, tagManager, name, ovaPath, infraID, diskType)
+					err = createNewVMTemplateWithNameForFailureDomain(ctx, providerSpec, failureDomain, finder, client, tagManager, resolvedName, ovaPath, infraID, diskType)
 					if err != nil {
 						return "", false, err
 					}
-					return name, true, nil
+					return resolvedName, true, nil
 				}
 
 				klog.Infof("Existing RHCOS v%s does match current RHCOS v%s. Skipping reconciliation process using govmomi.", templateProductVersion, release)
-				if providerSpec.Template != name {
-					klog.Infof("ProviderSpec template name: %s has diverged from the VM Template of name: %s that exists in VSphere. Reconciling the name change.", providerSpec.Template, name)
-					return name, true, nil
+				if providerSpec.Template != resolvedName {
+					klog.Infof("ProviderSpec template name: %s has diverged from the VM Template of name: %s that exists in VSphere. Reconciling the name change.", providerSpec.Template, resolvedName)
+					return resolvedName, true, nil
 				}
 
 			} else {
