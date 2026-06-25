@@ -828,6 +828,10 @@ func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mc
 		}
 	}
 
+	if err := validateNoRuncOnRHEL10(pool.Name, merged, osImageStreamSet); err != nil {
+		return nil, err
+	}
+
 	return merged, nil
 }
 
@@ -953,6 +957,33 @@ func RunBootstrap(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineCo
 		oconfigs = append(oconfigs, generated)
 	}
 	return opools, oconfigs, nil
+}
+
+// validateNoRuncOnRHEL10 returns an error if the generated MachineConfig uses runc
+// as the default container runtime and the pool targets a RHEL 10 / CentOS 10 OS
+// image stream. runc is not available on RHCOS 10; clusters must migrate to crun
+// before switching to a RHEL 10 stream.
+// TODO(OCP 5.3): Remove this guard once RHEL 9 is no longer supported and all nodes run RHEL 10.
+func validateNoRuncOnRHEL10(poolName string, mc *mcfgv1.MachineConfig, osImageStreamSet *mcfgv1.OSImageStreamSet) error {
+	if osImageStreamSet == nil {
+		return nil
+	}
+	if !osimagestream.IsRHEL10Stream(osImageStreamSet.Name) {
+		return nil
+	}
+
+	runcMCName, err := ctrlcommon.DetectRuncInMachineConfig(mc)
+	if err != nil {
+		return fmt.Errorf("failed to check runc in generated MachineConfig for pool %s: %w", poolName, err)
+	}
+	if runcMCName != "" {
+		return fmt.Errorf(
+			"MachineConfigPool %s targets OS image stream %q where runc is not available. "+
+				"To unblock, migrate to crun by removing any ContainerRuntimeConfig that sets defaultRuntime to runc, "+
+				"and removing any MachineConfig that sets default_runtime = \"runc\" in CRI-O configuration under /etc/crio/crio.conf.d/",
+			poolName, osImageStreamSet.Name)
+	}
+	return nil
 }
 
 // getMachineConfigsForPool is called by RunBootstrap and returns configs that match label from configs for a pool.

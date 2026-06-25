@@ -16,6 +16,11 @@ const (
 	StreamNameCentOS10 = "centos-10"
 )
 
+// IsRHEL10Stream returns true if the given stream name targets RHEL 10 or CentOS 10.
+func IsRHEL10Stream(stream string) bool {
+	return stream == StreamNameRHEL10 || stream == StreamNameCentOS10
+}
+
 // GetBuiltinDefaultStreamName returns the default stream name for the current build.
 // For OKD/SCOS builds it always returns "centos-10" as OKD only ships a single stream.
 // For OCP builds it returns the default stream based on the OCP version:
