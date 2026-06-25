@@ -574,6 +574,39 @@ func SupportedExtensions() map[string][]string {
 	}
 }
 
+// LegacyExtensionPackages tracks the legacy package list for extensions
+// that have changed.
+func LegacyExtensionPackages() map[string][]string {
+	return map[string][]string{
+		// ipsec extension only have libreswan packages in <= 4.x releases.
+		"ipsec": {"NetworkManager-libreswan", "libreswan"},
+	}
+}
+
+// GetAllValidPackageSetsForExtension returns all valid package sets for an extension,
+// including both current and legacy package lists. This is used during verification
+// to handle upgrade scenarios gracefully.
+// During an upgrade the new MCD code may run before the OS image update. This function
+// ensures that verification accepts either the old package set (from the current OS
+// image) OR the new package set (from the updated code).
+func GetAllValidPackageSetsForExtension(extension string) [][]string {
+	var validSets [][]string
+
+	// Add current package set
+	currentExtensions := SupportedExtensions()
+	if packages, exists := currentExtensions[extension]; exists {
+		validSets = append(validSets, packages)
+	}
+
+	// Add legacy package set (if exists)
+	legacyExtensions := LegacyExtensionPackages()
+	if packages, exists := legacyExtensions[extension]; exists {
+		validSets = append(validSets, packages)
+	}
+
+	return validSets
+}
+
 // IgnParseWrapper parses rawIgn for both V2 and V3 ignition configs and returns
 // a V2 or V3 Config or an error. This wrapper is necessary since V2 and V3 use different parsers.
 func IgnParseWrapper(rawIgn []byte) (interface{}, error) {

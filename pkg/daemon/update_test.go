@@ -858,7 +858,7 @@ func TestGenerateExtensionsArgs(t *testing.T) {
 			name:         "no extensions installed, install multiple extensions",
 			installedSet: sets.New[string](),
 			extensions:   []string{"sysstat", "ipsec"},
-			expected:     []string{constants.RPMOSTreeInstallArg, "NetworkManager-libreswan", constants.RPMOSTreeInstallArg, "sysstat", constants.RPMOSTreeInstallArg, "libreswan"},
+			expected:     []string{constants.RPMOSTreeInstallArg, "NetworkManager-libreswan", constants.RPMOSTreeInstallArg, "sysstat", constants.RPMOSTreeInstallArg, "libreswan", constants.RPMOSTreeInstallArg, "openvswitch3.5-ipsec"},
 		},
 		{
 			name:         "sysstat already installed, require sysstat",
@@ -874,15 +874,15 @@ func TestGenerateExtensionsArgs(t *testing.T) {
 		},
 		{
 			name:         "sysstat and ipsec installed, only sysstat required",
-			installedSet: sets.New("sysstat", "NetworkManager-libreswan", "libreswan"),
+			installedSet: sets.New("sysstat", "NetworkManager-libreswan", "libreswan", "openvswitch3.5-ipsec"),
 			extensions:   []string{"sysstat"},
-			expected:     []string{constants.RPMOSTreeUninstallArg, "NetworkManager-libreswan", constants.RPMOSTreeUninstallArg, "libreswan"},
+			expected:     []string{constants.RPMOSTreeUninstallArg, "NetworkManager-libreswan", constants.RPMOSTreeUninstallArg, "libreswan", constants.RPMOSTreeUninstallArg, "openvswitch3.5-ipsec"},
 		},
 		{
 			name:         "some packages installed, switch to different extension",
 			installedSet: sets.New("sysstat"),
 			extensions:   []string{"ipsec"},
-			expected:     []string{constants.RPMOSTreeInstallArg, "NetworkManager-libreswan", constants.RPMOSTreeInstallArg, "libreswan", constants.RPMOSTreeUninstallArg, "sysstat"},
+			expected:     []string{constants.RPMOSTreeInstallArg, "NetworkManager-libreswan", constants.RPMOSTreeInstallArg, "libreswan", constants.RPMOSTreeInstallArg, "openvswitch3.5-ipsec", constants.RPMOSTreeUninstallArg, "sysstat"},
 		},
 		{
 			name:         "complex scenario with two-node-ha",
@@ -900,7 +900,7 @@ func TestGenerateExtensionsArgs(t *testing.T) {
 			name:         "all supported extensions",
 			installedSet: sets.New[string](),
 			extensions:   []string{"two-node-ha", "ipsec", "usbguard", "kerberos", "kernel-devel", "sandboxed-containers", "sysstat"},
-			expected:     []string{constants.RPMOSTreeInstallArg, "NetworkManager-libreswan", constants.RPMOSTreeInstallArg, "fence-agents-all", constants.RPMOSTreeInstallArg, "kata-containers", constants.RPMOSTreeInstallArg, "kernel-devel", constants.RPMOSTreeInstallArg, "kernel-headers", constants.RPMOSTreeInstallArg, "krb5-workstation", constants.RPMOSTreeInstallArg, "libkadm5", constants.RPMOSTreeInstallArg, "libreswan", constants.RPMOSTreeInstallArg, "pacemaker", constants.RPMOSTreeInstallArg, "pcs", constants.RPMOSTreeInstallArg, "sysstat", constants.RPMOSTreeInstallArg, "usbguard"},
+			expected:     []string{constants.RPMOSTreeInstallArg, "NetworkManager-libreswan", constants.RPMOSTreeInstallArg, "fence-agents-all", constants.RPMOSTreeInstallArg, "kata-containers", constants.RPMOSTreeInstallArg, "kernel-devel", constants.RPMOSTreeInstallArg, "kernel-headers", constants.RPMOSTreeInstallArg, "krb5-workstation", constants.RPMOSTreeInstallArg, "libkadm5", constants.RPMOSTreeInstallArg, "libreswan", constants.RPMOSTreeInstallArg, "openvswitch3.5-ipsec", constants.RPMOSTreeInstallArg, "pacemaker", constants.RPMOSTreeInstallArg, "pcs", constants.RPMOSTreeInstallArg, "sysstat", constants.RPMOSTreeInstallArg, "usbguard"},
 		},
 	}
 
@@ -973,4 +973,75 @@ func TestPodmanCopy_CreateContainerCall(t *testing.T) {
 	// The function will error at podmanRemove, but that's expected in this unit test
 	// We're only testing that the CreatePodmanContainer interface is called correctly
 	assert.Error(t, err, "Expected error from podmanRemove since we're not mocking that part")
+}
+
+func TestLegacyExtensionPackageUpgradeScenario(t *testing.T) {
+	// This test validates the upgrade scenario from 4.x to 5.0 where the new MCD
+	// code runs before the OS image update. It mocks the RPM query to simulate
+	// package installation state and verifies that AreAllPackagesInstalled correctly
+	// matches against both current and legacy package sets.
+
+	// Save and restore the original execRpmQuery
+	originalExecRpmQuery := execRpmQuery
+	defer func() { execRpmQuery = originalExecRpmQuery }()
+
+	extension := "ipsec"
+
+	// Get all valid package sets (current + legacy)
+	validSets := ctrlcommon.GetAllValidPackageSetsForExtension(extension)
+	require.Greater(t, len(validSets), 0, "Should have at least one valid package set")
+
+	// Test Scenario 1: Old system (4.x) with only libreswan packages
+	installedPkgs := map[string]bool{
+		"NetworkManager-libreswan": true,
+		"libreswan":                true,
+		// openvswitch3.5-ipsec is NOT installed yet
+	}
+
+	// Mock the RPM query to return our simulated installation state
+	execRpmQuery = func(pkg string) (bool, error) {
+		installed, exists := installedPkgs[pkg]
+		return exists && installed, nil
+	}
+
+	// Try to verify packages using AreAllPackagesInstalled
+	foundMatch := false
+	for _, pkgSet := range validSets {
+		allInstalled, missingPkgs, err := AreAllPackagesInstalled(pkgSet)
+		require.NoError(t, err, "RPM query should not error")
+
+		if allInstalled {
+			foundMatch = true
+			t.Logf("Found matching package set during upgrade (4.x state): %v", pkgSet)
+			require.ElementsMatch(t, []string{"NetworkManager-libreswan", "libreswan"}, pkgSet,
+				"Should match the legacy package set without openvswitch-ipsec")
+			break
+		} else {
+			t.Logf("Package set %v not fully installed, missing: %v", pkgSet, missingPkgs)
+		}
+	}
+
+	require.True(t, foundMatch, "Should find a valid package set matching the old OS image state (legacy packages)")
+
+	// Test Scenario 2: New system (5.0) with all packages installed
+	installedPkgs["openvswitch3.5-ipsec"] = true
+
+	// Try to verify packages again with the updated installation state
+	foundNewMatch := false
+	for _, pkgSet := range validSets {
+		allInstalled, missingPkgs, err := AreAllPackagesInstalled(pkgSet)
+		require.NoError(t, err, "RPM query should not error")
+
+		if allInstalled {
+			foundNewMatch = true
+			t.Logf("Found matching package set after upgrade (5.0 state): %v", pkgSet)
+			require.ElementsMatch(t, []string{"NetworkManager-libreswan", "libreswan", "openvswitch3.5-ipsec"}, pkgSet,
+				"Should match the current package set with openvswitch-ipsec")
+			break
+		} else {
+			t.Logf("Package set %v not fully installed, missing: %v", pkgSet, missingPkgs)
+		}
+	}
+
+	require.True(t, foundNewMatch, "Should find a valid package set matching the new OS image state (current packages)")
 }

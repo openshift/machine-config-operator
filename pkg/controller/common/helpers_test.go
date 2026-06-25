@@ -2002,3 +2002,73 @@ func TestDetectRuncInMachineConfig(t *testing.T) {
 		})
 	}
 }
+
+func TestGetAllValidPackageSetsForExtension(t *testing.T) {
+	tests := []struct {
+		name                 string
+		extension            string
+		expectedSetCount     int
+		shouldContainCurrent bool
+		shouldContainLegacy  bool
+	}{
+		{
+			name:                 "ipsec extension should have both current and legacy sets",
+			extension:            "ipsec",
+			expectedSetCount:     2, // current + 1 legacy
+			shouldContainCurrent: true,
+			shouldContainLegacy:  true,
+		},
+		{
+			name:                 "usbguard extension should only have current set",
+			extension:            "usbguard",
+			expectedSetCount:     1, // only current, no legacy
+			shouldContainCurrent: true,
+			shouldContainLegacy:  false,
+		},
+		{
+			name:                 "non-existent extension should return empty",
+			extension:            "non-existent",
+			expectedSetCount:     0,
+			shouldContainCurrent: false,
+			shouldContainLegacy:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			packageSets := GetAllValidPackageSetsForExtension(tt.extension)
+
+			require.Equal(t, tt.expectedSetCount, len(packageSets),
+				"Expected %d package sets for extension %q", tt.expectedSetCount, tt.extension)
+
+			if tt.shouldContainCurrent {
+				// Verify current package set is included
+				currentPackages := SupportedExtensions()[tt.extension]
+				found := false
+				for _, pkgSet := range packageSets {
+					if reflect.DeepEqual(pkgSet, currentPackages) {
+						found = true
+						break
+					}
+				}
+				require.True(t, found, "Current package set should be included for extension %q", tt.extension)
+			}
+
+			if tt.shouldContainLegacy {
+				// Verify historical set is included
+				history := LegacyExtensionPackages()
+				if historicalSet, exists := history[tt.extension]; exists {
+					found := false
+					for _, pkgSet := range packageSets {
+						if reflect.DeepEqual(pkgSet, historicalSet) {
+							found = true
+							break
+						}
+					}
+					require.True(t, found, "Legacy package set should be included for extension %q", tt.extension)
+				}
+			}
+		})
+	}
+}
+
