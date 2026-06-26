@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/util/uuid"
@@ -45,14 +44,6 @@ type lsblkOutput struct {
 // -v /dev:/dev: bootupd mounts the ESP from host block devices dynamically; without this
 // the container only sees a synthetic devtmpfs with no host-specific nodes.
 func (dn *Daemon) runBootupdViaContainer(imageURL string) error {
-	if !dn.os.IsCoreOSVariant() {
-		return nil
-	}
-	// For now, only attempt bootloader updates on x86_64 and aarch64 as they are the ones
-	// affected by the secure boot issue.
-	if runtime.GOARCH != ctrlcommon.GoArchAMD64 && runtime.GOARCH != ctrlcommon.GoArchARM64 {
-		return nil
-	}
 	logSystem("runBootupdViaContainer: attempting bootloader update")
 
 	systemdPodmanArgs := []string{"--unit", "machine-config-daemon-bootupd", "-p", "EnvironmentFile=-/etc/mco/proxy.env", "--collect", "--wait", "--", "podman"}
@@ -343,61 +334,44 @@ func isSecureBootEnabled() bool {
 	return strings.Contains(string(out), "SecureBoot enabled")
 }
 
-// shimIsSafe returns true if no bootloader update is required: either Secure Boot
-// is not enabled, or the installed shim is at or above 15.8-3.el9_2 (the minimum
-// version with safe signing keys). On non-UEFI arches this always returns true.
-func shimIsSafe() bool {
+// runBootloaderUpdate orchestrates the pre-pivot bootloader update. It first
+// tries a fast node-level bootupctl update on RHEL 9.6+, falling back to the
+// container-based approach (pull + bootupctl from container + manual EFI copy).
+func (dn *Daemon) runBootloaderUpdate(imageURL string) error {
+	if !dn.os.IsCoreOSVariant() {
+		return nil
+	}
+	// For now, only attempt bootloader updates on x86_64 and aarch64 as they are the ones
+	// affected by the secure boot issue.
+	if runtime.GOARCH != ctrlcommon.GoArchAMD64 && runtime.GOARCH != ctrlcommon.GoArchARM64 {
+		return nil
+	}
+
 	if !isSecureBootEnabled() {
-		logSystem("shimIsSafe: Secure Boot not enabled, bootloader update not required")
-		return true
+		logSystem("runBootloaderUpdate: Secure Boot not enabled, bootloader update not required")
+		return nil
 	}
 
-	var pkgName string
-	switch runtime.GOARCH {
-	case ctrlcommon.GoArchAMD64:
-		pkgName = "shim-x64"
-	case ctrlcommon.GoArchARM64:
-		pkgName = "shim-aa64"
-	default:
-		return true
+	// On RHEL 9.6+ (OCP 4.19+), try updating the bootloader directly from the
+	// node. This covers nodes where /usr has been updated but the ESP still
+	// contains old bootloader binaries (e.g. nodes born from 4.15 or older).
+	// Trigger the systemd unit instead of calling the binary directly so that
+	// the update output is captured by the journal and visible via journalctl.
+	major, minor := dn.os.BaseVersionMajor(), dn.os.BaseVersionMinor()
+	if major > 9 || (major == 9 && minor >= 6) {
+		logSystem("runBootloaderUpdate: RHEL 9.6+ detected, attempting node-level bootloader update via bootloader-update.service")
+		var err error
+		// bootloader-update.service sets RemainAfterExit=yes, so --wait would block indefinitely.
+		// Plain "start" is sufficient: systemd waits for the oneshot ExecStart to complete and
+		// returns its exit code.
+		if err = runCmdSync("systemctl", "start", "bootloader-update.service"); err == nil {
+			logSystem("runBootloaderUpdate: node-level bootloader-update.service succeeded")
+			return nil
+		}
+		logSystem("runBootloaderUpdate: bootloader-update.service failed with error: %v, falling back to container-based update", err)
 	}
 
-	out, err := runGetOut("rpm", "-q", "--queryformat", "%{VERSION}-%{RELEASE}", pkgName)
-	if err != nil {
-		// Package not installed or rpm failed — fail open so bootupd runs.
-		logSystem("shimIsSafe: could not query %s, proceeding with bootloader update: %v", pkgName, err)
-		return false
-	}
-
-	installed := strings.TrimSpace(string(out))
-	const safeVersion = "15.8-3.el9_2"
-	cmp, err := rpmVercmp(installed, safeVersion)
-	if err != nil {
-		logSystem("shimIsSafe: could not compare versions, proceeding with bootloader update: %v", err)
-		return false
-	}
-	safe := cmp >= 0
-	if safe {
-		logSystem("shimIsSafe: %s %s >= %s, bootloader update not required", pkgName, installed, safeVersion)
-	} else {
-		logSystem("shimIsSafe: %s %s < %s, bootloader update required", pkgName, installed, safeVersion)
-	}
-	return safe
-}
-
-// rpmVercmp compares two RPM version strings using rpm's built-in Lua vercmp.
-// Returns negative if a < b, 0 if equal, positive if a > b.
-func rpmVercmp(a, b string) (int, error) {
-	luaExpr := "%{lua:print(rpm.vercmp('" + a + "', '" + b + "'))}"
-	out, err := runGetOut("rpm", "--eval", luaExpr)
-	if err != nil {
-		return 0, err
-	}
-	result, err := strconv.Atoi(strings.TrimSpace(string(out)))
-	if err != nil {
-		return 0, fmt.Errorf("unexpected rpm vercmp output %q: %w", string(out), err)
-	}
-	return result, nil
+	return dn.runBootupdViaContainer(imageURL)
 }
 
 // findRAIDESPs returns the ESP partition on every disk that is a member of the
