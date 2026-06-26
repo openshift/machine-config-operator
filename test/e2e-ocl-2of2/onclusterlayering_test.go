@@ -18,7 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 
-	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_6/types"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"

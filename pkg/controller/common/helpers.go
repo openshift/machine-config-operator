@@ -29,8 +29,8 @@ import (
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
 	validate2 "github.com/coreos/ignition/config/validate"
 	ign3error "github.com/coreos/ignition/v2/config/shared/errors"
-	ign3 "github.com/coreos/ignition/v2/config/v3_5"
-	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
+	ign3 "github.com/coreos/ignition/v2/config/v3_6"
+	ign3types "github.com/coreos/ignition/v2/config/v3_6/types"
 	validate3 "github.com/coreos/ignition/v2/config/validate"
 	"github.com/ghodss/yaml"
 	"github.com/vincent-petithory/dataurl"
@@ -299,9 +299,9 @@ func WriteTerminationError(err error) {
 	klog.Fatal(msg)
 }
 
-// ConvertRawExtIgnitionToV3_5 ensures that the Ignition config in
-// the RawExtension is spec v3.5, or translates to it.
-func ConvertRawExtIgnitionToV3_5(inRawExtIgn *runtime.RawExtension) (runtime.RawExtension, error) {
+// ConvertRawExtIgnitionToV3_6 ensures that the Ignition config in
+// the RawExtension is spec v3.6, or translates to it.
+func ConvertRawExtIgnitionToV3_6(inRawExtIgn *runtime.RawExtension) (runtime.RawExtension, error) {
 	// Parse the raw extension to the MCO's current internal ignition version
 	ignCfgV3, err := IgnParseWrapper(inRawExtIgn.Raw)
 	if err != nil {
@@ -324,7 +324,7 @@ func ConvertRawExtIgnitionToV3_5(inRawExtIgn *runtime.RawExtension) (runtime.Raw
 // ConvertRawExtIgnitionToVersion takes the Ignition config in the
 // RawExtension and translates it to the requested targetVersion.
 func ConvertRawExtIgnitionToVersion(inRawExtIgn *runtime.RawExtension, targetVersion semver.Version) (runtime.RawExtension, error) {
-	rawExt, err := ConvertRawExtIgnitionToV3_5(inRawExtIgn)
+	rawExt, err := ConvertRawExtIgnitionToV3_6(inRawExtIgn)
 	if err != nil {
 		return runtime.RawExtension{}, err
 	}
@@ -387,12 +387,11 @@ func validateIgn2FileModes(cfg ign2types.Config) error {
 	return nil
 }
 
-// Validates that Ignition V3 file modes do not have special bits (sticky, setuid, setgid) set
-// https://bugzilla.redhat.com/show_bug.cgi?id=2038240
+// Validates that Ignition V3.6 onwards dont exceed the fileMode limits. Special bits are allowed from V3.6 only.
 func validateIgn3FileModes(cfg ign3types.Config) error {
 	for _, file := range cfg.Storage.Files {
-		if file.Mode != nil && os.FileMode(*file.Mode) > os.ModePerm { //nolint:gosec
-			return fmt.Errorf("invalid mode %#o for %s, cannot exceed %#o", *file.Mode, file.Path, os.ModePerm)
+		if file.Mode != nil && (*file.Mode > 0o7777 || *file.Mode < 0) {
+			return fmt.Errorf("invalid mode %#o for %s, cannot exceed %#o or be negative", *file.Mode, file.Path, 0o7777)
 		}
 	}
 

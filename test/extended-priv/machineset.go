@@ -304,7 +304,6 @@ func (ms MachineSet) GetMachinesByPhase(phase string) ([]ManagedMachine, error) 
 	return machines, pollerr
 }
 
-
 // GetNodes returns a slice with all nodes that have been created for this MachineSet
 func (ms MachineSet) GetNodes() ([]*Node, error) {
 	machines, mErr := ms.GetMachines()
@@ -666,8 +665,6 @@ func (ms MachineSet) WaitForRunningMachines(expectedReplicas int, timeout, pollI
 	return runningMachines
 }
 
-
-
 // convertUserDataToNewVersion converts the provided userData ignition config into the provided version format
 //
 //nolint:unparam // newIgnitionVersion is always "2.2.0", but kept for flexibility
@@ -747,6 +744,7 @@ func ConvertUserDataIgnition3ToIgnition2(ignition3 string) (string, error) {
 // getUserDataIgnitionVersionFromOCPVersion returns that right ignition version for a given base image version
 func getUserDataIgnitionVersionFromOCPVersion(baseImageVersion string) string {
 	/* UserData ignition version is defined in https://github.com/openshift/installer/blob/release-4.16/pkg/asset/ignition/machine/node.go#L52
+	   5.1: 3.6.0
 	   4.16: 3.2.0
 	   4.15: 3.2.0
 	   4.14: 3.2.0
@@ -771,7 +769,10 @@ func getUserDataIgnitionVersionFromOCPVersion(baseImageVersion string) string {
 	if CompareVersions(baseImageVersion, "<", "4.10") {
 		return "3.1.0"
 	}
-	return "3.2.0"
+	if CompareVersions(baseImageVersion, "<", "5.1") {
+		return "3.2.0"
+	}
+	return "3.6.0"
 }
 
 // GetCoreOSBootImagePath returns the JSON patch path for the boot image in this machineset
