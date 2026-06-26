@@ -281,12 +281,12 @@ nulla pariatur.`
 
 	})
 
-	g.It("[PolarionID:63477][OTP] Deploy files using all available ignition configs. Default 3.5.0[Disruptive]", func() {
+	g.It("[PolarionID:63477][OTP] Deploy files using all available ignition configs. Default 3.6.0[Disruptive]", func() {
 		var (
 			wMcp                   = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
 			mcNames                = "mc-tc-63477"
-			allVersions            = []string{"2.2.0", "3.0.0", "3.1.0", "3.2.0", "3.3.0", "3.4.0", "3.5.0"}
-			defaultIgnitionVersion = "3.5.0" // default version is 3.5.0 for OCP > 4.19
+			allVersions            = []string{"2.2.0", "3.0.0", "3.1.0", "3.2.0", "3.3.0", "3.4.0", "3.5.0", "3.6.0"}
+			defaultIgnitionVersion = "3.6.0"
 		)
 		defer wMcp.waitForComplete()
 
