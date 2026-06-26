@@ -10,8 +10,8 @@ import (
 	"github.com/clarketm/json"
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
 	ign3utils "github.com/coreos/ignition/v2/config/util"
-	ign3 "github.com/coreos/ignition/v2/config/v3_5"
-	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
+	ign3 "github.com/coreos/ignition/v2/config/v3_6"
+	ign3types "github.com/coreos/ignition/v2/config/v3_6/types"
 	validate3 "github.com/coreos/ignition/v2/config/validate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -140,22 +140,22 @@ func TestValidateIgnition(t *testing.T) {
 // the expected supported minor versions in a sorted slice of strings
 func TestIgnitionConverterGetSupportedMinorVersions(t *testing.T) {
 	converter := newIgnitionConverter(buildConverterList())
-	supported := []string{"2.2", "3.0", "3.1", "3.2", "3.3", "3.4", "3.5"}
+	supported := []string{"2.2", "3.0", "3.1", "3.2", "3.3", "3.4", "3.5", "3.6"}
 	assert.Equal(t, supported, converter.GetSupportedMinorVersions())
 }
 
 // TestIgnitionConverterGetSupportedMinorVersion
 func TestIgnitionConverterGetSupportedMinorVersion(t *testing.T) {
 	converter := newIgnitionConverter(buildConverterList())
-	v350 := semver.New("3.5.0")
-	v352 := semver.New("3.5.2")
-	matchingVersion, err := converter.GetSupportedMinorVersion(*v350)
+	v360 := semver.New("3.6.0")
+	v362 := semver.New("3.6.2")
+	matchingVersion, err := converter.GetSupportedMinorVersion(*v360)
 	assert.NoError(t, err)
-	assert.True(t, matchingVersion.Equal(*v350))
+	assert.True(t, matchingVersion.Equal(*v360))
 
-	matchingMinorVersion, err := converter.GetSupportedMinorVersion(*v352)
+	matchingMinorVersion, err := converter.GetSupportedMinorVersion(*v362)
 	assert.NoError(t, err)
-	assert.True(t, matchingMinorVersion.Equal(*v350))
+	assert.True(t, matchingMinorVersion.Equal(*v360))
 
 	_, err = converter.GetSupportedMinorVersion(*semver.New("7.7.7"))
 	assert.ErrorIs(t, err, ErrIgnitionConverterUnknownVersion)
@@ -227,6 +227,12 @@ func TestIgnitionConverterConvert(t *testing.T) {
 			outputVersion: "3.1.0",
 		},
 		{
+			name:          "Conversion from 3.6 to 3.5",
+			inputConfig:   ign3Config,
+			inputVersion:  "3.6.0",
+			outputVersion: "3.5.0",
+		},
+		{
 			name:          "Conversion wrong source version",
 			inputConfig:   ign2Config,
 			inputVersion:  "3.5.0",
@@ -289,20 +295,14 @@ func TestParseAndConvert(t *testing.T) {
 	require.Nil(t, err)
 	assert.Equal(t, testIgn3Config, convertedIgn)
 
-	// turn v3.1 config into a raw []byte
-	rawIgn = helpers.MarshalOrDie(testIgn3Config)
-	// check that it was parsed successfully
-	convertedIgn, err = ParseAndConvertConfig(rawIgn)
-	require.Nil(t, err)
-	assert.Equal(t, testIgn3Config, convertedIgn)
-
 	// Make a valid Ign 3.2 cfg
-	testIgn3Config.Ignition.Version = InternalMCOIgnitionVersion
+	testIgn3Config.Ignition.Version = "3.2.0"
 	// turn it into a raw []byte
 	rawIgn = helpers.MarshalOrDie(testIgn3Config)
 	// check that it was parsed successfully
 	convertedIgn, err = ParseAndConvertConfig(rawIgn)
 	require.Nil(t, err)
+	testIgn3Config.Ignition.Version = InternalMCOIgnitionVersion
 	assert.Equal(t, testIgn3Config, convertedIgn)
 
 	// Make a valid Ign 3.1 cfg
@@ -347,6 +347,16 @@ func TestParseAndConvert(t *testing.T) {
 
 	// Make a valid Ign 3.5 cfg
 	testIgn3Config.Ignition.Version = "3.5.0"
+	// turn it into a raw []byte
+	rawIgn = helpers.MarshalOrDie(testIgn3Config)
+	// check that it was parsed successfully back to the default version
+	convertedIgn, err = ParseAndConvertConfig(rawIgn)
+	require.Nil(t, err)
+	testIgn3Config.Ignition.Version = InternalMCOIgnitionVersion
+	assert.Equal(t, testIgn3Config, convertedIgn)
+
+	// Make a valid Ign 3.6 cfg
+	testIgn3Config.Ignition.Version = "3.6.0"
 	// turn it into a raw []byte
 	rawIgn = helpers.MarshalOrDie(testIgn3Config)
 	// check that it was parsed successfully back to the default version
