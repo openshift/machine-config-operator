@@ -9,17 +9,18 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 // mockFailureReporter for testing
 type mockFailureReporter struct {
-	reports []*FirstbootFailureReport
+	reports []*ctrlcommon.FirstbootFailureReport
 	err     error
 }
 
-func (m *mockFailureReporter) ReportFailure(ctx context.Context, report *FirstbootFailureReport) error {
+func (m *mockFailureReporter) ReportFailure(ctx context.Context, report *ctrlcommon.FirstbootFailureReport) error {
 	m.reports = append(m.reports, report)
 	return m.err
 }
@@ -28,7 +29,7 @@ func TestNodeFailureHandler_POST(t *testing.T) {
 	reporter := &mockFailureReporter{}
 	handler := NewNodeFailureHandler(reporter)
 
-	report := FirstbootFailureReport{
+	report := ctrlcommon.FirstbootFailureReport{
 		Pool:         "worker",
 		NodeID:       "test-node-1",
 		Stage:        "updateLayeredOS",
@@ -75,7 +76,7 @@ func TestNodeFailureHandler_InvalidJSON(t *testing.T) {
 func TestNodeFailureHandler_MissingFields(t *testing.T) {
 	handler := NewNodeFailureHandler(&mockFailureReporter{})
 
-	report := FirstbootFailureReport{
+	report := ctrlcommon.FirstbootFailureReport{
 		Pool: "worker",
 		// Missing NodeID and Stage
 	}
@@ -94,7 +95,7 @@ func TestNodeFailureHandler_ReporterError(t *testing.T) {
 	reporter := &mockFailureReporter{err: fmt.Errorf("reporter error")}
 	handler := NewNodeFailureHandler(reporter)
 
-	report := FirstbootFailureReport{
+	report := ctrlcommon.FirstbootFailureReport{
 		Pool:   "worker",
 		NodeID: "test",
 		Stage:  "pivot",
@@ -142,6 +143,11 @@ func TestSanitizeErrorMessage(t *testing.T) {
 			expected: "Authorization failed bearer [REDACTED] invalid",
 		},
 		{
+			name:     "message with repeated tokens",
+			input:    "Failed with token=first&x=y&token=second&z=a",
+			expected: "Failed with token=[REDACTED]&x=y&token=[REDACTED]&z=a",
+		},
+		{
 			name:     "very long message",
 			input:    "This is a very long error message that exceeds the maximum length limit and should be truncated to avoid bloating the event storage with unnecessary details that are not helpful for debugging and this text keeps going on and on with more content",
 			expected: "This is a very long error message that exceeds the maximum length limit and should be truncated to avoid bloating the event storage with unnecessary details that are not helpful for debugging and this... (truncated)",
@@ -183,14 +189,24 @@ func TestSanitizeImageURL(t *testing.T) {
 			expected: "quay.io",
 		},
 		{
-			name:     "URL with credentials",
+			name:     "URL with credentials - private registry",
 			input:    "https://user:password@registry.example.com/repo/image:tag",
-			expected: "registry.example.com",
+			expected: "private-registry",
 		},
 		{
-			name:     "URL with query parameters",
+			name:     "URL with query parameters - private registry",
 			input:    "https://registry.example.com/repo?token=secret&key=value",
-			expected: "registry.example.com",
+			expected: "private-registry",
+		},
+		{
+			name:     "public registry - docker.io",
+			input:    "docker.io/library/nginx:latest",
+			expected: "docker.io",
+		},
+		{
+			name:     "public registry - registry.redhat.io",
+			input:    "registry.redhat.io/rhel9/rhel:latest",
+			expected: "registry.redhat.io",
 		},
 	}
 
@@ -205,12 +221,12 @@ func TestSanitizeImageURL(t *testing.T) {
 func TestFormatFailureMessage(t *testing.T) {
 	tests := []struct {
 		name     string
-		report   *FirstbootFailureReport
+		report   *ctrlcommon.FirstbootFailureReport
 		expected string
 	}{
 		{
 			name: "normal report",
-			report: &FirstbootFailureReport{
+			report: &ctrlcommon.FirstbootFailureReport{
 				NodeID:       "node-1",
 				Stage:        "pivot",
 				ErrorMessage: "Failed to pivot",
@@ -220,17 +236,17 @@ func TestFormatFailureMessage(t *testing.T) {
 		},
 		{
 			name: "report with credentials in URL",
-			report: &FirstbootFailureReport{
+			report: &ctrlcommon.FirstbootFailureReport{
 				NodeID:       "node-2",
 				Stage:        "updateLayeredOS",
 				ErrorMessage: "Pull failed",
 				ImageURL:     "https://user:pass@registry.com/repo:tag",
 			},
-			expected: "Node node-2 failed during firstboot at stage 'updateLayeredOS': Pull failed (image: registry.com)",
+			expected: "Node node-2 failed during firstboot at stage 'updateLayeredOS': Pull failed (image: private-registry)",
 		},
 		{
 			name: "report with internal registry",
-			report: &FirstbootFailureReport{
+			report: &ctrlcommon.FirstbootFailureReport{
 				NodeID:       "node-3",
 				Stage:        "pivot",
 				ErrorMessage: "Network timeout",
@@ -240,7 +256,7 @@ func TestFormatFailureMessage(t *testing.T) {
 		},
 		{
 			name: "report with secret in error message",
-			report: &FirstbootFailureReport{
+			report: &ctrlcommon.FirstbootFailureReport{
 				NodeID:       "node-4",
 				Stage:        "kargs",
 				ErrorMessage: "Auth failed with token=abc123&other=data",
