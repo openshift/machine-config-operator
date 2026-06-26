@@ -13,7 +13,7 @@ import (
 
 	"github.com/clarketm/json"
 	"github.com/coreos/go-semver/semver"
-	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_6/types"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"

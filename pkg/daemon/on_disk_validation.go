@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
-	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_6/types"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -195,7 +195,7 @@ func checkV3Files(files []ign3types.File) error {
 		}
 		mode := defaultFilePermissions
 		if f.Mode != nil {
-			mode = os.FileMode(*f.Mode) //nolint:gosec
+			mode = toNativeGoFileMode(*f.Mode)
 		}
 		contents, err := ctrlcommon.DecodeIgnitionFileContents(f.Contents.Source, f.Contents.Compression)
 		if err != nil {
@@ -270,7 +270,7 @@ func checkFileContentsAndMode(filePath string, expectedContent []byte, mode os.F
 		return fmt.Errorf("could not stat file %q: %w", filePath, err)
 	}
 	if fi.Mode() != mode {
-		return fmt.Errorf("mode mismatch for file: %q; expected: %[2]v/%[2]d/%#[2]o; received: %[3]v/%[3]d/%#[3]o", filePath, mode, fi.Mode())
+		return fmt.Errorf("mode mismatch for file: %q; expected: %[2]v/%#[3]o; received: %[4]v/%#[5]o", filePath, mode, toPOSIXFileMode(mode), fi.Mode(), toPOSIXFileMode(fi.Mode()))
 	}
 	contents, err := os.ReadFile(filePath)
 	if err != nil {

@@ -18,7 +18,8 @@ import (
 	ign3_3 "github.com/coreos/ignition/v2/config/v3_3"
 	ign3_4 "github.com/coreos/ignition/v2/config/v3_4"
 	ign3_5 "github.com/coreos/ignition/v2/config/v3_5"
-	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
+	ign3_6 "github.com/coreos/ignition/v2/config/v3_6"
+	ign3types "github.com/coreos/ignition/v2/config/v3_6/types"
 	yaml "github.com/ghodss/yaml"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -61,6 +62,9 @@ func parseIgnitionByVersion(raw []byte, version *semver.Version) (string, error)
 		return cfg.Ignition.Version, err
 	case version.Equal(*semver.New("3.5.0")):
 		cfg, _, err := ign3_5.Parse(raw)
+		return cfg.Ignition.Version, err
+	case version.Equal(*semver.New("3.6.0")):
+		cfg, _, err := ign3_6.Parse(raw)
 		return cfg.Ignition.Version, err
 	default:
 		return "", fmt.Errorf("unsupported test version %s", version)
@@ -106,7 +110,7 @@ func TestEncapsulated(t *testing.T) {
 	assert.Equal(t, mcIgnCfg.Storage.Files[1].Path, daemonconsts.MachineConfigEncapsulatedPath)
 
 	vers := []*semver.Version{
-		semver.New("3.5.0"), semver.New("3.4.0"), semver.New("3.3.0"),
+		semver.New("3.6.0"), semver.New("3.5.0"), semver.New("3.4.0"), semver.New("3.3.0"),
 		semver.New("3.2.0"), semver.New("3.1.0"), semver.New("2.2.0"),
 	}
 	t.Logf("vers: %v\n", vers)
@@ -1334,7 +1338,7 @@ func TestGetConfigDoesNotMutateInformerCache(t *testing.T) {
 			MachineConfig:   mcfgv1.MachineConfigReference{Name: "rendered-worker-new"},
 		},
 		Status: mcfgv1.MachineOSBuildStatus{
-			Conditions: []metav1.Condition{{Type: "Succeeded", Status: metav1.ConditionTrue}},
+			Conditions:            []metav1.Condition{{Type: "Succeeded", Status: metav1.ConditionTrue}},
 			DigestedImagePushSpec: mcfgv1.ImageDigestFormat("quay.io/openshift/custom-layered-image@sha256:abc123"),
 		},
 	}
