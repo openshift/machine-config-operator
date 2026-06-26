@@ -1817,9 +1817,8 @@ func (dn *CoreOSDaemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConf
 		return nil
 	}
 
-	extensionsEmpty := len(oldConfig.Spec.Extensions) == 0 && len(newConfig.Spec.Extensions) == 0
-	if (extensionsEmpty) ||
-		(reflect.DeepEqual(oldConfig.Spec.Extensions, newConfig.Spec.Extensions) && oldConfig.Spec.OSImageURL == newConfig.Spec.OSImageURL) {
+	// If both configs have no extensions, there's nothing to do
+	if len(oldConfig.Spec.Extensions) == 0 && len(newConfig.Spec.Extensions) == 0 {
 		return nil
 	}
 
