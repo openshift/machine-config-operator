@@ -139,9 +139,12 @@ func NewClusterServer(kubeConfig, apiserverURL string, eventBroadcaster record.E
 		}
 	}
 
-	// Start recording events to the API server
+	// Start recording events to the API server. The sink is deliberately not
+	// pinned to a namespace: MachineConfigPool is cluster-scoped, so its events
+	// belong in the default namespace, and a pinned sink rejects any event whose
+	// namespace does not match it.
 	eventBroadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{
-		Interface: kubeClient.CoreV1().Events(ctrlcommon.MCONamespace),
+		Interface: kubeClient.CoreV1().Events(""),
 	})
 
 	// Create EventRecorder for failure reporting
@@ -153,7 +156,7 @@ func NewClusterServer(kubeConfig, apiserverURL string, eventBroadcaster record.E
 	})
 
 	// Create failure reporter
-	failureReporter := NewClusterFailureReporter(eventRecorder)
+	failureReporter := NewClusterFailureReporter(eventRecorder, mcpLister)
 
 	return &clusterServer{
 		machineConfigPoolLister: mcpLister,
