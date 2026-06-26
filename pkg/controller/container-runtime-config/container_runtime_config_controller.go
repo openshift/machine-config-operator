@@ -11,7 +11,7 @@ import (
 
 	"github.com/clarketm/json"
 	signature "github.com/containers/image/v5/signature"
-	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_6/types"
 	apicfgv1 "github.com/openshift/api/config/v1"
 	features "github.com/openshift/api/features"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
