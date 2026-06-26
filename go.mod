@@ -21,7 +21,7 @@ require (
 	github.com/containers/storage v1.58.0
 	github.com/coreos/fcct v0.5.0
 	github.com/coreos/go-semver v0.3.1
-	github.com/coreos/ign-converter v0.0.0-20241125185625-2f773079ca81
+	github.com/coreos/ign-converter v0.0.0-20260420141348-5351d3e16080
 	github.com/coreos/ignition v0.35.0
 	github.com/coreos/ignition/v2 v2.26.0
 	github.com/coreos/rpmostree-client-go v0.0.0-20230914135003-fae0786302f7
@@ -55,7 +55,7 @@ require (
 	github.com/tidwall/sjson v1.2.5
 	github.com/vincent-petithory/dataurl v1.0.0
 	github.com/vmware/govmomi v0.45.1
-	golang.org/x/net v0.57.0
+	golang.org/x/net v0.56.0
 	golang.org/x/time v0.15.0
 	google.golang.org/grpc v1.82.2
 	k8s.io/api v0.36.2
