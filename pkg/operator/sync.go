@@ -9,11 +9,8 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"net"
-	"net/url"
 	"os"
 	"reflect"
-	"strconv"
 	"strings"
 	"time"
 
@@ -620,7 +617,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		templatectrl.DockerRegistryKey:        imgs.DockerRegistry,
 	}
 
-	ignitionHost, err := getIgnitionHost(&infra.Status)
+	ignitionHost, err := server.GetIgnitionHost(&infra.Status)
 	if err != nil {
 		return err
 	}
@@ -696,34 +693,6 @@ func (optr *Operator) getTrustedBundle(proxy *configv1.Proxy) ([]byte, error) {
 		}
 	}
 	return trustBundle, nil
-}
-
-func getIgnitionHost(infraStatus *configv1.InfrastructureStatus) (string, error) {
-	internalURL := infraStatus.APIServerInternalURL
-	internalURLParsed, err := url.Parse(internalURL)
-	if err != nil {
-		return "", err
-	}
-	securePortStr := strconv.Itoa(server.SecurePort)
-	ignitionHost := fmt.Sprintf("%s:%s", internalURLParsed.Hostname(), securePortStr)
-	if infraStatus.PlatformStatus != nil {
-		switch infraStatus.PlatformStatus.Type {
-		case configv1.BareMetalPlatformType:
-			ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.BareMetal.APIServerInternalIPs[0], securePortStr)
-		case configv1.OpenStackPlatformType:
-			ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.OpenStack.APIServerInternalIPs[0], securePortStr)
-		case configv1.OvirtPlatformType:
-			ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.Ovirt.APIServerInternalIPs[0], securePortStr)
-		case configv1.VSpherePlatformType:
-			if infraStatus.PlatformStatus.VSphere != nil {
-				if len(infraStatus.PlatformStatus.VSphere.APIServerInternalIPs) > 0 {
-					ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.VSphere.APIServerInternalIPs[0], securePortStr)
-				}
-			}
-		}
-	}
-
-	return ignitionHost, nil
 }
 
 func (optr *Operator) syncMachineConfigPools(config *renderConfig, _ *configv1.ClusterOperator) error {
