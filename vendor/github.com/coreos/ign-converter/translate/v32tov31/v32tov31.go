@@ -102,7 +102,7 @@ func translateConfig(old old_types.Config) (ret types.Config) {
 func Translate(cfg old_types.Config) (types.Config, error) {
 	rpt := validate.ValidateWithContext(cfg, nil)
 	if rpt.IsFatal() {
-		return types.Config{}, fmt.Errorf("Invalid input config:\n%s", rpt.String())
+		return types.Config{}, fmt.Errorf("invalid input config:\n%s", rpt.String())
 	}
 
 	if len(cfg.Storage.Luks) > 0 {
@@ -126,7 +126,7 @@ func Translate(cfg old_types.Config) (types.Config, error) {
 	for _, d := range cfg.Storage.Disks {
 		for _, p := range d.Partitions {
 			if p.Resize != nil && *p.Resize {
-				return types.Config{}, fmt.Errorf("Resize in Storage.Disks.Partitions is not supported on 3.1")
+				return types.Config{}, fmt.Errorf("resize in Storage.Disks.Partitions is not supported on 3.1")
 			}
 		}
 	}
@@ -136,7 +136,7 @@ func Translate(cfg old_types.Config) (types.Config, error) {
 	// Sanity check the returned config
 	oldrpt := validate.ValidateWithContext(res, nil)
 	if oldrpt.IsFatal() {
-		return types.Config{}, fmt.Errorf("Converted spec has unexpected fatal error:\n%s", oldrpt.String())
+		return types.Config{}, fmt.Errorf("converted spec has unexpected fatal error:\n%s", oldrpt.String())
 	}
 	return res, nil
 }
