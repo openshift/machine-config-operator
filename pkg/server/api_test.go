@@ -28,6 +28,10 @@ func (ms *mockServer) GetConfig(pr poolRequest) (*runtime.RawExtension, error) {
 	return ms.GetConfigFn(pr)
 }
 
+func (ms *mockServer) GetFailureReporter() FailureReporter {
+	return nil
+}
+
 type checkResponse func(t *testing.T, response *http.Response)
 
 type scenario struct {
@@ -717,7 +721,7 @@ func TestAPIServer(t *testing.T) {
 			ms := &mockServer{
 				GetConfigFn: scenario.serverFunc,
 			}
-			server := NewAPIServer(NewServerAPIHandler(ms), 0, false, "", "", nil)
+			server := NewAPIServer(NewServerAPIHandler(ms), nil, 0, false, "", "", nil)
 			server.handler.ServeHTTP(w, scenario.request)
 
 			resp := w.Result()
