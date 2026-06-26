@@ -23,6 +23,7 @@ import (
 // Error definitions
 
 // UsesNetworkdError is the error for including networkd configs
+// nolint:staticcheck
 var UsesNetworkdError = errors.New("config includes deprecated networkd section - use Files instead")
 
 // NoFilesystemError type for when a filesystem is referenced in a config but there's no mapping to where
