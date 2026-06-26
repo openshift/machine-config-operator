@@ -230,6 +230,19 @@ func TestBootstrapServer(t *testing.T) {
 	validateIgnitionFiles(t, ignCfg.Storage.Files, resCfg.Storage.Files)
 	validateIgnitionSystemd(t, ignCfg.Systemd.Units, resCfg.Systemd.Units)
 
+	// Verify bootstrap server does not write the MCS URL file
+	var foundAnnotations, foundMCSURL bool
+	for _, file := range resCfg.Storage.Files {
+		if file.Path == daemonconsts.MCSURLFilePath {
+			foundMCSURL = true
+		}
+		if file.Path == daemonconsts.InitialNodeAnnotationsFilePath {
+			foundAnnotations = true
+		}
+	}
+	assert.True(t, foundAnnotations, "node annotations file should be present")
+	assert.False(t, foundMCSURL, "bootstrap server should not write the MCS URL file")
+
 	// verify bootstrap cannot serve ignition to other pool than master
 	res, err = bs.GetConfig(poolRequest{
 		machineConfigPool: testPool,
@@ -358,6 +371,7 @@ func TestClusterServer(t *testing.T) {
 		kubeconfigFunc: func() ([]byte, []byte, error) {
 			return getKubeConfigContent()
 		},
+		mcsURL: "https://api-int.test.example.com:22623",
 	}
 
 	mc := new(mcfgv1.MachineConfig)
@@ -404,6 +418,35 @@ func TestClusterServer(t *testing.T) {
 	}
 	validateIgnitionFiles(t, ignCfg.Storage.Files, resCfg.Storage.Files)
 	validateIgnitionSystemd(t, ignCfg.Systemd.Units, resCfg.Systemd.Units)
+
+	// Verify cluster server writes the MCS URL to a file rather than a node annotation
+	var foundAnnotations, foundMCSURL bool
+	for _, file := range resCfg.Storage.Files {
+		switch file.Path {
+		case daemonconsts.InitialNodeAnnotationsFilePath:
+			foundAnnotations = true
+
+			contents, err := ctrlcommon.DecodeIgnitionFileContents(file.Contents.Source, file.Contents.Compression)
+			require.NoError(t, err)
+
+			var annotations map[string]string
+			err = json.Unmarshal([]byte(contents), &annotations)
+			require.NoError(t, err)
+
+			// The MCS URL must not leak onto the in-cluster Node object
+			for k := range annotations {
+				assert.NotContains(t, k, "machineConfigServerURL", "MCS URL should not be a node annotation")
+			}
+		case daemonconsts.MCSURLFilePath:
+			foundMCSURL = true
+
+			contents, err := ctrlcommon.DecodeIgnitionFileContents(file.Contents.Source, file.Contents.Compression)
+			require.NoError(t, err)
+			assert.Equal(t, "https://api-int.test.example.com:22623", string(contents))
+		}
+	}
+	assert.True(t, foundAnnotations, "node annotations file should be present")
+	assert.True(t, foundMCSURL, "cluster server should write the MCS URL file")
 
 	foundEncapsulated := false
 	for _, f := range resCfg.Storage.Files {

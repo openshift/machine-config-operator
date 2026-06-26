@@ -26,9 +26,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
 	clientset "k8s.io/client-go/kubernetes"
+	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	clientcmdv1 "k8s.io/client-go/tools/clientcmd/api/v1"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 
 	v1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
@@ -54,12 +56,14 @@ type clusterServer struct {
 	machineOSConfigLister   v1.MachineOSConfigLister
 	machineOSBuildLister    v1.MachineOSBuildLister
 
-	mcfgclient  mcfgclientset.Interface
-	kubeclient  clientset.Interface
-	routeclient routeclientset.Interface
+	mcfgclient      mcfgclientset.Interface
+	kubeclient      clientset.Interface
+	routeclient     routeclientset.Interface
+	failureReporter FailureReporter
 
 	kubeconfigFunc kubeconfigFunc
 	apiserverURL   string
+	mcsURL         string
 }
 
 const minResyncPeriod = 20 * time.Minute
@@ -80,7 +84,8 @@ func resyncPeriod() func() time.Duration {
 // It accepts a kubeConfig, which is not required when it's
 // run from within a cluster(useful in testing).
 // It accepts the apiserverURL which is the location of the KubeAPIServer.
-func NewClusterServer(kubeConfig, apiserverURL string) (Server, error) {
+// It accepts an eventBroadcaster for recording firstboot failure events.
+func NewClusterServer(kubeConfig, apiserverURL string, eventBroadcaster record.EventBroadcaster) (Server, error) {
 	clientsBuilder, err := clients.NewBuilder(kubeConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Kubernetes rest client: %w", err)
@@ -89,6 +94,7 @@ func NewClusterServer(kubeConfig, apiserverURL string) (Server, error) {
 	machineConfigClient := clientsBuilder.MachineConfigClientOrDie("machine-config-shared-informer")
 	kubeClient := clientsBuilder.KubeClientOrDie("kube-client-shared-informer")
 	routeClient := clientsBuilder.RouteClientOrDie("route-client")
+	configClient := clientsBuilder.ConfigClientOrDie("config-client")
 	sharedInformerFactory := mcfginformers.NewSharedInformerFactory(machineConfigClient, resyncPeriod()())
 	kubeNamespacedSharedInformer := informers.NewSharedInformerFactoryWithOptions(kubeClient, resyncPeriod()(), informers.WithNamespace("openshift-machine-config-operator"))
 
@@ -116,6 +122,39 @@ func NewClusterServer(kubeConfig, apiserverURL string) (Server, error) {
 		return nil, errors.New("failed to wait for cache sync")
 	}
 
+	// Fetch Infrastructure to compute MCS URL
+	// Non-fatal: if this fails, continue with empty mcsURL
+	var mcsURL string
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	infra, err := configClient.ConfigV1().Infrastructures().Get(ctx, "cluster", metav1.GetOptions{})
+	if err != nil {
+		klog.Warningf("Failed to get cluster infrastructure, continuing without MCS URL: %v", err)
+	} else {
+		ignitionHost, err := GetIgnitionHost(&infra.Status)
+		if err != nil {
+			klog.Warningf("Failed to compute ignition host, continuing without MCS URL: %v", err)
+		} else {
+			mcsURL = fmt.Sprintf("https://%s", ignitionHost)
+		}
+	}
+
+	// Start recording events to the API server
+	eventBroadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{
+		Interface: kubeClient.CoreV1().Events(ctrlcommon.MCONamespace),
+	})
+
+	// Create EventRecorder for failure reporting
+	scheme := runtime.NewScheme()
+	corev1.AddToScheme(scheme)
+	mcfgv1.AddToScheme(scheme)
+	eventRecorder := eventBroadcaster.NewRecorder(scheme, corev1.EventSource{
+		Component: "machine-config-server",
+	})
+
+	// Create failure reporter
+	failureReporter := NewClusterFailureReporter(eventRecorder)
+
 	return &clusterServer{
 		machineConfigPoolLister: mcpLister,
 		machineConfigLister:     mcLister,
@@ -126,8 +165,10 @@ func NewClusterServer(kubeConfig, apiserverURL string) (Server, error) {
 		mcfgclient:              machineConfigClient,
 		kubeclient:              kubeClient,
 		routeclient:             routeClient,
+		failureReporter:         failureReporter,
 		kubeconfigFunc:          func() ([]byte, []byte, error) { return kubeconfigFromSecret(bootstrapTokenDir, apiserverURL, nil) },
 		apiserverURL:            apiserverURL,
+		mcsURL:                  mcsURL,
 	}, nil
 }
 
@@ -190,6 +231,7 @@ func (cs *clusterServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error
 
 	addDataAndMaybeAppendToIgnition(caBundleFilePath, cc.Spec.KubeAPIServerServingCAData, &ignConf)
 	addDataAndMaybeAppendToIgnition(cloudProviderCAPath, cc.Spec.CloudProviderCAData, &ignConf)
+	addDataAndMaybeAppendToIgnition(daemonconsts.MCSURLFilePath, []byte(cs.mcsURL), &ignConf)
 
 	desiredImage := cs.resolveDesiredImageForPool(mp)
 
@@ -391,4 +433,9 @@ func appendDesiredOSImage(desired string) appenderFunc {
 		}
 		return nil
 	}
+}
+
+// GetKubeClient returns the Kubernetes client for this cluster server
+func (cs *clusterServer) GetFailureReporter() FailureReporter {
+	return cs.failureReporter
 }
