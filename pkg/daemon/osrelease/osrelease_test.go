@@ -167,6 +167,8 @@ OPENSHIFT_VERSION="4.20"`
 		IsCoreOSVariant        bool
 		IsLikeTraditionalRHEL7 bool
 		ToPrometheusLabel      string
+		BaseVersionMajor       int
+		BaseVersionMinor       int
 	}{
 		{
 			Name:                   "RHCOS 8.6",
@@ -179,6 +181,8 @@ OPENSHIFT_VERSION="4.20"`
 			IsCoreOSVariant:        true,
 			IsLikeTraditionalRHEL7: false,
 			ToPrometheusLabel:      "RHCOS",
+			BaseVersionMajor:       8,
+			BaseVersionMinor:       6,
 		},
 		{
 			Name:                   "RHCOS 9.0",
@@ -190,6 +194,8 @@ OPENSHIFT_VERSION="4.20"`
 			IsCoreOSVariant:        true,
 			IsLikeTraditionalRHEL7: false,
 			ToPrometheusLabel:      "RHCOS",
+			BaseVersionMajor:       9,
+			BaseVersionMinor:       0,
 		},
 		{
 			Name:                   "RHCOS 10.1",
@@ -202,6 +208,8 @@ OPENSHIFT_VERSION="4.20"`
 			IsCoreOSVariant:        true,
 			IsLikeTraditionalRHEL7: false,
 			ToPrometheusLabel:      "RHEL",
+			BaseVersionMajor:       10,
+			BaseVersionMinor:       1,
 		},
 		{
 			Name:                   "Fedora 37 Server",
@@ -214,6 +222,8 @@ OPENSHIFT_VERSION="4.20"`
 			IsCoreOSVariant:        false,
 			IsLikeTraditionalRHEL7: false,
 			ToPrometheusLabel:      "FEDORA",
+			BaseVersionMajor:       37,
+			BaseVersionMinor:       -1,
 		},
 		{
 			Name:                   "SCOS",
@@ -226,6 +236,8 @@ OPENSHIFT_VERSION="4.20"`
 			IsCoreOSVariant:        true,
 			IsLikeTraditionalRHEL7: false,
 			ToPrometheusLabel:      "SCOS",
+			BaseVersionMajor:       9,
+			BaseVersionMinor:       -1,
 		},
 		{
 			Name:                   "FCOS",
@@ -238,6 +250,8 @@ OPENSHIFT_VERSION="4.20"`
 			IsCoreOSVariant:        true,
 			IsLikeTraditionalRHEL7: false,
 			ToPrometheusLabel:      "FEDORA",
+			BaseVersionMajor:       37,
+			BaseVersionMinor:       -1,
 		},
 	}
 
@@ -256,6 +270,8 @@ OPENSHIFT_VERSION="4.20"`
 			assert.Equal(t, testCase.IsSCOS, os.IsSCOS(), "expected IsSCOS() to be %v", testCase.IsSCOS)
 			assert.Equal(t, testCase.IsLikeTraditionalRHEL7, os.IsLikeTraditionalRHEL7(), "expected IsLikeTraditionalRHEL7() to be %v", testCase.IsLikeTraditionalRHEL7)
 			assert.Equal(t, testCase.ToPrometheusLabel, os.ToPrometheusLabel(), "expected ToPrometheusLabel() to be %s, got %s", testCase.ToPrometheusLabel, os.ToPrometheusLabel())
+			assert.Equal(t, testCase.BaseVersionMajor, os.BaseVersionMajor(), "expected BaseVersionMajor() to be %d", testCase.BaseVersionMajor)
+			assert.Equal(t, testCase.BaseVersionMinor, os.BaseVersionMinor(), "expected BaseVersionMinor() to be %d", testCase.BaseVersionMinor)
 		})
 	}
 }
