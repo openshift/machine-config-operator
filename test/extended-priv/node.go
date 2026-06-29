@@ -827,12 +827,12 @@ func (n *Node) GetDateWithDelta(delta string) (time.Time, error) {
 
 // IsFIPSEnabled check whether fips is enabled on node
 func (n *Node) IsFIPSEnabled() (bool, error) {
-	output, err := n.DebugNodeWithChroot("fips-mode-setup", "--check")
+	stdout, _, err := n.DebugNodeWithChrootStd("cat", "/proc/sys/crypto/fips_enabled")
 	if err != nil {
 		logger.Errorf("Error checking fips mode %s", err)
 	}
 
-	return strings.Contains(output, "FIPS mode is enabled"), err
+	return strings.TrimSpace(stdout) == "1", err
 }
 
 // IsKernelArgEnabled check whether kernel arg is enabled on node

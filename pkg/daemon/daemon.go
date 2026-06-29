@@ -539,11 +539,11 @@ func ReexecuteForTargetRoot(target string) error {
 
 		// When container is newer than target, use target-compatible binary
 		switch {
-		case sourceMajor == "10" && targetMajor == "9":
+		case sourceMajor == 10 && targetMajor == 9:
 			sourceBinarySuffix = ".rhel9"
 			klog.Info("container is rhel10, target is rhel9")
 		default:
-			klog.Infof("using appropriate binary for source=rhel-%s target=rhel-%s", sourceMajor, targetMajor)
+			klog.Infof("using appropriate binary for source=rhel-%d target=rhel-%d", sourceMajor, targetMajor)
 		}
 	} else {
 		klog.Info("assuming we can use container binary chroot() to host")

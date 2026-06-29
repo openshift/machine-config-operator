@@ -55,7 +55,7 @@ func TestExtensions(t *testing.T) {
 			Config: runtime.RawExtension{
 				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
 			},
-			Extensions: []string{"two-node-ha", "ipsec", "usbguard", "kerberos", "kernel-devel", "sandboxed-containers", "sysstat"},
+			Extensions: []string{"two-node-ha", "ipsec", "usbguard", "kerberos", "kernel-devel", "sysstat"},
 		},
 	}
 
@@ -84,8 +84,8 @@ func TestExtensions(t *testing.T) {
 		// "kerberos" extension is not available on OKD
 		expectedPackages = []string{"libreswan", "usbguard", "kernel-devel"}
 	} else {
-		installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-q", "pacemaker", "pcs", "fence-agents-all", "libreswan", "usbguard", "kernel-devel", "kernel-headers", "kata-containers", "krb5-workstation", "libkadm5", "sysstat")
-		expectedPackages = []string{"pacemaker", "pcs", "fence-agents-all", "libreswan", "usbguard", "kernel-devel", "kernel-headers", "kata-containers", "krb5-workstation", "libkadm5", "sysstat"}
+		installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-q", "pacemaker", "pcs", "fence-agents-all", "libreswan", "usbguard", "kernel-devel", "kernel-headers", "krb5-workstation", "libkadm5", "sysstat")
+		expectedPackages = []string{"pacemaker", "pcs", "fence-agents-all", "libreswan", "usbguard", "kernel-devel", "kernel-headers", "krb5-workstation", "libkadm5", "sysstat"}
 
 	}
 	for _, v := range expectedPackages {
@@ -119,7 +119,7 @@ func TestExtensions(t *testing.T) {
 		// "sandboxed-containers" extension is not available on OKD
 		installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "usbguard", "kernel-devel")
 	} else {
-		installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "usbguard", "kernel-devel", "kernel-headers", "kata-containers", "krb5-workstation", "libkadm5")
+		installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "usbguard", "kernel-devel", "kernel-headers", "krb5-workstation", "libkadm5")
 	}
 	for _, v := range expectedPackages {
 		if strings.Contains(installedPackages, v) {

@@ -3,6 +3,7 @@ package osrelease
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/ashcrow/osrelease"
@@ -85,8 +86,28 @@ func (os OperatingSystem) BaseVersion() string {
 
 // BaseVersionMajor returns the first number in a `.` separated BaseVersion.
 // For example with VERSION_ID=9.2, this will return 9.
-func (os OperatingSystem) BaseVersionMajor() string {
-	return strings.Split(os.BaseVersion(), ".")[0]
+// Returns -1 if the version cannot be parsed.
+func (os OperatingSystem) BaseVersionMajor() int {
+	major, err := strconv.Atoi(strings.Split(os.BaseVersion(), ".")[0])
+	if err != nil {
+		return -1
+	}
+	return major
+}
+
+// BaseVersionMinor returns the second number in a `.` separated BaseVersion.
+// For example with VERSION_ID=9.6, this will return 6.
+// Returns -1 if there is no minor component or it cannot be parsed.
+func (os OperatingSystem) BaseVersionMinor() int {
+	parts := strings.SplitN(os.BaseVersion(), ".", 2)
+	if len(parts) < 2 {
+		return -1
+	}
+	minor, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return -1
+	}
+	return minor
 }
 
 // IsEL is true if the OS is an Enterprise Linux variant of CoreOS
