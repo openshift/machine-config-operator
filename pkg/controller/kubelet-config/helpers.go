@@ -398,17 +398,20 @@ func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 	return nil
 }
 
+// wrapErrorWithCondition converts an error into a KubeletConfigCondition with type KubeletConfigAccepted.
+// If err is non-nil, the condition status is set to False; otherwise it is set to True.
+// Optional args can provide a format string and values to override the default condition message.
 func wrapErrorWithCondition(err error, args ...interface{}) mcfgv1.KubeletConfigCondition {
 	var condition *mcfgv1.KubeletConfigCondition
 	if err != nil {
 		condition = apihelpers.NewKubeletConfigCondition(
-			mcfgv1.KubeletConfigFailure,
-			corev1.ConditionTrue,
+			mcfgv1.KubeletConfigAccepted,
+			corev1.ConditionFalse,
 			fmt.Sprintf("Error: %v", err),
 		)
 	} else {
 		condition = apihelpers.NewKubeletConfigCondition(
-			mcfgv1.KubeletConfigSuccess,
+			mcfgv1.KubeletConfigAccepted,
 			corev1.ConditionTrue,
 			"Success",
 		)
@@ -420,6 +423,17 @@ func wrapErrorWithCondition(err error, args ...interface{}) mcfgv1.KubeletConfig
 		}
 	}
 	return *condition
+}
+
+// LEGACY: legacyConditionFromAccepted converts a KubeletConfigAccepted condition to the
+// corresponding deprecated KubeletConfigSuccess or KubeletConfigFailure condition for backwards
+// compatibility with downstream consumers (openshift/origin, openshift/oc).
+// TODO(OCPNODE-XXXX): Remove once openshift/origin and openshift/oc use KubeletConfigAccepted.
+func legacyConditionFromAccepted(cond mcfgv1.KubeletConfigCondition) mcfgv1.KubeletConfigCondition {
+	if cond.Status == corev1.ConditionTrue {
+		return *apihelpers.NewKubeletConfigCondition(mcfgv1.KubeletConfigSuccess, corev1.ConditionTrue, cond.Message)
+	}
+	return *apihelpers.NewKubeletConfigCondition(mcfgv1.KubeletConfigFailure, corev1.ConditionTrue, cond.Message)
 }
 
 func DecodeKubeletConfig(data []byte) (*kubeletconfigv1beta1.KubeletConfiguration, error) {

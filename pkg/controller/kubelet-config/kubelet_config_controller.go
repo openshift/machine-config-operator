@@ -467,6 +467,7 @@ func generateOriginalKubeletConfigIgn(cc *mcfgv1.ControllerConfig, templatesDir,
 	return nil, fmt.Errorf("could not generate old kubelet config")
 }
 
+// syncStatusOnly updates the status conditions of a KubeletConfig CR without modifying its spec.
 func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.KubeletConfig, err error, args ...interface{}) error {
 	statusUpdateError := retry.RetryOnConflict(updateBackoff, func() error {
 		newcfg, getErr := ctrl.mckLister.Get(cfg.Name)
@@ -477,13 +478,17 @@ func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.KubeletConfig, err error, arg
 		if newcfg.GetGeneration() != newcfg.Status.ObservedGeneration {
 			newcfg.Status.ObservedGeneration = newcfg.GetGeneration()
 		}
-		// Keeps a list of three status to avoid a long list of same statuses,
-		// only append a status if it is the first status
-		// or if the status message is different from the message of the last status recorded
-		// If the last status message is the same as the new one, then update the last status to
-		// reflect the latest time stamp from the new status message.
 		newStatusCondition := wrapErrorWithCondition(err, args...)
+
+		// LEGACY: Strip deprecated conditions before cleanup so the rolling window only tracks Accepted.
+		// TODO(OCPNODE-XXXX): Remove the next line once openshift/origin and openshift/oc use KubeletConfigAccepted.
+		removeLegacyConditions(&newcfg.Status.Conditions)
+
 		cleanUpStatusConditions(&newcfg.Status.Conditions, newStatusCondition)
+
+		// LEGACY: Append deprecated KubeletConfigSuccess/KubeletConfigFailure for backwards compat.
+		// TODO(OCPNODE-XXXX): Remove the next line once openshift/origin and openshift/oc use KubeletConfigAccepted.
+		newcfg.Status.Conditions = append(newcfg.Status.Conditions, legacyConditionFromAccepted(newStatusCondition))
 		_, lerr := ctrl.client.MachineconfigurationV1().KubeletConfigs().UpdateStatus(context.TODO(), newcfg, metav1.UpdateOptions{})
 		return lerr
 	})
@@ -505,6 +510,19 @@ func cleanUpStatusConditions(statusConditions *[]mcfgv1.KubeletConfigCondition, 
 	if len(*statusConditions) > statusLimit {
 		*statusConditions = (*statusConditions)[len(*statusConditions)-statusLimit:]
 	}
+}
+
+// LEGACY: removeLegacyConditions strips deprecated KubeletConfigSuccess/KubeletConfigFailure conditions.
+// Called before cleanUpStatusConditions so the rolling window only tracks KubeletConfigAccepted entries.
+// TODO(OCPNODE-XXXX): Remove once openshift/origin and openshift/oc use KubeletConfigAccepted.
+func removeLegacyConditions(conditions *[]mcfgv1.KubeletConfigCondition) {
+	filtered := (*conditions)[:0]
+	for _, c := range *conditions {
+		if c.Type != mcfgv1.KubeletConfigSuccess && c.Type != mcfgv1.KubeletConfigFailure {
+			filtered = append(filtered, c)
+		}
+	}
+	*conditions = filtered
 }
 
 // addAnnotation adds the annotions for a kubeletconfig object with the given annotationKey and annotationVal
@@ -633,7 +651,9 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			}
 			configSuccess := false
 			if len(cfg.Status.Conditions) > 0 {
-				configSuccess = cfg.Status.Conditions[len(cfg.Status.Conditions)-1].Type == mcfgv1.KubeletConfigSuccess
+				lastCondition := cfg.Status.Conditions[len(cfg.Status.Conditions)-1]
+				configSuccess = (lastCondition.Type == mcfgv1.KubeletConfigAccepted && lastCondition.Status == corev1.ConditionTrue) ||
+					lastCondition.Type == mcfgv1.KubeletConfigSuccess // backwards compatibility
 			}
 			if match && cfg.Status.ObservedGeneration >= cfg.Generation && configSuccess {
 				// But we still need to compare the generated controller version because during an upgrade we need a new one
