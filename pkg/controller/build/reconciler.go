@@ -233,6 +233,13 @@ func (b *buildReconciler) AddJob(ctx context.Context, job *batchv1.Job) error {
 		mosb, err := b.getMachineOSBuildForJob(job)
 		if err == nil && mosb != nil {
 			b.eventRecorder.RecordJobCreated(mosb, job)
+			mosc, err := utils.GetMachineOSConfigForMachineOSBuild(mosb, b.utilListers())
+			if err == nil {
+				poolName := mosc.Spec.MachineConfigPool.Name
+				RecordBuildJobState(poolName, "active")
+				RecordImagePushStarted(poolName)
+				RecordBuildQueueDuration(poolName, mosb.CreationTimestamp.Time)
+			}
 		}
 
 		if err := b.updateMachineOSBuildWithStatus(ctx, job); err != nil {
@@ -259,6 +266,25 @@ func (b *buildReconciler) UpdateJob(ctx context.Context, oldJob, curJob *batchv1
 			if curJob.Status.Active > 0 && (oldJob.Status.Active == 0) {
 				b.eventRecorder.RecordJobStarted(mosb, curJob)
 				b.eventRecorder.RecordBuildBuilding(mosb)
+			}
+
+			mosc, err := utils.GetMachineOSConfigForMachineOSBuild(mosb, b.utilListers())
+			if err == nil {
+				poolName := mosc.Spec.MachineConfigPool.Name
+
+				if curJob.Status.Succeeded > 0 && (oldJob.Status.Succeeded == 0) {
+					RecordBuildJobState(poolName, StateSucceeded)
+					RecordImagePushCompleted(poolName)
+				}
+
+				if curJob.Status.Failed > 0 && (oldJob.Status.Failed == 0) {
+					RecordBuildJobState(poolName, StateFailed)
+					RecordImagePushFailed(poolName)
+				}
+
+				if curJob.Status.Failed > oldJob.Status.Failed && curJob.Status.Failed <= constants.JobMaxRetries {
+					RecordBuildRetry(poolName)
+				}
 			}
 		}
 
@@ -327,8 +353,16 @@ func (b *buildReconciler) updateMachineOSBuild(ctx context.Context, old, current
 		return nil
 	}
 
+	poolName := mosc.Spec.MachineConfigPool.Name
+
 	if !oldState.IsBuildFailure() && curState.IsBuildFailure() {
 		klog.Infof("MachineOSBuild %s failed, leaving ephemeral objects in place for inspection", current.Name)
+
+		if old.CreationTimestamp.Time.IsZero() {
+			RecordBuildFailed(poolName, time.Now())
+		} else {
+			RecordBuildFailed(poolName, old.CreationTimestamp.Time)
+		}
 
 		mcp, err := b.machineConfigPoolLister.Get(mosc.Spec.MachineConfigPool.Name)
 		if err != nil {
@@ -353,6 +387,12 @@ func (b *buildReconciler) updateMachineOSBuild(ctx context.Context, old, current
 		klog.Infof("MachineOSBuild %s succeeded, cleaning up all ephemeral objects used for the build", current.Name)
 
 		b.eventRecorder.RecordBuildCompleted(current, string(current.Status.DigestedImagePushSpec))
+
+		if old.CreationTimestamp.Time.IsZero() {
+			RecordBuildCompleted(poolName, time.Now())
+		} else {
+			RecordBuildCompleted(poolName, old.CreationTimestamp.Time)
+		}
 
 		mcp, err := b.machineConfigPoolLister.Get(mosc.Spec.MachineConfigPool.Name)
 		if err != nil {
@@ -382,6 +422,14 @@ func (b *buildReconciler) updateMachineOSBuild(ctx context.Context, old, current
 		if err := b.updateMachineOSConfigStatus(ctx, mosc, current); err != nil {
 			return fmt.Errorf("could not update MachineOSConfig %q status for successful MachineOSBuild %q: %w", mosc.Name, current.Name, err)
 		}
+	}
+
+	if !oldState.IsBuilding() && curState.IsBuilding() {
+		RecordBuildBuilding(poolName)
+	}
+
+	if !oldState.IsBuildInterrupted() && curState.IsBuildInterrupted() {
+		RecordBuildInterrupted(poolName)
 	}
 
 	return nil
@@ -490,10 +538,14 @@ func (b *buildReconciler) updateMachineConfigPool(ctx context.Context, oldMCP, c
 	if oldMCP.Spec.Configuration.Name != curMCP.Spec.Configuration.Name {
 		klog.Infof("Rendered config for pool %s changed from %s to %s", curMCP.Name, oldMCP.Spec.Configuration.Name, curMCP.Spec.Configuration.Name)
 		b.eventRecorder.RecordPoolConfigChanged(curMCP, oldMCP.Spec.Configuration.Name, curMCP.Spec.Configuration.Name)
+		RecordConfigChange(curMCP.Name)
 		if err := b.reconcilePoolChange(ctx, curMCP); err != nil {
 			return fmt.Errorf("could not create or reuse existing MachineOSBuild for MachineConfigPool %q change: %w", curMCP.Name, err)
 		}
 	}
+
+	UpdateOCLRolloutCounts(curMCP.Name, curMCP.Status.UpdatedMachineCount, curMCP.Status.MachineCount)
+	UpdateLayeredNodesCount(curMCP.Name, int(curMCP.Status.UpdatedMachineCount))
 
 	return b.syncAll(ctx)
 }
@@ -510,6 +562,8 @@ func (b *buildReconciler) startBuild(ctx context.Context, mosb *mcfgv1.MachineOS
 		return err
 	}
 
+	poolName := mosc.Spec.MachineConfigPool.Name
+
 	// If there are any other in-progress builds for this MachineOSConfig, stop them first.
 	if err := b.deleteOtherBuildsForMachineOSConfig(ctx, mosb, mosc); err != nil {
 		return fmt.Errorf("could not delete other non-terminal MachineOSBuilds for MachineOSConfig %s: %w", mosc.Name, err)
@@ -517,6 +571,7 @@ func (b *buildReconciler) startBuild(ctx context.Context, mosb *mcfgv1.MachineOS
 
 	b.eventRecorder.RecordBuildStarted(mosb, mosc)
 	b.eventRecorder.RecordBuildPreparing(mosb, fmt.Sprintf("creating build job for pool %q", mosc.Spec.MachineConfigPool.Name))
+	RecordBuildStarted(poolName)
 
 	// Next, create our new MachineOSBuild.
 	if err := imagebuilder.NewJobImageBuilder(b.kubeclient, b.mcfgclient, mosb, mosc).Start(ctx); err != nil {
