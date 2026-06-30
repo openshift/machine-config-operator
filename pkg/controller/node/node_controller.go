@@ -1303,13 +1303,33 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	if pool.Name == ctrlcommon.MachineConfigPoolArbiter {
 		masterPool, err := ctrl.mcpLister.Get(ctrlcommon.MachineConfigPoolMaster)
 		switch {
-		case err == nil:
-			if controlPlaneTopology == configv1.HighlyAvailableArbiterMode && masterPool.Spec.Paused {
-				klog.Infof("Master pool is paused in HighlyAvailableArbiterMode; reconciling arbiter pool directly")
-			} else {
-				ctrl.enqueue(masterPool)
+	case err == nil:
+		if controlPlaneTopology == configv1.HighlyAvailableArbiterMode && masterPool.Spec.Paused {
+			// Master pool is paused. Before allowing arbiter updates, verify that no master
+			// nodes are currently unavailable. If any are, the arbiter must not update either:
+			// a paused master means masterUnavailableCount is never populated in updatePools,
+			// so we perform the quorum check here directly. Allowing the arbiter to update
+			// while a master node is down would drop the cluster to a single available
+			// etcd member and risk losing quorum.
+			masterNodes, err := ctrl.getNodesForPool(masterPool)
+			if err != nil {
+				return fmt.Errorf("pool %s: failed to get master nodes for quorum check: %w", pool.Name, err)
+			}
+			var masterUnavailable int
+			for _, n := range masterNodes {
+				if ctrlcommon.NewLayeredNodeState(n).IsUnavailableForUpdate() {
+					masterUnavailable++
+				}
+			}
+			if masterUnavailable > 0 {
+				klog.Infof("Pool %s: master pool is paused with %d unavailable master node(s); deferring arbiter updates to preserve etcd quorum", pool.Name, masterUnavailable)
 				return ctrl.syncStatusOnly(pool)
 			}
+			klog.Infof("Pool %s: master pool is paused with no unavailable master nodes; reconciling arbiter pool directly", pool.Name)
+		} else {
+			ctrl.enqueue(masterPool)
+			return ctrl.syncStatusOnly(pool)
+		}
 		case errors.IsNotFound(err):
 			return ctrl.syncStatusOnly(pool)
 		default:
