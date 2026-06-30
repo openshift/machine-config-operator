@@ -146,7 +146,6 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*runtime.RawExtension, er
 		klog.Errorf("could not marshal ignConf %v", err)
 		return nil, err
 	}
-	klog.Infof("got ignconf %s", rawConf)
 	return &runtime.RawExtension{Raw: rawConf}, nil
 }
 
