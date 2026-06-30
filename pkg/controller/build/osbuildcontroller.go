@@ -149,7 +149,7 @@ func newOSBuildController(
 		UpdateFunc: ctrl.updateMachineConfigPool,
 	})
 
-	ctrl.buildReconciler = newBuildReconciler(mcfgclient, kubeclient, imageclient, routeclient, ctrl.listers, imagepruner)
+	ctrl.buildReconciler = newBuildReconciler(mcfgclient, kubeclient, imageclient, routeclient, ctrl.listers, imagepruner, ctrl.eventRecorder)
 	ctrl.shutdownDelayHandler = newShutdownDelayHandler(ctrl.listers)
 	ctrl.shutdownChan = make(chan struct{})
 
