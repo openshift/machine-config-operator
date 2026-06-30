@@ -186,14 +186,15 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		go pinnedImageSet.Run(ctx, 2)
 
 		// Start the shared factory informers that you need to use in your controller
-		ctrlctx.InformerFactory.Start(ctx.Done())
-		ctrlctx.KubeInformerFactory.Start(ctx.Done())
-		ctrlctx.OpenShiftConfigKubeNamespacedInformerFactory.Start(ctx.Done())
-		ctrlctx.OperatorInformerFactory.Start(ctx.Done())
-		ctrlctx.ConfigInformerFactory.Start(ctx.Done())
-		ctrlctx.KubeNamespacedInformerFactory.Start(ctx.Done())
-		ctrlctx.KubeMAOSharedInformer.Start(ctx.Done())
-		ctrlctx.OCLInformerFactory.Start(ctx.Done())
+		ctrlctx.InformerFactory.Start(ctrlctx.Stop)
+		ctrlctx.KubeInformerFactory.Start(ctrlctx.Stop)
+		ctrlctx.OpenShiftConfigKubeNamespacedInformerFactory.Start(ctrlctx.Stop)
+		ctrlctx.OperatorInformerFactory.Start(ctrlctx.Stop)
+		ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
+		ctrlctx.KubeNamespacedInformerFactory.Start(ctrlctx.Stop)
+		ctrlctx.KubeMAOSharedInformer.Start(ctrlctx.Stop)
+		ctrlctx.OCLInformerFactory.Start(ctrlctx.Stop)
+		ctrlctx.MCOPodInformerFactory.Start(ctrlctx.Stop)
 
 		close(ctrlctx.InformersStarted)
 
@@ -357,7 +358,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext, inspectionCache *image
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 			ctx.KubeInformerFactory.Core().V1().Nodes(),
-			ctx.KubeInformerFactory.Core().V1().Pods(),
+			ctx.MCOPodInformerFactory.Core().V1().Pods(),
 			ctx.OCLInformerFactory.Machineconfiguration().V1().MachineOSConfigs(),
 			ctx.OCLInformerFactory.Machineconfiguration().V1().MachineOSBuilds(),
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigNodes(),
