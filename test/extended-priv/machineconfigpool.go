@@ -135,13 +135,6 @@ func (mcp *MachineConfigPool) SetMaxUnavailable(maxUnavailable int) {
 	o.Expect(err).NotTo(o.HaveOccurred())
 }
 
-// RemoveMaxUnavailable removes spec.maxUnavailable attribute from the pool config
-func (mcp *MachineConfigPool) RemoveMaxUnavailable() {
-	logger.Infof("patch mcp %v, removing spec.maxUnavailable", mcp.name)
-	err := mcp.Patch("json", `[{ "op": "remove", "path": "/spec/maxUnavailable" }]`)
-	o.Expect(err).NotTo(o.HaveOccurred())
-}
-
 // SetOsImageStream sets the osImageStream name for the MCP
 func (mcp *MachineConfigPool) SetOsImageStream(streamName string) error {
 	logger.Infof("patch mcp %v, change spec.osImageStream.name to %s", mcp.name, streamName)
@@ -156,6 +149,13 @@ func (mcp *MachineConfigPool) GetOsImageStream() (string, error) {
 // GetStatusOsImageStream returns the osImageStream from MCP status
 func (mcp *MachineConfigPool) GetStatusOsImageStream() (string, error) {
 	return mcp.Get(`{.status.osImageStream.name}`)
+}
+
+// RemoveMaxUnavailable removes spec.maxUnavailable attribute from the pool config
+func (mcp *MachineConfigPool) RemoveMaxUnavailable() {
+	logger.Infof("patch mcp %v, removing spec.maxUnavailable", mcp.name)
+	err := mcp.Patch("json", `[{ "op": "remove", "path": "/spec/maxUnavailable" }]`)
+	o.Expect(err).NotTo(o.HaveOccurred())
 }
 
 func (mcp *MachineConfigPool) getConfigNameOfSpec() (string, error) {
@@ -535,6 +535,80 @@ func (mcp *MachineConfigPool) GetSortedNodesOrFail() []*Node {
 		"Cannot get the list of nodes that belong to '%s' MCP", mcp.GetName())
 
 	return nodes
+}
+
+// GetSortedUpdatedNodes returns the list of the UpdatedNodes sorted by the time when they started to be updated.
+// If maxUnavailable>0, then the function will fail if more that maxUpdatingNodes are being updated at the same time
+func (mcp *MachineConfigPool) GetSortedUpdatedNodes(maxUnavailable int) []*Node {
+	timeToWait := mcp.estimateWaitDuration()
+	logger.Infof("Waiting %s in pool %s for all nodes to start updating.", timeToWait, mcp.name)
+
+	poolNodes, errget := mcp.GetNodes()
+	o.Expect(errget).NotTo(o.HaveOccurred(), fmt.Sprintf("Cannot get nodes in pool %s", mcp.GetName()))
+
+	pendingNodes := poolNodes
+	updatedNodes := []*Node{}
+	immediate := false
+	err := wait.PollUntilContextTimeout(context.TODO(), 20*time.Second, timeToWait, immediate, func(_ context.Context) (bool, error) {
+		// If there are degraded machines, stop polling, directly fail
+		degradedstdout, degradederr := mcp.getDegradedMachineCount()
+		if degradederr != nil {
+			logger.Errorf("the err:%v, and try next round", degradederr)
+			return false, nil
+		}
+
+		if degradedstdout != 0 {
+			logger.Errorf("Degraded MC:\n%s", mcp.PrettyString())
+			exutil.AssertWaitPollNoErr(fmt.Errorf("Degraded machines"), fmt.Sprintf("mcp %s has degraded %d machines", mcp.name, degradedstdout))
+		}
+
+		// Check that there aren't more thatn maxUpdatingNodes updating at the same time
+		if maxUnavailable > 0 {
+			totalUpdating := 0
+			for _, node := range poolNodes {
+				isUpdating, err := node.IsUpdating()
+				if err != nil {
+					logger.Errorf("Error getting IsUpdating state for node %s: %v", node.GetName(), err)
+					return false, err
+				}
+				if isUpdating {
+					totalUpdating++
+				}
+			}
+			if totalUpdating > maxUnavailable {
+				// print nodes for debug
+				mcp.oc.Run("get").Args("nodes").Execute()
+				exutil.AssertWaitPollNoErr(fmt.Errorf("maxUnavailable Not Honored. Pool %s, error: %d nodes were updating at the same time. Only %d nodes should be updating at the same time", mcp.GetName(), totalUpdating, maxUnavailable), "")
+			}
+		}
+
+		remainingNodes := []*Node{}
+		for _, node := range pendingNodes {
+			isUpdating, err := node.IsUpdating()
+			if err != nil {
+				logger.Errorf("Error getting IsUpdating state for node %s: %v", node.GetName(), err)
+				return false, err
+			}
+			if isUpdating {
+				logger.Infof("Node %s is UPDATING", node.GetName())
+				updatedNodes = append(updatedNodes, node)
+			} else {
+				remainingNodes = append(remainingNodes, node)
+			}
+		}
+
+		if len(remainingNodes) == 0 {
+			logger.Infof("All nodes have started to be updated on mcp %s", mcp.name)
+			return true, nil
+
+		}
+		logger.Infof(" %d remaining nodes", len(remainingNodes))
+		pendingNodes = remainingNodes
+		return false, nil
+	})
+
+	exutil.AssertWaitPollNoErr(err, fmt.Sprintf("Could not get the list of updated nodes on mcp %s", mcp.name))
+	return updatedNodes
 }
 
 // GetCordonedNodes get cordoned nodes (if maxUnavailable > 1 ) otherwise return the 1st cordoned node
@@ -1646,80 +1720,6 @@ func GetPoolWithArchDifferentFromOrFail(oc *exutil.CLI, arch architecture.Archit
 
 	e2e.Failf("Something went wrong. There is no suitable pool to execute the test case. There is no pool with nodes using  an architecture different from %s", arch)
 	return nil
-}
-
-// GetSortedUpdatedNodes returns a list of nodes in the order that they are being updated by the MCO
-// If maxUnavailable>0, then the function will fail if more that maxUpdatingNodes are being updated at the same time
-func (mcp *MachineConfigPool) GetSortedUpdatedNodes(maxUnavailable int) []*Node {
-	timeToWait := mcp.estimateWaitDuration()
-	logger.Infof("Waiting %s in pool %s for all nodes to start updating.", timeToWait, mcp.name)
-
-	poolNodes, errget := mcp.GetNodes()
-	o.Expect(errget).NotTo(o.HaveOccurred(), fmt.Sprintf("Cannot get nodes in pool %s", mcp.GetName()))
-
-	pendingNodes := poolNodes
-	updatedNodes := []*Node{}
-	immediate := false
-	err := wait.PollUntilContextTimeout(context.TODO(), 20*time.Second, timeToWait, immediate, func(_ context.Context) (bool, error) {
-		// If there are degraded machines, stop polling, directly fail
-		degradedstdout, degradederr := mcp.getDegradedMachineCount()
-		if degradederr != nil {
-			logger.Errorf("the err:%v, and try next round", degradederr)
-			return false, nil
-		}
-
-		if degradedstdout != 0 {
-			logger.Errorf("Degraded MC:\n%s", mcp.PrettyString())
-			exutil.AssertWaitPollNoErr(fmt.Errorf("degraded machines"), fmt.Sprintf("mcp %s has degraded %d machines", mcp.name, degradedstdout))
-		}
-
-		// Check that there aren't more thatn maxUpdatingNodes updating at the same time
-		if maxUnavailable > 0 {
-			totalUpdating := 0
-			for _, node := range poolNodes {
-				isUpdating, err := node.IsUpdating()
-				if err != nil {
-					logger.Errorf("Error getting IsUpdating state for node %s: %v", node.GetName(), err)
-					return false, err
-				}
-				if isUpdating {
-					totalUpdating++
-				}
-			}
-			if totalUpdating > maxUnavailable {
-				// print nodes for debug
-				mcp.oc.Run("get").Args("nodes").Execute()
-				exutil.AssertWaitPollNoErr(fmt.Errorf("maxUnavailable Not Honored. Pool %s, error: %d nodes were updating at the same time. Only %d nodes should be updating at the same time", mcp.GetName(), totalUpdating, maxUnavailable), "")
-			}
-		}
-
-		remainingNodes := []*Node{}
-		for _, node := range pendingNodes {
-			isUpdating, err := node.IsUpdating()
-			if err != nil {
-				logger.Errorf("Error getting IsUpdating state for node %s: %v", node.GetName(), err)
-				return false, err
-			}
-			if isUpdating {
-				logger.Infof("Node %s is UPDATING", node.GetName())
-				updatedNodes = append(updatedNodes, node)
-			} else {
-				remainingNodes = append(remainingNodes, node)
-			}
-		}
-
-		if len(remainingNodes) == 0 {
-			logger.Infof("All nodes have started to be updated on mcp %s", mcp.name)
-			return true, nil
-
-		}
-		logger.Infof(" %d remaining nodes", len(remainingNodes))
-		pendingNodes = remainingNodes
-		return false, nil
-	})
-
-	exutil.AssertWaitPollNoErr(err, fmt.Sprintf("Could not get the list of updated nodes on mcp %s", mcp.name))
-	return updatedNodes
 }
 
 // IsOCL returns true if the pool is using On Cluster Layering functionality

@@ -2,6 +2,8 @@ package extended
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -12,7 +14,7 @@ import (
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 )
 
-var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Serial][Disruptive] MCO ocb", func() {
+var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longduration][Serial][Disruptive] MCO ocb", func() {
 	defer g.GinkgoRecover()
 
 	var (
@@ -215,107 +217,318 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("OK!\n")
 	})
 
-	g.It("[PolarionID:88202][Skipped:Disconnected] Both off-cluster and on-cluster layering can coexist on the same pool [Disruptive]", func() {
-		var (
-			testID         = GetCurrentTestPolarionIDNumber()
-			osLayerMCName  = fmt.Sprintf("tc-%s-os-layer", testID)
-			offClusterFile = "/etc/test-offlayering.test"
-			onClusterFile  = "/etc/test-onlayering.test"
-			containerFiles = []ContainerFile{{Content: fmt.Sprintf("RUN echo \"on-cluster layering %s\" > %s", testID, onClusterFile)}}
-		)
-
-		mcp := GetCompactCompatiblePool(oc.AsAdmin())
-		node := mcp.GetSortedNodesOrFail()[0]
-		offClusterRF := NewRemoteFile(node, offClusterFile)
-		onClusterRF := NewRemoteFile(node, onClusterFile)
-
-		exutil.By("Build a custom OS image for off-cluster layering")
-		osImageBuilder := OsImageBuilderInNode{
-			node:               node,
-			dockerFileCommands: fmt.Sprintf("RUN echo \"off-cluster layering %s\" > %s\nRUN ostree container commit", testID, offClusterFile),
-		}
-		digestedImage, err := osImageBuilder.CreateAndDigestOsImage()
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the custom osImage for off-cluster layering")
-		logger.Infof("Built custom OS image: %s", digestedImage)
-		logger.Infof("OK!\n")
-
-		exutil.By("Apply osImageURL MachineConfig to pool (off-cluster layering)")
-		osLayerMC := NewMachineConfig(oc.AsAdmin(), osLayerMCName, mcp.GetName())
-		osLayerMC.parameters = []string{"OS_IMAGE=" + digestedImage}
-		defer osLayerMC.DeleteWithWait()
-		osLayerMC.create()
-		logger.Infof("MachineConfig %s created with osImageURL %s", osLayerMC.GetName(), digestedImage)
-		logger.Infof("OK!\n")
-
-		exutil.By("Verify off-cluster layering is applied on the node")
-		o.Expect(node.GetCurrentBootOSImage()).To(o.Equal(digestedImage),
-			"Node %s should be running the off-cluster osImageURL %s", node, digestedImage)
-		o.Expect(offClusterRF.Exists()).To(o.BeTrue(),
-			"%s should exist on %s after off-cluster layering", offClusterFile, node)
-		logger.Infof("Off-cluster layering verified: %s exists on %s", offClusterFile, node)
-		logger.Infof("OK!\n")
-
-		exutil.By("Enable on-cluster layering (OCL) with a containerFile")
-		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, mcp.GetName(), mcp.GetName(), containerFiles)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating MachineOSConfig for %s", mcp.GetName())
-		defer DisableOCL(mosc)
-		logger.Infof("OK!\n")
-
-		exutil.By("Validate OCL build succeeds")
-		ValidateSuccessfulMOSC(mosc, nil)
-		logger.Infof("OK!\n")
-
-		exutil.By("Verify both off-cluster and on-cluster layering files are present")
-		o.Expect(offClusterRF.Exists()).To(o.BeTrue(),
-			"%s should still exist alongside on-cluster layering", offClusterFile)
-		o.Expect(onClusterRF.Exists()).To(o.BeTrue(),
-			"%s should exist after on-cluster layering is applied", onClusterFile)
-		logger.Infof("Both %s and %s are present on %s", offClusterFile, onClusterFile, node)
-		logger.Infof("OK!\n")
-
-		exutil.By("Record current MOSB before deleting off-cluster MC")
-		currentMOSB, err := mosc.GetCurrentMachineOSBuild()
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting current MOSB")
-		currentMOSBName := currentMOSB.GetName()
-		logger.Infof("Current MOSB before MC deletion: %s", currentMOSBName)
-		logger.Infof("OK!\n")
-
-		exutil.By("Delete the off-cluster MC")
-		o.Expect(osLayerMC.Delete()).To(o.Succeed(),
-			"Error deleting off-cluster MachineConfig %s", osLayerMCName)
-		logger.Infof("Off-cluster MachineConfig %s deleted", osLayerMCName)
-		logger.Infof("OK!\n")
-
-		exutil.By("Wait for a new MachineOSBuild to be triggered after MC deletion")
-		var newMOSB *MachineOSBuild
-		o.Eventually(func() string {
-			mosb, err := mosc.GetCurrentMachineOSBuild()
-			if err != nil {
-				return currentMOSBName
-			}
-			newMOSB = mosb
-			return mosb.GetName()
-		}, "5m", "20s").ShouldNot(o.Equal(currentMOSBName),
-			"A new MOSB should be created after deleting the off-cluster MC")
-		logger.Infof("OK!\n")
-
-		exutil.By("Wait for the new build to succeed and deploy")
-		o.Eventually(newMOSB, "20m", "20s").Should(HaveConditionField("Succeeded", "status", TrueString),
-			"New MachineOSBuild didn't succeed after MC deletion")
-		logger.Infof("New MOSB %s built successfully", newMOSB.GetName())
-		mcp.waitForComplete()
-		logger.Infof("OK!\n")
-
-		exutil.By("Verify only on-cluster layering content remains after MC deletion")
-		o.Expect(offClusterRF.Exists()).To(o.BeFalse(),
-			"%s should be removed after off-cluster MC is deleted", offClusterFile)
-		o.Expect(onClusterRF.Exists()).To(o.BeTrue(),
-			"%s should still exist after off-cluster MC is deleted", onClusterFile)
-		logger.Infof("Only on-cluster layering file remains on %s (as expected)", node)
-		logger.Infof("OK!\n")
-	})
-
 })
+
+func checkNewBuildIsTriggered(mosc *MachineOSConfig, currentMOSB *MachineOSBuild) {
+	var (
+		newMOSB *MachineOSBuild
+		err     error
+	)
+	logger.Infof("Current mosb: %s", currentMOSB)
+	o.Eventually(func() (string, error) {
+		newMOSB, err = mosc.GetCurrentMachineOSBuild()
+		return newMOSB.GetName(), err
+	}, "5m", "20s").ShouldNot(o.Equal(currentMOSB.GetName()),
+		"A new MOSB should be created after the new rendered image pull spec is configured")
+
+	logger.Infof("New mosb: %s", newMOSB)
+
+	o.Eventually(newMOSB, "5m", "20s").Should(HaveConditionField("Building", "status", TrueString),
+		"MachineOSBuild didn't report that the build has begun")
+
+	o.Eventually(newMOSB, "20m", "20s").Should(HaveConditionField("Building", "status", FalseString), "Build was not finished")
+	o.Eventually(newMOSB, "10m", "20s").Should(HaveConditionField("Succeeded", "status", TrueString), "Build didn't succeed")
+	o.Eventually(newMOSB, "2m", "20s").Should(HaveConditionField("Interrupted", "status", FalseString), "Build was interrupted")
+	o.Eventually(newMOSB, "2m", "20s").Should(HaveConditionField("Failed", "status", FalseString), "Build was failed")
+}
+
+func getNewNodeRebootValueForOCL(newNode *Node, oclImage string) {
+	exutil.By("Verify the new node boots directly with the OCL image")
+	currentImage, err := newNode.GetCurrentBootOSImage()
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting current boot OS image from node %s", newNode.GetName())
+	o.Expect(currentImage).To(o.Equal(oclImage), "New node %s is not using the OCL image. Current: %s, Expected: %s", newNode.GetName(), currentImage, oclImage)
+	logger.Infof("OK!\n")
+
+	exutil.By("Verify /etc/machine-config-daemon/currentimage matches the OCL image")
+	currentImageFile, err := newNode.DebugNodeWithChroot("cat", "/etc/machine-config-daemon/currentimage")
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error reading currentimage file from node %s", newNode.GetName())
+	o.Expect(currentImageFile).To(o.ContainSubstring(oclImage), "currentimage file does not contain the OCL image")
+	logger.Infof("OK!\n")
+
+	exutil.By("Verify rpm-ostree status shows the OCL image")
+	rpmOstreeStatus, err := newNode.DebugNodeWithChroot("rpm-ostree", "status")
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting rpm-ostree status from node %s", newNode.GetName())
+	o.Expect(rpmOstreeStatus).To(o.ContainSubstring(oclImage), "rpm-ostree status does not show the OCL image")
+	logger.Infof("OK!\n")
+
+	exutil.By("Verify no unnecessary reboots occurred - desiredImage file should not exist")
+	desiredImageFile, err := newNode.DebugNodeWithChroot("cat", "/etc/machine-config-daemon/desiredImage")
+	// When a node boots with the correct image, there's no desiredImage file because no upgrade is needed
+	o.Expect(err).To(o.HaveOccurred(), "desiredImage file should not exist when node boots with correct OCL image")
+	o.Expect(desiredImageFile).Should(o.ContainSubstring("No such file or directory"),
+		"Expected desiredImage file to not exist, indicating no OS upgrade was needed")
+	logger.Infof("OK!\n")
+}
+
+func ValidateNewNodesBootDirectlyWithOCLImage(oc *exutil.CLI, mosc *MachineOSConfig, mcp *MachineConfigPool) {
+	// First validate MOSC build and application
+	ValidateSuccessfulMOSC(mosc, nil)
+
+	exutil.By("Get the OCL image")
+	oclImage := OrFail[string](mosc.GetStatusCurrentImagePullSpec())
+	logger.Infof("OCL image: %s\n", oclImage)
+
+	// Detect if using internal registry - internal registry always requires 2 reboots
+	isInternalRegistry := OrFail[bool](mosc.IsUsingInternalRegistry())
+
+	exutil.By("Check able to scale the node from existing Machineset")
+	msl, err := NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAll()
+	o.Expect(err).NotTo(o.HaveOccurred(), "Get machinesets failed")
+	o.Expect(msl).ShouldNot(o.BeEmpty(), "Machineset list is empty")
+	existingMS := msl[0]
+
+	o.Expect(existingMS.AddToScale(1)).NotTo(o.HaveOccurred())
+
+	defer func() {
+		exutil.By("Scale down the node from existing Machineset")
+		existingMS.AddToScale(-1)
+		mcp.waitForComplete()
+	}()
+
+	exutil.By("Create duplicate machineset and scale new node")
+	machineset := OrFail[*MachineSet](GetScalableMachineSet(oc.AsAdmin()))
+	duplicateMSName := machineset.GetName() + "-ocl"
+	duplicateMS, err := machineset.Duplicate(duplicateMSName)
+	o.Expect(err).NotTo(o.HaveOccurred())
+
+	defer func() {
+		if duplicateMS.Exists() {
+			logger.Infof("Deleting duplicate machineset %s and scale down the node", duplicateMS.GetName())
+			o.Expect(duplicateMS.ScaleTo(0)).To(o.Succeed())
+			o.Expect(duplicateMS.WaitUntilReady("10m")).To(o.Succeed())
+			o.Expect(duplicateMS.Delete()).To(o.Succeed())
+		}
+	}()
+	o.Expect(duplicateMS.ScaleTo(1)).To(o.Succeed())
+
+	exutil.By("Wait for both existing new node added and for duplicate new node added to get ready")
+
+	o.Eventually(func(gm o.Gomega) {
+		gm.Expect(existingMS.GetIsReady()).To(o.BeTrue(), "MachineSet %s is not ready", existingMS.GetName())
+		gm.Expect(duplicateMS.GetIsReady()).To(o.BeTrue(), "MachineSet %s is not ready", duplicateMS.GetName())
+	}, "20m", "2m").Should(o.Succeed(), "MachineSets are not ready")
+
+	// For internal registry, wait for MCP to complete as it always requires 2 reboots
+	if isInternalRegistry {
+		logger.Infof("Internal registry detected, waiting for MCP to complete (requires 2 reboots)")
+		mcp.waitForComplete()
+	}
+	logger.Infof("OK!\n")
+
+	exutil.By("Get the new node created by the machine set")
+
+	existingMSNodes, nErr := existingMS.GetNodes()
+	o.Expect(nErr).NotTo(o.HaveOccurred(), "Error getting the nodes created by MachineSet %s", existingMS.GetName())
+	// Get the most recently created node (last in the sorted list)
+	existingNode := existingMSNodes[len(existingMSNodes)-1]
+	logger.Infof("Existing node: %s\n", existingNode.GetName())
+	logger.Infof("OK!\n")
+
+	duplicateMSNodes, nErr := duplicateMS.GetNodes()
+	o.Expect(nErr).NotTo(o.HaveOccurred(), "Error getting the nodes created by MachineSet %s", duplicateMS.GetName())
+	// Get the most recently created node (last in the sorted list)
+	duplicateMSNode := duplicateMSNodes[len(duplicateMSNodes)-1]
+	logger.Infof("Duplicate node: %s\n", duplicateMSNode.GetName())
+	logger.Infof("OK!\n")
+
+	getNewNodeRebootValueForOCL(duplicateMSNode, oclImage)
+	getNewNodeRebootValueForOCL(existingNode, oclImage)
+
+	exutil.By("Wait for MCP to complete before scaling down nodes")
+	// This wait is necessary to prevent MCP from becoming temporarily degraded when using external registry
+	// (internal registry already waits via waitForComplete earlier in the test)
+	mcp.waitForComplete()
+	logger.Infof("OK!\n")
+}
+
+func removeImageStream(oc *exutil.CLI, mosb *MachineOSBuild) bool {
+	// Get the MOSC from the MOSB
+	mosc, err := mosb.GetMachineOSConfig()
+	if err != nil {
+		logger.Errorf("Error getting MOSC from MOSB: %s", err)
+		return false
+	}
+
+	// Get the rendered image push spec from MOSC
+	pushSpec, err := mosc.GetRenderedImagePushspec()
+	if err != nil {
+		logger.Errorf("Error getting renderedImagePushspec from MOSC: %s", err)
+		return false
+	}
+
+	// Extract imagestream name from push spec
+	// Format: image-registry.openshift-image-registry.svc:5000/openshift-machine-config-operator/ocb-worker-image:latest
+	// Extract: ocb-worker-image
+	parts := strings.Split(pushSpec, "/")
+	if len(parts) < 3 {
+		logger.Errorf("Invalid push spec format: %s", pushSpec)
+		return false
+	}
+	imageNameWithTag := parts[len(parts)-1]
+	imageName := strings.Split(imageNameWithTag, ":")[0]
+
+	logger.Infof("Deleting imagestream tag: %s:%s", imageName, mosb.GetName())
+	imagestream, err := oc.AsAdmin().WithoutNamespace().Run("tag").Args("-d", imageName+":"+mosb.GetName(), "-n", MachineConfigNamespace).Output()
+
+	if err != nil {
+		logger.Errorf("Error deleting imagestream: %s", imagestream)
+		return false
+	}
+	return true
+}
+
+func removeQuayImageUsingSkepo(oc *exutil.CLI, mosb *MachineOSBuild, mcp *MachineConfigPool) bool {
+	// Get the MOSC to access the push secret
+	mosc, err := mosb.GetMachineOSConfig()
+	if err != nil {
+		logger.Errorf("Error getting MOSC from MOSB: %s", err)
+		return false
+	}
+
+	// Get the digested image from MOSB's status
+	digestedImage, err := mosb.GetStatusDigestedImagePullSpec()
+	if err != nil {
+		logger.Errorf("Error getting digested image from MOSB: %s", err)
+		return false
+	}
+
+	logger.Infof("Attempting to delete Quay image: %s", digestedImage)
+
+	// Get the PUSH secret (not pull secret) - we need write/delete permissions
+	pushSecretName, err := mosc.Get(`{.spec.renderedImagePushSecret.name}`)
+	if err != nil || pushSecretName == "" {
+		logger.Errorf("Error getting push secret name from MOSC: %s", err)
+		return false
+	}
+
+	logger.Infof("Using push secret for deletion: %s", pushSecretName)
+
+	// Extract the push secret to a local temp directory
+	// This is secure - never prints credentials in logs even if commands fail
+	pushSecret := NewSecret(oc, MachineConfigNamespace, pushSecretName)
+	secretDir, err := pushSecret.Extract()
+	if err != nil {
+		logger.Errorf("Error extracting push secret: %s", err)
+		return false
+	}
+	// Clean up the extracted secret directory to avoid resource leak
+	defer func() {
+		logger.Infof("Cleaning up local secret directory: %s", secretDir)
+		os.RemoveAll(secretDir)
+	}()
+	logger.Infof("Push secret extracted to local directory: %s", secretDir)
+
+	// The .dockerconfigjson file is created in the extracted directory
+	localAuthFile := filepath.Join(secretDir, ".dockerconfigjson")
+
+	// Get a node from the MCP to run skopeo command
+	nodes, err := mcp.GetNodes()
+	if err != nil || len(nodes) == 0 {
+		logger.Errorf("Error getting nodes from MCP: %s", err)
+		return false
+	}
+	node := nodes[0]
+
+	logger.Infof("Running skopeo delete on node: %s", node.GetName())
+
+	// Create a temporary auth file path on the node
+	tmpAuthFile := "/tmp/skopeo-delete-auth-" + exutil.GetRandomString() + ".json"
+
+	// Set up cleanup for node file BEFORE copying - ensures cleanup even if copy fails
+	defer func() {
+		logger.Infof("Cleaning up temporary auth file on node")
+		node.DebugNodeWithChroot("rm", "-f", tmpAuthFile)
+	}()
+
+	// Copy the local auth file to the node (secure - never prints credentials)
+	err = node.CopyFromLocal(localAuthFile, tmpAuthFile)
+	if err != nil {
+		logger.Errorf("Error copying auth file to node: %s", err)
+		return false
+	}
+
+	// Build the skopeo delete command using the push secret auth file
+	// Source proxy settings from /etc/mco/proxy.env to handle proxy environments
+	skopeoCommand := fmt.Sprintf("skopeo delete --authfile %s docker://%s", tmpAuthFile, digestedImage)
+	fullCommand := fmt.Sprintf("set -a; source /etc/mco/proxy.env; %s", skopeoCommand)
+
+	logger.Infof("Executing command on node: %s", skopeoCommand)
+
+	// Run skopeo delete on the node
+	stdout, stderr, err := node.DebugNodeWithChrootStd("sh", "-c", fullCommand)
+	if err != nil {
+		logger.Errorf("Error deleting Quay image via skopeo on node. Stdout: %s, Stderr: %s, Error: %s", stdout, stderr, err)
+		return false
+	}
+
+	logger.Infof("Successfully deleted Quay image: %s", digestedImage)
+	logger.Infof("Skopeo output: %s", stdout)
+	return true
+}
+
+func verifyMOSBRebuildAfterImageDeletion(mcp *MachineConfigPool, mosc *MachineOSConfig, mosb1, mosb2 *MachineOSBuild, mc *MachineConfig, mcName string) {
+	exutil.By("Delete MC")
+	err := mc.Delete()
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error deleting MC")
+	logger.Infof("OK!\n")
+
+	exutil.By("Verify MOSB-1 is re-triggered (starts building again)")
+	o.Eventually(mosb1, "5m", "20s").Should(HaveConditionField("Building", "status", TrueString),
+		"MOSB-1 should be re-triggered and start building again after image deletion")
+	logger.Infof("MOSB-1 is re-building\n")
+
+	o.Eventually(mosb1, "35m", "20s").Should(HaveConditionField("Building", "status", FalseString),
+		"MOSB-1 rebuild should complete")
+	o.Eventually(mosb1, "10m", "20s").Should(HaveConditionField("Succeeded", "status", TrueString),
+		"MOSB-1 rebuild should succeed")
+	logger.Infof("OK!\n")
+
+	exutil.By("Wait for MCP to complete update")
+	mcp.waitForComplete()
+	logger.Infof("OK!\n")
+
+	exutil.By("Re-apply MC")
+	mc.skipWaitForMcp = true
+	defer mc.DeleteWithWait()
+	err = mc.Create("-p", "NAME="+mcName, "-p", "POOL="+mcp.GetName(),
+		"-p", fmt.Sprintf(`KERNEL_ARGS=["%s"]`, "test"))
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error creating MachineConfig %s", mc.GetName())
+	logger.Infof("OK!\n")
+
+	exutil.By("Verify MOSB-2 is NOT triggered again")
+	o.Consistently(mosb2, "2m", "10s").ShouldNot(HaveConditionField("Building", "status", TrueString),
+		"MOSB-2 should NOT start building again")
+	logger.Infof("OK!\n")
+
+	exutil.By("Verify MCP starts updating instead of triggering a new/old MOSB")
+	o.Eventually(mcp, "5m", "20s").Should(HaveConditionField("Updating", "status", TrueString),
+		"MCP should start updating instead of triggering a new/old MOSB")
+	logger.Infof("OK!\n")
+
+	exutil.By("Wait for MCP to complete update")
+	mcp.waitForComplete()
+	logger.Infof("OK!\n")
+
+	exutil.By("Verify no new MOSB-3 was created during MCP update")
+	currentMosb, err := mosc.GetCurrentMachineOSBuild()
+	logger.Infof("Current MOSB: %s\n", currentMosb.GetName())
+	logger.Infof("MOSB-1: %s\n", mosb1.GetName())
+	logger.Infof("MOSB-2: %s\n", mosb2.GetName())
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting current MOSB")
+	o.Expect(currentMosb.GetName()).To(o.Or(o.Equal(mosb1.GetName()), o.Equal(mosb2.GetName())),
+		"Current MOSB should be either MOSB-1 or MOSB-2, no new MOSB-3 should be triggered")
+	logger.Infof("OK!\n")
+}
 
 func testContainerFile(containerFiles []ContainerFile, imageNamespace string, mcp *MachineConfigPool, checkers []Checker, defaultPullSecret bool) {
 	var (
