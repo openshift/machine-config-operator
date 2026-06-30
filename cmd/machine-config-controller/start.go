@@ -133,6 +133,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		ctrlctx.KubeNamespacedInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.KubeMAOSharedInformer.Start(ctrlctx.Stop)
 		ctrlctx.OCLInformerFactory.Start(ctrlctx.Stop)
+		ctrlctx.MCOPodInformerFactory.Start(ctrlctx.Stop)
 
 		close(ctrlctx.InformersStarted)
 
@@ -283,7 +284,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 			ctx.KubeInformerFactory.Core().V1().Nodes(),
-			ctx.KubeInformerFactory.Core().V1().Pods(),
+			ctx.MCOPodInformerFactory.Core().V1().Pods(),
 			ctx.OCLInformerFactory.Machineconfiguration().V1().MachineOSConfigs(),
 			ctx.OCLInformerFactory.Machineconfiguration().V1().MachineOSBuilds(),
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigNodes(),

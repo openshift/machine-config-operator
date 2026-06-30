@@ -59,6 +59,10 @@ type ControllerContext struct {
 	OpenShiftConfigKubeNamespacedInformerFactory        informers.SharedInformerFactory
 	OpenShiftConfigManagedKubeNamespacedInformerFactory informers.SharedInformerFactory
 	OpenShiftKubeAPIServerKubeNamespacedInformerFactory informers.SharedInformerFactory
+	// Scoped informer factory for MCO-specific pods only (namespace + label filtered)
+	// This dramatically reduces memory by only caching machine-config-operator pods
+	// instead of all pods cluster-wide
+	MCOPodInformerFactory                               informers.SharedInformerFactory
 	APIExtInformerFactory                               apiextinformers.SharedInformerFactory
 	ConfigInformerFactory                               configinformers.SharedInformerFactory
 	OperatorInformerFactory                             operatorinformers.SharedInformerFactory
@@ -104,6 +108,17 @@ func CreateControllerContext(ctx context.Context, cb *clients.Builder) *Controll
 	)
 	// this is needed to listen for changes in MAO user data secrets to re-apply the ones we define in the MCO (since we manage them)
 	kubeMAOSharedInformer := informers.NewSharedInformerFactoryWithOptions(kubeClient, resyncPeriod()(), informers.WithNamespace("openshift-machine-api"))
+	// Create scoped informer for MCO pods only (namespace + label filtered)
+	// This dramatically reduces memory overhead by only caching the machine-config-operator pod
+	// instead of all pods cluster-wide (potentially thousands of pods)
+	mcoPodInformer := informers.NewSharedInformerFactoryWithOptions(
+		kubeClient,
+		resyncPeriod()(),
+		informers.WithNamespace(MCONamespace),
+		informers.WithTweakListOptions(func(opt *metav1.ListOptions) {
+			opt.LabelSelector = labels.Set{"k8s-app": "machine-config-operator"}.String()
+		}),
+	)
 	imageSharedInformer := imageinformers.NewSharedInformerFactory(imageClient, resyncPeriod()())
 	routeSharedInformer := routeinformers.NewSharedInformerFactory(routeClient, resyncPeriod()())
 
@@ -150,6 +165,7 @@ func CreateControllerContext(ctx context.Context, cb *clients.Builder) *Controll
 		OpenShiftConfigKubeNamespacedInformerFactory:        openShiftConfigKubeNamespacedSharedInformer,
 		OpenShiftKubeAPIServerKubeNamespacedInformerFactory: openShiftKubeAPIServerKubeNamespacedSharedInformer,
 		OpenShiftConfigManagedKubeNamespacedInformerFactory: openShiftConfigManagedKubeNamespacedSharedInformer,
+		MCOPodInformerFactory:                               mcoPodInformer,
 		APIExtInformerFactory:                               apiExtSharedInformer,
 		ConfigInformerFactory:                               configSharedInformer,
 		OperatorInformerFactory:                             operatorSharedInformer,
