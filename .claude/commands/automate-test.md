@@ -9,11 +9,15 @@ Use the conventions in `.claude/skills/mco-automate-test-workflow.md` for all te
 
 **Input modes** (determined by `<spec-source>` format):
 - **Text file**: a file path containing the test specification
-- **Polarion ID** (future, MCO-2220): a numeric ID like `OCP-12345`
+- **Polarion ID**: a numeric ID like `OCP-12345` → fetches via `fetch_polarion.py`, uses `/tmp/test-specs/OCP-12345.txt`
 - **Jira ID** (future, MCO-2221): a Jira key like `MCO-1234`
 
 **Workflow:**
-1. Parse arguments. Read the spec file and extract test case ID, title, preconditions, steps, expected results, and tags. Derive target file from suite name (`"mco security"` -> `mco_security.go`).
+1. **Parse arguments**:
+   - If `<spec-source>` matches `OCP-\d+` or `OSE-\d+` → run `python3 .claude/scripts/fetch_polarion.py <id>` to fetch test case
+   - If `<spec-source>` is a file path → read the spec file directly
+   - Extract test case ID, title, preconditions, steps, expected results, and tags
+   - Derive target file from suite name (`"mco security"` -> `mco_security.go`).
 2. Learn from previous code reviews — check memory (`review_patterns_mco.md`), fetch new patterns from merged PRs via `gh api` on `openshift/machine-config-operator`.
 3. Read existing tests and utilities in `test/extended-priv/` to understand available helpers and patterns.
 4. Generate the test code following all conventions from the workflow skill.

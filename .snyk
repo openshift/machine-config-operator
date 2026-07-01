@@ -10,6 +10,9 @@ exclude:
     # Ignore _test.go files because they are tests and not exploitable on
     # running systems.
     - '**/*_test.go'
+    # Ignore .claude/ directory - development tooling and QE automation scripts,
+    # not production code deployed to clusters.
+    - '.claude/**'
     # Ignoring CWE-295 (Improper Certificate Validation). This is working as
     # intended.
     - 'cmd/apiserver-watcher/run.go'
