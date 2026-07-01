@@ -26,16 +26,14 @@ SYSTEM_RESERVED_ES=1Gi
 `
 )
 
-// ensureAutoSizingMachineConfigs ensures auto-sizing MachineConfigs exist for the master and worker MachineConfigPools
+// ensureAutoSizingMachineConfigs ensures auto-sizing MachineConfigs exist for the worker MachineConfigPool
 func (ctrl *Controller) ensureAutoSizingMachineConfigs(ctx context.Context) error {
-	for _, poolName := range []string{ctrlcommon.MachineConfigPoolMaster, ctrlcommon.MachineConfigPoolWorker} {
-		pool, err := ctrl.mcpLister.Get(poolName)
-		if err != nil {
-			return fmt.Errorf("could not get MachineConfigPool %v: %w", poolName, err)
-		}
-		if err := ctrl.createAutoSizingMCIfNeeded(ctx, pool); err != nil {
-			return fmt.Errorf("could not ensure auto-sizing MachineConfig for pool %v: %w", poolName, err)
-		}
+	pool, err := ctrl.mcpLister.Get(ctrlcommon.MachineConfigPoolWorker)
+	if err != nil {
+		return fmt.Errorf("could not get MachineConfigPool %v: %w", ctrlcommon.MachineConfigPoolWorker, err)
+	}
+	if err := ctrl.createAutoSizingMCIfNeeded(ctx, pool); err != nil {
+		return fmt.Errorf("could not ensure auto-sizing MachineConfig for pool %v: %w", ctrlcommon.MachineConfigPoolWorker, err)
 	}
 
 	return nil
@@ -75,13 +73,13 @@ func (ctrl *Controller) createAutoSizingMCIfNeeded(ctx context.Context, pool *mc
 	return nil
 }
 
-// RunAutoSizingBootstrap generates auto-sizing MachineConfig objects for master and worker mcpPools
+// RunAutoSizingBootstrap generates auto-sizing MachineConfig objects for the worker mcpPool
 func RunAutoSizingBootstrap(mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
 	var configs []*mcfgv1.MachineConfig
 
 	for _, pool := range mcpPools {
-		if pool.Name != ctrlcommon.MachineConfigPoolMaster && pool.Name != ctrlcommon.MachineConfigPoolWorker {
-			klog.V(4).Infof("Skipping auto-sizing MachineConfig for non-default pool %v during bootstrap", pool.Name)
+		if pool.Name != ctrlcommon.MachineConfigPoolWorker {
+			klog.V(4).Infof("Skipping auto-sizing MachineConfig for non-worker pool %v during bootstrap", pool.Name)
 			continue
 		}
 		autoSizingMC, err := newAutoSizingMachineConfig(pool)
