@@ -1011,12 +1011,6 @@ func TestKubeletConfigDenylistedOptions(t *testing.T) {
 			},
 		},
 		{
-			name: "test banned staticpodpath",
-			config: &kubeletconfigv1beta1.KubeletConfiguration{
-				StaticPodPath: "some_value",
-			},
-		},
-		{
 			name: "user cannot supply features gates",
 			config: &kubeletconfigv1beta1.KubeletConfiguration{
 				FeatureGates: map[string]bool{
@@ -1068,6 +1062,156 @@ func TestKubeletConfigDenylistedOptions(t *testing.T) {
 		if err != nil {
 			t.Errorf("%s: failed with %v. should have succeeded", test.name, err)
 		}
+	}
+}
+
+func TestIsControlPlanePool(t *testing.T) {
+	tests := []struct {
+		name     string
+		pool     *mcfgv1.MachineConfigPool
+		expected bool
+	}{
+		{
+			name:     "master pool",
+			pool:     helpers.NewMachineConfigPool(ctrlcommon.MachineConfigPoolMaster, nil, helpers.MasterSelector, "v0"),
+			expected: true,
+		},
+		{
+			name:     "arbiter pool",
+			pool:     helpers.NewMachineConfigPool(ctrlcommon.MachineConfigPoolArbiter, nil, helpers.MasterSelector, "v0"),
+			expected: true,
+		},
+		{
+			name:     "worker pool",
+			pool:     helpers.NewMachineConfigPool(ctrlcommon.MachineConfigPoolWorker, nil, helpers.WorkerSelector, "v0"),
+			expected: false,
+		},
+		{
+			name:     "custom pool",
+			pool:     helpers.NewMachineConfigPool("custom-pool", nil, helpers.WorkerSelector, "v0"),
+			expected: false,
+		},
+		{
+			name: "custom pool derived from master via MatchLabels",
+			pool: helpers.NewMachineConfigPool("infra-master", nil,
+				&metav1.LabelSelector{MatchLabels: map[string]string{ctrlcommon.MasterLabel: ""}}, "v0"),
+			expected: true,
+		},
+		{
+			name: "custom pool derived from master via MatchExpressions Exists",
+			pool: helpers.NewMachineConfigPool("infra-master-expr", nil,
+				&metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{
+					{Key: ctrlcommon.MasterLabel, Operator: metav1.LabelSelectorOpExists},
+				}}, "v0"),
+			expected: true,
+		},
+		{
+			name: "custom pool derived from master via MatchExpressions In",
+			pool: helpers.NewMachineConfigPool("infra-master-in", nil,
+				&metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{
+					{Key: ctrlcommon.MasterLabel, Operator: metav1.LabelSelectorOpIn, Values: []string{""}},
+				}}, "v0"),
+			expected: true,
+		},
+		{
+			name: "custom pool excluding master via MatchExpressions DoesNotExist",
+			pool: helpers.NewMachineConfigPool("not-master", nil,
+				&metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{
+					{Key: ctrlcommon.MasterLabel, Operator: metav1.LabelSelectorOpDoesNotExist},
+				}}, "v0"),
+			expected: false,
+		},
+		{
+			name:     "custom pool with nil node selector",
+			pool:     helpers.NewMachineConfigPool("custom-nil", nil, nil, "v0"),
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isControlPlanePool(tt.pool)
+			if result != tt.expected {
+				t.Errorf("isControlPlanePool(%q) = %v, want %v", tt.pool.Name, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestStaticPodPathPoolValidation(t *testing.T) {
+	kcWithNonEmptyStaticPodPath := newKubeletConfig(
+		"test-staticpodpath-nonempty",
+		&kubeletconfigv1beta1.KubeletConfiguration{
+			StaticPodPath: "/some/path",
+		},
+		metav1.AddLabelToSelector(&metav1.LabelSelector{}, "", ""),
+	)
+
+	masterPool := helpers.NewMachineConfigPool(ctrlcommon.MachineConfigPoolMaster, nil, helpers.MasterSelector, "v0")
+	arbiterPool := helpers.NewMachineConfigPool(ctrlcommon.MachineConfigPoolArbiter, nil, helpers.MasterSelector, "v0")
+	workerPool := helpers.NewMachineConfigPool(ctrlcommon.MachineConfigPoolWorker, nil, helpers.WorkerSelector, "v0")
+	customPool := helpers.NewMachineConfigPool("custom-pool", nil, helpers.WorkerSelector, "v0")
+	// custom pool derived from master via node selector
+	masterDerivedPool := helpers.NewMachineConfigPool("infra-master", nil,
+		&metav1.LabelSelector{MatchLabels: map[string]string{ctrlcommon.MasterLabel: ""}}, "v0")
+
+	// non-empty staticPodPath should be rejected for all pools
+	err := validateStaticPodPathGivenPool(kcWithNonEmptyStaticPodPath, masterPool)
+	if err == nil {
+		t.Error("expected error for non-empty staticPodPath on master pool, got nil")
+	}
+
+	err = validateStaticPodPathGivenPool(kcWithNonEmptyStaticPodPath, arbiterPool)
+	if err == nil {
+		t.Error("expected error for non-empty staticPodPath on arbiter pool, got nil")
+	}
+
+	err = validateStaticPodPathGivenPool(kcWithNonEmptyStaticPodPath, masterDerivedPool)
+	if err == nil {
+		t.Error("expected error for non-empty staticPodPath on master-derived custom pool, got nil")
+	}
+
+	err = validateStaticPodPathGivenPool(kcWithNonEmptyStaticPodPath, workerPool)
+	if err == nil {
+		t.Error("expected error for non-empty staticPodPath on worker pool, got nil")
+	}
+
+	err = validateStaticPodPathGivenPool(kcWithNonEmptyStaticPodPath, customPool)
+	if err == nil {
+		t.Error("expected error for non-empty staticPodPath on custom pool, got nil")
+	}
+
+	// empty staticPodPath should be allowed for worker and custom pools
+	kcWithEmptyStaticPodPath := newKubeletConfig(
+		"test-staticpodpath-empty",
+		&kubeletconfigv1beta1.KubeletConfiguration{
+			StaticPodPath: "",
+		},
+		metav1.AddLabelToSelector(&metav1.LabelSelector{}, "", ""),
+	)
+
+	err = validateStaticPodPathGivenPool(kcWithEmptyStaticPodPath, workerPool)
+	if err != nil {
+		t.Errorf("expected no error for empty staticPodPath on worker pool, got: %v", err)
+	}
+
+	err = validateStaticPodPathGivenPool(kcWithEmptyStaticPodPath, customPool)
+	if err != nil {
+		t.Errorf("expected no error for empty staticPodPath on custom pool, got: %v", err)
+	}
+
+	// control plane pools should reject staticPodPath even when set to ""
+	kcExplicitEmpty := kcWithEmptyStaticPodPath.DeepCopy()
+	kcExplicitEmpty.Spec.KubeletConfig.Raw = []byte(`{"staticPodPath":""}`)
+
+	err = validateStaticPodPathGivenPool(kcExplicitEmpty, masterPool)
+	if err == nil {
+		t.Error("expected error for explicitly empty staticPodPath on master pool, got nil")
+	}
+
+	err = validateStaticPodPathGivenPool(kcExplicitEmpty, arbiterPool)
+	if err == nil {
+		t.Error("expected error for explicitly empty staticPodPath on arbiter pool, got nil")
 	}
 }
 
