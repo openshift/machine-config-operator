@@ -30,6 +30,13 @@ type bootstrapServer struct {
 	certs []string
 }
 
+// GetFailureReporter returns nil for bootstrap server (no failure reporting during bootstrap).
+// Boot images are kept current with the release payload, so firstboot pivot failures
+// are not a realistic scenario during cluster bootstrap.
+func (bsc *bootstrapServer) GetFailureReporter() FailureReporter {
+	return nil
+}
+
 // NewBootstrapServer initializes a new Bootstrap server that implements
 // the Server interface.
 func NewBootstrapServer(dir, kubeconfig string, ircerts []string) (Server, error) {
@@ -135,7 +142,7 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*runtime.RawExtension, er
 	addDataAndMaybeAppendToIgnition(cloudProviderCAPath, cc.Spec.CloudProviderCAData, &ignConf)
 
 	appenders := newAppendersBuilder(nil, bsc.kubeconfigFunc, bsc.certs, bsc.serverBaseDir).
-		WithNodeAnnotations(currConf, "").
+		WithNodeAnnotations(currConf, "", "").
 		build()
 
 	for _, a := range appenders {

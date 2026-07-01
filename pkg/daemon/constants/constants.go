@@ -12,7 +12,8 @@ const (
 	CurrentImageAnnotationKey = "machineconfiguration.openshift.io/currentImage"
 	// DesiredImageAnnotationKey is used to specify the desired OS image pullspec for a machine
 	DesiredImageAnnotationKey = "machineconfiguration.openshift.io/desiredImage"
-
+	// MachineConfigServerURLAnnotationKey stores the MCS base URL for status reporting
+	MachineConfigServerURLAnnotationKey = "machineconfiguration.openshift.io/machineConfigServerURL"
 	// CurrentMachineConfigAnnotationKey is used to fetch current MachineConfig for a machine
 	CurrentMachineConfigAnnotationKey = "machineconfiguration.openshift.io/currentConfig"
 	// DesiredMachineConfigAnnotationKey is used to specify the desired MachineConfig for a machine
