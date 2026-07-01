@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/containers/image/v5/types"
-	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_6/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/util/diff"

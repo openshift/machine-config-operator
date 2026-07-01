@@ -10,7 +10,7 @@ import (
 	"time"
 
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
-	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_6/types"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -80,6 +80,27 @@ func TestValidateFiles(t *testing.T) {
 
 	if err := checkV3Files(filesV3); err != nil {
 		t.Errorf("Invalid files: %v", err)
+	}
+
+	// Support for setuid/setgid/sticky bits introduced in ignition version 3.6.0+
+	// The on-disk file has mode 0644, so a spec requesting 04644 (setuid) must
+	// be detected as a mismatch — proving special bits flow through correctly.
+	setuidMode := int(04000 | fileMode) // 04000 is the setuid bit
+	filesV3Special := []ign3types.File{
+		{
+			Node: ign3types.Node{
+				Path: "fixtures/test1.txt",
+			},
+			FileEmbedded1: ign3types.FileEmbedded1{
+				Contents: ign3types.Resource{
+					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte("hello world\n"))),
+				},
+				Mode: &setuidMode,
+			},
+		},
+	}
+	if err := checkV3Files(filesV3Special); err == nil {
+		t.Errorf("checkV3Files should have reported a mode mismatch for setuid bit, but did not")
 	}
 
 	// validate overwritten file in spec 2
