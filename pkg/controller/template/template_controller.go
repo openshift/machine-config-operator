@@ -76,8 +76,6 @@ type Controller struct {
 	iriSecretsInformerSynced cache.InformerSynced
 	iriInformerSynced        cache.InformerSynced
 
-	iriMerger *ctrlcommon.IRISecretMerger
-
 	queue workqueue.TypedRateLimitingInterface[string]
 
 	urlClearOnce sync.Once
@@ -93,7 +91,7 @@ func New(
 	apiserverInformer configinformersv1.APIServerInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
-	fgHandler ctrlcommon.FeatureGatesHandler,
+	_ ctrlcommon.FeatureGatesHandler,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -151,10 +149,8 @@ func New(
 
 	if iriInformer != nil {
 		ctrl.iriInformerSynced = iriInformer.Informer().HasSynced
-		ctrl.iriMerger = ctrlcommon.NewIRISecretMerger(iriSecretsInformer.Lister(), ctrl.ccLister, iriInformer.Lister(), fgHandler)
 	} else {
 		ctrl.iriInformerSynced = func() bool { return true }
-		ctrl.iriMerger = ctrlcommon.NewIRISecretMerger(nil, ctrl.ccLister, nil, fgHandler)
 	}
 
 	ctrl.apiserverLister = apiserverInformer.Lister()
@@ -164,9 +160,28 @@ func New(
 }
 
 func (ctrl *Controller) filterSecret(secret *corev1.Secret) {
-	if secret.Name == "pull-secret" || secret.Name == ctrlcommon.InternalReleaseImageAuthSecretName {
+	// Check if this is the IRI auth secret
+	if secret.Namespace == ctrlcommon.MCONamespace && secret.Name == ctrlcommon.InternalReleaseImageAuthSecretName {
 		ctrl.enqueueController()
-		klog.Infof("Re-syncing ControllerConfig due to secret %s change", secret.Name)
+		klog.Infof("Re-syncing ControllerConfig due to secret %s/%s change", secret.Namespace, secret.Name)
+		return
+	}
+
+	// Check if this is the configured global pull secret
+	cfg, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
+	if err != nil {
+		// If we can't get the ControllerConfig, we can't determine if this secret
+		// is the pull secret, so skip the check. The controller will eventually
+		// sync when the ControllerConfig is available.
+		klog.V(4).Infof("Could not get ControllerConfig to check secret %s/%s: %v", secret.Namespace, secret.Name, err)
+		return
+	}
+
+	if cfg.Spec.PullSecret != nil &&
+		secret.Namespace == cfg.Spec.PullSecret.Namespace &&
+		secret.Name == cfg.Spec.PullSecret.Name {
+		ctrl.enqueueController()
+		klog.Infof("Re-syncing ControllerConfig due to secret %s/%s change", secret.Namespace, secret.Name)
 	}
 }
 
@@ -585,15 +600,9 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 		clusterPullSecretRaw = clusterPullSecret.Data[corev1.DockerConfigJsonKey]
 	}
 
-	// If IRI is in use, merge its registry credentials into the pull secret so
-	// that kubelet and CRI-O on all nodes can authenticate to the IRI registry.
-	// Credentials are merged at render time rather than writing back to the
-	// user-controlled global pull secret, avoiding ownership conflicts and the
-	// timing window where 00-master/00-worker could be rendered without IRI creds.
-	clusterPullSecretRaw, err = ctrl.iriMerger.Merge(clusterPullSecretRaw)
-	if err != nil {
-		return ctrl.syncFailingStatus(cfg, fmt.Errorf("could not merge IRI registry credentials into pull secret: %w", err))
-	}
+	// IRI registry credentials are now managed directly in the global pull secret
+	// by the IRI controller, so no merging is needed here. The global pull secret
+	// already contains IRI credentials when read above.
 
 	// Grab the tlsSecurityProfile from the apiserver object
 	apiServer, err := ctrl.apiserverLister.Get(ctrlcommon.APIServerInstanceName)

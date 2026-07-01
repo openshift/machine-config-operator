@@ -62,7 +62,7 @@ func NewIRISecretMerger(
 			if err != nil {
 				return "", "", fmt.Errorf("could not get ControllerConfig: %w", err)
 			}
-			return extractIRICredentials(secret, cconfig)
+			return ExtractIRICredentials(secret, cconfig)
 		},
 	}
 }
@@ -85,7 +85,7 @@ func NewIRISecretMergerFromObjects(
 			if iri == nil {
 				return "", "", errIRIDisabled
 			}
-			return extractIRICredentials(secret, cconfig)
+			return ExtractIRICredentials(secret, cconfig)
 		},
 	}
 }
@@ -104,7 +104,7 @@ func (m *IRISecretMerger) Merge(pullSecretRaw []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	merged, changed, err := mergeIRIRegistryCredentialsIntoPullSecret(pullSecretRaw, password, baseDomain)
+	merged, changed, err := MergeIRIRegistryCredentialsIntoPullSecret(pullSecretRaw, password, baseDomain)
 	if err != nil {
 		return nil, err
 	}
@@ -114,9 +114,9 @@ func (m *IRISecretMerger) Merge(pullSecretRaw []byte) ([]byte, error) {
 	return merged, nil
 }
 
-// extractIRICredentials validates and extracts the password and baseDomain from
+// ExtractIRICredentials validates and extracts the password and baseDomain from
 // the IRI credentials secret and ControllerConfig.
-func extractIRICredentials(secret *corev1.Secret, cconfig *mcfgv1.ControllerConfig) (password, baseDomain string, err error) {
+func ExtractIRICredentials(secret *corev1.Secret, cconfig *mcfgv1.ControllerConfig) (password, baseDomain string, err error) {
 	if secret == nil {
 		return "", "", fmt.Errorf("IRI registry credentials secret must not be nil")
 	}
@@ -137,13 +137,13 @@ func extractIRICredentials(secret *corev1.Secret, cconfig *mcfgv1.ControllerConf
 	return string(pw), bd, nil
 }
 
-// mergeIRIRegistryCredentialsIntoPullSecret merges IRI registry authentication
+// MergeIRIRegistryCredentialsIntoPullSecret merges IRI registry authentication
 // credentials into a dockerconfigjson pull secret. It adds auth entries for
 // api-int.<baseDomain>:<IRIRegistryPort> (all nodes) and
 // localhost:<IRIRegistryPort> (masters, where the registry runs locally).
 // Returns the merged bytes, a boolean indicating whether the pull secret was
 // changed, and any error.
-func mergeIRIRegistryCredentialsIntoPullSecret(pullSecretRaw []byte, password, baseDomain string) ([]byte, bool, error) {
+func MergeIRIRegistryCredentialsIntoPullSecret(pullSecretRaw []byte, password, baseDomain string) ([]byte, bool, error) {
 	// The IRI registry is reachable via api-int on all nodes, and also via
 	// localhost on master nodes where it runs locally. registries.conf mirror
 	// rules on masters use localhost:22625, so credentials must be present for
