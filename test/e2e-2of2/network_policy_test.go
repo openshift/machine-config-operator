@@ -26,6 +26,7 @@ const (
 
 var staticPolicyNames = []string{
 	"default-deny",
+	"allow-all-egress",
 	"allow-machine-config-operator",
 	"allow-machine-config-controller",
 	"allow-machine-os-builder",
@@ -68,6 +69,15 @@ func TestNetworkPolicies_DefaultPoliciesExist(t *testing.T) {
 		assert.Empty(t, deny.Spec.Egress, "default-deny should have no egress rules")
 	}
 
+	// Verify allow-all-egress policy covers all pods
+	egressPolicy := policyMap["allow-all-egress"]
+	if egressPolicy != nil {
+		assert.Empty(t, egressPolicy.Spec.PodSelector.MatchLabels, "allow-all-egress should select all pods")
+		assert.Contains(t, egressPolicy.Spec.PolicyTypes, networkingv1.PolicyTypeEgress)
+		require.NotEmpty(t, egressPolicy.Spec.Egress, "allow-all-egress should have egress rules")
+	}
+
+	// Verify per-component ingress-only allow policies
 	for _, tc := range []struct {
 		name     string
 		labelVal string
@@ -84,7 +94,6 @@ func TestNetworkPolicies_DefaultPoliciesExist(t *testing.T) {
 		assert.Equal(t, tc.labelVal, policy.Spec.PodSelector.MatchLabels["k8s-app"],
 			"%s: podSelector should match k8s-app=%s", tc.name, tc.labelVal)
 		assert.Contains(t, policy.Spec.PolicyTypes, networkingv1.PolicyTypeIngress)
-		assert.Contains(t, policy.Spec.PolicyTypes, networkingv1.PolicyTypeEgress)
 
 		require.NotEmpty(t, policy.Spec.Ingress, "%s: should have ingress rules", tc.name)
 		require.NotEmpty(t, policy.Spec.Ingress[0].Ports, "%s: ingress should have ports", tc.name)
@@ -92,8 +101,6 @@ func TestNetworkPolicies_DefaultPoliciesExist(t *testing.T) {
 			"%s: ingress port should be 9001", tc.name)
 		assert.Equal(t, corev1.ProtocolTCP, *policy.Spec.Ingress[0].Ports[0].Protocol,
 			"%s: ingress protocol should be TCP", tc.name)
-
-		require.NotEmpty(t, policy.Spec.Egress, "%s: should have egress rules", tc.name)
 	}
 }
 

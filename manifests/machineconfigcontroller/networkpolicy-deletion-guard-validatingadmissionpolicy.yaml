@@ -17,5 +17,5 @@ spec:
       resources:   ["networkpolicies"]
       scope: "Namespaced"
   validations:
-    - expression: "!(oldObject.metadata.name in ['default-deny', 'allow-machine-config-operator', 'allow-machine-config-controller', 'allow-machine-os-builder'])"
+    - expression: "!(oldObject.metadata.name in ['default-deny', 'allow-all-egress', 'allow-machine-config-operator', 'allow-machine-config-controller', 'allow-machine-os-builder'])"
       message: "Deletion of MCO-managed NetworkPolicy resources in the openshift-machine-config-operator namespace is not allowed"

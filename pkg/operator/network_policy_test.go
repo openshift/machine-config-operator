@@ -61,6 +61,7 @@ func TestSyncNetworkPolicies_StaticPoliciesCreated(t *testing.T) {
 	}
 
 	assert.Contains(t, names, "default-deny", "expected default-deny policy")
+	assert.Contains(t, names, "allow-all-egress", "expected allow-all-egress policy")
 	assert.Contains(t, names, "allow-machine-config-operator", "expected allow-machine-config-operator policy")
 	assert.Contains(t, names, "allow-machine-config-controller", "expected allow-machine-config-controller policy")
 	assert.Contains(t, names, "allow-machine-os-builder", "expected allow-machine-os-builder policy")
@@ -82,6 +83,25 @@ func TestSyncNetworkPolicies_DefaultDenySpec(t *testing.T) {
 	assert.Contains(t, denyPolicy.Spec.PolicyTypes, networkingv1.PolicyTypeEgress, "default-deny must include Egress policy type")
 	assert.Empty(t, denyPolicy.Spec.Ingress, "default-deny should have no ingress rules")
 	assert.Empty(t, denyPolicy.Spec.Egress, "default-deny should have no egress rules")
+}
+
+func TestSyncNetworkPolicies_AllowAllEgressSpec(t *testing.T) {
+	optr := testOperatorForNetworkPolicies(t)
+	config := testRenderConfig()
+
+	err := optr.syncNetworkPolicies(config, nil)
+	require.NoError(t, err)
+
+	policies := listNetworkPolicies(t, optr)
+	egressPolicy := findPolicy(policies, "allow-all-egress")
+	require.NotNil(t, egressPolicy, "allow-all-egress policy must exist")
+
+	assert.Empty(t, egressPolicy.Spec.PodSelector.MatchLabels, "allow-all-egress should select all pods with empty selector")
+	assert.Contains(t, egressPolicy.Spec.PolicyTypes, networkingv1.PolicyTypeEgress)
+	assert.NotContains(t, egressPolicy.Spec.PolicyTypes, networkingv1.PolicyTypeIngress, "allow-all-egress should not set Ingress policy type")
+	require.Len(t, egressPolicy.Spec.Egress, 1, "should have one egress rule (allow all)")
+	assert.Empty(t, egressPolicy.Spec.Egress[0].Ports, "egress rule should allow all ports")
+	assert.Empty(t, egressPolicy.Spec.Egress[0].To, "egress rule should allow all destinations")
 }
 
 func TestSyncNetworkPolicies_AllowPolicySpecs(t *testing.T) {
@@ -111,11 +131,9 @@ func TestSyncNetworkPolicies_AllowPolicySpecs(t *testing.T) {
 			assert.Equal(t, tc.labelVal, policy.Spec.PodSelector.MatchLabels[tc.labelKey],
 				"podSelector should match %s=%s", tc.labelKey, tc.labelVal)
 			assert.Contains(t, policy.Spec.PolicyTypes, networkingv1.PolicyTypeIngress)
-			assert.Contains(t, policy.Spec.PolicyTypes, networkingv1.PolicyTypeEgress)
+			assert.NotContains(t, policy.Spec.PolicyTypes, networkingv1.PolicyTypeEgress, "ingress-only allow policies should not set Egress policy type")
 
-			require.Len(t, policy.Spec.Egress, 1, "should have one egress rule (allow all)")
-			assert.Empty(t, policy.Spec.Egress[0].Ports, "egress rule should allow all ports")
-			assert.Empty(t, policy.Spec.Egress[0].To, "egress rule should allow all destinations")
+			assert.Empty(t, policy.Spec.Egress, "ingress-only allow policies should have no egress rules")
 
 			require.Len(t, policy.Spec.Ingress, 1, "should have one ingress rule")
 			require.Len(t, policy.Spec.Ingress[0].Ports, 1, "ingress rule should have one port")
@@ -137,7 +155,7 @@ func TestSyncNetworkPolicies_MOBPolicyAlwaysCreated(t *testing.T) {
 	require.NotNil(t, mobPolicy, "MOB policy should always be created even without layered pools")
 
 	assert.Equal(t, "machine-os-builder", mobPolicy.Spec.PodSelector.MatchLabels["k8s-app"])
-	require.Len(t, mobPolicy.Spec.Egress, 1, "MOB should have one egress rule (allow all)")
+	assert.Empty(t, mobPolicy.Spec.Egress, "MOB ingress-only policy should have no egress rules")
 	require.Len(t, mobPolicy.Spec.Ingress, 1, "MOB should have one ingress rule")
 }
 

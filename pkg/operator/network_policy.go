@@ -36,6 +36,17 @@ func defaultDenyPatchBody() []byte {
 	}`)
 }
 
+// allowAllEgressNetworkPolicy allows all egress for every pod in the namespace.
+// This covers the operator, controller, machine-os-builder, and ephemeral
+// builder pods (which lack a k8s-app label) that need DNS and registry access.
+func allowAllEgressNetworkPolicy(namespace string) *networkingv1ac.NetworkPolicyApplyConfiguration {
+	return networkingv1ac.NetworkPolicy("allow-all-egress", namespace).
+		WithSpec(networkingv1ac.NetworkPolicySpec().
+			WithPodSelector(metav1ac.LabelSelector()).
+			WithEgress(networkingv1ac.NetworkPolicyEgressRule()).
+			WithPolicyTypes(networkingv1.PolicyTypeEgress))
+}
+
 func allowMCONetworkPolicy(namespace string) *networkingv1ac.NetworkPolicyApplyConfiguration {
 	return networkingv1ac.NetworkPolicy("allow-machine-config-operator", namespace).
 		WithSpec(networkingv1ac.NetworkPolicySpec().
@@ -45,8 +56,7 @@ func allowMCONetworkPolicy(namespace string) *networkingv1ac.NetworkPolicyApplyC
 				WithPorts(networkingv1ac.NetworkPolicyPort().
 					WithProtocol(corev1.ProtocolTCP).
 					WithPort(intstr.FromInt32(9001)))).
-			WithEgress(networkingv1ac.NetworkPolicyEgressRule()).
-			WithPolicyTypes(networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress))
+			WithPolicyTypes(networkingv1.PolicyTypeIngress))
 }
 
 func allowMCCNetworkPolicy(namespace string) *networkingv1ac.NetworkPolicyApplyConfiguration {
@@ -58,8 +68,7 @@ func allowMCCNetworkPolicy(namespace string) *networkingv1ac.NetworkPolicyApplyC
 				WithPorts(networkingv1ac.NetworkPolicyPort().
 					WithProtocol(corev1.ProtocolTCP).
 					WithPort(intstr.FromInt32(9001)))).
-			WithEgress(networkingv1ac.NetworkPolicyEgressRule()).
-			WithPolicyTypes(networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress))
+			WithPolicyTypes(networkingv1.PolicyTypeIngress))
 }
 
 func allowMOBNetworkPolicy(namespace string) *networkingv1ac.NetworkPolicyApplyConfiguration {
@@ -71,25 +80,18 @@ func allowMOBNetworkPolicy(namespace string) *networkingv1ac.NetworkPolicyApplyC
 				WithPorts(networkingv1ac.NetworkPolicyPort().
 					WithProtocol(corev1.ProtocolTCP).
 					WithPort(intstr.FromInt32(9001)))).
-			WithEgress(networkingv1ac.NetworkPolicyEgressRule()).
-			WithPolicyTypes(networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress))
+			WithPolicyTypes(networkingv1.PolicyTypeIngress))
 }
 
 func (optr *Operator) syncNetworkPolicies(_ *renderConfig, _ *configv1.ClusterOperator) error {
 	ctx := context.TODO()
 	ns := ctrlcommon.MCONamespace
 
-	// Apply default-deny via raw patch so empty ingress/egress slices are
-	// preserved in the payload and SSA claims ownership of those fields.
-	patchOpts := metav1.PatchOptions{FieldManager: networkPolicyFieldManager, Force: ptr.To(true)}
-	if _, err := optr.kubeClient.NetworkingV1().NetworkPolicies(ns).Patch(
-		ctx, "default-deny", types.ApplyPatchType, defaultDenyPatchBody(), patchOpts,
-	); err != nil {
-		return err
-	}
-
+	// Apply allow rules before default-deny so that traffic is never blocked
+	// during the window between sequential resource applies.
 	applyOpts := metav1.ApplyOptions{FieldManager: networkPolicyFieldManager, Force: true}
 	policies := []*networkingv1ac.NetworkPolicyApplyConfiguration{
+		allowAllEgressNetworkPolicy(ns),
 		allowMCONetworkPolicy(ns),
 		allowMCCNetworkPolicy(ns),
 		allowMOBNetworkPolicy(ns),
@@ -99,6 +101,15 @@ func (optr *Operator) syncNetworkPolicies(_ *renderConfig, _ *configv1.ClusterOp
 		if _, err := optr.kubeClient.NetworkingV1().NetworkPolicies(ns).Apply(ctx, policy, applyOpts); err != nil {
 			return err
 		}
+	}
+
+	// Apply default-deny last via raw patch so empty ingress/egress slices are
+	// preserved in the payload and SSA claims ownership of those fields.
+	patchOpts := metav1.PatchOptions{FieldManager: networkPolicyFieldManager, Force: ptr.To(true)}
+	if _, err := optr.kubeClient.NetworkingV1().NetworkPolicies(ns).Patch(
+		ctx, "default-deny", types.ApplyPatchType, defaultDenyPatchBody(), patchOpts,
+	); err != nil {
+		return err
 	}
 
 	return nil
