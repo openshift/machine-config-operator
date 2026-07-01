@@ -5,11 +5,14 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"text/template"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
+	command "github.com/openshift/imagebuilder/dockerfile/command"
+	parser "github.com/openshift/imagebuilder/dockerfile/parser"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/utils"
 	chelpers "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -39,6 +42,29 @@ const (
 	machineConfigJSONFilename string = "machineconfig.json.gz"
 )
 
+var basicSyntaxRegex = regexp.MustCompile(`(?m)(?i)^\s*FROM`)
+
+// instructionRequirements maps Containerfile instructions that MUST have arguments to their requirement descriptions
+// Instructions not in this map either don't require arguments or have optional arguments
+var instructionRequirements = map[string]string{
+	command.Add:        "source and destination paths",
+	command.Arg:        "a variable name",
+	command.Cmd:        "a command or arguments",
+	command.Copy:       "source and destination paths",
+	command.Entrypoint: "a command or arguments",
+	command.Env:        "key=value pairs",
+	command.Expose:     "a port",
+	command.From:       "a base image",
+	command.Label:      "key=value pairs",
+	command.Onbuild:    "an instruction to execute",
+	command.Run:        "a command",
+	command.Shell:      "a shell command array",
+	command.StopSignal: "a signal",
+	command.User:       "a username or UID",
+	command.Volume:     "a mount point",
+	command.Workdir:    "a directory path",
+}
+
 // Represents the request to build a layered OS image.
 type buildRequestImpl struct {
 	opts              BuildRequestOpts
@@ -66,6 +92,13 @@ func newBuildRequest(opts BuildRequestOpts) BuildRequest {
 		if file.ContainerfileArch == mcfgv1.NoArch {
 			br.userContainerfile = file.Content
 			break
+		}
+	}
+
+	// Validate user's Containerfile if provided
+	if br.userContainerfile != "" {
+		if err := br.validateContainerfileSyntax(br.userContainerfile); err != nil {
+			klog.Warningf("User Containerfile validation failed")
 		}
 	}
 
@@ -346,7 +379,183 @@ func (br buildRequestImpl) renderContainerfile() (string, error) {
 		return "", fmt.Errorf("could not execute containerfile template: %w", err)
 	}
 
-	return out.String(), nil
+	renderedContainerfile := out.String()
+
+	if renderedContainerfile != "" {
+		if err := br.validateContainerfileSyntax(renderedContainerfile); err != nil {
+			return "", fmt.Errorf("rendered containerfile validation failed: %w", err)
+		}
+	}
+
+	return renderedContainerfile, nil
+}
+
+// validateContainerfileSyntax validates the syntax of a Containerfile using basic checks and the imagebuilder parser.
+func (br buildRequestImpl) validateContainerfileSyntax(containerfile string) error {
+	if containerfile == "" || hasOnlyCommentsOrWhitespace(containerfile) {
+		klog.V(4).Infof("Containerfile is empty or contains only comments, nothing to validate")
+		return nil
+	}
+
+	if err := br.validateBasicSyntax(containerfile); err != nil {
+		return err
+	}
+
+	result, err := parser.Parse(strings.NewReader(containerfile))
+	if err != nil {
+		return handleParserError(err, containerfile)
+	}
+
+	if result.AST == nil || len(result.AST.Children) == 0 {
+		klog.V(4).Infof("Containerfile parsed with no instructions (may be all comments), nothing to validate")
+		return nil
+	}
+
+	for _, child := range result.AST.Children {
+		if err := br.validateInstruction(child); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// handleParserError translates a parser.Parse error into a validation outcome.
+// Known parser limitations (heredoc, unquoted LABEL/ENV values) are allowed through;
+// genuinely malformed instructions and all other errors fail.
+func handleParserError(err error, containerfile string) error {
+	switch {
+	case isKnownParserLimitation(err):
+		klog.V(4).Infof("Containerfile uses advanced syntax the parser doesn't support, skipping detailed parser validation: %v", err)
+		return nil
+	case isParseNameValError(err):
+		// imagebuilders parseNameVal rejects LABEL/ENV values that contain unquoted spaces
+		if malformed := findMalformedEnvLabel(containerfile); malformed != nil {
+			return malformed
+		}
+		klog.V(4).Infof("Containerfile LABEL/ENV values contain unquoted spaces; imagebuilder cannot parse them but buildah/podman will: %v", err)
+		return nil
+	default:
+		return fmt.Errorf("failed to parse Containerfile: %w", err)
+	}
+}
+
+// validateBasicSyntax performs basic sanity checks that don't require parsing.
+func (br buildRequestImpl) validateBasicSyntax(containerfile string) error {
+	if !basicSyntaxRegex.MatchString(containerfile) {
+		return fmt.Errorf("Containerfile must contain at least one FROM instruction")
+	}
+
+	return nil
+}
+
+// hasOnlyCommentsOrWhitespace reports whether every non-empty line in the
+// containerfile is a comment line (starts with '#' after trimming whitespace).
+func hasOnlyCommentsOrWhitespace(containerfile string) bool {
+	for _, line := range strings.Split(containerfile, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" && !strings.HasPrefix(trimmed, "#") {
+			return false
+		}
+	}
+	return true
+}
+
+// isKnownParserLimitation checks if a parser error is from known limitations of the
+// imagebuilder parser library that buildah/podman handle correctly.
+func isKnownParserLimitation(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Heredoc syntax (e.g. RUN bash <<'EOF') is valid in Podman/Buildah but not
+	// supported by the imagebuilder parser.
+	errMsg := err.Error()
+	for _, token := range []string{"<<", "heredoc"} {
+		if strings.Contains(errMsg, token) {
+			return true
+		}
+	}
+	return false
+}
+
+// isParseNameValError reports whether the error came from imagebuilder's parseNameVal,
+// which rejects LABEL/ENV values containing unquoted spaces.
+func isParseNameValError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "can't find = in") || strings.Contains(msg, "must be of the form: name=value")
+}
+
+// findMalformedEnvLabel scans containerfile lines for ENV or LABEL instructions that
+// lack any '=' sign in their arguments, which means the instruction is genuinely malformed.
+func findMalformedEnvLabel(containerfile string) error {
+	for i, line := range strings.Split(containerfile, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		instruction, rest, ok := cutEnvLabelPrefix(trimmed)
+		if !ok {
+			continue
+		}
+		if !strings.Contains(rest, "=") {
+			return fmt.Errorf("line %d: %s instruction must use key=value form", i+1, instruction)
+		}
+	}
+	return nil
+}
+
+// cutEnvLabelPrefix returns the instruction name and the remainder of the line if the
+// line begins with ENV or LABEL (case-insensitive). ok is false for all other instructions.
+func cutEnvLabelPrefix(line string) (instruction, rest string, ok bool) {
+	for _, inst := range []string{"ENV", "LABEL"} {
+		prefix := inst + " "
+		if len(line) > len(prefix) && strings.EqualFold(line[:len(prefix)], prefix) {
+			return inst, strings.TrimSpace(line[len(prefix):]), true
+		}
+	}
+	return "", "", false
+}
+
+// validateInstruction validates that an instruction is valid and has required arguments.
+func (br buildRequestImpl) validateInstruction(node *parser.Node) error {
+	if node == nil || node.Value == "" {
+		return nil
+	}
+
+	instruction := node.Value
+
+	// First check if this is a valid Dockerfile instruction
+	if _, exists := command.Commands[instruction]; !exists {
+		return fmt.Errorf("unknown Dockerfile instruction: %s", node.Value)
+	}
+
+	// NONE is valid without additional arguments
+	if instruction == command.Healthcheck && node.Next != nil && strings.EqualFold(node.Next.Value, "NONE") {
+		return nil
+	}
+
+	// Then check if it has required arguments
+	requirement, requiresArgs := instructionRequirements[instruction]
+	if requiresArgs {
+		// Check if the node has arguments
+		hasArgs := false
+		if node.Next != nil && node.Next.Value != "" {
+			hasArgs = true
+		}
+		// Also check if there's a raw attribute that contains args
+		if !hasArgs && node.Attributes != nil && len(node.Attributes) > 0 {
+			hasArgs = true
+		}
+
+		if !hasArgs {
+			return fmt.Errorf("%s instruction requires %s", strings.ToUpper(instruction), requirement)
+		}
+	}
+
+	return nil
 }
 
 // podToJob creates a Job with the spec of the given Pod
