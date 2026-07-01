@@ -539,6 +539,23 @@ func IsCompactOrSNOCluster(oc *exutil.CLI) bool {
 	return wMcp.IsEmpty() && len(mcpList.GetAllOrFail()) == 2
 }
 
+// IsAROCluster returns whether the current cluster is ARO.
+// Returns (false, nil) only when the ARO resource is genuinely absent.
+func IsAROCluster(oc *exutil.CLI) (bool, error) {
+	r := NewResource(oc.AsAdmin(), "clusters.aro.openshift.io", "cluster")
+	_, err := r.Get("{.}")
+	if err != nil {
+		// treat "not found"/"resource type doesn't exist" as non-ARO;
+		// propagate all other errors
+		if strings.Contains(err.Error(), "not found") ||
+			strings.Contains(err.Error(), "the server doesn't have a resource type") {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
 // IsInstalledWithAssistedInstallerOrFail checks if the cluster was installed using assisted-installer
 func IsInstalledWithAssistedInstallerOrFail(oc *exutil.CLI) bool {
 	logger.Infof("Checking if the cluster was installed using assisted-installer")
