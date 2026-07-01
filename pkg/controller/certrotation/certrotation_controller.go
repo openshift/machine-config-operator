@@ -33,6 +33,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/api/features"
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
+	configinformersexternal "github.com/openshift/client-go/config/informers/externalversions"
 	machineclientset "github.com/openshift/client-go/machine/clientset/versioned"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 
@@ -40,6 +41,7 @@ import (
 	"github.com/openshift/library-go/pkg/crypto"
 	"github.com/openshift/library-go/pkg/operator/certrotation"
 	"github.com/openshift/library-go/pkg/operator/events"
+	"github.com/openshift/library-go/pkg/pki"
 
 	aroclientset "github.com/Azure/ARO-RP/pkg/operator/clientset/versioned"
 
@@ -96,11 +98,25 @@ func New(
 	mcoSecretInformer coreinformersv1.SecretInformer,
 	mcoConfigMapInfomer coreinformersv1.ConfigMapInformer,
 	infraInformer configinformers.InfrastructureInformer,
+	configInformerFactory configinformersexternal.SharedInformerFactory,
 	featureGatesHandler ctrlcommon.FeatureGatesHandler,
 	mcfgClient mcfgclientset.Interface,
 ) (*CertRotationController, error) {
 
 	recorder := events.NewLoggingEventRecorder(componentName, clock.RealClock{})
+
+	cachesToSync := []cache.InformerSynced{
+		maoSecretInformer.Informer().HasSynced,
+		mcoSecretInformer.Informer().HasSynced,
+		mcoConfigMapInfomer.Informer().HasSynced,
+		infraInformer.Informer().HasSynced,
+	}
+
+	var pkiProfileProvider pki.PKIProfileProvider
+	if configInformerFactory != nil && featureGatesHandler != nil && featureGatesHandler.Enabled(features.FeatureGateConfigurablePKI) {
+		pkiProfileProvider = pki.NewClusterPKIProfileProvider(configInformerFactory.Config().V1alpha1().PKIs().Lister())
+		cachesToSync = append(cachesToSync, configInformerFactory.Config().V1alpha1().PKIs().Informer().HasSynced)
+	}
 
 	c := &CertRotationController{
 		kubeClient:          kubeClient,
@@ -112,12 +128,7 @@ func New(
 		mcoConfigMapInfomer: mcoConfigMapInfomer,
 		mcoSecretLister:     mcoSecretInformer.Lister(),
 		maoSecretLister:     maoSecretInformer.Lister(),
-		cachesToSync: []cache.InformerSynced{
-			maoSecretInformer.Informer().HasSynced,
-			mcoSecretInformer.Informer().HasSynced,
-			mcoConfigMapInfomer.Informer().HasSynced,
-			infraInformer.Informer().HasSynced,
-		},
+		cachesToSync:        cachesToSync,
 
 		hostnamesRotation: &DynamicServingRotation{hostnamesChanged: make(chan struct{}, 10)},
 		hostnamesQueue: workqueue.NewTypedRateLimitingQueueWithConfig(
@@ -142,12 +153,14 @@ func New(
 				JiraComponent: "Machine Config Operator",
 				Description:   "CA used to sign the MachineConfigServer TLS certificate",
 			},
-			Validity:      mcsCAExpiry,
-			Refresh:       mcsCARefresh,
-			Informer:      mcoSecretInformer,
-			Lister:        c.mcoSecretLister,
-			Client:        kubeClient.CoreV1(),
-			EventRecorder: recorder,
+			Validity:           mcsCAExpiry,
+			Refresh:            mcsCARefresh,
+			CertificateName:    "machine-config.machine-config-server-signer",
+			PKIProfileProvider: pkiProfileProvider,
+			Informer:           mcoSecretInformer,
+			Lister:             c.mcoSecretLister,
+			Client:             kubeClient.CoreV1(),
+			EventRecorder:      recorder,
 		},
 		certrotation.CABundleConfigMap{
 			Namespace: ctrlcommon.MCONamespace,
@@ -174,10 +187,12 @@ func New(
 				Hostnames:        c.hostnamesRotation.GetHostnames,
 				HostnamesChanged: c.hostnamesRotation.hostnamesChanged,
 			},
-			Informer:      mcoSecretInformer,
-			Lister:        c.mcoSecretLister,
-			Client:        kubeClient.CoreV1(),
-			EventRecorder: recorder,
+			CertificateName:    "machine-config.machine-config-server-serving",
+			PKIProfileProvider: pkiProfileProvider,
+			Informer:           mcoSecretInformer,
+			Lister:             c.mcoSecretLister,
+			Client:             kubeClient.CoreV1(),
+			EventRecorder:      recorder,
 		},
 		recorder,
 		NewCertRotationStatusReporter(),

@@ -124,7 +124,7 @@ func (f *fixture) newController() *CertRotationController {
 		[]configv1.FeatureGateName{features.FeatureGateNoRegistryClusterInstall},
 		nil,
 	)
-	c, err := New(f.kubeClient, f.configClient, f.machineClient, f.aroClient, f.k8sI.Core().V1().Secrets(), f.k8sI.Core().V1().Secrets(), f.k8sI.Core().V1().ConfigMaps(), f.infraInformer.Config().V1().Infrastructures(), fgHandler, f.mcfgClient)
+	c, err := New(f.kubeClient, f.configClient, f.machineClient, f.aroClient, f.k8sI.Core().V1().Secrets(), f.k8sI.Core().V1().Secrets(), f.k8sI.Core().V1().ConfigMaps(), f.infraInformer.Config().V1().Infrastructures(), nil, fgHandler, f.mcfgClient)
 	require.NoError(f.t, err)
 
 	c.StartInformers()
@@ -464,7 +464,7 @@ func TestIRICertificateReconcileSkippedWhenFeatureGateDisabled(t *testing.T) {
 	c, err := New(f.kubeClient, f.configClient, f.machineClient, f.aroClient,
 		f.k8sI.Core().V1().Secrets(), f.k8sI.Core().V1().Secrets(),
 		f.k8sI.Core().V1().ConfigMaps(), f.infraInformer.Config().V1().Infrastructures(),
-		fgHandler, f.mcfgClient)
+		nil, fgHandler, f.mcfgClient)
 	require.NoError(t, err)
 
 	// reconcileIRICertificate must be a no-op when the feature gate is disabled.

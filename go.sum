@@ -675,8 +675,8 @@ github.com/openshift/kubernetes/staging/src/k8s.io/pod-security-admission v0.0.0
 github.com/openshift/kubernetes/staging/src/k8s.io/pod-security-admission v0.0.0-20260305123649-d18f3f005eaa/go.mod h1:6wqqkK0+5hV+CLJ3uz9A1lkjxXRvkbq+5RnZdUZx/H8=
 github.com/openshift/kubernetes/staging/src/k8s.io/sample-apiserver v0.0.0-20260305123649-d18f3f005eaa h1:JY4k94JmDGQp2Pj94Cw2xtIjs7MpPkU9n8zNPDTbiKo=
 github.com/openshift/kubernetes/staging/src/k8s.io/sample-apiserver v0.0.0-20260305123649-d18f3f005eaa/go.mod h1:CnFDBq5NGnfOSMeOP8l4SNYJrxK6Z1kUaKdu3Qq9Uik=
-github.com/openshift/library-go v0.0.0-20260303171201-5d9eb6295ff6 h1:xjqy0OolrFdJ+ofI/aD0+2k9+MSk5anP5dXifFt539Q=
-github.com/openshift/library-go v0.0.0-20260303171201-5d9eb6295ff6/go.mod h1:D797O/ssKTNglbrGchjIguFq+DbyRYdeds5w4/VTrKM=
+github.com/openshift/library-go v0.0.0-20260611115129-21dd5809a4b2 h1:kH+vbMI//DZciIQXa6VhTX6BOH3ZJuZSN5IS8wQI76g=
+github.com/openshift/library-go v0.0.0-20260611115129-21dd5809a4b2/go.mod h1:/HBhy6jm/igWI3Y1vYFwFG3ZCcXmnNsKUT6VBpPyM9A=
 github.com/openshift/onsi-ginkgo/v2 v2.6.1-0.20251120221002-696928a6a0d7 h1:02E4Ttpu+7yCQLQxtY42JfcfHU7TBGnje6uB2ytBSdU=
 github.com/openshift/onsi-ginkgo/v2 v2.6.1-0.20251120221002-696928a6a0d7/go.mod h1:ArE1D/XhNXBXCBkKOLkbsb2c81dQHCRcF5zwn/ykDRo=
 github.com/openshift/runtime-utils v0.0.0-20230921210328-7bdb5b9c177b h1:oXzC1N6E9gw76/WH2gEA8GEHvuq09wuVQ9GoCuR8GF4=
