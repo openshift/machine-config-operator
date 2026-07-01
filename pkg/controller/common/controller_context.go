@@ -8,7 +8,9 @@ import (
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
 	imageinformers "github.com/openshift/client-go/image/informers/externalversions"
 	machineinformersv1beta1 "github.com/openshift/client-go/machine/informers/externalversions"
+	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	mcfginformers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
+	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
 	operatorinformers "github.com/openshift/client-go/operator/informers/externalversions"
 	routeinformers "github.com/openshift/client-go/route/informers/externalversions"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
@@ -208,4 +210,26 @@ func NewScopedNodeInformer(kubeclient kubernetes.Interface, nodeName string) (co
 // instantiated NodeInformer and a start function.
 func NewScopedNodeInformerFromClientBuilder(cb *clients.Builder, nodeName string) (corev1informers.NodeInformer, func(<-chan struct{})) {
 	return NewScopedNodeInformer(cb.KubeClientOrDie("node-scoped-informer"), nodeName)
+}
+
+// Creates a scoped MachineConfigNode informer that only watches the MCN for
+// a single node. Since the daemon only needs its own node's MCN, this avoids
+// caching all MachineConfigNodes cluster-wide. Uses a metadata.name field
+// selector to scope the list/watch to the given node name. Returns the
+// instantiated MachineConfigNodeInformer and a start function.
+func NewScopedMachineConfigNodeInformer(client mcfgclientset.Interface, nodeName string) (mcfginformersv1.MachineConfigNodeInformer, func(<-chan struct{})) {
+	sif := mcfginformers.NewSharedInformerFactoryWithOptions(
+		client,
+		resyncPeriod()(),
+		mcfginformers.WithTweakListOptions(func(opts *metav1.ListOptions) {
+			opts.FieldSelector = fields.OneTermEqualSelector("metadata.name", nodeName).String()
+		}),
+	)
+
+	return sif.Machineconfiguration().V1().MachineConfigNodes(), sif.Start
+}
+
+// Creates a scoped MachineConfigNode informer from a clients.Builder instance.
+func NewScopedMachineConfigNodeInformerFromClientBuilder(cb *clients.Builder, nodeName string) (mcfginformersv1.MachineConfigNodeInformer, func(<-chan struct{})) {
+	return NewScopedMachineConfigNodeInformer(cb.MachineConfigClientOrDie("mcn-scoped-informer"), nodeName)
 }
