@@ -158,3 +158,24 @@ Accepting one version older than the target prevents stalling when the target ve
 ## Credentials
 
 The MCO reads AWS credentials from the `aws-cloud-credentials` secret in the `openshift-machine-api` namespace. This secret is provisioned by the machine-api-operator's `CredentialsRequest` and already includes `ec2:DescribeImages` with `resource: "*"`. No new `CredentialsRequest` or RBAC changes are required — the MCO's existing clusterrole grants cluster-wide secret read access.
+
+## E2E Testing
+
+The E2E test validates that the MCO correctly identifies the product line of a marketplace AMI and updates it to the appropriate newer image. It runs on a standard (non-marketplace) AWS cluster by directly patching MachineSet AMIs to simulate marketplace-provisioned nodes.
+
+### Test flow (repeated sequentially for each product ID)
+
+For each known product ID (OCP, OKE, OPP, ROSA, and EMEA variants) for the cluster's architecture and region:
+
+1. **Read the target version token** from the stream ConfigMap for the cluster's architecture.
+2. **Query EC2** for all marketplace AMIs with the product ID whose version token is strictly less than the stream version token. Sort results descending by version.
+3. **Select the second-newest** AMI from that list. Using the second-newest (rather than the newest) ensures the controller always has a strictly newer candidate to update to — the newest AMI below the stream version may already be selected by the controller as the best `≤` match, making the test a no-op.
+4. **Patch the MachineSet** AMI to the selected AMI ID.
+5. **Wait for the MCO to reconcile** the MachineSet.
+6. **Assert** that the MachineSet AMI changed, the new AMI is owned by `679593333241` (`aws-marketplace`), and its name contains the same product ID as the original.
+
+If fewer than two AMIs are found below the stream version for a given product ID in the cluster's region, that product ID is skipped with a log message.
+
+### Why a standard cluster
+
+A standard CI cluster is used rather than a marketplace-provisioned one. The MCO branches on `OwnerId` from `DescribeImages`, so patching a MachineSet to a real marketplace AMI ID is sufficient to trigger the marketplace reconciliation path — no special cluster provisioning is required.
