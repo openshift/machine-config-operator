@@ -2933,7 +2933,10 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 		if err := dn.NodeUpdaterClient.RebaseLayeredFromContainerStorage(podmanImageInfo); err != nil {
 			return fmt.Errorf("failed to update OS from local storage: %s: %w", newURL, err)
 		}
+	} else if err := dn.NodeUpdaterClient.RebaseFromCache(newURL); err == nil {
+		klog.Infof("Updated OS to %s from local ostree cache", newURL)
 	} else {
+		klog.V(4).Infof("Cached OS rebase unavailable for %s, pulling from registry: %v", newURL, err)
 		// Report ImagePulledFromRegistry condition as unknown (pulling)
 		if imageModeStatusReportingEnabled {
 			err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
