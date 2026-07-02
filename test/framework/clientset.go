@@ -71,6 +71,16 @@ func (cs *ClientSet) GetImageclient() imagev1clientset.Interface {
 
 // NewClientSet returns a *ClientBuilder with the given kubeconfig.
 func NewClientSet(kubeconfig string) *ClientSet {
+	cs, err := NewClientSetOrError(kubeconfig)
+	if err != nil {
+		panic(err)
+	}
+	return cs
+}
+
+// NewClientSetOrError returns a *ClientBuilder with the given kubeconfig or an
+// error if one cannot be constructed.
+func NewClientSetOrError(kubeconfig string) (*ClientSet, error) {
 	var config *rest.Config
 	var err error
 
@@ -85,14 +95,15 @@ func NewClientSet(kubeconfig string) *ClientSet {
 		klog.V(4).Infof("Using in-cluster kube client config")
 		config, err = rest.InClusterConfig()
 	}
+
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("could not construct clientset: %w", err)
 	}
 
 	cs := NewClientSetFromConfig(config)
 	cs.kubeconfig = kubeconfig
 	cs.config = config
-	return cs
+	return cs, nil
 }
 
 // NewClientSetFromConfig returns a *ClientBuilder with the given rest config.
