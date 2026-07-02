@@ -590,7 +590,12 @@ func (ctrl *Controller) updateConditions(newReason string, syncError error, targ
 }
 
 // updateClusterBootImage updates the cluster boot image record if the skew enforcement is set to Automatic mode.
-func (ctrl *Controller) updateClusterBootImage() {
+// For marketplace clusters, rhcosVersion is the full RHCOS release string (e.g. "9.6.20260210-0") parsed from
+// the selected AMI's description and stored directly into ClusterBootImageAutomatic.RHCOSVersion; version
+// comparisons use cmpRHCOSVersion which compares only the major.minor portion. The value may reflect one minor
+// version older than the stream target when the target AMI has not yet replicated to the region.
+// For non-marketplace clusters, rhcosVersion is empty and the OCP version is recorded in RHCOSVersion instead.
+func (ctrl *Controller) updateClusterBootImage(rhcosVersion string) {
 
 	mcop, err := ctrl.mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, metav1.GetOptions{})
 	if err != nil {
@@ -602,30 +607,39 @@ func (ctrl *Controller) updateClusterBootImage() {
 		return
 	}
 
-	// Get OCP version of last boot image update from configmap
-	configMap, err := ctrl.mcoCmLister.ConfigMaps(ctrlcommon.MCONamespace).Get(ctrlcommon.BootImagesConfigMapName)
-	if err != nil {
-		klog.Warningf("Failed to get boot images configmap: %v, skipping cluster boot image record update", err)
-		return
-	}
-
-	releaseVersion, found := configMap.Data[ctrlcommon.OCPReleaseVersionKey]
-	if !found {
-		klog.Warningf("OCP release version not found in boot images configmap, skipping cluster boot image record update")
-		return
-	}
-
-	// Parse and extract semantic version (major.minor.patch) for API validation
-	parsedVersion, err := k8sversion.ParseGeneric(releaseVersion)
-	if err != nil {
-		klog.Warningf("Failed to parse release version %q from configmap: %v, skipping cluster boot image record update", releaseVersion, err)
-		return
-	}
-	ocpVersion := fmt.Sprintf("%d.%d.%d", parsedVersion.Major(), parsedVersion.Minor(), parsedVersion.Patch())
-
 	newBootImageSkewEnforcementStatus := mcop.Status.BootImageSkewEnforcementStatus.DeepCopy()
-	newBootImageSkewEnforcementStatus.Automatic = opv1.ClusterBootImageAutomatic{
-		OCPVersion: ocpVersion,
+
+	if rhcosVersion != "" {
+		// Marketplace clusters: record the RHCOS version that was actually installed so skew
+		// enforcement compares against what the MCO achieved, not the OCP target.
+		newBootImageSkewEnforcementStatus.Automatic = opv1.ClusterBootImageAutomatic{
+			RHCOSVersion: rhcosVersion,
+		}
+	} else {
+		// Get OCP version of last boot image update from configmap
+		configMap, err := ctrl.mcoCmLister.ConfigMaps(ctrlcommon.MCONamespace).Get(ctrlcommon.BootImagesConfigMapName)
+		if err != nil {
+			klog.Warningf("Failed to get boot images configmap: %v, skipping cluster boot image record update", err)
+			return
+		}
+
+		releaseVersion, found := configMap.Data[ctrlcommon.OCPReleaseVersionKey]
+		if !found {
+			klog.Warningf("OCP release version not found in boot images configmap, skipping cluster boot image record update")
+			return
+		}
+
+		// Parse and extract semantic version (major.minor.patch) for API validation
+		parsedVersion, err := k8sversion.ParseGeneric(releaseVersion)
+		if err != nil {
+			klog.Warningf("Failed to parse release version %q from configmap: %v, skipping cluster boot image record update", releaseVersion, err)
+			return
+		}
+		ocpVersion := fmt.Sprintf("%d.%d.%d", parsedVersion.Major(), parsedVersion.Minor(), parsedVersion.Patch())
+
+		newBootImageSkewEnforcementStatus.Automatic = opv1.ClusterBootImageAutomatic{
+			OCPVersion: ocpVersion,
+		}
 	}
 
 	// Only make an API call if there is an update to the skew enforcement status
