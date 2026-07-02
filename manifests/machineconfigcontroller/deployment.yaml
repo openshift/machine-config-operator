@@ -4,6 +4,8 @@ metadata:
   name: machine-config-controller
   namespace: {{.TargetNamespace}}
 spec:
+  # Declared desired count; operator also enforces ctrlcommon.DefaultMachineConfigControllerReplicas (RFE-9213).
+  replicas: 1
   selector:
     matchLabels:
       k8s-app: machine-config-controller

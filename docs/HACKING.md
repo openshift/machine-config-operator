@@ -321,6 +321,62 @@ Then, to directly push your images, run:
 $ ./hack/cluster-push.sh
 ```
 
+### Verifying machine-config-controller minimum replicas (RFE-9213)
+
+Related tracker: [RFE-9213](https://redhat.atlassian.net/browse/RFE-9213).
+
+After you deploy a **custom `machine-config-operator` image** (for example built with
+`Dockerfile.local` — operator binary only — and only patching
+`deployment/machine-config-operator` in `openshift-machine-config-operator`):
+
+1. **Confirm the operator pod uses your image**
+
+```bash
+oc project openshift-machine-config-operator
+oc get deploy machine-config-operator \
+  -o jsonpath='{.spec.template.spec.containers[?(@.name=="machine-config-operator")].image}{"\n"}'
+oc get pod -l k8s-app=machine-config-operator \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.containerStatuses[?(@.name=="machine-config-operator")].image}{"\n"}{end}'
+```
+
+2. **Scale-to-zero should recover to one replica**
+
+In one terminal, watch desired replicas:
+
+```bash
+oc get deploy machine-config-controller \
+  -o jsonpath='{.spec.replicas}{"\n"}' -w
+```
+
+In another:
+
+```bash
+oc scale deployment/machine-config-controller --replicas=0
+```
+
+You should see `spec.replicas` go to `0` briefly, then return to `1` (often within
+about one operator sync or the periodic reconcile window).
+
+3. **Scale-to-two should not stay at two**
+
+```bash
+oc scale deployment/machine-config-controller --replicas=2
+oc get deploy machine-config-controller -o jsonpath='{.spec.replicas}{"\n"}' -w
+```
+
+You should see `2` briefly, then `1` again.
+
+4. **Operator logs** (optional)
+
+```bash
+oc logs deploy/machine-config-operator -c machine-config-operator --since=5m | \
+  grep -iE 'MachineConfigControllerReplicas|periodic machine-config-controller|restoring'
+```
+
+You may also see API warnings about `node-role.kubernetes.io/master` vs
+`control-plane`, or feature-gate messages when the operator binary is newer than
+the cluster's `FeatureGate` object — those are unrelated to replica enforcement.
+
 ## Hacking on `rhel-coreos` image
 
 If you own part of the operating system (from kernel to kubelet) you

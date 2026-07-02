@@ -419,6 +419,21 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer optr.queue.ShutDown()
 
+	// Record stop channel and start machine-config-controller replica repair before cache waits.
+	// Otherwise a slow or stuck ControllerConfig informer sync can delay Run() for a long time
+	// (or return early) without ever reaching the worker loop, leaving MCC scaled to 0 with no fix.
+	optr.stopCh = stopCh
+	go wait.Until(func() {
+		changed, err := optr.ensureMachineConfigControllerReplicaCount(ctrlcommon.DefaultMachineConfigControllerReplicas)
+		if err != nil {
+			klog.Errorf("periodic machine-config-controller replica reconcile: %v", err)
+			return
+		}
+		if changed {
+			klog.Info("periodic machine-config-controller replica reconcile: patched deployment to 1 replica")
+		}
+	}, 30*time.Second, stopCh)
+
 	apiClient := optr.apiExtClient.ApiextensionsV1()
 	_, err := apiClient.CustomResourceDefinitions().Get(context.TODO(), "controllerconfigs.machineconfiguration.openshift.io", metav1.GetOptions{})
 	if err != nil {
@@ -505,11 +520,14 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 	klog.Info("Starting MachineConfigOperator")
 	defer klog.Info("Shutting down MachineConfigOperator")
 
-	optr.stopCh = stopCh
+	workQueueKey := fmt.Sprintf("%s/%s", optr.namespace, optr.name)
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(optr.worker, time.Second, stopCh)
 	}
+
+	// One immediate sync (many controllers do this); otherwise we only run when an informer fires.
+	optr.queue.Add(workQueueKey)
 
 	<-stopCh
 }
@@ -609,11 +627,9 @@ func (optr *Operator) sync(key string) error {
 	// syncFuncs is the list of sync functions that are executed in order.
 	// any error marks sync as failure.
 	syncFuncs := []syncFunc{
-		// OSImageStream must run FIRST to provide OS image information as RenderConfig will read
-		// images references from OSImageStream
+		// OSImageStream must run before RenderConfig so RenderConfig can read OS image references from OSImageStream
 		{"OSImageStream", optr.syncOSImageStream},
-		// "RenderConfig" should be the first one to run (except OSImageStream) as it sets the renderConfig in
-		// the operator for the sync funcs below
+		// "RenderConfig" sets renderConfig on the operator for the sync funcs below
 		{"RenderConfig", optr.syncRenderConfig},
 		{"MachineConfiguration", optr.syncMachineConfiguration},
 		{"MachineConfigNode", optr.syncMachineConfigNodes},

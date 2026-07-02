@@ -167,6 +167,12 @@ type syncError struct {
 }
 
 func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
+	// Restore machine-config-controller replicas before fetchClusterOperator or any sync func.
+	// If fetchClusterOperator (or clearDegradedStatus after an early step) fails, we must still
+	// repair a manual scale-to-0; otherwise the operator pod is up but nothing fixes MCC replicas.
+	if err := optr.syncMachineConfigControllerReplicasEarly(nil, nil); err != nil {
+		return fmt.Errorf("MachineConfigControllerReplicas (pre-sync): %w", err)
+	}
 
 	co, err := optr.fetchClusterOperator()
 	if err != nil {
@@ -1179,6 +1185,61 @@ func (optr *Operator) syncControllerConfig(config *renderConfig) error {
 	return optr.waitForControllerConfigToBeCompleted(cc)
 }
 
+// syncMachineConfigControllerReplicasEarly restores machine-config-controller replica count when it
+// was scaled to 0 (or otherwise diverged). Called from syncAll before fetchClusterOperator so replica
+// repair is not skipped when that call or later sync steps fail.
+func (optr *Operator) syncMachineConfigControllerReplicasEarly(_ *renderConfig, _ *configv1.ClusterOperator) error {
+	klog.V(4).Info("MachineConfigControllerReplicas: running early replica check")
+	changed, err := optr.ensureMachineConfigControllerReplicaCount(ctrlcommon.DefaultMachineConfigControllerReplicas)
+	if err != nil {
+		klog.Errorf("MachineConfigControllerReplicas: %v", err)
+		return err
+	}
+	if changed {
+		klog.Info("MachineConfigControllerReplicas: patched machine-config-controller to desired replica count")
+	}
+	return nil
+}
+
+// ensureMachineConfigControllerReplicaCount sets deployment.spec.replicas to desired when it differs.
+// Uses strategic merge patch on the Deployment (same effect as oc scale / UpdateScale, avoids Scale
+// subresource metadata/resourceVersion edge cases on some API servers).
+// The returned bool is true when a patch was applied.
+//
+// Replica enforcement is also covered by: replicas in manifests/machineconfigcontroller/deployment.yaml,
+// merge in lib/resourcemerge EnsureDeployment, this function from syncMachineConfigController, pre-sync
+// in syncAll, and a 30s loop in Operator.Run (so repair is not blocked by a long syncAll).
+// The minimum desired count is ctrlcommon.DefaultMachineConfigControllerReplicas.
+func (optr *Operator) ensureMachineConfigControllerReplicaCount(desired int32) (bool, error) {
+	name := ctrlcommon.ControllerConfigName
+	ns := ctrlcommon.MCONamespace
+	d, err := optr.kubeClient.AppsV1().Deployments(ns).Get(context.TODO(), name, metav1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("could not get deployment %s: %w", name, err)
+	}
+	cur := int32(1)
+	if d.Spec.Replicas != nil {
+		cur = *d.Spec.Replicas
+	}
+	if cur == desired {
+		return false, nil
+	}
+	klog.Infof("MachineConfigControllerReplicas: restoring %s/%s spec.replicas from %d to %d", ns, name, cur, desired)
+	patch := []byte(fmt.Sprintf(`{"spec":{"replicas":%d}}`, desired))
+	if retryErr := retry.OnError(retry.DefaultRetry, mcoResourceApply.IsApplyErrorRetriable, func() error {
+		_, err := optr.kubeClient.AppsV1().Deployments(ns).Patch(
+			context.TODO(), name, types.StrategicMergePatchType, patch, metav1.PatchOptions{},
+		)
+		return err
+	}); retryErr != nil {
+		return false, fmt.Errorf("could not patch deployment %s replicas to %d: %w", name, desired, retryErr)
+	}
+	return true, nil
+}
+
 func (optr *Operator) syncMachineConfigController(config *renderConfig, _ *configv1.ClusterOperator) error {
 	paths := manifestPaths{
 		clusterRoles: []string{
@@ -1261,7 +1322,19 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig, _ *confi
 	}); retryErr != nil {
 		return retryErr
 	}
-	if updated {
+
+	// Reconcile replica count after ApplyDeployment: the merge path updates spec.replicas from the
+	// rendered manifest, but a manual scale-to-0 can still diverge until this runs.
+	desiredReplicas := ctrlcommon.DefaultMachineConfigControllerReplicas
+	if mcc.Spec.Replicas != nil {
+		desiredReplicas = *mcc.Spec.Replicas
+	}
+	scaleUpdated, err := optr.ensureMachineConfigControllerReplicaCount(desiredReplicas)
+	if err != nil {
+		return err
+	}
+
+	if updated || scaleUpdated {
 		if err := optr.waitForDeploymentRollout(mcc); err != nil {
 			return err
 		}

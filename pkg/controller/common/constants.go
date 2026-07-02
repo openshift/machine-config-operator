@@ -36,6 +36,10 @@ const (
 	// ControllerConfigName is the name of the ControllerConfig object that controllers use
 	ControllerConfigName = "machine-config-controller"
 
+	// DefaultMachineConfigControllerReplicas is the default and enforced minimum replica count for
+	// the machine-config-controller Deployment (RFE-9213).
+	DefaultMachineConfigControllerReplicas int32 = 1
+
 	// KernelTypeDefault denominates the default kernel type
 	KernelTypeDefault = "default"
 
