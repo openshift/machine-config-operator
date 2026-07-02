@@ -1,0 +1,21 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: "networkpolicy-prevent-deletion"
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    matchPolicy: Equivalent
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: openshift-machine-config-operator
+    objectSelector: {}
+    resourceRules:
+    - apiGroups:   ["networking.k8s.io"]
+      apiVersions: ["v1"]
+      operations:  ["DELETE"]
+      resources:   ["networkpolicies"]
+      scope: "Namespaced"
+  validations:
+    - expression: "!(oldObject.metadata.name in ['default-deny', 'allow-all-egress', 'allow-machine-config-operator', 'allow-machine-config-controller', 'allow-machine-os-builder'])"
+      message: "Deletion of MCO-managed NetworkPolicy resources in the openshift-machine-config-operator namespace is not allowed"
