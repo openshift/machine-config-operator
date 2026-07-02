@@ -40,7 +40,6 @@ func (mc MachineConfiguration) SetAllManagedBootImagesConfig(resource string) er
 
 // SetPartialManagedBootImagesConfig  configures MachineConfiguration so that only the machinesets with the given label are updated if necessary
 func (mc MachineConfiguration) SetPartialManagedBootImagesConfig(resource, label, value string) error {
-
 	if label == "" && value == "" {
 		return mc.Patch("merge", `{"spec":{"managedBootImages":{"machineManagers":[{"resource":"`+resource+`","apiGroup":"machine.openshift.io","selection":{"mode":"Partial","partial":{"machineResourceSelector":{"matchLabels":{}}}}}]}}}`)
 	}
@@ -56,6 +55,19 @@ func (mc MachineConfiguration) SetNoneManagedBootImagesConfig(resource string) e
 // EnableIrreconcilableValidationOverrides enables irreconcilableValidationOverrides for storage
 func (mc MachineConfiguration) EnableIrreconcilableValidationOverrides() error {
 	return mc.Patch("merge", `{"spec":{"irreconcilableValidationOverrides":{"storage":["Disks","Raid","FileSystems"]}}}`)
+}
+
+func (mc MachineConfiguration) RemoveIrreconcilableValidationOverrides() error {
+	logger.Infof("Removing .spec.irreconcilableValidationOverrides")
+	irreconcilableOverrides, err := mc.Get(`{.spec.irreconcilableValidationOverrides}`)
+	if err != nil {
+		return err
+	}
+	if irreconcilableOverrides == "" {
+		logger.Infof("irreconcilableValidationOverrides is not enabled")
+		return nil
+	}
+	return mc.Patch("json", `[{ "op": "remove", "path": "/spec/irreconcilableValidationOverrides"}]`)
 }
 
 // GetManagedBootImagesStatus returns the entire .status.managedBootImagesStatus field
