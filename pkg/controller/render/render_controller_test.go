@@ -1,6 +1,7 @@
 package render
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"testing"
@@ -10,6 +11,8 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	apicfgv1 "github.com/openshift/api/config/v1"
 	configv1 "github.com/openshift/api/config/v1"
+	fakeconfigv1client "github.com/openshift/client-go/config/clientset/versioned/fake"
+	configv1informer "github.com/openshift/client-go/config/informers/externalversions"
 	mcopfake "github.com/openshift/client-go/operator/clientset/versioned/fake"
 	operatorinformer "github.com/openshift/client-go/operator/informers/externalversions"
 	"github.com/stretchr/testify/assert"
@@ -79,23 +82,37 @@ func (f *fixture) newController() *Controller {
 	f.oclient = mcopfake.NewSimpleClientset(f.oObjects...)
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
 	oi := operatorinformer.NewSharedInformerFactory(f.oclient, noResyncPeriodFunc())
+	ci := configv1informer.NewSharedInformerFactory(fakeconfigv1client.NewSimpleClientset(), noResyncPeriodFunc())
 
 	c := New(i.Machineconfiguration().V1().MachineConfigPools(), i.Machineconfiguration().V1().MachineConfigs(),
 		i.Machineconfiguration().V1().ControllerConfigs(), i.Machineconfiguration().V1().ContainerRuntimeConfigs(),
 		i.Machineconfiguration().V1().KubeletConfigs(), oi.Operator().V1().MachineConfigurations(),
-		i.Machineconfiguration().V1().OSImageStreams(), k8sfake.NewSimpleClientset(), f.client, f.fgHandler)
+		i.Machineconfiguration().V1().OSImageStreams(),
+		ci.Config().V1().Images(),
+		ci.Config().V1().ImageDigestMirrorSets(),
+		ci.Config().V1().ImageTagMirrorSets(),
+		oi.Operator().V1alpha1().ImageContentSourcePolicies(),
+		k8sfake.NewSimpleClientset(), f.client, f.fgHandler)
 
 	c.mcpListerSynced = alwaysReady
 	c.mcListerSynced = alwaysReady
 	c.ccListerSynced = alwaysReady
 	c.crcListerSynced = alwaysReady
 	c.mckListerSynced = alwaysReady
+	c.imgListerSynced = alwaysReady
+	c.icspListerSynced = alwaysReady
+	c.idmsListerSynced = alwaysReady
+	c.itmsListerSynced = alwaysReady
 	c.eventRecorder = ctrlcommon.NamespacedEventRecorder(&record.FakeRecorder{})
 
 	stopCh := make(chan struct{})
 	defer close(stopCh)
 	i.Start(stopCh)
 	i.WaitForCacheSync(stopCh)
+	oi.Start(stopCh)
+	oi.WaitForCacheSync(stopCh)
+	ci.Start(stopCh)
+	ci.WaitForCacheSync(stopCh)
 
 	for _, c := range f.ccLister {
 		i.Machineconfiguration().V1().ControllerConfigs().Informer().GetIndexer().Add(c)
@@ -281,11 +298,13 @@ func TestCreatesGeneratedMachineConfig(t *testing.T) {
 	mcp := helpers.NewMachineConfigPool("test-cluster-master", helpers.MasterSelector, nil, "")
 	files := []ign3types.File{{
 		Node: ign3types.Node{
-			Path: "/dummy/0",
+			Path:      "/dummy/0",
+			Overwrite: helpers.BoolToPtr(false),
 		},
 	}, {
 		Node: ign3types.Node{
-			Path: "/dummy/1",
+			Path:      "/dummy/1",
+			Overwrite: helpers.BoolToPtr(false),
 		},
 	}}
 	mcs := []*mcfgv1.MachineConfig{
@@ -1015,6 +1034,240 @@ func makeCRIODropIn(runtime string) string {
 	return "[crio.runtime]\ndefault_runtime = \"" + runtime + "\"\n"
 }
 
+type mockOSImageStreamClassInspector struct {
+	streamClass string
+	err         error
+}
+
+// GetStreamClass returns the preconfigured stream class and error for testing.
+func (m *mockOSImageStreamClassInspector) GetStreamClass(_ context.Context, _ string, _ *mcfgv1.ControllerConfig) (string, error) {
+	return m.streamClass, m.err
+}
+
+// TestValidateNoRuncFromOSImageURL verifies that runc is blocked on RHEL 10 streams detected via OSImageURL inspection.
+func TestValidateNoRuncFromOSImageURL(t *testing.T) {
+	tests := []struct {
+		name             string
+		mc               *mcfgv1.MachineConfig
+		streamClass      string
+		inspectErr       error
+		expectError      bool
+		expectErrMsg     string
+		expectAnnotation bool
+	}{
+		{
+			name:        "empty OSImageURL skips check",
+			mc:          helpers.NewMachineConfig("rendered-worker", nil, "", nil),
+			streamClass: "rhel-10",
+			expectError: false,
+		},
+		{
+			name: "runc on RHEL 10 should error",
+			mc: func() *mcfgv1.MachineConfig {
+				mc := helpers.NewMachineConfig("rendered-worker", nil, "", []ign3types.File{
+					helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0644),
+				})
+				mc.Spec.OSImageURL = "quay.io/openshift/rhcos@sha256:abc123"
+				return mc
+			}(),
+			streamClass:      "rhel-10",
+			expectError:      true,
+			expectAnnotation: true,
+		},
+		{
+			name: "crun on RHEL 10 should succeed",
+			mc: func() *mcfgv1.MachineConfig {
+				mc := helpers.NewMachineConfig("rendered-worker", nil, "", []ign3types.File{
+					helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("crun"), 0644),
+				})
+				mc.Spec.OSImageURL = "quay.io/openshift/rhcos@sha256:abc123"
+				return mc
+			}(),
+			streamClass: "rhel-10",
+			expectError: false,
+		},
+		{
+			name: "runc on RHEL 9 should succeed",
+			mc: func() *mcfgv1.MachineConfig {
+				mc := helpers.NewMachineConfig("rendered-worker", nil, "", []ign3types.File{
+					helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0644),
+				})
+				mc.Spec.OSImageURL = "quay.io/openshift/rhcos@sha256:abc123"
+				return mc
+			}(),
+			streamClass:      "rhel-9",
+			expectError:      false,
+			expectAnnotation: true,
+		},
+		{
+			name: "runc on CentOS 10 should error",
+			mc: func() *mcfgv1.MachineConfig {
+				mc := helpers.NewMachineConfig("rendered-worker", nil, "", []ign3types.File{
+					helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0644),
+				})
+				mc.Spec.OSImageURL = "quay.io/openshift/scos@sha256:abc123"
+				return mc
+			}(),
+			streamClass:      "centos-10",
+			expectError:      true,
+			expectAnnotation: true,
+		},
+		{
+			name: "inspection failure should fail closed",
+			mc: func() *mcfgv1.MachineConfig {
+				mc := helpers.NewMachineConfig("rendered-worker", nil, "", []ign3types.File{
+					helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0644),
+				})
+				mc.Spec.OSImageURL = "quay.io/openshift/rhcos@sha256:abc123"
+				return mc
+			}(),
+			inspectErr:   fmt.Errorf("network error"),
+			expectError:  true,
+			expectErrMsg: "network error",
+		},
+		{
+			name: "no stream class label should succeed",
+			mc: func() *mcfgv1.MachineConfig {
+				mc := helpers.NewMachineConfig("rendered-worker", nil, "", []ign3types.File{
+					helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0644),
+				})
+				mc.Spec.OSImageURL = "quay.io/openshift/rhcos@sha256:abc123"
+				return mc
+			}(),
+			streamClass: "",
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pool := &mcfgv1.MachineConfigPool{
+				ObjectMeta: metav1.ObjectMeta{Name: "worker"},
+			}
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName)
+
+			ctrl := &Controller{
+				imageInspector: &mockOSImageStreamClassInspector{
+					streamClass: tt.streamClass,
+					err:         tt.inspectErr,
+				},
+				mcLister: newFakeMCLister(t, nil),
+			}
+
+			err := ctrl.validateNoRuncFromOSImageURL(pool, tt.mc, cc)
+			if tt.expectError {
+				require.Error(t, err)
+				if tt.expectErrMsg != "" {
+					assert.Contains(t, err.Error(), tt.expectErrMsg)
+				} else {
+					assert.Contains(t, err.Error(), "runc")
+					assert.Contains(t, err.Error(), "not available")
+				}
+			} else {
+				require.NoError(t, err)
+			}
+
+			if tt.expectAnnotation {
+				assert.Equal(t, tt.streamClass, tt.mc.Annotations[ctrlcommon.OSImageStreamClassAnnotationKey])
+				assert.Equal(t, tt.mc.Spec.OSImageURL, tt.mc.Annotations[ctrlcommon.OSImageURLInspectedAnnotationKey])
+			}
+		})
+	}
+}
+
+// TestGetCachedStreamClass verifies that stream class annotation caching avoids redundant image inspections.
+func TestGetCachedStreamClass(t *testing.T) {
+	tests := []struct {
+		name       string
+		pool       *mcfgv1.MachineConfigPool
+		osImageURL string
+		currentMC  *mcfgv1.MachineConfig
+		wantStream string
+	}{
+		{
+			name: "no current config name",
+			pool: &mcfgv1.MachineConfigPool{
+				ObjectMeta: metav1.ObjectMeta{Name: "worker"},
+			},
+			osImageURL: "quay.io/openshift/rhcos@sha256:abc123",
+			wantStream: "",
+		},
+		{
+			name: "matching OSImageURL returns cached stream class",
+			pool: &mcfgv1.MachineConfigPool{
+				ObjectMeta: metav1.ObjectMeta{Name: "worker"},
+				Spec: mcfgv1.MachineConfigPoolSpec{
+					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{
+						ObjectReference: corev1.ObjectReference{Name: "rendered-worker-abc"},
+					},
+				},
+			},
+			osImageURL: "quay.io/openshift/rhcos@sha256:abc123",
+			currentMC: &mcfgv1.MachineConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "rendered-worker-abc",
+					Annotations: map[string]string{
+						ctrlcommon.OSImageURLInspectedAnnotationKey: "quay.io/openshift/rhcos@sha256:abc123",
+						ctrlcommon.OSImageStreamClassAnnotationKey:  "rhel-10",
+					},
+				},
+			},
+			wantStream: "rhel-10",
+		},
+		{
+			name: "different OSImageURL invalidates cache",
+			pool: &mcfgv1.MachineConfigPool{
+				ObjectMeta: metav1.ObjectMeta{Name: "worker"},
+				Spec: mcfgv1.MachineConfigPoolSpec{
+					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{
+						ObjectReference: corev1.ObjectReference{Name: "rendered-worker-abc"},
+					},
+				},
+			},
+			osImageURL: "quay.io/openshift/rhcos@sha256:def456",
+			currentMC: &mcfgv1.MachineConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "rendered-worker-abc",
+					Annotations: map[string]string{
+						ctrlcommon.OSImageURLInspectedAnnotationKey: "quay.io/openshift/rhcos@sha256:abc123",
+						ctrlcommon.OSImageStreamClassAnnotationKey:  "rhel-10",
+					},
+				},
+			},
+			wantStream: "",
+		},
+		{
+			name: "current MC not found",
+			pool: &mcfgv1.MachineConfigPool{
+				ObjectMeta: metav1.ObjectMeta{Name: "worker"},
+				Spec: mcfgv1.MachineConfigPoolSpec{
+					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{
+						ObjectReference: corev1.ObjectReference{Name: "rendered-worker-missing"},
+					},
+				},
+			},
+			osImageURL: "quay.io/openshift/rhcos@sha256:abc123",
+			wantStream: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var mcs []*mcfgv1.MachineConfig
+			if tt.currentMC != nil {
+				mcs = append(mcs, tt.currentMC)
+			}
+
+			ctrl := &Controller{
+				mcLister: newFakeMCLister(t, mcs),
+			}
+
+			got := ctrl.getCachedStreamClass(tt.pool, tt.osImageURL)
+			assert.Equal(t, tt.wantStream, got)
+		})
+	}
+}
+
 func TestValidateNoRuncOnRHEL10(t *testing.T) {
 	tests := []struct {
 		name             string
@@ -1130,8 +1383,106 @@ func TestRunBootstrapBlocksRuncOnRHEL10(t *testing.T) {
 		[]*mcfgv1.MachineConfig{runcMC},
 		cc,
 		osImageStream,
+		"",
 	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "runc")
 	assert.Contains(t, err.Error(), "not available")
+}
+
+// TestRunBootstrapBlocksRuncOnRHEL10ViaStreamClass verifies that bootstrap rendering rejects runc on RHEL 10 streams.
+func TestRunBootstrapBlocksRuncOnRHEL10ViaStreamClass(t *testing.T) {
+	pool := &mcfgv1.MachineConfigPool{
+		ObjectMeta: metav1.ObjectMeta{Name: "worker"},
+		Spec: mcfgv1.MachineConfigPoolSpec{
+			MachineConfigSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"machineconfiguration.openshift.io/role": "worker"},
+			},
+		},
+	}
+
+	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
+
+	runcMC := helpers.NewMachineConfig("99-worker-runc",
+		map[string]string{"machineconfiguration.openshift.io/role": "worker"},
+		"",
+		[]ign3types.File{
+			helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/99-runc",
+				makeCRIODropIn("runc"), 0644),
+		})
+
+	crunMC := helpers.NewMachineConfig("99-worker-crun",
+		map[string]string{"machineconfiguration.openshift.io/role": "worker"},
+		"",
+		[]ign3types.File{
+			helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/99-crun",
+				makeCRIODropIn("crun"), 0644),
+		})
+
+	tests := []struct {
+		name            string
+		mc              *mcfgv1.MachineConfig
+		baseStreamClass string
+		expectError     bool
+	}{
+		{
+			name:            "runc on RHEL 10 via stream class should error",
+			mc:              runcMC,
+			baseStreamClass: "rhel-10",
+			expectError:     true,
+		},
+		{
+			name:            "crun on RHEL 10 via stream class should succeed",
+			mc:              crunMC,
+			baseStreamClass: "rhel-10",
+			expectError:     false,
+		},
+		{
+			name:            "runc on RHEL 9 via stream class should succeed",
+			mc:              runcMC,
+			baseStreamClass: "rhel-9",
+			expectError:     false,
+		},
+		{
+			name:            "runc with empty stream class should succeed",
+			mc:              runcMC,
+			baseStreamClass: "",
+			expectError:     false,
+		},
+		{
+			name:            "runc on CentOS 10 via stream class should error",
+			mc:              runcMC,
+			baseStreamClass: "centos-10",
+			expectError:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := RunBootstrap(
+				[]*mcfgv1.MachineConfigPool{pool},
+				[]*mcfgv1.MachineConfig{tt.mc},
+				cc,
+				nil,
+				tt.baseStreamClass,
+			)
+			if tt.expectError {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "runc")
+				assert.Contains(t, err.Error(), "not available")
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+// newFakeMCLister creates a fake MachineConfig lister from a slice of MachineConfigs.
+func newFakeMCLister(t *testing.T, mcs []*mcfgv1.MachineConfig) mcfglistersv1.MachineConfigLister {
+	t.Helper()
+	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+	for _, mc := range mcs {
+		require.NoError(t, indexer.Add(mc))
+	}
+	return mcfglistersv1.NewMachineConfigLister(indexer)
 }

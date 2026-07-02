@@ -273,6 +273,11 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.InformerFactory.Machineconfiguration().V1().KubeletConfigs(),
 			ctx.OperatorInformerFactory.Operator().V1().MachineConfigurations(),
 			ctx.InformerFactory.Machineconfiguration().V1().OSImageStreams(),
+			// TODO(OCP 5.3): Remove these four informers when runc is removed.
+			ctx.ConfigInformerFactory.Config().V1().Images(),
+			ctx.ConfigInformerFactory.Config().V1().ImageDigestMirrorSets(),
+			ctx.ConfigInformerFactory.Config().V1().ImageTagMirrorSets(),
+			ctx.OperatorInformerFactory.Operator().V1alpha1().ImageContentSourcePolicies(),
 			ctx.ClientBuilder.KubeClientOrDie("render-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("render-controller"),
 			ctx.FeatureGatesHandler,

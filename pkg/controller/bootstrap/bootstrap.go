@@ -357,7 +357,21 @@ func (b *Bootstrap) Run(destDir string) error {
 		klog.Infof("Successfully created %d pre-built image component MachineConfigs for hybrid OCL.", len(preBuiltImageMCs))
 	}
 
-	fpools, gconfigs, err := render.RunBootstrap(pools, configs, cconfig, osImageStream)
+	// When no OSImageStream is available, fall back to inspecting the
+	// BaseOSContainerImage (derived from the release payload) to determine the
+	// OS stream class (e.g. "rhel-9", "rhel-10"). This is used downstream to
+	// decide whether runc should be blocked on RHEL 10.
+	// TODO(OCP 5.3): remove this once runc is removed.
+	var baseStreamClass string
+	if osImageStream == nil && cconfig.Spec.BaseOSContainerImage != "" {
+		sc, err := b.getBaseStreamClass(cconfig, pullSecretBytes, icspRules, idmsRules, itmsRules, imgCfg)
+		if err != nil {
+			return fmt.Errorf("failed to determine base OS stream class: %w", err)
+		}
+		baseStreamClass = sc
+	}
+
+	fpools, gconfigs, err := render.RunBootstrap(pools, configs, cconfig, osImageStream, baseStreamClass)
 	if err != nil {
 		return err
 	}
@@ -534,6 +548,29 @@ func (b *Bootstrap) fetchOSImageStream(
 		return nil, fmt.Errorf("error inspecting available OSImageStreams: %w", err)
 	}
 	return osImageStream, nil
+}
+
+// getBaseStreamClass inspects the base OS container image to determine the OS
+// stream class (e.g. "rhel-9", "rhel-10") when OSImageStream is not available.
+// TODO(OCP 5.3): Remove when runc is removed.
+func (b *Bootstrap) getBaseStreamClass(
+	cconfig *mcfgv1.ControllerConfig,
+	pullSecretBytes []byte,
+	icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy,
+	idmsRules []*apicfgv1.ImageDigestMirrorSet,
+	itmsRules []*apicfgv1.ImageTagMirrorSet,
+	imgCfg *apicfgv1.Image,
+) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	secret := &corev1.Secret{
+		Data: map[string][]byte{
+			corev1.DockerConfigJsonKey: pullSecretBytes,
+		},
+		Type: corev1.SecretTypeDockerConfigJson,
+	}
+	return osimagestream.InspectStreamClassWithMirrors(ctx, secret, cconfig, imgCfg, icspRules, idmsRules, itmsRules, cconfig.Spec.BaseOSContainerImage)
 }
 
 // Returns the embedded ImageStreamFactory or constructs a new default one. Used primarily for testing.
