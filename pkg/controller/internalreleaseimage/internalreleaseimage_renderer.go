@@ -13,7 +13,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -38,7 +37,7 @@ var (
 // a MachineConfig instance when required.
 type Renderer struct {
 	role                         string
-	iri                          *mcfgv1alpha1.InternalReleaseImage
+	iri                          *mcfgv1.InternalReleaseImage
 	iriSecret                    *corev1.Secret
 	iriRegistryCredentialsSecret *corev1.Secret
 	cconfig                      *mcfgv1.ControllerConfig
@@ -46,7 +45,7 @@ type Renderer struct {
 
 // NewRendererByRole creates a new Renderer instance for generating
 // the machine config for the given role.
-func NewRendererByRole(role string, iri *mcfgv1alpha1.InternalReleaseImage, iriSecret, iriRegistryCredentialsSecret *corev1.Secret, cconfig *mcfgv1.ControllerConfig) *Renderer {
+func NewRendererByRole(role string, iri *mcfgv1.InternalReleaseImage, iriSecret, iriRegistryCredentialsSecret *corev1.Secret, cconfig *mcfgv1.ControllerConfig) *Renderer {
 	return &Renderer{
 		role:                         role,
 		iri:                          iri,

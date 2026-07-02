@@ -10,7 +10,6 @@ import (
 	"time"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -32,7 +31,7 @@ const (
 // aggregateMCNIRIStatus aggregates the IRI status from all control plane MachineConfigNodes
 // and returns the cluster-wide status for each release bundle, the overall IRI status,
 // and lists of degraded/not ready nodes.
-func (ctrl *Controller) aggregateMCNIRIStatus(iri *mcfgv1alpha1.InternalReleaseImage) ([]mcfgv1alpha1.InternalReleaseImageBundleStatus, string, []string, []string, error) {
+func (ctrl *Controller) aggregateMCNIRIStatus(iri *mcfgv1.InternalReleaseImage) ([]mcfgv1.InternalReleaseImageBundleStatus, string, []string, []string, error) {
 	mcns, err := ctrl.mcnLister.List(labels.Everything())
 	if err != nil {
 		return nil, "", nil, nil, fmt.Errorf("failed to list MachineConfigNodes: %w", err)
@@ -122,7 +121,7 @@ func (ctrl *Controller) checkAPIIntRegistryAvailability() (string, string, bool,
 
 // mcnReleaseProcessingResult contains the results of processing MCN releases.
 type mcnReleaseProcessingResult struct {
-	releaseMap    map[string]mcfgv1alpha1.InternalReleaseImageBundleStatus
+	releaseMap    map[string]mcfgv1.InternalReleaseImageBundleStatus
 	iriStatus     string
 	degradedNodes []string
 	notReadyNodes []string
@@ -130,7 +129,7 @@ type mcnReleaseProcessingResult struct {
 
 // processMCNReleases scans through MCNs and builds a release map with node health tracking.
 func (ctrl *Controller) processMCNReleases(controlPlaneMCNs []*mcfgv1.MachineConfigNode, clusterDomain string) mcnReleaseProcessingResult {
-	releaseMap := make(map[string]mcfgv1alpha1.InternalReleaseImageBundleStatus)
+	releaseMap := make(map[string]mcfgv1.InternalReleaseImageBundleStatus)
 	var notReadyNodes []string
 	var degradedNodes []string
 	iriStatus := IRIStatusAllReleasesAvailable
@@ -158,7 +157,7 @@ func (ctrl *Controller) processMCNReleases(controlPlaneMCNs []*mcfgv1.MachineCon
 			apiIntImage := transformToAPIIntURL(release.Image, clusterDomain)
 
 			if _, exists := releaseMap[release.Name]; !exists {
-				releaseMap[release.Name] = mcfgv1alpha1.InternalReleaseImageBundleStatus{
+				releaseMap[release.Name] = mcfgv1.InternalReleaseImageBundleStatus{
 					Name:       release.Name,
 					Image:      apiIntImage,
 					Conditions: release.Conditions,
@@ -166,7 +165,7 @@ func (ctrl *Controller) processMCNReleases(controlPlaneMCNs []*mcfgv1.MachineCon
 			} else if nodeHealthy {
 				// Prefer healthy node's conditions (overwrite with healthy status)
 				klog.V(4).Infof("Overwriting release %s status with healthy version from node %s", release.Name, mcn.Name)
-				releaseMap[release.Name] = mcfgv1alpha1.InternalReleaseImageBundleStatus{
+				releaseMap[release.Name] = mcfgv1.InternalReleaseImageBundleStatus{
 					Name:       release.Name,
 					Image:      apiIntImage,
 					Conditions: release.Conditions,
@@ -185,13 +184,13 @@ func (ctrl *Controller) processMCNReleases(controlPlaneMCNs []*mcfgv1.MachineCon
 
 // buildAggregatedReleases builds the final aggregated releases list from the release map.
 func buildAggregatedReleases(
-	iri *mcfgv1alpha1.InternalReleaseImage,
-	releaseMap map[string]mcfgv1alpha1.InternalReleaseImageBundleStatus,
+	iri *mcfgv1.InternalReleaseImage,
+	releaseMap map[string]mcfgv1.InternalReleaseImageBundleStatus,
 	iriStatus string,
 	degradedNodes, notReadyNodes []string,
 	apiIntRegistryHost string,
-) []mcfgv1alpha1.InternalReleaseImageBundleStatus {
-	aggregatedReleases := []mcfgv1alpha1.InternalReleaseImageBundleStatus{}
+) []mcfgv1.InternalReleaseImageBundleStatus {
+	aggregatedReleases := []mcfgv1.InternalReleaseImageBundleStatus{}
 
 	for _, specRelease := range iri.Spec.Releases {
 		if releaseStatus, exists := releaseMap[specRelease.Name]; exists {
@@ -219,19 +218,19 @@ func buildAggregatedReleases(
 
 			imageRef := fmt.Sprintf("%s%s@sha256:%s", apiIntRegistryHost, iriRegistryPath, unavailableImageDigest)
 
-			aggregatedReleases = append(aggregatedReleases, mcfgv1alpha1.InternalReleaseImageBundleStatus{
+			aggregatedReleases = append(aggregatedReleases, mcfgv1.InternalReleaseImageBundleStatus{
 				Name:  specRelease.Name,
 				Image: imageRef,
 				Conditions: []metav1.Condition{
 					{
-						Type:               string(mcfgv1alpha1.InternalReleaseImageConditionTypeAvailable),
+						Type:               string(mcfgv1.InternalReleaseImageConditionTypeAvailable),
 						Status:             metav1.ConditionFalse,
 						Reason:             "ReleaseImageNotAvailable",
 						Message:            "The specified release image is not available",
 						LastTransitionTime: metav1.Now(),
 					},
 					{
-						Type:               string(mcfgv1alpha1.InternalReleaseImageConditionTypeDegraded),
+						Type:               string(mcfgv1.InternalReleaseImageConditionTypeDegraded),
 						Status:             metav1.ConditionTrue,
 						Reason:             degradedReason,
 						Message:            degradedMessage,
@@ -252,26 +251,26 @@ const (
 )
 
 // buildAPIIntUnavailableReleases creates release statuses when api-int is not available
-func buildAPIIntUnavailableReleases(specReleases []mcfgv1alpha1.InternalReleaseImageRef, apiIntRegistry string) []mcfgv1alpha1.InternalReleaseImageBundleStatus {
-	releases := []mcfgv1alpha1.InternalReleaseImageBundleStatus{}
+func buildAPIIntUnavailableReleases(specReleases []mcfgv1.InternalReleaseImageRef, apiIntRegistry string) []mcfgv1.InternalReleaseImageBundleStatus {
+	releases := []mcfgv1.InternalReleaseImageBundleStatus{}
 
 	for _, specRelease := range specReleases {
 		// Construct a valid OCI image reference (even though registry is unreachable)
 		imageRef := fmt.Sprintf("%s%s@sha256:%s", apiIntRegistry, iriRegistryPath, unavailableImageDigest)
 
-		releases = append(releases, mcfgv1alpha1.InternalReleaseImageBundleStatus{
+		releases = append(releases, mcfgv1.InternalReleaseImageBundleStatus{
 			Name:  specRelease.Name,
 			Image: imageRef,
 			Conditions: []metav1.Condition{
 				{
-					Type:               string(mcfgv1alpha1.InternalReleaseImageConditionTypeAvailable),
+					Type:               string(mcfgv1.InternalReleaseImageConditionTypeAvailable),
 					Status:             metav1.ConditionFalse,
 					Reason:             IRIStatusAPIIntNotAvailable,
 					Message:            "The specified release image is not available",
 					LastTransitionTime: metav1.Now(),
 				},
 				{
-					Type:               string(mcfgv1alpha1.InternalReleaseImageConditionTypeDegraded),
+					Type:               string(mcfgv1.InternalReleaseImageConditionTypeDegraded),
 					Status:             metav1.ConditionTrue,
 					Reason:             IRIStatusAPIIntNotAvailable,
 					Message:            IRIStatusAPIIntNotAvailable,
@@ -364,7 +363,7 @@ func updateDegradedCondition(conditions []metav1.Condition, iriStatus string, de
 	copy(updatedConditions, conditions)
 
 	degradedCondition := metav1.Condition{
-		Type:               string(mcfgv1alpha1.InternalReleaseImageConditionTypeDegraded),
+		Type:               string(mcfgv1.InternalReleaseImageConditionTypeDegraded),
 		Status:             metav1.ConditionTrue,
 		Reason:             reason,
 		Message:            message,

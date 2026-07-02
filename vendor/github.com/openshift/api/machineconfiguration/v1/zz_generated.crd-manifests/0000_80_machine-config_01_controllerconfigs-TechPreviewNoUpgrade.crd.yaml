@@ -1373,6 +1373,14 @@ spec:
                                 type: array
                                 x-kubernetes-list-type: atomic
                                 x-kubernetes-validations:
+                                - message: Cannot add and remove vCenters at the same
+                                    time
+                                  rule: 'size(self) >= size(oldSelf) ? oldSelf.all(x,
+                                    self.exists(y, y.server == x.server)) : true'
+                                - message: Cannot add and remove vCenters at the same
+                                    time
+                                  rule: 'size(self) < size(oldSelf) ? self.all(x,
+                                    oldSelf.exists(y, y.server == x.server)) : true'
                                 - message: vcenters must have unique server values
                                   rule: self.all(x, self.exists_one(y, y.server ==
                                     x.server))
@@ -1385,10 +1393,9 @@ spec:
                               rule: '!has(oldSelf.ingressIPs) || has(self.ingressIPs)'
                         type: object
                         x-kubernetes-validations:
-                        - message: vcenters can have at most 1 item when configured
-                            post-install
-                          rule: '!has(oldSelf.vsphere) && has(self.vsphere) ? (has(self.vsphere.vcenters)
-                            && size(self.vsphere.vcenters) < 2) : true'
+                        - message: vcenters is required once set and cannot be removed
+                          rule: 'oldSelf.?vsphere.vcenters.hasValue() ? self.?vsphere.vcenters.hasValue()
+                            : true'
                     type: object
                   status:
                     description: status holds observed values from the cluster. They
