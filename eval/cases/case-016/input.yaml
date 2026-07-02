@@ -1,0 +1,30 @@
+prompt: We need to create a custom MachineConfigPool for our GPU-enabled nodes (labeled
+  with node-role.kubernetes.io/gpu-worker) along with a KubeletConfig that sets a
+  custom systemReserved memory of 2Gi and cpuManagerPolicy to 'static' specifically
+  for that pool. Please create both YAML resources following the project's documented
+  best practices and constraints, ensuring the pool correctly inherits from the worker
+  pool.
+expected_structure:
+- MachineConfigPool resource definition
+- MachineConfigPool metadata with name
+- MachineConfigPool spec.machineConfigSelector with matchExpressions
+- MachineConfigPool spec.nodeSelector
+- KubeletConfig resource definition
+- KubeletConfig metadata with name
+- KubeletConfig spec.machineConfigPoolSelector
+- KubeletConfig spec.kubeletConfig with systemReserved and cpuManagerPolicy
+expected_patterns:
+- Custom MachineConfigPool inherits from worker pool via machineConfigSelector using
+  matchExpressions with both worker and gpu-worker roles
+- machineConfigSelector must NOT use independent matchLabels without worker inheritance
+- 'nodeSelector matches node-role.kubernetes.io/gpu-worker: '''''
+- KubeletConfig machineConfigPoolSelector targets the gpu-worker pool
+- apiVersion is machineconfiguration.openshift.io/v1 for both resources
+- KubeletConfig kubeletConfig section uses valid kubelet configuration fields
+- systemReserved memory is specified as '2Gi'
+- cpuManagerPolicy is set to 'static'
+expected_documentation:
+- ai-docs/domain/crds.md
+- ai-docs/architecture/components.md
+- docs/KubeletConfigDesign.md
+- docs/MachineConfig.md
