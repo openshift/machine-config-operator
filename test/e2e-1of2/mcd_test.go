@@ -218,7 +218,6 @@ func TestKernelType(t *testing.T) {
 		}
 		delete()
 		require.Nil(t, cs.MachineConfigs().Delete(context.TODO(), oldInfraConfig.Name, metav1.DeleteOptions{}))
-
 	})
 
 	_, err = cs.MachineConfigs().Create(context.TODO(), oldInfraConfig, metav1.CreateOptions{})
@@ -296,7 +295,6 @@ func TestKernelType(t *testing.T) {
 	}
 	err = helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
 	require.Nil(t, err)
-
 }
 
 func TestNoReboot(t *testing.T) {
@@ -315,33 +313,20 @@ func TestNoReboot(t *testing.T) {
 		}
 		delete()
 		require.Nil(t, cs.MachineConfigs().Delete(context.TODO(), oldInfraConfig.Name, metav1.DeleteOptions{}))
-
 	})
 	_, err := cs.MachineConfigs().Create(context.TODO(), oldInfraConfig, metav1.CreateOptions{})
 	require.Nil(t, err)
 	oldInfraRenderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", oldInfraConfig.Name)
+	require.Nil(t, err)
 	infraNode := helpers.GetSingleNodeByRole(t, cs, "infra")
 
 	sshKeyContent := "test adding authorized key without node reboot"
-
-	nodeOS := helpers.GetOSReleaseForNode(t, cs, infraNode).OS
-
-	sshPaths := helpers.GetSSHPaths(nodeOS)
-
-	t.Logf("Expecting SSH keys to be in %s", sshPaths.Expected)
-
-	if sshPaths.Expected == constants.RHCOS9SSHKeyPath {
-		// Write an SSH key to the old location on the node because the update process should remove this file.
-		t.Logf("Writing SSH key to %s to ensure that it will be removed later", sshPaths.NotExpected)
-		bashCmd := fmt.Sprintf("printf '%s' > %s", sshKeyContent, filepath.Join("/rootfs", sshPaths.NotExpected))
-		helpers.ExecCmdOnNode(t, cs, infraNode, "/bin/bash", "-c", bashCmd)
-	}
 
 	// Delete the expected SSH keys directory to ensure that the directories are
 	// (re)created correctly by the MCD. This targets the upgrade case where that
 	// directory may not previously exist. Note: This will need to be revisited
 	// once Config Drift Monitor is aware of SSH keys.
-	helpers.ExecCmdOnNode(t, cs, infraNode, "rm", "-rf", filepath.Join("/rootfs", filepath.Dir(sshPaths.Expected)))
+	helpers.ExecCmdOnNode(t, cs, infraNode, "rm", "-rf", filepath.Join("/rootfs", filepath.Dir(constants.RHCOSDefaultSSHKeyPath)))
 
 	output := helpers.ExecCmdOnNode(t, cs, infraNode, "cat", "/rootfs/proc/uptime")
 	oldTime := strings.Split(output, " ")[0]
@@ -388,23 +373,20 @@ func TestNoReboot(t *testing.T) {
 	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
 	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
-	helpers.AssertFileOnNode(t, cs, infraNode, sshPaths.Expected)
-	helpers.AssertFileNotOnNode(t, cs, infraNode, sshPaths.NotExpected)
+	helpers.AssertFileOnNode(t, cs, infraNode, constants.RHCOSDefaultSSHKeyPath)
 
-	foundSSHKey := helpers.ExecCmdOnNode(t, cs, infraNode, "cat", filepath.Join("/rootfs", sshPaths.Expected))
+	foundSSHKey := helpers.ExecCmdOnNode(t, cs, infraNode, "cat", filepath.Join("/rootfs", constants.RHCOSDefaultSSHKeyPath))
 	if !strings.Contains(foundSSHKey, sshKeyContent) {
 		t.Fatalf("updated ssh keys not found in authorized_keys, got %s", foundSSHKey)
 	}
 	t.Logf("Node %s has SSH key", infraNode.Name)
 
-	assertExpectedPerms(t, cs, infraNode, "/home/core/.ssh", []string{constants.CoreUserName, constants.CoreGroupName, "700"})
-
-	if sshPaths.Expected == constants.RHCOS9SSHKeyPath {
-		// /home/core/.ssh/authorized_keys.d
-		assertExpectedPerms(t, cs, infraNode, filepath.Dir(constants.RHCOS9SSHKeyPath), []string{constants.CoreUserName, constants.CoreGroupName, "700"})
-	}
-
-	assertExpectedPerms(t, cs, infraNode, sshPaths.Expected, []string{constants.CoreUserName, constants.CoreGroupName, "600"})
+	// /home/core/.ssh
+	assertExpectedPerms(t, cs, infraNode, constants.CoreUserSSHPath, []string{constants.CoreUserName, constants.CoreGroupName, "700"})
+	// /home/core/.ssh/authorized_keys.d
+	assertExpectedPerms(t, cs, infraNode, filepath.Dir(constants.RHCOSDefaultSSHKeyPath), []string{constants.CoreUserName, constants.CoreGroupName, "700"})
+	// /home/core/.ssh/authorized_keys.d/ignition
+	assertExpectedPerms(t, cs, infraNode, constants.RHCOSDefaultSSHKeyPath, []string{constants.CoreUserName, constants.CoreGroupName, "600"})
 
 	currentEtcShadowContents := helpers.ExecCmdOnNode(t, cs, infraNode, "grep", "^core:", "/rootfs/etc/shadow")
 
@@ -451,13 +433,12 @@ func TestNoReboot(t *testing.T) {
 	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], oldInfraRenderedConfig)
 	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
-	foundSSHKey = helpers.ExecCmdOnNode(t, cs, infraNode, "cat", filepath.Join("/rootfs", sshPaths.Expected))
+	foundSSHKey = helpers.ExecCmdOnNode(t, cs, infraNode, "cat", filepath.Join("/rootfs", constants.RHCOSDefaultSSHKeyPath))
 	if strings.Contains(foundSSHKey, sshKeyContent) {
 		t.Fatalf("Node %s did not rollback successfully", infraNode.Name)
 	}
 
-	helpers.AssertFileOnNode(t, cs, infraNode, sshPaths.Expected)
-	helpers.AssertFileNotOnNode(t, cs, infraNode, sshPaths.NotExpected)
+	helpers.AssertFileOnNode(t, cs, infraNode, constants.RHCOSDefaultSSHKeyPath)
 
 	t.Logf("Node %s has successfully rolled back", infraNode.Name)
 
@@ -564,7 +545,6 @@ func TestDontDeleteRPMFiles(t *testing.T) {
 		}
 		delete()
 		require.Nil(t, cs.MachineConfigs().Delete(context.TODO(), oldInfraConfig.Name, metav1.DeleteOptions{}))
-
 	})
 
 	_, err := cs.MachineConfigs().Create(context.TODO(), oldInfraConfig, metav1.CreateOptions{})
@@ -619,7 +599,6 @@ func TestDontDeleteRPMFiles(t *testing.T) {
 	}
 	err = helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
 	require.Nil(t, err)
-
 }
 
 func TestIgn3Cfg(t *testing.T) {
@@ -652,8 +631,10 @@ func TestIgn3Cfg(t *testing.T) {
 	testIgn3Config.Ignition.Version = "3.2.0"
 	mode := 420
 	testfiledata := "data:,test-ign3-stuff"
-	tempFile := ign3types.File{Node: ign3types.Node{Path: "/etc/testfileconfig"},
-		FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.Resource{Source: &testfiledata}, Mode: &mode}}
+	tempFile := ign3types.File{
+		Node:          ign3types.Node{Path: "/etc/testfileconfig"},
+		FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.Resource{Source: &testfiledata}, Mode: &mode},
+	}
 	testIgn3Config.Storage.Files = append(testIgn3Config.Storage.Files, tempFile)
 
 	overrideName := "override.conf"
@@ -726,9 +707,7 @@ func TestIgn3Cfg(t *testing.T) {
 	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
 	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
-	sshPaths := helpers.GetSSHPaths(helpers.GetOSReleaseForNode(t, cs, infraNode).OS)
-
-	foundSSH := helpers.ExecCmdOnNode(t, cs, infraNode, "grep", "1234_test_ign3", filepath.Join("/rootfs", sshPaths.Expected))
+	foundSSH := helpers.ExecCmdOnNode(t, cs, infraNode, "grep", "1234_test_ign3", filepath.Join("/rootfs", constants.RHCOSDefaultSSHKeyPath))
 	if !strings.Contains(foundSSH, "1234_test_ign3") {
 		t.Fatalf("updated ssh keys not found in authorized_keys, got %s", foundSSH)
 	}
@@ -800,7 +779,7 @@ func TestIgn3Cfg(t *testing.T) {
 
 // Test case for correct certificate rotation, even if a pool is paused
 func TestMCDRotatesCerts(t *testing.T) {
-	var testPool = "master"
+	testPool := "master"
 
 	cs := framework.NewClientSet("")
 
@@ -897,32 +876,20 @@ func TestFirstBootHasSSHKeys(t *testing.T) {
 	}
 
 	isFound := false
-	isFoundRhcos8KeyPath := false
 	isFoundRhcos9KeyPath := false
 
-	if sshKeyFileExistsOnNode(constants.RHCOS8SSHKeyPath) {
-		assertSSHKeyContents(constants.RHCOS8SSHKeyPath)
-		isFound = true
-		isFoundRhcos8KeyPath = true
-	}
-
-	if sshKeyFileExistsOnNode(constants.RHCOS9SSHKeyPath) {
-		assertSSHKeyContents(constants.RHCOS9SSHKeyPath)
+	if sshKeyFileExistsOnNode(constants.RHCOSDefaultSSHKeyPath) {
+		assertSSHKeyContents(constants.RHCOSDefaultSSHKeyPath)
 		isFound = true
 		isFoundRhcos9KeyPath = true
 	}
 
 	if isFound {
-		t.Logf("SSH keys found on node in RHCOS8 location %v / RHCOS9 location %v", isFoundRhcos8KeyPath, isFoundRhcos9KeyPath)
+		t.Logf("SSH keys found on node in RHCOS9 location %v", isFoundRhcos9KeyPath)
 	} else {
-		t.Logf("Neither %s or %s exists on the node", constants.RHCOS8SSHKeyPath, constants.RHCOS9SSHKeyPath)
+		t.Logf("SSH keys path %s does not exists on the node", constants.RHCOSDefaultSSHKeyPath)
 		t.FailNow()
 	}
-}
-
-func sshKeyFileExistsOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, path string) bool {
-	_, err := helpers.ExecCmdOnNodeWithError(cs, node, "stat", filepath.Join("/rootfs", path))
-	return err == nil
 }
 
 func createMCToAddFileForRole(name, role, filename, data string) *mcfgv1.MachineConfig {
