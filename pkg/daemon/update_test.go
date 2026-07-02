@@ -962,7 +962,7 @@ func TestPodmanCopy_CreateContainerCall(t *testing.T) {
 
 	// Note: This test will fail at podmanRemove since we're only testing the interface call
 	// The function will return an error, but we can verify the CreatePodmanContainer was called correctly
-	err := podmanCopy(mockPodman, imgURL, osImageContentDir)
+	err := podmanCopy(mockPodman, imgURL, osImageContentDir, true)
 
 	// Verify the CreatePodmanContainer was called with correct parameters
 	expectedArgs := []string{"--net=none", "--annotation=org.openshift.machineconfigoperator.pivot=true"}
