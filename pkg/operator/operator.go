@@ -32,6 +32,7 @@ import (
 	coreclientsetv1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	appslisterv1 "k8s.io/client-go/listers/apps/v1"
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
+	networkinglistersv1 "k8s.io/client-go/listers/networking/v1"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
@@ -129,6 +130,7 @@ type Operator struct {
 	clusterVersionLister     configlistersv1.ClusterVersionLister
 	osImageStreamLister      mcfglistersv1.OSImageStreamLister
 	iriLister                mcfglistersv1alpha1.InternalReleaseImageLister
+	networkPolicyLister      networkinglistersv1.NetworkPolicyLister
 	provisioningLister       dynamiclister.Lister
 	provisioningListerSynced cache.InformerSynced
 
@@ -381,6 +383,7 @@ func New(
 	optr.apiserverListerSynced = apiserverInformer.Informer().HasSynced
 	optr.moscLister = moscInformer.Lister()
 	optr.moscListerSynced = moscInformer.Informer().HasSynced
+	optr.networkPolicyLister = networkPolicyInformer.Lister()
 	optr.networkPolicyInformerSynced = networkPolicyInformer.Informer().HasSynced
 	optr.clusterVersionLister = clusterVersionInformer.Lister()
 	if osImageStreamInformer != nil && osimagestream.IsFeatureEnabled(optr.fgHandler) {
