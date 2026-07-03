@@ -136,6 +136,12 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &configv1.ConsoleSpecApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("ConsoleStatus"):
 		return &configv1.ConsoleStatusApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("CRIOCredentialProviderConfig"):
+		return &configv1.CRIOCredentialProviderConfigApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("CRIOCredentialProviderConfigSpec"):
+		return &configv1.CRIOCredentialProviderConfigSpecApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("CRIOCredentialProviderConfigStatus"):
+		return &configv1.CRIOCredentialProviderConfigStatusApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("Custom"):
 		return &configv1.CustomApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("CustomFeatureGates"):
