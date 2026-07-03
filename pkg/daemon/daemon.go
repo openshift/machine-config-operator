@@ -256,7 +256,9 @@ const (
 	onceFromRemoteConfig
 )
 
-var defaultRebootTimeout = 24 * time.Hour
+var (
+	defaultRebootTimeout = 24 * time.Hour
+)
 
 // rebootCommand creates a new transient systemd unit to reboot the system.
 // With the upstream implementation of kubelet graceful shutdown feature,
@@ -265,10 +267,8 @@ var defaultRebootTimeout = 24 * time.Hour
 // kubelet uses systemd inhibitor locks to delay node shutdown to terminate pods.
 // https://kubernetes.io/docs/concepts/architecture/nodes/#graceful-node-shutdown
 func rebootCommand(rationale string, workaroundOCPBUGS51150 bool) *exec.Cmd {
-	systemdRunArgs := []string{
-		"--unit", "machine-config-daemon-reboot",
-		"--description", fmt.Sprintf("machine-config-daemon: %s", rationale),
-	}
+	systemdRunArgs := []string{"--unit", "machine-config-daemon-reboot",
+		"--description", fmt.Sprintf("machine-config-daemon: %s", rationale)}
 	// we need this until we have https://github.com/ostreedev/ostree/pull/3389
 	if workaroundOCPBUGS51150 {
 		systemdRunArgs = append(systemdRunArgs, "-p", "Requires=ostree-finalize-staged.service", "-p", "After=ostree-finalize-staged.service")
@@ -384,8 +384,7 @@ func (dn *Daemon) ClusterConnect(
 	// we don't need to react in milliseconds.  See also updateDelay above.
 	dn.queue = workqueue.NewTypedRateLimitingQueueWithConfig[string](workqueue.NewTypedMaxOfRateLimiter[string](
 		&workqueue.TypedBucketRateLimiter[string]{Limiter: rate.NewLimiter(rate.Limit(updateDelay), 1)},
-		workqueue.NewTypedItemExponentialFailureRateLimiter[string](1*time.Second, maxUpdateBackoff),
-	),
+		workqueue.NewTypedItemExponentialFailureRateLimiter[string](1*time.Second, maxUpdateBackoff)),
 		workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigdaemon"})
 
 	nodeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -458,8 +457,7 @@ func (dn *Daemon) HypershiftConnect(
 
 	dn.queue = workqueue.NewTypedRateLimitingQueueWithConfig[string](workqueue.NewTypedMaxOfRateLimiter[string](
 		&workqueue.TypedBucketRateLimiter[string]{Limiter: rate.NewLimiter(rate.Limit(updateDelay), 1)},
-		workqueue.NewTypedItemExponentialFailureRateLimiter[string](1*time.Second, maxUpdateBackoff),
-	),
+		workqueue.NewTypedItemExponentialFailureRateLimiter[string](1*time.Second, maxUpdateBackoff)),
 		workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigdaemon"})
 
 	dn.enqueueNode = dn.enqueueDefault
@@ -1927,6 +1925,7 @@ func (dn *Daemon) generateBootstrappingMCMismatchError(currentConfigOnDisk *onDi
 }
 
 func (dn *Daemon) createBootstrapMachineConfigDiffFile(oldConfig, newConfig *mcfgv1.MachineConfig) {
+
 	if _, err := os.Stat(bootstrapConfigDiffPath); err == nil {
 		// If the file already exists, we don't need to write it again
 		return

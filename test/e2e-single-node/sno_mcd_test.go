@@ -113,6 +113,7 @@ func TestKernelArguments(t *testing.T) {
 		}
 	}
 	t.Logf("Node %s has successfully rolled back", node.Name)
+
 }
 
 func TestKernelType(t *testing.T) {

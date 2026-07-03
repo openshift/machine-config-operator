@@ -218,6 +218,7 @@ func TestKernelType(t *testing.T) {
 		}
 		delete()
 		require.Nil(t, cs.MachineConfigs().Delete(context.TODO(), oldInfraConfig.Name, metav1.DeleteOptions{}))
+
 	})
 
 	_, err = cs.MachineConfigs().Create(context.TODO(), oldInfraConfig, metav1.CreateOptions{})
@@ -295,6 +296,7 @@ func TestKernelType(t *testing.T) {
 	}
 	err = helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
 	require.Nil(t, err)
+
 }
 
 func TestNoReboot(t *testing.T) {
@@ -313,6 +315,7 @@ func TestNoReboot(t *testing.T) {
 		}
 		delete()
 		require.Nil(t, cs.MachineConfigs().Delete(context.TODO(), oldInfraConfig.Name, metav1.DeleteOptions{}))
+
 	})
 	_, err := cs.MachineConfigs().Create(context.TODO(), oldInfraConfig, metav1.CreateOptions{})
 	require.Nil(t, err)
@@ -545,6 +548,7 @@ func TestDontDeleteRPMFiles(t *testing.T) {
 		}
 		delete()
 		require.Nil(t, cs.MachineConfigs().Delete(context.TODO(), oldInfraConfig.Name, metav1.DeleteOptions{}))
+
 	})
 
 	_, err := cs.MachineConfigs().Create(context.TODO(), oldInfraConfig, metav1.CreateOptions{})
@@ -599,6 +603,7 @@ func TestDontDeleteRPMFiles(t *testing.T) {
 	}
 	err = helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
 	require.Nil(t, err)
+
 }
 
 func TestIgn3Cfg(t *testing.T) {
@@ -631,10 +636,8 @@ func TestIgn3Cfg(t *testing.T) {
 	testIgn3Config.Ignition.Version = "3.2.0"
 	mode := 420
 	testfiledata := "data:,test-ign3-stuff"
-	tempFile := ign3types.File{
-		Node:          ign3types.Node{Path: "/etc/testfileconfig"},
-		FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.Resource{Source: &testfiledata}, Mode: &mode},
-	}
+	tempFile := ign3types.File{Node: ign3types.Node{Path: "/etc/testfileconfig"},
+		FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.Resource{Source: &testfiledata}, Mode: &mode}}
 	testIgn3Config.Storage.Files = append(testIgn3Config.Storage.Files, tempFile)
 
 	overrideName := "override.conf"
@@ -779,7 +782,7 @@ func TestIgn3Cfg(t *testing.T) {
 
 // Test case for correct certificate rotation, even if a pool is paused
 func TestMCDRotatesCerts(t *testing.T) {
-	testPool := "master"
+	var testPool = "master"
 
 	cs := framework.NewClientSet("")
 
@@ -875,17 +878,15 @@ func TestFirstBootHasSSHKeys(t *testing.T) {
 		assert.NotEmpty(t, out, "expected SSH key file %s on %s to contain SSH keys, but it was empty", keyPath, newNode.Name)
 	}
 
-	isFound := false
-	isFoundRhcos9KeyPath := false
+	isFoundRhcosKeyPath := false
 
 	if sshKeyFileExistsOnNode(constants.RHCOSDefaultSSHKeyPath) {
 		assertSSHKeyContents(constants.RHCOSDefaultSSHKeyPath)
-		isFound = true
-		isFoundRhcos9KeyPath = true
+		isFoundRhcosKeyPath = true
 	}
 
-	if isFound {
-		t.Logf("SSH keys found on node in RHCOS9 location %v", isFoundRhcos9KeyPath)
+	if isFoundRhcosKeyPath {
+		t.Logf("SSH keys found on node in location %v", isFoundRhcosKeyPath)
 	} else {
 		t.Logf("SSH keys path %s does not exists on the node", constants.RHCOSDefaultSSHKeyPath)
 		t.FailNow()
