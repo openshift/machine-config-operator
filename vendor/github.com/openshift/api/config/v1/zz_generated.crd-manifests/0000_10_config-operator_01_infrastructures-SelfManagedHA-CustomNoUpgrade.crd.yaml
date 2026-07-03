@@ -4,10 +4,9 @@ metadata:
   annotations:
     api-approved.openshift.io: https://github.com/openshift/api/pull/470
     api.openshift.io/merged-by-featuregates: "true"
-    include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     release.openshift.io/bootstrap-required: "true"
-    release.openshift.io/feature-set: TechPreviewNoUpgrade
+    release.openshift.io/feature-set: CustomNoUpgrade
   name: infrastructures.config.openshift.io
 spec:
   group: config.openshift.io
@@ -68,6 +67,21 @@ spec:
                   name:
                     type: string
                 type: object
+              controlPlaneTopology:
+                description: |-
+                  controlPlaneTopology expresses the desired topology configuration for control nodes.
+
+                  When status.controlPlaneTopology is 'SingleReplica' and spec.controlPlaneTopology is set to 'HighlyAvailable',
+                  a transition will be triggered to reconfigure the cluster from SingleReplica to HighlyAvailable.
+
+                  When left blank or status.controlPlaneTopology and spec.controlPlaneTopology are the same value,
+                  no changes are required and no transitions will be triggered.
+
+                  This value may be set to match status.controlPlaneTopology regardless of the current value.
+                enum:
+                - HighlyAvailable
+                - SingleReplica
+                type: string
               platformSpec:
                 description: |-
                   platformSpec holds desired information specific to the underlying
@@ -2769,6 +2783,15 @@ spec:
         required:
         - spec
         type: object
+        x-kubernetes-validations:
+        - message: spec.controlPlaneTopology must match status.controlPlaneTopology
+            or be set to HighlyAvailable when status.controlPlaneTopology is SingleReplica
+          rule: '!has(self.spec.controlPlaneTopology) || (has(oldSelf.spec.controlPlaneTopology)
+            && self.spec.controlPlaneTopology == oldSelf.spec.controlPlaneTopology)
+            || (has(self.status.controlPlaneTopology) && self.spec.controlPlaneTopology
+            == self.status.controlPlaneTopology) || (has(self.status.controlPlaneTopology)
+            && self.status.controlPlaneTopology == ''SingleReplica'' && self.spec.controlPlaneTopology
+            == ''HighlyAvailable'')'
     served: true
     storage: true
     subresources:

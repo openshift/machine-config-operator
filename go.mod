@@ -37,8 +37,8 @@ require (
 	github.com/onsi/gomega v1.38.2
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/openshift-eng/openshift-tests-extension v0.0.0-20260127124016-0fed2b824818
-	github.com/openshift/api v0.0.0-20260619095050-5346161d1bf2
-	github.com/openshift/client-go v0.0.0-20260603140539-6892dc3e1ffc
+	github.com/openshift/api v0.0.0-20260702202555-ef71f942ef6c
+	github.com/openshift/client-go v0.0.0-20260703082747-24d059aea27a
 	github.com/openshift/library-go v0.0.0-20260303171201-5d9eb6295ff6
 	github.com/openshift/runtime-utils v0.0.0-20230921210328-7bdb5b9c177b
 	github.com/prometheus/client_golang v1.23.2
@@ -463,7 +463,3 @@ replace (
 	k8s.io/sample-cli-plugin => github.com/openshift/kubernetes/staging/src/k8s.io/sample-cli-plugin v0.0.0-20260305123649-d18f3f005eaa
 	k8s.io/sample-controller => github.com/openshift/kubernetes/staging/src/k8s.io/sample-controller v0.0.0-20260305123649-d18f3f005eaa
 )
-
-replace github.com/openshift/api => github.com/pawanpinjarkar/api v0.0.0-20260623161418-8d2ee099aae9
-
-replace github.com/openshift/client-go => github.com/andfasano/client-go v0.0.0-20260623165108-cdfce066c914

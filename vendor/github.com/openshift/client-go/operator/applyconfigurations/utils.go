@@ -110,6 +110,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &operatorv1.CSISnapshotControllerSpecApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("CSISnapshotControllerStatus"):
 		return &operatorv1.CSISnapshotControllerStatusApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("CustomSecretRotation"):
+		return &operatorv1.CustomSecretRotationApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("DefaultNetworkDefinition"):
 		return &operatorv1.DefaultNetworkDefinitionApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("DeveloperConsoleCatalogCategory"):
@@ -282,6 +284,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &operatorv1.MachineManagerSelectorApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("ManagedBootImages"):
 		return &operatorv1.ManagedBootImagesApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("ManagedTokenRequests"):
+		return &operatorv1.ManagedTokenRequestsApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("MTUMigration"):
 		return &operatorv1.MTUMigrationApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("MTUMigrationValues"):
@@ -386,6 +390,14 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &operatorv1.RestartServiceApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("RouteAdmissionPolicy"):
 		return &operatorv1.RouteAdmissionPolicyApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("SecretsStoreCSIDriverConfigSpec"):
+		return &operatorv1.SecretsStoreCSIDriverConfigSpecApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("SecretsStoreSecretRotation"):
+		return &operatorv1.SecretsStoreSecretRotationApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("SecretsStoreTokenRequest"):
+		return &operatorv1.SecretsStoreTokenRequestApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("SecretsStoreTokenRequests"):
+		return &operatorv1.SecretsStoreTokenRequestsApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("Server"):
 		return &operatorv1.ServerApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("ServiceAccountIssuerStatus"):
