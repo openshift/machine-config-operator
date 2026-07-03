@@ -115,6 +115,8 @@ const (
 	mccIRIDeletionGuardValidatingAdmissionPolicyBindingPath               = "manifests/machineconfigcontroller/internalreleaseimage-deletion-guard-validatingadmissionpolicybinding.yaml"
 	mccNetworkPolicyDeletionGuardValidatingAdmissionPolicyPath            = "manifests/machineconfigcontroller/networkpolicy-deletion-guard-validatingadmissionpolicy.yaml"
 	mccNetworkPolicyDeletionGuardValidatingAdmissionPolicyBindingPath     = "manifests/machineconfigcontroller/networkpolicy-deletion-guard-validatingadmissionpolicybinding.yaml"
+	mccNetworkPolicyUpdateGuardValidatingAdmissionPolicyPath              = "manifests/machineconfigcontroller/networkpolicy-update-guard-validatingadmissionpolicy.yaml"
+	mccNetworkPolicyUpdateGuardValidatingAdmissionPolicyBindingPath       = "manifests/machineconfigcontroller/networkpolicy-update-guard-validatingadmissionpolicybinding.yaml"
 	mccUpdateBootImagesCPMSValidatingAdmissionPolicyPath                  = "manifests/machineconfigcontroller/update-bootimages-cpms-validatingadmissionpolicy.yaml"
 	mccUpdateBootImagesCPMSValidatingAdmissionPolicyBindingPath           = "manifests/machineconfigcontroller/update-bootimages-cpms-validatingadmissionpolicybinding.yaml"
 
@@ -1213,12 +1215,14 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig, _ *confi
 			mccUpdateBootImagesValidatingAdmissionPolicyPath,
 			mccMachineConfigPoolSelectorValidatingAdmissionPolicyPath,
 			mccNetworkPolicyDeletionGuardValidatingAdmissionPolicyPath,
+			mccNetworkPolicyUpdateGuardValidatingAdmissionPolicyPath,
 		},
 		validatingAdmissionPolicyBindings: []string{
 			mccMachineConfigurationGuardsValidatingAdmissionPolicyBindingPath,
 			mccUpdateBootImagesValidatingAdmissionPolicyBindingPath,
 			mccMachineConfigPoolSelectorValidatingAdmissionPolicyBindingPath,
 			mccNetworkPolicyDeletionGuardValidatingAdmissionPolicyBindingPath,
+			mccNetworkPolicyUpdateGuardValidatingAdmissionPolicyBindingPath,
 		},
 	}
 

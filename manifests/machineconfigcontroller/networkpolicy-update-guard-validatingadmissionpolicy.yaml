@@ -1,0 +1,24 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: "networkpolicy-prevent-update"
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    matchPolicy: Equivalent
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: openshift-machine-config-operator
+    objectSelector: {}
+    resourceRules:
+    - apiGroups:   ["networking.k8s.io"]
+      apiVersions: ["v1"]
+      operations:  ["UPDATE"]
+      resources:   ["networkpolicies"]
+      scope: "Namespaced"
+  matchConditions:
+    - name: "exclude-mco-service-account"
+      expression: "request.userInfo.username != 'system:serviceaccount:openshift-machine-config-operator:machine-config-operator'"
+  validations:
+    - expression: "!(object.metadata.name in ['default-deny', 'allow-all-egress', 'allow-machine-config-operator', 'allow-machine-config-controller', 'allow-machine-os-builder'])"
+      message: "Modification of MCO-managed NetworkPolicy resources in the openshift-machine-config-operator namespace is not allowed"

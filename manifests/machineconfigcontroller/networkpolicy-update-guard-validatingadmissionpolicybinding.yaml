@@ -1,0 +1,7 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: "networkpolicy-prevent-update-binding"
+spec:
+  policyName: "networkpolicy-prevent-update"
+  validationActions: [Deny]
