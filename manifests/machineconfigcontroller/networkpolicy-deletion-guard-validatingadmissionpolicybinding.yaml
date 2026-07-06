@@ -1,0 +1,7 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: "networkpolicy-prevent-deletion-binding"
+spec:
+  policyName: "networkpolicy-prevent-deletion"
+  validationActions: [Deny]

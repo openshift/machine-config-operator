@@ -26,11 +26,13 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	appsinformersv1 "k8s.io/client-go/informers/apps/v1"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
+	networkinginformersv1 "k8s.io/client-go/informers/networking/v1"
 	rbacinformersv1 "k8s.io/client-go/informers/rbac/v1"
 	"k8s.io/client-go/kubernetes"
 	coreclientsetv1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	appslisterv1 "k8s.io/client-go/listers/apps/v1"
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
+	networkinglistersv1 "k8s.io/client-go/listers/networking/v1"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
@@ -128,6 +130,7 @@ type Operator struct {
 	clusterVersionLister     configlistersv1.ClusterVersionLister
 	osImageStreamLister      mcfglistersv1.OSImageStreamLister
 	iriLister                mcfglistersv1alpha1.InternalReleaseImageLister
+	networkPolicyLister      networkinglistersv1.NetworkPolicyLister
 	provisioningLister       dynamiclister.Lister
 	provisioningListerSynced cache.InformerSynced
 
@@ -168,6 +171,7 @@ type Operator struct {
 	apiserverListerSynced            cache.InformerSynced
 	osImageStreamListerSynced        cache.InformerSynced
 	iriListerSynced                  cache.InformerSynced
+	networkPolicyInformerSynced      cache.InformerSynced
 
 	// queue only ever has one item, but it has nice error handling backoff/retry semantics
 	queue workqueue.TypedRateLimitingInterface[string]
@@ -229,6 +233,7 @@ func New(
 	clusterVersionInformer configinformersv1.ClusterVersionInformer,
 	osImageStreamInformer mcfginformersv1.OSImageStreamInformer,
 	iriInformer mcfginformersv1alpha1.InternalReleaseImageInformer,
+	networkPolicyInformer networkinginformersv1.NetworkPolicyInformer,
 	ctrlctx *ctrlcommon.ControllerContext,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()
@@ -301,6 +306,7 @@ func New(
 		clusterOperatorInformer.Informer(),
 		apiserverInformer.Informer(),
 		moscInformer.Informer(),
+		networkPolicyInformer.Informer(),
 	}
 	for _, i := range informers {
 		i.AddEventHandler(optr.eventHandler())
@@ -377,6 +383,8 @@ func New(
 	optr.apiserverListerSynced = apiserverInformer.Informer().HasSynced
 	optr.moscLister = moscInformer.Lister()
 	optr.moscListerSynced = moscInformer.Informer().HasSynced
+	optr.networkPolicyLister = networkPolicyInformer.Lister()
+	optr.networkPolicyInformerSynced = networkPolicyInformer.Informer().HasSynced
 	optr.clusterVersionLister = clusterVersionInformer.Lister()
 	if osImageStreamInformer != nil && osimagestream.IsFeatureEnabled(optr.fgHandler) {
 		optr.osImageStreamLister = osImageStreamInformer.Lister()
@@ -464,6 +472,7 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.crcListerSynced,
 		optr.nodeClusterListerSynced,
 		optr.moscListerSynced,
+		optr.networkPolicyInformerSynced,
 	}
 	if optr.osImageStreamListerSynced != nil && osimagestream.IsFeatureEnabled(optr.fgHandler) {
 		cacheSynced = append(cacheSynced, optr.osImageStreamListerSynced)
@@ -618,6 +627,7 @@ func (optr *Operator) sync(key string) error {
 		{"MachineConfiguration", optr.syncMachineConfiguration},
 		{"MachineConfigNode", optr.syncMachineConfigNodes},
 		{"MachineConfigPools", optr.syncMachineConfigPools},
+		{"NetworkPolicies", optr.syncNetworkPolicies},
 		{"MachineConfigDaemon", optr.syncMachineConfigDaemon},
 		{"MachineConfigController", optr.syncMachineConfigController},
 		{"MachineConfigServer", optr.syncMachineConfigServer},
