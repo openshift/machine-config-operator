@@ -2,13 +2,11 @@ package osimagestream
 
 import (
 	"context"
-	"fmt"
 	"regexp"
 	"strings"
 
 	imagev1 "github.com/openshift/api/image/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	"k8s.io/klog/v2"
 )
 
 var (
@@ -19,62 +17,24 @@ var (
 
 // ImageStreamStreamSource fetches OS image stream metadata from an OpenShift ImageStream resource.
 type ImageStreamStreamSource struct {
-	imageStreamExtractor ImageDataExtractor
-	imageInspector       ImagesInspector
-	imageStreamProvider  ImageStreamProvider
+	discoverer          *StreamDiscoverer
+	imageStreamProvider ImageStreamProvider
 }
 
 // NewImageStreamStreamSource creates a new ImageStreamStreamSource with the provided dependencies.
-func NewImageStreamStreamSource(imageInspector ImagesInspector, imageStreamProvider ImageStreamProvider, imageStreamExtractor ImageDataExtractor) *ImageStreamStreamSource {
-	return &ImageStreamStreamSource{imageInspector: imageInspector, imageStreamProvider: imageStreamProvider, imageStreamExtractor: imageStreamExtractor}
+func NewImageStreamStreamSource(discoverer *StreamDiscoverer, imageStreamProvider ImageStreamProvider) *ImageStreamStreamSource {
+	return &ImageStreamStreamSource{discoverer: discoverer, imageStreamProvider: imageStreamProvider}
 }
 
-// FetchStreams retrieves an ImageStream, filters and inspects relevant OS images,
-// and returns the extracted OS image stream metadata.
+// FetchStreams retrieves an ImageStream, filters relevant OS image tags,
+// and delegates discovery to the StreamDiscoverer.
 func (r *ImageStreamStreamSource) FetchStreams(ctx context.Context) ([]*mcfgv1.OSImageStreamSet, error) {
 	imageStream, err := r.imageStreamProvider.ReadImageStream(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	// Filter out the tags to get only the one we consider
-	// related to OS/Extensions
 	osImagesDigests := r.filterImageTag(imageStream)
-
-	// Get the labels of each OS image
-	imagesData, err := r.fetchImagesData(ctx, osImagesDigests)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch ImageStream images data: %w", err)
-	}
-	return GroupOSContainerImageMetadataToStream(imagesData), nil
-}
-
-// fetchImagesData inspects the provided container images and extracts their metadata.
-// Images that fail inspection are logged and skipped rather than causing the entire operation to fail.
-func (r *ImageStreamStreamSource) fetchImagesData(ctx context.Context, images []string) ([]*ImageData, error) {
-	inspectionResults, err := r.imageInspector.Inspect(ctx, images...)
-	if err != nil {
-		return nil, err
-	}
-	results := make([]*ImageData, 0)
-	for _, inspectionResult := range inspectionResults {
-		if inspectionResult.Error != nil {
-			klog.Errorf(
-				"error inspecting ImageStream Image for OSImageStream generation. %s image will is ignored. %v",
-				inspectionResult.Image,
-				inspectionResult.Error,
-			)
-			continue
-		}
-		imageData := r.imageStreamExtractor.GetImageData(inspectionResult.Image, inspectionResult.InspectInfo.Labels)
-		// If imageData is nil: Not a CoreOS versions with the streams labels in place
-		if imageData == nil {
-			klog.V(4).Infof("image %s does not contain stream labels. Image discarded.", inspectionResult.Image)
-			continue
-		}
-		results = append(results, imageData)
-	}
-	return results, nil
+	return r.discoverer.Discover(ctx, osImagesDigests)
 }
 
 // filterImageTag returns container image references from ImageStream tags that are

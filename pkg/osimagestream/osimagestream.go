@@ -68,11 +68,12 @@ func NewDefaultStreamSourceFactory(inspectorFactory ImagesInspectorFactory) *Def
 func (f *DefaultStreamSourceFactory) Create(ctx context.Context, sysCtx *types.SystemContext, createOptions CreateOptions) (*mcfgv1.OSImageStream, error) {
 	var sources []StreamSource
 	imagesInspector := f.inspectorFactory.ForContext(sysCtx)
+	discoverer := NewStreamDiscoverer(imagesInspector, f.imagesExtractor)
 	if createOptions.CliImages != nil {
-		sources = append(sources, NewOSImagesURLStreamSource(NewStaticURLProvider(*createOptions.CliImages), f.imagesExtractor, imagesInspector))
+		sources = append(sources, NewOSImagesURLStreamSource(NewStaticURLProvider(*createOptions.CliImages), discoverer))
 	}
 	if createOptions.ConfigMapLister != nil {
-		sources = append(sources, NewOSImagesURLStreamSource(NewConfigMapURLProviders(createOptions.ConfigMapLister), f.imagesExtractor, imagesInspector))
+		sources = append(sources, NewOSImagesURLStreamSource(NewConfigMapURLProviders(createOptions.ConfigMapLister), discoverer))
 	}
 	var imageStreamProvider ImageStreamProvider
 	//nolint:gocritic // I disagree that this would be more readable with a switch case @pablintino
@@ -83,7 +84,7 @@ func (f *DefaultStreamSourceFactory) Create(ctx context.Context, sysCtx *types.S
 	} else {
 		return nil, errors.New("one of ReleaseImageStream or ReleaseImage must be specified")
 	}
-	sources = append(sources, NewImageStreamStreamSource(imagesInspector, imageStreamProvider, f.imagesExtractor))
+	sources = append(sources, NewImageStreamStreamSource(discoverer, imageStreamProvider))
 
 	streams := collect(ctx, sources)
 	if len(streams) == 0 {

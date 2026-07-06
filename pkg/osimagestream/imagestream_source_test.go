@@ -70,7 +70,6 @@ func TestImageStreamStreamSource_FetchStreams(t *testing.T) {
 		providerImageStream *imagev1.ImageStream
 		providerErr         error
 		inspectorResults    []imageutils.BulkInspectResult
-		inspectorErr        error
 		expectedStreamNames []string
 		errorContains       string
 	}{
@@ -103,12 +102,6 @@ func TestImageStreamStreamSource_FetchStreams(t *testing.T) {
 			name:          "imagestream provider error",
 			providerErr:   errors.New("failed to read imagestream"),
 			errorContains: "failed to read imagestream",
-		},
-		{
-			name:                "images inspector error",
-			providerImageStream: createTestImageStream(),
-			inspectorErr:        errors.New("inspection failed"),
-			errorContains:       "inspection failed",
 		},
 		{
 			name: "annotation-based filtering",
@@ -189,35 +182,6 @@ func TestImageStreamStreamSource_FetchStreams(t *testing.T) {
 			},
 			inspectorResults:    []imageutils.BulkInspectResult{},
 			expectedStreamNames: []string{},
-		},
-		{
-			name:                "skips individual image inspection errors",
-			providerImageStream: createTestImageStream(),
-			inspectorResults: []imageutils.BulkInspectResult{
-				{
-					Image: "invalid-image",
-					Error: errors.New("failed to inspect"),
-				},
-				{
-					Image: testRHELCoreosImage,
-					InspectInfo: &types.ImageInspectInfo{
-						Labels: map[string]string{
-							testCoreOSLabelStreamClass: streamNameRHELCoreos,
-							testCoreOSLabelBootc:       testCoreOSLabelBootcValue1,
-						},
-					},
-				},
-				{
-					Image: testRHELCoreosExtensionsImage,
-					InspectInfo: &types.ImageInspectInfo{
-						Labels: map[string]string{
-							testCoreOSLabelStreamClass: streamNameRHELCoreos,
-							testCoreOSLabelExtension:   testCoreOSLabelExtensionValue,
-						},
-					},
-				},
-			},
-			expectedStreamNames: []string{streamNameRHELCoreos},
 		},
 		{
 			name: "empty imagestream",
@@ -306,13 +270,14 @@ func TestImageStreamStreamSource_FetchStreams(t *testing.T) {
 			ctx := context.Background()
 
 			streams, err := NewImageStreamStreamSource(
-				&mockImagesInspector{
-					results: tt.inspectorResults,
-					err:     tt.inspectorErr,
-				}, &mockImageStreamProvider{
+				NewStreamDiscoverer(
+					&mockImagesInspector{
+						results: tt.inspectorResults,
+					}, NewImageStreamExtractor()),
+				&mockImageStreamProvider{
 					imageStream: tt.providerImageStream,
 					err:         tt.providerErr,
-				}, NewImageStreamExtractor()).
+				}).
 				FetchStreams(ctx)
 
 			if tt.errorContains != "" {

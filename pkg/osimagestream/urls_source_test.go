@@ -4,7 +4,6 @@ package osimagestream
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 
 	"github.com/containers/image/v5/types"
@@ -105,7 +104,7 @@ func TestOSImagesURLStreamSource_FetchStreams_Success(t *testing.T) {
 		},
 	}
 
-	streams, err := NewOSImagesURLStreamSource(urlsProvider, NewImageStreamExtractor(), imagesInspector).
+	streams, err := NewOSImagesURLStreamSource(urlsProvider, NewStreamDiscoverer(imagesInspector, NewImageStreamExtractor())).
 		FetchStreams(ctx)
 
 	require.NoError(t, err)
@@ -123,167 +122,13 @@ func TestOSImagesURLStreamSource_FetchStreams_URLProviderError(t *testing.T) {
 		err: errors.New("failed to get URLs"),
 	}
 
-	imagesInspector := &mockImagesInspector{}
-	extractor := &mockImageDataExtractor{}
-	source := NewOSImagesURLStreamSource(urlsProvider, extractor, imagesInspector)
+	source := NewOSImagesURLStreamSource(urlsProvider, NewStreamDiscoverer(&mockImagesInspector{}, &mockImageDataExtractor{}))
 
 	streams, err := source.FetchStreams(ctx)
 
 	require.Error(t, err)
 	assert.Nil(t, streams)
 	assert.Contains(t, err.Error(), "failed to get URLs")
-}
-
-func TestOSImagesURLStreamSource_FetchStreams_InspectorError(t *testing.T) {
-	ctx := context.Background()
-
-	streams, err := NewOSImagesURLStreamSource(
-		&mockURLsProvider{urls: createDummyTuple()},
-		&mockImageDataExtractor{},
-		&mockImagesInspector{
-			err: errors.New("inspection failed"),
-		},
-	).FetchStreams(ctx)
-	require.Error(t, err)
-	assert.ErrorContains(t, err, "inspection failed")
-
-	assert.Nil(t, streams)
-}
-
-func TestOSImagesURLStreamSource_FetchStreams_MissingImages(t *testing.T) {
-	ctx := context.Background()
-
-	urlsProvider := &mockURLsProvider{urls: createDummyTuple()}
-	tests := []struct {
-		name    string
-		results []imageutils.BulkInspectResult
-		errMsg  string
-	}{
-		{
-			name:    "no results",
-			results: []imageutils.BulkInspectResult{},
-			errMsg:  fmt.Sprintf("no inspection result for image %s", dummyOSImageName),
-		},
-		{
-			name: "only OS image",
-			results: []imageutils.BulkInspectResult{
-				{
-					Image: dummyOSImageName,
-					InspectInfo: &types.ImageInspectInfo{
-						Labels: map[string]string{},
-					},
-				},
-			},
-			errMsg: fmt.Sprintf("no inspection result for image %s", dummyOSExtensionsImageName),
-		},
-		{
-			name: "only extensions image",
-			results: []imageutils.BulkInspectResult{
-				{
-					Image: dummyOSExtensionsImageName,
-					InspectInfo: &types.ImageInspectInfo{
-						Labels: map[string]string{},
-					},
-				},
-			},
-			errMsg: fmt.Sprintf("no inspection result for image %s", dummyOSImageName),
-		},
-		{
-			name: "wrong images",
-			results: []imageutils.BulkInspectResult{
-				{
-					Image: "quay.io/wrong/image1:latest",
-					InspectInfo: &types.ImageInspectInfo{
-						Labels: map[string]string{},
-					},
-				},
-				{
-					Image: "quay.io/wrong/image2:latest",
-					InspectInfo: &types.ImageInspectInfo{
-						Labels: map[string]string{},
-					},
-				},
-			},
-			errMsg: fmt.Sprintf("no inspection result for image %s", dummyOSImageName),
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			streams, err := NewOSImagesURLStreamSource(
-				urlsProvider,
-				&mockImageDataExtractor{},
-				&mockImagesInspector{
-					results: tt.results,
-				},
-			).FetchStreams(ctx)
-
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), tt.errMsg)
-			assert.Nil(t, streams)
-		})
-	}
-}
-
-func TestOSImagesURLStreamSource_FetchStreams_InspectionResultError(t *testing.T) {
-	ctx := context.Background()
-
-	urlsProvider := &mockURLsProvider{urls: createDummyTuple()}
-	tests := []struct {
-		name    string
-		results []imageutils.BulkInspectResult
-		errMsg  string
-	}{
-		{
-			name: "OS image has error",
-			results: []imageutils.BulkInspectResult{
-				{
-					Image: dummyOSImageName,
-					Error: errors.New("failed to inspect OS image"),
-				},
-				{
-					Image: dummyOSExtensionsImageName,
-					InspectInfo: &types.ImageInspectInfo{
-						Labels: map[string]string{},
-					},
-				},
-			},
-			errMsg: "error inspecting OS image",
-		},
-		{
-			name: "extensions image has error",
-			results: []imageutils.BulkInspectResult{
-				{
-					Image: dummyOSImageName,
-					InspectInfo: &types.ImageInspectInfo{
-						Labels: map[string]string{},
-					},
-				},
-				{
-					Image: dummyOSExtensionsImageName,
-					Error: errors.New("failed to inspect extensions image"),
-				},
-			},
-			errMsg: "error inspecting OS extensions image",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			source := NewOSImagesURLStreamSource(
-				urlsProvider,
-				&mockImageDataExtractor{},
-				&mockImagesInspector{
-					results: tt.results,
-				},
-			)
-			streams, err := source.FetchStreams(ctx)
-
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), tt.errMsg)
-			assert.Nil(t, streams)
-		})
-	}
 }
 
 // Tests for ConfigMapURLProvider
