@@ -54,6 +54,10 @@ type OsImageBuilderInNode struct {
 	BuildAsManifest bool // If true, build as manifest; if false, build as single image
 }
 
+func (b *OsImageBuilderInNode) proxyEnvPrefix() string {
+	return "NO_PROXY=" + b.noProxy + " HTTPS_PROXY=" + b.httpsProxy + " HTTP_PROXY=" + b.httpProxy
+}
+
 // prepareEnvironment sets up the build environment on the node by performing the following tasks:
 // - Extracts pull secrets if no docker config is provided
 // - Creates a temporary directory on the remote node
@@ -258,14 +262,14 @@ func (b *OsImageBuilderInNode) buildImage() error {
 		return err
 	}
 
-	var buildCommand string
+	imageFlag := "--tag"
+	logLabel := "single image"
 	if b.BuildAsManifest {
-		buildCommand = "NO_PROXY=" + b.noProxy + " HTTPS_PROXY=" + b.httpsProxy + " HTTP_PROXY=" + b.httpProxy + " podman build  --network host " + buildPath + " --manifest " + b.osImage + " --authfile " + b.remoteDockerConfig
-		logger.Infof("Building as manifest")
-	} else {
-		buildCommand = "NO_PROXY=" + b.noProxy + " HTTPS_PROXY=" + b.httpsProxy + " HTTP_PROXY=" + b.httpProxy + " podman build  --network host " + buildPath + " --tag " + b.osImage + " --authfile " + b.remoteDockerConfig
-		logger.Infof("Building as single image")
+		imageFlag = "--manifest"
+		logLabel = "manifest"
 	}
+	logger.Infof("Building as %s", logLabel)
+	buildCommand := b.proxyEnvPrefix() + " podman build  --network host " + buildPath + " " + imageFlag + " " + b.osImage + " --authfile " + b.remoteDockerConfig
 	logger.Infof("Executing build command: %s", b.sanitizeCommand(buildCommand))
 
 	b.node.GetOC().NotShowInfo()
@@ -292,10 +296,10 @@ func (b *OsImageBuilderInNode) pushImage() error {
 	exutil.By("Push osImage")
 	var pushCommand string
 	if b.BuildAsManifest {
-		pushCommand = "NO_PROXY=" + b.noProxy + " HTTPS_PROXY=" + b.httpsProxy + " HTTP_PROXY=" + b.httpProxy + " podman manifest push " + b.osImage + " docker://" + b.osImage + " --authfile " + b.remoteDockerConfig
+		pushCommand = b.proxyEnvPrefix() + " podman manifest push " + b.osImage + " docker://" + b.osImage + " --authfile " + b.remoteDockerConfig
 		logger.Infof("Pushing as manifest")
 	} else {
-		pushCommand = "NO_PROXY=" + b.noProxy + " HTTPS_PROXY=" + b.httpsProxy + " HTTP_PROXY=" + b.httpProxy + " podman push " + b.osImage + " --authfile " + b.remoteDockerConfig
+		pushCommand = b.proxyEnvPrefix() + " podman push " + b.osImage + " --authfile " + b.remoteDockerConfig
 		logger.Infof("Pushing as single image")
 	}
 	logger.Infof("Executing push command: %s", b.sanitizeCommand(pushCommand))
@@ -348,7 +352,7 @@ func (b *OsImageBuilderInNode) removeImage() error {
 // digestImage inspects the pushed image and returns its digest reference
 func (b *OsImageBuilderInNode) digestImage() (string, error) {
 	exutil.By("Digest osImage")
-	skopeoCommand := "NO_PROXY=" + b.noProxy + " HTTPS_PROXY=" + b.httpsProxy + " HTTP_PROXY=" + b.httpProxy + " skopeo inspect docker://" + b.osImage + " --authfile " + b.remoteDockerConfig
+	skopeoCommand := b.proxyEnvPrefix() + " skopeo inspect docker://" + b.osImage + " --authfile " + b.remoteDockerConfig
 	logger.Infof("Executing skopeo command: %s", b.sanitizeCommand(skopeoCommand))
 
 	b.node.GetOC().NotShowInfo()
