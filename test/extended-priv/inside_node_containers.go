@@ -1,6 +1,7 @@
 package extended
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"path/filepath"
@@ -36,6 +37,12 @@ func (b *OsImageBuilderInNode) sanitizeCommand(cmd string) string {
 	return strings.NewReplacer(oldnew...).Replace(cmd)
 }
 
+func logAndError(format string, args ...interface{}) error {
+	msg := fmt.Sprintf(format, args...)
+	logger.Errorf("%s", msg)
+	return errors.New(msg)
+}
+
 // OsImageBuilderInNode encapsulates the functionality to build custom osImages inside a cluster node
 type OsImageBuilderInNode struct {
 	node *Node
@@ -52,6 +59,11 @@ type OsImageBuilderInNode struct {
 	remoteDockerfile string
 	UseInternalRegistry,
 	BuildAsManifest bool // If true, build as manifest; if false, build as single image
+}
+
+func (b *OsImageBuilderInNode) suppressOCOutput() func() {
+	b.node.GetOC().NotShowInfo()
+	return func() { b.node.GetOC().SetShowInfo() }
 }
 
 func (b *OsImageBuilderInNode) proxyEnvPrefix() string {
@@ -197,9 +209,8 @@ func (b *OsImageBuilderInNode) preparePushToInternalRegistry() error {
 	}
 	logger.Infof("OK!\n")
 
-	logger.Infof("Loging as registry admin to internal registry")
-	b.node.GetOC().NotShowInfo()
-	defer b.node.GetOC().SetShowInfo()
+	logger.Infof("Logging as registry admin to internal registry")
+	defer b.suppressOCOutput()()
 	loginOut, loginErr := b.node.DebugNodeWithChroot("podman", "login", InternalRegistrySvcURL, "-u", layeringRegistryAdminSAName, "-p", saToken, "--authfile", b.remoteDockerConfig)
 	if loginErr != nil {
 		return fmt.Errorf("error trying to login to internal registry:\nOutput:%s\nError:%s", loginOut, loginErr)
@@ -212,6 +223,14 @@ func (b *OsImageBuilderInNode) preparePushToInternalRegistry() error {
 // CleanUp will clean up all the helper resources created by the builder
 func (b *OsImageBuilderInNode) CleanUp() error {
 	logger.Infof("Cleanup image builder resources")
+
+	if b.remoteTmpDir != "" {
+		logger.Infof("Removing remote temp directory %s from node %s", b.remoteTmpDir, b.node.GetName())
+		if _, err := b.node.DebugNodeWithChroot("rm", "-rf", b.remoteTmpDir); err != nil {
+			logger.Errorf("Error removing remote tmp dir %s: %s", b.remoteTmpDir, err)
+		}
+	}
+
 	if b.UseInternalRegistry {
 		logger.Infof("Removing namespace %s", layeringTestsTmpNamespace)
 		err := b.node.oc.Run("delete").Args("namespace", layeringTestsTmpNamespace, "--ignore-not-found").Execute()
@@ -272,13 +291,10 @@ func (b *OsImageBuilderInNode) buildImage() error {
 	buildCommand := b.proxyEnvPrefix() + " podman build  --network host " + buildPath + " " + imageFlag + " " + b.osImage + " --authfile " + b.remoteDockerConfig
 	logger.Infof("Executing build command: %s", b.sanitizeCommand(buildCommand))
 
-	b.node.GetOC().NotShowInfo()
-	defer b.node.GetOC().SetShowInfo()
+	defer b.suppressOCOutput()()
 	output, err := b.node.DebugNodeWithChroot("bash", "-c", buildCommand)
 	if err != nil {
-		msg := fmt.Sprintf("Podman failed building image %s:\n%s\n%s", b.osImage, output, err)
-		logger.Errorf(msg)
-		return fmt.Errorf("%s", msg)
+		return logAndError("Podman failed building image %s:\n%s\n%s", b.osImage, output, err)
 	}
 
 	logger.Debugf(output)
@@ -304,21 +320,16 @@ func (b *OsImageBuilderInNode) pushImage() error {
 	}
 	logger.Infof("Executing push command: %s", b.sanitizeCommand(pushCommand))
 
-	b.node.GetOC().NotShowInfo()
-	defer b.node.GetOC().SetShowInfo()
+	defer b.suppressOCOutput()()
 	output, err := b.node.DebugNodeWithChroot("bash", "-c", pushCommand)
 	if err != nil {
-		msg := fmt.Sprintf("Podman failed pushing image %s:\n%s\n%s", b.osImage, output, err)
-		logger.Errorf(msg)
-		return fmt.Errorf("%s", msg)
+		return logAndError("Podman failed pushing image %s:\n%s\n%s", b.osImage, output, err)
 	}
 
 	// If we don't have permissions to push the image, the `oc debug` command will not return an error
 	//  so we need to check manually that there is no unauthorized error
 	if strings.Contains(output, "unauthorized: access to the requested resource is not authorized") {
-		msg := fmt.Sprintf("Podman was not authorized to push the image %s:\n%s\n", b.osImage, output)
-		logger.Errorf(msg)
-		return fmt.Errorf("%s", msg)
+		return logAndError("Podman was not authorized to push the image %s:\n%s\n", b.osImage, output)
 	}
 
 	logger.Debugf(output)
@@ -339,9 +350,7 @@ func (b *OsImageBuilderInNode) removeImage() error {
 		rmOutput, err = b.node.DebugNodeWithChroot("podman", "rmi", b.osImage)
 	}
 	if err != nil {
-		msg := fmt.Sprintf("Podman failed removing image %s:\n%s\n%s", b.osImage, rmOutput, err)
-		logger.Errorf(msg)
-		return fmt.Errorf("%s", msg)
+		return logAndError("Podman failed removing image %s:\n%s\n%s", b.osImage, rmOutput, err)
 	}
 
 	logger.Debugf(rmOutput)
@@ -355,13 +364,10 @@ func (b *OsImageBuilderInNode) digestImage() (string, error) {
 	skopeoCommand := b.proxyEnvPrefix() + " skopeo inspect docker://" + b.osImage + " --authfile " + b.remoteDockerConfig
 	logger.Infof("Executing skopeo command: %s", b.sanitizeCommand(skopeoCommand))
 
-	b.node.GetOC().NotShowInfo()
-	defer b.node.GetOC().SetShowInfo()
+	defer b.suppressOCOutput()()
 	inspectInfo, _, err := b.node.DebugNodeWithChrootStd("bash", "-c", skopeoCommand)
 	if err != nil {
-		msg := fmt.Sprintf("Skopeo failed inspecting image %s:\n%s\n%s", b.osImage, inspectInfo, err)
-		logger.Errorf(msg)
-		return "", fmt.Errorf("%s", msg)
+		return "", logAndError("Skopeo failed inspecting image %s:\n%s\n%s", b.osImage, inspectInfo, err)
 	}
 
 	logger.Debugf(inspectInfo)
