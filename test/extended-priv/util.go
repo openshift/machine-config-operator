@@ -564,6 +564,13 @@ func SkipIfNotOnPremPlatform(oc *exutil.CLI) {
 	}
 }
 
+// SkipIfCompactOrSNO skips the test if the cluster is SNO/Compact
+func SkipIfCompactOrSNO(oc *exutil.CLI) {
+	if IsCompactOrSNOCluster(oc) {
+		g.Skip("The cluster is SNO/Compact. This test cannot be executed in SNO/Compact clusters")
+	}
+}
+
 // MarshalOrFail marshals the input to JSON and fails the test if there is an error
 func MarshalOrFail(input interface{}) []byte {
 	inputJSON, err := json.Marshal(input)
@@ -1375,13 +1382,6 @@ func skipTestIfOsIsNotCoreOs(oc *exutil.CLI) *Node {
 		g.Skip("CoreOs is required to execute this test case!")
 	}
 	return allCoreOs[0]
-}
-
-// SkipIfCompactOrSNO skips the test case if the cluster is a compact or SNO cluster
-func SkipIfCompactOrSNO(oc *exutil.CLI) {
-	if IsCompactOrSNOCluster(oc) {
-		g.Skip("The test is not supported in Compact or SNO clusters")
-	}
 }
 
 // IsSNO returns true if the cluster is a SNO cluster
