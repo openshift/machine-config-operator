@@ -183,24 +183,37 @@ func TestGetInstallVersion(t *testing.T) {
 			expectedMinor: 16,
 		},
 		{
-			name: "no completed entries returns error",
+			name: "no completed entries falls back to desired version",
 			clusterVersion: &configv1.ClusterVersion{
 				ObjectMeta: metav1.ObjectMeta{Name: "version"},
 				Status: configv1.ClusterVersionStatus{
+					Desired: configv1.Release{Version: "4.18.0"},
 					History: []configv1.UpdateHistory{
-						{State: configv1.PartialUpdate, Version: "4.16.0", CompletionTime: nil},
+						{State: configv1.PartialUpdate, Version: "4.18.0", CompletionTime: nil},
 					},
 				},
 			},
-			errorContains: "no completed updates",
+			expectedMajor: 4,
+			expectedMinor: 18,
 		},
 		{
-			name: "empty history returns error",
+			name: "empty history falls back to desired version",
+			clusterVersion: &configv1.ClusterVersion{
+				ObjectMeta: metav1.ObjectMeta{Name: "version"},
+				Status: configv1.ClusterVersionStatus{
+					Desired: configv1.Release{Version: "5.0.0"},
+				},
+			},
+			expectedMajor: 5,
+			expectedMinor: 0,
+		},
+		{
+			name: "no completed entries and no desired version returns error",
 			clusterVersion: &configv1.ClusterVersion{
 				ObjectMeta: metav1.ObjectMeta{Name: "version"},
 				Status:     configv1.ClusterVersionStatus{},
 			},
-			errorContains: "no completed updates",
+			errorContains: "no desired version",
 		},
 		{
 			name:          "nil ClusterVersion returns error",

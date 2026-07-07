@@ -598,13 +598,14 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		return err
 	}
 
-	oscontainer, osextensionscontainer, err := optr.getOsImageURLs(optr.namespace, "")
-	if err != nil {
-		return fmt.Errorf("could not get OS images: %w", err)
-
+	if !osimagestream.IsFeatureEnabled(optr.fgHandler) {
+		oscontainer, osextensionscontainer, err := optr.getOSImageURLsFromConfigMap()
+		if err != nil {
+			return fmt.Errorf("could not get OS images: %w", err)
+		}
+		imgs.BaseOSContainerImage = oscontainer
+		imgs.BaseOSExtensionsContainerImage = osextensionscontainer
 	}
-	imgs.BaseOSContainerImage = oscontainer
-	imgs.BaseOSExtensionsContainerImage = osextensionscontainer
 
 	spec.KubeAPIServerServingCAData = kubeAPIServerServingCABytes
 	spec.RootCAData = machineConfigServerCABundle
@@ -1818,7 +1819,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(config *renderConfig, co *c
 					klog.Errorf("Error getting effective osImageStream name for pool %s: %q", pool.Name, err)
 					return false, nil
 				}
-				opURL, _, err := optr.getOsImageURLs(optr.namespace, streamName)
+				opURL, err := optr.getOSImageURLForStream(streamName)
 				if err != nil {
 					klog.Errorf("Error getting OS images: %q", err)
 					return false, nil
@@ -1983,39 +1984,54 @@ func (optr *Operator) waitForControllerConfigToBeCompleted(resource *mcfgv1.Cont
 	return nil
 }
 
-// getOsImageURLs retrieves the base OS and OS extensions container image URLs.
-// It first checks OSImageStream (if enabled), then falls back to the ConfigMap.
-func (optr *Operator) getOsImageURLs(namespace, osImageStreamName string) (string, string, error) {
-	// If OSImageStream is enabled fetch the URLs from there
-	if optr.osImageStreamLister != nil && osimagestream.IsFeatureEnabled(optr.fgHandler) {
-		osImageStream, err := optr.osImageStreamLister.Get(ctrlcommon.ClusterInstanceNameOSImageStream)
-		if err != nil {
-			return "", "", fmt.Errorf("could not get OSImageStream: %w", err)
-		}
-
-		stream, err := osimagestream.GetOSImageStreamSetByName(osImageStream, osImageStreamName)
-		if err != nil {
-			return "", "", fmt.Errorf("could not get OSImageStream: %w", err)
-		}
-		return string(stream.OSImage), string(stream.OSExtensionsImage), nil
-	}
-
-	cm, err := optr.mcoCmLister.ConfigMaps(namespace).Get(ctrlcommon.MachineConfigOSImageURLConfigMapName)
+func (optr *Operator) getOSImageURLsFromConfigMap() (string, string, error) {
+	cm, err := optr.mcoCmLister.ConfigMaps(optr.namespace).Get(ctrlcommon.MachineConfigOSImageURLConfigMapName)
 	if err != nil {
 		return "", "", err
 	}
-
 	cfg, err := ctrlcommon.ParseOSImageURLConfigMap(cm)
 	if err != nil {
 		return "", "", err
 	}
-
 	optrVersion, _ := optr.vStore.Get("operator")
 	if cfg.ReleaseVersion != optrVersion {
 		return "", "", fmt.Errorf("refusing to read osImageURL version %q, operator version %q", cfg.ReleaseVersion, optrVersion)
 	}
-
 	return cfg.BaseOSContainerImage, cfg.BaseOSExtensionsContainerImage, nil
+}
+
+// getOSImageURLForStream retrieves the OS image URL for a specific pool's stream.
+// When OSStreams is enabled reads from the OSImageStream CR; otherwise falls
+// back to the ConfigMap. Tolerates the CR not existing yet (returns empty).
+func (optr *Operator) getOSImageURLForStream(streamName string) (string, error) {
+	if optr.osImageStreamLister != nil && osimagestream.IsFeatureEnabled(optr.fgHandler) {
+		osImageStream, err := optr.osImageStreamLister.Get(ctrlcommon.ClusterInstanceNameOSImageStream)
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				return "", nil
+			}
+			return "", fmt.Errorf("could not get OSImageStream: %w", err)
+		}
+		stream, err := osimagestream.GetOSImageStreamSetByName(osImageStream, streamName)
+		if err != nil {
+			return "", fmt.Errorf("could not get OSImageStreamSet %s: %w", streamName, err)
+		}
+		return string(stream.OSImage), nil
+	}
+
+	cm, err := optr.mcoCmLister.ConfigMaps(optr.namespace).Get(ctrlcommon.MachineConfigOSImageURLConfigMapName)
+	if err != nil {
+		return "", err
+	}
+	cfg, err := ctrlcommon.ParseOSImageURLConfigMap(cm)
+	if err != nil {
+		return "", err
+	}
+	optrVersion, _ := optr.vStore.Get("operator")
+	if cfg.ReleaseVersion != optrVersion {
+		return "", fmt.Errorf("refusing to read osImageURL version %q, operator version %q", cfg.ReleaseVersion, optrVersion)
+	}
+	return cfg.BaseOSContainerImage, nil
 }
 
 func (optr *Operator) getCAsFromConfigMap(namespace, name, key string) ([]byte, error) {

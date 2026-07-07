@@ -7,7 +7,7 @@ rules:
   resources: ["nodes"]
   verbs: ["get", "list", "watch", "patch", "update"]
 - apiGroups: ["machineconfiguration.openshift.io"]
-  resources: ["machineconfigs", "machineconfigs/status", "machineconfigpools", "machineconfigpools/status", "controllerconfigs", "controllerconfigs/status", "kubeletconfigs", "kubeletconfigs/status", "containerruntimeconfigs", "containerruntimeconfigs/status", "machineconfignodes", "machineconfignodes/status", "internalreleaseimages", "internalreleaseimages/status", "pinnedimagesets", "osimagestreams", "machineosconfigs", "machineosconfigs/status", "machineosbuilds", "machineosbuilds/status"]
+  resources: ["machineconfigs", "machineconfigs/status", "machineconfigpools", "machineconfigpools/status", "controllerconfigs", "controllerconfigs/status", "kubeletconfigs", "kubeletconfigs/status", "containerruntimeconfigs", "containerruntimeconfigs/status", "machineconfignodes", "machineconfignodes/status", "internalreleaseimages", "internalreleaseimages/status", "pinnedimagesets", "osimagestreams", "osimagestreams/status", "machineosconfigs", "machineosconfigs/status", "machineosbuilds", "machineosbuilds/status"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 - apiGroups: ["machineconfiguration.openshift.io"]
   resources: ["controllerconfigs/finalizers", "kubeletconfigs/finalizers", "containerruntimeconfigs/finalizers", "machineconfigpools/finalizers", "internalreleaseimages/finalizers", "machineosconfigs/finalizers", "machineosbuilds/finalizers"]
