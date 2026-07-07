@@ -2,6 +2,8 @@ package operator
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"testing"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -14,6 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
+	corev1listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 
@@ -304,6 +307,136 @@ func TestMachineOSBuilderSecretReconciliation(t *testing.T) {
 			secrets, err := kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{})
 			assert.NoError(t, err)
 			assert.ElementsMatch(t, secrets.Items, tc.expectedMCOSecrets)
+		})
+	}
+}
+
+// newNamespacedIndexer returns an indexer configured with the namespace index,
+// as required by the namespaced core listers (Secrets, ServiceAccounts).
+func newNamespacedIndexer(objs ...interface{}) cache.Indexer {
+	idx := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	for _, o := range objs {
+		idx.Add(o)
+	}
+	return idx
+}
+
+// TestGetImageRegistryPullSecretsIRIMerge verifies that getImageRegistryPullSecrets
+// merges InternalReleaseImage (IRI) registry credentials into the assembled
+// image-registry pull secret when IRI is in use, and leaves the secret untouched
+// when IRI is absent. This blob feeds ControllerConfig.Spec.InternalRegistryPullSecret,
+// which the daemon writes to /etc/mco/internal-registry-pull-secret.json for the
+// OS-update image-pull path.
+func TestGetImageRegistryPullSecretsIRIMerge(t *testing.T) {
+	const (
+		baseDomain  = "example.com"
+		iriPassword = "s3cr3t"
+	)
+	expectedIRIAuth := base64.StdEncoding.EncodeToString([]byte(ctrlcommon.IRIRegistryUsername + ":" + iriPassword))
+	iriAPIIntHost := "api-int." + baseDomain + ":22625"
+	iriLocalHost := "localhost:22625"
+
+	// Common fixtures independent of whether IRI is enabled.
+	imageRegistryCO := &configv1.ClusterOperator{ObjectMeta: metav1.ObjectMeta{Name: "image-registry"}}
+	clusterDNS := &configv1.DNS{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+		Spec:       configv1.DNSSpec{BaseDomain: baseDomain},
+	}
+	// machine-os-puller SA with no image pull secrets; the cluster pull secret
+	// alone keeps the assembled "auths" map non-empty so the merge path runs.
+	machineOSPullerSA := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{Name: "machine-os-puller", Namespace: ctrlcommon.MCONamespace},
+	}
+	populatedPullSecretContent := `{"auths":{"registry.example.com":{"auth":"` +
+		base64.StdEncoding.EncodeToString([]byte("user:pass")) + `"}}}`
+
+	// IRI-specific fixtures.
+	iriInstance := &mcfgv1.InternalReleaseImage{
+		ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.InternalReleaseImageInstanceName},
+	}
+	iriAuthSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.InternalReleaseImageAuthSecretName, Namespace: ctrlcommon.MCONamespace},
+		Data:       map[string][]byte{"password": []byte(iriPassword)},
+	}
+	controllerConfig := &mcfgv1.ControllerConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.ControllerConfigName},
+		Spec: mcfgv1.ControllerConfigSpec{
+			DNS: &configv1.DNS{Spec: configv1.DNSSpec{BaseDomain: baseDomain}},
+		},
+	}
+
+	cases := []struct {
+		name string
+		// pullSecretContent is the raw ".dockerconfigjson" of the cluster pull secret.
+		pullSecretContent string
+		iriEnabled        bool
+		// expectNil asserts getImageRegistryPullSecrets returns a nil secret,
+		// used for the empty-"auths" ("don't roll config") path.
+		expectNil bool
+	}{
+		{name: "IRI absent - pull secret unchanged", pullSecretContent: populatedPullSecretContent, iriEnabled: false},
+		{name: "IRI present - credentials merged", pullSecretContent: populatedPullSecretContent, iriEnabled: true},
+		// With no image-pull secrets on the SA and an empty cluster pull secret,
+		// the assembled "auths" map is empty. Even with IRI enabled the function
+		// must return nil rather than emitting a secret carrying only IRI creds.
+		{name: "empty auths with IRI enabled - returns nil", pullSecretContent: "{}", iriEnabled: true, expectNil: true},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			mcoSecretObjs := []interface{}{}
+			iriObjs := []interface{}{}
+			if tc.iriEnabled {
+				mcoSecretObjs = append(mcoSecretObjs, iriAuthSecret)
+				iriObjs = append(iriObjs, iriInstance)
+			}
+
+			clusterPullSecret := helpers.NewDockerCfgJSONSecret(ctrlcommon.GlobalPullSecretName, ctrlcommon.OpenshiftConfigNamespace, tc.pullSecretContent)
+
+			optr := &Operator{
+				namespace:             ctrlcommon.MCONamespace,
+				clusterOperatorLister: configlistersv1.NewClusterOperatorLister(newNamespacedIndexer(imageRegistryCO)),
+				dnsLister:             configlistersv1.NewDNSLister(newNamespacedIndexer(clusterDNS)),
+				mcoSALister:           corev1listers.NewServiceAccountLister(newNamespacedIndexer(machineOSPullerSA)),
+				mcoSecretLister:       corev1listers.NewSecretLister(newNamespacedIndexer(mcoSecretObjs...)),
+				ocSecretLister:        corev1listers.NewSecretLister(newNamespacedIndexer(clusterPullSecret)),
+				ccLister:              mcplister.NewControllerConfigLister(newNamespacedIndexer(controllerConfig)),
+				iriLister:             mcplister.NewInternalReleaseImageLister(newNamespacedIndexer(iriObjs...)),
+			}
+
+			raw, err := optr.getImageRegistryPullSecrets()
+			assert.NoError(t, err)
+
+			if tc.expectNil {
+				// Empty "auths": nothing to roll, so no secret is emitted (and
+				// IRI creds are not emitted on their own).
+				assert.Nil(t, raw)
+				return
+			}
+			assert.NotEmpty(t, raw)
+
+			var parsed struct {
+				Auths map[string]struct {
+					Auth string `json:"auth"`
+				} `json:"auths"`
+			}
+			assert.NoError(t, json.Unmarshal(raw, &parsed))
+
+			// The original registry entry is always present.
+			assert.Contains(t, parsed.Auths, "registry.example.com")
+
+			if tc.iriEnabled {
+				assert.Contains(t, parsed.Auths, iriAPIIntHost, "expected api-int IRI auth entry to be merged")
+				assert.Contains(t, parsed.Auths, iriLocalHost, "expected localhost IRI auth entry to be merged")
+				assert.Equal(t, expectedIRIAuth, parsed.Auths[iriAPIIntHost].Auth)
+				assert.Equal(t, expectedIRIAuth, parsed.Auths[iriLocalHost].Auth)
+			} else {
+				assert.NotContains(t, parsed.Auths, iriAPIIntHost, "IRI auth entry must not be present when IRI is absent")
+				assert.NotContains(t, parsed.Auths, iriLocalHost, "IRI auth entry must not be present when IRI is absent")
+			}
 		})
 	}
 }
