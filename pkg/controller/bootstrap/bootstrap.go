@@ -188,6 +188,10 @@ func (b *Bootstrap) Run(destDir string) error {
 				if obj.GetName() == ctrlcommon.InternalReleaseImageInstanceName {
 					iri = true
 				}
+			case *mcfgv1.InternalReleaseImage:
+				if obj.GetName() == ctrlcommon.InternalReleaseImageInstanceName {
+					iri = true
+				}
 			case *imagev1.ImageStream:
 				for _, tag := range obj.Spec.Tags {
 					if tag.Name == "machine-config-operator" {
