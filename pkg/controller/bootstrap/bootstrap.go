@@ -115,7 +115,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		imgCfg               *apicfgv1.Image
 		apiServer            *apicfgv1.APIServer
 		imageStream          *imagev1.ImageStream
-		iri                  *mcfgv1alpha1.InternalReleaseImage
+		iri                  bool
 		iriTLSCert           *corev1.Secret
 		osImageStream        *mcfgv1.OSImageStream
 		iriCredentialsSecret *corev1.Secret
@@ -186,7 +186,7 @@ func (b *Bootstrap) Run(destDir string) error {
 				}
 			case *mcfgv1alpha1.InternalReleaseImage:
 				if obj.GetName() == ctrlcommon.InternalReleaseImageInstanceName {
-					iri = obj
+					iri = true
 				}
 			case *imagev1.ImageStream:
 				for _, tag := range obj.Spec.Tags {
@@ -335,8 +335,8 @@ func (b *Bootstrap) Run(destDir string) error {
 	klog.Infof("Successfully generated MachineConfigs from kubelet configs.")
 
 	if fgHandler != nil && fgHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
-		if iri != nil {
-			iriConfigs, err := internalreleaseimage.RunInternalReleaseImageBootstrap(iri, iriTLSCert, iriCredentialsSecret, cconfig)
+		if iri {
+			iriConfigs, err := internalreleaseimage.RunInternalReleaseImageBootstrap(iriTLSCert, iriCredentialsSecret, cconfig)
 			if err != nil {
 				return err
 			}
