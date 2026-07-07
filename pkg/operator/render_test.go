@@ -280,6 +280,30 @@ func TestRenderAsset(t *testing.T) {
 			},
 		},
 		{
+			// Test that MCC deployment is rendered correctly with proxy config
+			Path: "manifests/machineconfigcontroller/deployment.yaml",
+			RenderConfig: &renderConfig{
+				TargetNamespace: "testing-namespace",
+				ReleaseVersion:  "4.8.0-rc.0",
+				Images: &ctrlcommon.RenderConfigImages{
+					MachineConfigOperator: "mco-operator-image",
+					KubeRbacProxy:         "kube-rbac-proxy-image",
+				},
+				ControllerConfig: mcfgv1.ControllerConfigSpec{
+					Proxy: &configv1.ProxyStatus{
+						HTTPSProxy: "https://i.am.a.proxy.server",
+						NoProxy:    "*", // See: https://bugzilla.redhat.com/show_bug.cgi?id=1947066
+					},
+				},
+			},
+			FindExpected: []string{
+				"image: mco-operator-image",
+				"- name: HTTPS_PROXY\n          value: https://i.am.a.proxy.server",
+				"- name: NO_PROXY\n          value: \"*\"", // Ensure the * is quoted: "*": https://bugzilla.redhat.com/show_bug.cgi?id=1947066
+				"--payload-version=4.8.0-rc.0",
+			},
+		},
+		{
 			// Bad path, will cause asset error
 			Path:  "BAD PATH",
 			Error: true,
