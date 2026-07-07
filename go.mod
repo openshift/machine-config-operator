@@ -5,7 +5,7 @@ go 1.25.3
 require (
 	github.com/Azure/ARO-RP v0.0.0-20250602035759-0693f32d5ccc
 	github.com/BurntSushi/toml v1.5.0
-	github.com/InVisionApp/go-health v2.1.0+incompatible
+	github.com/InVisionApp/go-health/v2 v2.1.4
 	github.com/Masterminds/semver/v3 v3.4.0
 	github.com/ProtonMail/go-crypto v1.3.0
 	github.com/apparentlymart/go-cidr v1.1.0
@@ -213,7 +213,6 @@ require (
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20251202230838-ff82c1b0f217 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251202230838-ff82c1b0f217 // indirect
-	gopkg.in/DATA-DOG/go-sqlmock.v1 v1.3.0 // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.13.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	k8s.io/cli-runtime v0.35.0 // indirect
