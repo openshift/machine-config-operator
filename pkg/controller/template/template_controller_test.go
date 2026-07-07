@@ -530,8 +530,8 @@ func TestKubeletAutoNodeSizingEnabled(t *testing.T) {
 	}
 }
 
-// TestMergesIRIRegistryCredentialsIntoPullSecret verifies that the template controller merges
-// IRI registry credentials into the pull secret when rendering 00-master, so that
+// TestMergesIRIRegistryCredentialsIntoPullSecret verifies that the template
+// controller merges IRI registry credentials into the rendered pull secret so
 // nodes can authenticate to the IRI registry without writing to the user-controlled
 // global pull secret.
 func TestMergesIRIRegistryCredentialsIntoPullSecret(t *testing.T) {
@@ -618,5 +618,106 @@ func TestMergesIRIRegistryCredentialsIntoPullSecret(t *testing.T) {
 	// Verify the original quay.io entry is preserved.
 	if _, found := auths["quay.io"]; !found {
 		t.Error("original quay.io auth entry was dropped from pull secret")
+	}
+}
+
+// TestWaitForIRICaches pins the backstop behind the discovery gate in Run: even
+// once the CRD is known to be served, the wait is bounded, so an informer that
+// never syncs cannot wedge the template controller and block every
+// MachineConfig from rendering.
+func TestWaitForIRICaches(t *testing.T) {
+	neverSyncs := func() bool { return false }
+
+	orig := iriCacheSyncTimeout
+	iriCacheSyncTimeout = 50 * time.Millisecond
+	defer func() { iriCacheSyncTimeout = orig }()
+
+	t.Run("returns true once caches sync", func(t *testing.T) {
+		if !waitForIRICaches(context.Background(), alwaysReady, alwaysReady) {
+			t.Error("waitForIRICaches() = false, want true when both caches are synced")
+		}
+	})
+
+	t.Run("gives up instead of blocking when a cache never syncs", func(t *testing.T) {
+		done := make(chan bool, 1)
+		go func() { done <- waitForIRICaches(context.Background(), alwaysReady, neverSyncs) }()
+
+		select {
+		case synced := <-done:
+			if synced {
+				t.Error("waitForIRICaches() = true, want false when a cache never syncs")
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatal("waitForIRICaches blocked past the timeout; Run would wedge on a cluster without the IRI CRD")
+		}
+	})
+
+	t.Run("returns when the parent context is cancelled", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		if waitForIRICaches(ctx, neverSyncs) {
+			t.Error("waitForIRICaches() = true, want false on a cancelled context")
+		}
+	})
+}
+
+// TestIRICRDServed covers the discovery gate Run uses to decide whether waiting
+// for the InternalReleaseImage caches is worth doing. Anything short of the
+// resource being positively discovered has to read as "not served", otherwise
+// Run spends its whole timeout budget waiting on caches that can never sync.
+func TestIRICRDServed(t *testing.T) {
+	mcfgGroupVersion := mcfgv1.SchemeGroupVersion.String()
+
+	tests := []struct {
+		name      string
+		resources []*metav1.APIResourceList
+		reactor   core.ReactionFunc
+		want      bool
+	}{
+		{
+			name: "resource is discovered",
+			resources: []*metav1.APIResourceList{{
+				GroupVersion: mcfgGroupVersion,
+				APIResources: []metav1.APIResource{
+					{Name: "controllerconfigs"},
+					{Name: iriResourceName},
+				},
+			}},
+			want: true,
+		},
+		{
+			name: "group version is served without the resource",
+			resources: []*metav1.APIResourceList{{
+				GroupVersion: mcfgGroupVersion,
+				APIResources: []metav1.APIResource{{Name: "controllerconfigs"}},
+			}},
+			want: false,
+		},
+		{
+			name:      "group version is not served at all",
+			resources: nil,
+			want:      false,
+		},
+		{
+			name: "discovery fails",
+			reactor: func(core.Action) (bool, runtime.Object, error) {
+				return true, nil, fmt.Errorf("the server is currently unable to handle the request")
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := k8sfake.NewSimpleClientset()
+			client.Resources = tt.resources
+			if tt.reactor != nil {
+				client.PrependReactor("get", "resource", tt.reactor)
+			}
+
+			if got := iriCRDServed(client.Discovery()); got != tt.want {
+				t.Errorf("iriCRDServed() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }

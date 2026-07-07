@@ -15,16 +15,19 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// errIRIDisabled is returned by resolve when the InternalReleaseImage
-// resource is absent. Merge treats it as a skip signal rather than an error.
-var errIRIDisabled = errors.New("IRI not present")
+// errIRISkip is returned by resolve when there are no IRI credentials to merge:
+// either the InternalReleaseImage resource is absent, or it exists but its auth
+// secret has not been created yet. Merge treats it as a skip signal rather than
+// an error, so callers keep the pull secret they already have instead of
+// failing their sync. Wrap it with the specific reason so the skip is greppable.
+var errIRISkip = errors.New("no IRI credentials to merge")
 
 // IRISecretMerger merges IRI registry credentials into a pull secret.
 // Construct via NewIRISecretMerger (controller use) or NewIRISecretMergerFromObjects
 // (bootstrap use); then call Merge for each pull secret that needs updating.
 type IRISecretMerger struct {
-	// resolve returns the password and baseDomain needed for merging, or
-	// errIRIDisabled when IRI is not in use on this cluster.
+	// resolve returns the password and baseDomain needed for merging, or an
+	// error wrapping errIRISkip when there is nothing to merge.
 	resolve func() (password, baseDomain string, err error)
 }
 
@@ -40,12 +43,19 @@ func NewIRISecretMerger(
 		resolve: func() (string, string, error) {
 			_, err := iriLister.Get(InternalReleaseImageInstanceName)
 			if apierrors.IsNotFound(err) {
-				return "", "", errIRIDisabled
+				return "", "", fmt.Errorf("%w: InternalReleaseImage %q not found", errIRISkip, InternalReleaseImageInstanceName)
 			}
 			if err != nil {
 				return "", "", fmt.Errorf("could not get InternalReleaseImage: %w", err)
 			}
 			secret, err := secretLister.Secrets(MCONamespace).Get(InternalReleaseImageAuthSecretName)
+			// The auth secret is created by the InternalReleaseImage controller,
+			// so it can legitimately lag the InternalReleaseImage resource. Skip
+			// the merge until it shows up rather than failing the caller's sync;
+			// the secret informers re-trigger a render once it exists.
+			if apierrors.IsNotFound(err) {
+				return "", "", fmt.Errorf("%w: IRI auth secret %s/%s not found", errIRISkip, MCONamespace, InternalReleaseImageAuthSecretName)
+			}
 			if err != nil {
 				return "", "", fmt.Errorf("could not get IRI auth secret: %w", err)
 			}
@@ -70,7 +80,7 @@ func NewIRISecretMergerFromObjects(
 	return &IRISecretMerger{
 		resolve: func() (string, string, error) {
 			if !iri {
-				return "", "", errIRIDisabled
+				return "", "", fmt.Errorf("%w: InternalReleaseImage not present", errIRISkip)
 			}
 			return extractIRICredentials(secret, cconfig)
 		},
@@ -80,12 +90,13 @@ func NewIRISecretMergerFromObjects(
 // Merge merges IRI registry credentials into pullSecretRaw, adding auth entries
 // for api-int.<baseDomain>:<IRIRegistryPort> (all nodes) and
 // localhost:<IRIRegistryPort> (masters, where the registry runs locally).
-// If the InternalReleaseImage resource is absent, Merge logs and returns
-// pullSecretRaw unchanged.
+// If there are no credentials to merge — IRI is not in use, or its auth secret
+// does not exist yet — Merge logs the reason and returns pullSecretRaw
+// unchanged. Every other lookup or merge failure is returned to the caller.
 func (m *IRISecretMerger) Merge(pullSecretRaw []byte) ([]byte, error) {
 	password, baseDomain, err := m.resolve()
-	if errors.Is(err, errIRIDisabled) {
-		klog.V(4).Info("Skipping IRI registry credential merge: IRI not present")
+	if errors.Is(err, errIRISkip) {
+		klog.V(4).Infof("Skipping IRI registry credential merge: %v", err)
 		return pullSecretRaw, nil
 	}
 	if err != nil {

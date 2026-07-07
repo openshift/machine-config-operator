@@ -32,6 +32,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/discovery"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	corev1clientset "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -51,6 +52,47 @@ const (
 	// 5ms, 10ms, 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s, 20.4s, 41s, 82s
 	maxRetries = 15
 )
+
+// iriResourceName is the plural resource name of InternalReleaseImage, as it
+// appears in discovery.
+const iriResourceName = "internalreleaseimages"
+
+// iriCacheSyncTimeout bounds how long Run waits for the optional
+// InternalReleaseImage caches before starting without them.
+var iriCacheSyncTimeout = 30 * time.Second
+
+// iriCRDServed reports whether the API server serves InternalReleaseImage. The
+// CRD is not installed on every cluster, and where it is absent its informers
+// can never sync, so Run uses this to decide whether waiting for those caches
+// is worth doing at all. A discovery failure counts as not served: starting
+// without the IRI credentials is always recoverable, because the IRI informer
+// re-enqueues a render as soon as it does sync.
+func iriCRDServed(discoveryClient discovery.DiscoveryInterface) bool {
+	groupVersion := mcfgv1.SchemeGroupVersion.String()
+	resources, err := discoveryClient.ServerResourcesForGroupVersion(groupVersion)
+	if err != nil {
+		if !apierrors.IsNotFound(err) {
+			klog.Warningf("Could not discover %s resources, assuming InternalReleaseImage is not served: %v", groupVersion, err)
+		}
+		return false
+	}
+	for _, resource := range resources.APIResources {
+		if resource.Name == iriResourceName {
+			return true
+		}
+	}
+	return false
+}
+
+// waitForIRICaches waits up to iriCacheSyncTimeout for the IRI informer caches,
+// reporting whether they synced. Unlike a bare cache.WaitForCacheSync it always
+// returns, so a CRD that is served but whose informers are slow (or that is
+// removed between the discovery check and here) cannot wedge Run.
+func waitForIRICaches(ctx context.Context, synced ...cache.InformerSynced) bool {
+	waitCtx, cancel := context.WithTimeout(ctx, iriCacheSyncTimeout)
+	defer cancel()
+	return cache.WaitForCacheSync(waitCtx.Done(), synced...)
+}
 
 // controllerKind contains the schema.GroupVersionKind for this controller type.
 var controllerKind = mcfgv1.SchemeGroupVersion.WithKind("ControllerConfig")
@@ -116,11 +158,7 @@ func New(
 	ctrl.apiserverLister = apiserverInformer.Lister()
 	ctrl.apiserverListerSynced = apiserverInformer.Informer().HasSynced
 
-	if iriSecretsInformer != nil {
-		ctrl.iriSecretsInformerSynced = iriSecretsInformer.Informer().HasSynced
-	} else {
-		ctrl.iriSecretsInformerSynced = func() bool { return true }
-	}
+	ctrl.iriSecretsInformerSynced = iriSecretsInformer.Informer().HasSynced
 	ctrl.iriInformerSynced = iriInformer.Informer().HasSynced
 	ctrl.iriMerger = ctrlcommon.NewIRISecretMerger(iriSecretsInformer.Lister(), ctrl.ccLister, iriInformer.Lister())
 
@@ -139,14 +177,20 @@ func New(
 
 	// Watch the IRI auth secret in the MCO namespace so that when credentials
 	// are rotated the pull secret rendered into 00-master/00-worker is updated.
-	// Both informers are nil when the NoRegistryClusterInstall feature gate is
-	// off (the CRD doesn't exist on those clusters).
-	if iriSecretsInformer != nil {
-		iriSecretsInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc:    ctrl.addSecret,
-			UpdateFunc: ctrl.updateSecret,
-		})
-	}
+	iriSecretsInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addSecret,
+		UpdateFunc: ctrl.updateSecret,
+	})
+
+	// Whether the InternalReleaseImage resource exists decides whether IRI
+	// registry credentials belong in the rendered pull secret, so re-render on
+	// every change to it. This is also what recovers the render when the IRI
+	// informer syncs after Run has already stopped waiting for it.
+	iriInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addInternalReleaseImage,
+		UpdateFunc: ctrl.updateInternalReleaseImage,
+		DeleteFunc: ctrl.deleteInternalReleaseImage,
+	})
 
 	apiserverInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addAPIServer,
@@ -158,9 +202,28 @@ func New(
 }
 
 func (ctrl *Controller) filterSecret(secret *corev1.Secret) {
-	if secret.Name == "pull-secret" || secret.Name == ctrlcommon.InternalReleaseImageAuthSecretName {
+	// Check if this is the IRI auth secret
+	if secret.Namespace == ctrlcommon.MCONamespace && secret.Name == ctrlcommon.InternalReleaseImageAuthSecretName {
 		ctrl.enqueueController()
-		klog.Infof("Re-syncing ControllerConfig due to secret %s change", secret.Name)
+		klog.Infof("Re-syncing ControllerConfig due to secret %s/%s change", secret.Namespace, secret.Name)
+		return
+	}
+
+	// Check if this is the configured global pull secret
+	cfg, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
+	if err != nil {
+		// If we can't get the ControllerConfig, we can't determine if this secret
+		// is the pull secret, so skip the check. The controller will eventually
+		// sync when the ControllerConfig is available.
+		klog.V(4).Infof("Could not get ControllerConfig to check secret %s/%s: %v", secret.Namespace, secret.Name, err)
+		return
+	}
+
+	if cfg.Spec.PullSecret != nil &&
+		secret.Namespace == cfg.Spec.PullSecret.Namespace &&
+		secret.Name == cfg.Spec.PullSecret.Name {
+		ctrl.enqueueController()
+		klog.Infof("Re-syncing ControllerConfig due to secret %s/%s change", secret.Namespace, secret.Name)
 	}
 }
 
@@ -170,7 +233,7 @@ func (ctrl *Controller) addSecret(obj interface{}) {
 		ctrl.deleteSecret(secret)
 		return
 	}
-	klog.V(4).Infof("Add Secret %v", secret)
+	klog.V(4).Infof("Add Secret %s/%s", secret.Namespace, secret.Name)
 	ctrl.filterSecret(secret)
 }
 
@@ -178,7 +241,7 @@ func (ctrl *Controller) updateSecret(old, newObj interface{}) {
 	oldSecret := old.(*corev1.Secret)
 	newSecret := newObj.(*corev1.Secret)
 
-	klog.V(4).Infof("Update Secret %v", newSecret)
+	klog.V(4).Infof("Update Secret %s/%s", newSecret.Namespace, newSecret.Name)
 
 	// Only trigger resync if the secret data actually changed
 	// This prevents log spam from informer resyncs and watch reconnections
@@ -189,8 +252,6 @@ func (ctrl *Controller) updateSecret(old, newObj interface{}) {
 
 func (ctrl *Controller) deleteSecret(obj interface{}) {
 	secret, ok := obj.(*corev1.Secret)
-	klog.V(4).Infof("Delete Secret %v", secret)
-
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
 		if !ok {
@@ -204,6 +265,8 @@ func (ctrl *Controller) deleteSecret(obj interface{}) {
 		}
 	}
 
+	klog.V(4).Infof("Delete Secret %s/%s", secret.Namespace, secret.Name)
+
 	if secret.Name == "pull-secret" {
 		cfg, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 		if err != nil {
@@ -211,9 +274,49 @@ func (ctrl *Controller) deleteSecret(obj interface{}) {
 			return
 		}
 		klog.V(4).Infof("Re-syncing ControllerConfig %s due to secret deletion", cfg.Name)
-		// TODO(runcom): should we resync w/o a secret which is going to just cause the controller to fail when trying to get the secret itself?
-		// ctrl.enqueueControllerConfig(cfg)
 	}
+}
+
+// filterInternalReleaseImage re-renders when the InternalReleaseImage the merger
+// looks up changes. Limits to only the singleton instance.
+func (ctrl *Controller) filterInternalReleaseImage(iri *mcfgv1.InternalReleaseImage, action string) {
+	if iri.Name != ctrlcommon.InternalReleaseImageInstanceName {
+		return
+	}
+	ctrl.enqueueController()
+	klog.Infof("Re-syncing ControllerConfig due to InternalReleaseImage %s %s", iri.Name, action)
+}
+
+func (ctrl *Controller) addInternalReleaseImage(obj interface{}) {
+	iri := obj.(*mcfgv1.InternalReleaseImage)
+	ctrl.filterInternalReleaseImage(iri, "add")
+}
+
+func (ctrl *Controller) updateInternalReleaseImage(old, cur interface{}) {
+	oldIRI := old.(*mcfgv1.InternalReleaseImage)
+	newIRI := cur.(*mcfgv1.InternalReleaseImage)
+	if reflect.DeepEqual(oldIRI.Spec, newIRI.Spec) {
+		return
+	}
+	ctrl.filterInternalReleaseImage(newIRI, "update")
+}
+
+func (ctrl *Controller) deleteInternalReleaseImage(obj interface{}) {
+	iri, ok := obj.(*mcfgv1.InternalReleaseImage)
+	if !ok {
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
+			return
+		}
+		iri, ok = tombstone.Obj.(*mcfgv1.InternalReleaseImage)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not an InternalReleaseImage %#v", obj))
+			return
+		}
+	}
+	// The credentials have to come back out of the rendered pull secret.
+	ctrl.filterInternalReleaseImage(iri, "deletion")
 }
 
 func (ctrl *Controller) filterAPIServer(apiServer *configv1.APIServer) {
@@ -276,8 +379,24 @@ func (ctrl *Controller) Run(ctx context.Context, workers int) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(ctx.Done(), ctrl.ccListerSynced, ctrl.secretsInformerSynced, ctrl.iriSecretsInformerSynced, ctrl.iriInformerSynced) {
+	if !cache.WaitForCacheSync(ctx.Done(), ctrl.ccListerSynced, ctrl.secretsInformerSynced, ctrl.apiserverListerSynced) {
 		return
+	}
+
+	// The IRI caches are deliberately not part of the wait above. The
+	// InternalReleaseImage CRD is not served on every cluster, and
+	// cache.WaitForCacheSync has no timeout: it only returns once the caches
+	// sync or ctx is cancelled. Waiting on caches that can never sync would
+	// silently stop every MachineConfig from rendering wherever that CRD is
+	// missing, so only wait when it is actually served — and even then bound
+	// the wait. Starting without the credentials is safe either way: the merger
+	// skips the merge while the cache is cold, and the IRI informers re-enqueue
+	// a render as soon as they do sync.
+	switch {
+	case !iriCRDServed(ctrl.kubeClient.Discovery()):
+		klog.Info("InternalReleaseImage CRD is not served; starting without IRI registry credentials in the rendered pull secret")
+	case !waitForIRICaches(ctx, ctrl.iriInformerSynced, ctrl.iriSecretsInformerSynced):
+		klog.Infof("InternalReleaseImage caches did not sync within %s; starting without IRI registry credentials in the rendered pull secret", iriCacheSyncTimeout)
 	}
 
 	klog.Info("Starting MachineConfigController-TemplateController")
