@@ -119,8 +119,8 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1().MachineOSConfigs(),
 			ctrlctx.ConfigInformerFactory.Config().V1().ClusterVersions(),
 			ctrlctx.InformerFactory.Machineconfiguration().V1().OSImageStreams(),
-			iriInformer,
 			ctrlctx.KubeNamespacedInformerFactory.Networking().V1().NetworkPolicies(),
+			iriInformer,
 			ctrlctx,
 		)
 

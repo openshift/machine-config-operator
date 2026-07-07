@@ -73,14 +73,14 @@ func NewIRISecretMergerFromObjects(
 	secret *corev1.Secret,
 	cconfig *mcfgv1.ControllerConfig,
 	fgHandler FeatureGatesHandler,
-	iri *mcfgv1.InternalReleaseImage,
+	iri bool,
 ) *IRISecretMerger {
 	return &IRISecretMerger{
 		resolve: func() (string, string, error) {
 			if fgHandler == nil || !fgHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
 				return "", "", errIRIDisabled
 			}
-			if iri == nil {
+			if !iri {
 				return "", "", errIRIDisabled
 			}
 			return extractIRICredentials(secret, cconfig)

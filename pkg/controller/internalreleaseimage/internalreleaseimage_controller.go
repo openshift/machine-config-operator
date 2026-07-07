@@ -521,7 +521,7 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) (syncErr error) {
 	}
 
 	for _, role := range SupportedRoles {
-		r := NewRendererByRole(role, iri, iriSecret, iriRegistryCredentialsSecret, cconfig)
+		r := NewRendererByRole(role, iriSecret, iriRegistryCredentialsSecret, cconfig)
 
 		mc, err := ctrl.mcLister.Get(r.GetMachineConfigName())
 		isNotFound := errors.IsNotFound(err)

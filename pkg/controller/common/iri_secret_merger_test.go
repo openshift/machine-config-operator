@@ -91,7 +91,6 @@ func TestIRISecretMergerFromObjects(t *testing.T) {
 	basePullSecret := `{"auths":{"quay.io":{"auth":"dGVzdDp0ZXN0"}}}`
 	validSecret := newIRIRegistryCredentialsSecret("testpassword")
 	validCconfig := cconfigWithDNS("example.com")
-	iri := newIRIObject()
 
 	tests := []struct {
 		name            string
@@ -99,7 +98,7 @@ func TestIRISecretMergerFromObjects(t *testing.T) {
 		secret          *corev1.Secret
 		cconfig         *mcfgv1.ControllerConfig
 		fgHandler       FeatureGatesHandler
-		iri             *mcfgv1.InternalReleaseImage
+		iri        bool
 		expectUnchanged bool
 		expectError     bool
 		verifyAuthHost  string
@@ -110,7 +109,7 @@ func TestIRISecretMergerFromObjects(t *testing.T) {
 			secret:         validSecret,
 			cconfig:        validCconfig,
 			fgHandler:      fgEnabled(),
-			iri:            iri,
+			iri:       true,
 			verifyAuthHost: "api-int.example.com:22625",
 		},
 		{
@@ -119,16 +118,16 @@ func TestIRISecretMergerFromObjects(t *testing.T) {
 			secret:          validSecret,
 			cconfig:         validCconfig,
 			fgHandler:       fgDisabled(),
-			iri:             iri,
+			iri:        true,
 			expectUnchanged: true,
 		},
 		{
-			name:            "nil iri skips merge",
+			name:            "iri not found skips merge",
 			pullSecret:      basePullSecret,
 			secret:          validSecret,
 			cconfig:         validCconfig,
 			fgHandler:       fgEnabled(),
-			iri:             nil,
+			iri:        false,
 			expectUnchanged: true,
 		},
 		{
@@ -137,7 +136,7 @@ func TestIRISecretMergerFromObjects(t *testing.T) {
 			secret:      nil,
 			cconfig:     validCconfig,
 			fgHandler:   fgEnabled(),
-			iri:         iri,
+			iri:    true,
 			expectError: true,
 		},
 		{
@@ -146,7 +145,7 @@ func TestIRISecretMergerFromObjects(t *testing.T) {
 			secret:      validSecret,
 			cconfig:     nil,
 			fgHandler:   fgEnabled(),
-			iri:         iri,
+			iri:    true,
 			expectError: true,
 		},
 		{
@@ -155,7 +154,7 @@ func TestIRISecretMergerFromObjects(t *testing.T) {
 			secret:      validSecret,
 			cconfig:     &mcfgv1.ControllerConfig{},
 			fgHandler:   fgEnabled(),
-			iri:         iri,
+			iri:    true,
 			expectError: true,
 		},
 		{
@@ -164,7 +163,7 @@ func TestIRISecretMergerFromObjects(t *testing.T) {
 			secret:      newIRIRegistryCredentialsSecret(""),
 			cconfig:     validCconfig,
 			fgHandler:   fgEnabled(),
-			iri:         iri,
+			iri:    true,
 			expectError: true,
 		},
 		{
@@ -173,7 +172,7 @@ func TestIRISecretMergerFromObjects(t *testing.T) {
 			secret:          validSecret,
 			cconfig:         validCconfig,
 			fgHandler:       fgEnabled(),
-			iri:             iri,
+			iri:        true,
 			expectUnchanged: true,
 		},
 		{
@@ -182,7 +181,7 @@ func TestIRISecretMergerFromObjects(t *testing.T) {
 			secret:         newIRIRegistryCredentialsSecret("newpassword"),
 			cconfig:        validCconfig,
 			fgHandler:      fgEnabled(),
-			iri:            iri,
+			iri:       true,
 			verifyAuthHost: "api-int.example.com:22625",
 		},
 		{
@@ -191,7 +190,7 @@ func TestIRISecretMergerFromObjects(t *testing.T) {
 			secret:      validSecret,
 			cconfig:     validCconfig,
 			fgHandler:   fgEnabled(),
-			iri:         iri,
+			iri:    true,
 			expectError: true,
 		},
 		{
@@ -200,7 +199,7 @@ func TestIRISecretMergerFromObjects(t *testing.T) {
 			secret:      validSecret,
 			cconfig:     validCconfig,
 			fgHandler:   fgEnabled(),
-			iri:         iri,
+			iri:    true,
 			expectError: true,
 		},
 	}

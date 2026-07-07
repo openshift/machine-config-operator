@@ -30,6 +30,7 @@ import (
 	"github.com/openshift/api/features"
 	imagev1 "github.com/openshift/api/image/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	buildconstants "github.com/openshift/machine-config-operator/pkg/controller/build/constants"
@@ -84,6 +85,7 @@ func (b *Bootstrap) Run(destDir string) error {
 
 	scheme := runtime.NewScheme()
 	mcfgv1.Install(scheme)
+	mcfgv1alpha1.Install(scheme)
 	apioperatorsv1alpha1.Install(scheme)
 	apicfgv1.Install(scheme)
 	apicfgv1alpha1.Install(scheme)
@@ -91,7 +93,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	imagev1.AddToScheme(scheme)
 	codecFactory := serializer.NewCodecFactory(scheme)
 	decoder := codecFactory.UniversalDecoder(
-		mcfgv1.GroupVersion, apioperatorsv1alpha1.GroupVersion,
+		mcfgv1.GroupVersion, mcfgv1alpha1.GroupVersion, apioperatorsv1alpha1.GroupVersion,
 		apicfgv1.GroupVersion, apicfgv1alpha1.GroupVersion,
 		corev1.SchemeGroupVersion, imagev1.SchemeGroupVersion)
 
@@ -112,7 +114,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		imgCfg               *apicfgv1.Image
 		apiServer            *apicfgv1.APIServer
 		imageStream          *imagev1.ImageStream
-		iri                  *mcfgv1.InternalReleaseImage
+		iri                  bool
 		iriTLSCert           *corev1.Secret
 		osImageStream        *mcfgv1.OSImageStream
 		iriCredentialsSecret *corev1.Secret
@@ -183,7 +185,11 @@ func (b *Bootstrap) Run(destDir string) error {
 				}
 			case *mcfgv1.InternalReleaseImage:
 				if obj.GetName() == ctrlcommon.InternalReleaseImageInstanceName {
-					iri = obj
+					iri = true
+				}
+			case *mcfgv1alpha1.InternalReleaseImage:
+				if obj.GetName() == ctrlcommon.InternalReleaseImageInstanceName {
+					iri = true
 				}
 			case *imagev1.ImageStream:
 				for _, tag := range obj.Spec.Tags {
@@ -332,8 +338,8 @@ func (b *Bootstrap) Run(destDir string) error {
 	klog.Infof("Successfully generated MachineConfigs from kubelet configs.")
 
 	if fgHandler != nil && fgHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
-		if iri != nil {
-			iriConfigs, err := internalreleaseimage.RunInternalReleaseImageBootstrap(iri, iriTLSCert, iriCredentialsSecret, cconfig)
+		if iri {
+			iriConfigs, err := internalreleaseimage.RunInternalReleaseImageBootstrap(iriTLSCert, iriCredentialsSecret, cconfig)
 			if err != nil {
 				return err
 			}
