@@ -6,9 +6,7 @@ import (
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/pkg/controller/common"
-	"github.com/openshift/machine-config-operator/pkg/imageutils"
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
-	"k8s.io/klog/v2"
 )
 
 // OSImageTuple represents a pair of container images for OS and extensions.
@@ -19,68 +17,26 @@ type OSImageTuple struct {
 
 // OSImagesURLStreamSource fetches OS image stream metadata from specific container image URLs.
 type OSImagesURLStreamSource struct {
-	urlsProvider         URLsProvider
-	imageStreamExtractor ImageDataExtractor
-	imageInspector       ImagesInspector
+	urlsProvider URLsProvider
+	discoverer   *StreamDiscoverer
 }
 
 // NewOSImagesURLStreamSource creates a new OSImagesURLStreamSource with the provided dependencies.
-func NewOSImagesURLStreamSource(urlsProvider URLsProvider, imageStreamExtractor ImageDataExtractor, imageInspector ImagesInspector) *OSImagesURLStreamSource {
+func NewOSImagesURLStreamSource(urlsProvider URLsProvider, discoverer *StreamDiscoverer) *OSImagesURLStreamSource {
 	return &OSImagesURLStreamSource{
-		urlsProvider:         urlsProvider,
-		imageStreamExtractor: imageStreamExtractor,
-		imageInspector:       imageInspector,
+		urlsProvider: urlsProvider,
+		discoverer:   discoverer,
 	}
 }
 
-// FetchStreams retrieves and inspects OS and extensions images from the configured URLs,
-// returning the extracted OS image stream metadata.
+// FetchStreams retrieves OS and extensions image URLs from the configured provider
+// and delegates discovery to the StreamDiscoverer.
 func (s *OSImagesURLStreamSource) FetchStreams(ctx context.Context) ([]*mcfgv1.OSImageStreamSet, error) {
 	urls, err := s.urlsProvider.GetUrls()
 	if err != nil {
 		return nil, err
 	}
-	inspectionResults, err := s.imageInspector.Inspect(ctx, urls.OSImage, urls.OSExtensionsImage)
-	if err != nil {
-		return nil, err
-	}
-
-	// Validate we got results for both required images
-	osInspectResult, err := getInspectResultByImageName(inspectionResults, urls.OSImage)
-	if err != nil {
-		return nil, fmt.Errorf("error inspecting OS image %w", err)
-	}
-	osExtensionsInspectResult, err := getInspectResultByImageName(inspectionResults, urls.OSExtensionsImage)
-	if err != nil {
-		return nil, fmt.Errorf("error inspecting OS extensions image %w", err)
-	}
-
-	var imagesData []*ImageData
-	for _, inspectionResult := range []*imageutils.BulkInspectResult{osInspectResult, osExtensionsInspectResult} {
-		imageData := s.imageStreamExtractor.GetImageData(inspectionResult.Image, inspectionResult.InspectInfo.Labels)
-		if imageData == nil {
-			klog.V(4).Infof("image %s does not contain stream labels. Image discarded.", inspectionResult.Image)
-
-			// Both imageData should be fine to consider the source URLs valid
-			return []*mcfgv1.OSImageStreamSet{}, nil
-		}
-		imagesData = append(imagesData, imageData)
-	}
-	return GroupOSContainerImageMetadataToStream(imagesData), nil
-}
-
-// getInspectResultByImageName finds the inspection result for a specific image name
-// and returns an error if the inspection failed or no result was found.
-func getInspectResultByImageName(inspectResults []imageutils.BulkInspectResult, imageName string) (*imageutils.BulkInspectResult, error) {
-	for _, result := range inspectResults {
-		if imageName == result.Image {
-			if result.Error != nil {
-				return nil, result.Error
-			}
-			return &result, nil
-		}
-	}
-	return nil, fmt.Errorf("no inspection result for image %s", imageName)
+	return s.discoverer.Discover(ctx, []string{urls.OSImage, urls.OSExtensionsImage})
 }
 
 // URLsProvider provides OS and extensions container image URLs.
