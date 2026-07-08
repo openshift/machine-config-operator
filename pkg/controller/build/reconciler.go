@@ -1347,13 +1347,16 @@ func (b *buildReconciler) reconcilePoolChange(ctx context.Context, mcp *mcfgv1.M
 	old := mcp.DeepCopy()
 	old.Spec.Configuration.Name = mcp.Status.Configuration.Name
 	firstOptIn := mosc.Annotations[constants.CurrentMachineOSBuildAnnotationKey]
-	if firstOptIn == "" {
-		return fmt.Errorf("no current build annotation on MachineOSConfig %q", mosc.Name)
-	}
 
 	needsImageRebuild, err := b.reconcileImageRebuild(old, mcp)
 	if err != nil {
 		return err
+	}
+
+	// No action needed if the rendered config has not changed and we have an annotation
+	if oldRendered == newRendered && firstOptIn != "" {
+		klog.V(4).Infof("pool %q: Configuration unchanged (%s), no action needed", mcp.Name, oldRendered)
+		return nil
 	}
 
 	// This is our trigger point
