@@ -236,12 +236,15 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	)
 	go pinnedImageSetManager.Run(2, stopCh)
 
+	var mcnScopedInformerStartFunc func(<-chan struct{})
 	if ctrlctx.FeatureGatesHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
+		mcnScopedInformer, startFunc := ctrlcommon.NewScopedMachineConfigNodeInformerFromClientBuilder(cb, startOpts.nodeName)
+		mcnScopedInformerStartFunc = startFunc
 		internalReleaseImageManager := internalreleaseimage.New(
 			startOpts.nodeName,
 			ctrlctx.ClientBuilder.MachineConfigClientOrDie(componentName),
 			ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().InternalReleaseImages(),
-			ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigNodes(),
+			mcnScopedInformer,
 		)
 		go internalReleaseImageManager.Run(1, stopCh)
 	}
@@ -251,6 +254,9 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	ctrlctx.InformerFactory.Start(stopCh)
 	ctrlctx.OperatorInformerFactory.Start(stopCh)
 	nodeScopedInformerStartFunc(ctrlctx.Stop)
+	if mcnScopedInformerStartFunc != nil {
+		mcnScopedInformerStartFunc(ctrlctx.Stop)
+	}
 	close(ctrlctx.InformersStarted)
 
 	if err := dn.Run(stopCh, exitCh, errCh); err != nil {

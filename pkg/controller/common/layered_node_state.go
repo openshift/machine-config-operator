@@ -19,11 +19,19 @@ import (
 // status.go with this code, then repackage this so that it can be used by any
 // portion of the MCO which needs to interrogate or mutate node state.
 type LayeredNodeState struct {
-	node *corev1.Node
+	node   *corev1.Node
+	copied bool // true if we've already performed the safety DeepCopy
 }
 
-func NewLayeredNodeState(n *corev1.Node) *LayeredNodeState {
-	return &LayeredNodeState{node: n}
+// NewLayeredNodeState creates a LayeredNodeState with copy-on-write semantics.
+// The provided node may be from a lister cache; a DeepCopy is deferred until
+// the first mutation via SetDesiredStateFromPool or
+// SetDesiredStateFromMachineOSConfig. Node() returns the underlying pointer
+// for read-only access; callers must not mutate it directly.
+func NewLayeredNodeState(node *corev1.Node) *LayeredNodeState {
+	return &LayeredNodeState{
+		node: node,
+	}
 }
 
 // Checks if the node is done "working." For a node in both layered and non-layered MCPs, the
@@ -136,42 +144,42 @@ func (l *LayeredNodeState) isImageAnnotationEqualToMachineOSConfig(anno string, 
 
 // Sets the desired MachineConfig annotations from the MachineConfigPool.
 // Deletes any desired image annotations if they exist.
-//
-// Note: This will create a deep copy of the node object first to avoid
-// mutating any underlying caches.
 func (l *LayeredNodeState) SetDesiredStateFromPool(mcp *mcfgv1.MachineConfigPool) {
-	node := l.Node()
+	l.ensureSafeForMutation()
 
-	metav1.SetMetaDataAnnotation(&node.ObjectMeta, daemonconsts.DesiredMachineConfigAnnotationKey, mcp.Spec.Configuration.Name)
-	delete(node.Annotations, daemonconsts.DesiredImageAnnotationKey)
-
-	l.node = node
+	metav1.SetMetaDataAnnotation(&l.node.ObjectMeta, daemonconsts.DesiredMachineConfigAnnotationKey, mcp.Spec.Configuration.Name)
+	delete(l.node.Annotations, daemonconsts.DesiredImageAnnotationKey)
 }
 
 // Sets the desired MachineConfig & image annotations from the MachineOSBuild and
 // MachineOSConfig objects.
-//
-// Note: This will create a deep copy of the node object first to avoid
-// mutating any underlying caches.
-
 func (l *LayeredNodeState) SetDesiredStateFromMachineOSConfig(mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) {
-	node := l.Node()
+	l.ensureSafeForMutation()
 
-	metav1.SetMetaDataAnnotation(&node.ObjectMeta, daemonconsts.DesiredMachineConfigAnnotationKey, mosb.Spec.MachineConfig.Name)
+	metav1.SetMetaDataAnnotation(&l.node.ObjectMeta, daemonconsts.DesiredMachineConfigAnnotationKey, mosb.Spec.MachineConfig.Name)
 
 	moscs := NewMachineOSConfigState(mosc)
 	if moscs.HasOSImage() {
-		metav1.SetMetaDataAnnotation(&node.ObjectMeta, daemonconsts.DesiredImageAnnotationKey, moscs.GetOSImage())
+		metav1.SetMetaDataAnnotation(&l.node.ObjectMeta, daemonconsts.DesiredImageAnnotationKey, moscs.GetOSImage())
 	} else {
-		delete(node.Annotations, daemonconsts.DesiredImageAnnotationKey)
+		delete(l.node.Annotations, daemonconsts.DesiredImageAnnotationKey)
 	}
-
-	l.node = node
 }
 
-// Returns a deep copy of the underlying node object.
+// Node returns the node object for read-only access. Callers must not mutate
+// the returned pointer directly; use SetDesiredStateFromPool or
+// SetDesiredStateFromMachineOSConfig instead.
 func (l *LayeredNodeState) Node() *corev1.Node {
-	return l.node.DeepCopy()
+	return l.node
+}
+
+// ensureSafeForMutation performs a DeepCopy on the first mutation so that
+// lister-cached nodes are never modified in place.
+func (l *LayeredNodeState) ensureSafeForMutation() {
+	if !l.copied {
+		l.node = l.node.DeepCopy()
+		l.copied = true
+	}
 }
 
 // isNodeDone returns true if the current == desired and the MCD has marked done.
