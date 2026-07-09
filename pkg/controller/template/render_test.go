@@ -197,6 +197,74 @@ func TestSkipMissing(t *testing.T) {
 	}
 }
 
+func TestWaitForNodeIPScriptIPFamilies(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(templateDir, "common/_base/files/wait-for-node-ip.yaml")
+	templateData, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read template: %v", err)
+	}
+
+	const (
+		primaryBind = "cat /run/nodeip-configuration/primary-ip"
+		ipv4Bind    = "cat /run/nodeip-configuration/ipv4"
+		ipv6Bind    = "cat /run/nodeip-configuration/ipv6"
+	)
+
+	cases := []struct {
+		families     mcfgv1.IPFamiliesType
+		wantIPv4Bind bool
+		wantIPv6Bind bool
+	}{
+		{
+			families:     mcfgv1.IPFamiliesIPv4,
+			wantIPv4Bind: true,
+			wantIPv6Bind: false,
+		},
+		{
+			families:     mcfgv1.IPFamiliesIPv6,
+			wantIPv4Bind: false,
+			wantIPv6Bind: true,
+		},
+		{
+			families:     mcfgv1.IPFamiliesDualStack,
+			wantIPv4Bind: true,
+			wantIPv6Bind: true,
+		},
+		{
+			families:     mcfgv1.IPFamiliesDualStackIPv6Primary,
+			wantIPv4Bind: true,
+			wantIPv6Bind: true,
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(string(tc.families), func(t *testing.T) {
+			t.Parallel()
+			config := &mcfgv1.ControllerConfig{
+				Spec: mcfgv1.ControllerConfigSpec{
+					IPFamilies: tc.families,
+				},
+			}
+			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil}, path, templateData)
+			if err != nil {
+				t.Fatalf("renderTemplate: %v", err)
+			}
+			out := string(got)
+			if !strings.Contains(out, primaryBind) {
+				t.Fatalf("primary-ip bind block missing\n%s", out)
+			}
+			if strings.Contains(out, ipv4Bind) != tc.wantIPv4Bind {
+				t.Fatalf("ipv4 bind block: got %v want %v\n%s", strings.Contains(out, ipv4Bind), tc.wantIPv4Bind, out)
+			}
+			if strings.Contains(out, ipv6Bind) != tc.wantIPv6Bind {
+				t.Fatalf("ipv6 bind block: got %v want %v\n%s", strings.Contains(out, ipv6Bind), tc.wantIPv6Bind, out)
+			}
+		})
+	}
+}
+
 const templateDir = "../../../templates"
 
 var (
