@@ -43,22 +43,53 @@ func logAndError(format string, args ...interface{}) error {
 	return errors.New(msg)
 }
 
-// OsImageBuilderInNode encapsulates the functionality to build custom osImages inside a cluster node
+// OsImageBuilderInNode encapsulates the functionality to build custom osImages inside a cluster node.
+// Use NewOsImageBuilder() to create one, then call CreateAndDigestOsImage() and CleanUp().
 type OsImageBuilderInNode struct {
-	node *Node
-	baseImage,
-	osImage,
-	dockerFileCommands, // Full docker file but the "FROM basOsImage..." that will be calculated
-	dockerConfig,
-	httpProxy,
-	httpsProxy,
-	noProxy,
-	tmpDir,
-	remoteTmpDir,
-	remoteDockerConfig,
-	remoteDockerfile string
-	UseInternalRegistry,
-	BuildAsManifest bool // If true, build as manifest; if false, build as single image
+	// Required — set via NewOsImageBuilder()
+	node               *Node
+	dockerFileCommands string
+
+	// Options — set via WithInternalRegistry(), WithManifestBuild()
+	useInternalRegistry bool
+	buildAsManifest     bool
+
+	// Resolved by prepareEnvironment()
+	baseImage          string
+	osImage            string
+	dockerConfig       string
+	tmpDir             string
+	remoteTmpDir       string
+	remoteDockerConfig string
+	remoteDockerfile   string
+	httpProxy          string
+	httpsProxy         string
+	noProxy            string
+}
+
+// BuildOption configures optional behavior for OsImageBuilderInNode.
+type BuildOption func(*OsImageBuilderInNode)
+
+// WithInternalRegistry configures the builder to push images to the cluster's internal registry.
+func WithInternalRegistry() BuildOption {
+	return func(b *OsImageBuilderInNode) { b.useInternalRegistry = true }
+}
+
+// WithManifestBuild configures the builder to produce a manifest list instead of a single image.
+func WithManifestBuild() BuildOption {
+	return func(b *OsImageBuilderInNode) { b.buildAsManifest = true }
+}
+
+// NewOsImageBuilder creates a new OsImageBuilderInNode for the given node and Dockerfile commands.
+func NewOsImageBuilder(node *Node, dockerFileCommands string, opts ...BuildOption) *OsImageBuilderInNode {
+	b := &OsImageBuilderInNode{
+		node:               node,
+		dockerFileCommands: dockerFileCommands,
+	}
+	for _, o := range opts {
+		o(b)
+	}
+	return b
 }
 
 func (b *OsImageBuilderInNode) suppressOCOutput() func() {
@@ -102,12 +133,8 @@ func (b *OsImageBuilderInNode) prepareEnvironment() error {
 		return fmt.Errorf("error creating tmp dir %s in node %s. Error: %s", b.remoteTmpDir, b.node.GetName(), err)
 	}
 
-	if b.remoteDockerConfig == "" {
-		b.remoteDockerConfig = filepath.Join(b.remoteTmpDir, ".dockerconfigjson")
-	}
-	if b.remoteDockerfile == "" {
-		b.remoteDockerfile = filepath.Join(b.remoteTmpDir, "Dockerfile")
-	}
+	b.remoteDockerConfig = filepath.Join(b.remoteTmpDir, ".dockerconfigjson")
+	b.remoteDockerfile = filepath.Join(b.remoteTmpDir, "Dockerfile")
 
 	exutil.By("Prepare remote docker config file")
 	logger.Infof("Copy cluster config.json file")
@@ -138,7 +165,7 @@ func (b *OsImageBuilderInNode) prepareEnvironment() error {
 		return err
 	}
 
-	if b.UseInternalRegistry {
+	if b.useInternalRegistry {
 		// The images must be created inside the MCO namespace or MCO will not have permissions to pull them
 		b.osImage = fmt.Sprintf("%s/%s/%s:%s", InternalRegistrySvcURL, MachineConfigNamespace, "layering", uniqueTag)
 		if err := b.preparePushToInternalRegistry(); err != nil {
@@ -231,7 +258,7 @@ func (b *OsImageBuilderInNode) CleanUp() error {
 		}
 	}
 
-	if b.UseInternalRegistry {
+	if b.useInternalRegistry {
 		logger.Infof("Removing namespace %s", layeringTestsTmpNamespace)
 		err := b.node.oc.Run("delete").Args("namespace", layeringTestsTmpNamespace, "--ignore-not-found").Execute()
 		if err != nil {
@@ -283,12 +310,12 @@ func (b *OsImageBuilderInNode) buildImage() error {
 
 	imageFlag := "--tag"
 	logLabel := "single image"
-	if b.BuildAsManifest {
+	if b.buildAsManifest {
 		imageFlag = "--manifest"
 		logLabel = "manifest"
 	}
 	logger.Infof("Building as %s", logLabel)
-	buildCommand := b.proxyEnvPrefix() + " podman build  --network host " + buildPath + " " + imageFlag + " " + b.osImage + " --authfile " + b.remoteDockerConfig
+	buildCommand := b.proxyEnvPrefix() + " podman build --network host " + buildPath + " " + imageFlag + " " + b.osImage + " --authfile " + b.remoteDockerConfig
 	logger.Infof("Executing build command: %s", b.sanitizeCommand(buildCommand))
 
 	defer b.suppressOCOutput()()
@@ -311,7 +338,7 @@ func (b *OsImageBuilderInNode) buildImage() error {
 func (b *OsImageBuilderInNode) pushImage() error {
 	exutil.By("Push osImage")
 	var pushCommand string
-	if b.BuildAsManifest {
+	if b.buildAsManifest {
 		pushCommand = b.proxyEnvPrefix() + " podman manifest push " + b.osImage + " docker://" + b.osImage + " --authfile " + b.remoteDockerConfig
 		logger.Infof("Pushing as manifest")
 	} else {
@@ -342,7 +369,7 @@ func (b *OsImageBuilderInNode) removeImage() error {
 	exutil.By("Remove osImage")
 	var rmOutput string
 	var err error
-	if b.BuildAsManifest {
+	if b.buildAsManifest {
 		logger.Infof("Removing manifest")
 		rmOutput, err = b.node.DebugNodeWithChroot("podman", "manifest", "rm", b.osImage)
 	} else {

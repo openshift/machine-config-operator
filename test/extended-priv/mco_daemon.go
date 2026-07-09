@@ -453,10 +453,7 @@ ExecStartPre=/bin/bash -c "echo 'exec start pre'; /bin/sleep 15; echo 'exec star
 		logger.Infof("OK!\n")
 
 		// Build the new osImage
-		osImageBuilder := OsImageBuilderInNode{
-			node:               node,
-			dockerFileCommands: dockerFileCommands,
-		}
+		osImageBuilder := NewOsImageBuilder(node, dockerFileCommands)
 		digestedImage, err := osImageBuilder.CreateAndDigestOsImage()
 		o.Expect(err).NotTo(o.HaveOccurred(),
 			"Error creating the new osImage")

@@ -132,7 +132,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		// Build a new osImage that we will use to force a rebase in the broken node
 		exutil.By("Build new OSImage")
-		osImageBuilder := OsImageBuilderInNode{node: node, dockerFileCommands: dockerFileCommands}
+		osImageBuilder := NewOsImageBuilder(node, dockerFileCommands)
 		digestedImage, err := osImageBuilder.CreateAndDigestOsImage()
 		o.Expect(err).NotTo(o.HaveOccurred(),
 			"Error creating the new osImage")

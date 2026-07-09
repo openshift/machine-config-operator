@@ -230,10 +230,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		onClusterRF := NewRemoteFile(node, onClusterFile)
 
 		exutil.By("Build a custom OS image for off-cluster layering")
-		osImageBuilder := OsImageBuilderInNode{
-			node:               node,
-			dockerFileCommands: fmt.Sprintf("RUN echo \"off-cluster layering %s\" > %s\nRUN ostree container commit", testID, offClusterFile),
-		}
+		osImageBuilder := NewOsImageBuilder(node, fmt.Sprintf("RUN echo \"off-cluster layering %s\" > %s\nRUN ostree container commit", testID, offClusterFile))
 		digestedImage, err := osImageBuilder.CreateAndDigestOsImage()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the custom osImage for off-cluster layering")
 		logger.Infof("Built custom OS image: %s", digestedImage)

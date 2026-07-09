@@ -67,7 +67,7 @@ RUN update-ca-trust && \
 		logger.Infof("OK\n")
 
 		// Build the new osImage
-		osImageBuilder := OsImageBuilderInNode{node: node, dockerFileCommands: dockerFileCommands}
+		osImageBuilder := NewOsImageBuilder(node, dockerFileCommands)
 		digestedImage, err := osImageBuilder.CreateAndDigestOsImage()
 		o.Expect(err).NotTo(o.HaveOccurred(),
 			"Error creating the new osImage")
@@ -233,7 +233,7 @@ RUN update-ca-trust && \
 RUN echo "echo 'Hello world! '$(whoami)" > /usr/bin/tc_54159_rpm_and_osimage && chmod 1755 /usr/bin/tc_54159_rpm_and_osimage
 `
 		// Build the new osImage
-		osImageBuilder := OsImageBuilderInNode{node: node, dockerFileCommands: dockerFileCommands}
+		osImageBuilder := NewOsImageBuilder(node, dockerFileCommands)
 		digestedImage, berr := osImageBuilder.CreateAndDigestOsImage()
 		o.Expect(berr).NotTo(o.HaveOccurred(),
 			"Error creating the new osImage")
@@ -473,7 +473,7 @@ RUN printf '[baseos]\nname=CentOS-$releasever - Base\nbaseurl=http://mirror.stre
 		defer wMcp.WaitForUpdatedStatus()
 
 		// Build the new osImage
-		osImageBuilder := OsImageBuilderInNode{node: workerNode, dockerFileCommands: dockerFileCommands}
+		osImageBuilder := NewOsImageBuilder(workerNode, dockerFileCommands)
 		defer func() { _ = osImageBuilder.CleanUp() }()
 		digestedImage, err := osImageBuilder.CreateAndDigestOsImage()
 		o.Expect(err).NotTo(o.HaveOccurred(),
@@ -781,7 +781,7 @@ RUN printf '[baseos]\nname=CentOS-$releasever - Base\nbaseurl=http://mirror.stre
 
 		// Build the new osImage
 		g.By("Build a custom osImage")
-		osImageBuilder := OsImageBuilderInNode{node: workerNode, dockerFileCommands: dockerFileCommands}
+		osImageBuilder := NewOsImageBuilder(workerNode, dockerFileCommands)
 		digestedImage, err := osImageBuilder.CreateAndDigestOsImage()
 		o.Expect(err).NotTo(o.HaveOccurred(),
 			"Error creating the new osImage")
@@ -973,7 +973,7 @@ RUN printf '[baseos]\nname=CentOS-$releasever - Base\nbaseurl=http://mirror.stre
 
 		// Build the new osImage
 		g.By("Build a custom osImage")
-		osImageBuilder := OsImageBuilderInNode{node: workerNode, dockerFileCommands: dockerFileCommands}
+		osImageBuilder := NewOsImageBuilder(workerNode, dockerFileCommands)
 		digestedImage, err := osImageBuilder.CreateAndDigestOsImage()
 		o.Expect(err).NotTo(o.HaveOccurred(),
 			"Error creating the new osImage")
@@ -1097,8 +1097,7 @@ RUN touch %s
 		logger.Infof("Using pool %s and node %s for testing", mcp.GetName(), node.GetName())
 
 		// Build the new osImage
-		osImageBuilder := OsImageBuilderInNode{node: node, dockerFileCommands: dockerFileCommands}
-		osImageBuilder.UseInternalRegistry = true
+		osImageBuilder := NewOsImageBuilder(node, dockerFileCommands, WithInternalRegistry())
 		defer func() { _ = osImageBuilder.CleanUp() }()
 		digestedImage, err := osImageBuilder.CreateAndDigestOsImage()
 		o.Expect(err).NotTo(o.HaveOccurred(),
@@ -1185,7 +1184,7 @@ RUN printf '[baseos]\nname=CentOS-$releasever - Base\nbaseurl=http://mirror.stre
 
 		// Build the new osImage
 		g.By("Build a custom osImage")
-		osImageBuilder := OsImageBuilderInNode{node: node, dockerFileCommands: dockerFileCommands}
+		osImageBuilder := NewOsImageBuilder(node, dockerFileCommands)
 		digestedImage, err := osImageBuilder.CreateAndDigestOsImage()
 		o.Expect(err).NotTo(o.HaveOccurred(),
 			"Error creating the new osImage")
@@ -1281,8 +1280,7 @@ RUN echo '%s' > %s && chmod 0644 %s && ostree container commit
 		logger.Infof("OK!\n")
 
 		g.By("Build a new osImage as a manifest")
-		osImageBuilder := OsImageBuilderInNode{node: node, dockerFileCommands: dockerFileCommands}
-		osImageBuilder.BuildAsManifest = true
+		osImageBuilder := NewOsImageBuilder(node, dockerFileCommands, WithManifestBuild())
 		digestedImage, err := osImageBuilder.CreateAndDigestOsImage()
 		o.Expect(err).NotTo(o.HaveOccurred(),
 			"Error creating the new osImage as manifest")
