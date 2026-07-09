@@ -9,10 +9,6 @@ import (
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 )
 
-const (
-	workerLabelKey = "machineconfiguration.openshift.io/worker"
-)
-
 func platformBasedDisksPatch(platform string, ms *MachineSet) error {
 	var err error
 	switch platform {
@@ -33,13 +29,15 @@ func platformBasedDisksPatch(platform string, ms *MachineSet) error {
 func platformBasedDisksNames(platform string) []string {
 	switch platform {
 	case AWSPlatform:
+		// See: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/nvme-ebs-volumes.html
 		return []string{
 			"/dev/nvme1n1",
 			"/dev/nvme2n1",
 			"/dev/nvme3n1",
 			"/dev/nvme4n1",
 		}
-	case GCPPlatform, VspherePlatform:
+	case GCPPlatform:
+		// See: https://docs.cloud.google.com/compute/docs/disks/set-persistent-device-name-in-linux-vm and https://docs.cloud.google.com/compute/docs/disks/disk-symlinks
 		return []string{
 			"/dev/sdb",
 			"/dev/sdc",
@@ -47,11 +45,22 @@ func platformBasedDisksNames(platform string) []string {
 			"/dev/sde",
 		}
 	case AzurePlatform:
+		// See: https://learn.microsoft.com/en-us/troubleshoot/azure/virtual-machines/linux/troubleshoot-device-names-problems
 		return []string{
 			"/dev/disk/azure/scsi1/lun0",
 			"/dev/disk/azure/scsi1/lun1",
 			"/dev/disk/azure/scsi1/lun2",
 			"/dev/disk/azure/scsi1/lun3",
+		}
+	case VspherePlatform:
+		// vSphere data disks are added sequentially to the SCSI controller starting
+		// at unit 1 (unit 0 is the boot disk), so /dev/sd[b-e] mapping is stable
+		// for simple configurations without extra SCSI controllers.
+		return []string{
+			"/dev/sdb",
+			"/dev/sdc",
+			"/dev/sdd",
+			"/dev/sde",
 		}
 	}
 	return []string{}
@@ -63,6 +72,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	var (
 		oc       = exutil.NewCLI("mco-irreconcilable-changes", exutil.KubeConfigPath()).AsAdmin()
 		platform = exutil.CheckPlatform(oc)
+		mcpool   = MachineConfigPoolWorker
 	)
 
 	g.JustBeforeEach(func() {
@@ -77,7 +87,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			machineconfiguration = GetMachineConfiguration(oc)
 			mcName               = "irreconcilable-base-test"
 			initialMcSpecs       = machineconfiguration.GetSpecOrFail()
-			mcpool               = "worker"
 		)
 
 		mcp := NewMachineConfigPool(oc, mcpool)
@@ -112,13 +121,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		defer mc.DeleteWithWait()
 
 		exutil.By("Step 3: Verify all worker nodes report irreconcilable changes")
-		workerNodes, err := mcp.getSelectedNodes(workerLabelKey)
-		o.Expect(err).NotTo(o.HaveOccurred())
+		workerNodes := mcp.GetSortedNodesOrFail()
 
 		for _, node := range workerNodes {
-			o.Eventually(func() (string, error) {
-				return node.GetIrreconcilableChanges()
-			}, "5m", "10s").Should(o.SatisfyAll(
+			o.Eventually(node.GetIrreconcilableChanges, "5m", "10s").Should(o.SatisfyAll(
 				o.ContainSubstring("spec.config.storage.disks"),
 				o.ContainSubstring("spec.config.storage.raid"),
 				o.ContainSubstring("spec.config.storage.filesystems"),
@@ -133,7 +139,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			machineconfiguration = GetMachineConfiguration(oc)
 			mcName               = "irreconcilable-scaleup-test"
 			initialMcSpecs       = machineconfiguration.GetSpecOrFail()
-			mcpool               = "worker"
+			mcpool               = MachineConfigPoolWorker
 		)
 
 		SkipTestIfWorkersCannotBeScaled(oc)
@@ -171,13 +177,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		defer mc.DeleteWithWait()
 
 		exutil.By("Step 3: Verify old nodes report only storage irreconcilable changes (not files)")
-		workerNodes, err := mcp.getSelectedNodes(workerLabelKey)
-		o.Expect(err).NotTo(o.HaveOccurred())
+		workerNodes := mcp.GetSortedNodesOrFail()
 
 		for _, node := range workerNodes {
-			o.Eventually(func() (string, error) {
-				return node.GetIrreconcilableChanges()
-			}, "5m", "10s").Should(o.ContainSubstring("spec.config.storage.disks"),
+			o.Eventually(node.GetIrreconcilableChanges, "5m", "10s").Should(o.ContainSubstring("spec.config.storage.disks"),
 				"Node %s should have irreconcilable changes for storage.disks", node.GetName())
 			logger.Infof("Node %s has irreconcilable changes as expected", node.GetName())
 		}
@@ -212,19 +215,14 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		newNode := newNodes[0]
 		logger.Infof("New node is: %s", newNode.GetName())
 
-		newExtNode := NewNode(oc.AsAdmin(), newNode.GetName())
-		o.Eventually(func() (string, error) {
-			return newExtNode.GetIrreconcilableChanges()
-		}, "5m", "10s").Should(o.BeEmpty(), "New node should have no irreconcilable changes")
+		o.Eventually(newNode.GetIrreconcilableChanges, "5m", "10s").Should(o.BeEmpty(), "New node should have no irreconcilable changes")
 		logger.Infof("New node %s has no irreconcilable changes as expected\n", newNode.GetName())
 
 		exutil.By("Step 6: Verify storage configuration on new node")
-		_, err = newExtNode.DebugNodeWithChroot("mount", "/dev/md/data", "/var/lib/data")
+		_, err = newNode.DebugNodeWithChroot("mount", "/dev/md/data", "/var/lib/data")
 		o.Expect(err).NotTo(o.HaveOccurred())
 
-		stdout, err := newExtNode.DebugNodeWithChroot("mdadm", "--detail", "--scan")
-		o.Expect(err).NotTo(o.HaveOccurred())
-		o.Expect(stdout).Should(o.ContainSubstring("/dev/md/data"))
+		o.Expect(newNode.DebugNodeWithChroot("mdadm", "--detail", "--scan")).Should(o.ContainSubstring("/dev/md/data"))
 		logger.Infof("Storage configuration verified on new node\n")
 
 		exutil.By("Step 7: Delete the irreconcilable MC")
@@ -232,18 +230,14 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		exutil.By("Step 8: Verify old nodes have irreconcilable changes cleared")
 		for _, node := range workerNodes {
-			o.Eventually(func() (string, error) {
-				return node.GetIrreconcilableChanges()
-			}, "5m", "10s").Should(o.BeEmpty(),
+			o.Eventually(node.GetIrreconcilableChanges, "5m", "10s").Should(o.BeEmpty(),
 				"Node %s should have cleared irreconcilable changes after MC removal", node.GetName())
 			logger.Infof("Node %s has cleared irreconcilable changes as expected", node.GetName())
 		}
 		logger.Infof("All existing worker nodes have cleared irreconcilable changes!\n")
 
 		exutil.By("Step 9: Verify new node now reports irreconcilable changes")
-		o.Eventually(func() (string, error) {
-			return newExtNode.GetIrreconcilableChanges()
-		}, "5m", "10s").Should(o.SatisfyAll(
+		o.Eventually(newNode.GetIrreconcilableChanges, "5m", "10s").Should(o.SatisfyAll(
 			o.ContainSubstring("spec.config.storage.disks"),
 			o.ContainSubstring("spec.config.storage.raid"),
 			o.ContainSubstring("spec.config.storage.filesystems"),
@@ -256,7 +250,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			machineconfiguration = GetMachineConfiguration(oc)
 			mcName               = "irreconcilable-persist-test"
 			initialMcSpecs       = machineconfiguration.GetSpecOrFail()
-			mcpool               = "worker"
 		)
 
 		mcp := NewMachineConfigPool(oc, mcpool)
@@ -298,13 +291,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		}()
 
 		exutil.By("Step 3: Verify nodes report irreconcilable changes")
-		workerNodes, err := mcp.getSelectedNodes(workerLabelKey)
-		o.Expect(err).NotTo(o.HaveOccurred())
+		workerNodes := mcp.GetSortedNodesOrFail()
 
 		for _, node := range workerNodes {
-			o.Eventually(func() (string, error) {
-				return node.GetIrreconcilableChanges()
-			}, "5m", "10s").Should(o.SatisfyAll(
+			o.Eventually(node.GetIrreconcilableChanges, "5m", "10s").Should(o.SatisfyAll(
 				o.ContainSubstring("spec.config.storage.disks"),
 				o.ContainSubstring("spec.config.storage.raid"),
 				o.ContainSubstring("spec.config.storage.filesystems"),
@@ -321,9 +311,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		exutil.By("Step 5: Verify irreconcilable changes persist after disabling")
 		for _, node := range workerNodes {
-			o.Eventually(func() (string, error) {
-				return node.GetIrreconcilableChanges()
-			}, "5m", "10s").Should(o.SatisfyAll(
+			o.Eventually(node.GetIrreconcilableChanges, "5m", "10s").Should(o.SatisfyAll(
 				o.ContainSubstring("spec.config.storage.disks"),
 				o.ContainSubstring("spec.config.storage.raid"),
 				o.ContainSubstring("spec.config.storage.filesystems"),
@@ -344,11 +332,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		)
 		o.Expect(err).NotTo(o.HaveOccurred())
 
-		o.Eventually(func() (string, error) {
-			return mcp.Get(`{.status.conditions[?(@.type=="RenderDegraded")].status}`)
-		}, "5m", "10s").Should(o.Equal("True"), "MCP should be RenderDegraded after applying irreconcilable MC without override")
-		o.Expect(mcp).Should(HaveConditionField("RenderDegraded", "message",
-			o.ContainSubstring("ignition disks section contains changes")))
+		o.Eventually(mcp, "5m", "10s").Should(o.SatisfyAll(
+			HaveConditionField("RenderDegraded", "status", o.Equal("True")),
+			HaveConditionField("RenderDegraded", "message", o.ContainSubstring("ignition disks section contains changes")),
+		), "MCP should be RenderDegraded after applying irreconcilable MC without override")
 
 		defer func() {
 			mc2.DeleteWithWait()
@@ -361,7 +348,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			machineconfiguration = GetMachineConfiguration(oc)
 			mcName               = "irreconcilable-clear-test"
 			initialMcSpecs       = machineconfiguration.GetSpecOrFail()
-			mcpool               = "worker"
 		)
 
 		mcp := NewMachineConfigPool(oc, mcpool)
@@ -395,13 +381,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		defer mc.DeleteWithWait()
 
 		exutil.By("Step 2: Verify nodes report irreconcilable changes")
-		workerNodes, err := mcp.getSelectedNodes(workerLabelKey)
-		o.Expect(err).NotTo(o.HaveOccurred())
+		workerNodes := mcp.GetSortedNodesOrFail()
 
 		for _, node := range workerNodes {
-			o.Eventually(func() (string, error) {
-				return node.GetIrreconcilableChanges()
-			}, "5m", "10s").Should(o.SatisfyAll(
+			o.Eventually(node.GetIrreconcilableChanges, "5m", "10s").Should(o.SatisfyAll(
 				o.ContainSubstring("spec.config.storage.disks"),
 				o.ContainSubstring("spec.config.storage.raid"),
 				o.ContainSubstring("spec.config.storage.filesystems"),
@@ -415,9 +398,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		exutil.By("Step 4: Verify irreconcilable changes cleared on all nodes")
 		for _, node := range workerNodes {
-			o.Eventually(func() (string, error) {
-				return node.GetIrreconcilableChanges()
-			}, "5m", "10s").Should(o.BeEmpty(),
+			o.Eventually(node.GetIrreconcilableChanges, "5m", "10s").Should(o.BeEmpty(),
 				"Node %s should have cleared irreconcilable changes after MC removal", node.GetName())
 			logger.Infof("Node %s has cleared irreconcilable changes as expected", node.GetName())
 		}
@@ -427,7 +408,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	g.It("Irreconcilable MC rejected without override enabled", g.Label("Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere"), func() {
 		var (
 			mcName = "irreconcilable-reject-test"
-			mcpool = "worker"
 		)
 
 		mcp := NewMachineConfigPool(oc, mcpool)
@@ -445,11 +425,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		defer mc.DeleteWithWait()
 
 		exutil.By("Step 2: Verify MCP becomes RenderDegraded")
-		o.Eventually(func() (string, error) {
-			return mcp.Get(`{.status.conditions[?(@.type=="RenderDegraded")].status}`)
-		}, "5m", "10s").Should(o.Equal("True"), "MCP should be RenderDegraded after applying irreconcilable MC without override")
-		o.Expect(mcp).Should(HaveConditionField("RenderDegraded", "message",
-			o.ContainSubstring("ignition disks section contains changes")))
+		o.Eventually(mcp, "5m", "10s").Should(o.SatisfyAll(
+			HaveConditionField("RenderDegraded", "status", o.Equal("True")),
+			HaveConditionField("RenderDegraded", "message", o.ContainSubstring("ignition disks section contains changes")),
+		), "MCP should be RenderDegraded after applying irreconcilable MC without override")
 
 		exutil.By("Step 3: Delete MC and verify pool recovers")
 		mc.DeleteWithWait()
