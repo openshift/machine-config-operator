@@ -378,9 +378,6 @@ func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 	if len(kcDecoded.FeatureGates) > 0 {
 		return fmt.Errorf("KubeletConfiguration: featureGates is not allowed to be set, but contains: %v", kcDecoded.FeatureGates)
 	}
-	if kcDecoded.StaticPodPath != "" {
-		return fmt.Errorf("KubeletConfiguration: staticPodPath is not allowed to be set, but contains: %s", kcDecoded.StaticPodPath)
-	}
 	if kcDecoded.FailSwapOn != nil {
 		return fmt.Errorf("KubeletConfiguration: failSwapOn is not allowed to be set, but contains: %v", *kcDecoded.FailSwapOn)
 	}
@@ -396,6 +393,51 @@ func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 		return fmt.Errorf("KubeletConfiguration: systemReservedCgroup (%s) must match systemCgroups (%s)", kcDecoded.SystemReservedCgroup, kcDecoded.SystemCgroups)
 	}
 	return nil
+}
+
+// validateStaticPodPathGivenPool validates staticPodPath based on the target pool.
+// Control plane pools cannot have staticPodPath set at all.
+// Worker and custom pools may only set staticPodPath to "" to disable static pods.
+func validateStaticPodPathGivenPool(cfg *mcfgv1.KubeletConfig, pool *mcfgv1.MachineConfigPool) error {
+	if cfg.Spec.KubeletConfig == nil || cfg.Spec.KubeletConfig.Raw == nil {
+		return nil
+	}
+	if isControlPlanePool(pool) {
+		if strings.Contains(string(cfg.Spec.KubeletConfig.Raw), "\"staticPodPath\"") {
+			return fmt.Errorf("KubeletConfiguration: staticPodPath is not allowed to be set for control plane pool %q", pool.Name)
+		}
+		return nil
+	}
+	kcDecoded, err := DecodeKubeletConfig(cfg.Spec.KubeletConfig.Raw)
+	if err != nil {
+		return fmt.Errorf("KubeletConfig could not be unmarshalled, err: %w", err)
+	}
+	if kcDecoded.StaticPodPath != "" {
+		return fmt.Errorf("KubeletConfiguration: staticPodPath must be empty for pool %q, but contains: %s", pool.Name, kcDecoded.StaticPodPath)
+	}
+	return nil
+}
+
+// isControlPlanePool returns true if the pool targets control plane nodes,
+// either by name (master, arbiter) or by selecting nodes with the master label.
+func isControlPlanePool(pool *mcfgv1.MachineConfigPool) bool {
+	if pool.Name == ctrlcommon.MachineConfigPoolMaster || pool.Name == ctrlcommon.MachineConfigPoolArbiter {
+		return true
+	}
+	if pool.Spec.NodeSelector == nil {
+		return false
+	}
+	if pool.Spec.NodeSelector.MatchLabels != nil {
+		if _, ok := pool.Spec.NodeSelector.MatchLabels[ctrlcommon.MasterLabel]; ok {
+			return true
+		}
+	}
+	for _, expr := range pool.Spec.NodeSelector.MatchExpressions {
+		if expr.Key == ctrlcommon.MasterLabel && (expr.Operator == metav1.LabelSelectorOpExists || expr.Operator == metav1.LabelSelectorOpIn) {
+			return true
+		}
+	}
+	return false
 }
 
 func wrapErrorWithCondition(err error, args ...interface{}) mcfgv1.KubeletConfigCondition {
