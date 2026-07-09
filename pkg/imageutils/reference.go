@@ -8,6 +8,7 @@ import (
 	"github.com/containers/common/pkg/retry"
 	"github.com/containers/image/v5/docker"
 	"github.com/containers/image/v5/types"
+	"github.com/distribution/reference"
 )
 
 // GetImageSourceFromReference creates an ImageSource from an ImageReference with retry logic.
@@ -38,4 +39,18 @@ func ParseImageName(imgName string) (types.ImageReference, error) {
 	}
 
 	return docker.Transport.ParseReference(imgName)
+}
+
+// DigestFromPullspec extracts the digest from a digest-based image reference
+// (e.g. "registry/repo@sha256:abc..."). Returns an empty string for tag-only
+// references or unparseable input.
+func DigestFromPullspec(image string) string {
+	ref, err := reference.Parse(image)
+	if err != nil {
+		return ""
+	}
+	if digested, ok := ref.(reference.Digested); ok {
+		return digested.Digest().String()
+	}
+	return ""
 }
