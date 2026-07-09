@@ -23,6 +23,9 @@ spec:
         args:
         - "start"
         - "--v={{.LogLevel}}"
+        {{if .PprofEnabled}}- "--enable-pprof"
+        - "--pprof-port={{index .PprofPorts "machine-os-builder"}}"
+        {{end}}
         resources:
           requests:
             cpu: 20m

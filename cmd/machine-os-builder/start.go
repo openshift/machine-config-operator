@@ -9,6 +9,7 @@ import (
 	"github.com/openshift/machine-config-operator/internal/clients"
 	"github.com/openshift/machine-config-operator/pkg/controller/build"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/pprof"
 	"k8s.io/client-go/tools/leaderelection"
 
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -27,11 +28,18 @@ var (
 	startOpts struct {
 		kubeconfig string
 	}
+
+	pprofConfig *pprof.Config
 )
 
 func init() {
 	rootCmd.AddCommand(startCmd)
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeconfig, "kubeconfig", "", "Kubeconfig file to access a remote cluster (testing only)")
+
+	// Add pprof flags
+	pprofFlags, pprofCfg := pprof.GetPprofFlags()
+	pprofConfig = pprofCfg
+	startCmd.PersistentFlags().AddFlagSet(pprofFlags)
 }
 
 func runStartCmd(_ *cobra.Command, _ []string) {
@@ -48,6 +56,13 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	// the leader elections. Cancelling this is "stop everything, we are shutting down".
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Start pprof if enabled
+	if pprofConfig.Enabled {
+		if _, err := pprof.StartPprof(ctx, pprofConfig.Port); err != nil {
+			klog.Warningf("Failed to start pprof: %v", err)
+		}
+	}
 
 	cb, err := clients.NewBuilder("")
 	if err != nil {

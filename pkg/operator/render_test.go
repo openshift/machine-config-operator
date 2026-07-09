@@ -258,8 +258,8 @@ func TestRenderAsset(t *testing.T) {
 			// Test that machineconfigdaemon DaemonSets are rendered correctly with proxy config
 			Path: "manifests/machineconfigdaemon/daemonset.yaml",
 			RenderConfig: &renderConfig{
-				TargetNamespace:  "testing-namespace",
-				ReleaseVersion:   "4.8.0-rc.0",
+				TargetNamespace: "testing-namespace",
+				ReleaseVersion:  "4.8.0-rc.0",
 				Images: &ctrlcommon.RenderConfigImages{
 					MachineConfigOperator: "mco-operator-image",
 					KubeRbacProxy:         "kube-rbac-proxy-image",
@@ -295,6 +295,118 @@ func TestRenderAsset(t *testing.T) {
 			},
 			FindExpected: []string{
 				"--payload-version=4.8.0-rc.0",
+			},
+		},
+		{
+			// Test that pprof flags are NOT rendered when PprofEnabled is false
+			Path: "manifests/machineconfigcontroller/deployment.yaml",
+			RenderConfig: &renderConfig{
+				TargetNamespace: "testing-namespace",
+				ReleaseVersion:  "4.8.0-rc.0",
+				Images: &ctrlcommon.RenderConfigImages{
+					MachineConfigOperator: "mco-operator-image",
+				},
+				PprofEnabled: false,
+			},
+			NotFindExpected: []string{
+				"--enable-pprof",
+				"--pprof-port",
+			},
+		},
+		{
+			// Test that pprof flags ARE rendered when PprofEnabled is true with default ports
+			Path: "manifests/machineconfigcontroller/deployment.yaml",
+			RenderConfig: &renderConfig{
+				TargetNamespace: "testing-namespace",
+				ReleaseVersion:  "4.8.0-rc.0",
+				Images: &ctrlcommon.RenderConfigImages{
+					MachineConfigOperator: "mco-operator-image",
+				},
+				PprofEnabled: true,
+				PprofPorts: map[string]int{
+					"machine-config-controller": 6060,
+				},
+			},
+			FindExpected: []string{
+				"--enable-pprof",
+				"--pprof-port=6060",
+			},
+		},
+		{
+			// Test that pprof flags with custom port are rendered correctly
+			Path: "manifests/machineconfigcontroller/deployment.yaml",
+			RenderConfig: &renderConfig{
+				TargetNamespace: "testing-namespace",
+				ReleaseVersion:  "4.8.0-rc.0",
+				Images: &ctrlcommon.RenderConfigImages{
+					MachineConfigOperator: "mco-operator-image",
+				},
+				PprofEnabled: true,
+				PprofPorts: map[string]int{
+					"machine-config-controller": 7070,
+				},
+			},
+			FindExpected: []string{
+				"--enable-pprof",
+				"--pprof-port=7070",
+			},
+		},
+		{
+			// Test pprof flags for machine-config-daemon
+			Path: "manifests/machineconfigdaemon/daemonset.yaml",
+			RenderConfig: &renderConfig{
+				TargetNamespace: "testing-namespace",
+				ReleaseVersion:  "4.8.0-rc.0",
+				Images: &ctrlcommon.RenderConfigImages{
+					MachineConfigOperator: "mco-operator-image",
+					KubeRbacProxy:         "kube-rbac-proxy-image",
+				},
+				PprofEnabled: true,
+				PprofPorts: map[string]int{
+					"machine-config-daemon": 6061,
+				},
+			},
+			FindExpected: []string{
+				"--enable-pprof",
+				"--pprof-port=6061",
+			},
+		},
+		{
+			// Test pprof flags for machine-config-server
+			Path: "manifests/machineconfigserver/daemonset.yaml",
+			RenderConfig: &renderConfig{
+				TargetNamespace: "testing-namespace",
+				ReleaseVersion:  "4.8.0-rc.0",
+				Images: &ctrlcommon.RenderConfigImages{
+					MachineConfigOperator: "mco-operator-image",
+				},
+				PprofEnabled: true,
+				PprofPorts: map[string]int{
+					"machine-config-server": 6063,
+				},
+			},
+			FindExpected: []string{
+				"--enable-pprof",
+				"--pprof-port=6063",
+			},
+		},
+		{
+			// Test pprof flags for machine-os-builder
+			Path: "manifests/machineosbuilder/deployment.yaml",
+			RenderConfig: &renderConfig{
+				TargetNamespace: "testing-namespace",
+				ReleaseVersion:  "4.8.0-rc.0",
+				Images: &ctrlcommon.RenderConfigImages{
+					MachineConfigOperator: "mco-operator-image",
+				},
+				PprofEnabled: true,
+				PprofPorts: map[string]int{
+					"machine-os-builder": 6064,
+				},
+			},
+			FindExpected: []string{
+				"--enable-pprof",
+				"--pprof-port=6064",
 			},
 		},
 	}
