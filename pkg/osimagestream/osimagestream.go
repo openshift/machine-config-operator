@@ -8,10 +8,10 @@ import (
 	"maps"
 	"slices"
 
-	"github.com/containers/image/v5/types"
 	imagev1 "github.com/openshift/api/image/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/imageutils"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sversion "k8s.io/apimachinery/pkg/util/version"
@@ -31,7 +31,7 @@ type StreamSource interface {
 // ImageStreamFactory creates OS image streams for different runtime contexts.
 type ImageStreamFactory interface {
 	// Create builds an OSImageStream from the configured sources and options.
-	Create(ctx context.Context, sysCtx *types.SystemContext, opts CreateOptions) (*mcfgv1.OSImageStream, error)
+	Create(ctx context.Context, sysCtxFactory imageutils.SysContextFactory, opts CreateOptions) (*mcfgv1.OSImageStream, error)
 }
 
 // CreateOptions configures how an OSImageStream is built.
@@ -65,9 +65,9 @@ func NewDefaultStreamSourceFactory(inspectorFactory ImagesInspectorFactory) *Def
 }
 
 // Create builds an OSImageStream from the configured sources and options.
-func (f *DefaultStreamSourceFactory) Create(ctx context.Context, sysCtx *types.SystemContext, createOptions CreateOptions) (*mcfgv1.OSImageStream, error) {
+func (f *DefaultStreamSourceFactory) Create(ctx context.Context, sysCtxFactory imageutils.SysContextFactory, createOptions CreateOptions) (*mcfgv1.OSImageStream, error) {
 	var sources []StreamSource
-	imagesInspector := f.inspectorFactory.ForContext(sysCtx)
+	imagesInspector := f.inspectorFactory.ForContext(sysCtxFactory)
 	discoverer := NewStreamDiscoverer(imagesInspector, f.imagesExtractor)
 	if createOptions.CliImages != nil {
 		sources = append(sources, NewOSImagesURLStreamSource(NewStaticURLProvider(*createOptions.CliImages), discoverer))

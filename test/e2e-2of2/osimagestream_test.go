@@ -6,6 +6,7 @@ import (
 
 	"github.com/openshift/machine-config-operator/internal/clients"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/imageutils"
 	"github.com/openshift/machine-config-operator/pkg/osimagestream"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/stretchr/testify/assert"
@@ -47,11 +48,9 @@ func TestImageStreamProviderCVO(t *testing.T) {
 	assert.Equal(t, getCVOImage(t, cs), image)
 
 	sysContext := setupSysContext(t, cs)
-	defer func() {
-		require.NoError(t, sysContext.Cleanup())
-	}()
+	sysCtxFactory := func() (*imageutils.SysContext, error) { return sysContext, nil }
 
-	isNetProvider := osimagestream.NewImageStreamProviderNetwork(osimagestream.NewImagesInspector(sysContext.SysContext), image)
+	isNetProvider := osimagestream.NewImageStreamProviderNetwork(osimagestream.NewImagesInspector(sysCtxFactory), image)
 	imageStream, err := isNetProvider.ReadImageStream(ctx)
 	assert.NoError(t, err)
 	assert.NotNil(t, imageStream)

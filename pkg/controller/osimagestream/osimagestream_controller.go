@@ -389,20 +389,13 @@ func (ctrl *Controller) buildOSImageStream(ctx context.Context, existing *mcfgv1
 		return fmt.Errorf("could not get the cluster PullSecret for OSImageStream sync: %w", err)
 	}
 
-	sysCtxBuilder, err := ctrl.getSysContextBuilder(clusterPullSecret, cc)
-	if err != nil {
-		return fmt.Errorf("could not build SysContext for OSImageStream build: %w", err)
-	}
-
-	sysCtx, err := sysCtxBuilder.Build()
-	if err != nil {
-		return fmt.Errorf("could not prepare for OSImageStream inspection: %w", err)
-	}
-	defer func() {
-		if err := sysCtx.Cleanup(); err != nil {
-			klog.Warningf("Unable to clean resources after OSImageStream inspection: %s", err)
+	sysCtxFactory := func() (*imageutils.SysContext, error) {
+		builder, err := ctrl.getSysContextBuilder(clusterPullSecret, cc)
+		if err != nil {
+			return nil, fmt.Errorf("could not build SysContext for OSImageStream build: %w", err)
 		}
-	}()
+		return builder.Build()
+	}
 
 	buildCtx, buildCancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer buildCancel()
@@ -410,7 +403,7 @@ func (ctrl *Controller) buildOSImageStream(ctx context.Context, existing *mcfgv1
 	factory := osimagestream.NewDefaultStreamSourceFactory(&osimagestream.DefaultImagesInspectorFactory{})
 	osImageStream, err := factory.Create(
 		buildCtx,
-		sysCtx.SysContext,
+		sysCtxFactory,
 		osimagestream.CreateOptions{
 			ReleaseImage:          image,
 			ConfigMapLister:       ctrl.mcoCmLister,

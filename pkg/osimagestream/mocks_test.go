@@ -88,6 +88,6 @@ type mockImagesInspectorFactory struct {
 	inspector ImagesInspector
 }
 
-func (f *mockImagesInspectorFactory) ForContext(_ *types.SystemContext) ImagesInspector {
+func (f *mockImagesInspectorFactory) ForContext(_ imageutils.SysContextFactory) ImagesInspector {
 	return f.inspector
 }

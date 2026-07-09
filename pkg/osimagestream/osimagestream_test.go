@@ -161,7 +161,7 @@ func TestDefaultStreamSourceFactory_Create_RuntimeBothSources(t *testing.T) {
 		"quay.io/openshift/release:4.16:/release-manifests/image-references": manifest,
 	})
 
-	result, err := factory.Create(context.Background(), &types.SystemContext{}, CreateOptions{
+	result, err := factory.Create(context.Background(), nil, CreateOptions{
 		ReleaseImage:    "quay.io/openshift/release:4.16",
 		ConfigMapLister: cmLister,
 		InstallVersion:  testInstallVersion,
@@ -182,7 +182,7 @@ func TestDefaultStreamSourceFactory_Create_RuntimeConfigMapOnly(t *testing.T) {
 		"quay.io/openshift/release:4.16:/release-manifests/image-references": manifest,
 	})
 
-	result, err := factory.Create(context.Background(), &types.SystemContext{}, CreateOptions{
+	result, err := factory.Create(context.Background(), nil, CreateOptions{
 		ReleaseImage:    "quay.io/openshift/release:4.16",
 		ConfigMapLister: cmLister,
 		InstallVersion:  testInstallVersion,
@@ -201,7 +201,7 @@ func TestDefaultStreamSourceFactory_Create_RuntimeBothSourcesFail(t *testing.T) 
 	cmLister := newTestEmptyConfigMapLister()
 	factory := newTestFactory(map[string]*types.ImageInspectInfo{}, nil)
 
-	result, err := factory.Create(context.Background(), &types.SystemContext{}, CreateOptions{
+	result, err := factory.Create(context.Background(), nil, CreateOptions{
 		ReleaseImage:    "quay.io/openshift/release:4.16",
 		ConfigMapLister: cmLister,
 	})
@@ -220,7 +220,7 @@ func TestDefaultStreamSourceFactory_Create_RuntimeMultipleStreams(t *testing.T) 
 		"quay.io/openshift/release:4.16:/release-manifests/image-references": manifest,
 	})
 
-	result, err := factory.Create(context.Background(), &types.SystemContext{}, CreateOptions{
+	result, err := factory.Create(context.Background(), nil, CreateOptions{
 		ReleaseImage:    "quay.io/openshift/release:4.16",
 		ConfigMapLister: cmLister,
 		InstallVersion:  testInstallVersion,
@@ -243,7 +243,7 @@ func TestDefaultStreamSourceFactory_Create_BootstrapMultipleStreams(t *testing.T
 
 	factory := newTestFactory(newTestInspectData(testStreamDefRHEL9, testStreamDefRHEL10), nil)
 
-	result, err := factory.Create(context.Background(), &types.SystemContext{}, CreateOptions{
+	result, err := factory.Create(context.Background(), nil, CreateOptions{
 		ReleaseImageStream: imageStream,
 		InstallVersion:     testInstallVersion,
 	})
@@ -264,7 +264,7 @@ func TestDefaultStreamSourceFactory_Create_UserDefaultOverride(t *testing.T) {
 	})
 	factory := newTestFactory(newTestInspectData(testStreamDefRHEL9, testStreamDefRHEL10), nil)
 
-	result, err := factory.Create(context.Background(), &types.SystemContext{}, CreateOptions{
+	result, err := factory.Create(context.Background(), nil, CreateOptions{
 		ReleaseImageStream: imageStream,
 		InstallVersion:     testInstallVersion,
 		ExistingOSImageStream: &mcfgv1.OSImageStream{
@@ -286,7 +286,7 @@ func TestDefaultStreamSourceFactory_Create_BootstrapCliImagesOnly(t *testing.T) 
 	})
 	factory := newTestFactory(newTestInspectData(testStreamDefRHEL9), nil)
 
-	result, err := factory.Create(context.Background(), &types.SystemContext{}, CreateOptions{
+	result, err := factory.Create(context.Background(), nil, CreateOptions{
 		CliImages:          &OSImageTuple{OSImage: testStreamDefRHEL9.osImage, OSExtensionsImage: testStreamDefRHEL9.extImage},
 		ReleaseImageStream: imageStream,
 		InstallVersion:     testInstallVersion,
@@ -315,7 +315,7 @@ func TestDefaultStreamSourceFactory_Create_PreservesExistingSpec(t *testing.T) {
 		Spec: mcfgv1.OSImageStreamSpec{DefaultStream: "rhel-9"},
 	}
 
-	result, err := factory.Create(context.Background(), &types.SystemContext{}, CreateOptions{
+	result, err := factory.Create(context.Background(), nil, CreateOptions{
 		ReleaseImageStream:    imageStream,
 		InstallVersion:        testInstallVersion,
 		ExistingOSImageStream: existing,
@@ -334,7 +334,7 @@ func TestDefaultStreamSourceFactory_Create_BootstrapImageStreamOnly(t *testing.T
 	})
 	factory := newTestFactory(newTestInspectData(testStreamDefRHEL9), nil)
 
-	result, err := factory.Create(context.Background(), &types.SystemContext{}, CreateOptions{
+	result, err := factory.Create(context.Background(), nil, CreateOptions{
 		ReleaseImageStream: imageStream,
 		InstallVersion:     testInstallVersion,
 	})
@@ -356,7 +356,7 @@ func TestDefaultStreamSourceFactory_Create_BootstrapBothSources(t *testing.T) {
 	})
 	factory := newTestFactory(newTestInspectData(rhel9CLI, rhel9Stream), nil)
 
-	result, err := factory.Create(context.Background(), &types.SystemContext{}, CreateOptions{
+	result, err := factory.Create(context.Background(), nil, CreateOptions{
 		ReleaseImageStream: imageStream,
 		CliImages:          &OSImageTuple{OSImage: rhel9CLI.osImage, OSExtensionsImage: rhel9CLI.extImage},
 		InstallVersion:     testInstallVersion,
@@ -373,7 +373,7 @@ func TestDefaultStreamSourceFactory_Create_InstallVersionTakesPriority(t *testin
 	imageStream := newTestImageStream("5.0.0", testStreamDefRHEL9, testStreamDefRHEL10)
 	factory := newTestFactory(newTestInspectData(testStreamDefRHEL9, testStreamDefRHEL10), nil)
 
-	result, err := factory.Create(context.Background(), &types.SystemContext{}, CreateOptions{
+	result, err := factory.Create(context.Background(), nil, CreateOptions{
 		ReleaseImageStream: imageStream,
 		InstallVersion:     k8sversion.MustParseGeneric("4.22.0"),
 	})
@@ -392,7 +392,7 @@ func TestDefaultStreamSourceFactory_Create_DuplicateStreamsLastSourceWins(t *tes
 		"quay.io/openshift/release:4.16:/release-manifests/image-references": manifest,
 	})
 
-	result, err := factory.Create(context.Background(), &types.SystemContext{}, CreateOptions{
+	result, err := factory.Create(context.Background(), nil, CreateOptions{
 		ReleaseImage:    "quay.io/openshift/release:4.16",
 		ConfigMapLister: cmLister,
 		InstallVersion:  testInstallVersion,
@@ -415,7 +415,7 @@ func TestDefaultStreamSourceFactory_Create_PartialSourceFailure(t *testing.T) {
 	})
 	factory := newTestFactory(newTestInspectData(testStreamDefRHEL9), nil)
 
-	result, err := factory.Create(context.Background(), &types.SystemContext{}, CreateOptions{
+	result, err := factory.Create(context.Background(), nil, CreateOptions{
 		ReleaseImageStream: imageStream,
 		ConfigMapLister:    newTestEmptyConfigMapLister(),
 		InstallVersion:     testInstallVersion,
@@ -435,7 +435,7 @@ func TestDefaultStreamSourceFactory_Create_InvalidUserDefault(t *testing.T) {
 	})
 	factory := newTestFactory(newTestInspectData(testStreamDefRHEL9), nil)
 
-	_, err := factory.Create(context.Background(), &types.SystemContext{}, CreateOptions{
+	_, err := factory.Create(context.Background(), nil, CreateOptions{
 		ReleaseImageStream: imageStream,
 		InstallVersion:     testInstallVersion,
 		ExistingOSImageStream: &mcfgv1.OSImageStream{
@@ -456,7 +456,7 @@ func TestDefaultStreamSourceFactory_Create_FallsBackToBuildVersion(t *testing.T)
 	version.ReleaseVersion = "4.18.0"
 	defer func() { version.ReleaseVersion = originalReleaseVersion }()
 
-	result, err := factory.Create(context.Background(), &types.SystemContext{}, CreateOptions{
+	result, err := factory.Create(context.Background(), nil, CreateOptions{
 		ReleaseImageStream: imageStream,
 	})
 
@@ -467,7 +467,7 @@ func TestDefaultStreamSourceFactory_Create_FallsBackToBuildVersion(t *testing.T)
 func TestDefaultStreamSourceFactory_Create_BootstrapNoSources(t *testing.T) {
 	factory := newTestFactory(map[string]*types.ImageInspectInfo{}, nil)
 
-	result, err := factory.Create(context.Background(), &types.SystemContext{}, CreateOptions{})
+	result, err := factory.Create(context.Background(), nil, CreateOptions{})
 
 	require.Error(t, err)
 	assert.Nil(t, result)
