@@ -27,6 +27,12 @@ const (
 	// ReleaseImageVersionAnnotationKey is used to tag the rendered machineconfigs & controller config with the release image version.
 	ReleaseImageVersionAnnotationKey = "machineconfiguration.openshift.io/release-image-version"
 
+	// ReleasePayloadImageAnnotationKey tags the OSImageStream with the release payload image
+	// (ClusterVersion.Status.Desired.Image). Unlike ReleaseImageVersionAnnotationKey (which
+	// tracks the MCO binary hash for version-skew guards), this changes on every upgrade and
+	// is used solely to decide whether the OSImageStream needs rebuilding.
+	ReleasePayloadImageAnnotationKey = "machineconfiguration.openshift.io/release-payload-image"
+
 	// OSImageURLOverriddenKey is used to tag a rendered machineconfig when OSImageURL has been overridden from default using machineconfig
 	OSImageURLOverriddenKey = "machineconfiguration.openshift.io/os-image-url-overridden"
 

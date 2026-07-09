@@ -13,7 +13,6 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/imageutils"
 	"github.com/openshift/machine-config-operator/pkg/osimagestream"
-	"github.com/openshift/machine-config-operator/pkg/version"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -153,8 +152,8 @@ func (optr *Operator) buildOSImageStream(existingOSImageStream *mcfgv1.OSImageSt
 		klog.Infof("Created OSImageStream with %d available streams, default stream: %s",
 			len(osImageStream.Status.AvailableStreams), osImageStream.Status.DefaultStream)
 	} else {
-		oldVersion := existingOSImageStream.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey]
-		klog.V(4).Infof("Updating OSImageStream (previous version: %s, new version: %s)", oldVersion, version.Hash)
+		oldPayloadImage := existingOSImageStream.Annotations[ctrlcommon.ReleasePayloadImageAnnotationKey]
+		klog.V(4).Infof("Updating OSImageStream (previous release image: %s, new release image: %s)", oldPayloadImage, image)
 		// Update metadata/spec first (mainly for annotations)
 		// DeepCopy to avoid mutating the shared informer cache
 		desired := existingOSImageStream.DeepCopy()
@@ -240,8 +239,18 @@ func (optr *Operator) isOSImageStreamBuildRequired() (*mcfgv1.OSImageStream, boo
 		return nil, true, err
 	}
 
+	// Get the release payload image to check if it has changed
+	clusterVersion, err := osimagestream.GetClusterVersion(optr.clusterVersionLister)
+	if err != nil {
+		return existingOSImageStream, true, fmt.Errorf("getting cluster version for OSImageStream rebuild check: %w", err)
+	}
+	releaseImage, err := osimagestream.GetReleasePayloadImage(clusterVersion)
+	if err != nil {
+		return existingOSImageStream, true, fmt.Errorf("getting release image for OSImageStream rebuild check: %w", err)
+	}
+
 	// Check if an update is needed
-	if !osImageStreamRequiresRebuild(existingOSImageStream) {
+	if !osImageStreamRequiresRebuild(existingOSImageStream, releaseImage) {
 		klog.V(4).Info("OSImageStream is already up-to-date, skipping sync")
 		return existingOSImageStream, false, nil
 	}
@@ -304,11 +313,14 @@ func (optr *Operator) getExistingOSImageStream() (*mcfgv1.OSImageStream, error) 
 }
 
 // osImageStreamRequiresRebuild checks if the OSImageStream needs to be created or updated.
-// Returns true if osImageStream is nil, if its version annotation doesn't match the current version.
-func osImageStreamRequiresRebuild(osImageStream *mcfgv1.OSImageStream) bool {
+// Returns true if osImageStream is nil, or if its release image annotation doesn't match the
+// current release payload image. This uses the release payload image digest rather than the
+// MCO binary hash so that upgrades are detected even when the MCO image itself hasn't changed
+// (e.g., in CI upgrade jobs where only RHCOS images are rebuilt).
+func osImageStreamRequiresRebuild(osImageStream *mcfgv1.OSImageStream, releaseImage string) bool {
 	if osImageStream == nil {
 		return true
 	}
-	releaseVersion, ok := osImageStream.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey]
-	return !ok || releaseVersion != version.Hash
+	storedImage, ok := osImageStream.Annotations[ctrlcommon.ReleasePayloadImageAnnotationKey]
+	return !ok || storedImage != releaseImage
 }

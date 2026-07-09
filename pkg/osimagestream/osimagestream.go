@@ -96,11 +96,11 @@ func (f *DefaultStreamSourceFactory) Create(ctx context.Context, sysCtx *types.S
 		return nil, fmt.Errorf("could not find default OSImageStream in the available streams: %w", err)
 	}
 
-	return newOSImageStream(createOptions.ExistingOSImageStream, streams, defaultStream), nil
+	return newOSImageStream(createOptions.ExistingOSImageStream, streams, defaultStream, createOptions.ReleaseImage), nil
 }
 
 // newOSImageStream assembles the OSImageStream CR from the resolved streams, default, and existing spec.
-func newOSImageStream(existing *mcfgv1.OSImageStream, streams []mcfgv1.OSImageStreamSet, defaultStream string) *mcfgv1.OSImageStream {
+func newOSImageStream(existing *mcfgv1.OSImageStream, streams []mcfgv1.OSImageStreamSet, defaultStream, releaseImage string) *mcfgv1.OSImageStream {
 	if existing != nil {
 		defaultStream = existing.Spec.DefaultStream
 	}
@@ -110,6 +110,7 @@ func newOSImageStream(existing *mcfgv1.OSImageStream, streams []mcfgv1.OSImageSt
 			Name: ctrlcommon.ClusterInstanceNameOSImageStream,
 			Annotations: map[string]string{
 				ctrlcommon.ReleaseImageVersionAnnotationKey: version.Hash,
+				ctrlcommon.ReleasePayloadImageAnnotationKey: releaseImage,
 			},
 		},
 		Spec: mcfgv1.OSImageStreamSpec{
