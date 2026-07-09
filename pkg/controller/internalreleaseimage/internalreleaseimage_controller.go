@@ -239,7 +239,7 @@ func (ctrl *Controller) updateInternalReleaseImage(old, cur interface{}) {
 	newInternalReleaseImage := cur.(*mcfgv1.InternalReleaseImage)
 
 	if ctrl.internalReleaseImageChanged(oldInternalReleaseImage, newInternalReleaseImage) {
-		klog.V(4).Infof("mcfgv1.InternalReleaseImage %s updated", newInternalReleaseImage.Name)
+		klog.V(4).Infof("InternalReleaseImage %s updated", newInternalReleaseImage.Name)
 		ctrl.enqueueInternalReleaseImage()
 	}
 }
