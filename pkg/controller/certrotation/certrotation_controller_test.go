@@ -124,7 +124,7 @@ func (f *fixture) newController() *CertRotationController {
 		[]configv1.FeatureGateName{features.FeatureGateNoRegistryClusterInstall},
 		nil,
 	)
-	c, err := New(f.kubeClient, f.configClient, f.machineClient, f.aroClient, f.k8sI.Core().V1().Secrets(), f.k8sI.Core().V1().Secrets(), f.k8sI.Core().V1().ConfigMaps(), f.infraInformer.Config().V1().Infrastructures(), fgHandler, f.mcfgClient)
+	c, err := New(f.kubeClient, f.configClient, f.machineClient, f.aroClient, f.k8sI.Core().V1().Secrets(), f.k8sI.Core().V1().Secrets(), f.k8sI.Core().V1().ConfigMaps(), f.infraInformer.Config().V1().Infrastructures(), nil, fgHandler, f.mcfgClient)
 	require.NoError(f.t, err)
 
 	c.StartInformers()
@@ -464,7 +464,7 @@ func TestIRICertificateReconcileSkippedWhenFeatureGateDisabled(t *testing.T) {
 	c, err := New(f.kubeClient, f.configClient, f.machineClient, f.aroClient,
 		f.k8sI.Core().V1().Secrets(), f.k8sI.Core().V1().Secrets(),
 		f.k8sI.Core().V1().ConfigMaps(), f.infraInformer.Config().V1().Infrastructures(),
-		fgHandler, f.mcfgClient)
+		nil, fgHandler, f.mcfgClient)
 	require.NoError(t, err)
 
 	// reconcileIRICertificate must be a no-op when the feature gate is disabled.
@@ -474,6 +474,99 @@ func TestIRICertificateReconcileSkippedWhenFeatureGateDisabled(t *testing.T) {
 	_, err = f.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), ctrlcommon.InternalReleaseImageTLSSecretName, metav1.GetOptions{})
 	require.Error(t, err, "IRI TLS secret should not exist when feature gate is disabled")
 	require.True(t, k8serrors.IsNotFound(err))
+}
+
+func TestNewWithConfigurablePKI(t *testing.T) {
+	testCases := []struct {
+		name           string
+		enablePKI      bool
+		maoSecrets     []runtime.Object
+		machineObjects []runtime.Object
+	}{
+		{
+			name:           "ConfigurablePKI enabled wires PKI informer and syncs certs",
+			enablePKI:      true,
+			maoSecrets:     []runtime.Object{getGoodMAOSecret("test-user-data")},
+			machineObjects: []runtime.Object{getMachineSet("test-machine")},
+		},
+		{
+			name:           "ConfigurablePKI disabled with configInformerFactory does not wire PKI informer",
+			enablePKI:      false,
+			maoSecrets:     []runtime.Object{getGoodMAOSecret("test-user-data")},
+			machineObjects: []runtime.Object{getMachineSet("test-machine")},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			objects := []runtime.Object{}
+			objects = append(objects, tc.maoSecrets...)
+
+			infraObj := &configv1.Infrastructure{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cluster",
+				},
+				Status: configv1.InfrastructureStatus{
+					ControlPlaneTopology: configv1.HighlyAvailableTopologyMode,
+					APIServerInternalURL: "https://10.0.0.1:6443",
+				},
+			}
+
+			kubeClient := fake.NewSimpleClientset(objects...)
+			configClient := fakeconfigv1client.NewSimpleClientset(infraObj)
+			machineClient := fakemachineclientset.NewSimpleClientset(tc.machineObjects...)
+			mcfgClient := fakemcfgclientset.NewSimpleClientset()
+			aroClient := fakearoclientset.NewSimpleClientset()
+			k8sI := kubeinformers.NewSharedInformerFactory(kubeClient, noResyncPeriodFunc())
+			infraInformer := configinformers.NewSharedInformerFactory(configClient, noResyncPeriodFunc())
+
+			for _, obj := range tc.maoSecrets {
+				k8sI.Core().V1().Secrets().Informer().GetIndexer().Add(obj)
+			}
+			infraInformer.Config().V1().Infrastructures().Informer().GetIndexer().Add(infraObj)
+
+			enabledGates := []configv1.FeatureGateName{features.FeatureGateNoRegistryClusterInstall}
+			if tc.enablePKI {
+				enabledGates = append(enabledGates, features.FeatureGateConfigurablePKI)
+			}
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler(enabledGates, nil)
+
+			configInformerFactory := configinformers.NewSharedInformerFactory(configClient, noResyncPeriodFunc())
+
+			c, err := New(kubeClient, configClient, machineClient, aroClient,
+				k8sI.Core().V1().Secrets(), k8sI.Core().V1().Secrets(),
+				k8sI.Core().V1().ConfigMaps(), infraInformer.Config().V1().Infrastructures(),
+				configInformerFactory, fgHandler, mcfgClient)
+			require.NoError(t, err)
+
+			if tc.enablePKI {
+				// 5 caches: maoSecret, mcoSecret, mcoConfigMap, infra, pki
+				require.Len(t, c.cachesToSync, 5, "PKI informer HasSynced should be registered in cachesToSync")
+			} else {
+				// 4 caches: maoSecret, mcoSecret, mcoConfigMap, infra
+				require.Len(t, c.cachesToSync, 4, "PKI informer should not be registered when feature gate is disabled")
+			}
+
+			err = c.StartInformers()
+			require.NoError(t, err)
+
+			// Verify the controller can perform a cert sync
+			syncCtx := factory.NewSyncContext("test-sync", c.recorder)
+			require.NoError(t, c.syncHostnames())
+			for _, certRotator := range c.certRotators {
+				require.NoError(t, certRotator.Sync(context.TODO(), syncCtx))
+			}
+
+			// Verify the CA and TLS secrets were created
+			_, err = kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), ctrlcommon.MachineConfigServerCAName, metav1.GetOptions{})
+			require.NoError(t, err, "MCS CA secret should be created")
+
+			_, err = kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), ctrlcommon.MachineConfigServerTLSSecretName, metav1.GetOptions{})
+			require.NoError(t, err, "MCS TLS secret should be created")
+		})
+	}
 }
 
 func TestIsIRICertValid(t *testing.T) {
