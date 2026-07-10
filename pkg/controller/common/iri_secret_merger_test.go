@@ -9,15 +9,13 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
-	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/tools/cache"
 	corelistersv1 "k8s.io/client-go/listers/core/v1"
+	"k8s.io/client-go/tools/cache"
 )
 
 // --- test helpers ---
@@ -47,8 +45,8 @@ func cconfigWithDNS(baseDomain string) *mcfgv1.ControllerConfig {
 	}
 }
 
-func newIRIObject() *mcfgv1alpha1.InternalReleaseImage {
-	return &mcfgv1alpha1.InternalReleaseImage{
+func newIRIObject() *mcfgv1.InternalReleaseImage {
+	return &mcfgv1.InternalReleaseImage{
 		ObjectMeta: metav1.ObjectMeta{Name: InternalReleaseImageInstanceName},
 	}
 }
@@ -77,12 +75,12 @@ func newCCLister(cconfigs ...*mcfgv1.ControllerConfig) mcfglistersv1.ControllerC
 	return mcfglistersv1.NewControllerConfigLister(indexer)
 }
 
-func newIRILister(iris ...*mcfgv1alpha1.InternalReleaseImage) mcfglistersv1alpha1.InternalReleaseImageLister {
+func newIRILister(iris ...*mcfgv1.InternalReleaseImage) mcfglistersv1.InternalReleaseImageLister {
 	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
 	for _, iri := range iris {
 		indexer.Add(iri)
 	}
-	return mcfglistersv1alpha1.NewInternalReleaseImageLister(indexer)
+	return mcfglistersv1.NewInternalReleaseImageLister(indexer)
 }
 
 // --- object-based constructor tests ---
@@ -93,7 +91,6 @@ func TestIRISecretMergerFromObjects(t *testing.T) {
 	basePullSecret := `{"auths":{"quay.io":{"auth":"dGVzdDp0ZXN0"}}}`
 	validSecret := newIRIRegistryCredentialsSecret("testpassword")
 	validCconfig := cconfigWithDNS("example.com")
-	iri := newIRIObject()
 
 	tests := []struct {
 		name            string
@@ -101,7 +98,7 @@ func TestIRISecretMergerFromObjects(t *testing.T) {
 		secret          *corev1.Secret
 		cconfig         *mcfgv1.ControllerConfig
 		fgHandler       FeatureGatesHandler
-		iri             *mcfgv1alpha1.InternalReleaseImage
+		iri        bool
 		expectUnchanged bool
 		expectError     bool
 		verifyAuthHost  string
@@ -112,7 +109,7 @@ func TestIRISecretMergerFromObjects(t *testing.T) {
 			secret:         validSecret,
 			cconfig:        validCconfig,
 			fgHandler:      fgEnabled(),
-			iri:            iri,
+			iri:       true,
 			verifyAuthHost: "api-int.example.com:22625",
 		},
 		{
@@ -121,16 +118,16 @@ func TestIRISecretMergerFromObjects(t *testing.T) {
 			secret:          validSecret,
 			cconfig:         validCconfig,
 			fgHandler:       fgDisabled(),
-			iri:             iri,
+			iri:        true,
 			expectUnchanged: true,
 		},
 		{
-			name:            "nil iri skips merge",
+			name:            "iri not found skips merge",
 			pullSecret:      basePullSecret,
 			secret:          validSecret,
 			cconfig:         validCconfig,
 			fgHandler:       fgEnabled(),
-			iri:             nil,
+			iri:        false,
 			expectUnchanged: true,
 		},
 		{
@@ -139,7 +136,7 @@ func TestIRISecretMergerFromObjects(t *testing.T) {
 			secret:      nil,
 			cconfig:     validCconfig,
 			fgHandler:   fgEnabled(),
-			iri:         iri,
+			iri:    true,
 			expectError: true,
 		},
 		{
@@ -148,7 +145,7 @@ func TestIRISecretMergerFromObjects(t *testing.T) {
 			secret:      validSecret,
 			cconfig:     nil,
 			fgHandler:   fgEnabled(),
-			iri:         iri,
+			iri:    true,
 			expectError: true,
 		},
 		{
@@ -157,7 +154,7 @@ func TestIRISecretMergerFromObjects(t *testing.T) {
 			secret:      validSecret,
 			cconfig:     &mcfgv1.ControllerConfig{},
 			fgHandler:   fgEnabled(),
-			iri:         iri,
+			iri:    true,
 			expectError: true,
 		},
 		{
@@ -166,7 +163,7 @@ func TestIRISecretMergerFromObjects(t *testing.T) {
 			secret:      newIRIRegistryCredentialsSecret(""),
 			cconfig:     validCconfig,
 			fgHandler:   fgEnabled(),
-			iri:         iri,
+			iri:    true,
 			expectError: true,
 		},
 		{
@@ -175,7 +172,7 @@ func TestIRISecretMergerFromObjects(t *testing.T) {
 			secret:          validSecret,
 			cconfig:         validCconfig,
 			fgHandler:       fgEnabled(),
-			iri:             iri,
+			iri:        true,
 			expectUnchanged: true,
 		},
 		{
@@ -184,7 +181,7 @@ func TestIRISecretMergerFromObjects(t *testing.T) {
 			secret:         newIRIRegistryCredentialsSecret("newpassword"),
 			cconfig:        validCconfig,
 			fgHandler:      fgEnabled(),
-			iri:            iri,
+			iri:       true,
 			verifyAuthHost: "api-int.example.com:22625",
 		},
 		{
@@ -193,7 +190,7 @@ func TestIRISecretMergerFromObjects(t *testing.T) {
 			secret:      validSecret,
 			cconfig:     validCconfig,
 			fgHandler:   fgEnabled(),
-			iri:         iri,
+			iri:    true,
 			expectError: true,
 		},
 		{
@@ -202,7 +199,7 @@ func TestIRISecretMergerFromObjects(t *testing.T) {
 			secret:      validSecret,
 			cconfig:     validCconfig,
 			fgHandler:   fgEnabled(),
-			iri:         iri,
+			iri:    true,
 			expectError: true,
 		},
 	}
@@ -237,7 +234,7 @@ func TestIRISecretMergerFromListers(t *testing.T) {
 		pullSecret      string
 		secrets         []*corev1.Secret
 		cconfigs        []*mcfgv1.ControllerConfig
-		iris            []*mcfgv1alpha1.InternalReleaseImage
+		iris            []*mcfgv1.InternalReleaseImage
 		fgHandler       FeatureGatesHandler
 		expectUnchanged bool
 		expectError     bool
@@ -248,7 +245,7 @@ func TestIRISecretMergerFromListers(t *testing.T) {
 			pullSecret:     basePullSecret,
 			secrets:        []*corev1.Secret{secret},
 			cconfigs:       []*mcfgv1.ControllerConfig{cconfig},
-			iris:           []*mcfgv1alpha1.InternalReleaseImage{iri},
+			iris:           []*mcfgv1.InternalReleaseImage{iri},
 			fgHandler:      fgEnabled(),
 			verifyAuthHost: "api-int.example.com:22625",
 		},
@@ -257,7 +254,7 @@ func TestIRISecretMergerFromListers(t *testing.T) {
 			pullSecret:      basePullSecret,
 			secrets:         []*corev1.Secret{secret},
 			cconfigs:        []*mcfgv1.ControllerConfig{cconfig},
-			iris:            []*mcfgv1alpha1.InternalReleaseImage{iri},
+			iris:            []*mcfgv1.InternalReleaseImage{iri},
 			fgHandler:       fgDisabled(),
 			expectUnchanged: true,
 		},
@@ -275,7 +272,7 @@ func TestIRISecretMergerFromListers(t *testing.T) {
 			pullSecret:  basePullSecret,
 			secrets:     nil,
 			cconfigs:    []*mcfgv1.ControllerConfig{cconfig},
-			iris:        []*mcfgv1alpha1.InternalReleaseImage{iri},
+			iris:        []*mcfgv1.InternalReleaseImage{iri},
 			fgHandler:   fgEnabled(),
 			expectError: true,
 		},
@@ -284,7 +281,7 @@ func TestIRISecretMergerFromListers(t *testing.T) {
 			pullSecret:      pullSecretWithIRIRegistryCredentials("example.com", "testpassword"),
 			secrets:         []*corev1.Secret{secret},
 			cconfigs:        []*mcfgv1.ControllerConfig{cconfig},
-			iris:            []*mcfgv1alpha1.InternalReleaseImage{iri},
+			iris:            []*mcfgv1.InternalReleaseImage{iri},
 			fgHandler:       fgEnabled(),
 			expectUnchanged: true,
 		},
@@ -293,7 +290,7 @@ func TestIRISecretMergerFromListers(t *testing.T) {
 			pullSecret:     pullSecretWithIRIRegistryCredentials("example.com", "oldpassword"),
 			secrets:        []*corev1.Secret{newIRIRegistryCredentialsSecret("newpassword")},
 			cconfigs:       []*mcfgv1.ControllerConfig{cconfig},
-			iris:           []*mcfgv1alpha1.InternalReleaseImage{iri},
+			iris:           []*mcfgv1.InternalReleaseImage{iri},
 			fgHandler:      fgEnabled(),
 			verifyAuthHost: "api-int.example.com:22625",
 		},
@@ -302,7 +299,7 @@ func TestIRISecretMergerFromListers(t *testing.T) {
 			pullSecret:  basePullSecret,
 			secrets:     []*corev1.Secret{secret},
 			cconfigs:    []*mcfgv1.ControllerConfig{{ObjectMeta: metav1.ObjectMeta{Name: ControllerConfigName}}},
-			iris:        []*mcfgv1alpha1.InternalReleaseImage{iri},
+			iris:        []*mcfgv1.InternalReleaseImage{iri},
 			fgHandler:   fgEnabled(),
 			expectError: true,
 		},
@@ -311,7 +308,7 @@ func TestIRISecretMergerFromListers(t *testing.T) {
 			pullSecret:  basePullSecret,
 			secrets:     []*corev1.Secret{newIRIRegistryCredentialsSecret("")},
 			cconfigs:    []*mcfgv1.ControllerConfig{cconfig},
-			iris:        []*mcfgv1alpha1.InternalReleaseImage{iri},
+			iris:        []*mcfgv1.InternalReleaseImage{iri},
 			fgHandler:   fgEnabled(),
 			expectError: true,
 		},

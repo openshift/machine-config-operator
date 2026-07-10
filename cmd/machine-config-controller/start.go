@@ -7,7 +7,7 @@ import (
 	"os"
 
 	features "github.com/openshift/api/features"
-	mcfginformersv1alpha1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
+	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	bootimagecontroller "github.com/openshift/machine-config-operator/pkg/controller/bootimage"
@@ -139,7 +139,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 
 		if ctrlctx.FeatureGatesHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
 			iriController := internalreleaseimage.New(
-				ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().InternalReleaseImages(),
+				ctrlctx.InformerFactory.Machineconfiguration().V1().InternalReleaseImages(),
 				ctrlctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 				ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 				ctrlctx.ConfigInformerFactory.Config().V1().ClusterVersions(),
@@ -214,10 +214,10 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 	// off, so the informer list call would fail and WaitForCacheSync in the
 	// template controller would block forever.
 	var iriSecretsInformer coreinformersv1.SecretInformer
-	var iriInformer mcfginformersv1alpha1.InternalReleaseImageInformer
+	var iriInformer mcfginformersv1.InternalReleaseImageInformer
 	if ctx.FeatureGatesHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
 		iriSecretsInformer = ctx.KubeInformerFactory.Core().V1().Secrets()
-		iriInformer = ctx.InformerFactory.Machineconfiguration().V1alpha1().InternalReleaseImages()
+		iriInformer = ctx.InformerFactory.Machineconfiguration().V1().InternalReleaseImages()
 	}
 
 	var controllers []ctrlcommon.Controller
