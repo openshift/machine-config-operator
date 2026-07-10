@@ -255,6 +255,18 @@ func (optr *Operator) isOSImageStreamBuildRequired() (*mcfgv1.OSImageStream, boo
 		klog.V(4).Info("OSImageStream is already up-to-date, skipping sync")
 		return existingOSImageStream, false, nil
 	}
+
+	// During an upgrade the CVO updates ClusterVersion.Status.Desired before
+	// replacing the operator pod. The old operator would see the new payload
+	// image and rebuild the OSImageStream with its own stale version.Hash,
+	// poisoning the annotation for the incoming operator. Defer the rebuild
+	// to the new operator whose version matches the target.
+	if clusterVersion.Status.Desired.Version != version.ReleaseVersion {
+		klog.Infof("OSImageStream rebuild deferred: ClusterVersion targets %s but operator is %s",
+			clusterVersion.Status.Desired.Version, version.ReleaseVersion)
+		return existingOSImageStream, false, nil
+	}
+
 	return existingOSImageStream, true, nil
 }
 
