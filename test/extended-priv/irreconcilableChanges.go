@@ -37,12 +37,12 @@ func platformBasedDisksNames(platform string) []string {
 			"/dev/nvme4n1",
 		}
 	case GCPPlatform:
-		// See: https://docs.cloud.google.com/compute/docs/disks/set-persistent-device-name-in-linux-vm and https://docs.cloud.google.com/compute/docs/disks/disk-symlinks
+		// See: https://docs.cloud.google.com/compute/docs/disks/set-persistent-device-name-in-linux-vm#persistent-disk-id
 		return []string{
-			"/dev/sdb",
-			"/dev/sdc",
-			"/dev/sdd",
-			"/dev/sde",
+			"/dev/disk/by-id/google-persistent-disk-1",
+			"/dev/disk/by-id/google-persistent-disk-2",
+			"/dev/disk/by-id/google-persistent-disk-3",
+			"/dev/disk/by-id/google-persistent-disk-4",
 		}
 	case AzurePlatform:
 		// See: https://learn.microsoft.com/en-us/troubleshoot/azure/virtual-machines/linux/troubleshoot-device-names-problems
