@@ -422,6 +422,103 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		checkAuthorizedKeyInNode(mcp.GetCoreOsNodesOrFail()[0], append(initialKeys, key))
 		logger.Infof("OK!\n")
 	})
+
+	// https://issues.redhat.com/browse/OCPBUGS-83830
+	g.It("[PolarionID:88940][OTP] Apply password only if changes exist [Disruptive]", func() {
+		var (
+			mcName   = "tc-88940-core-password-hash-change"
+			silentOC = oc.AsAdmin()
+
+			password1     = exutil.GetRandomString()
+			passwordHash1 = OrFail[string](getHashPasswd(password1))
+			password2     = password1 + "-2"
+			passwordHash2 = OrFail[string](getHashPasswd(password2))
+
+			_, sshPubKey = GenerateSSHKeyPairOrFail()
+
+			passwordConfiguredMsg = "Password has been configured"
+			expectedReboot        = false
+		)
+		silentOC.NotShowInfo()
+
+		allCoreos := mcp.GetCoreOsNodesOrFail()
+		if len(allCoreos) == 0 {
+			logger.Infof("No CoreOs nodes are configured in the pool %s. We use master pool for testing", mcp.GetName())
+			mcp = mMcp
+			allCoreos = mcp.GetCoreOsNodesOrFail()
+		}
+
+		node := allCoreos[0]
+		mcc := NewController(oc.AsAdmin()).IgnoreLogsBeforeNowOrFail()
+		startTime := node.GetDateOrFail()
+		o.Expect(node.IgnoreEventsBeforeNow()).NotTo(o.HaveOccurred(),
+			"Error getting the latest event in node %s", node.GetName())
+
+		exutil.By("Apply MC with passwordHash for core user")
+		pwdUser := ign32PaswdUser{Name: user, PasswordHash: passwordHash1}
+		mc := NewMachineConfig(silentOC, mcName, mcp.GetName())
+		mc.parameters = []string{fmt.Sprintf(`PWDUSERS=[%s]`, MarshalOrFail(pwdUser))}
+		mc.skipWaitForMcp = true
+
+		defer mc.DeleteWithWait()
+		mc.create()
+		mcp.waitForComplete()
+		logger.Infof("OK!\n")
+
+		exutil.By("Check MCD logs to verify 'Password has been configured' is logged")
+		mcdLogs, err := node.GetMCDaemonLogs("")
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting MCD logs for node %s", node.GetName())
+		initialPasswordCount := strings.Count(mcdLogs, passwordConfiguredMsg)
+		o.Expect(initialPasswordCount).To(o.BeNumerically(">", 0),
+			"Expected '%s' in MCD logs after initial password application on node %s", passwordConfiguredMsg, node.GetName())
+		logger.Infof("OK!\n")
+
+		exutil.By("Check that drain and reboot are skipped for password-only change")
+		checkDrainAction(expectedReboot, node, mcc)
+		checkRebootAction(expectedReboot, node, startTime)
+		logger.Infof("OK!\n")
+
+		exutil.By("Update the passwordHash in MC")
+		patchErr := mc.Patch("json",
+			fmt.Sprintf(`[{ "op": "replace", "path": "/spec/config/passwd/users/0/passwordHash", "value": "%s"}]`, passwordHash2))
+		o.Expect(patchErr).NotTo(o.HaveOccurred(),
+			"Error patching mc %s to update the 'core' user password", mc.GetName())
+		mcp.waitForComplete()
+		logger.Infof("OK!\n")
+
+		exutil.By("Check MCD logs to verify 'Password has been configured' is logged again after hash change")
+		mcdLogs, err = node.GetMCDaemonLogs("")
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting MCD logs for node %s", node.GetName())
+		updatedPasswordCount := strings.Count(mcdLogs, passwordConfiguredMsg)
+		o.Expect(updatedPasswordCount).To(o.BeNumerically(">", initialPasswordCount),
+			"Expected a new '%s' log entry after password hash change on node %s", passwordConfiguredMsg, node.GetName())
+		logger.Infof("OK!\n")
+
+		exutil.By("Add SSH key to MC without changing the password hash")
+		pwdUserWithSSH := ign32PaswdUser{Name: user, PasswordHash: passwordHash2, SSHAuthorizedKeys: []string{strings.TrimSpace(sshPubKey)}}
+		patchErr = mc.Patch("json",
+			fmt.Sprintf(`[{ "op": "replace", "path": "/spec/config/passwd/users", "value": [%s]}]`, MarshalOrFail(pwdUserWithSSH)))
+		o.Expect(patchErr).NotTo(o.HaveOccurred(),
+			"Error patching mc %s to add SSH key", mc.GetName())
+		mcp.waitForComplete()
+		logger.Infof("OK!\n")
+
+		exutil.By("Check MCD logs to verify 'Password has been configured' is NOT logged for SSH-only change")
+		mcdLogs, err = node.GetMCDaemonLogs("")
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting MCD logs for node %s", node.GetName())
+		finalPasswordCount := strings.Count(mcdLogs, passwordConfiguredMsg)
+		o.Expect(finalPasswordCount).To(o.Equal(updatedPasswordCount),
+			"'%s' should NOT appear in MCD logs when only SSH keys are added (no password hash change) on node %s",
+			passwordConfiguredMsg, node.GetName())
+		logger.Infof("OK!\n")
+
+		exutil.By("Check events to make sure that drain and reboot events were not triggered")
+		nodeEvents, eErr := node.GetEvents()
+		o.Expect(eErr).ShouldNot(o.HaveOccurred(), "Error getting events for node %s", node.GetName())
+		o.Expect(nodeEvents).NotTo(HaveEventsSequence("Drain"), "Error, a Drain event was triggered but it shouldn't")
+		o.Expect(nodeEvents).NotTo(HaveEventsSequence("Reboot"), "Error, a Reboot event was triggered but it shouldn't")
+		logger.Infof("OK!\n")
+	})
 })
 
 // getPasswdValidator returns the commands that need to be executed in an interactive expect shell to validate that a user can login
