@@ -240,14 +240,12 @@ func (ctrl *Controller) addAPIServer(obj interface{}) {
 }
 
 func (ctrl *Controller) updateAPIServer(old, cur interface{}) {
-
 	oldAPIServer := old.(*configv1.APIServer)
 	newAPIServer := cur.(*configv1.APIServer)
 	if !reflect.DeepEqual(oldAPIServer.Spec, newAPIServer.Spec) {
 		klog.V(4).Infof("Updating APIServer: %s", newAPIServer.Name)
 		ctrl.filterAPIServer(newAPIServer)
 	}
-
 }
 
 func (ctrl *Controller) deleteAPIServer(obj interface{}) {
@@ -668,11 +666,20 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 		return nil, fmt.Errorf("couldn't compact pullsecret %q: %w", string(clusterPullSecretRaw), err)
 	}
 	tlsMinVersion, tlsCipherSuites := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
+
+	var tlsProfile *configv1.TLSSecurityProfile
+	if apiServer != nil {
+		tlsProfile = apiServer.Spec.TLSSecurityProfile
+	}
+	cryptoPolicy, cryptoPolicySubMod := ctrlcommon.GetCryptoPolicyFromTLSProfile(tlsProfile)
+
 	rc := &RenderConfig{
 		ControllerConfigSpec: &config.Spec,
-		PullSecret:           string(buf.Bytes()),
+		PullSecret:           buf.String(),
 		TLSMinVersion:        tlsMinVersion,
 		TLSCipherSuites:      tlsCipherSuites,
+		CryptoPolicy:         cryptoPolicy,
+		CryptoPolicySubMod:   cryptoPolicySubMod,
 	}
 	mcs, err := generateTemplateMachineConfigs(rc, templatesDir)
 	if err != nil {

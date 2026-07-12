@@ -15,7 +15,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-
 	"sort"
 	"strings"
 	"text/template"
@@ -759,7 +758,6 @@ func decompressPayload(r io.Reader) ([]byte, error) {
 // Units have one exception: dropins are concat'ed
 
 func removeIgnDuplicateFilesUnitsUsers(ignConfig ign2types.Config) (ign2types.Config, error) {
-
 	files := ignConfig.Storage.Files
 	units := ignConfig.Systemd.Units
 	users := ignConfig.Passwd.Users
@@ -1238,7 +1236,6 @@ func (n namespacedEventRecorder) AnnotatedEventf(object runtime.Object, annotati
 func DoARebuild(pool *mcfgv1.MachineConfigPool) bool {
 	_, ok := pool.Labels[RebuildPoolLabel]
 	return ok
-
 }
 
 // isSubdirectory checks if targetPath is a subdirectory of dirPath.
@@ -1310,6 +1307,183 @@ func GetSecurityProfileCiphers(profile *configv1.TLSSecurityProfile) (string, []
 
 	// need to remap all Ciphers to their respective IANA names used by Go
 	return string(profileSpec.MinTLSVersion), crypto.OpenSSLToIANACipherSuites(profileSpec.Ciphers)
+}
+
+// cipherComponents holds the Fedora crypto-policy component names that an
+// OpenSSL cipher suite decomposes into.
+type cipherComponents struct {
+	cipher string // e.g. "AES-256-GCM"
+	mac    string // e.g. "AEAD", "SHA256"
+}
+
+// opensslCipherInfo maps OpenSSL cipher suite names to their decomposed
+// Fedora crypto-policy components. The source of truth for which OpenSSL
+// cipher names exist is library-go's `openSSLToIANACiphers` map in
+// github.com/openshift/library-go/pkg/crypto/crypto.go — this table must
+// stay in sync with it.
+var opensslCipherInfo = map[string]cipherComponents{
+	// TLS 1.3
+	"TLS_AES_128_GCM_SHA256":       {cipher: "AES-128-GCM", mac: "AEAD"},
+	"TLS_AES_256_GCM_SHA384":       {cipher: "AES-256-GCM", mac: "AEAD"},
+	"TLS_CHACHA20_POLY1305_SHA256": {cipher: "CHACHA20-POLY1305", mac: "AEAD"},
+	// TLS 1.2 ECDHE GCM
+	"ECDHE-ECDSA-AES128-GCM-SHA256": {cipher: "AES-128-GCM", mac: "AEAD"},
+	"ECDHE-RSA-AES128-GCM-SHA256":   {cipher: "AES-128-GCM", mac: "AEAD"},
+	"ECDHE-ECDSA-AES256-GCM-SHA384": {cipher: "AES-256-GCM", mac: "AEAD"},
+	"ECDHE-RSA-AES256-GCM-SHA384":   {cipher: "AES-256-GCM", mac: "AEAD"},
+	// TLS 1.2 ECDHE ChaCha20
+	"ECDHE-ECDSA-CHACHA20-POLY1305": {cipher: "CHACHA20-POLY1305", mac: "AEAD"},
+	"ECDHE-RSA-CHACHA20-POLY1305":   {cipher: "CHACHA20-POLY1305", mac: "AEAD"},
+	// TLS 1.2 ECDHE CBC (SHA256/SHA384 variants require TLS 1.2 PRF)
+	"ECDHE-ECDSA-AES128-SHA256": {cipher: "AES-128-CBC", mac: "HMAC-SHA2-256"},
+	"ECDHE-RSA-AES128-SHA256":   {cipher: "AES-128-CBC", mac: "HMAC-SHA2-256"},
+	"ECDHE-ECDSA-AES256-SHA384": {cipher: "AES-256-CBC", mac: "HMAC-SHA2-384"}, // from ciphersUnsupportedByGo
+	"ECDHE-RSA-AES256-SHA384":   {cipher: "AES-256-CBC", mac: "HMAC-SHA2-384"}, // from ciphersUnsupportedByGo
+	// TLS 1.0 ECDHE CBC (predate TLS 1.2 but usable with it)
+	"ECDHE-ECDSA-AES128-SHA": {cipher: "AES-128-CBC", mac: "HMAC-SHA1"},
+	"ECDHE-RSA-AES128-SHA":   {cipher: "AES-128-CBC", mac: "HMAC-SHA1"},
+	"ECDHE-ECDSA-AES256-SHA": {cipher: "AES-256-CBC", mac: "HMAC-SHA1"},
+	"ECDHE-RSA-AES256-SHA":   {cipher: "AES-256-CBC", mac: "HMAC-SHA1"},
+	// TLS 1.2 RSA key exchange
+	"AES128-GCM-SHA256": {cipher: "AES-128-GCM", mac: "AEAD"},
+	"AES256-GCM-SHA384": {cipher: "AES-256-GCM", mac: "AEAD"},
+	"AES128-SHA256":     {cipher: "AES-128-CBC", mac: "HMAC-SHA2-256"},
+	"AES256-SHA256":     {cipher: "AES-256-CBC", mac: "HMAC-SHA2-256"}, // from ciphersUnsupportedByGo
+	// TLS 1.0 RSA key exchange (predate TLS 1.2 but usable with it)
+	"AES128-SHA": {cipher: "AES-128-CBC", mac: "HMAC-SHA1"},
+	"AES256-SHA": {cipher: "AES-256-CBC", mac: "HMAC-SHA1"},
+	// Legacy (3DES is removed from OpenSSL on RHCOS but harmless in the .pmod)
+	"DES-CBC3-SHA":           {cipher: "3DES-CBC", mac: "HMAC-SHA1"},
+	"ECDHE-RSA-DES-CBC3-SHA": {cipher: "3DES-CBC", mac: "HMAC-SHA1"},
+}
+
+// minTLSVersionToProtocols maps a TLS version to the space-separated list of
+// all protocol versions at or above it, for use as a crypto-policy override.
+// TLS 1.0 and 1.1 are clamped to TLS 1.2 because RHCOS cannot deliver them:
+// OpenSSL 3.x enforces @SECLEVEL=2 which forbids TLS < 1.2.
+var minTLSVersionToProtocols = map[configv1.TLSProtocolVersion]string{
+	configv1.VersionTLS10: "TLS1.2 TLS1.3",
+	configv1.VersionTLS11: "TLS1.2 TLS1.3",
+	configv1.VersionTLS12: "TLS1.2 TLS1.3",
+	configv1.VersionTLS13: "TLS1.3",
+}
+
+// tlsVersionsClamped contains TLS versions that are requested but cannot be
+// delivered on RHCOS, used to emit a warning log.
+var tlsVersionsClamped = map[configv1.TLSProtocolVersion]bool{
+	configv1.VersionTLS10: true,
+	configv1.VersionTLS11: true,
+}
+
+// tlsGroupToCryptoPolicy maps OpenShift TLSGroup enum values to Fedora
+// crypto-policy group names. The canonical names are in the .pol files at
+// https://gitlab.com/redhat-crypto/fedora-crypto-policies/-/tree/master/policies
+var tlsGroupToCryptoPolicy = map[configv1.TLSGroup]string{
+	configv1.TLSGroupX25519:             "X25519",
+	configv1.TLSGroupSecP256r1:          "SECP256R1",
+	configv1.TLSGroupSecP384r1:          "SECP384R1",
+	configv1.TLSGroupSecP521r1:          "SECP521R1",
+	configv1.TLSGroupX25519MLKEM768:     "MLKEM768-X25519",
+	configv1.TLSGroupSecP256r1MLKEM768:  "P256-MLKEM768",
+	configv1.TLSGroupSecP384r1MLKEM1024: "P384-MLKEM1024",
+}
+
+// buildCustomSubPolicy generates the content of a .pmod file from a custom
+// TLS profile spec. The output uses override syntax (no +/- suffix) so each
+// directive replaces the base policy's value entirely.
+func buildCustomSubPolicy(spec *configv1.TLSProfileSpec) string {
+	cipherSet := make(map[string]struct{})
+	macSet := make(map[string]struct{})
+
+	for _, c := range spec.Ciphers {
+		info, ok := opensslCipherInfo[c]
+		if !ok {
+			klog.Warningf("Unknown cipher %q in custom TLS profile, skipping crypto-policy mapping", c)
+			continue
+		}
+		cipherSet[info.cipher] = struct{}{}
+		macSet[info.mac] = struct{}{}
+	}
+
+	var lines []string
+
+	if len(cipherSet) > 0 {
+		lines = append(lines, "cipher@TLS = "+sortedKeys(cipherSet))
+	}
+	if len(macSet) > 0 {
+		lines = append(lines, "mac@TLS = "+sortedKeys(macSet))
+	}
+	if proto, ok := minTLSVersionToProtocols[spec.MinTLSVersion]; ok {
+		if tlsVersionsClamped[spec.MinTLSVersion] {
+			klog.Warningf("TLS profile requests %s but RHCOS enforces TLS 1.2 minimum; clamping protocol@TLS to TLS1.2+", spec.MinTLSVersion)
+		}
+		lines = append(lines, "protocol@TLS = "+proto)
+	}
+	if len(spec.Groups) > 0 {
+		var groups []string
+		for _, g := range spec.Groups {
+			if cpName, ok := tlsGroupToCryptoPolicy[g]; ok {
+				groups = append(groups, cpName)
+			}
+		}
+		if len(groups) > 0 {
+			lines = append(lines, "group = "+strings.Join(groups, " "))
+		}
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func sortedKeys(m map[string]struct{}) string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, " ")
+}
+
+const (
+	cryptoPolicyDefault         = "DEFAULT"
+	cryptoPolicyDefaultOpenShift = "DEFAULT:OPENSHIFT"
+	cryptoPolicyLegacy          = "LEGACY"
+	cryptoPolicyLegacyOpenShift = "LEGACY:OPENSHIFT"
+)
+
+// GetCryptoPolicyFromTLSProfile maps an OpenShift TLS security profile to a
+// Fedora crypto-policy name and optional sub-policy module content.
+func GetCryptoPolicyFromTLSProfile(profile *configv1.TLSSecurityProfile) (string, string) {
+	profileType := configv1.TLSProfileIntermediateType
+	if profile != nil {
+		profileType = profile.Type
+	}
+
+	switch profileType {
+	case configv1.TLSProfileModernType:
+		spec := configv1.TLSProfiles[configv1.TLSProfileModernType]
+		content := buildCustomSubPolicy(spec)
+		if content != "" {
+			return cryptoPolicyDefaultOpenShift, content
+		}
+		return cryptoPolicyDefault, ""
+	case configv1.TLSProfileOldType:
+		spec := configv1.TLSProfiles[configv1.TLSProfileOldType]
+		content := buildCustomSubPolicy(spec)
+		if content != "" {
+			return cryptoPolicyLegacyOpenShift, content
+		}
+		return cryptoPolicyLegacy, ""
+	case configv1.TLSProfileCustomType:
+		if profile.Custom != nil {
+			content := buildCustomSubPolicy(&profile.Custom.TLSProfileSpec)
+			if content != "" {
+				return cryptoPolicyDefaultOpenShift, content
+			}
+		}
+		return cryptoPolicyDefault, ""
+	default:
+		return cryptoPolicyDefault, ""
+	}
 }
 
 // Converts tlsMinVersion and tlscipherSuites flags to a tlsConfig object that is used
