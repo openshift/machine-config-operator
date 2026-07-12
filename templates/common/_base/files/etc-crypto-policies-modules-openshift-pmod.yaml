@@ -1,0 +1,7 @@
+{{- if .CryptoPolicySubMod }}
+mode: 0644
+path: "/etc/crypto-policies/policies/modules/OPENSHIFT.pmod"
+contents:
+  inline: |
+{{indent 4 .CryptoPolicySubMod}}
+{{- end }}

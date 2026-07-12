@@ -225,10 +225,16 @@ func writeDropins(u ign3types.Unit, systemdRoot string, isCoreOSVariant bool) er
 // writeFiles writes the given files to disk.
 // it doesn't fetch remote files and expects a flattened config file.
 func writeFiles(files []ign3types.File, skipCertificateWrite bool) error {
+	skipCryptoPolicyFiles := getCryptoPolicyFilesToSkip()
+
 	for _, file := range files {
 		if skipCertificateWrite && file.Path == caBundleFilePath {
 			// TODO remove this special case once we have a better way to do this
 			klog.V(4).Infof("Skipping file %s during writeFiles", caBundleFilePath)
+			continue
+		}
+		if skipCryptoPolicyFiles.Has(file.Path) {
+			klog.Infof("Skipping file %s during writeFiles: FIPS manages crypto-policy on this node", file.Path)
 			continue
 		}
 		klog.Infof("Writing file %q", file.Path)

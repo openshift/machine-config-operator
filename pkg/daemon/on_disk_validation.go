@@ -167,16 +167,42 @@ func checkV2Units(units []ign2types.Unit, systemdPath string) error {
 	return nil
 }
 
+// getCryptoPolicyFilesToSkip returns crypto-policy file paths that should be
+// skipped on FIPS nodes. On FIPS, the rhcos-fips dracut module writes "FIPS"
+// to /etc/crypto-policies/config during early boot. If Ignition later
+// overwrites it (e.g. with "DEFAULT"), fips-crypto-policy-overlay detects the
+// mismatch and bind-mounts the FIPS policy over the file. Either way, the
+// on-disk content will read as "FIPS" regardless of what the MachineConfig
+// wrote — writing would fail (EBUSY if bind-mounted) or produce false
+// content mismatches during validation.
+func getCryptoPolicyFilesToSkip() sets.Set[string] {
+	result := sets.New[string]()
+	if err := processFips(func(nodeFIPS bool) error {
+		if nodeFIPS {
+			result.Insert(
+				"/etc/crypto-policies/config",
+				"/etc/crypto-policies/policies/modules/OPENSHIFT.pmod",
+			)
+		}
+		return nil
+	}); err != nil {
+		klog.Warningf("Could not determine FIPS status for crypto-policy file skip: %v", err)
+	}
+	return result
+}
+
 // To transition certain files from being under MachineConfig management to
 // certificate_Writer, we must ignore these files at validation time since
 // there is the possibility that certificate_writer may write different
 // contents to the file during the transition.
 func getFilesToIgnore() sets.Set[string] {
-	return sets.New[string](
+	ignoredFiles := sets.New[string](
 		caBundleFilePath,
 		cloudCABundleFilePath,
 		internalRegistryAuthFile,
 	)
+	ignoredFiles = ignoredFiles.Union(getCryptoPolicyFilesToSkip())
+	return ignoredFiles
 }
 
 // checkV3Files validates the contents of all the files in the target config.

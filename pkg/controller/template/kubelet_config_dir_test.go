@@ -46,7 +46,7 @@ func TestKubeletConfigDirParameter(t *testing.T) {
 			controllerConfig, err := controllerConfigFromFile(tc.controllerConfig)
 			require.NoError(t, err, "Failed to load controller config for %s", tc.name)
 
-			cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil}, templateDir)
+			cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, "", "", nil}, templateDir)
 			require.NoError(t, err, "Failed to generate machine configs for %s", tc.name)
 
 			for _, cfg := range cfgs {
@@ -73,7 +73,7 @@ func TestKubeletConfigDirParameterSpecific(t *testing.T) {
 	controllerConfig, err := controllerConfigFromFile("./test_data/controller_config_aws.yaml")
 	require.NoError(t, err, "Failed to load AWS controller config")
 
-	cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil}, templateDir)
+	cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, "", "", nil}, templateDir)
 	require.NoError(t, err, "Failed to generate machine configs")
 
 	var kubeletUnit *string

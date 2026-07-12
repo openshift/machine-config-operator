@@ -82,7 +82,7 @@ func TestCloudProvider(t *testing.T) {
 				},
 			}
 
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil}, name, dummyTemplate)
+			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, "", "", nil}, name, dummyTemplate)
 			if err != nil {
 				t.Fatalf("expected nil error %v", err)
 			}
@@ -143,7 +143,7 @@ func TestCredentialProviderConfigFlag(t *testing.T) {
 				},
 			}
 
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil}, name, dummyTemplate)
+			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, "", "", nil}, name, dummyTemplate)
 			if err != nil {
 				t.Fatalf("expected nil error %v", err)
 			}
@@ -162,23 +162,24 @@ func TestSkipMissing(t *testing.T) {
 		key string
 		err bool
 		res string
-	}{{
-		key: "",
-		err: true,
-		res: "",
-	}, {
-		key: "2two",
-		err: true,
-		res: "",
-	}, {
-		key: "test index",
-		err: true,
-		res: "",
-	}, {
-		key: "index",
-		err: false,
-		res: "{{.index}}",
-	},
+	}{
+		{
+			key: "",
+			err: true,
+			res: "",
+		}, {
+			key: "2two",
+			err: true,
+			res: "",
+		}, {
+			key: "test index",
+			err: true,
+			res: "",
+		}, {
+			key: "index",
+			err: false,
+			res: "{{.index}}",
+		},
 	}
 
 	for idx, c := range cases {
@@ -199,26 +200,24 @@ func TestSkipMissing(t *testing.T) {
 
 const templateDir = "../../../templates"
 
-var (
-	configs = map[string]string{
-		"aws":               "./test_data/controller_config_aws.yaml",
-		"baremetal":         "./test_data/controller_config_baremetal.yaml",
-		"baremetal-arbiter": "./test_data/controller_config_baremetal_arbiter.yaml",
-		"gcp":               "./test_data/controller_config_gcp.yaml",
-		"openstack":         "./test_data/controller_config_openstack.yaml",
-		"libvirt":           "./test_data/controller_config_libvirt.yaml",
-		"mtu-migration":     "./test_data/controller_config_mtu_migration.yaml",
-		"none":              "./test_data/controller_config_none.yaml",
-		"external":          "./test_data/controller_config_external.yaml",
-		"vsphere":           "./test_data/controller_config_vsphere.yaml",
-		"kubevirt":          "./test_data/controller_config_kubevirt.yaml",
-		"powervs":           "./test_data/controller_config_powervs.yaml",
-		"nutanix":           "./test_data/controller_config_nutanix.yaml",
-		"gcp-custom-dns":    "./test_data/controller_config_gcp_custom_dns.yaml",
-		"gcp-default-dns":   "./test_data/controller_config_gcp_default_dns.yaml",
-		"baremetal-tnf":     "./test_data/controller_config_baremetal_tnf.yaml",
-	}
-)
+var configs = map[string]string{
+	"aws":               "./test_data/controller_config_aws.yaml",
+	"baremetal":         "./test_data/controller_config_baremetal.yaml",
+	"baremetal-arbiter": "./test_data/controller_config_baremetal_arbiter.yaml",
+	"gcp":               "./test_data/controller_config_gcp.yaml",
+	"openstack":         "./test_data/controller_config_openstack.yaml",
+	"libvirt":           "./test_data/controller_config_libvirt.yaml",
+	"mtu-migration":     "./test_data/controller_config_mtu_migration.yaml",
+	"none":              "./test_data/controller_config_none.yaml",
+	"external":          "./test_data/controller_config_external.yaml",
+	"vsphere":           "./test_data/controller_config_vsphere.yaml",
+	"kubevirt":          "./test_data/controller_config_kubevirt.yaml",
+	"powervs":           "./test_data/controller_config_powervs.yaml",
+	"nutanix":           "./test_data/controller_config_nutanix.yaml",
+	"gcp-custom-dns":    "./test_data/controller_config_gcp_custom_dns.yaml",
+	"gcp-default-dns":   "./test_data/controller_config_gcp_default_dns.yaml",
+	"baremetal-tnf":     "./test_data/controller_config_baremetal_tnf.yaml",
+}
 
 func TestInvalidPlatform(t *testing.T) {
 	controllerConfig, err := controllerConfigFromFile(configs["aws"])
@@ -238,14 +237,14 @@ func TestInvalidPlatform(t *testing.T) {
 
 	// we must treat unrecognized constants as "none"
 	controllerConfig.Spec.Infra.Status.PlatformStatus.Type = "_bad_"
-	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil}, templateDir)
+	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, "", "", nil}, templateDir)
 	if err != nil {
 		t.Errorf("expect nil error, got: %v", err)
 	}
 
 	// explicitly blocked
 	controllerConfig.Spec.Infra.Status.PlatformStatus.Type = "_base"
-	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil}, templateDir)
+	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, "", "", nil}, templateDir)
 	expectErr(err, "failed to create MachineConfig for role master: platform _base unsupported")
 }
 
@@ -256,7 +255,7 @@ func TestGenerateMachineConfigs(t *testing.T) {
 			t.Fatalf("failed to get controllerconfig config: %v", err)
 		}
 
-		cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil}, templateDir)
+		cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, "", "", nil}, templateDir)
 		if err != nil {
 			t.Fatalf("failed to generate machine configs: %v", err)
 		}
@@ -378,7 +377,7 @@ func TestKubeletGracefulShutdownTNF(t *testing.T) {
 			}
 
 			cfgs, err := generateTemplateMachineConfigs(
-				&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil},
+				&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, "", "", nil},
 				templateDir,
 			)
 			if err != nil {
@@ -457,7 +456,6 @@ func TestGetPaths(t *testing.T) {
 		res:      []string{strings.ToLower(string(configv1.GCPPlatformType))},
 		topology: configv1.HighlyAvailableTopologyMode,
 	}, {
-
 		platform: configv1.NonePlatformType,
 		res:      []string{strings.ToLower(string(configv1.NonePlatformType)), sno},
 		topology: configv1.SingleReplicaTopologyMode,
@@ -512,7 +510,7 @@ func TestGetPaths(t *testing.T) {
 			}
 			c.res = append(c.res, platformBase)
 
-			got := getPaths(&RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil}, config.Spec.Platform)
+			got := getPaths(&RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, "", "", nil}, config.Spec.Platform)
 			if reflect.DeepEqual(got, c.res) {
 				t.Fatalf("mismatch got: %s want: %s", got, c.res)
 			}
@@ -555,7 +553,6 @@ func findIgnUnit(units []ign3types.Unit, name string, t *testing.T) bool {
 }
 
 func verifyIgn(actual [][]byte, dir string, t *testing.T) {
-
 	expected := make(map[string][]byte)
 	if err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -594,5 +591,75 @@ func verifyIgn(actual [][]byte, dir string, t *testing.T) {
 
 	for key := range expected {
 		t.Errorf("can't find expected file:\n%v", key)
+	}
+}
+
+func TestCryptoPolicyTemplateRendering(t *testing.T) {
+	configTemplate := []byte(`{{ .CryptoPolicy }}`)
+	subModTemplate := []byte(`{{- if .CryptoPolicySubMod }}{{ .CryptoPolicySubMod }}{{- end }}`)
+
+	tests := []struct {
+		name           string
+		cryptoPolicy   string
+		cryptoSubMod   string
+		template       []byte
+		expectedOutput string
+	}{
+		{
+			name:           "DEFAULT policy renders policy name",
+			cryptoPolicy:   "DEFAULT",
+			cryptoSubMod:   "",
+			template:       configTemplate,
+			expectedOutput: "DEFAULT",
+		},
+		{
+			name:           "DEFAULT:OPENSHIFT policy renders policy name",
+			cryptoPolicy:   "DEFAULT:OPENSHIFT",
+			cryptoSubMod:   "protocol@TLS = TLS1.3",
+			template:       configTemplate,
+			expectedOutput: "DEFAULT:OPENSHIFT",
+		},
+		{
+			name:           "sub-policy module renders when set",
+			cryptoPolicy:   "DEFAULT:OPENSHIFT",
+			cryptoSubMod:   "protocol@TLS = TLS1.3",
+			template:       subModTemplate,
+			expectedOutput: "protocol@TLS = TLS1.3",
+		},
+		{
+			name:           "sub-policy module omitted when empty",
+			cryptoPolicy:   "DEFAULT",
+			cryptoSubMod:   "",
+			template:       subModTemplate,
+			expectedOutput: "",
+		},
+		{
+			name:         "multi-line sub-policy module renders for Custom profile",
+			cryptoPolicy: "DEFAULT:OPENSHIFT",
+			cryptoSubMod: "cipher@TLS = AES-128-GCM AES-256-GCM CHACHA20-POLY1305\nmac@TLS = AEAD\nprotocol@TLS = TLS1.2 TLS1.3",
+			template:     subModTemplate,
+			expectedOutput: "cipher@TLS = AES-128-GCM AES-256-GCM CHACHA20-POLY1305\nmac@TLS = AEAD\nprotocol@TLS = TLS1.2 TLS1.3",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &mcfgv1.ControllerConfig{
+				Spec: mcfgv1.ControllerConfigSpec{},
+			}
+			rc := RenderConfig{
+				ControllerConfigSpec: &config.Spec,
+				PullSecret:           `{"dummy":"dummy"}`,
+				CryptoPolicy:         tt.cryptoPolicy,
+				CryptoPolicySubMod:   tt.cryptoSubMod,
+			}
+			got, err := renderTemplate(rc, tt.name, tt.template)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if string(got) != tt.expectedOutput {
+				t.Fatalf("mismatch got: %q want: %q", string(got), tt.expectedOutput)
+			}
+		})
 	}
 }

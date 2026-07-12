@@ -48,7 +48,7 @@ func setupTempDirWithEtc(t *testing.T) (string, func()) {
 
 	// Stub out a test directory structure -- we need to create /etc so createOrigFile can use it
 	etcDir := filepath.Join(testDir, "etc")
-	err := os.MkdirAll(etcDir, 0755)
+	err := os.MkdirAll(etcDir, 0o755)
 	require.Nil(t, err)
 
 	oldOrigParentDirPath := origParentDirPath
@@ -241,9 +241,11 @@ func TestMachineConfigDiff(t *testing.T) {
 }
 
 func newTestIgnitionFile(i uint) ign3types.File {
-	mode := 0644
-	return ign3types.File{Node: ign3types.Node{Path: fmt.Sprintf("/etc/config%d", i)},
-		FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.Resource{Source: helpers.StrToPtr(fmt.Sprintf("data:,config%d", i))}, Mode: &mode}}
+	mode := 0o644
+	return ign3types.File{
+		Node:          ign3types.Node{Path: fmt.Sprintf("/etc/config%d", i)},
+		FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.Resource{Source: helpers.StrToPtr(fmt.Sprintf("data:,config%d", i))}, Mode: &mode},
+	}
 }
 
 func newMachineConfigFromFiles(files []ign3types.File) *mcfgv1.MachineConfig {
@@ -311,20 +313,26 @@ func TestKernelAguments(t *testing.T) {
 		{
 			oldKargs: []string{"foo", "bar=1 hello=world", "baz"},
 			newKargs: []string{"foo", "bar=1", "hello=world"},
-			out: []string{"--delete-if-present=foo", "--delete-if-present=bar=1", "--delete-if-present=hello=world", "--delete-if-present=baz",
-				"--append=foo", "--append=bar=1", "--append=hello=world"},
+			out: []string{
+				"--delete-if-present=foo", "--delete-if-present=bar=1", "--delete-if-present=hello=world", "--delete-if-present=baz",
+				"--append=foo", "--append=bar=1", "--append=hello=world",
+			},
 		},
 		{
 			oldKargs: []string{" baz=test bar=\"hello world\""},
 			newKargs: []string{" baz=test bar=\"hello world\"", "foo"},
-			out: []string{"--delete-if-present=baz=test", "--delete-if-present=bar=\"hello world\"",
-				"--append=baz=test", "--append=bar=\"hello world\"", "--append=foo"},
+			out: []string{
+				"--delete-if-present=baz=test", "--delete-if-present=bar=\"hello world\"",
+				"--append=baz=test", "--append=bar=\"hello world\"", "--append=foo",
+			},
 		},
 		{
 			oldKargs: []string{"hugepagesz=1G hugepages=4", "hugepagesz=2M hugepages=4"},
 			newKargs: []string{"hugepagesz=1G hugepages=4", "hugepagesz=2M hugepages=6"},
-			out: []string{"--delete-if-present=hugepagesz=1G", "--delete-if-present=hugepages=4", "--delete-if-present=hugepagesz=2M", "--delete-if-present=hugepages=4",
-				"--append=hugepagesz=1G", "--append=hugepages=4", "--append=hugepagesz=2M", "--append=hugepages=6"},
+			out: []string{
+				"--delete-if-present=hugepagesz=1G", "--delete-if-present=hugepages=4", "--delete-if-present=hugepagesz=2M", "--delete-if-present=hugepages=4",
+				"--append=hugepagesz=1G", "--append=hugepages=4", "--append=hugepagesz=2M", "--append=hugepages=6",
+			},
 		},
 	}
 
@@ -435,7 +443,6 @@ func TestUpdateSSHKeys(t *testing.T) {
 	err := d.updateSSHKeys(newIgnCfg.Passwd.Users, oldIgnConfig.Passwd.Users)
 	if err != nil {
 		t.Errorf("Expected no error. Got %s.", err)
-
 	}
 
 	// if Users is empty, nothing should happen and no error should ever be generated
@@ -640,7 +647,8 @@ func TestCalculatePostConfigChangeAction(t *testing.T) {
 			// test that updating openshift-config-user-ca-bundle.crt is crio restart
 			oldConfig:      helpers.NewMachineConfig("00-test", nil, "dummy://", []ign3types.File{files["restart-crio1"]}),
 			newConfig:      helpers.NewMachineConfig("01-test", nil, "dummy://", []ign3types.File{files["restart-crio2"]}),
-			expectedAction: []string{postConfigChangeActionRestartCrio}},
+			expectedAction: []string{postConfigChangeActionRestartCrio},
+		},
 		{
 			// test that updating openshift-config-user-ca-bundle.crt is crio restart and that it overrides a following crio reload
 			oldConfig:      helpers.NewMachineConfig("00-test", nil, "dummy://", []ign3types.File{files["restart-crio1"]}),
@@ -699,7 +707,7 @@ func TestOriginalFileBackupRestore(t *testing.T) {
 
 	// Write a file in the /tmp dir to test whether orig files are selectively preserved
 	controlFile := filepath.Join(testDir, "control-file")
-	err := os.WriteFile(controlFile, []byte("control file contents"), 0755)
+	err := os.WriteFile(controlFile, []byte("control file contents"), 0o755)
 	assert.Nil(t, err)
 
 	// Back up the tmp file
@@ -716,13 +724,13 @@ func TestOriginalFileBackupRestore(t *testing.T) {
 }
 
 func TestFindClosestFilePolicyPathMatch(t *testing.T) {
-
 	policyActions := map[string][]opv1.NodeDisruptionPolicyStatusAction{
 		"Empty":       {},
 		"None":        {{Type: opv1.NoneStatusAction}},
 		"Reboot":      {{Type: opv1.RebootStatusAction}},
 		"RestartCrio": {{Type: opv1.RestartStatusAction, Restart: &opv1.RestartService{ServiceName: "crio.service"}}},
-		"ReloadCrio":  {{Type: opv1.ReloadStatusAction, Reload: &opv1.ReloadService{ServiceName: "crio.service"}}}}
+		"ReloadCrio":  {{Type: opv1.ReloadStatusAction, Reload: &opv1.ReloadService{ServiceName: "crio.service"}}},
+	}
 
 	tests := []struct {
 		diffPath             string
@@ -822,7 +830,6 @@ func TestFindClosestFilePolicyPathMatch(t *testing.T) {
 
 	for idx, test := range tests {
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
-
 			pathFound, actionsFound := ctrlcommon.FindClosestFilePolicyPathMatch(test.diffPath, test.filePolicies)
 
 			if !reflect.DeepEqual(test.expectedPathFound, pathFound) {
@@ -1044,4 +1051,44 @@ func TestLegacyExtensionPackageUpgradeScenario(t *testing.T) {
 	}
 
 	require.True(t, foundNewMatch, "Should find a valid package set matching the new OS image state (current packages)")
+}
+
+func TestApplyCryptoPolicy(t *testing.T) {
+	tests := []struct {
+		name        string
+		diffFileSet []string
+		expectError bool
+	}{
+		{
+			name:        "no crypto-policy files in diff is a no-op",
+			diffFileSet: []string{"/etc/kubernetes/kubelet.conf", "/var/lib/kubelet/config.json"},
+			expectError: false,
+		},
+		{
+			name:        "empty diff is a no-op",
+			diffFileSet: []string{},
+			expectError: false,
+		},
+		{
+			name:        "crypto-policy config in diff triggers update",
+			diffFileSet: []string{"/etc/crypto-policies/config"},
+			expectError: true, // update-crypto-policies binary won't exist in test env
+		},
+		{
+			name:        "sub-policy module in diff triggers update",
+			diffFileSet: []string{"/etc/crypto-policies/policies/modules/TLS13ONLY.pmod"},
+			expectError: true, // update-crypto-policies binary won't exist in test env
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := applyCryptoPolicy(tt.diffFileSet)
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }
