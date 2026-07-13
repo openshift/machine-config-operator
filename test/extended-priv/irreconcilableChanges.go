@@ -2,6 +2,7 @@ package extended
 
 import (
 	"fmt"
+	"strings"
 
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
@@ -13,7 +14,7 @@ func platformBasedDisksPatch(platform string, ms *MachineSet) error {
 	var err error
 	switch platform {
 	case AWSPlatform:
-		err = ms.Patch("json", `[{"op":"add","path":"/spec/template/spec/providerSpec/value/blockDevices/-","value":{"ebs":{"encrypted":false,"iops":0,"volumeSize":120,"volumeType":"gp3"},"deviceName":"/dev/sdb"}},{"op":"add","path":"/spec/template/spec/providerSpec/value/blockDevices/-","value":{"ebs":{"encrypted":false,"iops":0,"volumeSize":120,"volumeType":"gp3"},"deviceName":"/dev/sdc"}}]`)
+		err = ms.Patch("json", `[{"op":"add","path":"/spec/template/spec/providerSpec/value/blockDevices/-","value":{"deviceName":"/dev/sdb","ebs":{"encrypted":false,"iops":0,"volumeSize":120,"volumeType":"gp3"}}},{"op":"add","path":"/spec/template/spec/providerSpec/value/blockDevices/-","value":{"deviceName":"/dev/sdc","ebs":{"encrypted":false,"iops":0,"volumeSize":120,"volumeType":"gp3"}}}]`)
 	case GCPPlatform:
 		err = ms.Patch("json", `[{"op":"add","path":"/spec/template/spec/providerSpec/value/disks/-","value":{"autoDelete":true,"boot":false,"sizeGb":16,"type":"pd-standard"}},{"op":"add","path":"/spec/template/spec/providerSpec/value/disks/-","value":{"autoDelete":true,"boot":false,"sizeGb":16,"type":"pd-standard"}}]`)
 	case AzurePlatform:
@@ -64,6 +65,25 @@ func platformBasedDisksNames(platform string) []string {
 		}
 	}
 	return []string{}
+}
+
+// discoverNVMeByPathDisks discovers the /dev/disk/by-path/ entries for non-boot NVMe
+// devices on an AWS node. These PCI-based paths are stable per instance type, unlike
+// /dev/nvmeXn1 which depends on device enumeration order.
+func discoverNVMeByPathDisks(node *Node) []string {
+	script := `for p in /dev/disk/by-path/*nvme*; do [[ $p == *part* ]] && continue; ls ${p}-part* &>/dev/null && continue; echo "$p"; done | sort`
+	stdout, _, err := node.DebugNodeWithChrootStd("bash", "-c", script)
+	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Failed to discover NVMe by-path disks on node %s", node.GetName())
+
+	var paths []string
+	for _, line := range strings.Split(strings.TrimSpace(stdout), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			paths = append(paths, line)
+		}
+	}
+	logger.Infof("Discovered %d non-boot NVMe by-path disks on node %s: %v", len(paths), node.GetName(), paths)
+	return paths
 }
 
 var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Disruptive][OCPFeatureGate:IrreconcilableMachineConfig][Serial]", g.Ordered, func() {
@@ -151,10 +171,48 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		err = mcp.WaitForUpdatedStatus()
 		o.Expect(err).NotTo(o.HaveOccurred())
 
-		mc := NewMachineConfig(oc, mcName, mcpool).SetMCOTemplate("extra-disks-with-files.yaml")
-		disks := platformBasedDisksNames(platform)
+		exutil.By("Step 2: Create duplicate machineset with custom disks")
+		machineset := OrFail[*MachineSet](GetScalableMachineSet(oc.AsAdmin()))
+		newMSName := machineset.GetName() + "-ms-ic-t2"
+		newMS, err := machineset.Duplicate(newMSName)
+		o.Expect(err).NotTo(o.HaveOccurred())
+		defer func() {
+			if newMS.Exists() {
+				err := newMS.ScaleTo(0)
+				o.Expect(err).NotTo(o.HaveOccurred())
+				err = newMS.WaitUntilReady("10m")
+				o.Expect(err).NotTo(o.HaveOccurred())
+				err = newMS.Delete()
+				o.Expect(err).NotTo(o.HaveOccurred())
+			}
+		}()
 
-		exutil.By("Step 2: Apply extra-disks-with-files MachineConfig")
+		err = platformBasedDisksPatch(platform, newMS)
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		// On AWS, NVMe device enumeration is non-deterministic. Scale up a probe
+		// node first to discover the stable /dev/disk/by-path/ entries, then use
+		// those paths in the MachineConfig so Ignition can reliably find the disks.
+		disks := platformBasedDisksNames(platform)
+		var probeNode *Node
+		if platform == AWSPlatform {
+			exutil.By("Step 2.5: Scale up probe node to discover disk paths")
+			o.Expect(newMS.ScaleTo(1)).To(o.Succeed())
+			o.Expect(newMS.WaitUntilReady("10m")).To(o.Succeed())
+
+			probeNodes := newMS.GetNodesOrFail()
+			o.Expect(probeNodes).To(o.HaveLen(1))
+			probeNode = probeNodes[0]
+			logger.Infof("Probe node is: %s", probeNode.GetName())
+
+			discoveredDisks := discoverNVMeByPathDisks(probeNode)
+			o.Expect(discoveredDisks).To(o.HaveLen(2), "Expected exactly 2 non-boot NVMe disks on probe node %s", probeNode.GetName())
+			disks = discoveredDisks
+		}
+
+		mc := NewMachineConfig(oc, mcName, mcpool).SetMCOTemplate("extra-disks-with-files.yaml")
+
+		exutil.By("Step 3: Apply extra-disks-with-files MachineConfig")
 		err = mc.Create(
 			"-p", "NAME="+mcName,
 			"-p", "POOL="+mcpool,
@@ -176,7 +234,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		}()
 		defer mc.DeleteWithWait()
 
-		exutil.By("Step 3: Verify old nodes report only storage irreconcilable changes (not files)")
+		exutil.By("Step 4: Verify existing nodes report storage irreconcilable changes")
 		workerNodes := mcp.GetSortedNodesOrFail()
 
 		for _, node := range workerNodes {
@@ -186,49 +244,45 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		}
 		logger.Infof("All worker nodes report irreconcilable storage changes!\n")
 
-		exutil.By("Step 4: Create duplicate machineset with custom disks")
-		machineset := OrFail[*MachineSet](GetScalableMachineSet(oc.AsAdmin()))
-		newMSName := machineset.GetName() + "-ms-ic-t2"
-		newMS, err := machineset.Duplicate(newMSName)
-		o.Expect(err).NotTo(o.HaveOccurred())
+		exutil.By("Step 5: Scale up test node with MC applied via Ignition")
+		var testNode *Node
+		if platform == AWSPlatform {
+			o.Expect(newMS.ScaleTo(2)).To(o.Succeed())
+			o.Expect(newMS.WaitUntilReady("10m")).To(o.Succeed())
 
-		defer func() {
-			if newMS.Exists() {
-				err := newMS.ScaleTo(0)
-				o.Expect(err).NotTo(o.HaveOccurred())
-				err = newMS.WaitUntilReady("10m")
-				o.Expect(err).NotTo(o.HaveOccurred())
-				err = newMS.Delete()
-				o.Expect(err).NotTo(o.HaveOccurred())
+			allNodes := newMS.GetNodesOrFail()
+			o.Expect(allNodes).To(o.HaveLen(2))
+			for _, n := range allNodes {
+				if n.GetName() != probeNode.GetName() {
+					testNode = n
+				}
 			}
-		}()
+			o.Expect(testNode).NotTo(o.BeNil(), "Could not identify test node among scaled-up nodes")
+		} else {
+			o.Expect(newMS.ScaleTo(1)).To(o.Succeed())
+			o.Expect(newMS.WaitUntilReady("10m")).To(o.Succeed())
 
-		err = platformBasedDisksPatch(platform, newMS)
+			testNodes := newMS.GetNodesOrFail()
+			o.Expect(testNodes).To(o.HaveLen(1))
+			testNode = testNodes[0]
+		}
+		logger.Infof("Test node is: %s", testNode.GetName())
+
+		exutil.By("Step 6: Verify test node has no irreconcilable changes")
+		o.Eventually(testNode.GetIrreconcilableChanges, "5m", "10s").Should(o.BeEmpty(), "Test node should have no irreconcilable changes")
+		logger.Infof("Test node %s has no irreconcilable changes as expected\n", testNode.GetName())
+
+		exutil.By("Step 7: Verify storage configuration on test node")
+		_, err = testNode.DebugNodeWithChroot("mount", "/dev/md/data", "/var/lib/data")
 		o.Expect(err).NotTo(o.HaveOccurred())
 
-		o.Expect(newMS.ScaleTo(1)).To(o.Succeed())
-		o.Expect(newMS.WaitUntilReady("20m")).To(o.Succeed())
+		o.Expect(testNode.DebugNodeWithChroot("mdadm", "--detail", "--scan")).Should(o.ContainSubstring("/dev/md/data"))
+		logger.Infof("Storage configuration verified on test node\n")
 
-		exutil.By("Step 5: Verify new node has no irreconcilable changes")
-		newNodes := newMS.GetNodesOrFail()
-		o.Expect(newNodes).To(o.HaveLen(1))
-		newNode := newNodes[0]
-		logger.Infof("New node is: %s", newNode.GetName())
-
-		o.Eventually(newNode.GetIrreconcilableChanges, "5m", "10s").Should(o.BeEmpty(), "New node should have no irreconcilable changes")
-		logger.Infof("New node %s has no irreconcilable changes as expected\n", newNode.GetName())
-
-		exutil.By("Step 6: Verify storage configuration on new node")
-		_, err = newNode.DebugNodeWithChroot("mount", "/dev/md/data", "/var/lib/data")
-		o.Expect(err).NotTo(o.HaveOccurred())
-
-		o.Expect(newNode.DebugNodeWithChroot("mdadm", "--detail", "--scan")).Should(o.ContainSubstring("/dev/md/data"))
-		logger.Infof("Storage configuration verified on new node\n")
-
-		exutil.By("Step 7: Delete the irreconcilable MC")
+		exutil.By("Step 8: Delete the irreconcilable MC")
 		mc.DeleteWithWait()
 
-		exutil.By("Step 8: Verify old nodes have irreconcilable changes cleared")
+		exutil.By("Step 9: Verify existing nodes have irreconcilable changes cleared")
 		for _, node := range workerNodes {
 			o.Eventually(node.GetIrreconcilableChanges, "5m", "10s").Should(o.BeEmpty(),
 				"Node %s should have cleared irreconcilable changes after MC removal", node.GetName())
@@ -236,13 +290,13 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		}
 		logger.Infof("All existing worker nodes have cleared irreconcilable changes!\n")
 
-		exutil.By("Step 9: Verify new node now reports irreconcilable changes")
-		o.Eventually(newNode.GetIrreconcilableChanges, "5m", "10s").Should(o.SatisfyAll(
+		exutil.By("Step 10: Verify test node now reports irreconcilable changes")
+		o.Eventually(testNode.GetIrreconcilableChanges, "5m", "10s").Should(o.SatisfyAll(
 			o.ContainSubstring("spec.config.storage.disks"),
 			o.ContainSubstring("spec.config.storage.raid"),
 			o.ContainSubstring("spec.config.storage.filesystems"),
-		), "New node should report irreconcilable changes after MC removal")
-		logger.Infof("New node %s correctly reports irreconcilable changes after MC removal\n", newNode.GetName())
+		), "Test node should report irreconcilable changes after MC removal")
+		logger.Infof("Test node %s correctly reports irreconcilable changes after MC removal\n", testNode.GetName())
 	})
 
 	g.It("Irreconcilable changes persist after feature has been disabled. New irreconcilable configs will be rejected", g.Label("Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere"), func() {
