@@ -27,7 +27,7 @@ func TestIRIController_IRIDelete(t *testing.T) {
 	ctx := context.Background()
 
 	// Verify IRI and its master MachineConfig exist before deletion.
-	_, err := cs.MachineconfigurationV1Interface.InternalReleaseImages().Get(ctx, "cluster", v1.GetOptions{})
+	_, err := cs.InternalReleaseImages().Get(ctx, "cluster", v1.GetOptions{})
 	require.NoError(t, err, "IRI should exist before deletion")
 
 	_, err = cs.MachineConfigs().Get(ctx, "02-master-internalreleaseimage", v1.GetOptions{})
@@ -43,7 +43,7 @@ func TestIRIController_IRIDelete(t *testing.T) {
 			return false, nil
 		}
 
-		delErr = cs.MachineconfigurationV1Interface.InternalReleaseImages().Delete(ctx, "cluster", v1.DeleteOptions{})
+		delErr = cs.InternalReleaseImages().Delete(ctx, "cluster", v1.DeleteOptions{})
 		if delErr == nil {
 			return true, nil
 		}
@@ -54,7 +54,7 @@ func TestIRIController_IRIDelete(t *testing.T) {
 
 	// Wait for the IRI to be fully garbage-collected (finalizer removed).
 	err = wait.PollUntilContextTimeout(ctx, 2*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
-		_, err := cs.MachineconfigurationV1Interface.InternalReleaseImages().Get(ctx, "cluster", v1.GetOptions{})
+		_, err := cs.InternalReleaseImages().Get(ctx, "cluster", v1.GetOptions{})
 		if k8serrors.IsNotFound(err) {
 			return true, nil
 		}

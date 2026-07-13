@@ -7,6 +7,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	mcfginformers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
@@ -29,12 +30,12 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 	cases := []struct {
 		name           string
 		initialObjects func() []runtime.Object
-		verify         func(t *testing.T, actualIRI *mcfgv1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig)
+		verify         func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig)
 	}{
 		{
 			name:           "feature inactive",
 			initialObjects: objs(),
-			verify: func(t *testing.T, actualIRI *mcfgv1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
+			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
 				assert.Nil(t, actualIRI)
 				assert.Nil(t, actualMasterMC)
 				assert.Nil(t, actualWorkerMC)
@@ -43,7 +44,7 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 		{
 			name:           "add finalizer if not present",
 			initialObjects: objs(iri(), clusterVersion(), cconfig().withDNS("example.com"), iriCertSecret(), iriRegistryCredentialsSecret(), pullSecret()),
-			verify: func(t *testing.T, actualIRI *mcfgv1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
+			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
 				assert.Len(t, actualIRI.Finalizers, 1)
 				assert.Contains(t, actualIRI.Finalizers, iriFinalizerName)
 			},
@@ -53,11 +54,11 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 			initialObjects: objs(
 				iri().finalizer(iriFinalizerName),
 				clusterVersion(), cconfig().withDNS("example.com"), iriCertSecret(), iriRegistryCredentialsSecret(), pullSecret()),
-			verify: func(t *testing.T, actualIRI *mcfgv1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
+			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
 				assert.Len(t, actualIRI.Status.Releases, 1)
 				assert.Equal(t, actualIRI.Status.Releases[0].Name, "ocp-release-bundle-4.21.5-x86_64")
 				assert.Equal(t, actualIRI.Status.Releases[0].Image, "ocp-4.21-release-pullspec")
-				assert.Equal(t, actualIRI.Status.Releases[0].Conditions[0].Type, string(mcfgv1.InternalReleaseImageConditionTypeAvailable))
+				assert.Equal(t, actualIRI.Status.Releases[0].Conditions[0].Type, string(mcfgv1alpha1.InternalReleaseImageConditionTypeAvailable))
 				assert.Equal(t, actualIRI.Status.Releases[0].Conditions[0].Status, metav1.ConditionTrue)
 				assert.Equal(t, actualIRI.Status.Releases[0].Conditions[0].Message, "Release bundle is available")
 			},
@@ -65,7 +66,7 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 		{
 			name:           "generate iri machine-config if not present",
 			initialObjects: objs(iri(), clusterVersion(), cconfig().withDNS("example.com"), iriCertSecret(), iriRegistryCredentialsSecret(), pullSecret()),
-			verify: func(t *testing.T, actualIRI *mcfgv1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
+			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
 				verifyInternalReleaseMasterMachineConfig(t, actualMasterMC)
 				verifyInternalReleaseWorkerMachineConfig(t, actualWorkerMC)
 			},
@@ -77,7 +78,7 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 				clusterVersion(), cconfig().withDNS("example.com"), iriCertSecret(), iriRegistryCredentialsSecret(), pullSecret(),
 				machineconfigmaster().ignition("some garbage"),
 				machineconfigworker().ignition("other garbage")),
-			verify: func(t *testing.T, actualIRI *mcfgv1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
+			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
 				verifyInternalReleaseMasterMachineConfig(t, actualMasterMC)
 				verifyInternalReleaseWorkerMachineConfig(t, actualWorkerMC)
 			},
@@ -88,7 +89,7 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 				iri().finalizer(iriFinalizerName),
 				clusterVersion(), cconfig().dockerRegistryImage("a-new-docker-registry-image-pullspec").withDNS("example.com"), iriCertSecret(), iriRegistryCredentialsSecret(), pullSecret(),
 				machineconfigmaster(), machineconfigworker()),
-			verify: func(t *testing.T, actualIRI *mcfgv1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
+			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
 				verifyInternalReleaseMasterMachineConfig(t, actualMasterMC)
 				verifyInternalReleaseWorkerMachineConfig(t, actualWorkerMC)
 			},
@@ -99,7 +100,7 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 				iri().finalizer(iriFinalizerName).setDeletionTimestamp(),
 				clusterVersion(), cconfig(), iriCertSecret(),
 				machineconfigmaster(), machineconfigworker()),
-			verify: func(t *testing.T, actualIRI *mcfgv1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
+			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
 				assert.NotNil(t, actualIRI)
 				assert.Empty(t, actualIRI.Finalizers)
 				verifyDisabledMasterMachineConfig(t, actualMasterMC)
@@ -111,10 +112,10 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 				iri().finalizer(iriFinalizerName),
 				clusterVersion(), cconfig().withDNS("example.com"), iriCertSecret(), iriRegistryCredentialsSecret(), pullSecret(),
 				machineconfigmaster(), machineconfigworker()),
-			verify: func(t *testing.T, actualIRI *mcfgv1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
+			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
 				assert.NotNil(t, actualIRI)
 				assert.Len(t, actualIRI.Status.Conditions, 1)
-				assert.Equal(t, string(mcfgv1.InternalReleaseImageStatusConditionTypeDegraded), actualIRI.Status.Conditions[0].Type)
+				assert.Equal(t, string(mcfgv1alpha1.InternalReleaseImageStatusConditionTypeDegraded), actualIRI.Status.Conditions[0].Type)
 				assert.Equal(t, metav1.ConditionFalse, actualIRI.Status.Conditions[0].Status)
 				assert.Equal(t, "AllReleasesAvailable", actualIRI.Status.Conditions[0].Reason)
 				assert.Equal(t, "All the release images are available", actualIRI.Status.Conditions[0].Message)
@@ -128,7 +129,7 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 			f.run(ctrlcommon.InternalReleaseImageInstanceName)
 
 			if tc.verify != nil {
-				actualIRI, err := f.client.MachineconfigurationV1().InternalReleaseImages().Get(context.TODO(), ctrlcommon.InternalReleaseImageInstanceName, v1.GetOptions{})
+				actualIRI, err := f.client.MachineconfigurationV1alpha1().InternalReleaseImages().Get(context.TODO(), ctrlcommon.InternalReleaseImageInstanceName, v1.GetOptions{})
 				if err != nil {
 					if !errors.IsNotFound(err) {
 						t.Errorf("Error while running sync step: %v", err)
@@ -163,17 +164,17 @@ func TestInternalReleaseImageStatusOnError(t *testing.T) {
 	cases := []struct {
 		name           string
 		initialObjects func() []runtime.Object
-		verify         func(t *testing.T, actualIRI *mcfgv1.InternalReleaseImage)
+		verify         func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage)
 	}{
 		{
 			name: "status condition Degraded=True when ControllerConfig is missing",
 			initialObjects: objs(
 				iri(),
 				clusterVersion(), iriCertSecret()),
-			verify: func(t *testing.T, actualIRI *mcfgv1.InternalReleaseImage) {
+			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage) {
 				assert.NotNil(t, actualIRI)
 				assert.Len(t, actualIRI.Status.Conditions, 1)
-				assert.Equal(t, string(mcfgv1.InternalReleaseImageStatusConditionTypeDegraded), actualIRI.Status.Conditions[0].Type)
+				assert.Equal(t, string(mcfgv1alpha1.InternalReleaseImageStatusConditionTypeDegraded), actualIRI.Status.Conditions[0].Type)
 				assert.Equal(t, metav1.ConditionTrue, actualIRI.Status.Conditions[0].Status)
 				assert.Equal(t, "SyncError", actualIRI.Status.Conditions[0].Reason)
 				assert.Contains(t, actualIRI.Status.Conditions[0].Message, "could not get ControllerConfig")
@@ -184,10 +185,10 @@ func TestInternalReleaseImageStatusOnError(t *testing.T) {
 			initialObjects: objs(
 				iri(),
 				clusterVersion(), cconfig()),
-			verify: func(t *testing.T, actualIRI *mcfgv1.InternalReleaseImage) {
+			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage) {
 				assert.NotNil(t, actualIRI)
 				assert.Len(t, actualIRI.Status.Conditions, 1)
-				assert.Equal(t, string(mcfgv1.InternalReleaseImageStatusConditionTypeDegraded), actualIRI.Status.Conditions[0].Type)
+				assert.Equal(t, string(mcfgv1alpha1.InternalReleaseImageStatusConditionTypeDegraded), actualIRI.Status.Conditions[0].Type)
 				assert.Equal(t, metav1.ConditionTrue, actualIRI.Status.Conditions[0].Status)
 				assert.Equal(t, "SyncError", actualIRI.Status.Conditions[0].Reason)
 				assert.Contains(t, actualIRI.Status.Conditions[0].Message, "could not get Secret")
@@ -203,7 +204,7 @@ func TestInternalReleaseImageStatusOnError(t *testing.T) {
 			f.runController(ctrlcommon.InternalReleaseImageInstanceName, true)
 
 			if tc.verify != nil {
-				actualIRI, err := f.client.MachineconfigurationV1().InternalReleaseImages().Get(context.TODO(), ctrlcommon.InternalReleaseImageInstanceName, v1.GetOptions{})
+				actualIRI, err := f.client.MachineconfigurationV1alpha1().InternalReleaseImages().Get(context.TODO(), ctrlcommon.InternalReleaseImageInstanceName, v1.GetOptions{})
 				if err != nil {
 					if !errors.IsNotFound(err) {
 						t.Errorf("Error getting IRI: %v", err)
@@ -225,7 +226,7 @@ type fixture struct {
 	k8sClient    *k8sfake.Clientset
 	configClient *fakeconfigv1client.Clientset
 
-	iriLister            []*mcfgv1.InternalReleaseImage
+	iriLister            []*mcfgv1alpha1.InternalReleaseImage
 	ccLister             []*mcfgv1.ControllerConfig
 	mcLister             []*mcfgv1.MachineConfig
 	mcnLister            []*mcfgv1.MachineConfigNode
@@ -269,7 +270,7 @@ func (f *fixture) setupObjects(objs []runtime.Object) {
 		default:
 			f.objects = append(f.objects, obj)
 			switch o := obj.(type) {
-			case *mcfgv1.InternalReleaseImage:
+			case *mcfgv1alpha1.InternalReleaseImage:
 				f.iriLister = append(f.iriLister, o)
 			case *mcfgv1.ControllerConfig:
 				f.ccLister = append(f.ccLister, o)
@@ -292,7 +293,7 @@ func (f *fixture) newController() *Controller {
 	ci := configinformers.NewSharedInformerFactory(f.configClient, func() time.Duration { return 0 }())
 
 	c := New(
-		i.Machineconfiguration().V1().InternalReleaseImages(),
+		i.Machineconfiguration().V1alpha1().InternalReleaseImages(),
 		i.Machineconfiguration().V1().ControllerConfigs(),
 		i.Machineconfiguration().V1().MachineConfigs(),
 		ci.Config().V1().ClusterVersions(),
@@ -326,7 +327,7 @@ func (f *fixture) newController() *Controller {
 	ci.WaitForCacheSync(stopCh)
 
 	for _, c := range f.iriLister {
-		i.Machineconfiguration().V1().InternalReleaseImages().Informer().GetIndexer().Add(c)
+		i.Machineconfiguration().V1alpha1().InternalReleaseImages().Informer().GetIndexer().Add(c)
 	}
 	for _, c := range f.ccLister {
 		i.Machineconfiguration().V1().ControllerConfigs().Informer().GetIndexer().Add(c)
@@ -370,7 +371,7 @@ func TestAggregateIRIStatus(t *testing.T) {
 	cases := []struct {
 		name           string
 		initialObjects func() []runtime.Object
-		verify         func(t *testing.T, actualIRI *mcfgv1.InternalReleaseImage)
+		verify         func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage)
 	}{
 		{
 			name: "nodes-not-ready: some nodes not ready produces SomeNodesUnavailable",
@@ -391,10 +392,10 @@ func TestAggregateIRIStatus(t *testing.T) {
 				node("master-2"),
 				infrastructure(),
 			),
-			verify: func(t *testing.T, actualIRI *mcfgv1.InternalReleaseImage) {
+			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage) {
 				assert.NotNil(t, actualIRI)
 				assert.Len(t, actualIRI.Status.Conditions, 1)
-				assert.Equal(t, string(mcfgv1.InternalReleaseImageStatusConditionTypeDegraded), actualIRI.Status.Conditions[0].Type)
+				assert.Equal(t, string(mcfgv1alpha1.InternalReleaseImageStatusConditionTypeDegraded), actualIRI.Status.Conditions[0].Type)
 				assert.Equal(t, metav1.ConditionTrue, actualIRI.Status.Conditions[0].Status)
 
 				// Note: api-int ping will fail in unit tests, so may get ApiIntNotAvailable
@@ -426,10 +427,10 @@ func TestAggregateIRIStatus(t *testing.T) {
 				node("master-2"),
 				infrastructure(),
 			),
-			verify: func(t *testing.T, actualIRI *mcfgv1.InternalReleaseImage) {
+			verify: func(t *testing.T, actualIRI *mcfgv1alpha1.InternalReleaseImage) {
 				assert.NotNil(t, actualIRI)
 				assert.Len(t, actualIRI.Status.Conditions, 1)
-				assert.Equal(t, string(mcfgv1.InternalReleaseImageStatusConditionTypeDegraded), actualIRI.Status.Conditions[0].Type)
+				assert.Equal(t, string(mcfgv1alpha1.InternalReleaseImageStatusConditionTypeDegraded), actualIRI.Status.Conditions[0].Type)
 				assert.Equal(t, metav1.ConditionTrue, actualIRI.Status.Conditions[0].Status)
 				assert.NotEmpty(t, actualIRI.Status.Conditions[0].Reason)
 
@@ -447,7 +448,7 @@ func TestAggregateIRIStatus(t *testing.T) {
 			f.run(ctrlcommon.InternalReleaseImageInstanceName)
 
 			if tc.verify != nil {
-				actualIRI, err := f.client.MachineconfigurationV1().InternalReleaseImages().Get(context.TODO(), ctrlcommon.InternalReleaseImageInstanceName, v1.GetOptions{})
+				actualIRI, err := f.client.MachineconfigurationV1alpha1().InternalReleaseImages().Get(context.TODO(), ctrlcommon.InternalReleaseImageInstanceName, v1.GetOptions{})
 				if err != nil {
 					if !errors.IsNotFound(err) {
 						t.Errorf("Error while running sync step: %v", err)

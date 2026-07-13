@@ -20,10 +20,6 @@ func (c *FakeMachineconfigurationV1) ControllerConfigs() v1.ControllerConfigInte
 	return newFakeControllerConfigs(c)
 }
 
-func (c *FakeMachineconfigurationV1) InternalReleaseImages() v1.InternalReleaseImageInterface {
-	return newFakeInternalReleaseImages(c)
-}
-
 func (c *FakeMachineconfigurationV1) KubeletConfigs() v1.KubeletConfigInterface {
 	return newFakeKubeletConfigs(c)
 }

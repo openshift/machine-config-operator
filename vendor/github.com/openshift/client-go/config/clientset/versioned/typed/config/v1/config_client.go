@@ -15,7 +15,6 @@ type ConfigV1Interface interface {
 	APIServersGetter
 	AuthenticationsGetter
 	BuildsGetter
-	CRIOCredentialProviderConfigsGetter
 	ClusterImagePoliciesGetter
 	ClusterOperatorsGetter
 	ClusterVersionsGetter
@@ -54,10 +53,6 @@ func (c *ConfigV1Client) Authentications() AuthenticationInterface {
 
 func (c *ConfigV1Client) Builds() BuildInterface {
 	return newBuilds(c)
-}
-
-func (c *ConfigV1Client) CRIOCredentialProviderConfigs() CRIOCredentialProviderConfigInterface {
-	return newCRIOCredentialProviderConfigs(c)
 }
 
 func (c *ConfigV1Client) ClusterImagePolicies() ClusterImagePolicyInterface {

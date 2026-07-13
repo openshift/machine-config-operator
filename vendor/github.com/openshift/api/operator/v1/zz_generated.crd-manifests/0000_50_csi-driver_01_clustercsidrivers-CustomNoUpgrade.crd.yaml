@@ -187,7 +187,7 @@ spec:
                     description: |-
                       driverType indicates type of CSI driver for which the
                       driverConfig is being applied to.
-                      Valid values are: AWS, Azure, GCP, IBMCloud, vSphere, SecretsStore and omitted.
+                      Valid values are: AWS, Azure, GCP, IBMCloud, vSphere and omitted.
                       Consumers should treat unknown values as a NO-OP.
                     enum:
                     - ""
@@ -196,7 +196,6 @@ spec:
                     - GCP
                     - IBMCloud
                     - vSphere
-                    - SecretsStore
                     type: string
                   gcp:
                     description: gcp is used to configure the GCP CSI driver.
@@ -261,127 +260,6 @@ spec:
                         type: string
                     required:
                     - encryptionKeyCRN
-                    type: object
-                  secretsStore:
-                    description: secretsStore is used to configure the Secrets Store
-                      CSI driver.
-                    minProperties: 1
-                    properties:
-                      secretRotation:
-                        description: |-
-                          secretRotation controls automatic secret rotation behavior.
-                          When omitted, secret rotation is enabled with a default poll interval of 2 minutes.
-                        properties:
-                          custom:
-                            description: |-
-                              custom holds the custom rotation configuration.
-                              Only valid when type is "Custom".
-                            minProperties: 1
-                            properties:
-                              rotationPollIntervalSeconds:
-                                description: |-
-                                  rotationPollIntervalSeconds is the minimum time in seconds between secret
-                                  rotation attempts. The driver skips provider calls if less than this interval
-                                  has elapsed since the last successful rotation.
-                                  Must be at least 1 second and no more than 31560000 seconds (~1 year).
-                                  When omitted, this means no opinion and the platform is left to choose a
-                                  reasonable default, which is subject to change over time.
-                                format: int32
-                                maximum: 31560000
-                                minimum: 1
-                                type: integer
-                            type: object
-                          type:
-                            description: |-
-                              type determines the secret rotation behavior.
-                              When "None", secret rotation is disabled and secrets are only fetched at
-                              initial pod mount time.
-                              When "Custom", secret rotation is enabled with the configuration specified
-                              in the custom field.
-                            enum:
-                            - None
-                            - Custom
-                            type: string
-                        required:
-                        - type
-                        type: object
-                        x-kubernetes-validations:
-                        - message: custom must be set when type is 'Custom', and must
-                            not be set otherwise
-                          rule: 'has(self.type) && self.type == ''Custom'' ? has(self.custom)
-                            : !has(self.custom)'
-                      tokenRequests:
-                        description: |-
-                          tokenRequests controls service account token configuration for
-                          workload identity federation (WIF) with cloud providers.
-                          When omitted, the operator preserves any existing tokenRequests
-                          already configured on the CSIDriver object without modification.
-                        properties:
-                          managed:
-                            description: |-
-                              managed holds configuration for operator-managed tokenRequests.
-                              Only valid when type is "Managed".
-                            minProperties: 1
-                            properties:
-                              audiences:
-                                description: |-
-                                  audiences specifies service account token audiences that kubelet will
-                                  provide to the CSI driver during NodePublishVolume calls. These tokens
-                                  enable workload identity federation (WIF) with cloud providers such as
-                                  AWS, Azure, and GCP.
-                                  When empty, the operator clears all tokenRequests from the CSIDriver object.
-                                items:
-                                  description: |-
-                                    SecretsStoreTokenRequest specifies a service account token audience configuration
-                                    for workload identity federation (WIF) with the Secrets Store CSI driver.
-                                  properties:
-                                    audience:
-                                      description: |-
-                                        audience is the intended audience of the service account token.
-                                        An empty string means the issued token will use the kube-apiserver's default APIAudiences.
-                                      maxLength: 253
-                                      minLength: 0
-                                      type: string
-                                    expirationSeconds:
-                                      description: |-
-                                        expirationSeconds is the requested duration of validity of the service account token.
-                                        The token issuer may return a token with a different validity duration.
-                                        When omitted, the token expiration is determined by the kube-apiserver.
-                                        Must be at least 600 seconds (10 minutes) and no more than 315360000 seconds (~10 years).
-                                      format: int32
-                                      maximum: 315360000
-                                      minimum: 600
-                                      type: integer
-                                  required:
-                                  - audience
-                                  type: object
-                                maxItems: 10
-                                minItems: 0
-                                type: array
-                                x-kubernetes-list-map-keys:
-                                - audience
-                                x-kubernetes-list-type: map
-                            type: object
-                          type:
-                            description: |-
-                              type determines how the operator manages tokenRequests on the CSIDriver object.
-                              When "Unmanaged", existing tokenRequests on the CSIDriver are preserved
-                              and the managed field is not used.
-                              When "Managed", the operator sets tokenRequests from the audiences
-                              specified in the managed field, replacing any previously configured values.
-                              Once set to "Managed", type cannot be reverted back to "Unmanaged".
-                            enum:
-                            - Managed
-                            - Unmanaged
-                            type: string
-                        required:
-                        - type
-                        type: object
-                        x-kubernetes-validations:
-                        - message: managed must be set when type is 'Managed', and
-                            must not be set otherwise
-                          rule: 'has(self.type) && self.type == ''Managed'' ? has(self.managed)
-                            : !has(self.managed)'
                     type: object
                   vSphere:
                     description: vSphere is used to configure the vsphere CSI driver.
@@ -450,10 +328,6 @@ spec:
                     unset otherwise
                   rule: 'has(self.driverType) && self.driverType == ''IBMCloud'' ?
                     has(self.ibmcloud) : !has(self.ibmcloud)'
-                - message: secretsStore must be set if driverType is 'SecretsStore',
-                    but remain unset otherwise
-                  rule: 'has(self.driverType) && self.driverType == ''SecretsStore''
-                    ? has(self.secretsStore) : !has(self.secretsStore)'
               logLevel:
                 default: Normal
                 description: |-
@@ -632,17 +506,6 @@ spec:
         required:
         - spec
         type: object
-        x-kubernetes-validations:
-        - message: driverType 'SecretsStore' requires metadata.name 'secrets-store.csi.k8s.io'
-          rule: 'self.spec.?driverConfig.driverType.orValue('''') == ''SecretsStore''
-            ? self.metadata.name == ''secrets-store.csi.k8s.io'' : true'
-        - message: metadata.name 'secrets-store.csi.k8s.io' requires driverType 'SecretsStore'
-          rule: 'self.metadata.name == ''secrets-store.csi.k8s.io'' ? (!has(self.spec.driverConfig)
-            || self.spec.driverConfig.driverType == ''SecretsStore'') : true'
-        - message: tokenRequests type cannot be changed from Managed
-          rule: oldSelf.spec.?driverConfig.?secretsStore.?tokenRequests.?type.orValue('')
-            != 'Managed' || self.spec.?driverConfig.?secretsStore.?tokenRequests.?type.orValue('')
-            == 'Managed'
     served: true
     storage: true
     subresources:

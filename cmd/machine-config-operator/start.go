@@ -69,7 +69,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 
 		// Only pass IRI informer when the feature gate is enabled to avoid
 		// watching for a CRD that may not exist
-		var iriInformer = ctrlctx.InformerFactory.Machineconfiguration().V1().InternalReleaseImages()
+		var iriInformer = ctrlctx.InformerFactory.Machineconfiguration().V1alpha1().InternalReleaseImages()
 		if !ctrlctx.FeatureGatesHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
 			iriInformer = nil
 		}
@@ -119,8 +119,8 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1().MachineOSConfigs(),
 			ctrlctx.ConfigInformerFactory.Config().V1().ClusterVersions(),
 			ctrlctx.InformerFactory.Machineconfiguration().V1().OSImageStreams(),
-			ctrlctx.KubeNamespacedInformerFactory.Networking().V1().NetworkPolicies(),
 			iriInformer,
+			ctrlctx.KubeNamespacedInformerFactory.Networking().V1().NetworkPolicies(),
 			ctrlctx,
 		)
 

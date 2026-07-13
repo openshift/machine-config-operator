@@ -13,7 +13,7 @@ spec:
     objectSelector: {}
     resourceRules:
     - apiGroups:   ["machineconfiguration.openshift.io"]
-      apiVersions: ["v1"]
+      apiVersions: ["v1alpha1"]
       operations:  ["DELETE"]
       resources:   ["internalreleaseimages"]
       scope: "*"

@@ -28,8 +28,6 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&ContainerRuntimeConfigList{},
 		&ControllerConfig{},
 		&ControllerConfigList{},
-		&InternalReleaseImage{},
-		&InternalReleaseImageList{},
 		&KubeletConfig{},
 		&KubeletConfigList{},
 		&MachineConfig{},

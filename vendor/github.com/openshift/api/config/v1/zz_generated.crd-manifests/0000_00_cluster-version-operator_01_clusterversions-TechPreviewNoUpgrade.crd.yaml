@@ -95,8 +95,6 @@ spec:
                       - Ingress
                       - CloudControllerManager
                       - OperatorLifecycleManagerV1
-                      - CompatibilityRequirements
-                      - ClusterAPI
                       type: string
                     type: array
                     x-kubernetes-list-type: atomic
@@ -427,8 +425,6 @@ spec:
                       - Ingress
                       - CloudControllerManager
                       - OperatorLifecycleManagerV1
-                      - CompatibilityRequirements
-                      - ClusterAPI
                       type: string
                     type: array
                     x-kubernetes-list-type: atomic
@@ -456,8 +452,6 @@ spec:
                       - Ingress
                       - CloudControllerManager
                       - OperatorLifecycleManagerV1
-                      - CompatibilityRequirements
-                      - ClusterAPI
                       type: string
                     type: array
                     x-kubernetes-list-type: atomic
@@ -1121,15 +1115,6 @@ spec:
             in self.spec.capabilities.additionalEnabledCapabilities || (has(self.status)
             && has(self.status.capabilities) && has(self.status.capabilities.enabledCapabilities)
             && ''OperatorLifecycleManager'' in self.status.capabilities.enabledCapabilities)
-            : true'
-        - message: the `ClusterAPI` capability requires the `CompatibilityRequirements`
-            capability, which is neither explicitly or implicitly enabled in this
-            cluster, please enable the `CompatibilityRequirements` capability
-          rule: 'has(self.spec.capabilities) && has(self.spec.capabilities.additionalEnabledCapabilities)
-            && ''ClusterAPI'' in self.spec.capabilities.additionalEnabledCapabilities
-            ? ''CompatibilityRequirements'' in self.spec.capabilities.additionalEnabledCapabilities
-            || (has(self.status) && has(self.status.capabilities) && has(self.status.capabilities.enabledCapabilities)
-            && ''CompatibilityRequirements'' in self.status.capabilities.enabledCapabilities)
             : true'
     served: true
     storage: true

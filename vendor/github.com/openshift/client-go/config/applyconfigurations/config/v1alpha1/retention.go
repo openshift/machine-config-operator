@@ -7,28 +7,20 @@ package v1alpha1
 //
 // Retention configures how long Prometheus retains metrics data and how much storage it can use.
 type RetentionApplyConfiguration struct {
-	// duration is an optional field that specifies how long Prometheus retains metrics data.
-	// Valid values are Prometheus-style duration strings with unit suffixes y, w, d, h, m, s, or ms
-	// (for example, "15d", "24h", or "5d1h30m"). Each unit value must be a positive integer.
-	// Composite durations must follow the fixed unit order y, w, d, h, m, s, ms.
-	// Must be at least 1 character and at most 64 characters.
-	// When set to "0", time-based retention is disabled. This is the only supported form for disabling
-	// time-based retention; other zero-duration representations such as "0d", "0h", or "0y" are rejected.
+	// durationInDays specifies how many days Prometheus will retain metrics data.
 	// Prometheus automatically deletes data older than this duration.
 	// When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
-	// The current default value is `15d`.
-	Duration *string `json:"duration,omitempty"`
-	// size is an optional field that specifies the maximum storage size that Prometheus
+	// The default value is 15.
+	// Minimum value is 1 day.
+	// Maximum value is 365 days (1 year).
+	DurationInDays *int32 `json:"durationInDays,omitempty"`
+	// sizeInGiB specifies the maximum storage size in gibibytes (GiB) that Prometheus
 	// can use for data blocks and the write-ahead log (WAL).
-	// Valid values are byte-size strings with an optional decimal prefix and a unit suffix B, KB, MB, GB,
-	// TB, EB, PB, or their binary equivalents KiB, MiB, GiB, TiB, EiB, PiB (for example, "500MiB", "10GiB").
-	// The numeric value must be greater than zero.
-	// Must be at least 1 character and at most 32 characters.
-	// When set to "0", no size limit is enforced. This is the only supported form for disabling size-based
-	// retention; other zero-size representations such as "0B" or "0MiB" are rejected.
-	// When the limit is reached, Prometheus deletes oldest data first.
+	// When the limit is reached, Prometheus will delete oldest data first.
 	// When omitted, no size limit is enforced and Prometheus uses available PersistentVolume capacity.
-	Size *string `json:"size,omitempty"`
+	// Minimum value is 1 GiB.
+	// Maximum value is 16384 GiB (16 TiB).
+	SizeInGiB *int32 `json:"sizeInGiB,omitempty"`
 }
 
 // RetentionApplyConfiguration constructs a declarative configuration of the Retention type for use with
@@ -37,18 +29,18 @@ func Retention() *RetentionApplyConfiguration {
 	return &RetentionApplyConfiguration{}
 }
 
-// WithDuration sets the Duration field in the declarative configuration to the given value
+// WithDurationInDays sets the DurationInDays field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the Duration field is set to the value of the last call.
-func (b *RetentionApplyConfiguration) WithDuration(value string) *RetentionApplyConfiguration {
-	b.Duration = &value
+// If called multiple times, the DurationInDays field is set to the value of the last call.
+func (b *RetentionApplyConfiguration) WithDurationInDays(value int32) *RetentionApplyConfiguration {
+	b.DurationInDays = &value
 	return b
 }
 
-// WithSize sets the Size field in the declarative configuration to the given value
+// WithSizeInGiB sets the SizeInGiB field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the Size field is set to the value of the last call.
-func (b *RetentionApplyConfiguration) WithSize(value string) *RetentionApplyConfiguration {
-	b.Size = &value
+// If called multiple times, the SizeInGiB field is set to the value of the last call.
+func (b *RetentionApplyConfiguration) WithSizeInGiB(value int32) *RetentionApplyConfiguration {
+	b.SizeInGiB = &value
 	return b
 }

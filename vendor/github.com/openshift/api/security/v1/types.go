@@ -216,7 +216,6 @@ var (
 	FSTypeCSI                   FSType = "csi"
 	FSTypeEphemeral             FSType = "ephemeral"
 	FSTypeImage                 FSType = "image"
-	FSTypeServiceAccountToken   FSType = "serviceAccountToken"
 	FSTypeAll                   FSType = "*"
 	FSTypeNone                  FSType = "none"
 )

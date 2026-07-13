@@ -8,8 +8,6 @@ type AuthenticationExpansion interface{}
 
 type BuildExpansion interface{}
 
-type CRIOCredentialProviderConfigExpansion interface{}
-
 type ClusterImagePolicyExpansion interface{}
 
 type ClusterOperatorExpansion interface{}

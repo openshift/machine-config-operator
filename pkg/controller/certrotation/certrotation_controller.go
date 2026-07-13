@@ -509,7 +509,7 @@ func (c *CertRotationController) reconcileIRICertificate() {
 	}
 
 	// Check that the IRI cluster resource exists to confirm the feature is actually enabled
-	if _, err := c.mcfgClient.MachineconfigurationV1().InternalReleaseImages().Get(context.TODO(), ctrlcommon.InternalReleaseImageInstanceName, metav1.GetOptions{}); err != nil {
+	if _, err := c.mcfgClient.MachineconfigurationV1alpha1().InternalReleaseImages().Get(context.TODO(), ctrlcommon.InternalReleaseImageInstanceName, metav1.GetOptions{}); err != nil {
 		if k8serrors.IsNotFound(err) {
 			klog.V(4).Infof("Skipping IRI certificate reconciliation: InternalReleaseImage %q not found", ctrlcommon.InternalReleaseImageInstanceName)
 		} else {

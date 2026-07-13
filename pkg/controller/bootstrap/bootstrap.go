@@ -93,9 +93,10 @@ func (b *Bootstrap) Run(destDir string) error {
 	imagev1.AddToScheme(scheme)
 	codecFactory := serializer.NewCodecFactory(scheme)
 	decoder := codecFactory.UniversalDecoder(
-		mcfgv1.GroupVersion, mcfgv1alpha1.GroupVersion, apioperatorsv1alpha1.GroupVersion,
+		mcfgv1.GroupVersion, apioperatorsv1alpha1.GroupVersion,
 		apicfgv1.GroupVersion, apicfgv1alpha1.GroupVersion,
-		corev1.SchemeGroupVersion, imagev1.SchemeGroupVersion)
+		corev1.SchemeGroupVersion, mcfgv1alpha1.GroupVersion,
+		imagev1.SchemeGroupVersion)
 
 	var (
 		cconfig              *mcfgv1.ControllerConfig
@@ -114,7 +115,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		imgCfg               *apicfgv1.Image
 		apiServer            *apicfgv1.APIServer
 		imageStream          *imagev1.ImageStream
-		iri                  bool
+		iri                  *mcfgv1alpha1.InternalReleaseImage
 		iriTLSCert           *corev1.Secret
 		osImageStream        *mcfgv1.OSImageStream
 		iriCredentialsSecret *corev1.Secret
@@ -183,13 +184,9 @@ func (b *Bootstrap) Run(destDir string) error {
 				if obj.GetName() == ctrlcommon.APIServerInstanceName {
 					apiServer = obj
 				}
-			case *mcfgv1.InternalReleaseImage:
-				if obj.GetName() == ctrlcommon.InternalReleaseImageInstanceName {
-					iri = true
-				}
 			case *mcfgv1alpha1.InternalReleaseImage:
 				if obj.GetName() == ctrlcommon.InternalReleaseImageInstanceName {
-					iri = true
+					iri = obj
 				}
 			case *imagev1.ImageStream:
 				for _, tag := range obj.Spec.Tags {
@@ -338,8 +335,8 @@ func (b *Bootstrap) Run(destDir string) error {
 	klog.Infof("Successfully generated MachineConfigs from kubelet configs.")
 
 	if fgHandler != nil && fgHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
-		if iri {
-			iriConfigs, err := internalreleaseimage.RunInternalReleaseImageBootstrap(iriTLSCert, iriCredentialsSecret, cconfig)
+		if iri != nil {
+			iriConfigs, err := internalreleaseimage.RunInternalReleaseImageBootstrap(iri, iriTLSCert, iriCredentialsSecret, cconfig)
 			if err != nil {
 				return err
 			}

@@ -10,6 +10,7 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	"github.com/stretchr/testify/assert"
@@ -96,17 +97,17 @@ type objBuilder interface {
 
 // iriBuilder simplifies the creation of an InternalReleaseImage resource in the test.
 type iriBuilder struct {
-	obj *mcfgv1.InternalReleaseImage
+	obj *mcfgv1alpha1.InternalReleaseImage
 }
 
 func iri() *iriBuilder {
 	return &iriBuilder{
-		obj: &mcfgv1.InternalReleaseImage{
+		obj: &mcfgv1alpha1.InternalReleaseImage{
 			ObjectMeta: v1.ObjectMeta{
 				Name: ctrlcommon.InternalReleaseImageInstanceName,
 			},
-			Spec: mcfgv1.InternalReleaseImageSpec{
-				Releases: []mcfgv1.InternalReleaseImageRef{
+			Spec: mcfgv1alpha1.InternalReleaseImageSpec{
+				Releases: []mcfgv1alpha1.InternalReleaseImageRef{
 					{
 						Name: "ocp-release-bundle-4.21.5-x86_64",
 					},
@@ -312,12 +313,12 @@ func mcn(name string) *machineConfigNodeBuilder {
 							Image: "localhost:22625/openshift/release-images@sha256:abc123",
 							Conditions: []v1.Condition{
 								{
-									Type:   string(mcfgv1.InternalReleaseImageConditionTypeAvailable),
+									Type:   string(mcfgv1alpha1.InternalReleaseImageConditionTypeAvailable),
 									Status: v1.ConditionTrue,
 									Reason: "ReleaseImageAvailable",
 								},
 								{
-									Type:   string(mcfgv1.InternalReleaseImageConditionTypeDegraded),
+									Type:   string(mcfgv1alpha1.InternalReleaseImageConditionTypeDegraded),
 									Status: v1.ConditionFalse,
 									Reason: "ReleaseImageAvailable",
 								},
@@ -348,7 +349,7 @@ func (mb *machineConfigNodeBuilder) degraded() *machineConfigNodeBuilder {
 	// Mark release as degraded
 	for i := range mb.obj.Status.InternalReleaseImage.Releases {
 		for j := range mb.obj.Status.InternalReleaseImage.Releases[i].Conditions {
-			if mb.obj.Status.InternalReleaseImage.Releases[i].Conditions[j].Type == string(mcfgv1.InternalReleaseImageConditionTypeDegraded) {
+			if mb.obj.Status.InternalReleaseImage.Releases[i].Conditions[j].Type == string(mcfgv1alpha1.InternalReleaseImageConditionTypeDegraded) {
 				mb.obj.Status.InternalReleaseImage.Releases[i].Conditions[j].Status = v1.ConditionTrue
 				mb.obj.Status.InternalReleaseImage.Releases[i].Conditions[j].Reason = "RegistryUnreachable"
 			}

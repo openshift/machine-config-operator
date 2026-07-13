@@ -23,9 +23,12 @@ import (
 	"k8s.io/klog/v2"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
+	mcfginformersv1alpha1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
+	mcfglistersv1alpha1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1alpha1"
 	"github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 )
@@ -49,10 +52,10 @@ type Manager struct {
 	registryDataPath string
 
 	syncHandler                 func(iri string) error
-	enqueueInternalReleaseImage func(*mcfgv1.InternalReleaseImage)
+	enqueueInternalReleaseImage func(*mcfgv1alpha1.InternalReleaseImage)
 	queue                       workqueue.TypedRateLimitingInterface[string]
 
-	iriLister       mcfglistersv1.InternalReleaseImageLister
+	iriLister       mcfglistersv1alpha1.InternalReleaseImageLister
 	iriListerSynced cache.InformerSynced
 
 	mcnLister       mcfglistersv1.MachineConfigNodeLister
@@ -63,7 +66,7 @@ type Manager struct {
 func New(
 	nodeName string,
 	mcfgClient mcfgclientset.Interface,
-	iriInformer mcfginformersv1.InternalReleaseImageInformer,
+	iriInformer mcfginformersv1alpha1.InternalReleaseImageInformer,
 	mcnInformer mcfginformersv1.MachineConfigNodeInformer,
 ) *Manager {
 	i := &Manager{
@@ -124,7 +127,7 @@ func (i *Manager) Run(workers int, stopCh <-chan struct{}) {
 	<-stopCh
 }
 
-func (i *Manager) enqueue(iri *mcfgv1.InternalReleaseImage) {
+func (i *Manager) enqueue(iri *mcfgv1alpha1.InternalReleaseImage) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(iri)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %w", iri, err))
@@ -171,22 +174,22 @@ func (i *Manager) handleErr(err error, key string) {
 }
 
 func (i *Manager) addInternalReleaseImage(obj interface{}) {
-	iri := obj.(*mcfgv1.InternalReleaseImage)
+	iri := obj.(*mcfgv1alpha1.InternalReleaseImage)
 	klog.V(4).Infof("Adding InternalReleaseImage %s", iri.Name)
 	i.enqueueInternalReleaseImage(iri)
 }
 
 func (i *Manager) updateInternalReleaseImage(old, cur interface{}) {
-	oldInternalReleaseImage := old.(*mcfgv1.InternalReleaseImage)
-	newInternalReleaseImage := cur.(*mcfgv1.InternalReleaseImage)
+	oldInternalReleaseImage := old.(*mcfgv1alpha1.InternalReleaseImage)
+	newInternalReleaseImage := cur.(*mcfgv1alpha1.InternalReleaseImage)
 
 	if i.internalReleaseImageChanged(oldInternalReleaseImage, newInternalReleaseImage) {
-		klog.V(4).Infof("InternalReleaseImage %s updated", newInternalReleaseImage.Name)
+		klog.V(4).Infof("mcfgv1alpha1.InternalReleaseImage %s updated", newInternalReleaseImage.Name)
 		i.enqueueInternalReleaseImage(newInternalReleaseImage)
 	}
 }
 
-func (i *Manager) internalReleaseImageChanged(old, newIRI *mcfgv1.InternalReleaseImage) bool {
+func (i *Manager) internalReleaseImageChanged(old, newIRI *mcfgv1alpha1.InternalReleaseImage) bool {
 	if old.DeletionTimestamp != newIRI.DeletionTimestamp {
 		return true
 	}
@@ -197,14 +200,14 @@ func (i *Manager) internalReleaseImageChanged(old, newIRI *mcfgv1.InternalReleas
 }
 
 func (i *Manager) deleteInternalReleaseImage(obj interface{}) {
-	iri, ok := obj.(*mcfgv1.InternalReleaseImage)
+	iri, ok := obj.(*mcfgv1alpha1.InternalReleaseImage)
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
 		if !ok {
 			utilruntime.HandleError(fmt.Errorf("failed to get object from tombstone %#v", obj))
 			return
 		}
-		iri, ok = tombstone.Obj.(*mcfgv1.InternalReleaseImage)
+		iri, ok = tombstone.Obj.(*mcfgv1alpha1.InternalReleaseImage)
 		if !ok {
 			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a InternalReleaseImage %#v", obj))
 			return
@@ -288,13 +291,13 @@ func (i *Manager) refreshMachineConfigNodeStatus(mcn *mcfgv1.MachineConfigNode, 
 		err := iriReg.CheckImageAvailability(r.Image)
 		if err == nil {
 			meta.SetStatusCondition(&r.Conditions, metav1.Condition{
-				Type:    string(mcfgv1.InternalReleaseImageConditionTypeDegraded),
+				Type:    string(mcfgv1alpha1.InternalReleaseImageConditionTypeDegraded),
 				Status:  metav1.ConditionFalse,
 				Reason:  "ReleaseImageAvailable",
 				Message: "ReleaseImageAvailable",
 			})
 			meta.SetStatusCondition(&r.Conditions, metav1.Condition{
-				Type:    string(mcfgv1.InternalReleaseImageConditionTypeAvailable),
+				Type:    string(mcfgv1alpha1.InternalReleaseImageConditionTypeAvailable),
 				Status:  metav1.ConditionTrue,
 				Reason:  "ReleaseImageAvailable",
 				Message: "The specified release image is available",
@@ -303,13 +306,13 @@ func (i *Manager) refreshMachineConfigNodeStatus(mcn *mcfgv1.MachineConfigNode, 
 			mcnDegraded = true
 			klog.Errorf("Release image %s not available for bundle %s. Error: %v", r.Image, r.Name, err)
 			meta.SetStatusCondition(&r.Conditions, metav1.Condition{
-				Type:    string(mcfgv1.InternalReleaseImageConditionTypeDegraded),
+				Type:    string(mcfgv1alpha1.InternalReleaseImageConditionTypeDegraded),
 				Status:  metav1.ConditionTrue,
 				Reason:  "ReleaseImageNotFound",
 				Message: err.Error(),
 			})
 			meta.SetStatusCondition(&r.Conditions, metav1.Condition{
-				Type:    string(mcfgv1.InternalReleaseImageConditionTypeAvailable),
+				Type:    string(mcfgv1alpha1.InternalReleaseImageConditionTypeAvailable),
 				Status:  metav1.ConditionFalse,
 				Reason:  "ReleaseImageNotFound",
 				Message: "The specified release image was not found in the registry",
@@ -351,13 +354,13 @@ func (i *Manager) setMachineConfigNodeAsDegraded(mcn *mcfgv1.MachineConfigNode, 
 		r := &mcnUpdated.Status.InternalReleaseImage.Releases[n]
 
 		meta.SetStatusCondition(&r.Conditions, metav1.Condition{
-			Type:    string(mcfgv1.InternalReleaseImageConditionTypeDegraded),
+			Type:    string(mcfgv1alpha1.InternalReleaseImageConditionTypeDegraded),
 			Status:  metav1.ConditionTrue,
 			Reason:  reason,
 			Message: registryErr.Error(),
 		})
 		meta.SetStatusCondition(&r.Conditions, metav1.Condition{
-			Type:    string(mcfgv1.InternalReleaseImageConditionTypeAvailable),
+			Type:    string(mcfgv1alpha1.InternalReleaseImageConditionTypeAvailable),
 			Status:  metav1.ConditionFalse,
 			Reason:  reason,
 			Message: "Release bundle is unavailable: failed to reach the registry",

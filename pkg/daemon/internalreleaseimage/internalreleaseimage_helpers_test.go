@@ -2,6 +2,7 @@ package internalreleaseimage
 
 import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	"github.com/openshift/machine-config-operator/pkg/controller/common"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -10,17 +11,17 @@ import (
 
 // iriBuilder simplifies the creation of an InternalReleaseImage resource in the test.
 type iriBuilder struct {
-	obj *mcfgv1.InternalReleaseImage
+	obj *mcfgv1alpha1.InternalReleaseImage
 }
 
 func iri() *iriBuilder {
 	return &iriBuilder{
-		obj: &mcfgv1.InternalReleaseImage{
+		obj: &mcfgv1alpha1.InternalReleaseImage{
 			ObjectMeta: v1.ObjectMeta{
 				Name: common.InternalReleaseImageInstanceName,
 			},
-			Spec: mcfgv1.InternalReleaseImageSpec{
-				Releases: []mcfgv1.InternalReleaseImageRef{
+			Spec: mcfgv1alpha1.InternalReleaseImageSpec{
+				Releases: []mcfgv1alpha1.InternalReleaseImageRef{
 					{
 						Name: "ocp-release-bundle-4.21.5-x86_64",
 					},
@@ -70,11 +71,11 @@ func (mb *mcnBuilder) withIRIBundle(bundleName string, image string) *mcnBuilder
 					Image: image,
 					Conditions: []v1.Condition{
 						{
-							Type:   string(mcfgv1.InternalReleaseImageConditionTypeDegraded),
+							Type:   string(mcfgv1alpha1.InternalReleaseImageConditionTypeDegraded),
 							Status: metav1.ConditionFalse,
 						},
 						{
-							Type:   string(mcfgv1.InternalReleaseImageConditionTypeAvailable),
+							Type:   string(mcfgv1alpha1.InternalReleaseImageConditionTypeAvailable),
 							Status: metav1.ConditionTrue,
 						},
 					},

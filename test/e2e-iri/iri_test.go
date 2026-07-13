@@ -22,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/test/framework"
@@ -37,7 +38,7 @@ func TestIRIResource_Available(t *testing.T) {
 	ctx := context.Background()
 
 	// Check that the initial InternalReleaseImage resource has been installed.
-	_, err := cs.MachineconfigurationV1Interface.InternalReleaseImages().Get(ctx, "cluster", v1.GetOptions{})
+	_, err := cs.InternalReleaseImages().Get(ctx, "cluster", v1.GetOptions{})
 	require.NoError(t, err)
 
 	// Verify that the expected MachineConfigs have been created.
@@ -73,8 +74,8 @@ func TestMachineConfigNodesStatus(t *testing.T) {
 		require.Equal(t, expectedVersion, r.Name)
 		require.NotEmpty(t, r.Image, "OCP release pullspec cannot be empty")
 
-		requireCondition(t, r.Conditions, string(mcfgv1.InternalReleaseImageConditionTypeAvailable), v1.ConditionTrue)
-		requireCondition(t, r.Conditions, string(mcfgv1.InternalReleaseImageConditionTypeDegraded), v1.ConditionFalse)
+		requireCondition(t, r.Conditions, string(mcfgv1alpha1.InternalReleaseImageConditionTypeAvailable), v1.ConditionTrue)
+		requireCondition(t, r.Conditions, string(mcfgv1alpha1.InternalReleaseImageConditionTypeDegraded), v1.ConditionFalse)
 	}
 }
 
@@ -84,7 +85,7 @@ func TestInternalReleaseImageAggregatedStatusHappyPath(t *testing.T) {
 	cs := framework.NewClientSet("")
 	ctx := context.Background()
 
-	iri, err := cs.MachineconfigurationV1Interface.InternalReleaseImages().Get(ctx, "cluster", v1.GetOptions{})
+	iri, err := cs.InternalReleaseImages().Get(ctx, "cluster", v1.GetOptions{})
 	require.NoError(t, err)
 
 	require.NotEmpty(t, iri.Status.Releases, "Cluster-level IRI should have aggregated releases")
@@ -99,11 +100,11 @@ func TestInternalReleaseImageAggregatedStatusHappyPath(t *testing.T) {
 		require.NotEmpty(t, release.Conditions, "Release should have conditions")
 	}
 
-	requireCondition(t, iri.Status.Conditions, string(mcfgv1.InternalReleaseImageStatusConditionTypeDegraded), v1.ConditionFalse)
+	requireCondition(t, iri.Status.Conditions, string(mcfgv1alpha1.InternalReleaseImageStatusConditionTypeDegraded), v1.ConditionFalse)
 
 	// The reason should be AllReleasesAvailable in a healthy cluster
 	for _, cond := range iri.Status.Conditions {
-		if cond.Type == string(mcfgv1.InternalReleaseImageStatusConditionTypeDegraded) {
+		if cond.Type == string(mcfgv1alpha1.InternalReleaseImageStatusConditionTypeDegraded) {
 			require.Equal(t, "AllReleasesAvailable", cond.Reason, "In a healthy cluster, reason should be AllReleasesAvailable")
 		}
 	}
@@ -121,7 +122,7 @@ func TestInternalReleaseImageAggregatesFromMCNs(t *testing.T) {
 	ctx := context.Background()
 
 	// Get the cluster-level IRI
-	iri, err := cs.MachineconfigurationV1Interface.InternalReleaseImages().Get(ctx, "cluster", v1.GetOptions{})
+	iri, err := cs.InternalReleaseImages().Get(ctx, "cluster", v1.GetOptions{})
 	require.NoError(t, err)
 	require.NotEmpty(t, iri.Status.Releases, "Cluster IRI should have releases")
 
@@ -197,7 +198,7 @@ func TestInternalReleaseImageStatusConditions(t *testing.T) {
 	cs := framework.NewClientSet("")
 	ctx := context.Background()
 
-	iri, err := cs.MachineconfigurationV1Interface.InternalReleaseImages().Get(ctx, "cluster", v1.GetOptions{})
+	iri, err := cs.InternalReleaseImages().Get(ctx, "cluster", v1.GetOptions{})
 	require.NoError(t, err)
 
 	// Verify cluster-level IRI has Degraded condition
@@ -205,7 +206,7 @@ func TestInternalReleaseImageStatusConditions(t *testing.T) {
 
 	foundDegraded := false
 	for _, cond := range iri.Status.Conditions {
-		if cond.Type == string(mcfgv1.InternalReleaseImageStatusConditionTypeDegraded) {
+		if cond.Type == string(mcfgv1alpha1.InternalReleaseImageStatusConditionTypeDegraded) {
 			foundDegraded = true
 
 			// Verify condition has reason and message
@@ -241,12 +242,12 @@ func TestInternalReleaseImageStatusConditions(t *testing.T) {
 				"Condition in release %s should have LastTransitionTime", release.Name)
 
 			switch cond.Type {
-			case string(mcfgv1.InternalReleaseImageConditionTypeAvailable):
+			case string(mcfgv1alpha1.InternalReleaseImageConditionTypeAvailable):
 				foundAvailable = true
 				// In healthy cluster, Available should be True
 				require.Equal(t, v1.ConditionTrue, cond.Status,
 					"Available condition should be True for release %s in healthy cluster", release.Name)
-			case string(mcfgv1.InternalReleaseImageConditionTypeDegraded):
+			case string(mcfgv1alpha1.InternalReleaseImageConditionTypeDegraded):
 				foundReleaseDegraded = true
 				// In healthy cluster, Degraded should be False
 				require.Equal(t, v1.ConditionFalse, cond.Status,
@@ -374,7 +375,7 @@ func TestIRIController_ShouldPreventDeletionWhenInUse(t *testing.T) {
 	ctx := context.Background()
 
 	// Get the InternalReleaseImage resource
-	iri, err := cs.MachineconfigurationV1Interface.InternalReleaseImages().Get(ctx, "cluster", v1.GetOptions{})
+	iri, err := cs.InternalReleaseImages().Get(ctx, "cluster", v1.GetOptions{})
 	require.NoError(t, err)
 
 	// Verify the IRI has releases in its status
@@ -402,7 +403,7 @@ func TestIRIController_ShouldPreventDeletionWhenInUse(t *testing.T) {
 	require.True(t, matchFound, "IRI should contain a release matching the current cluster version (digest: %s)", cvDigest)
 
 	// Attempt to delete the InternalReleaseImage - this should fail
-	err = cs.MachineconfigurationV1Interface.InternalReleaseImages().Delete(ctx, "cluster", v1.DeleteOptions{})
+	err = cs.InternalReleaseImages().Delete(ctx, "cluster", v1.DeleteOptions{})
 	require.Error(t, err, "Deleting IRI while in use should fail")
 
 	// Verify the error is an Invalid error from the ValidatingAdmissionPolicy
@@ -412,7 +413,7 @@ func TestIRIController_ShouldPreventDeletionWhenInUse(t *testing.T) {
 		"Error message should indicate the IRI is in use")
 
 	// Verify the IRI still exists
-	iri, err = cs.MachineconfigurationV1Interface.InternalReleaseImages().Get(ctx, "cluster", v1.GetOptions{})
+	iri, err = cs.InternalReleaseImages().Get(ctx, "cluster", v1.GetOptions{})
 	require.NoError(t, err, "IRI should still exist after failed deletion attempt")
 	require.NotNil(t, iri, "IRI should not be nil")
 }

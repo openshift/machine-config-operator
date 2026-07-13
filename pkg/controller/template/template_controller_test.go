@@ -30,6 +30,7 @@ import (
 
 	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
@@ -132,7 +133,7 @@ func (f *fixture) newController() *Controller {
 		i.Machineconfiguration().V1().ControllerConfigs(),
 		cinformer.Core().V1().Secrets(),
 		cinformer.Core().V1().Secrets(), // iriSecretsInformer: reuse same factory in tests; not exercised here
-		iriInformers.Machineconfiguration().V1().InternalReleaseImages(),
+		iriInformers.Machineconfiguration().V1alpha1().InternalReleaseImages(),
 		apiserverinformer.Config().V1().APIServers(),
 		f.kubeclient, f.client,
 		f.fgHandler)
@@ -304,6 +305,7 @@ func (f *fixture) expectUpdateMachineConfigAction(config *mcfgv1.MachineConfig) 
 func (f *fixture) expectGetSecretAction(secret *corev1.Secret) {
 	f.kubeactions = append(f.kubeactions, core.NewGetAction(schema.GroupVersionResource{Resource: "secrets"}, secret.Namespace, secret.Name))
 }
+
 
 func (f *fixture) expectUpdateControllerConfigStatus(status *mcfgv1.ControllerConfig) {
 	f.actions = append(f.actions, core.NewRootUpdateSubresourceAction(schema.GroupVersionResource{Resource: "controllerconfigs"}, "status", status))
@@ -568,7 +570,7 @@ func TestMergesIRIRegistryCredentialsIntoPullSecret(t *testing.T) {
 	f.ccLister = append(f.ccLister, cc)
 	f.objects = append(f.objects, cc)
 	f.kubeobjects = append(f.kubeobjects, ps, iriRegistryCredentialsSecret)
-	f.iriObjects = append(f.iriObjects, &mcfgv1.InternalReleaseImage{
+	f.iriObjects = append(f.iriObjects, &mcfgv1alpha1.InternalReleaseImage{
 		ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.InternalReleaseImageInstanceName},
 	})
 	f.fgHandler = ctrlcommon.NewFeatureGatesHardcodedHandler(
