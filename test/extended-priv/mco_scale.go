@@ -335,11 +335,14 @@ func cloneMachineSet(oc *exutil.CLI, ms *MachineSet, newMsName, imageVersion, ig
 	architecture, err := ms.GetArchitecture()
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the arechitecture from machineset %s", ms.GetName())
 
-	baseImage, err := rhcosHandler.GetBaseImageFromRHCOSImageInfo(imageVersion, architecture, getCurrentRegionOrFail(oc.AsAdmin()))
+	stream := ms.GetOSStream()
+	logger.Infof("MachineSet %s is using OS stream %s", ms.GetName(), stream)
+
+	baseImage, err := rhcosHandler.GetBaseImageFromRHCOSImageInfo(imageVersion, stream, architecture, getCurrentRegionOrFail(oc.AsAdmin()))
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the base image")
 	logger.Infof("Using base image %s", baseImage)
 
-	baseImageURL, err := rhcosHandler.GetBaseImageURLFromRHCOSImageInfo(imageVersion, architecture)
+	baseImageURL, err := rhcosHandler.GetBaseImageURLFromRHCOSImageInfo(imageVersion, stream, architecture)
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the base image URL")
 
 	// In vshpere we will upload the image. To avoid collisions we will add prefix to identify our image
@@ -397,17 +400,20 @@ func removeClonedMachineSet(ms *MachineSet, mcp *MachineConfigPool, expectedNumW
 	}
 }
 
-func getRHCOSImagesInfo(version string) (string, error) {
+func getRHCOSImagesInfo(version, stream string) (string, error) {
 	var (
 		err        error
 		resp       *http.Response
 		numRetries = 3
 		retryDelay = time.Minute
-		rhcosURL   = fmt.Sprintf("https://raw.githubusercontent.com/openshift/installer/release-%s/data/data/rhcos.json", version)
+		rhcosURL   = fmt.Sprintf("https://raw.githubusercontent.com/openshift/installer/release-%s/data/data/coreos/coreos-%s.json", version, stream)
 	)
 
-	if CompareVersions(version, ">=", "4.10") {
+	if CompareVersions(version, "<", "4.22") {
 		rhcosURL = fmt.Sprintf("https://raw.githubusercontent.com/openshift/installer/release-%s/data/data/coreos/rhcos.json", version)
+	}
+	if CompareVersions(version, "<", "4.10") {
+		rhcosURL = fmt.Sprintf("https://raw.githubusercontent.com/openshift/installer/release-%s/data/data/rhcos.json", version)
 	}
 
 	// To mitigate network errors we will retry in case of failure
@@ -529,20 +535,20 @@ func GetRHCOSHandler(platform string) (RHCOSHandler, error) {
 }
 
 type RHCOSHandler interface {
-	GetBaseImageFromRHCOSImageInfo(version string, arch architecture.Architecture, region string) (string, error)
-	GetBaseImageURLFromRHCOSImageInfo(version string, arch architecture.Architecture) (string, error)
+	GetBaseImageFromRHCOSImageInfo(version, stream string, arch architecture.Architecture, region string) (string, error)
+	GetBaseImageURLFromRHCOSImageInfo(version, stream string, arch architecture.Architecture) (string, error)
 }
 
 type AWSRHCOSHandler struct{}
 
-func (aws AWSRHCOSHandler) GetBaseImageFromRHCOSImageInfo(version string, arch architecture.Architecture, region string) (string, error) {
+func (aws AWSRHCOSHandler) GetBaseImageFromRHCOSImageInfo(version, stream string, arch architecture.Architecture, region string) (string, error) {
 	var (
 		path       string
 		stringArch = arch.GNUString()
 		platform   = AWSPlatform
 	)
 
-	rhcosImageInfo, err := getRHCOSImagesInfo(version)
+	rhcosImageInfo, err := getRHCOSImagesInfo(version, stream)
 	if err != nil {
 		return "", err
 	}
@@ -567,13 +573,13 @@ func (aws AWSRHCOSHandler) GetBaseImageFromRHCOSImageInfo(version string, arch a
 	return baseImage.String(), nil
 }
 
-func (aws AWSRHCOSHandler) GetBaseImageURLFromRHCOSImageInfo(version string, arch architecture.Architecture) (string, error) {
-	return getBaseImageURLFromRHCOSImageInfo(version, "aws", "vmdk.gz", arch.GNUString())
+func (aws AWSRHCOSHandler) GetBaseImageURLFromRHCOSImageInfo(version, stream string, arch architecture.Architecture) (string, error) {
+	return getBaseImageURLFromRHCOSImageInfo(version, stream, "aws", "vmdk.gz", arch.GNUString())
 }
 
 type GCPRHCOSHandler struct{}
 
-func (gcp GCPRHCOSHandler) GetBaseImageFromRHCOSImageInfo(version string, arch architecture.Architecture, region string) (string, error) {
+func (gcp GCPRHCOSHandler) GetBaseImageFromRHCOSImageInfo(version, stream string, arch architecture.Architecture, region string) (string, error) {
 	var (
 		imagePath   string
 		projectPath string
@@ -585,7 +591,7 @@ func (gcp GCPRHCOSHandler) GetBaseImageFromRHCOSImageInfo(version string, arch a
 		return "", fmt.Errorf("there is no image base image supported for platform %s in version %s", platform, version)
 	}
 
-	rhcosImageInfo, err := getRHCOSImagesInfo(version)
+	rhcosImageInfo, err := getRHCOSImagesInfo(version, stream)
 	if err != nil {
 		return "", err
 	}
@@ -617,14 +623,14 @@ func (gcp GCPRHCOSHandler) GetBaseImageFromRHCOSImageInfo(version string, arch a
 	return fmt.Sprintf("projects/%s/global/images/%s", project.String(), baseImage.String()), nil
 }
 
-func (gcp GCPRHCOSHandler) GetBaseImageURLFromRHCOSImageInfo(version string, arch architecture.Architecture) (string, error) {
-	return getBaseImageURLFromRHCOSImageInfo(version, "gcp", "tar.gz", arch.GNUString())
+func (gcp GCPRHCOSHandler) GetBaseImageURLFromRHCOSImageInfo(version, stream string, arch architecture.Architecture) (string, error) {
+	return getBaseImageURLFromRHCOSImageInfo(version, stream, "gcp", "tar.gz", arch.GNUString())
 }
 
 type VsphereRHCOSHandler struct{}
 
-func (vsp VsphereRHCOSHandler) GetBaseImageFromRHCOSImageInfo(version string, arch architecture.Architecture, _ string) (string, error) {
-	baseImageURL, err := vsp.GetBaseImageURLFromRHCOSImageInfo(version, arch)
+func (vsp VsphereRHCOSHandler) GetBaseImageFromRHCOSImageInfo(version, stream string, arch architecture.Architecture, _ string) (string, error) {
+	baseImageURL, err := vsp.GetBaseImageURLFromRHCOSImageInfo(version, stream, arch)
 	if err != nil {
 		return "", err
 	}
@@ -632,18 +638,18 @@ func (vsp VsphereRHCOSHandler) GetBaseImageFromRHCOSImageInfo(version string, ar
 	return path.Base(baseImageURL), nil
 }
 
-func (vsp VsphereRHCOSHandler) GetBaseImageURLFromRHCOSImageInfo(version string, arch architecture.Architecture) (string, error) {
-	return getBaseImageURLFromRHCOSImageInfo(version, "vmware", "ova", arch.GNUString())
+func (vsp VsphereRHCOSHandler) GetBaseImageURLFromRHCOSImageInfo(version, stream string, arch architecture.Architecture) (string, error) {
+	return getBaseImageURLFromRHCOSImageInfo(version, stream, "vmware", "ova", arch.GNUString())
 }
 
-func getBaseImageURLFromRHCOSImageInfo(version, platform, format, stringArch string) (string, error) {
+func getBaseImageURLFromRHCOSImageInfo(version, stream, platform, format, stringArch string) (string, error) {
 	var (
 		imagePath    string
 		baseURIPath  string
 		olderThan410 = CompareVersions(version, "<", "4.10")
 	)
 
-	rhcosImageInfo, err := getRHCOSImagesInfo(version)
+	rhcosImageInfo, err := getRHCOSImagesInfo(version, stream)
 	if err != nil {
 		return "", err
 	}

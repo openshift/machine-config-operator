@@ -49,6 +49,23 @@ func NewControlPlaneMachineSetList(oc *exutil.CLI, namespace string) *ControlPla
 }
 
 // GetState returns the state of the ControlPlaneMachineSet (Active or Inactive)
+// GetOSStreamLabel returns the value of the machineconfiguration.openshift.io/osstream label
+func (cpms ControlPlaneMachineSet) GetOSStreamLabel() (string, error) {
+	return cpms.GetLabel("machineconfiguration.openshift.io/osstream")
+}
+
+// GetOSStream returns the OS stream used by this ControlPlaneMachineSet.
+// If the osstream label is set, it returns its value. Otherwise it defaults to rhel-9.
+// The logic should be more complex.
+// If the label is not set, then we should return the osstream used by the master pool
+func (cpms ControlPlaneMachineSet) GetOSStream() string {
+	stream, err := cpms.GetOSStreamLabel()
+	if err != nil || stream == "" {
+		return OSImageStreamRHEL9
+	}
+	return stream
+}
+
 func (cpms ControlPlaneMachineSet) GetState() (string, error) {
 	return cpms.Get(`{.spec.state}`)
 }

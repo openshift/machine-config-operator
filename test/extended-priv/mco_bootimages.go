@@ -930,11 +930,11 @@ func getBackdatedBootImage(oc *exutil.CLI) string {
 		rhcosHandler, err := GetRHCOSHandler(platform)
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the rhcos handler")
 
-		baseImage, err := rhcosHandler.GetBaseImageFromRHCOSImageInfo(imageVersion, arch, "")
+		baseImage, err := rhcosHandler.GetBaseImageFromRHCOSImageInfo(imageVersion, OSImageStreamRHEL9, arch, "")
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the base image")
 		logger.Infof("Using base image %s", baseImage)
 
-		baseImageURL, err := rhcosHandler.GetBaseImageURLFromRHCOSImageInfo(imageVersion, arch)
+		baseImageURL, err := rhcosHandler.GetBaseImageURLFromRHCOSImageInfo(imageVersion, OSImageStreamRHEL9, arch)
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the base image URL")
 
 		// To avoid collisions we will add prefix to identify our image
