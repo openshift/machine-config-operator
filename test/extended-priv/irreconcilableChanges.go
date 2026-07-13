@@ -21,6 +21,9 @@ func platformBasedDisksPatch(platform string, ms *MachineSet) error {
 		err = ms.Patch("json", `[{"op":"add","path":"/spec/template/spec/providerSpec/value/dataDisks","value":[{"nameSuffix":"disk1","diskSizeGB":16,"lun":0,"deletionPolicy":"Delete"},{"nameSuffix":"disk2","diskSizeGB":16,"lun":1,"deletionPolicy":"Delete"}]}]`)
 	case VspherePlatform:
 		err = ms.Patch("json", `[{"op":"add","path":"/spec/template/spec/providerSpec/value/dataDisks","value":[{"name":"data-disk-1","sizeGiB":16},{"name":"data-disk-2","sizeGiB":16}]}]`)
+	case BaremetalPlatform:
+		// skip patch on BaremetalPlatform
+		err = nil
 	default:
 		err = fmt.Errorf("Unknown platform: %v", platform)
 	}
@@ -63,6 +66,13 @@ func platformBasedDisksNames(platform string) []string {
 			"/dev/sdd",
 			"/dev/sde",
 		}
+	case BaremetalPlatform:
+		return []string{
+			"/dev/vda",
+			"/dev/vdb",
+			"/dev/vdc",
+			"/dev/vdd",
+		}
 	}
 	return []string{}
 }
@@ -97,12 +107,11 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 	g.JustBeforeEach(func() {
 		PreChecks(oc)
-		skipIfNoTechPreview(oc)
-		skipTestIfSupportedPlatformNotMatched(oc, AWSPlatform, GCPPlatform, AzurePlatform, VspherePlatform)
+		skipTestIfSupportedPlatformNotMatched(oc, AWSPlatform, GCPPlatform, AzurePlatform, VspherePlatform, BaremetalPlatform)
 		skipTestIfSNOCluster(oc)
 	})
 
-	g.It("Base irreconcilable changes detection on existing nodes", g.Label("Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere"), func() {
+	g.It("Base irreconcilable changes detection on existing nodes", g.Label("Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere", "Platform:baremetal"), func() {
 		var (
 			machineconfiguration = GetMachineConfiguration(oc)
 			mcName               = "irreconcilable-base-test"
@@ -299,7 +308,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("Test node %s correctly reports irreconcilable changes after MC removal\n", testNode.GetName())
 	})
 
-	g.It("Irreconcilable changes persist after feature has been disabled. New irreconcilable configs will be rejected", g.Label("Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere"), func() {
+	g.It("Irreconcilable changes persist after feature has been disabled. New irreconcilable configs will be rejected", g.Label("Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere", "Platform:baremetal"), func() {
 		var (
 			machineconfiguration = GetMachineConfiguration(oc)
 			mcName               = "irreconcilable-persist-test"
@@ -397,7 +406,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		}()
 	})
 
-	g.It("Irreconcilable changes cleared after reverting MC", g.Label("Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere"), func() {
+	g.It("Irreconcilable changes cleared after reverting MC", g.Label("Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere", "Platform:baremetal"), func() {
 		var (
 			machineconfiguration = GetMachineConfiguration(oc)
 			mcName               = "irreconcilable-clear-test"
@@ -459,7 +468,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("All worker nodes have cleared irreconcilable changes!\n")
 	})
 
-	g.It("Irreconcilable MC rejected without override enabled", g.Label("Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere"), func() {
+	g.It("Irreconcilable MC rejected without override enabled", g.Label("Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere", "Platform:baremetal"), func() {
 		var (
 			mcName = "irreconcilable-reject-test"
 		)
