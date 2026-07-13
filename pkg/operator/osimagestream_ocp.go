@@ -13,6 +13,7 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/imageutils"
 	"github.com/openshift/machine-config-operator/pkg/osimagestream"
+	"github.com/openshift/machine-config-operator/pkg/version"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -254,6 +255,18 @@ func (optr *Operator) isOSImageStreamBuildRequired() (*mcfgv1.OSImageStream, boo
 		klog.V(4).Info("OSImageStream is already up-to-date, skipping sync")
 		return existingOSImageStream, false, nil
 	}
+
+	// During an upgrade the CVO updates ClusterVersion.Status.Desired before
+	// replacing the operator pod. The old operator would see the new payload
+	// image and rebuild the OSImageStream with its own stale version.Hash,
+	// poisoning the annotation for the incoming operator. Defer the rebuild
+	// to the new operator whose version matches the target.
+	if clusterVersion.Status.Desired.Version != version.ReleaseVersion {
+		klog.Infof("OSImageStream rebuild deferred: ClusterVersion targets %s but operator is %s",
+			clusterVersion.Status.Desired.Version, version.ReleaseVersion)
+		return existingOSImageStream, false, nil
+	}
+
 	return existingOSImageStream, true, nil
 }
 
@@ -313,14 +326,20 @@ func (optr *Operator) getExistingOSImageStream() (*mcfgv1.OSImageStream, error) 
 }
 
 // osImageStreamRequiresRebuild checks if the OSImageStream needs to be created or updated.
-// Returns true if osImageStream is nil, or if its release image annotation doesn't match the
-// current release payload image. This uses the release payload image digest rather than the
-// MCO binary hash so that upgrades are detected even when the MCO image itself hasn't changed
-// (e.g., in CI upgrade jobs where only RHCOS images are rebuilt).
+// Returns true if the OSImageStream is nil, if the release payload image changed, or if
+// the MCO binary version changed. The release payload image check detects real content
+// changes (new RHCOS images). The version.Hash check ensures the render controller's
+// version-skew guard is satisfied — it compares ReleaseImageVersionAnnotationKey against
+// its own version.Hash, so the annotation must be kept in sync even when the release
+// payload image hasn't changed (e.g., CI upgrade jobs where only the MCO binary is rebuilt).
 func osImageStreamRequiresRebuild(osImageStream *mcfgv1.OSImageStream, releaseImage string) bool {
 	if osImageStream == nil {
 		return true
 	}
 	storedImage, ok := osImageStream.Annotations[ctrlcommon.ReleasePayloadImageAnnotationKey]
-	return !ok || storedImage != releaseImage
+	if !ok || storedImage != releaseImage {
+		return true
+	}
+	storedVersion, ok := osImageStream.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey]
+	return !ok || storedVersion != version.Hash
 }
