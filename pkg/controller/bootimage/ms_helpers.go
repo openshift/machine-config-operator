@@ -207,6 +207,7 @@ func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet
 		return false, nil
 	}
 	klog.Infof("No patching required for MAPI machineset %s", machineSet.Name)
+
 	return false, nil
 }
 
