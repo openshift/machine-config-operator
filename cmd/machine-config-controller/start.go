@@ -16,6 +16,8 @@ import (
 	containerruntimeconfig "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
 	"github.com/openshift/machine-config-operator/pkg/controller/drain"
 	"github.com/openshift/machine-config-operator/pkg/controller/internalreleaseimage"
+	osistreamctrl "github.com/openshift/machine-config-operator/pkg/controller/osimagestream"
+	"github.com/openshift/machine-config-operator/pkg/osimagestream"
 	kubeletconfig "github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
 	"github.com/openshift/machine-config-operator/pkg/controller/node"
 	"github.com/openshift/machine-config-operator/pkg/controller/pinnedimageset"
@@ -86,6 +88,39 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			runCancel()
 			<-ctx.Done()
 			return
+		}
+
+		// OSImageStream must be the first controller to run: the blocking
+		// EnsureOSImageStream call guarantees the CR exists before any other
+		// controller starts, since render, node, and template depend on it
+		// for OS image URLs.
+		if osimagestream.IsFeatureEnabled(ctrlctx.FeatureGatesHandler) {
+			osImageStreamCtrl := osistreamctrl.New(
+				ctrlctx.InformerFactory.Machineconfiguration().V1().OSImageStreams(),
+				ctrlctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
+				ctrlctx.ConfigInformerFactory.Config().V1().ClusterVersions(),
+				ctrlctx.OpenShiftConfigKubeNamespacedInformerFactory.Core().V1().Secrets(),
+				ctrlctx.KubeNamespacedInformerFactory.Core().V1().ConfigMaps(),
+				ctrlctx.OperatorInformerFactory.Operator().V1alpha1().ImageContentSourcePolicies(),
+				ctrlctx.ConfigInformerFactory.Config().V1().ImageDigestMirrorSets(),
+				ctrlctx.ConfigInformerFactory.Config().V1().ImageTagMirrorSets(),
+				ctrlctx.ConfigInformerFactory.Config().V1().Images(),
+				ctrlctx.ClientBuilder.KubeClientOrDie("osimagestream-controller"),
+				ctrlctx.ClientBuilder.MachineConfigClientOrDie("osimagestream-controller"),
+				ctrlctx.FeatureGatesHandler,
+			)
+
+			ctrlctx.InformerFactory.Start(ctrlctx.Stop)
+			ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
+			ctrlctx.OpenShiftConfigKubeNamespacedInformerFactory.Start(ctrlctx.Stop)
+			ctrlctx.KubeNamespacedInformerFactory.Start(ctrlctx.Stop)
+			ctrlctx.OperatorInformerFactory.Start(ctrlctx.Stop)
+
+			go osImageStreamCtrl.Run(1, ctrlctx.Stop)
+
+			if err := osImageStreamCtrl.EnsureOSImageStream(ctx); err != nil {
+				klog.Fatalf("Failed to ensure OSImageStream: %v", err)
+			}
 		}
 
 		go ctrlcommon.StartMetricsListener(startOpts.promMetricsListenAddress, ctrlctx.Stop, ctrlcommon.RegisterMCCMetrics, startOpts.tlsMinVersion, startOpts.tlsCipherSuites)

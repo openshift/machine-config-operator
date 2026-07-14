@@ -6,8 +6,6 @@ import (
 	"time"
 
 	opv1 "github.com/openshift/api/operator/v1"
-	operatorinformersv1alpha1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1alpha1"
-	operatorlistersv1alpha1 "github.com/openshift/client-go/operator/listers/operator/v1alpha1"
 	"github.com/openshift/machine-config-operator/pkg/osimagestream"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
@@ -95,9 +93,6 @@ type Operator struct {
 	syncHandler func(ic string) error
 
 	imgLister                configlistersv1.ImageLister
-	idmsLister               configlistersv1.ImageDigestMirrorSetLister
-	itmsLister               configlistersv1.ImageTagMirrorSetLister
-	icspLister               operatorlistersv1alpha1.ImageContentSourcePolicyLister
 	crdLister                apiextlistersv1.CustomResourceDefinitionLister
 	mcpLister                mcfglistersv1.MachineConfigPoolLister
 	msLister                 mcfglistersv1.MachineConfigNodeLister
@@ -151,9 +146,6 @@ type Operator struct {
 	dnsListerSynced                  cache.InformerSynced
 	maoSecretInformerSynced          cache.InformerSynced
 	imgListerSynced                  cache.InformerSynced
-	idmsListerSynced                 cache.InformerSynced
-	itmsListerSynced                 cache.InformerSynced
-	icspListerSynced                 cache.InformerSynced
 	clusterVersionListerSynced       cache.InformerSynced
 	mcoSAListerSynced                cache.InformerSynced
 	mcoSecretListerSynced            cache.InformerSynced
@@ -211,9 +203,6 @@ func New(
 	nodeInformer coreinformersv1.NodeInformer,
 	maoSecretInformer coreinformersv1.SecretInformer,
 	imgInformer configinformersv1.ImageInformer,
-	idmsInformer configinformersv1.ImageDigestMirrorSetInformer,
-	itmsInformer configinformersv1.ImageTagMirrorSetInformer,
-	icspInformer operatorinformersv1alpha1.ImageContentSourcePolicyInformer,
 	mcoSAInformer coreinformersv1.ServiceAccountInformer,
 	mcoSecretInformer coreinformersv1.SecretInformer,
 	ocCmInformer coreinformersv1.ConfigMapInformer,
@@ -314,13 +303,6 @@ func New(
 
 	optr.imgLister = imgInformer.Lister()
 	optr.imgListerSynced = imgInformer.Informer().HasSynced
-	optr.idmsLister = idmsInformer.Lister()
-	optr.idmsListerSynced = idmsInformer.Informer().HasSynced
-	optr.itmsLister = itmsInformer.Lister()
-	optr.itmsListerSynced = itmsInformer.Informer().HasSynced
-	optr.icspLister = icspInformer.Lister()
-	optr.icspListerSynced = icspInformer.Informer().HasSynced
-
 	optr.clusterVersionLister = clusterVersionInformer.Lister()
 	optr.clusterCmLister = clusterCmInfomer.Lister()
 	optr.clusterCmListerSynced = clusterCmInfomer.Informer().HasSynced
@@ -455,9 +437,6 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.mcListerSynced,
 		optr.dnsListerSynced,
 		optr.imgListerSynced,
-		optr.idmsListerSynced,
-		optr.itmsListerSynced,
-		optr.icspListerSynced,
 		optr.clusterVersionListerSynced,
 		optr.mcoSAListerSynced,
 		optr.mcoSecretListerSynced,
@@ -616,11 +595,8 @@ func (optr *Operator) sync(key string) error {
 	// syncFuncs is the list of sync functions that are executed in order.
 	// any error marks sync as failure.
 	syncFuncs := []syncFunc{
-		// OSImageStream must run FIRST to provide OS image information as RenderConfig will read
-		// images references from OSImageStream
-		{"OSImageStream", optr.syncOSImageStream},
-		// "RenderConfig" should be the first one to run (except OSImageStream) as it sets the renderConfig in
-		// the operator for the sync funcs below
+		// "RenderConfig" should be the first one to run as it sets the renderConfig in
+		// the operator for the sync funcs below.
 		{"RenderConfig", optr.syncRenderConfig},
 		{"MachineConfiguration", optr.syncMachineConfiguration},
 		{"MachineConfigNode", optr.syncMachineConfigNodes},

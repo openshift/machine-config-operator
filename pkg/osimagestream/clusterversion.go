@@ -43,17 +43,23 @@ func GetInstallVersion(clusterVersion *configv1.ClusterVersion) (*k8sversion.Ver
 			completed = append(completed, entry)
 		}
 	}
+	var versionStr string
 	if len(completed) == 0 {
-		return nil, errors.New("ClusterVersion has no completed updates in history")
+		// During install there are no completed updates yet, use the desired version
+		if clusterVersion.Status.Desired.Version == "" {
+			return nil, errors.New("ClusterVersion has no completed updates and no desired version")
+		}
+		versionStr = clusterVersion.Status.Desired.Version
+	} else {
+		slices.SortFunc(completed, func(a, b configv1.UpdateHistory) int {
+			return a.CompletionTime.Time.Compare(b.CompletionTime.Time)
+		})
+		versionStr = completed[0].Version
 	}
 
-	slices.SortFunc(completed, func(a, b configv1.UpdateHistory) int {
-		return a.CompletionTime.Time.Compare(b.CompletionTime.Time)
-	})
-
-	v, err := k8sversion.ParseGeneric(completed[0].Version)
+	v, err := k8sversion.ParseGeneric(versionStr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse install version %q: %w", completed[0].Version, err)
+		return nil, fmt.Errorf("failed to parse install version %q: %w", versionStr, err)
 	}
 	return v, nil
 }

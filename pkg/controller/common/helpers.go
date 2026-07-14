@@ -1093,10 +1093,13 @@ func GetIgnitionFileDataByPath(config *ign3types.Config, path string) ([]byte, e
 
 // GetBaseImageContainer returns the default bootable host base image.
 func GetBaseImageContainer(cconfigspec *mcfgv1.ControllerConfigSpec, imageStream *mcfgv1.OSImageStreamSet) string {
-	if imageStream == nil {
-		return cconfigspec.BaseOSContainerImage
+	if imageStream != nil {
+		return string(imageStream.OSImage)
 	}
-	return string(imageStream.OSImage)
+	if cconfigspec.BaseOSContainerImage == "" {
+		klog.Warningf("No BaseOSContainerImage set")
+	}
+	return cconfigspec.BaseOSContainerImage
 }
 
 // GetBaseExtensionsImageContainer returns the default bootable host base image.

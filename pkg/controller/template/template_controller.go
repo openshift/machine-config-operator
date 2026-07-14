@@ -108,6 +108,28 @@ func New(
 			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigcontroller-templatecontroller"}),
 	}
 
+	ctrl.syncHandler = ctrl.syncControllerConfig
+	ctrl.enqueueControllerConfig = ctrl.enqueue
+
+	ctrl.ccLister = ccInformer.Lister()
+	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
+	ctrl.secretsInformerSynced = secretsInformer.Informer().HasSynced
+	ctrl.apiserverLister = apiserverInformer.Lister()
+	ctrl.apiserverListerSynced = apiserverInformer.Informer().HasSynced
+
+	if iriSecretsInformer != nil {
+		ctrl.iriSecretsInformerSynced = iriSecretsInformer.Informer().HasSynced
+	} else {
+		ctrl.iriSecretsInformerSynced = func() bool { return true }
+	}
+	if iriInformer != nil {
+		ctrl.iriInformerSynced = iriInformer.Informer().HasSynced
+		ctrl.iriMerger = ctrlcommon.NewIRISecretMerger(iriSecretsInformer.Lister(), ctrl.ccLister, iriInformer.Lister(), fgHandler)
+	} else {
+		ctrl.iriInformerSynced = func() bool { return true }
+		ctrl.iriMerger = ctrlcommon.NewIRISecretMerger(nil, ctrl.ccLister, nil, fgHandler)
+	}
+
 	ccInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addControllerConfig,
 		UpdateFunc: ctrl.updateControllerConfig,
@@ -130,9 +152,6 @@ func New(
 			AddFunc:    ctrl.addSecret,
 			UpdateFunc: ctrl.updateSecret,
 		})
-		ctrl.iriSecretsInformerSynced = iriSecretsInformer.Informer().HasSynced
-	} else {
-		ctrl.iriSecretsInformerSynced = func() bool { return true }
 	}
 
 	apiserverInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -140,24 +159,6 @@ func New(
 		UpdateFunc: ctrl.updateAPIServer,
 		DeleteFunc: ctrl.deleteAPIServer,
 	})
-
-	ctrl.syncHandler = ctrl.syncControllerConfig
-	ctrl.enqueueControllerConfig = ctrl.enqueue
-
-	ctrl.ccLister = ccInformer.Lister()
-	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
-	ctrl.secretsInformerSynced = secretsInformer.Informer().HasSynced
-
-	if iriInformer != nil {
-		ctrl.iriInformerSynced = iriInformer.Informer().HasSynced
-		ctrl.iriMerger = ctrlcommon.NewIRISecretMerger(iriSecretsInformer.Lister(), ctrl.ccLister, iriInformer.Lister(), fgHandler)
-	} else {
-		ctrl.iriInformerSynced = func() bool { return true }
-		ctrl.iriMerger = ctrlcommon.NewIRISecretMerger(nil, ctrl.ccLister, nil, fgHandler)
-	}
-
-	ctrl.apiserverLister = apiserverInformer.Lister()
-	ctrl.apiserverListerSynced = apiserverInformer.Informer().HasSynced
 
 	return ctrl
 }
