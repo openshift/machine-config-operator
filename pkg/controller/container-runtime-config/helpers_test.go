@@ -17,7 +17,6 @@ import (
 	"github.com/containers/image/v5/types"
 	storageconfig "github.com/containers/storage/pkg/config"
 	apicfgv1 "github.com/openshift/api/config/v1"
-	apicfgv1alpha1 "github.com/openshift/api/config/v1alpha1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	"github.com/stretchr/testify/assert"
@@ -2687,28 +2686,28 @@ func TestWrapErrorWithCRIOCredentialProviderConfigCondition(t *testing.T) {
 			conditionType:  "",
 			reason:         "",
 			args:           nil,
-			expectedType:   apicfgv1alpha1.ConditionTypeMachineConfigRendered,
+			expectedType:   apicfgv1.ConditionTypeMachineConfigRendered,
 			expectedStatus: metav1.ConditionTrue,
-			expectedReason: apicfgv1alpha1.ReasonMachineConfigRenderingSucceeded,
+			expectedReason: apicfgv1.ReasonMachineConfigRenderingSucceeded,
 			expectedMsg:    "Success",
 		},
 		{
 			name:           "validated partial applied returns false status",
 			err:            nil,
-			conditionType:  apicfgv1alpha1.ConditionTypeValidated,
-			reason:         apicfgv1alpha1.ReasonConfigurationPartiallyApplied,
+			conditionType:  apicfgv1.ConditionTypeValidated,
+			reason:         apicfgv1.ReasonConfigurationPartiallyApplied,
 			args:           []interface{}{"partially applied"},
-			expectedType:   apicfgv1alpha1.ConditionTypeValidated,
+			expectedType:   apicfgv1.ConditionTypeValidated,
 			expectedStatus: metav1.ConditionFalse,
-			expectedReason: apicfgv1alpha1.ReasonConfigurationPartiallyApplied,
+			expectedReason: apicfgv1.ReasonConfigurationPartiallyApplied,
 			expectedMsg:    "partially applied",
 		},
 		{
 			name:           "validated success returns true status",
 			err:            nil,
-			conditionType:  apicfgv1alpha1.ConditionTypeValidated,
+			conditionType:  apicfgv1.ConditionTypeValidated,
 			reason:         "",
-			expectedType:   apicfgv1alpha1.ConditionTypeValidated,
+			expectedType:   apicfgv1.ConditionTypeValidated,
 			expectedStatus: metav1.ConditionTrue,
 			expectedReason: "Succeeded",
 			expectedMsg:    "Success",
@@ -2716,23 +2715,23 @@ func TestWrapErrorWithCRIOCredentialProviderConfigCondition(t *testing.T) {
 		{
 			name:           "error defaults reason to machine config rendering failed",
 			err:            errors.New("boom"),
-			conditionType:  apicfgv1alpha1.ConditionTypeValidated,
+			conditionType:  apicfgv1.ConditionTypeValidated,
 			reason:         "",
 			args:           nil,
-			expectedType:   apicfgv1alpha1.ConditionTypeValidated,
+			expectedType:   apicfgv1.ConditionTypeValidated,
 			expectedStatus: metav1.ConditionFalse,
-			expectedReason: apicfgv1alpha1.ReasonMachineConfigRenderingFailed,
+			expectedReason: apicfgv1.ReasonMachineConfigRenderingFailed,
 			expectedMsg:    "Error: boom",
 		},
 		{
 			name:           "error with explicit reason and message format",
 			err:            errors.New("bad input"),
-			conditionType:  apicfgv1alpha1.ConditionTypeMachineConfigRendered,
-			reason:         apicfgv1alpha1.ReasonValidationFailed,
+			conditionType:  apicfgv1.ConditionTypeMachineConfigRendered,
+			reason:         apicfgv1.ReasonValidationFailed,
 			args:           []interface{}{"custom %s", "message"},
-			expectedType:   apicfgv1alpha1.ConditionTypeMachineConfigRendered,
+			expectedType:   apicfgv1.ConditionTypeMachineConfigRendered,
 			expectedStatus: metav1.ConditionFalse,
-			expectedReason: apicfgv1alpha1.ReasonValidationFailed,
+			expectedReason: apicfgv1.ReasonValidationFailed,
 			expectedMsg:    "custom message",
 		},
 	}
@@ -2935,9 +2934,9 @@ providers:
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 
-			var testImages []apicfgv1alpha1.MatchImage
+			var testImages []apicfgv1.MatchImage
 			for _, img := range tt.matchImages {
-				testImages = append(testImages, apicfgv1alpha1.MatchImage(img))
+				testImages = append(testImages, apicfgv1.MatchImage(img))
 			}
 
 			credProviderConfigObject, err := credProviderConfigObject(tt.templateConfig)

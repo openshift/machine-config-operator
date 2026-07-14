@@ -25,7 +25,6 @@ import (
 	"github.com/ghodss/yaml"
 	"github.com/opencontainers/go-digest"
 	apicfgv1 "github.com/openshift/api/config/v1"
-	apicfgv1alpha1 "github.com/openshift/api/config/v1alpha1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	"github.com/openshift/runtime-utils/pkg/registries"
 	runtimeutils "github.com/openshift/runtime-utils/pkg/registries"
@@ -983,9 +982,9 @@ func ownerReferenceImageConfig(imageConfig *apicfgv1.Image) metav1.OwnerReferenc
 	}
 }
 
-func ownerReferenceCredentialProviderConfig(credentialProviderConfig *apicfgv1alpha1.CRIOCredentialProviderConfig) metav1.OwnerReference {
+func ownerReferenceCredentialProviderConfig(credentialProviderConfig *apicfgv1.CRIOCredentialProviderConfig) metav1.OwnerReference {
 	return metav1.OwnerReference{
-		APIVersion: apicfgv1alpha1.SchemeGroupVersion.String(),
+		APIVersion: apicfgv1.SchemeGroupVersion.String(),
 		Kind:       "CRIOCredentialProviderConfig",
 		Name:       credentialProviderConfig.Name,
 		UID:        credentialProviderConfig.UID,
@@ -1392,7 +1391,7 @@ type credentialProviderConfigWithVersion struct {
 	Providers  []*credentialProviderWithTag `json:"providers"`
 }
 
-func updateCredentialProviderConfig(credProviderConfigObject *credentialProviderConfigWithVersion, newImages []apicfgv1alpha1.MatchImage) ([]byte, []string, error) {
+func updateCredentialProviderConfig(credProviderConfigObject *credentialProviderConfigWithVersion, newImages []apicfgv1.MatchImage) ([]byte, []string, error) {
 
 	// newImages is not expected to be empty here as the caller should skip calling this function if there are no images
 	var (
@@ -1511,13 +1510,13 @@ func wrapErrorWithCRIOCredentialProviderConfigCondition(err error, conditionType
 	}
 
 	if conditionType == "" {
-		conditionType = apicfgv1alpha1.ConditionTypeMachineConfigRendered
+		conditionType = apicfgv1.ConditionTypeMachineConfigRendered
 	}
 
 	if err == nil {
 		if reason == "" {
-			if conditionType == apicfgv1alpha1.ConditionTypeMachineConfigRendered {
-				reason = apicfgv1alpha1.ReasonMachineConfigRenderingSucceeded
+			if conditionType == apicfgv1.ConditionTypeMachineConfigRendered {
+				reason = apicfgv1.ReasonMachineConfigRenderingSucceeded
 			} else {
 				reason = "Succeeded"
 			}
@@ -1527,7 +1526,7 @@ func wrapErrorWithCRIOCredentialProviderConfigCondition(err error, conditionType
 		}
 
 		status := metav1.ConditionTrue
-		if conditionType == apicfgv1alpha1.ConditionTypeValidated && reason == apicfgv1alpha1.ReasonConfigurationPartiallyApplied {
+		if conditionType == apicfgv1.ConditionTypeValidated && reason == apicfgv1.ReasonConfigurationPartiallyApplied {
 			status = metav1.ConditionFalse
 		}
 
@@ -1540,7 +1539,7 @@ func wrapErrorWithCRIOCredentialProviderConfigCondition(err error, conditionType
 	}
 
 	if reason == "" {
-		reason = apicfgv1alpha1.ReasonMachineConfigRenderingFailed
+		reason = apicfgv1.ReasonMachineConfigRenderingFailed
 	}
 	if message == "" {
 		message = fmt.Sprintf("Error: %v", err)
