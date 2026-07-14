@@ -58,6 +58,7 @@ import (
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/helpers"
+	"github.com/openshift/machine-config-operator/pkg/pprof"
 	"github.com/openshift/machine-config-operator/pkg/secrets"
 	"github.com/openshift/machine-config-operator/pkg/server"
 	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
@@ -171,7 +172,6 @@ type syncError struct {
 }
 
 func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
-
 	co, err := optr.fetchClusterOperator()
 	if err != nil {
 		return err
@@ -245,7 +245,6 @@ func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
 	// Handle these errors after as CO status updates should have priority over this
 	if syncUpgradeableStatusErr != nil {
 		return fmt.Errorf("syncingUpgradeableStatus: %w", syncUpgradeableStatusErr)
-
 	}
 	if syncClusterFleetEvaluationErr != nil {
 		return fmt.Errorf("updating cluster operator status: %w", syncClusterFleetEvaluationErr)
@@ -374,7 +373,64 @@ func (optr *Operator) syncCloudConfig(spec *mcfgv1.ControllerConfigSpec, infra *
 	return nil
 }
 
+// syncPprof manages the pprof endpoint (only for the machine-config-operator component) based on the enable-pprof ConfigMap
+//
 //nolint:gocyclo
+func (optr *Operator) syncPprof(_ *renderConfig, _ *configv1.ClusterOperator) error {
+	// Skip ConfigMap-based reconciliation if pprof was enabled via CLI flags
+	if optr.pprofEnabledViaCLI {
+		klog.V(4).Info("Skipping ConfigMap-based pprof reconciliation (pprof enabled via CLI flags)")
+		return nil
+	}
+
+	cm, err := optr.mcoCmLister.ConfigMaps(ctrlcommon.MCONamespace).Get(pprof.EnablePprofConfigMapName)
+	if err != nil {
+		// ConfigMap doesn't exist or error getting it
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("error getting enable-pprof ConfigMap: %w", err)
+		}
+
+		// ConfigMap not found - ensure pprof is stopped
+		if optr.pprofManager.IsRunning() {
+			klog.Info("enable-pprof ConfigMap not found, stopping pprof")
+			optr.pprofManager.Stop()
+		}
+		return nil
+	}
+
+	// ConfigMap exists - determine port and start pprof if not running
+	port := 6062 // default for MCO
+
+	// Check for global port override (lower priority)
+	if globalPortStr, ok := cm.Data["pprof-port"]; ok {
+		if p, err := strconv.Atoi(globalPortStr); err == nil {
+			port = p
+		} else {
+			klog.Warningf("Invalid pprof-port value in enable-pprof ConfigMap: key=%q value=%q error=%v", "pprof-port", globalPortStr, err)
+		}
+	}
+
+	// Check for component-specific override (higher priority)
+	if componentPortStr, ok := cm.Data["machine-config-operator-port"]; ok {
+		if p, err := strconv.Atoi(componentPortStr); err == nil {
+			port = p
+		} else {
+			klog.Warningf("Invalid machine-config-operator-port value in enable-pprof ConfigMap: key=%q value=%q error=%v", "machine-config-operator-port", componentPortStr, err)
+		}
+	}
+
+	if !optr.pprofManager.IsRunning() {
+		klog.Infof("enable-pprof ConfigMap found, starting pprof on port %d", port)
+		if err := optr.pprofManager.Start(optr.ctx, port); err != nil {
+			return fmt.Errorf("failed to start pprof: %w", err)
+		}
+	} else {
+		klog.V(4).Infof("pprof already running")
+	}
+
+	return nil
+}
+
 func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOperator) error {
 	if optr.inClusterBringup {
 		klog.V(4).Info("Starting inClusterBringup informers cache sync")
@@ -601,7 +657,6 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 	oscontainer, osextensionscontainer, err := optr.getOsImageURLs(optr.namespace, "")
 	if err != nil {
 		return fmt.Errorf("could not get OS images: %w", err)
-
 	}
 	imgs.BaseOSContainerImage = oscontainer
 	imgs.BaseOSExtensionsContainerImage = osextensionscontainer
@@ -656,7 +711,8 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		optr.setOperatorLogLevel(mcop.Spec.OperatorLogLevel)
 	}
 
-	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra, pointerConfigData, apiServer, fmt.Sprintf("%d", optr.logLevel))
+	pprofCfg := optr.getPprofConfig()
+	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra, pointerConfigData, apiServer, fmt.Sprintf("%d", optr.logLevel), pprofCfg)
 
 	return nil
 }
@@ -1456,7 +1512,6 @@ func (optr *Operator) isMachineOSBuilderRunning(mob *appsv1.Deployment) (bool, e
 }
 
 func (optr *Operator) reconcileSimpleContentAccessSecrets(layeredMCPs []*mcfgv1.MachineConfigPool) error {
-
 	// Create set of layered and non layeredPools
 	layeredPoolSet := sets.Set[string]{}
 	for _, pool := range layeredMCPs {
@@ -2162,7 +2217,62 @@ func setGVK(obj runtime.Object, scheme *runtime.Scheme) error {
 	return nil
 }
 
-func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *ctrlcommon.RenderConfigImages, infra *configv1.Infrastructure, pointerConfigData []byte, apiServer *configv1.APIServer, logLevel string) *renderConfig {
+// getPprofConfig checks for enable-pprof ConfigMap and returns configuration
+func (optr *Operator) getPprofConfig() *pprofRenderConfig {
+	cm, err := optr.mcoCmLister.ConfigMaps(ctrlcommon.MCONamespace).Get(pprof.EnablePprofConfigMapName)
+	if err != nil {
+		if !apierrors.IsNotFound(err) {
+			klog.V(4).Infof("Error getting enable-pprof ConfigMap: %v", err)
+		}
+		return nil
+	}
+
+	// ConfigMap exists, pprof is enabled
+	ports := map[string]int{
+		"machine-config-controller": 6060,
+		"machine-config-daemon":     6061,
+		"machine-config-operator":   6062,
+		"machine-config-server":     6063,
+		"machine-os-builder":        6064,
+	}
+
+	// Check for global port override
+	if globalPort, ok := cm.Data["pprof-port"]; ok {
+		if port, err := strconv.Atoi(globalPort); err == nil {
+			for k := range ports {
+				ports[k] = port
+			}
+		} else {
+			klog.Warningf("Invalid pprof-port value in enable-pprof ConfigMap: key=%q value=%q error=%v", "pprof-port", globalPort, err)
+		}
+	}
+
+	// Check for per-component overrides
+	for component := range ports {
+		key := component + "-port"
+		if portStr, ok := cm.Data[key]; ok {
+			if port, err := strconv.Atoi(portStr); err == nil {
+				ports[component] = port
+			} else {
+				klog.Warningf("Invalid %s value in enable-pprof ConfigMap: key=%q value=%q error=%v", key, key, portStr, err)
+			}
+		}
+	}
+
+	return &pprofRenderConfig{
+		Enabled: true,
+		Ports:   ports,
+	}
+}
+
+func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *ctrlcommon.RenderConfigImages, infra *configv1.Infrastructure, pointerConfigData []byte, apiServer *configv1.APIServer, logLevel string, pprofCfg *pprofRenderConfig) *renderConfig {
+	var pprofEnabled bool
+	var pprofPorts map[string]int
+	if pprofCfg != nil {
+		pprofEnabled = pprofCfg.Enabled
+		pprofPorts = pprofCfg.Ports
+	}
+
 	tlsMinVersion, tlsCipherSuites := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
 	return &renderConfig{
 		TargetNamespace:        tnamespace,
@@ -2177,6 +2287,8 @@ func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.C
 		TLSMinVersion:          tlsMinVersion,
 		TLSCipherSuites:        tlsCipherSuites,
 		LogLevel:               logLevel,
+		PprofEnabled:           pprofEnabled,
+		PprofPorts:             pprofPorts,
 	}
 }
 
@@ -2342,7 +2454,6 @@ func cmToData(cm *corev1.ConfigMap, key string) ([]byte, error) {
 // Validates configuration provided in the MachineConfiguration object's spec for each feature
 // and updates the status of the object as necessary
 func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.ClusterOperator) error {
-
 	// Grab the cluster CR
 	mcop, err := optr.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
 	if err != nil {
@@ -2655,7 +2766,6 @@ func (optr *Operator) getCurrentOCPVersionFromClusterVersion() string {
 //   - The CR does not exist (cluster is using the machine-os-images path introduced in 4.10)
 //   - The field is empty (same as above)
 func (optr *Operator) isBareMetalOnLegacyProvisioningPath() bool {
-
 	if optr.provisioningListerSynced != nil && !optr.provisioningListerSynced() {
 		klog.V(2).Info("Provisioning informer not synced yet; assuming legacy provisioning path for safety")
 		return true

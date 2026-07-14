@@ -19,6 +19,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/daemon/cri"
 	"github.com/openshift/machine-config-operator/pkg/daemon/internalreleaseimage"
+	"github.com/openshift/machine-config-operator/pkg/pprof"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
 	"k8s.io/klog/v2"
@@ -46,6 +47,8 @@ var (
 		tlsCipherSuites            []string
 		tlsMinVersion              string
 	}
+
+	pprofConfig *pprof.Config
 )
 
 func init() {
@@ -61,6 +64,11 @@ func init() {
 	startCmd.PersistentFlags().StringVar(&startOpts.promMetricsURL, "metrics-url", "127.0.0.1:8797", "URL for prometheus metrics listener")
 	startCmd.PersistentFlags().StringSliceVar(&startOpts.tlsCipherSuites, "tls-cipher-suites", nil, "Comma-separated list of cipher suites for the metrics server")
 	startCmd.PersistentFlags().StringVar(&startOpts.tlsMinVersion, "tls-min-version", "VersionTLS12", "Minimum TLS version supported for the metrics server")
+
+	// Add pprof flags
+	pprofFlags, pprofCfg := pprof.GetPprofFlags()
+	pprofConfig = pprofCfg
+	startCmd.PersistentFlags().AddFlagSet(pprofFlags)
 }
 
 //nolint:gocritic
@@ -72,6 +80,14 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 
 	// To help debugging, immediately log version
 	klog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
+
+	// Start pprof if enabled
+	if pprofConfig.Enabled {
+		ctx := context.Background()
+		if _, err := pprof.StartPprof(ctx, pprofConfig.Port); err != nil {
+			klog.Warningf("Failed to start pprof: %v", err)
+		}
+	}
 
 	// See https://github.com/coreos/rpm-ostree/pull/1880
 	os.Setenv("RPMOSTREE_CLIENT_ID", "machine-config-operator")

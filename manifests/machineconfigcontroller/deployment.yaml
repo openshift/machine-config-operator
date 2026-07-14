@@ -26,6 +26,9 @@ spec:
         - "--payload-version={{.ReleaseVersion}}"
         - "--tls-cipher-suites={{join .TLSCipherSuites ","}}"
         - "--tls-min-version={{.TLSMinVersion}}"
+        {{if .PprofEnabled}}- "--enable-pprof"
+        - "--pprof-port={{index .PprofPorts "machine-config-controller"}}"
+        {{end}}
         resources:
           requests:
             cpu: 20m

@@ -38,6 +38,13 @@ const (
 	ingressLB LoadBalancerType = "Ingress"
 )
 
+// pprofRenderConfig holds pprof configuration for manifest rendering
+// This is returned by getPprofConfig() and used to populate renderConfig
+type pprofRenderConfig struct {
+	Enabled bool
+	Ports   map[string]int
+}
+
 type renderConfig struct {
 	TargetNamespace        string
 	Version                string
@@ -52,6 +59,8 @@ type renderConfig struct {
 	TLSMinVersion          string
 	TLSCipherSuites        []string
 	LogLevel               string
+	PprofEnabled           bool
+	PprofPorts             map[string]int
 }
 
 type assetRenderer struct {

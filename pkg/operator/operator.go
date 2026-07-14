@@ -9,6 +9,7 @@ import (
 	operatorinformersv1alpha1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1alpha1"
 	operatorlistersv1alpha1 "github.com/openshift/client-go/operator/listers/operator/v1alpha1"
 	"github.com/openshift/machine-config-operator/pkg/osimagestream"
+	"github.com/openshift/machine-config-operator/pkg/pprof"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
 
@@ -132,6 +133,9 @@ type Operator struct {
 	provisioningLister       dynamiclister.Lister
 	provisioningListerSynced cache.InformerSynced
 
+	pprofManager       *pprof.Manager
+	pprofEnabledViaCLI bool
+
 	crdListerSynced                  cache.InformerSynced
 	deployListerSynced               cache.InformerSynced
 	daemonsetListerSynced            cache.InformerSynced
@@ -175,6 +179,7 @@ type Operator struct {
 	queue workqueue.TypedRateLimitingInterface[string]
 
 	stopCh <-chan struct{}
+	ctx    context.Context
 
 	renderConfig *renderConfig
 
@@ -258,9 +263,10 @@ func New(
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
 			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigoperator"}),
-		fgHandler: fgHandler,
-		ctrlctx:   ctrlctx,
-		logLevel:  2,
+		fgHandler:    fgHandler,
+		ctrlctx:      ctrlctx,
+		logLevel:     2,
+		pprofManager: pprof.NewManager(),
 	}
 
 	err := corev1.AddToScheme(scheme.Scheme)
@@ -420,6 +426,12 @@ func New(
 	return optr
 }
 
+// SetPprofEnabledViaCLI marks that pprof was enabled via CLI flags, which disables
+// ConfigMap-based pprof reconciliation to avoid conflicts
+func (optr *Operator) SetPprofEnabledViaCLI() {
+	optr.pprofEnabledViaCLI = true
+}
+
 // Run runs the machine config operator.
 func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
@@ -512,7 +524,24 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 	klog.Info("Starting MachineConfigOperator")
 	defer klog.Info("Shutting down MachineConfigOperator")
 
+	// Create context from stopCh for proper shutdown of long-running components
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		<-stopCh
+		cancel()
+	}()
+
 	optr.stopCh = stopCh
+	optr.ctx = ctx
+
+	// Ensure pprof server is stopped on shutdown
+	defer func() {
+		if optr.pprofManager.IsRunning() {
+			klog.Info("Stopping pprof server")
+			optr.pprofManager.Stop()
+		}
+	}()
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(optr.worker, time.Second, stopCh)
@@ -619,6 +648,8 @@ func (optr *Operator) sync(key string) error {
 		// OSImageStream must run FIRST to provide OS image information as RenderConfig will read
 		// images references from OSImageStream
 		{"OSImageStream", optr.syncOSImageStream},
+		// Pprof runs early as it's lightweight and doesn't depend on other resources
+		{"Pprof", optr.syncPprof},
 		// "RenderConfig" should be the first one to run (except OSImageStream) as it sets the renderConfig in
 		// the operator for the sync funcs below
 		{"RenderConfig", optr.syncRenderConfig},

@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/machine-config-operator/internal/clients"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/operator"
+	"github.com/openshift/machine-config-operator/pkg/pprof"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/tools/leaderelection"
@@ -29,12 +30,19 @@ var (
 		kubeconfig string
 		imagesFile string
 	}
+
+	pprofConfig *pprof.Config
 )
 
 func init() {
 	rootCmd.AddCommand(startCmd)
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeconfig, "kubeconfig", "", "Kubeconfig file to access a remote cluster (testing only)")
 	startCmd.PersistentFlags().StringVar(&startOpts.imagesFile, "images-json", "", "images.json file for MCO.")
+
+	// Add pprof flags for debugging when CVO is disabled
+	pprofFlags, pprofCfg := pprof.GetPprofFlags()
+	pprofConfig = pprofCfg
+	startCmd.PersistentFlags().AddFlagSet(pprofFlags)
 }
 
 func runStartCmd(_ *cobra.Command, _ []string) {
@@ -47,6 +55,13 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 
 	// To help debugging, immediately log version
 	klog.Infof("Version: %s (Raw: %s, Hash: %s)", version.ReleaseVersion, version.Raw, version.Hash)
+
+	// Start pprof if enabled via CLI flags (useful when CVO is disabled)
+	if pprofConfig.Enabled {
+		if _, err := pprof.StartPprof(runContext, pprofConfig.Port); err != nil {
+			klog.Warningf("Failed to start pprof via CLI flags: %v", err)
+		}
+	}
 
 	if startOpts.imagesFile == "" {
 		klog.Fatal("--images-json cannot be empty")
@@ -123,6 +138,11 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			iriInformer,
 			ctrlctx,
 		)
+
+		// If pprof was enabled via CLI flags, mark it to skip ConfigMap-based reconciliation
+		if pprofConfig.Enabled {
+			controller.SetPprofEnabledViaCLI()
+		}
 
 		ctrlctx.InformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)

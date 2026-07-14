@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"flag"
 
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/pprof"
 	"github.com/openshift/machine-config-operator/pkg/server"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
@@ -24,6 +26,8 @@ var (
 		kubeconfig   string
 		apiserverURL string
 	}
+
+	pprofConfig *pprof.Config
 )
 
 func init() {
@@ -31,6 +35,10 @@ func init() {
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeconfig, "kubeconfig", "", "Kubeconfig file to access a remote cluster (testing only)")
 	startCmd.PersistentFlags().StringVar(&startOpts.apiserverURL, "apiserver-url", "", "URL for apiserver; Used to generate kubeconfig")
 
+	// Add pprof flags
+	pprofFlags, pprofCfg := pprof.GetPprofFlags()
+	pprofConfig = pprofCfg
+	startCmd.PersistentFlags().AddFlagSet(pprofFlags)
 }
 
 func runStartCmd(_ *cobra.Command, _ []string) {
@@ -42,6 +50,14 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 
 	// To help debugging, immediately log version
 	klog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
+
+	// Start pprof if enabled
+	if pprofConfig.Enabled {
+		ctx := context.Background()
+		if _, err := pprof.StartPprof(ctx, pprofConfig.Port); err != nil {
+			klog.Warningf("Failed to start pprof: %v", err)
+		}
+	}
 
 	if startOpts.apiserverURL == "" {
 		klog.Exitf("--apiserver-url cannot be empty")

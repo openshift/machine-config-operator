@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: enable-pprof
+  namespace: openshift-machine-config-operator
+data:
+  # Optional: global port override (applies to all components)
+  # pprof-port: "6060"
+
+  # Optional: per-component port overrides
+  # machine-config-controller-port: "6060"
+  # machine-config-daemon-port: "6061"
+  # machine-config-operator-port: "6062"
+  # machine-config-server-port: "6063"
+  # machine-os-builder-port: "6064"

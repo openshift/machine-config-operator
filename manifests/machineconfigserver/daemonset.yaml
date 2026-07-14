@@ -27,6 +27,9 @@ spec:
           - "--tls-cipher-suites={{join .TLSCipherSuites ","}}"
           - "--tls-min-version={{.TLSMinVersion}}"
           - "--v={{.LogLevel}}"
+          {{if .PprofEnabled}}- "--enable-pprof"
+          - "--pprof-port={{index .PprofPorts "machine-config-server"}}"
+          {{end}}
         ports:
         - containerPort: 22623
           name: https
