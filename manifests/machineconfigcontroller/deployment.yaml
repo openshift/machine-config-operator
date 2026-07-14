@@ -29,6 +29,21 @@ spec:
             cpu: 20m
             memory: 50Mi
         terminationMessagePolicy: FallbackToLogsOnError
+        {{if .ControllerConfig.Proxy}}
+        env:
+        {{if .ControllerConfig.Proxy.HTTPProxy}}
+        - name: HTTP_PROXY
+          value: {{.ControllerConfig.Proxy.HTTPProxy}}
+        {{end}}
+        {{if .ControllerConfig.Proxy.HTTPSProxy}}
+        - name: HTTPS_PROXY
+          value: {{.ControllerConfig.Proxy.HTTPSProxy}}
+        {{end}}
+        {{if .ControllerConfig.Proxy.NoProxy}}
+        - name: NO_PROXY
+          value: "{{.ControllerConfig.Proxy.NoProxy}}"
+        {{end}}
+        {{end}}
       - name: kube-rbac-proxy
         image: {{.Images.KubeRbacProxy}}
         ports:
