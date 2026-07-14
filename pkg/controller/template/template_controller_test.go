@@ -28,7 +28,6 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 
-	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 
@@ -540,11 +539,10 @@ func TestKubeletAutoNodeSizingEnabled(t *testing.T) {
 	}
 }
 
-// TestMergesIRIRegistryCredentialsIntoPullSecret verifies that the template controller merges
-// IRI registry credentials into the pull secret when rendering 00-master, so that
-// nodes can authenticate to the IRI registry without writing to the user-controlled
-// global pull secret.
-func TestMergesIRIRegistryCredentialsIntoPullSecret(t *testing.T) {
+// TestRendersIRIRegistryCredentialsFromGlobalPullSecret verifies that the template
+// controller renders the global pull secret to /var/lib/kubelet/config.json, including
+// IRI registry credentials that were added to the global pull secret by the IRI controller.
+func TestRendersIRIRegistryCredentialsFromGlobalPullSecret(t *testing.T) {
 	f := newFixture(t)
 
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
@@ -552,27 +550,18 @@ func TestMergesIRIRegistryCredentialsIntoPullSecret(t *testing.T) {
 		Spec: configv1.DNSSpec{BaseDomain: "example.com"},
 	}
 
-	pullSecretJSON := []byte(`{"auths":{"quay.io":{"auth":"dGVzdDp0ZXN0"}}}`)
+	// The global pull secret now already contains IRI credentials (added by IRI controller).
+	expectedAuth := base64.StdEncoding.EncodeToString([]byte("openshift:testpassword"))
+	pullSecretJSON := []byte(`{"auths":{` +
+		`"quay.io":{"auth":"dGVzdDp0ZXN0"},` +
+		`"api-int.example.com:22625":{"auth":"` + expectedAuth + `"},` +
+		`"localhost:22625":{"auth":"` + expectedAuth + `"}` +
+		`}}`)
 	ps := newPullSecret("coreos-pull-secret", pullSecretJSON)
-
-	iriRegistryCredentialsSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      ctrlcommon.InternalReleaseImageAuthSecretName,
-			Namespace: ctrlcommon.MCONamespace,
-		},
-		Data: map[string][]byte{
-			"password": []byte("testpassword"),
-		},
-	}
 
 	f.ccLister = append(f.ccLister, cc)
 	f.objects = append(f.objects, cc)
-	f.kubeobjects = append(f.kubeobjects, ps, iriRegistryCredentialsSecret)
-	f.iriObjects = append(f.iriObjects, &mcfgv1.InternalReleaseImage{
-		ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.InternalReleaseImageInstanceName},
-	})
-	f.fgHandler = ctrlcommon.NewFeatureGatesHardcodedHandler(
-		[]configv1.FeatureGateName{features.FeatureGateNoRegistryClusterInstall}, nil)
+	f.kubeobjects = append(f.kubeobjects, ps)
 
 	ctrl := f.newController()
 	if err := ctrl.syncHandler(ctrlcommon.ControllerConfigName); err != nil {
@@ -614,21 +603,22 @@ func TestMergesIRIRegistryCredentialsIntoPullSecret(t *testing.T) {
 		t.Fatal("pull secret missing 'auths' field")
 	}
 
-	// Verify IRI entries are present for both api-int and localhost with correct credentials.
-	expectedAuth := base64.StdEncoding.EncodeToString([]byte("openshift:testpassword"))
-	for _, host := range []string{"api-int.example.com:22625", "localhost:22625"} {
-		entry, found := auths[host].(map[string]interface{})
-		if !found {
-			t.Errorf("IRI auth entry missing for %s in rendered pull secret", host)
-			continue
-		}
-		if entry["auth"] != expectedAuth {
-			t.Errorf("IRI auth value for %s = %q, want %q", host, entry["auth"], expectedAuth)
-		}
+	// Verify that all entries from the global pull secret are preserved,
+	// including IRI credentials that were added by the IRI controller.
+	expectedHosts := map[string]string{
+		"quay.io":                    "dGVzdDp0ZXN0",
+		"api-int.example.com:22625":  expectedAuth,
+		"localhost:22625":            expectedAuth,
 	}
 
-	// Verify the original quay.io entry is preserved.
-	if _, found := auths["quay.io"]; !found {
-		t.Error("original quay.io auth entry was dropped from pull secret")
+	for host, expectedAuthValue := range expectedHosts {
+		entry, found := auths[host].(map[string]interface{})
+		if !found {
+			t.Errorf("auth entry missing for %s in rendered pull secret", host)
+			continue
+		}
+		if entry["auth"] != expectedAuthValue {
+			t.Errorf("auth value for %s = %q, want %q", host, entry["auth"], expectedAuthValue)
+		}
 	}
 }
