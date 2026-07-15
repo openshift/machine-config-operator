@@ -36,6 +36,7 @@ const (
 	testPoolName      = "worker"
 	testDrainState    = "drain-test-hash"
 	testUncordonState = "uncordon-test-hash"
+	testCordonState   = "cordon-test-hash"
 )
 
 func createTestNode(name string, unschedulable bool) *corev1.Node {
@@ -275,5 +276,28 @@ func TestSyncNode(t *testing.T) {
 		if spec, ok := patch["spec"].(map[string]any); ok {
 			assert.Equal(t, true, spec["unschedulable"], "only patch should be the cordon")
 		}
+	})
+
+	t.Run("cordon-only requested (SNO)", func(t *testing.T) {
+		node := createDrainTestNode(testNodeName, false, testCordonState, "")
+		_, kubeClient, err := setupControllerAndSync(node, nil)
+		assert.NoError(t, err, "syncNode should not error for cordon-only action")
+
+		// Verify patch operations: cordon (unschedulable=true) + completion annotation
+		verifyDrainPatches(t, kubeClient, true, testCordonState)
+	})
+
+	t.Run("cordon-only already completed", func(t *testing.T) {
+		node := createDrainTestNode(testNodeName, true, testCordonState, testCordonState)
+		_, kubeClient, err := setupControllerAndSync(node, nil)
+		assert.NoError(t, err, "syncNode should not error when cordon already completed")
+
+		patchActions := []core.PatchAction{}
+		for _, action := range kubeClient.Actions() {
+			if patchAction, ok := action.(core.PatchAction); ok {
+				patchActions = append(patchActions, patchAction)
+			}
+		}
+		assert.Len(t, patchActions, 0, "should have made no patch requests when cordon already completed")
 	})
 }
