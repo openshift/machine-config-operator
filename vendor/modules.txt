@@ -64,10 +64,10 @@ github.com/GaijinEntertainment/go-exhaustruct/v3/analyzer
 github.com/GaijinEntertainment/go-exhaustruct/v3/internal/comment
 github.com/GaijinEntertainment/go-exhaustruct/v3/internal/pattern
 github.com/GaijinEntertainment/go-exhaustruct/v3/internal/structure
-# github.com/InVisionApp/go-health v2.1.0+incompatible
-## explicit
-github.com/InVisionApp/go-health
-github.com/InVisionApp/go-health/checkers
+# github.com/InVisionApp/go-health/v2 v2.1.4
+## explicit; go 1.13
+github.com/InVisionApp/go-health/v2
+github.com/InVisionApp/go-health/v2/checkers
 # github.com/InVisionApp/go-logger v1.0.1
 ## explicit
 github.com/InVisionApp/go-logger
@@ -2370,8 +2370,6 @@ google.golang.org/protobuf/types/known/fieldmaskpb
 google.golang.org/protobuf/types/known/structpb
 google.golang.org/protobuf/types/known/timestamppb
 google.golang.org/protobuf/types/known/wrapperspb
-# gopkg.in/DATA-DOG/go-sqlmock.v1 v1.3.0
-## explicit
 # gopkg.in/evanphx/json-patch.v4 v4.13.0
 ## explicit
 gopkg.in/evanphx/json-patch.v4
