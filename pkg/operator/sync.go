@@ -102,6 +102,8 @@ const (
 	mccMachineConfigPoolSelectorValidatingAdmissionPolicyBindingPath  = "manifests/machineconfigcontroller/custom-machine-config-pool-selector-validatingadmissionpolicybinding.yaml"
 	mccUpdateBootImagesValidatingAdmissionPolicyPath                  = "manifests/machineconfigcontroller/update-bootimages-validatingadmissionpolicy.yaml"
 	mccUpdateBootImagesValidatingAdmissionPolicyBindingPath           = "manifests/machineconfigcontroller/update-bootimages-validatingadmissionpolicybinding.yaml"
+	mccInstallConfigRoleManifestPath                                  = "manifests/machineconfigcontroller/install-config-role.yaml"
+	mccInstallConfigRoleBindingManifestPath                           = "manifests/machineconfigcontroller/install-config-rolebinding.yaml"
 
 	// Machine OS Builder manifest paths
 	mobClusterRoleManifestPath                      = "manifests/machineosbuilder/clusterrole.yaml"
@@ -1113,6 +1115,7 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig, _ *confi
 			mccKubeRbacProxyPrometheusRolePath,
 			mccConfigMapsRoleTargetManifestPath,
 			mccConfigMapsRoleConfigManagedManifestPath,
+			mccInstallConfigRoleManifestPath,
 		},
 		roleBindings: []string{
 			mccEventsRoleBindingDefaultManifestPath,
@@ -1120,6 +1123,7 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig, _ *confi
 			mccKubeRbacProxyPrometheusRoleBindingPath,
 			mccConfigMapsRoleBindingTargetManifestPath,
 			mccConfigMapsRoleBindingConfigManagedManifestPath,
+			mccInstallConfigRoleBindingManifestPath,
 			mopRoleBindingManifestPath,
 		},
 		clusterRoleBindings: []string{
