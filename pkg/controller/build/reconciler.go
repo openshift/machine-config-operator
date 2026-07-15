@@ -1353,24 +1353,6 @@ func (b *buildReconciler) reconcilePoolChange(ctx context.Context, mcp *mcfgv1.M
 		return err
 	}
 
-	osImageURLs, _ := ctrlcommon.GetOSImageURLConfig(ctx, b.kubeclient)
-	targetMosb, err := buildrequest.NewMachineOSBuild(buildrequest.MachineOSBuildOpts{
-		MachineOSConfig:   mosc,
-		MachineConfigPool: mcp,
-		OSImageURLConfig:  osImageURLs,
-	})
-
-	if err != nil {
-		return fmt.Errorf("could not generate name for target MOSB: %w", err)
-	}
-
-	// No action needed if the rendered config has not changed AND the annotation
-	// already points to the expected MOSB for the current MOSC spec.
-	if oldRendered == newRendered && firstOptIn == targetMosb.Name {
-		klog.V(4).Infof("pool %q: Configuration unchanged (%s), no action needed", mcp.Name, oldRendered)
-		return nil
-	}
-
 	// This is our trigger point
 	if (oldRendered != newRendered && needsImageRebuild) || firstOptIn == "" {
 		klog.Infof("pool %q: rendered config changed and requires an image rebuild. Verifying if a valid build already exists...", mcp.Name)
