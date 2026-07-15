@@ -436,19 +436,12 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 			_, sshPubKey = GenerateSSHKeyPairOrFail()
 
-			passwordConfiguredMsg = "Password has been configured"
+			passwdConfigLogMsg = "Password has been configured"
 			expectedReboot        = false
 		)
 		silentOC.NotShowInfo()
 
-		allCoreos := mcp.GetCoreOsNodesOrFail()
-		if len(allCoreos) == 0 {
-			logger.Infof("No CoreOs nodes are configured in the pool %s. We use master pool for testing", mcp.GetName())
-			mcp = mMcp
-			allCoreos = mcp.GetCoreOsNodesOrFail()
-		}
-
-		node := allCoreos[0]
+		node := mcp.GetSortedNodesOrFail()[0]
 		mcc := NewController(oc.AsAdmin()).IgnoreLogsBeforeNowOrFail()
 		startTime := node.GetDateOrFail()
 		o.Expect(node.IgnoreEventsBeforeNow()).NotTo(o.HaveOccurred(),
@@ -468,9 +461,9 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		exutil.By("Check MCD logs to verify 'Password has been configured' is logged")
 		mcdLogs, err := node.GetMCDaemonLogs("")
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting MCD logs for node %s", node.GetName())
-		initialPasswordCount := strings.Count(mcdLogs, passwordConfiguredMsg)
+		initialPasswordCount := strings.Count(mcdLogs, passwdConfigLogMsg)
 		o.Expect(initialPasswordCount).To(o.BeNumerically(">", 0),
-			"Expected '%s' in MCD logs after initial password application on node %s", passwordConfiguredMsg, node.GetName())
+			"Expected '%s' in MCD logs after initial password application on node %s", passwdConfigLogMsg, node.GetName())
 		logger.Infof("OK!\n")
 
 		exutil.By("Check that drain and reboot are skipped for password-only change")
@@ -489,9 +482,16 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		exutil.By("Check MCD logs to verify 'Password has been configured' is logged again after hash change")
 		mcdLogs, err = node.GetMCDaemonLogs("")
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting MCD logs for node %s", node.GetName())
-		updatedPasswordCount := strings.Count(mcdLogs, passwordConfiguredMsg)
+		updatedPasswordCount := strings.Count(mcdLogs, passwdConfigLogMsg)
 		o.Expect(updatedPasswordCount).To(o.BeNumerically(">", initialPasswordCount),
-			"Expected a new '%s' log entry after password hash change on node %s", passwordConfiguredMsg, node.GetName())
+			"Expected a new '%s' log entry after password hash change on node %s", passwdConfigLogMsg, node.GetName())
+		logger.Infof("OK!\n")
+
+		exutil.By("Get currently configured authorized keys before adding new SSH key")
+		currentMc, err := mcp.GetConfiguredMachineConfig()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the current configuration for %s pool", mcp.GetName())
+		initialKeys, err := currentMc.GetAuthorizedKeysByUserAsList("core")
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the current authorizedkeys for user 'core' in %s pool", mcp.GetName())
 		logger.Infof("OK!\n")
 
 		exutil.By("Add SSH key to MC without changing the password hash")
@@ -503,13 +503,17 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		mcp.waitForComplete()
 		logger.Infof("OK!\n")
 
+		exutil.By("Verify that the SSH key was correctly applied to the node")
+		checkAuthorizedKeyInNode(node, append(initialKeys, strings.TrimSpace(sshPubKey)))
+		logger.Infof("OK!\n")
+
 		exutil.By("Check MCD logs to verify 'Password has been configured' is NOT logged for SSH-only change")
 		mcdLogs, err = node.GetMCDaemonLogs("")
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting MCD logs for node %s", node.GetName())
-		finalPasswordCount := strings.Count(mcdLogs, passwordConfiguredMsg)
+		finalPasswordCount := strings.Count(mcdLogs, passwdConfigLogMsg)
 		o.Expect(finalPasswordCount).To(o.Equal(updatedPasswordCount),
 			"'%s' should NOT appear in MCD logs when only SSH keys are added (no password hash change) on node %s",
-			passwordConfiguredMsg, node.GetName())
+			passwdConfigLogMsg, node.GetName())
 		logger.Infof("OK!\n")
 
 		exutil.By("Check events to make sure that drain and reboot events were not triggered")
