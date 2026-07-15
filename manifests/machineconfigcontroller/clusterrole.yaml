@@ -16,7 +16,7 @@ rules:
   resources: ["secrets"]
   verbs: ["get", "list", "watch", "create", "update", "delete"]
 - apiGroups: ["config.openshift.io"]
-  resources: ["images", "clusterversions", "featuregates", "nodes", "schedulers", "apiservers", "infrastructures", "imagedigestmirrorsets", "imagetagmirrorsets", "clusterimagepolicies", "imagepolicies", "criocredentialproviderconfigs"]
+  resources: ["images", "clusterversions", "featuregates", "nodes", "schedulers", "apiservers", "infrastructures", "imagedigestmirrorsets", "imagetagmirrorsets", "clusterimagepolicies", "imagepolicies", "criocredentialproviderconfigs", "pkis"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["config.openshift.io"]
   resources: ["imagepolicies/status", "criocredentialproviderconfigs/status"]
