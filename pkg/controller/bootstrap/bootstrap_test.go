@@ -13,8 +13,11 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/diff"
+	"sigs.k8s.io/yaml"
 
+	apicfgv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -168,10 +171,13 @@ type fakeImageStreamFactory struct {
 	stream *mcfgv1.OSImageStream
 	// Whether the Create method was called.
 	createCalled bool
+	// The CreateOptions passed to the last Create call.
+	lastCreateOptions osimagestream.CreateOptions
 }
 
-func (f *fakeImageStreamFactory) Create(_ context.Context, _ imageutils.SysContextFactory, _ osimagestream.CreateOptions) (*mcfgv1.OSImageStream, error) {
+func (f *fakeImageStreamFactory) Create(_ context.Context, _ imageutils.SysContextFactory, createOptions osimagestream.CreateOptions) (*mcfgv1.OSImageStream, error) {
 	f.createCalled = true
+	f.lastCreateOptions = createOptions
 	return f.stream, nil
 }
 
@@ -211,23 +217,95 @@ func setupForBootstrapTest(t *testing.T) (*Bootstrap, *fakeImageStreamFactory, s
 	return bootstrap, fakeFactory, srcDir, destDir
 }
 
-// Ensures that when Hypershift is enabled that the OSImageStream value is not consumed.
+// TestBootstrapRunHypershift validates OSImageStream behavior under
+// ExternalTopologyMode (HyperShift). The ExternalTopologyMode guard was
+// removed in CNTRLPLANE-3840 because HyperShift now writes
+// 99_osimagestream.yaml into the MCC template directory
+// (openshift/hypershift#8792).
+//
+// NOTE for feature gate graduation: when OSStreams is promoted to GA and
+// the feature gate check is removed, these tests should still pass since
+// the fixture has OSStreams enabled. If the fixture changes, update
+// accordingly.
 func TestBootstrapRunHypershift(t *testing.T) {
-	bootstrap, fakeFactory, srcDir, destDir := setupForBootstrapTest(t)
+	disabledFG := apicfgv1.FeatureGate{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: apicfgv1.GroupVersion.String(),
+			Kind:       "FeatureGate",
+		},
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+		Status: apicfgv1.FeatureGateStatus{
+			FeatureGates: []apicfgv1.FeatureGateDetails{{
+				Version: "0.0.1-snapshot",
+				Enabled: []apicfgv1.FeatureGateAttributes{
+					{Name: "OpenShiftPodSecurityAdmission"},
+				},
+				Disabled: []apicfgv1.FeatureGateAttributes{
+					{Name: "OSStreams"},
+					{Name: "SigstoreImageVerification"},
+				},
+			}},
+		},
+	}
 
-	// Overwrite the default ControllerConfig with one that specifies an
-	// external control plane value e.g., Hypershift.
-	require.NoError(t, exec.Command("cp", "testdata/bootstrap-hypershift/machineconfigcontroller-controllerconfig.yaml", srcDir).Run())
+	testCases := []struct {
+		name                   string
+		featureGateOverride    *apicfgv1.FeatureGate
+		expectCreate           bool
+		expectOSImages         bool
+		expectReleaseImageUsed bool
+	}{
+		{
+			name:                   "When OSStreams feature gate is enabled it should consume OSImageStream via ReleaseImage fallback",
+			expectCreate:           true,
+			expectOSImages:         true,
+			expectReleaseImageUsed: true,
+		},
+		{
+			name:                "When OSStreams feature gate is disabled it should not consume OSImageStream",
+			featureGateOverride: &disabledFG,
+			expectCreate:        false,
+			expectOSImages:      false,
+		},
+	}
 
-	err := bootstrap.Run(destDir)
-	require.NoError(t, err)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			bootstrap, fakeFactory, srcDir, destDir := setupForBootstrapTest(t)
 
-	// Ensure that the values from the OSImageStream are *not* populated into the ControllerConfig.
-	assert.False(t, fakeFactory.createCalled)
-	cconfigBytes, err := os.ReadFile(filepath.Join(destDir, "controller-config", "machine-config-controller.yaml"))
-	require.NoError(t, err)
-	assert.NotContains(t, string(cconfigBytes), "baseOSContainerImage: registry.host.com/os:latest")
-	assert.NotContains(t, string(cconfigBytes), "baseOSExtensionsContainerImage: registry.host.com/extensions:latest")
+			require.NoError(t, exec.Command("cp", "testdata/bootstrap-hypershift/machineconfigcontroller-controllerconfig.yaml", srcDir).Run())
+
+			if tc.featureGateOverride != nil {
+				fgBytes, err := yaml.Marshal(tc.featureGateOverride)
+				require.NoError(t, err)
+				require.NoError(t, os.WriteFile(filepath.Join(srcDir, "featuregate.yaml"), fgBytes, 0644))
+			}
+
+			err := bootstrap.Run(destDir)
+			require.NoError(t, err)
+
+			assert.Equal(t, tc.expectCreate, fakeFactory.createCalled)
+			cconfigBytes, err := os.ReadFile(filepath.Join(destDir, "controller-config", "machine-config-controller.yaml"))
+			require.NoError(t, err)
+
+			if tc.expectOSImages {
+				assert.Contains(t, string(cconfigBytes), "baseOSContainerImage: registry.host.com/os:latest")
+				assert.Contains(t, string(cconfigBytes), "baseOSExtensionsContainerImage: registry.host.com/extensions:latest")
+			} else {
+				assert.NotContains(t, string(cconfigBytes), "baseOSContainerImage: registry.host.com/os:latest")
+				assert.NotContains(t, string(cconfigBytes), "baseOSExtensionsContainerImage: registry.host.com/extensions:latest")
+			}
+
+			if tc.expectReleaseImageUsed {
+				// HyperShift has no ImageStream in manifests, so fetchOSImageStream
+				// must fall back to cconfig.Spec.ReleaseImage for network-based discovery.
+				assert.Nil(t, fakeFactory.lastCreateOptions.ReleaseImageStream,
+					"ReleaseImageStream should be nil in HyperShift — no ImageStream in manifests")
+				assert.NotEmpty(t, fakeFactory.lastCreateOptions.ReleaseImage,
+					"ReleaseImage should be set from ControllerConfig.Spec.ReleaseImage as fallback")
+			}
+		})
+	}
 }
 
 func TestBootstrapRun(t *testing.T) {
