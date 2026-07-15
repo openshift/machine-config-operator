@@ -102,13 +102,12 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	var (
 		oc       = exutil.NewCLI("mco-irreconcilable-changes", exutil.KubeConfigPath()).AsAdmin()
 		platform = exutil.CheckPlatform(oc)
-		mcpool   = MachineConfigPoolWorker
 	)
 
 	g.JustBeforeEach(func() {
 		PreChecks(oc)
 		skipTestIfSupportedPlatformNotMatched(oc, AWSPlatform, GCPPlatform, AzurePlatform, VspherePlatform, BaremetalPlatform)
-		skipTestIfSNOCluster(oc)
+		SkipIfCompactOrSNO(oc)
 	})
 
 	g.It("Base irreconcilable changes detection on existing nodes", g.Label("Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere", "Platform:baremetal"), func() {
@@ -118,7 +117,13 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			initialMcSpecs       = machineconfiguration.GetSpecOrFail()
 		)
 
-		mcp := NewMachineConfigPool(oc, mcpool)
+		mcp := NewMachineConfigPool(oc, MachineConfigPoolWorker)
+
+		defer func() {
+			logger.Infof("Restore initial MachineConfiguration spec")
+			err := machineconfiguration.SetSpec(initialMcSpecs)
+			o.Expect(err).NotTo(o.HaveOccurred())
+		}()
 
 		exutil.By("Step 1: Enable irreconcilableValidationOverrides")
 		err := machineconfiguration.EnableIrreconcilableValidationOverrides()
@@ -126,13 +131,15 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		err = mcp.WaitForUpdatedStatus()
 		o.Expect(err).NotTo(o.HaveOccurred())
 
-		mc := NewMachineConfig(oc, mcName, mcpool).SetMCOTemplate("extra-disks.yaml")
+		mc := NewMachineConfig(oc, mcName, MachineConfigPoolWorker).SetMCOTemplate("extra-disks.yaml")
 		disks := platformBasedDisksNames(platform)
+
+		defer mc.DeleteWithWait()
 
 		exutil.By("Step 2: Apply extra-disks MachineConfig")
 		err = mc.Create(
 			"-p", "NAME="+mcName,
-			"-p", "POOL="+mcpool,
+			"-p", "POOL="+MachineConfigPoolWorker,
 			"-p", "DEVICE1="+disks[0],
 			"-p", "DEVICE2="+disks[1],
 		)
@@ -141,13 +148,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		err = mcp.WaitForUpdatedStatus()
 		o.Expect(err).NotTo(o.HaveOccurred())
-
-		defer func() {
-			logger.Infof("Restore initial MachineConfiguration spec")
-			err = machineconfiguration.SetSpec(initialMcSpecs)
-			o.Expect(err).NotTo(o.HaveOccurred())
-		}()
-		defer mc.DeleteWithWait()
 
 		exutil.By("Step 3: Verify all worker nodes report irreconcilable changes")
 		workerNodes := mcp.GetSortedNodesOrFail()
@@ -168,11 +168,16 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			machineconfiguration = GetMachineConfiguration(oc)
 			mcName               = "irreconcilable-scaleup-test"
 			initialMcSpecs       = machineconfiguration.GetSpecOrFail()
-			mcpool               = MachineConfigPoolWorker
 		)
 
 		SkipTestIfWorkersCannotBeScaled(oc)
-		mcp := NewMachineConfigPool(oc, mcpool)
+		mcp := NewMachineConfigPool(oc, MachineConfigPoolWorker)
+
+		defer func() {
+			logger.Infof("Restore initial MachineConfiguration spec")
+			err := machineconfiguration.SetSpec(initialMcSpecs)
+			o.Expect(err).NotTo(o.HaveOccurred())
+		}()
 
 		exutil.By("Step 1: Enable irreconcilableValidationOverrides")
 		err := machineconfiguration.EnableIrreconcilableValidationOverrides()
@@ -219,12 +224,14 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			disks = discoveredDisks
 		}
 
-		mc := NewMachineConfig(oc, mcName, mcpool).SetMCOTemplate("extra-disks-with-files.yaml")
+		mc := NewMachineConfig(oc, mcName, MachineConfigPoolWorker).SetMCOTemplate("extra-disks-with-files.yaml")
+
+		defer mc.DeleteWithWait()
 
 		exutil.By("Step 3: Apply extra-disks-with-files MachineConfig")
 		err = mc.Create(
 			"-p", "NAME="+mcName,
-			"-p", "POOL="+mcpool,
+			"-p", "POOL="+MachineConfigPoolWorker,
 			"-p", "DEVICE1="+disks[0],
 			"-p", "DEVICE2="+disks[1],
 			"-p", "FILE_PATH=/etc/temp_config.conf",
@@ -235,13 +242,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		err = mcp.WaitForUpdatedStatus()
 		o.Expect(err).NotTo(o.HaveOccurred())
-
-		defer func() {
-			logger.Infof("Restore initial MachineConfiguration spec")
-			err = machineconfiguration.SetSpec(initialMcSpecs)
-			o.Expect(err).NotTo(o.HaveOccurred())
-		}()
-		defer mc.DeleteWithWait()
 
 		exutil.By("Step 4: Verify existing nodes report storage irreconcilable changes")
 		workerNodes := mcp.GetSortedNodesOrFail()
@@ -315,7 +315,13 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			initialMcSpecs       = machineconfiguration.GetSpecOrFail()
 		)
 
-		mcp := NewMachineConfigPool(oc, mcpool)
+		mcp := NewMachineConfigPool(oc, MachineConfigPoolWorker)
+
+		defer func() {
+			logger.Infof("Restore initial MachineConfiguration spec")
+			err := machineconfiguration.SetSpec(initialMcSpecs)
+			o.Expect(err).NotTo(o.HaveOccurred())
+		}()
 
 		exutil.By("Step 1: Enable irreconcilableValidationOverrides")
 		err := machineconfiguration.EnableIrreconcilableValidationOverrides()
@@ -323,27 +329,9 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		err = mcp.WaitForUpdatedStatus()
 		o.Expect(err).NotTo(o.HaveOccurred())
 
-		mc := NewMachineConfig(oc, mcName, mcpool).SetMCOTemplate("extra-disks.yaml")
+		mc := NewMachineConfig(oc, mcName, MachineConfigPoolWorker).SetMCOTemplate("extra-disks.yaml")
 		disks := platformBasedDisksNames(platform)
 
-		exutil.By("Step 2: Apply extra-disks MachineConfig")
-		err = mc.Create(
-			"-p", "NAME="+mcName,
-			"-p", "POOL="+mcpool,
-			"-p", "DEVICE1="+disks[0],
-			"-p", "DEVICE2="+disks[1],
-		)
-		o.Expect(err).NotTo(o.HaveOccurred())
-		logger.Infof("MC %s created successfully", mcName)
-
-		err = mcp.WaitForUpdatedStatus()
-		o.Expect(err).NotTo(o.HaveOccurred())
-
-		defer func() {
-			logger.Infof("Restore initial MachineConfiguration spec")
-			err = machineconfiguration.SetSpec(initialMcSpecs)
-			o.Expect(err).NotTo(o.HaveOccurred())
-		}()
 		defer func() {
 			// Re-enable the override before deleting mc: without it, SetSpec (which replaces
 			// the entire /spec via op:add) triggers a full MCO reconciliation that detects the
@@ -352,6 +340,19 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			o.Expect(err).NotTo(o.HaveOccurred())
 			mc.DeleteWithWait()
 		}()
+
+		exutil.By("Step 2: Apply extra-disks MachineConfig")
+		err = mc.Create(
+			"-p", "NAME="+mcName,
+			"-p", "POOL="+MachineConfigPoolWorker,
+			"-p", "DEVICE1="+disks[0],
+			"-p", "DEVICE2="+disks[1],
+		)
+		o.Expect(err).NotTo(o.HaveOccurred())
+		logger.Infof("MC %s created successfully", mcName)
+
+		err = mcp.WaitForUpdatedStatus()
+		o.Expect(err).NotTo(o.HaveOccurred())
 
 		exutil.By("Step 3: Verify nodes report irreconcilable changes")
 		workerNodes := mcp.GetSortedNodesOrFail()
@@ -385,11 +386,16 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		exutil.By("Step 6: Apply new irreconcilable MC and verify rejection")
 		newMcName := mcName + "-2"
-		mc2 := NewMachineConfig(oc, newMcName, mcpool).SetMCOTemplate("extra-disks.yaml")
+		mc2 := NewMachineConfig(oc, newMcName, MachineConfigPoolWorker).SetMCOTemplate("extra-disks.yaml")
+
+		defer func() {
+			mc2.DeleteWithWait()
+			o.Expect(mcp.WaitForNotDegradedStatus()).To(o.Succeed())
+		}()
 
 		err = mc2.Create(
 			"-p", "NAME="+newMcName,
-			"-p", "POOL="+mcpool,
+			"-p", "POOL="+MachineConfigPoolWorker,
 			"-p", "DEVICE1="+disks[2],
 			"-p", "DEVICE2="+disks[3],
 		)
@@ -399,11 +405,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			HaveConditionField("RenderDegraded", "status", o.Equal("True")),
 			HaveConditionField("RenderDegraded", "message", o.ContainSubstring("ignition disks section contains changes")),
 		), "MCP should be RenderDegraded after applying irreconcilable MC without override")
-
-		defer func() {
-			mc2.DeleteWithWait()
-			o.Expect(mcp.WaitForNotDegradedStatus()).To(o.Succeed())
-		}()
 	})
 
 	g.It("Irreconcilable changes cleared after reverting MC", g.Label("Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere", "Platform:baremetal"), func() {
@@ -413,7 +414,13 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			initialMcSpecs       = machineconfiguration.GetSpecOrFail()
 		)
 
-		mcp := NewMachineConfigPool(oc, mcpool)
+		mcp := NewMachineConfigPool(oc, MachineConfigPoolWorker)
+
+		defer func() {
+			logger.Infof("Restore initial MachineConfiguration spec")
+			err := machineconfiguration.SetSpec(initialMcSpecs)
+			o.Expect(err).NotTo(o.HaveOccurred())
+		}()
 
 		exutil.By("Step 1: Enable irreconcilableValidationOverrides and apply MC")
 		err := machineconfiguration.EnableIrreconcilableValidationOverrides()
@@ -421,12 +428,14 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		err = mcp.WaitForUpdatedStatus()
 		o.Expect(err).NotTo(o.HaveOccurred())
 
-		mc := NewMachineConfig(oc, mcName, mcpool).SetMCOTemplate("extra-disks.yaml")
+		mc := NewMachineConfig(oc, mcName, MachineConfigPoolWorker).SetMCOTemplate("extra-disks.yaml")
 		disks := platformBasedDisksNames(platform)
+
+		defer mc.DeleteWithWait()
 
 		err = mc.Create(
 			"-p", "NAME="+mcName,
-			"-p", "POOL="+mcpool,
+			"-p", "POOL="+MachineConfigPoolWorker,
 			"-p", "DEVICE1="+disks[0],
 			"-p", "DEVICE2="+disks[1],
 		)
@@ -435,13 +444,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		err = mcp.WaitForUpdatedStatus()
 		o.Expect(err).NotTo(o.HaveOccurred())
-
-		defer func() {
-			logger.Infof("Restore initial MachineConfiguration spec")
-			err = machineconfiguration.SetSpec(initialMcSpecs)
-			o.Expect(err).NotTo(o.HaveOccurred())
-		}()
-		defer mc.DeleteWithWait()
 
 		exutil.By("Step 2: Verify nodes report irreconcilable changes")
 		workerNodes := mcp.GetSortedNodesOrFail()
@@ -473,19 +475,20 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			mcName = "irreconcilable-reject-test"
 		)
 
-		mcp := NewMachineConfigPool(oc, mcpool)
-		mc := NewMachineConfig(oc, mcName, mcpool).SetMCOTemplate("extra-disks.yaml")
+		mcp := NewMachineConfigPool(oc, MachineConfigPoolWorker)
+		mc := NewMachineConfig(oc, mcName, MachineConfigPoolWorker).SetMCOTemplate("extra-disks.yaml")
 		disks := platformBasedDisksNames(platform)
+
+		defer mc.DeleteWithWait()
 
 		exutil.By("Step 1: Apply irreconcilable MC without enabling override")
 		err := mc.Create(
 			"-p", "NAME="+mcName,
-			"-p", "POOL="+mcpool,
+			"-p", "POOL="+MachineConfigPoolWorker,
 			"-p", "DEVICE1="+disks[0],
 			"-p", "DEVICE2="+disks[1],
 		)
 		o.Expect(err).NotTo(o.HaveOccurred())
-		defer mc.DeleteWithWait()
 
 		exutil.By("Step 2: Verify MCP becomes RenderDegraded")
 		o.Eventually(mcp, "5m", "10s").Should(o.SatisfyAll(
