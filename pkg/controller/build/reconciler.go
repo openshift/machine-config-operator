@@ -1353,6 +1353,33 @@ func (b *buildReconciler) reconcilePoolChange(ctx context.Context, mcp *mcfgv1.M
 		return err
 	}
 
+	osImageURLs, _ := ctrlcommon.GetOSImageURLConfig(ctx, b.kubeclient)
+	targetMosb, err := buildrequest.NewMachineOSBuild(buildrequest.MachineOSBuildOpts{
+		MachineOSConfig:   mosc,
+		MachineConfigPool: mcp,
+		OSImageURLConfig:  osImageURLs,
+	})
+
+	if err != nil {
+		return fmt.Errorf("could not generate name for target MOSB: %w", err)
+	}
+
+	// No action needed if the rendered config has not changed AND the annotation
+	// imagestream tag was deleted, in which case we must fall through and rebuild.
+	if oldRendered == newRendered && firstOptIn == targetMosb.Name {
+		existingMosb, getErr := b.machineOSBuildLister.Get(targetMosb.Name)
+		if getErr != nil || !ctrlcommon.NewMachineOSBuildState(existingMosb).IsBuildSuccess() {
+			klog.V(4).Infof("pool %q: Configuration unchanged (%s), no action needed", mcp.Name, oldRendered)
+			return nil
+		}
+		image := string(existingMosb.Spec.RenderedImagePushSpec)
+		if _, err := b.inspectImage(ctx, image, existingMosb); err == nil {
+			klog.V(4).Infof("pool %q: Configuration unchanged (%s), no action needed", mcp.Name, oldRendered)
+			return nil
+		}
+		klog.Infof("pool %q: image %q no longer exists despite unchanged config, will rebuild", mcp.Name, image)
+	}
+
 	// This is our trigger point
 	if (oldRendered != newRendered && needsImageRebuild) || firstOptIn == "" {
 		klog.Infof("pool %q: rendered config changed and requires an image rebuild. Verifying if a valid build already exists...", mcp.Name)
