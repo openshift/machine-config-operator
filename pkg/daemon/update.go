@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"math/rand"
 	"sync"
 	"syscall"
 	"time"
@@ -449,7 +450,7 @@ func podmanRemove(cid string) {
 	exec.Command("podman", "rm", "-f", cid).Run()
 }
 
-func pullExtensionsImage(podmanInterface PodmanInterface, imgURL string) error {
+func pullExtensionsImage(podmanInterface PodmanInterface, imgURL string, background bool) error {
 	// Check if the image is present
 	podmanImageInfo, err := podmanInterface.GetPodmanImageInfoByReference(imgURL)
 	if err != nil || podmanImageInfo != nil {
@@ -465,11 +466,15 @@ func pullExtensionsImage(podmanInterface PodmanInterface, imgURL string) error {
 	args := []string{"pull", "-q"}
 	args = append(args, authArgs...)
 	args = append(args, imgURL)
-	_, err = pivotutils.RunExtBackground(numRetriesNetCommands, "podman", args...)
+	if background {
+		_, err = pivotutils.RunExtBackground(numRetriesNetCommands, "podman", args...)
+	} else {
+		_, err = pivotutils.RunExt(numRetriesNetCommands, "podman", args...)
+	}
 	return err
 }
 
-func podmanCopy(podmanInterface PodmanInterface, imgURL, osImageContentDir string) (err error) {
+func podmanCopy(podmanInterface PodmanInterface, imgURL, osImageContentDir string, background bool) (err error) {
 	// make sure that osImageContentDir doesn't exist
 	os.RemoveAll(osImageContentDir)
 
@@ -488,7 +493,11 @@ func podmanCopy(podmanInterface PodmanInterface, imgURL, osImageContentDir strin
 	// copy the content from create container locally into a temp directory under /run/
 	cid := strings.TrimSpace(string(cidBuf))
 	args := []string{"cp", fmt.Sprintf("%s:/", cid), osImageContentDir}
-	_, err = pivotutils.RunExtBackground(numRetriesNetCommands, "podman", args...)
+	if background {
+		_, err = pivotutils.RunExtBackground(numRetriesNetCommands, "podman", args...)
+	} else {
+		_, err = pivotutils.RunExt(numRetriesNetCommands, "podman", args...)
+	}
 	if err != nil {
 		return
 	}
@@ -505,7 +514,7 @@ func podmanCopy(podmanInterface PodmanInterface, imgURL, osImageContentDir strin
 
 // ExtractExtensionsImage extracts the OS extensions content in a temporary directory under /run/machine-os-extensions
 // and returns the path on successful extraction
-func (dn *CoreOSDaemon) ExtractExtensionsImage(imgURL string) (osExtensionsImageContentDir string, err error) {
+func (dn *CoreOSDaemon) ExtractExtensionsImage(imgURL string, background bool) (osExtensionsImageContentDir string, err error) {
 	if err = os.MkdirAll(osExtensionsContentBaseDir, 0o755); err != nil {
 		err = fmt.Errorf("error creating directory %s: %w", osExtensionsContentBaseDir, err)
 		return
@@ -514,11 +523,11 @@ func (dn *CoreOSDaemon) ExtractExtensionsImage(imgURL string) (osExtensionsImage
 	if osExtensionsImageContentDir, err = os.MkdirTemp(osExtensionsContentBaseDir, "os-extensions-content-"); err != nil {
 		return
 	}
-	if err := pullExtensionsImage(dn.podmanInterface, imgURL); err != nil {
+	if err := pullExtensionsImage(dn.podmanInterface, imgURL, background); err != nil {
 		return osExtensionsImageContentDir, fmt.Errorf("error pulling extensions image %s: %w", imgURL, err)
 	}
 	// Extract the image using `podman cp`
-	return osExtensionsImageContentDir, podmanCopy(dn.podmanInterface, imgURL, osExtensionsImageContentDir)
+	return osExtensionsImageContentDir, podmanCopy(dn.podmanInterface, imgURL, osExtensionsImageContentDir, background)
 }
 
 // Remove pending deployment on OSTree based system
@@ -527,7 +536,7 @@ func removePendingDeployment() error {
 }
 
 // applyOSChanges extracts the OS image and adds coreos-extensions repo if we have either OS update or package layering to perform
-func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
+func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newConfig *mcfgv1.MachineConfig, firstBoot bool) (retErr error) {
 	// We previously did not emit this event when kargs changed, so we still don't
 	if mcDiff.osUpdate || mcDiff.extensions || mcDiff.kernelType || mcDiff.oclEnabled {
 		// We emitted this event before, so keep it
@@ -561,7 +570,7 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "OSUpdateStarted", reason)
 		}
 
-		if err := dn.applyLayeredOSChanges(mcDiff, oldConfig, newConfig); err != nil {
+		if err := dn.applyLayeredOSChanges(mcDiff, oldConfig, newConfig, firstBoot); err != nil {
 			return err
 		}
 
@@ -1273,7 +1282,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 			klog.Info("Applying OCL revert-specific OS changes")
 		}
 
-		if err := coreOSDaemon.applyOSChanges(*diff, oldConfig, newConfig); err != nil {
+		if err := coreOSDaemon.applyOSChanges(*diff, oldConfig, newConfig, firstBoot); err != nil {
 			// When ImageModeStatusReporting is enabled, update the `MachineConfigNodeUpdateOS` condition to report the experienced error
 			if imageModeStatusReportingEnabled {
 				mcnErr := upgrademonitor.GenerateAndApplyMachineConfigNodes(
@@ -1295,7 +1304,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 
 		defer func() {
 			if retErr != nil {
-				if err := coreOSDaemon.applyOSChanges(*diff, newConfig, oldConfig); err != nil {
+				if err := coreOSDaemon.applyOSChanges(*diff, newConfig, oldConfig, firstBoot); err != nil {
 					errs := kubeErrs.NewAggregate([]error{err, retErr})
 					retErr = fmt.Errorf("error rolling back changes to OS: %w", errs)
 					return
@@ -1449,13 +1458,13 @@ func (dn *Daemon) updateHypershift(oldConfig, newConfig *mcfgv1.MachineConfig, d
 
 	if dn.os.IsCoreOSVariant() {
 		coreOSDaemon := CoreOSDaemon{dn}
-		if err := coreOSDaemon.applyOSChanges(*diff, oldConfig, newConfig); err != nil {
+		if err := coreOSDaemon.applyOSChanges(*diff, oldConfig, newConfig, false); err != nil {
 			return err
 		}
 
 		defer func() {
 			if retErr != nil {
-				if err := coreOSDaemon.applyOSChanges(*diff, newConfig, oldConfig); err != nil {
+				if err := coreOSDaemon.applyOSChanges(*diff, newConfig, oldConfig, false); err != nil {
 					errs := kubeErrs.NewAggregate([]error{err, retErr})
 					retErr = fmt.Errorf("error rolling back changes to OS: %w", errs)
 					return
@@ -1485,6 +1494,14 @@ func (dn *Daemon) removeRollback() error {
 		// do not attempt to rollback on non-RHCOS/FCOS machines
 		return nil
 	}
+	// Defer cleanup to reduce I/O contention during node bootstrap. The rpm-ostree cleanup
+	// syncfs calls (~43s total) run concurrently with CNI image pulls and compete for disk
+	// bandwidth during the kubelet-to-ready window. Sleeping here lets the node reach Ready
+	// before the heavy I/O starts. Jitter spreads cleanup across nodes that scale up in the
+	// same burst so they don't all hit the disk simultaneously after the delay expires.
+	delay := 60*time.Second + time.Duration(rand.Int63n(int64(30*time.Second)))
+	klog.Infof("Deferring rpm-ostree rollback cleanup by %s to reduce boot I/O contention", delay.Round(time.Second))
+	time.Sleep(delay)
 	return runRpmOstree("cleanup", "-r")
 }
 
@@ -3217,7 +3234,7 @@ func (dn *Daemon) reboot(rationale string) error {
 }
 
 //nolint:gocyclo
-func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
+func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfig, newConfig *mcfgv1.MachineConfig, firstBoot bool) (retErr error) {
 	// Override the computed diff if the booted state differs from the oldConfig
 	// https://issues.redhat.com/browse/OCPBUGS-2757
 	if mcDiff.osUpdate && dn.bootedOSImageURL == newConfig.Spec.OSImageURL {
@@ -3272,7 +3289,7 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 			}
 		}
 
-		if osExtensionsContentDir, err = dn.ExtractExtensionsImage(newConfig.Spec.BaseOSExtensionsContainerImage); err != nil {
+		if osExtensionsContentDir, err = dn.ExtractExtensionsImage(newConfig.Spec.BaseOSExtensionsContainerImage, !firstBoot); err != nil {
 			// Report ImagePulledFromRegistry condition as false (failed)
 			if imageModeStatusReportingEnabled {
 				err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
