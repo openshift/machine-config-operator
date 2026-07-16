@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -716,6 +717,81 @@ func TestImageBuildDegradedOnFailureAndClearedOnBuildStart(t *testing.T) {
 	t.Logf("All MCP status transitions verified successfully across build failure, success, and subsequent new build")
 }
 
+// TestPausedMCPSurfacesMachineOSBuildStatus verifies that a paused MachineConfigPool
+// surfaces MachineOSBuild progress in its Updating condition and rolls out after unpause.
+func TestPausedMCPSurfacesMachineOSBuildStatus(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	cs := framework.NewClientSet("")
+
+	dockerfile, err := ocltesthelper.GetCowsayDockerfileForCluster(t, cs)
+	require.NoError(t, err)
+
+	node := helpers.GetRandomNode(t, cs, "worker")
+	mosc := prepareForOnClusterLayeringTest(t, cs, onClusterLayeringTestOpts{
+		poolName:   layeredMCPName,
+		targetNode: &node,
+		customDockerfiles: map[string]string{
+			layeredMCPName: dockerfile,
+		},
+	})
+
+	setMachineConfigPoolPaused(ctx, t, cs, layeredMCPName, true)
+	t.Cleanup(func() {
+		setMachineConfigPoolPaused(ctx, t, cs, layeredMCPName, false)
+	})
+
+	createMachineOSConfig(t, cs, mosc)
+
+	// waiting/prepared are short-lived transitional messages that the node
+	// controller may skip entirely if it doesn't reconcile during that exact
+	// window (e.g. if the MOSB is already Building by the first reconcile
+	// after pause). Only "in progress" is durable for the life of the build,
+	// so that's the one condition we require here. The others are logged as
+	// a bonus signal if we happen to observe them.
+	var sawWaiting, sawPrepared, sawInProgress bool
+	require.NoError(t, wait.PollUntilContextTimeout(ctx, 500*time.Millisecond, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+		mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(ctx, layeredMCPName, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		if !mcp.Spec.Paused {
+			return false, fmt.Errorf("expected pool %s to remain paused", layeredMCPName)
+		}
+		// Check for starting conditions
+		cond := apihelpers.GetMachineConfigPoolCondition(mcp.Status, mcfgv1.MachineConfigPoolUpdating)
+		if cond != nil && cond.Status == corev1.ConditionTrue {
+			if strings.Contains(cond.Message, "waiting for a new OS image build to start") {
+				sawWaiting = true
+				assert.Contains(t, cond.Message, mosc.Name)
+			}
+			if strings.Contains(cond.Message, "prepared but will not rollout") {
+				sawPrepared = true
+			}
+			if strings.Contains(cond.Message, "OS image build in progress") {
+				sawInProgress = true
+			}
+		}
+
+		return sawInProgress, nil
+	}))
+	t.Logf("Observed while paused: sawWaiting=%v sawPrepared=%v sawInProgress=%v", sawWaiting, sawPrepared, sawInProgress)
+	assert.True(t, sawInProgress, "MCP should surface build-in-progress while paused")
+
+	mosb := waitForBuildToStartForPoolAndConfig(t, cs, layeredMCPName, mosc.Name)
+
+	finishedBuild := waitForBuildToComplete(t, cs, mosb)
+	imagePullspec := string(finishedBuild.Status.DigestedImagePushSpec)
+
+	updatingCond := waitForMCPUpdatingCondition(ctx, t, cs, layeredMCPName, corev1.ConditionFalse, "OS image build completed successfully")
+	assert.Contains(t, updatingCond.Message, mosb.Name)
+
+	setMachineConfigPoolPaused(ctx, t, cs, layeredMCPName, false)
+
+	require.NoError(t, helpers.WaitForNodeImageChange(t, cs, node, imagePullspec))
+}
+
 // TestCurrentMachineOSBuildAnnotationHandling tests that the node controller correctly uses the
 // current-machine-os-build annotation on the MachineOSConfig to select the correct MOSB when
 // multiple MOSBs exist for the same rendered MachineConfig. This can happen during rapid updates
@@ -1321,6 +1397,45 @@ func waitForJobToReachCondition(ctx context.Context, t *testing.T, cs *framework
 
 		return condFunc(job)
 	}))
+}
+
+func setMachineConfigPoolPaused(ctx context.Context, t *testing.T, cs *framework.ClientSet, poolName string, paused bool) {
+	t.Helper()
+
+	mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(ctx, poolName, metav1.GetOptions{})
+	require.NoError(t, err)
+
+	mcp.Spec.Paused = paused
+	_, err = cs.MachineconfigurationV1Interface.MachineConfigPools().Update(ctx, mcp, metav1.UpdateOptions{})
+	require.NoError(t, err)
+
+	t.Logf("MachineConfigPool %s paused=%v", poolName, paused)
+}
+
+func waitForMCPUpdatingCondition(ctx context.Context, t *testing.T, cs *framework.ClientSet, poolName string, expectedStatus corev1.ConditionStatus, messageContains string) *mcfgv1.MachineConfigPoolCondition {
+	t.Helper()
+
+	var condition *mcfgv1.MachineConfigPoolCondition
+	require.NoError(t, wait.PollUntilContextTimeout(ctx, 500*time.Millisecond, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+		mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(ctx, poolName, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		if !mcp.Spec.Paused {
+			return false, fmt.Errorf("expected pool %s to remain paused", poolName)
+		}
+
+		condition = apihelpers.GetMachineConfigPoolCondition(mcp.Status, mcfgv1.MachineConfigPoolUpdating)
+		if condition == nil || condition.Status != expectedStatus {
+			return false, nil
+		}
+		if messageContains != "" && !strings.Contains(condition.Message, messageContains) {
+			return false, nil
+		}
+		return true, nil
+	}))
+
+	return condition
 }
 
 // waitForImageBuildDegradedCondition waits for the ImageBuildDegraded condition to reach the expected state
