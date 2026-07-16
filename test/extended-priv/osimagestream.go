@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 )
@@ -90,4 +91,37 @@ func (osis *OSImageStream) LogStreamInfo() {
 		logger.Infof("  osImage: %s", osImage)
 		logger.Infof("  osExtensionsImage: %s", osExtImage)
 	}
+}
+
+// GetDefaultOSImageStream returns the default OS image stream based on the cluster version.
+// OCP 4.x clusters default to "rhel-9", OCP 5+ default to "rhel-10".
+func GetDefaultOSImageStream(oc *exutil.CLI) string {
+	clusterVersion, _, err := exutil.GetClusterVersion(oc)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting cluster version")
+	if clusterVersion[:1] == "4" {
+		return OSImageStreamRHEL9
+	}
+	return OSImageStreamRHEL10
+}
+
+// GetInitialAndTargetStreams determines initial and target osImageStreams based on cluster version.
+// Returns (initialStream, targetStream) where:
+// - initialStream: cluster default stream (rhel-9 in 4.23, rhel-10 in 5.0)
+// - targetStream: alternate stream (rhel-10 in 4.23, rhel-9 in 5.0)
+// This ensures tests always trigger a stream change and work consistently across versions.
+func GetInitialAndTargetStreams(oc *exutil.CLI) (initialStream, targetStream string) {
+	defaultStream := GetDefaultOSImageStream(oc)
+
+	if defaultStream == OSImageStreamRHEL10 {
+		// 5.0 cluster: default is rhel-10, alternate is rhel-9
+		initialStream = OSImageStreamRHEL10
+		targetStream = OSImageStreamRHEL9
+	} else {
+		// 4.23 cluster: default is rhel-9, alternate is rhel-10
+		initialStream = OSImageStreamRHEL9
+		targetStream = OSImageStreamRHEL10
+	}
+
+	logger.Infof("Cluster streams - initial: %s, target: %s", initialStream, targetStream)
+	return initialStream, targetStream
 }
