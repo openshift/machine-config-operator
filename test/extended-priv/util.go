@@ -720,15 +720,6 @@ func skipTestIfSupportedPlatformNotMatched(oc *exutil.CLI, supported ...string) 
 	}
 }
 
-// SkipTestIfSNOCluster skips the test if the specified cluster is a SNO cluster
-func skipTestIfSNOCluster(oc *exutil.CLI) {
-	sno, err := IsSNOSafe(oc)
-	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Could not determine whether cluster is SNO")
-	if sno {
-		g.Skip("skip test because current cluster is a SNO cluster")
-	}
-}
-
 // RemoveDuplicates removes duplicate items from a list
 func RemoveDuplicates[T comparable](list []T) []T {
 	allKeys := make(map[T]bool)
