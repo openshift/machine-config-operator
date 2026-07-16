@@ -2,7 +2,11 @@ package e2e_2of2
 
 import (
 	"context"
+	"errors"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/openshift/machine-config-operator/internal/clients"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -96,4 +100,58 @@ func TestConfigMapUrlProvider(t *testing.T) {
 	baseOSExtensionsContainerImage, ok := configMap.Data["baseOSExtensionsContainerImage"]
 	assert.True(t, ok)
 	assert.Equal(t, baseOSExtensionsContainerImage, urls.OSExtensionsImage)
+}
+
+// TestCachedInspectorFactory validates the CachedImagesInspectorFactory stack
+// (cache + real image inspector) wired the same way as production. It inspects
+// a real cluster image to populate the cache, then verifies a second inspect
+// with a broken SysContextFactory is served entirely from cache.
+func TestCachedInspectorFactory(t *testing.T) {
+	cs := framework.NewClientSet("")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	image := getCVOImage(t, cs)
+	digest := imageutils.DigestFromPullspec(image)
+	require.NotEmpty(t, digest, "CVO release image must be digested")
+
+	cachePath := filepath.Join(t.TempDir(), "test-cache.json")
+	cache := imageutils.NewFileInspectionCache(cachePath, 48*time.Hour)
+	factory := osimagestream.NewCachedImagesInspectorFactory(
+		&osimagestream.DefaultImagesInspectorFactory{},
+		cache,
+	)
+
+	// First inspect: cache miss, hits the real registry
+	sysContext := setupSysContext(t, cs)
+	sysCtxFactory := func() (*imageutils.SysContext, error) { return sysContext, nil }
+	inspector := factory.ForContext(sysCtxFactory)
+
+	results, err := inspector.Inspect(ctx, image)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.NoError(t, results[0].Error)
+	require.NotNil(t, results[0].InspectInfo)
+	require.NotEmpty(t, results[0].InspectInfo.Labels)
+
+	entry := cache.Get(digest)
+	require.NotNil(t, entry, "cache must be populated after first inspect")
+	assert.Equal(t, results[0].InspectInfo.Labels, entry.Labels)
+
+	_, err = os.Stat(cachePath)
+	require.NoError(t, err, "cache file must exist on disk")
+
+	// Second inspect: uses a broken factory that errors if called, proving
+	// the result is served from cache without touching the registry.
+	broken := func() (*imageutils.SysContext, error) {
+		return nil, errors.New("must not be called — cache should serve this")
+	}
+	inspector2 := factory.ForContext(broken)
+
+	results2, err := inspector2.Inspect(ctx, image)
+	require.NoError(t, err)
+	require.Len(t, results2, 1)
+	require.NoError(t, results2[0].Error)
+	assert.Equal(t, results[0].InspectInfo.Labels, results2[0].InspectInfo.Labels)
 }
