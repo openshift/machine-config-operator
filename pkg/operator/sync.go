@@ -154,6 +154,9 @@ const (
 	mcsNodeBootstrapperServiceAccountManifestPath = "manifests/machineconfigserver/node-bootstrapper-sa.yaml"
 	mcsNodeBootstrapperTokenManifestPath          = "manifests/machineconfigserver/node-bootstrapper-token.yaml"
 	mcsDaemonsetManifestPath                      = "manifests/machineconfigserver/daemonset.yaml"
+	mcsEventsClusterRoleManifestPath              = "manifests/machineconfigserver/events-clusterrole.yaml"
+	mcsEventsRoleBindingDefaultManifestPath       = "manifests/machineconfigserver/events-rolebinding-default.yaml"
+	mcsEventsRoleBindingTargetManifestPath        = "manifests/machineconfigserver/events-rolebinding-target.yaml"
 
 	// Machine OS puller manifest paths
 	mopRoleBindingManifestPath    = "manifests/machine-os-puller/rolebinding.yaml"
@@ -632,6 +635,8 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		return err
 	}
 
+	mcsURL := fmt.Sprintf("https://%s", ignitionHost)
+
 	pointerConfig, err := ctrlcommon.PointerConfig(ignitionHost, machineConfigServerCABundle)
 	if err != nil {
 		return err
@@ -657,7 +662,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		optr.setOperatorLogLevel(mcop.Spec.OperatorLogLevel)
 	}
 
-	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra, pointerConfigData, apiServer, fmt.Sprintf("%d", optr.logLevel))
+	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra, pointerConfigData, apiServer, mcsURL, fmt.Sprintf("%d", optr.logLevel))
 
 	return nil
 }
@@ -1701,6 +1706,11 @@ func (optr *Operator) syncMachineConfigServer(config *renderConfig, _ *configv1.
 	paths := manifestPaths{
 		clusterRoles: []string{
 			mcsClusterRoleManifestPath,
+			mcsEventsClusterRoleManifestPath,
+		},
+		roleBindings: []string{
+			mcsEventsRoleBindingDefaultManifestPath,
+			mcsEventsRoleBindingTargetManifestPath,
 		},
 		clusterRoleBindings: []string{
 			mcsClusterRoleBindingManifestPath,
@@ -2178,7 +2188,7 @@ func setGVK(obj runtime.Object, scheme *runtime.Scheme) error {
 	return nil
 }
 
-func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *ctrlcommon.RenderConfigImages, infra *configv1.Infrastructure, pointerConfigData []byte, apiServer *configv1.APIServer, logLevel string) *renderConfig {
+func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *ctrlcommon.RenderConfigImages, infra *configv1.Infrastructure, pointerConfigData []byte, apiServer *configv1.APIServer, mcsURL, logLevel string) *renderConfig {
 	tlsMinVersion, tlsCipherSuites := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
 	return &renderConfig{
 		TargetNamespace:        tnamespace,
@@ -2188,6 +2198,7 @@ func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.C
 		Images:                 imgs,
 		KubeAPIServerServingCA: kubeAPIServerServingCA,
 		APIServerURL:           infra.Status.APIServerInternalURL,
+		MCSURL:                 mcsURL,
 		PointerConfig:          string(pointerConfigData),
 		Infra:                  *infra,
 		TLSMinVersion:          tlsMinVersion,
