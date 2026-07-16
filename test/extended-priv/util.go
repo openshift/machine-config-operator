@@ -241,15 +241,12 @@ func sortNodeList(nodes []*Node) []*Node {
 		lDate, err := time.Parse(dateLayout, lMetadata.Get("creationTimestamp").ToString())
 		if err != nil {
 			e2e.Failf("Cannot parse creationTimestamp %s in node %s", lMetadata.Get("creationTimestamp").ToString(), nodes[l].GetName())
-
 		}
 		rDate, err := time.Parse(dateLayout, rMetadata.Get("creationTimestamp").ToString())
 		if err != nil {
 			e2e.Failf("Cannot parse creationTimestamp %s in node %s", rMetadata.Get("creationTimestamp").ToString(), nodes[r].GetName())
-
 		}
 		return lDate.Before(rDate)
-
 	})
 	return nodes
 }
@@ -407,7 +404,6 @@ func GetClonedResourceJSONString(res ResourceInterface, newName, newNamespace st
 	}
 
 	return jsonRes, nil
-
 }
 
 // CloneResource will clone the given resource with the new name and the new namespace. If new namespace is an empty strng, it is ignored and the namespace will not be changed.
@@ -455,7 +451,6 @@ func generateTmpFile(oc *exutil.CLI, fileName string) string {
 
 // MergeDockerConfigs accepts two docker configs strings as parameter and merge them
 func MergeDockerConfigs(dockerConfig1, dockerConfig2 string) (string, error) {
-
 	type DockerConfig struct {
 		Auths map[string]interface{} `json:"auths"`
 	}
@@ -864,7 +859,6 @@ func RotateMCSCertificates(oc *exutil.CLI) error {
 
 	defer master.RemoveFile(remoteAdminKubeConfig)
 	err := master.CopyFromLocal(adminKubeConfig, remoteAdminKubeConfig)
-
 	if err != nil {
 		return err
 	}
@@ -950,7 +944,8 @@ func GetCertificatesInfoFromPemBundle(bundleName string, pemBundle []byte) ([]Ce
 			return nil, err
 		}
 
-		certificatesInfo = append(certificatesInfo,
+		certificatesInfo = append(
+			certificatesInfo,
 			CertificateInfo{
 				BundleFile: bundleName,
 				NotAfter:   cert.NotAfter.Format(time.RFC3339),
@@ -973,9 +968,7 @@ func GetCertificatesInfoFromPemBundle(bundleName string, pemBundle []byte) ([]Ce
 //
 //nolint:unparam
 func createCA(tmpDir, caFileName string) (keyPath, caPath string, err error) {
-	var (
-		keyFileName = "privateKey.pem"
-	)
+	keyFileName := "privateKey.pem"
 	caPath = filepath.Join(tmpDir, caFileName)
 	keyPath = filepath.Join(tmpDir, keyFileName)
 
@@ -1061,7 +1054,6 @@ func getCertsFromKubeconfig(kubeconfig string) (string, error) {
 
 // GetBase64EncodedFileSourceContent encodes file content as a base64 data URI
 func GetBase64EncodedFileSourceContent(fileContent string) string {
-
 	encodedContent := b64.StdEncoding.EncodeToString([]byte(fileContent))
 
 	return "data:text/plain;charset=utf-8;base64," + encodedContent
@@ -1078,10 +1070,10 @@ func PtrInt(a int) *int {
 }
 
 func ConvertOctalPermissionsToDecimalOrFail(octalPerm string) int {
-
 	o.ExpectWithOffset(1, octalPerm).To(o.And(
 		o.Not(o.BeEmpty()),
-		o.HavePrefix("0")),
+		o.HavePrefix("0"),
+	),
 		"Error the octal permissions %s should not be empty and should start with a '0' character")
 
 	// parse the octal string and conver to integer
@@ -1100,7 +1092,6 @@ func RemoveAllMCDPods(oc *exutil.CLI) error {
 func removeMCOPods(oc *exutil.CLI, argsSelector ...string) error {
 	args := append([]string{"pods", "-n", MachineConfigNamespace}, argsSelector...)
 	err := oc.AsAdmin().WithoutNamespace().Run("delete").Args(args...).Execute()
-
 	if err != nil {
 		logger.Errorf("Cannot delete the pods in %s namespace", MachineConfigNamespace)
 		return err
@@ -1120,7 +1111,6 @@ func waitForAllMCOPodsReady(oc *exutil.CLI, timeout time.Duration) error {
 	waitErr := wait.PollUntilContextTimeout(context.TODO(), 10*time.Second, timeout, immediate,
 		func(_ context.Context) (bool, error) {
 			status, err := mcoPodsList.GetTemplate(template)
-
 			if err != nil {
 				logger.Errorf("Problems getting pods info. Trying again")
 				return false, nil
@@ -1243,7 +1233,6 @@ func splitCommandString(strCommand string) []string {
 	}
 
 	return command
-
 }
 
 func getMachineConfigControllerPod(oc *exutil.CLI) (string, error) {
@@ -1317,7 +1306,6 @@ func skipTestIfNotSupportedPlatform(oc *exutil.CLI, notsupported ...string) {
 }
 
 func getAlertsByName(oc *exutil.CLI, alertName string) ([]map[string]interface{}, error) {
-
 	mon, monErr := exutil.NewPrometheusMonitor(oc.AsAdmin())
 	if monErr != nil {
 		return nil, monErr
@@ -1549,7 +1537,6 @@ func getHostFromRoute(oc *exutil.CLI, routeName, routeNamespace string) string {
 
 // getPrometheusQueryResults executes a Prometheus query and returns the results
 func getPrometheusQueryResults(oc *exutil.CLI, query string) string {
-
 	token := getSATokenFromContainer(oc, "prometheus-k8s-0", "openshift-monitoring", "prometheus")
 
 	routeHost := getHostFromRoute(oc, "prometheus-k8s", "openshift-monitoring")
