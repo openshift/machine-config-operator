@@ -121,7 +121,6 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*runtime.RawExtension, er
 		klog.Errorf("could not read file: %s", fileName)
 		return nil, fmt.Errorf("server: could not read file %s, err: %w", fileName, err)
 	}
-	klog.Infof("got controllerConfig: %s", string(data))
 
 	cc := new(mcfgv1.ControllerConfig)
 	err = yaml.Unmarshal(data, cc)
