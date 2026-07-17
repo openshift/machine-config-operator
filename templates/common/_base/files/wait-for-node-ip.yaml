@@ -36,9 +36,8 @@ contents:
     fi
     wait_for_ip_bind "${ip}"
 
-    # Do not fail below because we don't know if we run on primary-v4 or primary-v6 platform.
-    # We only want to make sure that if nodeip-configuration detected an IP address, the
-    # address is usable.
+    # Family-specific checks follow ControllerConfig IPFamilies (network.config serviceNetwork; same as kubelet --node-ip).
+{{- if or (eq .IPFamilies "DualStack") (eq .IPFamilies "DualStackIPv6Primary") }}
     ip=$(cat /run/nodeip-configuration/ipv4 || echo "")
     if [[ "${ip}" == "" ]]; then
       echo "No ipv4 to bind was found"
@@ -52,3 +51,18 @@ contents:
     else
       wait_for_ip_bind "${ip}"
     fi
+{{- else if eq .IPFamilies "IPv4" }}
+    ip=$(cat /run/nodeip-configuration/ipv4 || echo "")
+    if [[ "${ip}" == "" ]]; then
+      echo "No ipv4 to bind was found"
+    else
+      wait_for_ip_bind "${ip}"
+    fi
+{{- else }}
+    ip=$(cat /run/nodeip-configuration/ipv6 || echo "")
+    if [[ "${ip}" == "" ]]; then
+      echo "No ipv6 to bind was found"
+    else
+      wait_for_ip_bind "${ip}"
+    fi
+{{- end }}
