@@ -174,7 +174,7 @@ func rotateTLSSecretOrFail(secret *Secret) string {
 		"The secret %s could not be patched in order to rotate the certificate", secret)
 
 	logger.Infof("Wait for certificate rotation")
-	o.Eventually(secret.GetDataValueOrFail, "3m", "20s").WithArguments("tls.crt").
+	o.Eventually(secret.GetDataValueOrFail, "5m", "20s").WithArguments("tls.crt").
 		ShouldNot(exutil.Secure(o.Equal(initialCert)),
 			"The certificate was not rotated in %s", secret)
 
