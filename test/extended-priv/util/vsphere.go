@@ -80,7 +80,7 @@ func DownloadOVAIfURL(ovaPath string) (string, error) {
 
 // UploadBaseImageToVsphere uploads a base image OVA to vSphere and converts it to a template.
 // The baseImageSrc can be either a local file path or a URL.
-func UploadBaseImageToVsphere(baseImageSrc, baseImageDest string, vsInfo *VSphereConnectionInfo) error {
+func UploadBaseImageToVsphere(baseImageSrc, baseImageDest string, vsInfo *VSphereConnectionInfo, folder string) error {
 	ctx := context.Background()
 
 	// Build vSphere URL without credentials
@@ -124,9 +124,20 @@ func UploadBaseImageToVsphere(baseImageSrc, baseImageDest string, vsInfo *VSpher
 	}
 
 	// Find VM folder
-	folders, err := dc.Folders(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get datacenter folders: %w", err)
+	var vmFolder *object.Folder
+	if folder != "" {
+		vmFolder, err = finder.Folder(ctx, folder)
+		if err != nil {
+			return fmt.Errorf("failed to find folder %s: %w", folder, err)
+		}
+		logger.Infof("Using workspace folder %s", folder)
+	} else {
+		folders, err := dc.Folders(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get datacenter folders: %w", err)
+		}
+		vmFolder = folders.VmFolder
+		logger.Infof("Using datacenter root VM folder")
 	}
 
 	// Check if VM already exists
@@ -183,7 +194,7 @@ func UploadBaseImageToVsphere(baseImageSrc, baseImageDest string, vsInfo *VSpher
 			Datacenter:   dc,
 			Datastore:    ds,
 			ResourcePool: pool,
-			Folder:       folders.VmFolder,
+			Folder:       vmFolder,
 			Log: func(s string) (int, error) {
 				logger.Infof("%s", s)
 				return len(s), nil
@@ -302,48 +313,25 @@ type VSphereConnectionInfo struct {
 	Password     string
 }
 
-// GetVSphereConnectionInfo extracts vSphere connection parameters from the infrastructure resource and credentials secret
-func GetVSphereConnectionInfo(oc *CLI) (*VSphereConnectionInfo, error) {
-	var info VSphereConnectionInfo
-	failureDomain, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("infrastructure", "cluster", "-o", "jsonpath={.spec.platformSpec.vsphere.failureDomains[0]}").Output()
-	if err != nil {
-		return nil, fmt.Errorf("cannot get the failureDomain from the infrastructure resource: %w", err)
-	}
+// GetVSphereConnectionInfoFromFailureDomain builds a VSphereConnectionInfo from a failure domain JSON string
+func GetVSphereConnectionInfoFromFailureDomain(oc *CLI, failureDomain string) (*VSphereConnectionInfo, error) {
 	if failureDomain == "" {
-		return nil, fmt.Errorf("empty failure domain in the infrastructure resource")
+		return nil, fmt.Errorf("empty failure domain")
 	}
 
-	gserver := gjson.Get(failureDomain, "server")
-	if !gserver.Exists() {
-		return nil, fmt.Errorf("cannot get the server value from failureDomain")
+	info := &VSphereConnectionInfo{
+		Server:       gjson.Get(failureDomain, "server").String(),
+		DataCenter:   gjson.Get(failureDomain, "topology.datacenter").String(),
+		DataStore:    gjson.Get(failureDomain, "topology.datastore").String(),
+		ResourcePool: gjson.Get(failureDomain, "topology.resourcePool").String(),
+		Network:      gjson.Get(failureDomain, "topology.networks.0").String(),
 	}
-	info.Server = gserver.String()
 
-	gdataCenter := gjson.Get(failureDomain, "topology.datacenter")
-	if !gdataCenter.Exists() {
-		return nil, fmt.Errorf("cannot get the data center value from failureDomain")
+	if info.Server == "" || info.DataCenter == "" || info.DataStore == "" || info.ResourcePool == "" || info.Network == "" {
+		return nil, fmt.Errorf("incomplete failure domain: server=%s datacenter=%s datastore=%s resourcePool=%s network=%s",
+			info.Server, info.DataCenter, info.DataStore, info.ResourcePool, info.Network)
 	}
-	info.DataCenter = gdataCenter.String()
 
-	gdataStore := gjson.Get(failureDomain, "topology.datastore")
-	if !gdataStore.Exists() {
-		return nil, fmt.Errorf("cannot get the data store value from failureDomain")
-	}
-	info.DataStore = gdataStore.String()
-
-	gresourcePool := gjson.Get(failureDomain, "topology.resourcePool")
-	if !gresourcePool.Exists() {
-		return nil, fmt.Errorf("cannot get the resourcepool value from failureDomain")
-	}
-	info.ResourcePool = gresourcePool.String()
-
-	gnetwork := gjson.Get(failureDomain, "topology.networks.0")
-	if !gnetwork.Exists() {
-		return nil, fmt.Errorf("cannot get the network value from failureDomain")
-	}
-	info.Network = gnetwork.String()
-
-	// Get credentials from vsphere-creds secret
 	secretData, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("secret", "vsphere-creds", "-n", "kube-system", "-o", "jsonpath={.data}").Output()
 	if err != nil {
 		return nil, err
@@ -354,25 +342,40 @@ func GetVSphereConnectionInfo(oc *CLI) (*VSphereConnectionInfo, error) {
 		return nil, err
 	}
 
-	for k, vb64 := range dataMap {
-		v, decErr := base64.StdEncoding.DecodeString(vb64)
-		if decErr != nil {
-			return nil, fmt.Errorf("cannot decode secret value for key %s: %w", k, decErr)
-		}
-		if strings.Contains(k, "username") {
-			info.User = string(v)
-		}
-		if strings.Contains(k, "password") {
-			info.Password = string(v)
-		}
+	// The secret keys are formatted as "<server>.username" and "<server>.password"
+	userKey := info.Server + ".username"
+	passKey := info.Server + ".password"
+
+	userB64, ok := dataMap[userKey]
+	if !ok {
+		return nil, fmt.Errorf("vsphere credentials key %s not found in vsphere-creds secret", userKey)
+	}
+	userBytes, err := base64.StdEncoding.DecodeString(userB64)
+	if err != nil {
+		return nil, fmt.Errorf("cannot decode secret value for key %s: %w", userKey, err)
+	}
+	info.User = string(userBytes)
+
+	passB64, ok := dataMap[passKey]
+	if !ok {
+		return nil, fmt.Errorf("vsphere credentials key %s not found in vsphere-creds secret", passKey)
+	}
+	passBytes, err := base64.StdEncoding.DecodeString(passB64)
+	if err != nil {
+		return nil, fmt.Errorf("cannot decode secret value for key %s: %w", passKey, err)
+	}
+	info.Password = string(passBytes)
+
+	return info, nil
+}
+
+// GetVSphereConnectionInfo extracts vSphere connection parameters from the first failure domain
+// in the infrastructure resource and the credentials secret
+func GetVSphereConnectionInfo(oc *CLI) (*VSphereConnectionInfo, error) {
+	failureDomain, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("infrastructure", "cluster", "-o", "jsonpath={.spec.platformSpec.vsphere.failureDomains[0]}").Output()
+	if err != nil {
+		return nil, fmt.Errorf("cannot get the failureDomain from the infrastructure resource: %w", err)
 	}
 
-	if info.User == "" {
-		return nil, fmt.Errorf("the vsphere user is empty")
-	}
-	if info.Password == "" {
-		return nil, fmt.Errorf("the vsphere password is empty")
-	}
-
-	return &info, nil
+	return GetVSphereConnectionInfoFromFailureDomain(oc, failureDomain)
 }

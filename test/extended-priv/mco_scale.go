@@ -347,7 +347,7 @@ func cloneMachineSet(oc *exutil.CLI, ms *MachineSet, newMsName, imageVersion, ig
 		baseImage = "mcotest-" + baseImage
 	}
 	o.Expect(
-		uploadBaseImageToCloud(oc, platform, baseImageURL, baseImage),
+		uploadBaseImageToCloud(oc, ms, platform, baseImageURL, baseImage),
 	).To(o.Succeed(), "Error uploading the base image %s to the cloud", baseImageURL)
 	logger.Infof("OK!\n")
 
@@ -678,7 +678,7 @@ func getBaseImageURLFromRHCOSImageInfo(version, platform, format, stringArch str
 	return fmt.Sprintf("%s/%s", strings.Replace(strings.Trim(baseURI.String(), "/"), "releases-art-rhcos.svc.ci.openshift.org", "rhcos.mirror.openshift.com", 1), strings.Trim(baseImageURL.String(), "/")), nil
 }
 
-func uploadBaseImageToCloud(oc *exutil.CLI, platform, baseImageURL, baseImage string) error {
+func uploadBaseImageToCloud(oc *exutil.CLI, ms *MachineSet, platform, baseImageURL, baseImage string) error {
 
 	switch platform {
 	case AWSPlatform:
@@ -688,12 +688,14 @@ func uploadBaseImageToCloud(oc *exutil.CLI, platform, baseImageURL, baseImage st
 		logger.Infof("No need to updload images in GCP")
 		return nil
 	case VspherePlatform:
-		vsInfo, err := exutil.GetVSphereConnectionInfo(oc.AsAdmin())
+		vsInfo, err := GetVSphereConnectionInfoForMachineSet(ms)
 		if err != nil {
 			return err
 		}
 
-		err = exutil.UploadBaseImageToVsphere(baseImageURL, baseImage, vsInfo)
+		folder, _ := ms.Get(`{.spec.template.spec.providerSpec.value.workspace.folder}`)
+
+		err = exutil.UploadBaseImageToVsphere(baseImageURL, baseImage, vsInfo, folder)
 		if err != nil {
 			return err
 		}

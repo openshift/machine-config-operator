@@ -158,7 +158,7 @@ var _ = g.Describe("[sig-mco][Serial][Disruptive][OCPFeatureGate:ManagedBootImag
 
 		var (
 			machineConfiguration = GetMachineConfiguration(oc.AsAdmin())
-			fakeImageName        = getBackdatedBootImage(oc.AsAdmin())
+			fakeImageName        = getBackdatedBootImage(oc.AsAdmin(), nil)
 
 			userDataJSONVersionPath = `ignition.version`
 		)
@@ -218,7 +218,7 @@ var _ = g.Describe("[sig-mco][Serial][Disruptive][OCPFeatureGate:ManagedBootImag
 	g.It("[PolarionID:85480][OTP] ControlPlaneMachineSets. Not updated when owner reference [apigroup:machineconfiguration.openshift.io]", func() {
 
 		var (
-			fakeImageName = getBackdatedBootImage(oc.AsAdmin())
+			fakeImageName = getBackdatedBootImage(oc.AsAdmin(), nil)
 
 			userDataJSONVersionPath = `ignition.version`
 		)
@@ -331,7 +331,7 @@ var _ = g.Describe("[sig-mco][Serial][Disruptive][OCPFeatureGate:ManagedBootImag
 	g.It("[PolarionID:85467][OTP] ControlPlaneMachineSets. Bootimage upgrade stub ignition to spec 3 [apigroup:machineconfiguration.openshift.io]", func() {
 
 		var (
-			fakeImageName = getBackdatedBootImage(oc.AsAdmin())
+			fakeImageName = getBackdatedBootImage(oc.AsAdmin(), nil)
 
 			userDataJSONVersionPath = `ignition.version`
 		)
