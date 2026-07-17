@@ -72,10 +72,6 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 		err := fmt.Errorf("could not fetch Node: %w", err)
 		return err
 	}
-	if err := ctrl.cleanUpDuplicatedMC(managedNodeConfigKeyPrefix); err != nil {
-		return err
-	}
-
 	// Fetch the controllerconfig
 	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
@@ -161,6 +157,9 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 		}
 		klog.Infof("Applied Node configuration %v on MachineConfigPool %v", key, pool.Name)
 		ctrlcommon.UpdateStateMetric(ctrlcommon.MCCSubControllerState, "machine-config-controller-kubelet-config", "Sync NodeConfig", pool.Name)
+	}
+	if err := ctrl.cleanUpDuplicatedMC(managedNodeConfigKeyPrefix); err != nil {
+		return err
 	}
 	// fetch the kubeletconfigs
 	kcs, err := ctrl.mckLister.List(labels.Everything())
