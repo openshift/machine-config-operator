@@ -2482,8 +2482,21 @@ func (dn *Daemon) writeFiles(files []ign3types.File, skipCertificateWrite bool) 
 // Ensures that both the SSH root directory (/home/core/.ssh) as well as any
 // subdirectories are created with the correct (0700) permissions.
 func createSSHKeyDir(authKeyDir string) error {
-	klog.Infof("Creating missing SSH key dir at %q", authKeyDir)
-	return exec.Command("runuser", "-u", constants.CoreUserName, "--", "mkdir", "-m", "0700", "-p", authKeyDir).Run()
+	mkdir := func(dir string) error {
+		return exec.Command("runuser", "-u", constants.CoreUserName, "--", "mkdir", "-m", "0700", "-p", dir).Run()
+	}
+
+	// Create the root SSH key directory (/home/core/.ssh) first (if it does not exist).
+	// This must be a separate mkdir call: "mkdir -m 0700 -p" only applies the mode
+	// to the leaf directory, leaving any intermediate directories at the umask default (0755).
+	if _, err := os.Stat(constants.CoreUserSSHPath); os.IsNotExist(err) {
+		if err := mkdir(constants.CoreUserSSHPath); err != nil {
+			return err
+		}
+	}
+
+	// Create the full target directory (e.g. /home/core/.ssh/authorized_keys.d).
+	return mkdir(authKeyDir)
 }
 
 func (dn *Daemon) atomicallyWriteSSHKey(authKeyPath, keys string) error {
