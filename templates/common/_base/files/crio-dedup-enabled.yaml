@@ -1,0 +1,5 @@
+mode: 0644
+path: "/etc/crio-dedup-enabled.env"
+contents:
+  inline: |
+    CRIO_IMAGE_DEDUP=false
