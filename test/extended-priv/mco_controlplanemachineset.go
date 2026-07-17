@@ -158,7 +158,7 @@ var _ = g.Describe("[sig-mco][Serial][Disruptive][OCPFeatureGate:ManagedBootImag
 
 		var (
 			machineConfiguration = GetMachineConfiguration(oc.AsAdmin())
-			fakeImageName        = getBackdatedBootImage(oc.AsAdmin())
+			backdatedImageName   = getBackdatedBootImage(oc.AsAdmin(), nil)
 
 			userDataJSONVersionPath = `ignition.version`
 		)
@@ -197,12 +197,12 @@ var _ = g.Describe("[sig-mco][Serial][Disruptive][OCPFeatureGate:ManagedBootImag
 		logger.Infof("OK!\n")
 
 		exutil.By("Set a wrong boot image in the ControlPlaneMachineSet")
-		o.Expect(cpms.SetCoreOsBootImage(fakeImageName)).To(o.Succeed(), "Error setting a fake boot image in %s", cpms)
+		o.Expect(cpms.SetCoreOsBootImage(backdatedImageName)).To(o.Succeed(), "Error setting a fake boot image in %s", cpms)
 		logger.Infof("OK!\n")
 
 		exutil.By("Check that the boot image was NOT updated")
-		// With Mode: None, the boot image should remain unchanged (still using the fake image)
-		o.Consistently(cpms.GetCoreOsBootImage, "3m", "30s").Should(o.Equal(fakeImageName),
+		// With Mode: None, the boot image should remain unchanged (still using the backdated image)
+		o.Consistently(cpms.GetCoreOsBootImage, "3m", "30s").Should(o.Equal(backdatedImageName),
 			"The boot image was unexpectedly updated when Mode: None was configured")
 		logger.Infof("OK!\n")
 
@@ -218,7 +218,7 @@ var _ = g.Describe("[sig-mco][Serial][Disruptive][OCPFeatureGate:ManagedBootImag
 	g.It("[PolarionID:85480][OTP] ControlPlaneMachineSets. Not updated when owner reference [apigroup:machineconfiguration.openshift.io]", func() {
 
 		var (
-			fakeImageName = getBackdatedBootImage(oc.AsAdmin())
+			backdatedImageName = getBackdatedBootImage(oc.AsAdmin(), nil)
 
 			userDataJSONVersionPath = `ignition.version`
 		)
@@ -266,7 +266,7 @@ var _ = g.Describe("[sig-mco][Serial][Disruptive][OCPFeatureGate:ManagedBootImag
 		logger.Infof("OK!\n")
 
 		exutil.By("Set a wrong boot image in the ControlPlaneMachineSet")
-		o.Expect(cpms.SetCoreOsBootImage(fakeImageName)).To(o.Succeed(), "Error setting a fake boot image in %s", cpms)
+		o.Expect(cpms.SetCoreOsBootImage(backdatedImageName)).To(o.Succeed(), "Error setting a fake boot image in %s", cpms)
 		logger.Infof("OK!\n")
 
 		exutil.By("Configure MachineConfiguration resource with mode All for controlplanemachinesets")
@@ -278,7 +278,7 @@ var _ = g.Describe("[sig-mco][Serial][Disruptive][OCPFeatureGate:ManagedBootImag
 
 		exutil.By("Check that the boot image was NOT updated")
 		// With owner reference, the boot image should remain unchanged even with Mode: All
-		o.Consistently(cpms.GetCoreOsBootImage, "3m", "30s").Should(o.Equal(fakeImageName),
+		o.Consistently(cpms.GetCoreOsBootImage, "3m", "30s").Should(o.Equal(backdatedImageName),
 			"The boot image was unexpectedly updated when owner reference was present")
 		logger.Infof("OK!\n")
 
@@ -331,7 +331,7 @@ var _ = g.Describe("[sig-mco][Serial][Disruptive][OCPFeatureGate:ManagedBootImag
 	g.It("[PolarionID:85467][OTP] ControlPlaneMachineSets. Bootimage upgrade stub ignition to spec 3 [apigroup:machineconfiguration.openshift.io]", func() {
 
 		var (
-			fakeImageName = getBackdatedBootImage(oc.AsAdmin())
+			backdatedImageName = getBackdatedBootImage(oc.AsAdmin(), nil)
 
 			userDataJSONVersionPath = `ignition.version`
 		)
@@ -370,7 +370,7 @@ var _ = g.Describe("[sig-mco][Serial][Disruptive][OCPFeatureGate:ManagedBootImag
 		logger.Infof("OK!\n")
 
 		exutil.By("Set a wrong boot image in the ControlPlaneMachineSet")
-		o.Expect(cpms.SetCoreOsBootImage(fakeImageName)).To(o.Succeed(), "Error setting a fake boot image in %s", cpms)
+		o.Expect(cpms.SetCoreOsBootImage(backdatedImageName)).To(o.Succeed(), "Error setting a fake boot image in %s", cpms)
 		logger.Infof("OK!\n")
 
 		exutil.By("Check that the user-data secret is updated to the latest ignition version")
@@ -381,11 +381,7 @@ var _ = g.Describe("[sig-mco][Serial][Disruptive][OCPFeatureGate:ManagedBootImag
 		logger.Infof("OK!\n")
 
 		exutil.By("Check that the boot image was updated with the right version")
-		// Check that it was actually updated
-		o.Eventually(cpms.GetCoreOsBootImage, "5m", "20s").ShouldNot(o.Or(o.Equal(fakeImageName), o.BeEmpty()),
-			"%s was NOT updated to use the right boot image", cpms)
-		// Check that the updated image is the right one
-		CheckCurrentOSImageIsUpdated(cpms)
+		CheckCurrentOSImageIsUpdated(cpms, backdatedImageName)
 		logger.Infof("OK!\n")
 
 		exutil.By("Delete one machine and wait for it to be recreated")
