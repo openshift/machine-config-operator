@@ -1269,7 +1269,7 @@ github.com/openshift-eng/openshift-tests-extension/pkg/ginkgo
 github.com/openshift-eng/openshift-tests-extension/pkg/junit
 github.com/openshift-eng/openshift-tests-extension/pkg/util/sets
 github.com/openshift-eng/openshift-tests-extension/pkg/version
-# github.com/openshift/api v0.0.0-20260326111139-30c2ef7a272e
+# github.com/openshift/api v0.0.0-20260717133910-57eb58a15422
 ## explicit; go 1.25.0
 github.com/openshift/api
 github.com/openshift/api/annotations
@@ -1294,6 +1294,7 @@ github.com/openshift/api/config/v1alpha2
 github.com/openshift/api/console
 github.com/openshift/api/console/v1
 github.com/openshift/api/etcd
+github.com/openshift/api/etcd/v1
 github.com/openshift/api/etcd/v1alpha1
 github.com/openshift/api/features
 github.com/openshift/api/helm
@@ -1356,7 +1357,7 @@ github.com/openshift/api/template
 github.com/openshift/api/template/v1
 github.com/openshift/api/user
 github.com/openshift/api/user/v1
-# github.com/openshift/client-go v0.0.0-20260330134249-7e1499aaacd7
+# github.com/openshift/client-go v0.0.0-20260720094807-fbc45213df28
 ## explicit; go 1.25.0
 github.com/openshift/client-go/apps/applyconfigurations/apps/v1
 github.com/openshift/client-go/apps/applyconfigurations/internal

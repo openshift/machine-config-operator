@@ -20,7 +20,6 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
-	mcfginformersv1alpha1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1alpha1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -89,7 +88,7 @@ func New(
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	secretsInformer coreinformersv1.SecretInformer,
 	iriSecretsInformer coreinformersv1.SecretInformer,
-	iriInformer mcfginformersv1alpha1.InternalReleaseImageInformer,
+	iriInformer mcfginformersv1.InternalReleaseImageInformer,
 	apiserverInformer configinformersv1.APIServerInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,

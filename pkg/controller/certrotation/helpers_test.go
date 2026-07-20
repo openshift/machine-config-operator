@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -55,8 +55,8 @@ func getAROCluster(apiIntIP string) *arov1alpha1.Cluster {
 	}
 }
 
-func getIRIClusterResource() *mcfgv1alpha1.InternalReleaseImage {
-	return &mcfgv1alpha1.InternalReleaseImage{
+func getIRIClusterResource() *mcfgv1.InternalReleaseImage {
+	return &mcfgv1.InternalReleaseImage{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: ctrlcommon.InternalReleaseImageInstanceName,
 		},
