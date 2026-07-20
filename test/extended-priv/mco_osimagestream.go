@@ -199,7 +199,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		exutil.By("Build a custom OS image to use as osImageURL")
 		node = mcp.GetSortedNodesOrFail()[0]
-		osImageBuilder := OsImageBuilderInNode{node: node, dockerFileCommands: "RUN ostree container commit"}
+		osImageBuilder := NewOsImageBuilder(node, "RUN ostree container commit")
 		digestedImage, err := osImageBuilder.CreateAndDigestOsImage()
 		o.Expect(err).NotTo(o.HaveOccurred(),
 			"Error creating the custom osImage")
