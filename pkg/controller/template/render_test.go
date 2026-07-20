@@ -596,3 +596,148 @@ func verifyIgn(actual [][]byte, dir string, t *testing.T) {
 		t.Errorf("can't find expected file:\n%v", key)
 	}
 }
+
+func TestIsBGPVIPManagement(t *testing.T) {
+	dummyTemplate := []byte(`{{isBGPVIPManagement .}}`)
+
+	cases := []struct {
+		name   string
+		infra  *configv1.Infrastructure
+		result string
+	}{
+		{
+			name:   "nil infra",
+			infra:  nil,
+			result: "false",
+		},
+		{
+			name: "nil platform status",
+			infra: &configv1.Infrastructure{
+				Status: configv1.InfrastructureStatus{},
+			},
+			result: "false",
+		},
+		{
+			name: "baremetal without VIPManagement",
+			infra: &configv1.Infrastructure{
+				Status: configv1.InfrastructureStatus{
+					PlatformStatus: &configv1.PlatformStatus{
+						Type:      configv1.BareMetalPlatformType,
+						BareMetal: &configv1.BareMetalPlatformStatus{},
+					},
+				},
+			},
+			result: "false",
+		},
+		{
+			name: "baremetal with VIPManagement BGP",
+			infra: &configv1.Infrastructure{
+				Status: configv1.InfrastructureStatus{
+					PlatformStatus: &configv1.PlatformStatus{
+						Type: configv1.BareMetalPlatformType,
+						BareMetal: &configv1.BareMetalPlatformStatus{
+							VIPManagement:        "BGP",
+							APIServerInternalIPs: []string{"192.168.111.5"},
+							IngressIPs:           []string{"192.168.111.4"},
+						},
+					},
+				},
+			},
+			result: "true",
+		},
+		{
+			name: "baremetal with VIPManagement BGP but no VIPs (user-managed LB)",
+			infra: &configv1.Infrastructure{
+				Status: configv1.InfrastructureStatus{
+					PlatformStatus: &configv1.PlatformStatus{
+						Type: configv1.BareMetalPlatformType,
+						BareMetal: &configv1.BareMetalPlatformStatus{
+							VIPManagement: "BGP",
+						},
+					},
+				},
+			},
+			result: "false",
+		},
+		{
+			name: "baremetal with VIPManagement BGP but no ingress VIPs",
+			infra: &configv1.Infrastructure{
+				Status: configv1.InfrastructureStatus{
+					PlatformStatus: &configv1.PlatformStatus{
+						Type: configv1.BareMetalPlatformType,
+						BareMetal: &configv1.BareMetalPlatformStatus{
+							VIPManagement:        "BGP",
+							APIServerInternalIPs: []string{"192.168.111.5"},
+						},
+					},
+				},
+			},
+			result: "false",
+		},
+		{
+			name: "baremetal with VIPManagement Keepalived",
+			infra: &configv1.Infrastructure{
+				Status: configv1.InfrastructureStatus{
+					PlatformStatus: &configv1.PlatformStatus{
+						Type: configv1.BareMetalPlatformType,
+						BareMetal: &configv1.BareMetalPlatformStatus{
+							VIPManagement: "Keepalived",
+						},
+					},
+				},
+			},
+			result: "false",
+		},
+		{
+			name: "nil baremetal status",
+			infra: &configv1.Infrastructure{
+				Status: configv1.InfrastructureStatus{
+					PlatformStatus: &configv1.PlatformStatus{
+						Type: configv1.BareMetalPlatformType,
+					},
+				},
+			},
+			result: "false",
+		},
+		{
+			name: "vsphere platform",
+			infra: &configv1.Infrastructure{
+				Status: configv1.InfrastructureStatus{
+					PlatformStatus: &configv1.PlatformStatus{
+						Type: configv1.VSpherePlatformType,
+					},
+				},
+			},
+			result: "false",
+		},
+		{
+			name: "aws platform",
+			infra: &configv1.Infrastructure{
+				Status: configv1.InfrastructureStatus{
+					PlatformStatus: &configv1.PlatformStatus{
+						Type: configv1.AWSPlatformType,
+					},
+				},
+			},
+			result: "false",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			config := &mcfgv1.ControllerConfig{
+				Spec: mcfgv1.ControllerConfigSpec{
+					Infra: c.infra,
+				},
+			}
+
+			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil}, c.name, dummyTemplate)
+			if err != nil {
+				t.Fatalf("expected nil error, got: %v", err)
+			}
+			if string(got) != c.result {
+				t.Fatalf("mismatch: got %q, want %q", string(got), c.result)
+			}
+		})
+	}
+}
