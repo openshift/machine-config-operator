@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -1589,6 +1590,62 @@ func TestControlPlaneTopology(t *testing.T) {
 	}
 
 	f.run(getKey(mcp, t))
+}
+
+func TestReconcileMasterSkipsExternalTopology(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t)
+	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.ExternalTopologyMode)
+	f.ccLister = append(f.ccLister, cc)
+	f.objects = append(f.objects, cc)
+
+	masterNode := newNodeWithLabel("master-node", "", "", map[string]string{
+		ctrlcommon.MasterLabel: "",
+		WorkerLabel:            "",
+	})
+	f.nodeLister = append(f.nodeLister, masterNode)
+	f.kubeobjects = append(f.kubeobjects, masterNode)
+
+	c := f.newController()
+	c.reconcileMaster(masterNode)
+
+	for _, action := range filterInformerActions(f.kubeclient.Actions()) {
+		if action.GetResource().Resource == "nodes" && (action.GetVerb() == "patch" || action.GetVerb() == "update") {
+			t.Fatalf("unexpected node %s on External topology cluster: %#v", action.GetVerb(), action)
+		}
+	}
+}
+
+func TestReconcileMasterAddsControlPlaneLabel(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t)
+	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.HighlyAvailableTopologyMode)
+	f.ccLister = append(f.ccLister, cc)
+	f.objects = append(f.objects, cc)
+
+	masterNode := newNodeWithLabel("master-node", "", "", map[string]string{
+		ctrlcommon.MasterLabel: "",
+	})
+	f.nodeLister = append(f.nodeLister, masterNode)
+	f.kubeobjects = append(f.kubeobjects, masterNode)
+
+	c := f.newController()
+	c.reconcileMaster(masterNode)
+
+	patched := false
+	for _, action := range filterInformerActions(f.kubeclient.Actions()) {
+		patchAction, ok := action.(core.PatchAction)
+		if !ok || action.GetResource().Resource != "nodes" {
+			continue
+		}
+		if strings.Contains(string(patchAction.GetPatch()), ControlPlaneLabel) {
+			patched = true
+			break
+		}
+	}
+	require.True(t, patched, "control-plane label should be added on non-External topology clusters")
 }
 
 // Checks that the layered pool can / should continue. This is based upon the
