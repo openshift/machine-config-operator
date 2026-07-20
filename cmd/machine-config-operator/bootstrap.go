@@ -31,6 +31,8 @@ var (
 		infraImage                     string
 		releaseImage                   string
 		keepalivedImage                string
+		frrK8sImage                    string
+		kubeVipImage                   string
 		mcoImage                       string
 		oauthProxyImage                string
 		kubeRbacProxyImage             string
@@ -68,6 +70,8 @@ func init() {
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.dependencyFiles.DNS, "dns-config-file", "/assets/manifests/cluster-dns-02-config.yml", "File containing dns.config.openshift.io manifest.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.dependencyFiles.AdditionalTrustBundle, "additional-trust-bundle-config-file", "/assets/manifests/user-ca-bundle-config.yaml", "File containing the additional user provided CA bundle manifest.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.keepalivedImage, "keepalived-image", "", "Image for Keepalived.")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.frrK8sImage, "frr-k8s-image", "", "Image for frr-k8s.")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.kubeVipImage, "kube-vip-image", "", "Image for kube-vip.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.corednsImage, "coredns-image", "", "Image for CoreDNS.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.haproxyImage, "haproxy-image", "", "Image for haproxy.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.baremetalRuntimeCfgImage, "baremetal-runtimecfg-image", "", "Image for baremetal-runtimecfg.")
@@ -78,6 +82,7 @@ func init() {
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.dockerRegistryImage, "docker-registry-image", "", "Image for docker-registry.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.imageReferences, "image-references", "", "File containing imagestreams (from cluster-version-operator)")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.dependencyFiles.CloudProviderCA, "cloud-provider-ca-file", "", "path to cloud provider CA certificate")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.dependencyFiles.BGPVIPConfig, "bgp-vip-config-file", "/assets/manifests/bgp-vip-config.yaml", "File containing the bgp-vip-config ConfigMap manifest (optional).")
 
 }
 
@@ -142,6 +147,18 @@ func runBootstrapCmd(_ *cobra.Command, _ []string) {
 		if err != nil {
 			klog.Warningf("Base OS extensions container not found: %s", err)
 		}
+		// The frr-k8s and kube-vip images are only present in payloads that
+		// support BGP-based VIP management, so their absence is not fatal.
+		if img, err := findImage(imgstream, "metallb-frr"); err == nil {
+			bootstrapOpts.frrK8sImage = img
+		} else {
+			klog.Warningf("metallb-frr image not found in image references: %v", err)
+		}
+		if img, err := findImage(imgstream, "kube-vip"); err == nil {
+			bootstrapOpts.kubeVipImage = img
+		} else {
+			klog.Warningf("kube-vip image not found in image references: %v", err)
+		}
 	}
 
 	imgs := ctrlcommon.Images{
@@ -155,6 +172,8 @@ func runBootstrapCmd(_ *cobra.Command, _ []string) {
 			BaseOSContainerImage:           bootstrapOpts.baseOSContainerImage,
 			BaseOSExtensionsContainerImage: bootstrapOpts.baseOSExtensionsContainerImage,
 			DockerRegistryBootstrap:        bootstrapOpts.dockerRegistryImage,
+			FRRK8sBootstrap:                bootstrapOpts.frrK8sImage,
+			KubeVIPBootstrap:               bootstrapOpts.kubeVipImage,
 		},
 		ControllerConfigImages: ctrlcommon.ControllerConfigImages{
 			InfraImage:          bootstrapOpts.infraImage,
@@ -163,6 +182,8 @@ func runBootstrapCmd(_ *cobra.Command, _ []string) {
 			Haproxy:             bootstrapOpts.haproxyImage,
 			BaremetalRuntimeCfg: bootstrapOpts.baremetalRuntimeCfgImage,
 			DockerRegistry:      bootstrapOpts.dockerRegistryImage,
+			FRRK8s:              bootstrapOpts.frrK8sImage,
+			KubeVip:             bootstrapOpts.kubeVipImage,
 		},
 	}
 

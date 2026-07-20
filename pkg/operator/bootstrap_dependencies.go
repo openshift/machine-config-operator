@@ -25,6 +25,7 @@ type BootstrapDependenciesFiles struct {
 	MCSCAFile              string
 	KubeAPIServerServingCA string
 	PullSecret             string
+	BGPVIPConfig           string
 }
 
 // Validate ensures all required files are set and all provided file paths exist.
@@ -45,6 +46,7 @@ func (b BootstrapDependenciesFiles) Validate() error {
 		{"CloudProviderCA", b.CloudProviderCA, false},
 		{"AdditionalTrustBundle", b.AdditionalTrustBundle, false},
 		{"CloudConfig", b.CloudConfig, false},
+		{"BGPVIPConfig", b.BGPVIPConfig, false},
 	}
 	for _, file := range files {
 		if err := b.validateFile(file.name, file.path, file.required); err != nil {
@@ -87,6 +89,7 @@ type BootstrapDependencies struct {
 	KubeAPIServerServingCA string
 	MCSCA                  string
 	AdditionalTrustBundle  string
+	BGPVIPPeersJSON        string
 }
 
 // NewBootstrapDependencies creates a new BootstrapDependencies instance by validating and loading
@@ -129,6 +132,9 @@ func (b *BootstrapDependencies) fillDependencies() error {
 		return err
 	}
 	if err := b.fillClusterConfig(); err != nil {
+		return err
+	}
+	if err := b.fillBGPVIPConfig(b.Files.BGPVIPConfig); err != nil {
 		return err
 	}
 	if err := b.fillCloudConfigData(); err != nil {
@@ -274,5 +280,32 @@ func (b *BootstrapDependencies) fillClusterConfig() error {
 	if b.ClusterConfig, err = readString(b.Files.ClusterConfig); err != nil {
 		return fmt.Errorf("failed to read ClusterConfig file %s: %w", b.Files.ClusterConfig, err)
 	}
+	return nil
+}
+
+// fillBGPVIPConfig loads the optional bgp-vip-config ConfigMap manifest and
+// extracts its config.json payload for frr-peers.json rendering.
+func (b *BootstrapDependencies) fillBGPVIPConfig(path string) error {
+	if path == "" {
+		return nil
+	}
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return nil // optional: only present when BGP VIP management is enabled
+	}
+	cm, err := readCoreCR[*corev1.ConfigMap](path)
+	if err != nil {
+		return fmt.Errorf("failed to read bgp-vip-config ConfigMap: %w", err)
+	}
+	// Mirror the day-2 sync: a present ConfigMap without a config.json
+	// payload is a hard error, not an empty peers file.
+	raw := cm.Data["config.json"]
+	if raw == "" {
+		return fmt.Errorf("bgp-vip-config ConfigMap has no config.json payload")
+	}
+	peersJSON, err := compactBGPVIPPeersJSON(raw)
+	if err != nil {
+		return err
+	}
+	b.BGPVIPPeersJSON = peersJSON
 	return nil
 }
