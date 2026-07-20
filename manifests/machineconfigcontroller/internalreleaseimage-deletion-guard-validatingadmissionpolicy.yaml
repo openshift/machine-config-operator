@@ -13,10 +13,11 @@ spec:
     objectSelector: {}
     resourceRules:
     - apiGroups:   ["machineconfiguration.openshift.io"]
-      apiVersions: ["v1alpha1"]
+      apiVersions: ["v1"]
       operations:  ["DELETE"]
       resources:   ["internalreleaseimages"]
       scope: "*"
   validations:
-    - expression: "!oldObject.status.releases.exists(r, has(r.image) && r.image == params.status.desired.image)"
+    - expression: "!oldObject.status.releases.exists(r, has(r.image) && r.image.split('@')[1] == params.status.desired.image.split('@')[1])"
       message: "Cannot delete InternalReleaseImage while the cluster is using a release bundle from this resource. The current cluster release image matches a release stored in this InternalReleaseImage. Please upgrade or downgrade to a different release before deletion."
+      reason: Invalid

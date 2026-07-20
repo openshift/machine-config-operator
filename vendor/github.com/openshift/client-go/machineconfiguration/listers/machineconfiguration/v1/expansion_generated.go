@@ -10,6 +10,10 @@ type ContainerRuntimeConfigListerExpansion interface{}
 // ControllerConfigLister.
 type ControllerConfigListerExpansion interface{}
 
+// InternalReleaseImageListerExpansion allows custom methods to be added to
+// InternalReleaseImageLister.
+type InternalReleaseImageListerExpansion interface{}
+
 // KubeletConfigListerExpansion allows custom methods to be added to
 // KubeletConfigLister.
 type KubeletConfigListerExpansion interface{}
