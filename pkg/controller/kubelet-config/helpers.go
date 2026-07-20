@@ -548,6 +548,18 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 		if strings.Contains(string(kubeletConfig.Spec.KubeletConfig.Raw), protectKernelDefaultsStr) {
 			originalKubeConfig.ProtectKernelDefaults = false
 		}
+		// staticPodPath is a string field with `omitempty`, so an explicit "" from the user
+		// is indistinguishable from unset after decoding and mergo will not overwrite the
+		// template default with an empty value. Detect the explicit empty value in the raw
+		// config and clear the default before merging, same as protectKernelDefaults above.
+		var rawFields map[string]interface{}
+		d := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(kubeletConfig.Spec.KubeletConfig.Raw), len(kubeletConfig.Spec.KubeletConfig.Raw))
+		if err := d.Decode(&rawFields); err != nil {
+			return nil, nil, nil, fmt.Errorf("could not decode raw kubelet config to map: %w", err)
+		}
+		if v, ok := rawFields["staticPodPath"]; ok && v == "" {
+			originalKubeConfig.StaticPodPath = ""
+		}
 		// Merge the Old and New
 		err = mergo.Merge(originalKubeConfig, specKubeletConfig, mergo.WithOverride)
 		if err != nil {
