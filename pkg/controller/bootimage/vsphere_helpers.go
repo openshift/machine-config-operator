@@ -694,50 +694,51 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 				return "", false, fmt.Errorf("unable to extract properties from existing Template VM: %w", err)
 			}
 
-			if vmMo.Summary.Config.Product != nil {
-				templateProductVersion := vmMo.Summary.Config.Product.Version
-				if templateProductVersion == "" {
-					return "", false, fmt.Errorf("unable to determine RHCOS version of virtual machine: %s", providerSpec.Template)
-				}
-
-				if templateProductVersion != release {
-					klog.Infof("Existing RHCOS v%s does not match current RHCOS v%s. Starting reconciliation process.", templateProductVersion, release)
-
-					// Find and download the relevant OVA file
-					ova, err := streamData.QueryDisk(arch, "vmware", "ova")
-					if err != nil {
-						return "", false, err
-					}
-
-					ovaPath, err := cache.DownloadOva(ova)
-					if err != nil {
-						return "", false, fmt.Errorf("failed to download %s: %w", ova.Location, err)
-					}
-
-					if len(resolvedName) > 80 {
-						return "", false, fmt.Errorf("length of VM template name `%s` exceeds the permitted limit of 80 characters", resolvedName)
-					}
-
-					diskType := getDiskTypeFromExistingVM(vmMo)
-
-					err = createNewVMTemplateWithNameForFailureDomain(ctx, providerSpec, failureDomain, finder, client, tagManager, resolvedName, ovaPath, infraID, diskType)
-					if err != nil {
-						return "", false, err
-					}
-					return resolvedName, true, nil
-				}
-
-				klog.Infof("Existing RHCOS v%s does match current RHCOS v%s. Skipping reconciliation process using govmomi.", templateProductVersion, release)
-				if providerSpec.Template != resolvedName {
-					klog.Infof("ProviderSpec template name: %s has diverged from the VM Template of name: %s that exists in VSphere. Reconciling the name change.", providerSpec.Template, resolvedName)
-					return resolvedName, true, nil
-				}
-
-			} else {
+			if vmMo.Summary.Config.Product == nil {
 				return "", false, fmt.Errorf("unable to determine RHCOS version of virtual machine: %s", providerSpec.Template)
 			}
+
+			templateProductVersion := vmMo.Summary.Config.Product.Version
+			if templateProductVersion == "" {
+				return "", false, fmt.Errorf("unable to determine RHCOS version of virtual machine: %s", providerSpec.Template)
+			}
+
+			if templateProductVersion != release {
+				klog.Infof("Existing RHCOS v%s does not match current RHCOS v%s. Starting reconciliation process.", templateProductVersion, release)
+
+				// Find and download the relevant OVA file
+				ova, err := streamData.QueryDisk(arch, "vmware", "ova")
+				if err != nil {
+					return "", false, err
+				}
+
+				ovaPath, err := cache.DownloadOva(ova)
+				if err != nil {
+					return "", false, fmt.Errorf("failed to download %s: %w", ova.Location, err)
+				}
+
+				if len(resolvedName) > 80 {
+					return "", false, fmt.Errorf("length of VM template name `%s` exceeds the permitted limit of 80 characters", resolvedName)
+				}
+
+				diskType := getDiskTypeFromExistingVM(vmMo)
+
+				err = createNewVMTemplateWithNameForFailureDomain(ctx, providerSpec, failureDomain, finder, client, tagManager, resolvedName, ovaPath, infraID, diskType)
+				if err != nil {
+					return "", false, err
+				}
+				return resolvedName, true, nil
+			}
+
+			klog.Infof("Existing RHCOS v%s does match current RHCOS v%s. Skipping reconciliation process using govmomi.", templateProductVersion, release)
+			if providerSpec.Template != resolvedName {
+				klog.Infof("ProviderSpec template name: %s has diverged from the VM Template of name: %s that exists in VSphere. Reconciling the name change.", providerSpec.Template, resolvedName)
+				return resolvedName, true, nil
+			}
+			return resolvedName, false, nil
 		}
 	}
 
-	return "", false, nil
+	return "", false, fmt.Errorf("providerSpec workspace (server: %s, datacenter: %s, datastore: %s, resourcePool: %s, vmGroup: %s) does not match any vCenter/failure domain in the Infrastructure object",
+		providerSpec.Workspace.Server, providerSpec.Workspace.Datacenter, providerSpec.Workspace.Datastore, providerSpec.Workspace.ResourcePool, providerSpec.Workspace.VMGroup)
 }
