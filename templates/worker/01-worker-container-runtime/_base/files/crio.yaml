@@ -33,6 +33,7 @@ contents:
         "/etc/hostname",
     ]
     drop_infra_ctr = true
+    min_injected_gomaxprocs = 1
 
     [crio.runtime.runtimes.runc]
     runtime_root = "/run/runc"
