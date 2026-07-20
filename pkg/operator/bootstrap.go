@@ -112,6 +112,15 @@ func buildSpec(dependencies *BootstrapDependencies, imgs *ctrlcommon.Images, rel
 		return nil, err
 	}
 
+	// BGP-based VIP management renders frr-k8s and kube-vip static pods at
+	// bootstrap; without their images the manifests would carry empty image
+	// fields and the install dies much later with no useful signal.
+	if ctrlcommon.IsBGPVIPManagement(dependencies.Infrastructure) {
+		if imgs.FRRK8s == "" || imgs.KubeVip == "" {
+			return nil, fmt.Errorf("BGP-based VIP management is enabled but the frr-k8s (%q) or kube-vip (%q) image is missing from the release payload", imgs.FRRK8s, imgs.KubeVip)
+		}
+	}
+
 	if dependencies.AdditionalTrustBundle != "" {
 		spec.AdditionalTrustBundle = []byte(dependencies.AdditionalTrustBundle)
 	}
@@ -130,6 +139,7 @@ func buildSpec(dependencies *BootstrapDependencies, imgs *ctrlcommon.Images, rel
 	}
 
 	spec.RootCAData = []byte(dependencies.MCSCA)
+	spec.BGPVIPPeersJSON = dependencies.BGPVIPPeersJSON
 	spec.PullSecret = nil
 	spec.BaseOSContainerImage = imgs.BaseOSContainerImage
 	spec.BaseOSExtensionsContainerImage = imgs.BaseOSExtensionsContainerImage
@@ -145,6 +155,8 @@ func buildSpec(dependencies *BootstrapDependencies, imgs *ctrlcommon.Images, rel
 		templatectrl.BaremetalRuntimeCfgKey: imgs.BaremetalRuntimeCfg,
 		templatectrl.KubeRbacProxyKey:       imgs.KubeRbacProxy,
 		templatectrl.DockerRegistryKey:      imgs.DockerRegistry,
+		templatectrl.FRRK8sKey:              imgs.FRRK8s,
+		templatectrl.KubeVIPKey:             imgs.KubeVip,
 	}
 
 	config := getRenderConfig("", dependencies.KubeAPIServerServingCA, spec,
@@ -154,25 +166,29 @@ func buildSpec(dependencies *BootstrapDependencies, imgs *ctrlcommon.Images, rel
 
 func appendManifestsByPlatform(manifests []manifest, infra *configv1.Infrastructure) []manifest {
 	lbType := configv1.LoadBalancerTypeOpenShiftManagedDefault
+	var vipManagement configv1.VIPManagementType
 	if infra.Status.PlatformStatus.BareMetal != nil {
 		if infra.Status.PlatformStatus.BareMetal.LoadBalancer != nil {
 			lbType = infra.Status.PlatformStatus.BareMetal.LoadBalancer.Type
 		}
-		manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.BareMetalPlatformType)), lbType)
+		if ctrlcommon.IsBGPVIPManagement(infra) {
+			vipManagement = configv1.VIPManagementTypeBGP
+		}
+		manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.BareMetalPlatformType)), lbType, vipManagement)
 	}
 
 	if infra.Status.PlatformStatus.OpenStack != nil {
 		if infra.Status.PlatformStatus.OpenStack.LoadBalancer != nil {
 			lbType = infra.Status.PlatformStatus.OpenStack.LoadBalancer.Type
 		}
-		manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.OpenStackPlatformType)), lbType)
+		manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.OpenStackPlatformType)), lbType, "")
 	}
 
 	if infra.Status.PlatformStatus.Ovirt != nil {
 		if infra.Status.PlatformStatus.Ovirt.LoadBalancer != nil {
 			lbType = infra.Status.PlatformStatus.Ovirt.LoadBalancer.Type
 		}
-		manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.OvirtPlatformType)), lbType)
+		manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.OvirtPlatformType)), lbType, "")
 	}
 
 	if infra.Status.PlatformStatus.VSphere != nil {
@@ -189,14 +205,14 @@ func appendManifestsByPlatform(manifests []manifest, infra *configv1.Infrastruct
 				return manifests
 			}
 		}
-		manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.VSpherePlatformType)), lbType)
+		manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.VSpherePlatformType)), lbType, "")
 	}
 
 	if infra.Status.PlatformStatus.Nutanix != nil {
 		if infra.Status.PlatformStatus.Nutanix.LoadBalancer != nil {
 			lbType = infra.Status.PlatformStatus.Nutanix.LoadBalancer.Type
 		}
-		manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.NutanixPlatformType)), lbType)
+		manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.NutanixPlatformType)), lbType, "")
 	}
 
 	if infra.Status.PlatformStatus.GCP != nil {
@@ -205,7 +221,7 @@ func appendManifestsByPlatform(manifests []manifest, infra *configv1.Infrastruct
 			// We do not need the keepalived manifests to be generated because the cloud default Load Balancers are in use.
 			// So, setting the lbType to `UserManaged` although the default cloud LBs are not user managed.
 			lbType = configv1.LoadBalancerTypeUserManaged
-			manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.GCPPlatformType)), lbType)
+			manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.GCPPlatformType)), lbType, "")
 		}
 	}
 	if infra.Status.PlatformStatus.AWS != nil {
@@ -214,7 +230,7 @@ func appendManifestsByPlatform(manifests []manifest, infra *configv1.Infrastruct
 			// We do not need the keepalived manifests to be generated because the cloud default Load Balancers are in use.
 			// So, setting the lbType to `UserManaged` although the default cloud LBs are not user managed.
 			lbType = configv1.LoadBalancerTypeUserManaged
-			manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.AWSPlatformType)), lbType)
+			manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.AWSPlatformType)), lbType, "")
 		}
 	}
 	if infra.Status.PlatformStatus.Azure != nil {
@@ -223,14 +239,14 @@ func appendManifestsByPlatform(manifests []manifest, infra *configv1.Infrastruct
 			// We do not need the keepalived manifests to be generated because the cloud default Load Balancers are in use.
 			// So, setting the lbType to `UserManaged` although the default cloud LBs are not user managed.
 			lbType = configv1.LoadBalancerTypeUserManaged
-			manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.AzurePlatformType)), lbType)
+			manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.AzurePlatformType)), lbType, "")
 		}
 	}
 
 	return manifests
 }
 
-func getPlatformManifests(manifests []manifest, platformName string, lbType configv1.PlatformLoadBalancerType) []manifest {
+func getPlatformManifests(manifests []manifest, platformName string, lbType configv1.PlatformLoadBalancerType, vipManagement configv1.VIPManagementType) []manifest {
 	var corednsName string
 	var corefileName string
 	switch platformName {
@@ -254,16 +270,27 @@ func getPlatformManifests(manifests []manifest, platformName string, lbType conf
 	)
 
 	if lbType == configv1.LoadBalancerTypeOpenShiftManagedDefault || lbType == "" {
-		platformManifests = append(platformManifests,
-			manifest{
-				name:     "manifests/on-prem/keepalived.yaml",
-				filename: platformName + "/manifests/keepalived.yaml",
-			},
-			manifest{
-				name:     "manifests/on-prem/keepalived.conf.tmpl",
-				filename: platformName + "/static-pod-resources/keepalived/keepalived.conf.tmpl",
-			},
-		)
+		if vipManagement == "BGP" {
+			platformManifests = append(platformManifests,
+				manifest{name: "manifests/on-prem/0000-frr-k8s.yaml", filename: platformName + "/manifests/0000-frr-k8s.yaml"},
+				manifest{name: "manifests/on-prem/frr.conf.tmpl", filename: platformName + "/static-pod-resources/frr-k8s/frr.conf.tmpl"},
+				manifest{name: "manifests/on-prem/frr-peers.json.tmpl", filename: platformName + "/static-pod-resources/frr-k8s/frr-peers.json"},
+				manifest{name: "manifests/on-prem/frr-startup-daemons", filename: platformName + "/static-pod-resources/frr-k8s/startup/daemons"},
+				manifest{name: "manifests/on-prem/frr-startup-vtysh.conf", filename: platformName + "/static-pod-resources/frr-k8s/startup/vtysh.conf"},
+				manifest{name: "manifests/on-prem/0010-kube-vip-api.yaml", filename: platformName + "/manifests/0010-kube-vip-api.yaml"},
+			)
+		} else {
+			platformManifests = append(platformManifests,
+				manifest{
+					name:     "manifests/on-prem/keepalived.yaml",
+					filename: platformName + "/manifests/keepalived.yaml",
+				},
+				manifest{
+					name:     "manifests/on-prem/keepalived.conf.tmpl",
+					filename: platformName + "/static-pod-resources/keepalived/keepalived.conf.tmpl",
+				},
+			)
+		}
 	}
 
 	return append(manifests, platformManifests...)

@@ -10,6 +10,7 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/informers"
@@ -176,6 +177,121 @@ func withCABundle(caBundle string) kubeCloudConfigOption {
 			kubeCloudConfig.Data = map[string]string{}
 		}
 		kubeCloudConfig.Data["ca-bundle.pem"] = caBundle
+	}
+}
+
+func withBareMetalVIPManagement(vipManagement configv1.VIPManagementType) infraOption {
+	return func(infra *configv1.Infrastructure) {
+		if infra.Status.PlatformStatus == nil {
+			infra.Status.PlatformStatus = &configv1.PlatformStatus{}
+		}
+		infra.Status.PlatformStatus.Type = configv1.BareMetalPlatformType
+		infra.Status.PlatformStatus.BareMetal = &configv1.BareMetalPlatformStatus{
+			VIPManagement:        vipManagement,
+			APIServerInternalIPs: []string{"192.168.111.5"},
+			IngressIPs:           []string{"192.168.111.4"},
+		}
+	}
+}
+
+func buildBGPVIPConfigMap(configJSON string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "openshift-network-operator",
+			Name:      "bgp-vip-config",
+		},
+		Data: map[string]string{
+			"config.json": configJSON,
+		},
+	}
+}
+
+func TestSyncBGPVIPPeersJSON(t *testing.T) {
+	compactJSON := `{"localASN":64512,"defaultPeers":[{"peerAddress":"192.168.111.1","peerASN":64513}]}`
+	prettyJSON := `{
+  "localASN": 64512,
+  "defaultPeers": [
+    {
+      "peerAddress": "192.168.111.1",
+      "peerASN": 64513
+    }
+  ]
+}`
+	cases := []struct {
+		name                    string
+		infra                   *configv1.Infrastructure
+		configMap               *corev1.ConfigMap
+		expectError             bool
+		expectedBGPVIPPeersJSON string
+	}{
+		{
+			name:  "non-BareMetal platform is a no-op",
+			infra: buildInfra(withPlatformType(configv1.AWSPlatformType)),
+		},
+		{
+			name:  "BareMetal without BGP VIP management is a no-op",
+			infra: buildInfra(withPlatformType(configv1.BareMetalPlatformType), withBareMetalVIPManagement("")),
+		},
+		{
+			// User-managed load balancer: BGP mode without VIPs renders
+			// keepalived-neither-BGP, and the peers ingestion must not
+			// degrade the operator over the (rightfully) absent ConfigMap.
+			name: "BGP without VIPs is a no-op",
+			infra: buildInfra(withPlatformType(configv1.BareMetalPlatformType), withBareMetalVIPManagement("BGP"),
+				func(infra *configv1.Infrastructure) {
+					infra.Status.PlatformStatus.BareMetal.APIServerInternalIPs = nil
+				}),
+		},
+		{
+			name:                    "BGP enabled with ConfigMap present",
+			infra:                   buildInfra(withPlatformType(configv1.BareMetalPlatformType), withBareMetalVIPManagement("BGP")),
+			configMap:               buildBGPVIPConfigMap(compactJSON),
+			expectedBGPVIPPeersJSON: compactJSON,
+		},
+		{
+			name:                    "BGP enabled with pretty-printed ConfigMap payload is compacted",
+			infra:                   buildInfra(withPlatformType(configv1.BareMetalPlatformType), withBareMetalVIPManagement("BGP")),
+			configMap:               buildBGPVIPConfigMap(prettyJSON),
+			expectedBGPVIPPeersJSON: compactJSON,
+		},
+		{
+			name:        "BGP enabled with missing ConfigMap degrades",
+			infra:       buildInfra(withPlatformType(configv1.BareMetalPlatformType), withBareMetalVIPManagement("BGP")),
+			expectError: true,
+		},
+		{
+			name:        "BGP enabled with malformed payload degrades",
+			infra:       buildInfra(withPlatformType(configv1.BareMetalPlatformType), withBareMetalVIPManagement("BGP")),
+			configMap:   buildBGPVIPConfigMap("{not json"),
+			expectError: true,
+		},
+		{
+			name:        "BGP enabled with empty config.json payload degrades",
+			infra:       buildInfra(withPlatformType(configv1.BareMetalPlatformType), withBareMetalVIPManagement("BGP")),
+			configMap:   buildBGPVIPConfigMap(""),
+			expectError: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sharedInformer := informers.NewSharedInformerFactory(fake.NewSimpleClientset(), 0)
+			cmInformer := sharedInformer.Core().V1().ConfigMaps()
+			if tc.configMap != nil {
+				require.NoError(t, cmInformer.Informer().GetIndexer().Add(tc.configMap))
+			}
+			optr := &Operator{
+				clusterCmLister: cmInformer.Lister(),
+			}
+			spec := &mcfgv1.ControllerConfigSpec{}
+			err := optr.syncBGPVIPPeersJSON(spec, tc.infra)
+			if tc.expectError {
+				assert.Error(t, err)
+				assert.Empty(t, spec.BGPVIPPeersJSON)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tc.expectedBGPVIPPeersJSON, spec.BGPVIPPeersJSON)
+		})
 	}
 }
 

@@ -1,0 +1,165 @@
+---
+kind: Pod
+apiVersion: v1
+metadata:
+  name: frr-k8s
+  namespace: openshift-frr-k8s
+  labels:
+    app: frr-k8s
+spec:
+  # hostNetwork: the BGP session must originate from the node IP and the
+  # advertised VIP routes live in the host routing table (keepalived parity).
+  hostNetwork: true
+  shareProcessNamespace: true
+  priorityClassName: system-node-critical
+  # 10s (not the upstream DaemonSet's 0): a SIGTERM'd bgpd sends a Cease
+  # NOTIFICATION, which hard-resets the session; after a SIGKILL a peer in
+  # graceful-restart helper mode may retain stale VIP routes on bare TCP
+  # loss until the restart timer expires.
+  terminationGracePeriodSeconds: 10
+  tolerations:
+  - operator: Exists
+  initContainers:
+  - name: render-config-frr
+    image: {{ .Images.BaremetalRuntimeCfgBootstrap }}
+    command:
+    - /usr/bin/runtimecfg
+    - render
+    - /etc/kubernetes/kubeconfig
+    - --api-vips
+    - {{ onPremPlatformAPIServerInternalIP .ControllerConfig }}
+    - --ingress-vips
+    - {{ onPremPlatformIngressIP .ControllerConfig }}
+    - "--cluster-config"
+    - "/opt/openshift/manifests/cluster-config.yaml"
+    - /config/frr.conf.tmpl
+    - --out-dir
+    - /etc/frr
+    - --peer-file
+    - /config/frr-peers.json
+    env:
+    - name: IS_BOOTSTRAP
+      value: "yes"
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop:
+        - ALL
+    resources:
+      requests:
+        cpu: 10m
+        memory: 50Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+    terminationMessagePolicy: FallbackToLogsOnError
+    volumeMounts:
+    - name: resource-dir
+      mountPath: /config
+      readOnly: true
+    - name: frr-conf
+      mountPath: /etc/frr
+    - name: kubeconfig
+      mountPath: /etc/kubernetes
+      readOnly: true
+    - name: manifests
+      mountPath: "/opt/openshift/manifests"
+      mountPropagation: HostToContainer
+      readOnly: true
+  - name: cp-frr-files
+    image: {{ .Images.FRRK8sBootstrap }}
+    command:
+    - /bin/sh
+    - -c
+    - |
+      set -eu
+      cp -f /tmp/frr/daemons /etc/frr/daemons
+      cp -f /tmp/frr/vtysh.conf /etc/frr/vtysh.conf
+    securityContext:
+      runAsUser: 100
+      runAsGroup: 101
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop:
+        - ALL
+    resources:
+      requests:
+        cpu: 10m
+        memory: 20Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+    terminationMessagePolicy: FallbackToLogsOnError
+    volumeMounts:
+    - name: frr-startup
+      mountPath: /tmp/frr
+      readOnly: true
+    - name: frr-conf
+      mountPath: /etc/frr
+  containers:
+  - name: frr
+    image: {{ .Images.FRRK8sBootstrap }}
+    command:
+    - /bin/sh
+    - -c
+    - /sbin/tini -- /usr/lib/frr/docker-start
+    env:
+    - name: TINI_SUBREAPER
+      value: "true"
+    resources:
+      requests:
+        cpu: 100m
+        memory: 200Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        # Mirrors the frr container of the frr-k8s DaemonSet shipped by CNO
+        # (upstream metallb/frr-k8s parity). No drop ALL: FRR's
+        # privilege-separated startup (watchfrr as root spawning daemons as
+        # the frr user) additionally relies on root's implicit capabilities
+        # (SETUID/SETGID/DAC_OVERRIDE/CHOWN); dropping ALL and re-adding
+        # only the network capabilities was tested and prevents the FRR
+        # daemons from starting. SYS_ADMIN is required by docker-start/
+        # watchfrr process supervision.
+        add:
+        - NET_ADMIN
+        - NET_RAW
+        - SYS_ADMIN
+        - NET_BIND_SERVICE
+    terminationMessagePolicy: FallbackToLogsOnError
+    volumeMounts:
+    - name: frr-sockets
+      mountPath: /var/run/frr
+    - name: frr-conf
+      mountPath: /etc/frr
+    - name: frr-lib
+      mountPath: /var/lib/frr
+    - name: frr-tmp
+      mountPath: /var/tmp/frr
+  volumes:
+  - name: resource-dir
+    hostPath:
+      path: /etc/kubernetes/static-pod-resources/frr-k8s
+  - name: frr-conf
+    emptyDir: {}
+  - name: frr-sockets
+    emptyDir: {}
+  - name: frr-lib
+    emptyDir: {}
+  - name: frr-tmp
+    emptyDir: {}
+  - name: frr-startup
+    hostPath:
+      path: /etc/kubernetes/static-pod-resources/frr-k8s/startup
+  - name: kubeconfig
+    hostPath:
+      path: /etc/kubernetes
+  - name: manifests
+    hostPath:
+      path: "/opt/openshift/manifests"

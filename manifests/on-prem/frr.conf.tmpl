@@ -1,0 +1,58 @@
+frr version 9.1
+frr defaults traditional
+hostname {{`{{.Hostname}}`}}
+!
+router bgp {{`{{.LocalASN}}`}}
+ bgp router-id {{`{{.RouterID}}`}}
+ no bgp ebgp-requires-policy
+ no bgp default ipv4-unicast
+ !
+{{`{{- range .Peers}}`}}
+ neighbor {{`{{.PeerAddress}}`}} remote-as {{`{{.PeerASN}}`}}
+{{`{{- if .Password}}`}}
+ neighbor {{`{{.PeerAddress}}`}} password {{`{{.Password}}`}}
+{{`{{- end}}`}}
+{{`{{- if eq .BFDEnabled "true"}}`}}
+ neighbor {{`{{.PeerAddress}}`}} bfd
+{{`{{- end}}`}}
+{{`{{- if eq .EBGPMultiHop "true"}}`}}
+ neighbor {{`{{.PeerAddress}}`}} ebgp-multihop
+{{`{{- end}}`}}
+{{`{{- if .HoldTime}}`}}
+ neighbor {{`{{.PeerAddress}}`}} timers {{`{{.KeepaliveTime}}`}} {{`{{.HoldTime}}`}}
+{{`{{- end}}`}}
+{{`{{- end}}`}}
+ !
+ address-family ipv4 unicast
+  redistribute table-direct 198
+{{`{{- range .Peers}}`}}
+{{`{{- if isIPv4 .PeerAddress}}`}}
+  neighbor {{`{{.PeerAddress}}`}} activate
+{{`{{- if $.Communities}}`}}
+  neighbor {{`{{.PeerAddress}}`}} route-map VIP-COMMUNITY out
+{{`{{- end}}`}}
+{{`{{- end}}`}}
+{{`{{- end}}`}}
+ exit-address-family
+ !
+ address-family ipv6 unicast
+  redistribute table-direct 198
+{{`{{- range .Peers}}`}}
+{{`{{- if isIPv6 .PeerAddress}}`}}
+  neighbor {{`{{.PeerAddress}}`}} activate
+{{`{{- if $.Communities}}`}}
+  neighbor {{`{{.PeerAddress}}`}} route-map VIP-COMMUNITY out
+{{`{{- end}}`}}
+{{`{{- end}}`}}
+{{`{{- end}}`}}
+ exit-address-family
+!
+{{`{{- if .Communities}}`}}
+route-map VIP-COMMUNITY permit 10
+{{`{{- range .Communities}}`}}
+ set community {{`{{.}}`}} additive
+{{`{{- end}}`}}
+!
+{{`{{- end}}`}}
+line vty
+!

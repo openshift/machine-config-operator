@@ -120,6 +120,7 @@ func TestRenderAllManifests(t *testing.T) {
 				HTTPSProxy: "https://i.am.a.proxy.server",
 				NoProxy:    "*",
 			},
+			BGPVIPPeersJSON: `{"localASN":64512,"defaultPeers":[{"peerAddress":"192.168.111.1","peerASN":64513}]}`,
 			Infra: &configv1.Infrastructure{
 				Status: configv1.InfrastructureStatus{
 					PlatformStatus: &configv1.PlatformStatus{
