@@ -1,0 +1,80 @@
+{
+  "default": [
+    {
+      "type": "insecureAcceptAnything"
+    }
+  ],
+  "transports": {
+    "atomic": {
+      "test0.com": [
+        {
+          "type": "sigstoreSigned",
+          "fulcio": {
+            "caData": "dGVzdC1jYS1kYXRhLWRhdGE=",
+            "oidcIssuer": "https://OIDC.example.com",
+            "subjectEmail": "test-user@example.com"
+          },
+          "rekorPublicKeyData": "dGVzdC1yZWtvci1rZXktZGF0YQ==",
+          "signedIdentity": {
+            "type": "remapIdentity",
+            "prefix": "test-remap-prefix",
+            "signedPrefix": "test-remap-signed-prefix"
+          }
+        }
+      ],
+      "test3.com/ns/repo": [
+        {
+          "type": "sigstoreSigned",
+          "pki": {
+            "caRootsData": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJBVEE9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0=",
+            "caIntermediatesData": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJBVEE9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0=",
+            "subjectEmail": "test-user@example.com",
+            "subjectHostname": "my-host.example.com"
+          },
+          "signedIdentity": {
+            "type": "matchRepoDigestOrExact"
+          }
+        }
+      ]
+    },
+    "docker": {
+      "test0.com": [
+        {
+          "type": "sigstoreSigned",
+          "fulcio": {
+            "caData": "dGVzdC1jYS1kYXRhLWRhdGE=",
+            "oidcIssuer": "https://OIDC.example.com",
+            "subjectEmail": "test-user@example.com"
+          },
+          "rekorPublicKeyData": "dGVzdC1yZWtvci1rZXktZGF0YQ==",
+          "signedIdentity": {
+            "type": "remapIdentity",
+            "prefix": "test-remap-prefix",
+            "signedPrefix": "test-remap-signed-prefix"
+          }
+        }
+      ],
+      "test3.com/ns/repo": [
+        {
+          "type": "sigstoreSigned",
+          "pki": {
+            "caRootsData": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJBVEE9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0=",
+            "caIntermediatesData": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJBVEE9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0=",
+            "subjectEmail": "test-user@example.com",
+            "subjectHostname": "my-host.example.com"
+          },
+          "signedIdentity": {
+            "type": "matchRepoDigestOrExact"
+          }
+        }
+      ]
+    },
+    "docker-daemon": {
+      "": [
+        {
+          "type": "insecureAcceptAnything"
+        }
+      ]
+    }
+  }
+}

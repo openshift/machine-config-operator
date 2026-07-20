@@ -62,6 +62,18 @@ spec:
                 description: baseOSExtensionsContainerImage is the matching extensions
                   container for the new-format container
                 type: string
+              bgpVIPPeersJSON:
+                description: |-
+                  bgpVIPPeersJSON carries the BGP VIP peer configuration (the config.json
+                  payload of the bgp-vip-config ConfigMap) for rendering the frr-k8s
+                  static pod peer file on control plane nodes. Only set when BGP-based
+                  VIP management is enabled.
+                  When omitted, BGP-based VIP management is not configured and no
+                  frr-k8s peer file is rendered.
+                  When set, the value must be between 1 and 65536 characters long.
+                maxLength: 65536
+                minLength: 1
+                type: string
               cloudProviderCAData:
                 description: cloudProviderCAData specifies the cloud provider CA data
                 format: byte
@@ -2067,6 +2079,25 @@ spec:
                                   datacenter DNS, a DNS service is hosted as a static pod to serve those hostnames
                                   to the nodes in the cluster.
                                 type: string
+                              vipManagement:
+                                description: |-
+                                  vipManagement indicates which VIP management mechanism is active
+                                  on this cluster.
+                                  Allowed values are `Keepalived`, `BGP`, and omitted.
+                                  Once set to a non-empty value, this field is immutable.
+                                  When set to `BGP`, kube-vip (Routing Table Mode) and frr-k8s are
+                                  deployed as static pods to advertise VIPs via BGP, replacing the
+                                  default keepalived/VRRP mechanism.
+                                  When set to `Keepalived`, the default keepalived-based VIP
+                                  management is used.
+                                  When omitted, the default keepalived-based VIP management is used.
+                                enum:
+                                - Keepalived
+                                - BGP
+                                type: string
+                                x-kubernetes-validations:
+                                - message: vipManagement is immutable once set
+                                  rule: oldSelf == '' || self == oldSelf
                             type: object
                             x-kubernetes-validations:
                             - message: dnsRecordsType may only be set to External
