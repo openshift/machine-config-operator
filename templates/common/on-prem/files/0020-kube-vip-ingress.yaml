@@ -1,0 +1,74 @@
+mode: 0644
+path: {{ if isBGPVIPManagement . }}"/etc/kubernetes/manifests/0020-kube-vip-ingress.yaml"{{ else }}"/etc/kubernetes/disabled-manifests/0020-kube-vip-ingress.yaml"{{ end }}
+contents:
+  inline: |
+    ---
+    kind: Pod
+    apiVersion: v1
+    metadata:
+      name: kube-vip-ingress
+      namespace: openshift-kube-vip
+      labels:
+        app: kube-vip
+        component: ingress
+    spec:
+      hostNetwork: true
+      priorityClassName: system-node-critical
+      tolerations:
+      - operator: Exists
+      containers:
+      - name: kube-vip
+        image: {{.Images.kubeVipImage}}
+        args:
+        - manager
+        env:
+        - name: address
+          value: "{{ onPremPlatformIngressIP . }}"
+        - name: k8s_config_file
+          value: "/etc/kubernetes/kubeconfig"
+        - name: kubernetes_addr
+          value: "https://localhost:6443"
+        - name: port
+          value: "443"
+        - name: cp_enable
+          value: "true"
+        - name: vip_leaderelection
+          value: "true"
+        - name: vip_routingtable
+          value: "true"
+        - name: vip_cleanroutingtable
+          value: "true"
+        - name: vip_routingtableid
+          value: "198"
+        - name: vip_routingtableprotocol
+          value: "248"
+        - name: backend_health_check_interval
+          value: "5"
+        - name: control_plane_health_check_address
+          value: "http://localhost:1936/healthz"
+        - name: control_plane_health_check_timeout_seconds
+          value: "3"
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+            add:
+            - NET_ADMIN
+            - NET_RAW
+        volumeMounts:
+        - name: kubeconfig
+          mountPath: /etc/kubernetes
+          readOnly: true
+      volumes:
+      - name: kubeconfig
+        hostPath:
+          path: /etc/kubernetes

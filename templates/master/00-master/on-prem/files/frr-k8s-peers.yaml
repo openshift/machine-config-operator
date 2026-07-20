@@ -1,0 +1,5 @@
+mode: 0600
+path: "/etc/kubernetes/static-pod-resources/frr-k8s/frr-peers.json"
+contents:
+  inline: |-
+    {{.BGPVIPPeersJSON}}
