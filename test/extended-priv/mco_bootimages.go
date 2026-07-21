@@ -906,9 +906,44 @@ func getBackdatedBootImage(oc *exutil.CLI) string {
 
 	switch platform {
 	case AWSPlatform:
-		// MCO will only update AMIS present in the list defined here https://github.com/openshift/machine-config-operator/pull/5122
-		// We choose one of them
-		return "ami-0ffec236307e00b94"
+		// RHCOS 4.12 AMIs per region, from https://github.com/openshift/installer/blob/release-4.12/data/data/coreos/rhcos.json
+		backdatedAMIs := map[string]string{
+			"af-south-1":     "ami-0422676091bb78731",
+			"ap-east-1":      "ami-017f906bb54acfd99",
+			"ap-northeast-1": "ami-037f7e8d0dc950d11",
+			"ap-northeast-2": "ami-0a18c136a1903a2e3",
+			"ap-northeast-3": "ami-09beba5c87bcec024",
+			"ap-south-1":     "ami-0cc4437f97ef143ec",
+			"ap-south-2":     "ami-0504e7a2db47da9eb",
+			"ap-southeast-1": "ami-027acff3ce48e4eed",
+			"ap-southeast-2": "ami-0f4aca32cc957ea1c",
+			"ap-southeast-3": "ami-0f340321ebee4b713",
+			"ap-southeast-4": "ami-05381daaeaf823dd1",
+			"ca-central-1":   "ami-05647a33ef035d728",
+			"ca-west-1":      "ami-008dced4fde41d1f4",
+			"eu-central-1":   "ami-01e1f97fd1c113991",
+			"eu-central-2":   "ami-065acce84d4598954",
+			"eu-north-1":     "ami-0b72ef2f4e9aca146",
+			"eu-south-1":     "ami-09736dd27e69b109a",
+			"eu-south-2":     "ami-04a7d232bfca8ccaf",
+			"eu-west-1":      "ami-04fa8ddcead8110a9",
+			"eu-west-2":      "ami-052d3c3a5a5c83a82",
+			"eu-west-3":      "ami-06e9203420d48e8e9",
+			"il-central-1":   "ami-0ce9a037bbd55c857",
+			"me-central-1":   "ami-02d31e1160bca115c",
+			"me-south-1":     "ami-07caa52515e8291fe",
+			"sa-east-1":      "ami-0de793dfbf8148181",
+			"us-east-1":      "ami-0c321aac14de997e3",
+			"us-east-2":      "ami-0fce6015e3592d4a5",
+			"us-gov-east-1":  "ami-08981a10e7aca4aef",
+			"us-gov-west-1":  "ami-042544030e96bb199",
+			"us-west-1":      "ami-0a0fd8c46d72e5a9d",
+			"us-west-2":      "ami-011274ede94622942",
+		}
+		region := getCurrentRegionOrFail(oc.AsAdmin())
+		ami, ok := backdatedAMIs[region]
+		o.Expect(ok).To(o.BeTrue(), "No backdated AMI found for region %s", region)
+		return ami
 	case GCPPlatform:
 		// In GCP all images located in projects/rhcos-cloud/global/images are considered valid for update
 		return "projects/rhcos-cloud/global/images" + "/updateble-fake-image"
