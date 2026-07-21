@@ -380,7 +380,7 @@ metadata:
 			}
 
 			// Run the bootstrap
-			bootstrapper := bootstrap.New(templatesDir, srcDir, filepath.Join(bootstrapTestDataDir, "/machineconfigcontroller-pull-secret"))
+			bootstrapper := bootstrap.New(templatesDir, srcDir, filepath.Join(bootstrapTestDataDir, "/machineconfigcontroller-pull-secret"), nil)
 			err = bootstrapper.Run(destDir)
 			require.NoError(t, err)
 
@@ -613,9 +613,11 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.InformerFactory.Machineconfiguration().V1().KubeletConfigs(),
 			ctx.OperatorInformerFactory.Operator().V1().MachineConfigurations(),
 			ctx.InformerFactory.Machineconfiguration().V1().OSImageStreams(),
+			nil, nil, nil, nil, nil,
 			ctx.ClientBuilder.KubeClientOrDie("render-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("render-controller"),
 			ctx.FeatureGatesHandler,
+			nil,
 		),
 		// The node controller consumes data written by the above
 		node.New(

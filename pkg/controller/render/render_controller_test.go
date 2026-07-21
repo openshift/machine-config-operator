@@ -83,7 +83,10 @@ func (f *fixture) newController() *Controller {
 	c := New(i.Machineconfiguration().V1().MachineConfigPools(), i.Machineconfiguration().V1().MachineConfigs(),
 		i.Machineconfiguration().V1().ControllerConfigs(), i.Machineconfiguration().V1().ContainerRuntimeConfigs(),
 		i.Machineconfiguration().V1().KubeletConfigs(), oi.Operator().V1().MachineConfigurations(),
-		i.Machineconfiguration().V1().OSImageStreams(), k8sfake.NewSimpleClientset(), f.client, f.fgHandler)
+		i.Machineconfiguration().V1().OSImageStreams(),
+		nil, nil, nil, nil, nil,
+		k8sfake.NewSimpleClientset(), f.client, f.fgHandler,
+		nil)
 
 	c.mcpListerSynced = alwaysReady
 	c.mcListerSynced = alwaysReady
@@ -1130,6 +1133,7 @@ func TestRunBootstrapBlocksRuncOnRHEL10(t *testing.T) {
 		[]*mcfgv1.MachineConfig{runcMC},
 		cc,
 		osImageStream,
+		nil,
 	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "runc")

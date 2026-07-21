@@ -51,16 +51,21 @@ type Bootstrap struct {
 	manifestDir string
 	// pull secret file
 	pullSecretFile string
-	// OSImageStreams factory. Used for testing purposes.
 	imageStreamFactory osimagestream.ImageStreamFactory
+	inspectorFactory   osimagestream.ImagesInspectorFactory
 }
 
 // New returns controller for bootstrap
-func New(templatesDir, manifestDir, pullSecretFile string) *Bootstrap {
+func New(templatesDir, manifestDir, pullSecretFile string, inspectorFactory osimagestream.ImagesInspectorFactory) *Bootstrap {
+	if inspectorFactory == nil {
+		inspectorFactory = &osimagestream.DefaultImagesInspectorFactory{}
+	}
 	return &Bootstrap{
-		templatesDir:   templatesDir,
-		manifestDir:    manifestDir,
-		pullSecretFile: pullSecretFile,
+		templatesDir:       templatesDir,
+		manifestDir:        manifestDir,
+		pullSecretFile:     pullSecretFile,
+		imageStreamFactory: osimagestream.NewDefaultStreamSourceFactory(inspectorFactory),
+		inspectorFactory:   inspectorFactory,
 	}
 }
 
@@ -364,7 +369,9 @@ func (b *Bootstrap) Run(destDir string) error {
 		klog.Infof("Successfully created %d pre-built image component MachineConfigs for hybrid OCL.", len(preBuiltImageMCs))
 	}
 
-	fpools, gconfigs, err := render.RunBootstrap(pools, configs, cconfig, osImageStream)
+	sysCtxFactory := buildSysContextFactory(pullSecret, cconfig, imgCfg, icspRules, idmsRules, itmsRules)
+	inspector := osimagestream.NewStreamClassInspector(b.inspectorFactory, sysCtxFactory)
+	fpools, gconfigs, err := render.RunBootstrap(pools, configs, cconfig, osImageStream, inspector)
 	if err != nil {
 		return err
 	}
@@ -508,7 +515,7 @@ func (b *Bootstrap) fetchOSImageStream(
 
 	sysCtxFactory := buildSysContextFactory(pullSecret, cconfig, imgCfg, icspRules, idmsRules, itmsRules)
 
-	factory := b.getImageStreamFactory()
+	factory := b.imageStreamFactory
 	createOpts := osimagestream.CreateOptions{
 		ExistingOSImageStream: existingOSImageStream,
 		CliImages: &osimagestream.OSImageTuple{
@@ -526,15 +533,6 @@ func (b *Bootstrap) fetchOSImageStream(
 		return nil, fmt.Errorf("error inspecting available OSImageStreams: %w", err)
 	}
 	return osImageStream, nil
-}
-
-// Returns the embedded ImageStreamFactory or constructs a new default one. Used primarily for testing.
-func (b *Bootstrap) getImageStreamFactory() osimagestream.ImageStreamFactory {
-	if b.imageStreamFactory != nil {
-		return b.imageStreamFactory
-	}
-
-	return osimagestream.NewDefaultStreamSourceFactory(&osimagestream.DefaultImagesInspectorFactory{})
 }
 
 func buildSysContextFactory(
