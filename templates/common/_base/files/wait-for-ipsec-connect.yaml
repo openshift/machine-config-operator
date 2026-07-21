@@ -4,33 +4,62 @@ contents:
   inline: |
     #!/bin/bash
     set -x
+    set -o pipefail
 
     if [ ! -e "/etc/ipsec.d/openshift.conf" ]; then
       exit 0
     fi
 
-    # Modify existing IPsec out connection entries with "auto=start"
-    # option and restart ipsec systemd service. This helps to
-    # establish IKE SAs for the existing IPsec connections with
-    # peer nodes. This option will be deleted from connections
-    # once ovs-monitor-ipsec process spinned up on the node by
-    # ovn-ipsec-host pod, but still it won't reestablish IKE SAs
-    # again with peer nodes, so it shouldn't be a problem.
-    # We are updating only out connections with "auto=start" to
-    # avoid cross stream issue with Libreswan 5.2.
-    # The in connections use default auto=route parameter.
-    if ! grep -q "auto=start" /etc/ipsec.d/openshift.conf; then
-      sed -i '/^.*conn ovn.*-out-1$/a\    auto=start' /etc/ipsec.d/openshift.conf
+    # If "openshift.conf" is referenced in /etc/sysconfig/openvswitch,
+    # the ovn-ipsec-host pod has already configured the openvswitch-ipsec
+    # systemd service for establishing OVN IPsec connections.
+    # However, the machine-config-daemon pod may reset this service to
+    # a disabled state, causing it not to start after a node reboot.
+    # To handle this scenario, enable and start the service here as well.
+    ovsipsecsvc="openvswitch-ipsec.service"
+    if grep -q "openshift.conf" /etc/sysconfig/openvswitch; then
+      if ! systemctl enable --now $ovsipsecsvc; then
+        echo "Failed to enable and start $ovsipsecsvc"
+        exit 1
+      fi
+    else
+      echo "$ovsipsecsvc is not configured, so make pluto to establish IKE SAs"
+
+      # Modify existing IPsec out connection entries with "auto=start"
+      # option and restart ipsec systemd service. This helps to
+      # establish IKE SAs for the existing IPsec connections with
+      # peer nodes. This option will be deleted from connections
+      # once ovs-monitor-ipsec process spinned up on the node by
+      # ovn-ipsec-host pod, but still it won't reestablish IKE SAs
+      # again with peer nodes, so it shouldn't be a problem.
+      # We are updating only out connections with "auto=start" to
+      # avoid cross stream issue with Libreswan 5.2.
+      # The in connections use default auto=route parameter.
+      if ! grep -q "auto=start" /etc/ipsec.d/openshift.conf; then
+        sed -i '/^.*conn ovn.*-out-1$/a\    auto=start' /etc/ipsec.d/openshift.conf
+      fi
+      chroot /proc/1/root ipsec restart
     fi
-    chroot /proc/1/root ipsec restart
 
     # Wait for upto 60s to get IPsec SAs to establish with peer nodes.
+    # We derived total wait time 60s based on the testing from 6 and 32 nodes
+    # cluster. In 6 node cluster, it took mostly about 2s (in worst case 4s),
+    # In 32 node cluster, it took mostly about 2s or 4s (in worst case 14s)
+    # to get IPsec connections up with peer nodes.
+    # This is a best-effort attempt to bootstrap IPsec connections upfront to
+    # avoid disruptions, waiting longer would impact node reboot time.
     timeout=60
     elapsed=0
     desiredconn=""
     establishedsa=""
     while [[ $elapsed -lt $timeout ]]; do
-      desiredconn=$(grep -E '^\s*conn\s+' /etc/ipsec.d/openshift.conf | grep -v '%default' | awk '{print $2}' | tr ' ' '\n' | sort | tr '\n' ' ')
+      if ! desiredconn=$(ovs-vsctl --bare --columns=name find interface type=geneve options:remote_name!='""' \
+       | sort \
+       | awk 'NF {print $0"-in-1", $0"-out-1"}' \
+       | tr '\n' ' '); then
+        echo "failed to query OVS Geneve interfaces for desired IPsec connections"
+        exit 1
+      fi
       establishedsa=$(ipsec showstates | grep ESTABLISHED_CHILD_SA | grep -o '"[^"]*"' | sed 's/"//g' | tr ' ' '\n' | sort | uniq | tr '\n' ' ')
       if [ "$desiredconn" == "$establishedsa" ]; then
         echo "IPsec SAs are established for desired connections after ${elapsed}s"
@@ -44,4 +73,8 @@ contents:
 
     if [[ $elapsed -ge $timeout ]]; then
         echo "Timed out waiting, some connections are not established, desired conns $desiredconn, established conns $establishedsa"
+        # Not treating this as a hard failure since this is a best-effort wait,
+        # peer nodes may be down or still rebooting during fairly common parallel
+        # reboots.
+        exit 0
     fi

@@ -565,13 +565,46 @@ func SupportedExtensions() map[string][]string {
 	// Each extension keeps a list of packages required to get enabled on host.
 	return map[string][]string{
 		"two-node-ha":          {"pacemaker", "pcs", "fence-agents-all"},
-		"ipsec":                {"NetworkManager-libreswan", "libreswan"},
+		"ipsec":                {"NetworkManager-libreswan", "libreswan", "openvswitch3.5-ipsec"},
 		"usbguard":             {"usbguard"},
 		"kerberos":             {"krb5-workstation", "libkadm5"},
 		"kernel-devel":         {"kernel-devel", "kernel-headers"},
 		"sandboxed-containers": {"kata-containers"},
 		"sysstat":              {"sysstat"},
 	}
+}
+
+// LegacyExtensionPackages tracks the legacy package list for extensions
+// that have changed.
+func LegacyExtensionPackages() map[string][]string {
+	return map[string][]string{
+		// ipsec extension only have libreswan packages in <= 4.x releases.
+		"ipsec": {"NetworkManager-libreswan", "libreswan"},
+	}
+}
+
+// GetAllValidPackageSetsForExtension returns all valid package sets for an extension,
+// including both current and legacy package lists. This is used during verification
+// to handle upgrade scenarios gracefully.
+// During an upgrade the new MCD code may run before the OS image update. This function
+// ensures that verification accepts either the old package set (from the current OS
+// image) OR the new package set (from the updated code).
+func GetAllValidPackageSetsForExtension(extension string) [][]string {
+	var validSets [][]string
+
+	// Add current package set
+	currentExtensions := SupportedExtensions()
+	if packages, exists := currentExtensions[extension]; exists {
+		validSets = append(validSets, packages)
+	}
+
+	// Add legacy package set (if exists)
+	legacyExtensions := LegacyExtensionPackages()
+	if packages, exists := legacyExtensions[extension]; exists {
+		validSets = append(validSets, packages)
+	}
+
+	return validSets
 }
 
 // IgnParseWrapper parses rawIgn for both V2 and V3 ignition configs and returns
