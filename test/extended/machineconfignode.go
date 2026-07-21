@@ -162,8 +162,8 @@ func isTransientConnectionError(err error) bool {
 // will also return true if the condition has returned to "False," indicating the update completed
 // and conditions were reset before the "True" state could be observed.
 func waitForMCNConditionStatus(machineConfigClient *machineconfigclient.Clientset, mcnName string, conditionType mcfgv1.StateProgress, status metav1.ConditionStatus,
-	timeout time.Duration, interval time.Duration, stopOnTransientError bool) (bool, error) {
-
+	timeout time.Duration, interval time.Duration, stopOnTransientError bool,
+) (bool, error) {
 	conditionMet := false
 	var conditionErr error
 	var workerNodeMCN *mcfgv1.MachineConfigNode
@@ -241,12 +241,12 @@ func ValidateTransitionThroughConditions(oc *exutil.CLI, machineConfigClient *ma
 	isSNO, isSNOErr := extpriv.IsSNOSafe(oc)
 	o.Expect(isSNOErr).NotTo(o.HaveOccurred(), fmt.Sprintf("Error checking if cluster is SNO: %v", isSNOErr))
 	if isImageMode {
-		updatingWaitTime = 25 * time.Minute
+		updatingWaitTime = 35 * time.Minute
 		updatingWaitInterval = 5 * time.Second
 	} else if isSNO {
 		// SNO transition times can also be a bit longer due to cluster connection instability, so
 		// set the times for longer in such clusters. (Longer image updates timing takes precedence.)
-		updatingWaitTime = 5 * time.Minute
+		updatingWaitTime = 3 * time.Minute
 		updatingWaitInterval = 5 * time.Second
 	}
 

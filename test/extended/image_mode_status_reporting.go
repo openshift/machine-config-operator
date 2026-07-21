@@ -17,10 +17,8 @@ import (
 
 var (
 	mcNameToFixtureMap = map[string]string{
-		"90-infra-extension":  filepath.Join("machineconfigs", "infra-extension-mc.yaml"),
-		"90-infra-testfile":   filepath.Join("machineconfigs", "infra-testfile-mc.yaml"),
-		"90-master-extension": filepath.Join("machineconfigs", "master-extension-mc.yaml"),
-		"90-master-testfile":  filepath.Join("machineconfigs", "master-testfile-mc.yaml"),
+		"90-infra-testfile":  filepath.Join("machineconfigs", "infra-testfile-mc.yaml"),
+		"90-master-testfile": filepath.Join("machineconfigs", "master-testfile-mc.yaml"),
 	}
 	nodeDisruptionFixture      = filepath.Join("machineconfigurations", "nodedisruptionpolicy-rebootless-path.yaml")
 	nodeDisruptionEmptyFixture = filepath.Join("machineconfigurations", "managedbootimages-empty.yaml")
@@ -63,10 +61,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		// cases, run the test against the default `master` MCP.
 		if !DoesMachineConfigPoolHaveMachines(machineConfigClient, "worker") {
 			logger.Infof("Cluster has no `worker` machines, running test against the `master` MCP.")
-			runImageModeMCNTestDefaultMCP(oc, machineConfigClient, "master", "90-master-extension", true)
+			runImageModeMCNTestDefaultMCP(oc, machineConfigClient, "master", "", true)
 		} else {
 			// Run the standard image mode MCN test for a custom MCP named `infra` with no MC to apply
-			runImageModeMCNTestCustomMCP(oc, machineConfigClient, "infra", "90-infra-extension", true)
+			runImageModeMCNTestCustomMCP(oc, machineConfigClient, "infra", "", true)
 		}
 	})
 
@@ -118,14 +116,17 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 //  2. Validate the starting properties of the MCN associated with the test node
 //  3. Create a custom MCP named the value of `mcpAndMoscName` and add the test node to it
 //  4. Validate the properties of the MCN associated with the test node
-//  5. Configure on cluster image mode in the custom MCP & validate the MOSC applied successfully
-//  6. Validate the properties of the MCN associated with the test node
-//  7. If a MachineConfig has been provided, apply it, validate the MCN conditions trasnition
-//     throughout the update, then remove the MC
-//  8. Disable on cluster image mode in the custom MCP & validate the MOSC removal was successful
-//  9. Validate the properties of the MCN associated with the test node
-//  10. Remove the custom MCP
+//  5. Configure on cluster image mode in the custom MCP
+//  6. (Image-mode update) Wait for the OCL image build to succeed, then track
+//     MCN transitions during the image rollout
+//  7. (Non-image-mode update) Validate the MOSC applied successfully
+//  8. Validate the properties of the MCN associated with the test node
+//  9. (Non-image-mode update) If a MachineConfig has been provided, apply it, validate
+//     the MCN conditions transition throughout the update, then remove the MC
+//  10. Disable on cluster image mode in the custom MCP & validate the MOSC removal was successful
 //  11. Validate the properties of the MCN associated with the test node
+//  12. Remove the custom MCP
+//  13. Validate the properties of the MCN associated with the test node
 func runImageModeMCNTestCustomMCP(oc *exutil.CLI, machineConfigClient *machineconfigclient.Clientset, mcpAndMoscName, mcName string, isImageUpdate bool) {
 	exutil.By("Select a node to follow in this test")
 	workerNodes, err := GetNodesByRole(oc, "worker")
@@ -163,9 +164,28 @@ func runImageModeMCNTestCustomMCP(oc *exutil.CLI, machineConfigClient *machineco
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource: %s", err)
 	logger.Infof("OK!\n")
 
-	exutil.By("Validating the `infra` MOSC applied successfully")
-	extpriv.ValidateSuccessfulMOSC(mosc, nil)
-	logger.Infof("OK!\n")
+	if isImageUpdate {
+		// Wait for the OCL image build to succeed before tracking MCN transitions.
+		// Creating a MOSC can trigger a config reconciliation that reboots the node
+		// before the image build finishes. Without this wait, validateMCNTransitions
+		// catches that early reboot (base OS) instead of the actual OCL image rollout.
+		exutil.By("Waiting for the OCL image build to succeed")
+		o.Eventually(mosc.GetCurrentMachineOSBuild, "10m", "20s").Should(extpriv.Exist(),
+			"No build was created when OCB was enabled")
+		mosb, buildErr := mosc.GetCurrentMachineOSBuild()
+		o.Expect(buildErr).NotTo(o.HaveOccurred(), "Error getting MOSB from MOSC")
+		o.Eventually(mosb, "35m", "20s").Should(extpriv.HaveConditionField("Succeeded", "status", extpriv.TrueString),
+			"OCL image build did not succeed")
+		logger.Infof("OK!\n")
+
+		exutil.By("Validating the MCN condition transitions during OCL image rollout")
+		validateMCNTransitions(oc, machineConfigClient, nodeToTestName, isImageUpdate)
+		logger.Infof("OK!\n")
+	} else {
+		exutil.By("Validating the `infra` MOSC applied successfully")
+		extpriv.ValidateSuccessfulMOSC(mosc, nil)
+		logger.Infof("OK!\n")
+	}
 
 	exutil.By("Validate the node in `infra` MCP has correct MCN properties")
 	err = ValidateMCNForNode(oc, machineConfigClient, nodeToTestName, mcpAndMoscName)
@@ -231,12 +251,15 @@ func runImageModeMCNTestCustomMCP(oc *exutil.CLI, machineConfigClient *machineco
 // for image mode enabled workflows in a default MCP. The steps for the test are as follows:
 //  1. Select a node in the desired MCP to follow throughout the test
 //  2. Validate the starting properties of the MCN associated with the test node
-//  3. Configure on cluster image mode in the desired MCP & validate the MOSC applied successfully
-//  4. Validate the properties of the MCN associated with the test node
-//  5. If a MachineConfig has been provided, apply it, validate the MCN conditions trasnition
-//     throughout the update, then remove the MC
-//  6. Disable on cluster image mode in the desired MCP & validate the MOSC removal was successful
-//  7. Validate the properties of the MCN associated with the test node
+//  3. Configure on cluster image mode in the desired MCP
+//  4. (Image-mode update) Wait for the OCL image build to succeed, then track
+//     MCN transitions during the image rollout
+//  5. (Non-image-mode update) Validate the MOSC applied successfully
+//  6. Validate the properties of the MCN associated with the test node
+//  7. (Non-image-mode update) If a MachineConfig has been provided, apply it, validate
+//     the MCN conditions transition throughout the update, then remove the MC
+//  8. Disable on cluster image mode in the desired MCP & validate the MOSC removal was successful
+//  9. Validate the properties of the MCN associated with the test node
 func runImageModeMCNTestDefaultMCP(oc *exutil.CLI, machineConfigClient *machineconfigclient.Clientset, mcpAndMoscName, mcName string, isImageUpdate bool) {
 	exutil.By("Select a node to follow in this test")
 	mcpNodes, err := GetNodesByRole(oc, mcpAndMoscName)
@@ -257,17 +280,36 @@ func runImageModeMCNTestDefaultMCP(oc *exutil.CLI, machineConfigClient *machinec
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource: %s", err)
 	logger.Infof("OK!\n")
 
-	exutil.By("Validating the MOSC applied successfully")
-	extpriv.ValidateSuccessfulMOSC(mosc, nil)
-	logger.Infof("OK!\n")
+	if isImageUpdate {
+		// Wait for the OCL image build to succeed before tracking MCN transitions.
+		// Creating a MOSC can trigger a config reconciliation that reboots the node
+		// before the image build finishes. Without this wait, validateMCNTransitions
+		// catches that early reboot (base OS) instead of the actual OCL image rollout.
+		exutil.By("Waiting for the OCL image build to succeed")
+		o.Eventually(mosc.GetCurrentMachineOSBuild, "10m", "20s").Should(extpriv.Exist(),
+			"No build was created when OCB was enabled")
+		mosb, buildErr := mosc.GetCurrentMachineOSBuild()
+		o.Expect(buildErr).NotTo(o.HaveOccurred(), "Error getting MOSB from MOSC")
+		o.Eventually(mosb, "35m", "20s").Should(extpriv.HaveConditionField("Succeeded", "status", extpriv.TrueString),
+			"OCL image build did not succeed")
+		logger.Infof("OK!\n")
+
+		exutil.By("Validating the MCN condition transitions during OCL image rollout")
+		validateMCNTransitions(oc, machineConfigClient, nodeToTestName, isImageUpdate)
+		logger.Infof("OK!\n")
+	} else {
+		exutil.By("Validating the MOSC applied successfully")
+		extpriv.ValidateSuccessfulMOSC(mosc, nil)
+		logger.Infof("OK!\n")
+	}
 
 	exutil.By("Validate the test node has correct MCN properties")
 	err = ValidateMCNForNode(oc, machineConfigClient, nodeToTestName, mcpAndMoscName)
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error validating MCN for node `%s`: %s", nodeToTestName, err)
 	logger.Infof("OK!\n")
 
-	// If an MC has been provided, apply it and validate the MCN conditions transition correctly
-	// throughout the update.
+	// If an MC has been provided, apply it and validate the MCN conditions transition
+	// correctly throughout the update.
 	if mcName != "" {
 		// If a rebootless (non image-based) update is desired, apply the NodeDisruptionPolicy to prevent reboots.
 		if !isImageUpdate {
