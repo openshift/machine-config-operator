@@ -225,7 +225,6 @@ func (b *buildReconciler) AddJob(ctx context.Context, job *batchv1.Job) error {
 			if err == nil {
 				poolName := mosc.Spec.MachineConfigPool.Name
 				RecordBuildJobState(poolName, "active")
-				RecordImagePushStarted(poolName)
 				RecordBuildQueueDuration(poolName, mosb.CreationTimestamp.Time)
 			}
 		}
@@ -492,7 +491,6 @@ func (b *buildReconciler) updateMachineConfigPool(ctx context.Context, oldMCP, c
 	}
 
 	UpdateOCLRolloutCounts(curMCP.Name, curMCP.Status.UpdatedMachineCount, curMCP.Status.MachineCount)
-	UpdateLayeredNodesCount(curMCP.Name, int(curMCP.Status.UpdatedMachineCount))
 
 	return b.syncAll(ctx)
 }
@@ -516,12 +514,12 @@ func (b *buildReconciler) startBuild(ctx context.Context, mosb *mcfgv1.MachineOS
 		return fmt.Errorf("could not delete other non-terminal MachineOSBuilds for MachineOSConfig %s: %w", mosc.Name, err)
 	}
 
-	RecordBuildStarted(poolName)
-
 	// Next, create our new MachineOSBuild.
 	if err := imagebuilder.NewJobImageBuilder(b.kubeclient, b.mcfgclient, mosb, mosc).Start(ctx); err != nil {
 		return fmt.Errorf("imagebuilder could not start build for MachineOSBuild %q: %w", mosb.Name, err)
 	}
+
+	RecordBuildStarted(poolName)
 
 	klog.Infof("Started new build %s for MachineOSBuild", utils.GetBuildJobName(mosb))
 

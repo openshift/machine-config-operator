@@ -71,7 +71,7 @@ spec:
         - alert: OCLBuildFailed
           expr: |
             increase(ocl_build_total{state="failed"}[5m]) > 0
-          for: 10m
+          for: 1m
           labels:
             namespace: openshift-machine-config-operator
             severity: warning
