@@ -110,6 +110,22 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		proxyValue := "http://user:pass@proxy-fake:1111"
 		noProxyValue := "test.52373.no-proxy.com"
 
+		// Disable boot images update and skew enforcement so that the boot image controller
+		// does not try to reconcile machinesets while the proxy is set to a fake value, which
+		// would cause the controller to fail and degrade the cluster operator
+		exutil.By("Disable boot images update and skew enforcement")
+		if IsBootImageUpdateSupported(oc.AsAdmin()) {
+			machineConfiguration := GetMachineConfiguration(oc.AsAdmin())
+			defer machineConfiguration.SetSpec(machineConfiguration.GetSpecOrFail())
+			DisableSkew(machineConfiguration)
+			o.Expect(
+				machineConfiguration.SetNoneManagedBootImagesConfig(MachineSetResource),
+			).To(o.Succeed(), "Error disabling managed boot images")
+		} else {
+			logger.Infof("Boot image update is not supported on this platform, skipping")
+		}
+		logger.Infof("OK!\n")
+
 		exutil.By("Get current proxy configuration")
 		proxy := NewResource(oc.AsAdmin(), "proxy", "cluster")
 		proxyInitialConfig := proxy.GetOrFail(`{.spec}`)
