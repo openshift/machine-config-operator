@@ -167,15 +167,6 @@ func RegisterOCLMetrics() error {
 		return fmt.Errorf("could not register OCL metrics: %w", err)
 	}
 
-	// Initialize GaugeVecs to ensure metrics are accessible even without values
-	oclBuildState.WithLabelValues("init", StateNone).Set(0)
-	oclBuildJobState.WithLabelValues("init", StateNone).Set(0)
-	oclLayeredNodesCount.WithLabelValues("init").Set(0)
-	oclImagePushState.WithLabelValues("init", StateNone).Set(0)
-	oclRolloutUpdatedNodes.WithLabelValues("init").Set(0)
-	oclRolloutTotalNodes.WithLabelValues("init").Set(0)
-	oclActiveBuilds.WithLabelValues("init").Set(0)
-
 	return nil
 }
 

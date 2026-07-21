@@ -544,8 +544,9 @@ func (b *buildReconciler) updateMachineConfigPool(ctx context.Context, oldMCP, c
 		}
 	}
 
-	UpdateOCLRolloutCounts(curMCP.Name, curMCP.Status.UpdatedMachineCount, curMCP.Status.MachineCount)
-	UpdateLayeredNodesCount(curMCP.Name, int(curMCP.Status.UpdatedMachineCount))
+	if _, err := utils.GetMachineOSConfigForMachineConfigPool(curMCP, b.utilListers()); err == nil {
+		UpdateOCLRolloutCounts(curMCP.Name, curMCP.Status.UpdatedMachineCount, curMCP.Status.MachineCount)
+	}
 
 	return b.syncAll(ctx)
 }
@@ -588,6 +589,8 @@ func (b *buildReconciler) startBuild(ctx context.Context, mosb *mcfgv1.MachineOS
 		}
 		return fmt.Errorf("imagebuilder could not start build for MachineOSBuild %q: %w", mosb.Name, err)
 	}
+
+	RecordBuildStarted(poolName)
 
 	klog.Infof("Started new build %s for MachineOSBuild", utils.GetBuildJobName(mosb))
 

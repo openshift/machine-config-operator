@@ -71,7 +71,7 @@ spec:
         - alert: OCLBuildFailed
           expr: |
             increase(ocl_build_total{state="failed"}[5m]) > 0
-          for: 10m
+          for: 1m
           labels:
             namespace: openshift-machine-config-operator
             severity: warning
@@ -90,7 +90,7 @@ spec:
             severity: warning
           annotations:
             summary: "On-Cluster Layering build is degraded for pool {{ $labels.pool }}"
-            description: "OCL build {{ $labels.build_name }} for MachineConfigPool {{ $labels.pool }} is in a persistent failed state. Check the MachineOSBuild {{ $labels.build_name }} status conditions and machine-os-builder pod logs."
+            description: "OCL build for MachineConfigPool {{ $labels.pool }} is in a persistent failed state. Check the MachineOSBuild status conditions and machine-os-builder pod logs."
             runbook_url: https://github.com/openshift/runbooks/blob/master/alerts/machine-config-operator/OCLBuildDegraded.md
     - name: ocl-image-push-failure
       rules:
