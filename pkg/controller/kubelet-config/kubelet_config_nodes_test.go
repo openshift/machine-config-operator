@@ -73,6 +73,7 @@ func TestNodeConfigDefault(t *testing.T) {
 			f.expectGetMachineConfigAction(mcsDeprecated)
 			f.expectGetMachineConfigAction(mcs)
 			f.expectCreateMachineConfigAction(mcs)
+			f.expectGetMachineConfigAction(mcs)
 			f.runNode(getKeyFromConfigNode(nodeConfig, t))
 		})
 	}
