@@ -1347,13 +1347,37 @@ func (b *buildReconciler) reconcilePoolChange(ctx context.Context, mcp *mcfgv1.M
 	old := mcp.DeepCopy()
 	old.Spec.Configuration.Name = mcp.Status.Configuration.Name
 	firstOptIn := mosc.Annotations[constants.CurrentMachineOSBuildAnnotationKey]
-	if firstOptIn == "" {
-		return fmt.Errorf("no current build annotation on MachineOSConfig %q", mosc.Name)
-	}
 
 	needsImageRebuild, err := b.reconcileImageRebuild(old, mcp)
 	if err != nil {
 		return err
+	}
+
+	osImageURLs, _ := ctrlcommon.GetOSImageURLConfig(ctx, b.kubeclient)
+	targetMosb, err := buildrequest.NewMachineOSBuild(buildrequest.MachineOSBuildOpts{
+		MachineOSConfig:   mosc,
+		MachineConfigPool: mcp,
+		OSImageURLConfig:  osImageURLs,
+	})
+
+	if err != nil {
+		return fmt.Errorf("could not generate name for target MOSB: %w", err)
+	}
+
+	// No action needed if the rendered config has not changed AND the annotation
+	// imagestream tag was deleted, in which case we must fall through and rebuild.
+	if oldRendered == newRendered && firstOptIn == targetMosb.Name {
+		existingMosb, getErr := b.machineOSBuildLister.Get(targetMosb.Name)
+		if getErr != nil || !ctrlcommon.NewMachineOSBuildState(existingMosb).IsBuildSuccess() {
+			klog.V(4).Infof("pool %q: Configuration unchanged (%s), no action needed", mcp.Name, oldRendered)
+			return nil
+		}
+		image := string(existingMosb.Spec.RenderedImagePushSpec)
+		if _, err := b.inspectImage(ctx, image, existingMosb); err == nil {
+			klog.V(4).Infof("pool %q: Configuration unchanged (%s), no action needed", mcp.Name, oldRendered)
+			return nil
+		}
+		klog.Infof("pool %q: image %q no longer exists despite unchanged config, will rebuild", mcp.Name, image)
 	}
 
 	// This is our trigger point
@@ -1385,8 +1409,10 @@ func (b *buildReconciler) reconcilePoolChange(ctx context.Context, mcp *mcfgv1.M
 			// 1. Applied MC triggered a MOSB build through `needsImageRebuild`, and it completed, but we are waiting for spec == status in the node update
 			// 2. Current MOSB state is successful, and a deleted MC triggered a MOSB build through `needsImageRebuild`.
 			if mosbState.IsBuildSuccess() {
-				// Next, we should check if the image associated with the MachineOSBuild still exists.
-				info, err := b.inspectImage(ctx, string(existingMosb.Status.DigestedImagePushSpec), existingMosb)
+				// Use the tag URL so that imagestream tag deletion (e.g. `oc tag -d`)
+				// is detected as image-not-found rather than hitting the still-live blob.
+				image := string(existingMosb.Spec.RenderedImagePushSpec)
+				info, err := b.inspectImage(ctx, image, existingMosb)
 				// If the image exists, reuse it.
 				if info != nil && err == nil {
 					klog.Infof("pool %q: Found successful build for target whose image exists. Reusing image.", mcp.Name)
@@ -1402,7 +1428,7 @@ func (b *buildReconciler) reconcilePoolChange(ctx context.Context, mcp *mcfgv1.M
 				// If we could not inspect the image, we might not have permissions to
 				// do so, or it could be another issue. Either way, we should return an
 				// error here.
-				return fmt.Errorf("could not inspect image %s for MachineOSBuild %s for MachineConfigPool %s: %w", string(existingMosb.Status.DigestedImagePushSpec), existingMosb.Name, mcp.Name, err)
+				return fmt.Errorf("could not inspect image %s for MachineOSBuild %s for MachineConfigPool %s: %w", image, existingMosb.Name, mcp.Name, err)
 			}
 		} else if !k8serrors.IsNotFound(err) {
 			// An actual error occurred (not just "not found"). Return the error.
