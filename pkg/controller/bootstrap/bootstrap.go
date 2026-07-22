@@ -502,21 +502,7 @@ func (b *Bootstrap) fetchOSImageStream(
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
-	sysCtxFactory := func() (*imageutils.SysContext, error) {
-		sysCtxBuilder := imageutils.NewSysContextBuilder().
-			WithControllerConfig(cconfig).
-			WithSecret(pullSecret)
-
-		registriesConfig, err := imageutils.GenerateRegistriesConfig(imgCfg, icspRules, idmsRules, itmsRules)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate registries config for OSImageStreams fetching: %w", err)
-		}
-		if registriesConfig != nil {
-			sysCtxBuilder.WithRegistriesConfig(registriesConfig)
-		}
-
-		return sysCtxBuilder.Build()
-	}
+	sysCtxFactory := buildSysContextFactory(pullSecret, cconfig, imgCfg, icspRules, idmsRules, itmsRules)
 
 	factory := b.getImageStreamFactory()
 	osImageStream, err := factory.Create(ctx, sysCtxFactory, osimagestream.CreateOptions{
@@ -540,6 +526,31 @@ func (b *Bootstrap) getImageStreamFactory() osimagestream.ImageStreamFactory {
 	}
 
 	return osimagestream.NewDefaultStreamSourceFactory(&osimagestream.DefaultImagesInspectorFactory{})
+}
+
+func buildSysContextFactory(
+	pullSecret *corev1.Secret,
+	cconfig *mcfgv1.ControllerConfig,
+	imgCfg *apicfgv1.Image,
+	icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy,
+	idmsRules []*apicfgv1.ImageDigestMirrorSet,
+	itmsRules []*apicfgv1.ImageTagMirrorSet,
+) imageutils.SysContextFactory {
+	return func() (*imageutils.SysContext, error) {
+		builder := imageutils.NewSysContextBuilder().
+			WithControllerConfig(cconfig).
+			WithSecret(pullSecret)
+
+		registriesConfig, err := imageutils.GenerateRegistriesConfig(imgCfg, icspRules, idmsRules, itmsRules)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate registries config: %w", err)
+		}
+		if registriesConfig != nil {
+			builder.WithRegistriesConfig(registriesConfig)
+		}
+
+		return builder.Build()
+	}
 }
 
 func getValidPullSecretFromBytes(sData []byte) (*corev1.Secret, error) {

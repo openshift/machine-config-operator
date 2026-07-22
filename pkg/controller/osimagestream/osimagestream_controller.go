@@ -9,9 +9,7 @@ import (
 	"sync"
 	"time"
 
-	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	configinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
@@ -19,14 +17,12 @@ import (
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	operatorinformersv1alpha1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1alpha1"
-	operatorlistersv1alpha1 "github.com/openshift/client-go/operator/listers/operator/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/imageutils"
 	"github.com/openshift/machine-config-operator/pkg/osimagestream"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -62,24 +58,17 @@ type Controller struct {
 	clusterVersionLister       configlistersv1.ClusterVersionLister
 	clusterVersionListerSynced cache.InformerSynced
 
-	secretLister       corelistersv1.SecretLister
 	secretListerSynced cache.InformerSynced
 
 	mcoCmLister       corelistersv1.ConfigMapLister
 	mcoCmListerSynced cache.InformerSynced
 
-	icspLister       operatorlistersv1alpha1.ImageContentSourcePolicyLister
 	icspListerSynced cache.InformerSynced
-
-	idmsLister       configlistersv1.ImageDigestMirrorSetLister
 	idmsListerSynced cache.InformerSynced
-
-	itmsLister       configlistersv1.ImageTagMirrorSetLister
 	itmsListerSynced cache.InformerSynced
+	imgListerSynced  cache.InformerSynced
 
-	imgLister       configlistersv1.ImageLister
-	imgListerSynced cache.InformerSynced
-
+	sysCtxFactory    imageutils.SysContextFactory
 	inspectorFactory osimagestream.ImagesInspectorFactory
 
 	queue workqueue.TypedRateLimitingInterface[string]
@@ -136,23 +125,20 @@ func New(
 	ctrl.clusterVersionLister = clusterVersionInformer.Lister()
 	ctrl.clusterVersionListerSynced = clusterVersionInformer.Informer().HasSynced
 
-	ctrl.secretLister = secretInformer.Lister()
 	ctrl.secretListerSynced = secretInformer.Informer().HasSynced
 
 	ctrl.mcoCmLister = cmInformer.Lister()
 	ctrl.mcoCmListerSynced = cmInformer.Informer().HasSynced
 
-	ctrl.icspLister = icspInformer.Lister()
 	ctrl.icspListerSynced = icspInformer.Informer().HasSynced
-
-	ctrl.idmsLister = idmsInformer.Lister()
 	ctrl.idmsListerSynced = idmsInformer.Informer().HasSynced
-
-	ctrl.itmsLister = itmsInformer.Lister()
 	ctrl.itmsListerSynced = itmsInformer.Informer().HasSynced
-
-	ctrl.imgLister = imgInformer.Lister()
 	ctrl.imgListerSynced = imgInformer.Informer().HasSynced
+
+	ctrl.sysCtxFactory = ctrlcommon.NewSysContextFactory(
+		ccInformer.Lister(), secretInformer.Lister(), imgInformer.Lister(),
+		icspInformer.Lister(), idmsInformer.Lister(), itmsInformer.Lister(),
+	)
 
 	return ctrl
 }
@@ -370,11 +356,6 @@ func (ctrl *Controller) getExistingOSImageStream() (*mcfgv1.OSImageStream, error
 func (ctrl *Controller) buildOSImageStream(ctx context.Context, existing *mcfgv1.OSImageStream) error {
 	klog.Info("Starting building of the OSImageStream instance")
 
-	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
-	if err != nil {
-		return fmt.Errorf("getting ControllerConfig for OSImageStream build: %w", err)
-	}
-
 	clusterVersion, err := osimagestream.GetClusterVersion(ctrl.clusterVersionLister)
 	if err != nil {
 		return fmt.Errorf("getting cluster version for OSImageStream inspection: %w", err)
@@ -389,26 +370,13 @@ func (ctrl *Controller) buildOSImageStream(ctx context.Context, existing *mcfgv1
 		klog.Warningf("Unable to get install version for OSImageStream build: %s", err)
 	}
 
-	clusterPullSecret, err := ctrl.secretLister.Secrets(ctrlcommon.OpenshiftConfigNamespace).Get("pull-secret")
-	if err != nil {
-		return fmt.Errorf("could not get the cluster PullSecret for OSImageStream sync: %w", err)
-	}
-
-	sysCtxFactory := func() (*imageutils.SysContext, error) {
-		builder, err := ctrl.getSysContextBuilder(clusterPullSecret, cc)
-		if err != nil {
-			return nil, fmt.Errorf("could not build SysContext for OSImageStream build: %w", err)
-		}
-		return builder.Build()
-	}
-
 	buildCtx, buildCancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer buildCancel()
 
 	factory := osimagestream.NewDefaultStreamSourceFactory(ctrl.inspectorFactory)
 	osImageStream, err := factory.Create(
 		buildCtx,
-		sysCtxFactory,
+		ctrl.sysCtxFactory,
 		osimagestream.CreateOptions{
 			ReleaseImage:          image,
 			ConfigMapLister:       ctrl.mcoCmLister,
@@ -498,50 +466,6 @@ func osImageStreamRequiresRebuild(osImageStream *mcfgv1.OSImageStream, releaseIm
 	return !ok || storedVersion != version.Hash
 }
 
-func (ctrl *Controller) getSysContextBuilder(clusterPullSecret *corev1.Secret, cc *mcfgv1.ControllerConfig) (*imageutils.SysContextBuilder, error) {
-	sysCtxBuilder := imageutils.NewSysContextBuilder().
-		WithSecret(clusterPullSecret).
-		WithControllerConfig(cc)
-
-	imageConfig, err := ctrl.imgLister.Get("cluster")
-	if err != nil && !apierrors.IsNotFound(err) {
-		return nil, fmt.Errorf("could not get image configuration: %w", err)
-	}
-
-	icspRules, err := ctrl.icspLister.List(labels.Everything())
-	if err != nil {
-		if !apierrors.IsNotFound(err) {
-			return nil, fmt.Errorf("could not get ICSP rules: %w", err)
-		}
-		icspRules = []*apioperatorsv1alpha1.ImageContentSourcePolicy{}
-	}
-
-	idmsRules, err := ctrl.idmsLister.List(labels.Everything())
-	if err != nil {
-		if !apierrors.IsNotFound(err) {
-			return nil, fmt.Errorf("could not get IDMS rules: %w", err)
-		}
-		idmsRules = []*configv1.ImageDigestMirrorSet{}
-	}
-
-	itmsRules, err := ctrl.itmsLister.List(labels.Everything())
-	if err != nil {
-		if !apierrors.IsNotFound(err) {
-			return nil, fmt.Errorf("could not get ITMS rules: %w", err)
-		}
-		itmsRules = []*configv1.ImageTagMirrorSet{}
-	}
-
-	if imageConfig != nil || len(icspRules) != 0 || len(idmsRules) != 0 || len(itmsRules) != 0 {
-		registriesConf, err := imageutils.GenerateRegistriesConfig(imageConfig, icspRules, idmsRules, itmsRules)
-		if err != nil {
-			return nil, fmt.Errorf("could not build registries configuration: %w", err)
-		}
-		sysCtxBuilder.WithRegistriesConfig(registriesConf)
-	}
-
-	return sysCtxBuilder, nil
-}
 
 // Retain implements CacheEvicter — it keeps cached digests referenced by the
 // OSImage and OSExtensionsImage of each available stream in the OSImageStream.
