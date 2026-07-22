@@ -1,0 +1,14 @@
+prompt: How do I use KubeletConfig to customize kubelet settings like maxPods and
+  podPidsLimit for my worker nodes?
+expected_api: KubeletConfig
+expected_example_type: yaml
+expected_fields:
+- apiVersion
+- kind
+- metadata
+- spec
+- kubeletConfig
+- machineConfigPoolSelector
+expected_documentation:
+- ai-docs/domain/crds.md
+- docs/KubeletConfigDesign.md
