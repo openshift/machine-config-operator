@@ -4,12 +4,13 @@ import (
 	"archive/tar"
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"strings"
 
 	"github.com/containers/common/pkg/retry"
-	"github.com/containers/image/v5/types"
 	"github.com/openshift/machine-config-operator/pkg/imageutils"
+	"k8s.io/klog/v2"
 )
 
 // isNetworkErrorRetryable checks if an error is a network-related error that should be retried.
@@ -59,15 +60,16 @@ type ImagesInspector interface {
 }
 
 // ImagesInspectorImpl is the default implementation of ImagesInspector.
+// It lazily creates a SysContext on each operation via the provided factory.
 type ImagesInspectorImpl struct {
 	bulkInspector *imageutils.BulkInspector
-	sysCtx        *types.SystemContext
+	sysCtxFactory imageutils.SysContextFactory
 }
 
-// NewImagesInspector creates a new ImagesInspector with the given system context.
-func NewImagesInspector(sysCtx *types.SystemContext) *ImagesInspectorImpl {
+// NewImagesInspector creates a new ImagesInspector with the given SysContext factory.
+func NewImagesInspector(sysCtxFactory imageutils.SysContextFactory) *ImagesInspectorImpl {
 	return &ImagesInspectorImpl{
-		sysCtx: sysCtx,
+		sysCtxFactory: sysCtxFactory,
 		bulkInspector: imageutils.NewBulkInspector(&imageutils.BulkInspectorOptions{
 			RetryOpts: newImageInspectionRetryOptions(),
 			Count:     5,
@@ -78,27 +80,44 @@ func NewImagesInspector(sysCtx *types.SystemContext) *ImagesInspectorImpl {
 
 // Inspect retrieves metadata for the specified container images.
 func (i *ImagesInspectorImpl) Inspect(ctx context.Context, image ...string) ([]imageutils.BulkInspectResult, error) {
-	return i.bulkInspector.Inspect(ctx, i.sysCtx, image...)
+	sysCtx, err := i.sysCtxFactory()
+	if err != nil {
+		return nil, fmt.Errorf("creating system context for image inspection: %w", err)
+	}
+	defer func() {
+		if cleanupErr := sysCtx.Cleanup(); cleanupErr != nil {
+			klog.Warningf("could not clean up system context: %v", cleanupErr)
+		}
+	}()
+	return i.bulkInspector.Inspect(ctx, sysCtx.SysContext, image...)
 }
 
 // FetchImageFile extracts and returns the contents of a file from the container image.
 func (i *ImagesInspectorImpl) FetchImageFile(ctx context.Context, image, path string) ([]byte, error) {
+	sysCtx, err := i.sysCtxFactory()
+	if err != nil {
+		return nil, fmt.Errorf("creating system context for image file fetch: %w", err)
+	}
+	defer func() {
+		if cleanupErr := sysCtx.Cleanup(); cleanupErr != nil {
+			klog.Warningf("could not clean up system context: %v", cleanupErr)
+		}
+	}()
 	targetHeaderPath := strings.TrimLeft(path, "./")
-	return imageutils.ReadImageFileContent(ctx, i.sysCtx, image, func(header *tar.Header) bool {
+	return imageutils.ReadImageFileContent(ctx, sysCtx.SysContext, image, func(header *tar.Header) bool {
 		return targetHeaderPath == strings.TrimLeft(header.Name, "./")
 	}, newImageInspectionRetryOptions())
 }
 
-// ImagesInspectorFactory creates ImagesInspector instances for different system contexts.
+// ImagesInspectorFactory creates ImagesInspector instances.
 type ImagesInspectorFactory interface {
-	// ForContext creates an ImagesInspector for the given system context.
-	ForContext(sysCtx *types.SystemContext) ImagesInspector
+	ForContext(sysCtxFactory imageutils.SysContextFactory) ImagesInspector
 }
 
 // DefaultImagesInspectorFactory is the production implementation of ImagesInspectorFactory.
 type DefaultImagesInspectorFactory struct{}
 
-// ForContext creates an ImagesInspector for the given system context.
-func (f *DefaultImagesInspectorFactory) ForContext(sysCtx *types.SystemContext) ImagesInspector {
-	return NewImagesInspector(sysCtx)
+// ForContext creates an ImagesInspector with the given SysContext factory.
+func (f *DefaultImagesInspectorFactory) ForContext(sysCtxFactory imageutils.SysContextFactory) ImagesInspector {
+	return NewImagesInspector(sysCtxFactory)
 }

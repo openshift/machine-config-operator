@@ -3,20 +3,18 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
-	"sigs.k8s.io/yaml"
-
 	imagev1 "github.com/openshift/api/image/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/yaml"
 
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/openshift/machine-config-operator/pkg/imageutils"
 	"github.com/openshift/machine-config-operator/pkg/osimagestream"
@@ -29,7 +27,7 @@ const (
 )
 
 // Retrieves the OSImageStream for the given release image or ImageStream path.
-func getOSImageStreamFromReleaseImageOrImageStream(opts getOpts) (_ *mcfgv1.OSImageStream, errOut error) {
+func getOSImageStreamFromReleaseImageOrImageStream(opts getOpts) (*mcfgv1.OSImageStream, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*5)
 	defer cancel()
 
@@ -42,25 +40,16 @@ func getOSImageStreamFromReleaseImageOrImageStream(opts getOpts) (_ *mcfgv1.OSIm
 		klog.V(defaultLogVerbosity).Infof("Retrieved OSImageStream in %s", time.Since(start))
 	}()
 
-	sysCtx, err := imageutils.NewSysContextFromFilesystem(imageutils.SysContextPaths{
-		AdditionalTrustBundles: opts.trustBundlePaths,
-		CertDir:                opts.certDirPath,
-		PerHostCertDir:         opts.perHostCertsPath,
-		Proxy:                  getProxyConfig(),
-		PullSecret:             opts.authfilePath,
-		RegistryConfig:         opts.registryConfigPath,
-	})
-
-	if err != nil {
-		return nil, fmt.Errorf("could not prepare system context: %w", err)
+	sysCtxFactory := func() (*imageutils.SysContext, error) {
+		return imageutils.NewSysContextFromFilesystem(imageutils.SysContextPaths{
+			AdditionalTrustBundles: opts.trustBundlePaths,
+			CertDir:                opts.certDirPath,
+			PerHostCertDir:         opts.perHostCertsPath,
+			Proxy:                  getProxyConfig(),
+			PullSecret:             opts.authfilePath,
+			RegistryConfig:         opts.registryConfigPath,
+		})
 	}
-
-	defer func() {
-		if err := sysCtx.Cleanup(); err != nil {
-			klog.Warningf("unable to clean resources after OSImageStream inspection: %s", err)
-			errOut = errors.Join(errOut, err)
-		}
-	}()
 
 	var imageStream *imagev1.ImageStream
 	if opts.imageStreamPath != "" {
@@ -79,7 +68,7 @@ func getOSImageStreamFromReleaseImageOrImageStream(opts getOpts) (_ *mcfgv1.OSIm
 		ReleaseImageStream: imageStream,
 	}
 
-	osImageStream, err := factory.Create(ctx, sysCtx.SysContext, createOpts)
+	osImageStream, err := factory.Create(ctx, sysCtxFactory, createOpts)
 	if err != nil {
 		return nil, err
 	}

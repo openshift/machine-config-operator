@@ -26,10 +26,14 @@ spec:
         - "--payload-version={{.ReleaseVersion}}"
         - "--tls-cipher-suites={{join .TLSCipherSuites ","}}"
         - "--tls-min-version={{.TLSMinVersion}}"
+        - "--streams-cache=/var/cache/mcc"
         resources:
           requests:
             cpu: 20m
             memory: 50Mi
+        volumeMounts:
+        - mountPath: /var/cache/mcc
+          name: image-inspection-cache
         terminationMessagePolicy: FallbackToLogsOnError
         {{if .ControllerConfig.Proxy}}
         env:
@@ -76,6 +80,9 @@ spec:
         node-role.kubernetes.io/master: ""
       priorityClassName: "system-cluster-critical"
       volumes:
+        - name: image-inspection-cache
+          emptyDir:
+            sizeLimit: 128Mi
         - name: proxy-tls
           secret:
             secretName: mcc-proxy-tls

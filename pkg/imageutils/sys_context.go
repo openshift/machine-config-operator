@@ -22,6 +22,9 @@ type SysContext struct {
 	temporalDir string
 }
 
+// SysContextFactory lazily creates a SysContext on demand.
+type SysContextFactory func() (*SysContext, error)
+
 // SysContextBuilder provides a fluent API for constructing SysContext instances.
 type SysContextBuilder struct {
 	secret           *corev1.Secret

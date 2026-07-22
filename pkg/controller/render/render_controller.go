@@ -20,6 +20,7 @@ import (
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/imageutils"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/osimagestream"
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -29,6 +30,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -1014,4 +1016,34 @@ func getMachineConfigRefs(mcfgs []*mcfgv1.MachineConfig) []corev1.ObjectReferenc
 	}
 
 	return refs
+}
+
+// Retain implements CacheEvicter — it keeps cached digests referenced by the
+// OSImageURL and BaseOSExtensionsContainerImage of the rendered MachineConfig
+// applied to each pool.
+func (ctrl *Controller) Retain(digests []string) []string {
+	pools, err := ctrl.mcpLister.List(labels.Everything())
+	if err != nil {
+		return digests
+	}
+
+	active := sets.New[string]()
+	for _, pool := range pools {
+		name := pool.Spec.Configuration.Name
+		if name == "" {
+			continue
+		}
+		mc, err := ctrl.mcLister.Get(name)
+		if err != nil {
+			return digests
+		}
+		if d := imageutils.DigestFromPullspec(mc.Spec.OSImageURL); d != "" {
+			active.Insert(d)
+		}
+		if d := imageutils.DigestFromPullspec(mc.Spec.BaseOSExtensionsContainerImage); d != "" {
+			active.Insert(d)
+		}
+	}
+
+	return sets.New(digests...).Intersection(active).UnsortedList()
 }

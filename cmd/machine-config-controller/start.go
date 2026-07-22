@@ -5,6 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path"
+	"time"
 
 	features "github.com/openshift/api/features"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
@@ -16,13 +18,14 @@ import (
 	containerruntimeconfig "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
 	"github.com/openshift/machine-config-operator/pkg/controller/drain"
 	"github.com/openshift/machine-config-operator/pkg/controller/internalreleaseimage"
-	osistreamctrl "github.com/openshift/machine-config-operator/pkg/controller/osimagestream"
-	"github.com/openshift/machine-config-operator/pkg/osimagestream"
 	kubeletconfig "github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
 	"github.com/openshift/machine-config-operator/pkg/controller/node"
+	osistreamctrl "github.com/openshift/machine-config-operator/pkg/controller/osimagestream"
 	"github.com/openshift/machine-config-operator/pkg/controller/pinnedimageset"
 	"github.com/openshift/machine-config-operator/pkg/controller/render"
 	"github.com/openshift/machine-config-operator/pkg/controller/template"
+	"github.com/openshift/machine-config-operator/pkg/imageutils"
+	"github.com/openshift/machine-config-operator/pkg/osimagestream"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -46,6 +49,7 @@ var (
 		resourceLockNamespace    string
 		tlsCipherSuites          []string
 		tlsMinVersion            string
+		streamsCache             string
 	}
 )
 
@@ -56,6 +60,7 @@ func init() {
 	startCmd.PersistentFlags().StringVar(&startOpts.promMetricsListenAddress, "metrics-listen-address", "127.0.0.1:8797", "Listen address for prometheus metrics listener")
 	startCmd.PersistentFlags().StringSliceVar(&startOpts.tlsCipherSuites, "tls-cipher-suites", nil, "Comma-separated list of cipher suites for the metrics server")
 	startCmd.PersistentFlags().StringVar(&startOpts.tlsMinVersion, "tls-min-version", "VersionTLS12", "Minimum TLS version supported for the metrics server")
+	startCmd.PersistentFlags().StringVar(&startOpts.streamsCache, "streams-cache", "/var/cache/mcc", "Directory to use as cache for streams discovery")
 }
 
 func runStartCmd(_ *cobra.Command, _ []string) {
@@ -90,11 +95,26 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			return
 		}
 
+		var inspectionCache *imageutils.FileInspectionCache
+		if startOpts.streamsCache != "" {
+			inspectionCache = imageutils.NewFileInspectionCache(path.Join(startOpts.streamsCache, "image-inspection.json"), 48*time.Hour)
+		}
+
 		// OSImageStream must be the first controller to run: the blocking
 		// EnsureOSImageStream call guarantees the CR exists before any other
 		// controller starts, since render, node, and template depend on it
 		// for OS image URLs.
 		if osimagestream.IsFeatureEnabled(ctrlctx.FeatureGatesHandler) {
+			var inspectorFactory osimagestream.ImagesInspectorFactory
+			if inspectionCache != nil {
+				inspectorFactory = osimagestream.NewCachedImagesInspectorFactory(
+					&osimagestream.DefaultImagesInspectorFactory{},
+					inspectionCache,
+				)
+			} else {
+				inspectorFactory = &osimagestream.DefaultImagesInspectorFactory{}
+			}
+
 			osImageStreamCtrl := osistreamctrl.New(
 				ctrlctx.InformerFactory.Machineconfiguration().V1().OSImageStreams(),
 				ctrlctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
@@ -108,6 +128,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 				ctrlctx.ClientBuilder.KubeClientOrDie("osimagestream-controller"),
 				ctrlctx.ClientBuilder.MachineConfigClientOrDie("osimagestream-controller"),
 				ctrlctx.FeatureGatesHandler,
+				inspectorFactory,
 			)
 
 			ctrlctx.InformerFactory.Start(ctrlctx.Stop)
@@ -121,11 +142,15 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			if err := osImageStreamCtrl.EnsureOSImageStream(ctx); err != nil {
 				klog.Fatalf("Failed to ensure OSImageStream: %v", err)
 			}
+
+			if inspectionCache != nil {
+				inspectionCache.RegisterEvicter(osImageStreamCtrl)
+			}
 		}
 
 		go ctrlcommon.StartMetricsListener(startOpts.promMetricsListenAddress, ctrlctx.Stop, ctrlcommon.RegisterMCCMetrics, startOpts.tlsMinVersion, startOpts.tlsCipherSuites)
 
-		controllers := createControllers(ctrlctx)
+		controllers := createControllers(ctrlctx, inspectionCache)
 		draincontroller := drain.New(
 			drain.DefaultConfig(),
 			ctrlctx.KubeInformerFactory.Core().V1().Nodes(),
@@ -220,6 +245,10 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		go draincontroller.Run(5, ctrlctx.Stop)
 		go certrotationcontroller.Run(ctx, 1)
 
+		if inspectionCache != nil {
+			inspectionCache.StartEviction(ctx, 24*time.Hour, 10*time.Minute)
+		}
+
 		// wait here in this function until the context gets cancelled (which tells us when we are being shut down)
 		<-ctx.Done()
 	}
@@ -243,7 +272,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	panic("unreachable")
 }
 
-func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controller {
+func createControllers(ctx *ctrlcommon.ControllerContext, inspectionCache *imageutils.FileInspectionCache) []ctrlcommon.Controller {
 	// Only watch IRI informers when the feature gate is enabled. The
 	// InternalReleaseImages CRD is not installed on clusters where the gate is
 	// off, so the informer list call would fail and WaitForCacheSync in the
@@ -255,8 +284,25 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 		iriInformer = ctx.InformerFactory.Machineconfiguration().V1().InternalReleaseImages()
 	}
 
+	renderCtrl := render.New(
+		ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
+		ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
+		ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
+		ctx.InformerFactory.Machineconfiguration().V1().ContainerRuntimeConfigs(),
+		ctx.InformerFactory.Machineconfiguration().V1().KubeletConfigs(),
+		ctx.OperatorInformerFactory.Operator().V1().MachineConfigurations(),
+		ctx.InformerFactory.Machineconfiguration().V1().OSImageStreams(),
+		ctx.ClientBuilder.KubeClientOrDie("render-controller"),
+		ctx.ClientBuilder.MachineConfigClientOrDie("render-controller"),
+		ctx.FeatureGatesHandler,
+	)
+	if inspectionCache != nil {
+		inspectionCache.RegisterEvicter(renderCtrl)
+	}
+
 	var controllers []ctrlcommon.Controller
 	controllers = append(controllers,
+		renderCtrl,
 		// Our primary MCs come from here
 		template.New(
 			rootOpts.templates,
@@ -299,21 +345,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.ClientBuilder.ConfigClientOrDie("container-runtime-config-controller"),
 			ctx.FeatureGatesHandler,
 		),
-		// The renderer creates "rendered" MCs from the MC fragments generated by
-		// the above sub-controllers, which are then consumed by the node controller
-		render.New(
-			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
-			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
-			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
-			ctx.InformerFactory.Machineconfiguration().V1().ContainerRuntimeConfigs(),
-			ctx.InformerFactory.Machineconfiguration().V1().KubeletConfigs(),
-			ctx.OperatorInformerFactory.Operator().V1().MachineConfigurations(),
-			ctx.InformerFactory.Machineconfiguration().V1().OSImageStreams(),
-			ctx.ClientBuilder.KubeClientOrDie("render-controller"),
-			ctx.ClientBuilder.MachineConfigClientOrDie("render-controller"),
-			ctx.FeatureGatesHandler,
-		),
-		// The node controller consumes data written by the above
+		// The node controller consumes data written by the render controller
 		node.New(
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),

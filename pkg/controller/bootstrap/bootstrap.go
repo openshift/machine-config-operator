@@ -502,30 +502,24 @@ func (b *Bootstrap) fetchOSImageStream(
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
-	sysCtxBuilder := imageutils.NewSysContextBuilder().
-		WithControllerConfig(cconfig).
-		WithSecret(pullSecret)
+	sysCtxFactory := func() (*imageutils.SysContext, error) {
+		sysCtxBuilder := imageutils.NewSysContextBuilder().
+			WithControllerConfig(cconfig).
+			WithSecret(pullSecret)
 
-	registriesConfig, err := imageutils.GenerateRegistriesConfig(imgCfg, icspRules, idmsRules, itmsRules)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate registries config for OSImageStreams fetching: %w", err)
-	}
-	if registriesConfig != nil {
-		sysCtxBuilder.WithRegistriesConfig(registriesConfig)
-	}
-
-	sysCtx, err := sysCtxBuilder.Build()
-	if err != nil {
-		return nil, fmt.Errorf("could not prepare for OSImageStream inspection: %w", err)
-	}
-	defer func() {
-		if err := sysCtx.Cleanup(); err != nil {
-			klog.Warningf("Unable to clean resources after OSImageStream inspection: %s", err)
+		registriesConfig, err := imageutils.GenerateRegistriesConfig(imgCfg, icspRules, idmsRules, itmsRules)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate registries config for OSImageStreams fetching: %w", err)
 		}
-	}()
+		if registriesConfig != nil {
+			sysCtxBuilder.WithRegistriesConfig(registriesConfig)
+		}
+
+		return sysCtxBuilder.Build()
+	}
 
 	factory := b.getImageStreamFactory()
-	osImageStream, err := factory.Create(ctx, sysCtx.SysContext, osimagestream.CreateOptions{
+	osImageStream, err := factory.Create(ctx, sysCtxFactory, osimagestream.CreateOptions{
 		ExistingOSImageStream: existingOSImageStream,
 		ReleaseImageStream:    imageStream,
 		CliImages: &osimagestream.OSImageTuple{

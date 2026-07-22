@@ -28,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -79,6 +80,8 @@ type Controller struct {
 	imgLister       configlistersv1.ImageLister
 	imgListerSynced cache.InformerSynced
 
+	inspectorFactory osimagestream.ImagesInspectorFactory
+
 	queue workqueue.TypedRateLimitingInterface[string]
 
 	initialSyncDone chan error
@@ -98,17 +101,19 @@ func New(
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 	fgHandler ctrlcommon.FeatureGatesHandler,
+	inspectorFactory osimagestream.ImagesInspectorFactory,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
 	eventBroadcaster.StartRecordingToSink(&corev1client.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	ctrl := &Controller{
-		kubeClient:      kubeClient,
-		mcfgClient:      mcfgClient,
-		eventRecorder:   ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-osimagestreamcontroller"})),
-		fgHandler:       fgHandler,
-		initialSyncDone: make(chan error, 1),
+		kubeClient:       kubeClient,
+		mcfgClient:       mcfgClient,
+		eventRecorder:    ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-osimagestreamcontroller"})),
+		fgHandler:        fgHandler,
+		inspectorFactory: inspectorFactory,
+		initialSyncDone:  make(chan error, 1),
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
 			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigcontroller-osimagestreamcontroller"}),
@@ -389,28 +394,21 @@ func (ctrl *Controller) buildOSImageStream(ctx context.Context, existing *mcfgv1
 		return fmt.Errorf("could not get the cluster PullSecret for OSImageStream sync: %w", err)
 	}
 
-	sysCtxBuilder, err := ctrl.getSysContextBuilder(clusterPullSecret, cc)
-	if err != nil {
-		return fmt.Errorf("could not build SysContext for OSImageStream build: %w", err)
-	}
-
-	sysCtx, err := sysCtxBuilder.Build()
-	if err != nil {
-		return fmt.Errorf("could not prepare for OSImageStream inspection: %w", err)
-	}
-	defer func() {
-		if err := sysCtx.Cleanup(); err != nil {
-			klog.Warningf("Unable to clean resources after OSImageStream inspection: %s", err)
+	sysCtxFactory := func() (*imageutils.SysContext, error) {
+		builder, err := ctrl.getSysContextBuilder(clusterPullSecret, cc)
+		if err != nil {
+			return nil, fmt.Errorf("could not build SysContext for OSImageStream build: %w", err)
 		}
-	}()
+		return builder.Build()
+	}
 
 	buildCtx, buildCancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer buildCancel()
 
-	factory := osimagestream.NewDefaultStreamSourceFactory(&osimagestream.DefaultImagesInspectorFactory{})
+	factory := osimagestream.NewDefaultStreamSourceFactory(ctrl.inspectorFactory)
 	osImageStream, err := factory.Create(
 		buildCtx,
-		sysCtx.SysContext,
+		sysCtxFactory,
 		osimagestream.CreateOptions{
 			ReleaseImage:          image,
 			ConfigMapLister:       ctrl.mcoCmLister,
@@ -543,4 +541,25 @@ func (ctrl *Controller) getSysContextBuilder(clusterPullSecret *corev1.Secret, c
 	}
 
 	return sysCtxBuilder, nil
+}
+
+// Retain implements CacheEvicter — it keeps cached digests referenced by the
+// OSImage and OSExtensionsImage of each available stream in the OSImageStream.
+func (ctrl *Controller) Retain(digests []string) []string {
+	osis, err := ctrl.getExistingOSImageStream()
+	if err != nil || osis == nil {
+		return digests
+	}
+
+	active := sets.New[string]()
+	for _, s := range osis.Status.AvailableStreams {
+		if d := imageutils.DigestFromPullspec(string(s.OSImage)); d != "" {
+			active.Insert(d)
+		}
+		if d := imageutils.DigestFromPullspec(string(s.OSExtensionsImage)); d != "" {
+			active.Insert(d)
+		}
+	}
+
+	return sets.New(digests...).Intersection(active).UnsortedList()
 }

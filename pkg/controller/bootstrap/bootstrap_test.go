@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/containers/image/v5/types"
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,6 +18,7 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/imageutils"
 	"github.com/openshift/machine-config-operator/pkg/osimagestream"
 )
 
@@ -170,7 +170,7 @@ type fakeImageStreamFactory struct {
 	createCalled bool
 }
 
-func (f *fakeImageStreamFactory) Create(ctx context.Context, sysCtx *types.SystemContext, createOptions osimagestream.CreateOptions) (*mcfgv1.OSImageStream, error) {
+func (f *fakeImageStreamFactory) Create(_ context.Context, _ imageutils.SysContextFactory, _ osimagestream.CreateOptions) (*mcfgv1.OSImageStream, error) {
 	f.createCalled = true
 	return f.stream, nil
 }
