@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kube-rbac-proxy-crio
+  namespace: {{.TargetNamespace}}
+  annotations:
+    include.release.openshift.io/ibm-cloud-managed: "true"
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+data:
+  config-file.yaml: |+
+    authorization:
+      static:
+        - resourceRequest: false
+          path: /metrics
+          verb: get
+          user:
+            name: system:serviceaccount:openshift-monitoring:prometheus-k8s
