@@ -104,6 +104,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		// EnsureOSImageStream call guarantees the CR exists before any other
 		// controller starts, since render, node, and template depend on it
 		// for OS image URLs.
+		var cacheWarmer *pinnedimageset.CacheWarmer
 		if osimagestream.IsFeatureEnabled(ctrlctx.FeatureGatesHandler) {
 			var inspectorFactory osimagestream.ImagesInspectorFactory
 			if inspectionCache != nil {
@@ -145,6 +146,20 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 
 			if inspectionCache != nil {
 				inspectionCache.RegisterEvicter(osImageStreamCtrl)
+
+				cacheWarmer = pinnedimageset.NewCacheWarmer(
+					ctrlctx.InformerFactory.Machineconfiguration().V1().PinnedImageSets().Lister(),
+					inspectorFactory,
+					ctrlcommon.NewSysContextFactory(
+						ctrlctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs().Lister(),
+						ctrlctx.OpenShiftConfigKubeNamespacedInformerFactory.Core().V1().Secrets().Lister(),
+						ctrlctx.ConfigInformerFactory.Config().V1().Images().Lister(),
+						ctrlctx.OperatorInformerFactory.Operator().V1alpha1().ImageContentSourcePolicies().Lister(),
+						ctrlctx.ConfigInformerFactory.Config().V1().ImageDigestMirrorSets().Lister(),
+						ctrlctx.ConfigInformerFactory.Config().V1().ImageTagMirrorSets().Lister(),
+					),
+				)
+				inspectionCache.RegisterEvicter(cacheWarmer)
 			}
 		}
 
@@ -182,6 +197,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 			ctrlctx.ClientBuilder.KubeClientOrDie("pinned-image-set-controller"),
 			ctrlctx.ClientBuilder.MachineConfigClientOrDie("pinned-image-set-controller"),
+			cacheWarmer,
 		)
 		go pinnedImageSet.Run(2, ctrlctx.Stop)
 

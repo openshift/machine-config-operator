@@ -78,7 +78,7 @@ func TestSyncHandler(t *testing.T) {
 				require.NoError(err)
 			}
 
-			c := New(imageSetInformer, mcpInformer, fakeClient, fakeMCOClient)
+			c := New(imageSetInformer, mcpInformer, fakeClient, fakeMCOClient, nil)
 			mcp, ok := tt.machineConfigPool.(*mcfgv1.MachineConfigPool)
 			require.True(ok)
 

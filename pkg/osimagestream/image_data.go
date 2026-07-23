@@ -17,6 +17,10 @@ const (
 	coreOSLabelExtension      = "io.openshift.os.extensions"
 	coreOSLabelExtensionValue = "true"
 
+	// releasePayloadLabel is the container image label that identifies a release payload image.
+	// Its value is the release version string (e.g. "5.0.0-0.ci-2026-07-21-191603").
+	releasePayloadLabel = "io.openshift.release"
+
 	// coreOSLabelBootc is the container image label present on bootc-based OS images.
 	coreOSLabelBootc             = "containers.bootc"
 	coreOSLabelBootcValueBool    = "true"
@@ -170,6 +174,12 @@ func NewOSImageStreamURLSetFromImageMetadata(imageMetadata *ImageData) *mcfgv1.O
 		urlSet.OSExtensionsImage = imageName
 	}
 	return urlSet
+}
+
+// IsReleasePayload returns true if the given labels indicate a release payload image.
+func IsReleasePayload(labels map[string]string) bool {
+	_, ok := labels[releasePayloadLabel]
+	return ok
 }
 
 // labelEquals returns a matcher that checks whether a label has the expected value (case-insensitive).
