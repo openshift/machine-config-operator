@@ -237,8 +237,12 @@ func (b *Bootstrap) Run(destDir string) error {
 		return fmt.Errorf("error filtering pools: %w", err)
 	}
 
-	// Enable OSImageStreams if the FeatureGate is active and the control plane topology is not external (e.g., Hypershift)
-	if osimagestream.IsFeatureEnabled(fgHandler) && cconfig.Spec.Infra.Status.ControlPlaneTopology != apicfgv1.ExternalTopologyMode {
+	// Enable OSImageStreams if the FeatureGate is active.
+	// Previously this also excluded ExternalTopologyMode (HyperShift) because
+	// HyperShift did not yet write stream selection into the synthetic MCP.
+	// Now that HyperShift writes 99_osimagestream.yaml into the MCC template
+	// directory (openshift/hypershift#8792), the guard is no longer needed.
+	if osimagestream.IsFeatureEnabled(fgHandler) {
 		osImageStream, err = b.fetchOSImageStream(
 			imageStream,
 			cconfig,
@@ -505,14 +509,19 @@ func (b *Bootstrap) fetchOSImageStream(
 	sysCtxFactory := buildSysContextFactory(pullSecret, cconfig, imgCfg, icspRules, idmsRules, itmsRules)
 
 	factory := b.getImageStreamFactory()
-	osImageStream, err := factory.Create(ctx, sysCtxFactory, osimagestream.CreateOptions{
+	createOpts := osimagestream.CreateOptions{
 		ExistingOSImageStream: existingOSImageStream,
-		ReleaseImageStream:    imageStream,
 		CliImages: &osimagestream.OSImageTuple{
 			OSImage:           cconfig.Spec.BaseOSContainerImage,
 			OSExtensionsImage: cconfig.Spec.BaseOSExtensionsContainerImage,
 		},
-	})
+	}
+	if imageStream != nil {
+		createOpts.ReleaseImageStream = imageStream
+	} else {
+		createOpts.ReleaseImage = cconfig.Spec.ReleaseImage
+	}
+	osImageStream, err := factory.Create(ctx, sysCtxFactory, createOpts)
 	if err != nil {
 		return nil, fmt.Errorf("error inspecting available OSImageStreams: %w", err)
 	}
