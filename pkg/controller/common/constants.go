@@ -176,6 +176,8 @@ const (
 
 	// NodeSizingEnabledEnvPath is the file path for the node sizing enabled environment file
 	NodeSizingEnabledEnvPath = "/etc/node-sizing-enabled.env"
+	// SystemGomaxprocsEnvPath is the file path for the system GOMAXPROCS behavior environment file
+	SystemGomaxprocsEnvPath = "/etc/system-gomaxprocs.env"
 
 	// Current Boot Image Skew Limits
 	// Note: Update units in status_test.go when the following are bumped
