@@ -757,11 +757,11 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 
 	// Check for runc on RHEL 10. When the OSImageURL was overridden or no
 	// stream is available, inspect the actual image; otherwise use the stream.
-	if osImageStreamSet == nil || isOSImageURLOverridden {
+	if isOSImageURLOverridden {
 		if err := validateNoRuncOnRHEL10FromOSImageURL(pool, generated, ctrl.imageInspector); err != nil {
 			return err
 		}
-	} else {
+	} else if osImageStreamSet != nil {
 		if err := validateNoRuncOnRHEL10FromOSImageStream(pool.Name, generated, osImageStreamSet); err != nil {
 			return err
 		}
@@ -997,11 +997,11 @@ func RunBootstrap(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineCo
 		// Check for runc on RHEL 10. When the OSImageURL was overridden or no
 		// stream is available, inspect the actual image; otherwise use the stream.
 		isOverridden := generated.Annotations[ctrlcommon.OSImageURLOverriddenKey] == ctrlcommon.OSImageURLOverriddenTrue
-		if osImageStreamSet == nil || isOverridden {
+		if isOverridden {
 			if err := validateNoRuncOnRHEL10FromOSImageURL(pool, generated, inspector); err != nil {
 				return nil, nil, err
 			}
-		} else {
+		} else if osImageStreamSet != nil {
 			if err := validateNoRuncOnRHEL10FromOSImageStream(pool.Name, generated, osImageStreamSet); err != nil {
 				return nil, nil, err
 			}

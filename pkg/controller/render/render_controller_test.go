@@ -33,6 +33,7 @@ import (
 	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/osimagestream"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/openshift/machine-config-operator/test/helpers"
@@ -1088,6 +1089,121 @@ func TestValidateNoRuncOnRHEL10(t *testing.T) {
 			if tt.expectError {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), "runc")
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+type fakeStreamClassInspector struct {
+	streamClass string
+	err         error
+}
+
+func (f *fakeStreamClassInspector) InspectStreamClass(string) (string, error) {
+	return f.streamClass, f.err
+}
+
+func TestValidateNoRuncOnRHEL10FromOSImageURL(t *testing.T) {
+	pool := &mcfgv1.MachineConfigPool{
+		ObjectMeta: metav1.ObjectMeta{Name: "worker"},
+	}
+
+	runcMC := func(osImageURL string) *mcfgv1.MachineConfig {
+		mc := helpers.NewMachineConfig("rendered-worker", nil, "", []ign3types.File{
+			helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0644),
+		})
+		mc.Spec.OSImageURL = osImageURL
+		return mc
+	}
+
+	crunMC := func(osImageURL string) *mcfgv1.MachineConfig {
+		mc := helpers.NewMachineConfig("rendered-worker", nil, "", []ign3types.File{
+			helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("crun"), 0644),
+		})
+		mc.Spec.OSImageURL = osImageURL
+		return mc
+	}
+
+	tests := []struct {
+		name        string
+		mc          *mcfgv1.MachineConfig
+		inspector   *fakeStreamClassInspector
+		expectError bool
+	}{
+		{
+			name:        "runc on RHEL 10 image should error",
+			mc:          runcMC("quay.io/openshift/rhcos@sha256:abc"),
+			inspector:   &fakeStreamClassInspector{streamClass: "rhel-10"},
+			expectError: true,
+		},
+		{
+			name:        "crun on RHEL 10 image should succeed",
+			mc:          crunMC("quay.io/openshift/rhcos@sha256:abc"),
+			inspector:   &fakeStreamClassInspector{streamClass: "rhel-10"},
+			expectError: false,
+		},
+		{
+			name:        "runc on RHEL 9 image should succeed",
+			mc:          runcMC("quay.io/openshift/rhcos@sha256:abc"),
+			inspector:   &fakeStreamClassInspector{streamClass: "rhel-9"},
+			expectError: false,
+		},
+		{
+			name:        "runc on CentOS 10 image should error",
+			mc:          runcMC("quay.io/openshift/rhcos@sha256:abc"),
+			inspector:   &fakeStreamClassInspector{streamClass: "centos-10"},
+			expectError: true,
+		},
+		{
+			name:        "runc with empty OSImageURL should succeed",
+			mc:          runcMC(""),
+			inspector:   &fakeStreamClassInspector{streamClass: "rhel-10"},
+			expectError: false,
+		},
+		{
+			name:        "runc with nil inspector should succeed",
+			mc:          runcMC("quay.io/openshift/rhcos@sha256:abc"),
+			inspector:   nil,
+			expectError: false,
+		},
+		{
+			name:        "runc with empty stream class label should succeed",
+			mc:          runcMC("quay.io/openshift/rhcos@sha256:abc"),
+			inspector:   &fakeStreamClassInspector{streamClass: ""},
+			expectError: false,
+		},
+		{
+			name:        "runc with inspector error should error",
+			mc:          runcMC("quay.io/openshift/rhcos@sha256:abc"),
+			inspector:   &fakeStreamClassInspector{err: fmt.Errorf("connection refused")},
+			expectError: true,
+		},
+		{
+			name: "runc overridden by crun on RHEL 10 image should succeed",
+			mc: func() *mcfgv1.MachineConfig {
+				mc := helpers.NewMachineConfig("rendered-worker", nil, "", []ign3types.File{
+					helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0644),
+					helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/01-ctrcfg", makeCRIODropIn("crun"), 0644),
+				})
+				mc.Spec.OSImageURL = "quay.io/openshift/rhcos@sha256:abc"
+				return mc
+			}(),
+			inspector:   &fakeStreamClassInspector{streamClass: "rhel-10"},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var inspector osimagestream.StreamClassInspector
+			if tt.inspector != nil {
+				inspector = tt.inspector
+			}
+			err := validateNoRuncOnRHEL10FromOSImageURL(pool, tt.mc, inspector)
+			if tt.expectError {
+				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
 			}
