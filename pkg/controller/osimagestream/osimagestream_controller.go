@@ -370,7 +370,7 @@ func (ctrl *Controller) buildOSImageStream(ctx context.Context, existing *mcfgv1
 		klog.Warningf("Unable to get install version for OSImageStream build: %s", err)
 	}
 
-	buildCtx, buildCancel := context.WithTimeout(ctx, 5*time.Minute)
+	buildCtx, buildCancel := context.WithTimeout(ctx, osimagestream.ImageInspectionTimeout)
 	defer buildCancel()
 
 	factory := osimagestream.NewDefaultStreamSourceFactory(ctrl.inspectorFactory)
