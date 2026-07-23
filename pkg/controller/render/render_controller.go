@@ -761,7 +761,7 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 	//   stream than the pool's default, so the stream-based check was skipped
 	//   in generateRenderedMachineConfig).
 	if osImageStreamSet == nil || isOSImageURLOverridden {
-		if err := ctrl.validateNoRuncFromOSImageURL(pool, generated); err != nil {
+		if err := ctrl.validateNoRuncOnRHEL10FromOSImageURL(pool, generated); err != nil {
 			return err
 		}
 	}
@@ -881,9 +881,9 @@ func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mc
 	// Skip the stream-based runc check when the OSImageURL is overridden —
 	// the override may point to a different stream than the pool's default.
 	// The caller (syncGeneratedMachineConfig) will inspect the actual image
-	// via validateNoRuncFromOSImageURL instead.
+	// via validateNoRuncOnRHEL10FromOSImageURL instead.
 	if merged.Annotations[ctrlcommon.OSImageURLOverriddenKey] != ctrlcommon.OSImageURLOverriddenTrue {
-		if err := validateNoRuncOnRHEL10(pool.Name, merged, osImageStreamSet); err != nil {
+		if err := validateNoRuncOnRHEL10FromOSImageStream(pool.Name, merged, osImageStreamSet); err != nil {
 			return nil, err
 		}
 	}
@@ -1047,10 +1047,10 @@ func runcBlockedError(poolName string, mc *mcfgv1.MachineConfig) error {
 	return nil
 }
 
-// validateNoRuncOnRHEL10 returns an error if the generated MachineConfig uses runc
+// validateNoRuncOnRHEL10FromOSImageStream returns an error if the generated MachineConfig uses runc
 // as the default container runtime and the pool targets a RHEL 10 / CentOS 10 OS
 // image stream.
-func validateNoRuncOnRHEL10(poolName string, mc *mcfgv1.MachineConfig, osImageStreamSet *mcfgv1.OSImageStreamSet) error {
+func validateNoRuncOnRHEL10FromOSImageStream(poolName string, mc *mcfgv1.MachineConfig, osImageStreamSet *mcfgv1.OSImageStreamSet) error {
 	if osImageStreamSet == nil {
 		return nil
 	}
@@ -1060,9 +1060,9 @@ func validateNoRuncOnRHEL10(poolName string, mc *mcfgv1.MachineConfig, osImageSt
 	return runcBlockedError(poolName, mc)
 }
 
-// validateNoRuncFromOSImageURL checks whether the generated MachineConfig uses
+// validateNoRuncOnRHEL10FromOSImageURL checks whether the generated MachineConfig uses
 // runc on a RHEL 10 image by inspecting the container image's labels.
-func (ctrl *Controller) validateNoRuncFromOSImageURL(pool *mcfgv1.MachineConfigPool, generated *mcfgv1.MachineConfig) error {
+func (ctrl *Controller) validateNoRuncOnRHEL10FromOSImageURL(pool *mcfgv1.MachineConfigPool, generated *mcfgv1.MachineConfig) error {
 	osImageURL := generated.Spec.OSImageURL
 	if osImageURL == "" || ctrl.imageInspector == nil {
 		return nil

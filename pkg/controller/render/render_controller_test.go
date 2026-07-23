@@ -1084,7 +1084,7 @@ func TestValidateNoRuncOnRHEL10(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateNoRuncOnRHEL10("worker", tt.mc, tt.osImageStreamSet)
+			err := validateNoRuncOnRHEL10FromOSImageStream("worker", tt.mc, tt.osImageStreamSet)
 			if tt.expectError {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), "runc")
