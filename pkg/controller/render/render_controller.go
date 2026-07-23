@@ -761,7 +761,7 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 	//   stream than the pool's default, so the stream-based check was skipped
 	//   in generateRenderedMachineConfig).
 	if osImageStreamSet == nil || isOSImageURLOverridden {
-		if err := ctrl.validateNoRuncOnRHEL10FromOSImageURL(pool, generated); err != nil {
+		if err := validateNoRuncOnRHEL10FromOSImageURL(pool, generated, ctrl.imageInspector); err != nil {
 			return err
 		}
 	}
@@ -1003,20 +1003,16 @@ func RunBootstrap(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineCo
 			return nil, nil, err
 		}
 
-		// When OSImageURL was overridden, the stream-based runc check in
-		// generateRenderedMachineConfig is skipped because the override may
-		// target a different stream. Inspect the actual image to catch runc
-		// on RHEL 10.
+		// Check for runc on RHEL 10. When the OSImageURL was overridden or no
+		// stream is available, inspect the actual image; otherwise use the stream.
 		isOverridden := generated.Annotations[ctrlcommon.OSImageURLOverriddenKey] == ctrlcommon.OSImageURLOverriddenTrue
-		if isOverridden && inspector != nil && generated.Spec.OSImageURL != "" {
-			streamClass, inspectErr := inspector.InspectStreamClass(generated.Spec.OSImageURL)
-			if inspectErr != nil {
-				return nil, nil, fmt.Errorf("pool %s: failed to inspect OSImageURL for stream class: %w", pool.Name, inspectErr)
+		if osImageStreamSet == nil || isOverridden {
+			if err := validateNoRuncOnRHEL10FromOSImageURL(pool, generated, inspector); err != nil {
+				return nil, nil, err
 			}
-			if osimagestream.IsRHEL10Stream(streamClass) {
-				if err := runcBlockedError(pool.Name, generated); err != nil {
-					return nil, nil, err
-				}
+		} else {
+			if err := validateNoRuncOnRHEL10FromOSImageStream(pool.Name, generated, osImageStreamSet); err != nil {
+				return nil, nil, err
 			}
 		}
 
@@ -1062,9 +1058,9 @@ func validateNoRuncOnRHEL10FromOSImageStream(poolName string, mc *mcfgv1.Machine
 
 // validateNoRuncOnRHEL10FromOSImageURL checks whether the generated MachineConfig uses
 // runc on a RHEL 10 image by inspecting the container image's labels.
-func (ctrl *Controller) validateNoRuncOnRHEL10FromOSImageURL(pool *mcfgv1.MachineConfigPool, generated *mcfgv1.MachineConfig) error {
+func validateNoRuncOnRHEL10FromOSImageURL(pool *mcfgv1.MachineConfigPool, generated *mcfgv1.MachineConfig, inspector osimagestream.StreamClassInspector) error {
 	osImageURL := generated.Spec.OSImageURL
-	if osImageURL == "" || ctrl.imageInspector == nil {
+	if osImageURL == "" || inspector == nil {
 		return nil
 	}
 
@@ -1076,7 +1072,7 @@ func (ctrl *Controller) validateNoRuncOnRHEL10FromOSImageURL(pool *mcfgv1.Machin
 		return nil
 	}
 
-	streamClass, err := ctrl.imageInspector.InspectStreamClass(osImageURL)
+	streamClass, err := inspector.InspectStreamClass(osImageURL)
 	if err != nil {
 		return fmt.Errorf("pool %s: failed to inspect OS image for stream class: %w", pool.Name, err)
 	}
