@@ -531,7 +531,7 @@ spec:
                                             x-kubernetes-list-type: atomic
                                         type: object
                                       group:
-                                        description: Group is the API Group of the
+                                        description: group is the API Group of the
                                           Resource.  "*" means all.
                                         type: string
                                       labelSelector:
@@ -584,32 +584,32 @@ spec:
                                             x-kubernetes-list-type: atomic
                                         type: object
                                       name:
-                                        description: Name is the name of the resource
+                                        description: name is the name of the resource
                                           being requested for a "get" or deleted for
                                           a "delete". "" (empty) means all.
                                         type: string
                                       namespace:
                                         description: |-
-                                          Namespace is the namespace of the action being requested.  Currently, there is no distinction between no namespace and all namespaces
+                                          namespace is the namespace of the action being requested.  Currently, there is no distinction between no namespace and all namespaces
                                           "" (empty) is defaulted for LocalSubjectAccessReviews
                                           "" (empty) is empty for cluster-scoped resources
                                           "" (empty) means "all" for namespace scoped resources from a SubjectAccessReview or SelfSubjectAccessReview
                                         type: string
                                       resource:
-                                        description: Resource is one of the existing
+                                        description: resource is one of the existing
                                           resource types.  "*" means all.
                                         type: string
                                       subresource:
-                                        description: Subresource is one of the existing
+                                        description: subresource is one of the existing
                                           resource types.  "" means none.
                                         type: string
                                       verb:
-                                        description: 'Verb is a kubernetes resource
+                                        description: 'verb is a kubernetes resource
                                           API verb, like: get, list, watch, create,
                                           update, delete, proxy.  "*" means all.'
                                         type: string
                                       version:
-                                        description: Version is the API Version of
+                                        description: version is the API Version of
                                           the Resource.  "*" means all.
                                         type: string
                                     type: object
@@ -678,7 +678,7 @@ spec:
                                             x-kubernetes-list-type: atomic
                                         type: object
                                       group:
-                                        description: Group is the API Group of the
+                                        description: group is the API Group of the
                                           Resource.  "*" means all.
                                         type: string
                                       labelSelector:
@@ -731,32 +731,32 @@ spec:
                                             x-kubernetes-list-type: atomic
                                         type: object
                                       name:
-                                        description: Name is the name of the resource
+                                        description: name is the name of the resource
                                           being requested for a "get" or deleted for
                                           a "delete". "" (empty) means all.
                                         type: string
                                       namespace:
                                         description: |-
-                                          Namespace is the namespace of the action being requested.  Currently, there is no distinction between no namespace and all namespaces
+                                          namespace is the namespace of the action being requested.  Currently, there is no distinction between no namespace and all namespaces
                                           "" (empty) is defaulted for LocalSubjectAccessReviews
                                           "" (empty) is empty for cluster-scoped resources
                                           "" (empty) means "all" for namespace scoped resources from a SubjectAccessReview or SelfSubjectAccessReview
                                         type: string
                                       resource:
-                                        description: Resource is one of the existing
+                                        description: resource is one of the existing
                                           resource types.  "*" means all.
                                         type: string
                                       subresource:
-                                        description: Subresource is one of the existing
+                                        description: subresource is one of the existing
                                           resource types.  "" means none.
                                         type: string
                                       verb:
-                                        description: 'Verb is a kubernetes resource
+                                        description: 'verb is a kubernetes resource
                                           API verb, like: get, list, watch, create,
                                           update, delete, proxy.  "*" means all.'
                                         type: string
                                       version:
-                                        description: Version is the API Version of
+                                        description: version is the API Version of
                                           the Resource.  "*" means all.
                                         type: string
                                     type: object
