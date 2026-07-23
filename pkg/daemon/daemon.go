@@ -1396,6 +1396,7 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error, errCh chan er
 
 	go wait.Until(dn.worker, time.Second, stopCh)
 	go wait.Until(dn.controllerConfigWorker, time.Second, stopCh)
+	go dn.runOSImagePrecache(stopCh)
 
 	for {
 		select {

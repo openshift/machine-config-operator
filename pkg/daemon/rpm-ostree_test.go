@@ -25,3 +25,8 @@ func TestParseVersion(t *testing.T) {
 	assert.Contains(t, q.Root.Features, "rust")
 	assert.NotContains(t, q.Root.Features, "container")
 }
+
+func TestLayeredRegistryRebaseRef(t *testing.T) {
+	img := "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:abc123"
+	assert.Equal(t, "ostree-unverified-registry:"+img, layeredRegistryRebaseRef(img))
+}
