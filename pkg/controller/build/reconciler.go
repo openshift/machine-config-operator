@@ -2,6 +2,7 @@ package build
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -457,6 +458,17 @@ func (b *buildReconciler) startBuild(ctx context.Context, mosb *mcfgv1.MachineOS
 
 	// Next, create our new MachineOSBuild.
 	if err := imagebuilder.NewJobImageBuilder(b.kubeclient, b.mcfgclient, mosb, mosc).Start(ctx); err != nil {
+		var validationErr *buildrequest.ContainerfileValidationError
+		if errors.As(err, &validationErr) {
+			klog.Warningf("MachineOSBuild %q has an invalid Containerfile; marking as failed: %v", mosb.Name, validationErr)
+			failedStatus := mcfgv1.MachineOSBuildStatus{
+				Conditions: apihelpers.MachineOSBuildFailedConditions(),
+			}
+			if statusErr := b.setStatusOnMachineOSBuildIfNeeded(ctx, mosb, mosb.Status, failedStatus); statusErr != nil {
+				klog.Errorf("Could not mark MachineOSBuild %q as failed: %v", mosb.Name, statusErr)
+			}
+			return nil
+		}
 		return fmt.Errorf("imagebuilder could not start build for MachineOSBuild %q: %w", mosb.Name, err)
 	}
 

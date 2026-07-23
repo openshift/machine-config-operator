@@ -512,16 +512,12 @@ func TestImageBuildDegradedOnFailureAndClearedOnBuildStart(t *testing.T) {
 
 	createMachineOSConfig(t, cs, mosc)
 
-	// Wait for the build to start and fail
-	firstMosb := waitForBuildToStartForPoolAndConfig(t, cs, layeredMCPName, mosc.Name)
-	t.Logf("Waiting for MachineOSBuild %s to fail", firstMosb.Name)
-
-	// Force the build to fail faster by repeatedly deleting the build pods until
-	// the job reflects a failure status.
-	require.NoError(t, ocltesthelper.ForceMachineOSBuildToFail(ctx, t, cs, firstMosb))
+	// The bad Containerfile fails validation before a build job is created,
+	// so the MOSB transitions directly to Failed without ever reaching Running.
+	firstMosb := waitForBuildToFailForPoolAndConfig(t, cs, ctx, layeredMCPName, mosc.Name)
+	t.Logf("MachineOSBuild %s failed as expected due to invalid Containerfile", firstMosb.Name)
 
 	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
-	kubeassert.Eventually().MachineOSBuildIsFailure(firstMosb)
 
 	// Wait for and verify ImageBuildDegraded condition is set to True
 	degradedCondition := waitForImageBuildDegradedCondition(ctx, t, cs, layeredMCPName, corev1.ConditionTrue)
@@ -1017,6 +1013,39 @@ func waitForBuildToStartForPoolAndConfig(t *testing.T, cs *framework.ClientSet, 
 	}
 
 	return waitForBuildToStart(t, cs, mosb)
+}
+
+// Waits for a MachineOSBuild to exist and then transition directly to Failed
+// (e.g. when Containerfile validation blocks the build before a job is created).
+func waitForBuildToFailForPoolAndConfig(t *testing.T, cs *framework.ClientSet, ctx context.Context, poolName, moscName string) *mcfgv1.MachineOSBuild {
+	t.Helper()
+
+	var mosbName string
+
+	require.NoError(t, wait.PollImmediate(2*time.Second, 3*time.Minute, func() (bool, error) {
+		name, err := ocltesthelper.GetMachineOSBuildNameForPool(cs, poolName, moscName)
+		if err != nil {
+			return false, nil
+		}
+		mosbName = name
+		return true, nil
+	}))
+
+	mosb := &mcfgv1.MachineOSBuild{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: mosbName,
+		},
+	}
+
+	t.Logf("Waiting for MachineOSBuild %s to fail due to Containerfile validation", mosb.Name)
+
+	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
+	kubeassert.Eventually().MachineOSBuildExists(mosb)
+	kubeassert.Eventually().MachineOSBuildIsFailure(mosb)
+
+	got, err := cs.MachineconfigurationV1Interface.MachineOSBuilds().Get(ctx, mosb.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+	return got
 }
 
 // Waits for a MachineOSBuild to start building.
