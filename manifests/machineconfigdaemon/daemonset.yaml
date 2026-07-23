@@ -85,6 +85,60 @@ spec:
           name: proxy-tls
         - mountPath: /etc/kube-rbac-proxy
           name: mcd-auth-proxy-config
+      - name: kube-rbac-proxy-crio
+        image: {{.Images.KubeRbacProxy}}
+        # No ports declaration: with hostNetwork, a declared containerPort acts
+        # as a hostPort, and the kubelet would reject this pod at admission
+        # while the legacy static pod still declares port 9637. The proxy binds
+        # :9637 either way once the startup script execs it.
+        command: ["/bin/bash", "-ec"]
+        args:
+        - |
+          # CRI-O metrics used to be proxied by the kube-rbac-proxy-crio static
+          # pod, which binds the same port. The daemonset rollout must complete
+          # before the operator syncs the node configs that delete the static
+          # pod manifest, so wait for it to go away instead of crashlooping on
+          # a bind failure and deadlocking the upgrade.
+          while [ -e /etc/kubernetes/manifests/criometricsproxy.yaml ]; do
+            echo "Waiting for the kube-rbac-proxy-crio static pod manifest to be removed..."
+            sleep 15
+          done
+          while (exec 3<>/dev/tcp/127.0.0.1/9637) 2>/dev/null; do
+            echo "Waiting for port 9637 to be released..."
+            sleep 5
+          done
+          echo "Waiting for kubelet key and certificate to be available"
+          while [ ! -e /var/lib/kubelet/pki/kubelet-server-current.pem ]; do
+            sleep 1
+          done
+          exec /usr/bin/kube-rbac-proxy \
+            --secure-listen-address=:9637 \
+            --config-file=/etc/kube-rbac-proxy-crio/config-file.yaml \
+            --client-ca-file=/etc/kubernetes/kubelet-ca.crt \
+            --logtostderr=true \
+            --tls-cipher-suites={{join .TLSCipherSuites ","}} \
+            --tls-min-version={{.TLSMinVersion}} \
+            --upstream=http://127.0.0.1:9537 \
+            --tls-cert-file=/var/lib/kubelet/pki/kubelet-server-current.pem \
+            --tls-private-key-file=/var/lib/kubelet/pki/kubelet-server-current.pem
+        securityContext:
+          privileged: true
+        resources:
+          requests:
+            cpu: 20m
+            memory: 50Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /etc/kubernetes
+          name: etc-kubernetes
+          mountPropagation: HostToContainer
+          readOnly: true
+        - mountPath: /var/lib/kubelet
+          name: var-lib-kubelet
+          mountPropagation: HostToContainer
+          readOnly: true
+        - mountPath: /etc/kube-rbac-proxy-crio
+          name: mcd-crio-auth-proxy-config
       hostNetwork: true
       hostPID: true
       serviceAccountName: machine-config-daemon
@@ -102,6 +156,15 @@ spec:
         - configMap:
             name: kube-rbac-proxy
           name: mcd-auth-proxy-config
+        - name: etc-kubernetes
+          hostPath:
+            path: /etc/kubernetes
+        - name: var-lib-kubelet
+          hostPath:
+            path: /var/lib/kubelet
+        - configMap:
+            name: kube-rbac-proxy-crio
+          name: mcd-crio-auth-proxy-config
       tolerations:
       # MCD needs to run everywhere. Tolerate all taints.
       - operator: Exists
