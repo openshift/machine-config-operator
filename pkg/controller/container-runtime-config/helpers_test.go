@@ -1273,7 +1273,7 @@ func TestCreateCRIODropinFiles(t *testing.T) {
 
 	for _, test := range zeroValueTests {
 		ctrcfg := newContainerRuntimeConfig(test.name, test.cfg, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "", ""))
-		files := createCRIODropinFiles(ctrcfg, false)
+		files := createCRIODropinFiles(ctrcfg, false, false)
 		for _, file := range files {
 			if file.filePath == test.filepath {
 				t.Errorf("%s: failed. should not have created dropin file", test.name)
@@ -1283,7 +1283,7 @@ func TestCreateCRIODropinFiles(t *testing.T) {
 
 	for _, test := range validValueTests {
 		ctrcfg := newContainerRuntimeConfig(test.name, test.cfg, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "", ""))
-		files := createCRIODropinFiles(ctrcfg, false)
+		files := createCRIODropinFiles(ctrcfg, false, false)
 		for _, file := range files {
 			if file.filePath == test.filepath {
 				require.Equal(t, test.want, file.data, "createCRIODropinFiles() Diff, want %v, got %v", test.want, string(file.data))
@@ -1508,7 +1508,7 @@ func TestCreateCRIODropinFilesAdditionalArtifactStores(t *testing.T) {
 		},
 	}
 
-	files := createCRIODropinFiles(cfg, true)
+	files := createCRIODropinFiles(cfg, true, false)
 
 	var found bool
 	for _, f := range files {
@@ -1523,7 +1523,7 @@ func TestCreateCRIODropinFilesAdditionalArtifactStores(t *testing.T) {
 	assert.True(t, found, "expected to find additional artifact stores drop-in file at %s", crioDropInFilePathAdditionalArtifactStores)
 
 	// Verify that artifact stores are NOT created when feature is disabled
-	filesDisabled := createCRIODropinFiles(cfg, false)
+	filesDisabled := createCRIODropinFiles(cfg, false, false)
 	for _, f := range filesDisabled {
 		assert.NotEqual(t, crioDropInFilePathAdditionalArtifactStores, f.filePath,
 			"artifact stores drop-in should not be created when additional storage is disabled")
@@ -1540,7 +1540,7 @@ func TestCreateCRIODropinFilesAdditionalArtifactStores(t *testing.T) {
 			},
 		},
 	}
-	filesMixed := createCRIODropinFiles(cfgMixed, false)
+	filesMixed := createCRIODropinFiles(cfgMixed, false, false)
 	var foundLogLevel, foundArtifact bool
 	for _, f := range filesMixed {
 		if f.filePath == CRIODropInFilePathLogLevel {
@@ -1552,6 +1552,97 @@ func TestCreateCRIODropinFilesAdditionalArtifactStores(t *testing.T) {
 	}
 	assert.True(t, foundLogLevel, "log-level drop-in should still be created when additional storage is disabled")
 	assert.False(t, foundArtifact, "artifact stores drop-in should not be created when additional storage is disabled")
+}
+
+func TestContainerGomaxprocsBehavior(t *testing.T) {
+	cfgAutosize := &mcfgv1.ContainerRuntimeConfig{
+		Spec: mcfgv1.ContainerRuntimeConfigSpec{
+			ContainerRuntimeConfig: &mcfgv1.ContainerRuntimeConfiguration{
+				ContainerGomaxprocsBehavior: mcfgv1.GomaxprocsBehaviorAutosize,
+			},
+		},
+	}
+
+	files := createCRIODropinFiles(cfgAutosize, false, true)
+	var found bool
+	for _, f := range files {
+		if f.filePath == crioDropInFilePathContainerGomaxprocs {
+			found = true
+			gotConf := tomlConfigCRIOMinInjectedGomaxprocs{}
+			_, err := toml.Decode(string(f.data), &gotConf)
+			require.NoError(t, err)
+			assert.Equal(t, 1, gotConf.Crio.Runtime.MinInjectedGomaxprocs)
+		}
+	}
+	assert.True(t, found, "expected gomaxprocs drop-in file at %s", crioDropInFilePathContainerGomaxprocs)
+
+	cfgDisabled := &mcfgv1.ContainerRuntimeConfig{
+		Spec: mcfgv1.ContainerRuntimeConfigSpec{
+			ContainerRuntimeConfig: &mcfgv1.ContainerRuntimeConfiguration{
+				ContainerGomaxprocsBehavior: mcfgv1.GomaxprocsBehaviorDisabled,
+			},
+		},
+	}
+
+	files = createCRIODropinFiles(cfgDisabled, false, true)
+	found = false
+	for _, f := range files {
+		if f.filePath == crioDropInFilePathContainerGomaxprocs {
+			found = true
+			gotConf := tomlConfigCRIOMinInjectedGomaxprocs{}
+			_, err := toml.Decode(string(f.data), &gotConf)
+			require.NoError(t, err)
+			assert.Equal(t, 0, gotConf.Crio.Runtime.MinInjectedGomaxprocs)
+		}
+	}
+	assert.True(t, found, "expected gomaxprocs drop-in file at %s", crioDropInFilePathContainerGomaxprocs)
+
+	// Feature gate disabled: no drop-in even if behavior is set
+	filesGateOff := createCRIODropinFiles(cfgAutosize, false, false)
+	for _, f := range filesGateOff {
+		assert.NotEqual(t, crioDropInFilePathContainerGomaxprocs, f.filePath,
+			"gomaxprocs drop-in should not be created when feature gate is disabled")
+	}
+
+	// Coexistence: GOMAXPROCS drop-in alongside other CRI-O fields
+	cfgCoexist := &mcfgv1.ContainerRuntimeConfig{
+		Spec: mcfgv1.ContainerRuntimeConfigSpec{
+			ContainerRuntimeConfig: &mcfgv1.ContainerRuntimeConfiguration{
+				LogLevel:                    "debug",
+				ContainerGomaxprocsBehavior: mcfgv1.GomaxprocsBehaviorAutosize,
+			},
+		},
+	}
+	filesCoexist := createCRIODropinFiles(cfgCoexist, false, true)
+	var foundLog, foundGomaxprocs bool
+	for _, f := range filesCoexist {
+		if f.filePath == CRIODropInFilePathLogLevel {
+			foundLog = true
+		}
+		if f.filePath == crioDropInFilePathContainerGomaxprocs {
+			foundGomaxprocs = true
+			gotConf := tomlConfigCRIOMinInjectedGomaxprocs{}
+			_, err := toml.Decode(string(f.data), &gotConf)
+			require.NoError(t, err)
+			assert.Equal(t, 1, gotConf.Crio.Runtime.MinInjectedGomaxprocs)
+		}
+	}
+	assert.True(t, foundLog, "logLevel drop-in should be created alongside gomaxprocs")
+	assert.True(t, foundGomaxprocs, "gomaxprocs drop-in should be created alongside logLevel")
+}
+
+func TestNeedsCRIODropinUpdateGomaxprocs(t *testing.T) {
+	ctrcfg := &mcfgv1.ContainerRuntimeConfiguration{
+		ContainerGomaxprocsBehavior: mcfgv1.GomaxprocsBehaviorAutosize,
+	}
+	assert.True(t, needsCRIODropinUpdate(ctrcfg, false, true),
+		"should need update when gomaxprocs behavior is set and gate enabled")
+	assert.False(t, needsCRIODropinUpdate(ctrcfg, false, false),
+		"should not need update when gate is disabled")
+
+	ctrcfgEmpty := &mcfgv1.ContainerRuntimeConfiguration{}
+	assert.False(t, needsCRIODropinUpdate(ctrcfgEmpty, false, true),
+		"should not need update when behavior is empty")
 }
 
 func TestValidateStorePath(t *testing.T) {
