@@ -65,6 +65,8 @@ var (
 
 // Controller defines the render controller.
 type Controller struct {
+	ctx context.Context
+
 	client        mcfgclientset.Interface
 	eventRecorder record.EventRecorder
 
@@ -194,6 +196,14 @@ func New(
 func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		<-stopCh
+		cancel()
+	}()
+	ctrl.ctx = ctx
 
 	listerCaches := []cache.InformerSynced{ctrl.mcpListerSynced, ctrl.mcListerSynced, ctrl.ccListerSynced}
 
@@ -758,7 +768,7 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 	// Check for runc on RHEL 10. When the OSImageURL was overridden or no
 	// stream is available, inspect the actual image; otherwise use the stream.
 	if isOSImageURLOverridden {
-		if err := validateNoRuncOnRHEL10FromOSImageURL(pool, generated, ctrl.imageInspector); err != nil {
+		if err := validateNoRuncOnRHEL10FromOSImageURL(ctrl.ctx, pool, generated, ctrl.imageInspector); err != nil {
 			return err
 		}
 	} else if osImageStreamSet != nil {
@@ -969,7 +979,7 @@ func getOSImageStreamNameForPoolBootstrap(pool *mcfgv1.MachineConfigPool, pools 
 // RunBootstrap runs the render controller in bootstrap mode.
 // For each pool, it matches the machineconfigs based on label selector and
 // returns the generated machineconfigs and pool with CurrentMachineConfig status field set.
-func RunBootstrap(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig, osImageStream *mcfgv1.OSImageStream, inspector osimagestream.StreamClassInspector) ([]*mcfgv1.MachineConfigPool, []*mcfgv1.MachineConfig, error) {
+func RunBootstrap(ctx context.Context, pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig, osImageStream *mcfgv1.OSImageStream, inspector osimagestream.StreamClassInspector) ([]*mcfgv1.MachineConfigPool, []*mcfgv1.MachineConfig, error) {
 	var (
 		opools   []*mcfgv1.MachineConfigPool
 		oconfigs []*mcfgv1.MachineConfig
@@ -998,7 +1008,7 @@ func RunBootstrap(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineCo
 		// stream is available, inspect the actual image; otherwise use the stream.
 		isOverridden := generated.Annotations[ctrlcommon.OSImageURLOverriddenKey] == ctrlcommon.OSImageURLOverriddenTrue
 		if isOverridden {
-			if err := validateNoRuncOnRHEL10FromOSImageURL(pool, generated, inspector); err != nil {
+			if err := validateNoRuncOnRHEL10FromOSImageURL(ctx, pool, generated, inspector); err != nil {
 				return nil, nil, err
 			}
 		} else if osImageStreamSet != nil {
@@ -1045,7 +1055,7 @@ func validateNoRuncOnRHEL10FromOSImageStream(poolName string, mc *mcfgv1.Machine
 
 // validateNoRuncOnRHEL10FromOSImageURL checks whether the generated MachineConfig uses
 // runc on a RHEL 10 image by inspecting the container image's labels.
-func validateNoRuncOnRHEL10FromOSImageURL(pool *mcfgv1.MachineConfigPool, generated *mcfgv1.MachineConfig, inspector osimagestream.StreamClassInspector) error {
+func validateNoRuncOnRHEL10FromOSImageURL(ctx context.Context, pool *mcfgv1.MachineConfigPool, generated *mcfgv1.MachineConfig, inspector osimagestream.StreamClassInspector) error {
 	osImageURL := generated.Spec.OSImageURL
 	if osImageURL == "" || inspector == nil {
 		return nil
@@ -1060,7 +1070,7 @@ func validateNoRuncOnRHEL10FromOSImageURL(pool *mcfgv1.MachineConfigPool, genera
 		return nil
 	}
 
-	streamClass, err := inspector.InspectStreamClass(osImageURL)
+	streamClass, err := inspector.InspectStreamClass(ctx, osImageURL)
 	if err != nil {
 		return fmt.Errorf("pool %s: failed to inspect OS image for stream class: %w", pool.Name, err)
 	}

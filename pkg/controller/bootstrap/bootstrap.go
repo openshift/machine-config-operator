@@ -371,7 +371,7 @@ func (b *Bootstrap) Run(destDir string) error {
 
 	sysCtxFactory := buildSysContextFactory(pullSecret, cconfig, imgCfg, icspRules, idmsRules, itmsRules)
 	inspector := osimagestream.NewStreamClassInspector(b.inspectorFactory, sysCtxFactory)
-	fpools, gconfigs, err := render.RunBootstrap(pools, configs, cconfig, osImageStream, inspector)
+	fpools, gconfigs, err := render.RunBootstrap(context.TODO(), pools, configs, cconfig, osImageStream, inspector)
 	if err != nil {
 		return err
 	}

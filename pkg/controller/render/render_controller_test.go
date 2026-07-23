@@ -1,6 +1,7 @@
 package render
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"testing"
@@ -1101,7 +1102,7 @@ type fakeStreamClassInspector struct {
 	err         error
 }
 
-func (f *fakeStreamClassInspector) InspectStreamClass(string) (string, error) {
+func (f *fakeStreamClassInspector) InspectStreamClass(context.Context, string) (string, error) {
 	return f.streamClass, f.err
 }
 
@@ -1201,7 +1202,7 @@ func TestValidateNoRuncOnRHEL10FromOSImageURL(t *testing.T) {
 			if tt.inspector != nil {
 				inspector = tt.inspector
 			}
-			err := validateNoRuncOnRHEL10FromOSImageURL(pool, tt.mc, inspector)
+			err := validateNoRuncOnRHEL10FromOSImageURL(context.Background(), pool, tt.mc, inspector)
 			if tt.expectError {
 				require.Error(t, err)
 			} else {
@@ -1245,6 +1246,7 @@ func TestRunBootstrapBlocksRuncOnRHEL10(t *testing.T) {
 	}
 
 	_, _, err := RunBootstrap(
+		context.Background(),
 		[]*mcfgv1.MachineConfigPool{pool},
 		[]*mcfgv1.MachineConfig{runcMC},
 		cc,
