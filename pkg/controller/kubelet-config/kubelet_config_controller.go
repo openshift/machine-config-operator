@@ -32,6 +32,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	osev1 "github.com/openshift/api/config/v1"
+	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
 	oseinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
@@ -658,7 +659,11 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			originalKubeConfig.TLSCipherSuites = observedCipherSuites
 		}
 
-		kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, err := generateKubeletIgnFiles(cfg, originalKubeConfig)
+		var systemGomaxprocsBehavior mcfgv1.GomaxprocsBehaviorType
+		if ctrl.fgHandler.Enabled(features.FeatureGateGomaxprocsInjection) {
+			systemGomaxprocsBehavior = cfg.Spec.SystemGomaxprocsBehavior
+		}
+		kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, err := generateKubeletIgnFiles(cfg, originalKubeConfig, systemGomaxprocsBehavior)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err)
 		}
