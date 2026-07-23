@@ -1019,7 +1019,16 @@ func RunBootstrap(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineCo
 	return opools, oconfigs, nil
 }
 
-func runcBlockedError(poolName string, mc *mcfgv1.MachineConfig) error {
+// validateNoRuncOnRHEL10FromOSImageStream returns an error if the generated MachineConfig uses runc
+// as the default container runtime and the pool targets a RHEL 10 / CentOS 10 OS
+// image stream.
+func validateNoRuncOnRHEL10FromOSImageStream(poolName string, mc *mcfgv1.MachineConfig, osImageStreamSet *mcfgv1.OSImageStreamSet) error {
+	if osImageStreamSet == nil {
+		return nil
+	}
+	if !osimagestream.IsRHEL10Stream(osImageStreamSet.Name) {
+		return nil
+	}
 	runcMCName, err := ctrlcommon.DetectRuncInMachineConfig(mc)
 	if err != nil {
 		return fmt.Errorf("failed to check runc in generated MachineConfig for pool %s: %w", poolName, err)
@@ -1034,19 +1043,6 @@ func runcBlockedError(poolName string, mc *mcfgv1.MachineConfig) error {
 	return nil
 }
 
-// validateNoRuncOnRHEL10FromOSImageStream returns an error if the generated MachineConfig uses runc
-// as the default container runtime and the pool targets a RHEL 10 / CentOS 10 OS
-// image stream.
-func validateNoRuncOnRHEL10FromOSImageStream(poolName string, mc *mcfgv1.MachineConfig, osImageStreamSet *mcfgv1.OSImageStreamSet) error {
-	if osImageStreamSet == nil {
-		return nil
-	}
-	if !osimagestream.IsRHEL10Stream(osImageStreamSet.Name) {
-		return nil
-	}
-	return runcBlockedError(poolName, mc)
-}
-
 // validateNoRuncOnRHEL10FromOSImageURL checks whether the generated MachineConfig uses
 // runc on a RHEL 10 image by inspecting the container image's labels.
 func validateNoRuncOnRHEL10FromOSImageURL(pool *mcfgv1.MachineConfigPool, generated *mcfgv1.MachineConfig, inspector osimagestream.StreamClassInspector) error {
@@ -1055,6 +1051,7 @@ func validateNoRuncOnRHEL10FromOSImageURL(pool *mcfgv1.MachineConfigPool, genera
 		return nil
 	}
 
+	// Check runc first: this is a local config check that doesn't need network access.
 	runcMCName, err := ctrlcommon.DetectRuncInMachineConfig(generated)
 	if err != nil {
 		return fmt.Errorf("pool %s: failed to check runc in generated MachineConfig: %w", pool.Name, err)
@@ -1075,7 +1072,11 @@ func validateNoRuncOnRHEL10FromOSImageURL(pool *mcfgv1.MachineConfigPool, genera
 		return nil
 	}
 
-	return runcBlockedError(pool.Name, generated)
+	return fmt.Errorf(
+		"MachineConfigPool %s targets a RHEL 10 OS image where runc is not available. "+
+			"To unblock, migrate to crun by removing any ContainerRuntimeConfig that sets defaultRuntime to runc, "+
+			"and removing any MachineConfig that sets default_runtime = \"runc\" in CRI-O configuration under /etc/crio/crio.conf.d/",
+		pool.Name)
 }
 
 // getMachineConfigsForPool is called by RunBootstrap and returns configs that match label from configs for a pool.
