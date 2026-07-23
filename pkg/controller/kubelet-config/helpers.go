@@ -36,7 +36,7 @@ const (
 	protectKernelDefaultsStr      = "\"protectKernelDefaults\":false"
 )
 
-func createNewKubeletDynamicSystemReservedIgnition(autoSystemReserved *bool, userDefinedSystemReserved map[string]string) *ign3types.File {
+func createNewKubeletDynamicSystemReservedIgnition(autoSystemReserved *bool, userDefinedSystemReserved map[string]string, systemGomaxprocsBehavior mcfgv1.GomaxprocsBehaviorType) *ign3types.File {
 	var autoNodeSizing string
 	var systemReservedMemory string
 	var systemReservedCPU string
@@ -66,8 +66,8 @@ func createNewKubeletDynamicSystemReservedIgnition(autoSystemReserved *bool, use
 		systemReservedEphemeralStorage = "1Gi"
 	}
 
-	config := fmt.Sprintf("NODE_SIZING_ENABLED=%s\nSYSTEM_RESERVED_MEMORY=%s\nSYSTEM_RESERVED_CPU=%s\nSYSTEM_RESERVED_ES=%s\n",
-		autoNodeSizing, systemReservedMemory, systemReservedCPU, systemReservedEphemeralStorage)
+	config := fmt.Sprintf("NODE_SIZING_ENABLED=%s\nSYSTEM_RESERVED_MEMORY=%s\nSYSTEM_RESERVED_CPU=%s\nSYSTEM_RESERVED_ES=%s\nSYSTEM_GOMAXPROCS_BEHAVIOR=%s\n",
+		autoNodeSizing, systemReservedMemory, systemReservedCPU, systemReservedEphemeralStorage, systemGomaxprocsBehavior)
 
 	r := ctrlcommon.NewIgnFileBytesOverwriting(ctrlcommon.NodeSizingEnabledEnvPath, []byte(config))
 	return &r
@@ -521,7 +521,7 @@ func kubeletConfigToIgnFile(cfg *kubeletconfigv1beta1.KubeletConfiguration) (*ig
 }
 
 // generateKubeletIgnFiles generates the Ignition files from the kubelet config
-func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeConfig *kubeletconfigv1beta1.KubeletConfiguration) (*ign3types.File, *ign3types.File, *ign3types.File, error) {
+func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeConfig *kubeletconfigv1beta1.KubeletConfiguration, systemGomaxprocsBehavior mcfgv1.GomaxprocsBehaviorType) (*ign3types.File, *ign3types.File, *ign3types.File, error) {
 	var (
 		kubeletIgnition            *ign3types.File
 		logLevelIgnition           *ign3types.File
@@ -628,12 +628,23 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 	if kubeletConfig.Spec.LogLevel != nil {
 		logLevelIgnition = createNewKubeletLogLevelIgnition(*kubeletConfig.Spec.LogLevel)
 	}
-	if kubeletConfig.Spec.AutoSizingReserved != nil && len(userDefinedSystemReserved) == 0 {
-		autoSizingReservedIgnition = createNewKubeletDynamicSystemReservedIgnition(kubeletConfig.Spec.AutoSizingReserved, userDefinedSystemReserved)
-	}
-	if len(userDefinedSystemReserved) > 0 {
-		autoSizingReservedIgnition = createNewKubeletDynamicSystemReservedIgnition(nil, userDefinedSystemReserved)
-	}
+	autoSizingReservedIgnition = createAutoSizingReservedIgnition(kubeletConfig.Spec.AutoSizingReserved, userDefinedSystemReserved, systemGomaxprocsBehavior)
 
 	return kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, nil
+}
+
+// createAutoSizingReservedIgnition builds the /etc/node-sizing-enabled.env ignition file when any of
+// auto-sizing, user-defined system reserved values, or a system GOMAXPROCS behavior is configured.
+// It returns nil when none of those are set.
+func createAutoSizingReservedIgnition(autoSizingReserved *bool, userDefinedSystemReserved map[string]string, systemGomaxprocsBehavior mcfgv1.GomaxprocsBehaviorType) *ign3types.File {
+	if len(userDefinedSystemReserved) > 0 {
+		return createNewKubeletDynamicSystemReservedIgnition(nil, userDefinedSystemReserved, systemGomaxprocsBehavior)
+	}
+	if autoSizingReserved != nil {
+		return createNewKubeletDynamicSystemReservedIgnition(autoSizingReserved, userDefinedSystemReserved, systemGomaxprocsBehavior)
+	}
+	if systemGomaxprocsBehavior != "" {
+		return createNewKubeletDynamicSystemReservedIgnition(nil, userDefinedSystemReserved, systemGomaxprocsBehavior)
+	}
+	return nil
 }
