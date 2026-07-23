@@ -755,13 +755,14 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		ctrlcommon.OSImageURLOverride.WithLabelValues(pool.Name).Set(0)
 	}
 
-	// Check for runc on RHEL 10 via OSImageURL inspection when either:
-	// - OSImageStream is not in use (no stream-based check available), or
-	// - The OSImageURL was overridden (the override may target a different
-	//   stream than the pool's default, so the stream-based check was skipped
-	//   in generateRenderedMachineConfig).
+	// Check for runc on RHEL 10. When the OSImageURL was overridden or no
+	// stream is available, inspect the actual image; otherwise use the stream.
 	if osImageStreamSet == nil || isOSImageURLOverridden {
 		if err := validateNoRuncOnRHEL10FromOSImageURL(pool, generated, ctrl.imageInspector); err != nil {
+			return err
+		}
+	} else {
+		if err := validateNoRuncOnRHEL10FromOSImageStream(pool.Name, generated, osImageStreamSet); err != nil {
 			return err
 		}
 	}
@@ -875,16 +876,6 @@ func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mc
 		// behaviors based on who set OSImageURL.
 		if pool.Spec.OSImageStream.Name != "" {
 			return nil, fmt.Errorf("cannot override MachineConfig osImageURL and set MachineConfigPool spec.osImageStream.name simultaneously")
-		}
-	}
-
-	// Skip the stream-based runc check when the OSImageURL is overridden —
-	// the override may point to a different stream than the pool's default.
-	// The caller (syncGeneratedMachineConfig) will inspect the actual image
-	// via validateNoRuncOnRHEL10FromOSImageURL instead.
-	if merged.Annotations[ctrlcommon.OSImageURLOverriddenKey] != ctrlcommon.OSImageURLOverriddenTrue {
-		if err := validateNoRuncOnRHEL10FromOSImageStream(pool.Name, merged, osImageStreamSet); err != nil {
-			return nil, err
 		}
 	}
 
