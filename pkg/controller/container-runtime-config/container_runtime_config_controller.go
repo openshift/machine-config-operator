@@ -63,8 +63,9 @@ const (
 	// 5ms, 10ms, 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s, 20.4s, 41s, 82s
 	maxRetries = 15
 
-	builtInLabelKey               = "machineconfiguration.openshift.io/mco-built-in"
-	genericCredProviderConfigPath = "/etc/kubernetes/credential-providers/generic-credential-provider.yaml"
+	builtInLabelKey                         = "machineconfiguration.openshift.io/mco-built-in"
+	genericCredProviderConfigPath           = "/etc/kubernetes/credential-providers/generic-credential-provider.yaml"
+	gomaxprocsInjectionEnabledAnnotationKey = "machineconfiguration.openshift.io/gomaxprocs-injection-enabled"
 )
 
 // controllerKind contains the schema.GroupVersionKind for this controller type.
@@ -414,6 +415,10 @@ func (ctrl *Controller) criocpEnabled() bool {
 	return ctrl.fgHandler.Enabled(features.FeatureGateCRIOCredentialProviderConfig)
 }
 
+func (ctrl *Controller) gomaxprocsInjectionEnabled() bool {
+	return ctrl.fgHandler.Enabled(features.FeatureGateGomaxprocsInjection)
+}
+
 func (ctrl *Controller) updateContainerRuntimeConfig(oldObj, newObj interface{}) {
 	oldCtrCfg := oldObj.(*mcfgv1.ContainerRuntimeConfig)
 	newCtrCfg := newObj.(*mcfgv1.ContainerRuntimeConfig)
@@ -760,6 +765,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		return ctrl.syncStatusOnly(cfg, err)
 	}
 
+	gomaxprocsInjectionEnabled := ctrl.gomaxprocsInjectionEnabled()
 	for _, pool := range mcpPools {
 		role := pool.Name
 		// Get MachineConfig
@@ -776,8 +782,9 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		if !isNotFound && cfg.Status.ObservedGeneration >= cfg.Generation && cfg.Status.Conditions[len(cfg.Status.Conditions)-1].Type == mcfgv1.ContainerRuntimeConfigSuccess {
 			// But we still need to compare the generated controller version because during an upgrade we need a new one
 			mcCtrlVersion := mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey]
-			if mcCtrlVersion == version.Hash {
-				return nil
+			mcGomaxprocsInjectionEnabled := mc.Annotations[gomaxprocsInjectionEnabledAnnotationKey]
+			if mcCtrlVersion == version.Hash && mcGomaxprocsInjectionEnabled == strconv.FormatBool(gomaxprocsInjectionEnabled) {
+				continue
 			}
 		}
 		// Generate the original ContainerRuntimeConfig
@@ -803,8 +810,8 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		}
 
 		// Create the cri-o drop-in files
-		if needsCRIODropinUpdate(ctrcfg, additionalStorageEnabled) {
-			crioFileConfigs := createCRIODropinFiles(cfg, additionalStorageEnabled)
+		if needsCRIODropinUpdate(ctrcfg, additionalStorageEnabled, gomaxprocsInjectionEnabled) {
+			crioFileConfigs := createCRIODropinFiles(cfg, additionalStorageEnabled, gomaxprocsInjectionEnabled)
 			configFileList = append(configFileList, crioFileConfigs...)
 		}
 
@@ -844,6 +851,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 
 		mc.SetAnnotations(map[string]string{
 			ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
+			gomaxprocsInjectionEnabledAnnotationKey:              strconv.FormatBool(gomaxprocsInjectionEnabled),
 		})
 		oref := metav1.NewControllerRef(cfg, controllerKind)
 		mc.SetOwnerReferences([]metav1.OwnerReference{*oref})
