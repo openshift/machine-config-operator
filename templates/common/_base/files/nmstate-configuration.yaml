@@ -43,3 +43,6 @@ contents:
 
     cp "$src_path/$config_file" /etc/nmstate
     cp "$src_path/$config_file" "$src_path/applied"
+
+    # Write a formatted copy of nmpolicy configurations for easier adoption on day 2
+    nmstatectl format "$src_path/$config_file" > "$src_path/formatted"
