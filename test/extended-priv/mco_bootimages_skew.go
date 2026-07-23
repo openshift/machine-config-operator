@@ -2,6 +2,7 @@ package extended
 
 import (
 	"context"
+	"fmt"
 
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
@@ -295,5 +296,66 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		// Check machine-config CO upgradeable status, should be set to true
 		o.Eventually(mcoCO, "1m", "10s").Should(BeUpgradeable(), "co/machine-config should be upgradeable when skew enforcement is disabled (None mode)")
+	})
+
+	// https://issues.redhat.com/browse/OCPBUGS-87962
+	g.It("[PolarionID:89593][OTP] Boot image skew check correctly reflects actual boot image version when MachineSets are reconcile-skipped [Disruptive]", g.Label("Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere"), func() {
+		skipTestIfSupportedPlatformNotMatched(oc, GCPPlatform, AWSPlatform, AzurePlatform, VspherePlatform)
+
+		automaticOCPVersionPath := `{.status.bootImageSkewEnforcementStatus.automatic.ocpVersion}`
+
+		exutil.By("Ensure Automatic mode is active")
+		o.Expect(machineConfiguration.RemoveSkew()).To(o.Succeed())
+		machineConfiguration.WaitForBootImageSkewEnforcementStatusMode(SkewEnforcementAutomaticMode)
+		machineConfiguration.WaitForBootImageControllerComplete()
+		logger.Infof("OK!\n")
+
+		exutil.By("Get the automatic.ocpVersion before patch")
+		originalOCPVersion, err := machineConfiguration.Get(automaticOCPVersionPath)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting automatic.ocpVersion from %s", machineConfiguration)
+		o.Expect(originalOCPVersion).NotTo(o.BeEmpty(), "automatic.ocpVersion should not be empty in Automatic mode")
+		logger.Infof("automatic.ocpVersion before patch: %s", originalOCPVersion)
+		logger.Infof("OK!\n")
+
+		exutil.By("Pick a MachineSet and add an OwnerReference to trigger reconcile-skip")
+		machineSetUnderTest := NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
+		logger.Infof("MachineSet under test: %s", machineSetUnderTest.name)
+
+		infraUID, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"infrastructure", "cluster", "-o", "jsonpath={.metadata.uid}",
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to get Infrastructure UID")
+
+		ownerRefPatch := fmt.Sprintf(
+			`{"metadata":{"ownerReferences":[{"apiVersion":"config.openshift.io/v1","kind":"Infrastructure","name":"cluster","uid":"%s"}]}}`,
+			infraUID)
+		o.Expect(machineSetUnderTest.Patch("merge", ownerRefPatch)).To(o.Succeed())
+		logger.Infof("Added OwnerReference to MachineSet %s to trigger reconcile-skip", machineSetUnderTest.name)
+
+		defer func() {
+			exutil.By("Restoring MachineSet by removing OwnerReference")
+			o.Expect(machineSetUnderTest.Patch("json", `[{"op":"remove","path":"/metadata/ownerReferences"}]`)).To(o.Succeed())
+			machineConfiguration.WaitForBootImageControllerComplete()
+		}()
+		logger.Infof("OK!\n")
+
+		exutil.By("Wait for boot image controller to process and get automatic.ocpVersion after patch")
+		machineConfiguration.WaitForBootImageControllerComplete()
+		patchedOCPVersion, err := machineConfiguration.Get(automaticOCPVersionPath)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting automatic.ocpVersion after patch")
+		o.Expect(patchedOCPVersion).NotTo(o.BeEmpty(), "automatic.ocpVersion should not be empty after reconcile-skip")
+		logger.Infof("automatic.ocpVersion after patch: %s", patchedOCPVersion)
+		logger.Infof("OK!\n")
+
+		exutil.By("Remove OwnerReference and verify automatic.ocpVersion is restored")
+		o.Expect(machineSetUnderTest.Patch("json", `[{"op":"remove","path":"/metadata/ownerReferences"}]`)).To(o.Succeed())
+		machineConfiguration.WaitForBootImageControllerComplete()
+		o.Eventually(func() string {
+			v, _ := machineConfiguration.Get(automaticOCPVersionPath)
+			return v
+		}, "2m", "10s").Should(o.Equal(originalOCPVersion),
+			"automatic.ocpVersion should be restored to %s after removing OwnerReference", originalOCPVersion)
+		logger.Infof("automatic.ocpVersion restored to: %s", originalOCPVersion)
+		logger.Infof("OK!\n")
 	})
 })
