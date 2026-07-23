@@ -96,6 +96,8 @@ const (
 	mccEventsRoleBindingTargetManifestPath                                = "manifests/machineconfigcontroller/events-rolebinding-target.yaml"
 	mccConfigMapsRoleTargetManifestPath                                   = "manifests/machineconfigcontroller/configmaps-role-target.yaml"
 	mccConfigMapsRoleBindingTargetManifestPath                            = "manifests/machineconfigcontroller/configmaps-rolebinding-target.yaml"
+	mccInstallConfigRoleManifestPath                                      = "manifests/machineconfigcontroller/install-config-role.yaml"
+	mccInstallConfigRoleBindingManifestPath                               = "manifests/machineconfigcontroller/install-config-rolebinding.yaml"
 	mccClusterRoleBindingManifestPath                                     = "manifests/machineconfigcontroller/clusterrolebinding.yaml"
 	mccServiceAccountManifestPath                                         = "manifests/machineconfigcontroller/sa.yaml"
 	mccKubeRbacProxyConfigMapPath                                         = "manifests/machineconfigcontroller/kube-rbac-proxy-config.yaml"
@@ -1193,12 +1195,14 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig, _ *confi
 		roles: []string{
 			mccKubeRbacProxyPrometheusRolePath,
 			mccConfigMapsRoleTargetManifestPath,
+			mccInstallConfigRoleManifestPath,
 		},
 		roleBindings: []string{
 			mccEventsRoleBindingDefaultManifestPath,
 			mccEventsRoleBindingTargetManifestPath,
 			mccKubeRbacProxyPrometheusRoleBindingPath,
 			mccConfigMapsRoleBindingTargetManifestPath,
+			mccInstallConfigRoleBindingManifestPath,
 			mopRoleBindingManifestPath,
 		},
 		clusterRoleBindings: []string{
