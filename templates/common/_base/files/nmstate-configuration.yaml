@@ -29,7 +29,7 @@ contents:
     if [ -e "$src_path/applied" ]; then
       sha_applied=$(sha256sum "$src_path/applied" | awk '{print $1}')
       sha_config=$(sha256sum "$src_path/$config_file" | awk '{print $1}')
-      if ["$sha_applied"=="$sha_config"]; then
+      if [[ "$sha_applied" == "$sha_config" ]]; then
         echo "Configuration already applied, exiting"
         exit 0
       fi
