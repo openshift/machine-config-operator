@@ -2,10 +2,8 @@ package extended
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"path/filepath"
-	"syscall"
 	"time"
 
 	g "github.com/onsi/ginkgo/v2"
@@ -19,10 +17,8 @@ import (
 
 var (
 	mcNameToFixtureMap = map[string]string{
-		"90-infra-extension":  filepath.Join("machineconfigs", "infra-extension-mc.yaml"),
-		"90-infra-testfile":   filepath.Join("machineconfigs", "infra-testfile-mc.yaml"),
-		"90-master-extension": filepath.Join("machineconfigs", "master-extension-mc.yaml"),
-		"90-master-testfile":  filepath.Join("machineconfigs", "master-testfile-mc.yaml"),
+		"90-infra-testfile":  filepath.Join("machineconfigs", "infra-testfile-mc.yaml"),
+		"90-master-testfile": filepath.Join("machineconfigs", "master-testfile-mc.yaml"),
 	}
 	nodeDisruptionFixture      = filepath.Join("machineconfigurations", "nodedisruptionpolicy-rebootless-path.yaml")
 	nodeDisruptionEmptyFixture = filepath.Join("machineconfigurations", "managedbootimages-empty.yaml")
@@ -33,9 +29,7 @@ var (
 var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Serial][Disruptive][OCPFeatureGate:ImageModeStatusReporting]", g.Ordered, func() {
 	defer g.GinkgoRecover()
 
-	var (
-		oc = exutil.NewCLI("mco-image-mode-status", exutil.KubeConfigPath()).AsAdmin()
-	)
+	oc := exutil.NewCLI("mco-image-mode-status", exutil.KubeConfigPath()).AsAdmin()
 
 	g.JustBeforeEach(func() {
 		extpriv.PreChecks(oc)
@@ -67,10 +61,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		// cases, run the test against the default `master` MCP.
 		if !DoesMachineConfigPoolHaveMachines(machineConfigClient, "worker") {
 			logger.Infof("Cluster has no `worker` machines, running test against the `master` MCP.")
-			runImageModeMCNTestDefaultMCP(oc, machineConfigClient, "master", "90-master-extension", true)
+			runImageModeMCNTestDefaultMCP(oc, machineConfigClient, "master", "", true)
 		} else {
 			// Run the standard image mode MCN test for a custom MCP named `infra` with no MC to apply
-			runImageModeMCNTestCustomMCP(oc, machineConfigClient, "infra", "90-infra-extension", true)
+			runImageModeMCNTestCustomMCP(oc, machineConfigClient, "infra", "", true)
 		}
 	})
 
@@ -122,14 +116,17 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 //  2. Validate the starting properties of the MCN associated with the test node
 //  3. Create a custom MCP named the value of `mcpAndMoscName` and add the test node to it
 //  4. Validate the properties of the MCN associated with the test node
-//  5. Configure on cluster image mode in the custom MCP & validate the MOSC applied successfully
-//  6. Validate the properties of the MCN associated with the test node
-//  7. If a MachineConfig has been provided, apply it, validate the MCN conditions trasnition
-//     throughout the update, then remove the MC
-//  8. Disable on cluster image mode in the custom MCP & validate the MOSC removal was successful
-//  9. Validate the properties of the MCN associated with the test node
-//  10. Remove the custom MCP
+//  5. Configure on cluster image mode in the custom MCP
+//  6. (Image-mode update) Wait for the OCL image build to succeed, then track
+//     MCN transitions during the image rollout
+//  7. (Non-image-mode update) Validate the MOSC applied successfully
+//  8. Validate the properties of the MCN associated with the test node
+//  9. (Non-image-mode update) If a MachineConfig has been provided, apply it, validate
+//     the MCN conditions transition throughout the update, then remove the MC
+//  10. Disable on cluster image mode in the custom MCP & validate the MOSC removal was successful
 //  11. Validate the properties of the MCN associated with the test node
+//  12. Remove the custom MCP
+//  13. Validate the properties of the MCN associated with the test node
 func runImageModeMCNTestCustomMCP(oc *exutil.CLI, machineConfigClient *machineconfigclient.Clientset, mcpAndMoscName, mcName string, isImageUpdate bool) {
 	exutil.By("Select a node to follow in this test")
 	workerNodes, err := GetNodesByRole(oc, "worker")
@@ -167,9 +164,28 @@ func runImageModeMCNTestCustomMCP(oc *exutil.CLI, machineConfigClient *machineco
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource: %s", err)
 	logger.Infof("OK!\n")
 
-	exutil.By("Validating the `infra` MOSC applied successfully")
-	extpriv.ValidateSuccessfulMOSC(mosc, nil)
-	logger.Infof("OK!\n")
+	if isImageUpdate {
+		// Wait for the OCL image build to succeed before tracking MCN transitions.
+		// Creating a MOSC can trigger a config reconciliation that reboots the node
+		// before the image build finishes. Without this wait, validateMCNTransitions
+		// catches that early reboot (base OS) instead of the actual OCL image rollout.
+		exutil.By("Waiting for the OCL image build to succeed")
+		o.Eventually(mosc.GetCurrentMachineOSBuild, "10m", "20s").Should(extpriv.Exist(),
+			"No build was created when OCB was enabled")
+		mosb, buildErr := mosc.GetCurrentMachineOSBuild()
+		o.Expect(buildErr).NotTo(o.HaveOccurred(), "Error getting MOSB from MOSC")
+		o.Eventually(mosb, "35m", "20s").Should(extpriv.HaveConditionField("Succeeded", "status", extpriv.TrueString),
+			"OCL image build did not succeed")
+		logger.Infof("OK!\n")
+
+		exutil.By("Validating the MCN condition transitions during OCL image rollout")
+		validateMCNTransitions(oc, machineConfigClient, nodeToTestName, isImageUpdate)
+		logger.Infof("OK!\n")
+	} else {
+		exutil.By("Validating the `infra` MOSC applied successfully")
+		extpriv.ValidateSuccessfulMOSC(mosc, nil)
+		logger.Infof("OK!\n")
+	}
 
 	exutil.By("Validate the node in `infra` MCP has correct MCN properties")
 	err = ValidateMCNForNode(oc, machineConfigClient, nodeToTestName, mcpAndMoscName)
@@ -235,12 +251,15 @@ func runImageModeMCNTestCustomMCP(oc *exutil.CLI, machineConfigClient *machineco
 // for image mode enabled workflows in a default MCP. The steps for the test are as follows:
 //  1. Select a node in the desired MCP to follow throughout the test
 //  2. Validate the starting properties of the MCN associated with the test node
-//  3. Configure on cluster image mode in the desired MCP & validate the MOSC applied successfully
-//  4. Validate the properties of the MCN associated with the test node
-//  5. If a MachineConfig has been provided, apply it, validate the MCN conditions trasnition
-//     throughout the update, then remove the MC
-//  6. Disable on cluster image mode in the desired MCP & validate the MOSC removal was successful
-//  7. Validate the properties of the MCN associated with the test node
+//  3. Configure on cluster image mode in the desired MCP
+//  4. (Image-mode update) Wait for the OCL image build to succeed, then track
+//     MCN transitions during the image rollout
+//  5. (Non-image-mode update) Validate the MOSC applied successfully
+//  6. Validate the properties of the MCN associated with the test node
+//  7. (Non-image-mode update) If a MachineConfig has been provided, apply it, validate
+//     the MCN conditions transition throughout the update, then remove the MC
+//  8. Disable on cluster image mode in the desired MCP & validate the MOSC removal was successful
+//  9. Validate the properties of the MCN associated with the test node
 func runImageModeMCNTestDefaultMCP(oc *exutil.CLI, machineConfigClient *machineconfigclient.Clientset, mcpAndMoscName, mcName string, isImageUpdate bool) {
 	exutil.By("Select a node to follow in this test")
 	mcpNodes, err := GetNodesByRole(oc, mcpAndMoscName)
@@ -261,17 +280,36 @@ func runImageModeMCNTestDefaultMCP(oc *exutil.CLI, machineConfigClient *machinec
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource: %s", err)
 	logger.Infof("OK!\n")
 
-	exutil.By("Validating the MOSC applied successfully")
-	extpriv.ValidateSuccessfulMOSC(mosc, nil)
-	logger.Infof("OK!\n")
+	if isImageUpdate {
+		// Wait for the OCL image build to succeed before tracking MCN transitions.
+		// Creating a MOSC can trigger a config reconciliation that reboots the node
+		// before the image build finishes. Without this wait, validateMCNTransitions
+		// catches that early reboot (base OS) instead of the actual OCL image rollout.
+		exutil.By("Waiting for the OCL image build to succeed")
+		o.Eventually(mosc.GetCurrentMachineOSBuild, "10m", "20s").Should(extpriv.Exist(),
+			"No build was created when OCB was enabled")
+		mosb, buildErr := mosc.GetCurrentMachineOSBuild()
+		o.Expect(buildErr).NotTo(o.HaveOccurred(), "Error getting MOSB from MOSC")
+		o.Eventually(mosb, "35m", "20s").Should(extpriv.HaveConditionField("Succeeded", "status", extpriv.TrueString),
+			"OCL image build did not succeed")
+		logger.Infof("OK!\n")
+
+		exutil.By("Validating the MCN condition transitions during OCL image rollout")
+		validateMCNTransitions(oc, machineConfigClient, nodeToTestName, isImageUpdate)
+		logger.Infof("OK!\n")
+	} else {
+		exutil.By("Validating the MOSC applied successfully")
+		extpriv.ValidateSuccessfulMOSC(mosc, nil)
+		logger.Infof("OK!\n")
+	}
 
 	exutil.By("Validate the test node has correct MCN properties")
 	err = ValidateMCNForNode(oc, machineConfigClient, nodeToTestName, mcpAndMoscName)
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error validating MCN for node `%s`: %s", nodeToTestName, err)
 	logger.Infof("OK!\n")
 
-	// If an MC has been provided, apply it and validate the MCN conditions transition correctly
-	// throughout the update.
+	// If an MC has been provided, apply it and validate the MCN conditions transition
+	// correctly throughout the update.
 	if mcName != "" {
 		// If a rebootless (non image-based) update is desired, apply the NodeDisruptionPolicy to prevent reboots.
 		if !isImageUpdate {
@@ -332,8 +370,6 @@ func validateMCNTransitions(oc *exutil.CLI, machineConfigClient *machineconfigcl
 	logger.Infof("Checking all conditions other than 'Updated' are False.")
 	o.Expect(ConfirmUpdatedMCNStatus(machineConfigClient, nodeToTestName)).Should(o.BeTrue(), "Error, all conditions must be 'False' when Updated=True.")
 	logger.Infof("OK!\n")
-
-	return
 }
 
 // `runMachineCountTest` runs through the general flow of validating machine count transitions in
@@ -406,66 +442,49 @@ func runMachineCountTest(machineConfigClient *machineconfigclient.Clientset, oc 
 // `validateMCPMachineCountTransitions` validates the actual machine counts reported in a MCP's
 // status matches the expected machine counts determined by checking the node annotations of the
 // targeted nodes. This function runs until one of the following termination conditions is met:
-//   - The expected and actual machine counts do not match within a 8 second tolerance window
+//   - The MCP machine counts have not matched the expected counts for longer than the mismatch
+//     deadline of 2 minutes for non-SNO clusters and 5 minutes for SNO clusters
 //   - The MCP is fully updated
 //   - The overall timeout for this function has been met
 //   - Some other error has occurred in a step of the function
 func validateMCPMachineCountTransitions(machineConfigClient *machineconfigclient.Clientset, oc *exutil.CLI, mcpName string, startTime metav1.Time, mosc *extpriv.MachineOSConfig, layered bool) {
 	timeout := 15 * time.Minute
 	interval := 10 * time.Second
-	loopCount := 3
-	// For on-cluster image mode updates, set the timeout to be longer
+	mismatchDeadline := 2 * time.Minute
 	if layered {
 		logger.Infof("Layered update, setting longer update timeout.")
 		timeout = 45 * time.Minute
 		interval = 30 * time.Second
-		// SNO clusters require a longer time to reconcile due to the MCC restart in
-		// reboot-required updates, so allow for more retries.
-		isSNO, isSNOErr := extpriv.IsSNOSafe(oc)
-		o.Expect(isSNOErr).NotTo(o.HaveOccurred(), fmt.Sprintf("Error checking if cluster is SNO: %v", isSNOErr))
-		if isSNO {
-			logger.Infof("Cluster is SNO, setting higher retry count.")
-			loopCount = 10
-		}
+		mismatchDeadline = 5 * time.Minute
 	}
 
+	var firstMismatchTime time.Time
 	o.Eventually(func() bool {
-		// Check if the MCP machine counts match what is expected from the pool's node annotation
-		// values. Note that there is some latency between when the node annotations are set and
-		// when the MCP machine counts are updates, so we'll try this a few times to make sure we
-		// don't fail just because of unlucky timing.
-		for i := 0; i <= loopCount; i++ {
-			logger.Infof("Checking if the MCP machine counts match the expected values...")
-			countsMatch, isConnErr := mcnAndNodeAnnotationMachineCountsMatch(machineConfigClient, oc, mcpName, mosc)
+		logger.Infof("Checking if the MCP machine counts match the expected values...")
+		countsMatch, isConnErr := mcnAndNodeAnnotationMachineCountsMatch(machineConfigClient, oc, mcpName, mosc)
 
-			// Handle success case
-			if countsMatch {
-				break
-			}
-
-			// Continue to next retry if there is a connection error. Connection errors are common
-			// in SNO suite runs, so we may need additional tries times to get the machine counts.
-			if isConnErr {
-				logger.Infof("Got connection error. Waiting %v seconds then trying again.", interval)
-				return false
-			}
-
-			// Handle case when the counts are not as expected. If we reach this point in the third
-			// itteration, we've exhausted our attempts and are likely seeing a true discrepancy
-			// between the expected and actual machine counts.
-			o.Expect(i).NotTo(o.BeNumerically("==", loopCount), "The actual MCP machine counts did not match the expected machine counts")
-			// If we have not exhausted our attempts, wait a few seconds and check again
-			if i != (loopCount - 1) {
-				logger.Infof("The MCP machine counts did match the expected values.  Waiting %v seconds then trying again.", (i+1)*4)
-				time.Sleep(time.Duration((i+1)*4) * time.Second)
-			}
+		// If we hit a connection error, continue to the next iterration
+		if isConnErr {
+			return false
 		}
 
-		// Check if the MCP is updated
-		// TODO: check if this properly handles the OCL case
+		// Handle the case when counts don't match, which can happen due to latency in MCP syncs
+		if !countsMatch {
+			if firstMismatchTime.IsZero() {
+				firstMismatchTime = time.Now()
+			}
+			elapsed := time.Since(firstMismatchTime)
+			if elapsed > mismatchDeadline {
+				o.StopTrying(fmt.Sprintf("MCP '%v' machine counts do not match expected values.", mcpName)).Now()
+			}
+			logger.Infof("Counts do not match yet. Will retry.")
+			return false
+		}
+
+		// Counts match — reset tracker and check if the MCP update is complete
+		firstMismatchTime = time.Time{}
 		return MCPIsUpdatedToNewConfig(machineConfigClient, mcpName, startTime)
 	}, timeout, interval).Should(o.BeTrue(), "Timed out waiting for MCP '%v' to complete update.", mcpName)
-
 }
 
 // `mcnAndNodeAnnotationMachineCountsMatch` checks whether the updated and degraded machine counts
@@ -474,17 +493,18 @@ func validateMCPMachineCountTransitions(machineConfigClient *machineconfigclient
 // otherwise. The second boolean return is `true`if there was a connection error when trying to get
 // a resource (this allows for resiliency in SNO clsuters).
 func mcnAndNodeAnnotationMachineCountsMatch(machineConfigClient *machineconfigclient.Clientset, oc *exutil.CLI,
-	mcpName string, mosc *extpriv.MachineOSConfig) (countsMatch, isConnErr bool) {
+	mcpName string, mosc *extpriv.MachineOSConfig,
+) (countsMatch, isConnErr bool) {
 	// Get machine counts from MCP
 	mcp, mcpErr := machineConfigClient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), mcpName, metav1.GetOptions{})
 	// If we fail to get the MCP, it could be due to a connection error or other infrastructure
 	// instability, so we should log a warning but not error out. This is especially important for SNO.
 	if mcpErr != nil {
-		if errors.Is(mcpErr, syscall.ECONNREFUSED) {
-			logger.Infof("Error connecting to cluster when getting MCP `%v`, will retry.", mcpName)
+		if isTransientConnectionError(mcpErr) {
+			logger.Infof("Transient error getting MCP `%v`, will retry: %v", mcpName, mcpErr)
 			return false, true
 		}
-		logger.Infof("Errored getting MCP `%v`, but not connection err.", mcpName)
+		logger.Infof("Non-transient error getting MCP `%v`: %v", mcpName, mcpErr)
 		return false, false
 	}
 	actualUpdatedCount := mcp.Status.UpdatedMachineCount
@@ -495,11 +515,11 @@ func mcnAndNodeAnnotationMachineCountsMatch(machineConfigClient *machineconfigcl
 	// If we fail to get the nodes, it could be due to a connection error or other infrastructure
 	// instability, so we should log a warning but not error out. This is especially important for SNO.
 	if nodesErr != nil {
-		if errors.Is(nodesErr, syscall.ECONNREFUSED) {
-			logger.Infof("Error getting nodes in MCP `%v`, will retry.", mcpName)
+		if isTransientConnectionError(nodesErr) {
+			logger.Infof("Transient error getting nodes in MCP `%v`, will retry: %v", mcpName, nodesErr)
 			return false, true
 		}
-		logger.Infof("Errored getting nodes in MCP `%v`, but not connection err.", mcpName)
+		logger.Infof("Non-transient error getting nodes in MCP `%v`: %v", mcpName, nodesErr)
 		return false, false
 	}
 	var expectedUpdatedCount int32

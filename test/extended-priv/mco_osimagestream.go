@@ -14,6 +14,12 @@ import (
 var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Serial][Disruptive][OCPFeatureGate:OSStreams] MCO osImageStream", func() {
 	defer g.GinkgoRecover()
 
+	// Registered before NewCLI so it runs before SetupProject's API calls.
+	// The image registry must be healthy for dockercfg secret provisioning.
+	g.BeforeEach(func() {
+		exutil.SkipIfImageRegistryUnhealthy(exutil.KubeConfigPath())
+	})
+
 	var (
 		oc = exutil.NewCLI("mco-osimagestream", exutil.KubeConfigPath())
 		// Compact compatible MCP. If the node is compact/SNO this variable will be the master pool, else it will be the worker pool

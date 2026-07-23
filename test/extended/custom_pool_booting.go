@@ -19,8 +19,14 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Serial][Disruptive]", func() {
+var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Serial][Disruptive]", g.Label("NoTopology:SingleReplica"), func() {
 	defer g.GinkgoRecover()
+
+	// Registered before NewCLI so it runs before SetupProject's API calls.
+	// Prevents test failures when the API is unreachable after a SNO reboot.
+	g.BeforeEach(func() {
+		exutil.SkipIfClusterUnreachable(exutil.KubeConfigPath())
+	})
 
 	var (
 		oc                  = exutil.NewCLI("custom-pool-booting", exutil.KubeConfigPath()).AsAdmin()
@@ -36,9 +42,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		// Skip if worker scale-ups aren't possible
 		extpriv.SkipTestIfWorkersCannotBeScaled(oc)
 
-		// Skip on single-node topologies
-		exutil.SkipOnSingleNodeTopology(oc)
-
 		machineClient, err = machineclient.NewForConfig(oc.KubeFramework().ClientConfig())
 		o.Expect(err).NotTo(o.HaveOccurred())
 
@@ -47,6 +50,9 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	})
 
 	g.AfterEach(func(ctx context.Context) {
+		if machineClient == nil {
+			return
+		}
 		exutil.By("Performing cleanup")
 		logger.Infof("Cleaning up custom MCP %s", customMCPName)
 		// Cleanup: Delete custom MCP if it exists
@@ -55,6 +61,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			logger.Infof("Failed to delete MCP %s: %v", customMCPName, deleteMCPErr)
 		} else {
 			logger.Infof("Successfully deleted MCP %s", customMCPName)
+		}
+
+		if clonedMachineSet == nil {
+			return
 		}
 
 		// Cleanup: Scale down and delete the cloned machineset if it exists
