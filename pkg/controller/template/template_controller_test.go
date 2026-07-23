@@ -530,6 +530,38 @@ func TestKubeletAutoNodeSizingEnabled(t *testing.T) {
 	}
 }
 
+func TestSystemGomaxprocsDropins(t *testing.T) {
+	cc := newControllerConfig("test-cluster")
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := map[string]bool{"kubelet.service": false, "crio.service": false}
+	for _, mc := range mcs {
+		ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+		if err != nil {
+			t.Fatalf("Failed to parse ignition config for %s: %v", mc.Name, err)
+		}
+		for _, unit := range ignCfg.Systemd.Units {
+			if _, ok := found[unit.Name]; !ok {
+				continue
+			}
+			for _, dropin := range unit.Dropins {
+				if dropin.Name == "30-gomaxprocs.conf" && dropin.Contents != nil && strings.Contains(*dropin.Contents, "EnvironmentFile=-/run/system-gomaxprocs.env") {
+					found[unit.Name] = true
+				}
+			}
+		}
+	}
+
+	for unit, exists := range found {
+		if !exists {
+			t.Errorf("Expected %s to have the GOMAXPROCS environment-file drop-in", unit)
+		}
+	}
+}
+
 // TestMergesIRIRegistryCredentialsIntoPullSecret verifies that the template controller merges
 // IRI registry credentials into the pull secret when rendering 00-master, so that
 // nodes can authenticate to the IRI registry without writing to the user-controlled
