@@ -195,8 +195,6 @@ func setupForBootstrapTest(t *testing.T) (*Bootstrap, *fakeImageStreamFactory, s
 
 	require.NoError(t, exec.Command("cp", "-r", "testdata/bootstrap/.", srcDir).Run())
 
-	bootstrap := New("../../../templates", srcDir, filepath.Join(srcDir, "machineconfigcontroller-pull-secret"))
-
 	fakeFactory := &fakeImageStreamFactory{
 		stream: &mcfgv1.OSImageStream{
 			Status: mcfgv1.OSImageStreamStatus{
@@ -212,9 +210,26 @@ func setupForBootstrapTest(t *testing.T) (*Bootstrap, *fakeImageStreamFactory, s
 		},
 	}
 
+	bootstrap := New("../../../templates", srcDir, filepath.Join(srcDir, "machineconfigcontroller-pull-secret"), &noopImagesInspectorFactory{})
 	bootstrap.imageStreamFactory = fakeFactory
 
 	return bootstrap, fakeFactory, srcDir, destDir
+}
+
+type noopImagesInspectorFactory struct{}
+
+func (n *noopImagesInspectorFactory) ForContext(_ imageutils.SysContextFactory) osimagestream.ImagesInspector {
+	return &noopImagesInspector{}
+}
+
+type noopImagesInspector struct{}
+
+func (n *noopImagesInspector) Inspect(_ context.Context, _ ...string) ([]imageutils.BulkInspectResult, error) {
+	return []imageutils.BulkInspectResult{{}}, nil
+}
+
+func (n *noopImagesInspector) FetchImageFile(_ context.Context, _, _ string) ([]byte, error) {
+	return nil, nil
 }
 
 // TestBootstrapRunHypershift validates OSImageStream behavior under
