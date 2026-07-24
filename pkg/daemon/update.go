@@ -748,7 +748,6 @@ func calculatePostConfigChangeAction(diff *machineConfigDiff, diffFileSet []stri
 
 // calculatePostConfigChangeNodeDisruptionAction takes action based on the cluster's Node disruption policies.
 func (dn *Daemon) calculatePostConfigChangeNodeDisruptionAction(diff *machineConfigDiff, diffFileSet, diffUnitSet []string) ([]opv1.NodeDisruptionPolicyStatusAction, error) {
-
 	var mcop *opv1.MachineConfiguration
 	var pollErr error
 	// Wait for mcop.Status.NodeDisruptionPolicyStatus to populate, otherwise error out. This shouldn't take very long
@@ -819,7 +818,6 @@ func (dn *Daemon) calculatePostConfigChangeNodeDisruptionAction(diff *machineCon
 	}
 
 	return nodeDisruptionActions, nil
-
 }
 
 // Finalizes the revert process by enabling a special systemd unit prior to
@@ -1312,6 +1310,11 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		return err
 	}
 
+	// update crypto policy
+	if err := applyCryptoPolicy(diffFileSet); err != nil {
+		return err
+	}
+
 	// At this point, we write the now expected to be "current" config to /etc.
 	// When we reboot, we'll find this file and validate that we're in this state,
 	// and that completes an update.
@@ -1775,7 +1778,6 @@ func (dn *Daemon) getCurrentlyInstalledPackages() (sets.Set[string], error) {
 // generateExtensionsArgs generates extension arguments for rpm-ostree, based on the target config
 // and currently installed extension packages.
 func generateExtensionsArgs(installedSet sets.Set[string], newConfig *mcfgv1.MachineConfig) []string {
-
 	// Get packages that should be installed based on new config
 	supportedExtensions := ctrlcommon.SupportedExtensions()
 	requiredSet := sets.New[string]()
@@ -2511,7 +2513,6 @@ func (dn *Daemon) listSystemdUnits() (result map[string]systemddbus.UnitFile, er
 		result[unitName] = unitFile
 	}
 	return result, nil
-
 }
 
 // writeFiles writes the given files to disk.
@@ -2607,7 +2608,6 @@ func getUserPasswordHash(user string) (string, error) {
 		return shadowSlice[1], nil
 	}
 	return "", nil
-
 }
 
 // SetPasswordHash updates the password for each user in newUsers, skipping
@@ -2667,6 +2667,49 @@ func (dn *Daemon) updateKubeConfigPermission() error {
 		}
 	} else {
 		return fmt.Errorf("cannot stat %s: %w", kubeConfigPath, err)
+	}
+	return nil
+}
+
+// applyCryptoPolicy runs update-crypto-policies when the rendered MachineConfig
+// changes /etc/crypto-policies/config or any .pmod under policies/modules/.
+// On FIPS nodes it refuses to apply a non-FIPS policy.
+func applyCryptoPolicy(diffFileSet []string) error {
+	needsUpdate := false
+	for _, path := range diffFileSet {
+		if path == "/etc/crypto-policies/config" || strings.HasPrefix(path, "/etc/crypto-policies/policies/modules/") {
+			needsUpdate = true
+			break
+		}
+	}
+	if !needsUpdate {
+		return nil
+	}
+
+	if err := processFips(func(nodeFIPS bool) error {
+		if !nodeFIPS {
+			return nil
+		}
+		desiredBytes, err := os.ReadFile("/etc/crypto-policies/config")
+		if err != nil {
+			return fmt.Errorf("failed to read /etc/crypto-policies/config: %w", err)
+		}
+		desired := strings.TrimSpace(string(desiredBytes))
+		if strings.HasPrefix(desired, "FIPS") {
+			return nil
+		}
+		klog.Warningf("Skipping crypto-policy update: FIPS mode is enabled but desired policy is %q; FIPS crypto-policy takes precedence", desired)
+		return errSkipCryptoPolicy
+	}); err != nil {
+		if errors.Is(err, errSkipCryptoPolicy) {
+			return nil
+		}
+		return err
+	}
+
+	klog.Infof("Applying crypto-policy via update-crypto-policies")
+	if err := runCmdSync("update-crypto-policies"); err != nil {
+		return fmt.Errorf("failed to apply crypto-policy: %w", err)
 	}
 	return nil
 }
@@ -3069,6 +3112,8 @@ func runCmdSync(cmdName string, args ...string) error {
 	return nil
 }
 
+var errSkipCryptoPolicy = errors.New("skip crypto-policy update")
+
 var (
 	podmanSigstoreSupported      sync.Once
 	podmanSigstoreSupportedValue bool
@@ -3274,9 +3319,8 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 	// repo isn't there rpm-ostree will fail if there are layered packages.
 	// See https://redhat.atlassian.net/browse/OCPBUGS-2269
 	haveExtensions := len(oldConfig.Spec.Extensions) != 0 || len(newConfig.Spec.Extensions) != 0
-	haveKernelType :=
-		helpers.CanonicalizeKernelType(oldConfig.Spec.KernelType) != ctrlcommon.KernelTypeDefault ||
-			helpers.CanonicalizeKernelType(newConfig.Spec.KernelType) != ctrlcommon.KernelTypeDefault
+	haveKernelType := helpers.CanonicalizeKernelType(oldConfig.Spec.KernelType) != ctrlcommon.KernelTypeDefault ||
+		helpers.CanonicalizeKernelType(newConfig.Spec.KernelType) != ctrlcommon.KernelTypeDefault
 
 	var osExtensionsContentDir string
 	var err error

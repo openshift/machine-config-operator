@@ -1,0 +1,5 @@
+mode: 0644
+path: "/etc/crypto-policies/config"
+contents:
+  inline: |
+    {{ .CryptoPolicy }}

@@ -19,6 +19,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
+	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
@@ -91,8 +92,10 @@ func TestValidateIgnition(t *testing.T) {
 	// Test that a valid ignition config returns nil
 	testIgn2Config.Ignition.Version = "2.0.0"
 	ign2Mode := 420
-	ign2File := ign2types.File{Node: ign2types.Node{Filesystem: "root", Path: "/etc/testfileconfig"},
-		FileEmbedded1: ign2types.FileEmbedded1{Mode: &ign2Mode, Contents: ign2types.FileContents{Source: "data:,helloworld"}}}
+	ign2File := ign2types.File{
+		Node:          ign2types.Node{Filesystem: "root", Path: "/etc/testfileconfig"},
+		FileEmbedded1: ign2types.FileEmbedded1{Mode: &ign2Mode, Contents: ign2types.FileContents{Source: "data:,helloworld"}},
+	}
 	testIgn2Config.Storage.Files = []ign2types.File{ign2File}
 	isValid = ValidateIgnition(testIgn2Config)
 	require.Nil(t, isValid)
@@ -112,8 +115,10 @@ func TestValidateIgnition(t *testing.T) {
 	testIgn3Config.Ignition.Version = InternalMCOIgnitionVersion
 	mode := 420
 	testfiledata := "data:,greatconfigstuff"
-	tempFile := ign3types.File{Node: ign3types.Node{Path: "/etc/testfileconfig"},
-		FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.Resource{Source: &testfiledata}, Mode: &mode}}
+	tempFile := ign3types.File{
+		Node:          ign3types.Node{Path: "/etc/testfileconfig"},
+		FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.Resource{Source: &testfiledata}, Mode: &mode},
+	}
 	testIgn3Config.Storage.Files = append(testIgn3Config.Storage.Files, tempFile)
 	isValid2 = ValidateIgnition(testIgn3Config)
 	require.Nil(t, isValid2)
@@ -232,7 +237,8 @@ func TestIgnitionConverterConvert(t *testing.T) {
 			inputVersion:  "3.5.0",
 			outputVersion: "3.1.0",
 			err:           ErrIgnitionConverterWrongSourceType,
-		}, {
+		},
+		{
 			name:          "Conversion not supported",
 			inputConfig:   ign3Config,
 			inputVersion:  "3.1.0",
@@ -259,7 +265,6 @@ func TestIgnitionConverterConvert(t *testing.T) {
 			} else {
 				assert.ErrorIs(t, err, testCase.err)
 			}
-
 		})
 	}
 }
@@ -643,7 +648,6 @@ func TestMergeMachineConfigs(t *testing.T) {
 		},
 	}
 	assert.Equal(t, *mergedMachineConfig, *expectedMachineConfig)
-
 }
 
 func TestRemoveIgnDuplicateFilesAndUnits(t *testing.T) {
@@ -761,12 +765,18 @@ func TestSetDefaultFileOverwrite(t *testing.T) {
 	// Set up Files entries
 	mode := 420
 	testfiledata := "data:,test"
-	tempFileNoDefault := ign3types.File{Node: ign3types.Node{Path: "/etc/testfileconfig1"},
-		FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.Resource{Source: &testfiledata}, Mode: &mode}}
-	tempFileOvewriteTrue := ign3types.File{Node: ign3types.Node{Path: "/etc/testfileconfig1", Overwrite: boolToPtr(true)},
-		FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.Resource{Source: &testfiledata}, Mode: &mode}}
-	tempFileOverwriteFalse := ign3types.File{Node: ign3types.Node{Path: "/etc/testfileconfig2", Overwrite: boolToPtr(false)},
-		FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.Resource{Source: &testfiledata}, Mode: &mode}}
+	tempFileNoDefault := ign3types.File{
+		Node:          ign3types.Node{Path: "/etc/testfileconfig1"},
+		FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.Resource{Source: &testfiledata}, Mode: &mode},
+	}
+	tempFileOvewriteTrue := ign3types.File{
+		Node:          ign3types.Node{Path: "/etc/testfileconfig1", Overwrite: boolToPtr(true)},
+		FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.Resource{Source: &testfiledata}, Mode: &mode},
+	}
+	tempFileOverwriteFalse := ign3types.File{
+		Node:          ign3types.Node{Path: "/etc/testfileconfig2", Overwrite: boolToPtr(false)},
+		FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.Resource{Source: &testfiledata}, Mode: &mode},
+	}
 
 	// Set up two Ignition configs, one with overwrite: no default, overwrite: false (to be passed to MergeMachineConfigs)
 	// and one with a overwrite: true, overwrite: false (the expected output)
@@ -822,8 +832,10 @@ func TestIgnitionMergeCompressed(t *testing.T) {
 	mode := 420
 	testfiledata := "data:;base64,H4sIAAAAAAAAA0vLz+cCAKhlMn4EAAAA"
 	compression := "gzip"
-	tempFile := ign3types.File{Node: ign3types.Node{Path: "/etc/testfileconfig"},
-		FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.Resource{Source: &testfiledata, Compression: &compression}, Mode: &mode}}
+	tempFile := ign3types.File{
+		Node:          ign3types.Node{Path: "/etc/testfileconfig"},
+		FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.Resource{Source: &testfiledata, Compression: &compression}, Mode: &mode},
+	}
 	testIgn3Config.Storage.Files = append(testIgn3Config.Storage.Files, tempFile)
 
 	testIgn3Config2 := ign3types.Config{}
@@ -1016,292 +1028,293 @@ func TestGetMachinesByState(t *testing.T) {
 		layered       bool
 		mosc          *mcfgv1.MachineOSConfig
 		mosb          *mcfgv1.MachineOSBuild
-	}{{
-		name:          "no nodes",
-		nodes:         []*corev1.Node{},
-		currentConfig: machineConfigV1,
-	}, {
-		name: "node with nil annotations",
-		nodes: []*corev1.Node{
-			{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        "node1",
-					Annotations: nil,
+	}{
+		{
+			name:          "no nodes",
+			nodes:         []*corev1.Node{},
+			currentConfig: machineConfigV1,
+		}, {
+			name: "node with nil annotations",
+			nodes: []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "node1",
+						Annotations: nil,
+					},
 				},
 			},
-		},
-		unavailable: []*corev1.Node{
-			{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        "node1",
-					Annotations: nil,
+			unavailable: []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "node1",
+						Annotations: nil,
+					},
 				},
 			},
-		},
-	}, {
-		name: "node with empty annotations",
-		nodes: []*corev1.Node{
-			{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        "node1",
-					Annotations: map[string]string{},
+		}, {
+			name: "node with empty annotations",
+			nodes: []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "node1",
+						Annotations: map[string]string{},
+					},
 				},
 			},
-		},
-		unavailable: []*corev1.Node{
-			{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        "node1",
-					Annotations: map[string]string{},
+			unavailable: []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "node1",
+						Annotations: map[string]string{},
+					},
 				},
 			},
+		}, {
+			name: "1 node updated, 1 node ready, 1 updating, 1 not acted upon, 0 degraded",
+			nodes: []*corev1.Node{
+				newNode(machineConfigV0, machineConfigV0),
+				newNode(machineConfigV1, machineConfigV1),
+				newNode(machineConfigV0, machineConfigV1),
+			},
+			currentConfig: machineConfigV1,
+			updated:       []*corev1.Node{newNode(machineConfigV1, machineConfigV1)},
+			ready:         []*corev1.Node{newNode(machineConfigV1, machineConfigV1)},
+			unavailable:   []*corev1.Node{newNode(machineConfigV0, machineConfigV1)},
+		}, {
+			name: "2 node updated, 1 updating",
+			nodes: []*corev1.Node{
+				newNode(machineConfigV0, machineConfigV1),
+				newNode(machineConfigV1, machineConfigV1),
+				newNode(machineConfigV1, machineConfigV1),
+			},
+			currentConfig: machineConfigV1,
+			updated:       []*corev1.Node{newNode(machineConfigV1, machineConfigV1), newNode(machineConfigV1, machineConfigV1)},
+			ready:         []*corev1.Node{newNode(machineConfigV1, machineConfigV1), newNode(machineConfigV1, machineConfigV1)},
+			unavailable:   []*corev1.Node{newNode(machineConfigV0, machineConfigV1)},
+		}, {
+			name: "2 node updated, 1 updating, but 1 updated node is NotReady",
+			nodes: []*corev1.Node{
+				newNode(machineConfigV0, machineConfigV1),
+				newNode(machineConfigV1, machineConfigV1),
+				helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
+			},
+			currentConfig: machineConfigV1,
+			updated:       []*corev1.Node{newNode(machineConfigV1, machineConfigV1), helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionFalse)},
+			ready:         []*corev1.Node{newNode(machineConfigV1, machineConfigV1)},
+			unavailable:   []*corev1.Node{newNode(machineConfigV0, machineConfigV1), helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionFalse)},
+		}, {
+			name: "1 layered node updated, 1 updating, 1 not acted upon",
+			nodes: []*corev1.Node{
+				newLayeredNode(machineConfigV0, machineConfigV0, imageV0, imageV0),
+				newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+				newLayeredNode(machineConfigV0, machineConfigV1, imageV0, imageV1),
+			},
+			currentConfig: machineConfigV1,
+			currentImage:  imageV1,
+			layered:       true,
+			mosc:          helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
+			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
+			updated:       []*corev1.Node{newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1)},
+			ready:         []*corev1.Node{newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1)},
+			unavailable:   []*corev1.Node{newLayeredNode(machineConfigV0, machineConfigV1, imageV0, imageV1)},
+		}, {
+			name: "2 layered nodes updated, 1 updating MachineConfig",
+			nodes: []*corev1.Node{
+				newLayeredNode(machineConfigV0, machineConfigV1, imageV1, imageV1),
+				newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+				newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+			},
+			currentConfig: machineConfigV1,
+			currentImage:  imageV1,
+			layered:       true,
+			mosc:          helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
+			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
+			updated: []*corev1.Node{
+				newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+				newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+			},
+			ready: []*corev1.Node{
+				newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+				newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+			},
+			unavailable: []*corev1.Node{newLayeredNode(machineConfigV0, machineConfigV1, imageV1, imageV1)},
+		}, {
+			name: "2 layered nodes updated, 1 updating image",
+			nodes: []*corev1.Node{
+				newLayeredNode(machineConfigV1, machineConfigV1, imageV0, imageV1),
+				newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+				newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+			},
+			currentConfig: machineConfigV1,
+			currentImage:  imageV1,
+			layered:       true,
+			mosc:          helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
+			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
+			updated: []*corev1.Node{
+				newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+				newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+			},
+			ready: []*corev1.Node{
+				newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+				newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+			},
+			unavailable: []*corev1.Node{newLayeredNode(machineConfigV1, machineConfigV1, imageV0, imageV1)},
+		}, {
+			name: "2 layered nodes updated, 1 updating, but 1 updated node is NotReady",
+			nodes: []*corev1.Node{
+				newLayeredNode(machineConfigV0, machineConfigV1, imageV0, imageV1),
+				newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+				helpers.NewLayeredNodeWithReady("node-2", machineConfigV1, machineConfigV1, imageV1, imageV1, corev1.ConditionFalse),
+			},
+			currentConfig: machineConfigV1,
+			currentImage:  imageV1,
+			layered:       true,
+			mosc:          helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
+			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
+			updated: []*corev1.Node{
+				newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+				helpers.NewLayeredNodeWithReady("node-2", machineConfigV1, machineConfigV1, imageV1, imageV1, corev1.ConditionFalse),
+			},
+			ready: []*corev1.Node{
+				newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+			},
+			unavailable: []*corev1.Node{
+				newLayeredNode(machineConfigV0, machineConfigV1, imageV0, imageV1),
+				helpers.NewLayeredNodeWithReady("node-2", machineConfigV1, machineConfigV1, imageV1, imageV1, corev1.ConditionFalse),
+			},
+		}, {
+			name: "Layered pool with unlayered nodes, 2 updated, 1 not layered and not updating",
+			nodes: []*corev1.Node{
+				newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+				newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+				newNode(machineConfigV0, machineConfigV0),
+			},
+			currentConfig: machineConfigV1,
+			currentImage:  imageV1,
+			layered:       true,
+			mosc:          helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
+			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
+			updated: []*corev1.Node{
+				newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+				newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+			},
+			ready: []*corev1.Node{
+				newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+				newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
+			},
+		}, {
+			name: "Layered pool with image not built, 3 not updated or ready, 0 updating",
+			nodes: []*corev1.Node{
+				newNode(machineConfigV1, machineConfigV1),
+				newNode(machineConfigV1, machineConfigV1),
+				newNode(machineConfigV1, machineConfigV1),
+			},
+			currentConfig: machineConfigV1,
+			layered:       true,
+			mosc:          helpers.NewMachineOSConfigBuilder("mosc-1").WithMachineConfigPool("pool-1").MachineOSConfig(),
+			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
+		}, {
+			name: "Unlayered pool with 1 layered node, 2 updated, 1 not acted upon",
+			nodes: []*corev1.Node{
+				newNode(machineConfigV1, machineConfigV1),
+				newNode(machineConfigV1, machineConfigV1),
+				newLayeredNode(machineConfigV0, machineConfigV0, imageV1, imageV1),
+			},
+			currentConfig: machineConfigV1,
+			updated: []*corev1.Node{
+				newNode(machineConfigV1, machineConfigV1),
+				newNode(machineConfigV1, machineConfigV1),
+			},
+			ready: []*corev1.Node{
+				newNode(machineConfigV1, machineConfigV1),
+				newNode(machineConfigV1, machineConfigV1),
+			},
+		}, {
+			name: "Pool with image mode disabling, 1 node updating, 2 nodes not acted upon",
+			nodes: []*corev1.Node{
+				newLayeredNode(machineConfigV0, machineConfigV0, imageV1, ""),
+				newLayeredNode(machineConfigV0, machineConfigV0, imageV1, imageV1),
+				newLayeredNode(machineConfigV0, machineConfigV0, imageV1, imageV1),
+			},
+			currentConfig: machineConfigV0,
+			layered:       false,
+			unavailable: []*corev1.Node{
+				newLayeredNode(machineConfigV0, machineConfigV0, imageV1, ""),
+			},
+		}, {
+			name: "Nodes with mixed states",
+			nodes: []*corev1.Node{
+				newNodeWithState(machineConfigV0, machineConfigV0, "Degraded"),
+				newNodeWithState(machineConfigV0, machineConfigV0, "Done"),
+				newNodeWithState(machineConfigV0, machineConfigV0, "Unreconcilable"),
+				newNodeWithState(machineConfigV0, machineConfigV1, "Working"),
+				newNodeWithState(machineConfigV0, machineConfigV1, "Rebooting"),
+			},
+			currentConfig: machineConfigV0,
+			updated: []*corev1.Node{
+				newNodeWithState(machineConfigV0, machineConfigV0, "Done"),
+			},
+			ready: []*corev1.Node{
+				newNodeWithState(machineConfigV0, machineConfigV0, "Done"),
+			},
+			unavailable: []*corev1.Node{
+				newNodeWithState(machineConfigV0, machineConfigV0, "Degraded"),
+				newNodeWithState(machineConfigV0, machineConfigV0, "Unreconcilable"),
+				newNodeWithState(machineConfigV0, machineConfigV1, "Working"),
+				newNodeWithState(machineConfigV0, machineConfigV1, "Rebooting"),
+			},
+			degraded: []*corev1.Node{
+				newNodeWithState(machineConfigV0, machineConfigV0, "Degraded"),
+				newNodeWithState(machineConfigV0, machineConfigV0, "Unreconcilable"),
+			},
+		}, {
+			name: "Layered nodes with mixed states",
+			nodes: []*corev1.Node{
+				newLayeredNodeWithState(machineConfigV0, machineConfigV0, imageV1, imageV1, "Degraded"),
+				newLayeredNodeWithState(machineConfigV0, machineConfigV0, imageV1, imageV1, "Done"),
+				newLayeredNodeWithState(machineConfigV0, machineConfigV0, imageV1, imageV1, "Unreconcilable"),
+				newLayeredNodeWithState(machineConfigV0, machineConfigV1, imageV1, imageV1, "Working"),
+				newLayeredNodeWithState(machineConfigV0, machineConfigV1, imageV1, imageV1, "Rebooting"),
+			},
+			currentConfig: machineConfigV0,
+			currentImage:  imageV1,
+			layered:       true,
+			mosc:          helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
+			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV0).MachineOSBuild(),
+			updated: []*corev1.Node{
+				newLayeredNodeWithState(machineConfigV0, machineConfigV0, imageV1, imageV1, "Done"),
+			},
+			ready: []*corev1.Node{
+				newLayeredNodeWithState(machineConfigV0, machineConfigV0, imageV1, imageV1, "Done"),
+			},
+			unavailable: []*corev1.Node{
+				newLayeredNodeWithState(machineConfigV0, machineConfigV0, imageV1, imageV1, "Degraded"),
+				newLayeredNodeWithState(machineConfigV0, machineConfigV0, imageV1, imageV1, "Unreconcilable"),
+				newLayeredNodeWithState(machineConfigV0, machineConfigV1, imageV1, imageV1, "Working"),
+				newLayeredNodeWithState(machineConfigV0, machineConfigV1, imageV1, imageV1, "Rebooting"),
+			},
+			degraded: []*corev1.Node{
+				newLayeredNodeWithState(machineConfigV0, machineConfigV0, imageV1, imageV1, "Degraded"),
+				newLayeredNodeWithState(machineConfigV0, machineConfigV0, imageV1, imageV1, "Unreconcilable"),
+			},
+		}, {
+			name: "0 layered nodes updated, 2 degraded",
+			nodes: []*corev1.Node{
+				newLayeredNodeWithState(machineConfigV1, machineConfigV0, imageV1, imageV1, "Degraded"),
+				newLayeredNodeWithState(machineConfigV1, machineConfigV0, imageV1, imageV1, "Unreconcilable"),
+				newLayeredNode(machineConfigV0, machineConfigV0, imageV1, imageV1),
+				newLayeredNode(machineConfigV0, machineConfigV0, imageV1, imageV1),
+			},
+			currentConfig: machineConfigV1,
+			currentImage:  imageV1,
+			layered:       true,
+			mosc:          helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
+			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV0).MachineOSBuild(),
+			degraded: []*corev1.Node{
+				newLayeredNodeWithState(machineConfigV1, machineConfigV0, imageV1, imageV1, "Degraded"),
+				newLayeredNodeWithState(machineConfigV1, machineConfigV0, imageV1, imageV1, "Unreconcilable"),
+			},
 		},
-	}, {
-		name: "1 node updated, 1 node ready, 1 updating, 1 not acted upon, 0 degraded",
-		nodes: []*corev1.Node{
-			newNode(machineConfigV0, machineConfigV0),
-			newNode(machineConfigV1, machineConfigV1),
-			newNode(machineConfigV0, machineConfigV1),
-		},
-		currentConfig: machineConfigV1,
-		updated:       []*corev1.Node{newNode(machineConfigV1, machineConfigV1)},
-		ready:         []*corev1.Node{newNode(machineConfigV1, machineConfigV1)},
-		unavailable:   []*corev1.Node{newNode(machineConfigV0, machineConfigV1)},
-	}, {
-		name: "2 node updated, 1 updating",
-		nodes: []*corev1.Node{
-			newNode(machineConfigV0, machineConfigV1),
-			newNode(machineConfigV1, machineConfigV1),
-			newNode(machineConfigV1, machineConfigV1),
-		},
-		currentConfig: machineConfigV1,
-		updated:       []*corev1.Node{newNode(machineConfigV1, machineConfigV1), newNode(machineConfigV1, machineConfigV1)},
-		ready:         []*corev1.Node{newNode(machineConfigV1, machineConfigV1), newNode(machineConfigV1, machineConfigV1)},
-		unavailable:   []*corev1.Node{newNode(machineConfigV0, machineConfigV1)},
-	}, {
-		name: "2 node updated, 1 updating, but 1 updated node is NotReady",
-		nodes: []*corev1.Node{
-			newNode(machineConfigV0, machineConfigV1),
-			newNode(machineConfigV1, machineConfigV1),
-			helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
-		},
-		currentConfig: machineConfigV1,
-		updated:       []*corev1.Node{newNode(machineConfigV1, machineConfigV1), helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionFalse)},
-		ready:         []*corev1.Node{newNode(machineConfigV1, machineConfigV1)},
-		unavailable:   []*corev1.Node{newNode(machineConfigV0, machineConfigV1), helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionFalse)},
-	}, {
-		name: "1 layered node updated, 1 updating, 1 not acted upon",
-		nodes: []*corev1.Node{
-			newLayeredNode(machineConfigV0, machineConfigV0, imageV0, imageV0),
-			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
-			newLayeredNode(machineConfigV0, machineConfigV1, imageV0, imageV1),
-		},
-		currentConfig: machineConfigV1,
-		currentImage:  imageV1,
-		layered:       true,
-		mosc:          helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
-		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
-		updated:       []*corev1.Node{newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1)},
-		ready:         []*corev1.Node{newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1)},
-		unavailable:   []*corev1.Node{newLayeredNode(machineConfigV0, machineConfigV1, imageV0, imageV1)},
-	}, {
-		name: "2 layered nodes updated, 1 updating MachineConfig",
-		nodes: []*corev1.Node{
-			newLayeredNode(machineConfigV0, machineConfigV1, imageV1, imageV1),
-			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
-			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
-		},
-		currentConfig: machineConfigV1,
-		currentImage:  imageV1,
-		layered:       true,
-		mosc:          helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
-		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
-		updated: []*corev1.Node{
-			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
-			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
-		},
-		ready: []*corev1.Node{
-			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
-			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
-		},
-		unavailable: []*corev1.Node{newLayeredNode(machineConfigV0, machineConfigV1, imageV1, imageV1)},
-	}, {
-		name: "2 layered nodes updated, 1 updating image",
-		nodes: []*corev1.Node{
-			newLayeredNode(machineConfigV1, machineConfigV1, imageV0, imageV1),
-			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
-			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
-		},
-		currentConfig: machineConfigV1,
-		currentImage:  imageV1,
-		layered:       true,
-		mosc:          helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
-		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
-		updated: []*corev1.Node{
-			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
-			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
-		},
-		ready: []*corev1.Node{
-			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
-			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
-		},
-		unavailable: []*corev1.Node{newLayeredNode(machineConfigV1, machineConfigV1, imageV0, imageV1)},
-	}, {
-		name: "2 layered nodes updated, 1 updating, but 1 updated node is NotReady",
-		nodes: []*corev1.Node{
-			newLayeredNode(machineConfigV0, machineConfigV1, imageV0, imageV1),
-			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
-			helpers.NewLayeredNodeWithReady("node-2", machineConfigV1, machineConfigV1, imageV1, imageV1, corev1.ConditionFalse),
-		},
-		currentConfig: machineConfigV1,
-		currentImage:  imageV1,
-		layered:       true,
-		mosc:          helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
-		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
-		updated: []*corev1.Node{
-			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
-			helpers.NewLayeredNodeWithReady("node-2", machineConfigV1, machineConfigV1, imageV1, imageV1, corev1.ConditionFalse),
-		},
-		ready: []*corev1.Node{
-			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
-		},
-		unavailable: []*corev1.Node{
-			newLayeredNode(machineConfigV0, machineConfigV1, imageV0, imageV1),
-			helpers.NewLayeredNodeWithReady("node-2", machineConfigV1, machineConfigV1, imageV1, imageV1, corev1.ConditionFalse),
-		},
-	}, {
-		name: "Layered pool with unlayered nodes, 2 updated, 1 not layered and not updating",
-		nodes: []*corev1.Node{
-			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
-			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
-			newNode(machineConfigV0, machineConfigV0),
-		},
-		currentConfig: machineConfigV1,
-		currentImage:  imageV1,
-		layered:       true,
-		mosc:          helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
-		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
-		updated: []*corev1.Node{
-			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
-			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
-		},
-		ready: []*corev1.Node{
-			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
-			newLayeredNode(machineConfigV1, machineConfigV1, imageV1, imageV1),
-		},
-	}, {
-		name: "Layered pool with image not built, 3 not updated or ready, 0 updating",
-		nodes: []*corev1.Node{
-			newNode(machineConfigV1, machineConfigV1),
-			newNode(machineConfigV1, machineConfigV1),
-			newNode(machineConfigV1, machineConfigV1),
-		},
-		currentConfig: machineConfigV1,
-		layered:       true,
-		mosc:          helpers.NewMachineOSConfigBuilder("mosc-1").WithMachineConfigPool("pool-1").MachineOSConfig(),
-		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
-	}, {
-		name: "Unlayered pool with 1 layered node, 2 updated, 1 not acted upon",
-		nodes: []*corev1.Node{
-			newNode(machineConfigV1, machineConfigV1),
-			newNode(machineConfigV1, machineConfigV1),
-			newLayeredNode(machineConfigV0, machineConfigV0, imageV1, imageV1),
-		},
-		currentConfig: machineConfigV1,
-		updated: []*corev1.Node{
-			newNode(machineConfigV1, machineConfigV1),
-			newNode(machineConfigV1, machineConfigV1),
-		},
-		ready: []*corev1.Node{
-			newNode(machineConfigV1, machineConfigV1),
-			newNode(machineConfigV1, machineConfigV1),
-		},
-	}, {
-		name: "Pool with image mode disabling, 1 node updating, 2 nodes not acted upon",
-		nodes: []*corev1.Node{
-			newLayeredNode(machineConfigV0, machineConfigV0, imageV1, ""),
-			newLayeredNode(machineConfigV0, machineConfigV0, imageV1, imageV1),
-			newLayeredNode(machineConfigV0, machineConfigV0, imageV1, imageV1),
-		},
-		currentConfig: machineConfigV0,
-		layered:       false,
-		unavailable: []*corev1.Node{
-			newLayeredNode(machineConfigV0, machineConfigV0, imageV1, ""),
-		},
-	}, {
-		name: "Nodes with mixed states",
-		nodes: []*corev1.Node{
-			newNodeWithState(machineConfigV0, machineConfigV0, "Degraded"),
-			newNodeWithState(machineConfigV0, machineConfigV0, "Done"),
-			newNodeWithState(machineConfigV0, machineConfigV0, "Unreconcilable"),
-			newNodeWithState(machineConfigV0, machineConfigV1, "Working"),
-			newNodeWithState(machineConfigV0, machineConfigV1, "Rebooting"),
-		},
-		currentConfig: machineConfigV0,
-		updated: []*corev1.Node{
-			newNodeWithState(machineConfigV0, machineConfigV0, "Done"),
-		},
-		ready: []*corev1.Node{
-			newNodeWithState(machineConfigV0, machineConfigV0, "Done"),
-		},
-		unavailable: []*corev1.Node{
-			newNodeWithState(machineConfigV0, machineConfigV0, "Degraded"),
-			newNodeWithState(machineConfigV0, machineConfigV0, "Unreconcilable"),
-			newNodeWithState(machineConfigV0, machineConfigV1, "Working"),
-			newNodeWithState(machineConfigV0, machineConfigV1, "Rebooting"),
-		},
-		degraded: []*corev1.Node{
-			newNodeWithState(machineConfigV0, machineConfigV0, "Degraded"),
-			newNodeWithState(machineConfigV0, machineConfigV0, "Unreconcilable"),
-		},
-	}, {
-		name: "Layered nodes with mixed states",
-		nodes: []*corev1.Node{
-			newLayeredNodeWithState(machineConfigV0, machineConfigV0, imageV1, imageV1, "Degraded"),
-			newLayeredNodeWithState(machineConfigV0, machineConfigV0, imageV1, imageV1, "Done"),
-			newLayeredNodeWithState(machineConfigV0, machineConfigV0, imageV1, imageV1, "Unreconcilable"),
-			newLayeredNodeWithState(machineConfigV0, machineConfigV1, imageV1, imageV1, "Working"),
-			newLayeredNodeWithState(machineConfigV0, machineConfigV1, imageV1, imageV1, "Rebooting"),
-		},
-		currentConfig: machineConfigV0,
-		currentImage:  imageV1,
-		layered:       true,
-		mosc:          helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
-		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV0).MachineOSBuild(),
-		updated: []*corev1.Node{
-			newLayeredNodeWithState(machineConfigV0, machineConfigV0, imageV1, imageV1, "Done"),
-		},
-		ready: []*corev1.Node{
-			newLayeredNodeWithState(machineConfigV0, machineConfigV0, imageV1, imageV1, "Done"),
-		},
-		unavailable: []*corev1.Node{
-			newLayeredNodeWithState(machineConfigV0, machineConfigV0, imageV1, imageV1, "Degraded"),
-			newLayeredNodeWithState(machineConfigV0, machineConfigV0, imageV1, imageV1, "Unreconcilable"),
-			newLayeredNodeWithState(machineConfigV0, machineConfigV1, imageV1, imageV1, "Working"),
-			newLayeredNodeWithState(machineConfigV0, machineConfigV1, imageV1, imageV1, "Rebooting"),
-		},
-		degraded: []*corev1.Node{
-			newLayeredNodeWithState(machineConfigV0, machineConfigV0, imageV1, imageV1, "Degraded"),
-			newLayeredNodeWithState(machineConfigV0, machineConfigV0, imageV1, imageV1, "Unreconcilable"),
-		},
-	}, {
-		name: "0 layered nodes updated, 2 degraded",
-		nodes: []*corev1.Node{
-			newLayeredNodeWithState(machineConfigV1, machineConfigV0, imageV1, imageV1, "Degraded"),
-			newLayeredNodeWithState(machineConfigV1, machineConfigV0, imageV1, imageV1, "Unreconcilable"),
-			newLayeredNode(machineConfigV0, machineConfigV0, imageV1, imageV1),
-			newLayeredNode(machineConfigV0, machineConfigV0, imageV1, imageV1),
-		},
-		currentConfig: machineConfigV1,
-		currentImage:  imageV1,
-		layered:       true,
-		mosc:          helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("pool-1").MachineOSConfig(),
-		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV0).MachineOSBuild(),
-		degraded: []*corev1.Node{
-			newLayeredNodeWithState(machineConfigV1, machineConfigV0, imageV1, imageV1, "Degraded"),
-			newLayeredNodeWithState(machineConfigV1, machineConfigV0, imageV1, imageV1, "Unreconcilable"),
-		},
-	},
 	}
 
 	for _, test := range tests {
@@ -1940,37 +1953,37 @@ func TestDetectRuncInMachineConfig(t *testing.T) {
 		{
 			name: "runc in single drop-in",
 			mc: helpers.NewMachineConfig("test-runc", nil, "", []ign3types.File{
-				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0644),
+				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0o644),
 			}),
 			expectedMC: "test-runc",
 		},
 		{
 			name: "crun in single drop-in",
 			mc: helpers.NewMachineConfig("test", nil, "", []ign3types.File{
-				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("crun"), 0644),
+				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("crun"), 0o644),
 			}),
 			expectedMC: "",
 		},
 		{
 			name: "runc overridden by crun in later drop-in",
 			mc: helpers.NewMachineConfig("test", nil, "", []ign3types.File{
-				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0644),
-				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/01-ctrcfg", makeCRIODropIn("crun"), 0644),
+				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0o644),
+				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/01-ctrcfg", makeCRIODropIn("crun"), 0o644),
 			}),
 			expectedMC: "",
 		},
 		{
 			name: "crun overridden by runc in later drop-in",
 			mc: helpers.NewMachineConfig("test-runc-override", nil, "", []ign3types.File{
-				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("crun"), 0644),
-				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/01-ctrcfg", makeCRIODropIn("runc"), 0644),
+				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("crun"), 0o644),
+				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/01-ctrcfg", makeCRIODropIn("runc"), 0o644),
 			}),
 			expectedMC: "test-runc-override",
 		},
 		{
 			name: "non-CRI-O files are ignored",
 			mc: helpers.NewMachineConfig("test", nil, "", []ign3types.File{
-				helpers.CreateEncodedIgn3File("/etc/other/config", makeCRIODropIn("runc"), 0644),
+				helpers.CreateEncodedIgn3File("/etc/other/config", makeCRIODropIn("runc"), 0o644),
 			}),
 			expectedMC: "",
 		},
@@ -1984,7 +1997,7 @@ func TestDetectRuncInMachineConfig(t *testing.T) {
 		{
 			name: "runc in gzip-compressed drop-in",
 			mc: func() *mcfgv1.MachineConfig {
-				gzFile, err := helpers.CreateGzippedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0644)
+				gzFile, err := helpers.CreateGzippedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0o644)
 				if err != nil {
 					t.Fatalf("failed to create gzipped file: %v", err)
 				}
@@ -2072,3 +2085,160 @@ func TestGetAllValidPackageSetsForExtension(t *testing.T) {
 	}
 }
 
+func TestGetCryptoPolicyFromTLSProfile(t *testing.T) {
+	tests := []struct {
+		name           string
+		profile        *configv1.TLSSecurityProfile
+		expectedPolicy string
+		expectedSubMod string
+	}{
+		{
+			name:           "nil profile defaults to DEFAULT",
+			profile:        nil,
+			expectedPolicy: "DEFAULT",
+			expectedSubMod: "",
+		},
+		{
+			name: "Intermediate maps to DEFAULT",
+			profile: &configv1.TLSSecurityProfile{
+				Type:         configv1.TLSProfileIntermediateType,
+				Intermediate: &configv1.IntermediateTLSProfile{},
+			},
+			expectedPolicy: "DEFAULT",
+			expectedSubMod: "",
+		},
+		{
+			name: "Modern maps to DEFAULT:OPENSHIFT with decomposed sub-policy",
+			profile: &configv1.TLSSecurityProfile{
+				Type:   configv1.TLSProfileModernType,
+				Modern: &configv1.ModernTLSProfile{},
+			},
+			expectedPolicy: "DEFAULT:OPENSHIFT",
+			expectedSubMod: "cipher@TLS = AES-128-GCM AES-256-GCM CHACHA20-POLY1305\n" +
+				"mac@TLS = AEAD\n" +
+				"protocol@TLS = TLS1.3\n" +
+				"group = MLKEM768-X25519 X25519 SECP256R1 SECP384R1",
+		},
+		{
+			name: "Old maps to LEGACY:OPENSHIFT with decomposed sub-policy",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileOldType,
+				Old:  &configv1.OldTLSProfile{},
+			},
+			expectedPolicy: "LEGACY:OPENSHIFT",
+			expectedSubMod: "cipher@TLS = 3DES-CBC AES-128-CBC AES-128-GCM AES-256-CBC AES-256-GCM CHACHA20-POLY1305\n" +
+				"mac@TLS = AEAD HMAC-SHA1 HMAC-SHA2-256 HMAC-SHA2-384\n" +
+				"protocol@TLS = TLS1.2 TLS1.3\n" +
+				"group = MLKEM768-X25519 X25519 SECP256R1 SECP384R1",
+		},
+		{
+			name: "Custom with Intermediate-equivalent ciphers and TLS 1.2",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				Custom: &configv1.CustomTLSProfile{
+					TLSProfileSpec: configv1.TLSProfileSpec{
+						Ciphers: []string{
+							"TLS_AES_128_GCM_SHA256",
+							"TLS_AES_256_GCM_SHA384",
+							"TLS_CHACHA20_POLY1305_SHA256",
+							"ECDHE-ECDSA-AES128-GCM-SHA256",
+							"ECDHE-RSA-AES128-GCM-SHA256",
+							"ECDHE-ECDSA-AES256-GCM-SHA384",
+							"ECDHE-RSA-AES256-GCM-SHA384",
+							"ECDHE-ECDSA-CHACHA20-POLY1305",
+							"ECDHE-RSA-CHACHA20-POLY1305",
+						},
+						MinTLSVersion: configv1.VersionTLS12,
+					},
+				},
+			},
+			expectedPolicy: "DEFAULT:OPENSHIFT",
+			expectedSubMod: "cipher@TLS = AES-128-GCM AES-256-GCM CHACHA20-POLY1305\nmac@TLS = AEAD\nprotocol@TLS = TLS1.2 TLS1.3",
+		},
+		{
+			name: "Custom with TLS 1.3 only ciphers",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				Custom: &configv1.CustomTLSProfile{
+					TLSProfileSpec: configv1.TLSProfileSpec{
+						Ciphers: []string{
+							"TLS_AES_256_GCM_SHA384",
+							"TLS_CHACHA20_POLY1305_SHA256",
+						},
+						MinTLSVersion: configv1.VersionTLS13,
+					},
+				},
+			},
+			expectedPolicy: "DEFAULT:OPENSHIFT",
+			expectedSubMod: "cipher@TLS = AES-256-GCM CHACHA20-POLY1305\nmac@TLS = AEAD\nprotocol@TLS = TLS1.3",
+		},
+		{
+			name: "Custom with groups specified",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				Custom: &configv1.CustomTLSProfile{
+					TLSProfileSpec: configv1.TLSProfileSpec{
+						Ciphers: []string{
+							"TLS_AES_256_GCM_SHA384",
+						},
+						MinTLSVersion: configv1.VersionTLS13,
+						Groups: []configv1.TLSGroup{
+							configv1.TLSGroupX25519MLKEM768,
+							configv1.TLSGroupX25519,
+							configv1.TLSGroupSecP256r1,
+						},
+					},
+				},
+			},
+			expectedPolicy: "DEFAULT:OPENSHIFT",
+			expectedSubMod: "cipher@TLS = AES-256-GCM\nmac@TLS = AEAD\nprotocol@TLS = TLS1.3\ngroup = MLKEM768-X25519 X25519 SECP256R1",
+		},
+		{
+			name: "Custom with CBC ciphers includes non-AEAD MACs",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				Custom: &configv1.CustomTLSProfile{
+					TLSProfileSpec: configv1.TLSProfileSpec{
+						Ciphers: []string{
+							"ECDHE-RSA-AES256-GCM-SHA384",
+							"ECDHE-RSA-AES128-SHA256",
+						},
+						MinTLSVersion: configv1.VersionTLS12,
+					},
+				},
+			},
+			expectedPolicy: "DEFAULT:OPENSHIFT",
+			expectedSubMod: "cipher@TLS = AES-128-CBC AES-256-GCM\nmac@TLS = AEAD HMAC-SHA2-256\nprotocol@TLS = TLS1.2 TLS1.3",
+		},
+		{
+			name: "Custom with nil spec falls back to DEFAULT",
+			profile: &configv1.TLSSecurityProfile{
+				Type:   configv1.TLSProfileCustomType,
+				Custom: nil,
+			},
+			expectedPolicy: "DEFAULT",
+			expectedSubMod: "",
+		},
+		{
+			name: "Custom with no ciphers still generates protocol directive",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				Custom: &configv1.CustomTLSProfile{
+					TLSProfileSpec: configv1.TLSProfileSpec{
+						MinTLSVersion: configv1.VersionTLS12,
+					},
+				},
+			},
+			expectedPolicy: "DEFAULT:OPENSHIFT",
+			expectedSubMod: "protocol@TLS = TLS1.2 TLS1.3",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			policy, subMod := GetCryptoPolicyFromTLSProfile(tt.profile)
+			assert.Equal(t, tt.expectedPolicy, policy)
+			assert.Equal(t, tt.expectedSubMod, subMod)
+		})
+	}
+}
