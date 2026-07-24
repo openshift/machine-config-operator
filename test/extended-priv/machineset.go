@@ -67,6 +67,19 @@ func (ms MachineSet) GetReplicaOfSpec() string {
 	return ms.GetOrFail(`{.spec.replicas}`)
 }
 
+// GetOSStream returns the OS stream used by this MachineSet.
+// If the osstream label is set, it returns its value. Otherwise it defaults to rhel-9.
+// The logic should be more complex. To find the right osstream if the label does not exist we should:
+// 1. Read the user-data secret and find out the pool configured for this machineset reading the ignition URL
+// 2. Get the osstream used by this pool
+func (ms MachineSet) GetOSStream() string {
+	stream, err := ms.GetOSStreamLabel()
+	if err != nil || stream == "" {
+		return OSImageStreamRHEL9
+	}
+	return stream
+}
+
 // AddToScale scales the MachineSet adding the given value (positive or negative).
 func (ms MachineSet) AddToScale(delta int) error {
 	currentReplicas, err := strconv.Atoi(ms.GetOrFail(`{.spec.replicas}`))
