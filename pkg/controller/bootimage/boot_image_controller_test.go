@@ -1,12 +1,15 @@
 package bootimage
 
 import (
+	"bytes"
 	"context"
+	"os"
 	"testing"
 
 	"github.com/coreos/stream-metadata-go/stream"
 	"github.com/coreos/stream-metadata-go/stream/rhcos"
 	osconfigv1 "github.com/openshift/api/config/v1"
+	machinev1 "github.com/openshift/api/machine/v1"
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 	opv1 "github.com/openshift/api/operator/v1"
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
@@ -16,9 +19,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	kruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
+	corelisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/klog/v2"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
 
@@ -1073,6 +1079,247 @@ func TestResetClusterBootImage(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tc.expectedVersion,
 				updated.Status.BootImageSkewEnforcementStatus.Automatic.OCPVersion)
+		})
+	}
+}
+
+func TestSyncMAPIMachineSetOSStreamLabel(t *testing.T) {
+	// Uses AWS platform so that when the controller does NOT skip (supported/no-label),
+	// it continues into reconcilePlatform and fails on the empty provider spec.
+	// This proves the skip path works: unsupported streams return early with no error
+	// and log the skip message, while supported streams continue processing.
+	newTestController := func() *Controller {
+		cv := &osconfigv1.ClusterVersion{
+			ObjectMeta: v1.ObjectMeta{Name: "version"},
+			Status: osconfigv1.ClusterVersionStatus{
+				Desired: osconfigv1.Release{Architecture: ""},
+				History: []osconfigv1.UpdateHistory{
+					{State: osconfigv1.CompletedUpdate, Version: "4.18.0"},
+				},
+			},
+		}
+		cvIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+		require.NoError(t, cvIndexer.Add(cv))
+
+		infra := &osconfigv1.Infrastructure{
+			ObjectMeta: v1.ObjectMeta{Name: "cluster"},
+			Status: osconfigv1.InfrastructureStatus{
+				PlatformStatus: &osconfigv1.PlatformStatus{
+					Type: osconfigv1.AWSPlatformType,
+				},
+			},
+		}
+		infraIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+		require.NoError(t, infraIndexer.Add(infra))
+
+		return &Controller{
+			kubeClient:           fake.NewClientset(),
+			clusterVersionLister: configlistersv1.NewClusterVersionLister(cvIndexer),
+			infraLister:          configlistersv1.NewInfrastructureLister(infraIndexer),
+			mapiBootImageState:   map[string]BootImageState{},
+			fgHandler:            ctrlcommon.NewFeatureGatesHardcodedHandler(nil, nil),
+		}
+	}
+
+	configMap := &corev1.ConfigMap{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      ctrlcommon.BootImagesConfigMapName,
+			Namespace: ctrlcommon.MCONamespace,
+		},
+	}
+
+	cases := []struct {
+		name      string
+		labels    map[string]string
+		expectErr bool
+		expectLog string
+		rejectLog string
+	}{
+		{
+			name:      "unsupported stream rhel-10 should skip",
+			labels:    map[string]string{OSStreamLabelKey: "rhel-10"},
+			expectErr: false,
+			expectLog: "has unsupported stream: rhel-10, skipping boot image update",
+		},
+		{
+			name:      "unsupported custom stream should skip",
+			labels:    map[string]string{OSStreamLabelKey: "custom-stream"},
+			expectErr: false,
+			expectLog: "has unsupported stream: custom-stream, skipping boot image update",
+		},
+		{
+			name:      "supported stream rhel-9 should continue processing",
+			labels:    map[string]string{OSStreamLabelKey: SupportedOSStream},
+			expectErr: true,
+			rejectLog: "skipping boot image update",
+		},
+		{
+			name:      "no osstream label should continue processing",
+			labels:    map[string]string{},
+			expectErr: true,
+			rejectLog: "skipping boot image update",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			klog.LogToStderr(false)
+			klog.SetOutput(&buf)
+			defer func() {
+				klog.SetOutput(os.Stderr)
+				klog.LogToStderr(true)
+			}()
+
+			ctrl := newTestController()
+
+			ms := &machinev1beta1.MachineSet{
+				ObjectMeta: v1.ObjectMeta{
+					Name:   "test-machineset",
+					Labels: tc.labels,
+					Annotations: map[string]string{
+						MachineSetArchAnnotationKey: "kubernetes.io/arch=amd64",
+					},
+				},
+				Spec: machinev1beta1.MachineSetSpec{
+					Template: machinev1beta1.MachineTemplateSpec{
+						Spec: machinev1beta1.MachineSpec{
+							ProviderSpec: machinev1beta1.ProviderSpec{
+								Value: &runtime.RawExtension{Raw: []byte("{}")},
+							},
+						},
+					},
+				},
+			}
+
+			_, _, err := ctrl.syncMAPIMachineSet(ms, configMap)
+			klog.Flush()
+			output := buf.String()
+
+			if tc.expectErr {
+				assert.Error(t, err, "supported/no-label stream should continue processing and error on empty provider spec")
+			} else {
+				assert.NoError(t, err, "unsupported stream should be skipped without error")
+			}
+			if tc.expectLog != "" {
+				assert.Contains(t, output, tc.expectLog)
+			}
+			if tc.rejectLog != "" {
+				assert.NotContains(t, output, tc.rejectLog)
+			}
+		})
+	}
+}
+
+func TestSyncControlPlaneMachineSetOSStreamLabel(t *testing.T) {
+	newTestController := func() *Controller {
+		infra := &osconfigv1.Infrastructure{
+			ObjectMeta: v1.ObjectMeta{Name: "cluster"},
+			Status: osconfigv1.InfrastructureStatus{
+				PlatformStatus: &osconfigv1.PlatformStatus{
+					Type: osconfigv1.AWSPlatformType,
+				},
+			},
+		}
+		infraIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+		require.NoError(t, infraIndexer.Add(infra))
+
+		cm := &corev1.ConfigMap{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      ctrlcommon.BootImagesConfigMapName,
+				Namespace: ctrlcommon.MCONamespace,
+			},
+		}
+		cmIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+		require.NoError(t, cmIndexer.Add(cm))
+
+		return &Controller{
+			kubeClient:         fake.NewClientset(),
+			infraLister:        configlistersv1.NewInfrastructureLister(infraIndexer),
+			mcoCmLister:        corelisterv1.NewConfigMapLister(cmIndexer),
+			cpmsBootImageState: map[string]BootImageState{},
+			fgHandler:          ctrlcommon.NewFeatureGatesHardcodedHandler(nil, nil),
+		}
+	}
+
+	cases := []struct {
+		name      string
+		labels    map[string]string
+		expectErr bool
+		expectLog string
+		rejectLog string
+	}{
+		{
+			name:      "unsupported stream rhel-10 should skip",
+			labels:    map[string]string{OSStreamLabelKey: "rhel-10"},
+			expectErr: false,
+			expectLog: "has unsupported stream: rhel-10, skipping boot image update",
+		},
+		{
+			name:      "unsupported custom stream should skip",
+			labels:    map[string]string{OSStreamLabelKey: "custom-stream"},
+			expectErr: false,
+			expectLog: "has unsupported stream: custom-stream, skipping boot image update",
+		},
+		{
+			name:      "supported stream rhel-9 should continue processing",
+			labels:    map[string]string{OSStreamLabelKey: SupportedOSStream},
+			expectErr: true,
+			rejectLog: "skipping boot image update",
+		},
+		{
+			name:      "no osstream label should continue processing",
+			labels:    map[string]string{},
+			expectErr: true,
+			rejectLog: "skipping boot image update",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			klog.LogToStderr(false)
+			klog.SetOutput(&buf)
+			defer func() {
+				klog.SetOutput(os.Stderr)
+				klog.LogToStderr(true)
+			}()
+
+			ctrl := newTestController()
+
+			cpms := &machinev1.ControlPlaneMachineSet{
+				ObjectMeta: v1.ObjectMeta{
+					Name:   "test-cpms",
+					Labels: tc.labels,
+				},
+				Spec: machinev1.ControlPlaneMachineSetSpec{
+					Template: machinev1.ControlPlaneMachineSetTemplate{
+						OpenShiftMachineV1Beta1Machine: &machinev1.OpenShiftMachineV1Beta1MachineTemplate{
+							Spec: machinev1beta1.MachineSpec{
+								ProviderSpec: machinev1beta1.ProviderSpec{
+									Value: &kruntime.RawExtension{Raw: []byte("{}")},
+								},
+							},
+						},
+					},
+				},
+			}
+
+			err := ctrl.syncControlPlaneMachineSet(cpms)
+			klog.Flush()
+			output := buf.String()
+
+			if tc.expectErr {
+				assert.Error(t, err, "supported/no-label stream should continue processing and error on empty provider spec")
+			} else {
+				assert.NoError(t, err, "unsupported stream should be skipped without error")
+			}
+			if tc.expectLog != "" {
+				assert.Contains(t, output, tc.expectLog)
+			}
+			if tc.rejectLog != "" {
+				assert.NotContains(t, output, tc.rejectLog)
+			}
 		})
 	}
 }
