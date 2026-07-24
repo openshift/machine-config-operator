@@ -506,6 +506,23 @@ func kubeletConfigToIgnFile(cfg *kubeletconfigv1beta1.KubeletConfiguration) (*ig
 	return cfgIgn, nil
 }
 
+// clearStaticPodPathDefaultIfEmpty detects an explicit staticPodPath: "" in the raw
+// KubeletConfig and clears the template default so the merge preserves the empty value.
+// staticPodPath is a string field with `omitempty`, so after decoding an explicit ""
+// is indistinguishable from unset and mergo will not overwrite the template default
+// with an empty value, same problem as protectKernelDefaults above.
+func clearStaticPodPathDefaultIfEmpty(raw []byte, originalKubeConfig *kubeletconfigv1beta1.KubeletConfiguration) error {
+	var rawFields map[string]interface{}
+	d := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(raw), len(raw))
+	if err := d.Decode(&rawFields); err != nil {
+		return fmt.Errorf("could not decode raw kubelet config to map: %w", err)
+	}
+	if v, ok := rawFields["staticPodPath"]; ok && v == "" {
+		originalKubeConfig.StaticPodPath = ""
+	}
+	return nil
+}
+
 // generateKubeletIgnFiles generates the Ignition files from the kubelet config
 func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeConfig *kubeletconfigv1beta1.KubeletConfiguration) (*ign3types.File, *ign3types.File, *ign3types.File, error) {
 	var (
@@ -547,6 +564,9 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 		// Adding a workaround to decide if the user has actually set the field to `false`
 		if strings.Contains(string(kubeletConfig.Spec.KubeletConfig.Raw), protectKernelDefaultsStr) {
 			originalKubeConfig.ProtectKernelDefaults = false
+		}
+		if err := clearStaticPodPathDefaultIfEmpty(kubeletConfig.Spec.KubeletConfig.Raw, originalKubeConfig); err != nil {
+			return nil, nil, nil, err
 		}
 		// Merge the Old and New
 		err = mergo.Merge(originalKubeConfig, specKubeletConfig, mergo.WithOverride)
