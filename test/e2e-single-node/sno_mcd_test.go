@@ -263,23 +263,10 @@ func TestNoReboot(t *testing.T) {
 
 	sshKeyContent := "test adding authorized key without node reboot"
 
-	nodeOS := helpers.GetOSReleaseForNode(t, cs, node).OS
-
-	sshPaths := helpers.GetSSHPaths(nodeOS)
-
-	t.Logf("Expecting SSH keys to be in %s", sshPaths.Expected)
-
-	if sshPaths.Expected == constants.RHCOS9SSHKeyPath {
-		// Write an SSH key to the old location on the node because the update process should remove this file.
-		t.Logf("Writing SSH key to %s to ensure that it will be removed later", sshPaths.NotExpected)
-		bashCmd := fmt.Sprintf("printf '%s' > %s", sshKeyContent, filepath.Join("/rootfs", sshPaths.NotExpected))
-		helpers.ExecCmdOnNode(t, cs, node, "/bin/bash", "-c", bashCmd)
-	}
-
 	// Delete the expected SSH keys directory to ensure that the directories are
 	// (re)created correctly by the MCD. This targets the upgrade case where that
 	// directory may not previously exist.
-	helpers.ExecCmdOnNode(t, cs, node, "rm", "-rf", filepath.Join("/rootfs", filepath.Dir(sshPaths.Expected)))
+	helpers.ExecCmdOnNode(t, cs, node, "rm", "-rf", filepath.Join("/rootfs", filepath.Dir(constants.RHCOSDefaultSSHKeyPath)))
 
 	// Adding authorized key for user core
 	testIgnConfig := ctrlcommon.NewIgnConfig()
@@ -314,12 +301,11 @@ func TestNoReboot(t *testing.T) {
 	assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
 	assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
-	t.Logf("Expecting SSH keys to be in %s", sshPaths.Expected)
+	t.Logf("Expecting SSH keys to be in %s", constants.RHCOSDefaultSSHKeyPath)
 
-	helpers.AssertFileOnNode(t, cs, node, sshPaths.Expected)
-	helpers.AssertFileNotOnNode(t, cs, node, sshPaths.NotExpected)
+	helpers.AssertFileOnNode(t, cs, node, constants.RHCOSDefaultSSHKeyPath)
 
-	foundSSHKey := helpers.ExecCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", sshPaths.Expected))
+	foundSSHKey := helpers.ExecCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", constants.RHCOSDefaultSSHKeyPath))
 	if !strings.Contains(foundSSHKey, sshKeyContent) {
 		t.Fatalf("updated ssh keys not found in authorized_keys, got %s", foundSSHKey)
 	}
@@ -359,13 +345,12 @@ func TestNoReboot(t *testing.T) {
 	assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], oldMasterRenderedConfig)
 	assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
-	foundSSHKey = helpers.ExecCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", sshPaths.Expected))
+	foundSSHKey = helpers.ExecCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", constants.RHCOSDefaultSSHKeyPath))
 	if strings.Contains(foundSSHKey, sshKeyContent) {
 		t.Fatalf("Node %s did not rollback successfully", node.Name)
 	}
 
-	helpers.AssertFileOnNode(t, cs, node, sshPaths.Expected)
-	helpers.AssertFileNotOnNode(t, cs, node, sshPaths.NotExpected)
+	helpers.AssertFileOnNode(t, cs, node, constants.RHCOSDefaultSSHKeyPath)
 
 	t.Logf("Node %s has successfully rolled back", node.Name)
 

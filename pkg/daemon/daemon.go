@@ -540,12 +540,6 @@ func ReexecuteForTargetRoot(target string) error {
 		case sourceMajor == 10 && targetMajor == 9:
 			sourceBinarySuffix = ".rhel9"
 			klog.Info("container is rhel10, target is rhel9")
-		case sourceMajor == 10 && targetMajor == 8:
-			sourceBinarySuffix = ".rhel8"
-			klog.Info("container is rhel10, target is rhel8")
-		case sourceMajor == 9 && targetMajor == 8:
-			sourceBinarySuffix = ".rhel8"
-			klog.Info("container is rhel9, target is rhel8")
 		default:
 			klog.Infof("using appropriate binary for source=rhel-%d target=rhel-%d", sourceMajor, targetMajor)
 		}
@@ -2004,7 +1998,6 @@ func removeIgnitionArtifacts() error {
 // when scaling up older bootimages and targeting newer RHEL versions.  In this case,
 // we may want to pin NIC interface names that reference static IP addresses.
 // More information:
-//   - RHEL 8→9 transition: https://issues.redhat.com/browse/OCPBUGS-10787
 //   - RHEL 9→10 transition: https://issues.redhat.com/browse/OCPBUGS-63593
 func PersistNetworkInterfaces(osRoot string) error {
 	hostos, err := osrelease.GetHostRunningOSFromRoot(osRoot)
@@ -2024,7 +2017,7 @@ func PersistNetworkInterfaces(osRoot string) error {
 	// likely this NIC pinning should actually be driven automatically by
 	// host updates.  If you change this, you'll need to change the conditions
 	// below too.
-	persisting := hostos.IsEL8() || hostos.IsEL9()
+	persisting := hostos.IsEL9()
 	cleanup := hostos.IsEL10()
 	if !(persisting || cleanup) {
 		return nil
@@ -2040,9 +2033,7 @@ func PersistNetworkInterfaces(osRoot string) error {
 
 	switch {
 	case persisting:
-		if hostos.IsEL8() {
-			klog.Info("Persisting NIC names for RHEL8 host system (RHEL8→9 transition)")
-		} else if hostos.IsEL9() {
+		if hostos.IsEL9() {
 			klog.Info("Persisting NIC names for RHEL9 host system (RHEL9→10 transition)")
 		}
 	case cleanup:
@@ -2105,71 +2096,6 @@ func PersistNetworkInterfaces(osRoot string) error {
 		return fmt.Errorf("failed to run rpm-ostree kargs: %w", err)
 	}
 	return nil
-}
-
-// When we move from RHCOS 8 -> RHCOS 9, the SSH keys do not get written to the
-// new location before the node reboots into RHCOS 9 because:
-//
-// 1. When the upgrade configs are written to the node, it is still running
-// RHCOS 8, so the keys are not being written to the new location since the
-// location is inferred from the currently booted OS.
-// 2. The node reboots into RHCOS 9 to complete the upgrade.
-// 3. The "are we on the latest config" functions detect that we are indeed on
-// the latest config and so it does not attempt to perform an update.
-//
-// To work around that check on bootup if the we should use the new SSH key
-// path and if the old SSH key path exists, we know that we need to migrate tot
-// he new key path by calling dn.updateSSHKeyLocation().
-func (dn *Daemon) isSSHKeyLocationUpdateRequired() (bool, error) {
-	if !dn.useNewSSHKeyPath() {
-		// Return early because we're not using the new SSH key path.
-		return false, nil
-	}
-
-	oldKeyExists, err := fileExists(constants.RHCOS8SSHKeyPath)
-	if err != nil {
-		return false, err
-	}
-
-	newKeyExists, err := fileExists(constants.RHCOS9SSHKeyPath)
-	if err != nil {
-		return false, err
-	}
-
-	// If the old key exists and the new key does not, we need to update.
-	return oldKeyExists && !newKeyExists, nil
-}
-
-// Decode the Ignition config and perform the SSH key update.
-func (dn *Daemon) updateSSHKeyLocation(cfg *mcfgv1.MachineConfig) error {
-	klog.Infof("SSH key location update required. Moving SSH keys from %q to %q.", constants.RHCOS8SSHKeyPath, constants.RHCOS9SSHKeyPath)
-
-	ignConfig, err := ctrlcommon.ParseAndConvertConfig(cfg.Spec.Config.Raw)
-	if err != nil {
-		return fmt.Errorf("ignition failure when updating SSH key location: %w", err)
-	}
-
-	if err := dn.updateSSHKeys(ignConfig.Passwd.Users, ignConfig.Passwd.Users); err != nil {
-		return fmt.Errorf("could not write SSH keys to new location: %w", err)
-	}
-
-	return nil
-}
-
-// Determines if we need to update the SSH key location and performs the
-// necessary update if so.
-func (dn *Daemon) updateSSHKeyLocationIfNeeded(cfg *mcfgv1.MachineConfig) error {
-	sshKeyLocationUpdateRequired, err := dn.isSSHKeyLocationUpdateRequired()
-	if err != nil {
-		return fmt.Errorf("unable to determine if SSH key location update is required: %w", err)
-	}
-
-	if !sshKeyLocationUpdateRequired {
-		klog.Infof("SSH key location (%q) up-to-date!", constants.RHCOS9SSHKeyPath)
-		return nil
-	}
-
-	return dn.updateSSHKeyLocation(cfg)
 }
 
 // checkStateOnFirstRun is a core entrypoint for our state machine.
@@ -2264,13 +2190,6 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		logSystem("Skipping on-disk validation; %s present", constants.MachineConfigDaemonForceFile)
 		return dn.triggerUpdate(state.currentConfig, state.desiredConfig, state.currentImage, state.desiredImage)
 
-	}
-
-	// When upgrading the OS, it is possible that the SSH key location will
-	// change. We should detect whether that is the case and update before we
-	// check for any config drift.
-	if err := dn.updateSSHKeyLocationIfNeeded(state.currentConfig); err != nil {
-		return err
 	}
 
 	if err := dn.validateOnDiskStateOrImage(state.currentConfig, state.currentImage); err != nil {
