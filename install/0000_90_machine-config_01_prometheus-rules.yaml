@@ -65,7 +65,46 @@ spec:
             severity: info
           annotations:
             summary: "Boot image skew enforcement is disabled. Scaling operations may not be successful."
-            description: "Boot image skew enforcement mode is set to None. When scaling up, new nodes may be provisioned with older boot images that could introduce compatibility issues. Consider manually updating boot images to match the cluster version. Please refer to docs at https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/machine_configuration/mco-update-boot-skew-mgmt for additional details."            
+            description: "Boot image skew enforcement mode is set to None. When scaling up, new nodes may be provisioned with older boot images that could introduce compatibility issues. Consider manually updating boot images to match the cluster version. Please refer to docs at https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/machine_configuration/mco-update-boot-skew-mgmt for additional details."
+    - name: ocl-build-failure
+      rules:
+        - alert: OCLBuildFailed
+          expr: |
+            increase(ocl_build_total{state="failed"}[5m]) > 0
+          for: 1m
+          labels:
+            namespace: openshift-machine-config-operator
+            severity: warning
+          annotations:
+            summary: "On-Cluster Layering build failed for pool {{ $labels.pool }}"
+            description: "An OCL image build has failed for MachineConfigPool {{ $labels.pool }}. Nodes in this pool will not receive updated layered images until the build succeeds. Check the machine-os-builder pod logs for details."
+            runbook_url: https://github.com/openshift/runbooks/blob/master/alerts/machine-config-operator/OCLBuildFailed.md
+    - name: ocl-build-degraded
+      rules:
+        - alert: OCLBuildDegraded
+          expr: |
+            ocl_build_state{state="failed"} == 1
+          for: 10m
+          labels:
+            namespace: openshift-machine-config-operator
+            severity: warning
+          annotations:
+            summary: "On-Cluster Layering build is degraded for pool {{ $labels.pool }}"
+            description: "OCL build {{ $labels.build_name }} for MachineConfigPool {{ $labels.pool }} is in a persistent failed state. Check the MachineOSBuild {{ $labels.build_name }} status conditions and machine-os-builder pod logs."
+            runbook_url: https://github.com/openshift/runbooks/blob/master/alerts/machine-config-operator/OCLBuildDegraded.md
+    - name: ocl-image-push-failure
+      rules:
+        - alert: OCLImagePushFailed
+          expr: |
+            increase(ocl_image_push_total{state="failed"}[5m]) > 0
+          for: 10m
+          labels:
+            namespace: openshift-machine-config-operator
+            severity: warning
+          annotations:
+            summary: "On-Cluster Layering image push failed for pool {{ $labels.pool }}"
+            description: "An OCL image push failed for MachineConfigPool {{ $labels.pool }}. The build job completed but the image was not pushed to the registry. Check registry credentials and machine-os-builder pod logs."
+            runbook_url: https://github.com/openshift/runbooks/blob/master/alerts/machine-config-operator/OCLImagePushFailed.md
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule

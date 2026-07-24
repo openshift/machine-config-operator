@@ -220,6 +220,16 @@ func (b *buildReconciler) AddJob(ctx context.Context, job *batchv1.Job) error {
 	return b.timeObjectOperation(job, addingVerb, func() error {
 		klog.Infof("Adding build job %q", job.Name)
 
+		mosb, err := b.getMachineOSBuildForJob(job)
+		if err == nil && mosb != nil {
+			mosc, err := utils.GetMachineOSConfigForMachineOSBuild(mosb, b.utilListers())
+			if err == nil {
+				poolName := mosc.Spec.MachineConfigPool.Name
+				RecordBuildJobState(poolName, "active")
+				RecordBuildQueueDuration(poolName, mosb.CreationTimestamp.Time)
+			}
+		}
+
 		if err := b.updateMachineOSBuildWithStatus(ctx, job); err != nil {
 			return fmt.Errorf("could not update job status for %q: %w", job.Name, err)
 		}
@@ -231,6 +241,28 @@ func (b *buildReconciler) AddJob(ctx context.Context, job *batchv1.Job) error {
 // Executes whenever a build Job is updated
 func (b *buildReconciler) UpdateJob(ctx context.Context, oldJob, curJob *batchv1.Job) error {
 	return b.timeObjectOperation(curJob, updatingVerb, func() error {
+		mosb, err := b.getMachineOSBuildForJob(curJob)
+		if err == nil && mosb != nil {
+			mosc, err := utils.GetMachineOSConfigForMachineOSBuild(mosb, b.utilListers())
+			if err == nil {
+				poolName := mosc.Spec.MachineConfigPool.Name
+
+				if curJob.Status.Succeeded > 0 && (oldJob.Status.Succeeded == 0) {
+					RecordBuildJobState(poolName, StateSucceeded)
+					RecordImagePushCompleted(poolName)
+				}
+
+				if curJob.Status.Failed > 0 && (oldJob.Status.Failed == 0) {
+					RecordBuildJobState(poolName, StateFailed)
+					RecordImagePushFailed(poolName)
+				}
+
+				if curJob.Status.Failed > oldJob.Status.Failed && curJob.Status.Failed <= constants.JobMaxRetries {
+					RecordBuildRetry(poolName)
+				}
+			}
+		}
+
 		return b.updateMachineOSBuildWithStatusIfNeeded(ctx, oldJob, curJob)
 	})
 }
@@ -288,8 +320,16 @@ func (b *buildReconciler) updateMachineOSBuild(ctx context.Context, old, current
 		return nil
 	}
 
+	poolName := mosc.Spec.MachineConfigPool.Name
+
 	if !oldState.IsBuildFailure() && curState.IsBuildFailure() {
 		klog.Infof("MachineOSBuild %s failed, leaving ephemeral objects in place for inspection", current.Name)
+
+		if old.CreationTimestamp.Time.IsZero() {
+			RecordBuildFailed(poolName, time.Now())
+		} else {
+			RecordBuildFailed(poolName, old.CreationTimestamp.Time)
+		}
 
 		mcp, err := b.machineConfigPoolLister.Get(mosc.Spec.MachineConfigPool.Name)
 		if err != nil {
@@ -305,6 +345,12 @@ func (b *buildReconciler) updateMachineOSBuild(ctx context.Context, old, current
 	// Also update BuildDegraded condition based on current active build status
 	if !oldState.IsBuildSuccess() && curState.IsBuildSuccess() {
 		klog.Infof("MachineOSBuild %s succeeded, cleaning up all ephemeral objects used for the build", current.Name)
+
+		if old.CreationTimestamp.Time.IsZero() {
+			RecordBuildCompleted(poolName, time.Now())
+		} else {
+			RecordBuildCompleted(poolName, old.CreationTimestamp.Time)
+		}
 
 		mcp, err := b.machineConfigPoolLister.Get(mosc.Spec.MachineConfigPool.Name)
 		if err != nil {
@@ -324,6 +370,14 @@ func (b *buildReconciler) updateMachineOSBuild(ctx context.Context, old, current
 		if err := b.updateMachineOSConfigStatus(ctx, mosc, current); err != nil {
 			return fmt.Errorf("could not update MachineOSConfig %q status for successful MachineOSBuild %q: %w", mosc.Name, current.Name, err)
 		}
+	}
+
+	if !oldState.IsBuilding() && curState.IsBuilding() {
+		RecordBuildBuilding(poolName)
+	}
+
+	if !oldState.IsBuildInterrupted() && curState.IsBuildInterrupted() {
+		RecordBuildInterrupted(poolName)
 	}
 
 	return nil
@@ -431,10 +485,13 @@ func (b *buildReconciler) UpdateMachineConfigPool(ctx context.Context, oldMCP, c
 func (b *buildReconciler) updateMachineConfigPool(ctx context.Context, oldMCP, curMCP *mcfgv1.MachineConfigPool) error {
 	if oldMCP.Spec.Configuration.Name != curMCP.Spec.Configuration.Name {
 		klog.Infof("Rendered config for pool %s changed from %s to %s", curMCP.Name, oldMCP.Spec.Configuration.Name, curMCP.Spec.Configuration.Name)
+		RecordConfigChange(curMCP.Name)
 		if err := b.reconcilePoolChange(ctx, curMCP); err != nil {
 			return fmt.Errorf("could not create or reuse existing MachineOSBuild for MachineConfigPool %q change: %w", curMCP.Name, err)
 		}
 	}
+
+	UpdateOCLRolloutCounts(curMCP.Name, curMCP.Status.UpdatedMachineCount, curMCP.Status.MachineCount)
 
 	return b.syncAll(ctx)
 }
@@ -450,6 +507,8 @@ func (b *buildReconciler) startBuild(ctx context.Context, mosb *mcfgv1.MachineOS
 	if err != nil {
 		return err
 	}
+
+	poolName := mosc.Spec.MachineConfigPool.Name
 
 	// If there are any other in-progress builds for this MachineOSConfig, stop them first.
 	if err := b.deleteOtherBuildsForMachineOSConfig(ctx, mosb, mosc); err != nil {
@@ -471,6 +530,8 @@ func (b *buildReconciler) startBuild(ctx context.Context, mosb *mcfgv1.MachineOS
 		}
 		return fmt.Errorf("imagebuilder could not start build for MachineOSBuild %q: %w", mosb.Name, err)
 	}
+
+	RecordBuildStarted(poolName)
 
 	klog.Infof("Started new build %s for MachineOSBuild", utils.GetBuildJobName(mosb))
 
@@ -500,6 +561,16 @@ func (b *buildReconciler) getMachineOSConfigForUpdate(mosc *mcfgv1.MachineOSConf
 	}
 
 	return out.DeepCopy(), nil
+}
+
+// Retrieves the MachineOSBuild associated with a Job based on labels
+func (b *buildReconciler) getMachineOSBuildForJob(job *batchv1.Job) (*mcfgv1.MachineOSBuild, error) {
+	if !metav1.HasLabel(job.ObjectMeta, constants.MachineOSBuildNameLabelKey) {
+		return nil, fmt.Errorf("job %q does not have MachineOSBuild label", job.Name)
+	}
+
+	mosbName := job.Labels[constants.MachineOSBuildNameLabelKey]
+	return b.machineOSBuildLister.Get(mosbName)
 }
 
 // Retrieves a deep-copy of the MachineOSBuild from the lister so that the cache is not mutated during the update.
