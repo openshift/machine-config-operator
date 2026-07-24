@@ -8,6 +8,7 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 
@@ -26,18 +27,25 @@ SYSTEM_RESERVED_ES=1Gi
 `
 )
 
-// ensureAutoSizingMachineConfigs ensures auto-sizing MachineConfigs exist for the master and worker MachineConfigPools
+// ensureAutoSizingMachineConfigs ensures auto-sizing MachineConfigs exist only for the master and worker pools,
+// and deletes any stale auto-sizing MachineConfigs left on non-default pools by older MCO versions.
 func (ctrl *Controller) ensureAutoSizingMachineConfigs(ctx context.Context) error {
-	for _, poolName := range []string{ctrlcommon.MachineConfigPoolMaster, ctrlcommon.MachineConfigPoolWorker} {
-		pool, err := ctrl.mcpLister.Get(poolName)
-		if err != nil {
-			return fmt.Errorf("could not get MachineConfigPool %v: %w", poolName, err)
+	pools, err := ctrl.mcpLister.List(labels.Everything())
+	if err != nil {
+		return fmt.Errorf("could not list MachineConfigPools: %w", err)
+	}
+	for _, pool := range pools {
+		mcName := fmt.Sprintf(AutoSizingMachineConfigNamePrefix, pool.Name)
+		if pool.Name == ctrlcommon.MachineConfigPoolMaster || pool.Name == ctrlcommon.MachineConfigPoolWorker {
+			if err := ctrl.createAutoSizingMCIfNeeded(ctx, pool); err != nil {
+				return fmt.Errorf("could not ensure auto-sizing MachineConfig for pool %v: %w", pool.Name, err)
+			}
+			continue
 		}
-		if err := ctrl.createAutoSizingMCIfNeeded(ctx, pool); err != nil {
-			return fmt.Errorf("could not ensure auto-sizing MachineConfig for pool %v: %w", poolName, err)
+		if err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(ctx, mcName, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
+			return fmt.Errorf("error deleting stale auto-sizing MachineConfig %s: %w", mcName, err)
 		}
 	}
-
 	return nil
 }
 
