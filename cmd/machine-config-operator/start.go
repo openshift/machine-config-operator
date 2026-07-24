@@ -62,7 +62,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		ctrlctx := ctrlcommon.CreateControllerContext(ctx, cb)
 
 		// Early start the config informer because feature gate depends on it
-		ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
+		ctrlctx.ConfigInformerFactory.Start(ctx.Done())
 		if fgErr := ctrlctx.FeatureGatesHandler.Connect(ctx); fgErr != nil {
 			klog.Fatal(fmt.Errorf("failed to connect to feature gates %w", fgErr))
 		}
@@ -121,21 +121,21 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			ctrlctx,
 		)
 
-		ctrlctx.InformerFactory.Start(ctrlctx.Stop)
-		ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
-		ctrlctx.NamespacedInformerFactory.Start(ctrlctx.Stop)
-		ctrlctx.KubeInformerFactory.Start(ctrlctx.Stop)
-		ctrlctx.KubeNamespacedInformerFactory.Start(ctrlctx.Stop)
-		ctrlctx.APIExtInformerFactory.Start(ctrlctx.Stop)
-		ctrlctx.OpenShiftKubeAPIServerKubeNamespacedInformerFactory.Start(ctrlctx.Stop)
-		ctrlctx.OpenShiftConfigKubeNamespacedInformerFactory.Start(ctrlctx.Stop)
-		ctrlctx.OpenShiftConfigManagedKubeNamespacedInformerFactory.Start(ctrlctx.Stop)
-		ctrlctx.OperatorInformerFactory.Start(ctrlctx.Stop)
-		ctrlctx.KubeMAOSharedInformer.Start(ctrlctx.Stop)
+		ctrlctx.InformerFactory.Start(ctx.Done())
+		ctrlctx.ConfigInformerFactory.Start(ctx.Done())
+		ctrlctx.NamespacedInformerFactory.Start(ctx.Done())
+		ctrlctx.KubeInformerFactory.Start(ctx.Done())
+		ctrlctx.KubeNamespacedInformerFactory.Start(ctx.Done())
+		ctrlctx.APIExtInformerFactory.Start(ctx.Done())
+		ctrlctx.OpenShiftKubeAPIServerKubeNamespacedInformerFactory.Start(ctx.Done())
+		ctrlctx.OpenShiftConfigKubeNamespacedInformerFactory.Start(ctx.Done())
+		ctrlctx.OpenShiftConfigManagedKubeNamespacedInformerFactory.Start(ctx.Done())
+		ctrlctx.OperatorInformerFactory.Start(ctx.Done())
+		ctrlctx.KubeMAOSharedInformer.Start(ctx.Done())
 
 		close(ctrlctx.InformersStarted)
 
-		go controller.Run(2, ctrlctx.Stop)
+		go controller.Run(ctx, 2)
 
 		// wait here in this function until the context gets cancelled (which tells us whe were being shut down)
 		<-ctx.Done()

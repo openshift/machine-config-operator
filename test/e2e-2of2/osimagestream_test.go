@@ -35,7 +35,7 @@ func TestImageStreamProviderCVO(t *testing.T) {
 	defer cancel()
 	cb, err := clients.NewBuilder("")
 	ctrlctx := ctrlcommon.CreateControllerContext(ctx, cb)
-	ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
+	ctrlctx.ConfigInformerFactory.Start(ctx.Done())
 
 	// Wait for the informer cache to sync before querying the lister
 	ctrlctx.ConfigInformerFactory.WaitForCacheSync(ctx.Done())
@@ -74,7 +74,7 @@ func TestConfigMapUrlProvider(t *testing.T) {
 	cmInformer := ctrlctx.KubeNamespacedInformerFactory.Core().V1().ConfigMaps()
 	_ = cmInformer.Informer()
 
-	ctrlctx.KubeNamespacedInformerFactory.Start(ctrlctx.Stop)
+	ctrlctx.KubeNamespacedInformerFactory.Start(ctx.Done())
 
 	// Wait for the informer cache to sync before querying the lister
 	ctrlctx.KubeNamespacedInformerFactory.WaitForCacheSync(ctx.Done())

@@ -187,13 +187,13 @@ func New(
 }
 
 // Run executes the kubelet config controller.
-func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
+func (ctrl *Controller) Run(ctx context.Context, workers int) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 	defer ctrl.featureQueue.ShutDown()
 	defer ctrl.nodeConfigQueue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.mckListerSynced, ctrl.ccListerSynced, ctrl.featListerSynced, ctrl.apiserverListerSynced) {
+	if !cache.WaitForCacheSync(ctx.Done(), ctrl.mcpListerSynced, ctrl.mckListerSynced, ctrl.ccListerSynced, ctrl.featListerSynced, ctrl.apiserverListerSynced) {
 		return
 	}
 
@@ -201,18 +201,18 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer klog.Info("Shutting down MachineConfigController-KubeletConfigController")
 
 	for i := 0; i < workers; i++ {
-		go wait.Until(ctrl.worker, time.Second, stopCh)
+		go wait.Until(ctrl.worker, time.Second, ctx.Done())
 	}
 
 	for i := 0; i < workers; i++ {
-		go wait.Until(ctrl.featureWorker, time.Second, stopCh)
+		go wait.Until(ctrl.featureWorker, time.Second, ctx.Done())
 	}
 
 	for i := 0; i < workers; i++ {
-		go wait.Until(ctrl.nodeConfigWorker, time.Second, stopCh)
+		go wait.Until(ctrl.nodeConfigWorker, time.Second, ctx.Done())
 	}
 
-	<-stopCh
+	<-ctx.Done()
 }
 func (ctrl *Controller) filterAPIServer(apiServer *configv1.APIServer) {
 	if apiServer.Name != "cluster" {
