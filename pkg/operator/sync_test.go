@@ -3,6 +3,7 @@ package operator
 import (
 	"context"
 	"testing"
+	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
 	features "github.com/openshift/api/features"
@@ -12,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
@@ -32,6 +34,12 @@ import (
 )
 
 func TestSyncCloudConfig(t *testing.T) {
+	origInterval, origTimeout := kubeCloudConfigPollInterval, kubeCloudConfigPollTimeout
+	kubeCloudConfigPollInterval, kubeCloudConfigPollTimeout = time.Millisecond, 10*time.Millisecond
+	t.Cleanup(func() {
+		kubeCloudConfigPollInterval, kubeCloudConfigPollTimeout = origInterval, origTimeout
+	})
+
 	cases := []struct {
 		name                        string
 		infra                       *configv1.Infrastructure
@@ -89,7 +97,11 @@ func TestSyncCloudConfig(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			client := fake.NewSimpleClientset()
+			objs := []runtime.Object{}
+			if tc.kubeCloudConfig != nil {
+				objs = append(objs, tc.kubeCloudConfig)
+			}
+			client := fake.NewSimpleClientset(objs...)
 			sharedInformer := informers.NewSharedInformerFactory(client, 0)
 			cmInformer := sharedInformer.Core().V1().ConfigMaps()
 			if tc.kubeCloudConfig != nil {
@@ -97,6 +109,7 @@ func TestSyncCloudConfig(t *testing.T) {
 			}
 			optr := &Operator{
 				clusterCmLister: cmInformer.Lister(),
+				kubeClient:      client,
 			}
 			spec := &mcfgv1.ControllerConfigSpec{}
 			err := optr.syncCloudConfig(spec, tc.infra)
@@ -109,6 +122,37 @@ func TestSyncCloudConfig(t *testing.T) {
 			assert.Equal(t, tc.expectedCABundle, spec.CloudProviderCAData)
 		})
 	}
+}
+
+// TestSyncCloudConfigTransientCacheMiss covers the case where the
+// clusterCmLister cache doesn't (yet, or momentarily) have the
+// kube-cloud-config ConfigMap, but it's actually present via the live API
+// (e.g. it was deleted and quickly recreated by another operator). syncCloudConfig
+// should not report an error in that case.
+func TestSyncCloudConfigTransientCacheMiss(t *testing.T) {
+	origInterval, origTimeout := kubeCloudConfigPollInterval, kubeCloudConfigPollTimeout
+	kubeCloudConfigPollInterval, kubeCloudConfigPollTimeout = time.Millisecond, time.Second
+	t.Cleanup(func() {
+		kubeCloudConfigPollInterval, kubeCloudConfigPollTimeout = origInterval, origTimeout
+	})
+
+	infra := buildInfra(withPlatformType(configv1.AzurePlatformType))
+	cm := buildKubeCloudConfig(withCloudConf("test-cloud-conf"))
+
+	// The ConfigMap exists in the live API, but is deliberately absent from the
+	// informer's cache/lister to simulate a delete/recreate race.
+	client := fake.NewSimpleClientset(cm)
+	sharedInformer := informers.NewSharedInformerFactory(client, 0)
+	cmInformer := sharedInformer.Core().V1().ConfigMaps()
+
+	optr := &Operator{
+		clusterCmLister: cmInformer.Lister(),
+		kubeClient:      client,
+	}
+	spec := &mcfgv1.ControllerConfigSpec{}
+	err := optr.syncCloudConfig(spec, infra)
+	assert.NoError(t, err)
+	assert.Equal(t, "test-cloud-conf", spec.CloudProviderConfig)
 }
 
 type infraOption func(*configv1.Infrastructure)

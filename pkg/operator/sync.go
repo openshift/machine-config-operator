@@ -347,13 +347,33 @@ func (optr *Operator) syncCloudConfig(spec *mcfgv1.ControllerConfigSpec, infra *
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			if isKubeCloudConfigCMRequired(infra) {
-				// Return error only if the kube-cloud-config ConfigMap is required, otherwise proceeds further.
-				return fmt.Errorf("%s/%s configmap is required on platform %s but not found: %w",
-					"openshift-config-managed", "kube-cloud-config", infra.Status.PlatformStatus.Type, err)
+				// The ConfigMap can be absent for a brief, self-healing window (e.g.
+				// another operator deletes and recreates it). Poll the live API for a
+				// short grace period before declaring failure, so we don't flip
+				// Degraded=True for a gap that resolves on its own within seconds.
+				pollErr := wait.PollUntilContextTimeout(wait.ContextForChannel(optr.stopCh), kubeCloudConfigPollInterval, kubeCloudConfigPollTimeout, true, func(ctx context.Context) (bool, error) {
+					cm, err = optr.kubeClient.CoreV1().ConfigMaps("openshift-config-managed").Get(ctx, "kube-cloud-config", metav1.GetOptions{})
+					if err != nil {
+						if apierrors.IsNotFound(err) {
+							return false, nil
+						}
+						return false, err
+					}
+					return true, nil
+				})
+				if pollErr != nil {
+					if wait.Interrupted(pollErr) {
+						return fmt.Errorf("%s/%s configmap is required on platform %s but not found: %w",
+							"openshift-config-managed", "kube-cloud-config", infra.Status.PlatformStatus.Type, err)
+					}
+					return pollErr
+				}
+			} else {
+				return nil
 			}
-			return nil
+		} else {
+			return err
 		}
-		return err
 	}
 	// Read cloud.conf from openshift-config-managed/kube-cloud-config ConfigMap.
 	cc, err := getCloudConfigFromConfigMap(cm, "cloud.conf")
@@ -1888,6 +1908,14 @@ const (
 
 	controllerConfigCompletedInterval = time.Second
 	controllerConfigCompletedTimeout  = 5 * time.Minute
+)
+
+// kubeCloudConfigPollInterval/Timeout bound how long syncCloudConfig waits on
+// the live API for a required kube-cloud-config ConfigMap before declaring it
+// missing. Declared as vars (not consts) so tests can shrink them.
+var (
+	kubeCloudConfigPollInterval = 2 * time.Second
+	kubeCloudConfigPollTimeout  = 15 * time.Second
 )
 
 //nolint:dupl
