@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"time"
 
 	imagev1 "github.com/openshift/api/image/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -18,6 +19,9 @@ import (
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 )
+
+// ImageInspectionTimeout is the timeout for operations that inspect images over the network.
+const ImageInspectionTimeout = 5 * time.Minute
 
 var (
 	ErrorNoOSImageStreamAvailable = errors.New("unable to retrieve any OSImageStream from the configured sources")

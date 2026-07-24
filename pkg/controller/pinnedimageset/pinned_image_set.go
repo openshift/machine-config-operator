@@ -56,6 +56,8 @@ type Controller struct {
 	imageSetSynced cache.InformerSynced
 
 	queue workqueue.TypedRateLimitingInterface[string]
+
+	cacheWarmer *CacheWarmer
 }
 
 // New returns a new pinned image set controller.
@@ -64,6 +66,7 @@ func New(
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
+	cacheWarmer *CacheWarmer,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -100,6 +103,8 @@ func New(
 	ctrl.imageSetLister = imageSetInformer.Lister()
 	ctrl.imageSetSynced = imageSetInformer.Informer().HasSynced
 
+	ctrl.cacheWarmer = cacheWarmer
+
 	return ctrl
 }
 
@@ -114,6 +119,10 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 
 	klog.Info("Starting MachineConfigController-PinnedImageSetController")
 	defer klog.Info("Shutting down MachineConfigController-PinnedImageSetController")
+
+	if ctrl.cacheWarmer != nil {
+		go ctrl.cacheWarmer.Start(stopCh)
+	}
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(ctrl.worker, time.Second, stopCh)
@@ -169,6 +178,9 @@ func (ctrl *Controller) addPinnedImageSet(obj interface{}) {
 	for _, p := range pools {
 		ctrl.enqueueMachineConfigPool(p)
 	}
+	if ctrl.cacheWarmer != nil {
+		ctrl.cacheWarmer.requestWarm()
+	}
 }
 
 func (ctrl *Controller) updatePinnedImageSet(old, cur interface{}) {
@@ -185,6 +197,9 @@ func (ctrl *Controller) updatePinnedImageSet(old, cur interface{}) {
 	if triggerPinnedImageSetChange(oldImageSet, newImageSet) {
 		for _, p := range pools {
 			ctrl.enqueueMachineConfigPool(p)
+		}
+		if ctrl.cacheWarmer != nil {
+			ctrl.cacheWarmer.requestWarm()
 		}
 	}
 }
