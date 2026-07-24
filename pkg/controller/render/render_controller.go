@@ -65,12 +65,10 @@ var (
 
 // Controller defines the render controller.
 type Controller struct {
-	ctx context.Context
-
 	client        mcfgclientset.Interface
 	eventRecorder record.EventRecorder
 
-	syncHandler              func(mcp string) error
+	syncHandler              func(ctx context.Context, mcp string) error
 	enqueueMachineConfigPool func(*mcfgv1.MachineConfigPool)
 
 	mcpLister           mcfglistersv1.MachineConfigPoolLister
@@ -203,7 +201,6 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 		<-stopCh
 		cancel()
 	}()
-	ctrl.ctx = ctx
 
 	listerCaches := []cache.InformerSynced{ctrl.mcpListerSynced, ctrl.mcListerSynced, ctrl.ccListerSynced}
 
@@ -226,7 +223,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer klog.Info("Shutting down MachineConfigController-RenderController")
 
 	for i := 0; i < workers; i++ {
-		go wait.Until(ctrl.worker, time.Second, stopCh)
+		go wait.Until(func() { ctrl.worker(ctx) }, time.Second, stopCh)
 	}
 
 	<-stopCh
@@ -500,19 +497,19 @@ func (ctrl *Controller) enqueueCustomPools() {
 
 // worker runs a worker thread that just dequeues items, processes them, and marks them done.
 // It enforces that the syncHandler is never invoked concurrently with the same key.
-func (ctrl *Controller) worker() {
-	for ctrl.processNextWorkItem() {
+func (ctrl *Controller) worker(ctx context.Context) {
+	for ctrl.processNextWorkItem(ctx) {
 	}
 }
 
-func (ctrl *Controller) processNextWorkItem() bool {
+func (ctrl *Controller) processNextWorkItem(ctx context.Context) bool {
 	key, quit := ctrl.queue.Get()
 	if quit {
 		return false
 	}
 	defer ctrl.queue.Done(key)
 
-	err := ctrl.syncHandler(key)
+	err := ctrl.syncHandler(ctx, key)
 	ctrl.handleErr(err, key)
 
 	return true
@@ -538,7 +535,7 @@ func (ctrl *Controller) handleErr(err error, key string) {
 
 // syncMachineConfigPool will sync the machineconfig pool with the given key.
 // This function is not meant to be invoked concurrently with the same key.
-func (ctrl *Controller) syncMachineConfigPool(key string) error {
+func (ctrl *Controller) syncMachineConfigPool(ctx context.Context, key string) error {
 	startTime := time.Now()
 	klog.V(4).Infof("Started syncing machineconfigpool %q (%v)", key, startTime)
 	defer func() {
@@ -591,7 +588,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		return ctrl.syncFailingStatus(pool, fmt.Errorf("no MachineConfigs found matching selector %v", selector))
 	}
 
-	if err := ctrl.syncGeneratedMachineConfig(pool, mcs); err != nil {
+	if err := ctrl.syncGeneratedMachineConfig(ctx, pool, mcs); err != nil {
 		klog.Errorf("Error syncing Generated MCFG: %v", err)
 		return ctrl.syncFailingStatus(pool, err)
 	}
@@ -730,7 +727,7 @@ func (ctrl *Controller) getOSImageStreamForPool(pool *mcfgv1.MachineConfigPool) 
 	return imageStreamSet, nil
 }
 
-func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig) error {
+func (ctrl *Controller) syncGeneratedMachineConfig(ctx context.Context, pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig) error {
 	if len(configs) == 0 {
 		return nil
 	}
@@ -768,7 +765,7 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 	// Check for runc on RHEL 10. When the OSImageURL was overridden or no
 	// stream is available, inspect the actual image; otherwise use the stream.
 	if isOSImageURLOverridden {
-		if err := validateNoRuncOnRHEL10FromOSImageURL(ctrl.ctx, pool, generated, ctrl.imageInspector); err != nil {
+		if err := validateNoRuncOnRHEL10FromOSImageURL(ctx, pool, generated, ctrl.imageInspector); err != nil {
 			return err
 		}
 	} else if osImageStreamSet != nil {

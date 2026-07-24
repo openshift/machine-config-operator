@@ -138,7 +138,7 @@ func (f *fixture) runExpectError(mcpname string) {
 func (f *fixture) runController(mcpname string, expectError bool) {
 	c := f.newController()
 
-	err := c.syncHandler(mcpname)
+	err := c.syncHandler(context.Background(), mcpname)
 	if !expectError && err != nil {
 		f.t.Errorf("error syncing machineconfigpool: %v", err)
 	} else if expectError && err == nil {
