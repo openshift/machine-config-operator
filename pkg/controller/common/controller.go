@@ -1,6 +1,8 @@
 package common
 
+import "context"
+
 // Controller is the common interface all controllers implement
 type Controller interface {
-	Run(workers int, stopCh <-chan struct{})
+	Run(ctx context.Context, workers int)
 }

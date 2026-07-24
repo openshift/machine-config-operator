@@ -234,7 +234,7 @@ func New(
 }
 
 // Run executes the container runtime config controller.
-func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
+func (ctrl *Controller) Run(ctx context.Context, workers int) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 	defer ctrl.imgQueue.ShutDown()
@@ -253,7 +253,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	}
 
 	if ctrl.addedPolicyObservers || ctrl.addedCRIOCPObservers {
-		ctrl.configInformerFactory.Start(stopCh)
+		ctrl.configInformerFactory.Start(ctx.Done())
 	}
 
 	if ctrl.addedPolicyObservers {
@@ -264,7 +264,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 		listerCaches = append(listerCaches, ctrl.criocpListerSynced)
 	}
 
-	if !cache.WaitForCacheSync(stopCh, listerCaches...) {
+	if !cache.WaitForCacheSync(ctx.Done(), listerCaches...) {
 		return
 	}
 
@@ -272,16 +272,16 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer klog.Info("Shutting down MachineConfigController-ContainerRuntimeConfigController")
 
 	for i := 0; i < workers; i++ {
-		go wait.Until(ctrl.worker, time.Second, stopCh)
+		go wait.Until(ctrl.worker, time.Second, ctx.Done())
 	}
 
 	// Just need one worker for the image config
-	go wait.Until(ctrl.imgWorker, time.Second, stopCh)
+	go wait.Until(ctrl.imgWorker, time.Second, ctx.Done())
 
 	// Just need one worker for the CRIOCredentialProviderConfig
-	go wait.Until(ctrl.criocpWorker, time.Second, stopCh)
+	go wait.Until(ctrl.criocpWorker, time.Second, ctx.Done())
 
-	<-stopCh
+	<-ctx.Done()
 }
 
 func ctrConfigTriggerObjectChange(old, newCRC *mcfgv1.ContainerRuntimeConfig) bool {

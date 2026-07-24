@@ -191,16 +191,9 @@ func New(
 }
 
 // Run executes the render controller.
-func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
+func (ctrl *Controller) Run(ctx context.Context, workers int) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go func() {
-		<-stopCh
-		cancel()
-	}()
 
 	listerCaches := []cache.InformerSynced{ctrl.mcpListerSynced, ctrl.mcListerSynced, ctrl.ccListerSynced}
 
@@ -215,7 +208,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	if ctrl.osImageStreamListerSynced != nil {
 		listerCaches = append(listerCaches, ctrl.osImageStreamListerSynced)
 	}
-	if !cache.WaitForCacheSync(stopCh, listerCaches...) {
+	if !cache.WaitForCacheSync(ctx.Done(), listerCaches...) {
 		return
 	}
 
@@ -223,10 +216,10 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer klog.Info("Shutting down MachineConfigController-RenderController")
 
 	for i := 0; i < workers; i++ {
-		go wait.Until(func() { ctrl.worker(ctx) }, time.Second, stopCh)
+		go wait.Until(func() { ctrl.worker(ctx) }, time.Second, ctx.Done())
 	}
 
-	<-stopCh
+	<-ctx.Done()
 }
 
 func (ctrl *Controller) addMachineConfigPool(obj interface{}) {

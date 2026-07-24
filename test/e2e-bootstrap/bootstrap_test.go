@@ -536,11 +536,11 @@ func newTestFixture(t *testing.T, cfg *rest.Config, objs []runtime.Object) *fixt
 	controllers := createControllers(ctrlctx)
 
 	// Start the shared factory informers that you need to use in your controller
-	ctrlctx.InformerFactory.Start(ctrlctx.Stop)
-	ctrlctx.KubeInformerFactory.Start(ctrlctx.Stop)
-	ctrlctx.OpenShiftConfigKubeNamespacedInformerFactory.Start(ctrlctx.Stop)
-	ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
-	ctrlctx.OperatorInformerFactory.Start(ctrlctx.Stop)
+	ctrlctx.InformerFactory.Start(ctx.Done())
+	ctrlctx.KubeInformerFactory.Start(ctx.Done())
+	ctrlctx.OpenShiftConfigKubeNamespacedInformerFactory.Start(ctx.Done())
+	ctrlctx.ConfigInformerFactory.Start(ctx.Done())
+	ctrlctx.OperatorInformerFactory.Start(ctx.Done())
 
 	err := ctrlctx.FeatureGatesHandler.Connect(ctx)
 	require.NoError(t, err, "FeatureGates should be available before proceeding")
@@ -548,7 +548,7 @@ func newTestFixture(t *testing.T, cfg *rest.Config, objs []runtime.Object) *fixt
 	close(ctrlctx.InformersStarted)
 
 	for _, c := range controllers {
-		go c.Run(2, ctrlctx.Stop)
+		go c.Run(ctx, 2)
 	}
 
 	return &fixture{

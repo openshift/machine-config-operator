@@ -219,11 +219,11 @@ func New(
 }
 
 // Run executes the machine-set-boot-image controller.
-func (ctrl *Controller) Run(stopCh <-chan struct{}) {
+func (ctrl *Controller) Run(ctx context.Context) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.mcoCmListerSynced, ctrl.mapiMachineSetListerSynced, ctrl.infraListerSynced, ctrl.mcopListerSynced, ctrl.clusterVersionListerSynced) {
+	if !cache.WaitForCacheSync(ctx.Done(), ctrl.mcoCmListerSynced, ctrl.mapiMachineSetListerSynced, ctrl.infraListerSynced, ctrl.mcopListerSynced, ctrl.clusterVersionListerSynced) {
 		return
 	}
 
@@ -232,9 +232,9 @@ func (ctrl *Controller) Run(stopCh <-chan struct{}) {
 
 	// This controller needs to run in single thread mode, as the work unit per sync are
 	// the same and shouldn't overlap each other.
-	go wait.Until(ctrl.worker, time.Second, stopCh)
+	go wait.Until(ctrl.worker, time.Second, ctx.Done())
 
-	<-stopCh
+	<-ctx.Done()
 }
 
 // enqueueEvent adds a event to the work queue.
