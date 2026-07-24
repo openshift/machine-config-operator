@@ -87,7 +87,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		ctrlctx := ctrlcommon.CreateControllerContext(ctx, cb)
 
 		// Early start the config informer because feature gate depends on it
-		ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
+		ctrlctx.ConfigInformerFactory.Start(ctx.Done())
 		if fgErr := ctrlctx.FeatureGatesHandler.Connect(ctx); fgErr != nil {
 			klog.Error(fmt.Errorf("failed to connect to feature gates %w", fgErr))
 			runCancel()
@@ -131,13 +131,13 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 				inspectorFactory,
 			)
 
-			ctrlctx.InformerFactory.Start(ctrlctx.Stop)
-			ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
-			ctrlctx.OpenShiftConfigKubeNamespacedInformerFactory.Start(ctrlctx.Stop)
-			ctrlctx.KubeNamespacedInformerFactory.Start(ctrlctx.Stop)
-			ctrlctx.OperatorInformerFactory.Start(ctrlctx.Stop)
+			ctrlctx.InformerFactory.Start(ctx.Done())
+			ctrlctx.ConfigInformerFactory.Start(ctx.Done())
+			ctrlctx.OpenShiftConfigKubeNamespacedInformerFactory.Start(ctx.Done())
+			ctrlctx.KubeNamespacedInformerFactory.Start(ctx.Done())
+			ctrlctx.OperatorInformerFactory.Start(ctx.Done())
 
-			go osImageStreamCtrl.Run(1, ctrlctx.Stop)
+			go osImageStreamCtrl.Run(ctx, 1)
 
 			if err := osImageStreamCtrl.EnsureOSImageStream(ctx); err != nil {
 				klog.Fatalf("Failed to ensure OSImageStream: %v", err)
@@ -148,7 +148,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			}
 		}
 
-		go ctrlcommon.StartMetricsListener(startOpts.promMetricsListenAddress, ctrlctx.Stop, ctrlcommon.RegisterMCCMetrics, startOpts.tlsMinVersion, startOpts.tlsCipherSuites)
+		go ctrlcommon.StartMetricsListener(startOpts.promMetricsListenAddress, ctx.Done(), ctrlcommon.RegisterMCCMetrics, startOpts.tlsMinVersion, startOpts.tlsCipherSuites)
 
 		controllers := createControllers(ctrlctx, inspectionCache)
 		draincontroller := drain.New(
@@ -183,17 +183,17 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			ctrlctx.ClientBuilder.KubeClientOrDie("pinned-image-set-controller"),
 			ctrlctx.ClientBuilder.MachineConfigClientOrDie("pinned-image-set-controller"),
 		)
-		go pinnedImageSet.Run(2, ctrlctx.Stop)
+		go pinnedImageSet.Run(ctx, 2)
 
 		// Start the shared factory informers that you need to use in your controller
-		ctrlctx.InformerFactory.Start(ctrlctx.Stop)
-		ctrlctx.KubeInformerFactory.Start(ctrlctx.Stop)
-		ctrlctx.OpenShiftConfigKubeNamespacedInformerFactory.Start(ctrlctx.Stop)
-		ctrlctx.OperatorInformerFactory.Start(ctrlctx.Stop)
-		ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
-		ctrlctx.KubeNamespacedInformerFactory.Start(ctrlctx.Stop)
-		ctrlctx.KubeMAOSharedInformer.Start(ctrlctx.Stop)
-		ctrlctx.OCLInformerFactory.Start(ctrlctx.Stop)
+		ctrlctx.InformerFactory.Start(ctx.Done())
+		ctrlctx.KubeInformerFactory.Start(ctx.Done())
+		ctrlctx.OpenShiftConfigKubeNamespacedInformerFactory.Start(ctx.Done())
+		ctrlctx.OperatorInformerFactory.Start(ctx.Done())
+		ctrlctx.ConfigInformerFactory.Start(ctx.Done())
+		ctrlctx.KubeNamespacedInformerFactory.Start(ctx.Done())
+		ctrlctx.KubeMAOSharedInformer.Start(ctx.Done())
+		ctrlctx.OCLInformerFactory.Start(ctx.Done())
 
 		close(ctrlctx.InformersStarted)
 
@@ -210,11 +210,11 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 				ctrlctx.ClientBuilder.KubeClientOrDie("internalreleaseimage-controller"),
 				ctrlctx.ClientBuilder.MachineConfigClientOrDie("internalreleaseimage-controller"))
 
-			go iriController.Run(2, ctrlctx.Stop)
+			go iriController.Run(ctx, 2)
 			// start the informers again to enable feature gated types.
 			// see comments in SharedInformerFactory interface.
-			ctrlctx.InformerFactory.Start(ctrlctx.Stop)
-			ctrlctx.KubeInformerFactory.Start(ctrlctx.Stop)
+			ctrlctx.InformerFactory.Start(ctx.Done())
+			ctrlctx.KubeInformerFactory.Start(ctx.Done())
 		}
 
 		if ctrlcommon.IsBootImageControllerRequired(ctrlctx) {
@@ -230,19 +230,19 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 				ctrlctx.ConfigInformerFactory.Config().V1().ClusterVersions(),
 				ctrlctx.FeatureGatesHandler,
 			)
-			go bootImageController.Run(ctrlctx.Stop)
+			go bootImageController.Run(ctx)
 			// start the informers again to enable feature gated types.
 			// see comments in SharedInformerFactory interface.
-			ctrlctx.KubeNamespacedInformerFactory.Start(ctrlctx.Stop)
-			ctrlctx.MachineInformerFactory.Start(ctrlctx.Stop)
-			ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
-			ctrlctx.OperatorInformerFactory.Start(ctrlctx.Stop)
+			ctrlctx.KubeNamespacedInformerFactory.Start(ctx.Done())
+			ctrlctx.MachineInformerFactory.Start(ctx.Done())
+			ctrlctx.ConfigInformerFactory.Start(ctx.Done())
+			ctrlctx.OperatorInformerFactory.Start(ctx.Done())
 		}
 
 		for _, c := range controllers {
-			go c.Run(2, ctrlctx.Stop)
+			go c.Run(ctx, 2)
 		}
-		go draincontroller.Run(5, ctrlctx.Stop)
+		go draincontroller.Run(ctx, 5)
 		go certrotationcontroller.Run(ctx, 1)
 
 		if inspectionCache != nil {

@@ -172,11 +172,11 @@ func New(
 }
 
 // Run executes the InternalReleaseImage controller.
-func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
+func (ctrl *Controller) Run(ctx context.Context, workers int) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.iriListerSynced, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.clusterVersionListerSynced, ctrl.secretListerSynced, ctrl.mcnListerSynced, ctrl.nodeListerSynced, ctrl.infraListerSynced) {
+	if !cache.WaitForCacheSync(ctx.Done(), ctrl.iriListerSynced, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.clusterVersionListerSynced, ctrl.secretListerSynced, ctrl.mcnListerSynced, ctrl.nodeListerSynced, ctrl.infraListerSynced) {
 		return
 	}
 
@@ -184,10 +184,10 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer klog.Info("Shutting down MachineConfigController-InternalReleaseImageController")
 
 	for i := 0; i < workers; i++ {
-		go wait.Until(ctrl.worker, time.Second, stopCh)
+		go wait.Until(ctrl.worker, time.Second, ctx.Done())
 	}
 
-	<-stopCh
+	<-ctx.Done()
 }
 
 // worker runs a worker thread that just dequeues items, processes them, and marks them done.
