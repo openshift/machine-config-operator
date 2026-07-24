@@ -208,7 +208,7 @@ func (ctrl *Controller) updateNodeConfig(old, cur interface{}) {
 	}
 	if newNode.Name != ctrlcommon.ClusterNodeInstanceName {
 		message := fmt.Sprintf("The node.config.openshift.io \"%v\" is invalid: metadata.name Invalid value: \"%v\" : must be \"%v\"", newNode.Name, newNode.Name, ctrlcommon.ClusterNodeInstanceName)
-		ctrl.eventRecorder.Eventf(oldNode, corev1.EventTypeNormal, "ActionProhibited", message)
+		ctrl.eventRecorder.Eventf(oldNode, corev1.EventTypeNormal, "ActionProhibited", "%s", message)
 		klog.V(2).Infof("%s", message)
 		return
 	}
@@ -228,7 +228,7 @@ func (ctrl *Controller) updateNodeConfig(old, cur interface{}) {
 		}
 		if !isValidWorkerLatencyProfleTransition {
 			message := fmt.Sprintf("Skipping the Update Node event, name: %s, transition not allowed from old WorkerLatencyProfile: \"%s\" to new WorkerLatencyProfile: \"%s\"", newNode.Name, oldNode.Spec.WorkerLatencyProfile, newNode.Spec.WorkerLatencyProfile)
-			ctrl.eventRecorder.Eventf(newNode, corev1.EventTypeNormal, "ActionProhibited", message)
+			ctrl.eventRecorder.Eventf(newNode, corev1.EventTypeNormal, "ActionProhibited", "%s", message)
 			klog.Info(message)
 			return
 		}
@@ -246,7 +246,7 @@ func (ctrl *Controller) addNodeConfig(obj interface{}) {
 	if nodeConfig.Name != ctrlcommon.ClusterNodeInstanceName {
 		message := fmt.Sprintf("The node.config.openshift.io \"%v\" is invalid: metadata.name Invalid value: \"%v\" : must be \"%v\"", nodeConfig.Name, nodeConfig.Name, ctrlcommon.ClusterNodeInstanceName)
 		klog.V(2).Info(message)
-		ctrl.eventRecorder.Eventf(nodeConfig, corev1.EventTypeNormal, "ActionProhibited", message)
+		ctrl.eventRecorder.Eventf(nodeConfig, corev1.EventTypeNormal, "ActionProhibited", "%s", message)
 		return
 	}
 	klog.V(4).Infof("Adding the node config resource, name: %s", nodeConfig.Name)
