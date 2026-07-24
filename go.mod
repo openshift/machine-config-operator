@@ -1,6 +1,6 @@
 module github.com/openshift/machine-config-operator
 
-go 1.25.5
+go 1.26.0
 
 require (
 	github.com/Azure/ARO-RP v0.0.0-20250602035759-0693f32d5ccc
@@ -41,7 +41,7 @@ require (
 	github.com/onsi/gomega v1.38.2
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/openshift-eng/openshift-tests-extension v0.0.0-20260127124016-0fed2b824818
-	github.com/openshift/api v0.0.0-20260702202555-ef71f942ef6c
+	github.com/openshift/api v0.0.0-20260724065811-356624ff036f
 	github.com/openshift/client-go v0.0.0-20260703082747-24d059aea27a
 	github.com/openshift/imagebuilder v1.2.21
 	github.com/openshift/library-go v0.0.0-20260611115129-21dd5809a4b2
@@ -58,9 +58,9 @@ require (
 	golang.org/x/net v0.56.0
 	golang.org/x/time v0.14.0
 	google.golang.org/grpc v1.79.3
-	k8s.io/api v0.35.1
+	k8s.io/api v0.36.2
 	k8s.io/apiextensions-apiserver v0.35.1
-	k8s.io/apimachinery v0.35.1
+	k8s.io/apimachinery v0.36.2
 	k8s.io/client-go v0.35.1
 	k8s.io/code-generator v0.35.1
 	k8s.io/component-base v0.35.1
@@ -420,7 +420,7 @@ require (
 	golang.org/x/term v0.45.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
 	golang.org/x/tools v0.47.0 // indirect
-	google.golang.org/protobuf v1.36.11 // indirect
+	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
