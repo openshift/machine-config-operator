@@ -61,40 +61,11 @@ func (r *responseDeduper) addAll(dr *DriverResponse) {
 }
 
 func (r *responseDeduper) addPackage(p *Package) {
-	if prev := r.seenPackages[p.ID]; prev != nil {
-		// Package already seen in a previous response. Merge the file lists,
-		// removing duplicates. This can happen when the same package appears
-		// in multiple driver responses that are being merged together.
-		prev.GoFiles = appendUniqueStrings(prev.GoFiles, p.GoFiles)
-		prev.CompiledGoFiles = appendUniqueStrings(prev.CompiledGoFiles, p.CompiledGoFiles)
-		prev.OtherFiles = appendUniqueStrings(prev.OtherFiles, p.OtherFiles)
-		prev.IgnoredFiles = appendUniqueStrings(prev.IgnoredFiles, p.IgnoredFiles)
-		prev.EmbedFiles = appendUniqueStrings(prev.EmbedFiles, p.EmbedFiles)
-		prev.EmbedPatterns = appendUniqueStrings(prev.EmbedPatterns, p.EmbedPatterns)
+	if r.seenPackages[p.ID] != nil {
 		return
 	}
 	r.seenPackages[p.ID] = p
 	r.dr.Packages = append(r.dr.Packages, p)
-}
-
-// appendUniqueStrings appends elements from src to dst, skipping duplicates.
-func appendUniqueStrings(dst, src []string) []string {
-	if len(src) == 0 {
-		return dst
-	}
-
-	seen := make(map[string]bool, len(dst))
-	for _, s := range dst {
-		seen[s] = true
-	}
-
-	for _, s := range src {
-		if !seen[s] {
-			dst = append(dst, s)
-		}
-	}
-
-	return dst
 }
 
 func (r *responseDeduper) addRoot(id string) {
@@ -207,10 +178,11 @@ func goListDriver(cfg *Config, runner *gocommand.Runner, overlay string, pattern
 	// doesn't exist.
 extractQueries:
 	for _, pattern := range patterns {
-		query, value, ok := strings.Cut(pattern, "=")
-		if !ok {
+		eqidx := strings.Index(pattern, "=")
+		if eqidx < 0 {
 			restPatterns = append(restPatterns, pattern)
 		} else {
+			query, value := pattern[:eqidx], pattern[eqidx+len("="):]
 			switch query {
 			case "file":
 				containFiles = append(containFiles, value)
@@ -562,18 +534,8 @@ func (state *golistState) createDriverResponse(words ...string) (*DriverResponse
 			} else {
 				// golang/go#38990: go list silently fails to do cgo processing
 				pkg.CompiledGoFiles = nil
-
-				var msg strings.Builder
-				fmt.Fprintf(&msg, "go list failed to return CompiledGoFiles for %q.\n", p.Name)
-
-				for _, err := range p.DepsErrors {
-					msg.WriteString(strings.TrimSpace(err.Err))
-					msg.WriteByte('\n')
-				}
-
-				msg.WriteString("This may indicate failure to perform cgo processing; try building at the command line. See https://golang.org/issue/38990.")
 				pkg.Errors = append(pkg.Errors, Error{
-					Msg:  msg.String(),
+					Msg:  "go list failed to return CompiledGoFiles. This may indicate failure to perform cgo processing; try building at the command line. See https://golang.org/issue/38990.",
 					Kind: ListError,
 				})
 			}
@@ -870,8 +832,6 @@ func golistargs(cfg *Config, words []string, goVersion int) []string {
 		// go list doesn't let you pass -test and -find together,
 		// probably because you'd just get the TestMain.
 		fmt.Sprintf("-find=%t", !cfg.Tests && cfg.Mode&findFlags == 0 && !usesExportData(cfg)),
-		// VCS information is not needed when not printing Stale or StaleReason fields
-		"-buildvcs=false",
 	}
 
 	// golang/go#60456: with go1.21 and later, go list serves pgo variants, which

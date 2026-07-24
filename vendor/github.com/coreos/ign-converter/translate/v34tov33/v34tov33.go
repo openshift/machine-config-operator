@@ -99,7 +99,7 @@ func translateConfig(old old_types.Config) (ret types.Config) {
 func Translate(cfg old_types.Config) (types.Config, error) {
 	rpt := validate.ValidateWithContext(cfg, nil)
 	if rpt.IsFatal() {
-		return types.Config{}, fmt.Errorf("Invalid input config:\n%s", rpt.String())
+		return types.Config{}, fmt.Errorf("invalid input config:\n%s", rpt.String())
 	}
 
 	err := checkValue(reflect.ValueOf(cfg))
@@ -112,7 +112,7 @@ func Translate(cfg old_types.Config) (types.Config, error) {
 	// Sanity check the returned config
 	oldrpt := validate.ValidateWithContext(res, nil)
 	if oldrpt.IsFatal() {
-		return types.Config{}, fmt.Errorf("Converted spec has unexpected fatal error:\n%s", oldrpt.String())
+		return types.Config{}, fmt.Errorf("converted spec has unexpected fatal error:\n%s", oldrpt.String())
 	}
 	return res, nil
 }
@@ -123,29 +123,17 @@ func checkValue(v reflect.Value) error {
 		tang := v.Interface().(old_types.Tang)
 		// 3.3 does not support tang offline provisioning
 		if util.NotEmpty(tang.Advertisement) {
-			return fmt.Errorf("Invalid input config: tang offline provisioning is not supported in spec v3.3")
+			return fmt.Errorf("invalid input config: tang offline provisioning is not supported in spec v3.3")
 		}
 	case reflect.TypeOf(old_types.Luks{}):
 		luks := v.Interface().(old_types.Luks)
 		// 3.3 does not support luks discard
 		if util.IsTrue(luks.Discard) {
-			return fmt.Errorf("Invalid input config: luks discard is not supported in spec v3.3")
+			return fmt.Errorf("invalid input config: luks discard is not supported in spec v3.3")
 		}
 		// 3.3 does not support luks openOptions
 		if len(luks.OpenOptions) > 0 {
-			return fmt.Errorf("Invalid input config: luks openOptions is not supported in spec v3.3")
-		}
-	case reflect.TypeOf(old_types.FileEmbedded1{}):
-		f := v.Interface().(old_types.FileEmbedded1)
-		// 3.3 does not support special mode bits in files
-		if f.Mode != nil && (*f.Mode&07000) != 0 {
-			return fmt.Errorf("Invalid input config: special mode bits are not supported in spec v3.3")
-		}
-	case reflect.TypeOf(old_types.DirectoryEmbedded1{}):
-		d := v.Interface().(old_types.DirectoryEmbedded1)
-		// 3.3 does not support special mode bits in directories
-		if d.Mode != nil && (*d.Mode&07000) != 0 {
-			return fmt.Errorf("Invalid input config: special mode bits are not supported in spec v3.3")
+			return fmt.Errorf("invalid input config: luks openOptions is not supported in spec v3.3")
 		}
 	case reflect.TypeOf(old_types.Resource{}):
 		resource := v.Interface().(old_types.Resource)
@@ -153,10 +141,10 @@ func checkValue(v reflect.Value) error {
 		if util.NotEmpty(resource.Source) {
 			u, err := url.Parse(*resource.Source)
 			if err != nil {
-				return fmt.Errorf("Invalid input config: %v", err)
+				return fmt.Errorf("invalid input config: %v", err)
 			}
 			if u.Scheme == "arn" {
-				return fmt.Errorf("Invalid input config: arn: scheme for s3 is not supported in spec v3.3")
+				return fmt.Errorf("invalid input config: arn: scheme for s3 is not supported in spec v3.3")
 			}
 		}
 	}
