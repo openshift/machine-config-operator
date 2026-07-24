@@ -280,15 +280,30 @@ func (ctrl *Controller) calculateStatus(mcns []*mcfgv1.MachineConfigNode, cconfi
 				updating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", fmt.Sprintf("Pool is waiting for a new OS image build to start (mosc: %s)", mosc.Name))
 				apihelpers.SetMachineConfigPoolCondition(&status, *updating)
 			default:
-				// Some cases we have an old MOSB object that still exists, we still update MCP
 				mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
 				switch {
-				case mosbState.IsBuilding() || mosbState.IsBuildPrepared():
+				case mosbState.IsBuildPrepared():
+					updating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", fmt.Sprintf("Pool is waiting for OS image build to start (mosb: %s)", mosb.Name))
+					apihelpers.SetMachineConfigPoolCondition(&status, *updating)
+				case mosbState.IsBuilding():
 					updating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", fmt.Sprintf("Pool is waiting for OS image build to complete (mosb: %s)", mosb.Name))
 					apihelpers.SetMachineConfigPoolCondition(&status, *updating)
+				case mosbState.IsBuildSuccess():
+					// Build succeeded: if nodes still need to apply the image, keep Updating=True.
+					// If allUpdated already cleared Updating above, leave it alone so a fully
+					// converged pool does not get stuck as Updating.
+					if !allUpdated {
+						updating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", fmt.Sprintf("Pool is waiting for nodes to apply OS image (mosb: %s)", mosb.Name))
+						apihelpers.SetMachineConfigPoolCondition(&status, *updating)
+					}
 				case mosbState.IsBuildFailure():
-					// Clear updating status when build fails
 					updating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionFalse, "", fmt.Sprintf("Pool update stopped due to OS image build failure (mosb: %s)", mosb.Name))
+					apihelpers.SetMachineConfigPoolCondition(&status, *updating)
+				case mosbState.IsBuildInterrupted():
+					updating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionFalse, "", fmt.Sprintf("Pool update stopped due to OS image build being interrupted (mosb: %s)", mosb.Name))
+					apihelpers.SetMachineConfigPoolCondition(&status, *updating)
+				case mosbState.IsInInitialState():
+					updating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", fmt.Sprintf("Pool is waiting for OS image build to start (mosb: %s)", mosb.Name))
 					apihelpers.SetMachineConfigPoolCondition(&status, *updating)
 				}
 			}
@@ -296,6 +311,35 @@ func (ctrl *Controller) calculateStatus(mcns []*mcfgv1.MachineConfigNode, cconfi
 			// Pool is degraded due to non-build issues, clear updating status
 			updating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionFalse, "", "Pool update paused due to degraded condition")
 			apihelpers.SetMachineConfigPoolCondition(&status, *updating)
+		}
+	} else if mosc != nil && pool.Spec.Paused {
+		// Pool is paused but a background build may still be running or may have failed.
+		// Surface build state so operators can observe progress without unpausing.
+		if mosb == nil {
+			updating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", fmt.Sprintf("Pool is paused; waiting for a new OS image build to start (mosc: %s)", mosc.Name))
+			apihelpers.SetMachineConfigPoolCondition(&status, *updating)
+		} else {
+			mosbState := ctrlcommon.NewMachineOSBuildState(mosb)
+			switch {
+			case mosbState.IsBuildPrepared():
+				updating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", fmt.Sprintf("Pool is paused; OS image build has been prepared but will not rollout (mosb: %s)", mosb.Name))
+				apihelpers.SetMachineConfigPoolCondition(&status, *updating)
+			case mosbState.IsBuilding():
+				updating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", fmt.Sprintf("Pool is paused; OS image build in progress (mosb: %s)", mosb.Name))
+				apihelpers.SetMachineConfigPoolCondition(&status, *updating)
+			case mosbState.IsBuildSuccess():
+				updating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionFalse, "", fmt.Sprintf("Pool is paused; OS image build completed successfully (mosb: %s)", mosb.Name))
+				apihelpers.SetMachineConfigPoolCondition(&status, *updating)
+			case mosbState.IsBuildFailure():
+				updating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionFalse, "", fmt.Sprintf("Pool is paused; OS image build failed (mosb: %s)", mosb.Name))
+				apihelpers.SetMachineConfigPoolCondition(&status, *updating)
+			case mosbState.IsBuildInterrupted():
+				updating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionFalse, "", fmt.Sprintf("Pool is paused; OS image build was interrupted (mosb: %s)", mosb.Name))
+				apihelpers.SetMachineConfigPoolCondition(&status, *updating)
+			case mosbState.IsInInitialState():
+				updating := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", fmt.Sprintf("Pool is paused; OS image build has been created but not yet started (mosb: %s)", mosb.Name))
+				apihelpers.SetMachineConfigPoolCondition(&status, *updating)
+			}
 		}
 	}
 

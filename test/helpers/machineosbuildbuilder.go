@@ -98,6 +98,186 @@ func (m *MachineOSBuildBuilder) WithSuccessfulBuild() *MachineOSBuildBuilder {
 	return m
 }
 
+func (m *MachineOSBuildBuilder) WithBuildPrepared() *MachineOSBuildBuilder {
+	m.mosb.Status.Conditions = []metav1.Condition{
+		{
+			Type:    string(mcfgv1.MachineOSBuildPrepared),
+			Status:  metav1.ConditionTrue,
+			Reason:  "Prepared",
+			Message: "Build Prepared and Pending",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuilding),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Building",
+			Message: "Image Build In Progress",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuildFailed),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Failed",
+			Message: "Build Failed",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuildInterrupted),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Interrupted",
+			Message: "Build Interrupted",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuildSucceeded),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Ready",
+			Message: "Build Ready",
+		},
+	}
+	return m
+}
+
+func (m *MachineOSBuildBuilder) WithBuildInitialState() *MachineOSBuildBuilder {
+	m.mosb.Status.Conditions = []metav1.Condition{
+		{
+			Type:    string(mcfgv1.MachineOSBuildPrepared),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Prepared",
+			Message: "Build Prepared and Pending",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuilding),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Building",
+			Message: "Image Build In Progress",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuildFailed),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Failed",
+			Message: "Build Failed",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuildInterrupted),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Interrupted",
+			Message: "Build Interrupted",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuildSucceeded),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Ready",
+			Message: "Build Ready",
+		},
+	}
+	return m
+}
+
+func (m *MachineOSBuildBuilder) WithBuildInProgress() *MachineOSBuildBuilder {
+	m.mosb.Status.Conditions = []metav1.Condition{
+		{
+			Type:    string(mcfgv1.MachineOSBuildPrepared),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Prepared",
+			Message: "Build Prepared and Pending",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuilding),
+			Status:  metav1.ConditionTrue,
+			Reason:  "Building",
+			Message: "Image Build In Progress",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuildFailed),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Failed",
+			Message: "Build Failed",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuildInterrupted),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Interrupted",
+			Message: "Build Interrupted",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuildSucceeded),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Ready",
+			Message: "Build Ready",
+		},
+	}
+	return m
+}
+
+func (m *MachineOSBuildBuilder) WithFailedBuild() *MachineOSBuildBuilder {
+	m.mosb.Status.Conditions = []metav1.Condition{
+		{
+			Type:    string(mcfgv1.MachineOSBuildPrepared),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Prepared",
+			Message: "Build Prepared and Pending",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuilding),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Building",
+			Message: "Image Build In Progress",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuildFailed),
+			Status:  metav1.ConditionTrue,
+			Reason:  "Failed",
+			Message: "Build Failed",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuildInterrupted),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Interrupted",
+			Message: "Build Interrupted",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuildSucceeded),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Ready",
+			Message: "Build Ready",
+		},
+	}
+	return m
+}
+
+func (m *MachineOSBuildBuilder) WithInterruptedBuild() *MachineOSBuildBuilder {
+	m.mosb.Status.Conditions = []metav1.Condition{
+		{
+			Type:    string(mcfgv1.MachineOSBuildPrepared),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Prepared",
+			Message: "Build Prepared and Pending",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuilding),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Building",
+			Message: "Image Build In Progress",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuildFailed),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Failed",
+			Message: "Build Failed",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuildInterrupted),
+			Status:  metav1.ConditionTrue,
+			Reason:  "Interrupted",
+			Message: "Build Interrupted",
+		},
+		{
+			Type:    string(mcfgv1.MachineOSBuildSucceeded),
+			Status:  metav1.ConditionFalse,
+			Reason:  "Ready",
+			Message: "Build Ready",
+		},
+	}
+	return m
+}
+
 func (m *MachineOSBuildBuilder) WithAnnotations(annos map[string]string) *MachineOSBuildBuilder {
 	for k, v := range annos {
 		m.mosb.Annotations[k] = v
