@@ -61,7 +61,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		var (
 			duplicatedMachinesetName = fmt.Sprintf("cloned-tc-%s", GetCurrentTestPolarionIDNumber())
 			firstMachineSet          = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
-			fakeImageName            = getBackdatedBootImage(oc.AsAdmin())
+			fakeImageName            = getBackdatedBootImage(oc.AsAdmin(), firstMachineSet)
 		)
 
 		exutil.By("Duplicate machineset for testing")
@@ -118,7 +118,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	g.It("[PolarionID:74240][OTP] ManagedBootImages. Restore All MachineSet images", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
 		var (
 			machineSet                 = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
-			fakeImageName              = getBackdatedBootImage(oc.AsAdmin())
+			fakeImageName              = getBackdatedBootImage(oc.AsAdmin(), machineSet)
 			clonedMSName               = "cloned-tc-74240"
 			clonedWrongBootImageMSName = "cloned-tc-74240-wrong-boot-image"
 			clonedOwnedMSName          = "cloned-tc-74240-owned"
@@ -224,7 +224,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	g.It("[PolarionID:74239][OTP] ManagedBootImages. Restore Partial MachineSet images", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
 		var (
 			machineSet             = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
-			fakeImageName          = getBackdatedBootImage(oc.AsAdmin())
+			fakeImageName          = getBackdatedBootImage(oc.AsAdmin(), machineSet)
 			clonedMSLabelName      = "cloned-tc-74239-label"
 			clonedMSNoLabelName    = "cloned-tc-74239-no-label"
 			clonedMSLabelOwnedName = "cloned-tc-74239-label-owned"
@@ -320,7 +320,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		var (
 			machineConfiguration        = GetMachineConfiguration(oc.AsAdmin())
 			machineSet                  = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
-			fakeImageName               = getBackdatedBootImage(oc.AsAdmin())
+			fakeImageName               = getBackdatedBootImage(oc.AsAdmin(), machineSet)
 			clonedMSName                = "cloned-tc-74751-copy"
 			labelName                   = "test"
 			labelValue                  = "update"
@@ -508,7 +508,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 			machineConfiguration = GetMachineConfiguration(oc.AsAdmin())
 			machineSet           = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
-			fakeImageName        = getBackdatedBootImage(oc.AsAdmin())
+			fakeImageName        = getBackdatedBootImage(oc.AsAdmin(), machineSet)
 			labelName            = "test"
 			labelValue           = "update"
 
@@ -806,7 +806,7 @@ func testUserDataUpdateFailure(oc *exutil.CLI, clonedMSName, clonedSecretName, e
 	var (
 		machineConfiguration   = GetMachineConfiguration(oc.AsAdmin())
 		machineSet             = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
-		fakeImageName          = getBackdatedBootImage(oc.AsAdmin())
+		fakeImageName          = getBackdatedBootImage(oc.AsAdmin(), machineSet)
 		labelName              = "test"
 		labelValue             = "update"
 		secondLabelValue       = "update2"
@@ -899,7 +899,7 @@ func checkManagedBootImagesStatus(mc *MachineConfiguration, mode string) {
 
 // getBackdatedBootImage returns a valid boot image value for testing based on platform
 // MCO will only update images previously published in the installer. This function returns one of those valid images
-func getBackdatedBootImage(oc *exutil.CLI) string {
+func getBackdatedBootImage(oc *exutil.CLI, ms *MachineSet) string {
 	var (
 		platform = exutil.CheckPlatform(oc)
 	)
@@ -975,7 +975,7 @@ func getBackdatedBootImage(oc *exutil.CLI) string {
 		// To avoid collisions we will add prefix to identify our image
 		baseImage = "mcotest-" + baseImage
 		o.Expect(
-			uploadBaseImageToCloud(oc, platform, baseImageURL, baseImage),
+			uploadBaseImageToCloud(oc, ms, platform, baseImageURL, baseImage),
 		).To(o.Succeed(), "Error uploading the base image %s to the cloud", baseImageURL)
 		logger.Infof("Uplodated: %s", baseImage)
 		logger.Infof("OK!\n")

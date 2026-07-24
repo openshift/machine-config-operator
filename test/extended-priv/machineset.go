@@ -707,3 +707,44 @@ func GetScalableMachineSet(oc *exutil.CLI) (*MachineSet, error) {
 
 	return machinesets[0], nil
 }
+
+// GetVSphereFailureDomain returns the failure domain from the infrastructure resource that matches
+// the given MachineSet's workspace. It matches by comparing the workspace server and datacenter
+// against each failure domain's server and topology.datacenter.
+func GetVSphereFailureDomain(ms *MachineSet) (string, error) {
+	workspace, err := ms.Get(`{.spec.template.spec.providerSpec.value.workspace}`)
+	if err != nil {
+		return "", fmt.Errorf("error getting workspace from MachineSet %s: %w", ms.GetName(), err)
+	}
+
+	wsServer := gjson.Get(workspace, "server").String()
+	wsDataCenter := gjson.Get(workspace, "datacenter").String()
+	if wsServer == "" || wsDataCenter == "" {
+		return "", fmt.Errorf("workspace in MachineSet %s is missing server or datacenter", ms.GetName())
+	}
+
+	infra := NewResource(ms.GetOC().AsAdmin(), "infrastructure", "cluster")
+	failureDomains, err := infra.Get(`{.spec.platformSpec.vsphere.failureDomains}`)
+	if err != nil {
+		return "", fmt.Errorf("error getting failure domains from infrastructure resource: %w", err)
+	}
+
+	for _, fd := range gjson.Parse(failureDomains).Array() {
+		if fd.Get("server").String() == wsServer && fd.Get("topology.datacenter").String() == wsDataCenter {
+			return fd.Raw, nil
+		}
+	}
+
+	return "", fmt.Errorf("no failure domain found matching server=%s datacenter=%s for MachineSet %s", wsServer, wsDataCenter, ms.GetName())
+}
+
+// GetVSphereConnectionInfoForMachineSet returns the vSphere connection info for the failure domain
+// that matches the given MachineSet's workspace.
+func GetVSphereConnectionInfoForMachineSet(ms *MachineSet) (*exutil.VSphereConnectionInfo, error) {
+	fd, err := GetVSphereFailureDomain(ms)
+	if err != nil {
+		return nil, err
+	}
+
+	return exutil.GetVSphereConnectionInfoFromFailureDomain(ms.GetOC().AsAdmin(), fd)
+}
