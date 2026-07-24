@@ -224,3 +224,34 @@ subjects:
 roleRef:
   kind: Role
   name: host-networking-services
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: machine-config-operator-bgp-vip
+  namespace: openshift-network-operator
+  annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["bgp-vip-config"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: machine-config-operator-bgp-vip
+  namespace: openshift-network-operator
+  annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: machine-config-operator-bgp-vip
+subjects:
+  - kind: ServiceAccount
+    name: machine-config-operator
+    namespace: openshift-machine-config-operator
