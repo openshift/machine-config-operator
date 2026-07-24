@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -540,6 +541,53 @@ func TestPrepUpdateFromClusterOnDiskDrift(t *testing.T) {
 			dn.currentImagePath = currentImagePath
 			ufc, err := dn.prepUpdateFromCluster()
 			test.verify(t, ufc, err)
+		})
+	}
+}
+
+func TestRebootCommand(t *testing.T) {
+	tests := []struct {
+		name                  string
+		rationale             string
+		workaroundOCPBUGS51150 bool
+	}{
+		{
+			name:                  "without workaround",
+			rationale:             "test reboot",
+			workaroundOCPBUGS51150: false,
+		},
+		{
+			name:                  "with workaround",
+			rationale:             "test reboot",
+			workaroundOCPBUGS51150: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := rebootCommand(tt.rationale, tt.workaroundOCPBUGS51150)
+			args := cmd.Args
+
+			assert.Equal(t, "systemd-run", args[0])
+			assert.Contains(t, args, "--unit")
+			assert.Contains(t, args, "machine-config-daemon-reboot")
+
+			if tt.workaroundOCPBUGS51150 {
+				assert.Contains(t, args, "Requires=ostree-finalize-staged.service")
+				assert.Contains(t, args, "After=ostree-finalize-staged.service")
+			}
+
+			assert.Contains(t, args, "TimeoutStartSec=300")
+
+			// The last three args should be the shell invocation.
+			assert.Equal(t, "/bin/sh", args[len(args)-3])
+			assert.Equal(t, "-c", args[len(args)-2])
+
+			script := args[len(args)-1]
+			assert.True(t, strings.Contains(script, "crictl ps -q --label io.kubernetes.container.name=kube-apiserver"))
+			assert.True(t, strings.Contains(script, "systemctl stop kubelet"))
+			assert.True(t, strings.Contains(script, "crictl stop --timeout 200"))
+			assert.True(t, strings.Contains(script, "systemctl reboot"))
 		})
 	}
 }
