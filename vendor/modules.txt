@@ -1367,8 +1367,8 @@ github.com/openshift-eng/openshift-tests-extension/pkg/ginkgo
 github.com/openshift-eng/openshift-tests-extension/pkg/junit
 github.com/openshift-eng/openshift-tests-extension/pkg/util/sets
 github.com/openshift-eng/openshift-tests-extension/pkg/version
-# github.com/openshift/api v0.0.0-20260702202555-ef71f942ef6c
-## explicit; go 1.25.0
+# github.com/openshift/api v0.0.0-20260724065811-356624ff036f
+## explicit; go 1.26.0
 github.com/openshift/api
 github.com/openshift/api/annotations
 github.com/openshift/api/apiextensions
@@ -2397,7 +2397,7 @@ google.golang.org/grpc/serviceconfig
 google.golang.org/grpc/stats
 google.golang.org/grpc/status
 google.golang.org/grpc/tap
-# google.golang.org/protobuf v1.36.11
+# google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af
 ## explicit; go 1.23
 google.golang.org/protobuf/encoding/protodelim
 google.golang.org/protobuf/encoding/protojson
@@ -2638,7 +2638,7 @@ honnef.co/go/tools/stylecheck/st1021
 honnef.co/go/tools/stylecheck/st1022
 honnef.co/go/tools/stylecheck/st1023
 honnef.co/go/tools/unused
-# k8s.io/api v0.35.1 => github.com/openshift/kubernetes/staging/src/k8s.io/api v0.0.0-20260305123649-d18f3f005eaa
+# k8s.io/api v0.36.2 => github.com/openshift/kubernetes/staging/src/k8s.io/api v0.0.0-20260305123649-d18f3f005eaa
 ## explicit; go 1.25.0
 k8s.io/api/admission/v1
 k8s.io/api/admission/v1beta1
@@ -2719,7 +2719,7 @@ k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions/internalint
 k8s.io/apiextensions-apiserver/pkg/client/listers/apiextensions/v1
 k8s.io/apiextensions-apiserver/pkg/client/listers/apiextensions/v1beta1
 k8s.io/apiextensions-apiserver/pkg/features
-# k8s.io/apimachinery v0.35.1 => github.com/openshift/kubernetes/staging/src/k8s.io/apimachinery v0.0.0-20260305123649-d18f3f005eaa
+# k8s.io/apimachinery v0.36.2 => github.com/openshift/kubernetes/staging/src/k8s.io/apimachinery v0.0.0-20260305123649-d18f3f005eaa
 ## explicit; go 1.25.0
 k8s.io/apimachinery/pkg/api/equality
 k8s.io/apimachinery/pkg/api/errors

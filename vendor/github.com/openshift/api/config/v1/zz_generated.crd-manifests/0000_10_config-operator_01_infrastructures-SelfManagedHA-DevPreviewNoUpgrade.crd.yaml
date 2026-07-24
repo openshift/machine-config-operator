@@ -1785,6 +1785,25 @@ spec:
                           datacenter DNS, a DNS service is hosted as a static pod to serve those hostnames
                           to the nodes in the cluster.
                         type: string
+                      vipManagement:
+                        description: |-
+                          vipManagement indicates which VIP management mechanism is active
+                          on this cluster.
+                          Allowed values are `Keepalived`, `BGP`, and omitted.
+                          Once set to a non-empty value, this field is immutable.
+                          When set to `BGP`, kube-vip (Routing Table Mode) and frr-k8s are
+                          deployed as static pods to advertise VIPs via BGP, replacing the
+                          default keepalived/VRRP mechanism.
+                          When set to `Keepalived`, the default keepalived-based VIP
+                          management is used.
+                          When omitted, the default keepalived-based VIP management is used.
+                        enum:
+                        - Keepalived
+                        - BGP
+                        type: string
+                        x-kubernetes-validations:
+                        - message: vipManagement is immutable once set
+                          rule: oldSelf == '' || self == oldSelf
                     type: object
                     x-kubernetes-validations:
                     - message: dnsRecordsType may only be set to External when loadBalancer.type
