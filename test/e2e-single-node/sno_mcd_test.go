@@ -383,6 +383,100 @@ func TestNoReboot(t *testing.T) {
 	t.Logf("Node %s didn't reboot as expected during rollback, uptime increased from %f to %f ", node.Name, uptimeOld, uptimeNew)
 }
 
+func TestSNOCordonDuringUpdate(t *testing.T) {
+	cs := framework.NewClientSet("")
+
+	mcp, err := cs.MachineConfigPools().Get(context.TODO(), "master", metav1.GetOptions{})
+	require.Nil(t, err)
+	oldMasterRenderedConfig := mcp.Status.Configuration.Name
+
+	// Create a MC with kernel arguments to force a reboot-requiring update
+	kargsMC := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   fmt.Sprintf("sno-cordon-test-%s", uuid.NewUUID()),
+			Labels: helpers.MCLabelForRole("master"),
+		},
+		Spec: mcfgv1.MachineConfigSpec{
+			Config: runtime.RawExtension{
+				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
+			},
+			KernelArguments: []string{"sno-cordon-e2e-test"},
+		},
+	}
+
+	_, err = cs.MachineConfigs().Create(context.TODO(), kargsMC, metav1.CreateOptions{})
+	require.Nil(t, err)
+	t.Logf("Created %s", kargsMC.Name)
+
+	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "master", kargsMC.Name)
+	require.Nil(t, err)
+	t.Logf("Rendered config: %s", renderedConfig)
+
+	// Poll for the node to become Unschedulable (cordoned) while the update is in flight.
+	// On SNO, the MCD requests cordon-only (no drain) before applying changes.
+	node := helpers.GetSingleNodeByRole(t, cs, "master")
+	cordonObserved := false
+	t.Logf("Polling for node %s to become Unschedulable...", node.Name)
+	// The cordon should happen within a few minutes of the rendered config being available.
+	// We poll aggressively (1s) because the window between cordon and reboot can be short.
+	err = wait.PollUntilContextTimeout(context.TODO(), 1*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+		n, err := cs.CoreV1Interface.Nodes().Get(ctx, node.Name, metav1.GetOptions{})
+		if err != nil {
+			return false, nil
+		}
+		if n.Spec.Unschedulable {
+			t.Logf("Node %s is Unschedulable (cordoned) during update", node.Name)
+			cordonObserved = true
+			return true, nil
+		}
+		return false, nil
+	})
+	// If we timed out, the cordon was never observed. This is a test failure.
+	require.Nil(t, err, "timed out waiting for node to be cordoned during update")
+	assert.True(t, cordonObserved, "node should have been cordoned during update")
+
+	// Verify the drain annotation shows cordon (not drain) was requested
+	n, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
+	require.Nil(t, err)
+	desiredDrain := n.Annotations[constants.DesiredDrainerAnnotationKey]
+	assert.True(t, strings.HasPrefix(desiredDrain, "cordon-"),
+		"desiredDrain annotation should use cordon verb, got: %s", desiredDrain)
+	t.Logf("Drain annotation confirms cordon-only: %s", desiredDrain)
+
+	// Wait for the full update to complete (includes reboot and uncordon)
+	err = waitForSingleNodePoolComplete(t, cs, "master", renderedConfig)
+	require.Nil(t, err)
+
+	// Verify post-completion state
+	node = helpers.GetSingleNodeByRole(t, cs, "master")
+	assert.Equal(t, renderedConfig, node.Annotations[constants.CurrentMachineConfigAnnotationKey])
+	assert.Equal(t, constants.MachineConfigDaemonStateDone, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey])
+	assert.False(t, node.Spec.Unschedulable, "node should be schedulable after update completes")
+
+	// The drain annotations should both show uncordon-<renderedConfig> (matching = completed)
+	desiredDrain = node.Annotations[constants.DesiredDrainerAnnotationKey]
+	lastAppliedDrain := node.Annotations[constants.LastAppliedDrainerAnnotationKey]
+	assert.Equal(t, desiredDrain, lastAppliedDrain,
+		"desiredDrain and lastAppliedDrain should match after update completes")
+	assert.True(t, strings.HasPrefix(desiredDrain, "uncordon-"),
+		"final drain annotation should show uncordon verb, got: %s", desiredDrain)
+	t.Logf("Post-update drain annotations match: %s", desiredDrain)
+
+	// Cleanup: delete MC and rollback
+	if err := cs.MachineConfigs().Delete(context.TODO(), kargsMC.Name, metav1.DeleteOptions{}); err != nil {
+		t.Error(err)
+	}
+	t.Logf("Deleted MachineConfig %s", kargsMC.Name)
+	err = waitForSingleNodePoolComplete(t, cs, "master", oldMasterRenderedConfig)
+	require.Nil(t, err)
+
+	node = helpers.GetSingleNodeByRole(t, cs, "master")
+	assert.Equal(t, oldMasterRenderedConfig, node.Annotations[constants.CurrentMachineConfigAnnotationKey])
+	assert.Equal(t, constants.MachineConfigDaemonStateDone, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey])
+	assert.False(t, node.Spec.Unschedulable, "node should be schedulable after rollback")
+	t.Logf("Node %s has successfully rolled back", node.Name)
+}
+
 func TestRunShared(t *testing.T) {
 	mcpName := "master"
 
