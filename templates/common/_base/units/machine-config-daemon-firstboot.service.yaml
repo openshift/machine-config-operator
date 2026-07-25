@@ -15,6 +15,14 @@ contents: |
   RemainAfterExit=yes
   # Disable existing repos (if any) so that OS extensions would use embedded RPMs only
   ExecStartPre=-/usr/bin/sh -c "sed -i 's/enabled=1/enabled=0/' /etc/yum.repos.d/*.repo"
+  # Bind mount a tmpfs-backed copy of the ostree repo config so that disabling fsync is ephemeral;
+  # if the host crashes or reboots the bind mount disappears and the on-disk config is unchanged.
+  # We append a second [core] section (GKeyFile merges duplicate groups) rather than using
+  # `ostree config set` because ostree uses an atomic rename which fails with EBUSY on a bind-mounted
+  # file; the bind mount must be established before `ostree config set` is called, and once it is,
+  # the rename target is a mount point and can't be replaced.
+  ExecStartPre=-/usr/bin/sh -c "cp /sysroot/ostree/repo/config /run/ostree-bootstrap-config && printf '\n[core]\nfsync = false\n' >> /run/ostree-bootstrap-config && mount --bind /run/ostree-bootstrap-config /sysroot/ostree/repo/config"
+  ExecStopPost=-/usr/bin/umount /sysroot/ostree/repo/config
   # Run this via podman because we want to use the nmstatectl binary in our container
   ExecStart=/usr/bin/podman run --rm --privileged --net=host -v /:/rootfs  --entrypoint machine-config-daemon '{{ .Images.machineConfigOperator }}' firstboot-complete-machineconfig --persist-nics
   ExecStart=/usr/bin/podman run --rm --privileged --pid=host --net=host -v /:/rootfs  --entrypoint machine-config-daemon '{{ .Images.machineConfigOperator }}' firstboot-complete-machineconfig
