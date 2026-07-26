@@ -1,6 +1,7 @@
 package osimagestream
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -115,7 +116,7 @@ func TestInspectStreamClass(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			factory := &mockImagesInspectorFactory{inspector: tt.inspector}
 			sci := NewStreamClassInspector(factory, noopSysCtxFactory)
-			sc, err := sci.InspectStreamClass(testImage)
+			sc, err := sci.InspectStreamClass(context.Background(), testImage)
 			if tt.wantErr {
 				require.Error(t, err)
 				return

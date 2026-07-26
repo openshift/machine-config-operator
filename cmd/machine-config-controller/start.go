@@ -95,6 +95,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			return
 		}
 
+		var inspectorFactory osimagestream.ImagesInspectorFactory
 		var inspectionCache *imageutils.FileInspectionCache
 		if startOpts.streamsCache != "" {
 			inspectionCache = imageutils.NewFileInspectionCache(path.Join(startOpts.streamsCache, "image-inspection.json"), 48*time.Hour)
@@ -105,7 +106,6 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		// controller starts, since render, node, and template depend on it
 		// for OS image URLs.
 		if osimagestream.IsFeatureEnabled(ctrlctx.FeatureGatesHandler) {
-			var inspectorFactory osimagestream.ImagesInspectorFactory
 			if inspectionCache != nil {
 				inspectorFactory = osimagestream.NewCachedImagesInspectorFactory(
 					&osimagestream.DefaultImagesInspectorFactory{},
@@ -150,7 +150,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 
 		go ctrlcommon.StartMetricsListener(startOpts.promMetricsListenAddress, ctrlctx.Stop, ctrlcommon.RegisterMCCMetrics, startOpts.tlsMinVersion, startOpts.tlsCipherSuites)
 
-		controllers := createControllers(ctrlctx, inspectionCache)
+		controllers := createControllers(ctrlctx, inspectionCache, inspectorFactory)
 		draincontroller := drain.New(
 			drain.DefaultConfig(),
 			ctrlctx.KubeInformerFactory.Core().V1().Nodes(),
@@ -272,7 +272,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	panic("unreachable")
 }
 
-func createControllers(ctx *ctrlcommon.ControllerContext, inspectionCache *imageutils.FileInspectionCache) []ctrlcommon.Controller {
+func createControllers(ctx *ctrlcommon.ControllerContext, inspectionCache *imageutils.FileInspectionCache, inspectorFactory osimagestream.ImagesInspectorFactory) []ctrlcommon.Controller {
 	// Only watch IRI informers when the feature gate is enabled. The
 	// InternalReleaseImages CRD is not installed on clusters where the gate is
 	// off, so the informer list call would fail and WaitForCacheSync in the
@@ -292,9 +292,15 @@ func createControllers(ctx *ctrlcommon.ControllerContext, inspectionCache *image
 		ctx.InformerFactory.Machineconfiguration().V1().KubeletConfigs(),
 		ctx.OperatorInformerFactory.Operator().V1().MachineConfigurations(),
 		ctx.InformerFactory.Machineconfiguration().V1().OSImageStreams(),
+		ctx.OpenShiftConfigKubeNamespacedInformerFactory.Core().V1().Secrets(),
+		ctx.OperatorInformerFactory.Operator().V1alpha1().ImageContentSourcePolicies(),
+		ctx.ConfigInformerFactory.Config().V1().ImageDigestMirrorSets(),
+		ctx.ConfigInformerFactory.Config().V1().ImageTagMirrorSets(),
+		ctx.ConfigInformerFactory.Config().V1().Images(),
 		ctx.ClientBuilder.KubeClientOrDie("render-controller"),
 		ctx.ClientBuilder.MachineConfigClientOrDie("render-controller"),
 		ctx.FeatureGatesHandler,
+		inspectorFactory,
 	)
 	if inspectionCache != nil {
 		inspectionCache.RegisterEvicter(renderCtrl)

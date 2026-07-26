@@ -11,7 +11,7 @@ import (
 // StreamClassInspector inspects a container image URL and returns its OS Image
 // Stream name.
 type StreamClassInspector interface {
-	InspectStreamClass(imageURL string) (string, error)
+	InspectStreamClass(ctx context.Context, imageURL string) (string, error)
 }
 
 type streamClassInspector struct {
@@ -28,8 +28,8 @@ func NewStreamClassInspector(inspectorFactory ImagesInspectorFactory, sysCtxFact
 	}
 }
 
-func (s *streamClassInspector) InspectStreamClass(imageURL string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+func (s *streamClassInspector) InspectStreamClass(ctx context.Context, imageURL string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	inspector := s.inspectorFactory.ForContext(s.sysCtxFactory)

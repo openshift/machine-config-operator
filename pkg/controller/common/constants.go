@@ -36,6 +36,9 @@ const (
 	// OSImageURLOverriddenKey is used to tag a rendered machineconfig when OSImageURL has been overridden from default using machineconfig
 	OSImageURLOverriddenKey = "machineconfiguration.openshift.io/os-image-url-overridden"
 
+	// OSImageURLOverriddenTrue is the annotation value set on OSImageURLOverriddenKey when the OSImageURL is overridden.
+	OSImageURLOverriddenTrue = "true"
+
 	// RenderedMachineConfigPrefix is the name prefix for rendered MachineConfigs
 	RenderedMachineConfigPrefix = "rendered-"
 
