@@ -467,8 +467,8 @@ func (ctrl *Controller) makeMasterNodeUnSchedulable(node *corev1.Node) error {
 	return nil
 }
 
-// makeMasterNodeSchedulable makes master node schedulable by removing NoSchedule master taint and
-// adding worker label
+// makeMasterNodeSchedulable makes master node schedulable by removing NoSchedule master and
+// control-plane taints and adding worker label
 func (ctrl *Controller) makeMasterNodeSchedulable(node *corev1.Node) error {
 	_, err := internal.UpdateNodeRetry(ctrl.kubeClient.CoreV1().Nodes(), ctrl.nodeLister, node.Name, func(node *corev1.Node) {
 		// Add worker label
@@ -477,10 +477,10 @@ func (ctrl *Controller) makeMasterNodeSchedulable(node *corev1.Node) error {
 			newLabels[WorkerLabel] = ""
 		}
 		node.Labels = newLabels
-		// Remove master taint
+		// Remove master and control-plane taints
 		newTaints := []corev1.Taint{}
 		for _, t := range node.Spec.Taints {
-			if t.Key == ctrlcommon.MasterLabel && t.Effect == corev1.TaintEffectNoSchedule {
+			if t.Effect == corev1.TaintEffectNoSchedule && (t.Key == ctrlcommon.MasterLabel || t.Key == ctrlcommon.ControlPlaneTaintKey) {
 				continue
 			}
 			newTaints = append(newTaints, t)

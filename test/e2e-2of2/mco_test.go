@@ -101,16 +101,22 @@ func checkMasterNodesSchedulability(cs *framework.ClientSet, masterSchedulable b
 }
 
 // CheckMasterIsAlreadySchedulable checks if the given node has a worker label and doesn't have NoSchedule master
-// taint
+// or control-plane taint
 func CheckMasterIsAlreadySchedulable(master *corev1.Node) bool {
 	_, hasWorkerLabel := master.Labels[node.WorkerLabel]
 	hasMasterTaint := false
+	hasControlPlaneTaint := false
 	for _, taint := range master.Spec.Taints {
-		if taint.Key == ctrlcommon.MasterLabel && taint.Effect == corev1.TaintEffectNoSchedule {
-			hasMasterTaint = true
+		if taint.Effect == corev1.TaintEffectNoSchedule {
+			if taint.Key == ctrlcommon.MasterLabel {
+				hasMasterTaint = true
+			}
+			if taint.Key == ctrlcommon.ControlPlaneTaintKey {
+				hasControlPlaneTaint = true
+			}
 		}
 	}
-	return hasWorkerLabel && !hasMasterTaint
+	return hasWorkerLabel && !hasMasterTaint && !hasControlPlaneTaint
 }
 
 func waitForAllMastersUpdate(cs *framework.ClientSet, mastersSchedulable bool) error {
