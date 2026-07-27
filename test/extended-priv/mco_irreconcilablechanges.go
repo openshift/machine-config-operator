@@ -150,8 +150,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			initialMcSpecs       = machineconfiguration.GetSpecOrFail()
 		)
 
-		SkipTestIfWorkersCannotBeScaled(oc)
-
 		// Only GCPPlatform and AzurePlatform are able to enumerate disks in a reliable manner right now.
 		// See https://redhat.atlassian.net/browse/MCO-2470
 		skipTestIfSupportedPlatformNotMatched(oc, GCPPlatform, AzurePlatform)
