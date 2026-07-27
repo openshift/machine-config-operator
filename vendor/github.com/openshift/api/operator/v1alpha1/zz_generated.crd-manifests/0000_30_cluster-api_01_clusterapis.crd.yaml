@@ -172,9 +172,10 @@ spec:
                                     valid '@sha256:<digest>' suffix, where '<digest>'
                                     is 64 characters long
                                   rule: (self.split('@').size() == 2 && self.split('@')[1].matches('^sha256:[a-f0-9]{64}$'))
-                                - message: the OCI Image name should follow the host[:port][/namespace]/name
-                                    format, resembling a valid URL without the scheme
-                                  rule: (self.split('@')[0].matches('^([a-zA-Z0-9-]+\\.)+[a-zA-Z0-9-]+(:[0-9]{2,5})?/([a-zA-Z0-9-_]{0,61}/)?[a-zA-Z0-9-_.]*?$'))
+                                - message: the OCI Image name should follow the host[:port][/namespace[/namespace...]]/name
+                                    format, where host is a domain name, IPv4, or
+                                    IPv6 address in brackets
+                                  rule: (self.split('@')[0].matches('^(?:(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])(?:\\.(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]))*|\\[(?:[a-fA-F0-9:]+)\\])(?::[0-9]+)?/[a-z0-9]+(?:(?:[._]|__|[-]+)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:[._]|__|[-]+)[a-z0-9]+)*)*$'))
                             required:
                             - profile
                             - ref

@@ -924,6 +924,32 @@ spec:
                 required:
                 - type
                 type: object
+              haproxyVersion:
+                description: |-
+                  haproxyVersion specifies the HAProxy version to use for this
+                  IngressController.
+
+                  OpenShift 5.0 introduces HAProxy 3.2 as its default version and supports
+                  HAProxy 2.8 from OpenShift 4.22 for migration purposes. When an OpenShift
+                  release introduces a new default HAProxy version, that HAProxy version
+                  becomes available as a pinnable value in subsequent OpenShift releases,
+                  providing a smooth migration path for administrators who want to defer
+                  HAProxy upgrades.
+
+                  Valid values for OpenShift 5.0:
+                  - Unset (default): Uses HAProxy 3.2 (the default for OpenShift 5.0)
+                  - "3.2": Explicitly pins HAProxy 3.2 for preservation during cluster
+                    upgrades to future OpenShift releases
+                  - "2.8": Uses HAProxy 2.8 from OpenShift 4.22 (migration support, will
+                    be dropped in the next OpenShift release)
+
+                  If a specific HAProxy version is set and would become unsupported in a
+                  target cluster upgrade, a preflight check will block the cluster upgrade
+                  until this field is updated to unset or a supported version.
+                enum:
+                - "2.8"
+                - "3.2"
+                type: string
               httpCompression:
                 description: |-
                   httpCompression defines a policy for HTTP traffic compression.
@@ -2600,6 +2626,20 @@ spec:
                 x-kubernetes-list-type: map
               domain:
                 description: domain is the actual domain in use.
+                type: string
+              effectiveHAProxyVersion:
+                description: |-
+                  effectiveHAProxyVersion reports the HAProxy version currently in use by
+                  this IngressController. This reflects the resolved value of the
+                  spec.haproxyVersion field. When omitted, the effective value has not yet
+                  been resolved by the operator or the feature is not enabled for this cluster.
+
+                  Examples for OpenShift 5.0:
+                  - "3.2": Using HAProxy 3.2
+                  - "2.8": Using HAProxy 2.8
+                enum:
+                - "2.8"
+                - "3.2"
                 type: string
               endpointPublishingStrategy:
                 description: endpointPublishingStrategy is the actual strategy in

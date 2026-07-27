@@ -7,6 +7,7 @@ metadata:
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     release.openshift.io/bootstrap-required: "true"
+    release.openshift.io/feature-set: OKD
   name: ingresses.config.openshift.io
 spec:
   group: config.openshift.io
@@ -66,6 +67,7 @@ spec:
                   To determine the set of configurable Routes, look at namespace and name of entries in the
                   .status.componentRoutes list, where participating operators write the status of
                   configurable routes.
+                  A maximum of 250 component routes may be configured.
                 items:
                   description: ComponentRouteSpec allows for configuration of a route's
                     hostname and serving certificate.
@@ -113,6 +115,7 @@ spec:
                   - name
                   - namespace
                   type: object
+                maxItems: 250
                 type: array
                 x-kubernetes-list-map-keys:
                 - namespace
