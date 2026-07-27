@@ -143,11 +143,11 @@ func New(
 	return ctrl
 }
 
-func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
+func (ctrl *Controller) Run(ctx context.Context, workers int) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh,
+	if !cache.WaitForCacheSync(ctx.Done(),
 		ctrl.osImageStreamListerSynced,
 		ctrl.ccListerSynced,
 		ctrl.clusterVersionListerSynced,
@@ -169,12 +169,12 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	klog.Info("Starting MachineConfigController-OSImageStreamController")
 	defer klog.Info("Shutting down MachineConfigController-OSImageStreamController")
 
-	go wait.Until(ctrl.worker, time.Second, stopCh)
+	go wait.Until(ctrl.worker, time.Second, ctx.Done())
 
 	// Run once at start at least to make sure the OSImageStream is created when creating the cluster
 	ctrl.enqueue()
 
-	<-stopCh
+	<-ctx.Done()
 }
 
 // EnsureOSImageStream blocks until the controller's first successful sync

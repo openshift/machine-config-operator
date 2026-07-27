@@ -164,11 +164,11 @@ func (w writer) Write(p []byte) (n int, err error) {
 }
 
 // Run executes the drain controller.
-func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
+func (ctrl *Controller) Run(ctx context.Context, workers int) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.nodeListerSynced, ctrl.mcpListerSynced) {
+	if !cache.WaitForCacheSync(ctx.Done(), ctrl.nodeListerSynced, ctrl.mcpListerSynced) {
 		return
 	}
 
@@ -179,11 +179,11 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer klog.Info("Shutting down MachineConfigController-DrainController")
 
 	for i := 0; i < workers; i++ {
-		go wait.Until(ctrl.worker, ctrl.cfg.WaitUntil, stopCh)
+		go wait.Until(ctrl.worker, ctrl.cfg.WaitUntil, ctx.Done())
 
 	}
 
-	<-stopCh
+	<-ctx.Done()
 }
 
 // logNode emits a log message at informational level, prefixed with the node name in a consistent fashion.

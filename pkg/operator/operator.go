@@ -403,12 +403,12 @@ func New(
 }
 
 // Run runs the machine config operator.
-func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
+func (optr *Operator) Run(ctx context.Context, workers int) {
 	defer utilruntime.HandleCrash()
 	defer optr.queue.ShutDown()
 
 	apiClient := optr.apiExtClient.ApiextensionsV1()
-	_, err := apiClient.CustomResourceDefinitions().Get(context.TODO(), "controllerconfigs.machineconfiguration.openshift.io", metav1.GetOptions{})
+	_, err := apiClient.CustomResourceDefinitions().Get(ctx, "controllerconfigs.machineconfiguration.openshift.io", metav1.GetOptions{})
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			klog.Infof("Couldn't find controllerconfig CRD, in cluster bringup mode")
@@ -457,7 +457,7 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 	if optr.iriListerSynced != nil {
 		cacheSynced = append(cacheSynced, optr.iriListerSynced)
 	}
-	if !cache.WaitForCacheSync(stopCh,
+	if !cache.WaitForCacheSync(ctx.Done(),
 		cacheSynced...) {
 		klog.Error("failed to sync caches")
 		return
@@ -475,12 +475,12 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		infra.Status.PlatformStatus != nil &&
 		infra.Status.PlatformStatus.Type == configv1.BareMetalPlatformType &&
 		optr.provisioningInformerFactory != nil {
-		optr.provisioningInformerFactory.Start(stopCh)
+		optr.provisioningInformerFactory.Start(ctx.Done())
 	}
 
 	// these can only be synced after CRDs are installed
 	if !optr.inClusterBringup {
-		if !cache.WaitForCacheSync(stopCh,
+		if !cache.WaitForCacheSync(ctx.Done(),
 			optr.ccListerSynced,
 		) {
 			klog.Error("failed to sync caches")
@@ -491,13 +491,13 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 	klog.Info("Starting MachineConfigOperator")
 	defer klog.Info("Shutting down MachineConfigOperator")
 
-	optr.stopCh = stopCh
+	optr.stopCh = ctx.Done()
 
 	for i := 0; i < workers; i++ {
-		go wait.Until(optr.worker, time.Second, stopCh)
+		go wait.Until(optr.worker, time.Second, ctx.Done())
 	}
 
-	<-stopCh
+	<-ctx.Done()
 }
 
 func (optr *Operator) enqueue(obj interface{}) {

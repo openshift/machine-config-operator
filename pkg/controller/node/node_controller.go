@@ -318,7 +318,7 @@ func newController(
 }
 
 // Run executes the render controller.
-func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
+func (ctrl *Controller) Run(ctx context.Context, workers int) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
@@ -331,7 +331,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	if ctrl.osStreamsFgEnabled {
 		syncers = append(syncers, ctrl.osImageStreamListerSynced)
 	}
-	if !cache.WaitForCacheSync(stopCh, syncers...) {
+	if !cache.WaitForCacheSync(ctx.Done(), syncers...) {
 		return
 	}
 
@@ -347,10 +347,10 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	}
 
 	for i := 0; i < workers; i++ {
-		go wait.Until(ctrl.worker, time.Second, stopCh)
+		go wait.Until(ctrl.worker, time.Second, ctx.Done())
 	}
 
-	<-stopCh
+	<-ctx.Done()
 }
 
 func (ctrl *Controller) getCurrentMasters() ([]*corev1.Node, error) {
