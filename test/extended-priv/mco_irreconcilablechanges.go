@@ -59,7 +59,10 @@ func platformBasedDisksNames(platform string) []string {
 	case VspherePlatform:
 		// vSphere data disks are added sequentially to the SCSI controller starting
 		// at unit 1 (unit 0 is the boot disk), so /dev/sd[b-e] mapping is stable
-		// for simple configurations without extra SCSI controllers.
+		// for simple configurations without extra SCSI controllers. These names are
+		// used only by tests that do not boot new nodes via Ignition. The scale-up
+		// test ([PolarionID:84219]) discovers stable /dev/disk/by-path/ entries at
+		// runtime via discoverVSphereSCSIByPathDisks instead.
 		return []string{
 			"/dev/sdb",
 			"/dev/sdc",
@@ -93,6 +96,28 @@ func discoverNVMeByPathDisks(node *Node) []string {
 		}
 	}
 	logger.Infof("Discovered %d non-boot NVMe by-path disks on node %s: %v", len(paths), node.GetName(), paths)
+	return paths
+}
+
+// discoverVSphereSCSIByPathDisks discovers the /dev/disk/by-path/ entries for
+// non-boot SCSI data disks on a vSphere node. The SCSI unit number is
+// deterministic (data disks start at unit 1), but the PCI address prefix
+// depends on the VM hardware version and cannot be hardcoded. This function
+// reads it from a live probe node that already has data disks attached.
+// Disks that have partitions (i.e. the boot disk) are excluded.
+func discoverVSphereSCSIByPathDisks(node *Node) []string {
+	script := `for p in /dev/disk/by-path/*scsi*; do [[ $p == *part* ]] && continue; ls ${p}-part* &>/dev/null && continue; echo "$p"; done | sort`
+	stdout, _, err := node.DebugNodeWithChrootStd("bash", "-c", script)
+	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Failed to discover SCSI by-path disks on node %s", node.GetName())
+
+	var paths []string
+	for _, line := range strings.Split(strings.TrimSpace(stdout), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			paths = append(paths, line)
+		}
+	}
+	logger.Infof("Discovered %d non-boot SCSI by-path disks on node %s: %v", len(paths), node.GetName(), paths)
 	return paths
 }
 
@@ -204,12 +229,13 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		err = platformBasedDisksPatch(platform, newMS)
 		o.Expect(err).NotTo(o.HaveOccurred())
 
-		// On AWS, NVMe device enumeration is non-deterministic. Scale up a probe
-		// node first to discover the stable /dev/disk/by-path/ entries, then use
-		// those paths in the MachineConfig so Ignition can reliably find the disks.
+		// On AWS and vSphere, device paths are non-deterministic or depend on the
+		// VM hardware version. Scale up a probe node first to discover the stable
+		// /dev/disk/by-path/ entries, then use those paths in the MachineConfig
+		// so Ignition can reliably find the disks.
 		disks := platformBasedDisksNames(platform)
 		var probeNode *Node
-		if platform == AWSPlatform {
+		if platform == AWSPlatform || platform == VspherePlatform {
 			exutil.By("Step 2.5: Scale up probe node to discover disk paths")
 			o.Expect(newMS.ScaleTo(1)).To(o.Succeed())
 			o.Expect(newMS.WaitUntilReady("10m")).To(o.Succeed())
@@ -219,8 +245,16 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			probeNode = probeNodes[0]
 			logger.Infof("Probe node is: %s", probeNode.GetName())
 
-			discoveredDisks := discoverNVMeByPathDisks(probeNode)
-			o.Expect(discoveredDisks).To(o.HaveLen(2), "Expected exactly 2 non-boot NVMe disks on probe node %s", probeNode.GetName())
+			var discoveredDisks []string
+
+			if platform == AWSPlatform {
+				discoveredDisks := discoverNVMeByPathDisks(probeNode)
+				o.Expect(discoveredDisks).To(o.HaveLen(2), "Expected exactly 2 non-boot NVMe disks on probe node %s", probeNode.GetName())
+			} else {
+				discoveredDisks := discoverVSphereSCSIByPathDisks(probeNode)
+				o.Expect(discoveredDisks).To(o.HaveLen(2), "Expected exactly 2 non-boot SCSI disks on probe node %s", probeNode.GetName())
+			}
+
 			disks = discoveredDisks
 		}
 
@@ -255,7 +289,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		exutil.By("Step 5: Scale up test node with MC applied via Ignition")
 		var testNode *Node
-		if platform == AWSPlatform {
+		if platform == AWSPlatform || platform == VspherePlatform {
 			o.Expect(newMS.ScaleTo(2)).To(o.Succeed())
 			o.Expect(newMS.WaitUntilReady("10m")).To(o.Succeed())
 
