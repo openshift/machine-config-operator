@@ -248,10 +248,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			var discoveredDisks []string
 
 			if platform == AWSPlatform {
-				discoveredDisks := discoverNVMeByPathDisks(probeNode)
+				discoveredDisks = discoverNVMeByPathDisks(probeNode)
 				o.Expect(discoveredDisks).To(o.HaveLen(2), "Expected exactly 2 non-boot NVMe disks on probe node %s", probeNode.GetName())
 			} else {
-				discoveredDisks := discoverVSphereSCSIByPathDisks(probeNode)
+				discoveredDisks = discoverVSphereSCSIByPathDisks(probeNode)
 				o.Expect(discoveredDisks).To(o.HaveLen(2), "Expected exactly 2 non-boot SCSI disks on probe node %s", probeNode.GetName())
 			}
 
