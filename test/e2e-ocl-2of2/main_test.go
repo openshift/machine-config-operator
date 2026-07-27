@@ -1,4 +1,4 @@
-package e2e_ocl_test
+package e2e_ocl_2of2_test
 
 import (
 	"flag"

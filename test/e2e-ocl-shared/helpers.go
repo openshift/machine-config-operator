@@ -1,4 +1,4 @@
-package e2e_ocl_test
+package e2e_ocl_shared_test
 
 import (
 	"bytes"
@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -43,17 +42,17 @@ var (
 	InspectMC = "inspect-mc"
 )
 
-func applyMC(t *testing.T, cs *framework.ClientSet, mc *mcfgv1.MachineConfig) func() {
+func ApplyMC(t *testing.T, cs *framework.ClientSet, mc *mcfgv1.MachineConfig, skipCleanupAlways, skipCleanupOnlyAfterFailure bool) func() {
 	cleanupFunc := helpers.ApplyMC(t, cs, mc)
 	t.Logf("Created new MachineConfig %q", mc.Name)
 
-	return makeIdempotentAndRegister(t, func() {
+	return MakeIdempotentAndRegister(t, skipCleanupAlways, skipCleanupOnlyAfterFailure, func() {
 		cleanupFunc()
 		t.Logf("Deleted MachineConfig %q", mc.Name)
 	})
 }
 
-func createMachineOSConfig(t *testing.T, cs *framework.ClientSet, mosc *mcfgv1.MachineOSConfig) func() {
+func CreateMachineOSConfig(t *testing.T, cs *framework.ClientSet, mosc *mcfgv1.MachineOSConfig, skipCleanupAlways, skipCleanupOnlyAfterFailure bool) func() {
 	helpers.SetMetadataOnObject(t, mosc)
 
 	_, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().Create(context.TODO(), mosc, metav1.CreateOptions{})
@@ -61,7 +60,7 @@ func createMachineOSConfig(t *testing.T, cs *framework.ClientSet, mosc *mcfgv1.M
 
 	t.Logf("Created MachineOSConfig %q", mosc.Name)
 
-	return makeIdempotentAndRegister(t, func() {
+	return MakeIdempotentAndRegister(t, skipCleanupAlways, skipCleanupOnlyAfterFailure, func() {
 		require.NoError(t, cs.MachineconfigurationV1Interface.MachineOSConfigs().Delete(context.TODO(), mosc.Name, metav1.DeleteOptions{}))
 		t.Logf("Deleted MachineOSConfig %q", mosc.Name)
 	})
@@ -71,7 +70,7 @@ func createMachineOSConfig(t *testing.T, cs *framework.ClientSet, mosc *mcfgv1.M
 // namespace than the MCO, it will create the namespace and clone the pull
 // secret into the MCO namespace. Returns the name of the push secret used, the
 // image pullspec, and an idempotent cleanup function.
-func setupImageStream(t *testing.T, cs *framework.ClientSet, objMeta metav1.ObjectMeta) (string, string, func()) {
+func SetupImageStream(t *testing.T, cs *framework.ClientSet, objMeta metav1.ObjectMeta, skipCleanupAlways, skipCleanupOnlyAfterFailure bool) (string, string, func()) {
 	t.Helper()
 
 	cleanups := helpers.NewCleanupFuncs()
@@ -92,14 +91,14 @@ func setupImageStream(t *testing.T, cs *framework.ClientSet, objMeta metav1.Obje
 	// to do some additional steps.
 	if objMeta.Namespace != ctrlcommon.MCONamespace {
 		// Create the namespace.
-		cleanups.Add(createNamespace(t, cs, objMeta))
+		cleanups.Add(CreateNamespace(t, cs, objMeta, skipCleanupAlways, skipCleanupOnlyAfterFailure))
 
 		// Wait for the builder service account to exist within the new namespace.
-		require.NoError(t, waitForServiceAccountToExist(cs, builderSAObjMeta))
+		require.NoError(t, WaitForServiceAccountToExist(cs, builderSAObjMeta))
 	}
 
 	// Create the Imagestream.
-	pullspec, isCleanupFunc := createImagestream(t, cs, objMeta)
+	pullspec, isCleanupFunc := CreateImagestream(t, cs, objMeta, skipCleanupAlways, skipCleanupOnlyAfterFailure)
 	cleanups.Add(isCleanupFunc)
 
 	// Create a long-lived image registry pull secret so that it will not get
@@ -116,11 +115,11 @@ func setupImageStream(t *testing.T, cs *framework.ClientSet, objMeta metav1.Obje
 
 	cleanups.Add(helpers.CreateLongLivedPullSecretForTest(context.TODO(), t, cs, opts))
 
-	return pushSecretName, pullspec, makeIdempotentAndRegister(t, cleanups.Run)
+	return pushSecretName, pullspec, MakeIdempotentAndRegister(t, skipCleanupAlways, skipCleanupOnlyAfterFailure, cleanups.Run)
 }
 
 // Creates a namespace. Returns an idempotent cleanup function.
-func createNamespace(t *testing.T, cs *framework.ClientSet, objMeta metav1.ObjectMeta) func() {
+func CreateNamespace(t *testing.T, cs *framework.ClientSet, objMeta metav1.ObjectMeta, skipCleanupAlways, skipCleanupOnlyAfterFailure bool) func() {
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: objMeta.Namespace,
@@ -133,7 +132,7 @@ func createNamespace(t *testing.T, cs *framework.ClientSet, objMeta metav1.Objec
 	require.NoError(t, err)
 	t.Logf("Created namespace %q", ns.Name)
 
-	return makeIdempotentAndRegister(t, func() {
+	return MakeIdempotentAndRegister(t, skipCleanupAlways, skipCleanupOnlyAfterFailure, func() {
 		require.NoError(t, cs.CoreV1Interface.Namespaces().Delete(context.TODO(), ns.Name, metav1.DeleteOptions{}))
 		t.Logf("Deleted namespace %q", ns.Name)
 	})
@@ -142,9 +141,11 @@ func createNamespace(t *testing.T, cs *framework.ClientSet, objMeta metav1.Objec
 // There may be a delay between the time a new namespace is created and its
 // service accounts to be created. This will wait up to one minute for the
 // specified service account to be created.
-func waitForServiceAccountToExist(cs *framework.ClientSet, objMeta metav1.ObjectMeta) error {
-	return wait.PollImmediate(1*time.Second, 1*time.Minute, func() (bool, error) {
-		builderSA, err := cs.CoreV1Interface.ServiceAccounts(objMeta.Namespace).Get(context.TODO(), objMeta.Name, metav1.GetOptions{})
+func WaitForServiceAccountToExist(cs *framework.ClientSet, objMeta metav1.ObjectMeta) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+	defer cancel()
+	return wait.PollUntilContextTimeout(ctx, 1*time.Second, 1*time.Minute, true, func(ctx context.Context) (bool, error) {
+		builderSA, err := cs.CoreV1Interface.ServiceAccounts(objMeta.Namespace).Get(ctx, objMeta.Name, metav1.GetOptions{})
 		if err != nil && !k8serrors.IsNotFound(err) {
 			return false, err
 		}
@@ -156,7 +157,7 @@ func waitForServiceAccountToExist(cs *framework.ClientSet, objMeta metav1.Object
 // Creates an OpenShift ImageStream in the MCO namespace for the test and
 // registers a cleanup function. Returns the pullspec with the latest tag for
 // the newly-created ImageStream.
-func createImagestream(t *testing.T, cs *framework.ClientSet, objMeta metav1.ObjectMeta) (string, func()) {
+func CreateImagestream(t *testing.T, cs *framework.ClientSet, objMeta metav1.ObjectMeta, skipCleanupAlways, skipCleanupOnlyAfterFailure bool) (string, func()) {
 	is := &imagev1.ImageStream{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      objMeta.Name,
@@ -173,14 +174,14 @@ func createImagestream(t *testing.T, cs *framework.ClientSet, objMeta metav1.Obj
 	pullspec := fmt.Sprintf("%s:latest", created.Status.DockerImageRepository)
 	t.Logf("Created ImageStream \"%s/%s\", has pullspec %q", is.Namespace, is.Name, pullspec)
 
-	return pullspec, makeIdempotentAndRegister(t, func() {
+	return pullspec, MakeIdempotentAndRegister(t, skipCleanupAlways, skipCleanupOnlyAfterFailure, func() {
 		require.NoError(t, cs.ImageV1Interface.ImageStreams(is.Namespace).Delete(context.TODO(), is.Name, metav1.DeleteOptions{}))
 		t.Logf("Deleted ImageStream \"%s/%s\"", is.Namespace, is.Name)
 	})
 }
 
 // Creates a given ConfigMap and registers a cleanup function to delete it.
-func createConfigMap(t *testing.T, cs *framework.ClientSet, cm *corev1.ConfigMap) func() {
+func CreateConfigMap(t *testing.T, cs *framework.ClientSet, cm *corev1.ConfigMap, skipCleanupAlways, skipCleanupOnlyAfterFailure bool) func() {
 	helpers.SetMetadataOnObject(t, cm)
 
 	_, err := cs.CoreV1Interface.ConfigMaps(cm.Namespace).Create(context.TODO(), cm, metav1.CreateOptions{})
@@ -188,14 +189,14 @@ func createConfigMap(t *testing.T, cs *framework.ClientSet, cm *corev1.ConfigMap
 
 	t.Logf("Created ConfigMap \"%s/%s\"", cm.Namespace, cm.Name)
 
-	return makeIdempotentAndRegister(t, func() {
+	return MakeIdempotentAndRegister(t, skipCleanupAlways, skipCleanupOnlyAfterFailure, func() {
 		require.NoError(t, cs.CoreV1Interface.ConfigMaps(cm.Namespace).Delete(context.TODO(), cm.Name, metav1.DeleteOptions{}))
 		t.Logf("Deleted ConfigMap \"%s/%s\"", cm.Namespace, cm.Name)
 	})
 }
 
 // Creates a given Secret and registers a cleanup function to delete it.
-func createSecret(t *testing.T, cs *framework.ClientSet, secret *corev1.Secret) func() {
+func CreateSecret(t *testing.T, cs *framework.ClientSet, secret *corev1.Secret, skipCleanupAlways, skipCleanupOnlyAfterFailure bool) func() {
 	helpers.SetMetadataOnObject(t, secret)
 
 	_, err := cs.CoreV1Interface.Secrets(secret.Namespace).Create(context.TODO(), secret, metav1.CreateOptions{})
@@ -203,14 +204,14 @@ func createSecret(t *testing.T, cs *framework.ClientSet, secret *corev1.Secret) 
 
 	t.Logf("Created secret \"%s/%s\"", secret.Namespace, secret.Name)
 
-	return makeIdempotentAndRegister(t, func() {
+	return MakeIdempotentAndRegister(t, skipCleanupAlways, skipCleanupOnlyAfterFailure, func() {
 		require.NoError(t, cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).Delete(context.TODO(), secret.Name, metav1.DeleteOptions{}))
 		t.Logf("Deleted secret \"%s/%s\"", secret.Namespace, secret.Name)
 	})
 }
 
 // Computes the name of the currently-running MachineOSBuild given a MachineConfigPool and MachineOSConfig.
-func getMachineOSBuildNameForPool(cs *framework.ClientSet, poolName, moscName string) (string, error) {
+func GetMachineOSBuildNameForPool(cs *framework.ClientSet, poolName, moscName string) (string, error) {
 	mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(context.TODO(), poolName, metav1.GetOptions{})
 	if err != nil {
 		return "", err
@@ -241,9 +242,11 @@ func getMachineOSBuildNameForPool(cs *framework.ClientSet, poolName, moscName st
 }
 
 // Waits for the target MachineConfigPool to reach a state defined in a supplied function.
-func waitForPoolToReachState(t *testing.T, cs *framework.ClientSet, poolName string, condFunc func(*mcfgv1.MachineConfigPool) bool) {
-	err := wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
-		mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(context.TODO(), poolName, metav1.GetOptions{})
+func WaitForPoolToReachState(t *testing.T, cs *framework.ClientSet, poolName string, condFunc func(*mcfgv1.MachineConfigPool) bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	err := wait.PollUntilContextTimeout(ctx, 1*time.Second, 10*time.Minute, true, func(ctx context.Context) (bool, error) {
+		mcp, err := cs.MachineconfigurationV1Interface.MachineConfigPools().Get(ctx, poolName, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -257,7 +260,7 @@ func waitForPoolToReachState(t *testing.T, cs *framework.ClientSet, poolName str
 // Registers a cleanup function, making it idempotent, and wiring up the skip
 // cleanup checks which will cause cleanup to be skipped under certain
 // conditions.
-func makeIdempotentAndRegister(t *testing.T, cleanupFunc func()) func() {
+func MakeIdempotentAndRegister(t *testing.T, skipCleanupAlways, skipCleanupOnlyAfterFailure bool, cleanupFunc func()) func() {
 	cfg := helpers.IdempotentConfig{
 		SkipAlways:        skipCleanupAlways,
 		SkipOnlyOnFailure: skipCleanupOnlyAfterFailure,
@@ -273,12 +276,12 @@ func makeIdempotentAndRegister(t *testing.T, cleanupFunc func()) func() {
 // function is only called once despite there being multiple calls to the
 // returned function. If there is only one call to the returned function
 // anyway, use t.Cleanup() instead for clarity.
-func makeIdempotentAndRegisterAlwaysRun(t *testing.T, cleanupFunc func()) func() {
+func MakeIdempotentAndRegisterAlwaysRun(t *testing.T, cleanupFunc func()) func() {
 	return helpers.MakeIdempotentAndRegister(t, cleanupFunc)
 }
 
-// TOOD: Refactor into smaller functions.
-func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
+// TODO: Refactor into smaller functions.
+func CleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 	labelSelector := utils.OSBuildSelector().String()
 
 	// Any secrets that get created by BuildController should have different
@@ -313,7 +316,16 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 	moscList, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().List(context.TODO(), metav1.ListOptions{})
 	require.NoError(t, err)
 
-	kubeassert := helpers.AssertClientSet(t, cs).WithTimeout(10 * time.Minute)
+	// Helper function to create a fresh timeout context for each resource verification.
+	// Each resource gets its own 3-minute timeout to prevent slow deletions from
+	// consuming the timeout budget of other resources. Use a 5-second poll interval
+	// to significantly reduce API call rate and avoid exhausting the rate limiter
+	// (~36 attempts per resource, vs 120 attempts with 1s interval).
+	newCleanupAssertion := func() *helpers.Assertions {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		t.Cleanup(cancel)
+		return helpers.AssertClientSet(t, cs).WithContext(ctx).WithPollInterval(5 * time.Second).Eventually()
+	}
 
 	if len(secretList.Items) == 0 {
 		t.Logf("No build-time secrets to clean up")
@@ -339,26 +351,36 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 		t.Logf("No MachineOSConfigs to clean up")
 	}
 
-	for _, item := range secretList.Items {
-		t.Logf("Cleaning up build-time Secret %s", item.Name)
-		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace)))
-		kubeassert.SecretDoesNotExist(item.Name)
+	// Delete owners first (MachineOSConfigs, MachineOSBuilds) before their dependents.
+	// MachineOSBuilds have FinalizerDeleteDependents which blocks deletion until owned
+	// resources are gone. Deleting ConfigMaps/Secrets before their owners creates a race
+	// with Kubernetes GC that causes intermittent timeout failures.
+	for _, item := range moscList.Items {
+		t.Logf("Cleaning up MachineOSConfig %q", item.Name)
+		require.NoError(t, DeleteObject(context.TODO(), t, &item, cs.MachineconfigurationV1Interface.MachineOSConfigs()))
+		newCleanupAssertion().MachineOSConfigDoesNotExist(&item)
 	}
 
-	for _, item := range cmList.Items {
-		t.Logf("Cleaning up ephemeral ConfigMap %q", item.Name)
-		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace)))
-		kubeassert.ConfigMapDoesNotExist(item.Name)
+	for _, item := range mosbList.Items {
+		t.Logf("Cleaning up MachineOSBuild %q", item.Name)
+		require.NoError(t, DeleteObject(context.TODO(), t, &item, cs.MachineconfigurationV1Interface.MachineOSBuilds()))
+		newCleanupAssertion().MachineOSBuildDoesNotExist(&item)
+
+		// Also clean up the digest ConfigMap
+		t.Logf("Cleaning up ephemeral digest ConfigMap %q", utils.GetDigestConfigMapName(&item))
+		require.NoError(t, CleanupDigestConfigMap(t, cs, &item))
+		newCleanupAssertion().ConfigMapDoesNotExist(utils.GetDigestConfigMapName(&item))
 	}
 
+	// Now delete Jobs and their dependent resources
 	for _, item := range jobList.Items {
 		jobUID := string(item.UID)
 		t.Logf("Cleaning up build job %q", item.Name)
 		bgDeletion := metav1.DeletePropagationBackground
-		require.NoError(t, deleteObjectWithOpts(context.TODO(), t, &item, cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace), metav1.DeleteOptions{
+		require.NoError(t, DeleteObjectWithOpts(context.TODO(), t, &item, cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace), metav1.DeleteOptions{
 			PropagationPolicy: &bgDeletion,
 		}))
-		kubeassert.JobDoesNotExist(item.Name)
+		newCleanupAssertion().JobDoesNotExist(item.Name)
 
 		// Delete any pods that were created by the job
 		pods, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{
@@ -366,57 +388,53 @@ func cleanupEphemeralBuildObjects(t *testing.T, cs *framework.ClientSet) {
 		})
 		require.NoError(t, err)
 		for _, pod := range pods.Items {
-			require.NoError(t, deleteObject(context.TODO(), t, &pod, cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace)))
-			kubeassert.PodDoesNotExist(pod.Name)
+			require.NoError(t, DeleteObject(context.TODO(), t, &pod, cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace)))
+			newCleanupAssertion().PodDoesNotExist(pod.Name)
 		}
 	}
 
 	for _, item := range podList.Items {
 		t.Logf("Cleaning up build pod %q", item.Name)
-		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace)))
-		kubeassert.PodDoesNotExist(item.Name)
+		require.NoError(t, DeleteObject(context.TODO(), t, &item, cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace)))
+		newCleanupAssertion().PodDoesNotExist(item.Name)
 	}
 
-	for _, item := range moscList.Items {
-		t.Logf("Cleaning up MachineOSConfig %q", item.Name)
-		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.MachineconfigurationV1Interface.MachineOSConfigs()))
-		kubeassert.MachineOSConfigDoesNotExist(&item)
+	// Clean up remaining ConfigMaps and Secrets after their owners are deleted
+	for _, item := range cmList.Items {
+		t.Logf("Cleaning up ephemeral ConfigMap %q", item.Name)
+		require.NoError(t, DeleteObject(context.TODO(), t, &item, cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace)))
+		newCleanupAssertion().ConfigMapDoesNotExist(item.Name)
 	}
 
-	for _, item := range mosbList.Items {
-		t.Logf("Cleaning up MachineOSBuild %q", item.Name)
-		require.NoError(t, deleteObject(context.TODO(), t, &item, cs.MachineconfigurationV1Interface.MachineOSBuilds()))
-		kubeassert.MachineOSBuildDoesNotExist(&item)
-
-		// Also clean up the digest ConfigMap
-		t.Logf("Cleaning up ephemeral digest ConfigMap %q", utils.GetDigestConfigMapName(&item))
-		require.NoError(t, cleanupDigestConfigMap(t, cs, &item))
-		kubeassert.ConfigMapDoesNotExist(utils.GetDigestConfigMapName(&item))
+	for _, item := range secretList.Items {
+		t.Logf("Cleaning up build-time Secret %s", item.Name)
+		require.NoError(t, DeleteObject(context.TODO(), t, &item, cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace)))
+		newCleanupAssertion().SecretDoesNotExist(item.Name)
 	}
 
 	// Clean up inspect MC if it exists
 	machineConfig, err := cs.MachineConfigs().Get(context.TODO(), InspectMC, metav1.GetOptions{})
 	if err == nil {
 		t.Logf("Cleaning up MachineConfig %q", InspectMC)
-		require.NoError(t, deleteObject(context.TODO(), t, machineConfig, cs.MachineConfigs()))
-		kubeassert.MachineConfigDoesNotExist(machineConfig)
+		require.NoError(t, DeleteObject(context.TODO(), t, machineConfig, cs.MachineConfigs()))
+		newCleanupAssertion().MachineConfigDoesNotExist(machineConfig)
 	}
 }
 
-type deleter interface {
+type Deleter interface {
 	Delete(context.Context, string, metav1.DeleteOptions) error
 }
 
-type kubeObject interface {
+type KubeObject interface {
 	runtime.Object
 	GetName() string
 }
 
-func deleteObject(ctx context.Context, t *testing.T, obj kubeObject, deleter deleter) error {
-	return deleteObjectWithOpts(ctx, t, obj, deleter, metav1.DeleteOptions{})
+func DeleteObject(ctx context.Context, t *testing.T, obj KubeObject, deleter Deleter) error {
+	return DeleteObjectWithOpts(ctx, t, obj, deleter, metav1.DeleteOptions{})
 }
 
-func deleteObjectWithOpts(ctx context.Context, t *testing.T, obj kubeObject, deleter deleter, opts metav1.DeleteOptions) error {
+func DeleteObjectWithOpts(ctx context.Context, t *testing.T, obj KubeObject, deleter Deleter, opts metav1.DeleteOptions) error {
 	kind, err := utils.GetKindForObject(obj)
 	if err != nil && kind == "" {
 		kind = "<unknown>"
@@ -437,10 +455,10 @@ func deleteObjectWithOpts(ctx context.Context, t *testing.T, obj kubeObject, del
 	return err
 }
 
-func cleanupDigestConfigMap(t *testing.T, cs *framework.ClientSet, mosb *mcfgv1.MachineOSBuild) error {
+func CleanupDigestConfigMap(t *testing.T, cs *framework.ClientSet, mosb *mcfgv1.MachineOSBuild) error {
 	cm, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), utils.GetDigestConfigMapName(mosb), metav1.GetOptions{})
 	if err == nil {
-		return deleteObject(context.TODO(), t, cm, cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace))
+		return DeleteObject(context.TODO(), t, cm, cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace))
 	}
 	if k8serrors.IsNotFound(err) {
 		t.Logf("%s already cleaned up", utils.GetDigestConfigMapName(mosb))
@@ -456,7 +474,7 @@ func cleanupDigestConfigMap(t *testing.T, cs *framework.ClientSet, mosb *mcfgv1.
 //
 // If this env var is not set, these files will be written to the current
 // working directory.
-func getBuildArtifactDir(t *testing.T) string {
+func GetBuildArtifactDir(t *testing.T) string {
 	artifactDir := os.Getenv("ARTIFACT_DIR")
 	if artifactDir != "" {
 		return artifactDir
@@ -468,7 +486,7 @@ func getBuildArtifactDir(t *testing.T) string {
 }
 
 // Writes any ephemeral build objects to disk as YAML files.
-func writeBuildArtifactsToFiles(t *testing.T, cs *framework.ClientSet, poolName string) {
+func WriteBuildArtifactsToFiles(t *testing.T, cs *framework.ClientSet) {
 	lo := metav1.ListOptions{
 		LabelSelector: utils.OSBuildSelector().String(),
 	}
@@ -479,10 +497,10 @@ func writeBuildArtifactsToFiles(t *testing.T, cs *framework.ClientSet, poolName 
 	require.NoError(t, err)
 
 	err = aggerrs.NewAggregate([]error{
-		writeConfigMapsToFile(t, cs, lo, archive.StagingDir()),
-		writeBuildPodsToFile(t, cs, lo, archive.StagingDir()),
-		writeMachineOSBuildsToFile(t, cs, archive.StagingDir()),
-		writeMachineOSConfigsToFile(t, cs, archive.StagingDir()),
+		WriteConfigMapsToFile(t, cs, lo, archive.StagingDir()),
+		WriteBuildPodsToFile(t, cs, lo, archive.StagingDir()),
+		WriteMachineOSBuildsToFile(t, cs, archive.StagingDir()),
+		WriteMachineOSConfigsToFile(t, cs, archive.StagingDir()),
 	})
 
 	require.NoError(t, err, "could not write build artifacts to files, got: %s", err)
@@ -491,7 +509,7 @@ func writeBuildArtifactsToFiles(t *testing.T, cs *framework.ClientSet, poolName 
 }
 
 // Writes all MachineOSBuilds to a file.
-func writeMachineOSBuildsToFile(t *testing.T, cs *framework.ClientSet, archiveDir string) error {
+func WriteMachineOSBuildsToFile(t *testing.T, cs *framework.ClientSet, archiveDir string) error {
 	mosbList, err := cs.MachineconfigurationV1Interface.MachineOSBuilds().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return err
@@ -502,11 +520,11 @@ func writeMachineOSBuildsToFile(t *testing.T, cs *framework.ClientSet, archiveDi
 		return nil
 	}
 
-	return dumpObjectToYAMLFile(t, mosbList, filepath.Join(archiveDir, "machineosbuilds.yaml"))
+	return DumpObjectToYAMLFile(mosbList, filepath.Join(archiveDir, "machineosbuilds.yaml"))
 }
 
 // Writes all MachineOSConfigs to a file.
-func writeMachineOSConfigsToFile(t *testing.T, cs *framework.ClientSet, archiveDir string) error {
+func WriteMachineOSConfigsToFile(t *testing.T, cs *framework.ClientSet, archiveDir string) error {
 	moscList, err := cs.MachineconfigurationV1Interface.MachineOSConfigs().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return err
@@ -517,11 +535,11 @@ func writeMachineOSConfigsToFile(t *testing.T, cs *framework.ClientSet, archiveD
 		return nil
 	}
 
-	return dumpObjectToYAMLFile(t, moscList, filepath.Join(archiveDir, "machineosconfigs.yaml"))
+	return DumpObjectToYAMLFile(moscList, filepath.Join(archiveDir, "machineosconfigs.yaml"))
 }
 
 // Writes all ConfigMaps that match the OS Build labels to files.
-func writeConfigMapsToFile(t *testing.T, cs *framework.ClientSet, lo metav1.ListOptions, archiveDir string) error {
+func WriteConfigMapsToFile(t *testing.T, cs *framework.ClientSet, lo metav1.ListOptions, archiveDir string) error {
 	cmList, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).List(context.TODO(), lo)
 
 	if err != nil {
@@ -533,11 +551,11 @@ func writeConfigMapsToFile(t *testing.T, cs *framework.ClientSet, lo metav1.List
 		return nil
 	}
 
-	return dumpObjectToYAMLFile(t, cmList, filepath.Join(archiveDir, "configmaps.yaml"))
+	return DumpObjectToYAMLFile(cmList, filepath.Join(archiveDir, "configmaps.yaml"))
 }
 
 // Wrttes all pod specs that match the OS Build labels to files.
-func writeBuildPodsToFile(t *testing.T, cs *framework.ClientSet, lo metav1.ListOptions, archiveDir string) error {
+func WriteBuildPodsToFile(t *testing.T, cs *framework.ClientSet, lo metav1.ListOptions, archiveDir string) error {
 	podList, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).List(context.TODO(), lo)
 	if err != nil {
 		return err
@@ -548,12 +566,12 @@ func writeBuildPodsToFile(t *testing.T, cs *framework.ClientSet, lo metav1.ListO
 		return nil
 	}
 
-	return dumpObjectToYAMLFile(t, podList, filepath.Join(archiveDir, "pods.yaml"))
+	return DumpObjectToYAMLFile(podList, filepath.Join(archiveDir, "pods.yaml"))
 }
 
 // Dumps a struct to the provided filename in YAML format, creating any
 // parent directories as needed.
-func dumpObjectToYAMLFile(t *testing.T, obj interface{}, filename string) error {
+func DumpObjectToYAMLFile(obj any, filename string) error {
 	if err := os.MkdirAll(filepath.Dir(filename), 0o755); err != nil {
 		return err
 	}
@@ -569,7 +587,7 @@ func dumpObjectToYAMLFile(t *testing.T, obj interface{}, filename string) error 
 // Streams the logs from the Machine OS Builder pod containers to a set of
 // files. This can provide a valuable window into how / why the e2e test suite
 // failed.
-func streamMachineOSBuilderPodLogsToFile(ctx context.Context, t *testing.T, cs *framework.ClientSet, dirPath string) error {
+func StreamMachineOSBuilderPodLogsToFile(ctx context.Context, t *testing.T, cs *framework.ClientSet, dirPath string) error {
 	pods, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).List(ctx, metav1.ListOptions{
 		LabelSelector: "k8s-app=machine-os-builder",
 	})
@@ -577,24 +595,24 @@ func streamMachineOSBuilderPodLogsToFile(ctx context.Context, t *testing.T, cs *
 	require.NoError(t, err)
 
 	mobPod := &pods.Items[0]
-	return streamPodContainerLogsToFile(ctx, t, cs, mobPod, dirPath)
+	return StreamPodContainerLogsToFile(ctx, t, cs, mobPod, dirPath)
 }
 
 // Streams the logs for all of the containers running in the build pod. The pod
 // logs can provide a valuable window into how / why a given build failed.
-func streamBuildPodLogsToFile(ctx context.Context, t *testing.T, cs *framework.ClientSet, mosb *mcfgv1.MachineOSBuild, dirPath string) error {
+func StreamBuildPodLogsToFile(ctx context.Context, t *testing.T, cs *framework.ClientSet, mosb *mcfgv1.MachineOSBuild, dirPath string) error {
 	jobName := mosb.Status.Builder.Job.Name
 
-	pod, err := getPodFromJob(ctx, cs, jobName)
+	pod, err := GetPodFromJob(ctx, cs, jobName)
 	if err != nil {
 		return err
 	}
 
-	return streamPodContainerLogsToFile(ctx, t, cs, pod, dirPath)
+	return StreamPodContainerLogsToFile(ctx, t, cs, pod, dirPath)
 }
 
 // Returns a list of pods that match a given job name.
-func listPodsForJob(ctx context.Context, cs *framework.ClientSet, jobName string) (*corev1.PodList, error) {
+func ListPodsForJob(ctx context.Context, cs *framework.ClientSet, jobName string) (*corev1.PodList, error) {
 	job, err := cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).Get(ctx, jobName, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("could not get job %s: %w", job, err)
@@ -609,8 +627,8 @@ func listPodsForJob(ctx context.Context, cs *framework.ClientSet, jobName string
 }
 
 // Retrieves the currently running build pod for a given job name.
-func getPodFromJob(ctx context.Context, cs *framework.ClientSet, jobName string) (*corev1.Pod, error) {
-	podList, err := listPodsForJob(ctx, cs, jobName)
+func GetPodFromJob(ctx context.Context, cs *framework.ClientSet, jobName string) (*corev1.Pod, error) {
+	podList, err := ListPodsForJob(ctx, cs, jobName)
 	if err != nil {
 		return nil, fmt.Errorf("could not list pods for job %s: %w", jobName, err)
 	}
@@ -623,7 +641,7 @@ func getPodFromJob(ctx context.Context, cs *framework.ClientSet, jobName string)
 		// this is needed when we test the case for a new pod being created after deleting the existing one
 		// as sometimes it takes time for the old pod to be completely deleted
 		for _, pod := range podList.Items {
-			if isBuildPodRunning(&pod) {
+			if IsBuildPodRunning(&pod) {
 				return &pod, nil
 			}
 		}
@@ -634,7 +652,7 @@ func getPodFromJob(ctx context.Context, cs *framework.ClientSet, jobName string)
 
 // Determines if a build pod is running by first examining the init container
 // statuses and then the main container statuses.
-func isBuildPodRunning(pod *corev1.Pod) bool {
+func IsBuildPodRunning(pod *corev1.Pod) bool {
 	for _, status := range pod.Status.InitContainerStatuses {
 		if status.State.Running != nil {
 			return true
@@ -652,7 +670,7 @@ func isBuildPodRunning(pod *corev1.Pod) bool {
 
 // getJobForMOSB returns the name of the job that was created for the given MOSB by comparing the job UID
 // to the UID stored in the MOSB annotation
-func getJobForMOSB(ctx context.Context, cs *framework.ClientSet, build *mcfgv1.MachineOSBuild) (string, error) {
+func GetJobForMOSB(ctx context.Context, cs *framework.ClientSet, build *mcfgv1.MachineOSBuild) (string, error) {
 	jobName := ""
 	mosbJobUID := ""
 
@@ -686,29 +704,27 @@ func getJobForMOSB(ctx context.Context, cs *framework.ClientSet, build *mcfgv1.M
 
 // Attaches a follower to each of the containers within a given pod in order to
 // stream their logs to disk for future debugging.
-func streamPodContainerLogsToFile(ctx context.Context, t *testing.T, cs *framework.ClientSet, pod *corev1.Pod, dirPath string) error {
+func StreamPodContainerLogsToFile(ctx context.Context, t *testing.T, cs *framework.ClientSet, pod *corev1.Pod, dirPath string) error {
 	errGroup, egCtx := errgroup.WithContext(ctx)
 
 	// Stream logs from init containers
 	for _, container := range pod.Spec.InitContainers {
-		container := container
 		pod := pod.DeepCopy()
 
 		errGroup.Go(func() error {
-			return streamContainerLogToFile(egCtx, t, cs, pod, container, dirPath)
+			return StreamContainerLogToFile(egCtx, t, cs, pod, container, dirPath)
 		})
 	}
 
 	// Stream logs from regular containers
 	for _, container := range pod.Spec.Containers {
-		container := container
 		pod := pod.DeepCopy()
 
 		// Because we follow the logs for each container in a build pod, this
 		// blocks the current Goroutine. So we run each log stream operation in a
 		// separate Goroutine to avoid blocking the main Goroutine.
 		errGroup.Go(func() error {
-			return streamContainerLogToFile(egCtx, t, cs, pod, container, dirPath)
+			return StreamContainerLogToFile(egCtx, t, cs, pod, container, dirPath)
 		})
 	}
 
@@ -721,7 +737,7 @@ func streamPodContainerLogsToFile(ctx context.Context, t *testing.T, cs *framewo
 }
 
 // Streams the logs for a given container to a file.
-func streamContainerLogToFile(ctx context.Context, t *testing.T, cs *framework.ClientSet, pod *corev1.Pod, container corev1.Container, dirPath string) error {
+func StreamContainerLogToFile(ctx context.Context, t *testing.T, cs *framework.ClientSet, pod *corev1.Pod, container corev1.Container, dirPath string) error {
 	// Wait for the container to be ready to stream logs
 	for {
 		select {
@@ -736,7 +752,7 @@ func streamContainerLogToFile(ctx context.Context, t *testing.T, cs *framework.C
 			if err != nil {
 				// If the container is waiting to start (e.g., PodInitializing), wait and retry
 				if strings.Contains(err.Error(), "waiting to start") || strings.Contains(err.Error(), "PodInitializing") {
-					time.Sleep(2 * time.Second)
+					time.Sleep(5 * time.Second)
 					continue
 				}
 				return fmt.Errorf("could not get logs for container %s in pod %s: %w", container.Name, pod.Name, err)
@@ -764,7 +780,7 @@ func streamContainerLogToFile(ctx context.Context, t *testing.T, cs *framework.C
 
 // Skips a given test if it is detected that the cluster is running OKD. We
 // skip these tests because they're either irrelevant for OKD or would fail.
-func skipOnOKD(t *testing.T) {
+func SkipOnOKD(t *testing.T) {
 	cs := framework.NewClientSet("")
 
 	isOKD, err := helpers.IsOKDCluster(cs)
@@ -776,7 +792,7 @@ func skipOnOKD(t *testing.T) {
 	}
 }
 
-func skipOnOCP(t *testing.T) {
+func SkipOnOCP(t *testing.T) {
 	cs := framework.NewClientSet("")
 	isOKD, err := helpers.IsOKDCluster(cs)
 	require.NoError(t, err)
@@ -790,7 +806,7 @@ func skipOnOCP(t *testing.T) {
 // Extracts the contents of a directory within a given container to a temporary
 // directory. Next, it loads them into a bytes map keyed by filename. It does
 // not handle nested directories, so use with caution.
-func convertFilesFromContainerImageToBytesMap(t *testing.T, pullspec, containerFilepath string) map[string][]byte {
+func ConvertFilesFromContainerImageToBytesMap(t *testing.T, pullspec, containerFilepath string) map[string][]byte {
 	tempDir := t.TempDir()
 
 	path := fmt.Sprintf("%s:%s", containerFilepath, tempDir)
@@ -813,7 +829,7 @@ func convertFilesFromContainerImageToBytesMap(t *testing.T, pullspec, containerF
 			return nil
 		}
 
-		contents, err := ioutil.ReadFile(path)
+		contents, err := os.ReadFile(path)
 		if err != nil {
 			return err
 		}
@@ -833,7 +849,7 @@ func convertFilesFromContainerImageToBytesMap(t *testing.T, pullspec, containerF
 }
 
 // Skips the test if the entitlement secret is not present.
-func skipIfEntitlementNotPresent(t *testing.T, cs *framework.ClientSet) {
+func SkipIfEntitlementNotPresent(t *testing.T, cs *framework.ClientSet) {
 
 	_, err := cs.CoreV1Interface.Secrets(constants.EtcPkiEntitlementSecretName).Get(context.TODO(), ctrlcommon.OpenshiftConfigManagedNamespace, metav1.GetOptions{})
 	if k8serrors.IsNotFound(err) {
@@ -850,17 +866,17 @@ func skipIfEntitlementNotPresent(t *testing.T, cs *framework.ClientSet) {
 // ConfigMap and Secret, respectively. This is so that the build process will
 // consume those objects as part of the build process, injecting them into the
 // build context.
-func injectYumRepos(t *testing.T, cs *framework.ClientSet) func() {
+func InjectYumRepos(t *testing.T, cs *framework.ClientSet, skipCleanupAlways, skipCleanupOnlyAfterFailure bool) func() {
 	tempDir := t.TempDir()
 
 	yumReposPath := filepath.Join(tempDir, "yum-repos-d")
 	require.NoError(t, os.MkdirAll(yumReposPath, 0o755))
 
 	centosPullspec := "quay.io/centos/centos:stream9"
-	yumReposContents := convertFilesFromContainerImageToBytesMap(t, centosPullspec, "/etc/yum.repos.d/")
-	rpmGpgContents := convertFilesFromContainerImageToBytesMap(t, centosPullspec, "/etc/pki/rpm-gpg/")
+	yumReposContents := ConvertFilesFromContainerImageToBytesMap(t, centosPullspec, "/etc/yum.repos.d/")
+	rpmGpgContents := ConvertFilesFromContainerImageToBytesMap(t, centosPullspec, "/etc/pki/rpm-gpg/")
 
-	configMapCleanupFunc := createConfigMap(t, cs, &corev1.ConfigMap{
+	configMapCleanupFunc := CreateConfigMap(t, cs, &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "etc-yum-repos-d",
 			Namespace: ctrlcommon.MCONamespace,
@@ -871,23 +887,23 @@ func injectYumRepos(t *testing.T, cs *framework.ClientSet) func() {
 		// because the Build Pod will use its contents the same regardless of
 		// whether its string data or binary data.
 		BinaryData: yumReposContents,
-	})
+	}, skipCleanupAlways, skipCleanupOnlyAfterFailure)
 
-	secretCleanupFunc := createSecret(t, cs, &corev1.Secret{
+	secretCleanupFunc := CreateSecret(t, cs, &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "etc-pki-rpm-gpg",
 			Namespace: ctrlcommon.MCONamespace,
 		},
 		Data: rpmGpgContents,
-	})
+	}, skipCleanupAlways, skipCleanupOnlyAfterFailure)
 
-	return makeIdempotentAndRegister(t, func() {
+	return MakeIdempotentAndRegister(t, skipCleanupAlways, skipCleanupOnlyAfterFailure, func() {
 		configMapCleanupFunc()
 		secretCleanupFunc()
 	})
 }
 
-func newMachineConfig(name, pool string) *mcfgv1.MachineConfig {
+func NewMachineConfig(name, pool string) *mcfgv1.MachineConfig {
 	mode := 420
 	testfiledata := fmt.Sprintf("data:,%s-%s", name, pool)
 	path := fmt.Sprintf("/etc/%s-%s", name, pool)
@@ -907,20 +923,20 @@ func newMachineConfig(name, pool string) *mcfgv1.MachineConfig {
 }
 
 // newMachineConfigWithExtensions returns the same base MC, but adds the given extensions to trigger an image rebuild
-func newMachineConfigTriggersImageRebuild(name, pool string, exts []string) *mcfgv1.MachineConfig {
-	mc := newMachineConfig(name, pool)
+func NewMachineConfigTriggersImageRebuild(name, pool string, exts []string) *mcfgv1.MachineConfig {
+	mc := NewMachineConfig(name, pool)
 	mc.Spec.Extensions = append(mc.Spec.Extensions, exts...)
 	return mc
 }
 
 // newMachineConfigWithKernelType returns the same base MC, but adds the given kernel
-func newMachineConfigWithKernelType(name, pool, kernelType string) *mcfgv1.MachineConfig {
-	mc := newMachineConfig(name, pool)
+func NewMachineConfigWithKernelType(name, pool, kernelType string) *mcfgv1.MachineConfig {
+	mc := NewMachineConfig(name, pool)
 	mc.Spec.KernelType = kernelType
 	return mc
 }
 
-func compareKernelType(t *testing.T, foundKernel, requiredKernelType string) bool {
+func CompareKernelType(t *testing.T, foundKernel, requiredKernelType string) bool {
 	switch requiredKernelType {
 	case ctrlcommon.KernelTypeDefault:
 		return !strings.Contains(foundKernel, "rt") && !strings.Contains(foundKernel, "64k")
@@ -945,7 +961,7 @@ func compareKernelType(t *testing.T, foundKernel, requiredKernelType string) boo
 // reason why we look up that image is because it does not require a pull
 // secret in order to get its digest, which the BaseOSImagePullspec field
 // requires.
-func getImagePullspecForFailureTest(ctx context.Context, cs *framework.ClientSet) (string, error) {
+func GetImagePullspecForFailureTest(ctx context.Context, cs *framework.ClientSet) (string, error) {
 	images, err := ctrlcommon.GetImagesConfig(ctx, cs.GetKubeclient())
 	if err != nil {
 		return "", err
@@ -960,13 +976,13 @@ func getImagePullspecForFailureTest(ctx context.Context, cs *framework.ClientSet
 	case reference.Digested:
 		return images.MachineConfigOperator, nil
 	case reference.Tagged:
-		return resolveTaggedPullspecToDigestedPullspec(ctx, "registry.fedoraproject.org/fedora:latest")
+		return ResolveTaggedPullspecToDigestedPullspec(ctx, "registry.fedoraproject.org/fedora:latest")
 	default:
 		return "", fmt.Errorf("unknown image reference spec %q", images.MachineConfigOperator)
 	}
 }
 
-func getBadContainerFileForFailureTest() []mcfgv1.MachineOSContainerfile {
+func GetBadContainerFileForFailureTest() []mcfgv1.MachineOSContainerfile {
 	return []mcfgv1.MachineOSContainerfile{{
 		ContainerfileArch: mcfgv1.NoArch,
 		Content:           "THIS IS A BAD CONTAINERFILE",
@@ -977,7 +993,7 @@ func getBadContainerFileForFailureTest() []mcfgv1.MachineOSContainerfile {
 // supplied image pullspec. Note: Only supports public image registries. This
 // is the same as doing:
 // $ skopeo inspect docker://image-pullspec | jq '.Digest'
-func resolveTaggedPullspecToDigestedPullspec(ctx context.Context, pullspec string) (string, error) {
+func ResolveTaggedPullspecToDigestedPullspec(ctx context.Context, pullspec string) (string, error) {
 	sysCtx := &types.SystemContext{}
 
 	tagged, err := docker.ParseReference("//" + pullspec)
@@ -1001,7 +1017,7 @@ func resolveTaggedPullspecToDigestedPullspec(ctx context.Context, pullspec strin
 // TODO: Deduplicate this definition from machine-config-operator/devex/internal/pkg/rollout/rollout.go
 // Having "internal" in the module path prevents us from reusing it here since
 // it is internal to the devex directory.
-func setDeploymentReplicas(t *testing.T, cs *framework.ClientSet, deployment metav1.ObjectMeta, replicas int32) error {
+func SetDeploymentReplicas(t *testing.T, cs *framework.ClientSet, deployment metav1.ObjectMeta, replicas int32) error {
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		t.Logf("Setting replicas for %s/%s to %d", deployment.Namespace, deployment.Name, replicas)
 		scale, err := cs.AppsV1Interface.Deployments(deployment.Namespace).GetScale(context.TODO(), deployment.Name, metav1.GetOptions{})
@@ -1019,7 +1035,7 @@ func setDeploymentReplicas(t *testing.T, cs *framework.ClientSet, deployment met
 // Scales down the machine-os-builder, machine-config-opreator, and
 // cluster-version-operator deployments. Registers and returns an idempotent
 // function that will scale the deployments back to their original values.
-func scaleDownDeployments(t *testing.T, cs *framework.ClientSet) func() {
+func ScaleDownDeployments(t *testing.T, cs *framework.ClientSet) func() {
 	deployments := []metav1.ObjectMeta{
 		// Scale down the cluster-version-operator since it could set the desired
 		// replicas for the MCO to 1.
@@ -1044,7 +1060,7 @@ func scaleDownDeployments(t *testing.T, cs *framework.ClientSet) func() {
 	restoreFuncs := []func(){}
 
 	for _, deployment := range deployments {
-		restoreFuncs = append(restoreFuncs, scaleDownDeployment(t, cs, deployment))
+		restoreFuncs = append(restoreFuncs, ScaleDownDeployment(t, cs, deployment))
 	}
 
 	return helpers.MakeIdempotentAndRegister(t, func() {
@@ -1063,7 +1079,7 @@ func scaleDownDeployments(t *testing.T, cs *framework.ClientSet) func() {
 // replicas, in which case it no-ops. Registers and returns an idempotent
 // restoral function that will revert the deployment back to its original
 // setting.
-func scaleDownDeployment(t *testing.T, cs *framework.ClientSet, deployment metav1.ObjectMeta) func() {
+func ScaleDownDeployment(t *testing.T, cs *framework.ClientSet, deployment metav1.ObjectMeta) func() {
 	ctx := context.TODO()
 
 	originalDeployment, err := cs.AppsV1Interface.Deployments(deployment.Namespace).Get(ctx, deployment.Name, metav1.GetOptions{})
@@ -1081,26 +1097,26 @@ func scaleDownDeployment(t *testing.T, cs *framework.ClientSet, deployment metav
 		})
 	}
 
-	require.NoError(t, setDeploymentReplicas(t, cs, deployment, 0))
+	require.NoError(t, SetDeploymentReplicas(t, cs, deployment, 0))
 
 	return helpers.MakeIdempotentAndRegister(t, func() {
-		require.NoError(t, setDeploymentReplicas(t, cs, deployment, originalReplicas))
+		require.NoError(t, SetDeploymentReplicas(t, cs, deployment, originalReplicas))
 	})
 }
 
 // forceMachineOSBuildToFail() repeatedly deletes the build pod associated
 // with the given MachineOSBuild so that the job will fail.
-func forceMachineOSBuildToFail(ctx context.Context, t *testing.T, cs *framework.ClientSet, mosb *mcfgv1.MachineOSBuild) error {
+func ForceMachineOSBuildToFail(ctx context.Context, t *testing.T, cs *framework.ClientSet, mosb *mcfgv1.MachineOSBuild) error {
 	start := time.Now()
 
-	jobName, err := getJobForMOSB(ctx, cs, mosb)
+	jobName, err := GetJobForMOSB(ctx, cs, mosb)
 	if err != nil {
 		return fmt.Errorf("could not identify job for MachineOSBuild %s: %w", mosb.Name, err)
 	}
 
 	t.Logf("Found job %s for MachineOSBuild %s, will delete pods belonging to this job to cause build failure", jobName, mosb.Name)
 
-	return wait.PollImmediate(1*time.Second, 5*time.Minute, func() (bool, error) {
+	return wait.PollUntilContextTimeout(ctx, 1*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
 		job, err := cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).Get(ctx, jobName, metav1.GetOptions{})
 		if err != nil {
 			return false, fmt.Errorf("could not get job %s for MachineOSBuild %s: %w", jobName, mosb.Name, err)
@@ -1113,7 +1129,7 @@ func forceMachineOSBuildToFail(ctx context.Context, t *testing.T, cs *framework.
 			}
 		}
 
-		podList, err := listPodsForJob(ctx, cs, jobName)
+		podList, err := ListPodsForJob(ctx, cs, jobName)
 		if err != nil {
 			return false, fmt.Errorf("could not list pods for job %s: %w", jobName, err)
 		}

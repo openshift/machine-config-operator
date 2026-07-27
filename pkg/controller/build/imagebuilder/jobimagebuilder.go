@@ -147,7 +147,21 @@ func (j *jobImageBuilder) start(ctx context.Context) (*batchv1.Job, error) {
 	}
 
 	if k8serrors.IsAlreadyExists(err) {
-		return j.getBuildJobStrict(ctx)
+		existingJob, getErr := j.getBuildJobStrict(ctx)
+		if getErr != nil {
+			return nil, getErr
+		}
+
+		klog.Infof("Build job %q already exists for MachineOSBuild %q, reusing", existingJob.Name, mosbName)
+
+		if j.mosb != nil {
+			metav1.SetMetaDataAnnotation(&j.mosb.ObjectMeta, constants.JobUIDAnnotationKey, string(existingJob.UID))
+			if _, updateErr := j.mcfgclient.MachineconfigurationV1().MachineOSBuilds().Update(ctx, j.mosb, metav1.UpdateOptions{}); updateErr != nil && !k8serrors.IsNotFound(updateErr) {
+				return nil, fmt.Errorf("could not update MachineOSBuild %s with job UID annotation: %w", mosbName, updateErr)
+			}
+		}
+
+		return existingJob, nil
 	}
 
 	return nil, fmt.Errorf("could not create build job: %w", err)
