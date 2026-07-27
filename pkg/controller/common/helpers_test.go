@@ -2116,7 +2116,7 @@ func TestGetCryptoPolicyFromTLSProfile(t *testing.T) {
 			expectedPolicy: "DEFAULT:OPENSHIFT",
 			expectedSubMod: "cipher@TLS = AES-128-GCM AES-256-GCM CHACHA20-POLY1305\n" +
 				"mac@TLS = AEAD\n" +
-				"protocol@TLS = TLS1.3\n" +
+				"protocol@TLS = -TLS1.0 -TLS1.1 -TLS1.2 -DTLS1.0 -DTLS1.2\n" +
 				"group@TLS = MLKEM768-X25519 X25519 SECP256R1 SECP384R1",
 		},
 		{
@@ -2128,7 +2128,7 @@ func TestGetCryptoPolicyFromTLSProfile(t *testing.T) {
 			expectedPolicy: "LEGACY:OPENSHIFT",
 			expectedSubMod: "cipher@TLS = 3DES-CBC AES-128-CBC AES-128-GCM AES-256-CBC AES-256-GCM CHACHA20-POLY1305\n" +
 				"mac@TLS = AEAD HMAC-SHA1 HMAC-SHA2-256 HMAC-SHA2-384\n" +
-				"protocol@TLS = TLS1.2 TLS1.3\n" +
+				"protocol@TLS = -TLS1.0 -TLS1.1 -DTLS1.0\n" +
 				"group@TLS = MLKEM768-X25519 X25519 SECP256R1 SECP384R1",
 		},
 		{
@@ -2153,7 +2153,7 @@ func TestGetCryptoPolicyFromTLSProfile(t *testing.T) {
 				},
 			},
 			expectedPolicy: "DEFAULT:OPENSHIFT",
-			expectedSubMod: "cipher@TLS = AES-128-GCM AES-256-GCM CHACHA20-POLY1305\nmac@TLS = AEAD\nprotocol@TLS = TLS1.2 TLS1.3",
+			expectedSubMod: "cipher@TLS = AES-128-GCM AES-256-GCM CHACHA20-POLY1305\nmac@TLS = AEAD\nprotocol@TLS = -TLS1.0 -TLS1.1 -DTLS1.0",
 		},
 		{
 			name: "Custom with TLS 1.3 only ciphers",
@@ -2170,7 +2170,7 @@ func TestGetCryptoPolicyFromTLSProfile(t *testing.T) {
 				},
 			},
 			expectedPolicy: "DEFAULT:OPENSHIFT",
-			expectedSubMod: "cipher@TLS = AES-256-GCM CHACHA20-POLY1305\nmac@TLS = AEAD\nprotocol@TLS = TLS1.3",
+			expectedSubMod: "cipher@TLS = AES-256-GCM CHACHA20-POLY1305\nmac@TLS = AEAD\nprotocol@TLS = -TLS1.0 -TLS1.1 -TLS1.2 -DTLS1.0 -DTLS1.2",
 		},
 		{
 			name: "Custom without groups (non-TechPreview: API strips groups field)",
@@ -2187,7 +2187,7 @@ func TestGetCryptoPolicyFromTLSProfile(t *testing.T) {
 				},
 			},
 			expectedPolicy: "DEFAULT:OPENSHIFT",
-			expectedSubMod: "cipher@TLS = AES-128-GCM AES-256-GCM\nmac@TLS = AEAD\nprotocol@TLS = TLS1.3",
+			expectedSubMod: "cipher@TLS = AES-128-GCM AES-256-GCM\nmac@TLS = AEAD\nprotocol@TLS = -TLS1.0 -TLS1.1 -TLS1.2 -DTLS1.0 -DTLS1.2",
 		},
 		{
 			name: "Custom with groups (TechPreview: TLSGroupPreferences gate enabled)",
@@ -2208,7 +2208,7 @@ func TestGetCryptoPolicyFromTLSProfile(t *testing.T) {
 				},
 			},
 			expectedPolicy: "DEFAULT:OPENSHIFT",
-			expectedSubMod: "cipher@TLS = AES-256-GCM\nmac@TLS = AEAD\nprotocol@TLS = TLS1.3\ngroup@TLS = MLKEM768-X25519 X25519 SECP256R1",
+			expectedSubMod: "cipher@TLS = AES-256-GCM\nmac@TLS = AEAD\nprotocol@TLS = -TLS1.0 -TLS1.1 -TLS1.2 -DTLS1.0 -DTLS1.2\ngroup@TLS = MLKEM768-X25519 X25519 SECP256R1",
 		},
 		{
 			name: "Custom with all groups (TechPreview: full group set)",
@@ -2233,7 +2233,7 @@ func TestGetCryptoPolicyFromTLSProfile(t *testing.T) {
 				},
 			},
 			expectedPolicy: "DEFAULT:OPENSHIFT",
-			expectedSubMod: "cipher@TLS = AES-256-GCM\nmac@TLS = AEAD\nprotocol@TLS = TLS1.3\ngroup@TLS = MLKEM768-X25519 P256-MLKEM768 P384-MLKEM1024 X25519 SECP256R1 SECP384R1 SECP521R1",
+			expectedSubMod: "cipher@TLS = AES-256-GCM\nmac@TLS = AEAD\nprotocol@TLS = -TLS1.0 -TLS1.1 -TLS1.2 -DTLS1.0 -DTLS1.2\ngroup@TLS = MLKEM768-X25519 P256-MLKEM768 P384-MLKEM1024 X25519 SECP256R1 SECP384R1 SECP521R1",
 		},
 		{
 			name: "Custom with CBC ciphers includes non-AEAD MACs",
@@ -2250,7 +2250,7 @@ func TestGetCryptoPolicyFromTLSProfile(t *testing.T) {
 				},
 			},
 			expectedPolicy: "DEFAULT:OPENSHIFT",
-			expectedSubMod: "cipher@TLS = AES-128-CBC AES-256-GCM\nmac@TLS = AEAD HMAC-SHA2-256\nprotocol@TLS = TLS1.2 TLS1.3",
+			expectedSubMod: "cipher@TLS = AES-128-CBC AES-256-GCM\nmac@TLS = AEAD HMAC-SHA2-256\nprotocol@TLS = -TLS1.0 -TLS1.1 -DTLS1.0",
 		},
 		{
 			name: "Custom with nil spec falls back to DEFAULT",
@@ -2272,7 +2272,7 @@ func TestGetCryptoPolicyFromTLSProfile(t *testing.T) {
 				},
 			},
 			expectedPolicy: "DEFAULT:OPENSHIFT",
-			expectedSubMod: "protocol@TLS = TLS1.2 TLS1.3",
+			expectedSubMod: "protocol@TLS = -TLS1.0 -TLS1.1 -DTLS1.0",
 		},
 	}
 

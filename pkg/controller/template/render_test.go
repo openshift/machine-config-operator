@@ -615,16 +615,16 @@ func TestCryptoPolicyTemplateRendering(t *testing.T) {
 		{
 			name:           "DEFAULT:OPENSHIFT policy renders policy name",
 			cryptoPolicy:   "DEFAULT:OPENSHIFT",
-			cryptoSubMod:   "protocol@TLS = TLS1.3",
+			cryptoSubMod:   "protocol@TLS = -TLS1.0 -TLS1.1 -TLS1.2 -DTLS1.0 -DTLS1.2",
 			template:       configTemplate,
 			expectedOutput: "DEFAULT:OPENSHIFT",
 		},
 		{
 			name:           "sub-policy module renders when set",
 			cryptoPolicy:   "DEFAULT:OPENSHIFT",
-			cryptoSubMod:   "protocol@TLS = TLS1.3",
+			cryptoSubMod:   "protocol@TLS = -TLS1.0 -TLS1.1 -TLS1.2 -DTLS1.0 -DTLS1.2",
 			template:       subModTemplate,
-			expectedOutput: "protocol@TLS = TLS1.3",
+			expectedOutput: "protocol@TLS = -TLS1.0 -TLS1.1 -TLS1.2 -DTLS1.0 -DTLS1.2",
 		},
 		{
 			name:           "sub-policy module omitted when empty",
@@ -636,9 +636,9 @@ func TestCryptoPolicyTemplateRendering(t *testing.T) {
 		{
 			name:         "multi-line sub-policy module renders for Custom profile",
 			cryptoPolicy: "DEFAULT:OPENSHIFT",
-			cryptoSubMod: "cipher@TLS = AES-128-GCM AES-256-GCM CHACHA20-POLY1305\nmac@TLS = AEAD\nprotocol@TLS = TLS1.2 TLS1.3",
+			cryptoSubMod: "cipher@TLS = AES-128-GCM AES-256-GCM CHACHA20-POLY1305\nmac@TLS = AEAD\nprotocol@TLS = -TLS1.0 -TLS1.1 -DTLS1.0",
 			template:     subModTemplate,
-			expectedOutput: "cipher@TLS = AES-128-GCM AES-256-GCM CHACHA20-POLY1305\nmac@TLS = AEAD\nprotocol@TLS = TLS1.2 TLS1.3",
+			expectedOutput: "cipher@TLS = AES-128-GCM AES-256-GCM CHACHA20-POLY1305\nmac@TLS = AEAD\nprotocol@TLS = -TLS1.0 -TLS1.1 -DTLS1.0",
 		},
 	}
 

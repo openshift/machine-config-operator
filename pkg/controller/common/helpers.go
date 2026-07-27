@@ -1357,15 +1357,18 @@ var opensslCipherInfo = map[string]cipherComponents{
 	"ECDHE-RSA-DES-CBC3-SHA": {cipher: "3DES-CBC", mac: "HMAC-SHA1"},
 }
 
-// minTLSVersionToProtocols maps a TLS version to the space-separated list of
-// all protocol versions at or above it, for use as a crypto-policy override.
+// protocolVersionsBelowMinimum maps a TLS version to the protocol versions
+// that must be removed from the base policy via subtractive syntax (-VERSION).
+// This approach preserves any protocol versions in the base policy that are at
+// or above the minimum (including DTLS peers), and automatically inherits new
+// versions (e.g. DTLS1.3) when they appear in future base policies.
 // TLS 1.0 and 1.1 are clamped to TLS 1.2 because RHCOS cannot deliver them:
 // OpenSSL 3.x enforces @SECLEVEL=2 which forbids TLS < 1.2.
-var minTLSVersionToProtocols = map[configv1.TLSProtocolVersion]string{
-	configv1.VersionTLS10: "TLS1.2 TLS1.3",
-	configv1.VersionTLS11: "TLS1.2 TLS1.3",
-	configv1.VersionTLS12: "TLS1.2 TLS1.3",
-	configv1.VersionTLS13: "TLS1.3",
+var protocolVersionsBelowMinimum = map[configv1.TLSProtocolVersion][]string{
+	configv1.VersionTLS10: {"TLS1.0", "TLS1.1", "DTLS1.0"},
+	configv1.VersionTLS11: {"TLS1.0", "TLS1.1", "DTLS1.0"},
+	configv1.VersionTLS12: {"TLS1.0", "TLS1.1", "DTLS1.0"},
+	configv1.VersionTLS13: {"TLS1.0", "TLS1.1", "TLS1.2", "DTLS1.0", "DTLS1.2"},
 }
 
 // tlsVersionsClamped contains TLS versions that are requested but cannot be
@@ -1389,8 +1392,8 @@ var tlsGroupToCryptoPolicy = map[configv1.TLSGroup]string{
 }
 
 // buildCustomSubPolicy generates the content of a .pmod file from a custom
-// TLS profile spec. The output uses override syntax (no +/- suffix) so each
-// directive replaces the base policy's value entirely.
+// TLS profile spec. Cipher, MAC, and group directives use override syntax;
+// protocol uses subtractive syntax (-VERSION) to preserve base policy DTLS.
 func buildCustomSubPolicy(spec *configv1.TLSProfileSpec) string {
 	cipherSet := make(map[string]struct{})
 	macSet := make(map[string]struct{})
@@ -1413,11 +1416,15 @@ func buildCustomSubPolicy(spec *configv1.TLSProfileSpec) string {
 	if len(macSet) > 0 {
 		lines = append(lines, "mac@TLS = "+sortedKeys(macSet))
 	}
-	if proto, ok := minTLSVersionToProtocols[spec.MinTLSVersion]; ok {
+	if toRemove, ok := protocolVersionsBelowMinimum[spec.MinTLSVersion]; ok {
 		if tlsVersionsClamped[spec.MinTLSVersion] {
 			klog.Warningf("TLS profile requests %s but RHCOS enforces TLS 1.2 minimum; clamping protocol@TLS to TLS1.2+", spec.MinTLSVersion)
 		}
-		lines = append(lines, "protocol@TLS = "+proto)
+		var removals []string
+		for _, v := range toRemove {
+			removals = append(removals, "-"+v)
+		}
+		lines = append(lines, "protocol@TLS = "+strings.Join(removals, " "))
 	}
 	if len(spec.Groups) > 0 {
 		var groups []string
