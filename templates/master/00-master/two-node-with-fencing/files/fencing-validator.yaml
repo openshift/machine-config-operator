@@ -472,7 +472,7 @@ contents:
     
     	if [[ "$TRANSPORT" == "ocdebug" ]]; then
     		if ! host_run "$CONDUCTOR" "if command -v systemd-run >/dev/null 2>&1; then \
-            systemd-run --no-block --unit fence-$t bash -lc 'pcs stonith fence $t'; \
+            systemd-run --no-block --collect --unit fence-$t bash -lc 'pcs stonith fence $t'; \
             else nohup bash -lc 'pcs stonith fence $t' >/var/tmp/fence-$t.log 2>&1 & disown; fi"; then
     			log_err "Dispatching fence for '$t' via ocdebug failed to start"
     			return 1
