@@ -27,7 +27,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/diff"
 	"k8s.io/apimachinery/pkg/util/yaml"
-	"k8s.io/utils/ptr"
 )
 
 func TestUpdateRegistriesConfig(t *testing.T) {
@@ -2817,7 +2816,7 @@ providers:
 						TokenAttributes: &serviceAccountTokenAttributesVersioned{
 							ServiceAccountTokenAudience: "https://kubernetes.default.svc",
 							CacheType:                   "Token",
-							RequireServiceAccount:       ptr.To(false),
+							RequireServiceAccount:       new(false),
 						},
 					},
 				},
@@ -2846,7 +2845,7 @@ providers:
 						TokenAttributes: &serviceAccountTokenAttributesVersioned{
 							ServiceAccountTokenAudience: "https://kubernetes.default.svc",
 							CacheType:                   "Token",
-							RequireServiceAccount:       ptr.To(false),
+							RequireServiceAccount:       new(false),
 						},
 					},
 				},
@@ -2875,7 +2874,7 @@ providers:
 						TokenAttributes: &serviceAccountTokenAttributesVersioned{
 							ServiceAccountTokenAudience: "https://kubernetes.default.svc",
 							CacheType:                   "Token",
-							RequireServiceAccount:       ptr.To(false),
+							RequireServiceAccount:       new(false),
 						},
 					},
 				},
@@ -2923,7 +2922,7 @@ providers:
 						TokenAttributes: &serviceAccountTokenAttributesVersioned{
 							ServiceAccountTokenAudience: "https://kubernetes.default.svc",
 							CacheType:                   "Token",
-							RequireServiceAccount:       ptr.To(false),
+							RequireServiceAccount:       new(false),
 						},
 					},
 				},

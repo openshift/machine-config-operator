@@ -39,7 +39,6 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	kubeletconfig "k8s.io/kubernetes/pkg/kubelet/apis/config"
-	"k8s.io/utils/ptr"
 )
 
 const (
@@ -1471,7 +1470,7 @@ func updateCredentialProviderConfig(credProviderConfigObject *credentialProvider
 			APIVersion:           credentialProviderAPIVersion,
 			TokenAttributes: &serviceAccountTokenAttributesVersioned{
 				ServiceAccountTokenAudience: "https://kubernetes.default.svc",
-				RequireServiceAccount:       ptr.To(false),
+				RequireServiceAccount:       new(false),
 				CacheType:                   kubeletconfig.TokenServiceAccountTokenCacheType,
 			},
 		}

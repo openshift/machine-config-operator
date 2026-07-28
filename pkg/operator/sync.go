@@ -38,7 +38,6 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
-	"k8s.io/utils/ptr"
 
 	"github.com/openshift/api/annotations"
 	configv1 "github.com/openshift/api/config/v1"
@@ -761,7 +760,7 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig, _ *configv1.C
 		// We don't care about the spec, the user is free to touch parameters
 		// in the spec, and we don't want to interfere with them. Merge strategies
 		// won't work in the spec as it won't allow a user to reset a field to blank
-		modified := ptr.To(false)
+		modified := new(false)
 		resourcemerge.EnsureObjectMeta(modified, &existing.ObjectMeta, mcp.ObjectMeta)
 		if !*modified {
 			continue
