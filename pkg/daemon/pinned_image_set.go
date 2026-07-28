@@ -35,7 +35,6 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
 	"k8s.io/klog/v2"
-	"k8s.io/utils/ptr"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	machineconfigurationv1 "github.com/openshift/client-go/machineconfiguration/applyconfigurations/machineconfiguration/v1"
@@ -690,17 +689,17 @@ func (p *PinnedImageSetManager) createApplyConfigForImageSet(imageSet *mcfgv1.Pi
 		cachedImageSet := cachedImage.(mcfgv1.PinnedImageSet)
 		if imageSet.Generation == cachedImageSet.Generation {
 			// return cached value
-			imageSetConfig.CurrentGeneration = ptr.To(int32(imageSet.GetGeneration()))
+			imageSetConfig.CurrentGeneration = new(int32(imageSet.GetGeneration()))
 			return imageSetConfig
 		}
 	}
 
 	if statusErr != nil {
-		imageSetConfig.LastFailedGeneration = ptr.To(int32(imageSet.GetGeneration()))
-		imageSetConfig.LastFailedGenerationError = ptr.To(statusErr.Error())
+		imageSetConfig.LastFailedGeneration = new(int32(imageSet.GetGeneration()))
+		imageSetConfig.LastFailedGenerationError = new(statusErr.Error())
 	} else if isCompleted {
 		// only set the current generation if prefetch is complete
-		imageSetConfig.CurrentGeneration = ptr.To(int32(imageSet.GetGeneration()))
+		imageSetConfig.CurrentGeneration = new(int32(imageSet.GetGeneration()))
 	}
 
 	return imageSetConfig

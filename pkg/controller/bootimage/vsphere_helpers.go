@@ -30,7 +30,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
-	"k8s.io/utils/ptr"
 	"sigs.k8s.io/yaml"
 
 	"github.com/openshift/machine-config-operator/pkg/controller/bootimage/cache"
@@ -633,7 +632,7 @@ func createNewVMTemplateWithNameForFailureDomain(ctx context.Context, providerSp
 		if err != nil {
 			return fmt.Errorf("failed to get boot options: %w", err)
 		}
-		bootOptions.EfiSecureBootEnabled = ptr.To(false)
+		bootOptions.EfiSecureBootEnabled = new(false)
 
 		err = vm.SetBootOptions(ctx, bootOptions)
 		if err != nil {
