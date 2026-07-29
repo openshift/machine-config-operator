@@ -2,6 +2,7 @@ package extended
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -315,7 +316,14 @@ func (ms MachineSet) GetArchitecture() (architecture.Architecture, error) {
 		return narch, nil
 	}
 
-	return architecture.FromString(strings.Split(labeledArch, "kubernetes.io/arch=")[1]), nil
+	for _, label := range strings.Split(labeledArch, ",") {
+		label = strings.TrimSpace(label)
+		if archValue, found := strings.CutPrefix(label, "kubernetes.io/arch="); found {
+			return architecture.FromString(archValue), nil
+		}
+	}
+
+	return architecture.UNKNOWN, fmt.Errorf("kubernetes.io/arch label not found in annotation: %s", labeledArch)
 }
 
 // GetArchitectureOrFail returns the architecture configured for this Machineset and fails the test if any error happens
@@ -327,9 +335,7 @@ func (ms MachineSet) GetArchitectureOrFail() architecture.Architecture {
 
 // SetArchitecture sets the architecture annotation for this MachineSet
 func (ms MachineSet) SetArchitecture(arch string) error {
-	return ms.Patch("json",
-		fmt.Sprintf(`[{"op": "add", "path": "/metadata/annotations/capacity.cluster-autoscaler.kubernetes.io~1labels", "value": "kubernetes.io/arch=%s"}]`,
-			arch))
+	return ms.SetAutoscalerLabels("kubernetes.io/arch=" + arch)
 }
 
 // GetUserDataSecretName returns the name of the user-data secret
@@ -706,4 +712,17 @@ func GetScalableMachineSet(oc *exutil.CLI) (*MachineSet, error) {
 	}
 
 	return machinesets[0], nil
+}
+
+// SetAutoscalerLabels sets the capacity.cluster-autoscaler.kubernetes.io/labels annotation
+// for this MachineSet. The value may contain multiple comma-separated labels
+// (e.g. "kubernetes.io/arch=amd64,topology.ebs.csi.aws.com/zone=eu-central-1a").
+func (ms MachineSet) SetAutoscalerLabels(labels string) error {
+	marshaledLabels, err := json.Marshal(labels)
+	if err != nil {
+		return fmt.Errorf("failed to marshal labels: %w", err)
+	}
+	return ms.Patch("json",
+		fmt.Sprintf(`[{"op": "add", "path": "/metadata/annotations/capacity.cluster-autoscaler.kubernetes.io~1labels", "value": %s}]`,
+			string(marshaledLabels)))
 }
