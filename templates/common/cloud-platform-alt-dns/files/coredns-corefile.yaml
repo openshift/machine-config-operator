@@ -38,7 +38,9 @@ contents:
             match ^api-int.{{ .DNS.Spec.BaseDomain }}
             fallthrough
         }
-        hosts {
+        hosts /etc/hosts {
+            127.0.0.1 localhost localhost.localdomain
+            ::1 localhost localhost.localdomain
             {{`{{- range .Cluster.NodeAddresses }}
             {{ .Address }} {{ .Name }} {{ .Name }}.{{ $.Cluster.Name }}.{{ $.Cluster.Domain }}
             {{- end }}`}}
