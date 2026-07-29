@@ -938,7 +938,7 @@ func (dn *Daemon) runPreflightConfigDriftCheck() error {
 	start := time.Now()
 
 	if err := dn.validateOnDiskStateOrImage(currentOnDisk.currentConfig, currentOnDisk.currentImage); err != nil {
-		dn.nodeWriter.Eventf(corev1.EventTypeWarning, "PreflightConfigDriftCheckFailed", err.Error())
+		dn.nodeWriter.Eventf(corev1.EventTypeWarning, "PreflightConfigDriftCheckFailed", "%s", err.Error())
 		klog.Errorf("Preflight config drift check failed: %v", err)
 		return &configDriftErr{err}
 	}
@@ -1456,7 +1456,7 @@ func (dn *Daemon) kubeletRebootstrap(ctx context.Context) error {
 // Called whenever the on-disk config has drifted from the current machineconfig.
 func (dn *Daemon) onConfigDrift(err error) {
 	mcdConfigDrift.SetToCurrentTime()
-	dn.nodeWriter.Eventf(corev1.EventTypeWarning, "ConfigDriftDetected", err.Error())
+	dn.nodeWriter.Eventf(corev1.EventTypeWarning, "ConfigDriftDetected", "%s", err.Error())
 	klog.Error(err)
 	if err := dn.updateErrorState(err); err != nil {
 		klog.Errorf("Could not update annotation: %v", err)
@@ -1545,9 +1545,7 @@ func (dn *Daemon) startConfigDriftMonitor() {
 		return
 	}
 
-	dn.nodeWriter.Eventf(corev1.EventTypeNormal, "ConfigDriftMonitorStarted",
-		"Config Drift Monitor started, watching against %s", odc.currentConfig.Name)
-
+	dn.nodeWriter.Eventf(corev1.EventTypeNormal, "ConfigDriftMonitorStarted", "%s", fmt.Sprintf("Config Drift Monitor started, watching against %s", odc.currentConfig.Name))
 	go func() {
 		// Common shutdown function
 		shutdown := func() {
@@ -1657,7 +1655,7 @@ func (dn *Daemon) syncFinalizationFailureAnnotation(finalizeError string) error 
 
 	// And let's emit this as an event
 	if dn.previousFinalizationFailure != finalizeError {
-		dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedFinalization", finalizeError)
+		dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedFinalization", "%s", finalizeError)
 	}
 
 	annos := map[string]string{
@@ -2274,7 +2272,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 	}
 
 	if err := dn.validateOnDiskStateOrImage(state.currentConfig, state.currentImage); err != nil {
-		dn.nodeWriter.Eventf(corev1.EventTypeWarning, "OnDiskStateValidationFailed", err.Error())
+		dn.nodeWriter.Eventf(corev1.EventTypeWarning, "OnDiskStateValidationFailed", "%s", err.Error())
 		// Start the config drift monitor even when there's pre-existing drift
 		// so the metric gets initialized correctly on MCD restart
 		dn.startConfigDriftMonitor()
@@ -2293,7 +2291,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 	}
 
 	if dn.nodeWriter != nil {
-		dn.nodeWriter.Eventf(corev1.EventTypeNormal, "BootResync", fmt.Sprintf("Booting node %s, currentConfig %s, desiredConfig %s", dn.node.Name, state.currentConfig.GetName(), state.desiredConfig.GetName()))
+		dn.nodeWriter.Eventf(corev1.EventTypeNormal, "BootResync", "%s", fmt.Sprintf("Booting node %s, currentConfig %s, desiredConfig %s", dn.node.Name, state.currentConfig.GetName(), state.desiredConfig.GetName()))
 	}
 
 	// currentConfig != desiredConfig, and we're not booting up into the desiredConfig.
@@ -2389,7 +2387,7 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, bool, erro
 
 		// We update the node annotation, and pop an event saying we're done.
 		if dn.nodeWriter != nil {
-			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "NodeDone", fmt.Sprintf("Setting node %s, currentConfig %s to Done", dn.node.Name, state.currentConfig.GetName()))
+			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "NodeDone", "%s", fmt.Sprintf("Setting node %s, currentConfig %s to Done", dn.node.Name, state.currentConfig.GetName()))
 		}
 
 		if err := dn.nodeWriter.SetDone(state); err != nil {
@@ -2603,14 +2601,14 @@ func (dn *Daemon) completeUpdate(desiredConfigName string) error {
 	}); err != nil {
 		if wait.Interrupted(err) {
 			failMsg := fmt.Sprintf("failed to uncordon node: %s after 10 minutes. Please see machine-config-controller logs for more information", dn.node.Name)
-			dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedToUncordon", failMsg)
+			dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedToUncordon", "%s", failMsg)
 			return errors.New(failMsg)
 		}
 		return fmt.Errorf("something went wrong while attempting to uncordon node: %w", err)
 	}
 
 	logSystem("Update completed for config %s and node has been successfully uncordoned", desiredConfigName)
-	dn.nodeWriter.Eventf(corev1.EventTypeNormal, "Uncordon", fmt.Sprintf("Update completed for config %s and node has been uncordoned", desiredConfigName))
+	dn.nodeWriter.Eventf(corev1.EventTypeNormal, "Uncordon", "%s", fmt.Sprintf("Update completed for config %s and node has been uncordoned", desiredConfigName))
 
 	return nil
 }

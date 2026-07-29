@@ -44,7 +44,7 @@ func (optr *Operator) syncVersion(co *configv1.ClusterOperator) {
 			Namespace: co.Namespace,
 			UID:       co.GetUID(),
 		}
-		optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeNormal, "OperatorVersionChanged", fmt.Sprintf("clusteroperator/machine-config version changed from %v to %v", co.Status.Versions, optr.vStore.GetAll()))
+		optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeNormal, "OperatorVersionChanged", "%s", fmt.Sprintf("clusteroperator/machine-config version changed from %v to %v", co.Status.Versions, optr.vStore.GetAll()))
 	}
 
 	co.Status.Versions = optr.vStore.GetAll()
@@ -118,7 +118,7 @@ func (optr *Operator) syncProgressingStatus(co *configv1.ClusterOperator) {
 	)
 	if optr.vStore.Equal(co.Status.Versions) {
 		if optr.inClusterBringup {
-			optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeNormal, "OperatorVersionChanged", fmt.Sprintf("clusteroperator/machine-config is bootstrapping to %v", optr.vStore.GetAll()))
+			optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeNormal, "OperatorVersionChanged", "%s", fmt.Sprintf("clusteroperator/machine-config is bootstrapping to %v", optr.vStore.GetAll()))
 			coStatusCondition.Message = fmt.Sprintf("Cluster is bootstrapping %s", optrVersion)
 			coStatusCondition.Status = configv1.ConditionTrue
 		}
@@ -127,7 +127,7 @@ func (optr *Operator) syncProgressingStatus(co *configv1.ClusterOperator) {
 		// but we want to fire the event only once when we're actually setting progressing and we
 		// weren't progressing before.
 		if !cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorProgressing) {
-			optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeNormal, "OperatorVersionChanged", fmt.Sprintf("clusteroperator/machine-config started a version change from %v to %v", co.Status.Versions, optr.vStore.GetAll()))
+			optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeNormal, "OperatorVersionChanged", "%s", fmt.Sprintf("clusteroperator/machine-config started a version change from %v to %v", co.Status.Versions, optr.vStore.GetAll()))
 		}
 		coStatusCondition.Message = fmt.Sprintf("Working towards %s", optrVersion)
 		coStatusCondition.Status = configv1.ConditionTrue
@@ -247,7 +247,7 @@ func (optr *Operator) syncDegradedStatus(co *configv1.ClusterOperator, ierr sync
 			Namespace: co.Namespace,
 			UID:       co.GetUID(),
 		}
-		optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeWarning, degradedReason, message)
+		optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeWarning, degradedReason, "%s", message)
 
 	}
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, coDegradedCondition, clock.RealClock{})

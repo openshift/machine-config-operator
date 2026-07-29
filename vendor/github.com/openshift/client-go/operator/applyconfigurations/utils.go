@@ -28,6 +28,10 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &operatorv1.AddPageApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("Authentication"):
 		return &operatorv1.AuthenticationApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("AuthenticationConfigMapReference"):
+		return &operatorv1.AuthenticationConfigMapReferenceApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("AuthenticationProxyConfig"):
+		return &operatorv1.AuthenticationProxyConfigApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("AuthenticationSpec"):
 		return &operatorv1.AuthenticationSpecApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("AuthenticationStatus"):

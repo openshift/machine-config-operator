@@ -126,7 +126,7 @@ func (dn *Daemon) finishRebootlessUpdate() error {
 func (dn *Daemon) executeReloadServiceNodeDisruptionAction(serviceName string, reloadErr error) error {
 	if reloadErr != nil {
 		if dn.nodeWriter != nil {
-			dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedServiceReload", fmt.Sprintf("Reloading service %s failed. Error: %v", serviceName, reloadErr))
+			dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedServiceReload", "%s", fmt.Sprintf("Reloading service %s failed. Error: %v", serviceName, reloadErr))
 		}
 		return fmt.Errorf("could not apply update: reloading %s configuration failed. Error: %w", serviceName, reloadErr)
 	}
@@ -152,7 +152,7 @@ func (dn *Daemon) executeReloadServiceNodeDisruptionAction(serviceName string, r
 	}
 
 	if dn.nodeWriter != nil {
-		dn.nodeWriter.Eventf(corev1.EventTypeNormal, "ServiceReload", "Config changes do not require reboot. Service %s was reloaded.", serviceName)
+		dn.nodeWriter.Eventf(corev1.EventTypeNormal, "ServiceReload", "%s", fmt.Sprintf("Config changes do not require reboot. Service %s was reloaded.", serviceName))
 	}
 	logSystem("%s service reloaded successfully!", serviceName)
 	return nil
@@ -229,20 +229,20 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 					cmd.Stderr = &stderr
 					if err := cmd.Run(); err != nil {
 						if dn.nodeWriter != nil {
-							dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedServiceRestart", fmt.Sprintf("Restarting %s service failed. Error: %v", serviceName, err))
+							dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedServiceRestart", "%s",  fmt.Sprintf("Restarting %s service failed. Error: %v", serviceName, err))
 						}
 						return fmt.Errorf("error running %s: %s: %w", constants.UpdateCATrustCommand, stderr.String(), err)
 					}
 				} else {
 					if dn.nodeWriter != nil {
-						dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedServiceRestart", fmt.Sprintf("Restarting %s service failed. Error: %v", serviceName, err))
+						dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedServiceRestart", "%s", fmt.Sprintf("Restarting %s service failed. Error: %v", serviceName, err))
 					}
 					return fmt.Errorf("could not apply update: restarting %s service failed. Error: %w", serviceName, err)
 				}
 			}
 			// TODO: Add a new MCN Condition to the API for service restarts?
 			if dn.nodeWriter != nil {
-				dn.nodeWriter.Eventf(corev1.EventTypeNormal, "ServiceRestart", "Config changes do not require reboot. Service %s was restarted.", serviceName)
+				dn.nodeWriter.Eventf(corev1.EventTypeNormal, "ServiceRestart", "%s", fmt.Sprintf("Config changes do not require reboot. Service %s was restarted.", serviceName))
 			}
 			logSystem("%s service restarted successfully!", serviceName)
 
@@ -325,7 +325,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 
 		if err := reloadService(serviceName); err != nil {
 			if dn.nodeWriter != nil {
-				dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedServiceReload", fmt.Sprintf("Reloading %s service failed. Error: %v", serviceName, err))
+				dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedServiceReload", "%s", fmt.Sprintf("Reloading %s service failed. Error: %v", serviceName, err))
 			}
 			return fmt.Errorf("could not apply update: reloading %s configuration failed. Error: %w", serviceName, err)
 		}
@@ -363,7 +363,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 
 		if err := restartService(serviceName); err != nil {
 			if dn.nodeWriter != nil {
-				dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedServiceReload", fmt.Sprintf("Reloading %s service failed. Error: %v", serviceName, err))
+				dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedServiceReload", "%s", fmt.Sprintf("Reloading %s service failed. Error: %v", serviceName, err))
 			}
 			return fmt.Errorf("could not apply update: reloading %s configuration failed. Error: %w", serviceName, err)
 		}
@@ -532,7 +532,7 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 	if mcDiff.osUpdate || mcDiff.extensions || mcDiff.kernelType || mcDiff.oclEnabled {
 		// We emitted this event before, so keep it
 		if dn.nodeWriter != nil {
-			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "InClusterUpgrade", fmt.Sprintf("Updating from oscontainer %s", newConfig.Spec.OSImageURL))
+			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "InClusterUpgrade", "%s", fmt.Sprintf("Updating from oscontainer %s", newConfig.Spec.OSImageURL))
 		}
 	}
 
@@ -558,7 +558,7 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 				// informative in such cases
 				reason = fmt.Sprintf("Updating to a target config with %s kernel", helpers.CanonicalizeKernelType(newConfig.Spec.KernelType))
 			}
-			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "OSUpdateStarted", reason)
+			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "OSUpdateStarted","%s", reason)
 		}
 
 		if err := dn.applyLayeredOSChanges(mcDiff, oldConfig, newConfig); err != nil {
@@ -1007,7 +1007,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		}
 		wrappedErr := fmt.Errorf("can't reconcile config %s with %s: %w", oldConfigName, newConfigName, reconcilableError)
 		if dn.nodeWriter != nil {
-			dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedToReconcile", wrappedErr.Error())
+			dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedToReconcile", "%s", wrappedErr.Error())
 		}
 		return &unreconcilableErr{wrappedErr}
 	}
@@ -3225,7 +3225,7 @@ func (dn *Daemon) reboot(rationale string) error {
 
 	// We'll only have a recorder if we're cluster driven
 	if dn.nodeWriter != nil {
-		dn.nodeWriter.Eventf(corev1.EventTypeNormal, "Reboot", rationale)
+		dn.nodeWriter.Eventf(corev1.EventTypeNormal, "Reboot", "%s",  rationale)
 	}
 	logSystem("initiating reboot: %s", rationale)
 

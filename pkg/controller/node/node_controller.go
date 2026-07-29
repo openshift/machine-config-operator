@@ -938,7 +938,7 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 			changed = true
 			// For the control plane, emit events for these since they're important
 			if pool.Name == ctrlcommon.MachineConfigPoolMaster {
-				ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "AnnotationChange", controlPlaneChangedMsg)
+				ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "AnnotationChange", "%s", controlPlaneChangedMsg)
 			}
 		}
 		if !reflect.DeepEqual(oldNode.Labels, curNode.Labels) {
