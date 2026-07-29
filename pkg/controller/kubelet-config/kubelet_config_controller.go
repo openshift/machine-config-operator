@@ -200,7 +200,8 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	klog.Info("Starting MachineConfigController-KubeletConfigController")
 	defer klog.Info("Shutting down MachineConfigController-KubeletConfigController")
 
-	// Ensure auto-sizing MachineConfigs exist only for master and worker pools
+	// Ensure auto-sizing MachineConfigs exist only for master and worker pools,
+	// and delete any stale auto-sizing MachineConfigs for non-default pools.
 	if err := ctrl.ensureAutoSizingMachineConfigs(context.TODO()); err != nil {
 		klog.Errorf("Error ensuring auto-sizing MachineConfigs: %v", err)
 		// Don't return - we want the controller to continue even if this fails

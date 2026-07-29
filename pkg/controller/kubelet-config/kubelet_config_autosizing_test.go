@@ -212,6 +212,62 @@ func TestEnsureAutoSizingMachineConfigs(t *testing.T) {
 	})
 }
 
+// TestEnsureAutoSizingMachineConfigsDeletesStale verifies that the controller deletes
+// stale auto-sizing MachineConfigs for non-default pools created by older MCO versions.
+func TestEnsureAutoSizingMachineConfigsDeletesStale(t *testing.T) {
+	t.Run("deletes stale auto-sizing MC for custom pool", func(t *testing.T) {
+		f := newFixture(t)
+		f.skipActionsValidation = true
+
+		workerPool := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
+		masterPool := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
+		customPool := helpers.NewMachineConfigPool("custom", nil, helpers.WorkerSelector, "v0")
+		f.mcpLister = append(f.mcpLister, workerPool, masterPool, customPool)
+
+		ctrl := f.newController(nil)
+		ctx := context.Background()
+
+		// Pre-create stale auto-sizing MC for custom pool
+		staleMC := helpers.NewMachineConfig("50-custom-auto-sizing-disabled", map[string]string{"node-role/custom": ""}, "dummy://", []ign3types.File{{}})
+		_, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Create(ctx, staleMC, metav1.CreateOptions{})
+		require.NoError(t, err)
+
+		err = ctrl.ensureAutoSizingMachineConfigs(ctx)
+		require.NoError(t, err)
+
+		mcList, err := ctrl.client.MachineconfigurationV1().MachineConfigs().List(ctx, metav1.ListOptions{})
+		require.NoError(t, err)
+
+		mcNames := make(map[string]bool)
+		for _, mc := range mcList.Items {
+			mcNames[mc.Name] = true
+		}
+		require.True(t, mcNames["50-worker-auto-sizing-disabled"], "should keep worker MC")
+		require.True(t, mcNames["50-master-auto-sizing-disabled"], "should keep master MC")
+		require.False(t, mcNames["50-custom-auto-sizing-disabled"], "should delete stale custom MC")
+	})
+
+	t.Run("no error when custom pool has no stale MC", func(t *testing.T) {
+		f := newFixture(t)
+		f.skipActionsValidation = true
+
+		workerPool := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
+		masterPool := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
+		customPool := helpers.NewMachineConfigPool("custom", nil, helpers.WorkerSelector, "v0")
+		f.mcpLister = append(f.mcpLister, workerPool, masterPool, customPool)
+
+		ctrl := f.newController(nil)
+		ctx := context.Background()
+
+		err := ctrl.ensureAutoSizingMachineConfigs(ctx)
+		require.NoError(t, err)
+
+		mcList, err := ctrl.client.MachineconfigurationV1().MachineConfigs().List(ctx, metav1.ListOptions{})
+		require.NoError(t, err)
+		require.Len(t, mcList.Items, 2, "should have only master and worker MCs")
+	})
+}
+
 // TestRunAutoSizingBootstrap validates the bootstrap function that generates auto-sizing MachineConfigs
 // for cluster initialization. This function is used during cluster bootstrap to ensure all pools
 // have auto-sizing configurations from the start.
