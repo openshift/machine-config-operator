@@ -1387,6 +1387,8 @@ func (b *buildReconciler) syncMachineOSConfigs(ctx context.Context) error {
 			return err
 		}
 
+		oclMOSCCount.Set(float64(len(moscs)))
+
 		for _, mosc := range moscs {
 			if err := b.syncMachineOSConfig(ctx, mosc); err != nil {
 				return fmt.Errorf("could not sync MachineOSConfig %q: %w", mosc.Name, err)

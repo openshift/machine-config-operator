@@ -15,6 +15,10 @@ spec:
       rules:
         - expr: sum(os_image_url_override)
           record: os_image_url_override:sum
+    - name: ocl-adoption.rules
+      rules:
+        - expr: mco_mosc_count
+          record: mco_mosc_count:sum
     - name: runc-deprecated
       rules:
         - alert: RuncDeprecated

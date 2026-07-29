@@ -129,6 +129,13 @@ var (
 			Name: "ocl_active_builds",
 			Help: "Number of OCL builds currently in progress per pool",
 		}, []string{"pool"})
+
+	// oclMOSCCount is the number of MachineOSConfig objects in the cluster, used to determine OCL adoption
+	oclMOSCCount = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "mco_mosc_count",
+			Help: "number of MachineOSConfig objects in the cluster; non-zero value indicates on-cluster layering is in use",
+		})
 )
 
 // Build state constants for consistent labeling
@@ -161,6 +168,7 @@ func RegisterOCLMetrics() error {
 		oclBuildQueueDuration,
 		oclImagePushDuration,
 		oclActiveBuilds,
+		oclMOSCCount,
 	})
 
 	if err != nil {

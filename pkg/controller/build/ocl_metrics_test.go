@@ -207,3 +207,17 @@ func TestImagePushDurationOnFailure(t *testing.T) {
 		t.Errorf("expected ocl_image_push_duration_seconds to have more observations after push failed, got count %v -> %v", before, after)
 	}
 }
+
+func TestOCLMOSCCount(t *testing.T) {
+	t.Parallel()
+
+	oclMOSCCount.Set(0)
+	if v := testutil.ToFloat64(oclMOSCCount); v != 0 {
+		t.Errorf("expected mco_mosc_count = 0, got %v", v)
+	}
+
+	oclMOSCCount.Set(3)
+	if v := testutil.ToFloat64(oclMOSCCount); v != 3 {
+		t.Errorf("expected mco_mosc_count = 3, got %v", v)
+	}
+}
