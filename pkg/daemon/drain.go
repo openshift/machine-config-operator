@@ -111,7 +111,7 @@ func (dn *Daemon) performDrain() error {
 	}); err != nil {
 		if wait.Interrupted(err) {
 			failMsg := fmt.Sprintf("failed to drain node: %s after 1 hour. Please see machine-config-controller logs for more information", dn.node.Name)
-			dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedToDrain", failMsg)
+			dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedToDrain", "%s", failMsg)
 
 			return errors.New(failMsg)
 

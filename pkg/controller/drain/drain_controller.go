@@ -418,7 +418,7 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 		if duration > ctrl.cfg.DrainTimeoutDuration {
 			logMessage := fmt.Sprintf("node %s: drain exceeded timeout: %v. Will continue to retry.", node.Name, ctrl.cfg.DrainTimeoutDuration)
 			klog.Error(logMessage)
-			ctrl.eventRecorder.Eventf(node, corev1.EventTypeWarning, "DrainFailed", logMessage)
+			ctrl.eventRecorder.Eventf(node, corev1.EventTypeWarning, "DrainFailed", "%s", logMessage)
 			ctrlcommon.MCCDrainErr.WithLabelValues(node.Name).Set(1)
 		}
 		break
@@ -493,7 +493,7 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 			logMessage := fmt.Sprintf("Drain failed. Drain has been failing for more than %v minutes. Waiting %v minutes then retrying. "+
 				"Error message from drain: %v", ctrl.cfg.DrainRequeueFailingThreshold.Minutes(), ctrl.cfg.DrainRequeueFailingDelay.Minutes(), err)
 			ctrl.logNode(node, "%s", logMessage)
-			ctrl.eventRecorder.Eventf(node, corev1.EventTypeWarning, "DrainThresholdExceeded", logMessage)
+			ctrl.eventRecorder.Eventf(node, corev1.EventTypeWarning, "DrainThresholdExceeded", "%s", logMessage)
 			ctrl.enqueueAfter(node, ctrl.cfg.DrainRequeueFailingDelay)
 		} else {
 			ctrl.logNode(node, "Drain failed. Waiting %v minute then retrying. Error message from drain: %v",
