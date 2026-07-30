@@ -949,15 +949,15 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("cluster version is %s", clusterVersion)
 		commitID, commitErr := getCommitID(oc, "machine-config", clusterVersion)
 		o.Expect(commitErr).NotTo(o.HaveOccurred())
-		// there is a case that in the payload no commit id from mco
-		if commitID == "" {
-			g.Skip("No code change from MCO, skip this case")
+		if commitID != "" {
+			logger.Infof("machine config commit id is %s", commitID)
+			goVersion, verErr := getGoVersion("machine-config-operator", commitID)
+			o.Expect(verErr).NotTo(o.HaveOccurred())
+			logger.Infof("go version is: %f", goVersion)
+			o.Expect(goVersion).Should(o.BeNumerically(">=", 1.15))
+		} else {
+			logger.Infof("No commit ID in release payload, skipping Go version check")
 		}
-		logger.Infof("machine config commit id is %s", commitID)
-		goVersion, verErr := getGoVersion("machine-config-operator", commitID)
-		o.Expect(verErr).NotTo(o.HaveOccurred())
-		logger.Infof("go version is: %f", goVersion)
-		o.Expect(goVersion).Should(o.BeNumerically(">=", 1.15))
 
 		exutil.By("verify TLS protocol version is 1.3")
 		intAPIServerURI, err := GetAPIServerInternalURI(oc.AsAdmin())

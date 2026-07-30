@@ -137,9 +137,10 @@ func getCommitID(oc *exutil.CLI, component, clusterVersion string) (string, erro
 			if len(fields) >= 3 {
 				return fields[2], nil
 			}
+			return "", nil
 		}
 	}
-	return "", fmt.Errorf("component %q not found in release info output", component)
+	return "", nil
 }
 
 func getGoVersion(component, commitID string) (float64, error) {
