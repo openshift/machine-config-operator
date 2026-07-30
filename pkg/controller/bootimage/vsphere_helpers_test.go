@@ -69,35 +69,46 @@ func TestIsInFolder(t *testing.T) {
 	workspaceFolder := newTestFolder("/dc1/vm/openshift4-folder")
 
 	tests := []struct {
-		name string
-		vm   *object.VirtualMachine
-		want bool
+		name   string
+		vm     *object.VirtualMachine
+		folder *object.Folder
+		want   bool
 	}{
 		{
-			name: "direct child of workspace folder",
-			vm:   newTestVM("/dc1/vm/openshift4-folder/infra-rhcos-fd1"),
-			want: true,
+			name:   "direct child of workspace folder",
+			vm:     newTestVM("/dc1/vm/openshift4-folder/infra-rhcos-fd1"),
+			folder: workspaceFolder,
+			want:   true,
 		},
 		{
-			name: "sibling folder",
-			vm:   newTestVM("/dc1/vm/customer-folder/infra-rhcos-fd1"),
-			want: false,
+			name:   "sibling folder",
+			vm:     newTestVM("/dc1/vm/customer-folder/infra-rhcos-fd1"),
+			folder: workspaceFolder,
+			want:   false,
 		},
 		{
-			name: "directly under the datacenter's default vm folder",
-			vm:   newTestVM("/dc1/vm/infra-rhcos-fd1"),
-			want: false,
+			name:   "directly under the datacenter's default vm folder",
+			vm:     newTestVM("/dc1/vm/infra-rhcos-fd1"),
+			folder: workspaceFolder,
+			want:   false,
 		},
 		{
-			name: "nested subfolder beneath the workspace folder",
-			vm:   newTestVM("/dc1/vm/openshift4-folder/nested/infra-rhcos-fd1"),
-			want: false,
+			name:   "nested subfolder beneath the workspace folder",
+			vm:     newTestVM("/dc1/vm/openshift4-folder/nested/infra-rhcos-fd1"),
+			folder: workspaceFolder,
+			want:   false,
+		},
+		{
+			name:   "nil folder (workspace folder unresolved) trusts the match",
+			vm:     newTestVM("/dc1/vm/customer-folder/infra-rhcos-fd1"),
+			folder: nil,
+			want:   true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, isInFolder(tt.vm, workspaceFolder))
+			assert.Equal(t, tt.want, isInFolder(tt.vm, tt.folder))
 		})
 	}
 }
