@@ -1,0 +1,37 @@
+mode: 0755
+path: "/usr/local/sbin/crio-dedup.sh"
+contents:
+  inline: |
+    #!/bin/bash
+    set -e
+
+    CRIO_IMAGE_DEDUP_ENABLED=${1:-false}
+
+    # Check if dedup is enabled
+    if [ "$CRIO_IMAGE_DEDUP_ENABLED" != "true" ]; then
+        echo "CRI-O image dedup is not enabled (CRIO_IMAGE_DEDUP=${CRIO_IMAGE_DEDUP_ENABLED}), skipping"
+        exit 0
+    fi
+
+    echo "Starting CRI-O image dedup at $(date)"
+
+    # Check if crio service is already running
+    if systemctl status crio.service >/dev/null 2>&1; then
+        echo "CRI-O service is already running, skipping dedup"
+        exit 0
+    fi
+
+    # Check if crun process is running
+    if pgrep -x crun >/dev/null 2>&1; then
+        echo "crun process is already running, skipping dedup"
+        exit 0
+    fi
+
+    # Run crio dedup (best-effort - do not fail if dedup fails)
+    echo "Running /usr/bin/crio dedup"
+    if /usr/bin/crio dedup --physical-disk-usage; then
+        echo "Finished CRI-O image dedup successfully at $(date)"
+    else
+        echo "Warning: CRI-O image dedup failed at $(date), but continuing"
+    fi
+    exit 0

@@ -370,3 +370,33 @@ func getCoreDNSWorkerPodCreationTime(oc *exutil.CLI) (string, error) {
 
 	return latestTimestamp, nil
 }
+
+var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator] MCO crio-dedup", func() {
+	defer g.GinkgoRecover()
+
+	var oc = exutil.NewCLI("mco-crio-dedup", exutil.KubeConfigPath())
+
+	g.JustBeforeEach(func() {
+		PreChecks(oc)
+	})
+
+	g.It("[OTP] verify crio-dedup is disabled by default", func() {
+		exutil.By("Get a worker node")
+		node := NewNodeList(oc.AsAdmin()).GetAllLinuxWorkerNodesOrFail()[0]
+		logger.Infof("Testing on node: %s", node.GetName())
+
+		exutil.By("Check that CRIO_IMAGE_DEDUP is set to false in /etc/crio-dedup-enabled.env")
+		envContent, err := node.DebugNodeWithChroot("cat", "/etc/crio-dedup-enabled.env")
+		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to read /etc/crio-dedup-enabled.env")
+		o.Expect(envContent).Should(o.ContainSubstring("CRIO_IMAGE_DEDUP=false"),
+			"Expected CRIO_IMAGE_DEDUP=false in /etc/crio-dedup-enabled.env")
+		logger.Infof("OK! CRIO_IMAGE_DEDUP is set to false")
+
+		exutil.By("Check that crio-dedup.service logs show dedup is not enabled")
+		serviceLogs, err := node.DebugNodeWithChroot("journalctl", "-u", "crio-dedup.service", "--no-pager")
+		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to get crio-dedup.service logs")
+		o.Expect(serviceLogs).Should(o.ContainSubstring("CRI-O image dedup is not enabled"),
+			"Expected 'CRI-O image dedup is not enabled' message in crio-dedup.service logs")
+		logger.Infof("OK! crio-dedup.service logs confirm dedup is disabled")
+	})
+})
