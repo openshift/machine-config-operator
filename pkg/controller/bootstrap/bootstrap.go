@@ -93,10 +93,9 @@ func (b *Bootstrap) Run(destDir string) error {
 	imagev1.AddToScheme(scheme)
 	codecFactory := serializer.NewCodecFactory(scheme)
 	decoder := codecFactory.UniversalDecoder(
-		mcfgv1.GroupVersion, apioperatorsv1alpha1.GroupVersion,
+		mcfgv1.GroupVersion, mcfgv1alpha1.GroupVersion, apioperatorsv1alpha1.GroupVersion,
 		apicfgv1.GroupVersion, apicfgv1alpha1.GroupVersion,
-		corev1.SchemeGroupVersion, mcfgv1alpha1.GroupVersion,
-		imagev1.SchemeGroupVersion)
+		corev1.SchemeGroupVersion, imagev1.SchemeGroupVersion)
 
 	var (
 		cconfig              *mcfgv1.ControllerConfig
@@ -115,9 +114,10 @@ func (b *Bootstrap) Run(destDir string) error {
 		imgCfg               *apicfgv1.Image
 		apiServer            *apicfgv1.APIServer
 		imageStream          *imagev1.ImageStream
-		iri                  *mcfgv1alpha1.InternalReleaseImage
+		iri                  bool
 		iriTLSCert           *corev1.Secret
 		osImageStream        *mcfgv1alpha1.OSImageStream
+		iriCredentialsSecret        *corev1.Secret
 	)
 	for _, info := range infos {
 		if info.IsDir() {
@@ -183,9 +183,13 @@ func (b *Bootstrap) Run(destDir string) error {
 				if obj.GetName() == ctrlcommon.APIServerInstanceName {
 					apiServer = obj
 				}
+			case *mcfgv1.InternalReleaseImage:
+				if obj.GetName() == ctrlcommon.InternalReleaseImageInstanceName {
+					iri = true
+				}
 			case *mcfgv1alpha1.InternalReleaseImage:
 				if obj.GetName() == ctrlcommon.InternalReleaseImageInstanceName {
-					iri = obj
+					iri = true
 				}
 			case *imagev1.ImageStream:
 				for _, tag := range obj.Spec.Tags {
@@ -201,6 +205,9 @@ func (b *Bootstrap) Run(destDir string) error {
 			case *corev1.Secret:
 				if obj.GetName() == ctrlcommon.InternalReleaseImageTLSSecretName {
 					iriTLSCert = obj
+				}
+				if obj.GetName() == ctrlcommon.InternalReleaseImageAuthSecretName {
+					iriCredentialsSecret = obj
 				}
 			case *mcfgv1alpha1.OSImageStream:
 				// If given, it's treated as user input with config such as the default stream
@@ -259,6 +266,17 @@ func (b *Bootstrap) Run(destDir string) error {
 	}
 
 	pullSecretBytes := pullSecret.Data[corev1.DockerConfigJsonKey]
+
+	// Merge IRI registry credentials into the pull secret for first-boot authentication.
+	// The template controller has not yet run at this point, so machine-config-daemon-pull.service
+	// would otherwise fail to authenticate against the IRI registry.
+	// Merge is a no-op if the feature gate is off or the IRI resource is absent.
+	merger := ctrlcommon.NewIRISecretMergerFromObjects(iriCredentialsSecret, cconfig, fgHandler, iri)
+	pullSecretBytes, err = merger.Merge(pullSecretBytes)
+	if err != nil {
+		return fmt.Errorf("could not merge IRI credentials into pull secret for bootstrap: %w", err)
+	}
+
 	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, pullSecretBytes, apiServer)
 	if err != nil {
 		return err
@@ -320,8 +338,8 @@ func (b *Bootstrap) Run(destDir string) error {
 	klog.Infof("Successfully generated MachineConfigs from kubelet configs.")
 
 	if fgHandler != nil && fgHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
-		if iri != nil {
-			iriConfigs, err := internalreleaseimage.RunInternalReleaseImageBootstrap(iri, iriTLSCert, cconfig)
+		if iri {
+			iriConfigs, err := internalreleaseimage.RunInternalReleaseImageBootstrap(iriTLSCert, iriCredentialsSecret, cconfig)
 			if err != nil {
 				return err
 			}

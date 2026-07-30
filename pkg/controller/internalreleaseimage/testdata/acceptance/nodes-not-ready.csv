@@ -1,0 +1,28 @@
+Scenario,,Node not ready,,,,,
+,,"Given an OVE cluster with 3 control plane nodes
+And all the IRI registries are accessible
+
+When the node master-0 becomes not ready,
+
+Then MachineConfigNode master-0 becomes stale
+And the InternalReleaseImage resource should be degraded
+And the cluster should remain able to serve (degraded) release images via api-int",,,,,
+,,,,,,,
+,,MasterConfigNode ,,,Node,,InternalReleaseImage
+resource,,master-0,master-1,master-2,master-0,,cluster
+"status 
+condition",Type,InternalReleaseImageDegraded,InternalReleaseImageDegraded,InternalReleaseImageDegraded,Ready,,Degraded
+,Status,True,False,False,Unknown,,True
+,Reason,RegistryUnreachable,AllReleasesAvailable,AllReleasesAvailable,NodeStatusUnknown,,SomeNodesUnavailable
+,Message,registry query...connection refused,All the release images are available,All the release images are available,Kubelet stopped posting node status.,,The following nodes are not ready: [master-0].
+"releases[0]
+conditions",name,ocp-release-bundle-4.22,ocp-release-bundle-4.22,ocp-release-bundle-4.22,,,ocp-release-bundle-4.22
+,image,localhost:22625/openshift/release-images@<digest>,localhost:22625/openshift/release-images@<digest>,localhost:22625/openshift/release-images@<digest>,,,api-int.<cluster-name>.<base-domain>:22625/openshift/release-images@<digest>
+,Type,Available,Available,Available,,,Available
+,Status,False,True,True,,,True
+,Reason,RegistryUnreachable,ReleaseImageAvailable,ReleaseImageAvailable,,,ReleaseImageAvailable
+,Message,Release bundle is unavailable: failed to reach the registry,The specified release image is available,The specified release image is available,,,The specified release image is available
+,Type,Degraded,Degraded,Degraded,,,Degraded
+,Status,True,False,False,,,True
+,Reason,RegistryUnreachable,ReleaseImageAvailable,ReleaseImageAvailable,,,SomeNodesUnavailable
+,Message,registry query...connection refused,ReleaseImageAvailable,ReleaseImageAvailable,,,The following nodes are not ready: [master-0].

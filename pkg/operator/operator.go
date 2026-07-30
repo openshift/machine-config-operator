@@ -127,7 +127,7 @@ type Operator struct {
 	apiserverLister          configlistersv1.APIServerLister
 	clusterVersionLister     configlistersv1.ClusterVersionLister
 	osImageStreamLister      mcfglistersv1alpha1.OSImageStreamLister
-	iriLister                mcfglistersv1alpha1.InternalReleaseImageLister
+	iriLister                mcfglistersv1.InternalReleaseImageLister
 	provisioningLister       dynamiclister.Lister
 	provisioningListerSynced cache.InformerSynced
 
@@ -228,7 +228,7 @@ func New(
 	moscInformer mcfginformersv1.MachineOSConfigInformer,
 	clusterVersionInformer configinformersv1.ClusterVersionInformer,
 	osImageStreamInformer mcfginformersv1alpha1.OSImageStreamInformer,
-	iriInformer mcfginformersv1alpha1.InternalReleaseImageInformer,
+	iriInformer mcfginformersv1.InternalReleaseImageInformer,
 	ctrlctx *ctrlcommon.ControllerContext,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()

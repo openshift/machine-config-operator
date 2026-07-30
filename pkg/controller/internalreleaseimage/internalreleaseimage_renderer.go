@@ -10,12 +10,9 @@ import (
 	"text/template"
 
 	"github.com/clarketm/json"
-	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -29,29 +26,38 @@ var (
 	// Templates folders are organized by those roles.
 	SupportedRoles = []string{"master", "worker"}
 
+	// Suffix of the name for the InternalReleaseImage machine configs.
+	machineConfigNameSuffix = "-internalreleaseimage"
 	// Format of the name for the InternalReleaseImage machine configs.
-	machineConfigNameFmt = "02-%s-internalreleaseimage"
+	machineConfigNameFmt = "02-%s" + machineConfigNameSuffix
 )
 
 // Renderer takes care of generating the required ignition (by role) for
 // the InternalReleaseImage machine config resources. It can also create
 // a MachineConfig instance when required.
 type Renderer struct {
-	role      string
-	iri       *mcfgv1alpha1.InternalReleaseImage
-	iriSecret *corev1.Secret
-	cconfig   *mcfgv1.ControllerConfig
+	role                         string
+	iriSecret                    *corev1.Secret
+	iriRegistryCredentialsSecret *corev1.Secret
+	cconfig                      *mcfgv1.ControllerConfig
 }
 
 // NewRendererByRole creates a new Renderer instance for generating
 // the machine config for the given role.
-func NewRendererByRole(role string, iri *mcfgv1alpha1.InternalReleaseImage, iriSecret *corev1.Secret, cconfig *mcfgv1.ControllerConfig) *Renderer {
+func NewRendererByRole(role string, iriSecret, iriRegistryCredentialsSecret *corev1.Secret, cconfig *mcfgv1.ControllerConfig) *Renderer {
 	return &Renderer{
-		role:      role,
-		iri:       iri,
-		iriSecret: iriSecret,
-		cconfig:   cconfig,
+		role:                         role,
+		iriSecret:                    iriSecret,
+		iriRegistryCredentialsSecret: iriRegistryCredentialsSecret,
+		cconfig:                      cconfig,
 	}
+}
+
+// NewSimpleRenderer creates a minimal Renderer that only knows its role.
+// Use this when secrets and ControllerConfig are not needed (e.g., rendering
+// a disabled service configuration).
+func NewSimpleRenderer(role string) *Renderer {
+	return &Renderer{role: role}
 }
 
 // GetMachineConfigName returns the name of the MachineConfig instance.
@@ -59,15 +65,13 @@ func (r *Renderer) GetMachineConfigName() string {
 	return fmt.Sprintf(machineConfigNameFmt, r.role)
 }
 
-// CreateEmptyMachineConfig creates an empty MachineConfig (without any ignition configured) owned by InternalReleaseImage.
-func (r *Renderer) CreateEmptyMachineConfig() (*mcfgv1.MachineConfig, error) {
+// createEmptyMachineConfig creates an empty MachineConfig (without any ignition configured).
+func (r *Renderer) createEmptyMachineConfig() (*mcfgv1.MachineConfig, error) {
 	mc, err := ctrlcommon.MachineConfigFromIgnConfig(r.role, r.GetMachineConfigName(), ctrlcommon.NewIgnConfig())
 	if err != nil {
 		return nil, err
 	}
 
-	cref := metav1.NewControllerRef(r.iri, controllerKind)
-	mc.SetOwnerReferences([]metav1.OwnerReference{*cref})
 	mc.SetAnnotations(map[string]string{
 		ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
 	})
@@ -82,27 +86,27 @@ func (r *Renderer) RenderAndSetIgnition(mc *mcfgv1.MachineConfig) error {
 		return err
 	}
 
-	ignCfg, err := r.generateIgnitionFromTemplates(rc)
+	units, err := r.renderTemplateFolder(rc, filepath.Join(r.role, "units"))
+	if err != nil {
+		return err
+	}
+	files, err := r.renderTemplateFolder(rc, filepath.Join(r.role, "files"))
 	if err != nil {
 		return err
 	}
 
-	rawIgn, err := json.Marshal(ignCfg)
-	if err != nil {
-		return err
-	}
-
-	mc.Spec.Config.Raw = rawIgn
-	return nil
+	return r.transpileAndSetIgnition(mc, files, units)
 }
 
 // renderContext is a type used to hold the configuration required
 // for current the template rendering.
 type renderContext struct {
+	RegistryEnabled     bool
 	DockerRegistryImage string
 	IriTLSKey           string
 	IriTLSCert          string
 	RootCA              string
+	IriHtpasswd         string
 }
 
 // newRenderContext creates a new renderContext instance.
@@ -115,11 +119,17 @@ func (r *Renderer) newRenderContext() (*renderContext, error) {
 	if err != nil {
 		return nil, err
 	}
+	// iriRegistryCredentialsSecret is always non-nil here: the IRI controller
+	// fetches it and fails loudly if not found (auth is mandatory).
+	iriHtpasswd := string(r.iriRegistryCredentialsSecret.Data["htpasswd"])
+
 	return &renderContext{
+		RegistryEnabled:     true,
 		DockerRegistryImage: r.cconfig.Spec.Images[templatectrl.DockerRegistryKey],
 		IriTLSKey:           iriTLSKey,
 		IriTLSCert:          iriTLSCert,
 		RootCA:              string(r.cconfig.Spec.RootCAData),
+		IriHtpasswd:         iriHtpasswd,
 	}, nil
 }
 
@@ -132,24 +142,38 @@ func (r *Renderer) extractTLSCertFieldFromSecret(secret *corev1.Secret, fieldNam
 	return string(raw), nil
 }
 
-// generateIgnitionFromTemplates creates the required ignition for the given roles
-// using the InternalReleaseImage templates.
-func (r *Renderer) generateIgnitionFromTemplates(rc *renderContext) (*ign3types.Config, error) {
-	// Render template subfolders, if defined.
-	units, err := r.renderTemplateFolder(rc, filepath.Join(r.role, "units"))
-	if err != nil {
-		return nil, err
-	}
-	files, err := r.renderTemplateFolder(rc, filepath.Join(r.role, "files"))
-	if err != nil {
-		return nil, err
+// RenderDisabledRegistryService renders the iri-registry systemd unit with
+// RegistryEnabled=false (producing a no-op ExecStart=/bin/true service) and
+// sets the resulting ignition on the specified MachineConfig.
+// This method does not require secrets or ControllerConfig.
+func (r *Renderer) RenderDisabledRegistryService(mc *mcfgv1.MachineConfig) error {
+	rc := &renderContext{
+		RegistryEnabled: false,
 	}
 
+	units, err := r.renderTemplateFolder(rc, filepath.Join("master", "units"))
+	if err != nil {
+		return err
+	}
+
+	return r.transpileAndSetIgnition(mc, nil, units)
+}
+
+// transpileAndSetIgnition transpiles the rendered files and units to an Ignition
+// config and sets it on the specified MachineConfig.
+func (r *Renderer) transpileAndSetIgnition(mc *mcfgv1.MachineConfig, files, units []string) error {
 	ignCfg, err := ctrlcommon.TranspileCoreOSConfigToIgn(files, units)
 	if err != nil {
-		return nil, fmt.Errorf("error transpiling CoreOS config to Ignition config: %w", err)
+		return fmt.Errorf("error transpiling CoreOS config to Ignition: %w", err)
 	}
-	return ignCfg, nil
+
+	rawIgn, err := json.Marshal(ignCfg)
+	if err != nil {
+		return err
+	}
+
+	mc.Spec.Config.Raw = rawIgn
+	return nil
 }
 
 // renderTemplateFolder renders all the templates found in the specified folder.

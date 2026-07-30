@@ -448,8 +448,12 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &operatorv1alpha1.ClusterAPIInstallerComponentApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("ClusterAPIInstallerComponentImage"):
 		return &operatorv1alpha1.ClusterAPIInstallerComponentImageApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("ClusterAPIInstallerComponentSource"):
+		return &operatorv1alpha1.ClusterAPIInstallerComponentSourceApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("ClusterAPIInstallerRevision"):
 		return &operatorv1alpha1.ClusterAPIInstallerRevisionApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("ClusterAPIInstallerRevisionManifestSubstitution"):
+		return &operatorv1alpha1.ClusterAPIInstallerRevisionManifestSubstitutionApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("ClusterAPISpec"):
 		return &operatorv1alpha1.ClusterAPISpecApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("ClusterAPIStatus"):
