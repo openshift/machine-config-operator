@@ -219,7 +219,14 @@ func findAllRequiredResources(ctx context.Context, finder *find.Finder, provider
 // name match alone doesn't mean the VM is the one MCO manages. MCO always creates/imports templates
 // directly into providerSpec.Workspace.Folder, so anything else found by name is customer-managed and
 // must be left untouched.
+//
+// A nil folder (the workspace folder itself couldn't be resolved) trusts the match instead of
+// rejecting it: verifying locality isn't a prerequisite for this function's caller, and anything that
+// actually needs to write to vSphere re-resolves the same folder and hard-fails there if it's broken.
 func isInFolder(vm *object.VirtualMachine, folder *object.Folder) bool {
+	if folder == nil {
+		return true
+	}
 	return path.Dir(vm.InventoryPath) == folder.InventoryPath
 }
 
@@ -286,9 +293,15 @@ func getDiskTypeFromInstallConfig(ctx context.Context, kubeClient clientset.Inte
 }
 
 // resolveExistingTemplateVM locates the template VM for a failure domain using a two-step lookup: providerSpec.Template first
-// then the infra computed name. If neither exists, it creates a fresh template from the OVA and signals the caller via created=true.
-// resolvedName is the vSphere name of the VM that was actually found, which may differ from name when the VM was located
-// via providerSpec.Template; callers must use resolvedName (not name) for divergence checks.
+// then the infra computed name. If neither exists in the workspace folder, it creates a fresh template from the OVA and
+// signals the caller via created=true. resolvedName is the vSphere name of the VM that was actually found, which may differ
+// from name when the VM was located via providerSpec.Template; callers must use resolvedName (not name) for divergence checks.
+//
+// A name match outside providerSpec.Workspace.Folder is never treated as the existing template: govmomi's finder searches
+// the entire vCenter inventory by name, so a match elsewhere may be a customer-managed VM MCO must not touch (see isInFolder).
+// If the workspace folder itself can't be resolved, this check is skipped (logging a warning) rather than failing the
+// reconcile: verifying it isn't this function's job — it's a locality check for classification, not a prerequisite for
+// action.
 func resolveExistingTemplateVM(
 	ctx context.Context,
 	finder *find.Finder,
@@ -304,31 +317,40 @@ func resolveExistingTemplateVM(
 	computedName := fmt.Sprintf("%s-rhcos-%s", infraID, failureDomain.Name)
 	var notFoundErr *find.NotFoundError
 
+	workspaceFolder, folderErr := finder.Folder(ctx, providerSpec.Workspace.Folder)
+	if folderErr != nil {
+		klog.Warningf("failed to resolve workspace folder %q; cannot verify template VM locality this reconcile, proceeding with name-based lookup only: %v", providerSpec.Workspace.Folder, folderErr)
+	}
+
 	// Check providerSpec.Template first so a freshly-added failure domain whose MachineSet
 	// already has a valid template doesn't fail just because the infra computed name isn't a match.
 	if providerSpec.Template != "" && providerSpec.Template != computedName {
 		tmplVM, tmplErr := finder.VirtualMachine(ctx, providerSpec.Template)
-		if tmplErr == nil {
+		switch {
+		case tmplErr == nil && isInFolder(tmplVM, workspaceFolder):
 			return tmplVM, providerSpec.Template, false, nil
-		}
-
-		if errors.As(tmplErr, &notFoundErr) {
+		case tmplErr == nil:
+			klog.Infof("providerSpec.Template %s exists outside the expected workspace folder %s; leaving the customer-managed VM untouched and falling back to computed name %s", providerSpec.Template, providerSpec.Workspace.Folder, computedName)
+		case errors.As(tmplErr, &notFoundErr):
 			klog.Infof("providerSpec.Template %s not found in vSphere; falling back to computed name %s", providerSpec.Template, computedName)
-		} else {
+		default:
 			klog.Warningf("Unexpected error looking up providerSpec.Template %s: %v; falling back to computed name %s", providerSpec.Template, tmplErr, computedName)
 		}
 	}
 
 	vm, err = finder.VirtualMachine(ctx, computedName)
-	if err == nil {
+	switch {
+	case err == nil && isInFolder(vm, workspaceFolder):
 		return vm, computedName, false, nil
-	}
-
-	if !errors.As(err, &notFoundErr) {
+	case err == nil:
+		klog.Infof("VM %s exists outside the expected workspace folder %s; leaving the customer-managed VM untouched and creating a fresh template", computedName, providerSpec.Workspace.Folder)
+	case !errors.As(err, &notFoundErr):
 		return nil, "", false, fmt.Errorf("finder had error: %w", err)
 	}
 
-	// Computed name not found; check for a rollback VM left by a prior mid-swap crash.
+	// Computed name not found in the workspace folder — either nothing exists there, or the name is
+	// held by a customer-managed VM elsewhere in the inventory that must be left alone. Either way,
+	// check for a rollback VM left by a prior mid-swap crash before creating a fresh template.
 	oldTempName := atomicTempName("mco-old", computedName)
 	oldVM, oldErr := finder.VirtualMachine(ctx, oldTempName)
 	if oldErr != nil {
@@ -708,50 +730,58 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 				return "", false, fmt.Errorf("unable to extract properties from existing Template VM: %w", err)
 			}
 
-			if vmMo.Summary.Config.Product != nil {
-				templateProductVersion := vmMo.Summary.Config.Product.Version
-				if templateProductVersion == "" {
-					return "", false, fmt.Errorf("unable to determine RHCOS version of virtual machine: %s", providerSpec.Template)
-				}
-
-				if templateProductVersion != release {
-					klog.Infof("Existing RHCOS v%s does not match current RHCOS v%s. Starting reconciliation process.", templateProductVersion, release)
-
-					// Find and download the relevant OVA file
-					ova, err := streamData.QueryDisk(arch, "vmware", "ova")
-					if err != nil {
-						return "", false, err
-					}
-
-					ovaPath, err := cache.DownloadOva(ova)
-					if err != nil {
-						return "", false, fmt.Errorf("failed to download %s: %w", ova.Location, err)
-					}
-
-					if len(resolvedName) > 80 {
-						return "", false, fmt.Errorf("length of VM template name `%s` exceeds the permitted limit of 80 characters", resolvedName)
-					}
-
-					diskType := getDiskTypeFromExistingVM(vmMo)
-
-					err = createNewVMTemplateWithNameForFailureDomain(ctx, providerSpec, failureDomain, finder, client, tagManager, resolvedName, ovaPath, infraID, diskType)
-					if err != nil {
-						return "", false, err
-					}
-					return resolvedName, true, nil
-				}
-
-				klog.Infof("Existing RHCOS v%s does match current RHCOS v%s. Skipping reconciliation process using govmomi.", templateProductVersion, release)
-				if providerSpec.Template != resolvedName {
-					klog.Infof("ProviderSpec template name: %s has diverged from the VM Template of name: %s that exists in VSphere. Reconciling the name change.", providerSpec.Template, resolvedName)
-					return resolvedName, true, nil
-				}
-
-			} else {
+			if vmMo.Summary.Config.Product == nil {
 				return "", false, fmt.Errorf("unable to determine RHCOS version of virtual machine: %s", providerSpec.Template)
 			}
+
+			templateProductVersion := vmMo.Summary.Config.Product.Version
+			if templateProductVersion == "" {
+				return "", false, fmt.Errorf("unable to determine RHCOS version of virtual machine: %s", providerSpec.Template)
+			}
+
+			if templateProductVersion != release {
+				klog.Infof("Existing RHCOS v%s does not match current RHCOS v%s. Starting reconciliation process.", templateProductVersion, release)
+
+				// Find and download the relevant OVA file
+				ova, err := streamData.QueryDisk(arch, "vmware", "ova")
+				if err != nil {
+					return "", false, err
+				}
+
+				ovaPath, err := cache.DownloadOva(ova)
+				if err != nil {
+					return "", false, fmt.Errorf("failed to download %s: %w", ova.Location, err)
+				}
+
+				if len(resolvedName) > 80 {
+					return "", false, fmt.Errorf("length of VM template name `%s` exceeds the permitted limit of 80 characters", resolvedName)
+				}
+
+				diskType := getDiskTypeFromExistingVM(vmMo)
+
+				err = createNewVMTemplateWithNameForFailureDomain(ctx, providerSpec, failureDomain, finder, client, tagManager, resolvedName, ovaPath, infraID, diskType)
+				if err != nil {
+					return "", false, err
+				}
+				return resolvedName, true, nil
+			}
+
+			klog.Infof("Existing RHCOS v%s does match current RHCOS v%s. Skipping reconciliation process using govmomi.", templateProductVersion, release)
+			if providerSpec.Template != resolvedName {
+				klog.Infof("ProviderSpec template name: %s has diverged from the VM Template of name: %s that exists in VSphere. Reconciling the name change.", providerSpec.Template, resolvedName)
+				return resolvedName, true, nil
+			}
+			return resolvedName, false, nil
 		}
 	}
 
-	return "", false, nil
+	workspaceDetails := fmt.Sprintf("server: %s, datacenter: %s, datastore: %s, resourcePool: %s",
+		providerSpec.Workspace.Server, providerSpec.Workspace.Datacenter, providerSpec.Workspace.Datastore, providerSpec.Workspace.ResourcePool)
+	// vmGroup only applies to HostGroup-zonal failure domains (VSphereFailureDomainZoneAffinity.Type
+	// == HostGroup; see the vmGroup derivation above) — omit it here when unset rather than implying
+	// it's a universal match criterion for every failure domain type (e.g. ComputeCluster-zoned ones).
+	if providerSpec.Workspace.VMGroup != "" {
+		workspaceDetails += fmt.Sprintf(", vmGroup: %s", providerSpec.Workspace.VMGroup)
+	}
+	return "", false, fmt.Errorf("providerSpec workspace (%s) does not match any vCenter/failure domain in the Infrastructure object", workspaceDetails)
 }
