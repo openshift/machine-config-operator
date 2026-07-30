@@ -43,8 +43,6 @@ var (
 		kubeletHealthzEnabled      bool
 		kubeletHealthzEndpoint     string
 		promMetricsURL             string
-		tlsCipherSuites            []string
-		tlsMinVersion              string
 	}
 )
 
@@ -59,8 +57,10 @@ func init() {
 	startCmd.PersistentFlags().BoolVar(&startOpts.kubeletHealthzEnabled, "kubelet-healthz-enabled", true, "kubelet healthz endpoint monitoring")
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeletHealthzEndpoint, "kubelet-healthz-endpoint", "http://localhost:10248/healthz", "healthz endpoint to check health")
 	startCmd.PersistentFlags().StringVar(&startOpts.promMetricsURL, "metrics-url", ctrlcommon.DefaultMetricsBindAddress, "URL for prometheus metrics listener")
-	startCmd.PersistentFlags().StringSliceVar(&startOpts.tlsCipherSuites, "tls-cipher-suites", nil, "Comma-separated list of cipher suites for the metrics server")
-	startCmd.PersistentFlags().StringVar(&startOpts.tlsMinVersion, "tls-min-version", "VersionTLS12", "Minimum TLS version supported for the metrics server")
+	startCmd.PersistentFlags().StringSlice("tls-cipher-suites", nil, "")
+	startCmd.PersistentFlags().String("tls-min-version", "", "")
+	_ = startCmd.PersistentFlags().MarkDeprecated("tls-cipher-suites", "always using the APIServer setting")
+	_ = startCmd.PersistentFlags().MarkDeprecated("tls-min-version", "always using the APIServer setting")
 }
 
 //nolint:gocritic

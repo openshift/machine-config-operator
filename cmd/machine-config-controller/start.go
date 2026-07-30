@@ -47,8 +47,6 @@ var (
 		templates                string
 		promMetricsListenAddress string
 		resourceLockNamespace    string
-		tlsCipherSuites          []string
-		tlsMinVersion            string
 		streamsCache             string
 	}
 )
@@ -58,9 +56,11 @@ func init() {
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeconfig, "kubeconfig", "", "Kubeconfig file to access a remote cluster (testing only)")
 	startCmd.PersistentFlags().StringVar(&startOpts.resourceLockNamespace, "resourcelock-namespace", metav1.NamespaceSystem, "Path to the template files used for creating MachineConfig objects")
 	startCmd.PersistentFlags().StringVar(&startOpts.promMetricsListenAddress, "metrics-listen-address", ctrlcommon.DefaultMetricsBindAddress, "Listen address for prometheus metrics listener")
-	startCmd.PersistentFlags().StringSliceVar(&startOpts.tlsCipherSuites, "tls-cipher-suites", nil, "Comma-separated list of cipher suites for the metrics server")
-	startCmd.PersistentFlags().StringVar(&startOpts.tlsMinVersion, "tls-min-version", "VersionTLS12", "Minimum TLS version supported for the metrics server")
 	startCmd.PersistentFlags().StringVar(&startOpts.streamsCache, "streams-cache", "/var/cache/mcc", "Directory to use as cache for streams discovery")
+	startCmd.PersistentFlags().StringSlice("tls-cipher-suites", nil, "")
+	startCmd.PersistentFlags().String("tls-min-version", "", "")
+	_ = startCmd.PersistentFlags().MarkDeprecated("tls-cipher-suites", "always using the APIServer setting")
+	_ = startCmd.PersistentFlags().MarkDeprecated("tls-min-version", "always using the APIServer setting")
 }
 
 func runStartCmd(_ *cobra.Command, _ []string) {
