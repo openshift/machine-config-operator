@@ -43,7 +43,7 @@ func runbootstrapCmd(_ *cobra.Command, _ []string) {
 		klog.Fatalf("--dest-dir or --manifest-dir not set")
 	}
 
-	if err := bootstrap.New(rootOpts.templates, bootstrapOpts.manifestsDir, bootstrapOpts.pullSecretFile).Run(bootstrapOpts.destinationDir); err != nil {
+	if err := bootstrap.New(rootOpts.templates, bootstrapOpts.manifestsDir, bootstrapOpts.pullSecretFile, nil).Run(bootstrapOpts.destinationDir); err != nil {
 		klog.Fatalf("error running MCC[BOOTSTRAP]: %v", err)
 	}
 }

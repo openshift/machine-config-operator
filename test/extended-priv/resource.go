@@ -620,3 +620,23 @@ func GetResourcesNamesSet(resources []ResourceInterface) sets.Set[string] {
 	}
 	return namesSet
 }
+
+// Delete removes all resources in the list from the cluster
+func (l *ResourceList) Delete(extraParams ...string) error {
+	params := l.getCommonParams()
+	params = append(params, l.extraParams...)
+	params = append(params, extraParams...)
+
+	_, err := l.oc.WithoutNamespace().Run("delete").Args(params...).Output()
+	if err != nil {
+		logger.Errorf("%v", err)
+	}
+
+	return err
+}
+
+// DeleteOrFail deletes all resources in the list, and if any error happens it fails the testcase
+func (l *ResourceList) DeleteOrFail(extraParams ...string) {
+	err := l.Delete(extraParams...)
+	o.Expect(err).NotTo(o.HaveOccurred())
+}

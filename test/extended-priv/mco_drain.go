@@ -281,8 +281,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		exutil.By("Set maxUnavailable value")
 		maxUnavailable := 2
+		defer mcp.SetSpec(mcp.GetSpecOrFail())
 		mcp.SetMaxUnavailable(maxUnavailable)
-		defer mcp.RemoveMaxUnavailable()
 
 		exutil.By("Create a MC to deploy a config file")
 		filePath := "/etc/TC-49672-mco-test-file-order"

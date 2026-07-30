@@ -339,8 +339,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		}
 
 		exutil.By("Set the maxUnavailable value to 2")
+		defer mcp.SetSpec(mcp.GetSpecOrFail())
 		mcp.SetMaxUnavailable(2)
-		defer mcp.RemoveMaxUnavailable()
 		logger.Infof("OK!\n")
 
 		exutil.By("Manually cordon one of the nodes")
