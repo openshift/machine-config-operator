@@ -2523,26 +2523,21 @@ func (dn *Daemon) writeFiles(files []ign3types.File, skipCertificateWrite bool) 
 // Ensures that both the SSH root directory (/home/core/.ssh) as well as any
 // subdirectories are created with the correct (0700) permissions.
 func createSSHKeyDir(authKeyDir string) error {
-	klog.Infof("Creating missing SSH key dir at %q", authKeyDir)
-
 	mkdir := func(dir string) error {
 		return exec.Command("runuser", "-u", constants.CoreUserName, "--", "mkdir", "-m", "0700", "-p", dir).Run()
 	}
 
-	// Create the root SSH key directory (/home/core/.ssh) first (if there does not exist one).
+	// Create the root SSH key directory (/home/core/.ssh) first (if it does not exist).
+	// This must be a separate mkdir call: "mkdir -m 0700 -p" only applies the mode
+	// to the leaf directory, leaving any intermediate directories at the umask default (0755).
 	if _, err := os.Stat(constants.CoreUserSSHPath); os.IsNotExist(err) {
-		if err := mkdir(filepath.Dir(constants.RHCOS8SSHKeyPath)); err != nil {
+		if err := mkdir(constants.CoreUserSSHPath); err != nil {
 			return err
 		}
 	}
 
-	// For RHCOS 8, creating /home/core/.ssh is all that is needed.
-	if authKeyDir == constants.RHCOS8SSHKeyPath {
-		return nil
-	}
-
-	// Create the next level of the SSH key directory (/home/core/.ssh/authorized_keys.d) for RHCOS 9 cases.
-	return mkdir(filepath.Dir(constants.RHCOS9SSHKeyPath))
+	// Create the full target directory (e.g. /home/core/.ssh/authorized_keys.d).
+	return mkdir(authKeyDir)
 }
 
 func (dn *Daemon) atomicallyWriteSSHKey(authKeyPath, keys string) error {
@@ -2671,13 +2666,6 @@ func (dn *Daemon) updateKubeConfigPermission() error {
 	return nil
 }
 
-// Determines if we should use the new SSH key path
-// (/home/core/.ssh/authorized_keys.d/ignition) or the old SSH key path
-// (/home/core/.ssh/authorized_keys)
-func (dn *Daemon) useNewSSHKeyPath() bool {
-	return dn.os.IsEL9() || dn.os.IsEL10() || dn.os.IsFCOS() || dn.os.IsSCOS()
-}
-
 // Update a given PasswdUser's SSHKey
 func (dn *Daemon) updateSSHKeys(newUsers, oldUsers []ign3types.PasswdUser) error {
 	klog.Info("updating SSH keys")
@@ -2705,28 +2693,9 @@ func (dn *Daemon) updateSSHKeys(newUsers, oldUsers []ign3types.PasswdUser) error
 		}
 	}
 
-	authKeyPath := constants.RHCOS8SSHKeyPath
-
 	if !dn.mock {
-		// In RHCOS 8.6 or lower, the keys were written to `/home/core/.ssh/authorized_keys`.
-		// RHCOS 9.0+, FCOS, and SCOS will however expect the keys at `/home/core/.ssh/authorized_keys.d/ignition`.
-		// Check if the authorized_keys file at the legacy path exists. If it does, remove it.
-		// It will be recreated at the new fragment path by the atomicallyWriteSSHKey function
-		// that is called right after.
-		if dn.useNewSSHKeyPath() {
-			authKeyPath = constants.RHCOS9SSHKeyPath
-
-			if err := cleanSSHKeyPaths(); err != nil {
-				return err
-			}
-
-			if err := removeNonIgnitionKeyPathFragments(); err != nil {
-				return err
-			}
-		}
-
 		// Note we write keys only for the core user and so this ignores the user list
-		return dn.atomicallyWriteSSHKey(authKeyPath, concatSSHKeys)
+		return dn.atomicallyWriteSSHKey(constants.RHCOSDefaultSSHKeyPath, concatSSHKeys)
 	}
 
 	return nil
@@ -2777,50 +2746,6 @@ func fileExists(path string) (bool, error) {
 
 	// An unexpected error occurred.
 	return false, fmt.Errorf("cannot stat file: %w", err)
-}
-
-// Removes the old SSH key path (/home/core/.ssh/authorized_keys), if found.
-func cleanSSHKeyPaths() error {
-	oldKeyExists, err := fileExists(constants.RHCOS8SSHKeyPath)
-	if err != nil {
-		return err
-	}
-
-	if !oldKeyExists {
-		return nil
-	}
-
-	if err := os.RemoveAll(constants.RHCOS8SSHKeyPath); err != nil {
-		return fmt.Errorf("failed to remove path '%s': %w", constants.RHCOS8SSHKeyPath, err)
-	}
-
-	return nil
-}
-
-// Ensures authorized_keys.d/ignition is the only fragment that exists within the /home/core/.ssh dir.
-func removeNonIgnitionKeyPathFragments() error {
-	// /home/core/.ssh/authorized_keys.d
-	authKeyFragmentDirPath := filepath.Dir(constants.RHCOS9SSHKeyPath)
-	// ignition
-	authKeyFragmentBasename := filepath.Base(constants.RHCOS9SSHKeyPath)
-
-	keyFragmentsDir, err := ctrlcommon.ReadDir(authKeyFragmentDirPath)
-	if err == nil {
-		for _, fragment := range keyFragmentsDir {
-			if fragment.Name() != authKeyFragmentBasename {
-				keyPath := filepath.Join(authKeyFragmentDirPath, fragment.Name())
-				err := os.RemoveAll(keyPath)
-				if err != nil {
-					return fmt.Errorf("failed to remove path '%s': %w", keyPath, err)
-				}
-			}
-		}
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		// This shouldn't ever happen
-		return fmt.Errorf("unexpectedly failed to get info for path '%s': %w", constants.RHCOS9SSHKeyPath, err)
-	}
-
-	return nil
 }
 
 // InplaceUpdateViaNewContainer runs rpm-ostree ex deploy-via-self
