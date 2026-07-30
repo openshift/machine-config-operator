@@ -15,6 +15,8 @@ import (
 
 	osconfigv1 "github.com/openshift/api/config/v1"
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
+
+	"github.com/openshift/machine-config-operator/pkg/controller/bootimage/marketplace"
 )
 
 // AzureVariant represents the different Azure marketplace image variants
@@ -189,7 +191,7 @@ func reconcileAWSProviderSpec(streamData *stream.Stream, arch string, _ *osconfi
 		newAMI = awsRegionImage.Image
 
 	case amiKindMarketplace:
-		klog.Infof("MachineSet %s: detected marketplace AMI %s (%s)", machineSetName, currentAMI, productName(productID))
+		klog.Infof("MachineSet %s: detected marketplace AMI %s (%s)", machineSetName, currentAMI, marketplace.ProductName(productID))
 		newAMI, rhcosVersion, err = resolveMarketplaceAMI(ctx, ec2Client, streamData, arch, productID, machineSetName)
 		if err != nil {
 			return false, false, nil, "", err
@@ -199,7 +201,7 @@ func reconcileAWSProviderSpec(streamData *stream.Stream, arch string, _ *osconfi
 		}
 
 	case amiKindROSA:
-		klog.Infof("MachineSet %s: detected ROSA marketplace AMI %s (%s)", machineSetName, currentAMI, productName(productID))
+		klog.Infof("MachineSet %s: detected ROSA marketplace AMI %s (%s)", machineSetName, currentAMI, marketplace.ProductName(productID))
 		newAMI, rhcosVersion, err = resolveMarketplaceAMI(ctx, ec2Client, streamData, arch, productID, machineSetName)
 		if err != nil {
 			return false, false, nil, "", err
