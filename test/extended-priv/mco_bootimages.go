@@ -1043,11 +1043,18 @@ func CheckCurrentOSImageIsUpdated(bir BootImageResource) {
 	}
 }
 
-// setArchitectureAndCheckStatus sets a different architecture in the cloned machineset and checks the status
+// setArchitectureAndCheckStatus sets the capacity labels annotation on the cloned machineset and checks the status.
+// If archValue already contains "kubernetes.io/arch=", it is used as the raw annotation value.
+// Otherwise, "kubernetes.io/arch=" is prepended automatically.
 func setArchitectureAndCheckStatus(clonedMS *MachineSet, machineConfiguration *MachineConfiguration, archValue string) {
-	exutil.By(fmt.Sprintf("Set a %s architecture in the cloned machineset", archValue))
-	o.Expect(clonedMS.SetArchitecture(archValue)).To(o.Succeed(), "Error setting architecture %s in %s", archValue, clonedMS)
-	logger.Infof("Architecture %s set in %s\n", archValue, clonedMS)
+	labels := archValue
+	if !strings.Contains(archValue, "kubernetes.io/arch=") {
+		labels = "kubernetes.io/arch=" + archValue
+	}
+
+	exutil.By(fmt.Sprintf("Set a %s architecture in the cloned machineset", labels))
+	o.Expect(clonedMS.SetAutoscalerLabels(labels)).To(o.Succeed(), "Error setting architecture %s in %s", labels, clonedMS)
+	logger.Infof("Architecture %s set in %s\n", labels, clonedMS)
 
 	exutil.By("Check that no failures are being reported")
 	o.Eventually(machineConfiguration, "5m", "20s").Should(HaveConditionField("BootImageUpdateDegraded", "status", "False"),
