@@ -27,7 +27,6 @@ import (
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
-	"k8s.io/utils/ptr"
 
 	"github.com/openshift/machine-config-operator/pkg/controller/bootimage/cache"
 )
@@ -428,7 +427,7 @@ func createNewVMTemplateWithNameForFailureDomain(ctx context.Context, providerSp
 		if err != nil {
 			return fmt.Errorf("failed to get boot options: %w", err)
 		}
-		bootOptions.EfiSecureBootEnabled = ptr.To(false)
+		bootOptions.EfiSecureBootEnabled = new(false)
 
 		err = vm.SetBootOptions(ctx, bootOptions)
 		if err != nil {
