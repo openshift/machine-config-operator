@@ -44,8 +44,16 @@ func WaitForMCPToBeReady(machineConfigClient *machineconfigclient.Clientset, poo
 			logger.Infof("MCP '%v' has the desired %v ready machines.", poolName, mcp.Status.UpdatedMachineCount)
 			// If an old rendered MC has been provided, make sure the MCP has been updated to a new rendered MC
 			if oldRenderedMC != "" {
-				// If the MC in the MCP is not equal to the old rendered MC, it meas we have updated to a new MC
+				// If the MC in the MCP is not equal to the old rendered MC, it means we have updated to a new MC
 				if mcp.Spec.Configuration.Name != oldRenderedMC {
+					// Guard against a stale Updated=True from the previous update cycle: verify
+					// that the new rendered config has actually been applied to all nodes by
+					// checking that spec and status configs match.
+					if mcp.Spec.Configuration.Name != mcp.Status.Configuration.Name {
+						logger.Infof("MCP '%v' has a new rendered MC (%v) but it has not been applied yet (status: %v). Waiting for the update to complete.",
+							poolName, mcp.Spec.Configuration.Name, mcp.Status.Configuration.Name)
+						return false
+					}
 					logger.Infof("MCP '%v' has updated to a new rendered MC: %v.", poolName, mcp.Spec.Configuration.Name)
 					return true
 				}
