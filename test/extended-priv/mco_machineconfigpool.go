@@ -107,15 +107,25 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 	g.It("[PolarionID:52373][OTP] Modify proxy configuration in paused pools", func() {
 
-		proxyValue := "http://user:pass@proxy-fake:1111"
-		noProxyValue := "test.52373.no-proxy.com"
+		var (
+			proxyValue              = "http://user:pass@proxy-fake:1111"
+			noProxyValue            = "test.52373.no-proxy.com"
+			expectedDegradedMessage = `required MachineConfigPool master is paused and cannot sync until it is unpaused`
+			wmcp                    = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
+			mmcp                    = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolMaster)
+			machineConfiguration    = GetMachineConfiguration(oc.AsAdmin())
+			proxy                   = NewResource(oc.AsAdmin(), "proxy", "cluster")
+			mcoMCD                  = NewNamespacedResource(oc.AsAdmin(), "DaemonSet", MachineConfigNamespace, "machine-config-daemon")
+			mcoMCC                  = NewNamespacedResource(oc.AsAdmin(), "Deployment", MachineConfigNamespace, "machine-config-controller")
+			mco                     = NewResource(oc.AsAdmin(), "co", "machine-config")
+			kubeAPIServer           = NewResource(oc.AsAdmin(), "co", "kube-apiserver")
+		)
 
 		// Disable boot images update and skew enforcement so that the boot image controller
 		// does not try to reconcile machinesets while the proxy is set to a fake value, which
 		// would cause the controller to fail and degrade the cluster operator
 		exutil.By("Disable boot images update and skew enforcement")
 		if IsBootImageUpdateSupported(oc.AsAdmin()) {
-			machineConfiguration := GetMachineConfiguration(oc.AsAdmin())
 			defer machineConfiguration.SetSpec(machineConfiguration.GetSpecOrFail())
 			DisableSkew(machineConfiguration)
 			o.Expect(
@@ -127,25 +137,31 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 
 		exutil.By("Get current proxy configuration")
-		proxy := NewResource(oc.AsAdmin(), "proxy", "cluster")
-		proxyInitialConfig := proxy.GetOrFail(`{.spec}`)
+		proxyInitialConfig := proxy.GetSpecOrFail()
 		logger.Infof("Initial proxy configuration: %s", proxyInitialConfig)
+		logger.Infof("OK!\n")
 
-		wmcp := NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
-		mmcp := NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolMaster)
-
-		defer func() {
+		defer SafeCleanup(func() {
 			logger.Infof("Start TC defer block")
 
 			logger.Infof("Restore original proxy config %s", proxyInitialConfig)
-			_ = proxy.Patch("json", `[{ "op": "add", "path": "/spec", "value": `+proxyInitialConfig+`}]`)
+			o.Expect(proxy.SetSpec(proxyInitialConfig)).To(o.Succeed())
 
 			logger.Infof("Wait for new machine configs to be rendered and paused pools to report updated status")
 			// We need to make sure that the config will NOT be applied, since the proxy is a fake one and if
 			// we dont make sure that the config proxy is reverted, the nodes will be broken and go into
 			// NotReady status
-			_ = wmcp.WaitForUpdatedStatus()
-			_ = mmcp.WaitForUpdatedStatus()
+			o.Expect(wmcp.WaitForUpdatedStatus()).To(o.Succeed())
+			o.Expect(mmcp.WaitForUpdatedStatus()).To(o.Succeed())
+
+			// Proxy changes trigger a kube-apiserver rollout. Wait for it to complete so that
+			// ValidatingAdmissionPolicy paramRef lookups don't fail while apiserver pods are replaced.
+			// Before modifying the MCP again, we need to make sure that the api server can handle the ValidatingAdmissionPolicy
+			exutil.By("Wait for kube-apiserver rollout to complete after proxy restore")
+			o.Eventually(kubeAPIServer, "20m", "30s").Should(
+				HaveConditionField("Progressing", "status", "False"),
+				"kube-apiserver is still progressing after proxy change")
+			logger.Infof("OK!\n")
 
 			logger.Infof("Unpause worker pool")
 			wmcp.pause(false)
@@ -154,60 +170,64 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			mmcp.pause(false)
 
 			logger.Infof("End TC defer block")
-		}()
+		})
 
 		exutil.By("Pause MCPs")
 		wmcp.pause(true)
 		mmcp.pause(true)
+		logger.Infof("OK!\n")
 
 		exutil.By("Configure new proxy")
 		err := proxy.Patch("json",
-			`[{ "op": "add", "path": "/spec/httpProxy", "value": "`+proxyValue+`" }]`)
-		o.Expect(err).ShouldNot(o.HaveOccurred(), "Error patching http proxy")
+			`[{ "op": "add", "path": "/spec/httpProxy", "value": "`+proxyValue+`" },`+
+				`{ "op": "add", "path": "/spec/httpsProxy", "value": "`+proxyValue+`" },`+
+				`{ "op": "add", "path": "/spec/noProxy", "value": "`+noProxyValue+`" }]`)
+		o.Expect(err).ShouldNot(o.HaveOccurred(), "Error patching proxy configuration")
+		logger.Infof("OK!\n")
 
-		err = proxy.Patch("json",
-			`[{ "op": "add", "path": "/spec/httpsProxy", "value": "`+proxyValue+`" }]`)
-		o.Expect(err).ShouldNot(o.HaveOccurred(), "Error patching https proxy")
-
-		err = proxy.Patch("json",
-			`[{ "op": "add", "path": "/spec/noProxy", "value":  "`+noProxyValue+`" }]`)
-		o.Expect(err).ShouldNot(o.HaveOccurred(), "Error patching noproxy")
-
-		exutil.By("Verify that the proxy configuration was applied to daemonsets")
-		mcoDs := NewNamespacedResource(oc.AsAdmin(), "DaemonSet", MachineConfigNamespace, "machine-config-daemon")
+		exutil.By("Verify that the proxy configuration was applied to the MCD daemonset and the MCC deployment")
 		// it should never take longer than 5 minutes to apply the proxy config under any circumstance,
 		// it should be considered a bug.
-		o.Eventually(mcoDs.Poll(`{.spec}`), "5m", "30s").Should(o.ContainSubstring(proxyValue),
+		o.Eventually(mcoMCD.GetSpec, "5m", "30s").Should(o.ContainSubstring(proxyValue),
 			"machine-config-daemon is not using the new proxy configuration: %s", proxyValue)
-		o.Eventually(mcoDs.Poll(`{.spec}`), "5m", "30s").Should(o.ContainSubstring(noProxyValue),
+		o.Eventually(mcoMCD.GetSpec, "5m", "30s").Should(o.ContainSubstring(noProxyValue),
 			"machine-config-daemon is not using the new no-proxy value: %s", noProxyValue)
+		o.Eventually(mcoMCC.GetSpec, "5m", "30s").Should(o.ContainSubstring(proxyValue),
+			"machine-config-controller is not using the new proxy configuration: %s", proxyValue)
+		o.Eventually(mcoMCC.GetSpec, "5m", "30s").Should(o.ContainSubstring(noProxyValue),
+			"machine-config-controller is not using the new no-proxy value: %s", noProxyValue)
+		logger.Infof("OK!\n")
 
 		exutil.By("Check that the operator has been marked as degraded")
-		mco := NewResource(oc.AsAdmin(), "co", "machine-config")
-		o.Eventually(mco.Poll(`{.status.conditions[?(@.type=="Degraded")].status}`),
-			"5m", "30s").Should(o.Equal("True"),
+		o.Eventually(mco, "5m", "30s").Should(BeDegraded(),
 			"machine-config Operator should report degraded status")
 
-		o.Eventually(mco.Poll(`{.status.conditions[?(@.type=="Degraded")].message}`),
-			"5m", "30s").Should(o.ContainSubstring(`required MachineConfigPool master is paused and cannot sync until it is unpaused`),
+		o.Eventually(mco, "5m", "30s").Should(HaveDegradedMessage(o.ContainSubstring(expectedDegradedMessage)),
 			"machine-config Operator is not reporting the right reason for degraded status")
+		logger.Infof("OK!\n")
 
 		exutil.By("Restore original proxy configuration")
-		err = proxy.Patch("json", `[{ "op": "add", "path": "/spec", "value": `+proxyInitialConfig+`}]`)
+		err = proxy.SetSpec(proxyInitialConfig)
 		o.Expect(err).ShouldNot(o.HaveOccurred(), "Error patching and restoring original proxy config")
+		logger.Infof("OK!\n")
 
-		exutil.By("Verify that the new configuration is applied to the daemonset")
+		exutil.By("Verify that the original configuration is restored in the MCD daemonset and the MCC deployment")
 		// it should never take longer than 5 minutes to apply the proxy config under any circumstance,
 		// it should be considered a bug.
-		o.Eventually(mcoDs.Poll(`{.spec}`), "5m", "30s").ShouldNot(o.ContainSubstring(proxyValue),
+		o.Eventually(mcoMCD.GetSpec, "5m", "30s").ShouldNot(o.ContainSubstring(proxyValue),
 			"machine-config-daemon has not restored the original proxy configuration")
-		o.Eventually(mcoDs.Poll(`{.spec}`), "5m", "30s").ShouldNot(o.ContainSubstring(noProxyValue),
+		o.Eventually(mcoMCD.GetSpec, "5m", "30s").ShouldNot(o.ContainSubstring(noProxyValue),
 			"machine-config-daemon has not restored the original proxy configuration for 'no-proxy'")
+		o.Eventually(mcoMCC.GetSpec, "5m", "30s").ShouldNot(o.ContainSubstring(proxyValue),
+			"machine-config-controller has not restored the original proxy configuration")
+		o.Eventually(mcoMCC.GetSpec, "5m", "30s").ShouldNot(o.ContainSubstring(noProxyValue),
+			"machine-config-controller has not restored the original proxy configuration for 'no-proxy'")
+		logger.Infof("OK!\n")
 
 		exutil.By("Check that the operator is not marked as degraded anymore")
-		o.Eventually(mco.Poll(`{.status.conditions[?(@.type=="Degraded")].status}`),
-			"5m", "30s").Should(o.Equal("False"),
+		o.Eventually(mco, "5m", "30s").ShouldNot(BeDegraded(),
 			"machine-config Operator should not report degraded status anymore")
+		logger.Infof("OK!\n")
 
 	})
 

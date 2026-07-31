@@ -472,23 +472,10 @@ func SimpleScaleUPTest(oc *exutil.CLI, mcp *MachineConfigPool, imageVersion, ign
 		logger.Infof("OK!\n")
 	}
 
-	defer func() {
-		logger.Infof("Start TC defer block")
+	defer SafeCleanup(func() {
 		newMs := NewMachineSet(oc.AsAdmin(), MachineAPINamespace, newMsName)
-		errors := o.InterceptGomegaFailures(func() { removeClonedMachineSet(newMs, mcp, initialNumWorkers) }) // We don't want gomega to fail and stop the deferred cleanup process
-		if len(errors) != 0 {
-			logger.Infof("There were errors restoring the original MachineSet resources in the cluster")
-			for _, e := range errors {
-				logger.Errorf(e)
-			}
-		}
-
-		// We don't want the test to pass if there were errors while restoring the initial state
-		o.Expect(len(errors)).To(o.BeZero(),
-			"There were %d errors while recovering the cluster's initial state", len(errors))
-
-		logger.Infof("End TC defer block")
-	}()
+		removeClonedMachineSet(newMs, mcp, initialNumWorkers)
+	})
 
 	logger.Infof("Create a new MachineSet using the right base image")
 	allMs, err := NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAll()

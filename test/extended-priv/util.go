@@ -319,6 +319,18 @@ func IsTrue(s string) bool {
 	return strings.EqualFold(s, TrueString)
 }
 
+// SafeCleanup executes the given cleanup function ensuring all statements run even if some assertions fail.
+// It collects all gomega failures and reports them at the end, failing the test if any occurred.
+// Use this in defer blocks instead of raw o.Expect calls to prevent cleanup from being interrupted.
+func SafeCleanup(cleanup func()) {
+	errors := o.InterceptGomegaFailures(cleanup)
+	for _, e := range errors {
+		logger.Errorf("Cleanup error: %s", e)
+	}
+	o.Expect(len(errors)).To(o.BeZero(),
+		"There were %d errors during cleanup:\n%s", len(errors), strings.Join(errors, "\n"))
+}
+
 // IsSNOSafe returns true if the cluster is a SNO cluster. Instead of failing, it returns an error if we can't know if the cluster is SNO or not
 func IsSNOSafe(oc *exutil.CLI) (bool, error) {
 	allNodes, err := NewNodeList(oc.AsAdmin()).GetAll()
