@@ -261,9 +261,17 @@ func (r *Resource) DeleteOrFail(extraParams ...string) {
 	o.Expect(err).NotTo(o.HaveOccurred())
 }
 
-// GetSpecOrFail returns the resource's spec as a JSON string
+// GetSpecOrFail returns the resource's spec as a JSON string and fails the test if any error happens
 func (r Resource) GetSpecOrFail() string {
-	return r.GetOrFail(`{.spec}`)
+	spec, err := r.GetSpec()
+	o.Expect(err).NotTo(o.HaveOccurred())
+
+	return spec
+}
+
+// GetSpec returns the resource's spec as a JSON string
+func (r Resource) GetSpec() (string, error) {
+	return r.Get(`{.spec}`)
 }
 
 // SetSpec replace the current resource's spec with the provided JSON string spec
