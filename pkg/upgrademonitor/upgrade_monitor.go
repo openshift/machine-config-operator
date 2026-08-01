@@ -10,8 +10,8 @@ import (
 	machineconfigurationv1 "github.com/openshift/client-go/machineconfiguration/applyconfigurations/machineconfiguration/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/utils/ptr"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -117,6 +117,7 @@ func generateAndApplyMachineConfigNodes(
 			Message:            childCondition.Message,
 			LastTransitionTime: metav1.Now(),
 		}
+
 	}
 	reset := false
 	if newParentCondition.Type == string(mcfgv1.MachineConfigNodeUpdated) {
@@ -532,12 +533,11 @@ func GenerateAndApplyMachineConfigNodeSpec(fgHandler ctrlcommon.FeatureGatesHand
 
 	// Update the existing MCN with the new Spec values or create a new MCN
 	if !needNewMCNode {
-		// No-diff guard: skip the SSA call if all spec fields are unchanged.
+		// No-diff guard: only the three fields below are included in the SSA
+		// payload, so skip the call if they are all unchanged.
 		if mcNode.Spec.Node.Name == newMCNode.Spec.Node.Name &&
 			mcNode.Spec.Pool.Name == newMCNode.Spec.Pool.Name &&
-			mcNode.Spec.ConfigVersion.Desired == newMCNode.Spec.ConfigVersion.Desired &&
-			(!fgHandler.Enabled(features.FeatureGateImageModeStatusReporting) ||
-				mcNode.Spec.ConfigImage.DesiredImage == newMCNode.Spec.ConfigImage.DesiredImage) {
+			mcNode.Spec.ConfigVersion.Desired == newMCNode.Spec.ConfigVersion.Desired {
 			klog.V(4).Infof("MCN spec for node %q is unchanged, skipping SSA apply", node.Name)
 			return nil
 		}
@@ -545,10 +545,6 @@ func GenerateAndApplyMachineConfigNodeSpec(fgHandler ctrlcommon.FeatureGatesHand
 		poolRefApplyConfig := machineconfigurationv1.MCOObjectReference().WithName(newMCNode.Spec.Pool.Name)
 		specconfigVersionApplyConfig := machineconfigurationv1.MachineConfigNodeSpecMachineConfigVersion().WithDesired(newMCNode.Spec.ConfigVersion.Desired)
 		specApplyConfig := machineconfigurationv1.MachineConfigNodeSpec().WithNode(nodeRefApplyConfig).WithPool(poolRefApplyConfig).WithConfigVersion(specconfigVersionApplyConfig)
-		if fgHandler.Enabled(features.FeatureGateImageModeStatusReporting) {
-			configImageApplyConfig := machineconfigurationv1.MachineConfigNodeSpecConfigImage().WithDesiredImage(newMCNode.Spec.ConfigImage.DesiredImage)
-			specApplyConfig = specApplyConfig.WithConfigImage(configImageApplyConfig)
-		}
 		mcnodeApplyConfig := machineconfigurationv1.MachineConfigNode(newMCNode.Name).WithSpec(specApplyConfig)
 		_, err := mcfgClient.MachineconfigurationV1().MachineConfigNodes().Apply(context.TODO(), mcnodeApplyConfig, metav1.ApplyOptions{FieldManager: "machine-config-operator", Force: true})
 		if err != nil {
