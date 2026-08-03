@@ -2,6 +2,7 @@ package extended
 
 import (
 	"fmt"
+	"strings"
 
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
@@ -76,6 +77,25 @@ func platformBasedDisksNames(platform string) []string {
 	return []string{}
 }
 
+// discoverNVMeByPathDisks discovers the /dev/disk/by-path/ entries for non-boot NVMe
+// devices on an AWS node. These PCI-based paths are stable per instance type, unlike
+// /dev/nvmeXn1 which depends on device enumeration order.
+func discoverNVMeByPathDisks(node *Node) []string {
+	script := `for p in /dev/disk/by-path/*nvme*; do [[ $p == *part* ]] && continue; ls ${p}-part* &>/dev/null && continue; echo "$p"; done | sort`
+	stdout, _, err := node.DebugNodeWithChrootStd("bash", "-c", script)
+	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Failed to discover NVMe by-path disks on node %s", node.GetName())
+
+	var paths []string
+	for _, line := range strings.Split(strings.TrimSpace(stdout), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			paths = append(paths, line)
+		}
+	}
+	logger.Infof("Discovered %d non-boot NVMe by-path disks on node %s: %v", len(paths), node.GetName(), paths)
+	return paths
+}
+
 var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Disruptive][OCPFeatureGate:IrreconcilableMachineConfig][Serial]", g.Ordered, func() {
 	defer g.GinkgoRecover()
 
@@ -143,17 +163,14 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("All worker nodes have irreconcilable changes as expected!\n")
 	})
 
-	g.It("[PolarionID:84219] Verify irreconcilable changes on new and existing nodes after scale up [Disruptive]", g.Label("Platform:gce", "Platform:azure"), func() {
+	g.It("[PolarionID:84219] Verify irreconcilable changes on new and existing nodes after scale up [Disruptive]", g.Label("Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere"), func() {
 		var (
 			machineconfiguration = GetMachineConfiguration(oc)
 			mcName               = "irreconcilable-scaleup-test"
 			initialMcSpecs       = machineconfiguration.GetSpecOrFail()
 		)
 
-		// Only GCPPlatform and AzurePlatform are able to enumerate disks in a reliable manner right now.
-		// See https://redhat.atlassian.net/browse/MCO-2470
-		skipTestIfSupportedPlatformNotMatched(oc, GCPPlatform, AzurePlatform)
-
+		SkipTestIfWorkersCannotBeScaled(oc)
 		mcp := NewMachineConfigPool(oc, MachineConfigPoolWorker)
 
 		defer func() {
@@ -187,7 +204,25 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		err = platformBasedDisksPatch(platform, newMS)
 		o.Expect(err).NotTo(o.HaveOccurred())
 
+		// On AWS, NVMe device enumeration is non-deterministic. Scale up a probe
+		// node first to discover the stable /dev/disk/by-path/ entries, then use
+		// those paths in the MachineConfig so Ignition can reliably find the disks.
 		disks := platformBasedDisksNames(platform)
+		var probeNode *Node
+		if platform == AWSPlatform {
+			exutil.By("Step 2.5: Scale up probe node to discover disk paths")
+			o.Expect(newMS.ScaleTo(1)).To(o.Succeed())
+			o.Expect(newMS.WaitUntilReady("10m")).To(o.Succeed())
+
+			probeNodes := newMS.GetNodesOrFail()
+			o.Expect(probeNodes).To(o.HaveLen(1))
+			probeNode = probeNodes[0]
+			logger.Infof("Probe node is: %s", probeNode.GetName())
+
+			discoveredDisks := discoverNVMeByPathDisks(probeNode)
+			o.Expect(discoveredDisks).To(o.HaveLen(2), "Expected exactly 2 non-boot NVMe disks on probe node %s", probeNode.GetName())
+			disks = discoveredDisks
+		}
 
 		mc := NewMachineConfig(oc, mcName, MachineConfigPoolWorker).SetMCOTemplate("extra-disks-with-files.yaml")
 
@@ -219,12 +254,27 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("All worker nodes report irreconcilable storage changes!\n")
 
 		exutil.By("Step 5: Scale up test node with MC applied via Ignition")
-		o.Expect(newMS.ScaleTo(1)).To(o.Succeed())
-		o.Expect(newMS.WaitUntilReady("10m")).To(o.Succeed())
+		var testNode *Node
+		if platform == AWSPlatform {
+			o.Expect(newMS.ScaleTo(2)).To(o.Succeed())
+			o.Expect(newMS.WaitUntilReady("10m")).To(o.Succeed())
 
-		testNodes := newMS.GetNodesOrFail()
-		o.Expect(testNodes).To(o.HaveLen(1))
-		testNode := testNodes[0]
+			allNodes := newMS.GetNodesOrFail()
+			o.Expect(allNodes).To(o.HaveLen(2))
+			for _, n := range allNodes {
+				if n.GetName() != probeNode.GetName() {
+					testNode = n
+				}
+			}
+			o.Expect(testNode).NotTo(o.BeNil(), "Could not identify test node among scaled-up nodes")
+		} else {
+			o.Expect(newMS.ScaleTo(1)).To(o.Succeed())
+			o.Expect(newMS.WaitUntilReady("10m")).To(o.Succeed())
+
+			testNodes := newMS.GetNodesOrFail()
+			o.Expect(testNodes).To(o.HaveLen(1))
+			testNode = testNodes[0]
+		}
 		logger.Infof("Test node is: %s", testNode.GetName())
 
 		exutil.By("Step 6: Verify test node has no irreconcilable changes")
