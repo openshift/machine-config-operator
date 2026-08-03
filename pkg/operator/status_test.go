@@ -825,3 +825,48 @@ func TestInClusterBringUpStayOnErr(t *testing.T) {
 
 	assert.False(t, optr.inClusterBringup)
 }
+
+func TestSyncRelatedObjectsContainsRBAC(t *testing.T) {
+	optr := &Operator{
+		namespace: "openshift-machine-config-operator",
+	}
+	co := &configv1.ClusterOperator{}
+	optr.syncRelatedObjects(co)
+
+	var clusterRoles, clusterRoleBindings []string
+	for _, obj := range co.Status.RelatedObjects {
+		if obj.Group != "rbac.authorization.k8s.io" {
+			continue
+		}
+		switch obj.Resource {
+		case "clusterroles":
+			clusterRoles = append(clusterRoles, obj.Name)
+		case "clusterrolebindings":
+			clusterRoleBindings = append(clusterRoleBindings, obj.Name)
+		}
+	}
+
+	expectedClusterRoles := []string{
+		"machine-config-controller",
+		"machine-config-controller-events",
+		"machine-config-daemon",
+		"machine-config-daemon-events",
+		"machine-config-server",
+		"machine-os-builder",
+		"machine-os-builder-events",
+		"system:openshift:machine-config-operator:cluster-reader",
+	}
+	expectedClusterRoleBindings := []string{
+		"machine-config-controller",
+		"machine-config-daemon",
+		"machine-config-server",
+		"machine-os-builder",
+		"machine-os-builder-anyuid",
+		"custom-account-openshift-machine-config-operator",
+		"system-bootstrap-node-bootstrapper",
+		"system-bootstrap-node-renewal",
+	}
+
+	assert.ElementsMatch(t, expectedClusterRoles, clusterRoles, "relatedObjects must include all MCO ClusterRoles for oc adm inspect to collect them")
+	assert.ElementsMatch(t, expectedClusterRoleBindings, clusterRoleBindings, "relatedObjects must include all MCO ClusterRoleBindings for oc adm inspect to collect them")
+}

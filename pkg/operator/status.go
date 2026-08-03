@@ -70,6 +70,23 @@ func (optr *Operator) syncRelatedObjects(co *configv1.ClusterOperator) {
 		{Resource: "namespaces", Name: "openshift-vsphere-infra"},
 		{Resource: "namespaces", Name: "openshift-nutanix-infra"},
 		{Resource: "namespaces", Name: "openshift-cloud-platform-infra"},
+		// ClusterRoles and ClusterRoleBindings are cluster-scoped and not implicitly gathered via namespace inspection.
+		{Group: "rbac.authorization.k8s.io", Resource: "clusterroles", Name: "machine-config-controller"},
+		{Group: "rbac.authorization.k8s.io", Resource: "clusterroles", Name: "machine-config-controller-events"},
+		{Group: "rbac.authorization.k8s.io", Resource: "clusterroles", Name: "machine-config-daemon"},
+		{Group: "rbac.authorization.k8s.io", Resource: "clusterroles", Name: "machine-config-daemon-events"},
+		{Group: "rbac.authorization.k8s.io", Resource: "clusterroles", Name: "machine-config-server"},
+		{Group: "rbac.authorization.k8s.io", Resource: "clusterroles", Name: "machine-os-builder"},
+		{Group: "rbac.authorization.k8s.io", Resource: "clusterroles", Name: "machine-os-builder-events"},
+		{Group: "rbac.authorization.k8s.io", Resource: "clusterroles", Name: "system:openshift:machine-config-operator:cluster-reader"},
+		{Group: "rbac.authorization.k8s.io", Resource: "clusterrolebindings", Name: "machine-config-controller"},
+		{Group: "rbac.authorization.k8s.io", Resource: "clusterrolebindings", Name: "machine-config-daemon"},
+		{Group: "rbac.authorization.k8s.io", Resource: "clusterrolebindings", Name: "machine-config-server"},
+		{Group: "rbac.authorization.k8s.io", Resource: "clusterrolebindings", Name: "machine-os-builder"},
+		{Group: "rbac.authorization.k8s.io", Resource: "clusterrolebindings", Name: "machine-os-builder-anyuid"},
+		{Group: "rbac.authorization.k8s.io", Resource: "clusterrolebindings", Name: "custom-account-openshift-machine-config-operator"},
+		{Group: "rbac.authorization.k8s.io", Resource: "clusterrolebindings", Name: "system-bootstrap-node-bootstrapper"},
+		{Group: "rbac.authorization.k8s.io", Resource: "clusterrolebindings", Name: "system-bootstrap-node-renewal"},
 	}
 
 	if !equality.Semantic.DeepEqual(coStatusCopy.RelatedObjects, co.Status.RelatedObjects) {
@@ -461,6 +478,23 @@ func (optr *Operator) initializeClusterOperator() (*configv1.ClusterOperator, er
 		{Group: "machineconfiguration.openshift.io", Resource: "machineconfigpools", Name: "worker"},
 		{Group: "machineconfiguration.openshift.io", Resource: "controllerconfigs", Name: "machine-config-controller"},
 		{Group: "operator.openshift.io", Resource: "machineconfigurations"},
+		// ClusterRoles and ClusterRoleBindings are cluster-scoped and not implicitly gathered via namespace inspection.
+		{Group: "rbac.authorization.k8s.io", Resource: "clusterroles", Name: "machine-config-controller"},
+		{Group: "rbac.authorization.k8s.io", Resource: "clusterroles", Name: "machine-config-controller-events"},
+		{Group: "rbac.authorization.k8s.io", Resource: "clusterroles", Name: "machine-config-daemon"},
+		{Group: "rbac.authorization.k8s.io", Resource: "clusterroles", Name: "machine-config-daemon-events"},
+		{Group: "rbac.authorization.k8s.io", Resource: "clusterroles", Name: "machine-config-server"},
+		{Group: "rbac.authorization.k8s.io", Resource: "clusterroles", Name: "machine-os-builder"},
+		{Group: "rbac.authorization.k8s.io", Resource: "clusterroles", Name: "machine-os-builder-events"},
+		{Group: "rbac.authorization.k8s.io", Resource: "clusterroles", Name: "system:openshift:machine-config-operator:cluster-reader"},
+		{Group: "rbac.authorization.k8s.io", Resource: "clusterrolebindings", Name: "machine-config-controller"},
+		{Group: "rbac.authorization.k8s.io", Resource: "clusterrolebindings", Name: "machine-config-daemon"},
+		{Group: "rbac.authorization.k8s.io", Resource: "clusterrolebindings", Name: "machine-config-server"},
+		{Group: "rbac.authorization.k8s.io", Resource: "clusterrolebindings", Name: "machine-os-builder"},
+		{Group: "rbac.authorization.k8s.io", Resource: "clusterrolebindings", Name: "machine-os-builder-anyuid"},
+		{Group: "rbac.authorization.k8s.io", Resource: "clusterrolebindings", Name: "custom-account-openshift-machine-config-operator"},
+		{Group: "rbac.authorization.k8s.io", Resource: "clusterrolebindings", Name: "system-bootstrap-node-bootstrapper"},
+		{Group: "rbac.authorization.k8s.io", Resource: "clusterrolebindings", Name: "system-bootstrap-node-renewal"},
 	}
 	// During an installation we report the RELEASE_VERSION as soon as the component is created.
 	// For both normal runs and upgrades, this code isn't hit and we get the right version every
