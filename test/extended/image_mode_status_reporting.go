@@ -425,8 +425,11 @@ func validateMCPMachineCountTransitions(machineConfigClient *machineconfigclient
 		logger.Infof("Checking if the MCP machine counts match the expected values...")
 		countsMatch, isConnErr := mcnAndNodeAnnotationMachineCountsMatch(machineConfigClient, oc, mcpName, mosc)
 
-		// If we hit a connection error, continue to the next iteration
+		// If we hit a connection error, reset the mismatch tracker so that
+		// connection-error time doesn't count against the mismatch deadline,
+		// then continue to the next iteration.
 		if isConnErr {
+			firstMismatchTime = time.Time{}
 			return false
 		}
 

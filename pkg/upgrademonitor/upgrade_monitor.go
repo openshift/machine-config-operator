@@ -536,8 +536,7 @@ func GenerateAndApplyMachineConfigNodeSpec(fgHandler ctrlcommon.FeatureGatesHand
 		if mcNode.Spec.Node.Name == newMCNode.Spec.Node.Name &&
 			mcNode.Spec.Pool.Name == newMCNode.Spec.Pool.Name &&
 			mcNode.Spec.ConfigVersion.Desired == newMCNode.Spec.ConfigVersion.Desired &&
-			(!fgHandler.Enabled(features.FeatureGateImageModeStatusReporting) ||
-				mcNode.Spec.ConfigImage.DesiredImage == newMCNode.Spec.ConfigImage.DesiredImage) {
+			mcNode.Spec.ConfigImage.DesiredImage == newMCNode.Spec.ConfigImage.DesiredImage {
 			klog.V(4).Infof("MCN spec for node %q is unchanged, skipping SSA apply", node.Name)
 			return nil
 		}
@@ -545,7 +544,7 @@ func GenerateAndApplyMachineConfigNodeSpec(fgHandler ctrlcommon.FeatureGatesHand
 		poolRefApplyConfig := machineconfigurationv1.MCOObjectReference().WithName(newMCNode.Spec.Pool.Name)
 		specconfigVersionApplyConfig := machineconfigurationv1.MachineConfigNodeSpecMachineConfigVersion().WithDesired(newMCNode.Spec.ConfigVersion.Desired)
 		specApplyConfig := machineconfigurationv1.MachineConfigNodeSpec().WithNode(nodeRefApplyConfig).WithPool(poolRefApplyConfig).WithConfigVersion(specconfigVersionApplyConfig)
-		if fgHandler.Enabled(features.FeatureGateImageModeStatusReporting) {
+		if fgHandler.Enabled(features.FeatureGateImageModeStatusReporting) && newMCNode.Spec.ConfigImage.DesiredImage != "" {
 			configImageApplyConfig := machineconfigurationv1.MachineConfigNodeSpecConfigImage().WithDesiredImage(newMCNode.Spec.ConfigImage.DesiredImage)
 			specApplyConfig = specApplyConfig.WithConfigImage(configImageApplyConfig)
 		}
