@@ -13,7 +13,6 @@ import (
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/ptr"
 )
 
 const (
@@ -33,8 +32,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	)
 
 	g.JustBeforeEach(func() {
-		// Skip this test if the cluster is not using MachineAPI
-		skipUnlessFunctionalMachineAPI(oc)
+		// Skip if no MAPI MachineSets are available (e.g. compute machine management migrated to CAPI)
+		exutil.SkipIfNoMAPIMachineSets(oc.AsAdmin())
 	})
 
 	g.It("Machines, MachineSets, and ControlPlaneMachineSets (if applicable) are labeled with OSStream [apigroup:machineconfiguration.openshift.io]", func() {
@@ -119,34 +118,6 @@ func validateOSStreamLabelOnControlPlaneMachineSet(machineClient *machineclient.
 	osStream, hasLabel := cpms.Labels[OSStreamLabelKey]
 	osStreamTemp, hasLabelTemp := cpms.Spec.Template.OpenShiftMachineV1Beta1Machine.ObjectMeta.Labels[OSStreamLabelKey]
 	return hasLabel && slices.Contains(expectedOSStreams, osStream) && hasLabelTemp && slices.Contains(expectedOSStreams, osStreamTemp)
-}
-
-// skipUnlessFunctionalMachineAPI skips the test if the cluster is not using Machine API
-func skipUnlessFunctionalMachineAPI(oc *exutil.CLI) {
-	machineClient, err := machineclient.NewForConfig(oc.KubeFramework().ClientConfig())
-	o.Expect(err).ToNot(o.HaveOccurred())
-	machines, err := machineClient.MachineV1beta1().Machines(MAPINamespace).List(context.Background(), metav1.ListOptions{LabelSelector: MAPIMasterMachineLabelSelector})
-	// the machine API can be unavailable resulting in a 404 or an empty list
-	if err != nil {
-		if !apierrors.IsNotFound(err) {
-			o.Expect(err).ToNot(o.HaveOccurred())
-		}
-		g.Skip("haven't found machines resources on the cluster, this test can be run on a platform that supports functional MachineAPI")
-		return
-	}
-	if len(machines.Items) == 0 {
-		g.Skip("got an empty list of machines resources from the cluster, this test can be run on a platform that supports functional MachineAPI")
-		return
-	}
-
-	// we expect just a single machine to be in the Running state
-	for _, machine := range machines.Items {
-		phase := ptr.Deref(machine.Status.Phase, "")
-		if phase == "Running" {
-			return
-		}
-	}
-	g.Skip("haven't found a machine in running state, this test can be run on a platform that supports functional MachineAPI")
 }
 
 // getAllMachineSets returns all the MachineSets in a cluster

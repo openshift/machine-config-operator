@@ -104,3 +104,20 @@ func SkipOnSingleNodeTopology(oc *CLI) {
 		e2eskipper.Skipf("This test does not apply to single-node topologies")
 	}
 }
+
+// SkipIfNoMAPIMachineSets skips the test if the cluster has no legacy MAPI MachineSets
+// (machinesets.machine.openshift.io) in the openshift-machine-api namespace. Clusters that
+// have migrated compute machine management to Cluster API no longer have any MAPI MachineSets, 
+// only CAPI ones under cluster.x-k8s.io in the openshift-cluster-api namespace, which these tests 
+// do not yet support.
+func SkipIfNoMAPIMachineSets(oc *CLI) {
+	out, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"machinesets.machine.openshift.io", "-n", "openshift-machine-api",
+		"-o", "jsonpath={range .items[*]}{.metadata.name}{end}",
+	).Output()
+	o.Expect(err).NotTo(o.HaveOccurred(), "failed to list machinesets")
+	if out == "" {
+		e2eskipper.Skipf("No MAPI MachineSets (machinesets.machine.openshift.io) found in openshift-machine-api; " +
+			"this test does not yet support clusters where compute machine management has been migrated to Cluster API")
+	}
+}

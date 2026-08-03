@@ -409,6 +409,7 @@ func (msl *MachineSetList) GetAll() ([]*MachineSet, error) {
 func (msl *MachineSetList) GetAllOrFail() []*MachineSet {
 	allMs, err := msl.GetAll()
 	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error getting the list of existing MachineSets")
+	o.ExpectWithOffset(1, allMs).NotTo(o.BeEmpty(), "No MachineSets found in namespace %s", msl.GetNamespace())
 
 	return allMs
 }

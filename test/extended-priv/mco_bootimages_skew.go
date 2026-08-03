@@ -94,6 +94,9 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		exutil.SkipIfUnsupportedOSStreamLabel(oc.AsAdmin())
 
+		// This test only supports clusters managing compute machines via legacy MAPI MachineSets
+		exutil.SkipIfNoMAPIMachineSets(oc.AsAdmin())
+
 		// No opinion on skew enforcement for these platforms will result in Automatic mode
 		o.Expect(machineConfiguration.RemoveSkew()).To(o.Succeed())
 
@@ -130,6 +133,9 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		skipTestIfSupportedPlatformNotMatched(oc, GCPPlatform, AWSPlatform, AzurePlatform, VspherePlatform)
 
 		exutil.SkipIfUnsupportedOSStreamLabel(oc.AsAdmin())
+
+		// This test only supports clusters managing compute machines via legacy MAPI MachineSets
+		exutil.SkipIfNoMAPIMachineSets(oc.AsAdmin())
 
 		// No opinion on skew enforcement for these platforms will result in Automatic mode
 		o.Expect(machineConfiguration.RemoveSkew()).To(o.Succeed())

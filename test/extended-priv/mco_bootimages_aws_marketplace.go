@@ -45,6 +45,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	)
 
 	g.JustBeforeEach(func() {
+		// Skip if no MAPI MachineSets are available (e.g. compute machine management migrated to CAPI)
+		exutil.SkipIfNoMAPIMachineSets(oc.AsAdmin())
 		machineConfiguration = GetMachineConfiguration(oc.AsAdmin())
 		PreChecks(oc)
 
