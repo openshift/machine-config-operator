@@ -1985,19 +1985,30 @@ func (optr *Operator) waitForControllerConfigToBeCompleted(resource *mcfgv1.Cont
 }
 
 func (optr *Operator) getOSImageURLsFromConfigMap() (string, string, error) {
-	cm, err := optr.mcoCmLister.ConfigMaps(optr.namespace).Get(ctrlcommon.MachineConfigOSImageURLConfigMapName)
-	if err != nil {
-		return "", "", err
+	var oscontainer, osextensionscontainer string
+	var lastErr error
+	if err := wait.PollUntilContextTimeout(context.TODO(), 1*time.Second, 3*time.Second, true, func(_ context.Context) (bool, error) {
+		cm, err := optr.mcoCmLister.ConfigMaps(optr.namespace).Get(ctrlcommon.MachineConfigOSImageURLConfigMapName)
+		if err != nil {
+			lastErr = err
+			return false, nil
+		}
+		cfg, err := ctrlcommon.ParseOSImageURLConfigMap(cm)
+		if err != nil {
+			return false, err
+		}
+		optrVersion, _ := optr.vStore.Get("operator")
+		if cfg.ReleaseVersion != optrVersion {
+			lastErr = fmt.Errorf("refusing to read osImageURL version %q, operator version %q", cfg.ReleaseVersion, optrVersion)
+			return false, nil
+		}
+		oscontainer = cfg.BaseOSContainerImage
+		osextensionscontainer = cfg.BaseOSExtensionsContainerImage
+		return true, nil
+	}); err != nil {
+		return "", "", fmt.Errorf("during osImageURL configmap check: %w", kubeErrs.NewAggregate([]error{err, lastErr}))
 	}
-	cfg, err := ctrlcommon.ParseOSImageURLConfigMap(cm)
-	if err != nil {
-		return "", "", err
-	}
-	optrVersion, _ := optr.vStore.Get("operator")
-	if cfg.ReleaseVersion != optrVersion {
-		return "", "", fmt.Errorf("refusing to read osImageURL version %q, operator version %q", cfg.ReleaseVersion, optrVersion)
-	}
-	return cfg.BaseOSContainerImage, cfg.BaseOSExtensionsContainerImage, nil
+	return oscontainer, osextensionscontainer, nil
 }
 
 // getOSImageURLForStream retrieves the OS image URL for a specific pool's stream.
