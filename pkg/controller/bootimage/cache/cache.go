@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 
 	"github.com/coreos/stream-metadata-go/stream"
-	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
 	"k8s.io/klog/v2"
 )
@@ -70,14 +69,10 @@ func getFileFromCache(fileName, cacheDir string) (string, string, error) {
 }
 
 // GetCacheDir returns a local path of the cache, where the installer should put the data:
-// /tmp/<applicationName>/<dataType>_cache
+// /tmp/<ImageBasedApplicationName>/<ImageDataType>_cache
 // If the directory doesn't exist, it will be automatically created.
-func getCacheDir(dataType, applicationName string) (string, error) {
-	if dataType == "" {
-		return "", errors.Errorf("data type can't be an empty string")
-	}
-
-	cacheDir := filepath.Join("/tmp", applicationName, dataType+"_cache")
+func getCacheDir() (string, error) {
+	cacheDir := filepath.Join("/tmp", ImageBasedApplicationName, ImageDataType+"_cache")
 
 	_, err := os.Stat(cacheDir)
 	if err != nil {
@@ -130,7 +125,7 @@ func cacheFile(ova *stream.Artifact, filePath, cacheDir string) (string, error) 
 	return ova.Download(cacheDir)
 }
 
-// download obtains a file from a given URL, puts it in the cache folder, defined by dataType parameter,
+// download obtains a file from a given URL, puts it in the cache folder,
 // and returns the local file path.
 func DownloadOva(ova *stream.Artifact) (string, error) {
 
@@ -139,7 +134,7 @@ func DownloadOva(ova *stream.Artifact) (string, error) {
 		return "", err
 	}
 
-	cacheDir, err := getCacheDir(ImageDataType, ImageBasedApplicationName)
+	cacheDir, err := getCacheDir()
 	if err != nil {
 		return "", err
 	}

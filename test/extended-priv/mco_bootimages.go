@@ -2,6 +2,7 @@ package extended
 
 import (
 	"fmt"
+	"path"
 	"regexp"
 	"strings"
 
@@ -13,6 +14,7 @@ import (
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	e2e "k8s.io/kubernetes/test/e2e/framework"
 )
 
@@ -438,7 +440,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			clonedSecretName = fmt.Sprintf("cloned-user-data-%s-copy", GetCurrentTestPolarionIDNumber())
 			// We make the the regexp end in a "$" to make sure that no more versions than the expected ones are present
 			expectedFailedMessageRegexp = regexp.QuoteMeta(fmt.Sprintf(mapiBaseErrorMessageTemplate+
-				" failed to unmarshal decoded user-data to json (secret %s): invalid character 'h' in literal true (expecting 'r')t", clonedMSName, clonedMSName, clonedSecretName)) + "$"
+				" failed to unmarshal decoded user-data to json (secret %s): invalid character 'h' in literal true (expecting 'r')", clonedMSName, clonedMSName, clonedSecretName)) + "$"
 		)
 
 		setNotJSONUserData := func(_ string) (string, error) {
@@ -689,7 +691,335 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		exutil.By("Set the original architecture in the cloneed machineset")
 		setArchitectureAndCheckStatus(clonedMS, machineConfiguration, arch.String())
 	})
+
+	g.It("[OTP] Boot image controller preserves a valid non-standard providerSpec.Template name", g.Label("Platform:vsphere"), func() {
+		// This is vSphere-specific: it is the only platform where providerSpec.Template names a
+		// vCenter template object directly rather than referencing an AMI/image ID, so it is the
+		// only platform where the boot image controller has to resolve/preserve an existing
+		// template by an arbitrary, non-standard name (see
+		// https://github.com/openshift/machine-config-operator/pull/6234).
+		skipTestIfSupportedPlatformNotMatched(oc, VspherePlatform)
+
+		var (
+			clonedMSName       = "cloned-tc-custom-template-name-copy"
+			machineSet         = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
+			customTemplateName = "mcotest-custom-template-name"
+			labelName          = "test"
+			labelValue         = "update"
+		)
+
+		exutil.By("Opt-in boot images update")
+		o.Expect(
+			machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, labelName, labelValue),
+		).To(o.Succeed(), "Error configuring Partial managedBootImages in the 'cluster' MachineConfiguration resource")
+		logger.Infof("OK!\n")
+
+		exutil.By("Clone the first machineset")
+		clonedMS, err := machineSet.Duplicate(clonedMSName)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s", machineSet)
+		defer clonedMS.Delete()
+		logger.Infof("OK!\n")
+
+		exutil.By("Upload the current RHCOS OVA under a non-standard (custom) template name")
+		currentVersion, _, err := exutil.GetClusterVersion(oc.AsAdmin())
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the current cluster version")
+
+		rhcosHandler, err := GetRHCOSHandler(VspherePlatform)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the rhcos handler")
+
+		baseImageURL, err := rhcosHandler.GetBaseImageURLFromRHCOSImageInfo(currentVersion, OSImageStreamRHEL9, architecture.AMD64)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the current base image URL")
+
+		msServer, err := machineSet.Get(`{.spec.template.spec.providerSpec.value.workspace.server}`)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting workspace.server from %s", machineSet)
+		msDC, err := machineSet.Get(`{.spec.template.spec.providerSpec.value.workspace.datacenter}`)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting workspace.datacenter from %s", machineSet)
+
+		o.Expect(
+			uploadBaseImageToVsphereForWorkspace(oc, baseImageURL, customTemplateName, msServer, msDC),
+		).To(o.Succeed(), "Error uploading the current base image %s under the custom name %s", baseImageURL, customTemplateName)
+		logger.Infof("OK!\n")
+
+		exutil.By("Point the cloned machineset's providerSpec.Template at the custom-named, already-current template")
+		o.Expect(clonedMS.SetCoreOsBootImage(customTemplateName)).To(o.Succeed(),
+			"Error setting the custom template name in %s", clonedMS)
+		logger.Infof("OK!\n")
+
+		exutil.By("Label the cloned machineset so that it is reconciled")
+		o.Expect(clonedMS.AddLabel(labelName, labelValue)).To(o.Succeed(),
+			"Error labeling %s", clonedMS)
+		logger.Infof("OK!\n")
+
+		exutil.By("Check that no failures are reported")
+		o.Eventually(machineConfiguration, "5m", "20s").Should(HaveConditionField("BootImageUpdateDegraded", "status", "False"),
+			"Expected %s not to be BootImageUpdateDegraded.\n%s", machineConfiguration.PrettyString())
+		o.Eventually(machineConfiguration, "5m", "20s").Should(HaveConditionField("BootImageUpdateProgressing", "status", "False"),
+			"Expected %s not to be BootImageUpdateProgressing.\n%s", machineConfiguration.PrettyString())
+		logger.Infof("OK!\n")
+
+		exutil.By("Check that the custom template name is preserved rather than being renamed back to the computed name")
+		// The custom name already points at a current, valid template - the controller should
+		// recognize that via providerSpec.Template, not silently discard it in favor of the
+		// name it would otherwise compute from the infra ID and failure domain.
+		o.Consistently(clonedMS.GetCoreOsBootImage, "3m", "20s").Should(o.Equal(customTemplateName),
+			"%s's providerSpec.Template was changed away from the custom name, even though it already pointed at a valid, current template", clonedMS)
+		logger.Infof("OK!\n")
+
+		exutil.By("Check that the custom-named template is recognized as up to date")
+		CheckCurrentOSImageIsUpdated(clonedMS)
+		logger.Infof("OK!\n")
+	})
+
+	g.It("[OTP] Reconciles MachineSets spread across multiple vSphere vCenters", g.Label("Platform:vsphere"), func() {
+		skipTestIfSupportedPlatformNotMatched(oc, VspherePlatform)
+
+		groups, cleanup, err := buildWorkspaceGroupsAcrossVCenters(oc)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error building workspace groups across vCenters")
+		defer cleanup()
+		if len(groups) < 2 {
+			g.Skip(fmt.Sprintf("This test needs at least 2 vCenters configured in the infrastructure resource, found %d", len(groups)))
+		}
+
+		reconcileOneMachineSetPerVsphereWorkspaceGroup(oc, machineConfiguration, groups, "multi-vcenter")
+	})
+
+	g.It("[OTP] Reconciles MachineSets spread across multiple vSphere failure domains", g.Label("Platform:vsphere"), func() {
+		skipTestIfSupportedPlatformNotMatched(oc, VspherePlatform)
+
+		groups, err := groupMachineSetsByVsphereWorkspaceField(oc, "datacenter", "datastore", "resourcePool", "server")
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error grouping machinesets by failure domain")
+		if len(groups) < 2 {
+			g.Skip(fmt.Sprintf("This test needs MachineSets spread across at least 2 failure domains, found %d", len(groups)))
+		}
+
+		reconcileOneMachineSetPerVsphereWorkspaceGroup(oc, machineConfiguration, groups, "multi-fd")
+	})
 })
+
+// vsphereWorkspaceGroup is one distinct combination of providerSpec.value.workspace field
+// values found among the cluster's existing MachineSets, along with the MachineSets that use it.
+type vsphereWorkspaceGroup struct {
+	key         string
+	machineSets []*MachineSet
+}
+
+// groupMachineSetsByVsphereWorkspaceField groups all existing MachineSets by the given
+// providerSpec.value.workspace field name(s) (e.g. "server", or
+// "datacenter","datastore","resourcePool" together to key on failure domain identity). Used to
+// discover, from already-existing cluster state, whether MachineSets are actually spread across
+// more than one vCenter/failure domain - rather than trying to force a MachineSet onto a
+// different one, which risks provisioning against topology this test doesn't control.
+func groupMachineSetsByVsphereWorkspaceField(oc *exutil.CLI, fields ...string) ([]vsphereWorkspaceGroup, error) {
+	allMS, err := NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAll()
+	if err != nil {
+		return nil, err
+	}
+
+	order := []string{}
+	byKey := map[string][]*MachineSet{}
+	for _, ms := range allMS {
+		values := make([]string, 0, len(fields))
+		for _, field := range fields {
+			value, err := ms.Get(fmt.Sprintf(`{.spec.template.spec.providerSpec.value.workspace.%s}`, field))
+			if err != nil {
+				return nil, fmt.Errorf("error reading workspace.%s from %s: %w", field, ms, err)
+			}
+			values = append(values, value)
+		}
+		key := strings.Join(values, "|")
+		if _, ok := byKey[key]; !ok {
+			order = append(order, key)
+		}
+		byKey[key] = append(byKey[key], ms)
+	}
+
+	groups := make([]vsphereWorkspaceGroup, 0, len(order))
+	for _, key := range order {
+		groups = append(groups, vsphereWorkspaceGroup{key: key, machineSets: byKey[key]})
+	}
+	return groups, nil
+}
+
+// buildWorkspaceGroupsAcrossVCenters reads all failure domains from the
+// infrastructure resource, groups them by vCenter server, and returns one
+// vsphereWorkspaceGroup per server. For servers that already have existing
+// MachineSets, the group uses those. For servers that have no existing
+// MachineSets (e.g. because workers were only placed on a subset of vCenters),
+// the group creates a synthetic MachineSet by cloning an existing one and
+// patching its workspace fields to match a failure domain on that server.
+func buildWorkspaceGroupsAcrossVCenters(oc *exutil.CLI) ([]vsphereWorkspaceGroup, func(), error) {
+	fds, err := exutil.GetAllVSphereFailureDomains(oc.AsAdmin())
+	if err != nil {
+		return nil, func() {}, err
+	}
+
+	allMS, err := NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAll()
+	if err != nil {
+		return nil, func() {}, err
+	}
+
+	var syntheticMachineSets []*MachineSet
+	cleanup := func() {
+		for _, ms := range syntheticMachineSets {
+			if err := ms.Delete(); err != nil {
+				logger.Infof("Warning: failed to delete synthetic MachineSet %s: %v", ms.GetName(), err)
+			}
+		}
+	}
+
+	// Index existing MachineSets by their workspace server.
+	msByServer := map[string][]*MachineSet{}
+	for _, ms := range allMS {
+		server, sErr := ms.Get(`{.spec.template.spec.providerSpec.value.workspace.server}`)
+		if sErr != nil {
+			continue
+		}
+		msByServer[server] = append(msByServer[server], ms)
+	}
+
+	// Group failure domains by server, preserving insertion order.
+	var fdOrder []string
+	fdByServer := map[string][]exutil.VSphereConnectionInfo{}
+	for _, fd := range fds {
+		if _, ok := fdByServer[fd.Server]; !ok {
+			fdOrder = append(fdOrder, fd.Server)
+		}
+		fdByServer[fd.Server] = append(fdByServer[fd.Server], fd)
+	}
+
+	// Build one workspace group per server.
+	var groups []vsphereWorkspaceGroup
+	for _, server := range fdOrder {
+		if msList, ok := msByServer[server]; ok && len(msList) > 0 {
+			groups = append(groups, vsphereWorkspaceGroup{
+				key:         server,
+				machineSets: msList,
+			})
+			continue
+		}
+
+		// No existing MachineSet targets this server. Clone one from another
+		// server and patch its workspace to match a failure domain here.
+		fd := fdByServer[server][0]
+		if len(allMS) == 0 {
+			return nil, cleanup, fmt.Errorf("cannot create a synthetic MachineSet for server %s: no existing MachineSets", server)
+		}
+
+		donor := allMS[0]
+		syntheticName := fmt.Sprintf("mco-synthetic-%s", fd.FailureDomainName)
+
+		// Get the donor's folder to extract the cluster suffix
+		donorFolder, fErr := donor.Get(`{.spec.template.spec.providerSpec.value.workspace.folder}`)
+		if fErr != nil {
+			return nil, cleanup, fmt.Errorf("error creating synthetic MachineSet for server %s: cannot read donor folder: %w", server, fErr)
+		}
+		// Replace the datacenter component with the target datacenter
+		newFolder := donorFolder
+		if parts := strings.SplitN(donorFolder, "/", 3); len(parts) >= 3 {
+			newFolder = path.Join("/", fd.DataCenter, parts[2])
+		}
+
+		syntheticMS, cloneErr := CloneResource(donor, syntheticName, donor.GetNamespace(),
+			func(resJSON string) (string, error) {
+				s, e := sjson.Set(resJSON, "spec.replicas", 0)
+				if e != nil {
+					return "", e
+				}
+				s, e = sjson.Set(s, `spec.selector.matchLabels.machine\.openshift\.io/cluster-api-machineset`, syntheticName)
+				if e != nil {
+					return "", e
+				}
+				s, e = sjson.Set(s, `spec.template.metadata.labels.machine\.openshift\.io/cluster-api-machineset`, syntheticName)
+				if e != nil {
+					return "", e
+				}
+				s, e = sjson.Set(s, "spec.template.spec.providerSpec.value.workspace.server", fd.Server)
+				if e != nil {
+					return "", e
+				}
+				s, e = sjson.Set(s, "spec.template.spec.providerSpec.value.workspace.datacenter", fd.DataCenter)
+				if e != nil {
+					return "", e
+				}
+				s, e = sjson.Set(s, "spec.template.spec.providerSpec.value.workspace.datastore", fd.DataStore)
+				if e != nil {
+					return "", e
+				}
+				s, e = sjson.Set(s, "spec.template.spec.providerSpec.value.workspace.resourcePool", fd.ResourcePool)
+				if e != nil {
+					return "", e
+				}
+				s, e = sjson.Set(s, "spec.template.spec.providerSpec.value.workspace.folder", newFolder)
+				if e != nil {
+					return "", e
+				}
+				s, e = sjson.Set(s, "spec.template.spec.providerSpec.value.network.devices.0.networkName", fd.Network)
+				if e != nil {
+					return "", e
+				}
+				return s, nil
+			},
+		)
+		if cloneErr != nil {
+			return nil, cleanup, fmt.Errorf("error creating synthetic MachineSet for server %s: %w", server, cloneErr)
+		}
+		logger.Infof("Created synthetic MachineSet %s targeting server %s (failure domain %s)", syntheticMS.GetName(), server, fd.FailureDomainName)
+		ms := NewMachineSet(oc.AsAdmin(), syntheticMS.GetNamespace(), syntheticMS.GetName())
+		syntheticMachineSets = append(syntheticMachineSets, ms)
+		groups = append(groups, vsphereWorkspaceGroup{
+			key:         server,
+			machineSets: []*MachineSet{ms},
+		})
+	}
+
+	return groups, cleanup, nil
+}
+
+// reconcileOneMachineSetPerVsphereWorkspaceGroup clones one MachineSet from each of the given
+// (already distinct) workspace groups, sets a backdated boot image on each, and verifies every
+// clone is independently reconciled to a current, valid image - exercising the boot image
+// controller's vCenter/failure-domain matching across more than one group in a single test run.
+func reconcileOneMachineSetPerVsphereWorkspaceGroup(oc *exutil.CLI, machineConfiguration *MachineConfiguration, groups []vsphereWorkspaceGroup, testTag string) {
+	exutil.By("Opt-in boot images update")
+	o.Expect(
+		machineConfiguration.SetAllManagedBootImagesConfig(MachineSetResource),
+	).To(o.Succeed(), "Error configuring ALL managedBootImages in the 'cluster' MachineConfiguration resource")
+	logger.Infof("OK!\n")
+
+	fakeImageName, fakeImageURL := getBackdatedBootImageNameAndURL(oc.AsAdmin())
+
+	var clonedMachineSets []*MachineSet
+	for i, group := range groups {
+		exutil.By(fmt.Sprintf("Clone a MachineSet from workspace group %d/%d (%s)", i+1, len(groups), group.key))
+		clonedMSName := fmt.Sprintf("cloned-tc-%s-%d-%s", testTag, i, utilrand.String(5))
+		representative := group.machineSets[0]
+		clonedMS, err := representative.Duplicate(clonedMSName)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s", representative)
+		defer clonedMS.Delete()
+		clonedMachineSets = append(clonedMachineSets, clonedMS)
+
+		server, err := representative.Get(`{.spec.template.spec.providerSpec.value.workspace.server}`)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting workspace.server from %s", representative)
+		datacenter, err := representative.Get(`{.spec.template.spec.providerSpec.value.workspace.datacenter}`)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting workspace.datacenter from %s", representative)
+
+		o.Expect(
+			uploadBaseImageToVsphereForWorkspace(oc, fakeImageURL, fakeImageName, server, datacenter),
+		).To(o.Succeed(), "Error uploading backdated image %s to %s/%s", fakeImageName, server, datacenter)
+
+		o.Expect(clonedMS.SetCoreOsBootImage(fakeImageName)).To(o.Succeed(),
+			"Error setting a fake boot image in %s", clonedMS)
+		logger.Infof("OK!\n")
+	}
+
+	exutil.By("Check that every cloned MachineSet is independently reconciled to a current image")
+	for _, clonedMS := range clonedMachineSets {
+		o.Eventually(clonedMS.GetCoreOsBootImage, "15m", "20s").ShouldNot(o.Or(o.Equal(fakeImageName), o.BeEmpty()),
+			"%s was NOT updated to use the right boot image", clonedMS)
+		CheckCurrentOSImageIsUpdated(clonedMS)
+	}
+	logger.Infof("OK!\n")
+}
 
 func DuplicateMachineSetWithCustomBootImage(ms *MachineSet, newBootImage, newName string) (*MachineSet, error) {
 
@@ -962,39 +1292,42 @@ func getBackdatedBootImage(oc *exutil.CLI, ms *MachineSet) string {
 		// We use a similar resourceID as the one generated in a normal installation. Note that it contains "gen2", so it should use "hyperVGen2"
 		return `{"offer":"","publisher":"","resourceID":"/resourceGroups/fake-499nn-rg/providers/Microsoft.Compute/galleries/gallery_fake21az_499nn/images/fake-499nn-gen2/versions/latest","sku":"","version":""}`
 	case VspherePlatform:
-		// In Vsphere we need the image to be present in the vcenter, so we need to manually upload it
-		var (
-			// We will use 4.16 as the original version that will be updated to the current version
-			imageVersion = "4.16"
-			// Vsphere only support AMD64
-			arch = architecture.AMD64
-		)
-
-		// Get the right base image name from the rhcos json info stored in the github repositories
-		exutil.By(fmt.Sprintf("Get the base image for version %s", imageVersion))
-		rhcosHandler, err := GetRHCOSHandler(platform)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the rhcos handler")
-
-		baseImage, err := rhcosHandler.GetBaseImageFromRHCOSImageInfo(imageVersion, OSImageStreamRHEL9, arch, "")
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the base image")
-		logger.Infof("Using base image %s", baseImage)
-
-		baseImageURL, err := rhcosHandler.GetBaseImageURLFromRHCOSImageInfo(imageVersion, OSImageStreamRHEL9, arch)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the base image URL")
-
-		// To avoid collisions with other test runs (including leftovers from a crashed, uncleaned-up
-		// run) we prefix with a per-run-unique ID in addition to the "mcotest-" marker.
-		baseImage = fmt.Sprintf("mcotest-%s-%s", backdatedImageRunID, baseImage)
+		name, url := getBackdatedBootImageNameAndURL(oc)
 		o.Expect(
-			uploadBaseImageToCloud(ms, platform, baseImageURL, baseImage),
-		).To(o.Succeed(), "Error uploading the base image %s to the cloud", baseImageURL)
-		logger.Infof("Uplodated: %s", baseImage)
+			uploadBaseImageToCloud(ms, platform, url, name),
+		).To(o.Succeed(), "Error uploading the base image %s to the cloud", url)
+		logger.Infof("Uplodated: %s", name)
 		logger.Infof("OK!\n")
 
-		return baseImage
+		return name
 	default:
 		return ""
 	}
+}
+
+// getBackdatedBootImageNameAndURL returns the vSphere template name and OVA URL
+// for a backdated RHCOS image without uploading it. The caller is responsible
+// for uploading to the correct vCenter/datacenter(s).
+func getBackdatedBootImageNameAndURL(_ *exutil.CLI) (string, string) {
+	var (
+		imageVersion = "4.16"
+		arch         = architecture.AMD64
+	)
+
+	exutil.By(fmt.Sprintf("Get the base image for version %s", imageVersion))
+	rhcosHandler, err := GetRHCOSHandler(VspherePlatform)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the rhcos handler")
+
+	baseImage, err := rhcosHandler.GetBaseImageFromRHCOSImageInfo(imageVersion, OSImageStreamRHEL9, arch, "")
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the base image")
+	logger.Infof("Using base image %s", baseImage)
+
+	baseImageURL, err := rhcosHandler.GetBaseImageURLFromRHCOSImageInfo(imageVersion, OSImageStreamRHEL9, arch)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the base image URL")
+
+	// To avoid collisions with other test runs (including leftovers from a crashed, uncleaned-up
+	// run) we prefix with a per-run-unique ID in addition to the "mcotest-" marker.
+	return fmt.Sprintf("mcotest-%s-%s", backdatedImageRunID, baseImage), baseImageURL
 }
 
 // getReleaseFromVsphereTemplate gets the release version from the vSphere template
