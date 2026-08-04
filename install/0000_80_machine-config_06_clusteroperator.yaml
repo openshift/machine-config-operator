@@ -27,5 +27,55 @@ status:
       resource: kubeletconfigs
     - group: machineconfiguration.openshift.io
       resource: containerruntimeconfigs
+    - group: operator.openshift.io
+      resource: machineconfigurations
     - group: ""
       resource: nodes
+    - group: rbac.authorization.k8s.io
+      name: machine-config-controller
+      resource: clusterroles
+    - group: rbac.authorization.k8s.io
+      name: machine-config-controller-events
+      resource: clusterroles
+    - group: rbac.authorization.k8s.io
+      name: machine-config-daemon
+      resource: clusterroles
+    - group: rbac.authorization.k8s.io
+      name: machine-config-daemon-events
+      resource: clusterroles
+    - group: rbac.authorization.k8s.io
+      name: machine-config-server
+      resource: clusterroles
+    - group: rbac.authorization.k8s.io
+      name: machine-os-builder
+      resource: clusterroles
+    - group: rbac.authorization.k8s.io
+      name: machine-os-builder-events
+      resource: clusterroles
+    - group: rbac.authorization.k8s.io
+      name: "system:openshift:machine-config-operator:cluster-reader"
+      resource: clusterroles
+    - group: rbac.authorization.k8s.io
+      name: machine-config-controller
+      resource: clusterrolebindings
+    - group: rbac.authorization.k8s.io
+      name: machine-config-daemon
+      resource: clusterrolebindings
+    - group: rbac.authorization.k8s.io
+      name: machine-config-server
+      resource: clusterrolebindings
+    - group: rbac.authorization.k8s.io
+      name: machine-os-builder
+      resource: clusterrolebindings
+    - group: rbac.authorization.k8s.io
+      name: machine-os-builder-anyuid
+      resource: clusterrolebindings
+    - group: rbac.authorization.k8s.io
+      name: custom-account-openshift-machine-config-operator
+      resource: clusterrolebindings
+    - group: rbac.authorization.k8s.io
+      name: system-bootstrap-node-bootstrapper
+      resource: clusterrolebindings
+    - group: rbac.authorization.k8s.io
+      name: system-bootstrap-node-renewal
+      resource: clusterrolebindings
