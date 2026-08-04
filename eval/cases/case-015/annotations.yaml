@@ -1,0 +1,7 @@
+category: authoring
+content_type: machineconfig-resource
+complexity: medium
+constraints_tested:
+- all-remote-sources-resolved-at-render-time
+- deterministic-merge-ordering
+- worker-pool-label-matching

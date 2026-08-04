@@ -1,0 +1,14 @@
+prompt: "I want to set up a NodeDisruptionPolicy to control how my nodes handle certain\
+  \ config changes. I'm going to create a MachineConfiguration custom resource named\
+  \ 'my-cluster-policy' with the disruption actions I need. Here's my YAML so far:\n\
+  \napiVersion: operator.openshift.io/v1\nkind: MachineConfiguration\nmetadata:\n\
+  \  name: my-cluster-policy\nspec:\n  nodeDisruptionPolicy:\n    ...\n\nCan you help\
+  \ me fill in the spec?"
+expected_rejection: true
+expected_constraint: MachineConfiguration CR for NodeDisruptionPolicy must be named
+  'cluster'
+expected_documentation:
+- docs/NodeDisruptionPolicy.md
+correct_approach: The MachineConfiguration custom resource for NodeDisruptionPolicy
+  must be named exactly 'cluster'. Change metadata.name from 'my-cluster-policy' to
+  'cluster'.
