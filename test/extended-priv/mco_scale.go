@@ -697,6 +697,17 @@ func uploadBaseImageToCloud(oc *exutil.CLI, platform, baseImageURL, baseImage st
 	}
 }
 
+// uploadBaseImageToVsphereForWorkspace uploads a vSphere OVA to the
+// vCenter/datacenter identified by the given server and datacenter strings
+// (taken from a MachineSet's providerSpec.value.workspace).
+func uploadBaseImageToVsphereForWorkspace(oc *exutil.CLI, baseImageURL, baseImage, server, datacenter string) error {
+	vsInfo, err := exutil.GetVSphereConnectionInfoForWorkspace(oc.AsAdmin(), server, datacenter)
+	if err != nil {
+		return err
+	}
+	return exutil.UploadBaseImageToVsphere(baseImageURL, baseImage, vsInfo)
+}
+
 func IsBootImageUpdateSupported(oc *exutil.CLI) bool {
 	var (
 		platform = exutil.CheckPlatform(oc.AsAdmin())
