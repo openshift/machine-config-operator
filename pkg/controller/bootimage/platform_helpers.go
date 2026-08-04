@@ -233,7 +233,7 @@ func reconcileAWSProviderSpec(streamData *stream.Stream, arch string, _ *osconfi
 	return true, false, newProviderSpec, rhcosVersion, nil
 }
 
-func reconcileVSphereProviderSpec(streamData *stream.Stream, arch string, infra *osconfigv1.Infrastructure, providerSpec *machinev1beta1.VSphereMachineProviderSpec, _ string, secretClient clientset.Interface) (bool, bool, *machinev1beta1.VSphereMachineProviderSpec, string, error) {
+func reconcileVSphereProviderSpec(streamData *stream.Stream, arch string, infra *osconfigv1.Infrastructure, providerSpec *machinev1beta1.VSphereMachineProviderSpec, _ string, kubeClient clientset.Interface) (bool, bool, *machinev1beta1.VSphereMachineProviderSpec, string, error) {
 
 	if infra.Spec.PlatformSpec.VSphere == nil {
 		klog.Warningf("Reconcile skipped: VSphere field is nil in PlatformSpec %v", infra.Spec.PlatformSpec)
@@ -253,12 +253,12 @@ func reconcileVSphereProviderSpec(streamData *stream.Stream, arch string, infra 
 	newProviderSpec := providerSpec.DeepCopy()
 
 	// Fetch the creds configmap
-	credsSc, err := secretClient.CoreV1().Secrets("kube-system").Get(context.TODO(), "vsphere-creds", metav1.GetOptions{})
+	credsSc, err := kubeClient.CoreV1().Secrets("kube-system").Get(context.TODO(), "vsphere-creds", metav1.GetOptions{})
 	if err != nil {
 		return false, false, nil, "", fmt.Errorf("failed to fetch vsphere-creds Secret during machineset sync: %w", err)
 	}
 
-	newBootImg, patchRequired, err := createNewVMTemplate(streamData, providerSpec, infra, credsSc, arch, artifacts.Release)
+	newBootImg, patchRequired, err := createNewVMTemplate(streamData, providerSpec, infra, credsSc, kubeClient, arch, artifacts.Release)
 	if err != nil {
 		return false, false, nil, "", err
 	}
@@ -266,7 +266,7 @@ func reconcileVSphereProviderSpec(streamData *stream.Stream, arch string, infra 
 	// If patch is required, marshal the new providerspec into the machineset
 	if patchRequired {
 		// Ensure the ignition stub is the minimum acceptable spec required for boot image updates
-		if err := upgradeStubIgnitionIfRequired(providerSpec.UserDataSecret.Name, secretClient); err != nil {
+		if err := upgradeStubIgnitionIfRequired(providerSpec.UserDataSecret.Name, kubeClient); err != nil {
 			return false, false, nil, "", err
 		}
 		newProviderSpec.Template = newBootImg
