@@ -189,3 +189,28 @@ func GetAllPodsWithLabel(oc *CLI, namespace, label string) ([]string, error) {
 	}
 	return strings.Split(pods, " "), err
 }
+
+// AssertAllNonJobPodsToBeReadyWithPollerParams asserts all non-job pods in a namespace are ready within the specified timeout
+// Exclude transient Job pods ('job-name') from readiness: build Job pods are short-lived and not expected to be Ready=True, so including them causes false failure
+// we validate the Job via logs/conditions separately, and this gate only asserts persistent controller pods (e.g., machine-os-builder) are Ready.
+func AssertAllNonJobPodsToBeReadyWithPollerParams(oc *CLI, namespace string, interval, timeout time.Duration) {
+	ctx := context.Background()
+	err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(_ context.Context) (bool, error) {
+
+		// get the status flag for all pods
+		// except the ones which are in Complete Status.
+		// exclude pods that belong to Jobs (pods with 'job-name' label)
+		// it use 'ne' operator which is only compatible with 4.10+ oc versions
+		template := "'{{- range .items -}}{{- range .status.conditions -}}{{- if ne .reason \"PodCompleted\" -}}{{- if eq .type \"Ready\" -}}{{- .status}} {{\" \"}}{{- end -}}{{- end -}}{{- end -}}{{- end -}}'"
+		stdout, err := oc.AsAdmin().Run("get").Args("pods", "-n", namespace, "-l", "!job-name").Template(template).Output()
+		if err != nil {
+			e2e.Logf("the err:%v, and try next round", err)
+			return false, nil
+		}
+		if strings.Contains(stdout, "False") {
+			return false, nil
+		}
+		return true, nil
+	})
+	AssertWaitPollNoErr(err, fmt.Sprintf("Some Pods are not ready in NS %s (excluding Job pods)!", namespace))
+}
