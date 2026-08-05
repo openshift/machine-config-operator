@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	g "github.com/onsi/ginkgo/v2"
@@ -23,6 +24,267 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	g.JustBeforeEach(func() {
 		PreChecks(oc)
 		SkipTestIfOCBIsEnabled(oc)
+	})
+
+	g.It("[PolarionID:83137][OTP][Skipped:Disconnected] OCB use OutputImage CurrentImagePullSecret [Disruptive]", func() {
+		var (
+			mcp              = GetCompactCompatiblePool(oc.AsAdmin())
+			tmpNamespaceName = fmt.Sprintf("tc-%s-mco-ocl-images", GetCurrentTestPolarionIDNumber())
+			checkers         = []Checker{
+				CommandOutputChecker{
+					Command:  []string{"rpm-ostree", "status"},
+					Matcher:  o.ContainSubstring(fmt.Sprintf("%s/%s/ocb-%s-image", InternalRegistrySvcURL, tmpNamespaceName, mcp.GetName())),
+					ErrorMsg: fmt.Sprintf("The nodes are not using the expected OCL image stored in the internal registry"),
+					Desc:     fmt.Sprintf("Check that the nodes are using the right OS image"),
+				},
+			}
+		)
+
+		testContainerFile([]ContainerFile{}, tmpNamespaceName, mcp, checkers, false)
+	})
+
+	g.It("[PolarionID:79137][OTP][Skipped:Disconnected] OCB Opting into on-cluster builds must respect maxUnavailable setting. Workers.[Disruptive]", func() {
+		SkipIfCompactOrSNO(oc.AsAdmin()) // This test makes no sense in SNO or Compact
+
+		var (
+			wMcp = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
+			// MOSC has to use the same name as the mcp
+			moscName    = wMcp.GetName()
+			workerNodes = wMcp.GetSortedNodesOrFail()
+		)
+
+		exutil.By("Configure maxUnavailable if worker pool has more than 2 nodes")
+		if len(workerNodes) > 2 {
+			defer wMcp.SetSpec(wMcp.GetSpecOrFail())
+			wMcp.SetMaxUnavailable(2)
+		}
+
+		maxUnavailable := OrFail[int](wMcp.GetMaxUnavailableInt())
+		logger.Infof("Current maxUnavailable value %d", maxUnavailable)
+		logger.Infof("OK!\n")
+
+		exutil.By("Configure OCB functionality for the new worker MCP")
+		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, moscName, wMcp.GetName(), nil)
+		defer DisableOCL(mosc)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
+		logger.Infof("OK!\n")
+
+		exutil.By("Wait for the worker MCP to start updating")
+		o.Eventually(wMcp.GetUpdatingStatus, "15m", "15s").Should(o.Equal("True"),
+			"The worker MCP did not start updating")
+		logger.Infof("OK!\n")
+
+		exutil.By("Poll the nodes sorted by the order they are updated")
+		updatedNodes := wMcp.GetSortedUpdatedNodes(maxUnavailable)
+		for _, n := range updatedNodes {
+			logger.Infof("updated node: %s created: %s zone: %s", n.GetName(), n.GetOrFail(`{.metadata.creationTimestamp}`), n.GetOrFail(`{.metadata.labels.topology\.kubernetes\.io/zone}`))
+		}
+		logger.Infof("OK!\n")
+
+		exutil.By("Wait for the configuration to be applied in all nodes")
+		wMcp.waitForComplete()
+		logger.Infof("OK!\n")
+
+		exutil.By("Check that nodes were updated in the right order")
+		rightOrder := checkUpdatedLists(workerNodes, updatedNodes, maxUnavailable)
+		o.Expect(rightOrder).To(o.BeTrue(), "Expected update order %s, but found order %s", workerNodes, updatedNodes)
+		logger.Infof("OK!\n")
+
+		exutil.By("Remove the MachineOSConfig resource")
+		o.Expect(DisableOCL(mosc)).To(o.Succeed(), "Error cleaning up %s", mosc)
+		logger.Infof("OK!\n")
+	})
+
+	g.It("[PolarionID:83139][OTP][Skipped:Disconnected] OCB build images in many MCPs at the same time [Disruptive]", func() {
+		SkipIfCompactOrSNO(oc.AsAdmin()) // This test makes no sense in SNO or compact
+
+		var (
+			customMCPNames = "infra"
+			numCustomPools = 5
+			moscList       = []*MachineOSConfig{}
+			mcpList        = []*MachineConfigPool{}
+			wg             sync.WaitGroup
+		)
+
+		exutil.By("Create custom MCPS")
+		for i := 0; i < numCustomPools; i++ {
+			infraMcpName := fmt.Sprintf("%s-%d", customMCPNames, i)
+			infraMcp, err := CreateCustomMCP(oc.AsAdmin(), infraMcpName, 0)
+			defer infraMcp.delete()
+			o.Expect(err).NotTo(o.HaveOccurred(), "Error creating a new custom pool: %s", infraMcpName)
+			mcpList = append(mcpList, infraMcp)
+
+		}
+		logger.Infof("OK!\n")
+
+		exutil.By("Checking that all MOSCs were executed properly")
+		for _, infraMcp := range mcpList {
+			// MOSCs resources have to use the same name as the MCP
+			moscName := infraMcp.GetName()
+
+			mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, moscName, infraMcp.GetName(), nil)
+			defer mosc.CleanupAndDelete()
+			o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
+			moscList = append(moscList, mosc)
+
+			wg.Add(1)
+			go func() {
+				defer g.GinkgoRecover()
+				defer wg.Done()
+
+				ValidateSuccessfulMOSC(mosc, nil)
+			}()
+		}
+
+		wg.Wait()
+		logger.Infof("OK!\n")
+
+		exutil.By("Removing all MOSC resources")
+		for _, mosc := range moscList {
+			o.Expect(mosc.CleanupAndDelete()).To(o.Succeed(), "Error cleaning up %s", mosc)
+		}
+		logger.Infof("OK!\n")
+
+		exutil.By("Validate that all resources were garbage collected")
+		for i := 0; i < numCustomPools; i++ {
+			ValidateMOSCIsGarbageCollected(moscList[i], mcpList[i])
+		}
+		logger.Infof("OK!\n")
+
+		waitForAllMCOPodsReady(oc.AsAdmin(), 10*time.Minute)
+		logger.Infof("OK!\n")
+	})
+
+	g.It("[PolarionID:83755][OTP] In OCL check no new image is applied on node after applying ssh/password/file MC .[Disruptive]", func() {
+		var (
+			mcp  = GetCompactCompatiblePool(oc.AsAdmin())
+			node = mcp.GetSortedNodesOrFail()[0]
+
+			moscName = mcp.GetName()
+			mcName   = fmt.Sprintf("test-ssh-%s", GetCurrentTestPolarionIDNumber())
+
+			_, key = GenerateSSHKeyPairOrFail()
+			user   = ign32PaswdUser{Name: "core", SSHAuthorizedKeys: []string{key}}
+		)
+
+		exutil.By("Configure OCB functionality for the new worker MCP")
+		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, moscName, mcp.GetName(), nil)
+		defer DisableOCL(mosc)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
+		logger.Infof("Applied MOSC!\n")
+
+		ValidateSuccessfulMOSC(mosc, nil)
+		logger.Infof("MOSC is applied!\n")
+
+		exutil.By("Get the image that is currently applied on nodes")
+		initialImage := OrFail[string](node.GetRpmOstreeStatus(false))
+		logger.Infof("Initial image: %s", initialImage)
+		logger.Infof("Got the initial image!\n")
+
+		exutil.By("Create a new MC to deploy new authorized keys")
+		mc := NewMachineConfig(oc.AsAdmin(), mcName, mcp.GetName())
+		mc.parameters = []string{fmt.Sprintf(`PWDUSERS=[%s]`, MarshalOrFail(user))}
+		mc.skipWaitForMcp = true
+
+		mc.create()
+		defer mc.DeleteWithWait()
+		logger.Infof("Created MC!\n")
+
+		exutil.By("Check that the build is triggered with succeed status and not building")
+		mosb, err := mosc.GetCurrentMachineOSBuild()
+		logger.Infof("MOSB: %s\n", mosb)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting MOSB from MOSC")
+		o.Expect(mosb).To(HaveConditionField("Building", "status", FalseString), "Build is still building")
+		o.Expect(mosb).To(HaveConditionField("Succeeded", "status", TrueString), "Build didn't succeed")
+		logger.Infof("Checked that the build does not take place!\n")
+
+		mcp.waitForComplete()
+		logger.Infof("OK!\n")
+
+		exutil.By("Check that the image is not updated")
+		o.Expect(OrFail[string](node.GetRpmOstreeStatus(false))).To(o.Equal(initialImage), "Image was updated")
+		logger.Infof("Image is not updated!\n")
+
+		exutil.By("Check that all expected keys are present and with the right permissions and owners")
+		currentMc := OrFail[*MachineConfig](mcp.GetConfiguredMachineConfig())
+		initialKeys := OrFail[[]string](currentMc.GetAuthorizedKeysByUserAsList("core"))
+		checkAuthorizedKeyInNode(node, append(initialKeys, key))
+		logger.Infof("MC is configured with the expected keys!\n")
+
+	})
+
+	g.It("[PolarionID:85843][OTP][Skipped:Disconnected] InternalRegistry OCB Verify new nodes boot directly with OCL image without unnecessary reboots [Disruptive]", func() {
+		SkipIfCompactOrSNO(oc.AsAdmin())                  // This test requires scaling, which doesn't make sense in SNO or Compact
+		skipTestIfWorkersCannotBeScaled(oc.AsAdmin())     // Skip test if worker node cannot be scaled
+		SkipTestIfCannotUseInternalRegistry(oc.AsAdmin()) // Skip test if cannot use internal registry
+
+		var (
+			mcp      = GetCompactCompatiblePool(oc.AsAdmin())
+			moscName = mcp.GetName()
+		)
+
+		exutil.By("Configure OCB functionality for the compatible MCP")
+		mosc, err := CreateMachineOSConfigUsingInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, moscName, mcp.GetName(), nil, true)
+		defer DisableOCL(mosc)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
+		logger.Infof("OK!\n")
+
+		ValidateNewNodesBootDirectlyWithOCLImage(oc.AsAdmin(), mosc, mcp)
+	})
+
+	g.It("[PolarionID:82536][OTP][Skipped:Disconnected] Internal Registry In OCB to check when a image is removed the old build is triggered again and the MC should start updating directly. [Disruptive]", func() {
+		SkipIfCompactOrSNO(oc.AsAdmin())
+		SkipTestIfCannotUseInternalRegistry(oc.AsAdmin()) // This test case requires the internal registry to be enabled
+
+		var (
+			infraMcpName = "infra"
+			mcName       = fmt.Sprintf("tc-%s-int-kernelarg", GetCurrentTestPolarionIDNumber())
+			kArgs        = "test"
+		)
+
+		exutil.By("Create custom infra MCP")
+		infraMcp, err := CreateCustomMCP(oc.AsAdmin(), infraMcpName, 1)
+		defer DeleteCustomMCP(oc.AsAdmin(), infraMcpName)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating a new custom pool: %s", infraMcpName)
+		logger.Infof("OK!\n")
+
+		exutil.By("Create MOSC for custom MCP using internal registry")
+		moscName := infraMcp.GetName()
+		mosc, err := CreateMachineOSConfigUsingInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, moscName, infraMcp.GetName(), nil, false)
+		defer DisableOCL(mosc)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating MOSC")
+		logger.Infof("OK!\n")
+
+		exutil.By("Validate initial MOSC and wait for MOSB-1 to succeed")
+		ValidateSuccessfulMOSC(mosc, nil)
+
+		mosb1, err := mosc.GetCurrentMachineOSBuild()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting initial MOSB")
+		logger.Infof("Initial MOSB created: %s\n", mosb1.GetName())
+
+		exutil.By("Apply MC with kernel argument to trigger new MOSB")
+		mc := NewMachineConfig(oc.AsAdmin(), mcName, infraMcp.GetName())
+		mc.skipWaitForMcp = true
+
+		defer mc.DeleteWithWait()
+
+		err = mc.Create("-p", "NAME="+mcName, "-p", "POOL="+infraMcp.GetName(),
+			"-p", fmt.Sprintf(`KERNEL_ARGS=["%s"]`, kArgs))
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating MachineConfig %s", mc.GetName())
+		logger.Infof("OK!\n")
+
+		exutil.By("Wait for MOSB-2 to be created and succeed")
+		checkNewBuildIsTriggered(mosc, mosb1)
+		mosb2, err := mosc.GetCurrentMachineOSBuild()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting MOSB-2")
+		logger.Infof("Second MOSB created: %s\n", mosb2.GetName())
+
+		exutil.By("Delete MOSB-1 image from internal registry using oc tag -d")
+		o.Expect(removeImageStream(oc.AsAdmin(), mosb1)).To(o.BeTrue(), "Error deleting imagestream tag for MOSB-1")
+		logger.Infof("OK!\n")
+
+		// Common verification after MOSB-1 deletion
+		verifyMOSBRebuildAfterImageDeletion(infraMcp, mosc, mosb1, mosb2, mc, mcName)
 	})
 
 	g.It("[PolarionID:79172][OTP] OCB Inherit from global pull secret if baseImagePullSecret field is not specified [Disruptive]", func() {
@@ -579,7 +841,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 
 		exutil.By("Delete MOSB-1 image from Quay using automated skopeo deletion")
-		o.Expect(removeQuayImageUsingSkepo(oc.AsAdmin(), mosb1, infraMcp)).To(o.BeTrue(), "Error deleting Quay image for MOSB-1")
+		o.Expect(removeQuayImageUsingSkopeo(oc.AsAdmin(), mosb1, infraMcp)).To(o.BeTrue(), "Error deleting Quay image for MOSB-1")
 		logger.Infof("OK!\n")
 
 		// Common verification after MOSB-1 deletion
@@ -614,7 +876,7 @@ func checkNewBuildIsTriggered(mosc *MachineOSConfig, currentMOSB *MachineOSBuild
 	o.Eventually(newMOSB, "2m", "20s").Should(HaveConditionField("Failed", "status", FalseString), "Build was failed")
 }
 
-func getNewNodeRebootValueForOCL(newNode *Node, oclImage string) {
+func verifyNewNodeBootedWithOCLImage(newNode *Node, oclImage string) {
 	exutil.By("Verify the new node boots directly with the OCL image")
 	currentImage, err := newNode.GetCurrentBootOSImage()
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting current boot OS image from node %s", newNode.GetName())
@@ -707,8 +969,8 @@ func ValidateNewNodesBootDirectlyWithOCLImage(oc *exutil.CLI, mosc *MachineOSCon
 	logger.Infof("Duplicate node: %s\n", duplicateMSNode.GetName())
 	logger.Infof("OK!\n")
 
-	getNewNodeRebootValueForOCL(duplicateMSNode, oclImage)
-	getNewNodeRebootValueForOCL(existingNode, oclImage)
+	verifyNewNodeBootedWithOCLImage(duplicateMSNode, oclImage)
+	verifyNewNodeBootedWithOCLImage(existingNode, oclImage)
 
 	exutil.By("Wait for MCP to complete before scaling down nodes")
 	mcp.waitForComplete()
@@ -746,7 +1008,7 @@ func removeImageStream(oc *exutil.CLI, mosb *MachineOSBuild) bool {
 	return true
 }
 
-func removeQuayImageUsingSkepo(oc *exutil.CLI, mosb *MachineOSBuild, mcp *MachineConfigPool) bool {
+func removeQuayImageUsingSkopeo(oc *exutil.CLI, mosb *MachineOSBuild, mcp *MachineConfigPool) bool {
 	mosc, err := mosb.GetMachineOSConfig()
 	if err != nil {
 		logger.Errorf("Error getting MOSC from MOSB: %s", err)
