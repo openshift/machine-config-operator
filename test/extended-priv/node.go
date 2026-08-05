@@ -1451,24 +1451,12 @@ func FixRebootInNode(node *Node) error {
 // BreakRebaseInNode breaks the rpm-ostree rebase process in a node
 func BreakRebaseInNode(node *Node) error {
 	logger.Infof("Breaking rpm-ostree rebase process in node %s", node.GetName())
-	brokenRpmOstree := generateTemplateAbsolutePath("rpm-ostree-force-pivot-error.sh")
-	if err := node.CopyFromLocal(brokenRpmOstree, "/tmp/rpm-ostree.broken"); err != nil {
-		return fmt.Errorf("Error copying %s to node %s: %w", brokenRpmOstree, node, err)
-	}
-	_, err := node.DebugNodeWithChroot("sh", "-c",
-		"chmod +x /tmp/rpm-ostree.broken; "+
-			"cp /usr/bin/rpm-ostree /tmp/rpm-ostree; "+
-			"nsenter --mount=/proc/1/ns/mnt mount --bind /tmp/rpm-ostree.broken /usr/bin/rpm-ostree; "+
-			"restorecon -v /usr/bin/rpm-ostree")
-	return err
+	return ReplaceRpmOstree(node, generateTemplateAbsolutePath("rpm-ostree-force-pivot-error.sh"))
 }
 
 // FixRebaseInNode fixes the rpm-ostree rebase process in a node
 func FixRebaseInNode(node *Node) error {
-	logger.Infof("Fixing rpm-ostree rebase process in node %s", node.GetName())
-
-	_, err := node.DebugNodeWithChroot("sh", "-c", "pkill -9 -x rpm-ostree; nsenter --mount=/proc/1/ns/mnt umount /usr/bin/rpm-ostree")
-	return err
+	return RestoreRpmOstree(node)
 }
 
 // GetOperatorNode returns the node running the MCO operator pod
@@ -1614,4 +1602,58 @@ func FilterSchedulableNodesOrFail(nodes []*Node) []*Node {
 func (n *Node) GetJournalLogs(args ...string) (string, error) {
 	cmd := []string{"journalctl", "-o", "with-unit"}
 	return n.DebugNodeWithChroot(append(cmd, args...)...)
+}
+
+const (
+	fakeRpmOstreeRemotePath = "/var/tmp/rpm-ostree-fake.sh"
+	fakeRpmRemotePath       = "/var/tmp/rpm-fake.sh"
+)
+
+// ReplaceRpmOstree copies a local script to the node and bind-mounts it over /usr/bin/rpm-ostree.
+// The original binary is backed up to /var/tmp/rpm-ostree.
+func ReplaceRpmOstree(node *Node, localScriptPath string) error {
+	logger.Infof("Replacing rpm-ostree with %s on node %s", localScriptPath, node.GetName())
+	if err := node.CopyFromLocal(localScriptPath, fakeRpmOstreeRemotePath); err != nil {
+		return fmt.Errorf("error copying %s to node %s: %w", localScriptPath, node, err)
+	}
+	_, err := node.DebugNodeWithChroot("sh", "-c",
+		"chmod +x "+fakeRpmOstreeRemotePath+" && "+
+			"cp /usr/bin/rpm-ostree /var/tmp/rpm-ostree && "+
+			"nsenter --mount=/proc/1/ns/mnt mount --bind "+fakeRpmOstreeRemotePath+" /usr/bin/rpm-ostree && "+
+			"restorecon -v /usr/bin/rpm-ostree")
+	return err
+}
+
+// RestoreRpmOstree unmounts the bind-mounted rpm-ostree and removes backup and fake script files.
+func RestoreRpmOstree(node *Node) error {
+	logger.Infof("Restoring rpm-ostree on node %s", node.GetName())
+	_, err := node.DebugNodeWithChroot("sh", "-c",
+		"pkill -9 -x rpm-ostree; "+
+			"nsenter --mount=/proc/1/ns/mnt umount -l /usr/bin/rpm-ostree 2>/dev/null; "+
+			"rm -f /var/tmp/rpm-ostree "+fakeRpmOstreeRemotePath)
+	return err
+}
+
+// ReplaceRpm copies a local script to the node and bind-mounts it over /usr/bin/rpm.
+// The original binary is backed up to /var/tmp/rpm-real.
+func ReplaceRpm(node *Node, localScriptPath string) error {
+	logger.Infof("Replacing rpm with %s on node %s", localScriptPath, node.GetName())
+	if err := node.CopyFromLocal(localScriptPath, fakeRpmRemotePath); err != nil {
+		return fmt.Errorf("error copying %s to node %s: %w", localScriptPath, node, err)
+	}
+	_, err := node.DebugNodeWithChroot("sh", "-c",
+		"chmod +x "+fakeRpmRemotePath+" && "+
+			"cp /usr/bin/rpm /var/tmp/rpm-real && "+
+			"nsenter --mount=/proc/1/ns/mnt mount --bind "+fakeRpmRemotePath+" /usr/bin/rpm && "+
+			"restorecon -v /usr/bin/rpm")
+	return err
+}
+
+// RestoreRpm unmounts the bind-mounted rpm and removes backup and fake script files.
+func RestoreRpm(node *Node) error {
+	logger.Infof("Restoring rpm on node %s", node.GetName())
+	_, err := node.DebugNodeWithChroot("sh", "-c",
+		"nsenter --mount=/proc/1/ns/mnt umount -l /usr/bin/rpm 2>/dev/null; "+
+			"rm -f /var/tmp/rpm-real "+fakeRpmRemotePath)
+	return err
 }

@@ -144,4 +144,110 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		validateMcpRenderDegraded(mc, mcp, expectedRDMessage, expectedRDReason)
 	})
+
+	g.It("[PolarionID:89090][OTP] verifyExtensionsStaged detects missing staged deployment after applying extensions [Disruptive]", func() {
+		var (
+			testID            = GetCurrentTestPolarionIDNumber()
+			expectedNDMessage = "no staged deployment found after applying extensions"
+		)
+
+		exutil.By("Get a pool for testing")
+		mcp, cleanup, err := GetCompactCompatibleOrCustomPool(oc.AsAdmin(), 1)
+		defer cleanup()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting pool for testing")
+		node := mcp.GetSortedNodesOrFail()[0]
+		logger.Infof("MCP: %s, node: %s", mcp.GetName(), node.GetName())
+		logger.Infof("OK!\n")
+
+		exutil.By("Replace rpm-ostree with fake script that silently succeeds on install/override")
+		o.Expect(ReplaceRpmOstree(node, generateTemplateAbsolutePath("rpm-ostree-fake-install-noop.sh"))).To(o.Succeed(),
+			"Failed to replace rpm-ostree on node %s", node.GetName())
+		logger.Infof("OK!\n")
+
+		exutil.By("Apply MachineConfig with usbguard extension")
+		mc := NewMachineConfig(oc.AsAdmin(), fmt.Sprintf("test-%s-ext", testID), mcp.GetName()).
+			SetMCOTemplate("change-worker-extension-usbguard.yaml")
+		mc.skipWaitForMcp = true
+		defer func() {
+			exutil.By("Restore rpm-ostree, delete MC, and recover MCP")
+			o.Expect(RestoreRpmOstree(node)).To(o.Succeed(), "Failed to restore rpm-ostree on node %s", node.GetName())
+			o.Eventually(mc.Delete).Should(o.Succeed(), "Could not delete the extension MC")
+			o.Expect(mcp.RecoverFromDegraded()).To(o.Succeed(), "The MCP could not be recovered from Degraded status")
+		}()
+		mc.create()
+		logger.Infof("OK!\n")
+
+		exutil.By("Restart MCD pod on the node to pick up fake rpm-ostree")
+		mcdPod := node.GetMachineConfigDaemon()
+		err = NewNamespacedResource(oc.AsAdmin(), "pod", MachineConfigNamespace, mcdPod).Delete()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to delete MCD pod %s", mcdPod)
+		logger.Infof("Deleted MCD pod %s to trigger re-sync with fake rpm-ostree", mcdPod)
+		logger.Infof("OK!\n")
+
+		exutil.By("Wait for MCP to degrade with missing staged deployment error")
+		o.Eventually(mcp, mcp.estimateWaitDuration().String(), "30s").Should(BeDegraded(),
+			"The '%s' MCP should become degraded when no staged deployment is found after applying extensions", mcp.GetName())
+		o.Expect(mcp).To(HaveNodeDegradedMessage(o.ContainSubstring(expectedNDMessage)),
+			"The '%s' MCP should report the staged deployment error in the NodeDegraded condition", mcp.GetName())
+		logger.Infof("OK!\n")
+	})
+
+	g.It("[PolarionID:89095][OTP] verifyExtensionPackages detects extension missing from RPM database after reboot [Disruptive]", func() {
+		var (
+			testID            = GetCurrentTestPolarionIDNumber()
+			expectedNDMessage = "extension package verification failed"
+			fakeRpmLocalPath  = generateTemplateAbsolutePath("rpm-fake-usbguard-missing.sh")
+		)
+
+		exutil.By("Get a pool for testing")
+		mcp, cleanup, err := GetCompactCompatibleOrCustomPool(oc.AsAdmin(), 1)
+		defer cleanup()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting pool for testing")
+		node := mcp.GetSortedNodesOrFail()[0]
+		logger.Infof("MCP: %s, node: %s", mcp.GetName(), node.GetName())
+		logger.Infof("OK!\n")
+
+		exutil.By("Apply MachineConfig with usbguard extension")
+		mc := NewMachineConfig(oc.AsAdmin(), fmt.Sprintf("test-%s-ext", testID), mcp.GetName()).
+			SetMCOTemplate("change-worker-extension-usbguard.yaml")
+		mc.skipWaitForMcp = true
+		defer func() {
+			exutil.By("Restore rpm, delete MC, and recover MCP")
+			o.Expect(RestoreRpm(node)).To(o.Succeed(), "Failed to restore rpm on node %s", node.GetName())
+			o.Eventually(mc.Delete).Should(o.Succeed(), "Could not delete the extension MC")
+			o.Expect(mcp.RecoverFromDegraded()).To(o.Succeed(), "The MCP could not be recovered from Degraded status")
+		}()
+		mc.create()
+		logger.Infof("OK!\n")
+
+		exutil.By("Wait for node to reboot and MCP to finish updating")
+		o.Expect(mcp.WaitForUpdatedStatus()).To(o.Succeed(),
+			"The MCP should complete the update after installing usbguard extension")
+		logger.Infof("OK!\n")
+
+		exutil.By("Re-apply fake rpm after reboot (bind mount is lost on reboot)")
+		o.Expect(ReplaceRpm(node, fakeRpmLocalPath)).To(o.Succeed(),
+			"Failed to re-apply fake rpm on node %s", node.GetName())
+		logger.Infof("OK!\n")
+
+		exutil.By("Restart MCD pod on the node to pick up fake rpm")
+		mcdPod := node.GetMachineConfigDaemon()
+		err = NewNamespacedResource(oc.AsAdmin(), "pod", MachineConfigNamespace, mcdPod).Delete()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to delete MCD pod %s", mcdPod)
+		logger.Infof("Deleted MCD pod %s to trigger re-sync", mcdPod)
+		logger.Infof("OK!\n")
+
+		exutil.By("Wait for MCP to degrade with extension verification error")
+		o.Eventually(mcp, mcp.estimateWaitDuration().String(), "30s").Should(BeDegraded(),
+			"The '%s' MCP should become degraded when extension packages are missing from the RPM database", mcp.GetName())
+		o.Expect(mcp).To(HaveNodeDegradedMessage(o.ContainSubstring(expectedNDMessage)),
+			"The '%s' MCP should report the extension verification error in the NodeDegraded condition", mcp.GetName())
+		logger.Infof("OK!\n")
+
+		exutil.By("Check MCD logs for extension verification error")
+		o.Eventually(node.GetMCDaemonLogs, "2m", "10s").WithArguments("").Should(
+			o.ContainSubstring(expectedNDMessage),
+			"MCD logs should contain the extension verification error")
+		logger.Infof("OK!\n")
+	})
 })
