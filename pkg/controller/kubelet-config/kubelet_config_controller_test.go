@@ -1441,6 +1441,18 @@ func TestCleanUpStatusConditions(t *testing.T) {
 	}
 }
 
+func TestRemoveLegacyConditions(t *testing.T) {
+	conditions := []mcfgv1.KubeletConfigCondition{
+		{Type: mcfgv1.KubeletConfigSuccess, Status: corev1.ConditionTrue, Message: "Success"},
+		{Type: mcfgv1.KubeletConfigAccepted, Status: corev1.ConditionTrue, Message: "Success"},
+		{Type: mcfgv1.KubeletConfigFailure, Status: corev1.ConditionTrue, Message: "Error"},
+	}
+
+	removeLegacyConditions(&conditions)
+	require.Equal(t, 1, len(conditions))
+	assert.Equal(t, mcfgv1.KubeletConfigAccepted, conditions[0].Type)
+}
+
 func TestKubeletConfigResync(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {

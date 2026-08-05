@@ -25,34 +25,34 @@ func TestWrapErrorWithCondition(t *testing.T) {
 		expectedMessage string
 	}{
 		{
-			name:            "error without args produces Failure condition with status True",
+			name:            "error without args produces KubeletConfigAccepted condition with status False",
 			err:             fmt.Errorf("KubeletConfiguration: swapBehavior is not allowed to be set, but contains: LimitedSwap"),
 			args:            nil,
-			expectedType:    mcfgv1.KubeletConfigFailure,
-			expectedStatus:  corev1.ConditionTrue,
+			expectedType:    mcfgv1.KubeletConfigAccepted,
+			expectedStatus:  corev1.ConditionFalse,
 			expectedMessage: "Error: KubeletConfiguration: swapBehavior is not allowed to be set, but contains: LimitedSwap",
 		},
 		{
-			name:            "error with formatted args produces Failure condition with status True",
+			name:            "error with formatted args produces KubeletConfigAccepted condition with status False",
 			err:             fmt.Errorf("validation failed"),
 			args:            []interface{}{"Failed to validate %s: %v", "kubelet config", "invalid field"},
-			expectedType:    mcfgv1.KubeletConfigFailure,
-			expectedStatus:  corev1.ConditionTrue,
+			expectedType:    mcfgv1.KubeletConfigAccepted,
+			expectedStatus:  corev1.ConditionFalse,
 			expectedMessage: "Failed to validate kubelet config: invalid field",
 		},
 		{
-			name:            "nil error produces Success condition with status True",
+			name:            "nil error produces KubeletConfigAccepted condition with status True",
 			err:             nil,
 			args:            nil,
-			expectedType:    mcfgv1.KubeletConfigSuccess,
+			expectedType:    mcfgv1.KubeletConfigAccepted,
 			expectedStatus:  corev1.ConditionTrue,
 			expectedMessage: "Success",
 		},
 		{
-			name:            "nil error with args still produces Success condition",
+			name:            "nil error with args still produces KubeletConfigAccepted condition with status True",
 			err:             nil,
 			args:            []interface{}{"Custom success message"},
-			expectedType:    mcfgv1.KubeletConfigSuccess,
+			expectedType:    mcfgv1.KubeletConfigAccepted,
 			expectedStatus:  corev1.ConditionTrue,
 			expectedMessage: "Custom success message",
 		},
@@ -73,6 +73,37 @@ func TestWrapErrorWithCondition(t *testing.T) {
 			if condition.Message != tt.expectedMessage {
 				t.Errorf("expected message %q, got %q", tt.expectedMessage, condition.Message)
 			}
+		})
+	}
+}
+
+func TestLegacyConditionFromAccepted(t *testing.T) {
+	tests := []struct {
+		name         string
+		input        mcfgv1.KubeletConfigCondition
+		expectedType mcfgv1.KubeletConfigStatusConditionType
+		expectedMsg  string
+	}{
+		{
+			name:         "accepted True maps to Success True",
+			input:        mcfgv1.KubeletConfigCondition{Type: mcfgv1.KubeletConfigAccepted, Status: corev1.ConditionTrue, Message: "Success"},
+			expectedType: mcfgv1.KubeletConfigSuccess,
+			expectedMsg:  "Success",
+		},
+		{
+			name:         "accepted False maps to Failure True",
+			input:        mcfgv1.KubeletConfigCondition{Type: mcfgv1.KubeletConfigAccepted, Status: corev1.ConditionFalse, Message: "Error: validation failed"},
+			expectedType: mcfgv1.KubeletConfigFailure,
+			expectedMsg:  "Error: validation failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			legacy := legacyConditionFromAccepted(tt.input)
+			require.Equal(t, tt.expectedType, legacy.Type)
+			require.Equal(t, corev1.ConditionTrue, legacy.Status)
+			require.Equal(t, tt.expectedMsg, legacy.Message)
 		})
 	}
 }
