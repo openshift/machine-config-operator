@@ -17,6 +17,7 @@ const (
 
 // OS IDs
 const (
+	centos string = "centos"
 	coreos string = "coreos"
 	fedora string = "fedora"
 	rhel   string = "rhel"
@@ -117,7 +118,7 @@ func (os OperatingSystem) BaseVersionMinor() int {
 // https://github.com/openshift/enhancements/blob/master/enhancements/rhcos/split-rhcos-into-layers.md
 // Additional info here: https://github.com/openshift/enhancements/pull/1755
 func (os OperatingSystem) IsEL() bool {
-	return os.id == rhcos || os.id == scos || (os.id == rhel && os.variantID == coreos)
+	return os.id == rhcos || os.id == scos || (os.id == rhel && os.variantID == coreos) || (os.id == centos && os.variantID == coreos)
 }
 
 // IsEL8 is true if the OS is RHCOS 8 or SCOS 8
