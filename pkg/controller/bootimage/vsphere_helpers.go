@@ -384,6 +384,12 @@ func resolveExistingTemplateVM(
 		if len(computedName) > 80 {
 			return nil, "", false, fmt.Errorf("length of VM template name `%s` exceeds the permitted limit of 80 characters", computedName)
 		}
+		// Validate/upgrade the ignition stub before creating the template in vSphere. If this fails,
+		// we must not have already mutated vSphere state, or a subsequent reconcile would find the
+		// template already in place and silently drop the error (see reconcileVSphereProviderSpec).
+		if err := upgradeStubIgnitionIfRequired(providerSpec.UserDataSecret.Name, kubeClient); err != nil {
+			return nil, "", false, err
+		}
 		ova, ovaErr := streamData.QueryDisk(arch, "vmware", "ova")
 		if ovaErr != nil {
 			return nil, "", false, ovaErr
@@ -405,6 +411,11 @@ func resolveExistingTemplateVM(
 	}
 
 	// Rollback: restore the old template renamed away during a crashed atomic swap.
+	// Validate/upgrade the ignition stub before this rename, so an invalid user-data secret blocks
+	// even this recovery mutation rather than only the OVA-driven create/swap paths.
+	if err := upgradeStubIgnitionIfRequired(providerSpec.UserDataSecret.Name, kubeClient); err != nil {
+		return nil, "", false, err
+	}
 	klog.Infof("Recovering from mid-swap crash: renaming %s back to %s", oldTempName, computedName)
 	renameTask, renameErr := oldVM.Rename(ctx, computedName)
 	if renameErr != nil {
@@ -763,6 +774,14 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 
 			if templateProductVersion != release {
 				klog.Infof("Existing RHCOS v%s does not match current RHCOS v%s. Starting reconciliation process.", templateProductVersion, release)
+
+				// Validate/upgrade the ignition stub before swapping the template in vSphere. If this
+				// fails, we must not have already mutated vSphere state, or a subsequent reconcile would
+				// find the template already up to date and silently drop the error (see
+				// reconcileVSphereProviderSpec).
+				if err := upgradeStubIgnitionIfRequired(providerSpec.UserDataSecret.Name, kubeClient); err != nil {
+					return "", false, err
+				}
 
 				// Find and download the relevant OVA file
 				ova, err := streamData.QueryDisk(arch, "vmware", "ova")
