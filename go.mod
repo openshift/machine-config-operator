@@ -21,7 +21,7 @@ require (
 	github.com/containers/storage v1.58.0
 	github.com/coreos/fcct v0.5.0
 	github.com/coreos/go-semver v0.3.1
-	github.com/coreos/ign-converter v0.0.0-20241125185625-2f773079ca81
+	github.com/coreos/ign-converter v0.0.0-20260420141348-5351d3e16080
 	github.com/coreos/ignition v0.35.0
 	github.com/coreos/ignition/v2 v2.26.0
 	github.com/coreos/rpmostree-client-go v0.0.0-20230914135003-fae0786302f7
@@ -55,7 +55,7 @@ require (
 	github.com/tidwall/sjson v1.2.5
 	github.com/vincent-petithory/dataurl v1.0.0
 	github.com/vmware/govmomi v0.45.1
-	golang.org/x/net v0.57.0
+	golang.org/x/net v0.55.1-0.20260602153038-42abb857022c
 	golang.org/x/time v0.15.0
 	google.golang.org/grpc v1.79.3
 	k8s.io/api v0.36.2
@@ -406,16 +406,16 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.1 // indirect
 	go4.org v0.0.0-20200104003542-c7e774b10ea0 // indirect
-	golang.org/x/crypto v0.54.0
+	golang.org/x/crypto v0.52.0
 	golang.org/x/exp v0.0.0-20251219203646-944ab1f22d93
 	golang.org/x/exp/typeparams v0.0.0-20241108190413-2d47ceb2692f // indirect
-	golang.org/x/mod v0.37.0 // indirect
+	golang.org/x/mod v0.35.0 // indirect
 	golang.org/x/oauth2 v0.34.0 // indirect
-	golang.org/x/sync v0.22.0
-	golang.org/x/sys v0.47.0
-	golang.org/x/term v0.45.0 // indirect
-	golang.org/x/text v0.40.0 // indirect
-	golang.org/x/tools v0.47.0 // indirect
+	golang.org/x/sync v0.20.0
+	golang.org/x/sys v0.45.0
+	golang.org/x/term v0.43.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
+	golang.org/x/tools v0.44.0 // indirect
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0

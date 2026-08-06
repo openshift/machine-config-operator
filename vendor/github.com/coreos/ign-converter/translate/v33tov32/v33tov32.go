@@ -115,7 +115,7 @@ func translateConfig(old old_types.Config) (ret types.Config) {
 func Translate(cfg old_types.Config) (types.Config, error) {
 	rpt := validate.ValidateWithContext(cfg, nil)
 	if rpt.IsFatal() {
-		return types.Config{}, fmt.Errorf("Invalid input config:\n%s", rpt.String())
+		return types.Config{}, fmt.Errorf("invalid input config:\n%s", rpt.String())
 	}
 
 	if len(cfg.KernelArguments.ShouldExist) > 0 || len(cfg.KernelArguments.ShouldNotExist) > 0 {
@@ -127,7 +127,7 @@ func Translate(cfg old_types.Config) (types.Config, error) {
 	// Sanity check the returned config
 	oldrpt := validate.ValidateWithContext(res, nil)
 	if oldrpt.IsFatal() {
-		return types.Config{}, fmt.Errorf("Converted spec has unexpected fatal error:\n%s", oldrpt.String())
+		return types.Config{}, fmt.Errorf("converted spec has unexpected fatal error:\n%s", oldrpt.String())
 	}
 	return res, nil
 }
