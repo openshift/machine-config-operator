@@ -19,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
+	k8sversion "k8s.io/apimachinery/pkg/util/version"
 	yamlutil "k8s.io/apimachinery/pkg/util/yaml"
 	kscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog/v2"
@@ -40,6 +41,7 @@ import (
 	kubeletconfig "github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
 	"github.com/openshift/machine-config-operator/pkg/controller/render"
 	"github.com/openshift/machine-config-operator/pkg/controller/template"
+	"github.com/openshift/machine-config-operator/pkg/daemon/osrelease"
 	"github.com/openshift/machine-config-operator/pkg/version"
 )
 
@@ -50,9 +52,11 @@ type Bootstrap struct {
 	// dir used to read pools and user defined machineconfigs.
 	manifestDir string
 	// pull secret file
-	pullSecretFile string
+	pullSecretFile     string
 	imageStreamFactory osimagestream.ImageStreamFactory
-	inspectorFactory   osimagestream.ImagesInspectorFactory
+	// ImagesInspector factory, used for OSImageStream discovery and to validate
+	// pre-built images for hybrid OCL at bootstrap time. Used for testing purposes.
+	inspectorFactory osimagestream.ImagesInspectorFactory
 }
 
 // New returns controller for bootstrap
@@ -357,11 +361,19 @@ func (b *Bootstrap) Run(destDir string) error {
 		}
 	}
 
+	sysCtxFactory := buildSysContextFactory(pullSecret, cconfig, imgCfg, icspRules, idmsRules, itmsRules)
+
 	// Create component MachineConfigs for pre-built images for hybrid OCL
 	// This must happen BEFORE render.RunBootstrap() so they can be merged into rendered MCs
 	if len(machineOSConfigs) > 0 {
 		klog.Infoln("Found machineOSConfig(s) at install time, will install cluster with Image Mode enabled")
-		preBuiltImageMCs, err := createPreBuiltImageMachineConfigs(machineOSConfigs, pools)
+
+		preBuiltImageCtx, preBuiltImageCancel := context.WithTimeout(context.Background(), time.Minute)
+		defer preBuiltImageCancel()
+
+		preBuiltImageInspector := b.inspectorFactory.ForContext(sysCtxFactory)
+
+		preBuiltImageMCs, err := createPreBuiltImageMachineConfigs(preBuiltImageCtx, machineOSConfigs, pools, cconfig, preBuiltImageInspector)
 		if err != nil {
 			return fmt.Errorf("failed to create pre-built image MachineConfigs: %w", err)
 		}
@@ -369,7 +381,6 @@ func (b *Bootstrap) Run(destDir string) error {
 		klog.Infof("Successfully created %d pre-built image component MachineConfigs for hybrid OCL.", len(preBuiltImageMCs))
 	}
 
-	sysCtxFactory := buildSysContextFactory(pullSecret, cconfig, imgCfg, icspRules, idmsRules, itmsRules)
 	inspector := osimagestream.NewStreamClassInspector(b.inspectorFactory, sysCtxFactory)
 	fpools, gconfigs, err := render.RunBootstrap(context.TODO(), pools, configs, cconfig, osImageStream, inspector)
 	if err != nil {
@@ -624,10 +635,13 @@ func parseManifests(filename string, r io.Reader) ([]manifest, error) {
 // that have associated MachineOSConfigs with pre-built image annotations.
 // These component MCs will be automatically merged into rendered MCs by the render controller.
 // This function validates pre-built images at bootstrap time and will fail if:
-// - The annotation is missing for a MOSC that hasn't been seeded yet (required for install-time OCL)
-// - The image format is invalid
+//   - The annotation is missing for a MOSC that hasn't been seeded yet (required for install-time OCL)
+//   - The image format is invalid
+//   - The image's registry is unreachable, or its OS version/base image doesn't match the cluster
+//     being installed (see validatePreBuiltImageVersion)
+//
 // MOSCs without the annotation are skipped only if seeding has already completed.
-func createPreBuiltImageMachineConfigs(machineOSConfigs []*mcfgv1.MachineOSConfig, pools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
+func createPreBuiltImageMachineConfigs(ctx context.Context, machineOSConfigs []*mcfgv1.MachineOSConfig, pools []*mcfgv1.MachineConfigPool, cconfig *mcfgv1.ControllerConfig, inspector osimagestream.ImagesInspector) ([]*mcfgv1.MachineConfig, error) {
 	var preBuiltImageMCs []*mcfgv1.MachineConfig
 	var validationErrors []error
 
@@ -669,6 +683,14 @@ func createPreBuiltImageMachineConfigs(machineOSConfigs []*mcfgv1.MachineOSConfi
 		// Validate the pre-built image format and digest
 		if err := validatePreBuiltImage(preBuiltImage); err != nil {
 			validationErrors = append(validationErrors, fmt.Errorf("invalid pre-built image %q for MachineOSConfig %q (pool %q): %w",
+				preBuiltImage, mosc.Name, poolName, err))
+			continue
+		}
+
+		// Validate that the pre-built image's base OS matches the cluster
+		// being installed, and that its registry is accessible.
+		if err := validatePreBuiltImageVersion(ctx, inspector, preBuiltImage, cconfig.Spec.BaseOSContainerImage); err != nil {
+			validationErrors = append(validationErrors, fmt.Errorf("pre-built image %q for MachineOSConfig %q (pool %q) failed validation: %w",
 				preBuiltImage, mosc.Name, poolName, err))
 			continue
 		}
@@ -716,4 +738,119 @@ func validatePreBuiltImage(imageSpec string) error {
 	}
 
 	return nil
+}
+
+// preBuiltImageBaseOSLabelKey is the label MCO's own Containerfile embeds
+// with the base OS image used to build the layered image (see
+// Containerfile.on-cluster-build-template).
+const preBuiltImageBaseOSLabelKey = "baseOSContainerImage"
+
+// osReleasePath is the path to the os-release file inside a container image.
+const osReleasePath = "/etc/os-release"
+
+// imageDigest parses an image reference and returns its canonical digest.
+func imageDigest(imageSpec string) (digest.Digest, error) {
+	ref, err := reference.ParseNamed(imageSpec)
+	if err != nil {
+		return "", fmt.Errorf("invalid image reference %q: %w", imageSpec, err)
+	}
+	canonical, ok := ref.(reference.Canonical)
+	if !ok {
+		return "", fmt.Errorf("image reference %q is not in digested form", imageSpec)
+	}
+	return canonical.Digest(), nil
+}
+
+// openshiftVersionFromImage fetches /etc/os-release from the given image and
+// extracts its OPENSHIFT_VERSION field (e.g. "4.16"). Returns an error if the
+// file can't be fetched/parsed or the field is absent.
+func openshiftVersionFromImage(ctx context.Context, inspector osimagestream.ImagesInspector, imageSpec string) (string, error) {
+	data, err := inspector.FetchImageFile(ctx, imageSpec, osReleasePath)
+	if err != nil {
+		return "", fmt.Errorf("could not fetch %s from image %q: %w", osReleasePath, imageSpec, err)
+	}
+	osRelease, err := osrelease.LoadOSRelease(string(data), string(data))
+	if err != nil {
+		return "", fmt.Errorf("could not parse %s from image %q: %w", osReleasePath, imageSpec, err)
+	}
+	openshiftVersion, ok := osRelease.OSRelease().ADDITIONAL_FIELDS["OPENSHIFT_VERSION"]
+	if !ok || openshiftVersion == "" {
+		return "", fmt.Errorf("image %q has no OPENSHIFT_VERSION field in %s", imageSpec, osReleasePath)
+	}
+	return openshiftVersion, nil
+}
+
+// sameMajorMinor compares two version strings by major.minor only.
+func sameMajorMinor(a, b string) (bool, error) {
+	va, err := k8sversion.ParseGeneric(a)
+	if err != nil {
+		return false, fmt.Errorf("could not parse version %q: %w", a, err)
+	}
+	vb, err := k8sversion.ParseGeneric(b)
+	if err != nil {
+		return false, fmt.Errorf("could not parse version %q: %w", b, err)
+	}
+	return va.Major() == vb.Major() && va.Minor() == vb.Minor(), nil
+}
+
+// validatePreBuiltImageDigestFallback compares the pre-built image's
+// baseOSContainerImage label digest against the cluster's resolved base OS
+// image digest. Used only when OCP-version comparison isn't possible.
+func validatePreBuiltImageDigestFallback(labels map[string]string, imageSpec, expectedBaseOSImage string) error {
+	label := labels[preBuiltImageBaseOSLabelKey]
+	if label == "" {
+		klog.Warningf("pre-built image %q has no OPENSHIFT_VERSION and no %q label; skipping version verification", imageSpec, preBuiltImageBaseOSLabelKey)
+		return nil
+	}
+	labelDigest, err := imageDigest(label)
+	if err != nil {
+		return fmt.Errorf("pre-built image %q has an invalid %q label: %w", imageSpec, preBuiltImageBaseOSLabelKey, err)
+	}
+	expectedDigest, err := imageDigest(expectedBaseOSImage)
+	if err != nil {
+		klog.Warningf("cluster's base OS image %q is not in digested form (%v); skipping digest verification for pre-built image %q", expectedBaseOSImage, err, imageSpec)
+		return nil
+	}
+	if labelDigest != expectedDigest {
+		return fmt.Errorf("pre-built image %q base OS image %q (digest %s) does not match the cluster's resolved base OS image %q (digest %s)",
+			imageSpec, label, labelDigest, expectedBaseOSImage, expectedDigest)
+	}
+	return nil
+}
+
+// validatePreBuiltImageVersion inspects the pre-built image (proving registry
+// accessibility as a side effect) and verifies it matches the cluster being
+// installed: primarily by comparing OPENSHIFT_VERSION from /etc/os-release
+// against version.ReleaseVersion; if that isn't determinable, it falls back
+// to a digest comparison via the baseOSContainerImage label. If neither
+// signal is available, it logs a warning and lets the image through
+// unverified. Inspection/registry failures are always a hard error.
+func validatePreBuiltImageVersion(ctx context.Context, inspector osimagestream.ImagesInspector, imageSpec, expectedBaseOSImage string) error {
+	imgVersion, versionErr := openshiftVersionFromImage(ctx, inspector, imageSpec)
+	if versionErr == nil {
+		matches, err := sameMajorMinor(imgVersion, version.ReleaseVersion)
+		if err != nil {
+			return fmt.Errorf("could not compare OCP versions for pre-built image %q: %w", imageSpec, err)
+		}
+		if !matches {
+			return fmt.Errorf("pre-built image %q OCP version %q does not match the cluster's OCP version %q", imageSpec, imgVersion, version.ReleaseVersion)
+		}
+		return nil
+	}
+	klog.V(4).Infof("could not determine OCP version for pre-built image %q, falling back to digest check: %v", imageSpec, versionErr)
+
+	results, err := inspector.Inspect(ctx, imageSpec)
+	if err != nil {
+		return fmt.Errorf("could not inspect pre-built image %q: %w", imageSpec, err)
+	}
+	if len(results) != 1 {
+		return fmt.Errorf("unexpected inspection result count for pre-built image %q", imageSpec)
+	}
+	if results[0].Error != nil {
+		return fmt.Errorf("could not access pre-built image %q (registry unreachable or image not found): %w", imageSpec, results[0].Error)
+	}
+	if results[0].InspectInfo == nil {
+		return fmt.Errorf("inspection of pre-built image %q returned no metadata", imageSpec)
+	}
+	return validatePreBuiltImageDigestFallback(results[0].InspectInfo.Labels, imageSpec, expectedBaseOSImage)
 }

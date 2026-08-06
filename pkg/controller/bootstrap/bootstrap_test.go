@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	imgtypes "github.com/containers/image/v5/types"
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -20,9 +21,11 @@ import (
 	apicfgv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
+	buildconstants "github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/imageutils"
 	"github.com/openshift/machine-config-operator/pkg/osimagestream"
+	"github.com/openshift/machine-config-operator/pkg/version"
 )
 
 func TestParseManifests(t *testing.T) {
@@ -181,13 +184,75 @@ func (f *fakeImageStreamFactory) Create(_ context.Context, _ imageutils.SysConte
 	return f.stream, nil
 }
 
+// Implements a fake ImagesInspector. FetchImageFileFunc and InspectFunc are
+// stubbable per-test; if left nil, the corresponding method returns an error,
+// simulating an unreachable registry.
+type fakeImagesInspector struct {
+	FetchImageFileFunc func(ctx context.Context, image, path string) ([]byte, error)
+	InspectFunc        func(ctx context.Context, image ...string) ([]imageutils.BulkInspectResult, error)
+}
+
+func (f *fakeImagesInspector) FetchImageFile(ctx context.Context, image, path string) ([]byte, error) {
+	if f.FetchImageFileFunc != nil {
+		return f.FetchImageFileFunc(ctx, image, path)
+	}
+	return nil, fmt.Errorf("fakeImagesInspector: FetchImageFile not configured for image %q", image)
+}
+
+func (f *fakeImagesInspector) Inspect(ctx context.Context, image ...string) ([]imageutils.BulkInspectResult, error) {
+	if f.InspectFunc != nil {
+		return f.InspectFunc(ctx, image...)
+	}
+	return nil, fmt.Errorf("fakeImagesInspector: Inspect not configured for image(s) %v", image)
+}
+
+// Implements a fake ImagesInspectorFactory.
+type fakeImagesInspectorFactory struct {
+	inspector *fakeImagesInspector
+	// Whether the ForContext method was called.
+	forContextCalled bool
+}
+
+func (f *fakeImagesInspectorFactory) ForContext(_ imageutils.SysContextFactory) osimagestream.ImagesInspector {
+	f.forContextCalled = true
+	return f.inspector
+}
+
+// fakeOSReleaseContent returns minimal /etc/os-release-style content with
+// the given OPENSHIFT_VERSION field set.
+func fakeOSReleaseContent(openshiftVersion string) []byte {
+	return []byte(fmt.Sprintf("ID=\"rhcos\"\nVERSION_ID=\"9\"\nOPENSHIFT_VERSION=%q\n", openshiftVersion))
+}
+
+// inspectResultWithLabels builds a successful imageutils.BulkInspectResult
+// with the given labels for a single image.
+func inspectResultWithLabels(image string, labels map[string]string) []imageutils.BulkInspectResult {
+	return []imageutils.BulkInspectResult{{
+		Image:       image,
+		InspectInfo: &imgtypes.ImageInspectInfo{Labels: labels},
+	}}
+}
+
+// inspectResultWithError builds a failed imageutils.BulkInspectResult for a
+// single image, simulating an unreachable registry.
+func inspectResultWithError(image string, err error) []imageutils.BulkInspectResult {
+	return []imageutils.BulkInspectResult{{
+		Image: image,
+		Error: err,
+	}}
+}
+
 // Instantiates a new instance of the Bootstrap struct for testing. This also
 // does the following:
 // 1. Copies the data from testdata/bootstrap into a temp directory so that it
 // may be safely overwritten to test specific scenarios.
 // 2. Creates a fake ImageStreamFactory instance and wires it up to return an
 // OSImageStream.
-func setupForBootstrapTest(t *testing.T) (*Bootstrap, *fakeImageStreamFactory, string, string) {
+// 3. Creates a fake ImagesInspectorFactory instance and wires it up so that
+// the pre-built image referenced by testdata/bootstrap/layered-worker.machineosconfig.yaml
+// passes version validation (its /etc/os-release always reports an
+// OPENSHIFT_VERSION matching version.ReleaseVersion).
+func setupForBootstrapTest(t *testing.T) (*Bootstrap, *fakeImageStreamFactory, *fakeImagesInspectorFactory, string, string) {
 	t.Helper()
 
 	srcDir := t.TempDir()
@@ -210,10 +275,18 @@ func setupForBootstrapTest(t *testing.T) (*Bootstrap, *fakeImageStreamFactory, s
 		},
 	}
 
-	bootstrap := New("../../../templates", srcDir, filepath.Join(srcDir, "machineconfigcontroller-pull-secret"), &noopImagesInspectorFactory{})
+	fakeInspectorFactory := &fakeImagesInspectorFactory{
+		inspector: &fakeImagesInspector{
+			FetchImageFileFunc: func(_ context.Context, _, _ string) ([]byte, error) {
+				return fakeOSReleaseContent(version.ReleaseVersion), nil
+			},
+		},
+	}
+
+	bootstrap := New("../../../templates", srcDir, filepath.Join(srcDir, "machineconfigcontroller-pull-secret"), fakeInspectorFactory)
 	bootstrap.imageStreamFactory = fakeFactory
 
-	return bootstrap, fakeFactory, srcDir, destDir
+	return bootstrap, fakeFactory, fakeInspectorFactory, srcDir, destDir
 }
 
 type noopImagesInspectorFactory struct{}
@@ -286,7 +359,7 @@ func TestBootstrapRunHypershift(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			bootstrap, fakeFactory, srcDir, destDir := setupForBootstrapTest(t)
+			bootstrap, fakeFactory, _, srcDir, destDir := setupForBootstrapTest(t)
 
 			require.NoError(t, exec.Command("cp", "testdata/bootstrap-hypershift/machineconfigcontroller-controllerconfig.yaml", srcDir).Run())
 
@@ -324,10 +397,15 @@ func TestBootstrapRunHypershift(t *testing.T) {
 }
 
 func TestBootstrapRun(t *testing.T) {
-	bootstrap, fakeFactory, _, destDir := setupForBootstrapTest(t)
+	bootstrap, fakeFactory, fakeInspectorFactory, _, destDir := setupForBootstrapTest(t)
 
 	err := bootstrap.Run(destDir)
 	require.NoError(t, err)
+
+	// testdata/bootstrap/layered-worker.machineosconfig.yaml carries a
+	// pre-built image annotation, so bootstrap-time validation must have
+	// used the (fake) ImagesInspector to check it.
+	assert.True(t, fakeInspectorFactory.forContextCalled)
 
 	for _, poolName := range []string{"master", "worker"} {
 		t.Run(poolName, func(t *testing.T) {
@@ -432,4 +510,366 @@ func TestValidatePreBuiltImage(t *testing.T) {
 			}
 		})
 	}
+}
+
+const (
+	testDigestA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	testDigestB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+)
+
+func TestImageDigest(t *testing.T) {
+	tests := []struct {
+		name          string
+		imageSpec     string
+		wantDigest    string
+		errorContains string
+	}{
+		{
+			name:       "valid digested reference",
+			imageSpec:  "registry.example.com/test@sha256:" + testDigestA,
+			wantDigest: "sha256:" + testDigestA,
+		},
+		{
+			name:          "reference without digest",
+			imageSpec:     "registry.example.com/test:latest",
+			errorContains: "is not in digested form",
+		},
+		{
+			name:          "malformed reference",
+			imageSpec:     "not a valid ref!!",
+			errorContains: "invalid image reference",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := imageDigest(tt.imageSpec)
+			if tt.errorContains != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorContains)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantDigest, got.String())
+		})
+	}
+}
+
+func TestSameMajorMinor(t *testing.T) {
+	tests := []struct {
+		name          string
+		a             string
+		b             string
+		want          bool
+		errorContains string
+	}{
+		{name: "identical major.minor with differing patch", a: "4.16", b: "4.16.3", want: true},
+		{name: "differing minor", a: "4.16", b: "4.17", want: false},
+		{name: "differing major", a: "5.0", b: "4.16", want: false},
+		{name: "leading v is tolerated", a: "v4.16", b: "4.16.1", want: true},
+		{name: "unparseable a", a: "not-a-version", b: "4.16", errorContains: "could not parse version"},
+		{name: "unparseable b", a: "4.16", b: "not-a-version", errorContains: "could not parse version"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := sameMajorMinor(tt.a, tt.b)
+			if tt.errorContains != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorContains)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestOpenshiftVersionFromImage(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("success", func(t *testing.T) {
+		inspector := &fakeImagesInspector{
+			FetchImageFileFunc: func(_ context.Context, _, path string) ([]byte, error) {
+				assert.Equal(t, osReleasePath, path)
+				return fakeOSReleaseContent("4.16"), nil
+			},
+		}
+		got, err := openshiftVersionFromImage(ctx, inspector, "registry.example.com/test@sha256:"+testDigestA)
+		require.NoError(t, err)
+		assert.Equal(t, "4.16", got)
+	})
+
+	t.Run("fetch error", func(t *testing.T) {
+		inspector := &fakeImagesInspector{
+			FetchImageFileFunc: func(_ context.Context, _, _ string) ([]byte, error) {
+				return nil, fmt.Errorf("registry unreachable")
+			},
+		}
+		_, err := openshiftVersionFromImage(ctx, inspector, "registry.example.com/test@sha256:"+testDigestA)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "could not fetch")
+	})
+
+	t.Run("missing OPENSHIFT_VERSION field", func(t *testing.T) {
+		inspector := &fakeImagesInspector{
+			FetchImageFileFunc: func(_ context.Context, _, _ string) ([]byte, error) {
+				return []byte(`ID="rhel"` + "\n"), nil
+			},
+		}
+		_, err := openshiftVersionFromImage(ctx, inspector, "registry.example.com/test@sha256:"+testDigestA)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "no OPENSHIFT_VERSION field")
+	})
+}
+
+func TestValidatePreBuiltImageDigestFallback(t *testing.T) {
+	imageSpec := "registry.example.com/layered@sha256:" + testDigestA
+
+	tests := []struct {
+		name                string
+		labels              map[string]string
+		expectedBaseOSImage string
+		errorContains       string
+	}{
+		{
+			name: "matching digest through a different registry host (mirror-tolerant)",
+			labels: map[string]string{
+				preBuiltImageBaseOSLabelKey: "mirror.example.com/os@sha256:" + testDigestB,
+			},
+			expectedBaseOSImage: "registry.host.com/os@sha256:" + testDigestB,
+		},
+		{
+			name: "mismatched digest",
+			labels: map[string]string{
+				preBuiltImageBaseOSLabelKey: "registry.host.com/os@sha256:" + testDigestA,
+			},
+			expectedBaseOSImage: "registry.host.com/os@sha256:" + testDigestB,
+			errorContains:       "does not match the cluster's resolved base OS image",
+		},
+		{
+			name:                "missing label is allowed through with a warning",
+			labels:              map[string]string{},
+			expectedBaseOSImage: "registry.host.com/os@sha256:" + testDigestB,
+		},
+		{
+			name: "invalid label",
+			labels: map[string]string{
+				preBuiltImageBaseOSLabelKey: "not a valid ref!!",
+			},
+			expectedBaseOSImage: "registry.host.com/os@sha256:" + testDigestB,
+			errorContains:       "invalid",
+		},
+		{
+			name: "invalid expected base OS image",
+			labels: map[string]string{
+				preBuiltImageBaseOSLabelKey: "registry.host.com/os@sha256:" + testDigestB,
+			},
+			expectedBaseOSImage: "registry.host.com/os:latest",
+			errorContains:       "is invalid",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validatePreBuiltImageDigestFallback(tt.labels, imageSpec, tt.expectedBaseOSImage)
+			if tt.errorContains != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorContains)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestValidatePreBuiltImageVersion(t *testing.T) {
+	const imageSpec = "registry.example.com/layered@sha256:" + testDigestA
+	const expectedBaseOSImage = "registry.host.com/os@sha256:" + testDigestB
+
+	tests := []struct {
+		name          string
+		inspector     *fakeImagesInspector
+		errorContains string
+	}{
+		{
+			name: "OCP version matches",
+			inspector: &fakeImagesInspector{
+				FetchImageFileFunc: func(_ context.Context, _, _ string) ([]byte, error) {
+					return fakeOSReleaseContent(version.ReleaseVersion), nil
+				},
+				InspectFunc: func(_ context.Context, _ ...string) ([]imageutils.BulkInspectResult, error) {
+					t.Fatal("Inspect should not be called when the OCP version check succeeds")
+					return nil, nil
+				},
+			},
+		},
+		{
+			name: "OCP version mismatch",
+			inspector: &fakeImagesInspector{
+				FetchImageFileFunc: func(_ context.Context, _, _ string) ([]byte, error) {
+					return fakeOSReleaseContent("999.999"), nil
+				},
+			},
+			errorContains: "does not match the cluster's OCP version",
+		},
+		{
+			name: "no os-release, digest fallback matches",
+			inspector: &fakeImagesInspector{
+				FetchImageFileFunc: func(_ context.Context, _, _ string) ([]byte, error) {
+					return nil, fmt.Errorf("no such file")
+				},
+				InspectFunc: func(_ context.Context, image ...string) ([]imageutils.BulkInspectResult, error) {
+					return inspectResultWithLabels(image[0], map[string]string{
+						preBuiltImageBaseOSLabelKey: expectedBaseOSImage,
+					}), nil
+				},
+			},
+		},
+		{
+			name: "no os-release, digest mismatch",
+			inspector: &fakeImagesInspector{
+				FetchImageFileFunc: func(_ context.Context, _, _ string) ([]byte, error) {
+					return nil, fmt.Errorf("no such file")
+				},
+				InspectFunc: func(_ context.Context, image ...string) ([]imageutils.BulkInspectResult, error) {
+					return inspectResultWithLabels(image[0], map[string]string{
+						preBuiltImageBaseOSLabelKey: "registry.host.com/os@sha256:" + testDigestA,
+					}), nil
+				},
+			},
+			errorContains: "does not match the cluster's resolved base OS image",
+		},
+		{
+			name: "neither OPENSHIFT_VERSION nor baseOSContainerImage label available",
+			inspector: &fakeImagesInspector{
+				FetchImageFileFunc: func(_ context.Context, _, _ string) ([]byte, error) {
+					return nil, fmt.Errorf("no such file")
+				},
+				InspectFunc: func(_ context.Context, image ...string) ([]imageutils.BulkInspectResult, error) {
+					return inspectResultWithLabels(image[0], map[string]string{}), nil
+				},
+			},
+		},
+		{
+			name: "Inspect call itself fails (registry unreachable)",
+			inspector: &fakeImagesInspector{
+				FetchImageFileFunc: func(_ context.Context, _, _ string) ([]byte, error) {
+					return nil, fmt.Errorf("no such file")
+				},
+				InspectFunc: func(_ context.Context, _ ...string) ([]imageutils.BulkInspectResult, error) {
+					return nil, fmt.Errorf("dial tcp: no route to host")
+				},
+			},
+			errorContains: "could not inspect pre-built image",
+		},
+		{
+			name: "Inspect returns a per-image error (registry unreachable or image not found)",
+			inspector: &fakeImagesInspector{
+				FetchImageFileFunc: func(_ context.Context, _, _ string) ([]byte, error) {
+					return nil, fmt.Errorf("no such file")
+				},
+				InspectFunc: func(_ context.Context, image ...string) ([]imageutils.BulkInspectResult, error) {
+					return inspectResultWithError(image[0], fmt.Errorf("manifest unknown")), nil
+				},
+			},
+			errorContains: "could not access pre-built image",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validatePreBuiltImageVersion(context.Background(), tt.inspector, imageSpec, expectedBaseOSImage)
+			if tt.errorContains != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorContains)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestCreatePreBuiltImageMachineConfigs(t *testing.T) {
+	pools := []*mcfgv1.MachineConfigPool{
+		{ObjectMeta: metav1.ObjectMeta{Name: "layered-worker"}},
+	}
+	cconfig := &mcfgv1.ControllerConfig{
+		Spec: mcfgv1.ControllerConfigSpec{
+			BaseOSContainerImage: "registry.host.com/os@sha256:" + testDigestB,
+		},
+	}
+	preBuiltImage := "quay.io/example/layered@sha256:" + testDigestA
+
+	versionMatchingInspector := &fakeImagesInspector{
+		FetchImageFileFunc: func(_ context.Context, _, _ string) ([]byte, error) {
+			return fakeOSReleaseContent(version.ReleaseVersion), nil
+		},
+	}
+
+	newMOSC := func(annotations map[string]string, conditions []metav1.Condition) *mcfgv1.MachineOSConfig {
+		return &mcfgv1.MachineOSConfig{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        "layered-worker",
+				Annotations: annotations,
+			},
+			Spec: mcfgv1.MachineOSConfigSpec{
+				MachineConfigPool: mcfgv1.MachineConfigPoolReference{Name: "layered-worker"},
+			},
+			Status: mcfgv1.MachineOSConfigStatus{
+				Conditions: conditions,
+			},
+		}
+	}
+
+	t.Run("valid pre-built image produces a component MachineConfig", func(t *testing.T) {
+		mosc := newMOSC(map[string]string{buildconstants.PreBuiltImageAnnotationKey: preBuiltImage}, nil)
+		mcs, err := createPreBuiltImageMachineConfigs(context.Background(), []*mcfgv1.MachineOSConfig{mosc}, pools, cconfig, versionMatchingInspector)
+		require.NoError(t, err)
+		require.Len(t, mcs, 1)
+	})
+
+	t.Run("missing annotation before seeding fails", func(t *testing.T) {
+		mosc := newMOSC(nil, nil)
+		_, err := createPreBuiltImageMachineConfigs(context.Background(), []*mcfgv1.MachineOSConfig{mosc}, pools, cconfig, versionMatchingInspector)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "is missing required annotation")
+	})
+
+	t.Run("missing annotation after seeding is skipped", func(t *testing.T) {
+		mosc := newMOSC(nil, []metav1.Condition{{
+			Type:   buildconstants.MachineOSConfigSeeded,
+			Status: metav1.ConditionTrue,
+		}})
+		mcs, err := createPreBuiltImageMachineConfigs(context.Background(), []*mcfgv1.MachineOSConfig{mosc}, pools, cconfig, versionMatchingInspector)
+		require.NoError(t, err)
+		assert.Empty(t, mcs)
+	})
+
+	t.Run("non-existent pool fails", func(t *testing.T) {
+		mosc := newMOSC(map[string]string{buildconstants.PreBuiltImageAnnotationKey: preBuiltImage}, nil)
+		mosc.Spec.MachineConfigPool.Name = "does-not-exist"
+		_, err := createPreBuiltImageMachineConfigs(context.Background(), []*mcfgv1.MachineOSConfig{mosc}, pools, cconfig, versionMatchingInspector)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "references non-existent pool")
+	})
+
+	t.Run("invalid image format fails", func(t *testing.T) {
+		mosc := newMOSC(map[string]string{buildconstants.PreBuiltImageAnnotationKey: "quay.io/example/layered:latest"}, nil)
+		_, err := createPreBuiltImageMachineConfigs(context.Background(), []*mcfgv1.MachineOSConfig{mosc}, pools, cconfig, versionMatchingInspector)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid pre-built image")
+	})
+
+	t.Run("OCP version mismatch fails", func(t *testing.T) {
+		mismatchInspector := &fakeImagesInspector{
+			FetchImageFileFunc: func(_ context.Context, _, _ string) ([]byte, error) {
+				return fakeOSReleaseContent("999.999"), nil
+			},
+		}
+		mosc := newMOSC(map[string]string{buildconstants.PreBuiltImageAnnotationKey: preBuiltImage}, nil)
+		_, err := createPreBuiltImageMachineConfigs(context.Background(), []*mcfgv1.MachineOSConfig{mosc}, pools, cconfig, mismatchInspector)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed validation")
+	})
 }
