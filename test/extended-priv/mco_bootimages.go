@@ -15,8 +15,10 @@ import (
 	e2e "k8s.io/kubernetes/test/e2e/framework"
 )
 
-const mapiBaseErrorMessageTemplate = `1 Degraded MAPI MachineSets | 0 Degraded ControlPlaneMachineSets | 0 Degraded CAPI MachineSets | 0 Degraded CAPI MachineDeployments | Error(s):` +
-	` error syncing MAPI MachineSet %s: failed to reconcile machineset %s, err:`
+const mapiBaseErrorMessageTemplate = `1 Degraded MAPI MachineSets | 0 Degraded ControlPlaneMachineSets | 0 Degraded CAPI MachineSets | 0 CAPI MachineDeployments | Error(s):` +
+	` error syncing MAPI MachineSet %s:`
+
+const mapiReconcileErrorMessageTemplate = mapiBaseErrorMessageTemplate + ` failed to reconcile machineset %s, err:`
 
 var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longduration][Serial][Disruptive] MCO Bootimages", func() {
 	defer g.GinkgoRecover()
@@ -410,7 +412,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			clonedMSName     = fmt.Sprintf("cloned-tc-%s-copy", GetCurrentTestPolarionIDNumber())
 			clonedSecretName = fmt.Sprintf("cloned-user-data-%s-copy", GetCurrentTestPolarionIDNumber())
 			// We make the the regexp end in a "$" to make sure that no more versions than the expected ones are present
-			expectedFailedMessageRegexp = regexp.QuoteMeta(fmt.Sprintf(mapiBaseErrorMessageTemplate+
+			expectedFailedMessageRegexp = regexp.QuoteMeta(fmt.Sprintf(mapiReconcileErrorMessageTemplate+
 				` error grabbing user data secret referenced in machineset: secrets "%s" not found`, clonedMSName, clonedMSName, clonedSecretName)) + "$"
 		)
 
@@ -423,7 +425,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			clonedMSName     = fmt.Sprintf("cloned-tc-%s-copy", GetCurrentTestPolarionIDNumber())
 			clonedSecretName = fmt.Sprintf("cloned-user-data-%s-copy", GetCurrentTestPolarionIDNumber())
 			// We make the the regexp end in a "$" to make sure that no more versions than the expected ones are present
-			expectedFailedMessageRegexp = regexp.QuoteMeta(fmt.Sprintf(mapiBaseErrorMessageTemplate+
+			expectedFailedMessageRegexp = regexp.QuoteMeta(fmt.Sprintf(mapiReconcileErrorMessageTemplate+
 				" failed to unmarshal decoded user-data to json (secret %s): invalid character 'h' in literal true (expecting 'r')t", clonedMSName, clonedMSName, clonedSecretName)) + "$"
 		)
 
@@ -441,7 +443,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			clonedMSName         = fmt.Sprintf("cloned-tc-%s-copy", GetCurrentTestPolarionIDNumber())
 			clonedSecretName     = fmt.Sprintf("cloned-user-data-%s-copy", GetCurrentTestPolarionIDNumber())
 			// We make the the regexp end in a "$" to make sure that no more versions than the expected ones are present
-			expectedFailedMessageRegexp = regexp.QuoteMeta(fmt.Sprintf(mapiBaseErrorMessageTemplate+
+			expectedFailedMessageRegexp = regexp.QuoteMeta(fmt.Sprintf(mapiReconcileErrorMessageTemplate+
 				" converting ignition stub failed: failed to parse Ignition config: parsing Ignition config failed:"+
 				" unknown version. Supported spec versions: 2.2,3.0,3.1,3.2,3.3,3.4,3.5", clonedMSName, clonedMSName)) + "$"
 		)
@@ -678,6 +680,76 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		exutil.By("Set the original architecture in the cloneed machineset")
 		setArchitectureAndCheckStatus(clonedMS, machineConfiguration, arch.String())
+	})
+
+	g.It("[PolarionID:89596][OTP] ManagedBootImages. Hot loop detection and recovery", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
+		var (
+			clonedMSName                = fmt.Sprintf("cloned-tc-%s-%s", GetCurrentTestPolarionIDNumber(), exutil.GetRandomString()[:5])
+			machineSet                  = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
+			fakeImageName               = getBackdatedBootImage(oc.AsAdmin())
+			expectedHotLoopMessageRegex = regexp.QuoteMeta(fmt.Sprintf(mapiBaseErrorMessageTemplate+
+				" refusing to reconcile machineset %s, hot loop detected.", clonedMSName, clonedMSName))
+		)
+
+		exutil.By("Opt-in boot images update")
+		o.Expect(
+			machineConfiguration.SetAllManagedBootImagesConfig(MachineSetResource),
+		).To(o.Succeed(), "Error configuring ALL managedBootImages in the 'cluster' MachineConfiguration resource")
+		logger.Infof("OK!\n")
+
+		exutil.By("Clone the first machineset")
+		clonedMS, err := machineSet.Duplicate(clonedMSName)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s", machineSet)
+		defer clonedMS.Delete()
+		logger.Infof("OK!\n")
+
+		exutil.By("Trigger hot loop by repeatedly setting a wrong boot image")
+		// HotLoopLimit is 3. After 3 patches to the same target value by MCO,
+		// the next attempt to patch triggers the hot loop detection.
+		for i := 1; i <= 3; i++ {
+			logger.Infof("Hot loop iteration %d/3: setting wrong boot image", i)
+			o.Expect(clonedMS.SetCoreOsBootImage(fakeImageName)).To(o.Succeed(),
+				"Error setting a fake boot image in %s (iteration %d)", clonedMS, i)
+
+			logger.Infof("Waiting for MCO to fix the boot image (iteration %d)", i)
+			o.Eventually(clonedMS.GetCoreOsBootImage, "5m", "20s").ShouldNot(o.Equal(fakeImageName),
+				"MCO did not fix the boot image in %s (iteration %d)", clonedMS, i)
+		}
+		logger.Infof("OK!\n")
+
+		exutil.By("Set wrong boot image one more time to trigger the hot loop error")
+		o.Expect(clonedMS.SetCoreOsBootImage(fakeImageName)).To(o.Succeed(),
+			"Error setting a fake boot image in %s", clonedMS)
+		logger.Infof("OK!\n")
+
+		exutil.By("Check that the hot loop error is reported in the MachineConfiguration resource")
+		o.Eventually(machineConfiguration, "5m", "20s").Should(HaveConditionField("BootImageUpdateDegraded", "status", "True"),
+			"Expected %s to be BootImageUpdateDegraded due to hot loop.\n%s", machineConfiguration.PrettyString())
+
+		o.Eventually(machineConfiguration, "5m", "20s").Should(HaveConditionField("BootImageUpdateDegraded", "message", o.MatchRegexp(expectedHotLoopMessageRegex)),
+			"Expected hot loop error message in %s.\n%s", machineConfiguration.PrettyString())
+		logger.Infof("OK!\n")
+
+		exutil.By("Opt-out to clear the hot loop state")
+		o.Expect(
+			machineConfiguration.SetNoneManagedBootImagesConfig(MachineSetResource),
+		).To(o.Succeed(), "Error configuring None managedBootImages in the 'cluster' MachineConfiguration resource")
+		logger.Infof("OK!\n")
+
+		exutil.By("Opt-in again to verify the hot loop state was cleared")
+		o.Expect(
+			machineConfiguration.SetAllManagedBootImagesConfig(MachineSetResource),
+		).To(o.Succeed(), "Error configuring ALL managedBootImages in the 'cluster' MachineConfiguration resource")
+		logger.Infof("OK!\n")
+
+		exutil.By("Check that the degraded status is cleared and the boot image is restored")
+		o.Eventually(machineConfiguration, "5m", "20s").Should(HaveConditionField("BootImageUpdateDegraded", "status", "False"),
+			"Expected %s NOT to be BootImageUpdateDegraded after clearing hot loop.\n%s", machineConfiguration.PrettyString())
+
+		o.Eventually(clonedMS.GetCoreOsBootImage, "5m", "20s").ShouldNot(o.Equal(fakeImageName),
+			"MCO should have fixed the boot image in %s after clearing the hot loop", clonedMS)
+		CheckCurrentOSImageIsUpdated(clonedMS)
+		logger.Infof("OK!\n")
 	})
 })
 
