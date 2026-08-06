@@ -25,6 +25,14 @@ const (
 	coreOSLabelBootc             = "containers.bootc"
 	coreOSLabelBootcValueBool    = "true"
 	coreOSLabelBootcValueInteger = "1"
+
+	// osSourceAnnotation is the ImageStream tag annotation key that identifies
+	// tags built from the openshift/os repository.
+	osSourceAnnotation = "io.openshift.build.source-location"
+
+	// osSourceRepo is the substring matched against the osSourceAnnotation value
+	// to identify OS-related ImageStream tags.
+	osSourceRepo = "github.com/openshift/os"
 )
 
 // ImageType indicates whether a container image is an OS image or an extensions image.

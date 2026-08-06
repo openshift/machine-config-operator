@@ -24,7 +24,8 @@ type InspectionCacheEntry struct {
 	CreatedAt time.Time         `json:"createdAt,omitempty"`
 }
 
-func (e *InspectionCacheEntry) deepCopy() *InspectionCacheEntry {
+// DeepCopy returns a deep copy of the entry.
+func (e *InspectionCacheEntry) DeepCopy() *InspectionCacheEntry {
 	cp := &InspectionCacheEntry{
 		CreatedAt: e.CreatedAt,
 		Labels:    maps.Clone(e.Labels),
@@ -46,6 +47,26 @@ type InspectionCache interface {
 	Put(digest string, entry *InspectionCacheEntry) error
 }
 
+// SyncableCache provides the read-side contract a CacheSyncer needs to
+// observe changes and obtain snapshots for external persistence.
+type SyncableCache interface {
+	// SyncNotify returns a channel that receives a value whenever the cache
+	// content changes and should be flushed.
+	SyncNotify() <-chan struct{}
+	// Snapshot returns a deep copy of all cache entries.
+	Snapshot() map[string]*InspectionCacheEntry
+}
+
+// CacheSyncer provides external persistence for the inspection cache.
+type CacheSyncer interface {
+	// Load retrieves persisted entries from the external store.
+	Load(ctx context.Context) (map[string]*InspectionCacheEntry, error)
+	// Start prepares the external store (e.g. waiting for informer sync),
+	// then launches a background goroutine that flushes cache snapshots
+	// whenever the cache signals a change.
+	Start(ctx context.Context, cache SyncableCache, debounce time.Duration)
+}
+
 // CacheEvicter determines which cached digests should be retained.
 // Retain receives all digests currently in the cache and returns the subset
 // that this evicter wants to keep. An entry is purged only if no registered
@@ -61,22 +82,28 @@ type inspectionCacheFile struct {
 
 // FileInspectionCache is a file-backed InspectionCache.
 // It keeps an in-memory copy for fast reads and writes through to a JSON file on every Put.
+// An optional CacheSyncer provides durable external persistence (e.g. a ConfigMap).
 type FileInspectionCache struct {
-	path     string
-	mu       sync.RWMutex
-	entries  map[string]*InspectionCacheEntry
-	evicters []CacheEvicter
-	minAge   time.Duration
+	path       string
+	mu         sync.RWMutex
+	entries    map[string]*InspectionCacheEntry
+	evicters   []CacheEvicter
+	minAge     time.Duration
+	syncer     CacheSyncer
+	syncNotify chan struct{}
 }
 
 // NewFileInspectionCache creates a cache backed by the given file path.
 // If the file exists it is loaded; a missing or corrupt file starts an empty cache.
 // minAge is the minimum time an entry must live before it can be evicted.
-func NewFileInspectionCache(path string, minAge time.Duration) *FileInspectionCache {
+// syncer, if non-nil, enables external persistence loaded on Start and flushed periodically.
+func NewFileInspectionCache(path string, minAge time.Duration, syncer CacheSyncer) *FileInspectionCache {
 	c := &FileInspectionCache{
-		path:    path,
-		entries: make(map[string]*InspectionCacheEntry),
-		minAge:  minAge,
+		path:       path,
+		entries:    make(map[string]*InspectionCacheEntry),
+		minAge:     minAge,
+		syncer:     syncer,
+		syncNotify: make(chan struct{}, 1),
 	}
 	c.load()
 	return c
@@ -89,7 +116,7 @@ func (c *FileInspectionCache) Get(digest string) *InspectionCacheEntry {
 	if e == nil {
 		return nil
 	}
-	return e.deepCopy()
+	return e.DeepCopy()
 }
 
 func (c *FileInspectionCache) Put(digest string, entry *InspectionCacheEntry) error {
@@ -106,10 +133,11 @@ func (c *FileInspectionCache) Put(digest string, entry *InspectionCacheEntry) er
 			existing.Files[k] = bytes.Clone(v)
 		}
 	} else {
-		cp := entry.deepCopy()
+		cp := entry.DeepCopy()
 		cp.CreatedAt = time.Now()
 		c.entries[digest] = cp
 	}
+	c.notifySync()
 	return c.saveLocked()
 }
 
@@ -161,9 +189,62 @@ func (c *FileInspectionCache) RegisterEvicter(e CacheEvicter) {
 	c.evicters = append(c.evicters, e)
 }
 
-// StartEviction runs a background goroutine that periodically evicts entries
-// older than minAge that no registered CacheEvicter wants to retain.
-func (c *FileInspectionCache) StartEviction(ctx context.Context, interval, initialDelay time.Duration) {
+// SyncNotify returns the channel that signals cache mutations.
+func (c *FileInspectionCache) SyncNotify() <-chan struct{} {
+	return c.syncNotify
+}
+
+// Snapshot returns a deep copy of all cache entries.
+func (c *FileInspectionCache) Snapshot() map[string]*InspectionCacheEntry {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	result := make(map[string]*InspectionCacheEntry, len(c.entries))
+	for k, v := range c.entries {
+		result[k] = v.DeepCopy()
+	}
+	return result
+}
+
+// Start loads persisted state from the syncer (if configured), then launches
+// background goroutines for eviction and external sync.
+func (c *FileInspectionCache) Start(ctx context.Context, evictionInterval, evictionDelay, syncInterval time.Duration) {
+	if c.syncer != nil {
+		c.syncer.Start(ctx, c, syncInterval)
+		c.loadFromSyncer(ctx)
+	}
+	c.startEviction(ctx, evictionInterval, evictionDelay)
+}
+
+func (c *FileInspectionCache) notifySync() {
+	select {
+	case c.syncNotify <- struct{}{}:
+	default:
+	}
+}
+
+func (c *FileInspectionCache) loadFromSyncer(ctx context.Context) {
+	entries, err := c.syncer.Load(ctx)
+	if err != nil {
+		klog.Warningf("Failed to load inspection cache from external store: %v", err)
+		return
+	}
+	if len(entries) == 0 {
+		return
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for digest, entry := range entries {
+		existing, ok := c.entries[digest]
+		// Keep the local entry if it is the same age or newer.
+		if ok && !existing.CreatedAt.Before(entry.CreatedAt) {
+			continue
+		}
+		c.entries[digest] = entry.DeepCopy()
+	}
+}
+
+func (c *FileInspectionCache) startEviction(ctx context.Context, interval, initialDelay time.Duration) {
 	go func() {
 		select {
 		case <-time.After(initialDelay):
@@ -222,6 +303,7 @@ func (c *FileInspectionCache) evict() {
 	}
 
 	if evicted > 0 {
+		c.notifySync()
 		klog.Infof("Inspection cache eviction: removed %d entries, %d retained", evicted, len(c.entries))
 		if err := c.saveLocked(); err != nil {
 			klog.Warningf("Failed to persist inspection cache after eviction: %v", err)

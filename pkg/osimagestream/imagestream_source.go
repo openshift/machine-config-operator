@@ -46,7 +46,7 @@ func (r *ImageStreamStreamSource) filterImageTag(imageStream *imagev1.ImageStrea
 			continue
 		}
 		if tag.Annotations != nil {
-			if source, ok := tag.Annotations["io.openshift.build.source-location"]; ok && strings.Contains(source, "github.com/openshift/os") {
+			if source, ok := tag.Annotations[osSourceAnnotation]; ok && strings.Contains(source, osSourceRepo) {
 				imagesToParse = append(imagesToParse, tag.From.Name)
 				continue
 			}
