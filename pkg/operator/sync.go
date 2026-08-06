@@ -350,8 +350,12 @@ func (optr *Operator) syncCloudConfig(spec *mcfgv1.ControllerConfigSpec, infra *
 			if apierrors.IsNotFound(err) {
 				if isKubeCloudConfigCMRequired(infra) {
 					// Return error only if the kube-cloud-config ConfigMap is required, otherwise proceeds further.
+					platformType := "Unknown"
+					if infra.Status.PlatformStatus != nil {
+						platformType = string(infra.Status.PlatformStatus.Type)
+					}
 					lastErr = fmt.Errorf("%s/%s configmap is required on platform %s but not found: %w",
-						"openshift-config-managed", "kube-cloud-config", infra.Status.PlatformStatus.Type, err)
+						"openshift-config-managed", "kube-cloud-config", platformType, err)
 					return false, nil
 				}
 				return true, nil
