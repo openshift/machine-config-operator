@@ -2,11 +2,11 @@
 kind: Pod
 apiVersion: v1
 metadata:
-  name: kube-vip-api
+  name: kube-vip-api-secondary
   namespace: openshift-kube-vip
   labels:
     app: kube-vip
-    component: api
+    component: api-secondary
 spec:
   hostNetwork: true
   priorityClassName: system-node-critical
@@ -19,7 +19,7 @@ spec:
     - manager
     env:
     - name: address
-      value: "{{ onPremPlatformAPIServerInternalIP .ControllerConfig }}"
+      value: "{{ if gt (len (onPremPlatformAPIServerInternalIPs .ControllerConfig)) 1 }}{{ index (onPremPlatformAPIServerInternalIPs .ControllerConfig) 1 }}{{ end }}"
     - name: k8s_config_file
       value: "/etc/kubernetes/kubeconfig"
     - name: kubernetes_addr

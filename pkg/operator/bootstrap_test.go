@@ -21,6 +21,8 @@ func TestGetPlatformManifests(t *testing.T) {
 		expectFRRK8s     bool
 		expectCoredns    bool
 		expectKubeVIPAPI bool
+		dualStackVIPs    bool
+		expectSecondary  bool
 	}{
 		{
 			name:             "baremetal default LB, no BGP",
@@ -83,6 +85,18 @@ func TestGetPlatformManifests(t *testing.T) {
 			expectKubeVIPAPI: true,
 		},
 		{
+			name:             "baremetal BGP enabled, dual-stack VIPs",
+			platformName:     "baremetal",
+			lbType:           "",
+			vipManagement:    "BGP",
+			dualStackVIPs:    true,
+			expectKeepalived: false,
+			expectFRRK8s:     true,
+			expectCoredns:    true,
+			expectKubeVIPAPI: true,
+			expectSecondary:  true,
+		},
+		{
 			name:             "openstack default LB, no BGP",
 			platformName:     "openstack",
 			lbType:           configv1.LoadBalancerTypeOpenShiftManagedDefault,
@@ -106,12 +120,13 @@ func TestGetPlatformManifests(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			result := getPlatformManifests(nil, c.platformName, c.lbType, c.vipManagement)
+			result := getPlatformManifests(nil, c.platformName, c.lbType, c.vipManagement, c.dualStackVIPs)
 
 			hasKeepalived := false
 			hasFRRK8s := false
 			hasCoredns := false
 			hasKubeVIPAPI := false
+			hasSecondary := false
 			for _, m := range result {
 				if m.name == "manifests/on-prem/keepalived.yaml" {
 					hasKeepalived = true
@@ -125,12 +140,16 @@ func TestGetPlatformManifests(t *testing.T) {
 				if m.name == "manifests/on-prem/0010-kube-vip-api.yaml" {
 					hasKubeVIPAPI = true
 				}
+				if m.name == "manifests/on-prem/0011-kube-vip-api-secondary.yaml" {
+					hasSecondary = true
+				}
 			}
 
 			assert.Equal(t, c.expectKeepalived, hasKeepalived, "keepalived manifest presence")
 			assert.Equal(t, c.expectFRRK8s, hasFRRK8s, "frr-k8s manifest presence")
 			assert.Equal(t, c.expectCoredns, hasCoredns, "coredns manifest presence")
 			assert.Equal(t, c.expectKubeVIPAPI, hasKubeVIPAPI, "kube-vip-api manifest presence")
+			assert.Equal(t, c.expectSecondary, hasSecondary, "kube-vip-api-secondary manifest presence")
 		})
 	}
 }
