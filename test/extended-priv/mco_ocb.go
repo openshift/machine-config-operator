@@ -312,6 +312,219 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("OK!\n")
 	})
 
+	g.It("[PolarionID:89820][OTP] Failed MachineOSBuild status conditions are exposed on MCP with and without pausing [Disruptive]", func() {
+		var (
+			mcpAndMoscName       = "infra"
+			failingContainerFile = []ContainerFile{{Content: "RUN false"}}
+		)
+
+		exutil.By("Create custom infra MCP")
+		infraMcp, err := CreateCustomMCP(oc.AsAdmin(), mcpAndMoscName, 0)
+		defer infraMcp.delete()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating a new custom pool: %s", mcpAndMoscName)
+		logger.Infof("OK!\n")
+
+		exutil.By("Without Pausing - Apply MOSC with invalid containerFile for the infra pool")
+		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, mcpAndMoscName, mcpAndMoscName, failingContainerFile)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
+		logger.Infof("OK!\n")
+
+		exutil.By("Without Pausing - Wait for MOSB to be created")
+		var mosb *MachineOSBuild
+		o.Eventually(func() (*MachineOSBuild, error) {
+			var err error
+			mosb, err = mosc.GetCurrentMachineOSBuild()
+			return mosb, err
+		}, "5m", "20s").Should(Exist(), "No build was created when MOSC was applied")
+		logger.Infof("OK!\n")
+
+		ValidateFailedMOSBConditionOnMCP(mosb, infraMcp)
+
+		exutil.By("Without Pausing - Delete the MOSC and clean up")
+		o.Expect(mosc.CleanupAndDelete()).To(o.Succeed(), "Error cleaning up %s", mosc)
+		logger.Infof("OK!\n")
+
+		exutil.By("With Pausing - Pause the MCP pool")
+		infraMcp.pause(true)
+		defer infraMcp.pause(false)
+		logger.Infof("OK!\n")
+
+		exutil.By("With Pausing - Apply MOSC with invalid containerFile while MCP is paused")
+		moscPaused, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, mcpAndMoscName, mcpAndMoscName, failingContainerFile)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
+		defer moscPaused.CleanupAndDelete()
+		logger.Infof("OK!\n")
+
+		exutil.By("With Pausing - Wait for MOSB to be created on paused pool")
+		var mosbPaused *MachineOSBuild
+		o.Eventually(func() (*MachineOSBuild, error) {
+			var err error
+			mosbPaused, err = moscPaused.GetCurrentMachineOSBuild()
+			return mosbPaused, err
+		}, "5m", "20s").Should(Exist(), "No build was created when MOSC was applied on paused pool")
+		logger.Infof("OK!\n")
+
+		ValidateFailedMOSBConditionOnMCP(mosbPaused, infraMcp)
+
+		exutil.By("With Pausing - Delete the MOSC and unpause the MCP to clean up")
+		o.Expect(moscPaused.CleanupAndDelete()).To(o.Succeed(), "Error cleaning up %s", moscPaused)
+		infraMcp.pause(false)
+		logger.Infof("OK!\n")
+	})
+
+	g.It("[PolarionID:89821][OTP] Default MOSC behavior exposes MachineOSBuild status conditions on MCP with and without pausing [Disruptive]", func() {
+		var (
+			mcpAndMoscName = "infra"
+		)
+
+		exutil.By("Create custom infra MCP")
+		infraMcp, err := CreateCustomMCP(oc.AsAdmin(), mcpAndMoscName, 0)
+		defer infraMcp.delete()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating a new custom pool: %s", mcpAndMoscName)
+		logger.Infof("OK!\n")
+
+		exutil.By("Without Pausing - Apply the correct MOSC for the infra pool")
+		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, mcpAndMoscName, mcpAndMoscName, nil)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
+		logger.Infof("OK!\n")
+
+		exutil.By("Without Pausing - Wait for MOSB to be created")
+		var mosb *MachineOSBuild
+		o.Eventually(func() (*MachineOSBuild, error) {
+			var err error
+			mosb, err = mosc.GetCurrentMachineOSBuild()
+			return mosb, err
+		}, "5m", "20s").Should(Exist(), "No build was created when MOSC was applied")
+		logger.Infof("OK!\n")
+
+		ValidateMOSBBuildingConditionOnMCP(mosc, mosb, infraMcp)
+		ValidateSucceededMOSBConditionOnMCP(mosb, infraMcp)
+
+		exutil.By("Without Pausing - Delete the MOSC and verify MCP Updating condition")
+		o.Expect(mosc.CleanupAndDelete()).To(o.Succeed(), "Error cleaning up %s", mosc)
+		o.Eventually(infraMcp, "5m", "20s").Should(HaveConditionField("Updating", "status", FalseString),
+			"MCP Updating condition should remain False after MOSC deletion")
+		logger.Infof("OK!\n")
+
+		exutil.By("With Pausing - Pause the MCP pool")
+		infraMcp.pause(true)
+		defer infraMcp.pause(false)
+		logger.Infof("OK!\n")
+
+		exutil.By("With Pausing - Apply the correct MOSC while MCP is paused")
+		moscPaused, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, mcpAndMoscName, mcpAndMoscName, nil)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
+		defer moscPaused.CleanupAndDelete()
+		logger.Infof("OK!\n")
+
+		exutil.By("With Pausing - Wait for MOSB to be created on paused pool")
+		var mosbPaused *MachineOSBuild
+		o.Eventually(func() (*MachineOSBuild, error) {
+			var err error
+			mosbPaused, err = moscPaused.GetCurrentMachineOSBuild()
+			return mosbPaused, err
+		}, "5m", "20s").Should(Exist(), "No build was created when MOSC was applied on paused pool")
+		logger.Infof("OK!\n")
+
+		ValidateMOSBBuildingConditionOnMCP(moscPaused, mosbPaused, infraMcp)
+		ValidateSucceededMOSBConditionOnMCP(mosbPaused, infraMcp)
+
+		exutil.By("With Pausing - Unpause the pool and verify MCP finishes updating")
+		infraMcp.pause(false)
+		o.Eventually(infraMcp, "5m", "20s").Should(HaveConditionField("Updating", "status", FalseString),
+			"MCP Updating should become False after unpausing")
+		logger.Infof("OK!\n")
+
+		exutil.By("With Pausing - Delete the MOSC and verify MCP Updating condition")
+		o.Expect(moscPaused.CleanupAndDelete()).To(o.Succeed(), "Error cleaning up %s", moscPaused)
+		o.Eventually(infraMcp, "5m", "20s").Should(HaveConditionField("Updating", "status", FalseString),
+			"MCP Updating condition should remain False after MOSC deletion")
+		logger.Infof("OK!\n")
+	})
+
+	g.It("[PolarionID:89822][OTP] Interrupted MachineOSBuild status conditions are exposed on MCP with and without pausing [Disruptive]", func() {
+		var (
+			mcpAndMoscName = "infra"
+		)
+
+		exutil.By("Create custom infra MCP")
+		infraMcp, err := CreateCustomMCP(oc.AsAdmin(), mcpAndMoscName, 0)
+		defer infraMcp.delete()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating a new custom pool: %s", mcpAndMoscName)
+		logger.Infof("OK!\n")
+
+		exutil.By("Without Pausing - Apply the correct MOSC for the infra pool")
+		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, mcpAndMoscName, mcpAndMoscName, nil)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
+		logger.Infof("OK!\n")
+
+		exutil.By("Without Pausing - Wait for MOSB and build job to start")
+		var mosb *MachineOSBuild
+		var job *Job
+		o.Eventually(func() (*MachineOSBuild, error) {
+			var err error
+			mosb, err = mosc.GetCurrentMachineOSBuild()
+			return mosb, err
+		}, "5m", "20s").Should(Exist(), "No build was created when MOSC was applied")
+		o.Eventually(func() (*Job, error) {
+			var err error
+			job, err = mosb.GetJob()
+			return job, err
+		}, "5m", "20s").Should(Exist(), "No build job was created")
+		o.Eventually(mosb, "5m", "20s").Should(HaveConditionField("Building", "status", TrueString),
+			"MachineOSBuild didn't report that the build has begun")
+		logger.Infof("OK!\n")
+
+		exutil.By("Without Pausing - Interrupt the build by deleting the job")
+		o.Expect(job.Delete()).To(o.Succeed(), "Error deleting build job %s", job)
+		logger.Infof("OK!\n")
+
+		ValidateInterruptedMOSBConditionOnMCP(mosb, infraMcp)
+
+		exutil.By("Without Pausing - Delete the MOSC and clean up")
+		o.Expect(mosc.CleanupAndDelete()).To(o.Succeed(), "Error cleaning up %s", mosc)
+		logger.Infof("OK!\n")
+
+		exutil.By("With Pausing - Pause the MCP pool")
+		infraMcp.pause(true)
+		defer infraMcp.pause(false)
+		logger.Infof("OK!\n")
+
+		exutil.By("With Pausing - Apply the correct MOSC while MCP is paused")
+		moscPaused, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, mcpAndMoscName, mcpAndMoscName, nil)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
+		defer moscPaused.CleanupAndDelete()
+		logger.Infof("OK!\n")
+
+		exutil.By("With Pausing - Wait for MOSB and build job to start on paused pool")
+		var mosbPaused *MachineOSBuild
+		var jobPaused *Job
+		o.Eventually(func() (*MachineOSBuild, error) {
+			var err error
+			mosbPaused, err = moscPaused.GetCurrentMachineOSBuild()
+			return mosbPaused, err
+		}, "5m", "20s").Should(Exist(), "No build was created when MOSC was applied on paused pool")
+		o.Eventually(func() (*Job, error) {
+			var err error
+			jobPaused, err = mosbPaused.GetJob()
+			return jobPaused, err
+		}, "5m", "20s").Should(Exist(), "No build job was created on paused pool")
+		o.Eventually(mosbPaused, "5m", "20s").Should(HaveConditionField("Building", "status", TrueString),
+			"MachineOSBuild didn't report that the build has begun on paused pool")
+		logger.Infof("OK!\n")
+
+		exutil.By("With Pausing - Interrupt the build by deleting the job on paused pool")
+		o.Expect(jobPaused.Delete()).To(o.Succeed(), "Error deleting build job %s", jobPaused)
+		logger.Infof("OK!\n")
+
+		ValidateInterruptedMOSBConditionOnMCP(mosbPaused, infraMcp)
+
+		exutil.By("With Pausing - Delete the MOSC and unpause the MCP to clean up")
+		o.Expect(moscPaused.CleanupAndDelete()).To(o.Succeed(), "Error cleaning up %s", moscPaused)
+		infraMcp.pause(false)
+		logger.Infof("OK!\n")
+	})
+
 })
 
 func testContainerFile(containerFiles []ContainerFile, imageNamespace string, mcp *MachineConfigPool, checkers []Checker, defaultPullSecret bool) {
@@ -862,4 +1075,101 @@ func checkSysstatExtension(node *Node) {
 	logger.Infof("%s", rpmOut)
 	o.Expect(strings.TrimSpace(rpmOut)).To(o.BeEmpty(), "Expected no missing or modified files for %s RPMs", extName)
 	logger.Infof("All %s RPM files are present\n", extName)
+}
+
+// ValidateFailedMOSBConditionOnMCP validates that a failed MOSB is surfaced on the MCP Updating condition.
+// It auto-detects whether the MCP is paused and checks the appropriate message.
+func ValidateFailedMOSBConditionOnMCP(mosb *MachineOSBuild, mcp *MachineConfigPool) {
+	exutil.By("Validate that MOSB failure is surfaced on MCP Updating condition")
+
+	o.Eventually(mosb, "20m", "20s").Should(HaveConditionField("Failed", "status", TrueString),
+		"MachineOSBuild didn't report failure")
+
+	var expectedMessage o.OmegaMatcher
+	if mcp.IsPaused() {
+		expectedMessage = o.ContainSubstring(fmt.Sprintf("Pool is paused; OS image build failed (mosb: %s)", mosb.GetName()))
+	} else {
+		expectedMessage = o.ContainSubstring(fmt.Sprintf("Pool update stopped due to OS image build failure (mosb: %s)", mosb.GetName()))
+	}
+
+	o.Eventually(mcp, "5m", "20s").Should(HaveConditionField("Updating", "status", FalseString),
+		"MCP Updating condition status should be False after MOSB failure")
+	o.Eventually(mcp, "2m", "20s").Should(HaveConditionField("Updating", "message", expectedMessage),
+		"MCP Updating condition message was not the expected one after MOSB failure")
+	logger.Infof("OK!\n")
+}
+
+// ValidateInterruptedMOSBConditionOnMCP validates that an interrupted MOSB is surfaced on the MCP Updating condition.
+// It auto-detects whether the MCP is paused and checks the appropriate message.
+func ValidateInterruptedMOSBConditionOnMCP(mosb *MachineOSBuild, mcp *MachineConfigPool) {
+	exutil.By("Validate that MOSB interruption is surfaced on MCP Updating condition")
+
+	o.Eventually(mosb, "5m", "20s").Should(HaveConditionField("Interrupted", "status", TrueString),
+		"MachineOSBuild didn't report interruption")
+
+	var expectedMessage o.OmegaMatcher
+	if mcp.IsPaused() {
+		expectedMessage = o.ContainSubstring(fmt.Sprintf("Pool is paused; OS image build was interrupted (mosb: %s)", mosb.GetName()))
+	} else {
+		expectedMessage = o.ContainSubstring(fmt.Sprintf("Pool update stopped due to OS image build being interrupted (mosb: %s)", mosb.GetName()))
+	}
+
+	o.Eventually(mcp, "5m", "20s").Should(HaveConditionField("Updating", "status", FalseString),
+		"MCP Updating condition status should be False after MOSB interruption")
+	o.Eventually(mcp, "2m", "20s").Should(HaveConditionField("Updating", "message", expectedMessage),
+		"MCP Updating condition message was not the expected one after MOSB interruption")
+	logger.Infof("OK!\n")
+}
+
+// ValidateMOSBBuildingConditionOnMCP validates that an in-progress MOSB build is surfaced on the MCP Updating condition.
+// It auto-detects whether the MCP is paused and checks the appropriate message.
+func ValidateMOSBBuildingConditionOnMCP(mosc *MachineOSConfig, mosb *MachineOSBuild, mcp *MachineConfigPool) {
+	exutil.By("Validate that MOSB building state is surfaced on MCP Updating condition")
+
+	o.Eventually(mosb, "5m", "20s").Should(HaveConditionField("Building", "status", TrueString),
+		"MachineOSBuild didn't report that the build has begun")
+
+	if mcp.IsPaused() {
+		o.Eventually(mcp, "5m", "20s").Should(HaveConditionField("Updating", "status", TrueString),
+			"MCP Updating status should be True when build is in progress (paused)")
+		o.Eventually(mcp, "2m", "20s").Should(HaveConditionField("Updating", "message",
+			o.Or(
+				o.ContainSubstring(fmt.Sprintf("Pool is paused; waiting for a new OS image build to start (mosc: %s)", mosc.GetName())),
+				o.ContainSubstring(fmt.Sprintf("Pool is paused; waiting for OS image build to start (mosb: %s)", mosb.GetName())),
+				o.ContainSubstring(fmt.Sprintf("Pool is paused; OS image build is in progress (mosb: %s)", mosb.GetName())),
+			)),
+			"MCP Updating message was not the expected one during building (paused)")
+	} else {
+		o.Eventually(mcp, "5m", "20s").Should(HaveConditionField("Updating", "status", TrueString),
+			"MCP Updating status should be True when build is in progress")
+		o.Eventually(mcp, "2m", "20s").Should(HaveConditionField("Updating", "message",
+			o.Or(
+				o.ContainSubstring(fmt.Sprintf("Pool is waiting for a new OS image build to start (mosc: %s)", mosc.GetName())),
+				o.ContainSubstring(fmt.Sprintf("Pool is waiting for OS image build to start (mosb: %s)", mosb.GetName())),
+				o.ContainSubstring(fmt.Sprintf("OS image build is in progress (mosb: %s)", mosb.GetName())),
+			)),
+			"MCP Updating message was not the expected one during building")
+	}
+	logger.Infof("OK!\n")
+}
+
+// ValidateSucceededMOSBConditionOnMCP validates that a succeeded MOSB is surfaced on the MCP Updating condition.
+// It auto-detects whether the MCP is paused and checks the appropriate message.
+func ValidateSucceededMOSBConditionOnMCP(mosb *MachineOSBuild, mcp *MachineConfigPool) {
+	exutil.By("Validate that MOSB success is surfaced on MCP Updating condition")
+
+	o.Eventually(mosb, "20m", "20s").Should(HaveConditionField("Succeeded", "status", TrueString),
+		"MachineOSBuild didn't report success")
+
+	if mcp.IsPaused() {
+		o.Eventually(mcp, "5m", "20s").Should(HaveConditionField("Updating", "status", FalseString),
+			"MCP Updating status should be False when build succeeded (paused)")
+		o.Eventually(mcp, "2m", "20s").Should(HaveConditionField("Updating", "message",
+			o.ContainSubstring(fmt.Sprintf("Pool is paused; OS image build completed successfully (mosb: %s)", mosb.GetName()))),
+			"MCP Updating message was not the expected one after build success (paused)")
+	} else {
+		o.Eventually(mcp, "20m", "30s").Should(HaveConditionField("Updating", "status", FalseString),
+			"MCP Updating status should be False after build succeeded and rollout completed")
+	}
+	logger.Infof("OK!\n")
 }
