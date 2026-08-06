@@ -112,11 +112,8 @@ const (
 	// SSH Keys for user "core" will only be written at /home/core/.ssh
 	CoreUserSSHPath = "/home/" + CoreUserName + "/.ssh"
 
-	// SSH keys in RHCOS 8 will be written to /home/core/.ssh/authorized_keys
-	RHCOS8SSHKeyPath = CoreUserSSHPath + "/authorized_keys"
-
 	// SSH keys in RHCOS 9 / FCOS / SCOS will be written to /home/core/.ssh/authorized_keys.d/ignition
-	RHCOS9SSHKeyPath = CoreUserSSHPath + "/authorized_keys.d/ignition"
+	RHCOSDefaultSSHKeyPath = CoreUserSSHPath + "/authorized_keys.d/ignition"
 
 	// CRIOServiceName is used to specify reloads and restarts of the CRI-O service
 	CRIOServiceName = "crio"
