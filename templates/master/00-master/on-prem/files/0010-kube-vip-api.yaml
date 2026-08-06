@@ -27,7 +27,7 @@ contents:
         - name: k8s_config_file
           value: "/etc/kubernetes/kubeconfig"
         - name: kubernetes_addr
-          value: "https://localhost:6443"
+          value: "https://127.0.0.1:6443"
         - name: port
           value: "6443"
         - name: cp_enable

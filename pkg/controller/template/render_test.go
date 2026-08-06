@@ -741,3 +741,92 @@ func TestIsBGPVIPManagement(t *testing.T) {
 		})
 	}
 }
+
+// TestBGPVIPSecondaryFamilyRendering verifies that under BGP VIP management
+// with dual-stack VIPs, a second kube-vip instance per role is rendered for
+// the secondary address family (the VIPs slices' second entry), and that on
+// single-stack clusters the secondary manifests land in disabled-manifests.
+func TestBGPVIPSecondaryFamilyRendering(t *testing.T) {
+	cases := []struct {
+		name        string
+		apiVIPs     []string
+		ingressVIPs []string
+		wantAPIPath string
+		wantAPIAddr string
+		wantIngPath string
+		wantIngAddr string
+	}{
+		{
+			name:        "dual-stack renders secondary instances",
+			apiVIPs:     []string{"192.168.111.5", "fd2e:6f44:5dd8:c956::5"},
+			ingressVIPs: []string{"192.168.111.4", "fd2e:6f44:5dd8:c956::4"},
+			wantAPIPath: "/etc/kubernetes/manifests/0011-kube-vip-api-secondary.yaml",
+			wantAPIAddr: "fd2e:6f44:5dd8:c956::5",
+			wantIngPath: "/etc/kubernetes/manifests/0021-kube-vip-ingress-secondary.yaml",
+			wantIngAddr: "fd2e:6f44:5dd8:c956::4",
+		},
+		{
+			name:        "single-stack disables secondary instances",
+			apiVIPs:     []string{"192.168.111.5"},
+			ingressVIPs: []string{"192.168.111.4"},
+			wantAPIPath: "/etc/kubernetes/disabled-manifests/0011-kube-vip-api-secondary.yaml",
+			wantIngPath: "/etc/kubernetes/disabled-manifests/0021-kube-vip-ingress-secondary.yaml",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			controllerConfig, err := controllerConfigFromFile(configs["baremetal"])
+			if err != nil {
+				t.Fatalf("failed to get controllerconfig config: %v", err)
+			}
+			bm := controllerConfig.Spec.Infra.Status.PlatformStatus.BareMetal
+			bm.VIPManagement = "BGP"
+			bm.APIServerInternalIPs = tc.apiVIPs
+			bm.IngressIPs = tc.ingressVIPs
+
+			cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil}, templateDir)
+			if err != nil {
+				t.Fatalf("failed to generate machine configs: %v", err)
+			}
+
+			checkFile := func(role, path, addr string) {
+				t.Helper()
+				found := false
+				for _, cfg := range cfgs {
+					if cfg.Labels[mcfgv1.MachineConfigRoleLabelKey] != role {
+						continue
+					}
+					ign, err := ctrlcommon.ParseAndConvertConfig(cfg.Spec.Config.Raw)
+					if err != nil {
+						t.Fatalf("failed to parse ignition config: %v", err)
+					}
+					for _, file := range ign.Storage.Files {
+						if string(file.Path) != path {
+							continue
+						}
+						found = true
+						if addr == "" {
+							continue
+						}
+						contents, err := ctrlcommon.DecodeIgnitionFileContents(file.Contents.Source, file.Contents.Compression)
+						if err != nil {
+							t.Fatalf("failed to decode %s: %v", path, err)
+						}
+						if !strings.Contains(string(contents), "value: \""+addr+"\"") {
+							t.Errorf("%s does not carry secondary VIP %q:\n%s", path, addr, string(contents))
+						}
+					}
+				}
+				if !found {
+					t.Errorf("no file %s rendered for role %s", path, role)
+				}
+			}
+
+			checkFile(masterRole, tc.wantAPIPath, tc.wantAPIAddr)
+			// the ingress instance is rendered for every role (templates/common)
+			checkFile(masterRole, tc.wantIngPath, tc.wantIngAddr)
+			checkFile(workerRole, tc.wantIngPath, tc.wantIngAddr)
+		})
+	}
+}

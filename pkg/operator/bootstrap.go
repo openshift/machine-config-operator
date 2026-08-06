@@ -174,21 +174,24 @@ func appendManifestsByPlatform(manifests []manifest, infra *configv1.Infrastruct
 		if ctrlcommon.IsBGPVIPManagement(infra) {
 			vipManagement = configv1.VIPManagementTypeBGP
 		}
-		manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.BareMetalPlatformType)), lbType, vipManagement)
+		// dual-stack clusters carry one API VIP per address family; the
+		// bootstrap node then needs one kube-vip instance per family
+		dualStackVIPs := len(infra.Status.PlatformStatus.BareMetal.APIServerInternalIPs) > 1
+		manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.BareMetalPlatformType)), lbType, vipManagement, dualStackVIPs)
 	}
 
 	if infra.Status.PlatformStatus.OpenStack != nil {
 		if infra.Status.PlatformStatus.OpenStack.LoadBalancer != nil {
 			lbType = infra.Status.PlatformStatus.OpenStack.LoadBalancer.Type
 		}
-		manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.OpenStackPlatformType)), lbType, "")
+		manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.OpenStackPlatformType)), lbType, "", false)
 	}
 
 	if infra.Status.PlatformStatus.Ovirt != nil {
 		if infra.Status.PlatformStatus.Ovirt.LoadBalancer != nil {
 			lbType = infra.Status.PlatformStatus.Ovirt.LoadBalancer.Type
 		}
-		manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.OvirtPlatformType)), lbType, "")
+		manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.OvirtPlatformType)), lbType, "", false)
 	}
 
 	if infra.Status.PlatformStatus.VSphere != nil {
@@ -205,14 +208,14 @@ func appendManifestsByPlatform(manifests []manifest, infra *configv1.Infrastruct
 				return manifests
 			}
 		}
-		manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.VSpherePlatformType)), lbType, "")
+		manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.VSpherePlatformType)), lbType, "", false)
 	}
 
 	if infra.Status.PlatformStatus.Nutanix != nil {
 		if infra.Status.PlatformStatus.Nutanix.LoadBalancer != nil {
 			lbType = infra.Status.PlatformStatus.Nutanix.LoadBalancer.Type
 		}
-		manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.NutanixPlatformType)), lbType, "")
+		manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.NutanixPlatformType)), lbType, "", false)
 	}
 
 	if infra.Status.PlatformStatus.GCP != nil {
@@ -221,7 +224,7 @@ func appendManifestsByPlatform(manifests []manifest, infra *configv1.Infrastruct
 			// We do not need the keepalived manifests to be generated because the cloud default Load Balancers are in use.
 			// So, setting the lbType to `UserManaged` although the default cloud LBs are not user managed.
 			lbType = configv1.LoadBalancerTypeUserManaged
-			manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.GCPPlatformType)), lbType, "")
+			manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.GCPPlatformType)), lbType, "", false)
 		}
 	}
 	if infra.Status.PlatformStatus.AWS != nil {
@@ -230,7 +233,7 @@ func appendManifestsByPlatform(manifests []manifest, infra *configv1.Infrastruct
 			// We do not need the keepalived manifests to be generated because the cloud default Load Balancers are in use.
 			// So, setting the lbType to `UserManaged` although the default cloud LBs are not user managed.
 			lbType = configv1.LoadBalancerTypeUserManaged
-			manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.AWSPlatformType)), lbType, "")
+			manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.AWSPlatformType)), lbType, "", false)
 		}
 	}
 	if infra.Status.PlatformStatus.Azure != nil {
@@ -239,14 +242,14 @@ func appendManifestsByPlatform(manifests []manifest, infra *configv1.Infrastruct
 			// We do not need the keepalived manifests to be generated because the cloud default Load Balancers are in use.
 			// So, setting the lbType to `UserManaged` although the default cloud LBs are not user managed.
 			lbType = configv1.LoadBalancerTypeUserManaged
-			manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.AzurePlatformType)), lbType, "")
+			manifests = getPlatformManifests(manifests, strings.ToLower(string(configv1.AzurePlatformType)), lbType, "", false)
 		}
 	}
 
 	return manifests
 }
 
-func getPlatformManifests(manifests []manifest, platformName string, lbType configv1.PlatformLoadBalancerType, vipManagement configv1.VIPManagementType) []manifest {
+func getPlatformManifests(manifests []manifest, platformName string, lbType configv1.PlatformLoadBalancerType, vipManagement configv1.VIPManagementType, dualStackVIPs bool) []manifest {
 	var corednsName string
 	var corefileName string
 	switch platformName {
@@ -279,6 +282,11 @@ func getPlatformManifests(manifests []manifest, platformName string, lbType conf
 				manifest{name: "manifests/on-prem/frr-startup-vtysh.conf", filename: platformName + "/static-pod-resources/frr-k8s/startup/vtysh.conf"},
 				manifest{name: "manifests/on-prem/0010-kube-vip-api.yaml", filename: platformName + "/manifests/0010-kube-vip-api.yaml"},
 			)
+			if dualStackVIPs {
+				platformManifests = append(platformManifests,
+					manifest{name: "manifests/on-prem/0011-kube-vip-api-secondary.yaml", filename: platformName + "/manifests/0011-kube-vip-api-secondary.yaml"},
+				)
+			}
 		} else {
 			platformManifests = append(platformManifests,
 				manifest{
