@@ -293,13 +293,14 @@ func GetReleaseFromVsphereTemplate(vsphereTemplate, server, dataCenter, user, pa
 
 // VSphereConnectionInfo holds vSphere connection parameters extracted from the cluster
 type VSphereConnectionInfo struct {
-	Server       string
-	DataCenter   string
-	DataStore    string
-	ResourcePool string
-	Network      string
-	User         string
-	Password     string
+	FailureDomainName string
+	Server            string
+	DataCenter        string
+	DataStore         string
+	ResourcePool      string
+	Network           string
+	User              string
+	Password          string
 }
 
 // GetVSphereConnectionInfo extracts vSphere connection parameters from the infrastructure resource and credentials secret
@@ -354,15 +355,20 @@ func GetVSphereConnectionInfo(oc *CLI) (*VSphereConnectionInfo, error) {
 		return nil, err
 	}
 
+	// The vsphere-creds secret holds one "<server>.username"/"<server>.password" pair per
+	// vCenter. With more than one vCenter configured, matching on "username"/"password" alone
+	// would non-deterministically pick whichever key Go's map iteration happens to visit last -
+	// match this failure domain's own server explicitly instead.
+	userKey, passKey := info.Server+".username", info.Server+".password"
 	for k, vb64 := range dataMap {
 		v, decErr := base64.StdEncoding.DecodeString(vb64)
 		if decErr != nil {
 			return nil, fmt.Errorf("cannot decode secret value for key %s: %w", k, decErr)
 		}
-		if strings.Contains(k, "username") {
+		if k == userKey {
 			info.User = string(v)
 		}
-		if strings.Contains(k, "password") {
+		if k == passKey {
 			info.Password = string(v)
 		}
 	}
@@ -375,4 +381,94 @@ func GetVSphereConnectionInfo(oc *CLI) (*VSphereConnectionInfo, error) {
 	}
 
 	return &info, nil
+}
+
+// GetAllVSphereFailureDomains returns a VSphereConnectionInfo for every failure
+// domain configured in the infrastructure resource, with credentials resolved
+// from the vsphere-creds secret.
+func GetAllVSphereFailureDomains(oc *CLI) ([]VSphereConnectionInfo, error) {
+	fdJSON, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"infrastructure", "cluster", "-o", "jsonpath={.spec.platformSpec.vsphere.failureDomains}").Output()
+	if err != nil {
+		return nil, fmt.Errorf("cannot get failureDomains from infrastructure resource: %w", err)
+	}
+	if fdJSON == "" {
+		return nil, fmt.Errorf("empty failureDomains in infrastructure resource")
+	}
+
+	secretData, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"secret", "vsphere-creds", "-n", "kube-system", "-o", "jsonpath={.data}").Output()
+	if err != nil {
+		return nil, fmt.Errorf("cannot get vsphere-creds secret: %w", err)
+	}
+	credsMap := map[string]string{}
+	if err := json.Unmarshal([]byte(secretData), &credsMap); err != nil {
+		return nil, fmt.Errorf("cannot parse vsphere-creds secret: %w", err)
+	}
+
+	decodedCreds := make(map[string]string, len(credsMap))
+	for k, vb64 := range credsMap {
+		v, err := base64.StdEncoding.DecodeString(vb64)
+		if err != nil {
+			return nil, fmt.Errorf("cannot decode secret value for key %s: %w", k, err)
+		}
+		decodedCreds[k] = string(v)
+	}
+
+	var result []VSphereConnectionInfo
+	var missingErr error
+	fds := gjson.Parse(fdJSON)
+	fds.ForEach(func(_, fd gjson.Result) bool {
+		info := VSphereConnectionInfo{
+			FailureDomainName: fd.Get("name").String(),
+			Server:            fd.Get("server").String(),
+			DataCenter:        fd.Get("topology.datacenter").String(),
+			DataStore:         fd.Get("topology.datastore").String(),
+			ResourcePool:      fd.Get("topology.resourcePool").String(),
+			Network:           fd.Get("topology.networks.0").String(),
+		}
+
+		userKey := info.Server + ".username"
+		passKey := info.Server + ".password"
+
+		user, userOK := decodedCreds[userKey]
+		pass, passOK := decodedCreds[passKey]
+		if !userOK || !passOK {
+			missingErr = fmt.Errorf("missing credential for failure domain %q: userKey=%q (present=%v), passKey=%q (present=%v)",
+				info.FailureDomainName, userKey, userOK, passKey, passOK)
+			return false
+		}
+		info.User = user
+		info.Password = pass
+
+		result = append(result, info)
+		return true
+	})
+
+	if missingErr != nil {
+		return nil, missingErr
+	}
+	if len(result) == 0 {
+		return nil, fmt.Errorf("no failure domains found in infrastructure resource")
+	}
+	return result, nil
+}
+
+// GetVSphereConnectionInfoForWorkspace returns a VSphereConnectionInfo for the
+// failure domain that matches the given server and datacenter. This is used to
+// look up the correct vCenter connection parameters for a specific MachineSet's
+// workspace.
+func GetVSphereConnectionInfoForWorkspace(oc *CLI, server, datacenter string) (*VSphereConnectionInfo, error) {
+	fds, err := GetAllVSphereFailureDomains(oc)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, fd := range fds {
+		if fd.Server == server && fd.DataCenter == datacenter {
+			return &fd, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no failure domain found matching server=%q datacenter=%q", server, datacenter)
 }

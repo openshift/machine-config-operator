@@ -181,3 +181,80 @@ func checkFeatureGates(t *testing.T, handler *FeatureGatesHandlerImpl) {
 	assert.True(t, handler.Enabled(FeatureGatesTestExistingEnaFeatureGate2))
 	assert.False(t, handler.Enabled(FeatureGatesTestExistingDisFeatureGate1))
 }
+
+func TestCheckBootImagePlatform(t *testing.T) {
+	cases := []struct {
+		name              string
+		infra             *configv1.Infrastructure
+		wantSupported     bool
+		wantCPMSSupported bool
+		wantEnabledByDflt bool
+	}{
+		{
+			name:              "AWS: opt-out on machinesets, opt-in on CPMS",
+			infra:             infraWithPlatform(configv1.AWSPlatformType),
+			wantSupported:     true,
+			wantCPMSSupported: true,
+			wantEnabledByDflt: true,
+		},
+		{
+			name:              "GCP: opt-out on machinesets, opt-in on CPMS",
+			infra:             infraWithPlatform(configv1.GCPPlatformType),
+			wantSupported:     true,
+			wantCPMSSupported: true,
+			wantEnabledByDflt: true,
+		},
+		{
+			name:              "vSphere: opt-out on machinesets, CPMS not supported",
+			infra:             infraWithPlatform(configv1.VSpherePlatformType),
+			wantSupported:     true,
+			wantCPMSSupported: false,
+			wantEnabledByDflt: true,
+		},
+		{
+			name:              "Azure (standard): opt-out on machinesets, opt-in on CPMS",
+			infra:             infraWithPlatform(configv1.AzurePlatformType),
+			wantSupported:     true,
+			wantCPMSSupported: true,
+			wantEnabledByDflt: true,
+		},
+		{
+			name: "Azure Stack Cloud: unsupported entirely",
+			infra: &configv1.Infrastructure{
+				Status: configv1.InfrastructureStatus{
+					PlatformStatus: &configv1.PlatformStatus{
+						Type:  configv1.AzurePlatformType,
+						Azure: &configv1.AzurePlatformStatus{CloudName: configv1.AzureStackCloud},
+					},
+				},
+			},
+			wantSupported:     false,
+			wantCPMSSupported: false,
+			wantEnabledByDflt: false,
+		},
+		{
+			name:              "unsupported platform (e.g. bare metal)",
+			infra:             infraWithPlatform(configv1.BareMetalPlatformType),
+			wantSupported:     false,
+			wantCPMSSupported: false,
+			wantEnabledByDflt: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			supported, cpmsSupported, enabledByDefault := CheckBootImagePlatform(tc.infra)
+			assert.Equal(t, tc.wantSupported, supported, "supported")
+			assert.Equal(t, tc.wantCPMSSupported, cpmsSupported, "cpmsSupported")
+			assert.Equal(t, tc.wantEnabledByDflt, enabledByDefault, "enabledByDefault")
+		})
+	}
+}
+
+func infraWithPlatform(platform configv1.PlatformType) *configv1.Infrastructure {
+	return &configv1.Infrastructure{
+		Status: configv1.InfrastructureStatus{
+			PlatformStatus: &configv1.PlatformStatus{Type: platform},
+		},
+	}
+}
