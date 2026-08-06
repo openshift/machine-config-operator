@@ -386,6 +386,7 @@ func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) 
 	funcs["urlHost"] = urlHost
 	funcs["urlPort"] = urlPort
 	funcs["isOpenShiftManagedDefaultLB"] = isOpenShiftManagedDefaultLB
+	funcs["isBGPVIPManagement"] = isBGPVIPManagement
 	funcs["dnsRecordsType"] = dnsRecordsType
 	funcs["cloudPlatformAPIIntLoadBalancerIPs"] = cloudPlatformAPIIntLoadBalancerIPs
 	funcs["cloudPlatformAPILoadBalancerIPs"] = cloudPlatformAPILoadBalancerIPs
@@ -497,10 +498,19 @@ func onPremPlatformIngressIP(cfg RenderConfig) (interface{}, error) {
 	if cfg.Infra.Status.PlatformStatus != nil {
 		switch cfg.Infra.Status.PlatformStatus.Type {
 		case configv1.BareMetalPlatformType:
+			if len(cfg.Infra.Status.PlatformStatus.BareMetal.IngressIPs) == 0 {
+				return nil, nil
+			}
 			return cfg.Infra.Status.PlatformStatus.BareMetal.IngressIPs[0], nil
 		case configv1.OvirtPlatformType:
+			if len(cfg.Infra.Status.PlatformStatus.Ovirt.IngressIPs) == 0 {
+				return nil, nil
+			}
 			return cfg.Infra.Status.PlatformStatus.Ovirt.IngressIPs[0], nil
 		case configv1.OpenStackPlatformType:
+			if len(cfg.Infra.Status.PlatformStatus.OpenStack.IngressIPs) == 0 {
+				return nil, nil
+			}
 			return cfg.Infra.Status.PlatformStatus.OpenStack.IngressIPs[0], nil
 		case configv1.VSpherePlatformType:
 			if cfg.Infra.Status.PlatformStatus.VSphere != nil {
@@ -513,6 +523,9 @@ func onPremPlatformIngressIP(cfg RenderConfig) (interface{}, error) {
 			// and there is also no data
 			return nil, nil
 		case configv1.NutanixPlatformType:
+			if len(cfg.Infra.Status.PlatformStatus.Nutanix.IngressIPs) == 0 {
+				return nil, nil
+			}
 			return cfg.Infra.Status.PlatformStatus.Nutanix.IngressIPs[0], nil
 		default:
 			return nil, fmt.Errorf("invalid platform for Ingress IP")
@@ -557,10 +570,19 @@ func onPremPlatformAPIServerInternalIP(cfg RenderConfig) (interface{}, error) {
 	if cfg.Infra.Status.PlatformStatus != nil {
 		switch cfg.Infra.Status.PlatformStatus.Type {
 		case configv1.BareMetalPlatformType:
+			if len(cfg.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIPs) == 0 {
+				return nil, nil
+			}
 			return cfg.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIPs[0], nil
 		case configv1.OvirtPlatformType:
+			if len(cfg.Infra.Status.PlatformStatus.Ovirt.APIServerInternalIPs) == 0 {
+				return nil, nil
+			}
 			return cfg.Infra.Status.PlatformStatus.Ovirt.APIServerInternalIPs[0], nil
 		case configv1.OpenStackPlatformType:
+			if len(cfg.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIPs) == 0 {
+				return nil, nil
+			}
 			return cfg.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIPs[0], nil
 		case configv1.VSpherePlatformType:
 			if cfg.Infra.Status.PlatformStatus.VSphere != nil {
@@ -573,6 +595,9 @@ func onPremPlatformAPIServerInternalIP(cfg RenderConfig) (interface{}, error) {
 			// and there is also no data
 			return nil, nil
 		case configv1.NutanixPlatformType:
+			if len(cfg.Infra.Status.PlatformStatus.Nutanix.APIServerInternalIPs) == 0 {
+				return nil, nil
+			}
 			return cfg.Infra.Status.PlatformStatus.Nutanix.APIServerInternalIPs[0], nil
 		default:
 			return nil, fmt.Errorf("invalid platform for API Server Internal IP")
@@ -721,6 +746,14 @@ func isOpenShiftManagedDefaultLB(cfg RenderConfig) bool {
 		}
 	}
 	return false
+}
+
+// isBGPVIPManagement returns true when the cluster is configured to use
+// BGP-based VIP management instead of keepalived/VRRP. This controls
+// whether MCO renders frr-k8s static pod manifests (BGP) or keepalived
+// static pod manifests (default).
+func isBGPVIPManagement(cfg RenderConfig) bool {
+	return ctrlcommon.IsBGPVIPManagement(cfg.Infra)
 }
 
 func dnsRecordsType(cfg RenderConfig) configv1.DNSRecordsType {
