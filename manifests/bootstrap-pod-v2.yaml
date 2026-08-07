@@ -37,6 +37,7 @@ spec:
     command: ["/usr/bin/machine-config-server"]
     args:
       - "bootstrap"
+      - "--mcs-url={{.MCSURL}}"
       - "--payload-version={{.ReleaseVersion}}"
     terminationMessagePolicy: FallbackToLogsOnError
     volumeMounts:
