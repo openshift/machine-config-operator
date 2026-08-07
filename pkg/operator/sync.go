@@ -140,6 +140,7 @@ const (
 	mcdServiceAccountManifestPath                   = "manifests/machineconfigdaemon/sa.yaml"
 	mcdDaemonsetManifestPath                        = "manifests/machineconfigdaemon/daemonset.yaml"
 	mcdKubeRbacProxyConfigMapPath                   = "manifests/machineconfigdaemon/kube-rbac-proxy-config.yaml"
+	mcdKubeRbacProxyCrioConfigMapPath               = "manifests/machineconfigdaemon/kube-rbac-proxy-crio-config.yaml"
 	mcdKubeRbacProxyPrometheusRolePath              = "manifests/machineconfigdaemon/prometheus-rbac.yaml"
 	mcdKubeRbacProxyPrometheusRoleBindingPath       = "manifests/machineconfigdaemon/prometheus-rolebinding-target.yaml"
 	mcdRolePath                                     = "manifests/machineconfigdaemon/role.yaml"
@@ -1668,6 +1669,7 @@ func (optr *Operator) syncMachineConfigDaemon(config *renderConfig, _ *configv1.
 		},
 		configMaps: []string{
 			mcdKubeRbacProxyConfigMapPath,
+			mcdKubeRbacProxyCrioConfigMapPath,
 		},
 		validatingAdmissionPolicies: []string{
 			mcdMCNGuardValidatingAdmissionPolicyPath,
