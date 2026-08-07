@@ -30,6 +30,7 @@ import (
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	routev1 "github.com/openshift/api/route/v1"
+	mcfgfake "github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	routefake "github.com/openshift/client-go/route/clientset/versioned/fake"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -574,6 +575,7 @@ func TestResolveDesiredImageForPool(t *testing.T) {
 		name                string
 		poolName            string
 		moscExists          bool
+		moscDeletedFromAPI  bool
 		mosbExists          bool
 		mosbSuccessful      bool
 		registryInternal    bool
@@ -630,6 +632,18 @@ func TestResolveDesiredImageForPool(t *testing.T) {
 			updatedMachineCount: 0,
 			expectedImageURL:    "",
 			expectedRebootPath:  "2-reboot (no nodes have validated the new build yet)",
+		},
+		{
+			name:                "MOSC deleted but still in stale cache - no layered image",
+			poolName:            "worker",
+			moscExists:          true,
+			moscDeletedFromAPI:  true,
+			mosbExists:          true,
+			mosbSuccessful:      true,
+			registryInternal:    false,
+			updatedMachineCount: 1,
+			expectedImageURL:    "",
+			expectedRebootPath:  "Base image (MOSC deleted, stale cache should be caught by API verification)",
 		},
 	}
 
@@ -735,10 +749,20 @@ func TestResolveDesiredImageForPool(t *testing.T) {
 			// Create fake k8s clients for registry detection
 			kubeclient, routeclient := createFakeRegistryClients(tc.registryInternal)
 
+			// Create fake MCO client with MOSCs present in the API (unless testing stale cache)
+			var mcfgObjs []runtime.Object
+			if !tc.moscDeletedFromAPI {
+				for _, m := range moscList {
+					mcfgObjs = append(mcfgObjs, m)
+				}
+			}
+			mcfgclient := mcfgfake.NewSimpleClientset(mcfgObjs...)
+
 			// Create cluster server
 			cs := &clusterServer{
 				machineOSConfigLister: moscLister,
 				machineOSBuildLister:  mosbLister,
+				mcfgclient:            mcfgclient,
 				kubeclient:            kubeclient,
 				routeclient:           routeclient,
 			}
@@ -1005,10 +1029,18 @@ func TestLayeredImageServingDuringScaleUp(t *testing.T) {
 			// Create fake k8s clients for registry detection
 			kubeclient, routeclient := createFakeRegistryClients(tc.registryInternal)
 
+			// Create fake MCO client with MOSCs present in the API
+			var mcfgObjs []runtime.Object
+			for _, m := range moscList {
+				mcfgObjs = append(mcfgObjs, m)
+			}
+			mcfgclient := mcfgfake.NewSimpleClientset(mcfgObjs...)
+
 			// Create cluster server
 			cs := &clusterServer{
 				machineOSConfigLister: moscLister,
 				machineOSBuildLister:  mosbLister,
+				mcfgclient:            mcfgclient,
 				kubeclient:            kubeclient,
 				routeclient:           routeclient,
 			}
@@ -1183,12 +1215,19 @@ func TestGetConfigWithLayeredImage(t *testing.T) {
 
 			kubeclient, routeclient := createFakeRegistryClients(tc.registryInternal)
 
+			var mcfgObjs []runtime.Object
+			for _, m := range moscList {
+				mcfgObjs = append(mcfgObjs, m)
+			}
+			mcfgclient := mcfgfake.NewSimpleClientset(mcfgObjs...)
+
 			csc := &clusterServer{
 				machineConfigPoolLister: mcpLister,
 				machineConfigLister:     mcLister,
 				controllerConfigLister:  ccLister,
 				machineOSConfigLister:   moscLister,
 				machineOSBuildLister:    mosbLister,
+				mcfgclient:              mcfgclient,
 				kubeclient:              kubeclient,
 				routeclient:             routeclient,
 				kubeconfigFunc: func() ([]byte, []byte, error) {

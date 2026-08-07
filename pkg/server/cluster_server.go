@@ -15,10 +15,13 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfginformers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 
+	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	routeclientset "github.com/openshift/client-go/route/clientset/versioned"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
@@ -51,6 +54,7 @@ type clusterServer struct {
 	machineOSConfigLister   v1.MachineOSConfigLister
 	machineOSBuildLister    v1.MachineOSBuildLister
 
+	mcfgclient  mcfgclientset.Interface
 	kubeclient  clientset.Interface
 	routeclient routeclientset.Interface
 
@@ -119,6 +123,7 @@ func NewClusterServer(kubeConfig, apiserverURL string) (Server, error) {
 		configMapLister:         cmLister,
 		machineOSConfigLister:   moscLister,
 		machineOSBuildLister:    mosbLister,
+		mcfgclient:              machineConfigClient,
 		kubeclient:              kubeClient,
 		routeclient:             routeClient,
 		kubeconfigFunc:          func() ([]byte, []byte, error) { return kubeconfigFromSecret(bootstrapTokenDir, apiserverURL, nil) },
@@ -286,6 +291,20 @@ func (cs *clusterServer) resolveDesiredImageForPool(pool *mcfgv1.MachineConfigPo
 	// No MOSC for this pool - not layered
 	if mosc == nil {
 		return ""
+	}
+
+	// Guard against stale informer cache: verify the MOSC still exists via a direct API call.
+	// The MCS runs as a DaemonSet with per-pod caches, so after a MOSC deletion, different
+	// pods may have stale data for different durations.
+	if cs.mcfgclient != nil {
+		_, err := cs.mcfgclient.MachineconfigurationV1().MachineOSConfigs().Get(context.TODO(), mosc.Name, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			klog.Infof("MachineOSConfig %s found in cache but deleted from API for pool %s, skipping layered image", mosc.Name, pool.Name)
+			return ""
+		}
+		if err != nil {
+			klog.Warningf("Failed to verify MachineOSConfig %s via API for pool %s, trusting cache: %v", mosc.Name, pool.Name, err)
+		}
 	}
 
 	// Check if image is ready in MOSC status
