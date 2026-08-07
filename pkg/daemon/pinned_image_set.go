@@ -195,7 +195,8 @@ func NewPinnedImageSetManager(
 		DeleteFunc: p.deletePinnedImageSet,
 	})
 
-	p.cache = newImageCache(256)
+	// PinnedImageSet API allows up to 500 images per set; 1024 accommodates max images + set UID entries.
+	p.cache = newImageCache(1024)
 
 	return p
 }
@@ -377,7 +378,8 @@ func (p *PinnedImageSetManager) prefetchImageSets(ctx context.Context, imageSets
 	for _, imageSet := range imageSets {
 		imageSetCache := imageSet.DeepCopy()
 		imageSetCache.Spec.PinnedImages = nil
-		p.cache.Add(strings.TrimSpace(string(imageSet.UID)), *imageSet)
+		// Cache without PinnedImages to avoid storing large image lists in the LRU.
+		p.cache.Add(strings.TrimSpace(string(imageSet.UID)), *imageSetCache)
 	}
 
 	return nil

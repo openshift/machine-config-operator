@@ -369,7 +369,7 @@ func TestPrefetchImageSets(t *testing.T) {
 					Factor:   retryFactor,
 					Cap:      10 * time.Millisecond,
 				},
-				cache: newImageCache(256),
+				cache: newImageCache(1024),
 			}
 
 			imageSets := make([]*mcfgv1.PinnedImageSet, len(tt.imageSets))
