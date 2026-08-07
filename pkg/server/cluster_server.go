@@ -18,6 +18,7 @@ import (
 	routeclientset "github.com/openshift/client-go/route/clientset/versioned"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -225,6 +226,7 @@ func (cs *clusterServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error
 
 	addDataAndMaybeAppendToIgnition(caBundleFilePath, cc.Spec.KubeAPIServerServingCAData, &ignConf)
 	addDataAndMaybeAppendToIgnition(cloudProviderCAPath, cc.Spec.CloudProviderCAData, &ignConf)
+	addDataAndMaybeAppendToIgnition(daemonconsts.MCSRootCABundlePath, cc.Spec.RootCAData, &ignConf)
 
 	desiredImage := cs.resolveDesiredImageForPool(mp)
 

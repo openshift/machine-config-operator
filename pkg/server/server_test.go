@@ -253,6 +253,16 @@ func TestBootstrapServer(t *testing.T) {
 	}
 	assert.True(t, foundAnnotations, "node annotations file should be present")
 
+	// Verify MCS root CA bundle is present in bootstrap ignition config
+	var foundMCSCA bool
+	for _, f := range resCfg.Storage.Files {
+		if f.Path == daemonconsts.MCSRootCABundlePath {
+			foundMCSCA = true
+			break
+		}
+	}
+	assert.True(t, foundMCSCA, "MCS root CA bundle should be present in bootstrap ignition config")
+
 	// verify bootstrap cannot serve ignition to other pool than master
 	res, err = bs.GetConfig(poolRequest{
 		machineConfigPool: testPool,
@@ -468,6 +478,19 @@ func TestClusterServer(t *testing.T) {
 	if !foundEncapsulated {
 		t.Errorf("missing %s", daemonconsts.MachineConfigEncapsulatedPath)
 	}
+
+	// Verify MCS root CA bundle is present in ignition config
+	var foundMCSCA bool
+	for _, f := range resCfg.Storage.Files {
+		if f.Path == daemonconsts.MCSRootCABundlePath {
+			foundMCSCA = true
+			contents, err := ctrlcommon.DecodeIgnitionFileContents(f.Contents.Source, f.Contents.Compression)
+			require.NoError(t, err)
+			assert.Equal(t, []byte("MCS-Root-CA-Testdata"), contents)
+			break
+		}
+	}
+	assert.True(t, foundMCSCA, "MCS root CA bundle should be present in ignition config")
 }
 
 func getKubeConfigContent(t *testing.T) ([]byte, []byte, error) {
@@ -544,6 +567,7 @@ func getTestControllerConfig() *mcfgv1.ControllerConfig {
 		ObjectMeta: metav1.ObjectMeta{Generation: 1, Name: "machine-config-controller"},
 		Spec: mcfgv1.ControllerConfigSpec{
 			KubeAPIServerServingCAData: []byte("Testdata"),
+			RootCAData:                []byte("MCS-Root-CA-Testdata"),
 		},
 	}
 }

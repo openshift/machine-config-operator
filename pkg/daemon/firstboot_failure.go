@@ -3,6 +3,8 @@ package daemon
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -122,21 +124,25 @@ func getMCSURLFromAnnotations() (string, error) {
 
 // sendFailureReportHTTP sends the failure report via HTTPS POST to the MCS.
 func sendFailureReportHTTP(mcsBaseURL string, report *ctrlcommon.FirstbootFailureReport) error {
-	// Build endpoint URL
 	endpoint := fmt.Sprintf("%s/v1/node-failure", strings.TrimSuffix(mcsBaseURL, "/"))
 
-	// Marshal report to JSON
 	payload, err := json.Marshal(report)
 	if err != nil {
 		return fmt.Errorf("failed to marshal failure report: %w", err)
 	}
 
-	// Create HTTP client with timeout (uses default cert pool)
-	client := &http.Client{
-		Timeout: firstbootReportTimeout,
+	tlsConfig, err := buildMCSTLSConfig()
+	if err != nil {
+		klog.Warningf("Failed to build MCS TLS config, falling back to system default: %v", err)
 	}
 
-	// Create request with context timeout
+	client := &http.Client{
+		Timeout: firstbootReportTimeout,
+		Transport: &http.Transport{
+			TLSClientConfig: tlsConfig,
+		},
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), firstbootReportTimeout)
 	defer cancel()
 
@@ -146,17 +152,40 @@ func sendFailureReportHTTP(mcsBaseURL string, report *ctrlcommon.FirstbootFailur
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	// Send request
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("HTTP request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	// Check response status (202 Accepted expected)
 	if resp.StatusCode != http.StatusAccepted {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
 	return nil
+}
+
+// buildMCSTLSConfig loads the MCS root CA from disk and returns a tls.Config
+// with a custom cert pool. Returns nil if the CA file does not exist, which
+// falls back to the system default cert pool for backward compatibility.
+func buildMCSTLSConfig() (*tls.Config, error) {
+	caPEM, err := os.ReadFile(constants.MCSRootCABundlePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			klog.V(2).Infof("MCS CA bundle not found at %s, using system default cert pool", constants.MCSRootCABundlePath)
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to read MCS CA bundle: %w", err)
+	}
+
+	certPool := x509.NewCertPool()
+	if !certPool.AppendCertsFromPEM(caPEM) {
+		return nil, fmt.Errorf("failed to parse any certificates from MCS CA bundle at %s", constants.MCSRootCABundlePath)
+	}
+
+	klog.V(2).Infof("Loaded MCS root CA from %s", constants.MCSRootCABundlePath)
+	return &tls.Config{
+		RootCAs:    certPool,
+		MinVersion: tls.VersionTLS12,
+	}, nil
 }
