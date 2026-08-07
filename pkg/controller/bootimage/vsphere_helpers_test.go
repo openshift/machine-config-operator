@@ -112,3 +112,47 @@ func TestIsInFolder(t *testing.T) {
 		})
 	}
 }
+
+// TestTemplateSearchPath verifies the folder-scoped path used to disambiguate templates that share a
+// name across folders (OCPBUGS-105426): a bare-name finder.VirtualMachine search matches anywhere in
+// vCenter and errors out with "resolves to multiple vms" if two same-named templates exist in different
+// folders, even when one of them unambiguously lives in the workspace folder MCO manages.
+func TestTemplateSearchPath(t *testing.T) {
+	tests := []struct {
+		name   string
+		folder string
+		vmName string
+		want   string
+	}{
+		{
+			name:   "scopes to the workspace folder",
+			folder: "/dc1/vm/openshift4-folder",
+			vmName: "rhcos-template",
+			want:   "/dc1/vm/openshift4-folder/rhcos-template",
+		},
+		{
+			name:   "no folder configured stays unscoped",
+			folder: "",
+			vmName: "rhcos-template",
+			want:   "rhcos-template",
+		},
+		{
+			name:   "template already an absolute inventory path stays unscoped",
+			folder: "/dc1/vm/openshift4-folder",
+			vmName: "/dc1/vm/customer-folder/rhcos-template",
+			want:   "/dc1/vm/customer-folder/rhcos-template",
+		},
+		{
+			name:   "trailing slash on folder does not produce a double slash",
+			folder: "/dc1/vm/openshift4-folder/",
+			vmName: "rhcos-template",
+			want:   "/dc1/vm/openshift4-folder/rhcos-template",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, templateSearchPath(tt.folder, tt.vmName))
+		})
+	}
+}
