@@ -182,12 +182,10 @@ func (cpms ControlPlaneMachineSet) GetCoreOsBootImage() (string, error) {
 			return "", err
 		}
 		coreOsBootImagePath = fmt.Sprintf(`{.spec.template.machines_v1beta1_machine_openshift_io.spec.providerSpec.value.disks[%d].image}`, bootDiskIndex)
-	case VspherePlatform:
-		coreOsBootImagePath = `{.spec.template.machines_v1beta1_machine_openshift_io.spec.providerSpec.value.template}`
 	case AzurePlatform:
 		coreOsBootImagePath = `{.spec.template.machines_v1beta1_machine_openshift_io.spec.providerSpec.value.image}`
 	default:
-		e2e.Failf("ControlPlaneMachineSet.GetCoreOsBootImage method is only supported for GCP, Vsphere, Azure and AWS infrastructure")
+		e2e.Failf("ControlPlaneMachineSet.GetCoreOsBootImage method is only supported for GCP, Azure and AWS infrastructure")
 	}
 
 	return cpms.Get(coreOsBootImagePath)
