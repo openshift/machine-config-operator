@@ -501,3 +501,81 @@ func TestTransformToAPIIntURL(t *testing.T) {
 		})
 	}
 }
+
+// TestNewWithAlreadyStartedInformers is a regression test for the nil-pointer
+// panic caused by an informer race in New(). When an informer is already
+// started, AddEventHandler replays the current cache contents as synthetic Add
+// events on a separate goroutine. If the listers were assigned after the event
+// handlers were registered, the replayed MachineConfigNode Add would invoke
+// isControlPlaneNode -> ctrl.nodeLister.Get on a nil nodeLister and panic.
+//
+// This test preloads and starts the informers (in particular mcnInformer and
+// nodeInformer) BEFORE calling New, exercising that ordering and asserting that
+// construction completes without panicking and that the replayed event is
+// handled.
+func TestNewWithAlreadyStartedInformers(t *testing.T) {
+	// A healthy MachineConfigNode plus its control-plane Node so that the
+	// replayed Add event drives addMachineConfigNode -> isControlPlaneNode,
+	// which dereferences the node lister.
+	mcfgClient := fake.NewSimpleClientset(mcn("master-0").build())
+	k8sClient := k8sfake.NewSimpleClientset(node("master-0").build())
+	configClient := fakeconfigv1client.NewSimpleClientset()
+
+	i := mcfginformers.NewSharedInformerFactory(mcfgClient, 0)
+	k := informers.NewSharedInformerFactory(k8sClient, 0)
+	ci := configinformers.NewSharedInformerFactory(configClient, 0)
+
+	iriInformer := i.Machineconfiguration().V1().InternalReleaseImages()
+	ccInformer := i.Machineconfiguration().V1().ControllerConfigs()
+	mcInformer := i.Machineconfiguration().V1().MachineConfigs()
+	cvInformer := ci.Config().V1().ClusterVersions()
+	secretInformer := k.Core().V1().Secrets()
+	mcnInformer := i.Machineconfiguration().V1().MachineConfigNodes()
+	nodeInformer := k.Core().V1().Nodes()
+	infraInformer := ci.Config().V1().Infrastructures()
+
+	// Instantiate each informer so the factories start and sync them below.
+	iriInformer.Informer()
+	ccInformer.Informer()
+	mcInformer.Informer()
+	cvInformer.Informer()
+	secretInformer.Informer()
+	mcnInformer.Informer()
+	nodeInformer.Informer()
+	infraInformer.Informer()
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	// Start and sync the informers BEFORE constructing the controller. This is
+	// the ordering that previously triggered the nil-pointer race.
+	i.Start(stopCh)
+	k.Start(stopCh)
+	ci.Start(stopCh)
+	i.WaitForCacheSync(stopCh)
+	k.WaitForCacheSync(stopCh)
+	ci.WaitForCacheSync(stopCh)
+
+	c := New(
+		iriInformer,
+		ccInformer,
+		mcInformer,
+		cvInformer,
+		secretInformer,
+		mcnInformer,
+		nodeInformer,
+		infraInformer,
+		k8sClient,
+		mcfgClient,
+	)
+	assert.NotNil(t, c)
+
+	// The replayed Add event for the control-plane MachineConfigNode must be
+	// handled by addMachineConfigNode without panicking, which enqueues the IRI
+	// singleton. Waiting for the enqueue proves the handler ran to completion
+	// against a non-nil node lister.
+	assert.Eventually(t, func() bool {
+		return c.queue.Len() > 0
+	}, 5*time.Second, 10*time.Millisecond,
+		"expected replayed MachineConfigNode Add to be handled and enqueue the IRI without panicking")
+}
