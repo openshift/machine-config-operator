@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	health "github.com/InVisionApp/go-health"
-	"github.com/InVisionApp/go-health/checkers"
+	health "github.com/InVisionApp/go-health/v2"
+	"github.com/InVisionApp/go-health/v2/checkers"
 	"github.com/spf13/cobra"
 	"k8s.io/klog/v2"
 
