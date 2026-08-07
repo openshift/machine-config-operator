@@ -85,6 +85,10 @@ const (
 	mccEventsClusterRoleManifestPath                                  = "manifests/machineconfigcontroller/events-clusterrole.yaml"
 	mccEventsRoleBindingDefaultManifestPath                           = "manifests/machineconfigcontroller/events-rolebinding-default.yaml"
 	mccEventsRoleBindingTargetManifestPath                            = "manifests/machineconfigcontroller/events-rolebinding-target.yaml"
+	mccConfigMapsRoleTargetManifestPath                               = "manifests/machineconfigcontroller/configmaps-role-target.yaml"
+	mccConfigMapsRoleBindingTargetManifestPath                        = "manifests/machineconfigcontroller/configmaps-rolebinding-target.yaml"
+	mccConfigMapsRoleConfigManagedManifestPath                        = "manifests/machineconfigcontroller/configmaps-role-config-managed.yaml"
+	mccConfigMapsRoleBindingConfigManagedManifestPath                 = "manifests/machineconfigcontroller/configmaps-rolebinding-config-managed.yaml"
 	mccClusterRoleBindingManifestPath                                 = "manifests/machineconfigcontroller/clusterrolebinding.yaml"
 	mccServiceAccountManifestPath                                     = "manifests/machineconfigcontroller/sa.yaml"
 	mccKubeRbacProxyConfigMapPath                                     = "manifests/machineconfigcontroller/kube-rbac-proxy-config.yaml"
@@ -148,7 +152,6 @@ type syncError struct {
 }
 
 func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
-
 	co, err := optr.fetchClusterOperator()
 	if err != nil {
 		return err
@@ -222,7 +225,6 @@ func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
 	// Handle these errors after as CO status updates should have priority over this
 	if syncUpgradeableStatusErr != nil {
 		return fmt.Errorf("error syncingUpgradeableStatus: %w", syncUpgradeableStatusErr)
-
 	}
 	if syncClusterFleetEvaluationErr != nil {
 		return fmt.Errorf("error updating cluster operator status: %w", syncClusterFleetEvaluationErr)
@@ -1120,11 +1122,15 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig, _ *confi
 		},
 		roles: []string{
 			mccKubeRbacProxyPrometheusRolePath,
+			mccConfigMapsRoleTargetManifestPath,
+			mccConfigMapsRoleConfigManagedManifestPath,
 		},
 		roleBindings: []string{
 			mccEventsRoleBindingDefaultManifestPath,
 			mccEventsRoleBindingTargetManifestPath,
 			mccKubeRbacProxyPrometheusRoleBindingPath,
+			mccConfigMapsRoleBindingTargetManifestPath,
+			mccConfigMapsRoleBindingConfigManagedManifestPath,
 			mopRoleBindingManifestPath,
 		},
 		clusterRoleBindings: []string{
@@ -1367,7 +1373,6 @@ func (optr *Operator) isMachineOSBuilderRunning(mob *appsv1.Deployment) (bool, e
 }
 
 func (optr *Operator) reconcileSimpleContentAccessSecrets(layeredMCPs []*mcfgv1.MachineConfigPool) error {
-
 	// Create set of layered and non layeredPools
 	layeredPoolSet := sets.Set[string]{}
 	for _, pool := range layeredMCPs {
@@ -2238,7 +2243,6 @@ func cmToData(cm *corev1.ConfigMap, key string) ([]byte, error) {
 // Validates configuration provided in the MachineConfiguration object's spec for each feature
 // and updates the status of the object as necessary
 func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.ClusterOperator) error {
-
 	// Grab the cluster CR
 	mcop, err := optr.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
 	if err != nil {
