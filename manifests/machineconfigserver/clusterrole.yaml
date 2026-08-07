@@ -25,6 +25,3 @@ rules:
 - apiGroups: ["route.openshift.io"]
   resources: ["routes"]
   verbs: ["get", "list"]
-- apiGroups: ["config.openshift.io"]
-  resources: ["infrastructures"]
-  verbs: ["get"]
