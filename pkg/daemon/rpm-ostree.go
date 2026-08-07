@@ -320,7 +320,21 @@ func (r *RpmOstreeClient) generateTransportPolicyKeyForReference(podmanImageInfo
 	if err != nil {
 		return "", fmt.Errorf("failed to get podman info for storage configuration gathering: %w", err)
 	}
-	return fmt.Sprintf("[%s@%s]%s@%s", podmanInfo.Store.GraphDriverName, podmanInfo.Store.GraphRoot, podmanImageInfo.RepoDigest, podmanImageInfo.ID), nil
+	graphRoot := canonicalizeGraphRoot(podmanInfo.Store.GraphRoot)
+	return fmt.Sprintf("[%s@%s]%s@%s", podmanInfo.Store.GraphDriverName, graphRoot, podmanImageInfo.RepoDigest, podmanImageInfo.ID), nil
+}
+
+// canonicalizeGraphRoot resolves the graph root the way containers/storage does when it
+// opens the store: EvalSymlinks, falling back to a lexically cleaned path exactly as
+// types.expandEnvPath does. "podman system info" can report the graph root unresolved, so
+// without this the allow rule is written under a scope the evaluator never looks up.
+func canonicalizeGraphRoot(graphRoot string) string {
+	resolved, err := filepath.EvalSymlinks(graphRoot)
+	if err != nil {
+		klog.V(2).Infof("Could not resolve container storage graph root %q, falling back to a cleaned path: %v", graphRoot, err)
+		return filepath.Clean(graphRoot)
+	}
+	return resolved
 }
 
 // writeTemporalOstreePolicyFileDropin creates a systemd drop-in configuration that
