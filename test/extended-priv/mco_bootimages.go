@@ -102,6 +102,22 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		).To(o.Succeed(), "Error configuring Partial managedBootImages in the 'cluster' MachineConfiguration resource")
 		logger.Infof("OK!\n")
 
+		// vSphere updates templates in-place (same name, new content), so the vSphere template behind
+		// backdatedImageName was likely already reconciled to the current release by the first update
+		// above. Re-upload it so this second use is genuinely backdated again, or MCO will see an
+		// already-current template and never trigger the update this check expects.
+		if exutil.CheckPlatform(oc) == VspherePlatform {
+			exutil.By("Re-upload the backdated vSphere template so it is genuinely backdated again")
+			vsInfo, vsErr := GetVSphereConnectionInfoForMachineSet(machineSet)
+			o.Expect(vsErr).NotTo(o.HaveOccurred(), "Error getting the vSphere connection info for %s", machineSet)
+			folder, fErr := machineSet.GetWorkspaceFolder()
+			o.Expect(fErr).NotTo(o.HaveOccurred(), "Error getting the workspace folder for %s", machineSet)
+			o.Expect(exutil.DeleteVsphereTemplate(backdatedImageName, folder, vsInfo)).To(o.Succeed(),
+				"Error deleting the already-updated vSphere template %s", backdatedImageName)
+			backdatedImageName = getBackdatedBootImage(oc.AsAdmin(), machineSet)
+			logger.Infof("OK!\n")
+		}
+
 		exutil.By("Patch coreos boot image in MachineSet")
 		o.Expect(machineSet.SetCoreOsBootImage(backdatedImageName)).To(o.Succeed(),
 			"Error patching the value of the coreos boot image in %s", machineSet)
