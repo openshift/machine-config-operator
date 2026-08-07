@@ -24,6 +24,7 @@ var (
 	startOpts struct {
 		kubeconfig   string
 		apiserverURL string
+		mcsURL       string
 	}
 )
 
@@ -31,6 +32,7 @@ func init() {
 	rootCmd.AddCommand(startCmd)
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeconfig, "kubeconfig", "", "Kubeconfig file to access a remote cluster (testing only)")
 	startCmd.PersistentFlags().StringVar(&startOpts.apiserverURL, "apiserver-url", "", "URL for apiserver; Used to generate kubeconfig")
+	startCmd.PersistentFlags().StringVar(&startOpts.mcsURL, "mcs-url", "", "URL this server is reached at; served to nodes so they can report firstboot failures. Reporting is disabled when empty")
 
 }
 
@@ -53,7 +55,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	eventBroadcaster := record.NewBroadcaster()
 	defer eventBroadcaster.Shutdown()
 
-	cs, err := server.NewClusterServer(startOpts.kubeconfig, startOpts.apiserverURL, eventBroadcaster)
+	cs, err := server.NewClusterServer(startOpts.kubeconfig, startOpts.apiserverURL, startOpts.mcsURL, rootOpts.tlsminversion, eventBroadcaster)
 	if err != nil {
 		ctrlcommon.WriteTerminationError(err)
 	}

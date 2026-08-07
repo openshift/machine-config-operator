@@ -19,6 +19,7 @@ import (
 	routeclientset "github.com/openshift/client-go/route/clientset/versioned"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -61,9 +62,10 @@ type clusterServer struct {
 	routeclient     routeclientset.Interface
 	failureReporter FailureReporter
 
-	kubeconfigFunc kubeconfigFunc
-	apiserverURL   string
-	mcsURL         string
+	kubeconfigFunc   kubeconfigFunc
+	apiserverURL     string
+	mcsURL           string
+	mcsTLSMinVersion string
 }
 
 const minResyncPeriod = 20 * time.Minute
@@ -84,8 +86,15 @@ func resyncPeriod() func() time.Duration {
 // It accepts a kubeConfig, which is not required when it's
 // run from within a cluster(useful in testing).
 // It accepts the apiserverURL which is the location of the KubeAPIServer.
+// It accepts the mcsURL which is the location this server is reached at; it is
+// served to nodes so they can report firstboot failures back. It is populated
+// by the operator, which already computes the same host for the pointer config.
+// An empty mcsURL disables firstboot failure reporting.
+// It accepts the mcsTLSMinVersion required by the cluster's security profile,
+// which is served to nodes alongside the mcsURL so a reporting client does not
+// negotiate below what this server itself enforces.
 // It accepts an eventBroadcaster for recording firstboot failure events.
-func NewClusterServer(kubeConfig, apiserverURL string, eventBroadcaster record.EventBroadcaster) (Server, error) {
+func NewClusterServer(kubeConfig, apiserverURL, mcsURL, mcsTLSMinVersion string, eventBroadcaster record.EventBroadcaster) (Server, error) {
 	clientsBuilder, err := clients.NewBuilder(kubeConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Kubernetes rest client: %w", err)
@@ -94,7 +103,6 @@ func NewClusterServer(kubeConfig, apiserverURL string, eventBroadcaster record.E
 	machineConfigClient := clientsBuilder.MachineConfigClientOrDie("machine-config-shared-informer")
 	kubeClient := clientsBuilder.KubeClientOrDie("kube-client-shared-informer")
 	routeClient := clientsBuilder.RouteClientOrDie("route-client")
-	configClient := clientsBuilder.ConfigClientOrDie("config-client")
 	sharedInformerFactory := mcfginformers.NewSharedInformerFactory(machineConfigClient, resyncPeriod()())
 	kubeNamespacedSharedInformer := informers.NewSharedInformerFactoryWithOptions(kubeClient, resyncPeriod()(), informers.WithNamespace("openshift-machine-config-operator"))
 
@@ -122,21 +130,8 @@ func NewClusterServer(kubeConfig, apiserverURL string, eventBroadcaster record.E
 		return nil, errors.New("failed to wait for cache sync")
 	}
 
-	// Fetch Infrastructure to compute MCS URL
-	// Non-fatal: if this fails, continue with empty mcsURL
-	var mcsURL string
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	infra, err := configClient.ConfigV1().Infrastructures().Get(ctx, "cluster", metav1.GetOptions{})
-	if err != nil {
-		klog.Warningf("Failed to get cluster infrastructure, continuing without MCS URL: %v", err)
-	} else {
-		ignitionHost, err := GetIgnitionHost(&infra.Status)
-		if err != nil {
-			klog.Warningf("Failed to compute ignition host, continuing without MCS URL: %v", err)
-		} else {
-			mcsURL = fmt.Sprintf("https://%s", ignitionHost)
-		}
+	if mcsURL == "" {
+		klog.Warning("No --mcs-url set, firstboot failure reporting will be disabled")
 	}
 
 	// Start recording events to the API server. The sink is deliberately not
@@ -172,6 +167,7 @@ func NewClusterServer(kubeConfig, apiserverURL string, eventBroadcaster record.E
 		kubeconfigFunc:          func() ([]byte, []byte, error) { return kubeconfigFromSecret(bootstrapTokenDir, apiserverURL, nil) },
 		apiserverURL:            apiserverURL,
 		mcsURL:                  mcsURL,
+		mcsTLSMinVersion:        mcsTLSMinVersion,
 	}, nil
 }
 
@@ -234,7 +230,22 @@ func (cs *clusterServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error
 
 	addDataAndMaybeAppendToIgnition(caBundleFilePath, cc.Spec.KubeAPIServerServingCAData, &ignConf)
 	addDataAndMaybeAppendToIgnition(cloudProviderCAPath, cc.Spec.CloudProviderCAData, &ignConf)
-	addDataAndMaybeAppendToIgnition(daemonconsts.MCSURLFilePath, []byte(cs.mcsURL), &ignConf)
+	addDataAndMaybeAppendToIgnition(daemonconsts.FirstbootMCSRootCABundlePath, cc.Spec.RootCAData, &ignConf)
+
+	// Guard on the URL explicitly rather than relying on the empty-data check in
+	// addDataAndMaybeAppendToIgnition: the marshalled form is never empty, so
+	// without this an unset --mcs-url would still provision a file the daemon
+	// cannot use.
+	if cs.mcsURL != "" {
+		connInfo, err := json.Marshal(ctrlcommon.MCSConnectionInfo{
+			URL:           cs.mcsURL,
+			TLSMinVersion: cs.mcsTLSMinVersion,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal MCS connection info: %w", err)
+		}
+		addDataAndMaybeAppendToIgnition(daemonconsts.FirstbootMCSConnectionInfoFilePath, connInfo, &ignConf)
+	}
 
 	desiredImage := cs.resolveDesiredImageForPool(mp)
 

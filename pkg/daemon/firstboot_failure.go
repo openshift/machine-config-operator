@@ -3,6 +3,8 @@ package daemon
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,6 +13,7 @@ import (
 	"time"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	k8sapiflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
 
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -48,8 +51,18 @@ func sendMCSFirstbootFailureReport(mc *mcfgv1.MachineConfig, imageURL string, pi
 		return
 	}
 
-	// Read MCS URL from the file written during ignition provisioning
-	mcsURL, err := getMCSURL()
+	// Read the MCS URL and TLS settings from the file written during ignition
+	// provisioning
+	connInfo, err := getMCSConnectionInfo(constants.FirstbootMCSConnectionInfoFilePath)
+	if err != nil {
+		klog.Warningf("Cannot send MCS failure report: %v", err)
+		return
+	}
+
+	// The MCS serving cert is signed by a cluster-internal CA that is not in the
+	// node's system trust store, so without the bundle the handshake cannot
+	// succeed. Skip the report rather than attempt a send that is certain to fail.
+	tlsConfig, err := buildMCSTLSConfig(constants.FirstbootMCSRootCABundlePath, connInfo.TLSMinVersion)
 	if err != nil {
 		klog.Warningf("Cannot send MCS failure report: %v", err)
 		return
@@ -65,7 +78,7 @@ func sendMCSFirstbootFailureReport(mc *mcfgv1.MachineConfig, imageURL string, pi
 	}
 
 	// Send report (fire-and-forget)
-	if err := sendFailureReportHTTP(mcsURL, &report); err != nil {
+	if err := sendFailureReportHTTP(connInfo.URL, tlsConfig, &report); err != nil {
 		klog.Warning("Failed to send MCS failure report (best-effort)")
 		return
 	}
@@ -92,39 +105,44 @@ func getPoolNameFromMachineConfig(mc *mcfgv1.MachineConfig) string {
 	return ctrlcommon.MachineConfigPoolMaster
 }
 
-// getMCSURL reads the MCS base URL from the file written by the MCS during
-// ignition provisioning.
-func getMCSURL() (string, error) {
-	data, err := os.ReadFile(constants.MCSURLFilePath)
+// getMCSConnectionInfo reads the MCS connection details from the file written
+// by the MCS during ignition provisioning. The file is absent when the cluster
+// has firstboot failure reporting disabled. The path is a parameter so the
+// parsing can be exercised in tests.
+func getMCSConnectionInfo(path string) (*ctrlcommon.MCSConnectionInfo, error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return "", fmt.Errorf("failed to read MCS URL file: %w", err)
+		return nil, fmt.Errorf("failed to read MCS connection info file: %w", err)
 	}
 
-	mcsURL := strings.TrimSpace(string(data))
-	if mcsURL == "" {
-		return "", fmt.Errorf("MCS URL file %s is empty", constants.MCSURLFilePath)
+	connInfo := new(ctrlcommon.MCSConnectionInfo)
+	if err := json.Unmarshal(data, connInfo); err != nil {
+		return nil, fmt.Errorf("failed to parse MCS connection info file %s: %w", path, err)
 	}
 
-	return mcsURL, nil
+	if connInfo.URL == "" {
+		return nil, fmt.Errorf("MCS connection info file %s has no URL", path)
+	}
+
+	return connInfo, nil
 }
 
 // sendFailureReportHTTP sends the failure report via HTTPS POST to the MCS.
-func sendFailureReportHTTP(mcsBaseURL string, report *ctrlcommon.FirstbootFailureReport) error {
-	// Build endpoint URL
+func sendFailureReportHTTP(mcsBaseURL string, tlsConfig *tls.Config, report *ctrlcommon.FirstbootFailureReport) error {
 	endpoint := fmt.Sprintf("%s/v1/node-failure", strings.TrimSuffix(mcsBaseURL, "/"))
 
-	// Marshal report to JSON
 	payload, err := json.Marshal(report)
 	if err != nil {
 		return fmt.Errorf("failed to marshal failure report: %w", err)
 	}
 
-	// Create HTTP client with timeout (uses default cert pool)
 	client := &http.Client{
 		Timeout: firstbootReportTimeout,
+		Transport: &http.Transport{
+			TLSClientConfig: tlsConfig,
+		},
 	}
 
-	// Create request with context timeout
 	ctx, cancel := context.WithTimeout(context.Background(), firstbootReportTimeout)
 	defer cancel()
 
@@ -134,17 +152,57 @@ func sendFailureReportHTTP(mcsBaseURL string, report *ctrlcommon.FirstbootFailur
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	// Send request
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("HTTP request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	// Check response status (202 Accepted expected)
 	if resp.StatusCode != http.StatusAccepted {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
 	return nil
+}
+
+// buildMCSTLSConfig loads the MCS root CA from disk and returns a tls.Config
+// pinned to it. There is no fallback to the system cert pool: the MCS serving
+// cert is signed by a cluster-internal CA that is never added to the node's
+// system trust store, so a handshake without this bundle cannot verify.
+//
+// tlsMinVersion is the cluster's security profile floor as served by the MCS,
+// so a cluster that has raised its profile is not undercut by this client. The
+// CA path is a parameter so the trust and version handling can be exercised in
+// tests.
+//
+// G402 cannot prove the minimum version is high enough when it comes from a
+// runtime value; k8sapiflag only ever returns TLS 1.0 or above, and the
+// cluster's own API validation guards the value before it reaches us.
+//
+//nolint:gosec
+func buildMCSTLSConfig(caPath, tlsMinVersion string) (*tls.Config, error) {
+	caPEM, err := os.ReadFile(caPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read MCS CA bundle at %s: %w", caPath, err)
+	}
+
+	certPool := x509.NewCertPool()
+	if !certPool.AppendCertsFromPEM(caPEM) {
+		return nil, fmt.Errorf("failed to parse any certificates from MCS CA bundle at %s", caPath)
+	}
+
+	// An empty value already resolves to TLS 1.2. Only an unrecognized one
+	// errors, and that is not worth dropping the report over: fall back to the
+	// same floor rather than lose the only signal this node can send.
+	minVersion, err := k8sapiflag.TLSVersion(tlsMinVersion)
+	if err != nil {
+		klog.Warningf("Ignoring unusable TLS min version %q from MCS connection info, using VersionTLS12: %v", tlsMinVersion, err)
+		minVersion = tls.VersionTLS12
+	}
+
+	klog.V(2).Infof("Loaded MCS root CA from %s", caPath)
+	return &tls.Config{
+		RootCAs:    certPool,
+		MinVersion: minVersion,
+	}, nil
 }

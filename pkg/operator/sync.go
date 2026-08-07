@@ -705,7 +705,10 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		optr.setOperatorLogLevel(mcop.Spec.OperatorLogLevel)
 	}
 
-	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra, pointerConfigData, apiServer, fmt.Sprintf("%d", optr.logLevel))
+	// The MCS serves Ignition on the same host it is reached at for firstboot
+	// failure reports, so reuse the host already computed for the pointer config
+	// rather than having the MCS rediscover it from the Infrastructure object.
+	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra, pointerConfigData, apiServer, fmt.Sprintf("%d", optr.logLevel), fmt.Sprintf("https://%s", ignitionHost))
 
 	return nil
 }
@@ -2193,7 +2196,7 @@ func setGVK(obj runtime.Object, scheme *runtime.Scheme) error {
 	return nil
 }
 
-func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *ctrlcommon.RenderConfigImages, infra *configv1.Infrastructure, pointerConfigData []byte, apiServer *configv1.APIServer, logLevel string) *renderConfig {
+func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *ctrlcommon.RenderConfigImages, infra *configv1.Infrastructure, pointerConfigData []byte, apiServer *configv1.APIServer, logLevel, mcsURL string) *renderConfig {
 	tlsMinVersion, tlsCipherSuites := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
 	return &renderConfig{
 		TargetNamespace:        tnamespace,
@@ -2203,6 +2206,7 @@ func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.C
 		Images:                 imgs,
 		KubeAPIServerServingCA: kubeAPIServerServingCA,
 		APIServerURL:           infra.Status.APIServerInternalURL,
+		MCSURL:                 mcsURL,
 		PointerConfig:          string(pointerConfigData),
 		Infra:                  *infra,
 		TLSMinVersion:          tlsMinVersion,
