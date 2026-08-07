@@ -38,16 +38,16 @@ contents:
     runtime_root = "/run/runc"
     allowed_annotations = [
         "io.containers.trace-syscall",
-        "io.kubernetes.cri-o.Devices",
-        "io.kubernetes.cri-o.LinkLogs",
+        "devices.crio.io",
+        "link-logs.crio.io",
     ]
 
     [crio.runtime.runtimes.crun]
     runtime_root = "/run/crun"
     allowed_annotations = [
         "io.containers.trace-syscall",
-        "io.kubernetes.cri-o.Devices",
-        "io.kubernetes.cri-o.LinkLogs",
+        "devices.crio.io",
+        "link-logs.crio.io",
     ]
     # Based on https://github.com/containers/crun/blob/27d7dd3a0/README.md?plain=1#L48
     container_min_memory = "512KiB"
@@ -56,8 +56,8 @@ contents:
     [crio.runtime.workloads.openshift-builder]
     activation_annotation = "io.openshift.builder"
     allowed_annotations = [
-      "io.kubernetes.cri-o.userns-mode",
-      "io.kubernetes.cri-o.Devices"
+      "userns-mode.crio.io",
+      "devices.crio.io"
     ]
     [crio.runtime.workloads.openshift-builder.resources]
 
