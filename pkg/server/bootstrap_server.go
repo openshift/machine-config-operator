@@ -13,6 +13,7 @@ import (
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 )
 
 // ensure bootstrapServer implements the
@@ -140,6 +141,7 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*runtime.RawExtension, er
 
 	addDataAndMaybeAppendToIgnition(caBundleFilePath, cc.Spec.KubeAPIServerServingCAData, &ignConf)
 	addDataAndMaybeAppendToIgnition(cloudProviderCAPath, cc.Spec.CloudProviderCAData, &ignConf)
+	addDataAndMaybeAppendToIgnition(daemonconsts.MCSRootCABundlePath, cc.Spec.RootCAData, &ignConf)
 
 	appenders := newAppendersBuilder(nil, bsc.kubeconfigFunc, bsc.certs, bsc.serverBaseDir).
 		WithNodeAnnotations(currConf, "", "").
