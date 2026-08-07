@@ -924,6 +924,7 @@ func TestGenerateExtensionsArgs(t *testing.T) {
 // MockPodmanInterface for testing podmanCopy function
 type MockPodmanInterface struct {
 	createContainerFunc func(additionalArgs []string, containerName, imgURL string) ([]byte, error)
+	info                *PodmanInfo
 }
 
 func (m *MockPodmanInterface) GetPodmanImageInfoByReference(reference string) (*PodmanImageInfo, error) {
@@ -931,6 +932,9 @@ func (m *MockPodmanInterface) GetPodmanImageInfoByReference(reference string) (*
 }
 
 func (m *MockPodmanInterface) GetPodmanInfo() (*PodmanInfo, error) {
+	if m.info != nil {
+		return m.info, nil
+	}
 	return nil, fmt.Errorf("not implemented in mock")
 }
 
