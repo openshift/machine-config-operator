@@ -345,34 +345,48 @@ func (optr *Operator) getImageRegistryBundles() ([]mcfgv1.ImageRegistryBundle, [
 
 // Sync cloud config on supported platform from cloud.conf available in openshift-config-managed/kube-cloud-config ConfigMap.
 func (optr *Operator) syncCloudConfig(spec *mcfgv1.ControllerConfigSpec, infra *configv1.Infrastructure) error {
-	cm, err := optr.clusterCmLister.ConfigMaps("openshift-config-managed").Get("kube-cloud-config")
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			if isKubeCloudConfigCMRequired(infra) {
-				// Return error only if the kube-cloud-config ConfigMap is required, otherwise proceeds further.
-				return fmt.Errorf("%s/%s configmap is required on platform %s but not found: %w",
-					"openshift-config-managed", "kube-cloud-config", infra.Status.PlatformStatus.Type, err)
+	var lastErr error
+	if err := wait.PollUntilContextTimeout(context.TODO(), 1*time.Second, 3*time.Second, true, func(_ context.Context) (bool, error) {
+		cm, err := optr.clusterCmLister.ConfigMaps("openshift-config-managed").Get("kube-cloud-config")
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				if isKubeCloudConfigCMRequired(infra) {
+					// Return error only if the kube-cloud-config ConfigMap is required, otherwise proceeds further.
+					platformType := "Unknown"
+					if infra.Status.PlatformStatus != nil {
+						platformType = string(infra.Status.PlatformStatus.Type)
+					}
+					lastErr = fmt.Errorf("%s/%s configmap is required on platform %s but not found: %w",
+						"openshift-config-managed", "kube-cloud-config", platformType, err)
+					return false, nil
+				}
+				return true, nil
 			}
-			return nil
+			lastErr = err
+			return false, nil
 		}
-		return err
-	}
-	// Read cloud.conf from openshift-config-managed/kube-cloud-config ConfigMap.
-	cc, err := getCloudConfigFromConfigMap(cm, "cloud.conf")
-	if err != nil {
-		if isCloudConfRequired(infra) {
-			// Return error only if cloud.conf is required, otherwise proceeds further.
-			return fmt.Errorf("%s/%s configmap must have the %s key on platform %s but not found",
-				"openshift-config-managed", "kube-cloud-config", "cloud.conf", infra.Status.PlatformStatus.Type)
+		// Read cloud.conf from openshift-config-managed/kube-cloud-config ConfigMap.
+		cc, err := getCloudConfigFromConfigMap(cm, "cloud.conf")
+		if err != nil {
+			if isCloudConfRequired(infra) {
+				// Return error only if cloud.conf is required, otherwise proceeds further.
+				lastErr = fmt.Errorf("%s/%s configmap must have the %s key on platform %s but not found",
+					"openshift-config-managed", "kube-cloud-config", "cloud.conf", infra.Status.PlatformStatus.Type)
+				return false, nil
+			}
+		} else {
+			spec.CloudProviderConfig = cc
 		}
-	} else {
-		spec.CloudProviderConfig = cc
+
+		caCert, err := ctrlcommon.GetCAsFromConfigMap(cm, "ca-bundle.pem")
+		if err == nil {
+			spec.CloudProviderCAData = caCert
+		}
+		return true, nil
+	}); err != nil {
+		return fmt.Errorf("during kube-cloud-config check: %w", kubeErrs.NewAggregate([]error{err, lastErr}))
 	}
 
-	caCert, err := ctrlcommon.GetCAsFromConfigMap(cm, "ca-bundle.pem")
-	if err == nil {
-		spec.CloudProviderCAData = caCert
-	}
 	return nil
 }
 
@@ -1989,19 +2003,30 @@ func (optr *Operator) waitForControllerConfigToBeCompleted(resource *mcfgv1.Cont
 }
 
 func (optr *Operator) getOSImageURLsFromConfigMap() (string, string, error) {
-	cm, err := optr.mcoCmLister.ConfigMaps(optr.namespace).Get(ctrlcommon.MachineConfigOSImageURLConfigMapName)
-	if err != nil {
-		return "", "", err
+	var oscontainer, osextensionscontainer string
+	var lastErr error
+	if err := wait.PollUntilContextTimeout(context.TODO(), 1*time.Second, 3*time.Second, true, func(_ context.Context) (bool, error) {
+		cm, err := optr.mcoCmLister.ConfigMaps(optr.namespace).Get(ctrlcommon.MachineConfigOSImageURLConfigMapName)
+		if err != nil {
+			lastErr = err
+			return false, nil
+		}
+		cfg, err := ctrlcommon.ParseOSImageURLConfigMap(cm)
+		if err != nil {
+			return false, err
+		}
+		optrVersion, _ := optr.vStore.Get("operator")
+		if cfg.ReleaseVersion != optrVersion {
+			lastErr = fmt.Errorf("refusing to read osImageURL version %q, operator version %q", cfg.ReleaseVersion, optrVersion)
+			return false, nil
+		}
+		oscontainer = cfg.BaseOSContainerImage
+		osextensionscontainer = cfg.BaseOSExtensionsContainerImage
+		return true, nil
+	}); err != nil {
+		return "", "", fmt.Errorf("during osImageURL configmap check: %w", kubeErrs.NewAggregate([]error{err, lastErr}))
 	}
-	cfg, err := ctrlcommon.ParseOSImageURLConfigMap(cm)
-	if err != nil {
-		return "", "", err
-	}
-	optrVersion, _ := optr.vStore.Get("operator")
-	if cfg.ReleaseVersion != optrVersion {
-		return "", "", fmt.Errorf("refusing to read osImageURL version %q, operator version %q", cfg.ReleaseVersion, optrVersion)
-	}
-	return cfg.BaseOSContainerImage, cfg.BaseOSExtensionsContainerImage, nil
+	return oscontainer, osextensionscontainer, nil
 }
 
 // getOSImageURLForStream retrieves the OS image URL for a specific pool's stream.
