@@ -36,6 +36,9 @@ contents: |
     {{if or (eq .IPFamilies "IPv6") (eq .IPFamilies "DualStackIPv6Primary") -}}
     --prefer-ipv6 \
     {{end -}}
+    {{if or (eq .IPFamilies "DualStack") (eq .IPFamilies "DualStackIPv6Primary") -}}
+    --dual-stack \
+    {{end -}}
     --retry-on-failure \
     ${NODEIP_HINT:-} \
     {{ range onPremPlatformAPIServerInternalIPs . }}{{.}} {{end}} \
