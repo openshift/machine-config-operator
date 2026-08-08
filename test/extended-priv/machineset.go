@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -734,8 +735,9 @@ func (ms MachineSet) SetAutoscalerLabels(labels string) error {
 }
 
 // GetVSphereFailureDomain returns the failure domain from the infrastructure resource that matches
-// the given MachineSet's workspace. It matches by comparing the workspace server and datacenter
-// against each failure domain's server and topology.datacenter.
+// the given MachineSet's workspace. Two failure domains can share the same server/datacenter but use
+// different datastore/resourcePool values, so all four are compared — mirroring the matching logic in
+// createNewVMTemplate (pkg/controller/bootimage/vsphere_helpers.go) — to avoid picking the wrong domain.
 func GetVSphereFailureDomain(ms *MachineSet) (string, error) {
 	workspace, err := ms.Get(`{.spec.template.spec.providerSpec.value.workspace}`)
 	if err != nil {
@@ -747,6 +749,8 @@ func GetVSphereFailureDomain(ms *MachineSet) (string, error) {
 	if wsServer == "" || wsDataCenter == "" {
 		return "", fmt.Errorf("workspace in MachineSet %s is missing server or datacenter", ms.GetName())
 	}
+	wsDatastore := gjson.Get(workspace, "datastore").String()
+	wsResourcePool := gjson.Get(workspace, "resourcePool").String()
 
 	infra := NewResource(ms.GetOC().AsAdmin(), "infrastructure", "cluster")
 	failureDomains, err := infra.Get(`{.spec.platformSpec.vsphere.failureDomains}`)
@@ -755,12 +759,15 @@ func GetVSphereFailureDomain(ms *MachineSet) (string, error) {
 	}
 
 	for _, fd := range gjson.Parse(failureDomains).Array() {
-		if fd.Get("server").String() == wsServer && fd.Get("topology.datacenter").String() == wsDataCenter {
+		if fd.Get("server").String() == wsServer &&
+			fd.Get("topology.datacenter").String() == wsDataCenter &&
+			fd.Get("topology.datastore").String() == wsDatastore &&
+			path.Clean(fd.Get("topology.resourcePool").String()) == path.Clean(wsResourcePool) {
 			return fd.Raw, nil
 		}
 	}
 
-	return "", fmt.Errorf("no failure domain found matching server=%s datacenter=%s for MachineSet %s", wsServer, wsDataCenter, ms.GetName())
+	return "", fmt.Errorf("no failure domain found matching server=%s datacenter=%s datastore=%s resourcePool=%s for MachineSet %s", wsServer, wsDataCenter, wsDatastore, wsResourcePool, ms.GetName())
 }
 
 // GetVSphereConnectionInfoForMachineSet returns the vSphere connection info for the failure domain

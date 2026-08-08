@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"strings"
 
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
@@ -230,6 +231,15 @@ func isInFolder(vm *object.VirtualMachine, folder *object.Folder) bool {
 	return path.Dir(vm.InventoryPath) == folder.InventoryPath
 }
 
+// templateSearchPath scopes name to folder to avoid ambiguity when the same name exists in multiple
+// folders. Left unscoped when there's no folder, or name is already an absolute inventory path.
+func templateSearchPath(folder, name string) string {
+	if folder == "" || strings.HasPrefix(name, "/") {
+		return name
+	}
+	return path.Join(folder, name)
+}
+
 // getDiskTypeFromExistingVM inspects the given VM's disk backing configuration and returns its disk provisioning type (thin, thick, eagerZeroedThick).
 func getDiskTypeFromExistingVM(vmMo mo.VirtualMachine) string {
 	diskType := ""
@@ -325,7 +335,13 @@ func resolveExistingTemplateVM(
 	// Check providerSpec.Template first so a freshly-added failure domain whose MachineSet
 	// already has a valid template doesn't fail just because the infra computed name isn't a match.
 	if providerSpec.Template != "" && providerSpec.Template != computedName {
-		tmplVM, tmplErr := finder.VirtualMachine(ctx, providerSpec.Template)
+		scopedPath := templateSearchPath(providerSpec.Workspace.Folder, providerSpec.Template)
+		tmplVM, tmplErr := finder.VirtualMachine(ctx, scopedPath)
+		if scopedPath != providerSpec.Template && errors.As(tmplErr, &notFoundErr) {
+			// Nothing at that path inside the workspace folder — fall back to a global search so we
+			// can still detect (and log) a customer-managed VM of the same name living elsewhere.
+			tmplVM, tmplErr = finder.VirtualMachine(ctx, providerSpec.Template)
+		}
 		switch {
 		case tmplErr == nil && isInFolder(tmplVM, workspaceFolder):
 			return tmplVM, providerSpec.Template, false, nil
