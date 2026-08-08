@@ -47,7 +47,7 @@ contents:
         - "--out-dir"
         - "/etc/coredns"
         - "--resolvconf-path"
-        - "/etc/resolv.conf"
+        - "/var/run/NetworkManager/resolv.conf"
         resources: {}
         volumeMounts:
         - name: kubeconfig
@@ -58,6 +58,9 @@ contents:
           mountPropagation: HostToContainer
         - name: conf-dir
           mountPath: "/etc/coredns"
+          mountPropagation: HostToContainer
+        - name: nm-resolv
+          mountPath: "/var/run/NetworkManager"
           mountPropagation: HostToContainer
         imagePullPolicy: IfNotPresent
         terminationMessagePolicy: FallbackToLogsOnError
