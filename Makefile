@@ -153,6 +153,12 @@ endef
 # Create a target for each component
 $(foreach C, $(HELPER_BINARIES), $(eval $(call helper_target_template,$(C))))
 
+# Unlike the other devex/cmd helpers (built but left for the engineer to install/run by name),
+# check-aws-marketplace-skew is meant to be run directly via `make` — build it and execute it in
+# one step. Extra flags can be passed via ARGS, e.g. `make check-aws-marketplace-skew ARGS="--json"`.
+check-aws-marketplace-skew: _build-helper-check-aws-marketplace-skew
+	@_output/linux/$(GOARCH)/check-aws-marketplace-skew $(ARGS)
+
 define verify_e2e_target_template =
  .PHONY: $(1)
  $(1): _verify-e2e-$(1)
