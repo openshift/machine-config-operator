@@ -156,6 +156,29 @@ VARIANT=CoreOS
 VARIANT_ID=coreos
 OPENSHIFT_VERSION="4.20"`
 
+	scos10OSReleaseContents := `NAME="CentOS Stream CoreOS"
+VERSION="10.0.20260614-0 (Coughlan)"
+RELEASE_TYPE=stable
+ID="centos"
+ID_LIKE="rhel fedora"
+VERSION_ID="10"
+PLATFORM_ID="platform:el10"
+PRETTY_NAME="CentOS Stream CoreOS 10.0.20260614-0 (Coughlan)"
+ANSI_COLOR="0;31"
+LOGO="fedora-logo-icon"
+CPE_NAME="cpe:/o:centos:centos:10"
+HOME_URL="https://centos.org/"
+VENDOR_NAME="CentOS"
+VENDOR_URL="https://centos.org/"
+BUG_REPORT_URL="https://issues.redhat.com/"
+REDHAT_SUPPORT_PRODUCT="Red Hat Enterprise Linux 10"
+REDHAT_SUPPORT_PRODUCT_VERSION="CentOS Stream"
+OSTREE_VERSION='10.0.20260614-0'
+IMAGE_VERSION='10.0.20260614-0'
+VARIANT=CoreOS
+VARIANT_ID=coreos
+OPENSHIFT_VERSION="5.0"`
+
 	testCases := []struct {
 		Name                   string
 		OSReleaseContents      string
@@ -251,6 +274,20 @@ OPENSHIFT_VERSION="4.20"`
 			IsLikeTraditionalRHEL7: false,
 			ToPrometheusLabel:      "FEDORA",
 			BaseVersionMajor:       37,
+			BaseVersionMinor:       -1,
+		},
+		{
+			Name:                   "SCOS 10",
+			OSReleaseContents:      scos10OSReleaseContents,
+			IsEL:                   true,
+			IsEL9:                  false,
+			IsEL10:                 true,
+			IsFCOS:                 false,
+			IsSCOS:                 false,
+			IsCoreOSVariant:        true,
+			IsLikeTraditionalRHEL7: false,
+			ToPrometheusLabel:      "CENTOS",
+			BaseVersionMajor:       10,
 			BaseVersionMinor:       -1,
 		},
 	}
