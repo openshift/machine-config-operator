@@ -111,6 +111,36 @@ func New(
 
 	ctrl.syncHandler = ctrl.syncInternalReleaseImage
 
+	// Assign the listers and their HasSynced functions BEFORE registering the
+	// event handlers below. AddEventHandler on an already-started informer
+	// replays synthetic Add events from a separate goroutine, which can invoke
+	// handlers (e.g. isControlPlaneNode/isNodeReady, which dereference
+	// ctrl.nodeLister) before these fields are assigned. Assigning the listers
+	// first eliminates that nil-pointer race.
+	ctrl.iriLister = iriInformer.Lister()
+	ctrl.iriListerSynced = iriInformer.Informer().HasSynced
+
+	ctrl.ccLister = ccInformer.Lister()
+	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
+
+	ctrl.mcLister = mcInformer.Lister()
+	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
+
+	ctrl.clusterVersionLister = clusterVersionInformer.Lister()
+	ctrl.clusterVersionListerSynced = clusterVersionInformer.Informer().HasSynced
+
+	ctrl.secretLister = secretInformer.Lister()
+	ctrl.secretListerSynced = secretInformer.Informer().HasSynced
+
+	ctrl.mcnLister = mcnInformer.Lister()
+	ctrl.mcnListerSynced = mcnInformer.Informer().HasSynced
+
+	ctrl.nodeLister = nodeInformer.Lister()
+	ctrl.nodeListerSynced = nodeInformer.Informer().HasSynced
+
+	ctrl.infraLister = infraInformer.Lister()
+	ctrl.infraListerSynced = infraInformer.Informer().HasSynced
+
 	iriInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addInternalReleaseImage,
 		UpdateFunc: ctrl.updateInternalReleaseImage,
@@ -143,30 +173,6 @@ func New(
 	nodeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		UpdateFunc: ctrl.updateNode,
 	})
-
-	ctrl.iriLister = iriInformer.Lister()
-	ctrl.iriListerSynced = iriInformer.Informer().HasSynced
-
-	ctrl.ccLister = ccInformer.Lister()
-	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
-
-	ctrl.mcLister = mcInformer.Lister()
-	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
-
-	ctrl.clusterVersionLister = clusterVersionInformer.Lister()
-	ctrl.clusterVersionListerSynced = clusterVersionInformer.Informer().HasSynced
-
-	ctrl.secretLister = secretInformer.Lister()
-	ctrl.secretListerSynced = secretInformer.Informer().HasSynced
-
-	ctrl.mcnLister = mcnInformer.Lister()
-	ctrl.mcnListerSynced = mcnInformer.Informer().HasSynced
-
-	ctrl.nodeLister = nodeInformer.Lister()
-	ctrl.nodeListerSynced = nodeInformer.Informer().HasSynced
-
-	ctrl.infraLister = infraInformer.Lister()
-	ctrl.infraListerSynced = infraInformer.Informer().HasSynced
 
 	return ctrl
 }
@@ -384,6 +390,16 @@ func (ctrl *Controller) updateNode(_, cur interface{}) {
 // isControlPlaneNode checks if a node is a control plane node by checking its labels.
 // Returns true if the node has the master or control-plane role label.
 func (ctrl *Controller) isControlPlaneNode(nodeName string) bool {
+	// Defensive guard: the nodeLister may not be assigned yet if an event
+	// handler fires during controller construction. Treat the node as
+	// non-control-plane rather than panicking on a nil lister.
+	if ctrl.nodeLister == nil {
+		// Do not log the node name: node names can contain internal hostnames
+		// or other infrastructure identifiers. Log only the lister state.
+		klog.Warning("nodeLister not initialized yet; treating node as non-control-plane")
+		return false
+	}
+
 	node, err := ctrl.nodeLister.Get(nodeName)
 	if err != nil {
 		klog.V(4).Infof("Failed to get node %s: %v", nodeName, err)
@@ -403,6 +419,16 @@ func (ctrl *Controller) isControlPlaneNode(nodeName string) bool {
 
 // isNodeReady checks if a node is ready by examining its Ready condition.
 func (ctrl *Controller) isNodeReady(nodeName string) bool {
+	// Defensive guard: the nodeLister may not be assigned yet if an event
+	// handler fires during controller construction. Treat the node as not
+	// ready rather than panicking on a nil lister.
+	if ctrl.nodeLister == nil {
+		// Do not log the node name: node names can contain internal hostnames
+		// or other infrastructure identifiers. Log only the lister state.
+		klog.Warning("nodeLister not initialized yet; treating node as not ready")
+		return false
+	}
+
 	node, err := ctrl.nodeLister.Get(nodeName)
 	if err != nil {
 		klog.V(4).Infof("Failed to get node %s: %v", nodeName, err)
