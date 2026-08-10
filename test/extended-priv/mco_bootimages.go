@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/google/uuid"
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
@@ -18,7 +19,15 @@ import (
 const mapiBaseErrorMessageTemplate = `1 Degraded MAPI MachineSets | 0 Degraded ControlPlaneMachineSets | 0 Degraded CAPI MachineSets | 0 Degraded CAPI MachineDeployments | Error(s):` +
 	` error syncing MAPI MachineSet %s: failed to reconcile machineset %s, err:`
 
-var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Serial][Disruptive] MCO Bootimages", func() {
+// backdatedImageRunID is generated once per test binary process, so every vSphere backdated
+// template this run uploads gets a name unique to that run. Without it, every run uploads under
+// the exact same literal name regardless of which failure domain/folder it lands in — so a leftover
+// template from an earlier (or crashed, uncleaned-up) run collides with the current run's upload,
+// which is what caused both the MCO-side "resolves to multiple vms" bug and the machine-api-provider-
+// vsphere actuator's own "multiple templates found" clone-time failure.
+var backdatedImageRunID = strings.ReplaceAll(uuid.NewString(), "-", "")[:8]
+
+var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longduration][Serial][Disruptive] MCO Bootimages", func() {
 	defer g.GinkgoRecover()
 
 	var (
@@ -61,8 +70,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		var (
 			duplicatedMachinesetName = fmt.Sprintf("cloned-tc-%s", GetCurrentTestPolarionIDNumber())
 			firstMachineSet          = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
-			backdatedImageName    = getBackdatedBootImage(oc.AsAdmin(), firstMachineSet)
-			fakeImageNameNoUpdate = "fake-noupdate-image-81403"
+			backdatedImageName       = getBackdatedBootImage(oc.AsAdmin(), firstMachineSet)
+			fakeImageNameNoUpdate    = "fake-noupdate-image-81403"
 		)
 
 		exutil.By("Duplicate machineset for testing")
@@ -237,14 +246,14 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 	g.It("[PolarionID:74239][OTP] ManagedBootImages. Restore Partial MachineSet images", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
 		var (
-			machineSet              = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
-			backdatedImageName      = getBackdatedBootImage(oc.AsAdmin(), machineSet)
-			fakeImageNameNoUpdate   = "fake-noupdate-image-74239"
-			clonedMSLabelName       = "cloned-tc-74239-label"
-			clonedMSNoLabelName     = "cloned-tc-74239-no-label"
-			clonedMSLabelOwnedName  = "cloned-tc-74239-label-owned"
-			labelName               = "test"
-			labelValue              = "update"
+			machineSet             = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
+			backdatedImageName     = getBackdatedBootImage(oc.AsAdmin(), machineSet)
+			fakeImageNameNoUpdate  = "fake-noupdate-image-74239"
+			clonedMSLabelName      = "cloned-tc-74239-label"
+			clonedMSNoLabelName    = "cloned-tc-74239-no-label"
+			clonedMSLabelOwnedName = "cloned-tc-74239-label-owned"
+			labelName              = "test"
+			labelValue             = "update"
 		)
 
 		exutil.By("Opt-in boot images update")
@@ -938,8 +947,9 @@ func getBackdatedBootImage(oc *exutil.CLI, ms *MachineSet) string {
 		baseImageURL, err := rhcosHandler.GetBaseImageURLFromRHCOSImageInfo(imageVersion, arch)
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the base image URL")
 
-		// To avoid collisions we will add prefix to identify our image
-		baseImage = "mcotest-" + baseImage
+		// To avoid collisions with other test runs (including leftovers from a crashed, uncleaned-up
+		// run) we prefix with a per-run-unique ID in addition to the "mcotest-" marker.
+		baseImage = fmt.Sprintf("mcotest-%s-%s", backdatedImageRunID, baseImage)
 		o.Expect(
 			uploadBaseImageToCloud(ms, platform, baseImageURL, baseImage),
 		).To(o.Succeed(), "Error uploading the base image %s to the cloud", baseImageURL)
