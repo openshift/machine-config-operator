@@ -246,6 +246,10 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &operatorv1.KMSEncryptionStatusApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("KMSPluginHealthReport"):
 		return &operatorv1.KMSPluginHealthReportApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("KMSPreflightCheck"):
+		return &operatorv1.KMSPreflightCheckApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("KMSPreflightResult"):
+		return &operatorv1.KMSPreflightResultApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("KubeAPIServer"):
 		return &operatorv1.KubeAPIServerApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("KubeAPIServerSpec"):
@@ -490,10 +494,18 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &operatorv1alpha1.EtcdBackupSpecApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("EtcdBackupStatus"):
 		return &operatorv1alpha1.EtcdBackupStatusApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("GatewayAPIIngressConfig"):
+		return &operatorv1alpha1.GatewayAPIIngressConfigApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("ImageContentSourcePolicy"):
 		return &operatorv1alpha1.ImageContentSourcePolicyApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("ImageContentSourcePolicySpec"):
 		return &operatorv1alpha1.ImageContentSourcePolicySpecApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("Ingress"):
+		return &operatorv1alpha1.IngressApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("IngressSpec"):
+		return &operatorv1alpha1.IngressSpecApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("IngressStatus"):
+		return &operatorv1alpha1.IngressStatusApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("OLM"):
 		return &operatorv1alpha1.OLMApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("OLMSpec"):

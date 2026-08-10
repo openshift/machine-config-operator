@@ -16,6 +16,8 @@ type Interface interface {
 	EtcdBackups() EtcdBackupInformer
 	// ImageContentSourcePolicies returns a ImageContentSourcePolicyInformer.
 	ImageContentSourcePolicies() ImageContentSourcePolicyInformer
+	// Ingresses returns a IngressInformer.
+	Ingresses() IngressInformer
 	// OLMs returns a OLMInformer.
 	OLMs() OLMInformer
 }
@@ -49,6 +51,11 @@ func (v *version) EtcdBackups() EtcdBackupInformer {
 // ImageContentSourcePolicies returns a ImageContentSourcePolicyInformer.
 func (v *version) ImageContentSourcePolicies() ImageContentSourcePolicyInformer {
 	return &imageContentSourcePolicyInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
+// Ingresses returns a IngressInformer.
+func (v *version) Ingresses() IngressInformer {
+	return &ingressInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
 // OLMs returns a OLMInformer.
