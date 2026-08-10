@@ -1,0 +1,182 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    api-approved.openshift.io: https://github.com/openshift/api/pull/2890
+    api.openshift.io/merged-by-featuregates: "true"
+    capability.openshift.io/name: Ingress
+    include.release.openshift.io/ibm-cloud-managed: "true"
+    include.release.openshift.io/self-managed-high-availability: "true"
+    release.openshift.io/feature-set: CustomNoUpgrade,DevPreviewNoUpgrade,TechPreviewNoUpgrade
+  name: ingresses.operator.openshift.io
+spec:
+  group: operator.openshift.io
+  names:
+    kind: Ingress
+    listKind: IngressList
+    plural: ingresses
+    singular: ingress
+  scope: Cluster
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          Ingress contains configuration options specific to the Ingress Operator itself,
+          including how it manages Gateway API integration.
+
+          Compatibility level 4: No compatibility is provided, the API can change at any point for any reason. These capabilities should not be used by applications needing long term support.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec holds user settable values for configuration.
+            minProperties: 1
+            properties:
+              gatewayAPI:
+                description: |-
+                  gatewayAPI holds configuration for Gateway API integration, including how the
+                  ingress operator manages Gateway API CRDs, the OpenShift Gateway API
+                  implementation, and its Gateway API controllers.
+                minProperties: 1
+                properties:
+                  managementMode:
+                    description: |-
+                      managementMode specifies how the Cluster Ingress Operator manages Gateway API
+                      Custom Resource Definitions (CRDs), the OpenShift Gateway API implementation,
+                      and its Gateway API controllers.
+
+                      Allowed values are "Managed" and "Unmanaged".
+
+                      When omitted or set to "Managed", the ingress operator installs, owns, and
+                      upgrades the Gateway API CRDs, protects them with a Validating Admission
+                      Policy, and deploys the OpenShift Gateway API implementation and its Gateway
+                      API controllers.
+
+                      When set to "Unmanaged", the ingress operator does not install or manage
+                      Gateway API CRDs and does not deploy the OpenShift Gateway API implementation
+                      or its Gateway API controllers. The cluster administrator or a third-party
+                      product is responsible for providing their own CRDs and Gateway controller.
+                      The ingress operator reports observational status only.
+                    enum:
+                    - Managed
+                    - Unmanaged
+                    type: string
+                type: object
+            type: object
+          status:
+            description: status holds observed values from the cluster.
+            minProperties: 1
+            properties:
+              conditions:
+                description: |-
+                  conditions is a list of conditions and their status.
+
+                  Gateway API CRD management conditions are reported here with the "GatewayAPI" prefix:
+
+                  * "GatewayAPICRDsManaged" indicates whether the ingress operator is actively
+                    managing Gateway API CRDs.
+                  * "GatewayAPICRDsPresent" indicates whether Gateway API CRDs exist on the
+                    cluster.
+                  * "GatewayAPICRDsCompliant" indicates whether the installed CRDs match the
+                    version expected by this ingress operator release.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                maxItems: 32
+                minItems: 1
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              observedGeneration:
+                description: |-
+                  observedGeneration represents the most recent generation observed by the operator and specifies the version of
+                  the spec field currently being synced.
+
+                  When omitted, the operator has not yet observed the resource.
+                format: int64
+                minimum: 1
+                type: integer
+            type: object
+            x-kubernetes-validations:
+            - message: observedGeneration must remain set and only increase once set
+              rule: '!has(oldSelf.observedGeneration) || (has(self.observedGeneration)
+                && self.observedGeneration >= oldSelf.observedGeneration)'
+        required:
+        - metadata
+        - spec
+        type: object
+        x-kubernetes-validations:
+        - message: Ingress is a singleton; the .metadata.name field must be 'cluster'
+          rule: self.metadata.name == 'cluster'
+    served: true
+    storage: true
+    subresources:
+      status: {}
