@@ -2,6 +2,7 @@ package extended
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -353,6 +354,11 @@ func (ms MachineSet) GetCoreOsBootImage() (string, error) {
 	return ms.Get(coreOsBootImagePath)
 }
 
+// GetWorkspaceFolder returns the workspace folder configured in the machineset's providerSpec
+func (ms MachineSet) GetWorkspaceFolder() (string, error) {
+	return ms.Get(`{.spec.template.spec.providerSpec.value.workspace.folder}`)
+}
+
 // GetCoreOsBootImageOrFail returns the configured coreOsBootImage in this machineset and fails the test case if any error happened
 func (ms MachineSet) GetCoreOsBootImageOrFail() string {
 	img, err := ms.GetCoreOsBootImage()
@@ -682,4 +688,58 @@ func GetScalableMachineSet(oc *exutil.CLI) (*MachineSet, error) {
 	}
 
 	return machinesets[0], nil
+}
+
+// SetAutoscalerLabels sets the capacity.cluster-autoscaler.kubernetes.io/labels annotation
+// for this MachineSet. The value may contain multiple comma-separated labels
+// (e.g. "kubernetes.io/arch=amd64,topology.ebs.csi.aws.com/zone=eu-central-1a").
+func (ms MachineSet) SetAutoscalerLabels(labels string) error {
+	marshaledLabels, err := json.Marshal(labels)
+	if err != nil {
+		return fmt.Errorf("failed to marshal labels: %w", err)
+	}
+	return ms.Patch("json",
+		fmt.Sprintf(`[{"op": "add", "path": "/metadata/annotations/capacity.cluster-autoscaler.kubernetes.io~1labels", "value": %s}]`,
+			string(marshaledLabels)))
+}
+
+// GetVSphereFailureDomain returns the failure domain from the infrastructure resource that matches
+// the given MachineSet's workspace. It matches by comparing the workspace server and datacenter
+// against each failure domain's server and topology.datacenter.
+func GetVSphereFailureDomain(ms *MachineSet) (string, error) {
+	workspace, err := ms.Get(`{.spec.template.spec.providerSpec.value.workspace}`)
+	if err != nil {
+		return "", fmt.Errorf("error getting workspace from MachineSet %s: %w", ms.GetName(), err)
+	}
+
+	wsServer := gjson.Get(workspace, "server").String()
+	wsDataCenter := gjson.Get(workspace, "datacenter").String()
+	if wsServer == "" || wsDataCenter == "" {
+		return "", fmt.Errorf("workspace in MachineSet %s is missing server or datacenter", ms.GetName())
+	}
+
+	infra := NewResource(ms.GetOC().AsAdmin(), "infrastructure", "cluster")
+	failureDomains, err := infra.Get(`{.spec.platformSpec.vsphere.failureDomains}`)
+	if err != nil {
+		return "", fmt.Errorf("error getting failure domains from infrastructure resource: %w", err)
+	}
+
+	for _, fd := range gjson.Parse(failureDomains).Array() {
+		if fd.Get("server").String() == wsServer && fd.Get("topology.datacenter").String() == wsDataCenter {
+			return fd.Raw, nil
+		}
+	}
+
+	return "", fmt.Errorf("no failure domain found matching server=%s datacenter=%s for MachineSet %s", wsServer, wsDataCenter, ms.GetName())
+}
+
+// GetVSphereConnectionInfoForMachineSet returns the vSphere connection info for the failure domain
+// that matches the given MachineSet's workspace.
+func GetVSphereConnectionInfoForMachineSet(ms *MachineSet) (*exutil.VSphereConnectionInfo, error) {
+	fd, err := GetVSphereFailureDomain(ms)
+	if err != nil {
+		return nil, err
+	}
+
+	return exutil.GetVSphereConnectionInfoFromFailureDomain(ms.GetOC().AsAdmin(), fd)
 }
