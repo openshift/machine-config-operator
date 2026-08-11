@@ -1078,20 +1078,13 @@ func (b *buildReconciler) deleteMachineOSBuild(ctx context.Context, mosb *mcfgv1
 }
 
 func (b *buildReconciler) deleteMOSBImage(ctx context.Context, mosb *mcfgv1.MachineOSBuild, moscName string) error {
-	moscExists := true
-	_, err := b.listers.machineOSConfigLister.Get(moscName)
-	if k8serrors.IsNotFound(err) {
-		moscExists = false
-	} else if err != nil {
-		return fmt.Errorf("could not get MachineOSConfig for MachineOSBuild %q: %w", mosb.Name, err)
+	poolName := mosb.ObjectMeta.Labels[constants.TargetMachineConfigPoolLabelKey]
+	if poolName == "" {
+		return fmt.Errorf("MachineOSBuild %q is missing label %s, cannot determine if image is in use", mosb.Name, constants.TargetMachineConfigPoolLabelKey)
 	}
 
-	if moscExists {
-		pool, err := b.listers.machineConfigPoolLister.Get(mosb.ObjectMeta.Labels[constants.TargetMachineConfigPoolLabelKey])
-		if err != nil {
-			return fmt.Errorf("could not get MachineConfigPool from MachineOSBuild %q: %w", mosb.Name, err)
-		}
-
+	pool, err := b.listers.machineConfigPoolLister.Get(poolName)
+	if err == nil {
 		nodes, err := helpers.GetNodesForPool(b.listers.machineConfigPoolLister, b.listers.nodeLister, pool)
 		if err != nil {
 			return fmt.Errorf("could not get nodes for MachineConfigPool %q: %w", pool.Name, err)
@@ -1105,6 +1098,8 @@ func (b *buildReconciler) deleteMOSBImage(ctx context.Context, mosb *mcfgv1.Mach
 				return nil
 			}
 		}
+	} else if !k8serrors.IsNotFound(err) {
+		return fmt.Errorf("could not get MachineConfigPool from MachineOSBuild %q: %w", mosb.Name, err)
 	}
 
 	image := string(mosb.Spec.RenderedImagePushSpec)
