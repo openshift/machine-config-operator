@@ -285,7 +285,6 @@ func WaitForPoolComplete(t *testing.T, cs *framework.ClientSet, pool, target str
 	return nil
 }
 
-
 // Waits for both the node image and config to change.
 func WaitForNodeConfigAndImageChange(t *testing.T, cs *framework.ClientSet, node corev1.Node, mcName, image string) error {
 	startTime := time.Now()
@@ -746,28 +745,6 @@ func CreateMCP(t *testing.T, cs *framework.ClientSet, mcpName string) func() {
 		err := cs.MachineConfigPools().Delete(context.TODO(), mcpName, metav1.DeleteOptions{})
 		require.Nil(t, err)
 		t.Logf("Deleted MachineConfigPool %q", mcpName)
-	}
-}
-
-type SSHPaths struct {
-	// The path where SSH keys are expected to be found.
-	Expected string
-	// The path where SSH keys are *not* expected to be found.
-	NotExpected string
-}
-
-// Determines where to expect SSH keys for the core user on a given node based upon the node's OS.
-func GetSSHPaths(os osrelease.OperatingSystem) SSHPaths {
-	if os.IsEL9() || os.IsEL10() || os.IsSCOS() || os.IsFCOS() {
-		return SSHPaths{
-			Expected:    constants.RHCOS9SSHKeyPath,
-			NotExpected: constants.RHCOS8SSHKeyPath,
-		}
-	}
-
-	return SSHPaths{
-		Expected:    constants.RHCOS8SSHKeyPath,
-		NotExpected: constants.RHCOS9SSHKeyPath,
 	}
 }
 
@@ -1672,8 +1649,7 @@ func CollectDebugInfoFromNode(t *testing.T, cs *framework.ClientSet, node *corev
 		"/etc/machine-config-daemon/currentconfig",
 		"/etc/os-release",
 		"/usr/lib/osrelease",
-		constants.RHCOS8SSHKeyPath,
-		constants.RHCOS9SSHKeyPath,
+		constants.RHCOSDefaultSSHKeyPath,
 		"/etc/machine-config-daemon/node-annotation.json.bak",
 		"/etc/ignition-machine-config-encapsulated.json.bak",
 	}
