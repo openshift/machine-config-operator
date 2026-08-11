@@ -212,7 +212,7 @@ spec:
                                             contain only lowercase alphanumeric characters,
                                             ''-'' or ''.'', and start and end with
                                             an alphanumeric character'
-                                          rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                                          rule: self.matches('^[a-z0-9]([a-z0-9\\-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9\\-]*[a-z0-9])?)*$')
                                     required:
                                     - name
                                     type: object
@@ -307,7 +307,7 @@ spec:
                                         contain only lowercase alphanumeric characters,
                                         ''-'' or ''.'', and start and end with an
                                         alphanumeric character'
-                                      rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                                      rule: self.matches('^[a-z0-9]([a-z0-9\\-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9\\-]*[a-z0-9])?)*$')
                                 required:
                                 - name
                                 type: object
@@ -327,7 +327,7 @@ spec:
                                     contain no more than 253 characters, contain only
                                     lowercase alphanumeric characters, ''-'' or ''.'',
                                     and start and end with an alphanumeric character'
-                                  rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                                  rule: self.matches('^[a-z0-9]([a-z0-9\\-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9\\-]*[a-z0-9])?)*$')
                             type: object
                           vaultAddress:
                             description: |-

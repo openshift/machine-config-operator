@@ -686,6 +686,7 @@ spec:
                         description: |-
                           failureDomains contains the definition of region, zone and the vCenter topology.
                           If this is omitted failure domains (regions and zones) will not be used.
+                          Each failure domain's server must match the server field of an entry in the vcenters list.
                         items:
                           description: VSpherePlatformFailureDomainSpec holds the
                             region and zone failure domain and the vCenter topology
@@ -730,8 +731,11 @@ spec:
                               - format: ipv4
                               - format: ipv6
                               - format: hostname
-                              description: server is the fully-qualified domain name
-                                or the IP address of the vCenter server.
+                              description: |-
+                                server is the fully-qualified domain name or the IP address of the vCenter server.
+                                This must match the server field of an entry in the vcenters list.
+                                The match is case-sensitive; the value must be specified exactly as it appears in the vcenters entry.
+                                The value must be between 1 and 255 characters long.
                               maxLength: 255
                               minLength: 1
                               type: string
@@ -1093,6 +1097,11 @@ spec:
                           rule: self.all(x, self.exists_one(y, y.server == x.server))
                     type: object
                     x-kubernetes-validations:
+                    - message: all failure domains must have a corresponding vCenter
+                        entry
+                      rule: '!has(self.failureDomains) || size(self.failureDomains)
+                        == 0 || (has(self.vcenters) && self.failureDomains.all(fd,
+                        self.vcenters.exists(vc, vc.server == fd.server)))'
                     - message: apiServerInternalIPs list is required once set
                       rule: '!has(oldSelf.apiServerInternalIPs) || has(self.apiServerInternalIPs)'
                     - message: ingressIPs list is required once set
@@ -1365,6 +1374,15 @@ spec:
                           network resources. This controls whether AWS resources are created with
                           IPv4-only, or dual-stack networking with IPv4 or IPv6 as the primary
                           protocol family.
+
+                          Valid values are:
+                          * "IPv4" (default): Cloud platform resources use IPv4 addressing only.
+                          * "DualStackIPv6Primary": Cloud platform resources use dual-stack networking with IPv6 as the primary protocol family.
+                          * "DualStackIPv4Primary": Cloud platform resources use dual-stack networking with IPv4 as the primary protocol family.
+
+                          When omitted, this field defaults to "IPv4".
+
+                          This field is immutable and cannot be changed once set.
                         enum:
                         - IPv4
                         - DualStackIPv6Primary
@@ -2066,6 +2084,28 @@ spec:
                         - message: resourceTags are immutable and may only be configured
                             during installation
                           rule: self.all(x, x in oldSelf) && oldSelf.all(x, x in self)
+                      universeDomain:
+                        description: |-
+                          universeDomain is the GCP universe domain for the cluster, detected from
+                          the installer credentials. Components with their own GCP credentials should
+                          read the universe domain from those credentials, as they are the authoritative
+                          source. This field is provided for components that do not have GCP credentials
+                          and for general observability.
+
+                          When omitted, standard public GCP (googleapis.com) is assumed.
+
+                          universeDomain is an optional field that, when specified, must be non-empty and at most
+                          253 characters. It must be a valid DNS subdomain: containing only lowercase alphanumeric
+                          characters, '-' or '.', and starting and ending with an alphanumeric character.
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                        x-kubernetes-validations:
+                        - message: 'universeDomain must be a valid DNS subdomain:
+                            contain no more than 253 characters, contain only lowercase
+                            alphanumeric characters, ''-'' or ''.'', and start and
+                            end with an alphanumeric character'
+                          rule: '!format.dns1123Subdomain().validate(self).hasValue()'
                     type: object
                     x-kubernetes-validations:
                     - message: resourceLabels may only be configured during installation

@@ -621,6 +621,7 @@ spec:
                         description: |-
                           failureDomains contains the definition of region, zone and the vCenter topology.
                           If this is omitted failure domains (regions and zones) will not be used.
+                          Each failure domain's server must match the server field of an entry in the vcenters list.
                         items:
                           description: VSpherePlatformFailureDomainSpec holds the
                             region and zone failure domain and the vCenter topology
@@ -665,8 +666,11 @@ spec:
                               - format: ipv4
                               - format: ipv6
                               - format: hostname
-                              description: server is the fully-qualified domain name
-                                or the IP address of the vCenter server.
+                              description: |-
+                                server is the fully-qualified domain name or the IP address of the vCenter server.
+                                This must match the server field of an entry in the vcenters list.
+                                The match is case-sensitive; the value must be specified exactly as it appears in the vcenters entry.
+                                The value must be between 1 and 255 characters long.
                               maxLength: 255
                               minLength: 1
                               type: string
@@ -1287,6 +1291,30 @@ spec:
                             ClusterHosted
                           rule: 'has(self.dnsType) && self.dnsType != ''ClusterHosted''
                             ? !has(self.clusterHosted) : true'
+                      ipFamily:
+                        default: IPv4
+                        description: |-
+                          ipFamily specifies the IP protocol family that should be used for AWS
+                          network resources. This controls whether AWS resources are created with
+                          IPv4-only, or dual-stack networking with IPv4 or IPv6 as the primary
+                          protocol family.
+
+                          Valid values are:
+                          * "IPv4" (default): Cloud platform resources use IPv4 addressing only.
+                          * "DualStackIPv6Primary": Cloud platform resources use dual-stack networking with IPv6 as the primary protocol family.
+                          * "DualStackIPv4Primary": Cloud platform resources use dual-stack networking with IPv4 as the primary protocol family.
+
+                          When omitted, this field defaults to "IPv4".
+
+                          This field is immutable and cannot be changed once set.
+                        enum:
+                        - IPv4
+                        - DualStackIPv6Primary
+                        - DualStackIPv4Primary
+                        type: string
+                        x-kubernetes-validations:
+                        - message: ipFamily is immutable once set
+                          rule: oldSelf == '' || self == oldSelf
                       region:
                         description: region holds the default AWS region for new AWS
                           resources created by the cluster.

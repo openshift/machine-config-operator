@@ -2162,6 +2162,28 @@ spec:
                         required:
                         - collectionPolicy
                         type: object
+                      deviceMapperMultipath:
+                        description: |-
+                          deviceMapperMultipath configures the dmmultipath collector, which collects statistics
+                          about DM-Multipath devices.
+                          deviceMapperMultipath is optional.
+                          When omitted, this means no opinion and the platform is left to choose a reasonable default,
+                          which is subject to change over time. The current default is enabled.
+                        properties:
+                          collectionPolicy:
+                            description: |-
+                              collectionPolicy declares whether the dmmultipath collector collects metrics.
+                              This field is required.
+                              Valid values are "Collect" and "DoNotCollect".
+                              When set to "Collect", the dmmultipath collector is active and DM-Multipath device statistics are collected.
+                              When set to "DoNotCollect", the dmmultipath collector is inactive and the corresponding metrics become unavailable.
+                            enum:
+                            - Collect
+                            - DoNotCollect
+                            type: string
+                        required:
+                        - collectionPolicy
+                        type: object
                       ethtool:
                         description: |-
                           ethtool configures the ethtool collector, which collects ethernet device statistics.
@@ -2304,6 +2326,28 @@ spec:
                         required:
                         - collectionPolicy
                         type: object
+                      nvmExpressSubsystem:
+                        description: |-
+                          nvmExpressSubsystem configures the nvmesubsystem collector, which
+                          collects statistics about NVM Express (NVMe) subsystem devices.
+                          nvmExpressSubsystem is optional.
+                          When omitted, this means no opinion and the platform is left to choose a reasonable default,
+                          which is subject to change over time. The current default is enabled.
+                        properties:
+                          collectionPolicy:
+                            description: |-
+                              collectionPolicy declares whether the nvmesubsystem collector collects metrics.
+                              This field is required.
+                              Valid values are "Collect" and "DoNotCollect".
+                              When set to "Collect", the nvmesubsystem collector is active and NVMe subsystem statistics are collected.
+                              When set to "DoNotCollect", the nvmesubsystem collector is inactive and the corresponding metrics become unavailable.
+                            enum:
+                            - Collect
+                            - DoNotCollect
+                            type: string
+                        required:
+                        - collectionPolicy
+                        type: object
                       processes:
                         description: |-
                           processes configures the processes collector, which collects statistics from processes and
@@ -2429,6 +2473,29 @@ spec:
                               Valid values are "Collect" and "DoNotCollect".
                               When set to "Collect", the tcpstat collector is active and TCP connection statistics are collected.
                               When set to "DoNotCollect", the tcpstat collector is inactive.
+                            enum:
+                            - Collect
+                            - DoNotCollect
+                            type: string
+                        required:
+                        - collectionPolicy
+                        type: object
+                      zoneinfo:
+                        description: |-
+                          zoneinfo configures the zoneinfo collector, which exposes per-zone memory page counts,
+                          watermarks, and protection thresholds from /proc/zoneinfo.
+                          zoneinfo is optional.
+                          When omitted, this means no opinion and the platform is left to choose a reasonable default,
+                          which is subject to change over time. The current default is to not collect zoneinfo metrics.
+                          Enable when you need visibility into kernel memory zone allocation and pressure.
+                        properties:
+                          collectionPolicy:
+                            description: |-
+                              collectionPolicy declares whether the zoneinfo collector collects metrics.
+                              This field is required.
+                              Valid values are "Collect" and "DoNotCollect".
+                              When set to "Collect", the zoneinfo collector is active and zone memory statistics are collected.
+                              When set to "DoNotCollect", the zoneinfo collector is inactive.
                             enum:
                             - Collect
                             - DoNotCollect
@@ -3849,6 +3916,17 @@ spec:
                           x-kubernetes-list-map-keys:
                           - name
                           x-kubernetes-list-type: map
+                        messageVersion:
+                          description: |-
+                            messageVersion defines the Remote Write message's version to use when writing to the endpoint.
+                            When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+                            The default value is "V1.0".
+                            When set to "V1.0", Prometheus uses the `prometheus.WriteRequest` protobuf message introduced in Remote Write 1.0.
+                            When set to "V2.0", Prometheus uses the `io.prometheus.write.v2.Request` protobuf message introduced in Remote Write 2.0.
+                          enum:
+                          - V1.0
+                          - V2.0
+                          type: string
                         metadataConfig:
                           description: |-
                             metadataConfig configures the sending of series metadata to remote storage.

@@ -18,6 +18,10 @@ type EtcdBackupListerExpansion interface{}
 // ImageContentSourcePolicyLister.
 type ImageContentSourcePolicyListerExpansion interface{}
 
+// IngressListerExpansion allows custom methods to be added to
+// IngressLister.
+type IngressListerExpansion interface{}
+
 // OLMListerExpansion allows custom methods to be added to
 // OLMLister.
 type OLMListerExpansion interface{}
