@@ -197,6 +197,116 @@ func TestSkipMissing(t *testing.T) {
 	}
 }
 
+func TestFilterIPsForIPFamilies(t *testing.T) {
+	t.Parallel()
+	dual := []string{"192.0.2.10", "2001:db8::10", "192.0.2.20", "2001:db8::20"}
+	cases := []struct {
+		name     string
+		families mcfgv1.IPFamiliesType
+		in       []string
+		want     []string
+	}{
+		{
+			name:     "IPv4 drops v6 preserves order",
+			families: mcfgv1.IPFamiliesIPv4,
+			in:       dual,
+			want:     []string{"192.0.2.10", "192.0.2.20"},
+		},
+		{
+			name:     "IPv6 drops v4 preserves order",
+			families: mcfgv1.IPFamiliesIPv6,
+			in:       dual,
+			want:     []string{"2001:db8::10", "2001:db8::20"},
+		},
+		{
+			name:     "DualStack keeps both",
+			families: mcfgv1.IPFamiliesDualStack,
+			in:       dual,
+			want:     dual,
+		},
+		{
+			name:     "DualStackIPv6Primary keeps both",
+			families: mcfgv1.IPFamiliesDualStackIPv6Primary,
+			in:       dual,
+			want:     dual,
+		},
+		{
+			name:     "empty families keeps both",
+			families: "",
+			in:       dual,
+			want:     dual,
+		},
+		{
+			name:     "skips unparseable",
+			families: mcfgv1.IPFamiliesIPv4,
+			in:       []string{"not-an-ip", "192.0.2.1", "also-bad", "2001:db8::1"},
+			want:     []string{"192.0.2.1"},
+		},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := filterIPsForIPFamilies(tc.in, tc.families)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("got %#v want %#v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNodeipConfigurationVIPArgsForFamilies(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(templateDir, "common/on-prem/units/nodeip-configuration.service.yaml")
+	templateData, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read template: %v", err)
+	}
+
+	const (
+		apiV4 = "192.0.2.10"
+		apiV6 = "2001:db8::10"
+		ingV4 = "192.0.2.20"
+		ingV6 = "2001:db8::20"
+	)
+
+	config := &mcfgv1.ControllerConfig{
+		Spec: mcfgv1.ControllerConfigSpec{
+			IPFamilies: mcfgv1.IPFamiliesIPv4,
+			Infra: &configv1.Infrastructure{
+				Status: configv1.InfrastructureStatus{
+					PlatformStatus: &configv1.PlatformStatus{
+						Type: configv1.BareMetalPlatformType,
+						BareMetal: &configv1.BareMetalPlatformStatus{
+							APIServerInternalIPs: []string{apiV4, apiV6},
+							IngressIPs:           []string{ingV4, ingV6},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil}, path, templateData)
+	if err != nil {
+		t.Fatalf("renderTemplate: %v", err)
+	}
+	out := string(got)
+	for _, want := range []string{apiV4, ingV4} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected %q in rendered unit\n%s", want, out)
+		}
+	}
+	for _, drop := range []string{apiV6, ingV6} {
+		if strings.Contains(out, drop) {
+			t.Fatalf("did not expect %q in rendered unit with IPFamilies=IPv4\n%s", drop, out)
+		}
+	}
+	if !strings.Contains(out, "enabled: true") {
+		t.Fatalf("expected enabled: true from unfiltered VIP list\n%s", out)
+	}
+}
+
 const templateDir = "../../../templates"
 
 var (

@@ -38,8 +38,8 @@ contents: |
     {{end -}}
     --retry-on-failure \
     ${NODEIP_HINT:-} \
-    {{ range onPremPlatformAPIServerInternalIPs . }}{{.}} {{end}} \
-    {{ range onPremPlatformIngressIPs . }}{{.}} {{end}}; \
+    {{ range onPremPlatformAPIServerInternalIPsForFamilies . }}{{.}} {{end}} \
+    {{ range onPremPlatformIngressIPsForFamilies . }}{{.}} {{end}}; \
     do \
     sleep 5; \
     done"
