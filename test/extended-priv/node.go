@@ -1618,6 +1618,7 @@ func ReplaceRpmOstree(node *Node, localScriptPath string) error {
 	}
 	_, err := node.DebugNodeWithChroot("sh", "-c",
 		"chmod +x "+fakeRpmOstreeRemotePath+" && "+
+			"{ nsenter --mount=/proc/1/ns/mnt umount -l /usr/bin/rpm-ostree 2>/dev/null || true; } && "+
 			"cp /usr/bin/rpm-ostree /var/tmp/rpm-ostree && "+
 			"nsenter --mount=/proc/1/ns/mnt mount --bind "+fakeRpmOstreeRemotePath+" /usr/bin/rpm-ostree && "+
 			"restorecon -v /usr/bin/rpm-ostree")
