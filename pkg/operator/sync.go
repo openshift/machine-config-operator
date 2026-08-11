@@ -1247,13 +1247,11 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig, _ *confi
 		paths.validatingAdmissionPolicyBindings = append(paths.validatingAdmissionPolicyBindings, mccUpdateBootImagesCPMSValidatingAdmissionPolicyBindingPath)
 	}
 
-	if optr.fgHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
-		// Only deploy the IRI deletion guard policy if the IRI resource actually exists
-		if optr.iriLister != nil {
-			if _, err := optr.iriLister.Get(ctrlcommon.InternalReleaseImageInstanceName); err == nil {
-				paths.validatingAdmissionPolicies = append(paths.validatingAdmissionPolicies, mccIRIDeletionGuardValidatingAdmissionPolicyPath)
-				paths.validatingAdmissionPolicyBindings = append(paths.validatingAdmissionPolicyBindings, mccIRIDeletionGuardValidatingAdmissionPolicyBindingPath)
-			}
+	// Only deploy the IRI deletion guard policy if the IRI resource actually exists
+	if optr.iriLister != nil {
+		if _, err := optr.iriLister.Get(ctrlcommon.InternalReleaseImageInstanceName); err == nil {
+			paths.validatingAdmissionPolicies = append(paths.validatingAdmissionPolicies, mccIRIDeletionGuardValidatingAdmissionPolicyPath)
+			paths.validatingAdmissionPolicyBindings = append(paths.validatingAdmissionPolicyBindings, mccIRIDeletionGuardValidatingAdmissionPolicyBindingPath)
 		}
 	}
 

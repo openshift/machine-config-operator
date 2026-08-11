@@ -27,7 +27,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	apicfgv1 "github.com/openshift/api/config/v1"
 	apicfgv1alpha1 "github.com/openshift/api/config/v1alpha1"
-	"github.com/openshift/api/features"
+
 	imagev1 "github.com/openshift/api/image/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
@@ -280,7 +280,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	// The template controller has not yet run at this point, so machine-config-daemon-pull.service
 	// would otherwise fail to authenticate against the IRI registry.
 	// Merge is a no-op if the feature gate is off or the IRI resource is absent.
-	merger := ctrlcommon.NewIRISecretMergerFromObjects(iriCredentialsSecret, cconfig, fgHandler, iri)
+	merger := ctrlcommon.NewIRISecretMergerFromObjects(iriCredentialsSecret, cconfig, iri)
 	pullSecretBytes, err = merger.Merge(pullSecretBytes)
 	if err != nil {
 		return fmt.Errorf("could not merge IRI credentials into pull secret for bootstrap: %w", err)
@@ -346,15 +346,13 @@ func (b *Bootstrap) Run(destDir string) error {
 	}
 	klog.Infof("Successfully generated MachineConfigs from kubelet configs.")
 
-	if fgHandler != nil && fgHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
-		if iri {
-			iriConfigs, err := internalreleaseimage.RunInternalReleaseImageBootstrap(iriTLSCert, iriCredentialsSecret, cconfig)
-			if err != nil {
-				return err
-			}
-			configs = append(configs, iriConfigs...)
-			klog.Infof("Successfully generated MachineConfig from InternalReleaseImage.")
+	if iri {
+		iriConfigs, err := internalreleaseimage.RunInternalReleaseImageBootstrap(iriTLSCert, iriCredentialsSecret, cconfig)
+		if err != nil {
+			return err
 		}
+		configs = append(configs, iriConfigs...)
+		klog.Infof("Successfully generated MachineConfig from InternalReleaseImage.")
 	}
 
 	// Create component MachineConfigs for pre-built images for hybrid OCL

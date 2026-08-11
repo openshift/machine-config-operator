@@ -12,7 +12,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/client-go/tools/clientcmd"
 
-	"github.com/openshift/api/features"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon"
@@ -236,27 +235,21 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	)
 	go pinnedImageSetManager.Run(2, stopCh)
 
-	var mcnScopedInformerStartFunc func(<-chan struct{})
-	if ctrlctx.FeatureGatesHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
-		mcnScopedInformer, startFunc := ctrlcommon.NewScopedMachineConfigNodeInformerFromClientBuilder(cb, startOpts.nodeName)
-		mcnScopedInformerStartFunc = startFunc
-		internalReleaseImageManager := internalreleaseimage.New(
-			startOpts.nodeName,
-			ctrlctx.ClientBuilder.MachineConfigClientOrDie(componentName),
-			ctrlctx.InformerFactory.Machineconfiguration().V1().InternalReleaseImages(),
-			mcnScopedInformer,
-		)
-		go internalReleaseImageManager.Run(1, stopCh)
-	}
+	mcnScopedInformer, mcnScopedInformerStartFunc := ctrlcommon.NewScopedMachineConfigNodeInformerFromClientBuilder(cb, startOpts.nodeName)
+	internalReleaseImageManager := internalreleaseimage.New(
+		startOpts.nodeName,
+		ctrlctx.ClientBuilder.MachineConfigClientOrDie(componentName),
+		ctrlctx.InformerFactory.Machineconfiguration().V1().InternalReleaseImages(),
+		mcnScopedInformer,
+	)
+	go internalReleaseImageManager.Run(1, stopCh)
 
 	ctrlctx.KubeInformerFactory.Start(stopCh)
 	ctrlctx.KubeNamespacedInformerFactory.Start(stopCh)
 	ctrlctx.InformerFactory.Start(stopCh)
 	ctrlctx.OperatorInformerFactory.Start(stopCh)
 	nodeScopedInformerStartFunc(ctrlctx.Stop)
-	if mcnScopedInformerStartFunc != nil {
-		mcnScopedInformerStartFunc(ctrlctx.Stop)
-	}
+	mcnScopedInformerStartFunc(ctrlctx.Stop)
 	close(ctrlctx.InformersStarted)
 
 	if err := dn.Run(stopCh, exitCh, errCh); err != nil {
