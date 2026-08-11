@@ -42,6 +42,7 @@ contents:
     ip=$(cat /run/nodeip-configuration/ipv4 || echo "")
     if [[ "${ip}" == "" ]]; then
       echo "No ipv4 to bind was found"
+      exit 1
     else
       wait_for_ip_bind "${ip}"
     fi
@@ -50,6 +51,7 @@ contents:
     ip=$(cat /run/nodeip-configuration/ipv6 || echo "")
     if [[ "${ip}" == "" ]]; then
       echo "No ipv6 to bind was found"
+      exit 1
     else
       wait_for_ip_bind "${ip}"
     fi
