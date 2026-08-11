@@ -12,7 +12,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/client-go/tools/clientcmd"
 
-	"github.com/openshift/api/features"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon"
@@ -236,15 +235,13 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	)
 	go pinnedImageSetManager.Run(2, stopCh)
 
-	if ctrlctx.FeatureGatesHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
-		internalReleaseImageManager := internalreleaseimage.New(
-			startOpts.nodeName,
-			ctrlctx.ClientBuilder.MachineConfigClientOrDie(componentName),
-			ctrlctx.InformerFactory.Machineconfiguration().V1().InternalReleaseImages(),
-			ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigNodes(),
-		)
-		go internalReleaseImageManager.Run(1, stopCh)
-	}
+	internalReleaseImageManager := internalreleaseimage.New(
+		startOpts.nodeName,
+		ctrlctx.ClientBuilder.MachineConfigClientOrDie(componentName),
+		ctrlctx.InformerFactory.Machineconfiguration().V1().InternalReleaseImages(),
+		ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigNodes(),
+	)
+	go internalReleaseImageManager.Run(1, stopCh)
 
 	ctrlctx.KubeInformerFactory.Start(stopCh)
 	ctrlctx.KubeNamespacedInformerFactory.Start(stopCh)

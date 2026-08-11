@@ -92,7 +92,6 @@ func New(
 	apiserverInformer configinformersv1.APIServerInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
-	fgHandler ctrlcommon.FeatureGatesHandler,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -123,8 +122,6 @@ func New(
 
 	// Watch the IRI auth secret in the MCO namespace so that when credentials
 	// are rotated the pull secret rendered into 00-master/00-worker is updated.
-	// Both informers are nil when the NoRegistryClusterInstall feature gate is
-	// off (the CRD doesn't exist on those clusters).
 	if iriSecretsInformer != nil {
 		iriSecretsInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc:    ctrl.addSecret,
@@ -150,10 +147,10 @@ func New(
 
 	if iriInformer != nil {
 		ctrl.iriInformerSynced = iriInformer.Informer().HasSynced
-		ctrl.iriMerger = ctrlcommon.NewIRISecretMerger(iriSecretsInformer.Lister(), ctrl.ccLister, iriInformer.Lister(), fgHandler)
+		ctrl.iriMerger = ctrlcommon.NewIRISecretMerger(iriSecretsInformer.Lister(), ctrl.ccLister, iriInformer.Lister())
 	} else {
 		ctrl.iriInformerSynced = func() bool { return true }
-		ctrl.iriMerger = ctrlcommon.NewIRISecretMerger(nil, ctrl.ccLister, nil, fgHandler)
+		ctrl.iriMerger = ctrlcommon.NewIRISecretMerger(nil, ctrl.ccLister, nil)
 	}
 
 	ctrl.apiserverLister = apiserverInformer.Lister()

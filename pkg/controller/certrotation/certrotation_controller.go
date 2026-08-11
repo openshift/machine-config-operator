@@ -31,7 +31,6 @@ import (
 	"k8s.io/utils/clock"
 
 	configv1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/api/features"
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
 	machineclientset "github.com/openshift/client-go/machine/clientset/versioned"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
@@ -488,11 +487,6 @@ func (c *CertRotationController) reconcileSecret(secret corev1.Secret) error {
 }
 
 func (c *CertRotationController) reconcileIRICertificate() {
-	if !c.featureGatesHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
-		klog.V(4).Infof("Skipping IRI certificate reconciliation: %s feature gate is not enabled", features.FeatureGateNoRegistryClusterInstall)
-		return
-	}
-
 	// Check that the IRI cluster resource exists to confirm the feature is actually enabled
 	if _, err := c.mcfgClient.MachineconfigurationV1().InternalReleaseImages().Get(context.TODO(), ctrlcommon.InternalReleaseImageInstanceName, metav1.GetOptions{}); err != nil {
 		if k8serrors.IsNotFound(err) {

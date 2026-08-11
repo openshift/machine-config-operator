@@ -12,13 +12,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	configv1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/api/features"
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
 	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/openshift/library-go/pkg/crypto"
 	"github.com/openshift/library-go/pkg/operator/certrotation"
 	corev1 "k8s.io/api/core/v1"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 
@@ -120,10 +118,7 @@ func (f *fixture) newController() *CertRotationController {
 		f.infraLister = append(f.infraLister, infra.(*configv1.Infrastructure))
 	}
 
-	fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler(
-		[]configv1.FeatureGateName{features.FeatureGateNoRegistryClusterInstall},
-		nil,
-	)
+	fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler(nil, nil)
 	c, err := New(f.kubeClient, f.configClient, f.machineClient, f.aroClient, f.k8sI.Core().V1().Secrets(), f.k8sI.Core().V1().Secrets(), f.k8sI.Core().V1().ConfigMaps(), f.infraInformer.Config().V1().Infrastructures(), fgHandler, f.mcfgClient)
 	require.NoError(f.t, err)
 
@@ -443,38 +438,6 @@ func TestIRICertificateRotation(t *testing.T) {
 	})
 }
 
-func TestIRICertificateReconcileSkippedWhenFeatureGateDisabled(t *testing.T) {
-	f := newFixture(t)
-	f.mcfgObjects = append(f.mcfgObjects, getIRIClusterResource())
-	f.machineObjects = append(f.machineObjects, getMachineSet("test-machine"))
-
-	// Build a controller with the feature gate disabled.
-	f.kubeClient = fake.NewSimpleClientset(f.objects...)
-	f.configClient = fakeconfigv1client.NewSimpleClientset(f.configObjects...)
-	f.machineClient = fakemachineclientset.NewSimpleClientset(f.machineObjects...)
-	f.mcfgClient = fakemcfgclientset.NewSimpleClientset(f.mcfgObjects...)
-	f.aroClient = fakearoclientset.NewSimpleClientset(f.aroObjects...)
-	f.k8sI = kubeinformers.NewSharedInformerFactory(f.kubeClient, noResyncPeriodFunc())
-	f.infraInformer = configinformers.NewSharedInformerFactory(f.configClient, noResyncPeriodFunc())
-
-	fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler(
-		nil,
-		[]configv1.FeatureGateName{features.FeatureGateNoRegistryClusterInstall},
-	)
-	c, err := New(f.kubeClient, f.configClient, f.machineClient, f.aroClient,
-		f.k8sI.Core().V1().Secrets(), f.k8sI.Core().V1().Secrets(),
-		f.k8sI.Core().V1().ConfigMaps(), f.infraInformer.Config().V1().Infrastructures(),
-		fgHandler, f.mcfgClient)
-	require.NoError(t, err)
-
-	// reconcileIRICertificate must be a no-op when the feature gate is disabled.
-	c.reconcileIRICertificate()
-
-	// Verify no IRI TLS secret was created.
-	_, err = f.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), ctrlcommon.InternalReleaseImageTLSSecretName, metav1.GetOptions{})
-	require.Error(t, err, "IRI TLS secret should not exist when feature gate is disabled")
-	require.True(t, k8serrors.IsNotFound(err))
-}
 
 func TestIsIRICertValid(t *testing.T) {
 	caConfig, err := crypto.MakeSelfSignedCAConfig("test-ca", 24*time.Hour)

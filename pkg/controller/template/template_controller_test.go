@@ -28,7 +28,6 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 
-	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 
@@ -62,9 +61,6 @@ type fixture struct {
 	// iriObjects are loaded into a separate fake client used only for the IRI
 	// informer, so that IRI list/watch calls do not pollute the main f.actions list.
 	iriObjects []runtime.Object
-	// fgHandler overrides the feature gate handler used by the controller.
-	// Defaults to all gates disabled (nil, nil) if not set.
-	fgHandler ctrlcommon.FeatureGatesHandler
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -74,7 +70,6 @@ func newFixture(t *testing.T) *fixture {
 	f.kubeobjects = []runtime.Object{}
 	f.oseobjects = []runtime.Object{}
 	f.iriObjects = []runtime.Object{}
-	f.fgHandler = ctrlcommon.NewFeatureGatesHardcodedHandler(nil, nil)
 	return f
 }
 
@@ -134,8 +129,7 @@ func (f *fixture) newController() *Controller {
 		cinformer.Core().V1().Secrets(), // iriSecretsInformer: reuse same factory in tests; not exercised here
 		iriInformers.Machineconfiguration().V1().InternalReleaseImages(),
 		apiserverinformer.Config().V1().APIServers(),
-		f.kubeclient, f.client,
-		f.fgHandler)
+		f.kubeclient, f.client)
 
 	c.ccListerSynced = alwaysReady
 	c.secretsInformerSynced = alwaysReady
@@ -629,8 +623,6 @@ func TestMergesIRIRegistryCredentialsIntoPullSecret(t *testing.T) {
 	f.iriObjects = append(f.iriObjects, &mcfgv1.InternalReleaseImage{
 		ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.InternalReleaseImageInstanceName},
 	})
-	f.fgHandler = ctrlcommon.NewFeatureGatesHardcodedHandler(
-		[]configv1.FeatureGateName{features.FeatureGateNoRegistryClusterInstall}, nil)
 
 	ctrl := f.newController()
 	if err := ctrl.syncHandler(ctrlcommon.ControllerConfigName); err != nil {
