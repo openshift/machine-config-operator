@@ -22,7 +22,10 @@ contents:
     {{`{{- if eq .EBGPMultiHop "true"}}`}}
      neighbor {{`{{.PeerAddress}}`}} ebgp-multihop
     {{`{{- end}}`}}
-    {{`{{- if .HoldTime}}`}}
+    {{`{{- if .Port}}`}}
+     neighbor {{`{{.PeerAddress}}`}} port {{`{{.Port}}`}}
+    {{`{{- end}}`}}
+    {{`{{- if and .HoldTime .KeepaliveTime}}`}}
      neighbor {{`{{.PeerAddress}}`}} timers {{`{{.KeepaliveTime}}`}} {{`{{.HoldTime}}`}}
     {{`{{- end}}`}}
     {{`{{- end}}`}}
