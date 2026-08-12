@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/google/uuid"
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
@@ -17,6 +18,14 @@ import (
 
 const mapiBaseErrorMessageTemplate = `1 Degraded MAPI MachineSets | 0 Degraded ControlPlaneMachineSets | 0 Degraded CAPI MachineSets | 0 Degraded CAPI MachineDeployments | Error(s):` +
 	` error syncing MAPI MachineSet %s: failed to reconcile machineset %s, err:`
+
+// backdatedImageRunID is generated once per test binary process, so every vSphere backdated
+// template this run uploads gets a name unique to that run. Without it, every run uploads under
+// the exact same literal name regardless of which failure domain/folder it lands in — so a leftover
+// template from an earlier (or crashed, uncleaned-up) run collides with the current run's upload,
+// which is what caused both the MCO-side "resolves to multiple vms" bug and the machine-api-provider-
+// vsphere actuator's own "multiple templates found" clone-time failure.
+var backdatedImageRunID = strings.ReplaceAll(uuid.NewString(), "-", "")[:8]
 
 var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longduration][Serial][Disruptive] MCO Bootimages", func() {
 	defer g.GinkgoRecover()
@@ -101,6 +110,22 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, "", ""),
 		).To(o.Succeed(), "Error configuring Partial managedBootImages in the 'cluster' MachineConfiguration resource")
 		logger.Infof("OK!\n")
+
+		// vSphere updates templates in-place (same name, new content), so the vSphere template behind
+		// backdatedImageName was likely already reconciled to the current release by the first update
+		// above. Re-upload it so this second use is genuinely backdated again, or MCO will see an
+		// already-current template and never trigger the update this check expects.
+		if exutil.CheckPlatform(oc) == VspherePlatform {
+			exutil.By("Re-upload the backdated vSphere template so it is genuinely backdated again")
+			vsInfo, vsErr := GetVSphereConnectionInfoForMachineSet(machineSet)
+			o.Expect(vsErr).NotTo(o.HaveOccurred(), "Error getting the vSphere connection info for %s", machineSet)
+			folder, fErr := machineSet.GetWorkspaceFolder()
+			o.Expect(fErr).NotTo(o.HaveOccurred(), "Error getting the workspace folder for %s", machineSet)
+			o.Expect(exutil.DeleteVsphereTemplate(backdatedImageName, folder, vsInfo)).To(o.Succeed(),
+				"Error deleting the already-updated vSphere template %s", backdatedImageName)
+			backdatedImageName = getBackdatedBootImage(oc.AsAdmin(), machineSet)
+			logger.Infof("OK!\n")
+		}
 
 		exutil.By("Patch coreos boot image in MachineSet")
 		o.Expect(machineSet.SetCoreOsBootImage(backdatedImageName)).To(o.Succeed(),
@@ -957,8 +982,9 @@ func getBackdatedBootImage(oc *exutil.CLI, ms *MachineSet) string {
 		baseImageURL, err := rhcosHandler.GetBaseImageURLFromRHCOSImageInfo(imageVersion, OSImageStreamRHEL9, arch)
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the base image URL")
 
-		// To avoid collisions we will add prefix to identify our image
-		baseImage = "mcotest-" + baseImage
+		// To avoid collisions with other test runs (including leftovers from a crashed, uncleaned-up
+		// run) we prefix with a per-run-unique ID in addition to the "mcotest-" marker.
+		baseImage = fmt.Sprintf("mcotest-%s-%s", backdatedImageRunID, baseImage)
 		o.Expect(
 			uploadBaseImageToCloud(ms, platform, baseImageURL, baseImage),
 		).To(o.Succeed(), "Error uploading the base image %s to the cloud", baseImageURL)
