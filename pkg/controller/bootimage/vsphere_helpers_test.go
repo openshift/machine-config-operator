@@ -420,4 +420,3 @@ func TestDebugCorruptOva(t *testing.T) {
 type errUnwrappable string
 
 func (e errUnwrappable) Error() string { return string(e) }
->>>>>>> e8efd7733 (test: add vSphere boot image unit and e2e coverage)

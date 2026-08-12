@@ -21,6 +21,9 @@ import (
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
+
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
 
 // simulatedVCenter is one independent vcsim instance standing in for a real vCenter, with its
@@ -231,12 +234,33 @@ func buildVSphereInfra(infraName string, vcenters []*simulatedVCenter, failureDo
 	}
 }
 
+const testUserDataSecretName = "test-user-data"
+
+// buildStubIgnitionKubeClient returns a fake clientset with a valid stub ignition secret for
+// createNewVMTemplate paths that call upgradeStubIgnitionIfRequired before mutating vSphere.
+func buildStubIgnitionKubeClient(t *testing.T) *fake.Clientset {
+	t.Helper()
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      testUserDataSecretName,
+			Namespace: ctrlcommon.MachineAPINamespace,
+		},
+		Data: map[string][]byte{
+			ctrlcommon.UserDataKey: []byte(`{"ignition":{"version":"3.4.0"},"storage":{"files":[]},"systemd":{},"passwd":{}}`),
+		},
+	}
+	return fake.NewSimpleClientset(secret)
+}
+
 // buildVSphereProviderSpec builds a VSphereMachineProviderSpec whose Workspace fields match the
 // given failure domain's topology on the given simulated vCenter, as a real MachineSet's
 // providerSpec would after being reconciled onto that failure domain.
 func buildVSphereProviderSpec(vc *simulatedVCenter, fd osconfigv1.VSpherePlatformFailureDomainSpec, templateName string) *machinev1beta1.VSphereMachineProviderSpec {
 	return &machinev1beta1.VSphereMachineProviderSpec{
 		Template: templateName,
+		UserDataSecret: &corev1.LocalObjectReference{
+			Name: testUserDataSecretName,
+		},
 		Workspace: &machinev1beta1.Workspace{
 			Server:       vc.Server,
 			Datacenter:   fd.Topology.Datacenter,

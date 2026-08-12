@@ -734,9 +734,11 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting workspace.server from %s", machineSet)
 		msDC, err := machineSet.Get(`{.spec.template.spec.providerSpec.value.workspace.datacenter}`)
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting workspace.datacenter from %s", machineSet)
+		msFolder, err := machineSet.GetWorkspaceFolder()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting workspace folder from %s", machineSet)
 
 		o.Expect(
-			uploadBaseImageToVsphereForWorkspace(oc, baseImageURL, customTemplateName, msServer, msDC),
+			uploadBaseImageToVsphereForWorkspace(oc, baseImageURL, customTemplateName, msServer, msDC, msFolder),
 		).To(o.Succeed(), "Error uploading the current base image %s under the custom name %s", baseImageURL, customTemplateName)
 		logger.Infof("OK!\n")
 
@@ -766,7 +768,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 
 		exutil.By("Check that the custom-named template is recognized as up to date")
-		CheckCurrentOSImageIsUpdated(clonedMS)
+		CheckCurrentOSImageIsUpdated(clonedMS, customTemplateName)
 		logger.Infof("OK!\n")
 	})
 
@@ -1002,9 +1004,11 @@ func reconcileOneMachineSetPerVsphereWorkspaceGroup(oc *exutil.CLI, machineConfi
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting workspace.server from %s", representative)
 		datacenter, err := representative.Get(`{.spec.template.spec.providerSpec.value.workspace.datacenter}`)
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting workspace.datacenter from %s", representative)
+		folder, err := representative.GetWorkspaceFolder()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting workspace folder from %s", representative)
 
 		o.Expect(
-			uploadBaseImageToVsphereForWorkspace(oc, fakeImageURL, fakeImageName, server, datacenter),
+			uploadBaseImageToVsphereForWorkspace(oc, fakeImageURL, fakeImageName, server, datacenter, folder),
 		).To(o.Succeed(), "Error uploading backdated image %s to %s/%s", fakeImageName, server, datacenter)
 
 		o.Expect(clonedMS.SetCoreOsBootImage(fakeImageName)).To(o.Succeed(),
@@ -1016,7 +1020,7 @@ func reconcileOneMachineSetPerVsphereWorkspaceGroup(oc *exutil.CLI, machineConfi
 	for _, clonedMS := range clonedMachineSets {
 		o.Eventually(clonedMS.GetCoreOsBootImage, "15m", "20s").ShouldNot(o.Or(o.Equal(fakeImageName), o.BeEmpty()),
 			"%s was NOT updated to use the right boot image", clonedMS)
-		CheckCurrentOSImageIsUpdated(clonedMS)
+		CheckCurrentOSImageIsUpdated(clonedMS, fakeImageName)
 	}
 	logger.Infof("OK!\n")
 }

@@ -17,7 +17,6 @@ import (
 
 	osconfigv1 "github.com/openshift/api/config/v1"
 
-	"k8s.io/client-go/kubernetes/fake"
 )
 
 // newTestOVAStream serves buildMinimalOVA's synthetic fixture over HTTP and returns a
@@ -115,7 +114,7 @@ func TestCreateNewVMTemplate(t *testing.T) {
 		streamData := newTestOVAStream(t, testArch, release)
 
 		vcenters[0].activate()
-		gotName, patchRequired, err := createNewVMTemplate(streamData, ps, infra, secret, nil, testArch, release)
+		gotName, patchRequired, err := createNewVMTemplate(streamData, ps, infra, secret, buildStubIgnitionKubeClient(t), testArch, release)
 		if err != nil {
 			t.Fatalf("createNewVMTemplate() unexpected error: %v", err)
 		}
@@ -161,7 +160,7 @@ func TestCreateNewVMTemplate(t *testing.T) {
 		streamData := newTestOVAStream(t, testArch, release)
 
 		vcenters[0].activate()
-		gotName, patchRequired, err := createNewVMTemplate(streamData, ps, infra, secret, nil, testArch, release)
+		gotName, patchRequired, err := createNewVMTemplate(streamData, ps, infra, secret, buildStubIgnitionKubeClient(t), testArch, release)
 		if err != nil {
 			t.Fatalf("createNewVMTemplate() unexpected error: %v", err)
 		}
@@ -197,7 +196,7 @@ func TestCreateNewVMTemplate(t *testing.T) {
 		streamData := newTestOVAStream(t, testArch, release)
 
 		vcenters[0].activate()
-		gotName, patchRequired, err := createNewVMTemplate(streamData, ps, infra, secret, nil, testArch, release)
+		gotName, patchRequired, err := createNewVMTemplate(streamData, ps, infra, secret, buildStubIgnitionKubeClient(t), testArch, release)
 		if err != nil {
 			t.Fatalf("createNewVMTemplate() unexpected error: %v", err)
 		}
@@ -232,7 +231,7 @@ func TestCreateNewVMTemplate(t *testing.T) {
 		streamData := newTestOVAStream(t, testArch, release)
 
 		vcenters[0].activate()
-		gotName, patchRequired, err := createNewVMTemplate(streamData, ps, infra, secret, nil, testArch, release)
+		gotName, patchRequired, err := createNewVMTemplate(streamData, ps, infra, secret, buildStubIgnitionKubeClient(t), testArch, release)
 		if err != nil {
 			t.Fatalf("createNewVMTemplate() unexpected error: %v", err)
 		}
@@ -262,7 +261,7 @@ func TestCreateNewVMTemplate(t *testing.T) {
 		streamData := newTestOVAStream(t, testArch, release)
 
 		vcenters[0].activate()
-		gotName, patchRequired, err := createNewVMTemplate(streamData, ps, infra, secret, nil, testArch, release)
+		gotName, patchRequired, err := createNewVMTemplate(streamData, ps, infra, secret, buildStubIgnitionKubeClient(t), testArch, release)
 		if err != nil {
 			t.Fatalf("createNewVMTemplate() unexpected error: %v", err)
 		}
@@ -317,7 +316,7 @@ func TestCreateNewVMTemplate(t *testing.T) {
 		streamData := newTestOVAStream(t, testArch, release)
 
 		vcenters[0].activate()
-		gotName, patchRequired, err := createNewVMTemplate(streamData, ps, infra, secret, nil, testArch, release)
+		gotName, patchRequired, err := createNewVMTemplate(streamData, ps, infra, secret, buildStubIgnitionKubeClient(t), testArch, release)
 		if err != nil {
 			t.Fatalf("createNewVMTemplate() unexpected error: %v", err)
 		}
@@ -351,7 +350,7 @@ func TestCreateNewVMTemplate(t *testing.T) {
 		streamData := newTestOVAStream(t, testArch, release)
 
 		vcenters[0].activate()
-		_, _, err := createNewVMTemplate(streamData, ps, infra, secret, nil, testArch, release)
+		_, _, err := createNewVMTemplate(streamData, ps, infra, secret, buildStubIgnitionKubeClient(t), testArch, release)
 		if err != nil {
 			t.Fatalf("createNewVMTemplate() unexpected error: %v", err)
 		}
@@ -375,7 +374,7 @@ func TestCreateNewVMTemplate(t *testing.T) {
 		streamData := newTestOVAStream(t, testArch, release)
 
 		vcenters[0].activate()
-		_, _, err := createNewVMTemplate(streamData, ps, infra, secret, fake.NewSimpleClientset(), testArch, release)
+		_, _, err := createNewVMTemplate(streamData, ps, infra, secret, buildStubIgnitionKubeClient(t), testArch, release)
 		if err == nil || !strings.Contains(err.Error(), "failed to determine disk provisioning type") {
 			t.Fatalf("createNewVMTemplate() expected a disk-provisioning-type error, got: %v", err)
 		}
@@ -395,7 +394,7 @@ func TestCreateNewVMTemplate(t *testing.T) {
 		streamData := newTestOVAStream(t, testArch, release)
 
 		vcenters[0].activate()
-		_, _, err := createNewVMTemplate(streamData, ps, infra, secret, nil, testArch, release)
+		_, _, err := createNewVMTemplate(streamData, ps, infra, secret, buildStubIgnitionKubeClient(t), testArch, release)
 		if err == nil || !strings.Contains(err.Error(), "unable to determine RHCOS version") {
 			t.Fatalf("createNewVMTemplate() expected an RHCOS-version error, got: %v", err)
 		}
@@ -415,7 +414,7 @@ func TestCreateNewVMTemplate(t *testing.T) {
 		streamData := newTestOVAStream(t, testArch, release)
 
 		vcenters[0].activate()
-		_, _, err := createNewVMTemplate(streamData, ps, infra, secret, nil, testArch, release)
+		_, _, err := createNewVMTemplate(streamData, ps, infra, secret, buildStubIgnitionKubeClient(t), testArch, release)
 		if err == nil || !strings.Contains(err.Error(), "unable to determine RHCOS version") {
 			t.Fatalf("createNewVMTemplate() expected an RHCOS-version error, got: %v", err)
 		}
@@ -443,7 +442,7 @@ func TestCreateNewVMTemplate(t *testing.T) {
 		streamData := newTestOVAStream(t, testArch, release)
 
 		vcenters[0].activate()
-		_, _, err := createNewVMTemplate(streamData, ps, infra, secret, nil, testArch, release)
+		_, _, err := createNewVMTemplate(streamData, ps, infra, secret, buildStubIgnitionKubeClient(t), testArch, release)
 		if err == nil || !strings.Contains(err.Error(), "exceeds the permitted limit") {
 			t.Fatalf("createNewVMTemplate() expected an 80-character-limit error, got: %v", err)
 		}
