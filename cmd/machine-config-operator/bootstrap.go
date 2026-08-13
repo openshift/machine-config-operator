@@ -147,18 +147,19 @@ func runBootstrapCmd(_ *cobra.Command, _ []string) {
 		if err != nil {
 			klog.Warningf("Base OS extensions container not found: %s", err)
 		}
-		// The frr-k8s and kube-vip images are only present in payloads that
-		// support BGP-based VIP management, so their absence is not fatal.
-		if img, err := findImage(imgstream, "metallb-frr"); err == nil {
-			bootstrapOpts.frrK8sImage = img
-		} else {
-			klog.Warningf("metallb-frr image not found in image references: %v", err)
-		}
-		if img, err := findImage(imgstream, "kube-vip"); err == nil {
-			bootstrapOpts.kubeVipImage = img
-		} else {
-			klog.Warningf("kube-vip image not found in image references: %v", err)
-		}
+		// Parity invariant: any image rendered into MachineConfig content
+		// must resolve identically at bootstrap and in-cluster, otherwise
+		// the bootstrap-rendered MC hash differs from the in-cluster one
+		// and every master degrades with a bootstrap MC mismatch. The
+		// in-cluster side reads the machine-config-operator-images
+		// ConfigMap (install/0000_80_machine-config_02_images.configmap.yaml,
+		// substituted by the CVO from install/image-references), so images
+		// may only be discovered here if the same tag is listed in both of
+		// those files. metallb-frr is; kube-vip is not in the release
+		// payload yet, so it must not be discovered here - it can only be
+		// wired through --kube-vip-image together with entries in the
+		// images ConfigMap and image-references once the payload ships it.
+		bootstrapOpts.frrK8sImage = findImageOrDie(imgstream, "metallb-frr")
 	}
 
 	imgs := ctrlcommon.Images{

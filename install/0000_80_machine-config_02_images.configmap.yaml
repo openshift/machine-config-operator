@@ -19,5 +19,6 @@ data:
       "baremetalRuntimeCfgImage": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:baremetal-runtimecfg",
       "oauthProxy": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:oauth-proxy",
       "kubeRbacProxy": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:kube-rbac-proxy",
-      "dockerRegistryImage": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:docker-registry"
+      "dockerRegistryImage": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:docker-registry",
+      "frrK8sImage": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:metallb-frr"
     }
