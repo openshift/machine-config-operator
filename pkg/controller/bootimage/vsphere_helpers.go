@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"strings"
 
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
@@ -198,7 +199,13 @@ func findAllRequiredResources(ctx context.Context, finder *find.Finder, provider
 	if err != nil {
 		return nil, fmt.Errorf("failed to find datastore: %w", err)
 	}
-	vr.existingVM, err = finder.VirtualMachine(ctx, name)
+	scopedPath := templateSearchPath(providerSpec.Workspace.Folder, name)
+	vr.existingVM, err = finder.VirtualMachine(ctx, scopedPath)
+	if _, ok := err.(*find.NotFoundError); ok && scopedPath != name {
+		// Nothing at that path inside the workspace folder — fall back to a global search so we can
+		// still detect (and log) a customer-managed VM of the same name living elsewhere.
+		vr.existingVM, err = finder.VirtualMachine(ctx, name)
+	}
 	if err != nil {
 		if _, ok := err.(*find.NotFoundError); ok {
 			klog.Infof("VM Template with name %s does not already exists", name)
@@ -228,6 +235,15 @@ func isInFolder(vm *object.VirtualMachine, folder *object.Folder) bool {
 		return true
 	}
 	return path.Dir(vm.InventoryPath) == folder.InventoryPath
+}
+
+// templateSearchPath scopes name to folder to avoid ambiguity when the same name exists in multiple
+// folders. Left unscoped when there's no folder, or name is already an absolute inventory path.
+func templateSearchPath(folder, name string) string {
+	if folder == "" || strings.HasPrefix(name, "/") {
+		return name
+	}
+	return path.Join(folder, name)
 }
 
 // getDiskTypeFromExistingVM inspects the given VM's disk backing configuration and returns its disk provisioning type (thin, thick, eagerZeroedThick).
@@ -325,7 +341,13 @@ func resolveExistingTemplateVM(
 	// Check providerSpec.Template first so a freshly-added failure domain whose MachineSet
 	// already has a valid template doesn't fail just because the infra computed name isn't a match.
 	if providerSpec.Template != "" && providerSpec.Template != computedName {
-		tmplVM, tmplErr := finder.VirtualMachine(ctx, providerSpec.Template)
+		scopedPath := templateSearchPath(providerSpec.Workspace.Folder, providerSpec.Template)
+		tmplVM, tmplErr := finder.VirtualMachine(ctx, scopedPath)
+		if scopedPath != providerSpec.Template && errors.As(tmplErr, &notFoundErr) {
+			// Nothing at that path inside the workspace folder — fall back to a global search so we
+			// can still detect (and log) a customer-managed VM of the same name living elsewhere.
+			tmplVM, tmplErr = finder.VirtualMachine(ctx, providerSpec.Template)
+		}
 		switch {
 		case tmplErr == nil && isInFolder(tmplVM, workspaceFolder):
 			return tmplVM, providerSpec.Template, false, nil
@@ -362,6 +384,12 @@ func resolveExistingTemplateVM(
 		if len(computedName) > 80 {
 			return nil, "", false, fmt.Errorf("length of VM template name `%s` exceeds the permitted limit of 80 characters", computedName)
 		}
+		// Validate/upgrade the ignition stub before creating the template in vSphere. If this fails,
+		// we must not have already mutated vSphere state, or a subsequent reconcile would find the
+		// template already in place and silently drop the error (see reconcileVSphereProviderSpec).
+		if err := upgradeStubIgnitionIfRequired(providerSpec.UserDataSecret.Name, kubeClient); err != nil {
+			return nil, "", false, err
+		}
 		ova, ovaErr := streamData.QueryDisk(arch, "vmware", "ova")
 		if ovaErr != nil {
 			return nil, "", false, ovaErr
@@ -383,6 +411,11 @@ func resolveExistingTemplateVM(
 	}
 
 	// Rollback: restore the old template renamed away during a crashed atomic swap.
+	// Validate/upgrade the ignition stub before this rename, so an invalid user-data secret blocks
+	// even this recovery mutation rather than only the OVA-driven create/swap paths.
+	if err := upgradeStubIgnitionIfRequired(providerSpec.UserDataSecret.Name, kubeClient); err != nil {
+		return nil, "", false, err
+	}
 	klog.Infof("Recovering from mid-swap crash: renaming %s back to %s", oldTempName, computedName)
 	renameTask, renameErr := oldVM.Rename(ctx, computedName)
 	if renameErr != nil {
@@ -741,6 +774,14 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 
 			if templateProductVersion != release {
 				klog.Infof("Existing RHCOS v%s does not match current RHCOS v%s. Starting reconciliation process.", templateProductVersion, release)
+
+				// Validate/upgrade the ignition stub before swapping the template in vSphere. If this
+				// fails, we must not have already mutated vSphere state, or a subsequent reconcile would
+				// find the template already up to date and silently drop the error (see
+				// reconcileVSphereProviderSpec).
+				if err := upgradeStubIgnitionIfRequired(providerSpec.UserDataSecret.Name, kubeClient); err != nil {
+					return "", false, err
+				}
 
 				// Find and download the relevant OVA file
 				ova, err := streamData.QueryDisk(arch, "vmware", "ova")

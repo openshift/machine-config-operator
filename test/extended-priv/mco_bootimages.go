@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/google/uuid"
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
@@ -18,7 +19,15 @@ import (
 const mapiBaseErrorMessageTemplate = `1 Degraded MAPI MachineSets | 0 Degraded ControlPlaneMachineSets | 0 Degraded CAPI MachineSets | 0 Degraded CAPI MachineDeployments | Error(s):` +
 	` error syncing MAPI MachineSet %s: failed to reconcile machineset %s, err:`
 
-var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Serial][Disruptive] MCO Bootimages", func() {
+// backdatedImageRunID is generated once per test binary process, so every vSphere backdated
+// template this run uploads gets a name unique to that run. Without it, every run uploads under
+// the exact same literal name regardless of which failure domain/folder it lands in — so a leftover
+// template from an earlier (or crashed, uncleaned-up) run collides with the current run's upload,
+// which is what caused both the MCO-side "resolves to multiple vms" bug and the machine-api-provider-
+// vsphere actuator's own "multiple templates found" clone-time failure.
+var backdatedImageRunID = strings.ReplaceAll(uuid.NewString(), "-", "")[:8]
+
+var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longduration][Serial][Disruptive] MCO Bootimages", func() {
 	defer g.GinkgoRecover()
 
 	var (
@@ -61,7 +70,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		var (
 			duplicatedMachinesetName = fmt.Sprintf("cloned-tc-%s", GetCurrentTestPolarionIDNumber())
 			firstMachineSet          = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
-			fakeImageName            = getBackdatedBootImage(oc.AsAdmin())
+			backdatedImageName       = getBackdatedBootImage(oc.AsAdmin(), firstMachineSet)
+			fakeImageNameNoUpdate    = "fake-noupdate-image-81403"
 		)
 
 		exutil.By("Duplicate machineset for testing")
@@ -71,13 +81,12 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("OK!\n")
 
 		exutil.By("Patch coreos boot image in MachineSet")
-		o.Expect(machineSet.SetCoreOsBootImage(fakeImageName)).To(o.Succeed(),
+		o.Expect(machineSet.SetCoreOsBootImage(backdatedImageName)).To(o.Succeed(),
 			"Error patching the value of the coreos boot image in %s", machineSet)
 		logger.Infof("OK!\n")
 
 		exutil.By("Check that the MachineSet is updated by MCO by default")
-		o.Eventually(machineSet.GetCoreOsBootImage, "3m", "20s").ShouldNot(o.Equal(fakeImageName),
-			"The machineset should be updated by MCO if the functionality is not enabled in the MachineConfiguration resource. %s", machineSet.PrettyString())
+		CheckCurrentOSImageIsUpdated(machineSet, backdatedImageName)
 		logger.Infof("OK!\n")
 
 		// For none - mode i.e opt-out MachineSet are not updated with original value if we try to set with any fake value
@@ -88,13 +97,12 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("OK!\n")
 
 		exutil.By("Patch coreos boot image in MachineSet")
-		o.Expect(machineSet.SetCoreOsBootImage(fakeImageName)).To(o.Succeed(),
+		o.Expect(machineSet.SetCoreOsBootImage(fakeImageNameNoUpdate)).To(o.Succeed(),
 			"Error patching the value of the coreos boot image in %s", machineSet)
 		logger.Infof("OK!\n")
 
 		exutil.By("Check that the MachineSet is not updated by MCO in opt-out")
-		o.Eventually(machineSet.GetCoreOsBootImage, "3m", "20s").Should(o.Equal(fakeImageName),
-			"The machineset should not be updated by MCO as we are opt-out in the MachineConfiguration resource. %s", machineSet.PrettyString())
+		CheckCurrentOSImageIsNotUpdated(machineSet, fakeImageNameNoUpdate)
 		logger.Infof("OK!\n")
 
 		exutil.By("Opt-in boot images update")
@@ -103,14 +111,29 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		).To(o.Succeed(), "Error configuring Partial managedBootImages in the 'cluster' MachineConfiguration resource")
 		logger.Infof("OK!\n")
 
+		// vSphere updates templates in-place (same name, new content), so the vSphere template behind
+		// backdatedImageName was likely already reconciled to the current release by the first update
+		// above. Re-upload it so this second use is genuinely backdated again, or MCO will see an
+		// already-current template and never trigger the update this check expects.
+		if exutil.CheckPlatform(oc) == VspherePlatform {
+			exutil.By("Re-upload the backdated vSphere template so it is genuinely backdated again")
+			vsInfo, vsErr := GetVSphereConnectionInfoForMachineSet(machineSet)
+			o.Expect(vsErr).NotTo(o.HaveOccurred(), "Error getting the vSphere connection info for %s", machineSet)
+			folder, fErr := machineSet.GetWorkspaceFolder()
+			o.Expect(fErr).NotTo(o.HaveOccurred(), "Error getting the workspace folder for %s", machineSet)
+			o.Expect(exutil.DeleteVsphereTemplate(backdatedImageName, folder, vsInfo)).To(o.Succeed(),
+				"Error deleting the already-updated vSphere template %s", backdatedImageName)
+			backdatedImageName = getBackdatedBootImage(oc.AsAdmin(), machineSet)
+			logger.Infof("OK!\n")
+		}
+
 		exutil.By("Patch coreos boot image in MachineSet")
-		o.Expect(machineSet.SetCoreOsBootImage(fakeImageName)).To(o.Succeed(),
+		o.Expect(machineSet.SetCoreOsBootImage(backdatedImageName)).To(o.Succeed(),
 			"Error patching the value of the coreos boot image in %s", machineSet)
 		logger.Infof("OK!\n")
 
 		exutil.By("Check that the MachineSet is updated by MCO for opt-in")
-		o.Eventually(machineSet.GetCoreOsBootImage, "3m", "20s").ShouldNot(o.Equal(fakeImageName),
-			"The machineset should not be updated by MCO if the functionality is not enabled in the MachineConfiguration resource. %s", machineSet.PrettyString())
+		CheckCurrentOSImageIsUpdated(machineSet, backdatedImageName)
 		logger.Infof("OK!\n")
 
 	})
@@ -118,7 +141,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	g.It("[PolarionID:74240][OTP] ManagedBootImages. Restore All MachineSet images", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
 		var (
 			machineSet                 = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
-			fakeImageName              = getBackdatedBootImage(oc.AsAdmin())
+			backdatedImageName         = getBackdatedBootImage(oc.AsAdmin(), machineSet)
+			fakeImageNameNoUpdate      = "fake-noupdate-image-74240"
 			clonedMSName               = "cloned-tc-74240"
 			clonedWrongBootImageMSName = "cloned-tc-74240-wrong-boot-image"
 			clonedOwnedMSName          = "cloned-tc-74240-owned"
@@ -145,7 +169,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("OK!\n")
 
 		exutil.By("Clone first machineset but using a wrong ")
-		clonedWrongImageMS, err := DuplicateMachineSetWithCustomBootImage(machineSet, fakeImageName, clonedWrongBootImageMSName)
+		clonedWrongImageMS, err := DuplicateMachineSetWithCustomBootImage(machineSet, backdatedImageName, clonedWrongBootImageMSName)
 		defer clonedWrongImageMS.Delete()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s using a custom boot image", machineSet)
 		logger.Infof("OK!\n")
@@ -162,8 +186,9 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		exutil.By("All machinesets should use the right boot image")
 		for _, ms := range NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail() {
 			logger.Infof("Checking boot image in machineset %s", ms.GetName())
-			// Check that the current boot image is the right one
-			CheckCurrentOSImageIsUpdated(ms)
+			// Check that the current boot image is the right one.
+			// Original machinesets were never set to backdatedImageName, so pass empty string.
+			CheckCurrentOSImageIsUpdated(ms, "")
 		}
 		logger.Infof("OK!\n")
 
@@ -175,33 +200,31 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("OK!\n")
 
 		exutil.By("Patch cloned machinesets to use a wrong boot image")
-		o.Expect(clonedMS.SetCoreOsBootImage(fakeImageName)).To(o.Succeed(),
+		o.Expect(clonedMS.SetCoreOsBootImage(backdatedImageName)).To(o.Succeed(),
 			"Error setting a new boot image in %s", clonedMS)
 
-		o.Expect(clonedWrongImageMS.SetCoreOsBootImage(fakeImageName)).To(o.Succeed(),
+		o.Expect(clonedWrongImageMS.SetCoreOsBootImage(backdatedImageName)).To(o.Succeed(),
 			"Error setting a new boot image in %s", clonedWrongImageMS)
 
-		o.Expect(clonedOwnedMS.SetCoreOsBootImage(fakeImageName)).To(o.Succeed(),
+		o.Expect(clonedOwnedMS.SetCoreOsBootImage(fakeImageNameNoUpdate)).To(o.Succeed(),
 			"Error setting a new boot image in %s", clonedOwnedMS)
 		logger.Infof("OK!\n")
 
 		exutil.By("All machinesets should use the right boot image except the one with an owner")
+		clonedNames := map[string]bool{clonedMSName: true, clonedWrongBootImageMSName: true, clonedOwnedMSName: true}
 		for _, ms := range NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail() {
 			logger.Infof("Checking boot image in machineset %s", ms.GetName())
 
 			if ms.GetName() == clonedOwnedMSName {
-				o.Consistently(ms.GetCoreOsBootImage, "15s", "5s").Should(o.Equal(fakeImageName),
-					"%s was patched and it is using the right boot image. Machinesets with owners should NOT be patched.", ms)
-
-			} else {
-				// Check that it was actually updated
-				o.Eventually(ms.GetCoreOsBootImage, "15m", "20s").ShouldNot(o.Or(o.Equal(fakeImageName), o.BeEmpty()),
-					"%s was NOT updated to use the right boot image", ms)
-				// Check that the updated image is the right one
-				CheckCurrentOSImageIsUpdated(ms)
-				// Check that the user-data secret is the right one
+				CheckCurrentOSImageIsNotUpdated(ms, fakeImageNameNoUpdate)
+			} else if clonedNames[ms.GetName()] {
+				// Cloned machinesets were patched with backdatedImageName
+				CheckCurrentOSImageIsUpdated(ms, backdatedImageName)
 				o.Eventually(ms.GetUserDataSecret, "3m", "20s").ShouldNot(o.ContainSubstring("worker-user-data-managed"),
 					"%s should NOT be using the worker-user-data-managed secret after updating the image", ms)
+			} else {
+				// Original machinesets were never patched
+				CheckCurrentOSImageIsUpdated(ms, "")
 			}
 		}
 		logger.Infof("OK!\n")
@@ -224,7 +247,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	g.It("[PolarionID:74239][OTP] ManagedBootImages. Restore Partial MachineSet images", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
 		var (
 			machineSet             = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
-			fakeImageName          = getBackdatedBootImage(oc.AsAdmin())
+			backdatedImageName     = getBackdatedBootImage(oc.AsAdmin(), machineSet)
+			fakeImageNameNoUpdate  = "fake-noupdate-image-74239"
 			clonedMSLabelName      = "cloned-tc-74239-label"
 			clonedMSNoLabelName    = "cloned-tc-74239-no-label"
 			clonedMSLabelOwnedName = "cloned-tc-74239-label-owned"
@@ -269,22 +293,18 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("OK!\n")
 
 		exutil.By("Patch the clonned machineset to configure a new boot image")
-		o.Expect(clonedMSLabel.SetCoreOsBootImage(fakeImageName)).To(o.Succeed(),
+		o.Expect(clonedMSLabel.SetCoreOsBootImage(backdatedImageName)).To(o.Succeed(),
 			"Error setting a new boot image in %s", clonedMSLabel)
 
-		o.Expect(clonedMSNoLabel.SetCoreOsBootImage(fakeImageName)).To(o.Succeed(),
+		o.Expect(clonedMSNoLabel.SetCoreOsBootImage(fakeImageNameNoUpdate)).To(o.Succeed(),
 			"Error setting a new boot image in %s", clonedMSNoLabel)
 
-		o.Expect(clonedMSLabelOwned.SetCoreOsBootImage(fakeImageName)).To(o.Succeed(),
+		o.Expect(clonedMSLabelOwned.SetCoreOsBootImage(fakeImageNameNoUpdate)).To(o.Succeed(),
 			"Error setting a new boot image in %s", clonedMSLabelOwned)
 		logger.Infof("OK!\n")
 
 		exutil.By("The labeled machineset without owner should be updated")
-		// Check that it was actually updated
-		o.Eventually(clonedMSLabel.GetCoreOsBootImage, "15m", "20s").ShouldNot(o.Or(o.Equal(fakeImageName), o.BeEmpty()),
-			"%s was NOT updated to use the right boot image", clonedMSLabel)
-		// Check that the updated image is the right one
-		CheckCurrentOSImageIsUpdated(clonedMSLabel)
+		CheckCurrentOSImageIsUpdated(clonedMSLabel, backdatedImageName)
 		// Check that the user-data secret is the right one
 		o.Eventually(clonedMSLabel.GetUserDataSecret, "3m", "20s").ShouldNot(o.ContainSubstring("worker-user-data-managed"),
 			"%s should NOT be using the worker-user-data-managed secret after updating the image", clonedMSLabel)
@@ -292,13 +312,11 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("OK!\n")
 
 		exutil.By("The labeled machineset with owner should NOT be updated")
-		o.Consistently(clonedMSLabelOwned.GetCoreOsBootImage, "15s", "5s").Should(o.Equal(fakeImageName),
-			"%s was patched and it is using the right boot image. Machinesets with owners should NOT be patched.", clonedMSLabelOwned)
+		CheckCurrentOSImageIsNotUpdated(clonedMSLabelOwned, fakeImageNameNoUpdate)
 		logger.Infof("OK!\n")
 
 		exutil.By("The machineset without label should NOT be updated")
-		o.Consistently(clonedMSNoLabel.GetCoreOsBootImage, "15s", "5s").Should(o.Equal(fakeImageName),
-			"%s was patched and it is using the right boot image. Machinesets with owners should NOT be patched.", clonedMSNoLabel)
+		CheckCurrentOSImageIsNotUpdated(clonedMSNoLabel, fakeImageNameNoUpdate)
 		logger.Infof("OK!\n")
 
 		exutil.By("Scale up the fixed machinessetset to make sure that it is working fine")
@@ -320,7 +338,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		var (
 			machineConfiguration        = GetMachineConfiguration(oc.AsAdmin())
 			machineSet                  = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
-			fakeImageName               = getBackdatedBootImage(oc.AsAdmin())
+			backdatedImageName          = getBackdatedBootImage(oc.AsAdmin(), machineSet)
 			clonedMSName                = "cloned-tc-74751-copy"
 			labelName                   = "test"
 			labelValue                  = "update"
@@ -349,7 +367,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("OK!\n")
 
 		exutil.By("Set a wrong boot image in the cloned image")
-		o.Expect(clonedMS.SetCoreOsBootImage(fakeImageName)).To(o.Succeed(), "Error setting a fake boot image in %s", clonedMS)
+		o.Expect(clonedMS.SetCoreOsBootImage(backdatedImageName)).To(o.Succeed(), "Error setting a fake boot image in %s", clonedMS)
 		logger.Infof("OK!\n")
 
 		exutil.By("Check that no failures are being reported")
@@ -396,11 +414,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("OK!\n")
 
 		exutil.By("Check that the boot image was updated")
-		// Check that it was actually updated
-		o.Eventually(clonedMS.GetCoreOsBootImage, "15m", "20s").ShouldNot(o.Or(o.Equal(fakeImageName), o.BeEmpty()),
-			"%s was NOT updated to use the right boot image", clonedMS)
-		// Check that the updated image is the right one
-		CheckCurrentOSImageIsUpdated(clonedMS)
+		CheckCurrentOSImageIsUpdated(clonedMS, backdatedImageName)
 		logger.Infof("OK!\n")
 
 	})
@@ -508,7 +522,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 			machineConfiguration = GetMachineConfiguration(oc.AsAdmin())
 			machineSet           = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
-			fakeImageName        = getBackdatedBootImage(oc.AsAdmin())
+			backdatedImageName   = getBackdatedBootImage(oc.AsAdmin(), machineSet)
 			labelName            = "test"
 			labelValue           = "update"
 
@@ -545,7 +559,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("OK!\n")
 
 		exutil.By("Set a wrong boot image in the cloned image. Not Marketplace image. Updateable")
-		o.Expect(clonedMS.SetCoreOsBootImage(fakeImageName)).To(o.Succeed(), "Error setting a fake boot image in %s", clonedMS)
+		o.Expect(clonedMS.SetCoreOsBootImage(backdatedImageName)).To(o.Succeed(), "Error setting a fake boot image in %s", clonedMS)
 		logger.Infof("OK!\n")
 
 		exutil.By("Label the cloned machineset so that its boot image is updated by MCO")
@@ -562,11 +576,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("OK!\n")
 
 		exutil.By("Check that the boot image was updated with the right version")
-		// Check that it was actually updated
-		o.Eventually(clonedMS.GetCoreOsBootImage, "15m", "20s").ShouldNot(o.Or(o.Equal(fakeImageName), o.BeEmpty()),
-			"%s was NOT updated to use the right boot image", clonedMS)
-		// Check that the updated image is the right one
-		CheckCurrentOSImageIsUpdated(clonedMS)
+		CheckCurrentOSImageIsUpdated(clonedMS, backdatedImageName)
 		logger.Infof("OK!\n")
 
 		exutil.By("Scale up the updated machineset to make sure that they are working fine")
@@ -806,7 +816,7 @@ func testUserDataUpdateFailure(oc *exutil.CLI, clonedMSName, clonedSecretName, e
 	var (
 		machineConfiguration   = GetMachineConfiguration(oc.AsAdmin())
 		machineSet             = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
-		fakeImageName          = getBackdatedBootImage(oc.AsAdmin())
+		backdatedImageName     = getBackdatedBootImage(oc.AsAdmin(), machineSet)
 		labelName              = "test"
 		labelValue             = "update"
 		secondLabelValue       = "update2"
@@ -845,7 +855,7 @@ func testUserDataUpdateFailure(oc *exutil.CLI, clonedMSName, clonedSecretName, e
 		"Error patching MachineSet %s to use the new secret %s", clonedMS.GetName(), clonedSecretName)
 	logger.Infof("OK!\n")
 	exutil.By("Set a wrong boot image in the cloned image")
-	o.Expect(clonedMS.SetCoreOsBootImage(fakeImageName)).To(o.Succeed(), "Error setting a fake boot image in %s", clonedMS)
+	o.Expect(clonedMS.SetCoreOsBootImage(backdatedImageName)).To(o.Succeed(), "Error setting a fake boot image in %s", clonedMS)
 	logger.Infof("OK!\n")
 
 	exutil.By("Label the cloned machineset so that its boot image is updated by MCO")
@@ -899,7 +909,7 @@ func checkManagedBootImagesStatus(mc *MachineConfiguration, mode string) {
 
 // getBackdatedBootImage returns a valid boot image value for testing based on platform
 // MCO will only update images previously published in the installer. This function returns one of those valid images
-func getBackdatedBootImage(oc *exutil.CLI) string {
+func getBackdatedBootImage(oc *exutil.CLI, ms *MachineSet) string {
 	var (
 		platform = exutil.CheckPlatform(oc)
 	)
@@ -937,10 +947,11 @@ func getBackdatedBootImage(oc *exutil.CLI) string {
 		baseImageURL, err := rhcosHandler.GetBaseImageURLFromRHCOSImageInfo(imageVersion, arch)
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the base image URL")
 
-		// To avoid collisions we will add prefix to identify our image
-		baseImage = "mcotest-" + baseImage
+		// To avoid collisions with other test runs (including leftovers from a crashed, uncleaned-up
+		// run) we prefix with a per-run-unique ID in addition to the "mcotest-" marker.
+		baseImage = fmt.Sprintf("mcotest-%s-%s", backdatedImageRunID, baseImage)
 		o.Expect(
-			uploadBaseImageToCloud(oc, platform, baseImageURL, baseImage),
+			uploadBaseImageToCloud(ms, platform, baseImageURL, baseImage),
 		).To(o.Succeed(), "Error uploading the base image %s to the cloud", baseImageURL)
 		logger.Infof("Uplodated: %s", baseImage)
 		logger.Infof("OK!\n")
@@ -951,18 +962,37 @@ func getBackdatedBootImage(oc *exutil.CLI) string {
 	}
 }
 
-// getReleaseFromVsphereTemplate gets the release version from a vSphere template
-func getReleaseFromVsphereTemplate(oc *exutil.CLI, vsphereTemplate string) (string, error) {
-	vsInfo, err := exutil.GetVSphereConnectionInfo(oc.AsAdmin())
+// getReleaseFromVsphereTemplate gets the release version from the vSphere template
+// used by the given BootImageResource, using its matching failure domain.
+// Only MachineSets are supported; ControlPlaneMachineSets will return an error.
+func getReleaseFromVsphereTemplate(bir BootImageResource) (string, error) {
+	ms, ok := bir.(*MachineSet)
+	if !ok {
+		return "", fmt.Errorf("getReleaseFromVsphereTemplate only supports MachineSets")
+	}
+
+	vsphereTemplate, err := bir.GetCoreOsBootImage()
 	if err != nil {
 		return "", err
 	}
 
-	return exutil.GetReleaseFromVsphereTemplate(vsphereTemplate, vsInfo.Server, vsInfo.DataCenter, vsInfo.User, vsInfo.Password)
+	vsInfo, err := GetVSphereConnectionInfoForMachineSet(ms)
+	if err != nil {
+		return "", err
+	}
+
+	folder, err := ms.GetWorkspaceFolder()
+	if err != nil {
+		return "", err
+	}
+
+	return exutil.GetReleaseFromVsphereTemplate(vsphereTemplate, folder, vsInfo)
 }
 
-// CheckCurrentOSImageIsUpdated checks that the machineset/controlplanemachineset is using the bootimage expected in the current cluster version
-func CheckCurrentOSImageIsUpdated(bir BootImageResource) {
+// CheckCurrentOSImageIsUpdated checks that the machineset/controlplanemachineset is using the bootimage expected in the current cluster version.
+// It also verifies that the image reference changed from fakeImageName (on non-vSphere platforms) or that the
+// template name was preserved (on vSphere, where the MCO updates the OVA in-place without renaming the template).
+func CheckCurrentOSImageIsUpdated(bir BootImageResource, fakeImageName string) {
 	var (
 		oc                 = bir.GetOC()
 		platform           = exutil.CheckPlatform(oc)
@@ -979,15 +1009,19 @@ func CheckCurrentOSImageIsUpdated(bir BootImageResource) {
 	case AWSPlatform, GCPPlatform:
 		o.Eventually(bir.GetCoreOsBootImage, "5m", "20s").Should(o.ContainSubstring(currentCoreOsBootImage),
 			"%s was NOT updated to use the right boot image", bir)
+		if fakeImageName != "" {
+			o.Expect(bir.GetCoreOsBootImage()).NotTo(o.Equal(fakeImageName),
+				"%s boot image was not updated, it still has the fake image", bir)
+		}
 	case VspherePlatform:
 		o.Eventually(func() (string, error) {
-			bootImage, err := bir.GetCoreOsBootImage()
-			if err != nil {
-				return "", err
-			}
-			return getReleaseFromVsphereTemplate(oc.AsAdmin(), bootImage)
+			return getReleaseFromVsphereTemplate(bir)
 		}, "5m", "20s").
-			Should(o.Equal(currentCoreOsBootImage), "The image used to update %s doen't have the right version", bir)
+			Should(o.Equal(currentCoreOsBootImage), "The image used to update %s doesn't have the right version", bir)
+		if fakeImageName != "" {
+			o.Expect(bir.GetCoreOsBootImage()).To(o.Equal(fakeImageName),
+				"%s template name was changed, but MCO should update the OVA in-place without renaming the template", bir)
+		}
 	case AzurePlatform:
 		parsedImage := gjson.Parse(currentCoreOsBootImage)
 		sku := parsedImage.Get("sku").String()
@@ -1003,12 +1037,52 @@ func CheckCurrentOSImageIsUpdated(bir BootImageResource) {
 			HavePathWithValue("resourceID", o.BeEmpty()),
 			HavePathWithValue("type", o.Equal("MarketplaceNoPlan"))),
 			"%s was NOT updated to use the right boot image", bir)
+		if fakeImageName != "" {
+			o.Expect(bir.GetCoreOsBootImage()).NotTo(o.Equal(fakeImageName),
+				"%s boot image was not updated, it still has the fake image", bir)
+		}
 	default:
 		e2e.Failf("Platform not supported in CheckCurrentOSImageIsUpdated: %s", platform)
 	}
 }
 
-// setArchitectureAndCheckStatus sets a different architecture in the cloned machineset and checks the status
+// CheckCurrentOSImageIsNotUpdated checks that the machineset/controlplanemachineset is NOT using the current cluster bootimage,
+// i.e. the MCO has not updated it. On vSphere, where the template name doesn't change during updates, it checks that the
+// RHCOS version inside the template has not been updated to the current version.
+func CheckCurrentOSImageIsNotUpdated(bir BootImageResource, fakeImageName string) {
+	var (
+		oc       = bir.GetOC()
+		platform = exutil.CheckPlatform(oc)
+	)
+
+	switch platform {
+	case VspherePlatform:
+		var (
+			region             = getCurrentRegionOrFail(oc)
+			arch               = bir.GetArchitectureOrFail()
+			coreosBootimagesCM = NewConfigMap(oc.AsAdmin(), MachineConfigNamespace, "coreos-bootimages")
+		)
+		currentCoreOsBootImage := getCoreOsBootImageFromConfigMapOrFail(platform, region, arch, coreosBootimagesCM)
+		o.Expect(currentCoreOsBootImage).NotTo(o.BeEmpty(), "Could not find the right coreOS image for this platform")
+
+		o.Consistently(func() string {
+			release, err := getReleaseFromVsphereTemplate(bir)
+			if err != nil {
+				// A non-existing template means the MCO did not update it
+				return ""
+			}
+			return release
+		}, "15s", "5s").ShouldNot(o.Equal(currentCoreOsBootImage),
+			"%s was updated but it should NOT have been", bir)
+	default:
+		o.Consistently(bir.GetCoreOsBootImage, "15s", "5s").Should(o.Equal(fakeImageName),
+			"%s was updated but it should NOT have been", bir)
+	}
+}
+
+// setArchitectureAndCheckStatus sets the capacity labels annotation on the cloned machineset and checks the status.
+// If archValue already contains "kubernetes.io/arch=", it is used as the raw annotation value.
+// Otherwise, "kubernetes.io/arch=" is prepended automatically.
 func setArchitectureAndCheckStatus(clonedMS *MachineSet, machineConfiguration *MachineConfiguration, archValue string) {
 	exutil.By(fmt.Sprintf("Set a %s architecture in the cloned machineset", archValue))
 	o.Expect(clonedMS.SetArchitecture(archValue)).To(o.Succeed(), "Error setting architecture %s in %s", archValue, clonedMS)
