@@ -17,7 +17,6 @@ import (
 	"github.com/openshift/machine-config-operator/test/extended-priv/util/architecture"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 	"github.com/tidwall/gjson"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -383,7 +382,6 @@ func (n *Node) GetBootedOsTreeDeployment(asJSON bool) (string, error) {
 
 	logger.Infof("WARNING! No booted deployment found in node %s", n.GetName())
 	return "", nil
-
 }
 
 // GetCurrentBootOSImage returns the osImage currently used to boot the node
@@ -683,7 +681,6 @@ func (n *Node) CaptureMCDaemonLogsUntilRestartWithTimeout(timeout string) (strin
 			}
 			return err
 		})
-
 		if err != nil {
 			logger.Errorf("Error getting %s logs. Error: %s", machineConfigDaemon, err)
 		}
@@ -699,7 +696,6 @@ func (n *Node) CaptureMCDaemonLogsUntilRestartWithTimeout(timeout string) (strin
 		logger.Infof(errMsg)
 		return "", fmt.Errorf("%s", errMsg)
 	}
-
 }
 
 // GetDateOrFail executes `date`command and returns the current time in the node and fails the test case if there is any error
@@ -712,7 +708,6 @@ func (n *Node) GetDateOrFail() time.Time {
 
 // GetDate executes `date`command and returns the current time in the node
 func (n *Node) GetDate() (time.Time, error) {
-
 	date, _, err := n.DebugNodeWithChrootStd(`date`, `+%Y-%m-%dT%H:%M:%SZ`)
 
 	logger.Infof("node %s. DATE: %s", n.GetName(), date)
@@ -732,7 +727,6 @@ func (n *Node) GetDate() (time.Time, error) {
 
 // GetUptime executes `uptime -s` command and returns the time when the node was booted
 func (n *Node) GetUptime() (time.Time, error) {
-
 	uptime, _, err := n.DebugNodeWithChrootStd(`uptime`, `-s`)
 
 	logger.Infof("node %s. UPTIME: %s", n.GetName(), uptime)
@@ -945,7 +939,6 @@ func (n *Node) WaitUntilRpmOsTreeIsIdle() error {
 	}
 
 	return waitErr
-
 }
 
 // CancelRpmOsTreeTransactions cancels rpm-ostree transactions
@@ -1239,9 +1232,7 @@ func (n *Node) GetMachineConfigNode() *MachineConfigNode {
 //
 // 38409719808 7045369856
 func (n *Node) GetFileSystemSpaceUsage(path string) (*SpaceUsage, error) {
-	var (
-		parserRegex = `(?P<Used>\d+)\D+(?P<Avail>\d+)`
-	)
+	parserRegex := `(?P<Used>\d+)\D+(?P<Avail>\d+)`
 	stdout, stderr, err := n.DebugNodeWithChrootStd("df", "-B1", "--output=used,avail", path)
 	if err != nil {
 		logger.Errorf("Error getting the disk usage in node %s:\nstdout:%s\nstderr:%s",
@@ -1270,7 +1261,6 @@ func (n *Node) GetFileSystemSpaceUsage(path string) (*SpaceUsage, error) {
 	used, err := strconv.ParseInt(match[usedIndex], 10, 64)
 	if err != nil {
 		return nil, fmt.Errorf("could convert parsed Used data [%s] into float64 from\n%s", match[usedIndex], stdout)
-
 	}
 
 	availIndex := re.SubexpIndex("Avail")
@@ -1485,25 +1475,6 @@ func GetOperatorNode(oc *exutil.CLI) (*Node, error) {
 	}
 
 	return NewNode(oc, nodeName), nil
-}
-
-func getReadyNodes(oc *exutil.CLI) (sets.Set[string], error) {
-	nodeList := NewResourceList(oc.AsAdmin(), "nodes")
-	nodes, err := nodeList.GetAll()
-	if err != nil {
-		return nil, err
-	}
-
-	nodeSet := sets.New[string]()
-	for _, node := range nodes {
-		node.oc.NotShowInfo()
-		isReady, err := node.Get(`{.status.conditions[?(@.type=="Ready")].status}`)
-		if err == nil && isReady == TrueString {
-			nodeSet.Insert(node.name)
-		}
-		node.oc.SetShowInfo()
-	}
-	return nodeSet, nil
 }
 
 // ConfigureStreamCentosRepo configures a centos stream repo in the given node

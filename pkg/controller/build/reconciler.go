@@ -645,26 +645,6 @@ func (b *buildReconciler) getMachineOSBuildForUpdate(mosb *mcfgv1.MachineOSBuild
 	return out.DeepCopy(), nil
 }
 
-// Creates a MachineOSBuild in response to MachineConfigPool changes.
-func (b *buildReconciler) createNewMachineOSBuildOrReuseExistingForPoolChange(ctx context.Context, mcp *mcfgv1.MachineConfigPool) error {
-	mosc, err := utils.GetMachineOSConfigForMachineConfigPool(mcp, b.utilListers())
-
-	if k8serrors.IsNotFound(err) {
-		klog.Infof("No MachineOSConfig found for MachineConfigPool %s", mcp.Name)
-		return nil
-	}
-
-	if err != nil {
-		return err
-	}
-
-	if err := b.createNewMachineOSBuildOrReuseExisting(ctx, mosc.DeepCopy(), false); err != nil {
-		return fmt.Errorf("could not create MachineOSBuild for MachineConfigPool %q change: %w", mcp.Name, err)
-	}
-
-	return nil
-}
-
 // Executes whenever a MachineOSConfig has the rebuild annotation and a new MachineOSBuild needs to be created.
 func (b *buildReconciler) createNewMachineOSBuildForRebuild(ctx context.Context, mosb *mcfgv1.MachineOSBuild, moscName string) error {
 	// Verify that the MOSB is actually deleted before we try to create a new one

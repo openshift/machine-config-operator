@@ -6,7 +6,6 @@ import (
 
 // ClusterOperator struct is used to handle ClusterOperator resources in OCP
 type ClusterOperator struct {
-	template string
 	Resource
 }
 

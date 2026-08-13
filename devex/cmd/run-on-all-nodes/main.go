@@ -126,26 +126,6 @@ func runCommand(outChan chan output, node *corev1.Node, opts runOpts) error {
 	return runErr
 }
 
-func writeToLogs(out output) error {
-	writeLog := func(node *corev1.Node, streamName string, buf *bytes.Buffer) error {
-		logFileName := fmt.Sprintf("%s-%s.log", node.Name, streamName)
-		klog.Infof("Writing output to %s", logFileName)
-		return os.WriteFile(logFileName, buf.Bytes(), 0o644)
-	}
-
-	eg := errgroup.Group{}
-
-	eg.Go(func() error {
-		return writeLog(out.node, "stdout", out.stdout)
-	})
-
-	eg.Go(func() error {
-		return writeLog(out.node, "stderr", out.stderr)
-	})
-
-	return eg.Wait()
-}
-
 func runCommandOnAllNodes(nodes *corev1.NodeList, opts runOpts) error {
 	eg := new(errgroup.Group)
 

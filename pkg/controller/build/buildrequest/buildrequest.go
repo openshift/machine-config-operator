@@ -34,9 +34,6 @@ var digestCMScript string
 //go:embed assets/buildah-build.sh
 var buildahBuildScript string
 
-//go:embed assets/podman-build.sh
-var podmanBuildScript string
-
 const (
 	// Filename for the machineconfig JSON tarball expected by the build job
 	machineConfigJSONFilename string = "machineconfig.json.gz"

@@ -13,11 +13,6 @@ import (
 	"k8s.io/klog/v2"
 )
 
-const (
-	imagestreamName     string = "os-image"
-	imagestreamPullspec string = "image-registry.openshift-image-registry.svc:5000/" + ctrlcommon.MCONamespace + "/" + imagestreamName + ":latest"
-)
-
 func createImagestreamAndGetPullspec(cs *framework.ClientSet, name string) (string, error) {
 	if err := createImagestream(cs, name); err != nil {
 		return "", err

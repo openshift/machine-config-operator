@@ -230,12 +230,6 @@ type ErrImage struct {
 	err error
 }
 
-// newErrImageWithMessage constructs a new ErrImage instance with a custom message,
-// image pullspec, and wrapped error.
-func newErrImageWithMessage(msg, img string, err error) error {
-	return &ErrImage{msg: msg, img: img, err: err}
-}
-
 // newErrImage constructs a new ErrImage instance with an image pullspec and
 // wrapped error, without a custom message.
 func newErrImage(img string, err error) error {

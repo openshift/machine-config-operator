@@ -26,7 +26,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
-	clientset "k8s.io/client-go/kubernetes"
 
 	fakecorev1client "k8s.io/client-go/kubernetes/fake"
 )
@@ -44,16 +43,9 @@ func (f *fakeImagePruner) DeleteImage(ctx context.Context, _ string, _ *corev1.S
 	return nil
 }
 
-// TODO: Remove this and deal with the resulting parameter explosion in the test suite.
-type clients struct {
-	mcfgclient mcfgclientset.Interface
-	kubeclient clientset.Interface
-}
-
 // This test validates that the OSBuildController does nothing unless
 // there is a matching MachineOSConfig for a given MachineConfigPool.
 func TestOSBuildControllerDoesNothing(t *testing.T) {
-
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	t.Cleanup(cancel)
 
@@ -73,14 +65,12 @@ func TestOSBuildControllerDoesNothing(t *testing.T) {
 // when a new MachineOSBuild for a givee MachineOSConfig is created or a new
 // rendered MachineConfig is detected on the associated MachineConfigPool.
 func TestOSBuildControllerDeletesRunningBuildBeforeStartingANewOne(t *testing.T) {
-
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	t.Cleanup(cancel)
 
 	poolName := "worker"
 
 	t.Run("MachineOSConfig change", func(t *testing.T) {
-
 		kubeclient, mcfgclient, _, _, mosc, initialMosb, mcp, kubeassert, lobj, _ := setupOSBuildControllerForTestWithRunningBuild(ctx, t, poolName)
 
 		// Now that the build is in the running state, we update the MachineOSConfig.
@@ -111,12 +101,11 @@ func TestOSBuildControllerDeletesRunningBuildBeforeStartingANewOne(t *testing.T)
 
 		// After the new build starts, the old build should be deleted.
 		kubeassert.MachineOSBuildDoesNotExist(initialMosb, "Expected the initial MachineOSBuild %s to be deleted", initialMosb.Name)
-		assertBuildObjectsAreDeleted(ctx, t, kubeassert, initialMosb)
+		assertBuildObjectsAreDeleted(t, kubeassert, initialMosb)
 		isMachineOSBuildReachedExpectedCount(ctx, t, mcfgclient, mosc, 1)
 	})
 
 	t.Run("MachineConfig change", func(t *testing.T) {
-
 		_, mcfgclient, _, _, mosc, initialMosb, mcp, kubeassert, _, _ := setupOSBuildControllerForTestWithRunningBuild(ctx, t, poolName)
 
 		apiMCP, apiMC := insertNewRenderedMachineConfigAndUpdatePool(ctx, t, mcfgclient, mosc.Spec.MachineConfigPool.Name, "rendered-worker-2")
@@ -137,7 +126,7 @@ func TestOSBuildControllerDeletesRunningBuildBeforeStartingANewOne(t *testing.T)
 
 		// After the new build starts, the old build should be deleted.
 		kubeassert.MachineOSBuildDoesNotExist(initialMosb, "Expected the initial MachineOSBuild %s to be deleted", initialMosb.Name)
-		assertBuildObjectsAreDeleted(ctx, t, kubeassert, initialMosb)
+		assertBuildObjectsAreDeleted(t, kubeassert, initialMosb)
 		isMachineOSBuildReachedExpectedCount(ctx, t, mcfgclient, mosc, 1)
 	})
 }
@@ -146,7 +135,6 @@ func TestOSBuildControllerDeletesRunningBuildBeforeStartingANewOne(t *testing.T)
 // builds but will still clear running builds before statring a new build for
 // the same MachineOSConfig.
 func TestOSBuildControllerLeavesSuccessfulBuildAlone(t *testing.T) {
-
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)
 	t.Cleanup(cancel)
 
@@ -218,22 +206,19 @@ func TestOSBuildControllerLeavesSuccessfulBuildAlone(t *testing.T) {
 // behind unless someone makes a change to the MachineOSConfig or
 // MachineConfigPool.
 func TestOSBuildControllerFailure(t *testing.T) {
-
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	t.Cleanup(cancel)
 
 	poolName := "worker"
 
 	t.Run("Failed build objects remain", func(t *testing.T) {
-
 		_, _, _, _, _, failedMosb, _, kubeassert, _ := setupOSBuildControllerForTestWithFailedBuild(ctx, t, poolName)
 
 		// Ensure that even after failure, the build objects remain.
-		assertBuildObjectsAreCreated(ctx, t, kubeassert, failedMosb)
+		assertBuildObjectsAreCreated(t, kubeassert, failedMosb)
 	})
 
 	t.Run("MachineOSConfig change clears failed build", func(t *testing.T) {
-
 		kubeclient, mcfgclient, _, _, mosc, failedMosb, mcp, kubeassert, lobj := setupOSBuildControllerForTestWithFailedBuild(ctx, t, poolName)
 
 		// Modify the MachineOSConfig to start a new build.
@@ -257,11 +242,10 @@ func TestOSBuildControllerFailure(t *testing.T) {
 
 		// Ensure that the old build was cleared.
 		kubeassert.MachineOSBuildDoesNotExist(failedMosb)
-		assertBuildObjectsAreDeleted(ctx, t, kubeassert, failedMosb)
+		assertBuildObjectsAreDeleted(t, kubeassert, failedMosb)
 	})
 
 	t.Run("MachineConfig change clears failed build", func(t *testing.T) {
-
 		_, mcfgclient, _, _, mosc, failedMosb, mcp, kubeassert, _ := setupOSBuildControllerForTestWithFailedBuild(ctx, t, poolName)
 
 		apiMCP, apiMC := insertNewRenderedMachineConfigAndUpdatePool(ctx, t, mcfgclient, mosc.Spec.MachineConfigPool.Name, "rendered-worker-2")
@@ -280,7 +264,7 @@ func TestOSBuildControllerFailure(t *testing.T) {
 
 		// Ensure that the old build was cleared.
 		kubeassert.MachineOSBuildDoesNotExist(failedMosb)
-		assertBuildObjectsAreDeleted(ctx, t, kubeassert, failedMosb)
+		assertBuildObjectsAreDeleted(t, kubeassert, failedMosb)
 	})
 }
 
@@ -293,7 +277,6 @@ func TestOSBuildControllerFailure(t *testing.T) {
 // whenever the MachineOSConfig itself is deleted.
 
 func TestOSBuildController(t *testing.T) {
-
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*25)
 	t.Cleanup(cancel)
 
@@ -304,7 +287,6 @@ func TestOSBuildController(t *testing.T) {
 	}
 
 	t.Run("MachineOSConfig changes creates a new MachineOSBuild", func(t *testing.T) {
-
 		kubeclient, mcfgclient, _, _, mosc, _, _, lobj, kubeassert := setupOSBuildControllerForTestWithSuccessfulBuild(ctx, t, poolName)
 
 		// Update the BuildInputs section on the MachineOSConfig and verify that a
@@ -325,7 +307,7 @@ func TestOSBuildController(t *testing.T) {
 			// After creating the new MachineOSConfig, a MachineOSBuild should be created.
 			kubeassert.MachineOSBuildExists(mosb, "MachineOSBuild not created for MachineOSConfig %s change, iteration %d", mosc.Name, i)
 
-			assertBuildObjectsAreCreated(ctx, t, kubeassert, mosb)
+			assertBuildObjectsAreCreated(t, kubeassert, mosb)
 			// After a new MachineOSBuild is created, a job should be created.
 			kubeassert.JobExists(buildJobName, "Build job did not get created for MachineOSConfig %s change", mosc.Name)
 			// Set the successful status on the job.
@@ -334,7 +316,7 @@ func TestOSBuildController(t *testing.T) {
 			time.Sleep(time.Millisecond * 200)
 			kubeassert.MachineOSBuildIsSuccessful(mosb, "Expected the MachineOSBuild %s status to be successful", mosb.Name)
 			// And the build job should be deleted.
-			assertBuildObjectsAreDeleted(ctx, t, kubeassert, mosb)
+			assertBuildObjectsAreDeleted(t, kubeassert, mosb)
 			kubeassert.JobDoesNotExist(buildJobName, "Expected the build job %s to be deleted", buildJobName)
 
 			// Ensure that the MachineOSBuild count increases with each successful build.
@@ -350,7 +332,6 @@ func TestOSBuildController(t *testing.T) {
 	})
 
 	t.Run("MachineConfig changes creates a new MachineOSBuild", func(t *testing.T) {
-
 		kubeclient, mcfgclient, _, _, mosc, _, mcp, _, kubeassert := setupOSBuildControllerForTestWithSuccessfulBuild(ctx, t, poolName)
 
 		// Update the rendered MachineConfig on the MachineConfigPool and verify that a new MachineOSBuild is produced. We'll do this 10 times.
@@ -394,7 +375,6 @@ func TestOSBuildController(t *testing.T) {
 }
 
 func TestOSBuildControllerBuildFailedDoesNotCascade(t *testing.T) {
-
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	t.Cleanup(cancel)
 
@@ -609,7 +589,7 @@ func TestOSBuildControllerReconcilesJobsAfterRestart(t *testing.T) {
 	}
 }
 
-func assertBuildObjectsAreCreated(ctx context.Context, t *testing.T, kubeassert *testhelpers.Assertions, mosb *mcfgv1.MachineOSBuild) {
+func assertBuildObjectsAreCreated(t *testing.T, kubeassert *testhelpers.Assertions, mosb *mcfgv1.MachineOSBuild) {
 	t.Helper()
 
 	kubeassert.JobExists(utils.GetBuildJobName(mosb))
@@ -619,7 +599,7 @@ func assertBuildObjectsAreCreated(ctx context.Context, t *testing.T, kubeassert 
 	kubeassert.SecretExists(utils.GetFinalPushSecretName(mosb))
 }
 
-func assertBuildObjectsAreDeleted(ctx context.Context, t *testing.T, kubeassert *testhelpers.Assertions, mosb *mcfgv1.MachineOSBuild) {
+func assertBuildObjectsAreDeleted(t *testing.T, kubeassert *testhelpers.Assertions, mosb *mcfgv1.MachineOSBuild) {
 	t.Helper()
 
 	kubeassert.JobDoesNotExist(utils.GetBuildJobName(mosb))
@@ -822,26 +802,6 @@ func isMachineOSBuildReachedExpectedCount(ctx context.Context, t *testing.T, mcf
 	})
 
 	require.NoError(t, err, "MachineOSBuild count did not reach expected value %d", expected)
-}
-
-func assertMachineOSConfigGetsBuiltImagePushspec(ctx context.Context, t *testing.T, mcfgclient mcfgclientset.Interface, mosc *mcfgv1.MachineOSConfig, pullspec string) {
-	t.Helper()
-
-	var foundMosc *mcfgv1.MachineOSConfig
-
-	err := wait.PollImmediateInfiniteWithContext(ctx, time.Millisecond, func(ctx context.Context) (bool, error) {
-		apiMosc, err := mcfgclient.MachineconfigurationV1().MachineOSConfigs().Get(ctx, mosc.Name, metav1.GetOptions{})
-		if err != nil {
-			return false, err
-		}
-
-		foundMosc = apiMosc
-
-		return string(apiMosc.Status.CurrentImagePullSpec) == pullspec, nil
-	})
-
-	require.NoError(t, err)
-	require.Equal(t, pullspec, string(foundMosc.Status.CurrentImagePullSpec))
 }
 
 func assertMachineOSConfigGetsCurrentBuildAnnotation(ctx context.Context, t *testing.T, mcfgclient mcfgclientset.Interface, mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild) {

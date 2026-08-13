@@ -34,8 +34,8 @@ import (
 	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	"github.com/openshift/machine-config-operator/pkg/osimagestream"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	"github.com/openshift/machine-config-operator/pkg/osimagestream"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/openshift/machine-config-operator/test/helpers"
 )
@@ -129,10 +129,6 @@ func (f *fixture) newController() *Controller {
 
 func (f *fixture) run(mcpname string) {
 	f.runController(mcpname, false)
-}
-
-func (f *fixture) runExpectError(mcpname string) {
-	f.runController(mcpname, true)
 }
 
 func (f *fixture) runController(mcpname string, expectError bool) {
@@ -238,24 +234,12 @@ func (f *fixture) expectCreateMachineConfigAction(config *mcfgv1.MachineConfig) 
 	f.actions = append(f.actions, core.NewRootCreateAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config))
 }
 
-func (f *fixture) expectPatchMachineConfigAction(config *mcfgv1.MachineConfig, patch []byte) {
-	f.actions = append(f.actions, core.NewRootPatchAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config.Name, types.MergePatchType, patch))
-}
-
 func (f *fixture) expectUpdateMachineConfigAction(config *mcfgv1.MachineConfig) {
 	f.actions = append(f.actions, core.NewRootUpdateAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config))
 }
 
 func (f *fixture) expectUpdateMachineConfigPool(pool *mcfgv1.MachineConfigPool) {
 	f.actions = append(f.actions, core.NewRootUpdateAction(schema.GroupVersionResource{Resource: "machineconfigpools"}, pool))
-}
-
-func (f *fixture) expectUpdateMachineConfigPoolSpec(pool *mcfgv1.MachineConfigPool) {
-	f.actions = append(f.actions, core.NewRootUpdateSubresourceAction(schema.GroupVersionResource{Resource: "machineconfigpools"}, "spec", pool))
-}
-
-func (f *fixture) expectUpdateMachineConfigPoolStatus(pool *mcfgv1.MachineConfigPool) {
-	f.actions = append(f.actions, core.NewRootUpdateSubresourceAction(schema.GroupVersionResource{Resource: "machineconfigpools"}, "status", pool))
 }
 
 func newControllerConfig(name string) *mcfgv1.ControllerConfig {
@@ -366,7 +350,6 @@ func TestIgnValidationGenerateRenderedMachineConfig(t *testing.T) {
 	mcs[1].Spec.KernelArguments = append(mcs[1].Spec.KernelArguments, "test1")
 	_, err = generateRenderedMachineConfig(mcp, mcs, cc, nil)
 	require.Nil(t, err)
-
 }
 
 func TestUpdatesGeneratedMachineConfig(t *testing.T) {
@@ -1030,7 +1013,7 @@ func TestValidateNoRuncOnRHEL10(t *testing.T) {
 		{
 			name: "runc on RHEL 10 should error",
 			mc: helpers.NewMachineConfig("rendered-worker", nil, "", []ign3types.File{
-				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0644),
+				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0o644),
 			}),
 			osImageStreamSet: &mcfgv1.OSImageStreamSet{Name: "rhel-10"},
 			expectError:      true,
@@ -1038,7 +1021,7 @@ func TestValidateNoRuncOnRHEL10(t *testing.T) {
 		{
 			name: "crun on RHEL 10 should succeed",
 			mc: helpers.NewMachineConfig("rendered-worker", nil, "", []ign3types.File{
-				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("crun"), 0644),
+				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("crun"), 0o644),
 			}),
 			osImageStreamSet: &mcfgv1.OSImageStreamSet{Name: "rhel-10"},
 			expectError:      false,
@@ -1046,7 +1029,7 @@ func TestValidateNoRuncOnRHEL10(t *testing.T) {
 		{
 			name: "runc on RHEL 9 should succeed",
 			mc: helpers.NewMachineConfig("rendered-worker", nil, "", []ign3types.File{
-				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0644),
+				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0o644),
 			}),
 			osImageStreamSet: &mcfgv1.OSImageStreamSet{Name: "rhel-9"},
 			expectError:      false,
@@ -1054,7 +1037,7 @@ func TestValidateNoRuncOnRHEL10(t *testing.T) {
 		{
 			name: "runc with nil OSImageStreamSet should succeed",
 			mc: helpers.NewMachineConfig("rendered-worker", nil, "", []ign3types.File{
-				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0644),
+				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0o644),
 			}),
 			osImageStreamSet: nil,
 			expectError:      false,
@@ -1062,7 +1045,7 @@ func TestValidateNoRuncOnRHEL10(t *testing.T) {
 		{
 			name: "runc on CentOS 10 should error",
 			mc: helpers.NewMachineConfig("rendered-worker", nil, "", []ign3types.File{
-				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0644),
+				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0o644),
 			}),
 			osImageStreamSet: &mcfgv1.OSImageStreamSet{Name: "centos-10"},
 			expectError:      true,
@@ -1076,8 +1059,8 @@ func TestValidateNoRuncOnRHEL10(t *testing.T) {
 		{
 			name: "runc overridden by crun on RHEL 10 should succeed",
 			mc: helpers.NewMachineConfig("rendered-worker", nil, "", []ign3types.File{
-				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0644),
-				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/01-ctrcfg", makeCRIODropIn("crun"), 0644),
+				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0o644),
+				helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/01-ctrcfg", makeCRIODropIn("crun"), 0o644),
 			}),
 			osImageStreamSet: &mcfgv1.OSImageStreamSet{Name: "rhel-10"},
 			expectError:      false,
@@ -1113,7 +1096,7 @@ func TestValidateNoRuncOnRHEL10FromOSImageURL(t *testing.T) {
 
 	runcMC := func(osImageURL string) *mcfgv1.MachineConfig {
 		mc := helpers.NewMachineConfig("rendered-worker", nil, "", []ign3types.File{
-			helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0644),
+			helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0o644),
 		})
 		mc.Spec.OSImageURL = osImageURL
 		return mc
@@ -1121,7 +1104,7 @@ func TestValidateNoRuncOnRHEL10FromOSImageURL(t *testing.T) {
 
 	crunMC := func(osImageURL string) *mcfgv1.MachineConfig {
 		mc := helpers.NewMachineConfig("rendered-worker", nil, "", []ign3types.File{
-			helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("crun"), 0644),
+			helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("crun"), 0o644),
 		})
 		mc.Spec.OSImageURL = osImageURL
 		return mc
@@ -1185,8 +1168,8 @@ func TestValidateNoRuncOnRHEL10FromOSImageURL(t *testing.T) {
 			name: "runc overridden by crun on RHEL 10 image should succeed",
 			mc: func() *mcfgv1.MachineConfig {
 				mc := helpers.NewMachineConfig("rendered-worker", nil, "", []ign3types.File{
-					helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0644),
-					helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/01-ctrcfg", makeCRIODropIn("crun"), 0644),
+					helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/00-default", makeCRIODropIn("runc"), 0o644),
+					helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/01-ctrcfg", makeCRIODropIn("crun"), 0o644),
 				})
 				mc.Spec.OSImageURL = "quay.io/openshift/rhcos@sha256:abc"
 				return mc
@@ -1227,7 +1210,7 @@ func TestRunBootstrapBlocksRuncOnRHEL10(t *testing.T) {
 		"",
 		[]ign3types.File{
 			helpers.CreateEncodedIgn3File("/etc/crio/crio.conf.d/99-runc",
-				makeCRIODropIn("runc"), 0644),
+				makeCRIODropIn("runc"), 0o644),
 		})
 
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName)

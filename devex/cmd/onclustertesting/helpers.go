@@ -118,26 +118,6 @@ func deleteAllPoolsWithOurLabel(cs *framework.ClientSet) error {
 	return eg.Wait()
 }
 
-func resetAllNodeAnnotations(cs *framework.ClientSet) error {
-	workerPool, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
-	if err != nil {
-		return err
-	}
-
-	nodes, err := cs.CoreV1Interface.Nodes().List(context.TODO(), metav1.ListOptions{})
-	if err != nil {
-		return err
-	}
-
-	for _, node := range nodes.Items {
-		if err := resetNodeAnnotationsAndLabels(cs, workerPool, &node); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
 func resetNodeAnnotationsAndLabels(cs *framework.ClientSet, originalPool *mcfgv1.MachineConfigPool, node *corev1.Node) error {
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		node, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
@@ -193,29 +173,6 @@ func deleteAllMachineConfigsForPool(cs *framework.ClientSet, mcp *mcfgv1.Machine
 	}
 
 	return eg.Wait()
-}
-
-func deleteObjects(cs *framework.ClientSet) error {
-	selectors, err := getSelectorsForDeletion()
-	if err != nil {
-		return err
-	}
-
-	return deleteObjectsForSelectors(cs, selectors)
-}
-
-func getSelectorsForDeletion() ([]labels.Selector, error) {
-	ourSelectors, err := getOurSelectors()
-	if err != nil {
-		return nil, err
-	}
-
-	ephemeralObjectSelectors, err := getEphemeralObjectsSelectors()
-	if err != nil {
-		return nil, err
-	}
-
-	return append(ourSelectors, ephemeralObjectSelectors...), nil
 }
 
 func getEphemeralObjectsSelectors() ([]labels.Selector, error) {
@@ -324,7 +281,6 @@ func cleanupJobs(cs *framework.ClientSet, selector labels.Selector) error {
 	jobs, err := cs.BatchV1Interface.Jobs(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{
 		LabelSelector: selector.String(),
 	})
-
 	if err != nil {
 		return err
 	}
@@ -353,7 +309,6 @@ func cleanupPods(cs *framework.ClientSet, selector labels.Selector) error {
 	pods, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{
 		LabelSelector: selector.String(),
 	})
-
 	if err != nil {
 		return err
 	}
@@ -382,7 +337,6 @@ func cleanupConfigMaps(cs *framework.ClientSet, selector labels.Selector) error 
 	configMaps, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{
 		LabelSelector: selector.String(),
 	})
-
 	if err != nil {
 		return err
 	}
@@ -411,7 +365,6 @@ func cleanupSecrets(cs *framework.ClientSet, selector labels.Selector) error {
 	secrets, err := cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{
 		LabelSelector: selector.String(),
 	})
-
 	if err != nil {
 		return err
 	}
@@ -440,7 +393,6 @@ func cleanupImagestreams(cs *framework.ClientSet, selector labels.Selector) erro
 	isList, err := cs.ImageV1Interface.ImageStreams(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{
 		LabelSelector: selector.String(),
 	})
-
 	if err != nil {
 		return err
 	}
@@ -469,7 +421,6 @@ func cleanupNamespaces(cs *framework.ClientSet, selector labels.Selector) error 
 	nsList, err := cs.CoreV1Interface.Namespaces().List(context.TODO(), metav1.ListOptions{
 		LabelSelector: selector.String(),
 	})
-
 	if err != nil {
 		return err
 	}
@@ -547,16 +498,4 @@ func getListOptsForOurLabel() metav1.ListOptions {
 	return metav1.ListOptions{
 		LabelSelector: req.String(),
 	}
-}
-
-func ignoreIsNotFound(err error) error {
-	if err == nil {
-		return nil
-	}
-
-	if apierrs.IsNotFound(err) {
-		return nil
-	}
-
-	return err
 }

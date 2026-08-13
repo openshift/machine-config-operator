@@ -69,25 +69,24 @@ import (
 // CLI provides function to call the OpenShift CLI and Kubernetes and OpenShift
 // clients.
 type CLI struct {
-	execPath           string
-	verb               string
-	configPath         string
-	guestConfigPath    string
-	adminConfigPath    string
-	user               string
-	globalArgs         []string
-	commandArgs        []string
-	finalArgs          []string
-	namespacesToDelete []string
-	stdin              *bytes.Buffer
-	stdout             io.Writer
-	stderr             io.Writer
-	verbose            bool
-	showInfo           bool
-	withoutNamespace   bool
-	withoutKubeconf    bool
-	asGuestKubeconf    bool
-	kubeFramework      *e2e.Framework
+	execPath         string
+	verb             string
+	configPath       string
+	guestConfigPath  string
+	adminConfigPath  string
+	user             string
+	globalArgs       []string
+	commandArgs      []string
+	finalArgs        []string
+	stdin            *bytes.Buffer
+	stdout           io.Writer
+	stderr           io.Writer
+	verbose          bool
+	showInfo         bool
+	withoutNamespace bool
+	withoutKubeconf  bool
+	asGuestKubeconf  bool
+	kubeFramework    *e2e.Framework
 
 	resourcesToDelete []resourceRef
 	pathsToDelete     []string
@@ -924,7 +923,6 @@ func (c *CLI) GetClientConfigForUser(username string) *rest.Config {
 		Scopes:      []string{"user:full"},
 		RedirectURI: "https://localhost:8443/oauth/token/implicit",
 	}, metav1.CreateOptions{})
-
 	if err != nil {
 		e2e.Failf("failure creating access token %v", err)
 	}

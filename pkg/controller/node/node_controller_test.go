@@ -142,7 +142,6 @@ func (f *fixture) newControllerWithStopChan(stopCh <-chan struct{}) *Controller 
 	}
 
 	return c
-
 }
 
 func (f *fixture) newController() *Controller {
@@ -151,16 +150,8 @@ func (f *fixture) newController() *Controller {
 	return f.newControllerWithStopChan(stopCh)
 }
 
-func (f *fixture) newControllerWithContext(ctx context.Context) *Controller {
-	return f.newControllerWithStopChan(ctx.Done())
-}
-
 func (f *fixture) run(pool string) {
 	f.runController(pool, false)
-}
-
-func (f *fixture) runExpectError(pool string) {
-	f.runController(pool, true)
 }
 
 func (f *fixture) runController(pool string, expectError bool) {
@@ -369,85 +360,85 @@ func TestGetPrimaryPoolForNode(t *testing.T) {
 
 		expected *mcfgv1.MachineConfigPool
 		err      bool
-	}{{
-		pools: []*mcfgv1.MachineConfigPool{
-			helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, machineConfigV0),
-			helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV0),
-		},
-		nodeLabel: map[string]string{"node-role": ""},
+	}{
+		{
+			pools: []*mcfgv1.MachineConfigPool{
+				helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, machineConfigV0),
+				helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV0),
+			},
+			nodeLabel: map[string]string{"node-role": ""},
 
-		expected: nil,
-		err:      false,
-	}, {
-		pools: []*mcfgv1.MachineConfigPool{
-			helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, machineConfigV0),
-			helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV0),
-		},
-		nodeLabel: map[string]string{"node-role/master": ""},
+			expected: nil,
+			err:      false,
+		}, {
+			pools: []*mcfgv1.MachineConfigPool{
+				helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, machineConfigV0),
+				helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV0),
+			},
+			nodeLabel: map[string]string{"node-role/master": ""},
 
-		expected: helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, machineConfigV0),
-		err:      false,
-	}, {
-		pools: []*mcfgv1.MachineConfigPool{
-			helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, machineConfigV0),
-			helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV0),
-		},
-		nodeLabel: map[string]string{"node-role/master": "", "node-role/worker": ""},
+			expected: helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, machineConfigV0),
+			err:      false,
+		}, {
+			pools: []*mcfgv1.MachineConfigPool{
+				helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, machineConfigV0),
+				helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV0),
+			},
+			nodeLabel: map[string]string{"node-role/master": "", "node-role/worker": ""},
 
-		expected: helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, machineConfigV0),
-		err:      false,
-	}, {
-		pools: []*mcfgv1.MachineConfigPool{
-			helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, machineConfigV0),
-			helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV0),
-			helpers.NewMachineConfigPool("infra", nil, helpers.InfraSelector, machineConfigV0),
-		},
-		nodeLabel: map[string]string{"node-role/worker": "", "node-role/infra": ""},
+			expected: helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, machineConfigV0),
+			err:      false,
+		}, {
+			pools: []*mcfgv1.MachineConfigPool{
+				helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, machineConfigV0),
+				helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV0),
+				helpers.NewMachineConfigPool("infra", nil, helpers.InfraSelector, machineConfigV0),
+			},
+			nodeLabel: map[string]string{"node-role/worker": "", "node-role/infra": ""},
 
-		expected: helpers.NewMachineConfigPool("infra", nil, helpers.InfraSelector, machineConfigV0),
-		err:      false,
-	}, {
-		pools: []*mcfgv1.MachineConfigPool{
-			helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, machineConfigV0),
-			helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV0),
-			helpers.NewMachineConfigPool("infra", nil, helpers.InfraSelector, machineConfigV0),
-		},
-		nodeLabel: map[string]string{"node-role/master": "", "node-role/infra": ""},
+			expected: helpers.NewMachineConfigPool("infra", nil, helpers.InfraSelector, machineConfigV0),
+			err:      false,
+		}, {
+			pools: []*mcfgv1.MachineConfigPool{
+				helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, machineConfigV0),
+				helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV0),
+				helpers.NewMachineConfigPool("infra", nil, helpers.InfraSelector, machineConfigV0),
+			},
+			nodeLabel: map[string]string{"node-role/master": "", "node-role/infra": ""},
 
-		// https://issues.redhat.com/browse/OCPBUGS-2177 a user should
-		// be able to label something as infra but retain master if it exists
-		expected: helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, machineConfigV0),
-		err:      false,
-	}, {
-		pools: []*mcfgv1.MachineConfigPool{
-			helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, machineConfigV0),
-			helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV0),
-			helpers.NewMachineConfigPool("infra", nil, helpers.InfraSelector, machineConfigV0),
-			helpers.NewMachineConfigPool("infra2", nil, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/infra2", ""), machineConfigV0),
-		},
-		nodeLabel: map[string]string{"node-role/infra": "", "node-role/infra2": ""},
+			// https://issues.redhat.com/browse/OCPBUGS-2177 a user should
+			// be able to label something as infra but retain master if it exists
+			expected: helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, machineConfigV0),
+			err:      false,
+		}, {
+			pools: []*mcfgv1.MachineConfigPool{
+				helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, machineConfigV0),
+				helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV0),
+				helpers.NewMachineConfigPool("infra", nil, helpers.InfraSelector, machineConfigV0),
+				helpers.NewMachineConfigPool("infra2", nil, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/infra2", ""), machineConfigV0),
+			},
+			nodeLabel: map[string]string{"node-role/infra": "", "node-role/infra2": ""},
 
-		expected: nil,
-		err:      true,
-	}, {
+			expected: nil,
+			err:      true,
+		}, {
+			pools: []*mcfgv1.MachineConfigPool{
+				helpers.NewMachineConfigPool("test-cluster-pool-1", nil, helpers.MasterSelector, machineConfigV0),
+				helpers.NewMachineConfigPool("test-cluster-pool-2", nil, helpers.MasterSelector, machineConfigV0),
+			},
+			nodeLabel: map[string]string{"node-role": "master"},
 
-		pools: []*mcfgv1.MachineConfigPool{
-			helpers.NewMachineConfigPool("test-cluster-pool-1", nil, helpers.MasterSelector, machineConfigV0),
-			helpers.NewMachineConfigPool("test-cluster-pool-2", nil, helpers.MasterSelector, machineConfigV0),
+			expected: nil,
+			err:      true,
+		}, {
+			// MCP with Widows worker, it should not be assigned a pool
+			pools: []*mcfgv1.MachineConfigPool{
+				helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV0),
+			},
+			nodeLabel: map[string]string{"node-role/master": "", "node-role/worker": "", osLabel: "windows"},
+			expected:  nil,
+			err:       false,
 		},
-		nodeLabel: map[string]string{"node-role": "master"},
-
-		expected: nil,
-		err:      true,
-	}, {
-		// MCP with Widows worker, it should not be assigned a pool
-		pools: []*mcfgv1.MachineConfigPool{
-			helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV0),
-		},
-		nodeLabel: map[string]string{"node-role/master": "", "node-role/worker": "", osLabel: "windows"},
-		expected:  nil,
-		err:       false,
-	},
 	}
 
 	for idx, test := range tests {
@@ -602,270 +593,271 @@ func TestGetCandidateMachines(t *testing.T) {
 		capacity uint
 
 		layered bool
-	}{{
-		name:     "no progress - capacity 1",
-		progress: 1,
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
-			helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
-			helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+	}{
+		{
+			name:     "no progress - capacity 1",
+			progress: 1,
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+				helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+				helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			},
+			expected:        []string{},
+			otherCandidates: nil,
+			capacity:        1,
+		}, {
+			name:     "no progress - capacity 0",
+			progress: 1,
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+				helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+				helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
+			},
+			expected:        []string{},
+			otherCandidates: nil,
+			capacity:        0,
+		}, {
+			name:     "no progress because we have an unavailable node",
+			progress: 1,
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+				helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
+				helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
+			},
+			expected:        []string{},
+			otherCandidates: nil,
+			capacity:        0,
+		}, {
+			name:     "node-0 is unavailable and should be skipped over",
+			progress: 2,
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReady("node-0", machineConfigV0, machineConfigV0, corev1.ConditionFalse),
+				helpers.NewNodeWithReady("node-1", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+				helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			},
+			expected:        []string{"node-1"},
+			otherCandidates: []string{"node-2"},
+			capacity:        1,
+		}, {
+			name:     "node-2 is going to change config, so we can only progress one more",
+			progress: 3,
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+				helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
+				helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
+				helpers.NewNodeWithReady("node-3", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+				helpers.NewNodeWithReady("node-4", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			},
+			expected:        []string{"node-3"},
+			otherCandidates: []string{"node-4"},
+			capacity:        1,
+		}, {
+			name:     "We have a node working, don't start anything else",
+			progress: 1,
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+				helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+				helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
+				helpers.NewNodeWithReady("node-3", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+				helpers.NewNodeWithReady("node-4", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			},
+			expected:        []string{},
+			otherCandidates: nil,
+			capacity:        0,
+		}, {
+			name:     "progress on old stuck node",
+			progress: 1,
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+				newNodeWithReadyAndDaemonState("node-1", "v0.1", "v0.2", corev1.ConditionTrue, daemonconsts.MachineConfigDaemonStateDegraded),
+				helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			},
+			expected:        []string{"node-1"},
+			otherCandidates: []string{"node-2"},
+			capacity:        1,
+		}, {
+			name:     "Don't change a degraded node to same config, but also don't start another",
+			progress: 1,
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+				newNodeWithReadyAndDaemonState("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue, daemonconsts.MachineConfigDaemonStateDegraded),
+				helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+			},
+			expected:        []string{},
+			otherCandidates: nil,
+			capacity:        0,
+		}, {
+			name:     "Must be able to roll back",
+			progress: 1,
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+				helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+				newNodeWithReadyAndDaemonState("node-2", machineConfigV1, machineConfigV2, corev1.ConditionTrue, daemonconsts.MachineConfigDaemonStateDegraded),
+				helpers.NewNodeWithReady("node-3", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			},
+			expected:        []string{"node-2"},
+			otherCandidates: nil,
+			capacity:        1,
+		}, {
+			name:     "Validate we also don't affect nodes which haven't started work",
+			progress: 1,
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+				newNodeWithReadyAndDaemonState("node-2", machineConfigV1, machineConfigV2, corev1.ConditionTrue, daemonconsts.MachineConfigDaemonStateDone),
+				helpers.NewNodeWithReady("node-3", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			},
+			expected:        []string{},
+			otherCandidates: nil,
+			capacity:        0,
+		}, {
+			name:     "More nodes in mixed order",
+			progress: 4,
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+				helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
+				helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
+				helpers.NewNodeWithReady("node-3", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+				helpers.NewNodeWithReady("node-4", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+				helpers.NewNodeWithReady("node-5", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+				helpers.NewNodeWithReady("node-6", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
+				helpers.NewNodeWithReady("node-7", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+				helpers.NewNodeWithReady("node-8", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			},
+			expected:        []string{"node-3", "node-4"},
+			otherCandidates: []string{"node-5", "node-6"},
+			capacity:        2,
+		}, {
+			name:     "Layered nodes in mixed order",
+			progress: 4,
+			nodes: []*corev1.Node{
+				helpers.NewNodeBuilder("node-0").WithEqualConfigsAndImages(machineConfigV1, imageV1).WithNodeReady().Node(),
+				helpers.NewNodeBuilder("node-1").WithEqualConfigsAndImages(machineConfigV1, imageV1).WithNodeNotReady().Node(),
+				helpers.NewNodeBuilder("node-2").WithConfigs(machineConfigV0, machineConfigV1).WithImages(imageV0, imageV1).WithNodeReady().Node(),
+				helpers.NewNodeBuilder("node-3").WithEqualConfigsAndImages(machineConfigV0, imageV0).WithNodeNotReady().Node(),
+				helpers.NewNodeBuilder("node-4").WithEqualConfigsAndImages(machineConfigV0, imageV0).WithNodeReady().Node(),
+				helpers.NewNodeBuilder("node-5").WithEqualConfigsAndImages(machineConfigV0, imageV0).WithNodeReady().Node(),
+				helpers.NewNodeBuilder("node-6").WithEqualConfigsAndImages(machineConfigV0, imageV0).WithNodeReady().Node(),
+				helpers.NewNodeBuilder("node-7").WithEqualConfigsAndImages(machineConfigV1, imageV1).WithNodeReady().Node(),
+				helpers.NewNodeBuilder("node-8").WithEqualConfigsAndImages(machineConfigV1, imageV1).WithNodeReady().Node(),
+			},
+			expected:        []string{"node-4"},
+			otherCandidates: []string{"node-5", "node-6"},
+			capacity:        1,
+			layered:         true,
+			mosc:            helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).MachineOSConfig(),
+			mosb:            helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
+		}, {
+			// Targets https://issues.redhat.com/browse/OCPBUGS-24705.
+			name:     "Node has received desiredImage annotation but MCD has not yet started working",
+			progress: 1,
+			nodes: []*corev1.Node{
+				// Need to set WithNodeReady() on all nodes to avoid short-circuiting.
+				helpers.NewNodeBuilder("node-0").
+					WithEqualConfigs(machineConfigV1).
+					WithDesiredImage(imageV1).
+					WithNodeReady().
+					WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
+					Node(),
+				helpers.NewNodeBuilder("node-1").
+					WithEqualConfigs(machineConfigV1).
+					WithNodeReady().
+					WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
+					Node(),
+				helpers.NewNodeBuilder("node-2").
+					WithEqualConfigs(machineConfigV1).
+					WithNodeReady().
+					WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
+					Node(),
+			},
+			expected:        []string{},
+			otherCandidates: nil,
+			capacity:        0,
+			layered:         true,
+			mosc:            helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).MachineOSConfig(),
+			mosb:            helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
+		}, {
+			// Targets https://issues.redhat.com/browse/OCPBUGS-24705.
+			name:     "Node has received desiredImage annotation and the MCD has started working",
+			progress: 1,
+			nodes: []*corev1.Node{
+				// Need to set WithNodeReady() on all nodes to avoid short-circuiting.
+				helpers.NewNodeBuilder("node-0").
+					WithEqualConfigs(machineConfigV1).
+					WithDesiredImage(imageV1).
+					WithNodeReady().
+					WithMCDState(daemonconsts.MachineConfigDaemonStateWorking).
+					Node(),
+				helpers.NewNodeBuilder("node-1").
+					WithEqualConfigs(machineConfigV1).
+					WithNodeReady().
+					WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
+					Node(),
+				helpers.NewNodeBuilder("node-2").
+					WithEqualConfigs(machineConfigV1).
+					WithNodeReady().
+					WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
+					Node(),
+			},
+			expected:        []string{},
+			otherCandidates: nil,
+			capacity:        0,
+			layered:         true,
+			mosc:            helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).MachineOSConfig(),
+			mosb:            helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
+		}, {
+			// Targets https://issues.redhat.com//browse/OCPBUGS-43552.
+			name:     "Node is rolling back from layered mode but MCD has not yet started working",
+			progress: 1,
+			nodes: []*corev1.Node{
+				// Need to set WithNodeReady() on all nodes to avoid short-circuiting.
+				helpers.NewNodeBuilder("node-0").WithEqualConfigs(machineConfigV1).
+					WithCurrentImage(imageV1).
+					WithNodeReady().
+					WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
+					Node(),
+				helpers.NewNodeBuilder("node-1").
+					WithEqualConfigs(machineConfigV1).
+					WithNodeReady().
+					WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
+					Node(),
+				helpers.NewNodeBuilder("node-2").
+					WithEqualConfigs(machineConfigV1).
+					WithNodeReady().
+					WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
+					Node(),
+			},
+			expected:        []string{},
+			otherCandidates: nil,
+			capacity:        0,
+			layered:         false,
+		}, {
+			// Targets https://issues.redhat.com//browse/OCPBUGS-43552.
+			name:     "Node is rolling back from layered mode and the MCD has started working",
+			progress: 1,
+			nodes: []*corev1.Node{
+				// Need to set WithNodeReady() on all nodes to avoid short-circuiting.
+				helpers.NewNodeBuilder("node-0").
+					WithEqualConfigs(machineConfigV1).
+					WithCurrentImage(imageV1).
+					WithNodeReady().
+					WithMCDState(daemonconsts.MachineConfigDaemonStateWorking).
+					Node(),
+				helpers.NewNodeBuilder("node-1").
+					WithEqualConfigs(machineConfigV1).
+					WithNodeReady().
+					WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
+					Node(),
+				helpers.NewNodeBuilder("node-2").
+					WithEqualConfigs(machineConfigV1).
+					WithNodeReady().
+					WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
+					Node(),
+			},
+			expected:        []string{},
+			otherCandidates: nil,
+			capacity:        0,
+			layered:         false,
 		},
-		expected:        []string{},
-		otherCandidates: nil,
-		capacity:        1,
-	}, {
-		name:     "no progress - capacity 0",
-		progress: 1,
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
-			helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
-			helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
-		},
-		expected:        []string{},
-		otherCandidates: nil,
-		capacity:        0,
-	}, {
-		name:     "no progress because we have an unavailable node",
-		progress: 1,
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
-			helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
-			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
-		},
-		expected:        []string{},
-		otherCandidates: nil,
-		capacity:        0,
-	}, {
-		name:     "node-0 is unavailable and should be skipped over",
-		progress: 2,
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReady("node-0", machineConfigV0, machineConfigV0, corev1.ConditionFalse),
-			helpers.NewNodeWithReady("node-1", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
-			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
-		},
-		expected:        []string{"node-1"},
-		otherCandidates: []string{"node-2"},
-		capacity:        1,
-	}, {
-		name:     "node-2 is going to change config, so we can only progress one more",
-		progress: 3,
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
-			helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
-			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
-			helpers.NewNodeWithReady("node-3", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
-			helpers.NewNodeWithReady("node-4", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
-		},
-		expected:        []string{"node-3"},
-		otherCandidates: []string{"node-4"},
-		capacity:        1,
-	}, {
-		name:     "We have a node working, don't start anything else",
-		progress: 1,
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
-			helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
-			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
-			helpers.NewNodeWithReady("node-3", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
-			helpers.NewNodeWithReady("node-4", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
-		},
-		expected:        []string{},
-		otherCandidates: nil,
-		capacity:        0,
-	}, {
-		name:     "progress on old stuck node",
-		progress: 1,
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
-			newNodeWithReadyAndDaemonState("node-1", "v0.1", "v0.2", corev1.ConditionTrue, daemonconsts.MachineConfigDaemonStateDegraded),
-			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
-		},
-		expected:        []string{"node-1"},
-		otherCandidates: []string{"node-2"},
-		capacity:        1,
-	}, {
-		name:     "Don't change a degraded node to same config, but also don't start another",
-		progress: 1,
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
-			newNodeWithReadyAndDaemonState("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue, daemonconsts.MachineConfigDaemonStateDegraded),
-			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
-		},
-		expected:        []string{},
-		otherCandidates: nil,
-		capacity:        0,
-	}, {
-		name:     "Must be able to roll back",
-		progress: 1,
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
-			helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
-			newNodeWithReadyAndDaemonState("node-2", machineConfigV1, machineConfigV2, corev1.ConditionTrue, daemonconsts.MachineConfigDaemonStateDegraded),
-			helpers.NewNodeWithReady("node-3", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
-		},
-		expected:        []string{"node-2"},
-		otherCandidates: nil,
-		capacity:        1,
-	}, {
-		name:     "Validate we also don't affect nodes which haven't started work",
-		progress: 1,
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
-			newNodeWithReadyAndDaemonState("node-2", machineConfigV1, machineConfigV2, corev1.ConditionTrue, daemonconsts.MachineConfigDaemonStateDone),
-			helpers.NewNodeWithReady("node-3", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
-		},
-		expected:        []string{},
-		otherCandidates: nil,
-		capacity:        0,
-	}, {
-		name:     "More nodes in mixed order",
-		progress: 4,
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
-			helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
-			helpers.NewNodeWithReady("node-2", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
-			helpers.NewNodeWithReady("node-3", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
-			helpers.NewNodeWithReady("node-4", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
-			helpers.NewNodeWithReady("node-5", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
-			helpers.NewNodeWithReady("node-6", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
-			helpers.NewNodeWithReady("node-7", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
-			helpers.NewNodeWithReady("node-8", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
-		},
-		expected:        []string{"node-3", "node-4"},
-		otherCandidates: []string{"node-5", "node-6"},
-		capacity:        2,
-	}, {
-		name:     "Layered nodes in mixed order",
-		progress: 4,
-		nodes: []*corev1.Node{
-			helpers.NewNodeBuilder("node-0").WithEqualConfigsAndImages(machineConfigV1, imageV1).WithNodeReady().Node(),
-			helpers.NewNodeBuilder("node-1").WithEqualConfigsAndImages(machineConfigV1, imageV1).WithNodeNotReady().Node(),
-			helpers.NewNodeBuilder("node-2").WithConfigs(machineConfigV0, machineConfigV1).WithImages(imageV0, imageV1).WithNodeReady().Node(),
-			helpers.NewNodeBuilder("node-3").WithEqualConfigsAndImages(machineConfigV0, imageV0).WithNodeNotReady().Node(),
-			helpers.NewNodeBuilder("node-4").WithEqualConfigsAndImages(machineConfigV0, imageV0).WithNodeReady().Node(),
-			helpers.NewNodeBuilder("node-5").WithEqualConfigsAndImages(machineConfigV0, imageV0).WithNodeReady().Node(),
-			helpers.NewNodeBuilder("node-6").WithEqualConfigsAndImages(machineConfigV0, imageV0).WithNodeReady().Node(),
-			helpers.NewNodeBuilder("node-7").WithEqualConfigsAndImages(machineConfigV1, imageV1).WithNodeReady().Node(),
-			helpers.NewNodeBuilder("node-8").WithEqualConfigsAndImages(machineConfigV1, imageV1).WithNodeReady().Node(),
-		},
-		expected:        []string{"node-4"},
-		otherCandidates: []string{"node-5", "node-6"},
-		capacity:        1,
-		layered:         true,
-		mosc:            helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).MachineOSConfig(),
-		mosb:            helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
-	}, {
-		// Targets https://issues.redhat.com/browse/OCPBUGS-24705.
-		name:     "Node has received desiredImage annotation but MCD has not yet started working",
-		progress: 1,
-		nodes: []*corev1.Node{
-			// Need to set WithNodeReady() on all nodes to avoid short-circuiting.
-			helpers.NewNodeBuilder("node-0").
-				WithEqualConfigs(machineConfigV1).
-				WithDesiredImage(imageV1).
-				WithNodeReady().
-				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
-				Node(),
-			helpers.NewNodeBuilder("node-1").
-				WithEqualConfigs(machineConfigV1).
-				WithNodeReady().
-				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
-				Node(),
-			helpers.NewNodeBuilder("node-2").
-				WithEqualConfigs(machineConfigV1).
-				WithNodeReady().
-				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
-				Node(),
-		},
-		expected:        []string{},
-		otherCandidates: nil,
-		capacity:        0,
-		layered:         true,
-		mosc:            helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).MachineOSConfig(),
-		mosb:            helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
-	}, {
-		// Targets https://issues.redhat.com/browse/OCPBUGS-24705.
-		name:     "Node has received desiredImage annotation and the MCD has started working",
-		progress: 1,
-		nodes: []*corev1.Node{
-			// Need to set WithNodeReady() on all nodes to avoid short-circuiting.
-			helpers.NewNodeBuilder("node-0").
-				WithEqualConfigs(machineConfigV1).
-				WithDesiredImage(imageV1).
-				WithNodeReady().
-				WithMCDState(daemonconsts.MachineConfigDaemonStateWorking).
-				Node(),
-			helpers.NewNodeBuilder("node-1").
-				WithEqualConfigs(machineConfigV1).
-				WithNodeReady().
-				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
-				Node(),
-			helpers.NewNodeBuilder("node-2").
-				WithEqualConfigs(machineConfigV1).
-				WithNodeReady().
-				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
-				Node(),
-		},
-		expected:        []string{},
-		otherCandidates: nil,
-		capacity:        0,
-		layered:         true,
-		mosc:            helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).MachineOSConfig(),
-		mosb:            helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).MachineOSBuild(),
-	}, {
-		// Targets https://issues.redhat.com//browse/OCPBUGS-43552.
-		name:     "Node is rolling back from layered mode but MCD has not yet started working",
-		progress: 1,
-		nodes: []*corev1.Node{
-			// Need to set WithNodeReady() on all nodes to avoid short-circuiting.
-			helpers.NewNodeBuilder("node-0").WithEqualConfigs(machineConfigV1).
-				WithCurrentImage(imageV1).
-				WithNodeReady().
-				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
-				Node(),
-			helpers.NewNodeBuilder("node-1").
-				WithEqualConfigs(machineConfigV1).
-				WithNodeReady().
-				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
-				Node(),
-			helpers.NewNodeBuilder("node-2").
-				WithEqualConfigs(machineConfigV1).
-				WithNodeReady().
-				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
-				Node(),
-		},
-		expected:        []string{},
-		otherCandidates: nil,
-		capacity:        0,
-		layered:         false,
-	}, {
-		// Targets https://issues.redhat.com//browse/OCPBUGS-43552.
-		name:     "Node is rolling back from layered mode and the MCD has started working",
-		progress: 1,
-		nodes: []*corev1.Node{
-			// Need to set WithNodeReady() on all nodes to avoid short-circuiting.
-			helpers.NewNodeBuilder("node-0").
-				WithEqualConfigs(machineConfigV1).
-				WithCurrentImage(imageV1).
-				WithNodeReady().
-				WithMCDState(daemonconsts.MachineConfigDaemonStateWorking).
-				Node(),
-			helpers.NewNodeBuilder("node-1").
-				WithEqualConfigs(machineConfigV1).
-				WithNodeReady().
-				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
-				Node(),
-			helpers.NewNodeBuilder("node-2").
-				WithEqualConfigs(machineConfigV1).
-				WithNodeReady().
-				WithMCDState(daemonconsts.MachineConfigDaemonStateDone).
-				Node(),
-		},
-		expected:        []string{},
-		otherCandidates: nil,
-		capacity:        0,
-		layered:         false,
-	},
 	}
 
 	for _, test := range tests {
@@ -968,111 +960,112 @@ func TestUpdateCandidates(t *testing.T) {
 
 		verify    func([]core.Action, *testing.T)
 		verifyAPI func(*testing.T, *k8sfake.Clientset)
-	}{{
-		name: "Node has no annotations",
-		node: newNode("node-0", "", ""),
-		verify: func(actions []core.Action, t *testing.T) {
-			assertPatchesNode0ToV1(t, actions)
-		},
-	}, {
-		name:       "Node has no MachineConfig annotations",
-		node:       newNode("node-0", "", ""),
-		extraannos: map[string]string{"test": "extra-annotation"},
-		verify: func(actions []core.Action, t *testing.T) {
-			assertPatchesNode0ToV1(t, actions)
-		},
-	}, {
-		name: "Node has current MachineConfig annotation only",
-		node: newNode("node-0", machineConfigV0, ""),
-		verify: func(actions []core.Action, t *testing.T) {
-			assertPatchesNode0ToV1(t, actions)
-		},
-	}, {
-		name:       "Node has current MachineConfig annotation and extra ones",
-		node:       newNode("node-0", machineConfigV0, ""),
-		extraannos: map[string]string{"test": "extra-annotation"},
-		verify: func(actions []core.Action, t *testing.T) {
-			assertPatchesNode0ToV1(t, actions)
-		},
-	}, {
-		name: "Node has both current and desired MachineConfig annotations",
-		node: newNode("node-0", machineConfigV0, machineConfigV0),
-		verify: func(actions []core.Action, t *testing.T) {
-			assertPatchesNode0ToV1(t, actions)
-		},
-	}, {
-		name:       "Node has current and desired MachineConfig annotations and extra annotations",
-		node:       newNode("node-0", machineConfigV0, machineConfigV0),
-		extraannos: map[string]string{"test": "extra-annotation"},
-		verify: func(actions []core.Action, t *testing.T) {
-			assertPatchesNode0ToV1(t, actions)
-		},
-	}, {
-		name: "Node has mismatched MachineConfig annotations",
-		node: newNode("node-0", machineConfigV0, machineConfigV1),
-		verify: func(actions []core.Action, t *testing.T) {
-			if !assert.Equal(t, 1, len(actions)) {
-				return
-			}
+	}{
+		{
+			name: "Node has no annotations",
+			node: newNode("node-0", "", ""),
+			verify: func(actions []core.Action, t *testing.T) {
+				assertPatchesNode0ToV1(t, actions)
+			},
+		}, {
+			name:       "Node has no MachineConfig annotations",
+			node:       newNode("node-0", "", ""),
+			extraannos: map[string]string{"test": "extra-annotation"},
+			verify: func(actions []core.Action, t *testing.T) {
+				assertPatchesNode0ToV1(t, actions)
+			},
+		}, {
+			name: "Node has current MachineConfig annotation only",
+			node: newNode("node-0", machineConfigV0, ""),
+			verify: func(actions []core.Action, t *testing.T) {
+				assertPatchesNode0ToV1(t, actions)
+			},
+		}, {
+			name:       "Node has current MachineConfig annotation and extra ones",
+			node:       newNode("node-0", machineConfigV0, ""),
+			extraannos: map[string]string{"test": "extra-annotation"},
+			verify: func(actions []core.Action, t *testing.T) {
+				assertPatchesNode0ToV1(t, actions)
+			},
+		}, {
+			name: "Node has both current and desired MachineConfig annotations",
+			node: newNode("node-0", machineConfigV0, machineConfigV0),
+			verify: func(actions []core.Action, t *testing.T) {
+				assertPatchesNode0ToV1(t, actions)
+			},
+		}, {
+			name:       "Node has current and desired MachineConfig annotations and extra annotations",
+			node:       newNode("node-0", machineConfigV0, machineConfigV0),
+			extraannos: map[string]string{"test": "extra-annotation"},
+			verify: func(actions []core.Action, t *testing.T) {
+				assertPatchesNode0ToV1(t, actions)
+			},
+		}, {
+			name: "Node has mismatched MachineConfig annotations",
+			node: newNode("node-0", machineConfigV0, machineConfigV1),
+			verify: func(actions []core.Action, t *testing.T) {
+				if !assert.Equal(t, 1, len(actions)) {
+					return
+				}
 
-			if !actions[0].Matches("get", "nodes") || actions[0].(core.GetAction).GetName() != "node-0" {
-				t.Fatal(actions)
-			}
-		},
-	}, {
-		name:       "Node has mismatched MachineConfig annotations and extra annotations",
-		node:       newNode("node-0", machineConfigV0, machineConfigV1),
-		extraannos: map[string]string{"test": "extra-annotation"},
-		verify: func(actions []core.Action, t *testing.T) {
-			if !assert.Equal(t, 1, len(actions)) {
-				return
-			}
+				if !actions[0].Matches("get", "nodes") || actions[0].(core.GetAction).GetName() != "node-0" {
+					t.Fatal(actions)
+				}
+			},
+		}, {
+			name:       "Node has mismatched MachineConfig annotations and extra annotations",
+			node:       newNode("node-0", machineConfigV0, machineConfigV1),
+			extraannos: map[string]string{"test": "extra-annotation"},
+			verify: func(actions []core.Action, t *testing.T) {
+				if !assert.Equal(t, 1, len(actions)) {
+					return
+				}
 
-			if !actions[0].Matches("get", "nodes") || actions[0].(core.GetAction).GetName() != "node-0" {
-				t.Fatal(actions)
-			}
-		},
-	}, {
-		name:    "MachineConfig and OS image change together",
-		node:    helpers.NewNodeBuilder("node-0").WithEqualConfigsAndImages(machineConfigV0, imageV0).Node(),
-		pool:    helpers.NewMachineConfigPoolBuilder("layered-1").WithMachineConfig(machineConfigV1).MachineConfigPool(),
-		mosc:    helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("layered-1").MachineOSConfig(),
-		mosb:    helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).WithMachineOSConfig("mosc-1").MachineOSBuild(),
-		layered: true,
-		verifyAPI: func(t *testing.T, client *k8sfake.Clientset) {
-			assertNodeHasAnnotations(t, client, "node-0", map[string]string{
-				daemonconsts.DesiredMachineConfigAnnotationKey: machineConfigV1,
-				daemonconsts.DesiredImageAnnotationKey:         imageV1,
-			})
-		},
-	}, {
-		name:    "only the OS changes",
-		node:    helpers.NewNodeBuilder("node-0").WithEqualConfigs(machineConfigV1).WithImages(imageV0, imageV1).Node(),
-		pool:    helpers.NewMachineConfigPoolBuilder("layered-1").WithMachineConfig(machineConfigV1).MachineConfigPool(),
-		mosc:    helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("layered-1").MachineOSConfig(),
-		mosb:    helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).WithMachineOSConfig("mosc-1").MachineOSBuild(),
-		layered: true,
-		verifyAPI: func(t *testing.T, client *k8sfake.Clientset) {
-			assertNodeHasAnnotations(t, client, "node-0", map[string]string{
-				daemonconsts.DesiredImageAnnotationKey:         imageV1,
-				daemonconsts.DesiredMachineConfigAnnotationKey: machineConfigV1,
-			})
-		},
-	}, {
-		name: "node loses desired image annotation because pool is not layered",
-		node: helpers.NewNodeBuilder("node-0").WithEqualConfigsAndImages(machineConfigV1, imageV1).Node(),
-		verifyAPI: func(t *testing.T, client *k8sfake.Clientset) {
-			assertNodeDoesNotHaveAnnotations(t, client, "node-0", []string{
-				daemonconsts.DesiredImageAnnotationKey,
-			})
+				if !actions[0].Matches("get", "nodes") || actions[0].(core.GetAction).GetName() != "node-0" {
+					t.Fatal(actions)
+				}
+			},
+		}, {
+			name:    "MachineConfig and OS image change together",
+			node:    helpers.NewNodeBuilder("node-0").WithEqualConfigsAndImages(machineConfigV0, imageV0).Node(),
+			pool:    helpers.NewMachineConfigPoolBuilder("layered-1").WithMachineConfig(machineConfigV1).MachineConfigPool(),
+			mosc:    helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("layered-1").MachineOSConfig(),
+			mosb:    helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).WithMachineOSConfig("mosc-1").MachineOSBuild(),
+			layered: true,
+			verifyAPI: func(t *testing.T, client *k8sfake.Clientset) {
+				assertNodeHasAnnotations(t, client, "node-0", map[string]string{
+					daemonconsts.DesiredMachineConfigAnnotationKey: machineConfigV1,
+					daemonconsts.DesiredImageAnnotationKey:         imageV1,
+				})
+			},
+		}, {
+			name:    "only the OS changes",
+			node:    helpers.NewNodeBuilder("node-0").WithEqualConfigs(machineConfigV1).WithImages(imageV0, imageV1).Node(),
+			pool:    helpers.NewMachineConfigPoolBuilder("layered-1").WithMachineConfig(machineConfigV1).MachineConfigPool(),
+			mosc:    helpers.NewMachineOSConfigBuilder("mosc-1").WithCurrentImagePullspec(imageV1).WithMachineConfigPool("layered-1").MachineOSConfig(),
+			mosb:    helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).WithMachineOSConfig("mosc-1").MachineOSBuild(),
+			layered: true,
+			verifyAPI: func(t *testing.T, client *k8sfake.Clientset) {
+				assertNodeHasAnnotations(t, client, "node-0", map[string]string{
+					daemonconsts.DesiredImageAnnotationKey:         imageV1,
+					daemonconsts.DesiredMachineConfigAnnotationKey: machineConfigV1,
+				})
+			},
+		}, {
+			name: "node loses desired image annotation because pool is not layered",
+			node: helpers.NewNodeBuilder("node-0").WithEqualConfigsAndImages(machineConfigV1, imageV1).Node(),
+			verifyAPI: func(t *testing.T, client *k8sfake.Clientset) {
+				assertNodeDoesNotHaveAnnotations(t, client, "node-0", []string{
+					daemonconsts.DesiredImageAnnotationKey,
+				})
 
-			assertNodeHasAnnotations(t, client, "node-0", map[string]string{
-				daemonconsts.DesiredMachineConfigAnnotationKey: machineConfigV1,
-				// The MCD is responsible for clearing the current image annotation key.
-				daemonconsts.CurrentImageAnnotationKey: imageV1,
-			})
+				assertNodeHasAnnotations(t, client, "node-0", map[string]string{
+					daemonconsts.DesiredMachineConfigAnnotationKey: machineConfigV1,
+					// The MCD is responsible for clearing the current image annotation key.
+					daemonconsts.CurrentImageAnnotationKey: imageV1,
+				})
+			},
 		},
-	},
 	}
 
 	for _, test := range tests {

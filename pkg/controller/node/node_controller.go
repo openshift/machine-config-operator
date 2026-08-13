@@ -1064,16 +1064,6 @@ func (ctrl *Controller) enqueue(pool *mcfgv1.MachineConfigPool) {
 	ctrl.queue.Add(key)
 }
 
-func (ctrl *Controller) enqueueRateLimited(pool *mcfgv1.MachineConfigPool) {
-	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(pool)
-	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %w", pool, err))
-		return
-	}
-
-	ctrl.queue.AddRateLimited(key)
-}
-
 // enqueueAfter will enqueue a pool after the provided amount of time.
 func (ctrl *Controller) enqueueAfter(pool *mcfgv1.MachineConfigPool, after time.Duration) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(pool)
@@ -1323,33 +1313,33 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	if pool.Name == ctrlcommon.MachineConfigPoolArbiter {
 		masterPool, err := ctrl.mcpLister.Get(ctrlcommon.MachineConfigPoolMaster)
 		switch {
-	case err == nil:
-		if controlPlaneTopology == configv1.HighlyAvailableArbiterMode && masterPool.Spec.Paused {
-			// Master pool is paused. Before allowing arbiter updates, verify that no master
-			// nodes are currently unavailable. If any are, the arbiter must not update either:
-			// a paused master means masterUnavailableCount is never populated in updatePools,
-			// so we perform the quorum check here directly. Allowing the arbiter to update
-			// while a master node is down would drop the cluster to a single available
-			// etcd member and risk losing quorum.
-			masterNodes, err := ctrl.getNodesForPool(masterPool)
-			if err != nil {
-				return fmt.Errorf("pool %s: failed to get master nodes for quorum check: %w", pool.Name, err)
-			}
-			var masterUnavailable int
-			for _, n := range masterNodes {
-				if ctrlcommon.NewLayeredNodeState(n).IsUnavailableForUpdate() {
-					masterUnavailable++
+		case err == nil:
+			if controlPlaneTopology == configv1.HighlyAvailableArbiterMode && masterPool.Spec.Paused {
+				// Master pool is paused. Before allowing arbiter updates, verify that no master
+				// nodes are currently unavailable. If any are, the arbiter must not update either:
+				// a paused master means masterUnavailableCount is never populated in updatePools,
+				// so we perform the quorum check here directly. Allowing the arbiter to update
+				// while a master node is down would drop the cluster to a single available
+				// etcd member and risk losing quorum.
+				masterNodes, err := ctrl.getNodesForPool(masterPool)
+				if err != nil {
+					return fmt.Errorf("pool %s: failed to get master nodes for quorum check: %w", pool.Name, err)
 				}
-			}
-			if masterUnavailable > 0 {
-				klog.Infof("Pool %s: master pool is paused with %d unavailable master node(s); deferring arbiter updates to preserve etcd quorum", pool.Name, masterUnavailable)
+				var masterUnavailable int
+				for _, n := range masterNodes {
+					if ctrlcommon.NewLayeredNodeState(n).IsUnavailableForUpdate() {
+						masterUnavailable++
+					}
+				}
+				if masterUnavailable > 0 {
+					klog.Infof("Pool %s: master pool is paused with %d unavailable master node(s); deferring arbiter updates to preserve etcd quorum", pool.Name, masterUnavailable)
+					return ctrl.syncStatusOnly(pool)
+				}
+				klog.Infof("Pool %s: master pool is paused with no unavailable master nodes; reconciling arbiter pool directly", pool.Name)
+			} else {
+				ctrl.enqueue(masterPool)
 				return ctrl.syncStatusOnly(pool)
 			}
-			klog.Infof("Pool %s: master pool is paused with no unavailable master nodes; reconciling arbiter pool directly", pool.Name)
-		} else {
-			ctrl.enqueue(masterPool)
-			return ctrl.syncStatusOnly(pool)
-		}
 		case errors.IsNotFound(err):
 			return ctrl.syncStatusOnly(pool)
 		default:
@@ -1776,7 +1766,6 @@ func (ctrl *Controller) filterCustomPoolBootedNodes(candidates []*corev1.Node) [
 // MachineConfig belongs to a custom pool (not master/worker).
 // Returns a boolean and associated custom pool name.
 func (ctrl *Controller) isCustomPoolBootedNode(node *corev1.Node) (bool, string) {
-
 	// Check if custom label has already been automatically applied, nothing to do in that case
 	_, customPoolApplied := node.Annotations[daemonconsts.CustomPoolLabelsAppliedAnnotationKey]
 	if customPoolApplied {
@@ -1813,7 +1802,6 @@ func (ctrl *Controller) isCustomPoolBootedNode(node *corev1.Node) (bool, string)
 // applyCustomPoolLabels applies the node selector labels from a custom MachineConfigPool
 // to the node if the rendered MachineConfig belongs to a pool other than master/worker.
 func (ctrl *Controller) applyCustomPoolLabels(node *corev1.Node, poolName string) error {
-
 	// Get the MachineConfigPool
 	pool, err := ctrl.mcpLister.Get(poolName)
 	if err != nil {
@@ -2153,7 +2141,6 @@ func (ctrl *Controller) deleteMachineConfiguration(_ any) {
 // The metric is set to 1 when mode is "None" on non-SNO clusters, indicating that scaling
 // operations may not be successful. On SNO clusters, None is the default and the alert is suppressed.
 func (ctrl *Controller) syncBootImageSkewEnforcementMetric(obj any) {
-
 	mcop, ok := obj.(*opv1.MachineConfiguration)
 	if !ok {
 		klog.Warningf("Expected MachineConfiguration object, got %T", obj)

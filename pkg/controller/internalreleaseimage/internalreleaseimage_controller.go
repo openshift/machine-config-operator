@@ -42,13 +42,11 @@ const (
 	controlPlaneLabelKey = "node-role.kubernetes.io/control-plane"
 )
 
-var (
-	updateBackoff = wait.Backoff{
-		Steps:    5,
-		Duration: 100 * time.Millisecond,
-		Jitter:   1.0,
-	}
-)
+var updateBackoff = wait.Backoff{
+	Steps:    5,
+	Duration: 100 * time.Millisecond,
+	Jitter:   1.0,
+}
 
 // Controller defines the InternalReleaseImage controller.
 type Controller struct {
@@ -469,15 +467,6 @@ func (ctrl *Controller) getClusterDomain() (string, error) {
 // IRI is a singleton resource named "cluster".
 func (ctrl *Controller) enqueueInternalReleaseImage() {
 	ctrl.queue.Add(ctrlcommon.InternalReleaseImageInstanceName)
-}
-
-func (ctrl *Controller) enqueue(iri *mcfgv1.InternalReleaseImage) {
-	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(iri)
-	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %w", iri, err))
-		return
-	}
-	ctrl.queue.Add(key)
 }
 
 // syncInternalReleaseImage will sync the InternalReleaseImage with the given key.
