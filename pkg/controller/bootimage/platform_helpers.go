@@ -326,7 +326,8 @@ func reconcileAzureProviderSpec(streamData *stream.Stream, arch string, _ *oscon
 	// Uploaded images(legacy) have a "gen2" in the resourceID field to indicate hyperGenV2
 	//
 	// Unpaid marketplace images:
-	// - have a "v2" in the SKU field to indicate hyperGenV2
+	// - have a "v2" in the SKU field to indicate hyperGenV2 (e.g. "aro_422-v2")
+	// - have a "gen2" in the SKU field to indicate hyperGenV2 (5.0+, e.g. "aro_5-0_x86_gen2")
 	// - aarch64 machinesets can only use hyperGenV2 images
 	//
 	// Paid marketplace images(MCO-1790):
@@ -337,15 +338,19 @@ func reconcileAzureProviderSpec(streamData *stream.Stream, arch string, _ *oscon
 	case usesLegacyImageUpload:
 		usesHyperVGen2 = strings.Contains(currentImage.ResourceID, "gen2")
 	case providerSpec.Image.Type == machinev1beta1.AzureImageTypeMarketplaceNoPlan:
-		usesHyperVGen2 = strings.Contains(currentImage.SKU, "v2") || arch == "aarch64"
+		usesHyperVGen2 = strings.Contains(currentImage.SKU, "v2") || strings.Contains(currentImage.SKU, "gen2") || arch == "aarch64"
 	default:
 		usesHyperVGen2 = !strings.Contains(currentImage.SKU, "gen1")
 	}
 
 	// Determine target image from RHCOS stream
-	targetImage, err := getTargetImageFromStream(streamArch, azureVariant, usesHyperVGen2, arch)
+	targetImage, reconcileSkipped, err := getTargetImageFromStream(streamArch, azureVariant, usesHyperVGen2, arch)
 	if err != nil {
 		return false, false, nil, "", err
+	}
+	if reconcileSkipped {
+		klog.Infof("Skipping machineset %s, no Gen1 Azure marketplace image available for architecture %s", machineSetName, arch)
+		return false, true, nil, "", nil
 	}
 
 	// If the current image matches, nothing to do here
@@ -415,8 +420,11 @@ func determineAzureVariant(usesLegacyImageUpload bool, currentImage machinev1bet
 	return "", fmt.Errorf("could not determine azure marketplace variant, cannot update boot images")
 }
 
-// getTargetImageFromStream determines the correct Azure marketplace image based on architecture and variant
-func getTargetImageFromStream(streamArch *stream.Arch, variant AzureVariant, usesHyperVGen2 bool, arch string) (machinev1beta1.Image, error) {
+// getTargetImageFromStream determines the correct Azure marketplace image based on architecture and variant.
+// Returns reconcileSkipped=true (with no error) when a Gen1 image is requested but the stream no longer
+// publishes one, e.g. once Gen1 Azure images are removed upstream (see CORS-4441): the boot image update is
+// skipped for this MachineSet rather than treated as an error, so skew enforcement can flag it as out of date.
+func getTargetImageFromStream(streamArch *stream.Arch, variant AzureVariant, usesHyperVGen2 bool, arch string) (machinev1beta1.Image, bool, error) {
 	marketplace := streamArch.RHELCoreOSExtensions.Marketplace.Azure
 
 	var imageSet *rhcos.AzureMarketplaceImages
@@ -438,11 +446,11 @@ func getTargetImageFromStream(streamArch *stream.Arch, variant AzureVariant, use
 	case AzureVariantOKEEMEA:
 		imageSet = marketplace.OKEEMEA
 	default:
-		return machinev1beta1.Image{}, fmt.Errorf("unsupported Azure variant")
+		return machinev1beta1.Image{}, false, fmt.Errorf("unsupported Azure variant")
 	}
 
 	if imageSet == nil {
-		return machinev1beta1.Image{}, fmt.Errorf("no Azure marketplace images available for variant %s", variant)
+		return machinev1beta1.Image{}, false, fmt.Errorf("no Azure marketplace images available for variant %s", variant)
 	}
 
 	var streamImage *rhcos.AzureMarketplaceImage
@@ -450,12 +458,12 @@ func getTargetImageFromStream(streamArch *stream.Arch, variant AzureVariant, use
 	// arm64 only uses hyperGenV2
 	if usesHyperVGen2 {
 		if imageSet.Gen2 == nil {
-			return machinev1beta1.Image{}, fmt.Errorf("no Gen2 Azure marketplace image available for architecture %s", arch)
+			return machinev1beta1.Image{}, false, fmt.Errorf("no Gen2 Azure marketplace image available for architecture %s", arch)
 		}
 		streamImage = imageSet.Gen2
 	} else {
 		if imageSet.Gen1 == nil {
-			return machinev1beta1.Image{}, fmt.Errorf("no Gen1 Azure marketplace image available for architecture %s", arch)
+			return machinev1beta1.Image{}, true, nil
 		}
 		streamImage = imageSet.Gen1
 	}
@@ -464,5 +472,5 @@ func getTargetImageFromStream(streamArch *stream.Arch, variant AzureVariant, use
 	// Convert stream image to Azure machine image
 	targetImage := getAzureImageFromStreamImage(*streamImage, isPaidImage)
 
-	return targetImage, nil
+	return targetImage, false, nil
 }
