@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strconv"
 	"testing"
 	"time"
@@ -16,17 +15,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/diff"
 	kubeinformers "k8s.io/client-go/informers"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 
 	mcopfake "github.com/openshift/client-go/operator/clientset/versioned/fake"
 	operatorinformer "github.com/openshift/client-go/operator/informers/externalversions"
-	core "k8s.io/client-go/testing"
-	"k8s.io/client-go/tools/cache"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
@@ -123,9 +118,6 @@ type fixture struct {
 	mcLister   []*mcfgv1.MachineConfig
 	nodeLister []*corev1.Node
 
-	kubeactions []core.Action
-	actions     []core.Action
-
 	objects     []runtime.Object
 	kubeobjects []runtime.Object
 	oObjects    []runtime.Object
@@ -190,140 +182,6 @@ func (f *fixture) newController() *Daemon {
 	}
 
 	return d
-}
-
-func (f *fixture) run(node string) {
-	f.runController(node, false)
-}
-
-func (f *fixture) runExpectError(node string) {
-	f.runController(node, true)
-}
-
-func (f *fixture) runController(node string, expectError bool) {
-	d := f.newController()
-
-	err := d.syncHandler(node)
-	if !expectError && err != nil {
-		f.t.Errorf("error syncing node: %v", err)
-	} else if expectError && err == nil {
-		f.t.Error("expected error syncing node, got nil")
-	}
-
-	actions := filterInformerActions(f.client.Actions())
-	for i, action := range actions {
-		if len(f.actions) < i+1 {
-			f.t.Errorf("%d unexpected actions: %+v", len(actions)-len(f.actions), actions[i:])
-			break
-		}
-
-		expectedAction := f.actions[i]
-		checkAction(expectedAction, action, f.t)
-	}
-
-	if len(f.actions) > len(actions) {
-		f.t.Errorf("%d additional expected actions:%+v", len(f.actions)-len(actions), f.actions[len(actions):])
-	}
-
-	k8sActions := filterInformerActions(f.kubeclient.Actions())
-	for i, action := range k8sActions {
-		if len(f.kubeactions) < i+1 {
-			f.t.Errorf("%d unexpected actions: %+v", len(k8sActions)-len(f.kubeactions), k8sActions[i:])
-			break
-		}
-
-		expectedAction := f.kubeactions[i]
-		checkAction(expectedAction, action, f.t)
-	}
-
-	if len(f.kubeactions) > len(k8sActions) {
-		f.t.Errorf("%d additional expected actions:%+v", len(f.kubeactions)-len(k8sActions), f.kubeactions[len(k8sActions):])
-	}
-}
-
-// checkAction verifies that expected and actual actions are equal and both have
-// same attached resources
-func checkAction(expected, actual core.Action, t *testing.T) {
-	if !(expected.Matches(actual.GetVerb(), actual.GetResource().Resource) && actual.GetSubresource() == expected.GetSubresource()) {
-		t.Errorf("Expected\n\t%#v\ngot\n\t%#v", expected, actual)
-		return
-	}
-
-	if reflect.TypeOf(actual) != reflect.TypeOf(expected) {
-		t.Errorf("Action has wrong type. Expected: %t. Got: %t", expected, actual)
-		return
-	}
-
-	switch a := actual.(type) {
-	case core.CreateAction:
-		e, _ := expected.(core.CreateAction)
-		expObject := filterLastTransitionTime(e.GetObject())
-		object := filterLastTransitionTime(a.GetObject())
-
-		if !equality.Semantic.DeepEqual(expObject, object) {
-			t.Errorf("Action %s %s has wrong object\nDiff:\n %s",
-				a.GetVerb(), a.GetResource().Resource, diff.Diff(expObject, object))
-		}
-	case core.UpdateAction:
-		e, _ := expected.(core.UpdateAction)
-		expObject := filterLastTransitionTime(e.GetObject())
-		object := filterLastTransitionTime(a.GetObject())
-
-		if !equality.Semantic.DeepEqual(expObject, object) {
-			t.Errorf("Action %s %s has wrong object\nDiff:\n %s",
-				a.GetVerb(), a.GetResource().Resource, diff.Diff(expObject, object))
-		}
-	case core.PatchAction:
-		e, _ := expected.(core.PatchAction)
-		expPatch := e.GetPatch()
-		patch := a.GetPatch()
-
-		if !equality.Semantic.DeepEqual(expPatch, expPatch) {
-			t.Errorf("Action %s %s has wrong patch\nDiff:\n %s",
-				a.GetVerb(), a.GetResource().Resource, diff.Diff(expPatch, patch))
-		}
-	}
-}
-
-// filterInformerActions filters list and watch actions for testing resources.
-// Since list and watch don't change resource state we can filter it to lower
-// nose level in our tests.
-func filterInformerActions(actions []core.Action) []core.Action {
-	ret := []core.Action{}
-	for _, action := range actions {
-		if len(action.GetNamespace()) == 0 &&
-			(action.Matches("list", "machineconfigs") ||
-				action.Matches("watch", "machineconfigs") ||
-				action.Matches("list", "nodes") ||
-				action.Matches("watch", "nodes")) {
-			continue
-		}
-		ret = append(ret, action)
-	}
-
-	return ret
-}
-
-func getKey(node *corev1.Node, t *testing.T) string {
-	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(node)
-	if err != nil {
-		t.Errorf("Unexpected error getting key for node %v: %v", node.Name, err)
-		return ""
-	}
-	return key
-}
-
-func filterLastTransitionTime(obj runtime.Object) runtime.Object {
-	obj = obj.DeepCopyObject()
-	o, ok := obj.(*corev1.Node)
-	if !ok {
-		return obj
-	}
-
-	for idx := range o.Status.Conditions {
-		o.Status.Conditions[idx].LastTransitionTime = metav1.Time{}
-	}
-	return o
 }
 
 func newNode(annotations map[string]string) *corev1.Node {
@@ -527,7 +385,7 @@ func TestPrepUpdateFromClusterOnDiskDrift(t *testing.T) {
 			currentImagePath := filepath.Join(t.TempDir(), "currentimage")
 
 			if test.onDiskImage != "" {
-				require.NoError(t, os.WriteFile(currentImagePath, []byte(test.onDiskImage), 0755))
+				require.NoError(t, os.WriteFile(currentImagePath, []byte(test.onDiskImage), 0o755))
 			}
 
 			f := newFixture(t)

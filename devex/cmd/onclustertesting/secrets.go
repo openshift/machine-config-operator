@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/ghodss/yaml"
 	"github.com/openshift/machine-config-operator/devex/internal/pkg/utils"
@@ -41,7 +40,6 @@ func copyGlobalPullSecret(cs *framework.ClientSet) error {
 
 func getSecretNameFromFile(path string) (string, error) {
 	secret, err := loadSecretFromFile(path)
-
 	if err != nil {
 		return "", fmt.Errorf("could not get secret name from %q: %w", path, err)
 	}
@@ -77,49 +75,6 @@ func createSecretFromFile(cs *framework.ClientSet, path string) error {
 
 	klog.Infof("Loaded secret %q from %s", secret.Name, path)
 	return utils.CreateOrRecreateSecret(cs, secret)
-}
-
-func deleteSecret(cs *framework.ClientSet, name string) error {
-	err := cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).Delete(context.TODO(), name, metav1.DeleteOptions{})
-
-	if err != nil {
-		return fmt.Errorf("could not delete secret %s: %w", name, err)
-	}
-
-	klog.Infof("Deleted secret %q from namespace %q", name, ctrlcommon.MCONamespace)
-	return nil
-}
-
-func getBuilderPushSecretName(cs *framework.ClientSet) (string, error) {
-	secrets, err := cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{})
-	if err != nil {
-		return "", err
-	}
-
-	for _, secret := range secrets.Items {
-		if strings.HasPrefix(secret.Name, "builder-dockercfg") {
-			klog.Infof("Will use builder secret %q in namespace %q", secret.Name, ctrlcommon.MCONamespace)
-			return secret.Name, nil
-		}
-	}
-
-	return "", fmt.Errorf("could not find matching secret name in namespace %s", ctrlcommon.MCONamespace)
-}
-
-func getDefaultPullSecretName(cs *framework.ClientSet) (string, error) {
-	secrets, err := cs.CoreV1Interface.Secrets(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{})
-	if err != nil {
-		return "", err
-	}
-
-	for _, secret := range secrets.Items {
-		if strings.HasPrefix(secret.Name, "default-dockercfg") && !strings.Contains(secret.Name, "canonical") {
-			klog.Infof("Will use default secret %q in namespace %q", secret.Name, ctrlcommon.MCONamespace)
-			return secret.Name, nil
-		}
-	}
-
-	return "", fmt.Errorf("could not find matching secret name in namespace %s", ctrlcommon.MCONamespace)
 }
 
 // TODO: Dedupe these funcs from BuildController helpers.

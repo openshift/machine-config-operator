@@ -229,7 +229,7 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 					cmd.Stderr = &stderr
 					if err := cmd.Run(); err != nil {
 						if dn.nodeWriter != nil {
-							dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedServiceRestart", "%s",  fmt.Sprintf("Restarting %s service failed. Error: %v", serviceName, err))
+							dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedServiceRestart", "%s", fmt.Sprintf("Restarting %s service failed. Error: %v", serviceName, err))
 						}
 						return fmt.Errorf("error running %s: %s: %w", constants.UpdateCATrustCommand, stderr.String(), err)
 					}
@@ -558,7 +558,7 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 				// informative in such cases
 				reason = fmt.Sprintf("Updating to a target config with %s kernel", helpers.CanonicalizeKernelType(newConfig.Spec.KernelType))
 			}
-			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "OSUpdateStarted","%s", reason)
+			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "OSUpdateStarted", "%s", reason)
 		}
 
 		if err := dn.applyLayeredOSChanges(mcDiff, oldConfig, newConfig); err != nil {
@@ -748,7 +748,6 @@ func calculatePostConfigChangeAction(diff *machineConfigDiff, diffFileSet []stri
 
 // calculatePostConfigChangeNodeDisruptionAction takes action based on the cluster's Node disruption policies.
 func (dn *Daemon) calculatePostConfigChangeNodeDisruptionAction(diff *machineConfigDiff, diffFileSet, diffUnitSet []string) ([]opv1.NodeDisruptionPolicyStatusAction, error) {
-
 	var mcop *opv1.MachineConfiguration
 	var pollErr error
 	// Wait for mcop.Status.NodeDisruptionPolicyStatus to populate, otherwise error out. This shouldn't take very long
@@ -819,7 +818,6 @@ func (dn *Daemon) calculatePostConfigChangeNodeDisruptionAction(diff *machineCon
 	}
 
 	return nodeDisruptionActions, nil
-
 }
 
 // Finalizes the revert process by enabling a special systemd unit prior to
@@ -1775,7 +1773,6 @@ func (dn *Daemon) getCurrentlyInstalledPackages() (sets.Set[string], error) {
 // generateExtensionsArgs generates extension arguments for rpm-ostree, based on the target config
 // and currently installed extension packages.
 func generateExtensionsArgs(installedSet sets.Set[string], newConfig *mcfgv1.MachineConfig) []string {
-
 	// Get packages that should be installed based on new config
 	supportedExtensions := ctrlcommon.SupportedExtensions()
 	requiredSet := sets.New[string]()
@@ -2511,7 +2508,6 @@ func (dn *Daemon) listSystemdUnits() (result map[string]systemddbus.UnitFile, er
 		result[unitName] = unitFile
 	}
 	return result, nil
-
 }
 
 // writeFiles writes the given files to disk.
@@ -2602,7 +2598,6 @@ func getUserPasswordHash(user string) (string, error) {
 		return shadowSlice[1], nil
 	}
 	return "", nil
-
 }
 
 // SetPasswordHash updates the password for each user in newUsers, skipping
@@ -3154,7 +3149,7 @@ func (dn *Daemon) reboot(rationale string) error {
 
 	// We'll only have a recorder if we're cluster driven
 	if dn.nodeWriter != nil {
-		dn.nodeWriter.Eventf(corev1.EventTypeNormal, "Reboot", "%s",  rationale)
+		dn.nodeWriter.Eventf(corev1.EventTypeNormal, "Reboot", "%s", rationale)
 	}
 	logSystem("initiating reboot: %s", rationale)
 
@@ -3203,9 +3198,8 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 	// repo isn't there rpm-ostree will fail if there are layered packages.
 	// See https://redhat.atlassian.net/browse/OCPBUGS-2269
 	haveExtensions := len(oldConfig.Spec.Extensions) != 0 || len(newConfig.Spec.Extensions) != 0
-	haveKernelType :=
-		helpers.CanonicalizeKernelType(oldConfig.Spec.KernelType) != ctrlcommon.KernelTypeDefault ||
-			helpers.CanonicalizeKernelType(newConfig.Spec.KernelType) != ctrlcommon.KernelTypeDefault
+	haveKernelType := helpers.CanonicalizeKernelType(oldConfig.Spec.KernelType) != ctrlcommon.KernelTypeDefault ||
+		helpers.CanonicalizeKernelType(newConfig.Spec.KernelType) != ctrlcommon.KernelTypeDefault
 
 	var osExtensionsContentDir string
 	var err error
@@ -3438,22 +3432,6 @@ func (dn *Daemon) disableRevertSystemdUnit() error {
 	}
 
 	return nil
-}
-
-// If the provided image is empty, then the OSImageURL value on the
-// MachineConfig should take precedence. Otherwise, if the provided image is
-// set, then it should take precedence over the OSImageURL value. This is only
-// used for OCL OS updates and should not be used for anything else.
-func canonicalizeMachineConfigImage(img string, mc *mcfgv1.MachineConfig) *mcfgv1.MachineConfig {
-	copied := mc.DeepCopy()
-
-	if img == "" {
-		return copied
-	}
-
-	copied.Spec.OSImageURL = img
-
-	return copied
 }
 
 // reportMachineNodeDegradeStatus Given the final error, and the used pool, of a node update the

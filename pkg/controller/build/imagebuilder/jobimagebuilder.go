@@ -162,20 +162,6 @@ func (j *jobImageBuilder) getBuildJobStrict(ctx context.Context) (*batchv1.Job, 
 	return j.kubeclient.BatchV1().Jobs(ctrlcommon.MCONamespace).Get(ctx, j.getBuilderName(), metav1.GetOptions{})
 }
 
-// Gets the build job but returns nil if it is not found.
-func (j *jobImageBuilder) getBuildJob(ctx context.Context) (*batchv1.Job, error) {
-	job, err := j.getBuildJobStrict(ctx)
-	if err == nil {
-		return job, nil
-	}
-
-	if k8serrors.IsNotFound(err) {
-		return nil, nil
-	}
-
-	return nil, err
-}
-
 // Determines whether the given build job exists in the API server.
 func (j *jobImageBuilder) Exists(ctx context.Context) (bool, error) {
 	job, err := j.getBuildJobStrict(ctx)

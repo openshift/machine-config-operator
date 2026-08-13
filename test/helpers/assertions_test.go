@@ -6,10 +6,8 @@ import (
 	"time"
 
 	fakeclientimagev1 "github.com/openshift/client-go/image/clientset/versioned/fake"
-	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	fakeclientmachineconfigv1 "github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	"github.com/stretchr/testify/assert"
-	clientset "k8s.io/client-go/kubernetes"
 	fakecorev1client "k8s.io/client-go/kubernetes/fake"
 )
 
@@ -43,7 +41,7 @@ func TestAssertions(t *testing.T) {
 	t.Run("Reaches the desired state with Now", func(t *testing.T) {
 		t.Parallel()
 
-		a, mock, _, _ := getAssertionsForTest()
+		a, mock := getAssertionsForTest()
 		start := time.Now()
 
 		a = a.Now()
@@ -59,7 +57,7 @@ func TestAssertions(t *testing.T) {
 	t.Run("Reaches the desired state in a single attempt", func(t *testing.T) {
 		t.Parallel()
 
-		a, mock, _, _ := getAssertionsForTest()
+		a, mock := getAssertionsForTest()
 		start := time.Now()
 
 		a = a.WithMaxAttempts(1)
@@ -77,7 +75,7 @@ func TestAssertions(t *testing.T) {
 	t.Run("Fails immediately with Now", func(t *testing.T) {
 		t.Parallel()
 
-		a, mock, _, _ := getAssertionsForTest()
+		a, mock := getAssertionsForTest()
 		start := time.Now()
 
 		a = a.Now()
@@ -94,7 +92,7 @@ func TestAssertions(t *testing.T) {
 		t.Parallel()
 
 		timeout := time.Millisecond * 5
-		a, mock, _, _ := getAssertionsForTest()
+		a, mock := getAssertionsForTest()
 		start := time.Now()
 		a = a.WithTimeout(timeout)
 		assert.Equal(t, a.timeout, timeout)
@@ -111,7 +109,7 @@ func TestAssertions(t *testing.T) {
 
 		interval := time.Millisecond
 
-		a, mock, _, _ := getAssertionsForTest()
+		a, mock := getAssertionsForTest()
 
 		a = a.WithPollInterval(interval)
 		assert.Equal(t, a.pollInterval, interval)
@@ -130,7 +128,7 @@ func TestAssertions(t *testing.T) {
 
 		interval := time.Millisecond
 
-		a, mock, _, _ := getAssertionsForTest()
+		a, mock := getAssertionsForTest()
 
 		a = a.WithPollInterval(interval)
 		assert.Equal(t, a.pollInterval, interval)
@@ -161,7 +159,7 @@ func TestAssertions(t *testing.T) {
 			cancel()
 		}()
 
-		a, mock, _, _ := getAssertionsForTest()
+		a, mock := getAssertionsForTest()
 		start := time.Now()
 
 		a = a.WithContext(ctx)
@@ -184,7 +182,7 @@ func TestAssertionsChains(t *testing.T) {
 	t.Run("Are immutable", func(t *testing.T) {
 		t.Parallel()
 
-		a, _, _ := getAssertionsForTestWithRealT(t)
+		a := getAssertionsForTestWithRealT(t)
 
 		b := a.WithMaxAttempts(5)
 		assert.Equal(t, 0, a.maxAttempts)
@@ -195,7 +193,7 @@ func TestAssertionsChains(t *testing.T) {
 	t.Run("Preserve polling options as each new option is added", func(t *testing.T) {
 		t.Parallel()
 
-		a, _, _ := getAssertionsForTestWithRealT(t)
+		a := getAssertionsForTestWithRealT(t)
 
 		a = a.WithMaxAttempts(5)
 		assert.Equal(t, 5, a.maxAttempts)
@@ -244,7 +242,7 @@ func TestAssertionsChains(t *testing.T) {
 	t.Run("Poll counts are not preserved but max attempts are", func(t *testing.T) {
 		t.Parallel()
 
-		a, _, _ := getAssertionsForTestWithRealT(t)
+		a := getAssertionsForTestWithRealT(t)
 
 		a = a.WithMaxAttempts(5)
 		assert.Equal(t, 5, a.maxAttempts)
@@ -263,7 +261,7 @@ func TestAssertionsChains(t *testing.T) {
 	t.Run("Now clears all poll options", func(t *testing.T) {
 		t.Parallel()
 
-		a, _, _ := getAssertionsForTestWithRealT(t)
+		a := getAssertionsForTestWithRealT(t)
 
 		a = a.Eventually().WithTimeout(time.Millisecond).WithMaxAttempts(5).Now()
 		assert.Equal(t, 0, a.maxAttempts)
@@ -274,7 +272,7 @@ func TestAssertionsChains(t *testing.T) {
 	t.Run("Now clears all poll options but keeps context", func(t *testing.T) {
 		t.Parallel()
 
-		a, _, _ := getAssertionsForTestWithRealT(t)
+		a := getAssertionsForTestWithRealT(t)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
@@ -290,7 +288,7 @@ func TestAssertionsChains(t *testing.T) {
 	t.Run("Eventually overrides Now but keeps context", func(t *testing.T) {
 		t.Parallel()
 
-		a, _, _ := getAssertionsForTestWithRealT(t)
+		a := getAssertionsForTestWithRealT(t)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
@@ -303,19 +301,19 @@ func TestAssertionsChains(t *testing.T) {
 	})
 }
 
-func getAssertionsForTest() (*Assertions, *mockTesting, clientset.Interface, mcfgclientset.Interface) {
+func getAssertionsForTest() (*Assertions, *mockTesting) {
 	mock := &mockTesting{}
 	kubeclient := fakecorev1client.NewSimpleClientset()
 	mcfgclient := fakeclientmachineconfigv1.NewSimpleClientset()
 	imageclient := fakeclientimagev1.NewSimpleClientset()
 	a := Assert(mock, kubeclient, mcfgclient, imageclient)
 
-	return a, mock, kubeclient, mcfgclient
+	return a, mock
 }
 
-func getAssertionsForTestWithRealT(t *testing.T) (*Assertions, clientset.Interface, mcfgclientset.Interface) {
+func getAssertionsForTestWithRealT(t *testing.T) *Assertions {
 	kubeclient := fakecorev1client.NewSimpleClientset()
 	mcfgclient := fakeclientmachineconfigv1.NewSimpleClientset()
 	imageclient := fakeclientimagev1.NewSimpleClientset()
-	return Assert(t, kubeclient, mcfgclient, imageclient), kubeclient, mcfgclient
+	return Assert(t, kubeclient, mcfgclient, imageclient)
 }

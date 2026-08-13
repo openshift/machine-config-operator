@@ -169,16 +169,6 @@ func (b *baseImageBuilder) getMachineOSBuildName() (string, error) {
 	return b.builder.MachineOSBuild()
 }
 
-// Gets the name of the MachineOSConfig name either directly from the
-// MachineOSConfig or from the Builder object.
-func (b *baseImageBuilder) getMachineOSConfigName() (string, error) {
-	if b.mosc != nil {
-		return b.mosc.Name, nil
-	}
-
-	return b.builder.MachineOSConfig()
-}
-
 // Gets the UID of the builder by either checking the MOSB annotation or
 // getting it directly from the Builder object.
 func (b *baseImageBuilder) getBuilderUID() (string, error) {

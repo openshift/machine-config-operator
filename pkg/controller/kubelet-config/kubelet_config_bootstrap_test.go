@@ -83,13 +83,13 @@ func TestRunKubeletBootstrap(t *testing.T) {
 
 			for i := range mcs {
 				require.Equal(t, expectedMCNames[i], mcs[i].Name)
-				verifyKubeletConfigYAMLContents(t, mcs[i], mcs[i].Name, cc.Spec.ReleaseImage)
+				verifyKubeletConfigYAMLContents(t, mcs[i])
 			}
 		})
 	}
 }
 
-func verifyKubeletConfigYAMLContents(t *testing.T, mc *mcfgv1.MachineConfig, mcName string, releaseImageReg string) {
+func verifyKubeletConfigYAMLContents(t *testing.T, mc *mcfgv1.MachineConfig) {
 	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
 	require.NoError(t, err)
 	regfile := ignCfg.Storage.Files[0]

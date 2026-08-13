@@ -51,7 +51,6 @@ import (
 
 const (
 	// cri gRPC connection parameters taken from kubelet
-	criPrefetchInterval             = 30 * time.Second
 	defaultPrefetchWorkers          = 5
 	defaultControlPlaneWorkers      = 1
 	defaultPrefetchThrottleDuration = 1 * time.Second
@@ -66,9 +65,6 @@ const (
 
 	// controller configuration
 	maxRetriesController = 15
-
-	// mcn looks for conditions with this prefix if seen will degrade the pool
-	degradeMessagePrefix = "Error:"
 )
 
 var (
@@ -906,7 +902,8 @@ func (p *PinnedImageSetManager) deletePinnedImageSet(obj interface{}) {
 // getNodeWithRetry gets the node with retries. This avoids some races when the local node
 // is new but not found during startup.
 func (p *PinnedImageSetManager) getNodeWithRetry(nodeName string) (*corev1.Node,
-	error) {
+	error,
+) {
 	var node *corev1.Node
 	err := wait.ExponentialBackoff(p.backoff, func() (bool, error) {
 		var err error
@@ -1483,7 +1480,6 @@ func (r *registryAuth) getAuthConfigForImage(image string) (*runtimeapi.AuthConf
 	// check for auth of the image's domain
 	if auth := r.getAuth(reference.Domain(parsed)); auth != nil {
 		return auth, nil
-
 	}
 
 	// public image or no auth found

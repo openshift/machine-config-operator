@@ -173,7 +173,6 @@ type syncError struct {
 }
 
 func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
-
 	co, err := optr.fetchClusterOperator()
 	if err != nil {
 		return err
@@ -247,7 +246,6 @@ func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
 	// Handle these errors after as CO status updates should have priority over this
 	if syncUpgradeableStatusErr != nil {
 		return fmt.Errorf("syncingUpgradeableStatus: %w", syncUpgradeableStatusErr)
-
 	}
 	if syncClusterFleetEvaluationErr != nil {
 		return fmt.Errorf("updating cluster operator status: %w", syncClusterFleetEvaluationErr)
@@ -1457,7 +1455,6 @@ func (optr *Operator) isMachineOSBuilderRunning(mob *appsv1.Deployment) (bool, e
 }
 
 func (optr *Operator) reconcileSimpleContentAccessSecrets(layeredMCPs []*mcfgv1.MachineConfigPool) error {
-
 	// Create set of layered and non layeredPools
 	layeredPoolSet := sets.Set[string]{}
 	for _, pool := range layeredMCPs {
@@ -1883,9 +1880,6 @@ const (
 	daemonsetRolloutPollInterval = time.Second
 	daemonsetRolloutTimeout      = 10 * time.Minute
 
-	customResourceReadyInterval = time.Second
-	customResourceReadyTimeout  = 10 * time.Minute
-
 	controllerConfigCompletedInterval = time.Second
 	controllerConfigCompletedTimeout  = 5 * time.Minute
 )
@@ -2099,14 +2093,6 @@ func (optr *Operator) stampBootImagesConfigMap() error {
 
 	}
 	return nil
-}
-
-func (optr *Operator) getCloudConfigFromConfigMap(namespace, name, key string) (string, error) {
-	cm, err := optr.clusterCmLister.ConfigMaps(namespace).Get(name)
-	if err != nil {
-		return "", err
-	}
-	return getCloudConfigFromConfigMap(cm, key)
 }
 
 func getCloudConfigFromConfigMap(cm *corev1.ConfigMap, key string) (string, error) {
@@ -2358,7 +2344,6 @@ func cmToData(cm *corev1.ConfigMap, key string) ([]byte, error) {
 // Validates configuration provided in the MachineConfiguration object's spec for each feature
 // and updates the status of the object as necessary
 func (optr *Operator) syncMachineConfiguration(_ *renderConfig, _ *configv1.ClusterOperator) error {
-
 	// Grab the cluster CR
 	mcop, err := optr.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
 	if err != nil {
@@ -2671,7 +2656,6 @@ func (optr *Operator) getCurrentOCPVersionFromClusterVersion() string {
 //   - The CR does not exist (cluster is using the machine-os-images path introduced in 4.10)
 //   - The field is empty (same as above)
 func (optr *Operator) isBareMetalOnLegacyProvisioningPath() bool {
-
 	if optr.provisioningListerSynced != nil && !optr.provisioningListerSynced() {
 		klog.V(2).Info("Provisioning informer not synced yet; assuming legacy provisioning path for safety")
 		return true

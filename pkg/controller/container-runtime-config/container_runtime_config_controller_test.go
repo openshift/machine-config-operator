@@ -343,10 +343,6 @@ func (f *fixture) run(mcpname string) {
 	f.runController(mcpname, false)
 }
 
-func (f *fixture) runExpectError(mcpname string) {
-	f.runController(mcpname, true)
-}
-
 func (f *fixture) runController(mcpname string, expectError bool) {
 	c := f.newController()
 	if !c.addedPolicyObservers {
@@ -451,20 +447,12 @@ func checkAction(expected, actual core.Action, t *testing.T, index int) {
 	}
 }
 
-func (f *fixture) expectGetContainerRuntimeConfigAction(config *mcfgv1.ContainerRuntimeConfig) {
-	f.actions = append(f.actions, core.NewRootGetAction(schema.GroupVersionResource{Resource: "containerruntimeconfigs"}, config.Name))
-}
-
 func (f *fixture) expectGetMachineConfigAction(config *mcfgv1.MachineConfig) {
 	f.actions = append(f.actions, core.NewRootGetAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config.Name))
 }
 
 func (f *fixture) expectCreateMachineConfigAction(config *mcfgv1.MachineConfig) {
 	f.actions = append(f.actions, core.NewRootCreateAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config))
-}
-
-func (f *fixture) expectDeleteMachineConfigAction(config *mcfgv1.MachineConfig) {
-	f.actions = append(f.actions, core.NewRootDeleteAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config.Name))
 }
 
 func (f *fixture) expectUpdateMachineConfigAction(config *mcfgv1.MachineConfig) {
@@ -1376,7 +1364,6 @@ func TestRunImageBootstrap(t *testing.T) {
 				imagePolicyNamespaces: 1,
 			},
 		} {
-
 			t.Run(string(platform), func(t *testing.T) {
 				cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 				pools := []*mcfgv1.MachineConfigPool{
@@ -2235,7 +2222,8 @@ func TestContainerRuntimeConfigAdditionalStorageConfigFeatureGateDisabled(t *tes
 }
 
 func TestCrioCredentialProviderConfigCreate(t *testing.T) {
-	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType,
+	for _, platform := range []apicfgv1.PlatformType{
+		apicfgv1.AWSPlatformType,
 		apicfgv1.GCPPlatformType,
 		apicfgv1.AzurePlatformType,
 		apicfgv1.NonePlatformType,
@@ -2283,7 +2271,8 @@ func TestCrioCredentialProviderConfigCreate(t *testing.T) {
 }
 
 func TestCrioCredentialProviderConfigUpdate(t *testing.T) {
-	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType,
+	for _, platform := range []apicfgv1.PlatformType{
+		apicfgv1.AWSPlatformType,
 		apicfgv1.GCPPlatformType,
 		apicfgv1.AzurePlatformType,
 		apicfgv1.NonePlatformType,
@@ -2360,7 +2349,6 @@ func TestCrioCredentialProviderConfigUpdate(t *testing.T) {
 			close(stopCh)
 
 			f.verifyCRIOCredentialProviderConfigContents(t, mcs.Name, criocpUpdate, verifyOpts)
-
 		})
 	}
 }
@@ -2386,7 +2374,8 @@ func newCrioCredentialProviderConfig(name string, matchImages []string) *apicfgv
 }
 
 func TestCrioCredentialProviderConfigCreateEmpty(t *testing.T) {
-	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType,
+	for _, platform := range []apicfgv1.PlatformType{
+		apicfgv1.AWSPlatformType,
 		apicfgv1.GCPPlatformType,
 		apicfgv1.AzurePlatformType,
 		apicfgv1.NonePlatformType,

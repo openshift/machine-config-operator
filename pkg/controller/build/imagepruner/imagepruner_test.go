@@ -20,10 +20,8 @@ import (
 type fakeImageInspector struct {
 	imageInspectCalled   bool
 	imageInspectPullspec string
-	imageInspectSysCtx   *types.SystemContext
 	deleteImageCalled    bool
 	deleteImagePullspec  string
-	deleteImageSysCtx    *types.SystemContext
 	imageApiError        bool
 }
 

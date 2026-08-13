@@ -163,10 +163,6 @@ func (f *fixture) run(ccname string) {
 	f.runController(ccname, false)
 }
 
-func (f *fixture) runExpectError(ccname string) {
-	f.runController(ccname, true)
-}
-
 func (f *fixture) runController(ccname string, expectError bool) {
 	c := f.newController()
 
@@ -420,7 +416,7 @@ func TestUpdateMachineConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	//update machineconfig
+	// update machineconfig
 	newIgnCfg := ctrlcommon.NewIgnConfig()
 	newRawIgnCfg, err := json.Marshal(newIgnCfg)
 	if err != nil {
