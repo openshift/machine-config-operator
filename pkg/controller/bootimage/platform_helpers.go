@@ -286,7 +286,7 @@ func reconcileAzureProviderSpec(streamData *stream.Stream, arch string, _ *oscon
 
 	if providerSpec.SecurityProfile != nil && providerSpec.SecurityProfile.Settings.SecurityType != "" {
 		klog.Infof("Skipping update for %s, machinesets/controlplanemachinesets with a SecurityType defined(%s in this case) is not currently supported for Azure", machineSetName, providerSpec.SecurityProfile.Settings.SecurityType)
-		return false, false, nil, "", nil
+		return false, true, nil, "", nil
 	}
 
 	currentImage := providerSpec.Image

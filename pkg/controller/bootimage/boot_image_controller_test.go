@@ -940,6 +940,7 @@ func TestReconcileAzureProviderSpec(t *testing.T) {
 					SecurityType: "ConfidentialVM",
 				},
 			},
+			expectReconcileSkipped: true,
 		},
 		{
 			name: "Skip machineset with TrustedLaunch SecurityType",
@@ -957,6 +958,7 @@ func TestReconcileAzureProviderSpec(t *testing.T) {
 					SecurityType: "TrustedLaunch",
 				},
 			},
+			expectReconcileSkipped: true,
 		},
 		{
 			name: "Process machineset with SecurityProfile but empty SecurityType",
