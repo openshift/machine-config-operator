@@ -211,24 +211,6 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 
 		close(ctrlctx.InformersStarted)
 
-		iriController := internalreleaseimage.New(
-			ctrlctx.InformerFactory.Machineconfiguration().V1().InternalReleaseImages(),
-			ctrlctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
-			ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
-			ctrlctx.ConfigInformerFactory.Config().V1().ClusterVersions(),
-			ctrlctx.KubeInformerFactory.Core().V1().Secrets(),
-			ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigNodes(),
-			ctrlctx.KubeInformerFactory.Core().V1().Nodes(),
-			ctrlctx.ConfigInformerFactory.Config().V1().Infrastructures(),
-			ctrlctx.ClientBuilder.KubeClientOrDie("internalreleaseimage-controller"),
-			ctrlctx.ClientBuilder.MachineConfigClientOrDie("internalreleaseimage-controller"))
-
-		go iriController.Run(ctx, 2)
-		// start the informers again to pick up newly registered types.
-		// see comments in SharedInformerFactory interface.
-		ctrlctx.InformerFactory.Start(ctx.Done())
-		ctrlctx.KubeInformerFactory.Start(ctx.Done())
-
 		if ctrlcommon.IsBootImageControllerRequired(ctrlctx) {
 			bootImageController := bootimagecontroller.New(
 				ctrlctx.ClientBuilder.KubeClientOrDie("machine-set-boot-image-controller"),
@@ -368,6 +350,18 @@ func createControllers(ctx *ctrlcommon.ControllerContext, inspectionCache *image
 			ctx.ClientBuilder.KubeClientOrDie("node-update-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("node-update-controller"),
 			ctx.FeatureGatesHandler,
+		),
+		internalreleaseimage.New(
+			ctx.InformerFactory.Machineconfiguration().V1().InternalReleaseImages(),
+			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
+			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
+			ctx.ConfigInformerFactory.Config().V1().ClusterVersions(),
+			ctx.KubeInformerFactory.Core().V1().Secrets(),
+			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigNodes(),
+			ctx.KubeInformerFactory.Core().V1().Nodes(),
+			ctx.ConfigInformerFactory.Config().V1().Infrastructures(),
+			ctx.ClientBuilder.KubeClientOrDie("internalreleaseimage-controller"),
+			ctx.ClientBuilder.MachineConfigClientOrDie("internalreleaseimage-controller"),
 		),
 	)
 

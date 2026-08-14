@@ -1248,11 +1248,9 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig, _ *confi
 	}
 
 	// Only deploy the IRI deletion guard policy if the IRI resource actually exists
-	if optr.iriLister != nil {
-		if _, err := optr.iriLister.Get(ctrlcommon.InternalReleaseImageInstanceName); err == nil {
-			paths.validatingAdmissionPolicies = append(paths.validatingAdmissionPolicies, mccIRIDeletionGuardValidatingAdmissionPolicyPath)
-			paths.validatingAdmissionPolicyBindings = append(paths.validatingAdmissionPolicyBindings, mccIRIDeletionGuardValidatingAdmissionPolicyBindingPath)
-		}
+	if _, err := optr.iriLister.Get(ctrlcommon.InternalReleaseImageInstanceName); err == nil {
+		paths.validatingAdmissionPolicies = append(paths.validatingAdmissionPolicies, mccIRIDeletionGuardValidatingAdmissionPolicyPath)
+		paths.validatingAdmissionPolicyBindings = append(paths.validatingAdmissionPolicyBindings, mccIRIDeletionGuardValidatingAdmissionPolicyBindingPath)
 	}
 
 	if err := optr.applyManifests(config, paths); err != nil {

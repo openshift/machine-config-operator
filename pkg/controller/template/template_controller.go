@@ -121,13 +121,8 @@ func New(
 	} else {
 		ctrl.iriSecretsInformerSynced = func() bool { return true }
 	}
-	if iriInformer != nil {
-		ctrl.iriInformerSynced = iriInformer.Informer().HasSynced
-		ctrl.iriMerger = ctrlcommon.NewIRISecretMerger(iriSecretsInformer.Lister(), ctrl.ccLister, iriInformer.Lister())
-	} else {
-		ctrl.iriInformerSynced = func() bool { return true }
-		ctrl.iriMerger = ctrlcommon.NewIRISecretMerger(nil, ctrl.ccLister, nil)
-	}
+	ctrl.iriInformerSynced = iriInformer.Informer().HasSynced
+	ctrl.iriMerger = ctrlcommon.NewIRISecretMerger(iriSecretsInformer.Lister(), ctrl.ccLister, iriInformer.Lister())
 
 	ccInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addControllerConfig,
