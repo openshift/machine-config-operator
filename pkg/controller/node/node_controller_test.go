@@ -1552,10 +1552,42 @@ func TestSortNodeList(t *testing.T) {
 		newest_node_nozone,
 	}
 
-	output_nodes := sortNodeList(nodes)
+	output_nodes := sortNodeList(nodes, false)
 
 	if !reflect.DeepEqual(sorted_nodes, output_nodes) {
 		t.Fatalf("sorting failed. expected: %v got: %v", sorted_nodes, output_nodes)
+	}
+
+	newestFirstSorted := []*corev1.Node{
+		node_zoneQQQ,
+		newer_node_zoneRRR,
+		older_node_zoneRRR,
+		newest_node_zoneZZZ,
+		newer_node_zoneZZZ,
+		older_node_zoneZZZ,
+		newest_node_nozone,
+		newer_node_nozone,
+		old_node_nozone,
+	}
+	newestFirstOutput := sortNodeList(append([]*corev1.Node(nil), nodes...), true)
+	if !reflect.DeepEqual(newestFirstSorted, newestFirstOutput) {
+		t.Fatalf("newest-first sorting failed. expected: %v got: %v", newestFirstSorted, newestFirstOutput)
+	}
+}
+
+func TestPoolWantsNewestFirst(t *testing.T) {
+	t.Parallel()
+	pool := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV1)
+	if poolWantsNewestFirst(pool) {
+		t.Fatal("expected default pool to use oldest-first")
+	}
+	pool.Annotations = map[string]string{updateOrderAnnotationKey: updateOrderNewestFirst}
+	if !poolWantsNewestFirst(pool) {
+		t.Fatal("expected NewestFirst annotation to enable newest-first")
+	}
+	pool.Annotations[updateOrderAnnotationKey] = updateOrderOldestFirst
+	if poolWantsNewestFirst(pool) {
+		t.Fatal("expected OldestFirst annotation to keep oldest-first")
 	}
 }
 
