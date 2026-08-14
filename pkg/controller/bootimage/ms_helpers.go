@@ -23,6 +23,8 @@ import (
 	archtranslater "github.com/coreos/stream-metadata-go/arch"
 	"github.com/coreos/stream-metadata-go/stream"
 	corev1 "k8s.io/api/core/v1"
+
+	"github.com/openshift/machine-config-operator/pkg/controller/bootimage/marketplace"
 )
 
 // syncMAPIMachineSets will attempt to enqueue every machineset
@@ -105,7 +107,7 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) {
 		if version != "" {
 			// Keep the oldest (lowest) RHCOS version across all marketplace MachineSets so that
 			// skew enforcement uses the most conservative baseline rather than the last value.
-			if rhcosVersion == "" || cmpRHCOSVersion(version, rhcosVersion) < 0 {
+			if rhcosVersion == "" || marketplace.CmpRHCOSVersion(version, rhcosVersion) < 0 {
 				rhcosVersion = version
 			}
 		}

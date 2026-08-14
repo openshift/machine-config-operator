@@ -3,9 +3,7 @@ package bootimage
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -21,6 +19,7 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 
+	"github.com/openshift/machine-config-operator/pkg/controller/bootimage/marketplace"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
 
@@ -29,42 +28,12 @@ const (
 	awsMarketplaceOwnerID = "679593333241"
 	// awsRHCOSOwnerID is the Red Hat AWS account that owns standard RHCOS AMIs.
 	awsRHCOSOwnerID = "531415883065"
-	// rosaProductID is the marketplace product ID for ROSA Classic.
-	rosaProductID = "34850061-abaf-402d-92df-94325c9e947f"
 	// awsMarketplaceOwnerAlias is the owner alias used in DescribeImages filters for marketplace AMIs.
 	awsMarketplaceOwnerAlias = "aws-marketplace"
 	// awsCredentialsSecretName is the secret in openshift-machine-api provisioned by
 	// the machine-api-operator's CredentialsRequest. It already includes ec2:DescribeImages.
 	awsCredentialsSecretName = "aws-cloud-credentials"
 )
-
-// marketplaceProductNames maps the AWS Marketplace product IDs to human-readable variant names.
-// These IDs are stable — they are tied to marketplace listings and will not change.
-var marketplaceProductNames = map[string]string{
-	// x86_64
-	"59ead7de-2540-4653-a8b0-fa7926d5c845": "OCP x86_64",
-	"963b36c3-de6f-48ed-b802-2b38b2a2cdeb": "OKE x86_64",
-	"f5da01a6-d046-487c-9072-42fe53b1cad4": "OPP x86_64",
-	// arm64
-	"abc249f8-7440-45f7-a4b1-c026baff64c1": "OCP arm64",
-	"d2d3ebcd-c1ca-43d8-bf0a-530433200f35": "OKE arm64",
-	"be6d3e94-c8dc-4a3e-9218-4b449b11f06f": "OPP arm64",
-	// x86_64 EMEA
-	"962791c7-3ae5-46d1-ba62-c7a5ebac54fd": "OCP EMEA x86_64",
-	"7026c8d7-392c-4010-b93c-f93f7bc5495f": "OKE EMEA x86_64",
-	"628c9df3-0254-4f91-bc1f-8619d1b8eaa8": "OPP EMEA x86_64",
-	// ROSA
-	rosaProductID: "ROSA",
-}
-
-// productName returns the human-readable variant name for a marketplace product ID,
-// falling back to the product ID itself if it is not in the map.
-func productName(productID string) string {
-	if name, ok := marketplaceProductNames[productID]; ok {
-		return name
-	}
-	return productID
-}
 
 // amiKind classifies a RHCOS AMI by its origin.
 type amiKind int
@@ -173,11 +142,11 @@ func detectAMIKind(image *ec2types.Image) (amiKind, string) {
 	case awsRHCOSOwnerID:
 		return amiKindStandard, ""
 	case awsMarketplaceOwnerID:
-		productID := extractProductID(aws.ToString(image.Name))
+		productID := marketplace.ExtractProductID(aws.ToString(image.Name))
 		switch productID {
 		case "":
 			return amiKindUnknown, ""
-		case rosaProductID:
+		case marketplace.ROSAProductID:
 			return amiKindROSA, productID
 		default:
 			return amiKindMarketplace, productID
@@ -185,25 +154,6 @@ func detectAMIKind(image *ec2types.Image) (amiKind, string) {
 	default:
 		return amiKindUnknown, ""
 	}
-}
-
-var productIDRegex = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
-
-// extractProductID returns the trailing UUID-format product ID from a marketplace AMI name, e.g.:
-//
-//	RHEL-9.4-RHCOS-9.6_HVM_GA-20260210-x86_64-0-{product-id}
-//
-// Returns an empty string if no valid product ID is found.
-func extractProductID(name string) string {
-	parts := strings.Split(name, "-")
-	if len(parts) < 5 {
-		return ""
-	}
-	candidate := strings.Join(parts[len(parts)-5:], "-")
-	if productIDRegex.MatchString(candidate) {
-		return candidate
-	}
-	return ""
 }
 
 // marketplaceVersionToken derives the version token used in marketplace AMI descriptions
@@ -247,65 +197,6 @@ func resolveMarketplaceAMI(ctx context.Context, client *ec2.Client, streamData *
 	return findMarketplaceAMI(ctx, client, productID, versionToken, machineSetName)
 }
 
-// descriptionVersionRe matches the full RHCOS release string embedded in marketplace AMI descriptions.
-// The full match is the API-valid release string; group 1 is the N.M token for version comparison.
-// Both description formats in use embed the full release string inline:
-//   - RHEL marketplace: "RHEL CoreOS 9.6 9.6.20260210-0 x86_64"   → "9.6.20260210-0" / "9.6"
-//   - ROSA:             "rhcos-9.6.20250701-0-x86_64"              → "9.6.20250701-0"  / "9.6"
-var descriptionVersionRe = regexp.MustCompile(`(\d+\.\d+)\.(?:[0-9]{8}|[0-9]{12})-\d+`)
-
-// extractVersionFromDescription parses the RHCOS release string from a marketplace AMI description.
-// Returns the full release string (e.g. "9.6.20260210-0") suitable for ClusterBootImageAutomatic.RHCOSVersion,
-// the N.M token (e.g. "9.6") for version comparison, and whether parsing succeeded.
-func extractVersionFromDescription(description string) (fullVersion, token string, ok bool) {
-	m := descriptionVersionRe.FindStringSubmatch(description)
-	if m == nil {
-		return "", "", false
-	}
-	return m[0], m[1], true
-}
-
-// cmpRHCOSVersion compares two full RHCOS release strings (e.g. "9.6.20260210-0") by their
-// major.minor version only. Returns negative if a < b, zero if equal, positive if a > b.
-func cmpRHCOSVersion(a, b string) int {
-	tokenOf := func(v string) string {
-		p := strings.SplitN(v, ".", 3)
-		if len(p) < 2 {
-			return v
-		}
-		return p[0] + "." + p[1]
-	}
-	return cmpVersionToken(tokenOf(a), tokenOf(b))
-}
-
-// cmpVersionToken compares two "major.minor" version tokens.
-// Returns negative if a < b, zero if equal, positive if a > b.
-func cmpVersionToken(a, b string) int {
-	parse := func(s string) (int, int) {
-		parts := strings.SplitN(s, ".", 2)
-		if len(parts) != 2 {
-			return 0, 0
-		}
-		major, _ := strconv.Atoi(parts[0])
-		minor, _ := strconv.Atoi(parts[1])
-		return major, minor
-	}
-	aMaj, aMin := parse(a)
-	bMaj, bMin := parse(b)
-	if aMaj != bMaj {
-		return aMaj - bMaj
-	}
-	return aMin - bMin
-}
-
-// isPreRHELAlignedToken reports whether a version token uses the pre-4.19 OCP-based RHCOS
-// versioning scheme (e.g. "418.94") rather than the RHEL-aligned scheme (e.g. "9.6").
-// Pre-RHEL-aligned tokens have a major component > 100 (encoding the OCP major version * 100 + minor).
-func isPreRHELAlignedToken(token string) bool {
-	major, _ := strconv.Atoi(strings.SplitN(token, ".", 2)[0])
-	return major > 100
-}
-
 // findMarketplaceAMI returns the AMI ID and RHCOS version of the best marketplace AMI for the
 // given product ID and version token. It fetches all AMIs for the product ID, discards any whose
 // description version exceeds the target, then returns the newest AMI at the highest version ≤ target.
@@ -336,13 +227,13 @@ func findMarketplaceAMI(ctx context.Context, client *ec2.Client, productID, vers
 	var matches []candidate
 	var sawPreRHELAligned bool
 	for _, img := range out.Images {
-		fullVersion, token, ok := extractVersionFromDescription(aws.ToString(img.Description))
+		fullVersion, token, ok := marketplace.ExtractVersionFromDescription(aws.ToString(img.Description))
 		if !ok {
 			continue
 		}
-		if cmpVersionToken(token, versionToken) <= 0 {
+		if marketplace.CmpVersionToken(token, versionToken) <= 0 {
 			matches = append(matches, candidate{img, token, fullVersion})
-		} else if isPreRHELAlignedToken(token) {
+		} else if marketplace.IsPreRHELAlignedToken(token) {
 			sawPreRHELAligned = true
 		}
 	}
@@ -361,7 +252,7 @@ func findMarketplaceAMI(ctx context.Context, client *ec2.Client, productID, vers
 
 	// Prefer the highest version not exceeding the target; break ties by newest CreationDate.
 	sort.Slice(matches, func(i, j int) bool {
-		if cmp := cmpVersionToken(matches[i].token, matches[j].token); cmp != 0 {
+		if cmp := marketplace.CmpVersionToken(matches[i].token, matches[j].token); cmp != 0 {
 			return cmp > 0
 		}
 		return aws.ToString(matches[i].image.CreationDate) > aws.ToString(matches[j].image.CreationDate)
