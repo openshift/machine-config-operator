@@ -279,6 +279,18 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.ClientBuilder.MachineConfigClientOrDie("node-update-controller"),
 			ctx.FeatureGatesHandler,
 		),
+		internalreleaseimage.New(
+			ctx.InformerFactory.Machineconfiguration().V1().InternalReleaseImages(),
+			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
+			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
+			ctx.ConfigInformerFactory.Config().V1().ClusterVersions(),
+			ctx.KubeInformerFactory.Core().V1().Secrets(),
+			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigNodes(),
+			ctx.KubeInformerFactory.Core().V1().Nodes(),
+			ctx.ConfigInformerFactory.Config().V1().Infrastructures(),
+			ctx.ClientBuilder.KubeClientOrDie("internalreleaseimage-controller"),
+			ctx.ClientBuilder.MachineConfigClientOrDie("internalreleaseimage-controller"),
+		),
 	)
 
 	return controllers
