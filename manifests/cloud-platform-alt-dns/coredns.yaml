@@ -24,6 +24,9 @@ spec:
   - name: manifests
     hostPath:
       path: "/opt/openshift/manifests"
+  - name: hosts-dir
+    hostPath:
+      path: "/etc/hosts"
   initContainers:
   - name: render-config
     image: {{ .Images.BaremetalRuntimeCfgBootstrap }}
@@ -55,6 +58,10 @@ spec:
     - name: manifests
       mountPath: "/opt/openshift/manifests"
       mountPropagation: HostToContainer
+    - name: hosts-dir
+      mountPath: "/etc/hosts"
+      mountPropagation: HostToContainer
+      readOnly: true
     imagePullPolicy: IfNotPresent
   containers:
   - name: coredns
@@ -71,6 +78,9 @@ spec:
     volumeMounts:
     - name: conf-dir
       mountPath: "/etc/coredns"
+    - name: hosts-dir
+      mountPath: "/etc/hosts"
+      readOnly: true
     livenessProbe:
       httpGet:
         path: /health

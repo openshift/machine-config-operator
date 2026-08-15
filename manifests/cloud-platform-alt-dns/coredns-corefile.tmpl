@@ -33,4 +33,9 @@
         match ^api-int.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
         fallthrough
     }
+    hosts /etc/hosts {
+        127.0.0.1 localhost localhost.localdomain
+        ::1 localhost localhost.localdomain
+        fallthrough
+    }
 }
