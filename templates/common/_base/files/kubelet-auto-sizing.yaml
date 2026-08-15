@@ -145,3 +145,4 @@ contents:
     else
         echo "Unrecognized command line option. Valid options are \"true\" or \"false\""
     fi
+
