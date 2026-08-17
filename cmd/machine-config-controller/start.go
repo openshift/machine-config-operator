@@ -8,8 +8,6 @@ import (
 	"path"
 	"time"
 
-	features "github.com/openshift/api/features"
-	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	bootimagecontroller "github.com/openshift/machine-config-operator/pkg/controller/bootimage"
@@ -29,7 +27,6 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/klog/v2"
 )
@@ -214,26 +211,6 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 
 		close(ctrlctx.InformersStarted)
 
-		if ctrlctx.FeatureGatesHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
-			iriController := internalreleaseimage.New(
-				ctrlctx.InformerFactory.Machineconfiguration().V1().InternalReleaseImages(),
-				ctrlctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
-				ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
-				ctrlctx.ConfigInformerFactory.Config().V1().ClusterVersions(),
-				ctrlctx.KubeInformerFactory.Core().V1().Secrets(),
-				ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigNodes(),
-				ctrlctx.KubeInformerFactory.Core().V1().Nodes(),
-				ctrlctx.ConfigInformerFactory.Config().V1().Infrastructures(),
-				ctrlctx.ClientBuilder.KubeClientOrDie("internalreleaseimage-controller"),
-				ctrlctx.ClientBuilder.MachineConfigClientOrDie("internalreleaseimage-controller"))
-
-			go iriController.Run(ctx, 2)
-			// start the informers again to enable feature gated types.
-			// see comments in SharedInformerFactory interface.
-			ctrlctx.InformerFactory.Start(ctx.Done())
-			ctrlctx.KubeInformerFactory.Start(ctx.Done())
-		}
-
 		if ctrlcommon.IsBootImageControllerRequired(ctrlctx) {
 			bootImageController := bootimagecontroller.New(
 				ctrlctx.ClientBuilder.KubeClientOrDie("machine-set-boot-image-controller"),
@@ -290,17 +267,6 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 }
 
 func createControllers(ctx *ctrlcommon.ControllerContext, inspectionCache *imageutils.FileInspectionCache, inspectorFactory osimagestream.ImagesInspectorFactory) []ctrlcommon.Controller {
-	// Only watch IRI informers when the feature gate is enabled. The
-	// InternalReleaseImages CRD is not installed on clusters where the gate is
-	// off, so the informer list call would fail and WaitForCacheSync in the
-	// template controller would block forever.
-	var iriSecretsInformer coreinformersv1.SecretInformer
-	var iriInformer mcfginformersv1.InternalReleaseImageInformer
-	if ctx.FeatureGatesHandler.Enabled(features.FeatureGateNoRegistryClusterInstall) {
-		iriSecretsInformer = ctx.KubeInformerFactory.Core().V1().Secrets()
-		iriInformer = ctx.InformerFactory.Machineconfiguration().V1().InternalReleaseImages()
-	}
-
 	renderCtrl := render.New(
 		ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 		ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
@@ -331,12 +297,11 @@ func createControllers(ctx *ctrlcommon.ControllerContext, inspectionCache *image
 			rootOpts.templates,
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 			ctx.OpenShiftConfigKubeNamespacedInformerFactory.Core().V1().Secrets(),
-			iriSecretsInformer,
-			iriInformer,
+			ctx.KubeInformerFactory.Core().V1().Secrets(),
+			ctx.InformerFactory.Machineconfiguration().V1().InternalReleaseImages(),
 			ctx.ConfigInformerFactory.Config().V1().APIServers(),
 			ctx.ClientBuilder.KubeClientOrDie("template-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("template-controller"),
-			ctx.FeatureGatesHandler,
 		),
 		// Add all "sub-renderers here"
 		kubeletconfig.New(
@@ -385,6 +350,18 @@ func createControllers(ctx *ctrlcommon.ControllerContext, inspectionCache *image
 			ctx.ClientBuilder.KubeClientOrDie("node-update-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("node-update-controller"),
 			ctx.FeatureGatesHandler,
+		),
+		internalreleaseimage.New(
+			ctx.InformerFactory.Machineconfiguration().V1().InternalReleaseImages(),
+			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
+			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
+			ctx.ConfigInformerFactory.Config().V1().ClusterVersions(),
+			ctx.KubeInformerFactory.Core().V1().Secrets(),
+			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigNodes(),
+			ctx.KubeInformerFactory.Core().V1().Nodes(),
+			ctx.ConfigInformerFactory.Config().V1().Infrastructures(),
+			ctx.ClientBuilder.KubeClientOrDie("internalreleaseimage-controller"),
+			ctx.ClientBuilder.MachineConfigClientOrDie("internalreleaseimage-controller"),
 		),
 	)
 

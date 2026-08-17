@@ -372,10 +372,8 @@ func New(
 		// TODO: Move this AddEventHandler to the main loop when the FG is removed
 		osImageStreamInformer.Informer().AddEventHandler(optr.eventHandler())
 	}
-	if iriInformer != nil {
-		optr.iriLister = iriInformer.Lister()
-		optr.iriListerSynced = iriInformer.Informer().HasSynced
-	}
+	optr.iriLister = iriInformer.Lister()
+	optr.iriListerSynced = iriInformer.Informer().HasSynced
 
 	// Set up a dynamic informer for the Provisioning CR (metal3.io/v1alpha1).
 	// The informer is only started in Run() when the cluster is on BareMetal to avoid
@@ -454,9 +452,7 @@ func (optr *Operator) Run(ctx context.Context, workers int) {
 	if optr.osImageStreamListerSynced != nil && osimagestream.IsFeatureEnabled(optr.fgHandler) {
 		cacheSynced = append(cacheSynced, optr.osImageStreamListerSynced)
 	}
-	if optr.iriListerSynced != nil {
-		cacheSynced = append(cacheSynced, optr.iriListerSynced)
-	}
+	cacheSynced = append(cacheSynced, optr.iriListerSynced)
 	if !cache.WaitForCacheSync(ctx.Done(),
 		cacheSynced...) {
 		klog.Error("failed to sync caches")
