@@ -155,11 +155,12 @@ func runBootstrapCmd(_ *cobra.Command, _ []string) {
 		// ConfigMap (install/0000_80_machine-config_02_images.configmap.yaml,
 		// substituted by the CVO from install/image-references), so images
 		// may only be discovered here if the same tag is listed in both of
-		// those files. metallb-frr is; kube-vip is not in the release
-		// payload yet, so it must not be discovered here - it can only be
-		// wired through --kube-vip-image together with entries in the
-		// images ConfigMap and image-references once the payload ships it.
+		// those files. Both metallb-frr and kube-vip (ose-kube-vip,
+		// ART-21663 / ocp-build-data#11838) are payload members and are
+		// listed in both files, so the lookups here resolve to the same
+		// digests the CVO substitutes in-cluster.
 		bootstrapOpts.frrK8sImage = findImageOrDie(imgstream, "metallb-frr")
+		bootstrapOpts.kubeVipImage = findImageOrDie(imgstream, "kube-vip")
 	}
 
 	imgs := ctrlcommon.Images{

@@ -30,12 +30,10 @@ func TestInstallImagesConfigMapCoversControllerConfigImages(t *testing.T) {
 	var imagesJSON map[string]string
 	require.NoError(t, json.Unmarshal([]byte(cm.Data["images.json"]), &imagesJSON))
 
-	// kubeVipImage is intentionally absent: the kube-vip image is not in the
-	// release payload yet, so neither bootstrap nor the ConfigMap may carry
-	// it (both sides render it empty, preserving parity). Once the payload
-	// ships kube-vip, it must be added to the ConfigMap, image-references,
-	// and the bootstrap lookup together.
-	exceptions := map[string]bool{"kubeVipImage": true}
+	// Images consumed at bootstrap but deliberately absent from the
+	// ConfigMap go here, with rationale; the test fails if the ConfigMap
+	// gains the key while it is still listed.
+	exceptions := map[string]bool{}
 
 	typ := reflect.TypeOf(ControllerConfigImages{})
 	for i := 0; i < typ.NumField(); i++ {
