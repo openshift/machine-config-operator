@@ -198,6 +198,11 @@ const (
 	// currentConfigPath is where we store the current config on disk to validate
 	// against annotations changes
 	currentConfigPath = "/etc/machine-config-daemon/currentconfig"
+	// postOSUpdateEtcFilesMarkerPath is written before a reboot that follows an
+	// OS update with MC-managed /etc files. On the next first-run it signals that
+	// those files must be re-applied, because the ostree 3-way merge may have
+	// overwritten them when their content matched the old OS base.
+	postOSUpdateEtcFilesMarkerPath = "/etc/machine-config-daemon/post-os-update-etc-files"
 	// bootstrapConfigDiffPath is where we store the current config on disk to validate
 	// against annotations changes
 	bootstrapConfigDiffPath = "/etc/machine-config-daemon/bootstrapconfigdiff"
@@ -2271,6 +2276,36 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 	// check for any config drift.
 	if err := dn.updateSSHKeyLocationIfNeeded(state.currentConfig); err != nil {
 		return err
+	}
+
+	// If a previous OS update left a marker, re-apply MC-managed /etc files
+	// before validation. The ostree 3-way merge silently overwrites MC-managed
+	// files whose content matches the old OS base, causing a spurious content
+	// mismatch. Re-applying here, after the merge has run, restores the correct
+	// content so validation passes.
+	if _, err := os.Stat(postOSUpdateEtcFilesMarkerPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("checking post-OS-update marker: %w", err)
+	} else if err == nil {
+		klog.Infof("Post-OS-update marker found; re-applying MC /etc files to correct 3-way merge overwrites")
+		if err := os.Remove(postOSUpdateEtcFilesMarkerPath); err != nil {
+			klog.Errorf("Failed to remove post-OS-update marker: %v", err)
+		}
+		newIgnConfig, err := ctrlcommon.ParseAndConvertConfig(state.currentConfig.Spec.Config.Raw)
+		if err != nil {
+			return fmt.Errorf("parsing current config for /etc re-apply after OS update: %w", err)
+		}
+		var etcFiles []ign3types.File
+		for _, f := range newIgnConfig.Storage.Files {
+			if strings.HasPrefix(f.Path, "/etc/") {
+				etcFiles = append(etcFiles, f)
+			}
+		}
+		if len(etcFiles) > 0 {
+			klog.Infof("Re-applying %d MC /etc files after OS update", len(etcFiles))
+			if err := dn.writeFiles(etcFiles, false); err != nil {
+				return fmt.Errorf("re-applying /etc files after OS update: %w", err)
+			}
+		}
 	}
 
 	if err := dn.validateOnDiskStateOrImage(state.currentConfig, state.currentImage); err != nil {
