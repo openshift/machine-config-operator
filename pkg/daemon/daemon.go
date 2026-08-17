@@ -2200,7 +2200,9 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 	// files whose content matches the old OS base, causing a spurious content
 	// mismatch. Re-applying here, after the merge has run, restores the correct
 	// content so validation passes.
-	if _, err := os.Stat(postOSUpdateEtcFilesMarkerPath); err == nil {
+	if _, err := os.Stat(postOSUpdateEtcFilesMarkerPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("checking post-OS-update marker: %w", err)
+	} else if err == nil {
 		klog.Infof("Post-OS-update marker found; re-applying MC /etc files to correct 3-way merge overwrites")
 		if err := os.Remove(postOSUpdateEtcFilesMarkerPath); err != nil {
 			klog.Errorf("Failed to remove post-OS-update marker: %v", err)
