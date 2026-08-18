@@ -17,6 +17,72 @@ contents:
         exit 1
     fi
 
+    parse_online_nodes() {
+        pcs status nodes 2>/dev/null | awk '
+            /^[[:space:]]+Online:/ {
+                for (i=2; i<=NF; i++) { gsub(/[][]/,"",$i); if ($i != "") printf "%s ",$i }
+            }' || true
+    }
+
+    node_is_listed() {
+        local target="$1"
+        local list="$2"
+        local short="${target%%.*}"
+        [[ " $list " == *" $target "* ]] || [[ " $list " == *" $short "* ]]
+    }
+
+    LOCAL_NAME=$(crm_node -n 2>/dev/null || hostname -s)
+    LOCAL_SHORT="${LOCAL_NAME%%.*}"
+    FENCED_SHORT="${FENCED_NODE%%.*}"
+
+    if [[ "$FENCED_SHORT" == "$LOCAL_SHORT" ]]; then
+        logger -t taint-fenced-node "Refusing to taint local node ${FENCED_NODE}"
+        exit 0
+    fi
+
+    # Confirm we are the survivor and the target stays off. Node-lost alerts also
+    # fire on brief corosync blips; tainting a live peer would force-delete its pods.
+    STABLE_REQUIRED=3
+    STABLE_INTERVAL=5
+    MAX_CONFIRM_ATTEMPTS=12
+    STABLE_COUNT=0
+    LAST_ONLINE=""
+    for attempt in $(seq 1 $MAX_CONFIRM_ATTEMPTS); do
+        LAST_ONLINE=$(parse_online_nodes)
+        if [[ -z "$LAST_ONLINE" ]]; then
+            logger -t taint-fenced-node "pacemaker Online list empty (attempt ${attempt}/${MAX_CONFIRM_ATTEMPTS}); retrying"
+            STABLE_COUNT=0
+            sleep $STABLE_INTERVAL
+            continue
+        fi
+        if ! node_is_listed "$LOCAL_NAME" "$LAST_ONLINE"; then
+            logger -t taint-fenced-node "Local node ${LOCAL_NAME} is not pacemaker-Online; skipping taint (this node may be shutting down)"
+            exit 0
+        fi
+        if node_is_listed "$FENCED_NODE" "$LAST_ONLINE"; then
+            logger -t taint-fenced-node "${FENCED_NODE} is still pacemaker-Online (attempt ${attempt}/${MAX_CONFIRM_ATTEMPTS}); waiting to confirm loss"
+            STABLE_COUNT=0
+            sleep $STABLE_INTERVAL
+            continue
+        fi
+        STABLE_COUNT=$((STABLE_COUNT + 1))
+        logger -t taint-fenced-node "${FENCED_NODE} is not pacemaker-Online (${STABLE_COUNT}/${STABLE_REQUIRED})"
+        if [[ "$STABLE_COUNT" -ge "$STABLE_REQUIRED" ]]; then
+            break
+        fi
+        sleep $STABLE_INTERVAL
+    done
+
+    LAST_ONLINE=$(parse_online_nodes)
+    if [[ -n "$LAST_ONLINE" ]] && node_is_listed "$FENCED_NODE" "$LAST_ONLINE"; then
+        logger -t taint-fenced-node "Skipping taint: ${FENCED_NODE} returned to pacemaker-Online (transient membership loss)"
+        exit 0
+    fi
+    if [[ "$STABLE_COUNT" -lt "$STABLE_REQUIRED" ]]; then
+        logger -t taint-fenced-node "ERROR: Could not confirm ${FENCED_NODE} is stably Offline; will retry via systemd"
+        exit 1
+    fi
+
     logger -t taint-fenced-node "Applying out-of-service taint to fenced node ${FENCED_NODE}"
 
     PATCH=$(cat <<PATCHEOF

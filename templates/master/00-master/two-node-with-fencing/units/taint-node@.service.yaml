@@ -3,8 +3,12 @@ contents: |
   [Unit]
   Description=Taint fenced node %i in Kubernetes
   After=network.target
+  StartLimitIntervalSec=2400
+  StartLimitBurst=3
 
   [Service]
   Type=oneshot
   ExecStart=/usr/local/bin/taint-fenced-node.sh %i
-  TimeoutStartSec=660
+  TimeoutStartSec=720
+  Restart=on-failure
+  RestartSec=10

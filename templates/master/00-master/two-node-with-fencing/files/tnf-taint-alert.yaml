@@ -3,14 +3,41 @@ path: "/var/lib/pacemaker/alerts/tnf-taint-alert.sh"
 contents:
   inline: |
     #!/bin/bash
-    # Pacemaker alert agent for fencing events.
-    # CRM_alert_kind=fencing, CRM_alert_rc=0 identifies a successful fence
-    # completion.
-    if [ "$CRM_alert_kind" = "fencing" ] && [ "$CRM_alert_rc" = "0" ] && [ -n "$CRM_alert_node" ]; then
-        logger -t tnf-taint-alert "Fencing succeeded for ${CRM_alert_node}, triggering taint service"
-        if ! sudo systemctl start --no-block "taint-node@${CRM_alert_node}.service"; then
-            logger -t tnf-taint-alert "ERROR: Failed to start taint-node@${CRM_alert_node}.service"
-            exit 1
+    # Pacemaker alert agent that starts taint-node@<peer> when a TNF node is gone.
+    #
+    # Two pacemaker alerts invoke this script:
+    #   tnf-taint-alert      (select_fencing) - STONITH completed successfully
+    #   tnf-taint-lost-alert (select_nodes)   - peer left corosync membership
+    #
+    # Node-lost covers graceful ACPI shutdown, which does not emit a fencing
+    # event. taint-fenced-node.sh refuses to taint the local node and waits
+    # until the target is stably Offline so a transient membership blip is not
+    # treated as a fence.
+    start_taint_unit() {
+        local reason="$1"
+        local unit="taint-node@${CRM_alert_node}.service"
+        logger -t tnf-taint-alert "${reason} for ${CRM_alert_node}, triggering taint service"
+        if sudo systemctl start --no-block "$unit"; then
+            return 0
         fi
+        # Fencing and node-lost can fire together; a oneshot already running is success.
+        local state
+        state=$(systemctl is-active "$unit" 2>/dev/null || true)
+        if [ "$state" = "activating" ] || [ "$state" = "active" ]; then
+            logger -t tnf-taint-alert "taint service ${unit} already ${state}"
+            return 0
+        fi
+        logger -t tnf-taint-alert "ERROR: Failed to start ${unit} (state=${state})"
+        return 1
+    }
+
+    if [ -z "${CRM_alert_node:-}" ]; then
+        exit 0
+    fi
+
+    if [ "$CRM_alert_kind" = "fencing" ] && [ "$CRM_alert_rc" = "0" ]; then
+        start_taint_unit "Fencing succeeded" || exit 1
+    elif [ "$CRM_alert_kind" = "node" ] && [ "$CRM_alert_desc" = "lost" ]; then
+        start_taint_unit "Node lost" || exit 1
     fi
     exit 0
