@@ -171,8 +171,20 @@ func (a *Assertions) SecretExists(name string, msgAndArgs ...interface{}) {
 // Asserts that a Secret is deleted.
 func (a *Assertions) SecretDoesNotExist(name string, msgAndArgs ...interface{}) {
 	a.t.Helper()
-	stateFunc := func(_ *corev1.Secret, err error) (bool, error) {
-		return a.deleted(err)
+
+	// Track the UID via closure to detect object replacement.
+	// We capture it on the first poll iteration when the object exists,
+	// avoiding an extra upfront API call that can trigger rate limiting.
+	var originalUID string
+	var uidCaptured bool
+
+	stateFunc := func(secret *corev1.Secret, err error) (bool, error) {
+		// Capture UID on first iteration if object exists
+		if !uidCaptured && err == nil {
+			originalUID = string(secret.UID)
+			uidCaptured = true
+		}
+		return a.deletedWithUID(secret, err, originalUID)
 	}
 
 	a.secretReachesState(name, stateFunc, msgAndArgs...)
@@ -191,8 +203,20 @@ func (a *Assertions) ConfigMapExists(name string, msgAndArgs ...interface{}) {
 // Asserts that a ConfigMap is deleted.
 func (a *Assertions) ConfigMapDoesNotExist(name string, msgAndArgs ...interface{}) {
 	a.t.Helper()
-	stateFunc := func(_ *corev1.ConfigMap, err error) (bool, error) {
-		return a.deleted(err)
+
+	// Track the UID via closure to detect object replacement.
+	// We capture it on the first poll iteration when the object exists,
+	// avoiding an extra upfront API call that can trigger rate limiting.
+	var originalUID string
+	var uidCaptured bool
+
+	stateFunc := func(cm *corev1.ConfigMap, err error) (bool, error) {
+		// Capture UID on first iteration if object exists
+		if !uidCaptured && err == nil {
+			originalUID = string(cm.UID)
+			uidCaptured = true
+		}
+		return a.deletedWithUID(cm, err, originalUID)
 	}
 
 	a.configMapReachesState(name, stateFunc, msgAndArgs...)
@@ -211,8 +235,20 @@ func (a *Assertions) PodExists(podName string, msgAndArgs ...interface{}) {
 // Asserts that a Pod is deleted.
 func (a *Assertions) PodDoesNotExist(podName string, msgAndArgs ...interface{}) {
 	a.t.Helper()
-	stateFunc := func(_ *corev1.Pod, err error) (bool, error) {
-		return a.deleted(err)
+
+	// Track the UID via closure to detect object replacement.
+	// We capture it on the first poll iteration when the object exists,
+	// avoiding an extra upfront API call that can trigger rate limiting.
+	var originalUID string
+	var uidCaptured bool
+
+	stateFunc := func(pod *corev1.Pod, err error) (bool, error) {
+		// Capture UID on first iteration if object exists
+		if !uidCaptured && err == nil {
+			originalUID = string(pod.UID)
+			uidCaptured = true
+		}
+		return a.deletedWithUID(pod, err, originalUID)
 	}
 
 	a.podReachesState(podName, stateFunc, msgAndArgs...)
@@ -299,8 +335,20 @@ func (a *Assertions) JobExists(jobName string, msgAndArgs ...interface{}) {
 // Asserts that a Job is deleted.
 func (a *Assertions) JobDoesNotExist(jobName string, msgAndArgs ...interface{}) {
 	a.t.Helper()
-	stateFunc := func(_ *batchv1.Job, err error) (bool, error) {
-		return a.deleted(err)
+
+	// Track the UID via closure to detect object replacement.
+	// We capture it on the first poll iteration when the object exists,
+	// avoiding an extra upfront API call that can trigger rate limiting.
+	var originalUID string
+	var uidCaptured bool
+
+	stateFunc := func(job *batchv1.Job, err error) (bool, error) {
+		// Capture UID on first iteration if object exists
+		if !uidCaptured && err == nil {
+			originalUID = string(job.UID)
+			uidCaptured = true
+		}
+		return a.deletedWithUID(job, err, originalUID)
 	}
 
 	a.jobReachesState(jobName, stateFunc, msgAndArgs...)
@@ -317,13 +365,17 @@ func (a *Assertions) MachineOSConfigExists(mosb *mcfgv1.MachineOSConfig, msgAndA
 }
 
 // Asserts that a MachineOSConfig is deleted.
-func (a *Assertions) MachineOSConfigDoesNotExist(mosb *mcfgv1.MachineOSConfig, msgAndArgs ...interface{}) {
+func (a *Assertions) MachineOSConfigDoesNotExist(mosc *mcfgv1.MachineOSConfig, msgAndArgs ...interface{}) {
 	a.t.Helper()
-	stateFunc := func(_ *mcfgv1.MachineOSConfig, err error) (bool, error) {
-		return a.deleted(err)
+
+	// Capture the original UID from the provided object
+	originalUID := string(mosc.UID)
+
+	stateFunc := func(apiMosc *mcfgv1.MachineOSConfig, err error) (bool, error) {
+		return a.deletedWithUID(apiMosc, err, originalUID)
 	}
 
-	a.machineOSConfigReachesState(mosb, stateFunc, msgAndArgs...)
+	a.machineOSConfigReachesState(mosc, stateFunc, msgAndArgs...)
 }
 
 // Asserts that a MachineOSBuild has failed.
@@ -359,8 +411,12 @@ func (a *Assertions) MachineOSBuildExists(mosb *mcfgv1.MachineOSBuild, msgAndArg
 // Asserts that a MachineOSBuild is deleted.
 func (a *Assertions) MachineOSBuildDoesNotExist(mosb *mcfgv1.MachineOSBuild, msgAndArgs ...interface{}) {
 	a.t.Helper()
-	stateFunc := func(_ *mcfgv1.MachineOSBuild, err error) (bool, error) {
-		return a.deleted(err)
+
+	// Capture the original UID from the provided object
+	originalUID := string(mosb.UID)
+
+	stateFunc := func(apiMosb *mcfgv1.MachineOSBuild, err error) (bool, error) {
+		return a.deletedWithUID(apiMosb, err, originalUID)
 	}
 
 	a.machineOSBuildReachesState(mosb, stateFunc, msgAndArgs...)
@@ -389,8 +445,20 @@ func (a *Assertions) PodHasOwnerSet(podName string, msgAndArgs ...interface{}) {
 // Asserts that an ImageStreamTag is deleted.
 func (a *Assertions) ImageDoesNotExist(imageName string, msgAndArgs ...interface{}) {
 	a.t.Helper()
-	stateFunc := func(_ *imagev1.ImageStreamTag, err error) (bool, error) {
-		return a.deleted(err)
+
+	// Track the UID via closure to detect object replacement.
+	// We capture it on the first poll iteration when the object exists,
+	// avoiding an extra upfront API call that can trigger rate limiting.
+	var originalUID string
+	var uidCaptured bool
+
+	stateFunc := func(image *imagev1.ImageStreamTag, err error) (bool, error) {
+		// Capture UID on first iteration if object exists
+		if !uidCaptured && err == nil {
+			originalUID = string(image.UID)
+			uidCaptured = true
+		}
+		return a.deletedWithUID(image, err, originalUID)
 	}
 
 	a.imageStreamTagReachesState(imageName, stateFunc, msgAndArgs...)
@@ -409,8 +477,12 @@ func (a *Assertions) MachineConfigExists(mc *mcfgv1.MachineConfig, msgAndArgs ..
 // Asserts that a MachineConfig is deleted.
 func (a *Assertions) MachineConfigDoesNotExist(mc *mcfgv1.MachineConfig, msgAndArgs ...interface{}) {
 	a.t.Helper()
-	stateFunc := func(_ *mcfgv1.MachineConfig, err error) (bool, error) {
-		return a.deleted(err)
+
+	// Capture the original UID from the provided object
+	originalUID := string(mc.UID)
+
+	stateFunc := func(apiMC *mcfgv1.MachineConfig, err error) (bool, error) {
+		return a.deletedWithUID(apiMC, err, originalUID)
 	}
 
 	a.machineConfigReachesState(mc, stateFunc, msgAndArgs...)
@@ -705,16 +777,6 @@ func (a *Assertions) getPollInterval() time.Duration {
 	return time.Second
 }
 
-// Determines if a given object is deleted based upon the error provided as
-// well as whether is to be done..
-func (a *Assertions) deleted(err error) (bool, error) {
-	if a.poll {
-		return isDeleted(err)
-	}
-
-	return isDeletedNoPoll(err)
-}
-
 // Determines if a given object is created based upon the error provided as
 // well as whether polling is to be done.
 func (a *Assertions) created(err error) (bool, error) {
@@ -729,17 +791,6 @@ func (a *Assertions) created(err error) (bool, error) {
 // query not returning any errors.
 func isCreatedNoPoll(err error) (bool, error) {
 	return err == nil, err
-}
-
-// Determines if an object is deleted right now. This is determined by the API
-// returning an IsNotFound error which is checked for. Any other errors are
-// returned to the caller.
-func isDeletedNoPoll(err error) (bool, error) {
-	if k8serrors.IsNotFound(err) {
-		return true, nil
-	}
-
-	return false, err
 }
 
 // Determines if an object is eventually created. This is more forgiving
@@ -757,19 +808,58 @@ func isCreated(err error) (bool, error) {
 	return false, err
 }
 
-// Determines if an object is eventually deleted. This is more forgiving
-// because we first check whether the returned error is nil and then check for
-// IsNotFound.
-func isDeleted(err error) (bool, error) {
-	if err == nil {
-		return false, nil
-	}
-
+// Determines if an object with a specific UID is deleted or replaced.
+// If originalUID is provided and the current object has a different UID,
+// consider it deleted (replaced with a new object).
+func (a *Assertions) deletedWithUID(obj interface{}, err error, originalUID string) (bool, error) {
+	// If we got a NotFound error, the object is definitely deleted
 	if k8serrors.IsNotFound(err) {
 		return true, nil
 	}
 
-	return false, err
+	// If there's another error, return it
+	if err != nil {
+		if a.poll {
+			return false, err
+		}
+		return false, err
+	}
+
+	// Object exists - check if it has a different UID (i.e., it was replaced)
+	if originalUID != "" {
+		// Extract UID from the object
+		var currentUID string
+		switch v := obj.(type) {
+		case *corev1.Pod:
+			currentUID = string(v.UID)
+		case *batchv1.Job:
+			currentUID = string(v.UID)
+		case *mcfgv1.MachineOSBuild:
+			currentUID = string(v.UID)
+		case *corev1.Secret:
+			currentUID = string(v.UID)
+		case *corev1.ConfigMap:
+			currentUID = string(v.UID)
+		case *mcfgv1.MachineConfig:
+			currentUID = string(v.UID)
+		case *mcfgv1.MachineOSConfig:
+			currentUID = string(v.UID)
+		case *imagev1.ImageStreamTag:
+			currentUID = string(v.UID)
+		}
+
+		// If the UID changed, the original object was deleted/replaced
+		if currentUID != originalUID {
+			return true, nil
+		}
+	}
+
+	// Object still exists with same UID (or we don't have original UID)
+	if a.poll {
+		return false, nil
+	}
+
+	return false, fmt.Errorf("object still exists")
 }
 
 func prefixMsgAndArgs(item interface{}, items []interface{}) []interface{} {
