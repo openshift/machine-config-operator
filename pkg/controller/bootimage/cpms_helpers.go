@@ -128,7 +128,7 @@ func (ctrl *Controller) syncControlPlaneMachineSet(controlPlaneMachineSet *machi
 
 	// Skip if this is a windows ControlPlaneMachineSet.
 	if os, ok := controlPlaneMachineSet.Spec.Template.OpenShiftMachineV1Beta1Machine.Spec.Labels[OSLabelKey]; ok {
-		if os == "Windows" {
+		if os == WindowsOSLabel {
 			klog.Infof("ControlPlaneMachineSet %s has a windows os label, skipping boot image update", controlPlaneMachineSet.Name)
 			return nil
 		}
