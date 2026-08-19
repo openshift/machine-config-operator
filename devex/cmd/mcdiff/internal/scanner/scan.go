@@ -68,7 +68,7 @@ type Finding struct {
 
 // Scan enumerates every file in the node's rendered MachineConfig and compares
 // each against the on-disk copy from reader.
-func Scan(ctx context.Context, g cluster.Getter, nodes node.NodeGetter, reader node.Reader, nodeName string, opts Options) (*Result, error) {
+func Scan(ctx context.Context, g cluster.Getter, nodes node.Getter, reader node.Reader, nodeName string, opts Options) (*Result, error) {
 	if g == nil {
 		return nil, fmt.Errorf("getter is nil")
 	}
@@ -195,7 +195,7 @@ func lastWriterFor(rp *cluster.RenderedPool, path string) string {
 	return attr.LastWriter.MachineConfigName
 }
 
-func resolvePoolName(ctx context.Context, g cluster.Getter, nodes node.NodeGetter, nodeName, poolOverride string) (string, error) {
+func resolvePoolName(ctx context.Context, g cluster.Getter, nodes node.Getter, nodeName, poolOverride string) (string, error) {
 	if poolOverride != "" {
 		return poolOverride, nil
 	}
