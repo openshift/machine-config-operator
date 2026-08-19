@@ -320,6 +320,7 @@ func TestSysContextBuilderWithProxy(t *testing.T) {
 		name             string
 		httpProxy        string
 		httpsProxy       string
+		skipProxy        bool
 		expectedScheme   string
 		expectedHost     string
 		expectedUsername string
@@ -376,6 +377,12 @@ func TestSysContextBuilderWithProxy(t *testing.T) {
 			expectedUsername: "user",
 			expectedPassword: "p@ssw0rd!",
 		},
+		{
+			name:       "WithoutProxy skips proxy even when configured",
+			httpsProxy: "https://proxy.example.com:3128",
+			httpProxy:  "http://proxy.example.com:8080",
+			skipProxy:  true,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -389,35 +396,41 @@ func TestSysContextBuilderWithProxy(t *testing.T) {
 				},
 			}
 
-			sysCtx, err := NewSysContextBuilder().
+			builder := NewSysContextBuilder().
 				WithSecret(secret).
-				WithControllerConfig(cc).
-				Build()
+				WithControllerConfig(cc)
+			if tc.skipProxy {
+				builder.WithoutProxy()
+			}
+
+			sysCtx, err := builder.Build()
 			require.NoError(t, err, "SysContextBuilder.Build should not fail")
 			require.NotNil(t, sysCtx, "SysContext wrapper should not be nil")
 			require.NotNil(t, sysCtx.SysContext, "Underlying SystemContext should not be nil")
 
-			// Check that proxy was set correctly
-			require.NotNil(t, sysCtx.SysContext.DockerProxyURL, "DockerProxyURL should not be nil")
-			assert.Equal(t, tc.expectedScheme, sysCtx.SysContext.DockerProxyURL.Scheme, "Proxy scheme should match")
-			assert.Equal(t, tc.expectedHost, sysCtx.SysContext.DockerProxyURL.Host, "Proxy host should match")
+			if tc.skipProxy {
+				assert.Nil(t, sysCtx.SysContext.DockerProxyURL, "DockerProxyURL should be nil when proxy is skipped")
+			} else {
+				require.NotNil(t, sysCtx.SysContext.DockerProxyURL, "DockerProxyURL should not be nil")
+				assert.Equal(t, tc.expectedScheme, sysCtx.SysContext.DockerProxyURL.Scheme, "Proxy scheme should match")
+				assert.Equal(t, tc.expectedHost, sysCtx.SysContext.DockerProxyURL.Host, "Proxy host should match")
 
-			// Check username and password if provided
-			if tc.expectedUsername != "" {
-				assert.NotNil(t, sysCtx.SysContext.DockerProxyURL.User, "Proxy user info should not be nil")
-				assert.Equal(t, tc.expectedUsername, sysCtx.SysContext.DockerProxyURL.User.Username(), "Proxy username should match")
-			}
+				if tc.expectedUsername != "" {
+					assert.NotNil(t, sysCtx.SysContext.DockerProxyURL.User, "Proxy user info should not be nil")
+					assert.Equal(t, tc.expectedUsername, sysCtx.SysContext.DockerProxyURL.User.Username(), "Proxy username should match")
+				}
 
-			if tc.expectedPassword != "" {
-				assert.NotNil(t, sysCtx.SysContext.DockerProxyURL.User, "Proxy user info should not be nil")
-				password, hasPassword := sysCtx.SysContext.DockerProxyURL.User.Password()
-				assert.True(t, hasPassword, "Proxy should have password")
-				assert.Equal(t, tc.expectedPassword, password, "Proxy password should match")
-			}
+				if tc.expectedPassword != "" {
+					assert.NotNil(t, sysCtx.SysContext.DockerProxyURL.User, "Proxy user info should not be nil")
+					password, hasPassword := sysCtx.SysContext.DockerProxyURL.User.Password()
+					assert.True(t, hasPassword, "Proxy should have password")
+					assert.Equal(t, tc.expectedPassword, password, "Proxy password should match")
+				}
 
-			if tc.expectedUsername == "" && tc.expectedPassword == "" {
-				if sysCtx.SysContext.DockerProxyURL.User != nil {
-					assert.Empty(t, sysCtx.SysContext.DockerProxyURL.User.Username(), "Proxy username should be empty")
+				if tc.expectedUsername == "" && tc.expectedPassword == "" {
+					if sysCtx.SysContext.DockerProxyURL.User != nil {
+						assert.Empty(t, sysCtx.SysContext.DockerProxyURL.User.Username(), "Proxy username should be empty")
+					}
 				}
 			}
 
