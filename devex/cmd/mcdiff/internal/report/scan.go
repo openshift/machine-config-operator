@@ -27,16 +27,16 @@ func WriteScan(w io.Writer, result *scanner.Result, opts ScanOptions) error {
 	}
 	format := opts.Format
 	if format == "" {
-		format = "text"
+		format = outputText
 	}
 	switch format {
-	case "text":
+	case outputText:
 		_, err := io.WriteString(w, formatScanText(result, opts))
 		return err
-	case "json":
+	case outputJSON:
 		return json.NewEncoder(w).Encode(toScanJSON(result, opts))
 	default:
-		return fmt.Errorf("unknown output format %q (want text or json)", format)
+		return fmt.Errorf("unknown output format %q (want %s or %s)", format, outputText, outputJSON)
 	}
 }
 

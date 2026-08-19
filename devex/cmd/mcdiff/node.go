@@ -28,7 +28,7 @@ type nodeOptions struct {
 	// nodeReader, if set, is used instead of a live MCD exec reader. Tests inject this.
 	nodeReader node.Reader
 	// nodeGetter, if set, is used instead of a live Node Get. Tests inject this.
-	nodeGetter node.NodeGetter
+	nodeGetter node.Getter
 	out        io.Writer
 }
 
@@ -144,7 +144,7 @@ func (o *nodeOptions) run(ctx context.Context, nodeName string) error {
 type liveClients struct {
 	getter cluster.Getter
 	reader node.Reader
-	nodes  node.NodeGetter
+	nodes  node.Getter
 }
 
 func liveClientsFromFlags(flags *genericclioptions.ConfigFlags) (*liveClients, error) {
@@ -175,7 +175,7 @@ type nodeScanArgs struct {
 	mustGather string
 }
 
-func runNode(ctx context.Context, g cluster.Getter, nodes node.NodeGetter, reader node.Reader, args nodeScanArgs, w io.Writer) error {
+func runNode(ctx context.Context, g cluster.Getter, nodes node.Getter, reader node.Reader, args nodeScanArgs, w io.Writer) error {
 	result, err := scanner.Scan(ctx, g, nodes, reader, args.node, scanner.Options{Pool: args.pool})
 	if err != nil {
 		return err

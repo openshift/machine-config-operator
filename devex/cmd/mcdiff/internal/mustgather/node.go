@@ -21,7 +21,7 @@ type NodeReader struct {
 }
 
 var _ node.Reader = (*NodeReader)(nil)
-var _ node.NodeGetter = (*MustGather)(nil)
+var _ node.Getter = (*MustGather)(nil)
 
 // GetNode loads a Node object from the must-gather archive. Used to detect the
 // node's MachineConfigPool from labels when --pool is not set.

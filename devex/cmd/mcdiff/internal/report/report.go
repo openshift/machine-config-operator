@@ -10,7 +10,11 @@ import (
 	"github.com/openshift/machine-config-operator/devex/cmd/mcdiff/internal/diff"
 )
 
-const separator = "────────────────────────────────────────"
+const (
+	separator  = "────────────────────────────────────────"
+	outputText = "text"
+	outputJSON = "json"
+)
 
 // Options control how a PoolFile is printed.
 type Options struct {
@@ -40,16 +44,16 @@ func Write(w io.Writer, pf *cluster.PoolFile, opts Options) error {
 	}
 	format := opts.Format
 	if format == "" {
-		format = "text"
+		format = outputText
 	}
 	switch format {
-	case "text":
+	case outputText:
 		_, err := io.WriteString(w, formatText(pf, opts))
 		return err
-	case "json":
+	case outputJSON:
 		return json.NewEncoder(w).Encode(toJSON(pf, opts))
 	default:
-		return fmt.Errorf("unknown output format %q (want text or json)", format)
+		return fmt.Errorf("unknown output format %q (want %s or %s)", format, outputText, outputJSON)
 	}
 }
 

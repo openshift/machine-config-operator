@@ -10,11 +10,11 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-var _ NodeGetter = (*kubeNodeGetter)(nil)
+var _ Getter = (*kubeNodeGetter)(nil)
 
-// NodeGetter loads a Node object. Used to detect the node's MachineConfigPool
+// Getter loads a Node object. Used to detect the node's MachineConfigPool
 // from labels when --pool is not set.
-type NodeGetter interface {
+type Getter interface {
 	GetNode(ctx context.Context, name string) (*corev1.Node, error)
 }
 
@@ -22,8 +22,8 @@ type kubeNodeGetter struct {
 	kube kubernetes.Interface
 }
 
-// NewKubeNodeGetter returns a NodeGetter backed by the kubernetes clientset.
-func NewKubeNodeGetter(kube kubernetes.Interface) NodeGetter {
+// NewKubeNodeGetter returns a Getter backed by the kubernetes clientset.
+func NewKubeNodeGetter(kube kubernetes.Interface) Getter {
 	return &kubeNodeGetter{kube: kube}
 }
 
