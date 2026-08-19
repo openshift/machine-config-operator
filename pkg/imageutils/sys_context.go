@@ -30,6 +30,7 @@ type SysContextBuilder struct {
 	secret           *corev1.Secret
 	controllerConfig *mcfgv1.ControllerConfig
 	registriesConfig *sysregistriesv2.V2RegistriesConf
+	skipProxy        bool
 }
 
 // NewSysContextBuilder creates a new SysContextBuilder for building SysContext instances.
@@ -46,6 +47,12 @@ func (b *SysContextBuilder) WithSecret(secret *corev1.Secret) *SysContextBuilder
 // WithControllerConfig adds certificates and proxy settings from ControllerConfig to the SysContext.
 func (b *SysContextBuilder) WithControllerConfig(cc *mcfgv1.ControllerConfig) *SysContextBuilder {
 	b.controllerConfig = cc
+	return b
+}
+
+// WithoutProxy disables proxy configuration even if the ControllerConfig has one.
+func (b *SysContextBuilder) WithoutProxy() *SysContextBuilder {
+	b.skipProxy = true
 	return b
 }
 
@@ -157,7 +164,7 @@ func (b *SysContextBuilder) buildRegistries(sysContext *SysContext) error {
 // Prioritizes HTTPS proxy over HTTP proxy when both are configured.
 // Returns early if no controller config was provided or no proxy is configured.
 func (b *SysContextBuilder) buildProxy(sysContext *SysContext) error {
-	if b.controllerConfig == nil {
+	if b.controllerConfig == nil || b.skipProxy {
 		return nil
 	}
 	// TODO: Improve when containers-libs is used with https://github.com/containers/container-libs/pull/583
