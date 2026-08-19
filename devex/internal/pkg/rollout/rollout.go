@@ -358,13 +358,15 @@ func updateContainers(name, pullspec string, containers []corev1.Container) []co
 
 func setDeploymentReplicas(cs *framework.ClientSet, deploymentName, namespace string, replicas int32) error {
 	klog.Infof("Setting replicas for %s/%s to %d", namespace, deploymentName, replicas)
-	scale, err := cs.AppsV1Interface.Deployments(namespace).GetScale(context.TODO(), deploymentName, metav1.GetOptions{})
-	if err != nil {
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		scale, err := cs.AppsV1Interface.Deployments(namespace).GetScale(context.TODO(), deploymentName, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+
+		scale.Spec.Replicas = replicas
+
+		_, err = cs.AppsV1Interface.Deployments(namespace).UpdateScale(context.TODO(), deploymentName, scale, metav1.UpdateOptions{})
 		return err
-	}
-
-	scale.Spec.Replicas = replicas
-
-	_, err = cs.AppsV1Interface.Deployments(namespace).UpdateScale(context.TODO(), deploymentName, scale, metav1.UpdateOptions{})
-	return err
+	})
 }
