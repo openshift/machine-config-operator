@@ -183,7 +183,7 @@ func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet
 	// Skip if this is a windows machineset. Not counted as skipped since the MCO
 	// intentionally excludes Windows machinesets.
 	if os, ok := machineSet.Spec.Template.Labels[OSLabelKey]; ok {
-		if os == "Windows" {
+		if os == WindowsOSLabel {
 			klog.Infof("machineset %s has a windows os label, skipping boot image update", machineSet.Name)
 			return false, "", nil
 		}
