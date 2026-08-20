@@ -55,6 +55,8 @@ spec:
     - name: manifests
       mountPath: "/opt/openshift/manifests"
       mountPropagation: HostToContainer
+    - name: hosts-dir
+      mountPath: "/etc/hosts"
     imagePullPolicy: IfNotPresent
   containers:
   - name: coredns
@@ -71,6 +73,8 @@ spec:
     volumeMounts:
     - name: conf-dir
       mountPath: "/etc/coredns"
+    - name: hosts-dir
+      mountPath: "/etc/hosts"
     livenessProbe:
       httpGet:
         path: /health
