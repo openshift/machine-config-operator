@@ -41,7 +41,7 @@ require (
 	github.com/onsi/gomega v1.39.1
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/openshift-eng/openshift-tests-extension v0.0.0-20260707142426-572a3e9deb7a
-	github.com/openshift/api v0.0.0-20260810132456-8f52beb625b5
+	github.com/openshift/api v0.0.0-20260901194050-81278704edb0
 	github.com/openshift/client-go v0.0.0-20260810202730-ddca5e0b7146
 	github.com/openshift/imagebuilder v1.2.21
 	github.com/openshift/library-go v0.0.0-20260720123941-85336565c3c7
