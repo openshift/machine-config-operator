@@ -15,6 +15,7 @@ import (
 	features "github.com/openshift/api/features"
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 	opv1 "github.com/openshift/api/operator/v1"
+	"github.com/openshift/machine-config-operator/pkg/controller/bootimage/marketplace"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	operatorversion "github.com/openshift/machine-config-operator/pkg/version"
 	corev1 "k8s.io/api/core/v1"
@@ -25,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
+	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
@@ -35,39 +37,41 @@ import (
 var awsMachineTemplateGVR = capav1beta2.GroupVersion.WithResource("awsmachinetemplates")
 
 // syncCAPIMachineSets reconciles boot images for enrolled CAPI MachineSets.
+// Returns the oldest RHCOS version across all marketplace CAPI MachineSets
+// (empty for non-marketplace clusters). The caller uses this for skew enforcement.
 // nolint:dupl
-func (ctrl *Controller) syncCAPIMachineSets(reason string) {
+func (ctrl *Controller) syncCAPIMachineSets(reason string) string {
 	ctrl.capiMachineSetStats = MachineResourceStats{}
 	if ctrl.capiMachineSetLister == nil {
-		return
+		return ""
 	}
 
 	mcop, err := ctrl.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
 	if err != nil {
 		klog.Errorf("Failed to get MachineConfiguration: %v", err)
 		ctrl.updateConditions(reason, fmt.Errorf("failed to get MachineConfiguration while enqueueing CAPI MachineSets: %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
-		return
+		return ""
 	}
 
 	machineManagerFound, machineResourceSelector, err := getMachineResourceSelectorFromMachineManagers(mcop.Status.ManagedBootImagesStatus.MachineManagers, opv1.ClusterAPI, opv1.MachineSets)
 	if err != nil {
 		klog.Errorf("failed to create a machineset selector while enqueueing CAPI MachineSets: %v", err)
 		ctrl.updateConditions(reason, fmt.Errorf("failed to create a machineset selector while enqueueing CAPI MachineSets: %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
-		return
+		return ""
 	}
 	if !machineManagerFound {
 		klog.V(4).Infof("No CAPI MachineSet manager found, clearing CAPI boot image state")
 		for k := range ctrl.capiBootImageState {
 			delete(ctrl.capiBootImageState, k)
 		}
-		return
+		return ""
 	}
 
 	objs, err := ctrl.capiMachineSetLister.List(machineResourceSelector)
 	if err != nil {
 		klog.Errorf("failed to list CAPI MachineSets: %v", err)
 		ctrl.updateConditions(reason, fmt.Errorf("failed to list CAPI MachineSets: %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
-		return
+		return ""
 	}
 
 	if len(objs) == 0 {
@@ -82,6 +86,7 @@ func (ctrl *Controller) syncCAPIMachineSets(reason string) {
 	var syncErrors []error
 	ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
 
+	var rhcosVersion string
 	for _, obj := range objs {
 		ms, err := unstructuredToMachineSet(obj)
 		if err != nil {
@@ -90,7 +95,7 @@ func (ctrl *Controller) syncCAPIMachineSets(reason string) {
 			ctrl.capiMachineSetStats.erroredCount++
 			continue
 		}
-		patchSkipped, err := ctrl.syncCAPIMachineSet(ms)
+		patchSkipped, version, err := ctrl.syncCAPIMachineSet(ms)
 		if err == nil {
 			ctrl.capiMachineSetStats.inProgress++
 		} else {
@@ -101,45 +106,53 @@ func (ctrl *Controller) syncCAPIMachineSets(reason string) {
 		if patchSkipped {
 			ctrl.capiMachineSetStats.skippedCount++
 		}
+		if version != "" {
+			if rhcosVersion == "" || marketplace.CmpRHCOSVersion(version, rhcosVersion) < 0 {
+				rhcosVersion = version
+			}
+		}
 		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
 	}
 	ctrl.updateConditions(reason, kubeErrs.NewAggregate(syncErrors), opv1.MachineConfigurationBootImageUpdateDegraded)
+	return rhcosVersion
 }
 
 // syncCAPIMachineDeployments reconciles boot images for enrolled CAPI MachineDeployments.
+// Returns the oldest RHCOS version across all marketplace CAPI MachineDeployments
+// (empty for non-marketplace clusters). The caller uses this for skew enforcement.
 // nolint:dupl
-func (ctrl *Controller) syncCAPIMachineDeployments(reason string) {
+func (ctrl *Controller) syncCAPIMachineDeployments(reason string) string {
 	ctrl.capiMachineDeploymentStats = MachineResourceStats{}
 	if ctrl.capiMachineDeploymentLister == nil {
-		return
+		return ""
 	}
 
 	mcop, err := ctrl.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
 	if err != nil {
 		klog.Errorf("Failed to get MachineConfiguration: %v", err)
 		ctrl.updateConditions(reason, fmt.Errorf("failed to get MachineConfiguration while enqueueing CAPI MachineDeployments: %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
-		return
+		return ""
 	}
 
 	machineManagerFound, machineResourceSelector, err := getMachineResourceSelectorFromMachineManagers(mcop.Status.ManagedBootImagesStatus.MachineManagers, opv1.ClusterAPI, opv1.MachineDeployments)
 	if err != nil {
 		klog.Errorf("failed to create a selector while enqueueing CAPI MachineDeployments: %v", err)
 		ctrl.updateConditions(reason, fmt.Errorf("failed to create a selector while enqueueing CAPI MachineDeployments: %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
-		return
+		return ""
 	}
 	if !machineManagerFound {
 		klog.V(4).Infof("No CAPI MachineDeployment manager found, clearing CAPI MachineDeployment boot image state")
 		for k := range ctrl.capiMachineDeploymentBootImageState {
 			delete(ctrl.capiMachineDeploymentBootImageState, k)
 		}
-		return
+		return ""
 	}
 
 	objs, err := ctrl.capiMachineDeploymentLister.List(machineResourceSelector)
 	if err != nil {
 		klog.Errorf("failed to list CAPI MachineDeployments: %v", err)
 		ctrl.updateConditions(reason, fmt.Errorf("failed to list CAPI MachineDeployments: %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
-		return
+		return ""
 	}
 
 	if len(objs) == 0 {
@@ -154,6 +167,7 @@ func (ctrl *Controller) syncCAPIMachineDeployments(reason string) {
 	var syncErrors []error
 	ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
 
+	var rhcosVersion string
 	for _, obj := range objs {
 		md, err := unstructuredToMachineDeployment(obj)
 		if err != nil {
@@ -162,7 +176,7 @@ func (ctrl *Controller) syncCAPIMachineDeployments(reason string) {
 			ctrl.capiMachineDeploymentStats.erroredCount++
 			continue
 		}
-		patchSkipped, err := ctrl.syncCAPIMachineDeployment(md)
+		patchSkipped, version, err := ctrl.syncCAPIMachineDeployment(md)
 		if err == nil {
 			ctrl.capiMachineDeploymentStats.inProgress++
 		} else {
@@ -173,13 +187,20 @@ func (ctrl *Controller) syncCAPIMachineDeployments(reason string) {
 		if patchSkipped {
 			ctrl.capiMachineDeploymentStats.skippedCount++
 		}
+		if version != "" {
+			if rhcosVersion == "" || marketplace.CmpRHCOSVersion(version, rhcosVersion) < 0 {
+				rhcosVersion = version
+			}
+		}
 		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
 	}
 	ctrl.updateConditions(reason, kubeErrs.NewAggregate(syncErrors), opv1.MachineConfigurationBootImageUpdateDegraded)
+	return rhcosVersion
 }
 
 // syncCAPIMachineSet reconciles a single CAPI MachineSet's boot image.
-func (ctrl *Controller) syncCAPIMachineSet(ms *clusterv1.MachineSet) (bool, error) {
+// Returns (patchSkipped, rhcosVersion, error).
+func (ctrl *Controller) syncCAPIMachineSet(ms *clusterv1.MachineSet) (bool, string, error) {
 	startTime := time.Now()
 	klog.V(4).Infof("Started syncing CAPI MachineSet %q (%v)", ms.Name, startTime)
 	defer func() {
@@ -192,7 +213,7 @@ func (ctrl *Controller) syncCAPIMachineSet(ms *clusterv1.MachineSet) (bool, erro
 	for _, ref := range ms.GetOwnerReferences() {
 		if ref.Kind == "MachineDeployment" {
 			klog.Infof("CAPI MachineSet %s is owned by MachineDeployment %s, boot image managed via parent", ms.Name, ref.Name)
-			return false, nil
+			return false, "", nil
 		}
 	}
 
@@ -201,11 +222,11 @@ func (ctrl *Controller) syncCAPIMachineSet(ms *clusterv1.MachineSet) (bool, erro
 	if ctrl.fgHandler.Enabled(features.FeatureGateMachineAPIMigration) {
 		mapiMS, err := ctrl.mapiMachineSetLister.MachineSets(MachineAPINamespace).Get(ms.Name)
 		if err != nil && !kubeApiErrors.IsNotFound(err) {
-			return false, fmt.Errorf("failed to check MAPI MachineSet for CAPI MachineSet %s: %w", ms.Name, err)
+			return false, "", fmt.Errorf("failed to check MAPI MachineSet for CAPI MachineSet %s: %w", ms.Name, err)
 		}
 		if mapiMS != nil && mapiMS.Status.AuthoritativeAPI != machinev1beta1.MachineAuthorityClusterAPI {
 			klog.Infof("CAPI MachineSet %s has a MAPI counterpart with authoritativeAPI=%s, deferring to MAPI path", ms.Name, mapiMS.Status.AuthoritativeAPI)
-			return false, nil
+			return false, "", nil
 		}
 	}
 
@@ -213,7 +234,7 @@ func (ctrl *Controller) syncCAPIMachineSet(ms *clusterv1.MachineSet) (bool, erro
 	if streamLabel, ok := ms.GetLabels()[OSStreamLabelKey]; ok {
 		if streamLabel != SupportedOSStream {
 			klog.Infof("CAPI MachineSet %s has unsupported stream: %v, skipping boot image update", ms.Name, streamLabel)
-			return false, nil
+			return false, "", nil
 		}
 	}
 
@@ -221,73 +242,74 @@ func (ctrl *Controller) syncCAPIMachineSet(ms *clusterv1.MachineSet) (bool, erro
 	if os, ok := ms.Spec.Template.Labels[OSLabelKey]; ok {
 		if os == WindowsOSLabel {
 			klog.Infof("CAPI MachineSet %s has a Windows OS label, skipping boot image update", ms.Name)
-			return false, nil
+			return false, "", nil
 		}
 	}
 
 	// Fetch ClusterVersion to determine if this is a multi-arch cluster.
 	clusterVersion, err := ctrl.clusterVersionLister.Get("version")
 	if err != nil {
-		return false, fmt.Errorf("failed to fetch clusterversion during CAPI MachineSet sync: %w", err)
+		return false, "", fmt.Errorf("failed to fetch clusterversion during CAPI MachineSet sync: %w", err)
 	}
 
 	arch, err := getArchFromCAPIMachineSet(ms, clusterVersion)
 	if err != nil {
 		if strings.Contains(err.Error(), "no architecture annotation found") {
-			return true, nil
+			return true, "", nil
 		}
-		return false, fmt.Errorf("failed to fetch arch during CAPI MachineSet sync: %w", err)
+		return false, "", fmt.Errorf("failed to fetch arch during CAPI MachineSet sync: %w", err)
 	}
 
 	infra, err := ctrl.infraLister.Get("cluster")
 	if err != nil {
-		return false, fmt.Errorf("failed to fetch infra object during CAPI MachineSet sync: %w", err)
+		return false, "", fmt.Errorf("failed to fetch infra object during CAPI MachineSet sync: %w", err)
 	}
 
 	configMap, err := ctrl.mcoCmLister.ConfigMaps(ctrlcommon.MCONamespace).Get(ctrlcommon.BootImagesConfigMapName)
 	if err != nil {
-		return false, fmt.Errorf("failed to fetch coreos-bootimages config map during CAPI MachineSet sync: %w", err)
+		return false, "", fmt.Errorf("failed to fetch coreos-bootimages config map during CAPI MachineSet sync: %w", err)
 	}
 	releaseVersionFromCM, releaseVersionFound := configMap.Data[ctrlcommon.OCPReleaseVersionKey]
 	if !releaseVersionFound {
 		klog.Infof("failed to find OCP release version in %s configmap, sync will exit to wait for the MCO upgrade to complete", ctrlcommon.BootImagesConfigMapName)
-		return true, nil
+		return true, "", nil
 	}
 	if releaseVersionFromCM != operatorversion.ReleaseVersion {
 		klog.Infof("mismatch between OCP release version stored in configmap and current MCO release version; sync will exit to wait for the MCO upgrade to complete")
-		return true, nil
+		return true, "", nil
 	}
 
 	// Fetch the current infrastructure template from the cache-backed per-platform lister.
 	currentTemplate, err := ctrl.getCAPIInfraTemplate(ms.Spec.Template.Spec.InfrastructureRef.Name)
 	if err != nil {
-		return false, fmt.Errorf("failed to fetch infrastructure template for CAPI MachineSet %s: %w", ms.Name, err)
+		return false, "", fmt.Errorf("failed to fetch infrastructure template for CAPI MachineSet %s: %w", ms.Name, err)
 	}
 
-	patchRequired, patchSkipped, newTemplate, err := checkCAPIMachineSet(ctrl.fgHandler, infra, ms.Name, currentTemplate, configMap, arch)
+	patchRequired, patchSkipped, newTemplate, rhcosVersion, err := checkCAPIMachineSet(ctrl.fgHandler, infra, "MachineSet", ms.Name, currentTemplate, configMap, arch, ctrl.kubeClient)
 	if err != nil {
-		return false, fmt.Errorf("failed to reconcile CAPI MachineSet %s: %w", ms.Name, err)
+		return false, "", fmt.Errorf("failed to reconcile CAPI MachineSet %s: %w", ms.Name, err)
 	}
 
 	if patchRequired {
 		newTemplateSpecBytes, err := json.Marshal(newTemplate.Object["spec"])
 		if err != nil {
-			return false, fmt.Errorf("failed to marshal new template spec for CAPI MachineSet %s: %w", ms.Name, err)
+			return false, "", fmt.Errorf("failed to marshal new template spec for CAPI MachineSet %s: %w", ms.Name, err)
 		}
 		if ctrl.checkCAPIMachineSetHotLoop(ms.Name, newTemplateSpecBytes) {
-			return false, fmt.Errorf("refusing to reconcile CAPI MachineSet %s, hot loop detected. Please opt-out of boot image updates, adjust your machine provisioning workflow to prevent hot loops and opt back in to resume boot image updates", ms.Name)
+			return false, "", fmt.Errorf("refusing to reconcile CAPI MachineSet %s, hot loop detected. Please opt-out of boot image updates, adjust your machine provisioning workflow to prevent hot loops and opt back in to resume boot image updates", ms.Name)
 		}
 		newTemplateName := newInfraTemplateName(ms.Name, newTemplateSpecBytes)
 		klog.Infof("Creating new CAPI infrastructure template %s for MachineSet %s", newTemplateName, ms.Name)
-		return false, ctrl.patchCAPIMachineSet(ms, newTemplate, newTemplateName)
+		return false, rhcosVersion, ctrl.patchCAPIMachineSet(ms, newTemplate, newTemplateName)
 	}
 
 	klog.Infof("No patching required for CAPI MachineSet %s", ms.Name)
-	return patchSkipped, nil
+	return patchSkipped, rhcosVersion, nil
 }
 
 // syncCAPIMachineDeployment reconciles a single CAPI MachineDeployment's boot image.
-func (ctrl *Controller) syncCAPIMachineDeployment(md *clusterv1.MachineDeployment) (bool, error) {
+// Returns (patchSkipped, rhcosVersion, error).
+func (ctrl *Controller) syncCAPIMachineDeployment(md *clusterv1.MachineDeployment) (bool, string, error) {
 	startTime := time.Now()
 	klog.V(4).Infof("Started syncing CAPI MachineDeployment %q (%v)", md.Name, startTime)
 	defer func() {
@@ -298,7 +320,7 @@ func (ctrl *Controller) syncCAPIMachineDeployment(md *clusterv1.MachineDeploymen
 	if streamLabel, ok := md.GetLabels()[OSStreamLabelKey]; ok {
 		if streamLabel != SupportedOSStream {
 			klog.Infof("CAPI MachineDeployment %s has unsupported stream: %v, skipping boot image update", md.Name, streamLabel)
-			return false, nil
+			return false, "", nil
 		}
 	}
 
@@ -306,67 +328,67 @@ func (ctrl *Controller) syncCAPIMachineDeployment(md *clusterv1.MachineDeploymen
 	if os, ok := md.Spec.Template.Labels[OSLabelKey]; ok {
 		if os == WindowsOSLabel {
 			klog.Infof("CAPI MachineDeployment %s has a Windows OS label, skipping boot image update", md.Name)
-			return false, nil
+			return false, "", nil
 		}
 	}
 
 	clusterVersion, err := ctrl.clusterVersionLister.Get("version")
 	if err != nil {
-		return false, fmt.Errorf("failed to fetch clusterversion during CAPI MachineDeployment sync: %w", err)
+		return false, "", fmt.Errorf("failed to fetch clusterversion during CAPI MachineDeployment sync: %w", err)
 	}
 
 	arch, err := getArchFromCAPIMachineDeployment(md, clusterVersion)
 	if err != nil {
 		if strings.Contains(err.Error(), "no architecture annotation found") {
-			return true, nil
+			return true, "", nil
 		}
-		return false, fmt.Errorf("failed to fetch arch during CAPI MachineDeployment sync: %w", err)
+		return false, "", fmt.Errorf("failed to fetch arch during CAPI MachineDeployment sync: %w", err)
 	}
 
 	infra, err := ctrl.infraLister.Get("cluster")
 	if err != nil {
-		return false, fmt.Errorf("failed to fetch infra object during CAPI MachineDeployment sync: %w", err)
+		return false, "", fmt.Errorf("failed to fetch infra object during CAPI MachineDeployment sync: %w", err)
 	}
 
 	configMap, err := ctrl.mcoCmLister.ConfigMaps(ctrlcommon.MCONamespace).Get(ctrlcommon.BootImagesConfigMapName)
 	if err != nil {
-		return false, fmt.Errorf("failed to fetch coreos-bootimages config map during CAPI MachineDeployment sync: %w", err)
+		return false, "", fmt.Errorf("failed to fetch coreos-bootimages config map during CAPI MachineDeployment sync: %w", err)
 	}
 	releaseVersionFromCM, releaseVersionFound := configMap.Data[ctrlcommon.OCPReleaseVersionKey]
 	if !releaseVersionFound {
 		klog.Infof("failed to find OCP release version in %s configmap, sync will exit to wait for the MCO upgrade to complete", ctrlcommon.BootImagesConfigMapName)
-		return true, nil
+		return true, "", nil
 	}
 	if releaseVersionFromCM != operatorversion.ReleaseVersion {
 		klog.Infof("mismatch between OCP release version stored in configmap and current MCO release version; sync will exit to wait for the MCO upgrade to complete")
-		return true, nil
+		return true, "", nil
 	}
 
 	currentTemplate, err := ctrl.getCAPIInfraTemplate(md.Spec.Template.Spec.InfrastructureRef.Name)
 	if err != nil {
-		return false, fmt.Errorf("failed to fetch infrastructure template for CAPI MachineDeployment %s: %w", md.Name, err)
+		return false, "", fmt.Errorf("failed to fetch infrastructure template for CAPI MachineDeployment %s: %w", md.Name, err)
 	}
 
-	patchRequired, patchSkipped, newTemplate, err := checkCAPIMachineSet(ctrl.fgHandler, infra, md.Name, currentTemplate, configMap, arch)
+	patchRequired, patchSkipped, newTemplate, rhcosVersion, err := checkCAPIMachineSet(ctrl.fgHandler, infra, "MachineDeployment", md.Name, currentTemplate, configMap, arch, ctrl.kubeClient)
 	if err != nil {
-		return false, fmt.Errorf("failed to reconcile CAPI MachineDeployment %s: %w", md.Name, err)
+		return false, "", fmt.Errorf("failed to reconcile CAPI MachineDeployment %s: %w", md.Name, err)
 	}
 
 	if patchRequired {
 		newTemplateSpecBytes, err := json.Marshal(newTemplate.Object["spec"])
 		if err != nil {
-			return false, fmt.Errorf("failed to marshal new template spec for CAPI MachineDeployment %s: %w", md.Name, err)
+			return false, "", fmt.Errorf("failed to marshal new template spec for CAPI MachineDeployment %s: %w", md.Name, err)
 		}
 		if ctrl.checkCAPIMachineDeploymentHotLoop(md.Name, newTemplateSpecBytes) {
-			return false, fmt.Errorf("refusing to reconcile CAPI MachineDeployment %s, hot loop detected. Please opt-out of boot image updates, adjust your machine provisioning workflow to prevent hot loops and opt back in to resume boot image updates", md.Name)
+			return false, "", fmt.Errorf("refusing to reconcile CAPI MachineDeployment %s, hot loop detected. Please opt-out of boot image updates, adjust your machine provisioning workflow to prevent hot loops and opt back in to resume boot image updates", md.Name)
 		}
 		newTemplateName := newInfraTemplateName(md.Name, newTemplateSpecBytes)
 		klog.Infof("Creating new CAPI infrastructure template %s for MachineDeployment %s", newTemplateName, md.Name)
-		return false, ctrl.patchCAPIMachineDeployment(md, newTemplate, newTemplateName)
+		return false, rhcosVersion, ctrl.patchCAPIMachineDeployment(md, newTemplate, newTemplateName)
 	}
 
 	klog.Infof("No patching required for CAPI MachineDeployment %s", md.Name)
-	return patchSkipped, nil
+	return patchSkipped, rhcosVersion, nil
 }
 
 // checkCAPIMachineSetHotLoop checks whether the controller is hot-looping on a CAPI MachineSet.
@@ -416,26 +438,31 @@ func (ctrl *Controller) getCAPIInfraTemplate(name string) (*unstructured.Unstruc
 // Each platform case is gated on its own feature gate; platforms whose gate is
 // not yet enabled are skipped.
 // Returns (patchRequired, patchSkipped, newTemplate, rhcosVersion, error).
-func checkCAPIMachineSet(fgHandler ctrlcommon.FeatureGatesHandler, infra *osconfigv1.Infrastructure, msName string, currentTemplate *unstructured.Unstructured, configMap *corev1.ConfigMap, arch string) (bool, bool, *unstructured.Unstructured, error) {
+
+func checkCAPIMachineSet(fgHandler ctrlcommon.FeatureGatesHandler, infra *osconfigv1.Infrastructure, resourceKind, msName string, currentTemplate *unstructured.Unstructured, configMap *corev1.ConfigMap, arch string, secretClient clientset.Interface) (bool, bool, *unstructured.Unstructured, string, error) {
+
 	if infra.Status.PlatformStatus == nil {
-		return false, false, nil, fmt.Errorf("infrastructure PlatformStatus is nil, cannot reconcile CAPI %s %s", resourceKind, msName)
+		return false, false, nil, "", fmt.Errorf("infrastructure PlatformStatus is nil, cannot reconcile CAPI %s %s", resourceKind, msName)
 	}
 	switch infra.Status.PlatformStatus.Type {
 	case osconfigv1.AWSPlatformType:
-		klog.V(4).Infof("CAPI boot image reconciliation not yet enabled for AWS, skipping CAPI MachineSet %s", msName)
-		return false, false, nil, nil
+		if !fgHandler.Enabled(features.FeatureGateManagedBootImagesAWSCAPI) {
+			klog.V(4).Infof("ManagedBootImagesAWSCAPI feature gate is not enabled, skipping CAPI %s %s", resourceKind, msName)
+			return false, false, nil, "", nil
+		}
+		return reconcileAWSCAPIMachineInfraTemplate(infra, resourceKind, msName, currentTemplate, configMap, arch, secretClient)
 	case osconfigv1.AzurePlatformType:
-		klog.V(4).Infof("CAPI boot image reconciliation not yet enabled for Azure, skipping CAPI MachineSet %s", msName)
-		return false, false, nil, nil
+		klog.V(4).Infof("CAPI boot image reconciliation not yet enabled for Azure, skipping CAPI %s %s", resourceKind, msName)
+		return false, false, nil, "", nil
 	case osconfigv1.GCPPlatformType:
-		klog.V(4).Infof("CAPI boot image reconciliation not yet enabled for GCP, skipping CAPI MachineSet %s", msName)
-		return false, false, nil, nil
+		klog.V(4).Infof("CAPI boot image reconciliation not yet enabled for GCP, skipping CAPI %s %s", resourceKind, msName)
+		return false, false, nil, "", nil
 	case osconfigv1.VSpherePlatformType:
-		klog.V(4).Infof("CAPI boot image reconciliation not yet enabled for vSphere, skipping CAPI MachineSet %s", msName)
-		return false, false, nil, nil
+		klog.V(4).Infof("CAPI boot image reconciliation not yet enabled for vSphere, skipping CAPI %s %s", resourceKind, msName)
+		return false, false, nil, "", nil
 	default:
-		klog.Infof("Skipping CAPI MachineSet %s, unsupported platform %s", msName, infra.Status.PlatformStatus.Type)
-		return false, false, nil, nil
+		klog.Infof("Skipping CAPI %s %s, unsupported platform %s", resourceKind, msName, infra.Status.PlatformStatus.Type)
+		return false, false, nil, "", nil
 	}
 }
 
