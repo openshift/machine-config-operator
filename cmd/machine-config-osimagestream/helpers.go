@@ -113,12 +113,12 @@ func getProxyConfig() *configv1.ProxyStatus {
 		proxyStatus.HTTPSProxy = httpsProxy
 	}
 
-	// Although a newer version of container-libs uses the NO_PROXY env var, the
-	// version we are using now does not. We should add that functionality here
-	// if https://redhat.atlassian.net/browse/MCO-2016 is addressed.
+	if noProxy := os.Getenv("NO_PROXY"); noProxy != "" {
+		proxyStatus.NoProxy = noProxy
+	}
 
 	// If none of the environment variables were set, return a nil config.
-	if proxyStatus.HTTPProxy == "" && proxyStatus.HTTPSProxy == "" {
+	if proxyStatus.HTTPProxy == "" && proxyStatus.HTTPSProxy == "" && proxyStatus.NoProxy == "" {
 		return nil
 	}
 
