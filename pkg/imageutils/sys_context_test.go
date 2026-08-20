@@ -111,6 +111,7 @@ func TestSysContextBuilder(t *testing.T) {
 		name             string
 		secret           *corev1.Secret
 		controllerConfig *mcfgv1.ControllerConfig
+		proxy            *configv1.ProxyStatus
 		registriesConfig *sysregistriesv2.V2RegistriesConf
 		expectTempDir    bool
 		expectAuthFile   bool
@@ -171,7 +172,7 @@ MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuOSW8w==
 			expectCerts:   true,
 		},
 		{
-			name: "WithControllerConfig only - proxy",
+			name: "WithControllerConfig only - proxy in controllerconfig does not set DockerProxyURL",
 			controllerConfig: &mcfgv1.ControllerConfig{
 				Spec: mcfgv1.ControllerConfigSpec{
 					Proxy: &configv1.ProxyStatus{
@@ -179,8 +180,8 @@ MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuOSW8w==
 					},
 				},
 			},
-			expectTempDir: false, // Proxy doesn't need temp dir
-			expectProxy:   true,
+			expectTempDir: false,
+			expectProxy:   false,
 		},
 		{
 			name: "WithControllerConfig only - just rootCA",
@@ -220,15 +221,18 @@ MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuOSW8w==
 -----END CERTIFICATE-----`),
 						},
 					},
-					Proxy: &configv1.ProxyStatus{
-						HTTPSProxy: "https://proxy.example.com:3128",
-					},
 				},
 			},
 			expectTempDir:  true,
 			expectAuthFile: true,
 			expectCerts:    true,
-			expectProxy:    true,
+		},
+		{
+			name: "WithProxy sets DockerProxyURL",
+			proxy: &configv1.ProxyStatus{
+				HTTPSProxy: "https://proxy.example.com:3128",
+			},
+			expectProxy: true,
 		},
 	}
 
@@ -242,6 +246,10 @@ MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuOSW8w==
 
 			if tc.controllerConfig != nil {
 				builder.WithControllerConfig(tc.controllerConfig)
+			}
+
+			if tc.proxy != nil {
+				builder.WithProxy(tc.proxy)
 			}
 
 			if tc.registriesConfig != nil {
@@ -320,7 +328,7 @@ func TestSysContextBuilderWithProxy(t *testing.T) {
 		name             string
 		httpProxy        string
 		httpsProxy       string
-		skipProxy        bool
+		useProxy         bool
 		expectedScheme   string
 		expectedHost     string
 		expectedUsername string
@@ -329,18 +337,21 @@ func TestSysContextBuilderWithProxy(t *testing.T) {
 		{
 			name:           "HTTPS proxy with complete URL",
 			httpsProxy:     "https://proxy.example.com:3128",
+			useProxy:       true,
 			expectedScheme: "https",
 			expectedHost:   "proxy.example.com:3128",
 		},
 		{
 			name:           "HTTP proxy with complete URL",
 			httpProxy:      "http://proxy.example.com:8080",
+			useProxy:       true,
 			expectedScheme: "http",
 			expectedHost:   "proxy.example.com:8080",
 		},
 		{
 			name:             "HTTPS proxy with authentication",
 			httpsProxy:       "https://user:password@proxy.example.com:3128",
+			useProxy:         true,
 			expectedScheme:   "https",
 			expectedHost:     "proxy.example.com:3128",
 			expectedUsername: "user",
@@ -349,58 +360,48 @@ func TestSysContextBuilderWithProxy(t *testing.T) {
 		{
 			name:             "HTTP proxy with authentication",
 			httpProxy:        "http://proxyuser:proxypass@proxy.example.com:8080",
+			useProxy:         true,
 			expectedScheme:   "http",
 			expectedHost:     "proxy.example.com:8080",
 			expectedUsername: "proxyuser",
 			expectedPassword: "proxypass",
 		},
 		{
-			name:             "Both proxies - HTTPS preferred with auth",
-			httpProxy:        "http://httpuser:httppass@http-proxy.example.com:8080",
-			httpsProxy:       "https://httpsuser:httpspass@https-proxy.example.com:3128",
-			expectedScheme:   "https",
-			expectedHost:     "https-proxy.example.com:3128",
-			expectedUsername: "httpsuser",
-			expectedPassword: "httpspass",
+			name:       "Different HTTP and HTTPS proxies falls back to env vars",
+			httpProxy:  "http://httpuser:httppass@http-proxy.example.com:8080",
+			httpsProxy: "https://httpsuser:httpspass@https-proxy.example.com:3128",
+			useProxy:   true,
 		},
 		{
 			name:           "HTTPS proxy without port",
 			httpsProxy:     "https://proxy.example.com",
+			useProxy:       true,
 			expectedScheme: "https",
 			expectedHost:   "proxy.example.com",
 		},
 		{
 			name:             "HTTPS proxy with special characters in password",
 			httpsProxy:       "https://user:p@ssw0rd!@proxy.example.com:3128",
+			useProxy:         true,
 			expectedScheme:   "https",
 			expectedHost:     "proxy.example.com:3128",
 			expectedUsername: "user",
 			expectedPassword: "p@ssw0rd!",
 		},
 		{
-			name:       "WithoutProxy skips proxy even when configured",
-			httpsProxy: "https://proxy.example.com:3128",
-			httpProxy:  "http://proxy.example.com:8080",
-			skipProxy:  true,
+			name: "No explicit proxy leaves DockerProxyURL nil",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			cc := &mcfgv1.ControllerConfig{
-				Spec: mcfgv1.ControllerConfigSpec{
-					Proxy: &configv1.ProxyStatus{
-						HTTPProxy:  tc.httpProxy,
-						HTTPSProxy: tc.httpsProxy,
-					},
-				},
-			}
-
 			builder := NewSysContextBuilder().
-				WithSecret(secret).
-				WithControllerConfig(cc)
-			if tc.skipProxy {
-				builder.WithoutProxy()
+				WithSecret(secret)
+			if tc.useProxy {
+				builder.WithProxy(&configv1.ProxyStatus{
+					HTTPProxy:  tc.httpProxy,
+					HTTPSProxy: tc.httpsProxy,
+				})
 			}
 
 			sysCtx, err := builder.Build()
@@ -408,8 +409,8 @@ func TestSysContextBuilderWithProxy(t *testing.T) {
 			require.NotNil(t, sysCtx, "SysContext wrapper should not be nil")
 			require.NotNil(t, sysCtx.SysContext, "Underlying SystemContext should not be nil")
 
-			if tc.skipProxy {
-				assert.Nil(t, sysCtx.SysContext.DockerProxyURL, "DockerProxyURL should be nil when proxy is skipped")
+			if tc.expectedScheme == "" {
+				assert.Nil(t, sysCtx.SysContext.DockerProxyURL, "DockerProxyURL should be nil")
 			} else {
 				require.NotNil(t, sysCtx.SysContext.DockerProxyURL, "DockerProxyURL should not be nil")
 				assert.Equal(t, tc.expectedScheme, sysCtx.SysContext.DockerProxyURL.Scheme, "Proxy scheme should match")

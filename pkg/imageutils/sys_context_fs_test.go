@@ -640,7 +640,7 @@ func TestNewSysContextFromFilesystem_EdgeCases(t *testing.T) {
 		require.NoError(t, err, "Cleanup should not fail")
 	})
 
-	t.Run("Both HTTP and HTTPS proxy set - HTTPS should take precedence", func(t *testing.T) {
+	t.Run("Different HTTP and HTTPS proxies falls back to env vars", func(t *testing.T) {
 		paths := SysContextPaths{
 			Proxy: &configv1.ProxyStatus{
 				HTTPProxy:  "http://http-proxy.example.com:8080",
@@ -651,10 +651,7 @@ func TestNewSysContextFromFilesystem_EdgeCases(t *testing.T) {
 		sysCtx, err := NewSysContextFromFilesystem(paths)
 		require.NoError(t, err, "Should not fail")
 		require.NotNil(t, sysCtx, "SysContext should not be nil")
-		require.NotNil(t, sysCtx.SysContext.DockerProxyURL, "DockerProxyURL should not be nil")
-
-		assert.Equal(t, "https", sysCtx.SysContext.DockerProxyURL.Scheme, "HTTPS proxy should take precedence")
-		assert.Equal(t, "https-proxy.example.com:3128", sysCtx.SysContext.DockerProxyURL.Host, "Proxy host should match HTTPS proxy")
+		assert.Nil(t, sysCtx.SysContext.DockerProxyURL, "DockerProxyURL should be nil when HTTP and HTTPS proxies differ")
 
 		err = sysCtx.Cleanup()
 		require.NoError(t, err, "Cleanup should not fail")
