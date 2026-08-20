@@ -748,10 +748,6 @@ func isOpenShiftManagedDefaultLB(cfg RenderConfig) bool {
 	return false
 }
 
-// isBGPVIPManagement returns true when the cluster is configured to use
-// BGP-based VIP management instead of keepalived/VRRP. This controls
-// whether MCO renders frr-k8s static pod manifests (BGP) or keepalived
-// static pod manifests (default).
 func isBGPVIPManagement(cfg RenderConfig) bool {
 	return ctrlcommon.IsBGPVIPManagement(cfg.Infra)
 }

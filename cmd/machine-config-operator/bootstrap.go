@@ -147,18 +147,10 @@ func runBootstrapCmd(_ *cobra.Command, _ []string) {
 		if err != nil {
 			klog.Warningf("Base OS extensions container not found: %s", err)
 		}
-		// Parity invariant: any image rendered into MachineConfig content
-		// must resolve identically at bootstrap and in-cluster, otherwise
-		// the bootstrap-rendered MC hash differs from the in-cluster one
-		// and every master degrades with a bootstrap MC mismatch. The
-		// in-cluster side reads the machine-config-operator-images
-		// ConfigMap (install/0000_80_machine-config_02_images.configmap.yaml,
-		// substituted by the CVO from install/image-references), so images
-		// may only be discovered here if the same tag is listed in both of
-		// those files. Both metallb-frr and kube-vip (ose-kube-vip,
-		// ART-21663 / ocp-build-data#11838) are payload members and are
-		// listed in both files, so the lookups here resolve to the same
-		// digests the CVO substitutes in-cluster.
+		// Images rendered into MachineConfig content must resolve
+		// identically at bootstrap and in-cluster (tag listed in both
+		// install/image-references and the images ConfigMap), otherwise the
+		// bootstrap-rendered MC hash differs and masters degrade.
 		bootstrapOpts.frrK8sImage = findImageOrDie(imgstream, "metallb-frr")
 		bootstrapOpts.kubeVipImage = findImageOrDie(imgstream, "kube-vip")
 	}

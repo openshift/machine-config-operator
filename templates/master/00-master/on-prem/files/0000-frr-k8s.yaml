@@ -16,10 +16,8 @@ contents:
       hostNetwork: true
       shareProcessNamespace: true
       priorityClassName: system-node-critical
-      # 10s (not the upstream DaemonSet's 0): a SIGTERM'd bgpd sends a Cease
-      # NOTIFICATION, which hard-resets the session; after a SIGKILL a peer
-      # in graceful-restart helper mode may retain stale VIP routes on bare
-      # TCP loss until the restart timer expires.
+      # 10s, not upstream's 0: SIGTERM'd bgpd sends a Cease; after SIGKILL
+      # a graceful-restart helper peer may retain stale VIP routes.
       terminationGracePeriodSeconds: 10
       tolerations:
       - operator: Exists
@@ -217,14 +215,10 @@ contents:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
           capabilities:
-            # Mirrors the frr container of the frr-k8s DaemonSet shipped by
-            # CNO (upstream metallb/frr-k8s parity). No drop ALL: FRR's
-            # privilege-separated startup (watchfrr as root spawning daemons
-            # as the frr user) additionally relies on root's implicit
-            # capabilities (SETUID/SETGID/DAC_OVERRIDE/CHOWN); dropping ALL
-            # and re-adding only the network capabilities was tested and
-            # prevents the FRR daemons from starting. SYS_ADMIN is required
-            # by docker-start/watchfrr process supervision.
+            # No drop ALL: FRR's privilege-separated startup relies on
+            # root's implicit caps beyond these four (tested: drop ALL +
+            # re-add breaks daemon startup). SYS_ADMIN for watchfrr
+            # supervision. Matches CNO's frr-k8s DaemonSet frr container.
             add:
             - NET_ADMIN
             - NET_RAW

@@ -22,14 +22,11 @@ const (
 	// BaremetalRuntimeCfgKey is the key that references the baremetal-runtimecfg image in the controller
 	BaremetalRuntimeCfgKey string = "baremetalRuntimeCfgImage"
 
-	// FRRK8sKey is the key for the frr-k8s image used by the frr-k8s static pod.
-	// A single image is used for all frr-k8s containers (controller, FRR daemon,
-	// reloader, metrics, status) in OpenShift.
+	// FRRK8sKey is the images.json key for the frr-k8s image (one image for
+	// all frr-k8s static pod containers).
 	FRRK8sKey string = "frrK8sImage"
 
-	// KubeVIPKey is the key for the kube-vip image used by the kube-vip static pods.
-	// kube-vip manages API and Ingress VIPs in Routing Table Mode for BGP-based
-	// VIP management.
+	// KubeVIPKey is the images.json key for the kube-vip image.
 	KubeVIPKey string = "kubeVipImage"
 
 	// KubeRbacProxyKey the key that references the kubeRbacProxy image
