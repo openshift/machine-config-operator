@@ -21,7 +21,12 @@ contents:
     if [ "${OPERATION}" != "pre-up" ]; then
         exit 0
     fi
-    
+
+    # Skip OVN-K VRFs (they have an ovn-k8s-mp lower device) to avoid wasted nmcli calls.
+    if ls /sys/class/net/"${INTERFACE_NAME}"/ 2>/dev/null | grep -q lower_ovn-k8s-mp; then
+        exit 0
+    fi
+
     # Get the interface's NM uuid
     INTERFACE_CONNECTION_UUID=$(nmcli -t -f device,type,uuid conn | awk -F ':' '{if($1=="'${INTERFACE_NAME}'" && $2!~/^ovs*/) print $NF}')
     if [ "${INTERFACE_CONNECTION_UUID}" == "" ]; then
