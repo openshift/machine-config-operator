@@ -4,6 +4,7 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/klog/v2"
 )
 
 // This is intended to provide a singular way to interrogate MachineConfigPool
@@ -165,11 +166,13 @@ func (b *MachineOSBuildState) SetBuildConditions(conditions []metav1.Condition) 
 	for _, condition := range conditions {
 		condition := condition
 		currentCondition := apihelpers.GetMachineOSBuildCondition(b.Build.Status, mcfgv1.BuildProgress(condition.Type))
+		klog.Errorf("SetBuildConditions currentCondition %v", currentCondition)
 		if currentCondition != nil && isConditionEqual(*currentCondition, condition) {
 			continue
 		}
 
 		mosbCondition := apihelpers.NewMachineOSBuildCondition(condition.Type, condition.Status, condition.Reason, condition.Message)
+		klog.Errorf("SetBuildConditions mosbCondition %v", mosbCondition)
 		apihelpers.SetMachineOSBuildCondition(&b.Build.Status, *mosbCondition)
 	}
 }
@@ -262,7 +265,6 @@ func HasBuildObjectForCurrentMachineConfig(pool *mcfgv1.MachineConfigPool, mosb 
 // Determines if we should do a build based upon the state of our
 // MachineConfigPool, the presence of a build pod, etc.
 func BuildDueToPoolChange(oldPool, curPool *mcfgv1.MachineConfigPool, moscNew *mcfgv1.MachineOSConfig, mosbNew *mcfgv1.MachineOSBuild) bool {
-
 	moscState := NewMachineOSConfigState(moscNew)
 	mosbState := NewMachineOSBuildState(mosbNew)
 
@@ -273,7 +275,6 @@ func BuildDueToPoolChange(oldPool, curPool *mcfgv1.MachineConfigPool, moscNew *m
 		(IsPoolConfigChange(oldPool, curPool) || !moscState.HasOSImage())
 
 	return poolStateSuggestsBuild
-
 }
 
 // Checks our pool to see if we can do a build. We base this off of a few criteria:

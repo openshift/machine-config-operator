@@ -920,7 +920,7 @@ func (b *buildReconciler) setStatusOnMachineOSBuildIfNeeded(ctx context.Context,
 	// Compare the old status and the current status to determine if an update is
 	// needed. This is handled according to very specific state transitions.
 	isUpdateNeeded, reason := isMachineOSBuildStatusUpdateNeeded(oldStatus, curStatus)
-	klog.Errorf("isUpdateNeeded: %s", isUpdateNeeded)
+	klog.Errorf("isUpdateNeeded: %v", isUpdateNeeded)
 	if !isUpdateNeeded {
 		if reason != "" {
 			klog.Infof("MachineOSBuild %q %s; skipping update because of invalid transition", mosb.Name, reason)
