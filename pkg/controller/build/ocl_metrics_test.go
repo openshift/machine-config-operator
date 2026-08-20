@@ -14,14 +14,27 @@ func resetGaugeVec(g *prometheus.GaugeVec, labels prometheus.Labels) {
 	g.DeletePartialMatch(labels)
 }
 
+// clearPushStartTimes removes all entries from the package-level pushStartTimes
+// sync.Map so that stale entries do not accumulate across -count iterations.
+func clearPushStartTimes(t *testing.T) {
+	t.Helper()
+	pushStartTimes.Range(func(key, value any) bool {
+		pushStartTimes.Delete(key)
+		return true
+	})
+}
+
 func TestRecordImagePushStarted(t *testing.T) {
 	t.Parallel()
 
-	resetGaugeVec(oclImagePushState, prometheus.Labels{"pool": "worker"})
+	pool := "push-started-test-pool"
+	t.Cleanup(func() { clearPushStartTimes(t) })
 
-	RecordImagePushStarted("worker")
+	resetGaugeVec(oclImagePushState, prometheus.Labels{"pool": pool})
 
-	v := testutil.ToFloat64(oclImagePushState.WithLabelValues("worker", StatePushing))
+	RecordImagePushStarted(pool)
+
+	v := testutil.ToFloat64(oclImagePushState.WithLabelValues(pool, StatePushing))
 	if v != 1 {
 		t.Errorf("expected ocl_image_push_state{state=%q} = 1, got %v", StatePushing, v)
 	}
@@ -30,6 +43,7 @@ func TestRecordImagePushStarted(t *testing.T) {
 func TestRecordImagePushCompleted(t *testing.T) {
 	t.Parallel()
 
+	t.Cleanup(func() { clearPushStartTimes(t) })
 	resetGaugeVec(oclImagePushState, prometheus.Labels{"pool": "worker2"})
 
 	RecordImagePushStarted("worker2")
@@ -50,6 +64,7 @@ func TestRecordImagePushCompleted(t *testing.T) {
 func TestRecordImagePushFailed(t *testing.T) {
 	t.Parallel()
 
+	t.Cleanup(func() { clearPushStartTimes(t) })
 	resetGaugeVec(oclImagePushState, prometheus.Labels{"pool": "worker3"})
 
 	RecordImagePushStarted("worker3")
@@ -179,6 +194,7 @@ func TestBuildQueueDuration(t *testing.T) {
 func TestImagePushDurationRecorded(t *testing.T) {
 	t.Parallel()
 
+	t.Cleanup(func() { clearPushStartTimes(t) })
 	pool := "push-duration-pool"
 
 	before := testutil.CollectAndCount(oclImagePushDuration)
@@ -195,6 +211,7 @@ func TestImagePushDurationRecorded(t *testing.T) {
 func TestImagePushDurationOnFailure(t *testing.T) {
 	t.Parallel()
 
+	t.Cleanup(func() { clearPushStartTimes(t) })
 	pool := "push-duration-fail-pool"
 
 	before := testutil.CollectAndCount(oclImagePushDuration)
