@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	"github.com/openshift/machine-config-operator/pkg/controller/build/fixtures"
@@ -14,6 +15,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	testhelpers "github.com/openshift/machine-config-operator/test/helpers"
 )
 
 const (
@@ -262,6 +264,30 @@ func assertBuildJobIsCorrect(t *testing.T, buildJob *batchv1.Job, opts BuildRequ
 			},
 		},
 	})
+
+	boolTrue := true
+	assertPodHasVolume(t, buildJob.Spec.Template.Spec, corev1.Volume{
+		Name: "etc-registries-d",
+		VolumeSource: corev1.VolumeSource{
+			ConfigMap: &corev1.ConfigMapVolumeSource{
+				LocalObjectReference: corev1.LocalObjectReference{
+					Name: utils.GetEtcRegistriesDConfigMapName(opts.MachineOSBuild),
+				},
+				Optional: &boolTrue,
+			},
+		},
+	})
+
+	etcRegistriesDMount := corev1.VolumeMount{
+		Name:      "etc-registries-d",
+		MountPath: "/etc/containers/registries.d",
+	}
+	for _, container := range buildJob.Spec.Template.Spec.Containers {
+		assert.Contains(t, container.VolumeMounts, etcRegistriesDMount)
+	}
+	for _, initContainer := range buildJob.Spec.Template.Spec.InitContainers {
+		assert.Contains(t, initContainer.VolumeMounts, etcRegistriesDMount)
+	}
 }
 
 func assertPodHasVolume(t *testing.T, pod corev1.PodSpec, volume corev1.Volume) {
@@ -523,4 +549,76 @@ LABEL badlabel`,
 			}
 		})
 	}
+}
+
+// Tests that etcRegistriesDToConfigMap correctly extracts /etc/containers/registries.d/
+// files from a MachineConfig into a ConfigMap for mounting into the build pod.
+func TestEtcRegistriesDToConfigMap(t *testing.T) {
+	t.Parallel()
+
+	sigstoreYAML := `docker:
+  registry.example.com:
+    use-sigstore-attachments: true`
+
+	t.Run("returns nil when no registries.d files are present in MachineConfig", func(t *testing.T) {
+		t.Parallel()
+		mc := testhelpers.NewMachineConfig("test-mc", map[string]string{}, "", []ign3types.File{})
+		br := buildRequestImpl{opts: getBuildRequestOpts()}
+		cm, err := br.etcRegistriesDToConfigMap(mc)
+		assert.NoError(t, err)
+		assert.Nil(t, cm)
+	})
+
+	t.Run("creates ConfigMap with sigstore-registries.yaml from MachineConfig", func(t *testing.T) {
+		t.Parallel()
+		mc := testhelpers.NewMachineConfig("test-mc", map[string]string{}, "", []ign3types.File{
+			ctrlcommon.NewIgnFile("/etc/containers/registries.d/sigstore-registries.yaml", sigstoreYAML),
+		})
+		opts := getBuildRequestOpts()
+		br := buildRequestImpl{opts: opts}
+		cm, err := br.etcRegistriesDToConfigMap(mc)
+		assert.NoError(t, err)
+		assert.NotNil(t, cm)
+		assert.Equal(t, utils.GetEtcRegistriesDConfigMapName(opts.MachineOSBuild), cm.Name)
+		assert.Equal(t, sigstoreYAML, cm.Data["sigstore-registries.yaml"])
+	})
+
+	t.Run("creates ConfigMap with multiple registries.d files from MachineConfig", func(t *testing.T) {
+		t.Parallel()
+		file1 := `docker:
+  registry1.example.com:
+    use-sigstore-attachments: true`
+		file2 := `docker:
+  registry2.example.com:
+    use-sigstore-attachments: true`
+		mc := testhelpers.NewMachineConfig("test-mc", map[string]string{}, "", []ign3types.File{
+			ctrlcommon.NewIgnFile("/etc/containers/registries.d/file1.yaml", file1),
+			ctrlcommon.NewIgnFile("/etc/containers/registries.d/file2.yaml", file2),
+		})
+		opts := getBuildRequestOpts()
+		br := buildRequestImpl{opts: opts}
+		cm, err := br.etcRegistriesDToConfigMap(mc)
+		assert.NoError(t, err)
+		assert.NotNil(t, cm)
+		assert.Equal(t, file1, cm.Data["file1.yaml"])
+		assert.Equal(t, file2, cm.Data["file2.yaml"])
+	})
+
+	t.Run("does not include files outside registries.d in ConfigMap", func(t *testing.T) {
+		t.Parallel()
+		mc := testhelpers.NewMachineConfig("test-mc", map[string]string{}, "", []ign3types.File{
+			ctrlcommon.NewIgnFile("/etc/containers/registries.d/sigstore-registries.yaml", sigstoreYAML),
+			ctrlcommon.NewIgnFile("/etc/containers/registries.conf", "unversioned-schema = true"),
+			ctrlcommon.NewIgnFile("/etc/containers/policy.json", `{"default":[{"type":"insecureAcceptAnything"}]}`),
+		})
+		opts := getBuildRequestOpts()
+		br := buildRequestImpl{opts: opts}
+		cm, err := br.etcRegistriesDToConfigMap(mc)
+		assert.NoError(t, err)
+		assert.NotNil(t, cm)
+		assert.Equal(t, 1, len(cm.Data))
+		assert.Contains(t, cm.Data, "sigstore-registries.yaml")
+		assert.NotContains(t, cm.Data, "registries.conf")
+		assert.NotContains(t, cm.Data, "policy.json")
+	})
 }
