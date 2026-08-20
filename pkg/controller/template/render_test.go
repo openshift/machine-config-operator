@@ -1,11 +1,9 @@
 package template
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -162,23 +160,24 @@ func TestSkipMissing(t *testing.T) {
 		key string
 		err bool
 		res string
-	}{{
-		key: "",
-		err: true,
-		res: "",
-	}, {
-		key: "2two",
-		err: true,
-		res: "",
-	}, {
-		key: "test index",
-		err: true,
-		res: "",
-	}, {
-		key: "index",
-		err: false,
-		res: "{{.index}}",
-	},
+	}{
+		{
+			key: "",
+			err: true,
+			res: "",
+		}, {
+			key: "2two",
+			err: true,
+			res: "",
+		}, {
+			key: "test index",
+			err: true,
+			res: "",
+		}, {
+			key: "index",
+			err: false,
+			res: "{{.index}}",
+		},
 	}
 
 	for idx, c := range cases {
@@ -199,26 +198,24 @@ func TestSkipMissing(t *testing.T) {
 
 const templateDir = "../../../templates"
 
-var (
-	configs = map[string]string{
-		"aws":               "./test_data/controller_config_aws.yaml",
-		"baremetal":         "./test_data/controller_config_baremetal.yaml",
-		"baremetal-arbiter": "./test_data/controller_config_baremetal_arbiter.yaml",
-		"gcp":               "./test_data/controller_config_gcp.yaml",
-		"openstack":         "./test_data/controller_config_openstack.yaml",
-		"libvirt":           "./test_data/controller_config_libvirt.yaml",
-		"mtu-migration":     "./test_data/controller_config_mtu_migration.yaml",
-		"none":              "./test_data/controller_config_none.yaml",
-		"external":          "./test_data/controller_config_external.yaml",
-		"vsphere":           "./test_data/controller_config_vsphere.yaml",
-		"kubevirt":          "./test_data/controller_config_kubevirt.yaml",
-		"powervs":           "./test_data/controller_config_powervs.yaml",
-		"nutanix":           "./test_data/controller_config_nutanix.yaml",
-		"gcp-custom-dns":    "./test_data/controller_config_gcp_custom_dns.yaml",
-		"gcp-default-dns":   "./test_data/controller_config_gcp_default_dns.yaml",
-		"baremetal-tnf":     "./test_data/controller_config_baremetal_tnf.yaml",
-	}
-)
+var configs = map[string]string{
+	"aws":               "./test_data/controller_config_aws.yaml",
+	"baremetal":         "./test_data/controller_config_baremetal.yaml",
+	"baremetal-arbiter": "./test_data/controller_config_baremetal_arbiter.yaml",
+	"gcp":               "./test_data/controller_config_gcp.yaml",
+	"openstack":         "./test_data/controller_config_openstack.yaml",
+	"libvirt":           "./test_data/controller_config_libvirt.yaml",
+	"mtu-migration":     "./test_data/controller_config_mtu_migration.yaml",
+	"none":              "./test_data/controller_config_none.yaml",
+	"external":          "./test_data/controller_config_external.yaml",
+	"vsphere":           "./test_data/controller_config_vsphere.yaml",
+	"kubevirt":          "./test_data/controller_config_kubevirt.yaml",
+	"powervs":           "./test_data/controller_config_powervs.yaml",
+	"nutanix":           "./test_data/controller_config_nutanix.yaml",
+	"gcp-custom-dns":    "./test_data/controller_config_gcp_custom_dns.yaml",
+	"gcp-default-dns":   "./test_data/controller_config_gcp_default_dns.yaml",
+	"baremetal-tnf":     "./test_data/controller_config_baremetal_tnf.yaml",
+}
 
 func TestInvalidPlatform(t *testing.T) {
 	controllerConfig, err := controllerConfigFromFile(configs["aws"])
@@ -284,37 +281,37 @@ func TestGenerateMachineConfigs(t *testing.T) {
 			}
 			if role == masterRole {
 				if !foundPullSecretMaster {
-					foundPullSecretMaster = findIgnFile(ign.Storage.Files, "/var/lib/kubelet/config.json", t)
+					foundPullSecretMaster = findIgnFile(ign.Storage.Files, "/var/lib/kubelet/config.json")
 				}
 				if !foundKubeletUnitMaster {
-					foundKubeletUnitMaster = findIgnUnit(ign.Systemd.Units, "kubelet.service", t)
+					foundKubeletUnitMaster = findIgnUnit(ign.Systemd.Units, "kubelet.service")
 				}
 				if !foundMTUMigrationMaster {
-					foundMTUMigrationMaster = findIgnFile(ign.Storage.Files, "/usr/local/bin/mtu-migration.sh", t)
-					foundMTUMigrationMaster = foundMTUMigrationMaster || findIgnFile(ign.Storage.Files, "/etc/systemd/system/mtu-migration.service", t)
+					foundMTUMigrationMaster = findIgnFile(ign.Storage.Files, "/usr/local/bin/mtu-migration.sh")
+					foundMTUMigrationMaster = foundMTUMigrationMaster || findIgnFile(ign.Storage.Files, "/etc/systemd/system/mtu-migration.service")
 				}
 			} else if role == workerRole {
 				if !foundPullSecretWorker {
-					foundPullSecretWorker = findIgnFile(ign.Storage.Files, "/var/lib/kubelet/config.json", t)
+					foundPullSecretWorker = findIgnFile(ign.Storage.Files, "/var/lib/kubelet/config.json")
 				}
 				if !foundKubeletUnitWorker {
-					foundKubeletUnitWorker = findIgnUnit(ign.Systemd.Units, "kubelet.service", t)
+					foundKubeletUnitWorker = findIgnUnit(ign.Systemd.Units, "kubelet.service")
 				}
 				if !foundMTUMigrationWorker {
-					foundMTUMigrationWorker = findIgnFile(ign.Storage.Files, "/usr/local/bin/mtu-migration.sh", t)
-					foundMTUMigrationWorker = foundMTUMigrationWorker || findIgnFile(ign.Storage.Files, "/etc/systemd/system/mtu-migration.service", t)
+					foundMTUMigrationWorker = findIgnFile(ign.Storage.Files, "/usr/local/bin/mtu-migration.sh")
+					foundMTUMigrationWorker = foundMTUMigrationWorker || findIgnFile(ign.Storage.Files, "/etc/systemd/system/mtu-migration.service")
 				}
 			} else if role == arbiterRole {
 				// arbiter role currently follows master output
 				if !foundPullSecretMaster {
-					foundPullSecretMaster = findIgnFile(ign.Storage.Files, "/var/lib/kubelet/config.json", t)
+					foundPullSecretMaster = findIgnFile(ign.Storage.Files, "/var/lib/kubelet/config.json")
 				}
 				if !foundKubeletUnitMaster {
-					foundKubeletUnitMaster = findIgnUnit(ign.Systemd.Units, "kubelet.service", t)
+					foundKubeletUnitMaster = findIgnUnit(ign.Systemd.Units, "kubelet.service")
 				}
 				if !foundMTUMigrationMaster {
-					foundMTUMigrationMaster = findIgnFile(ign.Storage.Files, "/usr/local/bin/mtu-migration.sh", t)
-					foundMTUMigrationMaster = foundMTUMigrationMaster || findIgnFile(ign.Storage.Files, "/etc/systemd/system/mtu-migration.service", t)
+					foundMTUMigrationMaster = findIgnFile(ign.Storage.Files, "/usr/local/bin/mtu-migration.sh")
+					foundMTUMigrationMaster = foundMTUMigrationMaster || findIgnFile(ign.Storage.Files, "/etc/systemd/system/mtu-migration.service")
 				}
 			} else {
 				t.Fatalf("Unknown role %s", role)
@@ -457,7 +454,6 @@ func TestGetPaths(t *testing.T) {
 		res:      []string{strings.ToLower(string(configv1.GCPPlatformType))},
 		topology: configv1.HighlyAvailableTopologyMode,
 	}, {
-
 		platform: configv1.NonePlatformType,
 		res:      []string{strings.ToLower(string(configv1.NonePlatformType)), sno},
 		topology: configv1.SingleReplicaTopologyMode,
@@ -536,7 +532,7 @@ func controllerConfigFromFile(path string) (*mcfgv1.ControllerConfig, error) {
 	return cc, nil
 }
 
-func findIgnFile(files []ign3types.File, path string, t *testing.T) bool {
+func findIgnFile(files []ign3types.File, path string) bool {
 	for _, f := range files {
 		if f.Path == path {
 			return true
@@ -545,54 +541,11 @@ func findIgnFile(files []ign3types.File, path string, t *testing.T) bool {
 	return false
 }
 
-func findIgnUnit(units []ign3types.Unit, name string, t *testing.T) bool {
+func findIgnUnit(units []ign3types.Unit, name string) bool {
 	for _, u := range units {
 		if u.Name == name {
 			return true
 		}
 	}
 	return false
-}
-
-func verifyIgn(actual [][]byte, dir string, t *testing.T) {
-
-	expected := make(map[string][]byte)
-	if err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			if path != dir {
-				return fmt.Errorf("unexpected dir: %w", err)
-			}
-			return nil
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-
-		expected[path] = data
-		return nil
-	}); err != nil {
-		t.Fatalf("failed to walk dir: %v", err)
-	}
-
-	for _, a := range actual {
-		var found bool
-		for key, d := range expected {
-			if bytes.Equal(d, a) {
-				found = true
-				delete(expected, key)
-			}
-		}
-
-		if !found {
-			t.Errorf("can't find actual file %v:\n%v", dir, string(a))
-		}
-	}
-
-	for key := range expected {
-		t.Errorf("can't find expected file:\n%v", key)
-	}
 }

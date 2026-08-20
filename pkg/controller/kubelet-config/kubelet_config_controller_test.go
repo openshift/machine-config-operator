@@ -139,7 +139,7 @@ func (f *fixture) validateMachineConfig() {
 	}
 }
 
-func newFeatures(name string, enabled, disabled []string, labels map[string]string) *osev1.FeatureGate {
+func newFeatures(name string, labels map[string]string) *osev1.FeatureGate {
 	if labels == nil {
 		labels = map[string]string{}
 	}
@@ -279,10 +279,6 @@ func (f *fixture) runNode(nodename string) {
 	f.runNodeController(nodename, false)
 }
 
-func (f *fixture) runExpectError(mcpname string) {
-	f.runController(mcpname, true)
-}
-
 func (f *fixture) runController(mcpname string, expectError bool) {
 	c := f.newController(nil)
 
@@ -344,17 +340,6 @@ func filterInformerActions(actions []core.Action) []core.Action {
 	return ret
 }
 
-// filterOSEActions filters list and watch actions for testing resources.
-// Since list and watch don't change resource state we can filter it to lower
-// nose level in our tests.
-func filterOSEActions(actions []core.Action) []core.Action {
-	ret := []core.Action{}
-	for _, action := range actions {
-		ret = append(ret, action)
-	}
-	return ret
-}
-
 // checkAction verifies that expected and actual actions are equal and both have
 // same attached resources
 func checkAction(expected, actual core.Action, t *testing.T, index int) {
@@ -399,14 +384,6 @@ func checkAction(expected, actual core.Action, t *testing.T, index int) {
 				a.GetVerb(), a.GetResource().Resource, diff.Diff(expPatch, patch))
 		}
 	}
-}
-
-func (f *fixture) expectGetKubeletConfigAction(config *mcfgv1.KubeletConfig) {
-	f.actions = append(f.actions, core.NewRootGetAction(schema.GroupVersionResource{Version: "v1", Group: "machineconfiguration.openshift.io", Resource: "kubeletconfigs"}, config.Name))
-}
-
-func (f *fixture) expectCreateKubeletConfigAction(config *mcfgv1.KubeletConfig) {
-	f.actions = append(f.actions, core.NewRootCreateAction(schema.GroupVersionResource{Version: "v1", Group: "machineconfiguration.openshift.io", Resource: "kubeletconfigs"}, config))
 }
 
 func (f *fixture) expectGetMachineConfigAction(config *mcfgv1.MachineConfig) {
@@ -805,7 +782,6 @@ func TestMachineConfigUpdateUponFeatureGateUpdate(t *testing.T) {
 			f.validateMachineConfig()
 
 			close(stopCh)
-
 		})
 	}
 }
@@ -890,7 +866,6 @@ func TestMachineConfigSkipUpdate(t *testing.T) {
 			f.validateMachineConfig()
 
 			close(stopCh)
-
 		})
 	}
 }
@@ -1318,7 +1293,7 @@ func TestKubeletFeatureExists(t *testing.T) {
 			f.mckLister = append(f.mckLister, kc1)
 			f.objects = append(f.objects, kc1)
 
-			features := newFeatures("cluster", []string{"DynamicAuditing"}, []string{"ExpandPersistentVolumes"}, nil)
+			features := newFeatures("cluster", nil)
 			f.featLister = append(f.featLister, features)
 
 			f.expectGetMachineConfigAction(mcs)
@@ -1749,7 +1724,6 @@ func TestKubeletConfigTLSRender(t *testing.T) {
 
 			require.Equal(t, originalKubeConfig.TLSCipherSuites, expectedTLSCipherSuites)
 			require.Equal(t, originalKubeConfig.TLSMinVersion, expectedTLSMinVersion)
-
 		})
 	}
 }
@@ -1757,7 +1731,6 @@ func TestKubeletConfigTLSRender(t *testing.T) {
 // This test ensures that a user defined kubeletConfiguration with a TLS profile will override
 // the TLS profile specified by the APIServer object
 func TestKubeletConfigTLSOverride(t *testing.T) {
-
 	f := newFixture(t)
 	fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
 	f.newController(fgHandler)
@@ -1810,5 +1783,4 @@ func TestKubeletConfigTLSOverride(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, kc.TLSCipherSuites, overrideTLSCiphers)
 	require.Equal(t, kc.TLSMinVersion, overrideTLSMinVersion)
-
 }

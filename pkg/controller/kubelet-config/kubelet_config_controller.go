@@ -214,6 +214,7 @@ func (ctrl *Controller) Run(ctx context.Context, workers int) {
 
 	<-ctx.Done()
 }
+
 func (ctrl *Controller) filterAPIServer(apiServer *configv1.APIServer) {
 	if apiServer.Name != "cluster" {
 		return
@@ -228,7 +229,6 @@ func (ctrl *Controller) filterAPIServer(apiServer *configv1.APIServer) {
 	} else {
 		ctrl.enqueueNodeConfig(nodeConfig)
 	}
-
 }
 
 func (ctrl *Controller) updateAPIServer(old, cur interface{}) {
@@ -345,15 +345,6 @@ func (ctrl *Controller) enqueue(cfg *mcfgv1.KubeletConfig) {
 		return
 	}
 	ctrl.queue.Add(key)
-}
-
-func (ctrl *Controller) enqueueRateLimited(cfg *mcfgv1.KubeletConfig) {
-	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(cfg)
-	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %w", cfg, err))
-		return
-	}
-	ctrl.queue.AddRateLimited(key)
 }
 
 // worker runs a worker thread that just dequeues items, processes them, and marks them done.

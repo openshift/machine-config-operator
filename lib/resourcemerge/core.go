@@ -347,22 +347,6 @@ func setResourceListIfSet(modified *bool, existing *corev1.ResourceList, require
 	}
 }
 
-func mergeStringSlice(modified *bool, existing *[]string, required []string) {
-	for _, required := range required {
-		found := false
-		for _, curr := range *existing {
-			if required == curr {
-				found = true
-				break
-			}
-		}
-		if !found {
-			*modified = true
-			*existing = append(*existing, required)
-		}
-	}
-}
-
 func ensureTolerations(modified *bool, existing *[]corev1.Toleration, required []corev1.Toleration) {
 	for ridx := range required {
 		found := false

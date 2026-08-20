@@ -53,20 +53,16 @@ const (
 	bootstrapTestDataDir = "../../pkg/controller/bootstrap/testdata/bootstrap"
 )
 
-var (
-	corev1GroupVersion = schema.GroupVersion{
-		Group:   "",
-		Version: "v1",
-	}
-)
+var corev1GroupVersion = schema.GroupVersion{
+	Group:   "",
+	Version: "v1",
+}
 
 type fixture struct {
-	stop         func()
-	manifestsDir string
+	stop func()
 }
 
 func TestE2EBootstrap(t *testing.T) {
-
 	ctx := context.Background()
 
 	testEnv := framework.NewTestEnv(t)
@@ -375,7 +371,7 @@ metadata:
 
 				name := fmt.Sprintf("manifest-%d.yaml", id)
 				path := filepath.Join(srcDir, name)
-				err = os.WriteFile(path, manifest, 0644)
+				err = os.WriteFile(path, manifest, 0o644)
 				require.NoError(t, err)
 			}
 
@@ -786,50 +782,6 @@ func loadRawManifests(t *testing.T, rawObjs [][]byte) []runtime.Object {
 	}
 
 	return objs
-}
-
-// copyDir copies the contents of one directory to another,
-// both directories must exist, does not copy recursively
-func copyDir(src string, dest string) error {
-	if strings.HasPrefix(dest, src) {
-		return fmt.Errorf("cannot copy a folder into the folder itself!")
-	}
-
-	f, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-
-	file, err := f.Stat()
-	if err != nil {
-		return err
-	}
-	if !file.IsDir() {
-		return fmt.Errorf("source %v is not a directory!", file.Name())
-	}
-
-	files, err := ctrlcommon.ReadDir(src)
-	if err != nil {
-		return err
-	}
-
-	for _, f := range files {
-		if f.IsDir() {
-			continue
-		}
-
-		content, err := os.ReadFile(src + "/" + f.Name())
-		if err != nil {
-			return err
-		}
-
-		err = os.WriteFile(dest+"/"+f.Name(), content, 0755)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 func containsGVK(objs []runtime.Object, gvk schema.GroupVersionKind) bool {

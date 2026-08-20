@@ -48,6 +48,7 @@ func TestKubeletConfigDefaultUpdateFreq(t *testing.T) {
 
 	runTestWithKubeletCfg(t, "resources", []string{`"?nodeStatusUpdateFrequency"?: (\S+)`}, []string{"nodeStatusUpdateFrequency"}, [][]string{{"10s"}}, kc1, nil)
 }
+
 func TestKubeletConfigMaxPods(t *testing.T) {
 	autoNodeSizing := true
 
@@ -181,7 +182,7 @@ func runTestWithKubeletCfg(t *testing.T, testName string, regexKey []string, str
 	// create our first kubelet config and attach it to our created node pool
 	cleanupKcFunc1 := createKcWithConfig(t, cs, kcName1, poolName, &kc1.Spec, "")
 	// wait for the first kubelet config to show up
-	kcMCName1, err := getMCFromKubeletCfg(t, cs, kcName1)
+	kcMCName1, err := getMCFromKubeletCfg(cs, kcName1)
 	require.Nil(t, err, "failed to render machine config from first container runtime config")
 	// ensure the first kubelet config update rolls out to the pool
 	kc1Target := helpers.WaitForConfigAndPoolComplete(t, cs, poolName, kcMCName1)
@@ -203,7 +204,7 @@ func runTestWithKubeletCfg(t *testing.T, testName string, regexKey []string, str
 		// create our second kubelet config and attach it to our created node pool
 		cleanupKcFunc2 := createKcWithConfig(t, cs, kcName2, poolName, &kc2.Spec, "1")
 		// wait for the second kubelet config to show up
-		kcMCName2, err := getMCFromKubeletCfg(t, cs, kcName2)
+		kcMCName2, err := getMCFromKubeletCfg(cs, kcName2)
 		require.Nil(t, err, "failed to render machine config from second container runtime config")
 		// ensure the second kubelet config update rolls out to the pool
 		helpers.WaitForConfigAndPoolComplete(t, cs, poolName, kcMCName2)
@@ -305,7 +306,7 @@ func createKcWithConfig(t *testing.T, cs *framework.ClientSet, name, key string,
 }
 
 // getMCFromKubeletCfg returns a rendered machine config that was generated from the kubelet config kcName
-func getMCFromKubeletCfg(t *testing.T, cs *framework.ClientSet, kcName string) (string, error) {
+func getMCFromKubeletCfg(cs *framework.ClientSet, kcName string) (string, error) {
 	var mcName string
 	// get the machine config created when we deploy the kubelet config
 	if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {

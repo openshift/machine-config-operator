@@ -14,7 +14,6 @@ import (
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -40,9 +39,6 @@ import (
 const (
 	// The MachineConfigPool to create for the tests.
 	layeredMCPName string = "layered"
-
-	// The MachineConfig names to create for the tests.
-	mcNameUsbguard string = "inspect-usbguard"
 )
 
 var (
@@ -355,7 +351,7 @@ func TestSSHKeyAndPasswordForOSBuilder(t *testing.T) {
 	helpers.SetMetadataOnObject(t, testConfig)
 
 	// Create the MachineConfig and wait for the configuration to be applied
-	mcCleanupFunc := applyMC(t, cs, testConfig)
+	applyMC(t, cs, testConfig)
 
 	// wait for rendered config to finish creating
 	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, layeredMCPName, testConfig.Name)
@@ -386,10 +382,7 @@ func TestSSHKeyAndPasswordForOSBuilder(t *testing.T) {
 
 	// Clean-up: Delete the applied MachineConfig and ensure configurations are rolled back
 
-	t.Cleanup(func() {
-		unlabelFunc()
-		mcCleanupFunc()
-	})
+	t.Cleanup(unlabelFunc)
 }
 
 // This test starts a build and then immediately scales down the
@@ -1163,84 +1156,6 @@ func waitForBuildToStart(t *testing.T, cs *framework.ClientSet, build *mcfgv1.Ma
 	return mosb
 }
 
-// Waits for a MachineOSBuild with a specific UID to be deleted.
-func waitForMOSBToBeDeleted(t *testing.T, cs *framework.ClientSet, mosb *mcfgv1.MachineOSBuild) {
-	t.Helper()
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*5)
-	defer cancel()
-
-	start := time.Now()
-
-	// If the given MachineOSBuild does not have a UID, e.g., from the
-	// NewMachineOSBuildFromAPIOrDie() helper, then we query the API server to
-	// find it.
-	if mosb.UID == "" {
-		t.Logf("No UID provided for MachineOSBuild %s, querying API for UID", mosb.Name)
-		// Get the MOSB from the API to get the UID
-		apiMosb, err := cs.MachineconfigurationV1Interface.MachineOSBuilds().Get(context.Background(), mosb.Name, metav1.GetOptions{})
-		require.NoError(t, err)
-
-		if k8serrors.IsNotFound(err) {
-			t.Logf("MachineOSBuild %s is not found, must have already been deleted", mosb.Name)
-			return
-		}
-
-		require.NoError(t, err)
-
-		mosb = apiMosb
-	}
-
-	mosbName := mosb.Name
-	mosbUID := mosb.UID
-
-	t.Logf("Waiting for MachineOSBuild %s with UID %s to be deleted", mosbName, mosbUID)
-
-	// Assert does not adequately handle the case where the object is deleted.
-	// See https://issues.redhat.com/browse/OCPBUGS-63048 for details.
-	err := wait.PollImmediate(time.Second, time.Minute*5, func() (bool, error) {
-		mosbs, err := cs.MachineconfigurationV1Interface.MachineOSBuilds().List(ctx, metav1.ListOptions{})
-		if err != nil {
-			return false, err
-		}
-
-		for _, mosb := range mosbs.Items {
-			// If we find a MachineOSBuild with the same name and UID, then we know
-			// it has not been deleted yet.
-			if mosb.Name == mosbName && mosb.UID == mosbUID {
-				return false, nil
-			}
-		}
-
-		return true, nil
-	})
-
-	t.Logf("MachineOSBuild %s with UID %s deleted after %s", mosb.Name, mosb.UID, time.Since(start))
-
-	require.NoError(t, err, "MachineOSBuild %s with UID %s not deleted after %s", mosb.Name, mosb.UID, time.Since(start))
-}
-
-// Waits for a MachineOSBuild to be deleted. This is different than
-// waitForMOSBToBeDeleted since it then asserts that all of the objects
-// associated with the MOSB are deleted.
-func waitForBuildToBeDeleted(t *testing.T, cs *framework.ClientSet, build *mcfgv1.MachineOSBuild) {
-	t.Helper()
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*5)
-	defer cancel()
-
-	kubeassert := helpers.AssertClientSet(t, cs).WithContext(ctx)
-
-	t.Logf("Waiting for MachineOSBuild %s to be deleted", build.Name)
-
-	start := time.Now()
-
-	waitForMOSBToBeDeleted(t, cs, build)
-
-	assertBuildObjectsAreDeleted(t, kubeassert.Eventually(), build)
-	t.Logf("Build objects deleted after %s", time.Since(start))
-}
-
 // Waits for the given MachineOSBuild to complete and returns the completed
 // MachineOSBuild object.
 func waitForBuildToComplete(t *testing.T, cs *framework.ClientSet, startedBuild *mcfgv1.MachineOSBuild) *mcfgv1.MachineOSBuild {
@@ -1375,8 +1290,8 @@ func createMachineOSConfig(t *testing.T, cs *framework.ClientSet, mosc *mcfgv1.M
 	ocltesthelper.CreateMachineOSConfig(t, cs, mosc, skipCleanupAlways, skipCleanupOnlyAfterFailure)
 }
 
-func applyMC(t *testing.T, cs *framework.ClientSet, mc *mcfgv1.MachineConfig) func() {
-	return ocltesthelper.ApplyMC(t, cs, mc, skipCleanupAlways, skipCleanupOnlyAfterFailure)
+func applyMC(t *testing.T, cs *framework.ClientSet, mc *mcfgv1.MachineConfig) {
+	ocltesthelper.ApplyMC(t, cs, mc, skipCleanupAlways, skipCleanupOnlyAfterFailure)
 }
 
 func waitForMOSCToGetNewPullspec(ctx context.Context, t *testing.T, cs *framework.ClientSet, moscName, pullspec string) {
