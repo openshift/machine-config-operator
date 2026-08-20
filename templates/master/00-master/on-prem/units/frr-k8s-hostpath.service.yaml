@@ -3,13 +3,10 @@ enabled: {{if isBGPVIPManagement .}}true{{else}}false{{end}}
 contents: |
   [Unit]
   Description=Prepare the frr-k8s static pod hostPath directories
-  # /run/frr-k8s is shared between the frr-k8s static pod and the
-  # CNO-managed metrics companion DaemonSet. 0777 mirrors emptyDir
-  # semantics: FRR daemons run as uid 100 while watchfrr runs as root
-  # without CAP_DAC_OVERRIDE. container_file_t because the companion runs
-  # as plain container_t (MCS-confined): the static pod itself is spc_t
-  # (host network) and unconstrained, but its files inherit the directory
-  # type and must stay accessible to the companion.
+  # Shared with the CNO metrics companion. 0777 mirrors emptyDir (FRR
+  # daemons uid 100, watchfrr root without DAC_OVERRIDE); container_file_t
+  # so the MCS-confined companion can reach files created by the spc_t
+  # static pod.
   Before=kubelet-dependencies.target
 
   [Service]

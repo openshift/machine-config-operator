@@ -39,8 +39,7 @@ contents:
         - name: vip_cleanroutingtable
           value: "true"
         - name: vip_skipdad
-          # health-gated ECMP: every advertiser deliberately holds the VIP
-          # (anycast); DAD would blackhole the second and later advertisers
+          # anycast ECMP: DAD would blackhole all advertisers but the first
           value: "true"
         - name: vip_routingtableid
           value: "198"
