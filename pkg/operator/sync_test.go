@@ -1,8 +1,13 @@
 package operator
 
 import (
+	"bytes"
 	"context"
+	"net"
+	"os"
+	"path/filepath"
 	"testing"
+	"text/template"
 
 	configv1 "github.com/openshift/api/config/v1"
 	features "github.com/openshift/api/features"
@@ -10,6 +15,7 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/informers"
@@ -176,6 +182,121 @@ func withCABundle(caBundle string) kubeCloudConfigOption {
 			kubeCloudConfig.Data = map[string]string{}
 		}
 		kubeCloudConfig.Data["ca-bundle.pem"] = caBundle
+	}
+}
+
+func withBareMetalVIPManagement(vipManagement configv1.VIPManagementType) infraOption {
+	return func(infra *configv1.Infrastructure) {
+		if infra.Status.PlatformStatus == nil {
+			infra.Status.PlatformStatus = &configv1.PlatformStatus{}
+		}
+		infra.Status.PlatformStatus.Type = configv1.BareMetalPlatformType
+		infra.Status.PlatformStatus.BareMetal = &configv1.BareMetalPlatformStatus{
+			VIPManagement:        vipManagement,
+			APIServerInternalIPs: []string{"192.168.111.5"},
+			IngressIPs:           []string{"192.168.111.4"},
+		}
+	}
+}
+
+func buildBGPVIPConfigMap(configJSON string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "openshift-network-operator",
+			Name:      "bgp-vip-config",
+		},
+		Data: map[string]string{
+			"config.json": configJSON,
+		},
+	}
+}
+
+func TestSyncBGPVIPPeersJSON(t *testing.T) {
+	compactJSON := `{"localASN":64512,"defaultPeers":[{"peerAddress":"192.168.111.1","peerASN":64513}]}`
+	prettyJSON := `{
+  "localASN": 64512,
+  "defaultPeers": [
+    {
+      "peerAddress": "192.168.111.1",
+      "peerASN": 64513
+    }
+  ]
+}`
+	cases := []struct {
+		name                    string
+		infra                   *configv1.Infrastructure
+		configMap               *corev1.ConfigMap
+		expectError             bool
+		expectedBGPVIPPeersJSON string
+	}{
+		{
+			name:  "non-BareMetal platform is a no-op",
+			infra: buildInfra(withPlatformType(configv1.AWSPlatformType)),
+		},
+		{
+			name:  "BareMetal without BGP VIP management is a no-op",
+			infra: buildInfra(withPlatformType(configv1.BareMetalPlatformType), withBareMetalVIPManagement("")),
+		},
+		{
+			// User-managed load balancer: BGP mode without VIPs renders
+			// keepalived-neither-BGP, and the peers ingestion must not
+			// degrade the operator over the (rightfully) absent ConfigMap.
+			name: "BGP without VIPs is a no-op",
+			infra: buildInfra(withPlatformType(configv1.BareMetalPlatformType), withBareMetalVIPManagement("BGP"),
+				func(infra *configv1.Infrastructure) {
+					infra.Status.PlatformStatus.BareMetal.APIServerInternalIPs = nil
+				}),
+		},
+		{
+			name:                    "BGP enabled with ConfigMap present",
+			infra:                   buildInfra(withPlatformType(configv1.BareMetalPlatformType), withBareMetalVIPManagement("BGP")),
+			configMap:               buildBGPVIPConfigMap(compactJSON),
+			expectedBGPVIPPeersJSON: compactJSON,
+		},
+		{
+			name:                    "BGP enabled with pretty-printed ConfigMap payload is compacted",
+			infra:                   buildInfra(withPlatformType(configv1.BareMetalPlatformType), withBareMetalVIPManagement("BGP")),
+			configMap:               buildBGPVIPConfigMap(prettyJSON),
+			expectedBGPVIPPeersJSON: compactJSON,
+		},
+		{
+			name:        "BGP enabled with missing ConfigMap degrades",
+			infra:       buildInfra(withPlatformType(configv1.BareMetalPlatformType), withBareMetalVIPManagement("BGP")),
+			expectError: true,
+		},
+		{
+			name:        "BGP enabled with malformed payload degrades",
+			infra:       buildInfra(withPlatformType(configv1.BareMetalPlatformType), withBareMetalVIPManagement("BGP")),
+			configMap:   buildBGPVIPConfigMap("{not json"),
+			expectError: true,
+		},
+		{
+			name:        "BGP enabled with empty config.json payload degrades",
+			infra:       buildInfra(withPlatformType(configv1.BareMetalPlatformType), withBareMetalVIPManagement("BGP")),
+			configMap:   buildBGPVIPConfigMap(""),
+			expectError: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sharedInformer := informers.NewSharedInformerFactory(fake.NewSimpleClientset(), 0)
+			cmInformer := sharedInformer.Core().V1().ConfigMaps()
+			if tc.configMap != nil {
+				require.NoError(t, cmInformer.Informer().GetIndexer().Add(tc.configMap))
+			}
+			optr := &Operator{
+				clusterCmLister: cmInformer.Lister(),
+			}
+			spec := &mcfgv1.ControllerConfigSpec{}
+			err := optr.syncBGPVIPPeersJSON(spec, tc.infra)
+			if tc.expectError {
+				assert.Error(t, err)
+				assert.Empty(t, spec.BGPVIPPeersJSON)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tc.expectedBGPVIPPeersJSON, spec.BGPVIPPeersJSON)
+		})
 	}
 }
 
@@ -1051,4 +1172,61 @@ func buildMachineConfigurationWithBootImageDisabledAndNoSkewEnforcement() *opv1.
 			},
 		},
 	}
+}
+
+// TestFRRConfTemplateTimersAndPort guards the review findings from
+// openshift/installer#10718 (review 4919561631): FRR's
+// "timers <keepalive> <hold>" takes bare seconds (the peer data carries
+// whole-second decimal strings, converted from install-config durations by
+// the producers), the line must only render when BOTH timers are set, and
+// the peer port must be rendered (it was dead code before).
+func TestFRRConfTemplateTimersAndPort(t *testing.T) {
+	// Outer pass: the MCO asset render only unwraps the {{` ... `}} escapes.
+	outer, err := renderAsset(&renderConfig{}, "manifests/on-prem/frr.conf.tmpl")
+	require.NoError(t, err)
+
+	// Inner pass: emulate runtimecfg rendering the on-disk tmpl.
+	type peer struct {
+		PeerAddress, PeerASN, Password, BFDEnabled, EBGPMultiHop, HoldTime, KeepaliveTime string
+		Port                                                                              int32
+	}
+	render := func(p peer) string {
+		data := struct {
+			Hostname, LocalASN, RouterID string
+			Peers                        []peer
+			Communities                  []string
+		}{
+			Hostname: "master-0", LocalASN: "64512", RouterID: "192.168.111.20",
+			Peers: []peer{p},
+		}
+		tmpl, err := template.New("frr").Funcs(template.FuncMap{
+			"isIPv4": func(s string) bool { ip := net.ParseIP(s); return ip != nil && ip.To4() != nil },
+			"isIPv6": func(s string) bool { ip := net.ParseIP(s); return ip != nil && ip.To4() == nil },
+		}).Parse(string(outer))
+		require.NoError(t, err)
+		var rendered bytes.Buffer
+		require.NoError(t, tmpl.Execute(&rendered, data))
+		return rendered.String()
+	}
+
+	// Both timers set (bare seconds): rendered in FRR's keepalive-first order.
+	out := render(peer{PeerAddress: "192.168.111.1", PeerASN: "64513", HoldTime: "90", KeepaliveTime: "30"})
+	assert.Contains(t, out, " neighbor 192.168.111.1 timers 30 90\n")
+
+	// Only one timer set: no timers line at all (FRR requires both).
+	out = render(peer{PeerAddress: "192.168.111.1", PeerASN: "64513", HoldTime: "90"})
+	assert.NotContains(t, out, " timers ")
+
+	// Port set: rendered; omitted: absent.
+	out = render(peer{PeerAddress: "192.168.111.1", PeerASN: "64513", Port: 1790})
+	assert.Contains(t, out, " neighbor 192.168.111.1 port 1790\n")
+	out = render(peer{PeerAddress: "192.168.111.1", PeerASN: "64513"})
+	assert.NotContains(t, out, " port ")
+
+	// The day-2 MachineConfig template must stay in sync with the bootstrap
+	// asset for both constructs.
+	day2, err := os.ReadFile(filepath.Join("..", "..", "templates", "master", "00-master", "on-prem", "files", "frr-k8s-conf.yaml"))
+	require.NoError(t, err)
+	assert.Contains(t, string(day2), "{{`{{- if and .HoldTime .KeepaliveTime}}`}}")
+	assert.Contains(t, string(day2), "port {{`{{.Port}}`}}")
 }

@@ -1605,3 +1605,23 @@ func DetectRuncInMachineConfig(mc *mcfgv1.MachineConfig) (string, error) {
 	}
 	return "", nil
 }
+
+// IsBGPVIPManagement reports whether BGP-based VIP management is active:
+// BareMetal platform, vipManagement "BGP", and VIPs present. Without VIPs
+// (user-managed load balancer) there is nothing to advertise and the
+// VIP-consuming templates would render empty values, so the keepalived
+// default applies. Shared by the template renderer, the bootstrap manifest
+// selection, and the operator's peers ingestion so they cannot disagree.
+func IsBGPVIPManagement(infra *configv1.Infrastructure) bool {
+	if infra == nil || infra.Status.PlatformStatus == nil {
+		return false
+	}
+	ps := infra.Status.PlatformStatus
+	if ps.Type != configv1.BareMetalPlatformType || ps.BareMetal == nil {
+		return false
+	}
+	if len(ps.BareMetal.APIServerInternalIPs) == 0 || len(ps.BareMetal.IngressIPs) == 0 {
+		return false
+	}
+	return ps.BareMetal.VIPManagement == configv1.VIPManagementTypeBGP
+}
