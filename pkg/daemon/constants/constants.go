@@ -153,6 +153,13 @@ const (
 	IRIRegistryServiceName = "iri-registry.service"
 	IRIRegistryDataPath    = "/var/lib/iri-registry"
 
+	// KubeletTLSDropInPath is the kubelet TLS drop-in (tlsMinVersion, tlsCipherSuites).
+	// TODO: decide on the "99" prefix — it gives TLS highest precedence in kubelet's
+	// --config-dir merge order (alphabetical, last wins). Revisit whether a lower prefix
+	// (like CRI-O's "01-ctrcfg-*" pattern) is more appropriate.
+	KubeletTLSDropInPath = "/etc/openshift/kubelet.conf.d/99-tls.conf"
+
+
 	// rpm-ostree command arguments
 	RPMOSTreeUpdateArg    = "update"
 	RPMOSTreeInstallArg   = "--install"
