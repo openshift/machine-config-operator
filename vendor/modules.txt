@@ -1366,7 +1366,7 @@ github.com/openshift-eng/openshift-tests-extension/pkg/ginkgo
 github.com/openshift-eng/openshift-tests-extension/pkg/junit
 github.com/openshift-eng/openshift-tests-extension/pkg/util/sets
 github.com/openshift-eng/openshift-tests-extension/pkg/version
-# github.com/openshift/api v0.0.0-20260810132456-8f52beb625b5
+# github.com/openshift/api v0.0.0-20260810132456-8f52beb625b5 => github.com/djoshy/api v0.0.0-20260819161813-39aaf431539d
 ## explicit; go 1.26.0
 github.com/openshift/api
 github.com/openshift/api/annotations
@@ -4165,3 +4165,4 @@ sigs.k8s.io/yaml/kyaml
 # k8s.io/sample-cli-plugin => github.com/openshift/kubernetes/staging/src/k8s.io/sample-cli-plugin v0.0.0-20260716191900-78acd4d422b2
 # k8s.io/sample-controller => github.com/openshift/kubernetes/staging/src/k8s.io/sample-controller v0.0.0-20260716191900-78acd4d422b2
 # k8s.io/streaming => github.com/openshift/kubernetes/staging/src/k8s.io/streaming v0.0.0-20260716191900-78acd4d422b2
+# github.com/openshift/api => github.com/djoshy/api v0.0.0-20260819161813-39aaf431539d
