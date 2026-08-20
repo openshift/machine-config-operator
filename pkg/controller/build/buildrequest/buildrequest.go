@@ -174,6 +174,10 @@ func (br buildRequestImpl) ConfigMaps() ([]*corev1.ConfigMap, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not convert registries.conf files into ConfigMap %q: %w", br.getEtcRegistriesConfigMapName(), err)
 	}
+	etcRegistriesD, err := br.etcRegistriesDToConfigMap(br.opts.MachineConfig)
+	if err != nil {
+		return nil, fmt.Errorf("could not convert registries.d files into ConfigMap %q: %w", br.getEtcRegistriesDConfigMapName(), err)
+	}
 
 	configMaps := []*corev1.ConfigMap{containerfile, machineconfig, additionaltrustbundle}
 	if etcPolicy != nil {
@@ -185,6 +189,11 @@ func (br buildRequestImpl) ConfigMaps() ([]*corev1.ConfigMap, error) {
 		configMaps = append(configMaps, etcRegistries)
 	} else {
 		klog.Warningf("/etc/containers/registries.conf file not found in MachineConfig %q, could not create ConfigMap %q", br.opts.MachineConfig.Name, br.getEtcRegistriesConfigMapName())
+	}
+	if etcRegistriesD != nil {
+		configMaps = append(configMaps, etcRegistriesD)
+	} else {
+		klog.Warningf("/etc/containers/registries.d/ files not found in MachineConfig %q, could not create ConfigMap %q", br.opts.MachineConfig.Name, br.getEtcRegistriesDConfigMapName())
 	}
 
 	return configMaps, nil
@@ -304,6 +313,51 @@ func (br buildRequestImpl) etcRegistriesToConfigMap(mc *mcfgv1.MachineConfig) (*
 		Data:       configMapData,
 	}
 	return configmap, nil
+}
+
+func (br buildRequestImpl) etcRegistriesDToConfigMap(mc *mcfgv1.MachineConfig) (*corev1.ConfigMap, error) {
+	configMapData, err := br.ignitionFilesToConfigMapData(mc, "/etc/containers/registries.d/", "/etc/containers/registries.d/")
+	if err != nil {
+		return nil, err
+	}
+	if len(configMapData) == 0 {
+		return nil, nil
+	}
+	return &corev1.ConfigMap{
+		TypeMeta:   metav1.TypeMeta{},
+		ObjectMeta: br.getObjectMeta(br.getEtcRegistriesDConfigMapName()),
+		Data:       configMapData,
+	}, nil
+}
+
+func (br buildRequestImpl) getEtcRegistriesDConfigMapName() string {
+	return utils.GetEtcRegistriesDConfigMapName(br.opts.MachineOSBuild)
+}
+
+func (br buildRequestImpl) ignitionFilesToConfigMapData(mc *mcfgv1.MachineConfig, dirPath, prefixToTrim string) (map[string]string, error) {
+	if len(mc.Spec.Config.Raw) == 0 {
+		return nil, nil
+	}
+	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+	if err != nil {
+		return nil, fmt.Errorf("parsing rendered MC Ignition config failed with error: %w", err)
+	}
+	result := map[string]string{}
+	for _, file := range ignCfg.Storage.Files {
+		if !strings.HasPrefix(file.Path, dirPath) {
+			continue
+		}
+		if file.Contents.Source == nil {
+			return nil, fmt.Errorf("nil source for %s", file.Path)
+		}
+		decodedData, err := chelpers.DecodeIgnitionFileContents(file.Contents.Source, file.Contents.Compression)
+		if err != nil {
+			return nil, fmt.Errorf("error decoding %s: %w", file.Path, err)
+		}
+		fileKey := strings.TrimPrefix(file.Path, prefixToTrim)
+		result[fileKey] = string(decodedData)
+	}
+	return result, nil
 }
 
 func (br buildRequestImpl) ignitionFileToConfigMapData(mc *mcfgv1.MachineConfig, filePath, prefixToTrim string) (map[string]string, error) {
@@ -703,6 +757,10 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 			SubPath:   "registries.conf",
 		},
 		{
+			Name:      "etc-registries-d",
+			MountPath: "/etc/containers/registries.d",
+		},
+		{
 			Name:      "additional-trust-bundle",
 			MountPath: "/etc/pki/ca-trust/source/anchors",
 		},
@@ -775,6 +833,18 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 				ConfigMap: &corev1.ConfigMapVolumeSource{
 					LocalObjectReference: corev1.LocalObjectReference{
 						Name: br.getEtcRegistriesConfigMapName(),
+					},
+					Optional: &boolTrue,
+				},
+			},
+		},
+		{
+			// Provides the /etc/containers/registries.d/ content from the node
+			Name: "etc-registries-d",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: br.getEtcRegistriesDConfigMapName(),
 					},
 					Optional: &boolTrue,
 				},
