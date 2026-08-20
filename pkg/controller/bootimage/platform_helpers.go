@@ -15,8 +15,6 @@ import (
 
 	osconfigv1 "github.com/openshift/api/config/v1"
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
-
-	"github.com/openshift/machine-config-operator/pkg/controller/bootimage/marketplace"
 )
 
 // AzureVariant represents the different Azure marketplace image variants
@@ -172,46 +170,11 @@ func reconcileAWSProviderSpec(streamData *stream.Stream, arch string, _ *osconfi
 		return false, false, nil, "", err
 	}
 
-	currentImage, err := describeAMI(ctx, ec2Client, currentAMI)
+	newAMI, rhcosVersion, reconcileSkipped, err := resolveAWSTargetAMI(ctx, ec2Client, streamData, arch, region, currentAMI, machineSetName)
 	if err != nil {
 		return false, false, nil, "", err
 	}
-
-	kind, productID := detectAMIKind(currentImage)
-
-	var newAMI, rhcosVersion string
-	switch kind {
-	case amiKindStandard:
-		klog.Infof("MachineSet %s: detected standard RHCOS AMI %s", machineSetName, currentAMI)
-		awsRegionImage, err := streamData.GetAwsRegionImage(arch, region)
-		if err != nil {
-			klog.Infof("failed to get AMI for region %s: %v, skipping update of MachineSet %s", region, err, machineSetName)
-			return false, true, nil, "", nil
-		}
-		newAMI = awsRegionImage.Image
-
-	case amiKindMarketplace:
-		klog.Infof("MachineSet %s: detected marketplace AMI %s (%s)", machineSetName, currentAMI, marketplace.ProductName(productID))
-		newAMI, rhcosVersion, err = resolveMarketplaceAMI(ctx, ec2Client, streamData, arch, productID, machineSetName)
-		if err != nil {
-			return false, false, nil, "", err
-		}
-		if newAMI == "" {
-			return false, true, nil, "", nil
-		}
-
-	case amiKindROSA:
-		klog.Infof("MachineSet %s: detected ROSA marketplace AMI %s (%s)", machineSetName, currentAMI, marketplace.ProductName(productID))
-		newAMI, rhcosVersion, err = resolveMarketplaceAMI(ctx, ec2Client, streamData, arch, productID, machineSetName)
-		if err != nil {
-			return false, false, nil, "", err
-		}
-		if newAMI == "" {
-			return false, true, nil, "", nil
-		}
-
-	default:
-		klog.Infof("MachineSet %s: AMI %s has unrecognised owner, skipping boot image update", machineSetName, currentAMI)
+	if reconcileSkipped {
 		return false, true, nil, "", nil
 	}
 
