@@ -134,6 +134,37 @@ contents:
     function create_version_file {
         echo "{\"version\": $1}" > $2
     }
+    function configure_system_gomaxprocs {
+        local behavior=$1
+        if [ "$behavior" != "Autosize" ]; then
+            rm -f /etc/systemd/system/kubelet.service.d/30-gomaxprocs.conf
+            rm -f /etc/systemd/system/crio.service.d/30-gomaxprocs.conf
+            return
+        fi
+        local gomaxprocs
+        gomaxprocs=$(awk -v cpu="$SYSTEM_RESERVED_CPU" 'BEGIN {
+            if (cpu ~ /m$/) {
+                gsub(/m$/, "", cpu)
+                val = cpu / 1000
+            } else {
+                val = cpu + 0
+            }
+            ival = int(val)
+            if (val > ival) ival++
+            if (ival < 1) ival = 1
+            print ival
+        }')
+        mkdir -p /etc/systemd/system/kubelet.service.d
+        mkdir -p /etc/systemd/system/crio.service.d
+        cat > /etc/systemd/system/kubelet.service.d/30-gomaxprocs.conf <<GOMAXPROCS_EOF
+    [Service]
+    Environment="GOMAXPROCS=${gomaxprocs}"
+    GOMAXPROCS_EOF
+        cat > /etc/systemd/system/crio.service.d/30-gomaxprocs.conf <<GOMAXPROCS_EOF
+    [Service]
+    Environment="GOMAXPROCS=${gomaxprocs}"
+    GOMAXPROCS_EOF
+    }
     if ! [ -f $NODE_AUTO_SIZING_VERSION_FILE ]; then
         create_version_file $NODE_AUTO_SIZING_VERSION $NODE_AUTO_SIZING_VERSION_FILE
     fi
@@ -145,3 +176,4 @@ contents:
     else
         echo "Unrecognized command line option. Valid options are \"true\" or \"false\""
     fi
+    configure_system_gomaxprocs "${SYSTEM_GOMAXPROCS_BEHAVIOR}"

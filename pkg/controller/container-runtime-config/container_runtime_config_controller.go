@@ -420,6 +420,10 @@ func (ctrl *Controller) criocpEnabled() bool {
 	return ctrl.fgHandler.Enabled(features.FeatureGateCRIOCredentialProviderConfig)
 }
 
+func (ctrl *Controller) gomaxprocsInjectionEnabled() bool {
+	return ctrl.fgHandler.Enabled(features.FeatureGateGomaxprocsInjection)
+}
+
 func (ctrl *Controller) updateContainerRuntimeConfig(oldObj, newObj interface{}) {
 	oldCtrCfg := oldObj.(*mcfgv1.ContainerRuntimeConfig)
 	newCtrCfg := newObj.(*mcfgv1.ContainerRuntimeConfig)
@@ -794,6 +798,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		var configFileList []generatedConfigFile
 		ctrcfg := cfg.Spec.ContainerRuntimeConfig
 		additionalStorageEnabled := ctrl.additionalStorageConfigEnabled()
+		gomaxprocsInjectionEnabled := ctrl.gomaxprocsInjectionEnabled()
 		if needsStorageUpdate(ctrcfg, additionalStorageEnabled) {
 			storageTOML, err := mergeConfigChanges(originalStorageIgn, cfg, func(data []byte, internal *mcfgv1.ContainerRuntimeConfiguration) ([]byte, error) {
 				return updateStorageConfig(data, internal, additionalStorageEnabled)
@@ -808,8 +813,8 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		}
 
 		// Create the cri-o drop-in files
-		if needsCRIODropinUpdate(ctrcfg, additionalStorageEnabled) {
-			crioFileConfigs := createCRIODropinFiles(cfg, additionalStorageEnabled)
+		if needsCRIODropinUpdate(ctrcfg, additionalStorageEnabled, gomaxprocsInjectionEnabled) {
+			crioFileConfigs := createCRIODropinFiles(cfg, additionalStorageEnabled, gomaxprocsInjectionEnabled)
 			configFileList = append(configFileList, crioFileConfigs...)
 		}
 
