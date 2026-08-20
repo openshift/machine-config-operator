@@ -679,11 +679,12 @@ func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.ContainerRuntimeConfig, err e
 		_, updateErr := ctrl.client.MachineconfigurationV1().ContainerRuntimeConfigs().UpdateStatus(context.TODO(), newcfg, metav1.UpdateOptions{})
 		return updateErr
 	})
-	// If an error occurred in updating the status just log it
 	if statusUpdateErr != nil {
 		klog.Warningf("error updating container runtime config status: %v", statusUpdateErr)
+		if err == nil {
+			return statusUpdateErr
+		}
 	}
-	// Want to return the actual error received from the sync function
 	return err
 }
 
