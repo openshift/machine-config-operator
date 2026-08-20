@@ -50,7 +50,7 @@ type Bootstrap struct {
 	// dir used to read pools and user defined machineconfigs.
 	manifestDir string
 	// pull secret file
-	pullSecretFile string
+	pullSecretFile     string
 	imageStreamFactory osimagestream.ImageStreamFactory
 	inspectorFactory   osimagestream.ImagesInspectorFactory
 }
@@ -242,21 +242,15 @@ func (b *Bootstrap) Run(destDir string) error {
 		return fmt.Errorf("error filtering pools: %w", err)
 	}
 
+	sysCtxFactory := buildSysContextFactory(pullSecret, cconfig, cconfig.Spec.Infra, imgCfg, icspRules, idmsRules, itmsRules)
+
 	// Enable OSImageStreams if the FeatureGate is active.
 	// Previously this also excluded ExternalTopologyMode (HyperShift) because
 	// HyperShift did not yet write stream selection into the synthetic MCP.
 	// Now that HyperShift writes 99_osimagestream.yaml into the MCC template
 	// directory (openshift/hypershift#8792), the guard is no longer needed.
 	if osimagestream.IsFeatureEnabled(fgHandler) {
-		osImageStream, err = b.fetchOSImageStream(
-			imageStream,
-			cconfig,
-			icspRules,
-			idmsRules,
-			itmsRules,
-			imgCfg,
-			pullSecret,
-			osImageStream)
+		osImageStream, err = b.fetchOSImageStream(sysCtxFactory, imageStream, cconfig, osImageStream)
 		if err != nil {
 			return err
 		}
@@ -369,7 +363,6 @@ func (b *Bootstrap) Run(destDir string) error {
 		klog.Infof("Successfully created %d pre-built image component MachineConfigs for hybrid OCL.", len(preBuiltImageMCs))
 	}
 
-	sysCtxFactory := buildSysContextFactory(pullSecret, cconfig, imgCfg, icspRules, idmsRules, itmsRules)
 	inspector := osimagestream.NewStreamClassInspector(b.inspectorFactory, sysCtxFactory)
 	fpools, gconfigs, err := render.RunBootstrap(context.TODO(), pools, configs, cconfig, osImageStream, inspector)
 	if err != nil {
@@ -500,20 +493,14 @@ func filterPools(pools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfigPool
 }
 
 func (b *Bootstrap) fetchOSImageStream(
+	sysCtxFactory imageutils.SysContextFactory,
 	imageStream *imagev1.ImageStream,
 	cconfig *mcfgv1.ControllerConfig,
-	icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy,
-	idmsRules []*apicfgv1.ImageDigestMirrorSet,
-	itmsRules []*apicfgv1.ImageTagMirrorSet,
-	imgCfg *apicfgv1.Image,
-	pullSecret *corev1.Secret,
 	existingOSImageStream *mcfgv1.OSImageStream,
 ) (*mcfgv1.OSImageStream, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-
-	sysCtxFactory := buildSysContextFactory(pullSecret, cconfig, imgCfg, icspRules, idmsRules, itmsRules)
 
 	factory := b.imageStreamFactory
 	createOpts := osimagestream.CreateOptions{
@@ -538,6 +525,7 @@ func (b *Bootstrap) fetchOSImageStream(
 func buildSysContextFactory(
 	pullSecret *corev1.Secret,
 	cconfig *mcfgv1.ControllerConfig,
+	infra *apicfgv1.Infrastructure,
 	imgCfg *apicfgv1.Image,
 	icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy,
 	idmsRules []*apicfgv1.ImageDigestMirrorSet,
@@ -547,6 +535,12 @@ func buildSysContextFactory(
 		builder := imageutils.NewSysContextBuilder().
 			WithControllerConfig(cconfig).
 			WithSecret(pullSecret)
+
+		// In HCP the proxy config belongs to the data plane cluster and is
+		// unreachable from the management cluster where this code runs.
+		if infra != nil && infra.Status.ControlPlaneTopology == apicfgv1.ExternalTopologyMode {
+			builder.WithoutProxy()
+		}
 
 		registriesConfig, err := imageutils.GenerateRegistriesConfig(imgCfg, icspRules, idmsRules, itmsRules)
 		if err != nil {
