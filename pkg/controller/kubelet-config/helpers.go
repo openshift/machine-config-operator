@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	ghodssyaml "github.com/ghodss/yaml"
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	"github.com/imdario/mergo"
 	osev1 "github.com/openshift/api/config/v1"
@@ -26,6 +27,7 @@ import (
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 )
 
 const (
@@ -83,6 +85,31 @@ func createNewKubeletIgnition(yamlConfig []byte) *ign3types.File {
 
 	r := ctrlcommon.NewIgnFileBytesOverwriting("/etc/kubernetes/kubelet.conf", yamlConfig)
 	return &r
+}
+
+// kubeletTLSDropIn contains only TLS fields. The full KubeletConfiguration cannot be used
+// because it emits non-omitempty fields that would overwrite the base config.
+type kubeletTLSDropIn struct {
+	APIVersion      string   `json:"apiVersion" yaml:"apiVersion"`
+	Kind            string   `json:"kind" yaml:"kind"`
+	TLSMinVersion   string   `json:"tlsMinVersion,omitempty" yaml:"tlsMinVersion,omitempty"`
+	TLSCipherSuites []string `json:"tlsCipherSuites,omitempty" yaml:"tlsCipherSuites,omitempty"`
+}
+
+// createKubeletTLSDropInIgnition builds the TLS drop-in YAML.
+func createKubeletTLSDropInIgnition(tlsMinVersion string, tlsCipherSuites []string) (*ign3types.File, error) {
+	cfg := kubeletTLSDropIn{
+		APIVersion:      "kubelet.config.k8s.io/v1beta1",
+		Kind:            "KubeletConfiguration",
+		TLSMinVersion:   tlsMinVersion,
+		TLSCipherSuites: tlsCipherSuites,
+	}
+	data, err := ghodssyaml.Marshal(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("could not marshal kubelet TLS drop-in config: %w", err)
+	}
+	r := ctrlcommon.NewIgnFileBytesOverwriting(constants.KubeletTLSDropInPath, data)
+	return &r, nil
 }
 
 func createNewDefaultFeatureGate() *osev1.FeatureGate {
@@ -182,17 +209,21 @@ func updateMachineConfigwithCgroup(node *osev1.Node, mc *mcfgv1.MachineConfig) e
 	return nil
 }
 
-func findKubeletConfig(mc *mcfgv1.MachineConfig) (*ign3types.File, error) {
+func findFileInMC(mc *mcfgv1.MachineConfig, path string) (*ign3types.File, error) {
 	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing Kubelet Ignition config failed with error: %w", err)
+		return nil, fmt.Errorf("parsing Ignition config for %s failed: %w", path, err)
 	}
 	for _, c := range ignCfg.Storage.Files {
-		if c.Path == "/etc/kubernetes/kubelet.conf" {
+		if c.Path == path {
 			return &c, nil
 		}
 	}
-	return nil, fmt.Errorf("could not find Kubelet Config")
+	return nil, fmt.Errorf("could not find file %s", path)
+}
+
+func findKubeletConfig(mc *mcfgv1.MachineConfig) (*ign3types.File, error) {
+	return findFileInMC(mc, "/etc/kubernetes/kubelet.conf")
 }
 
 // nolint: dupl
@@ -520,8 +551,30 @@ func kubeletConfigToIgnFile(cfg *kubeletconfigv1beta1.KubeletConfiguration) (*ig
 	return cfgIgn, nil
 }
 
+// filterSystemReservedEnforcement removes system-reserved enforcement keys
+// and ensures pods enforcement is always present.
+func filterSystemReservedEnforcement(enforceNodeAllocatable []string) []string {
+	filtered := []string{}
+	hasPods := false
+	for _, val := range enforceNodeAllocatable {
+		if val == kubeletypes.SystemReservedEnforcementKey ||
+			val == kubeletypes.SystemReservedCompressibleEnforcementKey {
+			continue
+		}
+		if val == kubeletypes.NodeAllocatableEnforcementKey {
+			hasPods = true
+		}
+		filtered = append(filtered, val)
+	}
+	if !hasPods {
+		filtered = append([]string{kubeletypes.NodeAllocatableEnforcementKey}, filtered...)
+	}
+	return filtered
+}
+
 // generateKubeletIgnFiles generates the Ignition files from the kubelet config
-func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeConfig *kubeletconfigv1beta1.KubeletConfiguration) (*ign3types.File, *ign3types.File, *ign3types.File, error) {
+// TODO: refactor return values to improve readability.
+func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeConfig *kubeletconfigv1beta1.KubeletConfiguration) (*ign3types.File, *ign3types.File, *ign3types.File, *ign3types.File, error) {
 	var (
 		kubeletIgnition            *ign3types.File
 		logLevelIgnition           *ign3types.File
@@ -532,22 +585,14 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 	if kubeletConfig.Spec.KubeletConfig != nil && kubeletConfig.Spec.KubeletConfig.Raw != nil {
 		specKubeletConfig, err := DecodeKubeletConfig(kubeletConfig.Spec.KubeletConfig.Raw)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("could not deserialize the new Kubelet config: %w", err)
+			return nil, nil, nil, nil, fmt.Errorf("could not deserialize the new Kubelet config: %w", err)
 		}
 
-		if val, ok := specKubeletConfig.SystemReserved["memory"]; ok {
-			userDefinedSystemReserved["memory"] = val
-			delete(specKubeletConfig.SystemReserved, "memory")
-		}
-
-		if val, ok := specKubeletConfig.SystemReserved["cpu"]; ok {
-			userDefinedSystemReserved["cpu"] = val
-			delete(specKubeletConfig.SystemReserved, "cpu")
-		}
-
-		if val, ok := specKubeletConfig.SystemReserved["ephemeral-storage"]; ok {
-			userDefinedSystemReserved["ephemeral-storage"] = val
-			delete(specKubeletConfig.SystemReserved, "ephemeral-storage")
+		for _, key := range []string{"memory", "cpu", "ephemeral-storage"} {
+			if val, ok := specKubeletConfig.SystemReserved[key]; ok {
+				userDefinedSystemReserved[key] = val
+				delete(specKubeletConfig.SystemReserved, key)
+			}
 		}
 
 		// FeatureGates must be set from the FeatureGate.
@@ -565,7 +610,7 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 		// Merge the Old and New
 		err = mergo.Merge(originalKubeConfig, specKubeletConfig, mergo.WithOverride)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("could not merge original config and new config: %w", err)
+			return nil, nil, nil, nil, fmt.Errorf("could not merge original config and new config: %w", err)
 		}
 
 		// Empty strings are ignored by mergo, so we need to set them to empty string for SystemReservedCgroup explicitly
@@ -592,37 +637,33 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 	if originalKubeConfig.ReservedSystemCPUs != "" {
 		klog.Infof("reservedSystemCPUs is set to %s, disabling systemReservedCgroup enforcement", originalKubeConfig.ReservedSystemCPUs)
 		originalKubeConfig.SystemReservedCgroup = ""
-		// Filter out system-reserved enforcement keys and ensure pods is present
-		filtered := []string{}
-		hasPods := false
-		for _, val := range originalKubeConfig.EnforceNodeAllocatable {
-			// Skip system-reserved enforcement keys
-			if val == kubeletypes.SystemReservedEnforcementKey ||
-				val == kubeletypes.SystemReservedCompressibleEnforcementKey {
-				continue
-			}
-			if val == kubeletypes.NodeAllocatableEnforcementKey {
-				hasPods = true
-			}
-			filtered = append(filtered, val)
-		}
-		// Ensure pods enforcement is always present
-		if !hasPods {
-			filtered = append([]string{kubeletypes.NodeAllocatableEnforcementKey}, filtered...)
-		}
-		originalKubeConfig.EnforceNodeAllocatable = filtered
+		originalKubeConfig.EnforceNodeAllocatable = filterSystemReservedEnforcement(originalKubeConfig.EnforceNodeAllocatable)
 	}
 
 	if originalKubeConfig.SystemReservedCgroup != "" && originalKubeConfig.SystemCgroups != "" {
 		if originalKubeConfig.SystemReservedCgroup != originalKubeConfig.SystemCgroups {
-			return nil, nil, nil, fmt.Errorf("invalid merged configuration: systemReservedCgroup (%s) must match systemCgroups (%s)", originalKubeConfig.SystemReservedCgroup, originalKubeConfig.SystemCgroups)
+			return nil, nil, nil, nil, fmt.Errorf("invalid merged configuration: systemReservedCgroup (%s) must match systemCgroups (%s)", originalKubeConfig.SystemReservedCgroup, originalKubeConfig.SystemCgroups)
 		}
 	}
 
+	// Only emit a TLS drop-in when TLS values are explicitly set.
+	var (
+		tlsDropInIgnition *ign3types.File
+		err               error
+	)
+	if originalKubeConfig.TLSMinVersion != "" || len(originalKubeConfig.TLSCipherSuites) > 0 {
+		tlsDropInIgnition, err = createKubeletTLSDropInIgnition(originalKubeConfig.TLSMinVersion, originalKubeConfig.TLSCipherSuites)
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
+	}
+	originalKubeConfig.TLSMinVersion = ""
+	originalKubeConfig.TLSCipherSuites = nil
+
 	// Encode the new config into an Ignition File
-	kubeletIgnition, err := kubeletConfigToIgnFile(originalKubeConfig)
+	kubeletIgnition, err = kubeletConfigToIgnFile(originalKubeConfig)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("could not encode JSON: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("could not encode JSON: %w", err)
 	}
 
 	if kubeletConfig.Spec.LogLevel != nil {
@@ -635,5 +676,5 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 		autoSizingReservedIgnition = createNewKubeletDynamicSystemReservedIgnition(nil, userDefinedSystemReserved)
 	}
 
-	return kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, nil
+	return kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, tlsDropInIgnition, nil
 }
