@@ -53,7 +53,6 @@ func init() {
 	setupCmd.PersistentFlags().StringVar(&setupOpts.pushSecretPath, "push-secret-path", "", "Path to a push secret K8s YAML to use.")
 	setupCmd.PersistentFlags().StringVar(&setupOpts.finalImagePullspec, "final-pullspec", "", "The final image pushspec to use for testing")
 	setupCmd.PersistentFlags().StringVar(&setupOpts.containerfilePath, "containerfile-path", "", "Optional Containerfile to inject for the build.")
-	setupCmd.PersistentFlags().BoolVar(&setupOpts.enableFeatureGate, "enable-feature-gate", false, "Enables the required featuregates if not already enabled.")
 	setupCmd.PersistentFlags().BoolVar(&setupOpts.injectYumRepos, "inject-yum-repos", false, fmt.Sprintf("Injects contents from the /etc/yum.repos.d and /etc/pki/rpm-gpg directories found in %s into the %s namespace.", yumReposContainerImagePullspec, ctrlcommon.MCONamespace))
 
 	rootCmd.AddCommand(setupCmd)
@@ -89,10 +88,6 @@ func runSetupCmd(setupOpts opts) error {
 
 	cs := framework.NewClientSet("")
 
-	if err := checkForRequiredFeatureGates(cs, setupOpts); err != nil {
-		return err
-	}
-
 	return mobSetup(cs, opts{
 		pushSecretName:     setupOpts.pushSecretName,
 		pullSecretName:     setupOpts.pullSecretName,
@@ -113,10 +108,6 @@ func runInClusterRegistrySetupCmd(setupOpts opts) error {
 	}
 
 	cs := framework.NewClientSet("")
-
-	if err := checkForRequiredFeatureGates(cs, setupOpts); err != nil {
-		return err
-	}
 
 	// TODO: Validate that pulls work with the pull image secret.
 	pushSecretName, err := createLongLivedImagePushSecretForPool(context.TODO(), cs, setupOpts.poolName)

@@ -20,7 +20,6 @@ type opts struct {
 	poolName                 string
 	injectYumRepos           bool
 	waitForBuildInfo         bool
-	enableFeatureGate        bool
 }
 
 func (o *opts) deepCopy() opts {
@@ -36,7 +35,6 @@ func (o *opts) deepCopy() opts {
 		poolName:                 o.poolName,
 		injectYumRepos:           o.injectYumRepos,
 		waitForBuildInfo:         o.waitForBuildInfo,
-		enableFeatureGate:        o.enableFeatureGate,
 	}
 }
 

@@ -27,10 +27,6 @@ func runCiSetupCmd(setupOpts opts) error {
 
 	cs := framework.NewClientSet("")
 
-	if err := checkForRequiredFeatureGates(cs, setupOpts); err != nil {
-		return err
-	}
-
 	if err := setupForCI(cs, setupOpts); err != nil {
 		return err
 	}
