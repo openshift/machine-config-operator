@@ -676,6 +676,16 @@ func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.ContainerRuntimeConfig, err e
 		} else if newcfg.Status.Conditions[len(newcfg.Status.Conditions)-1].Message == newStatusCondition.Message {
 			newcfg.Status.Conditions[len(newcfg.Status.Conditions)-1] = newStatusCondition
 		}
+		// Keep at most three conditions to avoid an unbounded list. Copy into a
+		// freshly allocated slice rather than reslicing in place, so the discarded
+		// conditions' backing array can be garbage collected instead of lingering
+		// in memory (e.g. in the informer cache).
+		const statusLimit = 3
+		if len(newcfg.Status.Conditions) > statusLimit {
+			trimmed := make([]mcfgv1.ContainerRuntimeConfigCondition, statusLimit)
+			copy(trimmed, newcfg.Status.Conditions[len(newcfg.Status.Conditions)-statusLimit:])
+			newcfg.Status.Conditions = trimmed
+		}
 		_, updateErr := ctrl.client.MachineconfigurationV1().ContainerRuntimeConfigs().UpdateStatus(context.TODO(), newcfg, metav1.UpdateOptions{})
 		return updateErr
 	})
