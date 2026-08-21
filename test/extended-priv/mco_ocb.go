@@ -25,34 +25,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	})
 
 	g.It("[PolarionID:83141][OTP] A valid MachineOSConfig leads to a successful MachineOSBuild and cleanup of its associated resources", func() {
-		var (
-			mcpAndMoscName = "infra"
-		)
+		env := NewOCBTestEnvWithCustomMCP(oc, "infra")
+		defer env.CleanupMCPOnly()
 
-		exutil.By("Create custom infra MCP")
-		// We add no workers to the infra pool, it is not necessary
-		infraMcp, err := CreateCustomMCP(oc.AsAdmin(), mcpAndMoscName, 0)
-		defer infraMcp.delete()
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating a new custom pool: %s", mcpAndMoscName)
-		logger.Infof("OK!\n")
-
-		exutil.By("Configure OCB functionality for the new infra MCP")
-		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, mcpAndMoscName, mcpAndMoscName, nil)
-		defer mosc.CleanupAndDelete()
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
-		logger.Infof("OK!\n")
-
-		ValidateSuccessfulMOSC(mosc, nil)
-
-		exutil.By("Remove the MachineOSConfig resource")
-		o.Expect(mosc.CleanupAndDelete()).To(o.Succeed(), "Error cleaning up %s", mosc)
-		logger.Infof("OK!\n")
-
-		ValidateMOSCIsGarbageCollected(mosc, infraMcp)
-
-		exutil.AssertAllPodsToBeReady(oc.AsAdmin(), MachineConfigNamespace)
-		logger.Infof("OK!\n")
-
+		env.ValidateAndCleanup(nil)
 	})
 
 	g.It("[PolarionID:83138][OTP] A MachineOSConfig fails to apply or degrades if invalid inputs are given", func() {
@@ -109,11 +85,9 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	})
 
 	g.It("[PolarionID:83140][OTP] A MachineOSConfig with custom containerfile definition can be successfully applied", func() {
-		var (
-			mcp                  = GetCompactCompatiblePool(oc.AsAdmin())
-			containerFileContent string
-			checkers             []Checker
-		)
+		mcp := GetCompactCompatiblePool(oc.AsAdmin())
+		var containerFileContent string
+		var checkers []Checker
 
 		if IsDisconnectedCluster(oc.AsAdmin()) {
 			logger.Infof("Disconnected cluster detected, using containerfile that does not require network access")
@@ -146,45 +120,28 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	})
 
 	g.It("[PolarionID:77781][OTP] A successfully built MachineOSConfig can be re-build", func() {
+		env := NewOCBTestEnvWithCompactPool(oc)
+		defer env.Cleanup()
 
-		var (
-			mcp = GetCompactCompatiblePool(oc.AsAdmin())
-		)
+		ValidateSuccessfulMOSC(env.MOSC, nil)
 
-		exutil.By("Configure OCB functionality for the new worker MCP")
-		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, mcp.GetName(), mcp.GetName(), nil)
-		defer DisableOCL(mosc)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
-		logger.Infof("OK!\n")
-
-		ValidateSuccessfulMOSC(mosc, nil)
-
-		// rebuild the image and check that the image is properly applied in the nodes
-		RebuildImageAndCheck(mosc)
+		RebuildImageAndCheck(env.MOSC)
 
 		exutil.By("Remove the MachineOSConfig resource")
-		o.Expect(DisableOCL(mosc)).To(o.Succeed(), "Error cleaning up %s", mosc)
+		o.Expect(DisableOCL(env.MOSC)).To(o.Succeed(), "Error cleaning up %s", env.MOSC)
 		logger.Infof("OK!\n")
 	})
 
 	g.It("[PolarionID:77782][OTP] A MachineOSConfig with an unfinished build can be re-build", func() {
-
-		var (
-			mcp = GetCompactCompatiblePool(oc.AsAdmin())
-		)
-
-		exutil.By("Configure OCB functionality for the new worker MCP")
-		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, mcp.GetName(), mcp.GetName(), nil)
-		defer DisableOCL(mosc)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
-		logger.Infof("OK!\n")
+		env := NewOCBTestEnvWithCompactPool(oc)
+		defer env.Cleanup()
 
 		exutil.By("Wait until MOSB starts building")
 		var mosb *MachineOSBuild
 		var job *Job
 		o.Eventually(func() (*MachineOSBuild, error) {
 			var err error
-			mosb, err = mosc.GetCurrentMachineOSBuild()
+			mosb, err = env.MOSC.GetCurrentMachineOSBuild()
 			return mosb, err
 		}, "5m", "20s").Should(Exist(),
 			"No build was created when OCB was enabled")
@@ -207,11 +164,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		// TODO: what's the intended MCP status when a build is interrupted? We need to check this status here
 
-		// rebuild the image and check that the image is properly applied in the nodes
-		RebuildImageAndCheck(mosc)
+		RebuildImageAndCheck(env.MOSC)
 
 		exutil.By("Remove the MachineOSConfig resource")
-		o.Expect(DisableOCL(mosc)).To(o.Succeed(), "Error cleaning up %s", mosc)
+		o.Expect(DisableOCL(env.MOSC)).To(o.Succeed(), "Error cleaning up %s", env.MOSC)
 		logger.Infof("OK!\n")
 	})
 
@@ -253,7 +209,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("OK!\n")
 
 		exutil.By("Enable on-cluster layering (OCL) with a containerFile")
-		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, mcp.GetName(), mcp.GetName(), containerFiles)
+		mosc, err := CreateMOSC(oc.AsAdmin(), mcp.GetName(), mcp.GetName(), WithContainerFiles(containerFiles))
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating MachineOSConfig for %s", mcp.GetName())
 		defer DisableOCL(mosc)
 		logger.Infof("OK!\n")
@@ -324,7 +280,14 @@ func testContainerFile(containerFiles []ContainerFile, imageNamespace string, mc
 	switch imageNamespace {
 	case MachineConfigNamespace:
 		exutil.By("Configure OCB functionality for the new infra MCP. Create MOSC")
-		mosc, err = createMachineOSConfigUsingExternalOrInternalRegistry(oc, MachineConfigNamespace, mcp.GetName(), mcp.GetName(), containerFiles, defaultPullSecret, true)
+		moscOpts := []MOSCCreateOption{}
+		if len(containerFiles) > 0 {
+			moscOpts = append(moscOpts, WithContainerFiles(containerFiles))
+		}
+		if defaultPullSecret {
+			moscOpts = append(moscOpts, WithDefaultPullSecret())
+		}
+		mosc, err = CreateMOSC(oc, mcp.GetName(), mcp.GetName(), moscOpts...)
 	default:
 		SkipTestIfCannotUseInternalRegistry(mcp.GetOC())
 
@@ -354,7 +317,14 @@ func testContainerFile(containerFiles []ContainerFile, imageNamespace string, mc
 		logger.Infof("OK!\n")
 
 		exutil.By("Configure OCB functionality for the new infra MCP. Create MOSC")
-		mosc, err = CreateMachineOSConfigUsingInternalRegistry(oc, tmpNamespace.GetName(), mcp.GetName(), mcp.GetName(), containerFiles, defaultPullSecret)
+		moscOpts := []MOSCCreateOption{WithMOSCInternalRegistry(), WithMOSCNamespace(tmpNamespace.GetName())}
+		if len(containerFiles) > 0 {
+			moscOpts = append(moscOpts, WithContainerFiles(containerFiles))
+		}
+		if defaultPullSecret {
+			moscOpts = append(moscOpts, WithDefaultPullSecret())
+		}
+		mosc, err = CreateMOSC(oc, mcp.GetName(), mcp.GetName(), moscOpts...)
 	}
 	defer DisableOCL(mosc)
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")

@@ -755,7 +755,7 @@ func testMOSBTriggeredOnStreamChange(oc *exutil.CLI, osis *OSImageStream, initia
 	logger.Infof("OK!\n")
 
 	exutil.By("Enable OCL functionality for the custom MCP")
-	mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, customMcpName, customMcpName, nil)
+	mosc, err := CreateMOSC(oc.AsAdmin(), customMcpName, customMcpName)
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error creating MachineOSConfig %s", customMcpName)
 	defer mosc.CleanupAndDelete()
 	logger.Infof("OK!\n")

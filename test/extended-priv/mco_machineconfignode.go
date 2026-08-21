@@ -424,7 +424,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		)
 
 		exutil.By("Configure OCB functionality for the MCP")
-		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, moscName, mcp.GetName(), nil)
+		mosc, err := CreateMOSC(oc.AsAdmin(), moscName, mcp.GetName())
 		defer DisableOCL(mosc)
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
 		ValidateSuccessfulMOSC(mosc, nil)
