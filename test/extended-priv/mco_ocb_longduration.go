@@ -64,7 +64,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 
 		exutil.By("Configure OCB functionality for the new worker MCP")
-		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, moscName, wMcp.GetName(), nil)
+		mosc, err := CreateMOSC(oc.AsAdmin(), moscName, wMcp.GetName())
 		defer DisableOCL(mosc)
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
 		logger.Infof("OK!\n")
@@ -122,7 +122,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			// MOSCs resources have to use the same name as the MCP
 			moscName := infraMcp.GetName()
 
-			mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, moscName, infraMcp.GetName(), nil)
+			mosc, err := CreateMOSC(oc.AsAdmin(), moscName, infraMcp.GetName())
 			defer mosc.CleanupAndDelete()
 			o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
 			moscList = append(moscList, mosc)
@@ -156,24 +156,17 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	})
 
 	g.It("[PolarionID:83755][OTP] In OCL check no new image is applied on node after applying ssh/password/file MC .[Disruptive]", func() {
+		env := NewOCBTestEnvWithCompactPool(oc)
+		defer env.Cleanup()
+
 		var (
-			mcp  = GetCompactCompatiblePool(oc.AsAdmin())
-			node = mcp.GetSortedNodesOrFail()[0]
-
-			moscName = mcp.GetName()
-			mcName   = fmt.Sprintf("test-ssh-%s", GetCurrentTestPolarionIDNumber())
-
+			node   = env.MCP.GetSortedNodesOrFail()[0]
+			mcName = fmt.Sprintf("test-ssh-%s", GetCurrentTestPolarionIDNumber())
 			_, key = GenerateSSHKeyPairOrFail()
 			user   = ign32PaswdUser{Name: "core", SSHAuthorizedKeys: []string{key}}
 		)
 
-		exutil.By("Configure OCB functionality for the new worker MCP")
-		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, moscName, mcp.GetName(), nil)
-		defer DisableOCL(mosc)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
-		logger.Infof("Applied MOSC!\n")
-
-		ValidateSuccessfulMOSC(mosc, nil)
+		ValidateSuccessfulMOSC(env.MOSC, nil)
 		logger.Infof("MOSC is applied!\n")
 
 		exutil.By("Get the image that is currently applied on nodes")
@@ -182,7 +175,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("Got the initial image!\n")
 
 		exutil.By("Create a new MC to deploy new authorized keys")
-		mc := NewMachineConfig(oc.AsAdmin(), mcName, mcp.GetName())
+		mc := NewMachineConfig(oc.AsAdmin(), mcName, env.MCP.GetName())
 		mc.parameters = []string{fmt.Sprintf(`PWDUSERS=[%s]`, MarshalOrFail(user))}
 		mc.skipWaitForMcp = true
 
@@ -191,14 +184,14 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("Created MC!\n")
 
 		exutil.By("Check that the build is triggered with succeed status and not building")
-		mosb, err := mosc.GetCurrentMachineOSBuild()
+		mosb, err := env.MOSC.GetCurrentMachineOSBuild()
 		logger.Infof("MOSB: %s\n", mosb)
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting MOSB from MOSC")
 		o.Expect(mosb).To(HaveConditionField("Building", "status", FalseString), "Build is still building")
 		o.Expect(mosb).To(HaveConditionField("Succeeded", "status", TrueString), "Build didn't succeed")
 		logger.Infof("Checked that the build does not take place!\n")
 
-		mcp.waitForComplete()
+		env.MCP.waitForComplete()
 		logger.Infof("OK!\n")
 
 		exutil.By("Check that the image is not updated")
@@ -206,7 +199,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("Image is not updated!\n")
 
 		exutil.By("Check that all expected keys are present and with the right permissions and owners")
-		currentMc := OrFail[*MachineConfig](mcp.GetConfiguredMachineConfig())
+		currentMc := OrFail[*MachineConfig](env.MCP.GetConfiguredMachineConfig())
 		initialKeys := OrFail[[]string](currentMc.GetAuthorizedKeysByUserAsList("core"))
 		checkAuthorizedKeyInNode(node, append(initialKeys, key))
 		logger.Infof("MC is configured with the expected keys!\n")
@@ -224,7 +217,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		)
 
 		exutil.By("Configure OCB functionality for the compatible MCP")
-		mosc, err := CreateMachineOSConfigUsingInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, moscName, mcp.GetName(), nil, true)
+		mosc, err := CreateMOSC(oc.AsAdmin(), moscName, mcp.GetName(), WithMOSCInternalRegistry(), WithDefaultPullSecret())
 		defer DisableOCL(mosc)
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
 		logger.Infof("OK!\n")
@@ -234,48 +227,37 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 	g.It("[PolarionID:82536][OTP][Skipped:Disconnected] Internal Registry In OCB to check when a image is removed the old build is triggered again and the MC should start updating directly. [Disruptive]", func() {
 		SkipIfCompactOrSNO(oc.AsAdmin())
-		SkipTestIfCannotUseInternalRegistry(oc.AsAdmin()) // This test case requires the internal registry to be enabled
+		SkipTestIfCannotUseInternalRegistry(oc.AsAdmin())
+
+		env := NewOCBTestEnvWithCustomMCP(oc, "infra", WithOCBWorkers(1), WithOCBMOSCOptions(WithMOSCInternalRegistry()))
+		defer env.Cleanup()
 
 		var (
-			infraMcpName = "infra"
-			mcName       = fmt.Sprintf("tc-%s-int-kernelarg", GetCurrentTestPolarionIDNumber())
-			kArgs        = "test"
+			mcName = fmt.Sprintf("tc-%s-int-kernelarg", GetCurrentTestPolarionIDNumber())
+			kArgs  = "test"
 		)
 
-		exutil.By("Create custom infra MCP")
-		infraMcp, err := CreateCustomMCP(oc.AsAdmin(), infraMcpName, 1)
-		defer DeleteCustomMCP(oc.AsAdmin(), infraMcpName)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating a new custom pool: %s", infraMcpName)
-		logger.Infof("OK!\n")
-
-		exutil.By("Create MOSC for custom MCP using internal registry")
-		moscName := infraMcp.GetName()
-		mosc, err := CreateMachineOSConfigUsingInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, moscName, infraMcp.GetName(), nil, false)
-		defer DisableOCL(mosc)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating MOSC")
-		logger.Infof("OK!\n")
-
 		exutil.By("Validate initial MOSC and wait for MOSB-1 to succeed")
-		ValidateSuccessfulMOSC(mosc, nil)
+		ValidateSuccessfulMOSC(env.MOSC, nil)
 
-		mosb1, err := mosc.GetCurrentMachineOSBuild()
+		mosb1, err := env.MOSC.GetCurrentMachineOSBuild()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting initial MOSB")
 		logger.Infof("Initial MOSB created: %s\n", mosb1.GetName())
 
 		exutil.By("Apply MC with kernel argument to trigger new MOSB")
-		mc := NewMachineConfig(oc.AsAdmin(), mcName, infraMcp.GetName())
+		mc := NewMachineConfig(oc.AsAdmin(), mcName, env.MCP.GetName())
 		mc.skipWaitForMcp = true
 
 		defer mc.DeleteWithWait()
 
-		err = mc.Create("-p", "NAME="+mcName, "-p", "POOL="+infraMcp.GetName(),
+		err = mc.Create("-p", "NAME="+mcName, "-p", "POOL="+env.MCP.GetName(),
 			"-p", fmt.Sprintf(`KERNEL_ARGS=["%s"]`, kArgs))
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating MachineConfig %s", mc.GetName())
 		logger.Infof("OK!\n")
 
 		exutil.By("Wait for MOSB-2 to be created and succeed")
-		checkNewBuildIsTriggered(mosc, mosb1)
-		mosb2, err := mosc.GetCurrentMachineOSBuild()
+		checkNewBuildIsTriggered(env.MOSC, mosb1)
+		mosb2, err := env.MOSC.GetCurrentMachineOSBuild()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting MOSB-2")
 		logger.Infof("Second MOSB created: %s\n", mosb2.GetName())
 
@@ -283,49 +265,28 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		o.Expect(removeImageStream(oc.AsAdmin(), mosb1)).To(o.BeTrue(), "Error deleting imagestream tag for MOSB-1")
 		logger.Infof("OK!\n")
 
-		// Common verification after MOSB-1 deletion
-		verifyMOSBRebuildAfterImageDeletion(infraMcp, mosc, mosb1, mosb2, mc, mcName)
+		verifyMOSBRebuildAfterImageDeletion(env.MCP, env.MOSC, mosb1, mosb2, mc, mcName)
 	})
 
 	g.It("[PolarionID:79172][OTP] OCB Inherit from global pull secret if baseImagePullSecret field is not specified [Disruptive]", func() {
-		var (
-			infraMcpName = "infra"
-		)
+		env := NewOCBTestEnvWithCustomMCP(oc, "infra", WithOCBSkipMOSC())
+		defer env.CleanupMCPOnly()
 
-		exutil.By("Create custom infra MCP")
-		// We add no workers to the infra pool, it is not necessary
-		infraMcp, err := CreateCustomMCP(oc.AsAdmin(), infraMcpName, 0)
-		defer infraMcp.delete()
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating a new custom pool: %s", infraMcpName)
-		logger.Infof("OK!\n")
-
-		testContainerFile([]ContainerFile{}, MachineConfigNamespace, infraMcp, nil, true)
+		testContainerFile([]ContainerFile{}, MachineConfigNamespace, env.MCP, nil, true)
 	})
 
 	g.It("[PolarionID:83136][OTP][Skipped:Disconnected] Panic Condition for Non-Matching MOSC Resources [Disruptive]", func() {
-		var (
-			infraMcpName = "infra"
-			// MOSC has to use the same name as the mcp
-			moscName = infraMcpName
-		)
-		exutil.By("Create New Custom MCP")
-		defer DeleteCustomMCP(oc.AsAdmin(), infraMcpName)
-		infraMcp, err := CreateCustomMCP(oc.AsAdmin(), infraMcpName, 1)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Could not create a new custom MCP")
-		node := infraMcp.GetNodesOrFail()[0]
+		env := NewOCBTestEnvWithCustomMCP(oc, "infra", WithOCBWorkers(1))
+		defer env.CleanupMCPOnly()
+
+		node := env.MCP.GetNodesOrFail()[0]
 		logger.Infof("%s", node.GetName())
 		logger.Infof("OK!\n")
 
-		exutil.By("Configure OCB functionality for the new infra MCP")
-		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, moscName, infraMcpName, nil)
-		defer DisableOCL(mosc)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
-		logger.Infof("OK!\n")
-
 		exutil.By("Check that a new build has been triggered")
-		o.Eventually(mosc.GetCurrentMachineOSBuild, "5m", "20s").Should(Exist(),
+		o.Eventually(env.MOSC.GetCurrentMachineOSBuild, "5m", "20s").Should(Exist(),
 			"No build was created when OCB was enabled")
-		mosb, err := mosc.GetCurrentMachineOSBuild()
+		mosb, err := env.MOSC.GetCurrentMachineOSBuild()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting MOSB from MOSC")
 		o.Eventually(mosb.GetJob, "5m", "20s").Should(Exist(),
 			"No build pod was created when OCB was enabled")
@@ -334,10 +295,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 
 		exutil.By("Delete the MCOS and check it is deleted")
-		o.Expect(mosc.CleanupAndDelete()).To(o.Succeed(), "Error cleaning up %s", mosc)
-		ValidateMOSCIsGarbageCollected(mosc, infraMcp)
+		o.Expect(env.MOSC.CleanupAndDelete()).To(o.Succeed(), "Error cleaning up %s", env.MOSC)
+		ValidateMOSCIsGarbageCollected(env.MOSC, env.MCP)
 		o.Expect(mosb).NotTo(Exist(), "Build is not deleted")
-		o.Expect(mosc).NotTo(Exist(), "MOSC is not deleted")
+		o.Expect(env.MOSC).NotTo(Exist(), "MOSC is not deleted")
 		logger.Infof("OK!\n")
 
 		exutil.AssertAllPodsToBeReady(oc.AsAdmin(), MachineConfigNamespace)
@@ -376,50 +337,35 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	})
 
 	g.It("[PolarionID:77498][OTP] OCB Trigger new build when renderedImagePushspec is updated [Disruptive]", func() {
+		env := NewOCBTestEnvWithCustomMCP(oc, "infra")
+		defer env.CleanupMCPOnly()
+		defer env.MOSC.CleanupAndDelete()
 
-		var (
-			infraMcpName = "infra"
-			// MOSC resources have to use the same names as the MCP
-			moscName = infraMcpName
-		)
-
-		exutil.By("Create custom infra MCP")
-		// We add no workers to the infra pool, it is not necessary
-		infraMcp, err := CreateCustomMCP(oc.AsAdmin(), infraMcpName, 0)
-		defer infraMcp.delete()
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating a new custom pool: %s", infraMcpName)
-		logger.Infof("OK!\n")
-
-		exutil.By("Configure OCB functionality for the new infra MCP")
-		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, moscName, infraMcpName, nil)
-		defer mosc.CleanupAndDelete()
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
-		logger.Infof("OK!\n")
-
-		ValidateSuccessfulMOSC(mosc, nil)
+		ValidateSuccessfulMOSC(env.MOSC, nil)
 
 		exutil.By("Set a new rendered image pull spec")
-		initialMOSB := OrFail[*MachineOSBuild](mosc.GetCurrentMachineOSBuild())
-		initialRIPS := OrFail[string](mosc.GetRenderedImagePushspec())
+		initialMOSB := OrFail[*MachineOSBuild](env.MOSC.GetCurrentMachineOSBuild())
+		initialRIPS := OrFail[string](env.MOSC.GetRenderedImagePushspec())
 		o.Expect(
-			mosc.SetRenderedImagePushspec(strings.ReplaceAll(initialRIPS, "ocb-", "ocb77498-")),
-		).NotTo(o.HaveOccurred(), "Error patching %s to set the new renderedImagePullSpec", mosc)
+			env.MOSC.SetRenderedImagePushspec(strings.ReplaceAll(initialRIPS, "ocb-", "ocb77498-")),
+		).NotTo(o.HaveOccurred(), "Error patching %s to set the new renderedImagePullSpec", env.MOSC)
 		logger.Infof("OK!\n")
 
 		exutil.By("Check that a new build is triggered")
-		checkNewBuildIsTriggered(mosc, initialMOSB)
+		checkNewBuildIsTriggered(env.MOSC, initialMOSB)
 		logger.Infof("OK!\n")
 
 		exutil.By("Set the original rendered image pull spec")
 		o.Expect(
-			mosc.SetRenderedImagePushspec(initialRIPS),
-		).NotTo(o.HaveOccurred(), "Error patching %s to set the new renderedImagePullSpec", mosc)
+			env.MOSC.SetRenderedImagePushspec(initialRIPS),
+		).NotTo(o.HaveOccurred(), "Error patching %s to set the new renderedImagePullSpec", env.MOSC)
 		logger.Infof("OK!\n")
 
 		exutil.By("Check that the initial build is reused")
 		var currentMOSB *MachineOSBuild
 		o.Eventually(func() (string, error) {
-			currentMOSB, err = mosc.GetCurrentMachineOSBuild()
+			var err error
+			currentMOSB, err = env.MOSC.GetCurrentMachineOSBuild()
 			if err != nil || currentMOSB == nil {
 				return "", err
 			}
@@ -431,69 +377,51 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	})
 
 	g.It("[PolarionID:77497][OTP] OCB Trigger new build when Containerfile is updated [Disruptive]", func() {
-
 		var (
-			infraMcpName = "infra"
-			// MOSC resources have to use the same names as the MCP
-			moscName         = infraMcpName
 			containerFile    = ContainerFile{Content: "RUN touch /etc/test-add-containerfile" + "\n" + ExpirationDockerfileLabel}
 			containerFileMod = ContainerFile{Content: "RUN touch /etc/test-modified-containerfile" + "\n" + ExpirationDockerfileLabel}
-
-			// We need to test a first MOSC without any container file, so we cannot add the expiration label in the first MOSC
-			expireImage = false
-			// We don't configure the pull secret in the MOSC, since it is optional
-			defaultPullSecret = true
 		)
 
-		exutil.By("Create custom infra MCP")
-		// We add no workers to the infra pool, it is not necessary
-		infraMcp, err := CreateCustomMCP(oc.AsAdmin(), infraMcpName, 0)
-		defer infraMcp.delete()
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating a new custom pool: %s", infraMcpName)
-		logger.Infof("OK!\n")
+		env := NewOCBTestEnvWithCustomMCP(oc, "infra", WithOCBMOSCOptions(WithDefaultPullSecret(), WithNoImageExpiration()))
+		defer env.CleanupMCPOnly()
+		defer env.MOSC.CleanupAndDelete()
 
-		exutil.By("Configure OCB functionality for the new infra MCP")
-		mosc, err := createMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, moscName, infraMcpName, nil, defaultPullSecret, expireImage)
-
-		defer mosc.CleanupAndDelete()
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
-		logger.Infof("OK!\n")
-
-		ValidateSuccessfulMOSC(mosc, nil)
+		ValidateSuccessfulMOSC(env.MOSC, nil)
 
 		exutil.By("Add new container file")
-		initialMOSB := OrFail[*MachineOSBuild](mosc.GetCurrentMachineOSBuild())
+		initialMOSB := OrFail[*MachineOSBuild](env.MOSC.GetCurrentMachineOSBuild())
 
 		o.Expect(
-			mosc.SetContainerfiles([]ContainerFile{containerFile}),
-		).NotTo(o.HaveOccurred(), "Error patching %s to add a container file", mosc)
+			env.MOSC.SetContainerfiles([]ContainerFile{containerFile}),
+		).NotTo(o.HaveOccurred(), "Error patching %s to add a container file", env.MOSC)
 		logger.Infof("OK!\n")
 
 		exutil.By("Check that a new build is triggered when a containerfile is added")
-		checkNewBuildIsTriggered(mosc, initialMOSB)
+		checkNewBuildIsTriggered(env.MOSC, initialMOSB)
 		logger.Infof("OK!\n")
 
 		exutil.By("Modify the container file")
-		currentMOSB := OrFail[*MachineOSBuild](mosc.GetCurrentMachineOSBuild())
+		currentMOSB := OrFail[*MachineOSBuild](env.MOSC.GetCurrentMachineOSBuild())
 
 		o.Expect(
-			mosc.SetContainerfiles([]ContainerFile{containerFileMod}),
-		).NotTo(o.HaveOccurred(), "Error patching %s to modify an existing container file", mosc)
+			env.MOSC.SetContainerfiles([]ContainerFile{containerFileMod}),
+		).NotTo(o.HaveOccurred(), "Error patching %s to modify an existing container file", env.MOSC)
 		logger.Infof("OK!\n")
 
 		exutil.By("Check that a new build is triggered when a containerfile is modified")
-		checkNewBuildIsTriggered(mosc, currentMOSB)
+		checkNewBuildIsTriggered(env.MOSC, currentMOSB)
 		logger.Infof("OK!\n")
 
 		exutil.By("Remove the container files")
 		o.Expect(
-			mosc.RemoveContainerfiles(),
-		).NotTo(o.HaveOccurred(), "Error patching %s to remove the configured container files", mosc)
+			env.MOSC.RemoveContainerfiles(),
+		).NotTo(o.HaveOccurred(), "Error patching %s to remove the configured container files", env.MOSC)
 		logger.Infof("OK!\n")
 
 		exutil.By("Check that the initial build is reused")
 		o.Eventually(func() (string, error) {
-			currentMOSB, err = mosc.GetCurrentMachineOSBuild()
+			var err error
+			currentMOSB, err = env.MOSC.GetCurrentMachineOSBuild()
 			if err != nil || currentMOSB == nil {
 				return "", err
 			}
@@ -505,28 +433,21 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	})
 
 	g.It("[PolarionID:77576][OTP] In OCB. Create a new MC while a build is running [Disruptive]", func() {
+		env := NewOCBTestEnvWithCompactPool(oc)
+		defer env.Cleanup()
 
 		var (
-			mcp      = GetCompactCompatiblePool(oc.AsAdmin())
-			node     = mcp.GetSortedNodesOrFail()[0]
-			moscName = mcp.GetName()
-
+			node   = env.MCP.GetSortedNodesOrFail()[0]
 			kArgs  = "test"
 			mcName = "tc-77576-testkargs"
-			mc     = NewMachineConfig(oc.AsAdmin(), mcName, mcp.GetName())
+			mc     = NewMachineConfig(oc.AsAdmin(), mcName, env.MCP.GetName())
 		)
-
-		exutil.By("Configure OCB functionality for the new worker MCP")
-		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, moscName, mcp.GetName(), nil)
-		defer DisableOCL(mosc)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
-		logger.Infof("OK!\n")
 
 		exutil.By("Check that a new build has been triggered and is building")
 		var mosb *MachineOSBuild
 		o.Eventually(func() (*MachineOSBuild, error) {
 			var err error
-			mosb, err = mosc.GetCurrentMachineOSBuild()
+			mosb, err = env.MOSC.GetCurrentMachineOSBuild()
 			return mosb, err
 		}, "5m", "20s").Should(Exist(),
 			"No build was created when OCB was enabled")
@@ -538,17 +459,17 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		exutil.By("Create a MC to trigger a new build")
 		defer mc.DeleteWithWait()
-		err = mc.Create("-p", "NAME="+mcName, "-p", "POOL="+mcp.GetName(), "-p", fmt.Sprintf(`KERNEL_ARGS=["%s"]`, kArgs))
+		err := mc.Create("-p", "NAME="+mcName, "-p", "POOL="+env.MCP.GetName(), "-p", fmt.Sprintf(`KERNEL_ARGS=["%s"]`, kArgs))
 		o.Expect(err).NotTo(o.HaveOccurred())
 		logger.Infof("OK!\n")
 
 		exutil.By("Check that a new build is triggered and the old build is removed")
-		checkNewBuildIsTriggered(mosc, mosb)
+		checkNewBuildIsTriggered(env.MOSC, mosb)
 		o.Eventually(mosb, "2m", "20s").ShouldNot(Exist(), "The old MOSB %s was not deleted", mosb)
 		logger.Infof("OK!\n")
 
 		exutil.By("Wait for the configuration to be applied")
-		mcp.waitForComplete()
+		env.MCP.waitForComplete()
 		logger.Infof("OK!\n")
 
 		exutil.By("Check that the MC was applied")
@@ -558,37 +479,31 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 
 		exutil.By("Remove the MachineOSConfig resource")
-		o.Expect(DisableOCL(mosc)).To(o.Succeed(), "Error cleaning up %s", mosc)
+		o.Expect(DisableOCL(env.MOSC)).To(o.Succeed(), "Error cleaning up %s", env.MOSC)
 		logger.Infof("OK!\n")
 	})
 
 	g.It("[PolarionID:77977][OTP][Skipped:Disconnected] Install extension after OCB is enabled [Disruptive]", func() {
+		env := NewOCBTestEnvWithCompactPool(oc)
+		defer env.Cleanup()
 
 		var (
-			mcp                     = GetCompactCompatiblePool(oc.AsAdmin())
-			moscName                = mcp.GetName() // MOSC resources have to use the same name as the MCP
-			node                    = mcp.GetSortedNodesOrFail()[0]
+			node                    = env.MCP.GetSortedNodesOrFail()[0]
 			mcName                  = "test-install-extension-" + GetCurrentTestPolarionIDNumber()
-			applicableExtensions, _ = GetAllApplicableExtensionsToMCPOrFail(mcp)
+			applicableExtensions, _ = GetAllApplicableExtensionsToMCPOrFail(env.MCP)
 		)
 
-		exutil.By("Configure OCB functionality for the new worker MCP")
-		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, moscName, mcp.GetName(), nil)
-		defer DisableOCL(mosc)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
-		logger.Infof("OK!\n")
-
-		ValidateSuccessfulMOSC(mosc, nil)
+		ValidateSuccessfulMOSC(env.MOSC, nil)
 
 		exutil.By("Create a MC")
-		mc := NewMachineConfig(oc.AsAdmin(), mcName, mcp.GetName())
+		mc := NewMachineConfig(oc.AsAdmin(), mcName, env.MCP.GetName())
 		defer mc.DeleteWithWait()
 		mc.parameters = []string{fmt.Sprintf(`EXTENSIONS=%s`, string(MarshalOrFail(applicableExtensions)))}
 		mc.create()
 		logger.Infof("OK!\n")
 
 		exutil.By("Wait for the configuration to be applied")
-		mcp.waitForComplete()
+		env.MCP.waitForComplete()
 		logger.Infof("OK!\n")
 
 		CheckExtensions(node, applicableExtensions)
@@ -598,8 +513,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 
 		exutil.By("Remove the MachineOSConfig resource")
-		o.Expect(DisableOCL(mosc)).To(o.Succeed(), "Error cleaning up %s", mosc)
-		ValidateMOSCIsGarbageCollected(mosc, mcp)
+		o.Expect(DisableOCL(env.MOSC)).To(o.Succeed(), "Error cleaning up %s", env.MOSC)
+		ValidateMOSCIsGarbageCollected(env.MOSC, env.MCP)
 		logger.Infof("OK!\n")
 	})
 
@@ -641,7 +556,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 
 		exutil.By("Create the MOSC")
-		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, moscName, mcp.GetName(), []ContainerFile{{Content: containerFileContent}})
+		mosc, err := CreateMOSC(oc.AsAdmin(), moscName, mcp.GetName(), WithContainerFiles([]ContainerFile{{Content: containerFileContent}}))
 		defer DisableOCL(mosc)
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
 		logger.Infof("OK!\n")
@@ -689,7 +604,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		)
 
 		exutil.By("Configure OCB functionality using external registry (Quay)")
-		mosc, err := CreateMachineOSConfigUsingExternalRegistry(oc.AsAdmin(), moscName, mcp.GetName(), nil, false, false)
+		mosc, err := CreateMOSC(oc.AsAdmin(), moscName, mcp.GetName(), WithMOSCExternalRegistry(), WithNoImageExpiration())
 		defer DisableOCL(mosc)
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
 		logger.Infof("OK!\n")
@@ -699,33 +614,24 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 	g.It("[PolarionID:85980][OTP][Skipped:Disconnected] Check when MOSB is degraded MCP should be degraded too with right fields updated. [Disruptive]", func() {
 		var (
-			infraMcpName = "infra"
-			moscName     = infraMcpName
-			// Intentionally uses 'apt' on Alpine (which uses 'apk'), causing build to fail
 			incorrectContainerFile  = "FROM alpine:3.18\nRUN apt update && apt install -y cowsay\n"
 			correctContainerFile    = "FROM configs AS final\nRUN echo \"hello\" > /etc/test.txt\n"
 			expectedDegradedMessage = "Failed to build OS image"
 		)
 
-		exutil.By("Create custom infra MCP")
-		infraMcp, err := CreateCustomMCP(oc.AsAdmin(), infraMcpName, 1)
-		defer DeleteCustomMCP(oc.AsAdmin(), infraMcpName)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating custom MCP: %s", infraMcpName)
-		node := infraMcp.GetNodesOrFail()[0]
+		env := NewOCBTestEnvWithCustomMCP(oc, "infra", WithOCBWorkers(1),
+			WithOCBMOSCOptions(WithContainerFiles([]ContainerFile{{Content: incorrectContainerFile}})))
+		defer env.CleanupMCPOnly()
+		defer env.MOSC.CleanupAndDelete()
+
+		node := env.MCP.GetNodesOrFail()[0]
 		logger.Infof("Infra node: %s\n", node.GetName())
 		logger.Infof("OK!\n")
 
-		exutil.By("Create MOSC with incorrect containerfile")
-		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, moscName, infraMcpName,
-			[]ContainerFile{{Content: incorrectContainerFile}})
-		defer mosc.CleanupAndDelete()
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating MOSC with incorrect containerfile")
-		logger.Infof("OK!\n")
-
 		exutil.By("Verify MOSB is created and fails")
-		o.Eventually(mosc.GetCurrentMachineOSBuild, "5m", "20s").Should(Exist(),
+		o.Eventually(env.MOSC.GetCurrentMachineOSBuild, "5m", "20s").Should(Exist(),
 			"No MOSB was created for the incorrect containerfile")
-		failedMOSB, err := mosc.GetCurrentMachineOSBuild()
+		failedMOSB, err := env.MOSC.GetCurrentMachineOSBuild()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting MOSB from MOSC")
 		logger.Infof("MOSB created: %s\n", failedMOSB.GetName())
 		o.Eventually(failedMOSB, "20m", "20s").Should(HaveConditionField("Failed", "status", TrueString),
@@ -733,23 +639,23 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("MOSB failed as expected\n")
 
 		exutil.By("Verify MCP is degraded with ImageBuildDegraded condition")
-		o.Eventually(infraMcp, "5m", "20s").Should(BeDegraded(), "MCP should be degraded when build fails")
-		o.Eventually(infraMcp, "5m", "20s").Should(HaveConditionField("ImageBuildDegraded", "status", TrueString),
+		o.Eventually(env.MCP, "5m", "20s").Should(BeDegraded(), "MCP should be degraded when build fails")
+		o.Eventually(env.MCP, "5m", "20s").Should(HaveConditionField("ImageBuildDegraded", "status", TrueString),
 			"MCP ImageBuildDegraded should be True when build fails")
-		o.Eventually(infraMcp, "5m", "20s").Should(HaveConditionField("ImageBuildDegraded", "message", o.ContainSubstring(expectedDegradedMessage)),
+		o.Eventually(env.MCP, "5m", "20s").Should(HaveConditionField("ImageBuildDegraded", "message", o.ContainSubstring(expectedDegradedMessage)),
 			"MCP degradation message should indicate OS image build failure")
-		o.Eventually(infraMcp, "5m", "20s").Should(HaveConditionField("Degraded", "message", o.ContainSubstring("Custom OS image build failed")),
+		o.Eventually(env.MCP, "5m", "20s").Should(HaveConditionField("Degraded", "message", o.ContainSubstring("Custom OS image build failed")),
 			"MCP Degraded message should indicate custom OS image build failed")
 		logger.Infof("OK!\n")
 
 		exutil.By("Fix the MOSC by updating containerfile")
-		o.Expect(mosc.SetContainerfiles([]ContainerFile{{Content: correctContainerFile}})).NotTo(o.HaveOccurred(),
+		o.Expect(env.MOSC.SetContainerfiles([]ContainerFile{{Content: correctContainerFile}})).NotTo(o.HaveOccurred(),
 			"Error updating MOSC with correct containerfile")
 		logger.Infof("OK!\n")
 
 		exutil.By("Verify new MOSB is created and succeeds")
-		checkNewBuildIsTriggered(mosc, failedMOSB)
-		newMOSB, err := mosc.GetCurrentMachineOSBuild()
+		checkNewBuildIsTriggered(env.MOSC, failedMOSB)
+		newMOSB, err := env.MOSC.GetCurrentMachineOSBuild()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting new MOSB")
 		logger.Infof("New MOSB created: %s\n", newMOSB.GetName())
 
@@ -759,22 +665,20 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 
 		exutil.By("Verify MCP recovers and is no longer degraded")
-		// Check both ImageBuildDegraded (specific condition) and Degraded (overall status)
-		// to ensure complete recovery from the failed build state
-		o.Eventually(infraMcp, "5m", "20s").Should(HaveConditionField("ImageBuildDegraded", "status", FalseString),
+		o.Eventually(env.MCP, "5m", "20s").Should(HaveConditionField("ImageBuildDegraded", "status", FalseString),
 			"MCP ImageBuildDegraded condition should be False after recovery")
-		o.Eventually(infraMcp, "5m", "20s").ShouldNot(BeDegraded(),
+		o.Eventually(env.MCP, "5m", "20s").ShouldNot(BeDegraded(),
 			"MCP Degraded condition should be False after recovery")
-		o.Eventually(infraMcp, "5m", "20s").Should(HaveConditionField("Updating", "status", TrueString),
+		o.Eventually(env.MCP, "5m", "20s").Should(HaveConditionField("Updating", "status", TrueString),
 			"MCP should be updating after successful build")
 		logger.Infof("OK!\n")
 
 		exutil.By("Wait for MCP to complete update")
-		infraMcp.waitForComplete()
+		env.MCP.waitForComplete()
 		logger.Infof("OK!\n")
 
 		exutil.By("Verify image is applied to node")
-		currentImagePullSpec := OrFail[string](mosc.GetStatusCurrentImagePullSpec())
+		currentImagePullSpec := OrFail[string](env.MOSC.GetStatusCurrentImagePullSpec())
 		o.Expect(node.GetCurrentBootOSImage()).To(o.Equal(currentImagePullSpec),
 			"Node should be using the correct OCL image after recovery")
 		logger.Infof("Node is using image: %s\n", currentImagePullSpec)
@@ -792,60 +696,48 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		SkipIfCompactOrSNO(oc.AsAdmin())
 
 		var (
-			infraMcpName              = "infra"
 			mcName                    = fmt.Sprintf("tc-%s-ext-kernelarg", GetCurrentTestPolarionIDNumber())
 			kArgs                     = "test"
 			containerFileNoExpiration = "FROM configs AS final\nLABEL maintainer=\"mco@example.com\"\n"
 		)
 
-		exutil.By("Create custom infra MCP")
-		infraMcp, err := CreateCustomMCP(oc.AsAdmin(), infraMcpName, 1)
-		defer DeleteCustomMCP(oc.AsAdmin(), infraMcpName)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating a new custom pool: %s", infraMcpName)
-		logger.Infof("OK!\n")
-
-		exutil.By("Create MOSC for custom MCP using external registry")
-		moscName := infraMcp.GetName()
-		mosc, err := CreateMachineOSConfigUsingExternalRegistry(oc.AsAdmin(), moscName, infraMcp.GetName(),
-			[]ContainerFile{{Content: containerFileNoExpiration}}, false, false)
-		defer DisableOCL(mosc)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating MOSC")
-		logger.Infof("OK!\n")
+		env := NewOCBTestEnvWithCustomMCP(oc, "infra", WithOCBWorkers(1),
+			WithOCBMOSCOptions(WithMOSCExternalRegistry(), WithNoImageExpiration(), WithContainerFiles([]ContainerFile{{Content: containerFileNoExpiration}})))
+		defer env.Cleanup()
 
 		exutil.By("Validate initial MOSC and wait for MOSB-1 to succeed")
-		ValidateSuccessfulMOSC(mosc, nil)
+		ValidateSuccessfulMOSC(env.MOSC, nil)
 
-		mosb1, err := mosc.GetCurrentMachineOSBuild()
+		mosb1, err := env.MOSC.GetCurrentMachineOSBuild()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting initial MOSB")
 		logger.Infof("Initial MOSB created: %s\n", mosb1.GetName())
 
 		exutil.By("Apply MC with kernel argument to trigger new MOSB")
-		mc := NewMachineConfig(oc.AsAdmin(), mcName, infraMcp.GetName())
+		mc := NewMachineConfig(oc.AsAdmin(), mcName, env.MCP.GetName())
 		mc.skipWaitForMcp = true
 
 		defer mc.DeleteWithWait()
 
-		err = mc.Create("-p", "NAME="+mcName, "-p", "POOL="+infraMcp.GetName(),
+		err = mc.Create("-p", "NAME="+mcName, "-p", "POOL="+env.MCP.GetName(),
 			"-p", fmt.Sprintf(`KERNEL_ARGS=["%s"]`, kArgs))
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating MachineConfig %s", mc.GetName())
 		logger.Infof("OK!\n")
 
 		exutil.By("Wait for MOSB-2 to be created and succeed")
-		checkNewBuildIsTriggered(mosc, mosb1)
-		mosb2, err := mosc.GetCurrentMachineOSBuild()
+		checkNewBuildIsTriggered(env.MOSC, mosb1)
+		mosb2, err := env.MOSC.GetCurrentMachineOSBuild()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting MOSB-2")
 		logger.Infof("Second MOSB created: %s\n", mosb2.GetName())
 
 		exutil.By("Wait for MCP to complete update")
-		infraMcp.waitForComplete()
+		env.MCP.waitForComplete()
 		logger.Infof("OK!\n")
 
 		exutil.By("Delete MOSB-1 image from Quay using automated skopeo deletion")
-		o.Expect(removeQuayImageUsingSkopeo(oc.AsAdmin(), mosb1, infraMcp)).To(o.BeTrue(), "Error deleting Quay image for MOSB-1")
+		o.Expect(removeQuayImageUsingSkopeo(oc.AsAdmin(), mosb1, env.MCP)).To(o.BeTrue(), "Error deleting Quay image for MOSB-1")
 		logger.Infof("OK!\n")
 
-		// Common verification after MOSB-1 deletion
-		verifyMOSBRebuildAfterImageDeletion(infraMcp, mosc, mosb1, mosb2, mc, mcName)
+		verifyMOSBRebuildAfterImageDeletion(env.MCP, env.MOSC, mosb1, mosb2, mc, mcName)
 	})
 
 })
