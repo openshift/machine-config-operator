@@ -2921,22 +2921,26 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 		// such that if we happen to update while the CoreDNS pod is being restarted,
 		// the next retry should succeed if no other issues are present.
 		backoff := wait.Backoff{
-			Duration: 5 * time.Second,
+			Duration: 10 * time.Second,
 			Factor:   2,
-			Steps:    5,
+			Steps:    7,
+			Cap:      60 * time.Second,
 		}
 
+		var lastRebaseErr error
 		if err := wait.ExponentialBackoff(backoff, func() (bool, error) {
 			if err := dn.NodeUpdaterClient.RebaseLayered(newURL); err != nil {
 				klog.Warningf("Failed to update OS to %s (will retry): %v", newURL, err)
+				lastRebaseErr = err
 				return false, nil
 			}
 			return true, nil
 		}); err != nil {
+			rebaseErr := fmt.Errorf("failed to update OS to %s after retries: %v: %w", newURL, lastRebaseErr, err)
 			// Report ImagePulledFromRegistry condition as false (failed)
 			if imageModeStatusReportingEnabled {
 				mcnErr := upgrademonitor.GenerateAndApplyMachineConfigNodes(
-					&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeImagePulledFromRegistry, Reason: string(mcfgv1.MachineConfigNodeImagePulledFromRegistry), Message: fmt.Sprintf("Failed to pull OS image %s from registry: %v", newURL, err)},
+					&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeImagePulledFromRegistry, Reason: string(mcfgv1.MachineConfigNodeImagePulledFromRegistry), Message: fmt.Sprintf("Failed to pull OS image %s from registry: %v", newURL, rebaseErr)},
 					nil,
 					metav1.ConditionFalse,
 					metav1.ConditionFalse,
@@ -2949,7 +2953,7 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 					klog.Errorf("Error setting ImagePulledFromRegistry condition to false: %v", mcnErr)
 				}
 			}
-			return fmt.Errorf("failed to update OS to %s after retries: %w", newURL, err)
+			return rebaseErr
 		}
 
 		// Report ImagePulledFromRegistry condition as true (success)
