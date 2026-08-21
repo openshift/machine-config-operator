@@ -252,37 +252,45 @@ func (b *buildReconciler) AddJob(ctx context.Context, job *batchv1.Job) error {
 
 // Executes whenever a build Job is updated
 func (b *buildReconciler) UpdateJob(ctx context.Context, oldJob, curJob *batchv1.Job) error {
+	klog.Errorf("in UpdateJob")
 	return b.timeObjectOperation(curJob, updatingVerb, func() error {
 		mosb, err := b.getMachineOSBuildForJob(curJob)
 		if err == nil && mosb != nil {
 			if curJob.Status.Succeeded > 0 && (oldJob.Status.Succeeded == 0) {
+				klog.Errorf("in curJob.Status.Succeeded > 0 && (oldJob.Status.Succeeded == 0)")
 				b.eventRecorder.RecordJobCompleted(mosb, curJob)
 			}
 
 			if curJob.Status.Failed > 0 && (oldJob.Status.Failed == 0) {
+				klog.Errorf("in curJob.Status.Failed > 0 && (oldJob.Status.Failed == 0)")
 				b.eventRecorder.RecordJobFailed(mosb, curJob)
 			}
 
 			if curJob.Status.Active > 0 && (oldJob.Status.Active == 0) {
+				klog.Errorf("in curJob.Status.Active > 0 && (oldJob.Status.Active == 0)")
 				b.eventRecorder.RecordJobStarted(mosb, curJob)
 				b.eventRecorder.RecordBuildBuilding(mosb)
 			}
 
 			mosc, err := utils.GetMachineOSConfigForMachineOSBuild(mosb, b.utilListers())
 			if err == nil {
+				klog.Errorf("in err == nil")
 				poolName := mosc.Spec.MachineConfigPool.Name
 
 				if curJob.Status.Succeeded > 0 && (oldJob.Status.Succeeded == 0) {
+					klog.Errorf("in curJob.Status.Succeeded > 0 && (oldJob.Status.Succeeded == 0)")
 					RecordBuildJobState(poolName, StateSucceeded)
 					RecordImagePushCompleted(poolName)
 				}
 
 				if curJob.Status.Failed > 0 && (oldJob.Status.Failed == 0) {
+					klog.Errorf("in curJob.Status.Failed > 0 && (oldJob.Status.Failed == 0)")
 					RecordBuildJobState(poolName, StateFailed)
 					RecordImagePushFailed(poolName)
 				}
 
 				if curJob.Status.Failed > oldJob.Status.Failed && curJob.Status.Failed <= constants.JobMaxRetries {
+					klog.Errorf("in curJob.Status.Failed > oldJob.Status.Failed && curJob.Status.Failed <= constants.JobMaxRetries")
 					RecordBuildRetry(poolName)
 				}
 			}
@@ -614,7 +622,6 @@ func (b *buildReconciler) startBuild(ctx context.Context, mosb *mcfgv1.MachineOS
 // Retrieves a deep-copy of the MachineOSConfig from the lister so that the cache is not mutated during the update.
 func (b *buildReconciler) getMachineOSConfigForUpdate(mosc *mcfgv1.MachineOSConfig) (*mcfgv1.MachineOSConfig, error) {
 	out, err := b.machineOSConfigLister.Get(mosc.Name)
-
 	if err != nil {
 		return nil, err
 	}
@@ -635,7 +642,6 @@ func (b *buildReconciler) getMachineOSBuildForJob(job *batchv1.Job) (*mcfgv1.Mac
 // Retrieves a deep-copy of the MachineOSBuild from the lister so that the cache is not mutated during the update.
 func (b *buildReconciler) getMachineOSBuildForUpdate(mosb *mcfgv1.MachineOSBuild) (*mcfgv1.MachineOSBuild, error) {
 	out, err := b.machineOSBuildLister.Get(mosb.Name)
-
 	if err != nil {
 		return nil, err
 	}
@@ -730,7 +736,6 @@ func (b *buildReconciler) createNewMachineOSBuildOrReuseExisting(ctx context.Con
 		MachineOSConfig:   mosc,
 		MachineConfigPool: mcp,
 	})
-
 	if err != nil {
 		return fmt.Errorf("could not instantiate new MachineOSBuild: %w", err)
 	}
@@ -861,7 +866,9 @@ func (b *buildReconciler) getMachineOSBuildStatusForBuilder(ctx context.Context,
 // the decision off to setStatusOnMachineOSBuildIfNeeded.
 func (b *buildReconciler) updateMachineOSBuildWithStatusIfNeeded(ctx context.Context, oldBuilder, curBuilder metav1.Object) error {
 	oldStatus, _, err := b.getMachineOSBuildStatusForBuilder(ctx, oldBuilder)
+	klog.Errorf("oldStatus: %v", oldStatus)
 	if err != nil {
+		klog.Errorf("got err for getMachineOSBuildStatusForBuilder for old")
 		// If we can't find the MachineOSConfig, MachineOSBuild, or any of the
 		// ephemeral build objects, it means that it was probably deleted. Instead
 		// of trying to reconcile the status, we'll return nil here to avoid
@@ -870,7 +877,9 @@ func (b *buildReconciler) updateMachineOSBuildWithStatusIfNeeded(ctx context.Con
 	}
 
 	curStatus, mosb, err := b.getMachineOSBuildStatusForBuilder(ctx, curBuilder)
+	klog.Errorf("curStatus: %v", curStatus)
 	if err != nil {
+		klog.Errorf("got err for getMachineOSBuildStatusForBuilder for cur")
 		// If we can't find the MachineOSConfig, MachineOSBuild, or any of the
 		// ephemeral build objects, it means that it was probably deleted. Instead
 		// of trying to reconcile the status, we'll return nil here to avoid
@@ -909,9 +918,11 @@ func (b *buildReconciler) updateMachineOSBuildWithStatusIfNeeded(ctx context.Con
 
 // Sets the status on the MachineOSBuild object after comparing the statuses according to very specific state transitions.
 func (b *buildReconciler) setStatusOnMachineOSBuildIfNeeded(ctx context.Context, mosb *mcfgv1.MachineOSBuild, oldStatus, curStatus mcfgv1.MachineOSBuildStatus) error {
+	klog.Errorf("in setStatusOnMachineOSBuildIfNeeded")
 	// Compare the old status and the current status to determine if an update is
 	// needed. This is handled according to very specific state transitions.
 	isUpdateNeeded, reason := isMachineOSBuildStatusUpdateNeeded(oldStatus, curStatus)
+	klog.Errorf("isUpdateNeeded: %v", isUpdateNeeded)
 	if !isUpdateNeeded {
 		if reason != "" {
 			klog.Infof("MachineOSBuild %q %s; skipping update because of invalid transition", mosb.Name, reason)
@@ -1212,7 +1223,6 @@ func (b *buildReconciler) syncAll(ctx context.Context) error {
 
 		return nil
 	})
-
 	if err != nil {
 		return fmt.Errorf("could not sync all: %w", err)
 	}
@@ -1236,7 +1246,6 @@ func (b *buildReconciler) syncMachineOSBuilds(ctx context.Context) error {
 
 		return nil
 	})
-
 	if err != nil {
 		return fmt.Errorf("could not sync MachineOSBuilds: %w", err)
 	}
@@ -1249,7 +1258,6 @@ func (b *buildReconciler) syncMachineOSBuilds(ctx context.Context) error {
 // builder associated with it that one should be created.
 func (b *buildReconciler) syncMachineOSBuild(ctx context.Context, mosb *mcfgv1.MachineOSBuild) error {
 	return b.timeObjectOperation(mosb, syncingVerb, func() error {
-
 		// It could be the case that the MCP the mosb in queue was targeting no longer is valid
 		mcp, err := b.machineConfigPoolLister.Get(mosb.ObjectMeta.Labels[constants.TargetMachineConfigPoolLabelKey])
 		if err != nil {
@@ -1392,7 +1400,6 @@ func (b *buildReconciler) syncMachineOSConfigs(ctx context.Context) error {
 
 		return nil
 	})
-
 	if err != nil {
 		return fmt.Errorf("could not sync MachineOSConfigs: %w", err)
 	}
@@ -1476,7 +1483,6 @@ func (b *buildReconciler) syncMachineConfigPools(ctx context.Context) error {
 
 		return nil
 	})
-
 	if err != nil {
 		return fmt.Errorf("could not sync MachineConfigPools: %w", err)
 	}
@@ -1612,7 +1618,6 @@ func (b *buildReconciler) reconcilePoolChange(ctx context.Context, mcp *mcfgv1.M
 		return b.reuseImageForNewMOSB(ctx, mosc, oldMOSB)
 	}
 	return b.createNewMachineOSBuildOrReuseExisting(ctx, mosc, needsImageRebuild)
-
 }
 
 // reuseImageForNewMOSB creates a new MOSB (for the new rendered-MC name)
@@ -1637,7 +1642,6 @@ func (b *buildReconciler) reuseImageForNewMOSB(ctx context.Context, mosc *mcfgv1
 			MachineOSConfig:   mosc,
 			MachineConfigPool: mcp,
 		})
-
 	if err != nil {
 		return err
 	}
@@ -1805,7 +1809,6 @@ func (b *buildReconciler) shouldPreventBuildDueToDegradation(mcp *mcfgv1.Machine
 // reconcileImageRebuild calls RequiresRebuild to see if an MC changes the kernel args, ext, or osimageurl.
 // if it does, we build a new image in our new MOSB
 func (b *buildReconciler) reconcileImageRebuild(oldMCP, curMCP *mcfgv1.MachineConfigPool) (bool, error) {
-
 	curr, err := b.machineConfigLister.Get(oldMCP.Spec.Configuration.Name)
 	if err != nil {
 		return false, err
@@ -1982,7 +1985,6 @@ func (b *buildReconciler) seedMachineOSConfigWithExistingImage(ctx context.Conte
 		MachineConfigPool: mcp,
 		MachineOSConfig:   mosc,
 	})
-
 	if err != nil {
 		return fmt.Errorf("could not generate MachineOSBuild template for MachineOSConfig %q: %w", mosc.Name, err)
 	}

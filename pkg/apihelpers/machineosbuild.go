@@ -4,6 +4,7 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/klog/v2"
 )
 
 // NewMachineOSBuildCondition creates a new MachineOSBuild condition.
@@ -71,7 +72,11 @@ func IsMachineOSBuildConditionTrue(conditions []metav1.Condition, conditionType 
 
 // IsMachineOSBuildConditionPresentAndEqual returns true when conditionType is present and equal to status.
 func IsMachineOSBuildConditionPresentAndEqual(conditions []metav1.Condition, conditionType mcfgv1.BuildProgress, status metav1.ConditionStatus) bool {
+	klog.Errorf("in IsMachineOSBuildConditionPresentAndEqual")
 	for _, condition := range conditions {
+		klog.Errorf("condition: %v", condition)
+		klog.Errorf("condition.Type: %v", condition.Type)
+		klog.Errorf("condition.Status: %v", condition.Status)
 		if mcfgv1.BuildProgress(condition.Type) == conditionType {
 			return condition.Status == status
 		}

@@ -7,6 +7,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/klog/v2"
 )
 
 // Event types for OCL processes
@@ -84,6 +85,7 @@ func (r *OCLEventRecorder) RecordBuildCompleted(mosb *mcfgv1.MachineOSBuild, ima
 
 // RecordBuildFailed records when a build fails
 func (r *OCLEventRecorder) RecordBuildFailed(mosb *mcfgv1.MachineOSBuild) {
+	klog.Errorf("in RecordBuildFailed")
 	r.recorder.Event(mosb, corev1.EventTypeWarning, EventBuildFailed,
 		fmt.Sprintf("Build failed; see MachineOSBuild %q status conditions for details", mosb.Name))
 }
