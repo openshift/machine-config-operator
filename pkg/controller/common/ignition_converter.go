@@ -11,6 +11,7 @@ import (
 	"github.com/coreos/ign-converter/translate/v33tov32"
 	"github.com/coreos/ign-converter/translate/v34tov33"
 	"github.com/coreos/ign-converter/translate/v35tov34"
+	"github.com/coreos/ign-converter/translate/v36tov35"
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
 	ign23 "github.com/coreos/ignition/config/v2_3"
 	v30types "github.com/coreos/ignition/v2/config/v3_0/types"
@@ -24,6 +25,8 @@ import (
 	v34types "github.com/coreos/ignition/v2/config/v3_4/types"
 	v35translate "github.com/coreos/ignition/v2/config/v3_5/translate"
 	v35types "github.com/coreos/ignition/v2/config/v3_5/types"
+	v36translate "github.com/coreos/ignition/v2/config/v3_6/translate"
+	v36types "github.com/coreos/ignition/v2/config/v3_6/types"
 )
 
 var (
@@ -126,6 +129,10 @@ func (c *functionConverter) Versions() conversionTuple {
 // of the supported version maps.
 func buildConverterList() []ignitionVersionConverter {
 	return []ignitionVersionConverter{
+		// v3.6 -> v3.5
+		newFunctionConverterTyped[v36types.Config, v35types.Config](v36types.MaxVersion, v35types.MaxVersion, v36tov35.Translate),
+		// v3.5 -> v3.6
+		newFunctionConverterTypedNoError[v35types.Config, v36types.Config](v35types.MaxVersion, v36types.MaxVersion, v36translate.Translate),
 		// v3.5 -> v3.4
 		newFunctionConverterTyped[v35types.Config, v34types.Config](v35types.MaxVersion, v34types.MaxVersion, v35tov34.Translate),
 		// v3.4 -> v3.5
