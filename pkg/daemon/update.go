@@ -1302,6 +1302,23 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 				}
 			}
 		}()
+		var etcFiles []ign3types.File
+		for _, f := range newIgnConfig.Storage.Files {
+			if strings.HasPrefix(f.Path, "/etc/") {
+				etcFiles = append(etcFiles, f)
+			}
+		}
+		if osUpdate && len(etcFiles) > 0 {
+			// Signal checkStateOnFirstRun to re-apply these files after the reboot.
+			// The ostree 3-way /etc merge runs at boot time and can overwrite
+			// MC-managed files whose content matches the old OS base; writing to
+			// the staged deployment before the reboot would not survive the merge.
+			// The marker causes a post-reboot re-apply that corrects any overwrites.
+			if err := writeFileAtomicallyWithDefaults(postOSUpdateEtcFilesMarkerPath, []byte{}); err != nil {
+				return fmt.Errorf("writing post-OS-update marker: %w", err)
+			}
+			klog.Infof("Wrote post-OS-update marker; %d managed /etc files will be re-applied on next boot", len(etcFiles))
+		}
 	} else {
 		klog.Info("updating the OS on non-CoreOS nodes is not supported")
 	}
