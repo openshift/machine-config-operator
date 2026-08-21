@@ -127,8 +127,12 @@ func validateSecret(secretGetter func(string) (*corev1.Secret, error), mosc *mcf
 // terminal state.
 func isMachineOSBuildStatusUpdateNeeded(oldStatus, curStatus mcfgv1.MachineOSBuildStatus) (bool, string) {
 	klog.Errorf("In isMachineOSBuildStatusUpdateNeeded")
+	klog.Errorf("oldStatus %v", oldStatus)
+	klog.Errorf("curStatus %v", curStatus)
 	oldState := ctrlcommon.NewMachineOSBuildStateFromStatus(oldStatus)
 	curState := ctrlcommon.NewMachineOSBuildStateFromStatus(curStatus)
+	klog.Errorf("oldState %v", oldState)
+	klog.Errorf("curState %v", curState)
 
 	// From having no build conditions to having the initial state set.
 	klog.Errorf("!oldState.HasBuildConditions() %t", !oldState.HasBuildConditions())
@@ -143,17 +147,17 @@ func isMachineOSBuildStatusUpdateNeeded(oldStatus, curStatus mcfgv1.MachineOSBui
 	curTransientState := curState.GetTransientState()
 
 	// From initial state -> pending or building.
-	klog.Errorf("oldState.IsInInitialState() %t", oldState.IsInInitialState())
-	klog.Errorf("curState.IsInTransientState() %t", curState.IsInTransientState())
+	// klog.Errorf("oldState.IsInInitialState() %t", oldState.IsInInitialState())
+	// klog.Errorf("curState.IsInTransientState() %t", curState.IsInTransientState())
 	if oldState.IsInInitialState() && curState.IsInTransientState() {
 		klog.Errorf("In oldState.IsInInitialState() && curState.IsInTransientState()")
 		return true, fmt.Sprintf("transitioned from initial state -> transient state (%s)", curTransientState)
 	}
 
 	// From pending -> building, but not building -> pending.
-	klog.Errorf("oldState.IsInTransientState() %t", oldState.IsInTransientState())
-	klog.Errorf("curState.IsInTransientState() %t", curState.IsInTransientState())
-	klog.Errorf("oldTransientState != curTransientState %t", oldTransientState != curTransientState)
+	// klog.Errorf("oldState.IsInTransientState() %t", oldState.IsInTransientState())
+	// klog.Errorf("curState.IsInTransientState() %t", curState.IsInTransientState())
+	// klog.Errorf("oldTransientState != curTransientState %t", oldTransientState != curTransientState)
 	if oldState.IsInTransientState() && curState.IsInTransientState() && oldTransientState != curTransientState {
 		klog.Errorf("In oldState.IsInTransientState() && curState.IsInTransientState() && oldTransientState != curTransientState")
 		reason := fmt.Sprintf("transitioned from transient state (%s) -> transient state (%s)", oldTransientState, curTransientState)
@@ -163,10 +167,12 @@ func isMachineOSBuildStatusUpdateNeeded(oldStatus, curStatus mcfgv1.MachineOSBui
 
 	oldTerminalState := oldState.GetTerminalState()
 	curTerminalState := curState.GetTerminalState()
+	klog.Errorf("oldTerminalState 168 %v", oldTerminalState)
+	klog.Errorf("curTerminalState 168 %v", curTerminalState)
 
 	// From building -> {success, failure, interrupted}
-	klog.Errorf("oldState.IsInTransientState() %t", oldState.IsInTransientState())
-	klog.Errorf("curState.IsInTerminalState() %t", curState.IsInTerminalState())
+	klog.Errorf("oldState.IsInTransientState() 170 %t", oldState.IsInTransientState())
+	klog.Errorf("curState.IsInTerminalState() 171 %t", curState.IsInTerminalState())
 	if oldState.IsInTransientState() && curState.IsInTerminalState() {
 		klog.Errorf("In oldState.IsInTransientState() && curState.IsInTerminalState()")
 		return true, fmt.Sprintf("transitioned from transient state (%s) -> terminal state (%s)", oldTransientState, curTerminalState)

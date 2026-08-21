@@ -866,6 +866,7 @@ func (b *buildReconciler) getMachineOSBuildStatusForBuilder(ctx context.Context,
 // the decision off to setStatusOnMachineOSBuildIfNeeded.
 func (b *buildReconciler) updateMachineOSBuildWithStatusIfNeeded(ctx context.Context, oldBuilder, curBuilder metav1.Object) error {
 	oldStatus, _, err := b.getMachineOSBuildStatusForBuilder(ctx, oldBuilder)
+	klog.Errorf("oldStatus: %v", oldStatus)
 	if err != nil {
 		klog.Errorf("got err for getMachineOSBuildStatusForBuilder for old")
 		// If we can't find the MachineOSConfig, MachineOSBuild, or any of the
@@ -876,6 +877,7 @@ func (b *buildReconciler) updateMachineOSBuildWithStatusIfNeeded(ctx context.Con
 	}
 
 	curStatus, mosb, err := b.getMachineOSBuildStatusForBuilder(ctx, curBuilder)
+	klog.Errorf("curStatus: %v", curStatus)
 	if err != nil {
 		klog.Errorf("got err for getMachineOSBuildStatusForBuilder for cur")
 		// If we can't find the MachineOSConfig, MachineOSBuild, or any of the
