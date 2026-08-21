@@ -99,7 +99,7 @@ func upgradeStubIgnitionIfRequired(secretName string, secretClient clientset.Int
 	userData := secret.Data[ctrlcommon.UserDataKey]
 	var userDataIgn interface{}
 	if err := json.Unmarshal(userData, &userDataIgn); err != nil {
-		return fmt.Errorf("failed to unmarshal decoded user-data to json (secret %s): %wt", secret.Name, err)
+		return fmt.Errorf("failed to unmarshal decoded user-data to json (secret %s): %w", secret.Name, err)
 	}
 	versionPath := []string{ctrlcommon.IgnFieldIgnition, ctrlcommon.IgnFieldVersion}
 	version, _, err := unstructured.NestedString(userDataIgn.(map[string]any), versionPath...)

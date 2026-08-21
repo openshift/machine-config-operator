@@ -175,7 +175,10 @@ func upload(ctx context.Context, archive *importer.TapeArchive, lease *nfc.Lease
 }
 
 // findAllRequiredResources locates all vSphere objects (folder, cluster, pool, network, etc.)
-func findAllRequiredResources(ctx context.Context, finder *find.Finder, providerSpec *machinev1beta1.VSphereMachineProviderSpec, failureDomain osconfigv1.VSpherePlatformFailureDomainSpec, name string) (*VsphereResources, error) {
+// existingVM, when non-nil, is used directly as the template to swap out instead of looking one
+// up by name — the caller may already know it under a different name than name (see
+// createNewVMTemplateWithNameForFailureDomain).
+func findAllRequiredResources(ctx context.Context, finder *find.Finder, providerSpec *machinev1beta1.VSphereMachineProviderSpec, failureDomain osconfigv1.VSpherePlatformFailureDomainSpec, existingVM *object.VirtualMachine, name string) (*VsphereResources, error) {
 	vr := VsphereResources{}
 	folder, err := finder.Folder(ctx, providerSpec.Workspace.Folder)
 	if err != nil {
@@ -198,6 +201,10 @@ func findAllRequiredResources(ctx context.Context, finder *find.Finder, provider
 	vr.datastore, err = finder.Datastore(ctx, providerSpec.Workspace.Datastore)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find datastore: %w", err)
+	}
+	if existingVM != nil {
+		vr.existingVM = existingVM
+		return &vr, nil
 	}
 	scopedPath := templateSearchPath(providerSpec.Workspace.Folder, name)
 	vr.existingVM, err = finder.VirtualMachine(ctx, scopedPath)
@@ -373,7 +380,7 @@ func resolveExistingTemplateVM(
 	// Computed name not found in the workspace folder — either nothing exists there, or the name is
 	// held by a customer-managed VM elsewhere in the inventory that must be left alone. Either way,
 	// check for a rollback VM left by a prior mid-swap crash before creating a fresh template.
-	oldTempName := atomicTempName("mco-old", computedName)
+	oldTempName := AtomicTempName("mco-old", computedName)
 	oldVM, oldErr := finder.VirtualMachine(ctx, oldTempName)
 	if oldErr != nil {
 		if !errors.As(oldErr, &notFoundErr) {
@@ -404,7 +411,7 @@ func resolveExistingTemplateVM(
 		if diskTypeErr != nil {
 			return nil, "", false, fmt.Errorf("failed to determine disk provisioning type for new template %s: %w", computedName, diskTypeErr)
 		}
-		if createErr := createNewVMTemplateWithNameForFailureDomain(ctx, providerSpec, failureDomain, finder, client, tagManager, computedName, ovaPath, infraID, diskType); createErr != nil {
+		if createErr := createNewVMTemplateWithNameForFailureDomain(ctx, providerSpec, failureDomain, finder, client, tagManager, nil, computedName, ovaPath, infraID, diskType); createErr != nil {
 			return nil, "", false, createErr
 		}
 		return nil, computedName, true, nil
@@ -435,7 +442,9 @@ func resolveExistingTemplateVM(
 
 // atomicTempName returns a short, fixed-length (17-char) VM name for use during atomic template
 // swaps. The hash makes it deterministic and unique per final name, bypassing the 80-char limit.
-func atomicTempName(prefix, name string) string {
+// Exported so e2e tests can compute the same "mco-old-<hash>" rollback name this package uses,
+// without duplicating the hashing logic.
+func AtomicTempName(prefix, name string) string {
 	h := sha256.Sum256([]byte(name))
 	return fmt.Sprintf("%s-%x", prefix, h[:4])
 }
@@ -521,13 +530,17 @@ func getCISP(ovfEnvelope *ovf.Envelope, networkRef object.NetworkReference, name
 	return cisp, nil
 }
 
-func createNewVMTemplateWithNameForFailureDomain(ctx context.Context, providerSpec *machinev1beta1.VSphereMachineProviderSpec, failureDomain osconfigv1.VSpherePlatformFailureDomainSpec, finder *find.Finder, client *govmomi.Client, tagManager *tags.Manager, name, ovaPath, infraID, diskType string) error {
+// existingVM, when non-nil, is the template VM to atomically swap out once the rebuild
+// completes — it may be known under a name other than name (e.g. a custom providerSpec.Template
+// that is being converged to the computed name on rebuild). When nil, findAllRequiredResources
+// falls back to looking up name directly (the "brand new template" case).
+func createNewVMTemplateWithNameForFailureDomain(ctx context.Context, providerSpec *machinev1beta1.VSphereMachineProviderSpec, failureDomain osconfigv1.VSpherePlatformFailureDomainSpec, finder *find.Finder, client *govmomi.Client, tagManager *tags.Manager, existingVM *object.VirtualMachine, name, ovaPath, infraID, diskType string) error {
 	// tempName is where the new OVA is imported; oldTempName holds the existing template during
 	// the swap. Both are fixed-length (17 chars) so they always fit within vSphere's 80-char limit.
-	tempName := atomicTempName("mco-tmp", name)
-	oldTempName := atomicTempName("mco-old", name)
+	tempName := AtomicTempName("mco-tmp", name)
+	oldTempName := AtomicTempName("mco-old", name)
 
-	vr, err := findAllRequiredResources(ctx, finder, providerSpec, failureDomain, name)
+	vr, err := findAllRequiredResources(ctx, finder, providerSpec, failureDomain, existingVM, name)
 	if err != nil {
 		return err
 	}
@@ -742,6 +755,7 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 				continue
 			}
 			infraID := infra.Status.InfrastructureName
+			computedName := fmt.Sprintf("%s-rhcos-%s", infraID, failureDomain.Name)
 
 			datacenter, err := finder.Datacenter(ctx, failureDomain.Topology.Datacenter)
 			if err != nil {
@@ -772,47 +786,7 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 				return "", false, fmt.Errorf("unable to determine RHCOS version of virtual machine: %s", providerSpec.Template)
 			}
 
-			if templateProductVersion != release {
-				klog.Infof("Existing RHCOS v%s does not match current RHCOS v%s. Starting reconciliation process.", templateProductVersion, release)
-
-				// Validate/upgrade the ignition stub before swapping the template in vSphere. If this
-				// fails, we must not have already mutated vSphere state, or a subsequent reconcile would
-				// find the template already up to date and silently drop the error (see
-				// reconcileVSphereProviderSpec).
-				if err := upgradeStubIgnitionIfRequired(providerSpec.UserDataSecret.Name, kubeClient); err != nil {
-					return "", false, err
-				}
-
-				// Find and download the relevant OVA file
-				ova, err := streamData.QueryDisk(arch, "vmware", "ova")
-				if err != nil {
-					return "", false, err
-				}
-
-				ovaPath, err := cache.DownloadOva(ova)
-				if err != nil {
-					return "", false, fmt.Errorf("failed to download %s: %w", ova.Location, err)
-				}
-
-				if len(resolvedName) > 80 {
-					return "", false, fmt.Errorf("length of VM template name `%s` exceeds the permitted limit of 80 characters", resolvedName)
-				}
-
-				diskType := getDiskTypeFromExistingVM(vmMo)
-
-				err = createNewVMTemplateWithNameForFailureDomain(ctx, providerSpec, failureDomain, finder, client, tagManager, resolvedName, ovaPath, infraID, diskType)
-				if err != nil {
-					return "", false, err
-				}
-				return resolvedName, true, nil
-			}
-
-			klog.Infof("Existing RHCOS v%s does match current RHCOS v%s. Skipping reconciliation process using govmomi.", templateProductVersion, release)
-			if providerSpec.Template != resolvedName {
-				klog.Infof("ProviderSpec template name: %s has diverged from the VM Template of name: %s that exists in VSphere. Reconciling the name change.", providerSpec.Template, resolvedName)
-				return resolvedName, true, nil
-			}
-			return resolvedName, false, nil
+			return reconcileTemplateVersion(ctx, finder, providerSpec, failureDomain, streamData, client, tagManager, kubeClient, existingTemplateVM, vmMo, computedName, resolvedName, infraID, arch, release, templateProductVersion)
 		}
 	}
 
@@ -825,4 +799,107 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 		workspaceDetails += fmt.Sprintf(", vmGroup: %s", providerSpec.Workspace.VMGroup)
 	}
 	return "", false, fmt.Errorf("providerSpec workspace (%s) does not match any vCenter/failure domain in the Infrastructure object", workspaceDetails)
+}
+
+// reconcileTemplateVersion decides whether the existing template VM found for a failure domain
+// needs to be rebuilt (RHCOS version mismatch) or only has its providerSpec.Template name
+// reconciled (version already matches). It is split out of createNewVMTemplate to keep that
+// function's decision tree within gocyclo's complexity limit.
+func reconcileTemplateVersion(ctx context.Context, finder *find.Finder, providerSpec *machinev1beta1.VSphereMachineProviderSpec, failureDomain osconfigv1.VSpherePlatformFailureDomainSpec, streamData *stream.Stream, client *govmomi.Client, tagManager *tags.Manager, kubeClient clientset.Interface, existingTemplateVM *object.VirtualMachine, vmMo mo.VirtualMachine, computedName, resolvedName, infraID, arch, release, templateProductVersion string) (string, bool, error) {
+	if templateProductVersion != release {
+		klog.Infof("Existing RHCOS v%s does not match current RHCOS v%s. Starting reconciliation process.", templateProductVersion, release)
+
+		// Validate/upgrade the ignition stub before swapping the template in vSphere. If this
+		// fails, we must not have already mutated vSphere state, or a subsequent reconcile would
+		// find the template already up to date and silently drop the error (see
+		// reconcileVSphereProviderSpec).
+		if err := upgradeStubIgnitionIfRequired(providerSpec.UserDataSecret.Name, kubeClient); err != nil {
+			return "", false, err
+		}
+
+		// An outdated custom template converges back to the computed name rather than
+		// being rebuilt in place: a custom name is only preserved while it is current
+		// (see the release-matches branch below). But the computed name may already have
+		// its own current template sitting there (e.g. left behind from before the
+		// custom name was adopted) — vSphere names are unique, so rebuilding straight
+		// into computedName would collide with it. Check for that first and, if found,
+		// just switch back to the existing current template instead of rebuilding.
+		if resolvedName != computedName {
+			computedCurrent, ccErr := isTemplateAtRelease(ctx, finder, computedName, release)
+			if ccErr != nil {
+				if _, ok := ccErr.(*find.NotFoundError); !ok {
+					return "", false, fmt.Errorf("checking whether computed name %q is at release %s: %w", computedName, release, ccErr)
+				}
+			}
+			if computedCurrent {
+				klog.Infof("providerSpec.Template %q is outdated, but computed name %q already has a current RHCOS v%s template; switching back to it", resolvedName, computedName, release)
+				return computedName, true, nil
+			}
+			klog.Infof("providerSpec.Template %q is outdated; converging to computed name %s on rebuild", resolvedName, computedName)
+		}
+
+		// Find and download the relevant OVA file
+		ova, err := streamData.QueryDisk(arch, "vmware", "ova")
+		if err != nil {
+			return "", false, err
+		}
+
+		ovaPath, err := cache.DownloadOva(ova)
+		if err != nil {
+			return "", false, fmt.Errorf("failed to download %s: %w", ova.Location, err)
+		}
+
+		if len(computedName) > 80 {
+			return "", false, fmt.Errorf("length of VM template name `%s` exceeds the permitted limit of 80 characters", computedName)
+		}
+
+		diskType := getDiskTypeFromExistingVM(vmMo)
+
+		err = createNewVMTemplateWithNameForFailureDomain(ctx, providerSpec, failureDomain, finder, client, tagManager, existingTemplateVM, computedName, ovaPath, infraID, diskType)
+		if err != nil {
+			return "", false, err
+		}
+		return computedName, true, nil
+	}
+
+	klog.Infof("Existing RHCOS v%s does match current RHCOS v%s. Skipping reconciliation process using govmomi.", templateProductVersion, release)
+	if providerSpec.Template != resolvedName {
+		// Before overwriting the custom template name, check whether
+		// providerSpec.Template already references a valid, current
+		// template. Users (or other tooling) may upload the correct
+		// RHCOS OVA under a non-standard name; if its embedded version
+		// matches the target release we should leave it alone.
+		customCurrent, custErr := isTemplateAtRelease(ctx, finder, providerSpec.Template, release)
+		if custErr != nil {
+			if _, ok := custErr.(*find.NotFoundError); !ok {
+				return "", false, fmt.Errorf("checking whether providerSpec.Template %q is at release %s: %w", providerSpec.Template, release, custErr)
+			}
+		}
+		if customCurrent {
+			klog.Infof("providerSpec.Template %q already points at a current RHCOS v%s template; preserving custom name", providerSpec.Template, release)
+			return "", false, nil
+		}
+		klog.Infof("ProviderSpec template name: %s has diverged from the VM Template of name: %s that exists in VSphere. Reconciling the name change.", providerSpec.Template, resolvedName)
+		return resolvedName, true, nil
+	}
+	return "", false, nil
+}
+
+// isTemplateAtRelease checks whether the named vSphere template exists in the
+// datacenter scoped by finder and has an embedded RHCOS product version that
+// matches release. Returns (true, nil) when the template is current,
+// (false, nil) when it is not, and (false, err) on unexpected failures.
+func isTemplateAtRelease(ctx context.Context, finder *find.Finder, templateName, release string) (bool, error) {
+	vm, err := finder.VirtualMachine(ctx, templateName)
+	if err != nil {
+		return false, err
+	}
+	var vmMo mo.VirtualMachine
+	if err := vm.Properties(ctx, vm.Reference(), []string{"summary.config.product"}, &vmMo); err != nil {
+		return false, err
+	}
+	if vmMo.Summary.Config.Product == nil || vmMo.Summary.Config.Product.Version == "" {
+		return false, nil
+	}
+	return vmMo.Summary.Config.Product.Version == release, nil
 }
