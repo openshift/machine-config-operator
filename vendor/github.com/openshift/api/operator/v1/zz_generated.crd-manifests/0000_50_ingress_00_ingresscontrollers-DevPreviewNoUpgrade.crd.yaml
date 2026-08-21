@@ -892,6 +892,26 @@ spec:
                 required:
                 - type
                 type: object
+              haproxyVersion:
+                description: |-
+                  haproxyVersion specifies the HAProxy version to use for this
+                  IngressController.
+
+                  This field is available in OpenShift 4.22 as an API-only backport with no
+                  operator implementation. Setting this field on OpenShift 4.22 allows
+                  administrators to pin HAProxy 2.8 before upgrading to OpenShift 5.0, where
+                  the operator will honor this setting.
+
+                  Valid values for OpenShift 4.22:
+                  - Unset (default): Uses HAProxy 2.8 (the default for OpenShift 4.22)
+                  - "2.8": Explicitly pins HAProxy 2.8 for preservation during cluster
+                    upgrade to OpenShift 5.0
+
+                  On OpenShift 4.22, this field has no effect on the running IngressController.
+                  It only preserves the administrator's intent for the OpenShift 5.0 upgrade.
+                enum:
+                - "2.8"
+                type: string
               httpCompression:
                 description: |-
                   httpCompression defines a policy for HTTP traffic compression.
