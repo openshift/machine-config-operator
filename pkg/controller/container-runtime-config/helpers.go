@@ -728,26 +728,59 @@ func validateUserContainerRuntimeConfig(cfg *mcfgv1.ContainerRuntimeConfig) erro
 		}
 	}
 
+	// Cross-store-type path uniqueness: the same path must not appear in
+	// multiple store type lists since they have different directory
+	// structure expectations and lockfile locations.
+	layerPaths := make(map[string]bool, len(ctrcfg.AdditionalLayerStores))
+	for _, s := range ctrcfg.AdditionalLayerStores {
+		layerPaths[filepath.Clean(string(s.Path))] = true
+	}
+	imagePaths := make(map[string]bool, len(ctrcfg.AdditionalImageStores))
+	for _, s := range ctrcfg.AdditionalImageStores {
+		cleaned := filepath.Clean(string(s.Path))
+		imagePaths[cleaned] = true
+		if layerPaths[cleaned] {
+			errs = append(errs, fmt.Errorf("path %q is used in both AdditionalLayerStores and AdditionalImageStores", s.Path))
+		}
+	}
+	for _, s := range ctrcfg.AdditionalArtifactStores {
+		cleaned := filepath.Clean(string(s.Path))
+		if layerPaths[cleaned] {
+			errs = append(errs, fmt.Errorf("path %q is used in both AdditionalLayerStores and AdditionalArtifactStores", s.Path))
+		}
+		if imagePaths[cleaned] {
+			errs = append(errs, fmt.Errorf("path %q is used in both AdditionalImageStores and AdditionalArtifactStores", s.Path))
+		}
+	}
+
 	return errors.Join(errs...)
 }
 
 // storePathRegexp matches the CRD CEL rule: ^/[a-zA-Z0-9/._-]+$
 var storePathRegexp = regexp.MustCompile(`^/[a-zA-Z0-9/._-]+$`)
 
-// validateStorePath validates that a storage path is absolute, only contains
-// allowed characters (a-z, A-Z, 0-9, '/', '.', '_', '-'), and does not
-// contain consecutive forward slashes. This mirrors the CRD-level CEL
-// validation so that invalid config is caught early.
+// storePathMaxLength mirrors the CRD MaxLength=256 for StorePath.
+const storePathMaxLength = 256
+
+// validateStorePath mirrors the CRD-level CEL validation for StorePath.
 func validateStorePath(p mcfgv1.StorePath, field string) error {
 	path := string(p)
 	if path == "" {
 		return fmt.Errorf("invalid %s: path must not be empty", field)
+	}
+	if len(path) > storePathMaxLength {
+		return fmt.Errorf("invalid %s path %q: must not exceed %d characters", field, path, storePathMaxLength)
 	}
 	if !storePathRegexp.MatchString(path) {
 		return fmt.Errorf("invalid %s path %q: must be an absolute path containing only alphanumeric characters, '/', '.', '_', and '-'", field, path)
 	}
 	if strings.Contains(path, "//") {
 		return fmt.Errorf("invalid %s path %q: must not contain consecutive forward slashes", field, path)
+	}
+	for _, component := range strings.Split(path, "/") {
+		if component == ".." {
+			return fmt.Errorf("invalid %s path %q: must not contain '..' components", field, path)
+		}
 	}
 	return nil
 }
