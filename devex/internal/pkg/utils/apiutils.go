@@ -9,6 +9,7 @@ import (
 	"github.com/openshift/machine-config-operator/test/framework"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 )
 
@@ -105,19 +106,21 @@ func UnpauseMachineConfigPool(ctx context.Context, cs *framework.ClientSet, pool
 }
 
 func setMachineConfigPoolPauseState(ctx context.Context, cs *framework.ClientSet, poolName string, pauseStatus bool) error {
-	mcp, err := cs.MachineConfigPools().Get(ctx, poolName, metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("could not get MachineConfigPool %s for pausing: %w", poolName, err)
-	}
-
 	if pauseStatus {
 		klog.Infof("Pausing MachineConfigPool %s", poolName)
 	} else {
 		klog.Infof("Unpausing MachineConfigPool %s", poolName)
 	}
 
-	mcp.Spec.Paused = pauseStatus
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		mcp, err := cs.MachineConfigPools().Get(ctx, poolName, metav1.GetOptions{})
+		if err != nil {
+			return fmt.Errorf("could not get MachineConfigPool %s for pausing: %w", poolName, err)
+		}
 
-	_, err = cs.MachineConfigPools().Update(ctx, mcp, metav1.UpdateOptions{})
-	return err
+		mcp.Spec.Paused = pauseStatus
+
+		_, err = cs.MachineConfigPools().Update(ctx, mcp, metav1.UpdateOptions{})
+		return err
+	})
 }

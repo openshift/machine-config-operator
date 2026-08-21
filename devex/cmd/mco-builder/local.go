@@ -100,11 +100,11 @@ func init() {
 		Use:   "local",
 		Short: "Builds an MCO image locally and deploys it to your sandbox cluster.",
 		Long:  "Builds the MCO image locally using the specified builder and options. Can either push to a remote image registry (such as Quay.io) or can expose a route to enable pushing directly into ones sandbox cluster.",
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := opts.validate(); err != nil {
 				return err
 			}
-			return runLocalCmd(opts)
+			return runLocalCmd(cmd.Context(), opts)
 		},
 	}
 
@@ -118,11 +118,11 @@ func init() {
 	rootCmd.AddCommand(localCmd)
 }
 
-func runLocalCmd(opts localBuildOpts) error {
+func runLocalCmd(ctx context.Context, opts localBuildOpts) error {
 
 	cs := framework.NewClientSet("")
 
-	if err := validateLocalAndClusterArches(cs); err != nil {
+	if err := validateLocalAndClusterArches(ctx, cs); err != nil {
 		if !errors.Is(err, errInvalidArch) {
 			return err
 		}
@@ -132,13 +132,13 @@ func runLocalCmd(opts localBuildOpts) error {
 	}
 
 	if opts.directPush {
-		return buildLocallyAndPushIntoCluster(cs, opts)
+		return buildLocallyAndPushIntoCluster(ctx, cs, opts)
 	}
 
-	return buildLocallyAndDeploy(cs, opts)
+	return buildLocallyAndDeploy(ctx, cs, opts)
 }
 
-func buildLocallyAndDeploy(cs *framework.ClientSet, buildOpts localBuildOpts) error {
+func buildLocallyAndDeploy(ctx context.Context, cs *framework.ClientSet, buildOpts localBuildOpts) error {
 	// TODO: Return these out of this function.
 	deferredErrs := []error{}
 	defer func() {
@@ -176,7 +176,7 @@ func buildLocallyAndDeploy(cs *framework.ClientSet, buildOpts localBuildOpts) er
 		return nil
 	}
 
-	if err := rollout.ReplaceMCOImage(cs, buildOpts.finalImagePullspec, false); err != nil {
+	if err := rollout.ReplaceMCOImage(ctx, cs, buildOpts.finalImagePullspec, false); err != nil {
 		return err
 	}
 
@@ -184,7 +184,7 @@ func buildLocallyAndDeploy(cs *framework.ClientSet, buildOpts localBuildOpts) er
 	return nil
 }
 
-func buildLocallyAndPushIntoCluster(cs *framework.ClientSet, buildOpts localBuildOpts) error {
+func buildLocallyAndPushIntoCluster(ctx context.Context, cs *framework.ClientSet, buildOpts localBuildOpts) error {
 	// TODO: Return these out of this function.
 	deferredErrs := []error{}
 	defer func() {
@@ -193,14 +193,14 @@ func buildLocallyAndPushIntoCluster(cs *framework.ClientSet, buildOpts localBuil
 		}
 	}()
 
-	extHostname, err := helpers.ExposeClusterImageRegistry(context.TODO(), cs)
+	extHostname, err := helpers.ExposeClusterImageRegistry(ctx, cs)
 	if err != nil {
 		return err
 	}
 
 	klog.Infof("Cluster is set up for direct pushes")
 
-	secretPath, err := writeBuilderSecretToTempDir(cs, extHostname)
+	secretPath, err := writeBuilderSecretToTempDir(ctx, cs, extHostname)
 	if err != nil {
 		return err
 	}
@@ -241,7 +241,7 @@ func buildLocallyAndPushIntoCluster(cs *framework.ClientSet, buildOpts localBuil
 		return nil
 	}
 
-	if err := rollout.ReplaceMCOImage(cs, imagestreamPullspec, false); err != nil {
+	if err := rollout.ReplaceMCOImage(ctx, cs, imagestreamPullspec, false); err != nil {
 		return err
 	}
 
@@ -251,8 +251,8 @@ func buildLocallyAndPushIntoCluster(cs *framework.ClientSet, buildOpts localBuil
 
 var errInvalidArch = fmt.Errorf("local and cluster arch differ")
 
-func validateLocalAndClusterArches(cs *framework.ClientSet) error {
-	nodes, err := cs.CoreV1Interface.Nodes().List(context.TODO(), metav1.ListOptions{})
+func validateLocalAndClusterArches(ctx context.Context, cs *framework.ClientSet) error {
+	nodes, err := cs.CoreV1Interface.Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return err
 	}

@@ -17,8 +17,8 @@ import (
 	"k8s.io/klog/v2"
 )
 
-func writeBuilderSecretToTempDir(cs *framework.ClientSet, hostname string) (string, error) {
-	secrets, err := cs.Secrets(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{})
+func writeBuilderSecretToTempDir(ctx context.Context, cs *framework.ClientSet, hostname string) (string, error) {
+	secrets, err := cs.Secrets(ctrlcommon.MCONamespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return "", err
 	}

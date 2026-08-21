@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/openshift/machine-config-operator/devex/internal/pkg/containers"
@@ -23,7 +24,7 @@ func init() {
 		Use:   "replace",
 		Short: "Replaces the MCO image with the provided container image pullspec",
 		Long:  "",
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				return fmt.Errorf("no pullspec provided")
 			}
@@ -34,7 +35,7 @@ func init() {
 
 			replaceOpts.pullspec = args[0]
 
-			return replace(replaceOpts)
+			return replaceMCO(cmd.Context(), replaceOpts)
 		},
 	}
 
@@ -44,7 +45,7 @@ func init() {
 	rootCmd.AddCommand(replaceCmd)
 }
 
-func replace(opts replaceOpts) error {
+func replaceMCO(ctx context.Context, opts replaceOpts) error {
 	if opts.validatePullspec {
 		digestedPullspec, err := containers.ResolveToDigestedPullspec(opts.pullspec, "")
 		if err != nil {
@@ -55,7 +56,7 @@ func replace(opts replaceOpts) error {
 	}
 
 	cs := framework.NewClientSet("")
-	if err := rollout.ReplaceMCOImage(cs, opts.pullspec, opts.forceRestart); err != nil {
+	if err := rollout.ReplaceMCOImage(ctx, cs, opts.pullspec, opts.forceRestart); err != nil {
 		return err
 	}
 

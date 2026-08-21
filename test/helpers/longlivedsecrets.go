@@ -341,8 +341,14 @@ func (s *secretCreator) getPullSecretForRESTConfig(ctx context.Context, cfg *res
 
 	pullsecretPath := filepath.Join(tmpdir, "config.json")
 
-	// Run: "$ oc registry login --to=<path to target file in temp dir>"
-	if err := runCmd("oc", "registry", "login", "--to", pullsecretPath); err != nil {
+	// Run: "$ oc registry login --to=<path to target file in temp dir>" Use
+	// --registry with the internal service hostname so the generated config.json
+	// is keyed to the address that build pods actually push to
+	// (image-registry.openshift-image-registry.svc:5000). Without this flag, oc
+	// registry login defaults to the external default-route hostname, which
+	// causes the OCL build process to fail because no credential entry matches
+	// the internal hostname.
+	if err := runCmd("oc", "registry", "login", "--to", pullsecretPath, "--registry", "image-registry.openshift-image-registry.svc:5000"); err != nil {
 		return nil, fmt.Errorf("could not registry login: %w", err)
 	}
 
