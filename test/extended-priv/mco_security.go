@@ -552,6 +552,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		var (
 			apiServer = NewResource(oc.AsAdmin(), "apiserver", "cluster")
+			node      = wMcp.GetSortedNodesOrFail()[0]
 		)
 
 		exutil.By("Verify for Intermediate TLS Profile")
@@ -578,6 +579,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			logger.Infof("OK!\n")
 		}(apiServer.GetSpecOrFail())
 
+		startTime := node.GetDateOrFail()
+
 		exutil.By("Patch the Custom tlsSecurityProfile")
 		o.Expect(apiServer.Patch("json",
 			`[{ "op": "add", "path": "/spec/tlsSecurityProfile", "value": {"type": "Custom","custom": {"ciphers": ["ECDHE-ECDSA-CHACHA20-POLY1305","ECDHE-RSA-CHACHA20-POLY1305", "ECDHE-RSA-AES128-GCM-SHA256",  "ECDHE-ECDSA-AES128-GCM-SHA256" ],"minTLSVersion": "VersionTLS11"}}}]`)).To(o.Succeed(), "Error patching tlsSecurityProfile")
@@ -591,6 +594,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		mMcp.waitForComplete()
 		wMcp.waitForComplete()
 		logger.Infof("OK!\n")
+		checkRebootAction(false, node, startTime)
 
 		exutil.By("Verify for Custom TLS Profile")
 		customCipherSuite := []string{"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256", "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256", "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256", "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"}
@@ -609,6 +613,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			"The controller pod didn't acquire the lease properly.")
 		mMcp.waitForComplete()
 		wMcp.waitForComplete()
+		checkRebootAction(false, node, startTime)
 
 		exutil.By("Verify for Old TLS Profile")
 		csNameList = getCipherSuitesNameforSpecificVersion(VersionTLS10)
@@ -627,6 +632,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		mMcp.waitForComplete()
 		wMcp.waitForComplete()
 		logger.Infof("OK!\n")
+		checkRebootAction(false, node, startTime)
+
 		exutil.By("Verify for Modern TLS Profile")
 		csNameList = getCipherSuitesNameforSpecificVersion(VersionTLS13)
 		validateCorrectTLSProfileSecurity(oc, "Modern", "VersionTLS13", csNameList)
@@ -669,6 +676,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			logger.Infof("OK!\n")
 		}(apiServer.GetSpecOrFail())
 
+		startTime := node.GetDateOrFail()
+
 		exutil.By("Patch the Old tlsSecurityProfile")
 		o.Expect(apiServer.Patch("json",
 			`[{ "op": "add", "path": "/spec/tlsSecurityProfile", "value":  {"type": "Old","old": {}}}]`)).To(o.Succeed(), "Error patching http proxy")
@@ -681,6 +690,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		mMcp.waitForComplete()
 		wMcp.waitForComplete()
 		logger.Infof("OK!\n")
+		checkRebootAction(false, node, startTime)
 
 		exutil.By("Verify for Old TLS Profile in kubeletConfig")
 		csVersion10 := getCipherSuitesNameforSpecificVersion(VersionTLS10)
@@ -699,6 +709,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		exutil.By("Wait for Worker MachineConfigPool to be updated")
 		wMcp.waitForComplete()
 		logger.Infof("OK!\n")
+		checkRebootAction(false, node, startTime)
 
 		exutil.By("Verify for Custom TLS Profile in kubeletConfig")
 		validateCorrectTLSProfileSecurityInKubeletConfig(node, "VersionTLS11", customCipherSuite)
@@ -716,6 +727,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		mMcp.waitForComplete()
 		wMcp.waitForComplete()
 		logger.Infof("OK!\n")
+		checkRebootAction(false, node, startTime)
 
 		exutil.By("Verify for Modern TLS Profile")
 		csVersion13 := getCipherSuitesNameforSpecificVersion(VersionTLS13)
@@ -736,6 +748,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		mMcp.waitForComplete()
 		wMcp.waitForComplete()
 		logger.Infof("OK!\n")
+		checkRebootAction(false, node, startTime)
 
 		exutil.By("Verify for Intermediate TLS Profile pod logs")
 		validateCorrectTLSProfileSecurity(oc, "Intermediate", "VersionTLS12", csVersion12)
@@ -747,6 +760,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		o.Expect(kc).NotTo(Exist())
 		wMcp.waitForComplete()
 		logger.Infof("OK!\n")
+		checkRebootAction(false, node, startTime)
 
 		exutil.By("To check the kubeletConfig to have same tls setting as of API server")
 		validateCorrectTLSProfileSecurityInKubeletConfig(node, "VersionTLS12", csVersion12)
