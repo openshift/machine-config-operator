@@ -116,7 +116,9 @@ func (b *MachineOSBuildState) IsInInitialState() bool {
 
 // Determines if an OS image build is in its terminal state where build success, build failure, or build interrupted condition is set.
 func (b *MachineOSBuildState) IsInTerminalState() bool {
-	return b.GetTerminalState() != ""
+	test := b.GetTerminalState()
+	klog.Errorf("test: %v", test)
+	return test != ""
 }
 
 // Determines if an OS image build is in a transient state where it is either prepared, pending, or running.
@@ -138,6 +140,7 @@ func (b *MachineOSBuildState) GetTransientState() mcfgv1.BuildProgress {
 // Gets the current terminal state, if any is set. Otherwise, returns an empty string.
 func (b *MachineOSBuildState) GetTerminalState() mcfgv1.BuildProgress {
 	for terminalState := range MachineOSBuildTerminalStates() {
+		klog.Errorf("terminalState: %s", terminalState)
 		if apihelpers.IsMachineOSBuildConditionTrue(b.Build.Status.Conditions, terminalState) {
 			return terminalState
 		}
