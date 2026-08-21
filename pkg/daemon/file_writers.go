@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	"github.com/google/renameio"
@@ -265,7 +267,7 @@ func writeFiles(files []ign3types.File, skipCertificateWrite bool) error {
 }
 
 // writeUnit writes a systemd unit and its dropins to disk
-func writeUnit(u ign3types.Unit, systemdRoot string, isCoreOSVariant bool) error {
+func writeUnit(systemdConnection SystemdConnection, u ign3types.Unit, systemdRoot string, isCoreOSVariant bool) error {
 	if err := writeDropins(u, systemdRoot, isCoreOSVariant); err != nil {
 		return err
 	}
@@ -302,13 +304,16 @@ func writeUnit(u ign3types.Unit, systemdRoot string, isCoreOSVariant bool) error
 		// If the unit is currently enabled, disable it before overwriting since we might be
 		// changing its WantedBy= or RequiredBy= directive (see OCPBUGS-33694). Later code will
 		// re-enable the new unit as directed by the MachineConfig.
-		cmd := exec.Command("systemctl", "is-enabled", u.Name)
-		out, _ := cmd.CombinedOutput()
-		if cmd.ProcessState.ExitCode() == 0 && strings.TrimSpace(string(out)) == "enabled" {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		isEnabled, err := systemdConnection.IsEnabled(ctx, u.Name)
+		if err != nil {
+			return fmt.Errorf("failed to check if %q is enabled: %w", u.Name, err)
+		}
+		if isEnabled {
 			klog.Infof("Disabling systemd unit %s before re-writing it", u.Name)
-			disableOut, err := exec.Command("systemctl", "disable", u.Name).CombinedOutput()
-			if err != nil {
-				return fmt.Errorf("disabling %s failed: %w (output: %s)", u.Name, err, string(disableOut))
+			if err := systemdConnection.Disable(ctx, u.Name); err != nil {
+				return fmt.Errorf("failed to disable %q: %w", u.Name, err)
 			}
 		}
 		if err := writeFileAtomicallyWithDefaults(fpath, []byte(*u.Contents)); err != nil {
@@ -338,17 +343,6 @@ func writeUnit(u ign3types.Unit, systemdRoot string, isCoreOSVariant bool) error
 // string.
 func unitHasContent(u ign3types.Unit) bool {
 	return u.Contents != nil && *u.Contents != ""
-}
-
-// writeUnits writes systemd units and their dropins to disk
-func writeUnits(units []ign3types.Unit, systemdRoot string, isCoreOSVariant bool) error {
-	for _, u := range units {
-		if err := writeUnit(u, systemdRoot, isCoreOSVariant); err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 func lookupUID(username string) (int, error) {
