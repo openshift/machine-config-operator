@@ -17,6 +17,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
 
 	e2eShared "github.com/openshift/machine-config-operator/test/e2e-shared-tests"
@@ -1272,4 +1273,162 @@ func parseMetricValue(metricLine string) (int, error) {
 		return 0, err
 	}
 	return value, nil
+}
+
+// TestFirstbootPivotFailureEvent provisions a new node into a custom pool
+// with a bogus OS image. The node's firstboot pivot fails, the MCD reports
+// the failure to the MCS, and the MCS creates a Warning Event on the pool.
+func TestFirstbootPivotFailureEvent(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	cs := framework.NewClientSet("")
+	machineclient := machineclientset.NewForConfigOrDie(cs.GetRestConfig())
+
+	poolName := fmt.Sprintf("fbfail-%s", uuid.NewUUID()[:5])
+	t.Logf("Using custom pool name: %s", poolName)
+
+	// Create the custom MCP
+	deleteMCP := helpers.CreateMCP(t, cs, poolName)
+
+	// Create MC with bogus OSImageURL targeting the custom pool
+	mcName := fmt.Sprintf("99-%s-bad-osimage", poolName)
+	bogusImageURL := "quay.io/does-not-exist/bogus-os-image:latest"
+	mc := helpers.NewMachineConfig(mcName, helpers.MCLabelForRole(poolName), bogusImageURL, nil)
+	helpers.SetMetadataOnObject(t, mc)
+
+	_, err := cs.MachineConfigs().Create(ctx, mc, metav1.CreateOptions{})
+	require.NoError(t, err, "failed to create MachineConfig %s", mcName)
+	t.Logf("Created MachineConfig %s with bogus OS image", mcName)
+
+	// Wait for rendered config to include our MC
+	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, poolName, mcName)
+	require.NoError(t, err, "timed out waiting for rendered config in pool %s", poolName)
+	t.Logf("Pool %s rendered config: %s", poolName, renderedConfig)
+
+	// Wait for user-data-managed secret (MCO operator creates it during sync)
+	userDataSecretName := fmt.Sprintf("%s-user-data-managed", poolName)
+	t.Logf("Waiting for secret %s", userDataSecretName)
+
+	err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+		_, err := cs.Secrets(ctrlcommon.MachineAPINamespace).Get(ctx, userDataSecretName, metav1.GetOptions{})
+		if err != nil {
+			return false, nil
+		}
+		return true, nil
+	})
+	require.NoError(t, err, "timed out waiting for secret %s", userDataSecretName)
+	t.Logf("Secret %s is available", userDataSecretName)
+
+	// Clone a worker MachineSet for the custom pool
+	machinesets, err := machineclient.MachineV1beta1().MachineSets(ctrlcommon.MachineAPINamespace).List(ctx, metav1.ListOptions{})
+	require.NoError(t, err, "failed to list MachineSets")
+	require.NotEmpty(t, machinesets.Items, "no MachineSets found")
+
+	originalMS := machinesets.Items[0]
+	msName := fmt.Sprintf("%s-e2e-fbfail", poolName)
+
+	clonedMS := originalMS.DeepCopy()
+	clonedMS.Name = msName
+	clonedMS.ResourceVersion = ""
+	clonedMS.UID = ""
+	var zero int32
+	clonedMS.Spec.Replicas = &zero
+	clonedMS.Spec.Selector.MatchLabels["machine.openshift.io/cluster-api-machineset"] = msName
+	clonedMS.Spec.Template.Labels["machine.openshift.io/cluster-api-machineset"] = msName
+
+	clonedMS, err = machineclient.MachineV1beta1().MachineSets(ctrlcommon.MachineAPINamespace).Create(ctx, clonedMS, metav1.CreateOptions{})
+	require.NoError(t, err, "failed to create cloned MachineSet %s", msName)
+	t.Logf("Created cloned MachineSet %s", msName)
+
+	// Patch userDataSecret to point to the custom pool's secret
+	jsonPatch := fmt.Sprintf(`[{"op":"replace","path":"/spec/template/spec/providerSpec/value/userDataSecret/name","value":"%s"}]`, userDataSecretName)
+	_, err = machineclient.MachineV1beta1().MachineSets(ctrlcommon.MachineAPINamespace).Patch(
+		ctx, msName, types.JSONPatchType, []byte(jsonPatch), metav1.PatchOptions{})
+	require.NoError(t, err, "failed to patch userDataSecret on MachineSet %s", msName)
+	t.Logf("Patched MachineSet %s to use secret %s", msName, userDataSecretName)
+
+	// Register cleanup before scaling up
+	t.Cleanup(func() {
+		cleanupCtx := context.Background()
+
+		t.Logf("Cleanup: scaling MachineSet %s to 0", msName)
+		ms, err := machineclient.MachineV1beta1().MachineSets(ctrlcommon.MachineAPINamespace).Get(cleanupCtx, msName, metav1.GetOptions{})
+		if err == nil {
+			var zero int32
+			ms.Spec.Replicas = &zero
+			_, err = machineclient.MachineV1beta1().MachineSets(ctrlcommon.MachineAPINamespace).Update(cleanupCtx, ms, metav1.UpdateOptions{})
+			if err != nil {
+				t.Logf("Cleanup: failed to scale down MachineSet: %v", err)
+			}
+		}
+
+		t.Logf("Cleanup: waiting for Machines from MachineSet %s to be deleted", msName)
+		_ = wait.PollUntilContextTimeout(cleanupCtx, 10*time.Second, 10*time.Minute, true, func(ctx context.Context) (bool, error) {
+			machines, err := machineclient.MachineV1beta1().Machines(ctrlcommon.MachineAPINamespace).List(ctx, metav1.ListOptions{
+				LabelSelector: fmt.Sprintf("machine.openshift.io/cluster-api-machineset=%s", msName),
+			})
+			if err != nil {
+				return false, nil
+			}
+			return len(machines.Items) == 0, nil
+		})
+
+		t.Logf("Cleanup: deleting MachineSet %s", msName)
+		_ = machineclient.MachineV1beta1().MachineSets(ctrlcommon.MachineAPINamespace).Delete(cleanupCtx, msName, metav1.DeleteOptions{})
+
+		t.Logf("Cleanup: deleting MachineConfig %s", mcName)
+		_ = cs.MachineConfigs().Delete(cleanupCtx, mcName, metav1.DeleteOptions{})
+
+		deleteMCP()
+	})
+
+	// Record event baseline before scaling up
+	eventFieldSelector := fmt.Sprintf("reason=FirstbootFailed,involvedObject.name=%s", poolName)
+	baselineEvents, err := cs.Events(ctrlcommon.MCONamespace).List(ctx, metav1.ListOptions{
+		FieldSelector: eventFieldSelector,
+	})
+	require.NoError(t, err, "failed to list baseline events")
+	baselineCount := len(baselineEvents.Items)
+
+	// Scale MachineSet to 1 to provision a new node
+	t.Logf("Scaling MachineSet %s to 1 replica", msName)
+	ms, err := machineclient.MachineV1beta1().MachineSets(ctrlcommon.MachineAPINamespace).Get(ctx, msName, metav1.GetOptions{})
+	require.NoError(t, err)
+	var one int32 = 1
+	ms.Spec.Replicas = &one
+	_, err = machineclient.MachineV1beta1().MachineSets(ctrlcommon.MachineAPINamespace).Update(ctx, ms, metav1.UpdateOptions{})
+	require.NoError(t, err, "failed to scale MachineSet %s to 1", msName)
+
+	// Poll for FirstbootFailed event
+	t.Logf("Waiting for FirstbootFailed event on pool %s (timeout 15m)", poolName)
+	var foundEvent *corev1.Event
+	startTime := time.Now()
+
+	err = wait.PollUntilContextTimeout(ctx, 15*time.Second, 15*time.Minute, false, func(ctx context.Context) (bool, error) {
+		events, err := cs.Events(ctrlcommon.MCONamespace).List(ctx, metav1.ListOptions{
+			FieldSelector: eventFieldSelector,
+		})
+		if err != nil {
+			t.Logf("Error listing events: %v", err)
+			return false, nil
+		}
+		if len(events.Items) > baselineCount {
+			e := events.Items[len(events.Items)-1]
+			foundEvent = &e
+			t.Logf("Found FirstbootFailed event after %s: %s", time.Since(startTime).Round(time.Second), e.Message)
+			return true, nil
+		}
+		t.Logf("No FirstbootFailed event yet (elapsed %s)", time.Since(startTime).Round(time.Second))
+		return false, nil
+	})
+	require.NoError(t, err, "timed out waiting for FirstbootFailed event on pool %s", poolName)
+
+	// Assert event details
+	require.NotNil(t, foundEvent)
+	assert.Equal(t, "FirstbootFailed", foundEvent.Reason)
+	assert.Equal(t, corev1.EventTypeWarning, foundEvent.Type)
+	assert.Equal(t, poolName, foundEvent.InvolvedObject.Name)
+	assert.Contains(t, foundEvent.Message, "firstboot")
+	t.Logf("Verified FirstbootFailed event: %s", foundEvent.Message)
 }
