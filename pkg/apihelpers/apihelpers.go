@@ -169,6 +169,28 @@ var (
 					},
 				},
 			},
+			// Kubelet reads its config only at startup, a restart is needed.
+			{
+				Path: constants.KubeletTLSDropInPath,
+				Actions: []opv1.NodeDisruptionPolicyStatusAction{
+					{
+						Type: opv1.RestartStatusAction,
+						Restart: &opv1.RestartService{
+							ServiceName: "kubelet.service",
+						},
+					},
+				},
+			},
+			// Static pod manifests: kubelet watches this directory and automatically
+			// recreates pods when their manifests change on disk
+			{
+				Path: "/etc/kubernetes/manifests",
+				Actions: []opv1.NodeDisruptionPolicyStatusAction{
+					{
+						Type: opv1.NoneStatusAction,
+					},
+				},
+			},
 		},
 		Units: []opv1.NodeDisruptionPolicyStatusUnit{
 			{
