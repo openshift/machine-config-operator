@@ -2872,7 +2872,10 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	}
 	// If the host isn't new enough to understand the new container model natively, run as a privileged container.
 	// See https://github.com/coreos/rpm-ostree/pull/3961 and https://issues.redhat.com/browse/MCO-356
-	if !newEnough {
+	// If rpm-ostree is < 2023.5, it has a skopeo-proxy sandboxing bug when rebasing
+	// from containers-storage or registry sources; run as a privileged container instead.
+	// See https://redhat.atlassian.net/browse/OCPBUGS-86768 (temporary until 4.13/4.14 boot images are unsupported).
+	if !newEnough || !dn.NodeUpdaterClient.SupportsContainerStorageRebase() {
 		logSystem("rpm-ostree is not new enough for layering; forcing an update via container")
 		return dn.InplaceUpdateViaNewContainer(newURL)
 	}
