@@ -676,6 +676,11 @@ func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.ContainerRuntimeConfig, err e
 		} else if newcfg.Status.Conditions[len(newcfg.Status.Conditions)-1].Message == newStatusCondition.Message {
 			newcfg.Status.Conditions[len(newcfg.Status.Conditions)-1] = newStatusCondition
 		}
+		// Keep at most three conditions to avoid an unbounded list
+		const statusLimit = 3
+		if len(newcfg.Status.Conditions) > statusLimit {
+			newcfg.Status.Conditions = newcfg.Status.Conditions[len(newcfg.Status.Conditions)-statusLimit:]
+		}
 		_, updateErr := ctrl.client.MachineconfigurationV1().ContainerRuntimeConfigs().UpdateStatus(context.TODO(), newcfg, metav1.UpdateOptions{})
 		return updateErr
 	})
