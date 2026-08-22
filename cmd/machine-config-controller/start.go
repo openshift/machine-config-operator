@@ -92,28 +92,32 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			return
 		}
 
-		var inspectorFactory osimagestream.ImagesInspectorFactory
-		var inspectionCache *imageutils.FileInspectionCache
-		if startOpts.streamsCache != "" {
-			inspectionCache = imageutils.NewFileInspectionCache(path.Join(startOpts.streamsCache, "image-inspection.json"), 48*time.Hour)
-		}
+		syncer := imageutils.NewConfigMapCacheSyncer(
+			ctrlctx.KubeNamespacedInformerFactory.Core().V1().ConfigMaps(),
+			ctrlctx.ClientBuilder.KubeClientOrDie("inspection-cache-syncer"),
+			ctrlcommon.MCONamespace,
+			ctrlcommon.InspectionCacheConfigMapName,
+			osimagestream.NewCacheEntryFilter(),
+			osimagestream.NewImageStreamFileTransformer(),
+		)
+		inspectionCache := imageutils.NewFileInspectionCache(
+			path.Join(startOpts.streamsCache, "image-inspection.json"), 48*time.Hour, syncer,
+		)
 
 		// OSImageStream must be the first controller to run: the blocking
 		// EnsureOSImageStream call guarantees the CR exists before any other
 		// controller starts, since render, node, and template depend on it
 		// for OS image URLs.
+		var inspectorFactory osimagestream.ImagesInspectorFactory
 		var cacheWarmer *pinnedimageset.CacheWarmer
+		var osImageStreamCtrl *osistreamctrl.Controller
 		if osimagestream.IsFeatureEnabled(ctrlctx.FeatureGatesHandler) {
-			if inspectionCache != nil {
-				inspectorFactory = osimagestream.NewCachedImagesInspectorFactory(
-					&osimagestream.DefaultImagesInspectorFactory{},
-					inspectionCache,
-				)
-			} else {
-				inspectorFactory = &osimagestream.DefaultImagesInspectorFactory{}
-			}
+			inspectorFactory = osimagestream.NewCachedImagesInspectorFactory(
+				&osimagestream.DefaultImagesInspectorFactory{},
+				inspectionCache,
+			)
 
-			osImageStreamCtrl := osistreamctrl.New(
+			osImageStreamCtrl = osistreamctrl.New(
 				ctrlctx.InformerFactory.Machineconfiguration().V1().OSImageStreams(),
 				ctrlctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 				ctrlctx.ConfigInformerFactory.Config().V1().ClusterVersions(),
@@ -128,41 +132,26 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 				ctrlctx.FeatureGatesHandler,
 				inspectorFactory,
 			)
+			inspectionCache.RegisterEvicter(osImageStreamCtrl)
 
-			ctrlctx.InformerFactory.Start(ctx.Done())
-			ctrlctx.ConfigInformerFactory.Start(ctx.Done())
-			ctrlctx.OpenShiftConfigKubeNamespacedInformerFactory.Start(ctx.Done())
-			ctrlctx.KubeNamespacedInformerFactory.Start(ctx.Done())
-			ctrlctx.OperatorInformerFactory.Start(ctx.Done())
-
-			go osImageStreamCtrl.Run(ctx, 1)
-
-			if err := osImageStreamCtrl.EnsureOSImageStream(ctx); err != nil {
-				klog.Fatalf("Failed to ensure OSImageStream: %v", err)
-			}
-
-			if inspectionCache != nil {
-				inspectionCache.RegisterEvicter(osImageStreamCtrl)
-
-				cacheWarmer = pinnedimageset.NewCacheWarmer(
-					ctrlctx.InformerFactory.Machineconfiguration().V1().PinnedImageSets().Lister(),
-					inspectorFactory,
-					ctrlcommon.NewSysContextFactory(
-						ctrlctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs().Lister(),
-						ctrlctx.OpenShiftConfigKubeNamespacedInformerFactory.Core().V1().Secrets().Lister(),
-						ctrlctx.ConfigInformerFactory.Config().V1().Images().Lister(),
-						ctrlctx.OperatorInformerFactory.Operator().V1alpha1().ImageContentSourcePolicies().Lister(),
-						ctrlctx.ConfigInformerFactory.Config().V1().ImageDigestMirrorSets().Lister(),
-						ctrlctx.ConfigInformerFactory.Config().V1().ImageTagMirrorSets().Lister(),
-					),
-				)
-				inspectionCache.RegisterEvicter(cacheWarmer)
-			}
+			cacheWarmer = pinnedimageset.NewCacheWarmer(
+				ctrlctx.InformerFactory.Machineconfiguration().V1().PinnedImageSets().Lister(),
+				inspectorFactory,
+				ctrlcommon.NewSysContextFactory(
+					ctrlctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs().Lister(),
+					ctrlctx.OpenShiftConfigKubeNamespacedInformerFactory.Core().V1().Secrets().Lister(),
+					ctrlctx.ConfigInformerFactory.Config().V1().Images().Lister(),
+					ctrlctx.OperatorInformerFactory.Operator().V1alpha1().ImageContentSourcePolicies().Lister(),
+					ctrlctx.ConfigInformerFactory.Config().V1().ImageDigestMirrorSets().Lister(),
+					ctrlctx.ConfigInformerFactory.Config().V1().ImageTagMirrorSets().Lister(),
+				),
+			)
+			inspectionCache.RegisterEvicter(cacheWarmer)
 		}
 
 		go ctrlcommon.StartMetricsListener(startOpts.promMetricsListenAddress, ctx.Done(), ctrlcommon.RegisterMCCMetrics, startOpts.tlsMinVersion, startOpts.tlsCipherSuites)
 
-		controllers := createControllers(ctrlctx, inspectionCache, inspectorFactory)
+		controllers := createControllers(ctrlctx, inspectionCache, inspectorFactory, cacheWarmer)
 		draincontroller := drain.New(
 			drain.DefaultConfig(),
 			ctrlctx.KubeInformerFactory.Core().V1().Nodes(),
@@ -189,15 +178,6 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			klog.Fatalf("unable to start cert rotation controller: %v", err)
 		}
 
-		pinnedImageSet := pinnedimageset.New(
-			ctrlctx.InformerFactory.Machineconfiguration().V1().PinnedImageSets(),
-			ctrlctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
-			ctrlctx.ClientBuilder.KubeClientOrDie("pinned-image-set-controller"),
-			ctrlctx.ClientBuilder.MachineConfigClientOrDie("pinned-image-set-controller"),
-			cacheWarmer,
-		)
-		go pinnedImageSet.Run(ctx, 2)
-
 		// Start the shared factory informers that you need to use in your controller
 		ctrlctx.InformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.KubeInformerFactory.Start(ctrlctx.Stop)
@@ -210,6 +190,16 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		ctrlctx.MCOPodInformerFactory.Start(ctrlctx.Stop)
 
 		close(ctrlctx.InformersStarted)
+
+		// Start the cache before any controller that consumes it has a chance to run.
+		inspectionCache.Start(ctx, 24*time.Hour, 10*time.Minute, 30*time.Second)
+
+		if osImageStreamCtrl != nil {
+			go osImageStreamCtrl.Run(ctx, 1)
+			if err := osImageStreamCtrl.EnsureOSImageStream(ctx); err != nil {
+				klog.Fatalf("Failed to ensure OSImageStream: %v", err)
+			}
+		}
 
 		if ctrlcommon.IsBootImageControllerRequired(ctrlctx) {
 			bootImageController := bootimagecontroller.New(
@@ -239,10 +229,6 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		go draincontroller.Run(ctx, 5)
 		go certrotationcontroller.Run(ctx, 1)
 
-		if inspectionCache != nil {
-			inspectionCache.StartEviction(ctx, 24*time.Hour, 10*time.Minute)
-		}
-
 		// wait here in this function until the context gets cancelled (which tells us when we are being shut down)
 		<-ctx.Done()
 	}
@@ -266,7 +252,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	panic("unreachable")
 }
 
-func createControllers(ctx *ctrlcommon.ControllerContext, inspectionCache *imageutils.FileInspectionCache, inspectorFactory osimagestream.ImagesInspectorFactory) []ctrlcommon.Controller {
+func createControllers(ctx *ctrlcommon.ControllerContext, inspectionCache *imageutils.FileInspectionCache, inspectorFactory osimagestream.ImagesInspectorFactory, pisCacheWarmer *pinnedimageset.CacheWarmer) []ctrlcommon.Controller {
 	renderCtrl := render.New(
 		ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 		ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
@@ -285,9 +271,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext, inspectionCache *image
 		ctx.FeatureGatesHandler,
 		inspectorFactory,
 	)
-	if inspectionCache != nil {
-		inspectionCache.RegisterEvicter(renderCtrl)
-	}
+	inspectionCache.RegisterEvicter(renderCtrl)
 
 	var controllers []ctrlcommon.Controller
 	controllers = append(controllers,
@@ -362,6 +346,13 @@ func createControllers(ctx *ctrlcommon.ControllerContext, inspectionCache *image
 			ctx.ConfigInformerFactory.Config().V1().Infrastructures(),
 			ctx.ClientBuilder.KubeClientOrDie("internalreleaseimage-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("internalreleaseimage-controller"),
+		),
+		pinnedimageset.New(
+			ctx.InformerFactory.Machineconfiguration().V1().PinnedImageSets(),
+			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
+			ctx.ClientBuilder.KubeClientOrDie("pinned-image-set-controller"),
+			ctx.ClientBuilder.MachineConfigClientOrDie("pinned-image-set-controller"),
+			pisCacheWarmer,
 		),
 	)
 
