@@ -146,6 +146,14 @@ type Daemon struct {
 	// rebootQueued is true when the node is waiting for graceful shutdown
 	rebootQueued bool
 
+	// apiUnreachableFailures counts consecutive sync failures caused by the API
+	// server being unreachable (for example while a single-node cluster's only node
+	// reboots during an upgrade). It drives an exponential backoff that avoids
+	// re-reporting the node's degraded state -- and emitting a MachineConfigNode
+	// failure event -- on every sync attempt during an outage. It is only accessed
+	// from the single sync worker goroutine, so it needs no additional locking.
+	apiUnreachableFailures int
+
 	currentConfigPath string
 	currentImagePath  string
 
@@ -621,6 +629,7 @@ func (dn *Daemon) processNextWorkItem() bool {
 func (dn *Daemon) handleErr(err error, key string) {
 	if err == nil {
 		dn.queue.Forget(key)
+		dn.apiUnreachableFailures = 0
 		return
 	}
 
@@ -630,8 +639,21 @@ func (dn *Daemon) handleErr(err error, key string) {
 		klog.Fatalf("Error handling node sync: %v", err)
 	}
 
-	if err := dn.updateErrorState(err); err != nil {
-		klog.Errorf("Could not update annotation: %v", err)
+	// While the API server is unreachable -- e.g. a single-node cluster whose only
+	// node is rebooting during an upgrade -- the sync loop keeps failing with
+	// "connection refused" errors. Marking the node Degraded and updating its
+	// MachineConfigNode status on every one of those attempts emits a failure event
+	// each time and, over a multi-minute outage, trips the pathological-events
+	// monitor with dozens of identical events. shouldReportSyncError applies an
+	// exponential backoff so we only re-report on the 1st, 2nd, 4th, 8th, ...
+	// consecutive connection failure. The queue's own exponential rate limiter
+	// (added via AddRateLimited below) continues to space out the retries themselves.
+	if dn.shouldReportSyncError(err) {
+		if err := dn.updateErrorState(err); err != nil {
+			klog.Errorf("Could not update annotation: %v", err)
+		}
+	} else {
+		klog.V(2).Infof("API server appears unreachable (%d consecutive failures); backing off before re-reporting node degraded state: %v", dn.apiUnreachableFailures, err)
 	}
 	// This is at V(2) since the updateErrorState() call above ends up logging too
 	klog.V(2).Infof("Error syncing node %v (retries %d): %v", key, dn.queue.NumRequeues(key), err)
