@@ -257,7 +257,6 @@ func TestBootstrapRunHypershift(t *testing.T) {
 				},
 				Disabled: []apicfgv1.FeatureGateAttributes{
 					{Name: "OSStreams"},
-					{Name: "SigstoreImageVerification"},
 				},
 			}},
 		},

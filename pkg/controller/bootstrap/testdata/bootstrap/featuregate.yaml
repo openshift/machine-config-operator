@@ -8,5 +8,3 @@ status:
     enabled:
     - name: OpenShiftPodSecurityAdmission
     - name: OSStreams
-    disabled:
-    - name: SigstoreImageVerification
