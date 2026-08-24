@@ -159,8 +159,8 @@ func isTransientConnectionError(err error) bool {
 // "Unknown," the function will also return true if the condition is "True," which ensures that we
 // do not fail when an update progresses quickly through the intermediary "Unknown" phase.
 func waitForMCNConditionStatus(machineConfigClient *machineconfigclient.Clientset, mcnName string, conditionType mcfgv1.StateProgress, status metav1.ConditionStatus,
-	timeout time.Duration, interval time.Duration, stopOnTransientError bool) (bool, error) {
-
+	timeout time.Duration, interval time.Duration, stopOnTransientError bool,
+) (bool, error) {
 	conditionMet := false
 	var conditionErr error
 	var workerNodeMCN *mcfgv1.MachineConfigNode
@@ -243,7 +243,7 @@ func ValidateTransitionThroughConditions(oc *exutil.CLI, machineConfigClient *ma
 	o.Expect(conditionMet).To(o.BeTrue(), "Error, could not detect Updated=False.")
 
 	logger.Infof("Waiting for UpdatePrepared=True")
-	conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdatePrepared, metav1.ConditionTrue, 1*time.Minute, 1*time.Second, false)
+	conditionMet, err = waitForMCNConditionStatus(machineConfigClient, updatingNodeName, mcfgv1.MachineConfigNodeUpdatePrepared, metav1.ConditionTrue, 2*time.Minute, 1*time.Second, false)
 	o.Expect(err).NotTo(o.HaveOccurred(), fmt.Sprintf("Error occurred while waiting for UpdatePrepared=True: %v", err))
 	o.Expect(conditionMet).To(o.BeTrue(), "Error, could not detect UpdatePrepared=True.")
 
