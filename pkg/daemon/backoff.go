@@ -59,12 +59,16 @@ func shouldReportUnreachable(consecutiveFailures int) bool {
 }
 
 // shouldReportSyncError is the decision core of handleErr's exponential backoff for
-// API-unreachable errors. It updates the consecutive-failure counter for err and
-// returns whether the caller should (re-)report the error this time.
+// API-unreachable errors on single-node (SNO) clusters. It updates the consecutive-
+// failure counter for err and returns whether the caller should (re-)report the
+// error this time.
 //
 // Non-connectivity errors reset the counter and are always reported (they represent
 // real, actionable failures). Connectivity errors increment the counter and are only
 // reported on the exponential schedule defined by shouldReportUnreachable.
+//
+// handleErr gates calls to this function behind an isSingleNodeTopology check so
+// the backoff is never applied on multi-node (HA) clusters.
 //
 // It is only called from the single sync worker goroutine, so the counter needs no
 // additional locking.
