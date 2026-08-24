@@ -10,8 +10,15 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/util/workqueue"
+
+	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 )
 
 // newConnRefusedError builds an error shaped like the ones client-go returns when
@@ -119,4 +126,87 @@ func TestShouldReportSyncErrorBackoff(t *testing.T) {
 		assert.True(t, dn.shouldReportSyncError(nil))
 		assert.Equal(t, 0, dn.apiUnreachableFailures)
 	})
+}
+
+// fakeNodeWriter is a minimal NodeWriter used to drive handleErr in tests. Its
+// SetDegraded deliberately returns an error so updateErrorState short-circuits
+// before reaching cluster-dependent code (primary-pool lookup and MCN status
+// updates). The apiUnreachableFailures bookkeeping under test happens in
+// handleErr itself -- for SNO via shouldReportSyncError, and for HA via the
+// explicit reset -- both of which run before updateErrorState, so short-circuiting
+// the annotation write does not affect what these tests verify.
+type fakeNodeWriter struct{}
+
+func (f *fakeNodeWriter) Run(_ <-chan struct{})            {}
+func (f *fakeNodeWriter) SetDone(_ *stateAndConfigs) error { return nil }
+func (f *fakeNodeWriter) SetWorking() error                { return nil }
+func (f *fakeNodeWriter) SetUnreconcilable(_ error) error  { return nil }
+func (f *fakeNodeWriter) SetDegraded(_ error) error {
+	return errors.New("fake node writer: annotation writes are not wired up in this test")
+}
+func (f *fakeNodeWriter) SetAnnotations(_ map[string]string) (*corev1.Node, error) { return nil, nil }
+func (f *fakeNodeWriter) SetDesiredDrainer(_ string) error                         { return nil }
+func (f *fakeNodeWriter) Eventf(_, _, _ string, _ ...interface{})                  {}
+
+// TestHandleErrTopologyTransitionResetsBackoff is a regression test for a
+// SNO -> HA -> SNO control-plane topology transition. The node controller can
+// rewrite the controlPlaneTopology annotation during the daemon's lifetime, and
+// handleErr reads it fresh on every call via getControlPlaneTopology(). Before
+// the fix, the API-unreachable backoff counter accumulated on SNO was never
+// cleared when the cluster became HA, so a later return to SNO would resume the
+// exponential backoff from a stale count and wrongly suppress or delay
+// legitimate MachineConfigNode failure reporting. handleErr must reset the
+// counter whenever the HA branch handles a sync error.
+func TestHandleErrTopologyTransitionResetsBackoff(t *testing.T) {
+	connErr := newConnRefusedError(syscall.ECONNREFUSED)
+
+	// The daemon derives its topology from the node annotation, so mutating the
+	// annotation on this shared node object simulates the node controller flipping
+	// the cluster topology at runtime.
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "node-0",
+			Annotations: map[string]string{},
+		},
+	}
+	dn := &Daemon{
+		node:       node,
+		nodeWriter: &fakeNodeWriter{},
+		queue: workqueue.NewTypedRateLimitingQueueWithConfig[string](
+			workqueue.DefaultTypedControllerRateLimiter[string](),
+			workqueue.TypedRateLimitingQueueConfig[string]{Name: "backoff-topology-transition-test"}),
+	}
+	defer dn.queue.ShutDown()
+
+	setTopology := func(mode configv1.TopologyMode) {
+		node.Annotations[constants.ClusterControlPlaneTopologyAnnotationKey] = string(mode)
+	}
+
+	const key = "test/node-0"
+
+	// 1. SNO: a multi-minute API outage accumulates the backoff counter across
+	//    consecutive connection-refused sync failures.
+	setTopology(configv1.SingleReplicaTopologyMode)
+	const snoOutageFailures = 10
+	for i := 0; i < snoOutageFailures; i++ {
+		dn.handleErr(connErr, key)
+	}
+	require.Equal(t, snoOutageFailures, dn.apiUnreachableFailures,
+		"SNO outage should accumulate the API-unreachable backoff counter")
+
+	// 2. Topology flips to HA (node controller rewrote the annotation). Handling a
+	//    sync error on HA must clear the stale SNO backoff counter, because HA
+	//    reports every sync error immediately and must not carry SNO backoff state.
+	setTopology(configv1.HighlyAvailableTopologyMode)
+	dn.handleErr(connErr, key)
+	require.Equal(t, 0, dn.apiUnreachableFailures,
+		"HA branch must reset the stale SNO backoff counter (SNO -> HA transition)")
+
+	// 3. Topology flips back to SNO. Because HA cleared the counter, the backoff
+	//    schedule starts fresh from the first failure rather than resuming from the
+	//    stale pre-transition count.
+	setTopology(configv1.SingleReplicaTopologyMode)
+	dn.handleErr(connErr, key)
+	require.Equal(t, 1, dn.apiUnreachableFailures,
+		"SNO backoff must restart fresh after returning from HA, not resume the stale count")
 }

@@ -659,6 +659,14 @@ func (dn *Daemon) handleErr(err error, key string) {
 			klog.V(2).Infof("API server appears unreachable (%d consecutive failures); backing off before re-reporting node degraded state", dn.apiUnreachableFailures)
 		}
 	} else {
+		// On multi-node (HA) clusters we report every sync error immediately, so
+		// clear any API-unreachable backoff state that may have been accumulated
+		// while this node was single-node. The node controller can update the
+		// control-plane topology annotation during the daemon's lifetime; without
+		// this reset a SNO -> HA -> SNO transition could resume the exponential
+		// backoff from a stale failure count and wrongly suppress or delay
+		// legitimate degraded-state reports.
+		dn.apiUnreachableFailures = 0
 		if err := dn.updateErrorState(err); err != nil {
 			klog.Errorf("Could not update annotation: %v", err)
 		}
