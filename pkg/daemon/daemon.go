@@ -1009,7 +1009,7 @@ func (dn *Daemon) syncNodeHypershift(ctx context.Context, key string) error {
 	}
 
 	// First, check if our drain/uncordon request was honored by the controller
-	node, err := dn.kubeClient.CoreV1().Nodes().Get(context.TODO(), dn.name, metav1.GetOptions{})
+	node, err := dn.kubeClient.CoreV1().Nodes().Get(ctx, dn.name, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
