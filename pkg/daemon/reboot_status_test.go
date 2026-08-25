@@ -178,7 +178,7 @@ func TestSyncNodeRetriesRebootWithoutBlockingInitialization(t *testing.T) {
 
 	// The missing ControllerConfig stops the test after node initialization;
 	// it must not stop at the stale boot ID or clear the reboot annotation.
-	err := dn.syncNode(node.Name)
+	err := dn.syncNode(context.Background(), node.Name)
 	require.ErrorContains(t, err, "could not get ControllerConfig")
 	require.True(t, dn.nodeInitialized)
 	require.Equal(t, node.Name, queue.key)
