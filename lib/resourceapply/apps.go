@@ -48,7 +48,7 @@ func IsApplyErrorRetriable(err error) bool {
 	}
 	// Add any other errors to be added to the retry here.
 
-	klog.Infof("Skipping retry in Apply fn for error: %s", err)
+	klog.Info("Skipping retry in Apply fn for non-retriable error")
 	return false
 }
 

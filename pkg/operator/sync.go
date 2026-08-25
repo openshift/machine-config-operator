@@ -920,7 +920,15 @@ func (optr *Operator) syncMachineConfigNodes(ctx context.Context, _ *renderConfi
 		for _, mcn := range mcns.Items {
 			if _, ok := nodeMap[mcn.Name]; !ok {
 				klog.Infof("Node %s has been removed, deleting associated MCN", mcn.Name)
-				optr.client.MachineconfigurationV1().MachineConfigNodes().Delete(ctx, mcn.Name, metav1.DeleteOptions{})
+				if err := retryMachineConfigNodeAPIOperation(ctx, func(ctx context.Context) error {
+					err := optr.client.MachineconfigurationV1().MachineConfigNodes().Delete(ctx, mcn.Name, metav1.DeleteOptions{})
+					if apierrors.IsNotFound(err) {
+						return nil
+					}
+					return err
+				}); err != nil {
+					return fmt.Errorf("deleting MachineConfigNode: %w", err)
+				}
 			}
 		}
 	}

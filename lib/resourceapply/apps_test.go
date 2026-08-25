@@ -1,13 +1,17 @@
 package resourceapply
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"net"
+	"os"
+	"strings"
 	"testing"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/klog/v2"
 )
 
 func TestIsApplyErrorRetriable(t *testing.T) {
@@ -85,5 +89,27 @@ func TestIsApplyErrorRetriable(t *testing.T) {
 				t.Fatalf("expected retriable=%t, got %t for %v", test.retriable, actual, test.err)
 			}
 		})
+	}
+}
+
+func TestIsApplyErrorRetriableSanitizesNonRetriableLog(t *testing.T) {
+	var output bytes.Buffer
+	klog.LogToStderr(false)
+	klog.SetOutput(&output)
+	defer func() {
+		klog.SetOutput(os.Stderr)
+		klog.LogToStderr(true)
+	}()
+
+	err := fmt.Errorf("request failed: %w", &net.DNSError{Err: "no such host", Name: "api.internal.example.test"})
+	if IsApplyErrorRetriable(err) {
+		t.Fatal("expected permanent DNS error not to be retriable")
+	}
+	klog.Flush()
+	if strings.Contains(output.String(), "api.internal.example.test") {
+		t.Fatalf("expected sanitized log, got %q", output.String())
+	}
+	if !strings.Contains(output.String(), "non-retriable error") {
+		t.Fatalf("expected sanitized error classification, got %q", output.String())
 	}
 }

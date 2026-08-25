@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -203,7 +204,7 @@ func (f *fixture) runExpectError(node string) {
 func (f *fixture) runController(node string, expectError bool) {
 	d := f.newController()
 
-	err := d.syncHandler(node)
+	err := d.syncHandler(context.Background(), node)
 	if !expectError && err != nil {
 		f.t.Errorf("error syncing node: %v", err)
 	} else if expectError && err == nil {
