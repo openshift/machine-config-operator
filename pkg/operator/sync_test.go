@@ -320,6 +320,64 @@ func TestSyncMachineConfigNodeErrorsDoNotIncludeNodeName(t *testing.T) {
 	}
 }
 
+func TestSyncMachineConfigNodesDeletion(t *testing.T) {
+	const nodeName = "removed-worker-0"
+	newMCN := func() *mcfgv1.MachineConfigNode {
+		return &mcfgv1.MachineConfigNode{ObjectMeta: metav1.ObjectMeta{Name: nodeName}}
+	}
+
+	t.Run("retries transient error", func(t *testing.T) {
+		optr, client := newMachineConfigNodeDeletionTestOperator(t, newMCN())
+		attempts := 0
+		client.PrependReactor("delete", "machineconfignodes", func(action clienttesting.Action) (bool, runtime.Object, error) {
+			attempts++
+			if attempts == 1 {
+				return true, nil, apierrors.NewServiceUnavailable("temporarily unavailable")
+			}
+			return false, nil, nil
+		})
+
+		if err := optr.syncMachineConfigNodes(context.Background(), nil, nil); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if attempts != 2 {
+			t.Fatalf("expected 2 delete attempts, got %d", attempts)
+		}
+	})
+
+	t.Run("returns terminal error without node name", func(t *testing.T) {
+		optr, client := newMachineConfigNodeDeletionTestOperator(t, newMCN())
+		attempts := 0
+		client.PrependReactor("delete", "machineconfignodes", func(action clienttesting.Action) (bool, runtime.Object, error) {
+			attempts++
+			return true, nil, apierrors.NewBadRequest("invalid delete")
+		})
+
+		err := optr.syncMachineConfigNodes(context.Background(), nil, nil)
+		if !apierrors.IsBadRequest(err) {
+			t.Fatalf("expected wrapped bad request, got %v", err)
+		}
+		if !strings.Contains(err.Error(), "deleting MachineConfigNode") {
+			t.Fatalf("expected delete operation context, got %v", err)
+		}
+		if strings.Contains(err.Error(), nodeName) {
+			t.Fatalf("expected error not to include node name %q, got %v", nodeName, err)
+		}
+		if attempts != 1 {
+			t.Fatalf("expected 1 delete attempt, got %d", attempts)
+		}
+	})
+}
+
+func newMachineConfigNodeDeletionTestOperator(t *testing.T, mcn *mcfgv1.MachineConfigNode) (*Operator, *fakeclientmachineconfigv1.Clientset) {
+	t.Helper()
+	optr, client := newMachineConfigNodeSyncTestOperator(t, "", mcn)
+	kubeClient := fake.NewSimpleClientset()
+	nodeInformer := informers.NewSharedInformerFactory(kubeClient, 0).Core().V1().Nodes()
+	optr.nodeLister = nodeInformer.Lister()
+	return optr, client
+}
+
 func newMachineConfigNodeSyncTestOperator(t *testing.T, desiredConfig string, existing ...runtime.Object) (*Operator, *fakeclientmachineconfigv1.Clientset) {
 	t.Helper()
 

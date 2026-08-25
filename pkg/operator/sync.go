@@ -918,13 +918,24 @@ func (optr *Operator) syncMachineConfigNodes(ctx context.Context, _ *renderConfi
 		for _, mcn := range mcns.Items {
 			if _, ok := nodeMap[mcn.Name]; !ok {
 				klog.Infof("Node %s has been removed, deleting associated MCN", mcn.Name)
-				optr.client.MachineconfigurationV1().MachineConfigNodes().Delete(ctx, mcn.Name, metav1.DeleteOptions{})
+				if err := retryMachineConfigNodeAPIOperation(ctx, func(ctx context.Context) error {
+					err := optr.client.MachineconfigurationV1().MachineConfigNodes().Delete(ctx, mcn.Name, metav1.DeleteOptions{})
+					if apierrors.IsNotFound(err) {
+						return nil
+					}
+					return err
+				}); err != nil {
+					return fmt.Errorf("deleting MachineConfigNode: %w", err)
+				}
 			}
 		}
 	}
 	return nil
 }
 
+// retryMachineConfigNodeAPIOperation is a context-aware equivalent of retry.OnError.
+// ApplyMachineConfigNode already retries conflicts with a fresh GET and merge, so the
+// outer retry handles other transient API errors without multiplying conflict retries.
 func retryMachineConfigNodeAPIOperation(ctx context.Context, fn func(context.Context) error) error {
 	var lastErr error
 	err := wait.ExponentialBackoffWithContext(ctx, retry.DefaultRetry, func(ctx context.Context) (bool, error) {

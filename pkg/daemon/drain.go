@@ -33,7 +33,7 @@ func (dn *Daemon) drainRequired() bool {
 	return !isSingleNodeTopology(dn.getControlPlaneTopology())
 }
 
-func (dn *Daemon) performDrain() error {
+func (dn *Daemon) performDrain(ctx context.Context) error {
 	// Skip drain process when we're not cluster driven
 	if dn.kubeClient == nil {
 		return nil
@@ -48,7 +48,7 @@ func (dn *Daemon) performDrain() error {
 			return err
 		}
 
-		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
+		err = upgrademonitor.GenerateAndApplyMachineConfigNodesWithContext(ctx,
 			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgv1.MachineConfigNodeUpdateDrained), Message: "Node Drain Not required for this update."},
 			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateDrained, Reason: fmt.Sprintf("%s%s", string(mcfgv1.MachineConfigNodeUpdateExecuted), string(mcfgv1.MachineConfigNodeUpdateDrained)), Message: "Node Drain Not required for this update."},
 			metav1.ConditionUnknown,
@@ -95,8 +95,6 @@ func (dn *Daemon) performDrain() error {
 	if err := dn.nodeWriter.SetDesiredDrainer(desiredDrainAnnotationValue); err != nil {
 		return fmt.Errorf("could not set drain annotation: %w", err)
 	}
-
-	ctx := context.TODO()
 
 	if err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 1*time.Hour, false, func(ctx context.Context) (bool, error) {
 		node, err := dn.kubeClient.CoreV1().Nodes().Get(ctx, dn.name, metav1.GetOptions{})
