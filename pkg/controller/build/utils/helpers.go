@@ -69,12 +69,8 @@ func GetMCConfigMapName(mosb *mcfgv1.MachineOSBuild) string {
 	return fmt.Sprintf("mc-%s", getFieldFromMachineOSBuild(mosb))
 }
 
-func GetEtcPolicyConfigMapName(mosb *mcfgv1.MachineOSBuild) string {
-	return fmt.Sprintf("etc-policy-%s", getFieldFromMachineOSBuild(mosb))
-}
-
-func GetEtcRegistriesConfigMapName(mosb *mcfgv1.MachineOSBuild) string {
-	return fmt.Sprintf("etc-registries-%s", getFieldFromMachineOSBuild(mosb))
+func GetEtcContainersConfigMapName(mosb *mcfgv1.MachineOSBuild) string {
+	return fmt.Sprintf("etc-containers-%s", getFieldFromMachineOSBuild(mosb))
 }
 
 // Computes the build job name.
