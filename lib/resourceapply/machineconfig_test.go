@@ -1,6 +1,8 @@
 package resourceapply
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -306,7 +308,7 @@ func TestApplyMachineConfigNode(t *testing.T) {
 		client := fake.NewSimpleClientset()
 		required := &mcfgv1.MachineConfigNode{ObjectMeta: metav1.ObjectMeta{Name: name}}
 
-		actual, modified, err := ApplyMachineConfigNode(client.MachineconfigurationV1(), required)
+		actual, modified, err := ApplyMachineConfigNode(context.Background(), client.MachineconfigurationV1(), required)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -335,7 +337,7 @@ func TestApplyMachineConfigNode(t *testing.T) {
 			Spec:       existing.Spec,
 		}
 
-		actual, modified, err := ApplyMachineConfigNode(client.MachineconfigurationV1(), required)
+		actual, modified, err := ApplyMachineConfigNode(context.Background(), client.MachineconfigurationV1(), required)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -390,7 +392,7 @@ func TestApplyMachineConfigNode(t *testing.T) {
 			return false, nil, nil
 		})
 
-		actual, modified, err := ApplyMachineConfigNode(client.MachineconfigurationV1(), required)
+		actual, modified, err := ApplyMachineConfigNode(context.Background(), client.MachineconfigurationV1(), required)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -411,6 +413,33 @@ func TestApplyMachineConfigNode(t *testing.T) {
 		actions := client.Actions()
 		if len(actions) != 4 || !actions[0].Matches("get", "machineconfignodes") || !actions[1].Matches("update", "machineconfignodes") || !actions[2].Matches("get", "machineconfignodes") || !actions[3].Matches("update", "machineconfignodes") {
 			t.Fatalf("unexpected actions: %s", spew.Sdump(actions))
+		}
+	})
+
+	t.Run("conflict retry stops on cancellation", func(t *testing.T) {
+		existing := &mcfgv1.MachineConfigNode{
+			ObjectMeta: metav1.ObjectMeta{Name: name},
+			Spec: mcfgv1.MachineConfigNodeSpec{
+				Pool: mcfgv1.MCOObjectReference{Name: "old-pool"},
+			},
+		}
+		client := fake.NewSimpleClientset(existing)
+		required := existing.DeepCopy()
+		required.Spec.Pool.Name = "new-pool"
+		ctx, cancel := context.WithCancel(context.Background())
+		updateCalls := 0
+		client.PrependReactor("update", "machineconfignodes", func(action clienttesting.Action) (bool, runtime.Object, error) {
+			updateCalls++
+			cancel()
+			return true, nil, apierrors.NewConflict(schema.GroupResource{Group: mcfgv1.GroupName, Resource: "machineconfignodes"}, name, errors.New("conflict"))
+		})
+
+		_, _, err := ApplyMachineConfigNode(ctx, client.MachineconfigurationV1(), required)
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected context cancellation, got %v", err)
+		}
+		if updateCalls != 1 {
+			t.Fatalf("expected cancellation after 1 update attempt, got %d", updateCalls)
 		}
 	})
 }

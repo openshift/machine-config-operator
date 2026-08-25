@@ -834,7 +834,7 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig, _ *configv1.C
 }
 
 // we need to mimic this
-func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.ClusterOperator) error {
+func (optr *Operator) syncMachineConfigNodes(ctx context.Context, _ *renderConfig, _ *configv1.ClusterOperator) error {
 	nodes, err := optr.nodeLister.List(labels.Everything())
 	if err != nil {
 		return err
@@ -846,9 +846,9 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.Cluste
 	}
 
 	var mcns *mcfgv1.MachineConfigNodeList
-	if err := retryMachineConfigNodeAPIOperation(func() error {
+	if err := retryMachineConfigNodeAPIOperation(ctx, func(ctx context.Context) error {
 		var err error
-		mcns, err = optr.client.MachineconfigurationV1().MachineConfigNodes().List(context.TODO(), metav1.ListOptions{})
+		mcns, err = optr.client.MachineconfigurationV1().MachineConfigNodes().List(ctx, metav1.ListOptions{})
 		return err
 	}); err != nil {
 		return fmt.Errorf("listing MachineConfigNodes: %w", err)
@@ -899,19 +899,19 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.Cluste
 		}
 		p := mcoResourceRead.ReadMachineConfigNodeV1OrDie(mcsBytes)
 		var mcn *mcfgv1.MachineConfigNode
-		if err := retryMachineConfigNodeAPIOperation(func() error {
+		if err := retryMachineConfigNodeAPIOperation(ctx, func(ctx context.Context) error {
 			var err error
-			mcn, _, err = mcoResourceApply.ApplyMachineConfigNode(optr.client.MachineconfigurationV1(), p)
+			mcn, _, err = mcoResourceApply.ApplyMachineConfigNode(ctx, optr.client.MachineconfigurationV1(), p)
 			return err
 		}); err != nil {
-			return fmt.Errorf("applying MachineConfigNode %q: %w", node.Name, err)
+			return fmt.Errorf("applying MachineConfigNode: %w", err)
 		}
 		// if this is the first time we are applying the MCN and the node is ready, set the config version probably
 		if mcn.Spec.ConfigVersion.Desired == upgrademonitor.NotYetSet {
-			if err := retryMachineConfigNodeAPIOperation(func() error {
-				return upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(optr.fgHandler, pool, node, optr.client)
+			if err := retryMachineConfigNodeAPIOperation(ctx, func(ctx context.Context) error {
+				return upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(ctx, optr.fgHandler, pool, node, optr.client)
 			}); err != nil {
-				return fmt.Errorf("applying MachineConfigNode spec for %q: %w", node.Name, err)
+				return fmt.Errorf("applying MachineConfigNode spec: %w", err)
 			}
 		}
 
@@ -920,18 +920,34 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.Cluste
 		for _, mcn := range mcns.Items {
 			if _, ok := nodeMap[mcn.Name]; !ok {
 				klog.Infof("Node %s has been removed, deleting associated MCN", mcn.Name)
-				optr.client.MachineconfigurationV1().MachineConfigNodes().Delete(context.TODO(), mcn.Name, metav1.DeleteOptions{})
+				optr.client.MachineconfigurationV1().MachineConfigNodes().Delete(ctx, mcn.Name, metav1.DeleteOptions{})
 			}
 		}
 	}
 	return nil
 }
 
-func retryMachineConfigNodeAPIOperation(fn func() error) error {
-	return retry.OnError(retry.DefaultRetry, func(err error) bool {
-		// ApplyMachineConfigNode already retries conflicts with a fresh GET and merge.
-		return !apierrors.IsConflict(err) && mcoResourceApply.IsApplyErrorRetriable(err)
-	}, fn)
+func retryMachineConfigNodeAPIOperation(ctx context.Context, fn func(context.Context) error) error {
+	var lastErr error
+	err := wait.ExponentialBackoffWithContext(ctx, retry.DefaultRetry, func(ctx context.Context) (bool, error) {
+		err := fn(ctx)
+		switch {
+		case err == nil:
+			return true, nil
+		case !apierrors.IsConflict(err) && mcoResourceApply.IsApplyErrorRetriable(err):
+			lastErr = err
+			return false, nil
+		default:
+			return false, err
+		}
+	})
+	if wait.Interrupted(err) {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		return lastErr
+	}
+	return err
 }
 
 //nolint:gocyclo

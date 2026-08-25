@@ -3,6 +3,7 @@ package operator
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -171,7 +172,7 @@ func TestSyncMachineConfigNodesRetriesTransientAPIErrors(t *testing.T) {
 				return false, nil, nil
 			})
 
-			if err := optr.syncMachineConfigNodes(nil, nil); err != nil {
+			if err := optr.syncMachineConfigNodes(context.Background(), nil, nil); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			if attempts != 2 {
@@ -189,7 +190,7 @@ func TestSyncMachineConfigNodesDoesNotRetryNonTransientError(t *testing.T) {
 		return true, nil, apierrors.NewBadRequest("invalid selector")
 	})
 
-	err := optr.syncMachineConfigNodes(nil, nil)
+	err := optr.syncMachineConfigNodes(context.Background(), nil, nil)
 	if err == nil {
 		t.Fatal("expected non-transient error")
 	}
@@ -209,7 +210,7 @@ func TestSyncMachineConfigNodesReturnsAfterTransientRetriesExhausted(t *testing.
 		return true, nil, apierrors.NewServiceUnavailable("storage is (re)initializing")
 	})
 
-	err := optr.syncMachineConfigNodes(nil, nil)
+	err := optr.syncMachineConfigNodes(context.Background(), nil, nil)
 	if !apierrors.IsServiceUnavailable(err) {
 		t.Fatalf("expected wrapped service unavailable error, got %v", err)
 	}
@@ -221,7 +222,7 @@ func TestSyncMachineConfigNodesReturnsAfterTransientRetriesExhausted(t *testing.
 func TestRetryMachineConfigNodeAPIOperationDoesNotDoubleRetryConflicts(t *testing.T) {
 	attempts := 0
 	conflict := apierrors.NewConflict(schema.GroupResource{Group: mcfgv1.GroupName, Resource: "machineconfignodes"}, "worker-0", errors.New("conflict"))
-	err := retryMachineConfigNodeAPIOperation(func() error {
+	err := retryMachineConfigNodeAPIOperation(context.Background(), func(context.Context) error {
 		attempts++
 		return conflict
 	})
@@ -231,6 +232,91 @@ func TestRetryMachineConfigNodeAPIOperationDoesNotDoubleRetryConflicts(t *testin
 	}
 	if attempts != 1 {
 		t.Fatalf("expected conflict not to be retried by outer retry, got %d attempts", attempts)
+	}
+}
+
+func TestRetryMachineConfigNodeAPIOperationStopsOnCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	attempts := 0
+	err := retryMachineConfigNodeAPIOperation(ctx, func(context.Context) error {
+		attempts++
+		cancel()
+		return apierrors.NewServiceUnavailable("temporarily unavailable")
+	})
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context cancellation, got %v", err)
+	}
+	if attempts != 1 {
+		t.Fatalf("expected cancellation after 1 attempt, got %d", attempts)
+	}
+}
+
+func TestSyncMachineConfigNodesCanceledContextDoesNotCallAPI(t *testing.T) {
+	optr, client := newMachineConfigNodeSyncTestOperator(t, "")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := optr.syncMachineConfigNodes(ctx, nil, nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context cancellation, got %v", err)
+	}
+	if actions := client.Actions(); len(actions) != 0 {
+		t.Fatalf("expected no MachineConfigNode API calls after cancellation, got %v", actions)
+	}
+}
+
+func TestSyncMachineConfigNodeErrorsDoNotIncludeNodeName(t *testing.T) {
+	const nodeName = "worker-0"
+	newExistingMCN := func() *mcfgv1.MachineConfigNode {
+		return &mcfgv1.MachineConfigNode{
+			ObjectMeta: metav1.ObjectMeta{Name: nodeName},
+			Spec: mcfgv1.MachineConfigNodeSpec{
+				Node:          mcfgv1.MCOObjectReference{Name: nodeName},
+				Pool:          mcfgv1.MCOObjectReference{Name: "worker"},
+				ConfigVersion: mcfgv1.MachineConfigNodeSpecMachineConfigVersion{Desired: upgrademonitor.NotYetSet},
+			},
+		}
+	}
+	tests := []struct {
+		name            string
+		desiredConfig   string
+		existing        []runtime.Object
+		verb            string
+		expectedContext string
+	}{
+		{
+			name:            "apply",
+			verb:            "create",
+			expectedContext: "applying MachineConfigNode",
+		},
+		{
+			name:            "spec",
+			desiredConfig:   "rendered-worker-new",
+			existing:        []runtime.Object{newExistingMCN()},
+			verb:            "patch",
+			expectedContext: "applying MachineConfigNode spec",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			optr, client := newMachineConfigNodeSyncTestOperator(t, test.desiredConfig, test.existing...)
+			client.PrependReactor(test.verb, "machineconfignodes", func(action clienttesting.Action) (bool, runtime.Object, error) {
+				return true, nil, errors.New("permanent failure")
+			})
+
+			err := optr.syncMachineConfigNodes(context.Background(), nil, nil)
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), test.expectedContext) {
+				t.Fatalf("expected operation context %q, got %v", test.expectedContext, err)
+			}
+			if strings.Contains(err.Error(), nodeName) {
+				t.Fatalf("expected error not to include node name %q, got %v", nodeName, err)
+			}
+		})
 	}
 }
 
