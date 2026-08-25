@@ -43,7 +43,7 @@ func IsApplyErrorRetriable(err error) bool {
 	}
 	// Network errors can be wrapped by the client transport.
 	var netErr net.Error
-	if errors.As(err, &netErr) {
+	if errors.As(err, &netErr) && (netErr.Timeout() || netErr.Temporary()) {
 		return true
 	}
 	// Add any other errors to be added to the retry here.

@@ -87,7 +87,7 @@ type Operator struct {
 	eventRecorder record.EventRecorder
 	libgoRecorder events.Recorder
 
-	syncHandler func(ic string) error
+	syncHandler func(ctx context.Context, key string) error
 
 	imgLister                configlistersv1.ImageLister
 	crdLister                apiextlistersv1.CustomResourceDefinitionLister
@@ -486,7 +486,7 @@ func (optr *Operator) Run(ctx context.Context, workers int) {
 	optr.stopCh = ctx.Done()
 
 	for i := 0; i < workers; i++ {
-		go wait.Until(optr.worker, time.Second, ctx.Done())
+		go wait.Until(func() { optr.worker(ctx) }, time.Second, ctx.Done())
 	}
 
 	<-ctx.Done()
@@ -522,19 +522,19 @@ func (optr *Operator) eventHandler() cache.ResourceEventHandler {
 	}
 }
 
-func (optr *Operator) worker() {
-	for optr.processNextWorkItem() {
+func (optr *Operator) worker(ctx context.Context) {
+	for optr.processNextWorkItem(ctx) {
 	}
 }
 
-func (optr *Operator) processNextWorkItem() bool {
+func (optr *Operator) processNextWorkItem(ctx context.Context) bool {
 	key, quit := optr.queue.Get()
 	if quit {
 		return false
 	}
 	defer optr.queue.Done(key)
 
-	err := optr.syncHandler(key)
+	err := optr.syncHandler(ctx, key)
 	optr.handleErr(err, key)
 
 	return true
@@ -577,7 +577,7 @@ func (optr *Operator) setOperatorLogLevel(logLevelFromMachineConfiguration opv1.
 	}
 }
 
-func (optr *Operator) sync(key string) error {
+func (optr *Operator) sync(ctx context.Context, key string) error {
 	startTime := time.Now()
 	klog.V(4).Infof("Started syncing operator %q (%v)", key, startTime)
 	defer func() {
@@ -591,7 +591,9 @@ func (optr *Operator) sync(key string) error {
 		// the operator for the sync funcs below.
 		{"RenderConfig", optr.syncRenderConfig},
 		{"MachineConfiguration", optr.syncMachineConfiguration},
-		{"MachineConfigNode", optr.syncMachineConfigNodes},
+		{"MachineConfigNode", func(config *renderConfig, co *configv1.ClusterOperator) error {
+			return optr.syncMachineConfigNodes(ctx, config, co)
+		}},
 		{"MachineConfigPools", optr.syncMachineConfigPools},
 		{"NetworkPolicies", optr.syncNetworkPolicies},
 		{"MachineConfigDaemon", optr.syncMachineConfigDaemon},

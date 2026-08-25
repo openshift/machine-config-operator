@@ -42,13 +42,30 @@ func TestIsApplyErrorRetriable(t *testing.T) {
 			retriable: true,
 		},
 		{
-			name: "wrapped network error",
+			name: "wrapped temporary network error",
 			err: fmt.Errorf("request failed: %w", &net.DNSError{
 				Err:         "temporary failure",
 				Name:        "api.example.test",
 				IsTemporary: true,
 			}),
 			retriable: true,
+		},
+		{
+			name: "wrapped timeout network error",
+			err: fmt.Errorf("request failed: %w", &net.DNSError{
+				Err:       "i/o timeout",
+				Name:      "api.example.test",
+				IsTimeout: true,
+			}),
+			retriable: true,
+		},
+		{
+			name: "wrapped permanent DNS error",
+			err: fmt.Errorf("request failed: %w", &net.DNSError{
+				Err:  "no such host",
+				Name: "api.example.test",
+			}),
+			retriable: false,
 		},
 		{
 			name:      "bad request",
