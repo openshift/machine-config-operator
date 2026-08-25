@@ -1,6 +1,7 @@
 package upgrademonitor
 
 import (
+	"context"
 	"testing"
 
 	apicfgv1 "github.com/openshift/api/config/v1"
@@ -9,6 +10,7 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -66,7 +68,7 @@ func TestSpecNoDiffGuardSkipsApply(t *testing.T) {
 		},
 	}
 
-	if err := GenerateAndApplyMachineConfigNodeSpec(newFakeHandler(), poolName, node, fakeClient); err != nil {
+	if err := GenerateAndApplyMachineConfigNodeSpec(context.Background(), newFakeHandler(), poolName, node, fakeClient); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -100,12 +102,46 @@ func TestSpecNoDiffGuardAllowsApplyOnChange(t *testing.T) {
 		},
 	}
 
-	if err := GenerateAndApplyMachineConfigNodeSpec(newFakeHandler(), poolName, node, fakeClient); err != nil {
+	if err := GenerateAndApplyMachineConfigNodeSpec(context.Background(), newFakeHandler(), poolName, node, fakeClient); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	if n := countSSAActions(fakeClient.Actions(), ""); n != 1 {
 		t.Errorf("expected 1 SSA Apply action when spec changed, got %d", n)
+	}
+}
+
+func TestSpecGetErrorIsPropagated(t *testing.T) {
+	const nodeName = "worker-1"
+	fakeClient := fake.NewSimpleClientset()
+	fakeClient.PrependReactor("get", "machineconfignodes", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, apierrors.NewServiceUnavailable("temporarily unavailable")
+	})
+	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: nodeName}}
+
+	err := GenerateAndApplyMachineConfigNodeSpec(context.Background(), newFakeHandler(), "worker", node, fakeClient)
+	if !apierrors.IsServiceUnavailable(err) {
+		t.Fatalf("expected service unavailable error, got %v", err)
+	}
+	if actions := fakeClient.Actions(); len(actions) != 1 || !actions[0].Matches("get", "machineconfignodes") {
+		t.Fatalf("expected only the failed get action, got %v", actions)
+	}
+}
+
+func TestSpecCreatesMachineConfigNodeWhenMissing(t *testing.T) {
+	const nodeName = "worker-1"
+	fakeClient := fake.NewSimpleClientset()
+	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: nodeName}}
+
+	if err := GenerateAndApplyMachineConfigNodeSpec(context.Background(), newFakeHandler(), "worker", node, fakeClient); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	created, err := fakeClient.MachineconfigurationV1().MachineConfigNodes().Get(context.Background(), nodeName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("getting created MachineConfigNode: %v", err)
+	}
+	if created.Spec.Node.Name != nodeName || created.Spec.Pool.Name != "worker" {
+		t.Fatalf("unexpected created MachineConfigNode spec: %#v", created.Spec)
 	}
 }
 
