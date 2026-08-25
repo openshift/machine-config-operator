@@ -9,6 +9,7 @@ import (
 	mcoResourceMerge "github.com/openshift/machine-config-operator/lib/resourcemerge"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
 )
@@ -57,23 +58,34 @@ func ApplyMachineConfigPool(client mcfgclientv1.MachineConfigPoolsGetter, requir
 
 // ApplyMachineConfigNode applies the required machineconfignode to the cluster.
 func ApplyMachineConfigNode(client mcfgclientv1.MachineConfigNodesGetter, required *mcfgv1.MachineConfigNode) (*mcfgv1.MachineConfigNode, bool, error) {
-	existing, err := client.MachineConfigNodes().Get(context.TODO(), required.GetName(), metav1.GetOptions{})
-	if apierrors.IsNotFound(err) {
-		actual, err := client.MachineConfigNodes().Create(context.TODO(), required, metav1.CreateOptions{})
-		return actual, true, err
-	}
-	if err != nil {
-		return nil, false, err
-	}
+	var actual *mcfgv1.MachineConfigNode
+	modified := false
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		actual = nil
+		modified = false
 
-	modified := ptr.To(false)
-	mcoResourceMerge.EnsureMachineConfigNode(modified, existing, *required)
-	if !*modified {
-		return existing, false, nil
-	}
+		existing, err := client.MachineConfigNodes().Get(context.TODO(), required.GetName(), metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			actual, err = client.MachineConfigNodes().Create(context.TODO(), required, metav1.CreateOptions{})
+			modified = true
+			return err
+		}
+		if err != nil {
+			return err
+		}
 
-	actual, err := client.MachineConfigNodes().Update(context.TODO(), existing, metav1.UpdateOptions{})
-	return actual, true, err
+		merged := ptr.To(false)
+		mcoResourceMerge.EnsureMachineConfigNode(merged, existing, *required)
+		if !*merged {
+			actual = existing
+			return nil
+		}
+
+		actual, err = client.MachineConfigNodes().Update(context.TODO(), existing, metav1.UpdateOptions{})
+		modified = true
+		return err
+	})
+	return actual, modified, err
 }
 
 // ApplyControllerConfig applies the required machineconfig to the cluster.
