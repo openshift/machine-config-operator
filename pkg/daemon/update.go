@@ -594,7 +594,7 @@ func (dn *CoreOSDaemon) applyOSChanges(ctx context.Context, mcDiff machineConfig
 				Source:         corev1.EventSource{Component: "machineconfigdaemon", Host: dn.name},
 			}
 			// its ok to create a unique event for this low volume event
-			if _, err := dn.kubeClient.CoreV1().Events(metav1.NamespaceDefault).Create(context.TODO(),
+			if _, err := dn.kubeClient.CoreV1().Events(metav1.NamespaceDefault).Create(ctx,
 				event, metav1.CreateOptions{}); err != nil {
 				klog.Errorf("Failed to create event with reason 'OSUpdateStaged': %v", err)
 			}
