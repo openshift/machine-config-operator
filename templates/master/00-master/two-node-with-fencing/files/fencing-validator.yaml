@@ -428,22 +428,59 @@ contents:
     	exit $EXIT_ETCD_NOT_READY
     }
     
+    mac_sha256() {
+    	local normalized
+    	normalized="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -d ':')"
+    	printf '%s' "$normalized" | sha256sum | cut -d' ' -f1
+    }
+
+    get_node_macs() {
+    	local tgt
+    	tgt="$(node_exec_target "$1")"
+    	host_run "$tgt" "ip -o link show 2>/dev/null" 2>/dev/null |
+    		grep -oE '([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}' |
+    		grep -v -E '^(00:00:00:00:00:00|ff:ff:ff:ff:ff:ff)$' |
+    		sort -u
+    }
+
     find_fencing_secret_for_node() {
-    	local node="$1" ns="openshift-etcd" short_node
+    	local node="$1" ns="openshift-etcd" short_node secrets_json
     	short_node="$(short_hostname "$node")"
-    	oc_run -n "$ns" get secret -o json 2>/dev/null |
-    		jq -e --arg short "$short_node" '
-          any(.items[]?; (.metadata.name // "") | startswith("fencing-credentials-" + $short))
-        ' >/dev/null
+    	secrets_json="$(oc_run -n "$ns" get secret -o json 2>/dev/null)"
+
+    	# Try hostname-based match first
+    	if jq -e --arg prefix "fencing-credentials-$short_node" '
+    		any(.items[]?;
+    			(.metadata.name // "") as $name |
+    			($name == $prefix) or ($name | startswith($prefix + "."))
+    		)
+    	' <<<"$secrets_json" >/dev/null 2>&1; then
+    		return 0
+    	fi
+
+    	# Fallback: try MAC-based match (installer hashes normalized MAC with SHA-256)
+    	local macs mac hash
+    	mapfile -t macs < <(get_node_macs "$node")
+    	for mac in "${macs[@]}"; do
+    		hash="$(mac_sha256 "$mac")"
+    		if jq -e --arg name "fencing-credentials-$hash" '
+    			any(.items[]?; (.metadata.name // "") == $name)
+    		' <<<"$secrets_json" >/dev/null 2>&1; then
+    			return 0
+    		fi
+    	done
+
+    	return 1
     }
     
     check_fencing_secret_bindings() {
     	local missing=0 n
     	for n in "$NODE_A" "$NODE_B"; do
     		if ! find_fencing_secret_for_node "$n" >/dev/null; then
-    			log_err "No fencing credential secret found that matches node hostname '$n'.
-                If you installed with FQDNs, ensure the secret(s)
-                use the same hostname form used by the cluster (short vs FQDN)."
+    			log_err "No fencing credential secret found matching node '$n'.
+                Secrets are matched by short hostname or by SHA-256 hash of the
+                node's MAC address. Ensure the install-config fencing credentials
+                use a hostname or MAC that corresponds to this node."
     			missing=1
     		fi
     	done
