@@ -845,9 +845,13 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.Cluste
 		nodeMap[node.Name] = node
 	}
 
-	mcns, err := optr.client.MachineconfigurationV1().MachineConfigNodes().List(context.TODO(), metav1.ListOptions{})
-	if err != nil {
+	var mcns *mcfgv1.MachineConfigNodeList
+	if err := retryMachineConfigNodeAPIOperation(func() error {
+		var err error
+		mcns, err = optr.client.MachineconfigurationV1().MachineConfigNodes().List(context.TODO(), metav1.ListOptions{})
 		return err
+	}); err != nil {
+		return fmt.Errorf("listing MachineConfigNodes: %w", err)
 	}
 	for _, node := range nodes {
 		if node.Status.Phase == corev1.NodePending || node.Status.Phase == corev1.NodePhase("Provisioning") {
@@ -894,15 +898,20 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.Cluste
 			return err
 		}
 		p := mcoResourceRead.ReadMachineConfigNodeV1OrDie(mcsBytes)
-		mcn, _, err := mcoResourceApply.ApplyMachineConfigNode(optr.client.MachineconfigurationV1(), p)
-		if err != nil {
+		var mcn *mcfgv1.MachineConfigNode
+		if err := retryMachineConfigNodeAPIOperation(func() error {
+			var err error
+			mcn, _, err = mcoResourceApply.ApplyMachineConfigNode(optr.client.MachineconfigurationV1(), p)
 			return err
+		}); err != nil {
+			return fmt.Errorf("applying MachineConfigNode %q: %w", node.Name, err)
 		}
 		// if this is the first time we are applying the MCN and the node is ready, set the config version probably
 		if mcn.Spec.ConfigVersion.Desired == upgrademonitor.NotYetSet {
-			err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(optr.fgHandler, pool, node, optr.client)
-			if err != nil {
-				klog.Errorf("Error making MCN spec for Update Compatible: %v", err)
+			if err := retryMachineConfigNodeAPIOperation(func() error {
+				return upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(optr.fgHandler, pool, node, optr.client)
+			}); err != nil {
+				return fmt.Errorf("applying MachineConfigNode spec for %q: %w", node.Name, err)
 			}
 		}
 
@@ -916,6 +925,13 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.Cluste
 		}
 	}
 	return nil
+}
+
+func retryMachineConfigNodeAPIOperation(fn func() error) error {
+	return retry.OnError(retry.DefaultRetry, func(err error) bool {
+		// ApplyMachineConfigNode already retries conflicts with a fresh GET and merge.
+		return !apierrors.IsConflict(err) && mcoResourceApply.IsApplyErrorRetriable(err)
+	}, fn)
 }
 
 //nolint:gocyclo
