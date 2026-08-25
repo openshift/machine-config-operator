@@ -71,7 +71,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			duplicatedMachinesetName = fmt.Sprintf("cloned-tc-%s", GetCurrentTestPolarionIDNumber())
 			firstMachineSet          = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
 			backdatedImageName    = getBackdatedBootImage(oc.AsAdmin(), firstMachineSet)
-			fakeImageNameNoUpdate = "fake-noupdate-image-81403"
+			fakeImageNameNoUpdate = getFakeNoUpdateBootImage(oc.AsAdmin(), "81403")
 		)
 
 		exutil.By("Duplicate machineset for testing")
@@ -142,7 +142,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		var (
 			machineSet                 = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
 			backdatedImageName         = getBackdatedBootImage(oc.AsAdmin(), machineSet)
-			fakeImageNameNoUpdate      = "fake-noupdate-image-74240"
+			fakeImageNameNoUpdate      = getFakeNoUpdateBootImage(oc.AsAdmin(), "74240")
 			clonedMSName               = "cloned-tc-74240"
 			clonedWrongBootImageMSName = "cloned-tc-74240-wrong-boot-image"
 			clonedOwnedMSName          = "cloned-tc-74240-owned"
@@ -248,7 +248,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		var (
 			machineSet              = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
 			backdatedImageName      = getBackdatedBootImage(oc.AsAdmin(), machineSet)
-			fakeImageNameNoUpdate   = "fake-noupdate-image-74239"
+			fakeImageNameNoUpdate   = getFakeNoUpdateBootImage(oc.AsAdmin(), "74239")
 			clonedMSLabelName       = "cloned-tc-74239-label"
 			clonedMSNoLabelName     = "cloned-tc-74239-no-label"
 			clonedMSLabelOwnedName  = "cloned-tc-74239-label-owned"
@@ -1109,10 +1109,32 @@ func CheckCurrentOSImageIsNotUpdated(bir BootImageResource, fakeImageName string
 			return release
 		}, "15s", "5s").ShouldNot(o.Equal(currentCoreOsBootImage),
 			"%s was updated but it should NOT have been", bir)
+	case AzurePlatform:
+		// Compare by resourceID only to avoid field-ordering sensitivity in the full Image JSON.
+		expectedResourceID := gjson.Get(fakeImageName, "resourceID").String()
+		o.Consistently(func() (string, error) {
+			img, err := bir.GetCoreOsBootImage()
+			if err != nil {
+				return "", err
+			}
+			return gjson.Get(img, "resourceID").String(), nil
+		}, "15s", "5s").Should(o.Equal(expectedResourceID),
+			"%s was updated but it should NOT have been", bir)
 	default:
 		o.Consistently(bir.GetCoreOsBootImage, "15s", "5s").Should(o.Equal(fakeImageName),
 			"%s was updated but it should NOT have been", bir)
 	}
+}
+
+// getFakeNoUpdateBootImage returns a platform-appropriate fake boot image value that will not be
+// recognised as a valid managed image by MCO, so the resource carrying it is expected to stay
+// unchanged. On Azure the image field is a struct, so a plain string would be rejected by the
+// MachineSet admission webhook; we wrap it in a minimal Image JSON object instead.
+func getFakeNoUpdateBootImage(oc *exutil.CLI, id string) string {
+	if exutil.CheckPlatform(oc) == AzurePlatform {
+		return fmt.Sprintf(`{"offer":"","publisher":"","resourceID":"fake-noupdate-image-%s","sku":"","version":""}`, id)
+	}
+	return "fake-noupdate-image-" + id
 }
 
 // setArchitectureAndCheckStatus sets the capacity labels annotation on the cloned machineset and checks the status.
