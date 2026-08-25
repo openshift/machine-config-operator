@@ -2,6 +2,8 @@ package resourceapply
 
 import (
 	"context"
+	"errors"
+	"net"
 	"strings"
 
 	"k8s.io/utils/ptr"
@@ -29,6 +31,19 @@ func IsApplyErrorRetriable(err error) bool {
 	}
 	// Retry when the server takes too long to respond to the apply requests.
 	if apierrors.IsTimeout(err) {
+		return true
+	}
+	// Retry temporary API availability and throttling errors.
+	if apierrors.IsServiceUnavailable(err) || apierrors.IsTooManyRequests(err) {
+		return true
+	}
+	// Storage reinitialization can be returned without a structured API status.
+	if strings.Contains(err.Error(), "storage is (re)initializing") {
+		return true
+	}
+	// Network errors can be wrapped by the client transport.
+	var netErr net.Error
+	if errors.As(err, &netErr) {
 		return true
 	}
 	// Add any other errors to be added to the retry here.
