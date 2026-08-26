@@ -14,6 +14,7 @@ import (
 	opv1 "github.com/openshift/api/operator/v1"
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	fakemcopclient "github.com/openshift/client-go/operator/clientset/versioned/fake"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -25,7 +26,6 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
 
 func TestIsClusterStable(t *testing.T) {
@@ -546,14 +546,14 @@ func TestReconcileAzureProviderSpec(t *testing.T) {
 	fakeClient := fake.NewClientset(testSecret)
 
 	tests := []struct {
-		name            string
-		arch            string
-		currentImage    machinev1beta1.Image
-		expectedImage   machinev1beta1.Image
-		expectPatch     bool
-		expectSkip      bool
-		streamData      *stream.Stream                  // Custom stream data for specific tests
-		securityProfile *machinev1beta1.SecurityProfile // Custom security profile for specific tests
+		name                   string
+		arch                   string
+		currentImage           machinev1beta1.Image
+		expectedImage          machinev1beta1.Image
+		expectPatch            bool
+		expectReconcileSkipped bool
+		streamData             *stream.Stream                  // Custom stream data for specific tests
+		securityProfile        *machinev1beta1.SecurityProfile // Custom security profile for specific tests
 	}{
 		{
 			name: "Legacy Gen1 upload image transitions to marketplace Gen1",
@@ -682,7 +682,6 @@ func TestReconcileAzureProviderSpec(t *testing.T) {
 				Version:    "419.94.20250101",
 				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
 			},
-			expectSkip: true,
 		},
 		{
 			name: "Skip unsupported architecture s390x",
@@ -695,7 +694,6 @@ func TestReconcileAzureProviderSpec(t *testing.T) {
 				Version:    "419.94.20250101",
 				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
 			},
-			expectSkip: true,
 		},
 		{
 			name: "Paid OCP Gen1 image updates to newer version",
@@ -813,7 +811,7 @@ func TestReconcileAzureProviderSpec(t *testing.T) {
 				Version:    "419.94.20250101",
 				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
 			},
-			expectSkip: true,
+			expectReconcileSkipped: true,
 			streamData: &stream.Stream{
 				Architectures: map[string]stream.Arch{
 					"x86_64": {
@@ -835,13 +833,91 @@ func TestReconcileAzureProviderSpec(t *testing.T) {
 				Version:    "419.94.20250101",
 				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
 			},
-			expectSkip: true,
+			expectReconcileSkipped: true,
 			streamData: &stream.Stream{
 				Architectures: map[string]stream.Arch{
 					"x86_64": {
 						RHELCoreOSExtensions: &rhcos.Extensions{
 							Marketplace: &rhcos.Marketplace{
 								Azure: nil, // Azure marketplace is nil
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "Skip when Gen1 Azure marketplace image is unavailable (Gen1 removal)",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "aro_418",
+				Version:    "418.94.20241201",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectReconcileSkipped: true,
+			streamData: &stream.Stream{
+				Architectures: map[string]stream.Arch{
+					"x86_64": {
+						RHELCoreOSExtensions: &rhcos.Extensions{
+							Marketplace: &rhcos.Marketplace{
+								Azure: &rhcos.AzureMarketplace{
+									NoPurchasePlan: &rhcos.AzureMarketplaceImages{
+										// Gen1 intentionally omitted, mirroring the stream once
+										// Gen1 Azure images are removed upstream (CORS-4441).
+										Gen2: &rhcos.AzureMarketplaceImage{
+											Offer:     "aro4",
+											Publisher: "azureopenshift",
+											SKU:       "aro_50-x64",
+											Version:   "50.0.20260601",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "Post-Gen1-removal Gen2 SKU ('gen2' suffix) still updates",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "aro_5-0_x86_gen2",
+				Version:    "50.0.20260601",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectedImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "aro_5-0_x86_gen2",
+				Version:    "50.0.20260701",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectPatch: true,
+			streamData: &stream.Stream{
+				Architectures: map[string]stream.Arch{
+					"x86_64": {
+						RHELCoreOSExtensions: &rhcos.Extensions{
+							Marketplace: &rhcos.Marketplace{
+								Azure: &rhcos.AzureMarketplace{
+									NoPurchasePlan: &rhcos.AzureMarketplaceImages{
+										// Gen1 intentionally omitted, mirroring the stream once
+										// Gen1 Azure images are removed upstream (CORS-4441).
+										Gen2: &rhcos.AzureMarketplaceImage{
+											Offer:     "aro4",
+											Publisher: "azureopenshift",
+											SKU:       "aro_5-0_x86_gen2",
+											Version:   "50.0.20260701",
+										},
+									},
+								},
 							},
 						},
 					},
@@ -859,7 +935,7 @@ func TestReconcileAzureProviderSpec(t *testing.T) {
 				Version:    "419.94.20250101",
 				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
 			},
-			expectSkip: true,
+			expectReconcileSkipped: true,
 			securityProfile: &machinev1beta1.SecurityProfile{
 				Settings: machinev1beta1.SecuritySettings{
 					SecurityType: "ConfidentialVM",
@@ -877,7 +953,7 @@ func TestReconcileAzureProviderSpec(t *testing.T) {
 				Version:    "419.94.20250101",
 				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
 			},
-			expectSkip: true,
+			expectReconcileSkipped: true,
 			securityProfile: &machinev1beta1.SecurityProfile{
 				Settings: machinev1beta1.SecuritySettings{
 					SecurityType: "TrustedLaunch",
@@ -954,7 +1030,7 @@ func TestReconcileAzureProviderSpec(t *testing.T) {
 				testStreamData = tt.streamData
 			}
 
-			patchRequired, _, updatedProviderSpec, _, err := reconcileAzureProviderSpec(
+			patchRequired, reconcileSkipped, updatedProviderSpec, _, err := reconcileAzureProviderSpec(
 				testStreamData,
 				tt.arch,
 				infra,
@@ -965,11 +1041,7 @@ func TestReconcileAzureProviderSpec(t *testing.T) {
 
 			require.NoError(t, err)
 
-			if tt.expectSkip {
-				assert.False(t, patchRequired, "Expected no patch for skipped case")
-				return
-			}
-
+			assert.Equal(t, tt.expectReconcileSkipped, reconcileSkipped, "Reconcile skipped mismatch")
 			assert.Equal(t, tt.expectPatch, patchRequired, "Patch required mismatch")
 
 			if tt.expectPatch {
