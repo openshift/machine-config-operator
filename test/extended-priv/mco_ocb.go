@@ -12,12 +12,10 @@ import (
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 )
 
-var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Serial][Disruptive] MCO ocb", func() {
+var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longduration][Serial][Disruptive] MCO ocb", func() {
 	defer g.GinkgoRecover()
 
-	var (
-		oc = exutil.NewCLI("mco-ocb", exutil.KubeConfigPath())
-	)
+	oc := exutil.NewCLI("mco-ocb", exutil.KubeConfigPath())
 
 	g.JustBeforeEach(func() {
 		PreChecks(oc)
@@ -25,9 +23,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	})
 
 	g.It("[PolarionID:83141][OTP] A valid MachineOSConfig leads to a successful MachineOSBuild and cleanup of its associated resources", func() {
-		var (
-			mcpAndMoscName = "infra"
-		)
+		mcpAndMoscName := "infra"
 
 		exutil.By("Create custom infra MCP")
 		// We add no workers to the infra pool, it is not necessary
@@ -52,7 +48,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		exutil.AssertAllPodsToBeReady(oc.AsAdmin(), MachineConfigNamespace)
 		logger.Infof("OK!\n")
-
 	})
 
 	g.It("[PolarionID:83138][OTP] A MachineOSConfig fails to apply or degrades if invalid inputs are given", func() {
@@ -146,10 +141,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	})
 
 	g.It("[PolarionID:77781][OTP] A successfully built MachineOSConfig can be re-build", func() {
-
-		var (
-			mcp = GetCompactCompatiblePool(oc.AsAdmin())
-		)
+		mcp := GetCompactCompatiblePool(oc.AsAdmin())
 
 		exutil.By("Configure OCB functionality for the new worker MCP")
 		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, mcp.GetName(), mcp.GetName(), nil)
@@ -168,10 +160,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	})
 
 	g.It("[PolarionID:77782][OTP] A MachineOSConfig with an unfinished build can be re-build", func() {
-
-		var (
-			mcp = GetCompactCompatiblePool(oc.AsAdmin())
-		)
+		mcp := GetCompactCompatiblePool(oc.AsAdmin())
 
 		exutil.By("Configure OCB functionality for the new worker MCP")
 		mosc, err := CreateMachineOSConfigUsingExternalOrInternalRegistry(oc.AsAdmin(), MachineConfigNamespace, mcp.GetName(), mcp.GetName(), nil)
@@ -311,7 +300,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("Only on-cluster layering file remains on %s (as expected)", node)
 		logger.Infof("OK!\n")
 	})
-
 })
 
 func testContainerFile(containerFiles []ContainerFile, imageNamespace string, mcp *MachineConfigPool, checkers []Checker, defaultPullSecret bool) {
@@ -556,14 +544,12 @@ func ValidateMOSCIsGarbageCollected(mosc *MachineOSConfig, mcp *MachineConfigPoo
 	entitlementSecretInMco := NewSecret(oc.AsAdmin(), "openshift-machine-config-operator", secretName)
 	o.Eventually(entitlementSecretInMco.Exists, "5m", "30s").Should(o.BeFalse(), "Error etc-pki-entitlement should not exist")
 	logger.Infof("OK!\n")
-
 }
 
 func checkMisconfiguredMOSC(oc *exutil.CLI, moscAndMcpName, baseImagePullSecret, renderedImagePushSecret, pushSpec string, containerFile []ContainerFile,
-	expectedMsg, stepMgs string) {
-	var (
-		machineConfigCO = NewResource(oc.AsAdmin(), "co", "machine-config")
-	)
+	expectedMsg, stepMgs string,
+) {
+	machineConfigCO := NewResource(oc.AsAdmin(), "co", "machine-config")
 
 	exutil.By(stepMgs)
 	defer logger.Infof("OK!\n")
@@ -588,7 +574,6 @@ func checkMisconfiguredMOSC(oc *exutil.CLI, moscAndMcpName, baseImagePullSecret,
 	logger.Infof("CHeck that machine-config CO is not degraded anymore")
 	o.Eventually(machineConfigCO, "5m", "20s").ShouldNot(BeDegraded(),
 		"%s should stop being degraded when the offending MOSC is deleted", machineConfigCO)
-
 }
 
 // getConnectedCustomContainerFileContent returns a containerfile content that installs cowsay and ripgrep
@@ -696,10 +681,10 @@ func CheckExtensions(node *Node, applicableExtensions []string) {
 // To check usbguard is installed and is active after installed
 func checkUsbguradExtension(node *Node) {
 	var (
-		extName          = usbguardExtension
-		rpmName          = AllExtenstions[extName]
-		activeString     = "Active: active (running)"
-		inactiveString   = "Active: inactive (dead)"
+		extName               = usbguardExtension
+		rpmName               = AllExtenstions[extName]
+		activeString          = "Active: active (running)"
+		inactiveString        = "Active: inactive (dead)"
 		expectedError         = "missing     /usr/lib/tmpfiles.d/usbguard.conf\nerror: non-zero exit code from debug container"
 		expectedErrorOCL      = ".M.......    /var/log/usbguard\nerror: non-zero exit code from debug container"
 		expectedErrorCombined = "missing     /usr/lib/tmpfiles.d/usbguard.conf\n.M.......    /var/log/usbguard\nerror: non-zero exit code from debug container"
@@ -843,9 +828,7 @@ func checkSandboxedContainersExtension(node *Node) {
 
 // To check Sysstat is installed and is active after installed
 func checkSysstatExtension(node *Node) {
-	var (
-		extName = sysstatExtension
-	)
+	extName := sysstatExtension
 	exutil.By(fmt.Sprintf("Verify node includes %s extension", extName))
 	o.Expect(
 		node.RpmIsInstalled(extName)).To(o.BeTrue(), "%s has not been installed", extName)
