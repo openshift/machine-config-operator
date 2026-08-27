@@ -49,14 +49,18 @@ func (ctrl *Controller) syncCAPIMachineSets(reason string) string {
 	mcop, err := ctrl.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
 	if err != nil {
 		klog.Errorf("Failed to get MachineConfiguration: %v", err)
-		ctrl.updateConditions(reason, fmt.Errorf("failed to get MachineConfiguration while enqueueing CAPI MachineSets: %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.capiMachineSetStats.erroredCount++
+		ctrl.capiMachineSetStats.syncErr = fmt.Errorf("failed to get MachineConfiguration while enqueueing CAPI MachineSets: %v", err)
+		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 		return ""
 	}
 
 	machineManagerFound, machineResourceSelector, err := getMachineResourceSelectorFromMachineManagers(mcop.Status.ManagedBootImagesStatus.MachineManagers, opv1.ClusterAPI, opv1.MachineSets)
 	if err != nil {
 		klog.Errorf("failed to create a machineset selector while enqueueing CAPI MachineSets: %v", err)
-		ctrl.updateConditions(reason, fmt.Errorf("failed to create a machineset selector while enqueueing CAPI MachineSets: %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.capiMachineSetStats.erroredCount++
+		ctrl.capiMachineSetStats.syncErr = fmt.Errorf("failed to create a machineset selector while enqueueing CAPI MachineSets: %v", err)
+		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 		return ""
 	}
 	if !machineManagerFound {
@@ -70,7 +74,9 @@ func (ctrl *Controller) syncCAPIMachineSets(reason string) string {
 	objs, err := ctrl.capiMachineSetLister.List(machineResourceSelector)
 	if err != nil {
 		klog.Errorf("failed to list CAPI MachineSets: %v", err)
-		ctrl.updateConditions(reason, fmt.Errorf("failed to list CAPI MachineSets: %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.capiMachineSetStats.erroredCount++
+		ctrl.capiMachineSetStats.syncErr = fmt.Errorf("failed to list CAPI MachineSets: %v", err)
+		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 		return ""
 	}
 
@@ -113,7 +119,8 @@ func (ctrl *Controller) syncCAPIMachineSets(reason string) string {
 		}
 		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
 	}
-	ctrl.updateConditions(reason, kubeErrs.NewAggregate(syncErrors), opv1.MachineConfigurationBootImageUpdateDegraded)
+	ctrl.capiMachineSetStats.syncErr = kubeErrs.NewAggregate(syncErrors)
+	ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 	return rhcosVersion
 }
 
@@ -130,14 +137,18 @@ func (ctrl *Controller) syncCAPIMachineDeployments(reason string) string {
 	mcop, err := ctrl.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
 	if err != nil {
 		klog.Errorf("Failed to get MachineConfiguration: %v", err)
-		ctrl.updateConditions(reason, fmt.Errorf("failed to get MachineConfiguration while enqueueing CAPI MachineDeployments: %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.capiMachineDeploymentStats.erroredCount++
+		ctrl.capiMachineDeploymentStats.syncErr = fmt.Errorf("failed to get MachineConfiguration while enqueueing CAPI MachineDeployments: %v", err)
+		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 		return ""
 	}
 
 	machineManagerFound, machineResourceSelector, err := getMachineResourceSelectorFromMachineManagers(mcop.Status.ManagedBootImagesStatus.MachineManagers, opv1.ClusterAPI, opv1.MachineDeployments)
 	if err != nil {
 		klog.Errorf("failed to create a selector while enqueueing CAPI MachineDeployments: %v", err)
-		ctrl.updateConditions(reason, fmt.Errorf("failed to create a selector while enqueueing CAPI MachineDeployments: %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.capiMachineDeploymentStats.erroredCount++
+		ctrl.capiMachineDeploymentStats.syncErr = fmt.Errorf("failed to create a selector while enqueueing CAPI MachineDeployments: %v", err)
+		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 		return ""
 	}
 	if !machineManagerFound {
@@ -151,7 +162,9 @@ func (ctrl *Controller) syncCAPIMachineDeployments(reason string) string {
 	objs, err := ctrl.capiMachineDeploymentLister.List(machineResourceSelector)
 	if err != nil {
 		klog.Errorf("failed to list CAPI MachineDeployments: %v", err)
-		ctrl.updateConditions(reason, fmt.Errorf("failed to list CAPI MachineDeployments: %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.capiMachineDeploymentStats.erroredCount++
+		ctrl.capiMachineDeploymentStats.syncErr = fmt.Errorf("failed to list CAPI MachineDeployments: %v", err)
+		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 		return ""
 	}
 
@@ -194,7 +207,8 @@ func (ctrl *Controller) syncCAPIMachineDeployments(reason string) string {
 		}
 		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
 	}
-	ctrl.updateConditions(reason, kubeErrs.NewAggregate(syncErrors), opv1.MachineConfigurationBootImageUpdateDegraded)
+	ctrl.capiMachineDeploymentStats.syncErr = kubeErrs.NewAggregate(syncErrors)
+	ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 	return rhcosVersion
 }
 

@@ -32,19 +32,24 @@ import (
 // (empty for non-marketplace clusters). The caller uses this for skew enforcement.
 // nolint:dupl // I separated this from syncControlPlaneMachineSets for readability
 func (ctrl *Controller) syncMAPIMachineSets(reason string) string {
+	ctrl.mapiStats = MachineResourceStats{}
 
 	// Get MachineConfiguration to determine which resources are enrolled
 	mcop, err := ctrl.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
 	if err != nil {
 		klog.Errorf("Failed to get MachineConfiguration: %v", err)
-		ctrl.updateConditions(reason, fmt.Errorf("failed to get MachineConfiguration while enqueueing MAPI MachineSets: %w", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.mapiStats.erroredCount++
+		ctrl.mapiStats.syncErr = fmt.Errorf("failed to get MachineConfiguration while enqueueing MAPI MachineSets: %w", err)
+		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 		return ""
 	}
 
 	machineManagerFound, machineResourceSelector, err := getMachineResourceSelectorFromMachineManagers(mcop.Status.ManagedBootImagesStatus.MachineManagers, opv1.MachineAPI, opv1.MachineSets)
 	if err != nil {
 		klog.Errorf("failed to create a machineset selector while enqueueing MAPI machineset %v", err)
-		ctrl.updateConditions(reason, fmt.Errorf("failed to create a machineset selector while enqueueing MAPI machineset %w", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.mapiStats.erroredCount++
+		ctrl.mapiStats.syncErr = fmt.Errorf("failed to create a machineset selector while enqueueing MAPI machineset %w", err)
+		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 		return ""
 	}
 	if !machineManagerFound {
@@ -59,7 +64,9 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) string {
 	mapiMachineSets, err := ctrl.mapiMachineSetLister.List(machineResourceSelector)
 	if err != nil {
 		klog.Errorf("failed to fetch MachineSet list while enqueueing MAPI MachineSets %v", err)
-		ctrl.updateConditions(reason, fmt.Errorf("failed to fetch MachineSet list while enqueueing MAPI MachineSets %w", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.mapiStats.erroredCount++
+		ctrl.mapiStats.syncErr = fmt.Errorf("failed to fetch MachineSet list while enqueueing MAPI MachineSets %w", err)
+		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 		return ""
 	}
 
@@ -78,16 +85,14 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) string {
 		configMap, err = ctrl.mcoCmLister.ConfigMaps(ctrlcommon.MCONamespace).Get(ctrlcommon.BootImagesConfigMapName)
 		if err != nil {
 			klog.Errorf("failed to fetch coreos-bootimages config map: %v", err)
-			ctrl.updateConditions(reason, fmt.Errorf("failed to fetch coreos-bootimages config map: %w", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+			ctrl.mapiStats.erroredCount++
+			ctrl.mapiStats.syncErr = fmt.Errorf("failed to fetch coreos-bootimages config map: %w", err)
+			ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 			return ""
 		}
 	}
 
-	// Reset stats before initiating reconciliation loop
-	ctrl.mapiStats.inProgress = 0
 	ctrl.mapiStats.totalCount = len(mapiMachineSets)
-	ctrl.mapiStats.skippedCount = 0
-	ctrl.mapiStats.erroredCount = 0
 
 	// Signal start of reconciliation process, by setting progressing to true
 	var syncErrors []error
@@ -116,8 +121,8 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) string {
 		// Update progressing conditions every step of the loop
 		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
 	}
-	// Update/Clear degrade conditions based on errors from this loop
-	ctrl.updateConditions(reason, kubeErrs.NewAggregate(syncErrors), opv1.MachineConfigurationBootImageUpdateDegraded)
+	ctrl.mapiStats.syncErr = kubeErrs.NewAggregate(syncErrors)
+	ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 	return rhcosVersion
 }
 
