@@ -2496,6 +2496,37 @@ func (optr *Operator) syncManagedBootImagesStatus(mcop *opv1.MachineConfiguratio
 		apihelpers.MergeMachineManager(status, cpmsManager)
 	}
 
+	// Populate/Reflect opinion for CAPI MachineSets and MachineDeployments, if the AWS CAPI feature gate is enabled
+	if optr.fgHandler.Enabled(features.FeatureGateManagedBootImagesAWSCAPI) {
+		// CAPI MachineSets — mirrors MAPI MachineSet opt-in logic
+		capiMachineSetManager := opv1.MachineManager{Resource: opv1.MachineSets, APIGroup: opv1.ClusterAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.None}}
+		if mcop.Spec.ManagedBootImages.MachineManagers != nil && apihelpers.HasMachineManager(mcop.Spec.ManagedBootImages.MachineManagers, opv1.MachineSets, opv1.ClusterAPI) {
+			// An admin-defined opinion for CAPI MachineSets exists, so reflect that to the status
+			capiMachineSetManager = apihelpers.GetMachineManager(mcop.Spec.ManagedBootImages.MachineManagers, opv1.MachineSets, opv1.ClusterAPI)
+		} else if isDefaultOnPlatform {
+			// No admin opinion: auto opt-in on supported platforms (install or upgrade from None)
+			defaultOptInEvent = defaultOptInEvent ||
+				(mcop.Status.ManagedBootImagesStatus.MachineManagers == nil) ||
+				apihelpers.HasMachineManagerWithMode(mcop.Status.ManagedBootImagesStatus.MachineManagers, opv1.MachineSets, opv1.ClusterAPI, opv1.None)
+			capiMachineSetManager.Selection.Mode = opv1.All
+		}
+		apihelpers.MergeMachineManager(status, capiMachineSetManager)
+
+		// CAPI MachineDeployments — mirrors MAPI MachineSet opt-in logic
+		capiMachineDeploymentManager := opv1.MachineManager{Resource: opv1.MachineDeployments, APIGroup: opv1.ClusterAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.None}}
+		if mcop.Spec.ManagedBootImages.MachineManagers != nil && apihelpers.HasMachineManager(mcop.Spec.ManagedBootImages.MachineManagers, opv1.MachineDeployments, opv1.ClusterAPI) {
+			// An admin-defined opinion for CAPI MachineDeployments exists, so reflect that to the status
+			capiMachineDeploymentManager = apihelpers.GetMachineManager(mcop.Spec.ManagedBootImages.MachineManagers, opv1.MachineDeployments, opv1.ClusterAPI)
+		} else if isDefaultOnPlatform {
+			// No admin opinion: auto opt-in on supported platforms (install or upgrade from None)
+			defaultOptInEvent = defaultOptInEvent ||
+				(mcop.Status.ManagedBootImagesStatus.MachineManagers == nil) ||
+				apihelpers.HasMachineManagerWithMode(mcop.Status.ManagedBootImagesStatus.MachineManagers, opv1.MachineDeployments, opv1.ClusterAPI, opv1.None)
+			capiMachineDeploymentManager.Selection.Mode = opv1.All
+		}
+		apihelpers.MergeMachineManager(status, capiMachineDeploymentManager)
+	}
+
 	return defaultOptInEvent
 }
 
