@@ -277,7 +277,6 @@ func TestMissingImageIsRebuilt(t *testing.T) {
 // Satellite user.
 func TestYumReposBuilds(t *testing.T) {
 	// Skipping this test as it is having a package conflict issue unrelated to MCO
-	t.Skip()
 	runOnClusterLayeringTest(t, onClusterLayeringTestOpts{
 		poolName: layeredMCPName,
 		customDockerfiles: map[string]string{
