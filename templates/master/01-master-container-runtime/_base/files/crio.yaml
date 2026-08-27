@@ -106,3 +106,6 @@ contents:
       "processes_defunct",
       "default_runtime"
     ]
+
+    [crio.checkpoint_restore]
+    container_level_enabled = "checkpoint_only"
