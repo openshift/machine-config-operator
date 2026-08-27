@@ -74,12 +74,12 @@ func TestOSBuildControllerDoesNothing(t *testing.T) {
 // rendered MachineConfig is detected on the associated MachineConfigPool.
 func TestOSBuildControllerDeletesRunningBuildBeforeStartingANewOne(t *testing.T) {
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	t.Cleanup(cancel)
-
 	poolName := "worker"
 
 	t.Run("MachineOSConfig change", func(t *testing.T) {
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+		t.Cleanup(cancel)
 
 		kubeclient, mcfgclient, _, _, mosc, initialMosb, mcp, kubeassert, lobj, _ := setupOSBuildControllerForTestWithRunningBuild(ctx, t, poolName)
 
@@ -116,6 +116,9 @@ func TestOSBuildControllerDeletesRunningBuildBeforeStartingANewOne(t *testing.T)
 	})
 
 	t.Run("MachineConfig change", func(t *testing.T) {
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+		t.Cleanup(cancel)
 
 		_, mcfgclient, _, _, mosc, initialMosb, mcp, kubeassert, _, _ := setupOSBuildControllerForTestWithRunningBuild(ctx, t, poolName)
 
@@ -219,12 +222,12 @@ func TestOSBuildControllerLeavesSuccessfulBuildAlone(t *testing.T) {
 // MachineConfigPool.
 func TestOSBuildControllerFailure(t *testing.T) {
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	t.Cleanup(cancel)
-
 	poolName := "worker"
 
 	t.Run("Failed build objects remain", func(t *testing.T) {
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+		t.Cleanup(cancel)
 
 		_, _, _, _, _, failedMosb, _, kubeassert, _ := setupOSBuildControllerForTestWithFailedBuild(ctx, t, poolName)
 
@@ -233,6 +236,9 @@ func TestOSBuildControllerFailure(t *testing.T) {
 	})
 
 	t.Run("MachineOSConfig change clears failed build", func(t *testing.T) {
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+		t.Cleanup(cancel)
 
 		kubeclient, mcfgclient, _, _, mosc, failedMosb, mcp, kubeassert, lobj := setupOSBuildControllerForTestWithFailedBuild(ctx, t, poolName)
 
@@ -261,6 +267,9 @@ func TestOSBuildControllerFailure(t *testing.T) {
 	})
 
 	t.Run("MachineConfig change clears failed build", func(t *testing.T) {
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+		t.Cleanup(cancel)
 
 		_, mcfgclient, _, _, mosc, failedMosb, mcp, kubeassert, _ := setupOSBuildControllerForTestWithFailedBuild(ctx, t, poolName)
 
@@ -294,9 +303,6 @@ func TestOSBuildControllerFailure(t *testing.T) {
 
 func TestOSBuildController(t *testing.T) {
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*25)
-	t.Cleanup(cancel)
-
 	poolName := "worker"
 
 	getConfigNameForPool := func(num int) string {
@@ -304,6 +310,9 @@ func TestOSBuildController(t *testing.T) {
 	}
 
 	t.Run("MachineOSConfig changes creates a new MachineOSBuild", func(t *testing.T) {
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*25)
+		t.Cleanup(cancel)
 
 		kubeclient, mcfgclient, _, _, mosc, _, _, lobj, kubeassert := setupOSBuildControllerForTestWithSuccessfulBuild(ctx, t, poolName)
 
@@ -350,6 +359,9 @@ func TestOSBuildController(t *testing.T) {
 	})
 
 	t.Run("MachineConfig changes creates a new MachineOSBuild", func(t *testing.T) {
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*25)
+		t.Cleanup(cancel)
 
 		kubeclient, mcfgclient, _, _, mosc, _, mcp, _, kubeassert := setupOSBuildControllerForTestWithSuccessfulBuild(ctx, t, poolName)
 
@@ -516,8 +528,6 @@ func TestOSBuildControllerReconcilesMachineConfigPoolsAfterRestart(t *testing.T)
 // performs all of the setup steps and creates a successful Job before starting
 // the controller.
 func TestOSBuildControllerReconcilesJobsAfterRestart(t *testing.T) {
-	mainCtx, mainCancel := context.WithTimeout(context.Background(), time.Second*5)
-	t.Cleanup(mainCancel)
 
 	testCases := []struct {
 		name       string
@@ -556,7 +566,7 @@ func TestOSBuildControllerReconcilesJobsAfterRestart(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			ctx, cancel := context.WithCancel(mainCtx)
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 			t.Cleanup(cancel)
 
 			poolName := "worker"
