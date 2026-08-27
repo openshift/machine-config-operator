@@ -22,6 +22,7 @@ var (
 		serverBaseDir    string
 		serverKubeConfig string
 		certificates     []string
+		mcsURL           string
 	}
 )
 
@@ -30,6 +31,7 @@ func init() {
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.serverBaseDir, "server-basedir", "/etc/mcs/bootstrap", "base directory on the host, relative to which machine-configs and pools can be found.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.serverKubeConfig, "bootstrap-kubeconfig", "/etc/kubernetes/kubeconfig", "path to bootstrap kubeconfig served by the bootstrap server.")
 	bootstrapCmd.PersistentFlags().StringArrayVar(&bootstrapOpts.certificates, "bootstrap-certs", []string{}, "a certificate bundle formatted in a string array with the format key=value,key=value")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mcsURL, "mcs-url", "", "Base URL for Machine Config Server; Used for status reporting")
 }
 
 func runBootstrapCmd(_ *cobra.Command, _ []string) {
@@ -39,10 +41,9 @@ func runBootstrapCmd(_ *cobra.Command, _ []string) {
 	// To help debugging, immediately log version
 	klog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
 
-	bs, err := server.NewBootstrapServer(bootstrapOpts.serverBaseDir, bootstrapOpts.serverKubeConfig, bootstrapOpts.certificates)
-
+	bs, err := server.NewBootstrapServer(bootstrapOpts.serverBaseDir, bootstrapOpts.serverKubeConfig, bootstrapOpts.mcsURL, bootstrapOpts.certificates)
 	if err != nil {
-		klog.Exitf("Machine Config Server exited with error: %v", err)
+		klog.Fatal(err)
 	}
 
 	// Read-in bootstrap apiserver file /etc/mcs/bootstrap/api-server/apiserver.yaml.
@@ -59,9 +60,12 @@ func runBootstrapCmd(_ *cobra.Command, _ []string) {
 	klog.Infof("Launching bootstrap server with tls min version: %v & cipher suites %v", tlsminversion, tlsciphersuites)
 	tlsConfig := ctrlcommon.GetGoTLSConfig(tlsminversion, tlsciphersuites)
 
+	failureReporter := server.NewBootstrapFailureReporter()
+	failureHandler := server.NewNodeFailureHandler(failureReporter)
+
 	apiHandler := server.NewServerAPIHandler(bs)
-	secureServer := server.NewAPIServer(apiHandler, rootOpts.sport, false, rootOpts.cert, rootOpts.key, tlsConfig)
-	insecureServer := server.NewAPIServer(apiHandler, rootOpts.isport, true, "", "", tlsConfig)
+	secureServer := server.NewAPIServer(apiHandler, failureHandler, rootOpts.sport, false, rootOpts.cert, rootOpts.key, tlsConfig)
+	insecureServer := server.NewAPIServer(apiHandler, failureHandler, rootOpts.isport, true, "", "", tlsConfig)
 
 	stopCh := make(chan struct{})
 	go secureServer.Serve()

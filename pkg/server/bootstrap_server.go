@@ -8,6 +8,7 @@ import (
 
 	yaml "github.com/ghodss/yaml"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes"
 	clientcmd "k8s.io/client-go/tools/clientcmd/api/v1"
 	"k8s.io/klog/v2"
 
@@ -28,11 +29,18 @@ type bootstrapServer struct {
 	kubeconfigFunc kubeconfigFunc
 
 	certs []string
+
+	mcsURL string
+}
+
+// GetKubeClient returns nil for bootstrap server (no k8s access during bootstrap)
+func (bsc *bootstrapServer) GetKubeClient() kubernetes.Interface {
+	return nil
 }
 
 // NewBootstrapServer initializes a new Bootstrap server that implements
 // the Server interface.
-func NewBootstrapServer(dir, kubeconfig string, ircerts []string) (Server, error) {
+func NewBootstrapServer(dir, kubeconfig, mcsURL string, ircerts []string) (Server, error) {
 	if _, err := os.Stat(kubeconfig); err != nil {
 		return nil, fmt.Errorf("kubeconfig not found at location: %s", kubeconfig)
 	}
@@ -40,6 +48,7 @@ func NewBootstrapServer(dir, kubeconfig string, ircerts []string) (Server, error
 		serverBaseDir:  dir,
 		kubeconfigFunc: func() ([]byte, []byte, error) { return kubeconfigFromFile(kubeconfig) },
 		certs:          ircerts,
+		mcsURL:         mcsURL,
 	}, nil
 }
 
@@ -135,7 +144,7 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*runtime.RawExtension, er
 	addDataAndMaybeAppendToIgnition(cloudProviderCAPath, cc.Spec.CloudProviderCAData, &ignConf)
 
 	appenders := newAppendersBuilder(nil, bsc.kubeconfigFunc, bsc.certs, bsc.serverBaseDir).
-		WithNodeAnnotations(currConf, "").
+		WithNodeAnnotations(currConf, "", bsc.mcsURL).
 		build()
 
 	for _, a := range appenders {
