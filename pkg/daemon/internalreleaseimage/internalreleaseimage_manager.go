@@ -453,17 +453,11 @@ func (i *Manager) reclaimRegistryStorage() error {
 // getIRIRegistry creates and returns an IRI registry client.
 // Returns the registry and an error indicating whether the registry is reachable.
 func (i *Manager) getIRIRegistry() (*iriRegistry, error) {
-	authToken := i.authToken
-	if authToken == "" {
-		var err error
-		authToken, err = readIRIAuthToken(net.JoinHostPort(iriRegistryHost, fmt.Sprintf("%d", iriRegistryPort)))
-		if err != nil {
-			return nil, fmt.Errorf("could not read IRI auth token: %w", err)
-		}
+	iriReg, err := newIRIRegistry(i.nodeName, i.registryClient, i.authToken)
+	if err != nil {
+		return nil, fmt.Errorf("could not create IRI registry client: %w", err)
 	}
-
-	iriReg := newIRIRegistry(i.nodeName, i.registryClient, authToken)
-	err := iriReg.CheckLocalRegistry()
+	err = iriReg.CheckLocalRegistry()
 	return iriReg, err
 }
 
