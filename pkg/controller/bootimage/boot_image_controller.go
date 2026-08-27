@@ -16,6 +16,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	k8sversion "k8s.io/apimachinery/pkg/util/version"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -107,6 +108,7 @@ type MachineResourceStats struct {
 	skippedCount int
 	erroredCount int
 	totalCount   int
+	syncErr      error
 }
 
 // State structure uses for detecting hot loops. Reset when cluster is opted
@@ -773,13 +775,25 @@ func (ctrl *Controller) updateConditions(newReason string, syncError error, targ
 					ctrl.capiMachineSetStats.getDegradedStatusMessage("CAPI MachineSets"),
 					ctrl.capiMachineDeploymentStats.getDegradedStatusMessage("CAPI MachineDeployments"),
 				}
-				if syncError == nil {
+				allErrs := kubeErrs.NewAggregate([]error{
+					syncError,
+					ctrl.mapiStats.syncErr,
+					ctrl.cpmsStats.syncErr,
+					ctrl.capiMachineSetStats.syncErr,
+					ctrl.capiMachineDeploymentStats.syncErr,
+				})
+				if allErrs == nil {
 					newConditions[i].Message = strings.Join(messages, " | ")
 				} else {
-					newConditions[i].Message = fmt.Sprintf("%s | Error(s): %s", strings.Join(messages, " | "), syncError.Error())
+					newConditions[i].Message = fmt.Sprintf("%s | Error(s): %s", strings.Join(messages, " | "), allErrs.Error())
 				}
 				newConditions[i].Reason = newReason
-				if syncError != nil {
+				isDegraded := syncError != nil ||
+					ctrl.mapiStats.erroredCount > 0 ||
+					ctrl.cpmsStats.erroredCount > 0 ||
+					ctrl.capiMachineSetStats.erroredCount > 0 ||
+					ctrl.capiMachineDeploymentStats.erroredCount > 0
+				if isDegraded {
 					newConditions[i].Status = metav1.ConditionTrue
 				} else {
 					newConditions[i].Status = metav1.ConditionFalse

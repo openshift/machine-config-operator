@@ -3,6 +3,7 @@ package bootimage
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"testing"
 
@@ -14,6 +15,7 @@ import (
 	opv1 "github.com/openshift/api/operator/v1"
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	fakemcopclient "github.com/openshift/client-go/operator/clientset/versioned/fake"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -25,7 +27,6 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
 
 func TestIsClusterStable(t *testing.T) {
@@ -1151,6 +1152,103 @@ func TestResetClusterBootImage(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tc.expectedVersion,
 				updated.Status.BootImageSkewEnforcementStatus.Automatic.OCPVersion)
+		})
+	}
+}
+
+// TestUpdateConditionsDegradedCrossResource verifies that a Degraded condition set by one resource
+// sync is not cleared by a subsequent clean sync from another resource, and that all per-resource
+// sync errors appear in the condition message regardless of which resource calls last.
+func TestUpdateConditionsDegradedCrossResource(t *testing.T) {
+	cases := []struct {
+		name                string
+		mapiStats           MachineResourceStats
+		cpmsStats           MachineResourceStats
+		capiMSStats         MachineResourceStats
+		capiMDStats         MachineResourceStats
+		syncError           error
+		wantDegraded        bool
+		wantMessageContains []string
+	}{
+		{
+			name:         "no errors — not degraded, no error text",
+			wantDegraded: false,
+		},
+		{
+			name:                "MAPI syncErr preserved when CAPI calls with nil",
+			mapiStats:           MachineResourceStats{erroredCount: 1, syncErr: fmt.Errorf("mapi-list-failed")},
+			wantDegraded:        true,
+			wantMessageContains: []string{"mapi-list-failed"},
+		},
+		{
+			name:                "CPMS syncErr preserved when CAPI calls with nil",
+			cpmsStats:           MachineResourceStats{erroredCount: 1, syncErr: fmt.Errorf("cpms-list-failed")},
+			wantDegraded:        true,
+			wantMessageContains: []string{"cpms-list-failed"},
+		},
+		{
+			name:                "CAPI MachineSet syncErr preserved when MachineDeployments call with nil",
+			capiMSStats:         MachineResourceStats{erroredCount: 1, syncErr: fmt.Errorf("capi-ms-failed")},
+			wantDegraded:        true,
+			wantMessageContains: []string{"capi-ms-failed"},
+		},
+		{
+			name:                "CAPI MachineDeployment syncErr preserved when MachineSets call with nil",
+			capiMDStats:         MachineResourceStats{erroredCount: 1, syncErr: fmt.Errorf("capi-md-failed")},
+			wantDegraded:        true,
+			wantMessageContains: []string{"capi-md-failed"},
+		},
+		{
+			name:                "top-level syncError appears in message",
+			syncError:           fmt.Errorf("top-level-boom"),
+			wantDegraded:        true,
+			wantMessageContains: []string{"top-level-boom"},
+		},
+		{
+			name:                "all resource errors aggregated in message",
+			mapiStats:           MachineResourceStats{erroredCount: 1, syncErr: fmt.Errorf("mapi-err")},
+			capiMSStats:         MachineResourceStats{erroredCount: 1, syncErr: fmt.Errorf("capi-ms-err")},
+			wantDegraded:        true,
+			wantMessageContains: []string{"mapi-err", "capi-ms-err"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mcop := &opv1.MachineConfiguration{
+				ObjectMeta: v1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+			}
+			fakeMcopClient := fakemcopclient.NewClientset(mcop)
+			ctrl := &Controller{
+				mcopClient:                 fakeMcopClient,
+				mapiStats:                  tc.mapiStats,
+				cpmsStats:                  tc.cpmsStats,
+				capiMachineSetStats:        tc.capiMSStats,
+				capiMachineDeploymentStats: tc.capiMDStats,
+			}
+
+			ctrl.updateConditions("test", tc.syncError, opv1.MachineConfigurationBootImageUpdateDegraded)
+
+			updated, err := fakeMcopClient.OperatorV1().MachineConfigurations().Get(
+				context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, v1.GetOptions{})
+			require.NoError(t, err)
+
+			var degraded *v1.Condition
+			for i := range updated.Status.Conditions {
+				if updated.Status.Conditions[i].Type == opv1.MachineConfigurationBootImageUpdateDegraded {
+					degraded = &updated.Status.Conditions[i]
+					break
+				}
+			}
+			require.NotNil(t, degraded, "Degraded condition not found")
+			if tc.wantDegraded {
+				assert.Equal(t, v1.ConditionTrue, degraded.Status)
+			} else {
+				assert.Equal(t, v1.ConditionFalse, degraded.Status)
+			}
+			for _, substr := range tc.wantMessageContains {
+				assert.Contains(t, degraded.Message, substr)
+			}
 		})
 	}
 }
