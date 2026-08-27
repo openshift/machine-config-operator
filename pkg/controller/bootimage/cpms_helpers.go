@@ -31,6 +31,7 @@ import (
 // syncs, I chose to keep this function similar.
 // nolint:dupl // I separated these from syncMAPIMachineSets for readability
 func (ctrl *Controller) syncControlPlaneMachineSets(reason string) {
+	ctrl.cpmsStats = MachineResourceStats{}
 
 	// Check if CPMS feature gate is enabled
 	if !ctrl.fgHandler.Enabled(features.FeatureGateManagedBootImagesCPMS) {
@@ -42,14 +43,18 @@ func (ctrl *Controller) syncControlPlaneMachineSets(reason string) {
 	mcop, err := ctrl.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
 	if err != nil {
 		klog.Errorf("Failed to get MachineConfiguration: %v", err)
-		ctrl.updateConditions(reason, fmt.Errorf("failed to get MachineConfiguration while enqueueing ControlPlaneMachineSet: %w", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.cpmsStats.erroredCount++
+		ctrl.cpmsStats.syncErr = fmt.Errorf("failed to get MachineConfiguration while enqueueing ControlPlaneMachineSet: %w", err)
+		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 		return
 	}
 
 	machineManagerFound, machineResourceSelector, err := getMachineResourceSelectorFromMachineManagers(mcop.Status.ManagedBootImagesStatus.MachineManagers, opv1.MachineAPI, opv1.ControlPlaneMachineSets)
 	if err != nil {
 		klog.Errorf("failed to create a machineset selector while enqueueing controlplanemachineset %v", err)
-		ctrl.updateConditions(reason, fmt.Errorf("failed to create a machineset selector while enqueueing ControlPlaneMachineSet %w", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.cpmsStats.erroredCount++
+		ctrl.cpmsStats.syncErr = fmt.Errorf("failed to create a machineset selector while enqueueing ControlPlaneMachineSet %w", err)
+		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 		return
 	}
 	if !machineManagerFound {
@@ -63,7 +68,9 @@ func (ctrl *Controller) syncControlPlaneMachineSets(reason string) {
 	controlPlaneMachineSets, err := ctrl.cpmsLister.List(machineResourceSelector)
 	if err != nil {
 		klog.Errorf("failed to fetch ControlPlaneMachineSet list while enqueueing ControlPlaneMachineSet %v", err)
-		ctrl.updateConditions(reason, fmt.Errorf("failed to fetch ControlPlaneMachineSet list while enqueueing ControlPlaneMachineSet %w", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.cpmsStats.erroredCount++
+		ctrl.cpmsStats.syncErr = fmt.Errorf("failed to fetch ControlPlaneMachineSet list while enqueueing ControlPlaneMachineSet %w", err)
+		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 		return
 	}
 
@@ -76,10 +83,7 @@ func (ctrl *Controller) syncControlPlaneMachineSets(reason string) {
 		}
 	}
 
-	// Reset stats before initiating reconciliation loop
-	ctrl.cpmsStats.inProgress = 0
 	ctrl.cpmsStats.totalCount = len(controlPlaneMachineSets)
-	ctrl.cpmsStats.erroredCount = 0
 
 	// Signal start of reconciliation process, by setting progressing to true
 	var syncErrors []error
@@ -97,8 +101,8 @@ func (ctrl *Controller) syncControlPlaneMachineSets(reason string) {
 		// Update progressing conditions every step of the loop
 		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
 	}
-	// Update/Clear degrade conditions based on errors from this loop
-	ctrl.updateConditions(reason, kubeErrs.NewAggregate(syncErrors), opv1.MachineConfigurationBootImageUpdateDegraded)
+	ctrl.cpmsStats.syncErr = kubeErrs.NewAggregate(syncErrors)
+	ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 }
 
 // syncControlPlaneMachineSet will attempt to reconcile the provided ControlPlaneMachineSet
