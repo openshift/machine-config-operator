@@ -46,6 +46,7 @@ require (
 	github.com/openshift/imagebuilder v1.2.21
 	github.com/openshift/library-go v0.0.0-20260720123941-85336565c3c7
 	github.com/openshift/runtime-utils v0.0.0-20230921210328-7bdb5b9c177b
+	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 	github.com/prometheus/client_golang v1.23.2
 	github.com/rs/zerolog v1.34.0
 	github.com/spf13/cobra v1.10.2
@@ -61,6 +62,7 @@ require (
 	k8s.io/api v0.36.2
 	k8s.io/apiextensions-apiserver v0.36.2
 	k8s.io/apimachinery v0.36.2
+	k8s.io/cli-runtime v0.36.2
 	k8s.io/client-go v0.36.2
 	k8s.io/code-generator v0.36.2
 	k8s.io/component-base v0.36.2
@@ -232,7 +234,6 @@ require (
 	gopkg.in/DATA-DOG/go-sqlmock.v1 v1.3.0 // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.13.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
-	k8s.io/cli-runtime v0.36.2 // indirect
 	k8s.io/cloud-provider v0.0.0 // indirect
 	k8s.io/component-helpers v0.36.2 // indirect
 	k8s.io/controller-manager v0.32.1 // indirect
@@ -361,7 +362,6 @@ require (
 	github.com/opencontainers/runtime-spec v1.3.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/pkg/errors v0.9.1
-	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/polyfloyd/go-errorlint v1.7.0 // indirect
 	github.com/proglottis/gpgme v0.1.4 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
