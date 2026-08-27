@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/openshift/machine-config-operator/devex/internal/pkg/rollout"
@@ -24,18 +23,19 @@ func init() {
 	rootCmd.AddCommand(revertCmd)
 }
 
-func doRevert(_ *cobra.Command, _ []string) error {
+func doRevert(cmd *cobra.Command, _ []string) error {
+	ctx := cmd.Context()
 	cs := framework.NewClientSet("")
 
-	if err := cs.ImageStreams(ctrlcommon.MCONamespace).Delete(context.TODO(), imagestreamName, metav1.DeleteOptions{}); err != nil && !apierrs.IsNotFound(err) {
+	if err := cs.ImageStreams(ctrlcommon.MCONamespace).Delete(ctx, imagestreamName, metav1.DeleteOptions{}); err != nil && !apierrs.IsNotFound(err) {
 		return fmt.Errorf("could not remove imagestream %s: %w", imagestreamName, err)
 	}
 
-	if err := rollout.RevertToOriginalMCOImage(cs, false); err != nil {
+	if err := rollout.RevertToOriginalMCOImage(ctx, cs, false); err != nil {
 		return fmt.Errorf("could not revert to original MCO image: %w", err)
 	}
 
-	if err := helpers.UnexposeClusterImageRegistry(context.TODO(), cs); err != nil {
+	if err := helpers.UnexposeClusterImageRegistry(ctx, cs); err != nil {
 		return fmt.Errorf("could not unexpose cluster image registry: %w", err)
 	}
 

@@ -16,6 +16,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
@@ -43,8 +44,8 @@ const (
 	mcoImagesJSON      string = "images.json"
 )
 
-func RevertToOriginalMCOImage(cs *framework.ClientSet, forceRestart bool) error {
-	clusterVersion, err := cs.ConfigV1Interface.ClusterVersions().Get(context.TODO(), "version", metav1.GetOptions{})
+func RevertToOriginalMCOImage(ctx context.Context, cs *framework.ClientSet, forceRestart bool) error {
+	clusterVersion, err := cs.ConfigV1Interface.ClusterVersions().Get(ctx, "version", metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("could not get cluster version: %w", err)
 	}
@@ -57,65 +58,99 @@ func RevertToOriginalMCOImage(cs *framework.ClientSet, forceRestart bool) error 
 
 	klog.Infof("Found original MCO image %s for the currently running cluster release (%s)", originalMCOImage, currentRelease)
 
-	if err := ReplaceMCOImage(cs, originalMCOImage, forceRestart); err != nil {
+	if err := ReplaceMCOImage(ctx, cs, originalMCOImage, forceRestart); err != nil {
 		return fmt.Errorf("could not roll MCO back to image %s: %w", originalMCOImage, err)
 	}
 
-	if err := setDeploymentReplicas(cs, cvoName, cvoNamespace, 1); err != nil {
+	if err := setDeploymentReplicas(ctx, cs, cvoName, cvoNamespace, 1); err != nil {
 		return fmt.Errorf("could not restore cluster version operator to default replica count of 1")
 	}
 
 	return nil
 }
 
-func ReplaceMCOImage(cs *framework.ClientSet, pullspec string, forceRestart bool) error {
-	if err := setDeploymentReplicas(cs, cvoName, cvoNamespace, 0); err != nil {
+// cleanupTimeout is the maximum time allowed for restoring scaled-down
+// deployments when the caller's context has already been cancelled.
+const cleanupTimeout = 30 * time.Second
+
+func ReplaceMCOImage(ctx context.Context, cs *framework.ClientSet, pullspec string, forceRestart bool) error {
+	var cvoScaledDown, mcoScaledDown bool
+
+	if err := setDeploymentReplicas(ctx, cs, cvoName, cvoNamespace, 0); err != nil {
 		return fmt.Errorf("could not scale cluster version operator down to zero: %w", err)
 	}
+	cvoScaledDown = true
 
-	if err := setDeploymentReplicas(cs, mcoName, ctrlcommon.MCONamespace, 0); err != nil {
+	if err := setDeploymentReplicas(ctx, cs, mcoName, ctrlcommon.MCONamespace, 0); err != nil {
 		return fmt.Errorf("could not scale machine config operator down to zero: %w", err)
 	}
+	mcoScaledDown = true
 
-	if err := setPullspecOnObjects(cs, pullspec, forceRestart); err != nil {
+	if err := setPullspecOnObjects(ctx, cs, pullspec, forceRestart); err != nil {
+		if ctx.Err() != nil {
+			restoreAfterInterruption(cs, cvoScaledDown, mcoScaledDown)
+		}
 		return err
 	}
 
-	if err := setDeploymentReplicas(cs, mcoName, ctrlcommon.MCONamespace, 1); err != nil {
+	if err := setDeploymentReplicas(ctx, cs, mcoName, ctrlcommon.MCONamespace, 1); err != nil {
+		if ctx.Err() != nil {
+			restoreAfterInterruption(cs, cvoScaledDown, false)
+		}
 		return fmt.Errorf("could not scale machine config operator back up: %w", err)
 	}
 
 	return nil
 }
 
-func RestartMCO(cs *framework.ClientSet, forceRestart bool) error {
-	if forceRestart {
-		return forceRestartMCO(cs)
+// restoreAfterInterruption attempts to scale deployments back to one replica
+// after the caller's context was cancelled or its deadline exceeded. It uses a
+// fresh, bounded context so that the cleanup calls are not immediately rejected.
+func restoreAfterInterruption(cs *framework.ClientSet, cvoScaledDown, mcoScaledDown bool) {
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
+	defer cancel()
+
+	if mcoScaledDown {
+		if err := setDeploymentReplicas(cleanupCtx, cs, mcoName, ctrlcommon.MCONamespace, 1); err != nil {
+			klog.Errorf("cleanup: could not restore MCO replicas after interruption: %v", err)
+		}
 	}
 
-	_, images, err := loadMCOImagesConfigMap(cs)
+	if cvoScaledDown {
+		if err := setDeploymentReplicas(cleanupCtx, cs, cvoName, cvoNamespace, 1); err != nil {
+			klog.Errorf("cleanup: could not restore CVO replicas after interruption: %v", err)
+		}
+	}
+}
+
+func RestartMCO(ctx context.Context, cs *framework.ClientSet, forceRestart bool) error {
+	if forceRestart {
+		return forceRestartMCO(ctx, cs)
+	}
+
+	_, images, err := loadMCOImagesConfigMap(ctx, cs)
 	if err != nil {
 		return fmt.Errorf("could not load or parse ConfigMap %s: %w", mcoImagesConfigMap, err)
 	}
 
-	return ReplaceMCOImage(cs, images[mcoImageKey], forceRestart)
+	return ReplaceMCOImage(ctx, cs, images[mcoImageKey], forceRestart)
 }
 
-func forceRestartMCO(cs *framework.ClientSet) error {
+func forceRestartMCO(ctx context.Context, cs *framework.ClientSet) error {
 	eg := errgroup.Group{}
 
 	for _, name := range append(mcoDeployments, mcoDaemonsets...) {
 		name := name
 		eg.Go(func() error {
-			return forceRestartPodsForDeploymentOrDaemonset(cs, name)
+			return forceRestartPodsForDeploymentOrDaemonset(ctx, cs, name)
 		})
 	}
 
 	return eg.Wait()
 }
 
-func forceRestartPodsForDeploymentOrDaemonset(cs *framework.ClientSet, name string) error {
-	podList, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).List(context.TODO(), metav1.ListOptions{
+func forceRestartPodsForDeploymentOrDaemonset(ctx context.Context, cs *framework.ClientSet, name string) error {
+	podList, err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).List(ctx, metav1.ListOptions{
 		LabelSelector: fmt.Sprintf("k8s-app==%s", name),
 	})
 
@@ -130,7 +165,7 @@ func forceRestartPodsForDeploymentOrDaemonset(cs *framework.ClientSet, name stri
 	for _, pod := range podList.Items {
 		pod := pod
 		eg.Go(func() error {
-			if err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).Delete(context.TODO(), pod.Name, metav1.DeleteOptions{}); err != nil {
+			if err := cs.CoreV1Interface.Pods(ctrlcommon.MCONamespace).Delete(ctx, pod.Name, metav1.DeleteOptions{}); err != nil {
 				return fmt.Errorf("could not delete pod %s: %w", pod.Name, err)
 			}
 
@@ -143,11 +178,11 @@ func forceRestartPodsForDeploymentOrDaemonset(cs *framework.ClientSet, name stri
 	return eg.Wait()
 }
 
-func setPullspecOnObjects(cs *framework.ClientSet, pullspec string, forceRestart bool) error {
+func setPullspecOnObjects(ctx context.Context, cs *framework.ClientSet, pullspec string, forceRestart bool) error {
 	eg := errgroup.Group{}
 
 	eg.Go(func() error {
-		if err := maybeUpdateMCOConfigMap(cs, pullspec); err != nil {
+		if err := maybeUpdateMCOConfigMap(ctx, cs, pullspec); err != nil {
 			return fmt.Errorf("could not update MCO images ConfigMap: %w", err)
 		}
 
@@ -155,7 +190,7 @@ func setPullspecOnObjects(cs *framework.ClientSet, pullspec string, forceRestart
 	})
 
 	eg.Go(func() error {
-		if err := updateDaemonsets(cs, pullspec, forceRestart); err != nil {
+		if err := updateDaemonsets(ctx, cs, pullspec, forceRestart); err != nil {
 			return fmt.Errorf("could not update daemonsets: %w", err)
 		}
 
@@ -163,7 +198,7 @@ func setPullspecOnObjects(cs *framework.ClientSet, pullspec string, forceRestart
 	})
 
 	eg.Go(func() error {
-		if err := updateDeployments(cs, pullspec, forceRestart); err != nil {
+		if err := updateDeployments(ctx, cs, pullspec, forceRestart); err != nil {
 			return fmt.Errorf("could not update deployments: %w", err)
 		}
 
@@ -173,18 +208,18 @@ func setPullspecOnObjects(cs *framework.ClientSet, pullspec string, forceRestart
 	return eg.Wait()
 }
 
-func updateDeployments(cs *framework.ClientSet, pullspec string, forceRestart bool) error {
+func updateDeployments(ctx context.Context, cs *framework.ClientSet, pullspec string, forceRestart bool) error {
 	eg := errgroup.Group{}
 
 	for _, name := range mcoDeployments {
 		name := name
 		eg.Go(func() error {
-			if err := updateDeployment(cs, name, pullspec); err != nil {
+			if err := updateDeployment(ctx, cs, name, pullspec); err != nil {
 				return fmt.Errorf("could not update deployment/%s: %w", name, err)
 			}
 
 			if forceRestart {
-				return forceRestartPodsForDeploymentOrDaemonset(cs, name)
+				return forceRestartPodsForDeploymentOrDaemonset(ctx, cs, name)
 			}
 
 			return nil
@@ -194,18 +229,18 @@ func updateDeployments(cs *framework.ClientSet, pullspec string, forceRestart bo
 	return eg.Wait()
 }
 
-func updateDaemonsets(cs *framework.ClientSet, pullspec string, forceRestart bool) error {
+func updateDaemonsets(ctx context.Context, cs *framework.ClientSet, pullspec string, forceRestart bool) error {
 	eg := errgroup.Group{}
 
 	for _, name := range mcoDaemonsets {
 		name := name
 		eg.Go(func() error {
-			if err := updateDaemonset(cs, name, pullspec); err != nil {
+			if err := updateDaemonset(ctx, cs, name, pullspec); err != nil {
 				return fmt.Errorf("could not update daemonset/%s: %w", name, err)
 			}
 
 			if forceRestart {
-				return forceRestartPodsForDeploymentOrDaemonset(cs, name)
+				return forceRestartPodsForDeploymentOrDaemonset(ctx, cs, name)
 			}
 
 			return nil
@@ -215,8 +250,8 @@ func updateDaemonsets(cs *framework.ClientSet, pullspec string, forceRestart boo
 	return eg.Wait()
 }
 
-func loadMCOImagesConfigMap(cs *framework.ClientSet) (*corev1.ConfigMap, map[string]string, error) {
-	cm, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Get(context.TODO(), mcoImagesConfigMap, metav1.GetOptions{})
+func loadMCOImagesConfigMap(ctx context.Context, cs *framework.ClientSet) (*corev1.ConfigMap, map[string]string, error) {
+	cm, err := cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Get(ctx, mcoImagesConfigMap, metav1.GetOptions{})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -239,15 +274,15 @@ func loadMCOImagesConfigMap(cs *framework.ClientSet) (*corev1.ConfigMap, map[str
 	return cm, images, nil
 }
 
-func maybeUpdateMCOConfigMap(cs *framework.ClientSet, pullspec string) error {
-	_, images, err := loadMCOImagesConfigMap(cs)
+func maybeUpdateMCOConfigMap(ctx context.Context, cs *framework.ClientSet, pullspec string) error {
+	_, images, err := loadMCOImagesConfigMap(ctx, cs)
 	if err != nil {
 		return fmt.Errorf("could not load or parse ConfigMap %s: %w", mcoImagesConfigMap, err)
 	}
 
 	if images[mcoImageKey] != pullspec {
 		klog.Warningf("ConfigMap %s has pullspec %s, which will change to %s. A MachineConfig update will occur as a result.", mcoImagesConfigMap, images[mcoImageKey], pullspec)
-		if err := updateMCOConfigMap(cs, pullspec); err != nil {
+		if err := updateMCOConfigMap(ctx, cs, pullspec); err != nil {
 			return err
 		}
 	} else {
@@ -257,9 +292,9 @@ func maybeUpdateMCOConfigMap(cs *framework.ClientSet, pullspec string) error {
 	return nil
 }
 
-func updateMCOConfigMap(cs *framework.ClientSet, pullspec string) error {
-	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		cm, images, err := loadMCOImagesConfigMap(cs)
+func updateMCOConfigMap(ctx context.Context, cs *framework.ClientSet, pullspec string) error {
+	err := retryOnConflictContext(ctx, retry.DefaultRetry, func() error {
+		cm, images, err := loadMCOImagesConfigMap(ctx, cs)
 		if err != nil {
 			return err
 		}
@@ -273,7 +308,7 @@ func updateMCOConfigMap(cs *framework.ClientSet, pullspec string) error {
 
 		cm.Data[mcoImagesJSON] = string(imagesBytes)
 
-		_, err = cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Update(context.TODO(), cm, metav1.UpdateOptions{})
+		_, err = cs.CoreV1Interface.ConfigMaps(ctrlcommon.MCONamespace).Update(ctx, cm, metav1.UpdateOptions{})
 		return err
 	})
 
@@ -285,9 +320,9 @@ func updateMCOConfigMap(cs *framework.ClientSet, pullspec string) error {
 	return fmt.Errorf("could not update ConfigMap %s: %w", mcoImagesConfigMap, err)
 }
 
-func updateDeployment(cs *framework.ClientSet, name, pullspec string) error {
-	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		deploy, err := cs.AppsV1Interface.Deployments(ctrlcommon.MCONamespace).Get(context.TODO(), name, metav1.GetOptions{})
+func updateDeployment(ctx context.Context, cs *framework.ClientSet, name, pullspec string) error {
+	return retryOnConflictContext(ctx, retry.DefaultBackoff, func() error {
+		deploy, err := cs.AppsV1Interface.Deployments(ctrlcommon.MCONamespace).Get(ctx, name, metav1.GetOptions{})
 		if name == "machine-os-builder" && apierrs.IsNotFound(err) {
 			return nil
 		}
@@ -305,14 +340,14 @@ func updateDeployment(cs *framework.ClientSet, name, pullspec string) error {
 			deploy.Spec.Template.ObjectMeta.Annotations["kubectl.kubernetes.io/restartedAt"] = time.Now().Format(time.RFC3339)
 		}
 
-		_, err = cs.AppsV1Interface.Deployments(ctrlcommon.MCONamespace).Update(context.TODO(), deploy, metav1.UpdateOptions{})
+		_, err = cs.AppsV1Interface.Deployments(ctrlcommon.MCONamespace).Update(ctx, deploy, metav1.UpdateOptions{})
 		return err
 	})
 }
 
-func updateDaemonset(cs *framework.ClientSet, name, pullspec string) error {
-	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		ds, err := cs.AppsV1Interface.DaemonSets(ctrlcommon.MCONamespace).Get(context.TODO(), name, metav1.GetOptions{})
+func updateDaemonset(ctx context.Context, cs *framework.ClientSet, name, pullspec string) error {
+	return retryOnConflictContext(ctx, retry.DefaultBackoff, func() error {
+		ds, err := cs.AppsV1Interface.DaemonSets(ctrlcommon.MCONamespace).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
@@ -326,7 +361,7 @@ func updateDaemonset(cs *framework.ClientSet, name, pullspec string) error {
 			ds.Spec.Template.ObjectMeta.Annotations["kubectl.kubernetes.io/restartedAt"] = time.Now().Format(time.RFC3339)
 		}
 
-		_, err = cs.AppsV1Interface.DaemonSets(ctrlcommon.MCONamespace).Update(context.TODO(), ds, metav1.UpdateOptions{})
+		_, err = cs.AppsV1Interface.DaemonSets(ctrlcommon.MCONamespace).Update(ctx, ds, metav1.UpdateOptions{})
 		return err
 	})
 }
@@ -356,15 +391,30 @@ func updateContainers(name, pullspec string, containers []corev1.Container) []co
 	return out
 }
 
-func setDeploymentReplicas(cs *framework.ClientSet, deploymentName, namespace string, replicas int32) error {
+func setDeploymentReplicas(ctx context.Context, cs *framework.ClientSet, deploymentName, namespace string, replicas int32) error {
 	klog.Infof("Setting replicas for %s/%s to %d", namespace, deploymentName, replicas)
-	scale, err := cs.AppsV1Interface.Deployments(namespace).GetScale(context.TODO(), deploymentName, metav1.GetOptions{})
-	if err != nil {
+	return retryOnConflictContext(ctx, retry.DefaultBackoff, func() error {
+		scale, err := cs.AppsV1Interface.Deployments(namespace).GetScale(ctx, deploymentName, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+
+		scale.Spec.Replicas = replicas
+
+		_, err = cs.AppsV1Interface.Deployments(namespace).UpdateScale(ctx, deploymentName, scale, metav1.UpdateOptions{})
 		return err
-	}
+	})
+}
 
-	scale.Spec.Replicas = replicas
-
-	_, err = cs.AppsV1Interface.Deployments(namespace).UpdateScale(context.TODO(), deploymentName, scale, metav1.UpdateOptions{})
-	return err
+// retryOnConflictContext behaves like retry.RetryOnConflict but also stops
+// retrying when ctx is cancelled or its deadline is exceeded. The backoff
+// sleep between attempts is interrupted by context cancellation so callers
+// are not stuck waiting for the next attempt when the context is already done.
+func retryOnConflictContext(ctx context.Context, backoff wait.Backoff, fn func() error) error {
+	return retry.OnError(backoff, func(err error) bool {
+		if ctx.Err() != nil {
+			return false
+		}
+		return apierrs.IsConflict(err)
+	}, fn)
 }

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+
 	"github.com/openshift/machine-config-operator/devex/internal/pkg/rollout"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/spf13/cobra"
@@ -14,8 +16,8 @@ func init() {
 		Use:   "restart",
 		Short: "Restarts all of the MCO pods",
 		Long:  "",
-		RunE: func(_ *cobra.Command, _ []string) error {
-			return restart(forceRestart)
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return restartMCO(cmd.Context(), forceRestart)
 		},
 	}
 
@@ -23,14 +25,14 @@ func init() {
 	rootCmd.AddCommand(restartCmd)
 }
 
-func restart(forceRestart bool) error {
+func restartMCO(ctx context.Context, forceRestart bool) error {
 	cs := framework.NewClientSet("")
 
 	if forceRestart {
 		klog.Infof("Will delete pods to force restart")
 	}
 
-	if err := rollout.RestartMCO(cs, forceRestart); err != nil {
+	if err := rollout.RestartMCO(ctx, cs, forceRestart); err != nil {
 		return err
 	}
 
