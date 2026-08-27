@@ -410,7 +410,7 @@ func TestCalculateStatus(t *testing.T) {
 			}
 
 			conddegraded := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolDegraded)
-			if condupdating == nil {
+			if conddegraded == nil {
 				t.Fatal("degraded condition not found")
 			}
 
