@@ -10,8 +10,10 @@ import (
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/diff"
 	clienttesting "k8s.io/client-go/testing"
 )
@@ -294,5 +296,41 @@ func TestApplyMachineConfig(t *testing.T) {
 			}
 			test.verifyActions(client.Actions(), t)
 		})
+	}
+}
+
+func TestApplyMachineConfigNodeConflictReturnsRetriableError(t *testing.T) {
+	existing := &mcfgv1.MachineConfigNode{
+		ObjectMeta: metav1.ObjectMeta{Name: "node-1", ResourceVersion: "100"},
+		Spec: mcfgv1.MachineConfigNodeSpec{
+			Pool: mcfgv1.MCOObjectReference{Name: "worker"},
+		},
+	}
+	required := &mcfgv1.MachineConfigNode{
+		ObjectMeta: metav1.ObjectMeta{Name: "node-1"},
+		Spec: mcfgv1.MachineConfigNodeSpec{
+			Pool: mcfgv1.MCOObjectReference{Name: "master"},
+		},
+	}
+
+	client := fake.NewSimpleClientset(existing)
+	conflictErr := apierrors.NewConflict(
+		schema.GroupResource{Group: "machineconfiguration.openshift.io", Resource: "machineconfignodes"},
+		"node-1",
+		fmt.Errorf("the object has been modified; please apply your changes to the latest version and try again"),
+	)
+	client.PrependReactor("update", "machineconfignodes", func(action clienttesting.Action) (bool, runtime.Object, error) {
+		return true, nil, conflictErr
+	})
+
+	_, _, err := ApplyMachineConfigNode(client.MachineconfigurationV1(), required)
+	if err == nil {
+		t.Fatal("expected conflict error, got nil")
+	}
+	if !apierrors.IsConflict(err) {
+		t.Fatalf("expected conflict error, got: %v", err)
+	}
+	if !IsApplyErrorRetriable(err) {
+		t.Fatal("conflict error should be retriable via IsApplyErrorRetriable")
 	}
 }

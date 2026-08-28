@@ -894,8 +894,12 @@ func (optr *Operator) syncMachineConfigNodes(_ *renderConfig, _ *configv1.Cluste
 			return err
 		}
 		p := mcoResourceRead.ReadMachineConfigNodeV1OrDie(mcsBytes)
-		mcn, _, err := mcoResourceApply.ApplyMachineConfigNode(optr.client.MachineconfigurationV1(), p)
-		if err != nil {
+		var mcn *mcfgv1.MachineConfigNode
+		if err := retry.OnError(retry.DefaultRetry, mcoResourceApply.IsApplyErrorRetriable, func() error {
+			var applyErr error
+			mcn, _, applyErr = mcoResourceApply.ApplyMachineConfigNode(optr.client.MachineconfigurationV1(), p)
+			return applyErr
+		}); err != nil {
 			return err
 		}
 		// if this is the first time we are applying the MCN and the node is ready, set the config version probably
