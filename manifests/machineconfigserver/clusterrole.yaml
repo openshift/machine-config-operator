@@ -5,7 +5,7 @@ metadata:
 rules:
 - apiGroups: ["machineconfiguration.openshift.io"]
   resources: ["machineconfigs", "machineconfigpools"]
-  verbs: ["*"]
+  verbs: ["get", "list", "watch"]
 - apiGroups: ["machineconfiguration.openshift.io"]
   resources: ["controllerconfigs"]
   verbs: ["get", "watch", "list"]
