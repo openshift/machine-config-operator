@@ -19,7 +19,7 @@ import (
 	"syscall"
 	"time"
 
-	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_6/types"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/renameio"
 	"github.com/openshift/api/features"
