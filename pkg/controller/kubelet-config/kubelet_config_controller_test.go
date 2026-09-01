@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	"github.com/stretchr/testify/assert"
@@ -1016,6 +1017,42 @@ func TestKubeletConfigDenylistedOptions(t *testing.T) {
 				FeatureGates: map[string]bool{
 					"SomeFeatureGate": true,
 				},
+			},
+		},
+		{
+			name: "user cannot configure shutdownGracePeriod through GracefulNodeShutdown",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				ShutdownGracePeriod: metav1.Duration{Duration: 30 * time.Second},
+				FeatureGates:        map[string]bool{"GracefulNodeShutdown": true},
+			},
+		},
+		{
+			name: "user cannot configure shutdownGracePeriodCriticalPods through GracefulNodeShutdown",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				ShutdownGracePeriodCriticalPods: metav1.Duration{Duration: 10 * time.Second},
+				FeatureGates:                    map[string]bool{"GracefulNodeShutdown": true},
+			},
+		},
+		{
+			name: "user cannot configure shutdownGracePeriodByPodPriority through GracefulNodeShutdownBasedOnPodPriority",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				ShutdownGracePeriodByPodPriority: []kubeletconfigv1beta1.ShutdownGracePeriodByPodPriority{{
+					Priority:                   0,
+					ShutdownGracePeriodSeconds: 30,
+				}},
+				FeatureGates: map[string]bool{"GracefulNodeShutdownBasedOnPodPriority": true},
+			},
+		},
+		{
+			name: "user cannot supply GracefulNodeShutdown feature gate",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				FeatureGates: map[string]bool{"GracefulNodeShutdown": true},
+			},
+		},
+		{
+			name: "user cannot supply GracefulNodeShutdownBasedOnPodPriority feature gate",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				FeatureGates: map[string]bool{"GracefulNodeShutdownBasedOnPodPriority": true},
 			},
 		},
 		{
