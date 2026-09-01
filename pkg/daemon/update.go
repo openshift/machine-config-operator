@@ -2872,8 +2872,10 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	}
 	// If the host isn't new enough to understand the new container model natively, run as a privileged container.
 	// See https://github.com/coreos/rpm-ostree/pull/3961 and https://issues.redhat.com/browse/MCO-356
-	if !newEnough {
-		logSystem("rpm-ostree is not new enough for layering; forcing an update via container")
+	// If skopeo is < 1.22.2 on a multi-arch image, run as a privileged container which has updated skopeo.
+	// See https://redhat.atlassian.net/browse/OCPBUGS-83826 and https://redhat.atlassian.net/browse/OCPBUGS-81187
+	if !newEnough || !skopeoSupportsMultiArchSigstore(newURL) {
+		logSystem("rpm-ostree or skopeo is not new enough for layering; forcing an update via container")
 		return dn.InplaceUpdateViaNewContainer(newURL)
 	}
 
