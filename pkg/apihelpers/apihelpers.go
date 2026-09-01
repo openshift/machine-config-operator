@@ -21,180 +21,178 @@ import (
 	"k8s.io/klog/v2"
 )
 
-var (
-	// This is the list of MCO's default node disruption policies.
-	defaultClusterPolicies = opv1.NodeDisruptionPolicyClusterStatus{
-		Files: []opv1.NodeDisruptionPolicyStatusFile{
-			{
-				Path: constants.KubeletAuthFile,
-				Actions: []opv1.NodeDisruptionPolicyStatusAction{
-					{
-						Type: opv1.NoneStatusAction,
-					},
-				},
-			},
-			{
-				Path: constants.GPGNoRebootPath,
-				Actions: []opv1.NodeDisruptionPolicyStatusAction{
-					{
-						Type: opv1.ReloadStatusAction,
-						Reload: &opv1.ReloadService{
-							ServiceName: "crio.service",
-						},
-					},
-				},
-			},
-			{
-				Path: constants.ContainerRegistryPolicyPath,
-				Actions: []opv1.NodeDisruptionPolicyStatusAction{
-					{
-						Type: opv1.ReloadStatusAction,
-						Reload: &opv1.ReloadService{
-							ServiceName: "crio.service",
-						},
-					},
-				},
-			},
-			{
-				Path: constants.ContainerRegistryConfPath,
-				Actions: []opv1.NodeDisruptionPolicyStatusAction{
-					{
-						Type: opv1.SpecialStatusAction,
-					},
-				},
-			},
-			{
-				Path: constants.SigstoreRegistriesConfigDir,
-				Actions: []opv1.NodeDisruptionPolicyStatusAction{
-					{
-						Type: opv1.ReloadStatusAction,
-						Reload: &opv1.ReloadService{
-							ServiceName: "crio.service",
-						},
-					},
-				},
-			},
-			{
-				Path: constants.CrioPoliciesDir,
-				Actions: []opv1.NodeDisruptionPolicyStatusAction{
-					{
-						Type: opv1.ReloadStatusAction,
-						Reload: &opv1.ReloadService{
-							ServiceName: "crio.service",
-						},
-					},
-				},
-			},
-			{
-				Path: constants.OpenShiftNMStateConfigDir,
-				Actions: []opv1.NodeDisruptionPolicyStatusAction{
-					{
-						Type: opv1.NoneStatusAction,
-					},
-				},
-			},
-			{
-				Path: constants.UserCABundlePath,
-				Actions: []opv1.NodeDisruptionPolicyStatusAction{
-					{
-						Type: opv1.RestartStatusAction,
-						Restart: &opv1.RestartService{
-							ServiceName: constants.UpdateCATrustServiceName,
-						},
-					},
-					{
-						Type: opv1.RestartStatusAction,
-						Restart: &opv1.RestartService{
-							ServiceName: "crio.service",
-						},
-					},
-				},
-			},
-			// Add default policy for KubernetesCredentialProvidersDir
-			{
-				Path: constants.KubernetesCredentialProvidersDir,
-				Actions: []opv1.NodeDisruptionPolicyStatusAction{
-					{
-						Type: opv1.RestartStatusAction,
-						Restart: &opv1.RestartService{
-							ServiceName: "kubelet.service",
-						},
-					},
-				},
-			},
-			{
-				Path: constants.KubeletCrioImageCredProviderConfPath,
-				Actions: []opv1.NodeDisruptionPolicyStatusAction{
-					{
-						Type: opv1.DaemonReloadStatusAction,
-					},
-					{
-						Type: opv1.RestartStatusAction,
-						Restart: &opv1.RestartService{
-							ServiceName: "kubelet.service",
-						},
-					},
-				},
-			},
-			{
-				Path: constants.IRIRegistryConfigPath,
-				Actions: []opv1.NodeDisruptionPolicyStatusAction{
-					{
-						Type: opv1.RestartStatusAction,
-						Restart: &opv1.RestartService{
-							ServiceName: constants.IRIRegistryServiceName,
-						},
-					},
-				},
-			},
-			{
-				Path: constants.IRILoadImageScriptPath,
-				Actions: []opv1.NodeDisruptionPolicyStatusAction{
-					{
-						Type: opv1.RestartStatusAction,
-						Restart: &opv1.RestartService{
-							ServiceName: constants.IRIRegistryServiceName,
-						},
-					},
-				},
-			},
-			{
-				Path: constants.IRIRootCAPath,
-				Actions: []opv1.NodeDisruptionPolicyStatusAction{
-					{
-						Type: opv1.RestartStatusAction,
-						Restart: &opv1.RestartService{
-							ServiceName: constants.UpdateCATrustServiceName,
-						},
-					},
-				},
-			},
-		},
-		Units: []opv1.NodeDisruptionPolicyStatusUnit{
-			{
-				Name: constants.IRIRegistryServiceName,
-				Actions: []opv1.NodeDisruptionPolicyStatusAction{
-					{
-						Type: opv1.DaemonReloadStatusAction,
-					},
-					{
-						Type: opv1.RestartStatusAction,
-						Restart: &opv1.RestartService{
-							ServiceName: constants.IRIRegistryServiceName,
-						},
-					},
-				},
-			},
-		},
-		SSHKey: opv1.NodeDisruptionPolicyStatusSSHKey{
+// This is the list of MCO's default node disruption policies.
+var defaultClusterPolicies = opv1.NodeDisruptionPolicyClusterStatus{
+	Files: []opv1.NodeDisruptionPolicyStatusFile{
+		{
+			Path: constants.KubeletAuthFile,
 			Actions: []opv1.NodeDisruptionPolicyStatusAction{
 				{
 					Type: opv1.NoneStatusAction,
 				},
 			},
 		},
-	}
-)
+		{
+			Path: constants.GPGNoRebootPath,
+			Actions: []opv1.NodeDisruptionPolicyStatusAction{
+				{
+					Type: opv1.ReloadStatusAction,
+					Reload: &opv1.ReloadService{
+						ServiceName: "crio.service",
+					},
+				},
+			},
+		},
+		{
+			Path: constants.ContainerRegistryPolicyPath,
+			Actions: []opv1.NodeDisruptionPolicyStatusAction{
+				{
+					Type: opv1.ReloadStatusAction,
+					Reload: &opv1.ReloadService{
+						ServiceName: "crio.service",
+					},
+				},
+			},
+		},
+		{
+			Path: constants.ContainerRegistryConfPath,
+			Actions: []opv1.NodeDisruptionPolicyStatusAction{
+				{
+					Type: opv1.SpecialStatusAction,
+				},
+			},
+		},
+		{
+			Path: constants.SigstoreRegistriesConfigDir,
+			Actions: []opv1.NodeDisruptionPolicyStatusAction{
+				{
+					Type: opv1.ReloadStatusAction,
+					Reload: &opv1.ReloadService{
+						ServiceName: "crio.service",
+					},
+				},
+			},
+		},
+		{
+			Path: constants.CrioPoliciesDir,
+			Actions: []opv1.NodeDisruptionPolicyStatusAction{
+				{
+					Type: opv1.ReloadStatusAction,
+					Reload: &opv1.ReloadService{
+						ServiceName: "crio.service",
+					},
+				},
+			},
+		},
+		{
+			Path: constants.OpenShiftNMStateConfigDir,
+			Actions: []opv1.NodeDisruptionPolicyStatusAction{
+				{
+					Type: opv1.NoneStatusAction,
+				},
+			},
+		},
+		{
+			Path: constants.UserCABundlePath,
+			Actions: []opv1.NodeDisruptionPolicyStatusAction{
+				{
+					Type: opv1.RestartStatusAction,
+					Restart: &opv1.RestartService{
+						ServiceName: constants.UpdateCATrustServiceName,
+					},
+				},
+				{
+					Type: opv1.RestartStatusAction,
+					Restart: &opv1.RestartService{
+						ServiceName: "crio.service",
+					},
+				},
+			},
+		},
+		// Add default policy for KubernetesCredentialProvidersDir
+		{
+			Path: constants.KubernetesCredentialProvidersDir,
+			Actions: []opv1.NodeDisruptionPolicyStatusAction{
+				{
+					Type: opv1.RestartStatusAction,
+					Restart: &opv1.RestartService{
+						ServiceName: "kubelet.service",
+					},
+				},
+			},
+		},
+		{
+			Path: constants.KubeletCrioImageCredProviderConfPath,
+			Actions: []opv1.NodeDisruptionPolicyStatusAction{
+				{
+					Type: opv1.DaemonReloadStatusAction,
+				},
+				{
+					Type: opv1.RestartStatusAction,
+					Restart: &opv1.RestartService{
+						ServiceName: "kubelet.service",
+					},
+				},
+			},
+		},
+		{
+			Path: constants.IRIRegistryConfigPath,
+			Actions: []opv1.NodeDisruptionPolicyStatusAction{
+				{
+					Type: opv1.RestartStatusAction,
+					Restart: &opv1.RestartService{
+						ServiceName: constants.IRIRegistryServiceName,
+					},
+				},
+			},
+		},
+		{
+			Path: constants.IRILoadImageScriptPath,
+			Actions: []opv1.NodeDisruptionPolicyStatusAction{
+				{
+					Type: opv1.RestartStatusAction,
+					Restart: &opv1.RestartService{
+						ServiceName: constants.IRIRegistryServiceName,
+					},
+				},
+			},
+		},
+		{
+			Path: constants.IRIRootCAPath,
+			Actions: []opv1.NodeDisruptionPolicyStatusAction{
+				{
+					Type: opv1.RestartStatusAction,
+					Restart: &opv1.RestartService{
+						ServiceName: constants.UpdateCATrustServiceName,
+					},
+				},
+			},
+		},
+	},
+	Units: []opv1.NodeDisruptionPolicyStatusUnit{
+		{
+			Name: constants.IRIRegistryServiceName,
+			Actions: []opv1.NodeDisruptionPolicyStatusAction{
+				{
+					Type: opv1.DaemonReloadStatusAction,
+				},
+				{
+					Type: opv1.RestartStatusAction,
+					Restart: &opv1.RestartService{
+						ServiceName: constants.IRIRegistryServiceName,
+					},
+				},
+			},
+		},
+	},
+	SSHKey: opv1.NodeDisruptionPolicyStatusSSHKey{
+		Actions: []opv1.NodeDisruptionPolicyStatusAction{
+			{
+				Type: opv1.NoneStatusAction,
+			},
+		},
+	},
+}
 
 // NewMachineConfigPoolCondition creates a new MachineConfigPool condition.
 func NewMachineConfigPoolCondition(condType mcfgv1.MachineConfigPoolConditionType, status corev1.ConditionStatus, reason, message string) *mcfgv1.MachineConfigPoolCondition {
@@ -235,15 +233,9 @@ func SetMachineConfigPoolCondition(status *mcfgv1.MachineConfigPoolStatus, condi
 	newConditions := filterOutMachineConfigPoolCondition(status.Conditions, condition.Type)
 	newConditions = append(newConditions, condition)
 	status.Conditions = newConditions
-
 }
 
-// RemoveMachineConfigPoolCondition removes the MachineConfigPool condition with the provided type.
-func RemoveMachineConfigPoolCondition(status *mcfgv1.MachineConfigPoolStatus, condType mcfgv1.MachineConfigPoolConditionType) {
-	status.Conditions = filterOutMachineConfigPoolCondition(status.Conditions, condType)
-}
-
-// filterOutCondition returns a new slice of MachineConfigPool conditions without conditions with the provided type.
+// filterOutMachineConfigPoolCondition returns a new slice of MachineConfigPool conditions without conditions with the provided type.
 func filterOutMachineConfigPoolCondition(conditions []mcfgv1.MachineConfigPoolCondition, condType mcfgv1.MachineConfigPoolConditionType) []mcfgv1.MachineConfigPoolCondition {
 	var newConditions []mcfgv1.MachineConfigPoolCondition
 	for _, c := range conditions {
@@ -343,12 +335,7 @@ func SetControllerConfigStatusCondition(status *mcfgv1.ControllerConfigStatus, c
 	status.Conditions = newConditions
 }
 
-// RemoveControllerConfigStatusCondition removes the ControllerConfigStatus condition with the provided type.
-func RemoveControllerConfigStatusCondition(status *mcfgv1.ControllerConfigStatus, condType mcfgv1.ControllerConfigStatusConditionType) {
-	status.Conditions = filterOutControllerConfigStatusCondition(status.Conditions, condType)
-}
-
-// filterOutCondition returns a new slice of ControllerConfigStatus conditions without conditions with the provided type.
+// filterOutControllerConfigStatusCondition returns a new slice of ControllerConfigStatus conditions without conditions with the provided type.
 func filterOutControllerConfigStatusCondition(conditions []mcfgv1.ControllerConfigStatusCondition, condType mcfgv1.ControllerConfigStatusConditionType) []mcfgv1.ControllerConfigStatusCondition {
 	var newConditions []mcfgv1.ControllerConfigStatusCondition
 	for _, c := range conditions {
@@ -363,11 +350,6 @@ func filterOutControllerConfigStatusCondition(conditions []mcfgv1.ControllerConf
 // IsControllerConfigStatusConditionTrue returns true when the conditionType is present and set to `ConditionTrue`
 func IsControllerConfigStatusConditionTrue(conditions []mcfgv1.ControllerConfigStatusCondition, conditionType mcfgv1.ControllerConfigStatusConditionType) bool {
 	return IsControllerConfigStatusConditionPresentAndEqual(conditions, conditionType, corev1.ConditionTrue)
-}
-
-// IsControllerConfigStatusConditionFalse returns true when the conditionType is present and set to `ConditionFalse`
-func IsControllerConfigStatusConditionFalse(conditions []mcfgv1.ControllerConfigStatusCondition, conditionType mcfgv1.ControllerConfigStatusConditionType) bool {
-	return IsControllerConfigStatusConditionPresentAndEqual(conditions, conditionType, corev1.ConditionFalse)
 }
 
 // IsControllerConfigStatusConditionPresentAndEqual returns true when conditionType is present and equal to status.
@@ -404,7 +386,6 @@ func IsControllerConfigCompleted(ccName string, ccGetter func(string) (*mcfgv1.C
 
 // AreMCGeneratingSubControllersCompleted checks whether all MC producing sub-controllers are completed
 func AreMCGeneratingSubControllersCompletedForPool(crcLister func(labels.Selector) ([]*mcfgv1.ContainerRuntimeConfig, error), mckLister func(labels.Selector) ([]*mcfgv1.KubeletConfig, error), poolLabels map[string]string) error {
-
 	containerConfigs, err := crcLister(labels.Everything())
 	if err != nil {
 		return err
@@ -454,7 +435,6 @@ func AreMCGeneratingSubControllersCompletedForPool(crcLister func(labels.Selecto
 
 // Merges the cluster's default node disruption policies with the user defined policies, if any.
 func MergeClusterPolicies(userDefinedClusterPolicies opv1.NodeDisruptionPolicyConfig) opv1.NodeDisruptionPolicyClusterStatus {
-
 	mergedClusterPolicies := opv1.NodeDisruptionPolicyClusterStatus{}
 
 	// Add default file policies to the merged list.
@@ -560,7 +540,6 @@ func convertSpecActiontoStatusAction(action opv1.NodeDisruptionPolicySpecAction)
 
 // Checks if a list of NodeDisruptionActions contain any action from the set of target actions
 func CheckNodeDisruptionActionsForTargetActions(actions []opv1.NodeDisruptionPolicyStatusAction, targetActions ...opv1.NodeDisruptionPolicyStatusActionType) bool {
-
 	currentActions := sets.New[opv1.NodeDisruptionPolicyStatusActionType]()
 	for _, action := range actions {
 		currentActions.Insert(action.Type)

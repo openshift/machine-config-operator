@@ -185,17 +185,6 @@ func isMachineOSBuildStatusUpdateNeeded(oldStatus, curStatus mcfgv1.MachineOSBui
 	return false, ""
 }
 
-// Converts a list of MachineOSConfigs into a list of their names.
-func getMachineOSConfigNames(moscList []*mcfgv1.MachineOSConfig) []string {
-	out := []string{}
-
-	for _, mosc := range moscList {
-		out = append(out, mosc.Name)
-	}
-
-	return out
-}
-
 // Converts a list of MachineOSBuilds into a list of their names.
 func getMachineOSBuildNames(mosbList []*mcfgv1.MachineOSBuild) []string {
 	out := []string{}

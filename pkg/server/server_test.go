@@ -41,10 +41,6 @@ const (
 	testDir    = "./testdata"
 )
 
-var (
-	testKubeConfig = fmt.Sprintf("%s/kubeconfig", testDir)
-)
-
 func parseIgnitionByVersion(raw []byte, version *semver.Version) (string, error) {
 	switch {
 	case version.Major == 2:
@@ -110,7 +106,8 @@ func TestEncapsulated(t *testing.T) {
 
 	vers := []*semver.Version{
 		semver.New("3.5.0"), semver.New("3.4.0"), semver.New("3.3.0"),
-		semver.New("3.2.0"), semver.New("3.1.0"), semver.New("2.2.0")}
+		semver.New("3.2.0"), semver.New("3.1.0"), semver.New("2.2.0"),
+	}
 	t.Logf("vers: %v\n", vers)
 	for _, v := range vers {
 		mcIgnCfg, err = ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
@@ -177,7 +174,7 @@ func TestBootstrapServer(t *testing.T) {
 	}
 
 	// add new files, units in the expected Ignition.
-	kc, _, err := getKubeConfigContent(t)
+	kc, _, err := getKubeConfigContent()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +197,7 @@ func TestBootstrapServer(t *testing.T) {
 	// initialize bootstrap server and get config.
 	bs := &bootstrapServer{
 		serverBaseDir:  testDir,
-		kubeconfigFunc: func() ([]byte, []byte, error) { return getKubeConfigContent(t) },
+		kubeconfigFunc: func() ([]byte, []byte, error) { return getKubeConfigContent() },
 		certs:          []string{"foo=bar.crt"},
 	}
 	if err != nil {
@@ -248,6 +245,7 @@ type mockMCPLister struct {
 func (mcpl *mockMCPLister) List(selector labels.Selector) (ret []*mcfgv1.MachineConfigPool, err error) {
 	return mcpl.pools, nil
 }
+
 func (mcpl *mockMCPLister) Get(name string) (ret *mcfgv1.MachineConfigPool, err error) {
 	if mcpl.pools == nil {
 		return nil, nil
@@ -256,7 +254,6 @@ func (mcpl *mockMCPLister) Get(name string) (ret *mcfgv1.MachineConfigPool, err 
 		if pool.Name == name {
 			return pool, nil
 		}
-
 	}
 	return nil, nil
 }
@@ -268,6 +265,7 @@ type mockMCLister struct {
 func (mcpl *mockMCLister) List(selector labels.Selector) (ret []*mcfgv1.MachineConfig, err error) {
 	return mcpl.configs, nil
 }
+
 func (mcpl *mockMCLister) Get(name string) (ret *mcfgv1.MachineConfig, err error) {
 	if mcpl.configs == nil {
 		return nil, nil
@@ -276,7 +274,6 @@ func (mcpl *mockMCLister) Get(name string) (ret *mcfgv1.MachineConfig, err error
 		if pool.Name == name {
 			return pool, nil
 		}
-
 	}
 	return nil, nil
 }
@@ -288,6 +285,7 @@ type mockCCLister struct {
 func (mcpl *mockCCLister) List(selector labels.Selector) (ret []*mcfgv1.ControllerConfig, err error) {
 	return mcpl.configs, nil
 }
+
 func (mcpl *mockCCLister) Get(name string) (ret *mcfgv1.ControllerConfig, err error) {
 	if mcpl.configs == nil {
 		return nil, nil
@@ -296,7 +294,6 @@ func (mcpl *mockCCLister) Get(name string) (ret *mcfgv1.ControllerConfig, err er
 		if config.Name == name {
 			return config, nil
 		}
-
 	}
 	return nil, nil
 }
@@ -358,7 +355,7 @@ func TestClusterServer(t *testing.T) {
 		machineConfigLister:     mcLister,
 		controllerConfigLister:  ccLister,
 		kubeconfigFunc: func() ([]byte, []byte, error) {
-			return getKubeConfigContent(t)
+			return getKubeConfigContent()
 		},
 	}
 
@@ -372,7 +369,7 @@ func TestClusterServer(t *testing.T) {
 		t.Errorf("decoding Ignition Config failed: %s", err)
 	}
 
-	kc, _, err := getKubeConfigContent(t)
+	kc, _, err := getKubeConfigContent()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -426,7 +423,7 @@ func TestClusterServer(t *testing.T) {
 	}
 }
 
-func getKubeConfigContent(t *testing.T) ([]byte, []byte, error) {
+func getKubeConfigContent() ([]byte, []byte, error) {
 	return []byte("dummy-kubeconfig"), []byte("dummy-root-ca"), nil
 }
 
@@ -447,7 +444,6 @@ func validateIgnitionFiles(t *testing.T, exp, got []ign3types.File) {
 		}
 		assert.Equal(t, v, f)
 	}
-
 }
 
 func validateIgnitionSystemd(t *testing.T, exp, got []ign3types.Unit) {
@@ -1192,7 +1188,7 @@ func TestGetConfigWithLayeredImage(t *testing.T) {
 				kubeclient:              kubeclient,
 				routeclient:             routeclient,
 				kubeconfigFunc: func() ([]byte, []byte, error) {
-					return getKubeConfigContent(t)
+					return getKubeConfigContent()
 				},
 			}
 

@@ -118,7 +118,7 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfVal1, expec
 	// create our first ctrcfg and attach it to our created node pool
 	cleanupCtrcfgFunc1 := createCtrcfgWithConfig(t, cs, ctrcfgName1, poolName, cfg1.Spec.ContainerRuntimeConfig, "")
 	// wait for the first ctrcfg to show up
-	ctrcfgMCName1, err := getMCFromCtrcfg(t, cs, ctrcfgName1)
+	ctrcfgMCName1, err := getMCFromCtrcfg(cs, ctrcfgName1)
 	require.Nil(t, err, "failed to render machine config from first container runtime config")
 	// ensure the first ctrcfg update rolls out to the pool
 	ctrcfg1Target := helpers.WaitForConfigAndPoolComplete(t, cs, poolName, ctrcfgMCName1)
@@ -129,7 +129,7 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfVal1, expec
 	// create our second ctrcfg and attach it to our created node pool
 	cleanupCtrcfgFunc2 := createCtrcfgWithConfig(t, cs, ctrcfgName2, poolName, cfg2.Spec.ContainerRuntimeConfig, "1")
 	// wait for the second ctrcfg to show up
-	ctrcfgMCName2, err := getMCFromCtrcfg(t, cs, ctrcfgName2)
+	ctrcfgMCName2, err := getMCFromCtrcfg(cs, ctrcfgName2)
 	require.Nil(t, err, "failed to render machine config from second container runtime config")
 	// ensure the second ctrcfg update rolls out to the pool
 	helpers.WaitForConfigAndPoolComplete(t, cs, poolName, ctrcfgMCName2)
@@ -197,7 +197,7 @@ func createCtrcfgWithConfig(t *testing.T, cs *framework.ClientSet, name, key str
 }
 
 // getMCFromCtrcfg returns a rendered machine config that was generated from the ctrcfg ctrcfgName
-func getMCFromCtrcfg(t *testing.T, cs *framework.ClientSet, ctrcfgName string) (string, error) {
+func getMCFromCtrcfg(cs *framework.ClientSet, ctrcfgName string) (string, error) {
 	var mcName string
 	// get the machine config created when we deploy the ctrcfg
 	if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {

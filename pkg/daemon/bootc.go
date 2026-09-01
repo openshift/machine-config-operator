@@ -86,11 +86,6 @@ func (client *Client) newCmd(args ...string) *exec.Cmd {
 	return r
 }
 
-func (client *Client) run(args ...string) error {
-	c := client.newCmd(args...)
-	return c.Run()
-}
-
 // QueryStatus loads the current system state.
 func (client *Client) QueryStatus() (*BootcStatus, error) {
 	var q BootcStatus

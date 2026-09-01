@@ -762,11 +762,11 @@ EKTcWGekdmdDPsHloRNtsiCa697B2O9IFA==
 	ts.TLSConfig.Certificates = []tls.Certificate{certData}
 	ts.TLSConfig.InsecureSkipVerify = true
 
-	go func(t *testing.T) {
+	go func() {
 		if err := ts.ListenAndServeTLS("", ""); err != http.ErrServerClosed {
 			log.Fatal("error creating test server")
 		}
-	}(t)
+	}()
 	defer ts.Close()
 
 	type testCase struct {

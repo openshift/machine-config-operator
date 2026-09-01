@@ -30,16 +30,6 @@ func (l *Listers) getMachineConfigPool(name string) (*mcfgv1.MachineConfigPool, 
 	return l.MachineConfigPoolLister.Get(name)
 }
 
-// Lists all MachineConfigPools matching the given selector after first
-// ensuring that the lister is not nil.
-func (l *Listers) listMachineConfigPools(sel labels.Selector) ([]*mcfgv1.MachineConfigPool, error) {
-	if l.MachineConfigPoolLister == nil {
-		return nil, fmt.Errorf("required MachineConfigPoolLister is nil")
-	}
-
-	return l.MachineConfigPoolLister.List(sel)
-}
-
 // Gets a MachineOSConfig after first ensuring that the lister is not nil.
 func (l *Listers) getMachineOSConfig(name string) (*mcfgv1.MachineOSConfig, error) {
 	if l.MachineOSConfigLister == nil {
@@ -57,15 +47,6 @@ func (l *Listers) listMachineOSConfigs(sel labels.Selector) ([]*mcfgv1.MachineOS
 	}
 
 	return l.MachineOSConfigLister.List(sel)
-}
-
-// Gets a MachineOSBuild after first ensuring that the lister is not nil.
-func (l *Listers) getMachineOSBuild(name string) (*mcfgv1.MachineOSBuild, error) {
-	if l.MachineOSBuildLister == nil {
-		return nil, fmt.Errorf("required MachineOSBuildLister is nil")
-	}
-
-	return l.MachineOSBuildLister.Get(name)
 }
 
 // Lists all MachineOSBuilds matching the given selector after first

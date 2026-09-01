@@ -14,20 +14,11 @@ import (
 	"k8s.io/klog/v2"
 )
 
-var (
-	setStatusCmd = &cobra.Command{
-		Use:   "set-build-status",
-		Short: "Sets the build status on a given MachineConfigPool",
-		Long:  "",
-		Run:   runSetStatusCmd,
-	}
-
-	setStatusOpts struct {
-		poolName string
-		condType string
-		status   bool
-	}
-)
+var setStatusOpts struct {
+	poolName string
+	condType string
+	status   bool
+}
 
 func SetStatusCommand() *cobra.Command {
 	setStatusCmd := &cobra.Command{
