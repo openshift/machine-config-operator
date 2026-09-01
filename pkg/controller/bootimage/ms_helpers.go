@@ -29,20 +29,20 @@ import (
 
 // syncMAPIMachineSets will attempt to enqueue every machineset
 // nolint:dupl // I separated this from syncControlPlaneMachineSets for readability
-func (ctrl *Controller) syncMAPIMachineSets(reason string) {
+func (ctrl *Controller) syncMAPIMachineSets(ctx context.Context, reason string) {
 
 	// Get MachineConfiguration to determine which resources are enrolled
 	mcop, err := ctrl.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
 	if err != nil {
 		klog.Errorf("Failed to get MachineConfiguration: %v", err)
-		ctrl.updateConditions(reason, fmt.Errorf("failed to get MachineConfiguration while enqueueing MAPI MachineSets: %w", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.updateConditions(ctx, reason, fmt.Errorf("failed to get MachineConfiguration while enqueueing MAPI MachineSets: %w", err), opv1.MachineConfigurationBootImageUpdateDegraded)
 		return
 	}
 
 	machineManagerFound, machineResourceSelector, err := getMachineResourceSelectorFromMachineManagers(mcop.Status.ManagedBootImagesStatus.MachineManagers, opv1.MachineAPI, opv1.MachineSets)
 	if err != nil {
 		klog.Errorf("failed to create a machineset selector while enqueueing MAPI machineset %v", err)
-		ctrl.updateConditions(reason, fmt.Errorf("failed to create a machineset selector while enqueueing MAPI machineset %w", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.updateConditions(ctx, reason, fmt.Errorf("failed to create a machineset selector while enqueueing MAPI machineset %w", err), opv1.MachineConfigurationBootImageUpdateDegraded)
 		return
 	}
 	if !machineManagerFound {
@@ -57,7 +57,7 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) {
 	mapiMachineSets, err := ctrl.mapiMachineSetLister.List(machineResourceSelector)
 	if err != nil {
 		klog.Errorf("failed to fetch MachineSet list while enqueueing MAPI MachineSets %v", err)
-		ctrl.updateConditions(reason, fmt.Errorf("failed to fetch MachineSet list while enqueueing MAPI MachineSets %w", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.updateConditions(ctx, reason, fmt.Errorf("failed to fetch MachineSet list while enqueueing MAPI MachineSets %w", err), opv1.MachineConfigurationBootImageUpdateDegraded)
 		return
 	}
 
@@ -76,7 +76,7 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) {
 		configMap, err = ctrl.mcoCmLister.ConfigMaps(ctrlcommon.MCONamespace).Get(ctrlcommon.BootImagesConfigMapName)
 		if err != nil {
 			klog.Errorf("failed to fetch coreos-bootimages config map: %v", err)
-			ctrl.updateConditions(reason, fmt.Errorf("failed to fetch coreos-bootimages config map: %w", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+			ctrl.updateConditions(ctx, reason, fmt.Errorf("failed to fetch coreos-bootimages config map: %w", err), opv1.MachineConfigurationBootImageUpdateDegraded)
 			return
 		}
 	}
@@ -89,11 +89,11 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) {
 
 	// Signal start of reconciliation process, by setting progressing to true
 	var syncErrors []error
-	ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
+	ctrl.updateConditions(ctx, reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
 
 	var rhcosVersion string
 	for _, machineSet := range mapiMachineSets {
-		reconcileSkipped, version, err := ctrl.syncMAPIMachineSet(machineSet, configMap)
+		reconcileSkipped, version, err := ctrl.syncMAPIMachineSet(ctx, machineSet, configMap)
 		if err == nil {
 			ctrl.mapiStats.inProgress++
 		} else {
@@ -112,21 +112,21 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) {
 			}
 		}
 		// Update progressing conditions every step of the loop
-		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
+		ctrl.updateConditions(ctx, reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
 	}
 	// Update/Clear degrade conditions based on errors from this loop
-	ctrl.updateConditions(reason, kubeErrs.NewAggregate(syncErrors), opv1.MachineConfigurationBootImageUpdateDegraded)
+	ctrl.updateConditions(ctx, reason, kubeErrs.NewAggregate(syncErrors), opv1.MachineConfigurationBootImageUpdateDegraded)
 	if ctrl.fgHandler.Enabled(features.FeatureGateBootImageSkewEnforcement) {
 		switch {
 		case ctrl.mapiStats.skippedCount == 0 && len(syncErrors) == 0:
 			// All MachineSets reconciled cleanly — record the current OCP version.
-			ctrl.updateClusterBootImage(rhcosVersion)
+			ctrl.updateClusterBootImage(ctx, rhcosVersion)
 		case ctrl.mapiStats.skippedCount > 0 && len(syncErrors) == 0:
 			// One or more MachineSets were reconcileSkipped without an error. The existing
 			// ClusterBootImageAutomatic value is no longer trustworthy (a new or changed
 			// MachineSet may be running an older image), so reset it to the cluster install
 			// version to ensure the skew check surfaces a violation if warranted.
-			ctrl.resetClusterBootImage()
+			ctrl.resetClusterBootImage(ctx)
 		}
 		// Errors (syncErrors > 0) are already surfaced via the Degraded condition, which
 		// checkBootImageControllerReady checks first — no boot image record update needed.
@@ -139,7 +139,7 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) {
 // error immediately, the condition is surfaced via skew enforcement.
 // reconcileSkipped=false means a patch was applied, the MachineSet was already up to
 // date, or it is out of scope for the MAPI path (e.g. migrated to CAPI authority).
-func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap) (bool, string, error) {
+func (ctrl *Controller) syncMAPIMachineSet(ctx context.Context, machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap) (bool, string, error) {
 
 	startTime := time.Now()
 	klog.V(4).Infof("Started syncing MAPI machineset %q (%v)", machineSet.Name, startTime)
@@ -197,7 +197,7 @@ func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet
 	}
 
 	// Check if the this MachineSet requires an update
-	patchRequired, reconcileSkipped, newMachineSet, rhcosVersion, err := checkMachineSet(infra, machineSet, configMap, arch, ctrl.kubeClient)
+	patchRequired, reconcileSkipped, newMachineSet, rhcosVersion, err := checkMachineSet(ctx, infra, machineSet, configMap, arch, ctrl.kubeClient)
 	if err != nil {
 		return false, "", fmt.Errorf("failed to reconcile machineset %s, err: %w", machineSet.Name, err)
 	}
@@ -211,7 +211,7 @@ func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet
 			return false, "", fmt.Errorf("refusing to reconcile machineset %s, hot loop detected. Please opt-out of boot image updates, adjust your machine provisioning workflow to prevent hot loops and opt back in to resume boot image updates", machineSet.Name)
 		}
 		klog.Infof("Patching MAPI machineset %s", machineSet.Name)
-		if err := ctrl.patchMachineSet(machineSet, newMachineSet); err != nil {
+		if err := ctrl.patchMachineSet(ctx, machineSet, newMachineSet); err != nil {
 			return false, "", err
 		}
 		ctrl.recordMAPIBootImageState(newMachineSet, configMap, infra, arch)
@@ -263,7 +263,7 @@ func (ctrl *Controller) recordMAPIBootImageState(machineSet *machinev1beta1.Mach
 
 // This function patches the machineset object using the machineClient
 // Returns an error if marshsalling or patching fails.
-func (ctrl *Controller) patchMachineSet(oldMachineSet, newMachineSet *machinev1beta1.MachineSet) error {
+func (ctrl *Controller) patchMachineSet(ctx context.Context, oldMachineSet, newMachineSet *machinev1beta1.MachineSet) error {
 	machineSetMarshal, err := json.Marshal(oldMachineSet)
 	if err != nil {
 		return fmt.Errorf("unable to marshal old machineset: %w", err)
@@ -276,7 +276,7 @@ func (ctrl *Controller) patchMachineSet(oldMachineSet, newMachineSet *machinev1b
 	if err != nil {
 		return fmt.Errorf("unable to create patch for new machineset: %w", err)
 	}
-	_, err = ctrl.machineClient.MachineV1beta1().MachineSets(MachineAPINamespace).Patch(context.TODO(), oldMachineSet.Name, types.MergePatchType, patchBytes, metav1.PatchOptions{})
+	_, err = ctrl.machineClient.MachineV1beta1().MachineSets(MachineAPINamespace).Patch(ctx, oldMachineSet.Name, types.MergePatchType, patchBytes, metav1.PatchOptions{})
 	if err != nil {
 		return fmt.Errorf("unable to patch new machineset: %w", err)
 	}

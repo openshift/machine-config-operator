@@ -51,7 +51,7 @@ type Controller struct {
 	mcopClient    mcopclientset.Interface
 	eventRecorder record.EventRecorder
 
-	syncHandler func(event string) error
+	syncHandler func(ctx context.Context, event string) error
 
 	mcoCmLister          corelisterv1.ConfigMapLister
 	mapiMachineSetLister machinelistersv1beta1.MachineSetLister
@@ -232,7 +232,7 @@ func (ctrl *Controller) Run(ctx context.Context) {
 
 	// This controller needs to run in single thread mode, as the work unit per sync are
 	// the same and shouldn't overlap each other.
-	go wait.Until(ctrl.worker, time.Second, ctx.Done())
+	go wait.Until(func() { ctrl.worker(ctx) }, time.Second, ctx.Done())
 
 	<-ctx.Done()
 }
@@ -244,20 +244,20 @@ func (ctrl *Controller) enqueueEvent(event string) {
 
 // worker runs a worker thread that just dequeues items, processes them, and marks them done.
 // It enforces that the syncHandler is never invoked concurrently with the same key.
-func (ctrl *Controller) worker() {
-	for ctrl.processNextWorkItem() {
+func (ctrl *Controller) worker(ctx context.Context) {
+	for ctrl.processNextWorkItem(ctx) {
 	}
 }
 
 // processNextWorkItem processes the next work item from the queue.
-func (ctrl *Controller) processNextWorkItem() bool {
+func (ctrl *Controller) processNextWorkItem(ctx context.Context) bool {
 	event, quit := ctrl.queue.Get()
 	if quit {
 		return false
 	}
 	defer ctrl.queue.Done(event)
 
-	err := ctrl.syncHandler(event)
+	err := ctrl.syncHandler(ctx, event)
 	ctrl.handleErr(err, event)
 
 	return true
@@ -526,9 +526,9 @@ func (ctrl *Controller) updateClusterVersion(oldCV, newCV interface{}) {
 
 // updateConditions updates the boot image update conditions on the MachineConfiguration status
 // based on the current state of machine resource reconciliation.
-func (ctrl *Controller) updateConditions(newReason string, syncError error, targetConditionType string) {
+func (ctrl *Controller) updateConditions(ctx context.Context, newReason string, syncError error, targetConditionType string) {
 
-	mcop, err := ctrl.mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, metav1.GetOptions{})
+	mcop, err := ctrl.mcopClient.OperatorV1().MachineConfigurations().Get(ctx, ctrlcommon.MCOOperatorKnobsObjectName, metav1.GetOptions{})
 	if err != nil {
 		klog.Errorf("error updating progressing condition: %s", err)
 		return
@@ -585,7 +585,7 @@ func (ctrl *Controller) updateConditions(newReason string, syncError error, targ
 	// Only make an API call if there is an update to the Conditions field
 	if !reflect.DeepEqual(newConditions, mcop.Status.Conditions) {
 		mcop.Status.Conditions = newConditions
-		ctrl.updateMachineConfigurationStatus(mcop.Status)
+		ctrl.updateMachineConfigurationStatus(ctx, mcop.Status)
 	}
 }
 
@@ -595,9 +595,9 @@ func (ctrl *Controller) updateConditions(newReason string, syncError error, targ
 // comparisons use cmpRHCOSVersion which compares only the major.minor portion. The value may reflect one minor
 // version older than the stream target when the target AMI has not yet replicated to the region.
 // For non-marketplace clusters, rhcosVersion is empty and the OCP version is recorded in RHCOSVersion instead.
-func (ctrl *Controller) updateClusterBootImage(rhcosVersion string) {
+func (ctrl *Controller) updateClusterBootImage(ctx context.Context, rhcosVersion string) {
 
-	mcop, err := ctrl.mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, metav1.GetOptions{})
+	mcop, err := ctrl.mcopClient.OperatorV1().MachineConfigurations().Get(ctx, ctrlcommon.MCOOperatorKnobsObjectName, metav1.GetOptions{})
 	if err != nil {
 		klog.Errorf("error updating cluster boot image record: %s", err)
 		return
@@ -645,7 +645,7 @@ func (ctrl *Controller) updateClusterBootImage(rhcosVersion string) {
 	// Only make an API call if there is an update to the skew enforcement status
 	if !reflect.DeepEqual(mcop.Status.BootImageSkewEnforcementStatus, *newBootImageSkewEnforcementStatus) {
 		mcop.Status.BootImageSkewEnforcementStatus = *newBootImageSkewEnforcementStatus
-		ctrl.updateMachineConfigurationStatus(mcop.Status)
+		ctrl.updateMachineConfigurationStatus(ctx, mcop.Status)
 	}
 }
 
@@ -654,8 +654,8 @@ func (ctrl *Controller) updateClusterBootImage(rhcosVersion string) {
 // accurate description of the full cluster state (a newly-added or changed MachineSet may be on an
 // older image), so we fall back to the install version — the oldest version we can reliably claim —
 // so that the skew check correctly surfaces a violation if the cluster is genuinely out of date.
-func (ctrl *Controller) resetClusterBootImage() {
-	mcop, err := ctrl.mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, metav1.GetOptions{})
+func (ctrl *Controller) resetClusterBootImage(ctx context.Context) {
+	mcop, err := ctrl.mcopClient.OperatorV1().MachineConfigurations().Get(ctx, ctrlcommon.MCOOperatorKnobsObjectName, metav1.GetOptions{})
 	if err != nil {
 		klog.Errorf("error resetting cluster boot image record: %s", err)
 		return
@@ -680,22 +680,22 @@ func (ctrl *Controller) resetClusterBootImage() {
 	if !reflect.DeepEqual(mcop.Status.BootImageSkewEnforcementStatus, *newBootImageSkewEnforcementStatus) {
 		klog.Infof("Resetting cluster boot image record to install version %s due to reconcileSkipped MachineSets", ocpVersion)
 		mcop.Status.BootImageSkewEnforcementStatus = *newBootImageSkewEnforcementStatus
-		ctrl.updateMachineConfigurationStatus(mcop.Status)
+		ctrl.updateMachineConfigurationStatus(ctx, mcop.Status)
 	}
 }
 
 // updateMachineConfigurationStatus updates the MachineConfiguration status using retry logic to handle concurrent updates.
-func (ctrl *Controller) updateMachineConfigurationStatus(mcopStatus opv1.MachineConfigurationStatus) {
+func (ctrl *Controller) updateMachineConfigurationStatus(ctx context.Context, mcopStatus opv1.MachineConfigurationStatus) {
 	// Using a retry here as there may be concurrent reconiliation loops updating conditions for multiple
 	// resources at the same time and their local stores may be out of date
 	klog.V(4).Infof("MachineConfiguration status update: %v", mcopStatus)
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		mcop, err := ctrl.mcopClient.OperatorV1().MachineConfigurations().Get(context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, metav1.GetOptions{})
+		mcop, err := ctrl.mcopClient.OperatorV1().MachineConfigurations().Get(ctx, ctrlcommon.MCOOperatorKnobsObjectName, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
 		mcop.Status = mcopStatus
-		_, err = ctrl.mcopClient.OperatorV1().MachineConfigurations().UpdateStatus(context.TODO(), mcop, metav1.UpdateOptions{})
+		_, err = ctrl.mcopClient.OperatorV1().MachineConfigurations().UpdateStatus(ctx, mcop, metav1.UpdateOptions{})
 		if err != nil {
 			return err
 		}
@@ -729,12 +729,12 @@ func getDefaultConditions() []metav1.Condition {
 }
 
 // syncAll will attempt to sync all supported machine resources
-func (ctrl *Controller) syncAll(event string) error {
+func (ctrl *Controller) syncAll(ctx context.Context, event string) error {
 	klog.V(4).Infof("Syncing boot image controller for event: %s", event)
 
 	// Wait for MachineConfiguration/cluster to be ready before syncing any machine resources
-	if err := ctrl.waitForMachineConfigurationReady(); err != nil {
-		ctrl.updateConditions(event, fmt.Errorf("MachineConfiguration was not ready: %w", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+	if err := ctrl.waitForMachineConfigurationReady(ctx); err != nil {
+		ctrl.updateConditions(ctx, event, fmt.Errorf("MachineConfiguration was not ready: %w", err), opv1.MachineConfigurationBootImageUpdateDegraded)
 		return err
 	}
 
@@ -751,7 +751,7 @@ func (ctrl *Controller) syncAll(event string) error {
 		return nil
 	}
 
-	ctrl.syncControlPlaneMachineSets(event)
-	ctrl.syncMAPIMachineSets(event)
+	ctrl.syncControlPlaneMachineSets(ctx, event)
+	ctrl.syncMAPIMachineSets(ctx, event)
 	return nil
 }

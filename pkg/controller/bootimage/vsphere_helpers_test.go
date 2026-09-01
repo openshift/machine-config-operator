@@ -1,6 +1,7 @@
 package bootimage
 
 import (
+	"context"
 	"testing"
 
 	"github.com/vmware/govmomi/object"
@@ -40,7 +41,7 @@ func TestCreateNewVMTemplate_NoMatchingFailureDomain(t *testing.T) {
 		},
 	}
 
-	resolvedName, patchRequired, err := createNewVMTemplate(nil, providerSpec, infra, nil, nil, "x86_64", "9.6.20260210-0")
+	resolvedName, patchRequired, err := createNewVMTemplate(context.Background(), nil, providerSpec, infra, nil, nil, "x86_64", "9.6.20260210-0")
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "does not match any vCenter/failure domain")

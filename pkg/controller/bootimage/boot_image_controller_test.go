@@ -14,6 +14,7 @@ import (
 	opv1 "github.com/openshift/api/operator/v1"
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	fakemcopclient "github.com/openshift/client-go/operator/clientset/versioned/fake"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -25,7 +26,6 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
 
 func TestIsClusterStable(t *testing.T) {
@@ -546,14 +546,14 @@ func TestReconcileAzureProviderSpec(t *testing.T) {
 	fakeClient := fake.NewClientset(testSecret)
 
 	tests := []struct {
-		name            string
-		arch            string
-		currentImage    machinev1beta1.Image
-		expectedImage   machinev1beta1.Image
-		expectPatch     bool
-		expectReconcileSkipped      bool
-		streamData      *stream.Stream                  // Custom stream data for specific tests
-		securityProfile *machinev1beta1.SecurityProfile // Custom security profile for specific tests
+		name                   string
+		arch                   string
+		currentImage           machinev1beta1.Image
+		expectedImage          machinev1beta1.Image
+		expectPatch            bool
+		expectReconcileSkipped bool
+		streamData             *stream.Stream                  // Custom stream data for specific tests
+		securityProfile        *machinev1beta1.SecurityProfile // Custom security profile for specific tests
 	}{
 		{
 			name: "Legacy Gen1 upload image transitions to marketplace Gen1",
@@ -1031,6 +1031,7 @@ func TestReconcileAzureProviderSpec(t *testing.T) {
 			}
 
 			patchRequired, reconcileSkipped, updatedProviderSpec, _, err := reconcileAzureProviderSpec(
+				context.Background(),
 				testStreamData,
 				tt.arch,
 				infra,
@@ -1144,7 +1145,7 @@ func TestResetClusterBootImage(t *testing.T) {
 				clusterVersionLister: configlistersv1.NewClusterVersionLister(cvIndexer),
 			}
 
-			ctrl.resetClusterBootImage()
+			ctrl.resetClusterBootImage(context.Background())
 
 			updated, err := fakeMcopClient.OperatorV1().MachineConfigurations().Get(
 				context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, v1.GetOptions{})
@@ -1264,7 +1265,7 @@ func TestSyncMAPIMachineSetOSStreamLabel(t *testing.T) {
 				},
 			}
 
-			_, _, err := ctrl.syncMAPIMachineSet(ms, configMap)
+			_, _, err := ctrl.syncMAPIMachineSet(context.Background(), ms, configMap)
 			klog.Flush()
 			output := buf.String()
 
@@ -1377,7 +1378,7 @@ func TestSyncControlPlaneMachineSetOSStreamLabel(t *testing.T) {
 				},
 			}
 
-			err := ctrl.syncControlPlaneMachineSet(cpms)
+			err := ctrl.syncControlPlaneMachineSet(context.Background(), cpms)
 			klog.Flush()
 			output := buf.String()
 
