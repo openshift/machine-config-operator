@@ -702,8 +702,37 @@ func getClientsFromServerURL(ctx context.Context, server, username, password str
 	return client, tagManager, nil
 }
 
-// Creates a Template VM which has the relevant OVA/OVF file
-func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1.VSphereMachineProviderSpec, infra *osconfigv1.Infrastructure, credsSc *corev1.Secret, kubeClient clientset.Interface, arch, release string) (string, bool, error) {
+// hasMatchingFailureDomain reports whether any failure domain in the list matches
+// the providerSpec workspace fields for the given vcenter. Mirrors the match
+// criteria used in the createNewVMTemplate inner loop.
+func hasMatchingFailureDomain(providerSpec *machinev1beta1.VSphereMachineProviderSpec, vcenter osconfigv1.VSpherePlatformVCenterSpec, failureDomains []osconfigv1.VSpherePlatformFailureDomainSpec) bool {
+	for _, fd := range failureDomains {
+		vmGroup := ""
+		if fd.ZoneAffinity != nil && fd.ZoneAffinity.HostGroup != nil {
+			vmGroup = fd.ZoneAffinity.HostGroup.VMGroup
+		}
+		if providerSpec.Workspace.Datacenter == fd.Topology.Datacenter &&
+			providerSpec.Workspace.Datastore == fd.Topology.Datastore &&
+			vcenter.Server == fd.Server &&
+			providerSpec.Workspace.VMGroup == vmGroup &&
+			path.Clean(providerSpec.Workspace.ResourcePool) == path.Clean(fd.Topology.ResourcePool) {
+			return true
+		}
+	}
+	return false
+}
+
+// createNewVMTemplate finds or creates the RHCOS template VM for the MachineSet's vSphere workspace.
+// It matches the providerSpec workspace against the Infrastructure failure domains to locate the
+// correct vCenter context, then delegates to resolveExistingTemplateVM / createNewVMTemplateWithNameForFailureDomain.
+//
+// Returns:
+//   - resolvedName: the inventory name of the template VM (empty when no update is needed or the MachineSet is skipped)
+//   - patchRequired: true when the MachineSet's providerSpec.Template must be updated to resolvedName
+//   - reconcileSkipped: true when the workspace does not match any failure domain — the MachineSet
+//     is functional but cannot be managed for boot image updates; the caller should skip without degrading
+//   - err: non-nil for real vSphere or infrastructure errors that should degrade the CO
+func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1.VSphereMachineProviderSpec, infra *osconfigv1.Infrastructure, credsSc *corev1.Secret, kubeClient clientset.Interface, arch, release string) (resolvedName string, patchRequired, reconcileSkipped bool, err error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -712,11 +741,17 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 			continue
 		}
 
+		// Pre-validate that at least one failure domain matches the workspace before
+		// authenticating. Avoids creating a vCenter session that will never be used.
+		if !hasMatchingFailureDomain(providerSpec, vcenter, infra.Spec.PlatformSpec.VSphere.FailureDomains) {
+			continue
+		}
+
 		username := string(credsSc.Data[fmt.Sprintf("%s.username", vcenter.Server)])
 		password := string(credsSc.Data[fmt.Sprintf("%s.password", vcenter.Server)])
 		client, tagManager, err := getClientsFromServerURL(ctx, vcenter.Server, username, password)
 		if err != nil {
-			return "", false, fmt.Errorf("failed in getClientsFromServerURL: %w", err)
+			return "", false, false, fmt.Errorf("failed in getClientsFromServerURL: %w", err)
 		}
 
 		finder := find.NewFinder(client.Client, false)
@@ -745,31 +780,31 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 
 			datacenter, err := finder.Datacenter(ctx, failureDomain.Topology.Datacenter)
 			if err != nil {
-				return "", false, fmt.Errorf("failed to find datacenter: %w", err)
+				return "", false, false, fmt.Errorf("failed to find datacenter: %w", err)
 			}
 			finder = finder.SetDatacenter(datacenter)
 
 			existingTemplateVM, resolvedName, created, err := resolveExistingTemplateVM(ctx, finder, providerSpec, failureDomain, streamData, client, tagManager, kubeClient, infraID, arch)
 			if err != nil {
-				return "", false, err
+				return "", false, false, err
 			}
 			if created {
-				return resolvedName, true, nil
+				return resolvedName, true, false, nil
 			}
 
 			var vmMo mo.VirtualMachine
 			err = existingTemplateVM.Properties(ctx, existingTemplateVM.Reference(), nil, &vmMo)
 			if err != nil {
-				return "", false, fmt.Errorf("unable to extract properties from existing Template VM: %w", err)
+				return "", false, false, fmt.Errorf("unable to extract properties from existing Template VM: %w", err)
 			}
 
 			if vmMo.Summary.Config.Product == nil {
-				return "", false, fmt.Errorf("unable to determine RHCOS version of virtual machine: %s", providerSpec.Template)
+				return "", false, false, fmt.Errorf("unable to determine RHCOS version of virtual machine: %s", providerSpec.Template)
 			}
 
 			templateProductVersion := vmMo.Summary.Config.Product.Version
 			if templateProductVersion == "" {
-				return "", false, fmt.Errorf("unable to determine RHCOS version of virtual machine: %s", providerSpec.Template)
+				return "", false, false, fmt.Errorf("unable to determine RHCOS version of virtual machine: %s", providerSpec.Template)
 			}
 
 			if templateProductVersion != release {
@@ -780,39 +815,39 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 				// find the template already up to date and silently drop the error (see
 				// reconcileVSphereProviderSpec).
 				if err := upgradeStubIgnitionIfRequired(providerSpec.UserDataSecret.Name, kubeClient); err != nil {
-					return "", false, err
+					return "", false, false, err
 				}
 
 				// Find and download the relevant OVA file
 				ova, err := streamData.QueryDisk(arch, "vmware", "ova")
 				if err != nil {
-					return "", false, err
+					return "", false, false, err
 				}
 
 				ovaPath, err := cache.DownloadOva(ova)
 				if err != nil {
-					return "", false, fmt.Errorf("failed to download %s: %w", ova.Location, err)
+					return "", false, false, fmt.Errorf("failed to download %s: %w", ova.Location, err)
 				}
 
 				if len(resolvedName) > 80 {
-					return "", false, fmt.Errorf("length of VM template name `%s` exceeds the permitted limit of 80 characters", resolvedName)
+					return "", false, false, fmt.Errorf("length of VM template name `%s` exceeds the permitted limit of 80 characters", resolvedName)
 				}
 
 				diskType := getDiskTypeFromExistingVM(vmMo)
 
 				err = createNewVMTemplateWithNameForFailureDomain(ctx, providerSpec, failureDomain, finder, client, tagManager, resolvedName, ovaPath, infraID, diskType)
 				if err != nil {
-					return "", false, err
+					return "", false, false, err
 				}
-				return resolvedName, true, nil
+				return resolvedName, true, false, nil
 			}
 
 			klog.Infof("Existing RHCOS v%s does match current RHCOS v%s. Skipping reconciliation process using govmomi.", templateProductVersion, release)
 			if providerSpec.Template != resolvedName {
 				klog.Infof("ProviderSpec template name: %s has diverged from the VM Template of name: %s that exists in VSphere. Reconciling the name change.", providerSpec.Template, resolvedName)
-				return resolvedName, true, nil
+				return resolvedName, true, false, nil
 			}
-			return resolvedName, false, nil
+			return resolvedName, false, false, nil
 		}
 	}
 
@@ -824,5 +859,9 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 	if providerSpec.Workspace.VMGroup != "" {
 		workspaceDetails += fmt.Sprintf(", vmGroup: %s", providerSpec.Workspace.VMGroup)
 	}
-	return "", false, fmt.Errorf("providerSpec workspace (%s) does not match any vCenter/failure domain in the Infrastructure object", workspaceDetails)
+	// The MachineSet's workspace does not correspond to any failure domain in the Infrastructure
+	// object. This is a valid topology-unaware configuration — the MachineSet provisions nodes
+	// successfully but cannot be managed for boot image updates. Skip without degrading.
+	klog.Warningf("Skipping boot image update: providerSpec workspace (%s) does not match any vCenter/failure domain in the Infrastructure object. Boot image must be updated manually for this MachineSet.", workspaceDetails)
+	return "", false, true, nil
 }
