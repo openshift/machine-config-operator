@@ -107,8 +107,12 @@ func reconcilePlatform[T any](
 	return patchRequired, false, newMachineSet, nil
 }
 
-// reconcileGCPProviderSpec reconciles the GCP provider spec by updating boot images
-// Returns whether a patch is required, the updated provider spec, and any error
+// reconcileGCPProviderSpec reconciles the GCP provider spec by updating boot images.
+// Returns:
+//   - patchRequired: true when the MachineSet's providerSpec.Disks[].Image must be updated
+//   - reconcileSkipped: true when the current image is custom/unrecognised and cannot be managed automatically; see reconcilePlatform
+//   - newProviderSpec: updated copy of providerSpec; nil when patchRequired=false
+//   - err: non-nil for stream or ignition errors that should degrade the CO
 func reconcileGCPProviderSpec(streamData *stream.Stream, arch string, _ *osconfigv1.Infrastructure, providerSpec *machinev1beta1.GCPMachineProviderSpec, machineSetName string, secretClient clientset.Interface) (bool, bool, *machinev1beta1.GCPMachineProviderSpec, error) {
 
 	// Construct the new target bootimage from the configmap
@@ -150,8 +154,12 @@ func reconcileGCPProviderSpec(streamData *stream.Stream, arch string, _ *osconfi
 	return patchRequired, false, newProviderSpec, nil
 }
 
-// reconcileAWSProviderSpec reconciles the AWS provider spec by updating AMIs
-// Returns whether a patch is required, the updated provider spec, and any error
+// reconcileAWSProviderSpec reconciles the AWS provider spec by updating AMIs.
+// Returns:
+//   - patchRequired: true when the MachineSet's AMI.ID must be updated
+//   - reconcileSkipped: true when the current AMI is unrecognised or the region image is unavailable; see reconcilePlatform
+//   - newProviderSpec: updated copy of providerSpec; nil when patchRequired=false
+//   - err: non-nil for AWS API or ignition errors that should degrade the CO
 func reconcileAWSProviderSpec(streamData *stream.Stream, arch string, _ *osconfigv1.Infrastructure, providerSpec *machinev1beta1.AWSMachineProviderConfig, machineSetName string, secretClient clientset.Interface) (bool, bool, *machinev1beta1.AWSMachineProviderConfig, error) {
 
 	// Extract the region from the Placement field
@@ -208,6 +216,12 @@ func reconcileAWSProviderSpec(streamData *stream.Stream, arch string, _ *osconfi
 	return true, false, newProviderSpec, nil
 }
 
+// reconcileVSphereProviderSpec reconciles the vSphere provider spec by finding or creating the RHCOS template VM.
+// Returns:
+//   - patchRequired: true when the MachineSet's providerSpec.Template must be updated to the resolved template name
+//   - reconcileSkipped: true when the workspace does not match any failure domain and cannot be managed automatically; see reconcilePlatform
+//   - newProviderSpec: updated copy of providerSpec; nil when patchRequired=false or reconcileSkipped=true
+//   - err: non-nil for vSphere API, credential, or ignition errors that should degrade the CO
 func reconcileVSphereProviderSpec(streamData *stream.Stream, arch string, infra *osconfigv1.Infrastructure, providerSpec *machinev1beta1.VSphereMachineProviderSpec, _ string, kubeClient clientset.Interface) (bool, bool, *machinev1beta1.VSphereMachineProviderSpec, error) {
 
 	if infra.Spec.PlatformSpec.VSphere == nil {
@@ -233,9 +247,12 @@ func reconcileVSphereProviderSpec(streamData *stream.Stream, arch string, infra 
 		return false, false, nil, fmt.Errorf("failed to fetch vsphere-creds Secret during machineset sync: %w", err)
 	}
 
-	newBootImg, patchRequired, err := createNewVMTemplate(streamData, providerSpec, infra, credsSc, kubeClient, arch, artifacts.Release)
+	newBootImg, patchRequired, reconcileSkipped, err := createNewVMTemplate(streamData, providerSpec, infra, credsSc, kubeClient, arch, artifacts.Release)
 	if err != nil {
 		return false, false, nil, err
+	}
+	if reconcileSkipped {
+		return false, true, nil, nil
 	}
 
 	// If patch is required, marshal the new providerspec into the machineset
@@ -250,8 +267,12 @@ func reconcileVSphereProviderSpec(streamData *stream.Stream, arch string, infra 
 	return patchRequired, false, newProviderSpec, nil
 }
 
-// reconcileAzureProviderSpec reconciles the Azure provider spec by updating AMIs
-// Returns whether a patch is required, the updated provider spec, and any error
+// reconcileAzureProviderSpec reconciles the Azure provider spec by updating boot images.
+// Returns:
+//   - patchRequired: true when the MachineSet's Image must be updated to the target marketplace image
+//   - reconcileSkipped: true when the image type or architecture is unsupported (e.g. ppc64le, SecurityType set, Gen1 unavailable); see reconcilePlatform
+//   - newProviderSpec: updated copy of providerSpec; nil when patchRequired=false or reconcileSkipped=true
+//   - err: non-nil for stream, variant-detection, or ignition errors that should degrade the CO
 func reconcileAzureProviderSpec(streamData *stream.Stream, arch string, _ *osconfigv1.Infrastructure, providerSpec *machinev1beta1.AzureMachineProviderSpec, machineSetName string, secretClient clientset.Interface) (bool, bool, *machinev1beta1.AzureMachineProviderSpec, error) {
 
 	if arch == "ppc64le" || arch == "s390x" {
