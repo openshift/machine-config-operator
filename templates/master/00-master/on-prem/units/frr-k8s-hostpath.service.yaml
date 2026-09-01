@@ -1,0 +1,18 @@
+name: frr-k8s-hostpath.service
+enabled: {{if isBGPVIPManagement .}}true{{else}}false{{end}}
+contents: |
+  [Unit]
+  Description=Prepare the frr-k8s static pod hostPath directories
+  # Shared with the CNO metrics companion. 0777 mirrors emptyDir (FRR
+  # daemons uid 100, watchfrr root without DAC_OVERRIDE); container_file_t
+  # so the MCS-confined companion can reach files created by the spc_t
+  # static pod.
+  Before=kubelet-dependencies.target
+
+  [Service]
+  Type=oneshot
+  RemainAfterExit=yes
+  ExecStart=/bin/bash -c 'mkdir -p /run/frr-k8s/sockets /run/frr-k8s/conf && chmod 0777 /run/frr-k8s/sockets /run/frr-k8s/conf && chcon -R -t container_file_t /run/frr-k8s'
+
+  [Install]
+  WantedBy=kubelet-dependencies.target

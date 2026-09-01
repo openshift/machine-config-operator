@@ -517,3 +517,237 @@ func verifyIgn(actual [][]byte, dir string, t *testing.T) {
 		t.Errorf("can't find expected file:\n%v", key)
 	}
 }
+
+func TestIsBGPVIPManagement(t *testing.T) {
+	dummyTemplate := []byte(`{{isBGPVIPManagement .}}`)
+
+	cases := []struct {
+		name   string
+		infra  *configv1.Infrastructure
+		result string
+	}{
+		{
+			name:   "nil infra",
+			infra:  nil,
+			result: "false",
+		},
+		{
+			name: "nil platform status",
+			infra: &configv1.Infrastructure{
+				Status: configv1.InfrastructureStatus{},
+			},
+			result: "false",
+		},
+		{
+			name: "baremetal without VIPManagement",
+			infra: &configv1.Infrastructure{
+				Status: configv1.InfrastructureStatus{
+					PlatformStatus: &configv1.PlatformStatus{
+						Type:      configv1.BareMetalPlatformType,
+						BareMetal: &configv1.BareMetalPlatformStatus{},
+					},
+				},
+			},
+			result: "false",
+		},
+		{
+			name: "baremetal with VIPManagement BGP",
+			infra: &configv1.Infrastructure{
+				Status: configv1.InfrastructureStatus{
+					PlatformStatus: &configv1.PlatformStatus{
+						Type: configv1.BareMetalPlatformType,
+						BareMetal: &configv1.BareMetalPlatformStatus{
+							VIPManagement:        "BGP",
+							APIServerInternalIPs: []string{"192.168.111.5"},
+							IngressIPs:           []string{"192.168.111.4"},
+						},
+					},
+				},
+			},
+			result: "true",
+		},
+		{
+			name: "baremetal with VIPManagement BGP but no VIPs (user-managed LB)",
+			infra: &configv1.Infrastructure{
+				Status: configv1.InfrastructureStatus{
+					PlatformStatus: &configv1.PlatformStatus{
+						Type: configv1.BareMetalPlatformType,
+						BareMetal: &configv1.BareMetalPlatformStatus{
+							VIPManagement: "BGP",
+						},
+					},
+				},
+			},
+			result: "false",
+		},
+		{
+			name: "baremetal with VIPManagement BGP but no ingress VIPs",
+			infra: &configv1.Infrastructure{
+				Status: configv1.InfrastructureStatus{
+					PlatformStatus: &configv1.PlatformStatus{
+						Type: configv1.BareMetalPlatformType,
+						BareMetal: &configv1.BareMetalPlatformStatus{
+							VIPManagement:        "BGP",
+							APIServerInternalIPs: []string{"192.168.111.5"},
+						},
+					},
+				},
+			},
+			result: "false",
+		},
+		{
+			name: "baremetal with VIPManagement Keepalived",
+			infra: &configv1.Infrastructure{
+				Status: configv1.InfrastructureStatus{
+					PlatformStatus: &configv1.PlatformStatus{
+						Type: configv1.BareMetalPlatformType,
+						BareMetal: &configv1.BareMetalPlatformStatus{
+							VIPManagement: "Keepalived",
+						},
+					},
+				},
+			},
+			result: "false",
+		},
+		{
+			name: "nil baremetal status",
+			infra: &configv1.Infrastructure{
+				Status: configv1.InfrastructureStatus{
+					PlatformStatus: &configv1.PlatformStatus{
+						Type: configv1.BareMetalPlatformType,
+					},
+				},
+			},
+			result: "false",
+		},
+		{
+			name: "vsphere platform",
+			infra: &configv1.Infrastructure{
+				Status: configv1.InfrastructureStatus{
+					PlatformStatus: &configv1.PlatformStatus{
+						Type: configv1.VSpherePlatformType,
+					},
+				},
+			},
+			result: "false",
+		},
+		{
+			name: "aws platform",
+			infra: &configv1.Infrastructure{
+				Status: configv1.InfrastructureStatus{
+					PlatformStatus: &configv1.PlatformStatus{
+						Type: configv1.AWSPlatformType,
+					},
+				},
+			},
+			result: "false",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			config := &mcfgv1.ControllerConfig{
+				Spec: mcfgv1.ControllerConfigSpec{
+					Infra: c.infra,
+				},
+			}
+
+			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil}, c.name, dummyTemplate)
+			if err != nil {
+				t.Fatalf("expected nil error, got: %v", err)
+			}
+			if string(got) != c.result {
+				t.Fatalf("mismatch: got %q, want %q", string(got), c.result)
+			}
+		})
+	}
+}
+
+// TestBGPVIPSecondaryFamilyRendering verifies that under BGP VIP management
+// with dual-stack VIPs, a second kube-vip instance per role is rendered for
+// the secondary address family (the VIPs slices' second entry), and that on
+// single-stack clusters the secondary manifests land in disabled-manifests.
+func TestBGPVIPSecondaryFamilyRendering(t *testing.T) {
+	cases := []struct {
+		name        string
+		apiVIPs     []string
+		ingressVIPs []string
+		wantAPIPath string
+		wantAPIAddr string
+		wantIngPath string
+		wantIngAddr string
+	}{
+		{
+			name:        "dual-stack renders secondary instances",
+			apiVIPs:     []string{"192.168.111.5", "fd2e:6f44:5dd8:c956::5"},
+			ingressVIPs: []string{"192.168.111.4", "fd2e:6f44:5dd8:c956::4"},
+			wantAPIPath: "/etc/kubernetes/manifests/0011-kube-vip-api-secondary.yaml",
+			wantAPIAddr: "fd2e:6f44:5dd8:c956::5",
+			wantIngPath: "/etc/kubernetes/manifests/0021-kube-vip-ingress-secondary.yaml",
+			wantIngAddr: "fd2e:6f44:5dd8:c956::4",
+		},
+		{
+			name:        "single-stack disables secondary instances",
+			apiVIPs:     []string{"192.168.111.5"},
+			ingressVIPs: []string{"192.168.111.4"},
+			wantAPIPath: "/etc/kubernetes/disabled-manifests/0011-kube-vip-api-secondary.yaml",
+			wantIngPath: "/etc/kubernetes/disabled-manifests/0021-kube-vip-ingress-secondary.yaml",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			controllerConfig, err := controllerConfigFromFile(configs["baremetal"])
+			if err != nil {
+				t.Fatalf("failed to get controllerconfig config: %v", err)
+			}
+			bm := controllerConfig.Spec.Infra.Status.PlatformStatus.BareMetal
+			bm.VIPManagement = "BGP"
+			bm.APIServerInternalIPs = tc.apiVIPs
+			bm.IngressIPs = tc.ingressVIPs
+
+			cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil}, templateDir)
+			if err != nil {
+				t.Fatalf("failed to generate machine configs: %v", err)
+			}
+
+			checkFile := func(role, path, addr string) {
+				t.Helper()
+				found := false
+				for _, cfg := range cfgs {
+					if cfg.Labels[mcfgv1.MachineConfigRoleLabelKey] != role {
+						continue
+					}
+					ign, err := ctrlcommon.ParseAndConvertConfig(cfg.Spec.Config.Raw)
+					if err != nil {
+						t.Fatalf("failed to parse ignition config: %v", err)
+					}
+					for _, file := range ign.Storage.Files {
+						if string(file.Path) != path {
+							continue
+						}
+						found = true
+						if addr == "" {
+							continue
+						}
+						contents, err := ctrlcommon.DecodeIgnitionFileContents(file.Contents.Source, file.Contents.Compression)
+						if err != nil {
+							t.Fatalf("failed to decode %s: %v", path, err)
+						}
+						if !strings.Contains(string(contents), "value: \""+addr+"\"") {
+							t.Errorf("%s does not carry secondary VIP %q:\n%s", path, addr, string(contents))
+						}
+					}
+				}
+				if !found {
+					t.Errorf("no file %s rendered for role %s", path, role)
+				}
+			}
+
+			checkFile(masterRole, tc.wantAPIPath, tc.wantAPIAddr)
+			// the ingress instance is rendered for every role (templates/common)
+			checkFile(masterRole, tc.wantIngPath, tc.wantIngAddr)
+			checkFile(workerRole, tc.wantIngPath, tc.wantIngAddr)
+		})
+	}
+}
