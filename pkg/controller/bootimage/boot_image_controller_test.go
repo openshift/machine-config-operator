@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/coreos/stream-metadata-go/stream"
 	"github.com/coreos/stream-metadata-go/stream/rhcos"
@@ -14,6 +15,7 @@ import (
 	opv1 "github.com/openshift/api/operator/v1"
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	fakemcopclient "github.com/openshift/client-go/operator/clientset/versioned/fake"
+	mcoplistersv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1395,4 +1397,21 @@ func TestSyncControlPlaneMachineSetOSStreamLabel(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWaitForMachineConfigurationReadyCancelledContext(t *testing.T) {
+	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+	ctrl := &Controller{
+		mcopLister: mcoplistersv1.NewMachineConfigurationLister(indexer),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	start := time.Now()
+	err := ctrl.waitForMachineConfigurationReady(ctx)
+	elapsed := time.Since(start)
+
+	assert.Error(t, err, "should return an error when context is cancelled")
+	assert.Less(t, elapsed, 10*time.Second, "should return promptly on cancellation, not wait for the full 2-minute poll timeout")
 }
