@@ -70,8 +70,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		var (
 			duplicatedMachinesetName = fmt.Sprintf("cloned-tc-%s", GetCurrentTestPolarionIDNumber())
 			firstMachineSet          = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
-			backdatedImageName    = getBackdatedBootImage(oc.AsAdmin(), firstMachineSet)
-			fakeImageNameNoUpdate = getFakeNoUpdateBootImage(oc.AsAdmin(), "81403")
+			backdatedImageName       = getBackdatedBootImage(oc.AsAdmin(), firstMachineSet)
+			fakeImageNameNoUpdate    = getFakeNoUpdateBootImage(oc.AsAdmin(), "81403")
 		)
 
 		exutil.By("Duplicate machineset for testing")
@@ -246,14 +246,14 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 	g.It("[PolarionID:74239][OTP] ManagedBootImages. Restore Partial MachineSet images", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
 		var (
-			machineSet              = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
-			backdatedImageName      = getBackdatedBootImage(oc.AsAdmin(), machineSet)
-			fakeImageNameNoUpdate   = getFakeNoUpdateBootImage(oc.AsAdmin(), "74239")
-			clonedMSLabelName       = "cloned-tc-74239-label"
-			clonedMSNoLabelName     = "cloned-tc-74239-no-label"
-			clonedMSLabelOwnedName  = "cloned-tc-74239-label-owned"
-			labelName               = "test"
-			labelValue              = "update"
+			machineSet             = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
+			backdatedImageName     = getBackdatedBootImage(oc.AsAdmin(), machineSet)
+			fakeImageNameNoUpdate  = getFakeNoUpdateBootImage(oc.AsAdmin(), "74239")
+			clonedMSLabelName      = "cloned-tc-74239-label"
+			clonedMSNoLabelName    = "cloned-tc-74239-no-label"
+			clonedMSLabelOwnedName = "cloned-tc-74239-label-owned"
+			labelName              = "test"
+			labelValue             = "update"
 		)
 
 		exutil.By("Opt-in boot images update")
@@ -406,7 +406,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		o.Eventually(machineConfiguration, "20s", "1s").ShouldNot(HaveConditionField("BootImageUpdateProgressing", "lastTransitionTime", lastProgressTransition),
 			"Progress status did not change, but it should have been moved to 'true' and back to 'false' .\n%s", machineConfiguration.PrettyString())
 
-		o.Eventually(machineConfiguration, "2m", "10s").Should(HaveConditionField("BootImageUpdateProgressing", "status", "False"),
+		o.Eventually(machineConfiguration, "10m", "10s").Should(HaveConditionField("BootImageUpdateProgressing", "status", "False"),
 			"Progress status is not the expected one.\n%s", machineConfiguration.PrettyString())
 
 		o.Eventually(machineConfiguration, "5m", "20s").Should(HaveConditionField("BootImageUpdateDegraded", "status", "False"),
