@@ -3,6 +3,7 @@ package imageutils
 import (
 	"bytes"
 	"fmt"
+	configv1 "github.com/openshift/api/config/v1"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -30,7 +31,7 @@ type SysContextBuilder struct {
 	secret           *corev1.Secret
 	controllerConfig *mcfgv1.ControllerConfig
 	registriesConfig *sysregistriesv2.V2RegistriesConf
-	skipProxy        bool
+	explicitProxy    *configv1.ProxyStatus
 }
 
 // NewSysContextBuilder creates a new SysContextBuilder for building SysContext instances.
@@ -44,15 +45,15 @@ func (b *SysContextBuilder) WithSecret(secret *corev1.Secret) *SysContextBuilder
 	return b
 }
 
-// WithControllerConfig adds certificates and proxy settings from ControllerConfig to the SysContext.
+// WithControllerConfig adds certificates from ControllerConfig to the SysContext.
 func (b *SysContextBuilder) WithControllerConfig(cc *mcfgv1.ControllerConfig) *SysContextBuilder {
 	b.controllerConfig = cc
 	return b
 }
 
-// WithoutProxy disables proxy configuration even if the ControllerConfig has one.
-func (b *SysContextBuilder) WithoutProxy() *SysContextBuilder {
-	b.skipProxy = true
+// WithProxy overrides the system proxy defined by HTTP_PROXY, HTTPS_PROXY and NO_PROXY environment variables.
+func (b *SysContextBuilder) WithProxy(proxy *configv1.ProxyStatus) *SysContextBuilder {
+	b.explicitProxy = proxy
 	return b
 }
 
@@ -160,22 +161,37 @@ func (b *SysContextBuilder) buildRegistries(sysContext *SysContext) error {
 	return nil
 }
 
-// buildProxy configures the Docker proxy URL from ControllerConfig.Spec.Proxy.
-// Prioritizes HTTPS proxy over HTTP proxy when both are configured.
-// Returns early if no controller config was provided or no proxy is configured.
+// buildProxy configures the Docker proxy URL from the one specified by WithProxy.
+// If no explicit proxy was set the context won't use an explicit proxy and the
+// system-wide HTTP_PROXY, HTTPS_PROXY and NO_PROXY environment variables will
+// be used while performing operations.
 func (b *SysContextBuilder) buildProxy(sysContext *SysContext) error {
-	if b.controllerConfig == nil || b.skipProxy {
+	if b.explicitProxy == nil {
 		return nil
 	}
-	// TODO: Improve when containers-libs is used with https://github.com/containers/container-libs/pull/583
-	// proxy settings
+
+	// TODO: Remove when containers-libs is used with https://github.com/containers/container-libs/pull/583
+	// Tracking card: https://redhat.atlassian.net/browse/MCO-2016
+	if b.explicitProxy.NoProxy != "" ||
+		(b.explicitProxy.HTTPProxy != "" &&
+			b.explicitProxy.HTTPSProxy != "" &&
+			b.explicitProxy.HTTPProxy != b.explicitProxy.HTTPSProxy) {
+		// Not supported right now:
+		// 1. NO_PROXY
+		// 2. Different proxies for HTTPS and HTTP
+		// Till we have proper proxy support by the new container-libs just trust that the system-proxy vars are set.
+		// Note to the reader: If this code runs in the MCC, the OS Builder or an installer script
+		// the environment variables should be present and early returning would be just fine as
+		// the values of the env-vars will be used.
+		return nil
+	}
 
 	var proxyRawURL string
 	//nolint:gocritic // if-else chain is clearer than switch for this proxy priority logic
-	if b.controllerConfig.Spec.Proxy != nil && b.controllerConfig.Spec.Proxy.HTTPSProxy != "" {
-		proxyRawURL = b.controllerConfig.Spec.Proxy.HTTPSProxy
-	} else if b.controllerConfig.Spec.Proxy != nil && b.controllerConfig.Spec.Proxy.HTTPProxy != "" {
-		proxyRawURL = b.controllerConfig.Spec.Proxy.HTTPProxy
+	if b.explicitProxy.HTTPSProxy != "" {
+		proxyRawURL = b.explicitProxy.HTTPSProxy
+	} else if b.explicitProxy.HTTPProxy != "" {
+		proxyRawURL = b.explicitProxy.HTTPProxy
 	} else {
 		// No proxy configured
 		return nil
