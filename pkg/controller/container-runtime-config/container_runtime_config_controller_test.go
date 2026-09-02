@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"k8s.io/klog/v2"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -739,11 +740,13 @@ func TestContainerRuntimeConfigCreate(t *testing.T) {
 			f.expectGetMachineConfigAction(mcs2)
 			f.expectGetMachineConfigAction(mcs1)
 			f.expectGetMachineConfigAction(mcs1)
+			f.expectGetContainerRuntimeConfigAction(ctrcfg1)
 			f.expectUpdateContainerRuntimeConfig(ctrcfg1)
 			f.expectUpdateContainerRuntimeConfigRoot(ctrcfg1)
 			f.expectCreateMachineConfigAction(mcs1)
 			f.expectPatchContainerRuntimeConfig(ctrcfg1, ctrcfgPatchBytes)
 			f.expectGetMachineConfigAction(mcs2)
+			f.expectGetContainerRuntimeConfigAction(ctrcfg1)
 			f.expectUpdateContainerRuntimeConfig(ctrcfg1)
 
 			f.run(getKey(ctrcfg1, t))
@@ -780,11 +783,13 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			f.expectGetMachineConfigAction(mcsUpdate)
 			f.expectGetMachineConfigAction(mcs)
 			f.expectGetMachineConfigAction(mcs)
+			f.expectGetContainerRuntimeConfigAction(ctrcfg1)
 			f.expectUpdateContainerRuntimeConfig(ctrcfg1)
 			f.expectUpdateContainerRuntimeConfigRoot(ctrcfg1)
 			f.expectCreateMachineConfigAction(mcs)
 			f.expectPatchContainerRuntimeConfig(ctrcfg1, ctrcfgPatchBytes)
 			f.expectGetMachineConfigAction(mcs)
+			f.expectGetContainerRuntimeConfigAction(ctrcfg1)
 			f.expectUpdateContainerRuntimeConfig(ctrcfg1)
 
 			c := f.newController()
@@ -824,10 +829,12 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 
 			f.expectGetMachineConfigAction(mcsUpdate)
 			f.expectGetMachineConfigAction(mcsUpdate)
+			f.expectGetContainerRuntimeConfigAction(ctrcfgUpdate)
 			f.expectUpdateContainerRuntimeConfig(ctrcfgUpdate)
 			f.expectUpdateMachineConfigAction(mcsUpdate)
 			f.expectPatchContainerRuntimeConfig(ctrcfgUpdate, ctrcfgPatchBytes)
 			f.expectGetMachineConfigAction(mcsUpdate)
+			f.expectGetContainerRuntimeConfigAction(ctrcfgUpdate)
 			f.expectUpdateContainerRuntimeConfig(ctrcfgUpdate)
 
 			f.validateActions()
@@ -1736,6 +1743,7 @@ func TestCtrruntimeConfigMultiCreate(t *testing.T) {
 				f.expectCreateMachineConfigAction(mcs)
 				f.expectPatchContainerRuntimeConfig(ccr, []byte(expectedPatch))
 				f.expectGetMachineConfigAction(mcs)
+				f.expectGetContainerRuntimeConfigAction(ccr)
 				f.expectUpdateContainerRuntimeConfig(ccr)
 				f.run(poolName)
 			}
@@ -1846,6 +1854,7 @@ func TestAddAnnotationExistingContainerRuntimeConfig(t *testing.T) {
 			f.expectUpdateMachineConfigAction(ctrcfgMC)
 			f.expectPatchContainerRuntimeConfig(ctrc, []byte("{}"))
 			f.expectGetMachineConfigAction(ctrcfgMC)
+			f.expectGetContainerRuntimeConfigAction(ctrc)
 			f.expectUpdateContainerRuntimeConfig(ctrc)
 
 			c := f.newController()
@@ -2149,11 +2158,13 @@ func TestContainerRuntimeConfigAdditionalStorageConfig(t *testing.T) {
 			f.expectGetMachineConfigAction(mcs2)
 			f.expectGetMachineConfigAction(mcs1)
 			f.expectGetMachineConfigAction(mcs1)
+			f.expectGetContainerRuntimeConfigAction(ctrcfg)
 			f.expectUpdateContainerRuntimeConfig(ctrcfg)
 			f.expectUpdateContainerRuntimeConfigRoot(ctrcfg)
 			f.expectCreateMachineConfigAction(mcs1)
 			f.expectPatchContainerRuntimeConfig(ctrcfg, ctrcfgPatchBytes)
 			f.expectGetMachineConfigAction(mcs2)
+			f.expectGetContainerRuntimeConfigAction(ctrcfg)
 			f.expectUpdateContainerRuntimeConfig(ctrcfg)
 
 			f.run(getKey(ctrcfg, t))
@@ -2209,6 +2220,7 @@ func TestContainerRuntimeConfigAdditionalStorageConfigFeatureGateDisabled(t *tes
 			f.expectCreateMachineConfigAction(mcs1)
 			f.expectPatchContainerRuntimeConfig(ctrcfg, ctrcfgPatchBytes)
 			f.expectGetMachineConfigAction(mcs2)
+			f.expectGetContainerRuntimeConfigAction(ctrcfg)
 			f.expectUpdateContainerRuntimeConfig(ctrcfg)
 
 			f.run(getKey(ctrcfg, t))
@@ -2410,6 +2422,68 @@ func TestCrioCredentialProviderConfigCreateEmpty(t *testing.T) {
 			}
 
 			f.verifyCRIOCredentialProviderConfigContents(t, mcs.Name, criocp, verifyOpts)
+		})
+	}
+}
+
+// TestStatusUpdateConflictRequeues verifies that when the final status write
+// in syncContainerRuntimeConfig fails with a 409 Conflict error (e.g., due to
+// a concurrent finalizer update), the sync function returns an error so the
+// workqueue re-queues the item. This is a regression test for:
+// MCO render controller permanently stuck due to ContainerRuntimeConfig
+// failure during SNO bootstrap.
+// Without the fix, syncStatusOnly swallows the status update failure (logs a
+// warning and returns nil), leaving the CR with no .status and permanently
+// blocking the render controller.
+func TestStatusUpdateConflictRequeues(t *testing.T) {
+	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType, apicfgv1.NonePlatformType} {
+		t.Run(string(platform), func(t *testing.T) {
+			f := newFixture(t)
+			f.skipActionsValidation = true
+
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
+			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
+			ctrcfg := newContainerRuntimeConfig("enable-crun-master", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp, mcp2)
+			f.mccrLister = append(f.mccrLister, ctrcfg)
+			f.objects = append(f.objects, ctrcfg)
+
+			c := f.newController()
+
+			// Inject a reactor that makes every UpdateStatus call on
+			// containerruntimeconfigs return a 409 Conflict error, simulating
+			// the race where a concurrent finalizer patch bumps the
+			// resourceVersion between the lister read and the status write.
+			ctrRuntimeResource := schema.GroupVersionResource{
+				Group:    "machineconfiguration.openshift.io",
+				Version:  "v1",
+				Resource: "containerruntimeconfigs",
+			}
+			f.client.PrependReactor("update", "containerruntimeconfigs", func(action core.Action) (bool, runtime.Object, error) {
+				if action.GetSubresource() != "status" {
+					return false, nil, nil
+				}
+				return true, nil, apierrors.NewConflict(
+					ctrRuntimeResource.GroupResource(),
+					"enable-crun-master",
+					fmt.Errorf("the object has been modified; please apply your changes to the latest version and try again"),
+				)
+			})
+
+			err := c.syncHandler(getKey(ctrcfg, t))
+
+			// The sync function should return an error when the status write
+			// fails, so the workqueue re-queues the item. If err is nil, the
+			// bug is present: the controller silently swallowed the status
+			// update failure.
+			if err == nil {
+				t.Errorf("syncHandler returned nil; expected an error when status update fails with 409 Conflict. " +
+					"This means the item will NOT be re-queued and the CR will be left without .status, " +
+					"permanently blocking the render controller.")
+			}
 		})
 	}
 }

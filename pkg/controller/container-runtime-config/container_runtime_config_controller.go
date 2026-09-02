@@ -642,7 +642,7 @@ func generateOriginalCredentialProviderConfig(templateDir string, cc *mcfgv1.Con
 
 func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.ContainerRuntimeConfig, err error, args ...interface{}) error {
 	statusUpdateErr := retry.RetryOnConflict(updateBackoff, func() error {
-		newcfg, getErr := ctrl.mccrLister.Get(cfg.Name)
+		newcfg, getErr := ctrl.client.MachineconfigurationV1().ContainerRuntimeConfigs().Get(context.TODO(), cfg.Name, metav1.GetOptions{})
 		if getErr != nil {
 			return getErr
 		}
@@ -673,11 +673,12 @@ func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.ContainerRuntimeConfig, err e
 		_, updateErr := ctrl.client.MachineconfigurationV1().ContainerRuntimeConfigs().UpdateStatus(context.TODO(), newcfg, metav1.UpdateOptions{})
 		return updateErr
 	})
-	// If an error occurred in updating the status just log it
 	if statusUpdateErr != nil {
 		klog.Warningf("error updating container runtime config status: %v", statusUpdateErr)
+		if err == nil {
+			return statusUpdateErr
+		}
 	}
-	// Want to return the actual error received from the sync function
 	return err
 }
 
@@ -1142,13 +1143,15 @@ func (ctrl *Controller) syncCRIOCredentialProviderConfig(key string) error {
 			klog.Infof("Applied CRIOCredentialProviderConfig cluster on MachineConfigPool %v", pool.Name)
 			ctrlcommon.UpdateStateMetric(ctrlcommon.MCCSubControllerState, "machine-config-controller-container-runtime-config", "Sync CRIO Credential Provider Config", pool.Name)
 		}
-		ctrl.syncCRIOCredentialProviderConfigStatusOnly(nil, apicfgv1.ConditionTypeMachineConfigRendered, apicfgv1.ReasonMachineConfigRenderingSucceeded)
+		if statusErr := ctrl.syncCRIOCredentialProviderConfigStatusOnly(nil, apicfgv1.ConditionTypeMachineConfigRendered, apicfgv1.ReasonMachineConfigRenderingSucceeded); statusErr != nil {
+			return statusErr
+		}
 	}
 
 	return nil
 }
 
-func (ctrl *Controller) syncCRIOCredentialProviderConfigStatusOnly(err error, conditionType, reason string, args ...interface{}) {
+func (ctrl *Controller) syncCRIOCredentialProviderConfigStatusOnly(err error, conditionType, reason string, args ...interface{}) error {
 	statusUpdateErr := retry.RetryOnConflict(updateBackoff, func() error {
 		newCfg, getErr := ctrl.criocpLister.Get("cluster")
 		if getErr != nil {
@@ -1167,10 +1170,13 @@ func (ctrl *Controller) syncCRIOCredentialProviderConfigStatusOnly(err error, co
 		_, updateErr := ctrl.configClient.ConfigV1().CRIOCredentialProviderConfigs().UpdateStatus(context.TODO(), newCfg, metav1.UpdateOptions{})
 		return updateErr
 	})
-	// If an error occurred in updating the status just log it
 	if statusUpdateErr != nil {
 		klog.Warningf("error updating CRIOCredentialProviderConfig status: %v", statusUpdateErr)
+		if err == nil {
+			return statusUpdateErr
+		}
 	}
+	return nil
 }
 
 func (ctrl *Controller) syncIgnitionConfig(managedKey string, ignFile *ign3types.Config, pool *mcfgv1.MachineConfigPool, ownerRef metav1.OwnerReference) (bool, error) {
