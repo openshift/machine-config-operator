@@ -15,10 +15,9 @@ import (
 
 // TestCreateNewVMTemplate_NoMatchingFailureDomain verifies that when a MachineSet's
 // providerSpec.Workspace doesn't match any vCenter/failure domain in the Infrastructure object,
-// createNewVMTemplate returns a descriptive error instead of silently no-op'ing. This is the
-// degrade-on-no-match behavior added in "bootimage: degrade when vsphere fd not found" — it never
-// reaches getClientsFromServerURL (no real vCenter connectivity needed), since the outer loop over
-// infra.Spec.PlatformSpec.VSphere.VCenters has nothing to match against.
+// createNewVMTemplate skips without error rather than degrading the CO. This covers topology-unaware
+// clusters where machinesets span datastores not present in the Infrastructure failure domains.
+// The function never reaches getClientsFromServerURL (no real vCenter connectivity needed).
 func TestCreateNewVMTemplate_NoMatchingFailureDomain(t *testing.T) {
 	providerSpec := &machinev1beta1.VSphereMachineProviderSpec{
 		Workspace: &machinev1beta1.Workspace{
@@ -40,13 +39,56 @@ func TestCreateNewVMTemplate_NoMatchingFailureDomain(t *testing.T) {
 		},
 	}
 
-	resolvedName, patchRequired, err := createNewVMTemplate(nil, providerSpec, infra, nil, nil, "x86_64", "9.6.20260210-0")
+	resolvedName, patchRequired, reconcileSkipped, err := createNewVMTemplate(nil, providerSpec, infra, nil, nil, "x86_64", "9.6.20260210-0")
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "does not match any vCenter/failure domain")
-	assert.Contains(t, err.Error(), "vcenter.example.com")
+	require.NoError(t, err)
 	assert.Empty(t, resolvedName)
 	assert.False(t, patchRequired)
+	assert.True(t, reconcileSkipped)
+}
+
+// TestCreateNewVMTemplate_MatchingServerNoMatchingFD verifies that when the providerSpec server
+// matches a vCenter entry but the workspace fields don't match any failure domain, we return
+// reconcileSkipped=true without attempting vCenter authentication.
+func TestCreateNewVMTemplate_MatchingServerNoMatchingFD(t *testing.T) {
+	providerSpec := &machinev1beta1.VSphereMachineProviderSpec{
+		Workspace: &machinev1beta1.Workspace{
+			Server:       "vcenter.example.com",
+			Datacenter:   "dc1",
+			Datastore:    "unregistered-datastore",
+			ResourcePool: "/dc1/host/cluster1/Resources",
+		},
+	}
+
+	infra := &osconfigv1.Infrastructure{
+		Spec: osconfigv1.InfrastructureSpec{
+			PlatformSpec: osconfigv1.PlatformSpec{
+				VSphere: &osconfigv1.VSpherePlatformSpec{
+					VCenters: []osconfigv1.VSpherePlatformVCenterSpec{
+						{Server: "vcenter.example.com"},
+					},
+					FailureDomains: []osconfigv1.VSpherePlatformFailureDomainSpec{
+						{
+							Server: "vcenter.example.com",
+							Topology: osconfigv1.VSpherePlatformTopology{
+								Datacenter:   "dc1",
+								Datastore:    "registered-datastore", // different from providerSpec
+								ResourcePool: "/dc1/host/cluster1/Resources",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// credsSc is nil — if getClientsFromServerURL were called it would panic.
+	resolvedName, patchRequired, reconcileSkipped, err := createNewVMTemplate(nil, providerSpec, infra, nil, nil, "x86_64", "9.6.20260210-0")
+
+	require.NoError(t, err)
+	assert.Empty(t, resolvedName)
+	assert.False(t, patchRequired)
+	assert.True(t, reconcileSkipped)
 }
 
 func newTestVM(inventoryPath string) *object.VirtualMachine {
