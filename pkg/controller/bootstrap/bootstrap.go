@@ -242,7 +242,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		return fmt.Errorf("error filtering pools: %w", err)
 	}
 
-	sysCtxFactory := buildSysContextFactory(pullSecret, cconfig, cconfig.Spec.Infra, imgCfg, icspRules, idmsRules, itmsRules)
+	sysCtxFactory := buildSysContextFactory(pullSecret, cconfig, imgCfg, icspRules, idmsRules, itmsRules)
 
 	// Enable OSImageStreams if the FeatureGate is active.
 	// Previously this also excluded ExternalTopologyMode (HyperShift) because
@@ -288,7 +288,7 @@ func (b *Bootstrap) Run(destDir string) error {
 
 	configs = append(configs, iconfigs...)
 
-	rconfigs, err := containerruntimeconfig.RunImageBootstrap(b.templatesDir, cconfig, pools, icspRules, idmsRules, itmsRules, imgCfg, clusterImagePolicies, imagePolicies, fgHandler)
+	rconfigs, err := containerruntimeconfig.RunImageBootstrap(b.templatesDir, cconfig, pools, icspRules, idmsRules, itmsRules, imgCfg, clusterImagePolicies, imagePolicies)
 	if err != nil {
 		return err
 	}
@@ -523,7 +523,6 @@ func (b *Bootstrap) fetchOSImageStream(
 func buildSysContextFactory(
 	pullSecret *corev1.Secret,
 	cconfig *mcfgv1.ControllerConfig,
-	infra *apicfgv1.Infrastructure,
 	imgCfg *apicfgv1.Image,
 	icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy,
 	idmsRules []*apicfgv1.ImageDigestMirrorSet,
@@ -533,12 +532,6 @@ func buildSysContextFactory(
 		builder := imageutils.NewSysContextBuilder().
 			WithControllerConfig(cconfig).
 			WithSecret(pullSecret)
-
-		// In HCP the proxy config belongs to the data plane cluster and is
-		// unreachable from the management cluster where this code runs.
-		if infra != nil && infra.Status.ControlPlaneTopology == apicfgv1.ExternalTopologyMode {
-			builder.WithoutProxy()
-		}
 
 		registriesConfig, err := imageutils.GenerateRegistriesConfig(imgCfg, icspRules, idmsRules, itmsRules)
 		if err != nil {

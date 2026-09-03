@@ -139,6 +139,10 @@ func NewSysContextFromFilesystem(opts SysContextPaths) (*SysContext, error) {
 
 	sysCtxBuilder = sysCtxBuilder.WithControllerConfig(ctrlCfg)
 
+	if opts.Proxy != nil {
+		sysCtxBuilder = sysCtxBuilder.WithProxy(opts.Proxy)
+	}
+
 	sysCtx, err := sysCtxBuilder.Build()
 	if err != nil {
 		return nil, err

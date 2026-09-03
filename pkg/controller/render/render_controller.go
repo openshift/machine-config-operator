@@ -226,7 +226,6 @@ func (ctrl *Controller) addMachineConfigPool(obj interface{}) {
 	pool := obj.(*mcfgv1.MachineConfigPool)
 	klog.V(4).Infof("Adding MachineConfigPool %s", pool.Name)
 	ctrl.enqueueMachineConfigPool(pool)
-
 }
 
 func (ctrl *Controller) updateMachineConfigPool(old, cur interface{}) {
@@ -433,26 +432,6 @@ func (ctrl *Controller) getPoolsForMachineConfig(config *mcfgv1.MachineConfig) (
 		return nil, fmt.Errorf("could not find any MachineConfigPool set for MachineConfig %s with labels: %v", config.Name, config.Labels)
 	}
 	return pools, nil
-}
-
-func (ctrl *Controller) enqueue(pool *mcfgv1.MachineConfigPool) {
-	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(pool)
-	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %w", pool, err))
-		return
-	}
-
-	ctrl.queue.Add(key)
-}
-
-func (ctrl *Controller) enqueueRateLimited(pool *mcfgv1.MachineConfigPool) {
-	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(pool)
-	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %w", pool, err))
-		return
-	}
-
-	ctrl.queue.AddRateLimited(key)
 }
 
 // enqueueAfter will enqueue a pool after the provided amount of time.
@@ -838,7 +817,6 @@ func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mc
 	}
 
 	merged, err := ctrlcommon.MergeMachineConfigs(configs, cconfig, osImageStreamSet)
-
 	if err != nil {
 		return nil, err
 	}
@@ -895,7 +873,8 @@ func generateAndValidateRenderedMachineConfig(
 	configs []*mcfgv1.MachineConfig,
 	cconfig *mcfgv1.ControllerConfig,
 	validationOverrides *opv1.IrreconcilableValidationOverrides,
-	osImageStreamSet *mcfgv1.OSImageStreamSet) (*mcfgv1.MachineConfig, error) {
+	osImageStreamSet *mcfgv1.OSImageStreamSet,
+) (*mcfgv1.MachineConfig, error) {
 	source := getMachineConfigRefs(configs)
 	klog.V(4).Infof("Considering %d configs %s for MachineConfig generation", len(source), source)
 

@@ -67,10 +67,8 @@ const (
 	genericCredProviderConfigPath = "/etc/kubernetes/credential-providers/generic-credential-provider.yaml"
 )
 
-var (
-	// controllerKind contains the schema.GroupVersionKind for this controller type.
-	controllerKind = mcfgv1.SchemeGroupVersion.WithKind("ContainerRuntimeConfig")
-)
+// controllerKind contains the schema.GroupVersionKind for this controller type.
+var controllerKind = mcfgv1.SchemeGroupVersion.WithKind("ContainerRuntimeConfig")
 
 var updateBackoff = wait.Backoff{
 	Steps:    5,
@@ -239,13 +237,13 @@ func (ctrl *Controller) Run(ctx context.Context, workers int) {
 	defer ctrl.queue.ShutDown()
 	defer ctrl.imgQueue.ShutDown()
 	defer ctrl.criocpQueue.ShutDown()
-	listerCaches := []cache.InformerSynced{ctrl.mcpListerSynced, ctrl.mccrListerSynced, ctrl.ccListerSynced,
-		ctrl.imgListerSynced, ctrl.icspListerSynced, ctrl.idmsListerSynced, ctrl.itmsListerSynced, ctrl.clusterVersionListerSynced}
-
-	if ctrl.sigstoreAPIEnabled() {
-		ctrl.addImagePolicyObservers()
-		klog.Info("addded image policy observers with sigstore featuregate enabled")
+	listerCaches := []cache.InformerSynced{
+		ctrl.mcpListerSynced, ctrl.mccrListerSynced, ctrl.ccListerSynced,
+		ctrl.imgListerSynced, ctrl.icspListerSynced, ctrl.idmsListerSynced, ctrl.itmsListerSynced, ctrl.clusterVersionListerSynced,
 	}
+
+	ctrl.addImagePolicyObservers()
+	klog.Info("added image policy observers")
 
 	if ctrl.criocpEnabled() {
 		ctrl.addCRIOCPObservers()
@@ -408,10 +406,6 @@ func (ctrl *Controller) imagePolicyDeleted(_ interface{}) {
 	ctrl.imgQueue.Add("openshift-config")
 }
 
-func (ctrl *Controller) sigstoreAPIEnabled() bool {
-	return ctrl.fgHandler.Enabled(features.FeatureGateSigstoreImageVerification)
-}
-
 func (ctrl *Controller) additionalStorageConfigEnabled() bool {
 	return ctrl.fgHandler.Enabled(features.FeatureGateAdditionalStorageConfig)
 }
@@ -476,15 +470,6 @@ func (ctrl *Controller) enqueue(cfg *mcfgv1.ContainerRuntimeConfig) {
 		return
 	}
 	ctrl.queue.Add(key)
-}
-
-func (ctrl *Controller) enqueueRateLimited(cfg *mcfgv1.ContainerRuntimeConfig) {
-	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(cfg)
-	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %w", cfg, err))
-		return
-	}
-	ctrl.queue.AddRateLimited(key)
 }
 
 // worker runs a worker thread that just dequeues items, processes them, and marks them done.
@@ -610,7 +595,6 @@ func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.Cont
 }
 
 func generateOriginalCredentialProviderConfig(templateDir string, cc *mcfgv1.ControllerConfig, role string) (*ign3types.File, string, error) {
-
 	// Render the default templates
 	rc := &mtmpl.RenderConfig{
 		ControllerConfigSpec: &cc.Spec,
@@ -675,6 +659,16 @@ func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.ContainerRuntimeConfig, err e
 			newcfg.Status.Conditions = append(newcfg.Status.Conditions, newStatusCondition)
 		} else if newcfg.Status.Conditions[len(newcfg.Status.Conditions)-1].Message == newStatusCondition.Message {
 			newcfg.Status.Conditions[len(newcfg.Status.Conditions)-1] = newStatusCondition
+		}
+		// Keep at most three conditions to avoid an unbounded list. Copy into a
+		// freshly allocated slice rather than reslicing in place, so the discarded
+		// conditions' backing array can be garbage collected instead of lingering
+		// in memory (e.g. in the informer cache).
+		const statusLimit = 3
+		if len(newcfg.Status.Conditions) > statusLimit {
+			trimmed := make([]mcfgv1.ContainerRuntimeConfigCondition, statusLimit)
+			copy(trimmed, newcfg.Status.Conditions[len(newcfg.Status.Conditions)-statusLimit:])
+			newcfg.Status.Conditions = trimmed
 		}
 		_, updateErr := ctrl.client.MachineconfigurationV1().ContainerRuntimeConfigs().UpdateStatus(context.TODO(), newcfg, metav1.UpdateOptions{})
 		return updateErr
@@ -902,7 +896,6 @@ func (ctrl *Controller) cleanUpDuplicatedMC() error {
 			if err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), mc.Name, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
 				return fmt.Errorf("error deleting degraded containerruntime machine config %s: %w", mc.Name, err)
 			}
-
 		}
 	}
 	return nil
@@ -988,7 +981,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		scopeNamespacePolicies                        map[string]map[string]signature.PolicyRequirements
 	)
 
-	if ctrl.sigstoreAPIEnabled() && ctrl.addedPolicyObservers {
+	if ctrl.addedPolicyObservers {
 		// Find all ClusterImagePolicy objects
 		clusterImagePolicies, err = ctrl.clusterImagePolicyLister.List(labels.Everything())
 		if err != nil && errors.IsNotFound(err) {
@@ -1122,7 +1115,6 @@ func (ctrl *Controller) syncCRIOCredentialProviderConfig(key string) error {
 		}
 
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
-
 			credentialProviderConfigIgn, overlappedEntries, err := crioCredentialProviderConfigIgnition(ctrl.templatesDir, controllerConfig, pool.Name, crioCredentialProviderConfig)
 			if err != nil {
 				ctrl.syncCRIOCredentialProviderConfigStatusOnly(err, apicfgv1.ConditionTypeMachineConfigRendered, apicfgv1.ReasonMachineConfigRenderingFailed, "could not generate CRIOCredentialProvider Ignition config: %v", err)
@@ -1224,8 +1216,8 @@ func (ctrl *Controller) syncIgnitionConfig(managedKey string, ignFile *ign3types
 func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.ControllerConfig, role, releaseImage string,
 	insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs []string,
 	icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy, idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet,
-	clusterScopePolicies map[string]signature.PolicyRequirements, scopeNamespacePolicies map[string]map[string]signature.PolicyRequirements) (*ign3types.Config, error) {
-
+	clusterScopePolicies map[string]signature.PolicyRequirements, scopeNamespacePolicies map[string]map[string]signature.PolicyRequirements,
+) (*ign3types.Config, error) {
 	var (
 		registriesTOML               []byte
 		policyJSON                   []byte
@@ -1368,19 +1360,15 @@ func (ctrl *Controller) syncImagePolicyStatusOnly(namespace, imagepolicy, condit
 // except that mcfgv1.Image is not available.
 func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy,
 	idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet, imgCfg *apicfgv1.Image, clusterImagePolicies []*apicfgv1.ClusterImagePolicy, imagePolicies []*apicfgv1.ImagePolicy,
-	fgHandler ctrlcommon.FeatureGatesHandler) ([]*mcfgv1.MachineConfig, error) {
-
+) ([]*mcfgv1.MachineConfig, error) {
 	var (
 		insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs []string
 		err                                                                     error
 	)
 
-	clusterScopePolicies := map[string]signature.PolicyRequirements{}
-	scopeNamespacePolicies := map[string]map[string]signature.PolicyRequirements{}
-	if fgHandler.Enabled(features.FeatureGateSigstoreImageVerification) {
-		if clusterScopePolicies, scopeNamespacePolicies, err = getValidScopePolicies(clusterImagePolicies, imagePolicies, nil); err != nil {
-			return nil, err
-		}
+	clusterScopePolicies, scopeNamespacePolicies, err := getValidScopePolicies(clusterImagePolicies, imagePolicies, nil)
+	if err != nil {
+		return nil, err
 	}
 
 	// Read the search, insecure, blocked, and allowed registries from the cluster-wide Image CR if it is not nil
@@ -1527,7 +1515,6 @@ func (ctrl *Controller) getPoolsForContainerRuntimeConfig(config *mcfgv1.Contain
 }
 
 func crioCredentialProviderConfigIgnition(templateDir string, controllerConfig *mcfgv1.ControllerConfig, role string, crioCredentialProviderConfig *apicfgv1.CRIOCredentialProviderConfig) (*ign3types.Config, []string, error) {
-
 	var (
 		credProviderConfigYaml           []byte
 		overlappedEntries                []string

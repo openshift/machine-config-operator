@@ -73,14 +73,11 @@ type Operator struct {
 
 	inClusterBringup bool
 
-	imagesFile    string
-	templatesPath string
+	imagesFile string
 
 	logLevel int
 
 	vStore *versionStore
-
-	operatorHealthEvents record.EventRecorder
 
 	client        mcfgclientset.Interface
 	kubeClient    kubernetes.Interface
@@ -95,7 +92,6 @@ type Operator struct {
 	imgLister                configlistersv1.ImageLister
 	crdLister                apiextlistersv1.CustomResourceDefinitionLister
 	mcpLister                mcfglistersv1.MachineConfigPoolLister
-	msLister                 mcfglistersv1.MachineConfigNodeLister
 	ccLister                 mcfglistersv1.ControllerConfigLister
 	mcLister                 mcfglistersv1.MachineConfigLister
 	deployLister             appslisterv1.DeploymentLister

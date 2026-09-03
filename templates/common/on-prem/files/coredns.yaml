@@ -94,6 +94,9 @@ contents:
         terminationMessagePolicy: FallbackToLogsOnError
         imagePullPolicy: IfNotPresent
       - name: coredns-monitor
+        securityContext:
+          capabilities:
+            add: ["NET_ADMIN"]
         image: {{ .Images.baremetalRuntimeCfgImage }}
         command:
         - corednsmonitor

@@ -11,7 +11,7 @@ import (
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 )
 
-var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Serial][Disruptive][OCPFeatureGate:OSStreams] MCO osImageStream", func() {
+var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longduration][Serial][Disruptive][OCPFeatureGate:OSStreams] MCO osImageStream", func() {
 	defer g.GinkgoRecover()
 
 	var (
@@ -294,7 +294,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 	// AI-assisted: Test case to validate osImageStream inheritance for custom MachineConfigPools
 	g.It("[PolarionID:88122][OTP] Validate osImageStream inheritance for custom MachineConfigPools [Disruptive] [apigroup:machineconfiguration.openshift.io] [apigroup:machine.openshift.io]", func() {
-
 		SkipIfCompactOrSNO(oc.AsAdmin())
 
 		// Get initial and target streams based on cluster version

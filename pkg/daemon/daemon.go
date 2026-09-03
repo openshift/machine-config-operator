@@ -130,7 +130,6 @@ type Daemon struct {
 
 	queue       workqueue.TypedRateLimitingInterface[string]
 	ccQueue     workqueue.TypedRateLimitingInterface[string]
-	cmQueue     workqueue.TypedRateLimitingInterface[string]
 	enqueueNode func(*corev1.Node)
 	syncHandler func(ctx context.Context, node string) error
 
@@ -239,10 +238,6 @@ const (
 	userCABundleFilePath  = "/etc/pki/ca-trust/source/anchors/openshift-config-user-ca-bundle.crt"
 	kubeConfigPath        = "/etc/kubernetes/kubeconfig"
 
-	// Where nmstate writes the link files if it persisted ifnames.
-	// https://github.com/nmstate/nmstate/blob/03c7b03bd4c9b0067d3811dbbf72635201519356/rust/src/cli/persist_nic.rs#L32-L36
-	systemdNetworkDir = "etc/systemd/network"
-
 	// Config drift error message fragments used to identify drift-related degradation
 	configDriftContentMismatch = "content mismatch"
 	configDriftModeMismatch    = "mode mismatch"
@@ -256,9 +251,7 @@ const (
 	onceFromRemoteConfig
 )
 
-var (
-	defaultRebootTimeout = 24 * time.Hour
-)
+var defaultRebootTimeout = 24 * time.Hour
 
 // rebootCommand creates a new transient systemd unit to reboot the system.
 // With the upstream implementation of kubelet graceful shutdown feature,
@@ -267,8 +260,10 @@ var (
 // kubelet uses systemd inhibitor locks to delay node shutdown to terminate pods.
 // https://kubernetes.io/docs/concepts/architecture/nodes/#graceful-node-shutdown
 func rebootCommand(rationale string, workaroundOCPBUGS51150 bool) *exec.Cmd {
-	systemdRunArgs := []string{"--unit", "machine-config-daemon-reboot",
-		"--description", fmt.Sprintf("machine-config-daemon: %s", rationale)}
+	systemdRunArgs := []string{
+		"--unit", "machine-config-daemon-reboot",
+		"--description", fmt.Sprintf("machine-config-daemon: %s", rationale),
+	}
 	// we need this until we have https://github.com/ostreedev/ostree/pull/3389
 	if workaroundOCPBUGS51150 {
 		systemdRunArgs = append(systemdRunArgs, "-p", "Requires=ostree-finalize-staged.service", "-p", "After=ostree-finalize-staged.service")
@@ -1936,7 +1931,6 @@ func (dn *Daemon) generateBootstrappingMCMismatchError(currentConfigOnDisk *onDi
 }
 
 func (dn *Daemon) createBootstrapMachineConfigDiffFile(oldConfig, newConfig *mcfgv1.MachineConfig) {
-
 	if _, err := os.Stat(bootstrapConfigDiffPath); err == nil {
 		// If the file already exists, we don't need to write it again
 		return

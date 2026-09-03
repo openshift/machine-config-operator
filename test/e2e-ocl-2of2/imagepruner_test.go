@@ -39,8 +39,10 @@ import (
 )
 
 // Used by TestImagePruner only when flags are passed.
-var realImageRegistrySecretPath string
-var realImagePullspec string
+var (
+	realImageRegistrySecretPath string
+	realImagePullspec           string
+)
 
 func init() {
 	flag.StringVar(&realImageRegistrySecretPath, "image-registry-secret", "", "Path to image registry creds for real test")
@@ -68,7 +70,7 @@ func TestImagePruner(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	require.NoError(t, createAndPushScratchImage(ctx, t, realImagePullspec, realImageRegistrySecretPath, ""))
+	require.NoError(t, createAndPushScratchImage(t, realImagePullspec, realImageRegistrySecretPath, ""))
 
 	ip, k8sSecret, err := setupImagePrunerForTest(realImageRegistrySecretPath)
 	require.NoError(t, err)
@@ -235,7 +237,7 @@ func TestImagePrunerOnCluster(t *testing.T) {
 	t.Run("Push image and inspect", func(t *testing.T) {
 		t.Parallel()
 
-		require.NoError(t, createAndPushScratchImage(ctx, t, pullspec, secretPath, certsDir))
+		require.NoError(t, createAndPushScratchImage(t, pullspec, secretPath, certsDir))
 
 		imgPruner := imagepruner.NewImageInspectorDeleter()
 		sysCtx := &types.SystemContext{DockerCertPath: certsDir, AuthFilePath: secretPath}
@@ -853,7 +855,7 @@ func writePolicyFile(t *testing.T) (string, error) {
 // provided secret path. Accepts an optional certsDir parameter which is
 // particularly useful for pushing internal image registries which have
 // self-signed certificates.
-func createAndPushScratchImage(ctx context.Context, t *testing.T, pullspec, secretPath, certsDir string) error {
+func createAndPushScratchImage(t *testing.T, pullspec, secretPath, certsDir string) error {
 	tmpDir := t.TempDir()
 
 	srcImage := filepath.Join(tmpDir, helpers.ImageTarballFilename)

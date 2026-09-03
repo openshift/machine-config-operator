@@ -19,17 +19,13 @@ const (
 	OSStreamLabelKey = "machineconfiguration.openshift.io/osstream"
 )
 
-var (
-	expectedOSStreams = []string{"rhel-9", "rhel-10"}
-)
+var expectedOSStreams = []string{"rhel-9", "rhel-10"}
 
 // These tests verify OSStreams feature gate functionality.
-var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Disruptive][OCPFeatureGate:OSStreams]", g.Ordered, func() {
+var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longduration][Disruptive][OCPFeatureGate:OSStreams]", g.Ordered, func() {
 	defer g.GinkgoRecover()
 
-	var (
-		oc = exutil.NewCLI("mco-os-streams", exutil.KubeConfigPath()).AsAdmin()
-	)
+	oc := exutil.NewCLI("mco-os-streams", exutil.KubeConfigPath()).AsAdmin()
 
 	g.JustBeforeEach(func() {
 		// Skip if no MAPI MachineSets are available (e.g. compute machine management migrated to CAPI)

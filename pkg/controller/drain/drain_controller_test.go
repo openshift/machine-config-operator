@@ -72,7 +72,7 @@ func createTestMCP(name string) *mcfgv1.MachineConfigPool {
 	}
 }
 
-func createTestController(nodes []*corev1.Node, mcps []*mcfgv1.MachineConfigPool) (*Controller, *k8sfake.Clientset, *fakemcfgclientset.Clientset, coreinformersv1.NodeInformer) {
+func createTestController(nodes []*corev1.Node, mcps []*mcfgv1.MachineConfigPool) (*Controller, *k8sfake.Clientset, coreinformersv1.NodeInformer) {
 	kubeObjs := make([]runtime.Object, len(nodes))
 	for i, node := range nodes {
 		kubeObjs[i] = node
@@ -117,7 +117,7 @@ func createTestController(nodes []*corev1.Node, mcps []*mcfgv1.MachineConfigPool
 	// Initialize ongoing drains map for testing
 	ctrl.ongoingDrains = make(map[string]time.Time)
 
-	return ctrl, kubeClient, mcfgClient, nodeInformer
+	return ctrl, kubeClient, nodeInformer
 }
 
 func createDrainTestNode(nodeName string, unschedulable bool, desiredState, lastAppliedState string) *corev1.Node {
@@ -132,7 +132,7 @@ func createDrainTestNode(nodeName string, unschedulable bool, desiredState, last
 }
 
 func setupControllerAndSync(node *corev1.Node, ongoingDrains map[string]time.Time) (*Controller, *k8sfake.Clientset, error) {
-	ctrl, kubeClient, _, _ := createTestController([]*corev1.Node{node}, []*mcfgv1.MachineConfigPool{createTestMCP(testPoolName)})
+	ctrl, kubeClient, _ := createTestController([]*corev1.Node{node}, []*mcfgv1.MachineConfigPool{createTestMCP(testPoolName)})
 
 	if ongoingDrains != nil {
 		ctrl.ongoingDrains = ongoingDrains
@@ -178,7 +178,7 @@ func updateNodeInIndexer(nodeInformer coreinformersv1.NodeInformer, unschedulabl
 // this the lister would return stale data after drainNode cordons the node. This models
 // the happy path where no external actor interferes.
 func setupControllerAndSyncWithIndexerUpdate(node *corev1.Node) (*Controller, *k8sfake.Clientset, error) {
-	ctrl, kubeClient, _, nodeInformer := createTestController([]*corev1.Node{node}, []*mcfgv1.MachineConfigPool{createTestMCP(testPoolName)})
+	ctrl, kubeClient, nodeInformer := createTestController([]*corev1.Node{node}, []*mcfgv1.MachineConfigPool{createTestMCP(testPoolName)})
 	kubeClient.PrependReactor("patch", "nodes", updateNodeInIndexer(nodeInformer, true))
 	err := ctrl.syncNode(testNodeName)
 	return ctrl, kubeClient, err
@@ -189,7 +189,7 @@ func setupControllerAndSyncWithIndexerUpdate(node *corev1.Node) (*Controller, *k
 // actor uncordoning the node before the re-fetch at the end of drainNode. syncNode should
 // detect this and skip writing lastApplied rather than falsely signalling the MCD.
 func setupControllerAndSyncWithExternalUncordon(node *corev1.Node) (*Controller, *k8sfake.Clientset, error) {
-	ctrl, kubeClient, _, nodeInformer := createTestController([]*corev1.Node{node}, []*mcfgv1.MachineConfigPool{createTestMCP(testPoolName)})
+	ctrl, kubeClient, nodeInformer := createTestController([]*corev1.Node{node}, []*mcfgv1.MachineConfigPool{createTestMCP(testPoolName)})
 	kubeClient.PrependReactor("patch", "nodes", updateNodeInIndexer(nodeInformer, false))
 	err := ctrl.syncNode(testNodeName)
 	return ctrl, kubeClient, err
@@ -233,7 +233,6 @@ func verifyDrainPatches(t *testing.T, kubeClient *k8sfake.Clientset, expectedUns
 }
 
 func TestSyncNode(t *testing.T) {
-
 	t.Run("uncordon requested", func(t *testing.T) {
 		node := createDrainTestNode(testNodeName, true, testUncordonState, "")
 		_, kubeClient, err := setupControllerAndSync(node, nil)
@@ -241,7 +240,6 @@ func TestSyncNode(t *testing.T) {
 
 		// Verify patch operations: uncordon (schedulable=false) + completion annotation
 		verifyDrainPatches(t, kubeClient, false, testUncordonState)
-
 	})
 
 	t.Run("drain requested", func(t *testing.T) {

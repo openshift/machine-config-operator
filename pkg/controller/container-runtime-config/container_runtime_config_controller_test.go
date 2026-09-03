@@ -93,7 +93,6 @@ func newFixture(t *testing.T) *fixture {
 	f.objects = []runtime.Object{}
 	f.fgHandler = ctrlcommon.NewFeatureGatesHardcodedHandler(
 		[]apicfgv1.FeatureGateName{
-			features.FeatureGateSigstoreImageVerification,
 			features.FeatureGateCRIOCredentialProviderConfig,
 		},
 		[]apicfgv1.FeatureGateName{},
@@ -343,10 +342,6 @@ func (f *fixture) run(mcpname string) {
 	f.runController(mcpname, false)
 }
 
-func (f *fixture) runExpectError(mcpname string) {
-	f.runController(mcpname, true)
-}
-
 func (f *fixture) runController(mcpname string, expectError bool) {
 	c := f.newController()
 	if !c.addedPolicyObservers {
@@ -451,20 +446,12 @@ func checkAction(expected, actual core.Action, t *testing.T, index int) {
 	}
 }
 
-func (f *fixture) expectGetContainerRuntimeConfigAction(config *mcfgv1.ContainerRuntimeConfig) {
-	f.actions = append(f.actions, core.NewRootGetAction(schema.GroupVersionResource{Resource: "containerruntimeconfigs"}, config.Name))
-}
-
 func (f *fixture) expectGetMachineConfigAction(config *mcfgv1.MachineConfig) {
 	f.actions = append(f.actions, core.NewRootGetAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config.Name))
 }
 
 func (f *fixture) expectCreateMachineConfigAction(config *mcfgv1.MachineConfig) {
 	f.actions = append(f.actions, core.NewRootCreateAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config))
-}
-
-func (f *fixture) expectDeleteMachineConfigAction(config *mcfgv1.MachineConfig) {
-	f.actions = append(f.actions, core.NewRootDeleteAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config.Name))
 }
 
 func (f *fixture) expectUpdateMachineConfigAction(config *mcfgv1.MachineConfig) {
@@ -1376,7 +1363,6 @@ func TestRunImageBootstrap(t *testing.T) {
 				imagePolicyNamespaces: 1,
 			},
 		} {
-
 			t.Run(string(platform), func(t *testing.T) {
 				cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 				pools := []*mcfgv1.MachineConfigPool{
@@ -1386,10 +1372,7 @@ func TestRunImageBootstrap(t *testing.T) {
 				// Adding the release-image registry "release-reg.io" to the list of blocked registries to ensure that is it not added to
 				// both registries.conf and policy.json as blocked
 				imgCfg := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"insecure-reg-1.io", "insecure-reg-2.io"}, BlockedRegistries: []string{"blocked-reg.io", "release-reg.io"}, ContainerRuntimeSearchRegistries: []string{"search-reg.io"}})
-				// set FeatureGateSigstoreImageVerification enabled for testing
-				fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]apicfgv1.FeatureGateName{features.FeatureGateSigstoreImageVerification}, []apicfgv1.FeatureGateName{})
-
-				mcs, err := RunImageBootstrap("../../../templates", cc, pools, tc.icspRules, tc.idmsRules, tc.itmsRules, imgCfg, tc.clusterImagePolicies, tc.imagePolicies, fgHandler)
+				mcs, err := RunImageBootstrap("../../../templates", cc, pools, tc.icspRules, tc.idmsRules, tc.itmsRules, imgCfg, tc.clusterImagePolicies, tc.imagePolicies)
 				require.NoError(t, err)
 
 				require.Len(t, mcs, len(pools))
@@ -2132,7 +2115,6 @@ func TestContainerRuntimeConfigAdditionalStorageConfig(t *testing.T) {
 			// Enable the AdditionalStorageConfig feature gate
 			f.fgHandler = ctrlcommon.NewFeatureGatesHardcodedHandler(
 				[]apicfgv1.FeatureGateName{
-					features.FeatureGateSigstoreImageVerification,
 					features.FeatureGateAdditionalStorageConfig,
 				},
 				[]apicfgv1.FeatureGateName{},
@@ -2185,7 +2167,7 @@ func TestContainerRuntimeConfigAdditionalStorageConfigFeatureGateDisabled(t *tes
 			f := newFixture(t)
 			// Disable the AdditionalStorageConfig feature gate
 			f.fgHandler = ctrlcommon.NewFeatureGatesHardcodedHandler(
-				[]apicfgv1.FeatureGateName{features.FeatureGateSigstoreImageVerification},
+				[]apicfgv1.FeatureGateName{},
 				[]apicfgv1.FeatureGateName{features.FeatureGateAdditionalStorageConfig},
 			)
 			f.newController()
@@ -2235,7 +2217,8 @@ func TestContainerRuntimeConfigAdditionalStorageConfigFeatureGateDisabled(t *tes
 }
 
 func TestCrioCredentialProviderConfigCreate(t *testing.T) {
-	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType,
+	for _, platform := range []apicfgv1.PlatformType{
+		apicfgv1.AWSPlatformType,
 		apicfgv1.GCPPlatformType,
 		apicfgv1.AzurePlatformType,
 		apicfgv1.NonePlatformType,
@@ -2283,7 +2266,8 @@ func TestCrioCredentialProviderConfigCreate(t *testing.T) {
 }
 
 func TestCrioCredentialProviderConfigUpdate(t *testing.T) {
-	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType,
+	for _, platform := range []apicfgv1.PlatformType{
+		apicfgv1.AWSPlatformType,
 		apicfgv1.GCPPlatformType,
 		apicfgv1.AzurePlatformType,
 		apicfgv1.NonePlatformType,
@@ -2360,7 +2344,6 @@ func TestCrioCredentialProviderConfigUpdate(t *testing.T) {
 			close(stopCh)
 
 			f.verifyCRIOCredentialProviderConfigContents(t, mcs.Name, criocpUpdate, verifyOpts)
-
 		})
 	}
 }
@@ -2386,7 +2369,8 @@ func newCrioCredentialProviderConfig(name string, matchImages []string) *apicfgv
 }
 
 func TestCrioCredentialProviderConfigCreateEmpty(t *testing.T) {
-	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType,
+	for _, platform := range []apicfgv1.PlatformType{
+		apicfgv1.AWSPlatformType,
 		apicfgv1.GCPPlatformType,
 		apicfgv1.AzurePlatformType,
 		apicfgv1.NonePlatformType,

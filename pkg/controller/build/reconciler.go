@@ -259,7 +259,11 @@ func (b *buildReconciler) UpdateJob(ctx context.Context, oldJob, curJob *batchv1
 				b.eventRecorder.RecordJobCompleted(mosb, curJob)
 			}
 
-			if curJob.Status.Failed > 0 && (oldJob.Status.Failed == 0) {
+			if curJob.Status.Failed > oldJob.Status.Failed && curJob.Status.Failed <= constants.JobMaxRetries {
+				b.eventRecorder.RecordJobPodFailed(mosb, curJob, constants.JobMaxRetries)
+			}
+
+			if curJob.Status.Failed > constants.JobMaxRetries && oldJob.Status.Failed <= constants.JobMaxRetries {
 				b.eventRecorder.RecordJobFailed(mosb, curJob)
 			}
 
@@ -614,7 +618,6 @@ func (b *buildReconciler) startBuild(ctx context.Context, mosb *mcfgv1.MachineOS
 // Retrieves a deep-copy of the MachineOSConfig from the lister so that the cache is not mutated during the update.
 func (b *buildReconciler) getMachineOSConfigForUpdate(mosc *mcfgv1.MachineOSConfig) (*mcfgv1.MachineOSConfig, error) {
 	out, err := b.machineOSConfigLister.Get(mosc.Name)
-
 	if err != nil {
 		return nil, err
 	}
@@ -635,32 +638,11 @@ func (b *buildReconciler) getMachineOSBuildForJob(job *batchv1.Job) (*mcfgv1.Mac
 // Retrieves a deep-copy of the MachineOSBuild from the lister so that the cache is not mutated during the update.
 func (b *buildReconciler) getMachineOSBuildForUpdate(mosb *mcfgv1.MachineOSBuild) (*mcfgv1.MachineOSBuild, error) {
 	out, err := b.machineOSBuildLister.Get(mosb.Name)
-
 	if err != nil {
 		return nil, err
 	}
 
 	return out.DeepCopy(), nil
-}
-
-// Creates a MachineOSBuild in response to MachineConfigPool changes.
-func (b *buildReconciler) createNewMachineOSBuildOrReuseExistingForPoolChange(ctx context.Context, mcp *mcfgv1.MachineConfigPool) error {
-	mosc, err := utils.GetMachineOSConfigForMachineConfigPool(mcp, b.utilListers())
-
-	if k8serrors.IsNotFound(err) {
-		klog.Infof("No MachineOSConfig found for MachineConfigPool %s", mcp.Name)
-		return nil
-	}
-
-	if err != nil {
-		return err
-	}
-
-	if err := b.createNewMachineOSBuildOrReuseExisting(ctx, mosc.DeepCopy(), false); err != nil {
-		return fmt.Errorf("could not create MachineOSBuild for MachineConfigPool %q change: %w", mcp.Name, err)
-	}
-
-	return nil
 }
 
 // Executes whenever a MachineOSConfig has the rebuild annotation and a new MachineOSBuild needs to be created.
@@ -730,7 +712,6 @@ func (b *buildReconciler) createNewMachineOSBuildOrReuseExisting(ctx context.Con
 		MachineOSConfig:   mosc,
 		MachineConfigPool: mcp,
 	})
-
 	if err != nil {
 		return fmt.Errorf("could not instantiate new MachineOSBuild: %w", err)
 	}
@@ -1212,7 +1193,6 @@ func (b *buildReconciler) syncAll(ctx context.Context) error {
 
 		return nil
 	})
-
 	if err != nil {
 		return fmt.Errorf("could not sync all: %w", err)
 	}
@@ -1236,7 +1216,6 @@ func (b *buildReconciler) syncMachineOSBuilds(ctx context.Context) error {
 
 		return nil
 	})
-
 	if err != nil {
 		return fmt.Errorf("could not sync MachineOSBuilds: %w", err)
 	}
@@ -1249,7 +1228,6 @@ func (b *buildReconciler) syncMachineOSBuilds(ctx context.Context) error {
 // builder associated with it that one should be created.
 func (b *buildReconciler) syncMachineOSBuild(ctx context.Context, mosb *mcfgv1.MachineOSBuild) error {
 	return b.timeObjectOperation(mosb, syncingVerb, func() error {
-
 		// It could be the case that the MCP the mosb in queue was targeting no longer is valid
 		mcp, err := b.machineConfigPoolLister.Get(mosb.ObjectMeta.Labels[constants.TargetMachineConfigPoolLabelKey])
 		if err != nil {
@@ -1392,7 +1370,6 @@ func (b *buildReconciler) syncMachineOSConfigs(ctx context.Context) error {
 
 		return nil
 	})
-
 	if err != nil {
 		return fmt.Errorf("could not sync MachineOSConfigs: %w", err)
 	}
@@ -1476,7 +1453,6 @@ func (b *buildReconciler) syncMachineConfigPools(ctx context.Context) error {
 
 		return nil
 	})
-
 	if err != nil {
 		return fmt.Errorf("could not sync MachineConfigPools: %w", err)
 	}
@@ -1612,7 +1588,6 @@ func (b *buildReconciler) reconcilePoolChange(ctx context.Context, mcp *mcfgv1.M
 		return b.reuseImageForNewMOSB(ctx, mosc, oldMOSB)
 	}
 	return b.createNewMachineOSBuildOrReuseExisting(ctx, mosc, needsImageRebuild)
-
 }
 
 // reuseImageForNewMOSB creates a new MOSB (for the new rendered-MC name)
@@ -1637,7 +1612,6 @@ func (b *buildReconciler) reuseImageForNewMOSB(ctx context.Context, mosc *mcfgv1
 			MachineOSConfig:   mosc,
 			MachineConfigPool: mcp,
 		})
-
 	if err != nil {
 		return err
 	}
@@ -1805,7 +1779,6 @@ func (b *buildReconciler) shouldPreventBuildDueToDegradation(mcp *mcfgv1.Machine
 // reconcileImageRebuild calls RequiresRebuild to see if an MC changes the kernel args, ext, or osimageurl.
 // if it does, we build a new image in our new MOSB
 func (b *buildReconciler) reconcileImageRebuild(oldMCP, curMCP *mcfgv1.MachineConfigPool) (bool, error) {
-
 	curr, err := b.machineConfigLister.Get(oldMCP.Spec.Configuration.Name)
 	if err != nil {
 		return false, err
@@ -1982,7 +1955,6 @@ func (b *buildReconciler) seedMachineOSConfigWithExistingImage(ctx context.Conte
 		MachineConfigPool: mcp,
 		MachineOSConfig:   mosc,
 	})
-
 	if err != nil {
 		return fmt.Errorf("could not generate MachineOSBuild template for MachineOSConfig %q: %w", mosc.Name, err)
 	}

@@ -234,14 +234,12 @@ func (ctrl *Controller) addAPIServer(obj interface{}) {
 }
 
 func (ctrl *Controller) updateAPIServer(old, cur interface{}) {
-
 	oldAPIServer := old.(*configv1.APIServer)
 	newAPIServer := cur.(*configv1.APIServer)
 	if !reflect.DeepEqual(oldAPIServer.Spec, newAPIServer.Spec) {
 		klog.V(4).Infof("Updating APIServer: %s", newAPIServer.Name)
 		ctrl.filterAPIServer(newAPIServer)
 	}
-
 }
 
 func (ctrl *Controller) deleteAPIServer(obj interface{}) {
@@ -271,39 +269,6 @@ func (ctrl *Controller) enqueueController() {
 	}
 	klog.V(4).Infof("Re-syncing ControllerConfig %s due to dependency change", cfg.Name)
 	ctrl.enqueueControllerConfig(cfg)
-}
-
-func (ctrl *Controller) updateFeature(old, cur interface{}) {
-	oldFeature := old.(*configv1.FeatureGate)
-	newFeature := cur.(*configv1.FeatureGate)
-	if !reflect.DeepEqual(oldFeature.Spec, newFeature.Spec) {
-		klog.V(4).Infof("Updating Feature: %s", newFeature.Name)
-		ctrl.enqueueController()
-	}
-}
-
-func (ctrl *Controller) addFeature(obj interface{}) {
-	features := obj.(*configv1.FeatureGate)
-	klog.V(4).Infof("Adding Feature: %s", features.Name)
-	ctrl.enqueueController()
-}
-
-func (ctrl *Controller) deleteFeature(obj interface{}) {
-	features, ok := obj.(*configv1.FeatureGate)
-	if !ok {
-		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
-		if !ok {
-			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
-			return
-		}
-		features, ok = tombstone.Obj.(*configv1.FeatureGate)
-		if !ok {
-			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a FeatureGate %#v", obj))
-			return
-		}
-	}
-	klog.V(4).Infof("Deleting Feature %s", features.Name)
-	ctrl.enqueueController()
 }
 
 // Run executes the template controller
@@ -376,27 +341,6 @@ func (ctrl *Controller) enqueue(config *mcfgv1.ControllerConfig) {
 	}
 
 	ctrl.queue.Add(key)
-}
-
-func (ctrl *Controller) enqueueRateLimited(controllerconfig *mcfgv1.ControllerConfig) {
-	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(controllerconfig)
-	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %w", controllerconfig, err))
-		return
-	}
-
-	ctrl.queue.AddRateLimited(key)
-}
-
-// enqueueAfter will enqueue a controllerconfig after the provided amount of time.
-func (ctrl *Controller) enqueueAfter(controllerconfig *mcfgv1.ControllerConfig, after time.Duration) {
-	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(controllerconfig)
-	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %w", controllerconfig, err))
-		return
-	}
-
-	ctrl.queue.AddAfter(key, after)
 }
 
 // worker runs a worker thread that just dequeues items, processes them, and marks them done.
