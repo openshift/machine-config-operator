@@ -1658,3 +1658,67 @@ func RestoreRpm(node *Node) error {
 			"rm -f /var/tmp/rpm-real "+fakeRpmRemotePath)
 	return err
 }
+
+// RemoveNFTablesRulesFromChain flushes all the rules in the given nftables chain and returns the
+// removed rules so that they can be restored later with RestoreNFTablesRulesInChain.
+// The "table" parameter is the full table specification (family and name), e.g. "inet ovn-kubernetes".
+// On newer releases the MCS port (22623/22624) is blocked via a native nftables chain
+// ("mcs-blocking" in table "inet ovn-kubernetes") instead of the old iptables OPENSHIFT-BLOCK-OUTPUT
+// rules, so RemoveIPTablesRulesByRegexp is a no-op there and this function must be used instead.
+// If the chain does not exist (e.g. older releases still using iptables) it returns an empty slice
+// and no error.
+func (n *Node) RemoveNFTablesRulesFromChain(table, chain string) ([]string, error) {
+	removedRules := []string{}
+
+	listArgs := append([]string{"nft", "list", "chain"}, strings.Fields(table)...)
+	listArgs = append(listArgs, chain)
+	out, stderr, err := n.DebugNodeWithChrootStd(listArgs...)
+	if err != nil {
+		// If the chain or the table does not exist there is nothing to remove
+		if strings.Contains(stderr, "No such file or directory") || strings.Contains(stderr, "does not exist") {
+			logger.Infof("nftables chain %q in table %q does not exist in node %s. Nothing to remove", chain, table, n.GetName())
+			return removedRules, nil
+		}
+		logger.Errorf("Error listing nftables chain %q in table %q. Stderr: %s", chain, table, stderr)
+		return nil, err
+	}
+
+	for _, line := range strings.Split(out, "\n") {
+		rule := strings.TrimSpace(line)
+		// Skip empty lines, the chain header, the closing brace and the chain type/hook definition
+		if rule == "" || rule == "}" || strings.HasPrefix(rule, "chain ") || strings.HasPrefix(rule, "type ") {
+			continue
+		}
+		removedRules = append(removedRules, rule)
+	}
+
+	if len(removedRules) == 0 {
+		logger.Infof("No rules found in nftables chain %q of table %q in node %s", chain, table, n.GetName())
+		return removedRules, nil
+	}
+
+	logger.Infof("%s. Flushing nftables chain %q in table %q. Rules: %v", n.GetName(), chain, table, removedRules)
+	flushArgs := append([]string{"nft", "flush", "chain"}, strings.Fields(table)...)
+	flushArgs = append(flushArgs, chain)
+	if _, err := n.DebugNodeWithChroot(flushArgs...); err != nil {
+		return removedRules, err
+	}
+
+	return removedRules, nil
+}
+
+// RestoreNFTablesRulesInChain re-adds the given rules to the nftables chain. It is meant to restore
+// the rules removed by RemoveNFTablesRulesFromChain. Each rule is the rule body as printed by
+// `nft list chain` (without the "add rule <table> <chain>" prefix).
+func (n *Node) RestoreNFTablesRulesInChain(table, chain string, rules []string) error {
+	for _, rule := range rules {
+		logger.Infof("%s. Restoring nftables rule in table %q chain %q: %s", n.GetName(), table, chain, rule)
+		addArgs := append([]string{"nft", "add", "rule"}, strings.Fields(table)...)
+		addArgs = append(addArgs, chain)
+		addArgs = append(addArgs, strings.Fields(rule)...)
+		if _, err := n.DebugNodeWithChroot(addArgs...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
