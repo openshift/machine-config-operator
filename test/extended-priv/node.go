@@ -1615,6 +1615,7 @@ func ReplaceRpm(node *Node, localScriptPath string) error {
 	}
 	_, err := node.DebugNodeWithChroot("sh", "-c",
 		"chmod +x "+fakeRpmRemotePath+" && "+
+			"{ nsenter --mount=/proc/1/ns/mnt umount -l /usr/bin/rpm 2>/dev/null || true; } && "+
 			"cp /usr/bin/rpm /var/tmp/rpm-real && "+
 			"nsenter --mount=/proc/1/ns/mnt mount --bind "+fakeRpmRemotePath+" /usr/bin/rpm && "+
 			"restorecon -v /usr/bin/rpm")
