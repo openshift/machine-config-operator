@@ -1,0 +1,17 @@
+prompt: How do I create a MachineConfig to add a custom file to /etc/myapp/config.json
+  on all worker nodes and set specific kernel arguments?
+expected_api: MachineConfig
+expected_example_type: yaml
+expected_fields:
+- apiVersion
+- kind
+- metadata
+- labels
+- spec
+- config
+- storage
+- files
+- kernelArguments
+expected_documentation:
+- ai-docs/domain/crds.md
+- docs/MachineConfig.md

@@ -1,0 +1,24 @@
+prompt: How does on-cluster layering work architecturally? What is the relationship
+  between MachineOSConfig, MachineOSBuild, the Build Controller, and the Machine OS
+  Builder? How does a custom OS image get built and rolled out to nodes?
+expected_components:
+- Build Controller
+- Machine OS Builder
+- Node Controller
+- Machine Config Daemon
+expected_interactions:
+- MachineOSConfig → defines the desired OS image customization for a MachineConfigPool,
+  referencing Containerfile and base image
+- Build Controller → watches MachineOSConfig resources and creates MachineOSBuild
+  objects to trigger image builds
+- Machine OS Builder → performs the actual container image build on-cluster using
+  the specified Containerfile
+- MachineOSBuild → tracks the status and result of each image build, including the
+  output image pullspec
+- Node Controller + Machine Config Daemon → coordinate rolling out the newly built
+  OS image to nodes in the pool
+expected_documentation:
+- ai-docs/architecture/components.md
+- ai-docs/decisions/adr-001-on-cluster-layering.md
+- ai-docs/domain/crds.md
+- docs/OnClusterLayering.md

@@ -1,0 +1,7 @@
+category: authoring
+content_type: machineconfigpool-and-kubeletconfig
+complexity: complex
+constraints_tested:
+- custom-pool-must-inherit-from-worker
+- kubeletconfig-controller-integration
+- deterministic-rendering
