@@ -117,7 +117,7 @@ func TestCachedInspectorFactory(t *testing.T) {
 	require.NotEmpty(t, digest, "CVO release image must be digested")
 
 	cachePath := filepath.Join(t.TempDir(), "test-cache.json")
-	cache := imageutils.NewFileInspectionCache(cachePath, 48*time.Hour)
+	cache := imageutils.NewFileInspectionCache(cachePath, 48*time.Hour, nil)
 	factory := osimagestream.NewCachedImagesInspectorFactory(
 		&osimagestream.DefaultImagesInspectorFactory{},
 		cache,

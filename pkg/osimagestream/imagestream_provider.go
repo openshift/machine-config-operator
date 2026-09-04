@@ -10,8 +10,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-const releaseImageStreamLocation = "/release-manifests/image-references"
-
 // ImageStreamProvider provides access to an ImageStream resource.
 type ImageStreamProvider interface {
 	ReadImageStream(ctx context.Context) (*imagev1.ImageStream, error)
@@ -65,7 +63,7 @@ func (i *ImageStreamProviderNetwork) ReadImageStream(ctx context.Context) (*imag
 }
 
 func (i *ImageStreamProviderNetwork) fetchImageStream(ctx context.Context) (*imagev1.ImageStream, error) {
-	imageStreamBytes, err := i.imagesInspector.FetchImageFile(ctx, i.imageName, releaseImageStreamLocation)
+	imageStreamBytes, err := i.imagesInspector.FetchImageFile(ctx, i.imageName, releaseImageStreamPath)
 	if err != nil {
 		return nil, err
 	}

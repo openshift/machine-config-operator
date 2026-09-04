@@ -2,17 +2,10 @@ package osimagestream
 
 import (
 	"context"
-	"regexp"
 	"strings"
 
 	imagev1 "github.com/openshift/api/image/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-)
-
-var (
-	// imageTagRegxpr matches ImageStream tag names that are considered OS or extensions images.
-	// Matches patterns like "rhel-coreos", "stream-coreos", "rhel-coreos-extensions", etc.
-	imageTagRegxpr = regexp.MustCompile(`^(rhel|stream)[a-zA-Z0-9.-]*-coreos[a-zA-Z0-9.-]*(-extensions[a-zA-Z0-9.-]*)?$`)
 )
 
 // ImageStreamStreamSource fetches OS image stream metadata from an OpenShift ImageStream resource.
@@ -46,7 +39,7 @@ func (r *ImageStreamStreamSource) filterImageTag(imageStream *imagev1.ImageStrea
 			continue
 		}
 		if tag.Annotations != nil {
-			if source, ok := tag.Annotations["io.openshift.build.source-location"]; ok && strings.Contains(source, "github.com/openshift/os") {
+			if source, ok := tag.Annotations[osSourceAnnotation]; ok && strings.Contains(source, osSourceRepo) {
 				imagesToParse = append(imagesToParse, tag.From.Name)
 				continue
 			}
