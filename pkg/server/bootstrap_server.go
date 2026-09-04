@@ -13,6 +13,7 @@ import (
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 )
 
 // ensure bootstrapServer implements the
@@ -28,6 +29,13 @@ type bootstrapServer struct {
 	kubeconfigFunc kubeconfigFunc
 
 	certs []string
+}
+
+// GetFailureReporter returns nil for bootstrap server (no failure reporting during bootstrap).
+// Boot images are kept current with the release payload, so firstboot pivot failures
+// are not a realistic scenario during cluster bootstrap.
+func (bsc *bootstrapServer) GetFailureReporter() FailureReporter {
+	return nil
 }
 
 // NewBootstrapServer initializes a new Bootstrap server that implements
@@ -133,9 +141,10 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*runtime.RawExtension, er
 
 	addDataAndMaybeAppendToIgnition(caBundleFilePath, cc.Spec.KubeAPIServerServingCAData, &ignConf)
 	addDataAndMaybeAppendToIgnition(cloudProviderCAPath, cc.Spec.CloudProviderCAData, &ignConf)
+	addDataAndMaybeAppendToIgnition(daemonconsts.MCSRootCABundlePath, cc.Spec.RootCAData, &ignConf)
 
 	appenders := newAppendersBuilder(nil, bsc.kubeconfigFunc, bsc.certs, bsc.serverBaseDir).
-		WithNodeAnnotations(currConf, "").
+		WithNodeAnnotations(currConf, "", "").
 		build()
 
 	for _, a := range appenders {
