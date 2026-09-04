@@ -359,6 +359,7 @@ func getValueFromKubeletConfig(t *testing.T, cs *framework.ClientSet, node corev
 	return matches[1], true
 }
 
+
 // TestKubeletAutoSizingDropIn verifies that the auto-sizing script creates a
 // KubeletConfiguration drop-in with systemReserved values on each node.
 func TestKubeletAutoSizingDropIn(t *testing.T) {

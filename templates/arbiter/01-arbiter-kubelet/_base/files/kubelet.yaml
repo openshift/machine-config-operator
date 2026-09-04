@@ -31,8 +31,3 @@ contents:
     nodeStatusUpdateFrequency: 10s
     nodeStatusReportFrequency: 5m
     serverTLSBootstrap: true
-    tlsMinVersion: {{.TLSMinVersion}}
-    tlsCipherSuites:
-      {{- range .TLSCipherSuites }}
-        - {{ . }}
-      {{- end }}

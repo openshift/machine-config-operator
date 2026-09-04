@@ -439,23 +439,25 @@ func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, 
 	return originalKubeConfig, nil
 }
 
-func generateOriginalKubeletConfigIgn(cc *mcfgv1.ControllerConfig, templatesDir, role string, apiServer *osev1.APIServer) (*ign3types.File, error) {
-	// Render the default templates
+// renderAndExtractFile renders templates for the given role and extracts the file at path
+// from the generated MachineConfigs.
+func renderAndExtractFile(cc *mcfgv1.ControllerConfig, templatesDir, role string, apiServer *osev1.APIServer, path string) (*ign3types.File, error) {
 	tlsMinVersion, tlsCipherSuites := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
 	rc := &mtmpl.RenderConfig{ControllerConfigSpec: &cc.Spec, TLSMinVersion: tlsMinVersion, TLSCipherSuites: tlsCipherSuites}
 	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templatesDir)
 	if err != nil {
-		return nil, fmt.Errorf("GenerateMachineConfigsforRole failed with error: %w", err)
+		return nil, fmt.Errorf("GenerateMachineConfigsForRole failed with error: %w", err)
 	}
-	// Find generated kubelet.config
 	for _, gmc := range generatedConfigs {
-		gmcKubeletConfig, err := findKubeletConfig(gmc)
-		if err != nil {
-			continue
+		if f, err := findFileInMC(gmc, path); err == nil {
+			return f, nil
 		}
-		return gmcKubeletConfig, nil
 	}
-	return nil, fmt.Errorf("could not generate old kubelet config")
+	return nil, fmt.Errorf("could not find %s in rendered templates", path)
+}
+
+func generateOriginalKubeletConfigIgn(cc *mcfgv1.ControllerConfig, templatesDir, role string, apiServer *osev1.APIServer) (*ign3types.File, error) {
+	return renderAndExtractFile(cc, templatesDir, role, apiServer, "/etc/kubernetes/kubelet.conf")
 }
 
 // syncStatusOnly updates the status conditions of a KubeletConfig CR without modifying its spec.
@@ -669,7 +671,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			originalKubeConfig.TLSCipherSuites = observedCipherSuites
 		}
 
-		kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, err := generateKubeletIgnFiles(cfg, originalKubeConfig)
+		kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, tlsDropInIgnition, err := generateKubeletIgnFiles(cfg, originalKubeConfig)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err)
 		}
@@ -711,6 +713,9 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		}
 		if kubeletIgnition != nil {
 			tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *kubeletIgnition)
+		}
+		if tlsDropInIgnition != nil {
+			tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *tlsDropInIgnition)
 		}
 
 		rawIgn, err := json.Marshal(tempIgnConfig)
