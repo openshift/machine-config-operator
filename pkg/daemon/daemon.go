@@ -884,6 +884,25 @@ func (dn *Daemon) syncNode(key string) error {
 		}
 
 	} else {
+		if dn.os.IsCoreOSVariant() {
+			if odc, odcErr := dn.getCurrentConfigOnDisk(); odcErr == nil && odc != nil {
+				coreOSDaemon := CoreOSDaemon{dn}
+				if verifyErr := coreOSDaemon.verifyExtensionPackages(odc.currentConfig); verifyErr != nil {
+					return fmt.Errorf("extension package verification failed: %w", verifyErr)
+				}
+			}
+		}
+
+		if dn.node.Annotations[constants.MachineConfigDaemonStateAnnotationKey] == constants.MachineConfigDaemonStateDegraded {
+			annos := map[string]string{
+				constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateDone,
+				constants.MachineConfigDaemonReasonAnnotationKey: "",
+			}
+			if _, setErr := dn.nodeWriter.SetAnnotations(annos); setErr != nil {
+				klog.Errorf("Failed to clear degraded state after successful sync: %v", setErr)
+			}
+		}
+
 		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
 			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdated, Reason: string(mcfgv1.MachineConfigNodeUpdated), Message: fmt.Sprintf("Node %s Updated", dn.node.GetName())},
 			nil,
