@@ -190,8 +190,9 @@ func findAllRequiredResources(ctx context.Context, finder *find.Finder, provider
 	if err != nil {
 		return nil, fmt.Errorf("failed to find resource pool: %w", err)
 	}
-	networkPath := path.Join(vr.cluster.InventoryPath, failureDomain.Topology.Networks[0])
-	vr.networkRef, err = finder.Network(ctx, networkPath)
+	// finder.Network handles the discovery of the network no matter
+	// the format of the string (absolute, relative, uuid, etc)
+	vr.networkRef, err = finder.Network(ctx, failureDomain.Topology.Networks[0])
 	if err != nil {
 		return nil, fmt.Errorf("failed to find network: %w", err)
 	}
