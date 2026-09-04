@@ -318,6 +318,7 @@ func TestSyncMachineConfiguration(t *testing.T) {
 		expectedSkewEnforcementStatus   opv1.BootImageSkewEnforcementStatus
 		annotationExpected              bool
 		enableCPMSFeatureGate           bool
+		enableCAPIFeatureGate           bool
 		provisioningCRPresent           bool
 		provisioningOSDownloadURL       string
 	}{
@@ -761,6 +762,119 @@ func TestSyncMachineConfiguration(t *testing.T) {
 			},
 			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.18.0"),
 		},
+		// CAPI test cases - feature gate enabled
+		{
+			name:                  "AWS platform, CAPI gate enabled, no admin opinion, CAPI MS and MD auto opt-in to All",
+			infra:                 buildInfra(withPlatformType(configv1.AWSPlatformType)),
+			mcop:                  buildMachineConfigurationWithNoBootImageConfiguration(),
+			clusterVersion:        buildClusterVersion("4.18.0"),
+			annotationExpected:    true,
+			enableCAPIFeatureGate: true,
+			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
+				MachineManagers: []opv1.MachineManager{
+					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
+					{Resource: opv1.MachineSets, APIGroup: opv1.ClusterAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
+					{Resource: opv1.MachineDeployments, APIGroup: opv1.ClusterAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
+				},
+			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.18.0"),
+		},
+		{
+			name:                  "GCP platform, CAPI gate enabled, no admin opinion, CAPI MS and MD auto opt-in to All",
+			infra:                 buildInfra(withPlatformType(configv1.GCPPlatformType)),
+			mcop:                  buildMachineConfigurationWithNoBootImageConfiguration(),
+			clusterVersion:        buildClusterVersion("4.18.0"),
+			annotationExpected:    true,
+			enableCAPIFeatureGate: true,
+			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
+				MachineManagers: []opv1.MachineManager{
+					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
+					{Resource: opv1.MachineSets, APIGroup: opv1.ClusterAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
+					{Resource: opv1.MachineDeployments, APIGroup: opv1.ClusterAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
+				},
+			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.18.0"),
+		},
+		{
+			name:                  "Azure platform, CAPI gate enabled, no admin opinion, CAPI MS and MD auto opt-in to All",
+			infra:                 buildInfra(withPlatformType(configv1.AzurePlatformType)),
+			mcop:                  buildMachineConfigurationWithNoBootImageConfiguration(),
+			clusterVersion:        buildClusterVersion("4.18.0"),
+			annotationExpected:    true,
+			enableCAPIFeatureGate: true,
+			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
+				MachineManagers: []opv1.MachineManager{
+					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
+					{Resource: opv1.MachineSets, APIGroup: opv1.ClusterAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
+					{Resource: opv1.MachineDeployments, APIGroup: opv1.ClusterAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
+				},
+			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.18.0"),
+		},
+		{
+			name:                  "vSphere platform, CAPI gate enabled, no admin opinion, CAPI MS and MD auto opt-in to All",
+			infra:                 buildInfra(withPlatformType(configv1.VSpherePlatformType)),
+			mcop:                  buildMachineConfigurationWithNoBootImageConfiguration(),
+			clusterVersion:        buildClusterVersion("4.18.0"),
+			annotationExpected:    true,
+			enableCAPIFeatureGate: true,
+			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
+				MachineManagers: []opv1.MachineManager{
+					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
+					{Resource: opv1.MachineSets, APIGroup: opv1.ClusterAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
+					{Resource: opv1.MachineDeployments, APIGroup: opv1.ClusterAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
+				},
+			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.18.0"),
+		},
+		{
+			// MAPI MachineSets have no spec entry so they auto opt-in; CAPI entries come from spec.
+			name:                  "AWS platform, CAPI gate enabled, admin opinion for both CAPI MS and MD, MAPI still auto opts in",
+			infra:                 buildInfra(withPlatformType(configv1.AWSPlatformType)),
+			mcop:                  buildMachineConfigurationWithCAPIMachineSetsAndDeploymentsEnabled(),
+			clusterVersion:        buildClusterVersion("4.18.0"),
+			annotationExpected:    true,
+			enableCAPIFeatureGate: true,
+			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
+				MachineManagers: []opv1.MachineManager{
+					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
+					{Resource: opv1.MachineSets, APIGroup: opv1.ClusterAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
+					{Resource: opv1.MachineDeployments, APIGroup: opv1.ClusterAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
+				},
+			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.18.0"),
+		},
+		{
+			// Admin disabled CAPI MS; MD has no spec opinion so it auto opts in; MAPI MS also auto opts in.
+			name:                  "AWS platform, CAPI gate enabled, CAPI MS disabled in spec, CAPI MD and MAPI MS auto opt-in",
+			infra:                 buildInfra(withPlatformType(configv1.AWSPlatformType)),
+			mcop:                  buildMachineConfigurationWithCAPIMachineSetsDisabled(),
+			clusterVersion:        buildClusterVersion("4.18.0"),
+			annotationExpected:    true,
+			enableCAPIFeatureGate: true,
+			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
+				MachineManagers: []opv1.MachineManager{
+					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
+					{Resource: opv1.MachineSets, APIGroup: opv1.ClusterAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.None}},
+					{Resource: opv1.MachineDeployments, APIGroup: opv1.ClusterAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
+				},
+			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.18.0"),
+		},
+		{
+			name:                  "AWS platform, CAPI gate disabled, no CAPI managers in status",
+			infra:                 buildInfra(withPlatformType(configv1.AWSPlatformType)),
+			mcop:                  buildMachineConfigurationWithNoBootImageConfiguration(),
+			clusterVersion:        buildClusterVersion("4.18.0"),
+			annotationExpected:    true,
+			enableCAPIFeatureGate: false,
+			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
+				MachineManagers: []opv1.MachineManager{
+					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
+				},
+			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.18.0"),
+		},
 		{
 			name:               "SNO cluster, no skew enforcement spec, skew enforcement defaults to None",
 			infra:              buildInfra(withPlatformType(configv1.AWSPlatformType), withControlPlaneTopology(configv1.SingleReplicaTopologyMode)),
@@ -804,6 +918,9 @@ func TestSyncMachineConfiguration(t *testing.T) {
 			enabledFeatureGates := []configv1.FeatureGateName{features.FeatureGateBootImageSkewEnforcement}
 			if tc.enableCPMSFeatureGate {
 				enabledFeatureGates = append(enabledFeatureGates, features.FeatureGateManagedBootImagesCPMS)
+			}
+			if tc.enableCAPIFeatureGate {
+				enabledFeatureGates = append(enabledFeatureGates, features.FeatureGateManagedBootImagesAWSCAPI)
 			}
 
 			provisioningGVR := schema.GroupVersionResource{Group: "metal3.io", Version: "v1alpha1", Resource: "provisionings"}
@@ -1047,6 +1164,33 @@ func buildMachineConfigurationWithBootImageDisabledAndNoSkewEnforcement() *opv1.
 			ManagedBootImages: opv1.ManagedBootImages{
 				MachineManagers: []opv1.MachineManager{
 					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.None}},
+				},
+			},
+		},
+	}
+}
+
+func buildMachineConfigurationWithCAPIMachineSetsAndDeploymentsEnabled() *opv1.MachineConfiguration {
+	return &opv1.MachineConfiguration{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+		Spec: opv1.MachineConfigurationSpec{
+			ManagedBootImages: opv1.ManagedBootImages{
+				MachineManagers: []opv1.MachineManager{
+					{Resource: opv1.MachineSets, APIGroup: opv1.ClusterAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
+					{Resource: opv1.MachineDeployments, APIGroup: opv1.ClusterAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
+				},
+			},
+		},
+	}
+}
+
+func buildMachineConfigurationWithCAPIMachineSetsDisabled() *opv1.MachineConfiguration {
+	return &opv1.MachineConfiguration{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+		Spec: opv1.MachineConfigurationSpec{
+			ManagedBootImages: opv1.ManagedBootImages{
+				MachineManagers: []opv1.MachineManager{
+					{Resource: opv1.MachineSets, APIGroup: opv1.ClusterAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.None}},
 				},
 			},
 		},
