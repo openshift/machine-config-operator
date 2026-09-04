@@ -131,7 +131,7 @@ type Daemon struct {
 	queue       workqueue.TypedRateLimitingInterface[string]
 	ccQueue     workqueue.TypedRateLimitingInterface[string]
 	enqueueNode func(*corev1.Node)
-	syncHandler func(node string) error
+	syncHandler func(ctx context.Context, node string) error
 
 	// isControlPlane is true if this node is a control plane (master).
 	// The machine may also be a worker (with schedulable masters).
@@ -595,25 +595,25 @@ func ReexecuteForTargetRoot(target string) error {
 
 // worker runs a worker thread that just dequeues items, processes them, and marks them done.
 // It enforces that the syncHandler is never invoked concurrently with the same key.
-func (dn *Daemon) worker() {
-	for dn.processNextWorkItem() {
+func (dn *Daemon) worker(ctx context.Context) {
+	for dn.processNextWorkItem(ctx) {
 	}
 }
 
-func (dn *Daemon) processNextWorkItem() bool {
+func (dn *Daemon) processNextWorkItem(ctx context.Context) bool {
 	key, quit := dn.queue.Get()
 	if quit {
 		return false
 	}
 	defer dn.queue.Done(key)
 
-	err := dn.syncHandler(key)
-	dn.handleErr(err, key)
+	err := dn.syncHandler(ctx, key)
+	dn.handleErr(ctx, err, key)
 
 	return true
 }
 
-func (dn *Daemon) handleErr(err error, key string) {
+func (dn *Daemon) handleErr(ctx context.Context, err error, key string) {
 	if err == nil {
 		dn.queue.Forget(key)
 		return
@@ -625,7 +625,7 @@ func (dn *Daemon) handleErr(err error, key string) {
 		klog.Fatalf("Error handling node sync: %v", err)
 	}
 
-	if err := dn.updateErrorState(err); err != nil {
+	if err := dn.updateErrorStateWithContext(ctx, err); err != nil {
 		klog.Errorf("Could not update annotation: %v", err)
 	}
 	// This is at V(2) since the updateErrorState() call above ends up logging too
@@ -642,16 +642,24 @@ type unreconcilableErr struct {
 // error. Otherwise it calls `updateDegradedState` to set the node's state annotation value to
 // "Degraded," populate the associated reason annotation, and set the degrade condition in the MCN.
 func (dn *Daemon) updateErrorState(err error) error {
+	return dn.updateErrorStateWithContext(context.Background(), err)
+}
+
+func (dn *Daemon) updateErrorStateWithContext(ctx context.Context, err error) error {
 	var uErr *unreconcilableErr
 	if errors.As(err, &uErr) {
 		return dn.nodeWriter.SetUnreconcilable(err)
 	}
-	return dn.updateDegradedState(err)
+	return dn.updateDegradedStateWithContext(ctx, err)
 }
 
 // `updateDegradedState` calls `SetDegraded` to set the node's state annotation value to "Degraded"
 // and populate the associated reason annotation. It then sets the degrade condition in the MCN.
 func (dn *Daemon) updateDegradedState(err error) error {
+	return dn.updateDegradedStateWithContext(context.Background(), err)
+}
+
+func (dn *Daemon) updateDegradedStateWithContext(ctx context.Context, err error) error {
 	// Set node state annotation to "Degraded"
 	if setErr := dn.nodeWriter.SetDegraded(err); setErr != nil {
 		return setErr
@@ -662,7 +670,7 @@ func (dn *Daemon) updateDegradedState(err error) error {
 		return poolErr
 	}
 	// Set the node's MCN condition to "Degraded"
-	dn.reportMachineNodeDegradeStatus(err, pool)
+	dn.reportMachineNodeDegradeStatusWithContext(ctx, err, pool)
 	return nil
 }
 
@@ -700,7 +708,7 @@ func (dn *Daemon) initializeNode() error {
 }
 
 //nolint:gocyclo
-func (dn *Daemon) syncNode(key string) error {
+func (dn *Daemon) syncNode(ctx context.Context, key string) error {
 	startTime := time.Now()
 	klog.V(4).Infof("Started syncing node %q (%v)", key, startTime)
 	defer func() {
@@ -746,7 +754,7 @@ func (dn *Daemon) syncNode(key string) error {
 
 	if node.Annotations[constants.MachineConfigDaemonPostConfigAction] == constants.MachineConfigDaemonStateRebooting {
 		klog.Info("Detected Rebooting Annotation, applying MCN.")
-		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+		err := upgrademonitor.GenerateAndApplyMachineConfigNodesWithContext(ctx,
 			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateRebooted, Reason: string(mcfgv1.MachineConfigNodeUpdateRebooted), Message: "Node has rebooted"},
 			nil,
 			metav1.ConditionTrue,
@@ -814,7 +822,7 @@ func (dn *Daemon) syncNode(key string) error {
 		if err := PersistNetworkInterfaces("/"); err != nil {
 			return err
 		}
-		if err := dn.checkStateOnFirstRun(); err != nil {
+		if err := dn.checkStateOnFirstRun(ctx); err != nil {
 			return err
 		}
 		// finished syncing node for the first time;
@@ -822,7 +830,7 @@ func (dn *Daemon) syncNode(key string) error {
 		// I think we should change this to continue.
 		dn.booting = false
 
-		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
+		err = upgrademonitor.GenerateAndApplyMachineConfigNodesWithContext(ctx,
 			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeResumed, Reason: string(mcfgv1.MachineConfigNodeResumed), Message: fmt.Sprintf("In desired config %s. Resumed normal operations.", node.Annotations[constants.CurrentMachineConfigAnnotationKey])},
 			nil,
 			metav1.ConditionTrue,
@@ -860,7 +868,7 @@ func (dn *Daemon) syncNode(key string) error {
 	}
 
 	if ufc != nil {
-		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
+		err = upgrademonitor.GenerateAndApplyMachineConfigNodesWithContext(ctx,
 			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdated, Reason: string(mcfgv1.MachineConfigNodeUpdated), Message: fmt.Sprintf("Node %s needs an update", dn.node.GetName())},
 			nil,
 			metav1.ConditionFalse,
@@ -879,12 +887,12 @@ func (dn *Daemon) syncNode(key string) error {
 			return err
 		}
 
-		if err := dn.triggerUpdate(ufc.currentConfig, ufc.desiredConfig, ufc.currentImage, ufc.desiredImage); err != nil {
+		if err := dn.triggerUpdate(ctx, ufc.currentConfig, ufc.desiredConfig, ufc.currentImage, ufc.desiredImage); err != nil {
 			return err
 		}
 
 	} else {
-		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
+		err = upgrademonitor.GenerateAndApplyMachineConfigNodesWithContext(ctx,
 			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdated, Reason: string(mcfgv1.MachineConfigNodeUpdated), Message: fmt.Sprintf("Node %s Updated", dn.node.GetName())},
 			nil,
 			metav1.ConditionTrue,
@@ -950,6 +958,8 @@ func (dn *Daemon) enqueueDefault(node *corev1.Node) {
 // RunHypershift is the entry point for the simplified Hypershift mode daemon
 func (dn *Daemon) RunHypershift(stopCh <-chan struct{}, exitCh <-chan error) error {
 	klog.Info("Starting MachineConfigDaemon - Hypershift")
+	ctx, cancel := context.WithCancel(wait.ContextForChannel(stopCh))
+	defer cancel()
 
 	signaled := make(chan struct{})
 	dn.InstallSignalHandler(signaled)
@@ -957,7 +967,7 @@ func (dn *Daemon) RunHypershift(stopCh <-chan struct{}, exitCh <-chan error) err
 	defer utilruntime.HandleCrash()
 	defer dn.queue.ShutDown()
 
-	go wait.Until(dn.worker, time.Second, stopCh)
+	go wait.Until(func() { dn.worker(ctx) }, time.Second, stopCh)
 
 	for {
 		select {
@@ -974,7 +984,7 @@ func (dn *Daemon) RunHypershift(stopCh <-chan struct{}, exitCh <-chan error) err
 }
 
 //nolint:gocyclo
-func (dn *Daemon) syncNodeHypershift(key string) error {
+func (dn *Daemon) syncNodeHypershift(ctx context.Context, key string) error {
 	// First, get the current and desired configurations for the node
 	// current configuration will be read from on-disk state, either
 	//   a) /etc/mcd-currentconfig.json, written by a previous hypershift-mode MCD
@@ -994,7 +1004,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 	}
 
 	// First, check if our drain/uncordon request was honored by the controller
-	node, err := dn.kubeClient.CoreV1().Nodes().Get(context.TODO(), dn.name, metav1.GetOptions{})
+	node, err := dn.kubeClient.CoreV1().Nodes().Get(ctx, dn.name, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
@@ -1142,7 +1152,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 
 	// For us to be here, DesiredDrainerAnnotationKey == LastAppliedDrainerAnnotationKey == drain-targetHash
 	// perform the actual update
-	if err := dn.updateHypershift(&currentConfig, &desiredConfig, mcDiff); err != nil {
+	if err := dn.updateHypershift(ctx, &currentConfig, &desiredConfig, mcDiff); err != nil {
 		return fmt.Errorf("failed to update configuration: %w", err)
 	}
 
@@ -1284,7 +1294,8 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig(machineConfigFile string) er
 	// This "false" is a compatibility for IBM's use case, where they are using the MCD to write the full configuration instead of just
 	// the encapsulated config. This shouldn't affect normal OCP operations, but will allow anyone using this code to write configs to
 	// still get the kubelet cert
-	err = dn.update(oldConfig, &mc, false, true)
+	// Firstboot runs synchronously outside Run and has no lifecycle stop channel.
+	err = dn.update(context.Background(), oldConfig, &mc, false, true)
 	if err != nil {
 		return err
 	}
@@ -1356,6 +1367,8 @@ func (dn *Daemon) maybeEventf(eventtype, reason, messageFmt string, args ...inte
 func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error, errCh chan error) error {
 	logSystem("Starting to manage node: %s", dn.name)
 	dn.LogSystemData()
+	ctx, cancel := context.WithCancel(wait.ContextForChannel(stopCh))
+	defer cancel()
 
 	klog.Info("Starting MachineConfigDaemon")
 	defer klog.Info("Shutting down MachineConfigDaemon")
@@ -1383,7 +1396,7 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error, errCh chan er
 	// Collect metrics
 	dn.getUnsupportedPackages()
 
-	go wait.Until(dn.worker, time.Second, stopCh)
+	go wait.Until(func() { dn.worker(ctx) }, time.Second, stopCh)
 	go wait.Until(dn.controllerConfigWorker, time.Second, stopCh)
 
 	for {
@@ -2099,7 +2112,7 @@ func PersistNetworkInterfaces(osRoot string) error {
 // Some more background in this PR: https://github.com/openshift/machine-config-operator/pull/245
 //
 //nolint:gocyclo
-func (dn *Daemon) checkStateOnFirstRun() error {
+func (dn *Daemon) checkStateOnFirstRun(ctx context.Context) error {
 	node, err := dn.loadNodeAnnotations(dn.node)
 	if err != nil {
 		return err
@@ -2128,7 +2141,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		if !osMatch {
 			logSystem("Bootstrap pivot required to: %s", targetOSImageURL)
 
-			if err := dn.updateLayeredOS(state.currentConfig); err != nil {
+			if err := dn.updateLayeredOS(ctx, state.currentConfig); err != nil {
 				return err
 			}
 
@@ -2180,7 +2193,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 
 	if forceFileExists() {
 		logSystem("Skipping on-disk validation; %s present", constants.MachineConfigDaemonForceFile)
-		return dn.triggerUpdate(state.currentConfig, state.desiredConfig, state.currentImage, state.desiredImage)
+		return dn.triggerUpdate(ctx, state.currentConfig, state.desiredConfig, state.currentImage, state.desiredImage)
 
 	}
 
@@ -2196,7 +2209,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 
 	// We've validated state. Now, ensure that node is in desired state
 	var inDesiredConfig bool
-	if _, inDesiredConfig, err = dn.updateConfigAndState(state); err != nil {
+	if _, inDesiredConfig, err = dn.updateConfigAndState(ctx, state); err != nil {
 		return err
 	}
 	if inDesiredConfig {
@@ -2209,7 +2222,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 
 	// currentConfig != desiredConfig, and we're not booting up into the desiredConfig.
 	// Kick off an update.
-	err = dn.triggerUpdate(state.currentConfig, state.desiredConfig, state.currentImage, state.desiredImage)
+	err = dn.triggerUpdate(ctx, state.currentConfig, state.desiredConfig, state.currentImage, state.desiredImage)
 	return err
 }
 
@@ -2222,7 +2235,7 @@ func (dn *Daemon) isInDesiredConfig(state *stateAndConfigs) bool {
 }
 
 // updateConfigAndState updates node to desired state, labels nodes as done and uncordon
-func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, bool, error) {
+func (dn *Daemon) updateConfigAndState(ctx context.Context, state *stateAndConfigs) (bool, bool, error) {
 	missingODC := false
 
 	if state.bootstrapping {
@@ -2275,7 +2288,7 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, bool, erro
 			return missingODC, inDesiredConfig, err
 		}
 
-		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
+		err = upgrademonitor.GenerateAndApplyMachineConfigNodesWithContext(ctx,
 			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeResumed, Reason: string(mcfgv1.MachineConfigNodeResumed), Message: fmt.Sprintf("In desired config %s. Resumed normal operations. Applying proper annotations.", state.currentConfig.Name)},
 			nil,
 			metav1.ConditionTrue,
@@ -2355,7 +2368,8 @@ func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, c
 			return nil
 		}
 		// At this point we have verified we need to update
-		if err = dn.triggerUpdateWithMachineConfig(ufc.currentConfig, &machineConfig, false); err != nil {
+		// RunOnce is synchronous and has no lifecycle stop channel.
+		if err = dn.triggerUpdateWithMachineConfig(context.Background(), ufc.currentConfig, &machineConfig, false); err != nil {
 			dn.updateDegradedState(err)
 			return err
 		}
@@ -2363,7 +2377,8 @@ func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, c
 	}
 	if contentFrom == onceFromLocalConfig {
 		// Execute update without hitting the cluster
-		return dn.update(nil, &machineConfig, false, true)
+		// RunOnce is synchronous and has no lifecycle stop channel.
+		return dn.update(context.Background(), nil, &machineConfig, false, true)
 	}
 	// Otherwise return an error as the input format is unsupported
 	return fmt.Errorf("%v is not a path nor url; can not run once", contentFrom)
@@ -2526,7 +2541,7 @@ func (dn *Daemon) completeUpdate(desiredConfigName string) error {
 	return nil
 }
 
-func (dn *Daemon) triggerUpdate(currentConfig, desiredConfig *mcfgv1.MachineConfig, currentImage, desiredImage string) error {
+func (dn *Daemon) triggerUpdate(ctx context.Context, currentConfig, desiredConfig *mcfgv1.MachineConfig, currentImage, desiredImage string) error {
 	// Before we do any updates, ensure that the image pull secrets that rpm-ostree uses are up-to-date.
 	if err := dn.syncInternalRegistryPullSecrets(nil); err != nil {
 		return err
@@ -2547,12 +2562,12 @@ func (dn *Daemon) triggerUpdate(currentConfig, desiredConfig *mcfgv1.MachineConf
 	dn.stopConfigDriftMonitor()
 
 	klog.Infof("Triggering layered OS update")
-	return dn.update(oldConfig, newConfig, true, false)
+	return dn.update(ctx, oldConfig, newConfig, true, false)
 }
 
 // We might be able to drop this method entirely since I'm not sure if it's actually needed.
-func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig, desiredConfig *mcfgv1.MachineConfig, _ bool) error {
-	return dn.triggerUpdate(currentConfig, desiredConfig, "", "")
+func (dn *Daemon) triggerUpdateWithMachineConfig(ctx context.Context, currentConfig, desiredConfig *mcfgv1.MachineConfig, _ bool) error {
+	return dn.triggerUpdate(ctx, currentConfig, desiredConfig, "", "")
 }
 
 // Queries the cluster for the current and desired configs if they are not set.

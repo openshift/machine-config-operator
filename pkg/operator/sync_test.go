@@ -2,20 +2,28 @@ package operator
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	configv1 "github.com/openshift/api/config/v1"
 	features "github.com/openshift/api/features"
 	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	"github.com/openshift/machine-config-operator/pkg/upgrademonitor"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
+	clienttesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/retry"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	opv1 "github.com/openshift/api/operator/v1"
@@ -109,6 +117,307 @@ func TestSyncCloudConfig(t *testing.T) {
 			assert.Equal(t, tc.expectedCABundle, spec.CloudProviderCAData)
 		})
 	}
+}
+
+func TestSyncMachineConfigNodesRetriesTransientAPIErrors(t *testing.T) {
+	const (
+		nodeName = "worker-0"
+		poolName = "worker"
+	)
+
+	newExistingMCN := func(desired string) *mcfgv1.MachineConfigNode {
+		return &mcfgv1.MachineConfigNode{
+			ObjectMeta: metav1.ObjectMeta{Name: nodeName},
+			Spec: mcfgv1.MachineConfigNodeSpec{
+				Node:          mcfgv1.MCOObjectReference{Name: nodeName},
+				Pool:          mcfgv1.MCOObjectReference{Name: poolName},
+				ConfigVersion: mcfgv1.MachineConfigNodeSpecMachineConfigVersion{Desired: desired},
+			},
+		}
+	}
+
+	tests := []struct {
+		name          string
+		desiredConfig string
+		existing      []runtime.Object
+		verb          string
+	}{
+		{
+			name:          "list",
+			desiredConfig: "rendered-worker-current",
+			existing:      []runtime.Object{newExistingMCN("rendered-worker-current")},
+			verb:          "list",
+		},
+		{
+			name: "apply create",
+			verb: "create",
+		},
+		{
+			name:          "apply spec",
+			desiredConfig: "rendered-worker-new",
+			existing:      []runtime.Object{newExistingMCN(upgrademonitor.NotYetSet)},
+			verb:          "patch",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			optr, client := newMachineConfigNodeSyncTestOperator(t, test.desiredConfig, test.existing...)
+			attempts := 0
+			client.PrependReactor(test.verb, "machineconfignodes", func(action clienttesting.Action) (bool, runtime.Object, error) {
+				attempts++
+				if attempts == 1 {
+					return true, nil, apierrors.NewServiceUnavailable("storage is (re)initializing")
+				}
+				return false, nil, nil
+			})
+
+			if err := optr.syncMachineConfigNodes(context.Background(), nil, nil); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if attempts != 2 {
+				t.Fatalf("expected 2 %s attempts, got %d", test.verb, attempts)
+			}
+		})
+	}
+}
+
+func TestSyncMachineConfigNodesDoesNotRetryNonTransientError(t *testing.T) {
+	optr, client := newMachineConfigNodeSyncTestOperator(t, "")
+	attempts := 0
+	client.PrependReactor("list", "machineconfignodes", func(action clienttesting.Action) (bool, runtime.Object, error) {
+		attempts++
+		return true, nil, apierrors.NewBadRequest("invalid selector")
+	})
+
+	err := optr.syncMachineConfigNodes(context.Background(), nil, nil)
+	if err == nil {
+		t.Fatal("expected non-transient error")
+	}
+	if !apierrors.IsBadRequest(err) {
+		t.Fatalf("expected wrapped bad request, got %v", err)
+	}
+	if attempts != 1 {
+		t.Fatalf("expected 1 list attempt, got %d", attempts)
+	}
+}
+
+func TestSyncMachineConfigNodesReturnsAfterTransientRetriesExhausted(t *testing.T) {
+	optr, client := newMachineConfigNodeSyncTestOperator(t, "")
+	attempts := 0
+	client.PrependReactor("list", "machineconfignodes", func(action clienttesting.Action) (bool, runtime.Object, error) {
+		attempts++
+		return true, nil, apierrors.NewServiceUnavailable("storage is (re)initializing")
+	})
+
+	err := optr.syncMachineConfigNodes(context.Background(), nil, nil)
+	if !apierrors.IsServiceUnavailable(err) {
+		t.Fatalf("expected wrapped service unavailable error, got %v", err)
+	}
+	if attempts != retry.DefaultRetry.Steps {
+		t.Fatalf("expected retry to stop after %d attempts, got %d", retry.DefaultRetry.Steps, attempts)
+	}
+}
+
+func TestRetryMachineConfigNodeAPIOperationDoesNotDoubleRetryConflicts(t *testing.T) {
+	attempts := 0
+	conflict := apierrors.NewConflict(schema.GroupResource{Group: mcfgv1.GroupName, Resource: "machineconfignodes"}, "worker-0", errors.New("conflict"))
+	err := retryMachineConfigNodeAPIOperation(context.Background(), func(context.Context) error {
+		attempts++
+		return conflict
+	})
+
+	if !apierrors.IsConflict(err) {
+		t.Fatalf("expected conflict, got %v", err)
+	}
+	if attempts != 1 {
+		t.Fatalf("expected conflict not to be retried by outer retry, got %d attempts", attempts)
+	}
+}
+
+func TestRetryMachineConfigNodeAPIOperationStopsOnCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	attempts := 0
+	err := retryMachineConfigNodeAPIOperation(ctx, func(context.Context) error {
+		attempts++
+		cancel()
+		return apierrors.NewServiceUnavailable("temporarily unavailable")
+	})
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context cancellation, got %v", err)
+	}
+	if attempts != 1 {
+		t.Fatalf("expected cancellation after 1 attempt, got %d", attempts)
+	}
+}
+
+func TestSyncMachineConfigNodesCanceledContextDoesNotCallAPI(t *testing.T) {
+	optr, client := newMachineConfigNodeSyncTestOperator(t, "")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := optr.syncMachineConfigNodes(ctx, nil, nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context cancellation, got %v", err)
+	}
+	if actions := client.Actions(); len(actions) != 0 {
+		t.Fatalf("expected no MachineConfigNode API calls after cancellation, got %v", actions)
+	}
+}
+
+func TestSyncMachineConfigNodeErrorsDoNotIncludeNodeName(t *testing.T) {
+	const nodeName = "worker-0"
+	newExistingMCN := func() *mcfgv1.MachineConfigNode {
+		return &mcfgv1.MachineConfigNode{
+			ObjectMeta: metav1.ObjectMeta{Name: nodeName},
+			Spec: mcfgv1.MachineConfigNodeSpec{
+				Node:          mcfgv1.MCOObjectReference{Name: nodeName},
+				Pool:          mcfgv1.MCOObjectReference{Name: "worker"},
+				ConfigVersion: mcfgv1.MachineConfigNodeSpecMachineConfigVersion{Desired: upgrademonitor.NotYetSet},
+			},
+		}
+	}
+	tests := []struct {
+		name            string
+		desiredConfig   string
+		existing        []runtime.Object
+		verb            string
+		expectedContext string
+	}{
+		{
+			name:            "apply",
+			verb:            "create",
+			expectedContext: "applying MachineConfigNode",
+		},
+		{
+			name:            "spec",
+			desiredConfig:   "rendered-worker-new",
+			existing:        []runtime.Object{newExistingMCN()},
+			verb:            "patch",
+			expectedContext: "applying MachineConfigNode spec",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			optr, client := newMachineConfigNodeSyncTestOperator(t, test.desiredConfig, test.existing...)
+			client.PrependReactor(test.verb, "machineconfignodes", func(action clienttesting.Action) (bool, runtime.Object, error) {
+				return true, nil, errors.New("permanent failure")
+			})
+
+			err := optr.syncMachineConfigNodes(context.Background(), nil, nil)
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), test.expectedContext) {
+				t.Fatalf("expected operation context %q, got %v", test.expectedContext, err)
+			}
+			if strings.Contains(err.Error(), nodeName) {
+				t.Fatalf("expected error not to include node name %q, got %v", nodeName, err)
+			}
+		})
+	}
+}
+
+func TestSyncMachineConfigNodesDeletion(t *testing.T) {
+	const nodeName = "removed-worker-0"
+	newMCN := func() *mcfgv1.MachineConfigNode {
+		return &mcfgv1.MachineConfigNode{ObjectMeta: metav1.ObjectMeta{Name: nodeName}}
+	}
+
+	t.Run("retries transient error", func(t *testing.T) {
+		optr, client := newMachineConfigNodeDeletionTestOperator(t, newMCN())
+		attempts := 0
+		client.PrependReactor("delete", "machineconfignodes", func(action clienttesting.Action) (bool, runtime.Object, error) {
+			attempts++
+			if attempts == 1 {
+				return true, nil, apierrors.NewServiceUnavailable("temporarily unavailable")
+			}
+			return false, nil, nil
+		})
+
+		if err := optr.syncMachineConfigNodes(context.Background(), nil, nil); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if attempts != 2 {
+			t.Fatalf("expected 2 delete attempts, got %d", attempts)
+		}
+	})
+
+	t.Run("returns terminal error without node name", func(t *testing.T) {
+		optr, client := newMachineConfigNodeDeletionTestOperator(t, newMCN())
+		attempts := 0
+		client.PrependReactor("delete", "machineconfignodes", func(action clienttesting.Action) (bool, runtime.Object, error) {
+			attempts++
+			return true, nil, apierrors.NewBadRequest("invalid delete")
+		})
+
+		err := optr.syncMachineConfigNodes(context.Background(), nil, nil)
+		if !apierrors.IsBadRequest(err) {
+			t.Fatalf("expected wrapped bad request, got %v", err)
+		}
+		if !strings.Contains(err.Error(), "deleting MachineConfigNode") {
+			t.Fatalf("expected delete operation context, got %v", err)
+		}
+		if strings.Contains(err.Error(), nodeName) {
+			t.Fatalf("expected error not to include node name %q, got %v", nodeName, err)
+		}
+		if attempts != 1 {
+			t.Fatalf("expected 1 delete attempt, got %d", attempts)
+		}
+	})
+}
+
+func newMachineConfigNodeDeletionTestOperator(t *testing.T, mcn *mcfgv1.MachineConfigNode) (*Operator, *fakeclientmachineconfigv1.Clientset) {
+	t.Helper()
+	optr, client := newMachineConfigNodeSyncTestOperator(t, "", mcn)
+	kubeClient := fake.NewSimpleClientset()
+	nodeInformer := informers.NewSharedInformerFactory(kubeClient, 0).Core().V1().Nodes()
+	optr.nodeLister = nodeInformer.Lister()
+	return optr, client
+}
+
+func newMachineConfigNodeSyncTestOperator(t *testing.T, desiredConfig string, existing ...runtime.Object) (*Operator, *fakeclientmachineconfigv1.Clientset) {
+	t.Helper()
+
+	const (
+		nodeName = "worker-0"
+		poolName = "worker"
+	)
+
+	client := fakeclientmachineconfigv1.NewSimpleClientset(existing...)
+	mcfgInformerFactory := mcfginformers.NewSharedInformerFactory(client, 0)
+	mcpInformer := mcfgInformerFactory.Machineconfiguration().V1().MachineConfigPools()
+	if err := mcpInformer.Informer().GetIndexer().Add(helpers.NewMachineConfigPool(poolName, nil, helpers.WorkerSelector, "rendered-worker-current")); err != nil {
+		t.Fatalf("adding MachineConfigPool to indexer: %v", err)
+	}
+
+	kubeClient := fake.NewSimpleClientset()
+	kubeInformerFactory := informers.NewSharedInformerFactory(kubeClient, 0)
+	nodeInformer := kubeInformerFactory.Core().V1().Nodes()
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   nodeName,
+			UID:    "worker-0-uid",
+			Labels: map[string]string{"node-role/worker": ""},
+			Annotations: map[string]string{
+				daemonconsts.DesiredMachineConfigAnnotationKey: desiredConfig,
+			},
+		},
+	}
+	if err := nodeInformer.Informer().GetIndexer().Add(node); err != nil {
+		t.Fatalf("adding Node to indexer: %v", err)
+	}
+
+	return &Operator{
+		client:     client,
+		nodeLister: nodeInformer.Lister(),
+		mcpLister:  mcpInformer.Lister(),
+		fgHandler: ctrlcommon.NewFeatureGatesHardcodedHandler(
+			[]configv1.FeatureGateName{}, []configv1.FeatureGateName{},
+		),
+	}, client
 }
 
 type infraOption func(*configv1.Infrastructure)

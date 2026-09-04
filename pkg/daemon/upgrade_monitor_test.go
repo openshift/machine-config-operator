@@ -15,10 +15,12 @@ import (
 	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 	mcopfake "github.com/openshift/client-go/operator/clientset/versioned/fake"
 	"github.com/openshift/machine-config-operator/pkg/helpers"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	kubeinformers "k8s.io/client-go/informers"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 )
 
 type upgradeMonitorTestCase struct {
@@ -94,6 +96,46 @@ func TestUpgradeMonitor(t *testing.T) {
 
 			testCase.run(t)
 		})
+	}
+}
+
+func TestDaemonUpdateMachineConfigNodeOperationsStopOnCanceledContext(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	informerFactory := informers.NewSharedInformerFactory(client, 0)
+	mcpInformer := informerFactory.Machineconfiguration().V1().MachineConfigPools()
+	pool := &v1.MachineConfigPool{
+		ObjectMeta: metav1.ObjectMeta{Name: "worker"},
+		Spec: v1.MachineConfigPoolSpec{NodeSelector: &metav1.LabelSelector{
+			MatchLabels: map[string]string{"node-role/worker": ""},
+		}},
+	}
+	if err := mcpInformer.Informer().GetIndexer().Add(pool); err != nil {
+		t.Fatalf("adding MachineConfigPool to indexer: %v", err)
+	}
+	dn := &Daemon{
+		node: &corev1.Node{ObjectMeta: metav1.ObjectMeta{
+			Name:   "worker-0",
+			Labels: map[string]string{"node-role/worker": ""},
+		}},
+		mcfgClient: client,
+		mcpLister:  mcpInformer.Lister(),
+		fgHandler: ctrlcommon.NewFeatureGatesHardcodedHandler(
+			[]apicfgv1.FeatureGateName{},
+			[]apicfgv1.FeatureGateName{},
+		),
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	client.PrependReactor("get", "machineconfignodes", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		cancel()
+		return false, nil, nil
+	})
+
+	if err := dn.executeReloadServiceNodeDisruptionAction(ctx, "crio", nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	actions := client.Actions()
+	if len(actions) != 1 || !actions[0].Matches("get", "machineconfignodes") {
+		t.Fatalf("expected cancellation after the initial get with no subsequent MachineConfigNode API actions, got %v", actions)
 	}
 }
 

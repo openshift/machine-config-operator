@@ -96,7 +96,7 @@ func reloadDaemon() error {
 	return runCmdSync("systemctl", constants.DaemonReloadCommand)
 }
 
-func (dn *Daemon) finishRebootlessUpdate() error {
+func (dn *Daemon) finishRebootlessUpdate(ctx context.Context) error {
 	// Get current state of node, in case of an error reboot
 	state, err := dn.getStateAndConfigs()
 	if err != nil {
@@ -105,7 +105,7 @@ func (dn *Daemon) finishRebootlessUpdate() error {
 
 	var inDesiredConfig bool
 	var missingODC bool
-	if missingODC, inDesiredConfig, err = dn.updateConfigAndState(state); err != nil {
+	if missingODC, inDesiredConfig, err = dn.updateConfigAndState(ctx, state); err != nil {
 		return fmt.Errorf("could not apply update: setting node's state to Done failed. Error: %w", err)
 	}
 
@@ -120,10 +120,10 @@ func (dn *Daemon) finishRebootlessUpdate() error {
 	}
 
 	// currentConfig != desiredConfig, kick off an update
-	return dn.triggerUpdateWithMachineConfig(state.currentConfig, state.desiredConfig, true)
+	return dn.triggerUpdateWithMachineConfig(ctx, state.currentConfig, state.desiredConfig, true)
 }
 
-func (dn *Daemon) executeReloadServiceNodeDisruptionAction(serviceName string, reloadErr error) error {
+func (dn *Daemon) executeReloadServiceNodeDisruptionAction(ctx context.Context, serviceName string, reloadErr error) error {
 	if reloadErr != nil {
 		if dn.nodeWriter != nil {
 			dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedServiceReload", "%s", fmt.Sprintf("Reloading service %s failed. Error: %v", serviceName, reloadErr))
@@ -137,7 +137,7 @@ func (dn *Daemon) executeReloadServiceNodeDisruptionAction(serviceName string, r
 		return err
 	}
 
-	err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
+	err = upgrademonitor.GenerateAndApplyMachineConfigNodesWithContext(ctx,
 		&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdatePostActionComplete, Reason: string(mcfgv1.MachineConfigNodeUpdatePostActionComplete), Message: fmt.Sprintf("Node has reloaded service %s", serviceName)},
 		nil,
 		metav1.ConditionTrue,
@@ -162,7 +162,7 @@ func (dn *Daemon) executeReloadServiceNodeDisruptionAction(serviceName string, r
 // For non-reboot action, it applies configuration, updates node's config and state.
 // In the end uncordon node to schedule workload.
 // If at any point an error occurs, we reboot the node so that node has correct configuration.
-func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeActions []opv1.NodeDisruptionPolicyStatusAction, configName string) error {
+func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(ctx context.Context, postConfigChangeActions []opv1.NodeDisruptionPolicyStatusAction, configName string) error {
 	for _, action := range postConfigChangeActions {
 
 		// Drain is already completed at this stage and essentially a no-op for this loop, so no need to log that.
@@ -180,7 +180,7 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 
 		switch action.Type {
 		case opv1.RebootStatusAction:
-			err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+			err := upgrademonitor.GenerateAndApplyMachineConfigNodesWithContext(ctx,
 				&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateRebooted, Reason: string(mcfgv1.MachineConfigNodeUpdateRebooted), Message: "Upgrade requires a reboot."},
 				nil,
 				metav1.ConditionUnknown,
@@ -200,7 +200,7 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 			if dn.nodeWriter != nil {
 				dn.nodeWriter.Eventf(corev1.EventTypeNormal, "SkipReboot", "Config changes do not require reboot.")
 			}
-			err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+			err := upgrademonitor.GenerateAndApplyMachineConfigNodesWithContext(ctx,
 				&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdatePostActionComplete, Reason: "None", Message: "Changes do not require a reboot"},
 				nil,
 				metav1.ConditionTrue,
@@ -249,33 +249,33 @@ func (dn *Daemon) performPostConfigChangeNodeDisruptionAction(postConfigChangeAc
 		case opv1.ReloadStatusAction:
 			// Execute a generic service reload defined by the action object
 			serviceName := string(action.Reload.ServiceName)
-			if err := dn.executeReloadServiceNodeDisruptionAction(serviceName, reloadService(serviceName)); err != nil {
+			if err := dn.executeReloadServiceNodeDisruptionAction(ctx, serviceName, reloadService(serviceName)); err != nil {
 				return err
 			}
 
 		case opv1.SpecialStatusAction:
 			// The special action type requires a CRIO reload
-			if err := dn.executeReloadServiceNodeDisruptionAction(constants.CRIOServiceName, reloadService(constants.CRIOServiceName)); err != nil {
+			if err := dn.executeReloadServiceNodeDisruptionAction(ctx, constants.CRIOServiceName, reloadService(constants.CRIOServiceName)); err != nil {
 				return err
 			}
 
 		case opv1.DaemonReloadStatusAction:
 			// Execute daemon-reload
-			if err := dn.executeReloadServiceNodeDisruptionAction(constants.DaemonReloadCommand, reloadDaemon()); err != nil {
+			if err := dn.executeReloadServiceNodeDisruptionAction(ctx, constants.DaemonReloadCommand, reloadDaemon()); err != nil {
 				return err
 			}
 		}
 	}
 
 	// We are here, which means a reboot was not needed to apply the configuration.
-	return dn.finishRebootlessUpdate()
+	return dn.finishRebootlessUpdate(ctx)
 }
 
 // performPostConfigChangeAction takes action based on what postConfigChangeAction has been asked.
 // For non-reboot action, it applies configuration, updates node's config and state.
 // In the end uncordon node to schedule workload.
 // If at any point an error occurs, we reboot the node so that node has correct configuration.
-func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string, configName string) error {
+func (dn *Daemon) performPostConfigChangeAction(ctx context.Context, postConfigChangeActions []string, configName string) error {
 	// Get MCP associated with node
 	pool, err := helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node)
 	if err != nil {
@@ -283,7 +283,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 	}
 
 	if ctrlcommon.InSlice(postConfigChangeActionReboot, postConfigChangeActions) {
-		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+		err := upgrademonitor.GenerateAndApplyMachineConfigNodesWithContext(ctx,
 			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateRebooted, Reason: string(mcfgv1.MachineConfigNodeUpdateRebooted), Message: "Upgrade requires a reboot."},
 			nil,
 			metav1.ConditionUnknown,
@@ -304,7 +304,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 		if dn.nodeWriter != nil {
 			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "SkipReboot", "Config changes do not require reboot.")
 		}
-		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+		err := upgrademonitor.GenerateAndApplyMachineConfigNodesWithContext(ctx,
 			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdatePostActionComplete, Reason: "None", Message: fmt.Sprintf("Changes do not require a reboot")},
 			nil,
 			metav1.ConditionTrue,
@@ -330,7 +330,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 			return fmt.Errorf("could not apply update: reloading %s configuration failed. Error: %w", serviceName, err)
 		}
 
-		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+		err := upgrademonitor.GenerateAndApplyMachineConfigNodesWithContext(ctx,
 			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdatePostActionComplete, Reason: string(mcfgv1.MachineConfigNodeUpdatePostActionComplete), Message: "Node has reloaded CRIO"},
 			nil,
 			metav1.ConditionTrue,
@@ -372,7 +372,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 	}
 
 	// We are here, which means a reboot was not needed to apply the configuration.
-	return dn.finishRebootlessUpdate()
+	return dn.finishRebootlessUpdate(ctx)
 }
 
 func setRunningKargsWithCmdline(config *mcfgv1.MachineConfig, requestedKargs []string, cmdline []byte) error {
@@ -527,7 +527,7 @@ func removePendingDeployment() error {
 }
 
 // applyOSChanges extracts the OS image and adds coreos-extensions repo if we have either OS update or package layering to perform
-func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
+func (dn *CoreOSDaemon) applyOSChanges(ctx context.Context, mcDiff machineConfigDiff, oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
 	// We previously did not emit this event when kargs changed, so we still don't
 	if mcDiff.osUpdate || mcDiff.extensions || mcDiff.kernelType || mcDiff.oclEnabled {
 		// We emitted this event before, so keep it
@@ -561,7 +561,7 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "OSUpdateStarted", "%s", reason)
 		}
 
-		if err := dn.applyLayeredOSChanges(mcDiff, oldConfig, newConfig); err != nil {
+		if err := dn.applyLayeredOSChanges(ctx, mcDiff, oldConfig, newConfig); err != nil {
 			return err
 		}
 
@@ -594,7 +594,7 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 				Source:         corev1.EventSource{Component: "machineconfigdaemon", Host: dn.name},
 			}
 			// its ok to create a unique event for this low volume event
-			if _, err := dn.kubeClient.CoreV1().Events(metav1.NamespaceDefault).Create(context.TODO(),
+			if _, err := dn.kubeClient.CoreV1().Events(metav1.NamespaceDefault).Create(ctx,
 				event, metav1.CreateOptions{}); err != nil {
 				klog.Errorf("Failed to create event with reason 'OSUpdateStaged': %v", err)
 			}
@@ -889,7 +889,7 @@ func (dn *Daemon) finalizeRevertToNonLayering(newConfig *mcfgv1.MachineConfig) (
 // discussion.
 //
 //nolint:gocyclo
-func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertificateWrite, firstBoot bool) (retErr error) {
+func (dn *Daemon) update(ctx context.Context, oldConfig, newConfig *mcfgv1.MachineConfig, skipCertificateWrite, firstBoot bool) (retErr error) {
 	oldConfig = canonicalizeEmptyMC(oldConfig)
 
 	mcDiff, err := newMachineConfigDiff(oldConfig, newConfig)
@@ -959,7 +959,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 
 	// Update the MCN's NodeNodeDegraded condition with the update result
 	defer func() {
-		dn.reportMachineNodeDegradeStatus(retErr, pool)
+		dn.reportMachineNodeDegradeStatusWithContext(ctx, retErr, pool)
 	}()
 
 	oldConfigName := oldConfig.GetName()
@@ -990,7 +990,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	diff, reconcilableError := reconcilable(oldConfig, newConfig, &mcop.Spec.IrreconcilableValidationOverrides)
 
 	if reconcilableError != nil {
-		Nerr := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+		Nerr := upgrademonitor.GenerateAndApplyMachineConfigNodesWithContext(ctx,
 			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdatePrepared, Reason: string(mcfgv1.MachineConfigNodeUpdatePrepared), Message: fmt.Sprintf("Update Failed compatibility validation. MachineConfigs %v and %v are not compatible. Err: %s", oldConfigName, newConfigName, reconcilableError.Error())},
 			nil,
 			metav1.ConditionUnknown,
@@ -1036,7 +1036,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	}
 
 	if err != nil {
-		Nerr := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+		Nerr := upgrademonitor.GenerateAndApplyMachineConfigNodesWithContext(ctx,
 			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdatePrepared, Reason: string(mcfgv1.MachineConfigNodeUpdatePrepared), Message: fmt.Sprintf("Update Failed compatibility validation. MachineConfigs %v and %v are not available for update. Error calculating post config change actions: %s", oldConfigName, newConfigName, err.Error())},
 			nil,
 			metav1.ConditionUnknown,
@@ -1068,7 +1068,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 			return err
 		}
 	}
-	err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
+	err = upgrademonitor.GenerateAndApplyMachineConfigNodesWithContext(ctx,
 		&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdatePrepared, Reason: string(mcfgv1.MachineConfigNodeUpdatePrepared), Message: fmt.Sprintf("Update Compatible. Post Cfg Actions: %v Drain Required: %t", actions, drain)},
 		nil,
 		metav1.ConditionTrue,
@@ -1082,17 +1082,17 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		klog.Errorf("Error making MCN for Update Compatible: %v", err)
 	}
 
-	err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(dn.fgHandler, pool, dn.node, dn.mcfgClient)
+	err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(ctx, dn.fgHandler, pool, dn.node, dn.mcfgClient)
 	if err != nil {
 		klog.Errorf("Error making MCN spec for Update Compatible: %v", err)
 	}
 	if drain {
-		if err := dn.performDrain(); err != nil {
+		if err := dn.performDrain(ctx); err != nil {
 			return err
 		}
 	} else {
 		klog.Info("Changes do not require drain, skipping.")
-		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+		err := upgrademonitor.GenerateAndApplyMachineConfigNodesWithContext(ctx,
 			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgv1.MachineConfigNodeUpdateDrained), Message: "Node Drain Not required for this update."},
 			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateDrained, Reason: fmt.Sprintf("%s%s", string(mcfgv1.MachineConfigNodeUpdateExecuted), string(mcfgv1.MachineConfigNodeUpdateDrained)), Message: "Node Drain Not required for this update."},
 			metav1.ConditionUnknown,
@@ -1126,7 +1126,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		fileUpdate = true
 		// When ImageModeStatusReporting is enabled, use the specific `MachineConfigNodeUpdateFiles` condition for file updates
 		if imageModeStatusReportingEnabled {
-			err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
+			err = upgrademonitor.GenerateAndApplyMachineConfigNodesWithContext(ctx,
 				&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgv1.MachineConfigNodeUpdateFiles), Message: fmt.Sprintf("Updating the Files on disk as a part of the in progress phase")},
 				&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateFiles, Reason: fmt.Sprintf("%s%s", string(mcfgv1.MachineConfigNodeUpdateExecuted), string(mcfgv1.MachineConfigNodeUpdateFiles)), Message: fmt.Sprintf("Applying files to node.")},
 				metav1.ConditionUnknown,
@@ -1147,7 +1147,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		updatesNeeded[0] = ""
 		// When ImageModeStatusReporting is enabled, use the specific `MachineConfigNodeUpdateOS` condition for OS updates
 		if imageModeStatusReportingEnabled {
-			err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
+			err = upgrademonitor.GenerateAndApplyMachineConfigNodesWithContext(ctx,
 				&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgv1.MachineConfigNodeUpdateOS), Message: fmt.Sprintf("Updating the OS on disk as a part of the in progress phase")},
 				&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateOS, Reason: fmt.Sprintf("%s%s", string(mcfgv1.MachineConfigNodeUpdateExecuted), string(mcfgv1.MachineConfigNodeUpdateOS)), Message: fmt.Sprintf("Applying new OS config to node.")},
 				metav1.ConditionUnknown,
@@ -1163,7 +1163,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		}
 	}
 	if !imageModeStatusReportingEnabled {
-		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
+		err = upgrademonitor.GenerateAndApplyMachineConfigNodesWithContext(ctx,
 			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgv1.MachineConfigNodeUpdateFilesAndOS), Message: fmt.Sprintf("Updating the Files and OS on disk as a part of the in progress phase")},
 			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateFilesAndOS, Reason: fmt.Sprintf("%s%s", string(mcfgv1.MachineConfigNodeUpdateExecuted), string(mcfgv1.MachineConfigNodeUpdateFilesAndOS)), Message: fmt.Sprintf("Applying files and new OS config to node. OS will %s need an update. SSH Keys will %s need an update", updatesNeeded[0], updatesNeeded[1])},
 			metav1.ConditionUnknown,
@@ -1182,7 +1182,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	if err := dn.updateFiles(oldIgnConfig, newIgnConfig, addedOrChangedUnits, skipCertificateWrite, forceFilePresent); err != nil {
 		// When ImageModeStatusReporting is enabled, update the `MachineConfigNodeUpdateFiles` condition to report the experienced error
 		if imageModeStatusReportingEnabled {
-			mcnErr := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+			mcnErr := upgrademonitor.GenerateAndApplyMachineConfigNodesWithContext(ctx,
 				&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgv1.MachineConfigNodeUpdateFiles), Message: fmt.Sprintf("Error updating the Files on disk as a part of the in progress phase")},
 				&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateFiles, Reason: fmt.Sprintf("%s%s", string(mcfgv1.MachineConfigNodeUpdateExecuted), string(mcfgv1.MachineConfigNodeUpdateFiles)), Message: fmt.Sprintf("Update failed applying files to node: %s", err.Error())},
 				metav1.ConditionUnknown,
@@ -1221,7 +1221,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
 			// When ImageModeStatusReporting is enabled, update the `MachineConfigNodeUpdateFiles` condition to report the experienced error
 			if imageModeStatusReportingEnabled {
-				mcnErr := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+				mcnErr := upgrademonitor.GenerateAndApplyMachineConfigNodesWithContext(ctx,
 					&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgv1.MachineConfigNodeUpdateFiles), Message: fmt.Sprintf("Error updating the Files on disk as a part of the in progress phase")},
 					&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateFiles, Reason: fmt.Sprintf("%s%s", string(mcfgv1.MachineConfigNodeUpdateExecuted), string(mcfgv1.MachineConfigNodeUpdateFiles)), Message: fmt.Sprintf("Update failed applying files to node: %s", err.Error())},
 					metav1.ConditionUnknown,
@@ -1271,10 +1271,10 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 			klog.Info("Applying OCL revert-specific OS changes")
 		}
 
-		if err := coreOSDaemon.applyOSChanges(*diff, oldConfig, newConfig); err != nil {
+		if err := coreOSDaemon.applyOSChanges(ctx, *diff, oldConfig, newConfig); err != nil {
 			// When ImageModeStatusReporting is enabled, update the `MachineConfigNodeUpdateOS` condition to report the experienced error
 			if imageModeStatusReportingEnabled {
-				mcnErr := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+				mcnErr := upgrademonitor.GenerateAndApplyMachineConfigNodesWithContext(ctx,
 					&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgv1.MachineConfigNodeUpdateOS), Message: fmt.Sprintf("Error the OS on disk as a part of the in progress phase")},
 					&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateOS, Reason: fmt.Sprintf("%s%s", string(mcfgv1.MachineConfigNodeUpdateExecuted), string(mcfgv1.MachineConfigNodeUpdateOS)), Message: fmt.Sprintf("Update failed applying new OS config to node: %s", err.Error())},
 					metav1.ConditionUnknown,
@@ -1293,7 +1293,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 
 		defer func() {
 			if retErr != nil {
-				if err := coreOSDaemon.applyOSChanges(*diff, newConfig, oldConfig); err != nil {
+				if err := coreOSDaemon.applyOSChanges(ctx, *diff, newConfig, oldConfig); err != nil {
 					errs := kubeErrs.NewAggregate([]error{err, retErr})
 					retErr = fmt.Errorf("error rolling back changes to OS: %w", errs)
 					return
@@ -1341,7 +1341,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 	if imageModeStatusReportingEnabled {
 		// Update MCN for successful file update
 		if fileUpdate {
-			err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
+			err = upgrademonitor.GenerateAndApplyMachineConfigNodesWithContext(ctx,
 				&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgv1.MachineConfigNodeUpdateFiles), Message: fmt.Sprintf("Updated the Files on disk as a part of the in progress phase")},
 				&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateFiles, Reason: fmt.Sprintf("%s%s", string(mcfgv1.MachineConfigNodeUpdateExecuted), string(mcfgv1.MachineConfigNodeUpdateFiles)), Message: fmt.Sprintf("Applied files. SSH Keys did need an update")},
 				metav1.ConditionTrue,
@@ -1357,7 +1357,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 		}
 		// Update MCN for successful OS update
 		if osUpdate {
-			err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
+			err = upgrademonitor.GenerateAndApplyMachineConfigNodesWithContext(ctx,
 				&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgv1.MachineConfigNodeUpdateOS), Message: fmt.Sprintf("Updated the OS on disk as a part of the in progress phase")},
 				&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateOS, Reason: fmt.Sprintf("%s%s", string(mcfgv1.MachineConfigNodeUpdateExecuted), string(mcfgv1.MachineConfigNodeUpdateOS)), Message: fmt.Sprintf("Applied new OS config to node.")},
 				metav1.ConditionTrue,
@@ -1372,7 +1372,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 			}
 		}
 	} else {
-		err = upgrademonitor.GenerateAndApplyMachineConfigNodes(
+		err = upgrademonitor.GenerateAndApplyMachineConfigNodesWithContext(ctx,
 			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateExecuted, Reason: string(mcfgv1.MachineConfigNodeUpdateFilesAndOS), Message: fmt.Sprintf("Updated the Files and OS on disk as a part of the in progress phase")},
 			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateFilesAndOS, Reason: fmt.Sprintf("%s%s", string(mcfgv1.MachineConfigNodeUpdateExecuted), string(mcfgv1.MachineConfigNodeUpdateFilesAndOS)), Message: fmt.Sprintf("Applied files and new OS config to node. OS did %s need an update. SSH Keys did %s need an update", updatesNeeded[0], updatesNeeded[1])},
 			metav1.ConditionTrue,
@@ -1389,16 +1389,16 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig, skipCertifi
 
 	// Node Disruption Policies cannot be used during firstboot as API is not accessible.
 	if !firstBoot {
-		return dn.performPostConfigChangeNodeDisruptionAction(nodeDisruptionActions, newConfig.GetName())
+		return dn.performPostConfigChangeNodeDisruptionAction(ctx, nodeDisruptionActions, newConfig.GetName())
 	}
 	// If we're here, node disruption policies can't be used, so perform legacy action
-	return dn.performPostConfigChangeAction(actions, newConfig.GetName())
+	return dn.performPostConfigChangeAction(ctx, actions, newConfig.GetName())
 }
 
 // This is currently a subsection copied over from update() since we need to be more nuanced. Should eventually
 // de-dupe the functions.
 // See: https://issues.redhat.com/browse/MCO-810
-func (dn *Daemon) updateHypershift(oldConfig, newConfig *mcfgv1.MachineConfig, diff *machineConfigDiff) (retErr error) {
+func (dn *Daemon) updateHypershift(ctx context.Context, oldConfig, newConfig *mcfgv1.MachineConfig, diff *machineConfigDiff) (retErr error) {
 	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
 	if err != nil {
 		return fmt.Errorf("parsing old Ignition config failed: %w", err)
@@ -1447,13 +1447,13 @@ func (dn *Daemon) updateHypershift(oldConfig, newConfig *mcfgv1.MachineConfig, d
 
 	if dn.os.IsCoreOSVariant() {
 		coreOSDaemon := CoreOSDaemon{dn}
-		if err := coreOSDaemon.applyOSChanges(*diff, oldConfig, newConfig); err != nil {
+		if err := coreOSDaemon.applyOSChanges(ctx, *diff, oldConfig, newConfig); err != nil {
 			return err
 		}
 
 		defer func() {
 			if retErr != nil {
-				if err := coreOSDaemon.applyOSChanges(*diff, newConfig, oldConfig); err != nil {
+				if err := coreOSDaemon.applyOSChanges(ctx, *diff, newConfig, oldConfig); err != nil {
 					errs := kubeErrs.NewAggregate([]error{err, retErr})
 					retErr = fmt.Errorf("error rolling back changes to OS: %w", errs)
 					return
@@ -2853,7 +2853,7 @@ func (dn *Daemon) queueRevertKernelSwap() error {
 }
 
 // updateLayeredOS updates the system OS to the one specified in newConfig
-func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
+func (dn *Daemon) updateLayeredOS(ctx context.Context, config *mcfgv1.MachineConfig) error {
 	newURL := config.Spec.OSImageURL
 	klog.Infof("Updating OS to layered image %q", newURL)
 
@@ -2897,7 +2897,7 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	} else {
 		// Report ImagePulledFromRegistry condition as unknown (pulling)
 		if imageModeStatusReportingEnabled {
-			err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+			err := upgrademonitor.GenerateAndApplyMachineConfigNodesWithContext(ctx,
 				&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeImagePulledFromRegistry, Reason: string(mcfgv1.MachineConfigNodeImagePulledFromRegistry), Message: fmt.Sprintf("Pulling OS image %s from registry", newURL)},
 				nil,
 				metav1.ConditionUnknown,
@@ -2934,7 +2934,7 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 			rebaseErr := fmt.Errorf("failed to update OS to %s after retries: %v: %w", newURL, lastRebaseErr, err)
 			// Report ImagePulledFromRegistry condition as false (failed)
 			if imageModeStatusReportingEnabled {
-				mcnErr := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+				mcnErr := upgrademonitor.GenerateAndApplyMachineConfigNodesWithContext(ctx,
 					&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeImagePulledFromRegistry, Reason: string(mcfgv1.MachineConfigNodeImagePulledFromRegistry), Message: fmt.Sprintf("Failed to pull OS image %s from registry: %v", newURL, rebaseErr)},
 					nil,
 					metav1.ConditionFalse,
@@ -2953,7 +2953,7 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 
 		// Report ImagePulledFromRegistry condition as true (success)
 		if imageModeStatusReportingEnabled {
-			err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+			err := upgrademonitor.GenerateAndApplyMachineConfigNodesWithContext(ctx,
 				&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeImagePulledFromRegistry, Reason: string(mcfgv1.MachineConfigNodeImagePulledFromRegistry), Message: fmt.Sprintf("Successfully pulled OS image %s from registry", newURL)},
 				nil,
 				metav1.ConditionTrue,
@@ -3182,7 +3182,7 @@ func (dn *Daemon) reboot(rationale string) error {
 }
 
 //nolint:gocyclo
-func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
+func (dn *CoreOSDaemon) applyLayeredOSChanges(ctx context.Context, mcDiff machineConfigDiff, oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
 	// Override the computed diff if the booted state differs from the oldConfig
 	// https://issues.redhat.com/browse/OCPBUGS-2757
 	if mcDiff.osUpdate && dn.bootedOSImageURL == newConfig.Spec.OSImageURL {
@@ -3221,7 +3221,7 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 
 		// Report ImagePulledFromRegistry condition as unknown (pulling)
 		if imageModeStatusReportingEnabled {
-			err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+			err := upgrademonitor.GenerateAndApplyMachineConfigNodesWithContext(ctx,
 				&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeImagePulledFromRegistry, Reason: string(mcfgv1.MachineConfigNodeImagePulledFromRegistry), Message: fmt.Sprintf("Pulling extensions image %s from registry", newConfig.Spec.BaseOSExtensionsContainerImage)},
 				nil,
 				metav1.ConditionUnknown,
@@ -3239,7 +3239,7 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 		if osExtensionsContentDir, err = dn.ExtractExtensionsImage(newConfig.Spec.BaseOSExtensionsContainerImage); err != nil {
 			// Report ImagePulledFromRegistry condition as false (failed)
 			if imageModeStatusReportingEnabled {
-				err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+				err := upgrademonitor.GenerateAndApplyMachineConfigNodesWithContext(ctx,
 					&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeImagePulledFromRegistry, Reason: string(mcfgv1.MachineConfigNodeImagePulledFromRegistry), Message: fmt.Sprintf("Failed to pull extensions image %s from registry: %v", newConfig.Spec.BaseOSExtensionsContainerImage, err)},
 					nil,
 					metav1.ConditionFalse,
@@ -3258,7 +3258,7 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 
 		// Report ImagePulledFromRegistry condition as true (success)
 		if imageModeStatusReportingEnabled {
-			err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+			err := upgrademonitor.GenerateAndApplyMachineConfigNodesWithContext(ctx,
 				&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeImagePulledFromRegistry, Reason: string(mcfgv1.MachineConfigNodeImagePulledFromRegistry), Message: fmt.Sprintf("Successfully pulled extensions image %s from registry", newConfig.Spec.BaseOSExtensionsContainerImage)},
 				nil,
 				metav1.ConditionTrue,
@@ -3317,7 +3317,7 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 
 	// Update OS
 	if mcDiff.osUpdate {
-		if err := dn.updateLayeredOS(newConfig); err != nil {
+		if err := dn.updateLayeredOS(ctx, newConfig); err != nil {
 			mcdPivotErr.Inc()
 			return err
 		}
@@ -3440,6 +3440,11 @@ func (dn *Daemon) disableRevertSystemdUnit() error {
 // message is formatted accordingly to include the error message. The condition is otherwise set to
 // [metav1.ConditionFalse].
 func (dn *Daemon) reportMachineNodeDegradeStatus(err error, pool string) {
+	// Non-Run callers do not have a lifecycle stop channel.
+	dn.reportMachineNodeDegradeStatusWithContext(context.Background(), err, pool)
+}
+
+func (dn *Daemon) reportMachineNodeDegradeStatusWithContext(ctx context.Context, err error, pool string) {
 	if dn.node == nil {
 		return
 	}
@@ -3455,7 +3460,7 @@ func (dn *Daemon) reportMachineNodeDegradeStatus(err error, pool string) {
 		status = metav1.ConditionTrue
 	}
 
-	if applyErr := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+	if applyErr := upgrademonitor.GenerateAndApplyMachineConfigNodesWithContext(ctx,
 		condition,
 		nil,
 		status,
