@@ -132,7 +132,7 @@ func runBootstrapCmd(_ *cobra.Command, _ []string) {
 		bootstrapOpts.oauthProxyImage = findImageOrDie(imgstream, "oauth-proxy")
 		bootstrapOpts.kubeRbacProxyImage = findImageOrDie(imgstream, "kube-rbac-proxy")
 		bootstrapOpts.infraImage = findImageOrDie(imgstream, "pod")
-		bootstrapOpts.haproxyImage = findImageOrDie(imgstream, "haproxy-router")
+		bootstrapOpts.haproxyImage = findImageOrDie(imgstream, "haproxy-router-haproxy32")
 		bootstrapOpts.dockerRegistryImage = findImageOrDie(imgstream, "docker-registry")
 		bootstrapOpts.baseOSContainerImage, err = findImage(imgstream, baseOSContainerImageTag)
 		if err != nil {

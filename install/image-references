@@ -44,10 +44,10 @@ spec:
     from:
       kind: DockerImage
       name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:coredns
-  - name: haproxy-router
+  - name: haproxy-router-haproxy32
     from:
       kind: DockerImage
-      name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:haproxy-router
+      name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:haproxy-router-haproxy32
   - name: baremetal-runtimecfg
     from:
       kind: DockerImage
