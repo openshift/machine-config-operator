@@ -758,6 +758,9 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			node            = mcp.GetSortedNodesOrFail()[0]
 			port            = 22623
 			insecureCiphers = []string{"TLS_RSA_WITH_AES_128_GCM_SHA256", "TLS_RSA_WITH_AES_256_GCM_SHA384"}
+			// On newer releases the MCS port is blocked via a native nftables chain instead of iptables
+			nftBlockTable = "inet ovn-kubernetes"
+			nftBlockChain = "mcs-blocking"
 		)
 
 		exutil.By("Remove iptable rules")
@@ -772,6 +775,16 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		defer node.ExecIP6Tables(removed6Rules)
 		logger.Infof("OK!\n")
 
+		exutil.By("Remove nftables rules that block the ignition config")
+		logger.Infof("Remove the native nftables rules (chain %q in table %q) that block the MCS port", nftBlockChain, nftBlockTable)
+		removedNFTRules, err := node.RemoveNFTablesRulesFromChain(nftBlockTable, nftBlockChain)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error removing the nftables MCS-block rules in node %s", node.GetName())
+		defer func() {
+			o.Expect(node.RestoreNFTablesRulesInChain(nftBlockTable, nftBlockChain, removedNFTRules)).NotTo(o.HaveOccurred(),
+				"Error restoring the nftables MCS-block rules in node %s", node.GetName())
+		}()
+		logger.Infof("OK!\n")
+
 		internalAPIServerURI, err := GetAPIServerInternalURI(mcp.oc)
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the internal apiserver URL")
 
@@ -780,6 +793,13 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		cipherOutput, cipherErr := node.DebugNodeWithOptions([]string{"--image=" + TestSSLImage, "-n", MachineConfigNamespace}, "testssl.sh", "--color", "0", url)
 		logger.Infof("test ssh script output:\n %s", cipherOutput)
 		o.Expect(cipherErr).NotTo(o.HaveOccurred())
+
+		// Fail honestly if testssl.sh could not reach the MCS port instead of misreporting the connection
+		// problem as a cipher/SWEET32 vulnerability further down. This happens when the port block was not
+		// actually removed (e.g. the block is enforced by a mechanism this test does not clean up).
+		o.Expect(cipherOutput).NotTo(o.MatchRegexp("(?i)(can.t connect|connection refused|Fatal error|Unable to open a socket)"),
+			"testssl.sh could not connect to the MCS port at %s. The MCS port block was not fully removed:\n%s", url, cipherOutput)
+
 		for _, insecureCipher := range insecureCiphers {
 			logger.Infof("Verify %s", insecureCipher)
 			o.Expect(cipherOutput).NotTo(o.ContainSubstring(insecureCipher),
