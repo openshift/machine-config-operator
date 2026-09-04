@@ -770,6 +770,11 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		removed6Rules, err := node.RemoveIP6TablesRulesByRegexp(fmt.Sprintf("%d", port))
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error removing the IPv6 iptables rules for port %s in node %s", port, node.GetName())
 		defer node.ExecIP6Tables(removed6Rules)
+
+		logger.Infof("Flush nftables rules that block the ignition config")
+		savedNftRules, err := node.FlushNftablesMCSBlockingRules()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error flushing nftables mcs-blocking rules in node %s", node.GetName())
+		defer node.RestoreNftablesMCSBlockingRules(savedNftRules)
 		logger.Infof("OK!\n")
 
 		internalAPIServerURI, err := GetAPIServerInternalURI(mcp.oc)

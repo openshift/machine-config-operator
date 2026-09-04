@@ -31,6 +31,12 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		exutil.By("get one master node to do mc query")
 		masterNode := NewNodeList(oc.AsAdmin()).GetAllMasterNodesOrFail()[0]
+
+		logger.Infof("Flush nftables rules that block the ignition config")
+		savedNftRules, nftErr := masterNode.FlushNftablesMCSBlockingRules()
+		o.Expect(nftErr).NotTo(o.HaveOccurred(), "Error flushing nftables mcs-blocking rules in node %s", masterNode.GetName())
+		defer masterNode.RestoreNftablesMCSBlockingRules(savedNftRules)
+
 		stdout, err := masterNode.DebugNode("curl", "-w", "'Total: %{time_total}'", "-k", "-s", "-o", "/dev/null", "https://localhost:22623/config/worker")
 		o.Expect(err).NotTo(o.HaveOccurred())
 
