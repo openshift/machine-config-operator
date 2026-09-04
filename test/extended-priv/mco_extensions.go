@@ -225,16 +225,18 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			"The MCP should complete the update after installing usbguard extension")
 		logger.Infof("OK!\n")
 
-		exutil.By("Re-apply fake rpm after reboot (bind mount is lost on reboot)")
+		exutil.By("Replace rpm with fake script to simulate missing usbguard package")
 		o.Expect(ReplaceRpm(node, fakeRpmLocalPath)).To(o.Succeed(),
-			"Failed to re-apply fake rpm on node %s", node.GetName())
+			"Failed to replace rpm on node %s", node.GetName())
 		logger.Infof("OK!\n")
 
-		exutil.By("Restart MCD pod on the node to pick up fake rpm")
-		mcdPod := node.GetMachineConfigDaemon()
-		err = NewNamespacedResource(oc.AsAdmin(), "pod", MachineConfigNamespace, mcdPod).Delete()
-		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to delete MCD pod %s", mcdPod)
-		logger.Infof("Deleted MCD pod %s to trigger re-sync", mcdPod)
+		exutil.By("Trigger MCD re-sync to detect missing extension package")
+		_, err = oc.AsAdmin().WithoutNamespace().Run("annotate").Args(
+			"node", node.GetName(),
+			fmt.Sprintf("test.openshift.io/trigger-sync=%s", testID),
+			"--overwrite",
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to annotate node %s to trigger re-sync", node.GetName())
 		logger.Infof("OK!\n")
 
 		exutil.By("Wait for MCP to degrade with extension verification error")
