@@ -363,14 +363,20 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 
 	if err := ctrl.syncPinnedImageSets(pool, imageSets); err != nil {
 		klog.Errorf("Error syncing pinned image sets: %v", err)
-		return ctrl.syncFailingStatus(pool, err)
+		return err
 	}
 
-	return ctrl.syncAvailableStatus(pool)
+	return nil
 }
 
 func (ctrl *Controller) syncAvailableStatus(pool *mcfgv1.MachineConfigPool) error {
 	if apihelpers.IsMachineConfigPoolConditionFalse(pool.Status.Conditions, mcfgv1.MachineConfigPoolPinnedImageSetsDegraded) {
+		return nil
+	}
+	// Don't clear PinnedImageSetsDegraded while node-level PIS failures are active.
+	// The node controller sets this condition when NodeDegraded=True; clearing it here
+	// would create a write conflict loop between the two controllers.
+	if apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolNodeDegraded) {
 		return nil
 	}
 	sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolPinnedImageSetsDegraded, corev1.ConditionFalse, "", "")
@@ -400,6 +406,10 @@ func (ctrl *Controller) syncPinnedImageSets(pool *mcfgv1.MachineConfigPool, imag
 
 	if len(pinnedImageSetRefs) == 0 {
 		pinnedImageSetRefs = nil
+	}
+
+	if reflect.DeepEqual(pool.Spec.PinnedImageSets, pinnedImageSetRefs) {
+		return nil
 	}
 
 	newPool := pool.DeepCopy()
