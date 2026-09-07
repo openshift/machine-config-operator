@@ -730,6 +730,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("MOSB created: %s\n", failedMOSB.GetName())
 		o.Eventually(failedMOSB, "20m", "20s").Should(HaveConditionField("Failed", "status", TrueString),
 			"MOSB should fail due to incorrect containerfile")
+		o.Eventually(failedMOSB, "2m", "20s").Should(HaveConditionField("Failed", "message", o.ContainSubstring("Job has reached the specified backoff limit")),
+			"MOSB should report a failure message describing the problem")
 		logger.Infof("MOSB failed as expected\n")
 
 		exutil.By("Verify MCP is degraded with ImageBuildDegraded condition")

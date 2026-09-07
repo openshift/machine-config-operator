@@ -933,6 +933,9 @@ func (optr *Operator) syncMachineConfigNodes(ctx context.Context, _ *renderConfi
 	return nil
 }
 
+// retryMachineConfigNodeAPIOperation is a context-aware equivalent of retry.OnError.
+// ApplyMachineConfigNode already retries conflicts with a fresh GET and merge, so the
+// outer retry handles other transient API errors without multiplying conflict retries.
 func retryMachineConfigNodeAPIOperation(ctx context.Context, fn func(context.Context) error) error {
 	var lastErr error
 	err := wait.ExponentialBackoffWithContext(ctx, retry.DefaultRetry, func(ctx context.Context) (bool, error) {

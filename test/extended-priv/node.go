@@ -1196,6 +1196,43 @@ func (n *Node) ExecIP6Tables(rules []string) error {
 	return n.execIPTables(true, rules)
 }
 
+// FlushNftablesMCSBlockingRules saves and then flushes the mcs-blocking chain in the inet ovn-kubernetes nftables table.
+// Returns the original rules so they can be restored later with RestoreNftablesMCSBlockingRules.
+func (n *Node) FlushNftablesMCSBlockingRules() (string, error) {
+	savedRules, stderr, err := n.DebugNodeWithChrootStd("nft", "list", "chain", "inet", "ovn-kubernetes", "mcs-blocking")
+	if err != nil {
+		logger.Warnf("nft mcs-blocking chain not found (nftables may not be in use). Stderr: %s", stderr)
+		return "", nil
+	}
+
+	logger.Infof("%s. Flushing nftables mcs-blocking chain", n.GetName())
+	output, flushErr := n.DebugNodeWithChroot("nft", "flush", "chain", "inet", "ovn-kubernetes", "mcs-blocking")
+	if flushErr != nil {
+		logger.Errorf("Output: %s", output)
+		return savedRules, flushErr
+	}
+
+	return savedRules, nil
+}
+
+// RestoreNftablesMCSBlockingRules restores the mcs-blocking chain rules that were saved by FlushNftablesMCSBlockingRules.
+// Using echo piped to `nft -f -` is the simplest approach. If we find problems with echo (e.g. special characters
+// in the rules), we can use the RemoteFile.Create approach to write the rules to a file on the node and then
+// run `nft -f <file>` instead.
+func (n *Node) RestoreNftablesMCSBlockingRules(savedRules string) error {
+	if savedRules == "" {
+		return nil
+	}
+
+	logger.Infof("%s. Restoring nftables mcs-blocking chain rules", n.GetName())
+	output, err := n.DebugNodeWithChroot("bash", "-c",
+		fmt.Sprintf("echo '%s' | nft -f -", savedRules))
+	if err != nil {
+		logger.Errorf("Output: %s", output)
+	}
+	return err
+}
+
 // GetArchitecture get the architecture used in the node
 func (n *Node) GetArchitecture() (architecture.Architecture, error) {
 	arch, err := n.Get(`{.status.nodeInfo.architecture}`)

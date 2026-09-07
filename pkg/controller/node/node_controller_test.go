@@ -422,11 +422,13 @@ func TestGetPrimaryPoolForNode(t *testing.T) {
 			expected: nil,
 			err:      true,
 		}, {
+			// Two custom pools share the same node selector; the node must match
+			// that selector so getPrimaryPoolForNode returns an error.
 			pools: []*mcfgv1.MachineConfigPool{
 				helpers.NewMachineConfigPool("test-cluster-pool-1", nil, helpers.MasterSelector, machineConfigV0),
 				helpers.NewMachineConfigPool("test-cluster-pool-2", nil, helpers.MasterSelector, machineConfigV0),
 			},
-			nodeLabel: map[string]string{"node-role": "master"},
+			nodeLabel: map[string]string{"node-role/master": ""},
 
 			expected: nil,
 			err:      true,
@@ -460,8 +462,10 @@ func TestGetPrimaryPoolForNode(t *testing.T) {
 			c := f.newController()
 
 			got, err := c.getPrimaryPoolForNode(node)
-			if err != nil && !test.err {
-				t.Fatal("expected non-nil error")
+			if test.err {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
 			}
 
 			if got != nil {
