@@ -550,34 +550,51 @@ func CheckNodeDisruptionActionsForTargetActions(actions []opv1.NodeDisruptionPol
 
 // HasMAPIMachineSetManager checks if a MachineManager entry for a target resource exists.
 func HasMAPIMachineSetManager(machineManagers []opv1.MachineManager, resource opv1.MachineManagerMachineSetsResourceType) bool {
+	return HasMachineManager(machineManagers, resource, opv1.MachineAPI)
+}
+
+// GetMAPIMachineSetManager returns a target machine resource's machine manager. This should ideally
+// only be called if the machine manager exists in the list, returns None if not found.
+func GetMAPIMachineSetManager(machineManagers []opv1.MachineManager, resource opv1.MachineManagerMachineSetsResourceType) opv1.MachineManager {
+	return GetMachineManager(machineManagers, resource, opv1.MachineAPI)
+}
+
+// HasMAPIMachineSetManagerWithMode checks if a MachineManager entry for a target resource exists with the specified mode.
+func HasMAPIMachineSetManagerWithMode(machineManagers []opv1.MachineManager, resource opv1.MachineManagerMachineSetsResourceType, mode opv1.MachineManagerSelectorMode) bool {
+	return HasMachineManagerWithMode(machineManagers, resource, opv1.MachineAPI, mode)
+}
+
+// HasMachineManagerWithMode checks if a MachineManager entry exists for a given resource, API group, and mode.
+func HasMachineManagerWithMode(machineManagers []opv1.MachineManager, resource opv1.MachineManagerMachineSetsResourceType, apiGroup opv1.MachineManagerMachineSetsAPIGroupType, mode opv1.MachineManagerSelectorMode) bool {
 	for _, manager := range machineManagers {
-		if manager.Resource == resource {
+		if manager.Resource == resource && manager.APIGroup == apiGroup {
+			return manager.Selection.Mode == mode
+		}
+	}
+	return false
+}
+
+// HasMachineManager checks if a MachineManager entry exists for a given resource and API group.
+// Use this instead of HasMAPIMachineSetManager when the API group must also match (e.g. to
+// distinguish CAPI MachineSets from MAPI MachineSets).
+func HasMachineManager(machineManagers []opv1.MachineManager, resource opv1.MachineManagerMachineSetsResourceType, apiGroup opv1.MachineManagerMachineSetsAPIGroupType) bool {
+	for _, manager := range machineManagers {
+		if manager.Resource == resource && manager.APIGroup == apiGroup {
 			return true
 		}
 	}
 	return false
 }
 
-// GetMAPIMachineSetManager returns a target machine resource's machine manager. This should ideally
-// only be called if the machine manager exists in the list, returns None if not found.
-func GetMAPIMachineSetManager(machineManagers []opv1.MachineManager, resource opv1.MachineManagerMachineSetsResourceType) opv1.MachineManager {
+// GetMachineManager returns the MachineManager for the given resource and API group.
+// Returns a Mode=None manager if not found.
+func GetMachineManager(machineManagers []opv1.MachineManager, resource opv1.MachineManagerMachineSetsResourceType, apiGroup opv1.MachineManagerMachineSetsAPIGroupType) opv1.MachineManager {
 	for _, manager := range machineManagers {
-		if manager.Resource == resource {
+		if manager.Resource == resource && manager.APIGroup == apiGroup {
 			return manager
 		}
 	}
-	// Return a None manager if no match is found
-	return opv1.MachineManager{Resource: resource, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.None}}
-}
-
-// HasMAPIMachineSetManagerWithMode checks if a MachineManager entry for a target resource exists with the specified mode.
-func HasMAPIMachineSetManagerWithMode(machineManagers []opv1.MachineManager, resource opv1.MachineManagerMachineSetsResourceType, mode opv1.MachineManagerSelectorMode) bool {
-	for _, manager := range machineManagers {
-		if manager.Resource == resource {
-			return manager.Selection.Mode == mode
-		}
-	}
-	return false
+	return opv1.MachineManager{Resource: resource, APIGroup: apiGroup, Selection: opv1.MachineManagerSelector{Mode: opv1.None}}
 }
 
 // MergeMachineManager updates or adds a MachineManager entry for the target MachineSets resource
