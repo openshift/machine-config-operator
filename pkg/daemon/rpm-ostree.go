@@ -7,8 +7,10 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 
 	"github.com/containers/image/v5/signature"
+	"github.com/coreos/go-semver/semver"
 	rpmostreeclient "github.com/coreos/rpmostree-client-go/pkg/client"
 	"gopkg.in/yaml.v2"
 	"k8s.io/klog/v2"
@@ -18,6 +20,24 @@ const imagePolicyTransportContainerStorage = "containers-storage"
 const imagePolicyFilePath = "/etc/containers/policy.json"
 const rpmOstreeTemporalDropinFile = "/run/systemd/system/rpm-ostreed.service.d/temporal-policy-binding.conf"
 const rpmOstreeTemporalPolicyFile = "/run/tmp-rpm-ostree-policy.json"
+
+// minRpmOstreeVersionForContainerStorageRebase is the first upstream rpm-ostree
+// release that contains the fix for
+// https://github.com/coreos/rpm-ostree/issues/4283 (merged via
+// https://github.com/coreos/rpm-ostree/pull/4466), which resolved a skopeo-proxy
+// sandboxing bug affecting rebases from both containers-storage and registry
+// sources. Hosts running an older rpm-ostree hit the following issue:
+//
+// https://redhat.atlassian.net/browse/OCPBUGS-86768
+//
+// Expressed in dotted-tri form for comparison with go-semver, since rpm-ostree's
+// own version strings (e.g. "2023.3") only carry two components.
+const minRpmOstreeVersionForContainerStorageRebase = "2023.5.0"
+
+var (
+	rpmOstreeContainerStorageRebaseChecked   sync.Once
+	rpmOstreeContainerStorageRebaseSupported bool
+)
 
 // RpmOstreeClient provides all RpmOstree related methods in one structure.
 // This structure implements DeploymentClient
@@ -190,6 +210,37 @@ func (r *RpmOstreeClient) IsNewEnoughForLayering() (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// normalizeCalVerForSemver adapts rpm-ostree's CalVer-style version strings
+// (e.g. "2023.3") to the dotted-tri format go-semver requires (e.g. "2023.3.0")
+// by appending a zero patch component when only two are present. Strings that
+// already have three (or more) dot-separated components are left untouched,
+// and any resulting parse failure is handled by the caller.
+func normalizeCalVerForSemver(version string) string {
+	if strings.Count(version, ".") == 1 {
+		return version + ".0"
+	}
+	return version
+}
+
+// NOTE: This is a temporary workaround for boot images predating rpm-ostree
+// v2023.5. Remove once 4.13 and 4.14 boot images are no longer supported.
+func (r *RpmOstreeClient) SupportsContainerStorageRebase() bool {
+	rpmOstreeContainerStorageRebaseChecked.Do(func() {
+		verdata, err := r.rpmOstreeVersion()
+		if err != nil {
+			klog.Errorf("failed to get rpm-ostree version: %v", err)
+			return
+		}
+		hostVersion, err := semver.NewVersion(normalizeCalVerForSemver(verdata.Version))
+		if err != nil {
+			klog.Errorf("failed to parse rpm-ostree version %q: %v", verdata.Version, err)
+			return
+		}
+		rpmOstreeContainerStorageRebaseSupported = hostVersion.Compare(*semver.New(minRpmOstreeVersionForContainerStorageRebase)) >= 0
+	})
+	return rpmOstreeContainerStorageRebaseSupported
 }
 
 // RebaseLayered rebases system or errors if already rebased.
