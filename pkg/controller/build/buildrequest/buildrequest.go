@@ -5,9 +5,11 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"path"
 	"regexp"
 	"strings"
 	"text/template"
+	"unicode/utf8"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
@@ -37,9 +39,13 @@ var buildahBuildScript string
 const (
 	// Filename for the machineconfig JSON tarball expected by the build job
 	machineConfigJSONFilename string = "machineconfig.json.gz"
+
+	etcContainersPrefix = "/etc/containers/"
 )
 
 var basicSyntaxRegex = regexp.MustCompile(`(?m)(?i)^\s*FROM`)
+
+var validConfigMapKeyChars = regexp.MustCompile(`[^-._a-zA-Z0-9]`)
 
 // ContainerfileValidationError is returned when a rendered Containerfile fails
 // syntax validation. It is a permanent error — the build should not be retried.
@@ -163,25 +169,20 @@ func (br buildRequestImpl) ConfigMaps() ([]*corev1.ConfigMap, error) {
 
 	additionaltrustbundle := br.additionaltrustbundleToConfigMap()
 
-	etcPolicy, err := br.etcPolicyToConfigMap(br.opts.MachineConfig)
+	etcContainers, err := br.etcContainersToConfigMap(br.opts.MachineConfig)
 	if err != nil {
-		return nil, fmt.Errorf("could not convert etc/containers registries files into ConfigMap %q: %w", br.getEtcPolicyConfigMapName(), err)
-	}
-	etcRegistries, err := br.etcRegistriesToConfigMap(br.opts.MachineConfig)
-	if err != nil {
-		return nil, fmt.Errorf("could not convert registries.conf files into ConfigMap %q: %w", br.getEtcRegistriesConfigMapName(), err)
+		return nil, fmt.Errorf("could not convert /etc/containers/ files into ConfigMap %q: %w", br.getEtcContainersConfigMapName(), err)
 	}
 
 	configMaps := []*corev1.ConfigMap{containerfile, machineconfig, additionaltrustbundle}
-	if etcPolicy != nil {
-		configMaps = append(configMaps, etcPolicy)
+	if etcContainers != nil {
+		configMaps = append(configMaps, etcContainers)
 	} else {
-		klog.Warningf("/etc/containers/policy.json file not found in MachineConfig %q, could not create ConfigMap %q", br.opts.MachineConfig.Name, br.getEtcPolicyConfigMapName())
-	}
-	if etcRegistries != nil {
-		configMaps = append(configMaps, etcRegistries)
-	} else {
-		klog.Warningf("/etc/containers/registries.conf file not found in MachineConfig %q, could not create ConfigMap %q", br.opts.MachineConfig.Name, br.getEtcRegistriesConfigMapName())
+		mcName := ""
+		if br.opts.MachineConfig != nil {
+			mcName = br.opts.MachineConfig.Name
+		}
+		klog.Warningf("No /etc/containers/ files found in MachineConfig %q, could not create ConfigMap %q", mcName, br.getEtcContainersConfigMapName())
 	}
 
 	return configMaps, nil
@@ -265,74 +266,83 @@ func (br buildRequestImpl) additionaltrustbundleToConfigMap() *corev1.ConfigMap 
 	return configmap
 }
 
-func (br buildRequestImpl) etcPolicyToConfigMap(mc *mcfgv1.MachineConfig) (*corev1.ConfigMap, error) {
-	// Build the ConfigMap data
-	configMapData, err := br.ignitionFileToConfigMapData(mc, "/etc/containers/policy.json", "/etc/containers/")
-	if err != nil {
-		return nil, err
-	}
-	if len(configMapData) == 0 {
-		return nil, nil
-	}
-
-	// Create the ConfigMap
-	configmap := &corev1.ConfigMap{
-		TypeMeta:   metav1.TypeMeta{},
-		ObjectMeta: br.getObjectMeta(br.getEtcPolicyConfigMapName()),
-		Data:       configMapData,
-	}
-	return configmap, nil
+type etcContainersFile struct {
+	path    string
+	key     string
+	content string
 }
 
-func (br buildRequestImpl) etcRegistriesToConfigMap(mc *mcfgv1.MachineConfig) (*corev1.ConfigMap, error) {
-	// Build the ConfigMap data
-	configMapData, err := br.ignitionFileToConfigMapData(mc, "/etc/containers/registries.conf", "/etc/containers/")
-	if err != nil {
-		return nil, err
-	}
-	if len(configMapData) == 0 {
+func (br buildRequestImpl) getEtcContainersFiles(mc *mcfgv1.MachineConfig) ([]etcContainersFile, error) {
+	if mc == nil || len(mc.Spec.Config.Raw) == 0 {
 		return nil, nil
 	}
 
-	// Create the ConfigMap
-	configmap := &corev1.ConfigMap{
-		TypeMeta:   metav1.TypeMeta{},
-		ObjectMeta: br.getObjectMeta(br.getEtcRegistriesConfigMapName()),
-		Data:       configMapData,
-	}
-	return configmap, nil
-}
-
-func (br buildRequestImpl) ignitionFileToConfigMapData(mc *mcfgv1.MachineConfig, filePath, prefixToTrim string) (map[string]string, error) {
-	if len(mc.Spec.Config.Raw) == 0 {
-		return nil, nil
-	}
-	// Build the ConfigMap data
 	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
 	if err != nil {
 		return nil, fmt.Errorf("parsing rendered MC Ignition config failed with error: %w", err)
 	}
 
+	seen := map[string]string{}
+	var files []etcContainersFile
 	for _, file := range ignCfg.Storage.Files {
-		if file.Path != filePath {
+		cleanPath := path.Clean(file.Path)
+		if !strings.HasPrefix(cleanPath, etcContainersPrefix) {
 			continue
 		}
 		if file.Contents.Source == nil {
-			return nil, fmt.Errorf("nil source for %s", file.Path)
+			klog.Warningf("Ignition file under %s has nil source, skipping", etcContainersPrefix)
+			continue
 		}
 
-		// Extract and decode the encoded data
 		decodedData, err := chelpers.DecodeIgnitionFileContents(file.Contents.Source, file.Contents.Compression)
 		if err != nil {
-			return nil, fmt.Errorf("error decoding %s: %w", file.Path, err)
+			return nil, fmt.Errorf("error decoding Ignition file contents under %s: %w", etcContainersPrefix, err)
 		}
 
-		// Key in the configmap is the path without the prefix
-		fileKey := strings.TrimPrefix(file.Path, prefixToTrim)
-		return map[string]string{fileKey: string(decodedData)}, nil
+		if !utf8.Valid(decodedData) {
+			klog.Warningf("Ignition file under %s contains non-UTF-8 data, skipping", etcContainersPrefix)
+			continue
+		}
+
+		relativePath := strings.TrimPrefix(cleanPath, etcContainersPrefix)
+		relativePath = strings.TrimPrefix(relativePath, "/")
+		key := strings.ReplaceAll(relativePath, "/", "__")
+		key = validConfigMapKeyChars.ReplaceAllString(key, "_")
+
+		if _, exists := seen[key]; exists {
+			return nil, fmt.Errorf("ConfigMap key collision for key %q", key)
+		}
+		seen[key] = cleanPath
+
+		files = append(files, etcContainersFile{
+			path:    cleanPath,
+			key:     key,
+			content: string(decodedData),
+		})
 	}
-	klog.Infof("Could not find %s in MachineConfig %s, skipping configmap creation....", filePath, mc.Name)
-	return nil, nil
+
+	return files, nil
+}
+
+func (br buildRequestImpl) etcContainersToConfigMap(mc *mcfgv1.MachineConfig) (*corev1.ConfigMap, error) {
+	files, err := br.getEtcContainersFiles(mc)
+	if err != nil {
+		return nil, err
+	}
+	if len(files) == 0 {
+		return nil, nil
+	}
+
+	data := make(map[string]string, len(files))
+	for _, f := range files {
+		data[f.key] = f.content
+	}
+
+	return &corev1.ConfigMap{
+		TypeMeta:   metav1.TypeMeta{},
+		ObjectMeta: br.getObjectMeta(br.getEtcContainersConfigMapName()),
+		Data:       data,
+	}, nil
 }
 
 // Renders our Containerfile template.
@@ -690,16 +700,6 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 			MountPath: "/tmp/containerfile",
 		},
 		{
-			Name:      "etc-policy",
-			MountPath: "/etc/containers/policy.json",
-			SubPath:   "policy.json",
-		},
-		{
-			Name:      "etc-registries",
-			MountPath: "/etc/containers/registries.conf",
-			SubPath:   "registries.conf",
-		},
-		{
 			Name:      "additional-trust-bundle",
 			MountPath: "/etc/pki/ca-trust/source/anchors",
 		},
@@ -715,6 +715,18 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 			Name:      "done",
 			MountPath: "/tmp/done",
 		},
+	}
+
+	etcContainersFiles, err := br.getEtcContainersFiles(br.opts.MachineConfig)
+	if err != nil {
+		klog.Warningf("Could not discover /etc/containers/ files from MachineConfig: %v", err)
+	}
+	for _, f := range etcContainersFiles {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      "etc-containers",
+			MountPath: f.path,
+			SubPath:   f.key,
+		})
 	}
 
 	boolTrue := true
@@ -750,30 +762,6 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 					LocalObjectReference: corev1.LocalObjectReference{
 						Name: br.getAdditionalTrustBundleConfigMapName(),
 					},
-				},
-			},
-		},
-		{
-			// Provides the /etc/containers/policy.json content from the node
-			Name: "etc-policy",
-			VolumeSource: corev1.VolumeSource{
-				ConfigMap: &corev1.ConfigMapVolumeSource{
-					LocalObjectReference: corev1.LocalObjectReference{
-						Name: br.getEtcPolicyConfigMapName(),
-					},
-					Optional: &boolTrue,
-				},
-			},
-		},
-		{
-			// Provides the /etc/containers/registries.conf content from the node
-			Name: "etc-registries",
-			VolumeSource: corev1.VolumeSource{
-				ConfigMap: &corev1.ConfigMapVolumeSource{
-					LocalObjectReference: corev1.LocalObjectReference{
-						Name: br.getEtcRegistriesConfigMapName(),
-					},
-					Optional: &boolTrue,
 				},
 			},
 		},
@@ -831,6 +819,20 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 				EmptyDir: &corev1.EmptyDirVolumeSource{},
 			},
 		},
+	}
+
+	if len(etcContainersFiles) > 0 {
+		volumes = append(volumes, corev1.Volume{
+			Name: "etc-containers",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: br.getEtcContainersConfigMapName(),
+					},
+					Optional: &boolTrue,
+				},
+			},
+		})
 	}
 
 	// If the etc-pki-entitlement secret is found, mount it into the build pod.
@@ -972,12 +974,8 @@ func (br buildRequestImpl) getMCConfigMapName() string {
 	return utils.GetMCConfigMapName(br.opts.MachineOSBuild)
 }
 
-func (br buildRequestImpl) getEtcPolicyConfigMapName() string {
-	return utils.GetEtcPolicyConfigMapName(br.opts.MachineOSBuild)
-}
-
-func (br buildRequestImpl) getEtcRegistriesConfigMapName() string {
-	return utils.GetEtcRegistriesConfigMapName(br.opts.MachineOSBuild)
+func (br buildRequestImpl) getEtcContainersConfigMapName() string {
+	return utils.GetEtcContainersConfigMapName(br.opts.MachineOSBuild)
 }
 
 // Computes the build name based upon the MachineConfigPool name.
