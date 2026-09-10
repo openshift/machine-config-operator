@@ -24,6 +24,8 @@ contents:
           path: "/var/lib/kubelet"
       - name: run-dir
         empty-dir: {}
+      - name: lib-run-dir
+        empty-dir: {}
       - name: conf-dir
         hostPath:
           path: "/etc/haproxy"
@@ -53,8 +55,6 @@ contents:
       containers:
       - name: haproxy
         image: {{.Images.haproxyImage}}
-        securityContext:
-          runAsUser: 0
         env:
           - name: OLD_HAPROXY_PS_FORCE_DEL_TIMEOUT
             value: "120"
@@ -102,10 +102,6 @@ contents:
             done
           }
           set -ex
-          # The haproxy-router-haproxy32 (HAProxy 3.2) image does not ship the
-          # /var/lib/haproxy/run directory that older haproxy-router images did.
-          # HAProxy needs it to create the stats socket and pid file, so ensure it exists.
-          mkdir -p /var/lib/haproxy/run
           declare -r haproxy_sock="/var/run/haproxy/haproxy-master.sock"
           declare -r haproxy_log_sock="/var/run/haproxy/haproxy-log.sock"
           export -f msg_handler
@@ -127,6 +123,8 @@ contents:
           mountPropagation: HostToContainer
         - name: run-dir
           mountPath: "/var/run/haproxy"
+        - name: lib-run-dir
+          mountPath: "/var/lib/haproxy/run"
         livenessProbe:
           initialDelaySeconds: 50
           httpGet:
