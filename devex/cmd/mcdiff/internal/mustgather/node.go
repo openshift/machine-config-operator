@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-	"github.com/openshift/machine-config-operator/devex/cmd/mcdiff/internal/ignition"
 	"github.com/openshift/machine-config-operator/devex/cmd/mcdiff/internal/node"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
@@ -62,13 +60,6 @@ func (r *NodeReader) ReadFile(ctx context.Context, nodeName, filePath string) ([
 		return readHostSnapshot(p)
 	}
 
-	if content, mode, ok, err := r.mg.fromCurrentConfig(nodeName, filePath); err != nil {
-		return nil, nil, err
-	} else if ok {
-		klog.V(2).Infof("reading %s for node %s from machine_config_ondisk currentconfig", filePath, nodeName)
-		return content, mode, nil
-	}
-
 	if r.mg.nodePresent(nodeName) {
 		return nil, nil, fmt.Errorf("file %q is missing on node %q in must-gather: %w", filePath, nodeName, node.ErrFileNotFound)
 	}
@@ -99,29 +90,6 @@ func (m *MustGather) nodePresent(nodeName string) bool {
 		}
 	}
 	return false
-}
-
-func (m *MustGather) fromCurrentConfig(nodeName, filePath string) ([]byte, *int, bool, error) {
-	p := existingFile(
-		filepath.Join(m.Root, "machine_config_ondisk", nodeName, "currentconfig"),
-		filepath.Join(m.Root, "machine_config_ondisk", nodeName, "currentconfig.json"),
-		filepath.Join(m.Root, "machine_config_ondisk", nodeName, "currentconfig.yaml"),
-	)
-	if p == "" {
-		return nil, nil, false, nil
-	}
-	var mc mcfgv1.MachineConfig
-	if err := decodeFile(p, &mc); err != nil {
-		return nil, nil, false, fmt.Errorf("failed to decode currentconfig for node %q (%s): %w", nodeName, p, err)
-	}
-	extracted, err := ignition.ExtractFile(&mc, filePath)
-	if err != nil {
-		return nil, nil, false, err
-	}
-	if !extracted.Found {
-		return nil, nil, false, nil
-	}
-	return extracted.Contents, extracted.Mode, true, nil
 }
 
 func readHostSnapshot(p string) ([]byte, *int, error) {

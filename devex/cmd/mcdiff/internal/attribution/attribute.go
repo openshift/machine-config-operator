@@ -62,6 +62,33 @@ func Attribute(path string, sources []*mcfgv1.MachineConfig) (*Result, error) {
 	return out, nil
 }
 
+// LastWriters maps each Ignition path to the source MachineConfig that wins
+// MergeMachineConfigs order for that path. One parse of each fragment.
+// Paths in fragments that fail to parse or use append are omitted.
+func LastWriters(sources []*mcfgv1.MachineConfig) map[string]string {
+	out := map[string]string{}
+	ordered, err := sortForMerge(sources)
+	if err != nil {
+		return out
+	}
+	for _, mc := range ordered {
+		if len(mc.Spec.Config.Raw) == 0 {
+			continue
+		}
+		ign, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+		if err != nil {
+			continue
+		}
+		for _, f := range ign.Storage.Files {
+			if len(f.Append) > 0 || f.Path == "" {
+				continue
+			}
+			out[f.Path] = mc.Name
+		}
+	}
+	return out
+}
+
 // sortForMerge copies configs and orders them the way MergeMachineConfigs does:
 // worker-role fragments by name, then all other fragments by name.
 func sortForMerge(configs []*mcfgv1.MachineConfig) ([]*mcfgv1.MachineConfig, error) {
