@@ -81,8 +81,10 @@ func (a *assetRenderer) addTemplateFuncs() {
 	funcs["toYAML"] = toYAML
 	funcs["onPremPlatformAPIServerInternalIP"] = onPremPlatformAPIServerInternalIP
 	funcs["onPremPlatformAPIServerInternalIPs"] = onPremPlatformAPIServerInternalIPs
+	funcs["onPremPlatformAPIServerInternalIPsForFamilies"] = onPremPlatformAPIServerInternalIPsForFamilies
 	funcs["onPremPlatformIngressIP"] = onPremPlatformIngressIP
 	funcs["onPremPlatformIngressIPs"] = onPremPlatformIngressIPs
+	funcs["onPremPlatformIngressIPsForFamilies"] = onPremPlatformIngressIPsForFamilies
 	funcs["onPremPlatformShortName"] = onPremPlatformShortName
 	funcs["cloudPlatformAPIIntLoadBalancerIPs"] = cloudPlatformAPIIntLoadBalancerIPs
 	funcs["cloudPlatformAPILoadBalancerIPs"] = cloudPlatformAPILoadBalancerIPs
@@ -373,6 +375,73 @@ func onPremPlatformAPIServerInternalIPs(cfg mcfgv1.ControllerConfigSpec) (interf
 		}
 	}
 	return nil, fmt.Errorf("")
+}
+
+// onPremPlatformAPIServerInternalIPsForFamilies returns API VIP strings filtered by
+// ControllerConfig IPFamilies (from ServiceNetwork).
+func onPremPlatformAPIServerInternalIPsForFamilies(cfg mcfgv1.ControllerConfigSpec) (interface{}, error) {
+	raw, err := onPremPlatformAPIServerInternalIPs(cfg)
+	if err != nil {
+		return nil, err
+	}
+	ips, err := onPremIPsToStrings(raw)
+	if err != nil {
+		return nil, err
+	}
+	return filterIPsForIPFamilies(ips, cfg.IPFamilies), nil
+}
+
+// onPremPlatformIngressIPsForFamilies returns Ingress VIP strings filtered by IPFamilies.
+func onPremPlatformIngressIPsForFamilies(cfg mcfgv1.ControllerConfigSpec) (interface{}, error) {
+	raw, err := onPremPlatformIngressIPs(cfg)
+	if err != nil {
+		return nil, err
+	}
+	ips, err := onPremIPsToStrings(raw)
+	if err != nil {
+		return nil, err
+	}
+	return filterIPsForIPFamilies(ips, cfg.IPFamilies), nil
+}
+
+func onPremIPsToStrings(v interface{}) ([]string, error) {
+	switch x := v.(type) {
+	case nil:
+		return []string{}, nil
+	case []string:
+		return x, nil
+	case []configv1.IP:
+		out := make([]string, len(x))
+		for i, ip := range x {
+			out[i] = string(ip)
+		}
+		return out, nil
+	default:
+		return nil, fmt.Errorf("unexpected VIP list type %T", v)
+	}
+}
+
+func filterIPsForIPFamilies(ips []string, families mcfgv1.IPFamiliesType) []string {
+	wantV4 := families == mcfgv1.IPFamiliesIPv4
+	wantV6 := families == mcfgv1.IPFamiliesIPv6
+	if !wantV4 && !wantV6 {
+		return ips
+	}
+	out := make([]string, 0, len(ips))
+	for _, s := range ips {
+		ip := net.ParseIP(s)
+		if ip == nil {
+			continue
+		}
+		isV4 := ip.To4() != nil
+		if wantV4 && isV4 {
+			out = append(out, s)
+		}
+		if wantV6 && !isV4 {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // cloudPlatformLoadBalancerIPs provides a generic method to obtain API, API-Int and Ingrerss Load Balancer IPs
