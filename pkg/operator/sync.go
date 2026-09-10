@@ -127,8 +127,6 @@ const (
 	mobEventsClusterRoleManifestPath                = "manifests/machineosbuilder/events-clusterrole.yaml"
 	mobEventsRoleBindingDefaultManifestPath         = "manifests/machineosbuilder/events-rolebinding-default.yaml"
 	mobEventsRoleBindingTargetManifestPath          = "manifests/machineosbuilder/events-rolebinding-target.yaml"
-	mobConfigMapsSecretsRoleTargetManifestPath      = "manifests/machineosbuilder/configmaps-secrets-role-target.yaml"
-	mobConfigMapsSecretsRoleBindingTargetManifestPath = "manifests/machineosbuilder/configmaps-secrets-rolebinding-target.yaml"
 	mobClusterRoleBindingServiceAccountManifestPath = "manifests/machineosbuilder/clusterrolebinding-service-account.yaml"
 	mobClusterRolebindingAnyUIDManifestPath         = "manifests/machineosbuilder/clusterrolebinding-anyuid.yaml"
 	mobServiceAccountManifestPath                   = "manifests/machineosbuilder/sa.yaml"
@@ -1292,13 +1290,9 @@ func (optr *Operator) syncMachineOSBuilder(config *renderConfig, _ *configv1.Clu
 			mobClusterRoleManifestPath,
 			mobEventsClusterRoleManifestPath,
 		},
-		roles: []string{
-			mobConfigMapsSecretsRoleTargetManifestPath,
-		},
 		roleBindings: []string{
 			mobEventsRoleBindingDefaultManifestPath,
 			mobEventsRoleBindingTargetManifestPath,
-			mobConfigMapsSecretsRoleBindingTargetManifestPath,
 		},
 		clusterRoleBindings: []string{
 			mobClusterRoleBindingServiceAccountManifestPath,
