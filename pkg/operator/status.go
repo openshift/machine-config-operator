@@ -11,7 +11,6 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 
 	configv1 "github.com/openshift/api/config/v1"
-	features "github.com/openshift/api/features"
 	opv1 "github.com/openshift/api/operator/v1"
 	cov1helpers "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers"
 	corev1 "k8s.io/api/core/v1"
@@ -676,11 +675,6 @@ func checkBootImageControllerReady(mcop *opv1.MachineConfiguration) (bool, error
 // It returns an error if there is no skew enforcement opinion specified. If one is specified,
 // it checks if boot image skew is within the expected limit.
 func (optr *Operator) checkBootImageSkewUpgradeableGuard() (bool, string, error) {
-	// Check if feature gate is enabled
-	if !optr.fgHandler.Enabled(features.FeatureGateBootImageSkewEnforcement) {
-		return false, "", nil
-	}
-
 	// Fetch MachineConfiguration
 	mcop, err := optr.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
 	if err != nil {

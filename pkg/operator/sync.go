@@ -2579,10 +2579,6 @@ func (optr *Operator) syncPreBuiltImageMachineConfigs() error {
 // syncBootImageSkewEnforcementStatus determines the appropriate BootImageSkewEnforcementStatus based on
 // the MachineConfiguration spec, platform defaults, and cluster version information.
 func (optr *Operator) syncBootImageSkewEnforcementStatus(mcop *opv1.MachineConfiguration, newMachineConfigurationStatus *opv1.MachineConfigurationStatus, infra *configv1.Infrastructure, supportsBootImageUpdates bool) {
-	if !optr.fgHandler.Enabled(features.FeatureGateBootImageSkewEnforcement) {
-		return
-	}
-
 	// Grab install time OCP version
 	ocpVersionAtInstall := optr.getOCPInstallVersion()
 
