@@ -24,6 +24,21 @@ spec:
       privileged: true
       readOnlyRootFilesystem: false
     terminationMessagePolicy: FallbackToLogsOnError
+    {{if .ControllerConfig.Proxy}}
+    env:
+    {{if .ControllerConfig.Proxy.HTTPProxy}}
+    - name: HTTP_PROXY
+      value: {{.ControllerConfig.Proxy.HTTPProxy}}
+    {{end}}
+    {{if .ControllerConfig.Proxy.HTTPSProxy}}
+    - name: HTTPS_PROXY
+      value: {{.ControllerConfig.Proxy.HTTPSProxy}}
+    {{end}}
+    {{if .ControllerConfig.Proxy.NoProxy}}
+    - name: NO_PROXY
+      value: "{{.ControllerConfig.Proxy.NoProxy}}"
+    {{end}}
+    {{end}}
     volumeMounts:
     - name: bootstrap-manifests
       mountPath: /etc/mcc/bootstrap
