@@ -340,6 +340,34 @@ func (j *jobImageBuilder) validateBuilderType(builder buildrequest.Builder) erro
 	return fmt.Errorf("invalid type %T from builder, expected %T", j.builder, &batchv1.Job{})
 }
 
+// buildFailedConditionsFromJob returns MachineOSBuild failed conditions populated with the
+// failure reason and message from the job's Failed condition, falling back to generic values.
+func buildFailedConditionsFromJob(job *batchv1.Job) []metav1.Condition {
+	reason := "Failed"
+	message := "Build Failed"
+	for _, cond := range job.Status.Conditions {
+		if cond.Type == batchv1.JobFailed && cond.Status == corev1.ConditionTrue {
+			if cond.Reason != "" {
+				reason = cond.Reason
+			}
+			if cond.Message != "" {
+				message = cond.Message
+			}
+			break
+		}
+	}
+	message = fmt.Sprintf("Job %q failed after %d attempt(s): %s", job.Name, job.Status.Failed, message)
+	conditions := apihelpers.MachineOSBuildFailedConditions()
+	for i := range conditions {
+		if conditions[i].Type == string(mcfgv1.MachineOSBuildFailed) {
+			conditions[i].Reason = reason
+			conditions[i].Message = message
+			break
+		}
+	}
+	return conditions
+}
+
 // Maps a given batchv1.Job to a given MachineOSBuild status. Exported so that it can be used in e2e tests.
 func MapJobStatusToBuildStatus(job *batchv1.Job) (mcfgv1.BuildProgress, []metav1.Condition) {
 	// If the job is being deleted and it was not in either a successful or failed state
@@ -370,7 +398,7 @@ func MapJobStatusToBuildStatus(job *batchv1.Job) (mcfgv1.BuildProgress, []metav1
 				return mcfgv1.MachineOSBuildSucceeded, apihelpers.MachineOSBuildSucceededConditions()
 			}
 			if condition.Type == batchv1.JobFailed && condition.Status == corev1.ConditionTrue {
-				return mcfgv1.MachineOSBuildFailed, apihelpers.MachineOSBuildFailedConditions()
+				return mcfgv1.MachineOSBuildFailed, buildFailedConditionsFromJob(job)
 			}
 		}
 		// If we have succeeded pods but no completion condition, we're still building
@@ -379,7 +407,7 @@ func MapJobStatusToBuildStatus(job *batchv1.Job) (mcfgv1.BuildProgress, []metav1
 
 	// Only return failed if there have been 4 pod failures as the backoffLimit is set to 3
 	if job.Status.Failed > constants.JobMaxRetries {
-		return mcfgv1.MachineOSBuildFailed, apihelpers.MachineOSBuildFailedConditions()
+		return mcfgv1.MachineOSBuildFailed, buildFailedConditionsFromJob(job)
 	}
 
 	return "", apihelpers.MachineOSBuildInitialConditions()
