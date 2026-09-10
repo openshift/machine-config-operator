@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -43,6 +44,9 @@ type kubeReader struct {
 	kube    kubernetes.Interface
 	execer  commandExecutor
 	timeout time.Duration
+
+	mu        sync.Mutex
+	podByNode map[string]*corev1.Pod
 }
 
 // NewKubeReader returns a Reader that execs into the machine-config-daemon pod
@@ -73,19 +77,9 @@ func (r *kubeReader) ReadFile(ctx context.Context, nodeName, filePath string) ([
 		defer cancel()
 	}
 
-	if _, err := r.kube.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{}); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, nil, wrapNodeNotFound(nodeName, err)
-		}
-		return nil, nil, fmt.Errorf("failed to get node %q: %w", nodeName, err)
-	}
-
-	pod, err := r.mcdPod(ctx, nodeName)
+	pod, err := r.podForNode(ctx, nodeName)
 	if err != nil {
 		return nil, nil, err
-	}
-	if pod.Status.Phase != corev1.PodRunning {
-		return nil, nil, wrapMCDUnavailable(nodeName, fmt.Errorf("pod %q is not running (phase %s)", pod.Name, pod.Status.Phase))
 	}
 
 	klog.V(2).Infof("reading %s on node %s via machine-config-daemon pod %s", filePath, nodeName, pod.Name)
@@ -130,7 +124,39 @@ func (r *kubeReader) statHostFile(ctx context.Context, podName, nodeName, filePa
 	return &mode, nil
 }
 
-func (r *kubeReader) mcdPod(ctx context.Context, nodeName string) (*corev1.Pod, error) {
+func (r *kubeReader) podForNode(ctx context.Context, nodeName string) (*corev1.Pod, error) {
+	r.mu.Lock()
+	if pod := r.podByNode[nodeName]; pod != nil {
+		r.mu.Unlock()
+		return pod, nil
+	}
+	r.mu.Unlock()
+
+	if _, err := r.kube.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{}); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, wrapNodeNotFound(nodeName, err)
+		}
+		return nil, fmt.Errorf("failed to get node %q: %w", nodeName, err)
+	}
+
+	pod, err := r.lookupMCDPod(ctx, nodeName)
+	if err != nil {
+		return nil, err
+	}
+	if pod.Status.Phase != corev1.PodRunning {
+		return nil, wrapMCDUnavailable(nodeName, fmt.Errorf("pod %q is not running (phase %s)", pod.Name, pod.Status.Phase))
+	}
+
+	r.mu.Lock()
+	if r.podByNode == nil {
+		r.podByNode = map[string]*corev1.Pod{}
+	}
+	r.podByNode[nodeName] = pod
+	r.mu.Unlock()
+	return pod, nil
+}
+
+func (r *kubeReader) lookupMCDPod(ctx context.Context, nodeName string) (*corev1.Pod, error) {
 	list, err := r.kube.CoreV1().Pods(ctrlcommon.MCONamespace).List(ctx, metav1.ListOptions{
 		LabelSelector: labels.SelectorFromSet(labels.Set{mcdDaemonLabel: mcdDaemonValue}).String(),
 		FieldSelector: fields.SelectorFromSet(fields.Set{"spec.nodeName": nodeName}).String(),

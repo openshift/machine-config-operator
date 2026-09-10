@@ -126,7 +126,7 @@ Standard `oc adm must-gather` archives include:
 - Node objects under `cluster-scoped-resources/core/nodes/`
 - On degraded nodes, MCO’s `machine_config_ondisk/<node>/currentconfig`
 
-They do **not** snapshot the entire host `/etc` tree. `--node` with `--must-gather` (and `mcdiff node --must-gather`) only diffs a host file when the archive contains a snapshot (`nodes/<node>/host/...`, `host_files/<node>/...`, `machine_config_ondisk/<node>/files/...`) or when that path can be decoded from `currentconfig`. Files without a snapshot are reported as missing. Extract the archive to a directory first; do not pass a tarball.
+They do **not** snapshot the entire host `/etc` tree. `--node` with `--must-gather` (and `mcdiff node --must-gather`) only diffs a host file when the archive contains a snapshot (`nodes/<node>/host/...`, `host_files/<node>/...`, `machine_config_ondisk/<node>/files/...`). `currentconfig` is the last applied MachineConfig, not the host file, and is not used as on-disk content. Files without a snapshot are reported as missing. Extract the archive to a directory first; do not pass a tarball.
 
 ## Shell completion
 
@@ -139,7 +139,5 @@ mcdiff completion fish | source
 ## Testing
 
 Unit tests, live-cluster scenarios, and must-gather steps for reviewers and QE: [TESTING.md](./TESTING.md).
-
-Suggested PR title and description: [PR_DESCRIPTION.md](./PR_DESCRIPTION.md).
 
 Expected file contents are omitted unless `--show-content` is set. Unified diffs from `--from-file`, `--node`, or `mcdiff node --show-diffs` do print changed lines, because that is the comparison result. Treat those outputs as sensitive.

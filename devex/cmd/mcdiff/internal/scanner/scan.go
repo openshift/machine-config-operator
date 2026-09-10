@@ -95,6 +95,11 @@ func Scan(ctx context.Context, g cluster.Getter, nodes node.Getter, reader node.
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 
+	writers := map[string]string{}
+	if rp.AttributionErr == nil {
+		writers = attribution.LastWriters(rp.Sources)
+	}
+
 	out := &Result{
 		Node:     nodeName,
 		Pool:     poolName,
@@ -107,7 +112,7 @@ func Scan(ctx context.Context, g cluster.Getter, nodes node.Getter, reader node.
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		kind, finding, err := scanFile(ctx, rp, reader, nodeName, f)
+		kind, finding, err := scanFile(ctx, reader, nodeName, f, writers[f.Path])
 		if err != nil {
 			return nil, err
 		}
@@ -137,9 +142,7 @@ const (
 	findingError
 )
 
-func scanFile(ctx context.Context, rp *cluster.RenderedPool, reader node.Reader, nodeName string, f ignition.File) (findingKind, Finding, error) {
-	lastWriter := lastWriterFor(rp, f.Path)
-
+func scanFile(ctx context.Context, reader node.Reader, nodeName string, f ignition.File, lastWriter string) (findingKind, Finding, error) {
 	if f.Err != nil {
 		return findingError, Finding{Path: f.Path, LastWriter: lastWriter, Error: f.Err.Error()}, nil
 	}
@@ -182,17 +185,6 @@ func copyMode(mode *int) *int {
 	}
 	copied := *mode
 	return &copied
-}
-
-func lastWriterFor(rp *cluster.RenderedPool, path string) string {
-	if rp == nil || rp.AttributionErr != nil {
-		return ""
-	}
-	attr, err := attribution.Attribute(path, rp.Sources)
-	if err != nil || attr == nil || attr.LastWriter == nil {
-		return ""
-	}
-	return attr.LastWriter.MachineConfigName
 }
 
 func resolvePoolName(ctx context.Context, g cluster.Getter, nodes node.Getter, nodeName, poolOverride string) (string, error) {

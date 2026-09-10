@@ -79,6 +79,20 @@ func TestAttributeRejectsEmptyPath(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestLastWritersOnePass(t *testing.T) {
+	t.Parallel()
+
+	base := mcWithFile(t, "00-worker", ctrlcommon.MachineConfigPoolWorker, sshdPath, "PermitRootLogin no\n")
+	overlay := mcWithFile(t, "99-worker-ssh", ctrlcommon.MachineConfigPoolWorker, sshdPath, "PermitRootLogin no\nUsePAM yes\n")
+	unrelated := mcWithFile(t, "01-worker-kubelet", ctrlcommon.MachineConfigPoolWorker, "/etc/kubernetes/kubelet.conf", "kubelet\n")
+	infra := mcWithFile(t, "00-infra", "infra", sshdPath, "from-infra\n")
+
+	got := LastWriters([]*mcfgv1.MachineConfig{overlay, unrelated, base, infra})
+	assert.Equal(t, "00-infra", got[sshdPath])
+	assert.Equal(t, "01-worker-kubelet", got["/etc/kubernetes/kubelet.conf"])
+	assert.Empty(t, LastWriters(nil))
+}
+
 func TestAttributeRejectsMissingRoleLabel(t *testing.T) {
 	t.Parallel()
 

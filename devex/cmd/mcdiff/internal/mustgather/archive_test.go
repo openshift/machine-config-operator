@@ -147,19 +147,21 @@ func TestNodeReaderHostSnapshot(t *testing.T) {
 	require.NotNil(t, mode)
 }
 
-func TestNodeReaderFromCurrentConfig(t *testing.T) {
+func TestNodeReaderCurrentConfigIsNotHostFile(t *testing.T) {
 	t.Parallel()
 
 	root := writePoolFixture(t, t.TempDir(), "expected\n", nil)
+	nodeDir := filepath.Join(root, "cluster-scoped-resources", "core", "nodes")
+	writeYAML(t, filepath.Join(nodeDir, "worker-1.yaml"), &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker-1"}})
 	ondisk := filepath.Join(root, "machine_config_ondisk", "worker-1")
 	require.NoError(t, os.MkdirAll(ondisk, 0o755))
 	writeYAML(t, filepath.Join(ondisk, "currentconfig"), mcWithFile(t, "current-worker-1", ctrlcommon.MachineConfigPoolWorker, sshdPath, "from-currentconfig\n"))
 
 	mg, err := Open(root)
 	require.NoError(t, err)
-	content, _, err := mg.NodeReader().ReadFile(context.Background(), "worker-1", sshdPath)
-	require.NoError(t, err)
-	assert.Equal(t, []byte("from-currentconfig\n"), content)
+	_, _, err = mg.NodeReader().ReadFile(context.Background(), "worker-1", sshdPath)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, node.ErrFileNotFound)
 }
 
 func TestNodeReaderMissingFile(t *testing.T) {

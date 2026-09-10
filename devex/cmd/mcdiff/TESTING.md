@@ -111,7 +111,7 @@ Re-run the file diff and node scan. Expect `MATCH` / `CLEAN` unless other drift 
 
 ## 4. Offline must-gather testing
 
-Standard `oc adm must-gather` does **not** snapshot all of `/etc`. Offline `--node` / `mcdiff node` only diffs a path when the archive has a host snapshot (`nodes/<node>/host/...`, `host_files/<node>/...`, `machine_config_ondisk/<node>/files/...`) or that path can be decoded from `currentconfig`. Other managed paths are **MISSING ON NODE**. Extract the tarball first; do not pass a `.tar.gz`.
+Standard `oc adm must-gather` does **not** snapshot all of `/etc`. Offline `--node` / `mcdiff node` only diffs a path when the archive has a host snapshot (`nodes/<node>/host/...`, `host_files/<node>/...`, `machine_config_ondisk/<node>/files/...`). `currentconfig` is not treated as the host file. Other managed paths are **MISSING ON NODE**. Extract the tarball first; do not pass a `.tar.gz`.
 
 ### a. Unpack
 

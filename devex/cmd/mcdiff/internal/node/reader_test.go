@@ -119,6 +119,35 @@ func TestReadFileTimeout(t *testing.T) {
 	assert.Contains(t, err.Error(), "timed out")
 }
 
+func TestReadFileReusesMCDPod(t *testing.T) {
+	t.Parallel()
+
+	execer := &scriptedExec{statOut: []byte("644\n"), catOut: []byte("x\n")}
+	r := newTestReader(t, execer, testNode("worker-0"), testMCDPod("worker-0", corev1.PodRunning))
+
+	_, _, err := r.ReadFile(context.Background(), "worker-0", "/etc/ssh/sshd_config")
+	require.NoError(t, err)
+	_, _, err = r.ReadFile(context.Background(), "worker-0", "/etc/motd")
+	require.NoError(t, err)
+
+	var nodeGets, podLists int
+	for _, a := range r.kube.(*fake.Clientset).Fake.Actions() {
+		switch a.GetResource().Resource {
+		case "nodes":
+			if a.GetVerb() == "get" {
+				nodeGets++
+			}
+		case "pods":
+			if a.GetVerb() == "list" {
+				podLists++
+			}
+		}
+	}
+	assert.Equal(t, 1, nodeGets)
+	assert.Equal(t, 1, podLists)
+	require.Len(t, execer.cmds, 4)
+}
+
 type scriptedExec struct {
 	statOut    []byte
 	statErrOut []byte
