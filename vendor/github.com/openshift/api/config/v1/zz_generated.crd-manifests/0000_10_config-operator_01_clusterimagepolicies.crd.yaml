@@ -268,10 +268,6 @@ spec:
                     - policyType
                     type: object
                     x-kubernetes-validations:
-                    - message: pki is required when policyType is PKI, and forbidden
-                        otherwise
-                      rule: 'has(self.policyType) && self.policyType == ''PKI'' ?
-                        has(self.pki) : !has(self.pki)'
                     - message: publicKey is required when policyType is PublicKey,
                         and forbidden otherwise
                       rule: 'has(self.policyType) && self.policyType == ''PublicKey''
@@ -280,6 +276,10 @@ spec:
                         and forbidden otherwise
                       rule: 'has(self.policyType) && self.policyType == ''FulcioCAWithRekor''
                         ? has(self.fulcioCAWithRekor) : !has(self.fulcioCAWithRekor)'
+                    - message: pki is required when policyType is PKI, and forbidden
+                        otherwise
+                      rule: 'has(self.policyType) && self.policyType == ''PKI'' ?
+                        has(self.pki) : !has(self.pki)'
                   signedIdentity:
                     description: |-
                       signedIdentity is an optional field specifies what image identity the signature claims about the image. This is useful when the image identity in the signature differs from the original image spec, such as when mirror registry is configured for the image scope, the signature from the mirror registry contains the image identity of the mirror instead of the original scope.

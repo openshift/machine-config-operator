@@ -69,9 +69,11 @@ contents:
             # about to forward them off-node, which then prevents the bad conntrack entries
             # from being created. The HealthCheck origin ip-ranges are documented:
             # https://cloud.google.com/load-balancing/docs/health-check-concepts#ip-ranges
+            # GCD (sovereign) regions each have distinct ranges that need to be dropped.
             add chain ip ${TABLE_NAME} forward { type filter hook forward priority filter; comment "gcp HealthCheck traffic"; }
-            add rule ip ${TABLE_NAME} forward ip saddr 35.191.0.0/16 drop
-            add rule ip ${TABLE_NAME} forward ip saddr 130.211.0.0/22 drop
+{{- range gcpHealthCheckSourceRanges . }}
+            add rule ip ${TABLE_NAME} forward ip saddr {{ . }} drop
+{{- end }}
     EOF
 
         mkdir -p "${RUN_DIR}"
