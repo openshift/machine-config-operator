@@ -233,14 +233,13 @@ func (ctrl *Controller) calculateStatus(mcns []*mcfgv1.MachineConfigNode, cconfi
 
 	// Determine if all machines are updated and
 	// 	- If all machines are updated, set "Updated" condition to true and "Updating" condition to false
-	// 	- If all machines not updated, set "Updated" condition to false and "Updating" condition to false
-	// 	  if the pool is paused or true if the pool is not paused and the PIS is not degraded
+	// 	- If all machines not updated, set "Updated" condition to false and
+	// 	  - If the pool is paused, set "Updating" condition to false
+	// 	  - If the pool is not paused and the PIS is not degraded, set "Updating" condition to true
 	allUpdated := updatedMachineCount == totalMachineCount &&
-		readyMachineCount == totalMachineCount &&
-		unavailableMachineCount == 0 &&
 		!isLayeredPoolBuilding(isLayeredPool, mosc, mosb)
 	if allUpdated {
-		//TODO: update api to only have one condition regarding status of update.
+		// TODO: update api to only have one condition regarding status of update.
 		updatedMsg := fmt.Sprintf("All nodes are updated with %s", getPoolUpdateLine(pool, mosc, isLayeredPool))
 		supdated := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdated, corev1.ConditionTrue, "", updatedMsg)
 		apihelpers.SetMachineConfigPoolCondition(&status, *supdated)
