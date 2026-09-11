@@ -17,6 +17,7 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	opv1 "github.com/openshift/api/operator/v1"
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/daemon/osrelease"
@@ -677,6 +678,64 @@ func TestCalculatePostConfigChangeAction(t *testing.T) {
 			if !reflect.DeepEqual(test.expectedAction, calculatedAction) {
 				t.Errorf("Failed calculating config change action: expected: %v but result is: %v. Error: %v", test.expectedAction, calculatedAction, err)
 			}
+		})
+	}
+}
+
+// TestNodeDisruptionPolicyStaticPodManifests verifies that changes to files under
+// /etc/kubernetes/manifests resolve to "None" via the default NodeDisruptionPolicy.
+func TestNodeDisruptionPolicyStaticPodManifests(t *testing.T) {
+	// Get the default cluster policies (no user overrides).
+	clusterPolicies := apihelpers.MergeClusterPolicies(opv1.NodeDisruptionPolicyConfig{})
+
+	tests := []struct {
+		name            string
+		diffFileSet     []string
+		expectedActions []opv1.NodeDisruptionPolicyStatusAction
+	}{
+		{
+			name:        "static pod manifest change alone results in None",
+			diffFileSet: []string{"/etc/kubernetes/manifests/criometricsproxy.yaml"},
+			expectedActions: []opv1.NodeDisruptionPolicyStatusAction{
+				{Type: opv1.NoneStatusAction},
+			},
+		},
+		{
+			name:        "any file under /etc/kubernetes/manifests results in None",
+			diffFileSet: []string{"/etc/kubernetes/manifests/some-new-static-pod.yaml"},
+			expectedActions: []opv1.NodeDisruptionPolicyStatusAction{
+				{Type: opv1.NoneStatusAction},
+			},
+		},
+		{
+			name: "TLS drop-in + static pod manifest = restart kubelet (None is stripped)",
+			diffFileSet: []string{
+				constants.KubeletTLSDropInPath,
+				"/etc/kubernetes/manifests/criometricsproxy.yaml",
+			},
+			expectedActions: []opv1.NodeDisruptionPolicyStatusAction{
+				{
+					Type: opv1.RestartStatusAction,
+					Restart: &opv1.RestartService{
+						ServiceName: "kubelet.service",
+					},
+				},
+			},
+		},
+		{
+			name:        "unknown file without policy defaults to Reboot",
+			diffFileSet: []string{"/etc/some-random-file"},
+			expectedActions: []opv1.NodeDisruptionPolicyStatusAction{
+				{Type: opv1.RebootStatusAction},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			actions := calculatePostConfigChangeNodeDisruptionActionFromMCDiffs(
+				false, tc.diffFileSet, nil, clusterPolicies)
+			require.Equal(t, tc.expectedActions, actions)
 		})
 	}
 }
