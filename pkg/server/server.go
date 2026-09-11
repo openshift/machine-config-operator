@@ -2,9 +2,11 @@ package server
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/clarketm/json"
@@ -14,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
 
+	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	build "github.com/openshift/machine-config-operator/pkg/controller/build/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -45,6 +48,7 @@ type appenderFunc func(*ign3types.Config, *mcfgv1.MachineConfig) error
 // machine config server implementations.
 type Server interface {
 	GetConfig(poolRequest) (*runtime.RawExtension, error)
+	GetFailureReporter() FailureReporter
 }
 
 // appendersBuilder builds a slice of appenderFunc with guaranteed ordering.
@@ -70,9 +74,9 @@ func newAppendersBuilder(version *semver.Version, kubeconfigFn kubeconfigFunc, c
 }
 
 // WithNodeAnnotations adds the node annotations appender with the specified config and image.
-func (ab *appendersBuilder) WithNodeAnnotations(currMachineConfig, image string) *appendersBuilder {
+func (ab *appendersBuilder) WithNodeAnnotations(currMachineConfig, image, mcsURL string) *appendersBuilder {
 	ab.customAppenders = append(ab.customAppenders, func(cfg *ign3types.Config, mc *mcfgv1.MachineConfig) error {
-		return appendNodeAnnotations(cfg, currMachineConfig, image, mc)
+		return appendNodeAnnotations(cfg, currMachineConfig, image, mcsURL, mc)
 	})
 	return ab
 }
@@ -196,8 +200,8 @@ func appendKubeConfig(conf *ign3types.Config, f kubeconfigFunc) error {
 	return nil
 }
 
-func appendNodeAnnotations(conf *ign3types.Config, currConf, image string, mc *mcfgv1.MachineConfig) error {
-	anno, err := getNodeAnnotation(currConf, image, mc)
+func appendNodeAnnotations(conf *ign3types.Config, currConf, image, mcsURL string, mc *mcfgv1.MachineConfig) error {
+	anno, err := getNodeAnnotation(currConf, image, mcsURL, mc)
 	if err != nil {
 		return err
 	}
@@ -208,12 +212,16 @@ func appendNodeAnnotations(conf *ign3types.Config, currConf, image string, mc *m
 	return nil
 }
 
-func getNodeAnnotation(conf, image string, mc *mcfgv1.MachineConfig) (string, error) {
+func getNodeAnnotation(conf, image, mcsURL string, mc *mcfgv1.MachineConfig) (string, error) {
 	nodeAnnotations := map[string]string{
 		daemonconsts.CurrentMachineConfigAnnotationKey:     conf,
 		daemonconsts.DesiredMachineConfigAnnotationKey:     conf,
 		daemonconsts.FirstPivotMachineConfigAnnotationKey:  conf,
 		daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateDone,
+	}
+
+	if mcsURL != "" {
+		nodeAnnotations[daemonconsts.MachineConfigServerURLAnnotationKey] = mcsURL
 	}
 
 	// Determine which image to use:
@@ -307,4 +315,42 @@ func addDataAndMaybeAppendToIgnition(path string, data []byte, ignConf *ign3type
 	if !exists && len(data) > 0 {
 		appendFileToIgnition(ignConf, path, (string(data)))
 	}
+}
+
+// GetIgnitionHost computes the MCS hostname:port for serving Ignition configs
+// from the cluster's Infrastructure status. Platform-specific IP addresses
+// take precedence over the parsed APIServerInternalURL hostname.
+func GetIgnitionHost(infraStatus *configv1.InfrastructureStatus) (string, error) {
+	if infraStatus == nil {
+		return "", fmt.Errorf("infraStatus is nil")
+	}
+	internalURL := infraStatus.APIServerInternalURL
+	internalURLParsed, err := url.Parse(internalURL)
+	if err != nil {
+		return "", err
+	}
+	securePortStr := strconv.Itoa(SecurePort)
+	ignitionHost := fmt.Sprintf("%s:%s", internalURLParsed.Hostname(), securePortStr)
+	if infraStatus.PlatformStatus != nil {
+		switch infraStatus.PlatformStatus.Type {
+		case configv1.BareMetalPlatformType:
+			if infraStatus.PlatformStatus.BareMetal != nil && len(infraStatus.PlatformStatus.BareMetal.APIServerInternalIPs) > 0 {
+				ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.BareMetal.APIServerInternalIPs[0], securePortStr)
+			}
+		case configv1.OpenStackPlatformType:
+			if infraStatus.PlatformStatus.OpenStack != nil && len(infraStatus.PlatformStatus.OpenStack.APIServerInternalIPs) > 0 {
+				ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.OpenStack.APIServerInternalIPs[0], securePortStr)
+			}
+		case configv1.OvirtPlatformType:
+			if infraStatus.PlatformStatus.Ovirt != nil && len(infraStatus.PlatformStatus.Ovirt.APIServerInternalIPs) > 0 {
+				ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.Ovirt.APIServerInternalIPs[0], securePortStr)
+			}
+		case configv1.VSpherePlatformType:
+			if infraStatus.PlatformStatus.VSphere != nil && len(infraStatus.PlatformStatus.VSphere.APIServerInternalIPs) > 0 {
+				ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.VSphere.APIServerInternalIPs[0], securePortStr)
+			}
+		}
+	}
+
+	return ignitionHost, nil
 }
