@@ -41,12 +41,12 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 
 		exutil.By("Check MCP status")
-		o.Consistently(mcp.pollDegradedMachineCount(), "30s", "10s").Should(o.Equal("0"), "There are degraded nodes in pool")
-		o.Eventually(mcp.pollDegradedStatus(), "1m", "20s").Should(o.Equal("False"), "The pool status is 'Degraded'")
-		o.Eventually(mcp.pollUpdatedStatus(), "1m", "20s").Should(o.Equal("True"), "The pool is reporting that it is not updated")
-		o.Eventually(mcp.pollMachineCount(), "1m", "10s").Should(o.Equal("0"), "The pool should report 0 machine count")
-		o.Eventually(mcp.pollReadyMachineCount(), "1m", "10s").Should(o.Equal("0"), "The pool should report 0 machine ready")
-		o.Eventually(wMcp.pollMachineCount(), "1m", "10s").Should(o.Equal(strconv.Itoa(initialNumWorkers)),
+		o.Consistently(mcp.GetDegradedMachineCountStatus, "30s", "10s").Should(o.Equal("0"), "There are degraded nodes in pool")
+		o.Eventually(mcp, "1m", "20s").ShouldNot(BeDegraded(), "The pool status is 'Degraded'")
+		o.Eventually(mcp, "1m", "20s").Should(HaveConditionField("Updated", "status", "True"), "The pool is reporting that it is not updated")
+		o.Eventually(mcp.GetMachineCountStatus, "1m", "10s").Should(o.Equal("0"), "The pool should report 0 machine count")
+		o.Eventually(mcp.GetReadyMachineCountStatus, "1m", "10s").Should(o.Equal("0"), "The pool should report 0 machine ready")
+		o.Eventually(wMcp.GetMachineCountStatus, "1m", "10s").Should(o.Equal(strconv.Itoa(initialNumWorkers)),
 			"The worker pool should report %d machine count", initialNumWorkers)
 
 		logger.Infof("Custom mcp is created successfully!")
@@ -61,12 +61,12 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 
 		exutil.By("Check MCP status")
-		o.Consistently(mcp.pollDegradedMachineCount(), "30s", "10s").Should(o.Equal("0"), "There are degraded nodes in pool")
-		o.Eventually(mcp.pollDegradedStatus(), "1m", "20s").Should(o.Equal("False"), "The pool status is 'Degraded'")
-		o.Eventually(mcp.pollUpdatedStatus(), "1m", "20s").Should(o.Equal("True"), "The pool is reporting that it is not updated")
-		o.Eventually(mcp.pollMachineCount(), "1m", "10s").Should(o.Equal("1"), "The pool should report 1 machine count")
-		o.Eventually(mcp.pollReadyMachineCount(), "1m", "10s").Should(o.Equal("1"), "The pool should report 1 machine ready")
-		o.Eventually(wMcp.pollMachineCount(), "1m", "10s").Should(o.Equal(strconv.Itoa(initialNumWorkers-1)),
+		o.Consistently(mcp.GetDegradedMachineCountStatus, "30s", "10s").Should(o.Equal("0"), "There are degraded nodes in pool")
+		o.Eventually(mcp, "1m", "20s").ShouldNot(BeDegraded(), "The pool status is 'Degraded'")
+		o.Eventually(mcp, "1m", "20s").Should(HaveConditionField("Updated", "status", "True"), "The pool is reporting that it is not updated")
+		o.Eventually(mcp.GetMachineCountStatus, "1m", "10s").Should(o.Equal("1"), "The pool should report 1 machine count")
+		o.Eventually(mcp.GetReadyMachineCountStatus, "1m", "10s").Should(o.Equal("1"), "The pool should report 1 machine ready")
+		o.Eventually(wMcp.GetMachineCountStatus, "1m", "10s").Should(o.Equal(strconv.Itoa(initialNumWorkers-1)),
 			"The worker pool should report %d machine count", initialNumWorkers-1)
 
 		logger.Infof("Custom mcp is created successfully!")
@@ -82,11 +82,11 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 
 		exutil.By("Verify that the information is updated in MCP")
-		o.Eventually(mcp.pollUpdatedStatus(), "5m", "20s").Should(o.Equal("True"), "The pool is reporting that it is not updated")
-		o.Eventually(mcp.pollMachineCount(), "5m", "20s").Should(o.Equal("0"), "The pool should report 0 machine count")
-		o.Eventually(mcp.pollReadyMachineCount(), "5m", "20s").Should(o.Equal("0"), "The pool should report 0 machine ready")
-		o.Consistently(mcp.pollDegradedMachineCount(), "30s", "10s").Should(o.Equal("0"), "There are degraded nodes in pool")
-		o.Eventually(mcp.pollDegradedStatus(), "5m", "20s").Should(o.Equal("False"), "The pool status is 'Degraded'")
+		o.Eventually(mcp, "5m", "20s").Should(HaveConditionField("Updated", "status", "True"), "The pool is reporting that it is not updated")
+		o.Eventually(mcp.GetMachineCountStatus, "5m", "20s").Should(o.Equal("0"), "The pool should report 0 machine count")
+		o.Eventually(mcp.GetReadyMachineCountStatus, "5m", "20s").Should(o.Equal("0"), "The pool should report 0 machine ready")
+		o.Consistently(mcp.GetDegradedMachineCountStatus, "30s", "10s").Should(o.Equal("0"), "There are degraded nodes in pool")
+		o.Eventually(mcp, "5m", "20s").ShouldNot(BeDegraded(), "The pool status is 'Degraded'")
 		logger.Infof("OK!\n")
 
 		exutil.By("Remove custom infra mcp")

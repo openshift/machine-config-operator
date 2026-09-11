@@ -645,18 +645,6 @@ func (n *Node) GetMCDaemonLogs(filter string) (string, error) {
 	return mcdLogs, err
 }
 
-// PollMCDaemonLogs returns a function that can be used by gomega Eventually/Consistently functions to poll logs results
-// If there is an error, it will return empty string, new need to take that into account building our Eventually/Consistently statement
-func (n *Node) PollMCDaemonLogs(filter string) func() string {
-	return func() string {
-		logs, err := n.GetMCDaemonLogs(filter)
-		if err != nil {
-			return ""
-		}
-		return logs
-	}
-}
-
 // CaptureMCDaemonLogsUntilRestartWithTimeout captures all the logs in the MachineConfig daemon pod for this node until the daemon pod is restarted
 func (n *Node) CaptureMCDaemonLogsUntilRestartWithTimeout(timeout string) (string, error) {
 	var (
