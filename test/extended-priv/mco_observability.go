@@ -358,19 +358,17 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 
 		exutil.By("Wait until node is cordoned")
-		o.Eventually(workerNode.Poll(`{.spec.taints[?(@.effect=="NoSchedule")].effect}`),
-			"20m", "1m").Should(o.Equal("NoSchedule"), fmt.Sprintf("Node %s was not cordoned", workerNode.name))
+		o.Eventually(workerNode.Get, "20m", "1m").WithArguments(`{.spec.taints[?(@.effect=="NoSchedule")].effect}`).
+				Should(o.Equal("NoSchedule"), fmt.Sprintf("Node %s was not cordoned", workerNode.name))
 		logger.Infof("OK!\n")
 
 		exutil.By("Verify that node is not degraded until the alarm timeout")
-		o.Consistently(mcp.pollDegradedStatus(),
-			"58m", "5m").Should(o.Equal("False"),
+		o.Consistently(mcp, "58m", "5m").ShouldNot(BeDegraded(),
 			"The worker MCP was degraded too soon. The worker MCP should not be degraded until 1 hour timeout happens")
 		logger.Infof("OK!\n")
 
 		exutil.By("Verify that node is degraded after the 1h timeout")
-		o.Eventually(mcp.pollDegradedStatus(),
-			"5m", "1m").Should(o.Equal("True"),
+		o.Eventually(mcp, "5m", "1m").Should(BeDegraded(),
 			"1 hour passed since the eviction problems were reported and the worker MCP has not been degraded")
 		logger.Infof("OK!\n")
 
@@ -431,8 +429,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 
 		exutil.By("Verfiy that the pool stops being degraded")
-		o.Eventually(mcp.pollDegradedStatus(),
-			"10m", "30s").Should(o.Equal("False"),
+		o.Eventually(mcp, "10m", "30s").ShouldNot(BeDegraded(),
 			"After removing the PodDisruptionBudget the eviction should have succeeded and the worker pool should stop being degraded")
 		logger.Infof("OK!\n")
 

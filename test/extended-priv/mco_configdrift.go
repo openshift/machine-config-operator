@@ -246,9 +246,9 @@ func verifyDriftConfig(mcp *MachineConfigPool, rf *RemoteFile, newMode string, f
 	o.Expect(rferr).NotTo(o.HaveOccurred())
 
 	o.Expect(rf.GetTextContent()).To(o.Equal(newContent), "File content should be updated")
-	o.Eventually(mcp.pollDegradedMachineCount(), "10m", "30s").Should(o.Equal("1"), "There should be 1 degraded machine")
-	o.Eventually(mcp.pollDegradedStatus(), "10m", "30s").Should(o.Equal("True"), "The worker MCP should report a True Degraded status")
-	o.Eventually(mcp.pollUpdatedStatus(), "10m", "30s").Should(o.Equal("False"), "The worker MCP should report a False Updated status")
+	o.Eventually(mcp.GetDegradedMachineCountStatus, "10m", "30s").Should(o.Equal("1"), "There should be 1 degraded machine")
+	o.Eventually(mcp, "10m", "30s").Should(BeDegraded(), "The worker MCP should report a True Degraded status")
+	o.Eventually(mcp, "10m", "30s").Should(HaveConditionField("Updated", "status", "False"), "The worker MCP should report a False Updated status")
 
 	exutil.By("Verify that node annotations describe the reason for the Degraded status")
 	reason := workerNode.GetAnnotationOrFail("machineconfiguration.openshift.io/reason")
@@ -262,9 +262,9 @@ func verifyDriftConfig(mcp *MachineConfigPool, rf *RemoteFile, newMode string, f
 		o.Expect(rf.PushNewTextContent(origContent)).NotTo(o.HaveOccurred())
 	}
 
-	o.Eventually(mcp.pollDegradedMachineCount(), "10m", "30s").Should(o.Equal("0"), "There should be no degraded machines")
-	o.Eventually(mcp.pollDegradedStatus(), "10m", "30s").Should(o.Equal("False"), "The worker MCP should report a False Degraded status")
-	o.Eventually(mcp.pollUpdatedStatus(), "15m", "30s").Should(o.Equal("True"), "The worker MCP should report a True Updated status")
+	o.Eventually(mcp.GetDegradedMachineCountStatus, "10m", "30s").Should(o.Equal("0"), "There should be no degraded machines")
+	o.Eventually(mcp, "10m", "30s").ShouldNot(BeDegraded(), "The worker MCP should report a False Degraded status")
+	o.Eventually(mcp, "15m", "30s").Should(HaveConditionField("Updated", "status", "True"), "The worker MCP should report a True Updated status")
 	rferr = rf.Fetch()
 	o.Expect(rferr).NotTo(o.HaveOccurred())
 	o.Expect(rf.GetTextContent()).To(o.Equal(origContent), "Original file content should be restored")
@@ -279,9 +279,9 @@ func verifyDriftConfig(mcp *MachineConfigPool, rf *RemoteFile, newMode string, f
 	o.Expect(rferr).NotTo(o.HaveOccurred())
 
 	o.Expect(rf.GetNpermissions()).To(o.Equal(newMode), "%s File permissions should be %s", rf.fullPath, newMode)
-	o.Eventually(mcp.pollDegradedMachineCount(), "10m", "30s").Should(o.Equal("1"), "There should be 1 degraded machine")
-	o.Eventually(mcp.pollDegradedStatus(), "10m", "30s").Should(o.Equal("True"), "The worker MCP should report a True Degraded status")
-	o.Eventually(mcp.pollUpdatedStatus(), "10m", "30s").Should(o.Equal("False"), "The worker MCP should report a False Updated status")
+	o.Eventually(mcp.GetDegradedMachineCountStatus, "10m", "30s").Should(o.Equal("1"), "There should be 1 degraded machine")
+	o.Eventually(mcp, "10m", "30s").Should(BeDegraded(), "The worker MCP should report a True Degraded status")
+	o.Eventually(mcp, "10m", "30s").Should(HaveConditionField("Updated", "status", "False"), "The worker MCP should report a False Updated status")
 
 	exutil.By("Verify that node annotations describe the reason for the Degraded status")
 	reason = workerNode.GetAnnotationOrFail("machineconfiguration.openshift.io/reason")
@@ -293,9 +293,9 @@ func verifyDriftConfig(mcp *MachineConfigPool, rf *RemoteFile, newMode string, f
 	o.Expect(rferr).NotTo(o.HaveOccurred())
 
 	o.Expect(rf.GetNpermissions()).To(o.Equal(origMode), "%s File permissions should be %s", rf.fullPath, origMode)
-	o.Eventually(mcp.pollDegradedMachineCount(), "10m", "30s").Should(o.Equal("0"), "There should be no degraded machines")
-	o.Eventually(mcp.pollDegradedStatus(), "10m", "30s").Should(o.Equal("False"), "The worker MCP should report a False Degraded status")
-	o.Eventually(mcp.pollUpdatedStatus(), "10m", "30s").Should(o.Equal("True"), "The worker MCP should report a True Updated status")
+	o.Eventually(mcp.GetDegradedMachineCountStatus, "10m", "30s").Should(o.Equal("0"), "There should be no degraded machines")
+	o.Eventually(mcp, "10m", "30s").ShouldNot(BeDegraded(), "The worker MCP should report a False Degraded status")
+	o.Eventually(mcp, "10m", "30s").Should(HaveConditionField("Updated", "status", "True"), "The worker MCP should report a True Updated status")
 
 	exutil.By("Verify that node annotations have been cleaned")
 	reason = workerNode.GetAnnotationOrFail("machineconfiguration.openshift.io/reason")
