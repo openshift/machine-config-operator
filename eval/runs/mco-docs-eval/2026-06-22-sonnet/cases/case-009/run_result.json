@@ -1,0 +1,25 @@
+{
+  "exit_code": 0,
+  "duration_s": 233.4,
+  "token_usage": {
+    "input": 437,
+    "output": 12024,
+    "cache_read": 1240962,
+    "cache_create": 134347
+  },
+  "cost_usd": 1.0577608500000002,
+  "num_turns": 16,
+  "per_model_usage": {
+    "claude-sonnet-4-6": {
+      "input": 437,
+      "output": 12024,
+      "cache_read": 1240962,
+      "cache_create": 134347,
+      "cost_usd": 1.0577608500000002
+    }
+  },
+  "per_model_turns": {
+    "claude-sonnet-4-6": 16
+  },
+  "repo_modified": false
+}

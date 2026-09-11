@@ -1,0 +1,273 @@
+name: mco-docs-eval
+description: Evaluate whether AI agents can navigate and use MCO agentic documentation
+
+execution:
+  mode: case
+  prompt: "{{ input.prompt }}"
+  timeout: 300
+  parallelism: 2
+
+runner:
+  type: claude-code
+  workspace_mode: repo
+  append_allowed_tools:
+    - Read
+    - Grep
+    - Glob
+    - Bash
+    - LSP
+
+models:
+  skill: claude-opus-4-6
+  judge: claude-opus-4-6
+
+permissions:
+  allow: []
+  deny:
+    - path: "eval/"
+      tools: ["Read", "Grep", "Glob", "Bash"]
+      reason: "Test cases contain answer keys and run results from other agents"
+    - path: "eval.yaml"
+      tools: ["Read", "Grep", "Bash"]
+      reason: "Eval config contains domain knowledge and expected schemas"
+    - path: "eval.md"
+      tools: ["Read", "Grep", "Bash"]
+      reason: "Analysis cache contains documentation structure maps"
+    - path: "tmp/"
+      tools: ["Read", "Grep", "Glob", "Bash"]
+      reason: "Harness state files not relevant to execution"
+
+mlflow:
+  experiment: mco-docs-eval
+
+dataset:
+  path: eval/cases
+  schema: |
+    Each case directory contains:
+    - input.yaml: YAML file with 'prompt' (the question or task for the agent)
+    - annotations.yaml: Expected results metadata with fields:
+      - category: test category (navigation, component-usage, architecture, anti-pattern, authoring)
+      - expected_files: list of documentation files the agent should consult
+      - expected_mentions: keywords that should appear in the response
+      - expected_rejection: (anti-pattern only) boolean, true if agent should reject the approach
+      - expected_guidance: (anti-pattern only) keywords for the correct approach
+  test_categories:
+    - name: navigation
+      template: builtin:navigation
+      count: 4
+      description: Agent finds specific information in MCO docs (controller responsibilities, API field meanings, validation rules)
+    - name: component-usage
+      template: builtin:component-usage
+      count: 3
+      description: Agent explains how to use MCO CRDs (MachineConfig, MachineConfigPool, KubeletConfig, ContainerRuntimeConfig)
+    - name: architecture
+      template: builtin:architecture
+      count: 3
+      description: Agent explains MCO system design (controller coordination, update lifecycle, rendering pipeline, OCL workflow)
+    - name: anti-pattern
+      template: builtin:anti-pattern
+      count: 4
+      description: Agent rejects approaches that violate MCO constraints (unsupported Ignition sections, invalid paths, remote content, pool selector rules)
+    - name: authoring
+      template: builtin:authoring
+      count: 2
+      description: Agent creates documentation following MCO patterns (ADR format, domain doc structure)
+  domain:
+    documentation_structure:
+      entry_point: AGENTS.md
+      areas:
+        - path: ai-docs/domain/
+          topics: [MachineConfig, MachineConfigPool, ControllerConfig, KubeletConfig, ContainerRuntimeConfig, MachineConfigNode, MachineOSConfig, MachineOSBuild]
+        - path: ai-docs/architecture/
+          topics: [controllers, daemon, server, ValidatingAdmissionPolicies]
+        - path: ai-docs/decisions/
+          topics: [on-cluster-layering, deterministic-rendering, node-update-lifecycle]
+        - path: ai-docs/references/
+          topics: [ecosystem, platform-hub]
+        - path: docs/
+          topics: [MachineConfig, MachineConfigDaemon, MachineConfigController, KubeletConfig, ContainerRuntimeConfig, NodeDisruptionPolicy, OnClusterLayering, FAQ]
+    constraints:
+      - rule: "Custom MachineConfigPools must inherit from worker pool via machineConfigSelector"
+        documentation: ai-docs/architecture/components.md
+        wrong_approach: "Creating custom pools with independent selectors without worker inheritance"
+      - rule: "MachineConfiguration CR for NodeDisruptionPolicy must be named 'cluster'"
+        documentation: docs/NodeDisruptionPolicy.md
+        wrong_approach: "Creating MachineConfiguration with any name other than 'cluster'"
+      - rule: "Only specific Ignition config sections are supported for in-place updates"
+        documentation: docs/MachineConfigDaemon.md
+        wrong_approach: "Attempting to update unsupported sections like Disks, FileSystems, Users"
+      - rule: "All remote sources in Ignition configs must be resolved at render time"
+        documentation: docs/MachineConfig.md
+        wrong_approach: "Including HTTP sources that would be evaluated dynamically on nodes"
+      - rule: "MachineConfig merge is deterministic: sorted by name, last-writer-wins"
+        documentation: ai-docs/decisions/adr-002-config-rendering.md
+        wrong_approach: "Assuming arbitrary merge order or first-writer-wins semantics"
+      - rule: "Store paths in ContainerRuntimeConfig must be absolute, 1-256 chars"
+        documentation: ai-docs/domain/crds.md
+        wrong_approach: "Using relative paths or invalid characters in store paths"
+    components:
+      - name: Template Controller
+        documentation: ai-docs/architecture/components.md
+      - name: Render Controller
+        documentation: ai-docs/architecture/components.md
+      - name: Node Controller
+        documentation: ai-docs/architecture/components.md
+      - name: Build Controller
+        documentation: ai-docs/architecture/components.md
+      - name: KubeletConfig Controller
+        documentation: ai-docs/architecture/components.md
+      - name: ContainerRuntimeConfig Controller
+        documentation: ai-docs/architecture/components.md
+      - name: Machine Config Daemon
+        documentation: docs/MachineConfigDaemon.md
+      - name: Machine Config Server
+        documentation: docs/MachineConfigServer.md
+      - name: Machine OS Builder
+        documentation: ai-docs/architecture/components.md
+
+outputs:
+  - path: output
+    schema: |
+      Agent conversation output captured via traces. No file artifacts expected
+      for documentation evaluation — judges use {{ conversation }} to assess
+      the agent's response quality.
+
+traces:
+  stdout: true
+  stderr: true
+  events: true
+  metrics: true
+
+judges:
+  - name: budget_check
+    builtin: cost_budget
+    arguments:
+      max_cost_usd: 2.0
+
+  - name: consulted_docs
+    builtin: consulted_docs
+    description: |
+      Verifies the agent read documentation files during its response.
+      Navigation and component-usage tests should show file reads.
+
+  - name: has_response
+    description: |
+      Checks that the agent produced a non-trivial response.
+    check: |
+      text = outputs.get("conversation", "")
+      if not text or len(text.strip()) < 100:
+          return (False, f"Response too short ({len(text.strip())} chars)")
+      return (True, f"Response length: {len(text.strip())} chars")
+
+  - name: mentions_expected_keywords
+    description: |
+      Checks that the response mentions keywords specified in annotations.
+      Skipped if no expected_mentions in annotations.
+    if: "annotations.get('expected_mentions')"
+    check: |
+      text = outputs.get("conversation", "").lower()
+      expected = annotations.get("expected_mentions", [])
+      if not expected:
+          return (True, "No expected mentions specified")
+      found = [kw for kw in expected if kw.lower() in text]
+      missing = [kw for kw in expected if kw.lower() not in text]
+      if len(found) < len(expected) * 0.5:
+          return (False, f"Missing keywords: {missing}")
+      return (True, f"Found {len(found)}/{len(expected)} keywords")
+
+  - name: anti_pattern_rejection
+    description: |
+      For anti-pattern tests, checks that the agent identifies the wrong approach
+      and provides correct guidance rather than blindly following the request.
+    if: "annotations.get('category') == 'anti-pattern'"
+    prompt: |
+      You are evaluating whether an AI agent correctly identified an anti-pattern
+      in the Machine Config Operator (MCO) documentation.
+
+      The agent was given a prompt that describes a wrong approach. The agent should:
+      1. Recognize that the approach violates MCO constraints
+      2. Explain WHY it's wrong (citing documentation or design principles)
+      3. Suggest the CORRECT approach
+
+      Expected constraint violated: {{ annotations.get('rule', 'not specified') }}
+      Expected correct guidance keywords: {{ annotations.get('expected_guidance', []) }}
+
+      Agent's response:
+      {{ conversation }}
+
+      Score on a 1-5 scale:
+      Score 1: Agent followed the wrong approach without question
+      Score 2: Agent expressed uncertainty but didn't identify the constraint
+      Score 3: Agent identified something was wrong but gave incomplete guidance
+      Score 4: Agent correctly identified the anti-pattern and suggested alternatives
+      Score 5: Agent identified the anti-pattern, cited documentation, and gave the correct approach
+
+  - name: response_accuracy
+    description: |
+      Assesses whether the agent's response is accurate and well-supported
+      by the documentation it consulted.
+    if: "annotations.get('category') in ('navigation', 'component-usage', 'architecture')"
+    prompt: |
+      You are evaluating an AI agent's response about the Machine Config Operator (MCO).
+      The agent was asked a question about MCO and responded using the repository's
+      documentation.
+
+      Test category: {{ annotations.get('category', 'unknown') }}
+      Expected documentation files: {{ annotations.get('expected_files', []) }}
+
+      Agent's response:
+      {{ conversation }}
+
+      Files the agent read:
+      {{ outputs }}
+
+      Score on a 1-5 scale:
+      Score 1: Response is incorrect or fabricated, not based on documentation
+      Score 2: Response has significant inaccuracies or misinterpretations
+      Score 3: Response is partially correct but misses key details or context
+      Score 4: Response is accurate and covers the main points from documentation
+      Score 5: Response is comprehensive, accurate, and cites specific documentation details
+
+  - name: authoring_quality
+    description: |
+      For authoring tests, evaluates whether generated content follows MCO
+      documentation patterns and conventions.
+    if: "annotations.get('category') == 'authoring'"
+    prompt: |
+      You are evaluating content created by an AI agent following MCO documentation patterns.
+
+      The agent was asked to create documentation for the Machine Config Operator.
+      Evaluate whether the output follows the patterns found in the repository:
+      - ADRs use numbered format (adr-NNN-title.md) with Status, Context, Decision, Consequences sections
+      - Domain docs cover CRD fields with types, validation rules, and relationships
+      - Architecture docs describe controller watches, reconcile logic, and interactions
+
+      Expected patterns: {{ annotations.get('expected_patterns', []) }}
+
+      Agent's response:
+      {{ conversation }}
+
+      {{ outputs }}
+
+      Score on a 1-5 scale:
+      Score 1: Output doesn't follow any recognizable pattern
+      Score 2: Output has some structure but doesn't match MCO conventions
+      Score 3: Output follows basic structure but misses important conventions
+      Score 4: Output follows MCO patterns well with minor deviations
+      Score 5: Output perfectly follows MCO documentation patterns and conventions
+
+thresholds:
+  budget_check:
+    min_pass_rate: 1.0
+  consulted_docs:
+    min_pass_rate: 0.8
+  has_response:
+    min_pass_rate: 1.0
+  mentions_expected_keywords:
+    min_pass_rate: 0.7
+  anti_pattern_rejection:
+    min_mean: 3.5
+  response_accuracy:
+    min_mean: 3.5
+  authoring_quality:
+    min_mean: 3.5
