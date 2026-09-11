@@ -1,0 +1,6 @@
+inheritance: true
+reviews:
+  path_instructions:
+    - path: "pkg/controller/kubelet-config/**"
+      instructions: |
+        Treat KubeletConfig override changes as platform-safety changes. Flag user overrides of platform-owned fields or feature gates, unaccounted MachineConfigPool rollout and reboot impact, and changes lacking Node-team review or focused validation coverage.
