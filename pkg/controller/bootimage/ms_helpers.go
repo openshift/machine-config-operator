@@ -9,7 +9,6 @@ import (
 	"time"
 
 	osconfigv1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/api/features"
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 	opv1 "github.com/openshift/api/operator/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -116,21 +115,19 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) {
 	}
 	// Update/Clear degrade conditions based on errors from this loop
 	ctrl.updateConditions(reason, kubeErrs.NewAggregate(syncErrors), opv1.MachineConfigurationBootImageUpdateDegraded)
-	if ctrl.fgHandler.Enabled(features.FeatureGateBootImageSkewEnforcement) {
-		switch {
-		case ctrl.mapiStats.skippedCount == 0 && len(syncErrors) == 0:
-			// All MachineSets reconciled cleanly — record the current OCP version.
-			ctrl.updateClusterBootImage(rhcosVersion)
-		case ctrl.mapiStats.skippedCount > 0 && len(syncErrors) == 0:
-			// One or more MachineSets were reconcileSkipped without an error. The existing
-			// ClusterBootImageAutomatic value is no longer trustworthy (a new or changed
-			// MachineSet may be running an older image), so reset it to the cluster install
-			// version to ensure the skew check surfaces a violation if warranted.
-			ctrl.resetClusterBootImage()
-		}
-		// Errors (syncErrors > 0) are already surfaced via the Degraded condition, which
-		// checkBootImageControllerReady checks first — no boot image record update needed.
+	switch {
+	case ctrl.mapiStats.skippedCount == 0 && len(syncErrors) == 0:
+		// All MachineSets reconciled cleanly — record the current OCP version.
+		ctrl.updateClusterBootImage(rhcosVersion)
+	case ctrl.mapiStats.skippedCount > 0 && len(syncErrors) == 0:
+		// One or more MachineSets were reconcileSkipped without an error. The existing
+		// ClusterBootImageAutomatic value is no longer trustworthy (a new or changed
+		// MachineSet may be running an older image), so reset it to the cluster install
+		// version to ensure the skew check surfaces a violation if warranted.
+		ctrl.resetClusterBootImage()
 	}
+	// Errors (syncErrors > 0) are already surfaced via the Degraded condition, which
+	// checkBootImageControllerReady checks first — no boot image record update needed.
 }
 
 // syncMAPIMachineSet will attempt to reconcile the provided machineset.

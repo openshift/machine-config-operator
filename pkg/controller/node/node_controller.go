@@ -2095,20 +2095,12 @@ func (ctrl *Controller) syncMetrics() error {
 
 // addMachineConfiguration handles MachineConfiguration add events to update the boot image skew enforcement metric.
 func (ctrl *Controller) addMachineConfiguration(obj any) {
-	if ctrl.fgHandler == nil || !ctrl.fgHandler.Enabled(features.FeatureGateBootImageSkewEnforcement) {
-		return
-	}
-
 	ctrl.syncBootImageSkewEnforcementMetric(obj)
 }
 
 // updateMachineConfiguration handles MachineConfiguration update events to update the boot image skew enforcement metric.
 // Only takes action if BootImageSkewEnforcementStatus has changed.
 func (ctrl *Controller) updateMachineConfiguration(old, cur any) {
-	if ctrl.fgHandler == nil || !ctrl.fgHandler.Enabled(features.FeatureGateBootImageSkewEnforcement) {
-		return
-	}
-
 	oldMCOP, ok := old.(*opv1.MachineConfiguration)
 	if !ok {
 		return
@@ -2128,10 +2120,6 @@ func (ctrl *Controller) updateMachineConfiguration(old, cur any) {
 
 // deleteMachineConfiguration handles MachineConfiguration delete events to reset the boot image skew enforcement metric.
 func (ctrl *Controller) deleteMachineConfiguration(_ any) {
-	if ctrl.fgHandler == nil || !ctrl.fgHandler.Enabled(features.FeatureGateBootImageSkewEnforcement) {
-		return
-	}
-
 	// Reset metric to 0 when MachineConfiguration is deleted
 	ctrlcommon.MCCBootImageSkewEnforcementNone.Set(0)
 }
