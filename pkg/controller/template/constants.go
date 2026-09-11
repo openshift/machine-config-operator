@@ -16,7 +16,7 @@ const (
 	// CorednsKey is the key that references the coredns image in the controller
 	CorednsKey string = "corednsImage"
 
-	// HaproxyKey is the key that references the haproxy-router image in the controller
+	// HaproxyKey is the key that references the haproxy-router-haproxy32 image in the controller
 	HaproxyKey string = "haproxyImage"
 
 	// BaremetalRuntimeCfgKey is the key that references the baremetal-runtimecfg image in the controller

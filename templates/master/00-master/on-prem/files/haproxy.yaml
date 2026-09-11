@@ -24,6 +24,8 @@ contents:
           path: "/var/lib/kubelet"
       - name: run-dir
         empty-dir: {}
+      - name: lib-run-dir
+        empty-dir: {}
       - name: conf-dir
         hostPath:
           path: "/etc/haproxy"
@@ -121,6 +123,8 @@ contents:
           mountPropagation: HostToContainer
         - name: run-dir
           mountPath: "/var/run/haproxy"
+        - name: lib-run-dir
+          mountPath: "/var/lib/haproxy/run"
         livenessProbe:
           initialDelaySeconds: 50
           httpGet:
