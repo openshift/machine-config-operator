@@ -321,6 +321,29 @@ func TestRenderAsset(t *testing.T) {
 				"--payload-version=4.8.0-rc.0",
 			},
 		},
+		{
+			// Test that bootstrap MCC pod is rendered correctly with proxy config
+			Path: "manifests/bootstrap-pod-v2.yaml",
+			RenderConfig: &renderConfig{
+				TargetNamespace: "testing-namespace",
+				ReleaseVersion:  "4.8.0-rc.0",
+				Images: &ctrlcommon.RenderConfigImages{
+					MachineConfigOperator: "mco-operator-image",
+				},
+				ControllerConfig: mcfgv1.ControllerConfigSpec{
+					Proxy: &configv1.ProxyStatus{
+						HTTPSProxy: "https://i.am.a.proxy.server",
+						NoProxy:    ".cluster.local",
+					},
+				},
+			},
+			FindExpected: []string{
+				"image: mco-operator-image",
+				"- name: HTTPS_PROXY\n      value: https://i.am.a.proxy.server",
+				"- name: NO_PROXY\n      value: \".cluster.local\"",
+				"--payload-version=4.8.0-rc.0",
+			},
+		},
 	}
 
 	for idx, test := range tests {
