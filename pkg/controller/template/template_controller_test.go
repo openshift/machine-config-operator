@@ -530,8 +530,8 @@ func TestKubeletAutoNodeSizingEnabled(t *testing.T) {
 	}
 }
 
-// TestMergesIRIRegistryCredentialsIntoPullSecret verifies that the template controller merges
-// IRI registry credentials into the pull secret when rendering 00-master, so that
+// TestMergesIRIRegistryCredentialsIntoPullSecret verifies that the template
+// controller merges IRI registry credentials into the rendered pull secret so
 // nodes can authenticate to the IRI registry without writing to the user-controlled
 // global pull secret.
 func TestMergesIRIRegistryCredentialsIntoPullSecret(t *testing.T) {
