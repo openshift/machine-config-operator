@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	configv1 "github.com/openshift/api/config/v1"
+	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -59,7 +60,11 @@ func RunKubeletBootstrap(templateDir string, kubeletConfigs []*mcfgv1.KubeletCon
 				originalKubeConfig.TLSCipherSuites = observedCipherSuites
 			}
 
-			kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, err := generateKubeletIgnFiles(kubeletConfig, originalKubeConfig)
+			var systemGomaxprocsBehavior mcfgv1.GomaxprocsBehaviorType
+			if fgHandler != nil && fgHandler.Enabled(features.FeatureGateGomaxprocsInjection) {
+				systemGomaxprocsBehavior = kubeletConfig.Spec.SystemGomaxprocsBehavior
+			}
+			kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, err := generateKubeletIgnFiles(kubeletConfig, originalKubeConfig, systemGomaxprocsBehavior)
 			if err != nil {
 				return nil, err
 			}
