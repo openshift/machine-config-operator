@@ -2206,6 +2206,80 @@ spec:
                         required:
                         - collectionPolicy
                         type: object
+                      interrupts:
+                        description: |-
+                          interrupts configures the interrupts collector, which exposes interrupt counts
+                          from /proc/interrupts.
+                          interrupts is optional.
+                          When omitted, this means no opinion and the platform is left to choose a reasonable default,
+                          which is subject to change over time. The current default is disabled.
+                          The interrupts collector can produce a large number of metrics depending on the hardware
+                          and interrupt sources present. When enabled, the collect field with at least one include
+                          pattern is required to explicitly select which interrupt lines are collected.
+                        properties:
+                          collect:
+                            description: |-
+                              collect contains configuration options that apply only when the interrupts collector is actively collecting metrics
+                              (i.e. when collectionPolicy is Collect).
+                              collect is required when collectionPolicy is Collect and must contain at least one include pattern
+                              to explicitly select which interrupt lines are collected.
+                              collect must not be set when collectionPolicy is DoNotCollect.
+                              When set, at least one field must be specified within collect.
+                            minProperties: 1
+                            properties:
+                              include:
+                                description: |-
+                                  include is a list of regular expression patterns that select which interrupt lines to collect.
+                                  This field is required.
+                                  Each line in /proc/interrupts is matched against the same string node-exporter uses:
+                                  the IRQ name, info, and devices fields joined with ";", for example "LOC;77;IO-APIC 2-edge ...".
+                                  Patterns are combined with OR into a single expression anchored on both ends,
+                                  so each pattern must match the entire string (use ".*" where needed).
+                                  Each entry must be at least 1 character, at most 1024 characters, and only contain printable ASCII characters.
+                                  Maximum length for this list is 50.
+                                  Minimum length for this list is 1.
+                                  Entries in this list must be unique.
+                                items:
+                                  description: |-
+                                    NodeExporterInterruptsIncludePattern is a string that is interpreted as a Go regular expression
+                                    pattern by the controller to match interrupt line names.
+                                    Invalid regular expressions will cause a controller-level error at runtime.
+                                    Must be at least 1 character and at most 1024 characters.
+                                    Must contain only printable ASCII characters (no control characters).
+                                  maxLength: 1024
+                                  minLength: 1
+                                  type: string
+                                  x-kubernetes-validations:
+                                  - message: must contain only printable ASCII characters
+                                      (no control characters)
+                                    rule: self.matches('^[\\x20-\\x7E]+$')
+                                maxItems: 50
+                                minItems: 1
+                                type: array
+                                x-kubernetes-list-type: set
+                            required:
+                            - include
+                            type: object
+                          collectionPolicy:
+                            description: |-
+                              collectionPolicy declares whether the interrupts collector collects metrics.
+                              This field is required.
+                              Valid values are "Collect" and "DoNotCollect".
+                              When set to "Collect", the interrupts collector is active and the collect field must be set
+                              with at least one include pattern to select which interrupt lines are collected.
+                              When set to "DoNotCollect", the interrupts collector is inactive and the collect field must not be set.
+                            enum:
+                            - Collect
+                            - DoNotCollect
+                            type: string
+                        required:
+                        - collectionPolicy
+                        type: object
+                        x-kubernetes-validations:
+                        - message: collect is required when collectionPolicy is Collect,
+                            and forbidden otherwise
+                          rule: 'has(self.collectionPolicy) && self.collectionPolicy
+                            == ''Collect'' ? has(self.collect) : !has(self.collect)'
                       ksmd:
                         description: |-
                           ksmd configures the ksmd collector, which collects statistics from the kernel same-page
@@ -2300,8 +2374,8 @@ spec:
                         - collectionPolicy
                         type: object
                         x-kubernetes-validations:
-                        - message: collect is forbidden when collectionPolicy is not
-                            Collect
+                        - message: collect may be set when collectionPolicy is Collect,
+                            and forbidden otherwise
                           rule: 'has(self.collectionPolicy) && self.collectionPolicy
                             == ''Collect'' ? true : !has(self.collect)'
                       netDev:
@@ -2454,8 +2528,8 @@ spec:
                         - collectionPolicy
                         type: object
                         x-kubernetes-validations:
-                        - message: collect is forbidden when collectionPolicy is not
-                            Collect
+                        - message: collect may be set when collectionPolicy is Collect,
+                            and forbidden otherwise
                           rule: 'has(self.collectionPolicy) && self.collectionPolicy
                             == ''Collect'' ? true : !has(self.collect)'
                       tcpStat:
