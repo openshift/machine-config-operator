@@ -129,52 +129,20 @@ func (ctrl *Controller) calculateStatus(mcns []*mcfgv1.MachineConfigNode, cconfi
 			poolSynchronizer.SetUpdated(mcfgv1.PinnedImageSets)
 		}
 
-		// Loop through the MCN conditions to determine if the associated node is updating, updated, or degraded
-		for _, cond := range mcn.Status.Conditions {
-			// Handle the case when the node is degraded
-			if mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodeNodeDegraded && cond.Status == metav1.ConditionTrue {
+		// When the ImageModeStatusReporting feature gate is enabled, determine if the machine is
+		// updated or degraded based on the MCN conditions.
+		if imageModeReportingIsEnabled {
+			isUpdated, isNodeDegraded, isPISDegraded, reasons := getMachineStateAndDegradeReasonFromMCN(mcn, ourNode, pool, mosc, mosb, isLayeredPool)
+			//nolint:gocritic // (ijanssen) the linter thinks this block would be clearer as a switch statement, but I disagree
+			if isNodeDegraded {
 				degradedMachines = append(degradedMachines, ourNode)
-				// populate the degradedReasons from the MachineConfigNodeNodeDegraded condition
-				degradedReasons = append(degradedReasons, fmt.Sprintf("Node %s is reporting: %q", ourNode.Name, cond.Message))
-				// break since the node cannot be considered updated in addition to degraded
-				break
-			}
-			/*
-				// TODO (ijanssen): This section of code should be implemented as part of OCPBUGS-57177 after OCPBUGS-32745 is addressed.
-				// 	In the current state of the code, the `MachineConfigNodePinnedImageSetsDegraded` condition is wrongly being set to True`
-				// 	even when no unintended functionality is occurring, such as many images taking more than 2 minutes to fetch. Thus, it is
-				//  not wise to degrade an MCP on a PIS degrade while the PIS degrade is not acting as intended. OCPBUGS-57177 has
-				// 	been marked as blocked by OCPBUGS-32745 in Jira, but once the degrade condition is stablilized, this code block should
-				// 	cover the fix for OCPBUGS-57177.
-					// populate the degradedReasons from the MachineConfigNodePinnedImageSetsDegraded condition
-					if pisIsEnabled && mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodePinnedImageSetsDegraded && cond.Status == metav1.ConditionTrue {
-						degradedMachines = append(degradedMachines, ourNode)
-						degradedReasons = append(degradedReasons, fmt.Sprintf("Node %s references an invalid PinnedImageSet. See the node's MachineConfigNode resource for details.", ourNode.Name))
-						if mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodePinnedImageSetsDegraded {
-							pinnedImageSetsDegraded = true
-						}
-						break
-					}
-			*/
-
-			// If the ImageModeStatusReporting feature gate is enabled, the updated machine count
-			// in the MCP status should be populated from MCN conditions
-			if imageModeReportingIsEnabled {
-				// A node is considered "updated" when the following are true:
-				// 	- The desired and current config versions (for non-image layering updates) and
-				// 	  the desired and current images (for image layering updates) are equal, which
-				// 	  is only met in the MCN when the `Updated` status is `True`.
-				// 	- The MCN's desired config version matches the MCP's desired config version and
-				// 	  the config version in the MOSB (for image layering updates) and the MCN's
-				// 	  desired image matches the image in the MOSC . Note that this check is
-				// 	  required to ensure no regressions occur in migrating to the MCN driven MCP
-				// 	  updates, since "Updated" in the MCN does not flip from "True" until a node
-				// 	  starts updating.
-				if mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodeUpdated && cond.Status == metav1.ConditionTrue && ctrlcommon.IsMachineUpdatedMCN(mcn, pool, mosc, mosb, isLayeredPool) {
-					updatedMachines = append(updatedMachines, ourNode)
-					// break since the node cannot be considered degraded in addition to updated
-					break
-				}
+				degradedReasons = append(degradedReasons, reasons...)
+			} else if isPISDegraded {
+				degradedMachines = append(degradedMachines, ourNode)
+				degradedReasons = append(degradedReasons, reasons...)
+				pinnedImageSetsDegraded = true
+			} else if isUpdated {
+				updatedMachines = append(updatedMachines, ourNode)
 			}
 		}
 	}
@@ -240,7 +208,7 @@ func (ctrl *Controller) calculateStatus(mcns []*mcfgv1.MachineConfigNode, cconfi
 		unavailableMachineCount == 0 &&
 		!isLayeredPoolBuilding(isLayeredPool, mosc, mosb)
 	if allUpdated {
-		//TODO: update api to only have one condition regarding status of update.
+		// TODO: update api to only have one condition regarding status of update.
 		updatedMsg := fmt.Sprintf("All nodes are updated with %s", getPoolUpdateLine(pool, mosc, isLayeredPool))
 		supdated := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdated, corev1.ConditionTrue, "", updatedMsg)
 		apihelpers.SetMachineConfigPoolCondition(&status, *supdated)
@@ -270,7 +238,7 @@ func (ctrl *Controller) calculateStatus(mcns []*mcfgv1.MachineConfigNode, cconfi
 		// Don't set Updating=True if pool is degraded due to render/node/other issues
 		isNonBuildDegraded := apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolRenderDegraded) ||
 			apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolNodeDegraded) ||
-			apihelpers.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolPinnedImageSetsDegraded)
+			pinnedImageSetsDegraded
 
 		switch {
 		case !isNonBuildDegraded:
@@ -354,13 +322,22 @@ func (ctrl *Controller) calculateStatus(mcns []*mcfgv1.MachineConfigNode, cconfi
 		sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolNodeDegraded, corev1.ConditionTrue, fmt.Sprintf("%d nodes are reporting degraded status on sync", len(degradedMachines)), strings.Join(degradedReasons, ", "))
 		nodeDegradedMessage = sdegraded.Message
 		apihelpers.SetMachineConfigPoolCondition(&status, *sdegraded)
-		if pinnedImageSetsDegraded {
-			sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolPinnedImageSetsDegraded, corev1.ConditionTrue, "one or more pinned image set is reporting degraded", strings.Join(degradedReasons, ", "))
-			apihelpers.SetMachineConfigPoolCondition(&status, *sdegraded)
-		}
 	} else {
 		sdegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolNodeDegraded, corev1.ConditionFalse, "", "")
 		apihelpers.SetMachineConfigPoolCondition(&status, *sdegraded)
+	}
+
+	// The node controller is the sole owner of PinnedImageSetsDegraded when ImageModeStatusReporting
+	// is enabled. Setting it unconditionally (True or False) ensures stale True values are cleared
+	// when PIS failures resolve, without depending on the PIS controller to clear it.
+	if imageModeReportingIsEnabled {
+		if pinnedImageSetsDegraded {
+			pisDegraded := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolPinnedImageSetsDegraded, corev1.ConditionTrue, "one or more pinned image set is reporting degraded", strings.Join(degradedReasons, ", "))
+			apihelpers.SetMachineConfigPoolCondition(&status, *pisDegraded)
+		} else {
+			pisClear := apihelpers.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolPinnedImageSetsDegraded, corev1.ConditionFalse, "", "")
+			apihelpers.SetMachineConfigPoolCondition(&status, *pisClear)
+		}
 	}
 
 	// here we now set the MCP Degraded field, the node_controller is the one making the call right now
@@ -429,6 +406,46 @@ func (ctrl *Controller) calculateStatus(mcns []*mcfgv1.MachineConfigNode, cconfi
 	}
 
 	return status
+}
+
+// getMachineStateAndDegradeReasonFromMCN loops through the MCN conditions of a node to determine
+// if it should be considered "Updated" or "Degraded" in the MCP status and collect the degrade
+// reasons, if applicable.
+func getMachineStateAndDegradeReasonFromMCN(mcn *mcfgv1.MachineConfigNode, node *corev1.Node, mcp *mcfgv1.MachineConfigPool,
+	mosc *mcfgv1.MachineOSConfig, mosb *mcfgv1.MachineOSBuild, layered bool,
+) (isUpdated, isNodeDegraded, isPISDegraded bool, degradedReasons []string) {
+	// Loop through the MCN conditions to determine if the associated node is updating, updated, or degraded
+	for _, cond := range mcn.Status.Conditions {
+		// Handle the case when the node is degraded
+		if mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodeNodeDegraded && cond.Status == metav1.ConditionTrue {
+			isNodeDegraded = true
+			degradedReasons = append(degradedReasons, fmt.Sprintf("Node %s is reporting: %q", node.Name, cond.Message))
+		} else if mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodePinnedImageSetsDegraded && cond.Status == metav1.ConditionTrue {
+			isPISDegraded = true
+			degradedReasons = append(degradedReasons, fmt.Sprintf("Node %s references a PinnedImageSet that cannot be successfully applied. PinnedImageSet is reporting: %q", node.Name, cond.Message))
+		}
+
+		// A node is considered "updated" when the following are true:
+		// 	- The desired and current config versions (for non-image layering updates) and
+		// 	  the desired and current images (for image layering updates) are equal, which
+		// 	  is only met in the MCN when the `Updated` status is `True`.
+		// 	- The MCN's desired config version matches the MCP's desired config version and
+		// 	  the config version in the MOSB (for image layering updates) and the MCN's
+		// 	  desired image matches the image in the MOSC . Note that this check is
+		// 	  required to ensure no regressions occur in migrating to the MCN driven MCP
+		// 	  updates, since "Updated" in the MCN does not flip from "True" until a node
+		// 	  starts updating.
+		if mcfgv1.StateProgress(cond.Type) == mcfgv1.MachineConfigNodeUpdated && cond.Status == metav1.ConditionTrue && ctrlcommon.IsMachineUpdatedMCN(mcn, mcp, mosc, mosb, layered) {
+			isUpdated = true
+		}
+	}
+
+	// If the machine is degraded (for any reason), it cannot be considered updated
+	if isNodeDegraded || isPISDegraded {
+		return false, isNodeDegraded, isPISDegraded, degradedReasons
+	}
+
+	return isUpdated, isNodeDegraded, isPISDegraded, []string{}
 }
 
 func getPoolUpdateLine(pool *mcfgv1.MachineConfigPool, mosc *mcfgv1.MachineOSConfig, layered bool) string {
