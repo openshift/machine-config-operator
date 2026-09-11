@@ -123,6 +123,22 @@ spec:
                     type: object
                 type: object
                 x-kubernetes-map-type: atomic
+              systemGomaxprocsBehavior:
+                description: |-
+                  systemGomaxprocsBehavior controls whether the kubelet-auto-node-size service automatically configures
+                  GOMAXPROCS for kubelet and CRI-O system services based on the system reserved CPU allocation.
+                  Valid values are "Autosize" and "Disabled".
+                  When set to "Autosize", the GOMAXPROCS environment variable for kubelet and CRI-O is set to
+                  max(ceil(system_reserved_cpu), 1). This optimizes the runtime parallelism of these Go-based system
+                  services based on their CPU allocation rather than total node capacity.
+                  When set to "Disabled", automatic GOMAXPROCS configuration is disabled and the system services
+                  use Go's default GOMAXPROCS behavior.
+                  When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+                  The current default is "Disabled".
+                enum:
+                - Autosize
+                - Disabled
+                type: string
               tlsSecurityProfile:
                 description: |-
                   tlsSecurityProfile configures TLS settings for the kubelet.

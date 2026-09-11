@@ -20,3 +20,7 @@ spec:
   validations:
     - expression: "!has(object.spec.managedBootImages) || (has(object.spec.managedBootImages) && params.status.platformStatus.type in ['GCP','AWS','VSphere','Azure'])"
       message: "This feature is only supported on these platforms: GCP, AWS, VSphere, Azure"
+    - expression: "!has(object.spec.managedBootImages) || !has(object.spec.managedBootImages.machineManagers) || !object.spec.managedBootImages.machineManagers.exists(m, m.apiGroup == 'cluster.x-k8s.io' && m.resource == 'machinesets') || params.status.platformStatus.type == 'AWS'"
+      message: "The CAPI MachineSet boot image update feature is only supported on AWS"
+    - expression: "!has(object.spec.managedBootImages) || !has(object.spec.managedBootImages.machineManagers) || !object.spec.managedBootImages.machineManagers.exists(m, m.apiGroup == 'cluster.x-k8s.io' && m.resource == 'machinedeployments') || params.status.platformStatus.type == 'AWS'"
+      message: "The CAPI MachineDeployment boot image update feature is only supported on AWS"
