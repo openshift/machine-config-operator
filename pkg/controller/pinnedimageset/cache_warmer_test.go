@@ -71,7 +71,7 @@ func TestCacheWarmerWarmsOnPISChange(t *testing.T) {
 	defer cancel()
 
 	cache := imageutils.NewFileInspectionCache(
-		filepath.Join(t.TempDir(), "cache.json"), 48*time.Hour)
+		filepath.Join(t.TempDir(), "cache.json"), 48*time.Hour, nil)
 
 	inspector := &fakeInspector{
 		inspectData: map[string]*types.ImageInspectInfo{
