@@ -710,5 +710,5 @@ func IsBootImageUpdateSupported(oc *exutil.CLI) bool {
 	var (
 		platform = exutil.CheckPlatform(oc.AsAdmin())
 	)
-	return platform == GCPPlatform || platform == AWSPlatform
+	return platform == GCPPlatform || platform == AWSPlatform || platform == VspherePlatform || platform == AzurePlatform
 }
