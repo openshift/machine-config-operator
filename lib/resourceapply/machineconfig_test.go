@@ -10,8 +10,10 @@ import (
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/diff"
 	clienttesting "k8s.io/client-go/testing"
 )
@@ -294,5 +296,95 @@ func TestApplyMachineConfig(t *testing.T) {
 			}
 			test.verifyActions(client.Actions(), t)
 		})
+	}
+}
+
+// TestIsApplyErrorRetriable verifies all cases that IsApplyErrorRetriable considers retriable,
+// and that unrelated errors are not.
+func TestIsApplyErrorRetriable(t *testing.T) {
+	mcnGR := schema.GroupResource{Group: "machineconfiguration.openshift.io", Resource: "machineconfignodes"}
+
+	tests := []struct {
+		name      string
+		err       error
+		retriable bool
+	}{
+		{
+			name:      "conflict error is retriable",
+			err:       apierrors.NewConflict(mcnGR, "node-1", fmt.Errorf("the object has been modified")),
+			retriable: true,
+		},
+		{
+			name:      "timeout error is retriable",
+			err:       apierrors.NewTimeoutError("request timed out", 10),
+			retriable: true,
+		},
+		{
+			name:      "rpc error is retriable",
+			err:       fmt.Errorf("rpc error: code = Unavailable desc = transport is closing"),
+			retriable: true,
+		},
+		{
+			name:      "not found error is not retriable",
+			err:       apierrors.NewNotFound(mcnGR, "node-1"),
+			retriable: false,
+		},
+		{
+			name:      "forbidden error is not retriable",
+			err:       apierrors.NewForbidden(mcnGR, "node-1", fmt.Errorf("access denied")),
+			retriable: false,
+		},
+		{
+			name:      "unrelated error is not retriable",
+			err:       fmt.Errorf("something went wrong"),
+			retriable: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsApplyErrorRetriable(tc.err); got != tc.retriable {
+				t.Errorf("IsApplyErrorRetriable(%v) = %v, want %v", tc.err, got, tc.retriable)
+			}
+		})
+	}
+}
+
+// TestApplyMachineConfigNodeConflictIsRetriable verifies that ApplyMachineConfigNode surfaces a
+// conflict error that IsApplyErrorRetriable recognises, so the retry.OnError wrapper in
+// syncMachineConfigNodes can retry it correctly.
+func TestApplyMachineConfigNodeConflictIsRetriable(t *testing.T) {
+	existing := &mcfgv1.MachineConfigNode{
+		ObjectMeta: metav1.ObjectMeta{Name: "node-1", ResourceVersion: "100"},
+		Spec: mcfgv1.MachineConfigNodeSpec{
+			Pool: mcfgv1.MCOObjectReference{Name: "worker"},
+		},
+	}
+	required := &mcfgv1.MachineConfigNode{
+		ObjectMeta: metav1.ObjectMeta{Name: "node-1"},
+		Spec: mcfgv1.MachineConfigNodeSpec{
+			Pool: mcfgv1.MCOObjectReference{Name: "master"},
+		},
+	}
+
+	client := fake.NewSimpleClientset(existing)
+	conflictErr := apierrors.NewConflict(
+		schema.GroupResource{Group: "machineconfiguration.openshift.io", Resource: "machineconfignodes"},
+		"node-1",
+		fmt.Errorf("the object has been modified; please apply your changes to the latest version and try again"),
+	)
+	client.PrependReactor("update", "machineconfignodes", func(_ clienttesting.Action) (bool, runtime.Object, error) {
+		return true, nil, conflictErr
+	})
+
+	_, _, err := ApplyMachineConfigNode(client.MachineconfigurationV1(), required)
+	if err == nil {
+		t.Fatal("expected conflict error, got nil")
+	}
+	if !apierrors.IsConflict(err) {
+		t.Fatalf("expected conflict error, got: %v", err)
+	}
+	if !IsApplyErrorRetriable(err) {
+		t.Fatal("conflict error should be retriable via IsApplyErrorRetriable")
 	}
 }
