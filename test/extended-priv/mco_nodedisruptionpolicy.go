@@ -242,7 +242,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			fileContent = "test"
 			fileConfig  = getURLEncodedFileConfig(filePath, fileContent, "420")
 
-			expectedNDMessage = regexp.QuoteMeta(fmt.Sprintf("error running systemctl reload %s: Failed to reload %s: Unit %s not found", invalidService, invalidService, invalidService)) // quotemeta to scape regex characters
+			expectedNDMessage = regexp.QuoteMeta(fmt.Sprintf("reloading systemd unit %q: Unit %s not found.", invalidService, invalidService))
 			expectedNDReason  = "1 nodes are reporting degraded status on sync"
 		)
 

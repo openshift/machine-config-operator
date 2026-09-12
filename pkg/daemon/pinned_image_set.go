@@ -115,6 +115,9 @@ type PinnedImageSetManager struct {
 	queue                    workqueue.TypedRateLimitingInterface[string]
 	fgHandler                ctrlcommon.FeatureGatesHandler
 
+	// Abstraction for interacting with systemd
+	systemdManager SystemdManager
+
 	// mutex protects cancelFn
 	mu       sync.Mutex
 	cancelFn context.CancelFunc
@@ -146,6 +149,7 @@ func NewPinnedImageSetManager(
 		registryCfgPath:          registryCfgPath,
 		prefetchTimeout:          prefetchTimeout,
 		minStorageAvailableBytes: minStorageAvailableBytes,
+		systemdManager:           NewSystemdManagerDefault(),
 		fgHandler:                fgHandler,
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig[string](
 			workqueue.DefaultTypedControllerRateLimiter[string](),
@@ -282,7 +286,7 @@ func (p *PinnedImageSetManager) syncMachineConfigPools(ctx context.Context, pool
 
 	// write config and reload crio last to allow a window for kubelet to gc
 	// images in an emergency
-	if err := ensureCrioPinnedImagesConfigFile(crioPinnedImagesDropInFilePath, imageNames); err != nil {
+	if err := p.ensureCrioPinnedImagesConfigFile(crioPinnedImagesDropInFilePath, imageNames); err != nil {
 		klog.Errorf("failed to write crio config file: %v", err)
 		return err
 	}
@@ -490,7 +494,7 @@ func (p *PinnedImageSetManager) checkImagePayloadStorage(ctx context.Context, im
 }
 
 // ensureCrioPinnedImagesConfigFile ensures the crio config file is up to date with the pinned images.
-func ensureCrioPinnedImagesConfigFile(path string, imageNames []string) error {
+func (p *PinnedImageSetManager) ensureCrioPinnedImagesConfigFile(path string, imageNames []string) error {
 	cfgExists, err := hasConfigFile(path)
 	if err != nil {
 		return fmt.Errorf("failed to check crio config file: %w", err)
@@ -500,7 +504,7 @@ func ensureCrioPinnedImagesConfigFile(path string, imageNames []string) error {
 		if err := deleteCrioConfigFile(); err != nil {
 			return fmt.Errorf("failed to remove CRI-O config file: %w", err)
 		}
-		return crioReload()
+		return p.crioReload()
 	} else if len(imageNames) == 0 {
 		return nil
 	}
@@ -524,7 +528,7 @@ func ensureCrioPinnedImagesConfigFile(path string, imageNames []string) error {
 		if err := writeFiles([]ign3types.File{ignFile}, true); err != nil {
 			return fmt.Errorf("failed to write CRIO config file: %w", err)
 		}
-		return crioReload()
+		return p.crioReload()
 	}
 	klog.Infof("CRI-O config file is up to date, no reload required")
 
@@ -1079,7 +1083,7 @@ func (p *PinnedImageSetManager) deleteMachineConfigPool(obj interface{}) {
 		return
 	}
 
-	crioReload()
+	p.crioReload()
 }
 
 func (p *PinnedImageSetManager) enqueue(pool *mcfgv1.MachineConfigPool) {
@@ -1163,6 +1167,15 @@ func (p *PinnedImageSetManager) getImageSize(ctx context.Context, imageName, aut
 	return totalSize, nil
 }
 
+func (p *PinnedImageSetManager) crioReload() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if err := p.systemdManager.DoConnection(ctx, SystemdReload(constants.CRIOServiceName)); err != nil {
+		return fmt.Errorf("could not apply update: reloading %s configuration failed. Error: %w", constants.CRIOServiceName, err)
+	}
+	return nil
+}
+
 // ensurePullImage first checks if the image exists locally and then will attempt to pull
 // the image from the container runtime with a retry/backoff.
 func ensurePullImage(ctx context.Context, client *cri.Client, backoff wait.Backoff, image string, authConfig *runtimeapi.AuthConfig) error {
@@ -1229,14 +1242,6 @@ func uniqueSortedImageNames(images []mcfgv1.PinnedImageRef) []string {
 	sort.Strings(unique)
 
 	return unique
-}
-
-func crioReload() error {
-	serviceName := constants.CRIOServiceName
-	if err := reloadService(serviceName); err != nil {
-		return fmt.Errorf("could not apply update: reloading %s configuration failed. Error: %w", serviceName, err)
-	}
-	return nil
 }
 
 func deleteCrioConfigFile() error {
