@@ -236,25 +236,24 @@ func (mcp *MachineConfigPool) getUpdatedMachineCount() (int, error) {
 	return umachineCount, nil
 }
 
-func (mcp *MachineConfigPool) pollMachineCount() func() string {
-	return mcp.Poll(`{.status.machineCount}`)
+// GetMachineCountStatus returns the value of 'machineCount' in the MCP status as a string
+func (mcp *MachineConfigPool) GetMachineCountStatus() (string, error) {
+	return mcp.Get(`{.status.machineCount}`)
 }
 
-func (mcp *MachineConfigPool) pollReadyMachineCount() func() string {
-	return mcp.Poll(`{.status.readyMachineCount}`)
+// GetReadyMachineCountStatus returns the value of 'readyMachineCount' in the MCP status as a string
+func (mcp *MachineConfigPool) GetReadyMachineCountStatus() (string, error) {
+	return mcp.Get(`{.status.readyMachineCount}`)
 }
 
-func (mcp *MachineConfigPool) pollDegradedMachineCount() func() string {
-	return mcp.Poll(`{.status.degradedMachineCount}`)
+// GetDegradedMachineCountStatus returns the value of 'degradedMachineCount' in the MCP status as a string
+func (mcp *MachineConfigPool) GetDegradedMachineCountStatus() (string, error) {
+	return mcp.Get(`{.status.degradedMachineCount}`)
 }
 
 // GetDegradedStatus returns the value of the 'Degraded' condition in the MCP
 func (mcp *MachineConfigPool) GetDegradedStatus() (string, error) {
 	return mcp.Get(`{.status.conditions[?(@.type=="Degraded")].status}`)
-}
-
-func (mcp *MachineConfigPool) pollDegradedStatus() func() string {
-	return mcp.Poll(`{.status.conditions[?(@.type=="Degraded")].status}`)
 }
 
 // GetUpdatedStatus returns the value of the 'Updated' condition in the MCP
@@ -265,10 +264,6 @@ func (mcp *MachineConfigPool) GetUpdatedStatus() (string, error) {
 // GetUpdatingStatus returns the value of 'Updating' condition in the MCP
 func (mcp *MachineConfigPool) GetUpdatingStatus() (string, error) {
 	return mcp.Get(`{.status.conditions[?(@.type=="Updating")].status}`)
-}
-
-func (mcp *MachineConfigPool) pollUpdatedStatus() func() string {
-	return mcp.Poll(`{.status.conditions[?(@.type=="Updated")].status}`)
 }
 
 func (mcp *MachineConfigPool) estimateWaitDuration() time.Duration {

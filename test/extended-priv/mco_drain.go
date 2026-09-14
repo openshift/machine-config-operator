@@ -62,8 +62,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		mc.create()
 
 		exutil.By("Wait until node is cordoned")
-		o.Eventually(workerNode.Poll(`{.spec.taints[?(@.effect=="NoSchedule")].effect}`),
-			"20m", "1m").Should(o.Equal("NoSchedule"), fmt.Sprintf("Node %s was not cordoned", workerNode.name))
+		o.Eventually(workerNode.Get, "20m", "1m").WithArguments(`{.spec.taints[?(@.effect=="NoSchedule")].effect}`).
+				Should(o.Equal("NoSchedule"), fmt.Sprintf("Node %s was not cordoned", workerNode.name))
 
 		exutil.By("Check MCC logs to see the early sleep interval b/w failed drains")
 		var podLogs string

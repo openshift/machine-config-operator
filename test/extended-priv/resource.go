@@ -38,7 +38,6 @@ type ResourceInterface interface {
 	Get(jsonPath string, extraParams ...string) (string, error)
 	GetSafe(jsonPath string, defaultValue string, extraParams ...string) string
 	GetOrFail(jsonPath string, extraParams ...string) string
-	Poll(jsonPath string) func() string
 	Delete(extraParams ...string) error
 	DeleteOrFail(extraParams ...string)
 	Exists() bool
@@ -162,14 +161,6 @@ func (r *ocGetter) GetOrFail(jsonPath string, extraParams ...string) string {
 	}
 
 	return ret
-}
-
-// PollValue returns a function suitable to be used with the gomega Eventually/Consistently checks
-func (r *ocGetter) Poll(jsonPath string) func() string {
-	return func() string {
-		ret, _ := r.Get(jsonPath)
-		return ret
-	}
 }
 
 // String implements the Stringer interface
