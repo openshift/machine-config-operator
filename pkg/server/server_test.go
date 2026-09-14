@@ -30,6 +30,7 @@ import (
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	routev1 "github.com/openshift/api/route/v1"
+	mcfgfake "github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	routefake "github.com/openshift/client-go/route/clientset/versioned/fake"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -570,6 +571,7 @@ func TestResolveDesiredImageForPool(t *testing.T) {
 		name                string
 		poolName            string
 		moscExists          bool
+		moscDeletedFromAPI  bool
 		mosbExists          bool
 		mosbSuccessful      bool
 		registryInternal    bool
@@ -626,6 +628,18 @@ func TestResolveDesiredImageForPool(t *testing.T) {
 			updatedMachineCount: 0,
 			expectedImageURL:    "",
 			expectedRebootPath:  "2-reboot (no nodes have validated the new build yet)",
+		},
+		{
+			name:                "MOSC deleted but still in stale cache - no layered image",
+			poolName:            "worker",
+			moscExists:          true,
+			moscDeletedFromAPI:  true,
+			mosbExists:          true,
+			mosbSuccessful:      true,
+			registryInternal:    false,
+			updatedMachineCount: 1,
+			expectedImageURL:    "",
+			expectedRebootPath:  "Base image (MOSC deleted, stale cache should be caught by API verification)",
 		},
 	}
 
@@ -731,10 +745,20 @@ func TestResolveDesiredImageForPool(t *testing.T) {
 			// Create fake k8s clients for registry detection
 			kubeclient, routeclient := createFakeRegistryClients(tc.registryInternal)
 
+			// Create fake MCO client with MOSCs present in the API (unless testing stale cache)
+			var mcfgObjs []runtime.Object
+			if !tc.moscDeletedFromAPI {
+				for _, m := range moscList {
+					mcfgObjs = append(mcfgObjs, m)
+				}
+			}
+			mcfgclient := mcfgfake.NewSimpleClientset(mcfgObjs...)
+
 			// Create cluster server
 			cs := &clusterServer{
 				machineOSConfigLister: moscLister,
 				machineOSBuildLister:  mosbLister,
+				mcfgclient:            mcfgclient,
 				kubeclient:            kubeclient,
 				routeclient:           routeclient,
 			}
@@ -1001,10 +1025,18 @@ func TestLayeredImageServingDuringScaleUp(t *testing.T) {
 			// Create fake k8s clients for registry detection
 			kubeclient, routeclient := createFakeRegistryClients(tc.registryInternal)
 
+			// Create fake MCO client with MOSCs present in the API
+			var mcfgObjs []runtime.Object
+			for _, m := range moscList {
+				mcfgObjs = append(mcfgObjs, m)
+			}
+			mcfgclient := mcfgfake.NewSimpleClientset(mcfgObjs...)
+
 			// Create cluster server
 			cs := &clusterServer{
 				machineOSConfigLister: moscLister,
 				machineOSBuildLister:  mosbLister,
+				mcfgclient:            mcfgclient,
 				kubeclient:            kubeclient,
 				routeclient:           routeclient,
 			}
@@ -1179,12 +1211,19 @@ func TestGetConfigWithLayeredImage(t *testing.T) {
 
 			kubeclient, routeclient := createFakeRegistryClients(tc.registryInternal)
 
+			var mcfgObjs []runtime.Object
+			for _, m := range moscList {
+				mcfgObjs = append(mcfgObjs, m)
+			}
+			mcfgclient := mcfgfake.NewSimpleClientset(mcfgObjs...)
+
 			csc := &clusterServer{
 				machineConfigPoolLister: mcpLister,
 				machineConfigLister:     mcLister,
 				controllerConfigLister:  ccLister,
 				machineOSConfigLister:   moscLister,
 				machineOSBuildLister:    mosbLister,
+				mcfgclient:              mcfgclient,
 				kubeclient:              kubeclient,
 				routeclient:             routeclient,
 				kubeconfigFunc: func() ([]byte, []byte, error) {
@@ -1245,4 +1284,121 @@ func TestGetConfigWithLayeredImage(t *testing.T) {
 				"Desired config annotation should match expected")
 		})
 	}
+}
+
+// TestGetConfigDoesNotMutateInformerCache verifies that calling GetConfig does not
+// permanently mutate the shared informer cache. This is a regression test for the
+// bug where appendDesiredOSImage set mc.Spec.OSImageURL on the cached MC object,
+// causing subsequent calls (after MOSC deletion) to still serve the stale layered image.
+func TestGetConfigDoesNotMutateInformerCache(t *testing.T) {
+	t.Parallel()
+
+	mcPath := filepath.Join(testDir, "machine-configs", testConfig+".yaml")
+	mcData, err := os.ReadFile(mcPath)
+	require.NoError(t, err)
+
+	mc := new(mcfgv1.MachineConfig)
+	err = yaml.Unmarshal(mcData, mc)
+	require.NoError(t, err)
+	mc.Name = "rendered-worker-new"
+
+	pool := &mcfgv1.MachineConfigPool{
+		ObjectMeta: metav1.ObjectMeta{Name: "worker"},
+		Spec: mcfgv1.MachineConfigPoolSpec{
+			Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{
+				ObjectReference: corev1.ObjectReference{Name: "rendered-worker-new"},
+			},
+		},
+		Status: mcfgv1.MachineConfigPoolStatus{
+			Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{
+				ObjectReference: corev1.ObjectReference{Name: "rendered-worker-new"},
+			},
+			UpdatedMachineCount: 1,
+		},
+	}
+
+	mosc := &mcfgv1.MachineOSConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "worker"},
+		Spec: mcfgv1.MachineOSConfigSpec{
+			MachineConfigPool: mcfgv1.MachineConfigPoolReference{Name: "worker"},
+		},
+		Status: mcfgv1.MachineOSConfigStatus{
+			CurrentImagePullSpec: mcfgv1.ImageDigestFormat("quay.io/openshift/custom-layered-image@sha256:abc123"),
+		},
+	}
+
+	mosb := &mcfgv1.MachineOSBuild{
+		ObjectMeta: metav1.ObjectMeta{Name: "worker-rendered-worker-new"},
+		Spec: mcfgv1.MachineOSBuildSpec{
+			MachineOSConfig: mcfgv1.MachineOSConfigReference{Name: "worker"},
+			MachineConfig:   mcfgv1.MachineConfigReference{Name: "rendered-worker-new"},
+		},
+		Status: mcfgv1.MachineOSBuildStatus{
+			Conditions: []metav1.Condition{{Type: "Succeeded", Status: metav1.ConditionTrue}},
+			DigestedImagePushSpec: mcfgv1.ImageDigestFormat("quay.io/openshift/custom-layered-image@sha256:abc123"),
+		},
+	}
+
+	controllerConfig := getTestControllerConfig()
+	mcpLister := &mockMCPLister{pools: []*mcfgv1.MachineConfigPool{pool}}
+	mcLister := &mockMCLister{configs: []*mcfgv1.MachineConfig{mc}}
+	ccLister := &mockCCLister{configs: []*mcfgv1.ControllerConfig{controllerConfig}}
+	moscLister := &mockMOSCLister{configs: []*mcfgv1.MachineOSConfig{mosc}}
+	mosbLister := &mockMOSBLister{builds: []*mcfgv1.MachineOSBuild{mosb}}
+	kubeclient, routeclient := createFakeRegistryClients(false)
+	mcfgclient := mcfgfake.NewSimpleClientset(mosc)
+
+	csc := &clusterServer{
+		machineConfigPoolLister: mcpLister,
+		machineConfigLister:     mcLister,
+		controllerConfigLister:  ccLister,
+		machineOSConfigLister:   moscLister,
+		machineOSBuildLister:    mosbLister,
+		mcfgclient:              mcfgclient,
+		kubeclient:              kubeclient,
+		routeclient:             routeclient,
+		kubeconfigFunc:          func() ([]byte, []byte, error) { return getKubeConfigContent(t) },
+	}
+
+	layeredImage := "quay.io/openshift/custom-layered-image@sha256:abc123"
+	originalOSImageURL := mc.Spec.OSImageURL
+
+	// First call: MOSC exists, should serve layered image and set OSImageURL on the copy
+	_, err = csc.GetConfig(poolRequest{machineConfigPool: "worker"})
+	require.NoError(t, err)
+
+	// Verify the cached MC was NOT mutated to the layered image
+	assert.Equal(t, originalOSImageURL, mc.Spec.OSImageURL,
+		"Shared informer cache MC should not have OSImageURL mutated after GetConfig")
+
+	// Now simulate MOSC deletion: remove from API client but keep in lister (stale cache)
+	mcfgclient = mcfgfake.NewSimpleClientset()
+	csc.mcfgclient = mcfgclient
+
+	// Second call: MOSC deleted from API, stale cache still has it
+	res, err := csc.GetConfig(poolRequest{machineConfigPool: "worker"})
+	require.NoError(t, err)
+
+	resCfg, err := ctrlcommon.ParseAndConvertConfig(res.Raw)
+	require.NoError(t, err)
+
+	// Find the encapsulated MC content file
+	var encapsulatedFile *ign3types.File
+	for i := range resCfg.Storage.Files {
+		if resCfg.Storage.Files[i].Path == "/etc/mcs-machine-config-content.json" {
+			encapsulatedFile = &resCfg.Storage.Files[i]
+			break
+		}
+	}
+	require.NotNil(t, encapsulatedFile, "Encapsulated MC file should be present")
+
+	contents, err := ctrlcommon.DecodeIgnitionFileContents(encapsulatedFile.Contents.Source, encapsulatedFile.Contents.Compression)
+	require.NoError(t, err)
+
+	var encapsulatedMC mcfgv1.MachineConfig
+	err = json.Unmarshal([]byte(contents), &encapsulatedMC)
+	require.NoError(t, err)
+
+	assert.NotEqual(t, layeredImage, encapsulatedMC.Spec.OSImageURL,
+		"After MOSC deletion, encapsulated MC should not contain stale layered image URL")
 }
