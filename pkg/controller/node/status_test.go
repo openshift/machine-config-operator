@@ -272,6 +272,66 @@ func assertExpectedNodes(t *testing.T, expected []string, actual []*corev1.Node)
 	assert.Equal(t, expected, helpers.GetNamesFromNodes(actual))
 }
 
+// expectedPoolStatus holds the expected values for assertPoolStatus. Fields that
+// are nil / zero/"" are skipped.
+type expectedPoolStatus struct {
+	machineCount            *int32
+	updatedMachineCount     *int32
+	readyMachineCount       *int32
+	unavailableMachineCount *int32
+	degradedMachineCount    *int32
+	updated                 corev1.ConditionStatus // "" = don't check
+	updating                corev1.ConditionStatus // "" = don't check
+	degraded                corev1.ConditionStatus // "" = don't check
+	updatingMsg             string                 // "" = don't check
+	osImageStreamName       *string                // nil = don't check
+}
+
+// assertPoolStatus takes in the expected machine counts and pool status and confirms they match
+// what is set in the pool's status.
+func assertPoolStatus(t *testing.T, status mcfgv1.MachineConfigPoolStatus, want expectedPoolStatus) {
+	t.Helper()
+	if want.machineCount != nil {
+		assert.Equal(t, *want.machineCount, status.MachineCount, "MachineCount")
+	}
+	if want.updatedMachineCount != nil {
+		assert.Equal(t, *want.updatedMachineCount, status.UpdatedMachineCount, "UpdatedMachineCount")
+	}
+	if want.readyMachineCount != nil {
+		assert.Equal(t, *want.readyMachineCount, status.ReadyMachineCount, "ReadyMachineCount")
+	}
+	if want.unavailableMachineCount != nil {
+		assert.Equal(t, *want.unavailableMachineCount, status.UnavailableMachineCount, "UnavailableMachineCount")
+	}
+	if want.degradedMachineCount != nil {
+		assert.Equal(t, *want.degradedMachineCount, status.DegradedMachineCount, "DegradedMachineCount")
+	}
+	if want.updated != "" {
+		cond := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
+		if assert.NotNil(t, cond, "Updated condition not found") {
+			assert.Equal(t, want.updated, cond.Status, "Updated condition")
+		}
+	}
+	if want.updating != "" {
+		cond := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
+		if assert.NotNil(t, cond, "Updating condition not found") {
+			assert.Equal(t, want.updating, cond.Status, "Updating condition")
+			if want.updatingMsg != "" {
+				assert.Equal(t, want.updatingMsg, cond.Message, "Updating condition message")
+			}
+		}
+	}
+	if want.degraded != "" {
+		cond := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolDegraded)
+		if assert.NotNil(t, cond, "Degraded condition not found") {
+			assert.Equal(t, want.degraded, cond.Status, "Degraded condition")
+		}
+	}
+	if want.osImageStreamName != nil {
+		assert.Equal(t, *want.osImageStreamName, status.OSImageStream.Name, "OSImageStream.Name")
+	}
+}
+
 func TestCalculateStatus(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -295,52 +355,16 @@ func TestCalculateStatus(t *testing.T) {
 			},
 			currentConfig: machineConfigV1,
 			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-				if got, want := status.MachineCount, int32(3); got != want {
-					t.Fatalf("mismatch MachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.UpdatedMachineCount, int32(0); got != want {
-					t.Fatalf("mismatch UpdatedMachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.ReadyMachineCount, int32(0); got != want {
-					t.Fatalf("mismatch ReadyMachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.UnavailableMachineCount, int32(0); got != want {
-					t.Fatalf("mismatch UnavailableMachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.DegradedMachineCount, int32(0); got != want {
-					t.Fatalf("mismatch DegradedMachineCount: got %d want: %d", got, want)
-				}
-
-				condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
-				if condupdated == nil {
-					t.Fatal("updated condition not found")
-				}
-
-				condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-				if condupdating == nil {
-					t.Fatal("updating condition not found")
-				}
-
-				conddegraded := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolDegraded)
-				if conddegraded == nil {
-					t.Fatal("degraded condition not found")
-				}
-
-				if got, want := condupdated.Status, corev1.ConditionFalse; got != want {
-					t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
-				}
-
-				if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
-					t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-				}
-
-				if got, want := conddegraded.Status, corev1.ConditionFalse; got != want {
-					t.Fatalf("mismatch conddegraded.Status: got %s want: %s", got, want)
-				}
+				assertPoolStatus(t, status, expectedPoolStatus{
+					machineCount:            new(int32(3)),
+					updatedMachineCount:     new(int32(0)),
+					readyMachineCount:       new(int32(0)),
+					unavailableMachineCount: new(int32(0)),
+					degradedMachineCount:    new(int32(0)),
+					updated:                 corev1.ConditionFalse,
+					updating:                corev1.ConditionTrue,
+					degraded:                corev1.ConditionFalse,
+				})
 			},
 		},
 		{
@@ -352,56 +376,20 @@ func TestCalculateStatus(t *testing.T) {
 			},
 			currentConfig: machineConfigV1,
 			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-				if got, want := status.MachineCount, int32(3); got != want {
-					t.Fatalf("mismatch MachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.UpdatedMachineCount, int32(0); got != want {
-					t.Fatalf("mismatch UpdatedMachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.ReadyMachineCount, int32(0); got != want {
-					t.Fatalf("mismatch ReadyMachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.UnavailableMachineCount, int32(1); got != want {
-					t.Fatalf("mismatch UnavailableMachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.DegradedMachineCount, int32(0); got != want {
-					t.Fatalf("mismatch DegradedMachineCount: got %d want: %d", got, want)
-				}
-
-				condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
-				if condupdated == nil {
-					t.Fatal("updated condition not found")
-				}
-
-				condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-				if condupdating == nil {
-					t.Fatal("updating condition not found")
-				}
-
-				conddegraded := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolDegraded)
-				if conddegraded == nil {
-					t.Fatal("degraded condition not found")
-				}
-
-				if got, want := condupdated.Status, corev1.ConditionFalse; got != want {
-					t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
-				}
-
-				if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
-					t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-				}
-
-				if got, want := conddegraded.Status, corev1.ConditionFalse; got != want {
-					t.Fatalf("mismatch conddegraded.Status: got %s want: %s", got, want)
-				}
+				assertPoolStatus(t, status, expectedPoolStatus{
+					machineCount:            new(int32(3)),
+					updatedMachineCount:     new(int32(0)),
+					readyMachineCount:       new(int32(0)),
+					unavailableMachineCount: new(int32(1)),
+					degradedMachineCount:    new(int32(0)),
+					updated:                 corev1.ConditionFalse,
+					updating:                corev1.ConditionTrue,
+					degraded:                corev1.ConditionFalse,
+				})
 			},
 		},
 		{
-			name: "0 nodes updates, 0 nodes updating, 0 nodes degraded, pool paused",
+			name: "0 nodes updated, 0 nodes updating, 0 nodes degraded, pool paused",
 			nodes: []*corev1.Node{
 				helpers.NewNodeWithReady("node-0", machineConfigV0, machineConfigV1, corev1.ConditionTrue),
 				helpers.NewNodeWithReady("node-1", machineConfigV0, machineConfigV0, corev1.ConditionTrue),
@@ -410,49 +398,16 @@ func TestCalculateStatus(t *testing.T) {
 			currentConfig: machineConfigV1,
 			paused:        true,
 			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-				if got, want := status.MachineCount, int32(3); got != want {
-					t.Fatalf("mismatch MachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.UpdatedMachineCount, int32(0); got != want {
-					t.Fatalf("mismatch UpdatedMachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.ReadyMachineCount, int32(0); got != want {
-					t.Fatalf("mismatch ReadyMachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.UnavailableMachineCount, int32(1); got != want {
-					t.Fatalf("mismatch UnavailableMachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.DegradedMachineCount, int32(0); got != want {
-					t.Fatalf("mismatch DegradedMachineCount: got %d want: %d", got, want)
-				}
-
-				condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
-				if condupdated == nil {
-					t.Fatal("updated condition not found")
-				}
-				if got, want := condupdated.Status, corev1.ConditionFalse; got != want {
-					t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
-				}
-
-				condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-				if condupdating == nil {
-					t.Fatal("updating condition not found")
-				}
-				if got, want := condupdating.Status, corev1.ConditionFalse; got != want {
-					t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-				}
-
-				conddegraded := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolDegraded)
-				if conddegraded == nil {
-					t.Fatal("degraded condition not found")
-				}
-				if got, want := conddegraded.Status, corev1.ConditionFalse; got != want {
-					t.Fatalf("mismatch conddegraded.Status: got %s want: %s", got, want)
-				}
+				assertPoolStatus(t, status, expectedPoolStatus{
+					machineCount:            new(int32(3)),
+					updatedMachineCount:     new(int32(0)),
+					readyMachineCount:       new(int32(0)),
+					unavailableMachineCount: new(int32(1)),
+					degradedMachineCount:    new(int32(0)),
+					updated:                 corev1.ConditionFalse,
+					updating:                corev1.ConditionFalse,
+					degraded:                corev1.ConditionFalse,
+				})
 			},
 		},
 		{
@@ -467,14 +422,10 @@ func TestCalculateStatus(t *testing.T) {
 			overrideMosb:  true,
 			mosb:          nil,
 			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-				condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-				if condupdating == nil {
-					t.Fatal("updating condition not found")
-				}
-				if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
-					t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-				}
-				assert.Equal(t, "Pool is paused; waiting for a new OS image build to start (mosc: mosc-1)", condupdating.Message)
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updating:    corev1.ConditionTrue,
+					updatingMsg: "Pool is paused; waiting for a new OS image build to start (mosc: mosc-1)",
+				})
 			},
 		},
 		{
@@ -489,14 +440,10 @@ func TestCalculateStatus(t *testing.T) {
 			overrideMosb:  true,
 			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).WithBuildInitialState().MachineOSBuild(),
 			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-				condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-				if condupdating == nil {
-					t.Fatal("updating condition not found")
-				}
-				if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
-					t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-				}
-				assert.Equal(t, "Pool is paused; OS image build has been created but not yet started (mosb: mosb-1)", condupdating.Message)
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updating:    corev1.ConditionTrue,
+					updatingMsg: "Pool is paused; OS image build has been created but not yet started (mosb: mosb-1)",
+				})
 			},
 		},
 		{
@@ -511,14 +458,10 @@ func TestCalculateStatus(t *testing.T) {
 			overrideMosb:  true,
 			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).WithBuildPrepared().MachineOSBuild(),
 			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-				condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-				if condupdating == nil {
-					t.Fatal("updating condition not found")
-				}
-				if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
-					t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-				}
-				assert.Equal(t, "Pool is paused; OS image build has been prepared but will not rollout (mosb: mosb-1)", condupdating.Message)
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updating:    corev1.ConditionTrue,
+					updatingMsg: "Pool is paused; OS image build has been prepared but will not rollout (mosb: mosb-1)",
+				})
 			},
 		},
 		{
@@ -533,14 +476,10 @@ func TestCalculateStatus(t *testing.T) {
 			overrideMosb:  true,
 			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).WithBuildInProgress().MachineOSBuild(),
 			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-				condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-				if condupdating == nil {
-					t.Fatal("updating condition not found")
-				}
-				if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
-					t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-				}
-				assert.Equal(t, "Pool is paused; OS image build in progress (mosb: mosb-1)", condupdating.Message)
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updating:    corev1.ConditionTrue,
+					updatingMsg: "Pool is paused; OS image build in progress (mosb: mosb-1)",
+				})
 			},
 		},
 		{
@@ -555,14 +494,10 @@ func TestCalculateStatus(t *testing.T) {
 			overrideMosb:  true,
 			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).WithFailedBuild().MachineOSBuild(),
 			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-				condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-				if condupdating == nil {
-					t.Fatal("updating condition not found")
-				}
-				if got, want := condupdating.Status, corev1.ConditionFalse; got != want {
-					t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-				}
-				assert.Equal(t, "Pool is paused; OS image build failed (mosb: mosb-1)", condupdating.Message)
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updating:    corev1.ConditionFalse,
+					updatingMsg: "Pool is paused; OS image build failed (mosb: mosb-1)",
+				})
 			},
 		},
 		{
@@ -577,14 +512,10 @@ func TestCalculateStatus(t *testing.T) {
 			overrideMosb:  true,
 			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).WithInterruptedBuild().MachineOSBuild(),
 			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-				condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-				if condupdating == nil {
-					t.Fatal("updating condition not found")
-				}
-				if got, want := condupdating.Status, corev1.ConditionFalse; got != want {
-					t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-				}
-				assert.Equal(t, "Pool is paused; OS image build was interrupted (mosb: mosb-1)", condupdating.Message)
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updating:    corev1.ConditionFalse,
+					updatingMsg: "Pool is paused; OS image build was interrupted (mosb: mosb-1)",
+				})
 			},
 		},
 		{
@@ -599,14 +530,10 @@ func TestCalculateStatus(t *testing.T) {
 			overrideMosb:  true,
 			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).WithSuccessfulBuild().MachineOSBuild(),
 			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-				condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-				if condupdating == nil {
-					t.Fatal("updating condition not found")
-				}
-				if got, want := condupdating.Status, corev1.ConditionFalse; got != want {
-					t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-				}
-				assert.Equal(t, "Pool is paused; OS image build completed successfully (mosb: mosb-1)", condupdating.Message)
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updating:    corev1.ConditionFalse,
+					updatingMsg: "Pool is paused; OS image build completed successfully (mosb: mosb-1)",
+				})
 			},
 		},
 		{
@@ -620,14 +547,10 @@ func TestCalculateStatus(t *testing.T) {
 			overrideMosb:  true,
 			mosb:          nil,
 			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-				condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-				if condupdating == nil {
-					t.Fatal("updating condition not found")
-				}
-				if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
-					t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-				}
-				assert.Equal(t, "Pool is waiting for a new OS image build to start (mosc: mosc-1)", condupdating.Message)
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updating:    corev1.ConditionTrue,
+					updatingMsg: "Pool is waiting for a new OS image build to start (mosc: mosc-1)",
+				})
 			},
 		},
 		{
@@ -641,14 +564,10 @@ func TestCalculateStatus(t *testing.T) {
 			overrideMosb:  true,
 			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).WithBuildPrepared().MachineOSBuild(),
 			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-				condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-				if condupdating == nil {
-					t.Fatal("updating condition not found")
-				}
-				if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
-					t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-				}
-				assert.Equal(t, "Pool is waiting for OS image build to start (mosb: mosb-1)", condupdating.Message)
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updating:    corev1.ConditionTrue,
+					updatingMsg: "Pool is waiting for OS image build to start (mosb: mosb-1)",
+				})
 			},
 		},
 		{
@@ -662,14 +581,10 @@ func TestCalculateStatus(t *testing.T) {
 			overrideMosb:  true,
 			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).WithBuildInProgress().MachineOSBuild(),
 			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-				condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-				if condupdating == nil {
-					t.Fatal("updating condition not found")
-				}
-				if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
-					t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-				}
-				assert.Equal(t, "Pool is waiting for OS image build to complete (mosb: mosb-1)", condupdating.Message)
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updating:    corev1.ConditionTrue,
+					updatingMsg: "Pool is waiting for OS image build to complete (mosb: mosb-1)",
+				})
 			},
 		},
 		{
@@ -683,14 +598,10 @@ func TestCalculateStatus(t *testing.T) {
 			overrideMosb:  true,
 			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).WithFailedBuild().MachineOSBuild(),
 			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-				condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-				if condupdating == nil {
-					t.Fatal("updating condition not found")
-				}
-				if got, want := condupdating.Status, corev1.ConditionFalse; got != want {
-					t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-				}
-				assert.Equal(t, "Pool update stopped due to OS image build failure (mosb: mosb-1)", condupdating.Message)
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updating:    corev1.ConditionFalse,
+					updatingMsg: "Pool update stopped due to OS image build failure (mosb: mosb-1)",
+				})
 			},
 		},
 		{
@@ -704,14 +615,10 @@ func TestCalculateStatus(t *testing.T) {
 			overrideMosb:  true,
 			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).WithInterruptedBuild().MachineOSBuild(),
 			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-				condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-				if condupdating == nil {
-					t.Fatal("updating condition not found")
-				}
-				if got, want := condupdating.Status, corev1.ConditionFalse; got != want {
-					t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-				}
-				assert.Equal(t, "Pool update stopped due to OS image build being interrupted (mosb: mosb-1)", condupdating.Message)
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updating:    corev1.ConditionFalse,
+					updatingMsg: "Pool update stopped due to OS image build being interrupted (mosb: mosb-1)",
+				})
 			},
 		},
 		{
@@ -725,14 +632,10 @@ func TestCalculateStatus(t *testing.T) {
 			overrideMosb:  true,
 			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).WithBuildInitialState().MachineOSBuild(),
 			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-				condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-				if condupdating == nil {
-					t.Fatal("updating condition not found")
-				}
-				if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
-					t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-				}
-				assert.Equal(t, "Pool is waiting for OS image build to start (mosb: mosb-1)", condupdating.Message)
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updating:    corev1.ConditionTrue,
+					updatingMsg: "Pool is waiting for OS image build to start (mosb: mosb-1)",
+				})
 			},
 		},
 		{
@@ -746,14 +649,10 @@ func TestCalculateStatus(t *testing.T) {
 			overrideMosb:  true,
 			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).WithSuccessfulBuild().MachineOSBuild(),
 			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-				condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-				if condupdating == nil {
-					t.Fatal("updating condition not found")
-				}
-				if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
-					t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-				}
-				assert.Equal(t, "Pool is waiting for nodes to apply OS image (mosb: mosb-1)", condupdating.Message)
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updating:    corev1.ConditionTrue,
+					updatingMsg: "Pool is waiting for nodes to apply OS image (mosb: mosb-1)",
+				})
 			},
 		},
 		{
@@ -767,20 +666,10 @@ func TestCalculateStatus(t *testing.T) {
 			overrideMosb:  true,
 			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).WithDigestedImagePushspec("registry.host.com/org/repo@sha256:12345").WithSuccessfulBuild().MachineOSBuild(),
 			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-				condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
-				if condupdated == nil {
-					t.Fatal("updated condition not found")
-				}
-				if got, want := condupdated.Status, corev1.ConditionTrue; got != want {
-					t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
-				}
-				condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-				if condupdating == nil {
-					t.Fatal("updating condition not found")
-				}
-				if got, want := condupdating.Status, corev1.ConditionFalse; got != want {
-					t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-				}
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updated:  corev1.ConditionTrue,
+					updating: corev1.ConditionFalse,
+				})
 			},
 		},
 		{
@@ -792,52 +681,16 @@ func TestCalculateStatus(t *testing.T) {
 			},
 			currentConfig: machineConfigV1,
 			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-				if got, want := status.MachineCount, int32(3); got != want {
-					t.Fatalf("mismatch MachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.UpdatedMachineCount, int32(0); got != want {
-					t.Fatalf("mismatch UpdatedMachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.ReadyMachineCount, int32(0); got != want {
-					t.Fatalf("mismatch ReadyMachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.UnavailableMachineCount, int32(1); got != want {
-					t.Fatalf("mismatch UnavailableMachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.DegradedMachineCount, int32(0); got != want {
-					t.Fatalf("mismatch DegradedMachineCount: got %d want: %d", got, want)
-				}
-
-				condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
-				if condupdated == nil {
-					t.Fatal("updated condition not found")
-				}
-
-				condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-				if condupdating == nil {
-					t.Fatal("updating condition not found")
-				}
-
-				conddegraded := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolDegraded)
-				if conddegraded == nil {
-					t.Fatal("degraded condition not found")
-				}
-
-				if got, want := condupdated.Status, corev1.ConditionFalse; got != want {
-					t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
-				}
-
-				if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
-					t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-				}
-
-				if got, want := conddegraded.Status, corev1.ConditionFalse; got != want {
-					t.Fatalf("mismatch conddegraded.Status: got %s want: %s", got, want)
-				}
+				assertPoolStatus(t, status, expectedPoolStatus{
+					machineCount:            new(int32(3)),
+					updatedMachineCount:     new(int32(0)),
+					readyMachineCount:       new(int32(0)),
+					unavailableMachineCount: new(int32(1)),
+					degradedMachineCount:    new(int32(0)),
+					updated:                 corev1.ConditionFalse,
+					updating:                corev1.ConditionTrue,
+					degraded:                corev1.ConditionFalse,
+				})
 			},
 		},
 		{
@@ -849,52 +702,16 @@ func TestCalculateStatus(t *testing.T) {
 			},
 			currentConfig: machineConfigV1,
 			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-				if got, want := status.MachineCount, int32(3); got != want {
-					t.Fatalf("mismatch MachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.UpdatedMachineCount, int32(0); got != want {
-					t.Fatalf("mismatch UpdatedMachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.ReadyMachineCount, int32(0); got != want {
-					t.Fatalf("mismatch ReadyMachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.UnavailableMachineCount, int32(1); got != want {
-					t.Fatalf("mismatch UnavailableMachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.DegradedMachineCount, int32(1); got != want {
-					t.Fatalf("mismatch DegradedMachineCount: got %d want: %d", got, want)
-				}
-
-				condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
-				if condupdated == nil {
-					t.Fatal("updated condition not found")
-				}
-
-				condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-				if condupdating == nil {
-					t.Fatal("updating condition not found")
-				}
-
-				conddegraded := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolDegraded)
-				if conddegraded == nil {
-					t.Fatal("updating condition not found")
-				}
-
-				if got, want := condupdated.Status, corev1.ConditionFalse; got != want {
-					t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
-				}
-
-				if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
-					t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-				}
-
-				if got, want := conddegraded.Status, corev1.ConditionTrue; got != want {
-					t.Fatalf("mismatch conddegraded.Status: got %s want: %s", got, want)
-				}
+				assertPoolStatus(t, status, expectedPoolStatus{
+					machineCount:            new(int32(3)),
+					updatedMachineCount:     new(int32(0)),
+					readyMachineCount:       new(int32(0)),
+					unavailableMachineCount: new(int32(1)),
+					degradedMachineCount:    new(int32(1)),
+					updated:                 corev1.ConditionFalse,
+					updating:                corev1.ConditionTrue,
+					degraded:                corev1.ConditionTrue,
+				})
 			},
 		},
 		{
@@ -906,52 +723,16 @@ func TestCalculateStatus(t *testing.T) {
 			},
 			currentConfig: machineConfigV1,
 			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-				if got, want := status.MachineCount, int32(3); got != want {
-					t.Fatalf("mismatch MachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.UpdatedMachineCount, int32(1); got != want {
-					t.Fatalf("mismatch UpdatedMachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.ReadyMachineCount, int32(0); got != want {
-					t.Fatalf("mismatch ReadyMachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.UnavailableMachineCount, int32(1); got != want {
-					t.Fatalf("mismatch UnavailableMachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.DegradedMachineCount, int32(0); got != want {
-					t.Fatalf("mismatch DegradedMachineCount: got %d want: %d", got, want)
-				}
-
-				condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
-				if condupdated == nil {
-					t.Fatal("updated condition not found")
-				}
-
-				condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-				if condupdating == nil {
-					t.Fatal("updating condition not found")
-				}
-
-				conddegraded := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolDegraded)
-				if conddegraded == nil {
-					t.Fatal("degraded condition not found")
-				}
-
-				if got, want := condupdated.Status, corev1.ConditionFalse; got != want {
-					t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
-				}
-
-				if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
-					t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-				}
-
-				if got, want := conddegraded.Status, corev1.ConditionFalse; got != want {
-					t.Fatalf("mismatch conddegraded.Status: got %s want: %s", got, want)
-				}
+				assertPoolStatus(t, status, expectedPoolStatus{
+					machineCount:            new(int32(3)),
+					updatedMachineCount:     new(int32(1)),
+					readyMachineCount:       new(int32(0)),
+					unavailableMachineCount: new(int32(1)),
+					degradedMachineCount:    new(int32(0)),
+					updated:                 corev1.ConditionFalse,
+					updating:                corev1.ConditionTrue,
+					degraded:                corev1.ConditionFalse,
+				})
 			},
 		},
 		{
@@ -963,52 +744,16 @@ func TestCalculateStatus(t *testing.T) {
 			},
 			currentConfig: machineConfigV1,
 			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-				if got, want := status.MachineCount, int32(3); got != want {
-					t.Fatalf("mismatch MachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.UpdatedMachineCount, int32(1); got != want {
-					t.Fatalf("mismatch UpdatedMachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.ReadyMachineCount, int32(1); got != want {
-					t.Fatalf("mismatch ReadyMachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.UnavailableMachineCount, int32(2); got != want {
-					t.Fatalf("mismatch UnavailableMachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.DegradedMachineCount, int32(0); got != want {
-					t.Fatalf("mismatch DegradedMachineCount: got %d want: %d", got, want)
-				}
-
-				condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
-				if condupdated == nil {
-					t.Fatal("updated condition not found")
-				}
-
-				condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-				if condupdating == nil {
-					t.Fatal("updating condition not found")
-				}
-
-				conddegraded := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolDegraded)
-				if conddegraded == nil {
-					t.Fatal("degraded condition not found")
-				}
-
-				if got, want := condupdated.Status, corev1.ConditionFalse; got != want {
-					t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
-				}
-
-				if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
-					t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-				}
-
-				if got, want := conddegraded.Status, corev1.ConditionFalse; got != want {
-					t.Fatalf("mismatch conddegraded.Status: got %s want: %s", got, want)
-				}
+				assertPoolStatus(t, status, expectedPoolStatus{
+					machineCount:            new(int32(3)),
+					updatedMachineCount:     new(int32(1)),
+					readyMachineCount:       new(int32(1)),
+					unavailableMachineCount: new(int32(2)),
+					degradedMachineCount:    new(int32(0)),
+					updated:                 corev1.ConditionFalse,
+					updating:                corev1.ConditionTrue,
+					degraded:                corev1.ConditionFalse,
+				})
 			},
 		},
 		{
@@ -1020,52 +765,16 @@ func TestCalculateStatus(t *testing.T) {
 			},
 			currentConfig: machineConfigV1,
 			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-				if got, want := status.MachineCount, int32(3); got != want {
-					t.Fatalf("mismatch MachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.UpdatedMachineCount, int32(3); got != want {
-					t.Fatalf("mismatch UpdatedMachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.ReadyMachineCount, int32(3); got != want {
-					t.Fatalf("mismatch ReadyMachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.UnavailableMachineCount, int32(0); got != want {
-					t.Fatalf("mismatch UnavailableMachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.DegradedMachineCount, int32(0); got != want {
-					t.Fatalf("mismatch DegradedMachineCount: got %d want: %d", got, want)
-				}
-
-				condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
-				if condupdated == nil {
-					t.Fatal("updated condition not found")
-				}
-
-				condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-				if condupdating == nil {
-					t.Fatal("updating condition not found")
-				}
-
-				conddegraded := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolDegraded)
-				if conddegraded == nil {
-					t.Fatal("degraded condition not found")
-				}
-
-				if got, want := condupdated.Status, corev1.ConditionTrue; got != want {
-					t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
-				}
-
-				if got, want := condupdating.Status, corev1.ConditionFalse; got != want {
-					t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-				}
-
-				if got, want := conddegraded.Status, corev1.ConditionFalse; got != want {
-					t.Fatalf("mismatch conddegraded.Status: got %s want: %s", got, want)
-				}
+				assertPoolStatus(t, status, expectedPoolStatus{
+					machineCount:            new(int32(3)),
+					updatedMachineCount:     new(int32(3)),
+					readyMachineCount:       new(int32(3)),
+					unavailableMachineCount: new(int32(0)),
+					degradedMachineCount:    new(int32(0)),
+					updated:                 corev1.ConditionTrue,
+					updating:                corev1.ConditionFalse,
+					degraded:                corev1.ConditionFalse,
+				})
 			},
 		},
 		{
@@ -1077,44 +786,16 @@ func TestCalculateStatus(t *testing.T) {
 			},
 			currentConfig: machineConfigV0,
 			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-				if got, want := status.MachineCount, int32(3); got != want {
-					t.Fatalf("mismatch MachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.UpdatedMachineCount, int32(3); got != want {
-					t.Fatalf("mismatch UpdatedMachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.ReadyMachineCount, int32(3); got != want {
-					t.Fatalf("mismatch ReadyMachineCount: got %d want: %d", got, want)
-				}
-
-				if got, want := status.UnavailableMachineCount, int32(0); got != want {
-					t.Fatalf("mismatch UnavailableMachineCount: got %d want: %d", got, want)
-				}
-
-				condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
-				if condupdated == nil {
-					t.Fatal("updated condition not found")
-				}
-
-				condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-				if condupdating == nil {
-					t.Fatal("updating condition not found")
-				}
-
-				if got, want := condupdated.Status, corev1.ConditionTrue; got != want {
-					t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
-				}
-
-				if got, want := condupdating.Status, corev1.ConditionFalse; got != want {
-					t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-				}
-
-				// When OSImageStream CR does not exist, status.OSImageStream should be empty
-				if got, want := status.OSImageStream.Name, ""; got != want {
-					t.Fatalf("mismatch OSImageStream.Name: got %q want: %q - OSImageStream should be empty when CR does not exist", got, want)
-				}
+				assertPoolStatus(t, status, expectedPoolStatus{
+					machineCount:            new(int32(3)),
+					updatedMachineCount:     new(int32(3)),
+					readyMachineCount:       new(int32(3)),
+					unavailableMachineCount: new(int32(0)),
+					updated:                 corev1.ConditionTrue,
+					updating:                corev1.ConditionFalse,
+					// When OSImageStream CR does not exist, status.OSImageStream should be empty
+					osImageStreamName: new(""),
+				})
 			},
 		},
 		{
@@ -1132,27 +813,11 @@ func TestCalculateStatus(t *testing.T) {
 				{Type: mcfgv1.MachineConfigPoolDegraded, Status: corev1.ConditionFalse},
 			},
 			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-				// Verify pool is fully updated
-				condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
-				if condupdated == nil {
-					t.Fatal("updated condition not found")
-				}
-				if got, want := condupdated.Status, corev1.ConditionTrue; got != want {
-					t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
-				}
-
-				conddegraded := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolDegraded)
-				if conddegraded == nil {
-					t.Fatal("degraded condition not found")
-				}
-				if got, want := conddegraded.Status, corev1.ConditionFalse; got != want {
-					t.Fatalf("mismatch conddegraded.Status: got %s want: %s", got, want)
-				}
-
-				// OSImageStream status should be populated with the matching stream
-				if got, want := status.OSImageStream.Name, "rhel-9"; got != want {
-					t.Fatalf("mismatch OSImageStream.Name: got %q want: %q", got, want)
-				}
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updated:           corev1.ConditionTrue,
+					degraded:          corev1.ConditionFalse,
+					osImageStreamName: new("rhel-9"),
+				})
 			},
 		},
 		{
@@ -1170,19 +835,11 @@ func TestCalculateStatus(t *testing.T) {
 				{Type: mcfgv1.MachineConfigPoolDegraded, Status: corev1.ConditionFalse},
 			},
 			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-				// Verify pool is fully updated
-				condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
-				if condupdated == nil {
-					t.Fatal("updated condition not found")
-				}
-				if got, want := condupdated.Status, corev1.ConditionTrue; got != want {
-					t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
-				}
-
-				// OSImageStream status should be empty (override scenario)
-				if got, want := status.OSImageStream.Name, ""; got != want {
-					t.Fatalf("mismatch OSImageStream.Name: got %q want: %q - should be empty for override scenario", got, want)
-				}
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updated: corev1.ConditionTrue,
+					// OSImageStream status should be empty (override scenario)
+					osImageStreamName: new(""),
+				})
 			},
 		},
 		{
@@ -1196,27 +853,12 @@ func TestCalculateStatus(t *testing.T) {
 			needsOSImageStreamSetup: true,
 			// No initialConditions - let calculateStatus set them based on node states
 			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-				// Verify pool is updating
-				condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-				if condupdating == nil {
-					t.Fatal("updating condition not found")
-				}
-				if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
-					t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-				}
-
-				condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
-				if condupdated == nil {
-					t.Fatal("updated condition not found")
-				}
-				if got, want := condupdated.Status, corev1.ConditionFalse; got != want {
-					t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
-				}
-
-				// OSImageStream status should be empty when pool is updating
-				if got, want := status.OSImageStream.Name, ""; got != want {
-					t.Fatalf("mismatch OSImageStream.Name: got %q want: %q - should be empty when updating", got, want)
-				}
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updating: corev1.ConditionTrue,
+					updated:  corev1.ConditionFalse,
+					// OSImageStream status should be empty when pool is updating
+					osImageStreamName: new(""),
+				})
 			},
 		},
 		{
@@ -1234,19 +876,11 @@ func TestCalculateStatus(t *testing.T) {
 				{Type: mcfgv1.MachineConfigPoolDegraded, Status: corev1.ConditionTrue},
 			},
 			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-				// Verify pool is degraded
-				conddegraded := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolDegraded)
-				if conddegraded == nil {
-					t.Fatal("degraded condition not found")
-				}
-				if got, want := conddegraded.Status, corev1.ConditionTrue; got != want {
-					t.Fatalf("mismatch conddegraded.Status: got %s want: %s", got, want)
-				}
-
-				// OSImageStream status should be empty when pool is degraded
-				if got, want := status.OSImageStream.Name, ""; got != want {
-					t.Fatalf("mismatch OSImageStream.Name: got %q want: %q - should be empty when degraded", got, want)
-				}
+				assertPoolStatus(t, status, expectedPoolStatus{
+					degraded: corev1.ConditionTrue,
+					// OSImageStream status should be empty when pool is degraded
+					osImageStreamName: new(""),
+				})
 			},
 		},
 		{
@@ -1264,19 +898,11 @@ func TestCalculateStatus(t *testing.T) {
 				{Type: mcfgv1.MachineConfigPoolDegraded, Status: corev1.ConditionFalse},
 			},
 			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-				// Verify pool is fully updated
-				condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
-				if condupdated == nil {
-					t.Fatal("updated condition not found")
-				}
-				if got, want := condupdated.Status, corev1.ConditionTrue; got != want {
-					t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
-				}
-
-				// OSImageStream status should be empty when osImageURL is empty
-				if got, want := status.OSImageStream.Name, ""; got != want {
-					t.Fatalf("mismatch OSImageStream.Name: got %q want: %q - should be empty when osImageURL is empty", got, want)
-				}
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updated: corev1.ConditionTrue,
+					// OSImageStream status should be empty when osImageURL is empty
+					osImageStreamName: new(""),
+				})
 			},
 		},
 		{
@@ -1294,19 +920,10 @@ func TestCalculateStatus(t *testing.T) {
 				{Type: mcfgv1.MachineConfigPoolDegraded, Status: corev1.ConditionFalse},
 			},
 			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-				// Verify pool is fully updated
-				condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
-				if condupdated == nil {
-					t.Fatal("updated condition not found")
-				}
-				if got, want := condupdated.Status, corev1.ConditionTrue; got != want {
-					t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
-				}
-
-				// OSImageStream status should match the second stream (rhel-10)
-				if got, want := status.OSImageStream.Name, "rhel-10"; got != want {
-					t.Fatalf("mismatch OSImageStream.Name: got %q want: %q", got, want)
-				}
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updated:           corev1.ConditionTrue,
+					osImageStreamName: new("rhel-10"),
+				})
 			},
 		},
 	}
@@ -1449,771 +1066,493 @@ func TestCalculateStatusWithImageModeReporting(t *testing.T) {
 		overrideMosb  bool
 		mosb          *mcfgv1.MachineOSBuild
 		verify        func(mcfgv1.MachineConfigPoolStatus, *testing.T)
-	}{{
-		name: "0 nodes updated, 0 nodes updating, 0 nodes degraded",
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+	}{
+		{
+			name: "0 nodes updated, 0 nodes updating, 0 nodes degraded",
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+			},
+			mcns: []*mcfgv1.MachineConfigNode{
+				helpers.NewMachineConfigNode("node-0", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+				helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+				helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+			},
+			currentConfig: machineConfigV0,
+			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+				assertPoolStatus(t, status, expectedPoolStatus{
+					machineCount:            new(int32(3)),
+					updatedMachineCount:     new(int32(0)),
+					readyMachineCount:       new(int32(0)),
+					unavailableMachineCount: new(int32(0)),
+					degradedMachineCount:    new(int32(0)),
+					updated:                 corev1.ConditionFalse,
+					updating:                corev1.ConditionTrue,
+					degraded:                corev1.ConditionFalse,
+				})
+			},
+		}, {
+			name: "0 nodes updated, 1 node updating, 0 nodes degraded",
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+			},
+			mcns: []*mcfgv1.MachineConfigNode{
+				helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, false),
+				helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+				helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+			},
+			currentConfig: machineConfigV0,
+			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+				assertPoolStatus(t, status, expectedPoolStatus{
+					machineCount:            new(int32(3)),
+					updatedMachineCount:     new(int32(0)),
+					readyMachineCount:       new(int32(0)),
+					unavailableMachineCount: new(int32(1)),
+					degradedMachineCount:    new(int32(0)),
+					updated:                 corev1.ConditionFalse,
+					updating:                corev1.ConditionTrue,
+					degraded:                corev1.ConditionFalse,
+				})
+			},
+		}, {
+			name: "0 nodes updates, 0 nodes updating, 0 nodes degraded, pool paused",
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+			},
+			mcns: []*mcfgv1.MachineConfigNode{
+				helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, false),
+				helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+				helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+			},
+			currentConfig: machineConfigV0,
+			paused:        true,
+			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+				// The default MachineOSBuild created by the test driver (below) has no build
+				// conditions set, so it is in its "initial state". A paused pool with a MOSC/MOSB
+				// pair whose build is in its initial state is still considered "Updating" so
+				// operators can see that a build has been created but has not started yet.
+				assertPoolStatus(t, status, expectedPoolStatus{
+					machineCount:            new(int32(3)),
+					updatedMachineCount:     new(int32(0)),
+					readyMachineCount:       new(int32(0)),
+					unavailableMachineCount: new(int32(1)),
+					degradedMachineCount:    new(int32(0)),
+					updated:                 corev1.ConditionFalse,
+					updating:                corev1.ConditionTrue,
+					degraded:                corev1.ConditionFalse,
+				})
+			},
+		}, {
+			name: "pool paused, mosc exists but no mosb, waiting for build to start",
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+			},
+			mcns: []*mcfgv1.MachineConfigNode{
+				helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, false),
+				helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+				helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+			},
+			currentConfig: machineConfigV0,
+			paused:        true,
+			overrideMosb:  true,
+			mosb:          nil,
+			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updating:    corev1.ConditionTrue,
+					updatingMsg: "Pool is paused; waiting for a new OS image build to start (mosc: mosc-1)",
+				})
+			},
+		}, {
+			name: "pool paused, mosb exists but is in initial state",
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+			},
+			mcns: []*mcfgv1.MachineConfigNode{
+				helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, false),
+				helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+				helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+			},
+			currentConfig: machineConfigV0,
+			paused:        true,
+			overrideMosb:  true,
+			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV0).WithBuildInitialState().MachineOSBuild(),
+			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updating:    corev1.ConditionTrue,
+					updatingMsg: "Pool is paused; OS image build has been created but not yet started (mosb: mosb-1)",
+				})
+			},
+		}, {
+			name: "pool paused, build prepared",
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+			},
+			mcns: []*mcfgv1.MachineConfigNode{
+				helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, false),
+				helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+				helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+			},
+			currentConfig: machineConfigV0,
+			paused:        true,
+			overrideMosb:  true,
+			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV0).WithBuildPrepared().MachineOSBuild(),
+			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updating:    corev1.ConditionTrue,
+					updatingMsg: "Pool is paused; OS image build has been prepared but will not rollout (mosb: mosb-1)",
+				})
+			},
+		}, {
+			name: "pool paused, build in progress",
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+			},
+			mcns: []*mcfgv1.MachineConfigNode{
+				helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, false),
+				helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+				helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+			},
+			currentConfig: machineConfigV0,
+			paused:        true,
+			overrideMosb:  true,
+			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV0).WithBuildInProgress().MachineOSBuild(),
+			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updating:    corev1.ConditionTrue,
+					updatingMsg: "Pool is paused; OS image build in progress (mosb: mosb-1)",
+				})
+			},
+		}, {
+			name: "pool paused, build failed",
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+			},
+			mcns: []*mcfgv1.MachineConfigNode{
+				helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, false),
+				helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+				helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+			},
+			currentConfig: machineConfigV0,
+			paused:        true,
+			overrideMosb:  true,
+			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV0).WithFailedBuild().MachineOSBuild(),
+			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updating:    corev1.ConditionFalse,
+					updatingMsg: "Pool is paused; OS image build failed (mosb: mosb-1)",
+				})
+			},
+		}, {
+			name: "pool paused, build interrupted",
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+			},
+			mcns: []*mcfgv1.MachineConfigNode{
+				helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, false),
+				helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+				helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+			},
+			currentConfig: machineConfigV0,
+			paused:        true,
+			overrideMosb:  true,
+			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV0).WithInterruptedBuild().MachineOSBuild(),
+			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updating:    corev1.ConditionFalse,
+					updatingMsg: "Pool is paused; OS image build was interrupted (mosb: mosb-1)",
+				})
+			},
+		}, {
+			name: "pool paused, build succeeded",
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+			},
+			mcns: []*mcfgv1.MachineConfigNode{
+				helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, false),
+				helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+				helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+			},
+			currentConfig: machineConfigV0,
+			paused:        true,
+			overrideMosb:  true,
+			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV0).WithSuccessfulBuild().MachineOSBuild(),
+			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updating:    corev1.ConditionFalse,
+					updatingMsg: "Pool is paused; OS image build completed successfully (mosb: mosb-1)",
+				})
+			},
+		}, {
+			name: "pool not paused, mosc exists but no mosb, waiting for build to start",
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+			},
+			mcns: []*mcfgv1.MachineConfigNode{
+				helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, false),
+				helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+				helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+			},
+			currentConfig: machineConfigV0,
+			overrideMosb:  true,
+			mosb:          nil,
+			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updating:    corev1.ConditionTrue,
+					updatingMsg: "Pool is waiting for a new OS image build to start (mosc: mosc-1)",
+				})
+			},
+		}, {
+			name: "pool not paused, build in initial state",
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+			},
+			mcns: []*mcfgv1.MachineConfigNode{
+				helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, false),
+				helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+				helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+			},
+			currentConfig: machineConfigV0,
+			overrideMosb:  true,
+			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV0).WithBuildInitialState().MachineOSBuild(),
+			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updating:    corev1.ConditionTrue,
+					updatingMsg: "Pool is waiting for OS image build to start (mosb: mosb-1)",
+				})
+			},
+		}, {
+			name: "pool not paused, build prepared",
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+			},
+			mcns: []*mcfgv1.MachineConfigNode{
+				helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, false),
+				helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+				helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+			},
+			currentConfig: machineConfigV0,
+			overrideMosb:  true,
+			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV0).WithBuildPrepared().MachineOSBuild(),
+			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updating:    corev1.ConditionTrue,
+					updatingMsg: "Pool is waiting for OS image build to start (mosb: mosb-1)",
+				})
+			},
+		}, {
+			name: "pool not paused, build in progress",
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+			},
+			mcns: []*mcfgv1.MachineConfigNode{
+				helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, false),
+				helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+				helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+			},
+			currentConfig: machineConfigV0,
+			overrideMosb:  true,
+			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV0).WithBuildInProgress().MachineOSBuild(),
+			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updating:    corev1.ConditionTrue,
+					updatingMsg: "Pool is waiting for OS image build to complete (mosb: mosb-1)",
+				})
+			},
+		}, {
+			name: "pool not paused, build failed",
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+			},
+			mcns: []*mcfgv1.MachineConfigNode{
+				helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, false),
+				helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+				helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+			},
+			currentConfig: machineConfigV0,
+			overrideMosb:  true,
+			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV0).WithFailedBuild().MachineOSBuild(),
+			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updating:    corev1.ConditionFalse,
+					updatingMsg: "Pool update stopped due to OS image build failure (mosb: mosb-1)",
+				})
+			},
+		}, {
+			name: "pool not paused, build interrupted",
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+			},
+			mcns: []*mcfgv1.MachineConfigNode{
+				helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, false),
+				helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+				helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+			},
+			currentConfig: machineConfigV0,
+			overrideMosb:  true,
+			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV0).WithInterruptedBuild().MachineOSBuild(),
+			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updating:    corev1.ConditionFalse,
+					updatingMsg: "Pool update stopped due to OS image build being interrupted (mosb: mosb-1)",
+				})
+			},
+		}, {
+			name: "pool not paused, build succeeded, nodes still applying",
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+			},
+			mcns: []*mcfgv1.MachineConfigNode{
+				helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, false),
+				helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+				helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+			},
+			currentConfig: machineConfigV0,
+			overrideMosb:  true,
+			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV0).WithSuccessfulBuild().MachineOSBuild(),
+			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updating:    corev1.ConditionTrue,
+					updatingMsg: "Pool is waiting for nodes to apply OS image (mosb: mosb-1)",
+				})
+			},
+		}, {
+			name: "pool not paused, build succeeded, all nodes updated",
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+			},
+			mcns: []*mcfgv1.MachineConfigNode{
+				helpers.NewMachineConfigNode("node-0", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+				helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+				helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+			},
+			currentConfig: machineConfigV1,
+			overrideMosb:  true,
+			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).WithDigestedImagePushspec("registry.host.com/org/repo@sha256:12345").WithSuccessfulBuild().MachineOSBuild(),
+			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+				assertPoolStatus(t, status, expectedPoolStatus{
+					updated:  corev1.ConditionTrue,
+					updating: corev1.ConditionFalse,
+				})
+			},
+		}, {
+			name: "0 nodes updated, 1 node updating, 1 node degraded",
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+			},
+			mcns: []*mcfgv1.MachineConfigNode{
+				helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, true),
+				helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+				helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+			},
+			currentConfig: machineConfigV0,
+			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+				assertPoolStatus(t, status, expectedPoolStatus{
+					machineCount:            new(int32(3)),
+					updatedMachineCount:     new(int32(0)),
+					readyMachineCount:       new(int32(0)),
+					unavailableMachineCount: new(int32(1)),
+					degradedMachineCount:    new(int32(1)),
+					updated:                 corev1.ConditionFalse,
+					updating:                corev1.ConditionTrue,
+					degraded:                corev1.ConditionTrue,
+				})
+			},
+		}, {
+			name: "3 nodes updated, 0 nodes updating, 0 nodes degraded",
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+			},
+			mcns: []*mcfgv1.MachineConfigNode{
+				helpers.NewMachineConfigNode("node-0", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+				helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+				helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+			},
+			currentConfig: machineConfigV1,
+			overrideMosb:  true,
+			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).WithDigestedImagePushspec("registry.host.com/org/repo@sha256:12345").WithSuccessfulBuild().MachineOSBuild(),
+			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+				assertPoolStatus(t, status, expectedPoolStatus{
+					machineCount:            new(int32(3)),
+					updatedMachineCount:     new(int32(3)),
+					readyMachineCount:       new(int32(3)),
+					unavailableMachineCount: new(int32(0)),
+					degradedMachineCount:    new(int32(0)),
+					updated:                 corev1.ConditionTrue,
+					updating:                corev1.ConditionFalse,
+					degraded:                corev1.ConditionFalse,
+				})
+			},
+		}, {
+			name: "1 node updated, 2 nodes updating, 0 nodes degraded",
+			nodes: []*corev1.Node{
+				// Node-0 is updated and ready
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				// Node-1 is not updated yet, targeting new config but not done
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV0, machineConfigV1, "registry.host.com/org/repo@sha256:old", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateWorking, corev1.ConditionTrue),
+				// Node-2 is not updated yet, targeting new config but not done
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV0, machineConfigV1, "registry.host.com/org/repo@sha256:old", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateWorking, corev1.ConditionTrue),
+			},
+			mcns: []*mcfgv1.MachineConfigNode{
+				// Node-0 is updated to machineConfigV1
+				helpers.NewMachineConfigNode("node-0", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+				// Node-1 is targeting machineConfigV1 but not updated yet
+				helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", false, false),
+				// Node-2 is targeting machineConfigV1 but not updated yet
+				helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", false, false),
+			},
+			currentConfig: machineConfigV1,
+			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+				assertPoolStatus(t, status, expectedPoolStatus{
+					machineCount:         new(int32(3)),
+					updatedMachineCount:  new(int32(1)),
+					readyMachineCount:    new(int32(1)),
+					degradedMachineCount: new(int32(0)),
+					updated:              corev1.ConditionFalse,
+					updating:             corev1.ConditionTrue,
+					degraded:             corev1.ConditionFalse,
+				})
+			},
 		},
-		mcns: []*mcfgv1.MachineConfigNode{
-			helpers.NewMachineConfigNode("node-0", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-			helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-			helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-		},
-		currentConfig: machineConfigV0,
-		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-			if got, want := status.MachineCount, int32(3); got != want {
-				t.Fatalf("mismatch MachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.UpdatedMachineCount, int32(0); got != want {
-				t.Fatalf("mismatch UpdatedMachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.ReadyMachineCount, int32(0); got != want {
-				t.Fatalf("mismatch ReadyMachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.UnavailableMachineCount, int32(0); got != want {
-				t.Fatalf("mismatch UnavailableMachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.DegradedMachineCount, int32(0); got != want {
-				t.Fatalf("mismatch DegradedMachineCount: got %d want: %d", got, want)
-			}
-
-			condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
-			if condupdated == nil {
-				t.Fatal("updated condition not found")
-			}
-
-			if got, want := condupdated.Status, corev1.ConditionFalse; got != want {
-				t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
-			}
-
-			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-			if condupdating == nil {
-				t.Fatal("updating condition not found")
-			}
-
-			if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
-				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-			}
-
-			conddegraded := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolDegraded)
-			if conddegraded == nil {
-				t.Fatal("degraded condition not found")
-			}
-
-			if got, want := conddegraded.Status, corev1.ConditionFalse; got != want {
-				t.Fatalf("mismatch conddegraded.Status: got %s want: %s", got, want)
-			}
-		},
-	}, {
-		name: "0 nodes updated, 1 node updating, 0 nodes degraded",
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-		},
-		mcns: []*mcfgv1.MachineConfigNode{
-			helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, false),
-			helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-			helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-		},
-		currentConfig: machineConfigV0,
-		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-			if got, want := status.MachineCount, int32(3); got != want {
-				t.Fatalf("mismatch MachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.UpdatedMachineCount, int32(0); got != want {
-				t.Fatalf("mismatch UpdatedMachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.ReadyMachineCount, int32(0); got != want {
-				t.Fatalf("mismatch ReadyMachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.UnavailableMachineCount, int32(1); got != want {
-				t.Fatalf("mismatch UnavailableMachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.DegradedMachineCount, int32(0); got != want {
-				t.Fatalf("mismatch DegradedMachineCount: got %d want: %d", got, want)
-			}
-
-			condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
-			if condupdated == nil {
-				t.Fatal("updated condition not found")
-			}
-
-			if got, want := condupdated.Status, corev1.ConditionFalse; got != want {
-				t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
-			}
-
-			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-			if condupdating == nil {
-				t.Fatal("updating condition not found")
-			}
-
-			if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
-				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-			}
-
-			conddegraded := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolDegraded)
-			if conddegraded == nil {
-				t.Fatal("degraded condition not found")
-			}
-
-			if got, want := conddegraded.Status, corev1.ConditionFalse; got != want {
-				t.Fatalf("mismatch conddegraded.Status: got %s want: %s", got, want)
-			}
-		},
-	}, {
-		name: "0 nodes updates, 0 nodes updating, 0 nodes degraded, pool paused",
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-		},
-		mcns: []*mcfgv1.MachineConfigNode{
-			helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, false),
-			helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-			helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-		},
-		currentConfig: machineConfigV0,
-		paused:        true,
-		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-			if got, want := status.MachineCount, int32(3); got != want {
-				t.Fatalf("mismatch MachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.UpdatedMachineCount, int32(0); got != want {
-				t.Fatalf("mismatch UpdatedMachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.ReadyMachineCount, int32(0); got != want {
-				t.Fatalf("mismatch ReadyMachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.UnavailableMachineCount, int32(1); got != want {
-				t.Fatalf("mismatch UnavailableMachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.DegradedMachineCount, int32(0); got != want {
-				t.Fatalf("mismatch DegradedMachineCount: got %d want: %d", got, want)
-			}
-
-			condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
-			if condupdated == nil {
-				t.Fatal("updated condition not found")
-			}
-
-			if got, want := condupdated.Status, corev1.ConditionFalse; got != want {
-				t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
-			}
-
-			// The default MachineOSBuild created by the test driver (below) has no build
-			// conditions set, so it is in its "initial state". A paused pool with a MOSC/MOSB
-			// pair whose build is in its initial state is still considered "Updating" so
-			// operators can see that a build has been created but has not started yet.
-			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-			if condupdating == nil {
-				t.Fatal("updating condition not found")
-			}
-
-			if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
-				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-			}
-			assert.Equal(t, "Pool is paused; OS image build has been created but not yet started (mosb: mosb-1)", condupdating.Message)
-
-			conddegraded := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolDegraded)
-			if conddegraded == nil {
-				t.Fatal("degraded condition not found")
-			}
-
-			if got, want := conddegraded.Status, corev1.ConditionFalse; got != want {
-				t.Fatalf("mismatch conddegraded.Status: got %s want: %s", got, want)
-			}
-		},
-	}, {
-		name: "pool paused, mosc exists but no mosb, waiting for build to start",
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-		},
-		mcns: []*mcfgv1.MachineConfigNode{
-			helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, false),
-			helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-			helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-		},
-		currentConfig: machineConfigV0,
-		paused:        true,
-		overrideMosb:  true,
-		mosb:          nil,
-		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-			if condupdating == nil {
-				t.Fatal("updating condition not found")
-			}
-			if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
-				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-			}
-			assert.Equal(t, "Pool is paused; waiting for a new OS image build to start (mosc: mosc-1)", condupdating.Message)
-		},
-	}, {
-		name: "pool paused, mosb exists but is in initial state",
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-		},
-		mcns: []*mcfgv1.MachineConfigNode{
-			helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, false),
-			helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-			helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-		},
-		currentConfig: machineConfigV0,
-		paused:        true,
-		overrideMosb:  true,
-		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV0).WithBuildInitialState().MachineOSBuild(),
-		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-			if condupdating == nil {
-				t.Fatal("updating condition not found")
-			}
-			if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
-				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-			}
-			assert.Equal(t, "Pool is paused; OS image build has been created but not yet started (mosb: mosb-1)", condupdating.Message)
-		},
-	}, {
-		name: "pool paused, build prepared",
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-		},
-		mcns: []*mcfgv1.MachineConfigNode{
-			helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, false),
-			helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-			helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-		},
-		currentConfig: machineConfigV0,
-		paused:        true,
-		overrideMosb:  true,
-		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV0).WithBuildPrepared().MachineOSBuild(),
-		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-			if condupdating == nil {
-				t.Fatal("updating condition not found")
-			}
-			if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
-				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-			}
-			assert.Equal(t, "Pool is paused; OS image build has been prepared but will not rollout (mosb: mosb-1)", condupdating.Message)
-		},
-	}, {
-		name: "pool paused, build in progress",
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-		},
-		mcns: []*mcfgv1.MachineConfigNode{
-			helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, false),
-			helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-			helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-		},
-		currentConfig: machineConfigV0,
-		paused:        true,
-		overrideMosb:  true,
-		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV0).WithBuildInProgress().MachineOSBuild(),
-		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-			if condupdating == nil {
-				t.Fatal("updating condition not found")
-			}
-			if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
-				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-			}
-			assert.Equal(t, "Pool is paused; OS image build in progress (mosb: mosb-1)", condupdating.Message)
-		},
-	}, {
-		name: "pool paused, build failed",
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-		},
-		mcns: []*mcfgv1.MachineConfigNode{
-			helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, false),
-			helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-			helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-		},
-		currentConfig: machineConfigV0,
-		paused:        true,
-		overrideMosb:  true,
-		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV0).WithFailedBuild().MachineOSBuild(),
-		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-			if condupdating == nil {
-				t.Fatal("updating condition not found")
-			}
-			if got, want := condupdating.Status, corev1.ConditionFalse; got != want {
-				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-			}
-			assert.Equal(t, "Pool is paused; OS image build failed (mosb: mosb-1)", condupdating.Message)
-		},
-	}, {
-		name: "pool paused, build interrupted",
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-		},
-		mcns: []*mcfgv1.MachineConfigNode{
-			helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, false),
-			helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-			helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-		},
-		currentConfig: machineConfigV0,
-		paused:        true,
-		overrideMosb:  true,
-		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV0).WithInterruptedBuild().MachineOSBuild(),
-		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-			if condupdating == nil {
-				t.Fatal("updating condition not found")
-			}
-			if got, want := condupdating.Status, corev1.ConditionFalse; got != want {
-				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-			}
-			assert.Equal(t, "Pool is paused; OS image build was interrupted (mosb: mosb-1)", condupdating.Message)
-		},
-	}, {
-		name: "pool paused, build succeeded",
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-		},
-		mcns: []*mcfgv1.MachineConfigNode{
-			helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, false),
-			helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-			helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-		},
-		currentConfig: machineConfigV0,
-		paused:        true,
-		overrideMosb:  true,
-		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV0).WithSuccessfulBuild().MachineOSBuild(),
-		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-			if condupdating == nil {
-				t.Fatal("updating condition not found")
-			}
-			if got, want := condupdating.Status, corev1.ConditionFalse; got != want {
-				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-			}
-			assert.Equal(t, "Pool is paused; OS image build completed successfully (mosb: mosb-1)", condupdating.Message)
-		},
-	}, {
-		name: "pool not paused, mosc exists but no mosb, waiting for build to start",
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-		},
-		mcns: []*mcfgv1.MachineConfigNode{
-			helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, false),
-			helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-			helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-		},
-		currentConfig: machineConfigV0,
-		overrideMosb:  true,
-		mosb:          nil,
-		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-			if condupdating == nil {
-				t.Fatal("updating condition not found")
-			}
-			if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
-				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-			}
-			assert.Equal(t, "Pool is waiting for a new OS image build to start (mosc: mosc-1)", condupdating.Message)
-		},
-	}, {
-		name: "pool not paused, build in initial state",
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-		},
-		mcns: []*mcfgv1.MachineConfigNode{
-			helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, false),
-			helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-			helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-		},
-		currentConfig: machineConfigV0,
-		overrideMosb:  true,
-		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV0).WithBuildInitialState().MachineOSBuild(),
-		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-			if condupdating == nil {
-				t.Fatal("updating condition not found")
-			}
-			if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
-				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-			}
-			assert.Equal(t, "Pool is waiting for OS image build to start (mosb: mosb-1)", condupdating.Message)
-		},
-	}, {
-		name: "pool not paused, build prepared",
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-		},
-		mcns: []*mcfgv1.MachineConfigNode{
-			helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, false),
-			helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-			helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-		},
-		currentConfig: machineConfigV0,
-		overrideMosb:  true,
-		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV0).WithBuildPrepared().MachineOSBuild(),
-		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-			if condupdating == nil {
-				t.Fatal("updating condition not found")
-			}
-			if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
-				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-			}
-			assert.Equal(t, "Pool is waiting for OS image build to start (mosb: mosb-1)", condupdating.Message)
-		},
-	}, {
-		name: "pool not paused, build in progress",
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-		},
-		mcns: []*mcfgv1.MachineConfigNode{
-			helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, false),
-			helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-			helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-		},
-		currentConfig: machineConfigV0,
-		overrideMosb:  true,
-		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV0).WithBuildInProgress().MachineOSBuild(),
-		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-			if condupdating == nil {
-				t.Fatal("updating condition not found")
-			}
-			if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
-				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-			}
-			assert.Equal(t, "Pool is waiting for OS image build to complete (mosb: mosb-1)", condupdating.Message)
-		},
-	}, {
-		name: "pool not paused, build failed",
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-		},
-		mcns: []*mcfgv1.MachineConfigNode{
-			helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, false),
-			helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-			helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-		},
-		currentConfig: machineConfigV0,
-		overrideMosb:  true,
-		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV0).WithFailedBuild().MachineOSBuild(),
-		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-			if condupdating == nil {
-				t.Fatal("updating condition not found")
-			}
-			if got, want := condupdating.Status, corev1.ConditionFalse; got != want {
-				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-			}
-			assert.Equal(t, "Pool update stopped due to OS image build failure (mosb: mosb-1)", condupdating.Message)
-		},
-	}, {
-		name: "pool not paused, build interrupted",
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-		},
-		mcns: []*mcfgv1.MachineConfigNode{
-			helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, false),
-			helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-			helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-		},
-		currentConfig: machineConfigV0,
-		overrideMosb:  true,
-		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV0).WithInterruptedBuild().MachineOSBuild(),
-		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-			if condupdating == nil {
-				t.Fatal("updating condition not found")
-			}
-			if got, want := condupdating.Status, corev1.ConditionFalse; got != want {
-				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-			}
-			assert.Equal(t, "Pool update stopped due to OS image build being interrupted (mosb: mosb-1)", condupdating.Message)
-		},
-	}, {
-		name: "pool not paused, build succeeded, nodes still applying",
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-		},
-		mcns: []*mcfgv1.MachineConfigNode{
-			helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, false),
-			helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-			helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-		},
-		currentConfig: machineConfigV0,
-		overrideMosb:  true,
-		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV0).WithSuccessfulBuild().MachineOSBuild(),
-		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-			if condupdating == nil {
-				t.Fatal("updating condition not found")
-			}
-			if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
-				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-			}
-			assert.Equal(t, "Pool is waiting for nodes to apply OS image (mosb: mosb-1)", condupdating.Message)
-		},
-	}, {
-		name: "pool not paused, build succeeded, all nodes updated",
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-		},
-		mcns: []*mcfgv1.MachineConfigNode{
-			helpers.NewMachineConfigNode("node-0", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-			helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-			helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-		},
-		currentConfig: machineConfigV1,
-		overrideMosb:  true,
-		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).WithDigestedImagePushspec("registry.host.com/org/repo@sha256:12345").WithSuccessfulBuild().MachineOSBuild(),
-		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-			condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
-			if condupdated == nil {
-				t.Fatal("updated condition not found")
-			}
-			if got, want := condupdated.Status, corev1.ConditionTrue; got != want {
-				t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
-			}
-			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-			if condupdating == nil {
-				t.Fatal("updating condition not found")
-			}
-			if got, want := condupdating.Status, corev1.ConditionFalse; got != want {
-				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-			}
-		},
-	}, {
-		name: "0 nodes updated, 1 node updating, 1 node degraded",
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV0, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12346", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-		},
-		mcns: []*mcfgv1.MachineConfigNode{
-			helpers.NewMachineConfigNode("node-0", "worker", machineConfigV0, "registry.host.com/org/repo@sha256:12345", false, true),
-			helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-			helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-		},
-		currentConfig: machineConfigV0,
-		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-			if got, want := status.MachineCount, int32(3); got != want {
-				t.Fatalf("mismatch MachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.UpdatedMachineCount, int32(0); got != want {
-				t.Fatalf("mismatch UpdatedMachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.ReadyMachineCount, int32(0); got != want {
-				t.Fatalf("mismatch ReadyMachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.UnavailableMachineCount, int32(1); got != want {
-				t.Fatalf("mismatch UnavailableMachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.DegradedMachineCount, int32(1); got != want {
-				t.Fatalf("mismatch DegradedMachineCount: got %d want: %d", got, want)
-			}
-
-			condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
-			if condupdated == nil {
-				t.Fatal("updated condition not found")
-			}
-
-			if got, want := condupdated.Status, corev1.ConditionFalse; got != want {
-				t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
-			}
-
-			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-			if condupdating == nil {
-				t.Fatal("updating condition not found")
-			}
-
-			if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
-				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-			}
-
-			conddegraded := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolDegraded)
-			if conddegraded == nil {
-				t.Fatal("degraded condition not found")
-			}
-
-			if got, want := conddegraded.Status, corev1.ConditionTrue; got != want {
-				t.Fatalf("mismatch conddegraded.Status: got %s want: %s", got, want)
-			}
-		},
-	}, {
-		name: "3 nodes updated, 0 nodes updating, 0 nodes degraded",
-		nodes: []*corev1.Node{
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-		},
-		mcns: []*mcfgv1.MachineConfigNode{
-			helpers.NewMachineConfigNode("node-0", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-			helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-			helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-		},
-		currentConfig: machineConfigV1,
-		overrideMosb:  true,
-		mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).WithDigestedImagePushspec("registry.host.com/org/repo@sha256:12345").WithSuccessfulBuild().MachineOSBuild(),
-		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-			if got, want := status.MachineCount, int32(3); got != want {
-				t.Fatalf("mismatch MachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.UpdatedMachineCount, int32(3); got != want {
-				t.Fatalf("mismatch UpdatedMachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.ReadyMachineCount, int32(3); got != want {
-				t.Fatalf("mismatch ReadyMachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.UnavailableMachineCount, int32(0); got != want {
-				t.Fatalf("mismatch UnavailableMachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.DegradedMachineCount, int32(0); got != want {
-				t.Fatalf("mismatch DegradedMachineCount: got %d want: %d", got, want)
-			}
-
-			condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
-			if condupdated == nil {
-				t.Fatal("updated condition not found")
-			}
-
-			if got, want := condupdated.Status, corev1.ConditionTrue; got != want {
-				t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
-			}
-
-			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-			if condupdating == nil {
-				t.Fatal("updating condition not found")
-			}
-
-			if got, want := condupdating.Status, corev1.ConditionFalse; got != want {
-				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-			}
-
-			conddegraded := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolDegraded)
-			if conddegraded == nil {
-				t.Fatal("degraded condition not found")
-			}
-
-			if got, want := conddegraded.Status, corev1.ConditionFalse; got != want {
-				t.Fatalf("mismatch conddegraded.Status: got %s want: %s", got, want)
-			}
-		},
-	}, {
-		name: "1 node updated, 2 nodes updating, 0 nodes degraded",
-		nodes: []*corev1.Node{
-			// Node-0 is updated and ready
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
-			// Node-1 is not updated yet, targeting new config but not done
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV0, machineConfigV1, "registry.host.com/org/repo@sha256:old", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateWorking, corev1.ConditionTrue),
-			// Node-2 is not updated yet, targeting new config but not done
-			helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV0, machineConfigV1, "registry.host.com/org/repo@sha256:old", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateWorking, corev1.ConditionTrue),
-		},
-		mcns: []*mcfgv1.MachineConfigNode{
-			// Node-0 is updated to machineConfigV1
-			helpers.NewMachineConfigNode("node-0", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
-			// Node-1 is targeting machineConfigV1 but not updated yet
-			helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", false, false),
-			// Node-2 is targeting machineConfigV1 but not updated yet
-			helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", false, false),
-		},
-		currentConfig: machineConfigV1,
-		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
-			if got, want := status.MachineCount, int32(3); got != want {
-				t.Fatalf("mismatch MachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.UpdatedMachineCount, int32(1); got != want {
-				t.Fatalf("mismatch UpdatedMachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.ReadyMachineCount, int32(1); got != want {
-				t.Fatalf("mismatch ReadyMachineCount: got %d want: %d", got, want)
-			}
-
-			if got, want := status.DegradedMachineCount, int32(0); got != want {
-				t.Fatalf("mismatch DegradedMachineCount: got %d want: %d", got, want)
-			}
-
-			condupdated := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
-			if condupdated == nil {
-				t.Fatal("updated condition not found")
-			}
-
-			if got, want := condupdated.Status, corev1.ConditionFalse; got != want {
-				t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
-			}
-
-			condupdating := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
-			if condupdating == nil {
-				t.Fatal("updating condition not found")
-			}
-
-			if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
-				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-			}
-
-			conddegraded := apihelpers.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolDegraded)
-			if conddegraded == nil {
-				t.Fatal("updating condition not found")
-			}
-
-			if got, want := conddegraded.Status, corev1.ConditionFalse; got != want {
-				t.Fatalf("mismatch conddegraded.Status: got %s want: %s", got, want)
-			}
-		},
-	}}
+	}
 
 	for _, test := range tests {
 		test := test
