@@ -2,7 +2,7 @@
 
 ## Overview
 
-| Section | Content |
+| Section | Purpose |
 |---|---|
 | Header metadata | Feature, implementation epic, related items, status, and snapshot pin. |
 | 1. Introduction | Purpose, scope, current behavior, and references. |
@@ -29,7 +29,7 @@
 **Jira Epic/Story (implementation ticket):** MCO-1506 — Image Mode Status Reporting GA & MCN Improvements
 **Related items:** MCO-1735, MCO-1736, MCO-1775, MCO-1798; [MCO PR #5141](https://github.com/openshift/machine-config-operator/pull/5141), [#5282](https://github.com/openshift/machine-config-operator/pull/5282), [#5363](https://github.com/openshift/machine-config-operator/pull/5363), [#5411](https://github.com/openshift/machine-config-operator/pull/5411); [openshift/api PR #2678](https://github.com/openshift/api/pull/2678)
 **Feature status at time of writing:** In Progress, targeted 5.1
-**Snapshot pin:** This plan reflects OCPSTRAT-1282/MCO-1506 at commit/PR f3e11229c0823dd2c84d178062d3c6d3eb719c1f/[MCO PR #6547](https://github.com/openshift/machine-config-operator/pull/6547) as of 2026-09-16. Re-verify scope if the referenced code has since changed (see Risks).
+**Snapshot pin:** This plan reflects OCPSTRAT-1282/MCO-1506 at [MCO PR #6547](https://github.com/openshift/machine-config-operator/pull/6547) as of 2026-09-16. Re-verify scope if the referenced code has since changed (see Risks).
 
 ---
 
@@ -82,19 +82,19 @@ MCO owns the MCN/MCP reporting implementation and its extended Ginkgo coverage; 
 | MCO-1736, MCO-1775, and MCO-1798 implementation | This plan consumes their verified outcomes; it does not re-test separately owned graduation, retirement, or print-column implementation. |
 ## 5. Interaction / Non-Interference Checks
 
-| ID | Check | Why at risk | Evidence |
-|---|---|---|---|
-| F1 | Standard and image-mode contracts remain mutually consistent. | Split conditions can diverge by update mode. | Existing image and non-image cases in the F1 suite. |
-| F3 | Existing MCP/MCN count behavior remains consistent. | Count derivation can regress while MCN conditions change. | F3 MCP count cases. |
-| F9 | Standard non-image updates retain their established transition behavior. | Image-mode additions can alter shared update paths. | F9 non-image transition case. |
-| F10 | Gate-off and feature-gate/non-image compatibility remains intact. | Gate logic can expose changed status semantics outside image mode. | F10 gate handling and image/non-image cases. |
+| ID | What must keep working | Why it's at risk |
+|---|---|---|
+| F1 | Standard and image-mode contracts remain mutually consistent; existing image and non-image cases in the F1 suite provide the baseline evidence. | Split conditions can diverge by update mode. |
+| F3 | Existing MCP/MCN count behavior remains consistent; F3 MCP count cases provide the baseline evidence. | Count derivation can regress while MCN conditions change. |
+| F9 | Standard non-image updates retain their established transition behavior; the F9 non-image transition case provides the baseline evidence. | Image-mode additions can alter shared update paths. |
+| F10 | Gate-off and feature-gate/non-image compatibility remains intact; F10 gate handling and image/non-image cases provide the baseline evidence. | Gate logic can expose changed status semantics outside image mode. |
 ## 6. Target Environments
 
-- OpenShift 5.1 is the target release.
-- AWS and GCP are the primary execution platforms.
-- Other supported platforms are represented only through applicable existing CI jobs selected by the governing process.
-- This plan defines no invented fixed architecture matrix.
-- FIPS, disconnected, and topology coverage are N/A unless confirmed by selected CI; SNO and 3-of-3 measurement rules are delegated to MCO-1735, not independent binding criteria.
+- Platforms: AWS and GCP are the primary execution platforms; other supported platforms are represented only through applicable existing CI jobs selected by the governing process.
+- Architectures: This plan defines no invented fixed architecture matrix.
+- Topology: SNO and 3-of-3 measurement rules are delegated to MCO-1735, not independent binding criteria in this plan.
+- FIPS / disconnected: Coverage is N/A unless confirmed by selected CI.
+- OCP versions in scope: OpenShift 5.1 is the target release.
 ## 7. Approach
 
 ### 7.1 Test Levels
@@ -183,12 +183,12 @@ Acceptance criteria:
 Publication (commit/push/PR) required requester confirmation, and confirmation was received for this revision. Final MCO feature-owner and QE review remains required for merge; this plan does not create or change a PR.
 ## 15. External Dependencies / Unresolved Items
 
-| Dependency | Waiting on |
-|---|---|
-| MCO-1735 readiness/CI signal contract and evidence | Its owner’s selected-route, measurement-window, and readiness results. |
-| MCO-1736 feature-gate graduation | API/feature-gate owner’s graduation outcome. |
-| MCO-1775 legacy-condition retirement | Owner’s retirement and migration-coverage disposition. |
-| MCO-1798 MCN print columns | Owner’s separately scoped implementation outcome. |
-| [Open API cleanup PR #2678](https://github.com/openshift/api/pull/2678) | Its API/print-column cleanup resolution, if still relevant at execution. |
+This section contains only external dependencies after chat.
+
+1. MCO-1735 readiness/CI signal contract and evidence: waits on its owner’s selected-route, measurement-window, and readiness results.
+2. MCO-1736 feature-gate graduation: waits on the API/feature-gate owner’s graduation outcome.
+3. MCO-1775 legacy-condition retirement: waits on the owner’s retirement and migration-coverage disposition.
+4. MCO-1798 MCN print columns: waits on the owner’s separately scoped implementation outcome.
+5. [openshift/api PR #2678](https://github.com/openshift/api/pull/2678): waits on its API/print-column cleanup resolution, if still relevant at execution.
 
 *Generated to accompany OCPSTRAT-1282/MCO-1506. File paths/line numbers/commit pin reference the `main` branch at time of writing (see Snapshot pin above); re-verify after the referenced PRs merge.*
