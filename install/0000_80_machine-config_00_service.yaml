@@ -78,8 +78,10 @@ metadata:
     include.release.openshift.io/single-node-developer: "true"
 spec:
   type: ClusterIP
+  # The CRI-O metrics proxy runs as a container in the machine-config-daemon
+  # daemonset rather than as a standalone pod.
   selector:
-    k8s-app: kube-rbac-proxy-crio
+    k8s-app: machine-config-daemon
   ports:
   - name: metrics
     port: 9637
