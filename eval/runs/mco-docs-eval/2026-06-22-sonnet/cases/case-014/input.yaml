@@ -1,0 +1,16 @@
+prompt: "I'm writing a MachineConfig that references a configuration file hosted on\
+  \ our internal HTTP server. Instead of embedding the file contents inline, I'd like\
+  \ to use an Ignition remote source with an HTTP URL so that each node fetches the\
+  \ latest version of the config file dynamically at boot or when the config is applied.\
+  \ Here's the snippet:\n\nstorage:\n  files:\n  - path: /etc/myapp/config.yaml\n\
+  \    contents:\n      source: http://internal-server.example.com/configs/myapp.yaml\n\
+  \nCan you help me finalize this MachineConfig?"
+expected_rejection: true
+expected_constraint: All remote sources in Ignition configs must be resolved at render
+  time
+expected_documentation:
+- docs/MachineConfig.md
+correct_approach: Remote sources in Ignition configs are resolved at render time by
+  the MCO, not dynamically on nodes. Embed file contents inline using data URIs or
+  ensure the content is available at render time rather than relying on HTTP sources
+  evaluated at node boot.

@@ -1,0 +1,10 @@
+prompt: How does MachineConfig merging work when multiple MachineConfigs target the
+  same pool? What determines the order?
+expected_files:
+- ai-docs/decisions/adr-002-config-rendering.md
+- ai-docs/domain/crds.md
+expected_mentions:
+- deterministic
+- sorted
+- name
+- last-writer-wins
