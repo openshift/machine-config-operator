@@ -1,239 +1,194 @@
 # Test Plan — OpenShift Image Mode State Reporting GA
 
-**Jira Feature (OCPSTRAT):** OCPSTRAT-1282 — OpenShift Image Mode State Reporting GA
-**Jira Epic/Story (implementation ticket):** MCO-1506 — Image Mode Status Reporting GA & MCN Improvements
-**Related items:** MCO-1735, MCO-1736, MCO-1775, MCO-1798; [MCO PR #5411](https://github.com/openshift/machine-config-operator/pull/5411); [MCO PR #6454](https://github.com/openshift/machine-config-operator/pull/6454); [openshift/api PR #2678](https://github.com/openshift/api/pull/2678)
-**Feature status at time of writing:** In Progress, targeted 5.1
+## Overview
+
+| Section | Content |
+|---|---|
+| Header metadata | Feature, implementation epic, related items, status, and snapshot pin. |
+| 1. Introduction | Purpose, scope, current behavior, and references. |
+| 2. Test Strategy | MCO ownership and dependency boundaries. |
+| 3. Features to Be Tested | Traceable functional and readiness coverage. |
+| 4. Features Not to Be Tested | Explicit exclusions and rationale. |
+| 5. Interaction / Non-Interference Checks | Existing behavior that can regress. |
+| 6. Target Environments | Release, platform, topology, and configuration scope. |
+| 7. Approach | Test levels, security review, and regression execution. |
+| 8. Item Pass/Fail Criteria | Case, feature, and GA graduation criteria. |
+| 9. Suspension/Resumption Criteria | Stop and resume conditions. |
+| 10. Test Deliverables | Evidence and proposed work-item outputs. |
+| 11. Testing Tasks | Work breakdown for execution and evidence collection. |
+| 12. Risks and Contingencies | Feature-specific risks and mitigations. |
+| 13. Quality Stories | Proposed, unfiled coverage work. |
+| 14. Approvals | Publication and merge-review approvals. |
+| 15. External Dependencies / Unresolved Items | External owners and awaited outcomes. |
 
 ---
 
-## 1. Test Plan Identifier
+<a id="header"></a>
 
-`TP-MCO-1506-v1` — OpenShift Image Mode State Reporting GA, revision 1, 2026-09-16.
+**Jira Feature (OCPSTRAT):** OCPSTRAT-1282 — OpenShift Image Mode State Reporting GA
+**Jira Epic/Story (implementation ticket):** MCO-1506 — Image Mode Status Reporting GA & MCN Improvements
+**Related items:** MCO-1735, MCO-1736, MCO-1775, MCO-1798; [MCO PR #5141](https://github.com/openshift/machine-config-operator/pull/5141), [#5282](https://github.com/openshift/machine-config-operator/pull/5282), [#5363](https://github.com/openshift/machine-config-operator/pull/5363), [#5411](https://github.com/openshift/machine-config-operator/pull/5411); [openshift/api PR #2678](https://github.com/openshift/api/pull/2678)
+**Feature status at time of writing:** In Progress, targeted 5.1
+**Snapshot pin:** This plan reflects OCPSTRAT-1282/MCO-1506 at commit/PR f3e11229c0823dd2c84d178062d3c6d3eb719c1f/[MCO PR #6547](https://github.com/openshift/machine-config-operator/pull/6547) as of 2026-09-16. Re-verify scope if the referenced code has since changed (see Risks).
 
-## 2. Introduction
+---
 
-### 2.1 Purpose
+## 1. Introduction
 
-This plan defines MCO test planning and GA evidence for OCPSTRAT-1282, implemented by MCO-1506. The feature requirement is to provide accurate, granular, and consistent MachineConfigNode (MCN) state reporting so that customers, troubleshooters, and automation can make decisions from reliable node-update state. The plan preserves existing coverage and identifies only the delta work needed to show readiness.
+### 1.1 Purpose
 
-### 2.2 Scope
+OCPSTRAT-1282 enables customers, troubleshooters, and maintainers to make informed decisions from reliable node-update state. Its feature overview states: “The Machine Config Operator (MCO) will provide accurate, granular, and consistent state reporting through the MachineConfigNode (MCN) resource, enabling customers, troubleshooters, and maintainers to make informed decisions based on reliable node update status information.” The Jira acceptance language requires “consistent status reporting across both standard and on-cluster image mode updates” and “accurate MachineConfigPool (MCP) status aligned with the original MCN enhancement design.”
 
-MCO-1506 extends the completed MCO-836 MCN baseline; it is not greenfield work. Its Jira scope is to make the experience consistent across standard node updates and on-cluster image-mode updates, and to populate MachineConfigPool (MCP) status consistently with the original MCN enhancement design. It also includes the test/readiness evidence needed for GA.
+### 1.2 Scope
 
-The plan covers AWS and GCP as primary environments. Other supported platforms may be represented by applicable existing CI jobs; this plan intentionally does not define a fixed platform or architecture matrix. MCO-1506 explicitly excludes MCN-triggered updates and observability through customizable metrics.
+MCO-1506 extends closed MCO-836; it is not greenfield. Confirmed scope is consistent MCN experience for standard and on-cluster image-mode updates, MCP status population consistent with the original MCN enhancement, component-readiness tests and monitoring, and feature-gate graduation evidence for OpenShift 5.1.
 
-### 2.3 Background — current behavior relevant to testing
+### 1.3 Background — current behavior relevant to testing
 
-The existing serial, disruptive `ImageModeStatusReporting` suite is declared in [`test/extended/image_mode_status_reporting.go:31-117`](https://github.com/openshift/machine-config-operator/blob/main/test/extended/image_mode_status_reporting.go#L31-L117). Its five cases cover MCN/node properties, image and non-image condition transitions, and MCP machine counts. The shared assertions in [`test/extended/machineconfignode.go:24-112`](https://github.com/openshift/machine-config-operator/blob/main/test/extended/machineconfignode.go#L24-L112) and [`test/extended/machineconfignode.go:211-415`](https://github.com/openshift/machine-config-operator/blob/main/test/extended/machineconfignode.go#L211-L415) validate `status.configImage`, `UpdateFiles`, `UpdateOS`, and `ImagePulledFromRegistry` behavior.
+The existing serial disruptive [ImageModeStatusReporting suite](https://github.com/openshift/machine-config-operator/blob/main/test/extended/image_mode_status_reporting.go#L31-L117) has five cases for MCN/node properties, image and non-image condition transitions, and MCP counts. [MCN helpers](https://github.com/openshift/machine-config-operator/blob/main/test/extended/machineconfignode.go#L24-L112) and their [transition assertions](https://github.com/openshift/machine-config-operator/blob/main/test/extended/machineconfignode.go#L211-L415) cover `status.configImage`, `UpdateFiles`, `UpdateOS`, and `ImagePulledFromRegistry`. [Upgrade monitor gate handling](https://github.com/openshift/machine-config-operator/blob/main/pkg/upgrademonitor/upgrade_monitor.go#L135-L178), [status apply behavior](https://github.com/openshift/machine-config-operator/blob/main/pkg/upgrademonitor/upgrade_monitor.go#L290-L342), and [node migration/wrappers](https://github.com/openshift/machine-config-operator/blob/main/pkg/controller/node/node_controller.go#L2174-L2304) are the current implementation paths. Relevant history includes [#5141](https://github.com/openshift/machine-config-operator/pull/5141), [#5282](https://github.com/openshift/machine-config-operator/pull/5282), [#5363](https://github.com/openshift/machine-config-operator/pull/5363), [#5411](https://github.com/openshift/machine-config-operator/pull/5411), and related openshift/api and client-go API history.
 
-When the feature gate is enabled, [`pkg/upgrademonitor/upgrade_monitor.go:135-178`](https://github.com/openshift/machine-config-operator/blob/main/pkg/upgrademonitor/upgrade_monitor.go#L135-L178) uses the split conditions, and [`pkg/upgrademonitor/upgrade_monitor.go:290-342`](https://github.com/openshift/machine-config-operator/blob/main/pkg/upgrademonitor/upgrade_monitor.go#L290-L342) reports `status.configImage` and avoids an unchanged status apply. The node controller retains condition-migration behavior in [`pkg/controller/node/node_controller.go:2174-2304`](https://github.com/openshift/machine-config-operator/blob/main/pkg/controller/node/node_controller.go#L2174-L2304). The split-condition implementation is tracked by [MCO PR #5411](https://github.com/openshift/machine-config-operator/pull/5411).
-
-The separately owned InternalReleaseImage (IRI) suite is not a status-reporting suite: [`test/e2e-iri/README.md`](https://github.com/openshift/machine-config-operator/blob/main/test/e2e-iri/README.md) assigns it to InternalReleaseImage controller behavior for Agent Installer OpenShift-Virt `NoRegistryClusterInstall`, and [`test/e2e-iri/OWNERS`](https://github.com/openshift/machine-config-operator/blob/main/test/e2e-iri/OWNERS) has separate owners. Its dedicated `test-e2e-iri` Makefile target is therefore outside this plan's scope.
-
-### 2.4 References
+### 1.4 References
 
 | Ref | Document |
 |---|---|
-| [OCPSTRAT-1282](https://redhat.atlassian.net/browse/OCPSTRAT-1282) | Feature requirement: consistent reporting for standard and image-mode updates, accurate MCP status, and GA/readiness. |
-| [MCO-1506](https://redhat.atlassian.net/browse/MCO-1506) | Implementation epic; records the 7-day green-test evidence required on all platforms selected by API feature-promotion verification. |
-| [MCO-1735](https://redhat.atlassian.net/browse/MCO-1735) | Readiness-score monitoring and governing evidence process. |
-| [MCO-1736](https://redhat.atlassian.net/browse/MCO-1736) and [openshift/api PR #2738](https://github.com/openshift/api/pull/2738) | Feature-gate graduation dependency. |
-| [MCO-1775](https://redhat.atlassian.net/browse/MCO-1775) and [MCO-1798](https://redhat.atlassian.net/browse/MCO-1798) | Legacy-condition retirement and MCN print-column follow-up. |
-| [openshift/api PR #2678](https://github.com/openshift/api/pull/2678) | Open, held print-column/API cleanup relevant to the follow-up. |
-| [MCO PR #6454](https://github.com/openshift/machine-config-operator/pull/6454) | Related suite-routing change; use as evidence only after the selected route is observed. |
+| [OCPSTRAT-1282](https://redhat.atlassian.net/browse/OCPSTRAT-1282) | Feature requirement and exclusions. |
+| [MCO-1506](https://redhat.atlassian.net/browse/MCO-1506) | Implementation epic, GA evidence, and 5.1 target. |
+| [MCO-1735](https://redhat.atlassian.net/browse/MCO-1735) | Readiness/CI signal contract and evidence owner. |
+| [MCO-1736](https://redhat.atlassian.net/browse/MCO-1736), [MCO-1775](https://redhat.atlassian.net/browse/MCO-1775), [MCO-1798](https://redhat.atlassian.net/browse/MCO-1798) | Graduation, legacy-condition, and print-column follow-ups. |
+## 2. Test Strategy
 
-## 3. Test Items
+MCO owns the MCN/MCP reporting implementation and its extended Ginkgo coverage; this plan preserves that verified baseline and defines only needed deltas. API and client-go contract history, feature-gate graduation, and readiness-platform selection are cross-repo or external-owner inputs. Vendored and unrelated controller behavior is not re-tested: evidence must exercise the MCO status contract and its declared update paths, while separately owned work is consumed only as a dependency.
+## 3. Features to Be Tested
 
-1. The `ImageModeStatusReporting` feature gate and MCN API fields: `status.configImage`, `UpdateFiles`, `UpdateOS`, and `ImagePulledFromRegistry`.
-2. MCN-to-MCP status reporting, including updated and degraded machine counts.
-3. The five existing disruptive ImageModeStatusReporting cases and their shared MCP-count oracle.
-4. Existing MCN and OSStreams Polarion coverage, including private MCN cases 69187, 69197, 69205, and 85901 and OSStreams cases 88122 and 88203.
-5. CI selection, component-readiness, and API feature-promotion evidence.
-
-## 4. Features to Be Tested
-
-| ID | Requirement | Priority |
-| --- | --- | --- |
-| F1 | MCN status MUST remain consistent for standard node updates and on-cluster image-mode updates. | High |
-| F2 | Image-mode reporting MUST expose the current MCN contract, including `status.configImage`, `UpdateOS`, `UpdateFiles`, and `ImagePulledFromRegistry`, with transitions appropriate to update type. | High |
-| F3 | MCP updated and degraded machine counts MUST align with the original MCN status-reporting design during the covered update transitions. | High |
-| F4 | Existing ImageModeStatusReporting and MCN/OSStreams baseline coverage MUST remain traceable and be revalidated against the current contract without expanding its committed scope. | High |
-| F5 | The selected CI route and readiness evidence MUST support GA evaluation; component readiness greater than 95% is the binding criterion. | High |
-| F6 | Any additional migration, unchanged-status-apply, or failure-path coverage MUST be explicitly decided and traced before it is treated as GA coverage. | Medium |
-
-## 5. Features Not to Be Tested
-
-| Exclusion | Rationale |
-| --- | --- |
-| MCN-triggered updates | MCO-1506 states that using MCN resources to trigger updates is future work needing separate refinement, Technology Preview implementation, and soak; this plan tests reporting rather than a new update control plane. |
-| Observability through customizable metrics | MCO-1506 excludes flexible/customizable metrics because they require product and engineering refinement and a separate enhancement. |
-| InternalReleaseImage/IRI suite and `test-e2e-iri` | Verified separate ownership: this suite tests InternalReleaseImage controller behavior for Agent Installer OpenShift-Virt `NoRegistryClusterInstall`, not MCO-1506 status reporting. |
-| Feature-gate graduation, legacy-condition retirement, and print-column implementation | MCO-1736, MCO-1775, and MCO-1798 own those changes. This plan may consume their outcomes as evidence but does not test their implementation as MCO-1506 scope. |
-| A fixed cross-platform or architecture matrix | AWS and GCP are primary; coverage on other supported platforms follows existing applicable CI jobs rather than a matrix invented by this plan. |
-
-## 6. Approach
-
-### 6.1 Strategy
-
-Use the existing serial disruptive suite as the baseline for functional regression, then make only narrowly scoped expectation, traceability, and oracle updates where the current MCN contract requires them. Review CI selection and readiness records as release evidence; do not infer a route from configuration alone. Manual review is appropriate for API/Polarion traceability and evidence records, while automated suites supply transition and regression evidence. Upgrade and rollback coverage is N/A because no supported upgrade or rollback commitment is recorded in the confirmed scope.
-
-### 6.2 Existing / Baseline Coverage (not new work)
-
-| Scenario ID | What it validates | Status | Test location | Related Jira/PR |
+| ID | Requirement / Scenario | Priority | Status | Test location / evidence |
 |---|---|---|---|---|
-| B1 | MCN properties match the associated node with on-cluster builds in a custom MCP, falling back to `master` when no worker pool exists. | Implemented | [`image_mode_status_reporting.go:45-59`](https://github.com/openshift/machine-config-operator/blob/main/test/extended/image_mode_status_reporting.go#L45-L59) | MCO-1506; MCO-1513 |
-| B2 | MCN conditions transition during an image-based update with on-cluster builds. | Implemented | [`image_mode_status_reporting.go:61-75`](https://github.com/openshift/machine-config-operator/blob/main/test/extended/image_mode_status_reporting.go#L61-L75) | MCO-1775; [PR #5411](https://github.com/openshift/machine-config-operator/pull/5411) |
-| B3 | MCN conditions transition during a non-image update with on-cluster builds. | Implemented | [`image_mode_status_reporting.go:77-91`](https://github.com/openshift/machine-config-operator/blob/main/test/extended/image_mode_status_reporting.go#L77-L91) | MCO-1775; [PR #5411](https://github.com/openshift/machine-config-operator/pull/5411) |
-| B4 | MCP machine counts transition during a MachineConfig update in a default MCP. | Implemented | [`image_mode_status_reporting.go:93-100`](https://github.com/openshift/machine-config-operator/blob/main/test/extended/image_mode_status_reporting.go#L93-L100) | MCO-1506 |
-| B5 | MCP machine counts transition while on-cluster image mode is enabled in a default MCP. | Implemented | [`image_mode_status_reporting.go:102-116`](https://github.com/openshift/machine-config-operator/blob/main/test/extended/image_mode_status_reporting.go#L102-L116) | MCO-1506 |
-| B6 | MCN/OSStreams Polarion baseline, including MCN 69187, 69197, 69205, 85901 and OSStreams 88122, 88203. | Implemented | Polarion cases; existing MCN extended coverage | MCO-1512; MCO-1513 |
-| B7 | MCP expected-count calculation based on node annotations. | Implemented | [`image_mode_status_reporting.go:476-563`](https://github.com/openshift/machine-config-operator/blob/main/test/extended/image_mode_status_reporting.go#L476-L563) | MCO-1506 |
+| F1 | Standard and image-mode MCN status is consistent. | High | Implemented baseline | [Five-case suite](https://github.com/openshift/machine-config-operator/blob/main/test/extended/image_mode_status_reporting.go#L31-L117); Polarion 69187, 69197. |
+| F2 | MCN fields and image/non-image transitions follow the contract. | High | Implemented baseline | [MCN helpers](https://github.com/openshift/machine-config-operator/blob/main/test/extended/machineconfignode.go#L24-L112) and [assertions](https://github.com/openshift/machine-config-operator/blob/main/test/extended/machineconfignode.go#L211-L415); Polarion 69205, 81831. |
+| F3 | MCP updated/degraded counts align with MCN design. | High | Implemented baseline | [MCP count cases](https://github.com/openshift/machine-config-operator/blob/main/test/extended/image_mode_status_reporting.go#L93-L116); Polarion 69755. |
+| F4 | Existing e2e and Polarion coverage is updated for the current contract. | High | Proposed delta | Existing suite and Polarion 69187, 69197, 69205, 81831, 69755, 74644, 80333, 85901. |
+| F5 | CI/component-readiness evidence supports GA. | High | Blocked until external signal/evidence | MCO-1735 readiness records and API feature-promotion platform selection. |
+| F6 | Gate-off-to-gate-on legacy migration has an explicit decision and coverage. | Medium | Proposed | [Migration path](https://github.com/openshift/machine-config-operator/blob/main/pkg/controller/node/node_controller.go#L2174-L2304); MCO-1775/MCO-1736 disposition. |
+| F7 | Unchanged desired-image/status server-side apply behavior has an explicit decision and coverage. | Medium | Proposed | [No-unchanged-status apply path](https://github.com/openshift/machine-config-operator/blob/main/pkg/upgrademonitor/upgrade_monitor.go#L290-L342). |
+| F8 | Image-pull, file-application, and OS-application failure reporting has an explicit decision and coverage. | Medium | Proposed | [MCN status assertions](https://github.com/openshift/machine-config-operator/blob/main/test/extended/machineconfignode.go#L211-L415). |
+| F9 | Existing standard-update behavior remains unchanged while status reporting is exercised. | High | Implemented baseline | [Non-image transition case](https://github.com/openshift/machine-config-operator/blob/main/test/extended/image_mode_status_reporting.go#L77-L91). |
+| F10 | Feature-gate and non-image compatibility remains intact. | High | Implemented baseline | [Gate handling](https://github.com/openshift/machine-config-operator/blob/main/pkg/upgrademonitor/upgrade_monitor.go#L135-L178); [image/non-image cases](https://github.com/openshift/machine-config-operator/blob/main/test/extended/image_mode_status_reporting.go#L61-L91). |
+## 4. Features Not to Be Tested
 
-### 6.3 New Coverage Needed
+| Excluded | Rationale |
+|---|---|
+| MCN-triggered updates | Jira explicitly calls this a future enhancement requiring separate refinement, Technology Preview implementation, and soak. |
+| Observability through customizable metrics | Jira explicitly assigns flexible/customizable metrics to a separate enhancement/refinement. |
+| InternalReleaseImage and `test-e2e-iri` | The [IRI README](https://github.com/openshift/machine-config-operator/blob/main/test/e2e-iri/README.md) and [OWNERS](https://github.com/openshift/machine-config-operator/blob/main/test/e2e-iri/OWNERS) assign separate controller ownership; it is not status-reporting coverage. |
+| MCO-1736, MCO-1775, and MCO-1798 implementation | This plan consumes their verified outcomes; it does not re-test separately owned graduation, retirement, or print-column implementation. |
+## 5. Interaction / Non-Interference Checks
 
-| Scenario ID | What it validates | Status | Proposed test location | Related Jira/PR |
-|---|---|---|---|---|
-| N1 | Re-baseline the five existing cases with small expectation and suite updates for the current MCN fields and split conditions; retain their five-case scope. | Proposed | Existing `ImageModeStatusReporting` suite, B1-B5; this is not a new test suite. | F1, F2, F4; MCO-1506 |
-| N2 | Refresh MCN/OSStreams Polarion references for split conditions, legacy-field follow-up, print-column follow-up, and observed suite placement. | Proposed | Existing MCN/OSStreams Polarion baseline, B6. | F4; MCO-1775, MCO-1798, [openshift/api PR #2678](https://github.com/openshift/api/pull/2678) |
-| N3 | Reconcile the MCP expected-count oracle with MCN-driven MCP status semantics and retain compatibility checks that remain valid. | Proposed | Existing MCP expected-count oracle, B7. | F3; MCO-1506 |
-| N4 | Obtain CI selection/completion and Sippy-reporting evidence for the actual relevant route after related routing changes; no verified route/evidence package currently exists. | Blocked | Actual relevant CI route, selected after related routing changes are observed. | F5; MCO-1735 and accepted routing changes |
-| N5 | Assemble the GA readiness evidence package, including component-readiness results and the API feature-promotion platform window; no current measured rate is asserted. | Blocked | MCO-1735 governing measurement and evidence records. | F5; MCO-1735 |
-| N6 | Decide whether targeted gate-off-to-gate-on legacy-condition migration coverage is required before GA; no committed coverage is identified. | Proposed | Location to be determined by the MCO-1775/MCO-1736 disposition. | F6; MCO-1775, MCO-1736 |
-| N7 | Decide whether targeted regression coverage is required for unchanged desired-image/status SSA behavior; no committed coverage is identified, and the existing no-diff guard is not claimed as test coverage. | Proposed | Location to be determined if coverage is approved. | F6; MCO-1506 |
-| N8 | Decide whether targeted image-pull, file-application, and OS-application status-reporting failure-path coverage is required; no committed coverage is identified. | Proposed | Location to be determined if coverage is approved. | F6; MCO-1506 |
+| ID | Check | Why at risk | Evidence |
+|---|---|---|---|
+| F1 | Standard and image-mode contracts remain mutually consistent. | Split conditions can diverge by update mode. | Existing image and non-image cases in the F1 suite. |
+| F3 | Existing MCP/MCN count behavior remains consistent. | Count derivation can regress while MCN conditions change. | F3 MCP count cases. |
+| F9 | Standard non-image updates retain their established transition behavior. | Image-mode additions can alter shared update paths. | F9 non-image transition case. |
+| F10 | Gate-off and feature-gate/non-image compatibility remains intact. | Gate logic can expose changed status semantics outside image mode. | F10 gate handling and image/non-image cases. |
+## 6. Target Environments
 
-### 6.4 Regression
+- OpenShift 5.1 is the target release.
+- AWS and GCP are the primary execution platforms.
+- Other supported platforms are represented only through applicable existing CI jobs selected by the governing process.
+- This plan defines no invented fixed architecture matrix.
+- FIPS, disconnected, and topology coverage are N/A unless confirmed by selected CI; SNO and 3-of-3 measurement rules are delegated to MCO-1735, not independent binding criteria.
+## 7. Approach
 
-Re-run the five-case `ImageModeStatusReporting` serial disruptive suite, its shared MCN helpers, the applicable MCN/OSStreams Polarion baseline cases, and the CI jobs selected by the current feature-promotion/readiness process. Re-run AWS and GCP as primary environments; preserve results from any other supported-platform jobs selected by existing CI.
+### 7.1 Test Levels
 
-## 7. Item Pass/Fail Criteria
+| Level | Method and evidence | F# IDs |
+|---|---|---|
+| Unit/integration | Contract and implementation-path review; no unverified new unit suite is claimed. | F1, F2, F3, F6, F7, F10 |
+| Extended/e2e Ginkgo | Re-run the serial disruptive ImageModeStatusReporting suite and its MCN helpers. | F1, F2, F3, F9, F10 |
+| Manual/exploratory | Reconcile Polarion and inspect readiness/CI records; execute approved F4–F8 deltas. | F4, F5, F6, F7, F8 |
+### 7.2 Security / ProdSec Review
 
-- Functional status: F1-F3 pass when the existing or approved delta cases show the documented MCN fields, split-condition transitions, and MCP counts for their update type; contradictory, missing, or persistently mismatched state fails.
-- Baseline and regression: F4 passes when B1-B7 and their approved expectation/traceability updates retain the five-case scope and complete without a status-reporting regression; an obsolete assertion, missing traceability, or regression fails.
-- GA readiness: F5 passes only when Component Readiness is greater than 95%. MCO-1506 also records seven days of green tests on every platform required by the API `verify-feature-promotion` check as the governing GA evidence requirement. The current measured rate is unknown and is not asserted here.
-- Evidence governance: SNO pass-rate and 3-of-3 Sippy rules are evidence/dependency inputs governed by MCO-1735's readiness process, including its measurement window, denominator, retry, missing-run, and reporting treatment. They are not independent binding criteria in this plan unless that owning process makes them required; lack of the required governing evidence prevents an approval decision.
+N/A: no ProdSec review is applicable to this test-plan-only revision; no new security-sensitive feature behavior is introduced here.
+### 7.3 Regression
 
-## 8. Suspension Criteria and Resumption Requirements
+Re-run ImageModeStatusReporting for F1/F3/F9/F10, its MCN helper assertions for F2, and applicable Polarion MCN cases 69187, 69197, 69205, 81831, 69755, 74644, 80333, and 85901. Re-run selected AWS/GCP CI evidence and preserve applicable other-platform results selected by MCO-1735.
+## 8. Item Pass/Fail Criteria
 
-Suspend the affected test execution when an AWS or GCP environment is unavailable, a blocking image build or cluster failure makes status results uninterpretable, the selected CI route cannot report, or a critical status-reporting defect is found. Resume when the environment or routing issue is corrected, the defect has an owner and recorded disposition, and the affected scenario can be rerun with preserved evidence. Suspend GA-evidence review when the MCO-1735 evidence contract or API feature-promotion results are unavailable; resume when their governing records are available.
+- Per-case: a case passes only when its asserted MCN fields, transitions, and MCP counts match the declared update type; missing, contradictory, or persistent mismatched state fails.
+- Feature acceptance: F1–F3 and F9–F10 require their existing evidence to pass; F4 and F6–F8 require an approved decision and resulting evidence before being counted; F5 requires MCO-1735 evidence.
+- GA graduation: Component Readiness greater than 95% is the requester-confirmed binding criterion. MCO-1506 additionally requires seven green days on every platform selected by API `verify-feature-promotion`; the current rate is unknown here and its evidence is delegated to MCO-1735.
+## 9. Suspension/Resumption Criteria
 
-## 9. Test Deliverables
+Suspend an affected execution for unavailable AWS/GCP capacity, an infrastructure/build failure that makes status results uninterpretable, a non-reporting selected CI route, or a critical reporting defect. Resume only after the environment/route is restored or the defect has an owner and disposition, then rerun the affected F# case with preserved artifacts. Suspend GA review when MCO-1735 or API platform-window evidence is absent; resume when that governing evidence is published.
+## 10. Test Deliverables
 
-1. This version-controlled test plan.
-2. Results and artifacts from the existing/reused baseline automated-test paths and any approved delta execution.
-3. Updated Polarion traceability where N2 is approved, plus the proposed/not-filed Q1-Q5 quality-story records.
-4. Defect records for confirmed failures and the MCO-1735/API feature-promotion readiness evidence used for the GA decision.
+1. This version-controlled plan and its reviewed traceability.
+2. Existing ImageModeStatusReporting, MCN-helper, Polarion, and selected-CI results/artifacts.
+3. Approved F4–F8 delta evidence and confirmed defect records, if any.
+4. Proposed, unfiled Q1–Q5 quality-story definitions and MCO-1735 readiness evidence; this plan does not claim Jira stories were filed.
+## 11. Testing Tasks
 
-## 10. Testing Tasks
-
-1. Review the MCN API/status contract and reconcile B1-B7 expectations with it.
-2. Execute or collect the applicable baseline and regression evidence on AWS and GCP.
-3. Update only approved e2e expectations, suite references, Polarion links, and the MCP oracle.
-4. Verify the actual CI route and preserve its completion/reporting evidence.
-5. Collect the governing readiness evidence and record any N6-N8 disposition before treating it as coverage.
-
-## 11. Environmental Needs
-
-- Platforms: AWS and GCP are primary. Existing CI may supply applicable evidence for other supported platforms; this plan does not prescribe a topology matrix.
-- Tooling, access, and fixtures: AWS and GCP clusters capable of the existing serial disruptive MCO tests, with access to MCN, MCP, on-cluster image mode, and the current feature-gate/CI configuration. SNO and 3-of-3 execution details are supplied by the MCO-1735 governing readiness process.
-
-## 12. Responsibilities
-
-| Role | Responsibility |
-| --- | --- |
-| MCO development | Maintain the status-reporting implementation and resolve confirmed defects. |
-| MCO QE | Maintain approved test expectations and Polarion traceability; evaluate baseline results. |
-| Readiness owner | Under MCO-1735, define and publish the readiness measurement/evidence contract and investigate failures. |
-| API/feature-gate owner | Under MCO-1736, run the graduation process and `verify-feature-promotion` evaluation. |
-| Release engineering/CI owners | Provide selected-job and platform-window evidence. |
-| IRI owners | Own InternalReleaseImage controller and `test-e2e-iri` coverage independently of this plan. |
-
-## 13. Staffing and Training Needs
-
-No additional staffing or training need is identified. Execution requires the existing MCO QE/development familiarity with disruptive tests, MCN/MCP status, and the MCO-1735 readiness process.
-
-## 14. Schedule
-
-Complete N1-N3 early enough for their results to enter the current release evidence window. Collect N4-N5 only after the selected CI route is observable and MCO-1735 provides its governing evidence contract. Resolve the N6-N8 coverage dispositions before GA approval. The target release is OpenShift 5.1; no calendar date beyond the release target is committed by this plan.
-
-## 15. Risks and Contingencies
+1. Reconcile F1–F3/F9–F10 assertions with the current MCN/MCP contract.
+2. Re-run or collect selected AWS/GCP baseline and interaction evidence.
+3. Update approved F4 traceability and implement only approved F6–F8 coverage.
+4. Obtain F5 CI selection, readiness, and API feature-promotion evidence from its owners.
+5. Review results against Section 8 and preserve artifacts for GA review.
+## 12. Risks and Contingencies
 
 | ID | Risk | Impact | Mitigation |
 |---|---|---|---|
-| R1 | Serial disruptive tests are affected by cluster timing or instability. | Baseline results may be uninterpretable and delay status-reporting evidence. | Preserve job artifacts, distinguish infrastructure failures from status defects, and rerun only through the governing process. |
-| R2 | CI routing or 3-of-3 reporting does not produce readiness data. | The required readiness evidence is unavailable, so GA evaluation cannot proceed. | Hold readiness evaluation and track the required route/evidence through MCO-1735. |
-| R3 | API feature-gate, legacy-condition, or print-column dependencies remain open. | Dependent contract outcomes cannot be consumed as verified MCO-1506 evidence. | Keep their implementation out of MCO-1506 coverage and consume only verified outcomes. |
-| R4 | New coverage decisions expand beyond confirmed scope. | Unapproved tests could delay planning or be misrepresented as GA coverage. | Require an explicit N6-N8 disposition before scheduling or claiming additional tests. |
+| R1 | Serial disruptive status tests are unstable or cluster timing is ambiguous. | F1–F3/F9–F10 results are uninterpretable. | Preserve artifacts, separate infrastructure failures, and rerun the affected case. |
+| R2 | MCO-1735 readiness signals or selected CI routes do not report. | F5/GA evidence cannot be evaluated. | Hold GA review and obtain the governing signal contract/evidence. |
+| R3 | Feature-gate or legacy-condition dependencies change the contract after this snapshot. | F6/F10 coverage may become stale. | Re-verify against the pin and dependency outcomes before execution. |
+| R4 | Failure-path or SSA proposals expand beyond confirmed scope. | F7/F8 could be misrepresented as GA coverage. | Require an explicit owner decision and Q-story acceptance evidence. |
+## 13. Quality Stories (proposed, not filed automatically)
 
-## 16. Approvals
+One story per F# row lacking existing coverage. No generic "add e2e tests" catch-alls.
 
-The MCO QE lead, MCO feature owner, readiness owner, and API/feature-gate owner should approve the plan and the evidence used for GA. Publication required requester confirmation before commit/push; that confirmation applies to this revision, which is being made on the existing review branch `mco-1506/status-reporting-test-plan`.
+#### Q1: Update existing e2e and Polarion coverage for F4
 
-## 17. Quality Stories (proposed, not filed automatically)
-
-One story per Features-to-Be-Tested row that has no existing coverage. No generic "add e2e tests" catch-alls.
-
-#### Q1: Capture CI selection and reporting evidence
-
-Description: For F5/N4, define the evidence record that proves the selected ImageModeStatusReporting route ran, completed, and reported to the governing readiness process.
-
+Description: Reconcile the five existing cases and listed Polarion records with the current MCN contract.
 Acceptance criteria:
+- [ ] F4 references identify retained versus updated assertions.
+- [ ] Updated evidence preserves traceability to the named Polarion cases.
 
-- [ ] The selected job or jobs and their result links are recorded.
-- [ ] Completion and Sippy-reporting evidence is available to MCO-1735.
-- [ ] Any routing gap is recorded as a dependency rather than treated as a passing result.
+#### Q2: Collect component-readiness GA evidence for F5
 
-#### Q2: Assemble GA readiness evidence
-
-Description: For F5/N5, assemble the MCO-1735 and API feature-promotion evidence needed to evaluate the greater-than-95% Component Readiness criterion and required seven-day platform window.
-
+Description: Record the selected CI routes, Component Readiness, and API platform-window evidence supplied through MCO-1735.
 Acceptance criteria:
+- [ ] F5 evidence identifies selected platforms and result links.
+- [ ] The seven-day window and greater-than-95% criterion are evaluated by the governing process.
 
-- [ ] Component Readiness evidence is recorded using the MCO-1735 governing process.
-- [ ] The API feature-promotion-required platform window is identified and its seven-day green evidence is linked.
-- [ ] The record does not claim a current measurement until the governing result is available.
+#### Q3: Decide legacy migration coverage for F6
 
-#### Q3: Decide legacy-condition migration coverage
-
-Description: For F6/N6, record whether targeted gate-off-to-gate-on legacy-condition migration coverage is required, deferred, or not applicable under MCO-1775 and MCO-1736.
-
+Description: Record whether gate-off-to-gate-on legacy-condition migration coverage is required under MCO-1775/MCO-1736.
 Acceptance criteria:
+- [ ] F6 has an owner disposition and, if approved, a concrete test location.
+- [ ] Unapproved migration behavior is not counted as GA evidence.
 
-- [ ] The owner records an explicit disposition.
-- [ ] Any approved case traces to F6 and the relevant dependency.
-- [ ] No unapproved migration scenario is claimed as GA coverage.
+#### Q4: Decide unchanged-status SSA coverage for F7
 
-#### Q4: Decide unchanged-status SSA regression coverage
-
-Description: For F6/N7, record whether the unchanged desired-image/status SSA no-diff behavior needs targeted regression coverage.
-
+Description: Record whether unchanged desired-image/status apply behavior needs a targeted regression case.
 Acceptance criteria:
-
-- [ ] The owner records an explicit disposition.
-- [ ] Any approved case names the observable no-diff behavior and traces to F6/N7.
+- [ ] F7 has an owner disposition and observable expected behavior.
 - [ ] The implementation guard alone is not represented as executed coverage.
 
-#### Q5: Decide status-reporting failure-path coverage
+#### Q5: Decide failure-path coverage for F8
 
-Description: For F6/N8, record whether targeted image-pull, file-application, and OS-application failure-path reporting coverage is required.
-
+Description: Record disposition for image-pull, file-application, and OS-application status-reporting failures.
 Acceptance criteria:
+- [ ] F8 disposition addresses each listed failure area.
+- [ ] Approved cases define expected MCN status evidence.
 
-- [ ] The owner records an explicit disposition for each proposed failure-path area.
-- [ ] Any approved case traces to F6/N8 and defines the expected MCN status evidence.
-- [ ] Deferred areas retain their rationale and are not counted as executed coverage.
+## 14. Approvals
 
-## 18. External Dependencies / Unresolved Items
+Publication (commit/push/PR) required requester confirmation, and confirmation was received for this revision. Final MCO feature-owner and QE review remains required for merge; this plan does not create or change a PR.
+## 15. External Dependencies / Unresolved Items
 
-| Dependency or unresolved item | Waiting on |
-| --- | --- |
-| MCO-1735 readiness measurement and evidence contract, including any SNO or 3-of-3 Sippy measurement rules and the selected reporting window. | MCO readiness owner and the governing feature-promotion/readiness process. |
-| MCO-1736 feature-gate graduation. | API/feature-gate owner and [openshift/api PR #2738](https://github.com/openshift/api/pull/2738). |
-| MCO-1775 legacy `AppliedFilesAndOS` condition retirement. | MCO owners after graduation and regression-reference disposition. |
-| MCO-1798 MCN print columns. | MCO/API owners after graduation. |
-| Open API print-column cleanup. | [openshift/api PR #2678](https://github.com/openshift/api/pull/2678), which is open and held. |
+| Dependency | Waiting on |
+|---|---|
+| MCO-1735 readiness/CI signal contract and evidence | Its owner’s selected-route, measurement-window, and readiness results. |
+| MCO-1736 feature-gate graduation | API/feature-gate owner’s graduation outcome. |
+| MCO-1775 legacy-condition retirement | Owner’s retirement and migration-coverage disposition. |
+| MCO-1798 MCN print columns | Owner’s separately scoped implementation outcome. |
+| [Open API cleanup PR #2678](https://github.com/openshift/api/pull/2678) | Its API/print-column cleanup resolution, if still relevant at execution. |
 
----
-
-*Generated to accompany OCPSTRAT-1282/MCO-1506. File paths/line numbers reference the `main` branch at time of writing.*
+*Generated to accompany OCPSTRAT-1282/MCO-1506. File paths/line numbers/commit pin reference the `main` branch at time of writing (see Snapshot pin above); re-verify after the referenced PRs merge.*
