@@ -13,7 +13,9 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -525,23 +527,29 @@ func ReexecuteForTargetRoot(target string) error {
 		return fmt.Errorf("failed to get target OS: %w", err)
 	}
 
-	var sourceBinarySuffix string
+	sourceBinary := "/usr/bin/machine-config-daemon"
 	if sourceOsVersion.IsLikeRHEL() && targetOsVersion.IsLikeRHEL() {
-		sourceMajor := sourceOsVersion.BaseVersionMajor()
-		targetMajor := targetOsVersion.BaseVersionMajor()
-
+		sourceVersion := sourceOsVersion.BaseVersionMajor()
+		targetVersion := targetOsVersion.BaseVersionMajor()
 		// When container is newer than target, use target-compatible binary
-		switch {
-		case sourceMajor == 10 && targetMajor == 9:
-			sourceBinarySuffix = ".rhel9"
-			klog.Info("container is rhel10, target is rhel9")
-		default:
-			klog.Infof("using appropriate binary for source=rhel-%d target=rhel-%d", sourceMajor, targetMajor)
+		if sourceVersion > targetVersion {
+			suffixes, err := getVersionedBinarySuffixes(sourceBinary + "*")
+			if err != nil {
+				return fmt.Errorf("failed to get machine-config-daemon versioned binaries: %w", err)
+			}
+			suffix, exists := suffixes[targetVersion]
+			if !exists {
+				return fmt.Errorf("no RHEL%d-compatible machine-config-daemon binary found (container is RHEL%d, target is RHEL%d)", targetVersion, sourceVersion, targetVersion)
+			}
+			sourceBinary += suffix
+			klog.Infof("container is rhel%d, target is rhel%d, using binary: %s", sourceVersion, targetVersion, sourceBinary)
+		} else {
+			klog.Infof("using appropriate binary for source=rhel-%d target=rhel-%d", sourceVersion, targetVersion)
 		}
+
 	} else {
 		klog.Info("assuming we can use container binary chroot() to host")
 	}
-	sourceBinary := "/usr/bin/machine-config-daemon" + sourceBinarySuffix
 	src, err := os.Open(sourceBinary)
 	if err != nil {
 		return fmt.Errorf("opening %s: %w", sourceBinary, err)
@@ -591,6 +599,46 @@ func ReexecuteForTargetRoot(target string) error {
 	newEnv := append(os.Environ(), fmt.Sprintf("%s=1", reexecEnv))
 	klog.Infof("Invoking re-exec %s", targetBin)
 	return syscall.Exec(targetBin, newArgv, newEnv)
+}
+
+// regexRhelSuffix matches RHEL-versioned binary suffixes like ".rhel8", ".rhel9", ".rhel10"
+// The regex ensures we only match the specific pattern and not similar-looking files
+// like ".backup8" or ".test9"
+var regexRhelSuffix = regexp.MustCompile(`^\.rhel(\d+)$`)
+
+// getVersionedBinarySuffixes discovers available versioned binaries by globbing the filesystem.
+// For a base path like "/usr/bin/machine-config-daemon*", it finds files like:
+// - /usr/bin/machine-config-daemon.rhel8
+// - /usr/bin/machine-config-daemon.rhel9
+// Returns a map of version number (e.g., 8, 9) to suffix (e.g., ".rhel8", ".rhel9")
+// Only files matching the exact pattern ".rhel<N>" are recognized.
+func getVersionedBinarySuffixes(basePath string) (map[int]string, error) {
+	result := map[int]string{}
+	matches, err := filepath.Glob(basePath)
+	if err != nil {
+		return nil, err
+	}
+	for _, match := range matches {
+		extension := filepath.Ext(match)
+		if extension == "" {
+			continue
+		}
+
+		// Only accept files with the exact ".rhel<N>" pattern
+		submatches := regexRhelSuffix.FindStringSubmatch(extension)
+		if submatches == nil {
+			// Skip files that don't match the pattern (e.g., .backup8, .test9)
+			continue
+		}
+
+		// submatches[1] contains the captured digit group
+		version, err := strconv.Atoi(submatches[1])
+		if err != nil {
+			return nil, err
+		}
+		result[version] = extension
+	}
+	return result, nil
 }
 
 // worker runs a worker thread that just dequeues items, processes them, and marks them done.
