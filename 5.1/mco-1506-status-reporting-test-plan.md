@@ -4,22 +4,21 @@
 
 | Section | Purpose |
 |---|---|
-| Header metadata | Feature, implementation epic, related items, status, and snapshot pin. |
-| 1. Introduction | Purpose, scope, current behavior, and references. |
-| 2. Test Strategy | MCO ownership and dependency boundaries. |
-| 3. Features to Be Tested | Traceable functional and readiness coverage. |
-| 4. Features Not to Be Tested | Explicit exclusions and rationale. |
-| 5. Interaction / Non-Interference Checks | Existing behavior that can regress. |
-| 6. Target Environments | Release, platform, topology, and configuration scope. |
-| 7. Approach | Test levels, security review, and regression execution. |
-| 8. Item Pass/Fail Criteria | Case, feature, and GA graduation criteria. |
-| 9. Suspension/Resumption Criteria | Stop and resume conditions. |
-| 10. Test Deliverables | Evidence and proposed work-item outputs. |
-| 11. Testing Tasks | Work breakdown for execution and evidence collection. |
-| 12. Risks and Contingencies | Feature-specific risks and mitigations. |
-| 13. Quality Stories | Proposed, unfiled coverage work. |
-| 14. Approvals | Publication and merge-review approvals. |
-| 15. External Dependencies / Unresolved Items | External owners and awaited outcomes. |
+| [Header metadata](#header) | Feature, implementation epic, related items, status, and snapshot pin. |
+| [1. Introduction](#1-introduction) | Purpose, scope, current behavior, and references. |
+| [2. Test Strategy](#2-test-strategy) | MCO ownership and dependency boundaries. |
+| [3. Features to Be Tested](#3-features-to-be-tested) | Traceable functional and readiness coverage. |
+| [4. Features Not to Be Tested](#4-features-not-to-be-tested) | Explicit exclusions and rationale. |
+| [5. Interaction / Non-Interference Checks](#5-interaction--non-interference-checks) | Existing behavior that can regress. |
+| [6. Target Environments](#6-target-environments) | Release, platform, topology, and configuration scope. |
+| [7. Approach](#7-approach) | Test levels, security review, and regression execution. |
+| [8. Item Pass/Fail Criteria](#8-item-passfail-criteria) | Case, feature, and GA graduation criteria. |
+| [9. Suspension/Resumption Criteria](#9-suspensionresumption-criteria) | Stop and resume conditions. |
+| [10. Test Deliverables](#10-test-deliverables) | Evidence and proposed work-item outputs. |
+| [11. Testing Tasks](#11-testing-tasks) | Work breakdown for execution and evidence collection. |
+| [12. Risks and Contingencies](#12-risks-and-contingencies) | Feature-specific risks and mitigations. |
+| [13. Approvals](#13-approvals) | Publication and merge-review approvals. |
+| [14. External Dependencies / Unresolved Items](#14-external-dependencies--unresolved-items) | External owners and awaited outcomes. |
 
 ---
 
@@ -123,7 +122,7 @@ Suspend an affected execution for unavailable AWS/GCP capacity, an infrastructur
 1. This version-controlled plan and its reviewed traceability.
 2. Existing ImageModeStatusReporting, MCN-helper, Polarion, and selected-CI results/artifacts.
 3. Approved F4–F8 delta evidence and confirmed defect records, if any.
-4. Proposed, unfiled Q1–Q5 quality-story definitions and MCO-1735 readiness evidence; this plan does not claim Jira stories were filed.
+4. One real feature-specific Jira story for each Proposed or Blocked F# row (F4–F8), filed as a follow-up deliverable after plan approval, and MCO-1735 readiness evidence. This PR does not create Jira issues.
 ## 11. Testing Tasks
 
 1. Reconcile F1–F3/F9–F10 assertions with the current MCN/MCP contract.
@@ -131,6 +130,7 @@ Suspend an affected execution for unavailable AWS/GCP capacity, an infrastructur
 3. Update approved F4 traceability and implement only approved F6–F8 coverage.
 4. Obtain F5 CI selection, readiness, and API feature-promotion evidence from its owners.
 5. Review results against Section 8 and preserve artifacts for GA review.
+6. After plan approval, file the real feature-specific Jira stories for Proposed or Blocked F4–F8 work; do not create Jira issues in this PR.
 ## 12. Risks and Contingencies
 
 | ID | Risk | Impact | Mitigation |
@@ -138,50 +138,11 @@ Suspend an affected execution for unavailable AWS/GCP capacity, an infrastructur
 | R1 | Serial disruptive status tests are unstable or cluster timing is ambiguous. | F1–F3/F9–F10 results are uninterpretable. | Preserve artifacts, separate infrastructure failures, and rerun the affected case. |
 | R2 | MCO-1735 readiness signals or selected CI routes do not report. | F5/GA evidence cannot be evaluated. | Hold GA review and obtain the governing signal contract/evidence. |
 | R3 | Feature-gate or legacy-condition dependencies change the contract after this snapshot. | F6/F10 coverage may become stale. | Re-verify against the pin and dependency outcomes before execution. |
-| R4 | Failure-path or SSA proposals expand beyond confirmed scope. | F7/F8 could be misrepresented as GA coverage. | Require an explicit owner decision and Q-story acceptance evidence. |
-## 13. Quality Stories (proposed, not filed automatically)
-
-One story per F# row lacking existing coverage. No generic "add e2e tests" catch-alls.
-
-#### Q1: Update existing e2e and Polarion coverage for F4
-
-Description: Reconcile the five existing cases and listed Polarion records with the current MCN contract.
-Acceptance criteria:
-- [ ] F4 references identify retained versus updated assertions.
-- [ ] Updated evidence preserves traceability to the named Polarion cases.
-
-#### Q2: Collect component-readiness GA evidence for F5
-
-Description: Record the selected CI routes, Component Readiness, and API platform-window evidence supplied through MCO-1735.
-Acceptance criteria:
-- [ ] F5 evidence identifies selected platforms and result links.
-- [ ] The seven-day window and greater-than-95% criterion are evaluated by the governing process.
-
-#### Q3: Decide legacy migration coverage for F6
-
-Description: Record whether gate-off-to-gate-on legacy-condition migration coverage is required under MCO-1775/MCO-1736.
-Acceptance criteria:
-- [ ] F6 has an owner disposition and, if approved, a concrete test location.
-- [ ] Unapproved migration behavior is not counted as GA evidence.
-
-#### Q4: Cover F7 MCN spec/status SSA no-op and desired-image-only update
-
-Description: Add targeted F7 regression coverage for no SSA apply when the relevant MCN spec/status fields are unchanged, and for a `Spec.ConfigImage.DesiredImage`-only change that must not be skipped by the no-diff guard.
-Acceptance criteria:
-- [ ] When the relevant MCN spec/status fields are unchanged, no SSA apply is issued.
-- [ ] When only `Spec.ConfigImage.DesiredImage` changes, SSA apply is issued rather than skipped and the resulting MCN spec contains the new desired image.
-
-#### Q5: Decide failure-path coverage for F8
-
-Description: Record disposition for image-pull, file-application, and OS-application status-reporting failures.
-Acceptance criteria:
-- [ ] F8 disposition addresses each listed failure area.
-- [ ] Approved cases define expected MCN status evidence.
-
-## 14. Approvals
+| R4 | Failure-path or SSA proposals expand beyond confirmed scope. | F7/F8 could be misrepresented as GA coverage. | Require an explicit owner decision and feature-specific Jira story evidence. |
+## 13. Approvals
 
 Publication (commit/push/PR) required requester confirmation, and confirmation was received for this revision. Final MCO feature-owner and QE review remains required for merge; this plan does not create or change a PR.
-## 15. External Dependencies / Unresolved Items
+## 14. External Dependencies / Unresolved Items
 
 This section contains only external dependencies after chat.
 
