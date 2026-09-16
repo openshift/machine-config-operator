@@ -68,7 +68,7 @@ MCO owns the MCN/MCP reporting implementation and its extended Ginkgo coverage; 
 | F4 | Existing e2e and Polarion coverage is updated for the current contract. | High | Proposed delta | Existing suite and Polarion 69187, 69197, 69205, 81831, 69755, 74644, 80333, 85901. |
 | F5 | CI/component-readiness evidence supports GA. | High | Blocked until external signal/evidence | MCO-1735 readiness records and API feature-promotion platform selection. |
 | F6 | Gate-off-to-gate-on legacy migration has an explicit decision and coverage. | Medium | Proposed | [Migration path](https://github.com/openshift/machine-config-operator/blob/main/pkg/controller/node/node_controller.go#L2174-L2304); MCO-1775/MCO-1736 disposition. |
-| F7 | Unchanged desired-image/status server-side apply behavior has an explicit decision and coverage. | Medium | Proposed | [No-unchanged-status apply path](https://github.com/openshift/machine-config-operator/blob/main/pkg/upgrademonitor/upgrade_monitor.go#L290-L342). |
+| F7 | Unchanged MCN spec/status values issue no SSA apply when the relevant fields are unchanged; when only `Spec.ConfigImage.DesiredImage` changes, the no-diff guard must not skip the apply and the resulting MCN spec must contain the new desired image. | Medium | Proposed | [Spec generation and no-diff guard](https://github.com/openshift/machine-config-operator/blob/main/pkg/upgrademonitor/upgrade_monitor.go#L489-L541); [status/config-image path](https://github.com/openshift/machine-config-operator/blob/main/pkg/upgrademonitor/upgrade_monitor.go#L290-L342); [unit-test baseline](https://github.com/openshift/machine-config-operator/blob/main/pkg/upgrademonitor/upgrade_monitor_test.go#L43-L108) covers unchanged no-diff and `ConfigVersion.Desired` change; the desired-image-only case is not currently covered. |
 | F8 | Image-pull, file-application, and OS-application failure reporting has an explicit decision and coverage. | Medium | Proposed | [MCN status assertions](https://github.com/openshift/machine-config-operator/blob/main/test/extended/machineconfignode.go#L211-L415). |
 | F9 | Existing standard-update behavior remains unchanged while status reporting is exercised. | High | Implemented baseline | [Non-image transition case](https://github.com/openshift/machine-config-operator/blob/main/test/extended/image_mode_status_reporting.go#L77-L91). |
 | F10 | Feature-gate and non-image compatibility remains intact. | High | Implemented baseline | [Gate handling](https://github.com/openshift/machine-config-operator/blob/main/pkg/upgrademonitor/upgrade_monitor.go#L135-L178); [image/non-image cases](https://github.com/openshift/machine-config-operator/blob/main/test/extended/image_mode_status_reporting.go#L61-L91). |
@@ -164,12 +164,12 @@ Acceptance criteria:
 - [ ] F6 has an owner disposition and, if approved, a concrete test location.
 - [ ] Unapproved migration behavior is not counted as GA evidence.
 
-#### Q4: Decide unchanged-status SSA coverage for F7
+#### Q4: Cover F7 MCN spec/status SSA no-op and desired-image-only update
 
-Description: Record whether unchanged desired-image/status apply behavior needs a targeted regression case.
+Description: Add targeted F7 regression coverage for no SSA apply when the relevant MCN spec/status fields are unchanged, and for a `Spec.ConfigImage.DesiredImage`-only change that must not be skipped by the no-diff guard.
 Acceptance criteria:
-- [ ] F7 has an owner disposition and observable expected behavior.
-- [ ] The implementation guard alone is not represented as executed coverage.
+- [ ] When the relevant MCN spec/status fields are unchanged, no SSA apply is issued.
+- [ ] When only `Spec.ConfigImage.DesiredImage` changes, SSA apply is issued rather than skipped and the resulting MCN spec contains the new desired image.
 
 #### Q5: Decide failure-path coverage for F8
 
