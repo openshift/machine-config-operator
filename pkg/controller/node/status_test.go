@@ -926,6 +926,69 @@ func TestCalculateStatus(t *testing.T) {
 				})
 			},
 		},
+		{
+			// See https://redhat.atlassian.net/browse/MCO-2572 for expected behavior for updated
+			// and not ready nodes.
+			name: "all nodes updated, 1 node not ready",
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
+				helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+				helpers.NewNodeWithReady("node-2", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			},
+			currentConfig: machineConfigV1,
+			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+				assertPoolStatus(t, status, expectedPoolStatus{
+					machineCount:            new(int32(3)),
+					updatedMachineCount:     new(int32(3)),
+					readyMachineCount:       new(int32(2)),
+					unavailableMachineCount: new(int32(1)),
+					degradedMachineCount:    new(int32(0)),
+					updated:                 corev1.ConditionTrue,
+					updating:                corev1.ConditionFalse,
+					degraded:                corev1.ConditionFalse,
+				})
+			},
+		},
+		{
+			name: "1 node not ready and not updated, 1 node updated",
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReady("node-0", machineConfigV0, machineConfigV0, corev1.ConditionFalse),
+				helpers.NewNodeWithReady("node-1", machineConfigV1, machineConfigV1, corev1.ConditionTrue),
+			},
+			currentConfig: machineConfigV1,
+			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+				assertPoolStatus(t, status, expectedPoolStatus{
+					machineCount:            new(int32(2)),
+					updatedMachineCount:     new(int32(1)),
+					readyMachineCount:       new(int32(1)),
+					unavailableMachineCount: new(int32(1)),
+					degradedMachineCount:    new(int32(0)),
+					updated:                 corev1.ConditionFalse,
+					updating:                corev1.ConditionTrue,
+					degraded:                corev1.ConditionFalse,
+				})
+			},
+		},
+		{
+			name: "1 node not ready but updated, 1 node degraded",
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReady("node-0", machineConfigV1, machineConfigV1, corev1.ConditionFalse),
+				newNodeWithReadyAndDaemonState("node-1", machineConfigV0, machineConfigV1, corev1.ConditionTrue, daemonconsts.MachineConfigDaemonStateDegraded),
+			},
+			currentConfig: machineConfigV1,
+			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+				assertPoolStatus(t, status, expectedPoolStatus{
+					machineCount:            new(int32(2)),
+					updatedMachineCount:     new(int32(1)),
+					readyMachineCount:       new(int32(0)),
+					unavailableMachineCount: new(int32(1)),
+					degradedMachineCount:    new(int32(1)),
+					updated:                 corev1.ConditionFalse,
+					updating:                corev1.ConditionTrue,
+					degraded:                corev1.ConditionTrue,
+				})
+			},
+		},
 	}
 	for idx, test := range tests {
 		idx := idx
@@ -1549,6 +1612,34 @@ func TestCalculateStatusWithImageModeReporting(t *testing.T) {
 					updated:              corev1.ConditionFalse,
 					updating:             corev1.ConditionTrue,
 					degraded:             corev1.ConditionFalse,
+				})
+			},
+		}, {
+			// See https://redhat.atlassian.net/browse/MCO-2572 for expected behavior for updated
+			// and not ready nodes.
+			name: "all nodes updated (via MCN), 1 node not ready — pool should be Updated",
+			nodes: []*corev1.Node{
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionFalse),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+			},
+			mcns: []*mcfgv1.MachineConfigNode{
+				helpers.NewMachineConfigNode("node-0", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+				helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+				helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+			},
+			currentConfig: machineConfigV1,
+			overrideMosb:  true,
+			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).WithDigestedImagePushspec("registry.host.com/org/repo@sha256:12345").WithSuccessfulBuild().MachineOSBuild(),
+			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+				assertPoolStatus(t, status, expectedPoolStatus{
+					machineCount:            new(int32(3)),
+					updatedMachineCount:     new(int32(3)),
+					readyMachineCount:       new(int32(2)),
+					unavailableMachineCount: new(int32(1)),
+					updated:                 corev1.ConditionTrue,
+					updating:                corev1.ConditionFalse,
+					degraded:                corev1.ConditionFalse,
 				})
 			},
 		},
