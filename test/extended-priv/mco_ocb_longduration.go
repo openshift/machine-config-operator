@@ -1,6 +1,7 @@
 package extended
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -688,11 +689,18 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			moscName = mcp.GetName()
 		)
 
+		exutil.By("Enable default ClusterImagePolicy")
+		restoreCVO := enableDefaultClusterImagePolicy(oc.AsAdmin(), mcp)
+		defer restoreCVO()
+
 		exutil.By("Configure OCB functionality using external registry (Quay)")
 		mosc, err := CreateMachineOSConfigUsingExternalRegistry(oc.AsAdmin(), moscName, mcp.GetName(), nil, false, false)
 		defer DisableOCL(mosc)
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
 		logger.Infof("OK!\n")
+
+		exutil.By("Verify build Job mounts sigstore-registries.yaml")
+		verifyBuildJobMountsSigstoreRegistries(mosc)
 
 		ValidateNewNodesBootDirectlyWithOCLImage(oc.AsAdmin(), mosc, mcp)
 	})
@@ -804,6 +812,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating a new custom pool: %s", infraMcpName)
 		logger.Infof("OK!\n")
 
+		exutil.By("Enable default ClusterImagePolicy")
+		restoreCVO := enableDefaultClusterImagePolicy(oc.AsAdmin(), infraMcp)
+		defer restoreCVO()
+
 		exutil.By("Create MOSC for custom MCP using external registry")
 		moscName := infraMcp.GetName()
 		mosc, err := CreateMachineOSConfigUsingExternalRegistry(oc.AsAdmin(), moscName, infraMcp.GetName(),
@@ -811,6 +823,9 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		defer DisableOCL(mosc)
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating MOSC")
 		logger.Infof("OK!\n")
+
+		exutil.By("Verify build Job mounts sigstore-registries.yaml")
+		verifyBuildJobMountsSigstoreRegistries(mosc)
 
 		exutil.By("Validate initial MOSC and wait for MOSB-1 to succeed")
 		ValidateSuccessfulMOSC(mosc, nil)
@@ -1140,4 +1155,93 @@ func verifyMOSBRebuildAfterImageDeletion(mcp *MachineConfigPool, mosc *MachineOS
 	o.Expect(currentMosb.GetName()).To(o.Or(o.Equal(mosb1.GetName()), o.Equal(mosb2.GetName())),
 		"Current MOSB should be either MOSB-1 or MOSB-2, no new MOSB-3 should be triggered")
 	logger.Infof("OK!\n")
+}
+
+// enableDefaultClusterImagePolicy enables the default ClusterImagePolicy on nightly/CI builds
+// by removing only the ClusterImagePolicy override from the CVO, leaving other overrides intact.
+// On GA builds where the CIP already exists, this is a no-op.
+// Returns a cleanup function that restores the removed override.
+func enableDefaultClusterImagePolicy(oc *exutil.CLI, mcps ...*MachineConfigPool) func() {
+	cip := NewResource(oc, "clusterimagepolicy", "openshift")
+
+	if cip.Exists() {
+		logger.Infof("ClusterImagePolicy 'openshift' already exists, no CVO patching needed")
+		return func() {}
+	}
+
+	cv := NewResource(oc, "clusterversion", "version")
+	overridesJSON, err := cv.Get(`{.spec.overrides}`)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting CVO overrides")
+
+	if overridesJSON == "" || !strings.Contains(overridesJSON, "ClusterImagePolicy") {
+		logger.Infof("No ClusterImagePolicy override found in CVO, skipping")
+		return func() {}
+	}
+
+	var overrides []map[string]interface{}
+	o.Expect(json.Unmarshal([]byte(overridesJSON), &overrides)).NotTo(o.HaveOccurred(),
+		"Error parsing CVO overrides JSON")
+
+	cipIndex := -1
+	for i, override := range overrides {
+		if override["kind"] == "ClusterImagePolicy" && override["name"] == "openshift" {
+			cipIndex = i
+			break
+		}
+	}
+
+	if cipIndex == -1 {
+		logger.Infof("No ClusterImagePolicy 'openshift' override found in CVO, skipping")
+		return func() {}
+	}
+
+	logger.Infof("Removing ClusterImagePolicy override at index %d from CVO", cipIndex)
+	err = cv.Patch("json", fmt.Sprintf(`[{"op": "remove", "path": "/spec/overrides/%d"}]`, cipIndex))
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error removing ClusterImagePolicy override from CVO")
+
+	o.Eventually(cip, "5m", "20s").Should(Exist(),
+		"ClusterImagePolicy 'openshift' should be created after removing CVO override")
+	logger.Infof("ClusterImagePolicy 'openshift' created successfully")
+
+	for _, mcp := range mcps {
+		logger.Infof("Waiting for MCP %s to complete after CIP update", mcp)
+		mcp.waitForComplete()
+	}
+	logger.Infof("OK!\n")
+
+	cipOverrideJSON, marshalErr := json.Marshal(overrides[cipIndex])
+	o.Expect(marshalErr).NotTo(o.HaveOccurred(), "Error marshalling CIP override for cleanup")
+
+	return func() {
+		logger.Infof("Restoring ClusterImagePolicy CVO override")
+		err := cv.Patch("json", fmt.Sprintf(`[{"op": "add", "path": "/spec/overrides/-", "value": %s}]`, string(cipOverrideJSON)))
+		if err != nil {
+			logger.Errorf("Error restoring ClusterImagePolicy CVO override: %v", err)
+		}
+	}
+}
+
+// verifyBuildJobMountsSigstoreRegistries waits for the MOSB build to start and then verifies
+// that the build Job's pod spec includes a volume mount for sigstore-registries.yaml.
+// This must be called BEFORE the build succeeds, because both the Job and its ConfigMaps
+// are cleaned up as ephemeral objects once the build transitions to Succeeded.
+func verifyBuildJobMountsSigstoreRegistries(mosc *MachineOSConfig) {
+	o.Eventually(mosc.GetCurrentMachineOSBuild, "5m", "20s").Should(Exist(),
+		"No MOSB was created for the MOSC")
+	mosb, err := mosc.GetCurrentMachineOSBuild()
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting current MOSB")
+
+	o.Eventually(mosb, "5m", "20s").Should(HaveConditionField("Building", "status", TrueString),
+		"MachineOSBuild didn't report that the build has begun")
+
+	o.Eventually(mosb.GetJob, "2m", "20s").Should(Exist(),
+		"No build Job was created for MOSB %s", mosb.GetName())
+	job, err := mosb.GetJob()
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting build Job for MOSB %s", mosb.GetName())
+
+	volumeMounts, err := job.Get(`{.spec.template.spec.containers[*].volumeMounts[*].mountPath}`)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting volume mounts from build Job")
+	o.Expect(volumeMounts).To(o.ContainSubstring("sigstore-registries.yaml"),
+		"Build Job should mount sigstore-registries.yaml when ClusterImagePolicy is active")
+	logger.Infof("OK! Build Job %s mounts sigstore-registries.yaml\n", job.GetName())
 }
