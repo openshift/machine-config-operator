@@ -116,7 +116,7 @@ const (
 	RHCOSDefaultSSHKeyPath = CoreUserSSHPath + "/authorized_keys.d/ignition"
 
 	// CRIOServiceName is used to specify reloads and restarts of the CRI-O service
-	CRIOServiceName = "crio"
+	CRIOServiceName = "crio.service"
 
 	// DaemonReloadCommand is used to specify reloads and restarts of the systemd manager configuration
 	DaemonReloadCommand = "daemon-reload"
