@@ -1227,7 +1227,10 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig(machineConfigFile string) er
 	// This currently will incur a double reboot; see https://github.com/coreos/rpm-ostree/issues/4018
 	// If skopeo is < 1.22.2 on a multi-arch image, run as a privileged container which has updated skopeo.
 	// See https://redhat.atlassian.net/browse/OCPBUGS-83826 and https://redhat.atlassian.net/browse/OCPBUGS-81187
-	if !newEnough || !skopeoSupportsMultiArchSigstore(mc.Spec.OSImageURL) {
+	// If rpm-ostree is < 2023.5, it has a skopeo-proxy sandboxing bug when rebasing
+	// from containers-storage or registry sources; run as a privileged container instead.
+	// See https://issues.redhat.com/browse/OCPBUGS-86768 (temporary until 4.13/4.14 boot images are unsupported).
+	if !newEnough || !skopeoSupportsMultiArchSigstore(mc.Spec.OSImageURL) || !dn.NodeUpdaterClient.SupportsContainerStorageRebase() {
 		logSystem("rpm-ostree or skopeo is not new enough for new-format image; forcing an update via container and queuing immediate reboot")
 		if err := dn.InplaceUpdateViaNewContainer(mc.Spec.OSImageURL); err != nil {
 			return err
