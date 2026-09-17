@@ -147,8 +147,14 @@ func buildSpec(dependencies *BootstrapDependencies, imgs *ctrlcommon.Images, rel
 		templatectrl.DockerRegistryKey:      imgs.DockerRegistry,
 	}
 
+	ignitionHost, err := getIgnitionHost(&dependencies.Infrastructure.Status)
+	if err != nil {
+		return nil, err
+	}
+	mcsURL := fmt.Sprintf("https://%s", ignitionHost)
+
 	config := getRenderConfig("", dependencies.KubeAPIServerServingCA, spec,
-		&imgs.RenderConfigImages, dependencies.Infrastructure, nil, nil, "2")
+		&imgs.RenderConfigImages, dependencies.Infrastructure, nil, nil, mcsURL, "2")
 	return config, nil
 }
 

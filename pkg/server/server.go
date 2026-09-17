@@ -12,6 +12,7 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	"github.com/vincent-petithory/dataurl"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -45,6 +46,7 @@ type appenderFunc func(*ign3types.Config, *mcfgv1.MachineConfig) error
 // machine config server implementations.
 type Server interface {
 	GetConfig(poolRequest) (*runtime.RawExtension, error)
+	GetKubeClient() kubernetes.Interface
 }
 
 // appendersBuilder builds a slice of appenderFunc with guaranteed ordering.
@@ -70,9 +72,9 @@ func newAppendersBuilder(version *semver.Version, kubeconfigFn kubeconfigFunc, c
 }
 
 // WithNodeAnnotations adds the node annotations appender with the specified config and image.
-func (ab *appendersBuilder) WithNodeAnnotations(currMachineConfig, image string) *appendersBuilder {
+func (ab *appendersBuilder) WithNodeAnnotations(currMachineConfig, image, mcsURL string) *appendersBuilder {
 	ab.customAppenders = append(ab.customAppenders, func(cfg *ign3types.Config, mc *mcfgv1.MachineConfig) error {
-		return appendNodeAnnotations(cfg, currMachineConfig, image, mc)
+		return appendNodeAnnotations(cfg, currMachineConfig, image, mcsURL, mc)
 	})
 	return ab
 }
@@ -196,8 +198,8 @@ func appendKubeConfig(conf *ign3types.Config, f kubeconfigFunc) error {
 	return nil
 }
 
-func appendNodeAnnotations(conf *ign3types.Config, currConf, image string, mc *mcfgv1.MachineConfig) error {
-	anno, err := getNodeAnnotation(currConf, image, mc)
+func appendNodeAnnotations(conf *ign3types.Config, currConf, image, mcsURL string, mc *mcfgv1.MachineConfig) error {
+	anno, err := getNodeAnnotation(currConf, image, mcsURL, mc)
 	if err != nil {
 		return err
 	}
@@ -208,12 +210,16 @@ func appendNodeAnnotations(conf *ign3types.Config, currConf, image string, mc *m
 	return nil
 }
 
-func getNodeAnnotation(conf, image string, mc *mcfgv1.MachineConfig) (string, error) {
+func getNodeAnnotation(conf, image, mcsURL string, mc *mcfgv1.MachineConfig) (string, error) {
 	nodeAnnotations := map[string]string{
 		daemonconsts.CurrentMachineConfigAnnotationKey:     conf,
 		daemonconsts.DesiredMachineConfigAnnotationKey:     conf,
 		daemonconsts.FirstPivotMachineConfigAnnotationKey:  conf,
 		daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateDone,
+	}
+
+	if mcsURL != "" {
+		nodeAnnotations[daemonconsts.MachineConfigServerURLAnnotationKey] = mcsURL
 	}
 
 	// Determine which image to use:
