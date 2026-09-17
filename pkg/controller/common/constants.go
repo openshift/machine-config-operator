@@ -198,4 +198,6 @@ const (
 	MachineConfigOperatorImagesConfigMapName string = "machine-config-operator-images"
 	// The name of the machine-config-osimageurl ConfigMap.
 	MachineConfigOSImageURLConfigMapName string = "machine-config-osimageurl"
+	// The name of the ConfigMap used to persist the image inspection cache across Pod restarts.
+	InspectionCacheConfigMapName string = "machine-config-image-inspection-cache"
 )
