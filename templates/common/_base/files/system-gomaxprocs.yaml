@@ -1,0 +1,5 @@
+mode: 0644
+path: "/etc/system-gomaxprocs.env"
+contents:
+  inline: |
+    SYSTEM_GOMAXPROCS_BEHAVIOR=
