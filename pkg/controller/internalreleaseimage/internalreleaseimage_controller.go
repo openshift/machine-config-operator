@@ -51,6 +51,7 @@ var updateBackoff = wait.Backoff{
 // Controller defines the InternalReleaseImage controller.
 type Controller struct {
 	client        mcfgclientset.Interface
+	kubeClient    clientset.Interface
 	eventRecorder record.EventRecorder
 
 	syncHandler func(mcp string) error
@@ -101,6 +102,7 @@ func New(
 
 	ctrl := &Controller{
 		client:        mcfgClient,
+		kubeClient:    kubeClient,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-internalreleaseimagecontroller"})),
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
@@ -311,8 +313,9 @@ func (ctrl *Controller) processMachineConfigEvent(obj interface{}, logMsg string
 
 func (ctrl *Controller) addSecret(obj interface{}, _ bool) {
 	secret := obj.(*corev1.Secret)
-	if secret.Name != ctrlcommon.InternalReleaseImageTLSSecretName &&
-		secret.Name != ctrlcommon.InternalReleaseImageAuthSecretName {
+	if secret.Namespace != ctrlcommon.MCONamespace ||
+		(secret.Name != ctrlcommon.InternalReleaseImageTLSSecretName &&
+			secret.Name != ctrlcommon.InternalReleaseImageAuthSecretName) {
 		return
 	}
 	klog.V(4).Infof("Secret %s added, re-queuing IRI sync", secret.Name)
@@ -322,8 +325,9 @@ func (ctrl *Controller) addSecret(obj interface{}, _ bool) {
 func (ctrl *Controller) updateSecret(_, cur interface{}) {
 	secret := cur.(*corev1.Secret)
 
-	if secret.Name != ctrlcommon.InternalReleaseImageTLSSecretName &&
-		secret.Name != ctrlcommon.InternalReleaseImageAuthSecretName {
+	if secret.Namespace != ctrlcommon.MCONamespace ||
+		(secret.Name != ctrlcommon.InternalReleaseImageTLSSecretName &&
+			secret.Name != ctrlcommon.InternalReleaseImageAuthSecretName) {
 		return
 	}
 
@@ -533,6 +537,14 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) (syncErr error) {
 	iriRegistryCredentialsSecret, err := ctrl.secretLister.Secrets(ctrlcommon.MCONamespace).Get(ctrlcommon.InternalReleaseImageAuthSecretName)
 	if err != nil {
 		return fmt.Errorf("could not get Secret %s: %w", ctrlcommon.InternalReleaseImageAuthSecretName, err)
+	}
+
+	// Ensure the htpasswd field is in sync with the password field. If the
+	// password was rotated, this generates a new bcrypt hash and updates the
+	// secret before re-rendering the MachineConfig.
+	iriRegistryCredentialsSecret, err = reconcileHtpasswd(ctrl.kubeClient, iriRegistryCredentialsSecret)
+	if err != nil {
+		return fmt.Errorf("failed to reconcile IRI registry htpasswd: %w", err)
 	}
 
 	for _, role := range SupportedRoles {
