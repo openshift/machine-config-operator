@@ -34,6 +34,10 @@ spec:
         volumeMounts:
         - mountPath: /var/cache/mcc
           name: image-inspection-cache
+        - mountPath: /tmp
+          name: mcc-tmp
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         {{if .ControllerConfig.Proxy}}
         env:
@@ -83,6 +87,8 @@ spec:
         - name: image-inspection-cache
           emptyDir:
             sizeLimit: 128Mi
+        - name: mcc-tmp
+          emptyDir: {}
         - name: proxy-tls
           secret:
             secretName: mcc-proxy-tls
