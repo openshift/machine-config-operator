@@ -145,6 +145,16 @@ type Daemon struct {
 	// rebootQueued is true when the node is waiting for graceful shutdown
 	rebootQueued bool
 
+	// apiUnreachableFailures counts consecutive sync failures caused by the API
+	// server being unreachable on single-node (SNO) clusters (for example while
+	// the only node reboots during an upgrade). It drives an exponential backoff
+	// that avoids re-reporting the node's degraded state -- and emitting a
+	// MachineConfigNode failure event -- on every sync attempt during an outage.
+	// On multi-node (HA) clusters the backoff is not applied. It is only
+	// accessed from the single sync worker goroutine, so it needs no additional
+	// locking.
+	apiUnreachableFailures int
+
 	currentConfigPath string
 	currentImagePath  string
 
@@ -616,6 +626,7 @@ func (dn *Daemon) processNextWorkItem() bool {
 func (dn *Daemon) handleErr(err error, key string) {
 	if err == nil {
 		dn.queue.Forget(key)
+		dn.apiUnreachableFailures = 0
 		return
 	}
 
@@ -625,8 +636,35 @@ func (dn *Daemon) handleErr(err error, key string) {
 		klog.Fatalf("Error handling node sync: %v", err)
 	}
 
-	if err := dn.updateErrorState(err); err != nil {
-		klog.Errorf("Could not update annotation: %v", err)
+	// On single-node (SNO) clusters whose only node reboots during an upgrade,
+	// the API server goes down and every sync attempt fails with "connection
+	// refused" until it comes back. Marking the node Degraded on each of those
+	// attempts emits a MachineConfigNode failure event every time and, over a
+	// multi-minute outage, trips the pathological-events monitor. On SNO we
+	// apply an exponential backoff so we only re-report on the 1st, 2nd, 4th,
+	// 8th, ... consecutive connection failure. On multi-node (HA) clusters
+	// API-unreachable errors are uncommon and actionable, so we always report
+	// them immediately.
+	if isSingleNodeTopology(dn.getControlPlaneTopology()) {
+		if dn.shouldReportSyncError(err) {
+			if err := dn.updateErrorState(err); err != nil {
+				klog.Errorf("Could not update annotation: %v", err)
+			}
+		} else {
+			klog.V(2).Infof("API server appears unreachable (%d consecutive failures); backing off before re-reporting node degraded state", dn.apiUnreachableFailures)
+		}
+	} else {
+		// On multi-node (HA) clusters we report every sync error immediately, so
+		// clear any API-unreachable backoff state that may have been accumulated
+		// while this node was single-node. The node controller can update the
+		// control-plane topology annotation during the daemon's lifetime; without
+		// this reset a SNO -> HA -> SNO transition could resume the exponential
+		// backoff from a stale failure count and wrongly suppress or delay
+		// legitimate degraded-state reports.
+		dn.apiUnreachableFailures = 0
+		if err := dn.updateErrorState(err); err != nil {
+			klog.Errorf("Could not update annotation: %v", err)
+		}
 	}
 	// This is at V(2) since the updateErrorState() call above ends up logging too
 	klog.V(2).Infof("Error syncing node %v (retries %d): %v", key, dn.queue.NumRequeues(key), err)
