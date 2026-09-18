@@ -1,6 +1,8 @@
 package upgrademonitor
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	apicfgv1 "github.com/openshift/api/config/v1"
@@ -9,6 +11,7 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -66,7 +69,7 @@ func TestSpecNoDiffGuardSkipsApply(t *testing.T) {
 		},
 	}
 
-	if err := GenerateAndApplyMachineConfigNodeSpec(newFakeHandler(), poolName, node, fakeClient); err != nil {
+	if err := GenerateAndApplyMachineConfigNodeSpec(context.Background(), newFakeHandler(), poolName, node, fakeClient); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -100,12 +103,98 @@ func TestSpecNoDiffGuardAllowsApplyOnChange(t *testing.T) {
 		},
 	}
 
-	if err := GenerateAndApplyMachineConfigNodeSpec(newFakeHandler(), poolName, node, fakeClient); err != nil {
+	if err := GenerateAndApplyMachineConfigNodeSpec(context.Background(), newFakeHandler(), poolName, node, fakeClient); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	if n := countSSAActions(fakeClient.Actions(), ""); n != 1 {
 		t.Errorf("expected 1 SSA Apply action when spec changed, got %d", n)
+	}
+}
+
+func TestSpecGetErrorIsPropagated(t *testing.T) {
+	const nodeName = "worker-1"
+	fakeClient := fake.NewSimpleClientset()
+	fakeClient.PrependReactor("get", "machineconfignodes", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, apierrors.NewServiceUnavailable("temporarily unavailable")
+	})
+	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: nodeName}}
+
+	err := GenerateAndApplyMachineConfigNodeSpec(context.Background(), newFakeHandler(), "worker", node, fakeClient)
+	if !apierrors.IsServiceUnavailable(err) {
+		t.Fatalf("expected service unavailable error, got %v", err)
+	}
+	if actions := fakeClient.Actions(); len(actions) != 1 || !actions[0].Matches("get", "machineconfignodes") {
+		t.Fatalf("expected only the failed get action, got %v", actions)
+	}
+}
+
+func TestSpecCreatesMachineConfigNodeWhenMissing(t *testing.T) {
+	const nodeName = "worker-1"
+	fakeClient := fake.NewSimpleClientset()
+	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: nodeName}}
+
+	if err := GenerateAndApplyMachineConfigNodeSpec(context.Background(), newFakeHandler(), "worker", node, fakeClient); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	created, err := fakeClient.MachineconfigurationV1().MachineConfigNodes().Get(context.Background(), nodeName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("getting created MachineConfigNode: %v", err)
+	}
+	if created.Spec.Node.Name != nodeName || created.Spec.Pool.Name != "worker" {
+		t.Fatalf("unexpected created MachineConfigNode spec: %#v", created.Spec)
+	}
+}
+
+func TestMachineConfigNodeOperationsStopOnCanceledContext(t *testing.T) {
+	const nodeName = "worker-1"
+	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: nodeName}}
+	tests := []struct {
+		name string
+		run  func(context.Context, *fake.Clientset) error
+	}{
+		{
+			name: "status",
+			run: func(ctx context.Context, client *fake.Clientset) error {
+				return GenerateAndApplyMachineConfigNodesWithContext(
+					ctx,
+					&Condition{State: mcfgv1.MachineConfigNodeUpdated, Reason: "Updated", Message: "Node updated"},
+					nil,
+					metav1.ConditionTrue,
+					metav1.ConditionFalse,
+					node,
+					client,
+					newFakeHandler(),
+					"worker",
+				)
+			},
+		},
+		{
+			name: "spec",
+			run: func(ctx context.Context, client *fake.Clientset) error {
+				return GenerateAndApplyMachineConfigNodeSpec(ctx, newFakeHandler(), "worker", node, client)
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client := fake.NewSimpleClientset()
+			ctx, cancel := context.WithCancel(context.Background())
+			client.PrependReactor("get", "machineconfignodes", func(action k8stesting.Action) (bool, runtime.Object, error) {
+				cancel()
+				return false, nil, nil
+			})
+
+			err := test.run(ctx, client)
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("expected context cancellation, got %v", err)
+			}
+			actions := client.Actions()
+			if len(actions) != 1 || !actions[0].Matches("get", "machineconfignodes") {
+				t.Fatalf("expected cancellation after the initial get with no subsequent MachineConfigNode API actions, got %v", actions)
+			}
+		})
 	}
 }
 
