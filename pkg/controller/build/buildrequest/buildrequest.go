@@ -730,6 +730,11 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 	}
 
 	boolTrue := true
+
+	digestCMSecurityContext := &corev1.SecurityContext{
+		ReadOnlyRootFilesystem: &boolTrue,
+	}
+
 	volumes := []corev1.Volume{
 		{
 			// Provides the rendered Containerfile.
@@ -901,7 +906,7 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 					Image:                    br.opts.Images.MachineConfigOperator,
 					Env:                      env,
 					ImagePullPolicy:          corev1.PullAlways,
-					SecurityContext:          securityContext,
+					SecurityContext:          digestCMSecurityContext,
 					TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 					VolumeMounts:             volumeMounts,
 				},

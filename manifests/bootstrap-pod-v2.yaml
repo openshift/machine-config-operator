@@ -22,7 +22,7 @@ spec:
         memory: 200Mi
     securityContext:
       privileged: true
-      readOnlyRootFilesystem: false
+      readOnlyRootFilesystem: true
     terminationMessagePolicy: FallbackToLogsOnError
     {{if .ControllerConfig.Proxy}}
     env:
@@ -66,7 +66,7 @@ spec:
       mountPropagation: HostToContainer
     securityContext:
       privileged: true
-      readOnlyRootFilesystem: false
+      readOnlyRootFilesystem: true
   hostNetwork: true
   tolerations:
     - key: node-role.kubernetes.io/master
