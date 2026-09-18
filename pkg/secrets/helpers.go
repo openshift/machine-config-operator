@@ -1,9 +1,14 @@
 package secrets
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/klog/v2"
 )
 
 // NormalizeDockerConfigJSONSecret reads in a RegistrySecret and converts it
@@ -78,4 +83,109 @@ func getSecretTypeMap() map[corev1.SecretType]string {
 		corev1.SecretTypeDockerConfigJson: corev1.DockerConfigJsonKey,
 		corev1.SecretTypeDockercfg:        corev1.DockerConfigKey,
 	}
+}
+
+// Wraps imageRegistrySecretImpl and implements the Unmarshaller interface for
+// better control over unmarshalling.
+type dockerConfigJSONDecoder struct {
+	imageRegistrySecretImpl
+}
+
+// errNotDockerConfigJSON is returned when the input doesn't contain
+// DockerConfigJSON-specific keys, indicating a legacy DockerConfig format.
+var errNotDockerConfigJSON = errors.New("not DockerConfigJSON format")
+
+// Custom unmarshal method that supports both old-style and new-style
+// DockerConfig unmarshalling.
+func (d *dockerConfigJSONDecoder) UnmarshalJSON(in []byte) error {
+	// Check if we have a nil or zero-length payload.
+	if in == nil || len(in) == 0 {
+		return fmt.Errorf("empty dockerconfig bytes")
+	}
+
+	// Check if the input is just the JSON null literal
+	if bytes.TrimSpace(in) != nil && string(bytes.TrimSpace(in)) == "null" {
+		return fmt.Errorf("dockerconfig bytes contain JSON null")
+	}
+
+	if bytes.Equal(in, []byte(strings.TrimSpace(`{}`))) {
+		d.cfg = newDockerConfigJSON()
+		return nil
+	}
+
+	// Try to decode as DockerConfigJSON
+	err := d.decodeDockerConfigJSON(in)
+	if err == nil {
+		return nil
+	}
+
+	// If it's not DockerConfigJSON format, try legacy DockerConfig format
+	if errors.Is(err, errNotDockerConfigJSON) {
+		if err := d.decodeDockerConfig(in); err != nil {
+			return fmt.Errorf("decoding DockerConfig / DockerConfigJSON: %w", err)
+		}
+		return nil
+	}
+
+	// Error indicates malformed DockerConfigJSON, don't fall back
+	return err
+}
+
+// Strictly decodes bytes into a DockerConfig object.
+func (d *dockerConfigJSONDecoder) decodeDockerConfig(in []byte) error {
+	dc := DockerConfig{}
+	if err := strictJSONDecode(in, &dc); err != nil {
+		return fmt.Errorf("could not decode DockerConfig: %w", err)
+	}
+
+	d.cfg.Auths = dc
+	d.isLegacyStyle = true
+	return nil
+}
+
+// Strictly decodes JSON bytes into a DockerConfigJSON object.
+func (d *dockerConfigJSONDecoder) decodeDockerConfigJSON(in []byte) error {
+	// Private version of the DockerConfigJSON struct with CredHelpers and CredsStore fields.
+	// This prevents unknown field errors from occurring if these fields are present.
+	// However, these fields will be ignored. Strict decoding is necessary because we need
+	// to distinguish between the DockerConfigJSON and DockerConfig schemas.
+	type withCredHelpers struct {
+		DockerConfigJSON
+		CredHelpers json.RawMessage `json:"credHelpers"`
+		CredsStore  json.RawMessage `json:"credsStore"`
+	}
+
+	dcJSON := withCredHelpers{}
+	err := strictJSONDecode(in, &dcJSON)
+
+	// If strict decode succeeded, we have DockerConfigJSON format
+	if err == nil {
+		if len(dcJSON.CredHelpers) != 0 {
+			klog.Warning("Found credHelpers in DockerConfigJSON, ignoring")
+		}
+		if len(dcJSON.CredsStore) != 0 {
+			klog.Warning("Found credsStore in DockerConfigJSON, ignoring")
+		}
+		d.isLegacyStyle = false
+		d.cfg.Auths = dcJSON.Auths
+		return nil
+	}
+
+	// Strict decode as DockerConfigJSON failed. Check if input has DockerConfigJSON-specific
+	// keys - if so, the user intended DockerConfigJSON format but it's malformed,
+	// so we should NOT fall back to legacy format.
+	if len(dcJSON.Auths) > 0 || len(dcJSON.CredHelpers) > 0 || len(dcJSON.CredsStore) > 0 {
+		return fmt.Errorf("input has DockerConfigJSON-specific keys but failed to decode as DockerConfigJSON: %w", err)
+	}
+
+	// No DockerConfigJSON keys found, return sentinel to indicate legacy format should be tried
+	return errNotDockerConfigJSON
+}
+
+// Adds additional strictness to the unmarshalling process by disallowing
+// unknown fields.
+func strictJSONDecode(in []byte, target interface{}) error {
+	decoder := json.NewDecoder(bytes.NewReader(in))
+	decoder.DisallowUnknownFields()
+	return decoder.Decode(target)
 }

@@ -170,3 +170,21 @@ func TestMergeDockerConfigstoJSONMap(t *testing.T) {
 		})
 	}
 }
+
+// This test was heavily inspired by https://github.com/openshift/machine-config-operator/pull/5795
+func TestCredHelpers(t *testing.T) {
+	raw := `{"auths": {"foo": {"auth": "bar", "email": "baz"}}, "credHelpers": {}}`
+	outBytes, err := ConvertSecretTodockercfg([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assert.JSONEq(t, `{"foo": {"auth": "bar", "email": "baz"}}`, string(outBytes))
+
+	outBytes, _, err = ConvertSecretToDockerconfigJSON([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assert.JSONEq(t, `{"auths": {"foo": {"auth": "bar", "email": "baz"}}}`, string(outBytes))
+}
