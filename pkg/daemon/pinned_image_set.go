@@ -298,6 +298,10 @@ func (p *PinnedImageSetManager) syncMachineConfigPool(ctx context.Context, pool 
 	for _, ref := range pool.Spec.PinnedImageSets {
 		imageSet, err := p.imageSetLister.Get(ref.Name)
 		if err != nil {
+			if apierrors.IsNotFound(err) {
+				klog.Warningf("PinnedImageSet %q not found, skipping", ref.Name)
+				continue
+			}
 			return fmt.Errorf("failed to get PinnedImageSet %q: %w", ref.Name, err)
 		}
 		klog.Infof("Reconciling pinned image set: %s: generation: %d", ref.Name, imageSet.GetGeneration())
