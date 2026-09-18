@@ -62,7 +62,6 @@ func TestSyncNetworkPolicies_StaticPoliciesCreated(t *testing.T) {
 
 	assert.Contains(t, names, "default-deny", "expected default-deny policy")
 	assert.Contains(t, names, "allow-all-egress", "expected allow-all-egress policy")
-	assert.Contains(t, names, "allow-machine-config-operator", "expected allow-machine-config-operator policy")
 	assert.Contains(t, names, "allow-machine-config-controller", "expected allow-machine-config-controller policy")
 	assert.Contains(t, names, "allow-machine-os-builder", "expected allow-machine-os-builder policy")
 }
@@ -119,7 +118,6 @@ func TestSyncNetworkPolicies_AllowPolicySpecs(t *testing.T) {
 		labelVal    string
 		metricsPort int32
 	}{
-		{"allow-machine-config-operator", "k8s-app", "machine-config-operator", 9001},
 		{"allow-machine-config-controller", "k8s-app", "machine-config-controller", 9001},
 		{"allow-machine-os-builder", "k8s-app", "machine-os-builder", 9001},
 	}
