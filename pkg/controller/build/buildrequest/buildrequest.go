@@ -731,10 +731,6 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 
 	boolTrue := true
 
-	digestCMSecurityContext := &corev1.SecurityContext{
-		ReadOnlyRootFilesystem: &boolTrue,
-	}
-
 	volumes := []corev1.Volume{
 		{
 			// Provides the rendered Containerfile.
@@ -901,12 +897,14 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 					// a ConfigMap from the digestfile created by Buildah. This approach
 					// allows us to avoid parsing log files and also avoids the need for
 					// an oc / kubectl binary to be present.
-					Name:                     "create-digest-configmap",
-					Command:                  append(command, digestCMScript),
-					Image:                    br.opts.Images.MachineConfigOperator,
-					Env:                      env,
-					ImagePullPolicy:          corev1.PullAlways,
-					SecurityContext:          digestCMSecurityContext,
+					Name:            "create-digest-configmap",
+					Command:         append(command, digestCMScript),
+					Image:           br.opts.Images.MachineConfigOperator,
+					Env:             env,
+					ImagePullPolicy: corev1.PullAlways,
+					SecurityContext: &corev1.SecurityContext{
+						ReadOnlyRootFilesystem: &boolTrue,
+					},
 					TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 					VolumeMounts:             volumeMounts,
 				},
