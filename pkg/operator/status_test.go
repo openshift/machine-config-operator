@@ -20,7 +20,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 
 	configv1 "github.com/openshift/api/config/v1"
-	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	opv1 "github.com/openshift/api/operator/v1"
 	fakeconfigclientset "github.com/openshift/client-go/config/clientset/versioned/fake"
@@ -642,6 +641,12 @@ func TestOperatorSyncStatus(t *testing.T) {
 			},
 		}
 
+		mcopIndexer := cache.NewIndexer(
+			cache.MetaNamespaceKeyFunc,
+			cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc},
+		)
+		optr.mcopLister = mcoplistersv1.NewMachineConfigurationLister(mcopIndexer)
+
 		nodeIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
 		optr.nodeLister = corelisterv1.NewNodeLister(nodeIndexer)
 		nodeIndexer.Add(&corev1.Node{
@@ -732,6 +737,13 @@ func TestInClusterBringUpStayOnErr(t *testing.T) {
 			helpers.NewMachineConfigPool("workers", nil, helpers.WorkerSelector, "v0"),
 		},
 	}
+
+	mcopIndexer := cache.NewIndexer(
+		cache.MetaNamespaceKeyFunc,
+		cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc},
+	)
+	optr.mcopLister = mcoplistersv1.NewMachineConfigurationLister(mcopIndexer)
+
 	nodeIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
 	optr.nodeLister = corelisterv1.NewNodeLister(nodeIndexer)
 	nodeIndexer.Add(&corev1.Node{
@@ -793,7 +805,6 @@ func TestInClusterBringUpStayOnErr(t *testing.T) {
 func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 	tests := []struct {
 		name               string
-		featureGateEnabled bool
 		mcop               *opv1.MachineConfiguration
 		mcopNotFound       bool
 		mcopGetError       error
@@ -803,24 +814,14 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 		expectError        bool
 	}{
 		{
-			name:               "feature gate disabled",
-			featureGateEnabled: false,
-			mcop:               nil,
-			expectUpgradeBlock: false,
-			expectMessage:      "",
-			expectError:        false,
-		},
-		{
 			name:               "MachineConfiguration not found",
-			featureGateEnabled: true,
 			mcopNotFound:       true,
 			expectUpgradeBlock: false,
 			expectMessage:      "",
 			expectError:        false,
 		},
 		{
-			name:               "mode is None",
-			featureGateEnabled: true,
+			name: "mode is None",
 			mcop: &opv1.MachineConfiguration{
 				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
 				Status: opv1.MachineConfigurationStatus{
@@ -834,8 +835,7 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 			expectError:        false,
 		},
 		{
-			name:               "mode is unset",
-			featureGateEnabled: true,
+			name: "mode is unset",
 			mcop: &opv1.MachineConfiguration{
 				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
 				Status: opv1.MachineConfigurationStatus{
@@ -850,8 +850,7 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 		},
 		// Boot image controller readiness tests
 		{
-			name:               "boot image controller is degraded in Automatic mode",
-			featureGateEnabled: true,
+			name: "boot image controller is degraded in Automatic mode",
 			mcop: &opv1.MachineConfiguration{
 				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
 				Status: opv1.MachineConfigurationStatus{
@@ -875,8 +874,7 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 			expectError:        false,
 		},
 		{
-			name:               "boot image controller is progressing in Automatic mode",
-			featureGateEnabled: true,
+			name: "boot image controller is progressing in Automatic mode",
 			mcop: &opv1.MachineConfiguration{
 				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
 				Status: opv1.MachineConfigurationStatus{
@@ -899,8 +897,7 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 			expectError:        false,
 		},
 		{
-			name:               "boot image controller hasn't completed first pass in Automatic mode",
-			featureGateEnabled: true,
+			name: "boot image controller hasn't completed first pass in Automatic mode",
 			mcop: &opv1.MachineConfiguration{
 				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
 				Status: opv1.MachineConfigurationStatus{
@@ -919,8 +916,7 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 		},
 		// OCP version tests in automatic mode
 		{
-			name:               "mode is Automatic with OCP version within limit",
-			featureGateEnabled: true,
+			name: "mode is Automatic with OCP version within limit",
 			mcop: &opv1.MachineConfiguration{
 				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
 				Status: opv1.MachineConfigurationStatus{
@@ -943,8 +939,7 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 			expectError:        false,
 		},
 		{
-			name:               "mode is Automatic with OCP version below limit",
-			featureGateEnabled: true,
+			name: "mode is Automatic with OCP version below limit",
 			// History spans 4.12 (install) through 4.22 (current upgrade in progress),
 			// reflecting a cluster that never updated its boot images across many upgrades.
 			clusterVersion: buildClusterVersionWithMultipleHistory("4.22.0", "4.21.0", "4.20.0", "4.19.0", "4.18.0", "4.17.0", "4.16.0", "4.15.0", "4.14.0", "4.13.0", "4.12.0"),
@@ -970,8 +965,7 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 			expectError:        false,
 		},
 		{
-			name:               "mode is Automatic with OCP version below limit and no ClusterVersion",
-			featureGateEnabled: true,
+			name: "mode is Automatic with OCP version below limit and no ClusterVersion",
 			// No clusterVersion set — getCurrentOCPVersionFromClusterVersion returns "", docs URL falls back to "latest".
 			mcop: &opv1.MachineConfiguration{
 				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
@@ -996,8 +990,7 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 		},
 		// OCP version tests in manual mode
 		{
-			name:               "mode is Manual with OCP version within limit",
-			featureGateEnabled: true,
+			name: "mode is Manual with OCP version within limit",
 			mcop: &opv1.MachineConfiguration{
 				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
 				Status: opv1.MachineConfigurationStatus{
@@ -1015,8 +1008,7 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 			expectError:        false,
 		},
 		{
-			name:               "mode is Manual with OCP version below limit",
-			featureGateEnabled: true,
+			name: "mode is Manual with OCP version below limit",
 			// History spans 4.10 (install) through 4.22 (current upgrade in progress),
 			// reflecting a cluster that never updated its boot images across many upgrades.
 			clusterVersion: buildClusterVersionWithMultipleHistory("4.22.0", "4.21.0", "4.20.0", "4.19.0", "4.18.0", "4.17.0", "4.16.0", "4.15.0", "4.14.0", "4.13.0", "4.12.0", "4.11.0", "4.10.0"),
@@ -1037,8 +1029,7 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 			expectError:        false,
 		},
 		{
-			name:               "mode is Automatic with exact minimum OCP version",
-			featureGateEnabled: true,
+			name: "mode is Automatic with exact minimum OCP version",
 			mcop: &opv1.MachineConfiguration{
 				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
 				Status: opv1.MachineConfigurationStatus{
@@ -1062,8 +1053,7 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 		},
 		// RHCOS version tests in Automatic mode
 		{
-			name:               "mode is Automatic with modern RHCOS version within limit",
-			featureGateEnabled: true,
+			name: "mode is Automatic with modern RHCOS version within limit",
 			mcop: &opv1.MachineConfiguration{
 				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
 				Status: opv1.MachineConfigurationStatus{
@@ -1086,8 +1076,7 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 			expectError:        false,
 		},
 		{
-			name:               "mode is Automatic with modern RHCOS version below limit",
-			featureGateEnabled: true,
+			name: "mode is Automatic with modern RHCOS version below limit",
 			// RHEL 9 boot images were introduced in 4.13; history spans from there to 4.22.
 			clusterVersion: buildClusterVersionWithMultipleHistory("4.22.0", "4.21.0", "4.20.0", "4.19.0", "4.18.0", "4.17.0", "4.16.0", "4.15.0", "4.14.0", "4.13.0"),
 			mcop: &opv1.MachineConfiguration{
@@ -1112,8 +1101,7 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 			expectError:        false,
 		},
 		{
-			name:               "mode is Automatic with legacy RHCOS version within limit",
-			featureGateEnabled: true,
+			name: "mode is Automatic with legacy RHCOS version within limit",
 			mcop: &opv1.MachineConfiguration{
 				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
 				Status: opv1.MachineConfigurationStatus{
@@ -1136,8 +1124,7 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 			expectError:        false,
 		},
 		{
-			name:               "mode is Automatic with legacy RHCOS version below limit",
-			featureGateEnabled: true,
+			name: "mode is Automatic with legacy RHCOS version below limit",
 			// Legacy RHEL 8 (411.x) boot images originate from 4.11; history spans from there to 4.22.
 			clusterVersion: buildClusterVersionWithMultipleHistory("4.22.0", "4.21.0", "4.20.0", "4.19.0", "4.18.0", "4.17.0", "4.16.0", "4.15.0", "4.14.0", "4.13.0", "4.12.0", "4.11.0"),
 			mcop: &opv1.MachineConfiguration{
@@ -1163,8 +1150,7 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 		},
 
 		{
-			name:               "mode is Automatic with exact minimum RHCOS version",
-			featureGateEnabled: true,
+			name: "mode is Automatic with exact minimum RHCOS version",
 			mcop: &opv1.MachineConfiguration{
 				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
 				Status: opv1.MachineConfigurationStatus{
@@ -1188,8 +1174,7 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 		},
 		// RHCOS version tests in manual mode
 		{
-			name:               "mode is Manual with modern RHCOS version within limit",
-			featureGateEnabled: true,
+			name: "mode is Manual with modern RHCOS version within limit",
 			mcop: &opv1.MachineConfiguration{
 				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
 				Status: opv1.MachineConfigurationStatus{
@@ -1207,8 +1192,7 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 			expectError:        false,
 		},
 		{
-			name:               "mode is Manual with modern RHCOS version below limit",
-			featureGateEnabled: true,
+			name: "mode is Manual with modern RHCOS version below limit",
 			// RHEL 9 boot images were introduced in 4.13; history spans from there to 4.22.
 			clusterVersion: buildClusterVersionWithMultipleHistory("4.22.0", "4.21.0", "4.20.0", "4.19.0", "4.18.0", "4.17.0", "4.16.0", "4.15.0", "4.14.0", "4.13.0"),
 			mcop: &opv1.MachineConfiguration{
@@ -1228,8 +1212,7 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 			expectError:        false,
 		},
 		{
-			name:               "mode is Manual with legacy RHCOS version within limit",
-			featureGateEnabled: true,
+			name: "mode is Manual with legacy RHCOS version within limit",
 			mcop: &opv1.MachineConfiguration{
 				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
 				Status: opv1.MachineConfigurationStatus{
@@ -1247,8 +1230,7 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 			expectError:        false,
 		},
 		{
-			name:               "mode is Manual with legacy RHCOS version below limit",
-			featureGateEnabled: true,
+			name: "mode is Manual with legacy RHCOS version below limit",
 			// Legacy RHEL 8 (411.x) boot images originate from 4.11; history spans from there to 4.22.
 			clusterVersion: buildClusterVersionWithMultipleHistory("4.22.0", "4.21.0", "4.20.0", "4.19.0", "4.18.0", "4.17.0", "4.16.0", "4.15.0", "4.14.0", "4.13.0", "4.12.0", "4.11.0"),
 			mcop: &opv1.MachineConfiguration{
@@ -1268,8 +1250,7 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 			expectError:        false,
 		},
 		{
-			name:               "mode is manual with exact minimum RHCOS version",
-			featureGateEnabled: true,
+			name: "mode is manual with exact minimum RHCOS version",
 			mcop: &opv1.MachineConfiguration{
 				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
 				Status: opv1.MachineConfigurationStatus{
@@ -1292,9 +1273,6 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// Set up feature gate handler
 			enabledFeatures := []configv1.FeatureGateName{}
-			if tc.featureGateEnabled {
-				enabledFeatures = append(enabledFeatures, features.FeatureGateBootImageSkewEnforcement)
-			}
 			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler(enabledFeatures, []configv1.FeatureGateName{})
 
 			// Set up mcopLister
