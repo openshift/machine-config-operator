@@ -158,9 +158,28 @@ func New(
 }
 
 func (ctrl *Controller) filterSecret(secret *corev1.Secret) {
-	if secret.Name == "pull-secret" || secret.Name == ctrlcommon.InternalReleaseImageAuthSecretName {
+	// Check if this is the IRI auth secret
+	if secret.Namespace == ctrlcommon.MCONamespace && secret.Name == ctrlcommon.InternalReleaseImageAuthSecretName {
 		ctrl.enqueueController()
-		klog.Infof("Re-syncing ControllerConfig due to secret %s change", secret.Name)
+		klog.Infof("Re-syncing ControllerConfig due to secret %s/%s change", secret.Namespace, secret.Name)
+		return
+	}
+
+	// Check if this is the configured global pull secret
+	cfg, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
+	if err != nil {
+		// If we can't get the ControllerConfig, we can't determine if this secret
+		// is the pull secret, so skip the check. The controller will eventually
+		// sync when the ControllerConfig is available.
+		klog.V(4).Infof("Could not get ControllerConfig to check secret %s/%s: %v", secret.Namespace, secret.Name, err)
+		return
+	}
+
+	if cfg.Spec.PullSecret != nil &&
+		secret.Namespace == cfg.Spec.PullSecret.Namespace &&
+		secret.Name == cfg.Spec.PullSecret.Name {
+		ctrl.enqueueController()
+		klog.Infof("Re-syncing ControllerConfig due to secret %s/%s change", secret.Namespace, secret.Name)
 	}
 }
 
@@ -170,7 +189,7 @@ func (ctrl *Controller) addSecret(obj interface{}) {
 		ctrl.deleteSecret(secret)
 		return
 	}
-	klog.V(4).Infof("Add Secret %v", secret)
+	klog.V(4).Infof("Add Secret %s/%s", secret.Namespace, secret.Name)
 	ctrl.filterSecret(secret)
 }
 
@@ -178,7 +197,7 @@ func (ctrl *Controller) updateSecret(old, newObj interface{}) {
 	oldSecret := old.(*corev1.Secret)
 	newSecret := newObj.(*corev1.Secret)
 
-	klog.V(4).Infof("Update Secret %v", newSecret)
+	klog.V(4).Infof("Update Secret %s/%s", newSecret.Namespace, newSecret.Name)
 
 	// Only trigger resync if the secret data actually changed
 	// This prevents log spam from informer resyncs and watch reconnections
@@ -189,7 +208,7 @@ func (ctrl *Controller) updateSecret(old, newObj interface{}) {
 
 func (ctrl *Controller) deleteSecret(obj interface{}) {
 	secret, ok := obj.(*corev1.Secret)
-	klog.V(4).Infof("Delete Secret %v", secret)
+	klog.V(4).Infof("Delete Secret %s/%s", secret.Namespace, secret.Name)
 
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)

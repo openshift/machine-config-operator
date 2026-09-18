@@ -290,6 +290,7 @@ func New(
 		apiserverInformer.Informer(),
 		moscInformer.Informer(),
 		networkPolicyInformer.Informer(),
+		iriInformer.Informer(),
 	}
 	for _, i := range informers {
 		i.AddEventHandler(optr.eventHandler())
