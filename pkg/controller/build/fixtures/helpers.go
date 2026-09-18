@@ -26,13 +26,17 @@ type JobStatus struct {
 	UncountedTerminatedPodsFailed string
 }
 
-// Sets the provided job status on a given job under test. If successful, it will also insert the digestfile ConfigMap.
+// Sets the provided job status on a given job under test. For successful Jobs,
+// create the digestfile ConfigMap before updating the Job status because the
+// Job watcher reads the ConfigMap as soon as it observes success.
 func SetJobStatus(ctx context.Context, t *testing.T, kubeclient clientset.Interface, mosb *mcfgv1.MachineOSBuild, jobStatus JobStatus) {
-	require.NoError(t, setJobStatusFields(ctx, kubeclient, mosb, jobStatus))
-
 	if jobStatus.Succeeded == 1 {
 		require.NoError(t, createDigestfileConfigMap(ctx, kubeclient, mosb))
-	} else {
+	}
+
+	require.NoError(t, setJobStatusFields(ctx, kubeclient, mosb, jobStatus))
+
+	if jobStatus.Succeeded != 1 {
 		require.NoError(t, deleteDigestfileConfigMap(ctx, kubeclient, mosb))
 	}
 }
