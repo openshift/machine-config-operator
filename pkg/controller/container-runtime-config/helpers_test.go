@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -1570,6 +1571,10 @@ func TestValidateStorePath(t *testing.T) {
 			path: "/mnt/nfs-images/cache_v1.0",
 		},
 		{
+			name: "double dots within filename",
+			path: "/var/lib/foo..bar",
+		},
+		{
 			name:    "empty path",
 			path:    "",
 			wantErr: true,
@@ -1598,6 +1603,35 @@ func TestValidateStorePath(t *testing.T) {
 			path:    "/var//lib/store",
 			wantErr: true,
 			errMsg:  "must not contain consecutive forward slashes",
+		},
+		{
+			name:    "dot-dot traversal",
+			path:    "/var/lib/../../etc",
+			wantErr: true,
+			errMsg:  "must not contain '..' components",
+		},
+		{
+			name:    "dot-dot at end",
+			path:    "/mnt/store/..",
+			wantErr: true,
+			errMsg:  "must not contain '..' components",
+		},
+		{
+			name:    "path with colon",
+			path:    "/var/lib/store:ref",
+			wantErr: true,
+			errMsg:  "must be an absolute path",
+		},
+		{
+			name:    "path at max length",
+			path:    mcfgv1.StorePath("/" + strings.Repeat("a", 255)),
+			wantErr: false,
+		},
+		{
+			name:    "path exceeds max length",
+			path:    mcfgv1.StorePath("/" + strings.Repeat("a", 256)),
+			wantErr: true,
+			errMsg:  "must not exceed 256 characters",
 		},
 	}
 
@@ -1671,6 +1705,70 @@ func TestValidateUserContainerRuntimeConfigAdditionalStores(t *testing.T) {
 					ContainerRuntimeConfig: &mcfgv1.ContainerRuntimeConfiguration{
 						AdditionalArtifactStores: []mcfgv1.AdditionalArtifactStore{
 							{Path: ""},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "cross-store duplicate layer and image",
+			cfg: &mcfgv1.ContainerRuntimeConfig{
+				Spec: mcfgv1.ContainerRuntimeConfigSpec{
+					ContainerRuntimeConfig: &mcfgv1.ContainerRuntimeConfiguration{
+						AdditionalLayerStores: []mcfgv1.AdditionalLayerStore{
+							{Path: "/mnt/shared"},
+						},
+						AdditionalImageStores: []mcfgv1.AdditionalImageStore{
+							{Path: "/mnt/shared"},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "cross-store duplicate layer and artifact",
+			cfg: &mcfgv1.ContainerRuntimeConfig{
+				Spec: mcfgv1.ContainerRuntimeConfigSpec{
+					ContainerRuntimeConfig: &mcfgv1.ContainerRuntimeConfiguration{
+						AdditionalLayerStores: []mcfgv1.AdditionalLayerStore{
+							{Path: "/mnt/shared"},
+						},
+						AdditionalArtifactStores: []mcfgv1.AdditionalArtifactStore{
+							{Path: "/mnt/shared"},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "cross-store duplicate image and artifact",
+			cfg: &mcfgv1.ContainerRuntimeConfig{
+				Spec: mcfgv1.ContainerRuntimeConfigSpec{
+					ContainerRuntimeConfig: &mcfgv1.ContainerRuntimeConfiguration{
+						AdditionalImageStores: []mcfgv1.AdditionalImageStore{
+							{Path: "/mnt/shared"},
+						},
+						AdditionalArtifactStores: []mcfgv1.AdditionalArtifactStore{
+							{Path: "/mnt/shared"},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "cross-store duplicate with trailing slash normalization",
+			cfg: &mcfgv1.ContainerRuntimeConfig{
+				Spec: mcfgv1.ContainerRuntimeConfigSpec{
+					ContainerRuntimeConfig: &mcfgv1.ContainerRuntimeConfiguration{
+						AdditionalLayerStores: []mcfgv1.AdditionalLayerStore{
+							{Path: "/mnt/shared"},
+						},
+						AdditionalImageStores: []mcfgv1.AdditionalImageStore{
+							{Path: "/mnt/shared/"},
 						},
 					},
 				},
