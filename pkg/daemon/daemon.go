@@ -1986,10 +1986,18 @@ func removeIgnitionArtifacts() error {
 	return nil
 }
 
-// PersistNetworkInterfaces runs if the host is RHEL8 or RHEL9, which can happen
-// when scaling up older bootimages and targeting newer RHEL versions.  In this case,
-// we may want to pin NIC interface names that reference static IP addresses.
+// PersistNetworkInterfaces persists NIC device names across RHEL version transitions.
+// NIC device names can change between RHEL major versions (e.g., RHEL8→9, RHEL9→10),
+// which can break static network configurations. This function ensures consistent
+// NIC naming by persisting interface names for all RHEL-like systems.
+//
+// Rather than treating each RHEL version transition as a special case requiring
+// code updates, we now persist NIC names unconditionally for all RHEL-like systems.
+// This simplifies the logic and eliminates the need to update this code for future
+// RHEL releases (RHEL11, RHEL12, etc.).
+//
 // More information:
+//   - RHEL 8→9 transition: https://issues.redhat.com/browse/OCPBUGS-10787
 //   - RHEL 9→10 transition: https://issues.redhat.com/browse/OCPBUGS-63593
 func PersistNetworkInterfaces(osRoot string) error {
 	hostos, err := osrelease.GetHostRunningOSFromRoot(osRoot)
@@ -1997,22 +2005,17 @@ func PersistNetworkInterfaces(osRoot string) error {
 		return fmt.Errorf("checking operating system: %w", err)
 	}
 
+	// Only handle RHEL-like systems; Fedora-level updates are expected to
+	// handle this automatically via host updates.
+	if !hostos.IsLikeRHEL() {
+		return nil
+	}
+
 	nmstateBinary := "/usr/bin/nmstatectl"
 	// If we're already chrooted into the host / in the MCD case, then we
 	// need to find the binary in our saved copy of /usr/bin from the host.
 	if osRoot == "/" {
 		nmstateBinary = filepath.Join(originalContainerBin, "nmstatectl")
-	}
-
-	// For the moment, we only look at RHEL-like systems...this logic isn't
-	// yet aiming to try to handle Fedora-level updates.  For that, most
-	// likely this NIC pinning should actually be driven automatically by
-	// host updates.  If you change this, you'll need to change the conditions
-	// below too.
-	persisting := hostos.IsEL9()
-	cleanup := hostos.IsEL10()
-	if !(persisting || cleanup) {
-		return nil
 	}
 
 	tmpKargs, err := os.CreateTemp("", "nmstate-kargs")
@@ -2023,30 +2026,15 @@ func PersistNetworkInterfaces(osRoot string) error {
 
 	cmd := exec.Command(nmstateBinary, "persist-nic-names", "--root", osRoot, "--kargs-out", tmpKargs.Name())
 
-	switch {
-	case persisting:
-		if hostos.IsEL9() {
-			klog.Info("Persisting NIC names for RHEL9 host system (RHEL9→10 transition)")
-		}
-	case cleanup:
-		klog.Info("Cleaning up NIC name persistence for RHEL10 host system")
-		cmd.Args = append(cmd.Args, "--cleanup")
-	default:
-		return fmt.Errorf("unexpected host OS %s", hostos.ToPrometheusLabel())
-	}
+	// Log which RHEL version we're persisting for (informational only)
+	majorVersion := hostos.BaseVersionMajor()
+	klog.Infof("Persisting NIC names for RHEL%d host system", majorVersion)
 
 	// nmstate always logs to stderr, so we need to capture/forward that too
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	klog.Infof("Running: %s", strings.Join(cmd.Args, " "))
 	if err := cmd.Run(); err != nil {
-		if cleanup {
-			// nmstatectl clean up will fail if stamp file not
-			// found or `ROOT/etc/systemd/network` folder not
-			// found, these error is OK to ignore
-			klog.Infof("Cleanup error ignored: %v", err)
-			return nil
-		}
 		return fmt.Errorf("failed to run nmstatectl: %w", err)
 	}
 
@@ -2060,18 +2048,10 @@ func PersistNetworkInterfaces(osRoot string) error {
 	}
 	kargs := strings.Split(string(kargsBuf), " ")
 
+	// Append the kernel arguments to persist NIC names
 	var rpmOstreeArgs []string
-	switch {
-	case persisting:
-		for _, karg := range kargs {
-			rpmOstreeArgs = append(rpmOstreeArgs, "--append", karg)
-		}
-	case cleanup:
-		for _, karg := range kargs {
-			rpmOstreeArgs = append(rpmOstreeArgs, "--remove", karg)
-		}
-	default:
-		return fmt.Errorf("unexpected host OS %s", hostos.ToPrometheusLabel())
+	for _, karg := range kargs {
+		rpmOstreeArgs = append(rpmOstreeArgs, "--append", karg)
 	}
 
 	if osRoot != "/" {
