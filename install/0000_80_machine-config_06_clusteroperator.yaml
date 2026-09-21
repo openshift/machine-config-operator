@@ -27,6 +27,16 @@ status:
       resource: kubeletconfigs
     - group: machineconfiguration.openshift.io
       resource: containerruntimeconfigs
+    - group: machineconfiguration.openshift.io
+      resource: machineconfignodes
+    - group: machineconfiguration.openshift.io
+      resource: pinnedimagesets
+    - group: machineconfiguration.openshift.io
+      resource: machineosconfigs
+    - group: machineconfiguration.openshift.io
+      resource: machineosbuilds
+    - group: machineconfiguration.openshift.io
+      resource: osimagestreams
     - group: operator.openshift.io
       resource: machineconfigurations
     - group: ""
