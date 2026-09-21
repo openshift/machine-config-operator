@@ -916,6 +916,7 @@ spec:
                                 description: |-
                                   failureDomains contains the definition of region, zone and the vCenter topology.
                                   If this is omitted failure domains (regions and zones) will not be used.
+                                  Each failure domain's server must match the server field of an entry in the vcenters list.
                                 items:
                                   description: VSpherePlatformFailureDomainSpec holds
                                     the region and zone failure domain and the vCenter
@@ -956,8 +957,11 @@ spec:
                                       - type
                                       type: object
                                     server:
-                                      description: server is the fully-qualified domain
-                                        name or the IP address of the vCenter server.
+                                      description: |-
+                                        server is the fully-qualified domain name or the IP address of the vCenter server.
+                                        This must match the server field of an entry in the vcenters list.
+                                        The match is case-sensitive; the value must be specified exactly as it appears in the vcenters entry.
+                                        The value must be between 1 and 255 characters long.
                                       maxLength: 255
                                       minLength: 1
                                       type: string
@@ -1256,10 +1260,11 @@ spec:
                               vcenters:
                                 description: |-
                                   vcenters holds the connection details for services to communicate with vCenter.
-                                  Currently, only a single vCenter is supported, but in tech preview 3 vCenters are supported.
+                                  Up to 3 vCenters are supported.
                                   Once the cluster has been installed, you are unable to change the current number of defined
-                                  vCenters except in the case where the cluster has been upgraded from a version of OpenShift
-                                  where the vsphere platform spec was not present.  You may make modifications to the existing
+                                  vCenters except when 1.) the cluster has been upgraded from a version of OpenShift
+                                  where the vsphere platform spec was not present or 2.) in TechPreview you are able to add and
+                                  remove vCenters but may not remove all vCenters.  You may make modifications to the existing
                                   vCenters that are defined in the vcenters list in order to match with any added or modified
                                   failure domains.
                                 items:
@@ -1300,14 +1305,13 @@ spec:
                                   - server
                                   type: object
                                 maxItems: 3
-                                minItems: 0
+                                minItems: 1
                                 type: array
                                 x-kubernetes-list-type: atomic
                                 x-kubernetes-validations:
-                                - message: vcenters cannot be added or removed once
-                                    set
-                                  rule: 'size(self) != size(oldSelf) ? size(oldSelf)
-                                    == 0 && size(self) < 2 : true'
+                                - message: vcenters must have unique server values
+                                  rule: self.all(x, self.exists_one(y, y.server ==
+                                    x.server))
                             type: object
                             x-kubernetes-validations:
                             - message: apiServerInternalIPs list is required once
@@ -1315,16 +1319,12 @@ spec:
                               rule: '!has(oldSelf.apiServerInternalIPs) || has(self.apiServerInternalIPs)'
                             - message: ingressIPs list is required once set
                               rule: '!has(oldSelf.ingressIPs) || has(self.ingressIPs)'
-                            - message: vcenters can have at most 1 item when configured
-                                post-install
-                              rule: '!has(oldSelf.vcenters) && has(self.vcenters)
-                                ? size(self.vcenters) < 2 : true'
                         type: object
                         x-kubernetes-validations:
                         - message: vcenters can have at most 1 item when configured
                             post-install
-                          rule: '!has(oldSelf.vsphere) && has(self.vsphere) ? size(self.vsphere.vcenters)
-                            < 2 : true'
+                          rule: '!has(oldSelf.vsphere) && has(self.vsphere) ? (has(self.vsphere.vcenters)
+                            && size(self.vsphere.vcenters) < 2) : true'
                     type: object
                   status:
                     description: status holds observed values from the cluster. They
@@ -2121,6 +2121,28 @@ spec:
                                     be configured during installation
                                   rule: self.all(x, x in oldSelf) && oldSelf.all(x,
                                     x in self)
+                              universeDomain:
+                                description: |-
+                                  universeDomain is the GCP universe domain for the cluster, detected from
+                                  the installer credentials. Components with their own GCP credentials should
+                                  read the universe domain from those credentials, as they are the authoritative
+                                  source. This field is provided for components that do not have GCP credentials
+                                  and for general observability.
+
+                                  When omitted, standard public GCP (googleapis.com) is assumed.
+
+                                  universeDomain is an optional field that, when specified, must be non-empty and at most
+                                  253 characters. It must be a valid DNS subdomain: containing only lowercase alphanumeric
+                                  characters, '-' or '.', and starting and ending with an alphanumeric character.
+                                maxLength: 253
+                                minLength: 1
+                                type: string
+                                x-kubernetes-validations:
+                                - message: 'universeDomain must be a valid DNS subdomain:
+                                    contain no more than 253 characters, contain only
+                                    lowercase alphanumeric characters, ''-'' or ''.'',
+                                    and start and end with an alphanumeric character'
+                                  rule: '!format.dns1123Subdomain().validate(self).hasValue()'
                             type: object
                             x-kubernetes-validations:
                             - message: resourceLabels may only be configured during
