@@ -20,7 +20,9 @@ func (s *SecretMerger) Insert(val any) error {
 		return err
 	}
 
-	for key, val := range is.DockerConfigJSON().Auths {
+	dcj := is.DockerConfigJSON()
+
+	for key, val := range dcj.Auths {
 		s.cfg.Auths[key] = val
 	}
 
