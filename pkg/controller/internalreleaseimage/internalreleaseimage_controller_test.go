@@ -286,7 +286,7 @@ func TestReconcileHtpasswd(t *testing.T) {
 			},
 		}
 		f := newFixture(t, []runtime.Object{secret})
-		_, err := reconcileHtpasswd(f.k8sClient, secret)
+		_, err := reconcileHtpasswd(context.Background(), f.k8sClient, secret)
 		assert.Error(t, err)
 	})
 
@@ -304,7 +304,7 @@ func TestReconcileHtpasswd(t *testing.T) {
 			}
 
 			f := newFixture(t, []runtime.Object{secret})
-			result, err := reconcileHtpasswd(f.k8sClient, secret)
+			result, err := reconcileHtpasswd(context.Background(), f.k8sClient, secret)
 			assert.NoError(t, err)
 
 			if tc.expectUpdate {
@@ -483,7 +483,7 @@ func (f *fixture) run(key string) {
 }
 
 func (f *fixture) runController(key string, expectError bool) {
-	err := f.controller.syncHandler(key)
+	err := f.controller.syncHandler(context.Background(), key)
 	if !expectError && err != nil {
 		f.t.Errorf("error syncing internalreleaseimage: %v", err)
 	} else if expectError && err == nil {
