@@ -61,6 +61,11 @@ func (optr *Operator) syncRelatedObjects(co *configv1.ClusterOperator) {
 		{Group: "machineconfiguration.openshift.io", Resource: "kubeletconfigs"},
 		{Group: "machineconfiguration.openshift.io", Resource: "containerruntimeconfigs"},
 		{Group: "machineconfiguration.openshift.io", Resource: "machineconfigs"},
+		{Group: "machineconfiguration.openshift.io", Resource: "machineconfignodes"},
+		{Group: "machineconfiguration.openshift.io", Resource: "pinnedimagesets"},
+		{Group: "machineconfiguration.openshift.io", Resource: "machineosconfigs"},
+		{Group: "machineconfiguration.openshift.io", Resource: "machineosbuilds"},
+		{Group: "machineconfiguration.openshift.io", Resource: "osimagestreams"},
 		{Group: "operator.openshift.io", Resource: "machineconfigurations"},
 		// gathered because the machineconfigs created container bootstrap credentials and node configuration that gets reflected via the API and is needed for debugging
 		{Group: "", Resource: "nodes"},
@@ -491,6 +496,11 @@ func (optr *Operator) initializeClusterOperator() (*configv1.ClusterOperator, er
 		{Group: "machineconfiguration.openshift.io", Resource: "machineconfigpools", Name: "worker"},
 		{Group: "machineconfiguration.openshift.io", Resource: "controllerconfigs", Name: "machine-config-controller"},
 		{Group: "operator.openshift.io", Resource: "machineconfigurations"},
+		{Group: "machineconfiguration.openshift.io", Resource: "machineconfignodes"},
+		{Group: "machineconfiguration.openshift.io", Resource: "pinnedimagesets"},
+		{Group: "machineconfiguration.openshift.io", Resource: "machineosconfigs"},
+		{Group: "machineconfiguration.openshift.io", Resource: "machineosbuilds"},
+		{Group: "machineconfiguration.openshift.io", Resource: "osimagestreams"},
 		// ClusterRoles and ClusterRoleBindings are cluster-scoped and not implicitly gathered via namespace inspection.
 		{Group: "rbac.authorization.k8s.io", Resource: "clusterroles", Name: "machine-config-controller"},
 		{Group: "rbac.authorization.k8s.io", Resource: "clusterroles", Name: "machine-config-controller-events"},
