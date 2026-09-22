@@ -46,7 +46,11 @@ func HtpasswdMatchesPassword(htpasswd, username, password string) bool {
 // trigger for single-phase credential rotation: the updated htpasswd causes the
 // MachineConfig to be re-rendered, which MCDs roll out to nodes. Brief registry
 // downtime during the rollout is accepted.
-func reconcileHtpasswd(kubeClient clientset.Interface, authSecret *corev1.Secret) (*corev1.Secret, error) {
+//
+// The get/update retry loop runs under a htpasswdUpdateTimeout-bounded child of
+// ctx, so it is capped even when the caller's context has no deadline and it
+// still unblocks promptly when the controller shuts down.
+func reconcileHtpasswd(ctx context.Context, kubeClient clientset.Interface, authSecret *corev1.Secret) (*corev1.Secret, error) {
 	password := string(authSecret.Data["password"])
 	if password == "" {
 		return nil, fmt.Errorf("IRI auth secret %s/%s missing or empty \"password\" field", authSecret.Namespace, authSecret.Name)
@@ -59,7 +63,7 @@ func reconcileHtpasswd(kubeClient clientset.Interface, authSecret *corev1.Secret
 
 	klog.V(4).Infof("IRI auth secret htpasswd is out of sync with password, regenerating")
 
-	ctx, cancel := context.WithTimeout(context.Background(), htpasswdUpdateTimeout)
+	ctx, cancel := context.WithTimeout(ctx, htpasswdUpdateTimeout)
 	defer cancel()
 
 	var result *corev1.Secret

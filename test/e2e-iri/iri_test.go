@@ -34,6 +34,14 @@ import (
 
 const iriRootCAPath = "/rootfs" + constants.IRIRootCAPath
 
+// curl timeouts for on-node registry probes. Without these curl can hang on a
+// wedged or mid-rollout registry for far longer than the poll interval, so a
+// polling caller would keep waiting well past its own context deadline.
+const (
+	curlConnectTimeout = "5"
+	curlMaxTime        = "30"
+)
+
 func TestIRIResource_Available(t *testing.T) {
 	skipIfNoBaremetal(t)
 
@@ -395,7 +403,9 @@ func getIRIReleasePullSpec(t *testing.T, cs *framework.ClientSet, node corev1.No
 	var tag string
 	err := wait.PollUntilContextTimeout(context.Background(), 10*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
 		body := strings.TrimSpace(helpers.ExecCmdOnNode(t, cs, node,
-			"curl", "-s", "--cacert", iriRootCAPath, "-H", "Authorization: "+authHeader, url))
+			"curl", "-s",
+			"--connect-timeout", curlConnectTimeout, "--max-time", curlMaxTime,
+			"--cacert", iriRootCAPath, "-H", "Authorization: "+authHeader, url))
 		var tagsResp struct {
 			Tags []string `json:"tags"`
 		}
@@ -447,7 +457,14 @@ func verifyCanPullFromIRI(t *testing.T, cs *framework.ClientSet, ctx context.Con
 		if _, err := cs.Pods(ctrlcommon.MCONamespace).Create(ctx, newPod(name), v1.CreateOptions{}); err != nil {
 			return false, fmt.Errorf("failed to create pull-test pod: %w", err)
 		}
-		defer cs.Pods(ctrlcommon.MCONamespace).Delete(context.Background(), name, v1.DeleteOptions{})
+		defer func() {
+			// Best-effort cleanup: a leaked pull-test pod must not fail the
+			// test, but a delete failure other than NotFound is worth seeing
+			// in the test output.
+			if err := cs.Pods(ctrlcommon.MCONamespace).Delete(context.Background(), name, v1.DeleteOptions{}); err != nil && !k8serrors.IsNotFound(err) {
+				t.Logf("failed to delete pull-test pod %s/%s: %v", ctrlcommon.MCONamespace, name, err)
+			}
+		}()
 
 		err := waitForPodImagePull(ctx, cs, name)
 		if errors.Is(err, errImagePullBackOff) {
@@ -467,9 +484,10 @@ var errImagePullBackOff = errors.New("ImagePullBackOff")
 
 // waitForPodImagePull polls the given pod until its image is pulled (pod
 // reaches Running/Succeeded/Failed) or returns errImagePullBackOff if CRI-O
-// rejects the pull due to a cached auth failure.
+// rejects the pull due to a cached auth failure. It polls for as long as the
+// supplied context allows, so the caller owns the deadline.
 func waitForPodImagePull(ctx context.Context, cs *framework.ClientSet, podName string) error {
-	return wait.PollUntilContextTimeout(ctx, 3*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+	return wait.PollUntilContextCancel(ctx, 3*time.Second, true, func(ctx context.Context) (bool, error) {
 		p, err := cs.Pods(ctrlcommon.MCONamespace).Get(ctx, podName, v1.GetOptions{})
 		if err != nil {
 			return false, err
