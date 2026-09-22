@@ -422,29 +422,33 @@ func testMachineConfigurationStatusUpdate(mc *MachineConfiguration, patchConfig 
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting original status from %s", mc)
 	logger.Infof("Original status: %s", originalStatus)
 
-	// Capture the status for each resource before applying the config
-	resourcesBefore, err := mc.GetAllManagedBootImagesResources()
-	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting all resources from status")
+	// Capture the status for each manager (resource+apiGroup) before applying the config
+	managersBefore, err := mc.GetAllManagedBootImagesManagers()
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting all managers from status")
 
-	originalResourceStatus := make(map[string]string)
-	for _, res := range resourcesBefore {
-		if res != "" {
-			status, err := mc.GetManagedBootImagesStatusForResource(res)
-			o.Expect(err).NotTo(o.HaveOccurred(), "Error getting status for resource %s", res)
-			originalResourceStatus[res] = status
-			logger.Infof("Captured original status for resource %s", res)
-		}
+	originalManagerStatus := make(map[string]string)
+	for _, mgr := range managersBefore {
+		key := mgr.MachineManagerKey()
+		status, err := mc.GetManagedBootImagesStatusForManager(mgr.Resource, mgr.APIGroup)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting status for manager %s", key)
+		originalManagerStatus[key] = status
+		logger.Infof("Captured original status for manager %s", key)
 	}
 	logger.Infof("OK!\n")
 
-	exutil.By("Extract resource and expected status config from the patch config")
+	exutil.By("Extract resource, apiGroup, and expected status config from the patch config")
 	expectedStatusConfig := gjson.Get(patchConfig, "spec.managedBootImages.machineManagers.0").String()
 	o.Expect(expectedStatusConfig).NotTo(o.BeEmpty(), "Failed to extract expected status config from patchConfig")
 
 	resource := gjson.Get(patchConfig, "spec.managedBootImages.machineManagers.0.resource").String()
 	o.Expect(resource).NotTo(o.BeEmpty(), "Failed to extract resource from patchConfig")
 
-	logger.Infof("Resource: %s", resource)
+	apiGroup := gjson.Get(patchConfig, "spec.managedBootImages.machineManagers.0.apiGroup").String()
+	o.Expect(apiGroup).NotTo(o.BeEmpty(), "Failed to extract apiGroup from patchConfig")
+
+	patchKey := resource + "/" + apiGroup
+
+	logger.Infof("Manager: %s", patchKey)
 	logger.Infof("Expected status config: %s", expectedStatusConfig)
 	logger.Infof("OK!\n")
 
@@ -452,17 +456,18 @@ func testMachineConfigurationStatusUpdate(mc *MachineConfiguration, patchConfig 
 	o.Expect(mc.Patch("merge", patchConfig)).To(o.Succeed(), "Error applying configuration to %s", mc)
 	logger.Infof("OK!\n")
 
-	exutil.By("Check that the configured resource is correctly reported in the status")
-	o.Eventually(mc.GetManagedBootImagesStatusForResource, "5m", "10s").WithArguments(resource).Should(o.MatchJSON(expectedStatusConfig),
-		"Resource %s status does not match the expected configuration. Expected: %s", resource, expectedStatusConfig)
+	exutil.By("Check that the configured manager is correctly reported in the status")
+	o.Eventually(mc.GetManagedBootImagesStatusForManager, "5m", "10s").WithArguments(resource, apiGroup).Should(o.MatchJSON(expectedStatusConfig),
+		"Manager %s status does not match the expected configuration. Expected: %s", patchKey, expectedStatusConfig)
 	logger.Infof("OK!\n")
 
 	exutil.By("Check that other managedBootImagesStatus configurations remain the same as before")
-	for res, originalStatusValue := range originalResourceStatus {
-		if res != resource {
-			o.Eventually(mc.GetManagedBootImagesStatusForResource, "5m", "10s").WithArguments(res).Should(o.MatchJSON(originalStatusValue),
-				"Resource %s status changed unexpectedly. Expected: %s", res, originalStatusValue)
-			logger.Infof("Resource %s status unchanged", res)
+	for key, originalStatusValue := range originalManagerStatus {
+		if key != patchKey {
+			parts := strings.SplitN(key, "/", 2)
+			o.Eventually(mc.GetManagedBootImagesStatusForManager, "5m", "10s").WithArguments(parts[0], parts[1]).Should(o.MatchJSON(originalStatusValue),
+				"Manager %s status changed unexpectedly. Expected: %s", key, originalStatusValue)
+			logger.Infof("Manager %s status unchanged", key)
 		}
 	}
 	logger.Infof("OK!\n")
