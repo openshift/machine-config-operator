@@ -30,7 +30,7 @@ import (
 // ControlPlaneMachineSets are singletons, but for the sake of consistency with the other
 // syncs, I chose to keep this function similar.
 // nolint:dupl // I separated these from syncMAPIMachineSets for readability
-func (ctrl *Controller) syncControlPlaneMachineSets(reason string) {
+func (ctrl *Controller) syncControlPlaneMachineSets(ctx context.Context, reason string) {
 	ctrl.cpmsStats = MachineResourceStats{}
 
 	// Check if CPMS feature gate is enabled
@@ -45,7 +45,7 @@ func (ctrl *Controller) syncControlPlaneMachineSets(reason string) {
 		klog.Errorf("Failed to get MachineConfiguration: %v", err)
 		ctrl.cpmsStats.erroredCount++
 		ctrl.cpmsStats.syncErr = fmt.Errorf("failed to get MachineConfiguration while enqueueing ControlPlaneMachineSet: %w", err)
-		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.updateConditions(ctx, reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 		return
 	}
 
@@ -54,7 +54,7 @@ func (ctrl *Controller) syncControlPlaneMachineSets(reason string) {
 		klog.Errorf("failed to create a machineset selector while enqueueing controlplanemachineset %v", err)
 		ctrl.cpmsStats.erroredCount++
 		ctrl.cpmsStats.syncErr = fmt.Errorf("failed to create a machineset selector while enqueueing ControlPlaneMachineSet %w", err)
-		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.updateConditions(ctx, reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 		return
 	}
 	if !machineManagerFound {
@@ -70,7 +70,7 @@ func (ctrl *Controller) syncControlPlaneMachineSets(reason string) {
 		klog.Errorf("failed to fetch ControlPlaneMachineSet list while enqueueing ControlPlaneMachineSet %v", err)
 		ctrl.cpmsStats.erroredCount++
 		ctrl.cpmsStats.syncErr = fmt.Errorf("failed to fetch ControlPlaneMachineSet list while enqueueing ControlPlaneMachineSet %w", err)
-		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.updateConditions(ctx, reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 		return
 	}
 
@@ -87,10 +87,10 @@ func (ctrl *Controller) syncControlPlaneMachineSets(reason string) {
 
 	// Signal start of reconciliation process, by setting progressing to true
 	var syncErrors []error
-	ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
+	ctrl.updateConditions(ctx, reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
 
 	for _, controlPlaneMachineSet := range controlPlaneMachineSets {
-		err := ctrl.syncControlPlaneMachineSet(controlPlaneMachineSet)
+		err := ctrl.syncControlPlaneMachineSet(ctx, controlPlaneMachineSet)
 		if err == nil {
 			ctrl.cpmsStats.inProgress++
 		} else {
@@ -99,14 +99,14 @@ func (ctrl *Controller) syncControlPlaneMachineSets(reason string) {
 			ctrl.cpmsStats.erroredCount++
 		}
 		// Update progressing conditions every step of the loop
-		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
+		ctrl.updateConditions(ctx, reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
 	}
 	ctrl.cpmsStats.syncErr = kubeErrs.NewAggregate(syncErrors)
-	ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
+	ctrl.updateConditions(ctx, reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 }
 
 // syncControlPlaneMachineSet will attempt to reconcile the provided ControlPlaneMachineSet
-func (ctrl *Controller) syncControlPlaneMachineSet(controlPlaneMachineSet *machinev1.ControlPlaneMachineSet) error {
+func (ctrl *Controller) syncControlPlaneMachineSet(ctx context.Context, controlPlaneMachineSet *machinev1.ControlPlaneMachineSet) error {
 
 	startTime := time.Now()
 	klog.V(4).Infof("Started syncing ControlPlaneMachineSet %q (%v)", controlPlaneMachineSet.Name, startTime)
@@ -154,7 +154,7 @@ func (ctrl *Controller) syncControlPlaneMachineSet(controlPlaneMachineSet *machi
 	}
 
 	// Check if the this ControlPlaneMachineSet requires an update
-	patchRequired, newControlPlaneMachineSet, err := checkControlPlaneMachineSet(infra, controlPlaneMachineSet, configMap, arch, ctrl.kubeClient)
+	patchRequired, newControlPlaneMachineSet, err := checkControlPlaneMachineSet(ctx, infra, controlPlaneMachineSet, configMap, arch, ctrl.kubeClient)
 	if err != nil {
 		return fmt.Errorf("failed to reconcile ControlPlaneMachineSet %s, err: %w", controlPlaneMachineSet.Name, err)
 	}
@@ -166,7 +166,7 @@ func (ctrl *Controller) syncControlPlaneMachineSet(controlPlaneMachineSet *machi
 			return fmt.Errorf("refusing to reconcile ControlPlaneMachineSet %s, hot loop detected. Please opt-out of boot image updates, adjust your machine provisioning workflow to prevent hot loops and opt back in to resume boot image updates", controlPlaneMachineSet.Name)
 		}
 		klog.Infof("Patching ControlPlaneMachineSet %s", controlPlaneMachineSet.Name)
-		return ctrl.patchControlPlaneMachineSet(controlPlaneMachineSet, newControlPlaneMachineSet)
+		return ctrl.patchControlPlaneMachineSet(ctx, controlPlaneMachineSet, newControlPlaneMachineSet)
 	}
 	klog.Infof("No patching required for ControlPlaneMachineSet %s", controlPlaneMachineSet.Name)
 	return nil
@@ -201,7 +201,7 @@ func (ctrl *Controller) checkControlPlaneMachineSetHotLoop(machineSet *machinev1
 
 // This function patches the ControlPlaneMachineSet object using the machineClient
 // Returns an error if marshsalling or patching fails.
-func (ctrl *Controller) patchControlPlaneMachineSet(oldControlPlaneMachineSet, newControlPlaneMachineSet *machinev1.ControlPlaneMachineSet) error {
+func (ctrl *Controller) patchControlPlaneMachineSet(ctx context.Context, oldControlPlaneMachineSet, newControlPlaneMachineSet *machinev1.ControlPlaneMachineSet) error {
 	oldControlPlaneMachineSetMarshal, err := json.Marshal(oldControlPlaneMachineSet)
 	if err != nil {
 		return fmt.Errorf("unable to marshal old ControlPlaneMachineSet: %w", err)
@@ -214,7 +214,7 @@ func (ctrl *Controller) patchControlPlaneMachineSet(oldControlPlaneMachineSet, n
 	if err != nil {
 		return fmt.Errorf("unable to create patch for new ControlPlaneMachineSet: %w", err)
 	}
-	_, err = ctrl.machineClient.MachineV1().ControlPlaneMachineSets(MachineAPINamespace).Patch(context.TODO(), oldControlPlaneMachineSet.Name, types.MergePatchType, patchBytes, metav1.PatchOptions{})
+	_, err = ctrl.machineClient.MachineV1().ControlPlaneMachineSets(MachineAPINamespace).Patch(ctx, oldControlPlaneMachineSet.Name, types.MergePatchType, patchBytes, metav1.PatchOptions{})
 	if err != nil {
 		return fmt.Errorf("unable to patch new ControlPlaneMachineSet: %w", err)
 	}
@@ -225,14 +225,14 @@ func (ctrl *Controller) patchControlPlaneMachineSet(oldControlPlaneMachineSet, n
 // This function calls the appropriate reconcile function based on the infra type
 // On success, it will return a bool indicating if a patch is required, and an updated
 // machineset object if any. It will return an error if any of the above steps fail.
-func checkControlPlaneMachineSet(infra *osconfigv1.Infrastructure, machineSet *machinev1.ControlPlaneMachineSet, configMap *corev1.ConfigMap, arch string, secretClient clientset.Interface) (bool, *machinev1.ControlPlaneMachineSet, error) {
+func checkControlPlaneMachineSet(ctx context.Context, infra *osconfigv1.Infrastructure, machineSet *machinev1.ControlPlaneMachineSet, configMap *corev1.ConfigMap, arch string, secretClient clientset.Interface) (bool, *machinev1.ControlPlaneMachineSet, error) {
 	switch infra.Status.PlatformStatus.Type {
 	case osconfigv1.AWSPlatformType:
-		return reconcilePlatformCPMS(machineSet, infra, configMap, arch, secretClient, reconcileAWSProviderSpec)
+		return reconcilePlatformCPMS(ctx, machineSet, infra, configMap, arch, secretClient, reconcileAWSProviderSpec)
 	case osconfigv1.AzurePlatformType:
-		return reconcilePlatformCPMS(machineSet, infra, configMap, arch, secretClient, reconcileAzureProviderSpec)
+		return reconcilePlatformCPMS(ctx, machineSet, infra, configMap, arch, secretClient, reconcileAzureProviderSpec)
 	case osconfigv1.GCPPlatformType:
-		return reconcilePlatformCPMS(machineSet, infra, configMap, arch, secretClient, reconcileGCPProviderSpec)
+		return reconcilePlatformCPMS(ctx, machineSet, infra, configMap, arch, secretClient, reconcileGCPProviderSpec)
 	// TODO: vsphere CPMS template seems to be empty in CI runs, and will need further investigation
 	default:
 		klog.Infof("Skipping controlplanemachineset %s, unsupported platform %s", machineSet.Name, infra.Status.PlatformStatus.Type)
@@ -243,12 +243,13 @@ func checkControlPlaneMachineSet(infra *osconfigv1.Infrastructure, machineSet *m
 // Generic reconcile function that handles the common pattern across all platforms
 // nolint:dupl // I separated this from reconcilePlatform for readability
 func reconcilePlatformCPMS[T any](
+	ctx context.Context,
 	cpms *machinev1.ControlPlaneMachineSet,
 	infra *osconfigv1.Infrastructure,
 	configMap *corev1.ConfigMap,
 	arch string,
 	secretClient clientset.Interface,
-	reconcileProviderSpec func(*stream.Stream, string, *osconfigv1.Infrastructure, *T, string, clientset.Interface) (bool, bool, *T, string, error),
+	reconcileProviderSpec func(context.Context, *stream.Stream, string, *osconfigv1.Infrastructure, *T, string, clientset.Interface) (bool, bool, *T, string, error),
 ) (patchRequired bool, newCPMS *machinev1.ControlPlaneMachineSet, err error) {
 	klog.Infof("Reconciling controlplanemachineset %s on %s, with arch %s", cpms.Name, string(infra.Status.PlatformStatus.Type), arch)
 
@@ -265,7 +266,7 @@ func reconcilePlatformCPMS[T any](
 	}
 
 	// Reconcile the provider spec
-	patchRequired, _, newProviderSpec, _, err := reconcileProviderSpec(streamData, arch, infra, providerSpec, cpms.Name, secretClient)
+	patchRequired, _, newProviderSpec, _, err := reconcileProviderSpec(ctx, streamData, arch, infra, providerSpec, cpms.Name, secretClient)
 	if err != nil {
 		return false, nil, err
 	}

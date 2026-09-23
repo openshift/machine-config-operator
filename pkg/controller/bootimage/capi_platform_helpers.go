@@ -16,8 +16,7 @@ import (
 )
 
 // reconcileAWSCAPIMachineInfraTemplate reconciles an AWSMachineTemplate for a CAPI MachineSet or MachineDeployment.
-func reconcileAWSCAPIMachineInfraTemplate(infra *osconfigv1.Infrastructure, resourceKind, msName string, currentTemplate *unstructured.Unstructured, configMap *corev1.ConfigMap, arch string, secretClient clientset.Interface) (bool, bool, *unstructured.Unstructured, string, error) {
-	ctx := context.TODO()
+func reconcileAWSCAPIMachineInfraTemplate(ctx context.Context, infra *osconfigv1.Infrastructure, resourceKind, msName string, currentTemplate *unstructured.Unstructured, configMap *corev1.ConfigMap, arch string, secretClient clientset.Interface) (bool, bool, *unstructured.Unstructured, string, error) {
 	klog.Infof("Reconciling CAPI %s %s on AWS with arch %s", resourceKind, msName, arch)
 
 	streamData := new(stream.Stream)
