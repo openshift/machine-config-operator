@@ -2,12 +2,18 @@ package extended
 
 import (
 	"fmt"
-	"strings"
 
 	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
+	"github.com/tidwall/gjson"
 )
+
+// MachineManagerRef identifies a machine manager by its resource type and API group
+type MachineManagerRef struct {
+	Resource string
+	APIGroup string
+}
 
 // MachineConfiguration struct is used to handle MachineConfiguration resources in OCP
 type MachineConfiguration struct {
@@ -75,26 +81,61 @@ func (mc MachineConfiguration) GetManagedBootImagesStatus() (string, error) {
 	return mc.Get(`{.status.managedBootImagesStatus}`)
 }
 
-// GetManagedBootImagesStatusForResource returns the status for a specific resource type
-func (mc MachineConfiguration) GetManagedBootImagesStatusForResource(resource string) (string, error) {
-	return mc.Get(`{.status.managedBootImagesStatus.machineManagers[?(@.resource=="` + resource + `")]}`)
+// getManagedBootImagesJSON returns the full resource JSON for gjson-based filtering
+func (mc MachineConfiguration) getManagedBootImagesJSON() (string, error) {
+	return mc.GetCleanJSON()
 }
 
-// GetManagedBootImagesModeForResource returns the selection mode for a specific resource type
-func (mc MachineConfiguration) GetManagedBootImagesModeForResource(resource string) (string, error) {
-	return mc.Get(`{.status.managedBootImagesStatus.machineManagers[?(@.resource=="` + resource + `")].selection.mode}`)
+// GetManagedBootImagesStatusForManager returns the status JSON for a machine manager matching both resource and apiGroup
+func (mc MachineConfiguration) GetManagedBootImagesStatusForManager(resource, apiGroup string) (string, error) {
+	fullJSON, err := mc.getManagedBootImagesJSON()
+	if err != nil {
+		return "", err
+	}
+	managers := gjson.Get(fullJSON, "status.managedBootImagesStatus.machineManagers")
+	for _, mgr := range managers.Array() {
+		if mgr.Get("resource").String() == resource && mgr.Get("apiGroup").String() == apiGroup {
+			return mgr.Raw, nil
+		}
+	}
+	return "", fmt.Errorf("no machine manager found for resource=%s apiGroup=%s", resource, apiGroup)
 }
 
-// GetAllManagedBootImagesResources returns all resource types configured in the status as a slice
-func (mc MachineConfiguration) GetAllManagedBootImagesResources() ([]string, error) {
-	result, err := mc.Get(`{.status.managedBootImagesStatus.machineManagers[*].resource}`)
+// GetManagedBootImagesModeForManager returns the selection mode for a machine manager matching both resource and apiGroup
+func (mc MachineConfiguration) GetManagedBootImagesModeForManager(resource, apiGroup string) (string, error) {
+	fullJSON, err := mc.getManagedBootImagesJSON()
+	if err != nil {
+		return "", err
+	}
+	managers := gjson.Get(fullJSON, "status.managedBootImagesStatus.machineManagers")
+	for _, mgr := range managers.Array() {
+		if mgr.Get("resource").String() == resource && mgr.Get("apiGroup").String() == apiGroup {
+			return mgr.Get("selection.mode").String(), nil
+		}
+	}
+	return "", fmt.Errorf("no machine manager found for resource=%s apiGroup=%s", resource, apiGroup)
+}
+
+// GetAllManagedBootImagesManagers returns all (resource, apiGroup) pairs configured in the status
+func (mc MachineConfiguration) GetAllManagedBootImagesManagers() ([]MachineManagerRef, error) {
+	fullJSON, err := mc.getManagedBootImagesJSON()
 	if err != nil {
 		return nil, err
 	}
-	if result == "" {
-		return []string{}, nil
+	managers := gjson.Get(fullJSON, "status.managedBootImagesStatus.machineManagers")
+	var refs []MachineManagerRef
+	for _, mgr := range managers.Array() {
+		refs = append(refs, MachineManagerRef{
+			Resource: mgr.Get("resource").String(),
+			APIGroup: mgr.Get("apiGroup").String(),
+		})
 	}
-	return strings.Fields(result), nil
+	return refs, nil
+}
+
+// MachineManagerKey returns a string key for use in maps
+func (r MachineManagerRef) MachineManagerKey() string {
+	return r.Resource + "/" + r.APIGroup
 }
 
 // SetManualSkew configures bootImageSkewEnforcement to Manual mode with the specified mode type and version./
