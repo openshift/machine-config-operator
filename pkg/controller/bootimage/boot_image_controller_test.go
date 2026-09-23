@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/coreos/stream-metadata-go/stream"
 	"github.com/coreos/stream-metadata-go/stream/rhcos"
@@ -14,6 +15,7 @@ import (
 	opv1 "github.com/openshift/api/operator/v1"
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	fakemcopclient "github.com/openshift/client-go/operator/clientset/versioned/fake"
+	mcoplistersv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -1031,6 +1033,7 @@ func TestReconcileAzureProviderSpec(t *testing.T) {
 			}
 
 			patchRequired, reconcileSkipped, updatedProviderSpec, _, err := reconcileAzureProviderSpec(
+				context.Background(),
 				testStreamData,
 				tt.arch,
 				infra,
@@ -1144,7 +1147,7 @@ func TestResetClusterBootImage(t *testing.T) {
 				clusterVersionLister: configlistersv1.NewClusterVersionLister(cvIndexer),
 			}
 
-			ctrl.resetClusterBootImage()
+			ctrl.resetClusterBootImage(context.Background())
 
 			updated, err := fakeMcopClient.OperatorV1().MachineConfigurations().Get(
 				context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, v1.GetOptions{})
@@ -1264,7 +1267,7 @@ func TestSyncMAPIMachineSetOSStreamLabel(t *testing.T) {
 				},
 			}
 
-			_, _, err := ctrl.syncMAPIMachineSet(ms, configMap)
+			_, _, err := ctrl.syncMAPIMachineSet(context.Background(), ms, configMap)
 			klog.Flush()
 			output := buf.String()
 
@@ -1377,7 +1380,7 @@ func TestSyncControlPlaneMachineSetOSStreamLabel(t *testing.T) {
 				},
 			}
 
-			err := ctrl.syncControlPlaneMachineSet(cpms)
+			err := ctrl.syncControlPlaneMachineSet(context.Background(), cpms)
 			klog.Flush()
 			output := buf.String()
 
@@ -1394,4 +1397,44 @@ func TestSyncControlPlaneMachineSetOSStreamLabel(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWaitForMachineConfigurationReadyCancelledContext(t *testing.T) {
+	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+	ctrl := &Controller{
+		mcopLister: mcoplistersv1.NewMachineConfigurationLister(indexer),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	start := time.Now()
+	err := ctrl.waitForMachineConfigurationReady(ctx)
+	elapsed := time.Since(start)
+
+	assert.Error(t, err, "should return an error when context is cancelled")
+	assert.Less(t, elapsed, 10*time.Second, "should return promptly on cancellation, not wait for the full 2-minute poll timeout")
+}
+
+func TestSyncHandlerReceivesContext(t *testing.T) {
+	ctrl := &Controller{
+		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
+			workqueue.DefaultTypedControllerRateLimiter[string](),
+			workqueue.TypedRateLimitingQueueConfig[string]{Name: "test"}),
+	}
+
+	var receivedCtx context.Context
+	ctrl.syncHandler = func(ctx context.Context, event string) error {
+		receivedCtx = ctx
+		return nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ctrl.queue.Add("test-event")
+	ctrl.processNextWorkItem(ctx)
+
+	require.NotNil(t, receivedCtx, "syncHandler should receive a non-nil context")
+	assert.Equal(t, ctx, receivedCtx, "syncHandler should receive the same context passed to processNextWorkItem")
 }
