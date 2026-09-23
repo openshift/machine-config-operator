@@ -1,6 +1,7 @@
 package bootimage
 
 import (
+	"context"
 	"testing"
 
 	opv1 "github.com/openshift/api/operator/v1"
@@ -129,18 +130,18 @@ func TestVSphereCredentialsSecretCorrectionClearsDegraded(t *testing.T) {
 	}
 	t.Cleanup(ctrl.queue.ShutDown)
 	syncCalled := false
-	ctrl.syncHandler = func(event string) error {
+	ctrl.syncHandler = func(ctx context.Context, event string) error {
 		syncCalled = true
 		username, password := getVSphereCredentialsForServer(correctedSecret, "vcenter.example.com")
 		require.Equal(t, "correct-user", username)
 		require.Equal(t, "correct-password", password)
-		ctrl.updateConditions(event, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.updateConditions(ctx, event, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 		return nil
 	}
 
 	ctrl.updateVSphereCredentialsSecret(oldSecret, correctedSecret)
 	require.Equal(t, 1, ctrl.queue.Len(), "credential correction must enqueue reconciliation")
-	require.True(t, ctrl.processNextWorkItem())
+	require.True(t, ctrl.processNextWorkItem(t.Context()))
 	require.True(t, syncCalled)
 
 	updated, err := ctrl.mcopClient.OperatorV1().MachineConfigurations().Get(t.Context(), ctrlcommon.MCOOperatorKnobsObjectName, metav1.GetOptions{})
