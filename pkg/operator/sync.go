@@ -2629,7 +2629,14 @@ func (optr *Operator) syncBootImageSkewEnforcementStatus(mcop *opv1.MachineConfi
 	}
 
 	// Platforms with automated boot image updates: mode follows ManagedBootImages configuration.
-	if supportsBootImageUpdates && apihelpers.HasMAPIMachineSetManagerWithMode(newMachineConfigurationStatus.ManagedBootImagesStatus.MachineManagers, opv1.MachineSets, opv1.All) {
+	// All active managers must be in All mode for skew enforcement to be Automatic.
+	allManagersAutomatic := supportsBootImageUpdates &&
+		apihelpers.HasMAPIMachineSetManagerWithMode(newMachineConfigurationStatus.ManagedBootImagesStatus.MachineManagers, opv1.MachineSets, opv1.All)
+	if allManagersAutomatic && optr.fgHandler.Enabled(features.FeatureGateManagedBootImagesAWSCAPI) {
+		allManagersAutomatic = apihelpers.HasMachineManagerWithMode(newMachineConfigurationStatus.ManagedBootImagesStatus.MachineManagers, opv1.MachineSets, opv1.ClusterAPI, opv1.All) &&
+			apihelpers.HasMachineManagerWithMode(newMachineConfigurationStatus.ManagedBootImagesStatus.MachineManagers, opv1.MachineDeployments, opv1.ClusterAPI, opv1.All)
+	}
+	if allManagersAutomatic {
 		if (newMachineConfigurationStatus.BootImageSkewEnforcementStatus.Mode != opv1.BootImageSkewEnforcementModeStatusAutomatic ||
 			mcop.Status.BootImageSkewEnforcementStatus == opv1.BootImageSkewEnforcementStatus{}) {
 			newMachineConfigurationStatus.BootImageSkewEnforcementStatus = apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion(ocpVersionAtInstall)
