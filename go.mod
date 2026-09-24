@@ -22,7 +22,7 @@ require (
 	github.com/fsnotify/fsnotify v1.6.0
 	github.com/ghodss/yaml v1.0.1-0.20190212211648-25d852aebe32
 	github.com/golangci/golangci-lint v1.53.3
-	github.com/google/go-cmp v0.5.9
+	github.com/google/go-cmp v0.6.0
 	github.com/google/renameio v0.1.0
 	github.com/imdario/mergo v0.3.13
 	github.com/opencontainers/go-digest v1.0.0
@@ -36,7 +36,7 @@ require (
 	github.com/spf13/pflag v1.0.6-0.20210604193023-d5e0c0615ace
 	github.com/stretchr/testify v1.8.4
 	github.com/vincent-petithory/dataurl v1.0.0
-	golang.org/x/net v0.17.0
+	golang.org/x/net v0.25.0
 	golang.org/x/time v0.3.0
 	k8s.io/api v0.28.3
 	k8s.io/apiextensions-apiserver v0.28.3
@@ -292,16 +292,16 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.24.0 // indirect
 	go4.org v0.0.0-20200104003542-c7e774b10ea0 // indirect
-	golang.org/x/crypto v0.14.0 // indirect
+	golang.org/x/crypto v0.33.0 // indirect
 	golang.org/x/exp v0.0.0-20230522175609-2e198f4a06a1 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20230224173230-c95f2b4c22f2 // indirect
-	golang.org/x/mod v0.10.0 // indirect
+	golang.org/x/mod v0.17.0 // indirect
 	golang.org/x/oauth2 v0.9.0 // indirect
-	golang.org/x/sync v0.3.0 // indirect
-	golang.org/x/sys v0.13.0 // indirect
-	golang.org/x/term v0.13.0 // indirect
-	golang.org/x/text v0.13.0 // indirect
-	golang.org/x/tools v0.9.3 // indirect
+	golang.org/x/sync v0.11.0 // indirect
+	golang.org/x/sys v0.30.0 // indirect
+	golang.org/x/term v0.29.0 // indirect
+	golang.org/x/text v0.22.0 // indirect
+	golang.org/x/tools v0.21.1-0.20240508182429-e35e4ccd0d2d // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/protobuf v1.30.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
@@ -325,3 +325,5 @@ require (
 )
 
 replace k8s.io/kube-openapi => github.com/openshift/kube-openapi v0.0.0-20230816122517-ffc8f001abb0
+
+replace golang.org/x/net => github.com/openshift-sustaining/net v0.35.0-sec.4
