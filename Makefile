@@ -61,13 +61,13 @@ image:
 
 # Build the markdownlint container image.
 image-markdownlint:
-	$(RUNTIME) image build -f ./hack/Dockerfile.markdownlint --tag mco-markdownlint:latest
+	$(RUNTIME) build -f ./hack/Dockerfile.markdownlint --tag mco-markdownlint:latest .
 
 # Run the markdown linter in a container.
 lint-md: image-markdownlint
 	$(RUNTIME) run \
 		--rm=true \
-		--userns=keep-id \
+		$$(if command -v podman >/dev/null 2>&1 && [ "$(RUNTIME)" = "podman" ]; then echo "--userns=keep-id"; fi) \
 		--user $$(id -u):$$(id -g) \
 		--env LINT_TARGET=$${WHAT:-} \
 		-v $$(pwd):/workdir:Z \
