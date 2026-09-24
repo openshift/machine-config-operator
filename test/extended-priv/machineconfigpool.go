@@ -408,6 +408,13 @@ func (mcp *MachineConfigPool) GetMCSIgnitionConfig(secure bool, ignitionVersion 
 		return "", err
 	}
 
+	logger.Infof("Flush nftables rules that block the ignition config")
+	savedNftRules, err := master.FlushNftablesMCSBlockingRules()
+	defer master.RestoreNftablesMCSBlockingRules(savedNftRules)
+	if err != nil {
+		return "", err
+	}
+
 	cmd := []string{"curl", "-s"}
 	if secure {
 		cmd = append(cmd, "-k")
