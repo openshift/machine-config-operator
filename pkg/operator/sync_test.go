@@ -859,7 +859,23 @@ func TestSyncMachineConfiguration(t *testing.T) {
 					{Resource: opv1.MachineDeployments, APIGroup: opv1.ClusterAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
 				},
 			},
-			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusAutomaticWithOCPVersion("4.18.0"),
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.18.0"),
+		},
+		{
+			name:                  "AWS platform, CAPI gate enabled, CAPI MD disabled in spec, CAPI MS and MAPI MS auto opt-in",
+			infra:                 buildInfra(withPlatformType(configv1.AWSPlatformType)),
+			mcop:                  buildMachineConfigurationWithCAPIMachineDeploymentsDisabled(),
+			clusterVersion:        buildClusterVersion("4.18.0"),
+			annotationExpected:    true,
+			enableCAPIFeatureGate: true,
+			expectedManagedBootImagesStatus: opv1.ManagedBootImages{
+				MachineManagers: []opv1.MachineManager{
+					{Resource: opv1.MachineSets, APIGroup: opv1.MachineAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
+					{Resource: opv1.MachineSets, APIGroup: opv1.ClusterAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
+					{Resource: opv1.MachineDeployments, APIGroup: opv1.ClusterAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.None}},
+				},
+			},
+			expectedSkewEnforcementStatus: apihelpers.GetSkewEnforcementStatusManualWithOCPVersion("4.18.0"),
 		},
 		{
 			name:                  "AWS platform, CAPI gate disabled, no CAPI managers in status",
@@ -1178,6 +1194,19 @@ func buildMachineConfigurationWithCAPIMachineSetsAndDeploymentsEnabled() *opv1.M
 				MachineManagers: []opv1.MachineManager{
 					{Resource: opv1.MachineSets, APIGroup: opv1.ClusterAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
 					{Resource: opv1.MachineDeployments, APIGroup: opv1.ClusterAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.All}},
+				},
+			},
+		},
+	}
+}
+
+func buildMachineConfigurationWithCAPIMachineDeploymentsDisabled() *opv1.MachineConfiguration {
+	return &opv1.MachineConfiguration{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+		Spec: opv1.MachineConfigurationSpec{
+			ManagedBootImages: opv1.ManagedBootImages{
+				MachineManagers: []opv1.MachineManager{
+					{Resource: opv1.MachineDeployments, APIGroup: opv1.ClusterAPI, Selection: opv1.MachineManagerSelector{Mode: opv1.None}},
 				},
 			},
 		},
