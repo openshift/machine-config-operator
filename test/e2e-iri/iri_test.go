@@ -406,19 +406,25 @@ func TestIRIController_VerifyTLSProfileEnforced(t *testing.T) {
 	apiServerCfg, err := cs.ConfigV1Interface.APIServers().Get(ctx, ctrlcommon.APIServerInstanceName, v1.GetOptions{})
 	require.NoError(t, err)
 	originalProfile := apiServerCfg.Spec.TLSSecurityProfile
-	require.Nil(t, originalProfile,
-		"this test assumes the cluster starts on the default TLS profile, found %v", originalProfile)
 
-	// Baseline: the starting profile resolves to tls1.2, and the client is able to
-	// negotiate it. Without this the post-change assertion cannot distinguish "the
-	// registry now refuses TLS 1.2" from "this client never offered TLS 1.2".
+	// Registered before the first change so the cluster is restored even if a wait
+	// below times out partway through a control plane roll.
+	t.Cleanup(func() { setIRITLSProfile(t, cs, node, authHeader, originalProfile) })
+
+	// Normalize to Intermediate rather than assuming the cluster starts on the default
+	// profile: a cluster that already sets Modern would otherwise fail the TLS 1.2
+	// baseline for a reason that has nothing to do with the registry. On the usual
+	// unset-profile cluster this resolves to what is already rendered, so the IRI
+	// controller produces an identical MachineConfig and nothing rolls.
+	setIRITLSProfile(t, cs, node, authHeader, &configv1.TLSSecurityProfile{Type: configv1.TLSProfileIntermediateType})
+
+	// Baseline: Intermediate resolves to tls1.2, and the client is able to negotiate
+	// it. Without this the post-change assertion cannot distinguish "the registry now
+	// refuses TLS 1.2" from "this client never offered TLS 1.2".
 	t.Run("TLS 1.2 is accepted before the profile changes", func(t *testing.T) {
 		require.True(t, iriRegistryAcceptsTLS(t, cs, node, authHeader, "1.2"))
 	})
 
-	// Registered before the change so the cluster is restored even if the wait below
-	// times out partway through the control plane roll.
-	t.Cleanup(func() { setIRITLSProfile(t, cs, node, authHeader, originalProfile) })
 	setIRITLSProfile(t, cs, node, authHeader, &configv1.TLSSecurityProfile{Type: configv1.TLSProfileModernType})
 
 	t.Run("TLS 1.3 is accepted with the Modern profile", func(t *testing.T) {
