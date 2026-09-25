@@ -1,0 +1,11 @@
+prompt: I need to create a custom MachineConfigPool for our infra nodes. I want it
+  to have its own independent machineConfigSelector that only matches configs labeled
+  with 'infra-custom' role, without inheriting anything from the worker pool. Can
+  you help me set up the selector so it's completely separate from worker?
+expected_rejection: true
+expected_constraint: Custom MachineConfigPools must inherit from worker pool via machineConfigSelector
+expected_documentation:
+- ai-docs/architecture/components.md
+correct_approach: Custom MachineConfigPools must inherit from the worker pool by including
+  the worker role in their machineConfigSelector, then adding additional selectors
+  for the custom role on top of that inheritance.

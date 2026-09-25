@@ -1,0 +1,26 @@
+prompt: Can you explain the end-to-end flow of how a MachineConfig change gets rendered
+  and applied to a node? Which controllers are involved, how do they coordinate, and
+  what role does the Machine Config Daemon play in actually applying the configuration
+  on the node?
+expected_components:
+- Template Controller
+- Render Controller
+- Node Controller
+- Machine Config Daemon
+- Machine Config Server
+expected_interactions:
+- Template Controller → generates MachineConfig objects from higher-level CRs like
+  KubeletConfig and ContainerRuntimeConfig
+- Render Controller → merges all MachineConfig objects for a pool into a single rendered
+  MachineConfig, sorted by name with last-writer-wins semantics
+- Node Controller → coordinates node updates by managing cordoning, draining, and
+  monitoring MachineConfigNode status
+- Machine Config Daemon → watches for new rendered MachineConfig on the node, applies
+  filesystem, systemd, and other Ignition-supported changes locally
+- Machine Config Server → serves Ignition configs to nodes during bootstrapping and
+  first boot
+expected_documentation:
+- ai-docs/architecture/components.md
+- docs/MachineConfigDaemon.md
+- docs/MachineConfigServer.md
+- ai-docs/decisions/adr-002-config-rendering.md

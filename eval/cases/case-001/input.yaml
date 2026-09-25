@@ -1,0 +1,10 @@
+prompt: What controllers are part of the Machine Config Operator and what does each
+  one do?
+expected_files:
+- AGENTS.md
+- ai-docs/architecture/components.md
+expected_mentions:
+- Template Controller
+- Render Controller
+- Node Controller
+- Build Controller
