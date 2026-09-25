@@ -3,6 +3,7 @@ package common
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -227,19 +228,22 @@ func TestIRISecretMergerFromListers(t *testing.T) {
 			expectUnchanged: true,
 		},
 		{
-			name:        "secret not found returns error when IRI is enabled",
-			pullSecret:  basePullSecret,
-			secrets:     nil,
-			cconfigs:    []*mcfgv1.ControllerConfig{cconfig},
-			iris:        []*mcfgv1.InternalReleaseImage{iri},
-			expectError: true,
+			// The auth secret can lag the InternalReleaseImage resource, so a
+			// missing secret is a skip rather than an error: callers keep their
+			// existing pull secret and re-render once the secret exists.
+			name:            "secret not found skips merge when IRI is enabled",
+			pullSecret:      basePullSecret,
+			secrets:         nil,
+			cconfigs:        []*mcfgv1.ControllerConfig{cconfig},
+			iris:            []*mcfgv1.InternalReleaseImage{iri},
+			expectUnchanged: true,
 		},
 		{
 			name:            "already up-to-date returns unchanged",
 			pullSecret:      pullSecretWithIRIRegistryCredentials("example.com", "testpassword"),
 			secrets:         []*corev1.Secret{secret},
 			cconfigs:        []*mcfgv1.ControllerConfig{cconfig},
-			iris:           []*mcfgv1.InternalReleaseImage{iri},
+			iris:            []*mcfgv1.InternalReleaseImage{iri},
 			expectUnchanged: true,
 		},
 		{
@@ -290,6 +294,38 @@ func TestIRISecretMergerFromListers(t *testing.T) {
 			assertMergeResult(t, tt.pullSecret, tt.verifyAuthHost, tt.expectUnchanged, resolvedSecret, result)
 		})
 	}
+}
+
+// TestIRISecretMergerSkipVsError pins the contract Merge relies on: only
+// errIRISkip means "nothing to merge, carry on". Any other resolve failure has
+// to reach the caller so a real lookup problem is not mistaken for a cluster
+// that simply is not using IRI.
+func TestIRISecretMergerSkipVsError(t *testing.T) {
+	basePullSecret := `{"auths":{"quay.io":{"auth":"dGVzdDp0ZXN0"}}}`
+
+	t.Run("wrapped skip returns the pull secret unchanged", func(t *testing.T) {
+		merger := &IRISecretMerger{
+			resolve: func() (string, string, error) {
+				return "", "", fmt.Errorf("%w: IRI auth secret not found", errIRISkip)
+			},
+		}
+
+		result, err := merger.Merge([]byte(basePullSecret))
+		require.NoError(t, err)
+		assert.Equal(t, basePullSecret, string(result))
+	})
+
+	t.Run("other resolve errors are returned", func(t *testing.T) {
+		merger := &IRISecretMerger{
+			resolve: func() (string, string, error) {
+				return "", "", fmt.Errorf("could not get IRI auth secret: %w", errors.New("etcd is unavailable"))
+			},
+		}
+
+		_, err := merger.Merge([]byte(basePullSecret))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "etcd is unavailable")
+	})
 }
 
 // --- shared assertion helper ---
