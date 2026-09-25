@@ -458,11 +458,21 @@ func setIRITLSProfile(t *testing.T, cs *framework.ClientSet, node corev1.Node, a
 	t.Helper()
 	ctx := context.Background()
 
-	expectedVersion := "1.2"
+	// The condition has to describe the whole end state, not just "the new minimum
+	// version is accepted". A registry on Intermediate already accepts TLS 1.3, since
+	// tls1.2 is a floor rather than a pin, so waiting only for TLS 1.3 would return on
+	// the first poll -- before the Modern config had been applied -- and hand the
+	// caller a registry that still accepts TLS 1.2.
+	settled := func() bool { return iriRegistryAcceptsTLS(t, cs, node, authHeader, "1.2") }
+	wanted := "accept TLS 1.2"
 	if profile != nil && profile.Type == configv1.TLSProfileModernType {
-		expectedVersion = "1.3"
+		settled = func() bool {
+			return iriRegistryAcceptsTLS(t, cs, node, authHeader, "1.3") &&
+				!iriRegistryAcceptsTLS(t, cs, node, authHeader, "1.2")
+		}
+		wanted = "accept TLS 1.3 and refuse TLS 1.2"
 	}
-	t.Logf("Setting APIServer TLS profile to %v and waiting for the IRI registry to serve TLS %s", profile, expectedVersion)
+	t.Logf("Setting APIServer TLS profile to %v and waiting for the IRI registry to %s", profile, wanted)
 
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		apiServerCfg, err := cs.ConfigV1Interface.APIServers().Get(ctx, ctrlcommon.APIServerInstanceName, v1.GetOptions{})
@@ -477,9 +487,9 @@ func setIRITLSProfile(t *testing.T, cs *framework.ClientSet, node corev1.Node, a
 
 	// The control plane rolls to pick up the new profile, so this is slow.
 	err = wait.PollUntilContextTimeout(ctx, 30*time.Second, 30*time.Minute, true, func(_ context.Context) (bool, error) {
-		return iriRegistryAcceptsTLS(t, cs, node, authHeader, expectedVersion), nil
+		return settled(), nil
 	})
-	require.NoError(t, err, "IRI registry did not start serving TLS %s after the profile change", expectedVersion)
+	require.NoError(t, err, "IRI registry did not %s after the profile change", wanted)
 }
 
 // iriRegistryAcceptsTLS reports whether the IRI registry on the node completes a
