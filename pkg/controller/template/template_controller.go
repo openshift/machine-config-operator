@@ -139,8 +139,6 @@ func New(
 
 	// Watch the IRI auth secret in the MCO namespace so that when credentials
 	// are rotated the pull secret rendered into 00-master/00-worker is updated.
-	// Both informers are nil when the NoRegistryClusterInstall feature gate is
-	// off (the CRD doesn't exist on those clusters).
 	if iriSecretsInformer != nil {
 		iriSecretsInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc:    ctrl.addSecret,
