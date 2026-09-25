@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"net/http"
@@ -20,7 +21,9 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/retry"
 
+	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -365,6 +368,144 @@ func TestIRIRegistry_UnauthenticatedReadSucceeds(t *testing.T) {
 	args := []string{"curl", "-s", "--cacert", iriRootCAPath, "-o", "/dev/null", "-w", "%{http_code}", url}
 	statusCode := strings.TrimSpace(helpers.ExecCmdOnNode(t, cs, node, args...))
 	require.Equal(t, "200", statusCode, "unauthenticated read request should succeed")
+}
+
+// TestIRIController_VerifyTLSProfileEnforced verifies that changing the cluster's
+// APIServer TLS profile actually changes what the IRI registry will negotiate.
+//
+// The test deliberately changes the profile rather than reading whichever one the
+// cluster happens to have. A cluster on the default Intermediate profile resolves to
+// tls1.2, which is also the registry's own built-in default, so a test that only
+// observes the default passes identically with this feature reverted.
+//
+// It asserts TLS 1.2 before the change and TLS 1.3 after it. Both are versions the
+// RHCOS system crypto policy allows the client to offer, so a handshake failure is
+// attributable to the registry rejecting the version rather than to curl declining to
+// offer it -- which would not be true of a TLS 1.0 or 1.1 probe.
+//
+// Uses ExecCmdOnNode to run curl on the node directly, since port 22625 is not
+// accessible from the CI test runner.
+func TestIRIController_VerifyTLSProfileEnforced(t *testing.T) {
+	skipIfNoBaremetal(t)
+
+	cs := framework.NewClientSet("")
+	ctx := context.Background()
+
+	// Fetch authentication credentials for the IRI registry.
+	authSecret, err := cs.Secrets(ctrlcommon.MCONamespace).Get(ctx, ctrlcommon.InternalReleaseImageAuthSecretName, v1.GetOptions{})
+	require.NoError(t, err)
+	password := string(authSecret.Data["password"])
+	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(ctrlcommon.IRIRegistryUsername+":"+password))
+
+	// Find a master node to exec commands on.
+	masterNodes, err := cs.CoreV1Interface.Nodes().List(ctx, v1.ListOptions{LabelSelector: "node-role.kubernetes.io/master="})
+	require.NoError(t, err)
+	require.NotEmpty(t, masterNodes.Items)
+	node := masterNodes.Items[0]
+
+	apiServerCfg, err := cs.ConfigV1Interface.APIServers().Get(ctx, ctrlcommon.APIServerInstanceName, v1.GetOptions{})
+	require.NoError(t, err)
+	originalProfile := apiServerCfg.Spec.TLSSecurityProfile
+
+	// Registered before the first change so the cluster is restored even if a wait
+	// below times out partway through a control plane roll.
+	t.Cleanup(func() { setIRITLSProfile(t, cs, node, authHeader, originalProfile) })
+
+	// Normalize to Intermediate rather than assuming the cluster starts on the default
+	// profile: a cluster that already sets Modern would otherwise fail the TLS 1.2
+	// baseline for a reason that has nothing to do with the registry. On the usual
+	// unset-profile cluster this resolves to what is already rendered, so the IRI
+	// controller produces an identical MachineConfig and nothing rolls.
+	//
+	// The matching sub-struct has to be set alongside Type: the APIServer CRD rejects
+	// a profile that names a type without it.
+	setIRITLSProfile(t, cs, node, authHeader, &configv1.TLSSecurityProfile{
+		Type:         configv1.TLSProfileIntermediateType,
+		Intermediate: &configv1.IntermediateTLSProfile{},
+	})
+
+	// Baseline: Intermediate resolves to tls1.2, and the client is able to negotiate
+	// it. Without this the post-change assertion cannot distinguish "the registry now
+	// refuses TLS 1.2" from "this client never offered TLS 1.2".
+	t.Run("TLS 1.2 is accepted before the profile changes", func(t *testing.T) {
+		require.True(t, iriRegistryAcceptsTLS(t, cs, node, authHeader, "1.2"))
+	})
+
+	setIRITLSProfile(t, cs, node, authHeader, &configv1.TLSSecurityProfile{
+		Type:   configv1.TLSProfileModernType,
+		Modern: &configv1.ModernTLSProfile{},
+	})
+
+	t.Run("TLS 1.3 is accepted with the Modern profile", func(t *testing.T) {
+		require.True(t, iriRegistryAcceptsTLS(t, cs, node, authHeader, "1.3"),
+			"registry should accept TLS 1.3 under the Modern profile")
+	})
+
+	t.Run("TLS 1.2 is rejected with the Modern profile", func(t *testing.T) {
+		require.False(t, iriRegistryAcceptsTLS(t, cs, node, authHeader, "1.2"),
+			"registry should reject TLS 1.2 under the Modern profile, which sets a minimum of TLS 1.3")
+	})
+}
+
+// setIRITLSProfile sets the cluster APIServer TLS profile and blocks until the IRI
+// registry on the given node is serving the resulting configuration.
+//
+// It waits on the registry's observable behaviour rather than on MachineConfigPool
+// status: the profile change has to travel through the IRI controller, a re-rendered
+// MachineConfig, and an MCD-driven daemon-reload and service restart, and only the
+// last of those is what the assertions care about.
+func setIRITLSProfile(t *testing.T, cs *framework.ClientSet, node corev1.Node, authHeader string, profile *configv1.TLSSecurityProfile) {
+	t.Helper()
+	ctx := context.Background()
+
+	// The condition has to describe the whole end state, not just "the new minimum
+	// version is accepted". A registry on Intermediate already accepts TLS 1.3, since
+	// tls1.2 is a floor rather than a pin, so waiting only for TLS 1.3 would return on
+	// the first poll -- before the Modern config had been applied -- and hand the
+	// caller a registry that still accepts TLS 1.2.
+	settled := func() bool { return iriRegistryAcceptsTLS(t, cs, node, authHeader, "1.2") }
+	wanted := "accept TLS 1.2"
+	if profile != nil && profile.Type == configv1.TLSProfileModernType {
+		settled = func() bool {
+			return iriRegistryAcceptsTLS(t, cs, node, authHeader, "1.3") &&
+				!iriRegistryAcceptsTLS(t, cs, node, authHeader, "1.2")
+		}
+		wanted = "accept TLS 1.3 and refuse TLS 1.2"
+	}
+	t.Logf("Setting APIServer TLS profile to %v and waiting for the IRI registry to %s", profile, wanted)
+
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		apiServerCfg, err := cs.ConfigV1Interface.APIServers().Get(ctx, ctrlcommon.APIServerInstanceName, v1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		apiServerCfg.Spec.TLSSecurityProfile = profile
+		_, err = cs.ConfigV1Interface.APIServers().Update(ctx, apiServerCfg, v1.UpdateOptions{})
+		return err
+	})
+	require.NoError(t, err)
+
+	// The control plane rolls to pick up the new profile, so this is slow.
+	err = wait.PollUntilContextTimeout(ctx, 30*time.Second, 30*time.Minute, true, func(_ context.Context) (bool, error) {
+		return settled(), nil
+	})
+	require.NoError(t, err, "IRI registry did not %s after the profile change", wanted)
+}
+
+// iriRegistryAcceptsTLS reports whether the IRI registry on the node completes a
+// request pinned to exactly the given TLS version.
+func iriRegistryAcceptsTLS(t *testing.T, cs *framework.ClientSet, node corev1.Node, authHeader, version string) bool {
+	t.Helper()
+
+	out, err := helpers.ExecCmdOnNodeWithError(cs, node, "curl", "-s", "-k", "-o", "/dev/null", "-w", "%{http_code}",
+		"-H", "Authorization: "+authHeader,
+		"--tlsv"+version, "--tls-max", version,
+		"https://localhost:22625/v2/")
+	if err != nil {
+		t.Logf("TLS %s request to the IRI registry failed: %v", version, err)
+		return false
+	}
+	return strings.TrimSpace(out) == "200"
 }
 
 func TestIRIController_ShouldPreventDeletionWhenInUse(t *testing.T) {
