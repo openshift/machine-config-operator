@@ -61,7 +61,7 @@ image:
 
 # Build the markdownlint container image.
 image-markdownlint:
-	$(RUNTIME) build -f ./hack/Dockerfile.markdownlint --tag mco-markdownlint:latest .
+	$(RUNTIME) build -f ./hack/markdown/Dockerfile --tag mco-markdownlint:latest ./hack/markdown
 
 # Run the markdown linter in a container.
 lint-md: image-markdownlint
