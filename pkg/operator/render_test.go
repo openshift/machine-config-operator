@@ -94,6 +94,62 @@ func TestIPFamilies(t *testing.T) {
 	}
 }
 
+func TestFilterIPsForIPFamilies(t *testing.T) {
+	t.Parallel()
+	dual := []string{"192.0.2.10", "2001:db8::10", "192.0.2.20", "2001:db8::20"}
+	cases := []struct {
+		name     string
+		families mcfgv1.IPFamiliesType
+		in       []string
+		want     []string
+	}{
+		{
+			name:     "IPv4 drops v6 preserves order",
+			families: mcfgv1.IPFamiliesIPv4,
+			in:       dual,
+			want:     []string{"192.0.2.10", "192.0.2.20"},
+		},
+		{
+			name:     "IPv6 drops v4 preserves order",
+			families: mcfgv1.IPFamiliesIPv6,
+			in:       dual,
+			want:     []string{"2001:db8::10", "2001:db8::20"},
+		},
+		{
+			name:     "DualStack keeps both",
+			families: mcfgv1.IPFamiliesDualStack,
+			in:       dual,
+			want:     dual,
+		},
+		{
+			name:     "DualStackIPv6Primary keeps both",
+			families: mcfgv1.IPFamiliesDualStackIPv6Primary,
+			in:       dual,
+			want:     dual,
+		},
+		{
+			name:     "empty families keeps both",
+			families: "",
+			in:       dual,
+			want:     dual,
+		},
+		{
+			name:     "skips unparseable",
+			families: mcfgv1.IPFamiliesIPv4,
+			in:       []string{"not-an-ip", "192.0.2.1", "also-bad", "2001:db8::1"},
+			want:     []string{"192.0.2.1"},
+		},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := filterIPsForIPFamilies(tc.in, tc.families)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
 // Smoke test to render all manifests to validate if they can be rendered or
 // not and if they can be read into the appropriate structs.
 // TODO: Consolidate this and the TestRenderAsset tests
