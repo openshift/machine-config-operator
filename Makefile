@@ -1,3 +1,5 @@
+RUNTIME ?= podman
+
 E2E_ROOT_DIR = ./test
 E2E_SUITES = $(notdir $(wildcard $(E2E_ROOT_DIR)/e2e*))
 
@@ -56,6 +58,20 @@ _verify-e2e-%:
 # Use podman to build the image.
 image:
 	hack/build-image
+
+# Build the markdownlint container image.
+image-markdownlint:
+	$(RUNTIME) build -f ./hack/Dockerfile.markdownlint --tag mco-markdownlint:latest .
+
+# Run the markdown linter in a container.
+lint-md: image-markdownlint
+	$(RUNTIME) run \
+		--rm=true \
+		$$(if command -v podman >/dev/null 2>&1 && [ "$(RUNTIME)" = "podman" ]; then echo "--userns=keep-id"; fi) \
+		--user $$(id -u):$$(id -g) \
+		--env LINT_TARGET=$${WHAT:-} \
+		-v $$(pwd):/workdir:Z \
+		mco-markdownlint:latest
 
 # Run tests
 test: test-unit test-e2e
