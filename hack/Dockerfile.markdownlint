@@ -1,6 +1,0 @@
-FROM quay.io/hummingbird/nodejs:25-builder
-ENV NPM_CONFIG_PREFIX=/tmp/npm-global
-ENV PATH=$NPM_CONFIG_PREFIX/bin:$PATH
-RUN npm install -g markdownlint@v0.25.1 markdownlint-cli2@v0.4.0
-WORKDIR /workdir
-ENTRYPOINT ["/workdir/hack/markdownlint.sh"]
