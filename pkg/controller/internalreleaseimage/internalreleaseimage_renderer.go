@@ -2,7 +2,6 @@ package internalreleaseimage
 
 import (
 	"bytes"
-	"crypto/tls"
 	"embed"
 	"errors"
 	"fmt"
@@ -35,6 +34,53 @@ var (
 	// Format of the name for the InternalReleaseImage machine configs.
 	machineConfigNameFmt = "02-%s" + machineConfigNameSuffix
 )
+
+// The IRI registry is the distribution binary shipped in the docker-registry payload
+// image, which openshift/image-registry builds against openshift/docker-distribution
+// (a fork of distribution v3). It validates REGISTRY_HTTP_TLS_MINIMUMTLS and
+// REGISTRY_HTTP_TLS_CIPHERSUITES against the hardcoded tables mirrored below, and
+// returns a fatal error from ListenAndServe on any value it does not recognise --
+// with Restart=on-failure in the unit, an unrecognised value crash-loops the registry
+// on every master. An unknown cipher name rejects the whole list, not just that entry.
+//
+// Source: registry/registry.go in openshift/docker-distribution (tlsVersions,
+// cipherSuites). Note that distribution v3 dropped the tls1.0 and tls1.1 values that
+// v2.8 accepted, and dropped the RC4 and AES_128_CBC_SHA256 suites.
+const (
+	registryTLSVersion12 = "tls1.2"
+	registryTLSVersion13 = "tls1.3"
+)
+
+// registryMinTLSVersions is the set of values accepted for the registry's minimum
+// TLS version. OpenShift's Old profile asks for TLS 1.0, which is not in this set.
+var registryMinTLSVersions = map[string]bool{
+	registryTLSVersion12: true,
+	registryTLSVersion13: true,
+}
+
+// registryCipherSuites is the set of cipher suite names the registry accepts that
+// also have an effect at TLS 1.2. The registry additionally accepts the three TLS 1.3
+// suite names, but those are deliberately excluded: Go ignores TLS 1.3 suites in
+// tls.Config.CipherSuites, so sending them at tls1.2 would contribute nothing while
+// making an otherwise-empty list look non-empty.
+var registryCipherSuites = map[string]bool{
+	"TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA":          true,
+	"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256":       true,
+	"TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA":          true,
+	"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384":       true,
+	"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256": true,
+	"TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA":           true,
+	"TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA":            true,
+	"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256":         true,
+	"TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA":            true,
+	"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384":         true,
+	"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256":   true,
+	"TLS_RSA_WITH_3DES_EDE_CBC_SHA":                 true,
+	"TLS_RSA_WITH_AES_128_CBC_SHA":                  true,
+	"TLS_RSA_WITH_AES_128_GCM_SHA256":               true,
+	"TLS_RSA_WITH_AES_256_CBC_SHA":                  true,
+	"TLS_RSA_WITH_AES_256_GCM_SHA384":               true,
+}
 
 // Renderer takes care of generating the required ignition (by role) for
 // the InternalReleaseImage machine config resources. It can also create
@@ -114,7 +160,7 @@ type renderContext struct {
 	RootCA              string
 	IriHtpasswd         string
 	TLSMinVersion       string
-	TLSCipherSuites     string
+	TLSCipherSuites     []string
 }
 
 // newRenderContext creates a new renderContext instance.
@@ -132,13 +178,12 @@ func (r *Renderer) newRenderContext() (*renderContext, error) {
 	// fetches it and fails loudly if not found (auth is mandatory).
 	iriHtpasswd := string(r.iriRegistryCredentialsSecret.Data["htpasswd"])
 
-	tlsMinVersion, tlsCipherSuites := registryTLSFromProfile(r.tlsProfile)
-
-	profileType := "nil (defaulting to Intermediate)"
-	if r.tlsProfile != nil {
-		profileType = string(r.tlsProfile.Type)
+	tlsMinVersion, tlsCipherSuites, err := registryTLSFromProfile(r.tlsProfile)
+	if err != nil {
+		return nil, err
 	}
-	klog.V(4).Infof("IRI registry TLS profile: %s, minimum version: %s, cipher suites: %q", profileType, tlsMinVersion, tlsCipherSuites)
+	klog.V(4).Infof("IRI registry TLS profile: %s, minimum version: %s, cipher suites: %q",
+		tlsProfileName(r.tlsProfile), tlsMinVersion, tlsCipherSuites)
 
 	return &renderContext{
 		RegistryEnabled:     true,
@@ -152,60 +197,58 @@ func (r *Renderer) newRenderContext() (*renderContext, error) {
 	}, nil
 }
 
-// registryTLSFromProfile converts an OpenShift TLSSecurityProfile to the
-// Distribution registry's environment variable values for REGISTRY_HTTP_TLS_MINIMUMTLS
-// and REGISTRY_HTTP_TLS_CIPHERSUITES.
-func registryTLSFromProfile(profile *configv1.TLSSecurityProfile) (minVersion, cipherSuites string) {
+// registryTLSFromProfile converts an OpenShift TLSSecurityProfile to the values for
+// the registry's REGISTRY_HTTP_TLS_MINIMUMTLS and REGISTRY_HTTP_TLS_CIPHERSUITES
+// environment variables.
+//
+// The registry validates both against its own hardcoded tables and refuses to start
+// on any value it does not recognise, so the profile cannot be passed through
+// verbatim. Values outside those tables are either clamped (minimum version) or
+// dropped (cipher suites); see registryMinTLSVersions and registryCipherSuites.
+//
+// A nil cipherSuites result means "do not set REGISTRY_HTTP_TLS_CIPHERSUITES", and
+// is only ever returned for TLS 1.3, where the suites are fixed by the protocol. An
+// empty result is never returned for TLS 1.2: the registry reads an empty list as
+// "use my defaults", which is broader than any profile that produced it, so that
+// case is an error instead.
+func registryTLSFromProfile(profile *configv1.TLSSecurityProfile) (minVersion string, cipherSuites []string, err error) {
 	tlsVersion, ciphers := ctrlcommon.GetSecurityProfileCiphers(profile)
+
 	minVersion = openShiftTLSVersionToRegistryVersion(tlsVersion)
+	if !registryMinTLSVersions[minVersion] {
+		// The registry only accepts tls1.2 and tls1.3. Clamping upward keeps the
+		// cluster's only registry serving, and errs towards a stronger configuration
+		// than requested rather than a weaker one.
+		klog.Warningf("IRI registry does not support a minimum TLS version of %s (TLS profile %s); using %s instead",
+			minVersion, tlsProfileName(profile), registryTLSVersion12)
+		minVersion = registryTLSVersion12
+	}
 
-	// Filter to only configurable cipher suites (TLS 1.2 and below). TLS 1.3+
-	// cipher suites are fixed by the protocol and cannot be configured, so they
-	// are excluded. This is future-proof: if a future TLS version also uses
-	// fixed cipher suites, its ciphers won't appear in Go's configurable set
-	// and will be filtered out automatically.
-	configurableCiphers := buildConfigurableCipherSet()
-	var filtered []string
+	// Cipher suites are fixed by the protocol from TLS 1.3 onwards, and the registry
+	// ignores REGISTRY_HTTP_TLS_CIPHERSUITES entirely above tls1.2.
+	if minVersion != registryTLSVersion12 {
+		return minVersion, nil, nil
+	}
+
 	for _, c := range ciphers {
-		if configurableCiphers[c] {
-			filtered = append(filtered, c)
+		if registryCipherSuites[c] {
+			cipherSuites = append(cipherSuites, c)
 		}
 	}
-
-	if len(filtered) == 0 {
-		return minVersion, ""
+	if len(cipherSuites) == 0 {
+		return "", nil, fmt.Errorf("TLS profile %s specifies no cipher suite usable by the IRI registry at %s (requested: %v)",
+			tlsProfileName(profile), minVersion, ciphers)
 	}
-	// Format as a YAML array because the Distribution registry parses environment
-	// variables as YAML values, and CIPHERSUITES is a []string field.
-	return minVersion, "[" + strings.Join(filtered, ", ") + "]"
+
+	return minVersion, cipherSuites, nil
 }
 
-// buildConfigurableCipherSet returns a set of IANA cipher suite names that
-// can be configured via tls.Config.CipherSuites (i.e., TLS 1.2 and below).
-// TLS 1.3+ cipher suites are not included because they are fixed by the protocol.
-func buildConfigurableCipherSet() map[string]bool {
-	cipherSet := make(map[string]bool)
-	for _, cs := range tls.CipherSuites() {
-		if isConfigurableCipher(cs) {
-			cipherSet[cs.Name] = true
-		}
+// tlsProfileName returns a human-readable name for the profile, for use in messages.
+func tlsProfileName(profile *configv1.TLSSecurityProfile) string {
+	if profile == nil {
+		return "<unset>"
 	}
-	for _, cs := range tls.InsecureCipherSuites() {
-		cipherSet[cs.Name] = true
-	}
-	return cipherSet
-}
-
-// isConfigurableCipher returns true if the cipher suite supports any TLS version
-// below 1.3. Cipher suites that only support TLS 1.3+ are fixed by the protocol
-// and cannot be configured, so they should not be passed to the registry.
-func isConfigurableCipher(cs *tls.CipherSuite) bool {
-	for _, v := range cs.SupportedVersions {
-		if v < tls.VersionTLS13 {
-			return true
-		}
-	}
-	return false
+	return string(profile.Type)
 }
 
 // openShiftTLSVersionToRegistryVersion converts an OpenShift TLS version string
@@ -296,6 +339,11 @@ func (r *Renderer) renderTemplateFolder(rc any, folder string) ([]string, error)
 // applyTemplate applies the current template to the specified render context.
 func (r *Renderer) applyTemplate(rc any, iriTemplate []byte) (string, error) {
 	funcs := ctrlcommon.GetTemplateFuncMap()
+	// Rendering a []string directly yields "[a b c]", which YAML reads as a single
+	// scalar rather than a sequence, so the cipher suite list needs an explicit join.
+	// Extend a local copy rather than the shared map, which every MCO template uses.
+	funcs["join"] = strings.Join
+
 	tmpl, err := template.New("internalreleaseimage").Funcs(funcs).Parse(string(iriTemplate))
 	if err != nil {
 		return "", fmt.Errorf("failed to parse template : %w", err)

@@ -341,6 +341,12 @@ func (b *Bootstrap) Run(destDir string) error {
 	klog.Infof("Successfully generated MachineConfigs from kubelet configs.")
 
 	if iri {
+		// apiServer is nil when the installer does not ship an APIServer manifest, which
+		// is the common case for a cluster that never customises the TLS profile. The
+		// renderer then falls back to Intermediate, matching what the in-cluster
+		// controller will render once it can read the real object. A cluster that does
+		// customise the profile and whose installer omits the manifest gets one extra
+		// MachineConfig revision, and one registry restart, early in the install.
 		var tlsProfile *apicfgv1.TLSSecurityProfile
 		if apiServer != nil {
 			tlsProfile = apiServer.Spec.TLSSecurityProfile

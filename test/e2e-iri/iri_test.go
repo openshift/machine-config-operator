@@ -21,6 +21,7 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/retry"
 
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -369,12 +370,24 @@ func TestIRIRegistry_UnauthenticatedReadSucceeds(t *testing.T) {
 	require.Equal(t, "200", statusCode, "unauthenticated read request should succeed")
 }
 
-// TestIRIController_VerifyTLSProfileEnforced verifies that the IRI registry
-// enforces the TLS minimum version derived from the cluster's APIServer TLS profile.
-// It connects with the expected minimum version (should succeed) and one version
-// below it (should be rejected). Uses ExecCmdOnNode to run curl on the node
-// directly, since port 22625 is not accessible from the CI test runner.
+// TestIRIController_VerifyTLSProfileEnforced verifies that changing the cluster's
+// APIServer TLS profile actually changes what the IRI registry will negotiate.
+//
+// The test deliberately changes the profile rather than reading whichever one the
+// cluster happens to have. A cluster on the default Intermediate profile resolves to
+// tls1.2, which is also the registry's own built-in default, so a test that only
+// observes the default passes identically with this feature reverted.
+//
+// It asserts TLS 1.2 before the change and TLS 1.3 after it. Both are versions the
+// RHCOS system crypto policy allows the client to offer, so a handshake failure is
+// attributable to the registry rejecting the version rather than to curl declining to
+// offer it -- which would not be true of a TLS 1.0 or 1.1 probe.
+//
+// Uses ExecCmdOnNode to run curl on the node directly, since port 22625 is not
+// accessible from the CI test runner.
 func TestIRIController_VerifyTLSProfileEnforced(t *testing.T) {
+	skipIfNoBaremetal(t)
+
 	cs := framework.NewClientSet("")
 	ctx := context.Background()
 
@@ -384,93 +397,90 @@ func TestIRIController_VerifyTLSProfileEnforced(t *testing.T) {
 	password := string(authSecret.Data["password"])
 	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(ctrlcommon.IRIRegistryUsername+":"+password))
 
-	// Read the cluster's APIServer TLS profile to determine the expected minimum version.
-	apiServerCfg, err := cs.ConfigV1Interface.APIServers().Get(context.Background(), "cluster", v1.GetOptions{})
-	require.NoError(t, err)
-
-	profileName, expectedMinVersion, rejectedVersion := tlsVersionsFromProfile(t, apiServerCfg.Spec.TLSSecurityProfile)
-	t.Logf("Cluster TLS profile: %s, expected minimum TLS version: %s", profileName, expectedMinVersion)
-
 	// Find a master node to exec commands on.
-	masterNodes, err := cs.CoreV1Interface.Nodes().List(context.TODO(), v1.ListOptions{LabelSelector: "node-role.kubernetes.io/master="})
+	masterNodes, err := cs.CoreV1Interface.Nodes().List(ctx, v1.ListOptions{LabelSelector: "node-role.kubernetes.io/master="})
 	require.NoError(t, err)
 	require.NotEmpty(t, masterNodes.Items)
 	node := masterNodes.Items[0]
 
-	// Verify the minimum TLS version succeeds.
-	t.Run(fmt.Sprintf("minimum version succeeds with %s profile", profileName), func(t *testing.T) {
-		out := helpers.ExecCmdOnNode(t, cs, node, "curl", "-s", "-k", "-o", "/dev/null", "-w", "%{http_code}",
-			"-H", "Authorization: "+authHeader,
-			"--tlsv"+expectedMinVersion, "--tls-max", expectedMinVersion,
-			"https://localhost:22625/v2/")
-		require.Equal(t, "200", out, "expected TLS %s to succeed", expectedMinVersion)
+	apiServerCfg, err := cs.ConfigV1Interface.APIServers().Get(ctx, ctrlcommon.APIServerInstanceName, v1.GetOptions{})
+	require.NoError(t, err)
+	originalProfile := apiServerCfg.Spec.TLSSecurityProfile
+	require.Nil(t, originalProfile,
+		"this test assumes the cluster starts on the default TLS profile, found %v", originalProfile)
+
+	// Baseline: the starting profile resolves to tls1.2, and the client is able to
+	// negotiate it. Without this the post-change assertion cannot distinguish "the
+	// registry now refuses TLS 1.2" from "this client never offered TLS 1.2".
+	t.Run("TLS 1.2 is accepted before the profile changes", func(t *testing.T) {
+		require.True(t, iriRegistryAcceptsTLS(t, cs, node, authHeader, "1.2"))
 	})
 
-	// Verify that one version below the minimum is rejected at the TLS layer.
-	// curl exits with status 35 (CURLE_SSL_CONNECT_ERROR) when the server
-	// rejects the TLS version during the handshake.
-	t.Run(fmt.Sprintf("below minimum is rejected with %s profile", profileName), func(t *testing.T) {
-		_, err := helpers.ExecCmdOnNodeWithError(cs, node, "curl", "-s", "-k", "-o", "/dev/null", "-w", "%{http_code}",
-			"-H", "Authorization: "+authHeader,
-			"--tlsv"+rejectedVersion, "--tls-max", rejectedVersion,
-			"https://localhost:22625/v2/")
-		require.Error(t, err, "TLS %s should be rejected with %s profile", rejectedVersion, profileName)
-		require.Contains(t, err.Error(), "exit status 35", "expected TLS handshake failure (exit status 35), got: %v", err)
+	// Registered before the change so the cluster is restored even if the wait below
+	// times out partway through the control plane roll.
+	t.Cleanup(func() { setIRITLSProfile(t, cs, node, authHeader, originalProfile) })
+	setIRITLSProfile(t, cs, node, authHeader, &configv1.TLSSecurityProfile{Type: configv1.TLSProfileModernType})
+
+	t.Run("TLS 1.3 is accepted with the Modern profile", func(t *testing.T) {
+		require.True(t, iriRegistryAcceptsTLS(t, cs, node, authHeader, "1.3"),
+			"registry should accept TLS 1.3 under the Modern profile")
+	})
+
+	t.Run("TLS 1.2 is rejected with the Modern profile", func(t *testing.T) {
+		require.False(t, iriRegistryAcceptsTLS(t, cs, node, authHeader, "1.2"),
+			"registry should reject TLS 1.2 under the Modern profile, which sets a minimum of TLS 1.3")
 	})
 }
 
-// tlsVersionsFromProfile returns the profile name, expected minimum TLS version,
-// and the rejected TLS version (one below the minimum) for the given profile.
-// The versions are returned in curl format (e.g. "1.2", "1.3").
-func tlsVersionsFromProfile(t *testing.T, profile *configv1.TLSSecurityProfile) (profileName, expectedMinVersion, rejectedVersion string) {
+// setIRITLSProfile sets the cluster APIServer TLS profile and blocks until the IRI
+// registry on the given node is serving the resulting configuration.
+//
+// It waits on the registry's observable behaviour rather than on MachineConfigPool
+// status: the profile change has to travel through the IRI controller, a re-rendered
+// MachineConfig, and an MCD-driven daemon-reload and service restart, and only the
+// last of those is what the assertions care about.
+func setIRITLSProfile(t *testing.T, cs *framework.ClientSet, node corev1.Node, authHeader string, profile *configv1.TLSSecurityProfile) {
+	t.Helper()
+	ctx := context.Background()
+
+	expectedVersion := "1.2"
+	if profile != nil && profile.Type == configv1.TLSProfileModernType {
+		expectedVersion = "1.3"
+	}
+	t.Logf("Setting APIServer TLS profile to %v and waiting for the IRI registry to serve TLS %s", profile, expectedVersion)
+
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		apiServerCfg, err := cs.ConfigV1Interface.APIServers().Get(ctx, ctrlcommon.APIServerInstanceName, v1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		apiServerCfg.Spec.TLSSecurityProfile = profile
+		_, err = cs.ConfigV1Interface.APIServers().Update(ctx, apiServerCfg, v1.UpdateOptions{})
+		return err
+	})
+	require.NoError(t, err)
+
+	// The control plane rolls to pick up the new profile, so this is slow.
+	err = wait.PollUntilContextTimeout(ctx, 30*time.Second, 30*time.Minute, true, func(_ context.Context) (bool, error) {
+		return iriRegistryAcceptsTLS(t, cs, node, authHeader, expectedVersion), nil
+	})
+	require.NoError(t, err, "IRI registry did not start serving TLS %s after the profile change", expectedVersion)
+}
+
+// iriRegistryAcceptsTLS reports whether the IRI registry on the node completes a
+// request pinned to exactly the given TLS version.
+func iriRegistryAcceptsTLS(t *testing.T, cs *framework.ClientSet, node corev1.Node, authHeader, version string) bool {
 	t.Helper()
 
-	// Map from OpenShift TLS version strings to curl-compatible versions
-	// and the version below them for rejection testing.
-	tlsVersionMap := map[configv1.TLSProtocolVersion]struct{ curlVersion, belowVersion string }{
-		configv1.VersionTLS10: {"1.0", ""},
-		configv1.VersionTLS11: {"1.1", "1.0"},
-		configv1.VersionTLS12: {"1.2", "1.1"},
-		configv1.VersionTLS13: {"1.3", "1.2"},
+	out, err := helpers.ExecCmdOnNodeWithError(cs, node, "curl", "-s", "-k", "-o", "/dev/null", "-w", "%{http_code}",
+		"-H", "Authorization: "+authHeader,
+		"--tlsv"+version, "--tls-max", version,
+		"https://localhost:22625/v2/")
+	if err != nil {
+		t.Logf("TLS %s request to the IRI registry failed: %v", version, err)
+		return false
 	}
-
-	// Determine the profile spec and name.
-	var minTLSVersion configv1.TLSProtocolVersion
-	if profile == nil {
-		profileName = "Intermediate (default)"
-		minTLSVersion = configv1.TLSProfiles[configv1.TLSProfileIntermediateType].MinTLSVersion
-	} else {
-		profileName = string(profile.Type)
-		switch profile.Type {
-		case configv1.TLSProfileCustomType:
-			if profile.Custom != nil && profile.Custom.MinTLSVersion != "" {
-				minTLSVersion = profile.Custom.MinTLSVersion
-			} else {
-				// Custom profile with no spec or unset MinTLSVersion: fall back to
-				// Intermediate, matching the controller's behaviour.
-				minTLSVersion = configv1.TLSProfiles[configv1.TLSProfileIntermediateType].MinTLSVersion
-			}
-		default:
-			spec, ok := configv1.TLSProfiles[profile.Type]
-			if !ok {
-				t.Fatalf("Unknown TLS profile type: %s", profile.Type)
-			}
-			minTLSVersion = spec.MinTLSVersion
-		}
-	}
-
-	versions, ok := tlsVersionMap[minTLSVersion]
-	if !ok {
-		t.Fatalf("Unknown TLS version: %s", minTLSVersion)
-	}
-	expectedMinVersion = versions.curlVersion
-	rejectedVersion = versions.belowVersion
-
-	if rejectedVersion == "" {
-		t.Skipf("Skipping rejection test: no TLS version below %s to test against", expectedMinVersion)
-	}
-
-	return profileName, expectedMinVersion, rejectedVersion
+	return strings.TrimSpace(out) == "200"
 }
 
 func TestIRIController_ShouldPreventDeletionWhenInUse(t *testing.T) {

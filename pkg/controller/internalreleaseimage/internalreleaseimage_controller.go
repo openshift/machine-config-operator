@@ -344,19 +344,29 @@ func (ctrl *Controller) updateSecret(_, cur interface{}) {
 	ctrl.enqueueInternalReleaseImage()
 }
 
+// addAPIServer re-queues an IRI sync when the cluster APIServer config appears. Only
+// the singleton "cluster" instance carries the TLS profile the registry renders from.
 func (ctrl *Controller) addAPIServer(obj interface{}) {
 	apiServer := obj.(*configv1.APIServer)
-	klog.V(4).Infof("APIServer %s added", apiServer.Name)
+	if apiServer.Name != ctrlcommon.APIServerInstanceName {
+		return
+	}
+	klog.V(4).Infof("APIServer %s added, re-queuing IRI sync", apiServer.Name)
 	ctrl.enqueueInternalReleaseImage()
 }
 
+// updateAPIServer re-queues an IRI sync when the cluster APIServer TLS profile
+// changes. Other fields do not affect the rendered registry unit.
 func (ctrl *Controller) updateAPIServer(old, cur interface{}) {
 	oldAPIServer := old.(*configv1.APIServer)
 	newAPIServer := cur.(*configv1.APIServer)
+	if newAPIServer.Name != ctrlcommon.APIServerInstanceName {
+		return
+	}
 	if equality.Semantic.DeepEqual(oldAPIServer.Spec.TLSSecurityProfile, newAPIServer.Spec.TLSSecurityProfile) {
 		return
 	}
-	klog.V(4).Infof("APIServer %s TLS profile updated", newAPIServer.Name)
+	klog.V(4).Infof("APIServer %s TLS profile updated, re-queuing IRI sync", newAPIServer.Name)
 	ctrl.enqueueInternalReleaseImage()
 }
 
@@ -793,8 +803,9 @@ func (ctrl *Controller) addFinalizerToInternalReleaseImage(iri *mcfgv1.InternalR
 	return err
 }
 
-// getTLSProfile fetches the cluster APIServer TLS security profile.
-// Returns nil (which defaults to Intermediate) if the APIServer object is not found.
+// getTLSProfile fetches the cluster APIServer TLS security profile, or nil if the
+// APIServer object does not exist or does not set one. Interpreting nil is left to
+// the renderer.
 //
 // IRI is a new Tech Preview component with no prior TLS behavior, so we always
 // honor the cluster TLS profile regardless of APIServer.Spec.TLSAdherence.
