@@ -12,7 +12,8 @@ const (
 	CurrentImageAnnotationKey = "machineconfiguration.openshift.io/currentImage"
 	// DesiredImageAnnotationKey is used to specify the desired OS image pullspec for a machine
 	DesiredImageAnnotationKey = "machineconfiguration.openshift.io/desiredImage"
-
+	// MachineConfigServerURLAnnotationKey stores the MCS base URL for status reporting
+	MachineConfigServerURLAnnotationKey = "machineconfiguration.openshift.io/machineConfigServerURL"
 	// CurrentMachineConfigAnnotationKey is used to fetch current MachineConfig for a machine
 	CurrentMachineConfigAnnotationKey = "machineconfiguration.openshift.io/currentConfig"
 	// DesiredMachineConfigAnnotationKey is used to specify the desired MachineConfig for a machine
@@ -65,6 +66,10 @@ const (
 	InitialNodeAnnotationsFilePath = "/etc/machine-config-daemon/node-annotations.json"
 	// InitialNodeAnnotationsBakPath defines the path of InitialNodeAnnotationsFilePath when the initial bootstrap is done. We leave it around for debugging and reconciling.
 	InitialNodeAnnotationsBakPath = "/etc/machine-config-daemon/node-annotation.json.bak"
+	// MCSRootCABundlePath defines the path where the MCS root CA bundle is written
+	// by the Machine Config Server during ignition provisioning. The MCD uses this
+	// CA to establish TLS trust when sending firstboot failure reports to the MCS.
+	MCSRootCABundlePath = "/etc/machine-config-daemon/mcs-ca-bundle.crt"
 
 	// IgnitionSystemdPresetFile is where Ignition writes initial enabled/disabled systemd unit configs
 	// This should be removed on boot after MCO takes over, so if any of these are deleted we can go back
