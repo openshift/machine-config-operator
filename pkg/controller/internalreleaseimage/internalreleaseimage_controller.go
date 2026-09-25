@@ -173,6 +173,7 @@ func New(
 	apiServerInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addAPIServer,
 		UpdateFunc: ctrl.updateAPIServer,
+		DeleteFunc: ctrl.deleteAPIServer,
 	})
 
 	mcnInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -367,6 +368,33 @@ func (ctrl *Controller) updateAPIServer(old, cur interface{}) {
 		return
 	}
 	klog.V(4).Infof("APIServer %s TLS profile updated, re-queuing IRI sync", newAPIServer.Name)
+	ctrl.enqueueInternalReleaseImage()
+}
+
+// deleteAPIServer re-queues an IRI sync when the cluster APIServer config goes away,
+// so the registry falls back to the default profile. Without this the rendered
+// MachineConfig keeps the deleted profile's values until some unrelated event happens
+// to queue a sync.
+func (ctrl *Controller) deleteAPIServer(obj interface{}) {
+	apiServer, ok := obj.(*configv1.APIServer)
+	if !ok {
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("failed to get object from tombstone %#v", obj))
+			return
+		}
+		apiServer, ok = tombstone.Obj.(*configv1.APIServer)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not an APIServer %#v", obj))
+			return
+		}
+	}
+
+	if apiServer.Name != ctrlcommon.APIServerInstanceName {
+		return
+	}
+
+	klog.V(4).Infof("APIServer %s deleted, re-queuing IRI sync", apiServer.Name)
 	ctrl.enqueueInternalReleaseImage()
 }
 
