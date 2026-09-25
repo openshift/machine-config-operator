@@ -416,7 +416,13 @@ func TestIRIController_VerifyTLSProfileEnforced(t *testing.T) {
 	// baseline for a reason that has nothing to do with the registry. On the usual
 	// unset-profile cluster this resolves to what is already rendered, so the IRI
 	// controller produces an identical MachineConfig and nothing rolls.
-	setIRITLSProfile(t, cs, node, authHeader, &configv1.TLSSecurityProfile{Type: configv1.TLSProfileIntermediateType})
+	//
+	// The matching sub-struct has to be set alongside Type: the APIServer CRD rejects
+	// a profile that names a type without it.
+	setIRITLSProfile(t, cs, node, authHeader, &configv1.TLSSecurityProfile{
+		Type:         configv1.TLSProfileIntermediateType,
+		Intermediate: &configv1.IntermediateTLSProfile{},
+	})
 
 	// Baseline: Intermediate resolves to tls1.2, and the client is able to negotiate
 	// it. Without this the post-change assertion cannot distinguish "the registry now
@@ -425,7 +431,10 @@ func TestIRIController_VerifyTLSProfileEnforced(t *testing.T) {
 		require.True(t, iriRegistryAcceptsTLS(t, cs, node, authHeader, "1.2"))
 	})
 
-	setIRITLSProfile(t, cs, node, authHeader, &configv1.TLSSecurityProfile{Type: configv1.TLSProfileModernType})
+	setIRITLSProfile(t, cs, node, authHeader, &configv1.TLSSecurityProfile{
+		Type:   configv1.TLSProfileModernType,
+		Modern: &configv1.ModernTLSProfile{},
+	})
 
 	t.Run("TLS 1.3 is accepted with the Modern profile", func(t *testing.T) {
 		require.True(t, iriRegistryAcceptsTLS(t, cs, node, authHeader, "1.3"),
