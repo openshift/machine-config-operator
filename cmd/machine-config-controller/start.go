@@ -340,6 +340,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext, inspectionCache *image
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 			ctx.ConfigInformerFactory.Config().V1().ClusterVersions(),
+			ctx.ConfigInformerFactory.Config().V1().APIServers(),
 			ctx.KubeInformerFactory.Core().V1().Secrets(),
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigNodes(),
 			ctx.KubeInformerFactory.Core().V1().Nodes(),

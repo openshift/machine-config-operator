@@ -341,7 +341,11 @@ func (b *Bootstrap) Run(destDir string) error {
 	klog.Infof("Successfully generated MachineConfigs from kubelet configs.")
 
 	if iri {
-		iriConfigs, err := internalreleaseimage.RunInternalReleaseImageBootstrap(iriTLSCert, iriCredentialsSecret, cconfig)
+		var tlsProfile *apicfgv1.TLSSecurityProfile
+		if apiServer != nil {
+			tlsProfile = apiServer.Spec.TLSSecurityProfile
+		}
+		iriConfigs, err := internalreleaseimage.RunInternalReleaseImageBootstrap(iriTLSCert, iriCredentialsSecret, cconfig, tlsProfile)
 		if err != nil {
 			return err
 		}
