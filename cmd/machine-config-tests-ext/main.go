@@ -77,6 +77,19 @@ func main() {
 		Description:      "A long-running, resource-intensive test suite executed on a scheduled basis to provide deep validation beyond the standard executions",
 	})
 
+	ext.AddGlobalSuite(e.Suite{
+		Name: "openshift/machine-config-operator/parallel",
+		Parents: []string{
+			"openshift/conformance/parallel",
+		},
+		Qualifiers: []string{
+			`name.contains("[Suite:openshift/machine-config-operator/parallel]")`,
+		},
+		ClusterStability: e.ClusterStabilityStable,
+		TestTimeout:      &defaultTimeout,
+		Description:      "Non-disruptive suite that runs as part of the parallel conformance suite",
+	})
+
 	// If using Ginkgo, build test specs automatically
 	specs, err := g.BuildExtensionTestSpecsFromOpenShiftGinkgoSuite()
 	if err != nil {
