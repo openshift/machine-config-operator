@@ -11,6 +11,7 @@ ALL_COMPONENTS_PATHS = $(patsubst %,cmd/%,$(ALL_COMPONENTS))
 PREFIX ?= /usr
 GO111MODULE?=on
 PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
+DOCUMENT_URL ?=
 
 # Copied from coreos-assembler
 GOARCH := $(shell uname -m)
@@ -32,7 +33,7 @@ GOTAGS = "$(TAGS)"
 
 all: binaries
 
-.PHONY: clean test test-unit test-e2e verify update update-amis install-tools
+.PHONY: clean test test-unit test-e2e image-markdown image-markdown test-markdown verify update update-amis install-tools
 
 # Remove build artifaces
 # Example:
@@ -59,19 +60,32 @@ _verify-e2e-%:
 image:
 	hack/build-image
 
-# Build the markdownlint container image.
-image-markdownlint:
-	$(RUNTIME) build -f ./hack/markdown/Dockerfile --tag mco-markdownlint:latest ./hack/markdown
+# Build the Markdown tooling container image.
+image-markdown:
+	RUNTIME="$(RUNTIME)" hack/markdown/build-image.sh mco-markdownlint:latest ./hack/markdown/Dockerfile ./hack/markdown
+
+# Run the Markdown formatter's BATS tests. Credentialed roundtrip tests run
+# only when both DOCUMENT_URL and local Google Workspace credentials exist.
+test-markdown: image-markdown
+	RUNTIME="$(RUNTIME)" DOCUMENT_URL="$(DOCUMENT_URL)" hack/markdown/start-container.sh test
 
 # Run the markdown linter in a container.
-lint-md: image-markdownlint
-	$(RUNTIME) run \
-		--rm=true \
-		$$(if command -v podman >/dev/null 2>&1 && [ "$(RUNTIME)" = "podman" ]; then echo "--userns=keep-id"; fi) \
-		--user $$(id -u):$$(id -g) \
-		--env LINT_TARGET=$${WHAT:-} \
-		-v $$(pwd):/workdir:Z \
-		mco-markdownlint:latest
+lint-md: image-markdown
+	RUNTIME="$(RUNTIME)" WHAT="$${WHAT:-}" hack/markdown/start-container.sh lint "$${WHAT:-}"
+
+format-md: image-markdown
+	@test -n "$(MARKDOWN_FILE)" || (echo "MARKDOWN_FILE is required" >&2; exit 2)
+	RUNTIME="$(RUNTIME)" hack/markdown/start-container.sh format "$(MARKDOWN_FILE)"
+
+pull-md-from-google-drive: image-markdown
+	@test -n "$(MARKDOWN_FILE)" || (echo "MARKDOWN_FILE is required" >&2; exit 2)
+	@test -n "$(DOCUMENT_URL)" || (echo "DOCUMENT_URL is required" >&2; exit 2)
+	RUNTIME="$(RUNTIME)" DOCUMENT_URL="$(DOCUMENT_URL)" hack/markdown/start-container.sh pull "$(DOCUMENT_URL)" "$(MARKDOWN_FILE)"
+
+push-md-to-google-drive: image-markdown
+	@test -n "$(MARKDOWN_FILE)" || (echo "MARKDOWN_FILE is required" >&2; exit 2)
+	@test -n "$(DOCUMENT_URL)" || (echo "DOCUMENT_URL is required" >&2; exit 2)
+	RUNTIME="$(RUNTIME)" DOCUMENT_URL="$(DOCUMENT_URL)" hack/markdown/start-container.sh push "$(DOCUMENT_URL)" "$(MARKDOWN_FILE)"
 
 # Run tests
 test: test-unit test-e2e
