@@ -1,0 +1,11 @@
+name: openshift-azure-routes-timer-stop.timer
+enabled: true
+contents: |
+  [Unit]
+  Description=Stop Azure VIP routes timer after boot window
+
+  [Timer]
+  OnBootSec=15min
+
+  [Install]
+  WantedBy=timers.target
