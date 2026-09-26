@@ -91,8 +91,8 @@ func getMachineResourceSelectorFromMachineManagers(machineManagers []opv1.Machin
 }
 
 // Upgrades the Ignition stub enclosed in referenced secret if required
-func upgradeStubIgnitionIfRequired(secretName string, secretClient clientset.Interface) error {
-	secret, err := secretClient.CoreV1().Secrets(ctrlcommon.MachineAPINamespace).Get(context.TODO(), secretName, metav1.GetOptions{})
+func upgradeStubIgnitionIfRequired(ctx context.Context, secretName string, secretClient clientset.Interface) error {
+	secret, err := secretClient.CoreV1().Secrets(ctrlcommon.MachineAPINamespace).Get(ctx, secretName, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("error grabbing user data secret referenced in machineset: %w", err)
 	}
@@ -123,7 +123,7 @@ func upgradeStubIgnitionIfRequired(secretName string, secretClient clientset.Int
 			return fmt.Errorf("failed to marshal updated ignition back to json (secret %s): %w", secret.Name, err)
 		}
 		secret.Data[ctrlcommon.UserDataKey] = updatedIgnition
-		_, err = secretClient.CoreV1().Secrets(ctrlcommon.MachineAPINamespace).Update(context.TODO(), secret, metav1.UpdateOptions{})
+		_, err = secretClient.CoreV1().Secrets(ctrlcommon.MachineAPINamespace).Update(ctx, secret, metav1.UpdateOptions{})
 		if err != nil {
 			return fmt.Errorf("could not update secret %s: %w", secret.Name, err)
 		}
@@ -149,10 +149,10 @@ func (ctrl *Controller) isClusterStable() (bool, error) {
 
 // waitForMachineConfigurationReady waits for the MachineConfiguration to be ready
 // by polling until the status is populated and the ObservedGeneration matches Generation.
-func (ctrl *Controller) waitForMachineConfigurationReady() error {
+func (ctrl *Controller) waitForMachineConfigurationReady(ctx context.Context) error {
 	var mcop *opv1.MachineConfiguration
 	var pollError error
-	if err := wait.PollUntilContextTimeout(context.TODO(), 5*time.Second, 2*time.Minute, true, func(_ context.Context) (bool, error) {
+	if err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 2*time.Minute, true, func(_ context.Context) (bool, error) {
 		mcop, pollError = ctrl.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
 		if pollError != nil {
 			klog.Errorf("MachineConfiguration/cluster has not been created yet")
