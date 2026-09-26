@@ -32,6 +32,7 @@ func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
 			mcs, err := RunContainerRuntimeBootstrap("../../../templates", []*mcfgv1.ContainerRuntimeConfig{ctrcfg}, cc, pools, nil)
 			require.NoError(t, err)
 			require.Len(t, mcs, 1)
+			require.Equal(t, "false", mcs[0].Annotations[gomaxprocsInjectionEnabledAnnotationKey])
 
 			// add ctrcfg1 after bootstrap
 			ctrcfg1 := newContainerRuntimeConfig("log-level-master", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))

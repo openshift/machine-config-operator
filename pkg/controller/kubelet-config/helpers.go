@@ -73,6 +73,15 @@ func createNewKubeletDynamicSystemReservedIgnition(autoSystemReserved *bool, use
 	return &r
 }
 
+func createSystemGomaxprocsIgnition(behavior mcfgv1.GomaxprocsBehaviorType) *ign3types.File {
+	if behavior == "" {
+		return nil
+	}
+
+	r := ctrlcommon.NewIgnFileBytesOverwriting(ctrlcommon.SystemGomaxprocsEnvPath, []byte(fmt.Sprintf("SYSTEM_GOMAXPROCS_BEHAVIOR=%s\n", behavior)))
+	return &r
+}
+
 func createNewKubeletLogLevelIgnition(level int32) *ign3types.File {
 	config := fmt.Sprintf("[Service]\nEnvironment=\"KUBELET_LOG_LEVEL=%d\"\n", level)
 	r := ctrlcommon.NewIgnFileBytesOverwriting("/etc/systemd/system/kubelet.service.d/20-logging.conf", []byte(config))
@@ -521,18 +530,19 @@ func kubeletConfigToIgnFile(cfg *kubeletconfigv1beta1.KubeletConfiguration) (*ig
 }
 
 // generateKubeletIgnFiles generates the Ignition files from the kubelet config
-func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeConfig *kubeletconfigv1beta1.KubeletConfiguration) (*ign3types.File, *ign3types.File, *ign3types.File, error) {
+func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeConfig *kubeletconfigv1beta1.KubeletConfiguration, systemGomaxprocsBehavior mcfgv1.GomaxprocsBehaviorType) (*ign3types.File, *ign3types.File, *ign3types.File, *ign3types.File, error) {
 	var (
 		kubeletIgnition            *ign3types.File
 		logLevelIgnition           *ign3types.File
 		autoSizingReservedIgnition *ign3types.File
+		systemGomaxprocsIgnition   *ign3types.File
 	)
 	userDefinedSystemReserved := make(map[string]string)
 
 	if kubeletConfig.Spec.KubeletConfig != nil && kubeletConfig.Spec.KubeletConfig.Raw != nil {
 		specKubeletConfig, err := DecodeKubeletConfig(kubeletConfig.Spec.KubeletConfig.Raw)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("could not deserialize the new Kubelet config: %w", err)
+			return nil, nil, nil, nil, fmt.Errorf("could not deserialize the new Kubelet config: %w", err)
 		}
 
 		if val, ok := specKubeletConfig.SystemReserved["memory"]; ok {
@@ -565,7 +575,7 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 		// Merge the Old and New
 		err = mergo.Merge(originalKubeConfig, specKubeletConfig, mergo.WithOverride)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("could not merge original config and new config: %w", err)
+			return nil, nil, nil, nil, fmt.Errorf("could not merge original config and new config: %w", err)
 		}
 
 		// Empty strings are ignored by mergo, so we need to set them to empty string for SystemReservedCgroup explicitly
@@ -615,14 +625,14 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 
 	if originalKubeConfig.SystemReservedCgroup != "" && originalKubeConfig.SystemCgroups != "" {
 		if originalKubeConfig.SystemReservedCgroup != originalKubeConfig.SystemCgroups {
-			return nil, nil, nil, fmt.Errorf("invalid merged configuration: systemReservedCgroup (%s) must match systemCgroups (%s)", originalKubeConfig.SystemReservedCgroup, originalKubeConfig.SystemCgroups)
+			return nil, nil, nil, nil, fmt.Errorf("invalid merged configuration: systemReservedCgroup (%s) must match systemCgroups (%s)", originalKubeConfig.SystemReservedCgroup, originalKubeConfig.SystemCgroups)
 		}
 	}
 
 	// Encode the new config into an Ignition File
 	kubeletIgnition, err := kubeletConfigToIgnFile(originalKubeConfig)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("could not encode JSON: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("could not encode JSON: %w", err)
 	}
 
 	if kubeletConfig.Spec.LogLevel != nil {
@@ -634,6 +644,7 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 	if len(userDefinedSystemReserved) > 0 {
 		autoSizingReservedIgnition = createNewKubeletDynamicSystemReservedIgnition(nil, userDefinedSystemReserved)
 	}
+	systemGomaxprocsIgnition = createSystemGomaxprocsIgnition(systemGomaxprocsBehavior)
 
-	return kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, nil
+	return kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, systemGomaxprocsIgnition, nil
 }

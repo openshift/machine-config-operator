@@ -134,6 +134,27 @@ contents:
     function create_version_file {
         echo "{\"version\": $1}" > $2
     }
+    function configure_system_gomaxprocs {
+        local behavior=$1
+        rm -f /run/system-gomaxprocs.env
+        if [ "$behavior" != "Autosize" ]; then
+            return
+        fi
+        local gomaxprocs
+        gomaxprocs=$(awk -v cpu="$SYSTEM_RESERVED_CPU" 'BEGIN {
+            if (cpu ~ /m$/) {
+                gsub(/m$/, "", cpu)
+                val = cpu / 1000
+            } else {
+                val = cpu + 0
+            }
+            ival = int(val)
+            if (val > ival) ival++
+            if (ival < 1) ival = 1
+            print ival
+        }')
+        printf 'GOMAXPROCS=%s\n' "$gomaxprocs" > /run/system-gomaxprocs.env
+    }
     if ! [ -f $NODE_AUTO_SIZING_VERSION_FILE ]; then
         create_version_file $NODE_AUTO_SIZING_VERSION $NODE_AUTO_SIZING_VERSION_FILE
     fi
@@ -145,3 +166,4 @@ contents:
     else
         echo "Unrecognized command line option. Valid options are \"true\" or \"false\""
     fi
+    configure_system_gomaxprocs "${SYSTEM_GOMAXPROCS_BEHAVIOR:-}"

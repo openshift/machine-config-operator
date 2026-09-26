@@ -2,6 +2,7 @@ package containerruntimeconfig
 
 import (
 	"fmt"
+	"strconv"
 
 	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -41,6 +42,7 @@ func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.Contai
 			var configFileList []generatedConfigFile
 			ctrcfg := cfg.Spec.ContainerRuntimeConfig
 			additionalStorageEnabled := fgHandler != nil && fgHandler.Enabled(features.FeatureGateAdditionalStorageConfig)
+			gomaxprocsInjectionEnabled := fgHandler != nil && fgHandler.Enabled(features.FeatureGateGomaxprocsInjection)
 			if needsStorageUpdate(ctrcfg, additionalStorageEnabled) {
 				storageTOML, err := mergeConfigChanges(originalStorageIgn, cfg, func(data []byte, internal *mcfgv1.ContainerRuntimeConfiguration) ([]byte, error) {
 					return updateStorageConfig(data, internal, additionalStorageEnabled)
@@ -52,8 +54,8 @@ func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.Contai
 				}
 			}
 			// Create the cri-o drop-in files
-			if needsCRIODropinUpdate(ctrcfg, additionalStorageEnabled) {
-				crioFileConfigs := createCRIODropinFiles(cfg, additionalStorageEnabled)
+			if needsCRIODropinUpdate(ctrcfg, additionalStorageEnabled, gomaxprocsInjectionEnabled) {
+				crioFileConfigs := createCRIODropinFiles(cfg, additionalStorageEnabled, gomaxprocsInjectionEnabled)
 				configFileList = append(configFileList, crioFileConfigs...)
 			}
 
@@ -73,6 +75,7 @@ func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.Contai
 			}
 			mc.SetAnnotations(map[string]string{
 				ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
+				gomaxprocsInjectionEnabledAnnotationKey:              strconv.FormatBool(gomaxprocsInjectionEnabled),
 			})
 			oref := metav1.OwnerReference{
 				APIVersion: controllerKind.GroupVersion().String(),

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -844,6 +845,57 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			f.validateActions()
 
 			close(stopCh)
+		})
+	}
+}
+
+func TestContainerRuntimeConfigGomaxprocsFeatureGateTransition(t *testing.T) {
+	for _, currentEnabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("enabled=%t", currentEnabled), func(t *testing.T) {
+			f := newFixture(t)
+			f.skipActionsValidation = true
+			if currentEnabled {
+				f.fgHandler = ctrlcommon.NewFeatureGatesHardcodedHandler([]apicfgv1.FeatureGateName{features.FeatureGateGomaxprocsInjection}, nil)
+			} else {
+				f.fgHandler = ctrlcommon.NewFeatureGatesHardcodedHandler(nil, []apicfgv1.FeatureGateName{features.FeatureGateGomaxprocsInjection})
+			}
+
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, apicfgv1.AWSPlatformType)
+			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
+			cfg := newContainerRuntimeConfig("gomaxprocs", &mcfgv1.ContainerRuntimeConfiguration{
+				ContainerGomaxprocsBehavior: mcfgv1.GomaxprocsBehaviorAutosize,
+			}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+			managedKey := "99-master-generated-containerruntime"
+			cfg.Finalizers = []string{managedKey}
+			cfg.Status.ObservedGeneration = cfg.Generation
+			cfg.Status.Conditions = []mcfgv1.ContainerRuntimeConfigCondition{{Type: mcfgv1.ContainerRuntimeConfigSuccess}}
+
+			oldEnabled := !currentEnabled
+			oldIgn := createNewIgnition(createCRIODropinFiles(cfg, false, oldEnabled))
+			mc := helpers.NewMachineConfig(managedKey, map[string]string{"node-role/master": ""}, "dummy://", oldIgn.Storage.Files)
+			mc.SetAnnotations(map[string]string{
+				ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
+				gomaxprocsInjectionEnabledAnnotationKey:              strconv.FormatBool(oldEnabled),
+			})
+
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mccrLister = append(f.mccrLister, cfg)
+			f.objects = append(f.objects, mc, cfg)
+
+			ctrl := f.newController()
+			require.NoError(t, ctrl.syncHandler(getKey(cfg, t)))
+
+			updated, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), managedKey, metav1.GetOptions{})
+			require.NoError(t, err)
+			assert.Equal(t, strconv.FormatBool(currentEnabled), updated.Annotations[gomaxprocsInjectionEnabledAnnotationKey])
+			ign, err := ctrlcommon.ParseAndConvertConfig(updated.Spec.Config.Raw)
+			require.NoError(t, err)
+			found := false
+			for _, file := range ign.Storage.Files {
+				found = found || file.Path == crioDropInFilePathContainerGomaxprocs
+			}
+			assert.Equal(t, currentEnabled, found)
 		})
 	}
 }
