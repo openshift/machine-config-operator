@@ -19,6 +19,21 @@ spec:
       rules:
         - expr: mco_mosc_count
           record: mco_mosc_count:sum
+    - name: rhcos9-deprecated
+      rules:
+        - alert: RHCOS9Deprecated
+          expr: |
+            count(mcd_host_os_and_version{os="RHCOS", version=~"9\\..*"}) > 0
+          for: 10m
+          labels:
+            namespace: openshift-machine-config-operator
+            severity: info
+          annotations:
+            summary: "This cluster has nodes running deprecated RHCOS 9"
+            description: >-
+              {{ $value }} node(s) are running RHCOS 9, which is deprecated in OpenShift 5.0 and will be removed in OpenShift 5.3. Migrate all nodes to RHCOS 10 before upgrading to OpenShift 5.3.
+              See https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/postinstallation_configuration/coreos-layering#mco-image-streams-updating
+              for migration steps.
     - name: runc-deprecated
       rules:
         - alert: RuncDeprecated
