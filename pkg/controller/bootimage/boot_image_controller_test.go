@@ -1438,3 +1438,28 @@ func TestSyncHandlerReceivesContext(t *testing.T) {
 	require.NotNil(t, receivedCtx, "syncHandler should receive a non-nil context")
 	assert.Equal(t, ctx, receivedCtx, "syncHandler should receive the same context passed to processNextWorkItem")
 }
+
+func TestWaitForMachineConfigurationReadyCancelledContextWithReadyEntry(t *testing.T) {
+	mcop := &opv1.MachineConfiguration{
+		ObjectMeta: v1.ObjectMeta{
+			Name:       ctrlcommon.MCOOperatorKnobsObjectName,
+			Generation: 1,
+		},
+		Status: opv1.MachineConfigurationStatus{
+			ObservedGeneration: 1,
+		},
+	}
+
+	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+	require.NoError(t, indexer.Add(mcop))
+
+	ctrl := &Controller{
+		mcopLister: mcoplistersv1.NewMachineConfigurationLister(indexer),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := ctrl.waitForMachineConfigurationReady(ctx)
+	assert.Error(t, err, "should return an error when context is cancelled, even if MachineConfiguration is ready")
+}

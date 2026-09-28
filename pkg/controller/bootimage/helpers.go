@@ -150,12 +150,12 @@ func (ctrl *Controller) isClusterStable() (bool, error) {
 // waitForMachineConfigurationReady waits for the MachineConfiguration to be ready
 // by polling until the status is populated and the ObservedGeneration matches Generation.
 func (ctrl *Controller) waitForMachineConfigurationReady(ctx context.Context) error {
-	var mcop *opv1.MachineConfiguration
 	var pollError error
 	if err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 2*time.Minute, true, func(_ context.Context) (bool, error) {
-		mcop, pollError = ctrl.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
-		if pollError != nil {
+		mcop, listerErr := ctrl.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
+		if listerErr != nil {
 			klog.Errorf("MachineConfiguration/cluster has not been created yet")
+			pollError = listerErr
 			return false, nil
 		}
 
@@ -167,8 +167,15 @@ func (ctrl *Controller) waitForMachineConfigurationReady(ctx context.Context) er
 		}
 		return true, nil
 	}); err != nil {
+		// Context cancellation/timeout takes precedence over the last poll error.
+		if ctx.Err() != nil {
+			return fmt.Errorf("MachineConfiguration was not ready: %w", err)
+		}
 		klog.Errorf("MachineConfiguration was not ready: %v", pollError)
 		return pollError
+	}
+	if ctx.Err() != nil {
+		return fmt.Errorf("context cancelled after MachineConfiguration became ready: %w", ctx.Err())
 	}
 	return nil
 }

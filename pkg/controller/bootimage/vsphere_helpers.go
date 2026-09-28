@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
@@ -691,9 +692,10 @@ func getClientsFromServerURL(ctx context.Context, server, username, password str
 	restClient := rest.NewClient(client.Client)
 	err = restClient.Login(ctx, vcenterURL.User)
 	if err != nil {
-		logoutErr := client.Logout(ctx)
-		if logoutErr != nil {
-			err = logoutErr
+		logoutCtx, logoutCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer logoutCancel()
+		if logoutErr := client.Logout(logoutCtx); logoutErr != nil {
+			return nil, nil, fmt.Errorf("failed in restClient.Login: %w (also failed to logout: %v)", err, logoutErr)
 		}
 		return nil, nil, fmt.Errorf("failed in restClient.Login %w", err)
 	}
