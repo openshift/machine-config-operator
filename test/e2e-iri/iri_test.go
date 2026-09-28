@@ -448,12 +448,19 @@ func TestIRIController_VerifyTLSProfileEnforced(t *testing.T) {
 }
 
 // setIRITLSProfile sets the cluster APIServer TLS profile and blocks until the IRI
-// registry on the given node is serving the resulting configuration.
+// registry on the given node is serving the resulting configuration and the master
+// pool has finished rolling.
 //
-// It waits on the registry's observable behaviour rather than on MachineConfigPool
-// status: the profile change has to travel through the IRI controller, a re-rendered
-// MachineConfig, and an MCD-driven daemon-reload and service restart, and only the
-// last of those is what the assertions care about.
+// The registry check is what the assertions care about: the profile change has to
+// travel through the IRI controller, a re-rendered MachineConfig, and an MCD-driven
+// daemon-reload and service restart, and MachineConfigPool status alone does not say
+// the last of those has happened.
+//
+// The pool check is what the rest of the suite cares about. The registry on one node
+// goes green as soon as that node has the new config, while the other masters are
+// still rebooting. Returning there leaves the control plane mid-roll, and the next
+// test to run -- TestIRIController_IRIDelete, in its own binary right after this one
+// -- then finds no ready master node and fails.
 func setIRITLSProfile(t *testing.T, cs *framework.ClientSet, node corev1.Node, authHeader string, profile *configv1.TLSSecurityProfile) {
 	t.Helper()
 	ctx := context.Background()
@@ -486,10 +493,31 @@ func setIRITLSProfile(t *testing.T, cs *framework.ClientSet, node corev1.Node, a
 	require.NoError(t, err)
 
 	// The control plane rolls to pick up the new profile, so this is slow.
-	err = wait.PollUntilContextTimeout(ctx, 30*time.Second, 30*time.Minute, true, func(_ context.Context) (bool, error) {
-		return settled(), nil
+	//
+	// Both halves are needed, and neither is sufficient alone. Waiting only on the
+	// pool would return immediately when the profile resolves to what is already
+	// rendered and nothing rolls, and would also accept a pool that still reports the
+	// pre-change state as Updated. Waiting only on the registry returns mid-roll.
+	err = wait.PollUntilContextTimeout(ctx, 30*time.Second, 40*time.Minute, true, func(ctx context.Context) (bool, error) {
+		return settled() && masterPoolIsSettled(ctx, t, cs), nil
 	})
-	require.NoError(t, err, "IRI registry did not %s after the profile change", wanted)
+	require.NoError(t, err, "IRI registry did not %s after the profile change, or the master pool did not finish rolling", wanted)
+}
+
+// masterPoolIsSettled reports whether every master has the pool's current target
+// config and is ready.
+func masterPoolIsSettled(ctx context.Context, t *testing.T, cs *framework.ClientSet) bool {
+	t.Helper()
+
+	mcp, err := cs.MachineConfigPools().Get(ctx, "master", v1.GetOptions{})
+	if err != nil {
+		t.Logf("Could not read the master pool: %v", err)
+		return false
+	}
+	return mcp.Status.MachineCount > 0 &&
+		mcp.Status.UpdatedMachineCount == mcp.Status.MachineCount &&
+		mcp.Status.ReadyMachineCount == mcp.Status.MachineCount &&
+		mcp.Status.DegradedMachineCount == 0
 }
 
 // iriRegistryAcceptsTLS reports whether the IRI registry on the node completes a
