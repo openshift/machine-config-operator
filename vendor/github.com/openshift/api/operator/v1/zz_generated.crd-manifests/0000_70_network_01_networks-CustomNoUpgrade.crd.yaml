@@ -397,7 +397,25 @@ spec:
                               from OVN to outside without touching the host stack. Setting this to true means hardware
                               offload will not be supported. Default is false if GatewayConfig is specified.
                             type: boolean
+                          uplinkMode:
+                            description: |-
+                              uplinkMode controls whether the external gateway bridge (br-ex) requires a physical uplink port.
+                              Allowed values are "Required" and "Optional".
+                              When set to "Required", ovn-kubernetes requires an uplink on the gateway bridge.
+                              When set to "Optional", ovn-kubernetes allows the gateway bridge to start without an uplink.
+                              When omitted, this means no opinion and the platform is left to choose a reasonable default,
+                              which is subject to change over time. The current default is "Required".
+                              This setting only takes effect when routingViaHost is true (local gateway mode).
+                            enum:
+                            - Required
+                            - Optional
+                            type: string
                         type: object
+                        x-kubernetes-validations:
+                        - message: uplinkMode can only be set when routingViaHost
+                            is true
+                          rule: '!has(self.uplinkMode) || (has(self.routingViaHost)
+                            && self.routingViaHost == true)'
                       genevePort:
                         description: |-
                           geneve port is the UDP port to be used by geneve encapulation.
