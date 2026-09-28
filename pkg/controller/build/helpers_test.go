@@ -200,6 +200,37 @@ func TestIsMachineOSBuildStatusUpdateNeeded(t *testing.T) {
 	}
 }
 
+func TestIsMachineOSBuildStatusUpdateNeededDigestedImagePushSpec(t *testing.T) {
+	t.Parallel()
+
+	succeeded := apihelpers.MachineOSBuildSucceededConditions()
+
+	// Terminal → Terminal with a changed DigestedImagePushSpec must be allowed
+	// (the image-reuse path reassigns a new image to an existing successful MOSB).
+	oldDifferent := mcfgv1.MachineOSBuildStatus{
+		Conditions:            succeeded,
+		DigestedImagePushSpec: "registry.example.com/image@sha256:aaa",
+	}
+	curDifferent := mcfgv1.MachineOSBuildStatus{
+		Conditions:            succeeded,
+		DigestedImagePushSpec: "registry.example.com/image@sha256:bbb",
+	}
+	result, reason := isMachineOSBuildStatusUpdateNeeded(oldDifferent, curDifferent)
+	assert.True(t, result, "expected update when DigestedImagePushSpec changes in terminal state: %s", reason)
+
+	// Terminal → Terminal with the same DigestedImagePushSpec must still be blocked.
+	oldSame := mcfgv1.MachineOSBuildStatus{
+		Conditions:            succeeded,
+		DigestedImagePushSpec: "registry.example.com/image@sha256:aaa",
+	}
+	curSame := mcfgv1.MachineOSBuildStatus{
+		Conditions:            succeeded,
+		DigestedImagePushSpec: "registry.example.com/image@sha256:aaa",
+	}
+	result2, reason2 := isMachineOSBuildStatusUpdateNeeded(oldSame, curSame)
+	assert.False(t, result2, "expected no update when DigestedImagePushSpec is unchanged in terminal state: %s", reason2)
+}
+
 func TestNeedsPreBuiltImageAnnotationCleanup(t *testing.T) {
 	t.Parallel()
 
