@@ -303,7 +303,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	})
 })
 
-func cloneMachineSet(oc *exutil.CLI, ms *MachineSet, newMsName, imageVersion, ignitionVersion string) *MachineSet {
+func cloneMachineSet(oc *exutil.CLI, ms ManagedMachineSet, newMsName, imageVersion, ignitionVersion string) ManagedMachineSet {
 	var (
 		newSecretName = getClonedSecretName(newMsName)
 		platform      = exutil.CheckPlatform(oc.AsAdmin())
@@ -318,31 +318,29 @@ func cloneMachineSet(oc *exutil.CLI, ms *MachineSet, newMsName, imageVersion, ig
 
 	// Create a new secret using the given ignition version
 	exutil.By(fmt.Sprintf("Create a new secret with %s ignition version", ignitionVersion))
-	currentSecret := ms.GetOrFail(`{.spec.template.spec.providerSpec.value.userDataSecret.name}`)
-	logger.Infof("Duplicating secret %s with new name %s", currentSecret, newSecretName)
+	currentSecretName, csErr := ms.GetUserDataSecretName()
+	o.Expect(csErr).NotTo(o.HaveOccurred(), "Error getting user-data secret name from %s", ms.GetName())
+	logger.Infof("Duplicating secret %s with new name %s", currentSecretName, newSecretName)
 
 	modifyUserData := func(userData string) (string, error) { return convertUserDataToNewVersion(userData, ignitionVersion) }
-	clonedSecret, sErr := duplicateMachinesetSecret(oc, currentSecret, newSecretName, modifyUserData, nil)
+	clonedSecret, sErr := duplicateMachinesetSecret(oc, currentSecretName, newSecretName, modifyUserData, nil)
 	o.Expect(sErr).NotTo(o.HaveOccurred(), "Error duplicating machine-api secret")
 	o.Expect(clonedSecret).To(Exist(), "The secret was not duplicated for machineset %s", newMs)
 	logger.Infof("OK!\n")
 
 	// Get the right base image name from the rhcos json info stored in the github repositories
 	exutil.By(fmt.Sprintf("Get the base image for version %s", imageVersion))
-	rhcosHandler, err := GetRHCOSHandler(platform)
-	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the rhcos handler")
-
 	architecture, err := ms.GetArchitecture()
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the arechitecture from machineset %s", ms.GetName())
 
 	stream := ms.GetOSStream()
 	logger.Infof("MachineSet %s is using OS stream %s", ms.GetName(), stream)
 
-	baseImage, err := rhcosHandler.GetBaseImageFromRHCOSImageInfo(imageVersion, stream, architecture, getCurrentRegionOrFail(oc.AsAdmin()))
+	baseImage, err := GetBaseImageFromRHCOSImageInfo(platform, imageVersion, stream, architecture, getCurrentRegionOrFail(oc.AsAdmin()))
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the base image")
 	logger.Infof("Using base image %s", baseImage)
 
-	baseImageURL, err := rhcosHandler.GetBaseImageURLFromRHCOSImageInfo(imageVersion, stream, architecture)
+	baseImageURL, err := GetBaseImageURLFromRHCOSImageInfo(platform, imageVersion, stream, architecture)
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the base image URL")
 
 	// In vshpere we will upload the image. To avoid collisions we will add prefix to identify our image
@@ -369,7 +367,7 @@ func cloneMachineSet(oc *exutil.CLI, ms *MachineSet, newMsName, imageVersion, ig
 	return newMs
 }
 
-func removeClonedMachineSet(ms *MachineSet, mcp *MachineConfigPool, expectedNumWorkers int) {
+func removeClonedMachineSet(ms ManagedMachineSet, mcp *MachineConfigPool, expectedNumWorkers int) {
 	if ms.Exists() {
 		logger.Infof("Scaling %s machineset to zero", ms.GetName())
 		o.Expect(ms.ScaleTo(0)).To(o.Succeed(),
@@ -392,7 +390,7 @@ func removeClonedMachineSet(ms *MachineSet, mcp *MachineConfigPool, expectedNumW
 		}
 	}
 
-	clonedSecret := NewSecret(ms.oc, MachineAPINamespace, getClonedSecretName(ms.GetName()))
+	clonedSecret := NewSecret(ms.GetOC(), ms.GetNamespace(), getClonedSecretName(ms.GetName()))
 	if clonedSecret.Exists() {
 		logger.Infof("Removing %s secret", clonedSecret)
 		o.Expect(clonedSecret.Delete()).To(o.Succeed(),
@@ -508,144 +506,115 @@ func getClonedSecretName(msName string) string {
 	return clonedPrefix + msName
 }
 
-func GetRHCOSHandler(platform string) (RHCOSHandler, error) {
+func GetBaseImageFromRHCOSImageInfo(platform, version, stream string, arch architecture.Architecture, region string) (string, error) {
+	stringArch := arch.GNUString()
+
 	switch platform {
 	case AWSPlatform:
-		return AWSRHCOSHandler{}, nil
+		rhcosImageInfo, err := getRHCOSImagesInfo(version, stream)
+		if err != nil {
+			return "", err
+		}
+
+		if region == "" {
+			return "", fmt.Errorf("region cannot have an empty value when we try to get the base image in platform %s", platform)
+		}
+
+		var imagePath string
+		if CompareVersions(version, "<", "4.10") {
+			imagePath = `amis.` + region + `.hvm`
+		} else {
+			imagePath = fmt.Sprintf("architectures.%s.images.%s.regions.%s.image", stringArch, platform, region)
+		}
+
+		logger.Infof("Looking for rhcos base image info in path %s", imagePath)
+		baseImage := gjson.Get(rhcosImageInfo, imagePath)
+		if !baseImage.Exists() {
+			logger.Infof("rhcos info:\n%s", rhcosImageInfo)
+			return "", fmt.Errorf("could not find the base image for version <%s> in platform <%s> architecture <%s> and region <%s> with path %s",
+				version, platform, arch, region, imagePath)
+		}
+		return baseImage.String(), nil
+
 	case GCPPlatform:
-		return GCPRHCOSHandler{}, nil
+		if CompareVersions(version, "=", "4.1") {
+			return "", fmt.Errorf("there is no image base image supported for platform %s in version %s", platform, version)
+		}
+
+		rhcosImageInfo, err := getRHCOSImagesInfo(version, stream)
+		if err != nil {
+			return "", err
+		}
+
+		var imagePath, projectPath string
+		if CompareVersions(version, "<", "4.10") {
+			imagePath = "gcp.image"
+			projectPath = "gcp.project"
+		} else {
+			imagePath = fmt.Sprintf("architectures.%s.images.%s.name", stringArch, platform)
+			projectPath = fmt.Sprintf("architectures.%s.images.%s.project", stringArch, platform)
+		}
+
+		logger.Infof("Looking for rhcos base image name in path %s", imagePath)
+		baseImage := gjson.Get(rhcosImageInfo, imagePath)
+		if !baseImage.Exists() {
+			logger.Infof("rhcos info:\n%s", rhcosImageInfo)
+			return "", fmt.Errorf("could not find the base image for version <%s> in platform <%s> architecture <%s> and region <%s> with path %s",
+				version, platform, arch, region, imagePath)
+		}
+
+		logger.Infof("Looking for rhcos base image project in path %s", projectPath)
+		project := gjson.Get(rhcosImageInfo, projectPath)
+		if !project.Exists() {
+			logger.Infof("rhcos info:\n%s", rhcosImageInfo)
+			return "", fmt.Errorf("could not find the project where the base image is stored with version <%s> in platform <%s> architecture <%s> and region <%s> with path %s",
+				version, platform, arch, region, projectPath)
+		}
+
+		return fmt.Sprintf("projects/%s/global/images/%s", project.String(), baseImage.String()), nil
+
 	case VspherePlatform:
-		return VsphereRHCOSHandler{}, nil
+		baseImageURL, err := GetBaseImageURLFromRHCOSImageInfo(platform, version, stream, arch)
+		if err != nil {
+			return "", err
+		}
+		return path.Base(baseImageURL), nil
+
 	default:
-		return nil, fmt.Errorf("platform %s is not supported and cannot get RHCOSHandler", platform)
+		return "", fmt.Errorf("platform %s is not supported for getting RHCOS base image", platform)
 	}
 }
 
-type RHCOSHandler interface {
-	GetBaseImageFromRHCOSImageInfo(version, stream string, arch architecture.Architecture, region string) (string, error)
-	GetBaseImageURLFromRHCOSImageInfo(version, stream string, arch architecture.Architecture) (string, error)
-}
+// GetBaseImageURLFromRHCOSImageInfo returns the download URL for the RHCOS base image
+// for the given platform, version, stream and architecture from the RHCOS image metadata.
+func GetBaseImageURLFromRHCOSImageInfo(platform, version, stream string, arch architecture.Architecture) (string, error) {
+	var platformKey, format string
+	switch platform {
+	case AWSPlatform:
+		platformKey, format = "aws", "vmdk.gz"
+	case GCPPlatform:
+		platformKey, format = "gcp", "tar.gz"
+	case VspherePlatform:
+		platformKey, format = "vmware", "ova"
+	default:
+		return "", fmt.Errorf("platform %s is not supported for getting RHCOS base image URL", platform)
+	}
 
-type AWSRHCOSHandler struct{}
+	stringArch := arch.GNUString()
+	olderThan410 := CompareVersions(version, "<", "4.10")
 
-func (aws AWSRHCOSHandler) GetBaseImageFromRHCOSImageInfo(version, stream string, arch architecture.Architecture, region string) (string, error) {
-	var (
-		path       string
-		stringArch = arch.GNUString()
-		platform   = AWSPlatform
-	)
-
+	// Fetch the RHCOS image metadata JSON from the github repositories for the given version and stream
 	rhcosImageInfo, err := getRHCOSImagesInfo(version, stream)
 	if err != nil {
 		return "", err
 	}
 
-	if region == "" {
-		return "", fmt.Errorf("region cannot have an empty value when we try to get the base image in platform %s", platform)
-	}
-	if CompareVersions(version, "<", "4.10") {
-		path = `amis.` + region + `.hvm`
-	} else {
-		path = fmt.Sprintf("architectures.%s.images.%s.regions.%s.image", stringArch, platform, region)
-
-	}
-
-	logger.Infof("Looking for rhcos base image info in path %s", path)
-	baseImage := gjson.Get(rhcosImageInfo, path)
-	if !baseImage.Exists() {
-		logger.Infof("rhcos info:\n%s", rhcosImageInfo)
-		return "", fmt.Errorf("could not find the base image for version <%s> in platform <%s> architecture <%s> and region <%s> with path %s",
-			version, platform, arch, region, path)
-	}
-	return baseImage.String(), nil
-}
-
-func (aws AWSRHCOSHandler) GetBaseImageURLFromRHCOSImageInfo(version, stream string, arch architecture.Architecture) (string, error) {
-	return getBaseImageURLFromRHCOSImageInfo(version, stream, "aws", "vmdk.gz", arch.GNUString())
-}
-
-type GCPRHCOSHandler struct{}
-
-func (gcp GCPRHCOSHandler) GetBaseImageFromRHCOSImageInfo(version, stream string, arch architecture.Architecture, region string) (string, error) {
-	var (
-		imagePath   string
-		projectPath string
-		stringArch  = arch.GNUString()
-		platform    = GCPPlatform
-	)
-
-	if CompareVersions(version, "=", "4.1") {
-		return "", fmt.Errorf("there is no image base image supported for platform %s in version %s", platform, version)
-	}
-
-	rhcosImageInfo, err := getRHCOSImagesInfo(version, stream)
-	if err != nil {
-		return "", err
-	}
-
-	if CompareVersions(version, "<", "4.10") {
-		imagePath = "gcp.image"
-		projectPath = "gcp.project"
-	} else {
-		imagePath = fmt.Sprintf("architectures.%s.images.%s.name", stringArch, platform)
-		projectPath = fmt.Sprintf("architectures.%s.images.%s.project", stringArch, platform)
-	}
-
-	logger.Infof("Looking for rhcos base image name in path %s", imagePath)
-	baseImage := gjson.Get(rhcosImageInfo, imagePath)
-	if !baseImage.Exists() {
-		logger.Infof("rhcos info:\n%s", rhcosImageInfo)
-		return "", fmt.Errorf("could not find the base image for version <%s> in platform <%s> architecture <%s> and region <%s> with path %s",
-			version, platform, arch, region, imagePath)
-	}
-
-	logger.Infof("Looking for rhcos base image project in path %s", projectPath)
-	project := gjson.Get(rhcosImageInfo, projectPath)
-	if !project.Exists() {
-		logger.Infof("rhcos info:\n%s", rhcosImageInfo)
-		return "", fmt.Errorf("could not find the project where the base image is stored with version <%s> in platform <%s> architecture <%s> and region <%s> with path %s",
-			version, platform, arch, region, projectPath)
-	}
-
-	return fmt.Sprintf("projects/%s/global/images/%s", project.String(), baseImage.String()), nil
-}
-
-func (gcp GCPRHCOSHandler) GetBaseImageURLFromRHCOSImageInfo(version, stream string, arch architecture.Architecture) (string, error) {
-	return getBaseImageURLFromRHCOSImageInfo(version, stream, "gcp", "tar.gz", arch.GNUString())
-}
-
-type VsphereRHCOSHandler struct{}
-
-func (vsp VsphereRHCOSHandler) GetBaseImageFromRHCOSImageInfo(version, stream string, arch architecture.Architecture, _ string) (string, error) {
-	baseImageURL, err := vsp.GetBaseImageURLFromRHCOSImageInfo(version, stream, arch)
-	if err != nil {
-		return "", err
-	}
-
-	return path.Base(baseImageURL), nil
-}
-
-func (vsp VsphereRHCOSHandler) GetBaseImageURLFromRHCOSImageInfo(version, stream string, arch architecture.Architecture) (string, error) {
-	return getBaseImageURLFromRHCOSImageInfo(version, stream, "vmware", "ova", arch.GNUString())
-}
-
-func getBaseImageURLFromRHCOSImageInfo(version, stream, platform, format, stringArch string) (string, error) {
-	var (
-		imagePath    string
-		baseURIPath  string
-		olderThan410 = CompareVersions(version, "<", "4.10")
-	)
-
-	rhcosImageInfo, err := getRHCOSImagesInfo(version, stream)
-	if err != nil {
-		return "", err
-	}
-
+	var imagePath, baseURIPath string
 	if olderThan410 {
-		imagePath = fmt.Sprintf("images.%s.path", platform)
+		imagePath = fmt.Sprintf("images.%s.path", platformKey)
 		baseURIPath = "baseURI"
 	} else {
-		imagePath = fmt.Sprintf("architectures.%s.artifacts.%s.formats.%s.disk.location", stringArch, platform, strings.ReplaceAll(format, ".", `\.`))
+		imagePath = fmt.Sprintf("architectures.%s.artifacts.%s.formats.%s.disk.location", stringArch, platformKey, strings.ReplaceAll(format, ".", `\.`))
 	}
 
 	logger.Infof("Looking for rhcos base image path name in path %s", imagePath)
@@ -653,7 +622,7 @@ func getBaseImageURLFromRHCOSImageInfo(version, stream, platform, format, string
 	if !baseImageURL.Exists() {
 		logger.Infof("rhcos info:\n%s", rhcosImageInfo)
 		return "", fmt.Errorf("could not find the base image for version <%s> in platform <%s> architecture <%s> and format <%s> with path %s",
-			version, platform, stringArch, format, imagePath)
+			version, platformKey, stringArch, format, imagePath)
 	}
 
 	if !olderThan410 {
@@ -665,13 +634,13 @@ func getBaseImageURLFromRHCOSImageInfo(version, stream, platform, format, string
 	if !baseURI.Exists() {
 		logger.Infof("rhcos info:\n%s", rhcosImageInfo)
 		return "", fmt.Errorf("could not find the base URI with version <%s> in platform <%s> architecture <%s> and format <%s> with path %s",
-			version, platform, stringArch, format, baseURIPath)
+			version, platformKey, stringArch, format, baseURIPath)
 	}
 
 	return fmt.Sprintf("%s/%s", strings.Replace(strings.Trim(baseURI.String(), "/"), "releases-art-rhcos.svc.ci.openshift.org", "rhcos.mirror.openshift.com", 1), strings.Trim(baseImageURL.String(), "/")), nil
 }
 
-func uploadBaseImageToCloud(ms *MachineSet, platform, baseImageURL, baseImage string) error {
+func uploadBaseImageToCloud(ms ManagedMachineSet, platform, baseImageURL, baseImage string) error {
 
 	switch platform {
 	case AWSPlatform:
@@ -681,7 +650,7 @@ func uploadBaseImageToCloud(ms *MachineSet, platform, baseImageURL, baseImage st
 		logger.Infof("No need to updload images in GCP")
 		return nil
 	case VspherePlatform:
-		vsInfo, err := GetVSphereConnectionInfoForMachineSet(ms)
+		vsInfo, err := ms.GetVSphereConnectionInfo()
 		if err != nil {
 			return err
 		}

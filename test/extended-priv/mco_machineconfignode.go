@@ -242,7 +242,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("Machineset %s will be used for testing", ms.GetName())
 		logger.Infof("OK\n")
 
-		replica, cerr := strconv.Atoi(ms.GetReplicaOfSpec())
+		replica, cerr := strconv.Atoi(OrFail[string](ms.GetReplicaOfSpec()))
 		o.Expect(cerr).NotTo(o.HaveOccurred(), "Convert string to int error")
 
 		defer func() {

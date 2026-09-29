@@ -104,8 +104,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		machineConfiguration.WaitForBootImageSkewEnforcementStatusMode(SkewEnforcementAutomaticMode)
 
 		// Pick a random machineset to test
-		machineSetUnderTest := NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
-		logger.Infof("MachineSet under test: %s", machineSetUnderTest.name)
+		machineSetUnderTest := GetValidManagedMachineSet(oc)
+		logger.Infof("MachineSet under test: %s", machineSetUnderTest.GetName())
 
 		// Save and restore full spec to ensure cleanup regardless of what we modify
 		originalMachineSetSpec := machineSetUnderTest.GetSpecOrFail()
@@ -116,7 +116,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		// Patch the boot image to an older version to trigger an update loop
 		backdatedBootImage := getBackdatedBootImage(oc, machineSetUnderTest)
 		o.Expect(machineSetUnderTest.SetCoreOsBootImage(backdatedBootImage)).To(o.Succeed())
-		logger.Infof("Set backdated boot image '%s' in MachineSet %s to trigger update loop", backdatedBootImage, machineSetUnderTest.name)
+		logger.Infof("Set backdated boot image '%s' in MachineSet %s to trigger update loop", backdatedBootImage, machineSetUnderTest.GetName())
 
 		// Verify that the boot image controller has finished processing
 		machineConfiguration.WaitForBootImageControllerComplete()
@@ -144,8 +144,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		machineConfiguration.WaitForBootImageSkewEnforcementStatusMode(SkewEnforcementAutomaticMode)
 
 		// Pick a random machineset to test
-		machineSetUnderTest := NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
-		logger.Infof("MachineSet under test: %s", machineSetUnderTest.name)
+		machineSetUnderTest := GetValidManagedMachineSet(oc)
+		logger.Infof("MachineSet under test: %s", machineSetUnderTest.GetName())
 
 		// Save and restore full spec to ensure cleanup regardless of what we modify
 		originalMachineSetSpec := machineSetUnderTest.GetSpecOrFail()
@@ -156,12 +156,12 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		// Set a non-existent user data secret in the machineset's providerSpec; this will cause a boot image controller degrade
 		nonExistentSecret := "non-existent-user-data"
 		o.Expect(machineSetUnderTest.SetUserDataSecret(nonExistentSecret)).To(o.Succeed())
-		logger.Infof("Set non-existent user data secret '%s' in MachineSet %s", nonExistentSecret, machineSetUnderTest.name)
+		logger.Infof("Set non-existent user data secret '%s' in MachineSet %s", nonExistentSecret, machineSetUnderTest.GetName())
 
 		// Patch the boot image to an older version to trigger an update loop
 		backdatedBootImage := getBackdatedBootImage(oc, machineSetUnderTest)
 		o.Expect(machineSetUnderTest.SetCoreOsBootImage(backdatedBootImage)).To(o.Succeed())
-		logger.Infof("Set backdated boot image '%s' in MachineSet %s to trigger update loop", backdatedBootImage, machineSetUnderTest.name)
+		logger.Infof("Set backdated boot image '%s' in MachineSet %s to trigger update loop", backdatedBootImage, machineSetUnderTest.GetName())
 
 		// Verify that the boot image controller has finished processing
 		machineConfiguration.WaitForBootImageControllerComplete()

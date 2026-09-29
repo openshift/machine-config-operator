@@ -10,7 +10,7 @@ import (
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 )
 
-func platformBasedDisksPatch(platform string, ms *MachineSet) error {
+func platformBasedDisksPatch(platform string, ms ManagedMachineSet) error {
 	var err error
 	switch platform {
 	case AWSPlatform:
