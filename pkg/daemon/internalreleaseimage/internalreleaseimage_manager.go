@@ -268,7 +268,10 @@ func (i *Manager) refreshMachineConfigNodeStatus(mcn *mcfgv1.MachineConfigNode, 
 		if err != nil {
 			return err
 		}
-		pullSpec := iriReg.GetOCPReleasePullSpec(ocpReleaseTag)
+		pullSpec, err := iriReg.GetOCPReleasePullSpec(ocpReleaseTag)
+		if err != nil {
+			return err
+		}
 
 		iriRelease := mcfgv1.MachineConfigNodeStatusInternalReleaseImageRef{
 			Name:  bundle,
