@@ -91,6 +91,276 @@ func TestCreateNewVMTemplate_MatchingServerNoMatchingFD(t *testing.T) {
 	assert.True(t, reconcileSkipped)
 }
 
+// TestFindMatchingFailureDomain verifies the failure domain search logic that replaced
+// hasMatchingFailureDomain and the inner-loop matching in createNewVMTemplate.
+func TestFindMatchingFailureDomain(t *testing.T) {
+	providerSpec := &machinev1beta1.VSphereMachineProviderSpec{
+		Workspace: &machinev1beta1.Workspace{
+			Server:       "vcenter.example.com",
+			Datacenter:   "dc1",
+			Datastore:    "datastore1",
+			ResourcePool: "/dc1/host/cluster1/Resources/pool1",
+			VMGroup:      "",
+		},
+	}
+
+	tests := []struct {
+		name      string
+		infra     *osconfigv1.Infrastructure
+		wantFound bool
+		wantName  string
+	}{
+		{
+			name: "exact match",
+			infra: &osconfigv1.Infrastructure{
+				Spec: osconfigv1.InfrastructureSpec{
+					PlatformSpec: osconfigv1.PlatformSpec{
+						VSphere: &osconfigv1.VSpherePlatformSpec{
+							FailureDomains: []osconfigv1.VSpherePlatformFailureDomainSpec{
+								{
+									Name:   "zone-a",
+									Server: "vcenter.example.com",
+									Topology: osconfigv1.VSpherePlatformTopology{
+										Datacenter:   "dc1",
+										Datastore:    "datastore1",
+										ResourcePool: "/dc1/host/cluster1/Resources/pool1",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantFound: true,
+			wantName:  "zone-a",
+		},
+		{
+			name: "datastore mismatch",
+			infra: &osconfigv1.Infrastructure{
+				Spec: osconfigv1.InfrastructureSpec{
+					PlatformSpec: osconfigv1.PlatformSpec{
+						VSphere: &osconfigv1.VSpherePlatformSpec{
+							FailureDomains: []osconfigv1.VSpherePlatformFailureDomainSpec{
+								{
+									Name:   "zone-a",
+									Server: "vcenter.example.com",
+									Topology: osconfigv1.VSpherePlatformTopology{
+										Datacenter:   "dc1",
+										Datastore:    "different-datastore",
+										ResourcePool: "/dc1/host/cluster1/Resources/pool1",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantFound: false,
+		},
+		{
+			name: "empty failure domains",
+			infra: &osconfigv1.Infrastructure{
+				Spec: osconfigv1.InfrastructureSpec{
+					PlatformSpec: osconfigv1.PlatformSpec{
+						VSphere: &osconfigv1.VSpherePlatformSpec{},
+					},
+				},
+			},
+			wantFound: false,
+		},
+		{
+			name: "nil vsphere spec",
+			infra: &osconfigv1.Infrastructure{
+				Spec: osconfigv1.InfrastructureSpec{
+					PlatformSpec: osconfigv1.PlatformSpec{},
+				},
+			},
+			wantFound: false,
+		},
+		{
+			name: "resource pool path normalization",
+			infra: &osconfigv1.Infrastructure{
+				Spec: osconfigv1.InfrastructureSpec{
+					PlatformSpec: osconfigv1.PlatformSpec{
+						VSphere: &osconfigv1.VSpherePlatformSpec{
+							FailureDomains: []osconfigv1.VSpherePlatformFailureDomainSpec{
+								{
+									Name:   "zone-a",
+									Server: "vcenter.example.com",
+									Topology: osconfigv1.VSpherePlatformTopology{
+										Datacenter:   "dc1",
+										Datastore:    "datastore1",
+										ResourcePool: "/dc1/host/cluster1/Resources/pool1/",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantFound: true,
+			wantName:  "zone-a",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fd, found := findMatchingFailureDomain(providerSpec, tt.infra)
+			assert.Equal(t, tt.wantFound, found)
+			if tt.wantFound {
+				assert.Equal(t, tt.wantName, fd.Name)
+			}
+		})
+	}
+}
+
+func TestComputeClusterFromResourcePool(t *testing.T) {
+	tests := []struct {
+		name    string
+		rpPath  string
+		want    string
+		wantErr bool
+	}{
+		{
+			name:   "default resource pool",
+			rpPath: "/dc1/host/cluster1/Resources",
+			want:   "/dc1/host/cluster1",
+		},
+		{
+			name:   "named resource pool",
+			rpPath: "/dc1/host/cluster1/Resources/pool1",
+			want:   "/dc1/host/cluster1",
+		},
+		{
+			name:   "nested resource pool",
+			rpPath: "/dc1/host/cluster1/Resources/pool1/subpool",
+			want:   "/dc1/host/cluster1",
+		},
+		{
+			name:   "trailing slash cleaned",
+			rpPath: "/dc1/host/cluster1/Resources/",
+			want:   "/dc1/host/cluster1",
+		},
+		{
+			name:   "cluster name starts with Resources",
+			rpPath: "/dc1/host/Resources-cluster/Resources/pool1",
+			want:   "/dc1/host/Resources-cluster",
+		},
+		{
+			name:    "no Resources segment",
+			rpPath:  "/dc1/host/cluster1",
+			wantErr: true,
+		},
+		{
+			name:    "empty path",
+			rpPath:  "",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := computeClusterFromResourcePool(tt.rpPath)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tt.want, got)
+			}
+		})
+	}
+}
+
+func TestBuildSyntheticFailureDomain(t *testing.T) {
+	tests := []struct {
+		name         string
+		providerSpec *machinev1beta1.VSphereMachineProviderSpec
+		wantErr      bool
+		wantCluster  string
+		wantNetwork  string
+	}{
+		{
+			name: "valid providerSpec",
+			providerSpec: &machinev1beta1.VSphereMachineProviderSpec{
+				Workspace: &machinev1beta1.Workspace{
+					Server:       "vcenter.example.com",
+					Datacenter:   "dc1",
+					Datastore:    "datastore1",
+					ResourcePool: "/dc1/host/cluster1/Resources/pool1",
+				},
+				Network: machinev1beta1.NetworkSpec{
+					Devices: []machinev1beta1.NetworkDeviceSpec{
+						{NetworkName: "VM Network"},
+					},
+				},
+			},
+			wantCluster: "/dc1/host/cluster1",
+			wantNetwork: "VM Network",
+		},
+		{
+			name: "no resource pool",
+			providerSpec: &machinev1beta1.VSphereMachineProviderSpec{
+				Workspace: &machinev1beta1.Workspace{
+					Server:     "vcenter.example.com",
+					Datacenter: "dc1",
+				},
+				Network: machinev1beta1.NetworkSpec{
+					Devices: []machinev1beta1.NetworkDeviceSpec{
+						{NetworkName: "VM Network"},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "no network devices",
+			providerSpec: &machinev1beta1.VSphereMachineProviderSpec{
+				Workspace: &machinev1beta1.Workspace{
+					Server:       "vcenter.example.com",
+					Datacenter:   "dc1",
+					ResourcePool: "/dc1/host/cluster1/Resources",
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "empty network name",
+			providerSpec: &machinev1beta1.VSphereMachineProviderSpec{
+				Workspace: &machinev1beta1.Workspace{
+					Server:       "vcenter.example.com",
+					Datacenter:   "dc1",
+					ResourcePool: "/dc1/host/cluster1/Resources",
+				},
+				Network: machinev1beta1.NetworkSpec{
+					Devices: []machinev1beta1.NetworkDeviceSpec{
+						{NetworkName: ""},
+					},
+				},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fd, err := buildSyntheticFailureDomain(tt.providerSpec)
+			if tt.wantErr {
+				assert.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, "default", fd.Name)
+			assert.Equal(t, tt.providerSpec.Workspace.Server, fd.Server)
+			assert.Equal(t, tt.providerSpec.Workspace.Datacenter, fd.Topology.Datacenter)
+			assert.Equal(t, tt.wantCluster, fd.Topology.ComputeCluster)
+			require.Len(t, fd.Topology.Networks, 1)
+			assert.Equal(t, tt.wantNetwork, fd.Topology.Networks[0])
+			assert.Equal(t, tt.providerSpec.Workspace.Datastore, fd.Topology.Datastore)
+			assert.Equal(t, tt.providerSpec.Workspace.ResourcePool, fd.Topology.ResourcePool)
+		})
+	}
+}
+
 func newTestVM(inventoryPath string) *object.VirtualMachine {
 	vm := object.NewVirtualMachine(nil, types.ManagedObjectReference{})
 	vm.InventoryPath = inventoryPath
