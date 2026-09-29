@@ -626,7 +626,7 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 	return mcs, nil
 }
 
-// RunBootstrap runs the tempate controller in boostrap mode.
+// RunBootstrap runs the template controller in boostrap mode.
 func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, apiServer *configv1.APIServer) ([]*mcfgv1.MachineConfig, error) {
 	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, apiServer)
 }
