@@ -249,8 +249,60 @@ func (r *RpmOstreeClient) RebaseLayered(imgURL string) error {
 	if err := useMergedPullSecrets(rpmOstreeSystem); err != nil {
 		return fmt.Errorf("error while ensuring access to pull secrets: %w", err)
 	}
+	defer func() {
+		if err := cleanupTemporalOstreePolicyFiles(); err != nil {
+			klog.Errorf("Error deleting temporary MCD temporal policy %v", err)
+		}
+	}()
+	if err := r.patchPoliciesForMultiArchImage(imgURL); err != nil {
+		return fmt.Errorf("preparing rpm-ostree image policy: %w", err)
+	}
 	klog.Infof("Executing rebase to %s", imgURL)
 	return runRpmOstree("rebase", "--experimental", "ostree-unverified-registry:"+imgURL)
+}
+
+// patchPoliciesForMultiArchImage works around skopeo < 1.22.2 rejecting signatures
+// on multi-arch images (OCPBUGS-114737). Only rpm-ostreed sees the temporary
+// permissive policy; the system policy is never overwritten.
+func (r *RpmOstreeClient) patchPoliciesForMultiArchImage(imgURL string) error {
+	policy, err := multiArchImagePolicy(imgURL)
+	if err != nil || policy == nil {
+		return err
+	}
+	return writeTemporalOstreePolicy(policy)
+}
+
+// multiArchImagePolicy returns a permissive policy for a multi-arch image when
+// the host skopeo version is old or could not be determined.
+func multiArchImagePolicy(imgURL string) (*signature.Policy, error) {
+	if skopeoVersionSupportsMultiArchSigstore() {
+		return nil, nil
+	}
+	multiArch, err := isMultiArchImage(imgURL)
+	if err != nil {
+		return nil, err
+	}
+	if !multiArch {
+		return nil, nil
+	}
+
+	klog.Infof("Temporarily using an insecureAcceptAnything policy for rpm-ostree rebase of multi-arch OS image %s with an old or unknown skopeo version", imgURL)
+	return newInsecureAcceptAnythingPolicy(), nil
+}
+
+func newInsecureAcceptAnythingPolicy() *signature.Policy {
+	return &signature.Policy{
+		Default: signature.PolicyRequirements{
+			signature.NewPRInsecureAcceptAnything(),
+		},
+		Transports: map[string]signature.PolicyTransportScopes{
+			"docker-daemon": {
+				"": signature.PolicyRequirements{
+					signature.NewPRInsecureAcceptAnything(),
+				},
+			},
+		},
+	}
 }
 
 // RebaseLayeredFromContainerStorage rebases the system from an existing local container storage image.
@@ -337,7 +389,16 @@ func (r *RpmOstreeClient) patchPoliciesForContainerStorage(podmanImageInfo *Podm
 	policy.Transports[imagePolicyTransportContainerStorage][url] = signature.PolicyRequirements{
 		signature.NewPRInsecureAcceptAnything(),
 	}
+	if err := writeTemporalOstreePolicy(policy); err != nil {
+		return err
+	}
+	klog.Infof("Temporal allow policy added for URL %s", url)
+	return nil
+}
 
+// writeTemporalOstreePolicy uses the existing service-private bind mount for both
+// registry and containers-storage rebases.
+func writeTemporalOstreePolicy(policy *signature.Policy) error {
 	// Prepare the json patched content
 	policyJSON, err := json.MarshalIndent(policy, "", "  ")
 	if err != nil {
@@ -349,12 +410,7 @@ func (r *RpmOstreeClient) patchPoliciesForContainerStorage(podmanImageInfo *Podm
 		return err
 	}
 
-	if err := writeTemporalOstreePolicyFileDropin(); err != nil {
-		return err
-	}
-
-	klog.Infof("Temporal allow policy added for URL %s", url)
-	return nil
+	return writeTemporalOstreePolicyFileDropin()
 }
 
 // generateTransportPolicyKeyForReference creates the reference string used as a key in the
