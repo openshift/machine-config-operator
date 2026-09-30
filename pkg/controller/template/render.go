@@ -16,6 +16,7 @@ import (
 	"k8s.io/klog/v2"
 
 	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/api/features"
 	"github.com/openshift/library-go/pkg/cloudprovider"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -43,9 +44,10 @@ const (
 // RenderConfig is wrapper around ControllerConfigSpec.
 type RenderConfig struct {
 	*mcfgv1.ControllerConfigSpec
-	PullSecret      string
-	TLSMinVersion   string
-	TLSCipherSuites []string
+	PullSecret          string
+	TLSMinVersion       string
+	TLSCipherSuites     []string
+	FeatureGatesHandler ctrlcommon.FeatureGatesHandler
 
 	// no need to set this, will be automatically configured
 	Constants map[string]string
@@ -393,6 +395,9 @@ func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) 
 	funcs["platformType"] = platformType
 	funcs["gcpHealthCheckSourceRanges"] = gcpHealthCheckSourceRanges
 	funcs["join"] = strings.Join
+	funcs["isSNOCoreDNSEnabled"] = func() bool {
+		return isSNOCoreDNSEnabled(config.ControllerConfigSpec, config.FeatureGatesHandler)
+	}
 	tmpl, err := template.New(path).Funcs(funcs).Parse(string(b))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse template %s: %w", path, err)
@@ -408,6 +413,16 @@ func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) 
 	}
 
 	return buf.Bytes(), nil
+}
+
+func isSNOCoreDNSEnabled(config *mcfgv1.ControllerConfigSpec, fgHandler ctrlcommon.FeatureGatesHandler) bool {
+	if fgHandler == nil || config == nil || config.Infra == nil || config.Infra.Status.PlatformStatus == nil {
+		return false
+	}
+
+	return config.Infra.Status.PlatformStatus.Type == configv1.NonePlatformType &&
+		config.Infra.Status.ControlPlaneTopology == configv1.SingleReplicaTopologyMode &&
+		fgHandler.Enabled(features.FeatureGateUnifiedClusterManagedDNSAndLB)
 }
 
 var skipKeyValidate = regexp.MustCompile(`^[_a-z]\w*$`)

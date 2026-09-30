@@ -65,7 +65,8 @@ type Controller struct {
 	syncHandler             func(ccKey string) error
 	enqueueControllerConfig func(*mcfgv1.ControllerConfig)
 
-	ccLister mcfglistersv1.ControllerConfigLister
+	ccLister  mcfglistersv1.ControllerConfigLister
+	fgHandler ctrlcommon.FeatureGatesHandler
 
 	apiserverLister       configlistersv1.APIServerLister
 	apiserverListerSynced cache.InformerSynced
@@ -92,6 +93,7 @@ func New(
 	apiserverInformer configinformersv1.APIServerInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
+	fgHandler ctrlcommon.FeatureGatesHandler,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -101,6 +103,7 @@ func New(
 		templatesDir:  templatesDir,
 		client:        mcfgClient,
 		kubeClient:    kubeClient,
+		fgHandler:     fgHandler,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-templatecontroller"})),
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig[string](
 			workqueue.DefaultTypedControllerRateLimiter[string](),
@@ -548,7 +551,7 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 		klog.Warningf("Clearing MCs URLs has failed: %v", clearErr)
 	}
 
-	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, clusterPullSecretRaw, apiServer)
+	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, clusterPullSecretRaw, apiServer, ctrl.fgHandler)
 	if err != nil {
 		return ctrl.syncFailingStatus(cfg, err)
 	}
@@ -600,7 +603,7 @@ func (ctrl *Controller) clearImageURLs() error {
 	return err
 }
 
-func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, clusterPullSecretRaw []byte, apiServer *configv1.APIServer) ([]*mcfgv1.MachineConfig, error) {
+func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, clusterPullSecretRaw []byte, apiServer *configv1.APIServer, fgHandler ctrlcommon.FeatureGatesHandler) ([]*mcfgv1.MachineConfig, error) {
 	buf := &bytes.Buffer{}
 	if err := json.Compact(buf, clusterPullSecretRaw); err != nil {
 		return nil, fmt.Errorf("couldn't compact pullsecret %q: %w", string(clusterPullSecretRaw), err)
@@ -611,6 +614,7 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 		PullSecret:           string(buf.Bytes()),
 		TLSMinVersion:        tlsMinVersion,
 		TLSCipherSuites:      tlsCipherSuites,
+		FeatureGatesHandler:  fgHandler,
 	}
 	mcs, err := generateTemplateMachineConfigs(rc, templatesDir)
 	if err != nil {
@@ -627,6 +631,6 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 }
 
 // RunBootstrap runs the template controller in boostrap mode.
-func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, apiServer *configv1.APIServer) ([]*mcfgv1.MachineConfig, error) {
-	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, apiServer)
+func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, apiServer *configv1.APIServer, fgHandler ctrlcommon.FeatureGatesHandler) ([]*mcfgv1.MachineConfig, error) {
+	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, apiServer, fgHandler)
 }
