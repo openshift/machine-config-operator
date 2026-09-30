@@ -750,6 +750,9 @@ func (ctrl *Controller) syncAll(ctx context.Context, event string) error {
 	}
 
 	ctrl.syncControlPlaneMachineSets(ctx, event)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	ctrl.syncMAPIMachineSets(ctx, event)
 	return nil
 }
