@@ -1,0 +1,21 @@
+{{- if isSNOCoreDNSEnabled }}
+name: sno-resolv-prepender.service
+enabled: true
+contents: |
+  [Unit]
+  Description=Reconcile host DNS with SNO CoreDNS
+  After=NetworkManager.service nodeip-configuration.service kubelet.service
+  Wants=NetworkManager.service nodeip-configuration.service kubelet.service
+  ConditionPathExists=/etc/kubernetes/manifests/sno-coredns.yaml
+  StartLimitIntervalSec=0
+
+  [Service]
+  Type=oneshot
+  Restart=on-failure
+  RestartSec=5s
+  TimeoutStartSec=90s
+  ExecStart=/usr/local/bin/sno-resolv-prepender.sh
+
+  [Install]
+  WantedBy=multi-user.target
+{{- end }}

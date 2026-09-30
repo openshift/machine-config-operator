@@ -1,0 +1,114 @@
+{{- if isSNOCoreDNSEnabled }}
+mode: 0755
+path: "/usr/local/bin/sno-resolv-prepender.sh"
+contents:
+  inline: |
+    #!/bin/bash
+    set -euo pipefail
+
+    resolved_dropin=${SNO_DNS_RESOLVED_DROPIN:-/etc/systemd/resolved.conf.d/60-sno-internal-dns.conf}
+    resolved_runtime_dir=${SNO_DNS_RESOLVED_RUNTIME_DIR:-/run/systemd/resolve}
+    nm_dropin=${SNO_DNS_NM_DROPIN:-/run/NetworkManager/conf.d/99-sno-internal-dns.conf}
+    nm_resolv=${SNO_DNS_NM_RESOLV:-/var/run/NetworkManager/resolv.conf}
+    resolv_conf=${SNO_DNS_RESOLV_CONF:-/etc/resolv.conf}
+    node_ip_dir=${SNO_DNS_NODE_IP_DIR:-/run/nodeip-configuration}
+    health_url=${SNO_DNS_HEALTH_URL:-http://127.0.0.1:18081/ready}
+
+    valid_node_ip() {
+      [[ "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ || "$1" == *:* ]]
+    }
+
+    add_unique() {
+      local value=$1
+      local existing
+      for existing in "${addresses[@]}"; do
+        [[ "${existing}" == "${value}" ]] && return
+      done
+      addresses+=("${value}")
+    }
+
+    read_node_ip() {
+      local file=$1
+      local value
+      [[ -r "${file}" ]] || return 0
+      value=$(tr -d '[:space:]' < "${file}")
+      if valid_node_ip "${value}"; then
+        add_unique "${value}"
+      fi
+    }
+
+    load_node_ips() {
+      addresses=()
+      read_node_ip "${node_ip_dir}/primary-ip"
+      read_node_ip "${node_ip_dir}/ipv4"
+      read_node_ip "${node_ip_dir}/ipv6"
+      [[ "${#addresses[@]}" -gt 0 ]]
+    }
+
+    # The systemd service retries until CoreDNS is ready.
+    curl --fail --silent --max-time 2 "${health_url}" >/dev/null
+    load_node_ips
+    grep -q '^nameserver ' "${nm_resolv}"
+
+    target=$(readlink -f "${resolv_conf}" || true)
+    if [[ -L "${resolv_conf}" && "${target}" == "${resolved_runtime_dir}/"* ]]; then
+      mkdir -p "$(dirname "${resolved_dropin}")"
+      tmp=$(mktemp "${resolved_dropin}.XXXXXX")
+      printf '[Resolve]\nDNS=%s\n' "${addresses[*]}" > "${tmp}"
+      awk -v domain="{{ .DNS.Spec.BaseDomain }}" '
+        BEGIN { printf "Domains=%s", domain; seen[domain] = 1 }
+        $1 == "search" { for (i = 2; i <= NF; i++) if (!seen[$i]++) printf " %s", $i }
+        END { print "" }
+      ' "${nm_resolv}" >> "${tmp}"
+      chmod 0644 "${tmp}"
+      if [[ ! -f "${resolved_dropin}" ]] || ! cmp -s "${tmp}" "${resolved_dropin}"; then
+        mv -Tf "${tmp}" "${resolved_dropin}"
+        systemctl try-restart systemd-resolved.service
+      else
+        rm -f "${tmp}"
+      fi
+      exit 0
+    fi
+
+    mkdir -p "$(dirname "${nm_dropin}")"
+    tmp=$(mktemp "${nm_dropin}.XXXXXX")
+    printf '[main]\nrc-manager=unmanaged\n' > "${tmp}"
+    chmod 0644 "${tmp}"
+    if [[ ! -f "${nm_dropin}" ]] || ! cmp -s "${tmp}" "${nm_dropin}"; then
+      mv -Tf "${tmp}" "${nm_dropin}"
+    else
+      rm -f "${tmp}"
+    fi
+    nmcli general reload conf
+    manager=$(busctl get-property org.freedesktop.NetworkManager \
+      /org/freedesktop/NetworkManager/DnsManager org.freedesktop.NetworkManager.DnsManager RcManager)
+    [[ "${manager}" == 's "unmanaged"' ]] || exit 1
+
+    tmp=$(mktemp "${resolv_conf}.XXXXXX")
+    awk -v local_servers="${addresses[*]}" -v domain="{{ .DNS.Spec.BaseDomain }}" '
+      function nameserver(address, line) {
+        if (seen[address]++) return
+        if (++active <= 3) print line
+        else print "# " line
+      }
+      BEGIN {
+        count = split(local_servers, local_addresses, " ")
+        for (i = 1; i <= count; i++) nameserver(local_addresses[i], "nameserver " local_addresses[i])
+        domains = domain
+        seen_domain[domain] = 1
+      }
+      $1 == "nameserver" { nameserver($2, $0); next }
+      $1 == "search" {
+        for (i = 2; i <= NF; i++) if (!seen_domain[$i]++) domains = domains " " $i
+        next
+      }
+      { print }
+      END { print "search " domains }
+    ' "${nm_resolv}" > "${tmp}"
+    chmod 0644 "${tmp}"
+    if [[ -L "${resolv_conf}" ]] || ! cmp -s "${tmp}" "${resolv_conf}"; then
+      mv -ZTf "${tmp}" "${resolv_conf}"
+    else
+      rm -f "${tmp}"
+    fi
+{{- end }}
