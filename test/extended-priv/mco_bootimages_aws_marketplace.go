@@ -63,7 +63,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 	g.It("[PolarionID:89828][OTP] MCO updates marketplace boot images to the correct product line", g.Label("Platform:aws"), func() {
 		var (
-			testMS = GetValidManagedMachineSet(oc)
+			testMS = GetValidManagedMachineResource(oc)
 
 			region = getCurrentRegionOrFail(oc.AsAdmin())
 		)

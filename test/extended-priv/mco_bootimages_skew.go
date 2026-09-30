@@ -103,8 +103,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		// Wait for the controller to reflect Automatic mode in skew enforcement status
 		machineConfiguration.WaitForBootImageSkewEnforcementStatusMode(SkewEnforcementAutomaticMode)
 
-		// Pick a random machineset to test
-		machineSetUnderTest := GetValidManagedMachineSet(oc)
+		// Pick a valid managed machine set to test
+		machineSetUnderTest := GetValidManagedMachineResource(oc)
 		logger.Infof("MachineSet under test: %s", machineSetUnderTest.GetName())
 
 		// Save and restore full spec to ensure cleanup regardless of what we modify
@@ -143,8 +143,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		// Wait for the controller to reflect Automatic mode in skew enforcement status
 		machineConfiguration.WaitForBootImageSkewEnforcementStatusMode(SkewEnforcementAutomaticMode)
 
-		// Pick a random machineset to test
-		machineSetUnderTest := GetValidManagedMachineSet(oc)
+		// Pick a valid managed machine set to test
+		machineSetUnderTest := GetValidManagedMachineResource(oc)
 		logger.Infof("MachineSet under test: %s", machineSetUnderTest.GetName())
 
 		// Save and restore full spec to ensure cleanup regardless of what we modify

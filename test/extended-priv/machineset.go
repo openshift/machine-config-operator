@@ -19,10 +19,10 @@ import (
 	e2e "k8s.io/kubernetes/test/e2e/framework"
 )
 
-// ManagedMachineSet defines the operations that boot image tests perform on a machineset resource.
+// ManagedMachineResource defines the operations that boot image tests perform on a machineset resource.
 // Both MAPI MachineSets and CAPI MachineSets/MachineDeployments can implement this interface,
 // allowing the same test logic to run against different machine management APIs.
-type ManagedMachineSet interface {
+type ManagedMachineResource interface {
 	BootImageResource
 	GetName() string
 	GetNamespace() string
@@ -33,8 +33,8 @@ type ManagedMachineSet interface {
 	Exists() bool
 	AddLabel(label, value string) error
 	PrettyString() string
-	Duplicate(newName string) (ManagedMachineSet, error)
-	DuplicateWithBootImage(newName, bootImage string) (ManagedMachineSet, error)
+	Duplicate(newName string) (ManagedMachineResource, error)
+	DuplicateWithBootImage(newName, bootImage string) (ManagedMachineResource, error)
 	SetCoreOsBootImage(coreosBootImage string) error
 	GetCoreOsBootImageOrFail() string
 	GetCoreOSBootImagePath(platform string) (string, error)
@@ -80,27 +80,27 @@ func NewMachineSetList(oc *exutil.CLI, namespace string) *MachineSetList {
 	return &MachineSetList{*NewNamespacedResourceList(oc, MachineSetFullName, namespace)}
 }
 
-// GetAllManagedMachineSets returns all ManagedMachineSet resources available in the cluster.
+// GetAllManagedMachineResources returns all ManagedMachineResource resources available in the cluster.
 // Currently returns MAPI MachineSets. When CAPI support is added, it will also return
 // CAPI MachineSets/MachineDeployments from the openshift-cluster-api namespace.
-func GetAllManagedMachineSets(oc *exutil.CLI) []ManagedMachineSet {
+func GetAllManagedMachineResources(oc *exutil.CLI) []ManagedMachineResource {
 	mapiMachineSets := NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()
-	result := make([]ManagedMachineSet, len(mapiMachineSets))
+	result := make([]ManagedMachineResource, len(mapiMachineSets))
 	for i, ms := range mapiMachineSets {
 		result[i] = ms
 	}
 	return result
 }
 
-// GetValidManagedMachineSet returns a ManagedMachineSet with replicas > 0 that is ready and can be used for testing.
-func GetValidManagedMachineSet(oc *exutil.CLI) ManagedMachineSet {
-	all := GetAllManagedMachineSets(oc)
+// GetValidManagedMachineResource returns a ManagedMachineResource with replicas > 0 that is ready and can be used for testing.
+func GetValidManagedMachineResource(oc *exutil.CLI) ManagedMachineResource {
+	all := GetAllManagedMachineResources(oc)
 	for _, ms := range all {
 		if OrFail[string](ms.GetReplicaOfSpec()) != "0" && ms.GetIsReady() {
 			return ms
 		}
 	}
-	e2e.Failf("No ready ManagedMachineSet with replicas > 0 found")
+	e2e.Failf("No ready ManagedMachineResource with replicas > 0 found")
 	return nil
 }
 
@@ -302,7 +302,7 @@ func (ms MachineSet) WaitUntilReady(duration string) error {
 // newMs := ms.Duplicate("newname")
 // err = newMs.Patch("json", `[{ "op": "replace", "path": "/spec/template/spec/providerSpec/value/userDataSecret/name", "value": "newSecretName" }]`)
 // newMs.ScaleTo(1)
-func (ms MachineSet) Duplicate(newName string) (ManagedMachineSet, error) {
+func (ms MachineSet) Duplicate(newName string) (ManagedMachineResource, error) {
 
 	res, err := CloneResource(&ms, newName, ms.GetNamespace(),
 		// Extra modifications to
@@ -340,7 +340,7 @@ func (ms MachineSet) Duplicate(newName string) (ManagedMachineSet, error) {
 // DuplicateWithBootImage creates a new MachineSet by cloning, with the boot image set atomically during creation.
 // This ensures the controller sees the machineset created with the desired boot image from the start,
 // rather than seeing a create followed by an update.
-func (ms MachineSet) DuplicateWithBootImage(newName, bootImage string) (ManagedMachineSet, error) {
+func (ms MachineSet) DuplicateWithBootImage(newName, bootImage string) (ManagedMachineResource, error) {
 	platform := exutil.CheckPlatform(ms.oc)
 	coreOSBootImagePath, err := ms.GetCoreOSBootImagePath(platform)
 	if err != nil {
@@ -349,7 +349,7 @@ func (ms MachineSet) DuplicateWithBootImage(newName, bootImage string) (ManagedM
 
 	// Transform the JSON patch path to sjson dot-notation
 	// Patch is given like /spec/template/spec/providerSpec/value/ami/id
-	// but in sjson library we need the path like spec.template.spec.providerSpec.valude.ami.id
+	// but in sjson library we need the path like spec.template.spec.providerSpec.value.ami.id
 	// so we transform the string
 	jsonCoreOSBootImagePath := strings.ReplaceAll(strings.TrimPrefix(coreOSBootImagePath, "/"), "/", ".")
 

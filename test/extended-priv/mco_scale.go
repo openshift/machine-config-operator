@@ -303,7 +303,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	})
 })
 
-func cloneMachineSet(oc *exutil.CLI, ms ManagedMachineSet, newMsName, imageVersion, ignitionVersion string) ManagedMachineSet {
+func cloneMachineSet(oc *exutil.CLI, ms ManagedMachineResource, newMsName, imageVersion, ignitionVersion string) ManagedMachineResource {
 	var (
 		newSecretName = getClonedSecretName(newMsName)
 		platform      = exutil.CheckPlatform(oc.AsAdmin())
@@ -367,7 +367,7 @@ func cloneMachineSet(oc *exutil.CLI, ms ManagedMachineSet, newMsName, imageVersi
 	return newMs
 }
 
-func removeClonedMachineSet(ms ManagedMachineSet, mcp *MachineConfigPool, expectedNumWorkers int) {
+func removeClonedMachineSet(ms ManagedMachineResource, mcp *MachineConfigPool, expectedNumWorkers int) {
 	if ms.Exists() {
 		logger.Infof("Scaling %s machineset to zero", ms.GetName())
 		o.Expect(ms.ScaleTo(0)).To(o.Succeed(),
@@ -640,7 +640,7 @@ func GetBaseImageURLFromRHCOSImageInfo(platform, version, stream string, arch ar
 	return fmt.Sprintf("%s/%s", strings.Replace(strings.Trim(baseURI.String(), "/"), "releases-art-rhcos.svc.ci.openshift.org", "rhcos.mirror.openshift.com", 1), strings.Trim(baseImageURL.String(), "/")), nil
 }
 
-func uploadBaseImageToCloud(ms ManagedMachineSet, platform, baseImageURL, baseImage string) error {
+func uploadBaseImageToCloud(ms ManagedMachineResource, platform, baseImageURL, baseImage string) error {
 
 	switch platform {
 	case AWSPlatform:

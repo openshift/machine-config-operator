@@ -69,7 +69,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		var (
 			duplicatedMachinesetName = fmt.Sprintf("cloned-tc-%s", GetCurrentTestPolarionIDNumber())
-			firstMachineSet          = GetValidManagedMachineSet(oc)
+			firstMachineSet          = GetValidManagedMachineResource(oc)
 			backdatedImageName       = getBackdatedBootImage(oc.AsAdmin(), firstMachineSet)
 			fakeImageNameNoUpdate    = getFakeNoUpdateBootImage(oc.AsAdmin(), "81403")
 		)
@@ -140,7 +140,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 	g.It("[PolarionID:74240][OTP] ManagedBootImages. Restore All MachineSet images", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
 		var (
-			machineSet                 = GetValidManagedMachineSet(oc)
+			machineSet                 = GetValidManagedMachineResource(oc)
 			backdatedImageName         = getBackdatedBootImage(oc.AsAdmin(), machineSet)
 			fakeImageNameNoUpdate      = getFakeNoUpdateBootImage(oc.AsAdmin(), "74240")
 			clonedMSName               = "cloned-tc-74240"
@@ -149,7 +149,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		)
 
 		exutil.By("Prepare to restore the original Machinesets")
-		for _, item := range GetAllManagedMachineSets(oc) {
+		for _, item := range GetAllManagedMachineResources(oc) {
 			ms := item
 			logger.Infof("Preparing to restore machineset %s", ms.GetName())
 			defer ms.SetSpec(ms.GetSpecOrFail())
@@ -184,7 +184,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 
 		exutil.By("All machinesets should use the right boot image")
-		for _, ms := range GetAllManagedMachineSets(oc) {
+		for _, ms := range GetAllManagedMachineResources(oc) {
 			logger.Infof("Checking boot image in machineset %s", ms.GetName())
 			// Check that the current boot image is the right one.
 			// Original machinesets were never set to backdatedImageName, so pass empty string.
@@ -212,7 +212,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		exutil.By("All machinesets should use the right boot image except the one with an owner")
 		clonedNames := map[string]bool{clonedMSName: true, clonedWrongBootImageMSName: true, clonedOwnedMSName: true}
-		for _, ms := range GetAllManagedMachineSets(oc) {
+		for _, ms := range GetAllManagedMachineResources(oc) {
 			logger.Infof("Checking boot image in machineset %s", ms.GetName())
 
 			if ms.GetName() == clonedOwnedMSName {
@@ -246,7 +246,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 	g.It("[PolarionID:74239][OTP] ManagedBootImages. Restore Partial MachineSet images", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
 		var (
-			machineSet             = GetValidManagedMachineSet(oc)
+			machineSet             = GetValidManagedMachineResource(oc)
 			backdatedImageName     = getBackdatedBootImage(oc.AsAdmin(), machineSet)
 			fakeImageNameNoUpdate  = getFakeNoUpdateBootImage(oc.AsAdmin(), "74239")
 			clonedMSLabelName      = "cloned-tc-74239-label"
@@ -337,7 +337,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	g.It("[PolarionID:74751][OTP] ManagedBootImages. Fix errors", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
 		var (
 			machineConfiguration        = GetMachineConfiguration(oc.AsAdmin())
-			machineSet                  = GetValidManagedMachineSet(oc)
+			machineSet                  = GetValidManagedMachineResource(oc)
 			backdatedImageName          = getBackdatedBootImage(oc.AsAdmin(), machineSet)
 			clonedMSName                = "cloned-tc-74751-copy"
 			labelName                   = "test"
@@ -521,7 +521,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			clonedSecretName = fmt.Sprintf("cloned-user-data-%s-copy", GetCurrentTestPolarionIDNumber())
 
 			machineConfiguration = GetMachineConfiguration(oc.AsAdmin())
-			machineSet           = GetValidManagedMachineSet(oc)
+			machineSet           = GetValidManagedMachineResource(oc)
 			backdatedImageName   = getBackdatedBootImage(oc.AsAdmin(), machineSet)
 			labelName            = "test"
 			labelValue           = "update"
@@ -607,7 +607,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			fakeImageName = "fake-image" // not updateable
 
 			machineConfiguration = GetMachineConfiguration(oc.AsAdmin())
-			machineSet           = GetValidManagedMachineSet(oc)
+			machineSet           = GetValidManagedMachineResource(oc)
 			labelName            = "test"
 			labelValue           = "update"
 
@@ -666,7 +666,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	g.It("[PolarionID:83998][OTP] Check in the boot image controller to work with multiple labels for annotation", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
 		var (
 			clonedMSName         = fmt.Sprintf("cloned-tc-%s-copy", GetCurrentTestPolarionIDNumber())
-			machineSet           = GetValidManagedMachineSet(oc)
+			machineSet           = GetValidManagedMachineResource(oc)
 			machineConfiguration = GetMachineConfiguration(oc.AsAdmin())
 			arch                 = machineSet.GetArchitectureOrFail()
 		)
@@ -760,7 +760,7 @@ func testUserDataUpdateFailure(oc *exutil.CLI, clonedMSName, clonedSecretName, e
 
 	var (
 		machineConfiguration   = GetMachineConfiguration(oc.AsAdmin())
-		machineSet             = GetValidManagedMachineSet(oc)
+		machineSet             = GetValidManagedMachineResource(oc)
 		backdatedImageName     = getBackdatedBootImage(oc.AsAdmin(), machineSet)
 		labelName              = "test"
 		labelValue             = "update"
@@ -854,7 +854,7 @@ func checkManagedBootImagesStatus(mc *MachineConfiguration, mode string) {
 
 // getBackdatedBootImage returns a valid boot image value for testing based on platform
 // MCO will only update images previously published in the installer. This function returns one of those valid images
-func getBackdatedBootImage(oc *exutil.CLI, ms ManagedMachineSet) string {
+func getBackdatedBootImage(oc *exutil.CLI, ms ManagedMachineResource) string {
 	var (
 		platform = exutil.CheckPlatform(oc)
 	)
@@ -941,11 +941,11 @@ func getBackdatedBootImage(oc *exutil.CLI, ms ManagedMachineSet) string {
 
 // getReleaseFromVsphereTemplate gets the release version from the vSphere template
 // used by the given BootImageResource, using its matching failure domain.
-// Only ManagedMachineSet implementations are supported; ControlPlaneMachineSets will return an error.
+// Only ManagedMachineResource implementations are supported; ControlPlaneMachineSets will return an error.
 func getReleaseFromVsphereTemplate(bir BootImageResource) (string, error) {
-	ms, ok := bir.(ManagedMachineSet)
+	ms, ok := bir.(ManagedMachineResource)
 	if !ok {
-		return "", fmt.Errorf("getReleaseFromVsphereTemplate only supports ManagedMachineSet implementations")
+		return "", fmt.Errorf("getReleaseFromVsphereTemplate only supports ManagedMachineResource implementations")
 	}
 
 	vsphereTemplate, err := bir.GetCoreOsBootImage()
@@ -1082,7 +1082,7 @@ func getFakeNoUpdateBootImage(oc *exutil.CLI, id string) string {
 // setArchitectureAndCheckStatus sets the capacity labels annotation on the cloned machineset and checks the status.
 // If archValue already contains "kubernetes.io/arch=", it is used as the raw annotation value.
 // Otherwise, "kubernetes.io/arch=" is prepended automatically.
-func setArchitectureAndCheckStatus(clonedMS ManagedMachineSet, machineConfiguration *MachineConfiguration, archValue string) {
+func setArchitectureAndCheckStatus(clonedMS ManagedMachineResource, machineConfiguration *MachineConfiguration, archValue string) {
 	labels := archValue
 	if !strings.Contains(archValue, "kubernetes.io/arch=") {
 		labels = "kubernetes.io/arch=" + archValue
