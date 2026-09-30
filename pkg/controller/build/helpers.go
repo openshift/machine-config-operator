@@ -168,6 +168,14 @@ func isMachineOSBuildStatusUpdateNeeded(oldStatus, curStatus mcfgv1.MachineOSBui
 
 	// From {success, failure, interrupted} -> {success, failure, interrupted}
 	if oldState.IsInTerminalState() && curState.IsInTerminalState() {
+		// Allow the update when DigestedImagePushSpec changes: this is the image-reuse path where
+		// an existing successful MOSB is reassigned a new image (reuseImageForNewMOSB). Without this
+		// exception the MOSB's API state stays stale and node_controller's MachineOSBuildIsCurrent
+		// check always returns false, causing the MCP to hang in Updating indefinitely.
+		// See: https://redhat.atlassian.net/browse/OCPBUGS-116491
+		if oldStatus.DigestedImagePushSpec != curStatus.DigestedImagePushSpec {
+			return true, fmt.Sprintf("DigestedImagePushSpec updated in terminal state (%s)", curTerminalState)
+		}
 		return false, fmt.Sprintf("transitioned from terminal state (%s) -> terminal state (%s)", oldTerminalState, curTerminalState)
 	}
 
