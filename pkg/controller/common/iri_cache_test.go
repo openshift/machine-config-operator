@@ -9,6 +9,7 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/discovery"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 	core "k8s.io/client-go/testing"
 )
@@ -16,9 +17,12 @@ import (
 // alwaysReady stands in for an informer cache that has already synced.
 var alwaysReady = func() bool { return true }
 
-// testIRICacheSyncTimeout keeps these tests fast. Production callers pass
-// IRICacheSyncTimeout instead.
-const testIRICacheSyncTimeout = 50 * time.Millisecond
+// testIRICacheSyncTimeout and testIRIDiscoveryTimeout keep these tests fast.
+// Production callers pass IRICacheSyncTimeout and IRIDiscoveryTimeout instead.
+const (
+	testIRICacheSyncTimeout = 50 * time.Millisecond
+	testIRIDiscoveryTimeout = 50 * time.Millisecond
+)
 
 // TestWaitForIRICaches pins the backstop behind the discovery gate its callers
 // use: even once the CRD is known to be served, the wait is bounded, so an
@@ -113,9 +117,69 @@ func TestIRICRDServed(t *testing.T) {
 				client.PrependReactor("get", "resource", tt.reactor)
 			}
 
-			if got := IRICRDServed(client.Discovery()); got != tt.want {
+			if got := IRICRDServed(context.Background(), client.Discovery(), testIRIDiscoveryTimeout); got != tt.want {
 				t.Errorf("IRICRDServed() = %v, want %v", got, tt.want)
 			}
 		})
 	}
+}
+
+// TestIRICRDServedIsBounded pins the reason IRICRDServed takes a context at
+// all. Callers run it during startup before their workers are up, and
+// discovery issues its request with context.TODO() against a rest.Config that
+// sets no client timeout, so an unresponsive API server must not be able to
+// block the caller's Run indefinitely.
+func TestIRICRDServedIsBounded(t *testing.T) {
+	// hangingDiscovery never answers until the test is over, standing in for an
+	// API server that accepts the connection and then goes quiet.
+	hangingDiscovery := func(t *testing.T) discovery.DiscoveryInterface {
+		release := make(chan struct{})
+		t.Cleanup(func() { close(release) })
+
+		client := k8sfake.NewSimpleClientset()
+		client.PrependReactor("get", "resource", func(core.Action) (bool, runtime.Object, error) {
+			<-release
+			return true, nil, nil
+		})
+		return client.Discovery()
+	}
+
+	t.Run("gives up when discovery does not answer within the timeout", func(t *testing.T) {
+		done := make(chan bool, 1)
+		start := time.Now()
+		discoveryClient := hangingDiscovery(t)
+		go func() { done <- IRICRDServed(context.Background(), discoveryClient, testIRIDiscoveryTimeout) }()
+
+		select {
+		case served := <-done:
+			if served {
+				t.Error("IRICRDServed() = true, want false when discovery never answers")
+			}
+			if elapsed := time.Since(start); elapsed > 10*time.Second {
+				t.Errorf("IRICRDServed took %v, want it bounded near %v", elapsed, testIRIDiscoveryTimeout)
+			}
+		case <-time.After(20 * time.Second):
+			t.Fatal("IRICRDServed blocked past its timeout; Run would wedge on an unresponsive API server")
+		}
+	})
+
+	t.Run("returns when the caller's context is already cancelled", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		// An hour-long timeout isolates the parent context as the only thing
+		// that can end the wait.
+		discoveryClient := hangingDiscovery(t)
+		done := make(chan bool, 1)
+		go func() { done <- IRICRDServed(ctx, discoveryClient, time.Hour) }()
+
+		select {
+		case served := <-done:
+			if served {
+				t.Error("IRICRDServed() = true, want false on a cancelled context")
+			}
+		case <-time.After(20 * time.Second):
+			t.Fatal("IRICRDServed ignored its parent context; cancellation does not reach the discovery wait")
+		}
+	})
 }

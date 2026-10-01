@@ -135,20 +135,29 @@ func New(
 
 	// Watch the IRI auth secret in the MCO namespace so that when credentials
 	// are rotated the pull secret rendered into 00-master/00-worker is updated.
-	iriSecretsInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+	//
+	// Both IRI registrations below report their error rather than discarding it.
+	// New cannot fail, so this is not fatal, but a dropped registration is the
+	// kind of failure that otherwise shows up only as credentials that silently
+	// stop being refreshed; it needs to be in the logs.
+	if _, err := iriSecretsInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addSecret,
 		UpdateFunc: ctrl.updateSecret,
-	})
+	}); err != nil {
+		utilruntime.HandleError(fmt.Errorf("could not watch the InternalReleaseImage auth secret; rotated IRI registry credentials will not reach the rendered pull secret: %w", err))
+	}
 
 	// Whether the InternalReleaseImage resource exists decides whether IRI
 	// registry credentials belong in the rendered pull secret, so re-render on
 	// every change to it. This is also what recovers the render when the IRI
 	// informer syncs after Run has already stopped waiting for it.
-	iriInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+	if _, err := iriInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addInternalReleaseImage,
 		UpdateFunc: ctrl.updateInternalReleaseImage,
 		DeleteFunc: ctrl.deleteInternalReleaseImage,
-	})
+	}); err != nil {
+		utilruntime.HandleError(fmt.Errorf("could not watch InternalReleaseImage; the rendered pull secret will not follow changes to it: %w", err))
+	}
 
 	apiserverInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addAPIServer,
@@ -309,7 +318,7 @@ func (ctrl *Controller) Run(ctx context.Context, workers int) {
 	// skips the merge while the cache is cold, and the IRI informers re-enqueue
 	// a render as soon as they do sync.
 	switch {
-	case !ctrlcommon.IRICRDServed(ctrl.kubeClient.Discovery()):
+	case !ctrlcommon.IRICRDServed(ctx, ctrl.kubeClient.Discovery(), ctrlcommon.IRIDiscoveryTimeout):
 		klog.Info("InternalReleaseImage CRD is not served; starting without IRI registry credentials in the rendered pull secret")
 	case !ctrlcommon.WaitForIRICaches(ctx, ctrlcommon.IRICacheSyncTimeout, ctrl.iriInformerSynced, ctrl.iriSecretsInformerSynced):
 		klog.Infof("InternalReleaseImage caches did not sync within %s; starting without IRI registry credentials in the rendered pull secret", ctrlcommon.IRICacheSyncTimeout)
