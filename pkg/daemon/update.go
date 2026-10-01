@@ -2841,14 +2841,14 @@ func (dn *Daemon) InplaceUpdateViaNewContainer(target string) error {
 	return nil
 }
 
-// InplaceUpdateViaLayeredContainer imports the complete target image into an
-// OSTree commit before using deploy-from-self.  The latter only knows about the
-// embedded OSTree commit in an image on older rpm-ostree versions, which drops
-// derived layers such as the RHCOS node packages.
+// InplaceUpdateViaLayeredContainer imports the complete target image into the
+// host OSTree repository before rebasing to the imported commit.  The import is
+// performed with the target image's ostree binary because older host skopeo
+// versions cannot handle the target image's multi-arch signatures.
 //
-// The import is performed with the target image's ostree binary and the host's
-// container storage is mounted into that container.  This keeps the workaround
-// usable on old boot images without relying on their host ostree tooling.
+// The host's container storage is mounted into that container so the import
+// does not pull the image a second time.  Rebasing to the imported commit also
+// avoids creating an additional encapsulated container image.
 func (dn *Daemon) InplaceUpdateViaLayeredContainer(target string) (retErr error) {
 	enforceFile := "/sys/fs/selinux/enforce"
 	enforcingBuf, err := os.ReadFile(enforceFile)
@@ -2882,23 +2882,8 @@ func (dn *Daemon) InplaceUpdateViaLayeredContainer(target string) (retErr error)
 		}()
 	}
 
-	// Keep the imported repository and generated image outside the target
-	// container's writable layer. The image itself is retained in host storage
-	// until the deployment is staged and the temporary directory is removed.
-	workDir := filepath.Join("/run", "mco-layered-deploy-"+string(uuid.NewUUID()))
-	if err := os.MkdirAll(workDir, defaultDirectoryPermissions); err != nil {
-		return fmt.Errorf("failed to create layered deployment workspace: %w", err)
-	}
-	defer os.RemoveAll(workDir)
-
-	repoPath := filepath.Join(workDir, "repo")
-	digestPath := filepath.Join(workDir, "digest")
-	layeredImage := "localhost/mco-layered-deploy:" + string(uuid.NewUUID())
-	defer func() {
-		if err := runCmdSync("podman", "rmi", "--force", layeredImage); err != nil {
-			klog.Warningf("failed to remove temporary layered image %s: %v", layeredImage, err)
-		}
-	}()
+	digestPath := filepath.Join("/run", "mco-layered-deploy-"+string(uuid.NewUUID())+".digest")
+	defer os.Remove(digestPath)
 
 	systemdPodmanArgs := []string{"--unit", "machine-config-daemon-update-rpmostree-layered", "-p", "EnvironmentFile=-/etc/mco/proxy.env", "--collect", "--wait", "--", "podman"}
 	pullArgs := append([]string{}, systemdPodmanArgs...)
@@ -2913,48 +2898,37 @@ func (dn *Daemon) InplaceUpdateViaLayeredContainer(target string) (retErr error)
 
 	prepareScript := `set -eu
 target="$1"
-repo="$2"
-digest="$3"
-image="$4"
-mkdir -p "$repo"
-ostree init --repo="$repo"
+digest="$2"
+repo=/run/host/sysroot/ostree/repo
 ostree container image pull --ostree-digestfile="$digest" "$repo" "ostree-unverified-image:containers-storage:$target"
-ref=$(cat "$digest")
-ostree container encapsulate --repo="$repo" "$ref" "containers-storage:$image"
 `
 	prepareArgs := append([]string{}, systemdPodmanArgs...)
 	prepareArgs = append(prepareArgs,
 		"run", "--env-file", "/etc/mco/proxy.env", "--privileged", "--pid=host", "--net=host", "--rm",
 		"-v", "/:/run/host", "-v", "/var/lib/containers:/var/lib/containers", "-v", "/etc/containers:/etc/containers:ro",
-		target, "sh", "-ec", prepareScript, "mco-layered-import", target, "/run/host"+repoPath, "/run/host"+digestPath, layeredImage)
+		target, "sh", "-ec", prepareScript, "mco-layered-import", target, "/run/host"+digestPath)
 	if err := runCmdSync("systemd-run", prepareArgs...); err != nil {
 		return fmt.Errorf("failed to import complete layered image: %w", err)
 	}
 
-	runArgs := append([]string{}, systemdPodmanArgs...)
-	runArgs = append(runArgs,
-		"run", "--env-file", "/etc/mco/proxy.env", "--privileged", "--pid=host", "--net=host", "--rm",
-		"-v", "/:/run/host", "-v", "/var/lib/containers:/var/lib/containers", "-v", "/etc/containers:/etc/containers:ro",
-		layeredImage, "rpm-ostree", "ex", "deploy-from-self", "/run/host")
-	if err := runCmdSync("systemd-run", runArgs...); err != nil {
-		return fmt.Errorf("failed to deploy complete layered image: %w", err)
+	refBytes, err := os.ReadFile(digestPath)
+	if err != nil {
+		return fmt.Errorf("failed to read imported OSTree commit: %w", err)
+	}
+	ref := strings.TrimSpace(string(refBytes))
+	if ref == "" {
+		return fmt.Errorf("imported layered image did not produce an OSTree commit")
+	}
+
+	if err := runRpmOstree(
+		"rebase", ref,
+		"--custom-origin-url", "pivot://"+target,
+		"--custom-origin-description", "Image imported via ostree container image pull",
+	); err != nil {
+		return fmt.Errorf("failed to rebase to imported layered image: %w", err)
 	}
 
 	_, staged, err := dn.NodeUpdaterClient.GetBootedAndStagedDeployment()
-	if err != nil {
-		return fmt.Errorf("failed to inspect layered deployment: %w", err)
-	}
-	if staged == nil {
-		return fmt.Errorf("layered deploy-from-self completed without a staged deployment")
-	}
-	if err := runRpmOstree(
-		"rebase", staged.Checksum,
-		"--custom-origin-url", "pivot://"+target,
-		"--custom-origin-description", "Image deployed via deploy-from-self",
-	); err != nil {
-		return fmt.Errorf("failed to record target image origin on layered deployment: %w", err)
-	}
-	_, staged, err = dn.NodeUpdaterClient.GetBootedAndStagedDeployment()
 	if err != nil {
 		return fmt.Errorf("failed to recheck layered deployment origin: %w", err)
 	}
@@ -3032,7 +3006,7 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	// If skopeo is < 1.22.2 on a multi-arch image, run as a privileged container which has updated skopeo.
 	// See https://redhat.atlassian.net/browse/OCPBUGS-83826 and https://redhat.atlassian.net/browse/OCPBUGS-81187
 	if !newEnough || !skopeoSupportsMultiArchSigstore(newURL) {
-		logSystem("rpm-ostree or skopeo is not new enough for layering; importing the complete image before deploy-from-self")
+		logSystem("rpm-ostree or skopeo is not new enough for layering; importing the complete image before rebasing")
 		return dn.InplaceUpdateViaLayeredContainer(newURL)
 	}
 
