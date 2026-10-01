@@ -25,6 +25,7 @@ type FakeIRIRegistry struct {
 type registryResponse struct {
 	statusCode int
 	body       string
+	headers    map[string]string
 }
 
 // NewFakeIRIRegistry creates a new instance of the fake registry.
@@ -35,16 +36,29 @@ func NewFakeIRIRegistry() *FakeIRIRegistry {
 }
 
 func (fr *FakeIRIRegistry) AddResponse(endpoint string, statusCode int, body string) *FakeIRIRegistry {
+	return fr.addResponse(endpoint, registryResponse{
+		statusCode: statusCode,
+		body:       body,
+	})
+}
+
+// AddResponseWithHeaders registers a response carrying headers, such as the
+// Docker-Content-Digest of a manifest.
+func (fr *FakeIRIRegistry) AddResponseWithHeaders(endpoint string, statusCode int, body string, headers map[string]string) *FakeIRIRegistry {
+	return fr.addResponse(endpoint, registryResponse{
+		statusCode: statusCode,
+		body:       body,
+		headers:    headers,
+	})
+}
+
+func (fr *FakeIRIRegistry) addResponse(endpoint string, resp registryResponse) *FakeIRIRegistry {
 	epReplies, found := fr.responses[endpoint]
 	if !found {
 		epReplies = []registryResponse{}
 	}
 
-	epReplies = append(epReplies, registryResponse{
-		statusCode: statusCode,
-		body:       body,
-	})
-	fr.responses[endpoint] = epReplies
+	fr.responses[endpoint] = append(epReplies, resp)
 
 	return fr
 }
@@ -65,6 +79,9 @@ func (fr *FakeIRIRegistry) Start() error {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Docker-Distribution-Api-Version", "registry/2.0")
+		for k, v := range reply.headers {
+			w.Header().Set(k, v)
+		}
 		w.WriteHeader(reply.statusCode)
 
 		if _, err := w.Write([]byte(reply.body)); err != nil {

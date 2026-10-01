@@ -69,6 +69,56 @@ func TestInternalReleaseImageManager(t *testing.T) {
 			},
 		},
 		{
+			name:     "signed payload with a digest tag",
+			iri:      iri(),
+			nodeName: "master-0",
+			mcn:      machineConfigNode("master-0"),
+
+			setupRegistry: func(r *FakeIRIRegistry) {
+				r.AddResponse("/v2", http.StatusOK, "{}").
+					AddResponse("/v2/openshift/release-bundles/tags/list", http.StatusOK, `{"name":"openshift/release-bundles","tags":["ocp-release-bundle-4.22.0-0.ci-2026-04-01-050515"]}`).
+					AddResponse("/v2/openshift/release-images/tags/list", http.StatusOK, `{"name":"openshift/release-images","tags":["68bdf24405449be5c78a1f27a7b64fc9ee980e4bc3c9b169e8b3da08e50e0389","sha256-68bdf24405449be5c78a1f27a7b64fc9ee980e4bc3c9b169e8b3da08e50e0389.sig"]}`).
+					AddResponse("/v2/openshift/release-images/manifests/sha256:68bdf24405449be5c78a1f27a7b64fc9ee980e4bc3c9b169e8b3da08e50e0389", http.StatusOK, "{}")
+			},
+
+			verify: func(t *testing.T, mcn *mcfgv1.MachineConfigNode, registryDataPath string) {
+				verifyCondition(t, mcn.Status.Conditions, string(mcfgv1.MachineConfigNodeInternalReleaseImageDegraded), metav1.ConditionFalse)
+
+				assert.Len(t, mcn.Status.InternalReleaseImage.Releases, 1)
+				r := mcn.Status.InternalReleaseImage.Releases[0]
+				assert.Equal(t, "ocp-release-bundle-4.22.0-0.ci-2026-04-01-050515", r.Name)
+				assert.Equal(t, "localhost:22625/openshift/release-images@sha256:68bdf24405449be5c78a1f27a7b64fc9ee980e4bc3c9b169e8b3da08e50e0389", r.Image)
+				verifyCondition(t, r.Conditions, string(mcfgv1.InternalReleaseImageConditionTypeAvailable), metav1.ConditionTrue)
+				verifyCondition(t, r.Conditions, string(mcfgv1.InternalReleaseImageConditionTypeDegraded), metav1.ConditionFalse)
+			},
+		},
+		{
+			name:     "signed payload with a version tag",
+			iri:      iri(),
+			nodeName: "master-0",
+			mcn:      machineConfigNode("master-0"),
+
+			setupRegistry: func(r *FakeIRIRegistry) {
+				r.AddResponse("/v2", http.StatusOK, "{}").
+					AddResponse("/v2/openshift/release-bundles/tags/list", http.StatusOK, `{"name":"openshift/release-bundles","tags":["ocp-release-bundle-4.22.16"]}`).
+					AddResponse("/v2/openshift/release-images/tags/list", http.StatusOK, `{"name":"openshift/release-images","tags":["4.22.16-x86_64","sha256-55a0c0c8f9a285fa468003c9e1d1f5b6a1f5f0c8d2e3b4a5968778695a4b3c2d.sig"]}`).
+					AddResponseWithHeaders("/v2/openshift/release-images/manifests/4.22.16-x86_64", http.StatusOK, "{}",
+						map[string]string{"Docker-Content-Digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"}).
+					AddResponse("/v2/openshift/release-images/manifests/sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a", http.StatusOK, "{}")
+			},
+
+			verify: func(t *testing.T, mcn *mcfgv1.MachineConfigNode, registryDataPath string) {
+				verifyCondition(t, mcn.Status.Conditions, string(mcfgv1.MachineConfigNodeInternalReleaseImageDegraded), metav1.ConditionFalse)
+
+				assert.Len(t, mcn.Status.InternalReleaseImage.Releases, 1)
+				r := mcn.Status.InternalReleaseImage.Releases[0]
+				assert.Equal(t, "ocp-release-bundle-4.22.16", r.Name)
+				assert.Equal(t, "localhost:22625/openshift/release-images@sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a", r.Image)
+				verifyCondition(t, r.Conditions, string(mcfgv1.InternalReleaseImageConditionTypeAvailable), metav1.ConditionTrue)
+				verifyCondition(t, r.Conditions, string(mcfgv1.InternalReleaseImageConditionTypeDegraded), metav1.ConditionFalse)
+			},
+		},
+		{
 			name:             "registry down",
 			iri:              iri(),
 			nodeName:         "master-0",

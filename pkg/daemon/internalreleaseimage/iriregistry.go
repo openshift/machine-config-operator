@@ -2,6 +2,7 @@ package internalreleaseimage
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"strings"
 
 	"k8s.io/klog/v2"
 
@@ -21,6 +23,29 @@ const (
 
 	ocpReleasesRepo = "/openshift/release-images"
 	ocpBundlesRepo  = "/openshift/release-bundles"
+
+	// Signed release payloads store a cosign signature in the releases repo,
+	// tagged "sha256-<digest>.sig". It is not a release image.
+	cosignSignatureTagSuffix = ".sig"
+
+	// dockerContentDigestHeader carries the manifest digest in a registry response.
+	dockerContentDigestHeader = "Docker-Content-Digest"
+)
+
+var (
+	// releaseDigestRe matches a release tag that is a bare image digest, as used by
+	// CI and nightly payloads. Release builds are tagged by version instead.
+	releaseDigestRe = regexp.MustCompile(`^[a-f0-9]{64}$`)
+
+	// releaseTagRe matches the tag format accepted by the registry.
+	releaseTagRe = regexp.MustCompile(`^[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}$`)
+
+	manifestAcceptHeaders = map[string]string{
+		"Accept": "application/vnd.oci.image.index.v1+json, " +
+			"application/vnd.oci.image.manifest.v1+json, " +
+			"application/vnd.docker.distribution.manifest.list.v2+json, " +
+			"application/vnd.docker.distribution.manifest.v2+json",
+	}
 )
 
 type iriRegistry struct {
@@ -177,14 +202,71 @@ func (r *iriRegistry) GetOCPBundleReleaseTag(_ string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if len(ocpReleases.Tags) > 1 {
-		return "", fmt.Errorf("only one OCP release image is currently supported")
-	}
-	return ocpReleases.Tags[0], nil
+	return selectReleaseTag(ocpReleases.Tags)
 }
 
-func (r *iriRegistry) GetOCPReleasePullSpec(releaseTag string) string {
-	return fmt.Sprintf("%s%s@sha256:%s", r.registryHostPort, ocpReleasesRepo, releaseTag)
+// selectReleaseTag picks the single release tag out of the releases repo,
+// ignoring the cosign signature tags added by a signed payload.
+func selectReleaseTag(tags []string) (string, error) {
+	releaseTags := []string{}
+	for _, tag := range tags {
+		if !strings.HasSuffix(tag, cosignSignatureTagSuffix) {
+			releaseTags = append(releaseTags, tag)
+		}
+	}
+
+	if len(releaseTags) == 0 {
+		return "", fmt.Errorf("no OCP release image found in %s", ocpReleasesRepo)
+	}
+	if len(releaseTags) > 1 {
+		return "", fmt.Errorf("only one OCP release image is currently supported, found %d", len(releaseTags))
+	}
+	return releaseTags[0], nil
+}
+
+// resolveReleaseDigest returns the "sha256:<digest>" reference for a release tag.
+// CI and nightly payloads are tagged by digest already; release builds are tagged
+// by version, so their digest has to be read from the registry.
+func (r *iriRegistry) resolveReleaseDigest(releaseTag string) (string, error) {
+	// A malformed tag could otherwise alter the manifest URL, making the registry
+	// report the digest of a different image.
+	if !releaseTagRe.MatchString(releaseTag) {
+		return "", fmt.Errorf("invalid release tag %q in %s", releaseTag, ocpReleasesRepo)
+	}
+
+	if releaseDigestRe.MatchString(releaseTag) {
+		return "sha256:" + releaseTag, nil
+	}
+
+	endpoint := fmt.Sprintf("%s/manifests/%s", ocpReleasesRepo, releaseTag)
+	resp, err := r.query(endpoint, manifestAcceptHeaders)
+	if err != nil {
+		return "", fmt.Errorf("error while resolving the digest for %s: %w", endpoint, err)
+	}
+	defer resp.Body.Close()
+
+	manifest, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("error while reading the manifest for %s: %w", endpoint, err)
+	}
+
+	// The reported digest is only trusted once it matches the manifest it refers to.
+	digest := resp.Header.Get(dockerContentDigestHeader)
+	if manifestDigest := fmt.Sprintf("sha256:%x", sha256.Sum256(manifest)); digest != manifestDigest {
+		return "", fmt.Errorf("registry reported the digest %q for release tag %s, but its manifest is %s", digest, releaseTag, manifestDigest)
+	}
+	return digest, nil
+}
+
+// GetOCPReleasePullSpec builds the pull spec for a release tag. The
+// MachineConfigNode API only accepts a release image referenced by digest, so a
+// version-tagged release build has its digest resolved first.
+func (r *iriRegistry) GetOCPReleasePullSpec(releaseTag string) (string, error) {
+	digest, err := r.resolveReleaseDigest(releaseTag)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s%s@%s", r.registryHostPort, ocpReleasesRepo, digest), nil
 }
 
 func (r *iriRegistry) CheckImageAvailability(pullspec string) error {
@@ -202,11 +284,7 @@ func (r *iriRegistry) CheckImageAvailability(pullspec string) error {
 	}
 
 	endpoint := fmt.Sprintf("/%s/manifests/%s", repo, digest)
-	resp, err := r.query(endpoint, map[string]string{
-		"Accept": "application/vnd.oci.image.index.v1+json, " +
-			"application/vnd.oci.image.manifest.v1+json, " +
-			"application/vnd.docker.distribution.manifest.list.v2+json, " +
-			"application/vnd.docker.distribution.manifest.v2+json"})
+	resp, err := r.query(endpoint, manifestAcceptHeaders)
 	if err != nil {
 		return fmt.Errorf("error while checking image availability for %s: %w", endpoint, err)
 	}
