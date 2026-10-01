@@ -19,6 +19,47 @@ import (
 	e2e "k8s.io/kubernetes/test/e2e/framework"
 )
 
+// ManagedMachineResource defines the operations that boot image tests perform on a machineset resource.
+// Both MAPI MachineSets and CAPI MachineSets/MachineDeployments can implement this interface,
+// allowing the same test logic to run against different machine management APIs.
+type ManagedMachineResource interface {
+	BootImageResource
+	GetName() string
+	GetNamespace() string
+	GetSpecOrFail() string
+	SetSpec(spec string) error
+	Delete(extraParams ...string) error
+	Patch(patchType string, patch string, extraParams ...string) error
+	Exists() bool
+	AddLabel(label, value string) error
+	PrettyString() string
+	Duplicate(newName string) (ManagedMachineResource, error)
+	DuplicateWithBootImage(newName, bootImage string) (ManagedMachineResource, error)
+	SetCoreOsBootImage(coreosBootImage string) error
+	GetCoreOsBootImageOrFail() string
+	GetCoreOSBootImagePath(platform string) (string, error)
+	SetArchitecture(arch string) error
+	SetAutoscalerLabels(labels string) error
+	GetArchitecture() (architecture.Architecture, error)
+	GetUserDataSecret() (*Secret, error)
+	GetUserDataSecretName() (string, error)
+	SetUserDataSecret(userDataSecretName string) error
+	GetReplicaOfSpec() (string, error)
+	ScaleTo(scale int) error
+	GetIsReady() bool
+	WaitUntilReady(duration string) error
+	GetNodes() ([]*Node, error)
+	GetNodesOrFail() []*Node
+	AllNodesUpdated() (bool, error)
+	GetOSStreamLabel() (string, error)
+	AddOSStreamLabel(streamName string) error
+	RemoveOSStreamLabel() error
+	GetOSStream() string
+	GetWorkspaceFolder() (string, error)
+	GetVSphereFailureDomain() (string, error)
+	GetVSphereConnectionInfo() (*exutil.VSphereConnectionInfo, error)
+}
+
 // MachineSet struct to handle MachineSet resources
 type MachineSet struct {
 	Resource
@@ -37,6 +78,30 @@ func NewMachineSet(oc *exutil.CLI, namespace, name string) *MachineSet {
 // NewMachineSetList constructs a new MachineSetList struct
 func NewMachineSetList(oc *exutil.CLI, namespace string) *MachineSetList {
 	return &MachineSetList{*NewNamespacedResourceList(oc, MachineSetFullName, namespace)}
+}
+
+// GetAllManagedMachineResources returns all ManagedMachineResource resources available in the cluster.
+// Currently returns MAPI MachineSets. When CAPI support is added, it will also return
+// CAPI MachineSets/MachineDeployments from the openshift-cluster-api namespace.
+func GetAllManagedMachineResources(oc *exutil.CLI) []ManagedMachineResource {
+	mapiMachineSets := NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()
+	result := make([]ManagedMachineResource, len(mapiMachineSets))
+	for i, ms := range mapiMachineSets {
+		result[i] = ms
+	}
+	return result
+}
+
+// GetValidManagedMachineResource returns a ManagedMachineResource with replicas > 0 that is ready and can be used for testing.
+func GetValidManagedMachineResource(oc *exutil.CLI) ManagedMachineResource {
+	all := GetAllManagedMachineResources(oc)
+	for _, ms := range all {
+		if OrFail[string](ms.GetReplicaOfSpec()) != "0" && ms.GetIsReady() {
+			return ms
+		}
+	}
+	e2e.Failf("No ready ManagedMachineResource with replicas > 0 found")
+	return nil
 }
 
 func (ms MachineSet) String() string {
@@ -65,8 +130,8 @@ func (ms MachineSet) RemoveOSStreamLabel() error {
 }
 
 // GetReplicaOfSpec return replica number of spec
-func (ms MachineSet) GetReplicaOfSpec() string {
-	return ms.GetOrFail(`{.spec.replicas}`)
+func (ms MachineSet) GetReplicaOfSpec() (string, error) {
+	return ms.Get(`{.spec.replicas}`)
 }
 
 // GetOSStream returns the OS stream used by this MachineSet.
@@ -237,7 +302,7 @@ func (ms MachineSet) WaitUntilReady(duration string) error {
 // newMs := ms.Duplicate("newname")
 // err = newMs.Patch("json", `[{ "op": "replace", "path": "/spec/template/spec/providerSpec/value/userDataSecret/name", "value": "newSecretName" }]`)
 // newMs.ScaleTo(1)
-func (ms MachineSet) Duplicate(newName string) (*MachineSet, error) {
+func (ms MachineSet) Duplicate(newName string) (ManagedMachineResource, error) {
 
 	res, err := CloneResource(&ms, newName, ms.GetNamespace(),
 		// Extra modifications to
@@ -269,6 +334,61 @@ func (ms MachineSet) Duplicate(newName string) (*MachineSet, error) {
 	}
 
 	logger.Infof("A new machineset %s has been created by cloning %s", res.GetName(), ms.GetName())
+	return NewMachineSet(ms.oc, res.GetNamespace(), res.GetName()), nil
+}
+
+// DuplicateWithBootImage creates a new MachineSet by cloning, with the boot image set atomically during creation.
+// This ensures the controller sees the machineset created with the desired boot image from the start,
+// rather than seeing a create followed by an update.
+func (ms MachineSet) DuplicateWithBootImage(newName, bootImage string) (ManagedMachineResource, error) {
+	platform := exutil.CheckPlatform(ms.oc)
+	coreOSBootImagePath, err := ms.GetCoreOSBootImagePath(platform)
+	if err != nil {
+		return nil, err
+	}
+
+	// Transform the JSON patch path to sjson dot-notation
+	// Patch is given like /spec/template/spec/providerSpec/value/ami/id
+	// but in sjson library we need the path like spec.template.spec.providerSpec.value.ami.id
+	// so we transform the string
+	jsonCoreOSBootImagePath := strings.ReplaceAll(strings.TrimPrefix(coreOSBootImagePath, "/"), "/", ".")
+
+	res, err := CloneResource(&ms, newName, ms.GetNamespace(),
+		// Extra modifications to
+		// 1. Create the resource with 0 replicas
+		// 2. modify the selector matchLabels
+		// 3. modify the selector template metadata labels
+		// 4. set the provided boot image
+		func(resString string) (string, error) {
+			newResString, err := sjson.Set(resString, "spec.replicas", 0)
+			if err != nil {
+				return "", err
+			}
+
+			newResString, err = sjson.Set(newResString, `spec.selector.matchLabels.machine\.openshift\.io/cluster-api-machineset`, newName)
+			if err != nil {
+				return "", err
+			}
+
+			newResString, err = sjson.Set(newResString, `spec.template.metadata.labels.machine\.openshift\.io/cluster-api-machineset`, newName)
+			if err != nil {
+				return "", err
+			}
+
+			newResString, err = sjson.SetRaw(newResString, jsonCoreOSBootImagePath, QuoteIfNotJSON(bootImage))
+			if err != nil {
+				return "", err
+			}
+
+			return newResString, nil
+		},
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	logger.Infof("A new machineset %s has been created by cloning %s with boot image %s", res.GetName(), ms.GetName(), bootImage)
 	return NewMachineSet(ms.oc, res.GetNamespace(), res.GetName()), nil
 }
 
@@ -735,10 +855,10 @@ func (ms MachineSet) SetAutoscalerLabels(labels string) error {
 }
 
 // GetVSphereFailureDomain returns the failure domain from the infrastructure resource that matches
-// the given MachineSet's workspace. Two failure domains can share the same server/datacenter but use
+// the MachineSet's workspace. Two failure domains can share the same server/datacenter but use
 // different datastore/resourcePool values, so all four are compared — mirroring the matching logic in
 // createNewVMTemplate (pkg/controller/bootimage/vsphere_helpers.go) — to avoid picking the wrong domain.
-func GetVSphereFailureDomain(ms *MachineSet) (string, error) {
+func (ms MachineSet) GetVSphereFailureDomain() (string, error) {
 	workspace, err := ms.Get(`{.spec.template.spec.providerSpec.value.workspace}`)
 	if err != nil {
 		return "", fmt.Errorf("error getting workspace from MachineSet %s: %w", ms.GetName(), err)
@@ -770,10 +890,10 @@ func GetVSphereFailureDomain(ms *MachineSet) (string, error) {
 	return "", fmt.Errorf("no failure domain found matching server=%s datacenter=%s datastore=%s resourcePool=%s for MachineSet %s", wsServer, wsDataCenter, wsDatastore, wsResourcePool, ms.GetName())
 }
 
-// GetVSphereConnectionInfoForMachineSet returns the vSphere connection info for the failure domain
-// that matches the given MachineSet's workspace.
-func GetVSphereConnectionInfoForMachineSet(ms *MachineSet) (*exutil.VSphereConnectionInfo, error) {
-	fd, err := GetVSphereFailureDomain(ms)
+// GetVSphereConnectionInfo returns the vSphere connection info for the failure domain
+// that matches the MachineSet's workspace.
+func (ms MachineSet) GetVSphereConnectionInfo() (*exutil.VSphereConnectionInfo, error) {
+	fd, err := ms.GetVSphereFailureDomain()
 	if err != nil {
 		return nil, err
 	}

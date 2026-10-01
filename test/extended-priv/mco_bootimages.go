@@ -69,7 +69,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		var (
 			duplicatedMachinesetName = fmt.Sprintf("cloned-tc-%s", GetCurrentTestPolarionIDNumber())
-			firstMachineSet          = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
+			firstMachineSet          = GetValidManagedMachineResource(oc)
 			backdatedImageName       = getBackdatedBootImage(oc.AsAdmin(), firstMachineSet)
 			fakeImageNameNoUpdate    = getFakeNoUpdateBootImage(oc.AsAdmin(), "81403")
 		)
@@ -117,7 +117,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		// already-current template and never trigger the update this check expects.
 		if exutil.CheckPlatform(oc) == VspherePlatform {
 			exutil.By("Re-upload the backdated vSphere template so it is genuinely backdated again")
-			vsInfo, vsErr := GetVSphereConnectionInfoForMachineSet(machineSet)
+			vsInfo, vsErr := machineSet.GetVSphereConnectionInfo()
 			o.Expect(vsErr).NotTo(o.HaveOccurred(), "Error getting the vSphere connection info for %s", machineSet)
 			folder, fErr := machineSet.GetWorkspaceFolder()
 			o.Expect(fErr).NotTo(o.HaveOccurred(), "Error getting the workspace folder for %s", machineSet)
@@ -140,7 +140,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 	g.It("[PolarionID:74240][OTP] ManagedBootImages. Restore All MachineSet images", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
 		var (
-			machineSet                 = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
+			machineSet                 = GetValidManagedMachineResource(oc)
 			backdatedImageName         = getBackdatedBootImage(oc.AsAdmin(), machineSet)
 			fakeImageNameNoUpdate      = getFakeNoUpdateBootImage(oc.AsAdmin(), "74240")
 			clonedMSName               = "cloned-tc-74240"
@@ -149,7 +149,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		)
 
 		exutil.By("Prepare to restore the original Machinesets")
-		for _, item := range NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail() {
+		for _, item := range GetAllManagedMachineResources(oc) {
 			ms := item
 			logger.Infof("Preparing to restore machineset %s", ms.GetName())
 			defer ms.SetSpec(ms.GetSpecOrFail())
@@ -164,27 +164,27 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		exutil.By("Clone first machineset")
 		clonedMS, err := machineSet.Duplicate(clonedMSName)
-		defer clonedMS.Delete()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s", machineSet)
+		defer clonedMS.Delete()
 		logger.Infof("OK!\n")
 
 		exutil.By("Clone first machineset but using a wrong ")
-		clonedWrongImageMS, err := DuplicateMachineSetWithCustomBootImage(machineSet, backdatedImageName, clonedWrongBootImageMSName)
-		defer clonedWrongImageMS.Delete()
+		clonedWrongImageMS, err := machineSet.DuplicateWithBootImage(clonedWrongBootImageMSName, backdatedImageName)
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s using a custom boot image", machineSet)
+		defer clonedWrongImageMS.Delete()
 		logger.Infof("OK!\n")
 
 		exutil.By("Clone first machineset, an owner reference will be added later to this new machineset")
 		logger.Infof("Cloning machineset")
 		clonedOwnedMS, err := machineSet.Duplicate(clonedOwnedMSName)
-		defer clonedOwnedMS.Delete()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s", machineSet)
+		defer clonedOwnedMS.Delete()
 		logger.Infof("Setting a fake owner")
 
 		logger.Infof("OK!\n")
 
 		exutil.By("All machinesets should use the right boot image")
-		for _, ms := range NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail() {
+		for _, ms := range GetAllManagedMachineResources(oc) {
 			logger.Infof("Checking boot image in machineset %s", ms.GetName())
 			// Check that the current boot image is the right one.
 			// Original machinesets were never set to backdatedImageName, so pass empty string.
@@ -212,7 +212,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		exutil.By("All machinesets should use the right boot image except the one with an owner")
 		clonedNames := map[string]bool{clonedMSName: true, clonedWrongBootImageMSName: true, clonedOwnedMSName: true}
-		for _, ms := range NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail() {
+		for _, ms := range GetAllManagedMachineResources(oc) {
 			logger.Infof("Checking boot image in machineset %s", ms.GetName())
 
 			if ms.GetName() == clonedOwnedMSName {
@@ -246,7 +246,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 	g.It("[PolarionID:74239][OTP] ManagedBootImages. Restore Partial MachineSet images", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
 		var (
-			machineSet             = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
+			machineSet             = GetValidManagedMachineResource(oc)
 			backdatedImageName     = getBackdatedBootImage(oc.AsAdmin(), machineSet)
 			fakeImageNameNoUpdate  = getFakeNoUpdateBootImage(oc.AsAdmin(), "74239")
 			clonedMSLabelName      = "cloned-tc-74239-label"
@@ -265,19 +265,19 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		exutil.By("Clone the first machineset twice")
 		clonedMSLabel, err := machineSet.Duplicate(clonedMSLabelName)
-		defer clonedMSLabel.Delete()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s", machineSet)
+		defer clonedMSLabel.Delete()
 
 		clonedMSNoLabel, err := machineSet.Duplicate(clonedMSNoLabelName)
-		defer clonedMSNoLabel.Delete()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s", machineSet)
+		defer clonedMSNoLabel.Delete()
 		logger.Infof("OK!\n")
 
 		exutil.By("Clone first machineset again and set an owner for the cloned machineset")
 		logger.Infof("Cloning machineset")
 		clonedMSLabelOwned, err := machineSet.Duplicate(clonedMSLabelOwnedName)
-		defer clonedMSLabelOwned.Delete()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s", machineSet)
+		defer clonedMSLabelOwned.Delete()
 		logger.Infof("Setting a fake owner")
 
 		o.Expect(
@@ -337,7 +337,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	g.It("[PolarionID:74751][OTP] ManagedBootImages. Fix errors", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
 		var (
 			machineConfiguration        = GetMachineConfiguration(oc.AsAdmin())
-			machineSet                  = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
+			machineSet                  = GetValidManagedMachineResource(oc)
 			backdatedImageName          = getBackdatedBootImage(oc.AsAdmin(), machineSet)
 			clonedMSName                = "cloned-tc-74751-copy"
 			labelName                   = "test"
@@ -521,7 +521,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			clonedSecretName = fmt.Sprintf("cloned-user-data-%s-copy", GetCurrentTestPolarionIDNumber())
 
 			machineConfiguration = GetMachineConfiguration(oc.AsAdmin())
-			machineSet           = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
+			machineSet           = GetValidManagedMachineResource(oc)
 			backdatedImageName   = getBackdatedBootImage(oc.AsAdmin(), machineSet)
 			labelName            = "test"
 			labelValue           = "update"
@@ -607,7 +607,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			fakeImageName = "fake-image" // not updateable
 
 			machineConfiguration = GetMachineConfiguration(oc.AsAdmin())
-			machineSet           = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
+			machineSet           = GetValidManagedMachineResource(oc)
 			labelName            = "test"
 			labelValue           = "update"
 
@@ -666,7 +666,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	g.It("[PolarionID:83998][OTP] Check in the boot image controller to work with multiple labels for annotation", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
 		var (
 			clonedMSName         = fmt.Sprintf("cloned-tc-%s-copy", GetCurrentTestPolarionIDNumber())
-			machineSet           = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
+			machineSet           = GetValidManagedMachineResource(oc)
 			machineConfiguration = GetMachineConfiguration(oc.AsAdmin())
 			arch                 = machineSet.GetArchitectureOrFail()
 		)
@@ -690,61 +690,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		setArchitectureAndCheckStatus(clonedMS, machineConfiguration, arch.String())
 	})
 })
-
-func DuplicateMachineSetWithCustomBootImage(ms *MachineSet, newBootImage, newName string) (*MachineSet, error) {
-
-	var (
-		platform = exutil.CheckPlatform(ms.GetOC().AsAdmin())
-	)
-
-	coreOSBootImagePath, err := ms.GetCoreOSBootImagePath(platform)
-	if err != nil {
-		return nil, err
-	}
-
-	// Patch is given like /spec/template/spec/providerSpec/value/ami/id
-	// but in sjson library we need the path like spec.template.spec.providerSpec.valude.ami.id
-	// so we transform the string
-	jsonCoreOSBootImagePath := strings.ReplaceAll(strings.TrimPrefix(coreOSBootImagePath, "/"), "/", ".")
-
-	res, err := CloneResource(ms, newName, ms.GetNamespace(),
-		// Extra modifications to
-		// 1. Create the resource with 0 replicas
-		// 2. modify the selector matchLabels
-		// 3. modify the selector template metadata labels
-		// 4. set the provided boot image
-		func(resString string) (string, error) {
-			newResString, err := sjson.Set(resString, "spec.replicas", 0)
-			if err != nil {
-				return "", err
-			}
-
-			newResString, err = sjson.Set(newResString, `spec.selector.matchLabels.machine\.openshift\.io/cluster-api-machineset`, newName)
-			if err != nil {
-				return "", err
-			}
-
-			newResString, err = sjson.Set(newResString, `spec.template.metadata.labels.machine\.openshift\.io/cluster-api-machineset`, newName)
-			if err != nil {
-				return "", err
-			}
-
-			newResString, err = sjson.SetRaw(newResString, jsonCoreOSBootImagePath, QuoteIfNotJSON(newBootImage))
-			if err != nil {
-				return "", err
-			}
-
-			return newResString, nil
-		},
-	)
-
-	if err != nil {
-		return nil, err
-	}
-
-	logger.Infof("A new machineset %s has been created by cloning %s", res.GetName(), ms.GetName())
-	return NewMachineSet(ms.oc, res.GetNamespace(), res.GetName()), nil
-}
 
 // getCoreOsBootImageFromConfigMap retrieves the boot image from the coreos-bootimages ConfigMap for the given platform and architecture
 func getCoreOsBootImageFromConfigMap(platform, region string, arch architecture.Architecture, coreosBootimagesCM *ConfigMap) (string, error) {
@@ -815,7 +760,7 @@ func testUserDataUpdateFailure(oc *exutil.CLI, clonedMSName, clonedSecretName, e
 
 	var (
 		machineConfiguration   = GetMachineConfiguration(oc.AsAdmin())
-		machineSet             = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
+		machineSet             = GetValidManagedMachineResource(oc)
 		backdatedImageName     = getBackdatedBootImage(oc.AsAdmin(), machineSet)
 		labelName              = "test"
 		labelValue             = "update"
@@ -909,7 +854,7 @@ func checkManagedBootImagesStatus(mc *MachineConfiguration, mode string) {
 
 // getBackdatedBootImage returns a valid boot image value for testing based on platform
 // MCO will only update images previously published in the installer. This function returns one of those valid images
-func getBackdatedBootImage(oc *exutil.CLI, ms *MachineSet) string {
+func getBackdatedBootImage(oc *exutil.CLI, ms ManagedMachineResource) string {
 	var (
 		platform = exutil.CheckPlatform(oc)
 	)
@@ -972,14 +917,11 @@ func getBackdatedBootImage(oc *exutil.CLI, ms *MachineSet) string {
 
 		// Get the right base image name from the rhcos json info stored in the github repositories
 		exutil.By(fmt.Sprintf("Get the base image for version %s", imageVersion))
-		rhcosHandler, err := GetRHCOSHandler(platform)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the rhcos handler")
-
-		baseImage, err := rhcosHandler.GetBaseImageFromRHCOSImageInfo(imageVersion, OSImageStreamRHEL9, arch, "")
+		baseImage, err := GetBaseImageFromRHCOSImageInfo(platform, imageVersion, OSImageStreamRHEL9, arch, "")
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the base image")
 		logger.Infof("Using base image %s", baseImage)
 
-		baseImageURL, err := rhcosHandler.GetBaseImageURLFromRHCOSImageInfo(imageVersion, OSImageStreamRHEL9, arch)
+		baseImageURL, err := GetBaseImageURLFromRHCOSImageInfo(platform, imageVersion, OSImageStreamRHEL9, arch)
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the base image URL")
 
 		// To avoid collisions with other test runs (including leftovers from a crashed, uncleaned-up
@@ -999,11 +941,11 @@ func getBackdatedBootImage(oc *exutil.CLI, ms *MachineSet) string {
 
 // getReleaseFromVsphereTemplate gets the release version from the vSphere template
 // used by the given BootImageResource, using its matching failure domain.
-// Only MachineSets are supported; ControlPlaneMachineSets will return an error.
+// Only ManagedMachineResource implementations are supported; ControlPlaneMachineSets will return an error.
 func getReleaseFromVsphereTemplate(bir BootImageResource) (string, error) {
-	ms, ok := bir.(*MachineSet)
+	ms, ok := bir.(ManagedMachineResource)
 	if !ok {
-		return "", fmt.Errorf("getReleaseFromVsphereTemplate only supports MachineSets")
+		return "", fmt.Errorf("getReleaseFromVsphereTemplate only supports ManagedMachineResource implementations")
 	}
 
 	vsphereTemplate, err := bir.GetCoreOsBootImage()
@@ -1011,7 +953,7 @@ func getReleaseFromVsphereTemplate(bir BootImageResource) (string, error) {
 		return "", err
 	}
 
-	vsInfo, err := GetVSphereConnectionInfoForMachineSet(ms)
+	vsInfo, err := ms.GetVSphereConnectionInfo()
 	if err != nil {
 		return "", err
 	}
@@ -1140,7 +1082,7 @@ func getFakeNoUpdateBootImage(oc *exutil.CLI, id string) string {
 // setArchitectureAndCheckStatus sets the capacity labels annotation on the cloned machineset and checks the status.
 // If archValue already contains "kubernetes.io/arch=", it is used as the raw annotation value.
 // Otherwise, "kubernetes.io/arch=" is prepended automatically.
-func setArchitectureAndCheckStatus(clonedMS *MachineSet, machineConfiguration *MachineConfiguration, archValue string) {
+func setArchitectureAndCheckStatus(clonedMS ManagedMachineResource, machineConfiguration *MachineConfiguration, archValue string) {
 	labels := archValue
 	if !strings.Contains(archValue, "kubernetes.io/arch=") {
 		labels = "kubernetes.io/arch=" + archValue
