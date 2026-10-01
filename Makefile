@@ -28,7 +28,8 @@ export GOLANGCI_LINT_CACHE=$(shell echo $${GOLANGCI_LINT_CACHE:-$$GOPATH/cache})
 
 # MCO accesses container images through registries, not Docker daemons or local
 # containers/storage, and uses the pure-Go OpenPGP implementation.
-GOTAGS = "$(TAGS) containers_image_docker_daemon_stub containers_image_storage_stub containers_image_openpgp"
+comma := ,
+GOTAGS = "$(subst $(comma), ,$(TAGS)) containers_image_docker_daemon_stub containers_image_storage_stub containers_image_openpgp"
 
 all: binaries
 
