@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/clock"
 )
 
 // Any function that should not be retried when returning an error should
@@ -34,7 +35,8 @@ type executable struct {
 // generic objects which are stored and retrieved using a string key.
 type WrappedQueue struct {
 	WrappedQueueOpts
-	queue workqueue.TypedRateLimitingInterface[*executable]
+	queue   workqueue.TypedRateLimitingInterface[*executable]
+	workers wait.Group
 }
 
 type WrappedQueueOpts struct {
@@ -77,6 +79,42 @@ func NewWrappedQueueForTesting(t *testing.T) *WrappedQueue {
 	return wq
 }
 
+type observedRateLimiter struct {
+	workqueue.TypedRateLimiter[*executable]
+	whenCalled chan struct{}
+}
+
+func (r *observedRateLimiter) When(exec *executable) time.Duration {
+	delay := r.TypedRateLimiter.When(exec)
+	r.whenCalled <- struct{}{}
+	return delay
+}
+
+// NewWrappedQueueWithClockForTesting constructs a test queue whose
+// rate-limited retries use the supplied clock and fixed delay. The returned
+// channel reports each call through AddRateLimited's rate limiter.
+func NewWrappedQueueWithClockForTesting(t *testing.T, c clock.WithTicker, retryDelay time.Duration) (*WrappedQueue, <-chan struct{}) {
+	t.Helper()
+
+	wq := NewWrappedQueueWithOpts(WrappedQueueOpts{
+		MaxRetries: 1,
+		Period:     time.Millisecond,
+		RetryAfter: time.Millisecond,
+		Name:       t.Name(),
+	})
+	rateLimited := make(chan struct{}, 1)
+	rl := &observedRateLimiter{
+		TypedRateLimiter: workqueue.NewTypedItemExponentialFailureRateLimiter[*executable](retryDelay, retryDelay),
+		whenCalled:       rateLimited,
+	}
+	wq.queue = workqueue.NewTypedRateLimitingQueueWithConfig[*executable](rl, workqueue.TypedRateLimitingQueueConfig[*executable]{
+		Name:  t.Name(),
+		Clock: c,
+	})
+
+	return wq, rateLimited
+}
+
 func NewWrappedQueueWithOpts(o WrappedQueueOpts) *WrappedQueue {
 	if o.Period == 0 {
 		o.Period = time.Second
@@ -101,8 +139,16 @@ func NewWrappedQueueWithOpts(o WrappedQueueOpts) *WrappedQueue {
 // Starts the workqueue process with the specified number of concurrent workers.
 func (w *WrappedQueue) Start(ctx context.Context, workers int) {
 	for i := 0; i <= workers; i++ {
-		go wait.Until(w.worker, w.Period, ctx.Done())
+		w.workers.Start(func() {
+			wait.Until(w.worker, w.Period, ctx.Done())
+		})
 	}
+}
+
+// WaitForWorkers blocks until all workers have exited. Queue shutdown and
+// context cancellation remain the caller's responsibility.
+func (w *WrappedQueue) WaitForWorkers() {
+	w.workers.Wait()
 }
 
 // Returns the queue object for situations where more nuanced usage is desired.
