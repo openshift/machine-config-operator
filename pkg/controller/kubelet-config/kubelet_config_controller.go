@@ -625,7 +625,8 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			// But we still need to compare the generated controller version because during an upgrade we need a new one
 			mcCtrlVersion := mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey]
 			if mcCtrlVersion == version.Hash {
-				return nil
+				// The MC for the current pool is up to date. Continue to the next pool.
+				continue
 			}
 		}
 		// Generate the original KubeletConfig
