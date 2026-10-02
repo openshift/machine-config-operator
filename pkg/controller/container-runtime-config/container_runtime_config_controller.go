@@ -777,7 +777,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 			// But we still need to compare the generated controller version because during an upgrade we need a new one
 			mcCtrlVersion := mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey]
 			if mcCtrlVersion == version.Hash {
-				return nil
+				continue
 			}
 		}
 		// Generate the original ContainerRuntimeConfig
