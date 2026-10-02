@@ -174,8 +174,8 @@ func CheckBootImagePlatform(infra *configv1.Infrastructure) (supported, cpmsSupp
 	case configv1.AzurePlatformType:
 		// Special variant check for Azure platforms; AzureStackCloud boot images are defined at install time
 		// See: https://github.com/openshift/installer/blob/bc941c822f06c10a95ddd080ae6345c25968baf4/pkg/asset/installconfig/azure/validation.go#L743-L749
-		if infra.Status.PlatformStatus.Azure != nil && infra.Status.PlatformStatus.Azure.CloudName == configv1.AzureStackCloud {
-			klog.Infof(" %s is not supported for boot image updates; disabling boot image controller", configv1.AzureStackCloud)
+		if infra.Status.PlatformStatus.Azure != nil && (infra.Status.PlatformStatus.Azure.CloudName == configv1.AzureStackCloud || infra.Status.PlatformStatus.Azure.CloudName == configv1.AzureUSSecCloud) {
+			klog.Infof(" %s is not supported for boot image updates; disabling boot image controller", infra.Status.PlatformStatus.Azure.CloudName)
 			return false, false, false
 		}
 		return true, true, true
