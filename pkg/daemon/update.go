@@ -2841,6 +2841,110 @@ func (dn *Daemon) InplaceUpdateViaNewContainer(target string) error {
 	return nil
 }
 
+// InplaceUpdateViaLayeredContainer imports the complete target image into the
+// host OSTree repository before rebasing to the imported commit.  The import is
+// performed with the target image's ostree binary because older host skopeo
+// versions cannot handle the target image's multi-arch signatures.
+//
+// The host's container storage is mounted into that container so the import
+// does not pull the image a second time.  Rebasing to the imported commit also
+// avoids creating an additional encapsulated container image.
+func (dn *Daemon) InplaceUpdateViaLayeredContainer(target string) (retErr error) {
+	enforceFile := "/sys/fs/selinux/enforce"
+	enforcingBuf, err := os.ReadFile(enforceFile)
+	var enforcing bool
+	if err != nil {
+		if os.IsNotExist(err) {
+			enforcing = false
+		} else {
+			return fmt.Errorf("failed to read %s: %w", enforceFile, err)
+		}
+	} else {
+		v, parseErr := strconv.Atoi(strings.TrimSpace(string(enforcingBuf)))
+		if parseErr != nil {
+			return fmt.Errorf("failed to parse selinux enforcing %v: %w", enforcingBuf, parseErr)
+		}
+		enforcing = v == 1
+	}
+
+	if enforcing {
+		if err := runCmdSync("setenforce", "0"); err != nil {
+			return err
+		}
+		defer func() {
+			if err := runCmdSync("setenforce", "1"); err != nil {
+				if retErr == nil {
+					retErr = err
+					return
+				}
+				klog.Errorf("failed to restore SELinux enforcement: %v", err)
+			}
+		}()
+	}
+
+	tmpDir := filepath.Join("/run", "mco-layered-deploy-"+string(uuid.NewUUID()))
+	if err := os.MkdirAll(tmpDir, defaultDirectoryPermissions); err != nil {
+		return fmt.Errorf("failed to create layered deployment temporary directory: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	digestPath := filepath.Join("/run", "mco-layered-deploy-"+string(uuid.NewUUID())+".digest")
+	defer os.Remove(digestPath)
+
+	systemdPodmanArgs := []string{"--unit", "machine-config-daemon-update-rpmostree-layered", "-p", "EnvironmentFile=-/etc/mco/proxy.env", "--collect", "--wait", "--", "podman"}
+	pullArgs := append([]string{}, systemdPodmanArgs...)
+	pullArgs = append(pullArgs, "pull", "--authfile", "/var/lib/kubelet/config.json")
+	if !podmanSupportsSigstore() {
+		pullArgs = append(pullArgs, "--signature-policy", "/etc/machine-config-daemon/policy-for-old-podman.json")
+	}
+	pullArgs = append(pullArgs, target)
+	if err := runCmdSync("systemd-run", pullArgs...); err != nil {
+		return err
+	}
+
+	prepareScript := `set -eu
+target="$1"
+digest="$2"
+repo=/run/host/sysroot/ostree/repo
+mount -o remount,rw /run/host/sysroot
+ostree container image pull --ostree-digestfile="$digest" "$repo" "ostree-unverified-image:containers-storage:$target"
+`
+	prepareArgs := append([]string{}, systemdPodmanArgs...)
+	prepareArgs = append(prepareArgs,
+		"run", "--env-file", "/etc/mco/proxy.env", "--privileged", "--pid=host", "--net=host", "--rm",
+		"-v", "/:/run/host", "-v", "/var/lib/containers:/var/lib/containers", "-v", tmpDir+":/var/tmp", "-v", "/etc/containers:/etc/containers:ro",
+		target, "sh", "-ec", prepareScript, "mco-layered-import", target, "/run/host"+digestPath)
+	if err := runCmdSync("systemd-run", prepareArgs...); err != nil {
+		return fmt.Errorf("failed to import complete layered image: %w", err)
+	}
+
+	refBytes, err := os.ReadFile(digestPath)
+	if err != nil {
+		return fmt.Errorf("failed to read imported OSTree commit: %w", err)
+	}
+	ref := strings.TrimSpace(string(refBytes))
+	if ref == "" {
+		return fmt.Errorf("imported layered image did not produce an OSTree commit")
+	}
+
+	if err := runRpmOstree(
+		"rebase", ref,
+		"--custom-origin-url", "pivot://"+target,
+		"--custom-origin-description", "Image imported via ostree container image pull",
+	); err != nil {
+		return fmt.Errorf("failed to rebase to imported layered image: %w", err)
+	}
+
+	_, staged, err := dn.NodeUpdaterClient.GetBootedAndStagedDeployment()
+	if err != nil {
+		return fmt.Errorf("failed to recheck layered deployment origin: %w", err)
+	}
+	if staged == nil || len(staged.CustomOrigin) == 0 || staged.CustomOrigin[0] != "pivot://"+target {
+		return fmt.Errorf("layered deployment did not retain target image origin")
+	}
+	return nil
+}
+
 // queueRevertKernelSwap undoes the layering of the RT kernel or kernel-64k hugepages
 func (dn *Daemon) queueRevertKernelSwap() error {
 	booted, _, err := dn.NodeUpdaterClient.GetBootedAndStagedDeployment()
@@ -2909,8 +3013,8 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	// If skopeo is < 1.22.2 on a multi-arch image, run as a privileged container which has updated skopeo.
 	// See https://redhat.atlassian.net/browse/OCPBUGS-83826 and https://redhat.atlassian.net/browse/OCPBUGS-81187
 	if !newEnough || !skopeoSupportsMultiArchSigstore(newURL) {
-		logSystem("rpm-ostree or skopeo is not new enough for layering; forcing an update via container")
-		return dn.InplaceUpdateViaNewContainer(newURL)
+		logSystem("rpm-ostree or skopeo is not new enough for layering; importing the complete image before rebasing")
+		return dn.InplaceUpdateViaLayeredContainer(newURL)
 	}
 
 	isPisConfigured, err := dn.isPinnedImageSetConfigured()
