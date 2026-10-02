@@ -492,12 +492,18 @@ func TestGetImageRegistryPullSecretsIRIMerge(t *testing.T) {
 		// pullSecretContent is the raw ".dockerconfigjson" of the cluster pull secret.
 		pullSecretContent string
 		iriEnabled        bool
+		// ccAbsent drops ControllerConfig from the lister, as on a cluster that
+		// has not rendered its first one yet.
+		ccAbsent bool
 		// expectNil asserts getImageRegistryPullSecrets returns a nil secret,
 		// used for the empty-"auths" ("don't roll config") path.
 		expectNil bool
 	}{
 		{name: "IRI absent - pull secret unchanged", pullSecretContent: populatedPullSecretContent, iriEnabled: false},
 		{name: "IRI present - credentials merged", pullSecretContent: populatedPullSecretContent, iriEnabled: true},
+		// The base domain comes from the cluster DNS object, so a missing
+		// ControllerConfig must not fail the whole pull-secret assembly.
+		{name: "ControllerConfig absent - credentials still merged", pullSecretContent: populatedPullSecretContent, iriEnabled: true, ccAbsent: true},
 		// With no image-pull secrets on the SA and an empty cluster pull secret,
 		// the assembled "auths" map is empty. Even with IRI enabled the function
 		// must return nil rather than emitting a secret carrying only IRI creds.
@@ -515,6 +521,10 @@ func TestGetImageRegistryPullSecretsIRIMerge(t *testing.T) {
 				mcoSecretObjs = append(mcoSecretObjs, iriAuthSecret)
 				iriObjs = append(iriObjs, iriInstance)
 			}
+			ccObjs := []interface{}{controllerConfig}
+			if tc.ccAbsent {
+				ccObjs = nil
+			}
 
 			clusterPullSecret := helpers.NewDockerCfgJSONSecret(ctrlcommon.GlobalPullSecretName, ctrlcommon.OpenshiftConfigNamespace, tc.pullSecretContent)
 
@@ -525,7 +535,7 @@ func TestGetImageRegistryPullSecretsIRIMerge(t *testing.T) {
 				mcoSALister:           corev1listers.NewServiceAccountLister(newNamespacedIndexer(t, machineOSPullerSA)),
 				mcoSecretLister:       corev1listers.NewSecretLister(newNamespacedIndexer(t, mcoSecretObjs...)),
 				ocSecretLister:        corev1listers.NewSecretLister(newNamespacedIndexer(t, clusterPullSecret)),
-				ccLister:              mcplister.NewControllerConfigLister(newNamespacedIndexer(t, controllerConfig)),
+				ccLister:              mcplister.NewControllerConfigLister(newNamespacedIndexer(t, ccObjs...)),
 				iriLister:             mcplister.NewInternalReleaseImageLister(newNamespacedIndexer(t, iriObjs...)),
 			}
 

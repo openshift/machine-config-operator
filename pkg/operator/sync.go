@@ -2379,7 +2379,13 @@ func (optr *Operator) getImageRegistryPullSecrets() ([]byte, error) {
 		// that path is separate from the kubelet's pull secret, so IRI credentials
 		// must be supplied here in addition to the render-time merge. When IRI is
 		// not enabled on the cluster this merge makes no changes.
-		iriMerger := ctrlcommon.NewIRISecretMerger(optr.mcoSecretLister, optr.ccLister, optr.iriLister)
+		//
+		// The base domain comes from the cluster DNS object fetched above rather
+		// than from ControllerConfig: ControllerConfig.Spec.DNS is that same
+		// object, so going through the lister would add a dependency that can
+		// fail before the first ControllerConfig exists without telling us
+		// anything new.
+		iriMerger := ctrlcommon.NewIRISecretMergerWithBaseDomain(optr.mcoSecretLister, optr.iriLister, dns.Spec.BaseDomain)
 		mergedPullSecrets, err = iriMerger.Merge(mergedPullSecrets)
 		if err != nil {
 			return nil, fmt.Errorf("failed to merge IRI registry credentials into image registry pull secrets: %w", err)

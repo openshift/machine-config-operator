@@ -41,23 +41,9 @@ func NewIRISecretMerger(
 ) *IRISecretMerger {
 	return &IRISecretMerger{
 		resolve: func() (string, string, error) {
-			_, err := iriLister.Get(InternalReleaseImageInstanceName)
-			if apierrors.IsNotFound(err) {
-				return "", "", fmt.Errorf("%w: InternalReleaseImage %q not found", errIRISkip, InternalReleaseImageInstanceName)
-			}
+			secret, err := lookupIRIAuthSecret(secretLister, iriLister)
 			if err != nil {
-				return "", "", fmt.Errorf("could not get InternalReleaseImage: %w", err)
-			}
-			secret, err := secretLister.Secrets(MCONamespace).Get(InternalReleaseImageAuthSecretName)
-			// The auth secret is created by the InternalReleaseImage controller,
-			// so it can legitimately lag the InternalReleaseImage resource. Skip
-			// the merge until it shows up rather than failing the caller's sync;
-			// the secret informers re-trigger a render once it exists.
-			if apierrors.IsNotFound(err) {
-				return "", "", fmt.Errorf("%w: IRI auth secret %s/%s not found", errIRISkip, MCONamespace, InternalReleaseImageAuthSecretName)
-			}
-			if err != nil {
-				return "", "", fmt.Errorf("could not get IRI auth secret: %w", err)
+				return "", "", err
 			}
 			cconfig, err := ccLister.Get(ControllerConfigName)
 			if err != nil {
@@ -66,6 +52,56 @@ func NewIRISecretMerger(
 			return extractIRICredentials(secret, cconfig)
 		},
 	}
+}
+
+// NewIRISecretMergerWithBaseDomain creates an IRISecretMerger that takes the
+// cluster base domain from the caller rather than reading it back out of
+// ControllerConfig. Use this wherever the caller already holds the cluster DNS
+// object: ControllerConfig.Spec.DNS is just that same object copied in, so the
+// lister lookup buys nothing and only adds a dependency that can fail. It can
+// fail for real — before the first ControllerConfig is created, an otherwise
+// mergeable pull secret would turn into a hard error for the caller.
+func NewIRISecretMergerWithBaseDomain(
+	secretLister corelistersv1.SecretLister,
+	iriLister mcfglistersv1.InternalReleaseImageLister,
+	baseDomain string,
+) *IRISecretMerger {
+	return &IRISecretMerger{
+		resolve: func() (string, string, error) {
+			secret, err := lookupIRIAuthSecret(secretLister, iriLister)
+			if err != nil {
+				return "", "", err
+			}
+			return iriCredentialsFrom(secret, baseDomain)
+		},
+	}
+}
+
+// lookupIRIAuthSecret resolves the IRI auth secret from the informer cache,
+// returning an error wrapping errIRISkip when there is simply nothing to merge.
+func lookupIRIAuthSecret(
+	secretLister corelistersv1.SecretLister,
+	iriLister mcfglistersv1.InternalReleaseImageLister,
+) (*corev1.Secret, error) {
+	_, err := iriLister.Get(InternalReleaseImageInstanceName)
+	if apierrors.IsNotFound(err) {
+		return nil, fmt.Errorf("%w: InternalReleaseImage %q not found", errIRISkip, InternalReleaseImageInstanceName)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("could not get InternalReleaseImage: %w", err)
+	}
+	secret, err := secretLister.Secrets(MCONamespace).Get(InternalReleaseImageAuthSecretName)
+	// The auth secret is created by the InternalReleaseImage controller, so it
+	// can legitimately lag the InternalReleaseImage resource. Skip the merge
+	// until it shows up rather than failing the caller's sync; the secret
+	// informers re-trigger a render once it exists.
+	if apierrors.IsNotFound(err) {
+		return nil, fmt.Errorf("%w: IRI auth secret %s/%s not found", errIRISkip, MCONamespace, InternalReleaseImageAuthSecretName)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("could not get IRI auth secret: %w", err)
+	}
+	return secret, nil
 }
 
 // NewIRISecretMergerFromObjects creates an IRISecretMerger from pre-fetched objects.
@@ -115,24 +151,29 @@ func (m *IRISecretMerger) Merge(pullSecretRaw []byte) ([]byte, error) {
 // extractIRICredentials validates and extracts the password and baseDomain from
 // the IRI credentials secret and ControllerConfig.
 func extractIRICredentials(secret *corev1.Secret, cconfig *mcfgv1.ControllerConfig) (password, baseDomain string, err error) {
-	if secret == nil {
-		return "", "", fmt.Errorf("IRI registry credentials secret must not be nil")
-	}
 	if cconfig == nil {
 		return "", "", fmt.Errorf("ControllerConfig must not be nil")
 	}
 	if cconfig.Spec.DNS == nil {
 		return "", "", fmt.Errorf("ControllerConfig DNS spec must not be nil")
 	}
+	return iriCredentialsFrom(secret, cconfig.Spec.DNS.Spec.BaseDomain)
+}
+
+// iriCredentialsFrom validates the IRI credentials secret against an
+// already-resolved base domain, whatever the caller sourced it from.
+func iriCredentialsFrom(secret *corev1.Secret, baseDomain string) (password, bd string, err error) {
+	if secret == nil {
+		return "", "", fmt.Errorf("IRI registry credentials secret must not be nil")
+	}
 	pw, ok := secret.Data["password"]
 	if !ok || len(pw) == 0 {
 		return "", "", fmt.Errorf("IRI registry credentials secret missing or empty \"password\" field")
 	}
-	bd := cconfig.Spec.DNS.Spec.BaseDomain
-	if strings.TrimSpace(bd) == "" {
-		return "", "", fmt.Errorf("ControllerConfig baseDomain must not be empty")
+	if strings.TrimSpace(baseDomain) == "" {
+		return "", "", fmt.Errorf("baseDomain must not be empty")
 	}
-	return string(pw), bd, nil
+	return string(pw), baseDomain, nil
 }
 
 // mergeIRIRegistryCredentialsIntoPullSecret merges IRI registry authentication
