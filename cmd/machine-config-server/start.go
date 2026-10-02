@@ -8,6 +8,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
 
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -47,7 +48,12 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		klog.Exitf("--apiserver-url cannot be empty")
 	}
 
-	cs, err := server.NewClusterServer(startOpts.kubeconfig, startOpts.apiserverURL)
+	// Create EventBroadcaster for failure reporting
+	// EventBroadcaster must be shut down on exit to avoid leaking goroutines
+	eventBroadcaster := record.NewBroadcaster()
+	defer eventBroadcaster.Shutdown()
+
+	cs, err := server.NewClusterServer(startOpts.kubeconfig, startOpts.apiserverURL, eventBroadcaster)
 	if err != nil {
 		ctrlcommon.WriteTerminationError(err)
 	}
@@ -55,9 +61,11 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	klog.Infof("Launching server with tls min version: %v & cipher suites %v", rootOpts.tlsminversion, rootOpts.tlsciphersuites)
 	tlsConfig := ctrlcommon.GetGoTLSConfig(rootOpts.tlsminversion, rootOpts.tlsciphersuites)
 
+	failureHandler := server.NewNodeFailureHandler(cs.GetFailureReporter())
+
 	apiHandler := server.NewServerAPIHandler(cs)
-	secureServer := server.NewAPIServer(apiHandler, rootOpts.sport, false, rootOpts.cert, rootOpts.key, tlsConfig)
-	insecureServer := server.NewAPIServer(apiHandler, rootOpts.isport, true, "", "", tlsConfig)
+	secureServer := server.NewAPIServer(apiHandler, failureHandler, rootOpts.sport, false, rootOpts.cert, rootOpts.key, tlsConfig)
+	insecureServer := server.NewAPIServer(apiHandler, failureHandler, rootOpts.isport, true, "", "", tlsConfig)
 
 	stopCh := make(chan struct{})
 	go secureServer.Serve()
