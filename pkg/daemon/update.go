@@ -2882,6 +2882,12 @@ func (dn *Daemon) InplaceUpdateViaLayeredContainer(target string) (retErr error)
 		}()
 	}
 
+	tmpDir := filepath.Join("/run", "mco-layered-deploy-"+string(uuid.NewUUID()))
+	if err := os.MkdirAll(tmpDir, defaultDirectoryPermissions); err != nil {
+		return fmt.Errorf("failed to create layered deployment temporary directory: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
 	digestPath := filepath.Join("/run", "mco-layered-deploy-"+string(uuid.NewUUID())+".digest")
 	defer os.Remove(digestPath)
 
@@ -2905,7 +2911,7 @@ ostree container image pull --ostree-digestfile="$digest" "$repo" "ostree-unveri
 	prepareArgs := append([]string{}, systemdPodmanArgs...)
 	prepareArgs = append(prepareArgs,
 		"run", "--env-file", "/etc/mco/proxy.env", "--privileged", "--pid=host", "--net=host", "--rm",
-		"-v", "/:/run/host", "-v", "/var/lib/containers:/var/lib/containers", "-v", "/etc/containers:/etc/containers:ro",
+		"-v", "/:/run/host", "-v", "/var/lib/containers:/var/lib/containers", "-v", tmpDir+":/var/tmp", "-v", "/etc/containers:/etc/containers:ro",
 		target, "sh", "-ec", prepareScript, "mco-layered-import", target, "/run/host"+digestPath)
 	if err := runCmdSync("systemd-run", prepareArgs...); err != nil {
 		return fmt.Errorf("failed to import complete layered image: %w", err)
