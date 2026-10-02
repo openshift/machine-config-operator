@@ -176,7 +176,7 @@ func TestReserveSystemCPUs(t *testing.T) {
 				Spec: mcfgv1.KubeletConfigSpec{},
 			}
 
-			kubeletIgnition, _, _, err := generateKubeletIgnFiles(kubeletConfig, originalKubeConfig)
+			kubeletIgnition, _, _, _, err := generateKubeletIgnFiles(kubeletConfig, originalKubeConfig)
 			require.NoError(t, err, "generateKubeletIgnFiles should not return an error")
 			require.NotNil(t, kubeletIgnition, "kubelet ignition file should not be nil")
 
@@ -232,7 +232,7 @@ func TestCGroupKubeletConfigSpec(t *testing.T) {
 	}
 
 	// Execute: Generate the kubelet ignition files
-	kubeletIgnition, _, _, err := generateKubeletIgnFiles(kubeletConfig, originalKubeConfig)
+	kubeletIgnition, _, _, _, err := generateKubeletIgnFiles(kubeletConfig, originalKubeConfig)
 	require.NoError(t, err, "generateKubeletIgnFiles should not return an error")
 	require.NotNil(t, kubeletIgnition, "kubelet ignition file should not be nil")
 
@@ -290,7 +290,7 @@ func TestEmptyStringOverride(t *testing.T) {
 		},
 	}
 
-	kubeletIgnition, _, _, err := generateKubeletIgnFiles(kubeletConfig, originalKubeConfig)
+	kubeletIgnition, _, _, _, err := generateKubeletIgnFiles(kubeletConfig, originalKubeConfig)
 	require.NoError(t, err, "generateKubeletIgnFiles should not return an error")
 	require.NotNil(t, kubeletIgnition, "kubelet ignition file should not be nil")
 
@@ -343,7 +343,7 @@ func TestPartialUserConfig(t *testing.T) {
 		},
 	}
 
-	kubeletIgnition, _, _, err := generateKubeletIgnFiles(kubeletConfig, originalKubeConfig)
+	kubeletIgnition, _, _, _, err := generateKubeletIgnFiles(kubeletConfig, originalKubeConfig)
 	require.NoError(t, err, "generateKubeletIgnFiles should not return an error")
 	require.NotNil(t, kubeletIgnition, "kubelet ignition file should not be nil")
 
@@ -391,8 +391,67 @@ func TestSystemCgroupsMismatch(t *testing.T) {
 		},
 	}
 
-	_, _, _, err = generateKubeletIgnFiles(kubeletConfig, originalKubeConfig)
+	_, _, _, _, err = generateKubeletIgnFiles(kubeletConfig, originalKubeConfig)
 	require.Error(t, err, "generateKubeletIgnFiles should return an error for mismatched cgroups")
 	require.Contains(t, err.Error(), "systemReservedCgroup (/system.slice) must match systemCgroups (/foo.slice)",
 		"error message should indicate cgroup mismatch")
+}
+
+func TestTLSDropInOnlyEmittedWhenSet(t *testing.T) {
+	tests := []struct {
+		name            string
+		tlsMinVersion   string
+		tlsCipherSuites []string
+		expectDropIn    bool
+	}{
+		{
+			name:         "no TLS set, no drop-in emitted",
+			expectDropIn: false,
+		},
+		{
+			name:          "only tlsMinVersion set",
+			tlsMinVersion: "VersionTLS12",
+			expectDropIn:  true,
+		},
+		{
+			name:            "only tlsCipherSuites set",
+			tlsCipherSuites: []string{"TLS_AES_128_GCM_SHA256"},
+			expectDropIn:    true,
+		},
+		{
+			name:            "both set",
+			tlsMinVersion:   "VersionTLS13",
+			tlsCipherSuites: []string{"TLS_AES_128_GCM_SHA256", "TLS_AES_256_GCM_SHA384"},
+			expectDropIn:    true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			originalKubeConfig := &kubeletconfigv1beta1.KubeletConfiguration{
+				TLSMinVersion:   tc.tlsMinVersion,
+				TLSCipherSuites: tc.tlsCipherSuites,
+			}
+			kubeletConfig := &mcfgv1.KubeletConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec:       mcfgv1.KubeletConfigSpec{},
+			}
+
+			_, _, _, tlsDropIn, err := generateKubeletIgnFiles(kubeletConfig, originalKubeConfig)
+			require.NoError(t, err)
+
+			if !tc.expectDropIn {
+				require.Nil(t, tlsDropIn, "TLS drop-in should not be emitted when TLS is unset")
+				return
+			}
+
+			require.NotNil(t, tlsDropIn, "TLS drop-in should be emitted")
+			contents, err := ctrlcommon.DecodeIgnitionFileContents(tlsDropIn.Contents.Source, tlsDropIn.Contents.Compression)
+			require.NoError(t, err)
+			kc, err := DecodeKubeletConfig(contents)
+			require.NoError(t, err)
+			require.Equal(t, tc.tlsMinVersion, kc.TLSMinVersion)
+			require.Equal(t, tc.tlsCipherSuites, kc.TLSCipherSuites)
+		})
+	}
 }
