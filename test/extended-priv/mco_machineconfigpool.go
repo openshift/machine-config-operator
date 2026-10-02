@@ -342,7 +342,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			}
 			// TODO add only the necessary machines to reach 3 nodes
 			numAdd := 3 - initNumNodes
-			machineset := exutil.OrFail[*MachineSet](GetScalableMachineSet(oc.AsAdmin()))
+			machineset := exutil.OrFail[ManagedMachineResource](GetScalableManagedMachineResource(oc.AsAdmin()))
 			o.Expect(machineset.AddToScale(numAdd)).To(o.Succeed(),
 				"Error addind new nodes to the cluster")
 			o.Expect(machineset.WaitUntilReady("15m")).To(o.Succeed(),
