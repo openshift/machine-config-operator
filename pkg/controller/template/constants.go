@@ -22,6 +22,13 @@ const (
 	// BaremetalRuntimeCfgKey is the key that references the baremetal-runtimecfg image in the controller
 	BaremetalRuntimeCfgKey string = "baremetalRuntimeCfgImage"
 
+	// FRRK8sKey is the images.json key for the frr-k8s image (one image for
+	// all frr-k8s static pod containers).
+	FRRK8sKey string = "frrK8sImage"
+
+	// KubeVIPKey is the images.json key for the kube-vip image.
+	KubeVIPKey string = "kubeVipImage"
+
 	// KubeRbacProxyKey the key that references the kubeRbacProxy image
 	KubeRbacProxyKey string = "kubeRbacProxyImage"
 

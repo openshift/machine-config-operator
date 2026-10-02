@@ -374,6 +374,48 @@ func (optr *Operator) syncCloudConfig(spec *mcfgv1.ControllerConfigSpec, infra *
 	return nil
 }
 
+// compactBGPVIPPeersJSON validates and compacts the bgp-vip-config payload so
+// it is safe to embed in single-line template contexts.
+func compactBGPVIPPeersJSON(raw string) (string, error) {
+	if raw == "" {
+		return "", nil
+	}
+	var buf bytes.Buffer
+	if err := json.Compact(&buf, []byte(raw)); err != nil {
+		return "", fmt.Errorf("bgp-vip-config config.json is not valid JSON: %w", err)
+	}
+	return buf.String(), nil
+}
+
+// syncBGPVIPPeersJSON populates spec.BGPVIPPeersJSON from the
+// openshift-network-operator/bgp-vip-config ConfigMap when BGP-based VIP
+// management is enabled on a BareMetal platform.
+func (optr *Operator) syncBGPVIPPeersJSON(spec *mcfgv1.ControllerConfigSpec, infra *configv1.Infrastructure) error {
+	if !ctrlcommon.IsBGPVIPManagement(infra) {
+		return nil
+	}
+	cm, err := optr.clusterCmLister.ConfigMaps("openshift-network-operator").Get("bgp-vip-config")
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			// The spec is rebuilt from scratch on every sync, so silently
+			// tolerating absence would blank the peers file fleet-wide.
+			// Degrade instead, holding the last good ControllerConfig.
+			return fmt.Errorf("BGP VIP management is enabled but the openshift-network-operator/bgp-vip-config ConfigMap is missing")
+		}
+		return fmt.Errorf("failed to read bgp-vip-config ConfigMap: %w", err)
+	}
+	raw := cm.Data["config.json"]
+	if raw == "" {
+		return fmt.Errorf("BGP VIP management is enabled but the bgp-vip-config ConfigMap has no config.json payload")
+	}
+	peersJSON, err := compactBGPVIPPeersJSON(raw)
+	if err != nil {
+		return err
+	}
+	spec.BGPVIPPeersJSON = peersJSON
+	return nil
+}
+
 //nolint:gocyclo
 func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOperator) error {
 	if optr.inClusterBringup {
@@ -598,6 +640,10 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		return err
 	}
 
+	if err := optr.syncBGPVIPPeersJSON(spec, infra); err != nil {
+		return err
+	}
+
 	if !osimagestream.IsFeatureEnabled(optr.fgHandler) {
 		oscontainer, osextensionscontainer, err := optr.getOSImageURLsFromConfigMap()
 		if err != nil {
@@ -625,6 +671,8 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		templatectrl.BaremetalRuntimeCfgKey:   imgs.BaremetalRuntimeCfg,
 		templatectrl.KubeRbacProxyKey:         imgs.KubeRbacProxy,
 		templatectrl.DockerRegistryKey:        imgs.DockerRegistry,
+		templatectrl.FRRK8sKey:                imgs.FRRK8s,
+		templatectrl.KubeVIPKey:               imgs.KubeVip,
 	}
 
 	ignitionHost, err := getIgnitionHost(&infra.Status)

@@ -56,3 +56,11 @@ spec:
     from:
       kind: DockerImage
       name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:docker-registry
+  - name: metallb-frr
+    from:
+      kind: DockerImage
+      name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:metallb-frr
+  - name: kube-vip
+    from:
+      kind: DockerImage
+      name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:kube-vip
