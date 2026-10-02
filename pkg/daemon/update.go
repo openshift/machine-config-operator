@@ -2906,6 +2906,7 @@ func (dn *Daemon) InplaceUpdateViaLayeredContainer(target string) (retErr error)
 target="$1"
 digest="$2"
 repo=/run/host/sysroot/ostree/repo
+mount -o remount,rw /run/host/sysroot
 ostree container image pull --ostree-digestfile="$digest" "$repo" "ostree-unverified-image:containers-storage:$target"
 `
 	prepareArgs := append([]string{}, systemdPodmanArgs...)
