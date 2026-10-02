@@ -7,11 +7,14 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
+	"strings"
 	"text/template"
 
 	"github.com/clarketm/json"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/klog/v2"
 
+	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
@@ -32,6 +35,53 @@ var (
 	machineConfigNameFmt = "02-%s" + machineConfigNameSuffix
 )
 
+// The IRI registry is the distribution binary shipped in the docker-registry payload
+// image, which openshift/image-registry builds against openshift/docker-distribution
+// (a fork of distribution v3). It validates REGISTRY_HTTP_TLS_MINIMUMTLS and
+// REGISTRY_HTTP_TLS_CIPHERSUITES against the hardcoded tables mirrored below, and
+// returns a fatal error from ListenAndServe on any value it does not recognise --
+// with Restart=on-failure in the unit, an unrecognised value crash-loops the registry
+// on every master. An unknown cipher name rejects the whole list, not just that entry.
+//
+// Source: registry/registry.go in openshift/docker-distribution (tlsVersions,
+// cipherSuites). Note that distribution v3 dropped the tls1.0 and tls1.1 values that
+// v2.8 accepted, and dropped the RC4 and AES_128_CBC_SHA256 suites.
+const (
+	registryTLSVersion12 = "tls1.2"
+	registryTLSVersion13 = "tls1.3"
+)
+
+// registryMinTLSVersions is the set of values accepted for the registry's minimum
+// TLS version. OpenShift's Old profile asks for TLS 1.0, which is not in this set.
+var registryMinTLSVersions = map[string]bool{
+	registryTLSVersion12: true,
+	registryTLSVersion13: true,
+}
+
+// registryCipherSuites is the set of cipher suite names the registry accepts that
+// also have an effect at TLS 1.2. The registry additionally accepts the three TLS 1.3
+// suite names, but those are deliberately excluded: Go ignores TLS 1.3 suites in
+// tls.Config.CipherSuites, so sending them at tls1.2 would contribute nothing while
+// making an otherwise-empty list look non-empty.
+var registryCipherSuites = map[string]bool{
+	"TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA":          true,
+	"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256":       true,
+	"TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA":          true,
+	"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384":       true,
+	"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256": true,
+	"TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA":           true,
+	"TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA":            true,
+	"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256":         true,
+	"TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA":            true,
+	"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384":         true,
+	"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256":   true,
+	"TLS_RSA_WITH_3DES_EDE_CBC_SHA":                 true,
+	"TLS_RSA_WITH_AES_128_CBC_SHA":                  true,
+	"TLS_RSA_WITH_AES_128_GCM_SHA256":               true,
+	"TLS_RSA_WITH_AES_256_CBC_SHA":                  true,
+	"TLS_RSA_WITH_AES_256_GCM_SHA384":               true,
+}
+
 // Renderer takes care of generating the required ignition (by role) for
 // the InternalReleaseImage machine config resources. It can also create
 // a MachineConfig instance when required.
@@ -40,16 +90,18 @@ type Renderer struct {
 	iriSecret                    *corev1.Secret
 	iriRegistryCredentialsSecret *corev1.Secret
 	cconfig                      *mcfgv1.ControllerConfig
+	tlsProfile                   *configv1.TLSSecurityProfile
 }
 
 // NewRendererByRole creates a new Renderer instance for generating
 // the machine config for the given role.
-func NewRendererByRole(role string, iriSecret, iriRegistryCredentialsSecret *corev1.Secret, cconfig *mcfgv1.ControllerConfig) *Renderer {
+func NewRendererByRole(role string, iriSecret, iriRegistryCredentialsSecret *corev1.Secret, cconfig *mcfgv1.ControllerConfig, tlsProfile *configv1.TLSSecurityProfile) *Renderer {
 	return &Renderer{
 		role:                         role,
 		iriSecret:                    iriSecret,
 		iriRegistryCredentialsSecret: iriRegistryCredentialsSecret,
 		cconfig:                      cconfig,
+		tlsProfile:                   tlsProfile,
 	}
 }
 
@@ -107,6 +159,8 @@ type renderContext struct {
 	IriTLSCert          string
 	RootCA              string
 	IriHtpasswd         string
+	TLSMinVersion       string
+	TLSCipherSuites     []string
 }
 
 // newRenderContext creates a new renderContext instance.
@@ -119,9 +173,17 @@ func (r *Renderer) newRenderContext() (*renderContext, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	// iriRegistryCredentialsSecret is always non-nil here: the IRI controller
 	// fetches it and fails loudly if not found (auth is mandatory).
 	iriHtpasswd := string(r.iriRegistryCredentialsSecret.Data["htpasswd"])
+
+	tlsMinVersion, tlsCipherSuites, err := registryTLSFromProfile(r.tlsProfile)
+	if err != nil {
+		return nil, err
+	}
+	klog.V(4).Infof("IRI registry TLS profile: %s, minimum version: %s, cipher suites: %q",
+		tlsProfileName(r.tlsProfile), tlsMinVersion, tlsCipherSuites)
 
 	return &renderContext{
 		RegistryEnabled:     true,
@@ -130,7 +192,79 @@ func (r *Renderer) newRenderContext() (*renderContext, error) {
 		IriTLSCert:          iriTLSCert,
 		RootCA:              string(r.cconfig.Spec.RootCAData),
 		IriHtpasswd:         iriHtpasswd,
+		TLSMinVersion:       tlsMinVersion,
+		TLSCipherSuites:     tlsCipherSuites,
 	}, nil
+}
+
+// registryTLSFromProfile converts an OpenShift TLSSecurityProfile to the values for
+// the registry's REGISTRY_HTTP_TLS_MINIMUMTLS and REGISTRY_HTTP_TLS_CIPHERSUITES
+// environment variables.
+//
+// The registry validates both against its own hardcoded tables and refuses to start
+// on any value it does not recognise, so the profile cannot be passed through
+// verbatim. Values outside those tables are either clamped (minimum version) or
+// dropped (cipher suites); see registryMinTLSVersions and registryCipherSuites.
+//
+// A nil cipherSuites result means "do not set REGISTRY_HTTP_TLS_CIPHERSUITES", and
+// is only ever returned for TLS 1.3, where the suites are fixed by the protocol. An
+// empty result is never returned for TLS 1.2: the registry reads an empty list as
+// "use my defaults", which is broader than any profile that produced it, so that
+// case is an error instead.
+func registryTLSFromProfile(profile *configv1.TLSSecurityProfile) (minVersion string, cipherSuites []string, err error) {
+	tlsVersion, ciphers := ctrlcommon.GetSecurityProfileCiphers(profile)
+
+	minVersion = openShiftTLSVersionToRegistryVersion(tlsVersion)
+	if !registryMinTLSVersions[minVersion] {
+		// The registry only accepts tls1.2 and tls1.3. Clamping upward keeps the
+		// cluster's only registry serving, and errs towards a stronger configuration
+		// than requested rather than a weaker one.
+		klog.Warningf("IRI registry does not support a minimum TLS version of %s (TLS profile %s); using %s instead",
+			minVersion, tlsProfileName(profile), registryTLSVersion12)
+		minVersion = registryTLSVersion12
+	}
+
+	// Cipher suites are fixed by the protocol from TLS 1.3 onwards, and the registry
+	// ignores REGISTRY_HTTP_TLS_CIPHERSUITES entirely above tls1.2.
+	if minVersion != registryTLSVersion12 {
+		return minVersion, nil, nil
+	}
+
+	for _, c := range ciphers {
+		if registryCipherSuites[c] {
+			cipherSuites = append(cipherSuites, c)
+		}
+	}
+	if len(cipherSuites) == 0 {
+		return "", nil, fmt.Errorf("TLS profile %s specifies no cipher suite usable by the IRI registry at %s (requested: %v)",
+			tlsProfileName(profile), minVersion, ciphers)
+	}
+
+	return minVersion, cipherSuites, nil
+}
+
+// tlsProfileName returns a human-readable name for the profile, for use in messages.
+func tlsProfileName(profile *configv1.TLSSecurityProfile) string {
+	if profile == nil {
+		return "<unset>"
+	}
+	return string(profile.Type)
+}
+
+// openShiftTLSVersionToRegistryVersion converts an OpenShift TLS version string
+// (e.g. "VersionTLS12") to the Distribution registry format (e.g. "tls1.2").
+// The conversion is done programmatically so future TLS versions (e.g. "VersionTLS14")
+// are handled automatically without code changes.
+func openShiftTLSVersionToRegistryVersion(version string) string {
+	const prefix = "VersionTLS"
+	if !strings.HasPrefix(version, prefix) {
+		return "tls1.2" // default to Intermediate
+	}
+	digits := strings.TrimPrefix(version, prefix)
+	if len(digits) < 2 {
+		return "tls1.2"
+	}
+	return "tls" + string(digits[0]) + "." + digits[1:]
 }
 
 // extractTLSCertFieldFromSecret is an helper func to get the specified secret field data.
@@ -205,6 +339,11 @@ func (r *Renderer) renderTemplateFolder(rc any, folder string) ([]string, error)
 // applyTemplate applies the current template to the specified render context.
 func (r *Renderer) applyTemplate(rc any, iriTemplate []byte) (string, error) {
 	funcs := ctrlcommon.GetTemplateFuncMap()
+	// Rendering a []string directly yields "[a b c]", which YAML reads as a single
+	// scalar rather than a sequence, so the cipher suite list needs an explicit join.
+	// Extend a local copy rather than the shared map, which every MCO template uses.
+	funcs["join"] = strings.Join
+
 	tmpl, err := template.New("internalreleaseimage").Funcs(funcs).Parse(string(iriTemplate))
 	if err != nil {
 		return "", fmt.Errorf("failed to parse template : %w", err)
