@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
@@ -388,7 +389,7 @@ func resolveExistingTemplateVM(
 		// Validate/upgrade the ignition stub before creating the template in vSphere. If this fails,
 		// we must not have already mutated vSphere state, or a subsequent reconcile would find the
 		// template already in place and silently drop the error (see reconcileVSphereProviderSpec).
-		if err := upgradeStubIgnitionIfRequired(providerSpec.UserDataSecret.Name, kubeClient); err != nil {
+		if err := upgradeStubIgnitionIfRequired(ctx, providerSpec.UserDataSecret.Name, kubeClient); err != nil {
 			return nil, "", false, err
 		}
 		ova, ovaErr := streamData.QueryDisk(arch, "vmware", "ova")
@@ -414,7 +415,7 @@ func resolveExistingTemplateVM(
 	// Rollback: restore the old template renamed away during a crashed atomic swap.
 	// Validate/upgrade the ignition stub before this rename, so an invalid user-data secret blocks
 	// even this recovery mutation rather than only the OVA-driven create/swap paths.
-	if err := upgradeStubIgnitionIfRequired(providerSpec.UserDataSecret.Name, kubeClient); err != nil {
+	if err := upgradeStubIgnitionIfRequired(ctx, providerSpec.UserDataSecret.Name, kubeClient); err != nil {
 		return nil, "", false, err
 	}
 	klog.Infof("Recovering from mid-swap crash: renaming %s back to %s", oldTempName, computedName)
@@ -691,9 +692,10 @@ func getClientsFromServerURL(ctx context.Context, server, username, password str
 	restClient := rest.NewClient(client.Client)
 	err = restClient.Login(ctx, vcenterURL.User)
 	if err != nil {
-		logoutErr := client.Logout(context.TODO())
-		if logoutErr != nil {
-			err = logoutErr
+		logoutCtx, logoutCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer logoutCancel()
+		if logoutErr := client.Logout(logoutCtx); logoutErr != nil {
+			return nil, nil, fmt.Errorf("failed in restClient.Login: %w (also failed to logout: %v)", err, logoutErr)
 		}
 		return nil, nil, fmt.Errorf("failed in restClient.Login %w", err)
 	}
@@ -733,9 +735,7 @@ func hasMatchingFailureDomain(providerSpec *machinev1beta1.VSphereMachineProvide
 //   - reconcileSkipped: true when the workspace does not match any failure domain — the MachineSet
 //     is functional but cannot be managed for boot image updates; the caller should skip without degrading
 //   - err: non-nil for real vSphere or infrastructure errors that should degrade the CO
-func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1.VSphereMachineProviderSpec, infra *osconfigv1.Infrastructure, credsSc *corev1.Secret, kubeClient clientset.Interface, arch, release string) (resolvedName string, patchRequired, reconcileSkipped bool, err error) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+func createNewVMTemplate(ctx context.Context, streamData *stream.Stream, providerSpec *machinev1beta1.VSphereMachineProviderSpec, infra *osconfigv1.Infrastructure, credsSc *corev1.Secret, kubeClient clientset.Interface, arch, release string) (resolvedName string, patchRequired, reconcileSkipped bool, err error) {
 
 	for _, vcenter := range infra.Spec.PlatformSpec.VSphere.VCenters {
 		if vcenter.Server != providerSpec.Workspace.Server {
@@ -815,7 +815,7 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 				// fails, we must not have already mutated vSphere state, or a subsequent reconcile would
 				// find the template already up to date and silently drop the error (see
 				// reconcileVSphereProviderSpec).
-				if err := upgradeStubIgnitionIfRequired(providerSpec.UserDataSecret.Name, kubeClient); err != nil {
+				if err := upgradeStubIgnitionIfRequired(ctx, providerSpec.UserDataSecret.Name, kubeClient); err != nil {
 					return "", false, false, err
 				}
 
