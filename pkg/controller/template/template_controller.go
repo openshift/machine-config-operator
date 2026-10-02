@@ -133,8 +133,9 @@ func New(
 		DeleteFunc: ctrl.deleteSecret,
 	})
 
-	// Watch the IRI auth secret in the MCO namespace so that when credentials
-	// are rotated the pull secret rendered into 00-master/00-worker is updated.
+	// Watch the IRI auth secret in the MCO namespace so that the pull secret
+	// rendered into 00-master/00-worker follows it: updated when credentials are
+	// rotated, and stripped of those credentials when the secret is deleted.
 	//
 	// Both IRI registrations below report their error rather than discarding it.
 	// New cannot fail, so this is not fatal, but a dropped registration is the
@@ -143,6 +144,7 @@ func New(
 	if _, err := iriSecretsInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addSecret,
 		UpdateFunc: ctrl.updateSecret,
+		DeleteFunc: ctrl.deleteIRISecret,
 	}); err != nil {
 		utilruntime.HandleError(fmt.Errorf("could not watch the InternalReleaseImage auth secret; rotated IRI registry credentials will not reach the rendered pull secret: %w", err))
 	}
