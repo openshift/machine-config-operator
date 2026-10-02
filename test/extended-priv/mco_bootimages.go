@@ -149,7 +149,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		)
 
 		exutil.By("Prepare to restore the original Machinesets")
-		for _, item := range GetAllManagedMachineResources(oc) {
+		for _, item := range OrFail[[]ManagedMachineResource](GetAllManagedMachineResources(oc)) {
 			ms := item
 			logger.Infof("Preparing to restore machineset %s", ms.GetName())
 			defer ms.SetSpec(ms.GetSpecOrFail())
@@ -184,7 +184,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 
 		exutil.By("All machinesets should use the right boot image")
-		for _, ms := range GetAllManagedMachineResources(oc) {
+		for _, ms := range OrFail[[]ManagedMachineResource](GetAllManagedMachineResources(oc)) {
 			logger.Infof("Checking boot image in machineset %s", ms.GetName())
 			// Check that the current boot image is the right one.
 			// Original machinesets were never set to backdatedImageName, so pass empty string.
@@ -212,7 +212,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		exutil.By("All machinesets should use the right boot image except the one with an owner")
 		clonedNames := map[string]bool{clonedMSName: true, clonedWrongBootImageMSName: true, clonedOwnedMSName: true}
-		for _, ms := range GetAllManagedMachineResources(oc) {
+		for _, ms := range OrFail[[]ManagedMachineResource](GetAllManagedMachineResources(oc)) {
 			logger.Infof("Checking boot image in machineset %s", ms.GetName())
 
 			if ms.GetName() == clonedOwnedMSName {
@@ -548,7 +548,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting user-data secret from %s", clonedMS)
 
 		userDataModifyFunc := func(userData string) (string, error) { return convertUserDataToNewVersion(userData, "2.2.0") }
-		clonedSecret, err := duplicateMachinesetSecret(oc.AsAdmin(), userDataSecret.GetName(), clonedSecretName, userDataModifyFunc, nil)
+		clonedSecret, err := duplicateMachinesetSecret(userDataSecret, clonedSecretName, userDataModifyFunc, nil)
 		defer clonedSecret.Delete()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s with a wrong ignition V2 version", userDataSecret)
 		logger.Infof("OK!\n")
@@ -632,7 +632,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting user-data secret from %s", clonedMS)
 
 		userDataModifyFunc := func(userData string) (string, error) { return convertUserDataToNewVersion(userData, "2.2.0") }
-		clonedSecret, err := duplicateMachinesetSecret(oc.AsAdmin(), userDataSecret.GetName(), clonedSecretName, userDataModifyFunc, nil)
+		clonedSecret, err := duplicateMachinesetSecret(userDataSecret, clonedSecretName, userDataModifyFunc, nil)
 		defer clonedSecret.Delete()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s with a wrong ignition V2 version", userDataSecret)
 		logger.Infof("OK!\n")
@@ -787,7 +787,7 @@ func testUserDataUpdateFailure(oc *exutil.CLI, clonedMSName, clonedSecretName, e
 		userDataSecret, err := clonedMS.GetUserDataSecret()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting user-data secret from %s", clonedMS)
 
-		clonedSecret, err = duplicateMachinesetSecret(oc.AsAdmin(), userDataSecret.GetName(), clonedSecretName, userDataModifyFunc, nil)
+		clonedSecret, err = duplicateMachinesetSecret(userDataSecret, clonedSecretName, userDataModifyFunc, nil)
 		defer clonedSecret.Delete()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s with a wrong ignition V2 version", userDataSecret)
 

@@ -227,18 +227,15 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	g.It("[PolarionID:69755][OTP] MachineConfigNode resources should be synced when node is created/deleted [apigroup:machineconfiguration.openshift.io]", func() {
 
 		var (
-			provisioningMachine *Machine
-			deletingMachine     *Machine
+			provisioningMachine ManagedMachine
+			deletingMachine     ManagedMachine
 			mcp                 = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
 		)
 
 		SkipTestIfWorkersCannotBeScaled(oc.AsAdmin())
 
 		exutil.By("Get one machineset for testing")
-		msl, err := NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAll()
-		o.Expect(err).NotTo(o.HaveOccurred(), "Get machinesets failed")
-		o.Expect(msl).ShouldNot(o.BeEmpty(), "Machineset list is empty")
-		ms := msl[0]
+		ms := GetValidManagedMachineResource(oc.AsAdmin())
 		logger.Infof("Machineset %s will be used for testing", ms.GetName())
 		logger.Infof("OK\n")
 
@@ -257,14 +254,14 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		o.Expect(ms.ScaleTo(replica)).NotTo(o.HaveOccurred(), "Machineset %s scale up error", ms.GetName())
 
 		exutil.By("Find new machine")
-		provisioningMachine = ms.GetMachinesByPhaseOrFail(MachinePhaseProvisioning)[0]
+		provisioningMachine = OrFail[[]ManagedMachine](ms.GetMachinesByPhase(MachinePhaseProvisioning))[0]
 		o.Expect(provisioningMachine).NotTo(o.BeNil(), "Cannot find provisioning machine")
 		logger.Infof("New machine %s is provisioning", provisioningMachine.GetName())
 		o.Eventually(ms.GetIsReady, "20m", "2m").Should(o.BeTrue(), "MachineSet %s is not ready", ms.GetName())
 		logger.Infof("OK\n")
 
 		exutil.By("Check new MCN")
-		nodeToBeProvisioned := provisioningMachine.GetNodeOrFail()
+		nodeToBeProvisioned := OrFail[*Node](provisioningMachine.GetNode())
 		newMCN := NewMachineConfigNode(oc.AsAdmin(), nodeToBeProvisioned.GetName())
 		o.Eventually(newMCN.Exists, "2m", "5s").Should(o.BeTrue(), "new MCN does not exist")
 		o.Eventually(newMCN.GetDesiredMachineConfigOfSpec, "2m", "5s").Should(o.Equal(mcp.getConfigNameOfSpecOrFail()), "desired config of mcn.spec is not same as same property value in worker pool")
@@ -275,10 +272,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		exutil.By("Scale down machineset to remove node")
 		replica--
 		o.Expect(ms.ScaleTo(replica)).NotTo(o.HaveOccurred(), "Machineset %s scale down error", ms.GetName())
-		deletingMachine = ms.GetMachinesByPhaseOrFail(MachinePhaseDeleting)[0]
+		deletingMachine = OrFail[[]ManagedMachine](ms.GetMachinesByPhase(MachinePhaseDeleting))[0]
 		o.Expect(deletingMachine).ShouldNot(o.BeNil(), "Cannot find deleting machine")
 		logger.Infof("Machine %s is being deleted", deletingMachine.GetName())
-		nodeToBeDeleted := deletingMachine.GetNodeOrFail()
+		nodeToBeDeleted := OrFail[*Node](deletingMachine.GetNode())
 		o.Eventually(ms.GetIsReady, "20m", "2m").Should(o.BeTrue(), "MachineSet %s is not ready", ms.GetName())
 		logger.Infof("OK\n")
 

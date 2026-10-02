@@ -3,10 +3,18 @@ package extended
 import (
 	"fmt"
 
-	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 )
+
+// ManagedMachine is an interface for machine resources (MAPI Machine or CAPI Machine).
+// When CAPI support is added, a CAPIMachine struct will implement this interface.
+type ManagedMachine interface {
+	GetName() string
+	GetNode() (*Node, error)
+	GetPhase() (string, error)
+	IsRunning() (bool, error)
+}
 
 // Machine struct to handle Machine resources
 type Machine struct {
@@ -42,13 +50,6 @@ func (m Machine) GetNode() (*Node, error) {
 	}
 
 	return nodes[0], nil
-}
-
-// GetNodeOrFail, call GetNode, fail the test if any error occurred
-func (m Machine) GetNodeOrFail() *Node {
-	node, err := m.GetNode()
-	o.Expect(err).NotTo(o.HaveOccurred(), "Get node from machine %s failed", m.GetName())
-	return node
 }
 
 // GetPhase get phase of the machine
