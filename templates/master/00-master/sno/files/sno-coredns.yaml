@@ -1,0 +1,125 @@
+{{- if isSNOCoreDNSEnabled }}
+mode: 0644
+path: "/etc/kubernetes/manifests/sno-coredns.yaml"
+contents:
+  inline: |
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: sno-coredns
+      namespace: openshift-kni-infra
+      annotations:
+        openshift.io/required-scc: privileged
+        target.workload.openshift.io/management: '{"effect":"PreferredDuringScheduling"}'
+    spec:
+      hostNetwork: true
+      dnsPolicy: Default
+      priorityClassName: system-node-critical
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: resource-dir
+        hostPath:
+          path: /etc/kubernetes/static-pod-resources/sno-coredns
+      - name: kubeconfig
+        hostPath:
+          path: /var/lib/kubelet/kubeconfig
+          type: File
+      - name: config-dir
+        hostPath:
+          path: /etc/sno-coredns
+          type: DirectoryOrCreate
+      - name: nm-resolv
+        hostPath:
+          path: /run/NetworkManager
+          type: Directory
+      - name: nodeip-configuration
+        hostPath:
+          path: /run/nodeip-configuration
+          type: Directory
+      initContainers:
+      - name: render-config
+        image: {{ .Images.baremetalRuntimeCfgImage }}
+        imagePullPolicy: IfNotPresent
+        command:
+        - runtimecfg
+        - render
+        - /var/lib/kubelet/kubeconfig
+        - /config
+        - --discover-node-ip
+        - --out-dir
+        - /etc/sno-coredns
+        volumeMounts:
+        - name: kubeconfig
+          mountPath: /var/lib/kubelet/kubeconfig
+          readOnly: true
+        - name: resource-dir
+          mountPath: /config
+          readOnly: true
+        - name: config-dir
+          mountPath: /etc/sno-coredns
+        - name: nm-resolv
+          mountPath: /run/NetworkManager
+          readOnly: true
+        - name: nodeip-configuration
+          mountPath: /run/nodeip-configuration
+          readOnly: true
+      containers:
+      - name: coredns-monitor
+        image: {{ .Images.baremetalRuntimeCfgImage }}
+        imagePullPolicy: IfNotPresent
+        command:
+        - corednsmonitor
+        - /var/lib/kubelet/kubeconfig
+        - /config/Corefile.tmpl
+        - /etc/sno-coredns/Corefile
+        - --discover-node-ip
+        resources:
+          requests:
+            cpu: 100m
+            memory: 200Mi
+        volumeMounts:
+        - name: kubeconfig
+          mountPath: /var/lib/kubelet/kubeconfig
+          readOnly: true
+        - name: resource-dir
+          mountPath: /config
+          readOnly: true
+        - name: config-dir
+          mountPath: /etc/sno-coredns
+        - name: nm-resolv
+          mountPath: /run/NetworkManager
+          readOnly: true
+        - name: nodeip-configuration
+          mountPath: /run/nodeip-configuration
+          readOnly: true
+      - name: coredns
+        image: {{ .Images.corednsImage }}
+        imagePullPolicy: IfNotPresent
+        args:
+        - --conf
+        - /etc/sno-coredns/Corefile
+        resources:
+          requests:
+            cpu: 100m
+            memory: 200Mi
+        volumeMounts:
+        - name: config-dir
+          mountPath: /etc/sno-coredns
+          readOnly: true
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 18081
+          periodSeconds: 5
+          timeoutSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 18080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 5
+      tolerations:
+      - operator: Exists
+{{- end }}
