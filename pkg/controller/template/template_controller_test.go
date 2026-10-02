@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -528,6 +531,134 @@ func TestKubeletAutoNodeSizingEnabled(t *testing.T) {
 	if !autoSizingFileFound {
 		t.Errorf("Expected to find %s file in at least one machine config", ctrlcommon.NodeSizingEnabledEnvPath)
 	}
+}
+
+func TestSystemGomaxprocsDropins(t *testing.T) {
+	cc := newControllerConfig("test-cluster")
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := map[string]bool{"kubelet.service": false, "crio.service": false}
+	for _, mc := range mcs {
+		ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+		if err != nil {
+			t.Fatalf("Failed to parse ignition config for %s: %v", mc.Name, err)
+		}
+		for _, unit := range ignCfg.Systemd.Units {
+			if _, ok := found[unit.Name]; !ok {
+				continue
+			}
+			for _, dropin := range unit.Dropins {
+				if dropin.Name == "30-gomaxprocs.conf" && dropin.Contents != nil && strings.Contains(*dropin.Contents, "EnvironmentFile=-/run/system-gomaxprocs.env") {
+					found[unit.Name] = true
+				}
+			}
+		}
+	}
+
+	for unit, exists := range found {
+		if !exists {
+			t.Errorf("Expected %s to have the GOMAXPROCS environment-file drop-in", unit)
+		}
+	}
+}
+
+func TestSystemGomaxprocsCPUQuantities(t *testing.T) {
+	cc := newControllerConfig("test-cluster")
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var script string
+	for _, mc := range mcs {
+		ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+		if err != nil {
+			t.Fatalf("Failed to parse ignition config for %s: %v", mc.Name, err)
+		}
+		for _, file := range ignCfg.Storage.Files {
+			if file.Path != "/usr/local/sbin/dynamic-system-reserved-calc.sh" {
+				continue
+			}
+			contents, err := ctrlcommon.DecodeIgnitionFileContents(file.Contents.Source, file.Contents.Compression)
+			if err != nil {
+				t.Fatal(err)
+			}
+			script = string(contents)
+			break
+		}
+		if script != "" {
+			break
+		}
+	}
+	if script == "" {
+		t.Fatal("dynamic system-reserved script was not rendered")
+	}
+
+	for _, tc := range []struct {
+		cpu      string
+		expected string
+		valid    bool
+	}{
+		{cpu: "500u", expected: "GOMAXPROCS=1\n", valid: true},
+		{cpu: "500n", expected: "GOMAXPROCS=1\n", valid: true},
+		{cpu: "1500m", expected: "GOMAXPROCS=2\n", valid: true},
+		{cpu: "invalid", valid: false},
+	} {
+		t.Run(tc.cpu, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "system-gomaxprocs.env")
+			testScript := strings.ReplaceAll(script, "/run/system-gomaxprocs.env", path)
+			testScript, _, found := strings.Cut(testScript, "\nif ! [ -f $NODE_AUTO_SIZING_VERSION_FILE ]; then")
+			if !found {
+				t.Fatal("dynamic system-reserved script has no main block")
+			}
+			cmd := exec.Command("bash", "-c", testScript+"\nSYSTEM_RESERVED_CPU=\"$1\"\nconfigure_system_gomaxprocs Autosize", "--", tc.cpu)
+			output, err := cmd.CombinedOutput()
+			if !tc.valid {
+				if err == nil {
+					t.Fatal("expected invalid CPU quantity to fail")
+				}
+				if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+					t.Fatalf("invalid CPU quantity wrote %s: %v", path, statErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("configure_system_gomaxprocs failed: %v\n%s", err, output)
+			}
+			contents, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(contents) != tc.expected {
+				t.Errorf("GOMAXPROCS for %s = %q, want %q", tc.cpu, contents, tc.expected)
+			}
+		})
+	}
+
+	t.Run("invalid node sizing", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "system-gomaxprocs.env")
+		testScript := strings.ReplaceAll(script, "/run/system-gomaxprocs.env", path)
+		cmd := exec.Command("bash", "-c", testScript, "--", "invalid", "1Gi", "500m", "1Gi")
+		cmd.Env = append(os.Environ(),
+			"NODE_AUTO_SIZING_VERSION_FILE="+filepath.Join(dir, "node-sizing-version.json"),
+			"DROPIN_DIR="+filepath.Join(dir, "kubelet.conf.d"),
+			"SYSTEM_GOMAXPROCS_BEHAVIOR=Autosize",
+		)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("expected non-true node-sizing value to use static sizing: %v\n%s", err, output)
+		}
+		contents, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(contents) != "GOMAXPROCS=1\n" {
+			t.Errorf("GOMAXPROCS = %q, want %q", contents, "GOMAXPROCS=1\n")
+		}
+	})
 }
 
 // TestMergesIRIRegistryCredentialsIntoPullSecret verifies that the template controller merges

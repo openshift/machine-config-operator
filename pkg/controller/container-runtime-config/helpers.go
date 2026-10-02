@@ -59,6 +59,7 @@ const (
 	// will be dropped in this is exported so that we can use it in the e2e-tests
 	CRIODropInFilePathDefaultRuntime           = "/etc/crio/crio.conf.d/01-ctrcfg-defaultRuntime"
 	crioDropInFilePathAdditionalArtifactStores = "/etc/crio/crio.conf.d/01-ctrcfg-additionalArtifactStores"
+	crioDropInFilePathContainerGomaxprocs      = "/etc/crio/crio.conf.d/01-ctrcfg-containerGomaxprocs"
 	imagepolicyType                            = "sigstoreSigned"
 	sigstoreRegistriesConfigFilePath           = "/etc/containers/registries.d/sigstore-registries.yaml"
 	crioCredentialProviderName                 = "crio-credential-provider"
@@ -144,6 +145,14 @@ type tomlConfigCRIOAdditionalArtifactStores struct {
 	} `toml:"crio"`
 }
 
+type tomlConfigCRIOMinInjectedGomaxprocs struct {
+	Crio struct {
+		Runtime struct {
+			MinInjectedGomaxprocs int `toml:"min_injected_gomaxprocs"`
+		} `toml:"runtime"`
+	} `toml:"crio"`
+}
+
 type dockerConfig struct {
 	UseSigstoreAttachments bool `json:"use-sigstore-attachments,omitempty"`
 }
@@ -168,11 +177,12 @@ func needsStorageUpdate(ctrcfg *mcfgv1.ContainerRuntimeConfiguration, additional
 }
 
 // needsCRIODropinUpdate returns true if the ContainerRuntimeConfig requires CRI-O drop-in file changes.
-func needsCRIODropinUpdate(ctrcfg *mcfgv1.ContainerRuntimeConfiguration, additionalStorageEnabled bool) bool {
+func needsCRIODropinUpdate(ctrcfg *mcfgv1.ContainerRuntimeConfiguration, additionalStorageEnabled, gomaxprocsInjectionEnabled bool) bool {
 	return ctrcfg.LogLevel != "" || ctrcfg.PidsLimit != nil ||
 		(ctrcfg.LogSizeMax != nil && !ctrcfg.LogSizeMax.IsZero()) ||
 		ctrcfg.DefaultRuntime != mcfgv1.ContainerRuntimeDefaultRuntimeEmpty ||
-		(additionalStorageEnabled && len(ctrcfg.AdditionalArtifactStores) > 0)
+		(additionalStorageEnabled && len(ctrcfg.AdditionalArtifactStores) > 0) ||
+		(gomaxprocsInjectionEnabled && ctrcfg.ContainerGomaxprocsBehavior != "")
 }
 
 // createNewIgnition takes a map where the key is the path of the file, and the value is the
@@ -487,7 +497,7 @@ func addTOMLgeneratedConfigFile(configFileList []generatedConfigFile, path strin
 // The additionalStorageEnabled flag controls whether additional artifact store
 // fields are processed. Callers must pass the feature gate state to ensure
 // gated fields are not written when the feature is disabled.
-func createCRIODropinFiles(cfg *mcfgv1.ContainerRuntimeConfig, additionalStorageEnabled bool) []generatedConfigFile {
+func createCRIODropinFiles(cfg *mcfgv1.ContainerRuntimeConfig, additionalStorageEnabled, gomaxprocsInjectionEnabled bool) []generatedConfigFile {
 	var (
 		generatedConfigFileList []generatedConfigFile
 		err                     error
@@ -535,6 +545,19 @@ func createCRIODropinFiles(cfg *mcfgv1.ContainerRuntimeConfig, additionalStorage
 		generatedConfigFileList, err = addTOMLgeneratedConfigFile(generatedConfigFileList, crioDropInFilePathAdditionalArtifactStores, tomlConf)
 		if err != nil {
 			klog.V(2).Infof("error updating user changes for additional-artifact-stores to crio.conf.d: %v", err)
+		}
+	}
+	if gomaxprocsInjectionEnabled && ctrcfg.ContainerGomaxprocsBehavior != "" {
+		tomlConf := tomlConfigCRIOMinInjectedGomaxprocs{}
+		switch ctrcfg.ContainerGomaxprocsBehavior {
+		case mcfgv1.GomaxprocsBehaviorAutosize:
+			tomlConf.Crio.Runtime.MinInjectedGomaxprocs = 1
+		case mcfgv1.GomaxprocsBehaviorDisabled:
+			tomlConf.Crio.Runtime.MinInjectedGomaxprocs = 0
+		}
+		generatedConfigFileList, err = addTOMLgeneratedConfigFile(generatedConfigFileList, crioDropInFilePathContainerGomaxprocs, tomlConf)
+		if err != nil {
+			klog.V(2).Infof("error updating user changes for containerGomaxprocsBehavior to crio.conf.d: %v", err)
 		}
 	}
 	return generatedConfigFileList

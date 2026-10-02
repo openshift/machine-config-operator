@@ -760,6 +760,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		return ctrl.syncStatusOnly(cfg, err)
 	}
 
+	gomaxprocsInjectionEnabled := ctrl.fgHandler.Enabled(features.FeatureGateGomaxprocsInjection)
 	for _, pool := range mcpPools {
 		role := pool.Name
 		// Get MachineConfig
@@ -777,7 +778,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 			// But we still need to compare the generated controller version because during an upgrade we need a new one
 			mcCtrlVersion := mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey]
 			if mcCtrlVersion == version.Hash {
-				return nil
+				continue
 			}
 		}
 		// Generate the original ContainerRuntimeConfig
@@ -803,8 +804,8 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		}
 
 		// Create the cri-o drop-in files
-		if needsCRIODropinUpdate(ctrcfg, additionalStorageEnabled) {
-			crioFileConfigs := createCRIODropinFiles(cfg, additionalStorageEnabled)
+		if needsCRIODropinUpdate(ctrcfg, additionalStorageEnabled, gomaxprocsInjectionEnabled) {
+			crioFileConfigs := createCRIODropinFiles(cfg, additionalStorageEnabled, gomaxprocsInjectionEnabled)
 			configFileList = append(configFileList, crioFileConfigs...)
 		}
 
