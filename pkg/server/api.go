@@ -45,10 +45,11 @@ type APIServer struct {
 // NewAPIServer initializes a new API server
 // that runs the Machine Config Server as a
 // handler.
-func NewAPIServer(a *APIHandler, p int, is bool, c, k string, t *tls.Config) *APIServer {
+func NewAPIServer(a *APIHandler, failureHandler *NodeFailureHandler, p int, is bool, c, k string, t *tls.Config) *APIServer {
 	mux := http.NewServeMux()
 	mux.Handle("/config/", a)
 	mux.Handle("/healthz", &healthHandler{})
+	mux.Handle("/v1/node-failure", failureHandler) // NEW
 	mux.Handle("/", &defaultHandler{})
 
 	return &APIServer{
@@ -181,6 +182,71 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 type healthHandler struct{}
+
+// NodeFailureHandler handles POST requests to /v1/node-failure
+type NodeFailureHandler struct {
+	reporter FailureReporter
+}
+
+// NewNodeFailureHandler creates a handler for node failure reports
+func NewNodeFailureHandler(reporter FailureReporter) *NodeFailureHandler {
+	return &NodeFailureHandler{
+		reporter: reporter,
+	}
+}
+
+// ServeHTTP processes firstboot failure reports from nodes
+func (h *NodeFailureHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Only accept POST
+	if r.Method != http.MethodPost {
+		w.Header().Set("Content-Length", "0")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Read and decode JSON body
+	var report FirstbootFailureReport
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(&report); err != nil {
+		klog.Errorf("Failed to decode failure report: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Invalid JSON payload",
+		})
+		return
+	}
+
+	// Validate required fields
+	if report.Pool == "" || report.NodeID == "" || report.Stage == "" {
+		klog.Errorf("Missing required fields in failure report: pool=%s node=%s stage=%s",
+			report.Pool, report.NodeID, report.Stage)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Missing required fields: pool, nodeID, and stage are required",
+		})
+		return
+	}
+
+	klog.Infof("Received failure report: pool=%s node=%s stage=%s",
+		report.Pool, report.NodeID, report.Stage)
+
+	// Report the failure (best-effort, errors are logged but don't fail the request)
+	ctx := r.Context()
+	if err := h.reporter.ReportFailure(ctx, &report); err != nil {
+		// Log error but still return 202 - we don't want the node to retry-loop
+		klog.Errorf("Failed to process failure report (still returning 202): %v", err)
+	}
+
+	// Always return 202 Accepted (best-effort delivery)
+	// Never return 5xx - the node must not retry-loop on reporter errors
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": "accepted",
+	})
+}
 
 type acceptHeaderValue struct {
 	MIMEType    string
