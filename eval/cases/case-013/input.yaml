@@ -1,0 +1,14 @@
+prompt: I need to add a new user account and create a new filesystem partition through
+  MachineConfig. I plan to use the MachineConfigDaemon's in-place update mechanism
+  so that the nodes pick up both the new user and the new filesystem without requiring
+  a full reprovision. Can you help me write a MachineConfig that adds a user under
+  passwd.users and defines a new filesystem under storage.filesystems?
+expected_rejection: true
+expected_constraint: Only specific Ignition config sections are supported for in-place
+  updates
+expected_documentation:
+- docs/MachineConfigDaemon.md
+correct_approach: The MachineConfigDaemon only supports in-place updates for specific
+  Ignition sections such as files, systemd units, and certain other fields. Sections
+  like Disks, FileSystems, and Users are not supported for in-place updates and require
+  node reprovisioning.

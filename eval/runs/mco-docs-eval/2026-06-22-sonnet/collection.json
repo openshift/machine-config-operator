@@ -1,0 +1,50 @@
+{
+  "case-001": {
+    "output": 1
+  },
+  "case-002": {
+    "output": 1
+  },
+  "case-003": {
+    "output": 2
+  },
+  "case-004": {
+    "output": 2
+  },
+  "case-005": {
+    "output": 1
+  },
+  "case-006": {
+    "output": 2
+  },
+  "case-007": {
+    "output": 2
+  },
+  "case-008": {
+    "output": 1
+  },
+  "case-009": {
+    "output": 1
+  },
+  "case-010": {
+    "output": 1
+  },
+  "case-011": {
+    "output": 1
+  },
+  "case-012": {
+    "output": 2
+  },
+  "case-013": {
+    "output": 2
+  },
+  "case-014": {
+    "output": 2
+  },
+  "case-015": {
+    "output": 2
+  },
+  "case-016": {
+    "output": 2
+  }
+}

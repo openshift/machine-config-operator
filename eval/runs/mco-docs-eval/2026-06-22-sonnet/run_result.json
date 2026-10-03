@@ -1,0 +1,431 @@
+{
+  "exit_code": 0,
+  "duration_s": 2807.2,
+  "wall_clock_s": 2808.4,
+  "cost_usd": 11.14,
+  "token_usage": {
+    "input": 6840,
+    "output": 152263,
+    "cache_read": 25640668,
+    "cache_create": 1613789
+  },
+  "num_turns": 371,
+  "per_model_usage": {
+    "claude-sonnet-4-6": {
+      "input": 6617,
+      "output": 148221,
+      "cache_read": 14212460,
+      "cache_create": 1235597,
+      "cost_usd": 11.14039275
+    }
+  },
+  "per_model_turns": {
+    "claude-sonnet-4-6": 371
+  },
+  "num_cases": 16,
+  "model": "claude-sonnet-4-6",
+  "agent": "claude-code",
+  "agent_version": "2.1.186 (Claude Code)",
+  "execution_mode": "case",
+  "eval_params": {
+    "execution_mode": "case",
+    "max_budget_usd": 100.0,
+    "timeout_s": 300,
+    "skill": "docs",
+    "skill_args": "{{ input.prompt }}"
+  },
+  "per_case": {
+    "case-001": {
+      "exit_code": 0,
+      "duration_s": 159.3,
+      "token_usage": {
+        "input": 398,
+        "output": 8974,
+        "cache_read": 725531,
+        "cache_create": 107196
+      },
+      "cost_usd": 0.7554483000000001,
+      "num_turns": 16,
+      "per_model_usage": {
+        "claude-sonnet-4-6": {
+          "input": 398,
+          "output": 8974,
+          "cache_read": 725531,
+          "cache_create": 107196,
+          "cost_usd": 0.7554483000000001
+        }
+      },
+      "per_model_turns": {
+        "claude-sonnet-4-6": 16
+      },
+      "repo_modified": false
+    },
+    "case-002": {
+      "exit_code": 0,
+      "duration_s": 93.5,
+      "token_usage": {
+        "input": 403,
+        "output": 5116,
+        "cache_read": 432100,
+        "cache_create": 40936
+      },
+      "cost_usd": 0.361089,
+      "num_turns": 12,
+      "per_model_usage": {
+        "claude-sonnet-4-6": {
+          "input": 403,
+          "output": 5116,
+          "cache_read": 432100,
+          "cache_create": 40936,
+          "cost_usd": 0.361089
+        }
+      },
+      "per_model_turns": {
+        "claude-sonnet-4-6": 12
+      },
+      "repo_modified": false
+    },
+    "case-003": {
+      "exit_code": 0,
+      "duration_s": 193.3,
+      "token_usage": {
+        "input": 429,
+        "output": 11381,
+        "cache_read": 1355164,
+        "cache_create": 126763
+      },
+      "cost_usd": 1.05391245,
+      "num_turns": 19,
+      "per_model_usage": {
+        "claude-sonnet-4-6": {
+          "input": 429,
+          "output": 11381,
+          "cache_read": 1355164,
+          "cache_create": 126763,
+          "cost_usd": 1.05391245
+        }
+      },
+      "per_model_turns": {
+        "claude-sonnet-4-6": 19
+      },
+      "repo_modified": false
+    },
+    "case-004": {
+      "exit_code": 0,
+      "duration_s": 190.6,
+      "token_usage": {
+        "input": 413,
+        "output": 10822,
+        "cache_read": 1238959,
+        "cache_create": 89295
+      },
+      "cost_usd": 0.8701129500000001,
+      "num_turns": 20,
+      "per_model_usage": {
+        "claude-sonnet-4-6": {
+          "input": 413,
+          "output": 10822,
+          "cache_read": 1238959,
+          "cache_create": 89295,
+          "cost_usd": 0.8701129500000001
+        }
+      },
+      "per_model_turns": {
+        "claude-sonnet-4-6": 20
+      },
+      "repo_modified": false
+    },
+    "case-005": {
+      "exit_code": 0,
+      "duration_s": 101.5,
+      "token_usage": {
+        "input": 402,
+        "output": 6859,
+        "cache_read": 319666,
+        "cache_create": 34229
+      },
+      "cost_usd": 0.32834955000000005,
+      "num_turns": 10,
+      "per_model_usage": {
+        "claude-sonnet-4-6": {
+          "input": 402,
+          "output": 6859,
+          "cache_read": 319666,
+          "cache_create": 34229,
+          "cost_usd": 0.32834955000000005
+        }
+      },
+      "per_model_turns": {
+        "claude-sonnet-4-6": 10
+      },
+      "repo_modified": false
+    },
+    "case-006": {
+      "exit_code": 0,
+      "duration_s": 160.0,
+      "token_usage": {
+        "input": 413,
+        "output": 9031,
+        "cache_read": 867919,
+        "cache_create": 66344
+      },
+      "cost_usd": 0.6458697,
+      "num_turns": 19,
+      "per_model_usage": {
+        "claude-sonnet-4-6": {
+          "input": 413,
+          "output": 9031,
+          "cache_read": 867919,
+          "cache_create": 66344,
+          "cost_usd": 0.6458697
+        }
+      },
+      "per_model_turns": {
+        "claude-sonnet-4-6": 19
+      },
+      "repo_modified": false
+    },
+    "case-007": {
+      "exit_code": 0,
+      "duration_s": 142.0,
+      "token_usage": {
+        "input": 419,
+        "output": 8337,
+        "cache_read": 729385,
+        "cache_create": 43695
+      },
+      "cost_usd": 0.50898375,
+      "num_turns": 20,
+      "per_model_usage": {
+        "claude-sonnet-4-6": {
+          "input": 419,
+          "output": 8337,
+          "cache_read": 729385,
+          "cache_create": 43695,
+          "cost_usd": 0.50898375
+        }
+      },
+      "per_model_turns": {
+        "claude-sonnet-4-6": 20
+      },
+      "repo_modified": false
+    },
+    "case-008": {
+      "exit_code": 0,
+      "duration_s": 213.0,
+      "token_usage": {
+        "input": 433,
+        "output": 11672,
+        "cache_read": 1099241,
+        "cache_create": 123090
+      },
+      "cost_usd": 0.9677388,
+      "num_turns": 13,
+      "per_model_usage": {
+        "claude-sonnet-4-6": {
+          "input": 433,
+          "output": 11672,
+          "cache_read": 1099241,
+          "cache_create": 123090,
+          "cost_usd": 0.9677388
+        }
+      },
+      "per_model_turns": {
+        "claude-sonnet-4-6": 13
+      },
+      "repo_modified": false
+    },
+    "case-009": {
+      "exit_code": 0,
+      "duration_s": 233.4,
+      "token_usage": {
+        "input": 437,
+        "output": 12024,
+        "cache_read": 1240962,
+        "cache_create": 134347
+      },
+      "cost_usd": 1.0577608500000002,
+      "num_turns": 16,
+      "per_model_usage": {
+        "claude-sonnet-4-6": {
+          "input": 437,
+          "output": 12024,
+          "cache_read": 1240962,
+          "cache_create": 134347,
+          "cost_usd": 1.0577608500000002
+        }
+      },
+      "per_model_turns": {
+        "claude-sonnet-4-6": 16
+      },
+      "repo_modified": false
+    },
+    "case-010": {
+      "exit_code": 0,
+      "duration_s": 108.3,
+      "token_usage": {
+        "input": 418,
+        "output": 6116,
+        "cache_read": 386454,
+        "cache_create": 120612
+      },
+      "cost_usd": 0.6612252000000001,
+      "num_turns": 7,
+      "per_model_usage": {
+        "claude-sonnet-4-6": {
+          "input": 418,
+          "output": 6116,
+          "cache_read": 386454,
+          "cache_create": 120612,
+          "cost_usd": 0.6612252000000001
+        }
+      },
+      "per_model_turns": {
+        "claude-sonnet-4-6": 7
+      },
+      "repo_modified": false
+    },
+    "case-011": {
+      "exit_code": 0,
+      "duration_s": 122.2,
+      "token_usage": {
+        "input": 446,
+        "output": 7027,
+        "cache_read": 333518,
+        "cache_create": 28246
+      },
+      "cost_usd": 0.31272089999999997,
+      "num_turns": 12,
+      "per_model_usage": {
+        "claude-sonnet-4-6": {
+          "input": 446,
+          "output": 7027,
+          "cache_read": 333518,
+          "cache_create": 28246,
+          "cost_usd": 0.31272089999999997
+        }
+      },
+      "per_model_turns": {
+        "claude-sonnet-4-6": 12
+      },
+      "repo_modified": false
+    },
+    "case-012": {
+      "exit_code": 0,
+      "duration_s": 155.7,
+      "token_usage": {
+        "input": 495,
+        "output": 9162,
+        "cache_read": 682481,
+        "cache_create": 56577
+      },
+      "cost_usd": 0.55582305,
+      "num_turns": 16,
+      "per_model_usage": {
+        "claude-sonnet-4-6": {
+          "input": 495,
+          "output": 9162,
+          "cache_read": 682481,
+          "cache_create": 56577,
+          "cost_usd": 0.55582305
+        }
+      },
+      "per_model_turns": {
+        "claude-sonnet-4-6": 16
+      },
+      "repo_modified": false
+    },
+    "case-013": {
+      "exit_code": -1,
+      "duration_s": 300.0,
+      "token_usage": {
+        "input": 223,
+        "output": 4042,
+        "cache_read": 11428208,
+        "cache_create": 378192
+      },
+      "cost_usd": null,
+      "num_turns": 91,
+      "per_model_usage": null,
+      "per_model_turns": {
+        "claude-sonnet-4-6": 91
+      },
+      "repo_modified": false
+    },
+    "case-014": {
+      "exit_code": 0,
+      "duration_s": 248.1,
+      "token_usage": {
+        "input": 535,
+        "output": 14006,
+        "cache_read": 2261951,
+        "cache_create": 92575
+      },
+      "cost_usd": 1.23743655,
+      "num_turns": 40,
+      "per_model_usage": {
+        "claude-sonnet-4-6": {
+          "input": 535,
+          "output": 14006,
+          "cache_read": 2261951,
+          "cache_create": 92575,
+          "cost_usd": 1.23743655
+        }
+      },
+      "per_model_turns": {
+        "claude-sonnet-4-6": 40
+      },
+      "repo_modified": false
+    },
+    "case-015": {
+      "exit_code": 0,
+      "duration_s": 183.2,
+      "token_usage": {
+        "input": 480,
+        "output": 10158,
+        "cache_read": 969879,
+        "cache_create": 46502
+      },
+      "cost_usd": 0.6191561999999999,
+      "num_turns": 27,
+      "per_model_usage": {
+        "claude-sonnet-4-6": {
+          "input": 480,
+          "output": 10158,
+          "cache_read": 969879,
+          "cache_create": 46502,
+          "cost_usd": 0.6191561999999999
+        }
+      },
+      "per_model_turns": {
+        "claude-sonnet-4-6": 27
+      },
+      "repo_modified": false
+    },
+    "case-016": {
+      "exit_code": 0,
+      "duration_s": 203.1,
+      "token_usage": {
+        "input": 496,
+        "output": 17536,
+        "cache_read": 1569250,
+        "cache_create": 125190
+      },
+      "cost_usd": 1.2047655,
+      "num_turns": 33,
+      "per_model_usage": {
+        "claude-sonnet-4-6": {
+          "input": 496,
+          "output": 17536,
+          "cache_read": 1569250,
+          "cache_create": 125190,
+          "cost_usd": 1.2047655
+        }
+      },
+      "per_model_turns": {
+        "claude-sonnet-4-6": 33
+      },
+      "repo_modified": false
+    }
+  }
+}

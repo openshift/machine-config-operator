@@ -1,0 +1,8 @@
+prompt: What is the correct way to configure a NodeDisruptionPolicy, and are there
+  any naming requirements for the MachineConfiguration resource?
+expected_files:
+- docs/NodeDisruptionPolicy.md
+expected_mentions:
+- NodeDisruptionPolicy
+- MachineConfiguration
+- cluster

@@ -1,0 +1,26 @@
+prompt: I need to create a new MachineConfig resource that configures a custom chrony
+  NTP configuration file on all worker nodes. The file should be placed at /etc/chrony.conf
+  with specific NTP server entries for our internal time servers (time1.corp.example.com
+  and time2.corp.example.com). Please create the MachineConfig YAML following the
+  project's documented patterns and constraints.
+expected_structure:
+- 'apiVersion: machineconfiguration.openshift.io/v1'
+- 'kind: MachineConfig'
+- metadata with name and labels
+- spec.config with Ignition format
+- storage.files section with path and contents
+- machineConfigSelector label matching worker pool
+expected_patterns:
+- 'Name follows pattern: 99-worker-chrony or similar numbered prefix convention'
+- 'Label machineconfiguration.openshift.io/role: worker is present'
+- Ignition config version is specified (e.g., 3.2.0 or 3.4.0)
+- File contents are base64-encoded using source field with data URI
+- 'File path is absolute: /etc/chrony.conf'
+- No remote HTTP sources in Ignition config - all content must be inline/resolved
+  at render time
+- MachineConfig merge ordering is deterministic and sorted by name
+expected_documentation:
+- ai-docs/domain/crds.md
+- docs/MachineConfig.md
+- ai-docs/decisions/adr-002-config-rendering.md
+- ai-docs/architecture/components.md

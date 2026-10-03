@@ -1,0 +1,16 @@
+prompt: How do I configure on-cluster layering using MachineOSConfig to build a custom
+  OS image with additional packages for my nodes?
+expected_api: MachineOSConfig
+expected_example_type: yaml
+expected_fields:
+- apiVersion
+- kind
+- metadata
+- spec
+- machineConfigPool
+- buildInputs
+- imageBuilder
+expected_documentation:
+- ai-docs/domain/crds.md
+- docs/OnClusterLayering.md
+- ai-docs/decisions/adr-001-on-cluster-layering.md
