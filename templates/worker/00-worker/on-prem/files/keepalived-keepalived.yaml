@@ -5,8 +5,19 @@ contents:
     global_defs {
         enable_script_security
         script_user root
-        max_auto_priority -1
         vrrp_garp_master_refresh 60
+
+        # These settings are fine tuning scheduling of the process. They are to
+        # avoid split-brain caused by not getting enough CPU to run vrrp fast enough.
+        # Values are coming from multiple online resources combined together, e.g.
+        # * https://groups.io/g/keepalived-users/topic/a_thread_timer_expired/94707560
+        # * https://forge.puppet.com/modules/puppet/keepalived/readme
+        max_auto_priority 99
+        vrrp_rt_priority 50
+        vrrp_no_swap
+        vrrp_rlimit_rttime 100000
+        bfd_rlimit_rttime 100000
+        checker_rlimit_rttime 100000
     }
 
     # TODO: Improve this check. The port is assumed to be alive.
