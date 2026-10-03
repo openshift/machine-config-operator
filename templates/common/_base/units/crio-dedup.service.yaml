@@ -1,0 +1,17 @@
+name: crio-dedup.service
+enabled: true
+contents: |
+  [Unit]
+  Description=CRI-O image deduplication service
+  Wants=network-online.target
+  After=network-online.target firstboot-osupdate.target
+  Before=crio.service
+
+  [Service]
+  # Need oneshot to delay crio
+  Type=oneshot
+  RemainAfterExit=yes
+  EnvironmentFile=/etc/crio-dedup-enabled.env
+  ExecStart=/bin/bash /usr/local/sbin/crio-dedup.sh ${CRIO_IMAGE_DEDUP}
+  [Install]
+  RequiredBy=crio.service
