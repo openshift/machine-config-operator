@@ -112,16 +112,21 @@ func reconcilePlatform[T any](
 // reconcileGCPProviderSpec reconciles the GCP provider spec by updating boot images.
 // Returns:
 //   - patchRequired: true when the MachineSet's providerSpec.Disks[].Image must be updated
-//   - reconcileSkipped: true when the current image is custom/unrecognised and cannot be managed automatically; see reconcilePlatform
+//   - reconcileSkipped: true when the current image is custom/unrecognised or no GCP image is available for the requested architecture; see reconcilePlatform
 //   - newProviderSpec: updated copy of providerSpec; nil when patchRequired=false
 //   - rhcosVersion: always empty for GCP (no marketplace path)
 //   - err: non-nil for stream or ignition errors that should degrade the CO
 func reconcileGCPProviderSpec(streamData *stream.Stream, arch string, _ *osconfigv1.Infrastructure, providerSpec *machinev1beta1.GCPMachineProviderSpec, machineSetName string, secretClient clientset.Interface) (bool, bool, *machinev1beta1.GCPMachineProviderSpec, string, error) {
+	streamArch, ok := streamData.Architectures[arch]
+	if !ok || streamArch.Images.Gcp == nil {
+		klog.Infof("no GCP boot image available for architecture %s, skipping update of MachineSet %s", arch, machineSetName)
+		return false, true, nil, "", nil
+	}
 
 	// Construct the new target bootimage from the configmap
 	// This formatting is based on how the installer constructs
 	// the boot image during cluster bootstrap
-	newBootImage := fmt.Sprintf("projects/%s/global/images/%s", streamData.Architectures[arch].Images.Gcp.Project, streamData.Architectures[arch].Images.Gcp.Name)
+	newBootImage := fmt.Sprintf("projects/%s/global/images/%s", streamArch.Images.Gcp.Project, streamArch.Images.Gcp.Name)
 
 	// Grab what the current bootimage is, compare to the newBootImage
 	// There is typically only one element in this Disk array, assume multiple to be safe
