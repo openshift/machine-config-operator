@@ -754,6 +754,18 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 		if err != nil {
 			return "", false, false, fmt.Errorf("failed in getClientsFromServerURL: %w", err)
 		}
+		defer func() {
+			logoutErr := client.Logout(ctx)
+			if logoutErr != nil {
+				klog.Errorf("failed to logout vCenter SOAP client: %v", logoutErr)
+			}
+		}()
+		defer func() {
+			logoutErr := tagManager.Logout(ctx)
+			if logoutErr != nil {
+				klog.Errorf("failed to logout vCenter REST client: %v", logoutErr)
+			}
+		}()
 
 		finder := find.NewFinder(client.Client, false)
 
