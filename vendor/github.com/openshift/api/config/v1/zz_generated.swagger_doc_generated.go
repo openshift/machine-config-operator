@@ -1399,7 +1399,7 @@ func (ImagePolicy) SwaggerDoc() map[string]string {
 
 var map_ImagePolicyFulcioCAWithRekorRootOfTrust = map[string]string{
 	"":              "ImagePolicyFulcioCAWithRekorRootOfTrust defines the root of trust based on the Fulcio certificate and the Rekor public key.",
-	"fulcioCAData":  "fulcioCAData is a required field contains inline base64-encoded data for the PEM format fulcio CA. fulcioCAData must be at most 8192 characters. ",
+	"fulcioCAData":  "fulcioCAData is a required field contains inline base64-encoded data for the PEM format fulcio CA. fulcioCAData must be at most 32768 characters, which fits post-quantum (ML-DSA) certificates. ",
 	"rekorKeyData":  "rekorKeyData is a required field contains inline base64-encoded data for the PEM format from the Rekor public key. rekorKeyData must be at most 8192 characters. ",
 	"fulcioSubject": "fulcioSubject is a required field specifies OIDC issuer and the email of the Fulcio authentication configuration.",
 }
@@ -1420,8 +1420,8 @@ func (ImagePolicyList) SwaggerDoc() map[string]string {
 
 var map_ImagePolicyPKIRootOfTrust = map[string]string{
 	"":                      "ImagePolicyPKIRootOfTrust defines the root of trust based on Root CA(s) and corresponding intermediate certificates.",
-	"caRootsData":           "caRootsData contains base64-encoded data of a certificate bundle PEM file, which contains one or more CA roots in the PEM format. The total length of the data must not exceed 8192 characters. ",
-	"caIntermediatesData":   "caIntermediatesData contains base64-encoded data of a certificate bundle PEM file, which contains one or more intermediate certificates in the PEM format. The total length of the data must not exceed 8192 characters. caIntermediatesData requires caRootsData to be set. ",
+	"caRootsData":           "caRootsData contains base64-encoded data of a certificate bundle PEM file, which contains one or more CA roots in the PEM format. The total length of the data must not exceed 32768 characters, which fits post-quantum (ML-DSA) certificates. ",
+	"caIntermediatesData":   "caIntermediatesData contains base64-encoded data of a certificate bundle PEM file, which contains one or more intermediate certificates in the PEM format. The total length of the data must not exceed 32768 characters, which fits post-quantum (ML-DSA) certificates. caIntermediatesData requires caRootsData to be set. ",
 	"pkiCertificateSubject": "pkiCertificateSubject defines the requirements imposed on the subject to which the certificate was issued.",
 }
 

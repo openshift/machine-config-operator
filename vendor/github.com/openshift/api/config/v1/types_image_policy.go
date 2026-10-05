@@ -132,9 +132,9 @@ type ImagePolicyPublicKeyRootOfTrust struct {
 // ImagePolicyFulcioCAWithRekorRootOfTrust defines the root of trust based on the Fulcio certificate and the Rekor public key.
 type ImagePolicyFulcioCAWithRekorRootOfTrust struct {
 	// fulcioCAData is a required field contains inline base64-encoded data for the PEM format fulcio CA.
-	// fulcioCAData must be at most 8192 characters.
+	// fulcioCAData must be at most 32768 characters, which fits post-quantum (ML-DSA) certificates.
 	// +required
-	// +kubebuilder:validation:MaxLength=8192
+	// +kubebuilder:validation:MaxLength=32768
 	// +kubebuilder:validation:XValidation:rule="string(self).startsWith('-----BEGIN CERTIFICATE-----')",message="the fulcioCAData must start with base64 encoding of '-----BEGIN CERTIFICATE-----'."
 	// +kubebuilder:validation:XValidation:rule="string(self).endsWith('-----END CERTIFICATE-----\\n') || string(self).endsWith('-----END CERTIFICATE-----')",message="the fulcioCAData must end with base64 encoding of '-----END CERTIFICATE-----'."
 	FulcioCAData []byte `json:"fulcioCAData"`
@@ -171,21 +171,21 @@ type PolicyFulcioSubject struct {
 
 // ImagePolicyPKIRootOfTrust defines the root of trust based on Root CA(s) and corresponding intermediate certificates.
 type ImagePolicyPKIRootOfTrust struct {
-	// caRootsData contains base64-encoded data of a certificate bundle PEM file, which contains one or more CA roots in the PEM format. The total length of the data must not exceed 8192 characters.
+	// caRootsData contains base64-encoded data of a certificate bundle PEM file, which contains one or more CA roots in the PEM format. The total length of the data must not exceed 32768 characters, which fits post-quantum (ML-DSA) certificates.
 	// +required
-	// +kubebuilder:validation:MaxLength=8192
+	// +kubebuilder:validation:MaxLength=32768
 	// +kubebuilder:validation:MinLength=72
 	// +kubebuilder:validation:XValidation:rule="string(self).startsWith('-----BEGIN CERTIFICATE-----')",message="the caRootsData must start with base64 encoding of '-----BEGIN CERTIFICATE-----'."
 	// +kubebuilder:validation:XValidation:rule="string(self).endsWith('-----END CERTIFICATE-----\\n') || string(self).endsWith('-----END CERTIFICATE-----')",message="the caRootsData must end with base64 encoding of '-----END CERTIFICATE-----'."
 	// +kubebuilder:validation:XValidation:rule="string(self).findAll('-----BEGIN CERTIFICATE-----').size() == string(self).findAll('-----END CERTIFICATE-----').size()",message="caRootsData must be base64 encoding of valid PEM format data contain the same number of '-----BEGIN CERTIFICATE-----' and '-----END CERTIFICATE-----' markers."
 	CertificateAuthorityRootsData []byte `json:"caRootsData"`
-	// caIntermediatesData contains base64-encoded data of a certificate bundle PEM file, which contains one or more intermediate certificates in the PEM format. The total length of the data must not exceed 8192 characters.
+	// caIntermediatesData contains base64-encoded data of a certificate bundle PEM file, which contains one or more intermediate certificates in the PEM format. The total length of the data must not exceed 32768 characters, which fits post-quantum (ML-DSA) certificates.
 	// caIntermediatesData requires caRootsData to be set.
 	// +optional
 	// +kubebuilder:validation:XValidation:rule="string(self).startsWith('-----BEGIN CERTIFICATE-----')",message="the caIntermediatesData must start with base64 encoding of '-----BEGIN CERTIFICATE-----'."
 	// +kubebuilder:validation:XValidation:rule="string(self).endsWith('-----END CERTIFICATE-----\\n') || string(self).endsWith('-----END CERTIFICATE-----')",message="the caIntermediatesData must end with base64 encoding of '-----END CERTIFICATE-----'."
 	// +kubebuilder:validation:XValidation:rule="string(self).findAll('-----BEGIN CERTIFICATE-----').size() == string(self).findAll('-----END CERTIFICATE-----').size()",message="caIntermediatesData must be base64 encoding of valid PEM format data contain the same number of '-----BEGIN CERTIFICATE-----' and '-----END CERTIFICATE-----' markers."
-	// +kubebuilder:validation:MaxLength=8192
+	// +kubebuilder:validation:MaxLength=32768
 	// +kubebuilder:validation:MinLength=72
 	CertificateAuthorityIntermediatesData []byte `json:"caIntermediatesData,omitempty"`
 

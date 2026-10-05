@@ -252,6 +252,8 @@ spec:
                                 Partial requires specified selector(s) and allows customisation of which resources matched by the machine manager will be updated.
                                 Partial is not permitted for the controlplanemachinesets resource type as they are a singleton within the cluster.
                                 None means that every resource matched by the machine manager will not be updated.
+                                When boot image skew enforcement is in Automatic mode, only All is permitted for the
+                                machinesets and machinedeployments resource types, in any API group.
                               enum:
                               - All
                               - Partial
@@ -1037,6 +1039,8 @@ spec:
                                 Partial requires specified selector(s) and allows customisation of which resources matched by the machine manager will be updated.
                                 Partial is not permitted for the controlplanemachinesets resource type as they are a singleton within the cluster.
                                 None means that every resource matched by the machine manager will not be updated.
+                                When boot image skew enforcement is in Automatic mode, only All is permitted for the
+                                machinesets and machinedeployments resource types, in any API group.
                               enum:
                               - All
                               - Partial
@@ -1543,6 +1547,34 @@ spec:
         - spec
         type: object
         x-kubernetes-validations:
+        - message: when skew enforcement is in Automatic mode, any CAPI MachineSet
+            MachineManager must use selection mode 'All'
+          rule: 'self.?status.bootImageSkewEnforcementStatus.mode.orValue("") == ''Automatic''
+            ? !(self.?spec.managedBootImages.machineManagers.hasValue()) || !self.spec.managedBootImages.machineManagers.exists(m,
+            m.resource == ''machinesets'' && m.apiGroup == ''cluster.x-k8s.io'') ||
+            self.spec.managedBootImages.machineManagers.exists(m, m.resource == ''machinesets''
+            && m.apiGroup == ''cluster.x-k8s.io'' && m.selection.mode == ''All'')
+            : true'
+        - message: when skew enforcement is in Automatic mode, managedBootImagesStatus
+            must contain a MachineManager opting in all CAPI MachineSets
+          rule: 'self.?status.bootImageSkewEnforcementStatus.mode.orValue("") == ''Automatic''
+            ? !(self.?status.managedBootImagesStatus.machineManagers.hasValue()) ||
+            self.status.managedBootImagesStatus.machineManagers.exists(m, m.selection.mode
+            == ''All'' && m.resource == ''machinesets'' && m.apiGroup == ''cluster.x-k8s.io''):
+            true'
+        - message: when skew enforcement is in Automatic mode, any CAPI MachineDeployment
+            MachineManager must use selection mode 'All'
+          rule: 'self.?status.bootImageSkewEnforcementStatus.mode.orValue("") == ''Automatic''
+            ? !(self.?spec.managedBootImages.machineManagers.hasValue()) || !self.spec.managedBootImages.machineManagers.exists(m,
+            m.resource == ''machinedeployments'' && m.apiGroup == ''cluster.x-k8s.io'')
+            || self.spec.managedBootImages.machineManagers.exists(m, m.resource ==
+            ''machinedeployments'' && m.selection.mode == ''All'') : true'
+        - message: when skew enforcement is in Automatic mode, managedBootImagesStatus
+            must contain a MachineManager opting in all CAPI MachineDeployments
+          rule: 'self.?status.bootImageSkewEnforcementStatus.mode.orValue("") == ''Automatic''
+            ? !(self.?status.managedBootImagesStatus.machineManagers.hasValue()) ||
+            self.status.managedBootImagesStatus.machineManagers.exists(m, m.selection.mode
+            == ''All'' && m.resource == ''machinedeployments''): true'
         - message: when skew enforcement is in Automatic mode, a boot image configuration
             is required
           rule: 'self.?status.bootImageSkewEnforcementStatus.mode.orValue("") == ''Automatic''
