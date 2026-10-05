@@ -2869,15 +2869,13 @@ func (dn *Daemon) InplaceUpdateViaLayeredContainer(target string) (retErr error)
 
 	if enforcing {
 		if err := runCmdSync("setenforce", "0"); err != nil {
-			return err
+			return fmt.Errorf("failed to disable SELinux enforcement: %w", err)
 		}
 		defer func() {
 			if err := runCmdSync("setenforce", "1"); err != nil {
-				if retErr == nil {
-					retErr = err
-					return
-				}
-				klog.Errorf("failed to restore SELinux enforcement: %v", err)
+				restoreErr := fmt.Errorf("failed to restore SELinux enforcement: %w", err)
+				klog.Errorf("%v", restoreErr)
+				retErr = errors.Join(retErr, restoreErr)
 			}
 		}()
 	}
@@ -2886,10 +2884,18 @@ func (dn *Daemon) InplaceUpdateViaLayeredContainer(target string) (retErr error)
 	if err := os.MkdirAll(tmpDir, defaultDirectoryPermissions); err != nil {
 		return fmt.Errorf("failed to create layered deployment temporary directory: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			klog.Warningf("failed to remove layered deployment temporary directory %q: %v", tmpDir, err)
+		}
+	}()
 
 	digestPath := filepath.Join("/run", "mco-layered-deploy-"+string(uuid.NewUUID())+".digest")
-	defer os.Remove(digestPath)
+	defer func() {
+		if err := os.Remove(digestPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			klog.Warningf("failed to remove imported OSTree digest file %q: %v", digestPath, err)
+		}
+	}()
 
 	systemdPodmanArgs := []string{"--unit", "machine-config-daemon-update-rpmostree-layered", "-p", "EnvironmentFile=-/etc/mco/proxy.env", "--collect", "--wait", "--", "podman"}
 	pullArgs := append([]string{}, systemdPodmanArgs...)
