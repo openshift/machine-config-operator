@@ -549,8 +549,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		userDataModifyFunc := func(userData string) (string, error) { return convertUserDataToNewVersion(userData, "2.2.0") }
 		clonedSecret, err := duplicateMachinesetSecret(userDataSecret, clonedSecretName, userDataModifyFunc, nil)
-		defer clonedSecret.Delete()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s with a wrong ignition V2 version", userDataSecret)
+		defer clonedSecret.Delete()
 		logger.Infof("OK!\n")
 
 		logger.Infof("Configuring the cloned machineset to use the new user-data secret")
@@ -633,8 +633,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		userDataModifyFunc := func(userData string) (string, error) { return convertUserDataToNewVersion(userData, "2.2.0") }
 		clonedSecret, err := duplicateMachinesetSecret(userDataSecret, clonedSecretName, userDataModifyFunc, nil)
-		defer clonedSecret.Delete()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s with a wrong ignition V2 version", userDataSecret)
+		defer clonedSecret.Delete()
 		logger.Infof("OK!\n")
 
 		logger.Infof("Configuring the cloned machineset to use the new user-data secret")
@@ -788,8 +788,8 @@ func testUserDataUpdateFailure(oc *exutil.CLI, clonedMSName, clonedSecretName, e
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting user-data secret from %s", clonedMS)
 
 		clonedSecret, err = duplicateMachinesetSecret(userDataSecret, clonedSecretName, userDataModifyFunc, nil)
-		defer clonedSecret.Delete()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s with a wrong ignition V2 version", userDataSecret)
+		defer clonedSecret.Delete()
 
 	} else {
 		logger.Infof("The %s user-data secret will not be created. Testing with a non-existing user-data secret", clonedSecretName)

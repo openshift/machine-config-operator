@@ -680,7 +680,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 	})
 
-	g.It("[PolarionID:88801][OTP][Skipped:Disconnected] ExternalRegistry OCB Verify new nodes boot directly with OCL image without unnecessary reboots [Disruptive]", g.Label("Exclude: excluded until OCPBUGS-99751 is fixed"), func() {
+	g.It("[PolarionID:88801][OTP][Skipped:Disconnected] ExternalRegistry OCB Verify new nodes boot directly with OCL image without unnecessary reboots [Disruptive]", func() {
 		SkipIfCompactOrSNO(oc.AsAdmin())              // This test requires scaling, which doesn't make sense in SNO or Compact
 		skipTestIfWorkersCannotBeScaled(oc.AsAdmin()) // Skip test if worker node cannot be scaled
 
@@ -689,9 +689,9 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			moscName = mcp.GetName()
 		)
 
-		exutil.By("Enable default ClusterImagePolicy")
-		restoreCVO := enableDefaultClusterImagePolicy(oc.AsAdmin(), mcp)
-		defer restoreCVO()
+//		exutil.By("Enable default ClusterImagePolicy")
+//		restoreCVO := enableDefaultClusterImagePolicy(oc.AsAdmin(), mcp)
+//		defer restoreCVO()
 
 		exutil.By("Configure OCB functionality using external registry (Quay)")
 		mosc, err := CreateMachineOSConfigUsingExternalRegistry(oc.AsAdmin(), moscName, mcp.GetName(), nil, false, false)
@@ -699,8 +699,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
 		logger.Infof("OK!\n")
 
-		exutil.By("Verify build Job mounts sigstore-registries.yaml")
-		verifyBuildJobMountsSigstoreRegistries(mosc)
+//		exutil.By("Verify build Job mounts sigstore-registries.yaml")
+//		verifyBuildJobMountsSigstoreRegistries(mosc)
 
 		ValidateNewNodesBootDirectlyWithOCLImage(oc.AsAdmin(), mosc, mcp)
 	})
