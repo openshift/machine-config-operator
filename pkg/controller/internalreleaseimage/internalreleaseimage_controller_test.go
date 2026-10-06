@@ -94,6 +94,36 @@ func TestInternalReleaseImageCreate(t *testing.T) {
 			},
 		},
 		{
+			name: "apply Modern TLS profile from APIServer",
+			initialObjects: objs(
+				iri(), clusterVersion(), cconfig().withDNS("example.com"), iriCertSecret(), iriRegistryCredentialsSecret(), pullSecret(),
+				apiServer().tlsProfile(configv1.TLSProfileModernType)),
+			verify: func(t *testing.T, actualIRI *mcfgv1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
+				ignCfg, err := ctrlcommon.ParseAndConvertConfig(actualMasterMC.Spec.Config.Raw)
+				assert.NoError(t, err)
+				assert.Contains(t, *ignCfg.Systemd.Units[0].Contents, "REGISTRY_HTTP_TLS_MINIMUMTLS=tls1.3")
+				assert.NotContains(t, *ignCfg.Systemd.Units[0].Contents, "REGISTRY_HTTP_TLS_CIPHERSUITES")
+			},
+		},
+		{
+			name: "cipher suites with spaces are quoted in systemd unit to prevent word splitting",
+			initialObjects: objs(
+				iri(), clusterVersion(), cconfig().withDNS("example.com"), iriCertSecret(), iriRegistryCredentialsSecret(), pullSecret(),
+				apiServer().tlsProfile(configv1.TLSProfileIntermediateType)),
+			verify: func(t *testing.T, actualIRI *mcfgv1.InternalReleaseImage, actualMasterMC *mcfgv1.MachineConfig, actualWorkerMC *mcfgv1.MachineConfig) {
+				ignCfg, err := ctrlcommon.ParseAndConvertConfig(actualMasterMC.Spec.Config.Raw)
+				assert.NoError(t, err)
+				unitContents := *ignCfg.Systemd.Units[0].Contents
+				assert.Contains(t, unitContents, "REGISTRY_HTTP_TLS_MINIMUMTLS=tls1.2")
+				assert.Contains(t, unitContents, "REGISTRY_HTTP_TLS_CIPHERSUITES=")
+				// The cipher suites value (a YAML array with spaces) must be quoted
+				// in the systemd unit to prevent word splitting. Without quotes,
+				// systemd splits on spaces and podman interprets cipher names as
+				// container image references.
+				assert.Contains(t, unitContents, `-e "REGISTRY_HTTP_TLS_CIPHERSUITES=[`)
+			},
+		},
+		{
 			name: "disables service and removes finalizer on iri deletion",
 			initialObjects: objs(
 				iri().finalizer(iriFinalizerName).setDeletionTimestamp(),
@@ -233,6 +263,7 @@ type fixture struct {
 	nodeLister           []*corev1.Node
 	clusterVersionLister []*configv1.ClusterVersion
 	infraLister          []*configv1.Infrastructure
+	apiServerLister      []*configv1.APIServer
 
 	controller    *Controller
 	objects       []runtime.Object
@@ -258,13 +289,15 @@ func (f *fixture) setupObjects(objs []runtime.Object) {
 			case *corev1.Node:
 				f.nodeLister = append(f.nodeLister, o)
 			}
-		case *configv1.ClusterVersion, *configv1.Infrastructure:
+		case *configv1.ClusterVersion, *configv1.Infrastructure, *configv1.APIServer:
 			f.configObjects = append(f.configObjects, obj)
 			switch o := obj.(type) {
 			case *configv1.ClusterVersion:
 				f.clusterVersionLister = append(f.clusterVersionLister, o)
 			case *configv1.Infrastructure:
 				f.infraLister = append(f.infraLister, o)
+			case *configv1.APIServer:
+				f.apiServerLister = append(f.apiServerLister, o)
 			}
 		default:
 			f.objects = append(f.objects, obj)
@@ -296,6 +329,7 @@ func (f *fixture) newController() *Controller {
 		i.Machineconfiguration().V1().ControllerConfigs(),
 		i.Machineconfiguration().V1().MachineConfigs(),
 		ci.Config().V1().ClusterVersions(),
+		ci.Config().V1().APIServers(),
 		k.Core().V1().Secrets(),
 		i.Machineconfiguration().V1().MachineConfigNodes(),
 		k.Core().V1().Nodes(),
@@ -309,6 +343,7 @@ func (f *fixture) newController() *Controller {
 	c.ccListerSynced = alwaysReady
 	c.mcListerSynced = alwaysReady
 	c.clusterVersionListerSynced = alwaysReady
+	c.apiServerListerSynced = alwaysReady
 	c.secretListerSynced = alwaysReady
 	c.mcnListerSynced = alwaysReady
 	c.infraListerSynced = alwaysReady
@@ -348,6 +383,9 @@ func (f *fixture) newController() *Controller {
 	}
 	for _, c := range f.infraLister {
 		ci.Config().V1().Infrastructures().Informer().GetIndexer().Add(c)
+	}
+	for _, c := range f.apiServerLister {
+		ci.Config().V1().APIServers().Informer().GetIndexer().Add(c)
 	}
 
 	return c
@@ -529,6 +567,7 @@ func TestNewWithAlreadyStartedInformers(t *testing.T) {
 	ccInformer := i.Machineconfiguration().V1().ControllerConfigs()
 	mcInformer := i.Machineconfiguration().V1().MachineConfigs()
 	cvInformer := ci.Config().V1().ClusterVersions()
+	apiServerInformer := ci.Config().V1().APIServers()
 	secretInformer := k.Core().V1().Secrets()
 	mcnInformer := i.Machineconfiguration().V1().MachineConfigNodes()
 	nodeInformer := k.Core().V1().Nodes()
@@ -539,6 +578,7 @@ func TestNewWithAlreadyStartedInformers(t *testing.T) {
 	ccInformer.Informer()
 	mcInformer.Informer()
 	cvInformer.Informer()
+	apiServerInformer.Informer()
 	secretInformer.Informer()
 	mcnInformer.Informer()
 	nodeInformer.Informer()
@@ -561,6 +601,7 @@ func TestNewWithAlreadyStartedInformers(t *testing.T) {
 		ccInformer,
 		mcInformer,
 		cvInformer,
+		apiServerInformer,
 		secretInformer,
 		mcnInformer,
 		nodeInformer,

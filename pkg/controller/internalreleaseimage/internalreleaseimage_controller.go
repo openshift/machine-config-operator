@@ -20,6 +20,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 
+	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	configinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
@@ -67,6 +68,9 @@ type Controller struct {
 	clusterVersionLister       configlistersv1.ClusterVersionLister
 	clusterVersionListerSynced cache.InformerSynced
 
+	apiServerLister       configlistersv1.APIServerLister
+	apiServerListerSynced cache.InformerSynced
+
 	secretLister       corelistersv1.SecretLister
 	secretListerSynced cache.InformerSynced
 
@@ -88,6 +92,7 @@ func New(
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mcInformer mcfginformersv1.MachineConfigInformer,
 	clusterVersionInformer configinformersv1.ClusterVersionInformer,
+	apiServerInformer configinformersv1.APIServerInformer,
 	secretInformer coreinformersv1.SecretInformer,
 	mcnInformer mcfginformersv1.MachineConfigNodeInformer,
 	nodeInformer coreinformersv1.NodeInformer,
@@ -127,6 +132,9 @@ func New(
 	ctrl.clusterVersionLister = clusterVersionInformer.Lister()
 	ctrl.clusterVersionListerSynced = clusterVersionInformer.Informer().HasSynced
 
+	ctrl.apiServerLister = apiServerInformer.Lister()
+	ctrl.apiServerListerSynced = apiServerInformer.Informer().HasSynced
+
 	ctrl.secretLister = secretInformer.Lister()
 	ctrl.secretListerSynced = secretInformer.Informer().HasSynced
 
@@ -162,6 +170,12 @@ func New(
 		UpdateFunc: ctrl.updateSecret,
 	})
 
+	apiServerInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addAPIServer,
+		UpdateFunc: ctrl.updateAPIServer,
+		DeleteFunc: ctrl.deleteAPIServer,
+	})
+
 	mcnInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addMachineConfigNode,
 		UpdateFunc: ctrl.updateMachineConfigNode,
@@ -180,7 +194,7 @@ func (ctrl *Controller) Run(ctx context.Context, workers int) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(ctx.Done(), ctrl.iriListerSynced, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.clusterVersionListerSynced, ctrl.secretListerSynced, ctrl.mcnListerSynced, ctrl.nodeListerSynced, ctrl.infraListerSynced) {
+	if !cache.WaitForCacheSync(ctx.Done(), ctrl.iriListerSynced, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.clusterVersionListerSynced, ctrl.apiServerListerSynced, ctrl.secretListerSynced, ctrl.mcnListerSynced, ctrl.nodeListerSynced, ctrl.infraListerSynced) {
 		return
 	}
 
@@ -328,6 +342,59 @@ func (ctrl *Controller) updateSecret(_, cur interface{}) {
 	}
 
 	klog.V(4).Infof("Secret %s updated, re-queuing IRI sync", secret.Name)
+	ctrl.enqueueInternalReleaseImage()
+}
+
+// addAPIServer re-queues an IRI sync when the cluster APIServer config appears. Only
+// the singleton "cluster" instance carries the TLS profile the registry renders from.
+func (ctrl *Controller) addAPIServer(obj interface{}) {
+	apiServer := obj.(*configv1.APIServer)
+	if apiServer.Name != ctrlcommon.APIServerInstanceName {
+		return
+	}
+	klog.V(4).Infof("APIServer %s added, re-queuing IRI sync", apiServer.Name)
+	ctrl.enqueueInternalReleaseImage()
+}
+
+// updateAPIServer re-queues an IRI sync when the cluster APIServer TLS profile
+// changes. Other fields do not affect the rendered registry unit.
+func (ctrl *Controller) updateAPIServer(old, cur interface{}) {
+	oldAPIServer := old.(*configv1.APIServer)
+	newAPIServer := cur.(*configv1.APIServer)
+	if newAPIServer.Name != ctrlcommon.APIServerInstanceName {
+		return
+	}
+	if equality.Semantic.DeepEqual(oldAPIServer.Spec.TLSSecurityProfile, newAPIServer.Spec.TLSSecurityProfile) {
+		return
+	}
+	klog.V(4).Infof("APIServer %s TLS profile updated, re-queuing IRI sync", newAPIServer.Name)
+	ctrl.enqueueInternalReleaseImage()
+}
+
+// deleteAPIServer re-queues an IRI sync when the cluster APIServer config goes away,
+// so the registry falls back to the default profile. Without this the rendered
+// MachineConfig keeps the deleted profile's values until some unrelated event happens
+// to queue a sync.
+func (ctrl *Controller) deleteAPIServer(obj interface{}) {
+	apiServer, ok := obj.(*configv1.APIServer)
+	if !ok {
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("failed to get object from tombstone %#v", obj))
+			return
+		}
+		apiServer, ok = tombstone.Obj.(*configv1.APIServer)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not an APIServer %#v", obj))
+			return
+		}
+	}
+
+	if apiServer.Name != ctrlcommon.APIServerInstanceName {
+		return
+	}
+
+	klog.V(4).Infof("APIServer %s deleted, re-queuing IRI sync", apiServer.Name)
 	ctrl.enqueueInternalReleaseImage()
 }
 
@@ -535,8 +602,13 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) (syncErr error) {
 		return fmt.Errorf("could not get Secret %s: %w", ctrlcommon.InternalReleaseImageAuthSecretName, err)
 	}
 
+	tlsProfile, err := ctrl.getTLSProfile()
+	if err != nil {
+		return err
+	}
+
 	for _, role := range SupportedRoles {
-		r := NewRendererByRole(role, iriSecret, iriRegistryCredentialsSecret, cconfig)
+		r := NewRendererByRole(role, iriSecret, iriRegistryCredentialsSecret, cconfig, tlsProfile)
 
 		mc, err := ctrl.mcLister.Get(r.GetMachineConfigName())
 		isNotFound := errors.IsNotFound(err)
@@ -757,6 +829,25 @@ func (ctrl *Controller) addFinalizerToInternalReleaseImage(iri *mcfgv1.InternalR
 	iri.Finalizers = append(iri.Finalizers, iriFinalizerName)
 	_, err := ctrl.client.MachineconfigurationV1().InternalReleaseImages().Update(context.TODO(), iri, metav1.UpdateOptions{})
 	return err
+}
+
+// getTLSProfile fetches the cluster APIServer TLS security profile, or nil if the
+// APIServer object does not exist or does not set one. Interpreting nil is left to
+// the renderer.
+//
+// IRI is a new Tech Preview component with no prior TLS behavior, so we always
+// honor the cluster TLS profile regardless of APIServer.Spec.TLSAdherence.
+// The tlsAdherence field exists to provide a migration path for existing components
+// that historically ignored the cluster profile; that concern does not apply here.
+func (ctrl *Controller) getTLSProfile() (*configv1.TLSSecurityProfile, error) {
+	apiServer, err := ctrl.apiServerLister.Get(ctrlcommon.APIServerInstanceName)
+	if err != nil && !errors.IsNotFound(err) {
+		return nil, fmt.Errorf("could not get APIServer: %w", err)
+	}
+	if apiServer != nil {
+		return apiServer.Spec.TLSSecurityProfile, nil
+	}
+	return nil, nil
 }
 
 // disableAndRemoveFinalizer re-renders the master IRI MachineConfig with a
