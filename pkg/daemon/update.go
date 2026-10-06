@@ -1442,6 +1442,10 @@ func newMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineC
 	// If OCL is enabled, compute OS update and revertFromOCL separately.
 	diff.osUpdate = oldOCLImage != newOCLImage || force
 	diff.revertFromOCL = newOCLImage == ""
+
+	klog.Infof("OCL diff computed: oldOCLImage=%q, newOCLImage=%q, oclEnabled=%v, osUpdate=%v, revertFromOCL=%v",
+		oldOCLImage, newOCLImage, diff.oclEnabled, diff.osUpdate, diff.revertFromOCL)
+
 	return diff, nil
 }
 
@@ -1625,7 +1629,9 @@ func (dn *CoreOSDaemon) updateKernelArguments(oldKernelArguments, newKernelArgum
 	return runRpmOstree(args...)
 }
 
-// getCurrentlyInstalledPackages returns the list of currently installed extension packages
+// getCurrentlyInstalledPackages returns the list of currently installed extension packages.
+// It only returns packages from RequestedPackages - NOT InactiveRequests, because inactive
+// packages need to be re-applied when reverting from OCL back to stock RHCOS.
 func (dn *Daemon) getCurrentlyInstalledPackages() (sets.Set[string], error) {
 	status, err := dn.NodeUpdaterClient.Peel().QueryStatus()
 	if err != nil {
@@ -1637,7 +1643,12 @@ func (dn *Daemon) getCurrentlyInstalledPackages() (sets.Set[string], error) {
 		return nil, fmt.Errorf("failed to get booted deployment: %w", err)
 	}
 
-	return sets.New(bootedDeployment.RequestedPackages...), nil
+	klog.Infof("getCurrentlyInstalledPackages: RequestedPackages=%v", bootedDeployment.RequestedPackages)
+
+	result := sets.New(bootedDeployment.RequestedPackages...)
+	klog.Infof("getCurrentlyInstalledPackages returning: %v", result.UnsortedList())
+
+	return result, nil
 }
 
 // generateExtensionsArgs generates extension arguments for rpm-ostree, based on the target config
@@ -1679,31 +1690,51 @@ func generateExtensionsArgs(installedSet sets.Set[string], newConfig *mcfgv1.Mac
 	return extArgs
 }
 
-func (dn *CoreOSDaemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+func (dn *CoreOSDaemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConfig, forceReapply bool) error {
+	klog.Infof("applyExtensions called: oldExtensions=%v, newExtensions=%v, forceReapply=%v", oldConfig.Spec.Extensions, newConfig.Spec.Extensions, forceReapply)
+
 	// Take no action if we're not an RHCOS node
 	if !dn.os.IsEL() {
+		klog.Infof("Not an RHCOS node, skipping applyExtensions")
 		return nil
 	}
 
 	extensionsEmpty := len(oldConfig.Spec.Extensions) == 0 && len(newConfig.Spec.Extensions) == 0
-	if (extensionsEmpty) ||
-		(reflect.DeepEqual(oldConfig.Spec.Extensions, newConfig.Spec.Extensions) && oldConfig.Spec.OSImageURL == newConfig.Spec.OSImageURL) {
+	extensionsUnchanged := reflect.DeepEqual(oldConfig.Spec.Extensions, newConfig.Spec.Extensions) && oldConfig.Spec.OSImageURL == newConfig.Spec.OSImageURL
+
+	// Skip if no extensions AND not forcing reapplication
+	if extensionsEmpty && !forceReapply {
+		klog.Infof("No extensions to apply and not forcing reapplication")
 		return nil
+	}
+
+	// Skip if extensions unchanged AND not forcing reapplication
+	if extensionsUnchanged && !forceReapply {
+		klog.Infof("Extensions unchanged and not forcing reapplication")
+		return nil
+	}
+
+	if forceReapply {
+		klog.Infof("Force reapplying extensions (OCL rollback scenario)")
 	}
 
 	// Validate extensions allowlist on RHCOS nodes
 	if err := ctrlcommon.ValidateMachineConfigExtensions(newConfig.Spec); err != nil {
+		klog.Errorf("Extension validation failed: %v", err)
 		return err
 	}
 
 	// Get currently installed packages from rpm-ostree status
 	installedSet, err := dn.getCurrentlyInstalledPackages()
 	if err != nil {
+		klog.Errorf("Failed to get currently installed packages: %v", err)
 		return err
 	}
+	klog.Infof("Currently installed packages: %v", installedSet.UnsortedList())
 
 	// Generate arguments based on current extension packages and the target config's extensions
 	args := generateExtensionsArgs(installedSet, newConfig)
+	klog.Infof("Generated rpm-ostree args: %v", args)
 	if len(args) == 0 {
 		logSystem("No extension updates required")
 		return nil
@@ -3057,6 +3088,39 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 		}
 	}
 
+	// When reverting from OCL, we need to remove package requests before rebasing to stock RHCOS.
+	// These requests were carried over from when packages were layered before OCL, but they
+	// became inactive when the OCL image included them in the base. Now that we're reverting to
+	// stock RHCOS (which doesn't have these packages), the requests would try to layer the
+	// packages again, requiring RHEL repos which aren't available during rebase.
+	// We remove them here so the rebase succeeds, then re-apply them as extensions afterward.
+	if mcDiff.revertFromOCL {
+		status, err := dn.NodeUpdaterClient.Peel().QueryStatus()
+		if err != nil {
+			return fmt.Errorf("failed to query rpm-ostree status during OCL revert: %w", err)
+		}
+
+		bootedDeployment, err := status.GetBootedDeployment()
+		if err != nil {
+			return fmt.Errorf("failed to get booted deployment during OCL revert: %w", err)
+		}
+
+		// RequestedPackages are extension packages that were layered before OCL.
+		// On the OCL image, they're inactive (already in base), but we still need to remove
+		// them from the origin so the rebase to stock RHCOS doesn't try to layer them.
+		if len(bootedDeployment.RequestedPackages) > 0 {
+			klog.Infof("Removing %d package requests before OCL revert: %v", len(bootedDeployment.RequestedPackages), bootedDeployment.RequestedPackages)
+
+			// Remove layered packages from rpm-ostree origin using rpm-ostree uninstall
+			args := []string{"uninstall"}
+			args = append(args, bootedDeployment.RequestedPackages...)
+
+			if err := runRpmOstree(args...); err != nil {
+				return fmt.Errorf("failed to remove requested packages during OCL revert: %w", err)
+			}
+		}
+	}
+
 	// Update OS
 	if mcDiff.osUpdate {
 		if err := dn.updateLayeredOS(newConfig); err != nil {
@@ -3082,20 +3146,31 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 		}
 	}
 
-	// If on-cluster layering is enabled, we can skip the rest of this process.
-	if mcDiff.oclEnabled {
+	// If on-cluster layering is enabled, we can skip the rest of this process
+	// UNLESS we are reverting from OCL back to layering, in which case we need
+	// to handle extensions and kernel switching.
+	if mcDiff.oclEnabled && !mcDiff.revertFromOCL {
+		klog.Infof("OCL is enabled and not reverting, skipping applyExtensions and switchKernel")
 		return nil
+	}
+
+	if mcDiff.revertFromOCL {
+		klog.Infof("Reverting from OCL to stock RHCOS, will apply extensions and switch kernel if needed")
 	}
 
 	// Switch to real time kernel
 	if mcDiff.osUpdate || mcDiff.kernelType {
+		klog.Infof("Calling switchKernel: osUpdate=%v, kernelType=%v", mcDiff.osUpdate, mcDiff.kernelType)
 		if err := dn.switchKernel(oldConfig, newConfig); err != nil {
 			return err
 		}
 	}
 
 	// Apply extensions
-	return dn.applyExtensions(oldConfig, newConfig)
+	// When reverting from OCL, we need to force re-application even if extensions haven't changed
+	// because the packages are in InactiveRequests and need to be re-applied as active packages
+	klog.Infof("Calling applyExtensions for old extensions %v -> new extensions %v (forceReapply=%v)", oldConfig.Spec.Extensions, newConfig.Spec.Extensions, mcDiff.revertFromOCL)
+	return dn.applyExtensions(oldConfig, newConfig, mcDiff.revertFromOCL)
 }
 
 // Enables the revert layering systemd unit.
