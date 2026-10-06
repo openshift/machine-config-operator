@@ -3322,6 +3322,39 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 		}
 	}
 
+	// When reverting from OCL, we need to remove package requests before rebasing to stock RHCOS.
+	// These requests were carried over from when packages were layered before OCL, but they
+	// became inactive when the OCL image included them in the base. Now that we're reverting to
+	// stock RHCOS (which doesn't have these packages), the requests would try to layer the
+	// packages again, requiring RHEL repos which aren't available during rebase.
+	// We remove them here so the rebase succeeds, then re-apply them as extensions afterward.
+	if mcDiff.revertFromOCL {
+		status, err := dn.NodeUpdaterClient.Peel().QueryStatus()
+		if err != nil {
+			return fmt.Errorf("failed to query rpm-ostree status during OCL revert: %w", err)
+		}
+
+		bootedDeployment, err := status.GetBootedDeployment()
+		if err != nil {
+			return fmt.Errorf("failed to get booted deployment during OCL revert: %w", err)
+		}
+
+		// RequestedPackages are extension packages that were layered before OCL.
+		// On the OCL image, they're inactive (already in base), but we still need to remove
+		// them from the origin so the rebase to stock RHCOS doesn't try to layer them.
+		if len(bootedDeployment.RequestedPackages) > 0 {
+			klog.Infof("Removing %d package requests before OCL revert: %v", len(bootedDeployment.RequestedPackages), bootedDeployment.RequestedPackages)
+
+			// Remove layered packages from rpm-ostree origin using rpm-ostree uninstall
+			args := []string{"uninstall"}
+			args = append(args, bootedDeployment.RequestedPackages...)
+
+			if err := runRpmOstree(args...); err != nil {
+				return fmt.Errorf("failed to remove requested packages during OCL revert: %w", err)
+			}
+		}
+	}
+
 	// Update OS
 	if mcDiff.osUpdate {
 		if err := dn.updateLayeredOS(newConfig); err != nil {
