@@ -2868,16 +2868,15 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	// If the host isn't new enough to understand the new container model natively, run as a privileged container.
 	// See https://github.com/coreos/rpm-ostree/pull/3961 and https://issues.redhat.com/browse/MCO-356
 	//
-	// If skopeo is < 1.22.2 on a multi-arch image, run as a privileged container which has updated skopeo.
-	// See https://redhat.atlassian.net/browse/OCPBUGS-83826 and https://redhat.atlassian.net/browse/OCPBUGS-81187
-	//
 	// If rpm-ostree is < 2023.5, it has a skopeo-proxy sandboxing bug when rebasing
 	// from containers-storage or registry sources; run as a privileged container instead.
 	// See https://redhat.atlassian.net/browse/OCPBUGS-86768 (temporary until 4.13/4.14 boot images are unsupported).
-	if !newEnough || !skopeoSupportsMultiArchSigstore(newURL) || !dn.NodeUpdaterClient.SupportsContainerStorageRebase() {
-		logSystem("rpm-ostree or skopeo is not new enough for layering; forcing an update via container")
+	if !newEnough || !dn.NodeUpdaterClient.SupportsContainerStorageRebase() {
+		logSystem("rpm-ostree is not new enough for layering; forcing an update via container")
 		return dn.InplaceUpdateViaNewContainer(newURL)
 	}
+	// Old skopeo's multi-arch signature limitation is handled by RebaseLayered's
+	// temporary policy. Keep the normal image rebase so all container layers are deployed.
 
 	// Check to see if the new container image is already present.
 	// This could happen if PIS is configured or if the bootloader
