@@ -13,6 +13,54 @@ import (
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 )
 
+func auditRulesExcludeMessageType(rules, messageType string) bool {
+	for _, rule := range strings.Split(rules, "\n") {
+		fields := strings.Fields(rule)
+		// Validate the exact global policy shape supplied by MCO. In particular,
+		// require its literal "always" action even though the kernel ignores the
+		// action on the exclude list, and reject fields that narrow by UID or PID.
+		if len(fields) != 4 || strings.HasPrefix(fields[0], "#") {
+			continue
+		}
+
+		var hasAlwaysExclude, hasMessageType bool
+		validRule := true
+		for i := 0; i < len(fields); i += 2 {
+			switch fields[i] {
+			case "-a":
+				if hasAlwaysExclude {
+					validRule = false
+					continue
+				}
+
+				values := strings.Split(fields[i+1], ",")
+				if len(values) != 2 {
+					validRule = false
+					continue
+				}
+				var hasAlways, hasExclude bool
+				for _, value := range values {
+					hasAlways = hasAlways || value == "always"
+					hasExclude = hasExclude || value == "exclude"
+				}
+				hasAlwaysExclude = hasAlways && hasExclude
+			case "-F":
+				if hasMessageType || fields[i+1] != "msgtype="+messageType {
+					validRule = false
+					continue
+				}
+				hasMessageType = true
+			default:
+				validRule = false
+			}
+		}
+		if validRule && hasAlwaysExclude && hasMessageType {
+			return true
+		}
+	}
+	return false
+}
+
 var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longduration][Serial][Disruptive] MCO Observability", func() {
 	defer g.GinkgoRecover()
 
@@ -273,9 +321,40 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	})
 
 	g.It("[PolarionID:54974][OTP] silence audit log events for container infra", func() {
+		const (
+			auditRuleFile = "/etc/audit/rules.d/mco-audit-quiet-containers.rules"
+			// Persistent audit logs span boots. Restrict the behavior check to the
+			// current boot while separately verifying the effective kernel rules.
+			// The approved `boot` boundary is wall-clock-minus-uptime and therefore
+			// may be second-granular or imprecise after a wall-clock adjustment.
+			currentBootAuditEvents = `
+stdout_file="$(mktemp)"
+stderr_file="$(mktemp)"
+trap 'rm -f "${stdout_file}" "${stderr_file}"' EXIT
 
-		auditRuleFile := "/etc/audit/rules.d/mco-audit-quiet-containers.rules"
-		auditLogFile := "/var/log/audit/audit.log"
+ausearch --input-logs --start boot --message NETFILTER_CFG,ANOM_PROMISCUOUS >"${stdout_file}" 2>"${stderr_file}"
+status=$?
+if [ "${status}" -eq 0 ]; then
+	cat "${stdout_file}"
+	if [ -s "${stderr_file}" ]; then
+		cat "${stderr_file}" >&2
+		exit 2
+	fi
+	if ! grep -q '[^[:space:]]' "${stdout_file}"; then
+		echo "ausearch returned status 0 without matching records" >&2
+		exit 2
+	fi
+	exit 0
+fi
+if [ "${status}" -eq 1 ] && [ ! -s "${stdout_file}" ] && [ "$(cat "${stderr_file}")" = "<no matches>" ]; then
+	exit 0
+fi
+cat "${stdout_file}"
+cat "${stderr_file}" >&2
+exit "${status}"
+`
+		)
+		auditMessageTypes := []string{"NETFILTER_CFG", "ANOM_PROMISCUOUS"}
 
 		allCoreOsNodes := NewNodeList(oc.AsAdmin()).GetAllCoreOsNodesOrFail()
 		for _, node := range allCoreOsNodes {
@@ -285,25 +364,33 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			}
 
 			exutil.By(fmt.Sprintf("log into node %s to check audit rule file exists or not", node.GetName()))
-			o.Expect(node.DebugNodeWithChroot("stat", auditRuleFile)).ShouldNot(
-				o.ContainSubstring("No such file or directory"),
-				"The audit rules file %s should exist in the nodes", auditRuleFile)
+			_, err := node.DebugNodeWithChroot("stat", auditRuleFile)
+			o.Expect(err).NotTo(o.HaveOccurred(), "The audit rules file %s should exist on node %s", auditRuleFile, node.GetName())
 
 			exutil.By("check expected msgtype in audit log rule file")
-			grepOut, _ := node.DebugNodeWithOptions([]string{"--quiet"}, "chroot", "/host", "bash", "-c", fmt.Sprintf("grep -E 'NETFILTER_CFG|ANOM_PROMISCUOUS' %s", auditRuleFile))
+			ruleFileContents, err := node.DebugNodeWithChroot("cat", auditRuleFile)
+			o.Expect(err).NotTo(o.HaveOccurred(), "failed to read audit rules file %s on node %s", auditRuleFile, node.GetName())
+			for _, messageType := range auditMessageTypes {
+				o.Expect(auditRulesExcludeMessageType(ruleFileContents, messageType)).To(o.BeTrue(),
+					"audit rules file %s on node %s does not declare the global exclusion for message type %s:\n%s",
+					auditRuleFile, node.GetName(), messageType, ruleFileContents)
+			}
 
-			o.Expect(grepOut).NotTo(o.BeEmpty(), "expected excluded audit log msgtype not found")
-			o.Expect(grepOut).Should(o.And(
-				o.ContainSubstring("NETFILTER_CFG"),
-				o.ContainSubstring("ANOM_PROMISCUOUS"),
-			), "audit log rules does not have excluded msstype NETFILTER_CFG and ANOM_PROMISCUOUS")
+			exutil.By(fmt.Sprintf("check effective audit rules on node %s", node.GetName()))
+			effectiveRules, err := node.DebugNodeWithChroot("auditctl", "-l")
+			o.Expect(err).NotTo(o.HaveOccurred(), "failed to list effective audit rules on node %s: %s", node.GetName(), effectiveRules)
+			for _, messageType := range auditMessageTypes {
+				o.Expect(auditRulesExcludeMessageType(effectiveRules, messageType)).To(o.BeTrue(),
+					"effective audit rules on node %s do not exclude message type %s:\n%s", node.GetName(), messageType, effectiveRules)
+			}
 
-			exutil.By(fmt.Sprintf("check audit log on node %s, make sure msg types NETFILTER_CFG and ANOM_PROMISCUOUS are excluded", node.GetName()))
-			filteredLog, _ := node.DebugNodeWithChroot("bash", "-c", fmt.Sprintf("grep -E 'NETFILTER_CFG|ANOM_PROMISCUOUS' %s", auditLogFile))
-			o.Expect(filteredLog).ShouldNot(o.Or(
-				o.ContainSubstring("NETFILTER_CFG"),
-				o.ContainSubstring("ANOM_PROMISCUOUS"),
-			), "audit log contains excluded msgtype NETFILTER_CFG or ANOM_PROMISCUOUS")
+			exutil.By(fmt.Sprintf("check current-boot audit events on node %s", node.GetName()))
+			// Quiet suppresses successful oc debug lifecycle messages. The helper still
+			// combines stdout and stderr, so any other output remains a test failure.
+			currentBootEvents, err := node.DebugNodeWithOptionsAndChroot([]string{"--quiet"}, "bash", "-c", currentBootAuditEvents)
+			o.Expect(err).NotTo(o.HaveOccurred(), "failed to search current-boot audit events on node %s: %s", node.GetName(), currentBootEvents)
+			o.Expect(strings.TrimSpace(currentBootEvents)).To(o.BeEmpty(),
+				"current boot audit log on node %s contains excluded message types NETFILTER_CFG or ANOM_PROMISCUOUS:\n%s", node.GetName(), currentBootEvents)
 		}
 	})
 
@@ -359,7 +446,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		exutil.By("Wait until node is cordoned")
 		o.Eventually(workerNode.Get, "20m", "1m").WithArguments(`{.spec.taints[?(@.effect=="NoSchedule")].effect}`).
-				Should(o.Equal("NoSchedule"), fmt.Sprintf("Node %s was not cordoned", workerNode.name))
+			Should(o.Equal("NoSchedule"), fmt.Sprintf("Node %s was not cordoned", workerNode.name))
 		logger.Infof("OK!\n")
 
 		exutil.By("Verify that node is not degraded until the alarm timeout")
