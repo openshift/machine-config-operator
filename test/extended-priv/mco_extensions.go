@@ -220,6 +220,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		mc.create()
 		logger.Infof("OK!\n")
 
+		exutil.By("Wait for MCP to start updating")
+		o.Expect(mcp.WaitForUpdatingStatus()).To(o.Succeed(),
+			"The MCP should start updating after applying usbguard extension")
+
 		exutil.By("Wait for node to reboot and MCP to finish updating")
 		o.Expect(mcp.WaitForUpdatedStatus()).To(o.Succeed(),
 			"The MCP should complete the update after installing usbguard extension")
@@ -230,12 +234,52 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			"Failed to re-apply fake rpm on node %s", node.GetName())
 		logger.Infof("OK!\n")
 
+		exutil.By("DEBUG: Verify bind mount is visible from host mount namespace")
+		debugOut, debugErr := node.DebugNodeWithChroot("sh", "-c",
+			"echo '--- mount info for /usr/bin/rpm ---' && "+
+				"nsenter --mount=/proc/1/ns/mnt stat /usr/bin/rpm && "+
+				"echo '--- file type ---' && "+
+				"nsenter --mount=/proc/1/ns/mnt file /usr/bin/rpm && "+
+				"echo '--- head of rpm ---' && "+
+				"nsenter --mount=/proc/1/ns/mnt head -2 /usr/bin/rpm && "+
+				"echo '--- mount points containing rpm ---' && "+
+				"nsenter --mount=/proc/1/ns/mnt cat /proc/self/mountinfo | grep rpm && "+
+				"echo '--- composefs check ---' && "+
+				"nsenter --mount=/proc/1/ns/mnt cat /proc/self/mountinfo | grep -E 'composefs|erofs|overlay' | head -5 && "+
+				"echo '--- rpm -q usbguard from host ns ---' && "+
+				"nsenter --mount=/proc/1/ns/mnt /usr/bin/rpm -q usbguard; echo \"exit code: $?\"")
+		logger.Infof("DEBUG bind mount check output:\n%s", debugOut)
+		if debugErr != nil {
+			logger.Infof("DEBUG bind mount check error: %v", debugErr)
+		}
+
 		exutil.By("Restart MCD pod on the node to pick up fake rpm")
 		mcdPod := node.GetMachineConfigDaemon()
 		err = NewNamespacedResource(oc.AsAdmin(), "pod", MachineConfigNamespace, mcdPod).Delete()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to delete MCD pod %s", mcdPod)
 		logger.Infof("Deleted MCD pod %s to trigger re-sync", mcdPod)
 		logger.Infof("OK!\n")
+
+		exutil.By("DEBUG: Check what host mount namespace sees after MCD restart")
+		o.Eventually(func() string {
+			return node.GetMachineConfigDaemon()
+		}, "2m", "10s").ShouldNot(o.Equal(mcdPod), "New MCD pod should be created")
+		newMcdPod := node.GetMachineConfigDaemon()
+		logger.Infof("DEBUG: New MCD pod: %s", newMcdPod)
+		mcdExecOut, mcdExecErr := node.DebugNodeWithChroot("sh", "-c",
+			"echo '--- /usr/bin/rpm from host ns after MCD restart ---' && "+
+				"nsenter --mount=/proc/1/ns/mnt file /usr/bin/rpm && "+
+				"nsenter --mount=/proc/1/ns/mnt head -2 /usr/bin/rpm && "+
+				"echo '--- mount points for rpm after restart ---' && "+
+				"nsenter --mount=/proc/1/ns/mnt cat /proc/self/mountinfo | grep rpm && "+
+				"echo '--- rpm -q usbguard after restart ---' && "+
+				"nsenter --mount=/proc/1/ns/mnt /usr/bin/rpm -q usbguard; echo \"exit code: $?\" && "+
+				"echo '--- RHCOS version ---' && "+
+				"nsenter --mount=/proc/1/ns/mnt cat /etc/os-release | grep -E 'PRETTY_NAME|VERSION_ID'")
+		logger.Infof("DEBUG MCD view after restart:\n%s", mcdExecOut)
+		if mcdExecErr != nil {
+			logger.Infof("DEBUG MCD view error: %v", mcdExecErr)
+		}
 
 		exutil.By("Wait for MCP to degrade with extension verification error")
 		o.Eventually(mcp, mcp.estimateWaitDuration().String(), "30s").Should(BeDegraded(),
