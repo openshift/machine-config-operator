@@ -11,10 +11,12 @@ contents: |
   Type=notify
   ExecStartPre=/bin/mkdir --parents /etc/kubernetes/manifests
   ExecStartPre=-/usr/sbin/restorecon -ri /var/lib/kubelet/pod-resources /usr/local/bin/kubenswrapper /usr/bin/kubensenter
-{{- if eq .IPFamilies "IPv6"}}
+{{- if or (eq .IPFamilies "IPv6") (eq .IPFamilies "DualStackIPv6Primary") }}
   Environment="KUBELET_NODE_IP=::"
+  Environment="KUBELET_NODE_IPS=::"
 {{- else}}
   Environment="KUBELET_NODE_IP=0.0.0.0"
+  Environment="KUBELET_NODE_IPS=0.0.0.0"
 {{- end}}
   EnvironmentFile=/etc/os-release
   EnvironmentFile=-/etc/kubernetes/kubelet-workaround
