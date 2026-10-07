@@ -6,3 +6,7 @@ contents: |
   Requires=basic.target network-online.target
   Wants=NetworkManager-wait-online.service crio-wipe.service
   Wants=rpc-statd.service chrony-wait.service
+  {{if eq .NetworkType "OVNKubernetes" -}}
+  # OVS restarting does not retry failed dependency start jobs.
+  OnFailure=ovs-kubelet-recovery.service
+  {{end -}}
