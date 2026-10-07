@@ -3458,8 +3458,10 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 		}
 	}
 
-	// If on-cluster layering is enabled, we can skip the rest of this process.
-	if mcDiff.oclEnabled {
+	// If on-cluster layering is enabled, we can skip the rest of this process
+	// UNLESS we are reverting from OCL back to layering, in which case we need
+	// to handle extensions and kernel switching.
+	if mcDiff.oclEnabled && !mcDiff.revertFromOCL {
 		return nil
 	}
 
