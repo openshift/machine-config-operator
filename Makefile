@@ -28,7 +28,10 @@ export GOPROXY=https://proxy.golang.org
 # this is necessary for running golangci-lint in a container
 export GOLANGCI_LINT_CACHE=$(shell echo $${GOLANGCI_LINT_CACHE:-$$GOPATH/cache})
 
-GOTAGS = "$(TAGS)"
+# MCO accesses container images through registries, not Docker daemons or local
+# containers/storage, and uses the pure-Go OpenPGP implementation.
+comma := ,
+GOTAGS = "$(subst $(comma), ,$(TAGS)) containers_image_docker_daemon_stub containers_image_storage_stub containers_image_openpgp"
 
 all: binaries
 
