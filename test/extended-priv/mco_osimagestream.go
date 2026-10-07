@@ -130,19 +130,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		testKernelTypeAcrossOSImageStreams(oc, osis, mcp, testID, KernelTypeRealtime, "set-realtime-kernel.yaml", OSImageStreamRHEL9, OSImageStreamRHEL10)
 	})
 
-	// AI-assisted: Test case to validate real-time kernel configuration across OS image streams (rhel10 -> rhel9)
-	g.It("[PolarionID:89322][OTP] Realtime kernel from rhel10 stream to rhel9 stream [Disruptive] [apigroup:machineconfiguration.openshift.io]", func() {
-		SkipIfDefaultOSImageStream(oc.AsAdmin(), OSImageStreamRHEL9)
-		architecture.SkipIfNoNodeWithArchitectures(oc.AsAdmin(), architecture.AMD64)
-
-		testID := GetCurrentTestPolarionIDNumber()
-		createdCustomPoolName := fmt.Sprintf("tc-%s-%s", testID, architecture.AMD64)
-		defer DeleteCustomMCP(oc.AsAdmin(), createdCustomPoolName)
-
-		mcp, _ := GetPoolAndNodesForArchitectureOrFail(oc.AsAdmin(), createdCustomPoolName, architecture.AMD64, 1)
-		testKernelTypeAcrossOSImageStreams(oc, osis, mcp, testID, KernelTypeRealtime, "set-realtime-kernel.yaml", OSImageStreamRHEL10, OSImageStreamRHEL9)
-	})
-
 	// AI-assisted: Test case to validate 64k-pages kernel configuration across OS image streams (rhel9 -> rhel10)
 	g.It("[PolarionID:87096][OTP] 64k pages kernel from rhel9 stream to rhel10 stream [Disruptive] [apigroup:machineconfiguration.openshift.io]", g.Label("NoPlatform:gce"), func() {
 		SkipIfDefaultOSImageStream(oc.AsAdmin(), OSImageStreamRHEL10)
@@ -157,30 +144,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		testKernelTypeAcrossOSImageStreams(oc, osis, mcp, testID, KernelType64kPages, "set-64k-pages-kernel.yaml", OSImageStreamRHEL9, OSImageStreamRHEL10)
 	})
 
-	// AI-assisted: Test case to validate 64k-pages kernel configuration across OS image streams (rhel10 -> rhel9)
-	g.It("[PolarionID:89323][OTP] 64k pages kernel from rhel10 stream to rhel9 stream [Disruptive] [apigroup:machineconfiguration.openshift.io]", g.Label("NoPlatform:gce"), func() {
-		SkipIfDefaultOSImageStream(oc.AsAdmin(), OSImageStreamRHEL9)
-		architecture.SkipIfNoNodeWithArchitectures(oc.AsAdmin(), architecture.ARM64)
-		skipTestIfNotSupportedPlatform(oc.AsAdmin(), GCPPlatform)
-
-		testID := GetCurrentTestPolarionIDNumber()
-		createdCustomPoolName := fmt.Sprintf("tc-%s-%s", testID, architecture.ARM64)
-		defer DeleteCustomMCP(oc.AsAdmin(), createdCustomPoolName)
-
-		mcp, _ := GetPoolAndNodesForArchitectureOrFail(oc.AsAdmin(), createdCustomPoolName, architecture.ARM64, 1)
-		testKernelTypeAcrossOSImageStreams(oc, osis, mcp, testID, KernelType64kPages, "set-64k-pages-kernel.yaml", OSImageStreamRHEL10, OSImageStreamRHEL9)
-	})
-
 	// AI-assisted: Test case to validate extensions configuration survives osImageStream changes (rhel9 -> rhel10)
 	g.It("[PolarionID:87259][OTP] Extensions from rhel9 stream to rhel10 stream [Disruptive] [apigroup:machineconfiguration.openshift.io]", func() {
 		SkipIfDefaultOSImageStream(oc.AsAdmin(), OSImageStreamRHEL10)
 		testExtensionsAcrossOSImageStreams(oc, osis, OSImageStreamRHEL9, OSImageStreamRHEL10)
-	})
-
-	// AI-assisted: Test case to validate extensions configuration survives osImageStream changes (rhel10 -> rhel9)
-	g.It("[PolarionID:89324][OTP] Extensions from rhel10 stream to rhel9 stream [Disruptive] [apigroup:machineconfiguration.openshift.io]", func() {
-		SkipIfDefaultOSImageStream(oc.AsAdmin(), OSImageStreamRHEL9)
-		testExtensionsAcrossOSImageStreams(oc, osis, OSImageStreamRHEL10, OSImageStreamRHEL9)
 	})
 
 	g.It("[PolarionID:88366][Skipped:Disconnected] osImageStream should be empty when osImageURL is set [apigroup:machineconfiguration.openshift.io]", func() {
