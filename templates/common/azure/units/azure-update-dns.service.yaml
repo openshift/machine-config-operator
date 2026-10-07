@@ -13,7 +13,7 @@ contents: |
   [Service]
   Type=oneshot
   RemainAfterExit=yes
-  ExecStart=/usr/local/bin/update-dns-server 168.63.129.16
+  ExecStart=/usr/local/bin/update-dns-server 168.63.129.16,169.254.169.254
 
   [Install]
   RequiredBy=kubelet-dependencies.target
