@@ -703,166 +703,194 @@ func getClientsFromServerURL(ctx context.Context, server, username, password str
 	return client, tagManager, nil
 }
 
-// hasMatchingFailureDomain reports whether any failure domain in the list matches
-// the providerSpec workspace fields for the given vcenter. Mirrors the match
-// criteria used in the createNewVMTemplate inner loop.
-func hasMatchingFailureDomain(providerSpec *machinev1beta1.VSphereMachineProviderSpec, vcenter osconfigv1.VSpherePlatformVCenterSpec, failureDomains []osconfigv1.VSpherePlatformFailureDomainSpec) bool {
-	for _, fd := range failureDomains {
+// findMatchingFailureDomain searches the Infrastructure failure domains for one whose topology
+// matches the providerSpec workspace fields (server, datacenter, datastore, resource pool, vmGroup).
+func findMatchingFailureDomain(providerSpec *machinev1beta1.VSphereMachineProviderSpec, infra *osconfigv1.Infrastructure) (osconfigv1.VSpherePlatformFailureDomainSpec, bool) {
+	if infra.Spec.PlatformSpec.VSphere == nil {
+		return osconfigv1.VSpherePlatformFailureDomainSpec{}, false
+	}
+	for _, fd := range infra.Spec.PlatformSpec.VSphere.FailureDomains {
 		vmGroup := ""
 		if fd.ZoneAffinity != nil && fd.ZoneAffinity.HostGroup != nil {
 			vmGroup = fd.ZoneAffinity.HostGroup.VMGroup
 		}
-		if providerSpec.Workspace.Datacenter == fd.Topology.Datacenter &&
+		if providerSpec.Workspace.Server == fd.Server &&
+			providerSpec.Workspace.Datacenter == fd.Topology.Datacenter &&
 			providerSpec.Workspace.Datastore == fd.Topology.Datastore &&
-			vcenter.Server == fd.Server &&
 			providerSpec.Workspace.VMGroup == vmGroup &&
 			path.Clean(providerSpec.Workspace.ResourcePool) == path.Clean(fd.Topology.ResourcePool) {
-			return true
+			return fd, true
 		}
 	}
-	return false
+	return osconfigv1.VSpherePlatformFailureDomainSpec{}, false
+}
+
+// computeClusterFromResourcePool extracts the compute cluster path from a vSphere resource pool path.
+// Resource pool paths follow the pattern /<datacenter>/host/<cluster>/Resources[/<pool>...], so the
+// compute cluster is everything before the /Resources segment.
+func computeClusterFromResourcePool(resourcePoolPath string) (string, error) {
+	cleanPath := path.Clean(resourcePoolPath)
+	segments := strings.Split(cleanPath, "/")
+	for i, seg := range segments {
+		if seg == "Resources" {
+			return strings.Join(segments[:i], "/"), nil
+		}
+	}
+	return "", fmt.Errorf("resource pool path %q does not contain a /Resources segment", resourcePoolPath)
+}
+
+// buildSyntheticFailureDomain constructs a failure domain from the providerSpec workspace and network
+// fields. Used when no real failure domain in the Infrastructure object matches the MachineSet's
+// workspace — e.g., topology-unaware clusters installed before failure domains were introduced, or
+// MachineSets whose datastore isn't listed in any failure domain.
+func buildSyntheticFailureDomain(providerSpec *machinev1beta1.VSphereMachineProviderSpec) (osconfigv1.VSpherePlatformFailureDomainSpec, error) {
+	if providerSpec.Workspace.ResourcePool == "" {
+		return osconfigv1.VSpherePlatformFailureDomainSpec{}, fmt.Errorf("providerSpec has no resource pool; cannot derive compute cluster")
+	}
+	computeCluster, err := computeClusterFromResourcePool(providerSpec.Workspace.ResourcePool)
+	if err != nil {
+		return osconfigv1.VSpherePlatformFailureDomainSpec{}, fmt.Errorf("cannot derive compute cluster: %w", err)
+	}
+	if len(providerSpec.Network.Devices) == 0 || providerSpec.Network.Devices[0].NetworkName == "" {
+		return osconfigv1.VSpherePlatformFailureDomainSpec{}, fmt.Errorf("providerSpec has no network devices; cannot determine network for template import")
+	}
+	return osconfigv1.VSpherePlatformFailureDomainSpec{
+		Name:   "default",
+		Server: providerSpec.Workspace.Server,
+		Topology: osconfigv1.VSpherePlatformTopology{
+			Datacenter:     providerSpec.Workspace.Datacenter,
+			ComputeCluster: computeCluster,
+			Networks:       []string{providerSpec.Network.Devices[0].NetworkName},
+			Datastore:      providerSpec.Workspace.Datastore,
+			ResourcePool:   providerSpec.Workspace.ResourcePool,
+		},
+	}, nil
 }
 
 // createNewVMTemplate finds or creates the RHCOS template VM for the MachineSet's vSphere workspace.
 // It matches the providerSpec workspace against the Infrastructure failure domains to locate the
-// correct vCenter context, then delegates to resolveExistingTemplateVM / createNewVMTemplateWithNameForFailureDomain.
+// correct vCenter context. When no failure domain matches (topology-unaware clusters, or MachineSets
+// whose datastore isn't in any failure domain), it synthesizes one from the providerSpec fields so
+// that boot image management still works.
 //
 // Returns:
 //   - resolvedName: the inventory name of the template VM (empty when no update is needed or the MachineSet is skipped)
 //   - patchRequired: true when the MachineSet's providerSpec.Template must be updated to resolvedName
-//   - reconcileSkipped: true when the workspace does not match any failure domain — the MachineSet
-//     is functional but cannot be managed for boot image updates; the caller should skip without degrading
+//   - reconcileSkipped: true when neither a real nor synthetic failure domain can be determined — the
+//     MachineSet is functional but cannot be managed for boot image updates; the caller should skip without degrading
 //   - err: non-nil for real vSphere or infrastructure errors that should degrade the CO
 func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1.VSphereMachineProviderSpec, infra *osconfigv1.Infrastructure, credsSc *corev1.Secret, kubeClient clientset.Interface, arch, release string) (resolvedName string, patchRequired, reconcileSkipped bool, err error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	for _, vcenter := range infra.Spec.PlatformSpec.VSphere.VCenters {
-		if vcenter.Server != providerSpec.Workspace.Server {
-			continue
+	failureDomain, found := findMatchingFailureDomain(providerSpec, infra)
+	if !found {
+		// No failure domain matched the workspace. This happens on topology-unaware clusters
+		// (installed before failure domains were introduced, ~pre-4.13) or when a MachineSet's
+		// datastore isn't listed in any failure domain (e.g., single-zone clusters with multiple
+		// datastores spread across MachineSets for capacity/storage distribution).
+		//
+		// Attempt to synthesize a failure domain from the providerSpec itself: the compute cluster
+		// is derived from the resource pool path, and the network from providerSpec.Network.Devices.
+		syntheticFD, synthErr := buildSyntheticFailureDomain(providerSpec)
+		if synthErr != nil {
+			// The MachineSet's providerSpec lacks the fields needed to synthesize a failure domain
+			// (resource pool path without a /Resources segment, or no network devices). The MachineSet
+			// is functional but cannot be managed for boot image updates. Skip without degrading.
+			workspaceDetails := fmt.Sprintf("server: %s, datacenter: %s, datastore: %s, resourcePool: %s",
+				providerSpec.Workspace.Server, providerSpec.Workspace.Datacenter, providerSpec.Workspace.Datastore, providerSpec.Workspace.ResourcePool)
+			// vmGroup only applies to HostGroup-zonal failure domains (VSphereFailureDomainZoneAffinity.Type
+			// == HostGroup) — omit it here when unset rather than implying it's a universal match criterion
+			// for every failure domain type (e.g. ComputeCluster-zoned ones).
+			if providerSpec.Workspace.VMGroup != "" {
+				workspaceDetails += fmt.Sprintf(", vmGroup: %s", providerSpec.Workspace.VMGroup)
+			}
+			klog.Warningf("Skipping boot image update: providerSpec workspace (%s) does not match any failure domain and cannot synthesize one: %v. Boot image must be updated manually for this MachineSet.", workspaceDetails, synthErr)
+			return "", false, true, nil
+		}
+		klog.Infof("No matching failure domain for workspace (server: %s, datacenter: %s, datastore: %s); using synthetic failure domain derived from providerSpec",
+			providerSpec.Workspace.Server, providerSpec.Workspace.Datacenter, providerSpec.Workspace.Datastore)
+		failureDomain = syntheticFD
+	}
+
+	server := providerSpec.Workspace.Server
+	username := string(credsSc.Data[fmt.Sprintf("%s.username", server)])
+	password := string(credsSc.Data[fmt.Sprintf("%s.password", server)])
+	client, tagManager, err := getClientsFromServerURL(ctx, server, username, password)
+	if err != nil {
+		return "", false, false, fmt.Errorf("failed in getClientsFromServerURL: %w", err)
+	}
+
+	finder := find.NewFinder(client.Client, false)
+	infraID := infra.Status.InfrastructureName
+
+	datacenter, err := finder.Datacenter(ctx, failureDomain.Topology.Datacenter)
+	if err != nil {
+		return "", false, false, fmt.Errorf("failed to find datacenter: %w", err)
+	}
+	finder = finder.SetDatacenter(datacenter)
+
+	existingTemplateVM, resolvedName, created, err := resolveExistingTemplateVM(ctx, finder, providerSpec, failureDomain, streamData, client, tagManager, kubeClient, infraID, arch)
+	if err != nil {
+		return "", false, false, err
+	}
+	if created {
+		return resolvedName, true, false, nil
+	}
+
+	var vmMo mo.VirtualMachine
+	err = existingTemplateVM.Properties(ctx, existingTemplateVM.Reference(), nil, &vmMo)
+	if err != nil {
+		return "", false, false, fmt.Errorf("unable to extract properties from existing Template VM: %w", err)
+	}
+
+	if vmMo.Summary.Config.Product == nil {
+		return "", false, false, fmt.Errorf("unable to determine RHCOS version of virtual machine: %s", providerSpec.Template)
+	}
+
+	templateProductVersion := vmMo.Summary.Config.Product.Version
+	if templateProductVersion == "" {
+		return "", false, false, fmt.Errorf("unable to determine RHCOS version of virtual machine: %s", providerSpec.Template)
+	}
+
+	if templateProductVersion != release {
+		klog.Infof("Existing RHCOS v%s does not match current RHCOS v%s. Starting reconciliation process.", templateProductVersion, release)
+
+		// Validate/upgrade the ignition stub before swapping the template in vSphere. If this
+		// fails, we must not have already mutated vSphere state, or a subsequent reconcile would
+		// find the template already up to date and silently drop the error (see
+		// reconcileVSphereProviderSpec).
+		if err := upgradeStubIgnitionIfRequired(providerSpec.UserDataSecret.Name, kubeClient); err != nil {
+			return "", false, false, err
 		}
 
-		// Pre-validate that at least one failure domain matches the workspace before
-		// authenticating. Avoids creating a vCenter session that will never be used.
-		if !hasMatchingFailureDomain(providerSpec, vcenter, infra.Spec.PlatformSpec.VSphere.FailureDomains) {
-			continue
-		}
-
-		username := string(credsSc.Data[fmt.Sprintf("%s.username", vcenter.Server)])
-		password := string(credsSc.Data[fmt.Sprintf("%s.password", vcenter.Server)])
-		client, tagManager, err := getClientsFromServerURL(ctx, vcenter.Server, username, password)
+		ova, err := streamData.QueryDisk(arch, "vmware", "ova")
 		if err != nil {
-			return "", false, false, fmt.Errorf("failed in getClientsFromServerURL: %w", err)
+			return "", false, false, err
 		}
 
-		finder := find.NewFinder(client.Client, false)
-
-		for _, failureDomain := range infra.Spec.PlatformSpec.VSphere.FailureDomains {
-			// A failure domain is abstract and doesn't exist in vSphere. It represents a logical grouping of infrastructure components used to place and manage virtual machines in a way that ensures high availability and fault tolerance.
-			vmGroup := ""
-			if failureDomain.ZoneAffinity != nil {
-				if failureDomain.ZoneAffinity.HostGroup != nil {
-					if failureDomain.ZoneAffinity.HostGroup.VMGroup != "" {
-						vmGroup = failureDomain.ZoneAffinity.HostGroup.VMGroup
-					}
-				}
-			}
-
-			// Skip failure domains that don't match the providerSpec workspace.
-			// All fields must match — mirroring the logic in https://github.com/openshift/cluster-control-plane-machine-set-operator/blob/main/pkg/machineproviders/providers/openshift/machine/v1beta1/providerconfig/vsphere.go#L194
-			if providerSpec.Workspace.Datacenter != failureDomain.Topology.Datacenter ||
-				providerSpec.Workspace.Datastore != failureDomain.Topology.Datastore ||
-				vcenter.Server != failureDomain.Server ||
-				providerSpec.Workspace.VMGroup != vmGroup ||
-				path.Clean(providerSpec.Workspace.ResourcePool) != path.Clean(failureDomain.Topology.ResourcePool) {
-				continue
-			}
-			infraID := infra.Status.InfrastructureName
-
-			datacenter, err := finder.Datacenter(ctx, failureDomain.Topology.Datacenter)
-			if err != nil {
-				return "", false, false, fmt.Errorf("failed to find datacenter: %w", err)
-			}
-			finder = finder.SetDatacenter(datacenter)
-
-			existingTemplateVM, resolvedName, created, err := resolveExistingTemplateVM(ctx, finder, providerSpec, failureDomain, streamData, client, tagManager, kubeClient, infraID, arch)
-			if err != nil {
-				return "", false, false, err
-			}
-			if created {
-				return resolvedName, true, false, nil
-			}
-
-			var vmMo mo.VirtualMachine
-			err = existingTemplateVM.Properties(ctx, existingTemplateVM.Reference(), nil, &vmMo)
-			if err != nil {
-				return "", false, false, fmt.Errorf("unable to extract properties from existing Template VM: %w", err)
-			}
-
-			if vmMo.Summary.Config.Product == nil {
-				return "", false, false, fmt.Errorf("unable to determine RHCOS version of virtual machine: %s", providerSpec.Template)
-			}
-
-			templateProductVersion := vmMo.Summary.Config.Product.Version
-			if templateProductVersion == "" {
-				return "", false, false, fmt.Errorf("unable to determine RHCOS version of virtual machine: %s", providerSpec.Template)
-			}
-
-			if templateProductVersion != release {
-				klog.Infof("Existing RHCOS v%s does not match current RHCOS v%s. Starting reconciliation process.", templateProductVersion, release)
-
-				// Validate/upgrade the ignition stub before swapping the template in vSphere. If this
-				// fails, we must not have already mutated vSphere state, or a subsequent reconcile would
-				// find the template already up to date and silently drop the error (see
-				// reconcileVSphereProviderSpec).
-				if err := upgradeStubIgnitionIfRequired(providerSpec.UserDataSecret.Name, kubeClient); err != nil {
-					return "", false, false, err
-				}
-
-				// Find and download the relevant OVA file
-				ova, err := streamData.QueryDisk(arch, "vmware", "ova")
-				if err != nil {
-					return "", false, false, err
-				}
-
-				ovaPath, err := cache.DownloadOva(ova)
-				if err != nil {
-					return "", false, false, fmt.Errorf("failed to download %s: %w", ova.Location, err)
-				}
-
-				if len(resolvedName) > 80 {
-					return "", false, false, fmt.Errorf("length of VM template name `%s` exceeds the permitted limit of 80 characters", resolvedName)
-				}
-
-				diskType := getDiskTypeFromExistingVM(vmMo)
-
-				err = createNewVMTemplateWithNameForFailureDomain(ctx, providerSpec, failureDomain, finder, client, tagManager, resolvedName, ovaPath, infraID, diskType)
-				if err != nil {
-					return "", false, false, err
-				}
-				return resolvedName, true, false, nil
-			}
-
-			klog.Infof("Existing RHCOS v%s does match current RHCOS v%s. Skipping reconciliation process using govmomi.", templateProductVersion, release)
-			if providerSpec.Template != resolvedName {
-				klog.Infof("ProviderSpec template name: %s has diverged from the VM Template of name: %s that exists in VSphere. Reconciling the name change.", providerSpec.Template, resolvedName)
-				return resolvedName, true, false, nil
-			}
-			return resolvedName, false, false, nil
+		ovaPath, err := cache.DownloadOva(ova)
+		if err != nil {
+			return "", false, false, fmt.Errorf("failed to download %s: %w", ova.Location, err)
 		}
+
+		if len(resolvedName) > 80 {
+			return "", false, false, fmt.Errorf("length of VM template name `%s` exceeds the permitted limit of 80 characters", resolvedName)
+		}
+
+		diskType := getDiskTypeFromExistingVM(vmMo)
+
+		err = createNewVMTemplateWithNameForFailureDomain(ctx, providerSpec, failureDomain, finder, client, tagManager, resolvedName, ovaPath, infraID, diskType)
+		if err != nil {
+			return "", false, false, err
+		}
+		return resolvedName, true, false, nil
 	}
 
-	workspaceDetails := fmt.Sprintf("server: %s, datacenter: %s, datastore: %s, resourcePool: %s",
-		providerSpec.Workspace.Server, providerSpec.Workspace.Datacenter, providerSpec.Workspace.Datastore, providerSpec.Workspace.ResourcePool)
-	// vmGroup only applies to HostGroup-zonal failure domains (VSphereFailureDomainZoneAffinity.Type
-	// == HostGroup; see the vmGroup derivation above) — omit it here when unset rather than implying
-	// it's a universal match criterion for every failure domain type (e.g. ComputeCluster-zoned ones).
-	if providerSpec.Workspace.VMGroup != "" {
-		workspaceDetails += fmt.Sprintf(", vmGroup: %s", providerSpec.Workspace.VMGroup)
+	klog.Infof("Existing RHCOS v%s does match current RHCOS v%s. Skipping reconciliation process using govmomi.", templateProductVersion, release)
+	if providerSpec.Template != resolvedName {
+		klog.Infof("ProviderSpec template name: %s has diverged from the VM Template of name: %s that exists in VSphere. Reconciling the name change.", providerSpec.Template, resolvedName)
+		return resolvedName, true, false, nil
 	}
-	// The MachineSet's workspace does not correspond to any failure domain in the Infrastructure
-	// object. This is a valid topology-unaware configuration — the MachineSet provisions nodes
-	// successfully but cannot be managed for boot image updates. Skip without degrading.
-	klog.Warningf("Skipping boot image update: providerSpec workspace (%s) does not match any vCenter/failure domain in the Infrastructure object. Boot image must be updated manually for this MachineSet.", workspaceDetails)
-	return "", false, true, nil
+	return resolvedName, false, false, nil
 }
