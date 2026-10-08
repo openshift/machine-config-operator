@@ -1052,6 +1052,160 @@ func TestReconcileAzureProviderSpec(t *testing.T) {
 	}
 }
 
+func TestReconcileGCPProviderSpec(t *testing.T) {
+	streamData := &stream.Stream{
+		Architectures: map[string]stream.Arch{
+			"x86_64": {
+				Images: stream.Images{
+					Gcp: &stream.GcpImage{
+						Project: "rhcos-cloud",
+						Name:    "rhcos-4-22-0-x86-64-v20260101",
+					},
+				},
+			},
+			"aarch64": {
+				Images: stream.Images{
+					Gcp: &stream.GcpImage{
+						Project: "rhcos-cloud",
+						Name:    "rhcos-4-22-0-aarch64-v20260101",
+					},
+				},
+			},
+		},
+	}
+
+	testSecret := &corev1.Secret{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      "test-secret",
+			Namespace: "openshift-machine-api",
+		},
+		Data: map[string][]byte{
+			"userData": []byte(`{"ignition":{"version":"3.4.0"},"storage":{"files":[]},"systemd":{},"passwd":{}}`),
+		},
+	}
+
+	fakeClient := fake.NewClientset(testSecret)
+
+	tests := []struct {
+		name                  string
+		arch                  string
+		disks                 []*machinev1beta1.GCPDisk
+		expectPatch           bool
+		expectReconcileSkipped bool
+		expectedImage         string
+		streamData            *stream.Stream
+	}{
+		{
+			name: "boot disk image updated to stream target",
+			arch: "x86_64",
+			disks: []*machinev1beta1.GCPDisk{
+				{Boot: true, Image: "projects/rhcos-cloud/global/images/rhcos-4-18-0-x86-64-v20240101"},
+			},
+			expectPatch:   true,
+			expectedImage: "projects/rhcos-cloud/global/images/rhcos-4-22-0-x86-64-v20260101",
+		},
+		{
+			name: "boot disk already at stream target — no patch",
+			arch: "x86_64",
+			disks: []*machinev1beta1.GCPDisk{
+				{Boot: true, Image: "projects/rhcos-cloud/global/images/rhcos-4-22-0-x86-64-v20260101"},
+			},
+			expectPatch: false,
+		},
+		{
+			name: "custom boot image — skip",
+			arch: "x86_64",
+			disks: []*machinev1beta1.GCPDisk{
+				{Boot: true, Image: "projects/my-project/global/images/custom-rhcos"},
+			},
+			expectReconcileSkipped: true,
+		},
+		{
+			name: "non-boot disk is ignored",
+			arch: "x86_64",
+			disks: []*machinev1beta1.GCPDisk{
+				{Boot: false, Image: "projects/my-project/global/images/data-disk"},
+				{Boot: true, Image: "projects/rhcos-cloud/global/images/rhcos-4-18-0-x86-64-v20240101"},
+			},
+			expectPatch:   true,
+			expectedImage: "projects/rhcos-cloud/global/images/rhcos-4-22-0-x86-64-v20260101",
+		},
+		{
+			name: "aarch64 uses architecture-specific image",
+			arch: "aarch64",
+			disks: []*machinev1beta1.GCPDisk{
+				{Boot: true, Image: "projects/rhcos-cloud/global/images/rhcos-4-18-0-aarch64-v20240101"},
+			},
+			expectPatch:   true,
+			expectedImage: "projects/rhcos-cloud/global/images/rhcos-4-22-0-aarch64-v20260101",
+		},
+		{
+			name: "no GCP image in stream for arch — skip",
+			arch: "x86_64",
+			disks: []*machinev1beta1.GCPDisk{
+				{Boot: true, Image: "projects/rhcos-cloud/global/images/rhcos-4-18-0-x86-64-v20240101"},
+			},
+			streamData: &stream.Stream{
+				Architectures: map[string]stream.Arch{
+					"x86_64": {Images: stream.Images{Gcp: nil}},
+				},
+			},
+			expectReconcileSkipped: true,
+		},
+		{
+			name: "arch not in stream — skip",
+			arch: "s390x",
+			disks: []*machinev1beta1.GCPDisk{
+				{Boot: true, Image: "projects/rhcos-cloud/global/images/rhcos-4-18-0-s390x-v20240101"},
+			},
+			expectReconcileSkipped: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			providerSpec := &machinev1beta1.GCPMachineProviderSpec{
+				Disks: tt.disks,
+				UserDataSecret: &corev1.LocalObjectReference{
+					Name: "test-secret",
+				},
+			}
+
+			testStreamData := streamData
+			if tt.streamData != nil {
+				testStreamData = tt.streamData
+			}
+
+			patchRequired, reconcileSkipped, updatedProviderSpec, rhcosVersion, err := reconcileGCPProviderSpec(
+				testStreamData,
+				tt.arch,
+				&osconfigv1.Infrastructure{},
+				providerSpec,
+				"test-machineset",
+				fakeClient,
+			)
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectReconcileSkipped, reconcileSkipped, "reconcileSkipped mismatch")
+			assert.Equal(t, tt.expectPatch, patchRequired, "patchRequired mismatch")
+			assert.Empty(t, rhcosVersion, "rhcosVersion should always be empty for GCP")
+
+			if tt.expectPatch {
+				require.NotNil(t, updatedProviderSpec)
+				var bootDisk *machinev1beta1.GCPDisk
+				for _, d := range updatedProviderSpec.Disks {
+					if d.Boot {
+						bootDisk = d
+						break
+					}
+				}
+				require.NotNil(t, bootDisk)
+				assert.Equal(t, tt.expectedImage, bootDisk.Image)
+			}
+		})
+	}
+}
+
 func TestResetClusterBootImage(t *testing.T) {
 	cases := []struct {
 		name              string
