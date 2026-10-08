@@ -2372,6 +2372,25 @@ func (optr *Operator) getImageRegistryPullSecrets() ([]byte, error) {
 			return nil, fmt.Errorf("failed to marshal the merged pull secrets: %w", err)
 		}
 
+		// Ensure nodes can authenticate to the internal release image (IRI)
+		// registry when pulling images during OS updates. The credentials
+		// added here become part of ControllerConfig.Spec.InternalRegistryPullSecret,
+		// which is the auth source the OS-update path (rpm-ostree/bootc) uses;
+		// that path is separate from the kubelet's pull secret, so IRI credentials
+		// must be supplied here in addition to the render-time merge. When IRI is
+		// not enabled on the cluster this merge makes no changes.
+		//
+		// The base domain comes from the cluster DNS object fetched above rather
+		// than from ControllerConfig: ControllerConfig.Spec.DNS is that same
+		// object, so going through the lister would add a dependency that can
+		// fail before the first ControllerConfig exists without telling us
+		// anything new.
+		iriMerger := ctrlcommon.NewIRISecretMergerWithBaseDomain(optr.mcoSecretLister, optr.iriLister, dns.Spec.BaseDomain)
+		mergedPullSecrets, err = iriMerger.Merge(mergedPullSecrets)
+		if err != nil {
+			return nil, fmt.Errorf("failed to merge IRI registry credentials into image registry pull secrets: %w", err)
+		}
+
 		return mergedPullSecrets, nil
 	}
 
