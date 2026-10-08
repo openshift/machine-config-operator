@@ -1,0 +1,16 @@
+name: configure-ipsec-connect.service
+enabled: true
+contents: |
+  [Unit]
+  Description=Configure IPsec connections before ipsec service starts.
+  Before=ipsec.service
+  After=ovs-configuration.service
+
+  [Service]
+  Type=oneshot
+  ExecStart=/usr/local/bin/ipsec-connect-configure.sh
+  StandardOutput=journal+console
+  StandardError=journal+console
+
+  [Install]
+  WantedBy=ipsec.service
