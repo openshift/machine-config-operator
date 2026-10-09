@@ -186,7 +186,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		o.Expect(err).NotTo(o.HaveOccurred())
 
 		exutil.By("Step 2: Create duplicate machineset with custom disks")
-		machineset := OrFail[ManagedMachineResource](GetScalableManagedMachineResource(oc.AsAdmin()))
+		machineset := GetValidManagedMachineResource(oc.AsAdmin())
 		newMSName := machineset.GetName() + "-ms-ic-t2"
 		newMS, err := machineset.Duplicate(newMSName)
 		o.Expect(err).NotTo(o.HaveOccurred())

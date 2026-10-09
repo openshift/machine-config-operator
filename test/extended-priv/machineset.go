@@ -615,7 +615,7 @@ func (msl *MachineSetList) GetReplicas(comparison string, replicas int) ([]*Mach
 			comparison, allowedComparisson)
 	}
 
-	filter := fmt.Sprintf(`?(@.spec.replicas%s%d0)`, comparison, replicas)
+	filter := fmt.Sprintf(`?(@.spec.replicas%s%d)`, comparison, replicas)
 	msl.SetItemsFilter(filter)
 
 	return msl.GetAll()
@@ -835,23 +835,6 @@ func (ms MachineSet) AllNodesUpdated() (bool, error) {
 	}
 
 	return true, nil
-}
-
-// GetScalableManagedMachineResource returns a ManagedMachineResource that can be scaled to add new nodes to the cluster.
-// We select a resource that already has replicas > 0 to make sure that it is safe to scale it up.
-// It checks both MAPI and CAPI machinesets.
-func GetScalableManagedMachineResource(oc *exutil.CLI) (ManagedMachineResource, error) {
-	mapiMachinesets, err := NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetReplicas(">", 0)
-	if err == nil && len(mapiMachinesets) > 0 {
-		return mapiMachinesets[0], nil
-	}
-
-	capiMachinesets, err := NewCAPIMachineSetList(oc.AsAdmin(), ClusterAPINamespace).GetReplicas(">", 0)
-	if err == nil && len(capiMachinesets) > 0 {
-		return capiMachinesets[0], nil
-	}
-
-	return nil, fmt.Errorf("there is no machineset that can be used to scale nodes safely")
 }
 
 // SetAutoscalerLabels sets the capacity.cluster-autoscaler.kubernetes.io/labels annotation
