@@ -689,9 +689,12 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			moscName = mcp.GetName()
 		)
 
-		exutil.By("Enable default ClusterImagePolicy")
-		restoreCVO := enableDefaultClusterImagePolicy(oc.AsAdmin(), mcp)
-		defer restoreCVO()
+		signed, err := isReleasePayloadSigned(oc.AsAdmin())
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error checking if release payload is signed")
+		if signed {
+			exutil.By("Enable default ClusterImagePolicy")
+			enableDefaultClusterImagePolicy(oc.AsAdmin())
+		}
 
 		exutil.By("Configure OCB functionality using external registry (Quay)")
 		mosc, err := CreateMachineOSConfigUsingExternalRegistry(oc.AsAdmin(), moscName, mcp.GetName(), nil, false, false)
@@ -699,8 +702,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the MachineOSConfig resource")
 		logger.Infof("OK!\n")
 
-		exutil.By("Verify build Job mounts sigstore-registries.yaml")
-		verifyBuildJobMountsSigstoreRegistries(mosc)
+		if signed {
+			exutil.By("Verify build Job mounts sigstore-registries.yaml")
+			verifyBuildJobMountsSigstoreRegistries(mosc)
+		}
 
 		ValidateNewNodesBootDirectlyWithOCLImage(oc.AsAdmin(), mosc, mcp)
 	})
@@ -814,9 +819,12 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating a new custom pool: %s", infraMcpName)
 		logger.Infof("OK!\n")
 
-		exutil.By("Enable default ClusterImagePolicy")
-		restoreCVO := enableDefaultClusterImagePolicy(oc.AsAdmin(), infraMcp)
-		defer restoreCVO()
+		signed, err := isReleasePayloadSigned(oc.AsAdmin())
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error checking if release payload is signed")
+		if signed {
+			exutil.By("Enable default ClusterImagePolicy")
+			enableDefaultClusterImagePolicy(oc.AsAdmin())
+		}
 
 		exutil.By("Create MOSC for custom MCP using external registry")
 		moscName := infraMcp.GetName()
@@ -826,8 +834,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating MOSC")
 		logger.Infof("OK!\n")
 
-		exutil.By("Verify build Job mounts sigstore-registries.yaml")
-		verifyBuildJobMountsSigstoreRegistries(mosc)
+		if signed {
+			exutil.By("Verify build Job mounts sigstore-registries.yaml")
+			verifyBuildJobMountsSigstoreRegistries(mosc)
+		}
 
 		exutil.By("Validate initial MOSC and wait for MOSB-1 to succeed")
 		ValidateSuccessfulMOSC(mosc, nil)
@@ -1162,13 +1172,14 @@ func verifyMOSBRebuildAfterImageDeletion(mcp *MachineConfigPool, mosc *MachineOS
 // enableDefaultClusterImagePolicy enables the default ClusterImagePolicy on nightly/CI builds
 // by removing only the ClusterImagePolicy override from the CVO, leaving other overrides intact.
 // On GA builds where the CIP already exists, this is a no-op.
-// Returns a cleanup function that restores the removed override.
-func enableDefaultClusterImagePolicy(oc *exutil.CLI, mcps ...*MachineConfigPool) func() {
+// Cleanup is registered via g.DeferCleanup to ensure the override is restored even if
+// the function fails midway (e.g. during MCP wait).
+func enableDefaultClusterImagePolicy(oc *exutil.CLI) {
 	cip := NewResource(oc, "clusterimagepolicy", "openshift")
 
 	if cip.Exists() {
 		logger.Infof("ClusterImagePolicy 'openshift' already exists, no CVO patching needed")
-		return func() {}
+		return
 	}
 
 	cv := NewResource(oc, "clusterversion", "version")
@@ -1177,7 +1188,7 @@ func enableDefaultClusterImagePolicy(oc *exutil.CLI, mcps ...*MachineConfigPool)
 
 	if overridesJSON == "" || !strings.Contains(overridesJSON, "ClusterImagePolicy") {
 		logger.Infof("No ClusterImagePolicy override found in CVO, skipping")
-		return func() {}
+		return
 	}
 
 	var overrides []map[string]interface{}
@@ -1194,33 +1205,38 @@ func enableDefaultClusterImagePolicy(oc *exutil.CLI, mcps ...*MachineConfigPool)
 
 	if cipIndex == -1 {
 		logger.Infof("No ClusterImagePolicy 'openshift' override found in CVO, skipping")
-		return func() {}
+		return
 	}
+
+	cipOverrideJSON, marshalErr := json.Marshal(overrides[cipIndex])
+	o.Expect(marshalErr).NotTo(o.HaveOccurred(), "Error marshalling CIP override for cleanup")
 
 	logger.Infof("Removing ClusterImagePolicy override at index %d from CVO", cipIndex)
 	err = cv.Patch("json", fmt.Sprintf(`[{"op": "remove", "path": "/spec/overrides/%d"}]`, cipIndex))
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error removing ClusterImagePolicy override from CVO")
 
+	g.DeferCleanup(SafeCleanup, func() {
+		logger.Infof("Restoring ClusterImagePolicy CVO override")
+		o.Expect(cv.Patch("json", fmt.Sprintf(`[{"op": "add", "path": "/spec/overrides/-", "value": %s}]`, string(cipOverrideJSON)))).
+			NotTo(o.HaveOccurred(), "Error restoring ClusterImagePolicy CVO override")
+
+		logger.Infof("Waiting for CVO to acknowledge the restored override")
+		o.Eventually(cv.IsGenerationUpToDate, "2m", "10s").Should(o.BeTrue(),
+			"CVO observedGeneration did not catch up to generation after restoring override")
+
+		logger.Infof("Deleting ClusterImagePolicy 'openshift'")
+		o.Expect(cip.Delete()).NotTo(o.HaveOccurred(), "Error deleting ClusterImagePolicy 'openshift'")
+
+		logger.Infof("Waiting for all MCPs to complete after CIP cleanup")
+		NewMachineConfigPoolList(oc).waitForComplete()
+	})
+
 	o.Eventually(cip, "5m", "20s").Should(Exist(),
 		"ClusterImagePolicy 'openshift' should be created after removing CVO override")
 	logger.Infof("ClusterImagePolicy 'openshift' created successfully")
 
-	for _, mcp := range mcps {
-		logger.Infof("Waiting for MCP %s to complete after CIP update", mcp)
-		mcp.waitForComplete()
-	}
-	logger.Infof("OK!\n")
-
-	cipOverrideJSON, marshalErr := json.Marshal(overrides[cipIndex])
-	o.Expect(marshalErr).NotTo(o.HaveOccurred(), "Error marshalling CIP override for cleanup")
-
-	return func() {
-		logger.Infof("Restoring ClusterImagePolicy CVO override")
-		err := cv.Patch("json", fmt.Sprintf(`[{"op": "add", "path": "/spec/overrides/-", "value": %s}]`, string(cipOverrideJSON)))
-		if err != nil {
-			logger.Errorf("Error restoring ClusterImagePolicy CVO override: %v", err)
-		}
-	}
+	logger.Infof("Waiting for all MCPs to complete after CIP enablement")
+	NewMachineConfigPoolList(oc).waitForComplete()
 }
 
 // verifyBuildJobMountsSigstoreRegistries waits for the MOSB build to start and then verifies
