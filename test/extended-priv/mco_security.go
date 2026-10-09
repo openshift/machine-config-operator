@@ -913,10 +913,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 
 		exutil.By("Verify if able to add new worker node.")
-		msl, err := NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAll()
-		o.Expect(err).NotTo(o.HaveOccurred(), "Get machinesets failed")
-		o.Expect(msl).ShouldNot(o.BeEmpty(), "Machineset list is empty")
-		ms := msl[0]
+		ms := GetValidManagedMachineResource(oc.AsAdmin())
 
 		o.Expect(ms.AddToScale(1)).NotTo(o.HaveOccurred())
 

@@ -638,22 +638,22 @@ func WorkersCanBeScaled(oc *exutil.CLI) (bool, error) {
 		return false, nil
 	}
 
-	// Get all machinesets
-	msl, err := NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAll()
+	// Get all managed machine resources
+	allMs, err := GetAllManagedMachineResources(oc)
 	if err != nil {
-		logger.Errorf("Error getting a list of MachineSet resources")
+		logger.Errorf("Error getting a list of ManagedMachineResources")
 		return false, err
 	}
 
-	// If there is no machineset then clearly we can't use them to scale the workers
-	if len(msl) == 0 {
+	// If there are no managed machine resources then clearly we can't use them to scale the workers
+	if len(allMs) == 0 {
 		logger.Infof("No machineset configured. Nodes cannot be scaled")
 		return false, nil
 	}
 
 	totalworkers := 0
-	for _, ms := range msl {
-		replicas, err := ms.Get(`{.spec.replicas}`)
+	for _, ms := range allMs {
+		replicas, err := ms.GetReplicaOfSpec()
 		if err != nil {
 			logger.Errorf("Error getting the number of replicas in %s", ms)
 			return false, err
@@ -1446,13 +1446,12 @@ func filterTimestampFromLogs(logs string, numberOfTimestamp int) []string {
 	return regexp.MustCompile(`(?m)\b[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}\.[0-9]{1,6}\b`).FindAllString(logs, numberOfTimestamp)
 }
 
-// AddToAllMachineSets adds a delta to all MachineSets replicas and wait for the MachineSets to be ready
+// AddToAllMachineSets adds a delta to all ManagedMachineResources replicas and wait for them to be ready
 func AddToAllMachineSets(oc *exutil.CLI, delta int) error {
-	allMs, err := NewMachineSetList(oc.AsAdmin(), "openshift-machine-api").GetAll()
-	o.Expect(err).NotTo(o.HaveOccurred())
+	allMs := OrFail[[]ManagedMachineResource](GetAllManagedMachineResources(oc))
 
 	var addErr error
-	modifiedMSs := []*MachineSet{}
+	modifiedMSs := []ManagedMachineResource{}
 	for _, ms := range allMs {
 		addErr = ms.AddToScale(delta)
 		if addErr == nil {

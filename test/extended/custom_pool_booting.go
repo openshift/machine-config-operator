@@ -145,7 +145,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		// Grab node name from the new machine object
 		machine := runningMachines[0]
-		newNodeName = machine.GetNodeOrFail().GetName()
+		newNodeName = extpriv.OrFail[*extpriv.Node](machine.GetNode()).GetName()
 		logger.Infof("Machine %s is running with node %s", machine.GetName(), newNodeName)
 
 		exutil.By("Verifying node labels and annotations")

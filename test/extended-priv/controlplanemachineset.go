@@ -258,14 +258,9 @@ func (cpms ControlPlaneMachineSet) GetArchitectureOrFail() architecture.Architec
 	return arch
 }
 
-// GetUserDataSecretName returns the name of the secret used for user-data
-func (cpms ControlPlaneMachineSet) GetUserDataSecretName() (string, error) {
-	return cpms.Get(`{.spec.template.machines_v1beta1_machine_openshift_io.spec.providerSpec.value.userDataSecret.name}`)
-}
-
 // GetUserDataSecret returns the secret used for user-data
 func (cpms ControlPlaneMachineSet) GetUserDataSecret() (*Secret, error) {
-	secretName, err := cpms.GetUserDataSecretName()
+	secretName, err := cpms.Get(`{.spec.template.machines_v1beta1_machine_openshift_io.spec.providerSpec.value.userDataSecret.name}`)
 	if err != nil {
 		return nil, err
 	}

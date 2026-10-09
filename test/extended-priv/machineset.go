@@ -42,14 +42,15 @@ type ManagedMachineResource interface {
 	SetAutoscalerLabels(labels string) error
 	GetArchitecture() (architecture.Architecture, error)
 	GetUserDataSecret() (*Secret, error)
-	GetUserDataSecretName() (string, error)
 	SetUserDataSecret(userDataSecretName string) error
 	GetReplicaOfSpec() (string, error)
 	ScaleTo(scale int) error
+	AddToScale(delta int) error
 	GetIsReady() bool
 	WaitUntilReady(duration string) error
 	GetNodes() ([]*Node, error)
 	GetNodesOrFail() []*Node
+	GetMachinesByPhase(phase string) ([]ManagedMachine, error)
 	AllNodesUpdated() (bool, error)
 	GetOSStreamLabel() (string, error)
 	AddOSStreamLabel(streamName string) error
@@ -81,20 +82,24 @@ func NewMachineSetList(oc *exutil.CLI, namespace string) *MachineSetList {
 }
 
 // GetAllManagedMachineResources returns all ManagedMachineResource resources available in the cluster.
+// Returns an error if the list cannot be retrieved. Returns an empty slice (not an error) if no resources exist.
 // Currently returns MAPI MachineSets. When CAPI support is added, it will also return
 // CAPI MachineSets/MachineDeployments from the openshift-cluster-api namespace.
-func GetAllManagedMachineResources(oc *exutil.CLI) []ManagedMachineResource {
-	mapiMachineSets := NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()
+func GetAllManagedMachineResources(oc *exutil.CLI) ([]ManagedMachineResource, error) {
+	mapiMachineSets, err := NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAll()
+	if err != nil {
+		return nil, err
+	}
 	result := make([]ManagedMachineResource, len(mapiMachineSets))
 	for i, ms := range mapiMachineSets {
 		result[i] = ms
 	}
-	return result
+	return result, nil
 }
 
 // GetValidManagedMachineResource returns a ManagedMachineResource with replicas > 0 that is ready and can be used for testing.
 func GetValidManagedMachineResource(oc *exutil.CLI) ManagedMachineResource {
-	all := GetAllManagedMachineResources(oc)
+	all := OrFail[[]ManagedMachineResource](GetAllManagedMachineResources(oc))
 	for _, ms := range all {
 		if OrFail[string](ms.GetReplicaOfSpec()) != "0" && ms.GetIsReady() {
 			return ms
@@ -229,8 +234,8 @@ func (ms MachineSet) GetMachines() ([]*Machine, error) {
 }
 
 // GetMachinesByPhase get machine by phase e.g. Running, Provisioning, Provisioned, Deleting etc.
-func (ms MachineSet) GetMachinesByPhase(phase string) ([]*Machine, error) {
-	machines := []*Machine{}
+func (ms MachineSet) GetMachinesByPhase(phase string) ([]ManagedMachine, error) {
+	var machines []ManagedMachine
 	pollerr := wait.PollUntilContextTimeout(context.TODO(), 1*time.Second, 20*time.Second, true, func(_ context.Context) (bool, error) {
 		ml := NewMachineList(ms.oc, ms.GetNamespace())
 		ml.ByLabel("machine.openshift.io/cluster-api-machineset=" + ms.GetName())
@@ -239,20 +244,16 @@ func (ms MachineSet) GetMachinesByPhase(phase string) ([]*Machine, error) {
 		if err != nil {
 			return false, err
 		}
-		machines = allMachines
+		machines = make([]ManagedMachine, len(allMachines))
+		for i, m := range allMachines {
+			machines[i] = m
+		}
 		return len(machines) > 0, nil
 	})
 
 	return machines, pollerr
 }
 
-// GetMachinesByPhaseOrFail call GetMachineByPhase or fail the test if any error occurred
-func (ms MachineSet) GetMachinesByPhaseOrFail(phase string) []*Machine {
-	ml, err := ms.GetMachinesByPhase(phase)
-	o.Expect(err).NotTo(o.HaveOccurred(), "Get machine by phase %s failed", phase)
-	o.Expect(ml).ShouldNot(o.BeEmpty(), "No machine found by phase %s in machineset %s", phase, ms.GetName())
-	return ml
-}
 
 // GetNodes returns a slice with all nodes that have been created for this MachineSet
 func (ms MachineSet) GetNodes() ([]*Node, error) {
@@ -459,14 +460,9 @@ func (ms MachineSet) SetArchitecture(arch string) error {
 	return ms.SetAutoscalerLabels("kubernetes.io/arch=" + arch)
 }
 
-// GetUserDataSecretName returns the name of the user-data secret
-func (ms MachineSet) GetUserDataSecretName() (string, error) {
-	return ms.Get(`{.spec.template.spec.providerSpec.value.userDataSecret.name}`)
-}
-
 // GetUserDataSecret returns the secret used for user-data
 func (ms MachineSet) GetUserDataSecret() (*Secret, error) {
-	secretName, err := ms.GetUserDataSecretName()
+	secretName, err := ms.Get(`{.spec.template.spec.providerSpec.value.userDataSecret.name}`)
 	if err != nil {
 		return nil, err
 	}
@@ -611,21 +607,21 @@ func (ms MachineSet) WaitForRunningMachines(expectedReplicas int, timeout, pollI
 // duplicateMachinesetSecret duplicates a userData secret and uses the provided functions to modify the userData and the disableTemplating data if they are not nil
 //
 //nolint:unparam // modifyDisableTemplating may be nil, kept for flexibility
-func duplicateMachinesetSecret(oc *exutil.CLI, secretName, newName string,
+func duplicateMachinesetSecret(currentSecret *Secret, newName string,
 	modifyUserData func(userData string) (string, error), modifyDisableTemplating func(disableTemplating string) (string, error)) (*Secret, error) {
-	var (
-		currentSecret = NewSecret(oc, MachineAPINamespace, secretName)
-		err           error
-	)
+	var err error
+
+	namespace := currentSecret.GetNamespace()
+
 	userData, udErr := currentSecret.GetDataValue("userData")
 	if udErr != nil {
-		logger.Errorf("Error getting userData info from secret %s -n %s.\n%s", secretName, MachineAPINamespace, udErr)
+		logger.Errorf("Error getting userData info from secret %s -n %s.\n%s", currentSecret.GetName(), namespace, udErr)
 		return nil, udErr
 	}
 
 	disableTemplating, dtErr := currentSecret.GetDataValue("disableTemplating")
 	if dtErr != nil {
-		logger.Errorf("Error getting disableTemplating info from secret %s -n %s.\n%s", secretName, MachineAPINamespace, dtErr)
+		logger.Errorf("Error getting disableTemplating info from secret %s -n %s.\n%s", currentSecret.GetName(), namespace, dtErr)
 		return nil, dtErr
 	}
 
@@ -645,15 +641,16 @@ func duplicateMachinesetSecret(oc *exutil.CLI, secretName, newName string,
 		}
 	}
 
+	oc := currentSecret.GetOC()
 	logger.Debugf("New userData info:\n%s", userData)
 	oc.NotShowInfo()
 	defer oc.SetShowInfo()
 
-	_, err = oc.AsAdmin().WithoutNamespace().Run("create").Args("secret", "generic", newName, "-n", MachineAPINamespace,
+	_, err = oc.AsAdmin().WithoutNamespace().Run("create").Args("secret", "generic", newName, "-n", namespace,
 		"--from-literal", fmt.Sprintf("userData=%s", userData),
 		"--from-literal", fmt.Sprintf("disableTemplating=%s", disableTemplating)).Output()
 
-	return NewSecret(oc.AsAdmin(), MachineAPINamespace, newName), err
+	return NewSecret(oc.AsAdmin(), namespace, newName), err
 }
 
 // convertUserDataToNewVersion converts the provided userData ignition config into the provided version format
@@ -827,8 +824,9 @@ func (ms MachineSet) AllNodesUpdated() (bool, error) {
 	return true, nil
 }
 
-// GetScalableMachineSet return a machineset that can be scaled to add new nodes to the cluster. We select a machineset that already has node to make sure that it is safe to scale it up
-func GetScalableMachineSet(oc *exutil.CLI) (*MachineSet, error) {
+// GetScalableManagedMachineResource returns a ManagedMachineResource that can be scaled to add new nodes to the cluster.
+// We select a resource that already has replicas > 0 to make sure that it is safe to scale it up.
+func GetScalableManagedMachineResource(oc *exutil.CLI) (ManagedMachineResource, error) {
 	machinesets, err := NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetReplicas(">", 0)
 	if err != nil {
 		return nil, err

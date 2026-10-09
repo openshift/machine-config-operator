@@ -104,9 +104,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		defer wMcp.waitForComplete()
 
 		exutil.By("Scale up a machineset")
-		allMs, err := NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAll()
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting a list of MachineSet resources")
-		ms := allMs[0]
+		ms := GetValidManagedMachineResource(oc.AsAdmin())
 
 		initialMsNodes, err := ms.GetNodes()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting a list of nodes that belong to machineset %s", ms.GetName())
@@ -210,9 +208,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 
 		exutil.By("Scale up a machineset")
-		allMs, err := NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAll()
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting a list of MachineSet resources")
-		ms := allMs[0]
+		ms := GetValidManagedMachineResource(oc.AsAdmin())
 
 		initialMsNodes, err := ms.GetNodes()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting a list of nodes that belong to machineset %s", ms.GetName())
@@ -267,9 +263,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 
 		exutil.By("Scale up a machineset")
-		allMs, err := NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAll()
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting a list of MachineSet resources")
-		ms := allMs[0]
+		ms := GetValidManagedMachineResource(oc.AsAdmin())
 
 		initialNumMsNodes := len(ms.GetNodesOrFail())
 
@@ -303,7 +297,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	})
 })
 
-func cloneMachineSet(oc *exutil.CLI, ms ManagedMachineResource, newMsName, imageVersion, ignitionVersion string) ManagedMachineResource {
+func cloneMachineSet(oc *exutil.CLI, ms ManagedMachineResource, newMsName, imageVersion, ignitionVersion string) (ManagedMachineResource, error) {
 	var (
 		newSecretName = getClonedSecretName(newMsName)
 		platform      = exutil.CheckPlatform(oc.AsAdmin())
@@ -313,58 +307,74 @@ func cloneMachineSet(oc *exutil.CLI, ms ManagedMachineResource, newMsName, image
 	exutil.By("Duplicate a MachineSet resource")
 	logger.Infof("Create a new machineset that will use base image %s and ignition version %s", imageVersion, ignitionVersion)
 	newMs, dErr := ms.Duplicate(newMsName)
-	o.Expect(dErr).NotTo(o.HaveOccurred(), "Error duplicating MachineSet %s -n %s", ms.GetName(), ms.GetNamespace())
+	if dErr != nil {
+		return newMs, fmt.Errorf("error duplicating MachineSet %s -n %s: %w", ms.GetName(), ms.GetNamespace(), dErr)
+	}
 	logger.Infof("OK!\n")
 
 	// Create a new secret using the given ignition version
 	exutil.By(fmt.Sprintf("Create a new secret with %s ignition version", ignitionVersion))
-	currentSecretName, csErr := ms.GetUserDataSecretName()
-	o.Expect(csErr).NotTo(o.HaveOccurred(), "Error getting user-data secret name from %s", ms.GetName())
-	logger.Infof("Duplicating secret %s with new name %s", currentSecretName, newSecretName)
+	currentSecret, csErr := ms.GetUserDataSecret()
+	if csErr != nil {
+		return newMs, fmt.Errorf("error getting user-data secret from %s: %w", ms.GetName(), csErr)
+	}
+	logger.Infof("Duplicating secret %s with new name %s", currentSecret.GetName(), newSecretName)
 
 	modifyUserData := func(userData string) (string, error) { return convertUserDataToNewVersion(userData, ignitionVersion) }
-	clonedSecret, sErr := duplicateMachinesetSecret(oc, currentSecretName, newSecretName, modifyUserData, nil)
-	o.Expect(sErr).NotTo(o.HaveOccurred(), "Error duplicating machine-api secret")
-	o.Expect(clonedSecret).To(Exist(), "The secret was not duplicated for machineset %s", newMs)
+	clonedSecret, sErr := duplicateMachinesetSecret(currentSecret, newSecretName, modifyUserData, nil)
+	if sErr != nil {
+		return newMs, fmt.Errorf("error duplicating machine-api secret: %w", sErr)
+	}
+	if !clonedSecret.Exists() {
+		return newMs, fmt.Errorf("the secret was not duplicated for machineset %s", newMs)
+	}
 	logger.Infof("OK!\n")
 
 	// Get the right base image name from the rhcos json info stored in the github repositories
 	exutil.By(fmt.Sprintf("Get the base image for version %s", imageVersion))
-	architecture, err := ms.GetArchitecture()
-	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the arechitecture from machineset %s", ms.GetName())
+	arch, err := ms.GetArchitecture()
+	if err != nil {
+		return newMs, fmt.Errorf("error getting the architecture from machineset %s: %w", ms.GetName(), err)
+	}
 
 	stream := ms.GetOSStream()
 	logger.Infof("MachineSet %s is using OS stream %s", ms.GetName(), stream)
 
-	baseImage, err := GetBaseImageFromRHCOSImageInfo(platform, imageVersion, stream, architecture, getCurrentRegionOrFail(oc.AsAdmin()))
-	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the base image")
+	baseImage, err := GetBaseImageFromRHCOSImageInfo(platform, imageVersion, stream, arch, getCurrentRegionOrFail(oc.AsAdmin()))
+	if err != nil {
+		return newMs, fmt.Errorf("error getting the base image: %w", err)
+	}
 	logger.Infof("Using base image %s", baseImage)
 
-	baseImageURL, err := GetBaseImageURLFromRHCOSImageInfo(platform, imageVersion, stream, architecture)
-	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the base image URL")
+	baseImageURL, err := GetBaseImageURLFromRHCOSImageInfo(platform, imageVersion, stream, arch)
+	if err != nil {
+		return newMs, fmt.Errorf("error getting the base image URL: %w", err)
+	}
 
 	// In vshpere we will upload the image. To avoid collisions we will add prefix to identify our image
 	if platform == VspherePlatform {
 		baseImage = "mcotest-" + baseImage
 	}
-	o.Expect(
-		uploadBaseImageToCloud(ms, platform, baseImageURL, baseImage),
-	).To(o.Succeed(), "Error uploading the base image %s to the cloud", baseImageURL)
+	if err := uploadBaseImageToCloud(ms, platform, baseImageURL, baseImage); err != nil {
+		return newMs, fmt.Errorf("error uploading the base image %s to the cloud: %w", baseImageURL, err)
+	}
 	logger.Infof("OK!\n")
 
 	// Set the new boot base image
 	exutil.By(fmt.Sprintf("Configure the duplicated MachineSet to use the %s boot image", baseImage))
-	o.Expect(newMs.SetCoreOsBootImage(baseImage)).To(o.Succeed(),
-		"There was an error while patching the new base image in %s", newMs)
+	if err := newMs.SetCoreOsBootImage(baseImage); err != nil {
+		return newMs, fmt.Errorf("error patching the new base image in %s: %w", newMs, err)
+	}
 	logger.Infof("OK!\n")
 
 	// Use new secret
 	exutil.By("Configure the duplicated MachineSet to use the new secret")
-	o.Expect(newMs.SetUserDataSecret(newSecretName)).To(o.Succeed(),
-		"Error patching MachineSet %s to use the new secret %s", newMs.GetName(), newSecretName)
+	if err := newMs.SetUserDataSecret(newSecretName); err != nil {
+		return newMs, fmt.Errorf("error patching MachineSet %s to use the new secret %s: %w", newMs.GetName(), newSecretName, err)
+	}
 	logger.Infof("OK!\n")
 
-	return newMs
+	return newMs, nil
 }
 
 func removeClonedMachineSet(ms ManagedMachineResource, mcp *MachineConfigPool, expectedNumWorkers int) {
@@ -470,16 +480,17 @@ func SimpleScaleUPTest(oc *exutil.CLI, mcp *MachineConfigPool, imageVersion, ign
 		logger.Infof("OK!\n")
 	}
 
+	logger.Infof("Create a new MachineSet using the right base image")
+	ms := GetValidManagedMachineResource(oc.AsAdmin())
+	newMs, cloneErr := cloneMachineSet(oc.AsAdmin(), ms, newMsName, imageVersion, ignitionVersion)
+
 	defer SafeCleanup(func() {
-		newMs := NewMachineSet(oc.AsAdmin(), MachineAPINamespace, newMsName)
-		removeClonedMachineSet(newMs, mcp, initialNumWorkers)
+		if newMs != nil {
+			removeClonedMachineSet(newMs, mcp, initialNumWorkers)
+		}
 	})
 
-	logger.Infof("Create a new MachineSet using the right base image")
-	allMs, err := NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAll()
-	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting a list of MachineSet resources")
-	ms := allMs[0]
-	newMs := cloneMachineSet(oc.AsAdmin(), ms, newMsName, imageVersion, ignitionVersion)
+	o.Expect(cloneErr).NotTo(o.HaveOccurred(), "Error cloning machineset")
 
 	exutil.By("Scale MachineSet up")
 	logger.Infof("Scaling up machineset %s", newMs.GetName())
