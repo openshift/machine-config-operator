@@ -814,8 +814,7 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 	}
 
 	server := providerSpec.Workspace.Server
-	username := string(credsSc.Data[fmt.Sprintf("%s.username", server)])
-	password := string(credsSc.Data[fmt.Sprintf("%s.password", server)])
+	username, password := getVSphereCredentialsForServer(credsSc, server)
 	client, tagManager, err := getClientsFromServerURL(ctx, server, username, password)
 	if err != nil {
 		return "", false, false, fmt.Errorf("failed in getClientsFromServerURL: %w", err)

@@ -17,7 +17,20 @@ import (
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 
 	"github.com/openshift/machine-config-operator/pkg/controller/bootimage/marketplace"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
+
+func getVSphereCredentialsSecret(ctx context.Context, kubeClient clientset.Interface) (*corev1.Secret, error) {
+	secret, err := kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(ctx, ctrlcommon.VSphereCredentialsSecretName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch secret %s/%s: %w", ctrlcommon.MCONamespace, ctrlcommon.VSphereCredentialsSecretName, err)
+	}
+	return secret, nil
+}
+
+func getVSphereCredentialsForServer(secret *corev1.Secret, server string) (string, string) {
+	return string(secret.Data[server+".username"]), string(secret.Data[server+".password"])
+}
 
 // AzureVariant represents the different Azure marketplace image variants
 type AzureVariant string
@@ -276,10 +289,9 @@ func reconcileVSphereProviderSpec(streamData *stream.Stream, arch string, infra 
 
 	newProviderSpec := providerSpec.DeepCopy()
 
-	// Fetch the creds configmap
-	credsSc, err := kubeClient.CoreV1().Secrets("kube-system").Get(context.TODO(), "vsphere-creds", metav1.GetOptions{})
+	credsSc, err := getVSphereCredentialsSecret(context.TODO(), kubeClient)
 	if err != nil {
-		return false, false, nil, "", fmt.Errorf("failed to fetch vsphere-creds Secret during machineset sync: %w", err)
+		return false, false, nil, "", fmt.Errorf("failed to fetch vSphere credentials during machineset sync: %w", err)
 	}
 
 	newBootImg, patchRequired, reconcileSkipped, err := createNewVMTemplate(streamData, providerSpec, infra, credsSc, kubeClient, arch, artifacts.Release)
