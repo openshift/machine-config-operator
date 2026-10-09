@@ -14,6 +14,7 @@ import (
 
 	"github.com/tidwall/gjson"
 
+	constants "github.com/openshift/machine-config-operator/pkg/controller/common"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
@@ -384,7 +385,11 @@ func GetVSphereConnectionInfoFromFailureDomain(oc *CLI, failureDomain string) (*
 			info.Server, info.DataCenter, info.DataStore, info.ResourcePool, info.Network)
 	}
 
-	secretData, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("secret", "vsphere-creds", "-n", "kube-system", "-o", "jsonpath={.data}").Output()
+	secretData, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"secret", constants.VSphereCredentialsSecretName,
+		"-n", constants.MCONamespace,
+		"-o", "jsonpath={.data}",
+	).Output()
 	if err != nil {
 		return nil, err
 	}
@@ -400,7 +405,8 @@ func GetVSphereConnectionInfoFromFailureDomain(oc *CLI, failureDomain string) (*
 
 	userB64, ok := dataMap[userKey]
 	if !ok {
-		return nil, fmt.Errorf("vsphere credentials key %s not found in vsphere-creds secret", userKey)
+		return nil, fmt.Errorf("vsphere credentials key %s not found in %s/%s secret",
+			userKey, constants.MCONamespace, constants.VSphereCredentialsSecretName)
 	}
 	userBytes, err := base64.StdEncoding.DecodeString(userB64)
 	if err != nil {
@@ -410,7 +416,8 @@ func GetVSphereConnectionInfoFromFailureDomain(oc *CLI, failureDomain string) (*
 
 	passB64, ok := dataMap[passKey]
 	if !ok {
-		return nil, fmt.Errorf("vsphere credentials key %s not found in vsphere-creds secret", passKey)
+		return nil, fmt.Errorf("vsphere credentials key %s not found in %s/%s secret",
+			passKey, constants.MCONamespace, constants.VSphereCredentialsSecretName)
 	}
 	passBytes, err := base64.StdEncoding.DecodeString(passB64)
 	if err != nil {

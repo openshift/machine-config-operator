@@ -206,6 +206,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 				ctrlctx.ClientBuilder.KubeClientOrDie("machine-set-boot-image-controller"),
 				ctrlctx.ClientBuilder.MachineClientOrDie("machine-set-boot-image-controller"),
 				ctrlctx.KubeNamespacedInformerFactory.Core().V1().ConfigMaps(),
+				ctrlctx.KubeNamespacedInformerFactory.Core().V1().Secrets(),
 				ctrlctx.MachineInformerFactory.Machine().V1beta1().MachineSets(),
 				ctrlctx.MachineInformerFactory.Machine().V1().ControlPlaneMachineSets(),
 				ctrlctx.ConfigInformerFactory.Config().V1().Infrastructures(),

@@ -3,6 +3,8 @@ package common
 const (
 	// MCONamespace is the namespace that should be used for all API objects owned by the MCO by default
 	MCONamespace = "openshift-machine-config-operator"
+	// VSphereCredentialsSecretName is the CredentialsRequest target consumed by the MCO.
+	VSphereCredentialsSecretName = "vsphere-cloud-credentials"
 
 	// OpenshiftConfigManagedNamespace is the namespace that has the etc-pki-entitlement/Simple Content Access Cert
 	OpenshiftConfigManagedNamespace = "openshift-config-managed"
