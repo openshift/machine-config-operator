@@ -280,7 +280,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		return fmt.Errorf("could not merge IRI credentials into pull secret for bootstrap: %w", err)
 	}
 
-	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, pullSecretBytes, apiServer)
+	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, pullSecretBytes, apiServer, fgHandler)
 	if err != nil {
 		return err
 	}

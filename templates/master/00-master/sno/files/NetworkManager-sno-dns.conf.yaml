@@ -1,0 +1,8 @@
+{{- if isSNOCoreDNSEnabled }}
+mode: 0644
+path: "/etc/NetworkManager/conf.d/99-sno-internal-dns.conf"
+contents:
+  inline: |
+    [main]
+    rc-manager=unmanaged
+{{- end }}
