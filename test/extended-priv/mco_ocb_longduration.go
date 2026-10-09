@@ -930,7 +930,7 @@ func ValidateNewNodesBootDirectlyWithOCLImage(oc *exutil.CLI, mosc *MachineOSCon
 	isInternalRegistry := OrFail[bool](mosc.IsUsingInternalRegistry())
 
 	exutil.By("Check able to scale the node from existing ManagedMachineResource")
-	existingMS := OrFail[ManagedMachineResource](GetScalableManagedMachineResource(oc.AsAdmin()))
+	existingMS := GetValidManagedMachineResource(oc.AsAdmin())
 
 	o.Expect(existingMS.AddToScale(1)).NotTo(o.HaveOccurred())
 
@@ -941,7 +941,7 @@ func ValidateNewNodesBootDirectlyWithOCLImage(oc *exutil.CLI, mosc *MachineOSCon
 	}()
 
 	exutil.By("Create duplicate machineset and scale new node")
-	machineset := OrFail[ManagedMachineResource](GetScalableManagedMachineResource(oc.AsAdmin()))
+	machineset := GetValidManagedMachineResource(oc.AsAdmin())
 	duplicateMSName := machineset.GetName() + "-ocl"
 	duplicateMS, err := machineset.Duplicate(duplicateMSName)
 	o.Expect(err).NotTo(o.HaveOccurred())

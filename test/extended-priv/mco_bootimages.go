@@ -38,8 +38,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	)
 
 	g.JustBeforeEach(func() {
-		// Skip if no machineset
-		SkipTestIfWorkersCannotBeScaled(oc.AsAdmin())
+		// Skip if no MAPI machineset. Boot image tests do not support CAPI yet
+		SkipTestIfWorkersCannotBeScaled(oc.AsAdmin(), MAPI)
 		// Bootimages Update functionality is only available in GCP, AWS, vSphere and Azure
 		skipTestIfSupportedPlatformNotMatched(oc, GCPPlatform, AWSPlatform, VspherePlatform, AzurePlatform)
 		// Skip if any MachineSet carries an unsupported OS stream label
@@ -544,12 +544,12 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		exutil.By("Set a 2.2.0 user-data secet in the new machine config")
 		logger.Infof("Duplicating the user-data secret")
-		userDataSecret, err := clonedMS.GetUserDataSecret()
+		managedSecret, err := clonedMS.GetManagedUserDataSecret()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting user-data secret from %s", clonedMS)
 
 		userDataModifyFunc := func(userData string) (string, error) { return convertUserDataToNewVersion(userData, "2.2.0") }
-		clonedSecret, err := duplicateMachinesetSecret(userDataSecret, clonedSecretName, userDataModifyFunc, nil)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s with a wrong ignition V2 version", userDataSecret)
+		clonedSecret, err := managedSecret.Duplicate(clonedSecretName, userDataModifyFunc)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s with a wrong ignition V2 version", managedSecret.GetName())
 		defer clonedSecret.Delete()
 		logger.Infof("OK!\n")
 
@@ -569,7 +569,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		exutil.By("Check that the cloned user-data secret is updated to the latest ignintion version")
 		// We wait 15 minutes because in vsphere platforms we need to give time to MCO so that it can upload the ova file to cloud
-		o.Eventually(clonedSecret.GetDataValue, "15m", "15s").WithArguments("userData").Should(
+		o.Eventually(clonedSecret.GetUserData, "15m", "15s").Should(
 			HavePathWithValue(userDataJSONVersionPath, o.Equal(IgnitionDefaultVersion)),
 			"The user-data secret was not updated to the latest ignition version")
 
@@ -628,12 +628,12 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		exutil.By("Set a 2.2.0 user-data secet in the new machine config")
 		logger.Infof("Duplicating the user-data secret")
-		userDataSecret, err := clonedMS.GetUserDataSecret()
+		managedSecret, err := clonedMS.GetManagedUserDataSecret()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting user-data secret from %s", clonedMS)
 
 		userDataModifyFunc := func(userData string) (string, error) { return convertUserDataToNewVersion(userData, "2.2.0") }
-		clonedSecret, err := duplicateMachinesetSecret(userDataSecret, clonedSecretName, userDataModifyFunc, nil)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s with a wrong ignition V2 version", userDataSecret)
+		clonedSecret, err := managedSecret.Duplicate(clonedSecretName, userDataModifyFunc)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s with a wrong ignition V2 version", managedSecret.GetName())
 		defer clonedSecret.Delete()
 		logger.Infof("OK!\n")
 
@@ -657,7 +657,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 
 		exutil.By("Check that the cloned user-data secret was not updated")
-		o.Consistently(clonedSecret.GetDataValue, "2m", "15s").WithArguments("userData").Should(
+		o.Consistently(clonedSecret.GetUserData, "2m", "15s").Should(
 			HavePathWithValue(userDataJSONVersionPath, o.Equal("2.2.0")),
 			"The user-data secret was not updated, but it shouldn't be updated")
 		logger.Infof("OK!\n")
@@ -766,7 +766,7 @@ func testUserDataUpdateFailure(oc *exutil.CLI, clonedMSName, clonedSecretName, e
 		labelValue             = "update"
 		secondLabelValue       = "update2"
 		machineClusterOperator = NewResource(oc.AsAdmin(), "ClusterOperator", "machine-config")
-		clonedSecret           *Secret
+		clonedSecret           ManagedUserDataSecret
 	)
 
 	exutil.By("Opt-in boot images update")
@@ -784,11 +784,11 @@ func testUserDataUpdateFailure(oc *exutil.CLI, clonedMSName, clonedSecretName, e
 	exutil.By("Set a wrong user-data secret in the cloned machineset")
 	if userDataModifyFunc != nil {
 		logger.Infof("Duplicating the user-data secret")
-		userDataSecret, err := clonedMS.GetUserDataSecret()
+		managedSecret, err := clonedMS.GetManagedUserDataSecret()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting user-data secret from %s", clonedMS)
 
-		clonedSecret, err = duplicateMachinesetSecret(userDataSecret, clonedSecretName, userDataModifyFunc, nil)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s with a wrong ignition V2 version", userDataSecret)
+		clonedSecret, err = managedSecret.Duplicate(clonedSecretName, userDataModifyFunc)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s with a wrong ignition V2 version", managedSecret.GetName())
 		defer clonedSecret.Delete()
 
 	} else {
