@@ -314,16 +314,16 @@ func cloneMachineSet(oc *exutil.CLI, ms ManagedMachineResource, newMsName, image
 
 	// Create a new secret using the given ignition version
 	exutil.By(fmt.Sprintf("Create a new secret with %s ignition version", ignitionVersion))
-	currentSecret, csErr := ms.GetUserDataSecret()
+	managedSecret, csErr := ms.GetManagedUserDataSecret()
 	if csErr != nil {
 		return newMs, fmt.Errorf("error getting user-data secret from %s: %w", ms.GetName(), csErr)
 	}
-	logger.Infof("Duplicating secret %s with new name %s", currentSecret.GetName(), newSecretName)
+	logger.Infof("Duplicating secret %s with new name %s", managedSecret.GetName(), newSecretName)
 
 	modifyUserData := func(userData string) (string, error) { return convertUserDataToNewVersion(userData, ignitionVersion) }
-	clonedSecret, sErr := duplicateMachinesetSecret(currentSecret, newSecretName, modifyUserData, nil)
+	clonedSecret, sErr := managedSecret.Duplicate(newSecretName, modifyUserData)
 	if sErr != nil {
-		return newMs, fmt.Errorf("error duplicating machine-api secret: %w", sErr)
+		return newMs, fmt.Errorf("error duplicating user-data secret: %w", sErr)
 	}
 	if !clonedSecret.Exists() {
 		return newMs, fmt.Errorf("the secret was not duplicated for machineset %s", newMs)
@@ -378,6 +378,15 @@ func cloneMachineSet(oc *exutil.CLI, ms ManagedMachineResource, newMsName, image
 }
 
 func removeClonedMachineSet(ms ManagedMachineResource, mcp *MachineConfigPool, expectedNumWorkers int) {
+	// For CAPI machinesets, get the infrastructure template reference before deleting the machineset
+	var capiTmplRes *Resource
+	if capiMs, ok := ms.(*CAPIMachineSet); ok {
+		tmplRes, err := capiMs.getInfrastructureTemplateResource()
+		if err == nil {
+			capiTmplRes = tmplRes
+		}
+	}
+
 	if ms.Exists() {
 		logger.Infof("Scaling %s machineset to zero", ms.GetName())
 		o.Expect(ms.ScaleTo(0)).To(o.Succeed(),
@@ -398,6 +407,13 @@ func removeClonedMachineSet(ms ManagedMachineResource, mcp *MachineConfigPool, e
 			o.Eventually(mcp.GetNodes, "5m", "30s").Should(o.HaveLen(expectedNumWorkers),
 				"The number of nodes is not the expected one in pool:\n%s", mcp.PrettyString())
 		}
+	}
+
+	// Clean up the CAPI infrastructure template
+	if capiTmplRes != nil && capiTmplRes.Exists() {
+		logger.Infof("Removing infrastructure template %s", capiTmplRes.GetName())
+		o.Expect(capiTmplRes.Delete()).To(o.Succeed(),
+			"Error deleting infrastructure template %s", capiTmplRes.GetName())
 	}
 
 	clonedSecret := NewSecret(ms.GetOC(), ms.GetNamespace(), getClonedSecretName(ms.GetName()))
