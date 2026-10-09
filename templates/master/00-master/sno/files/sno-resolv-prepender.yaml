@@ -8,7 +8,6 @@ contents:
 
     resolved_dropin=${SNO_DNS_RESOLVED_DROPIN:-/etc/systemd/resolved.conf.d/60-sno-internal-dns.conf}
     resolved_runtime_dir=${SNO_DNS_RESOLVED_RUNTIME_DIR:-/run/systemd/resolve}
-    nm_dropin=${SNO_DNS_NM_DROPIN:-/run/NetworkManager/conf.d/99-sno-internal-dns.conf}
     nm_resolv=${SNO_DNS_NM_RESOLV:-/var/run/NetworkManager/resolv.conf}
     resolv_conf=${SNO_DNS_RESOLV_CONF:-/etc/resolv.conf}
     node_ip_dir=${SNO_DNS_NODE_IP_DIR:-/run/nodeip-configuration}
@@ -70,16 +69,6 @@ contents:
       exit 0
     fi
 
-    mkdir -p "$(dirname "${nm_dropin}")"
-    tmp=$(mktemp "${nm_dropin}.XXXXXX")
-    printf '[main]\nrc-manager=unmanaged\n' > "${tmp}"
-    chmod 0644 "${tmp}"
-    if [[ ! -f "${nm_dropin}" ]] || ! cmp -s "${tmp}" "${nm_dropin}"; then
-      mv -Tf "${tmp}" "${nm_dropin}"
-    else
-      rm -f "${tmp}"
-    fi
-    nmcli general reload conf
     manager=$(busctl get-property org.freedesktop.NetworkManager \
       /org/freedesktop/NetworkManager/DnsManager org.freedesktop.NetworkManager.DnsManager RcManager)
     [[ "${manager}" == 's "unmanaged"' ]] || exit 1
