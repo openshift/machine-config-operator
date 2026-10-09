@@ -1,6 +1,8 @@
 package resourceapply
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -299,9 +301,152 @@ func TestApplyMachineConfig(t *testing.T) {
 	}
 }
 
-// TestIsApplyErrorRetriable verifies all cases that IsApplyErrorRetriable considers retriable,
-// and that unrelated errors are not.
-func TestIsApplyErrorRetriable(t *testing.T) {
+func TestApplyMachineConfigNode(t *testing.T) {
+	const name = "worker-0"
+
+	t.Run("create", func(t *testing.T) {
+		client := fake.NewSimpleClientset()
+		required := &mcfgv1.MachineConfigNode{ObjectMeta: metav1.ObjectMeta{Name: name}}
+
+		actual, modified, err := ApplyMachineConfigNode(context.Background(), client.MachineconfigurationV1(), required)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !modified {
+			t.Fatal("expected create to report modified")
+		}
+		if actual == nil || actual.Name != name {
+			t.Fatalf("expected created MachineConfigNode %q, got %#v", name, actual)
+		}
+		if actions := client.Actions(); len(actions) != 2 || !actions[0].Matches("get", "machineconfignodes") || !actions[1].Matches("create", "machineconfignodes") {
+			t.Fatalf("unexpected actions: %s", spew.Sdump(actions))
+		}
+	})
+
+	t.Run("no change", func(t *testing.T) {
+		existing := &mcfgv1.MachineConfigNode{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Labels: map[string]string{"preserve": "true"}},
+			Spec: mcfgv1.MachineConfigNodeSpec{
+				Node: mcfgv1.MCOObjectReference{Name: name},
+				Pool: mcfgv1.MCOObjectReference{Name: "worker"},
+			},
+		}
+		client := fake.NewSimpleClientset(existing)
+		required := &mcfgv1.MachineConfigNode{
+			ObjectMeta: metav1.ObjectMeta{Name: name},
+			Spec:       existing.Spec,
+		}
+
+		actual, modified, err := ApplyMachineConfigNode(context.Background(), client.MachineconfigurationV1(), required)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if modified {
+			t.Fatal("expected unchanged MachineConfigNode to report unmodified")
+		}
+		if actual == nil || actual.Labels["preserve"] != "true" {
+			t.Fatalf("expected existing MachineConfigNode to be returned, got %#v", actual)
+		}
+		if actions := client.Actions(); len(actions) != 1 || !actions[0].Matches("get", "machineconfignodes") {
+			t.Fatalf("unexpected actions: %s", spew.Sdump(actions))
+		}
+	})
+
+	t.Run("conflict re-fetches and re-merges", func(t *testing.T) {
+		existing := &mcfgv1.MachineConfigNode{
+			ObjectMeta: metav1.ObjectMeta{Name: name, ResourceVersion: "1", Labels: map[string]string{"original": "preserved"}},
+			Spec: mcfgv1.MachineConfigNodeSpec{
+				Node:          mcfgv1.MCOObjectReference{Name: name},
+				Pool:          mcfgv1.MCOObjectReference{Name: "old-pool"},
+				ConfigVersion: mcfgv1.MachineConfigNodeSpecMachineConfigVersion{Desired: "concurrent-config"},
+			},
+		}
+		client := fake.NewSimpleClientset(existing)
+		required := &mcfgv1.MachineConfigNode{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Labels: map[string]string{"required": "merged"}},
+			Spec: mcfgv1.MachineConfigNodeSpec{
+				Node: mcfgv1.MCOObjectReference{Name: name},
+				Pool: mcfgv1.MCOObjectReference{Name: "new-pool"},
+			},
+		}
+
+		updateCalls := 0
+		client.PrependReactor("update", "machineconfignodes", func(action clienttesting.Action) (bool, runtime.Object, error) {
+			updateCalls++
+			updated := action.(clienttesting.UpdateAction).GetObject().(*mcfgv1.MachineConfigNode)
+			if updateCalls == 1 {
+				if updated.ResourceVersion != "1" {
+					t.Fatalf("expected first update with resource version 1, got %q", updated.ResourceVersion)
+				}
+				latest := existing.DeepCopy()
+				latest.ResourceVersion = "2"
+				latest.Labels["concurrent"] = "preserved"
+				if err := client.Tracker().Update(mcfgv1.SchemeGroupVersion.WithResource("machineconfignodes"), latest, ""); err != nil {
+					t.Fatalf("updating tracker: %v", err)
+				}
+				return true, nil, apierrors.NewConflict(schema.GroupResource{Group: mcfgv1.GroupName, Resource: "machineconfignodes"}, name, fmt.Errorf("resource version changed"))
+			}
+			if updated.ResourceVersion != "2" {
+				t.Fatalf("expected retry with resource version 2, got %q", updated.ResourceVersion)
+			}
+			return false, nil, nil
+		})
+
+		actual, modified, err := ApplyMachineConfigNode(context.Background(), client.MachineconfigurationV1(), required)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !modified {
+			t.Fatal("expected conflict retry update to report modified")
+		}
+		if updateCalls != 2 {
+			t.Fatalf("expected 2 update attempts, got %d", updateCalls)
+		}
+		if actual.Spec.Pool.Name != "new-pool" || actual.Spec.ConfigVersion.Desired != "concurrent-config" {
+			t.Fatalf("expected required pool and concurrent config to be preserved, got %#v", actual.Spec)
+		}
+		for key, value := range map[string]string{"original": "preserved", "concurrent": "preserved", "required": "merged"} {
+			if actual.Labels[key] != value {
+				t.Errorf("expected label %s=%s, got %q", key, value, actual.Labels[key])
+			}
+		}
+		actions := client.Actions()
+		if len(actions) != 4 || !actions[0].Matches("get", "machineconfignodes") || !actions[1].Matches("update", "machineconfignodes") || !actions[2].Matches("get", "machineconfignodes") || !actions[3].Matches("update", "machineconfignodes") {
+			t.Fatalf("unexpected actions: %s", spew.Sdump(actions))
+		}
+	})
+
+	t.Run("conflict retry stops on cancellation", func(t *testing.T) {
+		existing := &mcfgv1.MachineConfigNode{
+			ObjectMeta: metav1.ObjectMeta{Name: name},
+			Spec: mcfgv1.MachineConfigNodeSpec{
+				Pool: mcfgv1.MCOObjectReference{Name: "old-pool"},
+			},
+		}
+		client := fake.NewSimpleClientset(existing)
+		required := existing.DeepCopy()
+		required.Spec.Pool.Name = "new-pool"
+		ctx, cancel := context.WithCancel(context.Background())
+		updateCalls := 0
+		client.PrependReactor("update", "machineconfignodes", func(action clienttesting.Action) (bool, runtime.Object, error) {
+			updateCalls++
+			cancel()
+			return true, nil, apierrors.NewConflict(schema.GroupResource{Group: mcfgv1.GroupName, Resource: "machineconfignodes"}, name, errors.New("conflict"))
+		})
+
+		_, _, err := ApplyMachineConfigNode(ctx, client.MachineconfigurationV1(), required)
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected context cancellation, got %v", err)
+		}
+		if updateCalls != 1 {
+			t.Fatalf("expected cancellation after 1 update attempt, got %d", updateCalls)
+		}
+	})
+}
+
+// TestIsApplyErrorRetriableMachineConfigNodeCases verifies the retry classifications
+// added for MachineConfigNode reconciliation alongside the broader shared coverage.
+func TestIsApplyErrorRetriableMachineConfigNodeCases(t *testing.T) {
 	mcnGR := schema.GroupResource{Group: "machineconfiguration.openshift.io", Resource: "machineconfignodes"}
 
 	tests := []struct {
@@ -351,8 +496,8 @@ func TestIsApplyErrorRetriable(t *testing.T) {
 }
 
 // TestApplyMachineConfigNodeConflictIsRetriable verifies that ApplyMachineConfigNode surfaces a
-// conflict error that IsApplyErrorRetriable recognises, so the retry.OnError wrapper in
-// syncMachineConfigNodes can retry it correctly.
+// persistent conflict after its context-aware conflict retries and that the shared retry
+// classifier still recognises the error.
 func TestApplyMachineConfigNodeConflictIsRetriable(t *testing.T) {
 	existing := &mcfgv1.MachineConfigNode{
 		ObjectMeta: metav1.ObjectMeta{Name: "node-1", ResourceVersion: "100"},
@@ -377,7 +522,7 @@ func TestApplyMachineConfigNodeConflictIsRetriable(t *testing.T) {
 		return true, nil, conflictErr
 	})
 
-	_, _, err := ApplyMachineConfigNode(client.MachineconfigurationV1(), required)
+	_, _, err := ApplyMachineConfigNode(context.Background(), client.MachineconfigurationV1(), required)
 	if err == nil {
 		t.Fatal("expected conflict error, got nil")
 	}
