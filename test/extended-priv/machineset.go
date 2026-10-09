@@ -19,6 +19,16 @@ import (
 	e2e "k8s.io/kubernetes/test/e2e/framework"
 )
 
+// MachineAPIType represents the type of machine management API
+type MachineAPIType int
+
+const (
+	// MAPI represents the Machine API (machine.openshift.io)
+	MAPI MachineAPIType = iota
+	// CAPI represents the Cluster API (cluster.x-k8s.io)
+	CAPI
+)
+
 // ManagedMachineResource defines the operations that boot image tests perform on a machineset resource.
 // Both MAPI MachineSets and CAPI MachineSets/MachineDeployments can implement this interface,
 // allowing the same test logic to run against different machine management APIs.
@@ -42,6 +52,7 @@ type ManagedMachineResource interface {
 	SetAutoscalerLabels(labels string) error
 	GetArchitecture() (architecture.Architecture, error)
 	GetUserDataSecret() (*Secret, error)
+	GetManagedUserDataSecret() (ManagedUserDataSecret, error)
 	SetUserDataSecret(userDataSecretName string) error
 	GetReplicaOfSpec() (string, error)
 	ScaleTo(scale int) error
@@ -81,25 +92,62 @@ func NewMachineSetList(oc *exutil.CLI, namespace string) *MachineSetList {
 	return &MachineSetList{*NewNamespacedResourceList(oc, MachineSetFullName, namespace)}
 }
 
-// GetAllManagedMachineResources returns all ManagedMachineResource resources available in the cluster.
+// GetAllManagedMachineResources returns all authoritative ManagedMachineResource resources available in the cluster.
+// MAPI MachineSets with status.authoritativeAPI == "ClusterAPI" are excluded as they are just mirrors of the CAPI resources.
+// An optional list of MachineAPIType values can be provided to restrict which API types are collected.
+// If no types are provided, all types are collected.
 // Returns an error if the list cannot be retrieved. Returns an empty slice (not an error) if no resources exist.
-// Currently returns MAPI MachineSets. When CAPI support is added, it will also return
-// CAPI MachineSets/MachineDeployments from the openshift-cluster-api namespace.
-func GetAllManagedMachineResources(oc *exutil.CLI) ([]ManagedMachineResource, error) {
-	mapiMachineSets, err := NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAll()
-	if err != nil {
-		return nil, err
+func GetAllManagedMachineResources(oc *exutil.CLI, apiTypes ...MachineAPIType) ([]ManagedMachineResource, error) {
+	var result []ManagedMachineResource
+
+	collectMAPI := len(apiTypes) == 0
+	collectCAPI := len(apiTypes) == 0
+	for _, t := range apiTypes {
+		switch t {
+		case MAPI:
+			collectMAPI = true
+		case CAPI:
+			collectCAPI = true
+		}
 	}
-	result := make([]ManagedMachineResource, len(mapiMachineSets))
-	for i, ms := range mapiMachineSets {
-		result[i] = ms
+
+	if collectMAPI {
+		mapiMachineSets, err := NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAll()
+		if err != nil {
+			return nil, err
+		}
+		for _, ms := range mapiMachineSets {
+			authAPI, err := ms.Get(`{.status.authoritativeAPI}`)
+			if err != nil {
+				return nil, err
+			}
+			if authAPI == "ClusterAPI" {
+				logger.Infof("Skipping MAPI MachineSet %s: authoritativeAPI is ClusterAPI", ms.GetName())
+				continue
+			}
+			result = append(result, ms)
+		}
 	}
+
+	if collectCAPI {
+		capiMachineSets, err := NewCAPIMachineSetList(oc.AsAdmin(), ClusterAPINamespace).GetAll()
+		if err != nil {
+			// CAPI namespace may not exist on older clusters, treat as empty
+			logger.Infof("Could not list CAPI MachineSets in %s: %v", ClusterAPINamespace, err)
+		} else {
+			for _, ms := range capiMachineSets {
+				result = append(result, ms)
+			}
+		}
+	}
+
 	return result, nil
 }
 
 // GetValidManagedMachineResource returns a ManagedMachineResource with replicas > 0 that is ready and can be used for testing.
-func GetValidManagedMachineResource(oc *exutil.CLI) ManagedMachineResource {
-	all := OrFail[[]ManagedMachineResource](GetAllManagedMachineResources(oc))
+// An optional list of MachineAPIType values can be provided to restrict which API types are considered.
+func GetValidManagedMachineResource(oc *exutil.CLI, apiTypes ...MachineAPIType) ManagedMachineResource {
+	all := OrFail[[]ManagedMachineResource](GetAllManagedMachineResources(oc, apiTypes...))
 	for _, ms := range all {
 		if OrFail[string](ms.GetReplicaOfSpec()) != "0" && ms.GetIsReady() {
 			return ms
@@ -304,8 +352,9 @@ func (ms MachineSet) WaitUntilReady(duration string) error {
 // err = newMs.Patch("json", `[{ "op": "replace", "path": "/spec/template/spec/providerSpec/value/userDataSecret/name", "value": "newSecretName" }]`)
 // newMs.ScaleTo(1)
 func (ms MachineSet) Duplicate(newName string) (ManagedMachineResource, error) {
+	newMs := NewMachineSet(ms.oc, ms.GetNamespace(), newName)
 
-	res, err := CloneResource(&ms, newName, ms.GetNamespace(),
+	_, err := CloneResource(&ms, newName, ms.GetNamespace(),
 		// Extra modifications to
 		// 1. Create the resource with 0 replicas
 		// 2. modify the selector matchLabels
@@ -331,21 +380,23 @@ func (ms MachineSet) Duplicate(newName string) (ManagedMachineResource, error) {
 	)
 
 	if err != nil {
-		return nil, err
+		return newMs, err
 	}
 
-	logger.Infof("A new machineset %s has been created by cloning %s", res.GetName(), ms.GetName())
-	return NewMachineSet(ms.oc, res.GetNamespace(), res.GetName()), nil
+	logger.Infof("A new machineset %s has been created by cloning %s", newMs.GetName(), ms.GetName())
+	return newMs, nil
 }
 
 // DuplicateWithBootImage creates a new MachineSet by cloning, with the boot image set atomically during creation.
 // This ensures the controller sees the machineset created with the desired boot image from the start,
 // rather than seeing a create followed by an update.
 func (ms MachineSet) DuplicateWithBootImage(newName, bootImage string) (ManagedMachineResource, error) {
+	newMs := NewMachineSet(ms.oc, ms.GetNamespace(), newName)
+
 	platform := exutil.CheckPlatform(ms.oc)
 	coreOSBootImagePath, err := ms.GetCoreOSBootImagePath(platform)
 	if err != nil {
-		return nil, err
+		return newMs, err
 	}
 
 	// Transform the JSON patch path to sjson dot-notation
@@ -354,7 +405,7 @@ func (ms MachineSet) DuplicateWithBootImage(newName, bootImage string) (ManagedM
 	// so we transform the string
 	jsonCoreOSBootImagePath := strings.ReplaceAll(strings.TrimPrefix(coreOSBootImagePath, "/"), "/", ".")
 
-	res, err := CloneResource(&ms, newName, ms.GetNamespace(),
+	_, err = CloneResource(&ms, newName, ms.GetNamespace(),
 		// Extra modifications to
 		// 1. Create the resource with 0 replicas
 		// 2. modify the selector matchLabels
@@ -386,11 +437,11 @@ func (ms MachineSet) DuplicateWithBootImage(newName, bootImage string) (ManagedM
 	)
 
 	if err != nil {
-		return nil, err
+		return newMs, err
 	}
 
-	logger.Infof("A new machineset %s has been created by cloning %s with boot image %s", res.GetName(), ms.GetName(), bootImage)
-	return NewMachineSet(ms.oc, res.GetNamespace(), res.GetName()), nil
+	logger.Infof("A new machineset %s has been created by cloning %s with boot image %s", newMs.GetName(), ms.GetName(), bootImage)
+	return newMs, nil
 }
 
 // SetCoreOsBootImage sets the value of the configured coreos boot image
@@ -467,6 +518,15 @@ func (ms MachineSet) GetUserDataSecret() (*Secret, error) {
 		return nil, err
 	}
 	return NewSecret(ms.GetOC(), MachineAPINamespace, secretName), nil
+}
+
+// GetManagedUserDataSecret returns the user-data secret wrapped in a ManagedUserDataSecret for MAPI
+func (ms MachineSet) GetManagedUserDataSecret() (ManagedUserDataSecret, error) {
+	secret, err := ms.GetUserDataSecret()
+	if err != nil {
+		return nil, err
+	}
+	return NewMAPIUserDataSecret(secret), nil
 }
 
 // SetUserDataSecret configures the machineset to use the provided user-data secret in the machine-config-api namespace
@@ -604,54 +664,7 @@ func (ms MachineSet) WaitForRunningMachines(expectedReplicas int, timeout, pollI
 	return runningMachines
 }
 
-// duplicateMachinesetSecret duplicates a userData secret and uses the provided functions to modify the userData and the disableTemplating data if they are not nil
-//
-//nolint:unparam // modifyDisableTemplating may be nil, kept for flexibility
-func duplicateMachinesetSecret(currentSecret *Secret, newName string,
-	modifyUserData func(userData string) (string, error), modifyDisableTemplating func(disableTemplating string) (string, error)) (*Secret, error) {
-	var err error
 
-	namespace := currentSecret.GetNamespace()
-
-	userData, udErr := currentSecret.GetDataValue("userData")
-	if udErr != nil {
-		logger.Errorf("Error getting userData info from secret %s -n %s.\n%s", currentSecret.GetName(), namespace, udErr)
-		return nil, udErr
-	}
-
-	disableTemplating, dtErr := currentSecret.GetDataValue("disableTemplating")
-	if dtErr != nil {
-		logger.Errorf("Error getting disableTemplating info from secret %s -n %s.\n%s", currentSecret.GetName(), namespace, dtErr)
-		return nil, dtErr
-	}
-
-	if modifyUserData != nil {
-		userData, err = modifyUserData(userData)
-		if err != nil {
-			logger.Errorf("Error modifying the userData content with the provided modification function")
-			return nil, err
-		}
-	}
-
-	if modifyDisableTemplating != nil {
-		disableTemplating, err = modifyDisableTemplating(disableTemplating)
-		if err != nil {
-			logger.Errorf("Error modifying the disableTemplating content with the provided modification function")
-			return nil, err
-		}
-	}
-
-	oc := currentSecret.GetOC()
-	logger.Debugf("New userData info:\n%s", userData)
-	oc.NotShowInfo()
-	defer oc.SetShowInfo()
-
-	_, err = oc.AsAdmin().WithoutNamespace().Run("create").Args("secret", "generic", newName, "-n", namespace,
-		"--from-literal", fmt.Sprintf("userData=%s", userData),
-		"--from-literal", fmt.Sprintf("disableTemplating=%s", disableTemplating)).Output()
-
-	return NewSecret(oc.AsAdmin(), namespace, newName), err
-}
 
 // convertUserDataToNewVersion converts the provided userData ignition config into the provided version format
 //
@@ -826,17 +839,19 @@ func (ms MachineSet) AllNodesUpdated() (bool, error) {
 
 // GetScalableManagedMachineResource returns a ManagedMachineResource that can be scaled to add new nodes to the cluster.
 // We select a resource that already has replicas > 0 to make sure that it is safe to scale it up.
+// It checks both MAPI and CAPI machinesets.
 func GetScalableManagedMachineResource(oc *exutil.CLI) (ManagedMachineResource, error) {
-	machinesets, err := NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetReplicas(">", 0)
-	if err != nil {
-		return nil, err
+	mapiMachinesets, err := NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetReplicas(">", 0)
+	if err == nil && len(mapiMachinesets) > 0 {
+		return mapiMachinesets[0], nil
 	}
 
-	if len(machinesets) == 0 {
-		return nil, fmt.Errorf("there is no machineset that can be used to scale nodes safely")
+	capiMachinesets, err := NewCAPIMachineSetList(oc.AsAdmin(), ClusterAPINamespace).GetReplicas(">", 0)
+	if err == nil && len(capiMachinesets) > 0 {
+		return capiMachinesets[0], nil
 	}
 
-	return machinesets[0], nil
+	return nil, fmt.Errorf("there is no machineset that can be used to scale nodes safely")
 }
 
 // SetAutoscalerLabels sets the capacity.cluster-autoscaler.kubernetes.io/labels annotation
