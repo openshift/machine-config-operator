@@ -176,6 +176,56 @@ func marketplaceVersionToken(releaseString string) (string, error) {
 	return parts[0] + "." + parts[1], nil
 }
 
+// resolveAWSTargetAMI determines the target AMI for an AWS resource by detecting whether
+// the current AMI is standard RHCOS, marketplace, or ROSA, then resolving the appropriate
+// replacement. Shared by the MAPI and CAPI reconcile paths.
+func resolveAWSTargetAMI(ctx context.Context, ec2Client *ec2.Client, streamData *coreosstream.Stream, arch, region, currentAMI, resourceName string) (string, string, bool, error) {
+	currentImage, err := describeAMI(ctx, ec2Client, currentAMI)
+	if err != nil {
+		return "", "", false, err
+	}
+
+	kind, productID := detectAMIKind(currentImage)
+
+	var newAMI, rhcosVersion string
+	switch kind {
+	case amiKindStandard:
+		klog.Infof("%s: detected standard RHCOS AMI %s", resourceName, currentAMI)
+		awsRegionImage, err := streamData.GetAwsRegionImage(arch, region)
+		if err != nil {
+			klog.Infof("failed to get AMI for region %s: %v, skipping update of %s", region, err, resourceName)
+			return "", "", true, nil
+		}
+		newAMI = awsRegionImage.Image
+
+	case amiKindMarketplace:
+		klog.Infof("%s: detected marketplace AMI %s (%s)", resourceName, currentAMI, marketplace.ProductName(productID))
+		newAMI, rhcosVersion, err = resolveMarketplaceAMI(ctx, ec2Client, streamData, arch, productID, resourceName)
+		if err != nil {
+			return "", "", false, err
+		}
+		if newAMI == "" {
+			return "", "", true, nil
+		}
+
+	case amiKindROSA:
+		klog.Infof("%s: detected ROSA marketplace AMI %s (%s)", resourceName, currentAMI, marketplace.ProductName(productID))
+		newAMI, rhcosVersion, err = resolveMarketplaceAMI(ctx, ec2Client, streamData, arch, productID, resourceName)
+		if err != nil {
+			return "", "", false, err
+		}
+		if newAMI == "" {
+			return "", "", true, nil
+		}
+
+	default:
+		klog.Infof("%s: AMI %s has unrecognised owner, skipping boot image update", resourceName, currentAMI)
+		return "", "", true, nil
+	}
+
+	return newAMI, rhcosVersion, false, nil
+}
+
 // resolveMarketplaceAMI derives the version token from the stream configmap and delegates to
 // findMarketplaceAMI. Shared by the marketplace and ROSA variant paths.
 // Returns the selected AMI ID and the RHCOS version token that was actually used (which may be
