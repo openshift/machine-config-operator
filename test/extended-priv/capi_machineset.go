@@ -489,7 +489,9 @@ func (ms CAPIMachineSet) Duplicate(newName string) (ManagedMachineResource, erro
 
 	if err != nil {
 		// Clean up the cloned template if machineset creation fails
-		clonedTmpl.Delete()
+		if delErr := clonedTmpl.Delete(); delErr != nil {
+			logger.Errorf("Failed to delete cloned infrastructure template %s: %v", clonedTmpl.GetName(), delErr)
+		}
 		return newMs, err
 	}
 
@@ -547,7 +549,9 @@ func (ms CAPIMachineSet) DuplicateWithBootImage(newName, bootImage string) (Mana
 	)
 
 	if err != nil {
-		clonedTmpl.Delete()
+		if delErr := clonedTmpl.Delete(); delErr != nil {
+			logger.Errorf("Failed to delete cloned infrastructure template %s: %v", clonedTmpl.GetName(), delErr)
+		}
 		return newMs, err
 	}
 
@@ -611,7 +615,7 @@ func (msl *CAPIMachineSetList) GetReplicas(comparison string, replicas int) ([]*
 			comparison, allowedComparisons)
 	}
 
-	filter := fmt.Sprintf(`?(@.spec.replicas%s%d0)`, comparison, replicas)
+	filter := fmt.Sprintf(`?(@.spec.replicas%s%d)`, comparison, replicas)
 	msl.SetItemsFilter(filter)
 
 	return msl.GetAll()
