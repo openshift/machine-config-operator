@@ -8,6 +8,7 @@ import (
 	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
+	"github.com/tidwall/gjson"
 )
 
 func platformBasedDisksPatch(platform string, ms ManagedMachineResource) error {
@@ -306,6 +307,104 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			o.ContainSubstring("spec.config.storage.filesystems"),
 		), "Test node should report irreconcilable changes after MC removal")
 		logger.Infof("Test node %s correctly reports irreconcilable changes after MC removal\n", testNode.GetName())
+	})
+
+	g.It("Verify MCS Ignition contents for irreconcilable MachineConfig", g.Label("Lifecycle:informing", "Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere", "Platform:baremetal"), func() {
+		var (
+			machineconfiguration = GetMachineConfiguration(oc)
+			mcName               = "irreconcilable-ignition-test"
+			initialMcSpecs       = machineconfiguration.GetSpecOrFail()
+			ignitionVersion      = "3.4.0"
+			filePath             = "/etc/temp_config.conf"
+			fileContent          = "THIS_IS_A_TEST_FILE_CONF"
+		)
+
+		mcp := NewMachineConfigPool(oc, MachineConfigPoolWorker)
+
+		defer func() {
+			logger.Infof("Restore initial MachineConfiguration spec")
+			err := machineconfiguration.SetSpec(initialMcSpecs)
+			o.Expect(err).NotTo(o.HaveOccurred())
+		}()
+
+		exutil.By("Step 1: Enable irreconcilableValidationOverrides")
+		err := machineconfiguration.EnableIrreconcilableValidationOverrides()
+		o.Expect(err).NotTo(o.HaveOccurred())
+		err = mcp.WaitForUpdatedStatus()
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		disks := platformBasedDisksNames(platform)
+		o.Expect(disks).To(o.HaveLen(4), "Expected platform-specific disk names for %s", platform)
+
+		mc := NewMachineConfig(oc, mcName, MachineConfigPoolWorker).SetMCOTemplate("extra-disks-with-files.yaml")
+		defer mc.DeleteWithWait()
+
+		exutil.By("Step 2: Apply extra-disks-with-files MachineConfig")
+		err = mc.Create(
+			"-p", "NAME="+mcName,
+			"-p", "POOL="+MachineConfigPoolWorker,
+			"-p", "DEVICE1="+disks[0],
+			"-p", "DEVICE2="+disks[1],
+			"-p", "FILE_PATH="+filePath,
+			"-p", "FILE_CONTENT="+fileContent,
+		)
+		o.Expect(err).NotTo(o.HaveOccurred())
+		logger.Infof("MC %s created successfully", mcName)
+
+		err = mcp.WaitForUpdatedStatus()
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		exutil.By("Step 3: Verify MCS Ignition contains the expected storage and file configuration")
+		diskOnePath := fmt.Sprintf(`storage.disks.#(device==%q)`, disks[0])
+		diskTwoPath := fmt.Sprintf(`storage.disks.#(device==%q)`, disks[1])
+		renderedFilePath := fmt.Sprintf(`storage.files.#(path==%q)`, filePath)
+		var ignitionConfig string
+		o.Eventually(func() (string, error) {
+			var err error
+			ignitionConfig, err = mcp.GetMCSIgnitionConfig(true, ignitionVersion)
+			return ignitionConfig, err
+		}, "1m", "20s").Should(o.SatisfyAll(
+			HavePathWithValue("ignition.version", o.Equal(ignitionVersion)),
+			HavePathWithValue(diskOnePath+`.partitions.0.label`, o.Equal("raid.1.1")),
+			HavePathWithValue(diskTwoPath+`.partitions.0.label`, o.Equal("raid.1.2")),
+			HavePathWithValue(`storage.raid.#(name=="data").level`, o.Equal("stripe")),
+			HavePathWithValue(`storage.raid.#(name=="data").devices.0`, o.Equal("/dev/disk/by-partlabel/raid.1.1")),
+			HavePathWithValue(`storage.raid.#(name=="data").devices.1`, o.Equal("/dev/disk/by-partlabel/raid.1.2")),
+			HavePathWithValue(`storage.filesystems.#(path=="/var/lib/data").device`, o.Equal("/dev/md/data")),
+			HavePathWithValue(`storage.filesystems.#(path=="/var/lib/data").format`, o.Equal("ext4")),
+			HavePathWithValue(`storage.filesystems.#(path=="/var/lib/data").label`, o.Equal("DATA")),
+			HavePathWithValue(renderedFilePath+`.contents.source`, o.Equal("data:,"+fileContent)),
+			HavePathWithValue(renderedFilePath+`.mode`, o.BeEquivalentTo(0644)),
+			HavePathWithValue(renderedFilePath+`.overwrite`, o.BeTrue()),
+		), "Worker Ignition should contain the expected MachineConfig contents")
+		logger.Infof("MCS Ignition contains the irreconcilable storage and file configuration")
+
+		exutil.By("Step 4: Delete the irreconcilable MachineConfig")
+		mc.DeleteWithWait()
+		err = mcp.WaitForUpdatedStatus()
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		exutil.By("Step 5: Verify the removed MachineConfig contents are absent from MCS Ignition")
+		customIgnitionPaths := []string{
+			diskOnePath,
+			diskTwoPath,
+			`storage.raid.#(name=="data")`,
+			`storage.filesystems.#(path=="/var/lib/data")`,
+			renderedFilePath,
+		}
+		o.Eventually(func() (bool, error) {
+			ignitionConfig, err := mcp.GetMCSIgnitionConfig(true, ignitionVersion)
+			if err != nil {
+				return false, err
+			}
+			for _, path := range customIgnitionPaths {
+				if gjson.Get(ignitionConfig, path).Exists() {
+					return false, nil
+				}
+			}
+			return true, nil
+		}, "1m", "20s").Should(o.BeTrue(), "Removed MachineConfig contents should be absent from worker Ignition")
+		logger.Infof("MCS Ignition no longer contains the removed MachineConfig contents\n")
 	})
 
 	g.It("Irreconcilable changes persist after feature has been disabled. New irreconcilable configs will be rejected", g.Label("Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere", "Platform:baremetal"), func() {
