@@ -60,12 +60,13 @@ type Controller struct {
 	mcopLister           mcoplistersv1.MachineConfigurationLister
 	clusterVersionLister configlistersv1.ClusterVersionLister
 
-	mcoCmListerSynced          cache.InformerSynced
-	mapiMachineSetListerSynced cache.InformerSynced
-	cpmsListerSynced           cache.InformerSynced
-	infraListerSynced          cache.InformerSynced
-	mcopListerSynced           cache.InformerSynced
-	clusterVersionListerSynced cache.InformerSynced
+	mcoCmListerSynced           cache.InformerSynced
+	vsphereSecretInformerSynced cache.InformerSynced
+	mapiMachineSetListerSynced  cache.InformerSynced
+	cpmsListerSynced            cache.InformerSynced
+	infraListerSynced           cache.InformerSynced
+	mcopListerSynced            cache.InformerSynced
+	clusterVersionListerSynced  cache.InformerSynced
 
 	queue workqueue.TypedRateLimitingInterface[string]
 
@@ -141,6 +142,7 @@ func New(
 	kubeClient clientset.Interface,
 	machineClient machineclientset.Interface,
 	mcoCmInfomer coreinformersv1.ConfigMapInformer,
+	vsphereSecretInformer coreinformersv1.SecretInformer,
 	mapiMachineSetInformer mapimachineinformersv1beta1.MachineSetInformer,
 	cpmsInformer mapimachineinformersv1.ControlPlaneMachineSetInformer,
 	infraInformer configinformersv1.InfrastructureInformer,
@@ -173,6 +175,7 @@ func New(
 	ctrl.clusterVersionLister = clusterVersionInformer.Lister()
 
 	ctrl.mcoCmListerSynced = mcoCmInfomer.Informer().HasSynced
+	ctrl.vsphereSecretInformerSynced = vsphereSecretInformer.Informer().HasSynced
 	ctrl.mapiMachineSetListerSynced = mapiMachineSetInformer.Informer().HasSynced
 	ctrl.cpmsListerSynced = cpmsInformer.Informer().HasSynced
 	ctrl.infraListerSynced = infraInformer.Informer().HasSynced
@@ -200,6 +203,12 @@ func New(
 		DeleteFunc: ctrl.deleteConfigMap,
 	})
 
+	vsphereSecretInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addVSphereCredentialsSecret,
+		UpdateFunc: ctrl.updateVSphereCredentialsSecret,
+		DeleteFunc: ctrl.deleteVSphereCredentialsSecret,
+	})
+
 	mcopInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addMachineConfiguration,
 		UpdateFunc: ctrl.updateMachineConfiguration,
@@ -223,7 +232,7 @@ func (ctrl *Controller) Run(ctx context.Context) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(ctx.Done(), ctrl.mcoCmListerSynced, ctrl.mapiMachineSetListerSynced, ctrl.infraListerSynced, ctrl.mcopListerSynced, ctrl.clusterVersionListerSynced) {
+	if !cache.WaitForCacheSync(ctx.Done(), ctrl.mcoCmListerSynced, ctrl.vsphereSecretInformerSynced, ctrl.mapiMachineSetListerSynced, ctrl.infraListerSynced, ctrl.mcopListerSynced, ctrl.clusterVersionListerSynced) {
 		return
 	}
 
@@ -280,6 +289,50 @@ func (ctrl *Controller) handleErr(err error, event string) {
 	klog.V(2).Infof("Dropping event %q out of the queue: %v", event, err)
 	ctrl.queue.Forget(event)
 	ctrl.queue.AddAfter(event, 1*time.Minute)
+}
+
+func isVSphereCredentialsSecret(obj interface{}) bool {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+	return err == nil && key == ctrlcommon.MCONamespace+"/"+ctrlcommon.VSphereCredentialsSecretName
+}
+
+// addVSphereCredentialsSecret triggers reconciliation when the dedicated vSphere
+// credentials Secret is created. Other Secrets in the MCO namespace are ignored.
+func (ctrl *Controller) addVSphereCredentialsSecret(obj interface{}) {
+	if !isVSphereCredentialsSecret(obj) {
+		return
+	}
+
+	klog.Infof("vSphere credentials Secret added, reconciling enrolled machine resources")
+	ctrl.enqueueEvent("VSphereCredentialsSecretAdded")
+}
+
+// updateVSphereCredentialsSecret triggers reconciliation when credential data in
+// the dedicated vSphere Secret changes. Metadata-only updates are ignored.
+func (ctrl *Controller) updateVSphereCredentialsSecret(oldObj, newObj interface{}) {
+	if !isVSphereCredentialsSecret(newObj) {
+		return
+	}
+
+	oldSecret, oldOK := oldObj.(*corev1.Secret)
+	newSecret, newOK := newObj.(*corev1.Secret)
+	if !oldOK || !newOK || reflect.DeepEqual(oldSecret.Data, newSecret.Data) {
+		return
+	}
+
+	klog.Infof("vSphere credentials Secret updated, reconciling enrolled machine resources")
+	ctrl.enqueueEvent("VSphereCredentialsSecretUpdated")
+}
+
+// deleteVSphereCredentialsSecret triggers reconciliation when the dedicated
+// vSphere Secret is removed so that its absence is reflected in status.
+func (ctrl *Controller) deleteVSphereCredentialsSecret(obj interface{}) {
+	if !isVSphereCredentialsSecret(obj) {
+		return
+	}
+
+	klog.Infof("vSphere credentials Secret deleted, reconciling enrolled machine resources")
+	ctrl.enqueueEvent("VSphereCredentialsSecretDeleted")
 }
 
 // addMAPIMachineSet handles the addition of a MAPI MachineSet by triggering
