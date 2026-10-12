@@ -31,10 +31,6 @@ const (
 	// filesystem and systemd unit both address the partition through.
 	diskSetupPartlabelPrefix = "/dev/disk/by-partlabel/"
 
-	// azureLunDevicePrefix is the device path the installer partitions on Azure; the data
-	// disk's LUN is appended to it.
-	azureLunDevicePrefix = "/dev/disk/azure/scsi1/lun"
-
 	// prjquotaMountOption is required on data disks so the kubelet can enforce project
 	// quotas on the mounted filesystem.
 	prjquotaMountOption = "prjquota"
@@ -58,6 +54,11 @@ const (
 	// starts a debug pod, so this is deliberately coarse.
 	diskStateInterval = 20 * time.Second
 )
+
+// azureLunDevicePrefixes are the device paths the installer partitions on Azure, newest first;
+// the data disk's LUN is appended to them. data/by-lun is linked on both the SCSI and the NVMe
+// disk controller. scsi1/lun is SCSI-only, and is what older installers emit.
+var azureLunDevicePrefixes = []string{"/dev/disk/azure/data/by-lun/", "/dev/disk/azure/scsi1/lun"}
 
 // azureExpectedDisk describes one Azure data disk that the install-config under test is
 // expected to have configured. The lun and storageAccountType fields are Azure's, and the
@@ -142,14 +143,17 @@ func (d diskSetup) partitionDevice() string {
 // LUN is unique per virtual machine and is what identifies the data disk, so it is the
 // reliable way to pair a disk setup with its entry in the Machine provider spec.
 func (d diskSetup) azureLUN() (int32, error) {
-	if !strings.HasPrefix(d.backingDevice, azureLunDevicePrefix) {
-		return 0, fmt.Errorf("device %q is not an Azure LUN device", d.backingDevice)
+	for _, prefix := range azureLunDevicePrefixes {
+		if !strings.HasPrefix(d.backingDevice, prefix) {
+			continue
+		}
+		lun, err := strconv.ParseInt(strings.TrimPrefix(d.backingDevice, prefix), 10, 32)
+		if err != nil {
+			return 0, fmt.Errorf("device %q has a malformed LUN: %w", d.backingDevice, err)
+		}
+		return int32(lun), nil
 	}
-	lun, err := strconv.ParseInt(strings.TrimPrefix(d.backingDevice, azureLunDevicePrefix), 10, 32)
-	if err != nil {
-		return 0, fmt.Errorf("device %q has a malformed LUN: %w", d.backingDevice, err)
-	}
-	return int32(lun), nil
+	return 0, fmt.Errorf("device %q is not an Azure LUN device", d.backingDevice)
 }
 
 // getDiskSetups returns every disk-setup MachineConfig in the cluster, decoded.
@@ -289,8 +293,9 @@ func collectNodeDiskState(oc *exutil.CLI, nodeName, partDevice, mountPath, backi
 	//
 	// It does not need to be. The separation of the data disk from the OS disk is guaranteed
 	// by which device is partitioned, not by comparing against /. Azure's udev rules give the
-	// OS disk /dev/disk/azure/root, the ephemeral disk /dev/disk/azure/resource, and data
-	// disks /dev/disk/azure/scsi1/lun<N>. The installer partitions the LUN path, so a
+	// OS disk /dev/disk/azure/os, the ephemeral disk /dev/disk/azure/resource, and data disks
+	// /dev/disk/azure/data/by-lun/<N> (on SCSI, also the older /dev/disk/azure/scsi1/lun<N>,
+	// which older installers partition). The installer partitions the LUN path, so a
 	// partition whose parent is that device is on a data disk by construction and cannot be
 	// on the OS disk. Note that the kernel device names carry no such guarantee: in the run
 	// that motivated this, lun1 resolved to /dev/sda.
