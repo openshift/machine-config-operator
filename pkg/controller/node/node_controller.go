@@ -1639,10 +1639,14 @@ func (ctrl *Controller) updateCandidateNode(mosc *mcfgv1.MachineOSConfig, mosb *
 			return nil
 		}
 
-		// Populate the desired config version and image annotations in the node's MCN
-		err = upgrademonitor.UpdateMachineConfigNodeSpecDesiredAnnotations(ctrl.fgHandler, ctrl.client, nodeName, desiredConfig, desiredImage)
-		if err != nil {
+		// Populate the desired config version and image annotations in the node's MCN.
+		// Return any error so RetryOnConflict can retry the full Get→MCN-update→node-patch
+		// sequence. The MCD posts frequent MCN status updates that bump resourceVersion,
+		// so a Conflict here is common; swallowing it leaves MCN.spec.desiredImage empty
+		// while the node annotation is already set.
+		if err = upgrademonitor.UpdateMachineConfigNodeSpecDesiredAnnotations(ctrl.fgHandler, ctrl.client, nodeName, desiredConfig, desiredImage); err != nil {
 			klog.Errorf("error populating MCN for desired config version and image updates: %v", err)
+			return err
 		}
 
 		klog.V(4).Infof("Pool %s: layered=%v node %s update is needed", pool.Name, layered, nodeName)
