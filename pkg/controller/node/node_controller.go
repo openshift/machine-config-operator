@@ -1616,16 +1616,10 @@ func (ctrl *Controller) updateCandidateNode(mosc *mcfgv1.MachineOSConfig, mosb *
 		}
 
 		lns := ctrlcommon.NewLayeredNodeState(oldNode)
-		desiredConfig := ""
-		desiredImage := ""
 		if !layered {
 			lns.SetDesiredStateFromPool(pool)
-			// If pool is not layered, the desired image annotation is removed (see the `delete`
-			// call in `SetDesiredStateFromPool`), so only the desired config version must be set.
-			desiredConfig = lns.GetDesiredAnnotationsFromMachineConfigPool(pool)
 		} else {
 			lns.SetDesiredStateFromMachineOSConfig(mosc, mosb)
-			desiredConfig, desiredImage = lns.GetDesiredAnnotationsFromMachineOSConfig(mosc, mosb)
 		}
 
 		// Set the desired state to match the pool.
@@ -1639,13 +1633,10 @@ func (ctrl *Controller) updateCandidateNode(mosc *mcfgv1.MachineOSConfig, mosb *
 			return nil
 		}
 
-		// Populate the desired config version and image annotations in the node's MCN.
-		// Return any error so RetryOnConflict can retry the full Get→MCN-update→node-patch
-		// sequence. The MCD posts frequent MCN status updates that bump resourceVersion,
-		// so a Conflict here is common; swallowing it leaves MCN.spec.desiredImage empty
-		// while the node annotation is already set.
-		if err = upgrademonitor.UpdateMachineConfigNodeSpecDesiredAnnotations(ctrl.fgHandler, ctrl.client, nodeName, desiredConfig, desiredImage); err != nil {
-			klog.Errorf("error populating MCN for desired config version and image updates: %v", err)
+		// Populate the desired config version and image in the node's MCN spec via SSA.
+		// SSA with Force:true is conflict-free, so this is safe from concurrent MCD status writes.
+		if err = upgrademonitor.GenerateAndApplyMachineConfigNodeSpec(ctrl.fgHandler, pool.Name, lns.Node(), ctrl.client); err != nil {
+			klog.Errorf("error applying MCN spec for node %s: %v", nodeName, err)
 			return err
 		}
 
