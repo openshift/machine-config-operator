@@ -1,0 +1,14 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: ControllerConfig
+metadata:
+  name: test
+  namespace: kube-system
+spec:
+  clusterDNSIP: "10.3.0.10"
+  clusterName: "adahiya-0"
+  infra:
+    status:
+      platformStatus: 
+        type: "Libvirt"
+  baseDomain: "tt.testing"
+  etcdInitialCount: 1

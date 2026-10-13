@@ -1,0 +1,16 @@
+name: wait-for-ipsec-connect.service
+enabled: true
+contents: |
+  [Unit]
+  Description=Ensure IKE SA established for existing IPsec connections.
+  After=ipsec.service
+  Before=kubelet-dependencies.target node-valid-hostname.service
+
+  [Service]
+  Type=oneshot
+  ExecStart=/usr/local/bin/ipsec-connect-wait.sh
+  StandardOutput=journal+console
+  StandardError=journal+console
+
+  [Install]
+  WantedBy=ipsec.service

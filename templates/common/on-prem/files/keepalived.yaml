@@ -1,0 +1,239 @@
+mode: 0644
+path: {{ if isOpenShiftManagedDefaultLB . }} "/etc/kubernetes/manifests/keepalived.yaml" {{ else }} "/etc/kubernetes/disabled-manifests/keepalived.yaml" {{ end }}
+contents:
+  inline: |
+    kind: Pod
+    apiVersion: v1
+    metadata:
+      name: keepalived
+      namespace: openshift-{{ onPremPlatformShortName . }}-infra
+      creationTimestamp:
+      deletionGracePeriodSeconds: 65
+      labels:
+        app: {{ onPremPlatformShortName . }}-infra-vrrp
+      annotations:
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+        openshift.io/required-scc: privileged
+    spec:
+      volumes:
+      - name: resource-dir
+        hostPath:
+          path: "/etc/kubernetes/static-pod-resources/keepalived"
+      - name: script-dir
+        hostPath:
+          path: "/etc/kubernetes/static-pod-resources/keepalived/scripts"
+      - name: kubeconfig
+        hostPath:
+          path: "/etc/kubernetes"
+      - name: kubeconfigvarlib
+        hostPath:
+          path: "/var/lib/kubelet"
+      - name: conf-dir
+        hostPath:
+          path: "/etc/keepalived"
+      - name: run-dir
+        empty-dir: {}
+      - name: chroot-host
+        hostPath:
+          path: "/"
+      - name: nodeip-configuration
+        hostPath:
+          path: "/run/nodeip-configuration"
+      initContainers:
+      - name: render-config-keepalived
+        image: {{ .Images.baremetalRuntimeCfgImage }}
+        command:
+        - runtimecfg
+        - render
+        - "/etc/kubernetes/kubeconfig"
+        - "--api-vips"
+        - "{{- range $index, $ip := onPremPlatformAPIServerInternalIPs . }}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}"
+        - "--ingress-vips"
+        - "{{- range $index, $ip := onPremPlatformIngressIPs . }}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}"
+        - "/config"
+        - "--out-dir"
+        - "/etc/keepalived"
+        resources: {}
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - name: kubeconfig
+          mountPath: "/etc/kubernetes"
+          mountPropagation: HostToContainer
+        - name: script-dir
+          mountPath: "/config"
+          mountPropagation: HostToContainer
+        - name: conf-dir
+          mountPath: "/etc/keepalived"
+          mountPropagation: HostToContainer
+        - name: nodeip-configuration
+          mountPath: "/run/nodeip-configuration"
+          mountPropagation: HostToContainer
+        imagePullPolicy: IfNotPresent
+      containers:
+      - name: keepalived
+        securityContext:
+          capabilities:
+            add: ["NET_ADMIN", "NET_RAW", "SYS_CHROOT"]
+        image: {{.Images.keepalivedImage}}
+        env:
+          - name: NSS_SDB_USE_CACHE
+            value: "no"
+        command:
+        - /bin/bash
+        - -c
+        - |
+          #/bin/bash
+          sigterm_handler()
+          {
+            if pid=$(pgrep -o keepalived); then
+              kill -s SIGTERM "$pid"
+              # Give keepalived time to shut down
+              while pgrep -o keepalived; do sleep 1; done
+            fi
+          }
+
+          reload_keepalived()
+          {
+            if pid=$(pgrep -o keepalived); then
+                kill -s SIGHUP "$pid"
+            else
+                /usr/sbin/keepalived -f /etc/keepalived/keepalived.conf --dont-fork --vrrp --log-detail --log-console &
+            fi
+          }
+
+          msg_handler()
+          {
+            while read -r line; do
+              echo "The client sent: $line" >&2
+              # currently only 'reload' msg is supported
+              if [ "$line" = reload ]; then
+                  reload_keepalived
+              fi
+            done
+          }
+
+          remove_vip()
+          {
+            address=$1
+            interface=$(ip -o a | awk "/\s${address}\// {print \$2}")
+            cidr=$(ip -o a | awk "/\s${address}\// {print \$4}")
+            if [ -n "$interface" ]; then
+                ip a del $cidr dev $interface
+            fi
+          }
+
+          set -ex
+          # Ensure that we don't have stale VIPs configured
+          # See https://bugzilla.redhat.com/show_bug.cgi?id=1931505
+          {{- range onPremPlatformAPIServerInternalIPs . }}
+          remove_vip "{{.}}"
+          {{- end }}
+          {{- range onPremPlatformIngressIPs . }}
+          remove_vip "{{.}}"
+          {{- end }}
+          declare -r keepalived_sock="/var/run/keepalived/keepalived.sock"
+          export -f msg_handler
+          export -f reload_keepalived
+          export -f sigterm_handler
+
+          # in remote worker case sleep forever
+          if [ -f "/run/nodeip-configuration/remote-worker" ]; then
+             sleep infinity
+             exit 0
+          fi
+
+          trap sigterm_handler SIGTERM
+          if [ -s "/etc/keepalived/keepalived.conf" ]; then
+              /usr/sbin/keepalived -f /etc/keepalived/keepalived.conf --dont-fork --vrrp --log-detail --log-console &
+          fi
+
+          rm -f "$keepalived_sock"
+          socat UNIX-LISTEN:${keepalived_sock},fork system:'bash -c msg_handler' &
+          wait
+        resources:
+          requests:
+            cpu: 100m
+            memory: 200Mi
+        volumeMounts:
+        - name: conf-dir
+          mountPath: "/etc/keepalived"
+          mountPropagation: HostToContainer
+        - name: run-dir
+          mountPath: "/var/run/keepalived"
+        - name: chroot-host
+          mountPath: "/host"
+          mountPropagation: HostToContainer
+        - name: kubeconfigvarlib
+          mountPath: "/var/lib/kubelet"
+          mountPropagation: HostToContainer
+        - name: nodeip-configuration
+          mountPath: "/run/nodeip-configuration"
+          mountPropagation: HostToContainer
+        livenessProbe:
+          exec:
+            command:
+            - /bin/bash
+            - -c
+            - |
+              [ ! -s "/etc/keepalived/keepalived.conf" ] || (echo "" > /tmp/keepalived.data && kill -s SIGUSR1 "$(pgrep -o keepalived)" && for i in $(seq 5); do grep -q "VRRP Instance" /tmp/keepalived.data && exit 0 || sleep 1; done && exit 1)
+          initialDelaySeconds: 20
+          timeoutSeconds: 5
+        terminationMessagePolicy: FallbackToLogsOnError
+        imagePullPolicy: IfNotPresent
+      - name: keepalived-monitor
+        securityContext:
+          capabilities:
+            add: ["NET_ADMIN", "SYS_CHROOT"]
+        image: {{ .Images.baremetalRuntimeCfgImage }}
+        env:
+          - name: ENABLE_UNICAST
+            value: "yes"
+          - name: IS_BOOTSTRAP
+            value: "no"
+          - name: POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+        command:
+        - /bin/bash
+        - -c
+        - |
+          #/bin/bash
+          # in remote worker case sleep forever
+          if [ -f "/run/nodeip-configuration/remote-worker" ]; then
+              sleep infinity
+              exit 0
+          fi
+          api_vips={{- range $index, $ip := onPremPlatformAPIServerInternalIPs . }}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}
+          ingress_vips={{- range $index, $ip := onPremPlatformIngressIPs . }}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}
+          dynkeepalived /var/lib/kubelet/kubeconfig /config/keepalived.conf.tmpl /etc/keepalived/keepalived.conf --api-vips "${api_vips}" --ingress-vips "${ingress_vips}" --control-plane-topology {{ .Infra.Status.ControlPlaneTopology }}
+        resources:
+          requests:
+            cpu: 100m
+            memory: 200Mi
+        volumeMounts:
+        - name: resource-dir
+          mountPath: "/config"
+          mountPropagation: HostToContainer
+        - name: kubeconfigvarlib
+          mountPath: "/var/lib/kubelet"
+          mountPropagation: HostToContainer
+        - name: conf-dir
+          mountPath: "/etc/keepalived"
+          mountPropagation: HostToContainer
+        - name: run-dir
+          mountPath: "/var/run/keepalived"
+        - name: chroot-host
+          mountPath: "/host"
+          mountPropagation: HostToContainer
+        - name: nodeip-configuration
+          mountPath: "/run/nodeip-configuration"
+          mountPropagation: HostToContainer
+        terminationMessagePolicy: FallbackToLogsOnError
+        imagePullPolicy: IfNotPresent
+      hostNetwork: true
+      tolerations:
+      - operator: Exists
+      priorityClassName: system-node-critical
+      priority: 2000001000
+    status: {}

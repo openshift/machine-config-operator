@@ -1,0 +1,114 @@
+mode: 0644
+path: "/etc/kubernetes/static-pod-resources/keepalived/keepalived.conf.tmpl"
+contents:
+  inline: |
+    global_defs {
+        enable_script_security
+        script_user root
+        max_auto_priority -1
+        vrrp_garp_master_refresh 60
+    }
+
+    # TODO: Improve this check. The port is assumed to be alive.
+    # Need to assess what is the ramification if the port is not there.
+    vrrp_script chk_ingress_ready {
+        script "/usr/bin/timeout 0.9 /usr/bin/curl -o /dev/null -Lfs http://localhost:1936/healthz/ready"
+        interval 1
+        weight 10
+        rise 3
+        fall 2
+    }
+
+    vrrp_script chk_ingress {
+        script "/usr/bin/timeout 0.9 /usr/bin/curl -o /dev/null -Lfs http://localhost:1936/healthz"
+        interval 1
+        rise 3
+        fall 2
+    }
+
+    vrrp_script chk_default_ingress {
+        script "/usr/bin/timeout 4.9 /etc/keepalived/chk_default_ingress.sh"
+        interval 5
+        weight 50
+        rise 3
+        fall 2
+    }
+
+    {{- if and (eq .Infra.Status.PlatformStatus.Type "OpenStack") (or (eq .IPFamilies "DualStack") (eq .IPFamilies "DualStackIPv6Primary")) }}
+    # When using dual-stack with OpenStack, both IPv4 and IPv6 share the same Neutron Port,
+    # causing OVN to assume both addresses belong to the same node, which may not always be the case.
+    # To address this, we ensure that the API VIPs remain grouped through state changes,
+    # the same goes for Ingress VIPs.
+    vrrp_sync_group VG_INGRESS {
+        group {
+            {{`{{ range $i, $config := .Configs }}`}}
+            {{`{{$nonVirtualIP := .NonVirtualIP}}`}}
+
+            {{`{{$participateInIngressVRRP := not .EnableUnicast}}`}}
+            {{`{{- if .EnableUnicast}}
+            {{- range .IngressConfig.Peers}}
+            {{- if eq $nonVirtualIP .}}
+            {{$participateInIngressVRRP = true}}
+            {{- end}}
+            {{- end}}
+            {{- end}}`}}
+
+            {{`{{if $participateInIngressVRRP}}`}}
+            {{`{{ .Cluster.Name }}`}}_INGRESS_{{`{{$i}}`}}
+            {{`{{ end }}`}}
+            {{`{{ end }}`}}
+        }
+        track_script {
+            chk_ingress
+            chk_ingress_ready
+            chk_default_ingress
+        }
+    }
+    {{- end}}
+
+    {{`{{ range $i, $config := .Configs }}`}}
+    {{`{{$nonVirtualIP := .NonVirtualIP}}`}}
+
+    {{`{{$participateInIngressVRPP := not .EnableUnicast}}`}}
+    {{`{{- if .EnableUnicast}}
+    {{- range .IngressConfig.Peers}}
+    {{- if eq $nonVirtualIP .}}
+    {{$participateInIngressVRPP = true}}
+    {{- end}}
+    {{- end}}
+    {{- end}}`}}
+
+    {{`{{if $participateInIngressVRPP}}`}}
+    vrrp_instance {{`{{ .Cluster.Name }}`}}_INGRESS_{{`{{$i}}`}} {
+        state BACKUP
+        interface {{`{{ .VRRPInterface }}`}}
+        virtual_router_id {{`{{ .Cluster.IngressVirtualRouterID }}`}}
+        priority 20
+        advert_int 1
+        {{`{{if .EnableUnicast}}`}}
+        unicast_src_ip {{`{{.NonVirtualIP}}`}}
+        unicast_peer {
+            {{`{{- range .IngressConfig.Peers}}
+            {{- if ne $nonVirtualIP .}}
+            {{.}}
+            {{- end}}
+            {{- end}}`}}
+        }
+        {{`{{end}}`}}
+        authentication {
+            auth_type PASS
+            auth_pass {{`{{ .Cluster.Name }}`}}_ingress_vip
+        }
+        virtual_ipaddress {
+            {{`{{ .Cluster.IngressVIP }}`}}/{{`{{ .Cluster.VIPNetmask }}`}} label vip
+        }
+        {{- if not (and (eq .Infra.Status.PlatformStatus.Type "OpenStack") (or (eq .IPFamilies "DualStack") (eq .IPFamilies "DualStackIPv6Primary"))) }}
+        track_script {
+            chk_ingress
+            chk_ingress_ready
+            chk_default_ingress
+        }
+        {{- end}}
+    }
+    {{`{{ end }}`}}
+    {{`{{ end }}`}}

@@ -1,0 +1,14 @@
+path: "/etc/nmstate/001-nmstate-disable-ipv6-autoconf.yml"
+contents:
+  inline: |
+    capture:
+      ethernet-nics: interfaces.type=="ethernet"
+    desiredState:
+      interfaces:
+      - name: "{{`{{ capture.ethernet-nics.interfaces.0.name }}`}}"
+        type: ethernet
+        state: up
+        ipv6:
+          enabled: true
+          dhcp: true
+          autoconf: false

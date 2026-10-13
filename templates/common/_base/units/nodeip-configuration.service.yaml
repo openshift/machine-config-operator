@@ -1,0 +1,51 @@
+# NOTE: When making changes to this service, be sure they are replicated in the
+# VSphere-specific service in templates/common/[vsphere|kubevirt]/units
+name: nodeip-configuration.service
+enabled: {{if or (eq .Infra.Status.PlatformStatus.Type "None") (eq .Infra.Status.PlatformStatus.Type "External") (and (eq .Infra.Status.ControlPlaneTopology "SingleReplica") (eq (cloudProvider .) "external")) }}true{{else}}false{{end}}
+contents: |
+  [Unit]
+  Description=Writes IP address configuration so that kubelet and crio services select a valid node IP
+  Wants=NetworkManager-wait-online.service
+  After=NetworkManager-wait-online.service firstboot-osupdate.target
+  Before=kubelet-dependencies.target ovs-configuration.service
+
+  [Service]
+  # Need oneshot to delay kubelet
+  Type=oneshot
+  SyslogIdentifier=nodeip-configuration
+  # Would prefer to do Restart=on-failure instead of this bash retry loop, but
+  # the version of systemd we have right now doesn't support it. It should be
+  # available in systemd v244 and higher.
+  ExecStart=/bin/bash -c " \
+    until \
+    /usr/bin/podman run --rm \
+    --authfile /var/lib/kubelet/config.json \
+    --env 'ENABLE_NODEIP_DEBUG=true' \
+    --net=host \
+    --security-opt label=disable \
+    --volume /etc/systemd/system:/etc/systemd/system \
+    --volume /run/nodeip-configuration:/run/nodeip-configuration \
+    {{ .Images.baremetalRuntimeCfgImage }} \
+    node-ip \
+    set \
+    {{if or (eq .IPFamilies "IPv6") (eq .IPFamilies "DualStackIPv6Primary") -}}
+    --prefer-ipv6 \
+    {{end -}}
+    --retry-on-failure \
+    --network-type {{.NetworkType}} \
+    ${NODEIP_HINT:-${KUBELET_NODEIP_HINT:-}}; \
+    do \
+    sleep 5; \
+    done"
+  ExecStart=/bin/systemctl daemon-reload
+  ExecStartPre=/bin/mkdir -p /run/nodeip-configuration
+  StandardOutput=journal+console
+  StandardError=journal+console
+
+  {{if .Proxy -}}
+  EnvironmentFile=/etc/mco/proxy.env
+  {{end -}}
+  EnvironmentFile=-/etc/default/nodeip-configuration
+
+  [Install]
+  RequiredBy=kubelet-dependencies.target

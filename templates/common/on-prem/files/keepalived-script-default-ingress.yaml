@@ -1,0 +1,6 @@
+mode: 0755
+path: "/etc/kubernetes/static-pod-resources/keepalived/scripts/chk_default_ingress.sh.tmpl"
+contents:
+  inline: |
+    #!/bin/bash
+    chroot /host /bin/crictl pods --namespace openshift-ingress --state Ready | grep -qE 'router-default-[[:alnum:]]{5,}-[[:alnum:]]{5,}'

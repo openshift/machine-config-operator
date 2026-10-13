@@ -1,0 +1,5 @@
+mode: 0600
+path: "/etc/docker/certs.d/.create"
+contents:
+  inline: |
+    Initial Creation

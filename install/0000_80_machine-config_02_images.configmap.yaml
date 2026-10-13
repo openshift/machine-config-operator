@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: machine-config-operator-images
+  namespace: openshift-machine-config-operator
+  annotations:
+    include.release.openshift.io/ibm-cloud-managed: "true"
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+data:
+  images.json: >
+    {
+      "releaseVersion": "0.0.1-snapshot",
+      "machineConfigOperator": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:machine-config-operator",
+      "infraImage": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:pod",
+      "keepalivedImage": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:keepalived-ipfailover",
+      "corednsImage": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:coredns",
+      "haproxyImage": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:haproxy-router",
+      "baremetalRuntimeCfgImage": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:baremetal-runtimecfg",
+      "oauthProxy": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:oauth-proxy",
+      "kubeRbacProxy": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:kube-rbac-proxy",
+      "dockerRegistryImage": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:docker-registry"
+    }

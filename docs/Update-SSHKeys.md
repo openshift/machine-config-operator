@@ -1,0 +1,202 @@
+# Managing SSH Keys with the MCD
+
+By default, the OpenShift 4 installer creates a single user named `core` (derived in spirit from CoreOS Container Linux) with optional SSH keys specified at install time.
+
+This controller supports updating the SSH keys of user `core` via a MachineConfig object. The SSH keys are updated for all members of the MachineConfig pool specified in the MachineConfig, for example: all worker nodes.
+
+Please note that RHCOS nodes will be [annotated](https://github.com/openshift/machine-config-operator/blob/master/docs/MachineConfigDaemon.md#annotating-on-ssh-access) when accessed via SSH.
+
+## Unsupported Operations
+
+- The MCD will not add any new users.
+
+- The MCD will not delete the user `core`.
+
+- The MCD will not make any changes to any other User fields for user `core` other than `sshAuthorizedKeys`.
+
+## Info you will need
+
+You will need the following information for the MachineConfig that will be used to update your SSHKeys.
+
+- `machineconfiguration.openshift.io/role:` the MachineConfig that is updated will be applied to all nodes with the role specified here. For example: `master` or `worker`
+
+- `sshAuthorizedKeys:` you will need one or more public keys to be assigned to user `core`.  Multiple SSH Keys should begin on different lines and each be preceded by `-`.
+
+## Creating SSH for a pool
+
+In case your cluster has been installed without providing the ssh key for the `core` user at installation time (verify that `99-worker-ssh`/`99-master-ssh` are missing, by checking `oc get machineconfigs`),
+you can easily create a MachineConfig that will ship the SSH keys to the nodes in a pool:
+
+```console
+$ cat 99-worker-ssh.yaml
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  labels:
+    machineconfiguration.openshift.io/role: worker
+  name: 99-worker-ssh
+spec:
+  config:
+    ignition:
+      version: 2.2.0
+    passwd:
+      users:
+      - name: core
+        sshAuthorizedKeys:
+        - ssh-rsa ABC123....
+        - ssh-ed25519 XYZ7890....
+```
+
+Then just create the file with `oc`:
+
+```console
+$ oc create -f 99-worker-ssh.yaml
+```
+
+The MCO will take care of shipping the SSH keys to the nodes in the `worker` pool. The same procedure applies to any other pool in the cluster.
+
+## Updating SSH for workers
+
+List all the machineconfigs currently in the cluster.
+
+```console
+$ oc get machineconfigs
+NAME                                               GENERATEDBYCONTROLLER               IGNITIONVERSION   CREATED
+00-master                                          4.0.0-alpha.0-116-gdc9b354d-dirty   2.2.0             3m40s
+00-worker                                          4.0.0-alpha.0-116-gdc9b354d-dirty   2.2.0             3m40s
+01-master-container-runtime                        4.0.0-alpha.0-116-gdc9b354d-dirty   2.2.0             3m40s
+01-master-kubelet                                  4.0.0-alpha.0-116-gdc9b354d-dirty   2.2.0             3m40s
+01-worker-container-runtime                        4.0.0-alpha.0-116-gdc9b354d-dirty   2.2.0             3m39s
+01-worker-kubelet                                  4.0.0-alpha.0-116-gdc9b354d-dirty   2.2.0             3m39s
+99-master-ssh                                                                          2.2.0             3m57s
+99-worker-ssh                                                                          2.2.0             3m56s
+rendered-master-753f1b4476475611360ba65b4d0d378d   4.0.0-alpha.0-116-gdc9b354d-dirty   2.2.0             3m36s
+rendered-worker-6a77758776c24585f8db809b64569b6f   4.0.0-alpha.0-116-gdc9b354d-dirty   2.2.0             3m36s
+```
+
+`99-worker-ssh` contains the current SSHAuthorizedKeys for `worker` pool.
+
+```console
+$ oc get machineconfigs 99-worker-ssh -oyaml
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  labels:
+    machineconfiguration.openshift.io/role: worker
+  name: 99-worker-ssh
+spec:
+  config:
+    ignition:
+      version: 2.2.0
+    passwd:
+      users:
+      - name: core
+        sshAuthorizedKeys:
+        - ssh-rsa ABC123....
+        - ssh-ed25519 XYZ7890....
+        - ecdsa-sha2-nistp256 AAAAE2....
+```
+
+Export the `99-worker-ssh` to edit the `SSHAuthorizedKeys`.
+
+```sh
+oc get machineconfigs 99-worker-ssh -oyaml > update-ssh-worker.yaml
+```
+
+Update the `sshAuthorizedKeys` for `core` user in `update-ssh-worker.yaml`.
+
+```yaml
+# update-ssh-worker.yaml
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  labels:
+    machineconfiguration.openshift.io/role: worker
+  name: 99-worker-ssh
+spec:
+  config:
+    ignition:
+      version: 2.2.0
+    passwd:
+      users:
+      - name: core
+        sshAuthorizedKeys:
+        - ssh rsa ABC123....
+        - ssh rsa XYZ7890....
+```
+
+Now with your MachineConfig yaml file (using the example above), apply the changes.
+
+```sh
+oc apply -f update-ssh-worker.yaml
+```
+
+You should see the new MachineConfig being generated by the controller to roll the changes:
+
+```console
+$ oc get machineconfigs
+NAME                                               GENERATEDBYCONTROLLER               IGNITIONVERSION   CREATED
+00-master                                          4.0.0-alpha.0-116-gdc9b354d-dirty   2.2.0             3m40s
+00-worker                                          4.0.0-alpha.0-116-gdc9b354d-dirty   2.2.0             3m40s
+01-master-container-runtime                        4.0.0-alpha.0-116-gdc9b354d-dirty   2.2.0             3m40s
+01-master-kubelet                                  4.0.0-alpha.0-116-gdc9b354d-dirty   2.2.0             3m40s
+01-worker-container-runtime                        4.0.0-alpha.0-116-gdc9b354d-dirty   2.2.0             3m39s
+01-worker-kubelet                                  4.0.0-alpha.0-116-gdc9b354d-dirty   2.2.0             3m39s
+99-master-ssh                                                                          2.2.0             3m57s
+99-worker-ssh                                                                          2.2.0             3m56s
+rendered-master-753f1b4476475611360ba65b4d0d378d   4.0.0-alpha.0-116-gdc9b354d-dirty   2.2.0             3m36s
+rendered-worker-6a77758776c24585f8db809b64569b6f   4.0.0-alpha.0-116-gdc9b354d-dirty   2.2.0             3m36s
+rendered-worker-21612112efc1dde979f1c73c1d9df168   4.0.0-alpha.0-116-gdc9b354d-dirty   2.2.0             10s
+```
+
+You are then able to monitor the MCD logs of a worker or master (whichever the config applied to), which should check the proposed changes and reboot into the new config:
+
+```sh
+oc logs -f -n openshift-machine-config-operator machine-config-daemon-<hash>
+```
+
+If the update was succesfully applied, you should expect to see lines similar to in these logs:
+
+```console
+I0111 19:59:07.360110    7993 update.go:258] SSH Keys reconcilable
+...
+I0111 19:59:07.371253    7993 update.go:569] Writing SSHKeys at "/home/core/.ssh"
+...
+I0111 19:59:07.372208    7993 update.go:613] machine-config-daemon initiating reboot: Node will reboot into config worker-96b48815fa067f651fa50541ea6a9b5d
+```
+
+After the node reboots, expect to see the daemons for the node specified restarted:
+
+```console
+$ oc get pods -n openshift-machine-config-operator
+
+NAME                                         READY     STATUS    RESTARTS   AGE
+machine-config-controller-68f5989588-2cfvq   1/1       Running   0          1h
+machine-config-daemon-58d6c                  1/1       Running   0          1h
+machine-config-daemon-c7jkk                  1/1       Running   1          1h
+machine-config-daemon-ddsnp                  1/1       Running   1          1h
+machine-config-daemon-kx49n                  1/1       Running   1          1h
+machine-config-daemon-q8d7j                  1/1       Running   0          1h
+machine-config-daemon-w68t9                  1/1       Running   0          1h
+machine-config-operator-769967ddf5-9blb8     1/1       Running   0          1h
+machine-config-server-7gckv                  1/1       Running   0          1h
+machine-config-server-98cpz                  1/1       Running   0          1h
+machine-config-server-pzj68                  1/1       Running   0          1h
+```
+
+If we check the same daemon's logs, we should now see similar lines in the output:
+
+```console
+$ oc logs -f -n openshift-machine-config-operator machine-config-daemon-<same-hash>
+
+...
+I0111 20:00:15.755052    6900 daemon.go:497] Completing pending config worker-52df682dc5cb3976b063ef3f197ead5e
+...
+I0111 20:00:15.769349    6900 update.go:613] machine-config-daemon: completed update for config worker-52df682dc5cb3976b063ef3f197ead5e
+...
+I0111 20:00:15.778909    6900 daemon.go:503] In desired config worker-52df682dc5cb3976b063ef3f197ead5e
+```
+
+## Common Pitfalls
+
+- Updating `user: name`: Do not update the `user: name` field. The only user currently supported is `core` as shown in the above example config.

@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-deployment
+spec:
+  template:
+    spec:
+      containers:
+      - name: main-container
+        image: nginx
+        env:
+        - name: DATABASE_PASSWORD
+          value: "secret-db-password"
+        - name: PUBLIC_CONFIG
+          value: "public-value"
+      - name: sidecar-container
+        image: busybox
+        env:
+        - name: SIDECAR_SECRET
+          value: "sidecar-secret-value"
+      volumes:
+      - name: secret-volume
+        secret:
+          secretName: my-secret
+          items:
+          - key: password
+            path: db-password
+            data: "encrypted-password-data"
+          - key: token
+            path: api-token
+            data: "encrypted-token-data"

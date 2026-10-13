@@ -1,0 +1,25 @@
+[Unit]
+Description=Manages a mount namespace for kubernetes-specific mounts
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+RuntimeDirectory=kubens
+Environment=RUNTIME_DIRECTORY=%t/kubens
+Environment=BIND_POINT=%t/kubens/mnt
+Environment=ENVFILE=%t/kubens/env
+
+# Set up the runtime directory as an unbindable mountpoint
+ExecStartPre=bash -c "findmnt ${RUNTIME_DIRECTORY} || mount --make-unbindable --bind ${RUNTIME_DIRECTORY} ${RUNTIME_DIRECTORY}"
+# Ensure the bind point exists
+ExecStartPre=touch ${BIND_POINT}
+# Use 'unshare' to create the new mountpoint, then 'mount --make-rshared' so it cascades internally
+ExecStart=unshare --mount=${BIND_POINT} --propagation slave mount --make-rshared /
+# Finally, set an env pointer for ease-of-use
+ExecStartPost=bash -c 'echo "KUBENSMNT=${BIND_POINT}" > "${ENVFILE}"'
+
+# On stop, a recursive unmount cleans up the namespace and bind-mounted unbindable parent directory
+ExecStop=umount -R ${RUNTIME_DIRECTORY}
+
+[Install]
+WantedBy=multi-user.target

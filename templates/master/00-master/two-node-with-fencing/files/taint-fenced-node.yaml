@@ -1,0 +1,41 @@
+mode: 0755
+path: "/usr/local/bin/taint-fenced-node.sh"
+contents:
+  inline: |
+    #!/bin/bash
+    set -euo pipefail
+    FENCED_NODE="${1:-}"
+    KUBECONFIG="/etc/kubernetes/static-pod-resources/kube-apiserver-certs/secrets/node-kubeconfigs/localhost.kubeconfig"
+    TAINT_KEY="node.kubernetes.io/out-of-service"
+    TAINT_VALUE="nodeshutdown"
+    ANNOTATION_KEY="node.kubernetes.io/out-of-service-applied-by"
+    ANNOTATION_VALUE="pacemaker"
+    OC="oc --kubeconfig=$KUBECONFIG"
+
+    if [[ -z "${FENCED_NODE:-}" ]]; then
+        logger -t taint-fenced-node "ERROR: Node name is empty or not set"
+        exit 1
+    fi
+
+    logger -t taint-fenced-node "Applying out-of-service taint to fenced node ${FENCED_NODE}"
+
+    PATCH=$(cat <<PATCHEOF
+    {"metadata":{"annotations":{"${ANNOTATION_KEY}":"${ANNOTATION_VALUE}"}},
+     "spec":{"taints":[{"key":"${TAINT_KEY}","value":"${TAINT_VALUE}","effect":"NoExecute"}]}}
+    PATCHEOF
+    )
+
+    MAX_RETRIES=120
+    RETRY_INTERVAL=5
+    for attempt in $(seq 1 $MAX_RETRIES); do
+        OC_ERR=$($OC patch node "$FENCED_NODE" --type=strategic -p "$PATCH" 2>&1) && {
+            logger -t taint-fenced-node "Successfully tainted and annotated ${FENCED_NODE}"
+            exit 0
+        }
+
+        logger -t taint-fenced-node "Attempt ${attempt}/${MAX_RETRIES} failed: ${OC_ERR}, retrying in ${RETRY_INTERVAL}s"
+        sleep $RETRY_INTERVAL
+    done
+
+    logger -t taint-fenced-node "ERROR: Failed to taint ${FENCED_NODE} after ${MAX_RETRIES} attempts"
+    exit 1

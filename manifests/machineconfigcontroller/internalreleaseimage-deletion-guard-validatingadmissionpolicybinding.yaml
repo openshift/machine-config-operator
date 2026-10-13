@@ -1,0 +1,10 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: "internalreleaseimage-deletion-guard-binding"
+spec:
+  policyName: "internalreleaseimage-deletion-guard"
+  validationActions: [Deny]
+  paramRef:
+    name: "version"
+    parameterNotFoundAction: "Deny"

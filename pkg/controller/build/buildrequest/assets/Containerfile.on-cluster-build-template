@@ -1,0 +1,99 @@
+# This Dockerfile is not intended to be directly built. Instead, it is embedded
+# within the Build Controller binary (see //go:embed) and templatized with
+# certain options around base image pullspecs.
+#
+# Decode and extract the MachineConfig from the gzipped ConfigMap and move it
+# into position. We do this in a separate stage so that we don't have the
+# gzipped MachineConfig laying around.
+FROM {{.BaseOSImage}} AS extract
+COPY ./machineconfig/machineconfig.json.gz /tmp/machineconfig.json.gz
+RUN mkdir -p /etc/machine-config-daemon && \
+	cat /tmp/machineconfig.json.gz | base64 -d | gunzip - > /etc/machine-config-daemon/currentconfig
+
+FROM {{.BaseOSImage}} AS configs
+# Copy the extracted MachineConfig into the expected place in the image.
+COPY --from=extract /etc/machine-config-daemon/currentconfig /etc/machine-config-daemon/currentconfig
+# Do the ignition live-apply, extracting the Ignition config from the MachineConfig.
+# Not sure why Ignition explicitly requires the container env var to be set
+# since it should be set by the container runtime / builder.
+RUN container="oci" exec -a ignition-apply /usr/lib/dracut/modules.d/30ignition/ignition --ignore-unsupported <(cat /etc/machine-config-daemon/currentconfig | jq '.spec.config') && \
+	ostree container commit
+# Install any extensions specified
+{{if .ExtensionsImage}}
+# Mount the extensions image to use the content from it
+# and add the extensions repo to /etc/yum.repos.d/coreos-extensions.repo
+RUN --mount=type=bind,from={{.ExtensionsImage}},source=/,target=/tmp/mco-extensions/os-extensions-content,bind-propagation=rshared,z \
+    bash <<'EOF'
+set -xeuo pipefail
+
+# Add extensions repo
+cat > /etc/yum.repos.d/coreos-extensions.repo <<REPO
+[coreos-extensions]
+enabled=1
+metadata_expire=1m
+baseurl=/tmp/mco-extensions/os-extensions-content/usr/share/rpm-ostree/extensions/
+gpgcheck=0
+skip_if_unavailable=False
+REPO
+
+chmod 644 /etc/yum.repos.d/coreos-extensions.repo
+
+{{if .ExtensionsPackages}}
+# Install extension packages
+extensions="{{- range $index, $item := .ExtensionsPackages }}{{- if $index }} {{ end }}{{$item}}{{- end }}"
+echo "Installing extension packages: $extensions"
+rpm-ostree install $extensions
+{{end}}
+
+{{if and .KernelType .KernelPackages}}
+kernelOldPkgs=""
+# Detect current kernel and compare with desired .KernelType
+if rpm -q kernel-rt-core > /dev/null 2>&1; then
+	if [[ "{{ .KernelType }}" != "realtime" ]]; then
+		echo "Base Image has RT kernel, new KernelType is '{{ .KernelType }}'"
+		kernelOldPkgs="{{- range $index, $item := index .KernelPackages "realtime" -}}{{- if $index }} {{ end }}{{$item}}{{- end }}"
+	fi
+elif rpm -q kernel-64k-core > /dev/null 2>&1; then
+	if [[ "{{ .KernelType }}" != "64k-pages" ]]; then
+		echo "Base Image has 64k-pages kernel, new KernelType is '{{ .KernelType }}'"
+		kernelOldPkgs="{{- range $index, $item := index .KernelPackages "64k-pages" -}}{{- if $index }} {{ end }}{{$item}}{{- end }}"
+	fi
+elif rpm -q kernel > /dev/null 2>&1; then
+	if [[ "{{ .KernelType }}" != "default" ]]; then
+		echo "Base Image has Default kernel, new KernelType is '{{ .KernelType }}'"
+		kernelOldPkgs="{{- range $index, $item := index .KernelPackages "default" -}}{{- if $index }} {{ end }}{{$item}}{{- end }}"
+	fi
+else
+	echo "Error: Unknown base kernel type. Unable to perform the kernel swap to '{{ .KernelType }}'"
+	exit 1;
+fi
+
+# Override existing kernel packages if it differs from the requested kernel type
+if [ -n "$kernelOldPkgs" ]; then
+	installKernelPkgs="{{- range $index, $item := index .KernelPackages .KernelType -}}{{- if $index }} {{ end }}{{$item}}{{- end }}"
+	(echo "remove $kernelOldPkgs"; echo "install $installKernelPkgs"; echo run) | dnf -y shell
+fi
+{{end}}
+
+rm /etc/yum.repos.d/coreos-extensions.repo
+EOF
+
+RUN ostree container commit
+{{end}}
+
+# Hardcoded tmpfiles configuration for usbguard and ipsec.
+# Eventually when https://github.com/USBGuard/usbguard/pull/652 is backported to RHEL, we will be able to remove the usbguard patch
+# For now, libreswan (ipsec) patch will live here until we find a better alternative
+RUN test ! -f /usr/lib/tmpfiles.d/usbguard.conf || rm /usr/lib/tmpfiles.d/usbguard.conf
+RUN echo -e "d /var/log/usbguard 0755 root root -\nd /var/lib/ipsec 0700 root root -\nd /var/lib/ipsec/nss 0700 root root -" > /usr/lib/tmpfiles.d/usbguard_ipsec.conf
+
+COPY ./openshift-config-user-ca-bundle.crt /etc/pki/ca-trust/source/anchors/openshift-config-user-ca-bundle.crt
+RUN update-ca-trust
+
+LABEL machineconfig={{.MachineOSBuild.Spec.MachineConfig.Name}}
+LABEL machineconfigpool={{.MachineOSConfig.Spec.MachineConfigPool.Name}}
+LABEL baseOSContainerImage={{.BaseOSImage}}
+
+{{if .UserContainerfile}}
+{{.UserContainerfile}}
+{{end}}

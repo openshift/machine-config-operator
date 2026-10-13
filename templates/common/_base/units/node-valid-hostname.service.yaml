@@ -1,0 +1,20 @@
+name: node-valid-hostname.service
+enabled: true
+contents: |
+  [Unit]
+  Description=Wait for a non-localhost hostname
+  Before=kubelet-dependencies.target
+
+  [Service]
+  Type=oneshot
+  RemainAfterExit=yes
+  User=root
+  ExecStart=/usr/local/bin/mco-hostname --wait
+
+  # Wait up to 5min for the node to get a non-localhost name
+  TimeoutSec=300
+
+  [Install]
+  # TODO: Change this to RequiredBy after we fix https://github.com/openshift/machine-config-operator/pull/3865#issuecomment-1746963115
+  WantedBy=kubelet-dependencies.target
+

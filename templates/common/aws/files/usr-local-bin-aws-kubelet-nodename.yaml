@@ -1,0 +1,59 @@
+mode: 0755
+path: "/usr/local/bin/aws-kubelet-nodename"
+contents:
+  inline: |
+    #!/bin/bash
+    set -e -o pipefail
+
+    NODEENV=/etc/kubernetes/node.env
+
+    # This can be removed 1 release after it merges because all affected nodes
+    # will have upgraded
+    LEGACY_NODEENV=/etc/systemd/system/kubelet.service.d/20-aws-node-name.conf
+    if [ -e "${LEGACY_NODEENV}" ]; then
+        # Legacy file was a systemd stanza with KUBELET_NODE_NAME specified in
+        # a directive of the format:
+        #   Environment="KUBELET_NODE_NAME=node.example.com"
+        # New format is an environment file. The following extracts only the
+        # contents of any Environment directives.
+        echo "Migrating ${LEGACY_NODEENV} to ${NODEENV}"
+        awk 'match($0, /^\s*Environment\s*=\s*"(.*)"\s*$/, value) { print value[1] }' < "${LEGACY_NODEENV}" > "${NODEENV}"
+        rm "${LEGACY_NODEENV}"
+        exit 0
+    fi
+
+    if [ -e "${NODEENV}" ] && grep -Fq "KUBELET_NODE_NAME" ${NODEENV}; then
+        echo "Not replacing existing ${NODEENV}"
+        exit 0
+    fi
+    
+    # afterburn service is expected to be used for metadata retrival, see respective systemd unit.
+    # However, on older OCP boot images does not contain afterburn service, check if afterburn variables are there
+    # otherwise try to communicate IMDS here.
+    # metadata related afterburn doc: https://coreos.github.io/afterburn/usage/attributes/
+    
+    HOSTNAME=${AFTERBURN_AWS_HOSTNAME:-}
+    while [[ -z "${HOSTNAME}" ]]; do
+      HOSTNAME=$(curl -fSs http://169.254.169.254/2022-09-24/meta-data/local-hostname)
+      if [[ -z "${HOSTNAME}" ]]; then
+        echo "Can not obtain hostname from the metadata service." 1>&2
+        sleep 5
+      fi 
+    done
+
+    # AWS may return multiple, space separate hostnames, ensure we only use the first of these.
+    # REF: OCPBUGS-10498.
+    HOSTNAME=${HOSTNAME%% *}
+
+    # AWS validates DHCP option custom domain names if you create them via the console so that they do not contain
+    # trailing periods. However, if you use the CLI, you can avoid this validation and create a DHCP option set with
+    # a trailing period.
+    # Trailing periods are not compatible with Kube DNS1123 subdomain validation that is used for node names.
+    # Remove trailing periods from the hostname. REF: OCPBUGS-45306.
+    HOSTNAME=${HOSTNAME%%.}
+
+    # For compatibility with the AWS in-tree provider
+    # Set node name to be instance FQDN instead of the default hostname
+    cat >> "${NODEENV}" <<EOF
+    KUBELET_NODE_NAME=${HOSTNAME}
+    EOF

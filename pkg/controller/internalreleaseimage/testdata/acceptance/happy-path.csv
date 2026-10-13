@@ -1,0 +1,26 @@
+Scenario,,Happy path,,,,
+,,"Given an OVE cluster with 3 control plane nodes
+And all the IRI registries are accessible
+
+Then all the MachineConfigNodes should not be degraded
+And the InternalReleaseImage resource should not be degraded
+And all releases should be available and not degraded via api-int",,,,
+,,,,,,
+,,MasterConfigNode ,,,,InternalReleaseImage
+resource,,master-0,master-1,master-2,,cluster
+"status 
+condition",Type,InternalReleaseImageDegraded,InternalReleaseImageDegraded,InternalReleaseImageDegraded,,Degraded
+,Status,False,False,False,,False
+,Reason,AllReleasesAvailable,AllReleasesAvailable,AllReleasesAvailable,,AllReleasesAvailable
+,Message,All the release images are available,All the release images are available,All the release images are available,,All the release images are available
+"releases[0]
+conditions",name,ocp-release-bundle-4.22,ocp-release-bundle-4.22,ocp-release-bundle-4.22,,ocp-release-bundle-4.22
+,image,localhost:22625/openshift/release-images@<digest>,localhost:22625/openshift/release-images@<digest>,localhost:22625/openshift/release-images@<digest>,,api-int.<cluster-name>.<base-domain>:22625/openshift/release-images@<digest>
+,Type,Available,Available,Available,,Available
+,Status,True,True,True,,True
+,Reason,ReleaseImageAvailable,ReleaseImageAvailable,ReleaseImageAvailable,,ReleaseImageAvailable
+,Message,The specified release image is available,The specified release image is available,The specified release image is available,,The specified release image is available
+,Type,Degraded,Degraded,Degraded,,Degraded
+,Status,False,False,False,,False
+,Reason,ReleaseImageAvailable,ReleaseImageAvailable,ReleaseImageAvailable,,ReleaseImageAvailable
+,Message,ReleaseImageAvailable,ReleaseImageAvailable,ReleaseImageAvailable,,ReleaseImageAvailable

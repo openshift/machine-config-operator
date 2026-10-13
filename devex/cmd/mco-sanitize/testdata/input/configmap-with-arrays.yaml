@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-configmap
+data:
+  servers:
+  - host: "server1.example.com"
+    credentials: "user1:password1"
+  - host: "server2.example.com"
+    credentials: "user2:password2"
+  secretKeys:
+  - "secret-key-1"
+  - "secret-key-2"

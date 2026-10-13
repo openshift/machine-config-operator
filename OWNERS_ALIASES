@@ -1,0 +1,70 @@
+# See the OWNERS_ALIASES docs: https://git.k8s.io/community/contributors/guide/owners.md#OWNERS_ALIASES
+
+aliases:
+  baremetal-approvers:
+    - bfournie
+    - cybertron
+    - mkowalski
+  baremetal-reviewers:
+    - bfournie
+    - cybertron
+    - emy
+    - mkowalski
+  edge-enablement-reviewers:
+     - jerpeter1
+     - eggfoobar
+     - jeff-roche
+     - suleymanakbas91
+     - qJkee
+     - jaypoulz
+  openstack-approvers:
+    - gryf
+    - mandre
+    - stephenfin
+  openstack-reviewers:
+    - gryf
+    - mandre
+    - stephenfin
+  ovirt-approvers:
+    - engelmi
+    - eslutsky
+    - Darth-Mera
+  ovirt-reviewers:
+    - engelmi
+    - eslutsky
+    - Darth-Mera
+  vsphere-approvers:
+    - jcpowermac
+    - patrickdillon
+    - rvanderp3
+  vsphere-reviewers:
+    - jcpowermac
+    - patrickdillon
+    - rvanderp3
+  powervs-approvers:
+    - Prashanth684
+    - clnperez
+    - mkumatag
+  powervs-reviewers:
+    - Prashanth684
+    - clnperez
+    - mkumatag
+  nutanix-approvers:
+    - thunderboltsid
+    - yanhua121
+    - adiantum
+  nutanix-reviewers:
+    - thunderboltsid
+    - yanhua121
+    - adiantum
+  assisted-reviewers:
+    - tsorya
+    - eranco74
+  kubevirt-approvers:
+    - davidvossel
+    - orenc1
+    - qinqon
+  kubevirt-reviewers:
+    - davidvossel
+    - orenc1
+    - qinqon

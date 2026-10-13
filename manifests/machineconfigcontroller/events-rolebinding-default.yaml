@@ -1,0 +1,12 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: machine-config-controller-events
+  namespace: default
+roleRef:
+  kind: ClusterRole
+  name: machine-config-controller-events
+subjects:
+- kind: ServiceAccount
+  namespace: {{.TargetNamespace}}
+  name: machine-config-controller

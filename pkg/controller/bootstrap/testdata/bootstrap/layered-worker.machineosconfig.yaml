@@ -1,0 +1,22 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineOSConfig
+metadata:
+  name: layered-worker
+  annotations:
+    machineconfiguration.openshift.io/pre-built-image: "quay.io/example/layered-rhcos:latest@sha256:abcd1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab"
+spec:
+  machineConfigPool:
+    name: layered-worker
+  imageBuilder:
+    imageBuilderType: Job
+  baseImagePullSecret:
+    name: pull-secret
+  renderedImagePushSecret:
+    name: push-secret
+  renderedImagePushSpec: quay.io/example/layered-rhcos:latest
+  containerFile:
+  - containerfileArch: NoArch
+    content: |
+      FROM configs AS final
+      RUN rpm-ostree install httpd && \
+        ostree container commit

@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-deployment
+spec:
+  template:
+    spec:
+      containers:
+      - name: main-container
+        image: nginx
+        env:
+        - name: DATABASE_PASSWORD
+          value:
+            _REDACTED: This field has been redacted
+        - name: PUBLIC_CONFIG
+          value:
+            _REDACTED: This field has been redacted
+      - name: sidecar-container
+        image: busybox
+        env:
+        - name: SIDECAR_SECRET
+          value:
+            _REDACTED: This field has been redacted
+      volumes:
+      - name: secret-volume
+        secret:
+          secretName: my-secret
+          items:
+          - key: password
+            path: db-password
+            data:
+              _REDACTED: This field has been redacted
+          - key: token
+            path: api-token
+            data:
+              _REDACTED: This field has been redacted

@@ -1,0 +1,299 @@
+package extended
+
+import (
+	"context"
+
+	g "github.com/onsi/ginkgo/v2"
+	o "github.com/onsi/gomega"
+	constants "github.com/openshift/machine-config-operator/pkg/controller/common"
+	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
+	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
+)
+
+const (
+	// Test RHCOS & OCP versions for skew enforcement tests
+	rhcosVersionExceedsSkew = "48.84.202208021106-0"
+	ocpVersionExceedsSkew   = "4.12.0"
+)
+
+var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Serial][Disruptive][OCPFeatureGate:BootImageSkewEnforcement]", func() {
+	defer g.GinkgoRecover()
+
+	var (
+		oc                   = exutil.NewCLI("mco-bootimage", exutil.KubeConfigPath()).AsAdmin()
+		machineConfiguration *MachineConfiguration
+		originalSpec         string
+		mcoCO                *ClusterOperator
+	)
+
+	g.BeforeEach(func() {
+		// Skip on single-node topologies
+		exutil.SkipOnSingleNodeTopology(oc)
+		machineConfiguration = GetMachineConfiguration(oc)
+		// Save initial state to restore after each test
+		originalSpec = machineConfiguration.GetSpecOrFail()
+		mcoCO = NewClusterOperator(oc, "machine-config")
+	})
+
+	g.AfterEach(func() {
+		exutil.By("Restoring MachineConfiguration to original state")
+		o.Expect(machineConfiguration.SetSpec(originalSpec)).To(o.Succeed())
+	})
+
+	g.It("Verify Manual mode with RHCOSVersion and Upgradeable (Happy case) [apigroup:machineconfiguration.openshift.io]", func() {
+		// Get the current RHCOS version from the coreos-bootimages configmap (guaranteed to be within skew)
+		rhcosVersionWithinSkew := GetRHCOSVersionFromConfigMap(oc)
+		logger.Infof("Using RHCOS version from configmap: %s", rhcosVersionWithinSkew)
+
+		// Set manual mode with a boot image version that is within skew limits
+		o.Expect(machineConfiguration.SetManualSkew(RHCOSVersionMode, rhcosVersionWithinSkew)).To(o.Succeed())
+
+		// Wait for the controller to reflect Manual mode in skew enforcement status
+		machineConfiguration.WaitForBootImageSkewEnforcementStatusMode(SkewEnforcementManualMode)
+
+		// Check machine-config CO upgradeable status, should be set to true
+		o.Eventually(mcoCO, "1m", "10s").Should(BeUpgradeable(), "co/machine-config should be upgradeable when manual skew version is within limits")
+	})
+
+	g.It("Verify Manual mode with RHCOSVersion and Upgradeable (Sad case) [apigroup:machineconfiguration.openshift.io]", func() {
+		// Set manual mode with a boot image version that is NOT within skew limits
+		o.Expect(machineConfiguration.SetManualSkew(RHCOSVersionMode, rhcosVersionExceedsSkew)).To(o.Succeed())
+
+		// Wait for the controller to reflect Manual mode in skew enforcement status
+		machineConfiguration.WaitForBootImageSkewEnforcementStatusMode(SkewEnforcementManualMode)
+
+		// Check machine-config CO upgradeable status, should be set to false
+		o.Eventually(mcoCO, "1m", "10s").ShouldNot(BeUpgradeable(), "co/machine-config should not be upgradeable when manual skew version exceeds limits")
+	})
+
+	g.It("Verify Manual mode with OCPVersion and Upgradeable (Happy case) [apigroup:machineconfiguration.openshift.io]", func() {
+		// Set manual mode with a boot image version that is within skew limits
+		o.Expect(machineConfiguration.SetManualSkew(OCPVersionMode, constants.OCPVersionBootImageSkewLimit)).To(o.Succeed())
+
+		// Wait for the controller to reflect Manual mode in skew enforcement status
+		machineConfiguration.WaitForBootImageSkewEnforcementStatusMode(SkewEnforcementManualMode)
+
+		// Check machine-config CO upgradeable status, should be set to true
+		o.Eventually(mcoCO, "1m", "10s").Should(BeUpgradeable(), "co/machine-config should be upgradeable when manual skew version is within limits")
+	})
+
+	g.It("Verify Manual mode with OCPVersion and Upgradeable (Sad case) [apigroup:machineconfiguration.openshift.io]", func() {
+		// Set manual mode with a boot image version that is NOT within skew limits
+		o.Expect(machineConfiguration.SetManualSkew(OCPVersionMode, ocpVersionExceedsSkew)).To(o.Succeed())
+
+		// Wait for the controller to reflect Manual mode in skew enforcement status
+		machineConfiguration.WaitForBootImageSkewEnforcementStatusMode(SkewEnforcementManualMode)
+
+		// Check machine-config CO upgradeable status, should be set to false
+		o.Eventually(mcoCO, "1m", "10s").ShouldNot(BeUpgradeable(), "co/machine-config should not be upgradeable when manual skew version exceeds limits")
+	})
+
+	g.It("Verify Automatic mode and Upgradeable (Happy Case) [apigroup:machineconfiguration.openshift.io]", func() {
+		// only applicable on clusters where we support automatic updates: GCP, AWS, Azure and vSphere
+		skipTestIfSupportedPlatformNotMatched(oc, GCPPlatform, AWSPlatform, AzurePlatform, VspherePlatform)
+
+		exutil.SkipIfUnsupportedOSStreamLabel(oc.AsAdmin())
+
+		// No opinion on skew enforcement for these platforms will result in Automatic mode
+		o.Expect(machineConfiguration.RemoveSkew()).To(o.Succeed())
+
+		// Wait for the controller to reflect Automatic mode in skew enforcement status
+		machineConfiguration.WaitForBootImageSkewEnforcementStatusMode(SkewEnforcementAutomaticMode)
+
+		// Pick a random machineset to test
+		machineSetUnderTest := NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
+		logger.Infof("MachineSet under test: %s", machineSetUnderTest.name)
+
+		// Save and restore full spec to ensure cleanup regardless of what we modify
+		originalMachineSetSpec := machineSetUnderTest.GetSpecOrFail()
+		defer func() {
+			o.Expect(machineSetUnderTest.SetSpec(originalMachineSetSpec)).To(o.Succeed())
+		}()
+
+		// Patch the boot image to an older version to trigger an update loop
+		backdatedBootImage := getBackdatedBootImage(oc, machineSetUnderTest)
+		o.Expect(machineSetUnderTest.SetCoreOsBootImage(backdatedBootImage)).To(o.Succeed())
+		logger.Infof("Set backdated boot image '%s' in MachineSet %s to trigger update loop", backdatedBootImage, machineSetUnderTest.name)
+
+		// Verify that the boot image controller has finished processing
+		machineConfiguration.WaitForBootImageControllerComplete()
+
+		// Verify that the boot image controller is not degraded
+		machineConfiguration.WaitForBootImageControllerDegradedState(false)
+
+		// Check machine-config CO upgradeable status, should be set to True
+		o.Eventually(mcoCO, "1m", "10s").Should(BeUpgradeable(), "co/machine-config should be upgradeable with restored machineset")
+	})
+
+	g.It("Verify Automatic mode and Upgradeable (Sad Case) [apigroup:machineconfiguration.openshift.io]", func(_ context.Context) {
+		// only applicable on clusters where we support automatic updates: GCP, AWS, Azure and vSphere
+		skipTestIfSupportedPlatformNotMatched(oc, GCPPlatform, AWSPlatform, AzurePlatform, VspherePlatform)
+
+		exutil.SkipIfUnsupportedOSStreamLabel(oc.AsAdmin())
+
+		// No opinion on skew enforcement for these platforms will result in Automatic mode
+		o.Expect(machineConfiguration.RemoveSkew()).To(o.Succeed())
+
+		// Wait for the controller to reflect Automatic mode in skew enforcement status
+		machineConfiguration.WaitForBootImageSkewEnforcementStatusMode(SkewEnforcementAutomaticMode)
+
+		// Pick a random machineset to test
+		machineSetUnderTest := NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
+		logger.Infof("MachineSet under test: %s", machineSetUnderTest.name)
+
+		// Save and restore full spec to ensure cleanup regardless of what we modify
+		originalMachineSetSpec := machineSetUnderTest.GetSpecOrFail()
+		defer func() {
+			o.Expect(machineSetUnderTest.SetSpec(originalMachineSetSpec)).To(o.Succeed())
+		}()
+
+		// Set a non-existent user data secret in the machineset's providerSpec; this will cause a boot image controller degrade
+		nonExistentSecret := "non-existent-user-data"
+		o.Expect(machineSetUnderTest.SetUserDataSecret(nonExistentSecret)).To(o.Succeed())
+		logger.Infof("Set non-existent user data secret '%s' in MachineSet %s", nonExistentSecret, machineSetUnderTest.name)
+
+		// Patch the boot image to an older version to trigger an update loop
+		backdatedBootImage := getBackdatedBootImage(oc, machineSetUnderTest)
+		o.Expect(machineSetUnderTest.SetCoreOsBootImage(backdatedBootImage)).To(o.Succeed())
+		logger.Infof("Set backdated boot image '%s' in MachineSet %s to trigger update loop", backdatedBootImage, machineSetUnderTest.name)
+
+		// Verify that the boot image controller has finished processing
+		machineConfiguration.WaitForBootImageControllerComplete()
+
+		// Verify that the boot image controller is degraded
+		machineConfiguration.WaitForBootImageControllerDegradedState(true)
+
+		// Check machine-config CO upgradeable status, should be set to false due to the degrade
+		o.Eventually(mcoCO, "1m", "10s").ShouldNot(BeUpgradeable(), "co/machine-config should not be upgradeable with broken machineset and update loop")
+
+		// Restore machineset to original spec
+		o.Expect(machineSetUnderTest.SetSpec(originalMachineSetSpec)).To(o.Succeed())
+
+		// Verify that the boot image controller has finished processing
+		machineConfiguration.WaitForBootImageControllerComplete()
+
+		// Verify that the boot image controller is not degraded
+		machineConfiguration.WaitForBootImageControllerDegradedState(false)
+
+		// Check machine-config CO upgradeable status, should be set back to true
+		o.Eventually(mcoCO, "1m", "10s").Should(BeUpgradeable(), "co/machine-config should be upgradeable with restored machineset")
+	})
+
+	// AI-assisted: This test case validates that CPMS boot image config is permitted when skew enforcement is Automatic
+	g.It("Verify Automatic mode permits other machine managers [apigroup:machineconfiguration.openshift.io]", g.Label("Platform:aws", "Platform:gce", "Platform:azure"), func() {
+		// CPMS bootimages update is only allowed in gpc, aws and azure
+		skipTestIfSupportedPlatformNotMatched(oc, GCPPlatform, AWSPlatform, AzurePlatform)
+
+		var (
+			expectedMachineSetError = "when skew enforcement is in Automatic mode, any MachineAPI MachineSet MachineManager must use selection mode 'All'"
+
+			testConfigs = []struct {
+				description   string
+				patchConfig   string
+				shouldSucceed bool
+			}{
+				{
+					description:   "CPMS-only with All mode should succeed",
+					patchConfig:   `{"spec":{"managedBootImages":{"machineManagers":[{"resource":"controlplanemachinesets","apiGroup":"machine.openshift.io","selection":{"mode":"All"}}]}}}`,
+					shouldSucceed: true,
+				},
+				{
+					description:   "CPMS-only with None mode should succeed",
+					patchConfig:   `{"spec":{"managedBootImages":{"machineManagers":[{"resource":"controlplanemachinesets","apiGroup":"machine.openshift.io","selection":{"mode":"None"}}]}}}`,
+					shouldSucceed: true,
+				},
+				{
+					description:   "CPMS All + MachineSet All should succeed",
+					patchConfig:   `{"spec":{"managedBootImages":{"machineManagers":[{"resource":"controlplanemachinesets","apiGroup":"machine.openshift.io","selection":{"mode":"All"}},{"resource":"machinesets","apiGroup":"machine.openshift.io","selection":{"mode":"All"}}]}}}`,
+					shouldSucceed: true,
+				},
+				{
+					description:   "CPMS All + MachineSet None should fail",
+					patchConfig:   `{"spec":{"managedBootImages":{"machineManagers":[{"resource":"controlplanemachinesets","apiGroup":"machine.openshift.io","selection":{"mode":"All"}},{"resource":"machinesets","apiGroup":"machine.openshift.io","selection":{"mode":"None"}}]}}}`,
+					shouldSucceed: false,
+				},
+				{
+					description:   "CPMS None + MachineSet None should fail",
+					patchConfig:   `{"spec":{"managedBootImages":{"machineManagers":[{"resource":"controlplanemachinesets","apiGroup":"machine.openshift.io","selection":{"mode":"None"}},{"resource":"machinesets","apiGroup":"machine.openshift.io","selection":{"mode":"None"}}]}}}`,
+					shouldSucceed: false,
+				},
+			}
+		)
+
+		// No opinion on skew enforcement for these platforms will result in Automatic mode
+		o.Expect(machineConfiguration.RemoveSkew()).To(o.Succeed())
+
+		// Wait for the controller to reflect Automatic mode in skew enforcement status
+		machineConfiguration.WaitForBootImageSkewEnforcementStatusMode(SkewEnforcementAutomaticMode)
+
+		for _, tc := range testConfigs {
+			logger.Infof(tc.description)
+			err := machineConfiguration.Patch("merge", tc.patchConfig)
+			if tc.shouldSucceed {
+				o.Expect(err).NotTo(o.HaveOccurred(), "Config should be accepted when skew enforcement is Automatic: %s", tc.description)
+			} else {
+				o.Expect(err).To(o.HaveOccurred(), "Config should be rejected when skew enforcement is Automatic: %s", tc.description)
+				o.Expect(err).To(o.BeAssignableToTypeOf(&exutil.ExitError{}), "Unexpected error type for: %s", tc.description)
+				o.Expect(err.(*exutil.ExitError).StdErr).To(o.ContainSubstring(expectedMachineSetError),
+					"Error message does not match expected for: %s", tc.description)
+			}
+			logger.Infof("OK!\n")
+		}
+	})
+
+	g.It("Verify BareMetal defaults to None mode and flips to Manual on legacy provisioning path [apigroup:machineconfiguration.openshift.io]", func() {
+		// Only applicable on BareMetal clusters
+		skipTestIfSupportedPlatformNotMatched(oc, BaremetalPlatform)
+
+		provisioningCRName := "provisioning-configuration"
+
+		// machine-os-images path (default on 4.10+): provisioning URL should be empty
+		exutil.By("Verify provisioning CR URL is empty (machine-os-images path)")
+		originalURL, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"provisioning", provisioningCRName,
+			"-o", "jsonpath={.spec.provisioningOSDownloadURL}",
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to get provisioning CR")
+		o.Expect(originalURL).To(o.BeEmpty(), "Expected provisioningOSDownloadURL to be empty on machine-os-images path")
+		logger.Infof("Provisioning URL is empty as expected")
+
+		exutil.By("Verify bootImageSkewEnforcementStatus.mode is None on BareMetal (machine-os-images path)")
+		machineConfiguration.WaitForBootImageSkewEnforcementStatusMode(SkewEnforcementNoneMode)
+		logger.Infof("bootImageSkewEnforcementStatus.mode is None as expected")
+
+		// Legacy qcow2 path (simulated): patch the provisioning CR with a URL to trigger Manual mode.
+		// The URL must satisfy vprovisioning.kb.io validation: .qcow2.gz/.qcow2.xz extension and
+		// a sha256 query parameter (64 hex chars).
+		exutil.By("Simulate legacy qcow2 path by patching provisioning CR with a URL")
+		defer func() {
+			exutil.By("Restoring provisioning CR")
+			patchErr := oc.AsAdmin().WithoutNamespace().Run("patch").Args(
+				"provisioning", provisioningCRName, "--type=merge",
+				"-p", `{"spec":{"provisioningOSDownloadURL":""}}`,
+			).Execute()
+			o.Expect(patchErr).NotTo(o.HaveOccurred(), "Failed to restore provisioning CR")
+			machineConfiguration.WaitForBootImageSkewEnforcementStatusMode(SkewEnforcementNoneMode)
+		}()
+
+		err = oc.AsAdmin().WithoutNamespace().Run("patch").Args(
+			"provisioning", provisioningCRName, "--type=merge",
+			"-p", `{"spec":{"provisioningOSDownloadURL":"https://example.com/rhcos.qcow2.gz?sha256=0000000000000000000000000000000000000000000000000000000000000000"}}`,
+		).Execute()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to patch provisioning CR with legacy URL")
+
+		exutil.By("Verify bootImageSkewEnforcementStatus.mode flips to Manual (legacy qcow2 path)")
+		machineConfiguration.WaitForBootImageSkewEnforcementStatusMode(SkewEnforcementManualMode)
+		logger.Infof("bootImageSkewEnforcementStatus.mode is Manual as expected")
+	})
+
+	g.It("Verify None mode [apigroup:machineconfiguration.openshift.io]", func() {
+		// Set None mode, effectively disabling skew enforcement
+		o.Expect(machineConfiguration.SetNoneSkew()).To(o.Succeed())
+
+		// Wait for the controller to reflect None mode in skew enforcement status
+		machineConfiguration.WaitForBootImageSkewEnforcementStatusMode(SkewEnforcementNoneMode)
+
+		// Check machine-config CO upgradeable status, should be set to true
+		o.Eventually(mcoCO, "1m", "10s").Should(BeUpgradeable(), "co/machine-config should be upgradeable when skew enforcement is disabled (None mode)")
+	})
+})

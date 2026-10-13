@@ -1,0 +1,22 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: "managed-bootimages-cpms-platform-check"
+spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: config.openshift.io/v1
+    kind: Infrastructure
+  matchConstraints:
+    matchPolicy: Equivalent
+    namespaceSelector: {}
+    objectSelector: {}
+    resourceRules:
+    - apiGroups:   ["operator.openshift.io"]
+      apiVersions: ["v1"]
+      operations:  ["CREATE","UPDATE"]
+      resources:   ["machineconfigurations"]
+      scope: "*"
+  validations:
+    - expression: "!has(object.spec.managedBootImages) || !has(object.spec.managedBootImages.machineManagers) || !object.spec.managedBootImages.machineManagers.exists(m, m.resource == 'controlplanemachinesets') || params.status.platformStatus.type in ['GCP','AWS','Azure']"
+      message: "The control plane machineset boot image update feature is only supported on these platforms: GCP, AWS, Azure"

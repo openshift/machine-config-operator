@@ -1,0 +1,908 @@
+package bootimage
+
+import (
+	"context"
+	"crypto/sha256"
+	"errors"
+	"fmt"
+	"io"
+	"net/url"
+	"os"
+	"path"
+	"strings"
+
+	"github.com/vmware/govmomi"
+	"github.com/vmware/govmomi/find"
+	"github.com/vmware/govmomi/nfc"
+	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/ovf"
+	"github.com/vmware/govmomi/ovf/importer"
+	"github.com/vmware/govmomi/vapi/rest"
+	"github.com/vmware/govmomi/vapi/tags"
+	"github.com/vmware/govmomi/vim25/mo"
+	"github.com/vmware/govmomi/vim25/soap"
+	"github.com/vmware/govmomi/vim25/types"
+
+	"github.com/coreos/stream-metadata-go/stream"
+	osconfigv1 "github.com/openshift/api/config/v1"
+	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	clientset "k8s.io/client-go/kubernetes"
+	"k8s.io/klog/v2"
+	"k8s.io/utils/ptr"
+	"sigs.k8s.io/yaml"
+
+	"github.com/openshift/machine-config-operator/pkg/controller/bootimage/cache"
+)
+
+type VsphereResources struct {
+	folder       *object.Folder
+	cluster      *object.ClusterComputeResource
+	resourcePool *object.ResourcePool
+	networkRef   object.NetworkReference
+	datastore    *object.Datastore
+	existingVM   *object.VirtualMachine
+}
+
+// checkOvaSecureBoot returns true if the OVF descriptor indicates that EFI secure boot is enabled.
+// https://github.com/openshift/installer/blob/main/pkg/infrastructure/vsphere/clusterapi/import.go#L46
+func checkOvaSecureBoot(ovfEnvelope *ovf.Envelope) bool {
+	if ovfEnvelope.VirtualSystem != nil {
+		for _, vh := range ovfEnvelope.VirtualSystem.VirtualHardware {
+			for _, c := range vh.Config {
+				if c.Key == "bootOptions.efiSecureBootEnabled" {
+					if c.Value == "true" {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
+// debugCorruptOva prints SHA256 checksum and size of a possibly corrupt OVA file
+// https://github.com/openshift/installer/blob/main/pkg/infrastructure/vsphere/clusterapi/import.go#L27
+func debugCorruptOva(cachedImage string, err error) error {
+	// Open the corrupt OVA file
+	f, ferr := os.Open(cachedImage)
+	if ferr != nil {
+		err = fmt.Errorf("%s, %w", err.Error(), ferr)
+	}
+	defer f.Close()
+
+	// Get a sha256 on the corrupt OVA file
+	// and the size of the file
+	h := sha256.New()
+	written, cerr := io.Copy(h, f)
+	if cerr != nil {
+		err = fmt.Errorf("%s, %w", err.Error(), cerr)
+	}
+
+	return fmt.Errorf("ova %s has a sha256 of %x and a size of %d bytes, failed to read the ovf descriptor %w", cachedImage, h.Sum(nil), written, err)
+}
+
+// isDatastoreAvailable checks if the given datastore is accessible from the ESXi host.
+// https://github.com/openshift/installer/blob/main/pkg/infrastructure/vsphere/clusterapi/import.go#L252
+func isDatastoreAvailable(datastore *object.Datastore, hostDatastoreManagedObjectRefs []types.ManagedObjectReference) bool {
+	for _, dsMoRef := range hostDatastoreManagedObjectRefs {
+		if dsMoRef.Value == datastore.Reference().Value {
+			return true
+		}
+	}
+	return false
+}
+
+// isNetworkAvailable determines if the network object is available on the ESXi host.
+// https://github.com/openshift/installer/blob/main/pkg/infrastructure/vsphere/clusterapi/import.go#L261
+func isNetworkAvailable(networkObjectRef object.NetworkReference, hostNetworkManagedObjectRefs []types.ManagedObjectReference) bool {
+	// If the object.NetworkReference is a standard portgroup make
+	// sure that it exists on esxi host that the OVA will be imported to.
+	if _, ok := networkObjectRef.(*object.Network); ok {
+		for _, n := range hostNetworkManagedObjectRefs {
+			if n.Value == networkObjectRef.Reference().Value {
+				return true
+			}
+		}
+	} else {
+		// networkObjectReference is not a standard port group
+		// and the other types are distributed so return true
+		return true
+	}
+	return false
+}
+
+// findAvailableHostSystems locates an accessible ESXi host in the cluster that has access to the required network and datastore
+// https://github.com/openshift/installer/blob/main/pkg/infrastructure/vsphere/clusterapi/import.go#L228
+func findAvailableHostSystems(ctx context.Context, clusterHostSystems []*object.HostSystem, networkObjectRef object.NetworkReference, datastore *object.Datastore) (*object.HostSystem, error) {
+	var hostSystemManagedObject mo.HostSystem
+	for _, hostObj := range clusterHostSystems {
+		err := hostObj.Properties(ctx, hostObj.Reference(), []string{"config.product", "network", "datastore", "runtime"}, &hostSystemManagedObject)
+		if err != nil {
+			return nil, err
+		}
+
+		// if distributed port group the cast will fail
+		networkFound := isNetworkAvailable(networkObjectRef, hostSystemManagedObject.Network)
+		datastoreFound := isDatastoreAvailable(datastore, hostSystemManagedObject.Datastore)
+
+		// if the network or datastore is not found or the ESXi host is in maintenance mode continue the loop
+		if !networkFound || !datastoreFound || hostSystemManagedObject.Runtime.InMaintenanceMode {
+			continue
+		}
+
+		klog.V(2).Infof("using ESXi %s to import the OVA image", hostObj.Name())
+		return hostObj, nil
+	}
+	return nil, errors.New("all hosts unavailable")
+}
+
+// attachTag applies a vSphere tag to the virtual machine
+// https://github.com/openshift/installer/blob/4b3b91314bdb06c8646e3d4f07d0c9b7f4da7e58/pkg/infrastructure/vsphere/clusterapi/tags.go#L12
+func attachTag(ctx context.Context, tagManager *tags.Manager, vmMoRefValue, tagID string) error {
+	moRef := types.ManagedObjectReference{
+		Value: vmMoRefValue,
+		Type:  "VirtualMachine",
+	}
+
+	err := tagManager.AttachTag(ctx, tagID, moRef)
+
+	if err != nil {
+		return fmt.Errorf("unable to attach tag: %w", err)
+	}
+	return nil
+}
+
+// upload uploads a single file from the OVA archive to the vSphere host using NFC lease.
+// Used govc/importx/ovf.go as an example to implement
+// resourceVspherePrivateImportOvaCreate and upload functions
+// See: https://github.com/vmware/govmomi/blob/cc10a0758d5b4d4873388bcea417251d1ad03e42/govc/importx/ovf.go#L196-L324
+func upload(ctx context.Context, archive *importer.TapeArchive, lease *nfc.Lease, item nfc.FileItem) error {
+	file := item.Path
+
+	f, size, err := archive.Open(file)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	opts := soap.Upload{
+		ContentLength: size,
+	}
+
+	return lease.Upload(ctx, item, f, opts)
+}
+
+// findAllRequiredResources locates all vSphere objects (folder, cluster, pool, network, etc.)
+func findAllRequiredResources(ctx context.Context, finder *find.Finder, providerSpec *machinev1beta1.VSphereMachineProviderSpec, failureDomain osconfigv1.VSpherePlatformFailureDomainSpec, name string) (*VsphereResources, error) {
+	vr := VsphereResources{}
+	folder, err := finder.Folder(ctx, providerSpec.Workspace.Folder)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find folder: %w", err)
+	}
+	vr.folder = folder
+	vr.cluster, err = finder.ClusterComputeResource(ctx, failureDomain.Topology.ComputeCluster)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find compute cluster: %w", err)
+	}
+	vr.resourcePool, err = finder.ResourcePool(ctx, providerSpec.Workspace.ResourcePool)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find resource pool: %w", err)
+	}
+	// finder.Network handles the discovery of the network no matter
+	// the format of the string (absolute, relative, uuid, etc)
+	vr.networkRef, err = finder.Network(ctx, failureDomain.Topology.Networks[0])
+	if err != nil {
+		return nil, fmt.Errorf("failed to find network: %w", err)
+	}
+	vr.datastore, err = finder.Datastore(ctx, providerSpec.Workspace.Datastore)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find datastore: %w", err)
+	}
+	scopedPath := templateSearchPath(providerSpec.Workspace.Folder, name)
+	vr.existingVM, err = finder.VirtualMachine(ctx, scopedPath)
+	if _, ok := err.(*find.NotFoundError); ok && scopedPath != name {
+		// Nothing at that path inside the workspace folder — fall back to a global search so we can
+		// still detect (and log) a customer-managed VM of the same name living elsewhere.
+		vr.existingVM, err = finder.VirtualMachine(ctx, name)
+	}
+	if err != nil {
+		if _, ok := err.(*find.NotFoundError); ok {
+			klog.Infof("VM Template with name %s does not already exists", name)
+		} else {
+			return nil, fmt.Errorf("finder had error: %w", err)
+		}
+	} else if !isInFolder(vr.existingVM, vr.folder) {
+		// Name match outside the workspace folder: a customer-managed VM, not the one MCO manages.
+		// Leave it untouched so the caller creates a fresh template instead of swapping it out.
+		klog.Infof("VM %s exists outside the expected workspace folder %s; leaving the customer-managed VM untouched", name, providerSpec.Workspace.Folder)
+		vr.existingVM = nil
+	}
+	return &vr, nil
+}
+
+// isInFolder reports whether vm is a direct child of folder. govmomi's Finder.VirtualMachine does a
+// global, recursive, name-based search of the entire vCenter inventory with no folder scoping, so a
+// name match alone doesn't mean the VM is the one MCO manages. MCO always creates/imports templates
+// directly into providerSpec.Workspace.Folder, so anything else found by name is customer-managed and
+// must be left untouched.
+//
+// A nil folder (the workspace folder itself couldn't be resolved) trusts the match instead of
+// rejecting it: verifying locality isn't a prerequisite for this function's caller, and anything that
+// actually needs to write to vSphere re-resolves the same folder and hard-fails there if it's broken.
+func isInFolder(vm *object.VirtualMachine, folder *object.Folder) bool {
+	if folder == nil {
+		return true
+	}
+	return path.Dir(vm.InventoryPath) == folder.InventoryPath
+}
+
+// templateSearchPath scopes name to folder to avoid ambiguity when the same name exists in multiple
+// folders. Left unscoped when there's no folder, or name is already an absolute inventory path.
+func templateSearchPath(folder, name string) string {
+	if folder == "" || strings.HasPrefix(name, "/") {
+		return name
+	}
+	return path.Join(folder, name)
+}
+
+// getDiskTypeFromExistingVM inspects the given VM's disk backing configuration and returns its disk provisioning type (thin, thick, eagerZeroedThick).
+func getDiskTypeFromExistingVM(vmMo mo.VirtualMachine) string {
+	diskType := ""
+	for _, device := range vmMo.Config.Hardware.Device {
+		if disk, ok := device.(*types.VirtualDisk); ok {
+			if backing, ok := disk.Backing.(*types.VirtualDiskFlatVer2BackingInfo); ok {
+				if backing.ThinProvisioned != nil {
+					if *backing.ThinProvisioned {
+						diskType = "thin"
+					} else {
+						if backing.EagerlyScrub != nil && *backing.EagerlyScrub {
+							diskType = "eagerZeroedThick"
+						} else {
+							diskType = "thick"
+						}
+					}
+				}
+			}
+		}
+	}
+	return diskType
+}
+
+const (
+	installConfigConfigMapName = "cluster-config-v1"
+	installConfigConfigMapKey  = "install-config"
+)
+
+// installConfig mirrors the subset of the install-config schema needed to recover the vSphere disk
+// provisioning type. This is only ever set at install time and is not persisted anywhere else the
+// operator can read it (VSphereMachineProviderSpec, Infrastructure, failure domain topology all omit it).
+type installConfig struct {
+	Platform struct {
+		VSphere struct {
+			DiskType string `json:"diskType"`
+		} `json:"vsphere"`
+	} `json:"platform"`
+}
+
+// getDiskTypeFromInstallConfig reads platform.vsphere.diskType from the cluster's install-config
+// configmap. Used for brand-new failure domains, where there is no existing template VM to inspect
+// via getDiskTypeFromExistingVM. Returns "" (no error) if the installer left diskType unset, which is
+// a legitimate value: getCISP treats "" as "use the datastore's default storage policy."
+func getDiskTypeFromInstallConfig(ctx context.Context, kubeClient clientset.Interface) (string, error) {
+	cm, err := kubeClient.CoreV1().ConfigMaps("kube-system").Get(ctx, installConfigConfigMapName, metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch %s configmap: %w", installConfigConfigMapName, err)
+	}
+
+	raw, ok := cm.Data[installConfigConfigMapKey]
+	if !ok {
+		return "", fmt.Errorf("%s configmap has no %q key", installConfigConfigMapName, installConfigConfigMapKey)
+	}
+
+	var ic installConfig
+	if err := yaml.Unmarshal([]byte(raw), &ic); err != nil {
+		return "", fmt.Errorf("failed to parse install-config: %w", err)
+	}
+
+	return ic.Platform.VSphere.DiskType, nil
+}
+
+// resolveExistingTemplateVM locates the template VM for a failure domain using a two-step lookup: providerSpec.Template first
+// then the infra computed name. If neither exists in the workspace folder, it creates a fresh template from the OVA and
+// signals the caller via created=true. resolvedName is the vSphere name of the VM that was actually found, which may differ
+// from name when the VM was located via providerSpec.Template; callers must use resolvedName (not name) for divergence checks.
+//
+// A name match outside providerSpec.Workspace.Folder is never treated as the existing template: govmomi's finder searches
+// the entire vCenter inventory by name, so a match elsewhere may be a customer-managed VM MCO must not touch (see isInFolder).
+// If the workspace folder itself can't be resolved, this check is skipped (logging a warning) rather than failing the
+// reconcile: verifying it isn't this function's job — it's a locality check for classification, not a prerequisite for
+// action.
+func resolveExistingTemplateVM(
+	ctx context.Context,
+	finder *find.Finder,
+	providerSpec *machinev1beta1.VSphereMachineProviderSpec,
+	failureDomain osconfigv1.VSpherePlatformFailureDomainSpec,
+	streamData *stream.Stream,
+	client *govmomi.Client,
+	tagManager *tags.Manager,
+	kubeClient clientset.Interface,
+	infraID, arch string,
+) (vm *object.VirtualMachine, resolvedName string, created bool, err error) {
+
+	computedName := fmt.Sprintf("%s-rhcos-%s", infraID, failureDomain.Name)
+	var notFoundErr *find.NotFoundError
+
+	workspaceFolder, folderErr := finder.Folder(ctx, providerSpec.Workspace.Folder)
+	if folderErr != nil {
+		klog.Warningf("failed to resolve workspace folder %q; cannot verify template VM locality this reconcile, proceeding with name-based lookup only: %v", providerSpec.Workspace.Folder, folderErr)
+	}
+
+	// Check providerSpec.Template first so a freshly-added failure domain whose MachineSet
+	// already has a valid template doesn't fail just because the infra computed name isn't a match.
+	if providerSpec.Template != "" && providerSpec.Template != computedName {
+		scopedPath := templateSearchPath(providerSpec.Workspace.Folder, providerSpec.Template)
+		tmplVM, tmplErr := finder.VirtualMachine(ctx, scopedPath)
+		if scopedPath != providerSpec.Template && errors.As(tmplErr, &notFoundErr) {
+			// Nothing at that path inside the workspace folder — fall back to a global search so we
+			// can still detect (and log) a customer-managed VM of the same name living elsewhere.
+			tmplVM, tmplErr = finder.VirtualMachine(ctx, providerSpec.Template)
+		}
+		switch {
+		case tmplErr == nil && isInFolder(tmplVM, workspaceFolder):
+			return tmplVM, providerSpec.Template, false, nil
+		case tmplErr == nil:
+			klog.Infof("providerSpec.Template %s exists outside the expected workspace folder %s; leaving the customer-managed VM untouched and falling back to computed name %s", providerSpec.Template, providerSpec.Workspace.Folder, computedName)
+		case errors.As(tmplErr, &notFoundErr):
+			klog.Infof("providerSpec.Template %s not found in vSphere; falling back to computed name %s", providerSpec.Template, computedName)
+		default:
+			klog.Warningf("Unexpected error looking up providerSpec.Template %s: %v; falling back to computed name %s", providerSpec.Template, tmplErr, computedName)
+		}
+	}
+
+	vm, err = finder.VirtualMachine(ctx, computedName)
+	switch {
+	case err == nil && isInFolder(vm, workspaceFolder):
+		return vm, computedName, false, nil
+	case err == nil:
+		klog.Infof("VM %s exists outside the expected workspace folder %s; leaving the customer-managed VM untouched and creating a fresh template", computedName, providerSpec.Workspace.Folder)
+	case !errors.As(err, &notFoundErr):
+		return nil, "", false, fmt.Errorf("finder had error: %w", err)
+	}
+
+	// Computed name not found in the workspace folder — either nothing exists there, or the name is
+	// held by a customer-managed VM elsewhere in the inventory that must be left alone. Either way,
+	// check for a rollback VM left by a prior mid-swap crash before creating a fresh template.
+	oldTempName := atomicTempName("mco-old", computedName)
+	oldVM, oldErr := finder.VirtualMachine(ctx, oldTempName)
+	if oldErr != nil {
+		if !errors.As(oldErr, &notFoundErr) {
+			return nil, "", false, fmt.Errorf("error looking up rollback VM %s: %w", oldTempName, oldErr)
+		}
+		// No template exists anywhere — failure domain is newly added; create from OVA.
+		klog.Infof("No existing template found for failure domain %s; creating new template %s from OVA", failureDomain.Name, computedName)
+		if len(computedName) > 80 {
+			return nil, "", false, fmt.Errorf("length of VM template name `%s` exceeds the permitted limit of 80 characters", computedName)
+		}
+		// Validate/upgrade the ignition stub before creating the template in vSphere. If this fails,
+		// we must not have already mutated vSphere state, or a subsequent reconcile would find the
+		// template already in place and silently drop the error (see reconcileVSphereProviderSpec).
+		if err := upgradeStubIgnitionIfRequired(providerSpec.UserDataSecret.Name, kubeClient); err != nil {
+			return nil, "", false, err
+		}
+		ova, ovaErr := streamData.QueryDisk(arch, "vmware", "ova")
+		if ovaErr != nil {
+			return nil, "", false, ovaErr
+		}
+		ovaPath, ovaErr := cache.DownloadOva(ova)
+		if ovaErr != nil {
+			return nil, "", false, fmt.Errorf("failed to download %s: %w", ova.Location, ovaErr)
+		}
+		// No existing VM to inspect for this brand-new failure domain; the only other place
+		// disk provisioning type is recorded is the install-time install-config.
+		diskType, diskTypeErr := getDiskTypeFromInstallConfig(ctx, kubeClient)
+		if diskTypeErr != nil {
+			return nil, "", false, fmt.Errorf("failed to determine disk provisioning type for new template %s: %w", computedName, diskTypeErr)
+		}
+		if createErr := createNewVMTemplateWithNameForFailureDomain(ctx, providerSpec, failureDomain, finder, client, tagManager, computedName, ovaPath, infraID, diskType); createErr != nil {
+			return nil, "", false, createErr
+		}
+		return nil, computedName, true, nil
+	}
+
+	// Rollback: restore the old template renamed away during a crashed atomic swap.
+	// Validate/upgrade the ignition stub before this rename, so an invalid user-data secret blocks
+	// even this recovery mutation rather than only the OVA-driven create/swap paths.
+	if err := upgradeStubIgnitionIfRequired(providerSpec.UserDataSecret.Name, kubeClient); err != nil {
+		return nil, "", false, err
+	}
+	klog.Infof("Recovering from mid-swap crash: renaming %s back to %s", oldTempName, computedName)
+	renameTask, renameErr := oldVM.Rename(ctx, computedName)
+	if renameErr != nil {
+		return nil, "", false, fmt.Errorf("failed to initiate rollback rename of %s to %s: %w", oldTempName, computedName, renameErr)
+	}
+	if renameErr = renameTask.Wait(ctx); renameErr != nil {
+		return nil, "", false, fmt.Errorf("failed to complete rollback rename of %s to %s: %w", oldTempName, computedName, renameErr)
+	}
+	// Confirm the rollback succeeded; any stale mco-tmp-* VM will be cleaned up by
+	// createNewVMTemplateWithNameForFailureDomain if an update is subsequently needed.
+	vm, err = finder.VirtualMachine(ctx, computedName)
+	if err != nil {
+		return nil, "", false, fmt.Errorf("failed to fetch rolled-back template %s: %w", computedName, err)
+	}
+	return vm, computedName, false, nil
+}
+
+// atomicTempName returns a short, fixed-length (17-char) VM name for use during atomic template
+// swaps. The hash makes it deterministic and unique per final name, bypassing the 80-char limit.
+func atomicTempName(prefix, name string) string {
+	h := sha256.Sum256([]byte(name))
+	return fmt.Sprintf("%s-%x", prefix, h[:4])
+}
+
+// destroyVMIfPresent destroys the named VM if it exists, and is a no-op if it does not.
+func destroyVMIfPresent(ctx context.Context, finder *find.Finder, name string) error {
+	vm, err := finder.VirtualMachine(ctx, name)
+	if err != nil {
+		if _, ok := err.(*find.NotFoundError); ok {
+			return nil
+		}
+		return fmt.Errorf("finder had error looking up VM %s: %w", name, err)
+	}
+	klog.Infof("Destroying stale VM %s", name)
+	destroyTask, err := vm.Destroy(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to initiate destroy of VM %s: %w", name, err)
+	}
+	if err = destroyTask.Wait(ctx); err != nil {
+		return fmt.Errorf("failed to destroy VM %s: %w", name, err)
+	}
+	return nil
+}
+
+// swapTemplate atomically replaces the existing template with the new one using two fast renames,
+// minimising the window where the production name is absent.
+func swapTemplate(ctx context.Context, existingVM, newVM *object.VirtualMachine, name, oldTempName string) error {
+	klog.Infof("VM Template with name %s already exists, swapping atomically", name)
+	renameTask, err := existingVM.Rename(ctx, oldTempName)
+	if err != nil {
+		return fmt.Errorf("failed to rename existing VM to %s: %w", oldTempName, err)
+	}
+	if err = renameTask.Wait(ctx); err != nil {
+		return fmt.Errorf("failed to complete renaming existing VM to %s: %w", oldTempName, err)
+	}
+
+	renameTask, err = newVM.Rename(ctx, name)
+	if err != nil {
+		return fmt.Errorf("failed to rename new VM to %s: %w", name, err)
+	}
+	if err = renameTask.Wait(ctx); err != nil {
+		return fmt.Errorf("failed to complete renaming new VM to %s: %w", name, err)
+	}
+
+	destroyTask, err := existingVM.Destroy(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to initiate destroy of old VM: %w", err)
+	}
+	if err = destroyTask.Wait(ctx); err != nil {
+		return fmt.Errorf("failed to destroy old VM: %w", err)
+	}
+	klog.Infof("VM %s successfully replaced", name)
+	return nil
+}
+
+// getCISP generates an OVF CreateImportSpecParams based on network and disk configuration
+func getCISP(ovfEnvelope *ovf.Envelope, networkRef object.NetworkReference, name, diskType string) (types.OvfCreateImportSpecParams, error) {
+	// Create mapping between OVF and the network object
+	// found by Name
+	networkMappings := []types.OvfNetworkMapping{{
+		Name:    ovfEnvelope.Network.Networks[0].Name,
+		Network: networkRef.Reference(),
+	}}
+
+	// This is a very minimal spec for importing an OVF.
+	cisp := types.OvfCreateImportSpecParams{
+		EntityName:     name,
+		NetworkMapping: networkMappings,
+	}
+
+	switch diskType {
+	case "":
+		// Disk provisioning type will be set according to the default storage policy of vsphere.
+	case "thin":
+		cisp.DiskProvisioning = string(types.OvfCreateImportSpecParamsDiskProvisioningTypeThin)
+	case "thick":
+		cisp.DiskProvisioning = string(types.OvfCreateImportSpecParamsDiskProvisioningTypeThick)
+	case "eagerZeroedThick":
+		cisp.DiskProvisioning = string(types.OvfCreateImportSpecParamsDiskProvisioningTypeEagerZeroedThick)
+	default:
+		return types.OvfCreateImportSpecParams{}, fmt.Errorf("disk provisioning type %q is not supported", diskType)
+	}
+	return cisp, nil
+}
+
+func createNewVMTemplateWithNameForFailureDomain(ctx context.Context, providerSpec *machinev1beta1.VSphereMachineProviderSpec, failureDomain osconfigv1.VSpherePlatformFailureDomainSpec, finder *find.Finder, client *govmomi.Client, tagManager *tags.Manager, name, ovaPath, infraID, diskType string) error {
+	// tempName is where the new OVA is imported; oldTempName holds the existing template during
+	// the swap. Both are fixed-length (17 chars) so they always fit within vSphere's 80-char limit.
+	tempName := atomicTempName("mco-tmp", name)
+	oldTempName := atomicTempName("mco-old", name)
+
+	vr, err := findAllRequiredResources(ctx, finder, providerSpec, failureDomain, name)
+	if err != nil {
+		return err
+	}
+
+	// Clean up stale VMs if they exist
+	if err := destroyVMIfPresent(ctx, finder, tempName); err != nil {
+		return err
+	}
+	if err := destroyVMIfPresent(ctx, finder, oldTempName); err != nil {
+		return err
+	}
+
+	// OVF Descriptor
+	archive := &importer.TapeArchive{Path: ovaPath}
+	ovfDescriptor, err := importer.ReadOvf("*.ovf", archive)
+	if err != nil {
+		return debugCorruptOva(ovaPath, err)
+	}
+
+	ovfEnvelope, err := importer.ReadEnvelope(ovfDescriptor)
+	if err != nil {
+		return fmt.Errorf("failed to parse ovf: %w", err)
+	}
+
+	// The fcos ova enables secure boot by default, this causes
+	// scos to fail once
+	secureBoot := checkOvaSecureBoot(ovfEnvelope)
+
+	// The RHCOS OVA only has one network defined by default
+	// The OVF envelope defines this.  We need a 1:1 mapping
+	// between networks with the OVF and the host
+	if len(ovfEnvelope.Network.Networks) != 1 {
+		return fmt.Errorf("expected the OVA to only have a single network adapter")
+	}
+
+	clusterHostSystems, err := vr.cluster.Hosts(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get cluster hosts: %w", err)
+	}
+	if len(clusterHostSystems) == 0 {
+		return fmt.Errorf("the vCenter cluster %s has no ESXi nodes", failureDomain.Topology.ComputeCluster)
+	}
+
+	// Import under tempName so the existing template remains live throughout the upload.
+	cisp, err := getCISP(ovfEnvelope, vr.networkRef, tempName, diskType)
+	if err != nil {
+		return fmt.Errorf("failed to get CISP: %w", err)
+	}
+
+	m := ovf.NewManager(client.Client)
+	spec, err := m.CreateImportSpec(ctx,
+		string(ovfDescriptor),
+		vr.resourcePool.Reference(),
+		vr.datastore.Reference(),
+		cisp)
+
+	if err != nil {
+		return fmt.Errorf("failed to create import spec: %w", err)
+	}
+	if spec.Error != nil {
+		return errors.New(spec.Error[0].LocalizedMessage)
+	}
+
+	hostSystem, err := findAvailableHostSystems(ctx, clusterHostSystems, vr.networkRef, vr.datastore)
+	if err != nil {
+		return fmt.Errorf("failed to find available host system: %w", err)
+	}
+
+	lease, err := vr.resourcePool.ImportVApp(ctx, spec.ImportSpec, vr.folder, hostSystem)
+	if err != nil {
+		return fmt.Errorf("failed to import vapp: %w", err)
+	}
+
+	info, err := lease.Wait(ctx, spec.FileItem)
+	if err != nil {
+		return fmt.Errorf("failed to lease wait: %w", err)
+	}
+
+	u := lease.StartUpdater(ctx, info)
+	defer u.Done()
+
+	for _, i := range info.Items {
+		// upload the vmdk to which ever host that was first
+		// available with the required network and datastore.
+		err = upload(ctx, archive, lease, i)
+		if err != nil {
+			return fmt.Errorf("failed to upload: %w", err)
+		}
+	}
+
+	err = lease.Complete(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to lease complete: %w", err)
+	}
+
+	vm := object.NewVirtualMachine(client.Client, info.Entity)
+	if vm == nil {
+		return fmt.Errorf("error VirtualMachine not found, managed object id: %s", info.Entity.Value)
+	}
+	if secureBoot {
+		bootOptions, err := vm.BootOptions(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get boot options: %w", err)
+		}
+		bootOptions.EfiSecureBootEnabled = ptr.To(false)
+
+		err = vm.SetBootOptions(ctx, bootOptions)
+		if err != nil {
+			return fmt.Errorf("failed to set boot options: %w", err)
+		}
+	}
+
+	err = vm.MarkAsTemplate(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to mark vm as template: %w", err)
+	}
+
+	err = attachTag(ctx, tagManager, vm.Reference().Value, infraID)
+	if err != nil {
+		return fmt.Errorf("failed to attach tag: %w", err)
+	}
+
+	for _, tagID := range providerSpec.TagIDs {
+		err = attachTag(ctx, tagManager, vm.Reference().Value, tagID)
+		if err != nil {
+			return fmt.Errorf("failed to attach tag: %w", err)
+		}
+	}
+
+	// Atomic swap: the new template is fully ready; now replace the old one.
+	if vr.existingVM != nil {
+		return swapTemplate(ctx, vr.existingVM, vm, name, oldTempName)
+	}
+	// Swap not needed; just do a single rename
+	renameTask, err := vm.Rename(ctx, name)
+	if err != nil {
+		return fmt.Errorf("failed to rename new VM to %s: %w", name, err)
+	}
+	if err = renameTask.Wait(ctx); err != nil {
+		return fmt.Errorf("failed to complete renaming new VM to %s: %w", name, err)
+	}
+	klog.Infof("VM Template %s created", name)
+
+	return nil
+}
+
+// getClientsFromServerURL authenticates to vCenter using SOAP and REST APIs
+func getClientsFromServerURL(ctx context.Context, server, username, password string) (*govmomi.Client, *tags.Manager, error) {
+	vcenterURL := &url.URL{
+		Scheme: "https",
+		Host:   server,
+		Path:   "/sdk",
+		User:   url.UserPassword(username, password),
+	}
+	client, err := govmomi.NewClient(ctx, vcenterURL, true)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed in govmomi.NewClient login: %w", err)
+	}
+
+	restClient := rest.NewClient(client.Client)
+	err = restClient.Login(ctx, vcenterURL.User)
+	if err != nil {
+		logoutErr := client.Logout(context.TODO())
+		if logoutErr != nil {
+			err = logoutErr
+		}
+		return nil, nil, fmt.Errorf("failed in restClient.Login %w", err)
+	}
+
+	tagManager := tags.NewManager(restClient)
+
+	return client, tagManager, nil
+}
+
+// findMatchingFailureDomain searches the Infrastructure failure domains for one whose topology
+// matches the providerSpec workspace fields (server, datacenter, datastore, resource pool, vmGroup).
+func findMatchingFailureDomain(providerSpec *machinev1beta1.VSphereMachineProviderSpec, infra *osconfigv1.Infrastructure) (osconfigv1.VSpherePlatformFailureDomainSpec, bool) {
+	if infra.Spec.PlatformSpec.VSphere == nil {
+		return osconfigv1.VSpherePlatformFailureDomainSpec{}, false
+	}
+	for _, fd := range infra.Spec.PlatformSpec.VSphere.FailureDomains {
+		vmGroup := ""
+		if fd.ZoneAffinity != nil && fd.ZoneAffinity.HostGroup != nil {
+			vmGroup = fd.ZoneAffinity.HostGroup.VMGroup
+		}
+		if providerSpec.Workspace.Server == fd.Server &&
+			providerSpec.Workspace.Datacenter == fd.Topology.Datacenter &&
+			providerSpec.Workspace.Datastore == fd.Topology.Datastore &&
+			providerSpec.Workspace.VMGroup == vmGroup &&
+			path.Clean(providerSpec.Workspace.ResourcePool) == path.Clean(fd.Topology.ResourcePool) {
+			return fd, true
+		}
+	}
+	return osconfigv1.VSpherePlatformFailureDomainSpec{}, false
+}
+
+// computeClusterFromResourcePool extracts the compute cluster path from a vSphere resource pool path.
+// Resource pool paths follow the pattern /<datacenter>/host/<cluster>/Resources[/<pool>...], so the
+// compute cluster is everything before the /Resources segment.
+func computeClusterFromResourcePool(resourcePoolPath string) (string, error) {
+	cleanPath := path.Clean(resourcePoolPath)
+	segments := strings.Split(cleanPath, "/")
+	for i, seg := range segments {
+		if seg == "Resources" {
+			return strings.Join(segments[:i], "/"), nil
+		}
+	}
+	return "", fmt.Errorf("resource pool path %q does not contain a /Resources segment", resourcePoolPath)
+}
+
+// buildSyntheticFailureDomain constructs a failure domain from the providerSpec workspace and network
+// fields. Used when no real failure domain in the Infrastructure object matches the MachineSet's
+// workspace — e.g., topology-unaware clusters installed before failure domains were introduced, or
+// MachineSets whose datastore isn't listed in any failure domain.
+func buildSyntheticFailureDomain(providerSpec *machinev1beta1.VSphereMachineProviderSpec) (osconfigv1.VSpherePlatformFailureDomainSpec, error) {
+	if providerSpec.Workspace.ResourcePool == "" {
+		return osconfigv1.VSpherePlatformFailureDomainSpec{}, fmt.Errorf("providerSpec has no resource pool; cannot derive compute cluster")
+	}
+	computeCluster, err := computeClusterFromResourcePool(providerSpec.Workspace.ResourcePool)
+	if err != nil {
+		return osconfigv1.VSpherePlatformFailureDomainSpec{}, fmt.Errorf("cannot derive compute cluster: %w", err)
+	}
+	if len(providerSpec.Network.Devices) == 0 || providerSpec.Network.Devices[0].NetworkName == "" {
+		return osconfigv1.VSpherePlatformFailureDomainSpec{}, fmt.Errorf("providerSpec has no network devices; cannot determine network for template import")
+	}
+	return osconfigv1.VSpherePlatformFailureDomainSpec{
+		Name:   "default",
+		Server: providerSpec.Workspace.Server,
+		Topology: osconfigv1.VSpherePlatformTopology{
+			Datacenter:     providerSpec.Workspace.Datacenter,
+			ComputeCluster: computeCluster,
+			Networks:       []string{providerSpec.Network.Devices[0].NetworkName},
+			Datastore:      providerSpec.Workspace.Datastore,
+			ResourcePool:   providerSpec.Workspace.ResourcePool,
+		},
+	}, nil
+}
+
+// createNewVMTemplate finds or creates the RHCOS template VM for the MachineSet's vSphere workspace.
+// It matches the providerSpec workspace against the Infrastructure failure domains to locate the
+// correct vCenter context. When no failure domain matches (topology-unaware clusters, or MachineSets
+// whose datastore isn't in any failure domain), it synthesizes one from the providerSpec fields so
+// that boot image management still works.
+//
+// Returns:
+//   - resolvedName: the inventory name of the template VM (empty when no update is needed or the MachineSet is skipped)
+//   - patchRequired: true when the MachineSet's providerSpec.Template must be updated to resolvedName
+//   - reconcileSkipped: true when neither a real nor synthetic failure domain can be determined — the
+//     MachineSet is functional but cannot be managed for boot image updates; the caller should skip without degrading
+//   - err: non-nil for real vSphere or infrastructure errors that should degrade the CO
+func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1.VSphereMachineProviderSpec, infra *osconfigv1.Infrastructure, credsSc *corev1.Secret, kubeClient clientset.Interface, arch, release string) (resolvedName string, patchRequired, reconcileSkipped bool, err error) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	failureDomain, found := findMatchingFailureDomain(providerSpec, infra)
+	if !found {
+		// No failure domain matched the workspace. This happens on topology-unaware clusters
+		// (installed before failure domains were introduced, ~pre-4.13) or when a MachineSet's
+		// datastore isn't listed in any failure domain (e.g., single-zone clusters with multiple
+		// datastores spread across MachineSets for capacity/storage distribution).
+		//
+		// Attempt to synthesize a failure domain from the providerSpec itself: the compute cluster
+		// is derived from the resource pool path, and the network from providerSpec.Network.Devices.
+		syntheticFD, synthErr := buildSyntheticFailureDomain(providerSpec)
+		if synthErr != nil {
+			// The MachineSet's providerSpec lacks the fields needed to synthesize a failure domain
+			// (resource pool path without a /Resources segment, or no network devices). The MachineSet
+			// is functional but cannot be managed for boot image updates. Skip without degrading.
+			workspaceDetails := fmt.Sprintf("server: %s, datacenter: %s, datastore: %s, resourcePool: %s",
+				providerSpec.Workspace.Server, providerSpec.Workspace.Datacenter, providerSpec.Workspace.Datastore, providerSpec.Workspace.ResourcePool)
+			// vmGroup only applies to HostGroup-zonal failure domains (VSphereFailureDomainZoneAffinity.Type
+			// == HostGroup) — omit it here when unset rather than implying it's a universal match criterion
+			// for every failure domain type (e.g. ComputeCluster-zoned ones).
+			if providerSpec.Workspace.VMGroup != "" {
+				workspaceDetails += fmt.Sprintf(", vmGroup: %s", providerSpec.Workspace.VMGroup)
+			}
+			klog.Warningf("Skipping boot image update: providerSpec workspace (%s) does not match any failure domain and cannot synthesize one: %v. Boot image must be updated manually for this MachineSet.", workspaceDetails, synthErr)
+			return "", false, true, nil
+		}
+		klog.Infof("No matching failure domain for workspace (server: %s, datacenter: %s, datastore: %s); using synthetic failure domain derived from providerSpec",
+			providerSpec.Workspace.Server, providerSpec.Workspace.Datacenter, providerSpec.Workspace.Datastore)
+		failureDomain = syntheticFD
+	}
+
+	server := providerSpec.Workspace.Server
+	username := string(credsSc.Data[fmt.Sprintf("%s.username", server)])
+	password := string(credsSc.Data[fmt.Sprintf("%s.password", server)])
+	client, tagManager, err := getClientsFromServerURL(ctx, server, username, password)
+	if err != nil {
+		return "", false, false, fmt.Errorf("failed in getClientsFromServerURL: %w", err)
+	}
+
+	finder := find.NewFinder(client.Client, false)
+	infraID := infra.Status.InfrastructureName
+
+	datacenter, err := finder.Datacenter(ctx, failureDomain.Topology.Datacenter)
+	if err != nil {
+		return "", false, false, fmt.Errorf("failed to find datacenter: %w", err)
+	}
+	finder = finder.SetDatacenter(datacenter)
+
+	existingTemplateVM, resolvedName, created, err := resolveExistingTemplateVM(ctx, finder, providerSpec, failureDomain, streamData, client, tagManager, kubeClient, infraID, arch)
+	if err != nil {
+		return "", false, false, err
+	}
+	if created {
+		return resolvedName, true, false, nil
+	}
+
+	var vmMo mo.VirtualMachine
+	err = existingTemplateVM.Properties(ctx, existingTemplateVM.Reference(), nil, &vmMo)
+	if err != nil {
+		return "", false, false, fmt.Errorf("unable to extract properties from existing Template VM: %w", err)
+	}
+
+	if vmMo.Summary.Config.Product == nil {
+		return "", false, false, fmt.Errorf("unable to determine RHCOS version of virtual machine: %s", providerSpec.Template)
+	}
+
+	templateProductVersion := vmMo.Summary.Config.Product.Version
+	if templateProductVersion == "" {
+		return "", false, false, fmt.Errorf("unable to determine RHCOS version of virtual machine: %s", providerSpec.Template)
+	}
+
+	if templateProductVersion != release {
+		klog.Infof("Existing RHCOS v%s does not match current RHCOS v%s. Starting reconciliation process.", templateProductVersion, release)
+
+		// Validate/upgrade the ignition stub before swapping the template in vSphere. If this
+		// fails, we must not have already mutated vSphere state, or a subsequent reconcile would
+		// find the template already up to date and silently drop the error (see
+		// reconcileVSphereProviderSpec).
+		if err := upgradeStubIgnitionIfRequired(providerSpec.UserDataSecret.Name, kubeClient); err != nil {
+			return "", false, false, err
+		}
+
+		ova, err := streamData.QueryDisk(arch, "vmware", "ova")
+		if err != nil {
+			return "", false, false, err
+		}
+		defer func() {
+			logoutErr := client.Logout(ctx)
+			if logoutErr != nil {
+				klog.Errorf("failed to logout vCenter SOAP client: %v", logoutErr)
+			}
+		}()
+		defer func() {
+			logoutErr := tagManager.Logout(ctx)
+			if logoutErr != nil {
+				klog.Errorf("failed to logout vCenter REST client: %v", logoutErr)
+			}
+		}()
+
+		ovaPath, err := cache.DownloadOva(ova)
+		if err != nil {
+			return "", false, false, fmt.Errorf("failed to download %s: %w", ova.Location, err)
+		}
+
+		if len(resolvedName) > 80 {
+			return "", false, false, fmt.Errorf("length of VM template name `%s` exceeds the permitted limit of 80 characters", resolvedName)
+		}
+
+		diskType := getDiskTypeFromExistingVM(vmMo)
+
+		err = createNewVMTemplateWithNameForFailureDomain(ctx, providerSpec, failureDomain, finder, client, tagManager, resolvedName, ovaPath, infraID, diskType)
+		if err != nil {
+			return "", false, false, err
+		}
+		return resolvedName, true, false, nil
+	}
+
+	klog.Infof("Existing RHCOS v%s does match current RHCOS v%s. Skipping reconciliation process using govmomi.", templateProductVersion, release)
+	if providerSpec.Template != resolvedName {
+		klog.Infof("ProviderSpec template name: %s has diverged from the VM Template of name: %s that exists in VSphere. Reconciling the name change.", providerSpec.Template, resolvedName)
+		return resolvedName, true, false, nil
+	}
+	return resolvedName, false, false, nil
+}

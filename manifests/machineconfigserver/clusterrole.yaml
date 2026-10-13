@@ -1,0 +1,27 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: machine-config-server
+rules:
+- apiGroups: ["machineconfiguration.openshift.io"]
+  resources: ["machineconfigs", "machineconfigpools"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["machineconfiguration.openshift.io"]
+  resources: ["controllerconfigs"]
+  verbs: ["get", "watch", "list"]
+- apiGroups: ["machineconfiguration.openshift.io"]
+  resources: ["machineosconfigs", "machineosbuilds"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["security.openshift.io"]
+  resourceNames: ["hostnetwork"]
+  resources: ["securitycontextconstraints"]
+  verbs: ["use"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["services"]
+  verbs: ["get", "list"]
+- apiGroups: ["route.openshift.io"]
+  resources: ["routes"]
+  verbs: ["get", "list"]

@@ -1,0 +1,36 @@
+. {
+    errors
+    health :18080
+    forward . {{`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`}} {
+        policy sequential
+    }
+    cache 30
+    reload
+    template IN {{`{{ .Cluster.IngressVIPRecordType }}`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
+        match .*.apps.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
+        answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ if gt (len (onPremPlatformIngressIPs .ControllerConfig)) 0 }}{{ index (onPremPlatformIngressIPs .ControllerConfig) 0 }}{{ end }}"
+        fallthrough
+    }
+    template IN {{`{{ .Cluster.IngressVIPEmptyType }}`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
+        match .*.apps.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
+        fallthrough
+    }
+    template IN {{`{{ .Cluster.APIVIPRecordType }}`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
+        match ^api.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
+        answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ if gt (len (onPremPlatformAPIServerInternalIPs .ControllerConfig)) 0 }}{{ index (onPremPlatformAPIServerInternalIPs .ControllerConfig) 0 }}{{ end }}"
+        fallthrough
+    }
+    template IN {{`{{ .Cluster.APIVIPEmptyType }}`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
+        match ^api.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
+        fallthrough
+    }
+    template IN {{`{{ .Cluster.APIVIPRecordType }}`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
+        match ^api-int.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
+        answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ if gt (len (onPremPlatformAPIServerInternalIPs .ControllerConfig)) 0 }}{{ index (onPremPlatformAPIServerInternalIPs .ControllerConfig) 0 }}{{ end }}"
+        fallthrough
+    }
+    template IN {{`{{ .Cluster.APIVIPEmptyType }}`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
+        match ^api-int.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
+        fallthrough
+    }
+}

@@ -1,0 +1,6 @@
+name: gcp-routes.service
+dropins:
+- name: mco-disabled.conf
+  contents: |
+    [Unit]
+    ConditionPathExists=/enoent

@@ -1,0 +1,25 @@
+apiVersion: v1
+data:
+    apiKeys:
+        _REDACTED: This field has been redacted
+        length: 85
+    databases:
+        - postgresql://user:password@db1:5432/app
+        - _REDACTED: This field has been redacted
+          length: 31
+        - mongodb://admin:pass123@mongo:27017/data
+    endpoints:
+        - https://api.public.com
+        - https://service.public.org
+    passwords:
+        _REDACTED: This field has been redacted
+        length: 59
+    publicSetting: this should remain visible
+    servers:
+        - https://api.example.com
+        - _REDACTED: This field has been redacted
+          length: 45
+        - https://public.service.com
+kind: ConfigMap
+metadata:
+    name: test-configmap-primitives

@@ -1,0 +1,15 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfigPool
+metadata:
+  name: arbiter
+  labels:
+    "operator.machineconfiguration.openshift.io/required-for-upgrade": ""
+    "machineconfiguration.openshift.io/mco-built-in": ""
+    "pools.operator.machineconfiguration.openshift.io/arbiter": ""
+spec:
+  machineConfigSelector:
+    matchLabels:
+      "machineconfiguration.openshift.io/role": "arbiter"
+  nodeSelector:
+    matchLabels:
+      node-role.kubernetes.io/arbiter: ""

@@ -1,0 +1,7 @@
+mode: 0644
+path: "/etc/sysctl.d/vm-max-map.conf"
+contents:
+  inline: |
+    # Needed for OpenShift Logging (ElasticSearch). See
+    # https://bugzilla.redhat.com/show_bug.cgi?id=1793714
+    vm.max_map_count = 262144

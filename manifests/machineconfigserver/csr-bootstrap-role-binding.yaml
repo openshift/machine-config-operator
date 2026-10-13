@@ -1,0 +1,13 @@
+# system-bootstrap-node-bootstrapper lets serviceaccount `openshift-machine-config-operator/node-bootstrapper` tokens and nodes request CSRs.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: system-bootstrap-node-bootstrapper
+subjects:
+- kind: ServiceAccount
+  name: node-bootstrapper
+  namespace: openshift-machine-config-operator
+roleRef:
+  kind: ClusterRole
+  name: system:node-bootstrapper
+  apiGroup: rbac.authorization.k8s.io

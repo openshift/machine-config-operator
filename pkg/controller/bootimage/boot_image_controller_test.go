@@ -1,0 +1,1078 @@
+package bootimage
+
+import (
+	"context"
+	"testing"
+
+	"github.com/coreos/stream-metadata-go/stream"
+	"github.com/coreos/stream-metadata-go/stream/rhcos"
+	osconfigv1 "github.com/openshift/api/config/v1"
+	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
+	opv1 "github.com/openshift/api/operator/v1"
+	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
+	fakemcopclient "github.com/openshift/client-go/operator/clientset/versioned/fake"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/util/workqueue"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+)
+
+func TestIsClusterStable(t *testing.T) {
+	cases := []struct {
+		name         string
+		history      []osconfigv1.UpdateHistory
+		expectStable bool
+	}{
+		{
+			name:         "empty history - install in progress",
+			history:      []osconfigv1.UpdateHistory{},
+			expectStable: false,
+		},
+		{
+			name: "only partial entry - install in progress",
+			history: []osconfigv1.UpdateHistory{
+				{State: osconfigv1.PartialUpdate, Version: "4.18.0"},
+			},
+			expectStable: false,
+		},
+		{
+			name: "completed entry - stable after initial install",
+			history: []osconfigv1.UpdateHistory{
+				{State: osconfigv1.CompletedUpdate, Version: "4.18.0"},
+			},
+			expectStable: true,
+		},
+		{
+			name: "upgrade in progress",
+			history: []osconfigv1.UpdateHistory{
+				{State: osconfigv1.PartialUpdate, Version: "4.19.0"},
+				{State: osconfigv1.CompletedUpdate, Version: "4.18.0"},
+			},
+			expectStable: false,
+		},
+		{
+			name: "upgrade complete - stable",
+			history: []osconfigv1.UpdateHistory{
+				{State: osconfigv1.CompletedUpdate, Version: "4.19.0"},
+				{State: osconfigv1.CompletedUpdate, Version: "4.18.0"},
+			},
+			expectStable: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cv := &osconfigv1.ClusterVersion{
+				ObjectMeta: v1.ObjectMeta{Name: "version"},
+				Status:     osconfigv1.ClusterVersionStatus{History: tc.history},
+			}
+			indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+			require.NoError(t, indexer.Add(cv))
+			ctrl := &Controller{
+				clusterVersionLister: configlistersv1.NewClusterVersionLister(indexer),
+			}
+			stable, err := ctrl.isClusterStable()
+			require.NoError(t, err)
+			assert.Equal(t, tc.expectStable, stable)
+		})
+	}
+}
+
+func TestUpdateClusterVersion(t *testing.T) {
+	cases := []struct {
+		name          string
+		oldHistory    []osconfigv1.UpdateHistory
+		newHistory    []osconfigv1.UpdateHistory
+		expectEnqueue bool
+	}{
+		{
+			name:          "partial to completed - install finishes",
+			oldHistory:    []osconfigv1.UpdateHistory{{State: osconfigv1.PartialUpdate, Version: "4.18.0"}},
+			newHistory:    []osconfigv1.UpdateHistory{{State: osconfigv1.CompletedUpdate, Version: "4.18.0"}},
+			expectEnqueue: true,
+		},
+		{
+			// not sure this is possible, added for safety
+			name:          "empty to completed - install finishes from scratch",
+			oldHistory:    []osconfigv1.UpdateHistory{},
+			newHistory:    []osconfigv1.UpdateHistory{{State: osconfigv1.CompletedUpdate, Version: "4.18.0"}},
+			expectEnqueue: true,
+		},
+		{
+			name: "upgrade partial to completed - upgrade finishes",
+			oldHistory: []osconfigv1.UpdateHistory{
+				{State: osconfigv1.PartialUpdate, Version: "4.19.0"},
+				{State: osconfigv1.CompletedUpdate, Version: "4.18.0"},
+			},
+			newHistory: []osconfigv1.UpdateHistory{
+				{State: osconfigv1.CompletedUpdate, Version: "4.19.0"},
+				{State: osconfigv1.CompletedUpdate, Version: "4.18.0"},
+			},
+			expectEnqueue: true,
+		},
+		{
+			name:          "completed to completed - no change in stability",
+			oldHistory:    []osconfigv1.UpdateHistory{{State: osconfigv1.CompletedUpdate, Version: "4.18.0"}},
+			newHistory:    []osconfigv1.UpdateHistory{{State: osconfigv1.CompletedUpdate, Version: "4.18.0"}},
+			expectEnqueue: false,
+		},
+		{
+			name:          "partial to partial - still in progress",
+			oldHistory:    []osconfigv1.UpdateHistory{{State: osconfigv1.PartialUpdate, Version: "4.18.0"}},
+			newHistory:    []osconfigv1.UpdateHistory{{State: osconfigv1.PartialUpdate, Version: "4.18.0"}},
+			expectEnqueue: false,
+		},
+		{
+			name:          "completed to partial - new upgrade started",
+			oldHistory:    []osconfigv1.UpdateHistory{{State: osconfigv1.CompletedUpdate, Version: "4.18.0"}},
+			newHistory:    []osconfigv1.UpdateHistory{{State: osconfigv1.PartialUpdate, Version: "4.19.0"}, {State: osconfigv1.CompletedUpdate, Version: "4.18.0"}},
+			expectEnqueue: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := &Controller{
+				queue: workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]()),
+			}
+			oldCV := &osconfigv1.ClusterVersion{Status: osconfigv1.ClusterVersionStatus{History: tc.oldHistory}}
+			newCV := &osconfigv1.ClusterVersion{Status: osconfigv1.ClusterVersionStatus{History: tc.newHistory}}
+			ctrl.updateClusterVersion(oldCV, newCV)
+			assert.Equal(t, tc.expectEnqueue, ctrl.queue.Len() > 0)
+		})
+	}
+}
+
+func TestHotLoop(t *testing.T) {
+	cases := []struct {
+		name                  string
+		machineset            *machinev1beta1.MachineSet
+		generateBootImageFunc func(string) string
+		updateCount           int
+		expectHotLoop         bool
+	}{
+		{
+			name:                  "Hot loop detected due to multiple updates to same value",
+			machineset:            getMachineSet("machine-set-1", "boot-image-1"),
+			updateCount:           HotLoopLimit + 1,
+			generateBootImageFunc: func(s string) string { return s },
+			expectHotLoop:         true,
+		},
+		{
+			name:                  "Hot loop not detected due to update count being lower than threshold",
+			machineset:            getMachineSet("machine-set-1", "boot-image-1"),
+			generateBootImageFunc: func(s string) string { return s },
+			updateCount:           HotLoopLimit - 1,
+			expectHotLoop:         false,
+		},
+		{
+			name:                  "Hot loop not detected due to target boot image changing",
+			machineset:            getMachineSet("machine-set-1", "boot-image-1"),
+			generateBootImageFunc: func(s string) string { return s + "-1" },
+			updateCount:           HotLoopLimit + 1,
+			expectHotLoop:         false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctrl := &Controller{
+				mapiBootImageState: map[string]BootImageState{},
+			}
+			// checkMAPIMachineSetHotLoop is only called in the controller when a patch is required,
+			// so every call to it is assuming a boot image update is going to take place.
+
+			// No hot loops should be detected in the first (updateCount - 1) calls
+			var hotLoopDetected bool
+			for range tc.updateCount - 1 {
+				hotLoopDetected = ctrl.checkMAPIMachineSetHotLoop(tc.machineset, nil, nil, "")
+				assert.Equal(t, false, hotLoopDetected)
+				// Simulate a successful patch by recording the state
+				ctrl.recordMAPIBootImageState(tc.machineset, nil, nil, "")
+				// Change target boot image for next iteration
+				setMachineSetBootImage(tc.machineset, tc.generateBootImageFunc)
+			}
+			// Check for hot loop on the last iteration
+			hotLoopDetected = ctrl.checkMAPIMachineSetHotLoop(tc.machineset, nil, nil, "")
+			assert.Equal(t, tc.expectHotLoop, hotLoopDetected)
+		})
+	}
+}
+
+// Returns a machineset with a given boot image
+func getMachineSet(name, bootImage string) *machinev1beta1.MachineSet {
+	return &machinev1beta1.MachineSet{
+		ObjectMeta: v1.ObjectMeta{
+			Name: name,
+		},
+		Spec: machinev1beta1.MachineSetSpec{
+			Template: machinev1beta1.MachineTemplateSpec{
+				Spec: machinev1beta1.MachineSpec{
+					ProviderSpec: machinev1beta1.ProviderSpec{
+						Value: &runtime.RawExtension{
+							Raw: []byte(bootImage),
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+// Sets the boot image in a machineset based on the generate function passed in
+func setMachineSetBootImage(machineset *machinev1beta1.MachineSet, generateBootImageFunc func(string) string) {
+	currentBootImage := string(machineset.Spec.Template.Spec.ProviderSpec.Value.Raw)
+	machineset.Spec.Template.Spec.ProviderSpec.Value.Raw = []byte(generateBootImageFunc(currentBootImage))
+}
+
+func TestGetArchFromMachineSet(t *testing.T) {
+	// Helper to create a single-arch cluster version
+	singleArchCV := &osconfigv1.ClusterVersion{
+		Status: osconfigv1.ClusterVersionStatus{
+			Desired: osconfigv1.Release{
+				Architecture: "", // Empty means single-arch
+			},
+		},
+	}
+	// Helper to create a multi-arch cluster version
+	multiArchCV := &osconfigv1.ClusterVersion{
+		Status: osconfigv1.ClusterVersionStatus{
+			Desired: osconfigv1.Release{
+				Architecture: osconfigv1.ClusterVersionArchitectureMulti,
+			},
+		},
+	}
+
+	cases := []struct {
+		name           string
+		annotations    map[string]string
+		clusterVersion *osconfigv1.ClusterVersion
+		expectedArch   string
+		expectError    bool
+	}{
+		{
+			name: "Single architecture label in single-arch cluster",
+			annotations: map[string]string{
+				MachineSetArchAnnotationKey: "kubernetes.io/arch=amd64",
+			},
+			clusterVersion: singleArchCV,
+			expectedArch:   "x86_64",
+			expectError:    false,
+		},
+		{
+			name: "Single architecture label in multi-arch cluster",
+			annotations: map[string]string{
+				MachineSetArchAnnotationKey: "kubernetes.io/arch=amd64",
+			},
+			clusterVersion: multiArchCV,
+			expectedArch:   "x86_64",
+			expectError:    false,
+		},
+		{
+			name: "Multiple labels with architecture first",
+			annotations: map[string]string{
+				MachineSetArchAnnotationKey: "kubernetes.io/arch=amd64,topology.ebs.csi.aws.com/zone=eu-central-1a",
+			},
+			clusterVersion: singleArchCV,
+			expectedArch:   "x86_64",
+			expectError:    false,
+		},
+		{
+			name: "Multiple labels with architecture last",
+			annotations: map[string]string{
+				MachineSetArchAnnotationKey: "topology.ebs.csi.aws.com/zone=eu-central-1a,kubernetes.io/arch=arm64",
+			},
+			clusterVersion: singleArchCV,
+			expectedArch:   "aarch64",
+			expectError:    false,
+		},
+		{
+			name: "Multiple labels with architecture in middle",
+			annotations: map[string]string{
+				MachineSetArchAnnotationKey: "topology.ebs.csi.aws.com/zone=eu-central-1a,kubernetes.io/arch=s390x,node.kubernetes.io/instance-type=m5.large",
+			},
+			clusterVersion: singleArchCV,
+			expectedArch:   "s390x",
+			expectError:    false,
+		},
+		{
+			name: "Multiple labels with spaces",
+			annotations: map[string]string{
+				MachineSetArchAnnotationKey: " topology.ebs.csi.aws.com/zone=eu-central-1a , kubernetes.io/arch=ppc64le , node.kubernetes.io/instance-type=m5.large ",
+			},
+			clusterVersion: singleArchCV,
+			expectedArch:   "ppc64le",
+			expectError:    false,
+		},
+		{
+			name: "Invalid architecture",
+			annotations: map[string]string{
+				MachineSetArchAnnotationKey: "kubernetes.io/arch=invalid-arch",
+			},
+			clusterVersion: singleArchCV,
+			expectError:    true,
+		},
+		{
+			name: "No architecture label in annotation",
+			annotations: map[string]string{
+				MachineSetArchAnnotationKey: "topology.ebs.csi.aws.com/zone=eu-central-1a,node.kubernetes.io/instance-type=m5.large",
+			},
+			clusterVersion: singleArchCV,
+			expectError:    true,
+		},
+		{
+			name:           "No annotation in single-arch cluster defaults to control plane arch",
+			annotations:    map[string]string{},
+			clusterVersion: singleArchCV,
+			expectError:    false, // Should default to control plane arch
+		},
+		{
+			name:        "No annotation in multi-arch cluster returns error",
+			annotations: map[string]string{},
+			clusterVersion: &osconfigv1.ClusterVersion{
+				Status: osconfigv1.ClusterVersionStatus{
+					Desired: osconfigv1.Release{
+						Architecture: osconfigv1.ClusterVersionArchitectureMulti,
+					},
+				},
+			},
+			expectError: true,
+		},
+		{
+			name: "ARM64 architecture in multi-arch cluster",
+			annotations: map[string]string{
+				MachineSetArchAnnotationKey: "kubernetes.io/arch=arm64",
+			},
+			clusterVersion: multiArchCV,
+			expectedArch:   "aarch64",
+			expectError:    false,
+		},
+		{
+			name: "PPC64LE architecture in single-arch cluster",
+			annotations: map[string]string{
+				MachineSetArchAnnotationKey: "kubernetes.io/arch=ppc64le",
+			},
+			clusterVersion: singleArchCV,
+			expectedArch:   "ppc64le",
+			expectError:    false,
+		},
+		{
+			name: "S390X architecture in multi-arch cluster",
+			annotations: map[string]string{
+				MachineSetArchAnnotationKey: "kubernetes.io/arch=s390x",
+			},
+			clusterVersion: multiArchCV,
+			expectedArch:   "s390x",
+			expectError:    false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			machineSet := &machinev1beta1.MachineSet{
+				ObjectMeta: v1.ObjectMeta{
+					Name:        "test-machineset",
+					Annotations: tc.annotations,
+				},
+			}
+
+			arch, err := getArchFromMachineSet(machineSet, tc.clusterVersion)
+
+			if tc.expectError {
+				assert.Error(t, err, "Expected error for test case: %s", tc.name)
+			} else {
+				assert.NoError(t, err, "Unexpected error for test case: %s", tc.name)
+				if tc.expectedArch != "" {
+					assert.Equal(t, tc.expectedArch, arch, "Architecture mismatch for test case: %s", tc.name)
+				}
+			}
+		})
+	}
+}
+
+// This tests reconcileAzureProviderSpec against the various stream variants.
+// See comments in reconcileAzureProviderSpec() for additional context.
+func TestReconcileAzureProviderSpec(t *testing.T) {
+	streamData := &stream.Stream{
+		Architectures: map[string]stream.Arch{
+			"x86_64": {
+				RHELCoreOSExtensions: &rhcos.Extensions{
+					Marketplace: &rhcos.Marketplace{
+						Azure: &rhcos.AzureMarketplace{
+							NoPurchasePlan: &rhcos.AzureMarketplaceImages{
+								Gen1: &rhcos.AzureMarketplaceImage{
+									Offer:     "aro4",
+									Publisher: "azureopenshift",
+									SKU:       "aro_419",
+									Version:   "419.94.20250101",
+								},
+								Gen2: &rhcos.AzureMarketplaceImage{
+									Offer:     "aro4",
+									Publisher: "azureopenshift",
+									SKU:       "419-v2",
+									Version:   "419.94.20250101",
+								},
+							},
+							OCP: &rhcos.AzureMarketplaceImages{
+								Gen1: &rhcos.AzureMarketplaceImage{
+									Publisher: "redhat",
+									Offer:     "rh-ocp-worker",
+									SKU:       "rh-ocp-worker-gen1",
+									Version:   "4.18.2025031114",
+								},
+								Gen2: &rhcos.AzureMarketplaceImage{
+									Publisher: "redhat",
+									Offer:     "rh-ocp-worker",
+									SKU:       "rh-ocp-worker",
+									Version:   "4.18.2025031114",
+								},
+							},
+							OPP: &rhcos.AzureMarketplaceImages{
+								Gen1: &rhcos.AzureMarketplaceImage{
+									Publisher: "redhat",
+									Offer:     "rh-opp-worker",
+									SKU:       "rh-opp-worker-gen1",
+									Version:   "4.18.2025031114",
+								},
+								Gen2: &rhcos.AzureMarketplaceImage{
+									Publisher: "redhat",
+									Offer:     "rh-opp-worker",
+									SKU:       "rh-opp-worker",
+									Version:   "4.18.2025031114",
+								},
+							},
+							OKE: &rhcos.AzureMarketplaceImages{
+								Gen1: &rhcos.AzureMarketplaceImage{
+									Publisher: "redhat",
+									Offer:     "rh-oke-worker",
+									SKU:       "rh-oke-worker-gen1",
+									Version:   "4.18.2025031114",
+								},
+								Gen2: &rhcos.AzureMarketplaceImage{
+									Publisher: "redhat",
+									Offer:     "rh-oke-worker",
+									SKU:       "rh-oke-worker",
+									Version:   "4.18.2025031114",
+								},
+							},
+							OCPEMEA: &rhcos.AzureMarketplaceImages{
+								Gen1: &rhcos.AzureMarketplaceImage{
+									Publisher: "redhat-limited",
+									Offer:     "rh-ocp-worker",
+									SKU:       "rh-ocp-worker-gen1",
+									Version:   "4.18.2025031114",
+								},
+								Gen2: &rhcos.AzureMarketplaceImage{
+									Publisher: "redhat-limited",
+									Offer:     "rh-ocp-worker",
+									SKU:       "rh-ocp-worker",
+									Version:   "4.18.2025031114",
+								},
+							},
+							OPPEMEA: &rhcos.AzureMarketplaceImages{
+								Gen1: &rhcos.AzureMarketplaceImage{
+									Publisher: "redhat-limited",
+									Offer:     "rh-opp-worker",
+									SKU:       "rh-opp-worker-gen1",
+									Version:   "4.18.2025031114",
+								},
+								Gen2: &rhcos.AzureMarketplaceImage{
+									Publisher: "redhat-limited",
+									Offer:     "rh-opp-worker",
+									SKU:       "rh-opp-worker",
+									Version:   "4.18.2025031114",
+								},
+							},
+							OKEEMEA: &rhcos.AzureMarketplaceImages{
+								Gen1: &rhcos.AzureMarketplaceImage{
+									Publisher: "redhat-limited",
+									Offer:     "rh-oke-worker",
+									SKU:       "rh-oke-worker-gen1",
+									Version:   "4.18.2025031114",
+								},
+								Gen2: &rhcos.AzureMarketplaceImage{
+									Publisher: "redhat-limited",
+									Offer:     "rh-oke-worker",
+									SKU:       "rh-oke-worker",
+									Version:   "4.18.2025031114",
+								},
+							},
+						},
+					},
+				},
+			},
+			"aarch64": {
+				RHELCoreOSExtensions: &rhcos.Extensions{
+					Marketplace: &rhcos.Marketplace{
+						Azure: &rhcos.AzureMarketplace{
+							NoPurchasePlan: &rhcos.AzureMarketplaceImages{
+								Gen2: &rhcos.AzureMarketplaceImage{
+									Offer:     "aro4",
+									Publisher: "azureopenshift",
+									SKU:       "419-arm",
+									Version:   "419.94.20250101",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// Create a fake secret with ignition data
+	testSecret := &corev1.Secret{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      "test-secret",
+			Namespace: "openshift-machine-api",
+		},
+		Data: map[string][]byte{
+			"userData": []byte(`{"ignition":{"version":"3.4.0"},"storage":{"files":[]},"systemd":{},"passwd":{}}`),
+		},
+	}
+
+	fakeClient := fake.NewClientset(testSecret)
+
+	tests := []struct {
+		name            string
+		arch            string
+		currentImage    machinev1beta1.Image
+		expectedImage   machinev1beta1.Image
+		expectPatch     bool
+		expectSkip      bool
+		streamData      *stream.Stream                  // Custom stream data for specific tests
+		securityProfile *machinev1beta1.SecurityProfile // Custom security profile for specific tests
+	}{
+		{
+			name: "Legacy Gen1 upload image transitions to marketplace Gen1",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				ResourceID: "test-gen1-image",
+			},
+			expectedImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "aro_419",
+				Version:    "419.94.20250101",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectPatch: true,
+		},
+		{
+			name: "Legacy Gen2 upload image transitions to marketplace Gen2",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				ResourceID: "test-gen2-image",
+			},
+			expectedImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "419-v2",
+				Version:    "419.94.20250101",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectPatch: true,
+		},
+		{
+			name: "Marketplace Gen1 image updates to newer version",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "aro_418",
+				Version:    "418.94.20241201",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectedImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "aro_419",
+				Version:    "419.94.20250101",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectPatch: true,
+		},
+		{
+			name: "Marketplace Gen2 image updates to newer version",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "418-v2",
+				Version:    "418.94.20241201",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectedImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "419-v2",
+				Version:    "419.94.20250101",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectPatch: true,
+		},
+		{
+			name: "ARM64 always uses Gen2",
+			arch: "aarch64",
+			currentImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "aro_418", // this can't realistically happen, but a Gen1 SKU but should be forced to arm SKU
+				Version:    "418.94.20241201",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectedImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "419-arm", // Should be Gen2 SKU
+				Version:    "419.94.20250101",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectPatch: true,
+		},
+		{
+			name: "No update needed - image already current",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "419-v2",
+				Version:    "419.94.20250101",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectedImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "419-v2",
+				Version:    "419.94.20250101",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectPatch: false,
+		},
+		{
+			name: "Skip unsupported architecture ppc64le",
+			arch: "ppc64le",
+			currentImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "419-v2",
+				Version:    "419.94.20250101",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectSkip: true,
+		},
+		{
+			name: "Skip unsupported architecture s390x",
+			arch: "s390x",
+			currentImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "419-v2",
+				Version:    "419.94.20250101",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectSkip: true,
+		},
+		{
+			name: "Paid OCP Gen1 image updates to newer version",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				Publisher:  "redhat",
+				Offer:      "rh-ocp-worker",
+				ResourceID: "",
+				SKU:        "rh-ocp-worker-gen1",
+				Version:    "4.17.2024121214",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceWithPlan,
+			},
+			expectedImage: machinev1beta1.Image{
+				Publisher:  "redhat",
+				Offer:      "rh-ocp-worker",
+				ResourceID: "",
+				SKU:        "rh-ocp-worker-gen1",
+				Version:    "4.18.2025031114",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceWithPlan,
+			},
+			expectPatch: true,
+		},
+		{
+			name: "Paid OCP Gen2 image updates to newer version",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				Publisher:  "redhat",
+				Offer:      "rh-ocp-worker",
+				ResourceID: "",
+				SKU:        "rh-ocp-worker",
+				Version:    "4.17.2024121214",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceWithPlan,
+			},
+			expectedImage: machinev1beta1.Image{
+				Publisher:  "redhat",
+				Offer:      "rh-ocp-worker",
+				ResourceID: "",
+				SKU:        "rh-ocp-worker",
+				Version:    "4.18.2025031114",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceWithPlan,
+			},
+			expectPatch: true,
+		},
+		{
+			name: "Paid OPP EMEA Gen1 image updates to newer version",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				Publisher:  "redhat-limited",
+				Offer:      "rh-opp-worker",
+				ResourceID: "",
+				SKU:        "rh-opp-worker-gen1",
+				Version:    "4.17.2024121214",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceWithPlan,
+			},
+			expectedImage: machinev1beta1.Image{
+				Publisher:  "redhat-limited",
+				Offer:      "rh-opp-worker",
+				ResourceID: "",
+				SKU:        "rh-opp-worker-gen1",
+				Version:    "4.18.2025031114",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceWithPlan,
+			},
+			expectPatch: true,
+		},
+		{
+			name: "Paid OKE EMEA Gen2 image updates to newer version",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				Publisher:  "redhat-limited",
+				Offer:      "rh-oke-worker",
+				ResourceID: "",
+				SKU:        "rh-oke-worker",
+				Version:    "4.17.2024121214",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceWithPlan,
+			},
+			expectedImage: machinev1beta1.Image{
+				Publisher:  "redhat-limited",
+				Offer:      "rh-oke-worker",
+				ResourceID: "",
+				SKU:        "rh-oke-worker",
+				Version:    "4.18.2025031114",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceWithPlan,
+			},
+			expectPatch: true,
+		},
+		{
+			name: "Paid OCP image already current - no update needed",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				Publisher:  "redhat",
+				Offer:      "rh-ocp-worker",
+				ResourceID: "",
+				SKU:        "rh-ocp-worker",
+				Version:    "4.18.2025031114",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceWithPlan,
+			},
+			expectedImage: machinev1beta1.Image{
+				Publisher:  "redhat",
+				Offer:      "rh-ocp-worker",
+				ResourceID: "",
+				SKU:        "rh-ocp-worker",
+				Version:    "4.18.2025031114",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceWithPlan,
+			},
+			expectPatch: false,
+		},
+		{
+			name: "Error when marketplace extensions are nil",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				Publisher:  "azureopenshift",
+				Offer:      "aro4",
+				ResourceID: "",
+				SKU:        "419-v2",
+				Version:    "419.94.20250101",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectSkip: true,
+			streamData: &stream.Stream{
+				Architectures: map[string]stream.Arch{
+					"x86_64": {
+						RHELCoreOSExtensions: &rhcos.Extensions{
+							Marketplace: nil, // Marketplace is nil
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "Error when Azure marketplace is nil",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				Publisher:  "azureopenshift",
+				Offer:      "aro4",
+				ResourceID: "",
+				SKU:        "419-v2",
+				Version:    "419.94.20250101",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectSkip: true,
+			streamData: &stream.Stream{
+				Architectures: map[string]stream.Arch{
+					"x86_64": {
+						RHELCoreOSExtensions: &rhcos.Extensions{
+							Marketplace: &rhcos.Marketplace{
+								Azure: nil, // Azure marketplace is nil
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "Skip machineset with ConfidentialVM SecurityType",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "419-v2",
+				Version:    "419.94.20250101",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectSkip: true,
+			securityProfile: &machinev1beta1.SecurityProfile{
+				Settings: machinev1beta1.SecuritySettings{
+					SecurityType: "ConfidentialVM",
+				},
+			},
+		},
+		{
+			name: "Skip machineset with TrustedLaunch SecurityType",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "419-v2",
+				Version:    "419.94.20250101",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectSkip: true,
+			securityProfile: &machinev1beta1.SecurityProfile{
+				Settings: machinev1beta1.SecuritySettings{
+					SecurityType: "TrustedLaunch",
+				},
+			},
+		},
+		{
+			name: "Process machineset with SecurityProfile but empty SecurityType",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "418-v2",
+				Version:    "418.94.20241201",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectedImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "419-v2",
+				Version:    "419.94.20250101",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectPatch: true,
+			securityProfile: &machinev1beta1.SecurityProfile{
+				Settings: machinev1beta1.SecuritySettings{
+					SecurityType: "", // Empty SecurityType should not be skipped
+				},
+			},
+		},
+		{
+			name: "Process machineset with nil SecurityProfile",
+			arch: "x86_64",
+			currentImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "418-v2",
+				Version:    "418.94.20241201",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectedImage: machinev1beta1.Image{
+				Offer:      "aro4",
+				Publisher:  "azureopenshift",
+				ResourceID: "",
+				SKU:        "419-v2",
+				Version:    "419.94.20250101",
+				Type:       machinev1beta1.AzureImageTypeMarketplaceNoPlan,
+			},
+			expectPatch:     true,
+			securityProfile: nil, // Nil SecurityProfile should not be skipped
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create provider spec with current image
+			providerSpec := &machinev1beta1.AzureMachineProviderSpec{
+				Image: tt.currentImage,
+				UserDataSecret: &corev1.SecretReference{
+					Name: "test-secret",
+				},
+				SecurityProfile: tt.securityProfile,
+			}
+
+			// Create a mock infrastructure object
+			infra := &osconfigv1.Infrastructure{}
+
+			// Use custom stream data if provided, otherwise use default
+			testStreamData := streamData
+			if tt.streamData != nil {
+				testStreamData = tt.streamData
+			}
+
+			patchRequired, _, updatedProviderSpec, err := reconcileAzureProviderSpec(
+				testStreamData,
+				tt.arch,
+				infra,
+				providerSpec,
+				"test-machineset",
+				fakeClient,
+			)
+
+			require.NoError(t, err)
+
+			if tt.expectSkip {
+				assert.False(t, patchRequired, "Expected no patch for skipped case")
+				return
+			}
+
+			assert.Equal(t, tt.expectPatch, patchRequired, "Patch required mismatch")
+
+			if tt.expectPatch {
+				require.NotNil(t, updatedProviderSpec, "Updated provider spec should not be nil when patch is required")
+				assert.Equal(t, tt.expectedImage, updatedProviderSpec.Image, "Updated image mismatch")
+			}
+		})
+	}
+}
+
+func TestResetClusterBootImage(t *testing.T) {
+	cases := []struct {
+		name              string
+		history           []osconfigv1.UpdateHistory
+		mode              opv1.BootImageSkewEnforcementModeStatus
+		initialOCPVersion string
+		expectedVersion   string
+	}{
+		{
+			name: "resets to oldest completed entry (install version)",
+			history: []osconfigv1.UpdateHistory{
+				{State: osconfigv1.CompletedUpdate, Version: "4.19.0"},
+				{State: osconfigv1.CompletedUpdate, Version: "4.18.0"},
+			},
+			mode:              opv1.BootImageSkewEnforcementModeStatusAutomatic,
+			initialOCPVersion: "4.19.0",
+			expectedVersion:   "4.18.0",
+		},
+		{
+			name: "no-op when mode is not automatic",
+			history: []osconfigv1.UpdateHistory{
+				{State: osconfigv1.CompletedUpdate, Version: "4.18.0"},
+			},
+			mode:              opv1.BootImageSkewEnforcementModeStatusNone,
+			initialOCPVersion: "4.19.0",
+			expectedVersion:   "4.19.0",
+		},
+		{
+			name: "no-op when already at install version",
+			history: []osconfigv1.UpdateHistory{
+				{State: osconfigv1.CompletedUpdate, Version: "4.18.0"},
+			},
+			mode:              opv1.BootImageSkewEnforcementModeStatusAutomatic,
+			initialOCPVersion: "4.18.0",
+			expectedVersion:   "4.18.0",
+		},
+		{
+			name:              "falls back to 0.0.0 when history is empty",
+			history:           []osconfigv1.UpdateHistory{},
+			mode:              opv1.BootImageSkewEnforcementModeStatusAutomatic,
+			initialOCPVersion: "4.19.0",
+			expectedVersion:   "0.0.0",
+		},
+		{
+			name: "uses last entry when no completed update exists",
+			history: []osconfigv1.UpdateHistory{
+				{State: osconfigv1.PartialUpdate, Version: "4.18.0"},
+			},
+			mode:              opv1.BootImageSkewEnforcementModeStatusAutomatic,
+			initialOCPVersion: "4.19.0",
+			expectedVersion:   "4.18.0",
+		},
+		{
+			// history==nil is the sentinel for "do not populate the lister",
+			// exercising the clusterVersionLister.Get() error path.
+			name:              "falls back to 0.0.0 when ClusterVersion unavailable",
+			history:           nil,
+			mode:              opv1.BootImageSkewEnforcementModeStatusAutomatic,
+			initialOCPVersion: "4.19.0",
+			expectedVersion:   "0.0.0",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mcop := &opv1.MachineConfiguration{
+				ObjectMeta: v1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: tc.mode,
+						Automatic: opv1.ClusterBootImageAutomatic{
+							OCPVersion: tc.initialOCPVersion,
+						},
+					},
+				},
+			}
+
+			cvIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+			if tc.history != nil {
+				cv := &osconfigv1.ClusterVersion{
+					ObjectMeta: v1.ObjectMeta{Name: "version"},
+					Status:     osconfigv1.ClusterVersionStatus{History: tc.history},
+				}
+				require.NoError(t, cvIndexer.Add(cv))
+			}
+
+			fakeMcopClient := fakemcopclient.NewClientset(mcop)
+			ctrl := &Controller{
+				mcopClient:           fakeMcopClient,
+				clusterVersionLister: configlistersv1.NewClusterVersionLister(cvIndexer),
+			}
+
+			ctrl.resetClusterBootImage()
+
+			updated, err := fakeMcopClient.OperatorV1().MachineConfigurations().Get(
+				context.TODO(), ctrlcommon.MCOOperatorKnobsObjectName, v1.GetOptions{})
+			require.NoError(t, err)
+			assert.Equal(t, tc.expectedVersion,
+				updated.Status.BootImageSkewEnforcementStatus.Automatic.OCPVersion)
+		})
+	}
+}

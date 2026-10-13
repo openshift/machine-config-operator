@@ -1,0 +1,22 @@
+name: vsphere-hostname.service
+enabled: true
+contents: |
+  [Unit]
+  Description=vSphere hostname
+  Requires=vmtoolsd.service
+  After=vmtoolsd.service
+
+  ConditionVirtualization=vmware
+  
+  Before=kubelet-dependencies.target
+  Before=node-valid-hostname.service
+  Before=NetworkManager.service
+
+  [Service]
+  ExecStart=/usr/local/bin/vsphere-hostname.sh
+  Restart=on-failure
+  RestartSec=15
+  StartLimitIntervalSec=0
+
+  [Install]
+  WantedBy=multi-user.target

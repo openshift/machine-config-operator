@@ -1,0 +1,198 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: machine-config-controller
+  namespace: openshift-machine-config-operator
+  labels:
+    k8s-app: machine-config-controller
+  annotations:
+    include.release.openshift.io/ibm-cloud-managed: "true"
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+spec:
+  groups:
+    - name: os-image-override.rules
+      rules:
+        - expr: sum(os_image_url_override)
+          record: os_image_url_override:sum
+    - name: runc-deprecated
+      rules:
+        - alert: RuncDeprecated
+          expr: |
+            count(container_runtime_crio_default_runtime{runtime="runc"}) > 0
+          for: 10m
+          labels:
+            namespace: openshift-machine-config-operator
+            severity: info
+          annotations:
+            summary: "This cluster is using the deprecated runc container runtime"
+            description: >-
+              The runc OCI runtime has been deprecated and support will be removed in a future release. Migrate to crun before upgrading to a future OpenShift release.
+              See https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/machine_configuration/machine-configs-custom#config-container-runtime_machine-configs-custom
+              for migration steps.
+            runbook_url: https://github.com/openshift/runbooks/blob/master/alerts/machine-config-operator/RuncDeprecated.md
+    - name: mcc-drain-error
+      rules:
+        - alert: MCCDrainError
+          expr: |
+            mcc_drain_err > 0
+          labels:
+            namespace: openshift-machine-config-operator
+            severity: warning
+          annotations:
+            summary: "Alerts the user to a failed node drain. Always triggers when the failure happens one or more times."
+            description: "Drain failed on {{ $labels.exported_node }} , updates may be blocked. For more details check MachineConfigController pod logs: oc logs -f -n {{ $labels.namespace }} machine-config-controller-xxxxx -c machine-config-controller"
+            runbook_url: https://github.com/openshift/runbooks/blob/master/alerts/machine-config-operator/MachineConfigControllerDrainError.md
+    - name: mcc-pool-alert
+      rules:
+        - alert: MCCPoolAlert
+          expr: |
+            mcc_pool_alert > 0
+          labels:
+            namespace: openshift-machine-config-operator
+            severity: warning
+          annotations:
+            summary: "Triggers when nodes in a pool have overlapping labels such as master, worker, and a custom label therefore a choice must be made as to which is honored."
+            description: "Node {{ $labels.exported_node }} has triggered a pool alert due to a label change. For more details check MachineConfigController pod logs: oc logs -f -n {{ $labels.namespace }} machine-config-controller-xxxxx -c machine-config-controller"
+            runbook_url: https://github.com/openshift/runbooks/blob/master/alerts/machine-config-operator/MachineConfigControllerPoolAlert.md
+    - name: mcc-boot-image-skew-enforcement-none
+      rules:
+        - alert: MCCBootImageSkewEnforcementNone
+          expr: |
+            mcc_boot_image_skew_enforcement_none == 1
+          labels:
+            namespace: openshift-machine-config-operator
+            severity: info
+          annotations:
+            summary: "Boot image skew enforcement is disabled. Scaling operations may not be successful."
+            description: "Boot image skew enforcement mode is set to None. When scaling up, new nodes may be provisioned with older boot images that could introduce compatibility issues. Consider manually updating boot images to match the cluster version. Please refer to docs at https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/machine_configuration/mco-update-boot-skew-mgmt for additional details."            
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: machine-config-daemon
+  namespace: openshift-machine-config-operator
+  labels:
+    k8s-app: machine-config-daemon
+  annotations:
+    include.release.openshift.io/ibm-cloud-managed: "true"
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+spec:
+  groups:
+    - name: mcd-reboot-error
+      rules:
+        - alert: MCDRebootError
+          expr: |
+            mcd_reboots_failed_total > 0
+          for: 5m
+          labels:
+            namespace: openshift-machine-config-operator                   
+            severity: critical
+          annotations:
+            summary: "Alerts the user that a node failed to reboot one or more times over a span of 5 minutes."
+            description: "Reboot failed on {{ $labels.node }} , update may be blocked. For more details:  oc logs -f -n {{ $labels.namespace }} {{ $labels.pod }} -c machine-config-daemon "
+            runbook_url: https://github.com/openshift/runbooks/blob/master/alerts/machine-config-operator/MachineConfigDaemonRebootError.md 
+    - name: mcd-pivot-error
+      rules:
+        - alert: MCDPivotError
+          expr: |
+            mcd_pivot_errors_total > 0
+          for: 2m
+          labels:
+            namespace: openshift-machine-config-operator
+            severity: warning
+          annotations:
+            summary: "Alerts the user when an error is detected upon pivot. This triggers if the pivot errors are above zero for 2 minutes."
+            description: "Error detected in pivot logs on {{ $labels.node }} , upgrade may be blocked. For more details:  oc logs -f -n {{ $labels.namespace }} {{ $labels.pod }} -c machine-config-daemon "
+            runbook_url: https://github.com/openshift/runbooks/blob/master/alerts/machine-config-operator/MachineConfigDaemonPivotError.md
+    - name: mcd-kubelet-health-state-error
+      rules:
+        - alert: KubeletHealthState
+          expr: |
+            mcd_kubelet_state > 2
+          labels:
+            namespace: openshift-machine-config-operator
+            severity: warning
+          annotations:
+            summary: "This keeps track of Kubelet health failures, and tallies them. The warning is triggered if 2 or more failures occur."
+            description: "Kubelet health failure threshold reached"
+            runbook_url: https://github.com/openshift/runbooks/blob/master/alerts/machine-config-operator/KubeletHealthState.md
+    - name: system-memory-exceeds-reservation
+      rules:
+        - alert: SystemMemoryExceedsReservation
+          expr: |
+            sum by (node) (container_memory_rss{id="/system.slice"}) > ((sum by (node) (kube_node_status_capacity{resource="memory"} - kube_node_status_allocatable{resource="memory"})) * 0.95)
+          for: 15m
+          labels:
+            namespace: openshift-machine-config-operator
+            severity: warning
+          annotations:
+            summary: "Alerts the user when, for 15 minutes, a specific node is using more memory than is reserved"
+            description: "System memory usage of {{ $value | humanize }} on {{ $labels.node }} exceeds 95% of the reservation. Reserved memory ensures system processes can function even when the node is fully allocated and protects against workload out of memory events impacting the proper functioning of the node. The default reservation is expected to be sufficient for most configurations and should be increased (https://docs.openshift.com/container-platform/latest/nodes/nodes/nodes-nodes-managing.html) when running nodes with high numbers of pods (either due to rate of change or at steady state)."
+            runbook_url: https://github.com/openshift/runbooks/blob/master/alerts/machine-config-operator/SystemMemoryExceedsReservation.md
+    - name: high-overall-control-plane-memory
+      rules:
+        - alert: HighOverallControlPlaneMemory
+          expr: |
+            (
+              1
+              -
+              sum (
+                node_memory_MemFree_bytes
+                + node_memory_Buffers_bytes
+                + node_memory_Cached_bytes
+                AND on (instance)
+                label_replace( kube_node_role{role="master"}, "instance", "$1", "node", "(.+)" )
+              ) / sum (
+                node_memory_MemTotal_bytes
+                AND on (instance)
+                label_replace( kube_node_role{role="master"}, "instance", "$1", "node", "(.+)" )
+              )
+            ) * 100 > 60
+          for: 1h
+          labels:
+            namespace: openshift-machine-config-operator
+            severity: warning
+          annotations:
+            summary: >-
+              Memory utilization across all control plane nodes is high, and could impact responsiveness and stability.
+            description: >-
+              Given three control plane nodes, the overall memory utilization may only be about 2/3 of all available capacity.
+              This is because if a single control plane node fails, the kube-apiserver and etcd may be slow to respond.
+              To fix this, increase memory of the control plane nodes.
+            runbook_url: https://github.com/openshift/runbooks/blob/master/alerts/machine-config-operator/HighOverallControlPlaneMemory.md
+    - name: extremely-high-individual-control-plane-memory
+      rules:
+        - alert: ExtremelyHighIndividualControlPlaneMemory
+          expr: |
+            (
+              1
+              -
+              sum by (instance) (
+                node_memory_MemFree_bytes
+                + node_memory_Buffers_bytes
+                + node_memory_Cached_bytes
+                AND on (instance)
+                label_replace( kube_node_role{role="master"}, "instance", "$1", "node", "(.+)" )
+              ) / sum by (instance) (
+                node_memory_MemTotal_bytes
+                AND on (instance)
+                label_replace( kube_node_role{role="master"}, "instance", "$1", "node", "(.+)" )
+              )
+            ) * 100 > 90
+          for: 45m
+          labels:
+            namespace: openshift-machine-config-operator
+            severity: critical
+          annotations:
+            summary: >-
+              Extreme memory utilization per node within control plane nodes is extremely high, and could impact responsiveness and stability.
+            description: >-
+              The memory utilization per instance within control plane nodes influence the stability, and responsiveness of the cluster.
+              This can lead to cluster instability and slow responses from kube-apiserver or failing requests especially on etcd.
+              Moreover, OOM kill is expected which negatively influences the pod scheduling.
+              If this happens on container level, the descheduler will not be able to detect it, as it works on the pod level.
+              To fix this, increase memory of the affected node of control plane nodes.
+            runbook_url: https://github.com/openshift/runbooks/blob/master/alerts/machine-config-operator/ExtremelyHighIndividualControlPlaneMemory.md
+

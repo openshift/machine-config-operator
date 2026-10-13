@@ -1,0 +1,12 @@
+apiVersion: config.openshift.io/v1
+kind: FeatureGate
+metadata:
+  name: cluster
+status:
+  featureGates:
+  - version: 0.0.1-snapshot
+    enabled:
+    - name: OpenShiftPodSecurityAdmission
+    - name: OSStreams
+    disabled:
+    - name: SigstoreImageVerification

@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: machine-config-server
+  namespace: {{.TargetNamespace}}
+spec:
+  selector:
+    matchLabels:
+      k8s-app: machine-config-server
+  template:
+    metadata:
+      name: machine-config-server
+      labels:
+        k8s-app: machine-config-server
+      annotations:
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+        openshift.io/required-scc: hostnetwork
+    spec:
+      containers:
+      - name: machine-config-server
+        image: {{.Images.MachineConfigOperator}}
+        command: ["/usr/bin/machine-config-server"]
+        args:
+          - "start"
+          - "--apiserver-url={{.APIServerURL}}"
+          - "--payload-version={{.ReleaseVersion}}"
+          - "--tls-cipher-suites={{join .TLSCipherSuites ","}}"
+          - "--tls-min-version={{.TLSMinVersion}}"
+          - "--v={{.LogLevel}}"
+        ports:
+        - containerPort: 22623
+          name: https
+          protocol: TCP
+        - containerPort: 22624
+          name: http
+          protocol: TCP
+        resources:
+          requests:
+            cpu: 20m
+            memory: 50Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - name: certs
+          mountPath: /etc/ssl/mcs
+        - name: node-bootstrap-token
+          mountPath: /etc/mcs/bootstrap-token
+      hostNetwork: true
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+      priorityClassName: "system-cluster-critical"
+      serviceAccountName: machine-config-server
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/etcd
+        operator: Exists
+        effect: NoSchedule
+      volumes:
+      - name: node-bootstrap-token
+        secret:
+          secretName: node-bootstrapper-token
+      - name: certs
+        secret:
+          secretName: machine-config-server-tls

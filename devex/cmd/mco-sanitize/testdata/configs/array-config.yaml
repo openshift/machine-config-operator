@@ -1,0 +1,13 @@
+redact:
+  - apiVersion: apps/v1
+    kind: Deployment
+    paths:
+      - spec.template.spec.containers.env.value
+      - spec.template.spec.containers.0.env.0
+      - spec.template.spec.volumes.secret.items.data
+  - apiVersion: v1
+    kind: ConfigMap
+    paths:
+      - data.servers.credentials
+      - data.servers.1
+      - data.secretKeys

@@ -1,0 +1,310 @@
+package bootimage
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+
+	osconfigv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/api/features"
+	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
+	opv1 "github.com/openshift/api/operator/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/jsonmergepatch"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/klog/v2"
+
+	archtranslater "github.com/coreos/stream-metadata-go/arch"
+	"github.com/coreos/stream-metadata-go/stream"
+	corev1 "k8s.io/api/core/v1"
+)
+
+// syncMAPIMachineSets will attempt to enqueue every machineset
+// nolint:dupl // I separated this from syncControlPlaneMachineSets for readability
+func (ctrl *Controller) syncMAPIMachineSets(reason string) {
+
+	// Get MachineConfiguration to determine which resources are enrolled
+	mcop, err := ctrl.mcopLister.Get(ctrlcommon.MCOOperatorKnobsObjectName)
+	if err != nil {
+		klog.Errorf("Failed to get MachineConfiguration: %v", err)
+		ctrl.updateConditions(reason, fmt.Errorf("failed to get MachineConfiguration while enqueueing MAPI MachineSets: %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+		return
+	}
+
+	machineManagerFound, machineResourceSelector, err := getMachineResourceSelectorFromMachineManagers(mcop.Status.ManagedBootImagesStatus.MachineManagers, opv1.MachineAPI, opv1.MachineSets)
+	if err != nil {
+		klog.Errorf("failed to create a machineset selector while enqueueing MAPI machineset %v", err)
+		ctrl.updateConditions(reason, fmt.Errorf("failed to create a machineset selector while enqueueing MAPI machineset %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+		return
+	}
+	if !machineManagerFound {
+		klog.V(4).Infof("No MAPI machineset manager was found, so no MAPI machinesets will be enrolled.")
+		// clear out MAPI boot image history
+		for k := range ctrl.mapiBootImageState {
+			delete(ctrl.mapiBootImageState, k)
+		}
+
+	}
+
+	mapiMachineSets, err := ctrl.mapiMachineSetLister.List(machineResourceSelector)
+	if err != nil {
+		klog.Errorf("failed to fetch MachineSet list while enqueueing MAPI MachineSets %v", err)
+		ctrl.updateConditions(reason, fmt.Errorf("failed to fetch MachineSet list while enqueueing MAPI MachineSets %v", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+		return
+	}
+
+	// If no machine resources were enrolled; exit the enqueue process without errors.
+	if len(mapiMachineSets) == 0 {
+		klog.Infof("No MAPI machinesets were enrolled, so no MAPI machinesets will be enqueued.")
+		// clear out MAPI boot image history
+		for k := range ctrl.mapiBootImageState {
+			delete(ctrl.mapiBootImageState, k)
+		}
+	}
+
+	var configMap *corev1.ConfigMap
+	// The configMap is not needed if no resources are being reconciled; so check that first before making the API call.
+	if len(mapiMachineSets) > 0 {
+		configMap, err = ctrl.mcoCmLister.ConfigMaps(ctrlcommon.MCONamespace).Get(ctrlcommon.BootImagesConfigMapName)
+		if err != nil {
+			klog.Errorf("failed to fetch coreos-bootimages config map: %v", err)
+			ctrl.updateConditions(reason, fmt.Errorf("failed to fetch coreos-bootimages config map: %w", err), opv1.MachineConfigurationBootImageUpdateDegraded)
+			return
+		}
+	}
+
+	// Reset stats before initiating reconciliation loop
+	ctrl.mapiStats.inProgress = 0
+	ctrl.mapiStats.totalCount = len(mapiMachineSets)
+	ctrl.mapiStats.skippedCount = 0
+	ctrl.mapiStats.erroredCount = 0
+
+	// Signal start of reconciliation process, by setting progressing to true
+	var syncErrors []error
+	ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
+
+	for _, machineSet := range mapiMachineSets {
+		reconcileSkipped, err := ctrl.syncMAPIMachineSet(machineSet, configMap)
+		if err == nil {
+			ctrl.mapiStats.inProgress++
+		} else {
+			klog.Errorf("Error syncing MAPI MachineSet %v", err)
+			syncErrors = append(syncErrors, fmt.Errorf("error syncing MAPI MachineSet %s: %v", machineSet.Name, err))
+			ctrl.mapiStats.erroredCount++
+		}
+		if reconcileSkipped {
+			ctrl.mapiStats.skippedCount++
+		}
+		// Update progressing conditions every step of the loop
+		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
+	}
+	// Update/Clear degrade conditions based on errors from this loop
+	ctrl.updateConditions(reason, kubeErrs.NewAggregate(syncErrors), opv1.MachineConfigurationBootImageUpdateDegraded)
+	if ctrl.fgHandler.Enabled(features.FeatureGateBootImageSkewEnforcement) {
+		switch {
+		case ctrl.mapiStats.skippedCount == 0 && len(syncErrors) == 0:
+			// All MachineSets reconciled cleanly — record the current OCP version.
+			ctrl.updateClusterBootImage()
+		case ctrl.mapiStats.skippedCount > 0 && len(syncErrors) == 0:
+			// One or more MachineSets were reconcileSkipped without an error. The existing
+			// ClusterBootImageAutomatic value is no longer trustworthy (a new or changed
+			// MachineSet may be running an older image), so reset it to the cluster install
+			// version to ensure the skew check surfaces a violation if warranted.
+			ctrl.resetClusterBootImage()
+		}
+		// Errors (syncErrors > 0) are already surfaced via the Degraded condition, which
+		// checkBootImageControllerReady checks first — no boot image record update needed.
+	}
+}
+
+// syncMAPIMachineSet will attempt to reconcile the provided machineset.
+// Returns (reconcileSkipped, error): reconcileSkipped=true means something blocked the
+// boot image update that requires manual intervention; rather than returning an
+// error immediately, the condition is surfaced via skew enforcement.
+// reconcileSkipped=false means a patch was applied, the MachineSet was already up to
+// date, or it is out of scope for the MAPI path (e.g. migrated to CAPI authority).
+func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap) (bool, error) {
+
+	startTime := time.Now()
+	klog.V(4).Infof("Started syncing MAPI machineset %q (%v)", machineSet.Name, startTime)
+	defer func() {
+		klog.V(4).Infof("Finished syncing MAPI machineset %q (%v)", machineSet.Name, time.Since(startTime))
+	}()
+
+	// If the machineset has an owner reference, exit and log error. This means
+	// that the machineset may be managed by another workflow and should not be reconciled.
+	if len(machineSet.GetOwnerReferences()) != 0 {
+		klog.Infof("machineset %s has OwnerReference: %v, skipping boot image update", machineSet.Name, machineSet.GetOwnerReferences()[0].Kind+"/"+machineSet.GetOwnerReferences()[0].Name)
+		return true, nil
+	}
+
+	// Skip if the machineset has a label designating a non default stream. Not counted as skipped
+	// since the MCO intentionally excludes non-default streams. If no stream label is defined,
+	// this is an older, pre "dual stream" machineset and should be reconciled.
+	if streamLabel, ok := machineSet.GetLabels()[OSStreamLabelKey]; ok {
+		if streamLabel != SupportedOSStream {
+			klog.Infof("machineset %s has unsupported stream: %v, skipping boot image update", machineSet.Name, streamLabel)
+			return false, nil
+		}
+	}
+
+	// Skip if this is a windows machineset. Not counted as skipped since the MCO
+	// intentionally excludes Windows machinesets.
+	if os, ok := machineSet.Spec.Template.Labels[OSLabelKey]; ok {
+		if os == "Windows" {
+			klog.Infof("machineset %s has a windows os label, skipping boot image update", machineSet.Name)
+			return false, nil
+		}
+	}
+
+	// Fetch the ClusterVersion to determine if this is a multi-arch cluster
+	clusterVersion, err := ctrl.clusterVersionLister.Get("version")
+	if err != nil {
+		return false, fmt.Errorf("failed to fetch clusterversion during machineset sync: %v, defaulting to single-arch behavior", err)
+	}
+
+	// Fetch the architecture type of this machineset
+	arch, err := getArchFromMachineSet(machineSet, clusterVersion)
+	if err != nil {
+		// If no architecture annotation was found, skip this machineset without erroring
+		// A later sync loop will pick it up once the annotation is added
+		if strings.Contains(err.Error(), "no architecture annotation found") {
+			return true, nil
+		}
+		return false, fmt.Errorf("failed to fetch arch during machineset sync: %w", err)
+	}
+
+	// Fetch the infra object to determine the platform type
+	infra, err := ctrl.infraLister.Get("cluster")
+	if err != nil {
+		return false, fmt.Errorf("failed to fetch infra object during machineset sync: %w", err)
+	}
+
+	// Check if the this MachineSet requires an update
+	patchRequired, reconcileSkipped, newMachineSet, err := checkMachineSet(infra, machineSet, configMap, arch, ctrl.kubeClient)
+	if err != nil {
+		return false, fmt.Errorf("failed to reconcile machineset %s, err: %w", machineSet.Name, err)
+	}
+
+	if reconcileSkipped {
+		return true, nil
+	}
+	if patchRequired {
+		if ctrl.checkMAPIMachineSetHotLoop(newMachineSet, configMap, infra, arch) {
+			return false, fmt.Errorf("refusing to reconcile machineset %s, hot loop detected. Please opt-out of boot image updates, adjust your machine provisioning workflow to prevent hot loops and opt back in to resume boot image updates", machineSet.Name)
+		}
+		klog.Infof("Patching MAPI machineset %s", machineSet.Name)
+		if err := ctrl.patchMachineSet(machineSet, newMachineSet); err != nil {
+			return false, err
+		}
+		ctrl.recordMAPIBootImageState(newMachineSet, configMap, infra, arch)
+		return false, nil
+	}
+	klog.Infof("No patching required for MAPI machineset %s", machineSet.Name)
+	return false, nil
+}
+
+// getMAPIBootImageValue returns the value used for hot loop detection.
+// For vSphere, templates are updated in-place so providerSpec bytes never change;
+// the OVA release version is used instead.
+func getMAPIBootImageValue(machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap, infra *osconfigv1.Infrastructure, arch string) []byte {
+	value := machineSet.Spec.Template.Spec.ProviderSpec.Value.Raw
+	if infra != nil && infra.Status.PlatformStatus != nil && configMap != nil &&
+		infra.Status.PlatformStatus.Type == osconfigv1.VSpherePlatformType {
+		streamData := new(stream.Stream)
+		if err := unmarshalStreamDataConfigMap(configMap, streamData); err != nil {
+			klog.Warningf("Failed to unmarshal stream data for vSphere hot loop check: %v", err)
+		} else if streamArch, err := streamData.GetArchitecture(arch); err == nil {
+			if release := streamArch.Artifacts["vmware"].Release; release != "" {
+				value = []byte(release)
+			}
+		}
+	}
+	return value
+}
+
+// checkMAPIMachineSetHotLoop returns true if the next patch to this machineset
+// would exceed the hot loop limit. Does not modify the store.
+func (ctrl *Controller) checkMAPIMachineSetHotLoop(machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap, infra *osconfigv1.Infrastructure, arch string) bool {
+	value := getMAPIBootImageValue(machineSet, configMap, infra, arch)
+	bis, ok := ctrl.mapiBootImageState[machineSet.Name]
+	return ok && bytes.Equal(bis.value, value) && bis.hotLoopCount >= HotLoopLimit
+}
+
+// recordMAPIBootImageState updates the local boot image store after a successful patch.
+func (ctrl *Controller) recordMAPIBootImageState(machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap, infra *osconfigv1.Infrastructure, arch string) {
+	value := getMAPIBootImageValue(machineSet, configMap, infra, arch)
+	hotLoopCount := 1
+	if bis, ok := ctrl.mapiBootImageState[machineSet.Name]; ok && bytes.Equal(bis.value, value) {
+		hotLoopCount = bis.hotLoopCount + 1
+	}
+	ctrl.mapiBootImageState[machineSet.Name] = BootImageState{
+		value:        value,
+		hotLoopCount: hotLoopCount,
+	}
+}
+
+// This function patches the machineset object using the machineClient
+// Returns an error if marshsalling or patching fails.
+func (ctrl *Controller) patchMachineSet(oldMachineSet, newMachineSet *machinev1beta1.MachineSet) error {
+	machineSetMarshal, err := json.Marshal(oldMachineSet)
+	if err != nil {
+		return fmt.Errorf("unable to marshal old machineset: %w", err)
+	}
+	newMachineSetMarshal, err := json.Marshal(newMachineSet)
+	if err != nil {
+		return fmt.Errorf("unable to marshal new machineset: %w", err)
+	}
+	patchBytes, err := jsonmergepatch.CreateThreeWayJSONMergePatch(machineSetMarshal, newMachineSetMarshal, machineSetMarshal)
+	if err != nil {
+		return fmt.Errorf("unable to create patch for new machineset: %w", err)
+	}
+	_, err = ctrl.machineClient.MachineV1beta1().MachineSets(MachineAPINamespace).Patch(context.TODO(), oldMachineSet.Name, types.MergePatchType, patchBytes, metav1.PatchOptions{})
+	if err != nil {
+		return fmt.Errorf("unable to patch new machineset: %w", err)
+	}
+	klog.Infof("Successfully patched machineset %s", oldMachineSet.Name)
+	return nil
+}
+
+// Returns architecture type for a given machineset
+func getArchFromMachineSet(machineset *machinev1beta1.MachineSet, clusterVersion *osconfigv1.ClusterVersion) (arch string, err error) {
+
+	// Valid set of machineset/node architectures
+	validArchSet := sets.New("arm64", "s390x", "amd64", "ppc64le")
+	// Check if the annotation enclosing arch label is present on this machineset
+	archLabel, archLabelMatch := machineset.Annotations[MachineSetArchAnnotationKey]
+
+	if !archLabelMatch {
+		// Check if this is a multi-arch cluster
+		// clusterVersion should never be nil as it's validated by the caller
+		if clusterVersion.Status.Desired.Architecture == osconfigv1.ClusterVersionArchitectureMulti {
+			// For multi-arch clusters, we require the architecture annotation
+			klog.Errorf("No architecture annotation found on machineset %s in multi-arch cluster, skipping boot image update", machineset.Name)
+			return "", fmt.Errorf("no architecture annotation found on machineset %s", machineset.Name)
+		}
+		// For single-arch clusters, default to control plane architecture
+		klog.Infof("No architecture annotation found on machineset %s, defaulting to control plane architecture", machineset.Name)
+		return archtranslater.CurrentRpmArch(), nil
+	}
+
+	// Parse the annotation value which may contain multiple comma-separated labels
+	// Example: kubernetes.io/arch=amd64,topology.ebs.csi.aws.com/zone=eu-central-1a
+	for label := range strings.SplitSeq(archLabel, ",") {
+		label = strings.TrimSpace(label)
+		if archLabelValue, found := strings.CutPrefix(label, ArchLabelKey); found {
+			// Extract just the architecture value after "kubernetes.io/arch="
+			if validArchSet.Has(archLabelValue) {
+				return archtranslater.RpmArch(archLabelValue), nil
+			}
+			return "", fmt.Errorf("invalid architecture value found in annotation: %s", archLabelValue)
+		}
+	}
+	return "", fmt.Errorf("kubernetes.io/arch label not found in annotation: %s", archLabel)
+}

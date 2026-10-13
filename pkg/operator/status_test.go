@@ -1,0 +1,1331 @@
+package operator
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"reflect"
+	"testing"
+
+	corelisterv1 "k8s.io/client-go/listers/core/v1"
+	"k8s.io/client-go/tools/cache"
+	"k8s.io/utils/clock"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/client-go/tools/record"
+
+	"github.com/stretchr/testify/assert"
+	"k8s.io/apimachinery/pkg/util/uuid"
+
+	configv1 "github.com/openshift/api/config/v1"
+	features "github.com/openshift/api/features"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	opv1 "github.com/openshift/api/operator/v1"
+	fakeconfigclientset "github.com/openshift/client-go/config/clientset/versioned/fake"
+	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
+	mcoplistersv1 "github.com/openshift/client-go/operator/listers/operator/v1"
+	cov1helpers "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/test/helpers"
+)
+
+func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
+	configNotFound := errors.New("Config Not Found")
+	type config struct {
+		name                 string
+		version              string
+		releaseVersion       string
+		osimageurlOverridden bool
+	}
+
+	tests := []struct {
+		knownConfigs []config
+		source       []string
+		testurl      string
+		generated    string
+
+		err error
+	}{{
+		err: errors.New("configuration spec for pool dummy-pool is empty: <unknown>"),
+	}, {
+		generated: "g",
+		err:       errors.New("list of MachineConfigs that were used to generate configuration for pool dummy-pool is empty: <unknown>"),
+	}, {
+		knownConfigs: nil,
+		source:       []string{"c-0", "u-0"},
+		testurl:      "myurl",
+		generated:    "g",
+		err:          configNotFound,
+	}, {
+		knownConfigs: []config{{
+			name: "g",
+		}},
+		source:    []string{"c-0", "u-0"},
+		testurl:   "myurl",
+		generated: "g",
+		err:       errors.New("g must be created by controller version v2: <unknown>"),
+	}, {
+		knownConfigs: []config{{
+			name:    "g",
+			version: "v1",
+		}},
+		source:    []string{"c-0", "u-0"},
+		testurl:   "myurl",
+		generated: "g",
+		err:       errors.New("controller version mismatch for g expected v2 has v1: <unknown>"),
+	}, {
+		knownConfigs: []config{{
+			name:           "g",
+			version:        "v2",
+			releaseVersion: "rv2",
+		}, {
+			name:           "c-0",
+			version:        "v1",
+			releaseVersion: "rv2",
+		}, {
+			name: "u-0",
+		}},
+		source:    []string{"c-0", "u-0"},
+		testurl:   "myurl",
+		generated: "g",
+		err:       errors.New("controller version mismatch for c-0 expected v2 has v1: <unknown>"),
+	}, {
+		knownConfigs: []config{{
+			name:           "g",
+			version:        "v2",
+			releaseVersion: "rv2",
+		}, {
+			name:           "c-0",
+			version:        "v2",
+			releaseVersion: "rv2",
+		}, {
+			name: "u-0",
+		}},
+		source:    []string{"c-0", "u-0"},
+		testurl:   "myurl",
+		generated: "g",
+		err:       nil,
+	}, {
+		knownConfigs: []config{{
+			name:           "g",
+			version:        "v2",
+			releaseVersion: "rv2",
+		}, {
+			name:           "c-0",
+			version:        "v2",
+			releaseVersion: "rv2",
+		}, {
+			name: "u-0",
+		}},
+		source:    []string{"c-0", "u-0"},
+		testurl:   "wrongurl",
+		generated: "g",
+		err:       errors.New("osImageURL mismatch for dummy-pool in g expected: myurl got: wrongurl"),
+	}, {
+		// This is specifically testing that we can make sure the operator status check
+		// allows a mismatched URL if it's a user override for Phase 0 layering
+		knownConfigs: []config{{
+			name:                 "g",
+			version:              "v2",
+			releaseVersion:       "rv2",
+			osimageurlOverridden: true,
+		}, {
+			name:           "c-0",
+			version:        "v2",
+			releaseVersion: "rv2",
+		}, {
+			name: "u-0",
+		}},
+		source:    []string{"c-0", "u-0"},
+		testurl:   "overriddenurl",
+		generated: "g",
+		err:       nil,
+	},
+		{
+			knownConfigs: []config{{
+				name:           "g",
+				version:        "v2",
+				releaseVersion: "rv1",
+			}, {
+				name:           "c-0",
+				version:        "v2",
+				releaseVersion: "rv1",
+			}, {
+				name: "u-0",
+			}},
+			source:    []string{"c-0", "u-0"},
+			testurl:   "myurl",
+			generated: "g",
+			err:       errors.New("release image version mismatch for dummy-pool in g expected: rv2 got: rv1"),
+		}}
+
+	for idx, test := range tests {
+		t.Run(fmt.Sprintf("case #%d", idx), func(t *testing.T) {
+			getter := func(name string) (*mcfgv1.MachineConfig, error) {
+				for _, c := range test.knownConfigs {
+					if c.name == name {
+						annos := map[string]string{}
+						if c.version != "" {
+							annos[ctrlcommon.GeneratedByControllerVersionAnnotationKey] = c.version
+						}
+						if c.releaseVersion != "" {
+							annos[ctrlcommon.ReleaseImageVersionAnnotationKey] = c.releaseVersion
+						}
+						if c.osimageurlOverridden {
+							annos[ctrlcommon.OSImageURLOverriddenKey] = "true"
+						}
+						return &mcfgv1.MachineConfig{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:        c.name,
+								Annotations: annos,
+							},
+							Spec: mcfgv1.MachineConfigSpec{OSImageURL: test.testurl},
+						}, nil
+					}
+				}
+				return nil, configNotFound
+			}
+
+			source := []corev1.ObjectReference{}
+			for _, s := range test.source {
+				source = append(source, corev1.ObjectReference{Name: s})
+			}
+
+			err := isMachineConfigPoolConfigurationValid(&mcfgv1.MachineConfigPool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "dummy-pool",
+				},
+				Spec: mcfgv1.MachineConfigPoolSpec{
+					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: test.generated}, Source: source},
+				},
+				Status: mcfgv1.MachineConfigPoolStatus{
+					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: test.generated}, Source: source},
+				},
+			}, "v2", "rv2", "myurl", getter)
+			if !reflect.DeepEqual(err, test.err) {
+				t.Fatalf("expected %v got %v", test.err, err)
+			}
+		})
+	}
+}
+
+type mockMCPLister struct {
+	pools []*mcfgv1.MachineConfigPool
+}
+
+func (mcpl *mockMCPLister) List(selector labels.Selector) (ret []*mcfgv1.MachineConfigPool, err error) {
+	return mcpl.pools, nil
+}
+func (mcpl *mockMCPLister) Get(name string) (ret *mcfgv1.MachineConfigPool, err error) {
+	if mcpl.pools == nil {
+		return nil, nil
+	}
+	for _, pool := range mcpl.pools {
+		if pool.Name == name {
+			return pool, nil
+		}
+
+	}
+	return nil, nil
+}
+
+func TestOperatorSyncStatus(t *testing.T) {
+	type syncCase struct {
+		syncFuncs          []syncFunc
+		expectOperatorFail bool
+		cond               []configv1.ClusterOperatorStatusCondition
+		nextVersion        string
+		inClusterBringUp   bool
+	}
+	for idx, testCase := range []struct {
+		syncs []syncCase
+	}{
+		// 0. test that Degraded status clears out if the next sync call is successful
+		{
+			syncs: []syncCase{
+				{
+					cond: []configv1.ClusterOperatorStatusCondition{
+						{
+							Type:   configv1.OperatorDegraded,
+							Status: configv1.ConditionTrue,
+							Reason: "fn1Failed",
+						},
+						{
+							Type:   configv1.OperatorAvailable,
+							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
+						},
+						{
+							Type:   configv1.OperatorProgressing,
+							Status: configv1.ConditionFalse,
+						},
+						{
+							Type:   configv1.OperatorUpgradeable,
+							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
+						},
+					},
+					syncFuncs: []syncFunc{
+						{
+							name: "fn1",
+							fn:   func(config *renderConfig, co *configv1.ClusterOperator) error { return errors.New("got err") },
+						},
+					},
+					expectOperatorFail: true,
+				},
+				{
+					cond: []configv1.ClusterOperatorStatusCondition{
+						{
+							Type:   configv1.OperatorDegraded,
+							Status: configv1.ConditionFalse,
+						},
+						{
+							Type:   configv1.OperatorAvailable,
+							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
+						},
+
+						{
+							Type:   configv1.OperatorProgressing,
+							Status: configv1.ConditionFalse,
+						},
+						{
+							Type:   configv1.OperatorUpgradeable,
+							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
+						},
+					},
+					syncFuncs: []syncFunc{
+						{
+							name: "fn1",
+							fn:   func(config *renderConfig, co *configv1.ClusterOperator) error { return nil },
+						},
+					},
+				},
+			},
+		},
+		// 1. test that progressing is true while bootstrapping and false after the first sync
+		{
+			syncs: []syncCase{
+				{
+					inClusterBringUp: true,
+					cond: []configv1.ClusterOperatorStatusCondition{
+						{
+							Type:   configv1.OperatorProgressing,
+							Status: configv1.ConditionTrue,
+						},
+						{
+							Type:   configv1.OperatorAvailable,
+							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
+						},
+						{
+							Type:   configv1.OperatorDegraded,
+							Status: configv1.ConditionFalse,
+						},
+						{
+							Type:   configv1.OperatorUpgradeable,
+							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
+						},
+					},
+					syncFuncs: []syncFunc{
+						{
+							name: "fn1",
+							fn:   func(config *renderConfig, co *configv1.ClusterOperator) error { return nil },
+						},
+					},
+				},
+				{
+					cond: []configv1.ClusterOperatorStatusCondition{
+						{
+							Type:   configv1.OperatorProgressing,
+							Status: configv1.ConditionFalse,
+						},
+						{
+							Type:   configv1.OperatorAvailable,
+							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
+						},
+						{
+							Type:   configv1.OperatorDegraded,
+							Status: configv1.ConditionFalse,
+						},
+						{
+							Type:   configv1.OperatorUpgradeable,
+							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
+						},
+					},
+					syncFuncs: []syncFunc{
+						{
+							name: "fn1",
+							fn:   func(config *renderConfig, co *configv1.ClusterOperator) error { return nil },
+						},
+					},
+				},
+			},
+		},
+		// 2. test that progressing is true while moving forward in versions
+		{
+			syncs: []syncCase{
+				{
+					nextVersion: "test-version-2",
+					cond: []configv1.ClusterOperatorStatusCondition{
+						{
+							Type:   configv1.OperatorProgressing,
+							Status: configv1.ConditionTrue,
+						},
+						{
+							Type:   configv1.OperatorAvailable,
+							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
+						},
+						{
+							Type:   configv1.OperatorDegraded,
+							Status: configv1.ConditionFalse,
+						},
+						{
+							Type:   configv1.OperatorUpgradeable,
+							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
+						},
+					},
+					syncFuncs: []syncFunc{
+						{
+							name: "fn1",
+							fn:   func(config *renderConfig, co *configv1.ClusterOperator) error { return nil },
+						},
+					},
+				},
+			},
+		},
+		// 3. test that if progressing fails, we report degraded=false because state of the operator
+		//    might have changed in the various sync calls
+		{
+			syncs: []syncCase{
+				{
+					cond: []configv1.ClusterOperatorStatusCondition{
+						{
+							Type:   configv1.OperatorProgressing,
+							Status: configv1.ConditionFalse,
+						},
+						{
+							Type:   configv1.OperatorAvailable,
+							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
+						},
+						{
+							Type:   configv1.OperatorDegraded,
+							Status: configv1.ConditionFalse,
+						},
+						{
+							Type:   configv1.OperatorUpgradeable,
+							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
+						},
+					},
+					syncFuncs: []syncFunc{
+						{
+							name: "fn1",
+							fn:   func(config *renderConfig, co *configv1.ClusterOperator) error { return nil },
+						},
+					},
+				},
+				{
+					nextVersion: "test-version-2",
+					cond: []configv1.ClusterOperatorStatusCondition{
+						{
+							Type:   configv1.OperatorProgressing,
+							Status: configv1.ConditionTrue,
+						},
+						{
+							Type:   configv1.OperatorAvailable,
+							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
+						},
+						{
+							Type:   configv1.OperatorDegraded,
+							Status: configv1.ConditionTrue,
+							Reason: "fn1Failed",
+						},
+						{
+							Type:   configv1.OperatorUpgradeable,
+							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
+						},
+					},
+					expectOperatorFail: true,
+					syncFuncs: []syncFunc{
+						{
+							name: "fn1",
+							fn:   func(config *renderConfig, co *configv1.ClusterOperator) error { return errors.New("mock error") },
+						},
+					},
+				},
+			},
+		},
+		// 4. test that if progressing fails during bringup, we still report degraded
+		{
+			syncs: []syncCase{
+				{
+					inClusterBringUp: true,
+					cond: []configv1.ClusterOperatorStatusCondition{
+						{
+							Type:   configv1.OperatorProgressing,
+							Status: configv1.ConditionTrue,
+						},
+						{
+							Type:   configv1.OperatorAvailable,
+							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
+						},
+						{
+							Type:   configv1.OperatorDegraded,
+							Status: configv1.ConditionTrue,
+							Reason: "fn1Failed",
+						},
+						{
+							Type:   configv1.OperatorUpgradeable,
+							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
+						},
+					},
+					expectOperatorFail: true,
+					syncFuncs: []syncFunc{
+						{
+							name: "fn1",
+							fn:   func(config *renderConfig, co *configv1.ClusterOperator) error { return errors.New("error") },
+						},
+					},
+				},
+				{
+					// we're still bringing up and we need to set this in mock
+					inClusterBringUp: true,
+					cond: []configv1.ClusterOperatorStatusCondition{
+						{
+							Type:   configv1.OperatorProgressing,
+							Status: configv1.ConditionTrue,
+						},
+						{
+							Type:   configv1.OperatorAvailable,
+							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
+						},
+						{
+							Type:   configv1.OperatorDegraded,
+							Status: configv1.ConditionTrue,
+							Reason: "fn1Failed",
+						},
+						{
+							Type:   configv1.OperatorUpgradeable,
+							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
+						},
+					},
+					expectOperatorFail: true,
+					syncFuncs: []syncFunc{
+						{
+							name: "fn1",
+							fn:   func(config *renderConfig, co *configv1.ClusterOperator) error { return errors.New("error") },
+						},
+					},
+				},
+			},
+		},
+		// 5. test status flipping between not degraded and degraded
+		{
+			syncs: []syncCase{
+				{
+					inClusterBringUp: true,
+					cond: []configv1.ClusterOperatorStatusCondition{
+						{
+							Type:   configv1.OperatorProgressing,
+							Status: configv1.ConditionTrue,
+						},
+						{
+							Type:   configv1.OperatorAvailable,
+							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
+						},
+						{
+							Type:   configv1.OperatorDegraded,
+							Status: configv1.ConditionFalse,
+						},
+						{
+							Type:   configv1.OperatorUpgradeable,
+							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
+						},
+					},
+					syncFuncs: []syncFunc{
+						{
+							name: "fn1",
+							fn:   func(config *renderConfig, co *configv1.ClusterOperator) error { return nil },
+						},
+					},
+				},
+				{
+					cond: []configv1.ClusterOperatorStatusCondition{
+						{
+							Type:   configv1.OperatorProgressing,
+							Status: configv1.ConditionFalse,
+						},
+						{
+							Type:   configv1.OperatorAvailable,
+							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
+						},
+						{
+							Type:   configv1.OperatorDegraded,
+							Status: configv1.ConditionTrue,
+							Reason: "fn1Failed",
+						},
+						{
+							Type:   configv1.OperatorUpgradeable,
+							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
+						},
+					},
+					expectOperatorFail: true,
+					syncFuncs: []syncFunc{
+						{
+							name: "fn1",
+							fn:   func(config *renderConfig, co *configv1.ClusterOperator) error { return errors.New("error") },
+						},
+					},
+				},
+				{
+					cond: []configv1.ClusterOperatorStatusCondition{
+						{
+							Type:   configv1.OperatorProgressing,
+							Status: configv1.ConditionFalse,
+						},
+						{
+							Type:   configv1.OperatorAvailable,
+							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
+						},
+						{
+							Type:   configv1.OperatorDegraded,
+							Status: configv1.ConditionFalse,
+						},
+						{
+							Type:   configv1.OperatorUpgradeable,
+							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
+						},
+					},
+					syncFuncs: []syncFunc{
+						{
+							name: "fn1",
+							fn:   func(config *renderConfig, co *configv1.ClusterOperator) error { return nil },
+						},
+					},
+				},
+			},
+		},
+	} {
+		optr := &Operator{
+			eventRecorder: &record.FakeRecorder{},
+			fgHandler: ctrlcommon.NewFeatureGatesHardcodedHandler(
+				[]configv1.FeatureGateName{}, []configv1.FeatureGateName{},
+			),
+		}
+		optr.vStore = newVersionStore()
+		optr.mcpLister = &mockMCPLister{
+			pools: []*mcfgv1.MachineConfigPool{
+				helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
+				helpers.NewMachineConfigPool("workers", nil, helpers.WorkerSelector, "v0"),
+			},
+		}
+
+		nodeIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+		optr.nodeLister = corelisterv1.NewNodeLister(nodeIndexer)
+		nodeIndexer.Add(&corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: "first-node", Labels: map[string]string{"node-role/worker": ""}},
+			Status: corev1.NodeStatus{
+				NodeInfo: corev1.NodeSystemInfo{
+					KubeletVersion: "v1.21",
+				},
+			},
+		})
+
+		coName := fmt.Sprintf("test-%s", uuid.NewUUID())
+		co := &configv1.ClusterOperator{ObjectMeta: metav1.ObjectMeta{Name: coName}}
+		cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorAvailable, Status: configv1.ConditionFalse}, clock.RealClock{})
+		cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionFalse}, clock.RealClock{})
+		cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorDegraded, Status: configv1.ConditionFalse}, clock.RealClock{})
+		cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorUpgradeable, Status: configv1.ConditionUnknown}, clock.RealClock{})
+		co.Status.Versions = append(co.Status.Versions, configv1.OperandVersion{Name: "operator", Version: "test-version"})
+		optr.name = coName
+		kasOperator := &configv1.ClusterOperator{
+			ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver"},
+			Status: configv1.ClusterOperatorStatus{
+				Versions: []configv1.OperandVersion{
+					{Name: "kube-apiserver", Version: "1.21"},
+				},
+			},
+		}
+
+		operatorIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+		optr.clusterOperatorLister = configlistersv1.NewClusterOperatorLister(operatorIndexer)
+		operatorIndexer.Add(co)
+		operatorIndexer.Add(kasOperator)
+
+		configMapIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+		optr.mcoCmLister = corelisterv1.NewConfigMapLister(configMapIndexer)
+
+		configNode := &configv1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.ClusterNodeInstanceName},
+			Spec:       configv1.NodeSpec{},
+		}
+		configNodeIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+		optr.nodeClusterLister = configlistersv1.NewNodeLister(configNodeIndexer)
+		configNodeIndexer.Add(configNode)
+
+		for j, sync := range testCase.syncs {
+			optr.inClusterBringup = sync.inClusterBringUp
+			if sync.nextVersion != "" {
+				optr.vStore.Set("operator", sync.nextVersion)
+			} else {
+				optr.vStore.Set("operator", "test-version")
+			}
+			optr.configClient = fakeconfigclientset.NewSimpleClientset(co, kasOperator)
+			err := optr.syncAll(sync.syncFuncs)
+			if sync.expectOperatorFail {
+				assert.NotNil(t, err, "test case %d, sync call %d, expected an error", idx, j)
+			} else {
+				assert.Nil(t, err, "test case %d, expected no error", idx, j)
+			}
+			o, err := optr.configClient.ConfigV1().ClusterOperators().Get(context.TODO(), coName, metav1.GetOptions{})
+			assert.Nil(t, err)
+			for _, cond := range sync.cond {
+				var condition configv1.ClusterOperatorStatusCondition
+				for _, coCondition := range o.Status.Conditions {
+					if cond.Type == coCondition.Type {
+						condition = coCondition
+						break
+					}
+				}
+				assert.Equal(t, cond.Status, condition.Status, "test case %d, sync call %d, expected status for condition %v to be %v, but got %v", idx, j, condition.Type, cond.Status, condition.Status)
+				assert.Equal(t, cond.Reason, condition.Reason, "test case %d, sync call %d, expected reason for condition %v to be %v, but got %v", idx, j, condition.Type, cond.Reason, condition.Reason)
+			}
+		}
+	}
+}
+
+func TestInClusterBringUpStayOnErr(t *testing.T) {
+	optr := &Operator{
+		eventRecorder: &record.FakeRecorder{},
+		fgHandler: ctrlcommon.NewFeatureGatesHardcodedHandler(
+			[]configv1.FeatureGateName{}, []configv1.FeatureGateName{},
+		),
+	}
+	optr.vStore = newVersionStore()
+	optr.vStore.Set("operator", "test-version")
+	optr.mcpLister = &mockMCPLister{
+		pools: []*mcfgv1.MachineConfigPool{
+			helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
+			helpers.NewMachineConfigPool("workers", nil, helpers.WorkerSelector, "v0"),
+		},
+	}
+	nodeIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	optr.nodeLister = corelisterv1.NewNodeLister(nodeIndexer)
+	nodeIndexer.Add(&corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "first-node", Labels: map[string]string{"node-role/worker": ""}},
+		Status: corev1.NodeStatus{
+			NodeInfo: corev1.NodeSystemInfo{
+				KubeletVersion: "v1.21",
+			},
+		},
+	})
+	co := &configv1.ClusterOperator{}
+	kasOperator := &configv1.ClusterOperator{
+		ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver"},
+		Status: configv1.ClusterOperatorStatus{
+			Versions: []configv1.OperandVersion{
+				{Name: "kube-apiserver", Version: "1.21"},
+			},
+		},
+	}
+	configNode := &configv1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.ClusterNodeInstanceName},
+		Spec:       configv1.NodeSpec{},
+	}
+	configNodeIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	optr.nodeClusterLister = configlistersv1.NewNodeLister(configNodeIndexer)
+	configNodeIndexer.Add(configNode)
+
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorAvailable, Status: configv1.ConditionFalse}, clock.RealClock{})
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionFalse}, clock.RealClock{})
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorDegraded, Status: configv1.ConditionFalse}, clock.RealClock{})
+	optr.configClient = fakeconfigclientset.NewSimpleClientset(co, kasOperator)
+	optr.inClusterBringup = true
+
+	operatorIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	optr.clusterOperatorLister = configlistersv1.NewClusterOperatorLister(operatorIndexer)
+	operatorIndexer.Add(co)
+	operatorIndexer.Add(kasOperator)
+
+	configMapIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	optr.mcoCmLister = corelisterv1.NewConfigMapLister(configMapIndexer)
+
+	fn1 := func(config *renderConfig, co *configv1.ClusterOperator) error {
+		return errors.New("mocked fn1")
+	}
+	err := optr.syncAll([]syncFunc{{name: "mock1", fn: fn1}})
+	assert.NotNil(t, err, "expected syncAll to fail")
+
+	assert.True(t, optr.inClusterBringup)
+
+	fn1 = func(config *renderConfig, co *configv1.ClusterOperator) error {
+		return nil
+	}
+	err = optr.syncAll([]syncFunc{{name: "mock1", fn: fn1}})
+	assert.Nil(t, err, "expected syncAll to pass")
+
+	assert.False(t, optr.inClusterBringup)
+}
+
+func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
+	tests := []struct {
+		name               string
+		featureGateEnabled bool
+		mcop               *opv1.MachineConfiguration
+		mcopNotFound       bool
+		mcopGetError       error
+		clusterVersion     *configv1.ClusterVersion
+		expectUpgradeBlock bool
+		expectMessage      string
+		expectError        bool
+	}{
+		{
+			name:               "feature gate disabled",
+			featureGateEnabled: false,
+			mcop:               nil,
+			expectUpgradeBlock: false,
+			expectMessage:      "",
+			expectError:        false,
+		},
+		{
+			name:               "MachineConfiguration not found",
+			featureGateEnabled: true,
+			mcopNotFound:       true,
+			expectUpgradeBlock: false,
+			expectMessage:      "",
+			expectError:        false,
+		},
+		{
+			name:               "mode is None",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusNone,
+					},
+				},
+			},
+			expectUpgradeBlock: false,
+			expectMessage:      "",
+			expectError:        false,
+		},
+		{
+			name:               "mode is unset",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: "",
+					},
+				},
+			},
+			expectUpgradeBlock: false,
+			expectMessage:      "",
+			expectError:        false,
+		},
+		// Boot image controller readiness tests
+		{
+			name:               "boot image controller is degraded in Automatic mode",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:    opv1.MachineConfigurationBootImageUpdateDegraded,
+							Status:  metav1.ConditionTrue,
+							Message: "failed to update boot images",
+						},
+					},
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
+						Automatic: opv1.ClusterBootImageAutomatic{
+							OCPVersion: "4.12.0", // Out of skew, but degraded check should happen first
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: true,
+			expectMessage:      "Upgrades have been disabled due to boot image update failures: Boot image controller is degraded: failed to update boot images",
+			expectError:        false,
+		},
+		{
+			name:               "boot image controller is progressing in Automatic mode",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   opv1.MachineConfigurationBootImageUpdateProgressing,
+							Status: metav1.ConditionTrue,
+						},
+					},
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
+						Automatic: opv1.ClusterBootImageAutomatic{
+							OCPVersion: "4.12.0", // Out of skew, but progressing check should skip skew evaluation
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: false,
+			expectMessage:      "",
+			expectError:        false,
+		},
+		{
+			name:               "boot image controller hasn't completed first pass in Automatic mode",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{},
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
+						Automatic: opv1.ClusterBootImageAutomatic{
+							OCPVersion: "4.12.0", // Out of skew, but readiness check should skip skew evaluation
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: false,
+			expectMessage:      "",
+			expectError:        false,
+		},
+		// OCP version tests in automatic mode
+		{
+			name:               "mode is Automatic with OCP version within limit",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   opv1.MachineConfigurationBootImageUpdateProgressing,
+							Status: metav1.ConditionFalse,
+						},
+					},
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
+						Automatic: opv1.ClusterBootImageAutomatic{
+							OCPVersion: "4.17.0",
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: false,
+			expectMessage:      "",
+			expectError:        false,
+		},
+		{
+			name:               "mode is Automatic with OCP version below limit",
+			featureGateEnabled: true,
+			// History spans 4.12 (install) through 4.22 (current upgrade in progress),
+			// reflecting a cluster that never updated its boot images across many upgrades.
+			clusterVersion: buildClusterVersionWithMultipleHistory("4.22.0", "4.21.0", "4.20.0", "4.19.0", "4.18.0", "4.17.0", "4.16.0", "4.15.0", "4.14.0", "4.13.0", "4.12.0"),
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   opv1.MachineConfigurationBootImageUpdateProgressing,
+							Status: metav1.ConditionFalse,
+						},
+					},
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
+						Automatic: opv1.ClusterBootImageAutomatic{
+							OCPVersion: "4.12.0",
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: true,
+			expectMessage:      "Upgrades have been disabled because the cluster is using OCP boot image version 4.12.0, which is below the minimum required version " + ctrlcommon.OCPVersionBootImageSkewLimit + ". To enable upgrades, please update your boot images or disable boot image skew enforcement by following the documentation at https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html/machine_configuration/mco-update-boot-skew-mgmt",
+			expectError:        false,
+		},
+		{
+			name:               "mode is Automatic with OCP version below limit and no ClusterVersion",
+			featureGateEnabled: true,
+			// No clusterVersion set — getCurrentOCPVersionFromClusterVersion returns "", docs URL falls back to "latest".
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   opv1.MachineConfigurationBootImageUpdateProgressing,
+							Status: metav1.ConditionFalse,
+						},
+					},
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
+						Automatic: opv1.ClusterBootImageAutomatic{
+							OCPVersion: "4.12.0",
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: true,
+			expectMessage:      "Upgrades have been disabled because the cluster is using OCP boot image version 4.12.0, which is below the minimum required version " + ctrlcommon.OCPVersionBootImageSkewLimit + ". To enable upgrades, please update your boot images or disable boot image skew enforcement by following the documentation at https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/machine_configuration/mco-update-boot-skew-mgmt",
+			expectError:        false,
+		},
+		// OCP version tests in manual mode
+		{
+			name:               "mode is Manual with OCP version within limit",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusManual,
+						Manual: opv1.ClusterBootImageManual{
+							Mode:       opv1.ClusterBootImageSpecModeOCPVersion,
+							OCPVersion: "4.16.0",
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: false,
+			expectMessage:      "",
+			expectError:        false,
+		},
+		{
+			name:               "mode is Manual with OCP version below limit",
+			featureGateEnabled: true,
+			// History spans 4.10 (install) through 4.22 (current upgrade in progress),
+			// reflecting a cluster that never updated its boot images across many upgrades.
+			clusterVersion: buildClusterVersionWithMultipleHistory("4.22.0", "4.21.0", "4.20.0", "4.19.0", "4.18.0", "4.17.0", "4.16.0", "4.15.0", "4.14.0", "4.13.0", "4.12.0", "4.11.0", "4.10.0"),
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusManual,
+						Manual: opv1.ClusterBootImageManual{
+							Mode:       opv1.ClusterBootImageSpecModeOCPVersion,
+							OCPVersion: "4.10.0",
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: true,
+			expectMessage:      "Upgrades have been disabled because the cluster is using OCP boot image version 4.10.0, which is below the minimum required version " + ctrlcommon.OCPVersionBootImageSkewLimit + ". To enable upgrades, please update your boot images or disable boot image skew enforcement by following the documentation at https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html/machine_configuration/mco-update-boot-skew-mgmt",
+			expectError:        false,
+		},
+		{
+			name:               "mode is Automatic with exact minimum OCP version",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   opv1.MachineConfigurationBootImageUpdateProgressing,
+							Status: metav1.ConditionFalse,
+						},
+					},
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
+						Automatic: opv1.ClusterBootImageAutomatic{
+							OCPVersion: ctrlcommon.OCPVersionBootImageSkewLimit,
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: false,
+			expectMessage:      "",
+			expectError:        false,
+		},
+		// RHCOS version tests in Automatic mode
+		{
+			name:               "mode is Automatic with modern RHCOS version within limit",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   opv1.MachineConfigurationBootImageUpdateProgressing,
+							Status: metav1.ConditionFalse,
+						},
+					},
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
+						Automatic: opv1.ClusterBootImageAutomatic{
+							RHCOSVersion: "9.4.20251023-0",
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: false,
+			expectMessage:      "",
+			expectError:        false,
+		},
+		{
+			name:               "mode is Automatic with modern RHCOS version below limit",
+			featureGateEnabled: true,
+			// RHEL 9 boot images were introduced in 4.13; history spans from there to 4.22.
+			clusterVersion: buildClusterVersionWithMultipleHistory("4.22.0", "4.21.0", "4.20.0", "4.19.0", "4.18.0", "4.17.0", "4.16.0", "4.15.0", "4.14.0", "4.13.0"),
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   opv1.MachineConfigurationBootImageUpdateProgressing,
+							Status: metav1.ConditionFalse,
+						},
+					},
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
+						Automatic: opv1.ClusterBootImageAutomatic{
+							RHCOSVersion: "9.0.20251023-0",
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: true,
+			expectMessage:      "Upgrades have been disabled because the cluster is using RHCOS boot image version 9.0.20251023-0(RHEL version: 9.0), which is below the minimum required RHEL version " + ctrlcommon.RHCOSVersionBootImageSkewLimit + ". To enable upgrades, please update your boot images or disable boot image skew enforcement by following the documentation at https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html/machine_configuration/mco-update-boot-skew-mgmt",
+			expectError:        false,
+		},
+		{
+			name:               "mode is Automatic with legacy RHCOS version within limit",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   opv1.MachineConfigurationBootImageUpdateProgressing,
+							Status: metav1.ConditionFalse,
+						},
+					},
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
+						Automatic: opv1.ClusterBootImageAutomatic{
+							RHCOSVersion: "416.94.202510081640-0",
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: false,
+			expectMessage:      "",
+			expectError:        false,
+		},
+		{
+			name:               "mode is Automatic with legacy RHCOS version below limit",
+			featureGateEnabled: true,
+			// Legacy RHEL 8 (411.x) boot images originate from 4.11; history spans from there to 4.22.
+			clusterVersion: buildClusterVersionWithMultipleHistory("4.22.0", "4.21.0", "4.20.0", "4.19.0", "4.18.0", "4.17.0", "4.16.0", "4.15.0", "4.14.0", "4.13.0", "4.12.0", "4.11.0"),
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   opv1.MachineConfigurationBootImageUpdateProgressing,
+							Status: metav1.ConditionFalse,
+						},
+					},
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
+						Automatic: opv1.ClusterBootImageAutomatic{
+							RHCOSVersion: "411.86.202308081056-0",
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: true,
+			expectMessage:      "Upgrades have been disabled because the cluster is using RHCOS boot image version 411.86.202308081056-0(RHEL version: 8.6), which is below the minimum required RHEL version " + ctrlcommon.RHCOSVersionBootImageSkewLimit + ". To enable upgrades, please update your boot images or disable boot image skew enforcement by following the documentation at https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html/machine_configuration/mco-update-boot-skew-mgmt",
+			expectError:        false,
+		},
+
+		{
+			name:               "mode is Automatic with exact minimum RHCOS version",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   opv1.MachineConfigurationBootImageUpdateProgressing,
+							Status: metav1.ConditionFalse,
+						},
+					},
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusAutomatic,
+						Automatic: opv1.ClusterBootImageAutomatic{
+							RHCOSVersion: "413.92.202402131523-0",
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: false,
+			expectMessage:      "",
+			expectError:        false,
+		},
+		// RHCOS version tests in manual mode
+		{
+			name:               "mode is Manual with modern RHCOS version within limit",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusManual,
+						Manual: opv1.ClusterBootImageManual{
+							Mode:         opv1.ClusterBootImageSpecModeRHCOSVersion,
+							RHCOSVersion: "9.6.20251023-0",
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: false,
+			expectMessage:      "",
+			expectError:        false,
+		},
+		{
+			name:               "mode is Manual with modern RHCOS version below limit",
+			featureGateEnabled: true,
+			// RHEL 9 boot images were introduced in 4.13; history spans from there to 4.22.
+			clusterVersion: buildClusterVersionWithMultipleHistory("4.22.0", "4.21.0", "4.20.0", "4.19.0", "4.18.0", "4.17.0", "4.16.0", "4.15.0", "4.14.0", "4.13.0"),
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusManual,
+						Manual: opv1.ClusterBootImageManual{
+							Mode:         opv1.ClusterBootImageSpecModeRHCOSVersion,
+							RHCOSVersion: "9.1.20251023-0",
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: true,
+			expectMessage:      "Upgrades have been disabled because the cluster is using RHCOS boot image version 9.1.20251023-0(RHEL version: 9.1), which is below the minimum required RHEL version " + ctrlcommon.RHCOSVersionBootImageSkewLimit + ". To enable upgrades, please update your boot images or disable boot image skew enforcement by following the documentation at https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html/machine_configuration/mco-update-boot-skew-mgmt",
+			expectError:        false,
+		},
+		{
+			name:               "mode is Manual with legacy RHCOS version within limit",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusManual,
+						Manual: opv1.ClusterBootImageManual{
+							Mode:         opv1.ClusterBootImageSpecModeRHCOSVersion,
+							RHCOSVersion: "416.94.202510081640-0",
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: false,
+			expectMessage:      "",
+			expectError:        false,
+		},
+		{
+			name:               "mode is Manual with legacy RHCOS version below limit",
+			featureGateEnabled: true,
+			// Legacy RHEL 8 (411.x) boot images originate from 4.11; history spans from there to 4.22.
+			clusterVersion: buildClusterVersionWithMultipleHistory("4.22.0", "4.21.0", "4.20.0", "4.19.0", "4.18.0", "4.17.0", "4.16.0", "4.15.0", "4.14.0", "4.13.0", "4.12.0", "4.11.0"),
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusManual,
+						Manual: opv1.ClusterBootImageManual{
+							Mode:         opv1.ClusterBootImageSpecModeRHCOSVersion,
+							RHCOSVersion: "411.86.202308081056-0",
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: true,
+			expectMessage:      "Upgrades have been disabled because the cluster is using RHCOS boot image version 411.86.202308081056-0(RHEL version: 8.6), which is below the minimum required RHEL version " + ctrlcommon.RHCOSVersionBootImageSkewLimit + ". To enable upgrades, please update your boot images or disable boot image skew enforcement by following the documentation at https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html/machine_configuration/mco-update-boot-skew-mgmt",
+			expectError:        false,
+		},
+		{
+			name:               "mode is manual with exact minimum RHCOS version",
+			featureGateEnabled: true,
+			mcop: &opv1.MachineConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.MCOOperatorKnobsObjectName},
+				Status: opv1.MachineConfigurationStatus{
+					BootImageSkewEnforcementStatus: opv1.BootImageSkewEnforcementStatus{
+						Mode: opv1.BootImageSkewEnforcementModeStatusManual,
+						Manual: opv1.ClusterBootImageManual{
+							Mode:         opv1.ClusterBootImageSpecModeRHCOSVersion,
+							RHCOSVersion: "413.92.202402131523-0",
+						},
+					},
+				},
+			},
+			expectUpgradeBlock: false,
+			expectMessage:      "",
+			expectError:        false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Set up feature gate handler
+			enabledFeatures := []configv1.FeatureGateName{}
+			if tc.featureGateEnabled {
+				enabledFeatures = append(enabledFeatures, features.FeatureGateBootImageSkewEnforcement)
+			}
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler(enabledFeatures, []configv1.FeatureGateName{})
+
+			// Set up mcopLister
+			mcopIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+			if tc.mcop != nil && !tc.mcopNotFound {
+				mcopIndexer.Add(tc.mcop)
+			}
+			mcopLister := mcoplistersv1.NewMachineConfigurationLister(mcopIndexer)
+
+			// Set up clusterVersionLister
+			clusterVersionIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+			if tc.clusterVersion != nil {
+				clusterVersionIndexer.Add(tc.clusterVersion)
+			}
+			clusterVersionLister := configlistersv1.NewClusterVersionLister(clusterVersionIndexer)
+
+			optr := &Operator{
+				fgHandler:            fgHandler,
+				mcopLister:           mcopLister,
+				clusterVersionLister: clusterVersionLister,
+			}
+
+			upgradeBlock, message, err := optr.checkBootImageSkewUpgradeableGuard()
+
+			if tc.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+			assert.Equal(t, tc.expectUpgradeBlock, upgradeBlock, "upgrade block mismatch")
+			assert.Equal(t, tc.expectMessage, message, "message mismatch")
+		})
+	}
+}

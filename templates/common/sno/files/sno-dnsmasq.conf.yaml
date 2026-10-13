@@ -1,0 +1,7 @@
+mode: 0644
+path: "/etc/dnsmasq.conf"
+contents:
+  inline: |
+    user=dnsmasq
+    group=dnsmasq
+    conf-dir=/etc/dnsmasq.d,.rpmnew,.rpmsave,.rpmorig

@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: machine-os-builder
+  namespace: "{{.TargetNamespace}}"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: machine-os-builder
+  template:
+    metadata:
+      labels:
+        k8s-app: machine-os-builder
+      annotations:
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+        openshift.io/required-scc: anyuid
+    spec:
+      containers:
+      - name: machine-os-builder
+        image: "{{.Images.MachineConfigOperator}}"
+        command: ["/usr/bin/machine-os-builder"]
+        args:
+        - "start"
+        - "--v={{.LogLevel}}"
+        resources:
+          requests:
+            cpu: 20m
+            memory: 50Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+      serviceAccountName: machine-os-builder
+      priorityClassName: "system-cluster-critical"
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: "NoSchedule"
+      - key: "node.kubernetes.io/unreachable"
+        operator: "Exists"
+        effect: "NoExecute"
+        tolerationSeconds: 120
+      - key: "node.kubernetes.io/not-ready"
+        operator: "Exists"
+        effect: "NoExecute"
+        tolerationSeconds: 120

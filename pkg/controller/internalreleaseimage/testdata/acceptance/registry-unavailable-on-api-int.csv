@@ -1,0 +1,29 @@
+Scenario,,Registry unavailable (not on api-int),,,,
+,,"Given an OVE cluster with 3 control plane nodes
+And all the IRI registries are accessible
+And api-int resolves exclusively to master-0
+
+When the registry on master-0 becomes unreachable,
+
+Then only MachineConfigNode master-0 should be degraded
+And the InternalReleaseImage resource should be degraded
+And no release will be available (and degraded) via api-int",,,,
+,,,,,,
+,,MasterConfigNode ,,,,InternalReleaseImage
+resource,,master-0,master-1,master-2,,cluster
+"status 
+condition",Type,InternalReleaseImageDegraded,InternalReleaseImageDegraded,InternalReleaseImageDegraded,,Degraded
+,Status,True,False,False,,True
+,Reason,RegistryUnreachable,AllReleasesAvailable,AllReleasesAvailable,,ApiIntNotAvailable
+,Message,registry query...connection refused,All the release images are available,All the release images are available,,Unable to reach any registry via api-int.<cluster-name>.<base-domain>
+"releases[0]
+conditions",name,ocp-release-bundle-4.22,ocp-release-bundle-4.22,ocp-release-bundle-4.22,,ocp-release-bundle-4.22
+,image,localhost:22625/openshift/release-images@<digest>,localhost:22625/openshift/release-images@<digest>,localhost:22625/openshift/release-images@<digest>,,api-int.<cluster-name>.<base-domain>:22625/openshift/release-images@<digest>
+,Type,Available,Available,Available,,Available
+,Status,False,True,True,,False
+,Reason,RegistryUnreachable,ReleaseImageAvailable,ReleaseImageAvailable,,ApiIntNotAvailable
+,Message,Release bundle is unavailable: failed to reach the registry,The specified release image is available,The specified release image is available,,The specified release image is not available
+,Type,Degraded,Degraded,Degraded,,Degraded
+,Status,True,False,False,,True
+,Reason,RegistryUnreachable,ReleaseImageAvailable,ReleaseImageAvailable,,ApiIntNotAvailable
+,Message,registry query...connection refused,ReleaseImageAvailable,ReleaseImageAvailable,,ApiIntNotAvailable

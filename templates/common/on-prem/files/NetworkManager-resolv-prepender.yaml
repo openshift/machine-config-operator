@@ -1,0 +1,74 @@
+mode: 0755
+path: "/etc/NetworkManager/dispatcher.d/30-resolv-prepender"
+contents:
+  inline: |
+    {{ if gt (len (onPremPlatformAPIServerInternalIPs .)) 0 -}}
+    #!/bin/bash
+    set -eo pipefail
+    IFACE=$1
+    STATUS=$2
+
+    function resolv_prepender {
+      mkdir -p /run/resolv-prepender
+      echo "IP4_DOMAINS=$IP4_DOMAINS" > /run/resolv-prepender/env.new
+      echo "IP6_DOMAINS=$IP6_DOMAINS" >> /run/resolv-prepender/env.new
+
+      if ! diff -q /run/resolv-prepender/env /run/resolv-prepender/env.new; then
+        >&2 echo "NM resolv-prepender: Environment variable(s) changed. Systemd path unit will pick the change."
+        mv -f /run/resolv-prepender/env.new /run/resolv-prepender/env
+      fi
+    }
+
+    export IP4_DOMAINS IP6_DOMAINS
+    export -f resolv_prepender
+
+    # For RHEL8 with NetworkManager >= 1.36 and RHEL9 with NetworkManager >=1.42 we can use simplified logic
+    # of observing only a single "dns-change" event. Older version of NetworkManager require however that we
+    # react on a set of multiple events. Once dns-change event is detected we create a flag file to ignore
+    # subsequent up&co. events as undesired.
+    #
+    # Given an overall Network Manager dispatcher timeout of 90 seconds, we are enforcing a slightly shorter
+    # timeout for the observed events. It is not really required because all we do in this function is to write a file.
+    # We could get rid of this timeout completely, but it also does not cost much to keep it.
+    case "$STATUS" in
+      dns-change)
+        >&2 echo "NM resolv-prepender triggered by ${IFACE} ${STATUS}."
+        if [ ! -f "/run/networkmanager-dns-event-detected" ]; then
+          touch /run/networkmanager-dns-event-detected
+        fi
+        if ! timeout 60s bash -c resolv_prepender; then
+          >&2 echo "NM resolv-prepender: Timeout occurred"
+          exit 1
+        fi
+      ;;
+
+      up|dhcp4-change|dhcp6-change|reapply)
+        if [ ! -f "/run/networkmanager-dns-event-detected" ]; then
+          >&2 echo "NM resolv-prepender triggered by ${IFACE} ${STATUS}."
+          if ! timeout 30s bash -c resolv_prepender; then
+            >&2 echo "NM resolv-prepender: Timeout occurred"
+            exit 1
+          fi
+        fi
+
+        # If $DHCP6_FQDN_FQDN is not empty and is not localhost.localdomain and static hostname was not already set
+        if [[ -n "$DHCP6_FQDN_FQDN" && "$DHCP6_FQDN_FQDN" != "localhost.localdomain" && "$DHCP6_FQDN_FQDN" =~ "." ]] ; then
+           STATIC_HOSTNAME="$(test ! -e /etc/hostname && echo -n || cat /etc/hostname | xargs)"
+
+           if [[ -z "$STATIC_HOSTNAME" || "$STATIC_HOSTNAME" == "localhost.localdomain" ]] ; then
+              # run with systemd-run to avoid selinux problems
+              systemd-run --property=Type=oneshot --unit resolve-prepender-hostnamectl -Pq \
+                  hostnamectl set-hostname --static --transient $DHCP6_FQDN_FQDN
+           fi
+        fi
+
+        if [[ "$STATUS" == "up" ]] && [[ $IFACE == "br-ex" ]]; then
+            /bin/mkdir -p /run/nodeip-configuration
+            touch /run/nodeip-configuration/br-ex-up
+        fi
+      ;;
+      *)
+      ;;
+    esac
+
+    {{ end -}}

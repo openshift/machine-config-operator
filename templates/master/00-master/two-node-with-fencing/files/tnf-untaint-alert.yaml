@@ -1,0 +1,16 @@
+mode: 0755
+path: "/var/lib/pacemaker/alerts/tnf-untaint-alert.sh"
+contents:
+  inline: |
+    #!/bin/bash
+    # Pacemaker alert agent for node-rejoin events.
+    # Registered with: select_nodes
+    # Triggers on: CRM_alert_kind=node + CRM_alert_desc=member (corosync membership - rejoin after fence)
+    if [ "$CRM_alert_kind" = "node" ] && [ "$CRM_alert_desc" = "member" ] && [ -n "$CRM_alert_node" ]; then
+        logger -t tnf-untaint-alert "Node ${CRM_alert_node} rejoined cluster (membership), triggering untaint service"
+        if ! sudo systemctl start --no-block "untaint-node@${CRM_alert_node}.service"; then
+            logger -t tnf-untaint-alert "ERROR: Failed to start untaint-node@${CRM_alert_node}.service"
+            exit 1
+        fi
+    fi
+    exit 0

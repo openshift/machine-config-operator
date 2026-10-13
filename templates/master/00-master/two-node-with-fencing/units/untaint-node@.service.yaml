@@ -1,0 +1,13 @@
+name: "untaint-node@.service"
+contents: |
+  [Unit]
+  Description=Untaint pacemaker-annotated nodes (triggered by %i rejoin)
+  After=network.target taint-node@%i.service
+  StartLimitIntervalSec=0
+
+  [Service]
+  Type=oneshot
+  ExecStart=/usr/local/bin/untaint-fenced-node.sh %i
+  TimeoutStartSec=1200
+  Restart=on-failure
+  RestartSec=10

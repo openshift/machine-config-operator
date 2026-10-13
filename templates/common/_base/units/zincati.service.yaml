@@ -1,0 +1,6 @@
+name: zincati.service
+dropins:
+- name: mco-disabled.conf
+  contents: |
+    [Unit]
+    ConditionPathExists=/enoent

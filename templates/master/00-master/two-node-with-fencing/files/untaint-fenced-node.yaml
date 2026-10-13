@@ -1,0 +1,182 @@
+mode: 0755
+path: "/usr/local/bin/untaint-fenced-node.sh"
+contents:
+  inline: |
+    #!/bin/bash
+    set -euo pipefail
+    REJOINED_NODE="${1:-}"
+    KUBECONFIG="/etc/kubernetes/static-pod-resources/kube-apiserver-certs/secrets/node-kubeconfigs/localhost.kubeconfig"
+    TAINT_KEY="node.kubernetes.io/out-of-service"
+    ANNOTATION_KEY="node.kubernetes.io/out-of-service-applied-by"
+    ANNOTATION_VALUE="pacemaker"
+    OC="oc --kubeconfig=$KUBECONFIG"
+
+    if [[ -z "${REJOINED_NODE:-}" ]]; then
+        logger -t untaint-fenced-node "ERROR: Node name is empty or not set"
+        exit 1
+    fi
+
+    logger -t untaint-fenced-node "Node ${REJOINED_NODE} rejoined cluster, checking if untaint is needed"
+
+    # Wait for pacemaker to report the node as Online.
+    # The alert fires on corosync membership ("member"), but pacemaker Online
+    # confirms the full cluster join succeeded. This prevents untainting a node
+    # that joined corosync but may still fail pacemaker startup and get re-fenced.
+    MAX_NODE_WAIT=120
+    NODE_WAIT_INTERVAL=5
+    MAX_VA_WAIT=300
+    VA_INTERVAL=5
+
+    parse_online_nodes() {
+        pcs status nodes 2>/dev/null | awk '
+            /^[[:space:]]+Online:/ {
+                for (i=2; i<=NF; i++) { gsub(/[][]/,"",$i); if ($i != "") printf "%s ",$i }
+            }'
+    }
+
+    PCMK_ONLINE_NODES=""
+    for i in $(seq 1 $((MAX_NODE_WAIT / NODE_WAIT_INTERVAL))); do
+        PCMK_ONLINE_NODES=$(parse_online_nodes)
+        if [[ " $PCMK_ONLINE_NODES " == *" $REJOINED_NODE "* ]]; then
+            break
+        fi
+        logger -t untaint-fenced-node "Waiting for pacemaker to report ${REJOINED_NODE} as Online (attempt ${i})"
+        PCMK_ONLINE_NODES=""
+        sleep $NODE_WAIT_INTERVAL
+    done
+
+    if [[ " $PCMK_ONLINE_NODES " != *" $REJOINED_NODE "* ]]; then
+        logger -t untaint-fenced-node "WARNING: Pacemaker does not report ${REJOINED_NODE} as Online after ${MAX_NODE_WAIT}s - will retry via systemd"
+        exit 1
+    fi
+
+    logger -t untaint-fenced-node "Pacemaker Online nodes: ${PCMK_ONLINE_NODES}"
+
+    # Fetch all Kubernetes nodes and find those carrying the
+    # pacemaker annotation. A node not in this list needs no action.
+    ALL_NODES_JSON=$($OC get nodes -o json 2>/dev/null) || {
+        logger -t untaint-fenced-node "ERROR: Cannot fetch node list from API - aborting"
+        exit 1
+    }
+    ANNOTATED_NODES=$(echo "$ALL_NODES_JSON" | jq -r \
+        --arg annot_key "$ANNOTATION_KEY" \
+        --arg annot_val "$ANNOTATION_VALUE" \
+        '[.items[] | select(.metadata.annotations[$annot_key] == $annot_val) | .metadata.name] | join(" ")')
+
+    if [[ -z "${ANNOTATED_NODES}" ]]; then
+        logger -t untaint-fenced-node "No nodes with pacemaker out-of-service annotation found - nothing to do"
+        exit 0
+    fi
+    logger -t untaint-fenced-node "Nodes with pacemaker annotation: ${ANNOTATED_NODES}"
+
+    UNTAINT_FAILED=false
+    MAX_RETRIES=12
+    RETRY_INTERVAL=5
+    for node in $ANNOTATED_NODES; do
+        # Skip nodes not Online in pacemaker; check both FQDN and short
+        # name since pacemaker may use either form.
+        short_name="${node%%.*}"
+        if [[ " $PCMK_ONLINE_NODES " != *" $node "* ]] && [[ " $PCMK_ONLINE_NODES " != *" $short_name "* ]]; then
+            logger -t untaint-fenced-node "Node ${node} is not Online in pacemaker - skipping"
+            continue
+        fi
+
+        # Wait for this node's kubelet to become Ready.
+        # The taint script may still be retrying against the API while etcd
+        # recovers quorum; kubelet Ready is a natural signal that the cluster
+        # is healthy enough for the taint write to have completed.
+        NODE_READY=""
+        for i in $(seq 1 $((MAX_NODE_WAIT / NODE_WAIT_INTERVAL))); do
+            NODE_READY=$($OC get node "$node" -o json 2>/dev/null | jq -r '.status.conditions[] | select(.type=="Ready") | .status // empty') || true
+            if [ "$NODE_READY" = "True" ]; then
+                break
+            fi
+            logger -t untaint-fenced-node "Waiting for node ${node} to become Ready (attempt ${i})"
+            sleep $NODE_WAIT_INTERVAL
+        done
+        if [ "$NODE_READY" != "True" ]; then
+            logger -t untaint-fenced-node "WARNING: Node ${node} not Ready after ${MAX_NODE_WAIT}s - proceeding with untaint anyway"
+        fi
+
+        # Wait for VolumeAttachments to drain from this node before removing
+        # the taint, so volumes can fail over to the surviving node.
+        VA_COUNT=$($OC get volumeattachments -o json 2>/dev/null \
+          | jq --arg node "$node" '[.items[] | select(.spec.nodeName == $node)] | length') || VA_COUNT="0"
+        if [ "$VA_COUNT" -gt 0 ]; then
+            logger -t untaint-fenced-node "Waiting for ${VA_COUNT} VolumeAttachment(s) to detach from ${node}"
+            for i in $(seq 1 $((MAX_VA_WAIT / VA_INTERVAL))); do
+                VA_COUNT=$($OC get volumeattachments -o json 2>/dev/null \
+                  | jq --arg node "$node" '[.items[] | select(.spec.nodeName == $node)] | length') || VA_COUNT="-1"
+                if [ "$VA_COUNT" = "0" ]; then
+                    logger -t untaint-fenced-node "All VolumeAttachments detached from ${node}"
+                    break
+                fi
+                if [ "$VA_COUNT" = "-1" ]; then
+                    logger -t untaint-fenced-node "API unavailable checking VolumeAttachments for ${node} (attempt ${i})"
+                else
+                    logger -t untaint-fenced-node "Waiting for ${VA_COUNT} VolumeAttachment(s) to detach from ${node} (attempt ${i})"
+                fi
+                sleep $VA_INTERVAL
+            done
+            if [ "$VA_COUNT" != "0" ]; then
+                logger -t untaint-fenced-node "WARNING: ${VA_COUNT} VolumeAttachment(s) still on ${node} after ${MAX_VA_WAIT}s - proceeding with untaint"
+            fi
+        fi
+
+        logger -t untaint-fenced-node "Removing out-of-service taint and annotation from ${node}"
+        NODE_DONE=false
+        for attempt in $(seq 1 $MAX_RETRIES); do
+            NODE_JSON=$($OC get node "$node" -o json 2>/dev/null) || {
+                logger -t untaint-fenced-node "Attempt ${attempt}/${MAX_RETRIES}: oc get node ${node} failed - retrying in ${RETRY_INTERVAL}s"
+                sleep $RETRY_INTERVAL
+                continue
+            }
+            APPLIED_BY=$(echo "$NODE_JSON" | jq -r --arg key "$ANNOTATION_KEY" '.metadata.annotations[$key] // empty')
+            if [[ "$APPLIED_BY" != "$ANNOTATION_VALUE" ]]; then
+                logger -t untaint-fenced-node "Annotation already removed from ${node} - done"
+                NODE_DONE=true
+                break
+            fi
+
+            $OC adm taint node "$node" "${TAINT_KEY}-" 2>/dev/null || true
+
+            NODE_JSON=$($OC get node "$node" -o json 2>/dev/null) || {
+                logger -t untaint-fenced-node "Attempt ${attempt}/${MAX_RETRIES}: oc get node ${node} failed verifying taint removal - retrying in ${RETRY_INTERVAL}s"
+                sleep $RETRY_INTERVAL
+                continue
+            }
+            REMAINING_TAINT=$(echo "$NODE_JSON" | jq -r --arg key "$TAINT_KEY" '.spec.taints // [] | map(select(.key == $key)) | .[0].key // empty')
+            if [[ -n "$REMAINING_TAINT" ]]; then
+                logger -t untaint-fenced-node "Attempt ${attempt}/${MAX_RETRIES}: taint still present on ${node} - retrying in ${RETRY_INTERVAL}s"
+                sleep $RETRY_INTERVAL
+                continue
+            fi
+
+            $OC annotate node "$node" "${ANNOTATION_KEY}-" 2>/dev/null || true
+
+            NODE_JSON=$($OC get node "$node" -o json 2>/dev/null) || {
+                logger -t untaint-fenced-node "Attempt ${attempt}/${MAX_RETRIES}: oc get node ${node} failed verifying annotation removal - retrying in ${RETRY_INTERVAL}s"
+                sleep $RETRY_INTERVAL
+                continue
+            }
+            REMAINING_ANNOT=$(echo "$NODE_JSON" | jq -r --arg key "$ANNOTATION_KEY" '.metadata.annotations[$key] // empty')
+            if [[ -z "$REMAINING_ANNOT" ]]; then
+                logger -t untaint-fenced-node "Successfully untainted and removed annotation from ${node}"
+                NODE_DONE=true
+                break
+            fi
+            logger -t untaint-fenced-node "Attempt ${attempt}/${MAX_RETRIES}: annotation still present on ${node} - retrying in ${RETRY_INTERVAL}s"
+            sleep $RETRY_INTERVAL
+        done
+
+        if [[ "$NODE_DONE" != "true" ]]; then
+            logger -t untaint-fenced-node "WARNING: Failed to untaint ${node} after ${MAX_RETRIES} attempts"
+            UNTAINT_FAILED=true
+        fi
+    done
+
+    if [[ "$UNTAINT_FAILED" = "true" ]]; then
+        logger -t untaint-fenced-node "WARNING: Some nodes could not be untainted - will retry via systemd"
+        exit 1
+    fi
+    logger -t untaint-fenced-node "All pacemaker-annotated nodes successfully untainted"

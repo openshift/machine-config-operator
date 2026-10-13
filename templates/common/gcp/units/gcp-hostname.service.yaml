@@ -1,0 +1,19 @@
+name: gcp-hostname.service
+enabled: true
+contents: |
+  [Unit]
+  Description=Set GCP Transient Hostname
+  # We don't need to do this on the firstboot
+  After=firstboot-osupdate.target
+  # Wait for NetworkManager to report it's online
+  After=NetworkManager-wait-online.service
+  # Run before hostname checks
+  Before=node-valid-hostname.service
+
+  [Service]
+  Type=oneshot
+  RemainAfterExit=yes
+  ExecStart=/usr/local/bin/mco-hostname --gcp
+
+  [Install]
+  RequiredBy=kubelet-dependencies.target

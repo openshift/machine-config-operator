@@ -1,0 +1,16 @@
+# (zzlotnik): Grant the machine-os-builder service account the ability to start
+# pods with UID 1000 for builds. This allows us to run Buildah in an
+# unprivileged pod for better security than allowing it to run in a privileged
+# pod.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: machine-os-builder-anyuid
+roleRef:
+  name: "system:openshift:scc:anyuid"
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+subjects:
+  - name: machine-os-builder
+    kind: ServiceAccount
+    namespace: "{{.TargetNamespace}}"

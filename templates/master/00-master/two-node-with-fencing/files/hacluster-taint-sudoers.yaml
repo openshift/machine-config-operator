@@ -1,0 +1,6 @@
+mode: 0440
+path: "/etc/sudoers.d/hacluster-taint"
+contents:
+  inline: |
+    hacluster ALL=(root) NOPASSWD: /usr/bin/systemctl start --no-block taint-node@*
+    hacluster ALL=(root) NOPASSWD: /usr/bin/systemctl start --no-block untaint-node@*

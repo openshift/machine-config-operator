@@ -1,0 +1,9 @@
+name: "corosync.service"
+dropins:
+  - name: 10-after-ovs-configuration.conf
+    contents: |
+      [Unit]
+      # OVS bridge creation migrates the corosync NIC, causing a fencing
+      # reboot loop if corosync is already running. OCPEDGE-2447
+      Wants=ovs-configuration.service
+      After=ovs-configuration.service

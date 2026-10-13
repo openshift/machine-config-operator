@@ -1,0 +1,61 @@
+# This is a VSphere UPI-specific version of nodeip-configuration, which is
+# needed because of the way template precedence works in MCO. Most UPI
+# platforms get this from the _base directory because their platform is set
+# to None. However, VSphere UPI sets platform to VSphere and determines
+# whether it should be IPI or UPI based on whether the API VIPs field is
+# populated. Because platform is set to VSphere, we instead get the IPI
+# version of nodeip-configuration in the on-prem directory. This is disabled
+# for UPI deployments because it relies on the existence of a VIP to help with
+# IP selection.
+# This all means we don't have a good way to keep the _base version of the
+# service unless we put some platform-specific logic in the template processing
+# code. Instead, we create this duplicate version of the service that will
+# only be enabled for VSphere UPI deployments.
+name: nodeip-configuration-vsphere-upi.service
+enabled: {{if or (eq (len (onPremPlatformAPIServerInternalIPs .)) 0) (and (eq .Infra.Status.ControlPlaneTopology "SingleReplica") (eq (cloudProvider .) "external"))}}true{{else}}false{{end}}
+contents: |
+  [Unit]
+  Description=Writes IP address configuration so that kubelet and crio services select a valid node IP
+  Wants=NetworkManager-wait-online.service
+  After=NetworkManager-wait-online.service firstboot-osupdate.target
+  Before=kubelet-dependencies.target ovs-configuration.service
+
+  [Service]
+  # Need oneshot to delay kubelet
+  Type=oneshot
+  SyslogIdentifier=nodeip-configuration
+  # Would prefer to do Restart=on-failure instead of this bash retry loop, but
+  # the version of systemd we have right now doesn't support it. It should be
+  # available in systemd v244 and higher.
+  ExecStart=/bin/bash -c " \
+    until \
+    /usr/bin/podman run --rm \
+    --authfile /var/lib/kubelet/config.json \
+    --env 'ENABLE_NODEIP_DEBUG=true' \
+    --net=host \
+    --security-opt label=disable \
+    --volume /etc/systemd/system:/etc/systemd/system \
+    --volume /run/nodeip-configuration:/run/nodeip-configuration \
+    {{ .Images.baremetalRuntimeCfgImage }} \
+    node-ip \
+    set \
+    {{if or (eq .IPFamilies "IPv6") (eq .IPFamilies "DualStackIPv6Primary") -}}
+    --prefer-ipv6 \
+    {{end -}}
+    --retry-on-failure \
+    ${NODEIP_HINT:-${KUBELET_NODEIP_HINT:-}}; \
+    do \
+    sleep 5; \
+    done"
+  ExecStart=/bin/systemctl daemon-reload
+  ExecStartPre=/bin/mkdir -p /run/nodeip-configuration
+  StandardOutput=journal+console
+  StandardError=journal+console
+
+  {{if .Proxy -}}
+  EnvironmentFile=/etc/mco/proxy.env
+  {{end -}}
+  EnvironmentFile=-/etc/default/nodeip-configuration
+
+  [Install]
+  RequiredBy=kubelet-dependencies.target

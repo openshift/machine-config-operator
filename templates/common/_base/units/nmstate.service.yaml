@@ -1,0 +1,20 @@
+# Temporary override until the fix for https://issues.redhat.com/browse/OCPBUGS-61695
+# makes it into RHCOS.
+name: nmstate.service
+enabled: true
+contents: |
+  [Unit]
+  Description=Apply nmstate on-disk state
+  Documentation=man:nmstate.service(8) https://www.nmstate.io
+  After=NetworkManager-wait-online.service
+  Before=network-online.target
+  Wants=NetworkManager-wait-online.service
+  Requires=NetworkManager.service
+
+  [Service]
+  Type=oneshot
+  ExecStart=/usr/bin/nmstatectl service
+  RemainAfterExit=yes
+
+  [Install]
+  WantedBy=NetworkManager.service

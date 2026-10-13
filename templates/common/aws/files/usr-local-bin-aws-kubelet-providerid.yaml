@@ -1,0 +1,47 @@
+mode: 0755
+path: "/usr/local/bin/aws-kubelet-providerid"
+contents:
+  inline: |
+    #!/bin/bash
+    set -e -o pipefail
+
+    NODEENV=/etc/kubernetes/node.env
+
+    if [ -e "${NODEENV}" ] && grep -Fq "KUBELET_PROVIDERID" ${NODEENV}; then
+        echo "Not replacing existing ${NODEENV}"
+        exit 0
+    fi
+
+    # afterburn service is expected to be used for metadata retrival, see respective systemd unit.
+    # However, on older OCP boot images does not contain afterburn service, check if afterburn variables are there
+    # otherwise try to communicate IMDS here.
+    # metadata related afterburn doc: https://coreos.github.io/afterburn/usage/attributes/
+    
+    INSTANCE_ID=${AFTERBURN_AWS_INSTANCE_ID:-}
+    AVAILABILITY_ZONE=${AFTERBURN_AWS_AVAILABILITY_ZONE:-}
+    if [[ -z "${INSTANCE_ID}" ]] || [[ -z "${AVAILABILITY_ZONE}" ]]; then
+      INSTANCE_ID=$(curl -fSs http://169.254.169.254/2022-09-24/meta-data/instance-id)
+      AVAILABILITY_ZONE=$(curl -fSs http://169.254.169.254/2022-09-24/meta-data/placement/availability-zone)
+      if [[ -z "${INSTANCE_ID}" ]] || [[ -z "${AVAILABILITY_ZONE}" ]]; then
+        echo "Can not obtain instance-id and availability zone info from the metadata service."
+        exit 1
+      fi 
+    fi
+
+    # Due to a potential mismatch between Hostname and PrivateDNSName with clusters that use custom DHCP Option Sets
+    # which can cause issues in cloud controller manager node syncing
+    # (see: https://github.com/kubernetes/cloud-provider-aws/issues/384),
+    # set KUBELET_PROVIDERID to be a fully qualified AWS instace provider id.
+    # This new variable is later used to populate the kubelet's `provider-id` flag, later set on the Node .spec
+    # and used by the cloud controller manager's node controller to retrieve the Node's backing instance.
+    cat >> "${NODEENV}" <<EOF
+    KUBELET_PROVIDERID=aws:///${AVAILABILITY_ZONE}/${INSTANCE_ID}
+    EOF
+
+    # Remove the legacy node conf once we've written out the new file
+    LEGACY_NODECONF=NODECONF=/etc/systemd/system/kubelet.service.d/20-aws-providerid.conf
+
+    if [ -e "${LEGACY_NODECONF}" ]; then
+        rm -f ${LEGACY_NODECONF}
+        echo "Removed legacy ${LEGACY_NODECONF}"
+    fi

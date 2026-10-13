@@ -1,0 +1,17 @@
+# See the OWNERS docs: https://git.k8s.io/community/contributors/guide/owners.md
+approvers:
+  - giuseppe
+  - haircommander
+  - kolyshkin
+  - mrunalp
+  - nalind
+  - saschagrunert
+  - umohnani8
+  - edge-enablement-reviewers
+reviewers:
+  - QiWang19
+  - hasan4791
+  - kwilczynski
+  - mtrmac
+  - sohankunkerkar
+  - wgahnagl

@@ -1,0 +1,9 @@
+**/*.swp
+.DS_Store
+_output
+.vscode/
+.idea/
+junit*.xml
+checkstyle*.xml
+mco-unit-test-coverage.out
+mco-unit-test-coverage.html

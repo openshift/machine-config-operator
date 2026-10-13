@@ -1,0 +1,11 @@
+name: on-prem-resolv-prepender.path
+enabled: {{if gt (len (onPremPlatformAPIServerInternalIPs .)) 0}}true{{else}}false{{end}}
+contents: |
+  [Unit]
+  Description=Watches for changes in /var/run/NetworkManager/resolv.conf according to on-prem IPI needs
+  [Path]
+  PathModified=/var/run/NetworkManager/resolv.conf
+  PathModified=/run/resolv-prepender/env
+  Unit=on-prem-resolv-prepender.service
+  [Install]
+  WantedBy=multi-user.target

@@ -1,0 +1,47 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: mc-template
+objects:
+- apiVersion: machineconfiguration.openshift.io/v1
+  kind: MachineConfig
+  metadata:
+    labels:
+      machineconfiguration.openshift.io/role: "${POOL}"
+    name: "${NAME}"
+  spec:
+    config:
+      ignition:
+        version: 3.5.0
+      storage:
+        disks:
+        - device: ${DEVICE1}
+          wipeTable: true
+          partitions:
+          - label: raid.1.1
+            number: 1
+            sizeMiB: 1024
+            startMiB: 0
+        - device: ${DEVICE2}
+          wipeTable: true
+          partitions:
+          - label: raid.1.2
+            number: 1
+            sizeMiB: 1024
+            startMiB: 0
+        raid:
+        - devices:
+          - "/dev/disk/by-partlabel/raid.1.1"
+          - "/dev/disk/by-partlabel/raid.1.2"
+          level: stripe
+          name: data
+        filesystems:
+        - device: "/dev/md/data"
+          path: "/var/lib/data"
+          format: ext4
+          label: DATA
+parameters:
+  - name: NAME
+  - name: POOL
+  - name: DEVICE1
+  - name: DEVICE2

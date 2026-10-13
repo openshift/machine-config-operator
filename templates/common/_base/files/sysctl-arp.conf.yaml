@@ -1,0 +1,7 @@
+mode: 0644
+path: "/etc/sysctl.d/arp.conf"
+contents:
+  inline: |
+    # Needed by the OpenShift SDN. See
+    # https://bugzilla.redhat.com/show_bug.cgi?id=1758552
+    net.ipv4.conf.all.arp_announce = 2

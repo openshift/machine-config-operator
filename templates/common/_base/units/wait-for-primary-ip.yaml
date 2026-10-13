@@ -1,0 +1,29 @@
+name: wait-for-primary-ip.service
+enabled: true
+contents: |
+  [Unit]
+  Description=Ensure primary IP is assigned and usable
+  Requires=nmstate.service
+  After=nmstate.service
+  Before=kubelet-dependencies.target
+
+  [Service]
+  Type=oneshot
+  # Would prefer to do Restart=on-failure instead of this bash retry loop, but
+  # the version of systemd we have right now doesn't support it. It should be
+  # available in systemd v244 and higher.
+  ExecStart=/bin/bash -c " \
+    until \
+    /usr/local/bin/wait-for-primary-ip.sh; \
+    do \
+    sleep 10; \
+    done"
+  StandardOutput=journal+console
+  StandardError=journal+console
+
+  {{if .Proxy -}}
+  EnvironmentFile=/etc/mco/proxy.env
+  {{end -}}
+
+  [Install]
+  WantedBy=network-online.target

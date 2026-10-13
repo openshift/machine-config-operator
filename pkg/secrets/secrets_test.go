@@ -1,0 +1,633 @@
+package secrets
+
+import (
+	"encoding/json"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"sigs.k8s.io/yaml"
+)
+
+func TestImageRegistrySecretFromBytes(t *testing.T) {
+	dockerconfigJSON := []byte(`{"auths":{"registry.hostname.com":{"username":"user","email":"user@hostname.com","auth":"s00pers3kr1t"}}}`)
+	dockercfgJSON := []byte(`{"registry.hostname.com":{"username":"user","email":"user@hostname.com","auth":"s00pers3kr1t"}}`)
+
+	k8sDockerConfigJsonSecret := `apiVersion: v1
+data:
+  .dockerconfigjson: eyJhdXRocyI6eyJyZWdpc3RyeS5ob3N0bmFtZS5jb20iOnsidXNlcm5hbWUiOiJ1c2VyIiwiZW1haWwiOiJ1c2VyQGhvc3RuYW1lLmNvbSIsImF1dGgiOiJzMDBwZXJzM2tyMXQifX19
+kind: Secret
+metadata:
+  name: secret
+  # This is needed
+  creationTimestamp:
+type: kubernetes.io/dockerconfigjson`
+
+	k8sDockerConfigYAMLBytes := []byte(k8sDockerConfigJsonSecret)
+
+	k8sDockercfgSecret := `apiVersion: v1
+data:
+  .dockercfg: eyJyZWdpc3RyeS5ob3N0bmFtZS5jb20iOnsidXNlcm5hbWUiOiJ1c2VyIiwiZW1haWwiOiJ1c2VyQGhvc3RuYW1lLmNvbSIsImF1dGgiOiJzMDBwZXJzM2tyMXQifX0=
+kind: Secret
+metadata:
+  name: secret
+  # This is needed
+  creationTimestamp:
+type: kubernetes.io/dockercfg`
+
+	k8sDockerConfigJSONBytes, err := yaml.YAMLToJSON(k8sDockerConfigYAMLBytes)
+	require.NoError(t, err)
+
+	k8sDockercfgYAMLBytes := []byte(k8sDockercfgSecret)
+
+	k8sDockercfgJSONBytes, err := yaml.YAMLToJSON(k8sDockercfgYAMLBytes)
+	require.NoError(t, err)
+
+	k8sDockerConfigJsonSecretMissingKind := `apiVersion: v1
+data:
+  .dockerconfigjson: eyJhdXRocyI6eyJyZWdpc3RyeS5ob3N0bmFtZS5jb20iOnsidXNlcm5hbWUiOiJ1c2VyIiwiZW1haWwiOiJ1c2VyQGhvc3RuYW1lLmNvbSIsImF1dGgiOiJzMDBwZXJzM2tyMXQifX19
+metadata:
+  name: secret
+  # This is needed
+  creationTimestamp:
+type: kubernetes.io/dockerconfigjson`
+
+	k8sDockerConfigYAMLBytesMissingKind := []byte(k8sDockerConfigJsonSecretMissingKind)
+
+	k8sDockerConfigJSONBytesMissingKind, err := yaml.YAMLToJSON(k8sDockerConfigYAMLBytesMissingKind)
+	require.NoError(t, err)
+
+	k8sDockercfgSecretMissingKind := `apiVersion: v1
+data:
+  .dockercfg: eyJyZWdpc3RyeS5ob3N0bmFtZS5jb20iOnsidXNlcm5hbWUiOiJ1c2VyIiwiZW1haWwiOiJ1c2VyQGhvc3RuYW1lLmNvbSIsImF1dGgiOiJzMDBwZXJzM2tyMXQifX0=
+metadata:
+  name: secret
+  # This is needed
+  creationTimestamp:
+type: kubernetes.io/dockercfg`
+
+	k8sDockercfgYAMLBytesMissingKind := []byte(k8sDockercfgSecretMissingKind)
+
+	k8sDockercfgJSONBytesMissingKind, err := yaml.YAMLToJSON(k8sDockercfgYAMLBytesMissingKind)
+	require.NoError(t, err)
+
+	mismatchedK8sDockerConfigJSONSecret := `apiVersion: v1
+data:
+  .dockerconfigjson: eyJyZWdpc3RyeS5ob3N0bmFtZS5jb20iOnsidXNlcm5hbWUiOiJ1c2VyIiwiZW1haWwiOiJ1c2VyQGhvc3RuYW1lLmNvbSIsImF1dGgiOiJzMDBwZXJzM2tyMXQifX0=
+kind: Secret
+metadata:
+  name: secret
+  # This is needed
+  creationTimestamp:
+type: kubernetes.io/dockerconfigjson`
+
+	mismatchedK8sDockercfgSecret := `apiVersion: v1
+data:
+  .dockercfg: eyJhdXRocyI6eyJyZWdpc3RyeS5ob3N0bmFtZS5jb20iOnsidXNlcm5hbWUiOiJ1c2VyIiwiZW1haWwiOiJ1c2VyQGhvc3RuYW1lLmNvbSIsImF1dGgiOiJzMDBwZXJzM2tyMXQifX19
+kind: Secret
+metadata:
+  name: secret
+  # This is needed
+  creationTimestamp:
+type: kubernetes.io/dockercfg`
+
+	emptyK8sDockerConfigJSON := `apiVersion: v1
+data:
+  .dockercfg:
+kind: Secret
+metadata:
+  name: secret
+  # This is needed
+  creationTimestamp:
+type: kubernetes.io/dockercfg`
+
+	emptyBase64K8sDockerConfigJSON := `apiVersion: v1
+data:
+  .dockercfg: Cg==
+kind: Secret
+metadata:
+  name: secret
+  # This is needed
+  creationTimestamp:
+type: kubernetes.io/dockercfg`
+
+	k8sDockerConfigJsonSecretMissingAPIVersion := `kind: Secret
+data:
+  .dockerconfigjson: eyJhdXRocyI6eyJyZWdpc3RyeS5ob3N0bmFtZS5jb20iOnsidXNlcm5hbWUiOiJ1c2VyIiwiZW1haWwiOiJ1c2VyQGhvc3RuYW1lLmNvbSIsImF1dGgiOiJzMDBwZXJzM2tyMXQifX19
+metadata:
+  name: secret
+  # This is needed
+  creationTimestamp:
+type: kubernetes.io/dockerconfigjson`
+
+	k8sDockerConfigYAMLBytesMissingAPIVersion := []byte(k8sDockerConfigJsonSecretMissingAPIVersion)
+
+	k8sDockerConfigJSONBytesMissingAPIVersion, err := yaml.YAMLToJSON(k8sDockerConfigYAMLBytesMissingAPIVersion)
+	require.NoError(t, err)
+
+	k8sDockercfgSecretMissingAPIVersion := `kind: Secret
+data:
+  .dockercfg: eyJyZWdpc3RyeS5ob3N0bmFtZS5jb20iOnsidXNlcm5hbWUiOiJ1c2VyIiwiZW1haWwiOiJ1c2VyQGhvc3RuYW1lLmNvbSIsImF1dGgiOiJzMDBwZXJzM2tyMXQifX0=
+metadata:
+  name: secret
+  # This is needed
+  creationTimestamp:
+type: kubernetes.io/dockercfg`
+
+	k8sDockercfgYAMLBytesMissingAPIVersion := []byte(k8sDockercfgSecretMissingAPIVersion)
+
+	k8sDockercfgJSONBytesMissingAPIVersion, err := yaml.YAMLToJSON(k8sDockercfgYAMLBytesMissingAPIVersion)
+	require.NoError(t, err)
+
+	cfg := DockerConfigJSON{
+		Auths: map[string]DockerConfigEntry{
+			"registry.hostname.com": DockerConfigEntry{
+				Username: "user",
+				Email:    "user@hostname.com",
+				Auth:     "s00pers3kr1t",
+			},
+		},
+	}
+
+	testCases := []struct {
+		name          string
+		bytes         []byte
+		isLegacyStyle bool
+		expected      *DockerConfigJSON
+		errExpected   bool
+	}{
+		{
+			name:  "From YAML K8s DockerconfigJSON secret bytes base64",
+			bytes: k8sDockerConfigYAMLBytes,
+		},
+		{
+			name:          "From YAML K8s Dockercfg secret bytes base64",
+			bytes:         k8sDockercfgYAMLBytes,
+			isLegacyStyle: true,
+		},
+		{
+			name:          "Mismatched K8s DockerConfigJSON Secret",
+			bytes:         []byte(mismatchedK8sDockerConfigJSONSecret),
+			isLegacyStyle: true,
+		},
+		{
+			name:  "Mismatched K8s Dockercfg Secret",
+			bytes: []byte(mismatchedK8sDockercfgSecret),
+		},
+		{
+			name:        "Empty K8s DockerConfigJSON",
+			bytes:       []byte(emptyK8sDockerConfigJSON),
+			errExpected: true,
+		},
+		{
+			name:        "Empty Base64 K8s DockerConfigJSON",
+			bytes:       []byte(emptyBase64K8sDockerConfigJSON),
+			errExpected: true,
+		},
+		{
+			name:  "From JSON K8s DockerconfigJSON secret bytes base64",
+			bytes: k8sDockerConfigJSONBytes,
+		},
+		{
+			name:          "From JSON K8s Dockercfg secret bytes base64",
+			bytes:         k8sDockercfgJSONBytes,
+			isLegacyStyle: true,
+		},
+		{
+			name:  "From dockerconfigjson bytes",
+			bytes: dockerconfigJSON,
+		},
+		{
+			name:          "From dockercfg bytes",
+			bytes:         dockercfgJSON,
+			isLegacyStyle: true,
+		},
+		{
+			name:        "Empty bytes",
+			bytes:       []byte(``),
+			errExpected: true,
+		},
+		{
+			name:        "Nil bytes",
+			bytes:       nil,
+			errExpected: true,
+		},
+		{
+			name:        "Malformed JSON bytes",
+			bytes:       []byte(`{`),
+			errExpected: true,
+		},
+		{
+			name:        "Invalid keys in JSON bytes",
+			bytes:       []byte(`{"key":"value"}`),
+			errExpected: true,
+		},
+		{
+			name:        "Invalid auths keys in JSON bytes",
+			bytes:       []byte(`{"auths":{"key":"value"}}`),
+			errExpected: true,
+		},
+		{
+			name:     "Empty auths in JSON bytes",
+			bytes:    []byte(`{"auths":{}}`),
+			expected: &DockerConfigJSON{Auths: DockerConfig{}},
+		},
+		{
+			name:     "Empty JSON object without auths key",
+			bytes:    []byte(`{}`),
+			expected: &DockerConfigJSON{Auths: newDockerConfig()},
+		},
+		{
+			name:        "JSON null literal",
+			bytes:       []byte(`null`),
+			errExpected: true,
+		},
+		{
+			name:        "Invalid K8s object bytes",
+			bytes:       []byte(`{"kind":"ConfigMap","apiVersion":"v1","metadata":{"name":"configmap"},"data":{"key":"value"}}`),
+			errExpected: true,
+		},
+		{
+			name:        "K8s DockerConfigJSON secret YAML missing kind",
+			bytes:       k8sDockerConfigYAMLBytesMissingKind,
+			errExpected: true,
+		},
+		{
+			name:        "K8s DockerConfigJSON secret JSON missing kind",
+			bytes:       k8sDockerConfigJSONBytesMissingKind,
+			errExpected: true,
+		},
+		{
+			name:        "K8s Dockercfg secret YAML missing kind",
+			bytes:       k8sDockercfgYAMLBytesMissingKind,
+			errExpected: true,
+		},
+		{
+			name:        "K8s Dockercfg secret JSON missing kind",
+			bytes:       k8sDockercfgJSONBytesMissingKind,
+			errExpected: true,
+		},
+		{
+			name:        "K8s DockerConfigJSON secret YAML missing API version",
+			bytes:       k8sDockerConfigYAMLBytesMissingAPIVersion,
+			errExpected: true,
+		},
+		{
+			name:        "K8s DockerConfigJSON secret JSON missing API version",
+			bytes:       k8sDockerConfigJSONBytesMissingAPIVersion,
+			errExpected: true,
+		},
+		{
+			name:        "K8s Dockercfg secret YAML missing API version",
+			bytes:       k8sDockercfgYAMLBytesMissingAPIVersion,
+			errExpected: true,
+		},
+		{
+			name:        "K8s Dockercfg secret JSON missing API version",
+			bytes:       k8sDockercfgJSONBytesMissingAPIVersion,
+			errExpected: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			is, err := NewImageRegistrySecret[[]byte](testCase.bytes)
+			if testCase.errExpected {
+				assert.Error(t, err)
+				assert.Nil(t, is)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, is)
+				assert.Equal(t, testCase.isLegacyStyle, is.IsLegacyStyle())
+				if testCase.expected != nil {
+					assert.Equal(t, *testCase.expected, is.DockerConfigJSON())
+				} else {
+					assert.Equal(t, cfg, is.DockerConfigJSON())
+				}
+			}
+		})
+	}
+}
+
+func TestEquality(t *testing.T) {
+	dockerconfigJSONbytes := []byte(`{"auths":{"registry.hostname.com":{"username":"user","email":"user@hostname.com","auth":"s00pers3kr1t"}}}`)
+	dockercfgJSONbytes := []byte(`{"registry.hostname.com":{"username":"user","email":"user@hostname.com","auth":"s00pers3kr1t"}}`)
+
+	k8sDockerConfigJsonSecret := `apiVersion: v1
+data:
+  .dockerconfigjson: eyJhdXRocyI6eyJyZWdpc3RyeS5ob3N0bmFtZS5jb20iOnsidXNlcm5hbWUiOiJ1c2VyIiwiZW1haWwiOiJ1c2VyQGhvc3RuYW1lLmNvbSIsImF1dGgiOiJzMDBwZXJzM2tyMXQifX19
+kind: Secret
+metadata:
+  name: secret
+  # This is needed
+  creationTimestamp:
+type: kubernetes.io/dockerconfigjson`
+
+	k8sDockerConfigYAMLBytes := []byte(k8sDockerConfigJsonSecret)
+
+	k8sDockercfgSecret := `apiVersion: v1
+data:
+  .dockercfg: eyJyZWdpc3RyeS5ob3N0bmFtZS5jb20iOnsidXNlcm5hbWUiOiJ1c2VyIiwiZW1haWwiOiJ1c2VyQGhvc3RuYW1lLmNvbSIsImF1dGgiOiJzMDBwZXJzM2tyMXQifX0=
+kind: Secret
+metadata:
+  name: secret
+  # This is needed
+  creationTimestamp:
+type: kubernetes.io/dockercfg`
+
+	k8sDockercfgYAMLBytes := []byte(k8sDockercfgSecret)
+
+	unequalDockerconfigJSONbytes := []byte(`{"auths":{"other-registry.hostname.com":{"username":"user","email":"user@hostname.com","auth":"s00pers3kr1t"}}}`)
+
+	dockerConfigJSON := DockerConfigJSON{
+		Auths: map[string]DockerConfigEntry{
+			"registry.hostname.com": DockerConfigEntry{
+				Username: "user",
+				Email:    "user@hostname.com",
+				Auth:     "s00pers3kr1t",
+			},
+		},
+	}
+
+	dockerConfig := DockerConfig{
+		"registry.hostname.com": DockerConfigEntry{
+			Username: "user",
+			Email:    "user@hostname.com",
+			Auth:     "s00pers3kr1t",
+		},
+	}
+
+	testCases := []struct {
+		name          string
+		input1        interface{}
+		input2        interface{}
+		expectedEqual bool
+	}{
+		{
+			name:          "DockerConfigJSON bytes and Dockercfg bytes",
+			input1:        dockerconfigJSONbytes,
+			input2:        dockercfgJSONbytes,
+			expectedEqual: true,
+		},
+		{
+			name:          "Dockercfg bytes and K8s DockerConfig YAML Bytes",
+			input1:        dockercfgJSONbytes,
+			input2:        k8sDockerConfigYAMLBytes,
+			expectedEqual: true,
+		},
+		{
+			name:          "K8s DockerConfig YAML Bytes and K8s DockerCfg YAML Bytes",
+			input1:        k8sDockerConfigYAMLBytes,
+			input2:        k8sDockercfgYAMLBytes,
+			expectedEqual: true,
+		},
+		{
+			name:          "K8s DockerCfg YAML Bytes and unequal DockerConfigJSON bytes",
+			input1:        k8sDockercfgYAMLBytes,
+			input2:        unequalDockerconfigJSONbytes,
+			expectedEqual: false,
+		},
+		{
+			name:          "DockerConfigJSON and DockerConfigJSON bytes",
+			input1:        dockerConfigJSON,
+			input2:        dockerconfigJSONbytes,
+			expectedEqual: true,
+		},
+		{
+			name:          "DockerConfigJSON and DockerConfig",
+			input1:        dockerConfigJSON,
+			input2:        dockerConfig,
+			expectedEqual: true,
+		},
+		{
+			name:          "DockerConfigJSON and DockerConfigJSON bytes with credHelpers ignored",
+			input1:        []byte(`{"auths":{"registry.hostname.com":{"username":"user","email":"user@hostname.com","auth":"s00pers3kr1t"}}, "credHelpers": {"helper-1": "helper"}}`),
+			input2:        dockerconfigJSONbytes,
+			expectedEqual: true,
+		},
+		{
+			name:          "DockerConfigJSON and DockerConfigJSON bytes with credHelpers ignored",
+			input1:        []byte(`{"auths":{"registry.hostname.com":{"username":"user","email":"user@hostname.com","auth":"s00pers3kr1t"}}, "credsStore": {"cred-store-1": "cred-store"}}`),
+			input2:        dockerconfigJSONbytes,
+			expectedEqual: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			// This test uses the private newImageRegistrySecretFromAny() constructor
+			// for easier instantiation with less TDD boilerplate.
+			is1, err := newImageRegistrySecretFromAny(testCase.input1)
+			assert.NoError(t, err)
+
+			is2, err := newImageRegistrySecretFromAny(testCase.input2)
+			assert.NoError(t, err)
+
+			assert.Equal(t, testCase.expectedEqual, is1.Equal(is2))
+		})
+	}
+}
+
+func TestImageRegistrySecretFromK8s(t *testing.T) {
+	dockerconfigJSON := []byte(`{"auths":{"registry.hostname.com":{"username":"user","email":"user@hostname.com","auth":"s00pers3kr1t"}}}`)
+	dockercfgJSON := []byte(`{"registry.hostname.com":{"username":"user","email":"user@hostname.com","auth":"s00pers3kr1t"}}`)
+
+	testCases := []struct {
+		name          string
+		secret        *corev1.Secret
+		isLegacyStyle bool
+		errExpected   bool
+	}{
+		{
+			name: "From K8s DockerConfigJSON secret",
+			secret: &corev1.Secret{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "v1",
+					Kind:       "Secret",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "secret",
+				},
+				Type: corev1.SecretTypeDockerConfigJson,
+				Data: map[string][]byte{
+					corev1.DockerConfigJsonKey: dockerconfigJSON,
+				},
+			},
+		},
+		{
+			name: "From K8s Dockercfg secret",
+			secret: &corev1.Secret{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "v1",
+					Kind:       "Secret",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "secret",
+				},
+				Type: corev1.SecretTypeDockercfg,
+				Data: map[string][]byte{
+					corev1.DockerConfigKey: dockercfgJSON,
+				},
+			},
+			isLegacyStyle: true,
+		},
+		{
+			name: "From K8s secret missing secret type",
+			secret: &corev1.Secret{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "v1",
+					Kind:       "Secret",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "secret",
+				},
+				Data: map[string][]byte{
+					corev1.DockerConfigKey: dockercfgJSON,
+				},
+			},
+			errExpected: true,
+		},
+		{
+			name:        "Empty secret",
+			secret:      &corev1.Secret{},
+			errExpected: true,
+		},
+		{
+			name: "Empty DockerConfigJSON secret",
+			secret: &corev1.Secret{
+				Type: corev1.SecretTypeDockerConfigJson,
+				Data: map[string][]byte{corev1.DockerConfigJsonKey: []byte{}},
+			},
+			errExpected: true,
+		},
+		{
+			name: "Empty Dockercfg secret",
+			secret: &corev1.Secret{
+				Type: corev1.SecretTypeDockercfg,
+				Data: map[string][]byte{corev1.DockerConfigKey: []byte{}},
+			},
+			errExpected: true,
+		},
+		{
+			name: "Mismatched DockerConfigJSON secret",
+			secret: &corev1.Secret{
+				Type: corev1.SecretTypeDockerConfigJson,
+				Data: map[string][]byte{corev1.DockerConfigKey: dockercfgJSON},
+			},
+			errExpected: true,
+		},
+		{
+			name: "Mismatched Dockercfg secret",
+			secret: &corev1.Secret{
+				Type: corev1.SecretTypeDockercfg,
+				Data: map[string][]byte{corev1.DockerConfigJsonKey: dockerconfigJSON},
+			},
+			errExpected: true,
+		},
+		{
+			name: "Invalid secret type",
+			secret: &corev1.Secret{
+				Type: "i'm a secret",
+				Data: map[string][]byte{corev1.DockerConfigJsonKey: dockerconfigJSON},
+			},
+			errExpected: true,
+		},
+		{
+			name: "Multiple secret keys for type",
+			secret: &corev1.Secret{
+				Type: corev1.SecretTypeDockerConfigJson,
+				Data: map[string][]byte{
+					corev1.DockerConfigJsonKey: dockerconfigJSON,
+					corev1.DockerConfigKey:     dockercfgJSON,
+				},
+			},
+			errExpected: true,
+		},
+	}
+
+	cfg := DockerConfigJSON{
+		Auths: map[string]DockerConfigEntry{
+			"registry.hostname.com": DockerConfigEntry{
+				Username: "user",
+				Email:    "user@hostname.com",
+				Auth:     "s00pers3kr1t",
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			is, err := NewImageRegistrySecret[*corev1.Secret](testCase.secret)
+			if testCase.errExpected {
+				assert.Error(t, err)
+				assert.Nil(t, is)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, is)
+				assert.Equal(t, testCase.isLegacyStyle, is.IsLegacyStyle())
+				assert.Equal(t, cfg, is.DockerConfigJSON())
+			}
+		})
+	}
+}
+
+func TestImageRegistrySecretConversion(t *testing.T) {
+	dockerconfigJSON := []byte(`{"auths":{"registry.hostname.com":{"username":"user","email":"user@hostname.com","auth":"s00pers3kr1t"}}}`)
+	dockercfgJSON := []byte(`{"registry.hostname.com":{"username":"user","email":"user@hostname.com","auth":"s00pers3kr1t"}}`)
+
+	cfg := DockerConfigJSON{
+		Auths: map[string]DockerConfigEntry{
+			"registry.hostname.com": DockerConfigEntry{
+				Username: "user",
+				Email:    "user@hostname.com",
+				Auth:     "s00pers3kr1t",
+			},
+		},
+	}
+
+	is, err := NewImageRegistrySecret(cfg)
+	assert.NoError(t, err)
+
+	assert.Equal(t, cfg.Auths, is.DockerConfig())
+	assert.Equal(t, cfg, is.DockerConfigJSON())
+
+	k8sSecret, err := is.K8sSecret(corev1.SecretTypeDockerConfigJson)
+	assert.NoError(t, err)
+	assert.Equal(t, corev1.SecretTypeDockerConfigJson, k8sSecret.Type)
+	assert.Contains(t, k8sSecret.Data, corev1.DockerConfigJsonKey)
+	assert.JSONEq(t, string(k8sSecret.Data[corev1.DockerConfigJsonKey]), string(dockerconfigJSON))
+
+	k8sSecret, err = is.K8sSecret(corev1.SecretTypeDockercfg)
+	assert.NoError(t, err)
+	assert.Equal(t, corev1.SecretTypeDockercfg, k8sSecret.Type)
+	assert.Contains(t, k8sSecret.Data, corev1.DockerConfigKey)
+	assert.JSONEq(t, string(k8sSecret.Data[corev1.DockerConfigKey]), string(dockercfgJSON))
+
+	bytes, err := is.JSONBytes(corev1.SecretTypeDockercfg)
+	assert.NoError(t, err)
+	assert.JSONEq(t, string(dockercfgJSON), string(bytes))
+
+	bytes, err = is.JSONBytes(corev1.SecretTypeDockerConfigJson)
+	assert.NoError(t, err)
+	assert.JSONEq(t, string(dockerconfigJSON), string(bytes))
+}
+
+func TestMarshalling(t *testing.T) {
+	expected := []byte(`{"auths":{"registry.hostname.com":{"username":"user","email":"user@hostname.com","auth":"s00pers3kr1t"}}}`)
+
+	outBytes, err := json.Marshal(DockerConfigJSON{
+		Auths: map[string]DockerConfigEntry{
+			"registry.hostname.com": DockerConfigEntry{
+				Username: "user",
+				Email:    "user@hostname.com",
+				Auth:     "s00pers3kr1t",
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, outBytes, expected)
+}

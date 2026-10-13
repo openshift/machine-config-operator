@@ -1,0 +1,157 @@
+---
+kind: Pod
+apiVersion: v1
+metadata:
+  name: keepalived
+  namespace: openshift-{{ onPremPlatformShortName .ControllerConfig }}-infra
+  creationTimestamp:
+  deletionGracePeriodSeconds: 65
+  labels:
+    app: {{ onPremPlatformShortName .ControllerConfig }}-infra-vrrp
+  annotations:
+    target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+    openshift.io/required-scc: privileged
+spec:
+  volumes:
+  - name: resource-dir
+    hostPath:
+      path: "/etc/kubernetes/static-pod-resources/keepalived"
+  - name: kubeconfig
+    hostPath:
+      path: "/etc/kubernetes/kubeconfig"
+  - name: conf-dir
+    hostPath:
+      path: "/etc/keepalived"
+  - name: manifests
+    hostPath:
+      path: "/opt/openshift/manifests"
+  - name: run-dir
+    empty-dir: {}
+  containers:
+  - name: keepalived
+    securityContext:
+      privileged: true
+      readOnlyRootFilesystem: false
+    image: {{.Images.KeepalivedBootstrap}}
+    env:
+      - name: NSS_SDB_USE_CACHE
+        value: "no"
+    command:
+    - /bin/bash
+    - -c
+    - |
+      #/bin/bash
+      reload_keepalived()
+      {
+        if pid=$(pgrep -o keepalived); then
+            kill -s SIGHUP "$pid"
+        else
+            /usr/sbin/keepalived -f /etc/keepalived/keepalived.conf --dont-fork --vrrp --log-detail --log-console &
+        fi
+      }
+      stop_keepalived()
+      {
+        echo "Keepalived process stopped" >> /var/run/keepalived/stopped
+        if pid=$(pgrep -o keepalived); then
+            kill -s TERM "$pid"
+        fi
+      }
+
+      msg_handler()
+      {
+        while read -r line; do
+          echo "The client sent: $line" >&2
+          # currently only 'reload' and 'stop' msgs are supported
+          if [ "$line" = reload ]; then
+              reload_keepalived
+          elif  [ "$line" = stop ]; then
+              stop_keepalived
+          fi
+        done
+      }
+      set -ex
+      declare -r keepalived_sock="/var/run/keepalived/keepalived.sock"
+      export -f msg_handler
+      export -f reload_keepalived
+      export -f stop_keepalived
+
+      while [ -s "/var/run/keepalived/stopped" ]; do
+         echo "Container stopped"
+         sleep 60
+      done
+      if [ -s "/etc/keepalived/keepalived.conf" ]; then
+          /usr/sbin/keepalived -f /etc/keepalived/keepalived.conf --dont-fork --vrrp --log-detail --log-console &
+      fi
+      rm -f "$keepalived_sock"
+      socat UNIX-LISTEN:${keepalived_sock},fork system:'bash -c msg_handler'
+    resources:
+      requests:
+        cpu: 100m
+        memory: 200Mi
+    volumeMounts:
+    - name: conf-dir
+      mountPath: "/etc/keepalived"
+      mountPropagation: HostToContainer
+    - name: run-dir
+      mountPath: "/var/run/keepalived"
+    livenessProbe:
+      exec:
+        command:
+        - /bin/bash
+        - -c
+        - |
+          [[ -s /etc/keepalived/keepalived.conf ]] || \
+          [[ -s /var/run/keepalived/stopped ]] || \
+          kill -s SIGUSR1 "$(pgrep -o keepalived)" && ! grep -q "State = FAULT" /tmp/keepalived.data
+      initialDelaySeconds: 20
+    terminationMessagePolicy: FallbackToLogsOnError
+    imagePullPolicy: IfNotPresent
+  - name: keepalived-monitor
+    image: {{ .Images.BaremetalRuntimeCfgBootstrap }}
+    env:
+      - name: ENABLE_UNICAST
+        value: "yes"
+      - name: IS_BOOTSTRAP
+        value: "yes"
+      - name: POD_NAMESPACE
+        valueFrom:
+          fieldRef:
+            fieldPath: metadata.namespace
+    command:
+    - dynkeepalived
+    - "/etc/kubernetes/kubeconfig"
+    - "/config/keepalived.conf.tmpl"
+    - "/etc/keepalived/keepalived.conf"
+    - "--api-vips"
+    - "{{- range $index, $ip := onPremPlatformAPIServerInternalIPs .ControllerConfig }}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}"
+    - "--ingress-vips"
+    - "{{- range $index, $ip := onPremPlatformIngressIPs .ControllerConfig }}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}"
+    - "--cluster-config"
+    - "/opt/openshift/manifests/cluster-config.yaml"
+    - "--check-interval"
+    - "5s"
+    resources:
+      requests:
+        cpu: 100m
+        memory: 200Mi
+    volumeMounts:
+    - name: resource-dir
+      mountPath: "/config"
+      mountPropagation: HostToContainer
+    - name: kubeconfig
+      mountPath: "/etc/kubernetes/kubeconfig"
+      mountPropagation: HostToContainer
+    - name: conf-dir
+      mountPath: "/etc/keepalived"
+      mountPropagation: HostToContainer
+    - name: run-dir
+      mountPath: "/var/run/keepalived"
+    - name: manifests
+      mountPath: "/opt/openshift/manifests"
+      mountPropagation: HostToContainer
+    imagePullPolicy: IfNotPresent
+  hostNetwork: true
+  tolerations:
+  - operator: Exists
+  priorityClassName: system-node-critical
+status: {}

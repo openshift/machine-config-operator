@@ -1,0 +1,52 @@
+name: kubelet.service
+enabled: true
+contents: |
+  [Unit]
+  Description=Kubernetes Kubelet
+  Requires=crio.service kubelet-dependencies.target
+  After=kubelet-dependencies.target
+  After=ostree-finalize-staged.service
+
+  [Service]
+  Type=notify
+  ExecStartPre=/bin/mkdir --parents /etc/kubernetes/manifests
+  ExecStartPre=/bin/mkdir --parents /etc/openshift/kubelet.conf.d
+  ExecStartPre=-/usr/sbin/restorecon -ri /var/lib/kubelet/pod-resources /usr/local/bin/kubenswrapper /usr/bin/kubensenter
+{{- if eq .IPFamilies "IPv6"}}
+  Environment="KUBELET_NODE_IP=::"
+{{- else}}
+  Environment="KUBELET_NODE_IP=0.0.0.0"
+{{- end}}
+  EnvironmentFile=/etc/os-release
+  EnvironmentFile=-/etc/kubernetes/kubelet-workaround
+  EnvironmentFile=-/etc/kubernetes/kubelet-env
+  EnvironmentFile=/etc/node-sizing.env
+
+  ExecStart=/usr/local/bin/kubenswrapper \
+      /usr/bin/kubelet \
+        --config=/etc/kubernetes/kubelet.conf \
+        --config-dir=/etc/openshift/kubelet.conf.d \
+        --bootstrap-kubeconfig=/etc/kubernetes/kubeconfig \
+        --kubeconfig=/var/lib/kubelet/kubeconfig \
+        --container-runtime-endpoint=/var/run/crio/crio.sock \
+        --runtime-cgroups=/system.slice/crio.service \
+        --node-labels=node-role.kubernetes.io/worker,node.openshift.io/os_id=${ID},${CUSTOM_KUBELET_LABELS} \
+{{- if or (eq .IPFamilies "DualStack") (eq .IPFamilies "DualStackIPv6Primary") }}
+        --node-ip=${KUBELET_NODE_IPS} \
+{{- else}}
+        --node-ip=${KUBELET_NODE_IP} \
+{{- end}}
+        --address=${KUBELET_NODE_IP} \
+        --minimum-container-ttl-duration=6m0s \
+        --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
+        $KUBELET_CRIO_IMAGE_CREDENTIAL_PROVIDER_FLAGS \
+        --cloud-provider={{cloudProvider .}} \
+        --hostname-override=${KUBELET_NODE_NAME} \
+        --system-reserved=cpu=${SYSTEM_RESERVED_CPU},memory=${SYSTEM_RESERVED_MEMORY},ephemeral-storage=${SYSTEM_RESERVED_ES} \
+        --v=${KUBELET_LOG_LEVEL}
+
+  Restart=always
+  RestartSec=10
+
+  [Install]
+  WantedBy=multi-user.target

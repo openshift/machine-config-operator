@@ -1,0 +1,17 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: infra-extension-mc
+objects:
+- apiVersion: machineconfiguration.openshift.io/v1
+  kind: MachineConfig
+  metadata:
+    labels:
+      machineconfiguration.openshift.io/role: infra
+    name: 90-infra-extension
+  spec:
+    config:
+      ignition:
+        version: 3.2.0
+    extensions:
+      - usbguard

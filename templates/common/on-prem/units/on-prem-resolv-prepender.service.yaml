@@ -1,0 +1,21 @@
+name: on-prem-resolv-prepender.service
+# This service is started on-demand by a NetworkManager dispatcher script
+enabled: false
+contents: |
+  [Unit]
+  Description=Populates resolv.conf according to on-prem IPI needs
+  # Per https://issues.redhat.com/browse/OCPBUGS-27162 there is a problem if this is started before crio-wipe
+  After=crio-wipe.service
+  StartLimitIntervalSec=0
+  [Service]
+  Type=oneshot
+  # Would prefer to do Restart=on-failure instead of this bash retry loop, but
+  # the version of systemd we have right now doesn't support it. It should be
+  # available in systemd v244 and higher.
+  ExecStart=/bin/bash -c " \
+    until \
+    /usr/local/bin/resolv-prepender.sh; \
+    do \
+    sleep 10; \
+    done"
+  EnvironmentFile=-/run/resolv-prepender/env

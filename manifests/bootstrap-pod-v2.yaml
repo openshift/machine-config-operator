@@ -1,0 +1,73 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: bootstrap-machine-config-operator
+  namespace: {{.TargetNamespace}}
+  annotations:
+    target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+spec:
+  initContainers:
+  - name: machine-config-controller
+    image: {{.Images.MachineConfigOperator}}
+    command: ["/usr/bin/machine-config-controller"]
+    args:
+    - "bootstrap"
+    - "--manifest-dir=/etc/mcc/bootstrap"
+    - "--dest-dir=/etc/mcs/bootstrap"
+    - "--pull-secret=/etc/mcc/bootstrap/machineconfigcontroller-pull-secret"
+    - "--payload-version={{.ReleaseVersion}}"
+    resources:
+      requests:
+        cpu: 20m
+        memory: 200Mi
+    securityContext:
+      privileged: true
+      readOnlyRootFilesystem: false
+    terminationMessagePolicy: FallbackToLogsOnError
+    volumeMounts:
+    - name: bootstrap-manifests
+      mountPath: /etc/mcc/bootstrap
+      mountPropagation: HostToContainer
+    - name: server-basedir
+      mountPath: /etc/mcs/bootstrap
+      mountPropagation: HostToContainer
+  containers:
+  - name: machine-config-server
+    image: {{.Images.MachineConfigOperator}}
+    command: ["/usr/bin/machine-config-server"]
+    args:
+      - "bootstrap"
+      - "--payload-version={{.ReleaseVersion}}"
+    terminationMessagePolicy: FallbackToLogsOnError
+    volumeMounts:
+    - name: server-certs
+      mountPath: /etc/ssl/mcs
+      mountPropagation: HostToContainer
+    - name: bootstrap-kubeconfig
+      mountPath: /etc/kubernetes/kubeconfig
+      mountPropagation: HostToContainer
+    - name: server-basedir
+      mountPath: /etc/mcs/bootstrap
+      mountPropagation: HostToContainer
+    securityContext:
+      privileged: true
+      readOnlyRootFilesystem: false
+  hostNetwork: true
+  tolerations:
+    - key: node-role.kubernetes.io/master
+      operator: Exists
+      effect: NoSchedule
+  restartPolicy: Always
+  volumes:
+  - name: server-certs
+    hostPath:
+      path: /etc/ssl/mcs
+  - name: bootstrap-kubeconfig
+    hostPath:
+      path: /etc/mcs/kubeconfig
+  - name: server-basedir
+    hostPath:
+      path: /etc/mcs/bootstrap
+  - name: bootstrap-manifests
+    hostPath:
+      path: /etc/mcc/bootstrap
