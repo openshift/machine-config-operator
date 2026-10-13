@@ -57,15 +57,11 @@ contents:
         if [ -z "${ovnkContainerID}" ]; then
             return
         fi
-        echo "Found ovnkube-controller pod... ${ovnkContainerID}"
         local routeVIPsV4=$(crictl exec -i ${ovnkContainerID} ovn-nbctl lr-policy-list ovn_cluster_router | grep "1010" | grep "ip4" | awk '$8{print $8}')
-        echo "Found v4route vips: ${routeVIPsV4}"
         local host=$(hostname)
-        echo ${host}
         for route_vip in ${routeVIPsV4}; do
             if [[ ! -v v4vips[${route_vip}] ]] || [[ "${v4vips[${route_vip}]}" = down ]]; then
-                echo removing stale vip "${route_vip}" for local clients
-                echo "ovn-nbctl lr-policy-del ovn_cluster_router 1010 inport == rtos-${host} && ip4.dst == ${route_vip}"
+                echo "removing stale route: ovn-nbctl lr-policy-del ovn_cluster_router 1010 inport == rtos-${host} && ip4.dst == ${route_vip}"
                 crictl exec -i ${ovnkContainerID} ovn-nbctl lr-policy-del ovn_cluster_router 1010 "inport == \"rtos-${host}\" && ip4.dst == ${route_vip}"
             fi
         done
@@ -75,11 +71,9 @@ contents:
         fi
 
         local routeVIPsV6=$(crictl exec -i ${ovnkContainerID} ovn-nbctl lr-policy-list ovn_cluster_router | grep "1010" | grep "ip6" | awk '$8{print $8}')
-        echo "Found v6route vips: ${routeVIPsV6}"
         for route_vip in ${routeVIPsV6}; do
             if [[ ! -v v6vips[${route_vip}] ]] || [[ "${v6vips[${route_vip}]}" = down ]]; then
-                echo removing stale vip "${route_vip}" for local clients
-                echo "ovn-nbctl lr-policy-del ovn_cluster_router 1010 inport == rtos-${host} && ip6.dst == ${route_vip}"
+                echo "removing stale route: ovn-nbctl lr-policy-del ovn_cluster_router 1010 inport == rtos-${host} && ip6.dst == ${route_vip}"
                 crictl exec -i ${ovnkContainerID} ovn-nbctl lr-policy-del ovn_cluster_router 1010 "inport == \"rtos-${host}\" && ip6.dst == ${route_vip}"
             fi
         done
@@ -101,7 +95,6 @@ contents:
             fi
         done
 
-        echo "synchronizing IPv4 VIPs to (${v4vipset}), IPv6 VIPS to (${v6vipset})"
         {
             echo "flush chain inet ${TABLE_NAME} ${VIPS_CHAIN}"
             if [[ -n "${v4vipset}" ]]; then
@@ -119,21 +112,13 @@ contents:
             echo "OVN-Kubernetes is not running; no routes to add."
             return
         fi
-        echo "Found ovnkube-controller pod... ${ovnkContainerID}"
         local ovnK8sMp0v4=$(ip -brief address show ovn-k8s-mp0 | awk '{print $3}' | awk -F/ '{print $1}')
-        echo "Found ovn-k8s-mp0 interface IP ${ovnK8sMp0v4}"
         local host=$(hostname)
-        echo ${host}
         for vip in "${!v4vips[@]}"; do
             if [[ "${v4vips[${vip}]}" != down ]]; then
-                echo "ensuring route for ${vip} for internal clients"
                 local routes=$(crictl exec -i ${ovnkContainerID} ovn-nbctl lr-policy-list ovn_cluster_router | grep "1010" | grep "${vip}" | grep "${ovnK8sMp0v4}")
-                echo "OVNK Routes on ovn-cluster-router at 1010 priority: $routes"
-                if [[ "${routes}" == *"${vip}"* ]]; then
-                    echo "Route exists"
-                else
-                    echo "Route does not exist; creating it..."
-                    echo "ovn-nbctl lr-policy-add ovn_cluster_router 1010 inport == rtos-${host} && ip4.dst == ${vip} reroute ${ovnK8sMp0v4}"
+                if [[ "${routes}" != *"${vip}"* ]]; then
+                    echo "adding route: ovn-nbctl lr-policy-add ovn_cluster_router 1010 inport == rtos-${host} && ip4.dst == ${vip} reroute ${ovnK8sMp0v4}"
                     crictl exec -i ${ovnkContainerID} ovn-nbctl lr-policy-add ovn_cluster_router 1010 "inport == \"rtos-${host}\" && ip4.dst == ${vip}" reroute "${ovnK8sMp0v4}"
                 fi
             fi
@@ -144,18 +129,11 @@ contents:
         fi
 
         local ovnK8sMp0v6=$(ip -brief address show ovn-k8s-mp0 | awk '{print $4}' | awk -F/ '{print $1}')
-        echo "Found ovn-k8s-mp0 interface IP ${ovnK8sMp0v6}"
-
         for vip in "${!v6vips[@]}"; do
             if [[ "${v6vips[${vip}]}" != down ]]; then
-                echo "ensuring route for ${vip} for internal clients"
                 local routes=$(crictl exec -i ${ovnkContainerID} ovn-nbctl lr-policy-list ovn_cluster_router | grep "1010" | grep "${vip}" | grep "${ovnK8sMp0v6}")
-                echo "OVNK Routes on ovn-cluster-router at 1010 priority: $routes"
-                if [[ "${routes}" == *"${vip}"* ]]; then
-                    echo "Route exists"
-                else
-                    echo "Route does not exist; creating it..."
-                    echo "ovn-nbctl lr-policy-add ovn_cluster_router 1010 inport == rtos-${host} && ip6.dst == ${vip} reroute ${ovnK8sMp0v6}"
+                if [[ "${routes}" != *"${vip}"* ]]; then
+                    echo "adding route: ovn-nbctl lr-policy-add ovn_cluster_router 1010 inport == rtos-${host} && ip6.dst == ${vip} reroute ${ovnK8sMp0v6}"
                     crictl exec -i ${ovnkContainerID} ovn-nbctl lr-policy-add ovn_cluster_router 1010 "inport == \"rtos-${host}\" && ip6.dst == ${vip}" reroute "${ovnK8sMp0v6}"
                 fi
             fi
@@ -195,10 +173,8 @@ contents:
                 echo "${vip} has upfile and downfile, marking as down"
             else
                 if [[ ${vip} =~ : ]]; then
-                    echo "processing v6 vip ${vip}"
                     v6vips[${vip}]="${vip}"
                 else
-                    echo "processing v4 vip ${vip}"
                     v4vips[${vip}]="${vip}"
                 fi
             fi
@@ -213,7 +189,6 @@ contents:
             sync_rules
             remove_stale_routes # needed for OVN-Kubernetes plugin's routingViaHost=false mode
             add_routes # needed for OVN-Kubernetes plugin's routingViaHost=false mode
-            echo "done applying vip rules"
             ;;
         cleanup)
             clear_rules
