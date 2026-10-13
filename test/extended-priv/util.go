@@ -1670,9 +1670,15 @@ func GetDataFromConfigMap(oc *exutil.CLI, namespace, name string) (map[string]st
 	return data, nil
 }
 
-// isReleasePayloadSigned checks whether the current cluster's release payload is signed
-// by querying Red Hat's signature store. CI/nightly payloads are not signed, only
-// official GA releases published to quay.io/openshift-release-dev/ocp-release are.
+// isReleasePayloadSigned checks whether the current cluster's release payload is signed.
+// CI/nightly payloads are not signed, only official GA releases published to
+// quay.io/openshift-release-dev/ocp-release are. We consider any image from
+// that repository to be signed.
+//
+// If this check is not sufficient, the signature can be verified by sending an HTTP HEAD request
+// to Red Hat's signature store. Signatures are stored at
+// https://mirror.openshift.com/pub/openshift-v4/signatures/openshift-release-dev/ocp-release/<digest>/signature-1
+// where <digest> is the image's sha256 digest with ":" replaced by "=". A 200 response means the payload is signed.
 func isReleasePayloadSigned(oc *exutil.CLI) (bool, error) {
 	cv := NewResource(oc, "clusterversion", "version")
 
@@ -1684,39 +1690,11 @@ func isReleasePayloadSigned(oc *exutil.CLI) (bool, error) {
 		return false, fmt.Errorf("release image is empty in clusterversion")
 	}
 
-	// Only images from quay.io/openshift-release-dev/ocp-release can be signed
 	if !strings.Contains(releaseImage, "quay.io/openshift-release-dev/ocp-release") {
-		logger.Infof("Release image %s is not from quay.io/openshift-release-dev/ocp-release, skipping signature check", releaseImage)
+		logger.Infof("Release image %s is not from quay.io/openshift-release-dev/ocp-release, payload is not signed", releaseImage)
 		return false, nil
 	}
 
-	// Extract the digest (sha256:...) from the image reference
-	parts := strings.SplitN(releaseImage, "@", 2)
-	if len(parts) != 2 || !strings.HasPrefix(parts[1], "sha256:") {
-		return false, fmt.Errorf("release image %s does not contain a digest reference", releaseImage)
-	}
-	digest := parts[1]
-
-	// Check Red Hat's signature store: signatures are stored at
-	// mirror.openshift.com/pub/openshift-v4/signatures/openshift-release-dev/ocp-release/<digest>/signature-1
-	sigPath := strings.Replace(digest, ":", "=", 1)
-	sigURL := fmt.Sprintf("https://mirror.openshift.com/pub/openshift-v4/signatures/openshift-release-dev/ocp-release/%s/signature-1", sigPath)
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Head(sigURL) //nolint:gosec
-	if err != nil {
-		return false, fmt.Errorf("error checking signature store at %s: %w", sigURL, err)
-	}
-	defer resp.Body.Close()
-
-	switch resp.StatusCode {
-	case http.StatusOK:
-		logger.Infof("Release payload is signed (signature found at %s)", sigURL)
-		return true, nil
-	case http.StatusNotFound:
-		logger.Infof("Release payload is NOT signed (HTTP 404 from %s)", sigURL)
-		return false, nil
-	default:
-		return false, fmt.Errorf("unexpected HTTP %d from signature store at %s", resp.StatusCode, sigURL)
-	}
+	logger.Infof("Release image %s is from quay.io/openshift-release-dev/ocp-release, payload is signed", releaseImage)
+	return true, nil
 }
