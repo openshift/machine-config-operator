@@ -1,0 +1,4 @@
+category: component-usage
+api_type: kubernetes-crd
+use_case: configuration
+difficulty: medium

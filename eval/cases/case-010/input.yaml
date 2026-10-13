@@ -1,0 +1,22 @@
+prompt: How do KubeletConfig and ContainerRuntimeConfig resources get translated into
+  actual MachineConfig objects? Which controllers handle this translation and how
+  does the system ensure they are associated with the correct MachineConfigPool?
+expected_components:
+- KubeletConfig Controller
+- ContainerRuntimeConfig Controller
+- Template Controller
+- Render Controller
+expected_interactions:
+- KubeletConfig Controller → watches KubeletConfig CRs and generates corresponding
+  MachineConfig objects with the appropriate kubelet configuration
+- ContainerRuntimeConfig Controller → watches ContainerRuntimeConfig CRs and generates
+  MachineConfig objects configuring the container runtime (e.g., CRI-O storage paths)
+- Template Controller → manages generated MachineConfigs alongside other template-based
+  configs for each pool
+- Render Controller → picks up the generated MachineConfig objects via the pool's
+  machineConfigSelector and merges them into the rendered config deterministically
+expected_documentation:
+- ai-docs/architecture/components.md
+- docs/KubeletConfig.md
+- docs/ContainerRuntimeConfig.md
+- ai-docs/domain/crds.md

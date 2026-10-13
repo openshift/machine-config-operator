@@ -1,0 +1,12 @@
+prompt: I want to set up on-cluster layering to build custom OS images. Where can
+  I find information about MachineOSConfig and MachineOSBuild, and how does the build
+  process work?
+expected_files:
+- ai-docs/domain/crds.md
+- ai-docs/decisions/adr-001-on-cluster-layering.md
+- docs/OnClusterLayering.md
+expected_mentions:
+- MachineOSConfig
+- MachineOSBuild
+- layering
+- Build Controller
