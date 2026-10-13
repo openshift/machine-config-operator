@@ -15,6 +15,7 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	containerruntimeconfig "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
 	"github.com/openshift/machine-config-operator/pkg/controller/drain"
+	globalpullsecret "github.com/openshift/machine-config-operator/pkg/controller/global-pull-secret"
 	"github.com/openshift/machine-config-operator/pkg/controller/internalreleaseimage"
 	kubeletconfig "github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
 	"github.com/openshift/machine-config-operator/pkg/controller/node"
@@ -355,6 +356,11 @@ func createControllers(ctx *ctrlcommon.ControllerContext, inspectionCache *image
 			ctx.ClientBuilder.KubeClientOrDie("pinned-image-set-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("pinned-image-set-controller"),
 			pisCacheWarmer,
+		),
+		globalpullsecret.New(
+			ctx.OpenShiftConfigKubeNamespacedInformerFactory.Core().V1().Secrets(),
+			ctx.ClientBuilder.KubeClientOrDie("global-pull-secret-controller"),
+			ctx.FeatureGatesHandler,
 		),
 	)
 
