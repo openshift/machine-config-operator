@@ -358,12 +358,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		diskOnePath := fmt.Sprintf(`storage.disks.#(device==%q)`, disks[0])
 		diskTwoPath := fmt.Sprintf(`storage.disks.#(device==%q)`, disks[1])
 		renderedFilePath := fmt.Sprintf(`storage.files.#(path==%q)`, filePath)
-		var ignitionConfig string
-		o.Eventually(func() (string, error) {
-			var err error
-			ignitionConfig, err = mcp.GetMCSIgnitionConfig(true, ignitionVersion)
-			return ignitionConfig, err
-		}, "1m", "20s").Should(o.SatisfyAll(
+		o.Eventually(mcp.GetMCSIgnitionConfig, "1m", "20s").WithArguments(true, ignitionVersion).Should(o.SatisfyAll(
 			HavePathWithValue("ignition.version", o.Equal(ignitionVersion)),
 			HavePathWithValue(diskOnePath+`.partitions.0.label`, o.Equal("raid.1.1")),
 			HavePathWithValue(diskTwoPath+`.partitions.0.label`, o.Equal("raid.1.2")),
@@ -380,30 +375,22 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("MCS Ignition contains the irreconcilable storage and file configuration")
 
 		exutil.By("Step 4: Delete the irreconcilable MachineConfig")
-		mc.DeleteWithWait()
+		mc.Delete()
 		err = mcp.WaitForUpdatedStatus()
 		o.Expect(err).NotTo(o.HaveOccurred())
 
 		exutil.By("Step 5: Verify the removed MachineConfig contents are absent from MCS Ignition")
-		customIgnitionPaths := []string{
-			diskOnePath,
-			diskTwoPath,
-			`storage.raid.#(name=="data")`,
-			`storage.filesystems.#(path=="/var/lib/data")`,
-			renderedFilePath,
-		}
-		o.Eventually(func() (bool, error) {
-			ignitionConfig, err := mcp.GetMCSIgnitionConfig(true, ignitionVersion)
-			if err != nil {
-				return false, err
-			}
-			for _, path := range customIgnitionPaths {
-				if gjson.Get(ignitionConfig, path).Exists() {
-					return false, nil
-				}
-			}
-			return true, nil
-		}, "1m", "20s").Should(o.BeTrue(), "Removed MachineConfig contents should be absent from worker Ignition")
+		o.Eventually(mcp.GetMCSIgnitionConfig, "1m", "20s").WithArguments(true, ignitionVersion).Should(
+			o.And(
+				o.Satisfy(gjson.Valid),
+				HavePathWithValue("ignition.version", o.Equal(ignitionVersion)),
+				o.Not(HavePath(diskOnePath)),
+				o.Not(HavePath(diskTwoPath)),
+				o.Not(HavePath(`storage.raid.#(name=="data")`)),
+				o.Not(HavePath(`storage.filesystems.#(path=="/var/lib/data")`)),
+				o.Not(HavePath(renderedFilePath)),
+			),
+			"Removed MachineConfig contents should be absent from valid worker Ignition version %s", ignitionVersion)
 		logger.Infof("MCS Ignition no longer contains the removed MachineConfig contents\n")
 	})
 
