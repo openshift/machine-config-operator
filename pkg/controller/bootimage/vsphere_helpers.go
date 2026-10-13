@@ -868,6 +868,18 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 		if err != nil {
 			return "", false, false, err
 		}
+		defer func() {
+			logoutErr := client.Logout(ctx)
+			if logoutErr != nil {
+				klog.Errorf("failed to logout vCenter SOAP client: %v", logoutErr)
+			}
+		}()
+		defer func() {
+			logoutErr := tagManager.Logout(ctx)
+			if logoutErr != nil {
+				klog.Errorf("failed to logout vCenter REST client: %v", logoutErr)
+			}
+		}()
 
 		ovaPath, err := cache.DownloadOva(ova)
 		if err != nil {
