@@ -1,0 +1,16 @@
+name: firstboot-pivot-skip-finalize.service
+enabled: false
+contents: |
+  [Unit]
+  Description=Firstboot Pivot Skip - Finalize and Isolate
+  Requires=firstboot-pivot-skip-pull.service
+  After=firstboot-pivot-skip-pull.service
+
+  [Service]
+  Type=oneshot
+  ExecStart=/usr/bin/systemctl daemon-reload
+  ExecStart=/usr/bin/systemctl start openvswitch
+  ExecStart=/usr/bin/systemctl restart NetworkManager
+  ExecStart=/usr/bin/touch /etc/machine-config-daemon/firstboot-pivot-skipped
+  ExecStart=/usr/bin/systemctl --no-block isolate multi-user.target
+  KillMode=none

@@ -1,0 +1,68 @@
+mode: 0755
+path: "/usr/local/bin/firstboot-pivot-skip-pull.sh"
+contents:
+  inline: |
+    #!/bin/bash
+    set -euo pipefail
+
+    ENCAPSULATED="/etc/ignition-machine-config-encapsulated.json"
+    AUTHFILE="/var/lib/kubelet/config.json"
+    MODULES_SAVE="/run/modules-save"
+    echo "firstboot-pivot-skip-pull: extracting OS image URL"
+    OSIMAGE=$(jq -r '.spec.osImageURL' "${ENCAPSULATED}")
+    if [ -z "${OSIMAGE}" ] || [ "${OSIMAGE}" = "null" ]; then
+        echo "firstboot-pivot-skip-pull: no osImageURL in encapsulated MachineConfig" >&2
+        exit 1
+    fi
+    echo "firstboot-pivot-skip-pull: target image: ${OSIMAGE}"
+
+    mkdir -p /run/ostree
+    ln -sf "${AUTHFILE}" /run/ostree/auth.json
+
+    # Save the entire /usr/lib/modules before apply-live replaces it.
+    # The target image has a different kernel version, so the running
+    # kernel's module directory will not exist after apply-live.
+    if [ ! -d "${MODULES_SAVE}" ]; then
+        echo "firstboot-pivot-skip-pull: saving kernel modules"
+        mkdir -p "${MODULES_SAVE}"
+        cp -a /usr/lib/modules/. "${MODULES_SAVE}/"
+    fi
+
+    # Stage the target deployment. This must run BEFORE any ostree
+    # container image pull into the system repo, because pulling
+    # registers the image ref and causes rpm-ostree to think the
+    # deployment already tracks it.
+    echo "firstboot-pivot-skip-pull: staging deployment via rpm-ostree"
+    rebase_out=$(rpm-ostree rebase --experimental \
+        "ostree-unverified-registry:${OSIMAGE}" 2>&1) && true
+    rc=$?
+    if [ ${rc} -ne 0 ]; then
+        if echo "${rebase_out}" | grep -q "Old and new refs are equal"; then
+            echo "firstboot-pivot-skip-pull: already on target ref"
+        else
+            echo "firstboot-pivot-skip-pull: rpm-ostree rebase failed:" >&2
+            echo "${rebase_out}" >&2
+            exit 1
+        fi
+    else
+        echo "firstboot-pivot-skip-pull: deployment staged"
+    fi
+
+    # Apply the staged deployment to the running system without rebooting.
+    echo "firstboot-pivot-skip-pull: applying live"
+    rpm-ostree apply-live --allow-replacement
+
+    # Restore the running kernel's modules over the read-only overlay.
+    # apply-live replaced /usr/lib/modules with the target image's
+    # modules, which are built for a different kernel version. Bind-mount
+    # over the entire directory because the per-version subdirectory
+    # no longer exists in the overlay.
+    echo "firstboot-pivot-skip-pull: restoring kernel modules"
+    mount -o bind "${MODULES_SAVE}" /usr/lib/modules
+
+    # Reload SELinux policy from the target image so the running
+    # policy matches the new binary labels in the overlay.
+    echo "firstboot-pivot-skip-pull: reloading SELinux policy"
+    semodule -R
+
+    echo "firstboot-pivot-skip-pull: complete"

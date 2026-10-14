@@ -1,0 +1,16 @@
+name: firstboot-pivot-skip-pull.service
+enabled: false
+contents: |
+  [Unit]
+  Description=Firstboot Pivot Skip - Pull Node Image
+  Wants=network.target
+  After=network.target NetworkManager.service
+
+  [Service]
+  Type=oneshot
+  RemainAfterExit=yes
+  ExecStartPre=chcon --reference=/usr/bin/ostree /usr/local/bin/firstboot-pivot-skip-pull.sh
+  ExecStart=/usr/local/bin/firstboot-pivot-skip-pull.sh
+  {{if .Proxy -}}
+  EnvironmentFile=/etc/mco/proxy.env
+  {{end -}}
