@@ -1752,7 +1752,23 @@ func (dn *CoreOSDaemon) updateKernelArguments(oldKernelArguments, newKernelArgum
 
 	args := append([]string{"kargs"}, kargs...)
 	logSystem("Running rpm-ostree %v", args)
-	return runRpmOstree(args...)
+
+	// rpm-ostree can return "System transaction in progress" when it is
+	// still finalizing a previous operation (e.g. apply-live from the
+	// pivot-skip pull service). Retry with a short backoff instead of
+	// failing the entire firstboot update loop.
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		err := runRpmOstree(args...)
+		if err == nil {
+			return nil
+		}
+		if !strings.Contains(err.Error(), "System transaction in progress") || time.Now().After(deadline) {
+			return err
+		}
+		klog.Warningf("rpm-ostree transaction in progress, retrying in 2s: %v", err)
+		time.Sleep(2 * time.Second)
+	}
 }
 
 // getCurrentlyInstalledPackages returns the list of currently installed extension packages
@@ -3477,9 +3493,12 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 		defer os.Remove(extensionsRepo)
 	}
 
-	// Always clean up pending, because the RT kernel switch logic below operates on booted,
-	// not pending.
-	if err := removePendingDeployment(); err != nil {
+	// Clean up pending deployment, because the RT kernel switch logic below
+	// operates on booted, not pending. Skip when the firstboot pivot was
+	// skipped, because the pull service staged the target OS deployment.
+	if firstbootPivotWasSkipped() {
+		klog.Infof("Preserving staged deployment from firstboot pivot-skip pull service")
+	} else if err := removePendingDeployment(); err != nil {
 		return fmt.Errorf("failed to remove pending deployment: %w", err)
 	}
 
@@ -3489,6 +3508,10 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 		// In case of an error during any rpm-ostree transaction, removing pending deployment
 		// should be sufficient to discard any applied changes.
 		if retErr != nil {
+			if firstbootPivotWasSkipped() {
+				klog.Infof("Skipping rollback of staged deployment (pivot-skip): %v", retErr)
+				return
+			}
 			// Print out the error now so that if we fail to cleanup -p, we don't lose it.
 			klog.Infof("Rolling back applied changes to OS due to error: %v", retErr)
 			if err := removePendingDeployment(); err != nil {
