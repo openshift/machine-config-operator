@@ -9,51 +9,51 @@ import (
 // Interface provides access to all the informers in this group version.
 type Interface interface {
 	// Authentications returns a AuthenticationInformer.
-	Authentications() AuthenticationInformer
+	Authentications() TypedAuthenticationInformer
 	// CSISnapshotControllers returns a CSISnapshotControllerInformer.
-	CSISnapshotControllers() CSISnapshotControllerInformer
+	CSISnapshotControllers() TypedCSISnapshotControllerInformer
 	// CloudCredentials returns a CloudCredentialInformer.
-	CloudCredentials() CloudCredentialInformer
+	CloudCredentials() TypedCloudCredentialInformer
 	// ClusterCSIDrivers returns a ClusterCSIDriverInformer.
-	ClusterCSIDrivers() ClusterCSIDriverInformer
+	ClusterCSIDrivers() TypedClusterCSIDriverInformer
 	// Configs returns a ConfigInformer.
-	Configs() ConfigInformer
+	Configs() TypedConfigInformer
 	// Consoles returns a ConsoleInformer.
-	Consoles() ConsoleInformer
+	Consoles() TypedConsoleInformer
 	// DNSes returns a DNSInformer.
-	DNSes() DNSInformer
+	DNSes() TypedDNSInformer
 	// Etcds returns a EtcdInformer.
-	Etcds() EtcdInformer
+	Etcds() TypedEtcdInformer
 	// IngressControllers returns a IngressControllerInformer.
-	IngressControllers() IngressControllerInformer
+	IngressControllers() TypedIngressControllerInformer
 	// InsightsOperators returns a InsightsOperatorInformer.
-	InsightsOperators() InsightsOperatorInformer
+	InsightsOperators() TypedInsightsOperatorInformer
 	// KubeAPIServers returns a KubeAPIServerInformer.
-	KubeAPIServers() KubeAPIServerInformer
+	KubeAPIServers() TypedKubeAPIServerInformer
 	// KubeControllerManagers returns a KubeControllerManagerInformer.
-	KubeControllerManagers() KubeControllerManagerInformer
+	KubeControllerManagers() TypedKubeControllerManagerInformer
 	// KubeSchedulers returns a KubeSchedulerInformer.
-	KubeSchedulers() KubeSchedulerInformer
+	KubeSchedulers() TypedKubeSchedulerInformer
 	// KubeStorageVersionMigrators returns a KubeStorageVersionMigratorInformer.
-	KubeStorageVersionMigrators() KubeStorageVersionMigratorInformer
+	KubeStorageVersionMigrators() TypedKubeStorageVersionMigratorInformer
 	// MachineConfigurations returns a MachineConfigurationInformer.
-	MachineConfigurations() MachineConfigurationInformer
+	MachineConfigurations() TypedMachineConfigurationInformer
 	// Networks returns a NetworkInformer.
-	Networks() NetworkInformer
+	Networks() TypedNetworkInformer
 	// OLMs returns a OLMInformer.
-	OLMs() OLMInformer
+	OLMs() TypedOLMInformer
 	// OpenShiftAPIServers returns a OpenShiftAPIServerInformer.
-	OpenShiftAPIServers() OpenShiftAPIServerInformer
+	OpenShiftAPIServers() TypedOpenShiftAPIServerInformer
 	// OpenShiftControllerManagers returns a OpenShiftControllerManagerInformer.
-	OpenShiftControllerManagers() OpenShiftControllerManagerInformer
+	OpenShiftControllerManagers() TypedOpenShiftControllerManagerInformer
 	// ServiceCAs returns a ServiceCAInformer.
-	ServiceCAs() ServiceCAInformer
+	ServiceCAs() TypedServiceCAInformer
 	// ServiceCatalogAPIServers returns a ServiceCatalogAPIServerInformer.
-	ServiceCatalogAPIServers() ServiceCatalogAPIServerInformer
+	ServiceCatalogAPIServers() TypedServiceCatalogAPIServerInformer
 	// ServiceCatalogControllerManagers returns a ServiceCatalogControllerManagerInformer.
-	ServiceCatalogControllerManagers() ServiceCatalogControllerManagerInformer
+	ServiceCatalogControllerManagers() TypedServiceCatalogControllerManagerInformer
 	// Storages returns a StorageInformer.
-	Storages() StorageInformer
+	Storages() TypedStorageInformer
 }
 
 type version struct {
@@ -67,117 +67,117 @@ func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakList
 	return &version{factory: f, namespace: namespace, tweakListOptions: tweakListOptions}
 }
 
-// Authentications returns a AuthenticationInformer.
-func (v *version) Authentications() AuthenticationInformer {
+// Authentications returns a TypedAuthenticationInformer.
+func (v *version) Authentications() TypedAuthenticationInformer {
 	return &authenticationInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// CSISnapshotControllers returns a CSISnapshotControllerInformer.
-func (v *version) CSISnapshotControllers() CSISnapshotControllerInformer {
+// CSISnapshotControllers returns a TypedCSISnapshotControllerInformer.
+func (v *version) CSISnapshotControllers() TypedCSISnapshotControllerInformer {
 	return &cSISnapshotControllerInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// CloudCredentials returns a CloudCredentialInformer.
-func (v *version) CloudCredentials() CloudCredentialInformer {
+// CloudCredentials returns a TypedCloudCredentialInformer.
+func (v *version) CloudCredentials() TypedCloudCredentialInformer {
 	return &cloudCredentialInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// ClusterCSIDrivers returns a ClusterCSIDriverInformer.
-func (v *version) ClusterCSIDrivers() ClusterCSIDriverInformer {
+// ClusterCSIDrivers returns a TypedClusterCSIDriverInformer.
+func (v *version) ClusterCSIDrivers() TypedClusterCSIDriverInformer {
 	return &clusterCSIDriverInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// Configs returns a ConfigInformer.
-func (v *version) Configs() ConfigInformer {
+// Configs returns a TypedConfigInformer.
+func (v *version) Configs() TypedConfigInformer {
 	return &configInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// Consoles returns a ConsoleInformer.
-func (v *version) Consoles() ConsoleInformer {
+// Consoles returns a TypedConsoleInformer.
+func (v *version) Consoles() TypedConsoleInformer {
 	return &consoleInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// DNSes returns a DNSInformer.
-func (v *version) DNSes() DNSInformer {
+// DNSes returns a TypedDNSInformer.
+func (v *version) DNSes() TypedDNSInformer {
 	return &dNSInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// Etcds returns a EtcdInformer.
-func (v *version) Etcds() EtcdInformer {
+// Etcds returns a TypedEtcdInformer.
+func (v *version) Etcds() TypedEtcdInformer {
 	return &etcdInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// IngressControllers returns a IngressControllerInformer.
-func (v *version) IngressControllers() IngressControllerInformer {
+// IngressControllers returns a TypedIngressControllerInformer.
+func (v *version) IngressControllers() TypedIngressControllerInformer {
 	return &ingressControllerInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }
 
-// InsightsOperators returns a InsightsOperatorInformer.
-func (v *version) InsightsOperators() InsightsOperatorInformer {
+// InsightsOperators returns a TypedInsightsOperatorInformer.
+func (v *version) InsightsOperators() TypedInsightsOperatorInformer {
 	return &insightsOperatorInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// KubeAPIServers returns a KubeAPIServerInformer.
-func (v *version) KubeAPIServers() KubeAPIServerInformer {
+// KubeAPIServers returns a TypedKubeAPIServerInformer.
+func (v *version) KubeAPIServers() TypedKubeAPIServerInformer {
 	return &kubeAPIServerInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// KubeControllerManagers returns a KubeControllerManagerInformer.
-func (v *version) KubeControllerManagers() KubeControllerManagerInformer {
+// KubeControllerManagers returns a TypedKubeControllerManagerInformer.
+func (v *version) KubeControllerManagers() TypedKubeControllerManagerInformer {
 	return &kubeControllerManagerInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// KubeSchedulers returns a KubeSchedulerInformer.
-func (v *version) KubeSchedulers() KubeSchedulerInformer {
+// KubeSchedulers returns a TypedKubeSchedulerInformer.
+func (v *version) KubeSchedulers() TypedKubeSchedulerInformer {
 	return &kubeSchedulerInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// KubeStorageVersionMigrators returns a KubeStorageVersionMigratorInformer.
-func (v *version) KubeStorageVersionMigrators() KubeStorageVersionMigratorInformer {
+// KubeStorageVersionMigrators returns a TypedKubeStorageVersionMigratorInformer.
+func (v *version) KubeStorageVersionMigrators() TypedKubeStorageVersionMigratorInformer {
 	return &kubeStorageVersionMigratorInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// MachineConfigurations returns a MachineConfigurationInformer.
-func (v *version) MachineConfigurations() MachineConfigurationInformer {
+// MachineConfigurations returns a TypedMachineConfigurationInformer.
+func (v *version) MachineConfigurations() TypedMachineConfigurationInformer {
 	return &machineConfigurationInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// Networks returns a NetworkInformer.
-func (v *version) Networks() NetworkInformer {
+// Networks returns a TypedNetworkInformer.
+func (v *version) Networks() TypedNetworkInformer {
 	return &networkInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// OLMs returns a OLMInformer.
-func (v *version) OLMs() OLMInformer {
+// OLMs returns a TypedOLMInformer.
+func (v *version) OLMs() TypedOLMInformer {
 	return &oLMInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// OpenShiftAPIServers returns a OpenShiftAPIServerInformer.
-func (v *version) OpenShiftAPIServers() OpenShiftAPIServerInformer {
+// OpenShiftAPIServers returns a TypedOpenShiftAPIServerInformer.
+func (v *version) OpenShiftAPIServers() TypedOpenShiftAPIServerInformer {
 	return &openShiftAPIServerInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// OpenShiftControllerManagers returns a OpenShiftControllerManagerInformer.
-func (v *version) OpenShiftControllerManagers() OpenShiftControllerManagerInformer {
+// OpenShiftControllerManagers returns a TypedOpenShiftControllerManagerInformer.
+func (v *version) OpenShiftControllerManagers() TypedOpenShiftControllerManagerInformer {
 	return &openShiftControllerManagerInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// ServiceCAs returns a ServiceCAInformer.
-func (v *version) ServiceCAs() ServiceCAInformer {
+// ServiceCAs returns a TypedServiceCAInformer.
+func (v *version) ServiceCAs() TypedServiceCAInformer {
 	return &serviceCAInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// ServiceCatalogAPIServers returns a ServiceCatalogAPIServerInformer.
-func (v *version) ServiceCatalogAPIServers() ServiceCatalogAPIServerInformer {
+// ServiceCatalogAPIServers returns a TypedServiceCatalogAPIServerInformer.
+func (v *version) ServiceCatalogAPIServers() TypedServiceCatalogAPIServerInformer {
 	return &serviceCatalogAPIServerInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// ServiceCatalogControllerManagers returns a ServiceCatalogControllerManagerInformer.
-func (v *version) ServiceCatalogControllerManagers() ServiceCatalogControllerManagerInformer {
+// ServiceCatalogControllerManagers returns a TypedServiceCatalogControllerManagerInformer.
+func (v *version) ServiceCatalogControllerManagers() TypedServiceCatalogControllerManagerInformer {
 	return &serviceCatalogControllerManagerInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// Storages returns a StorageInformer.
-func (v *version) Storages() StorageInformer {
+// Storages returns a TypedStorageInformer.
+func (v *version) Storages() TypedStorageInformer {
 	return &storageInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }

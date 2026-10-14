@@ -18,11 +18,39 @@ import (
 )
 
 // MachineConfigNodeInformer provides access to a shared informer and lister for
-// MachineConfigNodes.
+// MachineConfigNodes. Prefer using the type-safe variant (see [TypedMachineConfigNodeInformer]).
 type MachineConfigNodeInformer interface {
 	Informer() cache.SharedIndexInformer
 	Lister() machineconfigurationv1.MachineConfigNodeLister
 }
+
+// TypedMachineConfigNodeInformer provides access to a shared informer and lister for
+// MachineConfigNodes, including the type-safe TypedInformer variant.
+// It is a superset of MachineConfigNodeInformer.
+type TypedMachineConfigNodeInformer interface {
+	Informer() cache.SharedIndexInformer
+	TypedInformer() MachineConfigNodeIndexInformer
+	Lister() machineconfigurationv1.MachineConfigNodeLister
+}
+
+// MachineConfigNodeIndexInformer is a wrapper around the underlying [cache.SharedIndexInformer]
+// with type-safe variants of several methods.
+type MachineConfigNodeIndexInformer cache.TypedSharedIndexInformer[*apimachineconfigurationv1.MachineConfigNode]
+
+// MachineConfigNodeHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerFuncs] for MachineConfigNode.
+type MachineConfigNodeHandlerFuncs = cache.TypedResourceEventHandlerFuncs[*apimachineconfigurationv1.MachineConfigNode]
+
+// MachineConfigNodeDetailedHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerDetailedFuncs] for MachineConfigNode.
+type MachineConfigNodeDetailedHandlerFuncs = cache.TypedResourceEventHandlerDetailedFuncs[*apimachineconfigurationv1.MachineConfigNode]
+
+// MachineConfigNodeFilteringHandler is a specialization of [cache.TypedFilteringResourceEventHandler] for MachineConfigNode.
+type MachineConfigNodeFilteringHandler = cache.TypedFilteringResourceEventHandler[*apimachineconfigurationv1.MachineConfigNode]
+
+// MachineConfigNodeIndexers is a specialization of [cache.TypedIndexers] for MachineConfigNode.
+type MachineConfigNodeIndexers = cache.TypedIndexers[*apimachineconfigurationv1.MachineConfigNode]
+
+// DeletedMachineConfigNode is a specialization of [cache.DeletedObject] for MachineConfigNode.
+type DeletedMachineConfigNode = cache.DeletedObject[*apimachineconfigurationv1.MachineConfigNode]
 
 type machineConfigNodeInformer struct {
 	factory          internalinterfaces.SharedInformerFactory
@@ -32,25 +60,49 @@ type machineConfigNodeInformer struct {
 // NewMachineConfigNodeInformer constructs a new informer for MachineConfigNode type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedMachineConfigNodeInformer]).
 func NewMachineConfigNodeInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
 	return NewMachineConfigNodeInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers})
+}
+
+// NewTypedMachineConfigNodeInformer constructs a new informer for MachineConfigNode type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedMachineConfigNodeInformer(client versioned.Interface, resyncPeriod time.Duration, indexers MachineConfigNodeIndexers) MachineConfigNodeIndexInformer {
+	return NewTypedMachineConfigNodeInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers)})
 }
 
 // NewFilteredMachineConfigNodeInformer constructs a new informer for MachineConfigNode type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedFilteredMachineConfigNodeInformer]).
 func NewFilteredMachineConfigNodeInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
-	return NewMachineConfigNodeInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+	return NewTypedMachineConfigNodeInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+}
+
+// NewTypedFilteredMachineConfigNodeInformer constructs a new informer for MachineConfigNode type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedFilteredMachineConfigNodeInformer(client versioned.Interface, resyncPeriod time.Duration, indexers MachineConfigNodeIndexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) MachineConfigNodeIndexInformer {
+	return NewTypedMachineConfigNodeInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers), TweakListOptions: tweakListOptions})
 }
 
 // NewMachineConfigNodeInformerWithOptions constructs a new informer for MachineConfigNode type with additional options.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedMachineConfigNodeInformerWithOptions]).
 func NewMachineConfigNodeInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) cache.SharedIndexInformer {
+	return NewTypedMachineConfigNodeInformerWithOptions(client, options)
+}
+
+// NewTypedMachineConfigNodeInformerWithOptions constructs a new informer for MachineConfigNode type with additional options.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedMachineConfigNodeInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) MachineConfigNodeIndexInformer {
 	gvr := schema.GroupVersionResource{Group: "machineconfiguration.openshift.io", Version: "v1", Resource: "machineconfignodes"}
 	identifier := options.InformerName.WithResource(gvr)
 	tweakListOptions := options.TweakListOptions
-	return cache.NewSharedIndexInformerWithOptions(
+	return cache.NewTypedSharedIndexInformer[*apimachineconfigurationv1.MachineConfigNode](cache.NewSharedIndexInformerWithOptions(
 		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
@@ -83,17 +135,57 @@ func NewMachineConfigNodeInformerWithOptions(client versioned.Interface, options
 			Indexers:     options.Indexers,
 			Identifier:   identifier,
 		},
-	)
+	))
 }
 
 func (f *machineConfigNodeInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewMachineConfigNodeInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
+	return NewTypedMachineConfigNodeInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
 }
 
 func (f *machineConfigNodeInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&apimachineconfigurationv1.MachineConfigNode{}, f.defaultInformer)
+	return f.TypedInformer()
+}
+
+func (f *machineConfigNodeInformer) TypedInformer() MachineConfigNodeIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apimachineconfigurationv1.MachineConfigNode](f.factory.InformerFor(&apimachineconfigurationv1.MachineConfigNode{}, f.defaultInformer))
 }
 
 func (f *machineConfigNodeInformer) Lister() machineconfigurationv1.MachineConfigNodeLister {
 	return machineconfigurationv1.NewMachineConfigNodeLister(f.Informer().GetIndexer())
+}
+
+// ToTypedMachineConfigNodeInformer converts an untyped informer into a TypedMachineConfigNodeInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *MachineConfigNode. If that is not the case, calling type-safe methods of the returned
+// TypedMachineConfigNodeInformer leads to runtime panics. A safer alternative is to pass
+// around a TypedMachineConfigNodeInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToTypedMachineConfigNodeInformer(informer MachineConfigNodeInformer) TypedMachineConfigNodeInformer {
+	if informer, ok := informer.(TypedMachineConfigNodeInformer); ok {
+		return informer
+	}
+	return &machineConfigNodeTypedInformerAdapter{informer}
+}
+
+type machineConfigNodeTypedInformerAdapter struct {
+	MachineConfigNodeInformer
+}
+
+func (a *machineConfigNodeTypedInformerAdapter) TypedInformer() MachineConfigNodeIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apimachineconfigurationv1.MachineConfigNode](a.Informer())
+}
+
+// ToMachineConfigNodeIndexInformer converts an untyped informer into a MachineConfigNodeIndexInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *MachineConfigNode. If that is not the case, calling type-safe methods of the returned
+// MachineConfigNodeIndexInformer leads to runtime panics. A safer alternative is to pass
+// around a MachineConfigNodeIndexInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToMachineConfigNodeIndexInformer(informer cache.SharedIndexInformer) MachineConfigNodeIndexInformer {
+	if informer, ok := informer.(MachineConfigNodeIndexInformer); ok {
+		return informer
+	}
+	return cache.NewTypedSharedIndexInformer[*apimachineconfigurationv1.MachineConfigNode](informer)
 }

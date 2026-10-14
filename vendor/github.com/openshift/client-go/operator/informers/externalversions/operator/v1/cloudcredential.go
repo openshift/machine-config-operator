@@ -18,11 +18,39 @@ import (
 )
 
 // CloudCredentialInformer provides access to a shared informer and lister for
-// CloudCredentials.
+// CloudCredentials. Prefer using the type-safe variant (see [TypedCloudCredentialInformer]).
 type CloudCredentialInformer interface {
 	Informer() cache.SharedIndexInformer
 	Lister() operatorv1.CloudCredentialLister
 }
+
+// TypedCloudCredentialInformer provides access to a shared informer and lister for
+// CloudCredentials, including the type-safe TypedInformer variant.
+// It is a superset of CloudCredentialInformer.
+type TypedCloudCredentialInformer interface {
+	Informer() cache.SharedIndexInformer
+	TypedInformer() CloudCredentialIndexInformer
+	Lister() operatorv1.CloudCredentialLister
+}
+
+// CloudCredentialIndexInformer is a wrapper around the underlying [cache.SharedIndexInformer]
+// with type-safe variants of several methods.
+type CloudCredentialIndexInformer cache.TypedSharedIndexInformer[*apioperatorv1.CloudCredential]
+
+// CloudCredentialHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerFuncs] for CloudCredential.
+type CloudCredentialHandlerFuncs = cache.TypedResourceEventHandlerFuncs[*apioperatorv1.CloudCredential]
+
+// CloudCredentialDetailedHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerDetailedFuncs] for CloudCredential.
+type CloudCredentialDetailedHandlerFuncs = cache.TypedResourceEventHandlerDetailedFuncs[*apioperatorv1.CloudCredential]
+
+// CloudCredentialFilteringHandler is a specialization of [cache.TypedFilteringResourceEventHandler] for CloudCredential.
+type CloudCredentialFilteringHandler = cache.TypedFilteringResourceEventHandler[*apioperatorv1.CloudCredential]
+
+// CloudCredentialIndexers is a specialization of [cache.TypedIndexers] for CloudCredential.
+type CloudCredentialIndexers = cache.TypedIndexers[*apioperatorv1.CloudCredential]
+
+// DeletedCloudCredential is a specialization of [cache.DeletedObject] for CloudCredential.
+type DeletedCloudCredential = cache.DeletedObject[*apioperatorv1.CloudCredential]
 
 type cloudCredentialInformer struct {
 	factory          internalinterfaces.SharedInformerFactory
@@ -32,25 +60,49 @@ type cloudCredentialInformer struct {
 // NewCloudCredentialInformer constructs a new informer for CloudCredential type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedCloudCredentialInformer]).
 func NewCloudCredentialInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
 	return NewCloudCredentialInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers})
+}
+
+// NewTypedCloudCredentialInformer constructs a new informer for CloudCredential type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedCloudCredentialInformer(client versioned.Interface, resyncPeriod time.Duration, indexers CloudCredentialIndexers) CloudCredentialIndexInformer {
+	return NewTypedCloudCredentialInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers)})
 }
 
 // NewFilteredCloudCredentialInformer constructs a new informer for CloudCredential type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedFilteredCloudCredentialInformer]).
 func NewFilteredCloudCredentialInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
-	return NewCloudCredentialInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+	return NewTypedCloudCredentialInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+}
+
+// NewTypedFilteredCloudCredentialInformer constructs a new informer for CloudCredential type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedFilteredCloudCredentialInformer(client versioned.Interface, resyncPeriod time.Duration, indexers CloudCredentialIndexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) CloudCredentialIndexInformer {
+	return NewTypedCloudCredentialInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers), TweakListOptions: tweakListOptions})
 }
 
 // NewCloudCredentialInformerWithOptions constructs a new informer for CloudCredential type with additional options.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedCloudCredentialInformerWithOptions]).
 func NewCloudCredentialInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) cache.SharedIndexInformer {
+	return NewTypedCloudCredentialInformerWithOptions(client, options)
+}
+
+// NewTypedCloudCredentialInformerWithOptions constructs a new informer for CloudCredential type with additional options.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedCloudCredentialInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) CloudCredentialIndexInformer {
 	gvr := schema.GroupVersionResource{Group: "operator.openshift.io", Version: "v1", Resource: "cloudcredentials"}
 	identifier := options.InformerName.WithResource(gvr)
 	tweakListOptions := options.TweakListOptions
-	return cache.NewSharedIndexInformerWithOptions(
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.CloudCredential](cache.NewSharedIndexInformerWithOptions(
 		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
@@ -83,17 +135,57 @@ func NewCloudCredentialInformerWithOptions(client versioned.Interface, options i
 			Indexers:     options.Indexers,
 			Identifier:   identifier,
 		},
-	)
+	))
 }
 
 func (f *cloudCredentialInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewCloudCredentialInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
+	return NewTypedCloudCredentialInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
 }
 
 func (f *cloudCredentialInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&apioperatorv1.CloudCredential{}, f.defaultInformer)
+	return f.TypedInformer()
+}
+
+func (f *cloudCredentialInformer) TypedInformer() CloudCredentialIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.CloudCredential](f.factory.InformerFor(&apioperatorv1.CloudCredential{}, f.defaultInformer))
 }
 
 func (f *cloudCredentialInformer) Lister() operatorv1.CloudCredentialLister {
 	return operatorv1.NewCloudCredentialLister(f.Informer().GetIndexer())
+}
+
+// ToTypedCloudCredentialInformer converts an untyped informer into a TypedCloudCredentialInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *CloudCredential. If that is not the case, calling type-safe methods of the returned
+// TypedCloudCredentialInformer leads to runtime panics. A safer alternative is to pass
+// around a TypedCloudCredentialInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToTypedCloudCredentialInformer(informer CloudCredentialInformer) TypedCloudCredentialInformer {
+	if informer, ok := informer.(TypedCloudCredentialInformer); ok {
+		return informer
+	}
+	return &cloudCredentialTypedInformerAdapter{informer}
+}
+
+type cloudCredentialTypedInformerAdapter struct {
+	CloudCredentialInformer
+}
+
+func (a *cloudCredentialTypedInformerAdapter) TypedInformer() CloudCredentialIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.CloudCredential](a.Informer())
+}
+
+// ToCloudCredentialIndexInformer converts an untyped informer into a CloudCredentialIndexInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *CloudCredential. If that is not the case, calling type-safe methods of the returned
+// CloudCredentialIndexInformer leads to runtime panics. A safer alternative is to pass
+// around a CloudCredentialIndexInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToCloudCredentialIndexInformer(informer cache.SharedIndexInformer) CloudCredentialIndexInformer {
+	if informer, ok := informer.(CloudCredentialIndexInformer); ok {
+		return informer
+	}
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.CloudCredential](informer)
 }

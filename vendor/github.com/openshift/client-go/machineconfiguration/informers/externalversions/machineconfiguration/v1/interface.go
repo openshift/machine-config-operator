@@ -9,27 +9,27 @@ import (
 // Interface provides access to all the informers in this group version.
 type Interface interface {
 	// ContainerRuntimeConfigs returns a ContainerRuntimeConfigInformer.
-	ContainerRuntimeConfigs() ContainerRuntimeConfigInformer
+	ContainerRuntimeConfigs() TypedContainerRuntimeConfigInformer
 	// ControllerConfigs returns a ControllerConfigInformer.
-	ControllerConfigs() ControllerConfigInformer
+	ControllerConfigs() TypedControllerConfigInformer
 	// InternalReleaseImages returns a InternalReleaseImageInformer.
-	InternalReleaseImages() InternalReleaseImageInformer
+	InternalReleaseImages() TypedInternalReleaseImageInformer
 	// KubeletConfigs returns a KubeletConfigInformer.
-	KubeletConfigs() KubeletConfigInformer
+	KubeletConfigs() TypedKubeletConfigInformer
 	// MachineConfigs returns a MachineConfigInformer.
-	MachineConfigs() MachineConfigInformer
+	MachineConfigs() TypedMachineConfigInformer
 	// MachineConfigNodes returns a MachineConfigNodeInformer.
-	MachineConfigNodes() MachineConfigNodeInformer
+	MachineConfigNodes() TypedMachineConfigNodeInformer
 	// MachineConfigPools returns a MachineConfigPoolInformer.
-	MachineConfigPools() MachineConfigPoolInformer
+	MachineConfigPools() TypedMachineConfigPoolInformer
 	// MachineOSBuilds returns a MachineOSBuildInformer.
-	MachineOSBuilds() MachineOSBuildInformer
+	MachineOSBuilds() TypedMachineOSBuildInformer
 	// MachineOSConfigs returns a MachineOSConfigInformer.
-	MachineOSConfigs() MachineOSConfigInformer
+	MachineOSConfigs() TypedMachineOSConfigInformer
 	// OSImageStreams returns a OSImageStreamInformer.
-	OSImageStreams() OSImageStreamInformer
+	OSImageStreams() TypedOSImageStreamInformer
 	// PinnedImageSets returns a PinnedImageSetInformer.
-	PinnedImageSets() PinnedImageSetInformer
+	PinnedImageSets() TypedPinnedImageSetInformer
 }
 
 type version struct {
@@ -43,57 +43,57 @@ func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakList
 	return &version{factory: f, namespace: namespace, tweakListOptions: tweakListOptions}
 }
 
-// ContainerRuntimeConfigs returns a ContainerRuntimeConfigInformer.
-func (v *version) ContainerRuntimeConfigs() ContainerRuntimeConfigInformer {
+// ContainerRuntimeConfigs returns a TypedContainerRuntimeConfigInformer.
+func (v *version) ContainerRuntimeConfigs() TypedContainerRuntimeConfigInformer {
 	return &containerRuntimeConfigInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// ControllerConfigs returns a ControllerConfigInformer.
-func (v *version) ControllerConfigs() ControllerConfigInformer {
+// ControllerConfigs returns a TypedControllerConfigInformer.
+func (v *version) ControllerConfigs() TypedControllerConfigInformer {
 	return &controllerConfigInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// InternalReleaseImages returns a InternalReleaseImageInformer.
-func (v *version) InternalReleaseImages() InternalReleaseImageInformer {
+// InternalReleaseImages returns a TypedInternalReleaseImageInformer.
+func (v *version) InternalReleaseImages() TypedInternalReleaseImageInformer {
 	return &internalReleaseImageInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// KubeletConfigs returns a KubeletConfigInformer.
-func (v *version) KubeletConfigs() KubeletConfigInformer {
+// KubeletConfigs returns a TypedKubeletConfigInformer.
+func (v *version) KubeletConfigs() TypedKubeletConfigInformer {
 	return &kubeletConfigInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// MachineConfigs returns a MachineConfigInformer.
-func (v *version) MachineConfigs() MachineConfigInformer {
+// MachineConfigs returns a TypedMachineConfigInformer.
+func (v *version) MachineConfigs() TypedMachineConfigInformer {
 	return &machineConfigInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// MachineConfigNodes returns a MachineConfigNodeInformer.
-func (v *version) MachineConfigNodes() MachineConfigNodeInformer {
+// MachineConfigNodes returns a TypedMachineConfigNodeInformer.
+func (v *version) MachineConfigNodes() TypedMachineConfigNodeInformer {
 	return &machineConfigNodeInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// MachineConfigPools returns a MachineConfigPoolInformer.
-func (v *version) MachineConfigPools() MachineConfigPoolInformer {
+// MachineConfigPools returns a TypedMachineConfigPoolInformer.
+func (v *version) MachineConfigPools() TypedMachineConfigPoolInformer {
 	return &machineConfigPoolInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// MachineOSBuilds returns a MachineOSBuildInformer.
-func (v *version) MachineOSBuilds() MachineOSBuildInformer {
+// MachineOSBuilds returns a TypedMachineOSBuildInformer.
+func (v *version) MachineOSBuilds() TypedMachineOSBuildInformer {
 	return &machineOSBuildInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// MachineOSConfigs returns a MachineOSConfigInformer.
-func (v *version) MachineOSConfigs() MachineOSConfigInformer {
+// MachineOSConfigs returns a TypedMachineOSConfigInformer.
+func (v *version) MachineOSConfigs() TypedMachineOSConfigInformer {
 	return &machineOSConfigInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// OSImageStreams returns a OSImageStreamInformer.
-func (v *version) OSImageStreams() OSImageStreamInformer {
+// OSImageStreams returns a TypedOSImageStreamInformer.
+func (v *version) OSImageStreams() TypedOSImageStreamInformer {
 	return &oSImageStreamInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// PinnedImageSets returns a PinnedImageSetInformer.
-func (v *version) PinnedImageSets() PinnedImageSetInformer {
+// PinnedImageSets returns a TypedPinnedImageSetInformer.
+func (v *version) PinnedImageSets() TypedPinnedImageSetInformer {
 	return &pinnedImageSetInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }

@@ -18,11 +18,39 @@ import (
 )
 
 // IngressControllerInformer provides access to a shared informer and lister for
-// IngressControllers.
+// IngressControllers. Prefer using the type-safe variant (see [TypedIngressControllerInformer]).
 type IngressControllerInformer interface {
 	Informer() cache.SharedIndexInformer
 	Lister() operatorv1.IngressControllerLister
 }
+
+// TypedIngressControllerInformer provides access to a shared informer and lister for
+// IngressControllers, including the type-safe TypedInformer variant.
+// It is a superset of IngressControllerInformer.
+type TypedIngressControllerInformer interface {
+	Informer() cache.SharedIndexInformer
+	TypedInformer() IngressControllerIndexInformer
+	Lister() operatorv1.IngressControllerLister
+}
+
+// IngressControllerIndexInformer is a wrapper around the underlying [cache.SharedIndexInformer]
+// with type-safe variants of several methods.
+type IngressControllerIndexInformer cache.TypedSharedIndexInformer[*apioperatorv1.IngressController]
+
+// IngressControllerHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerFuncs] for IngressController.
+type IngressControllerHandlerFuncs = cache.TypedResourceEventHandlerFuncs[*apioperatorv1.IngressController]
+
+// IngressControllerDetailedHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerDetailedFuncs] for IngressController.
+type IngressControllerDetailedHandlerFuncs = cache.TypedResourceEventHandlerDetailedFuncs[*apioperatorv1.IngressController]
+
+// IngressControllerFilteringHandler is a specialization of [cache.TypedFilteringResourceEventHandler] for IngressController.
+type IngressControllerFilteringHandler = cache.TypedFilteringResourceEventHandler[*apioperatorv1.IngressController]
+
+// IngressControllerIndexers is a specialization of [cache.TypedIndexers] for IngressController.
+type IngressControllerIndexers = cache.TypedIndexers[*apioperatorv1.IngressController]
+
+// DeletedIngressController is a specialization of [cache.DeletedObject] for IngressController.
+type DeletedIngressController = cache.DeletedObject[*apioperatorv1.IngressController]
 
 type ingressControllerInformer struct {
 	factory          internalinterfaces.SharedInformerFactory
@@ -33,25 +61,49 @@ type ingressControllerInformer struct {
 // NewIngressControllerInformer constructs a new informer for IngressController type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedIngressControllerInformer]).
 func NewIngressControllerInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
 	return NewIngressControllerInformerWithOptions(client, namespace, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers})
+}
+
+// NewTypedIngressControllerInformer constructs a new informer for IngressController type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedIngressControllerInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers IngressControllerIndexers) IngressControllerIndexInformer {
+	return NewTypedIngressControllerInformerWithOptions(client, namespace, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers)})
 }
 
 // NewFilteredIngressControllerInformer constructs a new informer for IngressController type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedFilteredIngressControllerInformer]).
 func NewFilteredIngressControllerInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
-	return NewIngressControllerInformerWithOptions(client, namespace, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+	return NewTypedIngressControllerInformerWithOptions(client, namespace, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+}
+
+// NewTypedFilteredIngressControllerInformer constructs a new informer for IngressController type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedFilteredIngressControllerInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers IngressControllerIndexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) IngressControllerIndexInformer {
+	return NewTypedIngressControllerInformerWithOptions(client, namespace, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers), TweakListOptions: tweakListOptions})
 }
 
 // NewIngressControllerInformerWithOptions constructs a new informer for IngressController type with additional options.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedIngressControllerInformerWithOptions]).
 func NewIngressControllerInformerWithOptions(client versioned.Interface, namespace string, options internalinterfaces.InformerOptions) cache.SharedIndexInformer {
+	return NewTypedIngressControllerInformerWithOptions(client, namespace, options)
+}
+
+// NewTypedIngressControllerInformerWithOptions constructs a new informer for IngressController type with additional options.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedIngressControllerInformerWithOptions(client versioned.Interface, namespace string, options internalinterfaces.InformerOptions) IngressControllerIndexInformer {
 	gvr := schema.GroupVersionResource{Group: "operator.openshift.io", Version: "v1", Resource: "ingresscontrollers"}
 	identifier := options.InformerName.WithResource(gvr)
 	tweakListOptions := options.TweakListOptions
-	return cache.NewSharedIndexInformerWithOptions(
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.IngressController](cache.NewSharedIndexInformerWithOptions(
 		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
@@ -84,17 +136,57 @@ func NewIngressControllerInformerWithOptions(client versioned.Interface, namespa
 			Indexers:     options.Indexers,
 			Identifier:   identifier,
 		},
-	)
+	))
 }
 
 func (f *ingressControllerInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewIngressControllerInformerWithOptions(client, f.namespace, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
+	return NewTypedIngressControllerInformerWithOptions(client, f.namespace, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
 }
 
 func (f *ingressControllerInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&apioperatorv1.IngressController{}, f.defaultInformer)
+	return f.TypedInformer()
+}
+
+func (f *ingressControllerInformer) TypedInformer() IngressControllerIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.IngressController](f.factory.InformerFor(&apioperatorv1.IngressController{}, f.defaultInformer))
 }
 
 func (f *ingressControllerInformer) Lister() operatorv1.IngressControllerLister {
 	return operatorv1.NewIngressControllerLister(f.Informer().GetIndexer())
+}
+
+// ToTypedIngressControllerInformer converts an untyped informer into a TypedIngressControllerInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *IngressController. If that is not the case, calling type-safe methods of the returned
+// TypedIngressControllerInformer leads to runtime panics. A safer alternative is to pass
+// around a TypedIngressControllerInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToTypedIngressControllerInformer(informer IngressControllerInformer) TypedIngressControllerInformer {
+	if informer, ok := informer.(TypedIngressControllerInformer); ok {
+		return informer
+	}
+	return &ingressControllerTypedInformerAdapter{informer}
+}
+
+type ingressControllerTypedInformerAdapter struct {
+	IngressControllerInformer
+}
+
+func (a *ingressControllerTypedInformerAdapter) TypedInformer() IngressControllerIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.IngressController](a.Informer())
+}
+
+// ToIngressControllerIndexInformer converts an untyped informer into a IngressControllerIndexInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *IngressController. If that is not the case, calling type-safe methods of the returned
+// IngressControllerIndexInformer leads to runtime panics. A safer alternative is to pass
+// around a IngressControllerIndexInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToIngressControllerIndexInformer(informer cache.SharedIndexInformer) IngressControllerIndexInformer {
+	if informer, ok := informer.(IngressControllerIndexInformer); ok {
+		return informer
+	}
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.IngressController](informer)
 }

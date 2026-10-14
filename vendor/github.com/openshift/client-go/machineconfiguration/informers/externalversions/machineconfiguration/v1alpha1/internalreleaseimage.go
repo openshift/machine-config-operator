@@ -18,11 +18,39 @@ import (
 )
 
 // InternalReleaseImageInformer provides access to a shared informer and lister for
-// InternalReleaseImages.
+// InternalReleaseImages. Prefer using the type-safe variant (see [TypedInternalReleaseImageInformer]).
 type InternalReleaseImageInformer interface {
 	Informer() cache.SharedIndexInformer
 	Lister() machineconfigurationv1alpha1.InternalReleaseImageLister
 }
+
+// TypedInternalReleaseImageInformer provides access to a shared informer and lister for
+// InternalReleaseImages, including the type-safe TypedInformer variant.
+// It is a superset of InternalReleaseImageInformer.
+type TypedInternalReleaseImageInformer interface {
+	Informer() cache.SharedIndexInformer
+	TypedInformer() InternalReleaseImageIndexInformer
+	Lister() machineconfigurationv1alpha1.InternalReleaseImageLister
+}
+
+// InternalReleaseImageIndexInformer is a wrapper around the underlying [cache.SharedIndexInformer]
+// with type-safe variants of several methods.
+type InternalReleaseImageIndexInformer cache.TypedSharedIndexInformer[*apimachineconfigurationv1alpha1.InternalReleaseImage]
+
+// InternalReleaseImageHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerFuncs] for InternalReleaseImage.
+type InternalReleaseImageHandlerFuncs = cache.TypedResourceEventHandlerFuncs[*apimachineconfigurationv1alpha1.InternalReleaseImage]
+
+// InternalReleaseImageDetailedHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerDetailedFuncs] for InternalReleaseImage.
+type InternalReleaseImageDetailedHandlerFuncs = cache.TypedResourceEventHandlerDetailedFuncs[*apimachineconfigurationv1alpha1.InternalReleaseImage]
+
+// InternalReleaseImageFilteringHandler is a specialization of [cache.TypedFilteringResourceEventHandler] for InternalReleaseImage.
+type InternalReleaseImageFilteringHandler = cache.TypedFilteringResourceEventHandler[*apimachineconfigurationv1alpha1.InternalReleaseImage]
+
+// InternalReleaseImageIndexers is a specialization of [cache.TypedIndexers] for InternalReleaseImage.
+type InternalReleaseImageIndexers = cache.TypedIndexers[*apimachineconfigurationv1alpha1.InternalReleaseImage]
+
+// DeletedInternalReleaseImage is a specialization of [cache.DeletedObject] for InternalReleaseImage.
+type DeletedInternalReleaseImage = cache.DeletedObject[*apimachineconfigurationv1alpha1.InternalReleaseImage]
 
 type internalReleaseImageInformer struct {
 	factory          internalinterfaces.SharedInformerFactory
@@ -32,25 +60,49 @@ type internalReleaseImageInformer struct {
 // NewInternalReleaseImageInformer constructs a new informer for InternalReleaseImage type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedInternalReleaseImageInformer]).
 func NewInternalReleaseImageInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
 	return NewInternalReleaseImageInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers})
+}
+
+// NewTypedInternalReleaseImageInformer constructs a new informer for InternalReleaseImage type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedInternalReleaseImageInformer(client versioned.Interface, resyncPeriod time.Duration, indexers InternalReleaseImageIndexers) InternalReleaseImageIndexInformer {
+	return NewTypedInternalReleaseImageInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers)})
 }
 
 // NewFilteredInternalReleaseImageInformer constructs a new informer for InternalReleaseImage type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedFilteredInternalReleaseImageInformer]).
 func NewFilteredInternalReleaseImageInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
-	return NewInternalReleaseImageInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+	return NewTypedInternalReleaseImageInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+}
+
+// NewTypedFilteredInternalReleaseImageInformer constructs a new informer for InternalReleaseImage type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedFilteredInternalReleaseImageInformer(client versioned.Interface, resyncPeriod time.Duration, indexers InternalReleaseImageIndexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) InternalReleaseImageIndexInformer {
+	return NewTypedInternalReleaseImageInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers), TweakListOptions: tweakListOptions})
 }
 
 // NewInternalReleaseImageInformerWithOptions constructs a new informer for InternalReleaseImage type with additional options.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedInternalReleaseImageInformerWithOptions]).
 func NewInternalReleaseImageInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) cache.SharedIndexInformer {
+	return NewTypedInternalReleaseImageInformerWithOptions(client, options)
+}
+
+// NewTypedInternalReleaseImageInformerWithOptions constructs a new informer for InternalReleaseImage type with additional options.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedInternalReleaseImageInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) InternalReleaseImageIndexInformer {
 	gvr := schema.GroupVersionResource{Group: "machineconfiguration.openshift.io", Version: "v1alpha1", Resource: "internalreleaseimages"}
 	identifier := options.InformerName.WithResource(gvr)
 	tweakListOptions := options.TweakListOptions
-	return cache.NewSharedIndexInformerWithOptions(
+	return cache.NewTypedSharedIndexInformer[*apimachineconfigurationv1alpha1.InternalReleaseImage](cache.NewSharedIndexInformerWithOptions(
 		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(opts v1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
@@ -83,17 +135,57 @@ func NewInternalReleaseImageInformerWithOptions(client versioned.Interface, opti
 			Indexers:     options.Indexers,
 			Identifier:   identifier,
 		},
-	)
+	))
 }
 
 func (f *internalReleaseImageInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewInternalReleaseImageInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
+	return NewTypedInternalReleaseImageInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
 }
 
 func (f *internalReleaseImageInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&apimachineconfigurationv1alpha1.InternalReleaseImage{}, f.defaultInformer)
+	return f.TypedInformer()
+}
+
+func (f *internalReleaseImageInformer) TypedInformer() InternalReleaseImageIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apimachineconfigurationv1alpha1.InternalReleaseImage](f.factory.InformerFor(&apimachineconfigurationv1alpha1.InternalReleaseImage{}, f.defaultInformer))
 }
 
 func (f *internalReleaseImageInformer) Lister() machineconfigurationv1alpha1.InternalReleaseImageLister {
 	return machineconfigurationv1alpha1.NewInternalReleaseImageLister(f.Informer().GetIndexer())
+}
+
+// ToTypedInternalReleaseImageInformer converts an untyped informer into a TypedInternalReleaseImageInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *InternalReleaseImage. If that is not the case, calling type-safe methods of the returned
+// TypedInternalReleaseImageInformer leads to runtime panics. A safer alternative is to pass
+// around a TypedInternalReleaseImageInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToTypedInternalReleaseImageInformer(informer InternalReleaseImageInformer) TypedInternalReleaseImageInformer {
+	if informer, ok := informer.(TypedInternalReleaseImageInformer); ok {
+		return informer
+	}
+	return &internalReleaseImageTypedInformerAdapter{informer}
+}
+
+type internalReleaseImageTypedInformerAdapter struct {
+	InternalReleaseImageInformer
+}
+
+func (a *internalReleaseImageTypedInformerAdapter) TypedInformer() InternalReleaseImageIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apimachineconfigurationv1alpha1.InternalReleaseImage](a.Informer())
+}
+
+// ToInternalReleaseImageIndexInformer converts an untyped informer into a InternalReleaseImageIndexInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *InternalReleaseImage. If that is not the case, calling type-safe methods of the returned
+// InternalReleaseImageIndexInformer leads to runtime panics. A safer alternative is to pass
+// around a InternalReleaseImageIndexInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToInternalReleaseImageIndexInformer(informer cache.SharedIndexInformer) InternalReleaseImageIndexInformer {
+	if informer, ok := informer.(InternalReleaseImageIndexInformer); ok {
+		return informer
+	}
+	return cache.NewTypedSharedIndexInformer[*apimachineconfigurationv1alpha1.InternalReleaseImage](informer)
 }

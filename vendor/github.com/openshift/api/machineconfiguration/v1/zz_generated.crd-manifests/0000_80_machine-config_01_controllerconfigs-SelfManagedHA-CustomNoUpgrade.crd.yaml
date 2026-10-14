@@ -378,6 +378,22 @@ spec:
                         - HighlyAvailable
                         - SingleReplica
                         type: string
+                      infrastructureTopology:
+                        description: |-
+                          infrastructureTopology expresses the desired topology for infrastructure
+                          services that do not run on control plane nodes, indicating how
+                          infrastructure workloads are distributed across nodes.
+
+                          When omitted, no topology transition override has been expressed.
+                          Once populated, the field represents the desired topology state.
+
+                          When the value differs from status.infrastructureTopology, the cluster
+                          evaluates whether the requested transition can proceed. Not all
+                          transitions may be permitted.
+                        enum:
+                        - HighlyAvailable
+                        - SingleReplica
+                        type: string
                       platformSpec:
                         description: |-
                           platformSpec holds desired information specific to the underlying
@@ -3180,6 +3196,20 @@ spec:
                     == self.status.controlPlaneTopology) || (has(self.status.controlPlaneTopology)
                     && self.status.controlPlaneTopology == ''SingleReplica'' && self.spec.controlPlaneTopology
                     == ''HighlyAvailable'')'
+                - message: spec.controlPlaneTopology is immutable while a topology
+                    transition is in progress
+                  rule: '!has(self.spec.controlPlaneTopology) || !has(oldSelf.spec.controlPlaneTopology)
+                    || self.spec.controlPlaneTopology == oldSelf.spec.controlPlaneTopology
+                    || (oldSelf.spec.controlPlaneTopology == oldSelf.status.controlPlaneTopology
+                    && (!has(oldSelf.spec.infrastructureTopology) || oldSelf.spec.infrastructureTopology
+                    == oldSelf.status.infrastructureTopology))'
+                - message: spec.infrastructureTopology is immutable while a topology
+                    transition is in progress
+                  rule: '!has(self.spec.infrastructureTopology) || !has(oldSelf.spec.infrastructureTopology)
+                    || self.spec.infrastructureTopology == oldSelf.spec.infrastructureTopology
+                    || ((!has(oldSelf.spec.controlPlaneTopology) || oldSelf.spec.controlPlaneTopology
+                    == oldSelf.status.controlPlaneTopology) && oldSelf.spec.infrastructureTopology
+                    == oldSelf.status.infrastructureTopology)'
               internalRegistryPullSecret:
                 description: |-
                   internalRegistryPullSecret is the pull secret for the internal registry, used by
