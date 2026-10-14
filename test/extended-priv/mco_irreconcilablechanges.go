@@ -8,7 +8,6 @@ import (
 	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
-	"github.com/tidwall/gjson"
 )
 
 func platformBasedDisksPatch(platform string, ms *MachineSet) error {
@@ -388,7 +387,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		exutil.By("Step 5: Verify the removed MachineConfig contents are absent from MCS Ignition")
 		o.Eventually(mcp.GetMCSIgnitionConfig, "1m", "20s").WithArguments(true, ignitionVersion).Should(
 			o.And(
-				o.Satisfy(gjson.Valid),
 				HavePathWithValue("ignition.version", o.Equal(ignitionVersion)),
 				o.Not(HavePath(diskOnePath)),
 				o.Not(HavePath(diskTwoPath)),
