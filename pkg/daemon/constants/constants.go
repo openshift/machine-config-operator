@@ -153,6 +153,14 @@ const (
 	IRIRegistryServiceName = "iri-registry.service"
 	IRIRegistryDataPath    = "/var/lib/iri-registry"
 
+	// FirstbootPivotSkippedPath is written by the firstboot-pivot-skip-finalize service
+	// after a successful live overlay. The MCD reads this to skip the firstboot reboot.
+	FirstbootPivotSkippedPath = "/etc/machine-config-daemon/firstboot-pivot-skipped"
+
+	// FirstbootPivotSkippedAnnotationKey indicates the node joined via the overlay path
+	// and has not yet converged to the payload OS image via reboot.
+	FirstbootPivotSkippedAnnotationKey = "machineconfiguration.openshift.io/firstboot-pivot-skipped"
+
 	// rpm-ostree command arguments
 	RPMOSTreeUpdateArg    = "update"
 	RPMOSTreeInstallArg   = "--install"

@@ -1,0 +1,10 @@
+name: firstboot-pivot-skip.target
+enabled: false
+contents: |
+  [Unit]
+  Description=Firstboot Pivot Skip Overlay Target
+  Requires=basic.target
+
+  Requires=sshd.service getty.target systemd-user-sessions.service
+
+  Requires=firstboot-pivot-skip-finalize.service

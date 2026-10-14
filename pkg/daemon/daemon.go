@@ -1332,6 +1332,12 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig(machineConfigFile string) er
 	}
 
 	dn.skipReboot = true
+
+	if firstbootPivotWasSkipped() {
+		logSystem("Firstboot pivot was skipped; OS deployment already staged by pull service")
+		oldConfig.Spec.OSImageURL = mc.Spec.OSImageURL
+	}
+
 	// This "false" is a compatibility for IBM's use case, where they are using the MCD to write the full configuration instead of just
 	// the encapsulated config. This shouldn't affect normal OCP operations, but will allow anyone using this code to write configs to
 	// still get the kubelet cert
@@ -1352,6 +1358,11 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig(machineConfigFile string) er
 	// the systemd unit is not present.
 	if err := dn.disableRevertSystemdUnit(); err != nil {
 		return err
+	}
+
+	if firstbootPivotWasSkipped() {
+		logSystem("Firstboot pivot was skipped via live overlay; staged deployment will apply on next reboot")
+		return nil
 	}
 
 	dn.skipReboot = false
@@ -2157,15 +2168,26 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		}
 		osMatch := dn.checkOS(targetOSImageURL)
 		if !osMatch {
-			logSystem("Bootstrap pivot required to: %s", targetOSImageURL)
+			if firstbootPivotWasSkipped() {
+				logSystem("Firstboot pivot was skipped via live overlay; OS image mismatch expected until next reboot")
+				if _, err := dn.nodeWriter.SetAnnotations(map[string]string{
+					constants.FirstbootPivotSkippedAnnotationKey: "",
+				}); err != nil {
+					klog.Warningf("Failed to set firstboot-pivot-skipped annotation: %v", err)
+				}
+			} else {
+				logSystem("Bootstrap pivot required to: %s", targetOSImageURL)
 
-			if err := dn.updateLayeredOS(state.currentConfig); err != nil {
-				return err
+				if err := dn.updateLayeredOS(state.currentConfig); err != nil {
+					return err
+				}
+
+				return dn.reboot(fmt.Sprintf("Node will reboot into config %v", state.currentConfig.GetName()))
 			}
-
-			return dn.reboot(fmt.Sprintf("Node will reboot into config %v", state.currentConfig.GetName()))
+		} else {
+			logSystem("No bootstrap pivot required")
 		}
-		logSystem("No bootstrap pivot required; unlinking bootstrap node annotations")
+		logSystem("Unlinking bootstrap node annotations")
 
 		// Rename the bootstrap node annotations; the
 		// currentConfig's osImageURL should now be *truth*.
@@ -2667,7 +2689,11 @@ func (dn *Daemon) validateOnDiskStateImpl(currentConfig *mcfgv1.MachineConfig, i
 	// Be sure we're booted into the OS we expect
 	osMatch := dn.checkOS(imageToCheck)
 	if !osMatch {
-		return fmt.Errorf("expected target osImageURL %q, have %q", imageToCheck, dn.bootedOSImageURL)
+		if firstbootPivotWasSkipped() {
+			klog.Infof("Firstboot pivot was skipped via live overlay; OS image mismatch expected until next reboot")
+		} else {
+			return fmt.Errorf("expected target osImageURL %q, have %q", imageToCheck, dn.bootedOSImageURL)
+		}
 	}
 
 	if dn.os.IsCoreOSVariant() {
@@ -2751,6 +2777,11 @@ func (dn *Daemon) checkOS(osImageURL string) bool {
 	}
 
 	return dn.bootedOSImageURL == osImageURL
+}
+
+func firstbootPivotWasSkipped() bool {
+	_, err := os.Stat(constants.FirstbootPivotSkippedPath)
+	return err == nil
 }
 
 // Close closes all the connections the node agent has open for it's lifetime

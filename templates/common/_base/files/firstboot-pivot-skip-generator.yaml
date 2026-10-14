@@ -1,0 +1,26 @@
+mode: 0755
+path: "/etc/systemd/system-generators/firstboot-pivot-skip-generator"
+contents:
+  inline: |
+    #!/bin/bash
+    set -euo pipefail
+
+    UNIT_DIR="${1:-/tmp}"
+    FLAG="/etc/machine-config-daemon/skip-firstboot-pivot"
+    SENTINEL="/etc/ignition-machine-config-encapsulated.json"
+
+    [ -f "${FLAG}" ] && [ -f "${SENTINEL}" ] || exit 0
+
+    # Replace the default boot target with the overlay target so that
+    # only minimal services run while the overlay chain executes.
+    ln -sf "/etc/systemd/system/firstboot-pivot-skip.target" \
+        "${UNIT_DIR}/default.target"
+
+    # After the overlay finishes, the finish service isolates back to
+    # multi-user.target. The firstboot-osupdate chain (which includes
+    # machine-config-daemon-firstboot.service) is normally only wanted
+    # by default.target. Create a wants link under multi-user.target so
+    # the firstboot service runs after isolation.
+    mkdir -p "${UNIT_DIR}/multi-user.target.wants"
+    ln -sf /etc/systemd/system/firstboot-osupdate.target \
+        "${UNIT_DIR}/multi-user.target.wants/firstboot-osupdate.target"
