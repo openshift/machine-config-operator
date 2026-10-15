@@ -195,7 +195,7 @@ func (ctrl *Controller) Run(ctx context.Context, workers int) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	listerCaches := []cache.InformerSynced{ctrl.mcpListerSynced, ctrl.mcListerSynced, ctrl.ccListerSynced}
+	listerCaches := []cache.InformerSynced{ctrl.mcpListerSynced, ctrl.mcListerSynced, ctrl.ccListerSynced, ctrl.crcListerSynced, ctrl.mckListerSynced}
 
 	if ctrl.secretListerSynced != nil {
 		listerCaches = append(listerCaches,
@@ -546,7 +546,7 @@ func (ctrl *Controller) syncMachineConfigPool(ctx context.Context, key string) e
 		return err
 	}
 
-	if err := apihelpers.AreMCGeneratingSubControllersCompletedForPool(ctrl.crcLister.List, ctrl.mckLister.List, pool.Labels); err != nil {
+	if err := apihelpers.AreMCGeneratingSubControllersCompletedForPool(ctrl.crcLister, ctrl.mckLister, ctrl.mcLister, pool.Name, pool.Labels); err != nil {
 		return err
 	}
 
