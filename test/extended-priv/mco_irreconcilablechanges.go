@@ -190,7 +190,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		newMSName := machineset.GetName() + "-ms-ic-t2"
 		newMS, err := machineset.Duplicate(newMSName)
 		o.Expect(err).NotTo(o.HaveOccurred())
-		defer func() {
+		defer SafeCleanup(func() {
 			if newMS.Exists() {
 				err := newMS.ScaleTo(0)
 				o.Expect(err).NotTo(o.HaveOccurred())
@@ -198,8 +198,9 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 				o.Expect(err).NotTo(o.HaveOccurred())
 				err = newMS.Delete()
 				o.Expect(err).NotTo(o.HaveOccurred())
+				mcp.waitForComplete()
 			}
-		}()
+		})
 
 		err = platformBasedDisksPatch(platform, newMS)
 		o.Expect(err).NotTo(o.HaveOccurred())
@@ -226,7 +227,12 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		mc := NewMachineConfig(oc, mcName, MachineConfigPoolWorker).SetMCOTemplate("extra-disks-with-files.yaml")
 
-		defer mc.DeleteWithWait()
+		defer SafeCleanup(func() {
+			if mc.Exists() {
+				err := mc.Delete()
+				o.Expect(err).NotTo(o.HaveOccurred())
+			}
+		})
 
 		exutil.By("Step 3: Apply extra-disks-with-files MachineConfig")
 		err = mc.Create(
