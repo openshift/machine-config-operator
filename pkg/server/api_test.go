@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -762,8 +763,12 @@ EKTcWGekdmdDPsHloRNtsiCa697B2O9IFA==
 	ts.TLSConfig.Certificates = []tls.Certificate{certData}
 	ts.TLSConfig.InsecureSkipVerify = true
 
+	ln, err := net.Listen("tcp", ":8088")
+	if err != nil {
+		t.Fatalf("failed to listen on :8088: %v", err)
+	}
 	go func() {
-		if err := ts.ListenAndServeTLS("", ""); err != http.ErrServerClosed {
+		if err := ts.ServeTLS(ln, "", ""); err != http.ErrServerClosed {
 			log.Fatal("error creating test server")
 		}
 	}()
@@ -867,12 +872,10 @@ EKTcWGekdmdDPsHloRNtsiCa697B2O9IFA==
 	for idx, c := range tests {
 		t.Run(fmt.Sprintf("case#%d: %s", idx, c.desc), func(t *testing.T) {
 			resp, err := c.client.Get("https://localhost:8088")
-			for _, insecure := range c.ciphers {
-				if insecure == resp.TLS.CipherSuite {
-					t.Fatalf("failed to %s:", c.desc)
-				}
-			}
 			if c.wantErr {
+				if err == nil {
+					t.Fatalf("expected error but got none")
+				}
 				errstr := fmt.Sprintf("%v", err)
 				if c.errStrings != nil {
 					matches := false
@@ -888,6 +891,15 @@ EKTcWGekdmdDPsHloRNtsiCa697B2O9IFA==
 					}
 				} else if !strings.Contains(errstr, c.errString) {
 					t.Fatalf("want: %s\n got: %v", c.errString, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			for _, insecure := range c.ciphers {
+				if insecure == resp.TLS.CipherSuite {
+					t.Fatalf("negotiated insecure cipher %s", tls.CipherSuiteName(insecure))
 				}
 			}
 		})
