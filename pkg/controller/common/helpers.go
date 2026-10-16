@@ -1275,7 +1275,7 @@ func FindClosestFilePolicyPathMatch(diffPath string, filePolicies []opv1.NodeDis
 
 // Extracts the minimum TLS version and cipher suites from apiServer object,
 func GetSecurityProfileCiphersFromAPIServer(apiServer *configv1.APIServer) (string, []string) {
-	// If no apiServer object exists, default to the intermediate profile by calling
+	// If no apiServer object exists, default to the modern profile by calling
 	// GetSecurityProfileCiphers with a nil object for TLSSecurityProfile
 	if apiServer == nil {
 		return GetSecurityProfileCiphers(nil)
@@ -1285,11 +1285,11 @@ func GetSecurityProfileCiphersFromAPIServer(apiServer *configv1.APIServer) (stri
 
 // Extracts the minimum TLS version and cipher suites from TLSSecurityProfile object,
 // Converts the ciphers to IANA names as supported by Kube ServingInfo config.
-// If profile is nil, returns config defined by the Intermediate TLS Profile
+// If profile is nil, returns config defined by the Modern TLS Profile
 func GetSecurityProfileCiphers(profile *configv1.TLSSecurityProfile) (string, []string) {
 	var profileType configv1.TLSProfileType
 	if profile == nil {
-		profileType = configv1.TLSProfileIntermediateType
+		profileType = configv1.TLSProfileModernType
 	} else {
 		profileType = profile.Type
 	}
@@ -1305,7 +1305,7 @@ func GetSecurityProfileCiphers(profile *configv1.TLSSecurityProfile) (string, []
 
 	// nothing found / custom type set but no actual custom spec
 	if profileSpec == nil {
-		profileSpec = configv1.TLSProfiles[configv1.TLSProfileIntermediateType]
+		profileSpec = configv1.TLSProfiles[configv1.TLSProfileModernType]
 	}
 
 	// need to remap all Ciphers to their respective IANA names used by Go

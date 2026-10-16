@@ -220,7 +220,8 @@ func (f *fixture) newController(fgHandler ctrlcommon.FeatureGatesHandler) *Contr
 		fgHandler = ctrlcommon.NewFeatureGatesHardcodedHandler(nil, nil)
 	}
 
-	c := New(templateDir,
+	c := New(
+		templateDir,
 		i.Machineconfiguration().V1().MachineConfigPools(),
 		i.Machineconfiguration().V1().ControllerConfigs(),
 		i.Machineconfiguration().V1().KubeletConfigs(),
@@ -1660,11 +1661,11 @@ func TestKubeletConfigTLSRender(t *testing.T) {
 			},
 		},
 		{
-			name: "Intermediate TLS profile",
+			name: "Modern TLS profile",
 			apiserver: &osev1.APIServer{
 				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.APIServerInstanceName},
 				Spec: osev1.APIServerSpec{
-					TLSSecurityProfile: &osev1.TLSSecurityProfile{Type: osev1.TLSProfileIntermediateType},
+					TLSSecurityProfile: &osev1.TLSSecurityProfile{Type: osev1.TLSProfileModernType},
 				},
 			},
 		},
@@ -1717,7 +1718,7 @@ func TestKubeletConfigTLSRender(t *testing.T) {
 			var expectedTLSMinVersion string
 			// Use an intermediate profile for the nil cases
 			if testCase.apiserver == nil || testCase.apiserver.Spec.TLSSecurityProfile == nil {
-				expectedTLSMinVersion, expectedTLSCipherSuites = ctrlcommon.GetSecurityProfileCiphers(&osev1.TLSSecurityProfile{Type: osev1.TLSProfileIntermediateType})
+				expectedTLSMinVersion, expectedTLSCipherSuites = ctrlcommon.GetSecurityProfileCiphers(&osev1.TLSSecurityProfile{Type: osev1.TLSProfileModernType})
 			} else {
 				expectedTLSMinVersion, expectedTLSCipherSuites = ctrlcommon.GetSecurityProfileCiphers(testCase.apiserver.Spec.TLSSecurityProfile)
 			}
