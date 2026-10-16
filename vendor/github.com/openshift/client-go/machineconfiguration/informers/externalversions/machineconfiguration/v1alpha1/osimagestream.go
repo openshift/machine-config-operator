@@ -18,11 +18,39 @@ import (
 )
 
 // OSImageStreamInformer provides access to a shared informer and lister for
-// OSImageStreams.
+// OSImageStreams. Prefer using the type-safe variant (see [TypedOSImageStreamInformer]).
 type OSImageStreamInformer interface {
 	Informer() cache.SharedIndexInformer
 	Lister() machineconfigurationv1alpha1.OSImageStreamLister
 }
+
+// TypedOSImageStreamInformer provides access to a shared informer and lister for
+// OSImageStreams, including the type-safe TypedInformer variant.
+// It is a superset of OSImageStreamInformer.
+type TypedOSImageStreamInformer interface {
+	Informer() cache.SharedIndexInformer
+	TypedInformer() OSImageStreamIndexInformer
+	Lister() machineconfigurationv1alpha1.OSImageStreamLister
+}
+
+// OSImageStreamIndexInformer is a wrapper around the underlying [cache.SharedIndexInformer]
+// with type-safe variants of several methods.
+type OSImageStreamIndexInformer cache.TypedSharedIndexInformer[*apimachineconfigurationv1alpha1.OSImageStream]
+
+// OSImageStreamHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerFuncs] for OSImageStream.
+type OSImageStreamHandlerFuncs = cache.TypedResourceEventHandlerFuncs[*apimachineconfigurationv1alpha1.OSImageStream]
+
+// OSImageStreamDetailedHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerDetailedFuncs] for OSImageStream.
+type OSImageStreamDetailedHandlerFuncs = cache.TypedResourceEventHandlerDetailedFuncs[*apimachineconfigurationv1alpha1.OSImageStream]
+
+// OSImageStreamFilteringHandler is a specialization of [cache.TypedFilteringResourceEventHandler] for OSImageStream.
+type OSImageStreamFilteringHandler = cache.TypedFilteringResourceEventHandler[*apimachineconfigurationv1alpha1.OSImageStream]
+
+// OSImageStreamIndexers is a specialization of [cache.TypedIndexers] for OSImageStream.
+type OSImageStreamIndexers = cache.TypedIndexers[*apimachineconfigurationv1alpha1.OSImageStream]
+
+// DeletedOSImageStream is a specialization of [cache.DeletedObject] for OSImageStream.
+type DeletedOSImageStream = cache.DeletedObject[*apimachineconfigurationv1alpha1.OSImageStream]
 
 type oSImageStreamInformer struct {
 	factory          internalinterfaces.SharedInformerFactory
@@ -32,25 +60,49 @@ type oSImageStreamInformer struct {
 // NewOSImageStreamInformer constructs a new informer for OSImageStream type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedOSImageStreamInformer]).
 func NewOSImageStreamInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
 	return NewOSImageStreamInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers})
+}
+
+// NewTypedOSImageStreamInformer constructs a new informer for OSImageStream type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedOSImageStreamInformer(client versioned.Interface, resyncPeriod time.Duration, indexers OSImageStreamIndexers) OSImageStreamIndexInformer {
+	return NewTypedOSImageStreamInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers)})
 }
 
 // NewFilteredOSImageStreamInformer constructs a new informer for OSImageStream type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedFilteredOSImageStreamInformer]).
 func NewFilteredOSImageStreamInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
-	return NewOSImageStreamInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+	return NewTypedOSImageStreamInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+}
+
+// NewTypedFilteredOSImageStreamInformer constructs a new informer for OSImageStream type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedFilteredOSImageStreamInformer(client versioned.Interface, resyncPeriod time.Duration, indexers OSImageStreamIndexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) OSImageStreamIndexInformer {
+	return NewTypedOSImageStreamInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers), TweakListOptions: tweakListOptions})
 }
 
 // NewOSImageStreamInformerWithOptions constructs a new informer for OSImageStream type with additional options.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedOSImageStreamInformerWithOptions]).
 func NewOSImageStreamInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) cache.SharedIndexInformer {
+	return NewTypedOSImageStreamInformerWithOptions(client, options)
+}
+
+// NewTypedOSImageStreamInformerWithOptions constructs a new informer for OSImageStream type with additional options.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedOSImageStreamInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) OSImageStreamIndexInformer {
 	gvr := schema.GroupVersionResource{Group: "machineconfiguration.openshift.io", Version: "v1alpha1", Resource: "osimagestreams"}
 	identifier := options.InformerName.WithResource(gvr)
 	tweakListOptions := options.TweakListOptions
-	return cache.NewSharedIndexInformerWithOptions(
+	return cache.NewTypedSharedIndexInformer[*apimachineconfigurationv1alpha1.OSImageStream](cache.NewSharedIndexInformerWithOptions(
 		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(opts v1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
@@ -83,17 +135,57 @@ func NewOSImageStreamInformerWithOptions(client versioned.Interface, options int
 			Indexers:     options.Indexers,
 			Identifier:   identifier,
 		},
-	)
+	))
 }
 
 func (f *oSImageStreamInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewOSImageStreamInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
+	return NewTypedOSImageStreamInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
 }
 
 func (f *oSImageStreamInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&apimachineconfigurationv1alpha1.OSImageStream{}, f.defaultInformer)
+	return f.TypedInformer()
+}
+
+func (f *oSImageStreamInformer) TypedInformer() OSImageStreamIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apimachineconfigurationv1alpha1.OSImageStream](f.factory.InformerFor(&apimachineconfigurationv1alpha1.OSImageStream{}, f.defaultInformer))
 }
 
 func (f *oSImageStreamInformer) Lister() machineconfigurationv1alpha1.OSImageStreamLister {
 	return machineconfigurationv1alpha1.NewOSImageStreamLister(f.Informer().GetIndexer())
+}
+
+// ToTypedOSImageStreamInformer converts an untyped informer into a TypedOSImageStreamInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *OSImageStream. If that is not the case, calling type-safe methods of the returned
+// TypedOSImageStreamInformer leads to runtime panics. A safer alternative is to pass
+// around a TypedOSImageStreamInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToTypedOSImageStreamInformer(informer OSImageStreamInformer) TypedOSImageStreamInformer {
+	if informer, ok := informer.(TypedOSImageStreamInformer); ok {
+		return informer
+	}
+	return &oSImageStreamTypedInformerAdapter{informer}
+}
+
+type oSImageStreamTypedInformerAdapter struct {
+	OSImageStreamInformer
+}
+
+func (a *oSImageStreamTypedInformerAdapter) TypedInformer() OSImageStreamIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apimachineconfigurationv1alpha1.OSImageStream](a.Informer())
+}
+
+// ToOSImageStreamIndexInformer converts an untyped informer into a OSImageStreamIndexInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *OSImageStream. If that is not the case, calling type-safe methods of the returned
+// OSImageStreamIndexInformer leads to runtime panics. A safer alternative is to pass
+// around a OSImageStreamIndexInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToOSImageStreamIndexInformer(informer cache.SharedIndexInformer) OSImageStreamIndexInformer {
+	if informer, ok := informer.(OSImageStreamIndexInformer); ok {
+		return informer
+	}
+	return cache.NewTypedSharedIndexInformer[*apimachineconfigurationv1alpha1.OSImageStream](informer)
 }

@@ -18,11 +18,39 @@ import (
 )
 
 // ConfigInformer provides access to a shared informer and lister for
-// Configs.
+// Configs. Prefer using the type-safe variant (see [TypedConfigInformer]).
 type ConfigInformer interface {
 	Informer() cache.SharedIndexInformer
 	Lister() operatorv1.ConfigLister
 }
+
+// TypedConfigInformer provides access to a shared informer and lister for
+// Configs, including the type-safe TypedInformer variant.
+// It is a superset of ConfigInformer.
+type TypedConfigInformer interface {
+	Informer() cache.SharedIndexInformer
+	TypedInformer() ConfigIndexInformer
+	Lister() operatorv1.ConfigLister
+}
+
+// ConfigIndexInformer is a wrapper around the underlying [cache.SharedIndexInformer]
+// with type-safe variants of several methods.
+type ConfigIndexInformer cache.TypedSharedIndexInformer[*apioperatorv1.Config]
+
+// ConfigHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerFuncs] for Config.
+type ConfigHandlerFuncs = cache.TypedResourceEventHandlerFuncs[*apioperatorv1.Config]
+
+// ConfigDetailedHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerDetailedFuncs] for Config.
+type ConfigDetailedHandlerFuncs = cache.TypedResourceEventHandlerDetailedFuncs[*apioperatorv1.Config]
+
+// ConfigFilteringHandler is a specialization of [cache.TypedFilteringResourceEventHandler] for Config.
+type ConfigFilteringHandler = cache.TypedFilteringResourceEventHandler[*apioperatorv1.Config]
+
+// ConfigIndexers is a specialization of [cache.TypedIndexers] for Config.
+type ConfigIndexers = cache.TypedIndexers[*apioperatorv1.Config]
+
+// DeletedConfig is a specialization of [cache.DeletedObject] for Config.
+type DeletedConfig = cache.DeletedObject[*apioperatorv1.Config]
 
 type configInformer struct {
 	factory          internalinterfaces.SharedInformerFactory
@@ -32,25 +60,49 @@ type configInformer struct {
 // NewConfigInformer constructs a new informer for Config type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedConfigInformer]).
 func NewConfigInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
 	return NewConfigInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers})
+}
+
+// NewTypedConfigInformer constructs a new informer for Config type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedConfigInformer(client versioned.Interface, resyncPeriod time.Duration, indexers ConfigIndexers) ConfigIndexInformer {
+	return NewTypedConfigInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers)})
 }
 
 // NewFilteredConfigInformer constructs a new informer for Config type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedFilteredConfigInformer]).
 func NewFilteredConfigInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
-	return NewConfigInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+	return NewTypedConfigInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+}
+
+// NewTypedFilteredConfigInformer constructs a new informer for Config type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedFilteredConfigInformer(client versioned.Interface, resyncPeriod time.Duration, indexers ConfigIndexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) ConfigIndexInformer {
+	return NewTypedConfigInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers), TweakListOptions: tweakListOptions})
 }
 
 // NewConfigInformerWithOptions constructs a new informer for Config type with additional options.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedConfigInformerWithOptions]).
 func NewConfigInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) cache.SharedIndexInformer {
+	return NewTypedConfigInformerWithOptions(client, options)
+}
+
+// NewTypedConfigInformerWithOptions constructs a new informer for Config type with additional options.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedConfigInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) ConfigIndexInformer {
 	gvr := schema.GroupVersionResource{Group: "operator.openshift.io", Version: "v1", Resource: "configs"}
 	identifier := options.InformerName.WithResource(gvr)
 	tweakListOptions := options.TweakListOptions
-	return cache.NewSharedIndexInformerWithOptions(
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.Config](cache.NewSharedIndexInformerWithOptions(
 		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
@@ -83,17 +135,57 @@ func NewConfigInformerWithOptions(client versioned.Interface, options internalin
 			Indexers:     options.Indexers,
 			Identifier:   identifier,
 		},
-	)
+	))
 }
 
 func (f *configInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewConfigInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
+	return NewTypedConfigInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
 }
 
 func (f *configInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&apioperatorv1.Config{}, f.defaultInformer)
+	return f.TypedInformer()
+}
+
+func (f *configInformer) TypedInformer() ConfigIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.Config](f.factory.InformerFor(&apioperatorv1.Config{}, f.defaultInformer))
 }
 
 func (f *configInformer) Lister() operatorv1.ConfigLister {
 	return operatorv1.NewConfigLister(f.Informer().GetIndexer())
+}
+
+// ToTypedConfigInformer converts an untyped informer into a TypedConfigInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *Config. If that is not the case, calling type-safe methods of the returned
+// TypedConfigInformer leads to runtime panics. A safer alternative is to pass
+// around a TypedConfigInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToTypedConfigInformer(informer ConfigInformer) TypedConfigInformer {
+	if informer, ok := informer.(TypedConfigInformer); ok {
+		return informer
+	}
+	return &configTypedInformerAdapter{informer}
+}
+
+type configTypedInformerAdapter struct {
+	ConfigInformer
+}
+
+func (a *configTypedInformerAdapter) TypedInformer() ConfigIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.Config](a.Informer())
+}
+
+// ToConfigIndexInformer converts an untyped informer into a ConfigIndexInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *Config. If that is not the case, calling type-safe methods of the returned
+// ConfigIndexInformer leads to runtime panics. A safer alternative is to pass
+// around a ConfigIndexInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToConfigIndexInformer(informer cache.SharedIndexInformer) ConfigIndexInformer {
+	if informer, ok := informer.(ConfigIndexInformer); ok {
+		return informer
+	}
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.Config](informer)
 }

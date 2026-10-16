@@ -322,7 +322,7 @@ var _ = g.Describe("[sig-mco][Serial][Disruptive][OCPFeatureGate:ManagedBootImag
 		)
 
 		for _, tc := range testConfigs {
-			logger.Infof(tc.description)
+			logger.Infof("%s", tc.description)
 			testMachineConfigurationStatusUpdate(machineConfiguration, tc.patchConfig)
 		}
 	})

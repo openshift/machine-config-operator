@@ -18,11 +18,39 @@ import (
 )
 
 // EtcdInformer provides access to a shared informer and lister for
-// Etcds.
+// Etcds. Prefer using the type-safe variant (see [TypedEtcdInformer]).
 type EtcdInformer interface {
 	Informer() cache.SharedIndexInformer
 	Lister() operatorv1.EtcdLister
 }
+
+// TypedEtcdInformer provides access to a shared informer and lister for
+// Etcds, including the type-safe TypedInformer variant.
+// It is a superset of EtcdInformer.
+type TypedEtcdInformer interface {
+	Informer() cache.SharedIndexInformer
+	TypedInformer() EtcdIndexInformer
+	Lister() operatorv1.EtcdLister
+}
+
+// EtcdIndexInformer is a wrapper around the underlying [cache.SharedIndexInformer]
+// with type-safe variants of several methods.
+type EtcdIndexInformer cache.TypedSharedIndexInformer[*apioperatorv1.Etcd]
+
+// EtcdHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerFuncs] for Etcd.
+type EtcdHandlerFuncs = cache.TypedResourceEventHandlerFuncs[*apioperatorv1.Etcd]
+
+// EtcdDetailedHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerDetailedFuncs] for Etcd.
+type EtcdDetailedHandlerFuncs = cache.TypedResourceEventHandlerDetailedFuncs[*apioperatorv1.Etcd]
+
+// EtcdFilteringHandler is a specialization of [cache.TypedFilteringResourceEventHandler] for Etcd.
+type EtcdFilteringHandler = cache.TypedFilteringResourceEventHandler[*apioperatorv1.Etcd]
+
+// EtcdIndexers is a specialization of [cache.TypedIndexers] for Etcd.
+type EtcdIndexers = cache.TypedIndexers[*apioperatorv1.Etcd]
+
+// DeletedEtcd is a specialization of [cache.DeletedObject] for Etcd.
+type DeletedEtcd = cache.DeletedObject[*apioperatorv1.Etcd]
 
 type etcdInformer struct {
 	factory          internalinterfaces.SharedInformerFactory
@@ -32,25 +60,49 @@ type etcdInformer struct {
 // NewEtcdInformer constructs a new informer for Etcd type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedEtcdInformer]).
 func NewEtcdInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
 	return NewEtcdInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers})
+}
+
+// NewTypedEtcdInformer constructs a new informer for Etcd type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedEtcdInformer(client versioned.Interface, resyncPeriod time.Duration, indexers EtcdIndexers) EtcdIndexInformer {
+	return NewTypedEtcdInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers)})
 }
 
 // NewFilteredEtcdInformer constructs a new informer for Etcd type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedFilteredEtcdInformer]).
 func NewFilteredEtcdInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
-	return NewEtcdInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+	return NewTypedEtcdInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+}
+
+// NewTypedFilteredEtcdInformer constructs a new informer for Etcd type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedFilteredEtcdInformer(client versioned.Interface, resyncPeriod time.Duration, indexers EtcdIndexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) EtcdIndexInformer {
+	return NewTypedEtcdInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers), TweakListOptions: tweakListOptions})
 }
 
 // NewEtcdInformerWithOptions constructs a new informer for Etcd type with additional options.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedEtcdInformerWithOptions]).
 func NewEtcdInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) cache.SharedIndexInformer {
+	return NewTypedEtcdInformerWithOptions(client, options)
+}
+
+// NewTypedEtcdInformerWithOptions constructs a new informer for Etcd type with additional options.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedEtcdInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) EtcdIndexInformer {
 	gvr := schema.GroupVersionResource{Group: "operator.openshift.io", Version: "v1", Resource: "etcds"}
 	identifier := options.InformerName.WithResource(gvr)
 	tweakListOptions := options.TweakListOptions
-	return cache.NewSharedIndexInformerWithOptions(
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.Etcd](cache.NewSharedIndexInformerWithOptions(
 		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
@@ -83,17 +135,57 @@ func NewEtcdInformerWithOptions(client versioned.Interface, options internalinte
 			Indexers:     options.Indexers,
 			Identifier:   identifier,
 		},
-	)
+	))
 }
 
 func (f *etcdInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewEtcdInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
+	return NewTypedEtcdInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
 }
 
 func (f *etcdInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&apioperatorv1.Etcd{}, f.defaultInformer)
+	return f.TypedInformer()
+}
+
+func (f *etcdInformer) TypedInformer() EtcdIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.Etcd](f.factory.InformerFor(&apioperatorv1.Etcd{}, f.defaultInformer))
 }
 
 func (f *etcdInformer) Lister() operatorv1.EtcdLister {
 	return operatorv1.NewEtcdLister(f.Informer().GetIndexer())
+}
+
+// ToTypedEtcdInformer converts an untyped informer into a TypedEtcdInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *Etcd. If that is not the case, calling type-safe methods of the returned
+// TypedEtcdInformer leads to runtime panics. A safer alternative is to pass
+// around a TypedEtcdInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToTypedEtcdInformer(informer EtcdInformer) TypedEtcdInformer {
+	if informer, ok := informer.(TypedEtcdInformer); ok {
+		return informer
+	}
+	return &etcdTypedInformerAdapter{informer}
+}
+
+type etcdTypedInformerAdapter struct {
+	EtcdInformer
+}
+
+func (a *etcdTypedInformerAdapter) TypedInformer() EtcdIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.Etcd](a.Informer())
+}
+
+// ToEtcdIndexInformer converts an untyped informer into a EtcdIndexInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *Etcd. If that is not the case, calling type-safe methods of the returned
+// EtcdIndexInformer leads to runtime panics. A safer alternative is to pass
+// around a EtcdIndexInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToEtcdIndexInformer(informer cache.SharedIndexInformer) EtcdIndexInformer {
+	if informer, ok := informer.(EtcdIndexInformer); ok {
+		return informer
+	}
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.Etcd](informer)
 }

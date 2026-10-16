@@ -1,11 +1,11 @@
 # Use RHEL 9 as the primary builder base for the Machine Config Operator
-FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.26-openshift-5.0 AS rhel9-builder
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.26-openshift-5.1 AS rhel9-builder
 ARG TAGS=""
 WORKDIR /go/src/github.com/openshift/machine-config-operator
 COPY . .
 RUN make install DESTDIR=./instroot-rhel9
 
-FROM registry.ci.openshift.org/ocp/5.0:base-rhel9
+FROM registry.ci.openshift.org/ocp/5.1:base-rhel9
 ARG TAGS=""
 COPY install /manifests
 RUN if [ "${TAGS}" = "fcos" ]; then \

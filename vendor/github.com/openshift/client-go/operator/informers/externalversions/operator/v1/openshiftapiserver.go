@@ -18,11 +18,39 @@ import (
 )
 
 // OpenShiftAPIServerInformer provides access to a shared informer and lister for
-// OpenShiftAPIServers.
+// OpenShiftAPIServers. Prefer using the type-safe variant (see [TypedOpenShiftAPIServerInformer]).
 type OpenShiftAPIServerInformer interface {
 	Informer() cache.SharedIndexInformer
 	Lister() operatorv1.OpenShiftAPIServerLister
 }
+
+// TypedOpenShiftAPIServerInformer provides access to a shared informer and lister for
+// OpenShiftAPIServers, including the type-safe TypedInformer variant.
+// It is a superset of OpenShiftAPIServerInformer.
+type TypedOpenShiftAPIServerInformer interface {
+	Informer() cache.SharedIndexInformer
+	TypedInformer() OpenShiftAPIServerIndexInformer
+	Lister() operatorv1.OpenShiftAPIServerLister
+}
+
+// OpenShiftAPIServerIndexInformer is a wrapper around the underlying [cache.SharedIndexInformer]
+// with type-safe variants of several methods.
+type OpenShiftAPIServerIndexInformer cache.TypedSharedIndexInformer[*apioperatorv1.OpenShiftAPIServer]
+
+// OpenShiftAPIServerHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerFuncs] for OpenShiftAPIServer.
+type OpenShiftAPIServerHandlerFuncs = cache.TypedResourceEventHandlerFuncs[*apioperatorv1.OpenShiftAPIServer]
+
+// OpenShiftAPIServerDetailedHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerDetailedFuncs] for OpenShiftAPIServer.
+type OpenShiftAPIServerDetailedHandlerFuncs = cache.TypedResourceEventHandlerDetailedFuncs[*apioperatorv1.OpenShiftAPIServer]
+
+// OpenShiftAPIServerFilteringHandler is a specialization of [cache.TypedFilteringResourceEventHandler] for OpenShiftAPIServer.
+type OpenShiftAPIServerFilteringHandler = cache.TypedFilteringResourceEventHandler[*apioperatorv1.OpenShiftAPIServer]
+
+// OpenShiftAPIServerIndexers is a specialization of [cache.TypedIndexers] for OpenShiftAPIServer.
+type OpenShiftAPIServerIndexers = cache.TypedIndexers[*apioperatorv1.OpenShiftAPIServer]
+
+// DeletedOpenShiftAPIServer is a specialization of [cache.DeletedObject] for OpenShiftAPIServer.
+type DeletedOpenShiftAPIServer = cache.DeletedObject[*apioperatorv1.OpenShiftAPIServer]
 
 type openShiftAPIServerInformer struct {
 	factory          internalinterfaces.SharedInformerFactory
@@ -32,25 +60,49 @@ type openShiftAPIServerInformer struct {
 // NewOpenShiftAPIServerInformer constructs a new informer for OpenShiftAPIServer type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedOpenShiftAPIServerInformer]).
 func NewOpenShiftAPIServerInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
 	return NewOpenShiftAPIServerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers})
+}
+
+// NewTypedOpenShiftAPIServerInformer constructs a new informer for OpenShiftAPIServer type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedOpenShiftAPIServerInformer(client versioned.Interface, resyncPeriod time.Duration, indexers OpenShiftAPIServerIndexers) OpenShiftAPIServerIndexInformer {
+	return NewTypedOpenShiftAPIServerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers)})
 }
 
 // NewFilteredOpenShiftAPIServerInformer constructs a new informer for OpenShiftAPIServer type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedFilteredOpenShiftAPIServerInformer]).
 func NewFilteredOpenShiftAPIServerInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
-	return NewOpenShiftAPIServerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+	return NewTypedOpenShiftAPIServerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+}
+
+// NewTypedFilteredOpenShiftAPIServerInformer constructs a new informer for OpenShiftAPIServer type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedFilteredOpenShiftAPIServerInformer(client versioned.Interface, resyncPeriod time.Duration, indexers OpenShiftAPIServerIndexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) OpenShiftAPIServerIndexInformer {
+	return NewTypedOpenShiftAPIServerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers), TweakListOptions: tweakListOptions})
 }
 
 // NewOpenShiftAPIServerInformerWithOptions constructs a new informer for OpenShiftAPIServer type with additional options.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedOpenShiftAPIServerInformerWithOptions]).
 func NewOpenShiftAPIServerInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) cache.SharedIndexInformer {
+	return NewTypedOpenShiftAPIServerInformerWithOptions(client, options)
+}
+
+// NewTypedOpenShiftAPIServerInformerWithOptions constructs a new informer for OpenShiftAPIServer type with additional options.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedOpenShiftAPIServerInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) OpenShiftAPIServerIndexInformer {
 	gvr := schema.GroupVersionResource{Group: "operator.openshift.io", Version: "v1", Resource: "openshiftapiservers"}
 	identifier := options.InformerName.WithResource(gvr)
 	tweakListOptions := options.TweakListOptions
-	return cache.NewSharedIndexInformerWithOptions(
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.OpenShiftAPIServer](cache.NewSharedIndexInformerWithOptions(
 		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
@@ -83,17 +135,57 @@ func NewOpenShiftAPIServerInformerWithOptions(client versioned.Interface, option
 			Indexers:     options.Indexers,
 			Identifier:   identifier,
 		},
-	)
+	))
 }
 
 func (f *openShiftAPIServerInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewOpenShiftAPIServerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
+	return NewTypedOpenShiftAPIServerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
 }
 
 func (f *openShiftAPIServerInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&apioperatorv1.OpenShiftAPIServer{}, f.defaultInformer)
+	return f.TypedInformer()
+}
+
+func (f *openShiftAPIServerInformer) TypedInformer() OpenShiftAPIServerIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.OpenShiftAPIServer](f.factory.InformerFor(&apioperatorv1.OpenShiftAPIServer{}, f.defaultInformer))
 }
 
 func (f *openShiftAPIServerInformer) Lister() operatorv1.OpenShiftAPIServerLister {
 	return operatorv1.NewOpenShiftAPIServerLister(f.Informer().GetIndexer())
+}
+
+// ToTypedOpenShiftAPIServerInformer converts an untyped informer into a TypedOpenShiftAPIServerInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *OpenShiftAPIServer. If that is not the case, calling type-safe methods of the returned
+// TypedOpenShiftAPIServerInformer leads to runtime panics. A safer alternative is to pass
+// around a TypedOpenShiftAPIServerInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToTypedOpenShiftAPIServerInformer(informer OpenShiftAPIServerInformer) TypedOpenShiftAPIServerInformer {
+	if informer, ok := informer.(TypedOpenShiftAPIServerInformer); ok {
+		return informer
+	}
+	return &openShiftAPIServerTypedInformerAdapter{informer}
+}
+
+type openShiftAPIServerTypedInformerAdapter struct {
+	OpenShiftAPIServerInformer
+}
+
+func (a *openShiftAPIServerTypedInformerAdapter) TypedInformer() OpenShiftAPIServerIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.OpenShiftAPIServer](a.Informer())
+}
+
+// ToOpenShiftAPIServerIndexInformer converts an untyped informer into a OpenShiftAPIServerIndexInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *OpenShiftAPIServer. If that is not the case, calling type-safe methods of the returned
+// OpenShiftAPIServerIndexInformer leads to runtime panics. A safer alternative is to pass
+// around a OpenShiftAPIServerIndexInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToOpenShiftAPIServerIndexInformer(informer cache.SharedIndexInformer) OpenShiftAPIServerIndexInformer {
+	if informer, ok := informer.(OpenShiftAPIServerIndexInformer); ok {
+		return informer
+	}
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.OpenShiftAPIServer](informer)
 }

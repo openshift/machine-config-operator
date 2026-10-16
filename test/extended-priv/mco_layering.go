@@ -271,7 +271,7 @@ RUN echo "echo 'Hello world! '$(whoami)" > /usr/bin/tc_54159_rpm_and_osimage && 
 			// is a way of waiting for the node to be ready after the reboot, so that the next test case
 			// can be executed without problems. Because the status cannot be retreived until the node is ready.
 			status, _ := node.GetRpmOstreeStatus(false)
-			logger.Infof(status)
+			logger.Infof("%s", status)
 		}()
 		// We wait, but we dont fail, if it does not become idle we cancel the transaction in the installation command
 		waitErr := node.WaitUntilRpmOsTreeIsIdle()

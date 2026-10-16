@@ -233,7 +233,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		machineConfiguration.WaitForBootImageSkewEnforcementStatusMode(SkewEnforcementAutomaticMode)
 
 		for _, tc := range testConfigs {
-			logger.Infof(tc.description)
+			logger.Infof("%s", tc.description)
 			err := machineConfiguration.Patch("merge", tc.patchConfig)
 			if tc.shouldSucceed {
 				o.Expect(err).NotTo(o.HaveOccurred(), "Config should be accepted when skew enforcement is Automatic: %s", tc.description)

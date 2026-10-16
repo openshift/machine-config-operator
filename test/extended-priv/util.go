@@ -882,7 +882,7 @@ func RotateMCSCertificates(oc *exutil.CLI) error {
 	logger.Infof("RUN: %s", command)
 	stdout, err := master.DebugNodeWithChroot(strings.Split(command, " ")...)
 
-	logger.Infof(stdout)
+	logger.Infof("%s", stdout)
 
 	return err
 }
@@ -993,7 +993,7 @@ func createCA(tmpDir, caFileName string) (keyPath, caPath string, err error) {
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		logger.Errorf(string(output))
+		logger.Errorf("%s", string(output))
 		return "", "", err
 	}
 
@@ -1006,7 +1006,7 @@ func createCA(tmpDir, caFileName string) (keyPath, caPath string, err error) {
 
 	output, err = cmd.CombinedOutput()
 	if err != nil {
-		logger.Errorf(string(output))
+		logger.Errorf("%s", string(output))
 		return "", "", err
 	}
 
