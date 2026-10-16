@@ -48,6 +48,8 @@ type ManagedMachineResource interface {
 	SetCoreOsBootImage(coreosBootImage string) error
 	GetCoreOsBootImageOrFail() string
 	GetCoreOSBootImagePath(platform string) (string, error)
+	PatchDisks(platform, disksJSON string) error
+	AppendDisks(platform string, disks ...string) error
 	SetArchitecture(arch string) error
 	SetAutoscalerLabels(labels string) error
 	GetArchitecture() (architecture.Architecture, error)
@@ -794,6 +796,48 @@ func (ms MachineSet) GetCoreOSBootImagePath(platform string) (string, error) {
 	}
 
 	return patchCoreOsBootImagePath, nil
+}
+
+// getDisksPath returns the JSON patch path for the disks field in the machineset's providerSpec
+func (ms MachineSet) getDisksPath(platform string) (string, error) {
+	switch platform {
+	case AWSPlatform:
+		return "/spec/template/spec/providerSpec/value/blockDevices", nil
+	case GCPPlatform:
+		return "/spec/template/spec/providerSpec/value/disks", nil
+	case AzurePlatform:
+		return "/spec/template/spec/providerSpec/value/dataDisks", nil
+	case VspherePlatform:
+		return "/spec/template/spec/providerSpec/value/dataDisks", nil
+	case BaremetalPlatform:
+		return "", nil
+	default:
+		return "", fmt.Errorf("getDisksPath is not supported for platform %s", platform)
+	}
+}
+
+// PatchDisks sets the disks field in the machineset's providerSpec. disksJSON is a raw JSON array.
+func (ms MachineSet) PatchDisks(platform, disksJSON string) error {
+	path, err := ms.getDisksPath(platform)
+	if err != nil || path == "" {
+		return err
+	}
+	return ms.Patch("json", fmt.Sprintf(`[{"op":"add","path":"%s","value":%s}]`, path, disksJSON))
+}
+
+// AppendDisks appends disk objects to the existing disks array in the machineset's providerSpec.
+// Each disk is a raw JSON string representing a single disk object.
+func (ms MachineSet) AppendDisks(platform string, disks ...string) error {
+	path, err := ms.getDisksPath(platform)
+	if err != nil || path == "" {
+		return err
+	}
+	appendPath := path + "/-"
+	var ops []string
+	for _, disk := range disks {
+		ops = append(ops, fmt.Sprintf(`{"op":"add","path":"%s","value":%s}`, appendPath, disk))
+	}
+	return ms.Patch("json", "["+strings.Join(ops, ",")+"]")
 }
 
 // GCPGetMachineSetBootDiskIndex returns the index of the boot disk in the GCP disks array

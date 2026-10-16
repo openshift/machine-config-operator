@@ -11,23 +11,33 @@ import (
 )
 
 func platformBasedDisksPatch(platform string, ms ManagedMachineResource) error {
-	var err error
+	_, isCAPI := ms.(*CAPIMachineSet)
 	switch platform {
 	case AWSPlatform:
-		err = ms.Patch("json", `[{"op":"add","path":"/spec/template/spec/providerSpec/value/blockDevices/-","value":{"deviceName":"/dev/sdb","ebs":{"encrypted":false,"iops":0,"volumeSize":120,"volumeType":"gp3"}}},{"op":"add","path":"/spec/template/spec/providerSpec/value/blockDevices/-","value":{"deviceName":"/dev/sdc","ebs":{"encrypted":false,"iops":0,"volumeSize":120,"volumeType":"gp3"}}}]`)
+		if isCAPI {
+			return ms.AppendDisks(platform,
+				`{"deviceName":"/dev/sdb","encrypted":false,"iops":0,"size":120,"type":"gp3"}`,
+				`{"deviceName":"/dev/sdc","encrypted":false,"iops":0,"size":120,"type":"gp3"}`,
+			)
+		}
+		return ms.AppendDisks(platform,
+			`{"deviceName":"/dev/sdb","ebs":{"encrypted":false,"iops":0,"volumeSize":120,"volumeType":"gp3"}}`,
+			`{"deviceName":"/dev/sdc","ebs":{"encrypted":false,"iops":0,"volumeSize":120,"volumeType":"gp3"}}`,
+		)
 	case GCPPlatform:
-		err = ms.Patch("json", `[{"op":"add","path":"/spec/template/spec/providerSpec/value/disks/-","value":{"autoDelete":true,"boot":false,"sizeGb":16,"type":"pd-standard"}},{"op":"add","path":"/spec/template/spec/providerSpec/value/disks/-","value":{"autoDelete":true,"boot":false,"sizeGb":16,"type":"pd-standard"}}]`)
+		return ms.AppendDisks(platform,
+			`{"autoDelete":true,"boot":false,"sizeGb":16,"type":"pd-standard"}`,
+			`{"autoDelete":true,"boot":false,"sizeGb":16,"type":"pd-standard"}`,
+		)
 	case AzurePlatform:
-		err = ms.Patch("json", `[{"op":"add","path":"/spec/template/spec/providerSpec/value/dataDisks","value":[{"nameSuffix":"disk1","diskSizeGB":16,"lun":0,"deletionPolicy":"Delete"},{"nameSuffix":"disk2","diskSizeGB":16,"lun":1,"deletionPolicy":"Delete"}]}]`)
+		return ms.PatchDisks(platform, `[{"nameSuffix":"disk1","diskSizeGB":16,"lun":0,"deletionPolicy":"Delete"},{"nameSuffix":"disk2","diskSizeGB":16,"lun":1,"deletionPolicy":"Delete"}]`)
 	case VspherePlatform:
-		err = ms.Patch("json", `[{"op":"add","path":"/spec/template/spec/providerSpec/value/dataDisks","value":[{"name":"data-disk-1","sizeGiB":16},{"name":"data-disk-2","sizeGiB":16}]}]`)
+		return ms.PatchDisks(platform, `[{"name":"data-disk-1","sizeGiB":16},{"name":"data-disk-2","sizeGiB":16}]`)
 	case BaremetalPlatform:
-		// skip patch on BaremetalPlatform
-		err = nil
+		return nil
 	default:
-		err = fmt.Errorf("Unknown platform: %v", platform)
+		return fmt.Errorf("Unknown platform: %v", platform)
 	}
-	return err
 }
 
 func platformBasedDisksNames(platform string) []string {

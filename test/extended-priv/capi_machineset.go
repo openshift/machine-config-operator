@@ -41,6 +41,27 @@ func (ms CAPIMachineSet) String() string {
 	return ms.GetName()
 }
 
+// Delete removes the CAPI MachineSet and its associated infrastructure template
+func (ms CAPIMachineSet) Delete(extraParams ...string) error {
+	tmplRes, err := ms.getInfrastructureTemplateResource()
+	if err != nil {
+		logger.Errorf("Error getting infrastructure template for %s: %v. Proceeding with machineset deletion.", ms.GetName(), err)
+	}
+
+	msErr := ms.Resource.Delete(extraParams...)
+
+	if tmplRes != nil {
+		if delErr := tmplRes.Delete(); delErr != nil {
+			logger.Errorf("Error deleting infrastructure template %s: %v", tmplRes.GetName(), delErr)
+			if msErr == nil {
+				msErr = delErr
+			}
+		}
+	}
+
+	return msErr
+}
+
 // ScaleTo scales the CAPI MachineSet to the exact given value
 func (ms CAPIMachineSet) ScaleTo(scale int) error {
 	return ms.Patch("merge", fmt.Sprintf(`{"spec": {"replicas": %d}}`, scale))
@@ -307,46 +328,87 @@ func (ms CAPIMachineSet) GetCoreOSBootImagePath(platform string) (string, error)
 }
 
 // SetCoreOsBootImage sets the boot image in the infrastructure template.
-// CAPI infrastructure templates are immutable, so this method reads the current template,
-// deletes it, and re-creates it with the new boot image.
+// CAPI infrastructure templates are immutable, so this method deletes and re-creates the template.
 func (ms CAPIMachineSet) SetCoreOsBootImage(coreosBootImage string) error {
+	bootImagePath, err := ms.GetCoreOSBootImagePath(exutil.CheckPlatform(ms.oc))
+	if err != nil {
+		return err
+	}
+	jsonBootImagePath := strings.ReplaceAll(strings.TrimPrefix(bootImagePath, "/"), "/", ".")
+	return ms.recreateTemplateWithModification(func(resString string) (string, error) {
+		return sjson.SetRaw(resString, jsonBootImagePath, QuoteIfNotJSON(coreosBootImage))
+	})
+}
+
+// getDisksPath returns the sjson dot-notation path for the disks field in the infrastructure template
+func (ms CAPIMachineSet) getDisksPath(platform string) (string, error) {
+	switch platform {
+	case AWSPlatform:
+		return "spec.template.spec.nonRootVolumes", nil
+	default:
+		return "", fmt.Errorf("CAPI getDisksPath is not implemented for platform %s", platform)
+	}
+}
+
+// recreateTemplateWithModification deletes and re-creates the immutable infrastructure template with a modification function applied
+func (ms CAPIMachineSet) recreateTemplateWithModification(modifyFunc func(string) (string, error)) error {
 	tmplRes, err := ms.getInfrastructureTemplateResource()
 	if err != nil {
 		return err
 	}
 
-	bootImagePath, err := ms.GetCoreOSBootImagePath(exutil.CheckPlatform(ms.oc))
-	if err != nil {
-		return err
-	}
-
-	// Transform the JSON patch path to sjson dot-notation
-	jsonBootImagePath := strings.ReplaceAll(strings.TrimPrefix(bootImagePath, "/"), "/", ".")
-
-	// Save all template data before deleting
 	templateName := tmplRes.GetName()
 	templateKind := tmplRes.GetKind()
 	templateNamespace := tmplRes.GetNamespace()
 	templateOC := tmplRes.GetOC()
 
-	jsonRes, err := GetClonedResourceJSONString(tmplRes, templateName, templateNamespace, func(resString string) (string, error) {
-		return sjson.SetRaw(resString, jsonBootImagePath, QuoteIfNotJSON(coreosBootImage))
-	})
+	jsonRes, err := GetClonedResourceJSONString(tmplRes, templateName, templateNamespace, modifyFunc)
 	if err != nil {
 		return fmt.Errorf("error preparing infrastructure template JSON: %w", err)
 	}
 
-	logger.Infof("Deleting immutable infrastructure template %s to re-create it with new boot image", templateName)
+	logger.Infof("Deleting immutable infrastructure template %s to re-create it with modifications", templateName)
 	if err := tmplRes.Delete(); err != nil {
 		return fmt.Errorf("error deleting infrastructure template %s: %w", templateName, err)
 	}
 
 	_, err = CreateResourceFromJSON(templateOC, templateKind, templateName, templateNamespace, jsonRes)
 	if err != nil {
-		return fmt.Errorf("error re-creating infrastructure template %s with new boot image: %w", templateName, err)
+		return fmt.Errorf("error re-creating infrastructure template %s: %w", templateName, err)
 	}
 
 	return nil
+}
+
+// PatchDisks sets the disks field in the CAPI infrastructure template. disksJSON is a raw JSON array.
+// CAPI infrastructure templates are immutable, so this method deletes and re-creates the template.
+func (ms CAPIMachineSet) PatchDisks(platform, disksJSON string) error {
+	disksField, err := ms.getDisksPath(platform)
+	if err != nil || disksField == "" {
+		return err
+	}
+	return ms.recreateTemplateWithModification(func(resString string) (string, error) {
+		return sjson.SetRaw(resString, disksField, disksJSON)
+	})
+}
+
+// AppendDisks appends disk objects to the existing disks array in the CAPI infrastructure template.
+// disksJSON is a raw JSON array; each element is appended individually.
+// CAPI infrastructure templates are immutable, so this method deletes and re-creates the template.
+func (ms CAPIMachineSet) AppendDisks(platform string, disks ...string) error {
+	disksField, err := ms.getDisksPath(platform)
+	if err != nil || disksField == "" {
+		return err
+	}
+	return ms.recreateTemplateWithModification(func(resString string) (string, error) {
+		for _, disk := range disks {
+			resString, err = sjson.SetRaw(resString, disksField+".-1", disk)
+			if err != nil {
+				return "", err
+			}
+		}
+		return resString, nil
+	})
 }
 
 // GetArchitecture returns the architecture configured for this CAPI MachineSet
