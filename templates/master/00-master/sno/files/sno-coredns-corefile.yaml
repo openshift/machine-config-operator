@@ -1,0 +1,34 @@
+{{- if isSNOCoreDNSEnabled }}
+mode: 0644
+path: "/etc/kubernetes/static-pod-resources/sno-coredns/Corefile.tmpl"
+contents:
+  inline: |
+    . {
+        errors
+        health :18080
+        ready :18081
+        bind {{`{{- range .DNSAddresses }} {{ .Address }}{{- end }}`}}
+        {{`{{- range .DNSAddresses }}`}}
+        template IN {{`{{ .RecordType }}`}} {{ .DNS.Spec.BaseDomain }} {
+            match ^api[.]{{ .DNS.Spec.BaseDomain }}[.]?$
+            answer "{{`{{"{{ .Name }}"}}`}} 60 IN {{`{{ .RecordType }}`}} {{`{{ .Address }}`}}"
+            fallthrough
+        }
+        template IN {{`{{ .RecordType }}`}} {{ .DNS.Spec.BaseDomain }} {
+            match ^api-int[.]{{ .DNS.Spec.BaseDomain }}[.]?$
+            answer "{{`{{"{{ .Name }}"}}`}} 60 IN {{`{{ .RecordType }}`}} {{`{{ .Address }}`}}"
+            fallthrough
+        }
+        template IN {{`{{ .RecordType }}`}} {{ .DNS.Spec.BaseDomain }} {
+            match ^.+[.]apps[.]{{ .DNS.Spec.BaseDomain }}[.]?$
+            answer "{{`{{"{{ .Name }}"}}`}} 60 IN {{`{{ .RecordType }}`}} {{`{{ .Address }}`}}"
+            fallthrough
+        }
+        {{`{{- end }}`}}
+        forward . {{`{{- range .DNSUpstreams }} {{ . }}{{- end }}`}} {
+            policy sequential
+        }
+        cache 30
+        reload
+    }
+{{- end }}

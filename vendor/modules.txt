@@ -1362,7 +1362,7 @@ github.com/openshift-eng/openshift-tests-extension/pkg/ginkgo
 github.com/openshift-eng/openshift-tests-extension/pkg/junit
 github.com/openshift-eng/openshift-tests-extension/pkg/util/sets
 github.com/openshift-eng/openshift-tests-extension/pkg/version
-# github.com/openshift/api v0.0.0-20260924141611-e4a04a95d6cf
+# github.com/openshift/api v0.0.0-20260924184654-049636e9e007
 ## explicit; go 1.26.0
 github.com/openshift/api
 github.com/openshift/api/annotations
