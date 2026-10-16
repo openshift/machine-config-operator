@@ -324,7 +324,7 @@ func (b *OsImageBuilderInNode) buildImage() error {
 		return logAndError("Podman failed building image %s:\n%s\n%s", b.osImage, output, err)
 	}
 
-	logger.Debugf(output)
+	logger.Debugf("%s", output)
 	logger.Infof("OK!\n")
 
 	return nil
@@ -359,7 +359,7 @@ func (b *OsImageBuilderInNode) pushImage() error {
 		return logAndError("Podman was not authorized to push the image %s:\n%s\n", b.osImage, output)
 	}
 
-	logger.Debugf(output)
+	logger.Debugf("%s", output)
 	logger.Infof("OK!\n")
 	return nil
 }
@@ -380,7 +380,7 @@ func (b *OsImageBuilderInNode) removeImage() error {
 		return logAndError("Podman failed removing image %s:\n%s\n%s", b.osImage, rmOutput, err)
 	}
 
-	logger.Debugf(rmOutput)
+	logger.Debugf("%s", rmOutput)
 	logger.Infof("OK!\n")
 	return nil
 }
@@ -397,7 +397,7 @@ func (b *OsImageBuilderInNode) digestImage() (string, error) {
 		return "", logAndError("Skopeo failed inspecting image %s:\n%s\n%s", b.osImage, inspectInfo, err)
 	}
 
-	logger.Debugf(inspectInfo)
+	logger.Debugf("%s", inspectInfo)
 
 	inspectJSON := JSON(inspectInfo)
 	digestedImage := inspectJSON.Get("Name").ToString() + "@" + inspectJSON.Get("Digest").ToString()

@@ -18,11 +18,39 @@ import (
 )
 
 // ClusterCSIDriverInformer provides access to a shared informer and lister for
-// ClusterCSIDrivers.
+// ClusterCSIDrivers. Prefer using the type-safe variant (see [TypedClusterCSIDriverInformer]).
 type ClusterCSIDriverInformer interface {
 	Informer() cache.SharedIndexInformer
 	Lister() operatorv1.ClusterCSIDriverLister
 }
+
+// TypedClusterCSIDriverInformer provides access to a shared informer and lister for
+// ClusterCSIDrivers, including the type-safe TypedInformer variant.
+// It is a superset of ClusterCSIDriverInformer.
+type TypedClusterCSIDriverInformer interface {
+	Informer() cache.SharedIndexInformer
+	TypedInformer() ClusterCSIDriverIndexInformer
+	Lister() operatorv1.ClusterCSIDriverLister
+}
+
+// ClusterCSIDriverIndexInformer is a wrapper around the underlying [cache.SharedIndexInformer]
+// with type-safe variants of several methods.
+type ClusterCSIDriverIndexInformer cache.TypedSharedIndexInformer[*apioperatorv1.ClusterCSIDriver]
+
+// ClusterCSIDriverHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerFuncs] for ClusterCSIDriver.
+type ClusterCSIDriverHandlerFuncs = cache.TypedResourceEventHandlerFuncs[*apioperatorv1.ClusterCSIDriver]
+
+// ClusterCSIDriverDetailedHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerDetailedFuncs] for ClusterCSIDriver.
+type ClusterCSIDriverDetailedHandlerFuncs = cache.TypedResourceEventHandlerDetailedFuncs[*apioperatorv1.ClusterCSIDriver]
+
+// ClusterCSIDriverFilteringHandler is a specialization of [cache.TypedFilteringResourceEventHandler] for ClusterCSIDriver.
+type ClusterCSIDriverFilteringHandler = cache.TypedFilteringResourceEventHandler[*apioperatorv1.ClusterCSIDriver]
+
+// ClusterCSIDriverIndexers is a specialization of [cache.TypedIndexers] for ClusterCSIDriver.
+type ClusterCSIDriverIndexers = cache.TypedIndexers[*apioperatorv1.ClusterCSIDriver]
+
+// DeletedClusterCSIDriver is a specialization of [cache.DeletedObject] for ClusterCSIDriver.
+type DeletedClusterCSIDriver = cache.DeletedObject[*apioperatorv1.ClusterCSIDriver]
 
 type clusterCSIDriverInformer struct {
 	factory          internalinterfaces.SharedInformerFactory
@@ -32,25 +60,49 @@ type clusterCSIDriverInformer struct {
 // NewClusterCSIDriverInformer constructs a new informer for ClusterCSIDriver type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedClusterCSIDriverInformer]).
 func NewClusterCSIDriverInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
 	return NewClusterCSIDriverInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers})
+}
+
+// NewTypedClusterCSIDriverInformer constructs a new informer for ClusterCSIDriver type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedClusterCSIDriverInformer(client versioned.Interface, resyncPeriod time.Duration, indexers ClusterCSIDriverIndexers) ClusterCSIDriverIndexInformer {
+	return NewTypedClusterCSIDriverInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers)})
 }
 
 // NewFilteredClusterCSIDriverInformer constructs a new informer for ClusterCSIDriver type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedFilteredClusterCSIDriverInformer]).
 func NewFilteredClusterCSIDriverInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
-	return NewClusterCSIDriverInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+	return NewTypedClusterCSIDriverInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+}
+
+// NewTypedFilteredClusterCSIDriverInformer constructs a new informer for ClusterCSIDriver type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedFilteredClusterCSIDriverInformer(client versioned.Interface, resyncPeriod time.Duration, indexers ClusterCSIDriverIndexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) ClusterCSIDriverIndexInformer {
+	return NewTypedClusterCSIDriverInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers), TweakListOptions: tweakListOptions})
 }
 
 // NewClusterCSIDriverInformerWithOptions constructs a new informer for ClusterCSIDriver type with additional options.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedClusterCSIDriverInformerWithOptions]).
 func NewClusterCSIDriverInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) cache.SharedIndexInformer {
+	return NewTypedClusterCSIDriverInformerWithOptions(client, options)
+}
+
+// NewTypedClusterCSIDriverInformerWithOptions constructs a new informer for ClusterCSIDriver type with additional options.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedClusterCSIDriverInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) ClusterCSIDriverIndexInformer {
 	gvr := schema.GroupVersionResource{Group: "operator.openshift.io", Version: "v1", Resource: "clustercsidrivers"}
 	identifier := options.InformerName.WithResource(gvr)
 	tweakListOptions := options.TweakListOptions
-	return cache.NewSharedIndexInformerWithOptions(
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.ClusterCSIDriver](cache.NewSharedIndexInformerWithOptions(
 		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
@@ -83,17 +135,57 @@ func NewClusterCSIDriverInformerWithOptions(client versioned.Interface, options 
 			Indexers:     options.Indexers,
 			Identifier:   identifier,
 		},
-	)
+	))
 }
 
 func (f *clusterCSIDriverInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewClusterCSIDriverInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
+	return NewTypedClusterCSIDriverInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
 }
 
 func (f *clusterCSIDriverInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&apioperatorv1.ClusterCSIDriver{}, f.defaultInformer)
+	return f.TypedInformer()
+}
+
+func (f *clusterCSIDriverInformer) TypedInformer() ClusterCSIDriverIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.ClusterCSIDriver](f.factory.InformerFor(&apioperatorv1.ClusterCSIDriver{}, f.defaultInformer))
 }
 
 func (f *clusterCSIDriverInformer) Lister() operatorv1.ClusterCSIDriverLister {
 	return operatorv1.NewClusterCSIDriverLister(f.Informer().GetIndexer())
+}
+
+// ToTypedClusterCSIDriverInformer converts an untyped informer into a TypedClusterCSIDriverInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *ClusterCSIDriver. If that is not the case, calling type-safe methods of the returned
+// TypedClusterCSIDriverInformer leads to runtime panics. A safer alternative is to pass
+// around a TypedClusterCSIDriverInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToTypedClusterCSIDriverInformer(informer ClusterCSIDriverInformer) TypedClusterCSIDriverInformer {
+	if informer, ok := informer.(TypedClusterCSIDriverInformer); ok {
+		return informer
+	}
+	return &clusterCSIDriverTypedInformerAdapter{informer}
+}
+
+type clusterCSIDriverTypedInformerAdapter struct {
+	ClusterCSIDriverInformer
+}
+
+func (a *clusterCSIDriverTypedInformerAdapter) TypedInformer() ClusterCSIDriverIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.ClusterCSIDriver](a.Informer())
+}
+
+// ToClusterCSIDriverIndexInformer converts an untyped informer into a ClusterCSIDriverIndexInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *ClusterCSIDriver. If that is not the case, calling type-safe methods of the returned
+// ClusterCSIDriverIndexInformer leads to runtime panics. A safer alternative is to pass
+// around a ClusterCSIDriverIndexInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToClusterCSIDriverIndexInformer(informer cache.SharedIndexInformer) ClusterCSIDriverIndexInformer {
+	if informer, ok := informer.(ClusterCSIDriverIndexInformer); ok {
+		return informer
+	}
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.ClusterCSIDriver](informer)
 }

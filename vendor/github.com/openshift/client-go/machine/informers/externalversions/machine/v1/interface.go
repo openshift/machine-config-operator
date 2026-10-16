@@ -9,7 +9,7 @@ import (
 // Interface provides access to all the informers in this group version.
 type Interface interface {
 	// ControlPlaneMachineSets returns a ControlPlaneMachineSetInformer.
-	ControlPlaneMachineSets() ControlPlaneMachineSetInformer
+	ControlPlaneMachineSets() TypedControlPlaneMachineSetInformer
 }
 
 type version struct {
@@ -23,7 +23,7 @@ func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakList
 	return &version{factory: f, namespace: namespace, tweakListOptions: tweakListOptions}
 }
 
-// ControlPlaneMachineSets returns a ControlPlaneMachineSetInformer.
-func (v *version) ControlPlaneMachineSets() ControlPlaneMachineSetInformer {
+// ControlPlaneMachineSets returns a TypedControlPlaneMachineSetInformer.
+func (v *version) ControlPlaneMachineSets() TypedControlPlaneMachineSetInformer {
 	return &controlPlaneMachineSetInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }

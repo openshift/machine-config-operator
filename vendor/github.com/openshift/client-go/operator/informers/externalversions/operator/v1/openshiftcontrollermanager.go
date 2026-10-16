@@ -18,11 +18,39 @@ import (
 )
 
 // OpenShiftControllerManagerInformer provides access to a shared informer and lister for
-// OpenShiftControllerManagers.
+// OpenShiftControllerManagers. Prefer using the type-safe variant (see [TypedOpenShiftControllerManagerInformer]).
 type OpenShiftControllerManagerInformer interface {
 	Informer() cache.SharedIndexInformer
 	Lister() operatorv1.OpenShiftControllerManagerLister
 }
+
+// TypedOpenShiftControllerManagerInformer provides access to a shared informer and lister for
+// OpenShiftControllerManagers, including the type-safe TypedInformer variant.
+// It is a superset of OpenShiftControllerManagerInformer.
+type TypedOpenShiftControllerManagerInformer interface {
+	Informer() cache.SharedIndexInformer
+	TypedInformer() OpenShiftControllerManagerIndexInformer
+	Lister() operatorv1.OpenShiftControllerManagerLister
+}
+
+// OpenShiftControllerManagerIndexInformer is a wrapper around the underlying [cache.SharedIndexInformer]
+// with type-safe variants of several methods.
+type OpenShiftControllerManagerIndexInformer cache.TypedSharedIndexInformer[*apioperatorv1.OpenShiftControllerManager]
+
+// OpenShiftControllerManagerHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerFuncs] for OpenShiftControllerManager.
+type OpenShiftControllerManagerHandlerFuncs = cache.TypedResourceEventHandlerFuncs[*apioperatorv1.OpenShiftControllerManager]
+
+// OpenShiftControllerManagerDetailedHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerDetailedFuncs] for OpenShiftControllerManager.
+type OpenShiftControllerManagerDetailedHandlerFuncs = cache.TypedResourceEventHandlerDetailedFuncs[*apioperatorv1.OpenShiftControllerManager]
+
+// OpenShiftControllerManagerFilteringHandler is a specialization of [cache.TypedFilteringResourceEventHandler] for OpenShiftControllerManager.
+type OpenShiftControllerManagerFilteringHandler = cache.TypedFilteringResourceEventHandler[*apioperatorv1.OpenShiftControllerManager]
+
+// OpenShiftControllerManagerIndexers is a specialization of [cache.TypedIndexers] for OpenShiftControllerManager.
+type OpenShiftControllerManagerIndexers = cache.TypedIndexers[*apioperatorv1.OpenShiftControllerManager]
+
+// DeletedOpenShiftControllerManager is a specialization of [cache.DeletedObject] for OpenShiftControllerManager.
+type DeletedOpenShiftControllerManager = cache.DeletedObject[*apioperatorv1.OpenShiftControllerManager]
 
 type openShiftControllerManagerInformer struct {
 	factory          internalinterfaces.SharedInformerFactory
@@ -32,25 +60,49 @@ type openShiftControllerManagerInformer struct {
 // NewOpenShiftControllerManagerInformer constructs a new informer for OpenShiftControllerManager type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedOpenShiftControllerManagerInformer]).
 func NewOpenShiftControllerManagerInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
 	return NewOpenShiftControllerManagerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers})
+}
+
+// NewTypedOpenShiftControllerManagerInformer constructs a new informer for OpenShiftControllerManager type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedOpenShiftControllerManagerInformer(client versioned.Interface, resyncPeriod time.Duration, indexers OpenShiftControllerManagerIndexers) OpenShiftControllerManagerIndexInformer {
+	return NewTypedOpenShiftControllerManagerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers)})
 }
 
 // NewFilteredOpenShiftControllerManagerInformer constructs a new informer for OpenShiftControllerManager type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedFilteredOpenShiftControllerManagerInformer]).
 func NewFilteredOpenShiftControllerManagerInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
-	return NewOpenShiftControllerManagerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+	return NewTypedOpenShiftControllerManagerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+}
+
+// NewTypedFilteredOpenShiftControllerManagerInformer constructs a new informer for OpenShiftControllerManager type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedFilteredOpenShiftControllerManagerInformer(client versioned.Interface, resyncPeriod time.Duration, indexers OpenShiftControllerManagerIndexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) OpenShiftControllerManagerIndexInformer {
+	return NewTypedOpenShiftControllerManagerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers), TweakListOptions: tweakListOptions})
 }
 
 // NewOpenShiftControllerManagerInformerWithOptions constructs a new informer for OpenShiftControllerManager type with additional options.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedOpenShiftControllerManagerInformerWithOptions]).
 func NewOpenShiftControllerManagerInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) cache.SharedIndexInformer {
+	return NewTypedOpenShiftControllerManagerInformerWithOptions(client, options)
+}
+
+// NewTypedOpenShiftControllerManagerInformerWithOptions constructs a new informer for OpenShiftControllerManager type with additional options.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedOpenShiftControllerManagerInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) OpenShiftControllerManagerIndexInformer {
 	gvr := schema.GroupVersionResource{Group: "operator.openshift.io", Version: "v1", Resource: "openshiftcontrollermanagers"}
 	identifier := options.InformerName.WithResource(gvr)
 	tweakListOptions := options.TweakListOptions
-	return cache.NewSharedIndexInformerWithOptions(
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.OpenShiftControllerManager](cache.NewSharedIndexInformerWithOptions(
 		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
@@ -83,17 +135,57 @@ func NewOpenShiftControllerManagerInformerWithOptions(client versioned.Interface
 			Indexers:     options.Indexers,
 			Identifier:   identifier,
 		},
-	)
+	))
 }
 
 func (f *openShiftControllerManagerInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewOpenShiftControllerManagerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
+	return NewTypedOpenShiftControllerManagerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
 }
 
 func (f *openShiftControllerManagerInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&apioperatorv1.OpenShiftControllerManager{}, f.defaultInformer)
+	return f.TypedInformer()
+}
+
+func (f *openShiftControllerManagerInformer) TypedInformer() OpenShiftControllerManagerIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.OpenShiftControllerManager](f.factory.InformerFor(&apioperatorv1.OpenShiftControllerManager{}, f.defaultInformer))
 }
 
 func (f *openShiftControllerManagerInformer) Lister() operatorv1.OpenShiftControllerManagerLister {
 	return operatorv1.NewOpenShiftControllerManagerLister(f.Informer().GetIndexer())
+}
+
+// ToTypedOpenShiftControllerManagerInformer converts an untyped informer into a TypedOpenShiftControllerManagerInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *OpenShiftControllerManager. If that is not the case, calling type-safe methods of the returned
+// TypedOpenShiftControllerManagerInformer leads to runtime panics. A safer alternative is to pass
+// around a TypedOpenShiftControllerManagerInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToTypedOpenShiftControllerManagerInformer(informer OpenShiftControllerManagerInformer) TypedOpenShiftControllerManagerInformer {
+	if informer, ok := informer.(TypedOpenShiftControllerManagerInformer); ok {
+		return informer
+	}
+	return &openShiftControllerManagerTypedInformerAdapter{informer}
+}
+
+type openShiftControllerManagerTypedInformerAdapter struct {
+	OpenShiftControllerManagerInformer
+}
+
+func (a *openShiftControllerManagerTypedInformerAdapter) TypedInformer() OpenShiftControllerManagerIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.OpenShiftControllerManager](a.Informer())
+}
+
+// ToOpenShiftControllerManagerIndexInformer converts an untyped informer into a OpenShiftControllerManagerIndexInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *OpenShiftControllerManager. If that is not the case, calling type-safe methods of the returned
+// OpenShiftControllerManagerIndexInformer leads to runtime panics. A safer alternative is to pass
+// around a OpenShiftControllerManagerIndexInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToOpenShiftControllerManagerIndexInformer(informer cache.SharedIndexInformer) OpenShiftControllerManagerIndexInformer {
+	if informer, ok := informer.(OpenShiftControllerManagerIndexInformer); ok {
+		return informer
+	}
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.OpenShiftControllerManager](informer)
 }

@@ -9,17 +9,17 @@ import (
 // Interface provides access to all the informers in this group version.
 type Interface interface {
 	// ClusterAPIs returns a ClusterAPIInformer.
-	ClusterAPIs() ClusterAPIInformer
+	ClusterAPIs() TypedClusterAPIInformer
 	// ClusterVersionOperators returns a ClusterVersionOperatorInformer.
-	ClusterVersionOperators() ClusterVersionOperatorInformer
+	ClusterVersionOperators() TypedClusterVersionOperatorInformer
 	// EtcdBackups returns a EtcdBackupInformer.
-	EtcdBackups() EtcdBackupInformer
+	EtcdBackups() TypedEtcdBackupInformer
 	// ImageContentSourcePolicies returns a ImageContentSourcePolicyInformer.
-	ImageContentSourcePolicies() ImageContentSourcePolicyInformer
+	ImageContentSourcePolicies() TypedImageContentSourcePolicyInformer
 	// Ingresses returns a IngressInformer.
-	Ingresses() IngressInformer
+	Ingresses() TypedIngressInformer
 	// OLMs returns a OLMInformer.
-	OLMs() OLMInformer
+	OLMs() TypedOLMInformer
 }
 
 type version struct {
@@ -33,32 +33,32 @@ func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakList
 	return &version{factory: f, namespace: namespace, tweakListOptions: tweakListOptions}
 }
 
-// ClusterAPIs returns a ClusterAPIInformer.
-func (v *version) ClusterAPIs() ClusterAPIInformer {
+// ClusterAPIs returns a TypedClusterAPIInformer.
+func (v *version) ClusterAPIs() TypedClusterAPIInformer {
 	return &clusterAPIInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// ClusterVersionOperators returns a ClusterVersionOperatorInformer.
-func (v *version) ClusterVersionOperators() ClusterVersionOperatorInformer {
+// ClusterVersionOperators returns a TypedClusterVersionOperatorInformer.
+func (v *version) ClusterVersionOperators() TypedClusterVersionOperatorInformer {
 	return &clusterVersionOperatorInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// EtcdBackups returns a EtcdBackupInformer.
-func (v *version) EtcdBackups() EtcdBackupInformer {
+// EtcdBackups returns a TypedEtcdBackupInformer.
+func (v *version) EtcdBackups() TypedEtcdBackupInformer {
 	return &etcdBackupInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// ImageContentSourcePolicies returns a ImageContentSourcePolicyInformer.
-func (v *version) ImageContentSourcePolicies() ImageContentSourcePolicyInformer {
+// ImageContentSourcePolicies returns a TypedImageContentSourcePolicyInformer.
+func (v *version) ImageContentSourcePolicies() TypedImageContentSourcePolicyInformer {
 	return &imageContentSourcePolicyInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// Ingresses returns a IngressInformer.
-func (v *version) Ingresses() IngressInformer {
+// Ingresses returns a TypedIngressInformer.
+func (v *version) Ingresses() TypedIngressInformer {
 	return &ingressInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// OLMs returns a OLMInformer.
-func (v *version) OLMs() OLMInformer {
+// OLMs returns a TypedOLMInformer.
+func (v *version) OLMs() TypedOLMInformer {
 	return &oLMInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }

@@ -18,11 +18,39 @@ import (
 )
 
 // CSISnapshotControllerInformer provides access to a shared informer and lister for
-// CSISnapshotControllers.
+// CSISnapshotControllers. Prefer using the type-safe variant (see [TypedCSISnapshotControllerInformer]).
 type CSISnapshotControllerInformer interface {
 	Informer() cache.SharedIndexInformer
 	Lister() operatorv1.CSISnapshotControllerLister
 }
+
+// TypedCSISnapshotControllerInformer provides access to a shared informer and lister for
+// CSISnapshotControllers, including the type-safe TypedInformer variant.
+// It is a superset of CSISnapshotControllerInformer.
+type TypedCSISnapshotControllerInformer interface {
+	Informer() cache.SharedIndexInformer
+	TypedInformer() CSISnapshotControllerIndexInformer
+	Lister() operatorv1.CSISnapshotControllerLister
+}
+
+// CSISnapshotControllerIndexInformer is a wrapper around the underlying [cache.SharedIndexInformer]
+// with type-safe variants of several methods.
+type CSISnapshotControllerIndexInformer cache.TypedSharedIndexInformer[*apioperatorv1.CSISnapshotController]
+
+// CSISnapshotControllerHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerFuncs] for CSISnapshotController.
+type CSISnapshotControllerHandlerFuncs = cache.TypedResourceEventHandlerFuncs[*apioperatorv1.CSISnapshotController]
+
+// CSISnapshotControllerDetailedHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerDetailedFuncs] for CSISnapshotController.
+type CSISnapshotControllerDetailedHandlerFuncs = cache.TypedResourceEventHandlerDetailedFuncs[*apioperatorv1.CSISnapshotController]
+
+// CSISnapshotControllerFilteringHandler is a specialization of [cache.TypedFilteringResourceEventHandler] for CSISnapshotController.
+type CSISnapshotControllerFilteringHandler = cache.TypedFilteringResourceEventHandler[*apioperatorv1.CSISnapshotController]
+
+// CSISnapshotControllerIndexers is a specialization of [cache.TypedIndexers] for CSISnapshotController.
+type CSISnapshotControllerIndexers = cache.TypedIndexers[*apioperatorv1.CSISnapshotController]
+
+// DeletedCSISnapshotController is a specialization of [cache.DeletedObject] for CSISnapshotController.
+type DeletedCSISnapshotController = cache.DeletedObject[*apioperatorv1.CSISnapshotController]
 
 type cSISnapshotControllerInformer struct {
 	factory          internalinterfaces.SharedInformerFactory
@@ -32,25 +60,49 @@ type cSISnapshotControllerInformer struct {
 // NewCSISnapshotControllerInformer constructs a new informer for CSISnapshotController type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedCSISnapshotControllerInformer]).
 func NewCSISnapshotControllerInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
 	return NewCSISnapshotControllerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers})
+}
+
+// NewTypedCSISnapshotControllerInformer constructs a new informer for CSISnapshotController type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedCSISnapshotControllerInformer(client versioned.Interface, resyncPeriod time.Duration, indexers CSISnapshotControllerIndexers) CSISnapshotControllerIndexInformer {
+	return NewTypedCSISnapshotControllerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers)})
 }
 
 // NewFilteredCSISnapshotControllerInformer constructs a new informer for CSISnapshotController type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedFilteredCSISnapshotControllerInformer]).
 func NewFilteredCSISnapshotControllerInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
-	return NewCSISnapshotControllerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+	return NewTypedCSISnapshotControllerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+}
+
+// NewTypedFilteredCSISnapshotControllerInformer constructs a new informer for CSISnapshotController type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedFilteredCSISnapshotControllerInformer(client versioned.Interface, resyncPeriod time.Duration, indexers CSISnapshotControllerIndexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) CSISnapshotControllerIndexInformer {
+	return NewTypedCSISnapshotControllerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers), TweakListOptions: tweakListOptions})
 }
 
 // NewCSISnapshotControllerInformerWithOptions constructs a new informer for CSISnapshotController type with additional options.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedCSISnapshotControllerInformerWithOptions]).
 func NewCSISnapshotControllerInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) cache.SharedIndexInformer {
+	return NewTypedCSISnapshotControllerInformerWithOptions(client, options)
+}
+
+// NewTypedCSISnapshotControllerInformerWithOptions constructs a new informer for CSISnapshotController type with additional options.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedCSISnapshotControllerInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) CSISnapshotControllerIndexInformer {
 	gvr := schema.GroupVersionResource{Group: "operator.openshift.io", Version: "v1", Resource: "csisnapshotcontrollers"}
 	identifier := options.InformerName.WithResource(gvr)
 	tweakListOptions := options.TweakListOptions
-	return cache.NewSharedIndexInformerWithOptions(
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.CSISnapshotController](cache.NewSharedIndexInformerWithOptions(
 		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
@@ -83,17 +135,57 @@ func NewCSISnapshotControllerInformerWithOptions(client versioned.Interface, opt
 			Indexers:     options.Indexers,
 			Identifier:   identifier,
 		},
-	)
+	))
 }
 
 func (f *cSISnapshotControllerInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewCSISnapshotControllerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
+	return NewTypedCSISnapshotControllerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
 }
 
 func (f *cSISnapshotControllerInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&apioperatorv1.CSISnapshotController{}, f.defaultInformer)
+	return f.TypedInformer()
+}
+
+func (f *cSISnapshotControllerInformer) TypedInformer() CSISnapshotControllerIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.CSISnapshotController](f.factory.InformerFor(&apioperatorv1.CSISnapshotController{}, f.defaultInformer))
 }
 
 func (f *cSISnapshotControllerInformer) Lister() operatorv1.CSISnapshotControllerLister {
 	return operatorv1.NewCSISnapshotControllerLister(f.Informer().GetIndexer())
+}
+
+// ToTypedCSISnapshotControllerInformer converts an untyped informer into a TypedCSISnapshotControllerInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *CSISnapshotController. If that is not the case, calling type-safe methods of the returned
+// TypedCSISnapshotControllerInformer leads to runtime panics. A safer alternative is to pass
+// around a TypedCSISnapshotControllerInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToTypedCSISnapshotControllerInformer(informer CSISnapshotControllerInformer) TypedCSISnapshotControllerInformer {
+	if informer, ok := informer.(TypedCSISnapshotControllerInformer); ok {
+		return informer
+	}
+	return &cSISnapshotControllerTypedInformerAdapter{informer}
+}
+
+type cSISnapshotControllerTypedInformerAdapter struct {
+	CSISnapshotControllerInformer
+}
+
+func (a *cSISnapshotControllerTypedInformerAdapter) TypedInformer() CSISnapshotControllerIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.CSISnapshotController](a.Informer())
+}
+
+// ToCSISnapshotControllerIndexInformer converts an untyped informer into a CSISnapshotControllerIndexInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *CSISnapshotController. If that is not the case, calling type-safe methods of the returned
+// CSISnapshotControllerIndexInformer leads to runtime panics. A safer alternative is to pass
+// around a CSISnapshotControllerIndexInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToCSISnapshotControllerIndexInformer(informer cache.SharedIndexInformer) CSISnapshotControllerIndexInformer {
+	if informer, ok := informer.(CSISnapshotControllerIndexInformer); ok {
+		return informer
+	}
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.CSISnapshotController](informer)
 }

@@ -18,11 +18,39 @@ import (
 )
 
 // ServiceCAInformer provides access to a shared informer and lister for
-// ServiceCAs.
+// ServiceCAs. Prefer using the type-safe variant (see [TypedServiceCAInformer]).
 type ServiceCAInformer interface {
 	Informer() cache.SharedIndexInformer
 	Lister() operatorv1.ServiceCALister
 }
+
+// TypedServiceCAInformer provides access to a shared informer and lister for
+// ServiceCAs, including the type-safe TypedInformer variant.
+// It is a superset of ServiceCAInformer.
+type TypedServiceCAInformer interface {
+	Informer() cache.SharedIndexInformer
+	TypedInformer() ServiceCAIndexInformer
+	Lister() operatorv1.ServiceCALister
+}
+
+// ServiceCAIndexInformer is a wrapper around the underlying [cache.SharedIndexInformer]
+// with type-safe variants of several methods.
+type ServiceCAIndexInformer cache.TypedSharedIndexInformer[*apioperatorv1.ServiceCA]
+
+// ServiceCAHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerFuncs] for ServiceCA.
+type ServiceCAHandlerFuncs = cache.TypedResourceEventHandlerFuncs[*apioperatorv1.ServiceCA]
+
+// ServiceCADetailedHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerDetailedFuncs] for ServiceCA.
+type ServiceCADetailedHandlerFuncs = cache.TypedResourceEventHandlerDetailedFuncs[*apioperatorv1.ServiceCA]
+
+// ServiceCAFilteringHandler is a specialization of [cache.TypedFilteringResourceEventHandler] for ServiceCA.
+type ServiceCAFilteringHandler = cache.TypedFilteringResourceEventHandler[*apioperatorv1.ServiceCA]
+
+// ServiceCAIndexers is a specialization of [cache.TypedIndexers] for ServiceCA.
+type ServiceCAIndexers = cache.TypedIndexers[*apioperatorv1.ServiceCA]
+
+// DeletedServiceCA is a specialization of [cache.DeletedObject] for ServiceCA.
+type DeletedServiceCA = cache.DeletedObject[*apioperatorv1.ServiceCA]
 
 type serviceCAInformer struct {
 	factory          internalinterfaces.SharedInformerFactory
@@ -32,25 +60,49 @@ type serviceCAInformer struct {
 // NewServiceCAInformer constructs a new informer for ServiceCA type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedServiceCAInformer]).
 func NewServiceCAInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
 	return NewServiceCAInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers})
+}
+
+// NewTypedServiceCAInformer constructs a new informer for ServiceCA type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedServiceCAInformer(client versioned.Interface, resyncPeriod time.Duration, indexers ServiceCAIndexers) ServiceCAIndexInformer {
+	return NewTypedServiceCAInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers)})
 }
 
 // NewFilteredServiceCAInformer constructs a new informer for ServiceCA type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedFilteredServiceCAInformer]).
 func NewFilteredServiceCAInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
-	return NewServiceCAInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+	return NewTypedServiceCAInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+}
+
+// NewTypedFilteredServiceCAInformer constructs a new informer for ServiceCA type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedFilteredServiceCAInformer(client versioned.Interface, resyncPeriod time.Duration, indexers ServiceCAIndexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) ServiceCAIndexInformer {
+	return NewTypedServiceCAInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers), TweakListOptions: tweakListOptions})
 }
 
 // NewServiceCAInformerWithOptions constructs a new informer for ServiceCA type with additional options.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedServiceCAInformerWithOptions]).
 func NewServiceCAInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) cache.SharedIndexInformer {
+	return NewTypedServiceCAInformerWithOptions(client, options)
+}
+
+// NewTypedServiceCAInformerWithOptions constructs a new informer for ServiceCA type with additional options.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedServiceCAInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) ServiceCAIndexInformer {
 	gvr := schema.GroupVersionResource{Group: "operator.openshift.io", Version: "v1", Resource: "servicecas"}
 	identifier := options.InformerName.WithResource(gvr)
 	tweakListOptions := options.TweakListOptions
-	return cache.NewSharedIndexInformerWithOptions(
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.ServiceCA](cache.NewSharedIndexInformerWithOptions(
 		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
@@ -83,17 +135,57 @@ func NewServiceCAInformerWithOptions(client versioned.Interface, options interna
 			Indexers:     options.Indexers,
 			Identifier:   identifier,
 		},
-	)
+	))
 }
 
 func (f *serviceCAInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewServiceCAInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
+	return NewTypedServiceCAInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
 }
 
 func (f *serviceCAInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&apioperatorv1.ServiceCA{}, f.defaultInformer)
+	return f.TypedInformer()
+}
+
+func (f *serviceCAInformer) TypedInformer() ServiceCAIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.ServiceCA](f.factory.InformerFor(&apioperatorv1.ServiceCA{}, f.defaultInformer))
 }
 
 func (f *serviceCAInformer) Lister() operatorv1.ServiceCALister {
 	return operatorv1.NewServiceCALister(f.Informer().GetIndexer())
+}
+
+// ToTypedServiceCAInformer converts an untyped informer into a TypedServiceCAInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *ServiceCA. If that is not the case, calling type-safe methods of the returned
+// TypedServiceCAInformer leads to runtime panics. A safer alternative is to pass
+// around a TypedServiceCAInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToTypedServiceCAInformer(informer ServiceCAInformer) TypedServiceCAInformer {
+	if informer, ok := informer.(TypedServiceCAInformer); ok {
+		return informer
+	}
+	return &serviceCATypedInformerAdapter{informer}
+}
+
+type serviceCATypedInformerAdapter struct {
+	ServiceCAInformer
+}
+
+func (a *serviceCATypedInformerAdapter) TypedInformer() ServiceCAIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.ServiceCA](a.Informer())
+}
+
+// ToServiceCAIndexInformer converts an untyped informer into a ServiceCAIndexInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *ServiceCA. If that is not the case, calling type-safe methods of the returned
+// ServiceCAIndexInformer leads to runtime panics. A safer alternative is to pass
+// around a ServiceCAIndexInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToServiceCAIndexInformer(informer cache.SharedIndexInformer) ServiceCAIndexInformer {
+	if informer, ok := informer.(ServiceCAIndexInformer); ok {
+		return informer
+	}
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.ServiceCA](informer)
 }
