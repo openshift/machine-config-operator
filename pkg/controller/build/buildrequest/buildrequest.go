@@ -686,8 +686,6 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 		},
 	}
 
-	securityContext := &corev1.SecurityContext{}
-
 	command := []string{"/bin/bash", "-c"}
 
 	volumeMounts := []corev1.VolumeMount{
@@ -879,7 +877,7 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 					Env:                      env,
 					Command:                  append(command, buildahBuildScript),
 					ImagePullPolicy:          corev1.PullAlways,
-					SecurityContext:          securityContext,
+					SecurityContext:          &corev1.SecurityContext{},
 					TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 					// Only attach the buildah-cache volume mount to the buildah container.
 					VolumeMounts: append(volumeMounts, corev1.VolumeMount{
@@ -896,12 +894,14 @@ func (br buildRequestImpl) toBuildahPod() *corev1.Pod {
 					// a ConfigMap from the digestfile created by Buildah. This approach
 					// allows us to avoid parsing log files and also avoids the need for
 					// an oc / kubectl binary to be present.
-					Name:                     "create-digest-configmap",
-					Command:                  append(command, digestCMScript),
-					Image:                    br.opts.Images.MachineConfigOperator,
-					Env:                      env,
-					ImagePullPolicy:          corev1.PullAlways,
-					SecurityContext:          securityContext,
+					Name:            "create-digest-configmap",
+					Command:         append(command, digestCMScript),
+					Image:           br.opts.Images.MachineConfigOperator,
+					Env:             env,
+					ImagePullPolicy: corev1.PullAlways,
+					SecurityContext: &corev1.SecurityContext{
+						ReadOnlyRootFilesystem: &boolTrue,
+					},
 					TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 					VolumeMounts:             volumeMounts,
 				},
