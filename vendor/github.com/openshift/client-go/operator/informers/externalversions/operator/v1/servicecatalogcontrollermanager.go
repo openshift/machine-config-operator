@@ -18,11 +18,39 @@ import (
 )
 
 // ServiceCatalogControllerManagerInformer provides access to a shared informer and lister for
-// ServiceCatalogControllerManagers.
+// ServiceCatalogControllerManagers. Prefer using the type-safe variant (see [TypedServiceCatalogControllerManagerInformer]).
 type ServiceCatalogControllerManagerInformer interface {
 	Informer() cache.SharedIndexInformer
 	Lister() operatorv1.ServiceCatalogControllerManagerLister
 }
+
+// TypedServiceCatalogControllerManagerInformer provides access to a shared informer and lister for
+// ServiceCatalogControllerManagers, including the type-safe TypedInformer variant.
+// It is a superset of ServiceCatalogControllerManagerInformer.
+type TypedServiceCatalogControllerManagerInformer interface {
+	Informer() cache.SharedIndexInformer
+	TypedInformer() ServiceCatalogControllerManagerIndexInformer
+	Lister() operatorv1.ServiceCatalogControllerManagerLister
+}
+
+// ServiceCatalogControllerManagerIndexInformer is a wrapper around the underlying [cache.SharedIndexInformer]
+// with type-safe variants of several methods.
+type ServiceCatalogControllerManagerIndexInformer cache.TypedSharedIndexInformer[*apioperatorv1.ServiceCatalogControllerManager]
+
+// ServiceCatalogControllerManagerHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerFuncs] for ServiceCatalogControllerManager.
+type ServiceCatalogControllerManagerHandlerFuncs = cache.TypedResourceEventHandlerFuncs[*apioperatorv1.ServiceCatalogControllerManager]
+
+// ServiceCatalogControllerManagerDetailedHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerDetailedFuncs] for ServiceCatalogControllerManager.
+type ServiceCatalogControllerManagerDetailedHandlerFuncs = cache.TypedResourceEventHandlerDetailedFuncs[*apioperatorv1.ServiceCatalogControllerManager]
+
+// ServiceCatalogControllerManagerFilteringHandler is a specialization of [cache.TypedFilteringResourceEventHandler] for ServiceCatalogControllerManager.
+type ServiceCatalogControllerManagerFilteringHandler = cache.TypedFilteringResourceEventHandler[*apioperatorv1.ServiceCatalogControllerManager]
+
+// ServiceCatalogControllerManagerIndexers is a specialization of [cache.TypedIndexers] for ServiceCatalogControllerManager.
+type ServiceCatalogControllerManagerIndexers = cache.TypedIndexers[*apioperatorv1.ServiceCatalogControllerManager]
+
+// DeletedServiceCatalogControllerManager is a specialization of [cache.DeletedObject] for ServiceCatalogControllerManager.
+type DeletedServiceCatalogControllerManager = cache.DeletedObject[*apioperatorv1.ServiceCatalogControllerManager]
 
 type serviceCatalogControllerManagerInformer struct {
 	factory          internalinterfaces.SharedInformerFactory
@@ -32,25 +60,49 @@ type serviceCatalogControllerManagerInformer struct {
 // NewServiceCatalogControllerManagerInformer constructs a new informer for ServiceCatalogControllerManager type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedServiceCatalogControllerManagerInformer]).
 func NewServiceCatalogControllerManagerInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
 	return NewServiceCatalogControllerManagerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers})
+}
+
+// NewTypedServiceCatalogControllerManagerInformer constructs a new informer for ServiceCatalogControllerManager type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedServiceCatalogControllerManagerInformer(client versioned.Interface, resyncPeriod time.Duration, indexers ServiceCatalogControllerManagerIndexers) ServiceCatalogControllerManagerIndexInformer {
+	return NewTypedServiceCatalogControllerManagerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers)})
 }
 
 // NewFilteredServiceCatalogControllerManagerInformer constructs a new informer for ServiceCatalogControllerManager type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedFilteredServiceCatalogControllerManagerInformer]).
 func NewFilteredServiceCatalogControllerManagerInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
-	return NewServiceCatalogControllerManagerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+	return NewTypedServiceCatalogControllerManagerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+}
+
+// NewTypedFilteredServiceCatalogControllerManagerInformer constructs a new informer for ServiceCatalogControllerManager type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedFilteredServiceCatalogControllerManagerInformer(client versioned.Interface, resyncPeriod time.Duration, indexers ServiceCatalogControllerManagerIndexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) ServiceCatalogControllerManagerIndexInformer {
+	return NewTypedServiceCatalogControllerManagerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers), TweakListOptions: tweakListOptions})
 }
 
 // NewServiceCatalogControllerManagerInformerWithOptions constructs a new informer for ServiceCatalogControllerManager type with additional options.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedServiceCatalogControllerManagerInformerWithOptions]).
 func NewServiceCatalogControllerManagerInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) cache.SharedIndexInformer {
+	return NewTypedServiceCatalogControllerManagerInformerWithOptions(client, options)
+}
+
+// NewTypedServiceCatalogControllerManagerInformerWithOptions constructs a new informer for ServiceCatalogControllerManager type with additional options.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedServiceCatalogControllerManagerInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) ServiceCatalogControllerManagerIndexInformer {
 	gvr := schema.GroupVersionResource{Group: "operator.openshift.io", Version: "v1", Resource: "servicecatalogcontrollermanagers"}
 	identifier := options.InformerName.WithResource(gvr)
 	tweakListOptions := options.TweakListOptions
-	return cache.NewSharedIndexInformerWithOptions(
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.ServiceCatalogControllerManager](cache.NewSharedIndexInformerWithOptions(
 		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
@@ -83,17 +135,57 @@ func NewServiceCatalogControllerManagerInformerWithOptions(client versioned.Inte
 			Indexers:     options.Indexers,
 			Identifier:   identifier,
 		},
-	)
+	))
 }
 
 func (f *serviceCatalogControllerManagerInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewServiceCatalogControllerManagerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
+	return NewTypedServiceCatalogControllerManagerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
 }
 
 func (f *serviceCatalogControllerManagerInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&apioperatorv1.ServiceCatalogControllerManager{}, f.defaultInformer)
+	return f.TypedInformer()
+}
+
+func (f *serviceCatalogControllerManagerInformer) TypedInformer() ServiceCatalogControllerManagerIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.ServiceCatalogControllerManager](f.factory.InformerFor(&apioperatorv1.ServiceCatalogControllerManager{}, f.defaultInformer))
 }
 
 func (f *serviceCatalogControllerManagerInformer) Lister() operatorv1.ServiceCatalogControllerManagerLister {
 	return operatorv1.NewServiceCatalogControllerManagerLister(f.Informer().GetIndexer())
+}
+
+// ToTypedServiceCatalogControllerManagerInformer converts an untyped informer into a TypedServiceCatalogControllerManagerInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *ServiceCatalogControllerManager. If that is not the case, calling type-safe methods of the returned
+// TypedServiceCatalogControllerManagerInformer leads to runtime panics. A safer alternative is to pass
+// around a TypedServiceCatalogControllerManagerInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToTypedServiceCatalogControllerManagerInformer(informer ServiceCatalogControllerManagerInformer) TypedServiceCatalogControllerManagerInformer {
+	if informer, ok := informer.(TypedServiceCatalogControllerManagerInformer); ok {
+		return informer
+	}
+	return &serviceCatalogControllerManagerTypedInformerAdapter{informer}
+}
+
+type serviceCatalogControllerManagerTypedInformerAdapter struct {
+	ServiceCatalogControllerManagerInformer
+}
+
+func (a *serviceCatalogControllerManagerTypedInformerAdapter) TypedInformer() ServiceCatalogControllerManagerIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.ServiceCatalogControllerManager](a.Informer())
+}
+
+// ToServiceCatalogControllerManagerIndexInformer converts an untyped informer into a ServiceCatalogControllerManagerIndexInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *ServiceCatalogControllerManager. If that is not the case, calling type-safe methods of the returned
+// ServiceCatalogControllerManagerIndexInformer leads to runtime panics. A safer alternative is to pass
+// around a ServiceCatalogControllerManagerIndexInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToServiceCatalogControllerManagerIndexInformer(informer cache.SharedIndexInformer) ServiceCatalogControllerManagerIndexInformer {
+	if informer, ok := informer.(ServiceCatalogControllerManagerIndexInformer); ok {
+		return informer
+	}
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.ServiceCatalogControllerManager](informer)
 }

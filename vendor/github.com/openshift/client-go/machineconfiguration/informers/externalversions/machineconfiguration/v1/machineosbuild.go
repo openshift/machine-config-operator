@@ -18,11 +18,39 @@ import (
 )
 
 // MachineOSBuildInformer provides access to a shared informer and lister for
-// MachineOSBuilds.
+// MachineOSBuilds. Prefer using the type-safe variant (see [TypedMachineOSBuildInformer]).
 type MachineOSBuildInformer interface {
 	Informer() cache.SharedIndexInformer
 	Lister() machineconfigurationv1.MachineOSBuildLister
 }
+
+// TypedMachineOSBuildInformer provides access to a shared informer and lister for
+// MachineOSBuilds, including the type-safe TypedInformer variant.
+// It is a superset of MachineOSBuildInformer.
+type TypedMachineOSBuildInformer interface {
+	Informer() cache.SharedIndexInformer
+	TypedInformer() MachineOSBuildIndexInformer
+	Lister() machineconfigurationv1.MachineOSBuildLister
+}
+
+// MachineOSBuildIndexInformer is a wrapper around the underlying [cache.SharedIndexInformer]
+// with type-safe variants of several methods.
+type MachineOSBuildIndexInformer cache.TypedSharedIndexInformer[*apimachineconfigurationv1.MachineOSBuild]
+
+// MachineOSBuildHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerFuncs] for MachineOSBuild.
+type MachineOSBuildHandlerFuncs = cache.TypedResourceEventHandlerFuncs[*apimachineconfigurationv1.MachineOSBuild]
+
+// MachineOSBuildDetailedHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerDetailedFuncs] for MachineOSBuild.
+type MachineOSBuildDetailedHandlerFuncs = cache.TypedResourceEventHandlerDetailedFuncs[*apimachineconfigurationv1.MachineOSBuild]
+
+// MachineOSBuildFilteringHandler is a specialization of [cache.TypedFilteringResourceEventHandler] for MachineOSBuild.
+type MachineOSBuildFilteringHandler = cache.TypedFilteringResourceEventHandler[*apimachineconfigurationv1.MachineOSBuild]
+
+// MachineOSBuildIndexers is a specialization of [cache.TypedIndexers] for MachineOSBuild.
+type MachineOSBuildIndexers = cache.TypedIndexers[*apimachineconfigurationv1.MachineOSBuild]
+
+// DeletedMachineOSBuild is a specialization of [cache.DeletedObject] for MachineOSBuild.
+type DeletedMachineOSBuild = cache.DeletedObject[*apimachineconfigurationv1.MachineOSBuild]
 
 type machineOSBuildInformer struct {
 	factory          internalinterfaces.SharedInformerFactory
@@ -32,25 +60,49 @@ type machineOSBuildInformer struct {
 // NewMachineOSBuildInformer constructs a new informer for MachineOSBuild type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedMachineOSBuildInformer]).
 func NewMachineOSBuildInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
 	return NewMachineOSBuildInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers})
+}
+
+// NewTypedMachineOSBuildInformer constructs a new informer for MachineOSBuild type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedMachineOSBuildInformer(client versioned.Interface, resyncPeriod time.Duration, indexers MachineOSBuildIndexers) MachineOSBuildIndexInformer {
+	return NewTypedMachineOSBuildInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers)})
 }
 
 // NewFilteredMachineOSBuildInformer constructs a new informer for MachineOSBuild type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedFilteredMachineOSBuildInformer]).
 func NewFilteredMachineOSBuildInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
-	return NewMachineOSBuildInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+	return NewTypedMachineOSBuildInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+}
+
+// NewTypedFilteredMachineOSBuildInformer constructs a new informer for MachineOSBuild type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedFilteredMachineOSBuildInformer(client versioned.Interface, resyncPeriod time.Duration, indexers MachineOSBuildIndexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) MachineOSBuildIndexInformer {
+	return NewTypedMachineOSBuildInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers), TweakListOptions: tweakListOptions})
 }
 
 // NewMachineOSBuildInformerWithOptions constructs a new informer for MachineOSBuild type with additional options.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedMachineOSBuildInformerWithOptions]).
 func NewMachineOSBuildInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) cache.SharedIndexInformer {
+	return NewTypedMachineOSBuildInformerWithOptions(client, options)
+}
+
+// NewTypedMachineOSBuildInformerWithOptions constructs a new informer for MachineOSBuild type with additional options.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedMachineOSBuildInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) MachineOSBuildIndexInformer {
 	gvr := schema.GroupVersionResource{Group: "machineconfiguration.openshift.io", Version: "v1", Resource: "machineosbuilds"}
 	identifier := options.InformerName.WithResource(gvr)
 	tweakListOptions := options.TweakListOptions
-	return cache.NewSharedIndexInformerWithOptions(
+	return cache.NewTypedSharedIndexInformer[*apimachineconfigurationv1.MachineOSBuild](cache.NewSharedIndexInformerWithOptions(
 		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
@@ -83,17 +135,57 @@ func NewMachineOSBuildInformerWithOptions(client versioned.Interface, options in
 			Indexers:     options.Indexers,
 			Identifier:   identifier,
 		},
-	)
+	))
 }
 
 func (f *machineOSBuildInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewMachineOSBuildInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
+	return NewTypedMachineOSBuildInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
 }
 
 func (f *machineOSBuildInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&apimachineconfigurationv1.MachineOSBuild{}, f.defaultInformer)
+	return f.TypedInformer()
+}
+
+func (f *machineOSBuildInformer) TypedInformer() MachineOSBuildIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apimachineconfigurationv1.MachineOSBuild](f.factory.InformerFor(&apimachineconfigurationv1.MachineOSBuild{}, f.defaultInformer))
 }
 
 func (f *machineOSBuildInformer) Lister() machineconfigurationv1.MachineOSBuildLister {
 	return machineconfigurationv1.NewMachineOSBuildLister(f.Informer().GetIndexer())
+}
+
+// ToTypedMachineOSBuildInformer converts an untyped informer into a TypedMachineOSBuildInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *MachineOSBuild. If that is not the case, calling type-safe methods of the returned
+// TypedMachineOSBuildInformer leads to runtime panics. A safer alternative is to pass
+// around a TypedMachineOSBuildInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToTypedMachineOSBuildInformer(informer MachineOSBuildInformer) TypedMachineOSBuildInformer {
+	if informer, ok := informer.(TypedMachineOSBuildInformer); ok {
+		return informer
+	}
+	return &machineOSBuildTypedInformerAdapter{informer}
+}
+
+type machineOSBuildTypedInformerAdapter struct {
+	MachineOSBuildInformer
+}
+
+func (a *machineOSBuildTypedInformerAdapter) TypedInformer() MachineOSBuildIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apimachineconfigurationv1.MachineOSBuild](a.Informer())
+}
+
+// ToMachineOSBuildIndexInformer converts an untyped informer into a MachineOSBuildIndexInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *MachineOSBuild. If that is not the case, calling type-safe methods of the returned
+// MachineOSBuildIndexInformer leads to runtime panics. A safer alternative is to pass
+// around a MachineOSBuildIndexInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToMachineOSBuildIndexInformer(informer cache.SharedIndexInformer) MachineOSBuildIndexInformer {
+	if informer, ok := informer.(MachineOSBuildIndexInformer); ok {
+		return informer
+	}
+	return cache.NewTypedSharedIndexInformer[*apimachineconfigurationv1.MachineOSBuild](informer)
 }

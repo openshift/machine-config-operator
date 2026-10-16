@@ -18,11 +18,39 @@ import (
 )
 
 // KubeAPIServerInformer provides access to a shared informer and lister for
-// KubeAPIServers.
+// KubeAPIServers. Prefer using the type-safe variant (see [TypedKubeAPIServerInformer]).
 type KubeAPIServerInformer interface {
 	Informer() cache.SharedIndexInformer
 	Lister() operatorv1.KubeAPIServerLister
 }
+
+// TypedKubeAPIServerInformer provides access to a shared informer and lister for
+// KubeAPIServers, including the type-safe TypedInformer variant.
+// It is a superset of KubeAPIServerInformer.
+type TypedKubeAPIServerInformer interface {
+	Informer() cache.SharedIndexInformer
+	TypedInformer() KubeAPIServerIndexInformer
+	Lister() operatorv1.KubeAPIServerLister
+}
+
+// KubeAPIServerIndexInformer is a wrapper around the underlying [cache.SharedIndexInformer]
+// with type-safe variants of several methods.
+type KubeAPIServerIndexInformer cache.TypedSharedIndexInformer[*apioperatorv1.KubeAPIServer]
+
+// KubeAPIServerHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerFuncs] for KubeAPIServer.
+type KubeAPIServerHandlerFuncs = cache.TypedResourceEventHandlerFuncs[*apioperatorv1.KubeAPIServer]
+
+// KubeAPIServerDetailedHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerDetailedFuncs] for KubeAPIServer.
+type KubeAPIServerDetailedHandlerFuncs = cache.TypedResourceEventHandlerDetailedFuncs[*apioperatorv1.KubeAPIServer]
+
+// KubeAPIServerFilteringHandler is a specialization of [cache.TypedFilteringResourceEventHandler] for KubeAPIServer.
+type KubeAPIServerFilteringHandler = cache.TypedFilteringResourceEventHandler[*apioperatorv1.KubeAPIServer]
+
+// KubeAPIServerIndexers is a specialization of [cache.TypedIndexers] for KubeAPIServer.
+type KubeAPIServerIndexers = cache.TypedIndexers[*apioperatorv1.KubeAPIServer]
+
+// DeletedKubeAPIServer is a specialization of [cache.DeletedObject] for KubeAPIServer.
+type DeletedKubeAPIServer = cache.DeletedObject[*apioperatorv1.KubeAPIServer]
 
 type kubeAPIServerInformer struct {
 	factory          internalinterfaces.SharedInformerFactory
@@ -32,25 +60,49 @@ type kubeAPIServerInformer struct {
 // NewKubeAPIServerInformer constructs a new informer for KubeAPIServer type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedKubeAPIServerInformer]).
 func NewKubeAPIServerInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
 	return NewKubeAPIServerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers})
+}
+
+// NewTypedKubeAPIServerInformer constructs a new informer for KubeAPIServer type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedKubeAPIServerInformer(client versioned.Interface, resyncPeriod time.Duration, indexers KubeAPIServerIndexers) KubeAPIServerIndexInformer {
+	return NewTypedKubeAPIServerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers)})
 }
 
 // NewFilteredKubeAPIServerInformer constructs a new informer for KubeAPIServer type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedFilteredKubeAPIServerInformer]).
 func NewFilteredKubeAPIServerInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
-	return NewKubeAPIServerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+	return NewTypedKubeAPIServerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+}
+
+// NewTypedFilteredKubeAPIServerInformer constructs a new informer for KubeAPIServer type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedFilteredKubeAPIServerInformer(client versioned.Interface, resyncPeriod time.Duration, indexers KubeAPIServerIndexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) KubeAPIServerIndexInformer {
+	return NewTypedKubeAPIServerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers), TweakListOptions: tweakListOptions})
 }
 
 // NewKubeAPIServerInformerWithOptions constructs a new informer for KubeAPIServer type with additional options.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedKubeAPIServerInformerWithOptions]).
 func NewKubeAPIServerInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) cache.SharedIndexInformer {
+	return NewTypedKubeAPIServerInformerWithOptions(client, options)
+}
+
+// NewTypedKubeAPIServerInformerWithOptions constructs a new informer for KubeAPIServer type with additional options.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedKubeAPIServerInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) KubeAPIServerIndexInformer {
 	gvr := schema.GroupVersionResource{Group: "operator.openshift.io", Version: "v1", Resource: "kubeapiservers"}
 	identifier := options.InformerName.WithResource(gvr)
 	tweakListOptions := options.TweakListOptions
-	return cache.NewSharedIndexInformerWithOptions(
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.KubeAPIServer](cache.NewSharedIndexInformerWithOptions(
 		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
@@ -83,17 +135,57 @@ func NewKubeAPIServerInformerWithOptions(client versioned.Interface, options int
 			Indexers:     options.Indexers,
 			Identifier:   identifier,
 		},
-	)
+	))
 }
 
 func (f *kubeAPIServerInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewKubeAPIServerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
+	return NewTypedKubeAPIServerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
 }
 
 func (f *kubeAPIServerInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&apioperatorv1.KubeAPIServer{}, f.defaultInformer)
+	return f.TypedInformer()
+}
+
+func (f *kubeAPIServerInformer) TypedInformer() KubeAPIServerIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.KubeAPIServer](f.factory.InformerFor(&apioperatorv1.KubeAPIServer{}, f.defaultInformer))
 }
 
 func (f *kubeAPIServerInformer) Lister() operatorv1.KubeAPIServerLister {
 	return operatorv1.NewKubeAPIServerLister(f.Informer().GetIndexer())
+}
+
+// ToTypedKubeAPIServerInformer converts an untyped informer into a TypedKubeAPIServerInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *KubeAPIServer. If that is not the case, calling type-safe methods of the returned
+// TypedKubeAPIServerInformer leads to runtime panics. A safer alternative is to pass
+// around a TypedKubeAPIServerInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToTypedKubeAPIServerInformer(informer KubeAPIServerInformer) TypedKubeAPIServerInformer {
+	if informer, ok := informer.(TypedKubeAPIServerInformer); ok {
+		return informer
+	}
+	return &kubeAPIServerTypedInformerAdapter{informer}
+}
+
+type kubeAPIServerTypedInformerAdapter struct {
+	KubeAPIServerInformer
+}
+
+func (a *kubeAPIServerTypedInformerAdapter) TypedInformer() KubeAPIServerIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.KubeAPIServer](a.Informer())
+}
+
+// ToKubeAPIServerIndexInformer converts an untyped informer into a KubeAPIServerIndexInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *KubeAPIServer. If that is not the case, calling type-safe methods of the returned
+// KubeAPIServerIndexInformer leads to runtime panics. A safer alternative is to pass
+// around a KubeAPIServerIndexInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToKubeAPIServerIndexInformer(informer cache.SharedIndexInformer) KubeAPIServerIndexInformer {
+	if informer, ok := informer.(KubeAPIServerIndexInformer); ok {
+		return informer
+	}
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.KubeAPIServer](informer)
 }

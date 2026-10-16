@@ -18,11 +18,39 @@ import (
 )
 
 // KubeSchedulerInformer provides access to a shared informer and lister for
-// KubeSchedulers.
+// KubeSchedulers. Prefer using the type-safe variant (see [TypedKubeSchedulerInformer]).
 type KubeSchedulerInformer interface {
 	Informer() cache.SharedIndexInformer
 	Lister() operatorv1.KubeSchedulerLister
 }
+
+// TypedKubeSchedulerInformer provides access to a shared informer and lister for
+// KubeSchedulers, including the type-safe TypedInformer variant.
+// It is a superset of KubeSchedulerInformer.
+type TypedKubeSchedulerInformer interface {
+	Informer() cache.SharedIndexInformer
+	TypedInformer() KubeSchedulerIndexInformer
+	Lister() operatorv1.KubeSchedulerLister
+}
+
+// KubeSchedulerIndexInformer is a wrapper around the underlying [cache.SharedIndexInformer]
+// with type-safe variants of several methods.
+type KubeSchedulerIndexInformer cache.TypedSharedIndexInformer[*apioperatorv1.KubeScheduler]
+
+// KubeSchedulerHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerFuncs] for KubeScheduler.
+type KubeSchedulerHandlerFuncs = cache.TypedResourceEventHandlerFuncs[*apioperatorv1.KubeScheduler]
+
+// KubeSchedulerDetailedHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerDetailedFuncs] for KubeScheduler.
+type KubeSchedulerDetailedHandlerFuncs = cache.TypedResourceEventHandlerDetailedFuncs[*apioperatorv1.KubeScheduler]
+
+// KubeSchedulerFilteringHandler is a specialization of [cache.TypedFilteringResourceEventHandler] for KubeScheduler.
+type KubeSchedulerFilteringHandler = cache.TypedFilteringResourceEventHandler[*apioperatorv1.KubeScheduler]
+
+// KubeSchedulerIndexers is a specialization of [cache.TypedIndexers] for KubeScheduler.
+type KubeSchedulerIndexers = cache.TypedIndexers[*apioperatorv1.KubeScheduler]
+
+// DeletedKubeScheduler is a specialization of [cache.DeletedObject] for KubeScheduler.
+type DeletedKubeScheduler = cache.DeletedObject[*apioperatorv1.KubeScheduler]
 
 type kubeSchedulerInformer struct {
 	factory          internalinterfaces.SharedInformerFactory
@@ -32,25 +60,49 @@ type kubeSchedulerInformer struct {
 // NewKubeSchedulerInformer constructs a new informer for KubeScheduler type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedKubeSchedulerInformer]).
 func NewKubeSchedulerInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
 	return NewKubeSchedulerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers})
+}
+
+// NewTypedKubeSchedulerInformer constructs a new informer for KubeScheduler type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedKubeSchedulerInformer(client versioned.Interface, resyncPeriod time.Duration, indexers KubeSchedulerIndexers) KubeSchedulerIndexInformer {
+	return NewTypedKubeSchedulerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers)})
 }
 
 // NewFilteredKubeSchedulerInformer constructs a new informer for KubeScheduler type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedFilteredKubeSchedulerInformer]).
 func NewFilteredKubeSchedulerInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
-	return NewKubeSchedulerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+	return NewTypedKubeSchedulerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+}
+
+// NewTypedFilteredKubeSchedulerInformer constructs a new informer for KubeScheduler type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedFilteredKubeSchedulerInformer(client versioned.Interface, resyncPeriod time.Duration, indexers KubeSchedulerIndexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) KubeSchedulerIndexInformer {
+	return NewTypedKubeSchedulerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers), TweakListOptions: tweakListOptions})
 }
 
 // NewKubeSchedulerInformerWithOptions constructs a new informer for KubeScheduler type with additional options.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedKubeSchedulerInformerWithOptions]).
 func NewKubeSchedulerInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) cache.SharedIndexInformer {
+	return NewTypedKubeSchedulerInformerWithOptions(client, options)
+}
+
+// NewTypedKubeSchedulerInformerWithOptions constructs a new informer for KubeScheduler type with additional options.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedKubeSchedulerInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) KubeSchedulerIndexInformer {
 	gvr := schema.GroupVersionResource{Group: "operator.openshift.io", Version: "v1", Resource: "kubeschedulers"}
 	identifier := options.InformerName.WithResource(gvr)
 	tweakListOptions := options.TweakListOptions
-	return cache.NewSharedIndexInformerWithOptions(
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.KubeScheduler](cache.NewSharedIndexInformerWithOptions(
 		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
@@ -83,17 +135,57 @@ func NewKubeSchedulerInformerWithOptions(client versioned.Interface, options int
 			Indexers:     options.Indexers,
 			Identifier:   identifier,
 		},
-	)
+	))
 }
 
 func (f *kubeSchedulerInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewKubeSchedulerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
+	return NewTypedKubeSchedulerInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
 }
 
 func (f *kubeSchedulerInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&apioperatorv1.KubeScheduler{}, f.defaultInformer)
+	return f.TypedInformer()
+}
+
+func (f *kubeSchedulerInformer) TypedInformer() KubeSchedulerIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.KubeScheduler](f.factory.InformerFor(&apioperatorv1.KubeScheduler{}, f.defaultInformer))
 }
 
 func (f *kubeSchedulerInformer) Lister() operatorv1.KubeSchedulerLister {
 	return operatorv1.NewKubeSchedulerLister(f.Informer().GetIndexer())
+}
+
+// ToTypedKubeSchedulerInformer converts an untyped informer into a TypedKubeSchedulerInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *KubeScheduler. If that is not the case, calling type-safe methods of the returned
+// TypedKubeSchedulerInformer leads to runtime panics. A safer alternative is to pass
+// around a TypedKubeSchedulerInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToTypedKubeSchedulerInformer(informer KubeSchedulerInformer) TypedKubeSchedulerInformer {
+	if informer, ok := informer.(TypedKubeSchedulerInformer); ok {
+		return informer
+	}
+	return &kubeSchedulerTypedInformerAdapter{informer}
+}
+
+type kubeSchedulerTypedInformerAdapter struct {
+	KubeSchedulerInformer
+}
+
+func (a *kubeSchedulerTypedInformerAdapter) TypedInformer() KubeSchedulerIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.KubeScheduler](a.Informer())
+}
+
+// ToKubeSchedulerIndexInformer converts an untyped informer into a KubeSchedulerIndexInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *KubeScheduler. If that is not the case, calling type-safe methods of the returned
+// KubeSchedulerIndexInformer leads to runtime panics. A safer alternative is to pass
+// around a KubeSchedulerIndexInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToKubeSchedulerIndexInformer(informer cache.SharedIndexInformer) KubeSchedulerIndexInformer {
+	if informer, ok := informer.(KubeSchedulerIndexInformer); ok {
+		return informer
+	}
+	return cache.NewTypedSharedIndexInformer[*apioperatorv1.KubeScheduler](informer)
 }

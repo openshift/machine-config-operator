@@ -18,11 +18,39 @@ import (
 )
 
 // MachineOSConfigInformer provides access to a shared informer and lister for
-// MachineOSConfigs.
+// MachineOSConfigs. Prefer using the type-safe variant (see [TypedMachineOSConfigInformer]).
 type MachineOSConfigInformer interface {
 	Informer() cache.SharedIndexInformer
 	Lister() machineconfigurationv1.MachineOSConfigLister
 }
+
+// TypedMachineOSConfigInformer provides access to a shared informer and lister for
+// MachineOSConfigs, including the type-safe TypedInformer variant.
+// It is a superset of MachineOSConfigInformer.
+type TypedMachineOSConfigInformer interface {
+	Informer() cache.SharedIndexInformer
+	TypedInformer() MachineOSConfigIndexInformer
+	Lister() machineconfigurationv1.MachineOSConfigLister
+}
+
+// MachineOSConfigIndexInformer is a wrapper around the underlying [cache.SharedIndexInformer]
+// with type-safe variants of several methods.
+type MachineOSConfigIndexInformer cache.TypedSharedIndexInformer[*apimachineconfigurationv1.MachineOSConfig]
+
+// MachineOSConfigHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerFuncs] for MachineOSConfig.
+type MachineOSConfigHandlerFuncs = cache.TypedResourceEventHandlerFuncs[*apimachineconfigurationv1.MachineOSConfig]
+
+// MachineOSConfigDetailedHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerDetailedFuncs] for MachineOSConfig.
+type MachineOSConfigDetailedHandlerFuncs = cache.TypedResourceEventHandlerDetailedFuncs[*apimachineconfigurationv1.MachineOSConfig]
+
+// MachineOSConfigFilteringHandler is a specialization of [cache.TypedFilteringResourceEventHandler] for MachineOSConfig.
+type MachineOSConfigFilteringHandler = cache.TypedFilteringResourceEventHandler[*apimachineconfigurationv1.MachineOSConfig]
+
+// MachineOSConfigIndexers is a specialization of [cache.TypedIndexers] for MachineOSConfig.
+type MachineOSConfigIndexers = cache.TypedIndexers[*apimachineconfigurationv1.MachineOSConfig]
+
+// DeletedMachineOSConfig is a specialization of [cache.DeletedObject] for MachineOSConfig.
+type DeletedMachineOSConfig = cache.DeletedObject[*apimachineconfigurationv1.MachineOSConfig]
 
 type machineOSConfigInformer struct {
 	factory          internalinterfaces.SharedInformerFactory
@@ -32,25 +60,49 @@ type machineOSConfigInformer struct {
 // NewMachineOSConfigInformer constructs a new informer for MachineOSConfig type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedMachineOSConfigInformer]).
 func NewMachineOSConfigInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
 	return NewMachineOSConfigInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers})
+}
+
+// NewTypedMachineOSConfigInformer constructs a new informer for MachineOSConfig type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedMachineOSConfigInformer(client versioned.Interface, resyncPeriod time.Duration, indexers MachineOSConfigIndexers) MachineOSConfigIndexInformer {
+	return NewTypedMachineOSConfigInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers)})
 }
 
 // NewFilteredMachineOSConfigInformer constructs a new informer for MachineOSConfig type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedFilteredMachineOSConfigInformer]).
 func NewFilteredMachineOSConfigInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
-	return NewMachineOSConfigInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+	return NewTypedMachineOSConfigInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+}
+
+// NewTypedFilteredMachineOSConfigInformer constructs a new informer for MachineOSConfig type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedFilteredMachineOSConfigInformer(client versioned.Interface, resyncPeriod time.Duration, indexers MachineOSConfigIndexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) MachineOSConfigIndexInformer {
+	return NewTypedMachineOSConfigInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers), TweakListOptions: tweakListOptions})
 }
 
 // NewMachineOSConfigInformerWithOptions constructs a new informer for MachineOSConfig type with additional options.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedMachineOSConfigInformerWithOptions]).
 func NewMachineOSConfigInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) cache.SharedIndexInformer {
+	return NewTypedMachineOSConfigInformerWithOptions(client, options)
+}
+
+// NewTypedMachineOSConfigInformerWithOptions constructs a new informer for MachineOSConfig type with additional options.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedMachineOSConfigInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) MachineOSConfigIndexInformer {
 	gvr := schema.GroupVersionResource{Group: "machineconfiguration.openshift.io", Version: "v1", Resource: "machineosconfigs"}
 	identifier := options.InformerName.WithResource(gvr)
 	tweakListOptions := options.TweakListOptions
-	return cache.NewSharedIndexInformerWithOptions(
+	return cache.NewTypedSharedIndexInformer[*apimachineconfigurationv1.MachineOSConfig](cache.NewSharedIndexInformerWithOptions(
 		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
@@ -83,17 +135,57 @@ func NewMachineOSConfigInformerWithOptions(client versioned.Interface, options i
 			Indexers:     options.Indexers,
 			Identifier:   identifier,
 		},
-	)
+	))
 }
 
 func (f *machineOSConfigInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewMachineOSConfigInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
+	return NewTypedMachineOSConfigInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
 }
 
 func (f *machineOSConfigInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&apimachineconfigurationv1.MachineOSConfig{}, f.defaultInformer)
+	return f.TypedInformer()
+}
+
+func (f *machineOSConfigInformer) TypedInformer() MachineOSConfigIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apimachineconfigurationv1.MachineOSConfig](f.factory.InformerFor(&apimachineconfigurationv1.MachineOSConfig{}, f.defaultInformer))
 }
 
 func (f *machineOSConfigInformer) Lister() machineconfigurationv1.MachineOSConfigLister {
 	return machineconfigurationv1.NewMachineOSConfigLister(f.Informer().GetIndexer())
+}
+
+// ToTypedMachineOSConfigInformer converts an untyped informer into a TypedMachineOSConfigInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *MachineOSConfig. If that is not the case, calling type-safe methods of the returned
+// TypedMachineOSConfigInformer leads to runtime panics. A safer alternative is to pass
+// around a TypedMachineOSConfigInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToTypedMachineOSConfigInformer(informer MachineOSConfigInformer) TypedMachineOSConfigInformer {
+	if informer, ok := informer.(TypedMachineOSConfigInformer); ok {
+		return informer
+	}
+	return &machineOSConfigTypedInformerAdapter{informer}
+}
+
+type machineOSConfigTypedInformerAdapter struct {
+	MachineOSConfigInformer
+}
+
+func (a *machineOSConfigTypedInformerAdapter) TypedInformer() MachineOSConfigIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apimachineconfigurationv1.MachineOSConfig](a.Informer())
+}
+
+// ToMachineOSConfigIndexInformer converts an untyped informer into a MachineOSConfigIndexInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *MachineOSConfig. If that is not the case, calling type-safe methods of the returned
+// MachineOSConfigIndexInformer leads to runtime panics. A safer alternative is to pass
+// around a MachineOSConfigIndexInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToMachineOSConfigIndexInformer(informer cache.SharedIndexInformer) MachineOSConfigIndexInformer {
+	if informer, ok := informer.(MachineOSConfigIndexInformer); ok {
+		return informer
+	}
+	return cache.NewTypedSharedIndexInformer[*apimachineconfigurationv1.MachineOSConfig](informer)
 }

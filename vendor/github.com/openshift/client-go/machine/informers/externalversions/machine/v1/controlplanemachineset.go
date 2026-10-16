@@ -18,11 +18,39 @@ import (
 )
 
 // ControlPlaneMachineSetInformer provides access to a shared informer and lister for
-// ControlPlaneMachineSets.
+// ControlPlaneMachineSets. Prefer using the type-safe variant (see [TypedControlPlaneMachineSetInformer]).
 type ControlPlaneMachineSetInformer interface {
 	Informer() cache.SharedIndexInformer
 	Lister() machinev1.ControlPlaneMachineSetLister
 }
+
+// TypedControlPlaneMachineSetInformer provides access to a shared informer and lister for
+// ControlPlaneMachineSets, including the type-safe TypedInformer variant.
+// It is a superset of ControlPlaneMachineSetInformer.
+type TypedControlPlaneMachineSetInformer interface {
+	Informer() cache.SharedIndexInformer
+	TypedInformer() ControlPlaneMachineSetIndexInformer
+	Lister() machinev1.ControlPlaneMachineSetLister
+}
+
+// ControlPlaneMachineSetIndexInformer is a wrapper around the underlying [cache.SharedIndexInformer]
+// with type-safe variants of several methods.
+type ControlPlaneMachineSetIndexInformer cache.TypedSharedIndexInformer[*apimachinev1.ControlPlaneMachineSet]
+
+// ControlPlaneMachineSetHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerFuncs] for ControlPlaneMachineSet.
+type ControlPlaneMachineSetHandlerFuncs = cache.TypedResourceEventHandlerFuncs[*apimachinev1.ControlPlaneMachineSet]
+
+// ControlPlaneMachineSetDetailedHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerDetailedFuncs] for ControlPlaneMachineSet.
+type ControlPlaneMachineSetDetailedHandlerFuncs = cache.TypedResourceEventHandlerDetailedFuncs[*apimachinev1.ControlPlaneMachineSet]
+
+// ControlPlaneMachineSetFilteringHandler is a specialization of [cache.TypedFilteringResourceEventHandler] for ControlPlaneMachineSet.
+type ControlPlaneMachineSetFilteringHandler = cache.TypedFilteringResourceEventHandler[*apimachinev1.ControlPlaneMachineSet]
+
+// ControlPlaneMachineSetIndexers is a specialization of [cache.TypedIndexers] for ControlPlaneMachineSet.
+type ControlPlaneMachineSetIndexers = cache.TypedIndexers[*apimachinev1.ControlPlaneMachineSet]
+
+// DeletedControlPlaneMachineSet is a specialization of [cache.DeletedObject] for ControlPlaneMachineSet.
+type DeletedControlPlaneMachineSet = cache.DeletedObject[*apimachinev1.ControlPlaneMachineSet]
 
 type controlPlaneMachineSetInformer struct {
 	factory          internalinterfaces.SharedInformerFactory
@@ -33,25 +61,49 @@ type controlPlaneMachineSetInformer struct {
 // NewControlPlaneMachineSetInformer constructs a new informer for ControlPlaneMachineSet type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedControlPlaneMachineSetInformer]).
 func NewControlPlaneMachineSetInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
 	return NewControlPlaneMachineSetInformerWithOptions(client, namespace, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers})
+}
+
+// NewTypedControlPlaneMachineSetInformer constructs a new informer for ControlPlaneMachineSet type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedControlPlaneMachineSetInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers ControlPlaneMachineSetIndexers) ControlPlaneMachineSetIndexInformer {
+	return NewTypedControlPlaneMachineSetInformerWithOptions(client, namespace, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers)})
 }
 
 // NewFilteredControlPlaneMachineSetInformer constructs a new informer for ControlPlaneMachineSet type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedFilteredControlPlaneMachineSetInformer]).
 func NewFilteredControlPlaneMachineSetInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
-	return NewControlPlaneMachineSetInformerWithOptions(client, namespace, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+	return NewTypedControlPlaneMachineSetInformerWithOptions(client, namespace, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+}
+
+// NewTypedFilteredControlPlaneMachineSetInformer constructs a new informer for ControlPlaneMachineSet type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedFilteredControlPlaneMachineSetInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers ControlPlaneMachineSetIndexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) ControlPlaneMachineSetIndexInformer {
+	return NewTypedControlPlaneMachineSetInformerWithOptions(client, namespace, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers), TweakListOptions: tweakListOptions})
 }
 
 // NewControlPlaneMachineSetInformerWithOptions constructs a new informer for ControlPlaneMachineSet type with additional options.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedControlPlaneMachineSetInformerWithOptions]).
 func NewControlPlaneMachineSetInformerWithOptions(client versioned.Interface, namespace string, options internalinterfaces.InformerOptions) cache.SharedIndexInformer {
+	return NewTypedControlPlaneMachineSetInformerWithOptions(client, namespace, options)
+}
+
+// NewTypedControlPlaneMachineSetInformerWithOptions constructs a new informer for ControlPlaneMachineSet type with additional options.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedControlPlaneMachineSetInformerWithOptions(client versioned.Interface, namespace string, options internalinterfaces.InformerOptions) ControlPlaneMachineSetIndexInformer {
 	gvr := schema.GroupVersionResource{Group: "machine.openshift.io", Version: "v1", Resource: "controlplanemachinesets"}
 	identifier := options.InformerName.WithResource(gvr)
 	tweakListOptions := options.TweakListOptions
-	return cache.NewSharedIndexInformerWithOptions(
+	return cache.NewTypedSharedIndexInformer[*apimachinev1.ControlPlaneMachineSet](cache.NewSharedIndexInformerWithOptions(
 		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
@@ -84,17 +136,57 @@ func NewControlPlaneMachineSetInformerWithOptions(client versioned.Interface, na
 			Indexers:     options.Indexers,
 			Identifier:   identifier,
 		},
-	)
+	))
 }
 
 func (f *controlPlaneMachineSetInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewControlPlaneMachineSetInformerWithOptions(client, f.namespace, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
+	return NewTypedControlPlaneMachineSetInformerWithOptions(client, f.namespace, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
 }
 
 func (f *controlPlaneMachineSetInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&apimachinev1.ControlPlaneMachineSet{}, f.defaultInformer)
+	return f.TypedInformer()
+}
+
+func (f *controlPlaneMachineSetInformer) TypedInformer() ControlPlaneMachineSetIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apimachinev1.ControlPlaneMachineSet](f.factory.InformerFor(&apimachinev1.ControlPlaneMachineSet{}, f.defaultInformer))
 }
 
 func (f *controlPlaneMachineSetInformer) Lister() machinev1.ControlPlaneMachineSetLister {
 	return machinev1.NewControlPlaneMachineSetLister(f.Informer().GetIndexer())
+}
+
+// ToTypedControlPlaneMachineSetInformer converts an untyped informer into a TypedControlPlaneMachineSetInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *ControlPlaneMachineSet. If that is not the case, calling type-safe methods of the returned
+// TypedControlPlaneMachineSetInformer leads to runtime panics. A safer alternative is to pass
+// around a TypedControlPlaneMachineSetInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToTypedControlPlaneMachineSetInformer(informer ControlPlaneMachineSetInformer) TypedControlPlaneMachineSetInformer {
+	if informer, ok := informer.(TypedControlPlaneMachineSetInformer); ok {
+		return informer
+	}
+	return &controlPlaneMachineSetTypedInformerAdapter{informer}
+}
+
+type controlPlaneMachineSetTypedInformerAdapter struct {
+	ControlPlaneMachineSetInformer
+}
+
+func (a *controlPlaneMachineSetTypedInformerAdapter) TypedInformer() ControlPlaneMachineSetIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apimachinev1.ControlPlaneMachineSet](a.Informer())
+}
+
+// ToControlPlaneMachineSetIndexInformer converts an untyped informer into a ControlPlaneMachineSetIndexInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *ControlPlaneMachineSet. If that is not the case, calling type-safe methods of the returned
+// ControlPlaneMachineSetIndexInformer leads to runtime panics. A safer alternative is to pass
+// around a ControlPlaneMachineSetIndexInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToControlPlaneMachineSetIndexInformer(informer cache.SharedIndexInformer) ControlPlaneMachineSetIndexInformer {
+	if informer, ok := informer.(ControlPlaneMachineSetIndexInformer); ok {
+		return informer
+	}
+	return cache.NewTypedSharedIndexInformer[*apimachinev1.ControlPlaneMachineSet](informer)
 }

@@ -141,9 +141,11 @@ func renderCustomNoUpgradeFeatureGate(in *configv1.FeatureGate, clusterProfile f
 	if in.Spec.FeatureSet != configv1.CustomNoUpgrade {
 		return nil, fmt.Errorf("not CustomNoUpgrade")
 	}
-	for _, forceEnabled := range in.Spec.CustomNoUpgrade.Enabled {
-		if inListOfNames(in.Spec.CustomNoUpgrade.Disabled, forceEnabled) {
-			return nil, fmt.Errorf("trying to enable and disable %q", forceEnabled)
+	if in.Spec.CustomNoUpgrade != nil {
+		for _, forceEnabled := range in.Spec.CustomNoUpgrade.Enabled {
+			if inListOfNames(in.Spec.CustomNoUpgrade.Disabled, forceEnabled) {
+				return nil, fmt.Errorf("trying to enable and disable %q", forceEnabled)
+			}
 		}
 	}
 
