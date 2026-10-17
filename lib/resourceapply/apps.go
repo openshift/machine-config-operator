@@ -31,6 +31,15 @@ func IsApplyErrorRetriable(err error) bool {
 	if apierrors.IsTimeout(err) {
 		return true
 	}
+	// Retry on x509/TLS certificate validation errors. These occur transiently during
+	// cluster upgrades when the kube-apiserver briefly serves a certificate without the
+	// kubernetes service ClusterIP as an IP SAN. The condition self-heals within seconds
+	// once the new serving cert is issued.
+	// See https://issues.redhat.com/browse/OCPBUGS-112464 for more information.
+	errMsg := err.Error()
+	if strings.Contains(errMsg, "x509:") || strings.Contains(errMsg, "tls: failed to verify certificate") {
+		return true
+	}
 	// Add any other errors to be added to the retry here.
 
 	klog.Infof("Skipping retry in Apply fn for error: %s", err)
