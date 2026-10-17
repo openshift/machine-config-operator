@@ -226,19 +226,20 @@ func (p *PinnedImageSetManager) sync(key string) error {
 		klog.Errorf("failed to update status: %v", err)
 	}
 
-	if err := p.syncMachineConfigPools(ctx, pools); err != nil {
+	setErrors, err := p.syncMachineConfigPools(ctx, pools)
+	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			ctxErr := fmt.Errorf("%w: %v", errRequeueAfterTimeout, p.prefetchTimeout)
-			if err := p.updateStatusError([]*mcfgv1.MachineConfigPool{primaryPool}, ctxErr); err != nil {
-				klog.Errorf("failed to update status: %v", err)
+			if statusErr := p.updateStatusError([]*mcfgv1.MachineConfigPool{primaryPool}, p.timeoutErrorsForPools([]*mcfgv1.MachineConfigPool{primaryPool}, ctxErr)); statusErr != nil {
+				klog.Errorf("failed to update status: %v", statusErr)
 			}
 			klog.Info(ctxErr)
 			return ctxErr
 		}
 
 		klog.Error(err)
-		if err := p.updateStatusError([]*mcfgv1.MachineConfigPool{primaryPool}, err); err != nil {
-			klog.Errorf("failed to update status: %v", err)
+		if statusErr := p.updateStatusError([]*mcfgv1.MachineConfigPool{primaryPool}, setErrors); statusErr != nil {
+			klog.Errorf("failed to update status: %v", statusErr)
 		}
 		return err
 	}
@@ -246,11 +247,13 @@ func (p *PinnedImageSetManager) sync(key string) error {
 	return p.updateStatusProgressingComplete([]*mcfgv1.MachineConfigPool{primaryPool}, "All pinned image sets complete")
 }
 
-func (p *PinnedImageSetManager) syncMachineConfigPools(ctx context.Context, pools []*mcfgv1.MachineConfigPool) error {
+func (p *PinnedImageSetManager) syncMachineConfigPools(ctx context.Context, pools []*mcfgv1.MachineConfigPool) (map[string]error, error) {
+	setErrors := make(map[string]error)
 	images := make([]mcfgv1.PinnedImageRef, 0, 100)
 	for _, pool := range pools {
-		if err := p.syncMachineConfigPool(ctx, pool); err != nil {
-			return err
+		poolErrors := p.syncMachineConfigPool(ctx, pool)
+		for name, err := range poolErrors {
+			setErrors[name] = err
 		}
 
 		// collect all unique images from all pools
@@ -261,10 +264,23 @@ func (p *PinnedImageSetManager) syncMachineConfigPools(ctx context.Context, pool
 					klog.Warningf("PinnedImageSet %q not found", image.Name)
 					continue
 				}
-				return fmt.Errorf("failed to get PinnedImageSet %q: %w", image.Name, err)
+				return setErrors, fmt.Errorf("failed to get PinnedImageSet %q: %w", image.Name, err)
+			}
+			// Only include images from sets that did not fail this sync when writing CRI-O config.
+			if _, failed := setErrors[imageSet.Name]; failed {
+				continue
 			}
 			images = append(images, imageSet.Spec.PinnedImages...)
 		}
+	}
+
+	if len(setErrors) > 0 {
+		// Join per-set causes so callers can still match context.DeadlineExceeded via errors.Is.
+		joined := make([]error, 0, len(setErrors))
+		for _, setErr := range setErrors {
+			joined = append(joined, setErr)
+		}
+		return setErrors, fmt.Errorf("one or more pinned image sets failed to prefetch: %w", errors.Join(joined...))
 	}
 
 	// verify all images available if not clear the cache and requeue
@@ -272,11 +288,11 @@ func (p *PinnedImageSetManager) syncMachineConfigPools(ctx context.Context, pool
 	for _, image := range imageNames {
 		exists, err := p.criClient.ImageStatus(ctx, image)
 		if err != nil {
-			return err
+			return setErrors, err
 		}
 		if !exists {
 			p.cache.Clear()
-			return fmt.Errorf("%w: image removed during sync: %s", errFailedToPullImage, image)
+			return setErrors, fmt.Errorf("%w: image removed during sync: %s", errFailedToPullImage, image)
 		}
 	}
 
@@ -284,15 +300,16 @@ func (p *PinnedImageSetManager) syncMachineConfigPools(ctx context.Context, pool
 	// images in an emergency
 	if err := ensureCrioPinnedImagesConfigFile(crioPinnedImagesDropInFilePath, imageNames); err != nil {
 		klog.Errorf("failed to write crio config file: %v", err)
-		return err
+		return setErrors, err
 	}
 
-	return nil
+	return setErrors, nil
 }
 
-func (p *PinnedImageSetManager) syncMachineConfigPool(ctx context.Context, pool *mcfgv1.MachineConfigPool) error {
+func (p *PinnedImageSetManager) syncMachineConfigPool(ctx context.Context, pool *mcfgv1.MachineConfigPool) map[string]error {
+	setErrors := make(map[string]error)
 	if pool.Spec.PinnedImageSets == nil {
-		return nil
+		return setErrors
 	}
 	imageSets := make([]*mcfgv1.PinnedImageSet, 0, len(pool.Spec.PinnedImageSets))
 	for _, ref := range pool.Spec.PinnedImageSets {
@@ -302,20 +319,52 @@ func (p *PinnedImageSetManager) syncMachineConfigPool(ctx context.Context, pool 
 				klog.Warningf("PinnedImageSet %q not found, skipping", ref.Name)
 				continue
 			}
-			return fmt.Errorf("failed to get PinnedImageSet %q: %w", ref.Name, err)
+			setErrors[ref.Name] = fmt.Errorf("failed to get PinnedImageSet %q: %w", ref.Name, err)
+			continue
 		}
 		klog.Infof("Reconciling pinned image set: %s: generation: %d", ref.Name, imageSet.GetGeneration())
 
 		// verify storage per image set
 		if err := p.checkNodeAllocatableStorage(ctx, imageSet); err != nil {
-			return err
+			setErrors[imageSet.Name] = err
+			continue
 		}
 		imageSets = append(imageSets, imageSet)
 	}
 	// images are cached with size information
 	p.cache.ClearDigests()
 
-	return p.prefetchImageSets(ctx, imageSets...)
+	for name, err := range p.prefetchImageSetsPerSet(ctx, imageSets...) {
+		setErrors[name] = err
+	}
+	return setErrors
+}
+
+// timeoutErrorsForPools attributes a shared timeout/deadline error to incomplete
+// PinnedImageSets only (skips sets already cached for the current generation).
+func (p *PinnedImageSetManager) timeoutErrorsForPools(pools []*mcfgv1.MachineConfigPool, timeoutErr error) map[string]error {
+	setErrors := make(map[string]error)
+	for _, pool := range pools {
+		for _, ref := range pool.Spec.PinnedImageSets {
+			imageSet, err := p.imageSetLister.Get(ref.Name)
+			if err != nil {
+				if apierrors.IsNotFound(err) {
+					continue
+				}
+				setErrors[ref.Name] = timeoutErr
+				continue
+			}
+			if cachedImage, ok := p.cache.Get(strings.TrimSpace(string(imageSet.UID))); ok {
+				cachedImageSet := cachedImage.(mcfgv1.PinnedImageSet)
+				if imageSet.Generation == cachedImageSet.Generation {
+					// Already complete for this generation; do not mark timed out.
+					continue
+				}
+			}
+			setErrors[imageSet.Name] = timeoutErr
+		}
+	}
+	return setErrors
 }
 
 func (p *PinnedImageSetManager) checkNodeAllocatableStorage(ctx context.Context, imageSet *mcfgv1.PinnedImageSet) error {
@@ -343,14 +392,27 @@ func (p *PinnedImageSetManager) checkNodeAllocatableStorage(ctx context.Context,
 }
 
 // prefetchImageSets schedules the prefetching of images for the given image sets and waits for completion.
+// Compatibility wrapper used by unit tests; prefer prefetchImageSetsPerSet for status reporting.
 func (p *PinnedImageSetManager) prefetchImageSets(ctx context.Context, imageSets ...*mcfgv1.PinnedImageSet) error {
-	registryAuth, err := newRegistryAuth(p.authFilePath, p.registryCfgPath)
-	if err != nil {
+	setErrors := p.prefetchImageSetsPerSet(ctx, imageSets...)
+	for _, err := range setErrors {
 		return err
 	}
+	return nil
+}
 
-	// monitor prefetch operations
-	monitor := newPrefetchMonitor()
+// prefetchImageSetsPerSet prefetches each PinnedImageSet independently so a failure in one
+// set does not attribute errors to other sets (OCPBUGS-50878).
+func (p *PinnedImageSetManager) prefetchImageSetsPerSet(ctx context.Context, imageSets ...*mcfgv1.PinnedImageSet) map[string]error {
+	setErrors := make(map[string]error)
+	registryAuth, err := newRegistryAuth(p.authFilePath, p.registryCfgPath)
+	if err != nil {
+		for _, imageSet := range imageSets {
+			setErrors[imageSet.Name] = err
+		}
+		return setErrors
+	}
+
 	for _, imageSet := range imageSets {
 		// this is forbidden by the API validation rules, but we should check anyway
 		if len(imageSet.Spec.PinnedImages) == 0 {
@@ -365,24 +427,25 @@ func (p *PinnedImageSetManager) prefetchImageSets(ctx context.Context, imageSets
 				continue
 			}
 		}
+
+		// Isolate completion tracking per image set so failures do not bleed across sets.
+		monitor := newPrefetchMonitor()
 		if err := p.scheduleWork(ctx, p.prefetchCh, registryAuth, imageSet.Spec.PinnedImages, monitor); err != nil {
-			return err
+			setErrors[imageSet.Name] = err
+			continue
 		}
-	}
+		if err := monitor.WaitForDone(); err != nil {
+			setErrors[imageSet.Name] = err
+			continue
+		}
 
-	if err := monitor.WaitForDone(); err != nil {
-		return err
-	}
-
-	// cache the completed image sets
-	for _, imageSet := range imageSets {
 		imageSetCache := imageSet.DeepCopy()
 		imageSetCache.Spec.PinnedImages = nil
 		// Cache without PinnedImages to avoid storing large image lists in the LRU.
 		p.cache.Add(strings.TrimSpace(string(imageSet.UID)), *imageSetCache)
 	}
 
-	return nil
+	return setErrors
 }
 
 // scheduleWork schedules the prefetch work for the images and collects the first error encountered.
@@ -541,8 +604,7 @@ func (p *PinnedImageSetManager) updateStatusProgressing(pools []*mcfgv1.MachineC
 		return fmt.Errorf("failed to get node %q: %w", p.nodeName, err)
 	}
 
-	isComplete := false
-	applyCfg, err := p.getPinnedImageSetApplyConfigsForPools(pools, isComplete, nil)
+	applyCfg, err := p.getPinnedImageSetApplyConfigsForPools(pools, false, nil)
 	if err != nil {
 		return fmt.Errorf("failed to get image set apply configs: %w", err)
 	}
@@ -576,8 +638,7 @@ func (p *PinnedImageSetManager) updateStatusProgressingComplete(pools []*mcfgv1.
 		return fmt.Errorf("failed to get node %q: %w", p.nodeName, err)
 	}
 
-	isComplete := true
-	applyCfg, err := p.getPinnedImageSetApplyConfigsForPools(pools, isComplete, nil)
+	applyCfg, err := p.getPinnedImageSetApplyConfigsForPools(pools, true, nil)
 	if err != nil {
 		return fmt.Errorf("failed to get image set apply configs: %w", err)
 	}
@@ -625,14 +686,13 @@ func (p *PinnedImageSetManager) updateStatusProgressingComplete(pools []*mcfgv1.
 	)
 }
 
-func (p *PinnedImageSetManager) updateStatusError(pools []*mcfgv1.MachineConfigPool, statusErr error) error {
+func (p *PinnedImageSetManager) updateStatusError(pools []*mcfgv1.MachineConfigPool, setErrors map[string]error) error {
 	node, err := p.nodeLister.Get(p.nodeName)
 	if err != nil {
 		return fmt.Errorf("failed to get node %q: %w", p.nodeName, err)
 	}
 
-	isComplete := false
-	applyCfg, err := p.getPinnedImageSetApplyConfigsForPools(pools, isComplete, statusErr)
+	applyCfg, err := p.getPinnedImageSetApplyConfigsForPools(pools, false, setErrors)
 	if err != nil {
 		return fmt.Errorf("failed to get image set apply configs: %w", err)
 	}
@@ -661,7 +721,8 @@ func (p *PinnedImageSetManager) updateStatusError(pools []*mcfgv1.MachineConfigP
 }
 
 // getPinnedImageSetApplyConfigsForPools returns a list of MachineConfigNodeStatusPinnedImageSetApplyConfiguration for the given pools.
-func (p *PinnedImageSetManager) getPinnedImageSetApplyConfigsForPools(pools []*mcfgv1.MachineConfigPool, isCompleted bool, statusErr error) ([]*machineconfigurationv1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration, error) {
+// setErrors maps PinnedImageSet name -> error for that set only. Successful / cached sets clear LastFailed*.
+func (p *PinnedImageSetManager) getPinnedImageSetApplyConfigsForPools(pools []*mcfgv1.MachineConfigPool, isCompleted bool, setErrors map[string]error) ([]*machineconfigurationv1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration, error) {
 	applyConfigs := make([]*machineconfigurationv1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration, 0)
 	for _, pool := range pools {
 		for _, imageSets := range pool.Spec.PinnedImageSets {
@@ -673,7 +734,7 @@ func (p *PinnedImageSetManager) getPinnedImageSetApplyConfigsForPools(pools []*m
 				return nil, err
 			}
 
-			config := p.createApplyConfigForImageSet(imageSet, isCompleted, statusErr)
+			config := p.createApplyConfigForImageSet(imageSet, isCompleted, setErrors[imageSet.Name])
 			applyConfigs = append(applyConfigs, config)
 		}
 	}
@@ -681,26 +742,33 @@ func (p *PinnedImageSetManager) getPinnedImageSetApplyConfigsForPools(pools []*m
 }
 
 //nolint:gosec
-func (p *PinnedImageSetManager) createApplyConfigForImageSet(imageSet *mcfgv1.PinnedImageSet, isCompleted bool, statusErr error) *machineconfigurationv1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration {
+func (p *PinnedImageSetManager) createApplyConfigForImageSet(imageSet *mcfgv1.PinnedImageSet, isCompleted bool, setErr error) *machineconfigurationv1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration {
 	imageSetConfig := machineconfigurationv1.MachineConfigNodeStatusPinnedImageSet().
 		WithName(imageSet.Name).
 		WithDesiredGeneration(int32(imageSet.GetGeneration()))
 
+	if setErr != nil {
+		imageSetConfig.LastFailedGeneration = ptr.To(int32(imageSet.GetGeneration()))
+		imageSetConfig.LastFailedGenerationError = ptr.To(setErr.Error())
+		return imageSetConfig
+	}
+
 	if cachedImage, ok := p.cache.Get(strings.TrimSpace(string(imageSet.UID))); ok {
 		cachedImageSet := cachedImage.(mcfgv1.PinnedImageSet)
 		if imageSet.Generation == cachedImageSet.Generation {
-			// return cached value
 			imageSetConfig.CurrentGeneration = ptr.To(int32(imageSet.GetGeneration()))
+			// Clear prior failures for this set (OCPBUGS-50878).
+			imageSetConfig.LastFailedGeneration = ptr.To(int32(0))
+			imageSetConfig.LastFailedGenerationError = ptr.To("")
 			return imageSetConfig
 		}
 	}
 
-	if statusErr != nil {
-		imageSetConfig.LastFailedGeneration = ptr.To(int32(imageSet.GetGeneration()))
-		imageSetConfig.LastFailedGenerationError = ptr.To(statusErr.Error())
-	} else if isCompleted {
+	if isCompleted {
 		// only set the current generation if prefetch is complete
 		imageSetConfig.CurrentGeneration = ptr.To(int32(imageSet.GetGeneration()))
+		imageSetConfig.LastFailedGeneration = ptr.To(int32(0))
+		imageSetConfig.LastFailedGenerationError = ptr.To("")
 	}
 
 	return imageSetConfig
