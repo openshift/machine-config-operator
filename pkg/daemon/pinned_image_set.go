@@ -588,11 +588,14 @@ func (p *PinnedImageSetManager) updateStatusProgressingComplete(pools []*mcfgv1.
 		return err
 	}
 
+	// When PIS work is finished, conditions flip to False. Per the MCN enhancement,
+	// reason/message should indicate these values are from the previous update cycle
+	// (same pattern as node update phases after Updated=True).
 	err = upgrademonitor.UpdateMachineConfigNodeStatus(
 		&upgrademonitor.Condition{
 			State:   mcfgv1.MachineConfigNodePinnedImageSetsProgressing,
-			Reason:  "AsExpected",
-			Message: message,
+			Reason:  "PinnedImageSetsUpdateComplete",
+			Message: previousPinnedImageSetUpdateMessage(message),
 		},
 		nil,
 		metav1.ConditionFalse,
@@ -611,8 +614,8 @@ func (p *PinnedImageSetManager) updateStatusProgressingComplete(pools []*mcfgv1.
 	return upgrademonitor.UpdateMachineConfigNodeStatus(
 		&upgrademonitor.Condition{
 			State:   mcfgv1.MachineConfigNodePinnedImageSetsDegraded,
-			Reason:  "AsExpected",
-			Message: "All is good",
+			Reason:  "PinnedImageSetsUpdateComplete",
+			Message: "Action during previous pinned image set update: All is good",
 		},
 		nil,
 		metav1.ConditionFalse,
@@ -678,6 +681,12 @@ func (p *PinnedImageSetManager) getPinnedImageSetApplyConfigsForPools(pools []*m
 		}
 	}
 	return applyConfigs, nil
+}
+
+// previousPinnedImageSetUpdateMessage formats MCN condition messages for completed
+// PinnedImageSet work so they are clearly attributed to the previous update cycle.
+func previousPinnedImageSetUpdateMessage(message string) string {
+	return fmt.Sprintf("Action during previous pinned image set update: %s", message)
 }
 
 //nolint:gosec
