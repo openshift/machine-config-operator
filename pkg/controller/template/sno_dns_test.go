@@ -289,15 +289,80 @@ func TestSNOCoreDNSResolverSystemdResolved(t *testing.T) {
 	}
 }
 
+func TestSNOCoreDNSResolverWithoutNetworkManagerNameserver(t *testing.T) {
+	script := renderSNODNSResolver(t)
+	for _, resolved := range []bool{false, true} {
+		t.Run("resolved="+strconv.FormatBool(resolved), func(t *testing.T) {
+			paths := prepareResolverTest(t, t.TempDir(), script)
+			writeTestFile(t, paths.nmResolv, "search example.net\noptions attempts:2\n", 0o644)
+			writeTestFile(t, filepath.Join(paths.nodeIPDir, "primary-ip"), "192.0.2.10\n", 0o644)
+			writeExecutable(t, filepath.Join(paths.binDir, "curl"), "#!/bin/sh\nexit 0\n")
+
+			if resolved {
+				stubResolv := filepath.Join(paths.resolvedRuntimeDir, "stub-resolv.conf")
+				writeTestFile(t, stubResolv, "nameserver 127.0.0.53\n", 0o644)
+				require.NoError(t, os.Symlink(stubResolv, paths.resolvConf))
+			} else {
+				writeTestFile(t, paths.resolvConf, "nameserver 198.51.100.53\n", 0o644)
+			}
+
+			runResolver(t, paths)
+			if resolved {
+				require.Equal(t, "[Resolve]\nDNS=192.0.2.10\nDomains=example.com example.net\n", readTestFile(t, paths.resolvedDropin))
+			} else {
+				require.Equal(t, "nameserver 192.0.2.10\noptions attempts:2\nsearch example.com example.net\n", readTestFile(t, paths.resolvConf))
+			}
+		})
+	}
+}
+
+func TestSNOCoreDNSResolverRetriesSystemdResolvedRestart(t *testing.T) {
+	paths := prepareResolverTest(t, t.TempDir(), renderSNODNSResolver(t))
+	stubResolv := filepath.Join(paths.resolvedRuntimeDir, "stub-resolv.conf")
+	writeTestFile(t, stubResolv, "nameserver 127.0.0.53\n", 0o644)
+	require.NoError(t, os.Symlink(stubResolv, paths.resolvConf))
+	writeTestFile(t, paths.nmResolv, "nameserver 203.0.113.53\n", 0o644)
+	writeTestFile(t, filepath.Join(paths.nodeIPDir, "primary-ip"), "192.0.2.10\n", 0o644)
+	writeExecutable(t, filepath.Join(paths.binDir, "curl"), "#!/bin/sh\nexit 0\n")
+	writeExecutable(t, filepath.Join(paths.binDir, "systemctl"), `#!/bin/sh
+attempts_file="$(dirname "$0")/systemctl-attempts"
+attempts=0
+if [ -f "${attempts_file}" ]; then
+  read -r attempts < "${attempts_file}"
+fi
+attempts=$((attempts + 1))
+printf '%s\n' "${attempts}" > "${attempts_file}"
+[ "${attempts}" -gt 1 ]
+`)
+
+	_, err := resolverCommand(paths).CombinedOutput()
+	require.Error(t, err)
+	before, err := os.Stat(paths.resolvedDropin)
+	require.NoError(t, err)
+	_, err = os.Stat(paths.resolvedRestartPending)
+	require.NoError(t, err)
+
+	runResolver(t, paths)
+	after, err := os.Stat(paths.resolvedDropin)
+	require.NoError(t, err)
+	require.True(t, os.SameFile(before, after), "unchanged drop-in was replaced")
+	require.NoFileExists(t, paths.resolvedRestartPending)
+	require.Equal(t, "2\n", readTestFile(t, filepath.Join(paths.binDir, "systemctl-attempts")))
+
+	runResolver(t, paths)
+	require.Equal(t, "2\n", readTestFile(t, filepath.Join(paths.binDir, "systemctl-attempts")), "unchanged applied drop-in triggered another restart")
+}
+
 type resolverTestPaths struct {
-	script             string
-	binDir             string
-	resolvedDropin     string
-	resolvedRuntimeDir string
-	nmResolv           string
-	nmDropin           string
-	resolvConf         string
-	nodeIPDir          string
+	script                 string
+	binDir                 string
+	resolvedDropin         string
+	resolvedRestartPending string
+	resolvedRuntimeDir     string
+	nmResolv               string
+	nmDropin               string
+	resolvConf             string
+	nodeIPDir              string
 }
 
 func renderSNODNSResolver(t *testing.T) string {
@@ -327,14 +392,15 @@ func renderSNODNSResolver(t *testing.T) string {
 func prepareResolverTest(t *testing.T, testDir, script string) resolverTestPaths {
 	t.Helper()
 	paths := resolverTestPaths{
-		script:             filepath.Join(testDir, "sno-resolv-prepender.sh"),
-		binDir:             filepath.Join(testDir, "bin"),
-		resolvedDropin:     filepath.Join(testDir, "resolved.conf.d", "60-sno-internal-dns.conf"),
-		resolvedRuntimeDir: filepath.Join(testDir, "run", "systemd", "resolve"),
-		nmResolv:           filepath.Join(testDir, "run", "NetworkManager", "resolv.conf"),
-		nmDropin:           filepath.Join(testDir, "run", "NetworkManager", "conf.d", "99-sno-internal-dns.conf"),
-		resolvConf:         filepath.Join(testDir, "etc", "resolv.conf"),
-		nodeIPDir:          filepath.Join(testDir, "run", "nodeip-configuration"),
+		script:                 filepath.Join(testDir, "sno-resolv-prepender.sh"),
+		binDir:                 filepath.Join(testDir, "bin"),
+		resolvedDropin:         filepath.Join(testDir, "resolved.conf.d", "60-sno-internal-dns.conf"),
+		resolvedRestartPending: filepath.Join(testDir, "run", "sno-resolv-prepender", "resolved-restart-pending"),
+		resolvedRuntimeDir:     filepath.Join(testDir, "run", "systemd", "resolve"),
+		nmResolv:               filepath.Join(testDir, "run", "NetworkManager", "resolv.conf"),
+		nmDropin:               filepath.Join(testDir, "run", "NetworkManager", "conf.d", "99-sno-internal-dns.conf"),
+		resolvConf:             filepath.Join(testDir, "etc", "resolv.conf"),
+		nodeIPDir:              filepath.Join(testDir, "run", "nodeip-configuration"),
 	}
 	for _, dir := range []string{paths.binDir, filepath.Dir(paths.resolvedDropin), paths.resolvedRuntimeDir, filepath.Dir(paths.nmResolv), filepath.Dir(paths.resolvConf), paths.nodeIPDir} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -367,6 +433,7 @@ func resolverCommand(paths resolverTestPaths) *exec.Cmd {
 	cmd.Env = append(os.Environ(),
 		"PATH="+paths.binDir+":"+os.Getenv("PATH"),
 		"SNO_DNS_RESOLVED_DROPIN="+paths.resolvedDropin,
+		"SNO_DNS_RESOLVED_RESTART_PENDING="+paths.resolvedRestartPending,
 		"SNO_DNS_RESOLVED_RUNTIME_DIR="+paths.resolvedRuntimeDir,
 		"SNO_DNS_NM_RESOLV="+paths.nmResolv,
 		"SNO_DNS_NM_DROPIN="+paths.nmDropin,

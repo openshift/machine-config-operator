@@ -7,6 +7,7 @@ contents:
     set -euo pipefail
 
     resolved_dropin=${SNO_DNS_RESOLVED_DROPIN:-/etc/systemd/resolved.conf.d/60-sno-internal-dns.conf}
+    resolved_restart_pending=${SNO_DNS_RESOLVED_RESTART_PENDING:-/run/sno-resolv-prepender/resolved-restart-pending}
     resolved_runtime_dir=${SNO_DNS_RESOLVED_RUNTIME_DIR:-/run/systemd/resolve}
     nm_dropin=${SNO_DNS_NM_DROPIN:-/run/NetworkManager/conf.d/99-sno-internal-dns.conf}
     nm_resolv=${SNO_DNS_NM_RESOLV:-/var/run/NetworkManager/resolv.conf}
@@ -48,7 +49,6 @@ contents:
     # The systemd service retries until CoreDNS is ready.
     curl --fail --silent --max-time 2 "${health_url}" >/dev/null
     load_node_ips
-    grep -q '^nameserver ' "${nm_resolv}"
 
     target=$(readlink -f "${resolv_conf}" || true)
     if [[ -L "${resolv_conf}" && "${target}" == "${resolved_runtime_dir}/"* ]]; then
@@ -62,10 +62,15 @@ contents:
       ' "${nm_resolv}" >> "${tmp}"
       chmod 0644 "${tmp}"
       if [[ ! -f "${resolved_dropin}" ]] || ! cmp -s "${tmp}" "${resolved_dropin}"; then
+        mkdir -p "$(dirname "${resolved_restart_pending}")"
+        touch "${resolved_restart_pending}"
         mv -Tf "${tmp}" "${resolved_dropin}"
-        systemctl try-restart systemd-resolved.service
       else
         rm -f "${tmp}"
+      fi
+      if [[ -e "${resolved_restart_pending}" ]]; then
+        systemctl try-restart systemd-resolved.service
+        rm -f "${resolved_restart_pending}"
       fi
       exit 0
     fi
