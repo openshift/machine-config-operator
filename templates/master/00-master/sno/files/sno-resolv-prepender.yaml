@@ -6,13 +6,18 @@ contents:
     #!/bin/bash
     set -euo pipefail
 
-    resolved_dropin=${SNO_DNS_RESOLVED_DROPIN:-/etc/systemd/resolved.conf.d/60-sno-internal-dns.conf}
+    resolved_dropin=${SNO_DNS_RESOLVED_DROPIN:-/run/systemd/resolved.conf.d/60-sno-internal-dns.conf}
+    resolved_restart_pending=${SNO_DNS_RESOLVED_RESTART_PENDING:-/run/sno-resolv-prepender/resolved-restart-pending}
     resolved_runtime_dir=${SNO_DNS_RESOLVED_RUNTIME_DIR:-/run/systemd/resolve}
     nm_dropin=${SNO_DNS_NM_DROPIN:-/run/NetworkManager/conf.d/99-sno-internal-dns.conf}
     nm_resolv=${SNO_DNS_NM_RESOLV:-/var/run/NetworkManager/resolv.conf}
     resolv_conf=${SNO_DNS_RESOLV_CONF:-/etc/resolv.conf}
     node_ip_dir=${SNO_DNS_NODE_IP_DIR:-/run/nodeip-configuration}
     health_url=${SNO_DNS_HEALTH_URL:-http://127.0.0.1:18081/ready}
+
+    tmp=""
+    nm_dropin_tmp=""
+    trap 'rm -f "${tmp}" "${nm_dropin_tmp}"' EXIT
 
     valid_node_ip() {
       [[ "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ || "$1" == *:* ]]
@@ -45,10 +50,14 @@ contents:
       [[ "${#addresses[@]}" -gt 0 ]]
     }
 
+    rc_manager() {
+      busctl get-property org.freedesktop.NetworkManager \
+        /org/freedesktop/NetworkManager/DnsManager org.freedesktop.NetworkManager.DnsManager RcManager
+    }
+
     # The systemd service retries until CoreDNS is ready.
     curl --fail --silent --max-time 2 "${health_url}" >/dev/null
     load_node_ips
-    grep -q '^nameserver ' "${nm_resolv}"
 
     target=$(readlink -f "${resolv_conf}" || true)
     if [[ -L "${resolv_conf}" && "${target}" == "${resolved_runtime_dir}/"* ]]; then
@@ -62,27 +71,18 @@ contents:
       ' "${nm_resolv}" >> "${tmp}"
       chmod 0644 "${tmp}"
       if [[ ! -f "${resolved_dropin}" ]] || ! cmp -s "${tmp}" "${resolved_dropin}"; then
+        mkdir -p "$(dirname "${resolved_restart_pending}")"
+        touch "${resolved_restart_pending}"
         mv -Tf "${tmp}" "${resolved_dropin}"
-        systemctl try-restart systemd-resolved.service
       else
         rm -f "${tmp}"
       fi
+      if [[ -e "${resolved_restart_pending}" ]]; then
+        systemctl try-restart systemd-resolved.service
+        rm -f "${resolved_restart_pending}"
+      fi
       exit 0
     fi
-
-    mkdir -p "$(dirname "${nm_dropin}")"
-    tmp=$(mktemp "${nm_dropin}.XXXXXX")
-    printf '[main]\nrc-manager=unmanaged\n' > "${tmp}"
-    chmod 0644 "${tmp}"
-    if [[ ! -f "${nm_dropin}" ]] || ! cmp -s "${tmp}" "${nm_dropin}"; then
-      mv -Tf "${tmp}" "${nm_dropin}"
-    else
-      rm -f "${tmp}"
-    fi
-    nmcli general reload conf
-    manager=$(busctl get-property org.freedesktop.NetworkManager \
-      /org/freedesktop/NetworkManager/DnsManager org.freedesktop.NetworkManager.DnsManager RcManager)
-    [[ "${manager}" == 's "unmanaged"' ]] || exit 1
 
     tmp=$(mktemp "${resolv_conf}.XXXXXX")
     awk -v local_servers="${addresses[*]}" -v domain="{{ .DNS.Spec.BaseDomain }}" '
@@ -106,6 +106,21 @@ contents:
       END { print "search " domains }
     ' "${nm_resolv}" > "${tmp}"
     chmod 0644 "${tmp}"
+
+    mkdir -p "$(dirname "${nm_dropin}")"
+    nm_dropin_tmp=$(mktemp "${nm_dropin}.XXXXXX")
+    printf '[main]\nrc-manager=unmanaged\n' > "${nm_dropin_tmp}"
+    chmod 0644 "${nm_dropin_tmp}"
+    if [[ ! -f "${nm_dropin}" ]] || ! cmp -s "${nm_dropin_tmp}" "${nm_dropin}"; then
+      mv -Tf "${nm_dropin_tmp}" "${nm_dropin}"
+    else
+      rm -f "${nm_dropin_tmp}"
+    fi
+    if [[ "$(rc_manager)" != 's "unmanaged"' ]]; then
+      nmcli general reload conf
+      [[ "$(rc_manager)" == 's "unmanaged"' ]] || exit 1
+    fi
+
     if [[ -L "${resolv_conf}" ]] || ! cmp -s "${tmp}" "${resolv_conf}"; then
       mv -ZTf "${tmp}" "${resolv_conf}"
     else

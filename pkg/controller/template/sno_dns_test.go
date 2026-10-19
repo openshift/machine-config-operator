@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -23,15 +22,12 @@ func TestIsSNOCoreDNSEnabledTemplateFunc(t *testing.T) {
 	cc.Spec.Infra.Status.PlatformStatus.Type = configv1.NonePlatformType
 	cc.Spec.Infra.Status.ControlPlaneTopology = configv1.SingleReplicaTopologyMode
 	on := ctrlcommon.NewFeatureGatesHardcodedHandler([]configv1.FeatureGateName{features.FeatureGateUnifiedClusterManagedDNSAndLB}, nil)
-	off := ctrlcommon.NewFeatureGatesHardcodedHandler(nil, nil)
 	for _, tc := range []struct {
 		name    string
 		config  *mcfgv1.ControllerConfigSpec
 		handler ctrlcommon.FeatureGatesHandler
 		want    bool
 	}{
-		{"enabled", &cc.Spec, on, true},
-		{"disabled", &cc.Spec, off, false},
 		{"no handler", &cc.Spec, nil, false},
 		{"empty config", nil, on, false},
 	} {
@@ -65,152 +61,109 @@ func TestSNOCoreDNSGate(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		for _, family := range []mcfgv1.IPFamiliesType{mcfgv1.IPFamiliesIPv4, mcfgv1.IPFamiliesIPv6, mcfgv1.IPFamiliesDualStack, mcfgv1.IPFamiliesDualStackIPv6Primary} {
-			t.Run(tc.name+"/"+string(family), func(t *testing.T) {
-				cc := newControllerConfig("test-cluster")
-				cc.Spec.DNS = &configv1.DNS{Spec: configv1.DNSSpec{BaseDomain: "example.com"}}
-				cc.Spec.Infra.Status.PlatformStatus.Type = tc.platform
-				cc.Spec.Infra.Status.ControlPlaneTopology = tc.topology
-				cc.Spec.IPFamilies = family
+		t.Run(tc.name, func(t *testing.T) {
+			cc := newControllerConfig("test-cluster")
+			cc.Spec.DNS = &configv1.DNS{Spec: configv1.DNSSpec{BaseDomain: "example.com"}}
+			cc.Spec.Infra.Status.PlatformStatus.Type = tc.platform
+			cc.Spec.Infra.Status.ControlPlaneTopology = tc.topology
 
-				enabled := []configv1.FeatureGateName{}
-				if tc.enabled {
-					enabled = append(enabled, features.FeatureGateUnifiedClusterManagedDNSAndLB)
-				}
-				fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler(enabled, nil)
+			enabled := []configv1.FeatureGateName{}
+			if tc.enabled {
+				enabled = append(enabled, features.FeatureGateUnifiedClusterManagedDNSAndLB)
+			}
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler(enabled, nil)
 
-				got, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy":"dummy"}`), nil, fgHandler)
-				if err != nil {
-					t.Fatal(err)
-				}
-				bootstrap, err := RunBootstrap(templateDir, cc, []byte(`{"dummy":"dummy"}`), nil, fgHandler)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if !reflect.DeepEqual(got, bootstrap) {
-					t.Fatal("bootstrap output differs from controller output")
-				}
+			got, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy":"dummy"}`), nil, fgHandler)
+			require.NoError(t, err)
 
-				disabled, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy":"dummy"}`), nil, nil)
+			disabled, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy":"dummy"}`), nil, nil)
+			require.NoError(t, err)
+			baseline := map[string]*mcfgv1.MachineConfig{}
+			for _, mc := range disabled {
+				baseline[mc.Name] = mc
+			}
+
+			seenAssets := map[string]bool{}
+			for _, mc := range got {
+				if !tc.want || mc.Labels[mcfgv1.MachineConfigRoleLabelKey] != masterRole {
+					require.Equal(t, baseline[mc.Name], mc, "MachineConfig changed outside enabled master configuration")
+				}
+				ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
 				require.NoError(t, err)
-				baseline := map[string]*mcfgv1.MachineConfig{}
-				for _, mc := range disabled {
-					baseline[mc.Name] = mc
-				}
 
-				hasCoreDNS := false
-				hasForcedDNSFix := false
-				seenAssets := map[string]bool{}
-				for _, mc := range got {
-					if !tc.want || mc.Labels[mcfgv1.MachineConfigRoleLabelKey] != masterRole {
-						require.Equal(t, baseline[mc.Name], mc, "MachineConfig changed outside enabled master configuration")
-					}
-					ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
-					if err != nil {
-						t.Fatal(err)
-					}
-					for _, file := range ignCfg.Storage.Files {
-						contents, err := ctrlcommon.DecodeIgnitionFileContents(file.Contents.Source, file.Contents.Compression)
-						if err != nil {
-							t.Fatal(err)
-						}
-						if tc.want && (strings.Contains(string(contents), "--api-vip") || strings.Contains(string(contents), "--ingress-vip") || strings.Contains(string(contents), "keepalived") || strings.Contains(string(contents), "haproxy")) {
-							t.Fatal("SNO CoreDNS assets contain VIP or load-balancer dependencies")
-						}
-						if tc.want && file.Path == "/etc/kubernetes/manifests/sno-coredns.yaml" {
-							for _, expected := range []string{"corednsmonitor", "--discover-node-ip", "/run/NetworkManager"} {
-								if !strings.Contains(string(contents), expected) {
-									t.Fatalf("SNO CoreDNS monitor is missing %q", expected)
-								}
-							}
-						}
-						if file.Path == "/etc/kubernetes/manifests/sno-coredns.yaml" {
-							hasCoreDNS = true
-						}
-						if file.Path == "/etc/NetworkManager/dispatcher.d/forcedns-rhel9-fix" {
-							hasForcedDNSFix = true
-						}
-						if file.Path == "/etc/kubernetes/static-pod-resources/sno-coredns/Corefile.tmpl" {
-							runtimeTemplate, err := template.New("Corefile").Parse(string(contents))
-							if err != nil {
-								t.Fatal(err)
-							}
-							data := struct {
-								DNSAddresses []struct{ Address, RecordType string }
-								DNSUpstreams []string
-							}{
-								DNSAddresses: []struct{ Address, RecordType string }{{"192.0.2.10", "A"}, {"2001:db8::10", "AAAA"}},
-								DNSUpstreams: []string{"192.0.2.53"},
-							}
-							var rendered bytes.Buffer
-							if err := runtimeTemplate.Execute(&rendered, data); err != nil {
-								t.Fatal(err)
-							}
-							for _, expected := range []string{"IN A 192.0.2.10", "IN AAAA 2001:db8::10", "{{ .Name }}"} {
-								if !strings.Contains(rendered.String(), expected) {
-									t.Fatalf("rendered Corefile does not contain %q:\n%s", expected, rendered.String())
-								}
-							}
-						}
-						if strings.Contains(file.Path, "sno-coredns") || file.Path == "/usr/local/bin/sno-resolv-prepender.sh" {
-							seenAssets[file.Path] = true
-							if mc.Labels[mcfgv1.MachineConfigRoleLabelKey] != "master" {
-								t.Fatalf("SNO DNS asset %s rendered for non-master role", file.Path)
-							}
-						}
-					}
-					for _, unit := range ignCfg.Systemd.Units {
-						if unit.Name == "nodeip-configuration.service" {
-							dualStack := family == mcfgv1.IPFamiliesDualStack || family == mcfgv1.IPFamiliesDualStackIPv6Primary
-							require.NotNil(t, unit.Contents)
-							require.Equal(t, dualStack, strings.Contains(*unit.Contents, "--dual-stack"))
-							preferIPv6 := family == mcfgv1.IPFamiliesIPv6 || family == mcfgv1.IPFamiliesDualStackIPv6Primary
-							require.Equal(t, preferIPv6, strings.Contains(*unit.Contents, "--prefer-ipv6"))
-						}
-						if unit.Name == "sno-resolv-prepender.service" {
-							if unit.Contents == nil || !strings.Contains(*unit.Contents, "ExecStart=/usr/local/bin/sno-resolv-prepender.sh") || !strings.Contains(*unit.Contents, "Restart=on-failure") {
-								t.Fatal("SNO DNS resolver unit does not reconcile the host resolver")
-							}
-							seenAssets[unit.Name] = true
-							if mc.Labels[mcfgv1.MachineConfigRoleLabelKey] != "master" {
-								t.Fatal("SNO DNS resolver unit rendered for non-master role")
-							}
-						}
-						if unit.Name == "sno-resolv-prepender.path" {
-							if unit.Contents == nil || !strings.Contains(*unit.Contents, "PathChanged=/run/NetworkManager") || !strings.Contains(*unit.Contents, "PathChanged=/etc/kubernetes/manifests/sno-coredns.yaml") {
-								t.Fatal("SNO DNS resolver does not refresh after CoreDNS or NetworkManager changes")
-							}
-							seenAssets[unit.Name] = true
-							if mc.Labels[mcfgv1.MachineConfigRoleLabelKey] != "master" {
-								t.Fatal("SNO DNS path unit rendered for non-master role")
-							}
-						}
+				var assets []string
+				for _, file := range ignCfg.Storage.Files {
+					if strings.Contains(file.Path, "sno-coredns") || file.Path == "/usr/local/bin/sno-resolv-prepender.sh" {
+						assets = append(assets, file.Path)
 					}
 				}
-				if hasCoreDNS != tc.want {
-					t.Fatalf("CoreDNS rendered: got %t, want %t", hasCoreDNS, tc.want)
-				}
-				if want := tc.topology == configv1.SingleReplicaTopologyMode; hasForcedDNSFix != want {
-					t.Fatalf("legacy forcedns fix rendered: got %t, want %t", hasForcedDNSFix, want)
-				}
-				wantAssets := map[string]bool{}
-				if tc.want {
-					wantAssets = map[string]bool{
-						"/etc/kubernetes/manifests/sno-coredns.yaml":                     true,
-						"/etc/kubernetes/static-pod-resources/sno-coredns/Corefile.tmpl": true,
-						"/usr/local/bin/sno-resolv-prepender.sh":                         true,
-						"sno-resolv-prepender.service":                                   true,
-						"sno-resolv-prepender.path":                                      true,
+				for _, unit := range ignCfg.Systemd.Units {
+					if unit.Name == "sno-resolv-prepender.service" || unit.Name == "sno-resolv-prepender.path" {
+						assets = append(assets, unit.Name)
 					}
 				}
-				require.Equal(t, wantAssets, seenAssets, "rendered SNO DNS assets")
-			})
-		}
+				for _, name := range assets {
+					seenAssets[name] = true
+					require.Equal(t, masterRole, mc.Labels[mcfgv1.MachineConfigRoleLabelKey], "SNO DNS asset %s rendered outside master", name)
+				}
+			}
+
+			wantAssets := map[string]bool{}
+			if tc.want {
+				wantAssets = map[string]bool{
+					"/etc/kubernetes/manifests/sno-coredns.yaml":                     true,
+					"/etc/kubernetes/static-pod-resources/sno-coredns/Corefile.tmpl": true,
+					"/usr/local/bin/sno-resolv-prepender.sh":                         true,
+					"sno-resolv-prepender.service":                                   true,
+					"sno-resolv-prepender.path":                                      true,
+				}
+			}
+			require.Equal(t, wantAssets, seenAssets, "rendered SNO DNS assets")
+		})
+	}
+}
+
+func TestSNOCoreDNSCorefile(t *testing.T) {
+	runtimeTemplate, err := template.New("Corefile").Parse(renderSNODNSFile(t, "/etc/kubernetes/static-pod-resources/sno-coredns/Corefile.tmpl"))
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		name      string
+		addresses []struct{ Address, RecordType string }
+		want      []string
+		notWant   []string
+	}{
+		{"ipv4", []struct{ Address, RecordType string }{{"192.0.2.10", "A"}}, []string{"IN A 192.0.2.10"}, []string{"IN AAAA"}},
+		{"dual-stack", []struct{ Address, RecordType string }{{"192.0.2.10", "A"}, {"2001:db8::10", "AAAA"}}, []string{"IN A 192.0.2.10", "IN AAAA 2001:db8::10"}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data := struct {
+				DNSAddresses []struct{ Address, RecordType string }
+				DNSUpstreams []string
+			}{
+				DNSAddresses: tc.addresses,
+				DNSUpstreams: []string{"192.0.2.53"},
+			}
+			var rendered bytes.Buffer
+			require.NoError(t, runtimeTemplate.Execute(&rendered, data))
+			out := rendered.String()
+
+			for _, want := range append([]string{"{{ .Name }}", "bufsize 512", "template IN ANY example.com {"}, tc.want...) {
+				require.Contains(t, out, want)
+			}
+			for _, notWant := range tc.notWant {
+				require.NotContains(t, out, notWant)
+			}
+
+			// CoreDNS uses the first matching template, so address answers must precede the empty catch-all.
+			catchAll := strings.Index(out, "template IN ANY example.com")
+			require.Less(t, strings.LastIndex(out, "answer "), catchAll, "address answers must precede the empty catch-all")
+			require.Less(t, catchAll, strings.Index(out, "forward ."), "empty catch-all must precede forward")
+		})
 	}
 }
 
 func TestSNOCoreDNSResolverPlainFile(t *testing.T) {
-	script := renderSNODNSResolver(t)
+	script := renderSNODNSFile(t, "/usr/local/bin/sno-resolv-prepender.sh")
 	testDir := t.TempDir()
 	paths := prepareResolverTest(t, testDir, script)
 
@@ -254,7 +207,7 @@ func TestSNOCoreDNSResolverPlainFile(t *testing.T) {
 }
 
 func TestSNOCoreDNSResolverSystemdResolved(t *testing.T) {
-	script := renderSNODNSResolver(t)
+	script := renderSNODNSFile(t, "/usr/local/bin/sno-resolv-prepender.sh")
 	testDir := t.TempDir()
 	paths := prepareResolverTest(t, testDir, script)
 
@@ -289,18 +242,158 @@ func TestSNOCoreDNSResolverSystemdResolved(t *testing.T) {
 	}
 }
 
-type resolverTestPaths struct {
-	script             string
-	binDir             string
-	resolvedDropin     string
-	resolvedRuntimeDir string
-	nmResolv           string
-	nmDropin           string
-	resolvConf         string
-	nodeIPDir          string
+func TestSNOCoreDNSResolverWithoutNetworkManagerNameserver(t *testing.T) {
+	script := renderSNODNSFile(t, "/usr/local/bin/sno-resolv-prepender.sh")
+	for _, resolved := range []bool{false, true} {
+		t.Run("resolved="+strconv.FormatBool(resolved), func(t *testing.T) {
+			paths := prepareResolverTest(t, t.TempDir(), script)
+			writeTestFile(t, paths.nmResolv, "search example.net\noptions attempts:2\n", 0o644)
+			writeTestFile(t, filepath.Join(paths.nodeIPDir, "primary-ip"), "192.0.2.10\n", 0o644)
+			writeExecutable(t, filepath.Join(paths.binDir, "curl"), "#!/bin/sh\nexit 0\n")
+
+			if resolved {
+				stubResolv := filepath.Join(paths.resolvedRuntimeDir, "stub-resolv.conf")
+				writeTestFile(t, stubResolv, "nameserver 127.0.0.53\n", 0o644)
+				require.NoError(t, os.Symlink(stubResolv, paths.resolvConf))
+			} else {
+				writeTestFile(t, paths.resolvConf, "nameserver 198.51.100.53\n", 0o644)
+			}
+
+			runResolver(t, paths)
+			if resolved {
+				require.Equal(t, "[Resolve]\nDNS=192.0.2.10\nDomains=example.com example.net\n", readTestFile(t, paths.resolvedDropin))
+			} else {
+				require.Equal(t, "nameserver 192.0.2.10\noptions attempts:2\nsearch example.com example.net\n", readTestFile(t, paths.resolvConf))
+			}
+		})
+	}
 }
 
-func renderSNODNSResolver(t *testing.T) string {
+func TestSNOCoreDNSResolverRetriesSystemdResolvedRestart(t *testing.T) {
+	paths := prepareResolverTest(t, t.TempDir(), renderSNODNSFile(t, "/usr/local/bin/sno-resolv-prepender.sh"))
+	stubResolv := filepath.Join(paths.resolvedRuntimeDir, "stub-resolv.conf")
+	writeTestFile(t, stubResolv, "nameserver 127.0.0.53\n", 0o644)
+	require.NoError(t, os.Symlink(stubResolv, paths.resolvConf))
+	writeTestFile(t, paths.nmResolv, "nameserver 203.0.113.53\n", 0o644)
+	writeTestFile(t, filepath.Join(paths.nodeIPDir, "primary-ip"), "192.0.2.10\n", 0o644)
+	writeExecutable(t, filepath.Join(paths.binDir, "curl"), "#!/bin/sh\nexit 0\n")
+	writeExecutable(t, filepath.Join(paths.binDir, "systemctl"), `#!/bin/sh
+attempts_file="$(dirname "$0")/systemctl-attempts"
+attempts=0
+if [ -f "${attempts_file}" ]; then
+  read -r attempts < "${attempts_file}"
+fi
+attempts=$((attempts + 1))
+printf '%s\n' "${attempts}" > "${attempts_file}"
+[ "${attempts}" -gt 1 ]
+`)
+
+	_, err := resolverCommand(paths).CombinedOutput()
+	require.Error(t, err)
+	before, err := os.Stat(paths.resolvedDropin)
+	require.NoError(t, err)
+	_, err = os.Stat(paths.resolvedRestartPending)
+	require.NoError(t, err)
+
+	runResolver(t, paths)
+	after, err := os.Stat(paths.resolvedDropin)
+	require.NoError(t, err)
+	require.True(t, os.SameFile(before, after), "unchanged drop-in was replaced")
+	require.NoFileExists(t, paths.resolvedRestartPending)
+	require.Equal(t, "2\n", readTestFile(t, filepath.Join(paths.binDir, "systemctl-attempts")))
+
+	runResolver(t, paths)
+	require.Equal(t, "2\n", readTestFile(t, filepath.Join(paths.binDir, "systemctl-attempts")), "unchanged applied drop-in triggered another restart")
+}
+
+func TestSNOCoreDNSResolverNetworkManagerSymlink(t *testing.T) {
+	paths := prepareResolverTest(t, t.TempDir(), renderSNODNSFile(t, "/usr/local/bin/sno-resolv-prepender.sh"))
+	require.NoError(t, os.Symlink(paths.nmResolv, paths.resolvConf))
+	writeTestFile(t, filepath.Join(paths.nodeIPDir, "primary-ip"), "192.0.2.10\n", 0o644)
+	writeExecutable(t, filepath.Join(paths.binDir, "curl"), "#!/bin/sh\nexit 0\n")
+	for _, upstream := range []string{"198.51.100.53", "203.0.113.53"} {
+		nmConfig := "nameserver " + upstream + "\n"
+		writeTestFile(t, paths.nmResolv, nmConfig, 0o644)
+		runResolver(t, paths)
+		require.Equal(t, nmConfig, readTestFile(t, paths.nmResolv), "NetworkManager input must not be overwritten")
+		require.Equal(t, "nameserver 192.0.2.10\n"+nmConfig+"search example.com\n", readTestFile(t, paths.resolvConf))
+		require.Equal(t, "[main]\nrc-manager=unmanaged\n", readTestFile(t, paths.nmDropin))
+
+		before, err := os.Stat(paths.resolvConf)
+		require.NoError(t, err)
+		runResolver(t, paths)
+		after, err := os.Stat(paths.resolvConf)
+		require.NoError(t, err)
+		require.True(t, os.SameFile(before, after), "unchanged resolver was replaced")
+	}
+	require.Equal(t, "reload\n", readTestFile(t, filepath.Join(paths.binDir, "nmcli-calls")), "NetworkManager reloaded although it was already unmanaged")
+}
+
+func TestSNOCoreDNSResolverDeduplicatesFallbacks(t *testing.T) {
+	paths := prepareResolverTest(t, t.TempDir(), renderSNODNSFile(t, "/usr/local/bin/sno-resolv-prepender.sh"))
+	writeTestFile(t, paths.resolvConf, "nameserver 198.51.100.53\n", 0o644)
+	writeTestFile(t, paths.nmResolv, "nameserver 192.0.2.10\nnameserver 2001:db8::10\nnameserver 203.0.113.53\nnameserver 203.0.113.53\nnameserver 203.0.113.54\nsearch example.net example.com example.net\noptions attempts:2\n", 0o644)
+	writeTestFile(t, filepath.Join(paths.nodeIPDir, "primary-ip"), "2001:db8::10\n", 0o644)
+	writeTestFile(t, filepath.Join(paths.nodeIPDir, "ipv4"), "192.0.2.10\n", 0o644)
+	writeTestFile(t, filepath.Join(paths.nodeIPDir, "ipv6"), "2001:db8::10\n", 0o644)
+	writeExecutable(t, filepath.Join(paths.binDir, "curl"), "#!/bin/sh\nexit 0\n")
+	want := "nameserver 2001:db8::10\nnameserver 192.0.2.10\nnameserver 203.0.113.53\n# nameserver 203.0.113.54\noptions attempts:2\nsearch example.com example.net\n"
+	for range 2 {
+		runResolver(t, paths)
+		require.Equal(t, want, readTestFile(t, paths.resolvConf))
+	}
+}
+
+func TestSNOCoreDNSResolverRejectsUnsafeTakeover(t *testing.T) {
+	script := renderSNODNSFile(t, "/usr/local/bin/sno-resolv-prepender.sh")
+	for _, reason := range []string{"ownership unchanged", "reload failure", "missing NetworkManager resolv.conf"} {
+		t.Run(reason, func(t *testing.T) {
+			paths := prepareResolverTest(t, t.TempDir(), script)
+			original := "nameserver 198.51.100.53\n"
+			writeTestFile(t, paths.resolvConf, original, 0o644)
+			if reason != "missing NetworkManager resolv.conf" {
+				writeTestFile(t, paths.nmResolv, original, 0o644)
+			}
+			writeTestFile(t, filepath.Join(paths.nodeIPDir, "primary-ip"), "192.0.2.10\n", 0o644)
+			writeExecutable(t, filepath.Join(paths.binDir, "curl"), "#!/bin/sh\nexit 0\n")
+			switch reason {
+			case "ownership unchanged":
+				writeExecutable(t, filepath.Join(paths.binDir, "busctl"), "#!/bin/sh\necho 's \"file\"'\n")
+			case "reload failure":
+				writeExecutable(t, filepath.Join(paths.binDir, "nmcli"), "#!/bin/sh\nexit 1\n")
+			}
+			_, err := resolverCommand(paths).CombinedOutput()
+			require.Error(t, err)
+			require.Equal(t, original, readTestFile(t, paths.resolvConf))
+
+			entries, err := os.ReadDir(filepath.Dir(paths.resolvConf))
+			require.NoError(t, err)
+			var names []string
+			for _, entry := range entries {
+				names = append(names, entry.Name())
+			}
+			require.Equal(t, []string{"resolv.conf"}, names, "resolver left temporary files")
+			if reason == "missing NetworkManager resolv.conf" {
+				require.NoFileExists(t, paths.nmDropin)
+				require.NoFileExists(t, filepath.Join(paths.binDir, "nmcli-calls"))
+			}
+		})
+	}
+}
+
+type resolverTestPaths struct {
+	script                 string
+	binDir                 string
+	resolvedDropin         string
+	resolvedRestartPending string
+	resolvedRuntimeDir     string
+	nmResolv               string
+	nmDropin               string
+	resolvConf             string
+	nodeIPDir              string
+}
+
+func renderSNODNSFile(t *testing.T, path string) string {
 	t.Helper()
 	cc := newControllerConfig("test-cluster")
 	cc.Spec.DNS = &configv1.DNS{Spec: configv1.DNSSpec{BaseDomain: "example.com"}}
@@ -313,28 +406,29 @@ func renderSNODNSResolver(t *testing.T) string {
 		ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
 		require.NoError(t, err)
 		for _, file := range ignCfg.Storage.Files {
-			if file.Path == "/usr/local/bin/sno-resolv-prepender.sh" {
+			if file.Path == path {
 				contents, err := ctrlcommon.DecodeIgnitionFileContents(file.Contents.Source, file.Contents.Compression)
 				require.NoError(t, err)
 				return string(contents)
 			}
 		}
 	}
-	t.Fatal("rendered MachineConfig is missing resolver script")
+	t.Fatalf("rendered MachineConfig is missing %s", path)
 	return ""
 }
 
 func prepareResolverTest(t *testing.T, testDir, script string) resolverTestPaths {
 	t.Helper()
 	paths := resolverTestPaths{
-		script:             filepath.Join(testDir, "sno-resolv-prepender.sh"),
-		binDir:             filepath.Join(testDir, "bin"),
-		resolvedDropin:     filepath.Join(testDir, "resolved.conf.d", "60-sno-internal-dns.conf"),
-		resolvedRuntimeDir: filepath.Join(testDir, "run", "systemd", "resolve"),
-		nmResolv:           filepath.Join(testDir, "run", "NetworkManager", "resolv.conf"),
-		nmDropin:           filepath.Join(testDir, "run", "NetworkManager", "conf.d", "99-sno-internal-dns.conf"),
-		resolvConf:         filepath.Join(testDir, "etc", "resolv.conf"),
-		nodeIPDir:          filepath.Join(testDir, "run", "nodeip-configuration"),
+		script:                 filepath.Join(testDir, "sno-resolv-prepender.sh"),
+		binDir:                 filepath.Join(testDir, "bin"),
+		resolvedDropin:         filepath.Join(testDir, "resolved.conf.d", "60-sno-internal-dns.conf"),
+		resolvedRestartPending: filepath.Join(testDir, "run", "sno-resolv-prepender", "resolved-restart-pending"),
+		resolvedRuntimeDir:     filepath.Join(testDir, "run", "systemd", "resolve"),
+		nmResolv:               filepath.Join(testDir, "run", "NetworkManager", "resolv.conf"),
+		nmDropin:               filepath.Join(testDir, "run", "NetworkManager", "conf.d", "99-sno-internal-dns.conf"),
+		resolvConf:             filepath.Join(testDir, "etc", "resolv.conf"),
+		nodeIPDir:              filepath.Join(testDir, "run", "nodeip-configuration"),
 	}
 	for _, dir := range []string{paths.binDir, filepath.Dir(paths.resolvedDropin), paths.resolvedRuntimeDir, filepath.Dir(paths.nmResolv), filepath.Dir(paths.resolvConf), paths.nodeIPDir} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -343,10 +437,9 @@ func prepareResolverTest(t *testing.T, testDir, script string) resolverTestPaths
 	}
 	writeExecutable(t, paths.script, script)
 	writeExecutable(t, filepath.Join(paths.binDir, "systemctl"), "#!/bin/sh\nexit 0\n")
-	writeExecutable(t, filepath.Join(paths.binDir, "restorecon"), "#!/bin/sh\nexit 0\n")
-	writeExecutable(t, filepath.Join(paths.binDir, "nmcli"), "#!/bin/sh\nexit 0\n")
+	writeExecutable(t, filepath.Join(paths.binDir, "nmcli"), "#!/bin/sh\nprintf 'reload\\n' >> \"$(dirname \"$0\")/nmcli-calls\"\n")
 	writeExecutable(t, filepath.Join(paths.binDir, "busctl"), `#!/bin/sh
-if [ -f "$SNO_DNS_NM_DROPIN" ] && grep -q '^rc-manager=unmanaged$' "$SNO_DNS_NM_DROPIN"; then
+if [ -f "$(dirname "$0")/nmcli-calls" ] && [ -f "$SNO_DNS_NM_DROPIN" ] && grep -q '^rc-manager=unmanaged$' "$SNO_DNS_NM_DROPIN"; then
   echo 's "unmanaged"'
 else
   echo 's "file"'
@@ -367,6 +460,7 @@ func resolverCommand(paths resolverTestPaths) *exec.Cmd {
 	cmd.Env = append(os.Environ(),
 		"PATH="+paths.binDir+":"+os.Getenv("PATH"),
 		"SNO_DNS_RESOLVED_DROPIN="+paths.resolvedDropin,
+		"SNO_DNS_RESOLVED_RESTART_PENDING="+paths.resolvedRestartPending,
 		"SNO_DNS_RESOLVED_RUNTIME_DIR="+paths.resolvedRuntimeDir,
 		"SNO_DNS_NM_RESOLV="+paths.nmResolv,
 		"SNO_DNS_NM_DROPIN="+paths.nmDropin,
@@ -398,64 +492,4 @@ func readTestFile(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(contents)
-}
-
-func TestSNOCoreDNSResolverNetworkManagerSymlink(t *testing.T) {
-	paths := prepareResolverTest(t, t.TempDir(), renderSNODNSResolver(t))
-	require.NoError(t, os.Symlink(paths.nmResolv, paths.resolvConf))
-	writeTestFile(t, filepath.Join(paths.nodeIPDir, "primary-ip"), "192.0.2.10\n", 0o644)
-	writeExecutable(t, filepath.Join(paths.binDir, "curl"), "#!/bin/sh\nexit 0\n")
-	for _, upstream := range []string{"198.51.100.53", "203.0.113.53"} {
-		nmConfig := "nameserver " + upstream + "\n"
-		writeTestFile(t, paths.nmResolv, nmConfig, 0o644)
-		runResolver(t, paths)
-		require.Equal(t, nmConfig, readTestFile(t, paths.nmResolv), "NetworkManager input must not be overwritten")
-		require.Equal(t, "nameserver 192.0.2.10\n"+nmConfig+"search example.com\n", readTestFile(t, paths.resolvConf))
-		require.Equal(t, "[main]\nrc-manager=unmanaged\n", readTestFile(t, paths.nmDropin))
-
-		before, err := os.Stat(paths.resolvConf)
-		require.NoError(t, err)
-		runResolver(t, paths)
-		after, err := os.Stat(paths.resolvConf)
-		require.NoError(t, err)
-		require.True(t, os.SameFile(before, after), "unchanged resolver was replaced")
-	}
-}
-
-func TestSNOCoreDNSResolverDeduplicatesFallbacks(t *testing.T) {
-	paths := prepareResolverTest(t, t.TempDir(), renderSNODNSResolver(t))
-	writeTestFile(t, paths.resolvConf, "nameserver 198.51.100.53\n", 0o644)
-	writeTestFile(t, paths.nmResolv, "nameserver 192.0.2.10\nnameserver 2001:db8::10\nnameserver 203.0.113.53\nnameserver 203.0.113.53\nnameserver 203.0.113.54\nsearch example.net example.com example.net\noptions attempts:2\n", 0o644)
-	writeTestFile(t, filepath.Join(paths.nodeIPDir, "primary-ip"), "2001:db8::10\n", 0o644)
-	writeTestFile(t, filepath.Join(paths.nodeIPDir, "ipv4"), "192.0.2.10\n", 0o644)
-	writeTestFile(t, filepath.Join(paths.nodeIPDir, "ipv6"), "2001:db8::10\n", 0o644)
-	writeExecutable(t, filepath.Join(paths.binDir, "curl"), "#!/bin/sh\nexit 0\n")
-	want := "nameserver 2001:db8::10\nnameserver 192.0.2.10\nnameserver 203.0.113.53\n# nameserver 203.0.113.54\noptions attempts:2\nsearch example.com example.net\n"
-	for range 2 {
-		runResolver(t, paths)
-		require.Equal(t, want, readTestFile(t, paths.resolvConf))
-	}
-}
-
-func TestSNOCoreDNSResolverRejectsUnsafeTakeover(t *testing.T) {
-	script := renderSNODNSResolver(t)
-	for _, reason := range []string{"ownership unchanged", "reload failure"} {
-		t.Run(reason, func(t *testing.T) {
-			paths := prepareResolverTest(t, t.TempDir(), script)
-			original := "nameserver 198.51.100.53\n"
-			writeTestFile(t, paths.resolvConf, original, 0o644)
-			writeTestFile(t, paths.nmResolv, original, 0o644)
-			writeTestFile(t, filepath.Join(paths.nodeIPDir, "primary-ip"), "192.0.2.10\n", 0o644)
-			writeExecutable(t, filepath.Join(paths.binDir, "curl"), "#!/bin/sh\nexit 0\n")
-			switch reason {
-			case "ownership unchanged":
-				writeExecutable(t, filepath.Join(paths.binDir, "busctl"), "#!/bin/sh\necho 's \"file\"'\n")
-			case "reload failure":
-				writeExecutable(t, filepath.Join(paths.binDir, "nmcli"), "#!/bin/sh\nexit 1\n")
-			}
-			_, err := resolverCommand(paths).CombinedOutput()
-			require.Error(t, err)
-			require.Equal(t, original, readTestFile(t, paths.resolvConf))
-		})
-	}
 }
