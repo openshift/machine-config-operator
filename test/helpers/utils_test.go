@@ -1,10 +1,13 @@
 package helpers
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
+	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -88,9 +91,10 @@ func TestRedactArgsScrubsCredentialsFromFailureMessage(t *testing.T) {
 
 	safeArgs := redactArgs(args, []string{authHeader, password})
 
-	// The three messages ExecCmdOnNodeRedacted can fail with.
+	// Every message ExecCmdOnNodeRedacted can fail with.
 	messages := []string{
 		fmt.Sprintf("could not prepare to exec cmd %v on node %s: %s", safeArgs, "master-0", "boom"),
+		fmt.Sprintf("timed out after %s exec'ing cmd %v on node %s: %s", ExecCmdOnNodeTimeout, safeArgs, "master-0", "signal: killed"),
 		fmt.Sprintf("failed to exec cmd %v on node %s: %s", safeArgs, "master-0", ""),
 	}
 
@@ -108,4 +112,33 @@ func TestRedactArgsScrubsCredentialsFromFailureMessage(t *testing.T) {
 	// so the assertions above are actually testing something.
 	leaky := fmt.Sprintf("failed to exec cmd %v on node %s", args, "master-0")
 	require.True(t, strings.Contains(leaky, authHeader), "test fixture no longer reproduces the leak")
+}
+
+// TestNewOcCommandContextIsBounded verifies that the command ExecCmdOnNodeRedacted
+// builds is actually bound to the context it is given, so that a hung `oc rsh`
+// is killed when the helper's deadline expires rather than running forever.
+//
+// NewOcCommandContext needs an oc binary and a kubeconfig, neither of which
+// exists in a unit-test environment, so this exercises the same
+// exec.CommandContext wiring directly.
+func TestNewOcCommandContextIsBounded(t *testing.T) {
+	t.Parallel()
+
+	sleep, err := exec.LookPath("sleep")
+	if err != nil {
+		t.Skipf("sleep not available: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, sleep, "60")
+
+	start := time.Now()
+	_, err = cmd.Output()
+	elapsed := time.Since(start)
+
+	require.Error(t, err, "command should have been killed by the deadline")
+	require.Error(t, ctx.Err(), "context should report the expired deadline")
+	assert.Less(t, elapsed, 30*time.Second, "command outlived its context")
 }
