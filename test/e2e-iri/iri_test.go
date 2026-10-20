@@ -365,18 +365,21 @@ func getBaseDomain(t *testing.T, cs *framework.ClientSet) string {
 	return cconfig.Spec.DNS.Spec.BaseDomain
 }
 
-// curlIRIRegistry runs curl against the IRI registry /v2/ endpoint via
-// ExecCmdOnNode, which executes inside the MCD pod on the given master node.
-// The MCD pod runs on the host network and can reach api-int:22625, making
-// this approach work in CI where the port is not reachable from the test runner.
-// Returns the HTTP status code string (e.g. "200", "401").
-func curlIRIRegistry(t *testing.T, cs *framework.ClientSet, node corev1.Node, baseDomain string, extraArgs ...string) string {
+// curlIRIRegistry runs curl against the IRI registry /v2/ endpoint via the MCD
+// pod on the given master node. The MCD pod runs on the host network and can
+// reach api-int:22625, making this approach work in CI where the port is not
+// reachable from the test runner.
+//
+// secrets lists the credentials carried by extraArgs; they are masked in any
+// failure message the exec helper logs. Returns the HTTP status code string
+// (e.g. "200", "401").
+func curlIRIRegistry(t *testing.T, cs *framework.ClientSet, node corev1.Node, baseDomain string, secrets []string, extraArgs ...string) string {
 	t.Helper()
 	url := fmt.Sprintf("https://api-int.%s:%d/v2/", baseDomain, ctrlcommon.IRIRegistryPort)
 	args := []string{"curl", "-s", "--cacert", iriRootCAPath, "-o", "/dev/null", "-w", "%{http_code}"}
 	args = append(args, extraArgs...)
 	args = append(args, url)
-	return strings.TrimSpace(helpers.ExecCmdOnNode(t, cs, node, args...))
+	return strings.TrimSpace(helpers.ExecCmdOnNodeRedacted(t, cs, node, secrets, args...))
 }
 
 func TestIRIAuth_UnauthenticatedRequestReturns401(t *testing.T) {
@@ -392,7 +395,7 @@ func TestIRIAuth_UnauthenticatedRequestReturns401(t *testing.T) {
 	baseDomain := getBaseDomain(t, cs)
 	node := helpers.GetRandomNode(t, cs, "master")
 
-	statusCode := curlIRIRegistry(t, cs, node, baseDomain)
+	statusCode := curlIRIRegistry(t, cs, node, baseDomain, nil)
 	require.Equal(t, "401", statusCode, "unauthenticated request should return 401")
 }
 
@@ -413,7 +416,7 @@ func TestIRIAuth_AuthenticatedRequestSucceeds(t *testing.T) {
 	node := helpers.GetRandomNode(t, cs, "master")
 	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(ctrlcommon.IRIRegistryUsername+":"+password))
 
-	statusCode := curlIRIRegistry(t, cs, node, baseDomain, "-H", "Authorization: "+authHeader)
+	statusCode := curlIRIRegistry(t, cs, node, baseDomain, []string{authHeader, password}, "-H", "Authorization: "+authHeader)
 	require.Equal(t, "200", statusCode, "authenticated request should succeed")
 }
 
@@ -569,6 +572,11 @@ func masterPoolIsSettled(ctx context.Context, t *testing.T, cs *framework.Client
 
 // iriRegistryAcceptsTLS reports whether the IRI registry on the node completes a
 // request pinned to exactly the given TLS version.
+//
+// This uses ExecCmdOnNodeWithError rather than ExecCmdOnNodeRedacted because the
+// former returns the raw exec error without formatting the argument list, so
+// authHeader never reaches the log below. Keep it that way, or switch to a
+// redacting helper.
 func iriRegistryAcceptsTLS(t *testing.T, cs *framework.ClientSet, node corev1.Node, authHeader, version string) bool {
 	t.Helper()
 
