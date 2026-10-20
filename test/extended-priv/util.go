@@ -1670,3 +1670,32 @@ func GetDataFromConfigMap(oc *exutil.CLI, namespace, name string) (map[string]st
 
 	return data, nil
 }
+
+// isReleasePayloadSigned checks whether the current cluster's release payload is signed.
+// CI/nightly payloads are not signed, only official GA releases published to
+// quay.io/openshift-release-dev/ocp-release are. We consider any image from
+// that repository to be signed.
+//
+// If this check is not sufficient, the signature can be verified by sending an HTTP HEAD request
+// to Red Hat's signature store. Signatures are stored at
+// https://mirror.openshift.com/pub/openshift-v4/signatures/openshift-release-dev/ocp-release/<digest>/signature-1
+// where <digest> is the image's sha256 digest with ":" replaced by "=". A 200 response means the payload is signed.
+func isReleasePayloadSigned(oc *exutil.CLI) (bool, error) {
+	cv := NewResource(oc, "clusterversion", "version")
+
+	releaseImage, err := cv.Get(`{.status.desired.image}`)
+	if err != nil {
+		return false, fmt.Errorf("could not get release image from clusterversion: %w", err)
+	}
+	if releaseImage == "" {
+		return false, fmt.Errorf("release image is empty in clusterversion")
+	}
+
+	if !strings.Contains(releaseImage, "quay.io/openshift-release-dev/ocp-release") {
+		logger.Infof("Release image %s is not from quay.io/openshift-release-dev/ocp-release, payload is not signed", releaseImage)
+		return false, nil
+	}
+
+	logger.Infof("Release image %s is from quay.io/openshift-release-dev/ocp-release, payload is signed", releaseImage)
+	return true, nil
+}
