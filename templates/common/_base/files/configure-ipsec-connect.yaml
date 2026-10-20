@@ -1,0 +1,33 @@
+mode: 0755
+path: "/usr/local/bin/ipsec-connect-configure.sh"
+contents:
+  inline: |
+    #!/bin/bash
+    set -x
+    set -o pipefail
+
+    if [ ! -e "/etc/ipsec.d/openshift.conf" ]; then
+      exit 0
+    fi
+
+    # If "openshift.conf" is referenced in /etc/sysconfig/openvswitch,
+    # the openvswitch-ipsec service handles IPsec connections, so no
+    # config update is needed here.
+    if grep -q "openshift.conf" /etc/sysconfig/openvswitch; then
+      exit 0
+    fi
+
+    # Modify existing IPsec out connection entries with "auto=start"
+    # option before ipsec service starts. This helps to establish IKE
+    # SAs for the existing IPsec connections with peer nodes on the
+    # initial ipsec start, avoiding the need for a restart.
+    # This option will be deleted from connections once
+    # ovs-monitor-ipsec process spinned up on the node by
+    # ovn-ipsec-host pod, but still it won't reestablish IKE SAs
+    # again with peer nodes, so it shouldn't be a problem.
+    # We are updating only out connections with "auto=start" to
+    # avoid cross stream issue with Libreswan 5.2.
+    # The in connections use default auto=route parameter.
+    if ! grep -q "auto=start" /etc/ipsec.d/openshift.conf; then
+      sed -i '/^.*conn ovn.*-out-1$/a\    auto=start' /etc/ipsec.d/openshift.conf
+    fi
