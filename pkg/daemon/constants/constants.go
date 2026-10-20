@@ -58,6 +58,10 @@ const (
 	MachineConfigDaemonReasonAnnotationKey = "machineconfiguration.openshift.io/reason"
 	// MachineConfigDaemonPostConfigAction is set by the daemon when it needs to report a human readable post config action that takes place during update.
 	MachineConfigDaemonPostConfigAction = "machineconfiguration.openshift.io/post-config-action"
+	// MachineConfigDaemonLastObservedBootIDAnnotationKey records the last boot ID
+	// observed by the MCO so node status reporting can distinguish daemon-managed
+	// update reboots from reboots outside an update.
+	MachineConfigDaemonLastObservedBootIDAnnotationKey = "machineconfiguration.openshift.io/last-observed-boot-id"
 	// MachineConfigDaemonFinalizeFailureAnnotationKey is set by the daemon when ostree fails to finalize
 	MachineConfigDaemonFinalizeFailureAnnotationKey = "machineconfiguration.openshift.io/ostree-finalize-staged-failure"
 	// InitialNodeAnnotationsFilePath defines the path at which it will find the node annotations it needs to set on the node once it comes up for the first time.
