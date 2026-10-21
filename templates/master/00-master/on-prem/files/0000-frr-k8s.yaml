@@ -262,6 +262,11 @@ contents:
           mountPath: /etc/frr
         - name: reloader
           mountPath: /etc/frr_reloader
+        # frr-reload.py writes to /tmp and /var/log/frr
+        - name: reloader-tmp
+          mountPath: /tmp
+        - name: frr-logs
+          mountPath: /var/log/frr
       - name: frr-status
         image: {{.Images.frrK8sImage}}
         command:
@@ -325,6 +330,10 @@ contents:
       - name: frr-lib
         emptyDir: {}
       - name: frr-tmp
+        emptyDir: {}
+      - name: reloader-tmp
+        emptyDir: {}
+      - name: frr-logs
         emptyDir: {}
       - name: frr-startup
         hostPath:
