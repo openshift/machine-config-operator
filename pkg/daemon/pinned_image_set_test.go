@@ -786,3 +786,8 @@ func newTestListener() (net.Listener, error) {
 func (f *FakeRuntime) Stop() {
 	f.server.Stop()
 }
+
+func TestPreviousPinnedImageSetUpdateMessage(t *testing.T) {
+	got := previousPinnedImageSetUpdateMessage("All pinned image sets complete")
+	require.Equal(t, "Action during previous pinned image set update: All pinned image sets complete", got)
+}
