@@ -2869,6 +2869,11 @@ func (dn *Daemon) InplaceUpdateViaLayeredContainer(target string) (retErr error)
 		return err
 	}
 
+	policyPath, err := dn.createLayeredImportPolicy(target, tmpDir)
+	if err != nil {
+		return err
+	}
+
 	prepareScript := `set -eu
 target="$1"
 digest="$2"
@@ -2880,7 +2885,11 @@ ostree container image pull --ostree-digestfile="$digest" "$repo" "ostree-unveri
 	prepareArgs = append(prepareArgs,
 		"run", "--env-file", "/etc/mco/proxy.env", "--privileged", "--pid=host", "--net=host", "--rm",
 		"-v", "/:/run/host", "-v", "/var/lib/containers:/var/lib/containers", "-v", tmpDir+":/var/tmp", "-v", "/etc/containers:/etc/containers:ro",
-		target, "sh", "-ec", prepareScript, "mco-layered-import", target, "/run/host"+digestPath)
+	)
+	// Mount the file after its parent directory so the temporary policy is
+	// visible only inside the import container, without changing the host policy.
+	prepareArgs = append(prepareArgs, layeredImportPolicyMountArgs(policyPath)...)
+	prepareArgs = append(prepareArgs, target, "sh", "-ec", prepareScript, "mco-layered-import", target, "/run/host"+digestPath)
 	if err := runCmdSync("systemd-run", prepareArgs...); err != nil {
 		return fmt.Errorf("failed to import complete layered image: %w", err)
 	}
@@ -2910,6 +2919,69 @@ ostree container image pull --ostree-digestfile="$digest" "$repo" "ostree-unveri
 		return fmt.Errorf("layered deployment did not retain target image origin")
 	}
 	return nil
+}
+
+// createLayeredImportPolicy returns a temporary policy file for the layered
+// import container when the host policy is restrictive for containers-storage.
+// An empty path means the existing policy already allows the import and should
+// be mounted unchanged.
+func (dn *Daemon) createLayeredImportPolicy(target, tmpDir string) (string, error) {
+	policyOriginalContent, err := os.ReadFile(imagePolicyFilePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read image policy %q for layered import: %w", imagePolicyFilePath, err)
+	}
+	return dn.createLayeredImportPolicyFromContent(target, tmpDir, policyOriginalContent)
+}
+
+func (dn *Daemon) createLayeredImportPolicyFromContent(target, tmpDir string, policyOriginalContent []byte) (string, error) {
+	policy, err := parseContainerStoragePolicy(policyOriginalContent)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse image policy %q for layered import: %w", imagePolicyFilePath, err)
+	}
+	if !containerStoragePolicyRequiresPatch(policy) {
+		klog.Infof("Image policy allows containers-storage by default; using the host policy for layered import")
+		return "", nil
+	}
+
+	if dn.podmanInterface == nil {
+		return "", fmt.Errorf("podman interface is required to create a containers-storage policy for layered import")
+	}
+	if dn.NodeUpdaterClient == nil {
+		return "", fmt.Errorf("node updater client is required to create a containers-storage policy for layered import")
+	}
+
+	podmanImageInfo, err := dn.podmanInterface.GetPodmanImageInfoByReference(target)
+	if err != nil {
+		return "", fmt.Errorf("failed to inspect pulled OS image %q for layered import policy: %w", target, err)
+	}
+	if podmanImageInfo == nil {
+		return "", fmt.Errorf("pulled OS image %q is not present in local container storage", target)
+	}
+
+	// The importer uses target in its containers-storage reference. Use that
+	// same reference in the policy key: tag references do not match RepoDigests.
+	policyKey, err := dn.NodeUpdaterClient.generateTransportPolicyKeyForReference(target, podmanImageInfo)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate containers-storage policy key for layered import: %w", err)
+	}
+	policyContent, err := addContainerStoragePolicyException(policy, policyKey)
+	if err != nil {
+		return "", fmt.Errorf("failed to add containers-storage policy for layered import: %w", err)
+	}
+
+	policyPath := filepath.Join(tmpDir, "policy.json")
+	if err := writeFileAtomicallyWithDefaults(policyPath, policyContent); err != nil {
+		return "", fmt.Errorf("failed to write temporary layered import policy %q: %w", policyPath, err)
+	}
+	klog.Infof("Temporary containers-storage policy added for layered import image %s", policyKey)
+	return policyPath, nil
+}
+
+func layeredImportPolicyMountArgs(policyPath string) []string {
+	if policyPath == "" {
+		return nil
+	}
+	return []string{"-v", policyPath + ":" + imagePolicyFilePath + ":ro"}
 }
 
 // queueRevertKernelSwap undoes the layering of the RT kernel or kernel-64k hugepages
