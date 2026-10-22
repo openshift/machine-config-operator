@@ -55,7 +55,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		exutil.By("To run prune cmd to know which rendered machineconfigs would be deleted")
 		pruneMCOutput, err := oc.AsAdmin().WithoutNamespace().Run("adm").Args("prune", "renderedmachineconfigs").Output()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Cannot get the rendered config for pool")
-		logger.Infof(pruneMCOutput)
+		logger.Infof("%s", pruneMCOutput)
 
 		for _, mc := range sortedRenderedMCs {
 			matchString := "dry-run deleting rendered MachineConfig "
@@ -72,7 +72,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		exutil.By("To get the rendered machineconfigs based on count and MCP name")
 		pruneMCOutput, err = oc.AsAdmin().WithoutNamespace().Run("adm").Args("prune", "renderedmachineconfigs", "--count=1", "--pool-name", "master").Output()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Cannot get the rendered config for pool")
-		logger.Infof(pruneMCOutput)
+		logger.Infof("%s", pruneMCOutput)
 		NewSortedRenderedMCMaster = mcList.GetRenderedMachineConfigForMasterOrFail()
 
 		matchString = "dry-run deleting rendered MachineConfig "
@@ -88,7 +88,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		exutil.By("Get the rendered machineconfigs list")
 		pruneMCOutput, err = oc.AsAdmin().WithoutNamespace().Run("adm").Args("prune", "renderedmachineconfigs", "list").Output()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Cannot get the rendered config list")
-		logger.Infof(pruneMCOutput)
+		logger.Infof("%s", pruneMCOutput)
 		o.Expect(pruneMCOutput).To(o.And(o.ContainSubstring(wSpecConf), o.ContainSubstring(mSpecConf)), "Error: Deleted in-use rendered machine configs")
 		for _, mc := range sortedRenderedMCs {
 			used := "Currently in use: false"
@@ -119,7 +119,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		o.Expect(err).NotTo(o.HaveOccurred(), "Cannot get the rendered config list")
 		NewSortedRenderedMCMaster = mcList.GetRenderedMachineConfigForMasterOrFail()
 
-		logger.Infof(pruneMCOutput)
+		logger.Infof("%s", pruneMCOutput)
 
 		if sortedMCListMaster[0].GetName() == mSpecConf {
 			matchString = "Skip deleting rendered MachineConfig "
@@ -138,7 +138,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		exutil.By("To delete the  rendered machineconfigs based on count and MCP name")
 		pruneMCOutput, err = oc.AsAdmin().WithoutNamespace().Run("adm").Args("prune", "renderedmachineconfigs", "--confirm").Output()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Cannot get the rendered config list")
-		logger.Infof(pruneMCOutput)
+		logger.Infof("%s", pruneMCOutput)
 
 		for _, mc := range sortedRenderedMCs {
 			if mc.GetName() == mSpecConf || mc.GetName() == wSpecConf {
@@ -220,7 +220,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		pruneMCOutput, err := oc.AsAdmin().WithoutNamespace().Run("adm").Args("prune", "renderedmachineconfigs", "--pool-name", "worker", "--confirm").Output()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Cannot get the rendered config list")
-		logger.Infof(pruneMCOutput)
+		logger.Infof("%s", pruneMCOutput)
 
 		renderedMCs := []string{wSpecConf, initialRenderedMC, newRenderedMC}
 		// as  wMCP is still updating with previous in-use  rendered MC and new generated MC from 1st and 2nd MC created are also in-use so we need to check they are not deleted
@@ -236,7 +236,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		exutil.By("Execute the prune command again after complete update")
 		pruneMCOutput, err = oc.AsAdmin().WithoutNamespace().Run("adm").Args("prune", "renderedmachineconfigs", "--pool-name", "worker", "--confirm").Output()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Cannot get the rendered config list")
-		logger.Infof(pruneMCOutput)
+		logger.Infof("%s", pruneMCOutput)
 		o.Expect(pruneMCOutput).To(o.ContainSubstring("Skip deleting rendered MachineConfig "+newRenderedMC), "Deleted the in-use rendered MC")
 
 		logger.Infof("OK\n")

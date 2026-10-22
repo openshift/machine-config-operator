@@ -157,7 +157,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		exutil.By("checking mco status")
 		co := NewResource(oc.AsAdmin(), "co", "machine-config")
 		coStatus := co.GetOrFail(`{range .status.conditions[*]}{.type}{.status}{"\n"}{end}`)
-		logger.Infof(coStatus)
+		logger.Infof("%s", coStatus)
 		o.Expect(coStatus).Should(
 			o.And(
 				o.ContainSubstring("ProgressingFalse"),
@@ -176,7 +176,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		exutil.By("checking mcp status")
 		mcp := NewResource(oc.AsAdmin(), "mcp", "")
 		mcpStatus := mcp.GetOrFail(`{.items[*].status.conditions[?(@.type=="Degraded")].status}`)
-		logger.Infof(mcpStatus)
+		logger.Infof("%s", mcpStatus)
 		o.Expect(mcpStatus).ShouldNot(o.ContainSubstring("True"))
 		logger.Infof("mcps are not degraded")
 

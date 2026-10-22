@@ -374,7 +374,11 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		exutil.By("Verify that the error is properly reported in the controller pod's logs")
 		logger.Debugf("CONTROLLER LOGS BEGIN!\n")
-		logger.Debugf(mcc.GetFilteredLogs(workerNode.GetName()))
+		filteredLogs, err := mcc.GetFilteredLogs(workerNode.GetName())
+		if err != nil {
+			logger.Errorf("Failed to get filtered logs: %s", err)
+		}
+		logger.Debugf("%s", filteredLogs)
 		logger.Debugf("CONTROLLER LOGS END!\n")
 
 		o.Eventually(mcc.GetFilteredLogs, "10m", "30s").WithArguments(workerNode.GetName()).Should(

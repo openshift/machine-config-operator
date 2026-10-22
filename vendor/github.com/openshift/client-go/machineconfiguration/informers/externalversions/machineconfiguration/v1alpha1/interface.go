@@ -9,9 +9,9 @@ import (
 // Interface provides access to all the informers in this group version.
 type Interface interface {
 	// InternalReleaseImages returns a InternalReleaseImageInformer.
-	InternalReleaseImages() InternalReleaseImageInformer
+	InternalReleaseImages() TypedInternalReleaseImageInformer
 	// OSImageStreams returns a OSImageStreamInformer.
-	OSImageStreams() OSImageStreamInformer
+	OSImageStreams() TypedOSImageStreamInformer
 }
 
 type version struct {
@@ -25,12 +25,12 @@ func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakList
 	return &version{factory: f, namespace: namespace, tweakListOptions: tweakListOptions}
 }
 
-// InternalReleaseImages returns a InternalReleaseImageInformer.
-func (v *version) InternalReleaseImages() InternalReleaseImageInformer {
+// InternalReleaseImages returns a TypedInternalReleaseImageInformer.
+func (v *version) InternalReleaseImages() TypedInternalReleaseImageInformer {
 	return &internalReleaseImageInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// OSImageStreams returns a OSImageStreamInformer.
-func (v *version) OSImageStreams() OSImageStreamInformer {
+// OSImageStreams returns a TypedOSImageStreamInformer.
+func (v *version) OSImageStreams() TypedOSImageStreamInformer {
 	return &oSImageStreamInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }

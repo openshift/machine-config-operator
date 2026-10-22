@@ -82,6 +82,22 @@ spec:
                 - HighlyAvailable
                 - SingleReplica
                 type: string
+              infrastructureTopology:
+                description: |-
+                  infrastructureTopology expresses the desired topology for infrastructure
+                  services that do not run on control plane nodes, indicating how
+                  infrastructure workloads are distributed across nodes.
+
+                  When omitted, no topology transition override has been expressed.
+                  Once populated, the field represents the desired topology state.
+
+                  When the value differs from status.infrastructureTopology, the cluster
+                  evaluates whether the requested transition can proceed. Not all
+                  transitions may be permitted.
+                enum:
+                - HighlyAvailable
+                - SingleReplica
+                type: string
               platformSpec:
                 description: |-
                   platformSpec holds desired information specific to the underlying

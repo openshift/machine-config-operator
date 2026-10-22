@@ -36,7 +36,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		exutil.By("get one node to verify the config changes")
 		stdout, err := node.DebugNodeWithChroot("cat", "/etc/chrony.conf")
 		o.Expect(err).NotTo(o.HaveOccurred())
-		logger.Infof(stdout)
+		logger.Infof("%s", stdout)
 		o.Expect(stdout).Should(
 			o.And(
 				o.ContainSubstring("pool 0.rhel.pool.ntp.org iburst"),

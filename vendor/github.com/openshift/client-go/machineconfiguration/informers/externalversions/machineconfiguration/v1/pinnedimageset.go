@@ -18,11 +18,39 @@ import (
 )
 
 // PinnedImageSetInformer provides access to a shared informer and lister for
-// PinnedImageSets.
+// PinnedImageSets. Prefer using the type-safe variant (see [TypedPinnedImageSetInformer]).
 type PinnedImageSetInformer interface {
 	Informer() cache.SharedIndexInformer
 	Lister() machineconfigurationv1.PinnedImageSetLister
 }
+
+// TypedPinnedImageSetInformer provides access to a shared informer and lister for
+// PinnedImageSets, including the type-safe TypedInformer variant.
+// It is a superset of PinnedImageSetInformer.
+type TypedPinnedImageSetInformer interface {
+	Informer() cache.SharedIndexInformer
+	TypedInformer() PinnedImageSetIndexInformer
+	Lister() machineconfigurationv1.PinnedImageSetLister
+}
+
+// PinnedImageSetIndexInformer is a wrapper around the underlying [cache.SharedIndexInformer]
+// with type-safe variants of several methods.
+type PinnedImageSetIndexInformer cache.TypedSharedIndexInformer[*apimachineconfigurationv1.PinnedImageSet]
+
+// PinnedImageSetHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerFuncs] for PinnedImageSet.
+type PinnedImageSetHandlerFuncs = cache.TypedResourceEventHandlerFuncs[*apimachineconfigurationv1.PinnedImageSet]
+
+// PinnedImageSetDetailedHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerDetailedFuncs] for PinnedImageSet.
+type PinnedImageSetDetailedHandlerFuncs = cache.TypedResourceEventHandlerDetailedFuncs[*apimachineconfigurationv1.PinnedImageSet]
+
+// PinnedImageSetFilteringHandler is a specialization of [cache.TypedFilteringResourceEventHandler] for PinnedImageSet.
+type PinnedImageSetFilteringHandler = cache.TypedFilteringResourceEventHandler[*apimachineconfigurationv1.PinnedImageSet]
+
+// PinnedImageSetIndexers is a specialization of [cache.TypedIndexers] for PinnedImageSet.
+type PinnedImageSetIndexers = cache.TypedIndexers[*apimachineconfigurationv1.PinnedImageSet]
+
+// DeletedPinnedImageSet is a specialization of [cache.DeletedObject] for PinnedImageSet.
+type DeletedPinnedImageSet = cache.DeletedObject[*apimachineconfigurationv1.PinnedImageSet]
 
 type pinnedImageSetInformer struct {
 	factory          internalinterfaces.SharedInformerFactory
@@ -32,25 +60,49 @@ type pinnedImageSetInformer struct {
 // NewPinnedImageSetInformer constructs a new informer for PinnedImageSet type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedPinnedImageSetInformer]).
 func NewPinnedImageSetInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
 	return NewPinnedImageSetInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers})
+}
+
+// NewTypedPinnedImageSetInformer constructs a new informer for PinnedImageSet type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedPinnedImageSetInformer(client versioned.Interface, resyncPeriod time.Duration, indexers PinnedImageSetIndexers) PinnedImageSetIndexInformer {
+	return NewTypedPinnedImageSetInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers)})
 }
 
 // NewFilteredPinnedImageSetInformer constructs a new informer for PinnedImageSet type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedFilteredPinnedImageSetInformer]).
 func NewFilteredPinnedImageSetInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
-	return NewPinnedImageSetInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+	return NewTypedPinnedImageSetInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+}
+
+// NewTypedFilteredPinnedImageSetInformer constructs a new informer for PinnedImageSet type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedFilteredPinnedImageSetInformer(client versioned.Interface, resyncPeriod time.Duration, indexers PinnedImageSetIndexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) PinnedImageSetIndexInformer {
+	return NewTypedPinnedImageSetInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers), TweakListOptions: tweakListOptions})
 }
 
 // NewPinnedImageSetInformerWithOptions constructs a new informer for PinnedImageSet type with additional options.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedPinnedImageSetInformerWithOptions]).
 func NewPinnedImageSetInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) cache.SharedIndexInformer {
+	return NewTypedPinnedImageSetInformerWithOptions(client, options)
+}
+
+// NewTypedPinnedImageSetInformerWithOptions constructs a new informer for PinnedImageSet type with additional options.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedPinnedImageSetInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) PinnedImageSetIndexInformer {
 	gvr := schema.GroupVersionResource{Group: "machineconfiguration.openshift.io", Version: "v1", Resource: "pinnedimagesets"}
 	identifier := options.InformerName.WithResource(gvr)
 	tweakListOptions := options.TweakListOptions
-	return cache.NewSharedIndexInformerWithOptions(
+	return cache.NewTypedSharedIndexInformer[*apimachineconfigurationv1.PinnedImageSet](cache.NewSharedIndexInformerWithOptions(
 		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
@@ -83,17 +135,57 @@ func NewPinnedImageSetInformerWithOptions(client versioned.Interface, options in
 			Indexers:     options.Indexers,
 			Identifier:   identifier,
 		},
-	)
+	))
 }
 
 func (f *pinnedImageSetInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewPinnedImageSetInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
+	return NewTypedPinnedImageSetInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
 }
 
 func (f *pinnedImageSetInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&apimachineconfigurationv1.PinnedImageSet{}, f.defaultInformer)
+	return f.TypedInformer()
+}
+
+func (f *pinnedImageSetInformer) TypedInformer() PinnedImageSetIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apimachineconfigurationv1.PinnedImageSet](f.factory.InformerFor(&apimachineconfigurationv1.PinnedImageSet{}, f.defaultInformer))
 }
 
 func (f *pinnedImageSetInformer) Lister() machineconfigurationv1.PinnedImageSetLister {
 	return machineconfigurationv1.NewPinnedImageSetLister(f.Informer().GetIndexer())
+}
+
+// ToTypedPinnedImageSetInformer converts an untyped informer into a TypedPinnedImageSetInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *PinnedImageSet. If that is not the case, calling type-safe methods of the returned
+// TypedPinnedImageSetInformer leads to runtime panics. A safer alternative is to pass
+// around a TypedPinnedImageSetInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToTypedPinnedImageSetInformer(informer PinnedImageSetInformer) TypedPinnedImageSetInformer {
+	if informer, ok := informer.(TypedPinnedImageSetInformer); ok {
+		return informer
+	}
+	return &pinnedImageSetTypedInformerAdapter{informer}
+}
+
+type pinnedImageSetTypedInformerAdapter struct {
+	PinnedImageSetInformer
+}
+
+func (a *pinnedImageSetTypedInformerAdapter) TypedInformer() PinnedImageSetIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apimachineconfigurationv1.PinnedImageSet](a.Informer())
+}
+
+// ToPinnedImageSetIndexInformer converts an untyped informer into a PinnedImageSetIndexInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *PinnedImageSet. If that is not the case, calling type-safe methods of the returned
+// PinnedImageSetIndexInformer leads to runtime panics. A safer alternative is to pass
+// around a PinnedImageSetIndexInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToPinnedImageSetIndexInformer(informer cache.SharedIndexInformer) PinnedImageSetIndexInformer {
+	if informer, ok := informer.(PinnedImageSetIndexInformer); ok {
+		return informer
+	}
+	return cache.NewTypedSharedIndexInformer[*apimachineconfigurationv1.PinnedImageSet](informer)
 }

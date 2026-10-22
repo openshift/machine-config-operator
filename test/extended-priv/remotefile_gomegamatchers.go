@@ -48,7 +48,7 @@ func (matcher *remoteFileMethodMatcher) Match(actual interface{}) (success bool,
 	method := value.MethodByName(matcher.method)
 	if !method.IsValid() {
 		msg := fmt.Sprintf("RemoteFile gomega matcher. ERROR! NOT VALID METHOD: [%s]", matcher.method)
-		logger.Errorf(msg)
+		logger.Errorf("%s", msg)
 		return false, o.StopTrying(msg)
 	}
 
@@ -57,7 +57,7 @@ func (matcher *remoteFileMethodMatcher) Match(actual interface{}) (success bool,
 	numRetValues := len(retValues)
 	if numRetValues == 0 {
 		msg := fmt.Sprintf("RemoteFile gomega matcher. ERROR! METHOD DOES NOT RETURN ANY VALUE: [%s]", matcher.method)
-		logger.Errorf(msg)
+		logger.Errorf("%s", msg)
 		return false, o.StopTrying(msg)
 	}
 

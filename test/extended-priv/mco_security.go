@@ -1019,7 +1019,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		exutil.By("verify file content changes")
 		fileContent, fileErr := workerNode.DebugNodeWithChroot("cat", "/etc/containers/policy.json")
 		o.Expect(fileErr).NotTo(o.HaveOccurred())
-		logger.Infof(fileContent)
+		logger.Infof("%s", fileContent)
 		o.Expect(fileContent).Should(o.ContainSubstring(`{"default": [{"type": "insecureAcceptAnything"}]}`))
 		o.Expect(fileContent).ShouldNot(o.ContainSubstring("transports"))
 

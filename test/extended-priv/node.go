@@ -250,7 +250,7 @@ func (n *Node) GetUnitActiveEnterTime(unitName string) (time.Time, error) {
 	match := r.FindStringSubmatch(cmdOut)
 	if len(match) == 0 {
 		msg := fmt.Sprintf("Wrong property format. Expected a format like '@1709918801', but got '%s'", cmdOut)
-		logger.Infof(msg)
+		logger.Infof("%s", msg)
 		return time.Time{}, fmt.Errorf("%s", msg)
 	}
 	unixTimeIndex := r.SubexpIndex("unix_timestamp")
@@ -286,7 +286,7 @@ func (n *Node) GetUnitExecReloadStartTime(unitName string) (time.Time, error) {
 	match := r.FindStringSubmatch(cmdOut)
 	if len(match) == 0 {
 		msg := fmt.Sprintf("Wrong property format. Expected a format like 'start_time=[@1709918801]', but got '%s'", cmdOut)
-		logger.Infof(msg)
+		logger.Infof("%s", msg)
 		return time.Time{}, fmt.Errorf("%s", msg)
 	}
 	unixTimeIndex := r.SubexpIndex("unix_timestamp")
@@ -681,7 +681,7 @@ func (n *Node) CaptureMCDaemonLogsUntilRestartWithTimeout(timeout string) (strin
 	case <-time.After(duration):
 		errMsg := fmt.Sprintf(`Node "%s". Timeout while waiting for the daemon pod "%s" -n  "%s" to be restarted`,
 			n.GetName(), machineConfigDaemon, MachineConfigNamespace)
-		logger.Infof(errMsg)
+		logger.Infof("%s", errMsg)
 		return "", fmt.Errorf("%s", errMsg)
 	}
 }
@@ -968,7 +968,7 @@ func (n *Node) CopyToLocal(from, to string) error {
 func (n *Node) RemoveFile(filePathToRemove string) error {
 	logger.Infof("Removing file %s from node %s", filePathToRemove, n.GetName())
 	output, err := n.DebugNodeWithChroot("rm", "-f", filePathToRemove)
-	logger.Infof(output)
+	logger.Infof("%s", output)
 
 	return err
 }
@@ -976,7 +976,7 @@ func (n *Node) RemoveFile(filePathToRemove string) error {
 // RpmIsInstalled returns true if the package is installed
 func (n *Node) RpmIsInstalled(rpmNames ...string) bool {
 	rpmOutput, err := n.DebugNodeWithChroot(append([]string{"rpm", "-q"}, rpmNames...)...)
-	logger.Infof(rpmOutput)
+	logger.Infof("%s", rpmOutput)
 	return err == nil
 }
 
@@ -1326,7 +1326,7 @@ func (n *Node) DnfDownload(pkg, dir string) (string, error) {
 	match := r.FindStringSubmatch(out)
 	if len(match) == 0 {
 		msg := fmt.Sprintf("Wrong download output. Cannot extract the name of the downloaded package using expresion %s:\n%s", expr, out)
-		logger.Errorf(msg)
+		logger.Errorf("%s", msg)
 		return "", fmt.Errorf("%s", msg)
 	}
 	pkgNameIndex := r.SubexpIndex("package")
