@@ -10,6 +10,8 @@ contents:
       namespace: openshift-frr-k8s
       labels:
         app: frr-k8s
+      annotations:
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
     spec:
       # hostNetwork: the BGP session must originate from the node IP and the
       # advertised VIP routes live in the host routing table (keepalived parity).
@@ -50,9 +52,6 @@ contents:
           requests:
             cpu: 10m
             memory: 50Mi
-          limits:
-            cpu: 100m
-            memory: 128Mi
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - name: resource-dir
@@ -84,9 +83,6 @@ contents:
           requests:
             cpu: 10m
             memory: 20Mi
-          limits:
-            cpu: 100m
-            memory: 128Mi
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - name: frr-startup
@@ -110,9 +106,6 @@ contents:
           requests:
             cpu: 10m
             memory: 20Mi
-          limits:
-            cpu: 100m
-            memory: 128Mi
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - name: reloader
@@ -133,9 +126,6 @@ contents:
           requests:
             cpu: 10m
             memory: 20Mi
-          limits:
-            cpu: 100m
-            memory: 128Mi
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - name: frr-status
@@ -163,9 +153,6 @@ contents:
           requests:
             cpu: 100m
             memory: 200Mi
-          limits:
-            cpu: 500m
-            memory: 512Mi
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
@@ -208,9 +195,6 @@ contents:
           requests:
             cpu: 100m
             memory: 200Mi
-          limits:
-            cpu: 500m
-            memory: 512Mi
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
@@ -251,9 +235,6 @@ contents:
           requests:
             cpu: 10m
             memory: 20Mi
-          limits:
-            cpu: 500m
-            memory: 128Mi
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - name: frr-sockets
@@ -295,9 +276,6 @@ contents:
           requests:
             cpu: 10m
             memory: 20Mi
-          limits:
-            cpu: 500m
-            memory: 128Mi
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - name: frr-sockets

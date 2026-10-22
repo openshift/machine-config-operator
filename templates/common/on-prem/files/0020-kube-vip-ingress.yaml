@@ -7,10 +7,12 @@ contents:
     apiVersion: v1
     metadata:
       name: kube-vip-ingress
-      namespace: openshift-kube-vip
+      namespace: openshift-{{ onPremPlatformShortName . }}-infra
       labels:
         app: kube-vip
         component: ingress
+      annotations:
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
     spec:
       hostNetwork: true
       priorityClassName: system-node-critical
@@ -55,9 +57,6 @@ contents:
           requests:
             cpu: 50m
             memory: 64Mi
-          limits:
-            cpu: 200m
-            memory: 256Mi
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
