@@ -3,6 +3,7 @@ package daemon
 import (
 	"bytes"
 	"compress/gzip"
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"os"
@@ -923,14 +924,22 @@ func TestGenerateExtensionsArgs(t *testing.T) {
 
 // MockPodmanInterface for testing podmanCopy function
 type MockPodmanInterface struct {
-	createContainerFunc func(additionalArgs []string, containerName, imgURL string) ([]byte, error)
+	createContainerFunc               func(additionalArgs []string, containerName, imgURL string) ([]byte, error)
+	getPodmanImageInfoByReferenceFunc func(reference string) (*PodmanImageInfo, error)
+	getPodmanInfoFunc                 func() (*PodmanInfo, error)
 }
 
 func (m *MockPodmanInterface) GetPodmanImageInfoByReference(reference string) (*PodmanImageInfo, error) {
+	if m.getPodmanImageInfoByReferenceFunc != nil {
+		return m.getPodmanImageInfoByReferenceFunc(reference)
+	}
 	return nil, fmt.Errorf("not implemented in mock")
 }
 
 func (m *MockPodmanInterface) GetPodmanInfo() (*PodmanInfo, error) {
+	if m.getPodmanInfoFunc != nil {
+		return m.getPodmanInfoFunc()
+	}
 	return nil, fmt.Errorf("not implemented in mock")
 }
 
@@ -939,6 +948,70 @@ func (m *MockPodmanInterface) CreatePodmanContainer(additionalArgs []string, con
 		return m.createContainerFunc(additionalArgs, containerName, imgURL)
 	}
 	return []byte("test-container-id"), nil
+}
+
+func TestCreateLayeredImportPolicy_TaggedOSImageWithRestrictivePolicy(t *testing.T) {
+	const (
+		target     = "quay.io/openshift/os:stable"
+		imageID    = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+		repoDigest = "quay.io/openshift/os@sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+	)
+	hostPolicy := []byte(`{
+		"default": [{"type":"reject"}],
+		"transports": {
+			"docker": {
+				"quay.io": [{"type":"insecureAcceptAnything"}]
+			}
+		}
+	}`)
+	imageInfo := &PodmanImageInfo{
+		ID:          imageID,
+		RepoDigests: []string{repoDigest},
+		// RepoDigest remains empty because target is a tag, not a repo digest.
+	}
+	var inspectedReference string
+	mockPodman := &MockPodmanInterface{
+		getPodmanImageInfoByReferenceFunc: func(reference string) (*PodmanImageInfo, error) {
+			inspectedReference = reference
+			return imageInfo, nil
+		},
+		getPodmanInfoFunc: func() (*PodmanInfo, error) {
+			return &PodmanInfo{Store: PodmanStorageConfig{GraphDriverName: "overlay", GraphRoot: "/var/lib/containers/storage"}}, nil
+		},
+	}
+	daemon := &Daemon{
+		podmanInterface:   mockPodman,
+		NodeUpdaterClient: &RpmOstreeClient{podmanInterface: mockPodman},
+	}
+
+	policyPath, err := daemon.createLayeredImportPolicyFromContent(target, t.TempDir(), hostPolicy)
+	require.NoError(t, err)
+	require.FileExists(t, policyPath)
+	assert.Equal(t, target, inspectedReference)
+	assert.Empty(t, imageInfo.RepoDigest)
+
+	policyContent, err := os.ReadFile(policyPath)
+	require.NoError(t, err)
+	var patchedPolicy struct {
+		Default []struct {
+			Type string `json:"type"`
+		} `json:"default"`
+		Transports map[string]map[string][]struct {
+			Type string `json:"type"`
+		} `json:"transports"`
+	}
+	require.NoError(t, json.Unmarshal(policyContent, &patchedPolicy))
+	require.Len(t, patchedPolicy.Default, 1)
+	assert.Equal(t, "reject", patchedPolicy.Default[0].Type)
+	assert.Equal(t, "insecureAcceptAnything", patchedPolicy.Transports["docker"]["quay.io"][0].Type)
+
+	expectedKey := "[overlay@/var/lib/containers/storage]" + target + "@" + imageID
+	storageRules := patchedPolicy.Transports[imagePolicyTransportContainerStorage]
+	require.Len(t, storageRules, 1)
+	require.Contains(t, storageRules, expectedKey)
+	require.Len(t, storageRules[expectedKey], 1)
+	assert.Equal(t, "insecureAcceptAnything", storageRules[expectedKey][0].Type)
+	assert.NotContains(t, storageRules, "")
 }
 
 // Assisted by: Cursor
