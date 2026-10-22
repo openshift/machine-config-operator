@@ -304,6 +304,18 @@ func IsTrue(s string) bool {
 	return strings.EqualFold(s, TrueString)
 }
 
+// SafeCleanup executes the given cleanup function ensuring all statements run even if some assertions fail.
+// It collects all gomega failures and reports them at the end, failing the test if any occurred.
+// Use this in defer blocks instead of raw o.Expect calls to prevent cleanup from being interrupted.
+func SafeCleanup(cleanup func()) {
+	errors := o.InterceptGomegaFailures(cleanup)
+	for _, e := range errors {
+		logger.Errorf("Cleanup error: %s", e)
+	}
+	o.Expect(len(errors)).To(o.BeZero(),
+		"There were %d errors during cleanup:\n%s", len(errors), strings.Join(errors, "\n"))
+}
+
 // IsSNOSafe returns true if the cluster is a SNO cluster. Instead of failing, it returns an error if we can't know if the cluster is SNO or not
 func IsSNOSafe(oc *exutil.CLI) (bool, error) {
 	allNodes, err := NewNodeList(oc.AsAdmin()).GetAll()
@@ -1609,4 +1621,33 @@ func ToInterfaceSlice(r gjson.Result) []interface{} {
 		result[i] = elem.Value()
 	}
 	return result
+}
+
+// isReleasePayloadSigned checks whether the current cluster's release payload is signed.
+// CI/nightly payloads are not signed, only official GA releases published to
+// quay.io/openshift-release-dev/ocp-release are. We consider any image from
+// that repository to be signed.
+//
+// If this check is not sufficient, the signature can be verified by sending an HTTP HEAD request
+// to Red Hat's signature store. Signatures are stored at
+// https://mirror.openshift.com/pub/openshift-v4/signatures/openshift-release-dev/ocp-release/<digest>/signature-1
+// where <digest> is the image's sha256 digest with ":" replaced by "=". A 200 response means the payload is signed.
+func isReleasePayloadSigned(oc *exutil.CLI) (bool, error) {
+	cv := NewResource(oc, "clusterversion", "version")
+
+	releaseImage, err := cv.Get(`{.status.desired.image}`)
+	if err != nil {
+		return false, fmt.Errorf("could not get release image from clusterversion: %w", err)
+	}
+	if releaseImage == "" {
+		return false, fmt.Errorf("release image is empty in clusterversion")
+	}
+
+	if !strings.Contains(releaseImage, "quay.io/openshift-release-dev/ocp-release") {
+		logger.Infof("Release image %s is not from quay.io/openshift-release-dev/ocp-release, payload is not signed", releaseImage)
+		return false, nil
+	}
+
+	logger.Infof("Release image %s is from quay.io/openshift-release-dev/ocp-release, payload is signed", releaseImage)
+	return true, nil
 }
