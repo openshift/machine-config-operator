@@ -51,11 +51,12 @@ type fixture struct {
 	client  *fake.Clientset
 	oclient *mcopfake.Clientset
 
-	mcpLister []*mcfgv1.MachineConfigPool
-	mcLister  []*mcfgv1.MachineConfig
-	ccLister  []*mcfgv1.ControllerConfig
-	crcLister []*mcfgv1.ContainerRuntimeConfig
-	mckLister []*mcfgv1.KubeletConfig
+	mcpLister           []*mcfgv1.MachineConfigPool
+	mcLister            []*mcfgv1.MachineConfig
+	ccLister            []*mcfgv1.ControllerConfig
+	crcLister           []*mcfgv1.ContainerRuntimeConfig
+	mckLister           []*mcfgv1.KubeletConfig
+	osImageStreamLister []*mcfgv1.OSImageStream
 
 	actions []core.Action
 
@@ -122,6 +123,10 @@ func (f *fixture) newController() *Controller {
 
 	for _, m := range f.mckLister {
 		i.Machineconfiguration().V1().KubeletConfigs().Informer().GetIndexer().Add(m)
+	}
+
+	for _, ois := range f.osImageStreamLister {
+		i.Machineconfiguration().V1().OSImageStreams().Informer().GetIndexer().Add(ois)
 	}
 
 	return c
@@ -1239,4 +1244,157 @@ func TestRunBootstrapBlocksRuncOnRHEL10(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "runc")
 	assert.Contains(t, err.Error(), "not available")
+}
+
+func TestValidateNoOSStreamDowngrade(t *testing.T) {
+	tests := []struct {
+		name            string
+		pool            *mcfgv1.MachineConfigPool
+		workerPool      *mcfgv1.MachineConfigPool
+		osImageStream   *mcfgv1.OSImageStream
+		wantErr         bool
+		wantErrContains string
+	}{
+		{
+			name: "downgrade rhel-10 to rhel-9 returns error",
+			pool: func() *mcfgv1.MachineConfigPool {
+				p := helpers.NewMachineConfigPool("worker", helpers.WorkerSelector, nil, "")
+				p.Spec.OSImageStream.Name = "rhel-9"
+				p.Status.OSImageStream.Name = "rhel-10"
+				return p
+			}(),
+			wantErr:         true,
+			wantErrContains: "cannot be downgraded",
+		},
+		{
+			name: "upgrade rhel-9 to rhel-10 is allowed",
+			pool: func() *mcfgv1.MachineConfigPool {
+				p := helpers.NewMachineConfigPool("worker", helpers.WorkerSelector, nil, "")
+				p.Spec.OSImageStream.Name = "rhel-10"
+				p.Status.OSImageStream.Name = "rhel-9"
+				return p
+			}(),
+			wantErr: false,
+		},
+		{
+			name: "same stream is allowed",
+			pool: func() *mcfgv1.MachineConfigPool {
+				p := helpers.NewMachineConfigPool("worker", helpers.WorkerSelector, nil, "")
+				p.Spec.OSImageStream.Name = "rhel-10"
+				p.Status.OSImageStream.Name = "rhel-10"
+				return p
+			}(),
+			wantErr: false,
+		},
+		{
+			name: "custom pool uses worker status when own status is empty",
+			pool: func() *mcfgv1.MachineConfigPool {
+				p := helpers.NewMachineConfigPool("infra", helpers.InfraSelector, nil, "")
+				p.Spec.OSImageStream.Name = "rhel-9"
+				return p
+			}(),
+			workerPool: func() *mcfgv1.MachineConfigPool {
+				p := helpers.NewMachineConfigPool("worker", helpers.WorkerSelector, nil, "")
+				p.Status.OSImageStream.Name = "rhel-10"
+				return p
+			}(),
+			wantErr:         true,
+			wantErrContains: "cannot be downgraded",
+		},
+		{
+			name: "custom pool uses worker spec when worker status is empty (mid-update)",
+			pool: func() *mcfgv1.MachineConfigPool {
+				p := helpers.NewMachineConfigPool("infra", helpers.InfraSelector, nil, "")
+				p.Spec.OSImageStream.Name = "rhel-9"
+				return p
+			}(),
+			workerPool: func() *mcfgv1.MachineConfigPool {
+				p := helpers.NewMachineConfigPool("worker", helpers.WorkerSelector, nil, "")
+				p.Spec.OSImageStream.Name = "rhel-10"
+				// status is empty — simulates worker mid-update where status is cleared
+				return p
+			}(),
+			wantErr:         true,
+			wantErrContains: "cannot be downgraded",
+		},
+		{
+			name: "custom pool uses cluster defaultStream when worker has no spec and no status (mid-update)",
+			pool: func() *mcfgv1.MachineConfigPool {
+				p := helpers.NewMachineConfigPool("infra", helpers.InfraSelector, nil, "")
+				p.Spec.OSImageStream.Name = "rhel-9"
+				return p
+			}(),
+			workerPool: helpers.NewMachineConfigPool("worker", helpers.WorkerSelector, nil, ""),
+			// worker has no explicit spec and no status — inherits cluster default
+			osImageStream: &mcfgv1.OSImageStream{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.ClusterInstanceNameOSImageStream},
+				Status: mcfgv1.OSImageStreamStatus{
+					DefaultStream: "rhel-10",
+				},
+			},
+			wantErr:         true,
+			wantErrContains: "cannot be downgraded",
+		},
+		{
+			name: "centos-10 to rhel-9 is blocked",
+			pool: func() *mcfgv1.MachineConfigPool {
+				p := helpers.NewMachineConfigPool("worker", helpers.WorkerSelector, nil, "")
+				p.Spec.OSImageStream.Name = "rhel-9"
+				p.Status.OSImageStream.Name = "centos-10"
+				return p
+			}(),
+			wantErr:         true,
+			wantErrContains: "cannot be downgraded",
+		},
+		{
+			name: "removing explicit rhel-10 spec on cluster defaulting to rhel-9 is blocked",
+			pool: func() *mcfgv1.MachineConfigPool {
+				p := helpers.NewMachineConfigPool("worker", helpers.WorkerSelector, nil, "")
+				// spec.osImageStream.name removed — getOSImageStreamNameForPool returns ""
+				p.Status.OSImageStream.Name = "rhel-10"
+				return p
+			}(),
+			osImageStream: &mcfgv1.OSImageStream{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.ClusterInstanceNameOSImageStream},
+				Status: mcfgv1.OSImageStreamStatus{
+					DefaultStream: "rhel-9",
+				},
+			},
+			wantErr:         true,
+			wantErrContains: "cannot be downgraded",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFixture(t)
+
+			f.fgHandler = ctrlcommon.NewFeatureGatesHardcodedHandler(
+				[]apicfgv1.FeatureGateName{features.FeatureGateOSStreams},
+				[]apicfgv1.FeatureGateName{},
+			)
+
+			if tt.workerPool != nil {
+				f.mcpLister = append(f.mcpLister, tt.workerPool)
+				f.objects = append(f.objects, tt.workerPool)
+			}
+
+			if tt.osImageStream != nil {
+				f.osImageStreamLister = append(f.osImageStreamLister, tt.osImageStream)
+				f.objects = append(f.objects, tt.osImageStream)
+			}
+
+			c := f.newController()
+
+			err := c.validateNoOSStreamDowngrade(tt.pool)
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.wantErrContains != "" {
+					assert.Contains(t, err.Error(), tt.wantErrContains)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 }

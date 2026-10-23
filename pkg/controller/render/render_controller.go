@@ -714,6 +714,10 @@ func (ctrl *Controller) syncGeneratedMachineConfig(ctx context.Context, pool *mc
 		return err
 	}
 
+	if err := ctrl.validateNoOSStreamDowngrade(pool); err != nil {
+		return err
+	}
+
 	generated, err := ctrl.getRenderedMachineConfig(pool, configs, cc, osImageStreamSet)
 	if err != nil {
 		return fmt.Errorf("could not generate rendered MachineConfig: %w", err)
@@ -1056,6 +1060,62 @@ func validateNoRuncOnRHEL10FromOSImageURL(ctx context.Context, pool *mcfgv1.Mach
 			"To unblock, migrate to crun by removing any ContainerRuntimeConfig that sets defaultRuntime to runc, "+
 			"and removing any MachineConfig that sets default_runtime = \"runc\" in CRI-O configuration under /etc/crio/crio.conf.d/",
 		pool.Name)
+}
+
+// validateNoOSStreamDowngrade returns an error if the pool is requesting a stream whose
+// major OS version is lower than the major version the pool is currently running.
+// Downgrading OS streams (e.g. rhel-10 → rhel-9) is unsupported.
+//
+// This is a backstop for the VAP-level downgrade check, which cannot inspect the worker
+// pool's status for custom pools. It also serves as defense-in-depth for downgrades
+// triggered by a change to OSImageStream.spec.defaultStream (the primary gate being the
+// osimagestream VAP).
+//
+// The current stream is resolved via this fallback chain:
+//  1. pool.Status.OSImageStream.Name — set by the node status controller when the pool
+//     is fully settled on a named stream.
+//  2. workerPool.Status.OSImageStream.Name — for custom pools whose own status is empty
+//     (inheriting the worker pool's running stream).
+//  3. workerPool.Spec.OSImageStream.Name — for custom pools when the worker status is
+//     cleared mid-update; the spec reflects the worker's target stream throughout the
+//     update window, closing the gap where status is transiently empty.
+//  4. imageStream.Status.DefaultStream — when the worker also has no explicit spec and
+//     inherits the cluster default; mirrors how requestedStream is resolved.
+//
+// If the current stream still cannot be determined the check is skipped; new-pool
+// creation with a downgrade stream is blocked at admission by the VAP.
+func (ctrl *Controller) validateNoOSStreamDowngrade(pool *mcfgv1.MachineConfigPool) error {
+	if !osimagestream.IsFeatureEnabled(ctrl.fgHandler) || ctrl.osImageStreamLister == nil {
+		return nil
+	}
+
+	imageStream, imageStreamErr := ctrl.osImageStreamLister.Get(ctrlcommon.ClusterInstanceNameOSImageStream)
+
+	requestedStream := ctrl.getOSImageStreamNameForPool(pool)
+	if requestedStream == "" && imageStreamErr == nil {
+		requestedStream = imageStream.Status.DefaultStream
+	}
+
+	currentStream := pool.Status.OSImageStream.Name
+
+	if currentStream == "" && ctrlcommon.IsCustomPool(pool) {
+		if workerPool, err := ctrl.mcpLister.Get(ctrlcommon.MachineConfigPoolWorker); err == nil {
+			currentStream = workerPool.Status.OSImageStream.Name
+			if currentStream == "" {
+				currentStream = ctrl.getOSImageStreamNameForPool(workerPool)
+			}
+			if currentStream == "" && imageStreamErr == nil {
+				currentStream = imageStream.Status.DefaultStream
+			}
+		}
+	}
+
+	if requestedStream == osimagestream.StreamNameRHEL9 && osimagestream.IsRHEL10Stream(currentStream) {
+		return fmt.Errorf("pool %s: changing OS stream from %q to %q is not supported; RHEL 10 nodes cannot be downgraded to RHEL 9",
+			pool.Name, currentStream, requestedStream)
+	}
+
+	return nil
 }
 
 // getMachineConfigsForPool is called by RunBootstrap and returns configs that match label from configs for a pool.

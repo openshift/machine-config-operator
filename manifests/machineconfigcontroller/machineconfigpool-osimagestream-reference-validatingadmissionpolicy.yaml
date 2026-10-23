@@ -20,3 +20,24 @@ spec:
   validations:
     - expression: "!has(object.spec.osImageStream) || object.spec.osImageStream.name in params.status.availableStreams.map(s, s.name)"
       message: "The specified osImageStream name must reference a valid stream from the cluster OSImageStream resource"
+    - expression: |
+        !(request.operation == "UPDATE" &&
+          has(oldObject.spec.osImageStream) &&
+          oldObject.spec.osImageStream.name in ["rhel-10", "centos-10"] &&
+          has(object.spec.osImageStream) &&
+          object.spec.osImageStream.name == "rhel-9")
+      message: "OS stream downgrade is not supported; RHEL 10 (rhel-10, centos-10) nodes cannot be downgraded to rhel-9"
+    - expression: |
+        !(request.operation == "UPDATE" &&
+          has(oldObject.spec.osImageStream) &&
+          oldObject.spec.osImageStream.name in ["rhel-10", "centos-10"] &&
+          !has(object.spec.osImageStream) &&
+          params.status.defaultStream == "rhel-9")
+      message: "Removing the OS stream spec would revert the pool to the cluster default rhel-9; RHEL 10 nodes cannot be downgraded to RHEL 9"
+    - expression: |
+        !((request.operation == "CREATE" ||
+           (request.operation == "UPDATE" && !has(oldObject.spec.osImageStream))) &&
+          has(object.spec.osImageStream) &&
+          object.spec.osImageStream.name == "rhel-9" &&
+          params.status.defaultStream in ["rhel-10", "centos-10"])
+      message: "OS stream rhel-9 is not supported when the cluster default stream is rhel-10 or centos-10"
