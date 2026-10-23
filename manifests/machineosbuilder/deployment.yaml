@@ -27,9 +27,17 @@ spec:
           requests:
             cpu: 20m
             memory: 50Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /tmp
+          name: mosb-tmp
       serviceAccountName: machine-os-builder
       priorityClassName: "system-cluster-critical"
+      volumes:
+      - name: mosb-tmp
+        emptyDir: {}
       tolerations:
       - key: node-role.kubernetes.io/master
         operator: Exists
