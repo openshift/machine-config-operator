@@ -1329,3 +1329,30 @@ func TestCheckBootImageSkewUpgradeableGuard(t *testing.T) {
 		})
 	}
 }
+
+func TestSyncRelatedObjectsContainsMachineConfigurationTypes(t *testing.T) {
+	optr := &Operator{namespace: "openshift-machine-config-operator"}
+	co := &configv1.ClusterOperator{}
+	optr.syncRelatedObjects(co)
+
+	have := map[string]bool{}
+	for _, obj := range co.Status.RelatedObjects {
+		if obj.Group == "machineconfiguration.openshift.io" {
+			have[obj.Resource] = true
+		}
+	}
+	for _, want := range []string{
+		"machineconfigpools",
+		"controllerconfigs",
+		"kubeletconfigs",
+		"containerruntimeconfigs",
+		"machineconfigs",
+		"machineconfignodes",
+		"pinnedimagesets",
+		"machineosconfigs",
+		"machineosbuilds",
+		"osimagestreams",
+	} {
+		assert.True(t, have[want], "relatedObjects must include %s for oc adm inspect to collect it", want)
+	}
+}
