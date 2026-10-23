@@ -3,10 +3,12 @@ kind: Pod
 apiVersion: v1
 metadata:
   name: kube-vip-api-secondary
-  namespace: openshift-kube-vip
+  namespace: openshift-{{ onPremPlatformShortName .ControllerConfig }}-infra
   labels:
     app: kube-vip
     component: api-secondary
+  annotations:
+    target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
 spec:
   hostNetwork: true
   priorityClassName: system-node-critical
@@ -47,9 +49,6 @@ spec:
       requests:
         cpu: 50m
         memory: 64Mi
-      limits:
-        cpu: 200m
-        memory: 256Mi
     securityContext:
       allowPrivilegeEscalation: false
       readOnlyRootFilesystem: true
