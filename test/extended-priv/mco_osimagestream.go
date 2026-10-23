@@ -119,6 +119,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 	// AI-assisted: Test case to validate real-time kernel configuration across OS image streams (rhel9 -> rhel10)
 	g.It("[PolarionID:87095][OTP] Realtime kernel from rhel9 stream to rhel10 stream [Disruptive] [apigroup:machineconfiguration.openshift.io]", func() {
+		g.Skip("Temporarily disabled: rhel-10→rhel-9 revert path is blocked by admission; see OCPBUGS-135363")
 		SkipIfDefaultOSImageStream(oc.AsAdmin(), OSImageStreamRHEL10)
 		architecture.SkipIfNoNodeWithArchitectures(oc.AsAdmin(), architecture.AMD64)
 
@@ -132,6 +133,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 	// AI-assisted: Test case to validate 64k-pages kernel configuration across OS image streams (rhel9 -> rhel10)
 	g.It("[PolarionID:87096][OTP] 64k pages kernel from rhel9 stream to rhel10 stream [Disruptive] [apigroup:machineconfiguration.openshift.io]", g.Label("NoPlatform:gce"), func() {
+		g.Skip("Temporarily disabled: rhel-10→rhel-9 revert path is blocked by admission; see OCPBUGS-135363")
 		SkipIfDefaultOSImageStream(oc.AsAdmin(), OSImageStreamRHEL10)
 		architecture.SkipIfNoNodeWithArchitectures(oc.AsAdmin(), architecture.ARM64)
 		skipTestIfNotSupportedPlatform(oc.AsAdmin(), GCPPlatform)
@@ -146,6 +148,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 	// AI-assisted: Test case to validate extensions configuration survives osImageStream changes (rhel9 -> rhel10)
 	g.It("[PolarionID:87259][OTP] Extensions from rhel9 stream to rhel10 stream [Disruptive] [apigroup:machineconfiguration.openshift.io]", func() {
+		g.Skip("Temporarily disabled: rhel-10→rhel-9 revert path is blocked by admission; see OCPBUGS-135363")
 		SkipIfDefaultOSImageStream(oc.AsAdmin(), OSImageStreamRHEL10)
 		testExtensionsAcrossOSImageStreams(oc, osis, OSImageStreamRHEL9, OSImageStreamRHEL10)
 	})
@@ -261,7 +264,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 	// AI-assisted: Test case to validate osImageStream inheritance for custom MachineConfigPools
 	g.It("[PolarionID:88122][OTP] Validate osImageStream inheritance for custom MachineConfigPools [Disruptive] [apigroup:machineconfiguration.openshift.io] [apigroup:machine.openshift.io]", func() {
-
+		g.Skip("Temporarily disabled: rhel-10→rhel-9 stream switch is blocked by admission; see OCPBUGS-135363")
 		SkipIfCompactOrSNO(oc.AsAdmin())
 
 		// Get initial and target streams based on cluster version
@@ -271,6 +274,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	})
 
 	g.It("[PolarionID:88203][OTP] In image-mode, verify the MOSB is triggered when osImageStream is patched [Disruptive] [apigroup:machineconfiguration.openshift.io]", func() {
+		g.Skip("Temporarily disabled: rhel-10→rhel-9 stream switch is blocked by admission; see OCPBUGS-135363")
 		SkipIfCompactOrSNO(oc.AsAdmin())
 
 		// Get initial and target streams based on cluster version
@@ -280,6 +284,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	})
 
 	g.It("[PolarionID:88365][OTP] Verify when osstream and osImageurl MC is applied the MCP is degraded [Disruptive] [apigroup:machineconfiguration.openshift.io]", func() {
+		g.Skip("Temporarily disabled: rhel-10→rhel-9 stream switch is blocked by admission; see OCPBUGS-135363")
 		var (
 			testID = GetCurrentTestPolarionIDNumber()
 			mcName = fmt.Sprintf("tc-%s-osimageurl", testID)
