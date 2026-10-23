@@ -314,16 +314,16 @@ func cloneMachineSet(oc *exutil.CLI, ms ManagedMachineResource, newMsName, image
 
 	// Create a new secret using the given ignition version
 	exutil.By(fmt.Sprintf("Create a new secret with %s ignition version", ignitionVersion))
-	currentSecret, csErr := ms.GetUserDataSecret()
+	managedSecret, csErr := ms.GetManagedUserDataSecret()
 	if csErr != nil {
 		return newMs, fmt.Errorf("error getting user-data secret from %s: %w", ms.GetName(), csErr)
 	}
-	logger.Infof("Duplicating secret %s with new name %s", currentSecret.GetName(), newSecretName)
+	logger.Infof("Duplicating secret %s with new name %s", managedSecret.GetName(), newSecretName)
 
 	modifyUserData := func(userData string) (string, error) { return convertUserDataToNewVersion(userData, ignitionVersion) }
-	clonedSecret, sErr := duplicateMachinesetSecret(currentSecret, newSecretName, modifyUserData, nil)
+	clonedSecret, sErr := managedSecret.Duplicate(newSecretName, modifyUserData)
 	if sErr != nil {
-		return newMs, fmt.Errorf("error duplicating machine-api secret: %w", sErr)
+		return newMs, fmt.Errorf("error duplicating user-data secret: %w", sErr)
 	}
 	if !clonedSecret.Exists() {
 		return newMs, fmt.Errorf("the secret was not duplicated for machineset %s", newMs)
