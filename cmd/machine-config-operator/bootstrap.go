@@ -120,7 +120,7 @@ func runBootstrapCmd(_ *cobra.Command, _ []string) {
 	// To help debugging, immediately log version
 	klog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
 
-	baseOSContainerImageTag := "rhel-coreos"
+	baseOSContainerImageTag := "rhel-coreos-10"
 	if version.IsFCOS() {
 		baseOSContainerImageTag = "fedora-coreos"
 	} else if version.IsSCOS() {
