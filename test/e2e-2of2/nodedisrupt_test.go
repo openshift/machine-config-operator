@@ -5,10 +5,12 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	"github.com/containers/image/v5/pkg/sysregistriesv2"
 
+	configv1 "github.com/openshift/api/config/v1"
 	v1 "github.com/openshift/api/machineconfiguration/v1"
 	opv1 "github.com/openshift/api/operator/v1"
 	mcoac "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
@@ -23,6 +25,7 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 const (
@@ -226,4 +229,54 @@ func checkNodeDisruptionAction(t *testing.T, cs *framework.ClientSet, testMC *v1
 	helpers.WaitForPoolComplete(t, cs, testMCP, oldRenderedMC)
 
 	t.Logf("Successfully verified %s", expectedAction)
+}
+
+// TestKubeletTLSProfileChangeNoReboot verifies that changing the kubelet TLS
+// security profile triggers a kubelet restart, not a reboot.
+func TestKubeletTLSProfileChangeNoReboot(t *testing.T) {
+	cs := framework.NewClientSet("")
+	ctx := context.Background()
+
+	node := helpers.GetRandomNode(t, cs, "worker")
+	initialUptime := helpers.GetNodeUptime(t, cs, node)
+	mcdPod, err := helpers.MCDForNode(cs, &node)
+	require.NoError(t, err)
+
+	oldRenderedMC := helpers.GetMcName(t, cs, "worker")
+
+	kcName := "test-tls-no-reboot"
+	kc := &v1.KubeletConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: kcName},
+		Spec: v1.KubeletConfigSpec{
+			MachineConfigPoolSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"pools.operator.machineconfiguration.openshift.io/worker": ""},
+			},
+			TLSSecurityProfile: &configv1.TLSSecurityProfile{Type: configv1.TLSProfileOldType},
+		},
+	}
+	_, err = cs.KubeletConfigs().Create(ctx, kc, metav1.CreateOptions{})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = cs.KubeletConfigs().Delete(ctx, kcName, metav1.DeleteOptions{})
+		helpers.WaitForPoolComplete(t, cs, "worker", oldRenderedMC)
+	})
+
+	// Wait for the pool to fully converge.
+	var newRenderedMC string
+	err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 10*time.Minute, true, func(ctx context.Context) (bool, error) {
+		mcp, err := cs.MachineConfigPools().Get(ctx, "worker", metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		if mcp.Status.Configuration.Name != oldRenderedMC && mcp.Status.Configuration.Name != "" {
+			newRenderedMC = mcp.Status.Configuration.Name
+			return true, nil
+		}
+		return false, nil
+	})
+	require.NoError(t, err, "timed out waiting for worker pool to converge")
+
+	helpers.AssertNodeNotReboot(t, cs, node, initialUptime)
+	helpers.AssertMCDLogsContain(t, cs, mcdPod, &node,
+		fmt.Sprintf("Performing post config change action: Restart for config %s", newRenderedMC))
 }
